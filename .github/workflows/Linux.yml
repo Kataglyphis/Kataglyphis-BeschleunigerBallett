@@ -36,9 +36,9 @@ jobs:
           libglx-mesa0 \
           ninja-build \
           ccache \
-          iwyu \ 
-          doxygen \
-          graphviz
+          iwyu \
+          graphviz \
+          doxygen
 
       - name: Install for Offscreen Rendering on GLFW
         run: sudo apt-get install libosmesa6-dev
