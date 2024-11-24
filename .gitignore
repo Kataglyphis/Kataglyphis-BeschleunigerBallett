@@ -1,6 +1,3 @@
-# do not track user specific vcpkg things
-CMakeUserPresets.json
-
 *.log
 
 dist

@@ -164,6 +164,7 @@ Frequently tested under
 * [nlohmann_json](https://github.com/nlohmann/json)
 * [SPDLOG](https://github.com/gabime/spdlog)
 
+
 ### Useful tools (you might also considering :) )
 
 * [cppcheck](https://cppcheck.sourceforge.io/)
@@ -184,7 +185,7 @@ Frequently tested under
 Dependencies to libraries are stated above.<br />
 C++23 or higher required.<br />
 C17 or higher required.<br />
-CMake 3.31.5 or higher required.<br />
+CMake 3.28.3 or higher required.<br />
 
 #### Optional
 * [Rust](https://www.rust-lang.org/)
@@ -330,6 +331,15 @@ Thanks for free 3D Models:
 Some very helpful literature, tutorials, etc. 
 
 * [View Frustum Culling](http://www.lighthouse3d.com/tutorials/view-frustum-culling/geometric-approach-extracting-the-planes/)
+
+Rust
+* [Rust](https://www.rust-lang.org/)
+
+CMake/C++
+* [Cpp best practices](https://github.com/cpp-best-practices/cppbestpractices)
+* [Integrate Rust into CMake projects](https://github.com/trondhe/rusty_cmake)
+* [corrision-rs](https://github.com/corrosion-rs/corrosion)
+* [cxx](https://cxx.rs/)
 
 OpenGL 
 * [learnopengl.com](https://learnopengl.com/)

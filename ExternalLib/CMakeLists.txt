@@ -116,25 +116,32 @@ add_library(GLAD OBJECT ${GLAD_FILTER})
 
 target_link_libraries(GLAD PRIVATE ${OPENGL_LIBRARIES})
 
-target_include_directories(GLAD PRIVATE GLAD/include ${OPENGL_INCLUDE_DIRS})
+target_include_directories(GLAD    PRIVATE GLAD/include
+                                            ${OPENGL_INCLUDE_DIRS})
 
-set_target_properties(GLAD PROPERTIES CXX_CLANG_TIDY "" CXX_CPPCHECK "")
+set_target_properties(
+    GLAD
+    PROPERTIES
+    CXX_CLANG_TIDY ""
+    CXX_CPPCHECK ""
+)
 
 if(RUST_FEATURES)
   FetchContent_Declare(
-    Corrosion
-    GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-    GIT_TAG master)
+      Corrosion
+      GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+      GIT_TAG master
+  )
   FetchContent_MakeAvailable(Corrosion)
 
   find_program(CXXBRIDGE cxxbridge PATHS "$ENV{HOME}/.cargo/bin/")
-  if(CXXBRIDGE STREQUAL "CXXBRIDGE-NOTFOUND")
-    message("Could not find cxxbridge, trying to install with `cargo install cxxbridge-cmd'")
-    find_program(CARGO cargo PATHS "$ENV{HOME}/.cargo/bin/")
-    if(CARGO STREQUAL "CARGO-NOTFOUND")
-      message(FATAL_ERROR "Requires cargo available in path, install via rustup https://rustup.rs/")
-    endif()
-    execute_process(COMMAND ${CARGO} install cxxbridge-cmd)
-    find_program(CXXBRIDGE cxxbridge PATHS "$ENV{HOME}/.cargo/bin/")
+  if (CXXBRIDGE STREQUAL "CXXBRIDGE-NOTFOUND")
+      message("Could not find cxxbridge, trying to install with `cargo install cxxbridge-cmd'")
+      find_program(CARGO cargo PATHS "$ENV{HOME}/.cargo/bin/")
+      if (CARGO STREQUAL "CARGO-NOTFOUND")
+          message(FATAL_ERROR "Requires cargo available in path, install via rustup https://rustup.rs/")
+      endif()
+      execute_process(COMMAND ${CARGO} install cxxbridge-cmd)
+      find_program(CXXBRIDGE cxxbridge PATHS "$ENV{HOME}/.cargo/bin/")
   endif()
 endif()

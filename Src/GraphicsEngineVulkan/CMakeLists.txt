@@ -28,6 +28,11 @@ if(RUST_FEATURES)
     lib.rs)
 endif()
 
+if(RUST_FEATURES)
+  corrosion_import_crate(MANIFEST_PATH rusty_code/Cargo.toml)
+  corrosion_add_cxxbridge(rusty_bridge CRATE rusty_code MANIFEST_PATH rusty_code FILES lib.rs)
+endif()
+
 # add the executable
 add_executable(${PROJECT_NAME})
 
@@ -123,7 +128,13 @@ target_link_libraries(
          myproject_warnings
          # enable sanitizers
          myproject_options
-  PRIVATE GSL spdlog::spdlog nlohmann_json::nlohmann_json)
+  PRIVATE GSL spdlog::spdlog nlohmann_json::nlohmann_json rusty_bridge)
+
+if(RUST_FEATURES)
+target_link_libraries(
+  ${PROJECT_NAME}
+  PRIVATE rusty_bridge)
+endif()
 
 if(RUST_FEATURES)
   target_link_libraries(${PROJECT_NAME} PUBLIC rusty_code)

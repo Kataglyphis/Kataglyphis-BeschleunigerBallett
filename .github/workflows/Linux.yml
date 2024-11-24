@@ -36,10 +36,9 @@ jobs:
           libglx-mesa0 \
           ninja-build \
           ccache \
-          iwyu \
-          graphviz \
-          doxygen
-
+          iwyu \ 
+          doxygen \
+          graphviz
       - name: Install for Offscreen Rendering on GLFW
         run: sudo apt-get install libosmesa6-dev
       - name: Install Vulkan
