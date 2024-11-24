@@ -20,7 +20,7 @@ jobs:
           submodules: recursive
       - name: Install GLFW + build system dependencies
         run: |
-          sudo apt-get update -y \
+          sudo apt-get update \
           sudo apt-get install -y \
           libxrandr-dev \
           libxinerama-dev \
