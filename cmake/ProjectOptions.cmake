@@ -164,7 +164,13 @@ macro(myproject_local_options)
     if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
       target_compile_options(myproject_options INTERFACE /EHs-) # Disable exceptions
     elseif(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-      target_compile_options(myproject_options INTERFACE /GX-) # Disable exceptions
+		if(CLANG_VERSION MATCHES "clang-cl")
+			message(STATUS "Using clang-cl and disable exceptions with /GX-")
+			target_compile_options(myproject_options INTERFACE /GX-) # Disable exceptions
+		else()
+			message(STATUS "Using clang and disable exceptions with -fno-exceptions")
+			target_compile_options(myproject_options INTERFACE -fno-exceptions)
+		endif()
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
       target_compile_options(myproject_options INTERFACE -fno-exceptions)
     else()
