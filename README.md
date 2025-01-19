@@ -219,6 +219,12 @@ CMake 3.28.3 or higher required.<br />
   ```sh
   $ {WORKING_DIR}/GraphicsEngineVulkan/buildEngine[.sh/.bat]
   ```
+### Upgrades
+#### Rusty things:
+1. Do not forget to upgrade the cxxbridge from time to time:
+```bash
+cargo install cxxbridge-cmd
+```
 
 # Shaders
 I provide two ways for compiling shaders with. Hence if you want to add new
