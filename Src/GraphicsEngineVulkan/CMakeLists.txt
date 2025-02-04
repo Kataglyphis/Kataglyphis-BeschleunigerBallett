@@ -9,33 +9,29 @@ include(cmake/filters/SetProjectFilters.cmake)
 include(cmake/SetSourceGroups.cmake)
 include(cmake/filters/SetExternalLibsFilters.cmake)
 
-file(
-  GLOB_RECURSE
-  VULKANRENDERER_SOURCES
-  "*.cpp")
+find_package(spdlog CONFIG REQUIRED)
+
+file(GLOB_RECURSE VULKANRENDERER_SOURCES "*.cpp")
 
 file(
-  GLOB_RECURSE
-  SHADER_HEADERS
+  GLOB_RECURSE SHADER_HEADERS
   RELATIVE ${SHADER_SRC_DIR}
-  "*.hpp"
-)
+  "*.hpp")
 
-file(
-  GLOB_RECURSE
-  VULKANRENDERER_HEADERS
-  "*.hpp"
-)
+file(GLOB_RECURSE VULKANRENDERER_HEADERS "*.hpp")
 
 if(RUST_FEATURES)
   corrosion_import_crate(MANIFEST_PATH rusty_code/Cargo.toml)
-  corrosion_add_cxxbridge(rusty_bridge CRATE rusty_code FILES lib.rs)
+  corrosion_add_cxxbridge(
+    rusty_bridge
+    CRATE
+    rusty_code
+    FILES
+    lib.rs)
 endif()
 
 # add the executable
-add_executable(
-  ${PROJECT_NAME}
-)
+add_executable(${PROJECT_NAME})
 
 set(ShaderIncludes
     -I
@@ -67,13 +63,9 @@ string(
 message("The shader include string is the following: ${ShaderIncludesString}")
 
 if(RUST_FEATURES)
-target_compile_definitions(
-  ${PROJECT_NAME}
-  PRIVATE USE_RUST=1)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE USE_RUST=1)
 else()
-target_compile_definitions(
-  ${PROJECT_NAME}
-  PRIVATE USE_RUST=0)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE USE_RUST=0)
 endif()
 
 if(NOT MSVC)
@@ -94,25 +86,26 @@ endif()
 
 configure_file(VulkanRendererConfig.hpp.in "${CMAKE_CURRENT_SOURCE_DIR}/renderer/VulkanRendererConfig.hpp")
 
-target_sources(${PROJECT_NAME}
-  PUBLIC 
-  ${RASTER_SHADER_FILTER}
-  ${RAYTRACING_SHADER_FILTER}
-  ${COMMON_SHADER_FILTER}
-  ${POST_SHADER_FILTER}
-  ${BRDF_SHADER_FILTER}
-  ${PBR_SHADER_FILTER}
-  ${PATH_TRACING_SHADER_FILTER}
-  ${VULKANRENDERER_SOURCES}
-  # this is great; no CPPCHECK,CLANG_TIDY here
-  $<TARGET_OBJECTS:IMGUI>
-  PUBLIC
-  FILE_SET HEADERS 
-  BASE_DIRS ${PROJECT_INCLUDE_DIR}
-            ${SHADER_SRC_DIR}
-  FILES ${VULKANRENDERER_HEADERS}
-        ${SHADER_HEADERS}
-)
+target_sources(
+  ${PROJECT_NAME}
+  PUBLIC ${RASTER_SHADER_FILTER}
+         ${RAYTRACING_SHADER_FILTER}
+         ${COMMON_SHADER_FILTER}
+         ${POST_SHADER_FILTER}
+         ${BRDF_SHADER_FILTER}
+         ${PBR_SHADER_FILTER}
+         ${PATH_TRACING_SHADER_FILTER}
+         ${VULKANRENDERER_SOURCES}
+         # this is great; no CPPCHECK,CLANG_TIDY here
+         $<TARGET_OBJECTS:IMGUI>
+  PUBLIC FILE_SET
+         HEADERS
+         BASE_DIRS
+         ${PROJECT_INCLUDE_DIR}
+         ${SHADER_SRC_DIR}
+         FILES
+         ${VULKANRENDERER_HEADERS}
+         ${SHADER_HEADERS})
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS})
 
@@ -135,9 +128,7 @@ target_link_libraries(
   PRIVATE GSL spdlog::spdlog nlohmann_json::nlohmann_json)
 
 if(RUST_FEATURES)
-target_link_libraries(
-  ${PROJECT_NAME}
-  PUBLIC rusty_code)
+  target_link_libraries(${PROJECT_NAME} PUBLIC rusty_code)
 endif()
 
 # compile shaders as part of my cmake routine right away :)

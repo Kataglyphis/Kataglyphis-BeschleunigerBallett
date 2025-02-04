@@ -9,29 +9,16 @@ include(cmake/filters/SetProjectFilters.cmake)
 include(cmake/SetSourceGroups.cmake)
 include(cmake/filters/SetExternalLibsFilters.cmake)
 
-file(
-  GLOB_RECURSE
-  OPENGLRENDERER_SOURCES
-  "*.cpp")
+file(GLOB_RECURSE OPENGLRENDERER_SOURCES "*.cpp")
 
-file(
-  GLOB_RECURSE
-  SHADER_HEADERS
-  "${SHADER_SRC_DIR}/*.hpp"
-)
+file(GLOB_RECURSE SHADER_HEADERS "${SHADER_SRC_DIR}/*.hpp")
 
-file(
-  GLOB_RECURSE
-  OPENGLRENDERER_HEADERS
-  "*.hpp"
-)
+file(GLOB_RECURSE OPENGLRENDERER_HEADERS "*.hpp")
 
 set(OpenGlEnigneTargetName "GraphicsEngineOpenGLBackend")
 
 # add the executable
-add_executable(
-  ${OpenGlEnigneTargetName}
-)
+add_executable(${OpenGlEnigneTargetName})
 
 if(NOT MSVC)
   target_compile_definitions(${OpenGlEnigneTargetName} PRIVATE RELATIVE_RESOURCE_PATH="/../Resources/")
@@ -43,27 +30,28 @@ endif()
 # at c++ side
 configure_file(OpenGLRendererConfig.hpp.in "renderer/OpenGLRendererConfig.hpp")
 
-target_sources(${OpenGlEnigneTargetName}
-  PUBLIC
-  ${OPENGLRENDERER_SOURCES}
-  ${PBR_SHADER_FILTER}
-  ${BRDF_SHADER_FILTER}
-  ${COMMON_SHADER_FILTER}
-  ${CLOUDS_SHADER_FILTER}
-  ${LOADING_SHADER_FILTER}
-  ${RASTERIZER_SHADER_FILTER}
-  ${RASTERIZER_SHADOWS_SHADER_FILTER}
-  ${SKYBOX_SHADER_FILTER}
-  # this is great; no CPPCHECK,CLANG_TIDY here
-  $<TARGET_OBJECTS:IMGUI>
-  $<TARGET_OBJECTS:GLAD>
-  PUBLIC
-  FILE_SET HEADERS 
-  BASE_DIRS ${PROJECT_INCLUDE_DIR}
-            ${SHADER_SRC_DIR}
-  FILES ${OPENGLRENDERER_HEADERS}
-        ${SHADER_HEADERS}
-)
+target_sources(
+  ${OpenGlEnigneTargetName}
+  PUBLIC ${OPENGLRENDERER_SOURCES}
+         ${PBR_SHADER_FILTER}
+         ${BRDF_SHADER_FILTER}
+         ${COMMON_SHADER_FILTER}
+         ${CLOUDS_SHADER_FILTER}
+         ${LOADING_SHADER_FILTER}
+         ${RASTERIZER_SHADER_FILTER}
+         ${RASTERIZER_SHADOWS_SHADER_FILTER}
+         ${SKYBOX_SHADER_FILTER}
+         # this is great; no CPPCHECK,CLANG_TIDY here
+         $<TARGET_OBJECTS:IMGUI>
+         $<TARGET_OBJECTS:GLAD>
+  PUBLIC FILE_SET
+         HEADERS
+         BASE_DIRS
+         ${PROJECT_INCLUDE_DIR}
+         ${SHADER_SRC_DIR}
+         FILES
+         ${OPENGLRENDERER_HEADERS}
+         ${SHADER_HEADERS})
 
 target_include_directories(${OpenGlEnigneTargetName} PRIVATE ${OPENGL_INCLUDE_DIRS} ${Vulkan_INCLUDE_DIRS})
 
@@ -84,4 +72,4 @@ target_link_libraries(
          myproject_warnings
          # enable sanitizers
          myproject_options
-  PRIVATE GSL spdlog::spdlog nlohmann_json::nlohmann_json)
+  PRIVATE GSL spdlog nlohmann_json::nlohmann_json)

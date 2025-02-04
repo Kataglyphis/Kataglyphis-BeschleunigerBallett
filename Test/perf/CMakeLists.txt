@@ -128,7 +128,7 @@ target_link_libraries(
   PRIVATE benchmark::benchmark
           benchmark::benchmark_main
           GSL
-          spdlog::spdlog)
+          spdlog)
 
 if(RUST_FEATURES)
   target_link_libraries(${PERF_TEST_SUITE} PUBLIC rusty_code)

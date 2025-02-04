@@ -123,7 +123,7 @@ target_link_libraries(
   PRIVATE gtest_main
           gtest
           GSL
-          spdlog::spdlog)
+          spdlog)
 
 if(NOT WINDOWS_CI)
   message(STATUS "WINDOWS_CI is OFF or not defined.")
