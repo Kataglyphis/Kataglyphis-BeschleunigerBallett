@@ -86,8 +86,7 @@ if(myproject_DISABLE_EXCEPTIONS)
       CACHE BOOL "Disable SPDLOG exceptions.")
 endif()
 
-find_package(spdlog CONFIG REQUIRED)
-# add_subdirectory(SPDLOG)
+add_subdirectory(SPDLOG)
 
 add_subdirectory(NLOHMANN_JSON)
 

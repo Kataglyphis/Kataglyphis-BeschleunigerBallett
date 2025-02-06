@@ -9,8 +9,6 @@ include(cmake/filters/SetProjectFilters.cmake)
 include(cmake/SetSourceGroups.cmake)
 include(cmake/filters/SetExternalLibsFilters.cmake)
 
-find_package(spdlog CONFIG REQUIRED)
-
 file(GLOB_RECURSE VULKANRENDERER_SOURCES "*.cpp")
 
 file(

@@ -17,8 +17,7 @@
         "CMAKE_VERBOSE_MAKEFILE": "ON",
 				"CMAKE_BUILD_TYPE": "Debug",
 				"CMAKE_C_COMPILER": "clang",
-				"CMAKE_CXX_COMPILER": "clang++",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+				"CMAKE_CXX_COMPILER": "clang++"
 			},
 			"condition": {
 				"type": "equals",
@@ -37,8 +36,7 @@
         "CMAKE_VERBOSE_MAKEFILE": "ON",
 				"CMAKE_BUILD_TYPE": "RelWithDebInfo",
 				"CMAKE_C_COMPILER": "clang",
-				"CMAKE_CXX_COMPILER": "clang++",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+				"CMAKE_CXX_COMPILER": "clang++"
 			},
 			"condition": {
 				"type": "equals",
@@ -57,8 +55,7 @@
         "CMAKE_VERBOSE_MAKEFILE": "ON",
 				"CMAKE_BUILD_TYPE": "Release",
 				"CMAKE_C_COMPILER": "clang",
-				"CMAKE_CXX_COMPILER": "clang++",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+				"CMAKE_CXX_COMPILER": "clang++"
 			},
 			"condition": {
 				"type": "equals",
@@ -77,8 +74,7 @@
         "CMAKE_VERBOSE_MAKEFILE": "ON",
 				"CMAKE_BUILD_TYPE": "Debug",
 				"CMAKE_C_COMPILER": "gcc",
-				"CMAKE_CXX_COMPILER": "g++",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+				"CMAKE_CXX_COMPILER": "g++"
 			},
 			"condition": {
 				"type": "equals",
@@ -97,8 +93,7 @@
         "CMAKE_VERBOSE_MAKEFILE": "ON",
 				"CMAKE_BUILD_TYPE": "RelWithDebInfo",
 				"CMAKE_C_COMPILER": "gcc",
-				"CMAKE_CXX_COMPILER": "g++",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+				"CMAKE_CXX_COMPILER": "g++"
 			},
 			"condition": {
 				"type": "equals",
@@ -117,8 +112,7 @@
         "CMAKE_VERBOSE_MAKEFILE": "ON",
 				"CMAKE_BUILD_TYPE": "Release",
 				"CMAKE_C_COMPILER": "gcc",
-				"CMAKE_CXX_COMPILER": "g++",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+				"CMAKE_CXX_COMPILER": "g++"
 			},
 			"condition": {
 				"type": "equals",
@@ -136,8 +130,7 @@
         "CMAKE_VERBOSE_MAKEFILE": "ON",
 				"CMAKE_C_COMPILER": "cl",
 				"CMAKE_CXX_COMPILER": "cl",
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        "CMAKE_BUILD_TYPE": "Debug"
 			},
 			"condition": {
 				"type": "equals",
@@ -159,8 +152,7 @@
         	 "CMAKE_VERBOSE_MAKEFILE": "ON",
 				   "CMAKE_C_COMPILER": "cl",
 				   "CMAKE_CXX_COMPILER": "cl",
-        		"CMAKE_BUILD_TYPE": "Release",
-            "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        		"CMAKE_BUILD_TYPE": "Release"
 			},
 			"condition": {
 				"type": "equals",
@@ -183,8 +175,7 @@
 				"CMAKE_C_COMPILER": "clang-cl",
 				"CMAKE_CXX_COMPILER": "clang-cl",
 				"RUST_FEATURES": "OFF",
-				"CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+				"CMAKE_BUILD_TYPE": "RelWithDebInfo"
 			},
 			"toolset": "ClangCL",
 			"condition": {
@@ -213,8 +204,7 @@
 				"CMAKE_C_COMPILER": "clang-cl",
 				"CMAKE_CXX_COMPILER": "clang-cl",
 				"RUST_FEATURES": "OFF",
-				"CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+				"CMAKE_BUILD_TYPE": "Debug"
 			},
 			"toolset": "ClangCL",
 			"condition": {
@@ -243,8 +233,7 @@
 				"CMAKE_C_COMPILER": "clang-cl",
 				"CMAKE_CXX_COMPILER": "clang-cl",
 				"RUST_FEATURES": "OFF",
-				"CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+				"CMAKE_BUILD_TYPE": "Release"
 			},
 			"toolset": "ClangCL",
 			"condition": {
@@ -273,8 +262,7 @@
 				"CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
 				"CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang++.exe",
 				"RUST_FEATURES": "OFF",
-				"CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+				"CMAKE_BUILD_TYPE": "RelWithDebInfo"
 			},
 			"condition": {
 				"type": "equals",
@@ -298,8 +286,7 @@
 				"CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
 				"CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang++.exe",
 				"RUST_FEATURES": "OFF",
-				"CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+				"CMAKE_BUILD_TYPE": "Debug"
 			},
 			"condition": {
 				"type": "equals",
@@ -323,8 +310,7 @@
 				"CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
 				"CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang++.exe",
 				"RUST_FEATURES": "OFF",
-				"CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+				"CMAKE_BUILD_TYPE": "Release"
 			},
 			"condition": {
 				"type": "equals",
@@ -347,8 +333,7 @@
         "CMAKE_VERBOSE_MAKEFILE": "ON",
 				"CMAKE_C_COMPILER": "clang-cl",
 				"CMAKE_CXX_COMPILER": "clang-cl",
-				"WINDOWS_CI": "ON",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+				"WINDOWS_CI": "ON"
 			},
 			"toolset": "ClangCL",
 			"condition": {
