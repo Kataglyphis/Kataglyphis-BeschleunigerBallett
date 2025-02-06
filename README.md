@@ -328,13 +328,14 @@ Some very helpful literature, tutorials, etc.
 * [View Frustum Culling](http://www.lighthouse3d.com/tutorials/view-frustum-culling/geometric-approach-extracting-the-planes/)
 
 Rust
-* [Rust](https://www.rust-lang.org/)
+* [rust-lang](https://www.rust-lang.org/)
 
 CMake/C++
 * [Cpp best practices](https://github.com/cpp-best-practices/cppbestpractices)
 * [Integrate Rust into CMake projects](https://github.com/trondhe/rusty_cmake)
 * [corrision-rs](https://github.com/corrosion-rs/corrosion)
 * [cxx](https://cxx.rs/)
+* [C++ Software Design by Klaus Iglberger](https://meetingcpp.com/2024/Speaker/items/Klaus_Iglberger.html)
 
 OpenGL 
 * [learnopengl.com](https://learnopengl.com/)
