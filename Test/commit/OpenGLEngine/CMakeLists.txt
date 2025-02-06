@@ -25,7 +25,7 @@ file(GLOB_RECURSE OPENGLRENDERER_HEADERS "${SHADER_SRC_DIR}/*.hpp")
 add_executable(${COMMIT_TEST_SUITE_OPENGL})
 
 if(NOT MSVC)
-  target_compile_definitions(${COMMIT_TEST_SUITE_OPENGL} PRIVATE RELATIVE_RESOURCE_PATH="/../Resources/")
+  target_compile_definitions(${COMMIT_TEST_SUITE_OPENGL} PRIVATE RELATIVE_RESOURCE_PATH="/../../../../Resources/")
 else()
   target_compile_definitions(${COMMIT_TEST_SUITE_OPENGL} PRIVATE RELATIVE_RESOURCE_PATH="/../../Resources/")
 endif()
