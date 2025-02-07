@@ -174,6 +174,7 @@ Frequently tested under
 * [visualstudio](https://visualstudio.microsoft.com/de/)
 * [ClangPowerTools](https://www.clangpowertools.com/)
 * [Codecov](https://app.codecov.io/gh)
+* [uv](https://github.com/astral-sh/uv)
 
 <!-- GETTING STARTED -->
 ## Getting Started
@@ -183,7 +184,7 @@ Frequently tested under
 Dependencies to libraries are stated above.<br />
 C++23 or higher required.<br />
 C17 or higher required.<br />
-CMake 3.31.2 or higher required.<br />
+CMake 3.31.5 or higher required.<br />
 
 #### Optional
 * [Rust](https://www.rust-lang.org/)
@@ -236,11 +237,15 @@ appropriately.</br>
 
 
 # Tests
-I have two tests suites.
+I have four tests suites.
 
 1. Compilation Test Suite: This suite gets executed every compilation step. This ensures the very most important functionality is correct before every compilation.
 
 2. Commit Test Suite: This gets executed on every push. More expensive tests are allowed :) 
+
+3. Perf test suite: It is all about measurements of performance. We are C++ tho! 
+
+4. Fuzz testing suite
 
 ## Static Analyzers
 
@@ -254,10 +259,9 @@ clang-tidy -p=./build/compile_commands.json  $(find Src -name '*.cpp' -o -name '
 # Format cmake files
 
 ```bash
-conda create -n cmake_formating python=3.10
-conda activate cmake_formating
-pip install pyyaml
-pip install cmake-format
+uv venv
+source .venv/bin/activate
+pip install -v -e .
 cmake-format -c ./.cmake-format.yaml -i $(find cmake -name '*.cmake' -o -name 'CMakeLists.txt')
 ```
 # Format code files 
@@ -269,9 +273,9 @@ clang-format -i $(find include -name "*.cpp" -or -name "*.h" -or -name "*.hpp")
 # Docs
 Build the docs
 ```bash
-pip install sphinx
-pip install sphinx-press-theme
-pip install myst-parser
+uv venv
+source .venv/bin/activate
+pip install -v -e .
 cd docs 
 make html
 ```
@@ -295,7 +299,7 @@ Contributions are what make the open source community such an amazing place to b
 <!-- LICENSE -->
 ## License
 
-Distributed under the BSD 3-Clause "New" or "Revised" License. See `LICENSE` for more information.
+Distributed under the MIT-License. See `LICENSE` for more information.
 
 
 <!-- CONTACT -->
@@ -326,16 +330,6 @@ Thanks for free 3D Models:
 Some very helpful literature, tutorials, etc. 
 
 * [View Frustum Culling](http://www.lighthouse3d.com/tutorials/view-frustum-culling/geometric-approach-extracting-the-planes/)
-
-Rust
-* [rust-lang](https://www.rust-lang.org/)
-
-CMake/C++
-* [Cpp best practices](https://github.com/cpp-best-practices/cppbestpractices)
-* [Integrate Rust into CMake projects](https://github.com/trondhe/rusty_cmake)
-* [corrision-rs](https://github.com/corrosion-rs/corrosion)
-* [cxx](https://cxx.rs/)
-* [C++ Software Design by Klaus Iglberger](https://meetingcpp.com/2024/Speaker/items/Klaus_Iglberger.html)
 
 OpenGL 
 * [learnopengl.com](https://learnopengl.com/)
@@ -375,28 +369,7 @@ Physically Based Shading
 Path tracing
 * [NVIDIA Path tracing Tutorial](https://github.com/nvpro-samples/vk_mini_path_tracer/blob/main/vk_mini_path_tracer/main.cpp)
 
-vkpkg
-* [Install vcpkg](https://learn.microsoft.com/de-de/vcpkg/get_started/get-started?pivots=shell-bash)
-
 ## Common issues
-
-<!-- MARKDOWN LINKS & IMAGES -->
-<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/othneildrew/Best-README-Template.svg?style=for-the-badge
-[contributors-url]: https://github.com/othneildrew/Best-README-Template/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/othneildrew/Best-README-Template.svg?style=for-the-badge
-[forks-url]: https://github.com/othneildrew/Best-README-Template/network/members
-[stars-shield]: https://img.shields.io/github/stars/othneildrew/Best-README-Template.svg?style=for-the-badge
-[stars-url]: https://github.com/othneildrew/Best-README-Template/stargazers
-[issues-shield]: https://img.shields.io/github/issues/othneildrew/Best-README-Template.svg?style=for-the-badge
-[issues-url]: https://github.com/othneildrew/Best-README-Template/issues
-[license-shield]: https://img.shields.io/github/license/othneildrew/Best-README-Template.svg?style=for-the-badge
-[license-url]: https://github.com/othneildrew/Best-README-Template/blob/master/LICENSE.txt
-[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
-[linkedin-url]: https://www.linkedin.com/in/jonas-heinle-0b2a301a0/
-[product-screenshot1]: images/Screenshot1.png
-[product-screenshot2]: images/Screenshot2.png
-[product-screenshot3]: images/Screenshot3.png
 
 
 
