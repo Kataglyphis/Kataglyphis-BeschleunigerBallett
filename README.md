@@ -115,6 +115,7 @@ Frequently tested under
 |                               | .obj Model loading                            |         ✔️         |
 |                               | Mip Mapping                                   |         ✔️         |
 |  **OpenGL Render agnostic**   |                                               |                    |
+|  **OpenGL Render agnostic**   |                                               |                    |
 |                               | Directional Lights                            |         ✔️         |
 |                               | Point Lights                                  |         ✔️         |
 |                               | Spot Lights                                   |         ✔️         |
