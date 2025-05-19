@@ -1,4 +1,4 @@
-#include "ShadowMap.hpp"
+#include "scene/shadows/ShadowMap.hpp"
 
 #include <stdio.h>
 

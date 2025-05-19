@@ -1,8 +1,8 @@
-#include "VulkanDevice.hpp"
+#include "vulkan_base/VulkanDevice.hpp"
 
 #include <string.h>
 
-#include <Utilities.hpp>
+#include "common/Utilities.hpp"
 #include <set>
 #include <stdexcept>
 #include <string>

@@ -1,9 +1,9 @@
-#include "Quad.hpp"
+#include "scene/Quad.hpp"
 
 #include <glm/glm.hpp>
 #include <vector>
 
-#include "GlobalValues.hpp"
+#include "hostDevice/GlobalValues.hpp"
 
 Quad::Quad() {
   glGenVertexArrays(1, &q_vao);

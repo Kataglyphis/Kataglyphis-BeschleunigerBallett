@@ -6,8 +6,8 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <memory>
 
-#include "GlobalValues.hpp"
-#include "ShaderProgram.hpp"
+#include "hostDevice/GlobalValues.hpp"
+#include "renderer/ShaderProgram.hpp"
 
 class GBuffer {
  public:

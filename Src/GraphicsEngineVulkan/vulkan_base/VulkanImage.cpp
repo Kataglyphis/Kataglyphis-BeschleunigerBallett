@@ -1,7 +1,7 @@
-#include "VulkanImage.hpp"
+#include "vulkan_base/VulkanImage.hpp"
 
-#include "MemoryHelper.hpp"
-#include "Utilities.hpp"
+#include "common/MemoryHelper.hpp"
+#include "common/Utilities.hpp"
 
 VulkanImage::VulkanImage() {}
 

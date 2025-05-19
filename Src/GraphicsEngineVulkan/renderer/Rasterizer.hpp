@@ -1,11 +1,11 @@
 #pragma once
 #include <vulkan/vulkan.h>
 
-#include "PushConstantRasterizer.hpp"
-#include "Scene.hpp"
-#include "Texture.hpp"
-#include "VulkanDevice.hpp"
-#include "VulkanSwapChain.hpp"
+#include "renderer/pushConstants/PushConstantRasterizer.hpp"
+#include "scene/Scene.hpp"
+#include "scene/Texture.hpp"
+#include "vulkan_base/VulkanDevice.hpp"
+#include "vulkan_base/VulkanSwapChain.hpp"
 
 class Rasterizer
 {

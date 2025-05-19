@@ -14,9 +14,9 @@
 #include <stdexcept>
 #include <vector>
 
-#include "GUI.hpp"
-#include "VulkanRenderer.hpp"
-#include "Window.hpp"
+#include "gui/GUI.hpp"
+#include "renderer/VulkanRenderer.hpp"
+#include "window/Window.hpp"
 
 
 // Demonstrate some basic assertions.

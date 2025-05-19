@@ -4,10 +4,10 @@
 
 #include <string>
 
-#include "VulkanBuffer.hpp"
-#include "VulkanBufferManager.hpp"
-#include "VulkanImage.hpp"
-#include "VulkanImageView.hpp"
+#include "vulkan_base/VulkanBuffer.hpp"
+#include "vulkan_base/VulkanBufferManager.hpp"
+#include "vulkan_base/VulkanImage.hpp"
+#include "vulkan_base/VulkanImageView.hpp"
 
 class Texture
 {

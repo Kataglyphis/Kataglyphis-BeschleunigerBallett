@@ -3,15 +3,15 @@
 #include <thread>
 #include <vector>
 
-#include "Clouds.hpp"
-#include "DirectionalLight.hpp"
+#include "scene/atmospheric_effects/clouds/Clouds.hpp"
+#include "scene/light/directional_light/DirectionalLight.hpp"
 #include "GameObject.hpp"
-#include "ObjMaterial.hpp"
-#include "PointLight.hpp"
-//#include "RenderPassSceneDependend.hpp"
+#include "scene/ObjMaterial.hpp"
+#include "scene/light/point_light/PointLight.hpp"
+//#include "renderer/RenderPassSceneDependend.hpp"
 #include "Rotation.hpp"
-#include "ViewFrustumCulling.hpp"
-#include "Window.hpp"
+#include "scene/ViewFrustumCulling.hpp"
+#include "window/Window.hpp"
 
 class Scene {
  public:

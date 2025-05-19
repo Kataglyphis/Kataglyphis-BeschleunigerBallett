@@ -1,9 +1,9 @@
 #pragma once
 
-#include "Texture.hpp"
+#include "scene/Texture.hpp"
 
-#include "VulkanDevice.hpp"
-#include "Window.hpp"
+#include "vulkan_base/VulkanDevice.hpp"
+#include "window/Window.hpp"
 
 class VulkanSwapChain
 {

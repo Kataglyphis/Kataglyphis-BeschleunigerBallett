@@ -1,8 +1,8 @@
 #pragma once
 #include <vulkan/vulkan.h>
 
-#include "CommandBufferManager.hpp"
-#include "VulkanDevice.hpp"
+#include "renderer/CommandBufferManager.hpp"
+#include "vulkan_base/VulkanDevice.hpp"
 
 class VulkanImage
 {

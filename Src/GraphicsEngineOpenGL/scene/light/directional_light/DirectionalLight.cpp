@@ -1,4 +1,4 @@
-#include "DirectionalLight.hpp"
+#include "scene/light/directional_light/DirectionalLight.hpp"
 
 DirectionalLight::DirectionalLight()
     :

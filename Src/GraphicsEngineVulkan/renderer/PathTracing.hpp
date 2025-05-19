@@ -2,9 +2,9 @@
 
 #include <vulkan/vulkan.h>
 
-#include "PushConstantPathTracing.hpp"
-#include "VulkanDevice.hpp"
-#include "VulkanSwapChain.hpp"
+#include "renderer/pushConstants/PushConstantPathTracing.hpp"
+#include "vulkan_base/VulkanDevice.hpp"
+#include "vulkan_base/VulkanSwapChain.hpp"
 
 class PathTracing
 {

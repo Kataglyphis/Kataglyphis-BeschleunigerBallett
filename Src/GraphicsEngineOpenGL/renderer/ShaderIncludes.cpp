@@ -1,5 +1,5 @@
-#include "ShaderIncludes.hpp"
-#include "OpenGLRendererConfig.hpp"
+#include "renderer/ShaderIncludes.hpp"
+#include "renderer/OpenGLRendererConfig.hpp"
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -12,7 +12,7 @@
 #include <sstream>
 #include <filesystem>
 
-#include "File.hpp"
+#include "util/File.hpp"
 #include "spdlog/spdlog.h"
 
 // this method is setting all files we want to use in a shader per #include

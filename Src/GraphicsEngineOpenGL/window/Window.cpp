@@ -1,4 +1,4 @@
-#include "Window.hpp"
+#include "window/Window.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>

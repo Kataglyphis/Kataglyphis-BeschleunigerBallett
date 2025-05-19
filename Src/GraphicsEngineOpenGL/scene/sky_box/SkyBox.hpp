@@ -6,9 +6,9 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <memory>
 
-#include "GlobalValues.hpp"
-#include "Mesh.hpp"
-#include "ShaderProgram.hpp"
+#include "hostDevice/GlobalValues.hpp"
+#include "scene/Mesh.hpp"
+#include "renderer/ShaderProgram.hpp"
 class SkyBox {
  public:
   SkyBox();

@@ -2,12 +2,12 @@
 #include <memory>
 #include <vector>
 
-#include "AABB.hpp"
-#include "Mesh.hpp"
+#include "scene/AABB.hpp"
+#include "scene/Mesh.hpp"
 #include "ObjLoader.hpp"
-#include "ObjMaterial.hpp"
-#include "Vertex.hpp"
-#include "Texture.hpp"
+#include "scene/ObjMaterial.hpp"
+#include "scene/Vertex.hpp"
+#include "scene/texture/Texture.hpp"
 
 class Model {
  public:

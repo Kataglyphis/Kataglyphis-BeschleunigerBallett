@@ -10,7 +10,7 @@
 
 #include "raycommon.glsl"
 
-#include "host_device_shared_vars.hpp"
+#include "hostDevice/host_device_shared_vars.hpp"
 
 #include "unreal4.glsl"
 #include "disney.glsl"
@@ -19,8 +19,8 @@
 #include "frostbite.glsl"
 
 #include "SceneUBO.hpp"
-#include "ObjMaterial.hpp"
-#include "Vertex.hpp"
+#include "scene/ObjMaterial.hpp"
+#include "scene/Vertex.hpp"
 #include "ObjectDescription.hpp"
 
 layout (location = 0) in vec2 texture_coordinates;

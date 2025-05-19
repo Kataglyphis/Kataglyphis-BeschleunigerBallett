@@ -1,10 +1,10 @@
 #pragma once
 #include <memory>
 
-#include "AABB.hpp"
+#include "scene/AABB.hpp"
 #include "Noise.hpp"
-#include "RandomNumbers.hpp"
-#include "ShaderProgram.hpp"
+#include "util/RandomNumbers.hpp"
+#include "renderer/ShaderProgram.hpp"
 
 class Clouds {
  public:

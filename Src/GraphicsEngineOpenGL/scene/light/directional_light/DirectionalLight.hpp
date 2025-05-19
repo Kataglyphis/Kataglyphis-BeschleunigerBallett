@@ -4,9 +4,9 @@
 #include <memory>
 #include <vector>
 
-#include "Light.hpp"
-#include "host_device_shared.hpp"
-#include "CascadedShadowMap.hpp"
+#include "scene/light/Light.hpp"
+#include "hostDevice/host_device_shared.hpp"
+#include "scene/light/directional_light/CascadedShadowMap.hpp"
 
 class DirectionalLight : public Light {
  public:

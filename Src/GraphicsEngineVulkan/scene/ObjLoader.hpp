@@ -4,8 +4,8 @@
 #include <memory>
 
 #include "Model.hpp"
-#include "ObjMaterial.hpp"
-#include "Vertex.hpp"
+#include "scene/ObjMaterial.hpp"
+#include "scene/Vertex.hpp"
 
 class ObjLoader
 {

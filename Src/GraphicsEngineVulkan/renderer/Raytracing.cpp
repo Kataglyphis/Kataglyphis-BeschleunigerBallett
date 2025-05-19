@@ -5,11 +5,11 @@
 #include <sstream>
 #include <vector>
 
-#include "File.hpp"
-#include "MemoryHelper.hpp"
-#include "ShaderHelper.hpp"
-#include "VulkanRendererConfig.hpp"
-#include <Utilities.hpp>
+#include "util/File.hpp"
+#include "common/MemoryHelper.hpp"
+#include "vulkan_base/ShaderHelper.hpp"
+#include "renderer/VulkanRendererConfig.hpp"
+#include "common/Utilities.hpp"
 
 Raytracing::Raytracing() {}
 

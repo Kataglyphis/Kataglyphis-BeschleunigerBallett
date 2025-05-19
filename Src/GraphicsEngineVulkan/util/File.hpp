@@ -2,6 +2,11 @@
 #include <string>
 #include <vector>
 
+/** @defgroup FileUtilities File Utilities
+ *  Functions and utilities for performing file operations.
+ *  @{
+ */
+
 class File
 {
   public:
@@ -16,3 +21,5 @@ class File
   private:
     std::string file_location;
 };
+
+/** @} */ // End of File utilities group

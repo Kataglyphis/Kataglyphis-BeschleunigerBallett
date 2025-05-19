@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 
-#include "GlobalValues.hpp"
+#include "hostDevice/GlobalValues.hpp"
 #include "TextureWrappingMode.hpp"
 
 class Texture {

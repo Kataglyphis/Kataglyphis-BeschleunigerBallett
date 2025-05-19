@@ -1,4 +1,4 @@
-#include "RepeatMode.hpp"
+#include "scene/texture/RepeatMode.hpp"
 
 RepeatMode::RepeatMode() {}
 

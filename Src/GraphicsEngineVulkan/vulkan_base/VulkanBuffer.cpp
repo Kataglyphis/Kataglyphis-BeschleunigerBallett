@@ -1,9 +1,9 @@
-#include "VulkanBuffer.hpp"
+#include "vulkan_base/VulkanBuffer.hpp"
 
 #include <stdexcept>
 
-#include "MemoryHelper.hpp"
-#include "Utilities.hpp"
+#include "common/MemoryHelper.hpp"
+#include "common/Utilities.hpp"
 
 VulkanBuffer::VulkanBuffer() {}
 

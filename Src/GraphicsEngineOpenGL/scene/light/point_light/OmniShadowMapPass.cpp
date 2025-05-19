@@ -1,4 +1,4 @@
-#include "OmniShadowMapPass.hpp"
+#include "scene/light/point_light/OmniShadowMapPass.hpp"
 
 #include <sstream>
 

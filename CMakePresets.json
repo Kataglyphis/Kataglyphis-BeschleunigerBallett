@@ -149,10 +149,10 @@
 			"binaryDir": "${sourceDir}/build/",
 			"installDir": "${sourceDir}/build/",
 			"cacheVariables": {
-        "CMAKE_VERBOSE_MAKEFILE": "ON",
-				"CMAKE_C_COMPILER": "cl",
-				"CMAKE_CXX_COMPILER": "cl",
-        "CMAKE_BUILD_TYPE": "Release"
+        	 "CMAKE_VERBOSE_MAKEFILE": "ON",
+				   "CMAKE_C_COMPILER": "cl",
+				   "CMAKE_CXX_COMPILER": "cl",
+        		"CMAKE_BUILD_TYPE": "Release"
 			},
 			"condition": {
 				"type": "equals",
@@ -165,15 +165,16 @@
 			}
 		},
     {
-			"name": "x64-Clang-Windows-RelWithDebInfo",
+			"name": "x64-ClangCL-Windows-RelWithDebInfo",
 			"description": "Windows and Clang",
 			"generator": "Visual Studio 17 2022",
 			"binaryDir": "${sourceDir}/build/",
 			"installDir": "${sourceDir}/build/",
 			"cacheVariables": {
-        "CMAKE_VERBOSE_MAKEFILE": "ON",
+        		"CMAKE_VERBOSE_MAKEFILE": "ON",
 				"CMAKE_C_COMPILER": "clang-cl",
 				"CMAKE_CXX_COMPILER": "clang-cl",
+				"RUST_FEATURES": "OFF",
 				"CMAKE_BUILD_TYPE": "RelWithDebInfo"
 			},
 			"toolset": "ClangCL",
@@ -193,15 +194,16 @@
 			}
 		},
 		{
-			"name": "x64-Clang-Windows-Debug",
+			"name": "x64-ClangCL-Windows-Debug",
 			"description": "Windows and Clang",
 			"generator": "Visual Studio 17 2022",
 			"binaryDir": "${sourceDir}/build/",
 			"installDir": "${sourceDir}/build/",
 			"cacheVariables": {
-        "CMAKE_VERBOSE_MAKEFILE": "ON",
+        		"CMAKE_VERBOSE_MAKEFILE": "ON",
 				"CMAKE_C_COMPILER": "clang-cl",
 				"CMAKE_CXX_COMPILER": "clang-cl",
+				"RUST_FEATURES": "OFF",
 				"CMAKE_BUILD_TYPE": "Debug"
 			},
 			"toolset": "ClangCL",
@@ -221,15 +223,16 @@
 			}
 		},
 		{
-			"name": "x64-Clang-Windows-Release",
+			"name": "x64-ClangCL-Windows-Release",
 			"description": "Windows and Clang",
 			"generator": "Visual Studio 17 2022",
 			"binaryDir": "${sourceDir}/build/",
 			"installDir": "${sourceDir}/build/",
 			"cacheVariables": {
-        "CMAKE_VERBOSE_MAKEFILE": "ON",
+        		"CMAKE_VERBOSE_MAKEFILE": "ON",
 				"CMAKE_C_COMPILER": "clang-cl",
 				"CMAKE_CXX_COMPILER": "clang-cl",
+				"RUST_FEATURES": "OFF",
 				"CMAKE_BUILD_TYPE": "Release"
 			},
 			"toolset": "ClangCL",
@@ -241,6 +244,78 @@
 			"architecture": {
 				"value": "x64",
 				"strategy": "set"
+			},
+			"vendor": {
+				"microsoft.com/VisualStudioSettings/CMake/1.0": {
+					"intelliSenseMode": "windows-clang-x64"
+				}
+			}
+		},
+		{
+			"name": "x64-Clang-Windows-RelWithDebInfo",
+			"description": "Windows and Clang",
+			"generator": "Ninja",
+			"binaryDir": "${sourceDir}/build/",
+			"installDir": "${sourceDir}/build/",
+			"cacheVariables": {
+        		"CMAKE_VERBOSE_MAKEFILE": "ON",
+				"CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
+				"CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang++.exe",
+				"RUST_FEATURES": "OFF",
+				"CMAKE_BUILD_TYPE": "RelWithDebInfo"
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			},
+			"vendor": {
+				"microsoft.com/VisualStudioSettings/CMake/1.0": {
+					"intelliSenseMode": "windows-clang-x64"
+				}
+			}
+		},
+		{
+			"name": "x64-Clang-Windows-Debug",
+			"description": "Windows and Clang",
+			"generator": "Ninja",
+			"binaryDir": "${sourceDir}/build/",
+			"installDir": "${sourceDir}/build/",
+			"cacheVariables": {
+        		"CMAKE_VERBOSE_MAKEFILE": "ON",
+				"CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
+				"CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang++.exe",
+				"RUST_FEATURES": "OFF",
+				"CMAKE_BUILD_TYPE": "Debug"
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			},
+			"vendor": {
+				"microsoft.com/VisualStudioSettings/CMake/1.0": {
+					"intelliSenseMode": "windows-clang-x64"
+				}
+			}
+		},
+		{
+			"name": "x64-Clang-Windows-Release",
+			"description": "Windows and Clang",
+			"generator": "Ninja",
+			"binaryDir": "${sourceDir}/build/",
+			"installDir": "${sourceDir}/build/",
+			"cacheVariables": {
+        		"CMAKE_VERBOSE_MAKEFILE": "ON",
+				"CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
+				"CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang++.exe",
+				"RUST_FEATURES": "OFF",
+				"CMAKE_BUILD_TYPE": "Release"
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
 			},
 			"vendor": {
 				"microsoft.com/VisualStudioSettings/CMake/1.0": {

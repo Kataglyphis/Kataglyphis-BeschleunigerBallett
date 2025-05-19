@@ -1,11 +1,11 @@
 #pragma once
 #include <array>
 
-#include "Camera.hpp"
+#include "scene/texture/Texture.hpp"
 #include "GeometryPassShaderProgram.hpp"
-#include "RenderPassSceneDependend.hpp"
-#include "Scene.hpp"
-#include "SkyBox.hpp"
+#include "renderer/RenderPassSceneDependend.hpp"
+#include "scene/Scene.hpp"
+#include "scene/sky_box/SkyBox.hpp"
 
 class GeometryPass : public RenderPassSceneDependend {
  public:

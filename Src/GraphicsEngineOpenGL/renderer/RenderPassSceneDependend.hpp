@@ -3,7 +3,7 @@
 
 //#include "Model.hpp"
 #include <glm/glm.hpp>
-#include "RenderPass.hpp"
+#include "renderer/deferred/RenderPass.hpp"
 
 class RenderPassSceneDependend : public RenderPass {
  public:

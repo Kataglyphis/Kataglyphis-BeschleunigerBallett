@@ -1,10 +1,10 @@
-#include "RandomNumbers.hpp"
+#include "util/RandomNumbers.hpp"
 
-#include "bindings.hpp"
-#include "host_device_shared.hpp"
+#include "hostDevice/bindings.hpp"
+#include "hostDevice/host_device_shared.hpp"
 
 #include <random>
-#include "GlobalValues.hpp"
+#include "hostDevice/GlobalValues.hpp"
 
 RandomNumbers::RandomNumbers() {
   generate_random_numbers();

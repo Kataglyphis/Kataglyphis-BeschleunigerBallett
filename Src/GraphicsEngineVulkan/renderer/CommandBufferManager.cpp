@@ -1,6 +1,6 @@
-#include "CommandBufferManager.hpp"
+#include "renderer/CommandBufferManager.hpp"
 
-#include "Utilities.hpp"
+#include "common/Utilities.hpp"
 
 CommandBufferManager::CommandBufferManager() {}
 

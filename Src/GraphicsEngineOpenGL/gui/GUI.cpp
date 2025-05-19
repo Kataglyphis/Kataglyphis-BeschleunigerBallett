@@ -1,4 +1,4 @@
-#include "GUI.hpp"
+#include "gui/GUI.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -7,10 +7,10 @@
 #include <filesystem>
 #include <sstream>
 
-#include "Clouds.hpp"
-#include "OpenGLRendererConfig.hpp"
-#include "RepeatMode.hpp"
-#include "host_device_shared.hpp"
+#include "scene/atmospheric_effects/clouds/Clouds.hpp"
+#include "renderer/OpenGLRendererConfig.hpp"
+#include "scene/texture/RepeatMode.hpp"
+#include "hostDevice/host_device_shared.hpp"
 
 GUI::GUI() {
   // give some arbitrary values; we will update these values after 1 frame :)

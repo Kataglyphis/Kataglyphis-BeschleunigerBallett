@@ -1,14 +1,14 @@
 #include "ObjLoader.hpp"
-#include "OpenGLRendererConfig.hpp"
+#include "renderer/OpenGLRendererConfig.hpp"
 
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 #include <filesystem>
 #include <iostream>
 #include <unordered_map>
-#include "Mesh.hpp"
-#include "GlobalValues.hpp"
-#include "host_device_shared.hpp"
+#include "scene/Mesh.hpp"
+#include "hostDevice/GlobalValues.hpp"
+#include "hostDevice/host_device_shared.hpp"
 
 ObjLoader::ObjLoader() {}
 

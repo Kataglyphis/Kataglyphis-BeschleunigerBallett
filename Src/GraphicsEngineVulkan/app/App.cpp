@@ -1,4 +1,4 @@
-#include "App.hpp"
+#include "app/App.hpp"
 
 #include <vulkan/vulkan.h>
 #define GLFW_INCLUDE_NONE
@@ -15,9 +15,9 @@
 #include <stdexcept>
 #include <vector>
 
-#include "GUI.hpp"
-#include "VulkanRenderer.hpp"
-#include "Window.hpp"
+#include "gui/GUI.hpp"
+#include "renderer/VulkanRenderer.hpp"
+#include "window/Window.hpp"
 
 App::App() {}
 

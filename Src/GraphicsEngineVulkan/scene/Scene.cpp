@@ -1,6 +1,6 @@
-#include "Scene.hpp"
+#include "scene/Scene.hpp"
 #include "ObjLoader.hpp"
-#include "Utilities.hpp"
+#include "common/Utilities.hpp"
 #include "spdlog/spdlog.h"
 
 Scene::Scene() {}

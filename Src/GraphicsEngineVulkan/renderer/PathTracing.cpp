@@ -4,11 +4,11 @@
 #include <array>
 #include <filesystem>
 
-#include "File.hpp"
-#include "ShaderHelper.hpp"
+#include "util/File.hpp"
+#include "vulkan_base/ShaderHelper.hpp"
 
-#include "VulkanRendererConfig.hpp"
-#include <Utilities.hpp>
+#include "renderer/VulkanRendererConfig.hpp"
+#include "common/Utilities.hpp"
 
 // Good source:
 // https://github.com/nvpro-samples/vk_mini_path_tracer/blob/main/vk_mini_path_tracer/main.cpp

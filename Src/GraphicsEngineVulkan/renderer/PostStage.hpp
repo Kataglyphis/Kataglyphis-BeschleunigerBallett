@@ -1,7 +1,7 @@
 #pragma once
 
-#include "VulkanDevice.hpp"
-#include "VulkanSwapChain.hpp"
+#include "vulkan_base/VulkanDevice.hpp"
+#include "vulkan_base/VulkanSwapChain.hpp"
 
 #include <vulkan/vulkan.h>
 

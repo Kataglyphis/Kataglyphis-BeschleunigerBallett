@@ -1,4 +1,4 @@
-#include "PointLight.hpp"
+#include "scene/light/point_light/PointLight.hpp"
 
 PointLight::PointLight()
     :

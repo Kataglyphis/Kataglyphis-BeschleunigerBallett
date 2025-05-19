@@ -1,6 +1,6 @@
-#include "LightingPass.hpp"
-#include "Clouds.hpp"
-#include "ObjMaterial.hpp"
+#include "renderer/deferred/LightingPass.hpp"
+#include "scene/atmospheric_effects/clouds/Clouds.hpp"
+#include "scene/ObjMaterial.hpp"
 
 #include <time.h>
 #include <cassert>

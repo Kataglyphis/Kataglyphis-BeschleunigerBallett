@@ -3,9 +3,9 @@
 
 #include <vector>
 
-#include "QueueFamilyIndices.hpp"
-#include "SwapChainDetails.hpp"
-#include "VulkanInstance.hpp"
+#include "renderer/QueueFamilyIndices.hpp"
+#include "renderer/SwapChainDetails.hpp"
+#include "vulkan_base/VulkanInstance.hpp"
 
 class VulkanDevice
 {

@@ -10,7 +10,7 @@
 
 #include "raycommon.glsl"
 
-#include "host_device_shared_vars.hpp"
+#include "hostDevice/host_device_shared_vars.hpp"
 
 #include "unreal4.glsl"
 #include "disney.glsl"
@@ -20,9 +20,9 @@
 
 #include "SceneUBO.hpp"
 #include "GlobalUBO.hpp"
-#include "PushConstantPathTracing.hpp"
-#include "ObjMaterial.hpp"
-#include "Vertex.hpp"
+#include "renderer/pushConstants/PushConstantPathTracing.hpp"
+#include "scene/ObjMaterial.hpp"
+#include "scene/Vertex.hpp"
 #include "ObjectDescription.hpp"
 
 layout(local_size_x_id = 0, local_size_y_id = 1) in;

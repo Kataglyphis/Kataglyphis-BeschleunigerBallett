@@ -1,6 +1,6 @@
-#include "Allocator.hpp"
+#include "memory/Allocator.hpp"
 
-#include "Utilities.hpp"
+#include "common/Utilities.hpp"
 
 Allocator::Allocator() {}
 

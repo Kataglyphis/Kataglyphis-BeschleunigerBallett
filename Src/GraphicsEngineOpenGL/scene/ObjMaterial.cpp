@@ -1,4 +1,4 @@
-#include "ObjMaterial.hpp"
+#include "scene/ObjMaterial.hpp"
 
 ObjMaterial::ObjMaterial() {
   this->ambient = glm::vec3(0.1f, 0.1f, 0.1f);

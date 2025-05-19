@@ -1,5 +1,5 @@
-#include "VulkanBufferManager.hpp"
-#include "Utilities.hpp"
+#include "vulkan_base/VulkanBufferManager.hpp"
+#include "common/Utilities.hpp"
 
 VulkanBufferManager::VulkanBufferManager() {}
 

@@ -1,9 +1,9 @@
 #pragma once
 
 #include "OmniDirShadowShaderProgram.hpp"
-#include "PointLight.hpp"
-#include "Scene.hpp"
-#include "RenderPassSceneDependend.hpp"
+#include "scene/light/point_light/PointLight.hpp"
+#include "scene/Scene.hpp"
+#include "renderer/RenderPassSceneDependend.hpp"
 
 class OmniShadowMapPass : public RenderPassSceneDependend {
  public:

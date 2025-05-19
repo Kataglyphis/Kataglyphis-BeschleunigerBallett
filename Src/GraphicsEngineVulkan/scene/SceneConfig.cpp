@@ -1,5 +1,5 @@
 #include "SceneConfig.hpp"
-#include "VulkanRendererConfig.hpp"
+#include "renderer/VulkanRendererConfig.hpp"
 
 #include <filesystem>
 #include <sstream>

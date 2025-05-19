@@ -4,13 +4,13 @@
 #include <filesystem>
 #include <vector>
 
-#include "File.hpp"
-#include "FormatHelper.hpp"
-#include "ShaderHelper.hpp"
-#include "Vertex.hpp"
+#include "util/File.hpp"
+#include "common/FormatHelper.hpp"
+#include "vulkan_base/ShaderHelper.hpp"
+#include "scene/Vertex.hpp"
 
-#include "VulkanRendererConfig.hpp"
-#include <Utilities.hpp>
+#include "renderer/VulkanRendererConfig.hpp"
+#include "common/Utilities.hpp"
 
 Rasterizer::Rasterizer() {}
 

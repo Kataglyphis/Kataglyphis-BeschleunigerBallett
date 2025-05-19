@@ -1,26 +1,26 @@
 #pragma once
 
-#include "ASManager.hpp"
-#include "Allocator.hpp"
-#include "CommandBufferManager.hpp"
-#include "GUI.hpp"
+#include "renderer/accelerationStructures/ASManager.hpp"
+#include "memory/Allocator.hpp"
+#include "renderer/CommandBufferManager.hpp"
+#include "gui/GUI.hpp"
 #include "GlobalUBO.hpp"
 #include "PathTracing.hpp"
 #include "PostStage.hpp"
 
 #include "Rasterizer.hpp"
 #include "Raytracing.hpp"
-#include "Scene.hpp"
+#include "scene/Scene.hpp"
 #include "SceneUBO.hpp"
-#include "Texture.hpp"
+#include "scene/Texture.hpp"
 
-#include "Camera.hpp"
-#include "VulkanBuffer.hpp"
-#include "VulkanBufferManager.hpp"
-#include "VulkanDevice.hpp"
-#include "VulkanInstance.hpp"
-#include "VulkanSwapChain.hpp"
-#include "Window.hpp"
+#include "scene/Camera.hpp"
+#include "vulkan_base/VulkanBuffer.hpp"
+#include "vulkan_base/VulkanBufferManager.hpp"
+#include "vulkan_base/VulkanDevice.hpp"
+#include "vulkan_base/VulkanInstance.hpp"
+#include "vulkan_base/VulkanSwapChain.hpp"
+#include "window/Window.hpp"
 
 class VulkanRenderer
 {

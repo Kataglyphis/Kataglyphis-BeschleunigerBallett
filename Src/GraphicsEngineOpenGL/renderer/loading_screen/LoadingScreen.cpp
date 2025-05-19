@@ -1,9 +1,9 @@
 #include "LoadingScreen.hpp"
-#include "OpenGLRendererConfig.hpp"
+#include "renderer/OpenGLRendererConfig.hpp"
 
 #include <filesystem>
 #include <sstream>
-#include "RepeatMode.hpp"
+#include "scene/texture/RepeatMode.hpp"
 
 LoadingScreen::LoadingScreen() { create_shader_program(); }
 

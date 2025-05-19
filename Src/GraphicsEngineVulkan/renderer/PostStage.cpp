@@ -4,16 +4,16 @@
 #include <filesystem>
 #include <vector>
 
-#include "File.hpp"
-#include "FormatHelper.hpp"
-#include "GUI.hpp"
-#include "PushConstantPost.hpp"
-#include "ShaderHelper.hpp"
-#include "Vertex.hpp"
+#include "util/File.hpp"
+#include "common/FormatHelper.hpp"
+#include "gui/GUI.hpp"
+#include "renderer/pushConstants/PushConstantPost.hpp"
+#include "vulkan_base/ShaderHelper.hpp"
+#include "scene/Vertex.hpp"
 
-#include "VulkanRendererConfig.hpp"
+#include "renderer/VulkanRendererConfig.hpp"
 
-#include <Utilities.hpp>
+#include "common/Utilities.hpp"
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>

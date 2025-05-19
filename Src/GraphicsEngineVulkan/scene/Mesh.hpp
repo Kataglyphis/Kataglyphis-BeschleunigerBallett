@@ -2,10 +2,10 @@
 #include <glm/glm.hpp>
 #include <vector>
 
-#include "ObjMaterial.hpp"
+#include "scene/ObjMaterial.hpp"
 #include "ObjectDescription.hpp"
-#include "Vertex.hpp"
-#include "VulkanBufferManager.hpp"
+#include "scene/Vertex.hpp"
+#include "vulkan_base/VulkanBufferManager.hpp"
 
 // this a simple Mesh without mesh generation
 class Mesh

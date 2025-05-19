@@ -1,5 +1,5 @@
 #pragma once
-#include "ShadowMap.hpp"
+#include "scene/shadows/ShadowMap.hpp"
 
 class OmniDirShadowMap : public ShadowMap {
  public:

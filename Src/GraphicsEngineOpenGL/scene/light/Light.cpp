@@ -1,4 +1,4 @@
-#include "Light.hpp"
+#include "scene/light/Light.hpp"
 
 Light::Light()
     :

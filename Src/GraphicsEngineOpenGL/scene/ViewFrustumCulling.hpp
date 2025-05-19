@@ -8,9 +8,10 @@
 #include <memory>
 #include <vector>
 
-#include "AABB.hpp"
-#include "Camera.hpp"
-#include "GlobalValues.hpp"
+#include "scene/AABB.hpp"
+#include "camera/Camera.hpp"
+#include "scene/texture/Texture.hpp"
+#include "hostDevice/GlobalValues.hpp"
 
 class ViewFrustumCulling {
  public:

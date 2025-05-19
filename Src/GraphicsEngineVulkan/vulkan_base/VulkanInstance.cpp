@@ -1,8 +1,8 @@
-#include "VulkanInstance.hpp"
-#include "VulkanDebug.hpp"
+#include "vulkan_base/VulkanInstance.hpp"
+#include "vulkan_base/VulkanDebug.hpp"
 
-#include "VulkanDebug.hpp"
-#include <Utilities.hpp>
+#include "vulkan_base/VulkanDebug.hpp"
+#include "common/Utilities.hpp"
 #include <string.h>
 #include <string>
 

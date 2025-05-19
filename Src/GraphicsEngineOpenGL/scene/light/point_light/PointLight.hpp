@@ -2,7 +2,7 @@
 #include <memory>
 #include <vector>
 
-#include "Light.hpp"
+#include "scene/light/Light.hpp"
 #include "OmniDirShadowMap.hpp"
 
 class PointLight : public Light {

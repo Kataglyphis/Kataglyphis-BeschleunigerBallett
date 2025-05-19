@@ -6,11 +6,11 @@
 
 #include "raycommon.glsl"
 
-#include "host_device_shared_vars.hpp"
+#include "hostDevice/host_device_shared_vars.hpp"
 
 #include "GlobalUBO.hpp"
 #include "SceneUBO.hpp"
-#include "PushConstantRayTracing.hpp"
+#include "renderer/pushConstants/PushConstantRayTracing.hpp"
 
 layout(location = 0) rayPayloadEXT HitPayload payload;
 

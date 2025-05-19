@@ -1,5 +1,5 @@
 #pragma once
-#include "ShaderProgram.hpp"
+#include "renderer/ShaderProgram.hpp"
 
 class GeometryPassShaderProgram : public ShaderProgram {
  public:

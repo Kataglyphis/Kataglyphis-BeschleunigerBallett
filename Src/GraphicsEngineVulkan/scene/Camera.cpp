@@ -1,7 +1,4 @@
-#include "Camera.hpp"
-
-#define GLFW_INCLUDE_NONE
-#define GLFW_INCLUDE_VULKAN
+#include "scene/Camera.hpp"
 
 #include <GLFW/glfw3.h>
 

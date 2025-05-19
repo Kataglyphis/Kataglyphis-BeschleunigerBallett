@@ -4,8 +4,8 @@
 #include <glm/glm.hpp>
 #include <vector>
 
-#include "GlobalValues.hpp"
-#include "Vertex.hpp"
+#include "hostDevice/GlobalValues.hpp"
+#include "scene/Vertex.hpp"
 
 // this a simple Mesh without mesh generation
 class Mesh {

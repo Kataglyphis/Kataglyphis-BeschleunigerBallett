@@ -1,4 +1,4 @@
-#include "ComputeShaderProgram.hpp"
+#include "compute/ComputeShaderProgram.hpp"
 
 ComputeShaderProgram::ComputeShaderProgram() {}
 

@@ -3,9 +3,9 @@
 
 #include <vector>
 
-#include "CommandBufferManager.hpp"
+#include "renderer/CommandBufferManager.hpp"
 
-#include "VulkanBuffer.hpp"
+#include "vulkan_base/VulkanBuffer.hpp"
 
 #include <cstring>
 

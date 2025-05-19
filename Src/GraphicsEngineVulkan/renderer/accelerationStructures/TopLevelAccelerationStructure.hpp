@@ -2,7 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
-#include "VulkanBuffer.hpp"
+#include "vulkan_base/VulkanBuffer.hpp"
 
 struct TopLevelAccelerationStructure
 {

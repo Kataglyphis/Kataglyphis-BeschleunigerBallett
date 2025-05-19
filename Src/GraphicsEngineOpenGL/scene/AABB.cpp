@@ -1,4 +1,4 @@
-#include "AABB.hpp"
+#include "scene/AABB.hpp"
 
 #include <algorithm>
 

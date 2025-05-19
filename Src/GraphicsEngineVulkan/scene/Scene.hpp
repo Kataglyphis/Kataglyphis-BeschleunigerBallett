@@ -13,9 +13,9 @@
 #include <stdexcept>
 #include <vector>
 
-#include "GUI.hpp"
-#include "GUISceneSharedVars.hpp"
-#include "Mesh.hpp"
+#include "gui/GUI.hpp"
+#include "scene/GUISceneSharedVars.hpp"
+#include "scene/Mesh.hpp"
 #include "Model.hpp"
 
 #include "SceneConfig.hpp"

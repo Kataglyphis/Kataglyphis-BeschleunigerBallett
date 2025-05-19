@@ -1,4 +1,4 @@
-#include "Vertex.hpp"
+#include "scene/Vertex.hpp"
 
 Vertex::Vertex()
 {

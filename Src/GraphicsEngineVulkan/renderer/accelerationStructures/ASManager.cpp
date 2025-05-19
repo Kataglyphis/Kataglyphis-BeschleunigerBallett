@@ -1,4 +1,4 @@
-#include "ASManager.hpp"
+#include "renderer/accelerationStructures/ASManager.hpp"
 
 ASManager::ASManager() {}
 

@@ -2,8 +2,8 @@
 #include <memory>
 #include <stdexcept>
 
-#include "ObjMaterial.hpp"
-#include "Vertex.hpp"
+#include "scene/ObjMaterial.hpp"
+#include "scene/Vertex.hpp"
 
 class ObjLoader {
  public:

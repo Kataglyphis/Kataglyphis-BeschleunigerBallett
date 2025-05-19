@@ -1,9 +1,9 @@
 #include "Model.hpp"
 
-#include "GlobalValues.hpp"
-#include "bindings.hpp"
+#include "hostDevice/GlobalValues.hpp"
+#include "hostDevice/bindings.hpp"
 
-#include "RepeatMode.hpp"
+#include "scene/texture/RepeatMode.hpp"
 
 #include <iostream>
 #include <unordered_map>

@@ -3,12 +3,12 @@
 //#include <glad/glad.h>
 //#include <GLFW/glfw3.h>
 
-#include "DirectionalShadowMapPass.hpp"
-#include "GBuffer.hpp"
-#include "GeometryPass.hpp"
-#include "LightingPass.hpp"
-#include "OmniShadowMapPass.hpp"
-#include "ShaderIncludes.hpp"
+#include "scene/light/directional_light/DirectionalShadowMapPass.hpp"
+#include "renderer/deferred/GBuffer.hpp"
+#include "renderer/deferred/GeometryPass.hpp"
+#include "renderer/deferred/LightingPass.hpp"
+#include "scene/light/point_light/OmniShadowMapPass.hpp"
+#include "renderer/ShaderIncludes.hpp"
 
 class Renderer {
  public:

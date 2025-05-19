@@ -1,5 +1,5 @@
 #pragma once
-#include "VulkanRendererConfig.hpp"
+#include "renderer/VulkanRendererConfig.hpp"
 #include <filesystem>
 #include <string>
 #include <vector>

@@ -1,4 +1,4 @@
-#include "SkyBox.hpp"
+#include "scene/sky_box/SkyBox.hpp"
 
 #include <time.h>
 #include <cassert>
@@ -13,9 +13,9 @@
 
 #include <stb_image.h>
 
-#include "OpenGLRendererConfig.hpp"
-#include "Vertex.hpp"
-#include "bindings.hpp"
+#include "renderer/OpenGLRendererConfig.hpp"
+#include "scene/Vertex.hpp"
+#include "hostDevice/bindings.hpp"
 
 SkyBox::SkyBox() {
   std::stringstream skybox_base_dir;

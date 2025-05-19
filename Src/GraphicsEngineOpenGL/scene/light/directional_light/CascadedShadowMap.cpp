@@ -1,8 +1,8 @@
-#include "CascadedShadowMap.hpp"
+#include "scene/light/directional_light/CascadedShadowMap.hpp"
 
 #include <iostream>
 
-#include "bindings.hpp"
+#include "hostDevice/bindings.hpp"
 #include "spdlog/spdlog.h"
 
 CascadedShadowMap::CascadedShadowMap()

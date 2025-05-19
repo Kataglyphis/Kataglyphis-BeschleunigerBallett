@@ -1,7 +1,7 @@
 #pragma once
 #include <vulkan/vulkan.h>
 
-#include "VulkanDevice.hpp"
+#include "vulkan_base/VulkanDevice.hpp"
 
 class VulkanBuffer
 {

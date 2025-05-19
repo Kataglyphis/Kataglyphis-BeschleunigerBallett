@@ -1,10 +1,10 @@
 #pragma once
 
-#include "DirectionalLight.hpp"
-#include "RenderPassSceneDependend.hpp"
-#include "Scene.hpp"
-#include "ShaderProgram.hpp"
-#include "ViewFrustumCulling.hpp"
+#include "scene/light/directional_light/DirectionalLight.hpp"
+#include "renderer/RenderPassSceneDependend.hpp"
+#include "scene/Scene.hpp"
+#include "renderer/ShaderProgram.hpp"
+#include "scene/ViewFrustumCulling.hpp"
 
 class DirectionalShadowMapPass : public RenderPassSceneDependend {
  public:

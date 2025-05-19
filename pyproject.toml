@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=70.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "CMakeTemplate Linter/Docs creator"
+version = "0.0.1"
+description = "This project can generate docs and lint CMake files"
+authors = [ { name="Jonas Heinle", email="jonasheinle@googlemail.com" }]
+license = "MIT"
+
+[project.dependencies]
+sphinx
+sphinx-press-theme
+myst-parser
+pyyaml
+cmake-format
+breathe

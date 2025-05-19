@@ -9,7 +9,7 @@
 #include <memory>
 #include <vector>
 
-#include "Mesh.hpp"
+#include "scene/Mesh.hpp"
 
 class AABB {
  public:

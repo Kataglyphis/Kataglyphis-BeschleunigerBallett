@@ -1,10 +1,10 @@
-#include "VulkanDebug.hpp"
+#include "vulkan_base/VulkanDebug.hpp"
 
 #include <iostream>
 #include <sstream>
 #include <string>
 
-#include "Utilities.hpp"
+#include "common/Utilities.hpp"
 
 namespace debug {
 PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;

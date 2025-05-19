@@ -1,10 +1,10 @@
-#include "GUI.hpp"
+#include "gui/GUI.hpp"
 
-#include "QueueFamilyIndices.hpp"
-#include "Utilities.hpp"
-#include "VulkanDevice.hpp"
+#include "renderer/QueueFamilyIndices.hpp"
+#include "common/Utilities.hpp"
+#include "vulkan_base/VulkanDevice.hpp"
 
-#include "VulkanRendererConfig.hpp"
+#include "renderer/VulkanRendererConfig.hpp"
 
 #include <filesystem>
 

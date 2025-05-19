@@ -12,26 +12,25 @@
 #include <memory>
 #include <string>
 
-#include "ObjLoader.hpp"
-#include "Rotation.hpp"
-#include "OpenGLRendererConfig.hpp"
-#include "GameObject.hpp"
+#include "scene/ObjLoader.hpp"
+#include "scene/Rotation.hpp"
+#include "renderer/OpenGLRendererConfig.hpp"
+#include "scene/GameObject.hpp"
 
-#include "Renderer.hpp"
-#include "DebugApp.hpp"
-#include "GUI.hpp"
-#include "LoadingScreen.hpp"
+#include "renderer/Renderer.hpp"
+#include "debug/DebugApp.hpp"
+#include "gui/GUI.hpp"
+#include "renderer/loading_screen/LoadingScreen.hpp"
 
-#include "File.hpp"
-#include "LoadingScreen.hpp"
+#include "util/File.hpp"
 
 // all scene/game logic/ game object related stuff
-#include "Camera.hpp"
-#include "DebugApp.hpp"
-#include "GlobalValues.hpp"
-#include "Scene.hpp"
-#include "Window.hpp"
-#include "host_device_shared.hpp"
+#include "camera/Camera.hpp"
+#include "debug/DebugApp.hpp"
+#include "hostDevice/GlobalValues.hpp"
+#include "scene/Scene.hpp"
+#include "window/Window.hpp"
+#include "hostDevice/host_device_shared.hpp"
 
 // Demonstrate some basic assertions.
 TEST(RendererTest, BasicSetup) {

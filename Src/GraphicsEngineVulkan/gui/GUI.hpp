@@ -5,12 +5,12 @@
 // #define GLFW_INCLUDE_VULKAN
 // #include <GLFW/glfw3.h>
 
-#include "CommandBufferManager.hpp"
-#include "GUIRendererSharedVars.hpp"
-#include "GUISceneSharedVars.hpp"
-#include "Globals.hpp"
-#include "VulkanDevice.hpp"
-#include "Window.hpp"
+#include "renderer/CommandBufferManager.hpp"
+#include "renderer/GUIRendererSharedVars.hpp"
+#include "scene/GUISceneSharedVars.hpp"
+#include "common/Globals.hpp"
+#include "vulkan_base/VulkanDevice.hpp"
+#include "window/Window.hpp"
 
 class GUI
 {

@@ -1,6 +1,6 @@
-#include "Texture.hpp"
+#include "scene/Texture.hpp"
 
-#include "Utilities.hpp"
+#include "common/Utilities.hpp"
 #include <cmath>
 #include <stdexcept>
 #include "spdlog/spdlog.h"

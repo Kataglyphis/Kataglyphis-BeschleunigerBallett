@@ -6,46 +6,19 @@ set(SHADER_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/Shaders/)
 
 include(cmake/filters/SetShaderFilters.cmake)
 include(cmake/filters/SetProjectFilters.cmake)
+include(cmake/SetSourceGroups.cmake)
 include(cmake/filters/SetExternalLibsFilters.cmake)
 
-include(cmake/SetSourceGroups.cmake)
+file(GLOB_RECURSE OPENGLRENDERER_SOURCES "*.cpp")
 
-set(OpenGlEnigneTargetName "OpenGLEngine")
+file(GLOB_RECURSE SHADER_HEADERS "${SHADER_SRC_DIR}/*.hpp")
+
+file(GLOB_RECURSE OPENGLRENDERER_HEADERS "*.hpp")
+
+set(OpenGlEnigneTargetName "GraphicsEngineOpenGLBackend")
 
 # add the executable
-add_executable(
-  ${OpenGlEnigneTargetName}
-  ${PBR_SHADER_FILTER}
-  ${BRDF_SHADER_FILTER}
-  ${CAMERA_FILTER}
-  ${COMMON_SHADER_FILTER}
-  ${CLOUDS_SHADER_FILTER}
-  ${LOADING_SHADER_FILTER}
-  ${RASTERIZER_SHADER_FILTER}
-  ${RASTERIZER_SHADOWS_SHADER_FILTER}
-  ${SKYBOX_SHADER_FILTER}
-  ${GUI_FILTER}
-  # this is great; no CPPCHECK,CLANG_TIDY here
-  $<TARGET_OBJECTS:IMGUI>
-  $<TARGET_OBJECTS:GLAD>
-  ${WINDOW_FILTER}
-  ${DEBUG_FILTER}
-  ${UTIL_FILTER}
-  ${COMPUTE_FILTER}
-  ${RENDERER_FILTER}
-  ${DEFERRED_FILTER}
-  ${LOAD_SCREEN_FILTER}
-  ${ATMOSPHERE_EFFECTS_FILTER}
-  ${LIGHT_FILTER}
-  ${D_LIGHT_FILTER}
-  ${P_LIGHT_FILTER}
-  ${CLOUD_FILTER}
-  ${SHADOWS_FILTER}
-  ${SKY_BOX_FILTER}
-  ${TEXTURE_FILTER}
-  ${SCENE_FILTER}
-  ${COMMON_FILTER}
-  ${APP_FILTER})
+add_executable(${OpenGlEnigneTargetName})
 
 if(NOT MSVC)
   target_compile_definitions(${OpenGlEnigneTargetName} PRIVATE RELATIVE_RESOURCE_PATH="/../Resources/")
@@ -57,27 +30,28 @@ endif()
 # at c++ side
 configure_file(OpenGLRendererConfig.hpp.in "renderer/OpenGLRendererConfig.hpp")
 
-target_include_directories(
+target_sources(
   ${OpenGlEnigneTargetName}
-  PUBLIC ${PROJECT_INCLUDE_DIR}
-         ${PROJECT_INCLUDE_DIR}camera
-         ${PROJECT_INCLUDE_DIR}compute
-         ${PROJECT_INCLUDE_DIR}renderer
-         ${PROJECT_INCLUDE_DIR}renderer/loading_screen
-         ${PROJECT_INCLUDE_DIR}renderer/deferred
-         ${PROJECT_INCLUDE_DIR}debug
-         ${PROJECT_INCLUDE_DIR}window
-         ${PROJECT_INCLUDE_DIR}scene
-         ${PROJECT_INCLUDE_DIR}scene/atmospheric_effects/clouds
-         ${PROJECT_INCLUDE_DIR}scene/light
-         ${PROJECT_INCLUDE_DIR}scene/light/directional_light
-         ${PROJECT_INCLUDE_DIR}scene/light/point_light
-         ${PROJECT_INCLUDE_DIR}scene/shadows
-         ${PROJECT_INCLUDE_DIR}scene/sky_box
-         ${PROJECT_INCLUDE_DIR}scene/texture
-         ${PROJECT_INCLUDE_DIR}gui
-         ${PROJECT_INCLUDE_DIR}util
-         ${SHADER_SRC_DIR}hostDevice)
+  PUBLIC ${OPENGLRENDERER_SOURCES}
+         ${PBR_SHADER_FILTER}
+         ${BRDF_SHADER_FILTER}
+         ${COMMON_SHADER_FILTER}
+         ${CLOUDS_SHADER_FILTER}
+         ${LOADING_SHADER_FILTER}
+         ${RASTERIZER_SHADER_FILTER}
+         ${RASTERIZER_SHADOWS_SHADER_FILTER}
+         ${SKYBOX_SHADER_FILTER}
+         # this is great; no CPPCHECK,CLANG_TIDY here
+         $<TARGET_OBJECTS:IMGUI>
+         $<TARGET_OBJECTS:GLAD>
+  PUBLIC FILE_SET
+         HEADERS
+         BASE_DIRS
+         ${PROJECT_INCLUDE_DIR}
+         ${SHADER_SRC_DIR}
+         FILES
+         ${OPENGLRENDERER_HEADERS}
+         ${SHADER_HEADERS})
 
 target_include_directories(${OpenGlEnigneTargetName} PRIVATE ${OPENGL_INCLUDE_DIRS} ${Vulkan_INCLUDE_DIRS})
 
@@ -98,4 +72,4 @@ target_link_libraries(
          myproject_warnings
          # enable sanitizers
          myproject_options
-  PRIVATE GSL spdlog::spdlog nlohmann_json::nlohmann_json)
+  PRIVATE GSL spdlog nlohmann_json::nlohmann_json)

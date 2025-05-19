@@ -1,4 +1,4 @@
-#include "DirectionalShadowMapPass.hpp"
+#include "scene/light/directional_light/DirectionalShadowMapPass.hpp"
 
 #include <memory>
 

@@ -1,10 +1,10 @@
 #include <iomanip>
 #include <sstream>
 
-#include "ShaderHelper.hpp"
-#include "ShaderIncludes.hpp"
-#include "Utilities.hpp"
-#include "VulkanRendererConfig.hpp"
+#include "vulkan_base/ShaderHelper.hpp"
+#include "vulkan_base/ShaderIncludes.hpp"
+#include "common/Utilities.hpp"
+#include "renderer/VulkanRendererConfig.hpp"
 
 #include "spdlog/spdlog.h"
 

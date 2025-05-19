@@ -1,4 +1,4 @@
-#include "Camera.hpp"
+#include "camera/Camera.hpp"
 
 Camera::Camera()
     :
@@ -19,10 +19,10 @@ Camera::Camera()
 
 {}
 
-Camera::Camera(glm::vec3 start_position, glm::vec3 start_up, GLfloat start_yaw,
-               GLfloat start_pitch, GLfloat start_move_speed,
-               GLfloat start_turn_speed, GLfloat near_plane, GLfloat far_plane,
-               GLfloat fov)
+Camera::Camera(glm::vec3 start_position, glm::vec3 start_up, float start_yaw,
+               float start_pitch, float start_move_speed,
+               float start_turn_speed, float near_plane, float far_plane,
+               float fov)
     :
 
       position(start_position),
@@ -41,8 +41,8 @@ Camera::Camera(glm::vec3 start_position, glm::vec3 start_up, GLfloat start_yaw,
 
 {}
 
-void Camera::key_control(bool* keys, GLfloat delta_time) {
-  GLfloat velocity = movement_speed * delta_time;
+void Camera::key_control(bool* keys, float delta_time) {
+  float velocity = movement_speed * delta_time;
 
   if (keys[GLFW_KEY_W]) {
     position += front * velocity;
@@ -69,7 +69,7 @@ void Camera::key_control(bool* keys, GLfloat delta_time) {
   }
 }
 
-void Camera::mouse_control(GLfloat x_change, GLfloat y_change) {
+void Camera::mouse_control(float x_change, float y_change) {
   // here we only want to support views 90 degrees to each side
   // again choose turn speed well in respect to its ordinal scale
   x_change *= turn_speed;
@@ -91,13 +91,13 @@ void Camera::mouse_control(GLfloat x_change, GLfloat y_change) {
   update();
 }
 
-void Camera::set_near_plane(GLfloat near_plane) {
+void Camera::set_near_plane(float near_plane) {
   this->near_plane = near_plane;
 }
 
-void Camera::set_far_plane(GLfloat far_plane) { this->far_plane = far_plane; }
+void Camera::set_far_plane(float far_plane) { this->far_plane = far_plane; }
 
-void Camera::set_fov(GLfloat fov) { this->fov = fov; }
+void Camera::set_fov(float fov) { this->fov = fov; }
 
 void Camera::set_camera_position(glm::vec3 new_camera_position) {
   this->position = new_camera_position;

@@ -2,9 +2,9 @@
 
 #include <vulkan/vulkan.h>
 
-#include "PushConstantRayTracing.hpp"
-#include "VulkanBuffer.hpp"
-#include "VulkanSwapChain.hpp"
+#include "renderer/pushConstants/PushConstantRayTracing.hpp"
+#include "vulkan_base/VulkanBuffer.hpp"
+#include "vulkan_base/VulkanSwapChain.hpp"
 
 class Raytracing
 {

@@ -8,8 +8,8 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <vector>
 
-#include "GlobalValues.hpp"
-#include "host_device_shared.hpp"
+#include "hostDevice/GlobalValues.hpp"
+#include "hostDevice/host_device_shared.hpp"
 
 class CascadedShadowMap {
  public:

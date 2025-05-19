@@ -4,9 +4,9 @@
 
 #include <memory>
 
-#include "Scene.hpp"
-#include "Texture.hpp"
-#include "Window.hpp"
+#include "scene/Scene.hpp"
+#include "scene/texture/Texture.hpp"
+#include "window/Window.hpp"
 
 class GUI {
  public:

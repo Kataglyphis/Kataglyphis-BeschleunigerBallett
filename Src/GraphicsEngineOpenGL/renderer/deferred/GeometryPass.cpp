@@ -1,7 +1,7 @@
-#include "GeometryPass.hpp"
-#include "Clouds.hpp"
-#include "DirectionalLight.hpp"
-#include "ViewFrustumCulling.hpp"
+#include "renderer/deferred/GeometryPass.hpp"
+#include "scene/atmospheric_effects/clouds/Clouds.hpp"
+#include "scene/light/directional_light/DirectionalLight.hpp"
+#include "scene/ViewFrustumCulling.hpp"
 
 #include <sstream>
 GeometryPass::GeometryPass() : skybox() { create_shader_program(); }

@@ -1,10 +1,10 @@
 #define STB_IMAGE_IMPLEMENTATION
 
-#include "Texture.hpp"
+#include "scene/texture/Texture.hpp"
 
 #include "ClampToEdgeMode.hpp"
 #include "MirroredRepeatMode.hpp"
-#include "RepeatMode.hpp"
+#include "scene/texture/RepeatMode.hpp"
 
 #include <iostream>
 

@@ -1,4 +1,9 @@
-#include "File.hpp"
+/** @defgroup FileUtilities File Utilities
+ *  Functions and utilities for performing file operations.
+ *  @{
+ */
+
+#include "util/File.hpp"
 #include "spdlog/spdlog.h"
 
 #include <fstream>
@@ -60,3 +65,5 @@ std::string File::getBaseDir()
 }
 
 File::~File() {}
+
+/** @} */ // End of File utilities group

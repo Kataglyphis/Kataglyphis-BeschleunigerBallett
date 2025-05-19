@@ -1,10 +1,10 @@
-#include "Mesh.hpp"
+#include "scene/Mesh.hpp"
 
 #include <cstring>
 #include <memory>
 
-#include "Utilities.hpp"
-#include "VulkanBuffer.hpp"
+#include "common/Utilities.hpp"
+#include "vulkan_base/VulkanBuffer.hpp"
 
 Mesh::Mesh() {}
 

@@ -2,10 +2,10 @@
 #include <vulkan/vulkan.h>
 
 #include "BottomLevelAccelerationStructure.hpp"
-#include "CommandBufferManager.hpp"
-#include "Scene.hpp"
+#include "renderer/CommandBufferManager.hpp"
+#include "scene/Scene.hpp"
 #include "TopLevelAccelerationStructure.hpp"
-#include "VulkanDevice.hpp"
+#include "vulkan_base/VulkanDevice.hpp"
 
 struct BuildAccelerationStructure
 {

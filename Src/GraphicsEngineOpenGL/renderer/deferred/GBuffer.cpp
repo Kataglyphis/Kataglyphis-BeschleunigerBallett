@@ -1,6 +1,6 @@
-#include "GBuffer.hpp"
+#include "renderer/deferred/GBuffer.hpp"
 
-#include "bindings.hpp"
+#include "hostDevice/bindings.hpp"
 
 #include <stdio.h>
 

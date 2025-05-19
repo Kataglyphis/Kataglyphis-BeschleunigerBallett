@@ -1,10 +1,10 @@
-#include "VulkanRenderer.hpp"
+#include "renderer/VulkanRenderer.hpp"
 
-#include "GUISceneSharedVars.hpp"
-#include "PushConstantRasterizer.hpp"
-#include "PushConstantRayTracing.hpp"
-#include "QueueFamilyIndices.hpp"
-#include "Utilities.hpp"
+#include "scene/GUISceneSharedVars.hpp"
+#include "renderer/pushConstants/PushConstantRasterizer.hpp"
+#include "renderer/pushConstants/PushConstantRayTracing.hpp"
+#include "renderer/QueueFamilyIndices.hpp"
+#include "common/Utilities.hpp"
 
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
@@ -36,13 +36,13 @@
 
 #include <gsl/gsl>
 
-#include "File.hpp"
-#include "Globals.hpp"
-#include "PushConstantPost.hpp"
-#include "ShaderHelper.hpp"
+#include "util/File.hpp"
+#include "common/Globals.hpp"
+#include "renderer/pushConstants/PushConstantPost.hpp"
+#include "vulkan_base/ShaderHelper.hpp"
 
-#include "VulkanRendererConfig.hpp"
-#include <VulkanDebug.hpp>
+#include "renderer/VulkanRendererConfig.hpp"
+#include "vulkan_base/VulkanDebug.hpp"
 
 VulkanRenderer::VulkanRenderer(Window *window, Scene *scene, GUI *gui, Camera *camera)
   :
