@@ -18,6 +18,37 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          
+      - name: Install latest CMake
+        run: |
+          # 1. Remove any manually installed CMake binary
+          which cmake
+          sudo rm -f /usr/local/bin/cmake
+          # Remove any existing CMake to avoid conflicts
+          sudo apt-get purge --auto-remove -y cmake        # recommended to ensure a clean install:contentReference[oaicite:1]{index=1}
+
+          # Prepare for adding the Kitware APT repository
+          sudo apt-get update                              # refresh package index:contentReference[oaicite:2]{index=2}
+          sudo apt-get install -y wget gpg lsb-release ca-certificates  # prerequisites for secure APT repos:contentReference[oaicite:3]{index=3}
+
+          # Import Kitware’s signing key and add the “noble” repo
+          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc \
+            | gpg --dearmor \
+            | sudo tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
+          echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] \
+            https://apt.kitware.com/ubuntu/ noble main" \
+            | sudo tee /etc/apt/sources.list.d/kitware.list >/dev/null  # Ubuntu 24.04 support confirmed:contentReference[oaicite:4]{index=4}
+
+          # Install the newest CMake available from Kitware
+          sudo apt-get update                              # pick up the new repository:contentReference[oaicite:5]{index=5}
+          sudo apt-get install -y cmake                     # installs the latest upstream release:contentReference[oaicite:6]{index=6}
+
+          # 5. Add the APT-installed CMake directory to PATH
+          echo "/usr/bin" >> $GITHUB_PATH                          # prepend /usr/bin so 'cmake' resolves to the APT version :contentReference[oaicite:2]{index=2}
+            
+          # Verify the installation
+          cmake --version
+
       - name: Install GLFW + build system dependencies
         run: |
           sudo apt-get update -y
