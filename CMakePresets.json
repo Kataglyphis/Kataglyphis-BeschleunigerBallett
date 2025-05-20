@@ -331,8 +331,36 @@
 			"installDir": "${sourceDir}/build/",
 			"cacheVariables": {
         "CMAKE_VERBOSE_MAKEFILE": "ON",
-				"CMAKE_C_COMPILER": "clang-cl",
-				"CMAKE_CXX_COMPILER": "clang-cl",
+				"CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
+				"CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
+				"WINDOWS_CI": "ON"
+			},
+			"toolset": "ClangCL",
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			},
+			"architecture": {
+				"value": "x64",
+				"strategy": "set"
+			},
+			"vendor": {
+				"microsoft.com/VisualStudioSettings/CMake/1.0": {
+					"intelliSenseMode": "windows-clang-x64"
+				}
+			}
+		},
+    {
+			"name": "x64-MSVC-Windows-CI",
+			"description": "Windows, MSCV on CI",
+			"generator": "Visual Studio 17 2022",
+			"binaryDir": "${sourceDir}/build/",
+			"installDir": "${sourceDir}/build/",
+			"cacheVariables": {
+        "CMAKE_VERBOSE_MAKEFILE": "ON",
+				"CMAKE_C_COMPILER": "cl",
+				"CMAKE_CXX_COMPILER": "cl",
 				"WINDOWS_CI": "ON"
 			},
 			"toolset": "ClangCL",
