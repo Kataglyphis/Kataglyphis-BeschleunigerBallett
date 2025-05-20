@@ -335,7 +335,8 @@
 				"CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang++.exe",
 				"WINDOWS_CI": "ON",
         "RUST_FEATURES": "OFF",
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "COMPILER_CACHE": "sccache"
 			},
 			
 			"condition": {
@@ -359,7 +360,8 @@
         "CMAKE_VERBOSE_MAKEFILE": "ON",
 				"CMAKE_C_COMPILER": "cl",
 				"CMAKE_CXX_COMPILER": "cl",
-				"WINDOWS_CI": "ON"
+				"WINDOWS_CI": "ON",
+        "COMPILER_CACHE": "sccache"
 			},
 			
 			"condition": {

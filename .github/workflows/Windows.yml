@@ -39,11 +39,12 @@ jobs:
           winget install --accept-source-agreements --accept-package-agreements cmake cppcheck KhronosGroup.VulkanSDK
           # ls "C:\VulkanSDK"
 
+      # for now cppcehck is buggy on windows 2025 github runner. so disable
       # a github runner has issues with running vulkan driver code; therefore just verify successful build :)
       - name: CMake Build for Clang
         shell: powershell
         run: |
-          cmake -B ${{github.workspace}}/build --preset "x64-Clang-Windows-CI"
+          cmake -B ${{github.workspace}}/build --preset "x64-Clang-Windows-CI" -Dmyproject_ENABLE_CPPCHECK="OFF"
           cmake --build ${{github.workspace}}/build
           ctest
 
@@ -55,6 +56,6 @@ jobs:
       - name: CMake Build for MSVC
         shell: powershell
         run: |
-          cmake -B ${{github.workspace}}/build --preset "x64-MSVC-Windows-CI"
+          cmake -B ${{github.workspace}}/build --preset "x64-MSVC-Windows-CI" -Dmyproject_ENABLE_CPPCHECK="OFF"
           cmake --build ${{github.workspace}}/build
           ctest

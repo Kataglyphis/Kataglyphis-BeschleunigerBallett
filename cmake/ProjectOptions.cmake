@@ -19,6 +19,7 @@ macro(myproject_setup_options)
   option(myproject_ENABLE_HARDENING "Enable hardening" OFF)
   option(myproject_ENABLE_COVERAGE "Enable coverage reporting" ON)
   option(myproject_DISABLE_EXCEPTIONS "Disable C++ exceptions" ON)
+  option(myproject_ENABLE_GPROF "Enable profiling with gprof (adds -pg flags)" ON)
 
   cmake_dependent_option(
     myproject_ENABLE_GLOBAL_HARDENING
@@ -159,6 +160,18 @@ macro(myproject_local_options)
     ""
     ""
     "")
+
+  if (
+    CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+    OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+    AND NOT WIN32
+  )
+    message(STATUS "Enabling gprof profiling")
+    target_compile_options(myproject_options INTERFACE -pg)
+    target_link_libraries(myproject_options INTERFACE -pg)
+  elseif(myproject_ENABLE_GPROF)
+    message(WARNING "GProf should only be used in conjuction with GCC GNU.")
+  endif()
 
   if(myproject_DISABLE_EXCEPTIONS)
     if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
