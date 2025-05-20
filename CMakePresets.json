@@ -380,5 +380,17 @@
 				}
 			}
 		}
-	]
+	],
+    "buildPresets": [
+    {
+      "name": "x64-Clang-Windows-CI",
+      "jobs": 0,
+      "configurePreset": "x64-Clang-Windows-CI"
+    },
+    {
+      "name": "x64-MSVC-Windows-CI",
+      "jobs": 0,
+      "configurePreset": "x64-MSVC-Windows-CI"
+    }
+]
 }

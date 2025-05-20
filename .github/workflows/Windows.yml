@@ -40,13 +40,13 @@ jobs:
           # ls "C:\VulkanSDK"
 
       # a github runner has issues with running vulkan driver code; therefore just verify successful build :)
-      - name: CMake Build for MSVC
+      - name: CMake Build for Clang
         shell: powershell
         run: |
           mkdir build
           cd build
-          cmake --preset "x64-MSVC-Windows-CI" ../
-          cmake --build . --target ALL_BUILD --verbose
+          cmake --preset "x64-Clang-Windows-CI" ../
+          cmake --build . --preset "x64-Clang-Windows-CI" --target ALL_BUILD --verbose
           ctest
 
       - name: Prepare for clang
@@ -54,11 +54,11 @@ jobs:
           Remove-Item -Path ${{github.workspace}}/build -Recurse -Force
           clang --version
 
-      - name: CMake Build for Clang
+      - name: CMake Build for MSVC
         shell: powershell
         run: |
           mkdir build
           cd build
-          cmake --preset "x64-Clang-Windows-CI" ../
-          cmake --build . --target ALL_BUILD --verbose
+          cmake --preset "x64-MSVC-Windows-CI" ../
+          cmake --build . --preset ""--target ALL_BUILD --verbose
           ctest
