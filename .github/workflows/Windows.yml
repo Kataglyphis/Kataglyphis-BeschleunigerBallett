@@ -44,6 +44,7 @@ jobs:
         shell: powershell
         run: |
           cmake -B ${{github.workspace}}/build --preset "x64-Clang-Windows-CI"
+          cmake --build ${{github.workspace}}/build
           ctest
 
       - name: Prepare for MSVC
@@ -55,4 +56,5 @@ jobs:
         shell: powershell
         run: |
           cmake -B ${{github.workspace}}/build --preset "x64-MSVC-Windows-CI"
+          cmake --build ${{github.workspace}}/build
           ctest
