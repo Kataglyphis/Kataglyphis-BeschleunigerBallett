@@ -161,16 +161,23 @@ macro(myproject_local_options)
     ""
     "")
 
+  # Only when building with -DCMAKE_BUILD_TYPE=Profile,
+  # with GCC or Clang on non-Windows hosts:
   if (
-    CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
-    OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+    CMAKE_BUILD_TYPE STREQUAL "Profile"
+    AND (CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+        OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     AND NOT WIN32
   )
+
     message(STATUS "Enabling gprof profiling")
     target_compile_options(myproject_options INTERFACE -pg)
     target_link_libraries(myproject_options INTERFACE -pg)
+
   elseif(myproject_ENABLE_GPROF)
-    message(WARNING "GProf should only be used in conjuction with GCC GNU.")
+
+    message(INFO "GProf should only be used in conjuction with GCC GNU.")
+    
   endif()
 
   if(myproject_DISABLE_EXCEPTIONS)
