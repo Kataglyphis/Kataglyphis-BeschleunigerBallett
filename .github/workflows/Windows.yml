@@ -34,8 +34,9 @@ jobs:
 
       - name: Setup Vulkan + CMake
         run: |
-          winget install --accept-source-agreements --accept-package-agreements cmake KhronosGroup.VulkanSDK cppcheck
+          winget install --accept-source-agreements --accept-package-agreements cmake cppcheck
           echo %VULKAN_SDK%
+      # KhronosGroup.VulkanSDK
       # $ver = (Invoke-WebRequest -Uri "https://vulkan.lunarg.com/sdk/latest.json" | ConvertFrom-Json).windows
       # echo Version $ver
       # $ProgressPreference = 'SilentlyContinue'
