@@ -2,9 +2,9 @@ name: Linux build + test + coverage
 
 on:
   push:
-    branches: [main,develop]
+    branches: [main, develop]
   pull_request:
-    branches: [main,develop]
+    branches: [main, develop]
 
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-          
+
       - name: Install latest CMake
         run: |
           # 1. Remove any manually installed CMake binary
@@ -79,6 +79,8 @@ jobs:
           sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-noble.list http://packages.lunarg.com/vulkan/lunarg-vulkan-noble.list
           sudo apt update
           sudo apt install vulkan-sdk
+          vulkaninfo
+
       - name: Install Code Coverage dependencies
         run: sudo apt-get install -y gcovr
       - name: Install clang
