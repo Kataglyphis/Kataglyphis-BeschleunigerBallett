@@ -41,15 +41,21 @@ jobs:
 
       # a github runner has issues with running vulkan driver code; therefore just verify successful build :)
       - name: CMake Build for MSVC
+        shell: powershell
         run: |
-          mkdir build2
-          cd build2
+          mkdir build
+          cd build
           cmake --preset "x64-MSVC-Windows-CI" ../
           cmake --build . --target ALL_BUILD --verbose
           ctest
 
       - name: CMake Build for Clang
+        shell: powershell
         run: |
+          # if 'build' exists, delete it (recursively, force-delete readonly files)
+          if (Test-Path build) {
+            Remove-Item build -Recurse -Force
+          }
           mkdir build
           cd build
           cmake --preset "x64-Clang-Windows-CI" ../

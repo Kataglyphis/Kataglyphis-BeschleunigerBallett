@@ -336,7 +336,7 @@
 				"WINDOWS_CI": "ON",
         "RUST_FEATURES": "OFF"
 			},
-			"toolset": "ClangCL",
+			
 			"condition": {
 				"type": "equals",
 				"lhs": "${hostSystemName}",
@@ -364,7 +364,7 @@
 				"CMAKE_CXX_COMPILER": "cl",
 				"WINDOWS_CI": "ON"
 			},
-			"toolset": "ClangCL",
+			
 			"condition": {
 				"type": "equals",
 				"lhs": "${hostSystemName}",

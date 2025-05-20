@@ -1,10 +1,10 @@
 function(enable_doxygen)
 
   # first we can indicate the documentation build as an option and set it to ON by default
-  option(BUILD_DOC "Build documentation" OFF)
+  option(BUILD_DOC "Build documentation" ON)
 
   # check if Doxygen is installed
-  if(BUILD_DOC)
+  if(BUILD_DOC AND NOT WIN32)
     find_package(Doxygen)
     if(DOXYGEN_FOUND)
       # set input and output files
