@@ -332,7 +332,7 @@
 			"cacheVariables": {
         "CMAKE_VERBOSE_MAKEFILE": "ON",
 				"CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
-				"CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
+				"CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang++.exe",
 				"WINDOWS_CI": "ON",
         "RUST_FEATURES": "OFF"
 			},
