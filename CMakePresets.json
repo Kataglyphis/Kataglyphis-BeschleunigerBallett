@@ -343,10 +343,6 @@
 				"lhs": "${hostSystemName}",
 				"rhs": "Windows"
 			},
-			"architecture": {
-				"value": "x64",
-				"strategy": "set"
-			},
 			"vendor": {
 				"microsoft.com/VisualStudioSettings/CMake/1.0": {
 					"intelliSenseMode": "windows-clang-x64"
