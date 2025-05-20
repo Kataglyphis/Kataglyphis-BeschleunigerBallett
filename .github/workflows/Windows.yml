@@ -49,13 +49,14 @@ jobs:
           cmake --build . --target ALL_BUILD --verbose
           ctest
 
+      - name: Prepare for clang
+        run: |
+          Remove-Item -Path ${{github.workspace}}/build -Recurse -Force
+          clang --version
+
       - name: CMake Build for Clang
         shell: powershell
         run: |
-          # if 'build' exists, delete it (recursively, force-delete readonly files)
-          if (Test-Path build) {
-            Remove-Item build -Recurse -Force
-          }
           mkdir build
           cd build
           cmake --preset "x64-Clang-Windows-CI" ../
