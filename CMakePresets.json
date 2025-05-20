@@ -326,7 +326,7 @@
 		{
 			"name": "x64-Clang-Windows-CI",
 			"description": "Windows and Clang",
-			"generator": "Visual Studio 17 2022",
+			"generator": "Ninja",
 			"binaryDir": "${sourceDir}/build/",
 			"installDir": "${sourceDir}/build/",
 			"cacheVariables": {
@@ -334,7 +334,8 @@
 				"CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
 				"CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang++.exe",
 				"WINDOWS_CI": "ON",
-        "RUST_FEATURES": "OFF"
+        "RUST_FEATURES": "OFF",
+        "CMAKE_BUILD_TYPE": "Debug"
 			},
 			
 			"condition": {
