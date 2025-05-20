@@ -12,7 +12,7 @@ env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Debug
   BUILD_DIR: build
-  VK_SDK_PATH: C:\VulkanSDK
+  # VK_SDK_PATH: C:\VulkanSDK
 
 jobs:
   build:
@@ -20,8 +20,8 @@ jobs:
     # You can convert this to a matrix build if you need cross-platform coverage.
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
     runs-on: windows-2025
-    env:
-      VULKAN_SDK: C:\VulkanSDK\
+    # env:
+    #  VULKAN_SDK: C:\VulkanSDK\
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,7 +35,7 @@ jobs:
       - name: Setup Vulkan + CMake
         run: |
           winget install --accept-source-agreements --accept-package-agreements cmake KhronosGroup.VulkanSDK cppcheck
-
+          echo %VULKAN_SDK%
       # $ver = (Invoke-WebRequest -Uri "https://vulkan.lunarg.com/sdk/latest.json" | ConvertFrom-Json).windows
       # echo Version $ver
       # $ProgressPreference = 'SilentlyContinue'
