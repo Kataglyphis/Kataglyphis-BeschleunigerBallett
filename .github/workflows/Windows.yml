@@ -38,7 +38,6 @@ jobs:
           choco install llvm --version=20.1.0 --params="'/AddToPath'" -y
           winget install --accept-source-agreements --accept-package-agreements cmake cppcheck KhronosGroup.VulkanSDK
           # ls "C:\VulkanSDK"
-          vulkaninfo
 
       # a github runner has issues with running vulkan driver code; therefore just verify successful build :)
       - name: CMake Build for Clang
