@@ -9,7 +9,7 @@ include(cmake/filters/SetProjectFilters.cmake)
 include(cmake/SetSourceGroups.cmake)
 include(cmake/filters/SetExternalLibsFilters.cmake)
 
-file(GLOB_RECURSE VULKANRENDERER_SOURCES "*.cpp")
+file(GLOB_RECURSE VULKANRENDERER_SOURCES "*.cpp" "*.hpp")
 
 file(
   GLOB_RECURSE SHADER_HEADERS
