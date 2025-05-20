@@ -1,5 +1,4 @@
-#include "App.hpp"
-#include "rusty_bridge/lib.h"
+#include "app/App.hpp"
 #include <iostream>
 
 extern "C" {
