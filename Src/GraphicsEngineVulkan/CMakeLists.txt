@@ -28,11 +28,6 @@ if(RUST_FEATURES)
     lib.rs)
 endif()
 
-if(RUST_FEATURES)
-  corrosion_import_crate(MANIFEST_PATH rusty_code/Cargo.toml)
-  corrosion_add_cxxbridge(rusty_bridge CRATE rusty_code MANIFEST_PATH rusty_code FILES lib.rs)
-endif()
-
 # add the executable
 add_executable(${PROJECT_NAME})
 
