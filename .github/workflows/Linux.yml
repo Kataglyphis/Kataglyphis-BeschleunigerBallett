@@ -68,7 +68,7 @@ jobs:
         with:
           # You can set the Vulkan SDK version to download.
           # Defaults to latest version, if version not set.
-          vulkan_version: ${VULKAN_VERSION}
+          vulkan_version: ${{env.VULKAN_VERSION}}
           optional_components: com.lunarg.vulkan.vma
           install_runtime: true
           cache: true
