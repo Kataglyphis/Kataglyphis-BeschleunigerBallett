@@ -176,7 +176,7 @@ macro(myproject_local_options)
 
   elseif(myproject_ENABLE_GPROF)
 
-    message(INFO "GProf should only be used in conjuction with GCC GNU.")
+    message(INFO "GProf should only be used in conjuction with GCC GNU/Clang and not on Windows.")
     
   endif()
 
