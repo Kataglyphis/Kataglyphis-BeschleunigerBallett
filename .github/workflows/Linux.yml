@@ -58,7 +58,7 @@ jobs:
         run: |
           sudo apt-get update -y
           wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
-          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.3.296-noble.list https://packages.lunarg.com/vulkan/1.3.296/lunarg-vulkan-1.3.296-noble.list
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.4.313-noble.list https://packages.lunarg.com/vulkan/1.4.313/lunarg-vulkan-1.4.313-noble.list
           sudo apt update
           sudo apt install vulkan-sdk
       
@@ -68,7 +68,6 @@ jobs:
         with:
           # You can set the Vulkan SDK version to download.
           # Defaults to latest version, if version not set.
-          vulkan_version: ${{env.VULKAN_VERSION}}
           optional_components: com.lunarg.vulkan.vma
           install_runtime: true
           cache: true
