@@ -54,6 +54,7 @@ jobs:
           cmake --version
 
       - name: Install Vulkan
+        if: runner.name == 'ubuntu-24.04'
         run: |
           sudo apt-get update -y
           ARCH=$(uname -m)
@@ -64,14 +65,23 @@ jobs:
             sudo wget -qO "$VULKAN_LIST_FILE" "$VULKAN_LIST_URL"
             sudo apt update
             sudo apt install vulkan-sdk
-          else
-            sudo apt update
-            sudo apt install vulkan-tools libvulkan1 vulkan-utility-libraries-dev
-            sudo apt install libvulkan-dev glslang-tools shaderc
-            which glslc
-            glslc --version
-          fi
+      
+      - name: Install Vulkan SDK
+        if: runner.name == 'ubuntu-24.04-arm'
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          # You can set the Vulkan SDK version to download.
+          # Defaults to latest version, if version not set.
+          vulkan_version: ${VULKAN_VERSION}
+          optional_components: com.lunarg.vulkan.vma
+          install_runtime: true
+          cache: true
+          stripdown: true
 
+          # You can install a software rasterizer.
+          install_swiftshader: true
+          install_lavapipe: true
+      
       - name: Install GLFW + build system dependencies
         run: |
           sudo apt-get update -y
