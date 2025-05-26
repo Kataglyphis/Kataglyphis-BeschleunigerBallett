@@ -53,6 +53,23 @@ jobs:
           # Verify the installation
           cmake --version
 
+      - name: Install Vulkan
+        run: |
+          sudo apt-get update -y
+          ARCH=$(uname -m)
+          if [[ "$ARCH" == "x86_64" ]]; then
+            wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
+            VULKAN_LIST_FILE="/etc/apt/sources.list.d/lunarg-vulkan-${VULKAN_VERSION}-noble.list"
+            VULKAN_LIST_URL="https://packages.lunarg.com/vulkan/${VULKAN_VERSION}/lunarg-vulkan-${VULKAN_VERSION}-noble.list"
+            sudo wget -qO "$VULKAN_LIST_FILE" "$VULKAN_LIST_URL"
+            sudo apt update
+            sudo apt install vulkan-sdk
+          else
+            sudo apt update
+            sudo apt install vulkan-tools libvulkan1 vulkan-utility-libraries-dev
+            sudo apt install libvulkan-dev
+          fi
+
       - name: Install GLFW + build system dependencies
         run: |
           sudo apt-get update -y
@@ -77,22 +94,6 @@ jobs:
 
       - name: Install for Offscreen Rendering on GLFW
         run: sudo apt-get install libosmesa6-dev
-
-      - name: Install Vulkan
-        run: |
-          ARCH=$(uname -m)
-          if [[ "$ARCH" == "x86_64" ]]; then
-            wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
-            VULKAN_LIST_FILE="/etc/apt/sources.list.d/lunarg-vulkan-${VULKAN_VERSION}-noble.list"
-            VULKAN_LIST_URL="https://packages.lunarg.com/vulkan/${VULKAN_VERSION}/lunarg-vulkan-${VULKAN_VERSION}-noble.list"
-            sudo wget -qO "$VULKAN_LIST_FILE" "$VULKAN_LIST_URL"
-            sudo apt update
-            sudo apt install vulkan-sdk
-          else
-            sudo apt update
-            sudo apt install vulkan-tools libvulkan1 vulkan-validationlayers-dev
-            sudo apt install libvulkan-dev
-          fi
 
       - name: Install Code Coverage dependencies
         run: sudo apt-get install -y gcovr
