@@ -67,7 +67,7 @@ jobs:
           else
             sudo apt update
             sudo apt install vulkan-tools libvulkan1 vulkan-utility-libraries-dev
-            sudo apt install libvulkan-dev
+            sudo apt install libvulkan-dev glslang-tools
           fi
 
       - name: Install GLFW + build system dependencies
