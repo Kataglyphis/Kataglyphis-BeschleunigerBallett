@@ -9,6 +9,7 @@ on:
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Debug
+  VULKAN_VERSION: 1.3.296
 
 jobs:
   setup:
@@ -76,13 +77,26 @@ jobs:
 
       - name: Install for Offscreen Rendering on GLFW
         run: sudo apt-get install libosmesa6-dev
+
       - name: Install Vulkan
         run: |
-          # I want to support the Raspberry Pi 5. Therefore I stick fpr now at Vulkan 1.3 
-          wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
-          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.3.296-noble.list https://packages.lunarg.com/vulkan/1.3.296/lunarg-vulkan-1.3.296-noble.list
-          sudo apt update
-          sudo apt install vulkan-sdk
+          ARCH=$(uname -m)
+          if [[ "$ARCH" == "x86_64" ]]; then
+            wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
+            VULKAN_LIST_FILE="/etc/apt/sources.list.d/lunarg-vulkan-${VULKAN_VERSION}-noble.list"
+            VULKAN_LIST_URL="https://packages.lunarg.com/vulkan/${VULKAN_VERSION}/lunarg-vulkan-${VULKAN_VERSION}-noble.list"
+            sudo wget -qO "$VULKAN_LIST_FILE" "$VULKAN_LIST_URL"
+            sudo apt update
+            sudo apt install vulkan-sdk
+          else
+            wget https://sdk.lunarg.com/sdk/download/${VULKAN_VERSION}/linux/arm64/vulkan-sdk-${VULKAN_VERSION}-linux-arm64.tar.gz
+            tar -xzf vulkan-sdk-${VULKAN_VERSION}-linux-arm64.tar.gz
+            echo "VULKAN_SDK=$PWD/vulkan-sdk-${VULKAN_VERSION}" >> $GITHUB_ENV
+            echo "PATH=$PWD/vulkan-sdk-${VULKAN_VERSION}/bin:\$PATH" >> $GITHUB_ENV
+            echo "LD_LIBRARY_PATH=$PWD/vulkan-sdk-${VULKAN_VERSION}/lib:\$LD_LIBRARY_PATH" >> $GITHUB_ENV
+            echo "VK_ICD_FILENAMES=$PWD/vulkan-sdk-${VULKAN_VERSION}/etc/vulkan/icd.d" >> $GITHUB_ENV
+            echo "VK_LAYER_PATH=$PWD/vulkan-sdk-${VULKAN_VERSION}/etc/vulkan/explicit_layer.d" >> $GITHUB_ENV
+          fi
 
       - name: Install Code Coverage dependencies
         run: sudo apt-get install -y gcovr

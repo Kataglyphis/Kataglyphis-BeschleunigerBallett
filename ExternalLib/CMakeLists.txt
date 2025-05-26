@@ -30,13 +30,21 @@ add_subdirectory(GOOGLE_BENCHMARK)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   message(STATUS "This is a Linux system.")
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
-    message("Adding Fuzztest")
-    add_subdirectory(FUZZTEST)
-    if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
-      set(FUZZTEST_FUZZING_MODE
-          ON
-          CACHE BOOL "" FORCE)
+  # Detect target architecture
+  string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" TARGET_ARCH)
+  message(STATUS "Detected architecture: ${TARGET_ARCH}")
+
+  # Check if not ARM
+  if(NOT TARGET_ARCH MATCHES "^(arm|aarch64)")
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+      
+      message("Adding Fuzztest")
+      add_subdirectory(FUZZTEST)
+      if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+        set(FUZZTEST_FUZZING_MODE
+            ON
+            CACHE BOOL "" FORCE)
+      endif()
     endif()
   endif()
 endif()
