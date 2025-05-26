@@ -89,13 +89,9 @@ jobs:
             sudo apt update
             sudo apt install vulkan-sdk
           else
-            wget https://sdk.lunarg.com/sdk/download/${VULKAN_VERSION}/linux/arm64/vulkan-sdk-${VULKAN_VERSION}-linux-arm64.tar.gz
-            tar -xzf vulkan-sdk-${VULKAN_VERSION}-linux-arm64.tar.gz
-            echo "VULKAN_SDK=$PWD/vulkan-sdk-${VULKAN_VERSION}" >> $GITHUB_ENV
-            echo "PATH=$PWD/vulkan-sdk-${VULKAN_VERSION}/bin:\$PATH" >> $GITHUB_ENV
-            echo "LD_LIBRARY_PATH=$PWD/vulkan-sdk-${VULKAN_VERSION}/lib:\$LD_LIBRARY_PATH" >> $GITHUB_ENV
-            echo "VK_ICD_FILENAMES=$PWD/vulkan-sdk-${VULKAN_VERSION}/etc/vulkan/icd.d" >> $GITHUB_ENV
-            echo "VK_LAYER_PATH=$PWD/vulkan-sdk-${VULKAN_VERSION}/etc/vulkan/explicit_layer.d" >> $GITHUB_ENV
+            sudo apt update
+            sudo apt install vulkan-tools libvulkan1 vulkan-validationlayers-dev
+            sudo apt install libvulkan-dev
           fi
 
       - name: Install Code Coverage dependencies
