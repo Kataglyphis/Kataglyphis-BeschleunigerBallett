@@ -16,7 +16,7 @@ macro(myproject_supports_sanitizers)
 endmacro()
 
 macro(myproject_setup_options)
-  option(myproject_ENABLE_HARDENING "Enable hardening" OFF)
+  option(myproject_ENABLE_HARDENING "Enable hardening" ON)
   option(myproject_ENABLE_COVERAGE "Enable coverage reporting" ON)
   option(myproject_DISABLE_EXCEPTIONS "Disable C++ exceptions" ON)
   option(myproject_ENABLE_GPROF "Enable profiling with gprof (adds -pg flags)" ON)

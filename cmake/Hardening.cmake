@@ -8,10 +8,14 @@ macro(
 
   message(STATUS "** Enabling Hardening (Target ${target}) **")
 
+  set(NEW_COMPILE_OPTIONS "")
+  set(NEW_LINK_OPTIONS "")
+  set(NEW_CXX_DEFINITIONS "")
+
   if(MSVC)
-    set(NEW_COMPILE_OPTIONS "${NEW_COMPILE_OPTIONS} /sdl /DYNAMICBASE /guard:cf")
+    list( APPEND NEW_COMPILE_OPTIONS /sdl /DYNAMICBASE /guard:cf)
     message(STATUS "*** MSVC flags: /sdl /DYNAMICBASE /guard:cf /NXCOMPAT /CETCOMPAT")
-    set(NEW_LINK_OPTIONS "${NEW_LINK_OPTIONS} /NXCOMPAT /CETCOMPAT")
+    list( APPEND NEW_LINK_OPTIONS /NXCOMPAT /CETCOMPAT)
 
   elseif(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang|GNU")
     list(APPEND NEW_CXX_DEFINITIONS -D_GLIBCXX_ASSERTIONS)
@@ -101,8 +105,8 @@ macro(
   if(${global})
     message(STATUS "** Setting hardening options globally for all dependencies")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${NEW_COMPILE_OPTIONS}")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${NEW_LINK_OPTIONS}")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${NEW_CXX_DEFINITIONS}")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${NEW_LINK_OPTIONS}")
   else()
     target_compile_options(${target} INTERFACE ${NEW_COMPILE_OPTIONS})
     target_link_options(${target} INTERFACE ${NEW_LINK_OPTIONS})
