@@ -54,7 +54,7 @@ jobs:
           cmake --version
 
       - name: Install Vulkan
-        if: runner.name == 'ubuntu-24.04'
+        if: matrix.runner == 'ubuntu-24.04'
         run: |
           sudo apt-get update -y
           wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
@@ -63,7 +63,7 @@ jobs:
           sudo apt install vulkan-sdk
       
       - name: Install Vulkan SDK
-        if: runner.name == 'ubuntu-24.04-arm'
+        if: matrix.runner == 'ubuntu-24.04-arm'
         uses: jakoch/install-vulkan-sdk-action@v1
         with:
           # You can set the Vulkan SDK version to download.
