@@ -83,6 +83,7 @@ jobs:
       - name: Check Installation
         if: matrix.runner == 'ubuntu-24.04-arm'
         run: |
+          echo "${{ github.workspace }}/${{ env.VULKAN_VERSION }}.0/aarch64/bin" >> $GITHUB_PATH
           which glslc
 
       - name: Install GLFW + build system dependencies
