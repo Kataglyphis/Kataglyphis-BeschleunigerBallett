@@ -40,7 +40,7 @@ jobs:
         run: |
           choco install llvm --version="${{ env.CLANG_VERSION }}" --params="'/AddToPath'" -y
           choco install sccache
-          winget install --accept-source-agreements --accept-package-agreements cmake cppcheck
+          winget install --accept-source-agreements --accept-package-agreements cmake cppcheck nsis
           winget install --accept-source-agreements --accept-package-agreements --id=KhronosGroup.VulkanSDK -v "${{ env.VULKAN_VERSION }}" -e
           # ls "C:\VulkanSDK"
 
