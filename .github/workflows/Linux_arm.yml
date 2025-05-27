@@ -1,0 +1,13 @@
+name: Linux build + test + coverage on Ubuntu ARM
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build-arm:
+    uses: ./.github/workflows/Linux.yml
+    with:
+      runner: ubuntu-24.04-arm

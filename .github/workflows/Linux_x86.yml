@@ -1,0 +1,13 @@
+name: Linux build + test + coverage on Ubuntu x86
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build-x64:
+    uses: ./.github/workflows/Linux.yml
+    with:
+      runner: ubuntu-24.04
