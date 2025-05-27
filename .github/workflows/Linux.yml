@@ -7,7 +7,6 @@ on:
     branches: [main, develop]
 
 env:
-  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Debug
   VULKAN_VERSION: 1.3.296
 
@@ -25,32 +24,20 @@ jobs:
 
       - name: Install latest CMake
         run: |
-          # 1. Remove any manually installed CMake binary
           which cmake
           sudo rm -f /usr/local/bin/cmake
-          # Remove any existing CMake to avoid conflicts
-          sudo apt-get purge --auto-remove -y cmake        # recommended to ensure a clean install
-
-          # Prepare for adding the Kitware APT repository
-          sudo apt-get update                              # refresh package index
-          sudo apt-get install -y wget gpg lsb-release ca-certificates  # prerequisites for secure APT repos
-
-          # Import Kitware’s signing key and add the “noble” repo
+          sudo apt-get purge --auto-remove -y cmake
+          sudo apt-get update
+          sudo apt-get install -y wget gpg lsb-release ca-certificates
           wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc \
             | gpg --dearmor \
             | sudo tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
           echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] \
             https://apt.kitware.com/ubuntu/ noble main" \
-            | sudo tee /etc/apt/sources.list.d/kitware.list >/dev/null  # Ubuntu 24.04 support confirmed
-
-          # Install the newest CMake available from Kitware
-          sudo apt-get update                              # pick up the new repository:contentReference
-          sudo apt-get install -y cmake                     # installs the latest upstream release:contentReference
-
-          # 5. Add the APT-installed CMake directory to PATH
-          echo "/usr/bin" >> $GITHUB_PATH                          # prepend /usr/bin so 'cmake' resolves to the APT version :contentReference
-            
-          # Verify the installation
+            | sudo tee /etc/apt/sources.list.d/kitware.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y cmake
+          echo "/usr/bin" >> $GITHUB_PATH
           cmake --version
 
       - name: Install Vulkan on x64
@@ -58,16 +45,24 @@ jobs:
         run: |
           sudo apt-get update -y
           wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
-          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.4.313-noble.list https://packages.lunarg.com/vulkan/1.4.313/lunarg-vulkan-1.4.313-noble.list
+          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-${{ env.VULKAN_VERSION }}-noble.list https://packages.lunarg.com/vulkan/${{ env.VULKAN_VERSION }}/lunarg-vulkan-${{ env.VULKAN_VERSION }}-noble.list
           sudo apt update
           sudo apt install vulkan-sdk
 
       - name: Install Vulkan SDK on ARM
         if: matrix.runner == 'ubuntu-24.04-arm'
         run: |
-          wget https://sdk.lunarg.com/sdk/download/1.3.296.0/linux/vulkansdk-linux-x86_64-1.3.296.0.tar.xz
-          tar -xf vulkansdk-linux-x86_64-1.3.296.0.tar.xz
-          cd 1.3.296.0
+          # https://vulkan.lunarg.com/doc/sdk/1.4.313.0/linux/getting_started.html
+          sudo apt install -y xz-utils
+          sudo apt-get install -y libglm-dev cmake libxcb-dri3-0 libxcb-present0 libpciaccess0 \
+            libpng-dev libxcb-keysyms1-dev libxcb-dri3-dev libx11-dev g++ gcc \
+            libwayland-dev libxrandr-dev libxcb-randr0-dev libxcb-ewmh-dev \
+            git python-is-python3 bison libx11-xcb-dev liblz4-dev libzstd-dev \
+            ocaml-core ninja-build pkg-config libxml2-dev wayland-protocols python3-jsonschema \
+            clang-format qtbase5-dev qt6-base-dev
+          wget https://sdk.lunarg.com/sdk/download/${{ env.VULKAN_VERSION }}.0/linux/vulkansdk-linux-x86_64-${{ env.VULKAN_VERSION }}.0.tar.xz
+          tar -xf vulkansdk-linux-x86_64-${{ env.VULKAN_VERSION }}.0.tar.xz
+          cd ${{ env.VULKAN_VERSION }}.0
           chmod +x vulkansdk 
           ./vulkansdk -j $(nproc) \
             glslang \
@@ -88,7 +83,6 @@ jobs:
       - name: Check Installation
         if: matrix.runner == 'ubuntu-24.04-arm'
         run: |
-          "$VULKAN_SDK/bin/glslc"
           which glslc
 
       - name: Install GLFW + build system dependencies
@@ -123,15 +117,11 @@ jobs:
         run: sudo apt-get install clang llvm
 
       - name: Make directory
-        # Configure CMake in a 'build' subdirectory. `CMAKE_BUILD_TYPE` is only required if you are using a single-configuration generator such as make.
-        # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
-        # cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DGLFW_USE_OSMESA=ON
         run: |
           rm -rf build
           mkdir build
 
       - name: Build
-        # Build your program with the given configuration
         run: |
           cd build
           cmake --preset linux-debug-clang ..
@@ -139,30 +129,13 @@ jobs:
 
       - name: Test
         working-directory: ${{github.workspace}}/build/
-        # Execute tests defined by the CMake configuration.
-        # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
         run: ctest -C ${{env.BUILD_TYPE}} --verbose --extra-verbose --debug -T test --output-on-failure -E Integration.VulkanEngine RendererTest.BasicSetup
+
       - name: Build Code Coverage
         run: |
           llvm-profdata merge -sparse ${{github.workspace}}/build/Test/compile/default.profraw -o ${{github.workspace}}/build/compileTestSuite.profdata
           llvm-cov report ${{github.workspace}}/build/compileTestSuite -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata
           llvm-cov export ${{github.workspace}}/build/compileTestSuite -format=text -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata > ${{github.workspace}}/build/coverage.json
-      # - name: Run profiling
-      #   run: |
-      #     cd build
-      #     LLVM_PROFILE_FILE="${{github.workspace}}/build/engine.profraw" ./GraphicsEngine
-      #     llvm-profdata merge -sparse ${{github.workspace}}/build/engine.profraw -o ${{github.workspace}}/build/engine.profdata
-      #     llvm-cov show ./GraphicsEngine -instr-profile=${{github.workspace}}/build/engine.profdata -format=text
-
-      # - name: Prepare python env for sphynx
-      #   run: |
-      #     pip install -r requirements.txt
-      # - name: Create docs
-      #   run: |
-      #     cd ${{github.workspace}}
-      #     doxygen Doxyfile
-      #     cd docs
-      #     make html
 
       - name: 📂 Sync files to dev domain
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -175,9 +148,8 @@ jobs:
       - name: Codecov
         uses: codecov/codecov-action@v4.6.0
         with:
-          token: ${{ secrets.CODECOV_TOKEN }} # not required for public repos
-          files: ${{github.workspace}}/build/coverage.json # optional
-          #flags: unittests # optional
-          name: codecov-umbrella # optional
-          fail_ci_if_error: false # optional (default = false)
-          verbose: false # optional (default = false)
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{github.workspace}}/build/coverage.json
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          verbose: false
