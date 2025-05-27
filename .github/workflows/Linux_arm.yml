@@ -1,4 +1,4 @@
-name: Linux build + test + coverage on Ubuntu ARM
+name: Linux build + test + coverage on Ubuntu 24.04 ARM
 
 on:
   push:

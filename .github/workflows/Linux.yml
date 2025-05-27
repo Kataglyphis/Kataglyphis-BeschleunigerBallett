@@ -145,6 +145,7 @@ jobs:
           llvm-cov export ${{github.workspace}}/build/compileTestSuite -format=text -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata > ${{github.workspace}}/build/coverage.json
 
       - name: 📂 Sync files to dev domain
+        if: inputs.runner == 'ubuntu-24.04'
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.SERVER }}
@@ -153,6 +154,7 @@ jobs:
           local-dir: "./build/build/html/"
 
       - name: Codecov
+        if: inputs.runner == 'ubuntu-24.04'
         uses: codecov/codecov-action@v4.6.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
