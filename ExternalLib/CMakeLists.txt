@@ -30,21 +30,15 @@ add_subdirectory(GOOGLE_BENCHMARK)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   message(STATUS "This is a Linux system.")
-  # Detect target architecture
-  string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" TARGET_ARCH)
-  message(STATUS "Detected architecture: ${TARGET_ARCH}")
 
-  # Check if not ARM
-  if(NOT TARGET_ARCH MATCHES "^(arm|aarch64)")
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
-      
-      message("Adding Fuzztest")
-      add_subdirectory(FUZZTEST)
-      if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
-        set(FUZZTEST_FUZZING_MODE
-            ON
-            CACHE BOOL "" FORCE)
-      endif()
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+
+    message("Adding Fuzztest")
+    add_subdirectory(FUZZTEST)
+    if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+      set(FUZZTEST_FUZZING_MODE
+          ON
+          CACHE BOOL "" FORCE)
     endif()
   endif()
 endif()
@@ -124,33 +118,26 @@ add_library(GLAD OBJECT ${GLAD_FILTER})
 
 target_link_libraries(GLAD PRIVATE ${OPENGL_LIBRARIES})
 
-target_include_directories(GLAD    PRIVATE GLAD/include
-                                            ${OPENGL_INCLUDE_DIRS})
+target_include_directories(GLAD PRIVATE GLAD/include ${OPENGL_INCLUDE_DIRS})
 
-set_target_properties(
-    GLAD
-    PROPERTIES
-    CXX_CLANG_TIDY ""
-    CXX_CPPCHECK ""
-)
+set_target_properties(GLAD PROPERTIES CXX_CLANG_TIDY "" CXX_CPPCHECK "")
 
 if(RUST_FEATURES)
   FetchContent_Declare(
-      Corrosion
-      GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-      GIT_TAG master
-  )
+    Corrosion
+    GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+    GIT_TAG master)
   FetchContent_MakeAvailable(Corrosion)
 
   find_program(CXXBRIDGE cxxbridge PATHS "$ENV{HOME}/.cargo/bin/")
-  if (CXXBRIDGE STREQUAL "CXXBRIDGE-NOTFOUND")
-      message("Could not find cxxbridge, trying to install with `cargo install cxxbridge-cmd'")
-      find_program(CARGO cargo PATHS "$ENV{HOME}/.cargo/bin/")
-      if (CARGO STREQUAL "CARGO-NOTFOUND")
-          message(FATAL_ERROR "Requires cargo available in path, install via rustup https://rustup.rs/")
-      endif()
-      execute_process(COMMAND ${CARGO} install cxxbridge-cmd)
-      find_program(CXXBRIDGE cxxbridge PATHS "$ENV{HOME}/.cargo/bin/")
+  if(CXXBRIDGE STREQUAL "CXXBRIDGE-NOTFOUND")
+    message("Could not find cxxbridge, trying to install with `cargo install cxxbridge-cmd'")
+    find_program(CARGO cargo PATHS "$ENV{HOME}/.cargo/bin/")
+    if(CARGO STREQUAL "CARGO-NOTFOUND")
+      message(FATAL_ERROR "Requires cargo available in path, install via rustup https://rustup.rs/")
+    endif()
+    execute_process(COMMAND ${CARGO} install cxxbridge-cmd)
+    find_program(CXXBRIDGE cxxbridge PATHS "$ENV{HOME}/.cargo/bin/")
   endif()
 endif()
 
@@ -159,7 +146,7 @@ set(KOMPUTE_OPT_BUILD_TESTS OFF)
 set(KOMPUTE_OPT_USE_VULKAN_VERSION "1.3.296.0")
 set(KOMPUTE_OPT_DISABLE_VULKAN_VERSION_CHECK ON)
 
-if (MSVC)
-    add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+if(MSVC)
+  add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 endif()
 add_subdirectory(KOMPUTE)

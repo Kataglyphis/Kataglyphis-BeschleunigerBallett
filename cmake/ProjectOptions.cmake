@@ -20,13 +20,14 @@ macro(myproject_setup_options)
   option(myproject_ENABLE_COVERAGE "Enable coverage reporting" ON)
   option(myproject_DISABLE_EXCEPTIONS "Disable C++ exceptions" ON)
   option(myproject_ENABLE_GPROF "Enable profiling with gprof (adds -pg flags)" ON)
-
-  cmake_dependent_option(
-    myproject_ENABLE_GLOBAL_HARDENING
-    "Attempt to push hardening options to built dependencies"
-    OFF
-    myproject_ENABLE_HARDENING
-    OFF)
+  option(myproject_ENABLE_GLOBAL_HARDENING "Enable global hardening" OFF)
+  # turn off for avoiding potential conflicts with dependencies
+  # cmake_dependent_option(
+  #   myproject_ENABLE_GLOBAL_HARDENING
+  #   "Attempt to push hardening options to built dependencies"
+  #   OFF
+  #   myproject_ENABLE_HARDENING
+  #   OFF)
 
   myproject_supports_sanitizers()
 
@@ -94,8 +95,8 @@ macro(myproject_global_options)
 
   # set build type specific flags
   if(MSVC)
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /DEBUG /Od /std:c++23")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /std:c++23")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /DEBUG /Od /std:c++23preview")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /std:c++23preview")
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # https://gcc.gnu.org/onlinedocs/gcc/Debugging-Options.html
     # https://gcc.gnu.org/onlinedocs/gcc/Option-Summary.html
@@ -137,6 +138,7 @@ macro(myproject_global_options)
     else()
       set(ENABLE_UBSAN_MINIMAL_RUNTIME TRUE)
     endif()
+    set(ENABLE_UBSAN_MINIMAL_RUNTIME FALSE)
     message("${myproject_ENABLE_HARDENING} ${ENABLE_UBSAN_MINIMAL_RUNTIME} ${myproject_ENABLE_SANITIZER_UNDEFINED}")
     myproject_enable_hardening(myproject_options ON ${ENABLE_UBSAN_MINIMAL_RUNTIME})
   endif()
@@ -163,12 +165,9 @@ macro(myproject_local_options)
 
   # Only when building with -DCMAKE_BUILD_TYPE=Profile,
   # with GCC or Clang on non-Windows hosts:
-  if (
-    CMAKE_BUILD_TYPE STREQUAL "Profile"
-    AND (CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
-        OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    AND NOT WIN32
-  )
+  if(CMAKE_BUILD_TYPE STREQUAL "Profile"
+     AND (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+     AND NOT WIN32)
 
     message(STATUS "Enabling gprof profiling")
     target_compile_options(myproject_options INTERFACE -pg)
@@ -177,20 +176,20 @@ macro(myproject_local_options)
   elseif(myproject_ENABLE_GPROF)
 
     message(INFO "GProf should only be used in conjuction with GCC GNU/Clang and not on Windows.")
-    
+
   endif()
 
   if(myproject_DISABLE_EXCEPTIONS)
     if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
       target_compile_options(myproject_options INTERFACE /EHs-) # Disable exceptions
     elseif(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-		if(CLANG_VERSION MATCHES "clang-cl")
-			message(STATUS "Using clang-cl and disable exceptions with /GX-")
-			target_compile_options(myproject_options INTERFACE /GX-) # Disable exceptions
-		else()
-			message(STATUS "Using clang and disable exceptions with -fno-exceptions")
-			target_compile_options(myproject_options INTERFACE -fno-exceptions)
-		endif()
+      if(CLANG_VERSION MATCHES "clang-cl")
+        message(STATUS "Using clang-cl and disable exceptions with /GX-")
+        target_compile_options(myproject_options INTERFACE /GX-) # Disable exceptions
+      else()
+        message(STATUS "Using clang and disable exceptions with -fno-exceptions")
+        target_compile_options(myproject_options INTERFACE -fno-exceptions)
+      endif()
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
       target_compile_options(myproject_options INTERFACE -fno-exceptions)
     else()
@@ -263,6 +262,7 @@ macro(myproject_local_options)
     else()
       set(ENABLE_UBSAN_MINIMAL_RUNTIME TRUE)
     endif()
+    set(ENABLE_UBSAN_MINIMAL_RUNTIME FALSE)
     myproject_enable_hardening(myproject_options OFF ${ENABLE_UBSAN_MINIMAL_RUNTIME})
   endif()
 
