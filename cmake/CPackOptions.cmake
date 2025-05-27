@@ -1,3 +1,5 @@
+include(InstallRequiredSystemLibraries)
+
 set(CPACK_PACKAGE_NAME "${PROJECT_NAME}")
 # Experience shows that explicit package naming can help make it easier to sort
 # out potential ABI related issues before they start, while helping you
@@ -49,3 +51,5 @@ if(MSVC)
 else()
   set(CPACK_SOURCE_GENERATOR "TGZ")
 endif()
+
+include(CPack)

@@ -162,3 +162,16 @@ jobs:
           name: codecov-umbrella
           fail_ci_if_error: false
           verbose: false
+
+      - name: Configure CMake for Release
+        run: |
+          cmake -B build-release --preset linux-release-clang
+
+      - name: Build Release
+        run: |
+          export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
+          cmake --build build-release --config Release
+
+      - name: Package
+        run: |
+          cmake --build build-release --target package
