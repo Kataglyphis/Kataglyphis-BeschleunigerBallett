@@ -6,6 +6,15 @@ on:
       runner:
         required: true
         type: string
+    secrets:
+      SERVER:
+        required: true
+      USERNAME:
+        required: true
+      PW:
+        required: true
+      CODECOV_TOKEN:
+        required: true
 
 env:
   BUILD_TYPE: Debug
@@ -77,7 +86,7 @@ jobs:
             vul \
             slang          
           echo "${{ github.workspace }}/${{ env.VULKAN_VERSION }}.0/aarch64/bin" >> $GITHUB_PATH
-      
+
       - name: Check Installation
         if: inputs.runner == 'ubuntu-24.04-arm'
         run: |

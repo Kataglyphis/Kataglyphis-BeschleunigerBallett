@@ -11,3 +11,8 @@ jobs:
     uses: ./.github/workflows/Linux.yml
     with:
       runner: ubuntu-24.04-arm
+    secrets:
+      SERVER: ${{ secrets.SERVER }}
+      USERNAME: ${{ secrets.USERNAME }}
+      PW: ${{ secrets.PW }}
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
