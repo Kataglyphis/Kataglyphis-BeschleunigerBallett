@@ -19,8 +19,9 @@ for learning various best practices in Graphic APIs, CMake, Rust, ...<a href="ht
 
 (see also [**__Official homepage__**](https://kataglyphisrenderer.jonasheinle.de))
 
-[![Linux build + tests + code coverage](https://github.com/Kataglyphis/GraphicsEngineVulkan/actions/workflows/Linux.yml/badge.svg)](https://github.com/Kataglyphis/GraphicsEngineVulkan/actions/workflows/Linux.yml)
-[![Windows build](https://github.com/Kataglyphis/GraphicsEngineVulkan/actions/workflows/Windows.yml/badge.svg)](https://github.com/Kataglyphis/GraphicsEngineVulkan/actions/workflows/Windows.yml)
+[![Linux build + test + coverage on Ubuntu 24.04 ARM](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_arm.yml/badge.svg?branch=main)](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_arm.yml)
+[![Linux build + test + coverage on Ubuntu 24.04 x86](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_x86.yml/badge.svg)](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_x86.yml)
+[![Windows Server 2025 build x86 MSVC and Clang](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Windows.yml/badge.svg)](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Windows.yml)
 [![TopLang](https://img.shields.io/github/languages/top/Kataglyphis/Kataglyphis-Renderer)]()
 [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/donate/?hosted_button_id=BX9AVVES2P9LN)
 [![Twitter](https://img.shields.io/twitter/follow/Cataglyphis_?style=social)](https://twitter.com/Cataglyphis_)
@@ -92,14 +93,15 @@ This project provides me a solid Vulkan/OpenGL renderer starting point for imple
 modern established rendering techniques and getting quickly started in own research topics.  
 As this project evolved it gained additional functionality:
 
-* collecting/using CMake best practices
+* collecting/using [CMake best practices](https://github.com/Kataglyphis/Kataglyphis-CMakeTemplate)
 * collecting/using C++ best practices and testing new lang features :blush:
 * collecting experience in fuzzy/benchmark testing in C++
 * collecting experience in integrating :love_letter: Rust :love_letter: code in Cmake projects
 
 Frequently tested under   
-* [latest windows and ubuntu version]
-* [GCC/CLANG/MSVC/CLANG-CL] 
+* windows server 2025 x64 *__Clang 20.1.0__* and *__MSVC__*
+* ubuntu 24.04 x64 *__Clang 18.1.3__*
+* ubuntu 24.04 ARM *__Clang 18.1.3__*
 
 ### Key Features
 
@@ -114,7 +116,6 @@ Frequently tested under
 |                               | PBR support (UE4, Disney, etc.)               |         ✔️         |
 |                               | .obj Model loading                            |         ✔️         |
 |                               | Mip Mapping                                   |         ✔️         |
-|  **OpenGL Render agnostic**   |                                               |                    |
 |  **OpenGL Render agnostic**   |                                               |                    |
 |                               | Directional Lights                            |         ✔️         |
 |                               | Point Lights                                  |         ✔️         |
@@ -131,9 +132,9 @@ Frequently tested under
 |                               | Supporting compute shader                     |         ✔️         |
 |                               | On the fly 3D worley/perlin noise creation    |         ✔️         |
 |      **C++/CMake agnostic**   | Code coverage for Clang                       |         ✔️         |
-|                               | Advanced unit testing                         |         🔶        |
-|                               | Advanced performance testing                  |         🔶        |
-|                               | Advanced fuzz testing                         |         🔶        |
+|                               | Advanced unit testing                         |         🔶         |
+|                               | Advanced performance testing                  |         🔶         |
+|                               | Advanced fuzz testing                         |         🔶         |
 
 </div>
 
@@ -141,7 +142,6 @@ Frequently tested under
 - ✔️ - completed  
 - 🔶 - in progress  
 - ❌ - not started
-
 
 
 ### Built With
@@ -186,9 +186,10 @@ Frequently tested under
 Dependencies to libraries are stated above.<br />
 C++23 or higher required.<br />
 C17 or higher required.<br />
-CMake 3.28.3 or higher required.<br />
+[CMake 4.0.2](https://cmake.org/download/) or higher required.<br />
 
 #### Optional
+
 * [Rust](https://www.rust-lang.org/)
 * [corrision-rs](https://github.com/corrosion-rs/corrosion)
 * [cxx](https://cxx.rs/)

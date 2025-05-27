@@ -9,7 +9,7 @@ include(cmake/filters/SetProjectFilters.cmake)
 include(cmake/SetSourceGroups.cmake)
 include(cmake/filters/SetExternalLibsFilters.cmake)
 
-file(GLOB_RECURSE VULKANRENDERER_SOURCES "*.cpp" "*.hpp")
+file(GLOB_RECURSE VULKANRENDERER_SOURCES "*.cpp")
 
 file(
   GLOB_RECURSE SHADER_HEADERS
@@ -123,13 +123,7 @@ target_link_libraries(
          myproject_warnings
          # enable sanitizers
          myproject_options
-  PRIVATE GSL spdlog::spdlog nlohmann_json::nlohmann_json rusty_bridge)
-
-if(RUST_FEATURES)
-target_link_libraries(
-  ${PROJECT_NAME}
-  PRIVATE rusty_bridge)
-endif()
+  PRIVATE GSL spdlog::spdlog nlohmann_json::nlohmann_json)
 
 if(RUST_FEATURES)
   target_link_libraries(${PROJECT_NAME} PUBLIC rusty_code)

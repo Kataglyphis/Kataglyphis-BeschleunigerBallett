@@ -28,3 +28,6 @@
 [submodule "ExternalLib/FUZZTEST"]
 	path = ExternalLib/FUZZTEST
 	url = https://github.com/google/fuzztest
+[submodule "ExternalLib/KOMPUTE"]
+	path = ExternalLib/KOMPUTE
+	url = https://github.com/KomputeProject/kompute.git
