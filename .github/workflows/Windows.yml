@@ -64,3 +64,17 @@ jobs:
           cmake -B ${{github.workspace}}/build --preset "x64-MSVC-Windows-CI" -Dmyproject_ENABLE_CPPCHECK="OFF"
           cmake --build ${{github.workspace}}/build
           ctest
+
+      - name: Configure CMake for Release (Clang only)
+        run: |
+          cmake -B build-release --preset "x64-Clang-Windows-Release"
+
+      - name: Build Release (Clang only)
+        shell: pwsh
+        run: |
+          $env:CMAKE_BUILD_PARALLEL_LEVEL = $env:NUMBER_OF_PROCESSORS
+          cmake --build build-release --config Release
+
+      - name: Package (Clang only)
+        run: |
+          cmake --build build-release --target package
