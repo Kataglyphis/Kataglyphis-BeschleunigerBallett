@@ -67,14 +67,14 @@ jobs:
 
       - name: Configure CMake for Release (Clang only)
         run: |
-          cmake -B build_release --preset "x64-Clang-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF"
+          cmake -B build-release --preset "x64-Clang-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF"
 
       - name: Build Release (Clang only)
         shell: pwsh
         run: |
           $env:CMAKE_BUILD_PARALLEL_LEVEL = $env:NUMBER_OF_PROCESSORS
-          cmake --build build_release --preset "x64-Clang-Windows-Release"
+          cmake --build build-release --preset "x64-Clang-Windows-Release"
 
       - name: Package (Clang only)
         run: |
-          cmake --build build_release --target package
+          cmake --build build-release --target package
