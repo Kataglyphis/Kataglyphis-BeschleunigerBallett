@@ -84,7 +84,9 @@ jobs:
             vma \
             vcv \
             vul \
-            slang          
+            slang
+          # DO NOT FORGET to source this script before running the app
+          # source ${{ env.VULKAN_VERSION }}.0/setup-env.sh
           echo "${{ github.workspace }}/${{ env.VULKAN_VERSION }}.0/aarch64/bin" >> $GITHUB_PATH
 
       - name: Check Installation
@@ -130,7 +132,7 @@ jobs:
 
       - name: Build
         run: |
-          cd build
+          cd buildsource ${{ env.VULKAN_VERSION }}.0/setup-env.sh
           cmake --preset linux-debug-clang ..
           cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
