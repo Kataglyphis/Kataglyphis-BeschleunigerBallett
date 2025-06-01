@@ -136,7 +136,7 @@ jobs:
           if [[ "$(uname -s)" == "Linux" ]] && [[ "$(uname -m)" == "aarch64" ]]; then
             source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}.0/setup-env.sh"
           fi
-          cmake --preset linux-debug-clang ..
+          cmake -B build --preset linux-debug-clang
           cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
       - name: Test
@@ -149,14 +149,29 @@ jobs:
           llvm-cov report ${{github.workspace}}/build/compileTestSuite -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata
           llvm-cov export ${{github.workspace}}/build/compileTestSuite -format=text -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata > ${{github.workspace}}/build/coverage.json
 
-      - name: 📂 Sync files to dev domain
-        if: inputs.runner == 'ubuntu-24.04'
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5.3.0
+        with:
+          python-version: "3.11"
+      # You can test your matrix by printing the current Python version
+      - name: Setup python env
+        run: |
+          pip install -v -e .
+          pip install -r requirements.txt
+
+      - name: Build web page
+        run: |
+          cd docs
+          make html
+      
+      - name: 📂 Sync files to domain
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        if: inputs.runner == 'ubuntu-24.04'
         with:
           server: ${{ secrets.SERVER }}
           username: ${{ secrets.USERNAME }}
-          password: ${{ secrets.PW }}
-          local-dir: "./build/build/html/"
+          password: ${{ secrets.PASSWORD }}
+          local-dir: "./docs/build/html/"
 
       - name: Codecov
         if: inputs.runner == 'ubuntu-24.04'
