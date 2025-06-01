@@ -1,0 +1,6 @@
+sphinx
+sphinx-press-theme
+myst-parser
+pyyaml
+cmake-format
+breathe
