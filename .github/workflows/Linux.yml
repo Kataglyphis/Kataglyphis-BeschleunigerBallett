@@ -132,7 +132,10 @@ jobs:
 
       - name: Build
         run: |
-          cd buildsource ${{ env.VULKAN_VERSION }}.0/setup-env.sh
+          # Only source if we're on Ubuntu ARM64
+          if [[ "$(uname -s)" == "Linux" ]] && [[ "$(uname -m)" == "aarch64" ]]; then
+            source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}.0/setup-env.sh"
+          fi
           cmake --preset linux-debug-clang ..
           cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
