@@ -157,7 +157,6 @@ jobs:
       - name: Setup python env
         run: |
           pip install -v -e .
-          pip install -r requirements.txt
 
       - name: Build web page
         run: |
