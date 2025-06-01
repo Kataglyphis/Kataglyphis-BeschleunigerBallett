@@ -4,4 +4,4 @@ myst-parser
 pyyaml
 cmake-format
 breathe
-exhile
+exhale
