@@ -14,7 +14,15 @@ release = "1.3"
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ["breathe","myst_parser"]
+extensions = ["breathe","myst_parser","exhile"]
+
+exhale_args = {
+    "containmentFolder": "./api",
+    "rootFileName": "library_root.rst",
+    "rootFileTitle": "Library API",
+    "doxygenStripFromPath": "../..",
+    "createTreeView": True,
+}
 
 myst_enable_extensions = [
     "dollarmath",  # Enables dollar-based math syntax
