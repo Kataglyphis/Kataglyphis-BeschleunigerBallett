@@ -32,7 +32,7 @@ myst_enable_extensions = [
 ]
 
 breathe_projects = {
-    "Kataglyphis-Renderer": "../../build/xml"
+    "Kataglyphis-Renderer": "../../build/build/xml"
 }
 breathe_default_project = "Kataglyphis-Renderer"
 
