@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Site BuildName="(empty)"
+	BuildStamp="20250602-0529-Experimental"
+	Name="(empty)"
+	Generator="ctest-4.0.2"
+	CompilerName=""
+	CompilerVersion=""
+	OSName="Linux"
+	Hostname="IPA-WN-023IT309"
+	OSRelease="5.15.167.4-microsoft-standard-WSL2"
+	OSVersion="#1 SMP Tue Nov 5 00:21:55 UTC 2024"
+	OSPlatform="x86_64"
+	Is64Bits="1"
+	VendorString="GenuineIntel"
+	VendorID="Intel Corporation"
+	FamilyID="6"
+	ModelID="191"
+	ModelName="13th Gen Intel(R) Core(TM) i7-13700HX"
+	ProcessorCacheSize="30720"
+	NumberOfLogicalCPU="24"
+	NumberOfPhysicalCPU="12"
+	TotalVirtualMemory="4096"
+	TotalPhysicalMemory="15831"
+	LogicalProcessorsPerPhysical="2"
+	ProcessorClockFrequency="2304.01"
+	>
+	<Testing>
+		<StartDateTime>Jun 02 07:29 CEST</StartDateTime>
+		<StartTestTime>1748842142</StartTestTime>
+		<TestList/>
+		<EndDateTime>Jun 02 07:29 CEST</EndDateTime>
+		<EndTestTime>1748842142</EndTestTime>
+		<ElapsedMinutes>0</ElapsedMinutes>
+	</Testing>
+</Site>

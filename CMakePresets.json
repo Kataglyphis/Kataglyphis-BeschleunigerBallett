@@ -482,6 +482,11 @@
 			"jobs": 0,
 			"configurePreset": "linux-debug-clang"
 		},
+    {
+			"name": "linux-debug-clang",
+			"jobs": 0,
+			"configurePreset": "linux-debug-clang"
+		},
 		{
 			"name": "linux-debug-GNU",
 			"jobs": 0,

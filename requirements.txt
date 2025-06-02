@@ -5,3 +5,4 @@ pyyaml
 cmake-format
 breathe
 exhale
+sphinx_design

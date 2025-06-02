@@ -14,7 +14,14 @@ release = "1.3"
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = ["breathe","myst_parser","exhale"]
+extensions = [
+    "breathe",
+    "myst_parser",
+    "exhale",
+    "sphinx_design",
+    "sphinx.ext.graphviz",
+    "sphinx.ext.inheritance_diagram",
+]
 
 exhale_args = {
     "containmentFolder": "./api",
@@ -22,6 +29,8 @@ exhale_args = {
     "rootFileTitle": "Library API",
     "doxygenStripFromPath": "../..",
     "createTreeView": True,
+    "contentsDirectives": True,  # Allows nested folder-like structure
+    "exhaleExecutesDoxygen": False,  # (optional) if you already run Doxygen manually
 }
 
 myst_enable_extensions = [
@@ -31,14 +40,11 @@ myst_enable_extensions = [
     "deflist",  # Enables definition lists
 ]
 
-breathe_projects = {
-    "Kataglyphis-Renderer": "../../build/build/xml"
-}
+breathe_projects = {"Kataglyphis-Renderer": "../../build/build/xml"}
 breathe_default_project = "Kataglyphis-Renderer"
 
 templates_path = ["_templates"]
 exclude_patterns = []
-
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
@@ -51,3 +57,5 @@ html_theme_options = {
 html_static_path = ["_static"]
 # Here we assume that the file is at _static/css/custom.css
 html_css_files = ["css/custom.css"]
+
+graphviz_output_format = "svg"

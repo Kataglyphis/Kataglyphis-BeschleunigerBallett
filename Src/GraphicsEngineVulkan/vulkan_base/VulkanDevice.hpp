@@ -7,11 +7,28 @@
 #include "renderer/SwapChainDetails.hpp"
 #include "vulkan_base/VulkanInstance.hpp"
 
+/**
+ * @brief Handles Vulkan device creation and management.
+ *
+ * This class is responsible for selecting a physical device, creating the logical device,
+ * retrieving queues, and querying swapchain details and hardware capabilities.
+ */
 class VulkanDevice
 {
   public:
+    /**
+     * @brief Constructs a VulkanDevice object.
+     *
+     * @param instance Pointer to the VulkanInstance.
+     * @param surface Pointer to the Vulkan surface used for presentation.
+     */
     VulkanDevice(VulkanInstance *instance, VkSurfaceKHR *surface);
 
+    /**
+     * @brief Returns properties of the selected physical device.
+     *
+     * @return VkPhysicalDeviceProperties containing device details.
+     */
     VkPhysicalDeviceProperties getPhysicalDeviceProperties() { return device_properties; };
     VkPhysicalDevice getPhysicalDevice() const { return physical_device; };
     VkDevice getLogicalDevice() const { return logical_device; };
@@ -76,5 +93,4 @@ class VulkanDevice
         VK_KHR_RAY_QUERY_EXTENSION_NAME
 
     };
-
 };
