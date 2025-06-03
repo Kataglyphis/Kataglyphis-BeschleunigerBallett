@@ -3,10 +3,10 @@
 #include <string.h>
 
 #include "common/Utilities.hpp"
+#include "spdlog/spdlog.h"
 #include <set>
 #include <stdexcept>
 #include <string>
-#include "spdlog/spdlog.h"
 
 VulkanDevice::VulkanDevice(VulkanInstance *instance, VkSurfaceKHR *surface)
 {
@@ -187,26 +187,24 @@ void VulkanDevice::create_logical_device()
     vkEnumerateDeviceExtensionProperties(physical_device, nullptr, &extensionCount, availableExtensions.data());
 
     // Helper function to check if an extension is supported
-    auto isExtensionSupported = [&availableExtensions](const char* extensionName) {
-        for (const auto& ext : availableExtensions) {
-            if (strcmp(ext.extensionName, extensionName) == 0) {
-                return true;
-            }
+    auto isExtensionSupported = [&availableExtensions](const char *extensionName) {
+        for (const auto &ext : availableExtensions) {
+            if (strcmp(ext.extensionName, extensionName) == 0) { return true; }
         }
         return false;
     };
 
-    for (const char* extensionName : device_extensions_for_raytracing) {
+    for (const char *extensionName : device_extensions_for_raytracing) {
         if (!isExtensionSupported(extensionName)) {
             deviceSupportsHardwareAcceleratedRRT = false;
-            spdlog::info("Required extension not supported: {}",  extensionName);
+            spdlog::info("Required extension not supported: {}", extensionName);
         }
     }
 
     if (deviceSupportsHardwareAcceleratedRRT) {
         // COPY ALL NECESSARY EXTENSIONS FOR RAYTRACING TO THE EXTENSION
         extensions.insert(
-        extensions.begin(), device_extensions_for_raytracing.begin(), device_extensions_for_raytracing.end());
+          extensions.begin(), device_extensions_for_raytracing.begin(), device_extensions_for_raytracing.end());
     }
 
     // information to create logical device (sometimes called "device")
@@ -222,9 +220,7 @@ void VulkanDevice::create_logical_device()
     device_create_info.flags = 0;
     device_create_info.pEnabledFeatures = NULL;
 
-    if(deviceSupportsHardwareAcceleratedRRT) {
-        device_create_info.pNext = &features2;
-    }
+    if (deviceSupportsHardwareAcceleratedRRT) { device_create_info.pNext = &features2; }
 
     // create logical device for the given physical device
     VkResult result = vkCreateDevice(physical_device, &device_create_info, nullptr, &logical_device);

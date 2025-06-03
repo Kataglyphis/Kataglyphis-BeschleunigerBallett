@@ -35,9 +35,7 @@ std::vector<char> File::readCharSequence()
     std::ifstream file(file_location, std::ios::binary | std::ios::ate);
 
     // check if file stream sucessfully opened
-    if (!file.is_open()) { 
-        spdlog::error("Failed to open a file on location: {}!", file_location); 
-    }
+    if (!file.is_open()) { spdlog::error("Failed to open a file on location: {}!", file_location); }
 
     size_t file_size = (size_t)file.tellg();
     std::vector<char> file_buffer(file_size);

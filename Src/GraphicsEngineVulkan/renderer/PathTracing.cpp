@@ -7,8 +7,8 @@
 #include "util/File.hpp"
 #include "vulkan_base/ShaderHelper.hpp"
 
-#include "renderer/VulkanRendererConfig.hpp"
 #include "common/Utilities.hpp"
+#include "renderer/VulkanRendererConfig.hpp"
 
 // Good source:
 // https://github.com/nvpro-samples/vk_mini_path_tracer/blob/main/vk_mini_path_tracer/main.cpp

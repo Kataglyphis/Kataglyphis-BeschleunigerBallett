@@ -1,17 +1,17 @@
 #pragma once
 
-#include "renderer/accelerationStructures/ASManager.hpp"
-#include "memory/Allocator.hpp"
-#include "renderer/CommandBufferManager.hpp"
-#include "gui/GUI.hpp"
 #include "GlobalUBO.hpp"
 #include "PathTracing.hpp"
 #include "PostStage.hpp"
+#include "gui/GUI.hpp"
+#include "memory/Allocator.hpp"
+#include "renderer/CommandBufferManager.hpp"
+#include "renderer/accelerationStructures/ASManager.hpp"
 
 #include "Rasterizer.hpp"
 #include "Raytracing.hpp"
-#include "scene/Scene.hpp"
 #include "SceneUBO.hpp"
+#include "scene/Scene.hpp"
 #include "scene/Texture.hpp"
 
 #include "scene/Camera.hpp"
@@ -25,13 +25,16 @@
 class VulkanRenderer
 {
   public:
-    VulkanRenderer(Window *window, Scene *scene, GUI *gui, Camera *camera);
+    VulkanRenderer(KataglyphisRenderer::Frontend::Window *window,
+      Scene *scene,
+      KataglyphisRenderer::Frontend::GUI *gui,
+      Camera *camera);
 
     void drawFrame();
 
-    void updateUniforms(Scene *scene, Camera *camera, Window *window);
+    void updateUniforms(Scene *scene, Camera *camera, KataglyphisRenderer::Frontend::Window *window);
 
-    void updateStateDueToUserInput(GUI *gui);
+    void updateStateDueToUserInput(KataglyphisRenderer::Frontend::GUI *gui);
     void finishAllRenderCommands();
     void update_raytracing_descriptor_set(uint32_t image_index);
 
@@ -57,9 +60,9 @@ class VulkanRenderer
 
     VulkanSwapChain vulkanSwapChain;
 
-    Window *window;
+    KataglyphisRenderer::Frontend::Window *window;
     Scene *scene;
-    GUI *gui;
+    KataglyphisRenderer::Frontend::GUI *gui;
 
     // -- pools
     void record_commands(uint32_t image_index);

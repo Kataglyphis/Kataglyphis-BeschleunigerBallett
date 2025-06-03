@@ -1,4 +1,5 @@
 #pragma once
+namespace KataglyphisRenderer {
 class App
 {
   public:
@@ -10,3 +11,4 @@ class App
 
   private:
 };
+}// namespace KataglyphisRenderer

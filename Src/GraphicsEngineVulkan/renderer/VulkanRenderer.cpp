@@ -1,10 +1,10 @@
 #include "renderer/VulkanRenderer.hpp"
 
-#include "scene/GUISceneSharedVars.hpp"
+#include "common/Utilities.hpp"
+#include "renderer/QueueFamilyIndices.hpp"
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 #include "renderer/pushConstants/PushConstantRayTracing.hpp"
-#include "renderer/QueueFamilyIndices.hpp"
-#include "common/Utilities.hpp"
+#include "scene/GUISceneSharedVars.hpp"
 
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
@@ -36,15 +36,18 @@
 
 #include <gsl/gsl>
 
-#include "util/File.hpp"
 #include "common/Globals.hpp"
 #include "renderer/pushConstants/PushConstantPost.hpp"
+#include "util/File.hpp"
 #include "vulkan_base/ShaderHelper.hpp"
 
 #include "renderer/VulkanRendererConfig.hpp"
 #include "vulkan_base/VulkanDebug.hpp"
 
-VulkanRenderer::VulkanRenderer(Window *window, Scene *scene, GUI *gui, Camera *camera)
+VulkanRenderer::VulkanRenderer(KataglyphisRenderer::Frontend::Window *window,
+  Scene *scene,
+  KataglyphisRenderer::Frontend::GUI *gui,
+  Camera *camera)
   :
 
     window(window), scene(scene), gui(gui)
@@ -52,67 +55,66 @@ VulkanRenderer::VulkanRenderer(Window *window, Scene *scene, GUI *gui, Camera *c
 {
     updateUniforms(scene, camera, window);
 
-        instance = VulkanInstance();
+    instance = VulkanInstance();
 
-        VkDebugReportFlagsEXT debugReportFlags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT;
-        if (ENABLE_VALIDATION_LAYERS)
-            debug::setupDebugging(instance.getVulkanInstance(), debugReportFlags, VK_NULL_HANDLE);
+    VkDebugReportFlagsEXT debugReportFlags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT;
+    if (ENABLE_VALIDATION_LAYERS) debug::setupDebugging(instance.getVulkanInstance(), debugReportFlags, VK_NULL_HANDLE);
 
-        create_surface();
+    create_surface();
 
-        device = std::make_unique<VulkanDevice>(&instance, &surface);
+    device = std::make_unique<VulkanDevice>(&instance, &surface);
 
-        allocator = Allocator(device->getLogicalDevice(), device->getPhysicalDevice(), instance.getVulkanInstance());
+    allocator = Allocator(device->getLogicalDevice(), device->getPhysicalDevice(), instance.getVulkanInstance());
 
-        create_command_pool();
+    create_command_pool();
 
-        vulkanSwapChain.initVulkanContext(device.get(), window, surface);
-        create_uniform_buffers();
-        create_command_buffers();
+    vulkanSwapChain.initVulkanContext(device.get(), window, surface);
+    create_uniform_buffers();
+    create_command_buffers();
 
-        createSynchronization();
+    createSynchronization();
 
-        createSharedRenderDescriptorSetLayouts();
-        std::vector<VkDescriptorSetLayout> descriptor_set_layouts_rasterizer = { sharedRenderDescriptorSetLayout };
-        rasterizer.init(device.get(), &vulkanSwapChain, descriptor_set_layouts_rasterizer, graphics_command_pool);
-        create_post_descriptor_layout();
-        std::vector<VkDescriptorSetLayout> descriptor_set_layouts_post = { post_descriptor_set_layout };
-        postStage.init(device.get(), &vulkanSwapChain, descriptor_set_layouts_post);
-        createDescriptorPoolSharedRenderStages();
-        createSharedRenderDescriptorSet();
+    createSharedRenderDescriptorSetLayouts();
+    std::vector<VkDescriptorSetLayout> descriptor_set_layouts_rasterizer = { sharedRenderDescriptorSetLayout };
+    rasterizer.init(device.get(), &vulkanSwapChain, descriptor_set_layouts_rasterizer, graphics_command_pool);
+    create_post_descriptor_layout();
+    std::vector<VkDescriptorSetLayout> descriptor_set_layouts_post = { post_descriptor_set_layout };
+    postStage.init(device.get(), &vulkanSwapChain, descriptor_set_layouts_post);
+    createDescriptorPoolSharedRenderStages();
+    createSharedRenderDescriptorSet();
 
-        updatePostDescriptorSets();
+    updatePostDescriptorSets();
 
-        std::vector<VkDescriptorSetLayout> layouts;
-        layouts.push_back(sharedRenderDescriptorSetLayout);
-        if(device->supportsHardwareAcceleratedRRT()) {
-            createRaytracingDescriptorPool();
-            createRaytracingDescriptorSetLayouts();
-            layouts.push_back(raytracingDescriptorSetLayout);
-            raytracingStage.init(device.get(), layouts);
-            pathTracing.init(device.get(), layouts);
-        }
+    std::vector<VkDescriptorSetLayout> layouts;
+    layouts.push_back(sharedRenderDescriptorSetLayout);
+    if (device->supportsHardwareAcceleratedRRT()) {
+        createRaytracingDescriptorPool();
+        createRaytracingDescriptorSetLayouts();
+        layouts.push_back(raytracingDescriptorSetLayout);
+        raytracingStage.init(device.get(), layouts);
+        pathTracing.init(device.get(), layouts);
+    }
 
-        scene->loadModel(device.get(), graphics_command_pool);
-        updateTexturesInSharedRenderDescriptorSet();
+    scene->loadModel(device.get(), graphics_command_pool);
+    updateTexturesInSharedRenderDescriptorSet();
 
-        if(device->supportsHardwareAcceleratedRRT()) {
-            asManager.createASForScene(device.get(), graphics_command_pool, scene);
-        }
+    if (device->supportsHardwareAcceleratedRRT()) {
+        asManager.createASForScene(device.get(), graphics_command_pool, scene);
+    }
 
-        create_object_description_buffer();
+    create_object_description_buffer();
 
-        if(device->supportsHardwareAcceleratedRRT()) {
-            createRaytracingDescriptorSets();
-            updateRaytracingDescriptorSets();
-        }
+    if (device->supportsHardwareAcceleratedRRT()) {
+        createRaytracingDescriptorSets();
+        updateRaytracingDescriptorSets();
+    }
 
-        gui->initializeVulkanContext(
-          device.get(), instance.getVulkanInstance(), postStage.getRenderPass(), graphics_command_pool);
-        gui->setUserSelectionForRRT(device->supportsHardwareAcceleratedRRT());
+    gui->initializeVulkanContext(
+      device.get(), instance.getVulkanInstance(), postStage.getRenderPass(), graphics_command_pool);
+    gui->setUserSelectionForRRT(device->supportsHardwareAcceleratedRRT());
 }
 
-void VulkanRenderer::updateUniforms(Scene *scene, Camera *camera, Window *window)
+void VulkanRenderer::updateUniforms(Scene *scene, Camera *camera, KataglyphisRenderer::Frontend::Window *window)
 {
     const GUISceneSharedVars guiSceneSharedVars = scene->getGuiSceneSharedVars();
 
@@ -132,7 +134,7 @@ void VulkanRenderer::updateUniforms(Scene *scene, Camera *camera, Window *window
     sceneUBO.cam_pos = glm::vec4(camera->get_camera_position(), camera->get_fov());
 }
 
-void VulkanRenderer::updateStateDueToUserInput(GUI *gui)
+void VulkanRenderer::updateStateDueToUserInput(KataglyphisRenderer::Frontend::GUI *gui)
 {
     GUIRendererSharedVars &guiRendererSharedVars = gui->getGuiRendererSharedVars();
 
@@ -1106,9 +1108,7 @@ bool VulkanRenderer::checkChangedFramebufferSize()
         current_frame = 0;
 
         updatePostDescriptorSets();
-        if(device->supportsHardwareAcceleratedRRT()) {
-            updateRaytracingDescriptorSets();
-        }
+        if (device->supportsHardwareAcceleratedRRT()) { updateRaytracingDescriptorSets(); }
         window->reset_framebuffer_has_changed();
 
         return true;

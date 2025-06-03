@@ -6,7 +6,9 @@
 
 VulkanSwapChain::VulkanSwapChain() {}
 
-void VulkanSwapChain::initVulkanContext(VulkanDevice *device, Window *window, const VkSurfaceKHR &surface)
+void VulkanSwapChain::initVulkanContext(VulkanDevice *device,
+  KataglyphisRenderer::Frontend::Window *window,
+  const VkSurfaceKHR &surface)
 {
     this->device = device;
     this->window = window;

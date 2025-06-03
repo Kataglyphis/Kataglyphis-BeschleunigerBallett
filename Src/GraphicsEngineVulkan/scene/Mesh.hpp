@@ -2,8 +2,8 @@
 #include <glm/glm.hpp>
 #include <vector>
 
-#include "scene/ObjMaterial.hpp"
 #include "ObjectDescription.hpp"
+#include "scene/ObjMaterial.hpp"
 #include "scene/Vertex.hpp"
 #include "vulkan_base/VulkanBufferManager.hpp"
 

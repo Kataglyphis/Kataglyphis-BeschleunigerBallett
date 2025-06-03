@@ -7,6 +7,7 @@
 
 #include <stdexcept>
 
+using namespace KataglyphisRenderer::Frontend;
 // GLFW Callback functions
 static void onErrorCallback(int error, const char *description)
 {
@@ -47,9 +48,7 @@ int Window::initialize()
         return 1;
     }
 
-    if (!glfwVulkanSupported()) {
-        spdlog::error("No Vulkan Supported!");
-    }
+    if (!glfwVulkanSupported()) { spdlog::error("No Vulkan Supported!"); }
 
     // allow it to resize
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);

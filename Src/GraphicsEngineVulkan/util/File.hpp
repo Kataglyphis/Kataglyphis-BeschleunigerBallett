@@ -22,4 +22,4 @@ class File
     std::string file_location;
 };
 
-/** @} */ // End of File utilities group
+/** @} */// End of File utilities group

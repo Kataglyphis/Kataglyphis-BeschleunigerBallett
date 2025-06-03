@@ -13,10 +13,10 @@
 #include <stdexcept>
 #include <vector>
 
+#include "Model.hpp"
 #include "gui/GUI.hpp"
 #include "scene/GUISceneSharedVars.hpp"
 #include "scene/Mesh.hpp"
-#include "Model.hpp"
 
 #include "SceneConfig.hpp"
 
@@ -25,7 +25,7 @@ class Scene
   public:
     Scene();
 
-    void update_user_input(GUI *gui);
+    void update_user_input(KataglyphisRenderer::Frontend::GUI *gui);
     void update_model_matrix(glm::mat4 model_matrix, int model_id);
 
     const GUISceneSharedVars &getGuiSceneSharedVars() { return guiSceneSharedVars; };

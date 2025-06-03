@@ -5,13 +5,14 @@
 // #define GLFW_INCLUDE_VULKAN
 // #include <GLFW/glfw3.h>
 
+#include "common/Globals.hpp"
 #include "renderer/CommandBufferManager.hpp"
 #include "renderer/GUIRendererSharedVars.hpp"
 #include "scene/GUISceneSharedVars.hpp"
-#include "common/Globals.hpp"
 #include "vulkan_base/VulkanDevice.hpp"
 #include "window/Window.hpp"
 
+namespace KataglyphisRenderer::Frontend {
 class GUI
 {
   public:
@@ -48,3 +49,5 @@ class GUI
 
     bool renderUserSelectionForRRT = true;
 };
+
+}// namespace KataglyphisRenderer::Frontend

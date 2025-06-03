@@ -10,7 +10,9 @@ class VulkanSwapChain
   public:
     VulkanSwapChain();
 
-    void initVulkanContext(VulkanDevice *device, Window *window, const VkSurfaceKHR &surface);
+    void initVulkanContext(VulkanDevice *device,
+      KataglyphisRenderer::Frontend::Window *window,
+      const VkSurfaceKHR &surface);
 
     const VkSwapchainKHR &getSwapChain() const { return swapchain; };
     uint32_t getNumberSwapChainImages() const { return static_cast<uint32_t>(swap_chain_images.size()); };
@@ -24,7 +26,7 @@ class VulkanSwapChain
 
   private:
     VulkanDevice *device{ VK_NULL_HANDLE };
-    Window *window{ VK_NULL_HANDLE };
+    KataglyphisRenderer::Frontend::Window *window{ VK_NULL_HANDLE };
 
     VkSwapchainKHR swapchain{ VK_NULL_HANDLE };
 

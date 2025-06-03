@@ -1,9 +1,9 @@
 #include "scene/Texture.hpp"
 
 #include "common/Utilities.hpp"
+#include "spdlog/spdlog.h"
 #include <cmath>
 #include <stdexcept>
-#include "spdlog/spdlog.h"
 
 Texture::Texture() {}
 
@@ -115,9 +115,7 @@ stbi_uc *Texture::loadTextureData(const std::string &file_name, int *width, int 
     // std::string file_loc = "../Resources/Textures/" + file_name;
     stbi_uc *image = stbi_load(file_name.c_str(), width, height, &channels, STBI_rgb_alpha);
 
-    if (!image) { 
-        spdlog::error("Failed to load a texture file! (" + file_name + ")"); 
-    }
+    if (!image) { spdlog::error("Failed to load a texture file! (" + file_name + ")"); }
 
     // calculate image size using given and known data
     *image_size = *width * *height * 4;

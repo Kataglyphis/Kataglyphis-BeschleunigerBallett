@@ -1,7 +1,7 @@
 #include "gui/GUI.hpp"
 
-#include "renderer/QueueFamilyIndices.hpp"
 #include "common/Utilities.hpp"
+#include "renderer/QueueFamilyIndices.hpp"
 #include "vulkan_base/VulkanDevice.hpp"
 
 #include "renderer/VulkanRendererConfig.hpp"
@@ -11,6 +11,8 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
+
+using namespace KataglyphisRenderer::Frontend;
 
 GUI::GUI(Window *window) { this->window = window; }
 
@@ -25,7 +27,8 @@ void GUI::initializeVulkanContext(VulkanDevice *device,
     create_fonts_and_upload(graphics_command_pool);
 }
 
-void GUI::setUserSelectionForRRT(bool rrtCapabilitiesAvailable) {
+void GUI::setUserSelectionForRRT(bool rrtCapabilitiesAvailable)
+{
     renderUserSelectionForRRT = rrtCapabilitiesAvailable;
 }
 
@@ -50,7 +53,7 @@ void GUI::render()
     static int e = 0;
     ImGui::RadioButton("Rasterizer", &e, 0);
     ImGui::SameLine();
-    if(renderUserSelectionForRRT) {
+    if (renderUserSelectionForRRT) {
         ImGui::RadioButton("Raytracing", &e, 1);
         ImGui::SameLine();
         ImGui::RadioButton("Path tracing", &e, 2);
