@@ -84,7 +84,7 @@ class VulkanRenderer
     CommandBufferManager commandBufferManager;
     void create_command_buffers();
 
-    Raytracing raytracingStage;
+    KataglyphisRenderer::VulkanRendererInternals::Raytracing raytracingStage;
     Rasterizer rasterizer;
     PathTracing pathTracing;
     PostStage postStage;
