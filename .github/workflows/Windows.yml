@@ -71,7 +71,7 @@ jobs:
 
       - name: Configure CMake for Release (Clang only)
         run: |
-          cmake -B build-release --preset "x64-Clang-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF"
+          cmake -B build-release --preset "x64-Clang-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF" -DCPACK_GENERATOR=ZIP
 
       - name: Build Release (Clang only)
         shell: pwsh
