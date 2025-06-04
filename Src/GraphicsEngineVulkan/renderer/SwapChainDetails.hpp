@@ -2,7 +2,7 @@
 #include <vulkan/vulkan.h>
 
 #include <vector>
-
+namespace KataglyphisRenderer::VulkanRendererInternals {
 struct SwapChainDetails
 {
     // surface properties, e.g. image size/extent
@@ -12,3 +12,4 @@ struct SwapChainDetails
     // how images should be presented to screen
     std::vector<VkPresentModeKHR> presentation_mode;
 };
+}// namespace KataglyphisRenderer::VulkanRendererInternals

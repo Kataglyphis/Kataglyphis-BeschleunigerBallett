@@ -116,7 +116,7 @@ PostStage::~PostStage() {}
 void PostStage::createDepthbufferImage()
 {
     // get supported format for depth buffer
-    depth_format = choose_supported_format(device->getPhysicalDevice(),
+    depth_format = KataglyphisRenderer::choose_supported_format(device->getPhysicalDevice(),
       { VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT },
       VK_IMAGE_TILING_OPTIMAL,
       VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
@@ -193,7 +193,7 @@ void PostStage::createRenderpass()
 
     // depth attachment of render pass
     VkAttachmentDescription depth_attachment{};
-    depth_attachment.format = choose_supported_format(device->getPhysicalDevice(),
+    depth_attachment.format = KataglyphisRenderer::choose_supported_format(device->getPhysicalDevice(),
       { VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT },
       VK_IMAGE_TILING_OPTIMAL,
       VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);

@@ -202,7 +202,7 @@ void GUI::create_gui_context(Window *window, const VkInstance &instance, const V
     VkResult result = vkCreateDescriptorPool(device->getLogicalDevice(), &gui_pool_info, nullptr, &gui_descriptor_pool);
     ASSERT_VULKAN(result, "Failed to create a gui descriptor pool!")
 
-    QueueFamilyIndices indices = device->getQueueFamilies();
+    KataglyphisRenderer::VulkanRendererInternals::QueueFamilyIndices indices = device->getQueueFamilies();
 
     ImGui_ImplVulkan_InitInfo init_info = {};
     init_info.Instance = instance;

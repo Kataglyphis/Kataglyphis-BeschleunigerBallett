@@ -44,8 +44,8 @@ void VulkanImage::create(VulkanDevice *device,
     VkMemoryAllocateInfo memory_alloc_info{};
     memory_alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     memory_alloc_info.allocationSize = memory_requirements.size;
-    memory_alloc_info.memoryTypeIndex =
-      find_memory_type_index(device->getPhysicalDevice(), memory_requirements.memoryTypeBits, prop_flags);
+    memory_alloc_info.memoryTypeIndex = KataglyphisRenderer::find_memory_type_index(
+      device->getPhysicalDevice(), memory_requirements.memoryTypeBits, prop_flags);
 
     result = vkAllocateMemory(device->getLogicalDevice(), &memory_alloc_info, nullptr, &imageMemory);
     ASSERT_VULKAN(result, "Failed to allocate memory!")

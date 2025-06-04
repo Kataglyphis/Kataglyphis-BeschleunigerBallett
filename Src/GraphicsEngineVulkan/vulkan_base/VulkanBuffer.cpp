@@ -35,8 +35,8 @@ void VulkanBuffer::create(VulkanDevice *device,
     memory_alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     memory_alloc_info.allocationSize = memory_requirements.size;
 
-    uint32_t memory_type_index =
-      find_memory_type_index(device->getPhysicalDevice(), memory_requirements.memoryTypeBits, buffer_propertiy_flags);
+    uint32_t memory_type_index = KataglyphisRenderer::find_memory_type_index(
+      device->getPhysicalDevice(), memory_requirements.memoryTypeBits, buffer_propertiy_flags);
 
     // VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |		/* memory is visible to
     // CPU side

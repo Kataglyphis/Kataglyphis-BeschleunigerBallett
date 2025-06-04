@@ -42,7 +42,7 @@ class GUI
     VulkanDevice *device{ VK_NULL_HANDLE };
     Window *window{ VK_NULL_HANDLE };
     VkDescriptorPool gui_descriptor_pool{ VK_NULL_HANDLE };
-    CommandBufferManager commandBufferManager;
+    KataglyphisRenderer::VulkanRendererInternals::CommandBufferManager commandBufferManager;
 
     GUISceneSharedVars guiSceneSharedVars;
     GUIRendererSharedVars guiRendererSharedVars;

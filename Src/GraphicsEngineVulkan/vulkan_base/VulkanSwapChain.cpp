@@ -14,7 +14,7 @@ void VulkanSwapChain::initVulkanContext(VulkanDevice *device,
     this->window = window;
 
     // get swap chain details so we can pick the best settings
-    SwapChainDetails swap_chain_details = device->getSwapchainDetails();
+    KataglyphisRenderer::VulkanRendererInternals::SwapChainDetails swap_chain_details = device->getSwapchainDetails();
 
     // 1. choose best surface format
     // 2. choose best presentation mode
@@ -53,7 +53,7 @@ void VulkanSwapChain::initVulkanContext(VulkanDevice *device,
     swap_chain_create_info.clipped = VK_TRUE;// of course activate clipping ! :)
 
     // get queue family indices
-    QueueFamilyIndices indices = device->getQueueFamilies();
+    KataglyphisRenderer::VulkanRendererInternals::QueueFamilyIndices indices = device->getQueueFamilies();
 
     // if graphics and presentation families are different then swapchain must let
     // images be shared between families

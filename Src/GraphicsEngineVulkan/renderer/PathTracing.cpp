@@ -59,7 +59,7 @@ void PathTracing::recordCommands(VkCommandBuffer &commandBuffer,
     vkCmdWriteTimestamp(
       commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool, query++);
 
-    QueueFamilyIndices indices = device->getQueueFamilies();
+    KataglyphisRenderer::VulkanRendererInternals::QueueFamilyIndices indices = device->getQueueFamilies();
 
     VkImageSubresourceRange subresourceRange{};
     subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;

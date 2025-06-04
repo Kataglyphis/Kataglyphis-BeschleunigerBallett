@@ -16,15 +16,18 @@ VulkanDevice::VulkanDevice(VulkanInstance *instance, VkSurfaceKHR *surface)
     create_logical_device();
 }
 
-SwapChainDetails VulkanDevice::getSwapchainDetails() { return getSwapchainDetails(physical_device); }
+KataglyphisRenderer::VulkanRendererInternals::SwapChainDetails VulkanDevice::getSwapchainDetails()
+{
+    return getSwapchainDetails(physical_device);
+}
 
 void VulkanDevice::cleanUp() { vkDestroyDevice(logical_device, nullptr); }
 
 VulkanDevice::~VulkanDevice() {}
 
-QueueFamilyIndices VulkanDevice::getQueueFamilies()
+KataglyphisRenderer::VulkanRendererInternals::QueueFamilyIndices VulkanDevice::getQueueFamilies()
 {
-    QueueFamilyIndices indices{};
+    KataglyphisRenderer::VulkanRendererInternals::QueueFamilyIndices indices{};
 
     uint32_t queue_family_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, nullptr);
@@ -90,7 +93,7 @@ void VulkanDevice::get_physical_device()
 void VulkanDevice::create_logical_device()
 {
     // get the queue family indices for the chosen physical device
-    QueueFamilyIndices indices = getQueueFamilies();
+    KataglyphisRenderer::VulkanRendererInternals::QueueFamilyIndices indices = getQueueFamilies();
 
     // vector for queue creation information and set for family indices
     std::vector<VkDeviceQueueCreateInfo> queue_create_infos;
@@ -235,9 +238,10 @@ void VulkanDevice::create_logical_device()
     vkGetDeviceQueue(logical_device, indices.compute_family, 0, &compute_queue);
 }
 
-QueueFamilyIndices VulkanDevice::getQueueFamilies(VkPhysicalDevice physical_device)
+KataglyphisRenderer::VulkanRendererInternals::QueueFamilyIndices VulkanDevice::getQueueFamilies(
+  VkPhysicalDevice physical_device)
 {
-    QueueFamilyIndices indices{};
+    KataglyphisRenderer::VulkanRendererInternals::QueueFamilyIndices indices{};
 
     uint32_t queue_family_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, nullptr);
@@ -276,9 +280,10 @@ QueueFamilyIndices VulkanDevice::getQueueFamilies(VkPhysicalDevice physical_devi
     return indices;
 }
 
-SwapChainDetails VulkanDevice::getSwapchainDetails(VkPhysicalDevice device)
+KataglyphisRenderer::VulkanRendererInternals::SwapChainDetails VulkanDevice::getSwapchainDetails(
+  VkPhysicalDevice device)
 {
-    SwapChainDetails swapchain_details{};
+    KataglyphisRenderer::VulkanRendererInternals::SwapChainDetails swapchain_details{};
     // get the surface capabilities for the given surface on the given physical
     // device
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, *surface, &swapchain_details.surface_capabilities);
@@ -314,14 +319,14 @@ bool VulkanDevice::check_device_suitable(VkPhysicalDevice device)
     VkPhysicalDeviceFeatures device_features;
     vkGetPhysicalDeviceFeatures(device, &device_features);
 
-    QueueFamilyIndices indices = getQueueFamilies(device);
+    KataglyphisRenderer::VulkanRendererInternals::QueueFamilyIndices indices = getQueueFamilies(device);
 
     bool extensions_supported = check_device_extension_support(device);
 
     bool swap_chain_valid = false;
 
     if (extensions_supported) {
-        SwapChainDetails swap_chain_details = getSwapchainDetails(device);
+        KataglyphisRenderer::VulkanRendererInternals::SwapChainDetails swap_chain_details = getSwapchainDetails(device);
         swap_chain_valid = !swap_chain_details.presentation_mode.empty() && !swap_chain_details.formats.empty();
     }
 

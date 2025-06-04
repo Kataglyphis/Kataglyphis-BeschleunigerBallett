@@ -22,6 +22,7 @@
 #include "vulkan_base/VulkanSwapChain.hpp"
 #include "window/Window.hpp"
 
+namespace KataglyphisRenderer {
 class VulkanRenderer
 {
   public:
@@ -72,20 +73,20 @@ class VulkanRenderer
     VkCommandPool compute_command_pool;
 
     // uniform buffers
-    GlobalUBO globalUBO;
+    VulkanRendererInternals::GlobalUBO globalUBO;
     std::vector<VulkanBuffer> globalUBOBuffer;
-    SceneUBO sceneUBO;
+    VulkanRendererInternals::SceneUBO sceneUBO;
     std::vector<VulkanBuffer> sceneUBOBuffer;
     void create_uniform_buffers();
     void update_uniform_buffers(uint32_t image_index);
     void cleanUpUBOs();
 
     std::vector<VkCommandBuffer> command_buffers;
-    CommandBufferManager commandBufferManager;
+    KataglyphisRenderer::VulkanRendererInternals::CommandBufferManager commandBufferManager;
     void create_command_buffers();
 
     KataglyphisRenderer::VulkanRendererInternals::Raytracing raytracingStage;
-    Rasterizer rasterizer;
+    KataglyphisRenderer::VulkanRendererInternals::Rasterizer rasterizer;
     PathTracing pathTracing;
     PostStage postStage;
 
@@ -131,3 +132,4 @@ class VulkanRenderer
 
     bool checkChangedFramebufferSize();
 };
+}// namespace KataglyphisRenderer

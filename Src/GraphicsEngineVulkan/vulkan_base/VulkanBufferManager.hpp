@@ -40,7 +40,7 @@ class VulkanBufferManager
     ~VulkanBufferManager();
 
   private:
-    CommandBufferManager commandBufferManager;
+    KataglyphisRenderer::VulkanRendererInternals::CommandBufferManager commandBufferManager;
 };
 
 template<typename T>

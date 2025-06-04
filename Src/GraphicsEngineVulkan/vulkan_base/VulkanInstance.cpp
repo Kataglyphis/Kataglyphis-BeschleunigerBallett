@@ -8,7 +8,7 @@
 
 VulkanInstance::VulkanInstance()
 {
-    if (ENABLE_VALIDATION_LAYERS && !check_validation_layer_support()) {
+    if (KataglyphisRenderer::ENABLE_VALIDATION_LAYERS && !check_validation_layer_support()) {
         spdlog::error("Validation layers requested, but not available!");
     }
 
@@ -28,7 +28,7 @@ VulkanInstance::VulkanInstance()
     create_info.pApplicationInfo = &app_info;
 
     // add validation layers IF enabled to the creeate info struct
-    if (ENABLE_VALIDATION_LAYERS) {
+    if (KataglyphisRenderer::ENABLE_VALIDATION_LAYERS) {
         create_info.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
         create_info.ppEnabledLayerNames = validationLayers.data();
 
@@ -51,7 +51,9 @@ VulkanInstance::VulkanInstance()
     // Add GLFW extensions to list of extensions
     for (size_t i = 0; i < glfw_extensions_count; i++) { instance_extensions.push_back(glfw_extensions[i]); }
 
-    if (ENABLE_VALIDATION_LAYERS) { instance_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME); }
+    if (KataglyphisRenderer::ENABLE_VALIDATION_LAYERS) {
+        instance_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    }
 
     // check instance extensions supported
     if (!check_instance_extension_support(&instance_extensions)) {

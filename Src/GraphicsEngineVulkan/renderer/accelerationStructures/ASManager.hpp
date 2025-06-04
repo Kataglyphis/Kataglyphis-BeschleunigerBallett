@@ -40,7 +40,7 @@ class ASManager
 
   private:
     VulkanDevice *vulkanDevice{ VK_NULL_HANDLE };
-    CommandBufferManager commandBufferManager;
+    KataglyphisRenderer::VulkanRendererInternals::CommandBufferManager commandBufferManager;
     VulkanBufferManager vulkanBufferManager;
 
     std::vector<BottomLevelAccelerationStructure> blas;

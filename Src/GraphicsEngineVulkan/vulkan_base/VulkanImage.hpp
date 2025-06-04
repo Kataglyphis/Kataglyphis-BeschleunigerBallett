@@ -41,7 +41,7 @@ class VulkanImage
 
   private:
     VulkanDevice *device{ VK_NULL_HANDLE };
-    CommandBufferManager commandBufferManager;
+    KataglyphisRenderer::VulkanRendererInternals::CommandBufferManager commandBufferManager;
 
     VkImage image;
     VkDeviceMemory imageMemory;

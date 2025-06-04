@@ -55,7 +55,7 @@ class Texture
       int32_t height,
       uint32_t mip_levels);
 
-    CommandBufferManager commandBufferManager;
+    KataglyphisRenderer::VulkanRendererInternals::CommandBufferManager commandBufferManager;
     VulkanBufferManager vulkanBufferManager;
 
     VulkanImage vulkanImage;
