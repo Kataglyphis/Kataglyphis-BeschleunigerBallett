@@ -1,7 +1,11 @@
 #include "DebugApp.hpp"
 
-#include <GLFW/glfw3.h>
+// clang-format off
+// you must include glad before glfw!
+// therefore disable clang-format for this section
 #include <glad/glad.h>
+#include <GLFW/glfw3.h>
+// clang-format on
 
 #include <iostream>
 // stolen from: https://learnopengl.com/In-Practice/Debugging

@@ -1,6 +1,10 @@
 #pragma once
-#include <GLFW/glfw3.h>
+// clang-format off
+// you must include glad before glfw!
+// therefore disable clang-format for this section
 #include <glad/glad.h>
+#include <GLFW/glfw3.h>
+// clang-format on
 
 class Window
 {
