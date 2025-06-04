@@ -4,6 +4,8 @@
 #include <iostream>
 #include <unordered_map>
 
+using namespace Kataglyphis;
+
 Model::Model() {}
 
 Model::Model(VulkanDevice *device) { this->device = device; }

@@ -2,6 +2,8 @@
 
 #include "common/Utilities.hpp"
 
+using namespace Kataglyphis;
+
 Allocator::Allocator() {}
 
 Allocator::Allocator(const VkDevice &device, const VkPhysicalDevice &physicalDevice, const VkInstance &instance)

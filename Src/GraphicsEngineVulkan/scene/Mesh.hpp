@@ -7,6 +7,7 @@
 #include "scene/Vertex.hpp"
 #include "vulkan_base/VulkanBufferManager.hpp"
 
+namespace Kataglyphis {
 // this a simple Mesh without mesh generation
 class Mesh
 {
@@ -68,3 +69,4 @@ class Mesh
       VkCommandPool transfer_command_pool,
       std::vector<ObjMaterial> &materials);
 };
+}// namespace Kataglyphis

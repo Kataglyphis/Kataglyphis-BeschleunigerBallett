@@ -1,11 +1,11 @@
 #include "vulkan_base/VulkanImageView.hpp"
 #include "common/Utilities.hpp"
 
-VulkanImageView::VulkanImageView() {}
+Kataglyphis::VulkanImageView::VulkanImageView() {}
 
-void VulkanImageView::setImageView(VkImageView imageView) { this->imageView = imageView; }
+void Kataglyphis::VulkanImageView::setImageView(VkImageView imageView) { this->imageView = imageView; }
 
-void VulkanImageView::create(VulkanDevice *device,
+void Kataglyphis::VulkanImageView::create(VulkanDevice *device,
   VkImage image,
   VkFormat format,
   VkImageAspectFlags aspect_flags,
@@ -37,6 +37,6 @@ void VulkanImageView::create(VulkanDevice *device,
     ASSERT_VULKAN(result, "Failed to create an image view!")
 }
 
-void VulkanImageView::cleanUp() { vkDestroyImageView(device->getLogicalDevice(), imageView, nullptr); }
+void Kataglyphis::VulkanImageView::cleanUp() { vkDestroyImageView(device->getLogicalDevice(), imageView, nullptr); }
 
-VulkanImageView::~VulkanImageView() {}
+Kataglyphis::VulkanImageView::~VulkanImageView() {}

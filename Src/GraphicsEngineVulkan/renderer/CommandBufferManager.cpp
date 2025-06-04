@@ -2,9 +2,9 @@
 
 #include "common/Utilities.hpp"
 
-KataglyphisRenderer::VulkanRendererInternals::CommandBufferManager::CommandBufferManager() {}
+Kataglyphis::VulkanRendererInternals::CommandBufferManager::CommandBufferManager() {}
 
-VkCommandBuffer KataglyphisRenderer::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(VkDevice device,
+VkCommandBuffer Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(VkDevice device,
   VkCommandPool command_pool)
 {
     // command buffer to hold transfer commands
@@ -32,7 +32,7 @@ VkCommandBuffer KataglyphisRenderer::VulkanRendererInternals::CommandBufferManag
     return command_buffer;
 }
 
-void KataglyphisRenderer::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(VkDevice device,
+void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(VkDevice device,
   VkCommandPool command_pool,
   VkQueue queue,
   VkCommandBuffer &command_buffer)
@@ -58,4 +58,4 @@ void KataglyphisRenderer::VulkanRendererInternals::CommandBufferManager::endAndS
     vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
 }
 
-KataglyphisRenderer::VulkanRendererInternals::CommandBufferManager::~CommandBufferManager() {}
+Kataglyphis::VulkanRendererInternals::CommandBufferManager::~CommandBufferManager() {}

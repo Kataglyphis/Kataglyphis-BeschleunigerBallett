@@ -8,9 +8,9 @@
 
 #include "spdlog/spdlog.h"
 
-ShaderHelper::ShaderHelper() {}
+Kataglyphis::ShaderHelper::ShaderHelper() {}
 
-void ShaderHelper::compileShader(const std::string &shader_src_dir, const std::string &shader_name)
+void Kataglyphis::ShaderHelper::compileShader(const std::string &shader_src_dir, const std::string &shader_name)
 {
     // GLSLC_EXE is set by cmake to the location of the vulkan glslc
     std::stringstream shader_src_path;
@@ -37,7 +37,8 @@ void ShaderHelper::compileShader(const std::string &shader_src_dir, const std::s
     system(cmdShaderCompile.str().c_str());
 }
 
-std::string ShaderHelper::getShaderSpvDir(const std::string &shader_src_dir, const std::string &shader_name)
+std::string Kataglyphis::ShaderHelper::getShaderSpvDir(const std::string &shader_src_dir,
+  const std::string &shader_name)
 {
     std::string shader_spv_dir = "spv/";
 
@@ -47,7 +48,7 @@ std::string ShaderHelper::getShaderSpvDir(const std::string &shader_src_dir, con
     return vertShaderSpv.str();
 }
 
-VkShaderModule ShaderHelper::createShaderModule(VulkanDevice *device, const std::vector<char> &code)
+VkShaderModule Kataglyphis::ShaderHelper::createShaderModule(VulkanDevice *device, const std::vector<char> &code)
 {
     // shader module create info
     VkShaderModuleCreateInfo shader_module_create_info{};
@@ -64,4 +65,4 @@ VkShaderModule ShaderHelper::createShaderModule(VulkanDevice *device, const std:
     return shader_module;
 }
 
-ShaderHelper::~ShaderHelper() {}
+Kataglyphis::ShaderHelper::~ShaderHelper() {}

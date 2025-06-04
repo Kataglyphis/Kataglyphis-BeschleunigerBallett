@@ -5,9 +5,9 @@
 #include <fstream>
 #include <iostream>
 
-File::File(const std::string &file_location) { this->file_location = file_location; }
+Kataglyphis::File::File(const std::string &file_location) { this->file_location = file_location; }
 
-std::string File::read()
+std::string Kataglyphis::File::read()
 {
     std::string content;
     std::ifstream file_stream(file_location, std::ios::in);
@@ -27,7 +27,7 @@ std::string File::read()
     return content;
 }
 
-std::vector<char> File::readCharSequence()
+std::vector<char> Kataglyphis::File::readCharSequence()
 {
     // open stream from given file
     // std::ios::binary tells stream to read file as binary
@@ -51,11 +51,11 @@ std::vector<char> File::readCharSequence()
     return file_buffer;
 }
 
-std::string File::getBaseDir()
+std::string Kataglyphis::File::getBaseDir()
 {
     if (file_location.find_last_of("/\\") != std::string::npos)
         return file_location.substr(0, file_location.find_last_of("/\\"));
     return "";
 }
 
-File::~File() {}
+Kataglyphis::File::~File() {}

@@ -20,12 +20,13 @@
 
 #include "SceneConfig.hpp"
 
+namespace Kataglyphis {
 class Scene
 {
   public:
     Scene();
 
-    void update_user_input(KataglyphisRenderer::Frontend::GUI *gui);
+    void update_user_input(Kataglyphis::Frontend::GUI *gui);
     void update_model_matrix(glm::mat4 model_matrix, int model_id);
 
     const GUISceneSharedVars &getGuiSceneSharedVars() { return guiSceneSharedVars; };
@@ -70,3 +71,4 @@ class Scene
 
     GUISceneSharedVars guiSceneSharedVars;
 };
+}// namespace Kataglyphis

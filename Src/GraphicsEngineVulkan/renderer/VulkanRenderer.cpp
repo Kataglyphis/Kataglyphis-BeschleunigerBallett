@@ -44,9 +44,9 @@
 #include "renderer/VulkanRendererConfig.hpp"
 #include "vulkan_base/VulkanDebug.hpp"
 
-KataglyphisRenderer::VulkanRenderer::VulkanRenderer(KataglyphisRenderer::Frontend::Window *window,
+Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *window,
   Scene *scene,
-  KataglyphisRenderer::Frontend::GUI *gui,
+  Kataglyphis::Frontend::GUI *gui,
   Camera *camera)
   :
 
@@ -58,7 +58,7 @@ KataglyphisRenderer::VulkanRenderer::VulkanRenderer(KataglyphisRenderer::Fronten
     instance = VulkanInstance();
 
     VkDebugReportFlagsEXT debugReportFlags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT;
-    if (KataglyphisRenderer::ENABLE_VALIDATION_LAYERS)
+    if (Kataglyphis::ENABLE_VALIDATION_LAYERS)
         debug::setupDebugging(instance.getVulkanInstance(), debugReportFlags, VK_NULL_HANDLE);
 
     create_surface();
@@ -115,9 +115,7 @@ KataglyphisRenderer::VulkanRenderer::VulkanRenderer(KataglyphisRenderer::Fronten
     gui->setUserSelectionForRRT(device->supportsHardwareAcceleratedRRT());
 }
 
-void KataglyphisRenderer::VulkanRenderer::updateUniforms(Scene *scene,
-  Camera *camera,
-  KataglyphisRenderer::Frontend::Window *window)
+void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene, Camera *camera, Kataglyphis::Frontend::Window *window)
 {
     const GUISceneSharedVars guiSceneSharedVars = scene->getGuiSceneSharedVars();
 
@@ -137,9 +135,9 @@ void KataglyphisRenderer::VulkanRenderer::updateUniforms(Scene *scene,
     sceneUBO.cam_pos = glm::vec4(camera->get_camera_position(), camera->get_fov());
 }
 
-void KataglyphisRenderer::VulkanRenderer::updateStateDueToUserInput(KataglyphisRenderer::Frontend::GUI *gui)
+void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Frontend::GUI *gui)
 {
-    KataglyphisRenderer::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars =
+    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars =
       gui->getGuiRendererSharedVars();
 
     if (guiRendererSharedVars.shader_hot_reload_triggered) {
@@ -148,9 +146,9 @@ void KataglyphisRenderer::VulkanRenderer::updateStateDueToUserInput(KataglyphisR
     }
 }
 
-void KataglyphisRenderer::VulkanRenderer::finishAllRenderCommands() { vkDeviceWaitIdle(device->getLogicalDevice()); }
+void Kataglyphis::VulkanRenderer::finishAllRenderCommands() { vkDeviceWaitIdle(device->getLogicalDevice()); }
 
-void KataglyphisRenderer::VulkanRenderer::shaderHotReload()
+void Kataglyphis::VulkanRenderer::shaderHotReload()
 {
     // wait until no actions being run on device before destroying
     vkDeviceWaitIdle(device->getLogicalDevice());
@@ -166,7 +164,7 @@ void KataglyphisRenderer::VulkanRenderer::shaderHotReload()
     pathTracing.shaderHotReload(layouts);
 }
 
-void KataglyphisRenderer::VulkanRenderer::drawFrame()
+void Kataglyphis::VulkanRenderer::drawFrame()
 {
     // We need to skip one frame
     // Due to ImGui need to call ImGui::NewFrame() again
@@ -214,7 +212,7 @@ void KataglyphisRenderer::VulkanRenderer::drawFrame()
 
     update_uniform_buffers(image_index);
 
-    KataglyphisRenderer::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars =
+    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars =
       gui->getGuiRendererSharedVars();
     if (guiRendererSharedVars.raytracing) update_raytracing_descriptor_set(image_index);
 
@@ -279,10 +277,10 @@ void KataglyphisRenderer::VulkanRenderer::drawFrame()
 
     if (result != VK_SUCCESS) { spdlog::error("Failed to submit to present queue!"); }
 
-    current_frame = (current_frame + 1) % KataglyphisRenderer::MAX_FRAME_DRAWS;
+    current_frame = (current_frame + 1) % Kataglyphis::MAX_FRAME_DRAWS;
 }
 
-void KataglyphisRenderer::VulkanRenderer::create_surface()
+void Kataglyphis::VulkanRenderer::create_surface()
 {
     // create surface (creates a surface create info struct, runs the create
     // surface function, returns result)
@@ -290,7 +288,7 @@ void KataglyphisRenderer::VulkanRenderer::create_surface()
       "Failed to create a surface!");
 }
 
-void KataglyphisRenderer::VulkanRenderer::create_post_descriptor_layout()
+void Kataglyphis::VulkanRenderer::create_post_descriptor_layout()
 {
     // UNIFORM VALUES DESCRIPTOR SET LAYOUT
     // globalUBO Binding info
@@ -355,7 +353,7 @@ void KataglyphisRenderer::VulkanRenderer::create_post_descriptor_layout()
     ASSERT_VULKAN(result, "Failed to create descriptor sets!")
 }
 
-void KataglyphisRenderer::VulkanRenderer::updatePostDescriptorSets()
+void Kataglyphis::VulkanRenderer::updatePostDescriptorSets()
 {
     // update all of descriptor set buffer bindings
     for (size_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
@@ -381,7 +379,7 @@ void KataglyphisRenderer::VulkanRenderer::updatePostDescriptorSets()
     }
 }
 
-void KataglyphisRenderer::VulkanRenderer::createRaytracingDescriptorPool()
+void Kataglyphis::VulkanRenderer::createRaytracingDescriptorPool()
 {
     std::array<VkDescriptorPoolSize, 2> descriptor_pool_sizes{};
 
@@ -402,16 +400,16 @@ void KataglyphisRenderer::VulkanRenderer::createRaytracingDescriptorPool()
     ASSERT_VULKAN(result, "Failed to create command pool!")
 }
 
-void KataglyphisRenderer::VulkanRenderer::cleanUpSync()
+void Kataglyphis::VulkanRenderer::cleanUpSync()
 {
-    for (int i = 0; i < KataglyphisRenderer::MAX_FRAME_DRAWS; i++) {
+    for (int i = 0; i < Kataglyphis::MAX_FRAME_DRAWS; i++) {
         vkDestroySemaphore(device->getLogicalDevice(), render_finished[i], nullptr);
         vkDestroySemaphore(device->getLogicalDevice(), image_available[i], nullptr);
         vkDestroyFence(device->getLogicalDevice(), in_flight_fences[i], nullptr);
     }
 }
 
-void KataglyphisRenderer::VulkanRenderer::create_object_description_buffer()
+void Kataglyphis::VulkanRenderer::create_object_description_buffer()
 {
     std::vector<ObjectDescription> objectDescriptions = scene->getObjectDescriptions();
 
@@ -454,7 +452,7 @@ void KataglyphisRenderer::VulkanRenderer::create_object_description_buffer()
     }
 }
 
-void KataglyphisRenderer::VulkanRenderer::createRaytracingDescriptorSetLayouts()
+void Kataglyphis::VulkanRenderer::createRaytracingDescriptorSetLayouts()
 {
     {
         std::array<VkDescriptorSetLayoutBinding, 2> descriptor_set_layout_bindings{};
@@ -487,7 +485,7 @@ void KataglyphisRenderer::VulkanRenderer::createRaytracingDescriptorSetLayouts()
     }
 }
 
-void KataglyphisRenderer::VulkanRenderer::createRaytracingDescriptorSets()
+void Kataglyphis::VulkanRenderer::createRaytracingDescriptorSets()
 {
     // resize descriptor set list so one for every buffer
     raytracingDescriptorSet.resize(vulkanSwapChain.getNumberSwapChainImages());
@@ -507,7 +505,7 @@ void KataglyphisRenderer::VulkanRenderer::createRaytracingDescriptorSets()
     ASSERT_VULKAN(result, "Failed to allocate raytracing descriptor set!")
 }
 
-void KataglyphisRenderer::VulkanRenderer::updateRaytracingDescriptorSets()
+void Kataglyphis::VulkanRenderer::updateRaytracingDescriptorSets()
 {
     for (size_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
         VkWriteDescriptorSetAccelerationStructureKHR descriptor_set_acceleration_structure{};
@@ -558,7 +556,7 @@ void KataglyphisRenderer::VulkanRenderer::updateRaytracingDescriptorSets()
     }
 }
 
-void KataglyphisRenderer::VulkanRenderer::createSharedRenderDescriptorSetLayouts()
+void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorSetLayouts()
 {
     std::array<VkDescriptorSetLayoutBinding, 5> descriptor_set_layout_bindings{};
     // UNIFORM VALUES DESCRIPTOR SET LAYOUT
@@ -615,10 +613,10 @@ void KataglyphisRenderer::VulkanRenderer::createSharedRenderDescriptorSetLayouts
     ASSERT_VULKAN(result, "Failed to create descriptor set layout!")
 }
 
-void KataglyphisRenderer::VulkanRenderer::create_command_pool()
+void Kataglyphis::VulkanRenderer::create_command_pool()
 {
     // get indices of queue familes from device
-    KataglyphisRenderer::VulkanRendererInternals::QueueFamilyIndices queue_family_indices = device->getQueueFamilies();
+    Kataglyphis::VulkanRendererInternals::QueueFamilyIndices queue_family_indices = device->getQueueFamilies();
 
     {
         VkCommandPoolCreateInfo pool_info{};
@@ -649,13 +647,13 @@ void KataglyphisRenderer::VulkanRenderer::create_command_pool()
     }
 }
 
-void KataglyphisRenderer::VulkanRenderer::cleanUpCommandPools()
+void Kataglyphis::VulkanRenderer::cleanUpCommandPools()
 {
     vkDestroyCommandPool(device->getLogicalDevice(), graphics_command_pool, nullptr);
     vkDestroyCommandPool(device->getLogicalDevice(), compute_command_pool, nullptr);
 }
 
-void KataglyphisRenderer::VulkanRenderer::create_command_buffers()
+void Kataglyphis::VulkanRenderer::create_command_buffers()
 {
     // resize command buffer count to have one for each framebuffer
     command_buffers.resize(vulkanSwapChain.getNumberSwapChainImages());
@@ -672,7 +670,7 @@ void KataglyphisRenderer::VulkanRenderer::create_command_buffers()
     ASSERT_VULKAN(result, "Failed to allocate command buffers!")
 }
 
-void KataglyphisRenderer::VulkanRenderer::createSynchronization()
+void Kataglyphis::VulkanRenderer::createSynchronization()
 {
     image_available.resize(vulkanSwapChain.getNumberSwapChainImages(), VK_NULL_HANDLE);
     render_finished.resize(vulkanSwapChain.getNumberSwapChainImages(), VK_NULL_HANDLE);
@@ -688,7 +686,7 @@ void KataglyphisRenderer::VulkanRenderer::createSynchronization()
     fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    for (int i = 0; i < KataglyphisRenderer::MAX_FRAME_DRAWS; i++) {
+    for (int i = 0; i < Kataglyphis::MAX_FRAME_DRAWS; i++) {
         if ((vkCreateSemaphore(device->getLogicalDevice(), &semaphore_create_info, nullptr, &image_available[i])
               != VK_SUCCESS)
             || (vkCreateSemaphore(device->getLogicalDevice(), &semaphore_create_info, nullptr, &render_finished[i])
@@ -700,7 +698,7 @@ void KataglyphisRenderer::VulkanRenderer::createSynchronization()
     }
 }
 
-void KataglyphisRenderer::VulkanRenderer::create_uniform_buffers()
+void Kataglyphis::VulkanRenderer::create_uniform_buffers()
 {
     // one uniform buffer for each image (and by extension, command buffer)
     globalUBOBuffer.resize(vulkanSwapChain.getNumberSwapChainImages());
@@ -732,7 +730,7 @@ void KataglyphisRenderer::VulkanRenderer::create_uniform_buffers()
     }
 }
 
-void KataglyphisRenderer::VulkanRenderer::createDescriptorPoolSharedRenderStages()
+void Kataglyphis::VulkanRenderer::createDescriptorPoolSharedRenderStages()
 {
     // CREATE UNIFORM DESCRIPTOR POOL
     // type of descriptors + how many descriptors, not descriptor sets (combined
@@ -749,7 +747,7 @@ void KataglyphisRenderer::VulkanRenderer::createDescriptorPoolSharedRenderStages
     VkDescriptorPoolSize object_descriptions_pool_size{};
     object_descriptions_pool_size.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     object_descriptions_pool_size.descriptorCount =
-      static_cast<uint32_t>(sizeof(ObjectDescription) * KataglyphisRenderer::MAX_OBJECTS);
+      static_cast<uint32_t>(sizeof(ObjectDescription) * Kataglyphis::MAX_OBJECTS);
 
     // TEXTURE SAMPLER POOL
     VkDescriptorPoolSize sampler_pool_size{};
@@ -779,7 +777,7 @@ void KataglyphisRenderer::VulkanRenderer::createDescriptorPoolSharedRenderStages
     ASSERT_VULKAN(result, "Failed to create a descriptor pool!")
 }
 
-void KataglyphisRenderer::VulkanRenderer::createSharedRenderDescriptorSet()
+void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorSet()
 {
     // resize descriptor set list so one for every buffer
     sharedRenderDescriptorSet.resize(vulkanSwapChain.getNumberSwapChainImages());
@@ -846,7 +844,7 @@ void KataglyphisRenderer::VulkanRenderer::createSharedRenderDescriptorSet()
     }
 }
 
-void KataglyphisRenderer::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
+void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
 {
     std::vector<Texture> &modelTextures = scene->getTextures(0);
     std::vector<VkDescriptorImageInfo> image_info_textures;
@@ -902,14 +900,14 @@ void KataglyphisRenderer::VulkanRenderer::updateTexturesInSharedRenderDescriptor
     }
 }
 
-void KataglyphisRenderer::VulkanRenderer::cleanUpUBOs()
+void Kataglyphis::VulkanRenderer::cleanUpUBOs()
 {
     for (VulkanBuffer vulkanBuffer : globalUBOBuffer) { vulkanBuffer.cleanUp(); }
 
     for (VulkanBuffer vulkanBuffer : sceneUBOBuffer) { vulkanBuffer.cleanUp(); }
 }
 
-void KataglyphisRenderer::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
+void Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
 {
     auto usage_stage_flags = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
                              | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
@@ -1012,7 +1010,7 @@ void KataglyphisRenderer::VulkanRenderer::update_uniform_buffers(uint32_t image_
       nullptr);
 }
 
-void KataglyphisRenderer::VulkanRenderer::update_raytracing_descriptor_set(uint32_t image_index)
+void Kataglyphis::VulkanRenderer::update_raytracing_descriptor_set(uint32_t image_index)
 {
     VkWriteDescriptorSetAccelerationStructureKHR descriptor_set_acceleration_structure{};
     descriptor_set_acceleration_structure.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
@@ -1056,12 +1054,12 @@ void KataglyphisRenderer::VulkanRenderer::update_raytracing_descriptor_set(uint3
       nullptr);
 }
 
-void KataglyphisRenderer::VulkanRenderer::record_commands(uint32_t image_index)
+void Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
 {
     Texture &renderResult = rasterizer.getOffscreenTexture(image_index);
     VulkanImage &vulkanImage = renderResult.getVulkanImage();
 
-    KataglyphisRenderer::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars =
+    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars =
       gui->getGuiRendererSharedVars();
     if (guiRendererSharedVars.raytracing) {
         std::vector<VkDescriptorSet> sets = { sharedRenderDescriptorSet[image_index],
@@ -1096,7 +1094,7 @@ void KataglyphisRenderer::VulkanRenderer::record_commands(uint32_t image_index)
       VK_IMAGE_ASPECT_COLOR_BIT);
 }
 
-bool KataglyphisRenderer::VulkanRenderer::checkChangedFramebufferSize()
+bool Kataglyphis::VulkanRenderer::checkChangedFramebufferSize()
 {
     if (window->framebuffer_size_has_changed()) {
         vkDeviceWaitIdle(device->getLogicalDevice());
@@ -1130,7 +1128,7 @@ bool KataglyphisRenderer::VulkanRenderer::checkChangedFramebufferSize()
     return false;
 }
 
-void KataglyphisRenderer::VulkanRenderer::cleanUp()
+void Kataglyphis::VulkanRenderer::cleanUp()
 {
     cleanUpUBOs();
 
@@ -1166,4 +1164,4 @@ void KataglyphisRenderer::VulkanRenderer::cleanUp()
     instance.cleanUp();
 }
 
-KataglyphisRenderer::VulkanRenderer::~VulkanRenderer() {}
+Kataglyphis::VulkanRenderer::~VulkanRenderer() {}

@@ -12,7 +12,7 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
 
-using namespace KataglyphisRenderer::Frontend;
+using namespace Kataglyphis::Frontend;
 
 GUI::GUI(Window *window) { this->window = window; }
 
@@ -202,7 +202,7 @@ void GUI::create_gui_context(Window *window, const VkInstance &instance, const V
     VkResult result = vkCreateDescriptorPool(device->getLogicalDevice(), &gui_pool_info, nullptr, &gui_descriptor_pool);
     ASSERT_VULKAN(result, "Failed to create a gui descriptor pool!")
 
-    KataglyphisRenderer::VulkanRendererInternals::QueueFamilyIndices indices = device->getQueueFamilies();
+    Kataglyphis::VulkanRendererInternals::QueueFamilyIndices indices = device->getQueueFamilies();
 
     ImGui_ImplVulkan_InitInfo init_info = {};
     init_info.Instance = instance;

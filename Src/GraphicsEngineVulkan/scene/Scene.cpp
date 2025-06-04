@@ -3,12 +3,11 @@
 #include "common/Utilities.hpp"
 #include "spdlog/spdlog.h"
 
+using namespace Kataglyphis;
+
 Scene::Scene() {}
 
-void Scene::update_user_input(KataglyphisRenderer::Frontend::GUI *gui)
-{
-    guiSceneSharedVars = gui->getGuiSceneSharedVars();
-}
+void Scene::update_user_input(Kataglyphis::Frontend::GUI *gui) { guiSceneSharedVars = gui->getGuiSceneSharedVars(); }
 
 void Scene::loadModel(VulkanDevice *device, VkCommandPool commandPool)
 {

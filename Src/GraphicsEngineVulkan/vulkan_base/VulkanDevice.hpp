@@ -6,7 +6,7 @@
 #include "renderer/QueueFamilyIndices.hpp"
 #include "renderer/SwapChainDetails.hpp"
 #include "vulkan_base/VulkanInstance.hpp"
-
+namespace Kataglyphis {
 /**
  * @brief Handles Vulkan device creation and management.
  *
@@ -32,11 +32,11 @@ class VulkanDevice
     VkPhysicalDeviceProperties getPhysicalDeviceProperties() { return device_properties; };
     VkPhysicalDevice getPhysicalDevice() const { return physical_device; };
     VkDevice getLogicalDevice() const { return logical_device; };
-    KataglyphisRenderer::VulkanRendererInternals::QueueFamilyIndices getQueueFamilies();
+    Kataglyphis::VulkanRendererInternals::QueueFamilyIndices getQueueFamilies();
     VkQueue getGraphicsQueue() const { return graphics_queue; };
     VkQueue getComputeQueue() const { return compute_queue; };
     VkQueue getPresentationQueue() const { return presentation_queue; };
-    KataglyphisRenderer::VulkanRendererInternals::SwapChainDetails getSwapchainDetails();
+    Kataglyphis::VulkanRendererInternals::SwapChainDetails getSwapchainDetails();
     bool supportsHardwareAcceleratedRRT() { return deviceSupportsHardwareAcceleratedRRT; };
 
     void cleanUp();
@@ -61,8 +61,8 @@ class VulkanDevice
     void get_physical_device();
     void create_logical_device();
 
-    KataglyphisRenderer::VulkanRendererInternals::QueueFamilyIndices getQueueFamilies(VkPhysicalDevice physical_device);
-    KataglyphisRenderer::VulkanRendererInternals::SwapChainDetails getSwapchainDetails(VkPhysicalDevice device);
+    Kataglyphis::VulkanRendererInternals::QueueFamilyIndices getQueueFamilies(VkPhysicalDevice physical_device);
+    Kataglyphis::VulkanRendererInternals::SwapChainDetails getSwapchainDetails(VkPhysicalDevice device);
 
     bool check_device_suitable(VkPhysicalDevice device);
     bool check_device_extension_support(VkPhysicalDevice device);
@@ -94,3 +94,4 @@ class VulkanDevice
 
     };
 };
+}// namespace Kataglyphis

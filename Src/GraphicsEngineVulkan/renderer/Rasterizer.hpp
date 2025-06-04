@@ -7,7 +7,7 @@
 #include "vulkan_base/VulkanDevice.hpp"
 #include "vulkan_base/VulkanSwapChain.hpp"
 
-namespace KataglyphisRenderer::VulkanRendererInternals {
+namespace Kataglyphis::VulkanRendererInternals {
 class Rasterizer
 {
   public:
@@ -56,4 +56,4 @@ class Rasterizer
     void createFramebuffer();
     void createPushConstantRange();
 };
-}// namespace KataglyphisRenderer::VulkanRendererInternals
+}// namespace Kataglyphis::VulkanRendererInternals

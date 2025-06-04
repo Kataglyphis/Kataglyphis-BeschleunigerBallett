@@ -12,9 +12,9 @@
 #include "common/Utilities.hpp"
 #include "renderer/VulkanRendererConfig.hpp"
 
-KataglyphisRenderer::VulkanRendererInternals::Rasterizer::Rasterizer() {}
+Kataglyphis::VulkanRendererInternals::Rasterizer::Rasterizer() {}
 
-void KataglyphisRenderer::VulkanRendererInternals::Rasterizer::init(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::Rasterizer::init(VulkanDevice *device,
   VulkanSwapChain *vulkanSwapChain,
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts,
   VkCommandPool &commandPool)
@@ -29,24 +29,24 @@ void KataglyphisRenderer::VulkanRendererInternals::Rasterizer::init(VulkanDevice
     createFramebuffer();
 }
 
-void KataglyphisRenderer::VulkanRendererInternals::Rasterizer::shaderHotReload(
+void Kataglyphis::VulkanRendererInternals::Rasterizer::shaderHotReload(
   const std::vector<VkDescriptorSetLayout> &descriptor_set_layouts)
 {
     vkDestroyPipeline(device->getLogicalDevice(), graphics_pipeline, nullptr);
     createGraphicsPipeline(descriptor_set_layouts);
 }
 
-Texture &KataglyphisRenderer::VulkanRendererInternals::Rasterizer::getOffscreenTexture(uint32_t index)
+Kataglyphis::Texture &Kataglyphis::VulkanRendererInternals::Rasterizer::getOffscreenTexture(uint32_t index)
 {
     return offscreenTextures[index];
 }
 
-void KataglyphisRenderer::VulkanRendererInternals::Rasterizer::setPushConstant(PushConstantRasterizer pushConstant)
+void Kataglyphis::VulkanRendererInternals::Rasterizer::setPushConstant(PushConstantRasterizer pushConstant)
 {
     this->pushConstant = pushConstant;
 }
 
-void KataglyphisRenderer::VulkanRendererInternals::Rasterizer::recordCommands(VkCommandBuffer &commandBuffer,
+void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(VkCommandBuffer &commandBuffer,
   uint32_t image_index,
   Scene *scene,
   const std::vector<VkDescriptorSet> &descriptorSets)
@@ -119,7 +119,7 @@ void KataglyphisRenderer::VulkanRendererInternals::Rasterizer::recordCommands(Vk
     vkCmdEndRenderPass(commandBuffer);
 }
 
-void KataglyphisRenderer::VulkanRendererInternals::Rasterizer::cleanUp()
+void Kataglyphis::VulkanRendererInternals::Rasterizer::cleanUp()
 {
     for (auto framebuffer : framebuffer) { vkDestroyFramebuffer(device->getLogicalDevice(), framebuffer, nullptr); }
 
@@ -132,9 +132,9 @@ void KataglyphisRenderer::VulkanRendererInternals::Rasterizer::cleanUp()
     vkDestroyRenderPass(device->getLogicalDevice(), render_pass, nullptr);
 }
 
-KataglyphisRenderer::VulkanRendererInternals::Rasterizer::~Rasterizer() {}
+Kataglyphis::VulkanRendererInternals::Rasterizer::~Rasterizer() {}
 
-void KataglyphisRenderer::VulkanRendererInternals::Rasterizer::createRenderPass()
+void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
 {
     // Color attachment of render pass
     VkAttachmentDescription color_attachment{};
@@ -222,7 +222,7 @@ void KataglyphisRenderer::VulkanRendererInternals::Rasterizer::createRenderPass(
     ASSERT_VULKAN(result, "Failed to create render pass!")
 }
 
-void KataglyphisRenderer::VulkanRendererInternals::Rasterizer::createFramebuffer()
+void Kataglyphis::VulkanRendererInternals::Rasterizer::createFramebuffer()
 {
     framebuffer.resize(vulkanSwapChain->getNumberSwapChainImages());
 
@@ -246,7 +246,7 @@ void KataglyphisRenderer::VulkanRendererInternals::Rasterizer::createFramebuffer
     }
 }
 
-void KataglyphisRenderer::VulkanRendererInternals::Rasterizer::createPushConstantRange()
+void Kataglyphis::VulkanRendererInternals::Rasterizer::createPushConstantRange()
 {
     // define push constant values (no 'create' needed)
     push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
@@ -254,7 +254,7 @@ void KataglyphisRenderer::VulkanRendererInternals::Rasterizer::createPushConstan
     push_constant_range.size = sizeof(PushConstantRasterizer);
 }
 
-void KataglyphisRenderer::VulkanRendererInternals::Rasterizer::createTextures(VkCommandPool &commandPool)
+void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(VkCommandPool &commandPool)
 {
     offscreenTextures.resize(vulkanSwapChain->getNumberSwapChainImages());
 
@@ -320,7 +320,7 @@ void KataglyphisRenderer::VulkanRendererInternals::Rasterizer::createTextures(Vk
       device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), cmdBuffer);
 }
 
-void KataglyphisRenderer::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
+void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
 {
     std::stringstream rasterizer_shader_dir;

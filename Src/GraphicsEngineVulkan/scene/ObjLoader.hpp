@@ -7,6 +7,7 @@
 #include "scene/ObjMaterial.hpp"
 #include "scene/Vertex.hpp"
 
+namespace Kataglyphis {
 class ObjLoader
 {
   public:
@@ -15,7 +16,7 @@ class ObjLoader
     std::shared_ptr<Model> loadModel(const std::string &modelFile);
 
   private:
-    VulkanDevice *device;
+    Kataglyphis::VulkanDevice *device;
     VkQueue transfer_queue;
     VkCommandPool command_pool;
 
@@ -28,3 +29,4 @@ class ObjLoader
     std::vector<std::string> loadTexturesAndMaterials(const std::string &modelFile);
     void loadVertices(const std::string &fileName);
 };
+}// namespace Kataglyphis

@@ -12,7 +12,7 @@
 #include "vulkan_base/VulkanDevice.hpp"
 #include "window/Window.hpp"
 
-namespace KataglyphisRenderer::Frontend {
+namespace Kataglyphis::Frontend {
 class GUI
 {
   public:
@@ -24,7 +24,7 @@ class GUI
       const VkCommandPool &graphics_command_pool);
 
     GUISceneSharedVars getGuiSceneSharedVars() { return guiSceneSharedVars; };
-    KataglyphisRenderer::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &getGuiRendererSharedVars()
+    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &getGuiRendererSharedVars()
     {
         return guiRendererSharedVars;
     };
@@ -45,12 +45,12 @@ class GUI
     VulkanDevice *device{ VK_NULL_HANDLE };
     Window *window{ VK_NULL_HANDLE };
     VkDescriptorPool gui_descriptor_pool{ VK_NULL_HANDLE };
-    KataglyphisRenderer::VulkanRendererInternals::CommandBufferManager commandBufferManager;
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
 
     GUISceneSharedVars guiSceneSharedVars;
-    KataglyphisRenderer::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars guiRendererSharedVars;
+    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars guiRendererSharedVars;
 
     bool renderUserSelectionForRRT = true;
 };
 
-}// namespace KataglyphisRenderer::Frontend
+}// namespace Kataglyphis::Frontend

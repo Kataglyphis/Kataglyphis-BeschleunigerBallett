@@ -7,7 +7,7 @@
 
 #include "spdlog/spdlog.h"
 
-namespace KataglyphisRenderer {
+namespace Kataglyphis {
 static VkFormat choose_supported_format(VkPhysicalDevice physical_device,
   const std::vector<VkFormat> &formats,
   VkImageTiling tiling,
@@ -31,4 +31,4 @@ static VkFormat choose_supported_format(VkPhysicalDevice physical_device,
 
     spdlog::error("Failed to find supported format!");
 }
-}// namespace KataglyphisRenderer
+}// namespace Kataglyphis

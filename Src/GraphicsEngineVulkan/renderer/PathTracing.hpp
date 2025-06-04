@@ -6,7 +6,7 @@
 #include "vulkan_base/VulkanDevice.hpp"
 #include "vulkan_base/VulkanSwapChain.hpp"
 
-namespace KataglyphisRenderer::VulkanRendererInternals {
+namespace Kataglyphis::VulkanRendererInternals {
 class PathTracing
 {
   public:
@@ -65,4 +65,4 @@ class PathTracing
     void createQueryPool();
     void createPipeline(const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts);
 };
-}// namespace KataglyphisRenderer::VulkanRendererInternals
+}// namespace Kataglyphis::VulkanRendererInternals

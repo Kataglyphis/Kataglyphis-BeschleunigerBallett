@@ -2,7 +2,7 @@
 #include <vulkan/vulkan.h>
 
 #include "vulkan_base/VulkanDevice.hpp"
-
+namespace Kataglyphis {
 class VulkanImageView
 {
   public:
@@ -27,3 +27,4 @@ class VulkanImageView
 
     VkImageView imageView;
 };
+}// namespace Kataglyphis

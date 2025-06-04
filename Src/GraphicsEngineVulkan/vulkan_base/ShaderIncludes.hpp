@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace ShaderIncludes {
+namespace Kataglyphis::ShaderIncludes {
 
 std::string getShaderIncludes()
 {
@@ -14,4 +14,4 @@ std::string getShaderIncludes()
     return ShaderIncludesString;
 }
 
-}// namespace ShaderIncludes
+}// namespace Kataglyphis::ShaderIncludes

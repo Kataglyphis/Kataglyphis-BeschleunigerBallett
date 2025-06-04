@@ -5,7 +5,7 @@
 #include "hostDevice/host_device_shared_vars.hpp"
 #include <spdlog/spdlog.h>
 
-namespace KataglyphisRenderer {
+namespace Kataglyphis {
 // Error checking on vulkan function calls
 #define ASSERT_VULKAN(val, error_string) \
     if (val != VK_SUCCESS) { spdlog::error(error_string); }
@@ -17,4 +17,4 @@ const bool ENABLE_VALIDATION_LAYERS = false;
 #else
 const bool ENABLE_VALIDATION_LAYERS = true;
 #endif
-}// namespace KataglyphisRenderer
+}// namespace Kataglyphis

@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 
 #include <stdexcept>
+namespace Kataglyphis {
 
 class Allocator
 {
@@ -17,3 +18,4 @@ class Allocator
   private:
     VmaAllocator vmaAllocator;
 };
+}// namespace Kataglyphis

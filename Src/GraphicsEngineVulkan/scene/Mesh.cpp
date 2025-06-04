@@ -6,6 +6,8 @@
 #include "common/Utilities.hpp"
 #include "vulkan_base/VulkanBuffer.hpp"
 
+using namespace Kataglyphis;
+
 Mesh::Mesh() {}
 
 void Mesh::cleanUp()

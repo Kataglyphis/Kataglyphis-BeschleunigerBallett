@@ -11,7 +11,7 @@ using vec3 = glm::vec3;
 using vec4 = glm::vec4;
 using mat4 = glm::mat4;
 using uint = unsigned int;
-namespace KataglyphisRenderer::VulkanRendererInternals {
+namespace Kataglyphis::VulkanRendererInternals {
 #endif
 
 // this will also be an input to our shaders !!
@@ -22,5 +22,5 @@ struct GlobalUBO
     mat4 view;
 };
 #ifdef __cplusplus
-}// namespace KataglyphisRenderer::VulkanRendererInternals
+}// namespace Kataglyphis::VulkanRendererInternals
 #endif

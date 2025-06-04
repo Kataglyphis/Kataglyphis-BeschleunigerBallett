@@ -7,7 +7,7 @@
 
 #include <stdexcept>
 
-using namespace KataglyphisRenderer::Frontend;
+using namespace Kataglyphis::Frontend;
 // GLFW Callback functions
 static void onErrorCallback(int error, const char *description)
 {

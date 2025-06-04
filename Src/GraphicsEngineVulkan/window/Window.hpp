@@ -6,7 +6,7 @@
 
 #include <GLFW/glfw3.h>
 
-namespace KataglyphisRenderer::Frontend {
+namespace Kataglyphis::Frontend {
 class Window
 {
   public:
@@ -62,4 +62,4 @@ class Window
     static void mouse_callback(GLFWwindow *window, double x_pos, double y_pos);
     static void mouse_button_callback(GLFWwindow *window, int button, int action, int mods);
 };
-}// namespace KataglyphisRenderer::Frontend
+}// namespace Kataglyphis::Frontend

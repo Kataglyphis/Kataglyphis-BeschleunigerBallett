@@ -7,6 +7,7 @@
 #include "scene/Scene.hpp"
 #include "vulkan_base/VulkanDevice.hpp"
 
+namespace Kataglyphis::VulkanRendererInternals {
 struct BuildAccelerationStructure
 {
     VkAccelerationStructureBuildGeometryInfoKHR build_info;
@@ -40,7 +41,7 @@ class ASManager
 
   private:
     VulkanDevice *vulkanDevice{ VK_NULL_HANDLE };
-    KataglyphisRenderer::VulkanRendererInternals::CommandBufferManager commandBufferManager;
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
     VulkanBufferManager vulkanBufferManager;
 
     std::vector<BottomLevelAccelerationStructure> blas;
@@ -62,3 +63,4 @@ class ASManager
       VkAccelerationStructureGeometryKHR &acceleration_structure_geometry,
       VkAccelerationStructureBuildRangeInfoKHR &acceleration_structure_build_range_info);
 };
+}// namespace Kataglyphis::VulkanRendererInternals

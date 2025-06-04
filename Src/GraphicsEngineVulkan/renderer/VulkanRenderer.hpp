@@ -22,20 +22,20 @@
 #include "vulkan_base/VulkanSwapChain.hpp"
 #include "window/Window.hpp"
 
-namespace KataglyphisRenderer {
+namespace Kataglyphis {
 class VulkanRenderer
 {
   public:
-    VulkanRenderer(KataglyphisRenderer::Frontend::Window *window,
+    VulkanRenderer(Kataglyphis::Frontend::Window *window,
       Scene *scene,
-      KataglyphisRenderer::Frontend::GUI *gui,
+      Kataglyphis::Frontend::GUI *gui,
       Camera *camera);
 
     void drawFrame();
 
-    void updateUniforms(Scene *scene, Camera *camera, KataglyphisRenderer::Frontend::Window *window);
+    void updateUniforms(Scene *scene, Camera *camera, Kataglyphis::Frontend::Window *window);
 
-    void updateStateDueToUserInput(KataglyphisRenderer::Frontend::GUI *gui);
+    void updateStateDueToUserInput(Kataglyphis::Frontend::GUI *gui);
     void finishAllRenderCommands();
     void update_raytracing_descriptor_set(uint32_t image_index);
 
@@ -61,9 +61,9 @@ class VulkanRenderer
 
     VulkanSwapChain vulkanSwapChain;
 
-    KataglyphisRenderer::Frontend::Window *window;
+    Kataglyphis::Frontend::Window *window;
     Scene *scene;
-    KataglyphisRenderer::Frontend::GUI *gui;
+    Kataglyphis::Frontend::GUI *gui;
 
     // -- pools
     void record_commands(uint32_t image_index);
@@ -82,13 +82,13 @@ class VulkanRenderer
     void cleanUpUBOs();
 
     std::vector<VkCommandBuffer> command_buffers;
-    KataglyphisRenderer::VulkanRendererInternals::CommandBufferManager commandBufferManager;
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
     void create_command_buffers();
 
-    KataglyphisRenderer::VulkanRendererInternals::Raytracing raytracingStage;
-    KataglyphisRenderer::VulkanRendererInternals::Rasterizer rasterizer;
-    KataglyphisRenderer::VulkanRendererInternals::PathTracing pathTracing;
-    PostStage postStage;
+    Kataglyphis::VulkanRendererInternals::Raytracing raytracingStage;
+    Kataglyphis::VulkanRendererInternals::Rasterizer rasterizer;
+    Kataglyphis::VulkanRendererInternals::PathTracing pathTracing;
+    Kataglyphis::VulkanRendererInternals::PostStage postStage;
 
     // new era of memory management for my project
     // for now on integrate vma
@@ -103,7 +103,7 @@ class VulkanRenderer
     void createSynchronization();
     void cleanUpSync();
 
-    ASManager asManager;
+    Kataglyphis::VulkanRendererInternals::ASManager asManager;
     VulkanBuffer objectDescriptionBuffer;
     void create_object_description_buffer();
 
@@ -132,4 +132,4 @@ class VulkanRenderer
 
     bool checkChangedFramebufferSize();
 };
-}// namespace KataglyphisRenderer
+}// namespace Kataglyphis

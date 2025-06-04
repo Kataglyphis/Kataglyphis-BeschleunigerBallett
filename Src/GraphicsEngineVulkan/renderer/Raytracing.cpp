@@ -11,9 +11,9 @@
 #include "util/File.hpp"
 #include "vulkan_base/ShaderHelper.hpp"
 
-KataglyphisRenderer::VulkanRendererInternals::Raytracing::Raytracing() {}
+Kataglyphis::VulkanRendererInternals::Raytracing::Raytracing() {}
 
-void KataglyphisRenderer::VulkanRendererInternals::Raytracing::init(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::Raytracing::init(VulkanDevice *device,
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
 {
     this->device = device;
@@ -23,14 +23,14 @@ void KataglyphisRenderer::VulkanRendererInternals::Raytracing::init(VulkanDevice
     createSBT();
 }
 
-void KataglyphisRenderer::VulkanRendererInternals::Raytracing::shaderHotReload(
+void Kataglyphis::VulkanRendererInternals::Raytracing::shaderHotReload(
   const std::vector<VkDescriptorSetLayout> &descriptor_set_layouts)
 {
     vkDestroyPipeline(device->getLogicalDevice(), graphicsPipeline, nullptr);
     createGraphicsPipeline(descriptor_set_layouts);
 }
 
-void KataglyphisRenderer::VulkanRendererInternals::Raytracing::recordCommands(VkCommandBuffer &commandBuffer,
+void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(VkCommandBuffer &commandBuffer,
   VulkanSwapChain *vulkanSwapChain,
   const std::vector<VkDescriptorSet> &descriptorSets)
 {
@@ -93,7 +93,7 @@ void KataglyphisRenderer::VulkanRendererInternals::Raytracing::recordCommands(Vk
       1);
 }
 
-void KataglyphisRenderer::VulkanRendererInternals::Raytracing::cleanUp()
+void Kataglyphis::VulkanRendererInternals::Raytracing::cleanUp()
 {
     shaderBindingTableBuffer.cleanUp();
     raygenShaderBindingTableBuffer.cleanUp();
@@ -104,9 +104,9 @@ void KataglyphisRenderer::VulkanRendererInternals::Raytracing::cleanUp()
     vkDestroyPipelineLayout(device->getLogicalDevice(), pipeline_layout, nullptr);
 }
 
-KataglyphisRenderer::VulkanRendererInternals::Raytracing::~Raytracing() {}
+Kataglyphis::VulkanRendererInternals::Raytracing::~Raytracing() {}
 
-void KataglyphisRenderer::VulkanRendererInternals::Raytracing::createPCRange()
+void Kataglyphis::VulkanRendererInternals::Raytracing::createPCRange()
 {
     // define push constant values (no 'create' needed)
     pc_ranges.stageFlags =
@@ -115,7 +115,7 @@ void KataglyphisRenderer::VulkanRendererInternals::Raytracing::createPCRange()
     pc_ranges.size = sizeof(PushConstantRaytracing);// size of data being passed
 }
 
-void KataglyphisRenderer::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
+void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
 {
     PFN_vkCreateRayTracingPipelinesKHR pvkCreateRayTracingPipelinesKHR =
@@ -282,7 +282,7 @@ void KataglyphisRenderer::VulkanRendererInternals::Raytracing::createGraphicsPip
     vkDestroyShaderModule(device->getLogicalDevice(), shadow_shader_module, nullptr);
 }
 
-void KataglyphisRenderer::VulkanRendererInternals::Raytracing::createSBT()
+void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
 {
     // load in functionality for raytracing shader group handles
     PFN_vkGetRayTracingShaderGroupHandlesKHR pvkGetRayTracingShaderGroupHandlesKHR =

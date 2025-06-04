@@ -6,7 +6,7 @@
 
 #include "common/Utilities.hpp"
 
-namespace debug {
+namespace Kataglyphis::debug {
 PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
 PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT;
 VkDebugUtilsMessengerEXT debugUtilsMessenger;
@@ -81,4 +81,4 @@ void freeDebugCallback(VkInstance instance)
         vkDestroyDebugUtilsMessengerEXT(instance, debugUtilsMessenger, nullptr);
     }
 }
-}// namespace debug
+}// namespace Kataglyphis::debug

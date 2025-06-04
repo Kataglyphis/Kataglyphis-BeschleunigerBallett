@@ -1,4 +1,4 @@
-namespace KataglyphisRenderer::VulkanRendererInternals::FrontendShared {
+namespace Kataglyphis::VulkanRendererInternals::FrontendShared {
 struct GUIRendererSharedVars
 {
     bool raytracing = false;
@@ -8,4 +8,4 @@ struct GUIRendererSharedVars
 
     // path tracing vars
 };
-}// namespace KataglyphisRenderer::VulkanRendererInternals::FrontendShared
+}// namespace Kataglyphis::VulkanRendererInternals::FrontendShared

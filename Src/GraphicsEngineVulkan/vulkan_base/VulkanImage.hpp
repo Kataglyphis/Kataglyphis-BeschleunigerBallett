@@ -4,6 +4,7 @@
 #include "renderer/CommandBufferManager.hpp"
 #include "vulkan_base/VulkanDevice.hpp"
 
+namespace Kataglyphis {
 class VulkanImage
 {
   public:
@@ -41,7 +42,7 @@ class VulkanImage
 
   private:
     VulkanDevice *device{ VK_NULL_HANDLE };
-    KataglyphisRenderer::VulkanRendererInternals::CommandBufferManager commandBufferManager;
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
 
     VkImage image;
     VkDeviceMemory imageMemory;
@@ -49,3 +50,4 @@ class VulkanImage
     VkAccessFlags accessFlagsForImageLayout(VkImageLayout layout);
     VkPipelineStageFlags pipelineStageForLayout(VkImageLayout oldImageLayout);
 };
+}// namespace Kataglyphis
