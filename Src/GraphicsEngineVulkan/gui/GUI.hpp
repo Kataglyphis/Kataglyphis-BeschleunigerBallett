@@ -24,7 +24,10 @@ class GUI
       const VkCommandPool &graphics_command_pool);
 
     GUISceneSharedVars getGuiSceneSharedVars() { return guiSceneSharedVars; };
-    GUIRendererSharedVars &getGuiRendererSharedVars() { return guiRendererSharedVars; };
+    KataglyphisRenderer::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &getGuiRendererSharedVars()
+    {
+        return guiRendererSharedVars;
+    };
 
     void setUserSelectionForRRT(bool rrtCapabilitiesAvailable);
 
@@ -45,7 +48,7 @@ class GUI
     KataglyphisRenderer::VulkanRendererInternals::CommandBufferManager commandBufferManager;
 
     GUISceneSharedVars guiSceneSharedVars;
-    GUIRendererSharedVars guiRendererSharedVars;
+    KataglyphisRenderer::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars guiRendererSharedVars;
 
     bool renderUserSelectionForRRT = true;
 };

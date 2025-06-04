@@ -139,7 +139,8 @@ void KataglyphisRenderer::VulkanRenderer::updateUniforms(Scene *scene,
 
 void KataglyphisRenderer::VulkanRenderer::updateStateDueToUserInput(KataglyphisRenderer::Frontend::GUI *gui)
 {
-    GUIRendererSharedVars &guiRendererSharedVars = gui->getGuiRendererSharedVars();
+    KataglyphisRenderer::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars =
+      gui->getGuiRendererSharedVars();
 
     if (guiRendererSharedVars.shader_hot_reload_triggered) {
         shaderHotReload();
@@ -213,7 +214,8 @@ void KataglyphisRenderer::VulkanRenderer::drawFrame()
 
     update_uniform_buffers(image_index);
 
-    GUIRendererSharedVars &guiRendererSharedVars = gui->getGuiRendererSharedVars();
+    KataglyphisRenderer::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars =
+      gui->getGuiRendererSharedVars();
     if (guiRendererSharedVars.raytracing) update_raytracing_descriptor_set(image_index);
 
     record_commands(image_index);
@@ -1059,7 +1061,8 @@ void KataglyphisRenderer::VulkanRenderer::record_commands(uint32_t image_index)
     Texture &renderResult = rasterizer.getOffscreenTexture(image_index);
     VulkanImage &vulkanImage = renderResult.getVulkanImage();
 
-    GUIRendererSharedVars &guiRendererSharedVars = gui->getGuiRendererSharedVars();
+    KataglyphisRenderer::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars =
+      gui->getGuiRendererSharedVars();
     if (guiRendererSharedVars.raytracing) {
         std::vector<VkDescriptorSet> sets = { sharedRenderDescriptorSet[image_index],
             raytracingDescriptorSet[image_index] };

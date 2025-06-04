@@ -87,7 +87,7 @@ class VulkanRenderer
 
     KataglyphisRenderer::VulkanRendererInternals::Raytracing raytracingStage;
     KataglyphisRenderer::VulkanRendererInternals::Rasterizer rasterizer;
-    PathTracing pathTracing;
+    KataglyphisRenderer::VulkanRendererInternals::PathTracing pathTracing;
     PostStage postStage;
 
     // new era of memory management for my project

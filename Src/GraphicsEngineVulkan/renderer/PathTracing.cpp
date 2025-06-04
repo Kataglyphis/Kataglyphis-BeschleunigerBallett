@@ -13,9 +13,10 @@
 // Good source:
 // https://github.com/nvpro-samples/vk_mini_path_tracer/blob/main/vk_mini_path_tracer/main.cpp
 
-PathTracing::PathTracing() {}
+KataglyphisRenderer::VulkanRendererInternals::PathTracing::PathTracing() {}
 
-void PathTracing::init(VulkanDevice *device, const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
+void KataglyphisRenderer::VulkanRendererInternals::PathTracing::init(VulkanDevice *device,
+  const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
 {
     this->device = device;
 
@@ -39,13 +40,14 @@ void PathTracing::init(VulkanDevice *device, const std::vector<VkDescriptorSetLa
     createPipeline(descriptorSetLayouts);
 }
 
-void PathTracing::shaderHotReload(const std::vector<VkDescriptorSetLayout> &descriptor_set_layouts)
+void KataglyphisRenderer::VulkanRendererInternals::PathTracing::shaderHotReload(
+  const std::vector<VkDescriptorSetLayout> &descriptor_set_layouts)
 {
     vkDestroyPipeline(device->getLogicalDevice(), pipeline, nullptr);
     createPipeline(descriptor_set_layouts);
 }
 
-void PathTracing::recordCommands(VkCommandBuffer &commandBuffer,
+void KataglyphisRenderer::VulkanRendererInternals::PathTracing::recordCommands(VkCommandBuffer &commandBuffer,
   uint32_t image_index,
   VulkanImage &vulkanImage,
   VulkanSwapChain *vulkanSwapChain,
@@ -158,7 +160,7 @@ void PathTracing::recordCommands(VkCommandBuffer &commandBuffer,
     }
 }
 
-void PathTracing::cleanUp()
+void KataglyphisRenderer::VulkanRendererInternals::PathTracing::cleanUp()
 {
     vkDestroyPipeline(device->getLogicalDevice(), pipeline, nullptr);
     vkDestroyPipelineLayout(device->getLogicalDevice(), pipeline_layout, nullptr);
@@ -166,9 +168,9 @@ void PathTracing::cleanUp()
     vkDestroyQueryPool(device->getLogicalDevice(), queryPool, nullptr);
 }
 
-PathTracing::~PathTracing() {}
+KataglyphisRenderer::VulkanRendererInternals::PathTracing::~PathTracing() {}
 
-void PathTracing::createQueryPool()
+void KataglyphisRenderer::VulkanRendererInternals::PathTracing::createQueryPool()
 {
     VkQueryPoolCreateInfo queryPoolInfo = {};
     queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
@@ -181,7 +183,8 @@ void PathTracing::createQueryPool()
       vkCreateQueryPool(device->getLogicalDevice(), &queryPoolInfo, NULL, &queryPool), "Failed to create query pool!");
 }
 
-void PathTracing::createPipeline(const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
+void KataglyphisRenderer::VulkanRendererInternals::PathTracing::createPipeline(
+  const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
 {
     VkPushConstantRange push_constant_range{};
     push_constant_range.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
