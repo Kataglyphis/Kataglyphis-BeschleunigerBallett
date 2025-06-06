@@ -97,19 +97,23 @@ macro(myproject_global_options)
   if(MSVC)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /DEBUG /Od /std:c++23preview")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /std:c++23preview")
+    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_RROFILE} /O2 /std:c++23preview")
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # https://gcc.gnu.org/onlinedocs/gcc/Debugging-Options.html
     # https://gcc.gnu.org/onlinedocs/gcc/Option-Summary.html
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0 -std=c++23 -ggdb")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -std=c++23 -DNDEBUG")
+    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} -O3 -std=c++23 -DNDEBUG")
     # https://clang.llvm.org/docs/UsersManual.html
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od /O0 /std:c++23 -fcolor-diagnostics")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /std:c++23 -DNDEBUG -fcolor-diagnostics")
+    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} /O2 /std:c++23 -DNDEBUG -fcolor-diagnostics")
     # https://clang.llvm.org/docs/ClangCommandLineReference.html
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g -ggdb -std=c++23 -fcolor-diagnostics") # -std=c++2a
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -std=c++23 -fcolor-diagnostics") # -std=c++2a
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -std=c++23 -fcolor-diagnostics")
+    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} -O3 -DNDEBUG -std=c++23 -fcolor-diagnostics") # -std=c++2a
   endif()
 
   # control where the static and shared libraries are built so that on windows
@@ -164,19 +168,27 @@ macro(myproject_local_options)
     "")
 
   # Only when building with -DCMAKE_BUILD_TYPE=Profile,
-  # with GCC or Clang on non-Windows hosts:
-  if(CMAKE_BUILD_TYPE STREQUAL "Profile"
-     AND (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-     AND NOT WIN32)
+  # on non-Windows and using GCC or Clang
+  if (
+    CMAKE_BUILD_TYPE STREQUAL "Profile"
+    AND (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    AND NOT WIN32
+  )
 
-    message(STATUS "Enabling gprof profiling")
-    target_compile_options(myproject_options INTERFACE -pg)
-    target_link_libraries(myproject_options INTERFACE -pg)
+    find_library(PROFILER_LIB profiler)
+
+    if (PROFILER_LIB)
+      message(STATUS "Enabling CPU profiling with gperftools (libprofiler)")
+      message(STATUS "Found libprofiler: ${PROFILER_LIB}")
+      target_link_libraries(myproject_options INTERFACE ${PROFILER_LIB})
+    else()
+      message(WARNING "libprofiler not found, falling back to gprof (-pg)")
+      target_compile_options(myproject_options INTERFACE -pg)
+      target_link_libraries(myproject_options INTERFACE -pg)
+    endif()
 
   elseif(myproject_ENABLE_GPROF)
-
-    message(INFO "GProf should only be used in conjuction with GCC GNU/Clang and not on Windows.")
-
+    message(WARNING "GProf should only be used with GCC on Linux using -DCMAKE_BUILD_TYPE=Profile")
   endif()
 
   if(myproject_DISABLE_EXCEPTIONS)
