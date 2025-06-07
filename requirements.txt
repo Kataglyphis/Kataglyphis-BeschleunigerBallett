@@ -1,5 +1,5 @@
 sphinx
-sphinx-press-theme
+sphinx-rtd-theme
 myst-parser
 pyyaml
 cmake-format

@@ -49,8 +49,9 @@ exclude_patterns = []
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = "press"
+html_theme = "sphinx_rtd_theme"
 html_theme_options = {
+    "style_nav_header_background": "#6af0ad",
     "palette": "dark",  # Set dark mode as default
     "fixed_sidebar": True,
 }
