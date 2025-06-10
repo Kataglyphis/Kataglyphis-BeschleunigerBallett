@@ -17,7 +17,7 @@
 <h4 align="center">A graphics engine built on top of Vulkan+OpenGL. Serves also as playground 
 for learning various best practices in Graphic APIs, CMake, Rust, ...<a href="https://jonasheinle.de" target="_blank"></a>.</h4>
 
-see also [**__Official homepage__**](https://beschleunigerballette.jonasheinle.de/)
+see also [**__Official homepage__**](https://beschleunigerballette.jonasheinle.de/). 
 [![Linux build + test + coverage on Ubuntu 24.04 ARM](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_arm.yml/badge.svg?branch=main)](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_arm.yml)
 [![Linux build + test + coverage on Ubuntu 24.04 x86](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_x86.yml/badge.svg)](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_x86.yml)
 [![Windows Server 2025 build x86 MSVC and Clang](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Windows.yml/badge.svg)](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Windows.yml)
