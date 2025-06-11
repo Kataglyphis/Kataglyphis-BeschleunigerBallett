@@ -1,23 +1,23 @@
 #pragma once
 
 #include "OmniDirShadowShaderProgram.hpp"
-#include "scene/light/point_light/PointLight.hpp"
-#include "scene/Scene.hpp"
 #include "renderer/RenderPassSceneDependend.hpp"
+#include "scene/Scene.hpp"
+#include "scene/light/point_light/PointLight.hpp"
 
-class OmniShadowMapPass : public RenderPassSceneDependend {
- public:
-  OmniShadowMapPass();
+class OmniShadowMapPass : public RenderPassSceneDependend
+{
+  public:
+    OmniShadowMapPass();
 
-  void execute(std::shared_ptr<PointLight> p_light,
-               std::shared_ptr<Scene> scene);
+    void execute(std::shared_ptr<PointLight> p_light, std::shared_ptr<Scene> scene);
 
-  void set_game_object_uniforms(glm::mat4 model, glm::mat4 normal_model);
+    void set_game_object_uniforms(glm::mat4 model, glm::mat4 normal_model);
 
-  void create_shader_program();
+    void create_shader_program();
 
-  ~OmniShadowMapPass();
+    ~OmniShadowMapPass();
 
- private:
-  std::shared_ptr<OmniDirShadowShaderProgram> shader_program;
+  private:
+    std::shared_ptr<OmniDirShadowShaderProgram> shader_program;
 };

@@ -1,28 +1,33 @@
 #pragma once
 #include <array>
 
-#include "scene/texture/Texture.hpp"
 #include "GeometryPassShaderProgram.hpp"
 #include "renderer/RenderPassSceneDependend.hpp"
 #include "scene/Scene.hpp"
 #include "scene/sky_box/SkyBox.hpp"
+#include "scene/texture/Texture.hpp"
 
-class GeometryPass : public RenderPassSceneDependend {
- public:
-  GeometryPass();
+class GeometryPass : public RenderPassSceneDependend
+{
+  public:
+    GeometryPass();
 
-  void execute(glm::mat4 projection_matrix, std::shared_ptr<Camera> main_camera,
-               GLuint window_width, GLuint window_height, GLuint gbuffer_id,
-               GLfloat delta_time, std::shared_ptr<Scene>);
+    void execute(glm::mat4 projection_matrix,
+      std::shared_ptr<Camera> main_camera,
+      GLuint window_width,
+      GLuint window_height,
+      GLuint gbuffer_id,
+      GLfloat delta_time,
+      std::shared_ptr<Scene>);
 
-  void create_shader_program();
+    void create_shader_program();
 
-  void set_game_object_uniforms(glm::mat4 model, glm::mat4 normal_model);
+    void set_game_object_uniforms(glm::mat4 model, glm::mat4 normal_model);
 
-  ~GeometryPass();
+    ~GeometryPass();
 
- private:
-  std::shared_ptr<GeometryPassShaderProgram> shader_program;
+  private:
+    std::shared_ptr<GeometryPassShaderProgram> shader_program;
 
-  SkyBox skybox;
+    SkyBox skybox;
 };

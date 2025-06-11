@@ -3,7 +3,8 @@
 
 #include <glm/glm.hpp>
 
-struct Rotation {
-  GLfloat degrees;
-  glm::vec3 axis;
+struct Rotation
+{
+    GLfloat degrees;
+    glm::vec3 axis;
 };

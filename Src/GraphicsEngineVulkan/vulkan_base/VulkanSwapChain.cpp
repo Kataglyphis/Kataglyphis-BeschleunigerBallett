@@ -4,15 +4,17 @@
 
 #include "common/Utilities.hpp"
 
-VulkanSwapChain::VulkanSwapChain() {}
+Kataglyphis::VulkanSwapChain::VulkanSwapChain() {}
 
-void VulkanSwapChain::initVulkanContext(VulkanDevice *device, Window *window, const VkSurfaceKHR &surface)
+void Kataglyphis::VulkanSwapChain::initVulkanContext(VulkanDevice *device,
+  Kataglyphis::Frontend::Window *window,
+  const VkSurfaceKHR &surface)
 {
     this->device = device;
     this->window = window;
 
     // get swap chain details so we can pick the best settings
-    SwapChainDetails swap_chain_details = device->getSwapchainDetails();
+    Kataglyphis::VulkanRendererInternals::SwapChainDetails swap_chain_details = device->getSwapchainDetails();
 
     // 1. choose best surface format
     // 2. choose best presentation mode
@@ -51,7 +53,7 @@ void VulkanSwapChain::initVulkanContext(VulkanDevice *device, Window *window, co
     swap_chain_create_info.clipped = VK_TRUE;// of course activate clipping ! :)
 
     // get queue family indices
-    QueueFamilyIndices indices = device->getQueueFamilies();
+    Kataglyphis::VulkanRendererInternals::QueueFamilyIndices indices = device->getQueueFamilies();
 
     // if graphics and presentation families are different then swapchain must let
     // images be shared between families
@@ -100,7 +102,7 @@ void VulkanSwapChain::initVulkanContext(VulkanDevice *device, Window *window, co
     }
 }
 
-void VulkanSwapChain::cleanUp()
+void Kataglyphis::VulkanSwapChain::cleanUp()
 {
     for (Texture &image : swap_chain_images) {
         vkDestroyImageView(device->getLogicalDevice(), image.getImageView(), nullptr);
@@ -109,9 +111,10 @@ void VulkanSwapChain::cleanUp()
     vkDestroySwapchainKHR(device->getLogicalDevice(), swapchain, nullptr);
 }
 
-VulkanSwapChain::~VulkanSwapChain() {}
+Kataglyphis::VulkanSwapChain::~VulkanSwapChain() {}
 
-VkSurfaceFormatKHR VulkanSwapChain::choose_best_surface_format(const std::vector<VkSurfaceFormatKHR> &formats)
+VkSurfaceFormatKHR Kataglyphis::VulkanSwapChain::choose_best_surface_format(
+  const std::vector<VkSurfaceFormatKHR> &formats)
 {
     // best format is subjective, but I go with:
     //  Format:           VK_FORMAT_R8G8B8A8_UNORM (backup-format:
@@ -133,7 +136,8 @@ VkSurfaceFormatKHR VulkanSwapChain::choose_best_surface_format(const std::vector
     return formats[0];
 }
 
-VkPresentModeKHR VulkanSwapChain::choose_best_presentation_mode(const std::vector<VkPresentModeKHR> &presentation_modes)
+VkPresentModeKHR Kataglyphis::VulkanSwapChain::choose_best_presentation_mode(
+  const std::vector<VkPresentModeKHR> &presentation_modes)
 {
     // look for mailbox presentation mode
     for (const auto &presentation_mode : presentation_modes) {
@@ -144,7 +148,7 @@ VkPresentModeKHR VulkanSwapChain::choose_best_presentation_mode(const std::vecto
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-VkExtent2D VulkanSwapChain::choose_swap_extent(const VkSurfaceCapabilitiesKHR &surface_capabilities)
+VkExtent2D Kataglyphis::VulkanSwapChain::choose_swap_extent(const VkSurfaceCapabilitiesKHR &surface_capabilities)
 {
     // if current extent is at numeric limits, than extent can vary. Otherwise it
     // is size of window

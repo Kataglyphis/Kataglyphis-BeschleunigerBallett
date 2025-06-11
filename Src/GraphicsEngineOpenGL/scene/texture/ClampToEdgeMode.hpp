@@ -1,13 +1,14 @@
 #pragma once
 #include "TextureWrappingMode.hpp"
 
-class ClampToEdgeMode : public TextureWrappingMode {
- public:
-  ClampToEdgeMode();
+class ClampToEdgeMode : public TextureWrappingMode
+{
+  public:
+    ClampToEdgeMode();
 
-  void activate() override;
+    void activate() override;
 
-  ~ClampToEdgeMode();
+    ~ClampToEdgeMode();
 
- private:
+  private:
 };

@@ -3,8 +3,10 @@
 
 #include "vulkan_base/VulkanBuffer.hpp"
 
+namespace Kataglyphis::VulkanRendererInternals {
 struct BottomLevelAccelerationStructure
 {
     VkAccelerationStructureKHR vulkanAS;
     VulkanBuffer vulkanBuffer;
 };
+}// namespace Kataglyphis::VulkanRendererInternals

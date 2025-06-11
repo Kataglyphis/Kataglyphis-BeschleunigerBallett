@@ -37,13 +37,13 @@ TEST(Integration, VulkanEngine)
 
   float delta_time = 0.0f;
   float last_time = 0.0f;
-
-  std::unique_ptr<Window> window =
-      std::make_unique<Window>(window_width, window_height);
+  using namespace Kataglyphis;
+  std::unique_ptr<Kataglyphis::Frontend::Window> window =
+      std::make_unique<Kataglyphis::Frontend::Window>(window_width, window_height);
   std::unique_ptr<Scene> scene = std::make_unique<Scene>();
-  std::unique_ptr<GUI> gui = std::make_unique<GUI>(window.get());
+  std::unique_ptr<Kataglyphis::Frontend::GUI> gui = std::make_unique<Kataglyphis::Frontend::GUI>(window.get());
   std::unique_ptr<Camera> camera = std::make_unique<Camera>();
 
-  VulkanRenderer vulkan_renderer{window.get(), scene.get(), gui.get(),
+  Kataglyphis::VulkanRenderer vulkan_renderer{window.get(), scene.get(), gui.get(),
                                   camera.get()};
 }

@@ -1,7 +1,3 @@
-/** @defgroup FileUtilities File Utilities
- *  Functions and utilities for performing file operations.
- *  @{
- */
 
 #include "util/File.hpp"
 #include "spdlog/spdlog.h"
@@ -9,9 +5,9 @@
 #include <fstream>
 #include <iostream>
 
-File::File(const std::string &file_location) { this->file_location = file_location; }
+Kataglyphis::File::File(const std::string &file_location) { this->file_location = file_location; }
 
-std::string File::read()
+std::string Kataglyphis::File::read()
 {
     std::string content;
     std::ifstream file_stream(file_location, std::ios::in);
@@ -31,7 +27,7 @@ std::string File::read()
     return content;
 }
 
-std::vector<char> File::readCharSequence()
+std::vector<char> Kataglyphis::File::readCharSequence()
 {
     // open stream from given file
     // std::ios::binary tells stream to read file as binary
@@ -39,9 +35,7 @@ std::vector<char> File::readCharSequence()
     std::ifstream file(file_location, std::ios::binary | std::ios::ate);
 
     // check if file stream sucessfully opened
-    if (!file.is_open()) { 
-        spdlog::error("Failed to open a file on location: {}!", file_location); 
-    }
+    if (!file.is_open()) { spdlog::error("Failed to open a file on location: {}!", file_location); }
 
     size_t file_size = (size_t)file.tellg();
     std::vector<char> file_buffer(file_size);
@@ -57,13 +51,11 @@ std::vector<char> File::readCharSequence()
     return file_buffer;
 }
 
-std::string File::getBaseDir()
+std::string Kataglyphis::File::getBaseDir()
 {
     if (file_location.find_last_of("/\\") != std::string::npos)
         return file_location.substr(0, file_location.find_last_of("/\\"));
     return "";
 }
 
-File::~File() {}
-
-/** @} */ // End of File utilities group
+Kataglyphis::File::~File() {}

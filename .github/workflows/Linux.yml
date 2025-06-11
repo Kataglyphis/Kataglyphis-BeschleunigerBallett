@@ -84,7 +84,9 @@ jobs:
             vma \
             vcv \
             vul \
-            slang          
+            slang
+          # DO NOT FORGET to source this script before running the app
+          # source ${{ env.VULKAN_VERSION }}.0/setup-env.sh
           echo "${{ github.workspace }}/${{ env.VULKAN_VERSION }}.0/aarch64/bin" >> $GITHUB_PATH
 
       - name: Check Installation
@@ -130,9 +132,12 @@ jobs:
 
       - name: Build
         run: |
-          cd build
-          cmake --preset linux-debug-clang ..
-          cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+          # Only source if we're on Ubuntu ARM64
+          if [[ "$(uname -s)" == "Linux" ]] && [[ "$(uname -m)" == "aarch64" ]]; then
+            source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}.0/setup-env.sh"
+          fi
+          cmake -B build --preset linux-debug-clang
+          cmake --build ${{github.workspace}}/build --preset linux-debug-clang
 
       - name: Test
         working-directory: ${{github.workspace}}/build/
@@ -143,15 +148,33 @@ jobs:
           llvm-profdata merge -sparse ${{github.workspace}}/build/Test/compile/default.profraw -o ${{github.workspace}}/build/compileTestSuite.profdata
           llvm-cov report ${{github.workspace}}/build/compileTestSuite -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata
           llvm-cov export ${{github.workspace}}/build/compileTestSuite -format=text -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata > ${{github.workspace}}/build/coverage.json
+          llvm-cov show ${{github.workspace}}/build/compileTestSuite -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata
 
-      - name: 📂 Sync files to dev domain
-        if: inputs.runner == 'ubuntu-24.04'
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5.3.0
+        with:
+          python-version: "3.11"
+      # You can test your matrix by printing the current Python version
+      - name: Setup python env
+        run: |
+          pip install -r requirements.txt
+
+      - name: Build web page
+        run: |
+          cp ${{github.workspace}}/build/build/html/*.svg ./docs/source/_static
+          cd docs/source
+          python graphviz_generator.py 
+          cd ..
+          make html
+
+      - name: 📂 Sync files to domain
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        if: inputs.runner == 'ubuntu-24.04'
         with:
           server: ${{ secrets.SERVER }}
           username: ${{ secrets.USERNAME }}
           password: ${{ secrets.PW }}
-          local-dir: "./build/build/html/"
+          local-dir: "./docs/build/html/"
 
       - name: Codecov
         if: inputs.runner == 'ubuntu-24.04'

@@ -1,13 +1,14 @@
 #pragma once
 #include "renderer/ShaderProgram.hpp"
 
-class OmniDirShadowShaderProgram : public ShaderProgram {
- public:
-  OmniDirShadowShaderProgram();
+class OmniDirShadowShaderProgram : public ShaderProgram
+{
+  public:
+    OmniDirShadowShaderProgram();
 
-  void reload();
+    void reload();
 
-  ~OmniDirShadowShaderProgram();
+    ~OmniDirShadowShaderProgram();
 
- private:
+  private:
 };

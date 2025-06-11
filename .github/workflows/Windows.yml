@@ -40,9 +40,13 @@ jobs:
         run: |
           choco install llvm --version="${{ env.CLANG_VERSION }}" --params="'/AddToPath'" -y
           choco install sccache
-          winget install --accept-source-agreements --accept-package-agreements cmake cppcheck
+          winget install --accept-source-agreements --accept-package-agreements cmake cppcheck nsis
           winget install --accept-source-agreements --accept-package-agreements --id=KhronosGroup.VulkanSDK -v "${{ env.VULKAN_VERSION }}" -e
           # ls "C:\VulkanSDK"
+
+      - name: Add NSIS to PATH
+        run: |
+          echo "C:\Program Files (x86)\NSIS" >> $GITHUB_PATH
 
       # for now cppcehck is buggy on windows 2025 github runner. so disable
       # a github runner has issues with running vulkan driver code; therefore just verify successful build :)
@@ -67,13 +71,13 @@ jobs:
 
       - name: Configure CMake for Release (Clang only)
         run: |
-          cmake -B build-release --preset "x64-Clang-Windows-Release"
+          cmake -B build-release --preset "x64-Clang-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF" -DCPACK_GENERATOR=ZIP
 
       - name: Build Release (Clang only)
         shell: pwsh
         run: |
           $env:CMAKE_BUILD_PARALLEL_LEVEL = $env:NUMBER_OF_PROCESSORS
-          cmake --build build-release --config Release
+          cmake --build build-release --preset "x64-Clang-Windows-Release"
 
       - name: Package (Clang only)
         run: |

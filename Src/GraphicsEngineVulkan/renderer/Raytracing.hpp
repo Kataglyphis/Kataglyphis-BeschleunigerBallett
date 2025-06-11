@@ -6,6 +6,7 @@
 #include "vulkan_base/VulkanBuffer.hpp"
 #include "vulkan_base/VulkanSwapChain.hpp"
 
+namespace Kataglyphis::VulkanRendererInternals {
 class Raytracing
 {
   public:
@@ -49,3 +50,4 @@ class Raytracing
     void createGraphicsPipeline(const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts);
     void createSBT();
 };
+}// namespace Kataglyphis::VulkanRendererInternals

@@ -6,7 +6,7 @@
  *  Functions and utilities for performing file operations.
  *  @{
  */
-
+namespace Kataglyphis {
 class File
 {
   public:
@@ -21,5 +21,5 @@ class File
   private:
     std::string file_location;
 };
-
-/** @} */ // End of File utilities group
+}// namespace Kataglyphis
+/** @} */// End of File utilities group

@@ -3,9 +3,11 @@
 #include "common/Utilities.hpp"
 #include "spdlog/spdlog.h"
 
+using namespace Kataglyphis;
+
 Scene::Scene() {}
 
-void Scene::update_user_input(GUI *gui) { guiSceneSharedVars = gui->getGuiSceneSharedVars(); }
+void Scene::update_user_input(Kataglyphis::Frontend::GUI *gui) { guiSceneSharedVars = gui->getGuiSceneSharedVars(); }
 
 void Scene::loadModel(VulkanDevice *device, VkCommandPool commandPool)
 {
@@ -34,9 +36,7 @@ void Scene::add_object_description(ObjectDescription object_description)
 
 void Scene::update_model_matrix(glm::mat4 model_matrix, int model_id)
 {
-    if (model_id >= static_cast<int32_t>(getModelCount()) || model_id < 0) {
-        spdlog::error("Wrong model id value!");
-    }
+    if (model_id >= static_cast<int32_t>(getModelCount()) || model_id < 0) { spdlog::error("Wrong model id value!"); }
 
     model_list[model_id]->set_model(model_matrix);
 }

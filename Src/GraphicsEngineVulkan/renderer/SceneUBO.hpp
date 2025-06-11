@@ -12,6 +12,7 @@ using vec3 = glm::vec3;
 using vec4 = glm::vec4;
 using mat4 = glm::mat4;
 using uint = unsigned int;
+namespace Kataglyphis::VulkanRendererInternals {
 #endif
 
 struct SceneUBO
@@ -21,3 +22,6 @@ struct SceneUBO
     // xyz is position; w = fov
     vec4 cam_pos;
 };
+#ifdef __cplusplus
+}// namespace Kataglyphis::VulkanRendererInternals
+#endif

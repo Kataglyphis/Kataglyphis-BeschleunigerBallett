@@ -4,17 +4,17 @@
 #include <filesystem>
 #include <vector>
 
-#include "util/File.hpp"
 #include "common/FormatHelper.hpp"
-#include "vulkan_base/ShaderHelper.hpp"
 #include "scene/Vertex.hpp"
+#include "util/File.hpp"
+#include "vulkan_base/ShaderHelper.hpp"
 
-#include "renderer/VulkanRendererConfig.hpp"
 #include "common/Utilities.hpp"
+#include "renderer/VulkanRendererConfig.hpp"
 
-Rasterizer::Rasterizer() {}
+Kataglyphis::VulkanRendererInternals::Rasterizer::Rasterizer() {}
 
-void Rasterizer::init(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::Rasterizer::init(VulkanDevice *device,
   VulkanSwapChain *vulkanSwapChain,
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts,
   VkCommandPool &commandPool)
@@ -29,17 +29,24 @@ void Rasterizer::init(VulkanDevice *device,
     createFramebuffer();
 }
 
-void Rasterizer::shaderHotReload(const std::vector<VkDescriptorSetLayout> &descriptor_set_layouts)
+void Kataglyphis::VulkanRendererInternals::Rasterizer::shaderHotReload(
+  const std::vector<VkDescriptorSetLayout> &descriptor_set_layouts)
 {
     vkDestroyPipeline(device->getLogicalDevice(), graphics_pipeline, nullptr);
     createGraphicsPipeline(descriptor_set_layouts);
 }
 
-Texture &Rasterizer::getOffscreenTexture(uint32_t index) { return offscreenTextures[index]; }
+Kataglyphis::Texture &Kataglyphis::VulkanRendererInternals::Rasterizer::getOffscreenTexture(uint32_t index)
+{
+    return offscreenTextures[index];
+}
 
-void Rasterizer::setPushConstant(PushConstantRasterizer pushConstant) { this->pushConstant = pushConstant; }
+void Kataglyphis::VulkanRendererInternals::Rasterizer::setPushConstant(PushConstantRasterizer pushConstant)
+{
+    this->pushConstant = pushConstant;
+}
 
-void Rasterizer::recordCommands(VkCommandBuffer &commandBuffer,
+void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(VkCommandBuffer &commandBuffer,
   uint32_t image_index,
   Scene *scene,
   const std::vector<VkDescriptorSet> &descriptorSets)
@@ -112,7 +119,7 @@ void Rasterizer::recordCommands(VkCommandBuffer &commandBuffer,
     vkCmdEndRenderPass(commandBuffer);
 }
 
-void Rasterizer::cleanUp()
+void Kataglyphis::VulkanRendererInternals::Rasterizer::cleanUp()
 {
     for (auto framebuffer : framebuffer) { vkDestroyFramebuffer(device->getLogicalDevice(), framebuffer, nullptr); }
 
@@ -125,9 +132,9 @@ void Rasterizer::cleanUp()
     vkDestroyRenderPass(device->getLogicalDevice(), render_pass, nullptr);
 }
 
-Rasterizer::~Rasterizer() {}
+Kataglyphis::VulkanRendererInternals::Rasterizer::~Rasterizer() {}
 
-void Rasterizer::createRenderPass()
+void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
 {
     // Color attachment of render pass
     VkAttachmentDescription color_attachment{};
@@ -215,7 +222,7 @@ void Rasterizer::createRenderPass()
     ASSERT_VULKAN(result, "Failed to create render pass!")
 }
 
-void Rasterizer::createFramebuffer()
+void Kataglyphis::VulkanRendererInternals::Rasterizer::createFramebuffer()
 {
     framebuffer.resize(vulkanSwapChain->getNumberSwapChainImages());
 
@@ -239,7 +246,7 @@ void Rasterizer::createFramebuffer()
     }
 }
 
-void Rasterizer::createPushConstantRange()
+void Kataglyphis::VulkanRendererInternals::Rasterizer::createPushConstantRange()
 {
     // define push constant values (no 'create' needed)
     push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
@@ -247,7 +254,7 @@ void Rasterizer::createPushConstantRange()
     push_constant_range.size = sizeof(PushConstantRasterizer);
 }
 
-void Rasterizer::createTextures(VkCommandPool &commandPool)
+void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(VkCommandPool &commandPool)
 {
     offscreenTextures.resize(vulkanSwapChain->getNumberSwapChainImages());
 
@@ -313,7 +320,8 @@ void Rasterizer::createTextures(VkCommandPool &commandPool)
       device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), cmdBuffer);
 }
 
-void Rasterizer::createGraphicsPipeline(const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
+void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
+  const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
 {
     std::stringstream rasterizer_shader_dir;
     std::filesystem::path cwd = std::filesystem::current_path();

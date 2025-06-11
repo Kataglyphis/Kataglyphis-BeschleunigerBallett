@@ -5,7 +5,7 @@
 
 #include "scene/Mesh.hpp"
 #include "scene/Texture.hpp"
-
+namespace Kataglyphis {
 class Model
 {
   public:
@@ -51,3 +51,4 @@ class Model
     std::vector<Texture> modelTextures;
     std::vector<VkSampler> modelTextureSamplers;
 };
+}// namespace Kataglyphis

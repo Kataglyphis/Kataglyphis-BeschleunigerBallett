@@ -1,15 +1,19 @@
 #include "renderer/accelerationStructures/ASManager.hpp"
 
-ASManager::ASManager() {}
+Kataglyphis::VulkanRendererInternals::ASManager::ASManager() {}
 
-void ASManager::createASForScene(VulkanDevice *device, VkCommandPool commandPool, Scene *scene)
+void Kataglyphis::VulkanRendererInternals::ASManager::createASForScene(VulkanDevice *device,
+  VkCommandPool commandPool,
+  Scene *scene)
 {
     this->vulkanDevice = device;
     createBLAS(device, commandPool, scene);
     createTLAS(device, commandPool, scene);
 }
 
-void ASManager::createBLAS(VulkanDevice *device, VkCommandPool commandPool, Scene *scene)
+void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(VulkanDevice *device,
+  VkCommandPool commandPool,
+  Scene *scene)
 {
     // LOAD ALL NECESSARY FUNCTIONS STRAIGHT IN THE BEGINNING
     // all functionality from extensions has to be loaded in the beginning
@@ -110,7 +114,9 @@ void ASManager::createBLAS(VulkanDevice *device, VkCommandPool commandPool, Scen
     scratchBuffer.cleanUp();
 }
 
-void ASManager::createTLAS(VulkanDevice *device, VkCommandPool commandPool, Scene *scene)
+void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *device,
+  VkCommandPool commandPool,
+  Scene *scene)
 {
     // LOAD ALL NECESSARY FUNCTIONS STRAIGHT IN THE BEGINNING
     // all functionality from extensions has to be loaded in the beginning
@@ -298,7 +304,7 @@ void ASManager::createTLAS(VulkanDevice *device, VkCommandPool commandPool, Scen
     geometryInstanceBuffer.cleanUp();
 }
 
-void ASManager::cleanUp()
+void Kataglyphis::VulkanRendererInternals::ASManager::cleanUp()
 {
     PFN_vkDestroyAccelerationStructureKHR pvkDestroyAccelerationStructureKHR =
       (PFN_vkDestroyAccelerationStructureKHR)vkGetDeviceProcAddr(
@@ -315,9 +321,9 @@ void ASManager::cleanUp()
     }
 }
 
-ASManager::~ASManager() {}
+Kataglyphis::VulkanRendererInternals::ASManager::~ASManager() {}
 
-void ASManager::createSingleBlas(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::ASManager::createSingleBlas(VulkanDevice *device,
   VkCommandBuffer command_buffer,
   BuildAccelerationStructure &build_as_structure,
   VkDeviceAddress scratch_device_or_host_address)
@@ -353,7 +359,7 @@ void ASManager::createSingleBlas(VulkanDevice *device,
       command_buffer, 1, &build_as_structure.build_info, &build_as_structure.range_info);
 }
 
-void ASManager::createAccelerationStructureInfosBLAS(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::ASManager::createAccelerationStructureInfosBLAS(VulkanDevice *device,
   BuildAccelerationStructure &build_as_structure,
   BlasInput &blas_input,
   VkDeviceSize &current_scretch_size,
@@ -389,7 +395,7 @@ void ASManager::createAccelerationStructureInfosBLAS(VulkanDevice *device,
     current_scretch_size = build_as_structure.size_info.buildScratchSize;
 }
 
-void ASManager::objectToVkGeometryKHR(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::ASManager::objectToVkGeometryKHR(VulkanDevice *device,
   Mesh *mesh,
   VkAccelerationStructureGeometryKHR &acceleration_structure_geometry,
   VkAccelerationStructureBuildRangeInfoKHR &acceleration_structure_build_range_info)
