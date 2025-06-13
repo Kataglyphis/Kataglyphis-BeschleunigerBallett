@@ -142,7 +142,7 @@ Frequently tested under
 - ❌ - not started
 
 
-### Built With
+### Dependencies
 
 * [Vulkan 1.3](https://www.vulkan.org/)
 * [OpenGL 4.6](https://www.opengl.org//)
@@ -153,19 +153,24 @@ Frequently tested under
 * [stb](https://github.com/nothings/stb)
 * [vma](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
 * [tinygltf](https://github.com/syoyo/tinygltf)
-* [doxygen](https://www.doxygen.nl/index.html)
 * [gtest](https://github.com/google/googletest)
 * [gbenchmark](https://github.com/google/benchmark)
 * [google fuzztest](https://github.com/google/fuzztest)
 * [cmake](https://cmake.org/)
 * [gsl](https://github.com/Microsoft/GSL)
-* [NSIS](https://nsis.sourceforge.io/Main_Page)
 * [nlohmann_json](https://github.com/nlohmann/json)
 * [SPDLOG](https://github.com/gabime/spdlog)
 
+##### Optional
+* [Rust](https://www.rust-lang.org/)
+* [corrision-rs](https://github.com/corrosion-rs/corrosion)
+* [cxx](https://cxx.rs/)
+* [uv](https://github.com/astral-sh/uv)
 
 ### Useful tools (you might also considering :) )
 
+* [NSIS](https://nsis.sourceforge.io/Main_Page)
+* [doxygen](https://www.doxygen.nl/index.html)
 * [cppcheck](https://cppcheck.sourceforge.io/)
 * [renderdoc](https://renderdoc.org/)
 * [nsightgraphics](https://developer.nvidia.com/nsight-graphics)
@@ -174,23 +179,25 @@ Frequently tested under
 * [visualstudio](https://visualstudio.microsoft.com/de/)
 * [ClangPowerTools](https://www.clangpowertools.com/)
 * [Codecov](https://app.codecov.io/gh)
-* [uv](https://github.com/astral-sh/uv)
+* [Ccache](https://ccache.dev/)
+* [Sccache](https://github.com/mozilla/sccache)
+
+#### Benchmarking
+* [gperftools](https://github.com/gperftools/gperftools)
+
+### VSCode Extensions
+* [CMake format](https://github.com/cheshirekow/cmake_format)
+* [CMake tools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cmake-tools)
+* [CppTools](https://github.com/microsoft/vscode-cpptools)
 
 <!-- GETTING STARTED -->
 ## Getting Started
 
-### Prerequisites
+### Specific version requirements
 
-Dependencies to libraries are stated above.<br />
-C++23 or higher required.<br />
-C17 or higher required.<br />
-[CMake 4.0.2](https://cmake.org/download/) or higher required.<br />
-
-#### Optional
-
-* [Rust](https://www.rust-lang.org/)
-* [corrision-rs](https://github.com/corrosion-rs/corrosion)
-* [cxx](https://cxx.rs/)
+**C++23** or higher required.<br />
+**C17** or higher required.<br />
+**CMake 4.0.2** or higher required.<br />
 
 ### Installation
 
@@ -200,33 +207,16 @@ C17 or higher required.<br />
    ```
 
 2. Then build your solution with [CMAKE] (https://cmake.org/) <br />
-  Here the recommended way over command line after cloning the repo:<br />
-  > **_NOTE:_** Here we use CmakePresets to simplify things. Consider using it too
-  or just build on a common way.
-  
+  You can follow my steps from my [CMake best practices](https://github.com/Kataglyphis/Kataglyphis-CMakeTemplate) repo.  
   For now the features in Rust are experimental. If you want to use them install
   Rust and set `RUST_FEATURES=ON` on your CMake build.
 
-  (for clarity: Assumption you are in the dir you have cloned the repo into)
-  ```sh
-  $ mkdir build ; cd build
-  # enlisting all available presets
-  $ cmake --list-presets=all ../
-  $ cmake --preset <configurePreset-name> ../
-  $ cmake --build --preset <buildPreset-name> .
-  ```
   Alternatively you can use the build scripts I use for my standard configuration: <br/>
   * [`buildEngine.sh`] 
   * [`buildEngine.bat`]
   ```sh
   $ {WORKING_DIR}/GraphicsEngineVulkan/buildEngine[.sh/.bat]
   ```
-### Upgrades
-#### Rusty things:
-1. Do not forget to upgrade the cxxbridge from time to time:
-```bash
-cargo install cxxbridge-cmd
-```
 
 # Shaders
 I provide two ways for compiling shaders with. Hence if you want to add new
@@ -238,48 +228,8 @@ appropriately.</br>
 
 
 # Tests
-I have four tests suites.
+I follow the test setup as descriped in: [CMake best practices](https://github.com/Kataglyphis/Kataglyphis-CMakeTemplate) 
 
-1. Compilation Test Suite: This suite gets executed every compilation step. This ensures the very most important functionality is correct before every compilation.
-
-2. Commit Test Suite: This gets executed on every push. More expensive tests are allowed :) 
-
-3. Perf test suite: It is all about measurements of performance. We are C++ tho! 
-
-4. Fuzz testing suite
-
-## Static Analyzers
-
-```bash
-clang --analyze --output-format html $(find Src -name '*.cpp' -o -name '*.cc')
-scan-build cmake --build .
-clang-tidy -p=./build/compile_commands.json  $(find Src -name '*.cpp' -o -name '*.cc')
-
-```
-
-# Format cmake files
-
-```bash
-uv venv
-source .venv/bin/activate
-pip install -v -e .
-cmake-format -c ./.cmake-format.yaml -i $(find cmake -name '*.cmake' -o -name 'CMakeLists.txt')
-```
-# Format code files 
-
-```bash
-clang-format -i $(find include -name "*.cpp" -or -name "*.h" -or -name "*.hpp")
-```
-
-# Docs
-Build the docs
-```bash
-uv venv
-source .venv/bin/activate
-pip install -v -e .
-cd docs 
-make html
-```
 <!-- ROADMAP -->
 ## Roadmap
 Watch the refman generated by doxygen. <br/>
@@ -331,15 +281,6 @@ Thanks for free 3D Models:
 Some very helpful literature, tutorials, etc. 
 
 * [View Frustum Culling](http://www.lighthouse3d.com/tutorials/view-frustum-culling/geometric-approach-extracting-the-planes/)
-
-Rust
-* [Rust](https://www.rust-lang.org/)
-
-CMake/C++
-* [Cpp best practices](https://github.com/cpp-best-practices/cppbestpractices)
-* [Integrate Rust into CMake projects](https://github.com/trondhe/rusty_cmake)
-* [corrision-rs](https://github.com/corrosion-rs/corrosion)
-* [cxx](https://cxx.rs/)
 
 OpenGL 
 * [learnopengl.com](https://learnopengl.com/)
