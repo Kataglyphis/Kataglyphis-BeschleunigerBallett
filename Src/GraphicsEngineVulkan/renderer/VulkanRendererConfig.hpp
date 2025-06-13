@@ -8,4 +8,4 @@
 #define VULKAN_VERSION_MAJOR "1"
 #define VULKAN_VERSION_MINOR "3"
 
-#define GLSLC_EXE "/bin/glslc"
+#define GLSLC_EXE "C:/VulkanSDK/1.4.304.0/Bin/glslc.exe"
