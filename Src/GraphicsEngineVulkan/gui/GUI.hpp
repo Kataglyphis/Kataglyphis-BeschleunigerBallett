@@ -40,8 +40,6 @@ class GUI
   private:
     void create_gui_context(Window *window, const VkInstance &instance, const VkRenderPass &post_render_pass);
 
-    // void create_fonts_and_upload(const VkCommandPool &graphics_command_pool);
-
     VulkanDevice *device{ VK_NULL_HANDLE };
     Window *window{ VK_NULL_HANDLE };
     VkDescriptorPool gui_descriptor_pool{ VK_NULL_HANDLE };

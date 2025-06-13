@@ -1,5 +1,7 @@
 *.log
 
+.cache
+
 dist
 .mypy_cache
 .conda
