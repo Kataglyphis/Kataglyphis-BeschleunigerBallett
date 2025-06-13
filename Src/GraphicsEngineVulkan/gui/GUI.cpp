@@ -24,7 +24,7 @@ void GUI::initializeVulkanContext(VulkanDevice *device,
     this->device = device;
 
     create_gui_context(window, instance, post_render_pass);
-    create_fonts_and_upload(graphics_command_pool);
+    // create_fonts_and_upload(graphics_command_pool);
 }
 
 void GUI::setUserSelectionForRRT(bool rrtCapabilitiesAvailable)
@@ -223,18 +223,18 @@ void GUI::create_gui_context(Window *window, const VkInstance &instance, const V
     ImGui_ImplVulkan_Init(&init_info);// post_render_pass
 }
 
-void GUI::create_fonts_and_upload(const VkCommandPool &graphics_command_pool)
-{
-    VkCommandBuffer command_buffer =
-      commandBufferManager.beginCommandBuffer(device->getLogicalDevice(), graphics_command_pool);
-    ImGui_ImplVulkan_CreateFontsTexture();// command_buffer
-    commandBufferManager.endAndSubmitCommandBuffer(
-      device->getLogicalDevice(), graphics_command_pool, device->getGraphicsQueue(), command_buffer);
+// void GUI::create_fonts_and_upload(const VkCommandPool &graphics_command_pool)
+// {
+//     VkCommandBuffer command_buffer =
+//       commandBufferManager.beginCommandBuffer(device->getLogicalDevice(), graphics_command_pool);
+//     ImGui_ImplVulkan_CreateFontsTexture();// command_buffer
+//     commandBufferManager.endAndSubmitCommandBuffer(
+//       device->getLogicalDevice(), graphics_command_pool, device->getGraphicsQueue(), command_buffer);
 
-    // wait until no actions being run on device before destroying
-    vkDeviceWaitIdle(device->getLogicalDevice());
-    // clear font textures from cpu data
-    // ImGui_ImplVulkan_DestroyFontUploadObjects();
-}
+//     // wait until no actions being run on device before destroying
+//     vkDeviceWaitIdle(device->getLogicalDevice());
+//     // clear font textures from cpu data
+//     // ImGui_ImplVulkan_DestroyFontUploadObjects();
+// }
 
 GUI::~GUI() {}

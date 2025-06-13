@@ -112,6 +112,7 @@ jobs:
           libglx-mesa0 \
           ninja-build \
           ccache \
+          sccache \
           iwyu \
           graphviz \
           doxygen
