@@ -78,7 +78,7 @@ if [ "$ARCH" == "x86_64" ]; then
   $SUDO apt-get install -y vulkan-sdk
 elif [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
   # ARM64
-  $SUDO apt-get install -y xz-utils libglm-dev cmake libxcb-dri3-0 \
+  $SUDO apt-get install -y xz-utils libglm-dev libxcb-dri3-0 \
     libxcb-present0 libpciaccess0 libpng-dev libxcb-keysyms1-dev \
     libxcb-dri3-dev libx11-dev g++ gcc libwayland-dev \
     libxrandr-dev libxcb-randr0-dev libxcb-ewmh-dev git \
