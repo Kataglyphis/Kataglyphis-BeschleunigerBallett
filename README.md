@@ -205,8 +205,8 @@ Frequently tested under
    ```sh
    git clone --recurse-submodules git@github.com:Kataglyphis/Kataglyphis-Renderer.git
    ```
-
-2. Then build your solution with [CMAKE] (https://cmake.org/) <br />
+2. Use the scripts (in the `Scripts` folder for installing dependencies on your system) 
+3. Then build your solution with [CMAKE] (https://cmake.org/) <br />
   You can follow my steps from my [CMake best practices](https://github.com/Kataglyphis/Kataglyphis-CMakeTemplate) repo.  
   For now the features in Rust are experimental. If you want to use them install
   Rust and set `RUST_FEATURES=ON` on your CMake build.

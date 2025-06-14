@@ -29,102 +29,27 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install latest CMake
+      - name: Remove too old CMake
         run: |
           which cmake || true
           sudo rm -f /usr/local/bin/cmake || true
           sudo apt-get purge --auto-remove -y cmake || true
-          sudo apt-get update
-          sudo apt-get install -y wget gpg lsb-release ca-certificates
-          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc \
-            | gpg --dearmor \
-            | sudo tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
-          echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] \
-            https://apt.kitware.com/ubuntu/ noble main" \
-            | sudo tee /etc/apt/sources.list.d/kitware.list >/dev/null
-          sudo apt-get update
-          sudo apt-get install -y cmake
-          echo "/usr/bin" >> $GITHUB_PATH
-          cmake --version
-
-      - name: Install Vulkan on x64
-        if: inputs.runner == 'ubuntu-24.04'
+          
+      - name: Install deps
         run: |
-          sudo apt-get update -y
-          wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
-          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-${{ env.VULKAN_VERSION }}-noble.list https://packages.lunarg.com/vulkan/${{ env.VULKAN_VERSION }}/lunarg-vulkan-${{ env.VULKAN_VERSION }}-noble.list
-          sudo apt update
-          sudo apt install vulkan-sdk
-
-      - name: Install Vulkan SDK on ARM
-        if: inputs.runner == 'ubuntu-24.04-arm'
-        run: |
-          sudo apt install -y xz-utils
-          sudo apt-get install -y libglm-dev cmake libxcb-dri3-0 libxcb-present0 libpciaccess0 \
-            libpng-dev libxcb-keysyms1-dev libxcb-dri3-dev libx11-dev g++ gcc \
-            libwayland-dev libxrandr-dev libxcb-randr0-dev libxcb-ewmh-dev \
-            git python-is-python3 bison libx11-xcb-dev liblz4-dev libzstd-dev \
-            ocaml-core ninja-build pkg-config libxml2-dev wayland-protocols python3-jsonschema \
-            clang-format qtbase5-dev qt6-base-dev
-          wget https://sdk.lunarg.com/sdk/download/${{ env.VULKAN_VERSION }}.0/linux/vulkansdk-linux-x86_64-${{ env.VULKAN_VERSION }}.0.tar.xz
-          tar -xf vulkansdk-linux-x86_64-${{ env.VULKAN_VERSION }}.0.tar.xz
-          cd ${{ env.VULKAN_VERSION }}.0
-          chmod +x vulkansdk 
-          ./vulkansdk -j $(nproc) \
-            glslang \
-            vulkan-tools \
-            vulkan-headers \
-            vulkan-loader \
-            vulkan-validationlayers \
-            shaderc \
-            spirv-headers \
-            spirv-tools \
-            vulkan-extensionlayer \
-            volk \
-            vma \
-            vcv \
-            vul \
-            slang
-          # DO NOT FORGET to source this script before running the app
-          # source ${{ env.VULKAN_VERSION }}.0/setup-env.sh
-          echo "${{ github.workspace }}/${{ env.VULKAN_VERSION }}.0/aarch64/bin" >> $GITHUB_PATH
+          sudo chmod +x Scripts/Linux/setup-dependencies.sh
+          sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
 
       - name: Check Installation
         if: inputs.runner == 'ubuntu-24.04-arm'
         run: |
           which glslc
 
-      - name: Install GLFW + build system dependencies
+      - name: Update path
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y \
-          libxrandr-dev \
-          libxinerama-dev \
-          libxcursor-dev \
-          libxi-dev \
-          libglu1-mesa-dev \
-          freeglut3-dev \
-          mesa-common-dev \
-          mesa-utils \
-          wayland-protocols \
-          libwayland-dev \
-          libxkbcommon-dev \
-          libglx-mesa0 \
-          ninja-build \
-          ccache \
-          sccache \
-          iwyu \
-          graphviz \
-          doxygen
-
-      - name: Install for Offscreen Rendering on GLFW
-        run: sudo apt-get install libosmesa6-dev
-
-      - name: Install Code Coverage dependencies
-        run: sudo apt-get install -y gcovr
-
-      - name: Install clang
-        run: sudo apt-get install clang llvm
+          which glslc
+          echo "/usr/bin" >> $GITHUB_PATH
+          cmake --version
 
       - name: Make directory
         run: |
