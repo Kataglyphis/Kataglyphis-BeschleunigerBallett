@@ -85,8 +85,12 @@ elif [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
     python3 bison libx11-xcb-dev liblz4-dev libzstd-dev \
     ocaml ninja-build pkg-config libxml2-dev \
     wayland-protocols python3-jsonschema clang-format qtbase5-dev qt6-base-dev
-  wget -q https://sdk.lunarg.com/sdk/download/${VULKAN_VERSION}.0/linux/vulkansdk-linux-aarch64-${VULKAN_VERSION}.0.tar.xz
-  tar -xf vulkansdk-linux-aarch64-${VULKAN_VERSION}.0.tar.xz
+  # Dont be confused: the name of the package has an arch tag of x86_64
+  # but the script inside also builds for ARM64 and it works fine. Somehow very strange to me 
+  # but thats how Khronos does it.
+  wget https://sdk.lunarg.com/sdk/download/${VULKAN_VERSION}.0/linux/vulkansdk-linux-x86_64-${VULKAN_VERSION}.0.tar.xz
+  tar -xf vulkansdk-linux-x86_64-${VULKAN_VERSION}.0.tar.xz
+  cd ${VULKAN_VERSION}.0
   chmod +x vulkansdk
   ./vulkansdk -j $(nproc) \
     glslang vulkan-tools vulkan-headers vulkan-loader \
