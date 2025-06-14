@@ -87,13 +87,11 @@ elif [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
     wayland-protocols python3-jsonschema clang-format qtbase5-dev qt6-base-dev
   wget -q https://sdk.lunarg.com/sdk/download/${VULKAN_VERSION}.0/linux/vulkansdk-linux-aarch64-${VULKAN_VERSION}.0.tar.xz
   tar -xf vulkansdk-linux-aarch64-${VULKAN_VERSION}.0.tar.xz
-  pushd ${VULKAN_VERSION}.0 >/dev/null
   chmod +x vulkansdk
   ./vulkansdk -j $(nproc) \
     glslang vulkan-tools vulkan-headers vulkan-loader \
     vulkan-validationlayers shaderc spirv-headers spirv-tools \
     vulkan-extensionlayer volk vma vcv vul slang
-  popd >/dev/null
   echo "Remember to source setup-env.sh before running your app:"
   echo "  source \${PWD}/${VULKAN_VERSION}.0/setup-env.sh"
 else

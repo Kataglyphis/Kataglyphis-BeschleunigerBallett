@@ -40,9 +40,10 @@ jobs:
           sudo chmod +x Scripts/Linux/setup-dependencies.sh
           sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
 
-      - name: Check Installation
+      - name: Check Installation and update path
         if: inputs.runner == 'ubuntu-24.04-arm'
         run: |
+          echo "${{ github.workspace }}/${{ env.VULKAN_VERSION }}.0/aarch64/bin" >> $GITHUB_PATH
           which glslc
 
       - name: Update path
