@@ -322,5 +322,19 @@ Path tracing
 
 ## Common issues
 
-
+  * Problem: 
+    If **__Validation Layers__** could not be found:
+    ```bash
+    A value given directly by extern c function 322
+    [XXXX-XX-XX 10:30:40.877] [error] Validation layers requested, but not available!
+    [XXXX-XX-XX 10:30:40.879] [error] Failed to create a Vulkan instance!
+    [XXXX-XX-XX 10:30:40.880] [error] Validation layers requested, but not available!
+    [XXXX-XX-XX 10:30:40.882] [error] Failed to create a Vulkan instance!
+    ERROR:             vkGetInstanceProcAddr: Invalid instance [VUID-vkGetInstanceProcAddr-instance-parameter]
+    ```
+    Solution for linux:
+    ```bash
+    sudo apt install libvulkan1 vulkan-tools vulkan-validationlayers
+    ```
+    Otherwise you would have to install them via sdk.
 
