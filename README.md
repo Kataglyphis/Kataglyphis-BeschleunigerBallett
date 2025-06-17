@@ -58,6 +58,7 @@ see also [**__Official homepage__**](https://beschleunigerballette.jonasheinle.d
     </li>
     <li><a href="#shaders">Shaders</a></li>
     <li><a href="#tests">Tests</a></li>
+    <li><a href="#tests">Docker</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#license">License</a></li>
@@ -229,6 +230,28 @@ appropriately.</br>
 
 # Tests
 I follow the test setup as descriped in: [CMake best practices](https://github.com/Kataglyphis/Kataglyphis-CMakeTemplate) 
+
+# Docker
+
+```bash
+# build
+docker build -t kataglphis_renderer_ubuntu24_04 .
+# run container on wayland
+# start docker in root of this repo 
+docker run --rm -it \
+  --device /dev/dri \
+  --group-add video \
+  --gpus all \
+  --env DISPLAY=$DISPLAY \
+  --env XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR \
+  -e WAYLAND_DISPLAY=$WAYLAND_DISPLAY \
+  -v $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY:$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY \
+  -v /usr/share/vulkan:/usr/share/vulkan:ro \
+  -e VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/whatever_icd.json \
+  -v "$(pwd)":/workspace:rw \
+  -w /workspace \
+  kataglphis_renderer_ubuntu24_04 
+```
 
 <!-- ROADMAP -->
 ## Roadmap

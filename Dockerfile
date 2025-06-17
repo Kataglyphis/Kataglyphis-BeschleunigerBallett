@@ -17,14 +17,37 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       ca-certificates \
       curl \
+      pkg-config \
       gnupg \
       lsb-release \
       wget \
       xz-utils \
       software-properties-common \
       sudo \
-      build-essential ninja-build make && \
+      git \
+      libssl-dev \
+      build-essential ninja-build make \
+      clang            \
+      clang-format     \
+      clang-tidy       \
+      lld              \
+      lldb             \
+      llvm             \
+      llvm-dev         \
+      libclang-dev \
+      libclang-rt-dev && \
     rm -rf /var/lib/apt/lists/*
+
+# --------- Install Rust via rustup (official method) ---------
+# Download and install rustup (the Rust installer) non‑interactively
+# The `-s -- -y` flags tell rustup.sh to skip prompts and accept defaults
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
+
+# Make sure the Cargo bin directory is on PATH
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# (Optional) Verify installation
+RUN rustc --version && cargo --version
 
 # --------- Install Kitware CMake ---------
 RUN mkdir -p /usr/share/keyrings && \
@@ -44,7 +67,15 @@ RUN wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | apt-key a
 # --------- Install Vulkan SDK per-architecture ---------
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
       apt-get update && \
-      apt-get install -y --no-install-recommends vulkan-sdk && \
+      apt-get install -y --no-install-recommends vulkan-sdk \
+      vulkan-validationlayers \
+      vulkan-tools \
+      libvulkan1 \
+      mesa-vulkan-drivers \
+      vulkan-utils \
+      libvulkan-dev \
+      nvidia-utils-570 \
+      libnvidia-gl-570 && \
       rm -rf /var/lib/apt/lists/*; \
     else \
       apt-get update && \
@@ -70,7 +101,9 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
 # --------- Install compiler, test & graphics deps ---------
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      build-essential clang llvm ninja-build ccache python3 python3-pip \
+      build-essential \
+      ninja-build sccache ccache \
+      python3 python3-pip \
       doxygen graphviz gcovr libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
       libglu1-mesa-dev freeglut3-dev mesa-common-dev mesa-utils wayland-protocols \
       libwayland-dev libxkbcommon-dev libglx-mesa0 libosmesa6-dev && \
