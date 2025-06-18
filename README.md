@@ -233,21 +233,25 @@ I follow the test setup as descriped in: [CMake best practices](https://github.c
 
 # Docker
 
+If you want to run it on NVIDIA GPUs you will have to  
+install the [NVIDIA Container Toolkit](Kataglyphis-BeschleunigerBallett)  
+before you proceed with the next steps.
+
 ```bash
 # build
 docker build -t kataglphis_renderer_ubuntu24_04 .
 # run container on wayland
 # start docker in root of this repo 
+xhost +local:root
 docker run --rm -it \
-  --device /dev/dri \
-  --group-add video \
   --gpus all \
+  --network=host \
+  -e QT_QPA_PLATFORM=wayland \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v $HOME/.Xauthority:/root/.Xauthority \
   --env DISPLAY=$DISPLAY \
   --env XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR \
   -e WAYLAND_DISPLAY=$WAYLAND_DISPLAY \
-  -v $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY:$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY \
-  -v /usr/share/vulkan:/usr/share/vulkan:ro \
-  -e VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/whatever_icd.json \
   -v "$(pwd)":/workspace:rw \
   -w /workspace \
   kataglphis_renderer_ubuntu24_04 
@@ -342,6 +346,9 @@ Physically Based Shading
 
 Path tracing
 * [NVIDIA Path tracing Tutorial](https://github.com/nvpro-samples/vk_mini_path_tracer/blob/main/vk_mini_path_tracer/main.cpp)
+
+Docker
+* [Vulkan Minimal Docker setup](https://github.com/j3soon/docker-vulkan-runtime)
 
 ## Common issues
 

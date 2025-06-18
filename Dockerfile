@@ -6,11 +6,61 @@ ARG BUILD_TYPE=Debug
 ARG VULKAN_VERSION=1.3.296
 ARG TARGETARCH
 
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=all
+
 ENV DEBIAN_FRONTEND=noninteractive \
     APT_LISTCHANGES_FRONTEND=none \
     BUILD_TYPE=${BUILD_TYPE} \
     VULKAN_VERSION=${VULKAN_VERSION} \
     WORKDIR=/workspace
+
+RUN apt-get update && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /etc/vulkan/icd.d && \
+    cat > /etc/vulkan/icd.d/nvidia_icd.json <<EOF
+{
+    "file_format_version" : "1.0.0",
+    "ICD": {
+        "library_path": "libGLX_nvidia.so.0",
+        "api_version" : "1.3.194"
+    }
+}
+EOF
+RUN mkdir -p /usr/share/glvnd/egl_vendor.d && \
+    cat > /usr/share/glvnd/egl_vendor.d/10_nvidia.json <<EOF
+{
+    "file_format_version" : "1.0.0",
+    "ICD" : {
+        "library_path" : "libEGL_nvidia.so.0"
+    }
+}
+EOF
+RUN mkdir -p /etc/vulkan/implicit_layer.d/ && \
+    cat > /etc/vulkan/implicit_layer.d/nvidia_layers.json <<EOF
+{
+    "file_format_version" : "1.0.0",
+    "layer": {
+        "name": "VK_LAYER_NV_optimus",
+        "type": "INSTANCE",
+        "library_path": "libGLX_nvidia.so.0",
+        "api_version" : "1.3.194",
+        "implementation_version" : "1",
+        "description" : "NVIDIA Optimus layer",
+        "functions": {
+            "vkGetInstanceProcAddr": "vk_optimusGetInstanceProcAddr",
+            "vkGetDeviceProcAddr": "vk_optimusGetDeviceProcAddr"
+        },
+        "enable_environment": {
+            "__NV_PRIME_RENDER_OFFLOAD": "1"
+        },
+        "disable_environment": {
+            "DISABLE_LAYER_NV_OPTIMUS_1": ""
+        }
+    }
+}
+EOF
 
 # --------- Common prerequisites ---------
 RUN apt-get update && \
@@ -70,12 +120,13 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
       apt-get install -y --no-install-recommends vulkan-sdk \
       vulkan-validationlayers \
       vulkan-tools \
+      libgl1 \      
       libvulkan1 \
       mesa-vulkan-drivers \
       vulkan-utils \
-      libvulkan-dev \
-      nvidia-utils-570 \
-      libnvidia-gl-570 && \
+      spirv-tools \
+      glslang-tools \
+      libvulkan-dev && \
       rm -rf /var/lib/apt/lists/*; \
     else \
       apt-get update && \
