@@ -1,7 +1,7 @@
 # escape=`
 
 # Use the latest Windows Server Core 2022 image.
-FROM mcr.microsoft.com/windows/servercore:ltsc2025
+FROM mcr.microsoft.com/windows:20H2
 
 # Restore the default Windows shell for correct batch processing.
 SHELL ["cmd", "/S", "/C"]
@@ -57,13 +57,35 @@ RUN `
 # After your Git install…
 # Temporarily switch to PowerShell so we can install Scoop cleanly
 SHELL ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+
 RUN `
     irm get.scoop.sh -outfile 'install.ps1' ; `
-    .\install.ps1 -RunAsAdmin ; 
+    .\install.ps1 -RunAsAdmin ;  `
     # install llvm & nano
-    scoop install llvm nano
+    scoop install llvm nano cmake cppcheck sccache 
 # ---------------------------------------------------------------
 
+# 0. Ensure our temp folder exists
+RUN New-Item -ItemType Directory -Path C:\temp -Force
+
+# 1. Download the SDK installer
+RUN Invoke-WebRequest `
+      -Uri "https://sdk.lunarg.com/sdk/download/1.3.296.0/windows/VulkanSDK-1.3.296.0-Installer.exe" `
+      -OutFile "C:\\temp\\VulkanSDK-1.3.296.0-Installer.exe" `
+    ; 
+
+# 2. Run silent installation (core + optional copy‑only to avoid registry changes)
+# Install by calling it directly:
+RUN & "C:\\temp\\VulkanSDK-1.3.296.0-Installer.exe" `
+      --accept-licenses `
+      --default-answer `
+      --confirm-command install `
+      copy_only=1
+
+# 3. Set Vulkan environment variables
+ENV VULKAN_SDK="C:\\VulkanSDK\\1.3.296.0" 
+ENV VK_SDK_PATH="%VULKAN_SDK%" 
+ENV PATH="%VULKAN_SDK%\\Bin;${PATH}"
 
 # Define the entry point for the docker container.
 # This entry point starts the developer command prompt and launches the PowerShell shell.
