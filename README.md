@@ -204,7 +204,7 @@ Frequently tested under
 
 1. Clone the repo
    ```sh
-   git clone --recurse-submodules git@github.com:Kataglyphis/Kataglyphis-Renderer.git
+   git clone --recurse-submodules git@github.com:Kataglyphis/Kataglyphis-BeschleunigerBallett.git
    ```
 2. Use the scripts (in the `Scripts` folder for installing dependencies on your system) 
 3. Then build your solution with [CMAKE] (https://cmake.org/) <br />
@@ -264,13 +264,19 @@ docker run --rm -it \
 
 ## Windows
 
+> **__NOTE:__** Pls for GPU accelerated Windows Docker
+> have a look [here](https://learn.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/gpu-acceleration) 
+
 ```ps1
 docker build -f docker/windows/Dockerfile -t my-windows-dev-image .
 ```
 
 ```ps1
+--device class/5B45201D-F2F2-4F3B-85BB-30FF1F953599
 docker run --rm -it --gpus all `
   -v "$($PWD.Path):C:\workdir" `
+  --isolation process `
+  --device class/5B45201D-F2F2-4F3B-85BB-30FF1F953599 `
   my-windows-dev-image
 ```
 
