@@ -1,7 +1,7 @@
 # escape=`
 
 # Use the latest Windows Server Core 2022 image.
-FROM mcr.microsoft.com/windows/servercore:ltsc2025 AS base
+FROM mcr.microsoft.com/windows/servercore:ltsc2025
 
 # Restore the default Windows shell for correct batch processing.
 SHELL ["cmd", "/S", "/C"]
@@ -31,8 +31,11 @@ RUN `
     --add Microsoft.VisualStudio.Component.Windows10SDK `
     --add Microsoft.VisualStudio.Component.Windows11SDK.26100 `
     --add Microsoft.VisualStudio.ComponentGroup.NativeDesktop.Core `
+    --add Microsoft.VisualStudio.Component.Llvm.ClangToolset `
     --add Microsoft.VisualStudio.Workload.MSBuildTools `
+    --add Microsoft.VisualStudio.Workload.UniversalBuildTools `
     --add Microsoft.VisualStudio.Workload.VCTools `
+    --add Microsoft.VisualStudio.Workload.ManagedDesktopBuildTools `
     --remove Microsoft.VisualStudio.Component.Windows10SDK.10240 `
     --remove Microsoft.VisualStudio.Component.Windows10SDK.10586 `
     --remove Microsoft.VisualStudio.Component.Windows10SDK.14393 `
@@ -47,6 +50,20 @@ RUN `
     curl -L -o Git-64-bit.exe "https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.2/Git-2.47.1.2-64-bit.exe" `
     && start /wait Git-64-bit.exe /SILENT /NORESTART `
     && del Git-64-bit.exe
+
+# after your Git install…
+# ---------------------------------------------------------------
+# Install Scoop (admin mode) plus llvm & nano in one single RUN
+# After your Git install…
+# Temporarily switch to PowerShell so we can install Scoop cleanly
+SHELL ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+RUN `
+    irm get.scoop.sh -outfile 'install.ps1' ; `
+    .\install.ps1 -RunAsAdmin ; 
+    # install llvm & nano
+    scoop install llvm nano
+# ---------------------------------------------------------------
+
 
 # Define the entry point for the docker container.
 # This entry point starts the developer command prompt and launches the PowerShell shell.
