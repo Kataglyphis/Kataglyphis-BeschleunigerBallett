@@ -368,6 +368,7 @@ Docker
 * [Vulkan Minimal Docker setup](https://github.com/j3soon/docker-vulkan-runtime)
 * [scoop](https://scoop.sh/#/apps)
 * [Docker container windows GPU](https://learn.microsoft.com/de-de/virtualization/windowscontainers/deploy-containers/gpu-acceleration)
+* [Docker windows](https://hub.docker.com/r/microsoft/windows)
 
 ## Common issues
 
