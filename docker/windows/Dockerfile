@@ -62,7 +62,7 @@ RUN `
     irm get.scoop.sh -outfile 'install.ps1' ; `
     .\install.ps1 -RunAsAdmin ;  `
     # install llvm & nano
-    scoop install llvm nano cmake cppcheck sccache 
+    scoop install llvm nano cmake cppcheck sccache main/ninja 
 # ---------------------------------------------------------------
 
 # 0. Ensure our temp folder exists
