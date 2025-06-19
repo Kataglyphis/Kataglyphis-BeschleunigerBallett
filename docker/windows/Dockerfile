@@ -1,7 +1,7 @@
 # escape=`
 
 # Use the latest Windows Server Core 2022 image.
-FROM mcr.microsoft.com/windows:20H2
+FROM mcr.microsoft.com/windows/servercore:ltsc2025
 
 # Restore the default Windows shell for correct batch processing.
 SHELL ["cmd", "/S", "/C"]
@@ -83,9 +83,22 @@ RUN & "C:\\temp\\VulkanSDK-1.3.296.0-Installer.exe" `
       copy_only=1
 
 # 3. Set Vulkan environment variables
-ENV VULKAN_SDK="C:\\VulkanSDK\\1.3.296.0" 
-ENV VK_SDK_PATH="%VULKAN_SDK%" 
-ENV PATH="%VULKAN_SDK%\\Bin;${PATH}"
+ENV VULKAN_SDK="C:\\VulkanSDK\\1.3.296.0"
+RUN setx /M PATH $($Env:PATH + ';C:\VulkanSDK\1.3.296.0\Bin')
+
+# Download and run rustup-init.exe silently, then clean up
+RUN Invoke-WebRequest `
+      -Uri "https://win.rustup.rs/" `
+      -OutFile "C:\\temp\\rustup-init.exe" `
+    ;
+   
+RUN & "C:\\temp\\rustup-init.exe" -y;
+
+# (Optional) verify installation
+RUN rustc --version; cargo --version
+
+# avoids problems with shared ownership when shared volume 
+RUN git config --global --add safe.directory '*'
 
 # Define the entry point for the docker container.
 # This entry point starts the developer command prompt and launches the PowerShell shell.

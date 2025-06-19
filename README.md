@@ -272,11 +272,8 @@ docker build -f docker/windows/Dockerfile -t my-windows-dev-image .
 ```
 
 ```ps1
---device class/5B45201D-F2F2-4F3B-85BB-30FF1F953599
-docker run --rm -it --gpus all `
+docker run --rm -it `
   -v "$($PWD.Path):C:\workdir" `
-  --isolation process `
-  --device class/5B45201D-F2F2-4F3B-85BB-30FF1F953599 `
   my-windows-dev-image
 ```
 
