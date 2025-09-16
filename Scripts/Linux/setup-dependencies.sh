@@ -70,12 +70,7 @@ fi
 # -----------------------------------------------------------------------------
 echo "Installing Vulkan SDK version ${VULKAN_VERSION} for architecture $ARCH..."
 
-# Decide install prefix
-if [ -n "$SUDO" ]; then
-  INSTALL_PREFIX=${INSTALL_PREFIX:-/opt/vulkan}
-else
-  INSTALL_PREFIX=${INSTALL_PREFIX:-"$HOME/vulkan"}
-fi
+INSTALL_PREFIX=${INSTALL_PREFIX:-"$HOME/vulkan"}
 
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
