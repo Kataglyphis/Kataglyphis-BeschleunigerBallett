@@ -144,6 +144,23 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      
+      - name: Remove too old CMake
+        run: |
+          which cmake || true
+          sudo rm -f /usr/local/bin/cmake || true
+          sudo apt-get purge --auto-remove -y cmake || true
+
+      - name: Update path
+        run: |
+          which glslc
+          echo "/usr/bin" >> $GITHUB_PATH
+          cmake --version
+
+      - name: Make directory
+        run: |
+          rm -rf build
+          mkdir build
 
       - name: (Optional) Install deps for release build
         run: |
