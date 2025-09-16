@@ -44,7 +44,7 @@ $SUDO apt-get update -y
 
 # Install basic tools
 echo "Installing core tools..."
-$SUDO apt-get install -y wget gpg lsb-release ca-certificates gnupg apt-transport-https
+$SUDO apt-get install -y wget curl gpg lsb-release ca-certificates gnupg apt-transport-https
 
 # -----------------------------------------------------------------------------
 # Install CMake (latest from Kitware)
@@ -66,11 +66,29 @@ fi
 # -----------------------------------------------------------------------------
 # Vulkan SDK Installation Function for Tarball
 # -----------------------------------------------------------------------------
+verify_vulkan_version() {
+  local version="$1"
+  echo "Attempting to verify Vulkan SDK version ${version} availability..."
+  
+  # Try to access the download page to see if version exists
+  local test_url="https://sdk.lunarg.com/sdk/download/${version}.0/linux/"
+  if ! curl -sSf --connect-timeout 10 "$test_url" >/dev/null 2>&1; then
+    echo "Warning: Could not verify version ${version} exists at ${test_url}" >&2
+    echo "This might be due to network issues or the version may not exist." >&2
+    echo "Common available versions include: 1.3.290, 1.3.296, 1.3.280, etc." >&2
+    echo "Check https://vulkan.lunarg.com/ for available versions." >&2
+    echo "Continuing with download attempt..." >&2
+  fi
+}
+
 install_vulkan_tarball() {
   local version="$1"
   local arch_suffix="x86_64"
   
   echo "Installing Vulkan SDK ${version} via tarball for ${ARCH}..."
+  
+  # Verify version availability
+  verify_vulkan_version "$version"
   
   # Install prerequisite packages for tarball installation
   echo "Installing tarball prerequisites..."
@@ -93,13 +111,19 @@ install_vulkan_tarball() {
   local download_url="https://sdk.lunarg.com/sdk/download/${version}.0/linux/${tarball_name}"
   
   echo "Downloading ${tarball_name}..."
-  wget -q "$download_url" -O "$tarball_name"
-  
-  # Verify download (optional - you might want to add sha256 verification here)
-  if [ ! -f "$tarball_name" ]; then
-    echo "Failed to download Vulkan SDK tarball" >&2
+  if ! wget --timeout=30 --tries=3 -q "$download_url" -O "$tarball_name"; then
+    echo "Failed to download Vulkan SDK from: $download_url" >&2
+    echo "Please check if the version ${version} exists at https://vulkan.lunarg.com/" >&2
     exit 1
   fi
+  
+  # Verify download (optional - you might want to add sha256 verification here)
+  if [ ! -f "$tarball_name" ] || [ ! -s "$tarball_name" ]; then
+    echo "Failed to download Vulkan SDK tarball or file is empty" >&2
+    exit 1
+  fi
+  
+  echo "Successfully downloaded $(du -h "$tarball_name" | cut -f1) tarball"
   
   # Extract tarball
   echo "Extracting Vulkan SDK..."
