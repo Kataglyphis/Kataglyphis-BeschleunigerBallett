@@ -19,7 +19,6 @@ on:
 env:
   BUILD_TYPE: Debug
   VULKAN_VERSION: 1.4.321.1
-  VULKAN_INSTALL_DIR: /root
 
 jobs:
   build_and_test:

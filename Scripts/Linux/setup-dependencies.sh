@@ -6,7 +6,8 @@ set -euo pipefail
 #
 # Installs all required dependencies for building the project on Linux.
 # Works both inside and outside GitHub Actions runners.
-#
+# see here:
+# https://vulkan.lunarg.com/doc/sdk/1.4.321.1/linux/getting_started.html
 # Usage:
 #   ./setup-dependencies.sh [vulkan-version]
 #   vulkan-version (optional): e.g. "1.3.296" (default: 1.3.296)
