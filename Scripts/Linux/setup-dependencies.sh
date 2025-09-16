@@ -163,6 +163,15 @@ else
   echo "Unknown or unsupported architecture: $ARCH. Skipping Vulkan SDK." >&2
 fi
 
+if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
+  cd ${version}
+  chmod +x vulkansdk
+  ./vulkansdk -j $(nproc) \
+    glslang vulkan-tools vulkan-headers vulkan-loader \
+    vulkan-validationlayers shaderc spirv-headers spirv-tools \
+    vulkan-extensionlayer volk vma vcv vul slang
+fi
+
 # -----------------------------------------------------------------------------
 # Install additional dependencies
 # -----------------------------------------------------------------------------
