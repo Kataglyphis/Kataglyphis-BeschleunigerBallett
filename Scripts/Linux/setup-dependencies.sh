@@ -135,7 +135,6 @@ if [ -n "${EXPECTED_SHA}" ] && [ "${EXPECTED_SHA}" != "${LOCAL_SHA}" ]; then
   exit 1
 fi
 
-
 # Extract the tarball to install prefix
 echo "Creating install prefix: ${INSTALL_PREFIX} (requires sudo if system-wide)..."
 $SUDO mkdir -p "${INSTALL_PREFIX}"
@@ -144,18 +143,17 @@ $SUDO mkdir -p "${INSTALL_PREFIX}"
 echo "Available disk space:"
 df -h "${INSTALL_PREFIX%/*}" 2>/dev/null || df -h /
 
-# Extract with verbose output for debugging
+# Extract with proper flags
 echo "Extracting Vulkan SDK..."
 if ! $SUDO tar -xJf "${SDK_FILENAME}" -C "${INSTALL_PREFIX}" --strip-components=1; then
     echo "Extraction failed!"
-    echo "File info:"
-    ls -la "${SDK_FILENAME}"
-    echo "Target directory:"
-    ls -la "${INSTALL_PREFIX}" 2>/dev/null || echo "Directory doesn't exist"
-    echo "Available space:"
-    df -h "${INSTALL_PREFIX%/*}" 2>/dev/null || df -h /
+    echo "Tarball contents (first few entries):"
+    tar -tJf "${SDK_FILENAME}" | head -10
     exit 1
 fi
+
+echo "Vulkan SDK extraction completed successfully!"
+
 
 # Find extracted directory name (first component of the tar)
 EXTRACTED_DIR=$($SUDO tar -tf "${SDK_FILENAME}" | head -n1 | cut -d/ -f1)
