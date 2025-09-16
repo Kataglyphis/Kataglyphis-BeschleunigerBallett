@@ -22,6 +22,10 @@ env:
 
 jobs:
   build_and_test:
+    strategy:
+      matrix:
+        compiler: [clang, gcc]
+
     runs-on: ${{ inputs.runner }}
 
     steps:
@@ -60,6 +64,14 @@ jobs:
         run: |
           rm -rf build
           mkdir build
+          
+      - name: Set PRESET for compiler
+        run: |
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            echo "PRESET=linux-debug-clang" >> $GITHUB_ENV
+          else
+            echo "PRESET=linux-debug-GNU" >> $GITHUB_ENV
+          fi
 
       - name: Build
         run: |
@@ -67,14 +79,17 @@ jobs:
           if [[ "$(uname -s)" == "Linux" ]] && [[ "$(uname -m)" == "aarch64" ]]; then
             source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}.0/setup-env.sh"
           fi
-          cmake -B build --preset linux-debug-clang
-          cmake --build ${{github.workspace}}/build --preset linux-debug-clang
+          # use the preset chosen above
+          cmake -B build --preset "$PRESET"
+          cmake --build ${{ github.workspace }}/build --preset "$PRESET"
 
       - name: Test
+        if: ${{ matrix.compiler == 'clang' }}
         working-directory: ${{github.workspace}}/build/
         run: ctest -C ${{env.BUILD_TYPE}} --verbose --extra-verbose --debug -T test --output-on-failure -E Integration.VulkanEngine RendererTest.BasicSetup
 
       - name: Build Code Coverage
+        if: ${{ matrix.compiler == 'clang' }}
         run: |
           llvm-profdata merge -sparse ${{github.workspace}}/build/Test/compile/default.profraw -o ${{github.workspace}}/build/compileTestSuite.profdata
           llvm-cov report ${{github.workspace}}/build/compileTestSuite -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata
@@ -82,15 +97,18 @@ jobs:
           llvm-cov show ${{github.workspace}}/build/compileTestSuite -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata
 
       - name: Set up Python 3.11
+        if: ${{ matrix.compiler == 'clang' }}
         uses: actions/setup-python@v5.3.0
         with:
           python-version: "3.11"
       # You can test your matrix by printing the current Python version
       - name: Setup python env
+        if: ${{ matrix.compiler == 'clang' }}
         run: |
           pip install -r requirements.txt
 
       - name: Build web page
+        if: ${{ matrix.compiler == 'clang' }}
         run: |
           cp ${{github.workspace}}/build/build/html/*.svg ./docs/source/_static
           cd docs/source
@@ -100,7 +118,7 @@ jobs:
 
       - name: 📂 Sync files to domain
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        if: inputs.runner == 'ubuntu-24.04'
+        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
         with:
           server: ${{ secrets.SERVER }}
           username: ${{ secrets.USERNAME }}
@@ -108,7 +126,7 @@ jobs:
           local-dir: "./docs/build/html/"
 
       - name: Codecov
-        if: inputs.runner == 'ubuntu-24.04'
+        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
         uses: codecov/codecov-action@v4.6.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -116,6 +134,21 @@ jobs:
           name: codecov-umbrella
           fail_ci_if_error: false
           verbose: false
+
+  release_package:
+    needs: build_and_test
+    runs-on: ${{ inputs.runner }}
+    # optionally: only run release packaging for a specific runner:
+    # if: ${{ inputs.runner == 'ubuntu-24.04' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: (Optional) Install deps for release build
+        run: |
+          sudo chmod +x Scripts/Linux/setup-dependencies.sh
+          sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
 
       - name: Configure CMake for Release
         run: |
