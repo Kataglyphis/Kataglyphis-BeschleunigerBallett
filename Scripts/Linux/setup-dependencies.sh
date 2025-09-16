@@ -70,7 +70,7 @@ fi
 # -----------------------------------------------------------------------------
 echo "Installing Vulkan SDK version ${VULKAN_VERSION} for architecture $ARCH..."
 
-INSTALL_PREFIX=${INSTALL_PREFIX:-"$HOME/vulkan"}
+INSTALL_PREFIX=${INSTALL_PREFIX:-"/opt/vulkan"}
 
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
