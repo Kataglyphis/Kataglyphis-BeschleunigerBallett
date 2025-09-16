@@ -21,7 +21,40 @@ env:
   VULKAN_VERSION: 1.4.321.1
 
 jobs:
+
+  setup_dependencies:
+    runs-on: ${{ inputs.runner }}
+    outputs: 
+      sdk-artifact: vulkan-sdk
+    steps:
+      - uses: actions/checkout@v5.0.0
+        with:
+          submodules: recursive
+
+      - name: Remove too old CMake
+        run: |
+          which cmake || true
+          sudo rm -f /usr/local/bin/cmake || true
+          sudo apt-get purge --auto-remove -y cmake || true
+
+      - name: Install deps (heavy)
+        run: |
+          sudo chmod +x Scripts/Linux/setup-dependencies.sh
+          sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
+
+      - name: (ARM) prepare PATH hint
+        if: ${{ inputs.runner == 'ubuntu-24.04-arm' }}
+        run: |
+          echo "ARM SDK will be at ${{ github.workspace }}/${{ env.VULKAN_VERSION }}/aarch64/bin"
+
+      - name: Upload Vulkan SDK artifact
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: vulkan-sdk-${{ inputs.runner }}-${{ env.VULKAN_VERSION }}
+          path: ${{ github.workspace }}/${{ env.VULKAN_VERSION }}
+
   build_and_test:
+    needs: setup_dependencies
     strategy:
       matrix:
         compiler: [clang, gcc]
@@ -33,27 +66,16 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Remove too old CMake
-        run: |
-          which cmake || true
-          sudo rm -f /usr/local/bin/cmake || true
-          sudo apt-get purge --auto-remove -y cmake || true
+      - name: Download SDK artifact
+        uses: actions/download-artifact@v4.6.2
+        with:
+          name: vulkan-sdk-${{ inputs.runner }}-${{ env.VULKAN_VERSION }}
+          path: ${{ github.workspace }}
           
       - name: Check Installation and update path
         if: inputs.runner == 'ubuntu-24.04-arm'
         run: |
           echo "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/aarch64/bin" >> $GITHUB_PATH
-
-      - name: Install deps
-        run: |
-          sudo chmod +x Scripts/Linux/setup-dependencies.sh
-          sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
-
-      - name: Check Installation
-        if: inputs.runner == 'ubuntu-24.04-arm'
-        run: |
-          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          which glslc
 
       - name: Update path and Vulkan env vars
         run: |
@@ -77,10 +99,6 @@ jobs:
 
       - name: Build
         run: |
-          # Only source if we're on Ubuntu ARM64
-          # if [[ "$(uname -s)" == "Linux" ]]; then
-          #   source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          # fi
           source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
           # use the preset chosen above
           cmake -B build --preset "$PRESET"
@@ -139,7 +157,7 @@ jobs:
           verbose: false
 
   release_package:
-    needs: build_and_test
+    needs: [build_and_test, setup_dependencies]
     runs-on: ${{ inputs.runner }}
     # optionally: only run release packaging for a specific runner:
     # if: ${{ inputs.runner == 'ubuntu-24.04' }}
@@ -148,22 +166,17 @@ jobs:
         with:
           submodules: recursive
       
-      - name: Remove too old CMake
-        run: |
-          which cmake || true
-          sudo rm -f /usr/local/bin/cmake || true
-          sudo apt-get purge --auto-remove -y cmake || true
+      - name: Download SDK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: vulkan-sdk-${{ inputs.runner }}-${{ env.VULKAN_VERSION }}
+          path: ${{ github.workspace }}
 
 
       - name: Make directory
         run: |
           rm -rf build
           mkdir build
-
-      - name: (Optional) Install deps for release build
-        run: |
-          sudo chmod +x Scripts/Linux/setup-dependencies.sh
-          sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
 
       - name: Update path
         run: |
