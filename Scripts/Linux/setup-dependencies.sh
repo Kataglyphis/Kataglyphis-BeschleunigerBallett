@@ -8,38 +8,18 @@ set -euo pipefail
 # Works both inside and outside GitHub Actions runners.
 #
 # Usage:
-#   ./setup-dependencies.sh [vulkan-version] [--use-tarball]
+#   ./setup-dependencies.sh [vulkan-version]
 #   vulkan-version (optional): e.g. "1.3.296" (default: 1.3.296)
-#   --use-tarball: Force tarball installation even on x86_64
 # -----------------------------------------------------------------------------
 
 # Default Vulkan version
 VULKAN_VERSION="1.3.296"
-USE_TARBALL=false
-
-# Parse arguments
-while [[ $# -gt 0 ]]; do
-  case $1 in
-    --use-tarball)
-      USE_TARBALL=true
-      shift
-      ;;
-    -*)
-      echo "Unknown option $1" >&2
-      exit 1
-      ;;
-    *)
-      if [ -z "${VULKAN_VERSION_SET:-}" ]; then
-        VULKAN_VERSION="$1"
-        VULKAN_VERSION_SET=true
-      else
-        echo "Usage: $0 [vulkan-version] [--use-tarball]" >&2
-        exit 1
-      fi
-      shift
-      ;;
-  esac
-done
+if [ "$#" -gt 1 ]; then
+  echo "Usage: $0 [vulkan-version]" >&2
+  exit 1
+elif [ "$#" -eq 1 ]; then
+  VULKAN_VERSION="$1"
+fi
 
 # Detect system architecture and distribution
 ARCH="$(uname -m)"
@@ -148,21 +128,11 @@ install_vulkan_tarball() {
 }
 
 # -----------------------------------------------------------------------------
-# Install Vulkan SDK
+# Install Vulkan SDK (via tarball for all architectures)
 # -----------------------------------------------------------------------------
-echo "Installing Vulkan SDK version ${VULKAN_VERSION} for architecture $ARCH..."
+echo "Installing Vulkan SDK version ${VULKAN_VERSION} via tarball for architecture $ARCH..."
 
-if [ "$ARCH" == "x86_64" ] && [ "$USE_TARBALL" = false ]; then
-  # x64: use GPG keyring instead of deprecated apt-key (existing behavior)
-  LUNARG_KEY=/usr/share/keyrings/lunarg-archive-keyring.gpg
-  wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc \
-    | gpg --dearmor | $SUDO tee "$LUNARG_KEY" >/dev/null
-  echo "deb [arch=amd64 signed-by=$LUNARG_KEY] https://packages.lunarg.com/vulkan/${VULKAN_VERSION} $DISTRO main" \
-    | $SUDO tee /etc/apt/sources.list.d/lunarg-vulkan-${VULKAN_VERSION}-${DISTRO}.list >/dev/null
-  $SUDO apt-get update -y
-  $SUDO apt-get install -y vulkan-sdk
-elif [[ "$ARCH" == "x86_64" && "$USE_TARBALL" = true ]] || [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
-  # Use tarball installation for x86_64 when requested or ARM64 always
+if [ "$ARCH" == "x86_64" ] || [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
   install_vulkan_tarball "$VULKAN_VERSION"
 else
   echo "Unknown or unsupported architecture: $ARCH. Skipping Vulkan SDK." >&2
@@ -188,8 +158,6 @@ clang --version | head -n1
 
 echo "All dependencies installed successfully."
 
-if [[ ("$ARCH" == "x86_64" && "$USE_TARBALL" = true) || "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
-  echo ""
-  echo "IMPORTANT: Since you used tarball installation, remember to source the setup script:"
-  echo "  source ~/vulkan/${VULKAN_VERSION}.0/setup-env.sh"
-fi
+echo ""
+echo "IMPORTANT: Remember to source the setup script before using Vulkan:"
+echo "  source ~/vulkan/${VULKAN_VERSION}.0/setup-env.sh"
