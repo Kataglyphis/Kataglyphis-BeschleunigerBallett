@@ -71,8 +71,14 @@ jobs:
         continue-on-error: true  
         with:
           name: vulkan-sdk-${{ inputs.runner }}-${{ env.VULKAN_VERSION }}
-          path: ${{ github.workspace }}
-          
+          path: ${{ github.workspace }}/artifacts
+      
+      - name: Extract SDK tarball
+        run: |
+          cd "${{ github.workspace }}"
+          tar -xzf artifacts/vulkan-sdk-${{ inputs.runner }}-${{ env.VULKAN_VERSION }}.tar.gz
+          # after extraction you'll have the exact folder: ${{ github.workspace }}/${{ env.VULKAN_VERSION }}
+
       - name: Check Installation and update path
         if: inputs.runner == 'ubuntu-24.04-arm'
         run: |
@@ -171,7 +177,13 @@ jobs:
         uses: actions/download-artifact@v5.0.0
         with:
           name: vulkan-sdk-${{ inputs.runner }}-${{ env.VULKAN_VERSION }}
-          path: ${{ github.workspace }}
+          path: ${{ github.workspace }}/artifacts
+      
+      - name: Extract SDK tarball
+        run: |
+          cd "${{ github.workspace }}"
+          tar -xzf artifacts/vulkan-sdk-${{ inputs.runner }}-${{ env.VULKAN_VERSION }}.tar.gz
+          # after extraction you'll have the exact folder: ${{ github.workspace }}/${{ env.VULKAN_VERSION }}
 
       - name: Make directory
         run: |
