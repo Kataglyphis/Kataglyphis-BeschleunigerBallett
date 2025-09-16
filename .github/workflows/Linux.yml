@@ -29,7 +29,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5.0.0
         with:
           submodules: recursive
 
@@ -99,11 +99,11 @@ jobs:
           llvm-cov export ${{github.workspace}}/build/compileTestSuite -format=text -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata > ${{github.workspace}}/build/coverage.json
           llvm-cov show ${{github.workspace}}/build/compileTestSuite -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.13
         if: ${{ matrix.compiler == 'clang' }}
-        uses: actions/setup-python@v5.3.0
+        uses: actions/setup-python@v6.0.0
         with:
-          python-version: "3.11"
+          python-version: "3.13"
       # You can test your matrix by printing the current Python version
       - name: Setup python env
         if: ${{ matrix.compiler == 'clang' }}
@@ -120,7 +120,7 @@ jobs:
           make html
 
       - name: 📂 Sync files to domain
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
         if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
         with:
           server: ${{ secrets.SERVER }}
@@ -130,7 +130,7 @@ jobs:
 
       - name: Codecov
         if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
-        uses: codecov/codecov-action@v4.6.0
+        uses: codecov/codecov-action@v5.5.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ${{github.workspace}}/build/coverage.json
@@ -144,7 +144,7 @@ jobs:
     # optionally: only run release packaging for a specific runner:
     # if: ${{ inputs.runner == 'ubuntu-24.04' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5.0.0
         with:
           submodules: recursive
       
