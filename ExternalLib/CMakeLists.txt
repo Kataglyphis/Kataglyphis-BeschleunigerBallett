@@ -32,7 +32,7 @@ add_subdirectory(GOOGLE_BENCHMARK)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND BUILD_TESTING)
   message(STATUS "This is a Linux system.")
 
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+  if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
 
     message("Adding Fuzztest")
     add_subdirectory(FUZZTEST)
