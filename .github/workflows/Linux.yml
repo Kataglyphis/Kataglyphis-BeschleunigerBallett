@@ -167,19 +167,21 @@ jobs:
 
       - name: Update path
         run: |
-          which glslc
           echo "/usr/bin" >> $GITHUB_PATH
           cmake --version
           
       - name: Configure CMake for Release
         run: |
+          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
           cmake -B build-release --preset linux-release-clang
 
       - name: Build Release
         run: |
+          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
           export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
           cmake --build build-release --config Release
 
       - name: Package
         run: |
+          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
           cmake --build build-release --target package
