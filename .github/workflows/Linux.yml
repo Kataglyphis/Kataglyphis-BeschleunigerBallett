@@ -43,7 +43,7 @@ jobs:
       - name: Check Installation and update path
         if: inputs.runner == 'ubuntu-24.04-arm'
         run: |
-          echo "${{ github.workspace }}/${{ env.VULKAN_VERSION }}.0/aarch64/bin" >> $GITHUB_PATH
+          echo "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/aarch64/bin" >> $GITHUB_PATH
 
       - name: Install deps
         run: |
@@ -53,12 +53,12 @@ jobs:
       - name: Check Installation
         if: inputs.runner == 'ubuntu-24.04-arm'
         run: |
-          source "${{ env.VULKAN_INSTALL_DIR }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
           which glslc
 
       - name: Update path and Vulkan env vars
         run: |
-          source "${{ env.VULKAN_INSTALL_DIR }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
           which glslc
           echo "/usr/bin" >> $GITHUB_PATH
           cmake --version
@@ -80,7 +80,7 @@ jobs:
         run: |
           # Only source if we're on Ubuntu ARM64
           # if [[ "$(uname -s)" == "Linux" ]]; then
-          #   source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}.0/setup-env.sh"
+          #   source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
           # fi
           # use the preset chosen above
           cmake -B build --preset "$PRESET"

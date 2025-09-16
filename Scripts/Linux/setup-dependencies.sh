@@ -102,7 +102,7 @@ install_vulkan_tarball() {
     libxcb-xinput0 libxcb-xinerama0 libxcb-cursor-dev
   
   # Create Vulkan directory
-  local vulkan_dir="${HOME}/vulkan"
+  local vulkan_dir="./vulkan"
   mkdir -p "$vulkan_dir"
   cd "$vulkan_dir"
   
