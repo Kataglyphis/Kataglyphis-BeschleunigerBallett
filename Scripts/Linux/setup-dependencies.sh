@@ -108,11 +108,24 @@ if ! curl -fSL -o "${SDK_FILENAME}" "${DOWNLOAD_URL}"; then
   exit 1
 fi
 
+
 # Attempt to fetch the expected sha (if available)
 EXPECTED_SHA=""
 if curl -fsS -o expected.sha "${SHA_URL}"; then
-  EXPECTED_SHA="$(tr -d ' \t\r\n' < expected.sha)"
-  echo "Fetched expected SHA: ${EXPECTED_SHA}"
+  # Extract the first 64 hex characters from the file robustly.
+  # Handles formats like:
+  #   <sha>\n
+  #   <sha>  filename\n
+  #   <sha>filename\n   <-- the one you hit (no separator)
+  EXPECTED_SHA="$(sed -n 's/^\([0-9a-fA-F]\{64\}\).*$/\1/p' expected.sha | head -n1 || true)"
+  if [ -n "${EXPECTED_SHA}" ]; then
+    # normalize to lowercase
+    EXPECTED_SHA="$(printf '%s' "${EXPECTED_SHA}" | tr '[:upper:]' '[:lower:]')"
+    echo "Fetched expected SHA: ${EXPECTED_SHA}"
+  else
+    echo "Warning: could not parse a 64-char SHA from LunarG expected.sha. Content was:"
+    sed -n '1,5p' expected.sha
+  fi
 else
   echo "Warning: could not fetch expected SHA from LunarG API (${SHA_URL}). Continuing but please verify integrity manually." >&2
 fi
@@ -121,7 +134,8 @@ fi
 LOCAL_SHA="$(sha256sum "${SDK_FILENAME}" | awk '{print $1}')"
 echo "Local SHA256: ${LOCAL_SHA}"
 
-if [ -n "$EXPECTED_SHA" ] && [ "$EXPECTED_SHA" != "$LOCAL_SHA" ]; then
+# Compare if we have an expected SHA
+if [ -n "${EXPECTED_SHA}" ] && [ "${EXPECTED_SHA}" != "${LOCAL_SHA}" ]; then
   echo "SHA mismatch! Expected ${EXPECTED_SHA} but got ${LOCAL_SHA}. Aborting." >&2
   exit 1
 fi
