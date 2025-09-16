@@ -67,7 +67,7 @@ jobs:
           submodules: recursive
 
       - name: Download SDK artifact
-        uses: actions/download-artifact@v4.6.2
+        uses: actions/download-artifact@v5.0.0
         with:
           name: vulkan-sdk-${{ inputs.runner }}-${{ env.VULKAN_VERSION }}
           path: ${{ github.workspace }}
@@ -167,11 +167,10 @@ jobs:
           submodules: recursive
       
       - name: Download SDK artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5.0.0
         with:
           name: vulkan-sdk-${{ inputs.runner }}-${{ env.VULKAN_VERSION }}
           path: ${{ github.workspace }}
-
 
       - name: Make directory
         run: |
