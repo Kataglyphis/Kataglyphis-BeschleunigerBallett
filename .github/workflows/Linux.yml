@@ -151,11 +151,6 @@ jobs:
           sudo rm -f /usr/local/bin/cmake || true
           sudo apt-get purge --auto-remove -y cmake || true
 
-      - name: Update path
-        run: |
-          which glslc
-          echo "/usr/bin" >> $GITHUB_PATH
-          cmake --version
 
       - name: Make directory
         run: |
@@ -167,6 +162,12 @@ jobs:
           sudo chmod +x Scripts/Linux/setup-dependencies.sh
           sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
 
+      - name: Update path
+        run: |
+          which glslc
+          echo "/usr/bin" >> $GITHUB_PATH
+          cmake --version
+          
       - name: Configure CMake for Release
         run: |
           cmake -B build-release --preset linux-release-clang
