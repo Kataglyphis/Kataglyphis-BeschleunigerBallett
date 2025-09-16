@@ -164,7 +164,7 @@ else
 fi
 
 if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
-  cd "${version}"
+  cd "${VULKAN_VERSION}"
   chmod +x vulkansdk
   ./vulkansdk -j $(nproc) \
     glslang vulkan-tools vulkan-headers vulkan-loader \
