@@ -22,10 +22,13 @@ env:
 
 jobs:
 
-  setup_dependencies:
+  build_and_test:
+    strategy:
+      matrix:
+        compiler: [clang, gcc]
+
     runs-on: ${{ inputs.runner }}
-    outputs: 
-      sdk-artifact: vulkan-sdk
+
     steps:
       - uses: actions/checkout@v5.0.0
         with:
@@ -46,50 +49,6 @@ jobs:
         if: ${{ inputs.runner == 'ubuntu-24.04-arm' }}
         run: |
           echo "ARM SDK will be at ${{ github.workspace }}/${{ env.VULKAN_VERSION }}/aarch64/bin"
-
-      - name: Create SDK tarball
-        run: |
-          cd "${{ github.workspace }}"
-          tar -czf "vulkan-sdk-${{ inputs.runner }}-${{ env.VULKAN_VERSION }}.tar.gz" "${{ env.VULKAN_VERSION }}"
-
-      - name: Upload Vulkan SDK tarball
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: vulkan-sdk-${{ inputs.runner }}-${{ env.VULKAN_VERSION }}
-          path: ${{ github.workspace }}/vulkan-sdk-${{ inputs.runner }}-${{ env.VULKAN_VERSION }}.tar.gz
-
-  build_and_test:
-    needs: setup_dependencies
-    strategy:
-      matrix:
-        compiler: [clang, gcc]
-
-    runs-on: ${{ inputs.runner }}
-
-    steps:
-      - uses: actions/checkout@v5.0.0
-        with:
-          submodules: recursive
-
-      - name: Download SDK artifact
-        uses: actions/download-artifact@v5.0.0
-        with:
-          name: vulkan-sdk-${{ inputs.runner }}-${{ env.VULKAN_VERSION }}
-          path: ${{ github.workspace }}/artifacts
-
-      - name: Extract SDK tarball
-        run: |
-          set -euo pipefail
-          ls -la artifacts
-          # finde tar.gz und extrahiere nach $GITHUB_WORKSPACE
-          TAR_GZ=$(ls artifacts/*.tar.gz 2>/dev/null || true)
-          if [ -n "$TAR_GZ" ]; then
-            tar -xzf "$TAR_GZ" -C "$GITHUB_WORKSPACE"
-          else
-            echo "No .tar.gz found in artifacts — listing artifacts:"
-            ls -la artifacts
-            exit 1
-          fi
 
       - name: Check Installation and update path
         if: inputs.runner == 'ubuntu-24.04-arm'
@@ -176,7 +135,7 @@ jobs:
           verbose: false
 
   release_package:
-    needs: [build_and_test, setup_dependencies]
+    needs: [build_and_test,]
     runs-on: ${{ inputs.runner }}
     # optionally: only run release packaging for a specific runner:
     # if: ${{ inputs.runner == 'ubuntu-24.04' }}
@@ -185,26 +144,21 @@ jobs:
         with:
           submodules: recursive
       
-      - name: Download SDK artifact
-        uses: actions/download-artifact@v5.0.0
-        with:
-          name: vulkan-sdk-${{ inputs.runner }}-${{ env.VULKAN_VERSION }}
-          path: ${{ github.workspace }}/artifacts
-
-      - name: Extract SDK tarball
+      - name: Remove too old CMake
         run: |
-          set -euo pipefail
-          ls -la artifacts
-          # finde tar.gz und extrahiere nach $GITHUB_WORKSPACE
-          TAR_GZ=$(ls artifacts/*.tar.gz 2>/dev/null || true)
-          if [ -n "$TAR_GZ" ]; then
-            tar -xzf "$TAR_GZ" -C "$GITHUB_WORKSPACE"
-          else
-            echo "No .tar.gz found in artifacts — listing artifacts:"
-            ls -la artifacts
-            exit 1
-          fi
+          which cmake || true
+          sudo rm -f /usr/local/bin/cmake || true
+          sudo apt-get purge --auto-remove -y cmake || true
 
+      - name: Install deps (heavy)
+        run: |
+          sudo chmod +x Scripts/Linux/setup-dependencies.sh
+          sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
+
+      - name: (ARM) prepare PATH hint
+        if: ${{ inputs.runner == 'ubuntu-24.04-arm' }}
+        run: |
+          echo "ARM SDK will be at ${{ github.workspace }}/${{ env.VULKAN_VERSION }}/aarch64/bin"
 
       - name: Make directory
         run: |
