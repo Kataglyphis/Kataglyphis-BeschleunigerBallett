@@ -14,7 +14,7 @@ set -euo pipefail
 # -----------------------------------------------------------------------------
 
 # Default Vulkan version
-VULKAN_VERSION="1.3.296"
+VULKAN_VERSION="1.4.321.1"
 if [ "$#" -gt 1 ]; then
   echo "Usage: $0 [vulkan-version]" >&2
   exit 1

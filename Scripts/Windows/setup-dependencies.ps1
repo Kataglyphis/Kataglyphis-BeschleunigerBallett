@@ -1,6 +1,6 @@
 Param(
-    [string]$VulkanVersion = '1.3.296.0',
-    [string]$ClangVersion  = '20.1.0',
+    [string]$VulkanVersion = '1.4.321.1',
+    [string]$ClangVersion  = '21.1.0',
     [string]$VulkanSdkPath = 'C:\VulkanSDK'
 )
 
@@ -10,12 +10,15 @@ Write-Host "=== Installing build dependencies on Windows ==="
 $ErrorActionPreference = 'Stop'
 
 # Install LLVM/Clang via Chocolatey
+# 
 Write-Host "Installing LLVM/Clang $ClangVersion..."
-choco install llvm --version="$ClangVersion" --params '/AddToPath' -y
+winget install --id=LLVM.LLVM -v $ClangVersion -e --accept-package-agreements
+# choco install llvm --version="$ClangVersion" --params '/AddToPath' -y
 
 # Install sccache
 Write-Host "Installing sccache..."
-choco install sccache -y
+winget install --id=Ccache.Ccache  -e --accept-package-agreements
+# choco install sccache -y
 
 # Install CMake, Cppcheck, NSIS via WinGet
 Write-Host "Installing CMake, Cppcheck and NSIS via winget..."
