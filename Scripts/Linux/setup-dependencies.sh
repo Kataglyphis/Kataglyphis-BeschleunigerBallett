@@ -71,7 +71,7 @@ verify_vulkan_version() {
   echo "Attempting to verify Vulkan SDK version ${version} availability..."
   
   # Try to access the download page to see if version exists
-  local test_url="https://sdk.lunarg.com/sdk/download/${version}.0/linux/"
+  local test_url="https://sdk.lunarg.com/sdk/download/${version}/linux/"
   if ! curl -sSf --connect-timeout 10 "$test_url" >/dev/null 2>&1; then
     echo "Warning: Could not verify version ${version} exists at ${test_url}" >&2
     echo "This might be due to network issues or the version may not exist." >&2
@@ -107,8 +107,8 @@ install_vulkan_tarball() {
   cd "$vulkan_dir"
   
   # Download tarball
-  local tarball_name="vulkansdk-linux-${arch_suffix}-${version}.0.tar.xz"
-  local download_url="https://sdk.lunarg.com/sdk/download/${version}.0/linux/${tarball_name}"
+  local tarball_name="vulkansdk-linux-${arch_suffix}-${version}.tar.xz"
+  local download_url="https://sdk.lunarg.com/sdk/download/${version}/linux/${tarball_name}"
   
   echo "Downloading ${tarball_name}..."
   if ! wget --timeout=30 --tries=3 -q "$download_url" -O "$tarball_name"; then
@@ -133,7 +133,7 @@ install_vulkan_tarball() {
   rm "$tarball_name"
   
   # Set up environment for current session
-  local sdk_path="${vulkan_dir}/${version}.0"
+  local sdk_path="${vulkan_dir}/${version}"
   if [ -d "$sdk_path" ]; then
     echo "Vulkan SDK extracted to: $sdk_path"
     echo ""
@@ -184,4 +184,4 @@ echo "All dependencies installed successfully."
 
 echo ""
 echo "IMPORTANT: Remember to source the setup script before using Vulkan:"
-echo "  source ~/vulkan/${VULKAN_VERSION}.0/setup-env.sh"
+echo "  source ~/vulkan/${VULKAN_VERSION}/setup-env.sh"
