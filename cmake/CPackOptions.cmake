@@ -32,7 +32,7 @@ set(CPACK_PACKAGE_HOMEPAGE_URL "${CMAKE_PROJECT_HOMEPAGE_URL}")
 # There is a bug in NSI that does not handle full UNIX paths properly.
 # Make sure there is at least one set of four backlashes.
 # https://gitlab.kitware.com/cmake/community/-/wikis/doc/cpack/Packaging-With-CPack
-set(CPACK_PACKAGE_ICON ${CMAKE_CURRENT_SOURCE_DIR}/images\\\\Engine_logo.bmp)
+set(CPACK_PACKAGE_ICON ${CMAKE_CURRENT_SOURCE_DIR}/images/Engine_logo.bmp)
 set(CPACK_RESOURCE_FILE_WELCOME ${CMAKE_CURRENT_SOURCE_DIR}/docs/packaging/WelcomeFile.txt)
 # try to use all cores
 set(CPACK_THREADS 0)
