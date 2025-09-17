@@ -73,8 +73,9 @@ jobs:
           ctest
 
       - name: Configure CMake for Release (Clang only)
+        # -DCPACK_GENERATOR=ZIP
         run: |
-          cmake -B ${{ env.BUILD_DIR_RELEASE }} --preset "x64-Clang-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF" -DCPACK_GENERATOR=ZIP
+          cmake -B ${{ env.BUILD_DIR_RELEASE }} --preset "x64-Clang-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF"
 
       - name: Build Release (Clang only)
         shell: pwsh
