@@ -42,7 +42,7 @@ set(CPACK_SOURCE_IGNORE_FILES /.git /.*build.*)
 if(WIN32)
   # Beide Generatoren aktivieren; CPack erzeugt dann sowohl .exe (NSIS) als auch .msi (WiX)
   # Zusätzlich auch ein reines ZIP-Binary-Package erzeugen NSIS;
-  set(CPACK_GENERATOR "WIX;ZIP")
+  set(CPACK_GENERATOR "NSIS;WIX;ZIP")
   # Quellpaket-Format für Windows (optional, sonst ZIP/TGZ). Kann bei Bedarf angepasst werden.
   set(CPACK_SOURCE_GENERATOR "ZIP")
 
@@ -66,15 +66,17 @@ if(WIN32)
   set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
   set(CPACK_NSIS_MODIFY_PATH "ON")
   # Erweiterte Desktop-Verknüpfung mit benutzerdefinierten Ausführungsoptionen
+  if(CPACK_GENERATOR MATCHES ".*NSIS.*")
+    # Für NSIS die automatische Desktop-Verknüpfung deaktivieren
+    set(CPACK_CREATE_DESKTOP_LINKS "")  # <-- leer setzen, nicht löschen
+  endif()
   set(CPACK_NSIS_CREATE_ICONS_EXTRA
-      "CreateShortCut '$DESKTOP\\\\${PROJECT_NAME}.lnk' '$INSTDIR\\\\bin\\\\${PROJECT_NAME}.exe' '' '$INSTDIR\\\\images\\\\faviconNew.ico' 0 SW_SHOWNORMAL '$INSTDIR\\\\bin' '${PROJECT_NAME} - Graphics Engine'
-      CreateShortCut '$DESKTOP\\\\${PROJECT_NAME} Debug.lnk' '$INSTDIR\\\\bin\\\\${PROJECT_NAME}.exe' '--debug --verbose' '$INSTDIR\\\\images\\\\faviconNew.ico' 0 SW_SHOWNORMAL '$INSTDIR\\\\bin' '${PROJECT_NAME} - Debug Mode'"
+      "CreateShortCut '$DESKTOP\\\\${PROJECT_NAME}.lnk' '$INSTDIR\\\\bin\\\\${PROJECT_NAME}.exe' '' '$INSTDIR\\\\images\\\\faviconNew.ico' 0 SW_SHOWNORMAL '$INSTDIR\\\\bin' '${PROJECT_NAME} - Graphics Engine'"
   )
 
   # Entsprechende Deinstallations-Anweisungen für die zusätzlichen Verknüpfungen
   set(CPACK_NSIS_DELETE_ICONS_EXTRA
-      "Delete '$DESKTOP\\\\${PROJECT_NAME}.lnk'
-      Delete '$DESKTOP\\\\${PROJECT_NAME} Debug.lnk'"
+      "Delete '$DESKTOP\\\\${PROJECT_NAME}.lnk'"
   )
 
   # Optional: Erweiterte Startmenü-Verknüpfungen mit verschiedenen Modi

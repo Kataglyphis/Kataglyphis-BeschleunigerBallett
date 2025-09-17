@@ -71,6 +71,8 @@ install(
 
 # we keep the relative paths in the install dir
 # keep in mind that install dir will be in front of this relative path ...
+# I want to use the .ico file in the images folder
+install(DIRECTORY images/ DESTINATION images/)
 install(DIRECTORY Resources/ DESTINATION Resources/)
 install(DIRECTORY ExternalLib/IMGUI/misc/fonts/ DESTINATION ExternalLib/IMGUI/misc/fonts/)
 
