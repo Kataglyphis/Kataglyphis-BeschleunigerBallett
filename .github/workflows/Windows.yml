@@ -83,6 +83,9 @@ jobs:
           $env:CMAKE_BUILD_PARALLEL_LEVEL = $env:NUMBER_OF_PROCESSORS
           cmake --build ${{ env.BUILD_DIR_RELEASE }} --preset "x64-Clang-Windows-Release"
 
+      - name: Add WiX to PATH
+        run: echo "C:\Program Files (x86)\WiX Toolset v3.14\bin" >> $env:GITHUB_PATH
+
       - name: Package (Clang only)
         run: |
           cmake --build ${{ env.BUILD_DIR_RELEASE }} --target package
