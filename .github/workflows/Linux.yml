@@ -185,3 +185,12 @@ jobs:
         run: |
           source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
           cmake --build build-release --target package
+
+      - name: Upload Linux Packages (Clang only)
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            build-release/*.tar.gz
+            build-release/*.tgz
+            build-release/*.deb

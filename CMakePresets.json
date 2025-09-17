@@ -536,5 +536,83 @@
 			"jobs": 0,
 			"configurePreset": "x64-MSVC-Windows-CI"
 		}
-	]
+	],
+  "testPresets": [
+    {
+      "name": "default",
+      "configurePreset": "linux-debug-clang",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": true
+      }
+    }
+  ],
+  "packagePresets": [
+    {
+      "name": "default",
+      "configurePreset": "linux-debug-clang",
+      "generators": [
+        "TGZ"
+      ]
+    },
+    {
+      "name": "linux-release-deb",
+      "displayName": "Linux Release TGZ+DEB",
+      "description": "Erzeugt TGZ und DEB Package für Release",
+      "configurePreset": "linux-release-clang",
+      "generators": [
+        "TGZ",
+        "DEB"
+      ],
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "windows-clang-release-wix",
+      "displayName": "Windows Release Clang NSIS+WIX",
+      "description": "Erzeugt NSIS (.exe) und WIX (.msi) Installer via CPack",
+      "configurePreset": "x64-Clang-Windows-Release",
+      "generators": [
+        "NSIS",
+        "WIX",
+        "ZIP"
+      ],
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "linux-debug-clang-workflow",
+      "displayName": "Linux Debug Clang Workflow",
+      "description": "Workflow preset for linux-debug-clang",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "linux-debug-clang"
+        },
+        {
+          "type": "build",
+          "name": "default"
+        },
+        {
+          "type": "test",
+          "name": "default"
+        },
+        {
+          "type": "package",
+          "name": "default"
+        }
+      ]
+    }
+  ]
 }

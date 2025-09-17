@@ -46,7 +46,8 @@ $SUDO apt-get update -y
 # Install basic tools
 echo "Installing core tools..."
 $SUDO apt-get install -y wget curl gpg lsb-release ca-certificates gnupg apt-transport-https
-
+# for debian packaging
+$SUDO apt-get install -y dpkg-dev fakeroot binutils
 # -----------------------------------------------------------------------------
 # Install CMake (latest from Kitware)
 # -----------------------------------------------------------------------------

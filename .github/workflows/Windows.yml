@@ -12,6 +12,7 @@ env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Debug
   BUILD_DIR: build
+  BUILD_DIR_RELEASE: build-release
   VULKAN_VERSION: 1.4.321.1
   CLANG_VERSION: 21.1.1
   VULKAN_SDK_PATH: C:\VulkanSDK
@@ -66,14 +67,23 @@ jobs:
 
       - name: Configure CMake for Release (Clang only)
         run: |
-          cmake -B build-release --preset "x64-Clang-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF" -DCPACK_GENERATOR=ZIP
+          cmake -B ${{ env.BUILD_DIR_RELEASE }} --preset "x64-Clang-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF" -DCPACK_GENERATOR=ZIP
 
       - name: Build Release (Clang only)
         shell: pwsh
         run: |
           $env:CMAKE_BUILD_PARALLEL_LEVEL = $env:NUMBER_OF_PROCESSORS
-          cmake --build build-release --preset "x64-Clang-Windows-Release"
+          cmake --build ${{ env.BUILD_DIR_RELEASE }} --preset "x64-Clang-Windows-Release"
 
       - name: Package (Clang only)
         run: |
-          cmake --build build-release --target package
+          cmake --build ${{ env.BUILD_DIR_RELEASE }} --target package
+
+      - name: Upload Installers & Zip
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: windows-installers
+          path: |
+            ${{ env.BUILD_DIR_RELEASE }}/*.msi
+            ${{ env.BUILD_DIR_RELEASE }}/*.exe
+            ${{ env.BUILD_DIR_RELEASE }}/*.zip
