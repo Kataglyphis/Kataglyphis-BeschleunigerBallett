@@ -84,11 +84,26 @@ jobs:
           cmake --build ${{ env.BUILD_DIR_RELEASE }} --preset "x64-Clang-Windows-Release"
 
       - name: Add WiX to PATH
-        run: echo "C:\Program Files (x86)\WiX Toolset v3.14\bin" >> $env:GITHUB_PATH
+        run: |
+         echo "C:\Program Files (x86)\WiX Toolset v3.14\bin" >> $env:GITHUB_PATH
+         echo "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
 
       - name: Package (Clang only)
         run: |
           cmake --build ${{ env.BUILD_DIR_RELEASE }} --target package
+
+      - name: Verify WiX Installation
+        shell: powershell
+        run: |
+          Write-Host "Checking WiX installation..."
+          Get-Command candle.exe -ErrorAction SilentlyContinue | Select-Object Source
+          Get-Command light.exe -ErrorAction SilentlyContinue | Select-Object Source
+          if (-not (Get-Command candle.exe -ErrorAction SilentlyContinue)) {
+            Write-Error "WiX candle.exe not found in PATH"
+          }
+          if (-not (Get-Command light.exe -ErrorAction SilentlyContinue)) {
+            Write-Error "WiX light.exe not found in PATH"
+          }
 
       - name: Upload Installers & Zip
         uses: actions/upload-artifact@v4.6.2
