@@ -41,8 +41,8 @@ set(CPACK_SOURCE_IGNORE_FILES /.git /.*build.*)
 # Windows (egal ob MSVC oder Clang/clang-cl) -> NSIS + WIX Binaries erzeugen
 if(WIN32)
   # Beide Generatoren aktivieren; CPack erzeugt dann sowohl .exe (NSIS) als auch .msi (WiX)
-  # Zusätzlich auch ein reines ZIP-Binary-Package erzeugen
-  set(CPACK_GENERATOR "NSIS;WIX;ZIP")
+  # Zusätzlich auch ein reines ZIP-Binary-Package erzeugen NSIS;
+  set(CPACK_GENERATOR "WIX;ZIP")
   # Quellpaket-Format für Windows (optional, sonst ZIP/TGZ). Kann bei Bedarf angepasst werden.
   set(CPACK_SOURCE_GENERATOR "ZIP")
 
@@ -65,6 +65,25 @@ if(WIN32)
   set(CPACK_NSIS_MUI_ICON ${CMAKE_CURRENT_SOURCE_DIR}/images/faviconNew.ico)
   set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
   set(CPACK_NSIS_MODIFY_PATH "ON")
+  # Erweiterte Desktop-Verknüpfung mit benutzerdefinierten Ausführungsoptionen
+  set(CPACK_NSIS_CREATE_ICONS_EXTRA
+      "CreateShortCut '$DESKTOP\\\\${PROJECT_NAME}.lnk' '$INSTDIR\\\\bin\\\\${PROJECT_NAME}.exe' '' '$INSTDIR\\\\images\\\\faviconNew.ico' 0 SW_SHOWNORMAL '$INSTDIR\\\\bin' '${PROJECT_NAME} - Graphics Engine'
+      CreateShortCut '$DESKTOP\\\\${PROJECT_NAME} Debug.lnk' '$INSTDIR\\\\bin\\\\${PROJECT_NAME}.exe' '--debug --verbose' '$INSTDIR\\\\images\\\\faviconNew.ico' 0 SW_SHOWNORMAL '$INSTDIR\\\\bin' '${PROJECT_NAME} - Debug Mode'"
+  )
+
+  # Entsprechende Deinstallations-Anweisungen für die zusätzlichen Verknüpfungen
+  set(CPACK_NSIS_DELETE_ICONS_EXTRA
+      "Delete '$DESKTOP\\\\${PROJECT_NAME}.lnk'
+      Delete '$DESKTOP\\\\${PROJECT_NAME} Debug.lnk'"
+  )
+
+  # Optional: Erweiterte Startmenü-Verknüpfungen mit verschiedenen Modi
+  set(CPACK_NSIS_MENU_LINKS
+      "${CMAKE_PROJECT_HOMEPAGE_URL}" "Homepage for ${PROJECT_NAME}"
+      "bin/${PROJECT_NAME}.exe" "${PROJECT_NAME}"
+      "bin/${PROJECT_NAME}.exe --safe-mode" "${PROJECT_NAME} (Safe Mode)"
+      "README.md" "Documentation"
+  )
 
   # WiX spezifische Einstellungen
   # WICHTIG: Diese Upgrade GUID MUSS STABIL BLEIBEN, sonst funktionieren Upgrades/Deinstallationen nicht korrekt.
