@@ -42,7 +42,7 @@ set(CPACK_SOURCE_IGNORE_FILES /.git /.*build.*)
 if(WIN32)
   # Beide Generatoren aktivieren; CPack erzeugt dann sowohl .exe (NSIS) als auch .msi (WiX)
   # Zusätzlich auch ein reines ZIP-Binary-Package erzeugen NSIS;
-  set(CPACK_GENERATOR "NSIS;WIX;ZIP")
+  set(CPACK_GENERATOR "WIX;ZIP")
   # Quellpaket-Format für Windows (optional, sonst ZIP/TGZ). Kann bei Bedarf angepasst werden.
   set(CPACK_SOURCE_GENERATOR "ZIP")
 
@@ -71,12 +71,18 @@ if(WIN32)
     set(CPACK_CREATE_DESKTOP_LINKS "")  # <-- leer setzen, nicht löschen
   endif()
   set(CPACK_NSIS_CREATE_ICONS_EXTRA
-      "CreateShortCut '$DESKTOP\\\\${PROJECT_NAME}.lnk' '$INSTDIR\\\\bin\\\\${PROJECT_NAME}.exe' '' '$INSTDIR\\\\images\\\\faviconNew.ico' 0 SW_SHOWNORMAL '$INSTDIR\\\\bin' '${PROJECT_NAME} - Graphics Engine'"
+  "CreateShortCut '$DESKTOP\\\\${PROJECT_NAME}.lnk' '$INSTDIR\\\\bin\\\\${PROJECT_NAME}.exe' '' '$INSTDIR\\\\images\\\\faviconNew.ico' 0"
   )
-
-  # Entsprechende Deinstallations-Anweisungen für die zusätzlichen Verknüpfungen
+  # Extra Install-Kommandos: SetOutPath vor CreateShortCut setzen, damit das "Start in" stimmt.
+  # Achte auf korrekte Escape-Zeichen in CMake-Strings.
+  set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS
+    "SetOutPath \\\"$INSTDIR\\\\bin\\\"\n"
+    "CreateShortCut \\\"$DESKTOP\\\\MyApp.lnk\\\" \\\"$INSTDIR\\\\bin\\\\MyApp.exe\\\" \\\"\\\" \\\"$INSTDIR\\\\bin\\\\MyApp.exe\\\" 0\n"
+    "SetOutPath \\\"$INSTDIR\\\"\n"
+  )
+  # Optional: sauberes Entfernen bei Deinstall
   set(CPACK_NSIS_DELETE_ICONS_EXTRA
-      "Delete '$DESKTOP\\\\${PROJECT_NAME}.lnk'"
+    "Delete '$DESKTOP\\\\${PROJECT_NAME}.lnk'"
   )
 
   # Optional: Erweiterte Startmenü-Verknüpfungen mit verschiedenen Modi
