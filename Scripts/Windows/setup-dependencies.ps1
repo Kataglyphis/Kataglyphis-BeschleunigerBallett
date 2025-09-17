@@ -1,6 +1,6 @@
 Param(
     [string]$VulkanVersion = '1.4.321.1',
-    [string]$ClangVersion  = '21.1.0',
+    [string]$ClangVersion  = '21.1.1',
     [string]$VulkanSdkPath = 'C:\VulkanSDK'
 )
 
@@ -23,6 +23,8 @@ winget install --id=Ccache.Ccache  -e --accept-package-agreements
 # Install CMake, Cppcheck, NSIS via WinGet
 Write-Host "Installing CMake, Cppcheck and NSIS via winget..."
 winget install --accept-source-agreements --accept-package-agreements cmake cppcheck nsis
+# also get wix
+winget install --accept-source-agreements --accept-package-agreements WiXToolset.WiXToolset
 
 # Install VulkanSDK via WinGet
 Write-Host "Installing Vulkan SDK $VulkanVersion..."
