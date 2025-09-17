@@ -24,7 +24,7 @@ winget install --accept-source-agreements --accept-package-agreements --id=Ccach
 Write-Host "Installing CMake, Cppcheck and NSIS via winget..."
 winget install --accept-source-agreements --accept-package-agreements cmake cppcheck nsis
 # also get wix
-winget install --accept-source-agreements --accept-package-agreements WiXToolset.WiXToolset
+winget install --accept-source-agreements --accept-package-agreements --id WiXToolset.WiXToolset -e
 
 # Install VulkanSDK via WinGet
 Write-Host "Installing Vulkan SDK $VulkanVersion..."

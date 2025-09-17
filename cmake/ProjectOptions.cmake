@@ -186,9 +186,6 @@ macro(myproject_local_options)
       target_compile_options(myproject_options INTERFACE -pg)
       target_link_libraries(myproject_options INTERFACE -pg)
     endif()
-
-  elseif(myproject_ENABLE_GPROF)
-    message(WARNING "GProf should only be used with GCC on Linux using -DCMAKE_BUILD_TYPE=Profile")
   endif()
 
   if(myproject_DISABLE_EXCEPTIONS)
