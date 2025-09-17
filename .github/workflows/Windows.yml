@@ -73,7 +73,7 @@ jobs:
           ctest
 
       - name: Configure CMake for Release (Clang only)
-        # -DCPACK_GENERATOR=ZIP
+        # -DCPACK_GENERATOR=ZIP; NSIS has problems on github windows runner
         run: |
           cmake -B ${{ env.BUILD_DIR_RELEASE }} --preset "x64-Clang-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF" -DCPACK_GENERATOR="WIX;ZIP"
 
