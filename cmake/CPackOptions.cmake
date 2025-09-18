@@ -42,7 +42,7 @@ set(CPACK_SOURCE_IGNORE_FILES /.git /.*build.*)
 if(WIN32)
   # Beide Generatoren aktivieren; CPack erzeugt dann sowohl .exe (NSIS) als auch .msi (WiX)
   # Zusätzlich auch ein reines ZIP-Binary-Package erzeugen NSIS;
-  set(CPACK_GENERATOR "WIX;ZIP")
+  set(CPACK_GENERATOR "NSIS;WIX;ZIP")
   # Quellpaket-Format für Windows (optional, sonst ZIP/TGZ). Kann bei Bedarf angepasst werden.
   set(CPACK_SOURCE_GENERATOR "ZIP")
 
@@ -52,7 +52,7 @@ if(WIN32)
   set(CPACK_NSIS_MUI_HEADERIMAGE ${CMAKE_CURRENT_SOURCE_DIR}/images/Engine_logo.bmp)
   set(CPACK_NSIS_MUI_WELCOMEFINISHPAGE_BITMAP ${CMAKE_CURRENT_SOURCE_DIR}/images/Engine_logo.bmp)
   set(CPACK_NSIS_MUI_UNWELCOMEFINISHPAGE_BITMAP ${CMAKE_CURRENT_SOURCE_DIR}/images/Engine_logo.bmp)
-  set(CPACK_NSIS_INSTALLED_ICON_NAME bin/${PROJECT_NAME}.exe)
+  set(CPACK_NSIS_INSTALLED_ICON_NAME bin\\\\${PROJECT_NAME}.exe)
   set(CPACK_NSIS_PACKAGE_NAME "${PROJECT_NAME}")
   set(CPACK_NSIS_DISPLAY_NAME "${PROJECT_NAME}")
   set(CPACK_NSIS_CONTACT "${CMAKE_PROJECT_HOMEPAGE_URL}")
@@ -65,33 +65,18 @@ if(WIN32)
   set(CPACK_NSIS_MUI_ICON ${CMAKE_CURRENT_SOURCE_DIR}/images/faviconNew.ico)
   set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
   set(CPACK_NSIS_MODIFY_PATH "ON")
-  # Erweiterte Desktop-Verknüpfung mit benutzerdefinierten Ausführungsoptionen
-  if(CPACK_GENERATOR MATCHES ".*NSIS.*")
-    # Für NSIS die automatische Desktop-Verknüpfung deaktivieren
-    set(CPACK_CREATE_DESKTOP_LINKS "")  # <-- leer setzen, nicht löschen
-  endif()
-  set(CPACK_NSIS_CREATE_ICONS_EXTRA
-  "CreateShortCut '$DESKTOP\\\\${PROJECT_NAME}.lnk' '$INSTDIR\\\\bin\\\\${PROJECT_NAME}.exe' '' '$INSTDIR\\\\images\\\\faviconNew.ico' 0"
-  )
-  # Extra Install-Kommandos: SetOutPath vor CreateShortCut setzen, damit das "Start in" stimmt.
-  # Achte auf korrekte Escape-Zeichen in CMake-Strings.
-  set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS
-    "SetOutPath \\\"$INSTDIR\\\\bin\\\"\n"
-    "CreateShortCut \\\"$DESKTOP\\\\MyApp.lnk\\\" \\\"$INSTDIR\\\\bin\\\\MyApp.exe\\\" \\\"\\\" \\\"$INSTDIR\\\\bin\\\\MyApp.exe\\\" 0\n"
-    "SetOutPath \\\"$INSTDIR\\\"\n"
-  )
-  # Optional: sauberes Entfernen bei Deinstall
-  set(CPACK_NSIS_DELETE_ICONS_EXTRA
-    "Delete '$DESKTOP\\\\${PROJECT_NAME}.lnk'"
-  )
 
-  # Optional: Erweiterte Startmenü-Verknüpfungen mit verschiedenen Modi
-  set(CPACK_NSIS_MENU_LINKS
-      "${CMAKE_PROJECT_HOMEPAGE_URL}" "Homepage for ${PROJECT_NAME}"
-      "bin/${PROJECT_NAME}.exe" "${PROJECT_NAME}"
-      "bin/${PROJECT_NAME}.exe --safe-mode" "${PROJECT_NAME} (Safe Mode)"
-      "README.md" "Documentation"
-  )
+  # Optional: If you need more control over the desktop shortcut, you can use custom NSIS commands
+  # This ensures the shortcut has the correct working directory
+  set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "
+    SetOutPath \\\"$INSTDIR\\\\bin\\\"
+    CreateShortCut \\\"$DESKTOP\\\\${PROJECT_NAME}.lnk\\\" \\\"$INSTDIR\\\\bin\\\\${PROJECT_NAME}.exe\\\" \\\"\\\" \\\"$INSTDIR\\\\bin\\\\${PROJECT_NAME}.exe\\\" 0 SW_SHOWNORMAL \\\"\\\" \\\"${PROJECT_NAME}\\\"
+  ")
+  
+  # Optional: Remove the desktop shortcut on uninstall
+  set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "
+    Delete \\\"$DESKTOP\\\\${PROJECT_NAME}.lnk\\\"
+  ")
 
   # WiX spezifische Einstellungen
   # WICHTIG: Diese Upgrade GUID MUSS STABIL BLEIBEN, sonst funktionieren Upgrades/Deinstallationen nicht korrekt.
