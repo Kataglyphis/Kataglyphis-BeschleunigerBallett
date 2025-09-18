@@ -101,6 +101,14 @@ jobs:
             Write-Error "WiX light.exe not found in PATH"
           }
 
+      - name: Set CPack output directory
+        id: set-cpack-dir
+        run: |
+          $cpackDir = Join-Path -Path ${{ env.BUILD_DIR_RELEASE }} -ChildPath "_cpack_output"
+          New-Item -Path $cpackDir -ItemType Directory -Force
+          echo "cpack_dir=$cpackDir" >> $GITHUB_OUTPUT
+        shell: pwsh
+        
       - name: Package (Clang only)
         run: |
           cmake --build ${{ env.BUILD_DIR_RELEASE }} --target package
