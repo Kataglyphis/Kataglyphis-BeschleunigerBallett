@@ -3,9 +3,9 @@
 #include "common/MemoryHelper.hpp"
 #include "common/Utilities.hpp"
 
-VulkanImage::VulkanImage() {}
+Kataglyphis::VulkanImage::VulkanImage() {}
 
-void VulkanImage::create(VulkanDevice *device,
+void Kataglyphis::VulkanImage::create(VulkanDevice *device,
   uint32_t width,
   uint32_t height,
   uint32_t mip_levels,
@@ -45,7 +45,7 @@ void VulkanImage::create(VulkanDevice *device,
     memory_alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     memory_alloc_info.allocationSize = memory_requirements.size;
     memory_alloc_info.memoryTypeIndex =
-      find_memory_type_index(device->getPhysicalDevice(), memory_requirements.memoryTypeBits, prop_flags);
+      Kataglyphis::find_memory_type_index(device->getPhysicalDevice(), memory_requirements.memoryTypeBits, prop_flags);
 
     result = vkAllocateMemory(device->getLogicalDevice(), &memory_alloc_info, nullptr, &imageMemory);
     ASSERT_VULKAN(result, "Failed to allocate memory!")
@@ -54,7 +54,7 @@ void VulkanImage::create(VulkanDevice *device,
     vkBindImageMemory(device->getLogicalDevice(), image, imageMemory, 0);
 }
 
-void VulkanImage::transitionImageLayout(VkDevice device,
+void Kataglyphis::VulkanImage::transitionImageLayout(VkDevice device,
   VkQueue queue,
   VkCommandPool command_pool,
   VkImageLayout old_layout,
@@ -103,7 +103,7 @@ void VulkanImage::transitionImageLayout(VkDevice device,
     commandBufferManager.endAndSubmitCommandBuffer(device, command_pool, queue, command_buffer);
 }
 
-void VulkanImage::transitionImageLayout(VkCommandBuffer command_buffer,
+void Kataglyphis::VulkanImage::transitionImageLayout(VkCommandBuffer command_buffer,
   VkImageLayout old_layout,
   VkImageLayout new_layout,
   uint32_t mip_levels,
@@ -146,17 +146,17 @@ void VulkanImage::transitionImageLayout(VkCommandBuffer command_buffer,
     );
 }
 
-void VulkanImage::setImage(VkImage image) { this->image = image; }
+void Kataglyphis::VulkanImage::setImage(VkImage image) { this->image = image; }
 
-void VulkanImage::cleanUp()
+void Kataglyphis::VulkanImage::cleanUp()
 {
     vkDestroyImage(device->getLogicalDevice(), image, nullptr);
     vkFreeMemory(device->getLogicalDevice(), imageMemory, nullptr);
 }
 
-VulkanImage::~VulkanImage() {}
+Kataglyphis::VulkanImage::~VulkanImage() {}
 
-VkAccessFlags VulkanImage::accessFlagsForImageLayout(VkImageLayout layout)
+VkAccessFlags Kataglyphis::VulkanImage::accessFlagsForImageLayout(VkImageLayout layout)
 {
     switch (layout) {
     case VK_IMAGE_LAYOUT_PREINITIALIZED:
@@ -176,7 +176,7 @@ VkAccessFlags VulkanImage::accessFlagsForImageLayout(VkImageLayout layout)
     }
 }
 
-VkPipelineStageFlags VulkanImage::pipelineStageForLayout(VkImageLayout oldImageLayout)
+VkPipelineStageFlags Kataglyphis::VulkanImage::pipelineStageForLayout(VkImageLayout oldImageLayout)
 {
     switch (oldImageLayout) {
     case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:

@@ -5,7 +5,7 @@
 #include <GLFW/glfw3.h>
 
 #include <vector>
-
+namespace Kataglyphis {
 class VulkanInstance
 {
   public:
@@ -26,3 +26,4 @@ class VulkanInstance
     bool check_validation_layer_support();
     bool check_instance_extension_support(std::vector<const char *> *check_extensions);
 };
+}// namespace Kataglyphis

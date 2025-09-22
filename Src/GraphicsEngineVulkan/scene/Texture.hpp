@@ -8,7 +8,7 @@
 #include "vulkan_base/VulkanBufferManager.hpp"
 #include "vulkan_base/VulkanImage.hpp"
 #include "vulkan_base/VulkanImageView.hpp"
-
+namespace Kataglyphis {
 class Texture
 {
   public:
@@ -55,9 +55,10 @@ class Texture
       int32_t height,
       uint32_t mip_levels);
 
-    CommandBufferManager commandBufferManager;
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
     VulkanBufferManager vulkanBufferManager;
 
     VulkanImage vulkanImage;
     VulkanImageView vulkanImageView;
 };
+}// namespace Kataglyphis

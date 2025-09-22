@@ -1,7 +1,11 @@
 #pragma once
 
+// clang-format off
+// you must include glad before glfw!
+// therefore disable clang-format for this section
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+// clang-format on
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -11,28 +15,28 @@
 
 #include "scene/Mesh.hpp"
 
-class AABB {
- public:
-  AABB();
+class AABB
+{
+  public:
+    AABB();
 
-  std::vector<glm::vec3> get_corners(glm::mat4 model);
+    std::vector<glm::vec3> get_corners(glm::mat4 model);
 
-  void init(GLfloat minX, GLfloat maxX, GLfloat minY, GLfloat maxY,
-            GLfloat minZ, GLfloat maxZ);
+    void init(GLfloat minX, GLfloat maxX, GLfloat minY, GLfloat maxY, GLfloat minZ, GLfloat maxZ);
 
-  glm::vec3 get_radius();
+    glm::vec3 get_radius();
 
-  void render();
+    void render();
 
-  ~AABB();
+    ~AABB();
 
- private:
-  std::vector<Vertex> vertices;
-  std::vector<unsigned int> indices;
+  private:
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
 
-  std::shared_ptr<Mesh> mesh;
+    std::shared_ptr<Mesh> mesh;
 
-  std::vector<glm::vec3> corners;
+    std::vector<glm::vec3> corners;
 
-  GLfloat minX, maxX, minY, maxY, minZ, maxZ;
+    GLfloat minX, maxX, minY, maxY, minZ, maxZ;
 };

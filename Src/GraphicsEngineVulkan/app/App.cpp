@@ -19,9 +19,9 @@
 #include "renderer/VulkanRenderer.hpp"
 #include "window/Window.hpp"
 
-App::App() {}
+Kataglyphis::App::App() {}
 
-int App::run()
+int Kataglyphis::App::run()
 {
     int window_width = 1200;
     int window_height = 768;
@@ -29,12 +29,13 @@ int App::run()
     float delta_time = 0.0f;
     float last_time = 0.0f;
 
-    std::unique_ptr<Window> window = std::make_unique<Window>(window_width, window_height);
+    std::unique_ptr<Kataglyphis::Frontend::Window> window =
+      std::make_unique<Kataglyphis::Frontend::Window>(window_width, window_height);
     std::unique_ptr<Scene> scene = std::make_unique<Scene>();
-    std::unique_ptr<GUI> gui = std::make_unique<GUI>(window.get());
+    std::unique_ptr<Kataglyphis::Frontend::GUI> gui = std::make_unique<Kataglyphis::Frontend::GUI>(window.get());
     std::unique_ptr<Camera> camera = std::make_unique<Camera>();
 
-    VulkanRenderer vulkan_renderer{ window.get(), scene.get(), gui.get(), camera.get() };
+    Kataglyphis::VulkanRenderer vulkan_renderer{ window.get(), scene.get(), gui.get(), camera.get() };
 
     while (!window->get_should_close()) {
         // poll all events incoming from user
@@ -69,4 +70,4 @@ int App::run()
     return EXIT_SUCCESS;
 }
 
-App::~App() {}
+Kataglyphis::App::~App() {}

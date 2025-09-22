@@ -6,6 +6,8 @@
 #include <iostream>
 #include <unordered_map>
 
+using namespace Kataglyphis;
+
 ObjLoader::ObjLoader(VulkanDevice *device, VkQueue transfer_queue, VkCommandPool command_pool)
 {
     this->device = device;

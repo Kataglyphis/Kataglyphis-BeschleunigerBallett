@@ -5,13 +5,14 @@
 // #define GLFW_INCLUDE_VULKAN
 // #include <GLFW/glfw3.h>
 
+#include "common/Globals.hpp"
 #include "renderer/CommandBufferManager.hpp"
 #include "renderer/GUIRendererSharedVars.hpp"
 #include "scene/GUISceneSharedVars.hpp"
-#include "common/Globals.hpp"
 #include "vulkan_base/VulkanDevice.hpp"
 #include "window/Window.hpp"
 
+namespace Kataglyphis::Frontend {
 class GUI
 {
   public:
@@ -23,7 +24,10 @@ class GUI
       const VkCommandPool &graphics_command_pool);
 
     GUISceneSharedVars getGuiSceneSharedVars() { return guiSceneSharedVars; };
-    GUIRendererSharedVars &getGuiRendererSharedVars() { return guiRendererSharedVars; };
+    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &getGuiRendererSharedVars()
+    {
+        return guiRendererSharedVars;
+    };
 
     void setUserSelectionForRRT(bool rrtCapabilitiesAvailable);
 
@@ -36,15 +40,15 @@ class GUI
   private:
     void create_gui_context(Window *window, const VkInstance &instance, const VkRenderPass &post_render_pass);
 
-    void create_fonts_and_upload(const VkCommandPool &graphics_command_pool);
-
     VulkanDevice *device{ VK_NULL_HANDLE };
     Window *window{ VK_NULL_HANDLE };
     VkDescriptorPool gui_descriptor_pool{ VK_NULL_HANDLE };
-    CommandBufferManager commandBufferManager;
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
 
     GUISceneSharedVars guiSceneSharedVars;
-    GUIRendererSharedVars guiRendererSharedVars;
+    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars guiRendererSharedVars;
 
     bool renderUserSelectionForRRT = true;
 };
+
+}// namespace Kataglyphis::Frontend

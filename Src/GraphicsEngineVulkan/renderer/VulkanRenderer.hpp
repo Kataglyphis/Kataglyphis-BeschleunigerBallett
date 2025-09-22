@@ -1,17 +1,17 @@
 #pragma once
 
-#include "renderer/accelerationStructures/ASManager.hpp"
-#include "memory/Allocator.hpp"
-#include "renderer/CommandBufferManager.hpp"
-#include "gui/GUI.hpp"
 #include "GlobalUBO.hpp"
 #include "PathTracing.hpp"
 #include "PostStage.hpp"
+#include "gui/GUI.hpp"
+#include "memory/Allocator.hpp"
+#include "renderer/CommandBufferManager.hpp"
+#include "renderer/accelerationStructures/ASManager.hpp"
 
 #include "Rasterizer.hpp"
 #include "Raytracing.hpp"
-#include "scene/Scene.hpp"
 #include "SceneUBO.hpp"
+#include "scene/Scene.hpp"
 #include "scene/Texture.hpp"
 
 #include "scene/Camera.hpp"
@@ -22,16 +22,20 @@
 #include "vulkan_base/VulkanSwapChain.hpp"
 #include "window/Window.hpp"
 
+namespace Kataglyphis {
 class VulkanRenderer
 {
   public:
-    VulkanRenderer(Window *window, Scene *scene, GUI *gui, Camera *camera);
+    VulkanRenderer(Kataglyphis::Frontend::Window *window,
+      Scene *scene,
+      Kataglyphis::Frontend::GUI *gui,
+      Camera *camera);
 
     void drawFrame();
 
-    void updateUniforms(Scene *scene, Camera *camera, Window *window);
+    void updateUniforms(Scene *scene, Camera *camera, Kataglyphis::Frontend::Window *window);
 
-    void updateStateDueToUserInput(GUI *gui);
+    void updateStateDueToUserInput(Kataglyphis::Frontend::GUI *gui);
     void finishAllRenderCommands();
     void update_raytracing_descriptor_set(uint32_t image_index);
 
@@ -57,9 +61,9 @@ class VulkanRenderer
 
     VulkanSwapChain vulkanSwapChain;
 
-    Window *window;
+    Kataglyphis::Frontend::Window *window;
     Scene *scene;
-    GUI *gui;
+    Kataglyphis::Frontend::GUI *gui;
 
     // -- pools
     void record_commands(uint32_t image_index);
@@ -69,22 +73,22 @@ class VulkanRenderer
     VkCommandPool compute_command_pool;
 
     // uniform buffers
-    GlobalUBO globalUBO;
+    VulkanRendererInternals::GlobalUBO globalUBO;
     std::vector<VulkanBuffer> globalUBOBuffer;
-    SceneUBO sceneUBO;
+    VulkanRendererInternals::SceneUBO sceneUBO;
     std::vector<VulkanBuffer> sceneUBOBuffer;
     void create_uniform_buffers();
     void update_uniform_buffers(uint32_t image_index);
     void cleanUpUBOs();
 
     std::vector<VkCommandBuffer> command_buffers;
-    CommandBufferManager commandBufferManager;
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
     void create_command_buffers();
 
-    Raytracing raytracingStage;
-    Rasterizer rasterizer;
-    PathTracing pathTracing;
-    PostStage postStage;
+    Kataglyphis::VulkanRendererInternals::Raytracing raytracingStage;
+    Kataglyphis::VulkanRendererInternals::Rasterizer rasterizer;
+    Kataglyphis::VulkanRendererInternals::PathTracing pathTracing;
+    Kataglyphis::VulkanRendererInternals::PostStage postStage;
 
     // new era of memory management for my project
     // for now on integrate vma
@@ -99,7 +103,7 @@ class VulkanRenderer
     void createSynchronization();
     void cleanUpSync();
 
-    ASManager asManager;
+    Kataglyphis::VulkanRendererInternals::ASManager asManager;
     VulkanBuffer objectDescriptionBuffer;
     void create_object_description_buffer();
 
@@ -128,3 +132,4 @@ class VulkanRenderer
 
     bool checkChangedFramebufferSize();
 };
+}// namespace Kataglyphis

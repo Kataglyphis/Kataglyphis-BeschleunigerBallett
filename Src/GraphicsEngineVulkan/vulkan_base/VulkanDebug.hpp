@@ -1,7 +1,7 @@
 #pragma once
 #include <vulkan/vulkan.h>
 
-namespace debug {
+namespace Kataglyphis::debug {
 // Default validation layers
 extern int validationLayerCount;
 extern const char *validationLayerNames[];
@@ -22,4 +22,4 @@ void setupDebugging(VkInstance instance, VkDebugReportFlagsEXT flags, VkDebugRep
 // Clear debug callback
 void freeDebugCallback(VkInstance instance);
 
-}// namespace debug
+}// namespace Kataglyphis::debug

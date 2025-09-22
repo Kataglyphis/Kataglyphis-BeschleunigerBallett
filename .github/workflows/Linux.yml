@@ -18,135 +18,106 @@ on:
 
 env:
   BUILD_TYPE: Debug
-  VULKAN_VERSION: 1.3.296
+  VULKAN_VERSION: 1.4.321.1
 
 jobs:
+
   build_and_test:
+    strategy:
+      matrix:
+        compiler: [clang, gcc]
+
     runs-on: ${{ inputs.runner }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5.0.0
         with:
           submodules: recursive
 
-      - name: Install latest CMake
+      - name: Remove too old CMake
         run: |
           which cmake || true
           sudo rm -f /usr/local/bin/cmake || true
           sudo apt-get purge --auto-remove -y cmake || true
-          sudo apt-get update
-          sudo apt-get install -y wget gpg lsb-release ca-certificates
-          wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc \
-            | gpg --dearmor \
-            | sudo tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
-          echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] \
-            https://apt.kitware.com/ubuntu/ noble main" \
-            | sudo tee /etc/apt/sources.list.d/kitware.list >/dev/null
-          sudo apt-get update
-          sudo apt-get install -y cmake
+
+      - name: Install deps (heavy)
+        run: |
+          sudo chmod +x Scripts/Linux/setup-dependencies.sh
+          sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
+
+      - name: (ARM) prepare PATH hint
+        if: ${{ inputs.runner == 'ubuntu-24.04-arm' }}
+        run: |
+          echo "ARM SDK will be at ${{ github.workspace }}/${{ env.VULKAN_VERSION }}/aarch64/bin"
+
+      - name: Check Installation and update path
+        if: inputs.runner == 'ubuntu-24.04-arm'
+        run: |
+          echo "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/aarch64/bin" >> $GITHUB_PATH
+
+      - name: Update path and Vulkan env vars
+        run: |
+          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          which glslc
           echo "/usr/bin" >> $GITHUB_PATH
           cmake --version
-
-      - name: Install Vulkan on x64
-        if: inputs.runner == 'ubuntu-24.04'
-        run: |
-          sudo apt-get update -y
-          wget -qO - https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo apt-key add -
-          sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-${{ env.VULKAN_VERSION }}-noble.list https://packages.lunarg.com/vulkan/${{ env.VULKAN_VERSION }}/lunarg-vulkan-${{ env.VULKAN_VERSION }}-noble.list
-          sudo apt update
-          sudo apt install vulkan-sdk
-
-      - name: Install Vulkan SDK on ARM
-        if: inputs.runner == 'ubuntu-24.04-arm'
-        run: |
-          sudo apt install -y xz-utils
-          sudo apt-get install -y libglm-dev cmake libxcb-dri3-0 libxcb-present0 libpciaccess0 \
-            libpng-dev libxcb-keysyms1-dev libxcb-dri3-dev libx11-dev g++ gcc \
-            libwayland-dev libxrandr-dev libxcb-randr0-dev libxcb-ewmh-dev \
-            git python-is-python3 bison libx11-xcb-dev liblz4-dev libzstd-dev \
-            ocaml-core ninja-build pkg-config libxml2-dev wayland-protocols python3-jsonschema \
-            clang-format qtbase5-dev qt6-base-dev
-          wget https://sdk.lunarg.com/sdk/download/${{ env.VULKAN_VERSION }}.0/linux/vulkansdk-linux-x86_64-${{ env.VULKAN_VERSION }}.0.tar.xz
-          tar -xf vulkansdk-linux-x86_64-${{ env.VULKAN_VERSION }}.0.tar.xz
-          cd ${{ env.VULKAN_VERSION }}.0
-          chmod +x vulkansdk 
-          ./vulkansdk -j $(nproc) \
-            glslang \
-            vulkan-tools \
-            vulkan-headers \
-            vulkan-loader \
-            vulkan-validationlayers \
-            shaderc \
-            spirv-headers \
-            spirv-tools \
-            vulkan-extensionlayer \
-            volk \
-            vma \
-            vcv \
-            vul \
-            slang          
-          echo "${{ github.workspace }}/${{ env.VULKAN_VERSION }}.0/aarch64/bin" >> $GITHUB_PATH
-
-      - name: Check Installation
-        if: inputs.runner == 'ubuntu-24.04-arm'
-        run: |
-          which glslc
-
-      - name: Install GLFW + build system dependencies
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y \
-          libxrandr-dev \
-          libxinerama-dev \
-          libxcursor-dev \
-          libxi-dev \
-          libglu1-mesa-dev \
-          freeglut3-dev \
-          mesa-common-dev \
-          mesa-utils \
-          wayland-protocols \
-          libwayland-dev \
-          libxkbcommon-dev \
-          libglx-mesa0 \
-          ninja-build \
-          ccache \
-          iwyu \
-          graphviz \
-          doxygen
-
-      - name: Install for Offscreen Rendering on GLFW
-        run: sudo apt-get install libosmesa6-dev
-
-      - name: Install Code Coverage dependencies
-        run: sudo apt-get install -y gcovr
-
-      - name: Install clang
-        run: sudo apt-get install clang llvm
 
       - name: Make directory
         run: |
           rm -rf build
           mkdir build
+          
+      - name: Set PRESET for compiler
+        run: |
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            echo "PRESET=linux-debug-clang" >> $GITHUB_ENV
+          else
+            echo "PRESET=linux-debug-GNU" >> $GITHUB_ENV
+          fi
 
       - name: Build
         run: |
-          cd build
-          cmake --preset linux-debug-clang ..
-          cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          # use the preset chosen above
+          cmake -B build --preset "$PRESET"
+          cmake --build ${{ github.workspace }}/build --preset "$PRESET"
 
       - name: Test
+        if: ${{ matrix.compiler == 'clang' }}
         working-directory: ${{github.workspace}}/build/
         run: ctest -C ${{env.BUILD_TYPE}} --verbose --extra-verbose --debug -T test --output-on-failure -E Integration.VulkanEngine RendererTest.BasicSetup
 
       - name: Build Code Coverage
+        if: ${{ matrix.compiler == 'clang' }}
         run: |
           llvm-profdata merge -sparse ${{github.workspace}}/build/Test/compile/default.profraw -o ${{github.workspace}}/build/compileTestSuite.profdata
           llvm-cov report ${{github.workspace}}/build/compileTestSuite -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata
           llvm-cov export ${{github.workspace}}/build/compileTestSuite -format=text -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata > ${{github.workspace}}/build/coverage.json
+          llvm-cov show ${{github.workspace}}/build/compileTestSuite -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata
 
-      - name: 📂 Sync files to dev domain
-        if: inputs.runner == 'ubuntu-24.04'
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      - name: Set up Python 3.13
+        if: ${{ matrix.compiler == 'clang' }}
+        uses: actions/setup-python@v6.0.0
+        with:
+          python-version: "3.13"
+      # You can test your matrix by printing the current Python version
+      - name: Setup python env
+        if: ${{ matrix.compiler == 'clang' }}
+        run: |
+          pip install -r requirements.txt
+
+      - name: Build web page
+        if: ${{ matrix.compiler == 'clang' }}
+        run: |
+          cp ${{github.workspace}}/build/build/html/*.svg ./docs/source/_static
+          cd docs/source
+          python graphviz_generator.py 
+          cd ..
+          make html
+
+      - name: 📂 Sync files to domain
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
+        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
         with:
           server: ${{ secrets.SERVER }}
           username: ${{ secrets.USERNAME }}
@@ -154,11 +125,72 @@ jobs:
           local-dir: "./build/build/html/"
 
       - name: Codecov
-        if: inputs.runner == 'ubuntu-24.04'
-        uses: codecov/codecov-action@v4.6.0
+        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
+        uses: codecov/codecov-action@v5.5.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ${{github.workspace}}/build/coverage.json
           name: codecov-umbrella
           fail_ci_if_error: false
           verbose: false
+
+  release_package:
+    needs: [build_and_test,]
+    runs-on: ${{ inputs.runner }}
+    # optionally: only run release packaging for a specific runner:
+    # if: ${{ inputs.runner == 'ubuntu-24.04' }}
+    steps:
+      - uses: actions/checkout@v5.0.0
+        with:
+          submodules: recursive
+      
+      - name: Remove too old CMake
+        run: |
+          which cmake || true
+          sudo rm -f /usr/local/bin/cmake || true
+          sudo apt-get purge --auto-remove -y cmake || true
+
+      - name: Install deps (heavy)
+        run: |
+          sudo chmod +x Scripts/Linux/setup-dependencies.sh
+          sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
+
+      - name: (ARM) prepare PATH hint
+        if: ${{ inputs.runner == 'ubuntu-24.04-arm' }}
+        run: |
+          echo "ARM SDK will be at ${{ github.workspace }}/${{ env.VULKAN_VERSION }}/aarch64/bin"
+
+      - name: Make directory
+        run: |
+          rm -rf build
+          mkdir build
+
+      - name: Update path
+        run: |
+          echo "/usr/bin" >> $GITHUB_PATH
+          cmake --version
+          
+      - name: Configure CMake for Release
+        run: |
+          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          cmake -B build-release --preset linux-release-clang
+
+      - name: Build Release
+        run: |
+          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
+          cmake --build build-release --config Release
+
+      - name: Package
+        run: |
+          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          cmake --build build-release --target package
+
+      - name: Upload Linux Packages (Clang only)
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            build-release/*.tar.gz
+            build-release/*.tgz
+            build-release/*.deb

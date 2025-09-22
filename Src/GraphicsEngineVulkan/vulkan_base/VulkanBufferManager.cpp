@@ -1,9 +1,9 @@
 #include "vulkan_base/VulkanBufferManager.hpp"
 #include "common/Utilities.hpp"
 
-VulkanBufferManager::VulkanBufferManager() {}
+Kataglyphis::VulkanBufferManager::VulkanBufferManager() {}
 
-void VulkanBufferManager::copyBuffer(VkDevice device,
+void Kataglyphis::VulkanBufferManager::copyBuffer(VkDevice device,
   VkQueue transfer_queue,
   VkCommandPool transfer_command_pool,
   VulkanBuffer src_buffer,
@@ -25,7 +25,7 @@ void VulkanBufferManager::copyBuffer(VkDevice device,
     commandBufferManager.endAndSubmitCommandBuffer(device, transfer_command_pool, transfer_queue, command_buffer);
 }
 
-void VulkanBufferManager::copyImageBuffer(VkDevice device,
+void Kataglyphis::VulkanBufferManager::copyImageBuffer(VkDevice device,
   VkQueue transfer_queue,
   VkCommandPool transfer_command_pool,
   VkBuffer src_buffer,
@@ -55,4 +55,4 @@ void VulkanBufferManager::copyImageBuffer(VkDevice device,
       device, transfer_command_pool, transfer_queue, transfer_command_buffer);
 }
 
-VulkanBufferManager::~VulkanBufferManager() {}
+Kataglyphis::VulkanBufferManager::~VulkanBufferManager() {}

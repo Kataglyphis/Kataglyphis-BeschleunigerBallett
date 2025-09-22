@@ -6,13 +6,12 @@
 
 #include "common/Utilities.hpp"
 
-namespace debug {
+namespace Kataglyphis::debug {
 PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
 PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT;
 VkDebugUtilsMessengerEXT debugUtilsMessenger;
 
-VKAPI_ATTR VkBool32 VKAPI_CALL debugUtilsMessengerCallback(
-  VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+VKAPI_ATTR VkBool32 VKAPI_CALL debugUtilsMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
   VkDebugUtilsMessageTypeFlagsEXT messageType,
   const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
   void *pUserData)
@@ -82,4 +81,4 @@ void freeDebugCallback(VkInstance instance)
         vkDestroyDebugUtilsMessengerEXT(instance, debugUtilsMessenger, nullptr);
     }
 }
-}// namespace debug
+}// namespace Kataglyphis::debug

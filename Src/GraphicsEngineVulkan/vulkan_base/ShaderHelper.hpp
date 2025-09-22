@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "vulkan_base/VulkanDevice.hpp"
-
+namespace Kataglyphis {
 class ShaderHelper
 {
   public:
@@ -21,3 +21,4 @@ class ShaderHelper
   private:
     std::string target = " --target-env=vulkan1.3 ";
 };
+}// namespace Kataglyphis

@@ -1,0 +1,8 @@
+sphinx
+sphinx-rtd-theme
+myst-parser
+pyyaml
+cmake-format
+breathe
+exhale
+sphinx_design

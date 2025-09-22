@@ -5,6 +5,7 @@
 
 #include <vulkan/vulkan.h>
 
+namespace Kataglyphis::VulkanRendererInternals {
 class PostStage
 {
   public:
@@ -48,3 +49,4 @@ class PostStage
     void createGraphicsPipeline(const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts);
     void createFramebuffer();
 };
+}// namespace Kataglyphis::VulkanRendererInternals

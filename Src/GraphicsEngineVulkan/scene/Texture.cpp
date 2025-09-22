@@ -1,13 +1,15 @@
 #include "scene/Texture.hpp"
 
 #include "common/Utilities.hpp"
+#include "spdlog/spdlog.h"
 #include <cmath>
 #include <stdexcept>
-#include "spdlog/spdlog.h"
 
-Texture::Texture() {}
+using namespace Kataglyphis;
 
-void Texture::createFromFile(VulkanDevice *device, VkCommandPool commandPool, const std::string &fileName)
+Kataglyphis::Texture::Texture() {}
+
+void Kataglyphis::Texture::createFromFile(VulkanDevice *device, VkCommandPool commandPool, const std::string &fileName)
 {
     int width, height;
     VkDeviceSize size;
@@ -75,11 +77,11 @@ void Texture::createFromFile(VulkanDevice *device, VkCommandPool commandPool, co
     createImageView(device, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, mip_levels);
 }
 
-void Texture::setImage(VkImage image) { vulkanImage.setImage(image); }
+void Kataglyphis::Texture::setImage(VkImage image) { vulkanImage.setImage(image); }
 
-void Texture::setImageView(VkImageView imageView) { vulkanImageView.setImageView(imageView); }
+void Kataglyphis::Texture::setImageView(VkImageView imageView) { vulkanImageView.setImageView(imageView); }
 
-void Texture::createImage(VulkanDevice *device,
+void Kataglyphis::Texture::createImage(VulkanDevice *device,
   uint32_t width,
   uint32_t height,
   uint32_t mip_levels,
@@ -91,7 +93,7 @@ void Texture::createImage(VulkanDevice *device,
     vulkanImage.create(device, width, height, mip_levels, format, tiling, use_flags, prop_flags);
 }
 
-void Texture::createImageView(VulkanDevice *device,
+void Kataglyphis::Texture::createImageView(VulkanDevice *device,
   VkFormat format,
   VkImageAspectFlags aspect_flags,
   uint32_t mip_levels)
@@ -99,15 +101,16 @@ void Texture::createImageView(VulkanDevice *device,
     vulkanImageView.create(device, vulkanImage.getImage(), format, aspect_flags, mip_levels);
 }
 
-void Texture::cleanUp()
+void Kataglyphis::Texture::cleanUp()
 {
     vulkanImageView.cleanUp();
     vulkanImage.cleanUp();
 }
 
-Texture::~Texture() {}
+Kataglyphis::Texture::~Texture() {}
 
-stbi_uc *Texture::loadTextureData(const std::string &file_name, int *width, int *height, VkDeviceSize *image_size)
+stbi_uc *
+  Kataglyphis::Texture::loadTextureData(const std::string &file_name, int *width, int *height, VkDeviceSize *image_size)
 {
     // number of channels image uses
     int channels;
@@ -115,9 +118,7 @@ stbi_uc *Texture::loadTextureData(const std::string &file_name, int *width, int 
     // std::string file_loc = "../Resources/Textures/" + file_name;
     stbi_uc *image = stbi_load(file_name.c_str(), width, height, &channels, STBI_rgb_alpha);
 
-    if (!image) { 
-        spdlog::error("Failed to load a texture file! (" + file_name + ")"); 
-    }
+    if (!image) { spdlog::error("Failed to load a texture file! (" + file_name + ")"); }
 
     // calculate image size using given and known data
     *image_size = *width * *height * 4;
@@ -125,7 +126,7 @@ stbi_uc *Texture::loadTextureData(const std::string &file_name, int *width, int 
     return image;
 }
 
-void Texture::generateMipMaps(VkPhysicalDevice physical_device,
+void Kataglyphis::Texture::generateMipMaps(VkPhysicalDevice physical_device,
   VkDevice device,
   VkCommandPool command_pool,
   VkQueue queue,

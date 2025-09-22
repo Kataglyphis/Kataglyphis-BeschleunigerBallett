@@ -2,7 +2,7 @@
 #include <vulkan/vulkan.h>
 
 #include "vulkan_base/VulkanDevice.hpp"
-
+namespace Kataglyphis {
 class VulkanBuffer
 {
   public:
@@ -28,3 +28,4 @@ class VulkanBuffer
 
     bool created{ false };
 };
+}// namespace Kataglyphis

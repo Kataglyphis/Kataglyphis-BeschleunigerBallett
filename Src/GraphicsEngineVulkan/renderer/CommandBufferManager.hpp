@@ -1,6 +1,6 @@
 #pragma once
 #include <vulkan/vulkan.h>
-
+namespace Kataglyphis::VulkanRendererInternals {
 class CommandBufferManager
 {
   public:
@@ -16,3 +16,4 @@ class CommandBufferManager
 
   private:
 };
+}// namespace Kataglyphis::VulkanRendererInternals

@@ -1,5 +1,7 @@
 *.log
 
+.cache
+
 dist
 .mypy_cache
 .conda
@@ -52,3 +54,12 @@ Documents/doxygen/*
 # cmake configure file
 Src/GraphicsEngineOpenGL/renderer/VulkanRendererConfig.hpp
 Src/GraphicsEngineVulkan/renderer/OpenGLRendererConfig.hpp
+
+# will all be generated sphinx and doxygen
+docs/source/api/*
+docs/build/*
+
+docs/source/_static/*.svg
+docs/source/graphviz_files.rst
+
+build-release*

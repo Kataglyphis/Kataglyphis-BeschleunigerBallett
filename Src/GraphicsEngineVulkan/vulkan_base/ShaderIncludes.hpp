@@ -1,11 +1,11 @@
 #pragma once
 #include "renderer/VulkanRendererConfig.hpp"
+#include "spdlog/spdlog.h"
 #include <filesystem>
 #include <string>
 #include <vector>
-#include "spdlog/spdlog.h"
 
-namespace ShaderIncludes {
+namespace Kataglyphis::ShaderIncludes {
 
 std::string getShaderIncludes()
 {
@@ -14,4 +14,4 @@ std::string getShaderIncludes()
     return ShaderIncludesString;
 }
 
-}// namespace ShaderIncludes
+}// namespace Kataglyphis::ShaderIncludes

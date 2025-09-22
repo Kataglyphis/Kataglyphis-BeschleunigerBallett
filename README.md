@@ -17,7 +17,7 @@
 <h4 align="center">A graphics engine built on top of Vulkan+OpenGL. Serves also as playground 
 for learning various best practices in Graphic APIs, CMake, Rust, ...<a href="https://jonasheinle.de" target="_blank"></a>.</h4>
 
-(see also [**__Official homepage__**](https://kataglyphisrenderer.jonasheinle.de))
+see also [**__Official homepage__**](https://beschleunigerballette.jonasheinle.de/). 
 
 [![Linux build + test + coverage on Ubuntu 24.04 ARM](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_arm.yml/badge.svg?branch=main)](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_arm.yml)
 [![Linux build + test + coverage on Ubuntu 24.04 x86](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_x86.yml/badge.svg)](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_x86.yml)
@@ -26,8 +26,6 @@ for learning various best practices in Graphic APIs, CMake, Rust, ...<a href="ht
 [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/donate/?hosted_button_id=BX9AVVES2P9LN)
 [![Twitter](https://img.shields.io/twitter/follow/Cataglyphis_?style=social)](https://twitter.com/Cataglyphis_)
 [![YouTube](https://img.shields.io/youtube/channel/subscribers/UC3LZiH4sZzzaVBCUV8knYeg?style=social)](https://www.youtube.com/channel/UC3LZiH4sZzzaVBCUV8knYeg)
-
-[**__Official homepage__**](https://kataglyphisrenderer.jonasheinle.de)
 
 <p align="center">
   <a href="#key-features">Key Features</a> •
@@ -60,6 +58,7 @@ for learning various best practices in Graphic APIs, CMake, Rust, ...<a href="ht
     </li>
     <li><a href="#shaders">Shaders</a></li>
     <li><a href="#tests">Tests</a></li>
+    <li><a href="#tests">Docker</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#license">License</a></li>
@@ -144,7 +143,7 @@ Frequently tested under
 - ❌ - not started
 
 
-### Built With
+### Dependencies
 
 * [Vulkan 1.3](https://www.vulkan.org/)
 * [OpenGL 4.6](https://www.opengl.org//)
@@ -155,19 +154,24 @@ Frequently tested under
 * [stb](https://github.com/nothings/stb)
 * [vma](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
 * [tinygltf](https://github.com/syoyo/tinygltf)
-* [doxygen](https://www.doxygen.nl/index.html)
 * [gtest](https://github.com/google/googletest)
 * [gbenchmark](https://github.com/google/benchmark)
 * [google fuzztest](https://github.com/google/fuzztest)
 * [cmake](https://cmake.org/)
 * [gsl](https://github.com/Microsoft/GSL)
-* [NSIS](https://nsis.sourceforge.io/Main_Page)
 * [nlohmann_json](https://github.com/nlohmann/json)
 * [SPDLOG](https://github.com/gabime/spdlog)
 
+##### Optional
+* [Rust](https://www.rust-lang.org/)
+* [corrision-rs](https://github.com/corrosion-rs/corrosion)
+* [cxx](https://cxx.rs/)
+* [uv](https://github.com/astral-sh/uv)
 
 ### Useful tools (you might also considering :) )
 
+* [NSIS](https://nsis.sourceforge.io/Main_Page)
+* [doxygen](https://www.doxygen.nl/index.html)
 * [cppcheck](https://cppcheck.sourceforge.io/)
 * [renderdoc](https://renderdoc.org/)
 * [nsightgraphics](https://developer.nvidia.com/nsight-graphics)
@@ -176,59 +180,44 @@ Frequently tested under
 * [visualstudio](https://visualstudio.microsoft.com/de/)
 * [ClangPowerTools](https://www.clangpowertools.com/)
 * [Codecov](https://app.codecov.io/gh)
-* [uv](https://github.com/astral-sh/uv)
+* [Ccache](https://ccache.dev/)
+* [Sccache](https://github.com/mozilla/sccache)
+
+#### Benchmarking
+* [gperftools](https://github.com/gperftools/gperftools)
+
+### VSCode Extensions
+* [CMake format](https://github.com/cheshirekow/cmake_format)
+* [CMake tools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cmake-tools)
+* [CppTools](https://github.com/microsoft/vscode-cpptools)
 
 <!-- GETTING STARTED -->
 ## Getting Started
 
-### Prerequisites
+### Specific version requirements
 
-Dependencies to libraries are stated above.<br />
-C++23 or higher required.<br />
-C17 or higher required.<br />
-[CMake 4.0.2](https://cmake.org/download/) or higher required.<br />
-
-#### Optional
-
-* [Rust](https://www.rust-lang.org/)
-* [corrision-rs](https://github.com/corrosion-rs/corrosion)
-* [cxx](https://cxx.rs/)
+**C++23** or higher required.<br />
+**C17** or higher required.<br />
+**CMake 4.0.2** or higher required.<br />
 
 ### Installation
 
 1. Clone the repo
    ```sh
-   git clone --recurse-submodules git@github.com:Kataglyphis/Kataglyphis-Renderer.git
+   git clone --recurse-submodules git@github.com:Kataglyphis/Kataglyphis-BeschleunigerBallett.git
    ```
-
-2. Then build your solution with [CMAKE] (https://cmake.org/) <br />
-  Here the recommended way over command line after cloning the repo:<br />
-  > **_NOTE:_** Here we use CmakePresets to simplify things. Consider using it too
-  or just build on a common way.
-  
+2. Use the scripts (in the `Scripts` folder for installing dependencies on your system) 
+3. Then build your solution with [CMAKE] (https://cmake.org/) <br />
+  You can follow my steps from my [CMake best practices](https://github.com/Kataglyphis/Kataglyphis-CMakeTemplate) repo.  
   For now the features in Rust are experimental. If you want to use them install
   Rust and set `RUST_FEATURES=ON` on your CMake build.
 
-  (for clarity: Assumption you are in the dir you have cloned the repo into)
-  ```sh
-  $ mkdir build ; cd build
-  # enlisting all available presets
-  $ cmake --list-presets=all ../
-  $ cmake --preset <configurePreset-name> ../
-  $ cmake --build --preset <buildPreset-name> .
-  ```
   Alternatively you can use the build scripts I use for my standard configuration: <br/>
   * [`buildEngine.sh`] 
   * [`buildEngine.bat`]
   ```sh
   $ {WORKING_DIR}/GraphicsEngineVulkan/buildEngine[.sh/.bat]
   ```
-### Upgrades
-#### Rusty things:
-1. Do not forget to upgrade the cxxbridge from time to time:
-```bash
-cargo install cxxbridge-cmd
-```
 
 # Shaders
 I provide two ways for compiling shaders with. Hence if you want to add new
@@ -240,50 +229,56 @@ appropriately.</br>
 
 
 # Tests
-I have four tests suites.
+I follow the test setup as descriped in: [CMake best practices](https://github.com/Kataglyphis/Kataglyphis-CMakeTemplate) 
 
-1. Compilation Test Suite: This suite gets executed every compilation step. This ensures the very most important functionality is correct before every compilation.
+# Docker
 
-2. Commit Test Suite: This gets executed on every push. More expensive tests are allowed :) 
 
-3. Perf test suite: It is all about measurements of performance. We are C++ tho! 
+## Linux
 
-4. Fuzz testing suite
+Dockerfile stays at project root.
 
-## Static Analyzers
-
-```bash
-clang --analyze --output-format html $(find Src -name '*.cpp' -o -name '*.cc')
-scan-build cmake --build .
-clang-tidy -p=./build/compile_commands.json  $(find Src -name '*.cpp' -o -name '*.cc')
-
-```
-
-# Format cmake files
+If you want to run it on NVIDIA GPUs you will have to  
+install the [NVIDIA Container Toolkit](Kataglyphis-BeschleunigerBallett)  
+before you proceed with the next steps.
 
 ```bash
-uv venv
-source .venv/bin/activate
-pip install -v -e .
-cmake-format -c ./.cmake-format.yaml -i $(find cmake -name '*.cmake' -o -name 'CMakeLists.txt')
+# build
+docker build -t kataglphis_renderer_ubuntu24_04 .
+# run container on wayland
+# start docker in root of this repo 
+xhost +local:root
+docker run --rm -it \
+  --gpus all \
+  --network=host \
+  -e QT_QPA_PLATFORM=wayland \
+  -v /tmp/.X11-unix:/tmp/.X11-unix \
+  -v $HOME/.Xauthority:/root/.Xauthority \
+  --env DISPLAY=$DISPLAY \
+  --env XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR \
+  -e WAYLAND_DISPLAY=$WAYLAND_DISPLAY \
+  -v "$(pwd)":/workspace:rw \
+  -w /workspace \
+  kataglphis_renderer_ubuntu24_04 
 ```
-# Format code files 
 
-```bash
-clang-format -i $(find include -name "*.cpp" -or -name "*.h" -or -name "*.hpp")
+## Windows
+
+> **__NOTE:__** Pls for GPU accelerated Windows Docker
+> have a look [here](https://learn.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/gpu-acceleration) 
+
+```ps1
+docker build -f docker/windows/Dockerfile -t my-windows-dev-image .
 ```
 
-# Docs
-Build the docs
-```bash
-uv venv
-source .venv/bin/activate
-pip install -v -e .
-cd docs 
-make html
+```ps1
+docker run --rm -it `
+  -v "$($PWD.Path):C:\workdir" `
+  my-windows-dev-image
 ```
+
 <!-- ROADMAP -->
-## Roadmap
+# Roadmap
 Watch the refman generated by doxygen. <br/>
 * [Watch it here](Documents/refman.pdf)
 
@@ -334,15 +329,6 @@ Some very helpful literature, tutorials, etc.
 
 * [View Frustum Culling](http://www.lighthouse3d.com/tutorials/view-frustum-culling/geometric-approach-extracting-the-planes/)
 
-Rust
-* [Rust](https://www.rust-lang.org/)
-
-CMake/C++
-* [Cpp best practices](https://github.com/cpp-best-practices/cppbestpractices)
-* [Integrate Rust into CMake projects](https://github.com/trondhe/rusty_cmake)
-* [corrision-rs](https://github.com/corrosion-rs/corrosion)
-* [cxx](https://cxx.rs/)
-
 OpenGL 
 * [learnopengl.com](https://learnopengl.com/)
 * [ogldev.org](https://ogldev.org/)
@@ -381,7 +367,27 @@ Physically Based Shading
 Path tracing
 * [NVIDIA Path tracing Tutorial](https://github.com/nvpro-samples/vk_mini_path_tracer/blob/main/vk_mini_path_tracer/main.cpp)
 
+Docker
+* [Vulkan Minimal Docker setup](https://github.com/j3soon/docker-vulkan-runtime)
+* [scoop](https://scoop.sh/#/apps)
+* [Docker container windows GPU](https://learn.microsoft.com/de-de/virtualization/windowscontainers/deploy-containers/gpu-acceleration)
+* [Docker windows](https://hub.docker.com/r/microsoft/windows)
+
 ## Common issues
 
-
+  * Problem: 
+    If **__Validation Layers__** could not be found:
+    ```bash
+    A value given directly by extern c function 322
+    [XXXX-XX-XX 10:30:40.877] [error] Validation layers requested, but not available!
+    [XXXX-XX-XX 10:30:40.879] [error] Failed to create a Vulkan instance!
+    [XXXX-XX-XX 10:30:40.880] [error] Validation layers requested, but not available!
+    [XXXX-XX-XX 10:30:40.882] [error] Failed to create a Vulkan instance!
+    ERROR:             vkGetInstanceProcAddr: Invalid instance [VUID-vkGetInstanceProcAddr-instance-parameter]
+    ```
+    Solution for linux:
+    ```bash
+    sudo apt install libvulkan1 vulkan-tools vulkan-validationlayers
+    ```
+    Otherwise you would have to install them via sdk.
 

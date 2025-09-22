@@ -19,13 +19,29 @@ file(
 file(GLOB_RECURSE VULKANRENDERER_HEADERS "*.hpp")
 
 if(RUST_FEATURES)
-  corrosion_import_crate(MANIFEST_PATH rusty_code/Cargo.toml)
+
+  corrosion_import_crate(
+    MANIFEST_PATH rusty_code/Cargo.toml
+  )
+  if(WIN32)
+    corrosion_set_env_vars(
+              rusty_code
+              CXXFLAGS=/EHsc
+    )
+  else()
+   corrosion_set_env_vars(
+              rusty_code
+              CXXFLAGS=-fexceptions
+    ) 
+  endif()
+  
   corrosion_add_cxxbridge(
     rusty_bridge
     CRATE
     rusty_code
     FILES
-    lib.rs)
+    lib.rs
+    )
 endif()
 
 # add the executable

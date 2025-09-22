@@ -7,28 +7,31 @@
 #include <memory>
 
 #include "hostDevice/GlobalValues.hpp"
-#include "scene/Mesh.hpp"
 #include "renderer/ShaderProgram.hpp"
-class SkyBox {
- public:
-  SkyBox();
+#include "scene/Mesh.hpp"
+class SkyBox
+{
+  public:
+    SkyBox();
 
-  void draw_sky_box(glm::mat4 projection_matrix, glm::mat4 view_matrix,
-                    GLuint window_width, GLuint window_height,
-                    GLfloat delta_time);
+    void draw_sky_box(glm::mat4 projection_matrix,
+      glm::mat4 view_matrix,
+      GLuint window_width,
+      GLuint window_height,
+      GLfloat delta_time);
 
-  void reload();
+    void reload();
 
-  ~SkyBox();
+    ~SkyBox();
 
- private:
-  GLfloat movement_speed = 0.1f;
+  private:
+    GLfloat movement_speed = 0.1f;
 
-  GLfloat shader_playback_time;
+    GLfloat shader_playback_time;
 
-  std::shared_ptr<Mesh> sky_mesh;
-  std::shared_ptr<ShaderProgram> shader_program;
+    std::shared_ptr<Mesh> sky_mesh;
+    std::shared_ptr<ShaderProgram> shader_program;
 
-  GLuint texture_id;
-  GLuint uniform_projection, uniform_view;
+    GLuint texture_id;
+    GLuint uniform_projection, uniform_view;
 };

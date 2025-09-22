@@ -5,12 +5,13 @@
 #include "vulkan_base/VulkanDevice.hpp"
 #include "window/Window.hpp"
 
+namespace Kataglyphis {
 class VulkanSwapChain
 {
   public:
     VulkanSwapChain();
 
-    void initVulkanContext(VulkanDevice *device, Window *window, const VkSurfaceKHR &surface);
+    void initVulkanContext(VulkanDevice *device, Kataglyphis::Frontend::Window *window, const VkSurfaceKHR &surface);
 
     const VkSwapchainKHR &getSwapChain() const { return swapchain; };
     uint32_t getNumberSwapChainImages() const { return static_cast<uint32_t>(swap_chain_images.size()); };
@@ -24,7 +25,7 @@ class VulkanSwapChain
 
   private:
     VulkanDevice *device{ VK_NULL_HANDLE };
-    Window *window{ VK_NULL_HANDLE };
+    Kataglyphis::Frontend::Window *window{ VK_NULL_HANDLE };
 
     VkSwapchainKHR swapchain{ VK_NULL_HANDLE };
 
@@ -36,3 +37,4 @@ class VulkanSwapChain
     VkPresentModeKHR choose_best_presentation_mode(const std::vector<VkPresentModeKHR> &presentation_modes);
     VkExtent2D choose_swap_extent(const VkSurfaceCapabilitiesKHR &surface_capabilities);
 };
+}// namespace Kataglyphis

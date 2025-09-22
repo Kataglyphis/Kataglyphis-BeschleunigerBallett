@@ -5,9 +5,9 @@
 #include "common/MemoryHelper.hpp"
 #include "common/Utilities.hpp"
 
-VulkanBuffer::VulkanBuffer() {}
+Kataglyphis::VulkanBuffer::VulkanBuffer() {}
 
-void VulkanBuffer::create(VulkanDevice *device,
+void Kataglyphis::VulkanBuffer::create(VulkanDevice *device,
   VkDeviceSize buffer_size,
   VkBufferUsageFlags buffer_usage_flags,
   VkMemoryPropertyFlags buffer_propertiy_flags)
@@ -35,8 +35,8 @@ void VulkanBuffer::create(VulkanDevice *device,
     memory_alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     memory_alloc_info.allocationSize = memory_requirements.size;
 
-    uint32_t memory_type_index =
-      find_memory_type_index(device->getPhysicalDevice(), memory_requirements.memoryTypeBits, buffer_propertiy_flags);
+    uint32_t memory_type_index = Kataglyphis::find_memory_type_index(
+      device->getPhysicalDevice(), memory_requirements.memoryTypeBits, buffer_propertiy_flags);
 
     // VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |		/* memory is visible to
     // CPU side
@@ -56,7 +56,7 @@ void VulkanBuffer::create(VulkanDevice *device,
     created = true;
 }
 
-void VulkanBuffer::cleanUp()
+void Kataglyphis::VulkanBuffer::cleanUp()
 {
     if (created) {
         vkDestroyBuffer(device->getLogicalDevice(), buffer, nullptr);
@@ -64,4 +64,4 @@ void VulkanBuffer::cleanUp()
     }
 }
 
-VulkanBuffer::~VulkanBuffer() {}
+Kataglyphis::VulkanBuffer::~VulkanBuffer() {}

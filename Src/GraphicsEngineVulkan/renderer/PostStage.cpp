@@ -4,12 +4,12 @@
 #include <filesystem>
 #include <vector>
 
-#include "util/File.hpp"
 #include "common/FormatHelper.hpp"
 #include "gui/GUI.hpp"
 #include "renderer/pushConstants/PushConstantPost.hpp"
-#include "vulkan_base/ShaderHelper.hpp"
 #include "scene/Vertex.hpp"
+#include "util/File.hpp"
+#include "vulkan_base/ShaderHelper.hpp"
 
 #include "renderer/VulkanRendererConfig.hpp"
 
@@ -18,9 +18,9 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
 
-PostStage::PostStage() {}
+Kataglyphis::VulkanRendererInternals::PostStage::PostStage() {}
 
-void PostStage::init(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::PostStage::init(VulkanDevice *device,
   VulkanSwapChain *vulkanSwapChain,
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
 {
@@ -36,13 +36,14 @@ void PostStage::init(VulkanDevice *device,
     createFramebuffer();
 }
 
-void PostStage::shaderHotReload(const std::vector<VkDescriptorSetLayout> &descriptor_set_layouts)
+void Kataglyphis::VulkanRendererInternals::PostStage::shaderHotReload(
+  const std::vector<VkDescriptorSetLayout> &descriptor_set_layouts)
 {
     vkDestroyPipeline(device->getLogicalDevice(), graphics_pipeline, nullptr);
     createGraphicsPipeline(descriptor_set_layouts);
 }
 
-void PostStage::recordCommands(VkCommandBuffer &commandBuffer,
+void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(VkCommandBuffer &commandBuffer,
   uint32_t image_index,
   const std::vector<VkDescriptorSet> &descriptorSets)
 {
@@ -99,7 +100,7 @@ void PostStage::recordCommands(VkCommandBuffer &commandBuffer,
     vkCmdEndRenderPass(commandBuffer);
 }
 
-void PostStage::cleanUp()
+void Kataglyphis::VulkanRendererInternals::PostStage::cleanUp()
 {
     depthBufferImage.cleanUp();
     for (auto framebuffer : framebuffers) { vkDestroyFramebuffer(device->getLogicalDevice(), framebuffer, nullptr); }
@@ -111,12 +112,12 @@ void PostStage::cleanUp()
     vkDestroyPipelineLayout(device->getLogicalDevice(), pipeline_layout, nullptr);
 }
 
-PostStage::~PostStage() {}
+Kataglyphis::VulkanRendererInternals::PostStage::~PostStage() {}
 
-void PostStage::createDepthbufferImage()
+void Kataglyphis::VulkanRendererInternals::PostStage::createDepthbufferImage()
 {
     // get supported format for depth buffer
-    depth_format = choose_supported_format(device->getPhysicalDevice(),
+    depth_format = Kataglyphis::choose_supported_format(device->getPhysicalDevice(),
       { VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT },
       VK_IMAGE_TILING_OPTIMAL,
       VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
@@ -138,7 +139,7 @@ void PostStage::createDepthbufferImage()
     depthBufferImage.createImageView(device, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
 }
 
-void PostStage::createOffscreenTextureSampler()
+void Kataglyphis::VulkanRendererInternals::PostStage::createOffscreenTextureSampler()
 {
     // sampler create info
     VkSamplerCreateInfo sampler_create_info{};
@@ -162,14 +163,14 @@ void PostStage::createOffscreenTextureSampler()
     ASSERT_VULKAN(result, "Failed to create a texture sampler!")
 }
 
-void PostStage::createPushConstantRange()
+void Kataglyphis::VulkanRendererInternals::PostStage::createPushConstantRange()
 {
     push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     push_constant_range.offset = 0;
     push_constant_range.size = sizeof(PushConstantPost);
 }
 
-void PostStage::createRenderpass()
+void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
 {
     // Color attachment of render pass
     VkAttachmentDescription color_attachment{};
@@ -193,7 +194,7 @@ void PostStage::createRenderpass()
 
     // depth attachment of render pass
     VkAttachmentDescription depth_attachment{};
-    depth_attachment.format = choose_supported_format(device->getPhysicalDevice(),
+    depth_attachment.format = Kataglyphis::choose_supported_format(device->getPhysicalDevice(),
       { VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT },
       VK_IMAGE_TILING_OPTIMAL,
       VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
@@ -254,7 +255,8 @@ void PostStage::createRenderpass()
     ASSERT_VULKAN(result, "Failed to create render pass!")
 }
 
-void PostStage::createGraphicsPipeline(const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
+void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
+  const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
 {
     std::stringstream post_shader_dir;
     std::filesystem::path cwd = std::filesystem::current_path();
@@ -439,7 +441,7 @@ void PostStage::createGraphicsPipeline(const std::vector<VkDescriptorSetLayout> 
     vkDestroyShaderModule(device->getLogicalDevice(), fragment_shader_module, nullptr);
 }
 
-void PostStage::createFramebuffer()
+void Kataglyphis::VulkanRendererInternals::PostStage::createFramebuffer()
 {
     // resize framebuffer size to equal swap chain image count
     framebuffers.resize(vulkanSwapChain->getNumberSwapChainImages());

@@ -9,6 +9,7 @@
 
 #include <cstring>
 
+namespace Kataglyphis {
 class VulkanBufferManager
 {
   public:
@@ -40,7 +41,7 @@ class VulkanBufferManager
     ~VulkanBufferManager();
 
   private:
-    CommandBufferManager commandBufferManager;
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
 };
 
 template<typename T>
@@ -83,3 +84,4 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(VulkanDevic
 
     stagingBuffer.cleanUp();
 }
+}// namespace Kataglyphis
