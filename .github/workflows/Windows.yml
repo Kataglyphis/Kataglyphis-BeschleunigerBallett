@@ -48,13 +48,13 @@ jobs:
       - name: CMake Build for Clang
         shell: powershell
         run: |
-          cmake -B ${{github.workspace}}/build --preset "x64-ClangCL-Windows" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
-          cmake --build ${{github.workspace}}/build
+          cmake -B ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }} --preset "x64-ClangCL-Windows" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
+          cmake --build ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}
           ctest
 
       - name: Prepare for MSVC
         run: |
-          Remove-Item -Path ${{github.workspace}}/build -Recurse -Force
+          Remove-Item -Path ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }} -Recurse -Force
           clang --version
 
       - name: CMake Build for MSVC
