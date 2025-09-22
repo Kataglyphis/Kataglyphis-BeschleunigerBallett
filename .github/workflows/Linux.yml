@@ -122,7 +122,7 @@ jobs:
           server: ${{ secrets.SERVER }}
           username: ${{ secrets.USERNAME }}
           password: ${{ secrets.PW }}
-          local-dir: "./docs/build/html/"
+          local-dir: "./build/build/html/"
 
       - name: Codecov
         if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
