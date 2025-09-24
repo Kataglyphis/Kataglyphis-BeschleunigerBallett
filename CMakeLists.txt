@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 4.1.1)
 # set the project name
 project(
   GraphicsEngine
-  VERSION 1.4.0
+  VERSION 1.4.1
   DESCRIPTION "Epic GPU accelerated rendering, compute engine using Vulkan and C++,C,Rust"
   HOMEPAGE_URL "https://jonasheinle.de/"
   LANGUAGES CXX C)
