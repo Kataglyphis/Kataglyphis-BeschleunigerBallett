@@ -82,7 +82,7 @@ else()
   target_compile_definitions(${PROJECT_NAME} PRIVATE USE_RUST=0)
 endif()
 
-if(NOT MSVC)
+if(NOT WIN32)
   target_compile_definitions(
     ${PROJECT_NAME}
     PRIVATE RELATIVE_RESOURCE_PATH="/../Resources/"
