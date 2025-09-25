@@ -6,15 +6,16 @@ set(VULKAN_VERSION_MINOR 3)
 
 # Warn if Vulkan version is not compatible with Raspberry Pi
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-    if(VULKAN_VERSION_MINOR GREATER 3)
-        message(WARNING [[
+  if(VULKAN_VERSION_MINOR GREATER 3)
+    message(
+      WARNING
+        [[
             ⚠️ Vulkan ${VULKAN_VERSION_MAJOR}.${VULKAN_VERSION_MINOR} may not be supported on Raspberry Pi.
             Consider using Vulkan 1.3 or lower to ensure compatibility with Pi GPUs.
         ]])
 
-    endif()
+  endif()
 endif()
-
 
 find_package(Threads REQUIRED)
 

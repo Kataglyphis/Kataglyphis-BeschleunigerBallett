@@ -169,15 +169,13 @@ macro(myproject_local_options)
 
   # Only when building with -DCMAKE_BUILD_TYPE=Profile,
   # on non-Windows and using GCC or Clang
-  if (
-    CMAKE_BUILD_TYPE STREQUAL "Profile"
-    AND (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    AND NOT WIN32
-  )
+  if(CMAKE_BUILD_TYPE STREQUAL "Profile"
+     AND (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+     AND NOT WIN32)
 
     find_library(PROFILER_LIB profiler)
 
-    if (PROFILER_LIB)
+    if(PROFILER_LIB)
       message(STATUS "Enabling CPU profiling with gperftools (libprofiler)")
       message(STATUS "Found libprofiler: ${PROFILER_LIB}")
       target_link_libraries(myproject_options INTERFACE ${PROFILER_LIB})

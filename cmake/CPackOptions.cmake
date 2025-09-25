@@ -8,7 +8,10 @@ if(NOT DEFINED PROJECT_ARCH)
   if(CMAKE_SYSTEM_PROCESSOR)
     set(PROJECT_ARCH "${CMAKE_SYSTEM_PROCESSOR}")
   else()
-    execute_process(COMMAND uname -m OUTPUT_VARIABLE PROJECT_ARCH OUTPUT_STRIP_TRAILING_WHITESPACE)
+    execute_process(
+      COMMAND uname -m
+      OUTPUT_VARIABLE PROJECT_ARCH
+      OUTPUT_STRIP_TRAILING_WHITESPACE)
   endif()
 endif()
 string(TOLOWER "${PROJECT_ARCH}" _arch_lc)
@@ -68,13 +71,15 @@ if(WIN32)
 
   # Optional: If you need more control over the desktop shortcut, you can use custom NSIS commands
   # This ensures the shortcut has the correct working directory
-  set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "
+  set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS
+      "
     SetOutPath \\\"$INSTDIR\\\\bin\\\"
     CreateShortCut \\\"$DESKTOP\\\\${PROJECT_NAME}.lnk\\\" \\\"$INSTDIR\\\\bin\\\\${PROJECT_NAME}.exe\\\" \\\"\\\" \\\"$INSTDIR\\\\bin\\\\${PROJECT_NAME}.exe\\\" 0 SW_SHOWNORMAL \\\"\\\" \\\"${PROJECT_NAME}\\\"
   ")
-  
+
   # Optional: Remove the desktop shortcut on uninstall
-  set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "
+  set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS
+      "
     Delete \\\"$DESKTOP\\\\${PROJECT_NAME}.lnk\\\"
   ")
 
@@ -93,7 +98,10 @@ if(WIN32)
   # damit der Generator nicht mit 'unsupported WiX License file extension' abbricht (ein häufiger Fall auf CI).
   set(_WIX_LICENSE_RTF "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.rtf")
   if(NOT EXISTS "${_WIX_LICENSE_RTF}")
-    file(WRITE "${_WIX_LICENSE_RTF}" "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}\\fs20 This software is licensed under the terms described in the accompanying LICENSE file.\\par}")
+    file(
+      WRITE "${_WIX_LICENSE_RTF}"
+      "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0 Arial;}}\\fs20 This software is licensed under the terms described in the accompanying LICENSE file.\\par}"
+    )
   endif()
   set(CPACK_WIX_LICENSE_RTF "${_WIX_LICENSE_RTF}")
 
