@@ -82,10 +82,9 @@ else()
   target_compile_definitions(${PROJECT_NAME} PRIVATE USE_RUST=0)
 endif()
 
-# Treat MSVC or clang-cl on Windows the same way
-if(WIN32 AND (MSVC OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
-                       AND DEFINED CMAKE_CXX_COMPILER_FRONTEND_VARIANT
-                       AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")))
+# Treat MSVC and clang-cl on Windows differently in a sense of deployment
+# https://clang.llvm.org/docs/UsersManual.html
+if(WIN32 AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC))
   target_compile_definitions(
     ${PROJECT_NAME}
     PRIVATE RELATIVE_RESOURCE_PATH="/../../Resources/"
