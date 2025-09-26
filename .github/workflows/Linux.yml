@@ -69,7 +69,7 @@ jobs:
           cmake --build ${{ github.workspace }}/${{ env.BUILD_DIR }} --preset "$PRESET"
 
       - name: Run Unit/Integration tests
-        working-directory: ${{github.workspace}}/${{ env.BUILD_DIR }}
+        working-directory: ${{ env.BUILD_DIR }}
         run: ctest -C ${{env.BUILD_TYPE}} --verbose --extra-verbose --debug -T test --output-on-failure -E Integration.VulkanEngine RendererTest.BasicSetup
 
       - name: Run fuzzer tests
