@@ -6,3 +6,4 @@ cmake-format
 breathe
 exhale
 sphinx_design
+pre-commit

@@ -63,3 +63,7 @@ docs/source/_static/*.svg
 docs/source/graphviz_files.rst
 
 build-release*
+
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md

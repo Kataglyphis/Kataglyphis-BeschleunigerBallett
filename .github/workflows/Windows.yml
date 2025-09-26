@@ -28,7 +28,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5.0.0
         with:
+          fetch-depth: 0
           submodules: recursive
+      
+      #################################################################################################################
+      ######################################## Prepare deps ###########################################################
+      #################################################################################################################
 
       - name: Install Windows Dependencies
         shell: pwsh
@@ -38,24 +43,15 @@ jobs:
             -ClangVersion  ${{ env.CLANG_VERSION }} `
             -VulkanSdkPath '${{ env.VULKAN_SDK_PATH }}'
 
+      # - name: Add NSIS to PATH
+      #   run: |
+      #     echo "C:\Program Files (x86)\NSIS" >> $GITHUB_PATH
 
-      - name: Add NSIS to PATH
-        run: |
-          echo "C:\Program Files (x86)\NSIS" >> $GITHUB_PATH
-
-      # for now cppcehck is buggy on windows 2025 github runner. so disable
-      # a github runner has issues with running vulkan driver code; therefore just verify successful build :)
-      - name: CMake Build for Clang
-        shell: powershell
-        run: |
-          cmake -B ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }} --preset "x64-ClangCL-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
-          cmake --build ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}
-          ctest
-
-      - name: Prepare for MSVC
-        run: |
-          Remove-Item -Path ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }} -Recurse -Force
-          clang --version
+      #################################################################################################################
+      ####################### Run unit/integration/coverage/tests/static analyzers ####################################
+      #################################################################################################################
+      
+      ########################################## MSVC #################################################################
 
       - name: CMake Build for MSVC
         shell: powershell
@@ -63,6 +59,26 @@ jobs:
           cmake -B ${{github.workspace}}/build --preset "x64-MSVC-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
           cmake --build ${{github.workspace}}/build
           ctest
+
+      ########################################## CLANG-CL #############################################################
+
+      # for now cppcehck is buggy on windows 2025 github runner. so disable
+      # a github runner has issues with running vulkan driver code; therefore just verify successful build :)
+      - name: Prepare for ClangCL Debug
+        run: |
+          Remove-Item -Path ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }} -Recurse -Force
+          clang --version
+
+      - name: CMake Build for Clang
+        shell: powershell
+        run: |
+          cmake -B ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }} --preset "x64-ClangCL-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
+          cmake --build ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}
+          ctest
+          
+      #################################################################################################################
+      ################################### Now run release and build package for clang #################################
+      #################################################################################################################
 
       - name: Configure CMake for Release (Clang only)
         # -DCPACK_GENERATOR=ZIP; NSIS has problems on github windows runner

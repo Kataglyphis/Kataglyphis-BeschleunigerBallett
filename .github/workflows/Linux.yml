@@ -19,6 +19,11 @@ on:
 env:
   BUILD_TYPE: Debug
   VULKAN_VERSION: 1.4.321.1
+  # folder/name configuration -- change here to affect the whole workflow
+  BUILD_DIR: build
+  BUILD_RELEASE_DIR: build-release
+  DOCS_OUT: build/build/html
+  COVERAGE_JSON: ${{ github.workspace }}/build/coverage.json
 
 jobs:
 
@@ -32,41 +37,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5.0.0
         with:
+          fetch-depth: 0
           submodules: recursive
 
-      - name: Remove too old CMake
-        run: |
-          which cmake || true
-          sudo rm -f /usr/local/bin/cmake || true
-          sudo apt-get purge --auto-remove -y cmake || true
-
-      - name: Install deps (heavy)
+      #################################################################################################################
+      ######################################## Prepare deps ###########################################################
+      #################################################################################################################
+      - name: Install deps
         run: |
           sudo chmod +x Scripts/Linux/setup-dependencies.sh
           sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
-
-      - name: (ARM) prepare PATH hint
-        if: ${{ inputs.runner == 'ubuntu-24.04-arm' }}
-        run: |
-          echo "ARM SDK will be at ${{ github.workspace }}/${{ env.VULKAN_VERSION }}/aarch64/bin"
-
-      - name: Check Installation and update path
-        if: inputs.runner == 'ubuntu-24.04-arm'
-        run: |
-          echo "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/aarch64/bin" >> $GITHUB_PATH
-
-      - name: Update path and Vulkan env vars
-        run: |
-          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          which glslc
           echo "/usr/bin" >> $GITHUB_PATH
-          cmake --version
 
-      - name: Make directory
-        run: |
-          rm -rf build
-          mkdir build
-          
+      #################################################################################################################
+      ####################### Run unit/integration/fuzzy/coverage/tests/static analyzers ##############################
+      #################################################################################################################
       - name: Set PRESET for compiler
         run: |
           if [ "${{ matrix.compiler }}" = "clang" ]; then
@@ -75,41 +60,98 @@ jobs:
             echo "PRESET=linux-debug-GNU" >> $GITHUB_ENV
           fi
 
-      - name: Build
+      - name: Prepare for unit/integration tests
         run: |
           source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
           # use the preset chosen above
-          cmake -B build --preset "$PRESET"
-          cmake --build ${{ github.workspace }}/build --preset "$PRESET"
+          cmake -B ${{ env.BUILD_DIR }} --preset "$PRESET"
+          cmake --build ${{ github.workspace }}/${{ env.BUILD_DIR }} --preset "$PRESET"
 
-      - name: Test
-        if: ${{ matrix.compiler == 'clang' }}
-        working-directory: ${{github.workspace}}/build/
+      - name: Run Unit/Integration tests
+        working-directory: ${{github.workspace}}/${{ env.BUILD_DIR }}
         run: ctest -C ${{env.BUILD_TYPE}} --verbose --extra-verbose --debug -T test --output-on-failure -E Integration.VulkanEngine RendererTest.BasicSetup
 
+      - name: Run fuzzer tests
+        run: |
+          if [[ "${{ matrix.compiler }}" == "clang" ]]; then
+            ./${{ env.BUILD_DIR }}/first_fuzz_test
+          else
+            echo "Compiled with GCC so no fuzz testing!"
+          fi
+
       - name: Build Code Coverage
+        run: |
+          if [[ "${{ matrix.compiler }}" == "gcc" ]]; then
+            gcovr -r .
+          else
+            llvm-profdata merge -sparse ${{github.workspace}}/${{ env.BUILD_DIR }}/Test/compile/default.profraw -o ${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
+            llvm-cov report ${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
+            llvm-cov export ${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite -format=text -instr-profile=${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata > ${{ env.COVERAGE_JSON }}
+            llvm-cov show ${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
+          fi
+
+      - name: Codecov
+        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
+        uses: codecov/codecov-action@v5.5.1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ env.COVERAGE_JSON }}
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          verbose: false
+
+      - name: Run clang tidy
+        run: clang-tidy -p=./${{ env.BUILD_DIR }}/compile_commands.json  $(find Src -name '*.cpp' -o -name '*.cc')
+
+      - name: Run Clang static analysis (HTML)
         if: ${{ matrix.compiler == 'clang' }}
         run: |
-          llvm-profdata merge -sparse ${{github.workspace}}/build/Test/compile/default.profraw -o ${{github.workspace}}/build/compileTestSuite.profdata
-          llvm-cov report ${{github.workspace}}/build/compileTestSuite -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata
-          llvm-cov export ${{github.workspace}}/build/compileTestSuite -format=text -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata > ${{github.workspace}}/build/coverage.json
-          llvm-cov show ${{github.workspace}}/build/compileTestSuite -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata
+          # HTML output (correct flag form)
+          clang++ --analyze -Xanalyzer -analyzer-output=html $(find Src -name '*.cpp' -o -name '*.cc')
+
+      - name: Run Clang static analysis (scan-build)
+        if: ${{ matrix.compiler == 'clang' }}
+        run: |
+          mkdir -p scan-build-reports
+          scan-build -o scan-build-reports cmake --build "${WORKSPACE}/${BUILD_DIR}" --preset "${CLANG_DEBUG_PRESET}"
+
+      #################################################################################################################
+      ############################# Now run on performance benchmarking/profiling #####################################
+      #################################################################################################################
+      - name: Configure/build CMake for Profiling (select preset by compiler)
+        run: |
+          if [[ "${COMPILER}" == "gcc" ]]; then
+            PRESET="${GCC_PROFILE_PRESET}"
+          else
+            PRESET="${CLANG_PROFILE_PRESET}"
+          fi
+          echo "Using preset: ${PRESET}"
+          cmake -B "${WORKSPACE}/${BUILD_DIR}" --preset "${PRESET}"
+          cmake --build "${WORKSPACE}/${BUILD_DIR}" --preset "${PRESET}"
+
+      - name: Run performance benchmarks
+        run: ./${{ env.BUILD_DIR }}/perfTestSuite
+        
+      #################################################################################################################
+      ######################################## Build docs #############################################################
+      #################################################################################################################
 
       - name: Set up Python 3.13
-        if: ${{ matrix.compiler == 'clang' }}
+        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
         uses: actions/setup-python@v6.0.0
         with:
           python-version: "3.13"
+
       # You can test your matrix by printing the current Python version
       - name: Setup python env
-        if: ${{ matrix.compiler == 'clang' }}
+        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
         run: |
           pip install -r requirements.txt
 
       - name: Build web page
-        if: ${{ matrix.compiler == 'clang' }}
+        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
         run: |
-          cp ${{github.workspace}}/build/build/html/*.svg ./docs/source/_static
+          cp ${{github.workspace}}/${{ env.DOCS_OUT }}/*.svg ./docs/source/_static
           cd docs/source
           python graphviz_generator.py 
           cd ..
@@ -122,75 +164,44 @@ jobs:
           server: ${{ secrets.SERVER }}
           username: ${{ secrets.USERNAME }}
           password: ${{ secrets.PW }}
-          local-dir: "./build/build/html/"
+          local-dir: "./${{ env.DOCS_OUT }}/"
 
-      - name: Codecov
-        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
-        uses: codecov/codecov-action@v5.5.1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ${{github.workspace}}/build/coverage.json
-          name: codecov-umbrella
-          fail_ci_if_error: false
-          verbose: false
-
+  #################################################################################################################
+  ################################ Build and package release version ##############################################
+  #################################################################################################################
   release_package:
     needs: [build_and_test,]
     runs-on: ${{ inputs.runner }}
-    # optionally: only run release packaging for a specific runner:
-    # if: ${{ inputs.runner == 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v5.0.0
         with:
           submodules: recursive
       
-      - name: Remove too old CMake
-        run: |
-          which cmake || true
-          sudo rm -f /usr/local/bin/cmake || true
-          sudo apt-get purge --auto-remove -y cmake || true
-
-      - name: Install deps (heavy)
+      #################################################################################################################
+      ######################################## Prepare deps ###########################################################
+      #################################################################################################################
+      - name: Install deps
         run: |
           sudo chmod +x Scripts/Linux/setup-dependencies.sh
           sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
-
-      - name: (ARM) prepare PATH hint
-        if: ${{ inputs.runner == 'ubuntu-24.04-arm' }}
-        run: |
-          echo "ARM SDK will be at ${{ github.workspace }}/${{ env.VULKAN_VERSION }}/aarch64/bin"
-
-      - name: Make directory
-        run: |
-          rm -rf build
-          mkdir build
-
-      - name: Update path
-        run: |
           echo "/usr/bin" >> $GITHUB_PATH
-          cmake --version
           
-      - name: Configure CMake for Release
+      - name: Configure/build CMake for Release
         run: |
           source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          cmake -B build-release --preset linux-release-clang
-
-      - name: Build Release
-        run: |
-          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
-          cmake --build build-release --config Release
+          cmake -B ${{ env.BUILD_RELEASE_DIR }} --preset linux-release-clang
+          cmake --build ${{ env.BUILD_RELEASE_DIR }} --config Release
 
       - name: Package
         run: |
           source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          cmake --build build-release --target package
+          cmake --build ${{ env.BUILD_RELEASE_DIR }} --target package
 
       - name: Upload Linux Packages (Clang only)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: linux-packages
           path: |
-            build-release/*.tar.gz
-            build-release/*.tgz
-            build-release/*.deb
+            ${{ env.BUILD_RELEASE_DIR }}/*.tar.gz
+            ${{ env.BUILD_RELEASE_DIR }}/*.tgz
+            ${{ env.BUILD_RELEASE_DIR }}/*.deb
