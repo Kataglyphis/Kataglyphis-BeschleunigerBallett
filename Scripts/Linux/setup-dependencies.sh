@@ -53,21 +53,18 @@ $SUDO apt-get install -y dpkg-dev fakeroot binutils
 # -----------------------------------------------------------------------------
 # Purge older distro cmake if present (ignore errors)
 $SUDO apt-get purge --auto-remove -y cmake || true
+$SUDO apt-get update -y
+echo "Installing latest CMake..."
+KITWARE_KEY=/usr/share/keyrings/kitware-archive-keyring.gpg
+wget -qO - https://apt.kitware.com/keys/kitware-archive-latest.asc \
+| gpg --dearmor \
+| $SUDO tee "$KITWARE_KEY" >/dev/null
+echo "deb [signed-by=$KITWARE_KEY] https://apt.kitware.com/ubuntu $DISTRO main" \
+| $SUDO tee /etc/apt/sources.list.d/kitware.list >/dev/null
+$SUDO apt-get update -y
+$SUDO apt-get install -y cmake
+cmake --version
 
-if ! command -v cmake >/dev/null 2>&1; then
-  echo "Installing latest CMake..."
-  KITWARE_KEY=/usr/share/keyrings/kitware-archive-keyring.gpg
-  wget -qO - https://apt.kitware.com/keys/kitware-archive-latest.asc \
-    | gpg --dearmor \
-    | $SUDO tee "$KITWARE_KEY" >/dev/null
-  echo "deb [signed-by=$KITWARE_KEY] https://apt.kitware.com/ubuntu $DISTRO main" \
-    | $SUDO tee /etc/apt/sources.list.d/kitware.list >/dev/null
-  $SUDO apt-get update -y
-  $SUDO apt-get install -y cmake
-  cmake --version
-else
-  echo "cmake already installed: $(cmake --version | head -n1)"
-fi
 
 # -----------------------------------------------------------------------------
 # Vulkan SDK Installation Function for Tarball

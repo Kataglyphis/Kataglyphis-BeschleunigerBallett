@@ -75,7 +75,28 @@ jobs:
           cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-ClangCL-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
           cmake --build "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-ClangCL-Windows-Debug"
           ctest
-          
+
+      - name: Run clang-tidy
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $sourceFiles = Get-ChildItem -Path "Src" -Recurse -Include "*.cpp", "*.cc" | ForEach-Object { $_.FullName }
+          clang-tidy -p="${{github.workspace}}/${{ env.BUILD_DIR }}/compile_commands.json" $sourceFiles
+
+      - name: Run Clang static analysis (HTML)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          # HTML output (correct flag form)
+          $sourceFiles = Get-ChildItem -Path "Src" -Recurse -Include "*.cpp", "*.cc" | ForEach-Object { $_.FullName }
+          clang++ --analyze -Xanalyzer -analyzer-output=html $sourceFiles
+
+      - name: Run Clang static analysis (scan-build)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          New-Item -ItemType Directory -Path "scan-build-reports" -Force
+          scan-build -o scan-build-reports cmake --build "$env:WORKSPACE/$env:BUILD_DIR" --preset "$env:CLANG_DEBUG_PRESET"
       #################################################################################################################
       ################################### Now run release and build package for clang #################################
       #################################################################################################################
