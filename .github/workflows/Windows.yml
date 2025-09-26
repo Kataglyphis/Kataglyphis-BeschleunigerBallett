@@ -56,8 +56,8 @@ jobs:
       - name: CMake Build for MSVC
         shell: powershell
         run: |
-          cmake -B ${{github.workspace}}/build --preset "x64-MSVC-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
-          cmake --build ${{github.workspace}}/build
+          cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-MSVC-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
+          cmake --build "${{github.workspace}}/${{ env.BUILD_DIR }}"
           ctest
 
       ########################################## CLANG-CL #############################################################
@@ -66,14 +66,14 @@ jobs:
       # a github runner has issues with running vulkan driver code; therefore just verify successful build :)
       - name: Prepare for ClangCL Debug
         run: |
-          Remove-Item -Path ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }} -Recurse -Force
+          Remove-Item -Path "${{github.workspace}}/${{ env.BUILD_DIR }}" -Recurse -Force
           clang --version
 
       - name: CMake Build for Clang
         shell: powershell
         run: |
-          cmake -B ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }} --preset "x64-ClangCL-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
-          cmake --build ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}
+          cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-ClangCL-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
+          cmake --build "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-ClangCL-Windows-Debug"
           ctest
           
       #################################################################################################################
@@ -83,17 +83,17 @@ jobs:
       - name: Configure CMake for Release (Clang only)
         # -DCPACK_GENERATOR=ZIP; NSIS has problems on github windows runner
         run: |
-          cmake -B ${{ env.BUILD_DIR_RELEASE }} --preset "x64-ClangCL-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
+          cmake -B "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}" --preset "x64-ClangCL-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
 
       - name: Build Release (Clang only)
         shell: pwsh
         run: |
           $env:CMAKE_BUILD_PARALLEL_LEVEL = $env:NUMBER_OF_PROCESSORS
-          cmake --build ${{ env.BUILD_DIR_RELEASE }} --preset "x64-ClangCL-Windows-Release" -DWINDOWS_CI=ON
+          cmake --build "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}" --preset "x64-ClangCL-Windows-Release" -DWINDOWS_CI=ON
         
       - name: Package (Clang only) 
         run: |
-          cmake --build ${{ env.BUILD_DIR_RELEASE }} --target package --verbose
+          cmake --build "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}" --target package --verbose
 
       # I limited the size of the builded package for storage restriction reasons on a github runner
       # see also the install commands in the bottom of the CMakeLists.txt
@@ -102,6 +102,6 @@ jobs:
         with:
           name: windows-installers
           path: |
-            ${{ env.BUILD_DIR_RELEASE }}/*.msi
-            ${{ env.BUILD_DIR_RELEASE }}/*.exe
-            ${{ env.BUILD_DIR_RELEASE }}/*.zip
+            "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}"/*.msi
+            "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}"/*.exe
+            "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}"/*.zip
