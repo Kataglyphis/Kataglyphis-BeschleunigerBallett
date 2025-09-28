@@ -1,5 +1,5 @@
 include(GoogleTest)
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT(CMAKE_BUILD_TYPE STREQUAL "Profile" ))
   message(STATUS "This is a Linux system.")
 
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
