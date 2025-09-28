@@ -10,6 +10,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     PROPERTY STRINGS
              "Debug"
              "Release"
+             "Profile"
              "MinSizeRel"
              "RelWithDebInfo")
 endif()
