@@ -124,6 +124,7 @@ jobs:
       #################################################################################################################
       - name: Configure/build CMake for Profiling (select preset by compiler)
         run: |
+          rm -r "${WORKSPACE}/${BUILD_DIR}"
           if [[ "${COMPILER}" == "gcc" ]]; then
             PRESET="${GCC_PROFILE_PRESET}"
           else
