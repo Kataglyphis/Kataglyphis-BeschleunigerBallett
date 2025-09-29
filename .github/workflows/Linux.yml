@@ -110,7 +110,7 @@ jobs:
         if: ${{ matrix.compiler == 'clang' }}
         run: |
           # HTML output (correct flag form)
-          clang++ --analyze -Xanalyzer -analyzer-output=html $(find Src -name '*.cpp' -o -name '*.cc')
+          clang++ --analyze -DUSE_RUST=1 -Xanalyzer -analyzer-output=html $(find Src -name '*.cpp' -o -name '*.cc')
 
       - name: Run Clang static analysis (scan-build)
         continue-on-error: true
