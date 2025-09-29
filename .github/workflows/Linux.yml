@@ -169,7 +169,7 @@ jobs:
           server: ${{ secrets.SERVER }}
           username: ${{ secrets.USERNAME }}
           password: ${{ secrets.PW }}
-          local-dir: "./${{ env.DOCS_OUT }}/"
+          local-dir: "./docs/build/html/"
 
   #################################################################################################################
   ################################ Build and package release version ##############################################
