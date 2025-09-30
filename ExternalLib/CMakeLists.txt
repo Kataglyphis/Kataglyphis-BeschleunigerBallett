@@ -1,7 +1,5 @@
 include(FetchContent)
 
-set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
-
 if(BUILD_TESTING)
   # include google test to project
   FetchContent_Declare(googletest
@@ -153,5 +151,3 @@ if(WIN32)
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 endif()
 add_subdirectory(KOMPUTE)
-
-set(CMAKE_CXX_SCAN_FOR_MODULES ON)
