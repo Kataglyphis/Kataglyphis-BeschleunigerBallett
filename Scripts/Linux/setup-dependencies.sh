@@ -65,7 +65,7 @@ $SUDO apt-get update -y
 $SUDO apt-get install -y cmake
 cmake --version
 
-WANTED=21  
+WANTED=21
 export DEBIAN_FRONTEND=noninteractive
 APT_OPTS=(-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
     
@@ -74,21 +74,9 @@ sudo apt-get update
 sudo apt-get install -y --no-install-recommends wget gnupg lsb-release ca-certificates
 
 # Add the LLVM apt repo using the official helper (non-interactive)
-wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- "${WANTED}"
+wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- "${WANTED}" all
 
 sudo apt-get update
-
-# Install packages (non-interactive)
-# Install LLVM/Clang ${WANTED}
-sudo apt-get install -y --no-install-recommends "${APT_OPTS[@]}" \
-  clang-"${WANTED}" \
-  clang-tools-"${WANTED}" \
-  lldb-"${WANTED}" \
-  lld-"${WANTED}" \
-  libc++-"${WANTED}"-dev \
-  libc++abi-"${WANTED}"-dev
-
-VER="${WANTED}"
 
 # clang
 if [ -x "/usr/bin/clang-${VER}" ]; then
@@ -117,7 +105,7 @@ clang --version
 clang++ --version
 
 # Install latest GCC
-GCC_WANTED=14  # or 13, adjst as needed
+GCC_WANTED=14  # or 13, adjust as needed
 sudo apt-get install -y --no-install-recommends \
   gcc-"${GCC_WANTED}" \
   g++-"${GCC_WANTED}" \
@@ -142,6 +130,7 @@ fi
 # Verify
 gcc --version
 g++ --version
+
 # -----------------------------------------------------------------------------
 # Vulkan SDK Installation Function for Tarball
 # -----------------------------------------------------------------------------
