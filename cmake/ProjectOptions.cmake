@@ -1,4 +1,4 @@
-include(CMakeDependentOption)
+(CMakeDependentOption)
 include(CheckCXXCompilerFlag)
 
 macro(myproject_supports_sanitizers)
@@ -101,6 +101,7 @@ macro(myproject_global_options)
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # https://gcc.gnu.org/onlinedocs/gcc/Debugging-Options.html
     # https://gcc.gnu.org/onlinedocs/gcc/Option-Summary.html
+    set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0 -std=c++23 -ggdb")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -std=c++23 -DNDEBUG")
     set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} -O3 -std=c++23 -DNDEBUG")
