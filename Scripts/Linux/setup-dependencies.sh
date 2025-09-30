@@ -65,7 +65,9 @@ $SUDO apt-get update -y
 $SUDO apt-get install -y cmake
 cmake --version
 
-WANTED=21
+# desired tool versions
+LLVM_WANTED=21        # for the apt.llvm.org helper (llvm.sh)
+CLANG_WANTED=21       # for update-alternatives clang/clang++
 export DEBIAN_FRONTEND=noninteractive
 APT_OPTS=(-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
     
@@ -74,30 +76,30 @@ sudo apt-get update
 sudo apt-get install -y --no-install-recommends wget gnupg lsb-release ca-certificates
 
 # Add the LLVM apt repo using the official helper (non-interactive)
-wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- "${WANTED}" all
+wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- "${LLVM_WANTED}" all
 
 sudo apt-get update
 
 # clang
-if [ -x "/usr/bin/clang-${VER}" ]; then
-  sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-"${VER}" 100
-  sudo update-alternatives --set clang /usr/bin/clang-"${VER}"
+if [ -x "/usr/bin/clang-${CLANG_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-"${CLANG_WANTED}" 100
+  sudo update-alternatives --set clang /usr/bin/clang-"${CLANG_WANTED}"
 fi
 
 # clang++
-if [ -x "/usr/bin/clang++-${VER}" ]; then
-  sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-"${VER}" 100
-  sudo update-alternatives --set clang++ /usr/bin/clang++-"${VER}"
+if [ -x "/usr/bin/clang++-${CLANG_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-"${CLANG_WANTED}" 100
+  sudo update-alternatives --set clang++ /usr/bin/clang++-"${CLANG_WANTED}"
 fi
 
 # clang-tidy
-if [ -x "/usr/bin/clang-tidy-${VER}" ]; then
-  sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-"${VER}" 100
+if [ -x "/usr/bin/clang-tidy-${CLANG_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-"${CLANG_WANTED}" 100
 fi
 
 # clang-format
-if [ -x "/usr/bin/clang-format-${VER}" ]; then
-  sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-"${VER}" 100
+if [ -x "/usr/bin/clang-format-${CLANG_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-"${CLANG_WANTED}" 100
 fi
 
 # Verify
