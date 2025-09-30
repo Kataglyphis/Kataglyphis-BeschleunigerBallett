@@ -65,6 +65,72 @@ else
   echo "cmake already installed: $(cmake --version | head -n1)"
 fi
 
+WANTED=21
+export DEBIAN_FRONTEND=noninteractive
+APT_OPTS=(-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
+    
+# minimal prerequisites
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends wget gnupg lsb-release ca-certificates
+
+# Add the LLVM apt repo using the official helper (non-interactive)
+wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- "${WANTED}" all
+
+sudo apt-get update
+
+# clang
+if [ -x "/usr/bin/clang-${VER}" ]; then
+  sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-"${VER}" 100
+  sudo update-alternatives --set clang /usr/bin/clang-"${VER}"
+fi
+
+# clang++
+if [ -x "/usr/bin/clang++-${VER}" ]; then
+  sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-"${VER}" 100
+  sudo update-alternatives --set clang++ /usr/bin/clang++-"${VER}"
+fi
+
+# clang-tidy
+if [ -x "/usr/bin/clang-tidy-${VER}" ]; then
+  sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-"${VER}" 100
+fi
+
+# clang-format
+if [ -x "/usr/bin/clang-format-${VER}" ]; then
+  sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-"${VER}" 100
+fi
+
+# Verify
+clang --version
+clang++ --version
+
+# Install latest GCC
+GCC_WANTED=14  # or 13, adjust as needed
+sudo apt-get install -y --no-install-recommends \
+  gcc-"${GCC_WANTED}" \
+  g++-"${GCC_WANTED}" \
+  gfortran-"${GCC_WANTED}"
+
+# Set GCC as default using update-alternatives
+if [ -x "/usr/bin/gcc-${GCC_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-"${GCC_WANTED}" 100
+  sudo update-alternatives --set gcc /usr/bin/gcc-"${GCC_WANTED}"
+fi
+
+if [ -x "/usr/bin/g++-${GCC_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-"${GCC_WANTED}" 100
+  sudo update-alternatives --set g++ /usr/bin/g++-"${GCC_WANTED}"
+fi
+
+if [ -x "/usr/bin/gcov-${GCC_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-"${GCC_WANTED}" 100
+  sudo update-alternatives --set gcov /usr/bin/gcov-"${GCC_WANTED}"
+fi
+
+# Verify
+gcc --version
+g++ --version
+
 # -----------------------------------------------------------------------------
 # Vulkan SDK Installation Function for Tarball
 # -----------------------------------------------------------------------------
