@@ -1,4 +1,4 @@
-(CMakeDependentOption)
+include(CMakeDependentOption)
 include(CheckCXXCompilerFlag)
 
 macro(myproject_supports_sanitizers)
