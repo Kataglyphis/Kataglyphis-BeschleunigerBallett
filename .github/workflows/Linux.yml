@@ -18,6 +18,9 @@ on:
 
 env:
   BUILD_TYPE: Debug
+  COMPILER: ${{ inputs.compiler }}
+  GCC_PROFILE_PRESET: linux-profile-GNU
+  CLANG_PROFILE_PRESET: linux-profile-clang
   VULKAN_VERSION: 1.4.321.1
   # folder/name configuration -- change here to affect the whole workflow
   BUILD_DIR: build
@@ -88,7 +91,7 @@ jobs:
             llvm-profdata merge -sparse ${{github.workspace}}/${{ env.BUILD_DIR }}/Test/compile/default.profraw -o ${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
             llvm-cov report ${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
             llvm-cov export ${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite -format=text -instr-profile=${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata > ${{ env.COVERAGE_JSON }}
-            llvm-cov show ${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
+            llvm-cov show ${{github.}}/${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
           fi
 
       - name: Codecov
@@ -124,15 +127,15 @@ jobs:
       #################################################################################################################
       - name: Configure/build CMake for Profiling (select preset by compiler)
         run: |
-          rm -r "${WORKSPACE}/${BUILD_DIR}"
+          rm -r "${{ github.workspace }}/${{ env.BUILD_DIR }}"
           if [[ "${COMPILER}" == "gcc" ]]; then
             PRESET="${GCC_PROFILE_PRESET}"
           else
             PRESET="${CLANG_PROFILE_PRESET}"
           fi
           echo "Using preset: ${PRESET}"
-          cmake -B "${WORKSPACE}/${BUILD_DIR}" --preset "${PRESET}"
-          cmake --build "${WORKSPACE}/${BUILD_DIR}" --preset "${PRESET}"
+          cmake -B "${{ github.workspace }}/${{ env.BUILD_DIR }}" --preset "${PRESET}"
+          cmake --build "${{ github.workspace }}/${{ env.BUILD_DIR }}" --preset "${PRESET}"
 
       - name: Run performance benchmarks
         run: ./${{ env.BUILD_DIR }}/perfTestSuite
