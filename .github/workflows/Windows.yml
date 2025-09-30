@@ -70,6 +70,7 @@ jobs:
           clang --version
 
       - name: CMake Build for Clang
+        working-directory: ${{ env.BUILD_DIR }} 
         shell: powershell
         run: |
           cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-ClangCL-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
