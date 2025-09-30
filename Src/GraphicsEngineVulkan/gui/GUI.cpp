@@ -210,15 +210,15 @@ void GUI::create_gui_context(Window *window, const VkInstance &instance, const V
     init_info.Device = device->getLogicalDevice();
     init_info.QueueFamily = indices.graphics_family;
     init_info.Queue = device->getGraphicsQueue();
-    init_info.RenderPass = post_render_pass;
+    init_info.PipelineInfoMain.RenderPass = post_render_pass;
     init_info.DescriptorPool = gui_descriptor_pool;
     init_info.PipelineCache = VK_NULL_HANDLE;
     init_info.MinImageCount = 2;
     init_info.ImageCount = MAX_FRAME_DRAWS;
     init_info.Allocator = VK_NULL_HANDLE;
     init_info.CheckVkResultFn = VK_NULL_HANDLE;
-    init_info.Subpass = 0;
-    init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    init_info.PipelineInfoMain.Subpass = 0;
+    init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 
     ImGui_ImplVulkan_Init(&init_info);// post_render_pass
 }
