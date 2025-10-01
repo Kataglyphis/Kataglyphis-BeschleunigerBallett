@@ -55,8 +55,8 @@ jobs:
       #################################################################################################################
       
       ########################################## MSVC #################################################################
-
-      - name: CMake Build for MSVC
+      # gtest discovery is buggy on msvc ci so turn off
+      - name: CMake Build for MSVC Debug
         shell: powershell
         run: |
           cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-MSVC-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI="ON"
@@ -66,13 +66,22 @@ jobs:
         working-directory: ${{ env.BUILD_DIR }}
         run: ctest
 
+      - name: Prepare for MSVC Release
+        run: |
+          Remove-Item -Path "${{github.workspace}}/${{ env.BUILD_DIR }}" -Recurse -Force
+
+      - name: CMake Build for MSVC Release
+        shell: powershell
+        run: |
+          cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-MSVC-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF"
+          cmake --build "${{github.workspace}}/${{ env.BUILD_DIR }}"
+
       ########################################## CLANG-CL #############################################################
       # for now cppcehck is buggy on windows 2025 github runner. so disable
       # a github runner has issues with running vulkan driver code; therefore just verify successful build :)
       - name: Prepare for ClangCL Debug
         run: |
           Remove-Item -Path "${{github.workspace}}/${{ env.BUILD_DIR }}" -Recurse -Force
-          clang --version
 
       - name: CMake Configure and Build for Clang 
         shell: powershell
@@ -88,13 +97,14 @@ jobs:
           & "llvm-cov.exe" report "compileTestSuite.exe" -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
           & "llvm-cov.exe" export "compileTestSuite.exe" -format=text -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata" | Out-File -FilePath "coverage.json" -Encoding UTF8
           & "llvm-cov.exe" show "compileTestSuite.exe" -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
-      
-      - name: Run clang-tidy
-        shell: pwsh
-        continue-on-error: true
-        run: |
-          $sourceFiles = Get-ChildItem -Path "Src" -Recurse -Include "*.cpp", "*.cc" | ForEach-Object { $_.FullName }
-          clang-tidy -p="./${{ env.BUILD_DIR }}/compile_commands.json" $sourceFiles
+
+      # runs forever, so turned off
+      #- name: Run clang-tidy
+      #  shell: pwsh
+      #  continue-on-error: true
+      #  run: |
+      #    $sourceFiles = Get-ChildItem -Path "Src" -Recurse -Include "*.cpp", "*.cc" | ForEach-Object { $_.FullName }
+      #    clang-tidy -p="./${{ env.BUILD_DIR }}/compile_commands.json" $sourceFiles
 
       - name: Run Clang static analysis (HTML)
         shell: pwsh
