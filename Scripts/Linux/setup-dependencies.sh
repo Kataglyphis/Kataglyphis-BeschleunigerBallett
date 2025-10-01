@@ -102,6 +102,18 @@ if [ -x "/usr/bin/clang-format-${CLANG_WANTED}" ]; then
   sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-"${CLANG_WANTED}" 100
 fi
 
+# llvm-profdata
+if [ -x "/usr/bin/llvm-profdata-${CLANG_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/llvm-profdata llvm-profdata /usr/bin/llvm-profdata-"${CLANG_WANTED}" 100
+  sudo update-alternatives --set llvm-profdata /usr/bin/llvm-profdata-"${CLANG_WANTED}"
+fi
+
+# llvm-cov
+if [ -x "/usr/bin/llvm-cov-${CLANG_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/llvm-cov llvm-cov /usr/bin/llvm-cov-"${CLANG_WANTED}" 100
+  sudo update-alternatives --set llvm-cov /usr/bin/llvm-cov-"${CLANG_WANTED}"
+fi
+
 # Verify
 clang --version
 clang++ --version
