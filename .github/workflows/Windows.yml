@@ -61,7 +61,6 @@ jobs:
         run: |
           cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-MSVC-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
           cmake --build "${{github.workspace}}/${{ env.BUILD_DIR }}"
-          ctest
 
       - name: Test (MSVC)
         working-directory: ${{ env.BUILD_DIR }}
