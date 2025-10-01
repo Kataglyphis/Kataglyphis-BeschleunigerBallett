@@ -44,9 +44,11 @@ jobs:
             -ClangVersion  ${{ env.CLANG_VERSION }} `
             -VulkanSdkPath '${{ env.VULKAN_SDK_PATH }}'
 
-      # - name: Add NSIS to PATH
-      #   run: |
-      #     echo "C:\Program Files (x86)\NSIS" >> $GITHUB_PATH
+      # this is necessary ... windows and paths ...
+      - name: Push Clang and LLVM to Path
+        shell: pwsh
+        run: |
+          Add-Content -Path $Env:GITHUB_PATH -Value 'C:\Program Files\LLVM\bin'
 
       #################################################################################################################
       ####################### Run unit/integration/coverage/tests/static analyzers ####################################
@@ -60,7 +62,11 @@ jobs:
           cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-MSVC-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
           cmake --build "${{github.workspace}}/${{ env.BUILD_DIR }}"
           ctest
-      
+
+      - name: Test (MSVC)
+        working-directory: ${{ env.BUILD_DIR }}
+        run: ctest
+
       ########################################## CLANG-CL #############################################################
       # for now cppcehck is buggy on windows 2025 github runner. so disable
       # a github runner has issues with running vulkan driver code; therefore just verify successful build :)
@@ -69,7 +75,7 @@ jobs:
           Remove-Item -Path "${{github.workspace}}/${{ env.BUILD_DIR }}" -Recurse -Force
           clang --version
 
-      - name: CMake Build for Clang 
+      - name: CMake Configure and Build for Clang 
         shell: powershell
         run: |
           cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-ClangCL-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
@@ -79,7 +85,7 @@ jobs:
         working-directory: ${{ env.BUILD_DIR }}
         run: |
           ctest
-          & "llvm-profdata.exe" merge -sparse "{{ github.workspace }}/${{ env.BUILD_DIR }}\Test\compile\default.profraw" -o "${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
+          & "llvm-profdata.exe" merge -sparse Test\compile\default.profraw -o "${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
           & "llvm-cov.exe" report "compileTestSuite.exe" -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
           & "llvm-cov.exe" export "compileTestSuite.exe" -format=text -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata" | Out-File -FilePath "coverage.json" -Encoding UTF8
           & "llvm-cov.exe" show "compileTestSuite.exe" -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
