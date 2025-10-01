@@ -64,7 +64,7 @@ jobs:
 
       - name: Test (MSVC)
         working-directory: ${{ env.BUILD_DIR }}
-        run: ctest
+        run: ctest -V -C Debug --test-dir "${{ github.workspace }}/${{ env.BUILD_DIR }}"
 
       ########################################## CLANG-CL #############################################################
       # for now cppcehck is buggy on windows 2025 github runner. so disable
@@ -83,7 +83,7 @@ jobs:
       - name: Clang coverage
         working-directory: ${{ env.BUILD_DIR }}
         run: |
-          ctest
+          ctest -V -C Debug --test-dir "${{ github.workspace }}/${{ env.BUILD_DIR }}"
           & "llvm-profdata.exe" merge -sparse "Test\compile\default.profraw" -o "${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
           & "llvm-cov.exe" report "compileTestSuite.exe" -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
           & "llvm-cov.exe" export "compileTestSuite.exe" -format=text -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata" | Out-File -FilePath "coverage.json" -Encoding UTF8
