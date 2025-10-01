@@ -84,7 +84,7 @@ jobs:
         working-directory: ${{ env.BUILD_DIR }}
         run: |
           ctest
-          & "llvm-profdata.exe" merge -sparse Test\compile\default.profraw -o "${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
+          & "llvm-profdata.exe" merge -sparse "Test\compile\default.profraw" -o "${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
           & "llvm-cov.exe" report "compileTestSuite.exe" -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
           & "llvm-cov.exe" export "compileTestSuite.exe" -format=text -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata" | Out-File -FilePath "coverage.json" -Encoding UTF8
           & "llvm-cov.exe" show "compileTestSuite.exe" -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
