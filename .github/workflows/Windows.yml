@@ -59,12 +59,12 @@ jobs:
       - name: CMake Build for MSVC
         shell: powershell
         run: |
-          cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-MSVC-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
+          cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-MSVC-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF"
           cmake --build "${{github.workspace}}/${{ env.BUILD_DIR }}"
 
       - name: Test (MSVC)
         working-directory: ${{ env.BUILD_DIR }}
-        run: ctest -V -C Debug --test-dir "${{ github.workspace }}/${{ env.BUILD_DIR }}"
+        run: ctest
 
       ########################################## CLANG-CL #############################################################
       # for now cppcehck is buggy on windows 2025 github runner. so disable
@@ -77,13 +77,13 @@ jobs:
       - name: CMake Configure and Build for Clang 
         shell: powershell
         run: |
-          cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-ClangCL-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
+          cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-ClangCL-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF"
           cmake --build "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-ClangCL-Windows-Debug"
           
       - name: Clang coverage
         working-directory: ${{ env.BUILD_DIR }}
         run: |
-          ctest -V -C Debug --test-dir "${{ github.workspace }}/${{ env.BUILD_DIR }}"
+          ctest
           & "llvm-profdata.exe" merge -sparse "Test\compile\default.profraw" -o "${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
           & "llvm-cov.exe" report "compileTestSuite.exe" -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
           & "llvm-cov.exe" export "compileTestSuite.exe" -format=text -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata" | Out-File -FilePath "coverage.json" -Encoding UTF8
