@@ -128,7 +128,9 @@ macro(myproject_global_options)
 
   if(myproject_ENABLE_IPO)
     include(cmake/InterproceduralOptimization.cmake)
-    myproject_enable_ipo()
+    if(NOT(CMAKE_BUILD_TYPE STREQUAL "Debug"))
+      myproject_enable_ipo()
+    endif()
   endif()
 
   myproject_supports_sanitizers()
