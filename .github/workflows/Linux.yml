@@ -91,7 +91,7 @@ jobs:
             llvm-profdata merge -sparse ${{github.workspace}}/${{ env.BUILD_DIR }}/Test/compile/default.profraw -o ${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
             llvm-cov report ${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
             llvm-cov export ${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite -format=text -instr-profile=${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata > ${{ env.COVERAGE_JSON }}
-            llvm-cov show ${{github.}}/${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
+            llvm-cov show ${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
           fi
 
       - name: Codecov
