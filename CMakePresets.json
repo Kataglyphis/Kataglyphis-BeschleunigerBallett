@@ -435,12 +435,12 @@
 		{
 			"name": "x64-Clang-Windows-Profile",
 			"jobs": 0,
-			"configurePreset": "linux-profile-clang"
+			"configurePreset": "x64-Clang-Windows-Profile"
 		},
 		{
 			"name": "x64-ClangCL-Windows-Profile",
 			"jobs": 0,
-			"configurePreset": "linux-profile-clang"
+			"configurePreset": "x64-ClangCL-Windows-Profile"
 		},
 		{
 			"name": "x64-MSVC-Windows-Debug",
