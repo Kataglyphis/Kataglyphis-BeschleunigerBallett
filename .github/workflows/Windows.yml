@@ -143,7 +143,7 @@ jobs:
         working-directory: ${{ env.BUILD_DIR_RELEASE }}
         run: |
           Write-Host "Workspace: $env:GITHUB_WORKSPACE"
-          $exe = Join-Path $env:GITHUB_WORKSPACE 'Debug\perfTestSuite.exe'
+          $exe = Join-Path $env:GITHUB_WORKSPACE $env:BUILD_DIR_RELEASE 'Debug\perfTestSuite.exe'
           Write-Host "Expecting exe at: $exe"
           if (-not (Test-Path $exe)) {
             Write-Error "Executable not found at $exe"
