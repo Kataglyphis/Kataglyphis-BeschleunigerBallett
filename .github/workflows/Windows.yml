@@ -134,10 +134,8 @@ jobs:
         shell: pwsh
         # cppcheck has weird bug
         run: |
-          $PRESET = $env:CLANG_PROFILE_PRESET
-          Write-Output "Using preset: $PRESET"
-          cmake -B "${{ github.workspace }}/${{ env.BUILD_DIR_RELEASE }}" --preset "$PRESET" -Dmyproject_ENABLE_CPPCHECK=OFF
-          cmake --build "${{ github.workspace }}/${{ env.BUILD_DIR_RELEASE }}" --preset "$PRESET"
+          cmake -B "${{ github.workspace }}/${{ env.BUILD_DIR_RELEASE }}" --preset "${{ env.CLANG_PROFILE_PRESET }}" -Dmyproject_ENABLE_CPPCHECK=OFF
+          cmake --build "${{ github.workspace }}/${{ env.BUILD_DIR_RELEASE }}" --preset "${{ env.CLANG_PROFILE_PRESET }}"
 
       - name: Run performance benchmarks
         working-directory: ${{ env.BUILD_DIR_RELEASE }}
