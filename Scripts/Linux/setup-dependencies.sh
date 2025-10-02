@@ -48,6 +48,9 @@ echo "Installing core tools..."
 $SUDO apt-get install -y wget curl gpg lsb-release ca-certificates gnupg apt-transport-https
 # for debian packaging
 $SUDO apt-get install -y dpkg-dev fakeroot binutils
+# on the Ubuntu runner or locally (Debian/Ubuntu)
+$SUDO apt-get install -y glslang-tools
+
 # -----------------------------------------------------------------------------
 # Install CMake (latest from Kitware)
 # -----------------------------------------------------------------------------
