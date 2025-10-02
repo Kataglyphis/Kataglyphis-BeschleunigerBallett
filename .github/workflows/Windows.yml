@@ -141,7 +141,7 @@ jobs:
 
       - name: Run performance benchmarks
         working-directory: ${{ env.BUILD_DIR_RELEASE }}
-        run: .\perfTestSuite.exe
+        run: .\Release\perfTestSuite.exe
 
       #################################################################################################################
       ################################### Now run release and build package for clang #################################
