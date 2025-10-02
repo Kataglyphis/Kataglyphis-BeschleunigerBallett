@@ -246,11 +246,9 @@ macro(myproject_local_options)
     if(myproject_ENABLE_CLANG_TIDY)
       myproject_enable_clang_tidy(myproject_options ${myproject_WARNINGS_AS_ERRORS})
     endif()
-  endif()
-
-  if(myproject_ENABLE_CPPCHECK)
-    myproject_enable_cppcheck(${myproject_WARNINGS_AS_ERRORS} "" # override cppcheck options
-    )
+    if(myproject_ENABLE_CPPCHECK)
+      myproject_enable_cppcheck(${myproject_WARNINGS_AS_ERRORS} "")
+    endif()
   endif()
 
   if(myproject_ENABLE_COVERAGE)
