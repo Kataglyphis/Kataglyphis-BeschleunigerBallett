@@ -134,6 +134,7 @@ jobs:
             PRESET="${CLANG_PROFILE_PRESET}"
           fi
           echo "Using preset: ${PRESET}"
+          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
           cmake -B "${{ github.workspace }}/${{ env.BUILD_DIR }}" --preset "${PRESET}"
           cmake --build "${{ github.workspace }}/${{ env.BUILD_DIR }}" --preset "${PRESET}"
 
