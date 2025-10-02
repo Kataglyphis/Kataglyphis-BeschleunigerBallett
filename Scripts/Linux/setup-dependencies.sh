@@ -48,6 +48,10 @@ echo "Installing core tools..."
 $SUDO apt-get install -y wget curl gpg lsb-release ca-certificates gnupg apt-transport-https
 # for debian packaging
 $SUDO apt-get install -y dpkg-dev fakeroot binutils
+$SUDO apt update
+$SUDO apt install google-perftools libgoogle-perftools-dev
+# optional: für Flamegraphs
+$SUDO apt install graphviz
 
 # -----------------------------------------------------------------------------
 # Install CMake (latest from Kitware)
