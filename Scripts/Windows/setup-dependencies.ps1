@@ -16,9 +16,17 @@ winget install --accept-source-agreements --accept-package-agreements --id=LLVM.
 # choco install llvm --version="$ClangVersion" --params '/AddToPath' -y
 
 # Install sccache
-Write-Host "Installing sccache..."
+Write-Host "Installing Ccache..."
 winget install --accept-source-agreements --accept-package-agreements --id=Ccache.Ccache -e 
 # choco install sccache -y
+
+# install scoop (if not present)
+iwr -useb get.scoop.sh | iex
+# install sccache
+scoop install sccache
+# verify
+sccache --version
+sccache -s   # show stats
 
 # Install CMake, Cppcheck, NSIS via WinGet
 Write-Host "Installing CMake, Cppcheck and NSIS via winget..."
