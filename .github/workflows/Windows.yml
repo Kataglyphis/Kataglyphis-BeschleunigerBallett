@@ -49,6 +49,7 @@ jobs:
         shell: pwsh
         run: |
           Add-Content -Path $Env:GITHUB_PATH -Value 'C:\Program Files\LLVM\bin'
+          Write-Output "$env:USERPROFILE\scoop\shims" >> $env:GITHUB_PATH 
 
       #################################################################################################################
       ####################### Run unit/integration/coverage/tests/static analyzers ####################################
