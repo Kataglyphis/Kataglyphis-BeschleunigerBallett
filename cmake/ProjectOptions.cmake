@@ -108,9 +108,9 @@ macro(myproject_global_options)
 # https://clang.llvm.org/docs/UsersManual.html
   # this is the clang-cl case
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od /O0 /std:c++23 -fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-error=character-conversion")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /std:c++23 -DNDEBUG -fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-error=character-conversion")
-    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} /O2 /std:c++23 -DNDEBUG -fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-error=character-conversion")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od /std:c++latest -fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-error=character-conversion")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /std:c++latest -DNDEBUG -fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-error=character-conversion")
+    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} /O2 /std:c++latest -DNDEBUG -fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-error=character-conversion")
     # https://clang.llvm.org/docs/ClangCommandLineReference.html
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g -ggdb -std=c++23 -fcolor-diagnostics") # -std=c++2a
@@ -191,26 +191,26 @@ macro(myproject_local_options)
   endif()
 
   if(myproject_DISABLE_EXCEPTIONS)
-    if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    if(MSVC AND NOT(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
       target_compile_options(myproject_options INTERFACE /EHs-) # Disable exceptions
-    elseif(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-      if(CLANG_VERSION MATCHES "clang-cl")
-        message(STATUS "Using clang-cl and disable exceptions with /GX-")
-        target_compile_options(myproject_options INTERFACE /GX-) # Disable exceptions
-      else()
-        message(STATUS "Using clang and disable exceptions with -fno-exceptions")
-        target_compile_options(myproject_options INTERFACE -fno-exceptions)
-      endif()
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
+	  message(STATUS "Using clang-cl and disable exceptions with /GX-")
+	  target_compile_options(myproject_options INTERFACE /EHs-) # Disable exceptions
     elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
       target_compile_options(myproject_options INTERFACE -fno-exceptions)
     else()
       message(WARNING "Disabling exceptions is not supported for this compiler.")
     endif()
   else()
-    if(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    if(MSVC AND NOT(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
       target_compile_options(myproject_options INTERFACE /EHs) # Enable exceptions
-    elseif(WIN32 AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-      target_compile_options(myproject_options INTERFACE /GX) # Enable exceptions
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
+      target_compile_options(myproject_options INTERFACE /EHs) # Enable exceptions
+	elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+      target_compile_options(myproject_options INTERFACE -fexceptions)
+    else()
+      message(WARNING "Enabling exceptions is not supported for this compiler.")
+    endif()
     endif()
   endif()
 
