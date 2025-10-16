@@ -206,11 +206,10 @@ macro(myproject_local_options)
       target_compile_options(myproject_options INTERFACE /EHs) # Enable exceptions
     elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
       target_compile_options(myproject_options INTERFACE /EHs) # Enable exceptions
-	elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+	  elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
       target_compile_options(myproject_options INTERFACE -fexceptions)
     else()
       message(WARNING "Enabling exceptions is not supported for this compiler.")
-    endif()
     endif()
   endif()
 

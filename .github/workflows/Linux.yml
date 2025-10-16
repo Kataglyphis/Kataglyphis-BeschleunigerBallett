@@ -15,6 +15,8 @@ on:
         required: true
       CODECOV_TOKEN:
         required: true
+      GHCR_PAT:
+        required: true
 
 env:
   BUILD_TYPE: Debug
@@ -35,6 +37,14 @@ jobs:
         compiler: [clang, gcc]
 
     runs-on: ${{ inputs.runner }}
+
+    # Run this job inside the GHCR container:
+    container:
+      image: ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GHCR_PAT }}
+      options: --user root
 
     steps:
       - uses: actions/checkout@v5.0.0
