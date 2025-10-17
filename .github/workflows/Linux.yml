@@ -75,7 +75,7 @@ jobs:
 
       - name: Prepare for unit/integration tests
         run: |
-          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          # source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
           # use the preset chosen above
           cmake -B ${{ env.BUILD_DIR }} --preset "$PRESET"
           cmake --build ${{ github.workspace }}/${{ env.BUILD_DIR }} --preset "$PRESET"
