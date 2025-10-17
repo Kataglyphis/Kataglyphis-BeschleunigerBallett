@@ -28,6 +28,8 @@ env:
   BUILD_RELEASE_DIR: build-release
   DOCS_OUT: build/build/html
   COVERAGE_JSON: build/coverage.json
+  # for ARM glslangValidator fix
+  PATH: /usr/local/bin:${{ env.PATH }}
 
 jobs:
 
