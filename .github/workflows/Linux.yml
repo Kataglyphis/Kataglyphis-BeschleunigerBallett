@@ -61,6 +61,23 @@ jobs:
           # sudo chmod +x Scripts/Linux/setup-dependencies.sh
           # sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
           echo "/usr/bin" >> $GITHUB_PATH
+          # Detect where cargo is installed and add that dir to PATH for subsequent steps
+          CARGO_BIN_DIR=$(dirname "$(command -v cargo 2>/dev/null || true)")
+          if [ -n "$CARGO_BIN_DIR" ]; then
+            echo "Found cargo at: $CARGO_BIN_DIR"
+            echo "$CARGO_BIN_DIR" >> $GITHUB_PATH
+            # also add it to PATH for this step (if you need cargo right away)
+            export PATH="$CARGO_BIN_DIR:$PATH"
+          else
+            echo "cargo not found in PATH — falling back to \$HOME/.cargo/bin"
+            echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+
+          # quick checks
+          command -v cargo || true
+          cargo --version || true
+          echo "PATH (this step): $PATH"
 
       #################################################################################################################
       ####################### Run unit/integration/fuzzy/coverage/tests/static analyzers ##############################
