@@ -79,8 +79,8 @@ jobs:
           # ${{ github.workspace }}
           . "/${{ env.VULKAN_VERSION }}/setup-env.sh"
           # use the preset chosen above
-          cmake -B ${{ github.workspace }}/${{ env.BUILD_DIR }} --preset "$PRESET"
-          cmake --build ${{ github.workspace }}/${{ env.BUILD_DIR }} --preset "$PRESET"
+          cmake -B "${{ github.workspace }}/${{ env.BUILD_DIR }}" --preset "$PRESET"
+          cmake --build "${{ github.workspace }}/${{ env.BUILD_DIR }}" --preset "$PRESET"
 
       - name: Run Unit/Integration tests
         working-directory: ${{ env.BUILD_DIR }}
@@ -212,14 +212,14 @@ jobs:
         run: |
           # ${{ github.workspace }}
           . "/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          cmake -B ${{ github.workspace }}/${{ env.BUILD_RELEASE_DIR }} --preset linux-release-clang
-          cmake --build ${{ github.workspace }}/${{ env.BUILD_RELEASE_DIR }} --config Release
+          cmake -B "${{ github.workspace }}/${{ env.BUILD_RELEASE_DIR }}" --preset linux-release-clang
+          cmake --build "${{ github.workspace }}/${{ env.BUILD_RELEASE_DIR }}" --config Release
 
       - name: Package
         run: |
           # ${{ github.workspace }}
           . "/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          cmake --build ${{ github.workspace }}/${{ env.BUILD_RELEASE_DIR }} --target package
+          cmake --build "${{ github.workspace }}/${{ env.BUILD_RELEASE_DIR }}" --target package
 
       - name: Upload Linux Packages (Clang only)
         uses: actions/upload-artifact@v4.6.2
