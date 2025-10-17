@@ -78,8 +78,8 @@ jobs:
         run: |
           . "/${{ env.VULKAN_VERSION }}/setup-env.sh"
           # Use relative path instead of absolute path
-          cmake -B build --preset "$PRESET"
-          cmake --build build --preset "$PRESET"
+          cmake -B ${{ env.BUILD_DIR }} --preset "$PRESET"
+          cmake --build ${{ env.BUILD_DIR }} --preset "$PRESET"
         working-directory: ${{ github.workspace }}
 
       - name: Run Unit/Integration tests
@@ -100,11 +100,12 @@ jobs:
           if [[ "${{ matrix.compiler }}" == "gcc" ]]; then
             gcovr -r .
           else
-            llvm-profdata merge -sparse ${{ github.workspace }}/${{ env.BUILD_DIR }}/Test/compile/default.profraw -o ${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
-            llvm-cov report ${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
-            llvm-cov export ${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite -format=text -instr-profile=${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata > ${{ env.COVERAGE_JSON }}
-            llvm-cov show ${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
+            llvm-profdata merge -sparse ${{ env.BUILD_DIR }}/Test/compile/default.profraw -o ${{ env.BUILD_DIR }}/compileTestSuite.profdata
+            llvm-cov report ${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{ env.BUILD_DIR }}/compileTestSuite.profdata
+            llvm-cov export ${{ env.BUILD_DIR }}/compileTestSuite -format=text -instr-profile=${{ env.BUILD_DIR }}/compileTestSuite.profdata > ${{ env.COVERAGE_JSON }}
+            llvm-cov show ${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{ env.BUILD_DIR }}/compileTestSuite.profdata
           fi
+        working-directory: ${{ github.workspace }}
 
       - name: Codecov
         if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
@@ -127,20 +128,22 @@ jobs:
         run: |
           # HTML output (correct flag form)
           clang++ --analyze -DUSE_RUST=1 -Xanalyzer -analyzer-output=html $(find Src -name '*.cpp' -o -name '*.cc')
+        working-directory: ${{ github.workspace }}
 
       - name: Run Clang static analysis (scan-build)
         continue-on-error: true
         if: ${{ matrix.compiler == 'clang' }}
         run: |
           mkdir -p scan-build-reports
-          scan-build -o scan-build-reports cmake --build "${{ github.workspace }}/${BUILD_DIR}" --preset "${CLANG_DEBUG_PRESET}"
+          scan-build -o scan-build-reports cmake --build ${BUILD_DIR} --preset "${CLANG_DEBUG_PRESET}"
+        working-directory: ${{ github.workspace }}
 
       #################################################################################################################
       ############################# Now run on performance benchmarking/profiling #####################################
       #################################################################################################################
       - name: Configure/build CMake for Profiling (select preset by compiler)
         run: |
-          rm -r "${{ github.workspace }}/${{ env.BUILD_DIR }}"
+          rm -r "${{ env.BUILD_DIR }}"
           if [[ "${{ matrix.compiler }}" == "gcc" ]]; then
             PRESET="${GCC_PROFILE_PRESET}"
           else
@@ -149,11 +152,13 @@ jobs:
           echo "Using preset: ${PRESET}"
           # ${{ github.workspace }}
           . "/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          cmake -B "${{ github.workspace }}/${{ env.BUILD_DIR }}" --preset "${PRESET}"
-          cmake --build "${{ github.workspace }}/${{ env.BUILD_DIR }}" --preset "${PRESET}"
+          cmake -B "${{ env.BUILD_DIR }}" --preset "${PRESET}"
+          cmake --build "${{ env.BUILD_DIR }}" --preset "${PRESET}"
+        working-directory: ${{ github.workspace }}
 
       - name: Run performance benchmarks
-        run: ${{ github.workspace }}/${{ env.BUILD_DIR }}/perfTestSuite
+        run: ${{ env.BUILD_DIR }}/perfTestSuite
+        working-directory: ${{ github.workspace }}
         
       #################################################################################################################
       ######################################## Build docs #############################################################
@@ -174,11 +179,12 @@ jobs:
       - name: Build web page
         if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
         run: |
-          cp ${{github.workspace}}/${{ env.DOCS_OUT }}/*.svg ./docs/source/_static
+          cp ${{ env.DOCS_OUT }}/*.svg ./docs/source/_static
           cd docs/source
           python graphviz_generator.py 
           cd ..
           make html
+        working-directory: ${{ github.workspace }}
 
       - name: 📂 Sync files to domain
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
@@ -212,14 +218,16 @@ jobs:
         run: |
           # ${{ github.workspace }}
           . "/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          cmake -B "${{ github.workspace }}/${{ env.BUILD_RELEASE_DIR }}" --preset linux-release-clang
-          cmake --build "${{ github.workspace }}/${{ env.BUILD_RELEASE_DIR }}" --config Release
+          cmake -B "${{ env.BUILD_RELEASE_DIR }}" --preset linux-release-clang
+          cmake --build "${{ env.BUILD_RELEASE_DIR }}" --config Release
+        working-directory: ${{ github.workspace }}
 
       - name: Package
         run: |
           # ${{ github.workspace }}
           . "/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          cmake --build "${{ github.workspace }}/${{ env.BUILD_RELEASE_DIR }}" --target package
+          cmake --build "${{ env.BUILD_RELEASE_DIR }}" --target package
+        working-directory: ${{ github.workspace }}
 
       - name: Upload Linux Packages (Clang only)
         uses: actions/upload-artifact@v4.6.2
