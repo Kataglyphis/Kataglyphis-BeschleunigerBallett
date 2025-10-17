@@ -13,7 +13,7 @@ inputs:
   install-uv:
     description: 'If "true", install Astral uv package manager'
     required: false
-    default: 'false'
+    default: 'true'
 
 runs:
   using: "composite"
@@ -25,7 +25,7 @@ runs:
         VULKAN_VERSION="${{ inputs.vulkan-version }}"
         RUN_SETUP_SCRIPT="${{ inputs.run-setup-script }}"
         INSTALL_UV="${{ inputs.install-uv }}"
-        
+
         echo "/usr/bin" >> "$GITHUB_PATH"
 
         # Detect where cargo is installed and add that dir to PATH for subsequent steps
@@ -96,3 +96,6 @@ runs:
         command -v cargo || true
         cargo --version || true
         echo "PATH (this step): $PATH"
+
+        sudo apt get update
+        sudo apt-get instasll -y glslang-tools
