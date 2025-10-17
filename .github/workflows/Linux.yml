@@ -74,6 +74,24 @@ jobs:
             export PATH="$HOME/.cargo/bin:$PATH"
           fi
 
+          # ensure rustup has a default toolchain
+          if command -v rustup >/dev/null 2>&1; then
+            if ! rustup show active-toolchain >/dev/null 2>&1; then
+              rustup toolchain install stable
+              rustup default stable
+            fi
+          fi
+
+          # expose rustc path for later use in the workflow
+          RUSTC_PATH=$(command -v rustc || true)
+          if [ -n "$RUSTC_PATH" ]; then
+            echo "Rust_COMPILER=$RUSTC_PATH" >> $GITHUB_ENV
+            echo "Found rustc at: $RUSTC_PATH"
+          else
+            echo "ERROR: rustc still not found after installation" >&2
+            exit 1
+          fi
+
           # quick checks
           command -v cargo || true
           cargo --version || true
