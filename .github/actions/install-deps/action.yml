@@ -97,5 +97,5 @@ runs:
         cargo --version || true
         echo "PATH (this step): $PATH"
 
-        sudo apt get update
+        sudo apt-get update
         sudo apt-get instasll -y glslang-tools
