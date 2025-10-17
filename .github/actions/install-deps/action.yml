@@ -92,25 +92,9 @@ runs:
         # Add Vulkan SDK bin dir
         echo "/${VULKAN_VERSION}/x86_64/bin" >> "$GITHUB_PATH"
 
-        # ---- ARCH-SPECIFIC CLEANUP FOR ARM RNNRS ----
-        ARCH="$(uname -m)"  # returns x86_64, aarch64, armv7l, etc.
-
-        case "$ARCH" in
-          aarch64|arm* )
-            echo "Detected ARM architecture: $ARCH — removing incompatible glslangValidator if present..."
-            GLSLANG_BIN="/${VULKAN_VERSION}/x86_64/bin/glslangValidator"
-            if [ -f "$GLSLANG_BIN" ]; then
-              sudo rm -f "$GLSLANG_BIN" || true
-              echo "Removed $GLSLANG_BIN"
-            else
-              echo "No $GLSLANG_BIN present — nothing to remove."
-            fi
-            ;;
-          *)
-            echo "Non-ARM architecture detected: $ARCH — keeping x86_64 Vulkan SDK bin dir."
-            ;;
-        esac
-        # ---- end cleanup ----
+        uname -m
+        file /1.4.321.1/x86_64/bin/glslc
+        find  /1.4.321.1/x86_64/bin/glslc -type f
         
         # quick checks
         command -v cargo || true
