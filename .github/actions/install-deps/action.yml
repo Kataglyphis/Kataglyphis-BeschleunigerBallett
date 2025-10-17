@@ -24,7 +24,8 @@ runs:
 
         VULKAN_VERSION="${{ inputs.vulkan-version }}"
         RUN_SETUP_SCRIPT="${{ inputs.run-setup-script }}"
-
+        INSTALL_UV="${{ inputs.install-uv }}"
+        
         echo "/usr/bin" >> "$GITHUB_PATH"
 
         # Detect where cargo is installed and add that dir to PATH for subsequent steps
