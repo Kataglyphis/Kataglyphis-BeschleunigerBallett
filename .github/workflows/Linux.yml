@@ -167,7 +167,7 @@ jobs:
       - name: Set Astral UV venv
         if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
         run: |
-          . "/root/.local/bin/env" 
+          . "$HOME/.local/bin/env" 
           uv venv
         working-directory: ${{ github.workspace }}
 
@@ -175,7 +175,7 @@ jobs:
       - name: Setup python env
         if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
         run: |
-          . "/root/.local/bin/env"
+          . "$HOME/.local/bin/env"
           . ".venv/bin/activate"
           uv pip install -r requirements.txt
         working-directory: ${{ github.workspace }}
@@ -183,7 +183,7 @@ jobs:
       - name: Build web page
         if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
         run: |
-          . "/root/.local/bin/env"
+          . "$HOME/.local/bin/env"
           cp ${{ env.DOCS_OUT }}/*.svg ./docs/source/_static
           cd docs/source
           uv run python graphviz_generator.py 
