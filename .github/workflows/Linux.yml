@@ -92,6 +92,8 @@ jobs:
             exit 1
           fi
 
+          echo "PATH=/1.4.321.1/x86_64/bin:$PATH" >> $GITHUB_ENV
+
           # quick checks
           command -v cargo || true
           cargo --version || true
