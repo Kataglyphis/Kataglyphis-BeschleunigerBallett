@@ -58,8 +58,8 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get purge --auto-remove -y cmake
-          sudo chmod +x Scripts/Linux/setup-dependencies.sh
-          sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
+          # sudo chmod +x Scripts/Linux/setup-dependencies.sh
+          # sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
           echo "/usr/bin" >> $GITHUB_PATH
 
       #################################################################################################################
