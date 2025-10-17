@@ -98,4 +98,4 @@ runs:
         echo "PATH (this step): $PATH"
 
         sudo apt-get update
-        sudo apt-get instasll -y glslang-tools
+        sudo apt-get install -y glslang-tools
