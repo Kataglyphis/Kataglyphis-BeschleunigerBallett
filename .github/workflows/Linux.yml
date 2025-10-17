@@ -88,7 +88,7 @@ jobs:
 
       - name: Run fuzzer tests
         run: |
-          if [ "${{ matrix.compiler }}" == "clang" ]; then
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
             ${{ env.BUILD_DIR }}/first_fuzz_test
           else
             echo "Compiled with GCC so no fuzz testing!"
@@ -97,7 +97,7 @@ jobs:
 
       - name: Build Code Coverage
         run: |
-          if [ "${{ matrix.compiler }}" == "gcc" ]; then
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
             gcovr -r .
           else
             llvm-profdata merge -sparse ${{ env.BUILD_DIR }}/Test/compile/default.profraw -o ${{ env.BUILD_DIR }}/compileTestSuite.profdata
@@ -144,7 +144,7 @@ jobs:
       - name: Configure/build CMake for Profiling (select preset by compiler)
         run: |
           rm -r "${{ env.BUILD_DIR }}"
-          if [ "${{ matrix.compiler }}" == "gcc" ]; then
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
             PRESET="${GCC_PROFILE_PRESET}"
           else
             PRESET="${CLANG_PROFILE_PRESET}"
