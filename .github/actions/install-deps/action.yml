@@ -99,3 +99,4 @@ runs:
 
         sudo apt-get update
         sudo apt-get install -y glslang-tools
+        sudo apt-get update && sudo apt-get install -y file dpkg-dev fakeroot binutils
