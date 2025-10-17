@@ -111,7 +111,7 @@ jobs:
       - name: Prepare for unit/integration tests
         run: |
           # ${{ github.workspace }}
-          source "/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          . "/${{ env.VULKAN_VERSION }}/setup-env.sh"
           # use the preset chosen above
           cmake -B ${{ env.BUILD_DIR }} --preset "$PRESET"
           cmake --build ${{ github.workspace }}/${{ env.BUILD_DIR }} --preset "$PRESET"
@@ -181,7 +181,7 @@ jobs:
           fi
           echo "Using preset: ${PRESET}"
           # ${{ github.workspace }}
-          source "/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          . "/${{ env.VULKAN_VERSION }}/setup-env.sh"
           cmake -B "${{ github.workspace }}/${{ env.BUILD_DIR }}" --preset "${PRESET}"
           cmake --build "${{ github.workspace }}/${{ env.BUILD_DIR }}" --preset "${PRESET}"
 
@@ -245,14 +245,14 @@ jobs:
       - name: Configure/build CMake for Release
         run: |
           # ${{ github.workspace }}
-          source "/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          . "/${{ env.VULKAN_VERSION }}/setup-env.sh"
           cmake -B ${{ env.BUILD_RELEASE_DIR }} --preset linux-release-clang
           cmake --build ${{ env.BUILD_RELEASE_DIR }} --config Release
 
       - name: Package
         run: |
           # ${{ github.workspace }}
-          source "/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          . "/${{ env.VULKAN_VERSION }}/setup-env.sh"
           cmake --build ${{ env.BUILD_RELEASE_DIR }} --target package
 
       - name: Upload Linux Packages (Clang only)
