@@ -76,11 +76,11 @@ jobs:
 
       - name: Prepare for unit/integration tests
         run: |
-          # ${{ github.workspace }}
           . "/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          # use the preset chosen above
-          cmake -B "${{ github.workspace }}/${{ env.BUILD_DIR }}" --preset "$PRESET"
-          cmake --build "${{ github.workspace }}/${{ env.BUILD_DIR }}" --preset "$PRESET"
+          # Use relative path instead of absolute path
+          cmake -B build --preset "$PRESET"
+          cmake --build build --preset "$PRESET"
+        working-directory: ${{ github.workspace }}
 
       - name: Run Unit/Integration tests
         working-directory: ${{ env.BUILD_DIR }}
