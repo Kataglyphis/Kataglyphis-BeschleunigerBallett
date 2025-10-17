@@ -48,7 +48,6 @@ jobs:
         --user root
         ${{ contains(inputs.runner, 'arm') && '--platform linux/arm64' || '--platform linux/amd64' }}
 
-
     steps:
       - uses: actions/checkout@v5.0.0
         with:
@@ -206,6 +205,17 @@ jobs:
   release_package:
     needs: [build_and_test,]
     runs-on: ${{ inputs.runner }}
+    
+    # Run this job inside the GHCR container:
+    container:
+      image: ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GHCR_PAT }}
+      options: >-
+        --user root
+        ${{ contains(inputs.runner, 'arm') && '--platform linux/arm64' || '--platform linux/amd64' }}
+
     steps:
       - uses: actions/checkout@v5.0.0
         with:
