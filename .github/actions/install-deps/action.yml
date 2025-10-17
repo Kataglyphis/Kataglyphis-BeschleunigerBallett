@@ -1,0 +1,72 @@
+name: "Install deps"
+description: "Shared install deps logic used by workflow jobs"
+
+inputs:
+  vulkan-version:
+    description: 'Vulkan SDK version (e.g. 1.4.321.1)'
+    required: false
+    default: '1.4.321.1'
+  run-setup-script:
+    description: 'If "true", chmod +x and run Scripts/Linux/setup-dependencies.sh'
+    required: false
+    default: 'false'
+
+runs:
+  using: "composite"
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+
+        VULKAN_VERSION="${{ inputs.vulkan-version }}"
+        RUN_SETUP_SCRIPT="${{ inputs.run-setup-script }}"
+
+        echo "/usr/bin" >> "$GITHUB_PATH"
+
+        # Detect where cargo is installed and add that dir to PATH for subsequent steps
+        CARGO_BIN_DIR=$(dirname "$(command -v cargo 2>/dev/null || true)")
+        if [ -n "$CARGO_BIN_DIR" ]; then
+          echo "Found cargo at: $CARGO_BIN_DIR"
+          echo "$CARGO_BIN_DIR" >> "$GITHUB_PATH"
+          export PATH="$CARGO_BIN_DIR:$PATH"
+        else
+          echo "cargo not found in PATH — falling back to \$HOME/.cargo/bin"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.cargo/bin:$PATH"
+        fi
+
+        # Optionally run the repository's setup script (release job used this previously)
+        if [ "$RUN_SETUP_SCRIPT" = "true" ]; then
+          if [ -f "Scripts/Linux/setup-dependencies.sh" ]; then
+            sudo chmod +x Scripts/Linux/setup-dependencies.sh
+            sudo ./Scripts/Linux/setup-dependencies.sh "${VULKAN_VERSION}"
+          else
+            echo "Warning: Scripts/Linux/setup-dependencies.sh not found, skipping."
+          fi
+        fi
+
+        # ensure rustup has a default toolchain
+        if command -v rustup >/dev/null 2>&1; then
+          if ! rustup show active-toolchain >/dev/null 2>&1; then
+            rustup toolchain install stable
+            rustup default stable
+          fi
+        fi
+
+        # expose rustc path for later use in the workflow
+        RUSTC_PATH=$(command -v rustc || true)
+        if [ -n "$RUSTC_PATH" ]; then
+          echo "Rust_COMPILER=$RUSTC_PATH" >> "$GITHUB_ENV"
+          echo "Found rustc at: $RUSTC_PATH"
+        else
+          echo "ERROR: rustc still not found after installation" >&2
+          exit 1
+        fi
+
+        # Add Vulkan SDK bin dir
+        echo "/${VULKAN_VERSION}/x86_64/bin" >> "$GITHUB_PATH"
+
+        # quick checks
+        command -v cargo || true
+        cargo --version || true
+        echo "PATH (this step): $PATH"

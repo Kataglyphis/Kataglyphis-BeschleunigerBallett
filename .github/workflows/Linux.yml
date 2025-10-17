@@ -44,7 +44,10 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GHCR_PAT }}
-      options: --user root
+      options: >-
+        --user root
+        ${{ contains(inputs.runner, 'arm') && '--platform linux/arm64' || '--platform linux/amd64' }}
+
 
     steps:
       - uses: actions/checkout@v5.0.0
@@ -56,48 +59,9 @@ jobs:
       ######################################## Prepare deps ###########################################################
       #################################################################################################################
       - name: Install deps
-        run: |
-          # sudo apt-get purge --auto-remove -y cmake
-          # sudo chmod +x Scripts/Linux/setup-dependencies.sh
-          # sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
-          echo "/usr/bin" >> $GITHUB_PATH
-          # Detect where cargo is installed and add that dir to PATH for subsequent steps
-          CARGO_BIN_DIR=$(dirname "$(command -v cargo 2>/dev/null || true)")
-          if [ -n "$CARGO_BIN_DIR" ]; then
-            echo "Found cargo at: $CARGO_BIN_DIR"
-            echo "$CARGO_BIN_DIR" >> $GITHUB_PATH
-            # also add it to PATH for this step (if you need cargo right away)
-            export PATH="$CARGO_BIN_DIR:$PATH"
-          else
-            echo "cargo not found in PATH — falling back to \$HOME/.cargo/bin"
-            echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-            export PATH="$HOME/.cargo/bin:$PATH"
-          fi
-
-          # ensure rustup has a default toolchain
-          if command -v rustup >/dev/null 2>&1; then
-            if ! rustup show active-toolchain >/dev/null 2>&1; then
-              rustup toolchain install stable
-              rustup default stable
-            fi
-          fi
-
-          # expose rustc path for later use in the workflow
-          RUSTC_PATH=$(command -v rustc || true)
-          if [ -n "$RUSTC_PATH" ]; then
-            echo "Rust_COMPILER=$RUSTC_PATH" >> $GITHUB_ENV
-            echo "Found rustc at: $RUSTC_PATH"
-          else
-            echo "ERROR: rustc still not found after installation" >&2
-            exit 1
-          fi
-
-          echo "/1.4.321.1/x86_64/bin" >> $GITHUB_PATH
-
-          # quick checks
-          command -v cargo || true
-          cargo --version || true
-          echo "PATH (this step): $PATH"
+        uses: ./.github/actions/install-deps
+        with:
+          vulkan-version: ${{ env.VULKAN_VERSION }}
 
       #################################################################################################################
       ####################### Run unit/integration/fuzzy/coverage/tests/static analyzers ##############################
@@ -115,7 +79,7 @@ jobs:
           # ${{ github.workspace }}
           . "/${{ env.VULKAN_VERSION }}/setup-env.sh"
           # use the preset chosen above
-          cmake -B ${{ env.BUILD_DIR }} --preset "$PRESET"
+          cmake -B ${{ github.workspace }}/${{ env.BUILD_DIR }} --preset "$PRESET"
           cmake --build ${{ github.workspace }}/${{ env.BUILD_DIR }} --preset "$PRESET"
 
       - name: Run Unit/Integration tests
@@ -125,20 +89,21 @@ jobs:
       - name: Run fuzzer tests
         run: |
           if [[ "${{ matrix.compiler }}" == "clang" ]]; then
-            ./${{ env.BUILD_DIR }}/first_fuzz_test
+            ${{ github.workspace }}/${{ env.BUILD_DIR }}/first_fuzz_test
           else
             echo "Compiled with GCC so no fuzz testing!"
           fi
 
       - name: Build Code Coverage
         run: |
+          
           if [[ "${{ matrix.compiler }}" == "gcc" ]]; then
             gcovr -r .
           else
-            llvm-profdata merge -sparse ${{github.workspace}}/${{ env.BUILD_DIR }}/Test/compile/default.profraw -o ${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
-            llvm-cov report ${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
-            llvm-cov export ${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite -format=text -instr-profile=${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata > ${{ env.COVERAGE_JSON }}
-            llvm-cov show ${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{github.workspace}}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
+            llvm-profdata merge -sparse ${{ github.workspace }}/${{ env.BUILD_DIR }}/Test/compile/default.profraw -o ${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
+            llvm-cov report ${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
+            llvm-cov export ${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite -format=text -instr-profile=${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata > ${{ env.COVERAGE_JSON }}
+            llvm-cov show ${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata
           fi
 
       - name: Codecov
@@ -168,7 +133,7 @@ jobs:
         if: ${{ matrix.compiler == 'clang' }}
         run: |
           mkdir -p scan-build-reports
-          scan-build -o scan-build-reports cmake --build "${WORKSPACE}/${BUILD_DIR}" --preset "${CLANG_DEBUG_PRESET}"
+          scan-build -o scan-build-reports cmake --build "${{ github.workspace }}/${BUILD_DIR}" --preset "${CLANG_DEBUG_PRESET}"
 
       #################################################################################################################
       ############################# Now run on performance benchmarking/profiling #####################################
@@ -188,7 +153,7 @@ jobs:
           cmake --build "${{ github.workspace }}/${{ env.BUILD_DIR }}" --preset "${PRESET}"
 
       - name: Run performance benchmarks
-        run: ./${{ env.BUILD_DIR }}/perfTestSuite
+        run: ${{ github.workspace }}/${{ env.BUILD_DIR }}/perfTestSuite
         
       #################################################################################################################
       ######################################## Build docs #############################################################
@@ -239,23 +204,22 @@ jobs:
       ######################################## Prepare deps ###########################################################
       #################################################################################################################
       - name: Install deps
-        run: |
-          sudo chmod +x Scripts/Linux/setup-dependencies.sh
-          sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
-          echo "/usr/bin" >> $GITHUB_PATH
+        uses: ./.github/actions/install-deps
+        with:
+          vulkan-version: ${{ env.VULKAN_VERSION }}
           
       - name: Configure/build CMake for Release
         run: |
           # ${{ github.workspace }}
           . "/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          cmake -B ${{ env.BUILD_RELEASE_DIR }} --preset linux-release-clang
-          cmake --build ${{ env.BUILD_RELEASE_DIR }} --config Release
+          cmake -B ${{ github.workspace }}/${{ env.BUILD_RELEASE_DIR }} --preset linux-release-clang
+          cmake --build ${{ github.workspace }}/${{ env.BUILD_RELEASE_DIR }} --config Release
 
       - name: Package
         run: |
           # ${{ github.workspace }}
           . "/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          cmake --build ${{ env.BUILD_RELEASE_DIR }} --target package
+          cmake --build ${{ github.workspace }}/${{ env.BUILD_RELEASE_DIR }} --target package
 
       - name: Upload Linux Packages (Clang only)
         uses: actions/upload-artifact@v4.6.2
