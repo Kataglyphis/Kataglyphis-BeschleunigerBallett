@@ -92,6 +92,8 @@ runs:
         # Add Vulkan SDK bin dir
         echo "/${VULKAN_VERSION}/x86_64/bin" >> "$GITHUB_PATH"
 
+        sudo apt-get update
+        sudo apt-get install -y file
         uname -m 
         file /1.4.321.1/x86_64/bin/glslc
         find  /1.4.321.1/x86_64/bin/glslc -type f
