@@ -188,7 +188,7 @@ jobs:
           cd docs/source
           uv run python graphviz_generator.py 
           cd ..
-          make html
+          uv run make html
         working-directory: ${{ github.workspace }}
 
       - name: 📂 Sync files to domain
