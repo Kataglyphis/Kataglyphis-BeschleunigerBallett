@@ -96,7 +96,7 @@ runs:
         sudo apt-get install -y file
         uname -m 
         file /1.4.321.1/x86_64/bin/glslc
-        find  /1.4.321.1/x86_64/bin/glslc -type f
+        find /1.4.321.1/ -type f
         
         # quick checks
         command -v cargo || true
