@@ -135,7 +135,7 @@ jobs:
         if: ${{ matrix.compiler == 'clang' }}
         run: |
           mkdir -p scan-build-reports
-          scan-build -o scan-build-reports cmake --build ${BUILD_DIR} --preset "${CLANG_DEBUG_PRESET}"
+          scan-build-21 -o scan-build-reports cmake --build ${BUILD_DIR} --preset "${CLANG_DEBUG_PRESET}"
         working-directory: ${{ github.workspace }}
 
       #################################################################################################################
@@ -164,24 +164,26 @@ jobs:
       ######################################## Build docs #############################################################
       #################################################################################################################
 
-      - name: Set up Python 3.13
+      - name: Set Astral UV venv
         if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
-        uses: actions/setup-python@v6.0.0
-        with:
-          python-version: "3.13"
+        run: | 
+          uv venv
+        working-directory: ${{ github.workspace }}
 
       # You can test your matrix by printing the current Python version
       - name: Setup python env
         if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
         run: |
-          pip install -r requirements.txt
+          source .venv/bin/activate
+          uv pip install -r requirements.txt
+        working-directory: ${{ github.workspace }}
 
       - name: Build web page
         if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
         run: |
           cp ${{ env.DOCS_OUT }}/*.svg ./docs/source/_static
           cd docs/source
-          python graphviz_generator.py 
+          uv run python graphviz_generator.py 
           cd ..
           make html
         working-directory: ${{ github.workspace }}

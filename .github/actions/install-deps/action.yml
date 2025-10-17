@@ -10,6 +10,10 @@ inputs:
     description: 'If "true", chmod +x and run Scripts/Linux/setup-dependencies.sh'
     required: false
     default: 'false'
+  install-uv:
+    description: 'If "true", install Astral uv package manager'
+    required: false
+    default: 'false'
 
 runs:
   using: "composite"
@@ -42,6 +46,27 @@ runs:
             sudo ./Scripts/Linux/setup-dependencies.sh "${VULKAN_VERSION}"
           else
             echo "Warning: Scripts/Linux/setup-dependencies.sh not found, skipping."
+          fi
+        fi
+
+        # Optionally install Astral uv package manager
+        if [ "$INSTALL_UV" = "true" ]; then
+          echo "Installing Astral uv package manager..."
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          
+          # Add uv to PATH
+          if [ -d "$HOME/.local/bin" ]; then
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.local/bin:$PATH"
+          fi
+          
+          # Verify installation
+          if command -v uv >/dev/null 2>&1; then
+            echo "uv installed successfully"
+            uv --version
+          else
+            echo "ERROR: uv installation failed" >&2
+            exit 1
           fi
         fi
 
