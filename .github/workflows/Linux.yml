@@ -149,7 +149,7 @@ jobs:
           fi
           echo "Using preset: ${PRESET}"
           # ${{ github.workspace }}
-          . "/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          . "/opt/vulkan/${{ env.VULKAN_VERSION }}/setup-env.sh"
           cmake -B "${{ env.BUILD_DIR }}" --preset "${PRESET}"
           cmake --build "${{ env.BUILD_DIR }}" --preset "${PRESET}"
         working-directory: ${{ github.workspace }}
