@@ -7,8 +7,6 @@ on:
     branches: [main, develop]
 
 env:
-  ACTIONS_STEP_DEBUG: true
-  ACTIONS_RUNNER_DEBUG: true
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Debug
   BUILD_DIR: build
@@ -25,6 +23,13 @@ jobs:
     # You can convert this to a matrix build if you need cross-platform coverage.
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
     runs-on: windows-2025
+
+    container:
+      image: ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GHCR_PAT }}
+
     # env:
     #  VULKAN_SDK: C:\VulkanSDK\
     steps:
@@ -37,13 +42,13 @@ jobs:
       ######################################## Prepare deps ###########################################################
       #################################################################################################################
 
-      - name: Install Windows Dependencies
-        shell: pwsh
-        run: |
-          ./Scripts/Windows/setup-dependencies.ps1 `
-            -VulkanVersion ${{ env.VULKAN_VERSION }} `
-            -ClangVersion  ${{ env.CLANG_VERSION }} `
-            -VulkanSdkPath '${{ env.VULKAN_SDK_PATH }}'
+      # - name: Install Windows Dependencies
+      #   shell: pwsh
+      #   run: |
+      #     ./Scripts/Windows/setup-dependencies.ps1 `
+      #       -VulkanVersion ${{ env.VULKAN_VERSION }} `
+      #       -ClangVersion  ${{ env.CLANG_VERSION }} `
+      #       -VulkanSdkPath '${{ env.VULKAN_SDK_PATH }}'
 
       # this is necessary ... windows and paths ...
       - name: Push Clang and LLVM to Path
