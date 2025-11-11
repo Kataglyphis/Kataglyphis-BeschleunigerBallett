@@ -1,4 +1,4 @@
-name: Windows Server 2025 build x86 MSVC and Clang (in container)
+name: Windows Server 2025 build x86 MSVC and Clang
 
 on:
   push:
@@ -6,218 +6,175 @@ on:
   pull_request:
     branches: [main, develop]
 
-permissions:
-  contents: read
-  packages: read
-
 env:
+  ACTIONS_STEP_DEBUG: true
+  ACTIONS_RUNNER_DEBUG: true
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Debug
   BUILD_DIR: build
   BUILD_DIR_RELEASE: build_release
   VULKAN_VERSION: 1.4.328.1
-  CLANG_VERSION: 21.1.5
+  CLANG_VERSION: 21.1.4
   VULKAN_SDK_PATH: C:\VulkanSDK
   CLANG_PROFILE_PRESET: x64-ClangCL-Windows-Profile
 
 jobs:
   build:
     if: contains(github.event.head_commit.message, '[build-win]')
-    # Use a SELF-HOSTED Windows runner with Docker (Windows containers) enabled
-    runs-on: [windows-2025]
-
+    # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
+    # You can convert this to a matrix build if you need cross-platform coverage.
+    # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
+    runs-on: windows-2025
+    # env:
+    #  VULKAN_SDK: C:\VulkanSDK\
     steps:
-
-      - name: Checkout
-
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5.0.0
         with:
           fetch-depth: 0
           submodules: recursive
+      
+      #################################################################################################################
+      ######################################## Prepare deps ###########################################################
+      #################################################################################################################
 
-
-      - name: Docker login (GHCR)
-
-        if: ${{ github.event.pull_request.head.repo.full_name == github.repository || !github.event.pull_request }}
+      - name: Install Windows Dependencies
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          $token = "${{ secrets.GITHUB_TOKEN }}"
-          echo $token | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          ./Scripts/Windows/setup-dependencies.ps1 `
+            -VulkanVersion ${{ env.VULKAN_VERSION }} `
+            -ClangVersion  ${{ env.CLANG_VERSION }} `
+            -VulkanSdkPath '${{ env.VULKAN_SDK_PATH }}'
 
-
-      - name: Pull container image
-
+      # this is necessary ... windows and paths ...
+      - name: Push Clang and LLVM to Path
         shell: pwsh
         run: |
-          docker pull ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64
+          Add-Content -Path $Env:GITHUB_PATH -Value 'C:\Program Files\LLVM\bin'
+          Write-Output "$env:USERPROFILE\scoop\shims" >> $env:GITHUB_PATH 
 
-
-      - name: Start container (detached)
-
-        shell: pwsh
+      #################################################################################################################
+      ####################### Run unit/integration/coverage/tests/static analyzers ####################################
+      #################################################################################################################
+      
+      ########################################## MSVC #################################################################
+      # gtest discovery is buggy on msvc ci so turn off
+      - name: CMake Build for MSVC Debug
+        shell: powershell
         run: |
-          docker rm -f ci 2>$null | Out-Null
-          docker run -d --name ci --isolation=process `
-            -e BUILD_TYPE="${{ env.BUILD_TYPE }}" `
-            -e BUILD_DIR="${{ env.BUILD_DIR }}" `
-            -e BUILD_DIR_RELEASE="${{ env.BUILD_DIR_RELEASE }}" `
-            -e VULKAN_VERSION="${{ env.VULKAN_VERSION }}" `
-            -e CLANG_VERSION="${{ env.CLANG_VERSION }}" `
-            -e VULKAN_SDK_PATH="${{ env.VULKAN_SDK_PATH }}" `
-            -e CLANG_PROFILE_PRESET="${{ env.CLANG_PROFILE_PRESET }}" `
-            -e WORKDIR="C:\work" `
-            -v "${{ github.workspace }}:C:\work" `
-            -w "C:\work" `
-            ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64 `
-            powershell -NoProfile -Command "while ($true) { Start-Sleep -Seconds 3600 }"
+          cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-MSVC-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI="ON"
+          cmake --build "${{github.workspace}}/${{ env.BUILD_DIR }}"
 
-      # ===================== Run your steps inside the container =====================
+      - name: Test (MSVC)
+        working-directory: ${{ env.BUILD_DIR }}
+        run: ctest
 
-
-      - name: Install Windows Dependencies (in container)
-
-        shell: pwsh
+      - name: Prepare for MSVC Release
         run: |
-          docker exec ci powershell -NoProfile -Command `
-            "./Scripts/Windows/setup-dependencies.ps1 `
-              -VulkanVersion $Env:VULKAN_VERSION `
-              -ClangVersion  $Env:CLANG_VERSION `
-              -VulkanSdkPath $Env:VULKAN_SDK_PATH"
+          Remove-Item -Path "${{github.workspace}}/${{ env.BUILD_DIR }}" -Recurse -Force
 
-
-      - name: Push Clang and LLVM to Path (in container)
-
-        shell: pwsh
+      - name: CMake Build for MSVC Release
+        shell: powershell
         run: |
-          docker exec ci powershell -NoProfile -Command `
-            "Add-Content -Path $Env:GITHUB_PATH -Value 'C:\Program Files\LLVM\bin'; `
-             '`$env:USERPROFILE\scoop\shims' | Out-File -Append -FilePath $Env:GITHUB_PATH"
+          cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-MSVC-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF"
+          cmake --build "${{github.workspace}}/${{ env.BUILD_DIR }}"
 
-
-      - name: CMake Build for MSVC Debug (in container)
-
-        shell: pwsh
+      ########################################## CLANG-CL #############################################################
+      # for now cppcehck is buggy on windows 2025 github runner. so disable
+      # a github runner has issues with running vulkan driver code; therefore just verify successful build :)
+      - name: Prepare for ClangCL Debug
         run: |
-          docker exec ci powershell -NoProfile -Command `
-            "cmake -B `"$Env:WORKDIR\$Env:BUILD_DIR`" --preset 'x64-MSVC-Windows-Debug' -Dmyproject_ENABLE_CPPCHECK=OFF -DWINDOWS_CI=ON; `
-             cmake --build `"$Env:WORKDIR\$Env:BUILD_DIR`""
+          Remove-Item -Path "${{github.workspace}}/${{ env.BUILD_DIR }}" -Recurse -Force
 
-
-      - name: Test (MSVC) (in container)
-
-        shell: pwsh
+      - name: CMake Configure and Build for Clang 
+        shell: powershell
         run: |
-          docker exec ci powershell -NoProfile -Command `
-            "pushd `"$Env:WORKDIR\$Env:BUILD_DIR`"; ctest; popd"
-
-
-      - name: Prepare for MSVC Release (in container)
-
-        shell: pwsh
+          cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-ClangCL-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF"
+          cmake --build "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-ClangCL-Windows-Debug"
+          
+      - name: Clang coverage
+        working-directory: ${{ env.BUILD_DIR }}
         run: |
-          docker exec ci powershell -NoProfile -Command `
-            "Remove-Item -Path `"$Env:WORKDIR\$Env:BUILD_DIR`" -Recurse -Force"
+          ctest
+          & "llvm-profdata.exe" merge -sparse "Test\compile\default.profraw" -o "${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
+          & "llvm-cov.exe" report "compileTestSuite.exe" -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
+          & "llvm-cov.exe" export "compileTestSuite.exe" -format=text -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata" | Out-File -FilePath "coverage.json" -Encoding UTF8
+          & "llvm-cov.exe" show "compileTestSuite.exe" -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
 
+      # runs forever, so turned off
+      #- name: Run clang-tidy
+      #  shell: pwsh
+      #  continue-on-error: true
+      #  run: |
+      #    $sourceFiles = Get-ChildItem -Path "Src" -Recurse -Include "*.cpp", "*.cc" | ForEach-Object { $_.FullName }
+      #    clang-tidy -p="./${{ env.BUILD_DIR }}/compile_commands.json" $sourceFiles
 
-      - name: CMake Build for MSVC Release (in container)
-
-        shell: pwsh
-        run: |
-          docker exec ci powershell -NoProfile -Command `
-            "cmake -B `"$Env:WORKDIR\$Env:BUILD_DIR`" --preset 'x64-MSVC-Windows-Release' -Dmyproject_ENABLE_CPPCHECK=OFF; `
-             cmake --build `"$Env:WORKDIR\$Env:BUILD_DIR`""
-
-
-      - name: Configure/Build Clang Debug (in container)
-
-        shell: pwsh
-        run: |
-          docker exec ci powershell -NoProfile -Command `
-            "Remove-Item -Path `"$Env:WORKDIR\$Env:BUILD_DIR`" -Recurse -Force; `
-             cmake -B `"$Env:WORKDIR\$Env:BUILD_DIR`" --preset 'x64-ClangCL-Windows-Debug' -Dmyproject_ENABLE_CPPCHECK=OFF; `
-             cmake --build `"$Env:WORKDIR\$Env:BUILD_DIR`" --preset 'x64-ClangCL-Windows-Debug'"
-
-
-      - name: Clang coverage (in container)
-
-        shell: pwsh
-        run: |
-          docker exec ci powershell -NoProfile -Command `
-            "pushd `"$Env:WORKDIR\$Env:BUILD_DIR`"; `
-             ctest; `
-             & 'llvm-profdata.exe' merge -sparse 'Test\compile\default.profraw' -o 'compileTestSuite.profdata'; `
-             & 'llvm-cov.exe' report 'compileTestSuite.exe' -instr-profile='compileTestSuite.profdata'; `
-             & 'llvm-cov.exe' export 'compileTestSuite.exe' -format=text -instr-profile='compileTestSuite.profdata' | Out-File -FilePath 'coverage.json' -Encoding UTF8; `
-             & 'llvm-cov.exe' show 'compileTestSuite.exe' -instr-profile='compileTestSuite.profdata'; `
-             popd"
-
-
-      - name: Run Clang static analysis (HTML) (in container)
-
+      - name: Run Clang static analysis (HTML)
         shell: pwsh
         continue-on-error: true
         run: |
-          docker exec ci powershell -NoProfile -Command `
-            "`$sourceFiles = Get-ChildItem -Path 'Src' -Recurse -Include '*.cpp','*.cc' | ForEach-Object { `$_.FullName }; `
-             clang++ --analyze -DUSE_RUST=1 -Xanalyzer -analyzer-output=html @sourceFiles"
-      - name: scan-build (in container)
+          # HTML output (correct flag form)
+          $sourceFiles = Get-ChildItem -Path "Src" -Recurse -Include "*.cpp", "*.cc" | ForEach-Object { $_.FullName }
+          clang++ --analyze -DUSE_RUST=1 -Xanalyzer -analyzer-output=html $sourceFiles
 
+       
+      - name: Run Clang static analysis (scan-build)
         shell: pwsh
         continue-on-error: true
         run: |
-          docker exec ci powershell -NoProfile -Command `
-            "New-Item -ItemType Directory -Path 'scan-build-reports' -Force | Out-Null; `
-             scan-build --use-analyzer='C:\Program Files\LLVM\bin\clang-cl.exe' -o scan-build-reports `
-               cmake --build `"$Env:WORKDIR\$Env:BUILD_DIR`" --preset 'x64-ClangCL-Windows-Debug'"
+          New-Item -ItemType Directory -Path "scan-build-reports" -Force
+          scan-build --use-analyzer="C:\Program Files\LLVM\bin\clang-cl.exe" -o scan-build-reports cmake --build "${{ github.workspace }}/${{ env.BUILD_DIR }}" --preset x64-ClangCL-Windows-Debug
+
+      #################################################################################################################
+      ############################# Now run on performance benchmarking/profiling #####################################
+      ################################################################################################################
+      - name: Prepare for Profiling
+        run: |
+          clang --version
+        shell: pwsh
+
+      - name: Configure/build CMake for Profiling (select preset by compiler)
+        shell: pwsh
+        # cppcheck has weird bug
+        run: |
+          cmake -B "${{ github.workspace }}/${{ env.BUILD_DIR_RELEASE }}" --preset "${{ env.CLANG_PROFILE_PRESET }}" -Dmyproject_ENABLE_CPPCHECK=OFF
+          cmake --build "${{ github.workspace }}/${{ env.BUILD_DIR_RELEASE }}" --preset "${{ env.CLANG_PROFILE_PRESET }}"
+
+      - name: Run performance benchmarks
+        working-directory: ${{ env.BUILD_DIR_RELEASE }}
+        run: .\perfTestSuite.exe --benchmark_out=results.json --benchmark_out_format=json
 
 
-      - name: Profiling build (in container)
+      #################################################################################################################
+      ################################### Now run release and build package for clang #################################
+      #################################################################################################################
+      - name: Prepare for Release
+        run: |
+          Remove-Item -Path "${{ github.workspace }}/${{ env.BUILD_DIR_RELEASE }}" -Recurse -Force   
+          clang --version
+        shell: pwsh
+        
+      - name: Configure CMake for Release (Clang only)
+        # -DCPACK_GENERATOR=ZIP; NSIS has problems on github windows runner
+        run: |
+          cmake -B "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}" --preset "x64-ClangCL-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
 
+      - name: Build Release (Clang only)
         shell: pwsh
         run: |
-          docker exec ci powershell -NoProfile -Command `
-            "clang --version; `
-             cmake -B `"$Env:WORKDIR\$Env:BUILD_DIR_RELEASE`" --preset `"$Env:CLANG_PROFILE_PRESET`" -Dmyproject_ENABLE_CPPCHECK=OFF; `
-             cmake --build `"$Env:WORKDIR\$Env:BUILD_DIR_RELEASE`" --preset `"$Env:CLANG_PROFILE_PRESET`""
-
-
-      - name: Run performance benchmarks (in container)
-
-        shell: pwsh
+          $env:CMAKE_BUILD_PARALLEL_LEVEL = $env:NUMBER_OF_PROCESSORS
+          cmake --build "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}" --preset "x64-ClangCL-Windows-Release" -DWINDOWS_CI=ON
+        
+      - name: Package (Clang only) 
         run: |
-          docker exec ci powershell -NoProfile -Command `
-            "pushd `"$Env:WORKDIR\$Env:BUILD_DIR_RELEASE`"; `
-             .\perfTestSuite.exe --benchmark_out=results.json --benchmark_out_format=json; `
-             popd"
+          cmake --build "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}" --target package --verbose
 
-
-      - name: Clang Release configure/build/package (in container)
-
-        shell: pwsh
-        run: |
-          docker exec ci powershell -NoProfile -Command `
-            "Remove-Item -Path `"$Env:WORKDIR\$Env:BUILD_DIR_RELEASE`" -Recurse -Force; `
-             clang --version; `
-             cmake -B `"$Env:WORKDIR\$Env:BUILD_DIR_RELEASE`" --preset 'x64-ClangCL-Windows-Release' -Dmyproject_ENABLE_CPPCHECK=OFF -DWINDOWS_CI=ON; `
-             `$env:CMAKE_BUILD_PARALLEL_LEVEL = `$env:NUMBER_OF_PROCESSORS; `
-             cmake --build `"$Env:WORKDIR\$Env:BUILD_DIR_RELEASE`" --preset 'x64-ClangCL-Windows-Release' -DWINDOWS_CI=ON; `
-             cmake --build `"$Env:WORKDIR\$Env:BUILD_DIR_RELEASE`" --target package --verbose"
-
-
+      # I limited the size of the builded package for storage restriction reasons on a github runner
+      # see also the install commands in the bottom of the CMakeLists.txt
       - name: Upload Installers & Zip
-
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: windows-installers
           path: |
-            ${{ github.workspace }}\${{ env.BUILD_DIR_RELEASE }}\*.msi
-            ${{ github.workspace }}\${{ env.BUILD_DIR_RELEASE }}\*.exe
-            ${{ github.workspace }}\${{ env.BUILD_DIR_RELEASE }}\*.zip
-
-
-      - name: Stop container
-
-        if: always()
-        shell: pwsh
-        run: |
-          docker rm -f ci 2>$null | Out-Null
+            "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}"/*.msi
+            "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}"/*.exe
+            "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}"/*.zip
