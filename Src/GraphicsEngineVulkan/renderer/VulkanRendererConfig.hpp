@@ -3,9 +3,9 @@
 #pragma once
 
 #define VulkanRenderer_VERSION_MAJOR "1"
-#define VulkanRenderer_VERSION_MINOR "3"
+#define VulkanRenderer_VERSION_MINOR "4"
 
 #define VULKAN_VERSION_MAJOR "1"
 #define VULKAN_VERSION_MINOR "3"
 
-#define GLSLC_EXE "/home/jones/Documents/1.3.296.0/x86_64/bin/glslc"
+#define GLSLC_EXE "/home/bigjuicyjones/1.4.321.1/aarch64/bin/glslc"
