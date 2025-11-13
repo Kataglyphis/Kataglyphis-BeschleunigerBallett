@@ -86,6 +86,7 @@ if(WIN32)
   # WiX spezifische Einstellungen
   # WICHTIG: Diese Upgrade GUID MUSS STABIL BLEIBEN, sonst funktionieren Upgrades/Deinstallationen nicht korrekt.
   # Falls bereits ein Wert existiert, NICHT ändern. Bei erstmaliger Einführung einmalig generieren.
+  set(CPACK_WIX_VERSION 4)
   set(CPACK_WIX_UPGRADE_GUID "A8B86F5E-5B3E-4C38-9D7F-4F4923F9E5C2")
   set(CPACK_WIX_PRODUCT_ICON ${CMAKE_CURRENT_SOURCE_DIR}/images/faviconNew.ico)
   set(CPACK_WIX_PROGRAM_MENU_FOLDER "${PROJECT_NAME}")
