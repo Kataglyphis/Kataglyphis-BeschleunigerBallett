@@ -1,6 +1,6 @@
 Param(
     [string]$VulkanVersion = '1.4.321.1',
-    [string]$ClangVersion  = '21.1.1',
+    [string]$ClangVersion  = '21.1.5',
     [string]$VulkanSdkPath = 'C:\VulkanSDK'
 )
 
@@ -16,15 +16,39 @@ winget install --accept-source-agreements --accept-package-agreements --id=LLVM.
 # choco install llvm --version="$ClangVersion" --params '/AddToPath' -y
 
 # Install sccache
-Write-Host "Installing sccache..."
+Write-Host "Installing Ccache..."
 winget install --accept-source-agreements --accept-package-agreements --id=Ccache.Ccache -e 
 # choco install sccache -y
+
+# install scoop (if not present)
+iwr -useb get.scoop.sh | iex
+# install sccache
+scoop install sccache
+# verify
+sccache --version
+sccache -s   # show stats
 
 # Install CMake, Cppcheck, NSIS via WinGet
 Write-Host "Installing CMake, Cppcheck and NSIS via winget..."
 winget install --accept-source-agreements --accept-package-agreements cmake cppcheck nsis
+
 # also get wix
-winget install --accept-source-agreements --accept-package-agreements --id WiXToolset.WiXToolset -e
+dotnet tool install --tool-path C:\WiX wix --version 4.0.4
+
+# Add wix to PATH (in case it's under Program Files (x86))
+$wixPath = 'C:\WiX'
+if (Test-Path $wixPath) {
+    Write-Host "Adding wix path to GITHUB_PATH: $wixPath"
+    $wixPath | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+} else {
+    Write-Warning "wix installation path not found at $nsisPath"
+}
+
+C:\WiX\wix extension add --global WixToolset.UI.wixext/4.0.4
+
+# get ninja
+Write-Host "Installing Ninja via winget..."
+winget install --accept-source-agreements --accept-package-agreements --id=Ninja-build.Ninja  -e
 
 # Install VulkanSDK via WinGet
 Write-Host "Installing Vulkan SDK $VulkanVersion..."

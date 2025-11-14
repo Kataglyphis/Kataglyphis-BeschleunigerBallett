@@ -15,10 +15,19 @@ on:
         required: true
       CODECOV_TOKEN:
         required: true
+      GHCR_PAT:
+        required: true
 
 env:
   BUILD_TYPE: Debug
-  VULKAN_VERSION: 1.4.321.1
+  GCC_PROFILE_PRESET: linux-profile-GNU
+  CLANG_PROFILE_PRESET: linux-profile-clang
+  VULKAN_VERSION: 1.4.328.1
+  # folder/name configuration -- change here to affect the whole workflow
+  BUILD_DIR: build
+  BUILD_RELEASE_DIR: build-release
+  DOCS_OUT: build/build/html
+  COVERAGE_JSON: build/coverage.json
 
 jobs:
 
@@ -28,45 +37,33 @@ jobs:
         compiler: [clang, gcc]
 
     runs-on: ${{ inputs.runner }}
+    # defaults:
+      # run:
+      #   shell: bash
+    # Run this job inside the GHCR container:
+    container:
+      image: ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest_multiarch
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GHCR_PAT }}
 
     steps:
       - uses: actions/checkout@v5.0.0
         with:
+          fetch-depth: 0
           submodules: recursive
 
-      - name: Remove too old CMake
-        run: |
-          which cmake || true
-          sudo rm -f /usr/local/bin/cmake || true
-          sudo apt-get purge --auto-remove -y cmake || true
+      #################################################################################################################
+      ######################################## Prepare deps ###########################################################
+      #################################################################################################################
+      - name: Install deps
+        uses: ./.github/actions/install-deps
+        with:
+          vulkan-version: ${{ env.VULKAN_VERSION }}
 
-      - name: Install deps (heavy)
-        run: |
-          sudo chmod +x Scripts/Linux/setup-dependencies.sh
-          sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
-
-      - name: (ARM) prepare PATH hint
-        if: ${{ inputs.runner == 'ubuntu-24.04-arm' }}
-        run: |
-          echo "ARM SDK will be at ${{ github.workspace }}/${{ env.VULKAN_VERSION }}/aarch64/bin"
-
-      - name: Check Installation and update path
-        if: inputs.runner == 'ubuntu-24.04-arm'
-        run: |
-          echo "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/aarch64/bin" >> $GITHUB_PATH
-
-      - name: Update path and Vulkan env vars
-        run: |
-          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          which glslc
-          echo "/usr/bin" >> $GITHUB_PATH
-          cmake --version
-
-      - name: Make directory
-        run: |
-          rm -rf build
-          mkdir build
-          
+      #################################################################################################################
+      ####################### Run unit/integration/fuzzy/coverage/tests/static analyzers ##############################
+      #################################################################################################################
       - name: Set PRESET for compiler
         run: |
           if [ "${{ matrix.compiler }}" = "clang" ]; then
@@ -75,45 +72,122 @@ jobs:
             echo "PRESET=linux-debug-GNU" >> $GITHUB_ENV
           fi
 
-      - name: Build
+      - name: Prepare for unit/integration tests
         run: |
-          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          # use the preset chosen above
-          cmake -B build --preset "$PRESET"
-          cmake --build ${{ github.workspace }}/build --preset "$PRESET"
+          . "/opt/vulkan/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          # Use relative path instead of absolute path
+          cmake -B ${{ env.BUILD_DIR }} --preset "$PRESET"
+          cmake --build ${{ env.BUILD_DIR }} --preset "$PRESET"
+        working-directory: ${{ github.workspace }}
 
-      - name: Test
-        if: ${{ matrix.compiler == 'clang' }}
-        working-directory: ${{github.workspace}}/build/
+      - name: Run Unit/Integration tests
+        working-directory: ${{ env.BUILD_DIR }}
         run: ctest -C ${{env.BUILD_TYPE}} --verbose --extra-verbose --debug -T test --output-on-failure -E Integration.VulkanEngine RendererTest.BasicSetup
 
+      - name: Run fuzzer tests
+        run: |
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            ${{ env.BUILD_DIR }}/first_fuzz_test
+          else
+            echo "Compiled with GCC so no fuzz testing!"
+          fi
+        working-directory: ${{ github.workspace }}
+
       - name: Build Code Coverage
-        if: ${{ matrix.compiler == 'clang' }}
         run: |
-          llvm-profdata merge -sparse ${{github.workspace}}/build/Test/compile/default.profraw -o ${{github.workspace}}/build/compileTestSuite.profdata
-          llvm-cov report ${{github.workspace}}/build/compileTestSuite -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata
-          llvm-cov export ${{github.workspace}}/build/compileTestSuite -format=text -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata > ${{github.workspace}}/build/coverage.json
-          llvm-cov show ${{github.workspace}}/build/compileTestSuite -instr-profile=${{github.workspace}}/build/compileTestSuite.profdata
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            gcovr -r .
+          else
+            llvm-profdata merge -sparse ${{ env.BUILD_DIR }}/Test/compile/default.profraw -o ${{ env.BUILD_DIR }}/compileTestSuite.profdata
+            llvm-cov report ${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{ env.BUILD_DIR }}/compileTestSuite.profdata
+            llvm-cov export ${{ env.BUILD_DIR }}/compileTestSuite -format=text -instr-profile=${{ env.BUILD_DIR }}/compileTestSuite.profdata > ${{ env.COVERAGE_JSON }}
+            llvm-cov show ${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{ env.BUILD_DIR }}/compileTestSuite.profdata
+          fi
+        working-directory: ${{ github.workspace }}
 
-      - name: Set up Python 3.13
-        if: ${{ matrix.compiler == 'clang' }}
-        uses: actions/setup-python@v6.0.0
+      - name: Codecov
+        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
+        uses: codecov/codecov-action@v5.5.1
         with:
-          python-version: "3.13"
-      # You can test your matrix by printing the current Python version
-      - name: Setup python env
-        if: ${{ matrix.compiler == 'clang' }}
-        run: |
-          pip install -r requirements.txt
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ env.COVERAGE_JSON }}
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          verbose: false
 
-      - name: Build web page
+      # runs for ever so disable
+      #- name: Run clang tidy
+      #  continue-on-error: true
+      #  run: clang-tidy -p=./${{ env.BUILD_DIR }}/compile_commands.json  $(find Src -name '*.cpp' -o -name '*.cc')
+
+      - name: Run Clang static analysis (HTML)
+        continue-on-error: true
         if: ${{ matrix.compiler == 'clang' }}
         run: |
-          cp ${{github.workspace}}/build/build/html/*.svg ./docs/source/_static
+          # HTML output (correct flag form)
+          clang++ --analyze -DUSE_RUST=1 -Xanalyzer -analyzer-output=html $(find Src -name '*.cpp' -o -name '*.cc')
+        working-directory: ${{ github.workspace }}
+
+      - name: Run Clang static analysis (scan-build)
+        continue-on-error: true
+        if: ${{ matrix.compiler == 'clang' }}
+        run: |
+          mkdir -p scan-build-reports
+          scan-build-21 -o scan-build-reports cmake --build ${BUILD_DIR} --preset "${CLANG_DEBUG_PRESET}"
+        working-directory: ${{ github.workspace }}
+
+      #################################################################################################################
+      ############################# Now run on performance benchmarking/profiling #####################################
+      #################################################################################################################
+      - name: Configure/build CMake for Profiling (select preset by compiler)
+        run: |
+          rm -r "${{ env.BUILD_DIR }}"
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            PRESET="${GCC_PROFILE_PRESET}"
+          else
+            PRESET="${CLANG_PROFILE_PRESET}"
+          fi
+          echo "Using preset: ${PRESET}"
+          # ${{ github.workspace }}
+          . "/opt/vulkan/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          cmake -B "${{ env.BUILD_DIR }}" --preset "${PRESET}"
+          cmake --build "${{ env.BUILD_DIR }}" --preset "${PRESET}"
+        working-directory: ${{ github.workspace }}
+
+      - name: Run performance benchmarks
+        run: ${{ env.BUILD_DIR }}/perfTestSuite
+        working-directory: ${{ github.workspace }}
+        
+      #################################################################################################################
+      ######################################## Build docs #############################################################
+      #################################################################################################################
+
+      # . "$HOME/.local/bin/env" 
+      - name: Set Astral UV venv
+        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
+        run: |
+          uv venv
+        working-directory: ${{ github.workspace }}
+
+      # You can test your matrix by printing the current Python version
+      # . "$HOME/.local/bin/env"
+      - name: Setup python env
+        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
+        run: |
+          . ".venv/bin/activate"
+          uv pip install -r requirements.txt
+        working-directory: ${{ github.workspace }}
+
+      # . "$HOME/.local/bin/env"
+      - name: Build web page
+        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
+        run: |
+          cp ${{ env.DOCS_OUT }}/*.svg ./docs/source/_static
           cd docs/source
-          python graphviz_generator.py 
+          uv run python graphviz_generator.py 
           cd ..
-          make html
+          uv run make html
+        working-directory: ${{ github.workspace }}
 
       - name: 📂 Sync files to domain
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
@@ -122,75 +196,55 @@ jobs:
           server: ${{ secrets.SERVER }}
           username: ${{ secrets.USERNAME }}
           password: ${{ secrets.PW }}
-          local-dir: "./build/build/html/"
+          local-dir: "./docs/build/html/"
 
-      - name: Codecov
-        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
-        uses: codecov/codecov-action@v5.5.1
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ${{github.workspace}}/build/coverage.json
-          name: codecov-umbrella
-          fail_ci_if_error: false
-          verbose: false
-
+  #################################################################################################################
+  ################################ Build and package release version ##############################################
+  #################################################################################################################
   release_package:
     needs: [build_and_test,]
     runs-on: ${{ inputs.runner }}
-    # optionally: only run release packaging for a specific runner:
-    # if: ${{ inputs.runner == 'ubuntu-24.04' }}
+    
+    # Run this job inside the GHCR container:
+    container:
+      image: ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest_multiarch
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GHCR_PAT }}
+
     steps:
       - uses: actions/checkout@v5.0.0
         with:
           submodules: recursive
       
-      - name: Remove too old CMake
-        run: |
-          which cmake || true
-          sudo rm -f /usr/local/bin/cmake || true
-          sudo apt-get purge --auto-remove -y cmake || true
-
-      - name: Install deps (heavy)
-        run: |
-          sudo chmod +x Scripts/Linux/setup-dependencies.sh
-          sudo ./Scripts/Linux/setup-dependencies.sh ${{ env.VULKAN_VERSION }}
-
-      - name: (ARM) prepare PATH hint
-        if: ${{ inputs.runner == 'ubuntu-24.04-arm' }}
-        run: |
-          echo "ARM SDK will be at ${{ github.workspace }}/${{ env.VULKAN_VERSION }}/aarch64/bin"
-
-      - name: Make directory
-        run: |
-          rm -rf build
-          mkdir build
-
-      - name: Update path
-        run: |
-          echo "/usr/bin" >> $GITHUB_PATH
-          cmake --version
+      #################################################################################################################
+      ######################################## Prepare deps ###########################################################
+      #################################################################################################################
+      - name: Install deps
+        uses: ./.github/actions/install-deps
+        with:
+          vulkan-version: ${{ env.VULKAN_VERSION }}
           
-      - name: Configure CMake for Release
+      - name: Configure/build CMake for Release
         run: |
-          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          cmake -B build-release --preset linux-release-clang
-
-      - name: Build Release
-        run: |
-          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          export CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)
-          cmake --build build-release --config Release
+          # ${{ github.workspace }}
+          . "/opt/vulkan/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          cmake -B "${{ env.BUILD_RELEASE_DIR }}" --preset linux-release-clang
+          cmake --build "${{ env.BUILD_RELEASE_DIR }}" --config Release
+        working-directory: ${{ github.workspace }}
 
       - name: Package
         run: |
-          source "${{ github.workspace }}/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          cmake --build build-release --target package
+          # ${{ github.workspace }}
+          . "/opt/vulkan/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          cmake --build "${{ env.BUILD_RELEASE_DIR }}" --target package
+        working-directory: ${{ github.workspace }}
 
       - name: Upload Linux Packages (Clang only)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: linux-packages
           path: |
-            build-release/*.tar.gz
-            build-release/*.tgz
-            build-release/*.deb
+            ${{ env.BUILD_RELEASE_DIR }}/*.tar.gz
+            ${{ env.BUILD_RELEASE_DIR }}/*.tgz
+            ${{ env.BUILD_RELEASE_DIR }}/*.deb

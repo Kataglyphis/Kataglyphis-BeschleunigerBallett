@@ -20,10 +20,12 @@ set(OpenGlEnigneTargetName "GraphicsEngineOpenGLBackend")
 # add the executable
 add_executable(${OpenGlEnigneTargetName})
 
-if(NOT MSVC)
-  target_compile_definitions(${OpenGlEnigneTargetName} PRIVATE RELATIVE_RESOURCE_PATH="/../Resources/")
-else()
+# Treat MSVC and clang-cl on Windows differently in a sense of deployment
+# https://clang.llvm.org/docs/UsersManual.html
+if(WIN32 AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC))
   target_compile_definitions(${OpenGlEnigneTargetName} PRIVATE RELATIVE_RESOURCE_PATH="/../../Resources/")
+else()
+  target_compile_definitions(${OpenGlEnigneTargetName} PRIVATE RELATIVE_RESOURCE_PATH="/../Resources/")
 endif()
 
 # we are using this dir strings for removing hard coded file locations

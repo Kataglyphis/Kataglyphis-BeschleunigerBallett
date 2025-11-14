@@ -3,7 +3,7 @@ include(FetchContent)
 if(BUILD_TESTING)
   # include google test to project
   FetchContent_Declare(googletest
-                       URL https://github.com/google/googletest/archive/e235eb34c6c4fed790ccdad4b16394301360dcd4.zip)
+                       URL https://github.com/google/googletest/archive/9706f75b8f91c52a3840cf5d878a7f37ea10ef00.zip)
   # For Windows: Prevent overriding the parent project's compiler/linker settings
   set(gtest_force_shared_crt
       ON
@@ -29,7 +29,7 @@ set(BENCHMARK_USE_BUNDLED_GTEST
 
 add_subdirectory(GOOGLE_BENCHMARK)
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND BUILD_TESTING)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND BUILD_TESTING AND NOT(CMAKE_BUILD_TYPE STREQUAL "Profile" ))
   message(STATUS "This is a Linux system.")
 
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")

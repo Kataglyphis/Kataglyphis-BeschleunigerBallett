@@ -13,12 +13,14 @@ env:
   BUILD_TYPE: Debug
   BUILD_DIR: build
   BUILD_DIR_RELEASE: build_release
-  VULKAN_VERSION: 1.4.321.1
-  CLANG_VERSION: 21.1.1
+  VULKAN_VERSION: 1.4.328.1
+  CLANG_VERSION: 21.1.4
   VULKAN_SDK_PATH: C:\VulkanSDK
+  CLANG_PROFILE_PRESET: x64-ClangCL-Windows-Profile
 
 jobs:
   build:
+    if: contains(github.event.head_commit.message, '[build-win]')
     # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
     # You can convert this to a matrix build if you need cross-platform coverage.
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
@@ -28,7 +30,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5.0.0
         with:
+          fetch-depth: 0
           submodules: recursive
+      
+      #################################################################################################################
+      ######################################## Prepare deps ###########################################################
+      #################################################################################################################
 
       - name: Install Windows Dependencies
         shell: pwsh
@@ -38,46 +45,128 @@ jobs:
             -ClangVersion  ${{ env.CLANG_VERSION }} `
             -VulkanSdkPath '${{ env.VULKAN_SDK_PATH }}'
 
-
-      - name: Add NSIS to PATH
+      # this is necessary ... windows and paths ...
+      - name: Push Clang and LLVM to Path
+        shell: pwsh
         run: |
-          echo "C:\Program Files (x86)\NSIS" >> $GITHUB_PATH
+          Add-Content -Path $Env:GITHUB_PATH -Value 'C:\Program Files\LLVM\bin'
+          Write-Output "$env:USERPROFILE\scoop\shims" >> $env:GITHUB_PATH 
 
+      #################################################################################################################
+      ####################### Run unit/integration/coverage/tests/static analyzers ####################################
+      #################################################################################################################
+      
+      ########################################## MSVC #################################################################
+      # gtest discovery is buggy on msvc ci so turn off
+      - name: CMake Build for MSVC Debug
+        shell: powershell
+        run: |
+          cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-MSVC-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI="ON"
+          cmake --build "${{github.workspace}}/${{ env.BUILD_DIR }}"
+
+      - name: Test (MSVC)
+        working-directory: ${{ env.BUILD_DIR }}
+        run: ctest
+
+      - name: Prepare for MSVC Release
+        run: |
+          Remove-Item -Path "${{github.workspace}}/${{ env.BUILD_DIR }}" -Recurse -Force
+
+      - name: CMake Build for MSVC Release
+        shell: powershell
+        run: |
+          cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-MSVC-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF"
+          cmake --build "${{github.workspace}}/${{ env.BUILD_DIR }}"
+
+      ########################################## CLANG-CL #############################################################
       # for now cppcehck is buggy on windows 2025 github runner. so disable
       # a github runner has issues with running vulkan driver code; therefore just verify successful build :)
-      - name: CMake Build for Clang
+      - name: Prepare for ClangCL Debug
+        run: |
+          Remove-Item -Path "${{github.workspace}}/${{ env.BUILD_DIR }}" -Recurse -Force
+
+      - name: CMake Configure and Build for Clang 
         shell: powershell
         run: |
-          cmake -B ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }} --preset "x64-ClangCL-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
-          cmake --build ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}
-          ctest
-
-      - name: Prepare for MSVC
+          cmake -B "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-ClangCL-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF"
+          cmake --build "${{github.workspace}}/${{ env.BUILD_DIR }}" --preset "x64-ClangCL-Windows-Debug"
+          
+      - name: Clang coverage
+        working-directory: ${{ env.BUILD_DIR }}
         run: |
-          Remove-Item -Path ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }} -Recurse -Force
+          ctest
+          & "llvm-profdata.exe" merge -sparse "Test\compile\default.profraw" -o "${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
+          & "llvm-cov.exe" report "compileTestSuite.exe" -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
+          & "llvm-cov.exe" export "compileTestSuite.exe" -format=text -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata" | Out-File -FilePath "coverage.json" -Encoding UTF8
+          & "llvm-cov.exe" show "compileTestSuite.exe" -instr-profile="${{ github.workspace }}/${{ env.BUILD_DIR }}/compileTestSuite.profdata"
+
+      # runs forever, so turned off
+      #- name: Run clang-tidy
+      #  shell: pwsh
+      #  continue-on-error: true
+      #  run: |
+      #    $sourceFiles = Get-ChildItem -Path "Src" -Recurse -Include "*.cpp", "*.cc" | ForEach-Object { $_.FullName }
+      #    clang-tidy -p="./${{ env.BUILD_DIR }}/compile_commands.json" $sourceFiles
+
+      - name: Run Clang static analysis (HTML)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          # HTML output (correct flag form)
+          $sourceFiles = Get-ChildItem -Path "Src" -Recurse -Include "*.cpp", "*.cc" | ForEach-Object { $_.FullName }
+          clang++ --analyze -DUSE_RUST=1 -Xanalyzer -analyzer-output=html $sourceFiles
+
+       
+      - name: Run Clang static analysis (scan-build)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          New-Item -ItemType Directory -Path "scan-build-reports" -Force
+          scan-build --use-analyzer="C:\Program Files\LLVM\bin\clang-cl.exe" -o scan-build-reports cmake --build "${{ github.workspace }}/${{ env.BUILD_DIR }}" --preset x64-ClangCL-Windows-Debug
+
+      #################################################################################################################
+      ############################# Now run on performance benchmarking/profiling #####################################
+      ################################################################################################################
+      - name: Prepare for Profiling
+        run: |
           clang --version
+        shell: pwsh
 
-      - name: CMake Build for MSVC
-        shell: powershell
+      - name: Configure/build CMake for Profiling (select preset by compiler)
+        shell: pwsh
+        # cppcheck has weird bug
         run: |
-          cmake -B ${{github.workspace}}/build --preset "x64-MSVC-Windows-Debug" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
-          cmake --build ${{github.workspace}}/build
-          ctest
+          cmake -B "${{ github.workspace }}/${{ env.BUILD_DIR_RELEASE }}" --preset "${{ env.CLANG_PROFILE_PRESET }}" -Dmyproject_ENABLE_CPPCHECK=OFF
+          cmake --build "${{ github.workspace }}/${{ env.BUILD_DIR_RELEASE }}" --preset "${{ env.CLANG_PROFILE_PRESET }}"
 
+      - name: Run performance benchmarks
+        working-directory: ${{ env.BUILD_DIR_RELEASE }}
+        run: .\perfTestSuite.exe --benchmark_out=results.json --benchmark_out_format=json
+
+
+      #################################################################################################################
+      ################################### Now run release and build package for clang #################################
+      #################################################################################################################
+      - name: Prepare for Release
+        run: |
+          Remove-Item -Path "${{ github.workspace }}/${{ env.BUILD_DIR_RELEASE }}" -Recurse -Force   
+          clang --version
+        shell: pwsh
+        
       - name: Configure CMake for Release (Clang only)
         # -DCPACK_GENERATOR=ZIP; NSIS has problems on github windows runner
         run: |
-          cmake -B ${{ env.BUILD_DIR_RELEASE }} --preset "x64-ClangCL-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
+          cmake -B "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}" --preset "x64-ClangCL-Windows-Release" -Dmyproject_ENABLE_CPPCHECK="OFF" -DWINDOWS_CI=ON
 
       - name: Build Release (Clang only)
         shell: pwsh
         run: |
           $env:CMAKE_BUILD_PARALLEL_LEVEL = $env:NUMBER_OF_PROCESSORS
-          cmake --build ${{ env.BUILD_DIR_RELEASE }} --preset "x64-ClangCL-Windows-Release" -DWINDOWS_CI=ON
+          cmake --build "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}" --preset "x64-ClangCL-Windows-Release" -DWINDOWS_CI=ON
         
       - name: Package (Clang only) 
         run: |
-          cmake --build ${{ env.BUILD_DIR_RELEASE }} --target package --verbose
+          cmake --build "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}" --target package --verbose
 
       # I limited the size of the builded package for storage restriction reasons on a github runner
       # see also the install commands in the bottom of the CMakeLists.txt
@@ -86,6 +175,6 @@ jobs:
         with:
           name: windows-installers
           path: |
-            ${{ env.BUILD_DIR_RELEASE }}/*.msi
-            ${{ env.BUILD_DIR_RELEASE }}/*.exe
-            ${{ env.BUILD_DIR_RELEASE }}/*.zip
+            "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}"/*.msi
+            "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}"/*.exe
+            "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}"/*.zip

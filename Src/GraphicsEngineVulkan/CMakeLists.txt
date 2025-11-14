@@ -82,19 +82,21 @@ else()
   target_compile_definitions(${PROJECT_NAME} PRIVATE USE_RUST=0)
 endif()
 
-if(NOT MSVC)
-  target_compile_definitions(
-    ${PROJECT_NAME}
-    PRIVATE RELATIVE_RESOURCE_PATH="/../Resources/"
-            RELATIVE_INCLUDE_PATH="/../Src/GraphicsEngineVulkan/"
-            RELATIVE_IMGUI_FONTS_PATH="/../ExternalLib/IMGUI/misc/fonts/"
-            ShaderIncludesString="${ShaderIncludesString}")
-else()
+# Treat MSVC and clang-cl on Windows differently in a sense of deployment
+# https://clang.llvm.org/docs/UsersManual.html
+if(WIN32 AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC))
   target_compile_definitions(
     ${PROJECT_NAME}
     PRIVATE RELATIVE_RESOURCE_PATH="/../../Resources/"
             RELATIVE_INCLUDE_PATH="/../../Src/GraphicsEngineVulkan/"
             RELATIVE_IMGUI_FONTS_PATH="/../../ExternalLib/IMGUI/misc/fonts/"
+            ShaderIncludesString="${ShaderIncludesString}")
+else()
+  target_compile_definitions(
+    ${PROJECT_NAME}
+    PRIVATE RELATIVE_RESOURCE_PATH="/../Resources/"
+            RELATIVE_INCLUDE_PATH="/../Src/GraphicsEngineVulkan/"
+            RELATIVE_IMGUI_FONTS_PATH="/../ExternalLib/IMGUI/misc/fonts/"
             ShaderIncludesString="${ShaderIncludesString}")
 endif()
 

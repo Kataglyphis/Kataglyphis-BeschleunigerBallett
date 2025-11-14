@@ -16,3 +16,4 @@ jobs:
       USERNAME: ${{ secrets.USERNAME }}
       PW: ${{ secrets.PW }}
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+      GHCR_PAT: ${{ secrets.GHCR_PAT }}

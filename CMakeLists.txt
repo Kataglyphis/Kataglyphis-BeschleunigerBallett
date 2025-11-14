@@ -3,12 +3,12 @@ cmake_minimum_required(VERSION 4.1.1)
 # set the project name
 project(
   GraphicsEngine
-  VERSION 1.3
-  DESCRIPTION "Epic Graphics"
+  VERSION 1.4.2
+  DESCRIPTION "Epic GPU accelerated rendering, compute engine using Vulkan and C++,C,Rust"
   HOMEPAGE_URL "https://jonasheinle.de/"
   LANGUAGES CXX C)
 
-set(AUTHOR "Jonas Heinle")
+set(AUTHOR "Jonas Heinle") 
 
 # Set WINDOWS_CI to OFF by default
 # WINDOWS CI is only able to verify successful compiling ... Windows ... lel

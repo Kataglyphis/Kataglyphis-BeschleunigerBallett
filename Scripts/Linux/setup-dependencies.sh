@@ -48,22 +48,107 @@ echo "Installing core tools..."
 $SUDO apt-get install -y wget curl gpg lsb-release ca-certificates gnupg apt-transport-https
 # for debian packaging
 $SUDO apt-get install -y dpkg-dev fakeroot binutils
+$SUDO apt update
+$SUDO apt install google-perftools libgoogle-perftools-dev
+# optional: für Flamegraphs
+$SUDO apt install graphviz
+
 # -----------------------------------------------------------------------------
 # Install CMake (latest from Kitware)
 # -----------------------------------------------------------------------------
-if ! command -v cmake >/dev/null 2>&1; then
-  echo "Installing latest CMake..."
-  KITWARE_KEY=/usr/share/keyrings/kitware-archive-keyring.gpg
-  wget -qO - https://apt.kitware.com/keys/kitware-archive-latest.asc \
-    | gpg --dearmor \
-    | $SUDO tee "$KITWARE_KEY" >/dev/null
-  echo "deb [signed-by=$KITWARE_KEY] https://apt.kitware.com/ubuntu $DISTRO main" \
-    | $SUDO tee /etc/apt/sources.list.d/kitware.list >/dev/null
-  $SUDO apt-get update -y
-  $SUDO apt-get install -y cmake
-else
-  echo "cmake already installed: $(cmake --version | head -n1)"
+# Purge older distro cmake if present (ignore errors)
+$SUDO apt-get purge --auto-remove -y cmake || true
+$SUDO apt-get update -y
+echo "Installing latest CMake..."
+KITWARE_KEY=/usr/share/keyrings/kitware-archive-keyring.gpg
+wget -qO - https://apt.kitware.com/keys/kitware-archive-latest.asc \
+| gpg --dearmor \
+| $SUDO tee "$KITWARE_KEY" >/dev/null
+echo "deb [signed-by=$KITWARE_KEY] https://apt.kitware.com/ubuntu $DISTRO main" \
+| $SUDO tee /etc/apt/sources.list.d/kitware.list >/dev/null
+$SUDO apt-get update -y
+$SUDO apt-get install -y cmake
+cmake --version
+
+# desired tool versions
+LLVM_WANTED=21        # for the apt.llvm.org helper (llvm.sh)
+CLANG_WANTED=21       # for update-alternatives clang/clang++
+export DEBIAN_FRONTEND=noninteractive
+APT_OPTS=(-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
+    
+# minimal prerequisites
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends wget gnupg lsb-release ca-certificates
+
+# Add the LLVM apt repo using the official helper (non-interactive)
+wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- "${LLVM_WANTED}" all
+
+sudo apt-get update
+
+# clang
+if [ -x "/usr/bin/clang-${CLANG_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-"${CLANG_WANTED}" 100
+  sudo update-alternatives --set clang /usr/bin/clang-"${CLANG_WANTED}"
 fi
+
+# clang++
+if [ -x "/usr/bin/clang++-${CLANG_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-"${CLANG_WANTED}" 100
+  sudo update-alternatives --set clang++ /usr/bin/clang++-"${CLANG_WANTED}"
+fi
+
+# clang-tidy
+if [ -x "/usr/bin/clang-tidy-${CLANG_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-"${CLANG_WANTED}" 100
+fi
+
+# clang-format
+if [ -x "/usr/bin/clang-format-${CLANG_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-"${CLANG_WANTED}" 100
+fi
+
+# llvm-profdata
+if [ -x "/usr/bin/llvm-profdata-${CLANG_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/llvm-profdata llvm-profdata /usr/bin/llvm-profdata-"${CLANG_WANTED}" 100
+  sudo update-alternatives --set llvm-profdata /usr/bin/llvm-profdata-"${CLANG_WANTED}"
+fi
+
+# llvm-cov
+if [ -x "/usr/bin/llvm-cov-${CLANG_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/llvm-cov llvm-cov /usr/bin/llvm-cov-"${CLANG_WANTED}" 100
+  sudo update-alternatives --set llvm-cov /usr/bin/llvm-cov-"${CLANG_WANTED}"
+fi
+
+# Verify
+clang --version
+clang++ --version
+
+# Install latest GCC
+GCC_WANTED=14  # or 13, adjust as needed
+sudo apt-get install -y --no-install-recommends \
+  gcc-"${GCC_WANTED}" \
+  g++-"${GCC_WANTED}" \
+  gfortran-"${GCC_WANTED}"
+
+# Set GCC as default using update-alternatives
+if [ -x "/usr/bin/gcc-${GCC_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-"${GCC_WANTED}" 100
+  sudo update-alternatives --set gcc /usr/bin/gcc-"${GCC_WANTED}"
+fi
+
+if [ -x "/usr/bin/g++-${GCC_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-"${GCC_WANTED}" 100
+  sudo update-alternatives --set g++ /usr/bin/g++-"${GCC_WANTED}"
+fi
+
+if [ -x "/usr/bin/gcov-${GCC_WANTED}" ]; then
+  sudo update-alternatives --install /usr/bin/gcov gcov /usr/bin/gcov-"${GCC_WANTED}" 100
+  sudo update-alternatives --set gcov /usr/bin/gcov-"${GCC_WANTED}"
+fi
+
+# Verify
+gcc --version
+g++ --version
 
 # -----------------------------------------------------------------------------
 # Vulkan SDK Installation Function for Tarball
