@@ -175,6 +175,6 @@ jobs:
         with:
           name: windows-installers
           path: |
-            "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}"/*.msi
-            "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}"/*.exe
-            "${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}"/*.zip
+            ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}/*.msi
+            ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}/*.exe
+            ${{github.workspace}}/${{ env.BUILD_DIR_RELEASE }}/*.zip
