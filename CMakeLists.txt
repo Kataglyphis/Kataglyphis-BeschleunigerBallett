@@ -8,7 +8,7 @@ project(
   HOMEPAGE_URL "https://jonasheinle.de/"
   LANGUAGES CXX C)
 
-set(AUTHOR "Jonas Heinle")
+set(AUTHOR "Jonas Heinle") 
 
 # Set WINDOWS_CI to OFF by default
 # WINDOWS CI is only able to verify successful compiling ... Windows ... lel
