@@ -42,13 +42,13 @@ jobs:
       #   shell: bash
     # Run this job inside the GHCR container:
     container:
-      image: ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest_multiarch
+      image: ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GHCR_PAT }}
 
     steps:
-      - uses: actions/checkout@v5.0.0
+      - uses: actions/checkout@v6.0.0
         with:
           fetch-depth: 0
           submodules: recursive
@@ -56,10 +56,10 @@ jobs:
       #################################################################################################################
       ######################################## Prepare deps ###########################################################
       #################################################################################################################
-      - name: Install deps
-        uses: ./.github/actions/install-deps
-        with:
-          vulkan-version: ${{ env.VULKAN_VERSION }}
+      # - name: Install deps
+      #   uses: ./.github/actions/install-deps
+      #   with:
+      #     vulkan-version: ${{ env.VULKAN_VERSION }}
 
       #################################################################################################################
       ####################### Run unit/integration/fuzzy/coverage/tests/static analyzers ##############################
@@ -207,23 +207,23 @@ jobs:
     
     # Run this job inside the GHCR container:
     container:
-      image: ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest_multiarch
+      image: ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest
       credentials:
         username: ${{ github.actor }}
         password: ${{ secrets.GHCR_PAT }}
 
     steps:
-      - uses: actions/checkout@v5.0.0
+      - uses: actions/checkout@v6.0.0
         with:
           submodules: recursive
       
       #################################################################################################################
       ######################################## Prepare deps ###########################################################
       #################################################################################################################
-      - name: Install deps
-        uses: ./.github/actions/install-deps
-        with:
-          vulkan-version: ${{ env.VULKAN_VERSION }}
+      # - name: Install deps
+      #   uses: ./.github/actions/install-deps
+      #   with:
+      #     vulkan-version: ${{ env.VULKAN_VERSION }}
           
       - name: Configure/build CMake for Release
         run: |
