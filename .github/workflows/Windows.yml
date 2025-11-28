@@ -14,7 +14,7 @@ env:
   BUILD_DIR: build
   BUILD_DIR_RELEASE: build_release
   VULKAN_VERSION: 1.4.328.1
-  CLANG_VERSION: 21.1.4
+  CLANG_VERSION: 21.1.6
   VULKAN_SDK_PATH: C:\VulkanSDK
   CLANG_PROFILE_PRESET: x64-ClangCL-Windows-Profile
 
