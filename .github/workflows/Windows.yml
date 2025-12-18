@@ -26,7 +26,14 @@ jobs:
       contents: read
       packages: read
     steps:
-      - uses: actions/checkout@v6.0.1
+
+     # windows is so funny ... NOT
+      - name: Enable Git long paths
+        run: git config --global core.longpaths true
+        shell: pwsh
+
+      - name: Checkout
+        uses: actions/checkout@v6.0.1
         with:
           fetch-depth: 0
           submodules: recursive
@@ -40,7 +47,7 @@ jobs:
         uses: docker/login-action@v3.6.0
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: Kataglyphis
           password: ${{ secrets.GHCR_PAT }}
 
       - name: Build/Test/Package inside ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64
@@ -51,22 +58,19 @@ jobs:
           $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
           docker pull $image
 
-          $workspace = "${{ github.workspace }}"
-
           docker run --rm `
-            -v "${workspace}:C:\\workspace" `
-            -w "C:\\workspace" `
+            --mount "type=bind,source=${{ github.workspace }},target=C:\workspace" `
+            -w "C:\workspace" `
             -e "BUILD_DIR=${{ env.BUILD_DIR }}" `
             -e "BUILD_DIR_RELEASE=${{ env.BUILD_DIR_RELEASE }}" `
             -e "CLANG_PROFILE_PRESET=${{ env.CLANG_PROFILE_PRESET }}" `
-            -e "CLANG_VERSION=${{ env.CLANG_VERSION }}" `
             $image `
             pwsh -NoProfile -File "C:\\workspace\\Scripts\\Windows\\ci.ps1"
 
       # I limited the size of the builded package for storage restriction reasons on a github runner
       # see also the install commands in the bottom of the CMakeLists.txt
       - name: Upload Installers & Zip
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v5.0.0
         with:
           name: windows-installers-container
           path: |
