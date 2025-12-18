@@ -65,7 +65,7 @@ jobs:
             -e "BUILD_DIR_RELEASE=${{ env.BUILD_DIR_RELEASE }}" `
             -e "CLANG_PROFILE_PRESET=${{ env.CLANG_PROFILE_PRESET }}" `
             $image `
-            pwsh -NoProfile -File "C:\\workspace\\Scripts\\Windows\\ci.ps1"
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\\workspace\\Scripts\\Windows\\ci.ps1"
 
       # I limited the size of the builded package for storage restriction reasons on a github runner
       # see also the install commands in the bottom of the CMakeLists.txt
