@@ -32,10 +32,6 @@ env:
 jobs:
 
   build_and_test:
-    strategy:
-      matrix:
-        compiler: [clang, gcc]
-
     runs-on: ${{ inputs.runner }}
     # defaults:
       # run:
@@ -56,13 +52,17 @@ jobs:
       #################################################################################################################
       ####################### Run unit/integration/fuzzy/coverage/tests/static analyzers ##############################
       #################################################################################################################
-      - name: Set PRESET for compiler
+      - name: Set compiler to clang
         run: |
-          if [ "${{ matrix.compiler }}" = "clang" ]; then
-            echo "PRESET=linux-debug-clang" >> $GITHUB_ENV
-          else
-            echo "PRESET=linux-debug-GNU" >> $GITHUB_ENV
-          fi
+          echo "COMPILER=clang" >> "$GITHUB_ENV"
+          echo "PRESET=linux-debug-clang" >> "$GITHUB_ENV"
+          echo "PROFILE_PRESET=${CLANG_PROFILE_PRESET}" >> "$GITHUB_ENV"
+          echo "BUILD_DIR=build-clang" >> "$GITHUB_ENV"
+          echo "COVERAGE_JSON=build-clang/coverage.json" >> "$GITHUB_ENV"
+
+      #################################################################################################################
+      ############################################### clang: build/test ################################################
+      #################################################################################################################
 
       - name: Prepare for unit/integration tests
         run: |
@@ -78,27 +78,19 @@ jobs:
 
       - name: Run fuzzer tests
         run: |
-          if [ "${{ matrix.compiler }}" = "clang" ]; then
-            ${{ env.BUILD_DIR }}/first_fuzz_test
-          else
-            echo "Compiled with GCC so no fuzz testing!"
-          fi
+          ${{ env.BUILD_DIR }}/first_fuzz_test
         working-directory: ${{ github.workspace }}
 
       - name: Build Code Coverage
         run: |
-          if [ "${{ matrix.compiler }}" = "gcc" ]; then
-            gcovr -r .
-          else
-            llvm-profdata merge -sparse ${{ env.BUILD_DIR }}/Test/compile/default.profraw -o ${{ env.BUILD_DIR }}/compileTestSuite.profdata
-            llvm-cov report ${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{ env.BUILD_DIR }}/compileTestSuite.profdata
-            llvm-cov export ${{ env.BUILD_DIR }}/compileTestSuite -format=text -instr-profile=${{ env.BUILD_DIR }}/compileTestSuite.profdata > ${{ env.COVERAGE_JSON }}
-            llvm-cov show ${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{ env.BUILD_DIR }}/compileTestSuite.profdata
-          fi
+          llvm-profdata merge -sparse ${{ env.BUILD_DIR }}/Test/compile/default.profraw -o ${{ env.BUILD_DIR }}/compileTestSuite.profdata
+          llvm-cov report ${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{ env.BUILD_DIR }}/compileTestSuite.profdata
+          llvm-cov export ${{ env.BUILD_DIR }}/compileTestSuite -format=text -instr-profile=${{ env.BUILD_DIR }}/compileTestSuite.profdata > ${{ env.COVERAGE_JSON }}
+          llvm-cov show ${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{ env.BUILD_DIR }}/compileTestSuite.profdata
         working-directory: ${{ github.workspace }}
 
       - name: Codecov
-        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
+        if: ${{ inputs.runner == 'ubuntu-24.04' }}
         uses: codecov/codecov-action@v5.5.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -114,7 +106,6 @@ jobs:
 
       - name: Run Clang static analysis (HTML)
         continue-on-error: true
-        if: ${{ matrix.compiler == 'clang' }}
         run: |
           # HTML output (correct flag form)
           clang++ --analyze -DUSE_RUST=1 -Xanalyzer -analyzer-output=html $(find Src -name '*.cpp' -o -name '*.cc')
@@ -122,10 +113,9 @@ jobs:
 
       - name: Run Clang static analysis (scan-build)
         continue-on-error: true
-        if: ${{ matrix.compiler == 'clang' }}
         run: |
           mkdir -p scan-build-reports
-          scan-build-21 -o scan-build-reports cmake --build ${BUILD_DIR} --preset "${CLANG_DEBUG_PRESET}"
+          scan-build-21 -o scan-build-reports cmake --build "${BUILD_DIR}" --preset "${PRESET}"
         working-directory: ${{ github.workspace }}
 
       #################################################################################################################
@@ -134,11 +124,7 @@ jobs:
       - name: Configure/build CMake for Profiling (select preset by compiler)
         run: |
           rm -r "${{ env.BUILD_DIR }}"
-          if [ "${{ matrix.compiler }}" = "gcc" ]; then
-            PRESET="${GCC_PROFILE_PRESET}"
-          else
-            PRESET="${CLANG_PROFILE_PRESET}"
-          fi
+          PRESET="${PROFILE_PRESET}"
           echo "Using preset: ${PRESET}"
           # ${{ github.workspace }}
           . "/opt/vulkan/${{ env.VULKAN_VERSION }}/setup-env.sh"
@@ -156,7 +142,7 @@ jobs:
 
       # . "$HOME/.local/bin/env" 
       - name: Set Astral UV venv
-        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
+        if: ${{ inputs.runner == 'ubuntu-24.04' }}
         run: |
           uv venv
         working-directory: ${{ github.workspace }}
@@ -164,7 +150,7 @@ jobs:
       # You can test your matrix by printing the current Python version
       # . "$HOME/.local/bin/env"
       - name: Setup python env
-        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
+        if: ${{ inputs.runner == 'ubuntu-24.04' }}
         run: |
           . ".venv/bin/activate"
           uv pip install -r requirements.txt
@@ -172,7 +158,7 @@ jobs:
 
       # . "$HOME/.local/bin/env"
       - name: Build web page
-        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
+        if: ${{ inputs.runner == 'ubuntu-24.04' }}
         run: |
           cp ${{ env.DOCS_OUT }}/*.svg ./docs/source/_static
           cd docs/source
@@ -183,43 +169,65 @@ jobs:
 
       - name: 📂 Sync files to domain
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
-        if: ${{ matrix.compiler == 'clang' && inputs.runner == 'ubuntu-24.04' }}
+        if: ${{ inputs.runner == 'ubuntu-24.04' }}
         with:
           server: ${{ secrets.SERVER }}
           username: ${{ secrets.USERNAME }}
           password: ${{ secrets.PW }}
           local-dir: "./docs/build/html/"
 
-  #################################################################################################################
-  ################################ Build and package release version ##############################################
-  #################################################################################################################
-  release_package:
-    needs: [build_and_test,]
-    runs-on: ${{ inputs.runner }}
-    
-    # Run this job inside the GHCR container:
-    container:
-      image: ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GHCR_PAT }}
+      #################################################################################################################
+      ############################################### gcc: build/test #################################################
+      #################################################################################################################
 
-    steps:
-      - uses: actions/checkout@v6.0.0
-        with:
-          submodules: recursive
-      
+      - name: Set compiler to gcc
+        run: |
+          echo "COMPILER=gcc" >> "$GITHUB_ENV"
+          echo "PRESET=linux-debug-GNU" >> "$GITHUB_ENV"
+          echo "PROFILE_PRESET=${GCC_PROFILE_PRESET}" >> "$GITHUB_ENV"
+          echo "BUILD_DIR=build-gcc" >> "$GITHUB_ENV"
+
+      - name: Prepare for unit/integration tests (gcc)
+        run: |
+          . "/opt/vulkan/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          cmake -B ${{ env.BUILD_DIR }} --preset "$PRESET"
+          cmake --build ${{ env.BUILD_DIR }} --preset "$PRESET"
+        working-directory: ${{ github.workspace }}
+
+      - name: Run Unit/Integration tests (gcc)
+        working-directory: ${{ env.BUILD_DIR }}
+        run: ctest -C ${{env.BUILD_TYPE}} --verbose --extra-verbose --debug -T test --output-on-failure -E Integration.VulkanEngine RendererTest.BasicSetup
+
+      - name: Run fuzzer tests (gcc)
+        run: |
+          echo "Compiled with GCC so no fuzz testing!"
+        working-directory: ${{ github.workspace }}
+
+      - name: Build Code Coverage (gcc)
+        run: |
+          gcovr -r .
+        working-directory: ${{ github.workspace }}
+
+      - name: Configure/build CMake for Profiling (gcc)
+        run: |
+          rm -r "${{ env.BUILD_DIR }}"
+          PRESET="${PROFILE_PRESET}"
+          echo "Using preset: ${PRESET}"
+          . "/opt/vulkan/${{ env.VULKAN_VERSION }}/setup-env.sh"
+          cmake -B "${{ env.BUILD_DIR }}" --preset "${PRESET}"
+          cmake --build "${{ env.BUILD_DIR }}" --preset "${PRESET}"
+        working-directory: ${{ github.workspace }}
+
+      - name: Run performance benchmarks (gcc)
+        run: ${{ env.BUILD_DIR }}/perfTestSuite
+        working-directory: ${{ github.workspace }}
+
       #################################################################################################################
-      ######################################## Prepare deps ###########################################################
+      ######################################## Release: build + package ################################################
       #################################################################################################################
-      # - name: Install deps
-      #   uses: ./.github/actions/install-deps
-      #   with:
-      #     vulkan-version: ${{ env.VULKAN_VERSION }}
-          
+
       - name: Configure/build CMake for Release
         run: |
-          # ${{ github.workspace }}
           . "/opt/vulkan/${{ env.VULKAN_VERSION }}/setup-env.sh"
           cmake -B "${{ env.BUILD_RELEASE_DIR }}" --preset linux-release-clang
           cmake --build "${{ env.BUILD_RELEASE_DIR }}" --config Release
@@ -227,7 +235,6 @@ jobs:
 
       - name: Package
         run: |
-          # ${{ github.workspace }}
           . "/opt/vulkan/${{ env.VULKAN_VERSION }}/setup-env.sh"
           cmake --build "${{ env.BUILD_RELEASE_DIR }}" --target package
         working-directory: ${{ github.workspace }}

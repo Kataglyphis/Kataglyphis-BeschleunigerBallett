@@ -185,7 +185,7 @@
 		{
 			"name": "x64-MSVC-Windows-Debug",
 			"description": "Windows and standard MSVC - Debug",
-			"generator": "Visual Studio 17 2022",
+			"generator": "Visual Studio 17 2026",
 			"binaryDir": "${sourceDir}/build/",
 			"installDir": "${sourceDir}/build/",
 			"cacheVariables": {
@@ -210,7 +210,7 @@
 		{
 			"name": "x64-MSVC-Windows-Release",
 			"description": "Windows and standard MSVC - Release",
-			"generator": "Visual Studio 17 2022",
+			"generator": "Visual Studio 17 2026",
 			"binaryDir": "${sourceDir}/build/",
 			"installDir": "${sourceDir}/build/",
 			"cacheVariables": {
