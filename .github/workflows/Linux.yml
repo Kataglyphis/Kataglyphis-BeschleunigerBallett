@@ -174,7 +174,12 @@ jobs:
       #################################################################################################################
       - name: Configure/build CMake for Profiling (select preset by compiler)
         run: |
-          rm -r "${{ env.BUILD_DIR }}"
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            -e BUILD_DIR=${{ env.BUILD_DIR }} \
+            "${{ env.CONTAINER_IMAGE }}" \
+            bash -lc 'rm -rf "${BUILD_DIR}"'
           PRESET="${PROFILE_PRESET}"
           echo "Using preset: ${PRESET}"
           # ${{ github.workspace }}
@@ -283,7 +288,12 @@ jobs:
 
       - name: Configure/build CMake for Profiling (gcc)
         run: |
-          rm -r "${{ env.BUILD_DIR }}"
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            -e BUILD_DIR=${{ env.BUILD_DIR }} \
+            "${{ env.CONTAINER_IMAGE }}" \
+            bash -lc 'rm -rf "${BUILD_DIR}"'
           PRESET="${PROFILE_PRESET}"
           echo "Using preset: ${PRESET}"
           . "/opt/vulkan/${{ env.VULKAN_VERSION }}/setup-env.sh"
