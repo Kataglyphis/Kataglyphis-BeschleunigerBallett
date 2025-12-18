@@ -48,7 +48,7 @@ jobs:
           docker-images: false
           swap-storage: true
 
-      - uses: actions/checkout@v6.0.0
+      - uses: actions/checkout@v6.0.1
         with:
           fetch-depth: 0
           submodules: recursive
@@ -121,10 +121,18 @@ jobs:
 
       - name: Build Code Coverage
         run: |
-          llvm-profdata merge -sparse ${{ env.BUILD_DIR }}/Test/compile/default.profraw -o ${{ env.BUILD_DIR }}/compileTestSuite.profdata
-          llvm-cov report ${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{ env.BUILD_DIR }}/compileTestSuite.profdata
-          llvm-cov export ${{ env.BUILD_DIR }}/compileTestSuite -format=text -instr-profile=${{ env.BUILD_DIR }}/compileTestSuite.profdata > ${{ env.COVERAGE_JSON }}
-          llvm-cov show ${{ env.BUILD_DIR }}/compileTestSuite -instr-profile=${{ env.BUILD_DIR }}/compileTestSuite.profdata
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            -e BUILD_DIR=${{ env.BUILD_DIR }} \
+            -e COVERAGE_JSON=${{ env.COVERAGE_JSON }} \
+            "${{ env.CONTAINER_IMAGE }}" \
+            bash -lc '
+            set -e
+            llvm-profdata merge -sparse "${BUILD_DIR}/Test/compile/default.profraw" -o "${BUILD_DIR}/compileTestSuite.profdata"
+            llvm-cov report "${BUILD_DIR}/compileTestSuite" -instr-profile="${BUILD_DIR}/compileTestSuite.profdata"
+            llvm-cov export "${BUILD_DIR}/compileTestSuite" -format=text -instr-profile="${BUILD_DIR}/compileTestSuite.profdata" > "${COVERAGE_JSON}"
+            '
         working-directory: ${{ github.workspace }}
 
       - name: Codecov

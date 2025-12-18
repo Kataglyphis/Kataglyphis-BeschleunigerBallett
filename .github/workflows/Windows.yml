@@ -30,6 +30,12 @@ jobs:
         with:
           fetch-depth: 0
           submodules: recursive
+      
+      # my windows container is quite big ... so remove runner packages for enough
+      # dis space
+      - name: Cleanup disk space
+        uses: ./.github/actions/cleanup-disk-space
+
       - name: Log in to GHCR (for container image)
         uses: docker/login-action@v3.6.0
         with:
