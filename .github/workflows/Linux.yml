@@ -111,6 +111,8 @@ jobs:
             "${{ env.CONTAINER_IMAGE }}" \
             bash -lc '
             set -e
+            git config --global --add safe.directory /workspace || true
+            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
             ctest -C "${BUILD_TYPE}" --verbose --extra-verbose --debug -T test --output-on-failure -E Integration.VulkanEngine RendererTest.BasicSetup
             '
 
@@ -304,6 +306,8 @@ jobs:
             "${{ env.CONTAINER_IMAGE }}" \
             bash -lc '
             set -e
+            git config --global --add safe.directory /workspace || true
+            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
             ctest -C "${BUILD_TYPE}" --verbose --extra-verbose --debug -T test --output-on-failure -E Integration.VulkanEngine RendererTest.BasicSetup
             '
 
