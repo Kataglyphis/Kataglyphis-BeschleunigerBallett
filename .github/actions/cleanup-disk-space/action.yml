@@ -1,0 +1,210 @@
+name: 'Cleanup Disk Space'
+description: 'Aggressively cleans up disk space on Windows runners'
+
+runs:
+  using: 'composite'
+  steps:
+    #- name: Check disk space before cleanup
+    #  shell: powershell
+    #  run: Get-Volume C | Format-Table -AutoSize
+
+    - name: Aggressive cleanup
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Continue'
+
+        # Remove ENTIRE Visual Studio installation (do this FIRST, before partial removals)
+        Write-Host "Removing Visual Studio completely..."
+        Remove-Item "C:\Program Files\Microsoft Visual Studio\2022" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "C:\Program Files\Microsoft Visual Studio\2019" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "C:\Program Files (x86)\Microsoft Visual Studio" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "$env:ProgramData\Microsoft\VisualStudio" -Recurse -Force -ErrorAction SilentlyContinue
+
+        # Remove more language toolchains you don't need
+        $toolchainsRemove = @(
+            "C:\hostedtoolcache\CodeQL",
+            "C:\hostedtoolcache\go",
+            "C:\hostedtoolcache\PyPy",
+            "C:\hostedtoolcache\Ruby",
+            "C:\hostedtoolcache\node",
+            "C:\hostedtoolcache\Python\*\x86",
+            "C:\SeleniumWebDrivers",
+            "C:\vcpkg",
+            "C:\tools\boost",
+            "C:\tools\msys64"
+        )
+
+        foreach ($path in $toolchainsRemove) {
+            if (Test-Path $path) {
+                Write-Host "Removing $path ..."
+                Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # Remove databases if not needed
+        $dbRemove = @(
+            "C:\Program Files\MySQL",
+            "C:\Program Files\PostgreSQL",
+            "C:\Program Files\MongoDB",
+            "C:\tools\mysql"
+        )
+
+        foreach ($path in $dbRemove) {
+            if (Test-Path $path) {
+                Write-Host "Removing $path ..."
+                Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # Remove old .NET Framework reference assemblies
+        $netRemove = @(
+            "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.0",
+            "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.5",
+            "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.5.1",
+            "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.5.2",
+            "C:\Program Files (x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.6"
+        )
+
+        foreach ($path in $netRemove) {
+            if (Test-Path $path) {
+                Write-Host "Removing $path ..."
+                Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # Remove IIS if not needed
+        $iisRemove = @(
+            "C:\Windows\System32\inetsrv",
+            "C:\inetpub"
+        )
+
+        foreach ($path in $iisRemove) {
+            if (Test-Path $path) {
+                Write-Host "Removing $path ..."
+                Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        # Remove Azure tools if not needed
+        Remove-Item -Path "C:\Program Files (x86)\Microsoft SDKs\Azure" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "C:\Program Files\Microsoft SDKs\Azure" -Recurse -Force -ErrorAction SilentlyContinue
+
+        # Remove PowerShell modules cache
+        Remove-Item -Path "$env:ProgramFiles\WindowsPowerShell\Modules\Az.*" -Recurse -Force -ErrorAction SilentlyContinue
+
+        # dotnet/NuGet
+        dotnet --info 2>$null
+        dotnet nuget locals all --clear 2>$null
+        if (Test-Path "$env:USERPROFILE\.nuget\packages") {
+          Remove-Item -Path "$env:USERPROFILE\.nuget\packages" -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        # NuGet CLI
+        if (Get-Command nuget -ErrorAction SilentlyContinue) {
+          nuget locals all -clear 2>$null
+        }
+
+        # pip
+        if (Get-Command pip -ErrorAction SilentlyContinue) {
+          pip cache purge --disable-pip-version-check 2>$null
+        }
+
+        # npm / yarn
+        if (Get-Command npm -ErrorAction SilentlyContinue) {
+          npm cache clean --force 2>$null
+        }
+        if (Get-Command yarn -ErrorAction SilentlyContinue) {
+          yarn cache clean 2>$null
+        }
+
+        # cargo / rustup
+        if (Test-Path "$env:USERPROFILE\.cargo") {
+          Remove-Item "$env:USERPROFILE\.cargo\registry" -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path "$env:USERPROFILE\.rustup") {
+          Remove-Item "$env:USERPROFILE\.rustup\toolchains" -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        # pipenv / poetry
+        if (Test-Path "$env:LOCALAPPDATA\pypoetry\Cache") {
+          Remove-Item "$env:LOCALAPPDATA\pypoetry\Cache" -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        # go modules cache
+        if ($env:GOMODCACHE) {
+          Remove-Item $env:GOMODCACHE -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path "$env:USERPROFILE\go\pkg\mod") {
+          Remove-Item "$env:USERPROFILE\go\pkg\mod" -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        # Chocolatey
+        if (Test-Path "C:\ProgramData\chocolatey") {
+          Write-Host "Cleaning Chocolatey cache"
+          Remove-Item -Path "C:\ProgramData\chocolatey\lib\*" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path "C:\ProgramData\chocolatey\cache\*" -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        Write-Host "Removing Android, Windows SDKs, and other big known folders (if present)..."
+        $maybeRemove = @(
+          "C:\Program Files (x86)\Android",
+          "C:\Program Files (x86)\Android\android-sdk",
+          "C:\Program Files (x86)\Android\android-ndk",
+          "C:\Program Files\Android",
+          "C:\Program Files (x86)\Windows Kits",
+          "C:\Program Files (x86)\Microsoft SDKs",
+          "C:\Program Files\dotnet\sdk",
+          "C:\tools\ghc",
+          "C:\tools\julia",
+          "C:\Program Files (x86)\Microsoft\Edge\Application",
+          "C:\Program Files\Google\Chrome",
+          "C:\Program Files (x86)\Google"
+        )
+
+        foreach ($path in $maybeRemove) {
+          if (Test-Path $path) {
+            Write-Host "Removing $path ..."
+            Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
+          }
+        }
+
+        # Windows Update cache
+        Write-Host "Clearing Windows Update download cache (requires admin; ignore if not allowed)..."
+        try {
+          Stop-Service wuauserv -ErrorAction SilentlyContinue
+          Remove-Item -Path "C:\Windows\SoftwareDistribution\Download\*" -Recurse -Force -ErrorAction SilentlyContinue
+          Start-Service wuauserv -ErrorAction SilentlyContinue
+        } catch {
+          Write-Host "Could not clear SoftwareDistribution: $_"
+        }
+
+        # Temp folders
+        Write-Host "Clearing TEMP folders..."
+        Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$env:USERPROFILE\AppData\Local\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+
+        # Visual Studio caches
+        Write-Host "Removing Visual Studio caches..."
+        Remove-Item -Path "$env:USERPROFILE\AppData\Local\Microsoft\VisualStudio" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$env:USERPROFILE\AppData\Local\Microsoft\VSCommon" -Recurse -Force -ErrorAction SilentlyContinue
+
+        if (Test-Path "C:\Users\runneradmin\.nuget\packages") {
+          Remove-Item -Path "C:\Users\runneradmin\.nuget\packages" -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+        # Docker prune (if docker present)
+        if (Get-Command docker -ErrorAction SilentlyContinue) {
+          Write-Host "Pruning Docker system (images/containers/volumes) — this deletes everything Docker-related."
+          docker system prune --all --volumes --force 2>$null
+        }
+
+        Write-Host "Removing old dotnet sdks (keep specified versions only)..."
+        $sdks = Get-ChildItem "C:\Program Files\dotnet\sdk" -Directory -ErrorAction SilentlyContinue
+        foreach ($s in $sdks) {
+          Write-Host "Removing SDK $($s.FullName)"
+          Remove-Item -Path $s.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+    #- name: Check disk space after cleanup
+    #  shell: powershell
+    #  run: Get-Volume C | Format-Table -AutoSize

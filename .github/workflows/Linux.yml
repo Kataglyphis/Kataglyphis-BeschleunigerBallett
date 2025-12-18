@@ -29,25 +29,46 @@ env:
   DOCS_OUT: build/build/html
   COVERAGE_JSON: build/coverage.json
 
-jobs:
+  CONTAINER_IMAGE: ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest
 
+jobs:
   build_and_test:
     runs-on: ${{ inputs.runner }}
-    # defaults:
-      # run:
-      #   shell: bash
     # Run this job inside the GHCR container:
-    container:
-      image: ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ secrets.GHCR_PAT }}
 
     steps:
+      - name: Free Disk Space on Host
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: true
+
       - uses: actions/checkout@v6.0.0
         with:
           fetch-depth: 0
           submodules: recursive
+
+      - name: Login to GitHub Container Registry
+        run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Pull container image
+        run: |
+          for i in 1 2 3; do
+            echo "Attempt $i to pull container (${{ inputs.runner }})..."
+            if timeout 900 docker pull "${{ env.CONTAINER_IMAGE }}"; then
+              echo "Successfully pulled container"
+              exit 0
+            fi
+            echo "Pull failed, waiting before retry..."
+            sleep 30
+          done
+          echo "Failed to pull container after 3 attempts"
+          exit 1
 
       #################################################################################################################
       ####################### Run unit/integration/fuzzy/coverage/tests/static analyzers ##############################
@@ -66,15 +87,39 @@ jobs:
 
       - name: Prepare for unit/integration tests
         run: |
-          . "/opt/vulkan/${{ env.VULKAN_VERSION }}/setup-env.sh"
-          # Use relative path instead of absolute path
-          cmake -B ${{ env.BUILD_DIR }} --preset "$PRESET"
-          cmake --build ${{ env.BUILD_DIR }} --preset "$PRESET"
-        working-directory: ${{ github.workspace }}
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
+            -e BUILD_DIR=${{ env.BUILD_DIR }} \
+            -e MATRIX_COMPILER=${{ matrix.compiler }} \
+            "${{ env.CONTAINER_IMAGE }}" \
+            bash -lc '
+            set -e
+            git config --global --add safe.directory /workspace || true
+
+            if [ "$MATRIX_COMPILER" = "clang" ]; then
+              PRESET="linux-debug-clang"
+            else
+              PRESET="linux-debug-GNU"
+            fi
+
+            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
+            cmake -B "${BUILD_DIR}" --preset "${PRESET}"
+            cmake --build "${BUILD_DIR}" --preset "${PRESET}"
+            '
 
       - name: Run Unit/Integration tests
-        working-directory: ${{ env.BUILD_DIR }}
-        run: ctest -C ${{env.BUILD_TYPE}} --verbose --extra-verbose --debug -T test --output-on-failure -E Integration.VulkanEngine RendererTest.BasicSetup
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace/${{ env.BUILD_DIR }} \
+            -e BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            "${{ env.CONTAINER_IMAGE }}" \
+            bash -lc '
+            set -e
+            ctest -C "${BUILD_TYPE}" --verbose --extra-verbose --debug -T test --output-on-failure -E Integration.VulkanEngine RendererTest.BasicSetup
+            '
 
       - name: Run fuzzer tests
         run: |
@@ -107,9 +152,14 @@ jobs:
       - name: Run Clang static analysis (HTML)
         continue-on-error: true
         run: |
-          # HTML output (correct flag form)
-          clang++ --analyze -DUSE_RUST=1 -Xanalyzer -analyzer-output=html $(find Src -name '*.cpp' -o -name '*.cc')
-        working-directory: ${{ github.workspace }}
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            "${{ env.CONTAINER_IMAGE }}" \
+            bash -lc '
+            set -e
+            clang++ --analyze -DUSE_RUST=1 -Xanalyzer -analyzer-output=html $(find Src -name "*.cpp" -o -name "*.cc")
+            '
 
       - name: Run Clang static analysis (scan-build)
         continue-on-error: true
@@ -133,39 +183,61 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - name: Run performance benchmarks
-        run: ${{ env.BUILD_DIR }}/perfTestSuite
-        working-directory: ${{ github.workspace }}
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            -e BUILD_DIR=${{ env.BUILD_DIR }} \
+            "${{ env.CONTAINER_IMAGE }}" \
+            bash -lc '
+            set -e
+            "${BUILD_DIR}/perfTestSuite"
+            '
         
       #################################################################################################################
       ######################################## Build docs #############################################################
       #################################################################################################################
-
-      # . "$HOME/.local/bin/env" 
       - name: Set Astral UV venv
         if: ${{ inputs.runner == 'ubuntu-24.04' }}
         run: |
-          uv venv
-        working-directory: ${{ github.workspace }}
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            "${{ env.CONTAINER_IMAGE }}" \
+            bash -lc '
+            set -e
+            uv venv
+            '
 
-      # You can test your matrix by printing the current Python version
-      # . "$HOME/.local/bin/env"
       - name: Setup python env
         if: ${{ inputs.runner == 'ubuntu-24.04' }}
         run: |
-          . ".venv/bin/activate"
-          uv pip install -r requirements.txt
-        working-directory: ${{ github.workspace }}
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            "${{ env.CONTAINER_IMAGE }}" \
+            bash -lc '
+            set -e
+            . ".venv/bin/activate"
+            uv pip install -r requirements.txt
+            '
 
-      # . "$HOME/.local/bin/env"
       - name: Build web page
         if: ${{ inputs.runner == 'ubuntu-24.04' }}
         run: |
-          cp ${{ env.DOCS_OUT }}/*.svg ./docs/source/_static
-          cd docs/source
-          uv run python graphviz_generator.py 
-          cd ..
-          uv run make html
-        working-directory: ${{ github.workspace }}
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            -e DOCS_OUT=${{ env.DOCS_OUT }} \
+            "${{ env.CONTAINER_IMAGE }}" \
+            bash -lc '
+            set -e
+            cp ${DOCS_OUT}/*.svg ./docs/source/_static
+            cd docs/source
+            uv run python graphviz_generator.py
+            cd ..
+            uv run make html
+            '
 
       - name: 📂 Sync files to domain
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
