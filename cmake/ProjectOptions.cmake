@@ -108,9 +108,9 @@ macro(myproject_global_options)
 # https://clang.llvm.org/docs/UsersManual.html
   # this is the clang-cl case
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od /std:c++latest -fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-error=character-conversion")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /std:c++latest -DNDEBUG -fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-error=character-conversion")
-    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} /O2 /std:c++latest -DNDEBUG -fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-error=character-conversion")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od /std:c++latest -fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-unknown-warning-option")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /std:c++latest -DNDEBUG -fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-unknown-warning-option")
+    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} /O2 /std:c++latest -DNDEBUG -fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-unknown-warning-option")
     # https://clang.llvm.org/docs/ClangCommandLineReference.html
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g -ggdb -std=c++23 -fcolor-diagnostics") # -std=c++2a
