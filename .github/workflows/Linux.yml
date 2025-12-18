@@ -78,8 +78,6 @@ jobs:
           echo "COMPILER=clang" >> "$GITHUB_ENV"
           echo "PRESET=linux-debug-clang" >> "$GITHUB_ENV"
           echo "PROFILE_PRESET=${CLANG_PROFILE_PRESET}" >> "$GITHUB_ENV"
-          echo "BUILD_DIR=build-clang" >> "$GITHUB_ENV"
-          echo "COVERAGE_JSON=build-clang/coverage.json" >> "$GITHUB_ENV"
 
       #################################################################################################################
       ############################################### clang: build/test ################################################
@@ -91,22 +89,17 @@ jobs:
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
-            -e BUILD_DIR=${{ env.BUILD_DIR }} \
-            -e MATRIX_COMPILER=${{ matrix.compiler }} \
+            -e PRESET=${{ env.PRESET }} \
             "${{ env.CONTAINER_IMAGE }}" \
             bash -lc '
             set -e
             git config --global --add safe.directory /workspace || true
 
-            if [ "$MATRIX_COMPILER" = "clang" ]; then
-              PRESET="linux-debug-clang"
-            else
-              PRESET="linux-debug-GNU"
-            fi
+            PRESET="${PRESET}"
 
             . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-            cmake -B "${BUILD_DIR}" --preset "${PRESET}"
-            cmake --build "${BUILD_DIR}" --preset "${PRESET}"
+            cmake --preset "${PRESET}"
+            cmake --build --preset "${PRESET}"
             '
 
       - name: Run Unit/Integration tests
