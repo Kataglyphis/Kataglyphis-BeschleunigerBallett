@@ -278,7 +278,7 @@ jobs:
           echo "COMPILER=gcc" >> "$GITHUB_ENV"
           echo "PRESET=linux-debug-GNU" >> "$GITHUB_ENV"
           echo "PROFILE_PRESET=${GCC_PROFILE_PRESET}" >> "$GITHUB_ENV"
-          echo "BUILD_DIR=build-gcc" >> "$GITHUB_ENV"
+          echo "BUILD_DIR=build" >> "$GITHUB_ENV"
 
       - name: Prepare for unit/integration tests (gcc)
         run: |
@@ -293,6 +293,7 @@ jobs:
             set -e
             git config --global --add safe.directory /workspace || true
             . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
+            rm -rf "${BUILD_DIR}"
             cmake -B "${BUILD_DIR}" --preset "${PRESET}"
             cmake --build "${BUILD_DIR}" --preset "${PRESET}"
             '
