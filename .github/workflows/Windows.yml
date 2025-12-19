@@ -19,6 +19,9 @@ defaults:
   run:
     shell: pwsh
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: windows-2025
