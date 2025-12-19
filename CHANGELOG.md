@@ -27,10 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.0.0] - YYYY-MM-DD
+## [1.4.2] - 2025-11-14
 
 ### Added
-- Initial release.
+- WiX 4.02 upport
+
+### Fixes
+- Windows installers fixed
 
 <!-- Add past versions below this line -->
 

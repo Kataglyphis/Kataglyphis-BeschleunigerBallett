@@ -3,7 +3,7 @@ include(FetchContent)
 if(BUILD_TESTING)
   # include google test to project
   FetchContent_Declare(googletest
-                       URL https://github.com/google/googletest/archive/9706f75b8f91c52a3840cf5d878a7f37ea10ef00.zip)
+                       URL https://github.com/google/googletest/archive/1b96fa13f549387b7549cc89e1a785cf143a1a50.zip)
   # For Windows: Prevent overriding the parent project's compiler/linker settings
   set(gtest_force_shared_crt
       ON
@@ -47,7 +47,7 @@ endif()
 FetchContent_Declare(
   GSL
   GIT_REPOSITORY "https://github.com/microsoft/GSL"
-  GIT_TAG "v4.1.0")
+  GIT_TAG "v4.2.1")
 FetchContent_MakeAvailable(GSL)
 
 # set all glfw dependencies
@@ -144,7 +144,7 @@ endif()
 
 set(KOMPUTE_OPT_BUILD_EXAMPLES OFF)
 set(KOMPUTE_OPT_BUILD_TESTS OFF)
-set(KOMPUTE_OPT_USE_VULKAN_VERSION "1.3.296.0")
+set(KOMPUTE_OPT_USE_VULKAN_VERSION "1.4.328.1")
 set(KOMPUTE_OPT_DISABLE_VULKAN_VERSION_CHECK ON)
 
 if(WIN32)

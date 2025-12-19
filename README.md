@@ -1,94 +1,78 @@
-<h1 align="center">
-  <br>
-  <a href="https://jonasheinle.de"><img src="images/logo.png" alt="VulkanEngine" width="200"></a>
-  <br>
-  Kataglyphis-BeschleunigerBallett
-  <br>
-</h1>
+<div align="center">
+  <a href="https://jonasheinle.de">
+    <img src="images/logo.png" alt="logo" width="200" />
+  </a>
 
-<h1 align="center">
+  <h1>Kataglyphis-BeschleunigerBallett</h1>
+
+  <h4>A graphics engine built on top of Vulkan+OpenGL. Serves also as playground 
+for learning various best practices in Graphic APIs, CMake, Rust, ... 🌋🌋🌋 </h4>
+</div>
+
+<div align="center">
   <br>
   <a href="https://jonasheinle.de"><img src="images/vulkan-logo.png" alt="VulkanEngine" width="200"></a>
   <a href="https://jonasheinle.de"><img src="images/Engine_logo.png" alt="VulkanEngine" width="200"></a>
   <a href="https://jonasheinle.de"><img src="images/glm_logo.png" alt="VulkanEngine" width="200"></a>
   <a href="https://jonasheinle.de"><img src="images/Opengl-logo.png" alt="OpenGLEngine" width="200"></a>
-</h1>
-
-<h4 align="center">A graphics engine built on top of Vulkan+OpenGL. Serves also as playground 
-for learning various best practices in Graphic APIs, CMake, Rust, ...<a href="https://jonasheinle.de" target="_blank"></a>.</h4>
+</div>
 
 see also [**__Official homepage__**](https://beschleunigerballette.jonasheinle.de/). 
 
 [![Linux build + test + coverage on Ubuntu 24.04 ARM](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_arm.yml/badge.svg?branch=main)](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_arm.yml)
 [![Linux build + test + coverage on Ubuntu 24.04 x86](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_x86.yml/badge.svg)](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_x86.yml)
-[![Windows Server 2025 build x86 MSVC and Clang](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Windows.yml/badge.svg)](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Windows.yml)
+[![Windows Server 2025 build x86 MSVC and Clang](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Windows.yml/badge.svg)](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Windows.yml)  
 [![CodeQL](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/github-code-scanning/codeql)
 [![Automatic Dependency Submission](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/dependency-graph/auto-submission/badge.svg)](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/dependency-graph/auto-submission)
-[![TopLang](https://img.shields.io/github/languages/top/Kataglyphis/Kataglyphis-Renderer)]()
+[![TopLang](https://img.shields.io/github/languages/top/Kataglyphis/Kataglyphis-Renderer)]()  
 [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/donate/?hosted_button_id=BX9AVVES2P9LN)
 [![Twitter](https://img.shields.io/twitter/follow/Cataglyphis_?style=social)](https://twitter.com/Cataglyphis_)
 [![YouTube](https://img.shields.io/youtube/channel/subscribers/UC3LZiH4sZzzaVBCUV8knYeg?style=social)](https://www.youtube.com/channel/UC3LZiH4sZzzaVBCUV8knYeg)
 
-<p align="center">
-  <a href="#key-features">Key Features</a> •
-  <a href="#how-to-use">How To Use</a> •
-  <a href="#download">Download</a> •
-  <a href="#credits">Credits</a> •
-  <a href="#related">Related</a> •
-  <a href="#license">License</a>
-</p>
-
 <!-- TABLE OF CONTENTS -->
-<details open="open">
-  <summary>Table of Contents</summary>
-  <ol>
-    <li>
-      <a href="#about-the-project">About The Project</a>
-      <ul>
-        <li><a href="#built-with">Built With</a></li>
-      </ul>
-      <ul>
-        <li><a href="#key-features">Key Features</a></li>
-      </ul>
-    </li>
-    <li>
-      <a href="#getting-started">Getting Started</a>
-      <ul>
-        <li><a href="#prerequisites">Prerequisites</a></li>
-        <li><a href="#installation">Installation</a></li>
-      </ul>
-    </li>
-    <li><a href="#shaders">Shaders</a></li>
-    <li><a href="#tests">Tests</a></li>
-    <li><a href="#tests">Docker</a></li>
-    <li><a href="#roadmap">Roadmap</a></li>
-    <li><a href="#contributing">Contributing</a></li>
-    <li><a href="#license">License</a></li>
-    <li><a href="#contact">Contact</a></li>
-    <li><a href="#acknowledgements">Acknowledgements</a></li>
-    <li><a href="#acknowledgements">Literature</a></li>
-    <li><a href="#acknowledgements">Common issues</a></li>
-  </ol>
-</details>
+## Table of Contents
+
+- [About The Project](#about-the-project)
+  - [Built With](#built-with)
+  - [Key Features](#key-features)
+  - [Dependencies](#dependencies)
+  - [Useful tools](#useful-tools-you-might-also-considering-)
+  - [Benchmarking](#benchmarking)
+  - [VSCode Extensions](#vscode-extensions)
+- [Getting Started](#getting-started)
+  - [Specific version requirements](#specific-version-requirements)
+  - [Installation](#installation)
+- [Shaders](#shaders)
+- [Tests](#tests)
+- [Docker](#docker)
+  - [Linux](#linux)
+  - [Windows](#windows)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
+- [Contact](#contact)
+- [Acknowledgements](#acknowledgements)
+- [Literature](#literature)
+- [Common issues](#common-issues)
 
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-<h1 align="center">
+<div align="center">
   <br>
   <a href="https://jonasheinle.de"><img src="images/VulkanEngine/Screenshot1.png" alt="VulkanEngine" width="400"></a>
   <a href="https://jonasheinle.de"><img src="images/VulkanEngine/Screenshot2.png" alt="VulkanEngine" width="400"></a>
   <a href="https://jonasheinle.de"><img src="images/VulkanEngine/Screenshot3.png" alt="VulkanEngine" width="700"></a>
-</h1>
+</div>
 
-<h1 align="center">
+<div align="center">
   <br>
   <a href="https://jonasheinle.de"><img src="images/OpenGLEngine/Screenshot1.png" alt="VulkanEngine" width="600"></a>
   <a href="https://jonasheinle.de"><img src="images/OpenGLEngine/Screenshot2.png" alt="VulkanEngine" width="600"></a>
   <br>
   <a href="https://jonasheinle.de"><img src="images/OpenGLEngine/Screenshot3.png" alt="VulkanEngine" width="200"></a>
   <a href="https://jonasheinle.de"><img src="images/OpenGLEngine/Screenshot4.png" alt="VulkanEngine" width="200"></a>
-</h1>
+</div>
 
 This project provides me a solid Vulkan/OpenGL renderer starting point for implementing 
 modern established rendering techniques and getting quickly started in own research topics.  
@@ -99,10 +83,9 @@ As this project evolved it gained additional functionality:
 * collecting experience in fuzzy/benchmark testing in C++
 * collecting experience in integrating :love_letter: Rust :love_letter: code in Cmake projects
 
-Frequently tested under   
-* windows server 2025 x64 *__Clang 20.1.0__* and *__MSVC__*
-* ubuntu 24.04 x64 *__Clang 18.1.3__*
-* ubuntu 24.04 ARM *__Clang 18.1.3__*
+I frequently test under Linux and Windows.  
+For more information regarding the build environment refer to my 
+[Kataglyphis-ContainerHub](https://github.com/Kataglyphis/Kataglyphis-ContainerHub) repository.  
 
 ### Key Features
 
@@ -147,7 +130,7 @@ Frequently tested under
 
 ### Dependencies
 
-* [Vulkan 1.3](https://www.vulkan.org/)
+* [Vulkan 1.4](https://www.vulkan.org/)
 * [OpenGL 4.6](https://www.opengl.org//)
 * [GLAD](https://glad.dav1d.de/)
 * [glm](https://github.com/g-truc/glm)
@@ -200,13 +183,17 @@ Frequently tested under
 
 **C++23** or higher required.<br />
 **C17** or higher required.<br />
-**CMake 4.0.2** or higher required.<br />
+**CMake 4.2.0** or higher required.<br />
 
 ### Installation
 
+> **__NOTE:__**
+> On Windows use Git Bash
+
+
 1. Clone the repo
-   ```sh
-   git clone --recurse-submodules git@github.com:Kataglyphis/Kataglyphis-BeschleunigerBallett.git
+   ```bash
+   git clone --branch develop --recurse-submodules git@github.com:Kataglyphis/Kataglyphis-BeschleunigerBallett.git
    ```
 2. Use the scripts (in the `Scripts` folder for installing dependencies on your system) 
 3. Then build your solution with [CMAKE] (https://cmake.org/) <br />
@@ -235,49 +222,18 @@ I follow the test setup as descriped in: [CMake best practices](https://github.c
 
 # Docker
 
+You can find all details in my [Kataglyphis-ContainerHub](https://github.com/Kataglyphis/Kataglyphis-ContainerHub) repository.  
 
 ## Linux
-
-Dockerfile stays at project root.
 
 If you want to run it on NVIDIA GPUs you will have to  
 install the [NVIDIA Container Toolkit](Kataglyphis-BeschleunigerBallett)  
 before you proceed with the next steps.
 
-```bash
-# build
-docker build -t kataglphis_renderer_ubuntu24_04 .
-# run container on wayland
-# start docker in root of this repo 
-xhost +local:root
-docker run --rm -it \
-  --gpus all \
-  --network=host \
-  -e QT_QPA_PLATFORM=wayland \
-  -v /tmp/.X11-unix:/tmp/.X11-unix \
-  -v $HOME/.Xauthority:/root/.Xauthority \
-  --env DISPLAY=$DISPLAY \
-  --env XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR \
-  -e WAYLAND_DISPLAY=$WAYLAND_DISPLAY \
-  -v "$(pwd)":/workspace:rw \
-  -w /workspace \
-  kataglphis_renderer_ubuntu24_04 
-```
-
 ## Windows
 
 > **__NOTE:__** Pls for GPU accelerated Windows Docker
-> have a look [here](https://learn.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/gpu-acceleration) 
-
-```ps1
-docker build -f docker/windows/Dockerfile -t my-windows-dev-image .
-```
-
-```ps1
-docker run --rm -it `
-  -v "$($PWD.Path):C:\workdir" `
-  my-windows-dev-image
-```
+> have a look [here](https://learn.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/gpu-acceleration)
 
 <!-- ROADMAP -->
 # Roadmap
