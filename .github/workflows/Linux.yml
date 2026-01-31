@@ -48,7 +48,7 @@ jobs:
           docker-images: false
           swap-storage: true
 
-      - uses: actions/checkout@v6.0.1
+      - uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0
           submodules: recursive
@@ -98,6 +98,21 @@ jobs:
             PRESET="${PRESET}"
 
             . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
+            
+            # --- START FIX ---
+            # 1. Force use of Clang/Clang++
+            export CC=clang
+            export CXX=clang++
+
+            # 2. Point Clang to the custom GCC headers and library
+            # This fixes the "type_traits not found" error
+            export CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0 $CXXFLAGS"
+
+            # 3. Ensure the linker finds the newer libstdc++
+            # We add rpath so the binary finds these libs at runtime/test time locally
+            export LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0 $LDFLAGS"
+            # --- END FIX ---
+
             cmake --preset "${PRESET}"
             cmake --build --preset "${PRESET}"
             '
@@ -199,6 +214,20 @@ jobs:
             rm -rf "${BUILD_DIR}"
 
             . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
+            # --- START FIX ---
+            # 1. Force use of Clang/Clang++
+            export CC=clang
+            export CXX=clang++
+
+            # 2. Point Clang to the custom GCC headers and library
+            # This fixes the "type_traits not found" error
+            export CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0 $CXXFLAGS"
+
+            # 3. Ensure the linker finds the newer libstdc++
+            # We add rpath so the binary finds these libs at runtime/test time locally
+            export LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0 $LDFLAGS"
+            # --- END FIX ---
+
             cmake -B "${BUILD_DIR}" --preset "${PRESET}"
             cmake --build "${BUILD_DIR}" --preset "${PRESET}"
             '
@@ -214,7 +243,7 @@ jobs:
             set -e
             "${BUILD_DIR}/perfTestSuite"
             '
-        
+
       #################################################################################################################
       ######################################## Build docs #############################################################
       #################################################################################################################
@@ -389,7 +418,7 @@ jobs:
             '
 
       - name: Upload Linux Packages (Clang only)
-        uses: actions/upload-artifact@v5.0.0
+        uses: actions/upload-artifact@v6.0.0
         with:
           name: linux-packages
           path: |
