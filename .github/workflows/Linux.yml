@@ -28,7 +28,6 @@ env:
   BUILD_RELEASE_DIR: build-release
   DOCS_OUT: build/build/html
   COVERAGE_JSON: build/coverage.json
-
   CONTAINER_IMAGE: ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest
 
 jobs:
@@ -397,6 +396,21 @@ jobs:
             bash -lc '
             set -e
             git config --global --add safe.directory /workspace || true
+            
+            # --- START FIX ---
+            # 1. Force use of Clang/Clang++
+            export CC=clang
+            export CXX=clang++
+
+            # 2. Point Clang to the custom GCC headers and library
+            # This fixes the "type_traits not found" error
+            export CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0 $CXXFLAGS"
+
+            # 3. Ensure the linker finds the newer libstdc++
+            # We add rpath so the binary finds these libs at runtime/test time locally
+            export LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0 $LDFLAGS"
+            # --- END FIX ---
+
             . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
             cmake -B "${BUILD_RELEASE_DIR}" --preset linux-release-clang
             cmake --build "${BUILD_RELEASE_DIR}" --config Release
@@ -414,6 +428,21 @@ jobs:
             set -e
             git config --global --add safe.directory /workspace || true
             . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
+            
+            # --- START FIX ---
+            # 1. Force use of Clang/Clang++
+            export CC=clang
+            export CXX=clang++
+
+            # 2. Point Clang to the custom GCC headers and library
+            # This fixes the "type_traits not found" error
+            export CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0 $CXXFLAGS"
+
+            # 3. Ensure the linker finds the newer libstdc++
+            # We add rpath so the binary finds these libs at runtime/test time locally
+            export LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0 $LDFLAGS"
+            # --- END FIX ---
+
             cmake --build "${BUILD_RELEASE_DIR}" --target package
             '
 
