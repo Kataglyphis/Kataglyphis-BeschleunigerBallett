@@ -97,7 +97,7 @@ jobs:
             PRESET="${PRESET}"
 
             . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-            
+
             # --- START FIX ---
             # 1. Force use of Clang/Clang++
             export CC=clang
@@ -213,6 +213,7 @@ jobs:
             rm -rf "${BUILD_DIR}"
 
             . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
+
             # --- START FIX ---
             # 1. Force use of Clang/Clang++
             export CC=clang
@@ -396,7 +397,7 @@ jobs:
             bash -lc '
             set -e
             git config --global --add safe.directory /workspace || true
-            
+
             # --- START FIX ---
             # 1. Force use of Clang/Clang++
             export CC=clang
@@ -428,7 +429,7 @@ jobs:
             set -e
             git config --global --add safe.directory /workspace || true
             . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-            
+
             # --- START FIX ---
             # 1. Force use of Clang/Clang++
             export CC=clang
