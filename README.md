@@ -4,7 +4,7 @@
   </a>
 
   <h1>Kataglyphis-BeschleunigerBallett</h1>
-
+ 
   <h4>A graphics engine built on top of Vulkan+OpenGL. Serves also as playground 
 for learning various best practices in Graphic APIs, CMake, Rust, ... 🌋🌋🌋 </h4>
 </div>
