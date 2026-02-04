@@ -31,14 +31,28 @@ if(RUST_FEATURES)
   else()
     # Native-only corrosion/toolchain setup (no cross-building)
     # Optionally override with -DGCC_TOOLCHAIN_PATH=/path/to/gcc when configuring
+    set(_DEFAULT_GCC_TOOLCHAIN "/opt/gcc-15.2.0")
+    set(_HAS_DEFAULT_GCC_TOOLCHAIN OFF)
+    if(EXISTS "${_DEFAULT_GCC_TOOLCHAIN}")
+      set(_HAS_DEFAULT_GCC_TOOLCHAIN ON)
+    endif()
+
     # Nur setzen, wenn wir im GNU/GCC Preset sind
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        set(GCC_TOOLCHAIN_PATH "/opt/gcc-15.2.0" CACHE PATH "GCC toolchain root")
-        set(RUST_CXXFLAGS "-fexceptions")
-    else()
-        # Falls Clang aktiv ist, leeren wir den Pfad oder setzen ihn auf 'OFF'
+      if(_HAS_DEFAULT_GCC_TOOLCHAIN)
+        set(GCC_TOOLCHAIN_PATH "${_DEFAULT_GCC_TOOLCHAIN}" CACHE PATH "GCC toolchain root")
+      else()
         set(GCC_TOOLCHAIN_PATH "" CACHE PATH "GCC toolchain root" FORCE)
-        set(RUST_CXXFLAGS "--gcc-toolchain=/opt/gcc-15.2.0 -fexceptions")
+      endif()
+      set(RUST_CXXFLAGS "-fexceptions")
+    else()
+      # Falls Clang aktiv ist, nur dann toolchain-Flag setzen, wenn der Pfad existiert
+      set(GCC_TOOLCHAIN_PATH "" CACHE PATH "GCC toolchain root" FORCE)
+      if(_HAS_DEFAULT_GCC_TOOLCHAIN)
+        set(RUST_CXXFLAGS "--gcc-toolchain=${_DEFAULT_GCC_TOOLCHAIN} -fexceptions")
+      else()
+        set(RUST_CXXFLAGS "-fexceptions")
+      endif()
     endif()
 
     # detect host arch for logging (no cross-compile behavior)

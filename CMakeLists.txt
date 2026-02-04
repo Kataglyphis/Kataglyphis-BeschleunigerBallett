@@ -20,6 +20,25 @@ set(RUST_FEATURES
     ON
     CACHE BOOL "Enable Rust features in our project.")
 
+# Auto-detect custom GCC toolchain for Clang on Linux to avoid workflow env setup
+if(UNIX AND NOT APPLE AND EXISTS "/opt/gcc-15.2.0" AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  set(_GCC_TOOLCHAIN_ROOT "/opt/gcc-15.2.0")
+  set(_GCC_TOOLCHAIN_LIB "${_GCC_TOOLCHAIN_ROOT}/lib64")
+  if(NOT EXISTS "${_GCC_TOOLCHAIN_LIB}")
+    set(_GCC_TOOLCHAIN_LIB "${_GCC_TOOLCHAIN_ROOT}/lib")
+  endif()
+
+  if(EXISTS "${_GCC_TOOLCHAIN_LIB}")
+    message(STATUS "Using GCC toolchain at ${_GCC_TOOLCHAIN_ROOT} for Clang")
+    string(APPEND CMAKE_C_FLAGS " --gcc-toolchain=${_GCC_TOOLCHAIN_ROOT}")
+    string(APPEND CMAKE_CXX_FLAGS " --gcc-toolchain=${_GCC_TOOLCHAIN_ROOT}")
+    string(APPEND CMAKE_EXE_LINKER_FLAGS " -L${_GCC_TOOLCHAIN_LIB} -Wl,-rpath,${_GCC_TOOLCHAIN_LIB} --gcc-toolchain=${_GCC_TOOLCHAIN_ROOT}")
+    string(APPEND CMAKE_SHARED_LINKER_FLAGS " -L${_GCC_TOOLCHAIN_LIB} -Wl,-rpath,${_GCC_TOOLCHAIN_LIB} --gcc-toolchain=${_GCC_TOOLCHAIN_ROOT}")
+  else()
+    message(WARNING "GCC toolchain found at ${_GCC_TOOLCHAIN_ROOT}, but no lib or lib64 dir exists.")
+  endif()
+endif()
+
 if(RUST_FEATURES)
   message(STATUS "Rust features are enabled.")
   if(MSVC)
