@@ -29,10 +29,101 @@ if(RUST_FEATURES)
               CXXFLAGS=/EHsc
     )
   else()
-   corrosion_set_env_vars(
-              rusty_code
-              CXXFLAGS=-fexceptions
-    ) 
+    # Native-only corrosion/toolchain setup (no cross-building)
+    # Optionally override with -DGCC_TOOLCHAIN_PATH=/path/to/gcc when configuring
+    set(_DEFAULT_GCC_TOOLCHAIN "/opt/gcc-15.2.0")
+    set(_HAS_DEFAULT_GCC_TOOLCHAIN OFF)
+    if(EXISTS "${_DEFAULT_GCC_TOOLCHAIN}")
+      set(_HAS_DEFAULT_GCC_TOOLCHAIN ON)
+    endif()
+
+    # Nur setzen, wenn wir im GNU/GCC Preset sind
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+      if(_HAS_DEFAULT_GCC_TOOLCHAIN)
+        set(GCC_TOOLCHAIN_PATH "${_DEFAULT_GCC_TOOLCHAIN}" CACHE PATH "GCC toolchain root")
+      else()
+        set(GCC_TOOLCHAIN_PATH "" CACHE PATH "GCC toolchain root" FORCE)
+      endif()
+      set(RUST_CXXFLAGS "-fexceptions")
+    else()
+      # Falls Clang aktiv ist, nur dann toolchain-Flag setzen, wenn der Pfad existiert
+      set(GCC_TOOLCHAIN_PATH "" CACHE PATH "GCC toolchain root" FORCE)
+      if(_HAS_DEFAULT_GCC_TOOLCHAIN)
+        set(RUST_CXXFLAGS "--gcc-toolchain=${_DEFAULT_GCC_TOOLCHAIN} -fexceptions")
+      else()
+        set(RUST_CXXFLAGS "-fexceptions")
+      endif()
+    endif()
+
+    # detect host arch for logging (no cross-compile behavior)
+    string(TOLOWER "${CMAKE_HOST_SYSTEM_PROCESSOR}" _hostproc)
+    if(_hostproc MATCHES "^(x86_64|amd64)$")
+      set(HOST_ARCH "x86_64")
+    elseif(_hostproc MATCHES "^(aarch64|arm64|armv8)$")
+      set(HOST_ARCH "aarch64")
+    elseif(_hostproc MATCHES "^(riscv64)$")
+      set(HOST_ARCH "riscv64")
+    else()
+      set(HOST_ARCH "${_hostproc}")
+    endif()
+
+    message(STATUS "Native-only build. HOST_ARCH=${HOST_ARCH}")
+
+    if(GCC_TOOLCHAIN_PATH AND EXISTS "${GCC_TOOLCHAIN_PATH}")
+      # Try to find reasonable native compiler binary names
+      if(HOST_ARCH STREQUAL "x86_64")
+        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/x86_64-pc-linux-gnu-gcc" "${GCC_TOOLCHAIN_PATH}/bin/gcc")
+        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/x86_64-pc-linux-gnu-g++" "${GCC_TOOLCHAIN_PATH}/bin/g++")
+      elseif(HOST_ARCH STREQUAL "aarch64")
+        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/aarch64-linux-gnu-gcc" "${GCC_TOOLCHAIN_PATH}/bin/gcc")
+        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/aarch64-linux-gnu-g++" "${GCC_TOOLCHAIN_PATH}/bin/g++")
+      elseif(HOST_ARCH STREQUAL "riscv64")
+        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/riscv64-unknown-linux-gnu-gcc" "${GCC_TOOLCHAIN_PATH}/bin/gcc")
+        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/riscv64-unknown-linux-gnu-g++" "${GCC_TOOLCHAIN_PATH}/bin/g++")
+      else()
+        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/gcc")
+        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/g++")
+      endif()
+
+      if(NOT GCC_TOOLCHAIN_GCC)
+        message(WARNING "Toolchain gcc not found in ${GCC_TOOLCHAIN_PATH}; falling back to system 'gcc'")
+        set(GCC_TOOLCHAIN_GCC "gcc")
+      endif()
+      if(NOT GCC_TOOLCHAIN_GXX)
+        message(WARNING "Toolchain g++ not found in ${GCC_TOOLCHAIN_PATH}; falling back to system 'g++'")
+        set(GCC_TOOLCHAIN_GXX "g++")
+      endif()
+
+      # prefer lib64 then lib; optional for setting LDFLAGS/rpath
+      if(EXISTS "${GCC_TOOLCHAIN_PATH}/lib64")
+        set(GCC_LIB_PATH "${GCC_TOOLCHAIN_PATH}/lib64")
+      elseif(EXISTS "${GCC_TOOLCHAIN_PATH}/lib")
+        set(GCC_LIB_PATH "${GCC_TOOLCHAIN_PATH}/lib")
+      else()
+        message(WARNING "No lib or lib64 under ${GCC_TOOLCHAIN_PATH}; skipping LDFLAGS/rpath setup")
+        unset(GCC_LIB_PATH)
+      endif()
+
+      # DO NOT inject toolchain C++ includes. Only set CC/CXX and LDFLAGS/rpath for native run.
+      corrosion_set_env_vars(
+        rusty_code
+        CC=${GCC_TOOLCHAIN_GCC}
+        CXX=${GCC_TOOLCHAIN_GXX}
+        "CXXFLAGS=${RUST_CXXFLAGS}"
+      )
+
+      message(STATUS "Configured native corrosion: CC=${GCC_TOOLCHAIN_GCC} CXX=${GCC_TOOLCHAIN_GXX} CXXFLAGS=${RUST_CXXFLAGS}")
+      if(GCC_LIB_PATH)
+        message(STATUS "GCC library path: ${GCC_LIB_PATH}")
+      endif()
+    else()
+      message(STATUS "No GCC_TOOLCHAIN_PATH (${GCC_TOOLCHAIN_PATH}) found — using system compilers (native build)")
+      # Still set minimal sensible env so corrosion has deterministic env on non-Windows hosts
+      corrosion_set_env_vars(
+        rusty_code
+        "CXXFLAGS=${RUST_CXXFLAGS}"
+      )
+    endif()
   endif()
   
   corrosion_add_cxxbridge(

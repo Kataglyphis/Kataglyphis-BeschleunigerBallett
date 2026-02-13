@@ -22,13 +22,12 @@ env:
   BUILD_TYPE: Debug
   GCC_PROFILE_PRESET: linux-profile-GNU
   CLANG_PROFILE_PRESET: linux-profile-clang
-  VULKAN_VERSION: 1.4.328.1
+  VULKAN_VERSION: 1.4.335.0
   # folder/name configuration -- change here to affect the whole workflow
   BUILD_DIR: build
   BUILD_RELEASE_DIR: build-release
   DOCS_OUT: build/build/html
   COVERAGE_JSON: build/coverage.json
-
   CONTAINER_IMAGE: ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest
 
 jobs:
@@ -48,7 +47,7 @@ jobs:
           docker-images: false
           swap-storage: true
 
-      - uses: actions/checkout@v6.0.1
+      - uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0
           submodules: recursive
@@ -98,6 +97,7 @@ jobs:
             PRESET="${PRESET}"
 
             . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
+
             cmake --preset "${PRESET}"
             cmake --build --preset "${PRESET}"
             '
@@ -199,6 +199,7 @@ jobs:
             rm -rf "${BUILD_DIR}"
 
             . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
+
             cmake -B "${BUILD_DIR}" --preset "${PRESET}"
             cmake --build "${BUILD_DIR}" --preset "${PRESET}"
             '
@@ -214,7 +215,7 @@ jobs:
             set -e
             "${BUILD_DIR}/perfTestSuite"
             '
-        
+
       #################################################################################################################
       ######################################## Build docs #############################################################
       #################################################################################################################
@@ -368,6 +369,7 @@ jobs:
             bash -lc '
             set -e
             git config --global --add safe.directory /workspace || true
+
             . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
             cmake -B "${BUILD_RELEASE_DIR}" --preset linux-release-clang
             cmake --build "${BUILD_RELEASE_DIR}" --config Release
@@ -385,11 +387,12 @@ jobs:
             set -e
             git config --global --add safe.directory /workspace || true
             . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
+
             cmake --build "${BUILD_RELEASE_DIR}" --target package
             '
 
       - name: Upload Linux Packages (Clang only)
-        uses: actions/upload-artifact@v5.0.0
+        uses: actions/upload-artifact@v6.0.0
         with:
           name: linux-packages
           path: |
