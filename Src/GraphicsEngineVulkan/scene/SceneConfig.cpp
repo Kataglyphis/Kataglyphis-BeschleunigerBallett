@@ -7,29 +7,54 @@
 
 namespace sceneConfig {
 
+namespace {
+std::string resolveModelPath(const std::string &relativeModelPath)
+{
+    std::error_code filesystem_error;
+    const std::filesystem::path current_path = std::filesystem::current_path(filesystem_error);
+    if (filesystem_error) { return relativeModelPath; }
+
+    const std::filesystem::path direct_candidate =
+      std::filesystem::path(current_path.string() + RELATIVE_RESOURCE_PATH) / relativeModelPath;
+    if (std::filesystem::exists(direct_candidate, filesystem_error)) {
+        return direct_candidate.string();
+    }
+
+    auto search_path = current_path;
+    constexpr int kModelSearchDepth = 8;
+    for (int depth = 0; depth < kModelSearchDepth; ++depth) {
+        const std::filesystem::path candidate = search_path / "Resources" / relativeModelPath;
+        if (std::filesystem::exists(candidate, filesystem_error)) {
+            return candidate.string();
+        }
+
+        if (filesystem_error || !search_path.has_parent_path()) {
+            break;
+        }
+
+        search_path = search_path.parent_path();
+    }
+
+    return direct_candidate.string();
+}
+}// namespace
+
 std::string getModelFile()
 {
-    std::stringstream modelFile;
-    std::filesystem::path cwd = std::filesystem::current_path();
-    modelFile << cwd.string();
-    modelFile << RELATIVE_RESOURCE_PATH;
+    std::string relativeModelPath;
 
 #if NDEBUG
-    modelFile << "Models/crytek-sponza/";
-    modelFile << "sponza_triag.obj";
+    relativeModelPath = "Models/crytek-sponza/sponza_triag.obj";
 
 #else
 #ifdef SULO_MODE
-    modelFile << "Model/Sulo/WolfStahl/";
-    // modelFile << "Wolf-Stahl.obj";
-    modelFile << "SuloLongDongLampe_v2.obj";
+    relativeModelPath = "Model/Sulo/WolfStahl/SuloLongDongLampe_v2.obj";
 #else
-    modelFile << "Models/VikingRoom/";
-    modelFile << "viking_room.obj";
+    relativeModelPath = "Models/VikingRoom/viking_room.obj";
 #endif
 #endif
 
-    return modelFile.str();
+    return resolveModelPath(relativeModelPath);
     // std::string modelFile =
     // "Models/crytek-sponza/sponza_triag.obj"; std::string modelFile
     // = "Models/Dinosaurs/dinosaurs.obj"; std::string modelFile =

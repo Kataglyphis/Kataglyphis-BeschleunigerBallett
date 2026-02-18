@@ -41,6 +41,8 @@ set(ShaderIncludes
     -I
     ${SHADER_SRC_DIR}hostDevice/
     -I
+    ${PROJECT_SRC_DIR}
+    -I
     ${PROJECT_SRC_DIR}/renderer/
     -I
     ${PROJECT_SRC_DIR}/renderer/pushConstants/

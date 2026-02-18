@@ -11,7 +11,8 @@ class VulkanBuffer
     void create(VulkanDevice *vulkanDevice,
       VkDeviceSize buffer_size,
       VkBufferUsageFlags buffer_usage_flags,
-      VkMemoryPropertyFlags buffer_propertiy_flags);
+      VkMemoryPropertyFlags buffer_propertiy_flags,
+      VkMemoryAllocateFlags buffer_allocate_flags = 0);
 
     void cleanUp();
 

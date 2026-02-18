@@ -71,7 +71,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(VulkanDevice *d
     scratchBuffer.create(device,
       max_scratch_size,
       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
     VkBufferDeviceAddressInfo scratch_buffer_device_address_info{};
     scratch_buffer_device_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
@@ -181,8 +182,9 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
       geometryInstanceBuffer,
       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
         | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-      tlas_instances);
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+      tlas_instances,
+      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
     VkBufferDeviceAddressInfo geometry_instance_buffer_device_address_info{};
     geometry_instance_buffer_device_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
@@ -252,7 +254,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
       acceleration_structure_build_sizes_info.accelerationStructureSize,
       VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
         | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
     VkAccelerationStructureCreateInfoKHR acceleration_structure_create_info{};
     acceleration_structure_create_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
@@ -272,7 +275,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
     scratchBuffer.create(device,
       acceleration_structure_build_sizes_info.buildScratchSize,
       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
     VkBufferDeviceAddressInfo scratch_buffer_device_address_info{};
     scratch_buffer_device_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
@@ -345,7 +349,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createSingleBlas(VulkanDev
       build_as_structure.size_info.accelerationStructureSize,
       VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
         | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
     acceleration_structure_create_info.buffer = blasVulkanBuffer.getBuffer();
     VkAccelerationStructureKHR &blas_as = build_as_structure.single_blas.vulkanAS;

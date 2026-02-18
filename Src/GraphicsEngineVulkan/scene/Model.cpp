@@ -59,6 +59,9 @@ Model::~Model() {}
 void Model::addSampler(Texture newTexture)
 {
     VkSampler newSampler;
+    VkPhysicalDeviceFeatures physical_device_features{};
+    vkGetPhysicalDeviceFeatures(device->getPhysicalDevice(), &physical_device_features);
+
     // sampler create info
     VkSamplerCreateInfo sampler_create_info{};
     sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -73,8 +76,8 @@ void Model::addSampler(Texture newTexture)
     sampler_create_info.mipLodBias = 0.0f;
     sampler_create_info.minLod = 0.0f;
     sampler_create_info.maxLod = newTexture.getMipLevel();
-    sampler_create_info.anisotropyEnable = VK_TRUE;
-    sampler_create_info.maxAnisotropy = 16;// max anisotropy sample level
+    sampler_create_info.anisotropyEnable = physical_device_features.samplerAnisotropy;
+    sampler_create_info.maxAnisotropy = physical_device_features.samplerAnisotropy ? 16.0f : 1.0f;
 
     VkResult result = vkCreateSampler(device->getLogicalDevice(), &sampler_create_info, nullptr, &newSampler);
     ASSERT_VULKAN(result, "Failed to create a texture sampler!")

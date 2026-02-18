@@ -21,7 +21,8 @@ class GUI
     void initializeVulkanContext(VulkanDevice *device,
       const VkInstance &instance,
       const VkRenderPass &post_render_pass,
-      const VkCommandPool &graphics_command_pool);
+      const VkCommandPool &graphics_command_pool,
+      uint32_t image_count);
 
     GUISceneSharedVars getGuiSceneSharedVars() { return guiSceneSharedVars; };
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &getGuiRendererSharedVars()
@@ -38,7 +39,8 @@ class GUI
     ~GUI();
 
   private:
-    void create_gui_context(Window *window, const VkInstance &instance, const VkRenderPass &post_render_pass);
+    void create_gui_context(
+      Window *window, const VkInstance &instance, const VkRenderPass &post_render_pass, uint32_t image_count);
 
     VulkanDevice *device{ VK_NULL_HANDLE };
     Window *window{ VK_NULL_HANDLE };

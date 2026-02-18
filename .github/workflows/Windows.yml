@@ -9,10 +9,7 @@ on:
 env:
   ACTIONS_STEP_DEBUG: true
   ACTIONS_RUNNER_DEBUG: true
-  BUILD_DIR: build
-  BUILD_DIR_RELEASE: build_release
   LLVM_BIN: C:\Program Files\LLVM\bin
-  CLANG_PROFILE_PRESET: x64-ClangCL-Windows-Profile
   GHCR_IMAGE_WIN: ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64
 
 defaults:
@@ -36,9 +33,9 @@ jobs:
         shell: pwsh
 
       - name: Checkout
-        uses: actions/checkout@v6.0.1
+        uses: actions/checkout@v6.0.2
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           submodules: recursive
       
       # my windows container is quite big ... so remove runner packages for enough
@@ -47,7 +44,7 @@ jobs:
         uses: ./.github/actions/cleanup-disk-space
 
       - name: Log in to GHCR (for container image)
-        uses: docker/login-action@v3.6.0
+        uses: docker/login-action@v3.7.0
         with:
           registry: ghcr.io
           username: Kataglyphis
@@ -64,19 +61,19 @@ jobs:
           docker run --rm `
             --mount "type=bind,source=${{ github.workspace }},target=C:\workspace" `
             -w "C:\workspace" `
-            -e "BUILD_DIR=${{ env.BUILD_DIR }}" `
-            -e "BUILD_DIR_RELEASE=${{ env.BUILD_DIR_RELEASE }}" `
-            -e "CLANG_PROFILE_PRESET=${{ env.CLANG_PROFILE_PRESET }}" `
             $image `
-            powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\\workspace\\Scripts\\Windows\\Build-Windows.ps1"
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\\workspace\\Scripts\\Windows\\Build-Windows.ps1" `
+            -BuildDir "C:\\workspace\\build" `
+            -BuildDirRelease "C:\\workspace\\build_release" `
+            -ClangProfilePreset "x64-ClangCL-Windows-Profile"
 
       # I limited the size of the builded package for storage restriction reasons on a github runner
       # see also the install commands in the bottom of the CMakeLists.txt
       - name: Upload Installers & Zip
-        uses: actions/upload-artifact@v5.0.0
+        uses: actions/upload-artifact@v6.0.0
         with:
           name: windows-installers-container
           path: |
-            ${{ github.workspace }}/${{ env.BUILD_DIR_RELEASE }}/*.msi
-            ${{ github.workspace }}/${{ env.BUILD_DIR_RELEASE }}/*.exe
-            ${{ github.workspace }}/${{ env.BUILD_DIR_RELEASE }}/*.zip
+            ${{ github.workspace }}/build_release/*.msi
+            ${{ github.workspace }}/build_release/*.exe
+            ${{ github.workspace }}/build_release/*.zip

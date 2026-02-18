@@ -146,18 +146,6 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(VkCommand
 
     vkCmdWriteTimestamp(
       commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool, query++);
-    VkResult result = vkGetQueryPoolResults(device->getLogicalDevice(),
-      queryPool,
-      0,
-      query_count,
-      queryResults.size() * sizeof(uint64_t),
-      queryResults.data(),
-      static_cast<VkDeviceSize>(sizeof(uint64_t)),
-      VK_QUERY_RESULT_64_BIT);
-
-    if (result != VK_NOT_READY) {
-        pathTracingTiming = (static_cast<float>(queryResults[1] - queryResults[0]) * timeStampPeriod) / 1000000.f;
-    }
 }
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::cleanUp()
@@ -176,8 +164,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createQueryPool()
     queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
     // This query pool will store pipeline statistics
     queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
-    // Pipeline counters to be returned for this pool
-    queryPoolInfo.pipelineStatistics = VK_QUERY_PIPELINE_STATISTIC_COMPUTE_SHADER_INVOCATIONS_BIT;
+  queryPoolInfo.pipelineStatistics = 0;
     queryPoolInfo.queryCount = query_count;
     ASSERT_VULKAN(
       vkCreateQueryPool(device->getLogicalDevice(), &queryPoolInfo, NULL, &queryPool), "Failed to create query pool!");

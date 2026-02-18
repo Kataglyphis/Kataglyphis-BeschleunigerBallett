@@ -36,7 +36,8 @@ class VulkanBufferManager
       VulkanBuffer &vulkanBuffer,
       VkBufferUsageFlags dstBufferUsageFlags,
       VkMemoryPropertyFlags dstBufferMemoryPropertyFlags,
-      std::vector<T> &data);
+      std::vector<T> &data,
+      VkMemoryAllocateFlags dstBufferMemoryAllocateFlags = 0);
 
     ~VulkanBufferManager();
 
@@ -50,9 +51,16 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(VulkanDevic
   VulkanBuffer &vulkanBuffer,
   VkBufferUsageFlags dstBufferUsageFlags,
   VkMemoryPropertyFlags dstBufferMemoryPropertyFlags,
-  std::vector<T> &bufferData)
+  std::vector<T> &bufferData,
+  VkMemoryAllocateFlags dstBufferMemoryAllocateFlags)
 {
     VkDeviceSize bufferSize = sizeof(T) * bufferData.size();
+    if (bufferSize == 0) {
+        bufferSize = sizeof(uint32_t);
+        vulkanBuffer.create(
+          device, bufferSize, dstBufferUsageFlags, dstBufferMemoryPropertyFlags, dstBufferMemoryAllocateFlags);
+        return;
+    }
 
     // temporary buffer to "stage" vertex data before transfering to GPU
     VulkanBuffer stagingBuffer;
@@ -76,7 +84,8 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(VulkanDevic
     // create buffer with TRANSFER_DST_BIT to mark as recipient of transfer data
     // (also VERTEX_BUFFER) buffer memory is to be DEVICE_LOCAL_BIT meaning memory
     // is on the GPU and only accessible by it and not CPU (host)
-    vulkanBuffer.create(device, bufferSize, dstBufferUsageFlags, dstBufferMemoryPropertyFlags);
+    vulkanBuffer.create(
+      device, bufferSize, dstBufferUsageFlags, dstBufferMemoryPropertyFlags, dstBufferMemoryAllocateFlags);
 
     // copy staging buffer to vertex buffer on GPU
     copyBuffer(

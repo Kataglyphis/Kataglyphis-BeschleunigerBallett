@@ -35,6 +35,7 @@
 #include <stb_image.h>
 
 #include <gsl/gsl>
+#include <imgui.h>
 
 #include "common/Globals.hpp"
 #include "renderer/pushConstants/PushConstantPost.hpp"
@@ -111,7 +112,11 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     }
 
     gui->initializeVulkanContext(
-      device.get(), instance.getVulkanInstance(), postStage.getRenderPass(), graphics_command_pool);
+      device.get(),
+      instance.getVulkanInstance(),
+      postStage.getRenderPass(),
+      graphics_command_pool,
+      vulkanSwapChain.getNumberSwapChainImages());
     gui->setUserSelectionForRRT(device->supportsHardwareAcceleratedRRT());
 }
 
@@ -159,26 +164,68 @@ void Kataglyphis::VulkanRenderer::shaderHotReload()
     std::vector<VkDescriptorSetLayout> descriptor_set_layouts_post = { post_descriptor_set_layout };
     postStage.shaderHotReload(descriptor_set_layouts_post);
 
-    std::vector<VkDescriptorSetLayout> layouts = { sharedRenderDescriptorSetLayout, raytracingDescriptorSetLayout };
-    raytracingStage.shaderHotReload(layouts);
-    pathTracing.shaderHotReload(layouts);
+    if (device->supportsHardwareAcceleratedRRT()) {
+      std::vector<VkDescriptorSetLayout> layouts = { sharedRenderDescriptorSetLayout, raytracingDescriptorSetLayout };
+      raytracingStage.shaderHotReload(layouts);
+      pathTracing.shaderHotReload(layouts);
+    }
 }
 
 void Kataglyphis::VulkanRenderer::drawFrame()
 {
+    const auto end_imgui_frame_if_needed = []() {
+        if (ImGui::GetCurrentContext() != nullptr) { ImGui::EndFrame(); }
+    };
+
+  const auto abort_frame_with_fatal_error = [&](const char *message, VkResult error_code) {
+    spdlog::error("{} (VkResult={})", message, static_cast<int>(error_code));
+    if (window != nullptr && window->get_window() != nullptr) {
+      glfwSetWindowShouldClose(window->get_window(), GLFW_TRUE);
+    }
+    end_imgui_frame_if_needed();
+  };
+
+    if (frame_sync_count == 0) {
+        spdlog::error("No synchronization frames available; skipping draw frame.");
+        end_imgui_frame_if_needed();
+        return;
+    }
+
     // We need to skip one frame
     // Due to ImGui need to call ImGui::NewFrame() again
     // if we recreated swapchain
-    if (checkChangedFramebufferSize()) return;
+    if (checkChangedFramebufferSize()) {
+      end_imgui_frame_if_needed();
+      return;
+    }
 
     /*1. Get next available image to draw to and set something to signal when
        we're finished with the image  (a semaphore) wait for given fence to signal
        (open) from last draw before continuing*/
+    if (current_frame >= in_flight_fences.size() || current_frame >= image_available.size()) {
+        spdlog::error("Frame synchronization index out of range: {}", current_frame);
+      end_imgui_frame_if_needed();
+        return;
+    }
+
+    if (in_flight_fences[current_frame] == VK_NULL_HANDLE || image_available[current_frame] == VK_NULL_HANDLE) {
+      spdlog::error("Synchronization handles are invalid for frame {}.", current_frame);
+      if (window != nullptr && window->get_window() != nullptr) {
+        glfwSetWindowShouldClose(window->get_window(), GLFW_TRUE);
+      }
+      end_imgui_frame_if_needed();
+      return;
+    }
+
     VkResult result = vkWaitForFences(
       device->getLogicalDevice(), 1, &in_flight_fences[current_frame], VK_TRUE, std::numeric_limits<uint64_t>::max());
-    ASSERT_VULKAN(result, "Failed to wait for fences!")
+    if (result != VK_SUCCESS) {
+        abort_frame_with_fatal_error("Failed to wait for fences!", result);
+        return;
+    }
+
     // -- GET NEXT IMAGE --
-    uint32_t image_index;
+    uint32_t image_index = 0;
     result = vkAcquireNextImageKHR(device->getLogicalDevice(),
       vulkanSwapChain.getSwapChain(),
       std::numeric_limits<uint64_t>::max(),
@@ -188,10 +235,25 @@ void Kataglyphis::VulkanRenderer::drawFrame()
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         // recreate_swap_chain();
+      end_imgui_frame_if_needed();
         return;
+    }
 
-    } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-        spdlog::error("Failed to acquire next image!");
+    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+      abort_frame_with_fatal_error("Failed to acquire next image!", result);
+        return;
+    }
+
+    if (image_index >= images_in_flight_fences.size() || image_index >= command_buffers.size()) {
+        spdlog::error("Swapchain image index out of range: {}", image_index);
+        end_imgui_frame_if_needed();
+        return;
+    }
+
+    if (image_index >= render_finished_by_image.size() || render_finished_by_image[image_index] == VK_NULL_HANDLE) {
+      spdlog::error("Render-finished semaphore missing for swapchain image {}.", image_index);
+      end_imgui_frame_if_needed();
+      return;
     }
 
     //// check if previous frame is using this image (i.e. there is its fence to
@@ -208,19 +270,30 @@ void Kataglyphis::VulkanRenderer::drawFrame()
     buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     // start recording commands to command buffer
     result = vkBeginCommandBuffer(command_buffers[image_index], &buffer_begin_info);
-    ASSERT_VULKAN(result, "Failed to start recording a command buffer!")
+    if (result != VK_SUCCESS) {
+      abort_frame_with_fatal_error("Failed to start recording a command buffer!", result);
+        return;
+    }
 
     update_uniform_buffers(image_index);
 
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars =
       gui->getGuiRendererSharedVars();
-    if (guiRendererSharedVars.raytracing) update_raytracing_descriptor_set(image_index);
+    if (device->supportsHardwareAcceleratedRRT() && guiRendererSharedVars.raytracing) {
+        update_raytracing_descriptor_set(image_index);
+    }
 
-    record_commands(image_index);
+    if (!record_commands(image_index)) {
+      end_imgui_frame_if_needed();
+      return;
+    }
 
     // stop recording to command buffer
     result = vkEndCommandBuffer(command_buffers[image_index]);
-    ASSERT_VULKAN(result, "Failed to stop recording a command buffer!")
+    if (result != VK_SUCCESS) {
+      abort_frame_with_fatal_error("Failed to stop recording a command buffer!", result);
+        return;
+    }
 
     // 2. Submit command buffer to queue for execution, making sure it waits for
     // the image to be signalled as available before drawing and signals when it
@@ -244,22 +317,28 @@ void Kataglyphis::VulkanRenderer::drawFrame()
     submit_info.commandBufferCount = 1;// number of command buffers to submit
     submit_info.pCommandBuffers = &command_buffers[image_index];// command buffer to submit
     submit_info.signalSemaphoreCount = 1;// number of semaphores to signal
-    submit_info.pSignalSemaphores = &render_finished[current_frame];// semaphores to signal when command
-                                                                    // buffer finishes
+    submit_info.pSignalSemaphores = &render_finished_by_image[image_index];// semaphores to signal when command
+                                        // buffer finishes
 
     result = vkResetFences(device->getLogicalDevice(), 1, &in_flight_fences[current_frame]);
-    ASSERT_VULKAN(result, "Failed to reset fences!")
+    if (result != VK_SUCCESS) {
+      abort_frame_with_fatal_error("Failed to reset fences!", result);
+        return;
+    }
 
     // submit command buffer to queue
     result = vkQueueSubmit(device->getGraphicsQueue(), 1, &submit_info, in_flight_fences[current_frame]);
-    ASSERT_VULKAN(result, "Failed to submit command buffer to queue!")
+    if (result != VK_SUCCESS) {
+      abort_frame_with_fatal_error("Failed to submit command buffer to queue!", result);
+        return;
+    }
 
     // 3. Present image to screen when it has signalled finished rendering
     // -- PRESENT RENDERED IMAGE TO SCREEN --
     VkPresentInfoKHR present_info{};
     present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     present_info.waitSemaphoreCount = 1;// number of semaphores to wait on
-    present_info.pWaitSemaphores = &render_finished[current_frame];// semaphores to wait on
+    present_info.pWaitSemaphores = &render_finished_by_image[image_index];// semaphores to wait on
     present_info.swapchainCount = 1;// number of swapchains to present to
     const VkSwapchainKHR swapchain = vulkanSwapChain.getSwapChain();
     present_info.pSwapchains = &swapchain;// swapchains to present images to
@@ -269,15 +348,16 @@ void Kataglyphis::VulkanRenderer::drawFrame()
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         // recreate_swap_chain();
+      end_imgui_frame_if_needed();
         return;
-
-    } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-        spdlog::error("Failed to acquire next image!");
     }
 
-    if (result != VK_SUCCESS) { spdlog::error("Failed to submit to present queue!"); }
+    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+      abort_frame_with_fatal_error("Failed to present image!", result);
+        return;
+    }
 
-    current_frame = (current_frame + 1) % Kataglyphis::MAX_FRAME_DRAWS;
+    current_frame = (current_frame + 1) % frame_sync_count;
 }
 
 void Kataglyphis::VulkanRenderer::create_surface()
@@ -318,7 +398,7 @@ void Kataglyphis::VulkanRenderer::create_post_descriptor_layout()
 
     VkDescriptorPoolSize post_pool_size{};
     post_pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    post_pool_size.descriptorCount = static_cast<uint32_t>(1);
+    post_pool_size.descriptorCount = static_cast<uint32_t>(vulkanSwapChain.getNumberSwapChainImages());
 
     // list of pool sizes
     std::vector<VkDescriptorPoolSize> descriptor_pool_sizes = { post_pool_size };
@@ -351,10 +431,19 @@ void Kataglyphis::VulkanRenderer::create_post_descriptor_layout()
     // allocate descriptor sets (multiple)
     result = vkAllocateDescriptorSets(device->getLogicalDevice(), &set_alloc_info, post_descriptor_set.data());
     ASSERT_VULKAN(result, "Failed to create descriptor sets!")
+    if (result != VK_SUCCESS) {
+      post_descriptor_set.clear();
+      return;
+    }
 }
 
 void Kataglyphis::VulkanRenderer::updatePostDescriptorSets()
 {
+  if (post_descriptor_set.size() < vulkanSwapChain.getNumberSwapChainImages()) {
+    spdlog::error("Post descriptor sets are not available; skipping update.");
+    return;
+  }
+
     // update all of descriptor set buffer bindings
     for (size_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
         // texture image info
@@ -382,18 +471,19 @@ void Kataglyphis::VulkanRenderer::updatePostDescriptorSets()
 void Kataglyphis::VulkanRenderer::createRaytracingDescriptorPool()
 {
     std::array<VkDescriptorPoolSize, 2> descriptor_pool_sizes{};
+  const uint32_t swapchain_image_count = vulkanSwapChain.getNumberSwapChainImages();
 
     descriptor_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-    descriptor_pool_sizes[0].descriptorCount = 1;
+  descriptor_pool_sizes[0].descriptorCount = swapchain_image_count;
 
     descriptor_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    descriptor_pool_sizes[1].descriptorCount = 1;
+  descriptor_pool_sizes[1].descriptorCount = swapchain_image_count;
 
     VkDescriptorPoolCreateInfo descriptor_pool_create_info{};
     descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     descriptor_pool_create_info.poolSizeCount = static_cast<uint32_t>(descriptor_pool_sizes.size());
     descriptor_pool_create_info.pPoolSizes = descriptor_pool_sizes.data();
-    descriptor_pool_create_info.maxSets = vulkanSwapChain.getNumberSwapChainImages();
+    descriptor_pool_create_info.maxSets = swapchain_image_count;
 
     VkResult result = vkCreateDescriptorPool(
       device->getLogicalDevice(), &descriptor_pool_create_info, nullptr, &raytracingDescriptorPool);
@@ -402,10 +492,19 @@ void Kataglyphis::VulkanRenderer::createRaytracingDescriptorPool()
 
 void Kataglyphis::VulkanRenderer::cleanUpSync()
 {
-    for (int i = 0; i < Kataglyphis::MAX_FRAME_DRAWS; i++) {
-        vkDestroySemaphore(device->getLogicalDevice(), render_finished[i], nullptr);
-        vkDestroySemaphore(device->getLogicalDevice(), image_available[i], nullptr);
-        vkDestroyFence(device->getLogicalDevice(), in_flight_fences[i], nullptr);
+  for (VkSemaphore semaphore : render_finished_by_image) {
+    if (semaphore != VK_NULL_HANDLE) {
+      vkDestroySemaphore(device->getLogicalDevice(), semaphore, nullptr);
+    }
+  }
+
+  for (uint32_t i = 0; i < frame_sync_count; i++) {
+        if (image_available[i] != VK_NULL_HANDLE) {
+          vkDestroySemaphore(device->getLogicalDevice(), image_available[i], nullptr);
+        }
+        if (in_flight_fences[i] != VK_NULL_HANDLE) {
+          vkDestroyFence(device->getLogicalDevice(), in_flight_fences[i], nullptr);
+        }
     }
 }
 
@@ -416,8 +515,8 @@ void Kataglyphis::VulkanRenderer::create_object_description_buffer()
     vulkanBufferManager.createBufferAndUploadVectorOnDevice(device.get(),
       graphics_command_pool,
       objectDescriptionBuffer,
-      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT,
+      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
       objectDescriptions);
 
     // update the object description set
@@ -558,23 +657,37 @@ void Kataglyphis::VulkanRenderer::updateRaytracingDescriptorSets()
 
 void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorSetLayouts()
 {
+  const bool raytracing_available = device->supportsHardwareAcceleratedRRT();
+
+  VkShaderStageFlags global_ubo_stages = VK_SHADER_STAGE_VERTEX_BIT;
+  VkShaderStageFlags scene_ubo_stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+  VkShaderStageFlags object_description_stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+  VkShaderStageFlags sampler_stages = VK_SHADER_STAGE_FRAGMENT_BIT;
+  VkShaderStageFlags textures_stages = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+  if (raytracing_available) {
+    global_ubo_stages |= VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+    scene_ubo_stages |=
+      VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+    object_description_stages |= VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+    sampler_stages |= VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+    textures_stages |= VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+  }
+
     std::array<VkDescriptorSetLayoutBinding, 5> descriptor_set_layout_bindings{};
     // UNIFORM VALUES DESCRIPTOR SET LAYOUT
     // globalUBO Binding info
     descriptor_set_layout_bindings[0].binding = globalUBO_BINDING;
     descriptor_set_layout_bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     descriptor_set_layout_bindings[0].descriptorCount = 1;
-    descriptor_set_layout_bindings[0].stageFlags =
-      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+    descriptor_set_layout_bindings[0].stageFlags = global_ubo_stages;
     descriptor_set_layout_bindings[0].pImmutableSamplers = nullptr;
 
     // our model matrix which updates every frame for each object
     descriptor_set_layout_bindings[1].binding = sceneUBO_BINDING;
     descriptor_set_layout_bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     descriptor_set_layout_bindings[1].descriptorCount = 1;
-    descriptor_set_layout_bindings[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-                                                   | VK_SHADER_STAGE_RAYGEN_BIT_KHR
-                                                   | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+    descriptor_set_layout_bindings[1].stageFlags = scene_ubo_stages;
     descriptor_set_layout_bindings[1].pImmutableSamplers = nullptr;
 
     descriptor_set_layout_bindings[2].binding = OBJECT_DESCRIPTION_BINDING;
@@ -582,23 +695,20 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorSetLayouts()
     descriptor_set_layout_bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     descriptor_set_layout_bindings[2].pImmutableSamplers = nullptr;
     // load them into the raygeneration and chlosest hit shader
-    descriptor_set_layout_bindings[2].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT
-                                                   | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+    descriptor_set_layout_bindings[2].stageFlags = object_description_stages;
 
     // CREATE TEXTURE SAMPLER DESCRIPTOR SET LAYOUT
     // texture binding info
     descriptor_set_layout_bindings[3].binding = SAMPLER_BINDING;
     descriptor_set_layout_bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
     descriptor_set_layout_bindings[3].descriptorCount = MAX_TEXTURE_COUNT;
-    descriptor_set_layout_bindings[3].stageFlags =
-      VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+    descriptor_set_layout_bindings[3].stageFlags = sampler_stages;
     descriptor_set_layout_bindings[3].pImmutableSamplers = nullptr;
 
     descriptor_set_layout_bindings[4].binding = TEXTURES_BINDING;
     descriptor_set_layout_bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
     descriptor_set_layout_bindings[4].descriptorCount = MAX_TEXTURE_COUNT;
-    descriptor_set_layout_bindings[4].stageFlags =
-      VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+    descriptor_set_layout_bindings[4].stageFlags = textures_stages;
     descriptor_set_layout_bindings[4].pImmutableSamplers = nullptr;
 
     // create descriptor set layout with given bindings
@@ -672,9 +782,12 @@ void Kataglyphis::VulkanRenderer::create_command_buffers()
 
 void Kataglyphis::VulkanRenderer::createSynchronization()
 {
-    image_available.resize(vulkanSwapChain.getNumberSwapChainImages(), VK_NULL_HANDLE);
-    render_finished.resize(vulkanSwapChain.getNumberSwapChainImages(), VK_NULL_HANDLE);
-    in_flight_fences.resize(vulkanSwapChain.getNumberSwapChainImages(), VK_NULL_HANDLE);
+    frame_sync_count = std::min<uint32_t>(
+      static_cast<uint32_t>(Kataglyphis::MAX_FRAME_DRAWS), vulkanSwapChain.getNumberSwapChainImages());
+
+    image_available.resize(frame_sync_count, VK_NULL_HANDLE);
+    render_finished_by_image.resize(vulkanSwapChain.getNumberSwapChainImages(), VK_NULL_HANDLE);
+    in_flight_fences.resize(frame_sync_count, VK_NULL_HANDLE);
     images_in_flight_fences.resize(vulkanSwapChain.getNumberSwapChainImages(), VK_NULL_HANDLE);
 
     // semaphore creation information
@@ -686,15 +799,35 @@ void Kataglyphis::VulkanRenderer::createSynchronization()
     fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    for (int i = 0; i < Kataglyphis::MAX_FRAME_DRAWS; i++) {
-        if ((vkCreateSemaphore(device->getLogicalDevice(), &semaphore_create_info, nullptr, &image_available[i])
-              != VK_SUCCESS)
-            || (vkCreateSemaphore(device->getLogicalDevice(), &semaphore_create_info, nullptr, &render_finished[i])
-                != VK_SUCCESS)
-            || (vkCreateFence(device->getLogicalDevice(), &fence_create_info, nullptr, &in_flight_fences[i])
-                != VK_SUCCESS)) {
-            spdlog::error("Failed to create a semaphore and/or fence!");
+    for (uint32_t i = 0; i < frame_sync_count; i++) {
+        const VkResult image_available_result =
+          vkCreateSemaphore(device->getLogicalDevice(), &semaphore_create_info, nullptr, &image_available[i]);
+        const VkResult in_flight_fence_result =
+          vkCreateFence(device->getLogicalDevice(), &fence_create_info, nullptr, &in_flight_fences[i]);
+
+        if (image_available_result != VK_SUCCESS || in_flight_fence_result != VK_SUCCESS
+            || image_available[i] == VK_NULL_HANDLE || in_flight_fences[i] == VK_NULL_HANDLE) {
+            spdlog::error(
+              "Failed to create synchronization objects for frame {} (imageAvailable={}, fence={}).",
+              i,
+              static_cast<int>(image_available_result),
+              static_cast<int>(in_flight_fence_result));
+            frame_sync_count = 0;
+            return;
         }
+    }
+
+    for (uint32_t image = 0; image < vulkanSwapChain.getNumberSwapChainImages(); ++image) {
+      const VkResult render_finished_result = vkCreateSemaphore(
+        device->getLogicalDevice(), &semaphore_create_info, nullptr, &render_finished_by_image[image]);
+
+      if (render_finished_result != VK_SUCCESS || render_finished_by_image[image] == VK_NULL_HANDLE) {
+        spdlog::error("Failed to create render-finished semaphore for swapchain image {} ({}).",
+          image,
+          static_cast<int>(render_finished_result));
+        frame_sync_count = 0;
+        return;
+      }
     }
 }
 
@@ -752,11 +885,11 @@ void Kataglyphis::VulkanRenderer::createDescriptorPoolSharedRenderStages()
     // TEXTURE SAMPLER POOL
     VkDescriptorPoolSize sampler_pool_size{};
     sampler_pool_size.type = VK_DESCRIPTOR_TYPE_SAMPLER;
-    sampler_pool_size.descriptorCount = MAX_TEXTURE_COUNT;
+    sampler_pool_size.descriptorCount = MAX_TEXTURE_COUNT * vulkanSwapChain.getNumberSwapChainImages();
 
     VkDescriptorPoolSize sampled_image_pool_size{};
     sampled_image_pool_size.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-    sampled_image_pool_size.descriptorCount = MAX_TEXTURE_COUNT;
+    sampled_image_pool_size.descriptorCount = MAX_TEXTURE_COUNT * vulkanSwapChain.getNumberSwapChainImages();
 
     // list of pool sizes
     std::vector<VkDescriptorPoolSize> descriptor_pool_sizes = {
@@ -796,6 +929,10 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorSet()
     VkResult result =
       vkAllocateDescriptorSets(device->getLogicalDevice(), &set_alloc_info, sharedRenderDescriptorSet.data());
     ASSERT_VULKAN(result, "Failed to create descriptor sets!")
+    if (result != VK_SUCCESS) {
+        sharedRenderDescriptorSet.clear();
+        return;
+    }
 
     // update all of descriptor set buffer bindings
     for (size_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
@@ -846,6 +983,11 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorSet()
 
 void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
 {
+  if (sharedRenderDescriptorSet.size() < vulkanSwapChain.getNumberSwapChainImages()) {
+    spdlog::error("Shared render descriptor sets are not available; skipping texture update.");
+    return;
+  }
+
     std::vector<Texture> &modelTextures = scene->getTextures(0);
     std::vector<VkDescriptorImageInfo> image_info_textures;
     image_info_textures.resize(scene->getTextureCount(0));
@@ -909,8 +1051,16 @@ void Kataglyphis::VulkanRenderer::cleanUpUBOs()
 
 void Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
 {
-    auto usage_stage_flags = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
-                             | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+  if (image_index >= command_buffers.size() || image_index >= globalUBOBuffer.size()
+      || image_index >= sceneUBOBuffer.size()) {
+    spdlog::error("Uniform update index out of range: {}", image_index);
+    return;
+  }
+
+  VkPipelineStageFlags usage_stage_flags = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+  if (device->supportsHardwareAcceleratedRRT()) {
+    usage_stage_flags |= VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
+  }
 
     VkBufferMemoryBarrier before_barrier_uvp{};
     before_barrier_uvp.pNext = nullptr;
@@ -1012,6 +1162,13 @@ void Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
 
 void Kataglyphis::VulkanRenderer::update_raytracing_descriptor_set(uint32_t image_index)
 {
+  if (!device->supportsHardwareAcceleratedRRT()) { return; }
+
+  if (image_index >= raytracingDescriptorSet.size() || image_index >= sharedRenderDescriptorSet.size()) {
+    spdlog::error("Raytracing descriptor update index out of range: {}", image_index);
+    return;
+  }
+
     VkWriteDescriptorSetAccelerationStructureKHR descriptor_set_acceleration_structure{};
     descriptor_set_acceleration_structure.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
     descriptor_set_acceleration_structure.pNext = nullptr;
@@ -1054,19 +1211,35 @@ void Kataglyphis::VulkanRenderer::update_raytracing_descriptor_set(uint32_t imag
       nullptr);
 }
 
-void Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
+bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
 {
+    if (image_index >= command_buffers.size() || image_index >= sharedRenderDescriptorSet.size()
+        || image_index >= post_descriptor_set.size()) {
+        spdlog::error("Record command index out of range: {}", image_index);
+        return false;
+    }
+
     Texture &renderResult = rasterizer.getOffscreenTexture(image_index);
     VulkanImage &vulkanImage = renderResult.getVulkanImage();
 
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars =
       gui->getGuiRendererSharedVars();
-    if (guiRendererSharedVars.raytracing) {
+    const bool raytracing_available = device->supportsHardwareAcceleratedRRT();
+
+    if (raytracing_available && guiRendererSharedVars.raytracing) {
+        if (image_index >= raytracingDescriptorSet.size()) {
+            spdlog::error("Raytracing descriptor set index out of range: {}", image_index);
+            return false;
+        }
         std::vector<VkDescriptorSet> sets = { sharedRenderDescriptorSet[image_index],
             raytracingDescriptorSet[image_index] };
         raytracingStage.recordCommands(command_buffers[image_index], &vulkanSwapChain, sets);
 
-    } else if (guiRendererSharedVars.pathTracing) {
+    } else if (raytracing_available && guiRendererSharedVars.pathTracing) {
+        if (image_index >= raytracingDescriptorSet.size()) {
+            spdlog::error("Path tracing descriptor set index out of range: {}", image_index);
+            return false;
+        }
         std::vector<VkDescriptorSet> sets = { sharedRenderDescriptorSet[image_index],
             raytracingDescriptorSet[image_index] };
 
@@ -1092,6 +1265,8 @@ void Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
       VK_IMAGE_LAYOUT_GENERAL,
       1,
       VK_IMAGE_ASPECT_COLOR_BIT);
+
+    return true;
 }
 
 bool Kataglyphis::VulkanRenderer::checkChangedFramebufferSize()
@@ -1100,8 +1275,21 @@ bool Kataglyphis::VulkanRenderer::checkChangedFramebufferSize()
         vkDeviceWaitIdle(device->getLogicalDevice());
         vkQueueWaitIdle(device->getGraphicsQueue());
 
+    cleanUpSync();
+    image_available.clear();
+    render_finished_by_image.clear();
+    in_flight_fences.clear();
+    images_in_flight_fences.clear();
+
         vulkanSwapChain.cleanUp();
         vulkanSwapChain.initVulkanContext(device.get(), window, surface);
+
+    createSynchronization();
+
+    if (frame_sync_count == 0) {
+      spdlog::error("Failed to recreate synchronization objects after swapchain resize.");
+      return true;
+    }
 
         std::vector<VkDescriptorSetLayout> descriptor_set_layouts = { sharedRenderDescriptorSetLayout };
         rasterizer.cleanUp();
@@ -1114,7 +1302,11 @@ bool Kataglyphis::VulkanRenderer::checkChangedFramebufferSize()
 
         gui->cleanUp();
         gui->initializeVulkanContext(
-          device.get(), instance.getVulkanInstance(), postStage.getRenderPass(), graphics_command_pool);
+          device.get(),
+          instance.getVulkanInstance(),
+          postStage.getRenderPass(),
+          graphics_command_pool,
+          vulkanSwapChain.getNumberSwapChainImages());
 
         current_frame = 0;
 
@@ -1133,19 +1325,29 @@ void Kataglyphis::VulkanRenderer::cleanUp()
     cleanUpUBOs();
 
     rasterizer.cleanUp();
-    raytracingStage.cleanUp();
+    if (device->supportsHardwareAcceleratedRRT()) {
+      raytracingStage.cleanUp();
+    }
     postStage.cleanUp();
-    pathTracing.cleanUp();
+    if (device->supportsHardwareAcceleratedRRT()) {
+      pathTracing.cleanUp();
+    }
 
     objectDescriptionBuffer.cleanUp();
-    asManager.cleanUp();
+    if (device->supportsHardwareAcceleratedRRT()) {
+      asManager.cleanUp();
+    }
 
-    vkDestroyDescriptorSetLayout(device->getLogicalDevice(), raytracingDescriptorSetLayout, nullptr);
+    if (device->supportsHardwareAcceleratedRRT()) {
+      vkDestroyDescriptorSetLayout(device->getLogicalDevice(), raytracingDescriptorSetLayout, nullptr);
+    }
     vkDestroyDescriptorSetLayout(device->getLogicalDevice(), post_descriptor_set_layout, nullptr);
     vkDestroyDescriptorSetLayout(device->getLogicalDevice(), sharedRenderDescriptorSetLayout, nullptr);
     vkDestroyDescriptorPool(device->getLogicalDevice(), post_descriptor_pool, nullptr);
     vkDestroyDescriptorPool(device->getLogicalDevice(), descriptorPoolSharedRenderStages, nullptr);
-    vkDestroyDescriptorPool(device->getLogicalDevice(), raytracingDescriptorPool, nullptr);
+    if (device->supportsHardwareAcceleratedRRT()) {
+      vkDestroyDescriptorPool(device->getLogicalDevice(), raytracingDescriptorPool, nullptr);
+    }
 
     vkFreeCommandBuffers(device->getLogicalDevice(),
       graphics_command_pool,

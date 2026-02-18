@@ -1,73 +1,163 @@
+param(
+  [string[]]$Configurations = @('all'),
+  [string]$BuildDir,
+  [string]$BuildDirRelease,
+  [string]$ClangProfilePreset = 'x64-ClangCL-Windows-Profile',
+  [switch]$CoverageShowSources
+)
+
 $ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
+$workspaceRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
+$moduleRoot = Join-Path $workspaceRoot 'ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules'
+$buildModulePath = Join-Path $moduleRoot 'WindowsBuild.Common.psm1'
+
+if (-not (Test-Path $buildModulePath)) {
+  throw "Required module not found: $buildModulePath"
+}
+
+Import-Module $buildModulePath -Force
+
+if ([string]::IsNullOrWhiteSpace($BuildDir)) {
+  $BuildDir = Join-Path $workspaceRoot 'build'
+}
+
+if ([string]::IsNullOrWhiteSpace($BuildDirRelease)) {
+  $BuildDirRelease = Join-Path $workspaceRoot 'build_release'
+}
+
+if ([string]::IsNullOrWhiteSpace($env:NUMBER_OF_PROCESSORS)) {
+  $env:NUMBER_OF_PROCESSORS = [Environment]::ProcessorCount.ToString()
+}
+
+$availableConfigurations = @('msvc-debug', 'msvc-release', 'clang-debug', 'profile', 'clang-release')
+$selectedConfigurations = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+
+if ($null -eq $Configurations -or $Configurations.Count -eq 0 -or ($Configurations -contains 'all')) {
+  foreach ($configurationName in $availableConfigurations) {
+    $selectedConfigurations.Add($configurationName) | Out-Null
+  }
+} else {
+  foreach ($configurationName in $Configurations) {
+    if ([string]::IsNullOrWhiteSpace($configurationName)) {
+      continue
+    }
+
+    $normalized = $configurationName.Trim().ToLowerInvariant()
+    if (-not ($availableConfigurations -contains $normalized)) {
+      throw "Unknown configuration '$configurationName'. Supported values: all, $($availableConfigurations -join ', ')"
+    }
+
+    $selectedConfigurations.Add($normalized) | Out-Null
+  }
+}
+
+function Test-ConfigurationSelected {
+  param(
+    [Parameter(Mandatory)]
+    [string]$Name
+  )
+
+  return $selectedConfigurations.Contains($Name)
+}
+
+$buildContext = New-BuildContext -Workspace $workspaceRoot -LogDir 'logs\windows' -StopOnError
+Open-BuildLog -Context $buildContext
 
 # Keep behavior close to the old workflow; image should already contain toolchains.
 if (Test-Path 'C:\Program Files\LLVM\bin') {
   $env:Path = 'C:\Program Files\LLVM\bin;' + $env:Path
 }
 
-####################################################################################################
-# MSVC Debug
-cmake -B "$env:BUILD_DIR" --preset 'x64-MSVC-Windows-Debug' -Dmyproject_ENABLE_CPPCHECK='OFF' -DWINDOWS_CI='ON'
-cmake --build "$env:BUILD_DIR"
+Write-BuildLog -Context $buildContext -Message "BUILD_DIR=$BuildDir"
+Write-BuildLog -Context $buildContext -Message "BUILD_DIR_RELEASE=$BuildDirRelease"
+Write-BuildLog -Context $buildContext -Message "CLANG_PROFILE_PRESET=$ClangProfilePreset"
+Write-BuildLog -Context $buildContext -Message "CONFIGURATIONS=$(([string[]]$selectedConfigurations -join ', '))"
+Write-BuildLog -Context $buildContext -Message "COVERAGE_SHOW_SOURCES=$CoverageShowSources"
 
-Push-Location "$env:BUILD_DIR"
-ctest
-Pop-Location
-
-Remove-Item -Path "$env:BUILD_DIR" -Recurse -Force
-
-####################################################################################################
-# MSVC Release
-cmake -B "$env:BUILD_DIR" --preset 'x64-MSVC-Windows-Release' -Dmyproject_ENABLE_CPPCHECK='OFF'
-cmake --build "$env:BUILD_DIR"
-
-Remove-Item -Path "$env:BUILD_DIR" -Recurse -Force
-
-####################################################################################################
-# ClangCL Debug
-cmake -B "$env:BUILD_DIR" --preset 'x64-ClangCL-Windows-Debug' -Dmyproject_ENABLE_CPPCHECK='OFF'
-cmake --build "$env:BUILD_DIR" --preset 'x64-ClangCL-Windows-Debug'
-
-Push-Location "$env:BUILD_DIR"
-ctest
-& 'llvm-profdata.exe' merge -sparse 'Test\compile\default.profraw' -o 'compileTestSuite.profdata'
-& 'llvm-cov.exe' report 'compileTestSuite.exe' -instr-profile='compileTestSuite.profdata'
-& 'llvm-cov.exe' export 'compileTestSuite.exe' -format=text -instr-profile='compileTestSuite.profdata' | Out-File -FilePath 'coverage.json' -Encoding UTF8
-& 'llvm-cov.exe' show 'compileTestSuite.exe' -instr-profile='compileTestSuite.profdata'
-Pop-Location
-
-# Optional analyses: keep them non-blocking like before
 try {
-  $sourceFiles = Get-ChildItem -Path 'Src' -Recurse -Include '*.cpp', '*.cc' | ForEach-Object { $_.FullName }
-  if ($null -ne $sourceFiles -and $sourceFiles.Count -gt 0) {
-    clang++ --analyze -DUSE_RUST=1 -Xanalyzer -analyzer-output=html $sourceFiles
+  if (Test-ConfigurationSelected -Name 'msvc-debug') {
+    Invoke-BuildStep -Context $buildContext -StepName 'MSVC Debug' -Critical -Script {
+      Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('-B', $BuildDir, '--preset', 'x64-MSVC-Windows-Debug', '-Dmyproject_ENABLE_CPPCHECK=OFF', '-DWINDOWS_CI=ON')
+      Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('--build', $BuildDir)
+
+      Invoke-BuildExternal -Context $buildContext -File 'ctest' -Parameters @('--test-dir', $BuildDir, '--output-on-failure')
+
+      Remove-BuildRoot -Context $buildContext -Path $BuildDir | Out-Null
+    } | Out-Null
   }
-} catch {
-  Write-Host "Clang static analysis (HTML) failed (ignored): $($_.Exception.Message)"
+
+  if (Test-ConfigurationSelected -Name 'msvc-release') {
+    Invoke-BuildStep -Context $buildContext -StepName 'MSVC Release' -Critical -Script {
+      Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('-B', $BuildDir, '--preset', 'x64-MSVC-Windows-Release', '-Dmyproject_ENABLE_CPPCHECK=OFF')
+      Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('--build', $BuildDir)
+      Remove-BuildRoot -Context $buildContext -Path $BuildDir | Out-Null
+    } | Out-Null
+  }
+
+  if (Test-ConfigurationSelected -Name 'clang-debug') {
+    Invoke-BuildStep -Context $buildContext -StepName 'ClangCL Debug' -Critical -Script {
+      Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('-B', $BuildDir, '--preset', 'x64-ClangCL-Windows-Debug', '-Dmyproject_ENABLE_CPPCHECK=OFF')
+      Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('--build', $BuildDir)
+
+      Push-Location $BuildDir
+      try {
+        Invoke-BuildExternal -Context $buildContext -File 'ctest' -Parameters @('--test-dir', $BuildDir, '--output-on-failure')
+        Invoke-BuildExternal -Context $buildContext -File 'llvm-profdata.exe' -Parameters @('merge', '-sparse', 'Test\compile\default.profraw', '-o', 'compileTestSuite.profdata')
+        Invoke-BuildExternal -Context $buildContext -File 'llvm-cov.exe' -Parameters @('report', 'compileTestSuite.exe', '-instr-profile=compileTestSuite.profdata')
+        & 'llvm-cov.exe' export 'compileTestSuite.exe' -format=text -instr-profile='compileTestSuite.profdata' | Out-File -FilePath 'coverage.json' -Encoding UTF8
+        if ($CoverageShowSources) {
+          Invoke-BuildExternal -Context $buildContext -File 'llvm-cov.exe' -Parameters @('show', 'compileTestSuite.exe', '-instr-profile=compileTestSuite.profdata')
+        }
+      } finally {
+        Pop-Location
+      }
+    } | Out-Null
+
+    Invoke-BuildOptional -Context $buildContext -Name 'Clang static analysis (HTML)' -Script {
+      $sourceFiles = Get-ChildItem -Path 'Src' -Recurse -Include '*.cpp', '*.cc' | ForEach-Object { $_.FullName }
+      if ($null -ne $sourceFiles -and $sourceFiles.Count -gt 0) {
+        Invoke-BuildExternal -Context $buildContext -File 'clang++' -Parameters @('--analyze', '-DUSE_RUST=1', '-Xanalyzer', '-analyzer-output=html', $sourceFiles)
+      }
+    }
+
+    Invoke-BuildOptional -Context $buildContext -Name 'Clang static analysis (scan-build)' -Script {
+      New-Item -ItemType Directory -Path 'scan-build-reports' -Force | Out-Null
+      Invoke-BuildExternal -Context $buildContext -File 'scan-build' -Parameters @('--use-analyzer=C:\Program Files\LLVM\bin\clang-cl.exe', '-o', 'scan-build-reports', 'cmake', '--build', $BuildDir)
+    }
+  }
+
+  if (Test-ConfigurationSelected -Name 'profile') {
+    Invoke-BuildStep -Context $buildContext -StepName 'Profiling build + benchmarks' -Critical -Script {
+      Invoke-BuildExternal -Context $buildContext -File 'clang' -Parameters @('--version')
+      Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('-B', $BuildDirRelease, '--preset', $ClangProfilePreset, '-Dmyproject_ENABLE_CPPCHECK=OFF')
+      Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('--build', $BuildDirRelease)
+
+      Push-Location $BuildDirRelease
+      try {
+        Invoke-BuildExternal -Context $buildContext -File '.\perfTestSuite.exe' -Parameters @('--benchmark_out=results.json', '--benchmark_out_format=json')
+      } finally {
+        Pop-Location
+      }
+    } | Out-Null
+  }
+
+  if (Test-ConfigurationSelected -Name 'clang-release') {
+    Invoke-BuildStep -Context $buildContext -StepName 'Clang Release + package' -Critical -Script {
+      Remove-BuildRoot -Context $buildContext -Path $BuildDirRelease | Out-Null
+      Invoke-BuildExternal -Context $buildContext -File 'clang' -Parameters @('--version')
+      Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('-B', $BuildDirRelease, '--preset', 'x64-ClangCL-Windows-Release', '-Dmyproject_ENABLE_CPPCHECK=OFF', '-DWINDOWS_CI=ON')
+      $env:CMAKE_BUILD_PARALLEL_LEVEL = $env:NUMBER_OF_PROCESSORS
+      Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('--build', $BuildDirRelease, '-DWINDOWS_CI=ON')
+      Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('--build', $BuildDirRelease, '--target', 'package', '--verbose')
+    } | Out-Null
+  }
+} finally {
+  Write-BuildSummary -Context $buildContext
+  Close-BuildLog -Context $buildContext
 }
 
-try {
-  New-Item -ItemType Directory -Path 'scan-build-reports' -Force | Out-Null
-  scan-build --use-analyzer='C:\Program Files\LLVM\bin\clang-cl.exe' -o 'scan-build-reports' cmake --build "$env:BUILD_DIR" --preset 'x64-ClangCL-Windows-Debug'
-} catch {
-  Write-Host "Clang static analysis (scan-build) failed (ignored): $($_.Exception.Message)"
+if ($buildContext.Results.Failed.Count -gt 0) {
+  exit 1
 }
-
-####################################################################################################
-# Profiling build + benchmarks
-clang --version
-cmake -B "$env:BUILD_DIR_RELEASE" --preset "$env:CLANG_PROFILE_PRESET" -Dmyproject_ENABLE_CPPCHECK=OFF
-cmake --build "$env:BUILD_DIR_RELEASE" --preset "$env:CLANG_PROFILE_PRESET"
-
-Push-Location "$env:BUILD_DIR_RELEASE"
-.\perfTestSuite.exe --benchmark_out=results.json --benchmark_out_format=json
-Pop-Location
-
-####################################################################################################
-# Clang Release + package
-Remove-Item -Path "$env:BUILD_DIR_RELEASE" -Recurse -Force
-clang --version
-cmake -B "$env:BUILD_DIR_RELEASE" --preset 'x64-ClangCL-Windows-Release' -Dmyproject_ENABLE_CPPCHECK='OFF' -DWINDOWS_CI=ON
-$env:CMAKE_BUILD_PARALLEL_LEVEL = $env:NUMBER_OF_PROCESSORS
-cmake --build "$env:BUILD_DIR_RELEASE" --preset 'x64-ClangCL-Windows-Release' -DWINDOWS_CI=ON
-cmake --build "$env:BUILD_DIR_RELEASE" --target package --verbose

@@ -46,4 +46,7 @@ TEST(Integration, VulkanEngine)
 
   Kataglyphis::VulkanRenderer vulkan_renderer{window.get(), scene.get(), gui.get(),
                                   camera.get()};
+
+  vulkan_renderer.finishAllRenderCommands();
+  vulkan_renderer.cleanUp();
 }

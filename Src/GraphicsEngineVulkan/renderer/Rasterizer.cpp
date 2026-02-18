@@ -138,8 +138,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
 {
     // Color attachment of render pass
     VkAttachmentDescription color_attachment{};
-    const VkFormat &swap_chain_image_format = vulkanSwapChain->getSwapChainFormat();
-    color_attachment.format = swap_chain_image_format;// format to use for attachment
+  constexpr VkFormat offscreen_format = VK_FORMAT_R8G8B8A8_UNORM;
+  color_attachment.format = offscreen_format;// format to use for attachment
     color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;// number of samples to write for multisampling
     color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;// describes what to do with attachment
                                                           // before rendering
@@ -263,19 +263,19 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(VkCommandP
     for (uint32_t index = 0; index < static_cast<uint32_t>(vulkanSwapChain->getNumberSwapChainImages()); index++) {
         Texture texture{};
         const VkExtent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-        const VkFormat &swap_chain_image_format = vulkanSwapChain->getSwapChainFormat();
+        constexpr VkFormat offscreen_format = VK_FORMAT_R8G8B8A8_UNORM;
 
         texture.createImage(device,
           swap_chain_extent.width,
           swap_chain_extent.height,
           1,
-          swap_chain_image_format,
+          offscreen_format,
           VK_IMAGE_TILING_OPTIMAL,
           VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT
             | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-        texture.createImageView(device, swap_chain_image_format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+        texture.createImageView(device, offscreen_format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 
         // --- WE NEED A DIFFERENT LAYOUT FOR USAGE
         VulkanImage &image = texture.getVulkanImage();

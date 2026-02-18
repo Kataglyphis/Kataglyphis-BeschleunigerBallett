@@ -2,6 +2,8 @@
 
 .cache
 
+logs/
+
 dist
 .mypy_cache
 .conda

@@ -12,6 +12,10 @@ void Kataglyphis::VulkanBufferManager::copyBuffer(VkDevice device,
 {
     // create buffer
     VkCommandBuffer command_buffer = commandBufferManager.beginCommandBuffer(device, transfer_command_pool);
+    if (command_buffer == VK_NULL_HANDLE) {
+      spdlog::error("Skipping buffer copy due to invalid command buffer.");
+      return;
+    }
 
     // region of data to copy from and to
     VkBufferCopy buffer_copy_region{};
@@ -35,6 +39,10 @@ void Kataglyphis::VulkanBufferManager::copyImageBuffer(VkDevice device,
 {
     // create buffer
     VkCommandBuffer transfer_command_buffer = commandBufferManager.beginCommandBuffer(device, transfer_command_pool);
+    if (transfer_command_buffer == VK_NULL_HANDLE) {
+      spdlog::error("Skipping image buffer copy due to invalid command buffer.");
+      return;
+    }
 
     VkBufferImageCopy image_region{};
     image_region.bufferOffset = 0;// offset into data

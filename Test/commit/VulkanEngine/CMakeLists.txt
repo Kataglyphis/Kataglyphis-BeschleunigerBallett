@@ -47,6 +47,8 @@ set(ShaderIncludes
     -I
     ${SHADER_SRC_DIR}hostDevice/
     -I
+    ${PROJECT_SRC_DIR}
+    -I
     ${PROJECT_SRC_DIR}/renderer/
     -I
     ${PROJECT_SRC_DIR}/renderer/pushConstants/
@@ -78,9 +80,9 @@ if(NOT MSVC)
 else()
   target_compile_definitions(
     ${COMMIT_TEST_SUITE}
-    PRIVATE RELATIVE_RESOURCE_PATH="/../../Resources/"
-            RELATIVE_INCLUDE_PATH="/../../Src/GraphicsEngineVulkan/"
-            RELATIVE_IMGUI_FONTS_PATH="/../../ExternalLib/IMGUI/misc/fonts/"
+    PRIVATE RELATIVE_RESOURCE_PATH="/../../../../Resources/"
+            RELATIVE_INCLUDE_PATH="/../../../../Src/GraphicsEngineVulkan/"
+            RELATIVE_IMGUI_FONTS_PATH="/../../../../ExternalLib/IMGUI/misc/fonts/"
             ShaderIncludesString="${ShaderIncludesString}")
 endif()
 

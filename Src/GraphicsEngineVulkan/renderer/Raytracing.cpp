@@ -312,14 +312,18 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
 
     const VkBufferUsageFlags bufferUsageFlags =
       VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-    const VkMemoryPropertyFlags memoryUsageFlags =
+    const VkMemoryPropertyFlags memoryPropertyFlags =
       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    const VkMemoryAllocateFlags memoryAllocateFlags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
 
-    raygenShaderBindingTableBuffer.create(device, handle_size, bufferUsageFlags, memoryUsageFlags);
+    raygenShaderBindingTableBuffer.create(
+      device, handle_size, bufferUsageFlags, memoryPropertyFlags, memoryAllocateFlags);
 
-    missShaderBindingTableBuffer.create(device, 2 * handle_size, bufferUsageFlags, memoryUsageFlags);
+    missShaderBindingTableBuffer.create(
+      device, 2 * handle_size, bufferUsageFlags, memoryPropertyFlags, memoryAllocateFlags);
 
-    hitShaderBindingTableBuffer.create(device, handle_size, bufferUsageFlags, memoryUsageFlags);
+    hitShaderBindingTableBuffer.create(
+      device, handle_size, bufferUsageFlags, memoryPropertyFlags, memoryAllocateFlags);
 
     void *mapped_raygen = nullptr;
     vkMapMemory(device->getLogicalDevice(),

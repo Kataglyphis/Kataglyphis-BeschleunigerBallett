@@ -3,7 +3,7 @@
 #include <cstdint>
 
 namespace shader {
-const std::array<uint32_t, 319> MY_SHADER_COMP_SPV = { 
+const std::array<uint32_t, 319> MY_SHADER_COMP_SPV = { { 
 0x07230203, 0x00010000, 0x0008000b, 0x0000002b, 
 0x00000000, 0x00020011, 0x00000001, 0x0006000b, 
 0x00000001, 0x4c534c47, 0x6474732e, 0x3035342e, 
@@ -83,7 +83,7 @@ const std::array<uint32_t, 319> MY_SHADER_COMP_SPV = {
 0x00000010, 0x00000027, 0x0000001f, 0x00000026, 
 0x00060041, 0x0000001d, 0x00000028, 0x00000014, 
 0x00000016, 0x00000017, 0x0003003e, 0x00000028, 
-0x00000027, 0x000100fd, 0x00010038 };
+0x00000027, 0x000100fd, 0x00010038 } };
 } // namespace shader
 
 

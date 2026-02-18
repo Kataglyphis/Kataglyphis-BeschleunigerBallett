@@ -66,7 +66,7 @@ class VulkanRenderer
     Kataglyphis::Frontend::GUI *gui;
 
     // -- pools
-    void record_commands(uint32_t image_index);
+    bool record_commands(uint32_t image_index);
     void create_command_pool();
     void cleanUpCommandPools();
     VkCommandPool graphics_command_pool;
@@ -96,8 +96,9 @@ class VulkanRenderer
 
     // -- synchronization
     uint32_t current_frame{ 0 };
+    uint32_t frame_sync_count{ 1 };
     std::vector<VkSemaphore> image_available;
-    std::vector<VkSemaphore> render_finished;
+    std::vector<VkSemaphore> render_finished_by_image;
     std::vector<VkFence> in_flight_fences;
     std::vector<VkFence> images_in_flight_fences;
     void createSynchronization();
