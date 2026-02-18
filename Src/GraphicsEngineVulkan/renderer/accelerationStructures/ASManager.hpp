@@ -47,18 +47,18 @@ class ASManager
     std::vector<BottomLevelAccelerationStructure> blas;
     TopLevelAccelerationStructure tlas;
 
-    void createSingleBlas(VulkanDevice *device,
+    static void createSingleBlas(VulkanDevice *device,
       VkCommandBuffer command_buffer,
       BuildAccelerationStructure &build_as_structure,
       VkDeviceAddress scratch_device_or_host_address);
 
-    void createAccelerationStructureInfosBLAS(VulkanDevice *device,
+    static void createAccelerationStructureInfosBLAS(VulkanDevice *device,
       BuildAccelerationStructure &build_as_structure,
       BlasInput &blas_input,
       VkDeviceSize &current_scretch_size,
       VkDeviceSize &current_size);
 
-    void objectToVkGeometryKHR(VulkanDevice *device,
+    static void objectToVkGeometryKHR(VulkanDevice *device,
       Mesh *mesh,
       VkAccelerationStructureGeometryKHR &acceleration_structure_geometry,
       VkAccelerationStructureBuildRangeInfoKHR &acceleration_structure_build_range_info);

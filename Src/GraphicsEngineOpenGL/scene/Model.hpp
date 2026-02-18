@@ -32,7 +32,7 @@ class Model
 
   private:
     // buffer for material id's
-    GLuint ssbo;
+    GLuint ssbo{};
 
     ObjLoader loader;
 

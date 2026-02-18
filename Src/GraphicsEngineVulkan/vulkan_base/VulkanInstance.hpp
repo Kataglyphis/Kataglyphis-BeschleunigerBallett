@@ -18,12 +18,12 @@ class VulkanInstance
     ~VulkanInstance();
 
   private:
-    VkInstance instance;
+    VkInstance instance{};
 
     // use the standard validation layers from the SDK for error checking
     std::vector<const char *> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 
     bool check_validation_layer_support();
-    bool check_instance_extension_support(std::vector<const char *> *check_extensions);
+    static bool check_instance_extension_support(std::vector<const char *> *check_extensions);
 };
 }// namespace Kataglyphis

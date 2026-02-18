@@ -30,7 +30,7 @@ class PointLight : public Light
     void set_position(glm::vec3 position);
 
     std::shared_ptr<OmniDirShadowMap> get_omni_shadow_map() { return omni_dir_shadow_map; };
-    GLfloat get_far_plane();
+    GLfloat get_far_plane() const;
     glm::vec3 get_position();
     GLfloat get_constant_factor() { return constant; };
     GLfloat get_linear_factor() { return linear; };

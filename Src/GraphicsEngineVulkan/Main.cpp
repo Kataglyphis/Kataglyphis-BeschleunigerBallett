@@ -1,16 +1,20 @@
 #include "app/App.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <system_error>
 #include <vector>
 
+#include "spdlog/common.h"
+#include "spdlog/logger.h"
 #include "spdlog/sinks/basic_file_sink.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 #include <iostream>
 
 extern "C" {
-int32_t rusty_extern_c_integer();
+auto rusty_extern_c_integer() -> int32_t;
 }
 
 namespace {
@@ -45,7 +49,7 @@ void initialize_logging()
 }
 }// namespace
 
-int main()
+auto main() -> int
 {
     initialize_logging();
 

@@ -1,22 +1,25 @@
 #include "util/File.hpp"
 
+#include <cstdio>
 #include <fstream>
 #include <iostream>
+#include <string>
+#include <print>
 
-File::File(const std::string &file_location) { this->file_location = file_location; }
+File::File(const std::string &file_location) : file_location(file_location) {}
 
-std::string File::read()
+auto File::read() -> std::string
 {
     std::string content;
-    std::string fileLocationWrappedInquotationMarks = makePathsWithBlanksPossible(file_location);
+    std::string const fileLocationWrappedInquotationMarks = makePathsWithBlanksPossible(file_location);
     std::ifstream file_stream(file_location, std::ios::in);
 
     if (!file_stream.is_open()) {
-        printf("Failed to read %s. File does not exist.", file_location.c_str());
+        std::print("Failed to read {}. File does not exist.", file_location);
         return "";
     }
 
-    std::string line = "";
+    std::string line;
     while (!file_stream.eof()) {
         std::getline(file_stream, line);
         content.append(line + "\n");
@@ -26,11 +29,11 @@ std::string File::read()
     return content;
 }
 
-File::~File() {}
+File::~File() = default;
 
 // https:www.howtogeek.com/694949/how-to-escape-spaces-in-file-paths-on-the-windows-command-line/
 // enclosure path with quotation mark
-std::string File::makePathsWithBlanksPossible(const std::string &file_location_with_possible_blanks)
+auto File::makePathsWithBlanksPossible(const std::string &file_location_with_possible_blanks) -> std::string
 {
 
     std::string new_file_location = file_location_with_possible_blanks;
@@ -38,5 +41,5 @@ std::string File::makePathsWithBlanksPossible(const std::string &file_location_w
     new_file_location.insert(0, quotationMark);
     new_file_location += (quotationMark);
 
-    return std::string();
+    return {};
 }

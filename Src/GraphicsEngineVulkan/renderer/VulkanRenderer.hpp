@@ -54,7 +54,7 @@ class VulkanRenderer
 
     // surface defined on windows as WIN32 window system, Linux f.e. X11, MacOS
     // also their own
-    VkSurfaceKHR surface;
+    VkSurfaceKHR surface{};
     void create_surface();
 
     std::unique_ptr<VulkanDevice> device;
@@ -69,13 +69,13 @@ class VulkanRenderer
     bool record_commands(uint32_t image_index);
     void create_command_pool();
     void cleanUpCommandPools();
-    VkCommandPool graphics_command_pool;
-    VkCommandPool compute_command_pool;
+    VkCommandPool graphics_command_pool{};
+    VkCommandPool compute_command_pool{};
 
     // uniform buffers
-    VulkanRendererInternals::GlobalUBO globalUBO;
+    VulkanRendererInternals::GlobalUBO globalUBO{};
     std::vector<VulkanBuffer> globalUBOBuffer;
-    VulkanRendererInternals::SceneUBO sceneUBO;
+    VulkanRendererInternals::SceneUBO sceneUBO{};
     std::vector<VulkanBuffer> sceneUBOBuffer;
     void create_uniform_buffers();
     void update_uniform_buffers(uint32_t image_index);
@@ -108,9 +108,9 @@ class VulkanRenderer
     VulkanBuffer objectDescriptionBuffer;
     void create_object_description_buffer();
 
-    VkDescriptorPool descriptorPoolSharedRenderStages;
+    VkDescriptorPool descriptorPoolSharedRenderStages{};
     void createDescriptorPoolSharedRenderStages();
-    VkDescriptorSetLayout sharedRenderDescriptorSetLayout;
+    VkDescriptorSetLayout sharedRenderDescriptorSetLayout{};
     void createSharedRenderDescriptorSetLayouts();
     std::vector<VkDescriptorSet> sharedRenderDescriptorSet;
     void createSharedRenderDescriptorSet();

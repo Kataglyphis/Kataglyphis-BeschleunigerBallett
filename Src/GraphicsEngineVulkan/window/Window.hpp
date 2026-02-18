@@ -25,11 +25,11 @@ class Window
     float get_y_change();
     GLFWwindow *get_window() { return main_window; }
 
-    float get_height();
-    float get_width();
+    float get_height() const;
+    float get_width() const;
 
     bool *get_keys() { return keys; }
-    bool framebuffer_size_has_changed();
+    bool framebuffer_size_has_changed() const;
     void reset_framebuffer_has_changed();
 
     // SETTER functions
@@ -39,19 +39,19 @@ class Window
     ~Window();
 
   private:
-    GLFWwindow *main_window;
+    GLFWwindow *main_window{};
     uint32_t window_width, window_height;
     // what key(-s) was/were pressed
-    bool keys[1024];
-    float last_x;
-    float last_y;
+    bool keys[1024]{};
+    float last_x{};
+    float last_y{};
     float x_change;
     float y_change;
-    bool mouse_first_moved;
+    bool mouse_first_moved{};
     bool framebuffer_resized;
 
     // buffers to store our window data to
-    int window_buffer_width, window_buffer_height;
+    int window_buffer_width{}, window_buffer_height{};
 
     // we need to start our window callbacks for interaction
     void init_callbacks();

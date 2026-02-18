@@ -18,10 +18,10 @@ class Vertex
     Vertex();
     Vertex(glm::vec3 pos, glm::vec3 normal, glm::vec3 color, glm::vec2 texture_coords);
 
-    glm::vec3 pos;
-    glm::vec3 normal;
-    glm::vec3 color;
-    glm::vec2 texture_coords;
+    glm::vec3 pos{};
+    glm::vec3 normal{};
+    glm::vec3 color{};
+    glm::vec2 texture_coords{};
 
     bool operator==(const Vertex &other) const
     {

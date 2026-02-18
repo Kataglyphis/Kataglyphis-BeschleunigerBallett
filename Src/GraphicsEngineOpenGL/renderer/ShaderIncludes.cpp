@@ -1,20 +1,19 @@
 #include "renderer/ShaderIncludes.hpp"
-#include "renderer/OpenGLRendererConfig.hpp"
 
 // clang-format off
 // you must include glad before glfw!
 // therefore disable clang-format for this section
+#include <cstdint>
 #include <glad/glad.h>
-#include <GLFW/glfw3.h>
 // clang-format on
 
-#include <stdio.h>
-#include <string.h>
+#include <cstdio>
+#include <cstring>
 
-#include <array>
 #include <cassert>
 #include <filesystem>
 #include <sstream>
+#include <vector>
 
 #include "spdlog/spdlog.h"
 #include "util/File.hpp"
@@ -27,14 +26,18 @@ ShaderIncludes::ShaderIncludes()
 {
     assert(includeNames.size() == file_locations_relative.size());
 
-    if (!isExtensionSupported("GL_ARB_shading_language_include")) {
-        spdlog::error("GL_ARB_shading_language_include is supported!");
+    if (GLAD_GL_ARB_shading_language_include == 0 || glNamedStringARB == nullptr) {
+        spdlog::warn("GL_ARB_shading_language_include is not available on this OpenGL driver/context. "
+                     "Shader include registration is skipped.");
+        return;
     }
+
+    spdlog::info("GL_ARB_shading_language_include is available.");
 
     std::vector<std::string> file_locations_abs;
     for (uint32_t i = 0; i < static_cast<uint32_t>(includeNames.size()); i++) {
         std::stringstream aux;
-        std::filesystem::path cwd = std::filesystem::current_path();
+        std::filesystem::path const cwd = std::filesystem::current_path();
         aux << cwd.string();
         aux << RELATIVE_RESOURCE_PATH;
         aux << file_locations_relative[i];
@@ -43,14 +46,9 @@ ShaderIncludes::ShaderIncludes()
 
     for (uint32_t i = 0; i < static_cast<uint32_t>(includeNames.size()); i++) {
         File file(file_locations_abs[i]);
-        std::string file_content = file.read();
+        std::string const file_content = file.read();
         char tmpstr[2000];
         snprintf(tmpstr, 2000, "/%s", includeNames[i]);
-        if (glNamedStringARB) {
-            spdlog::info("glNamedStringARB successfully loaded!");
-        } else {
-            spdlog::error("Failed to load glNamedStringARB!");
-        }
         glNamedStringARB(GL_SHADER_INCLUDE_ARB,
           static_cast<GLint>(strlen(tmpstr)),
           tmpstr,
@@ -59,4 +57,4 @@ ShaderIncludes::ShaderIncludes()
     }
 }
 
-ShaderIncludes::~ShaderIncludes() {}
+ShaderIncludes::~ShaderIncludes() = default;

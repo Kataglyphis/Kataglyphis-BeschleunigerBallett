@@ -1,11 +1,12 @@
 #include "renderer/CommandBufferManager.hpp"
 
-#include "common/Utilities.hpp"
+#include "spdlog/spdlog.h"
+#include <vulkan/vulkan_core.h>
 
-Kataglyphis::VulkanRendererInternals::CommandBufferManager::CommandBufferManager() {}
+Kataglyphis::VulkanRendererInternals::CommandBufferManager::CommandBufferManager() = default;
 
-VkCommandBuffer Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(VkDevice device,
-  VkCommandPool command_pool)
+auto Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(VkDevice device,
+  VkCommandPool command_pool) -> VkCommandBuffer
 {
     // command buffer to hold transfer commands
     VkCommandBuffer command_buffer = VK_NULL_HANDLE;
@@ -20,8 +21,8 @@ VkCommandBuffer Kataglyphis::VulkanRendererInternals::CommandBufferManager::begi
     // allocate command buffer from pool
     VkResult result = vkAllocateCommandBuffers(device, &alloc_info, &command_buffer);
     if (result != VK_SUCCESS || command_buffer == VK_NULL_HANDLE) {
-      spdlog::error("Failed to allocate command buffer! (VkResult={})", static_cast<int>(result));
-      return VK_NULL_HANDLE;
+        spdlog::error("Failed to allocate command buffer! (VkResult={})", static_cast<int>(result));
+        return VK_NULL_HANDLE;
     }
 
     // infromation to begin the command buffer record
@@ -33,9 +34,9 @@ VkCommandBuffer Kataglyphis::VulkanRendererInternals::CommandBufferManager::begi
     // begin recording transfer commands
     result = vkBeginCommandBuffer(command_buffer, &begin_info);
     if (result != VK_SUCCESS) {
-      spdlog::error("Failed to begin command buffer! (VkResult={})", static_cast<int>(result));
-      vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
-      return VK_NULL_HANDLE;
+        spdlog::error("Failed to begin command buffer! (VkResult={})", static_cast<int>(result));
+        vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
+        return VK_NULL_HANDLE;
     }
 
     return command_buffer;
@@ -46,19 +47,19 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
   VkQueue queue,
   VkCommandBuffer &command_buffer)
 {
-  if (command_buffer == VK_NULL_HANDLE) {
-    spdlog::error("Cannot submit null command buffer.");
-    return;
-  }
+    if (command_buffer == VK_NULL_HANDLE) {
+        spdlog::error("Cannot submit null command buffer.");
+        return;
+    }
 
     // end commands
     VkResult result = vkEndCommandBuffer(command_buffer);
-  if (result != VK_SUCCESS) {
-    spdlog::error("Failed to end command buffer! (VkResult={})", static_cast<int>(result));
-    vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
-    command_buffer = VK_NULL_HANDLE;
-    return;
-  }
+    if (result != VK_SUCCESS) {
+        spdlog::error("Failed to end command buffer! (VkResult={})", static_cast<int>(result));
+        vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
+        command_buffer = VK_NULL_HANDLE;
+        return;
+    }
 
     // queue submission information
     VkSubmitInfo submit_info{};
@@ -69,18 +70,18 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
     // submit transfer command to transfer queue and wait until it finishes
     result = vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
     if (result != VK_SUCCESS) {
-      spdlog::error("Failed to submit to queue! (VkResult={})", static_cast<int>(result));
-      vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
-      command_buffer = VK_NULL_HANDLE;
-      return;
+        spdlog::error("Failed to submit to queue! (VkResult={})", static_cast<int>(result));
+        vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
+        command_buffer = VK_NULL_HANDLE;
+        return;
     }
 
     result = vkQueueWaitIdle(queue);
     if (result != VK_SUCCESS) {
-      spdlog::error("Failed to wait queue idle! (VkResult={})", static_cast<int>(result));
-      vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
-      command_buffer = VK_NULL_HANDLE;
-      return;
+        spdlog::error("Failed to wait queue idle! (VkResult={})", static_cast<int>(result));
+        vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
+        command_buffer = VK_NULL_HANDLE;
+        return;
     }
 
     // free temporary command buffer back to pool
@@ -88,4 +89,4 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
     command_buffer = VK_NULL_HANDLE;
 }
 
-Kataglyphis::VulkanRendererInternals::CommandBufferManager::~CommandBufferManager() {}
+Kataglyphis::VulkanRendererInternals::CommandBufferManager::~CommandBufferManager() = default;

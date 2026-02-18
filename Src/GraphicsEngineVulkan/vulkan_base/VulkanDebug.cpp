@@ -1,31 +1,35 @@
 #include "vulkan_base/VulkanDebug.hpp"
 
+#include <cstdio>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vulkan/vk_platform.h>
+#include <vulkan/vulkan_core.h>
 
 #include "common/Utilities.hpp"
 
 namespace Kataglyphis::debug {
-PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
-PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT;
-VkDebugUtilsMessengerEXT debugUtilsMessenger;
+static PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
+static PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT;
+static VkDebugUtilsMessengerEXT debugUtilsMessenger;
 
-VKAPI_ATTR VkBool32 VKAPI_CALL debugUtilsMessengerCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-  VkDebugUtilsMessageTypeFlagsEXT messageType,
+VKAPI_ATTR static VkBool32 VKAPI_CALL debugUtilsMessengerCallback(
+  VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+  VkDebugUtilsMessageTypeFlagsEXT /*messageType*/,
   const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
-  void *pUserData)
+  void * /*pUserData*/)
 {
     // Select prefix depending on flags passed to the callback
-    std::string prefix("");
+    std::string prefix;
 
-    if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
+    if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) != 0) {
         prefix = "VERBOSE: ";
-    } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
+    } else if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) != 0) {
         prefix = "INFO: ";
-    } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+    } else if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0) {
         prefix = "WARNING: ";
-    } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+    } else if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0) {
         prefix = "ERROR: ";
     }
 
@@ -34,7 +38,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugUtilsMessengerCallback(VkDebugUtilsMessageSe
     debugMessage << prefix << "[" << pCallbackData->messageIdNumber << "][" << pCallbackData->pMessageIdName
                  << "] : " << pCallbackData->pMessage;
 
-#if defined(__ANDROID__)
+#ifdef __ANDROID__
     if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
         LOGE("%s", debugMessage.str().c_str());
     } else {
@@ -57,7 +61,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL debugUtilsMessengerCallback(VkDebugUtilsMessageSe
     return VK_FALSE;
 }
 
-void setupDebugging(VkInstance instance, VkDebugReportFlagsEXT flags, VkDebugReportCallbackEXT callBack)
+void setupDebugging(VkInstance instance, VkDebugReportFlagsEXT /*flags*/, VkDebugReportCallbackEXT /*callBack*/)
 {
     vkCreateDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
       vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT"));

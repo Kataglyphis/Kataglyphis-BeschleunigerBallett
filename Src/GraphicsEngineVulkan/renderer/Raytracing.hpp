@@ -26,7 +26,7 @@ class Raytracing
 
   private:
     VulkanDevice *device{ VK_NULL_HANDLE };
-    VulkanSwapChain *vulkanSwapChain{ VK_NULL_HANDLE };
+    [[maybe_unused]] VulkanSwapChain *vulkanSwapChain{ VK_NULL_HANDLE };
 
     VkPipeline graphicsPipeline{ VK_NULL_HANDLE };
     VkPipelineLayout pipeline_layout{ VK_NULL_HANDLE };

@@ -15,7 +15,7 @@ class Mesh
 
     Mesh();
 
-    void render();
+    void render() const;
 
     std::vector<Vertex> getVertices() const { return this->vertices; }
     std::vector<unsigned int> getIndices() const { return this->indices; }
@@ -36,9 +36,9 @@ class Mesh
     enum { POSITION_VB, NUM_BUFFERS };
 
     // Vertex Array Object
-    GLuint m_vao, m_ibo;
+    GLuint m_vao{}, m_ibo{};
     // Vertex array buffer
-    GLuint m_vab[NUM_BUFFERS];
+    GLuint m_vab[NUM_BUFFERS]{};
 
     uint32_t m_drawCount;
     std::vector<Vertex> vertices;

@@ -20,5 +20,5 @@ class Light
     glm::vec3 color;
     float radiance;
 
-    glm::mat4 light_proj;
+    glm::mat4 light_proj{};
 };

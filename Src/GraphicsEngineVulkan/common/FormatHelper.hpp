@@ -30,5 +30,6 @@ static VkFormat choose_supported_format(VkPhysicalDevice physical_device,
     }
 
     spdlog::error("Failed to find supported format!");
+    return VK_FORMAT_UNDEFINED;
 }
 }// namespace Kataglyphis

@@ -19,11 +19,11 @@ class ViewFrustumCulling
     ViewFrustumCulling();
 
     bool is_inside(GLfloat ratio,
-      std::shared_ptr<Camera> main_camera,
-      std::shared_ptr<AABB> bounding_box,
+      const std::shared_ptr<Camera> &main_camera,
+      const std::shared_ptr<AABB> &bounding_box,
       glm::mat4 model);
 
-    void render_view_frustum();
+    void render_view_frustum() const;
 
     ~ViewFrustumCulling();
 
@@ -58,17 +58,17 @@ class ViewFrustumCulling
         glm::vec3 position;
     };
 
-    frustum_plane frustum_planes[NUM_FRUSTUM_PLANES];
+    frustum_plane frustum_planes[NUM_FRUSTUM_PLANES]{};
 
     void init(std::vector<glm::vec3> frustum_corner);
 
     bool corners_outside_plane(std::vector<glm::vec3> aabb_corners, frustum_plane plane, GLuint outcode_pattern);
 
-    GLfloat plane_point_distance(frustum_plane plane, glm::vec3 corner);
+    static GLfloat plane_point_distance(frustum_plane plane, glm::vec3 corner);
 
     void update_frustum_param(GLfloat near_plane,
       GLfloat far_plane,
       GLfloat fov,
       GLfloat ratio,
-      std::shared_ptr<Camera> main_camera);
+      const std::shared_ptr<Camera> &main_camera);
 };

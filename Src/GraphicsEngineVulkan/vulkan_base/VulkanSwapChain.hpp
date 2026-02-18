@@ -33,8 +33,8 @@ class VulkanSwapChain
     VkFormat swap_chain_image_format{ VK_FORMAT_B8G8R8A8_UNORM };
     VkExtent2D swap_chain_extent{ 0, 0 };
 
-    VkSurfaceFormatKHR choose_best_surface_format(const std::vector<VkSurfaceFormatKHR> &formats);
-    VkPresentModeKHR choose_best_presentation_mode(const std::vector<VkPresentModeKHR> &presentation_modes);
+    static VkSurfaceFormatKHR choose_best_surface_format(const std::vector<VkSurfaceFormatKHR> &formats);
+    static VkPresentModeKHR choose_best_presentation_mode(const std::vector<VkPresentModeKHR> &presentation_modes);
     VkExtent2D choose_swap_extent(const VkSurfaceCapabilitiesKHR &surface_capabilities);
 };
 }// namespace Kataglyphis

@@ -1,26 +1,25 @@
 #include "scene/Vertex.hpp"
+#include <array>
+#include <cstddef>
+#include <vulkan/vulkan_core.h>
 
 Vertex::Vertex()
 {
-    this->pos = glm::vec3(-1.f);
-    this->normal = glm::vec3(-1.f);
-    this->color = glm::vec3(-1.f);
-    this->texture_coords = glm::vec3(-1.f);
+    this->pos = glm::vec3(-1.F);
+    this->normal = glm::vec3(-1.F);
+    this->color = glm::vec3(-1.F);
+    this->texture_coords = glm::vec3(-1.F);
 }
 
 Vertex::Vertex(glm::vec3 pos, glm::vec3 normal, glm::vec3 color, glm::vec2 texture_coords)
-{
-    this->pos = pos;
-    this->normal = normal;
-    this->color = color;
-    this->texture_coords = texture_coords;
-}
+  : pos(pos), normal(normal), color(color), texture_coords(texture_coords)
+{}
 
 namespace vertex {
 
-std::array<VkVertexInputAttributeDescription, 4> getVertexInputAttributeDesc()
+auto getVertexInputAttributeDesc() -> std::array<VkVertexInputAttributeDescription, 4>
 {
-    std::array<VkVertexInputAttributeDescription, 4> attribute_describtions;
+    std::array<VkVertexInputAttributeDescription, 4> attribute_describtions{};
 
     // Position attribute
     attribute_describtions[0].binding = 0;

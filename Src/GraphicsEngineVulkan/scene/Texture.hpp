@@ -43,7 +43,7 @@ class Texture
   private:
     uint32_t mip_levels = 0;
 
-    stbi_uc *loadTextureData(const std::string &file_name, int *width, int *height, VkDeviceSize *image_size);
+    static stbi_uc *loadTextureData(const std::string &file_name, int *width, int *height, VkDeviceSize *image_size);
 
     void generateMipMaps(VkPhysicalDevice physical_device,
       VkDevice device,

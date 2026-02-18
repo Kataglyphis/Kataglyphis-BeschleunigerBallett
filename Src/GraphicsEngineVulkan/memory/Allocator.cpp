@@ -1,10 +1,11 @@
 #include "memory/Allocator.hpp"
 
 #include "common/Utilities.hpp"
+#include <vulkan/vulkan_core.h>
 
 using namespace Kataglyphis;
 
-Allocator::Allocator() {}
+Allocator::Allocator() = default;
 
 Allocator::Allocator(const VkDevice &device, const VkPhysicalDevice &physicalDevice, const VkInstance &instance)
 {
@@ -22,4 +23,4 @@ Allocator::Allocator(const VkDevice &device, const VkPhysicalDevice &physicalDev
 
 void Allocator::cleanUp() { vmaDestroyAllocator(vmaAllocator); }
 
-Allocator::~Allocator() {}
+Allocator::~Allocator() = default;

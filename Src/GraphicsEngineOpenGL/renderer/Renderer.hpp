@@ -15,8 +15,8 @@ class Renderer
   public:
     Renderer(GLuint window_width, GLuint window_height);
 
-    void drawFrame(std::shared_ptr<Camera> main_camera,
-      std::shared_ptr<Scene> scene,
+    void drawFrame(const std::shared_ptr<Camera> &main_camera,
+      const std::shared_ptr<Scene> &scene,
       glm::mat4 projection_matrix,
       GLfloat delta_time);
 

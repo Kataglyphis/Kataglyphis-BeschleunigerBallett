@@ -2,8 +2,11 @@
 
 #include "common/MemoryHelper.hpp"
 #include "common/Utilities.hpp"
+#include "vulkan_base/VulkanDevice.hpp"
+#include <cstdint>
+#include <vulkan/vulkan_core.h>
 
-Kataglyphis::VulkanImage::VulkanImage() {}
+Kataglyphis::VulkanImage::VulkanImage() = default;
 
 void Kataglyphis::VulkanImage::create(VulkanDevice *device,
   uint32_t width,
@@ -62,7 +65,8 @@ void Kataglyphis::VulkanImage::transitionImageLayout(VkDevice device,
   VkImageAspectFlags aspectMask,
   uint32_t mip_levels)
 {
-    VkCommandBuffer command_buffer = commandBufferManager.beginCommandBuffer(device, command_pool);
+    VkCommandBuffer command_buffer =
+      Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device, command_pool);
 
     // VK_IMAGE_ASPECT_COLOR_BIT
     VkImageMemoryBarrier memory_barrier{};
@@ -82,8 +86,8 @@ void Kataglyphis::VulkanImage::transitionImageLayout(VkDevice device,
     memory_barrier.srcAccessMask = accessFlagsForImageLayout(old_layout);
     memory_barrier.dstAccessMask = accessFlagsForImageLayout(new_layout);
 
-    VkPipelineStageFlags src_stage = pipelineStageForLayout(old_layout);
-    VkPipelineStageFlags dst_stage = pipelineStageForLayout(new_layout);
+    VkPipelineStageFlags const src_stage = pipelineStageForLayout(old_layout);
+    VkPipelineStageFlags const dst_stage = pipelineStageForLayout(new_layout);
 
     vkCmdPipelineBarrier(
 
@@ -100,7 +104,8 @@ void Kataglyphis::VulkanImage::transitionImageLayout(VkDevice device,
 
     );
 
-    commandBufferManager.endAndSubmitCommandBuffer(device, command_pool, queue, command_buffer);
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      device, command_pool, queue, command_buffer);
 }
 
 void Kataglyphis::VulkanImage::transitionImageLayout(VkCommandBuffer command_buffer,
@@ -125,8 +130,8 @@ void Kataglyphis::VulkanImage::transitionImageLayout(VkCommandBuffer command_buf
     memory_barrier.srcAccessMask = accessFlagsForImageLayout(old_layout);
     memory_barrier.dstAccessMask = accessFlagsForImageLayout(new_layout);
 
-    VkPipelineStageFlags src_stage = pipelineStageForLayout(old_layout);
-    VkPipelineStageFlags dst_stage = pipelineStageForLayout(new_layout);
+    VkPipelineStageFlags const src_stage = pipelineStageForLayout(old_layout);
+    VkPipelineStageFlags const dst_stage = pipelineStageForLayout(new_layout);
 
     // if transitioning from new image to image ready to receive data
 
@@ -154,9 +159,9 @@ void Kataglyphis::VulkanImage::cleanUp()
     vkFreeMemory(device->getLogicalDevice(), imageMemory, nullptr);
 }
 
-Kataglyphis::VulkanImage::~VulkanImage() {}
+Kataglyphis::VulkanImage::~VulkanImage() = default;
 
-VkAccessFlags Kataglyphis::VulkanImage::accessFlagsForImageLayout(VkImageLayout layout)
+auto Kataglyphis::VulkanImage::accessFlagsForImageLayout(VkImageLayout layout) -> VkAccessFlags
 {
     switch (layout) {
     case VK_IMAGE_LAYOUT_PREINITIALIZED:
@@ -176,7 +181,7 @@ VkAccessFlags Kataglyphis::VulkanImage::accessFlagsForImageLayout(VkImageLayout 
     }
 }
 
-VkPipelineStageFlags Kataglyphis::VulkanImage::pipelineStageForLayout(VkImageLayout oldImageLayout)
+auto Kataglyphis::VulkanImage::pipelineStageForLayout(VkImageLayout oldImageLayout) -> VkPipelineStageFlags
 {
     switch (oldImageLayout) {
     case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:

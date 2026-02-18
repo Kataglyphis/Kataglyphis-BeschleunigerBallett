@@ -25,8 +25,8 @@ class Texture
     std::string get_filename() const;
     GLuint get_id() const;
 
-    void use_texture(unsigned int index);
-    void unbind_texture(unsigned int index);
+    void use_texture(unsigned int index) const;
+    static void unbind_texture(unsigned int index);
 
     void clear_texture_context();
 

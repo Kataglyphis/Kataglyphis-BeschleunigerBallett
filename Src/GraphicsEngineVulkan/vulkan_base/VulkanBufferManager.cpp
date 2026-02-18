@@ -1,7 +1,10 @@
 #include "vulkan_base/VulkanBufferManager.hpp"
-#include "common/Utilities.hpp"
+#include "spdlog/spdlog.h"
+#include "vulkan_base/VulkanBuffer.hpp"
+#include <cstdint>
+#include <vulkan/vulkan_core.h>
 
-Kataglyphis::VulkanBufferManager::VulkanBufferManager() {}
+Kataglyphis::VulkanBufferManager::VulkanBufferManager() = default;
 
 void Kataglyphis::VulkanBufferManager::copyBuffer(VkDevice device,
   VkQueue transfer_queue,
@@ -11,10 +14,11 @@ void Kataglyphis::VulkanBufferManager::copyBuffer(VkDevice device,
   VkDeviceSize buffer_size)
 {
     // create buffer
-    VkCommandBuffer command_buffer = commandBufferManager.beginCommandBuffer(device, transfer_command_pool);
+    VkCommandBuffer command_buffer =
+      Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device, transfer_command_pool);
     if (command_buffer == VK_NULL_HANDLE) {
-      spdlog::error("Skipping buffer copy due to invalid command buffer.");
-      return;
+        spdlog::error("Skipping buffer copy due to invalid command buffer.");
+        return;
     }
 
     // region of data to copy from and to
@@ -26,7 +30,8 @@ void Kataglyphis::VulkanBufferManager::copyBuffer(VkDevice device,
     // command to copy src buffer to dst buffer
     vkCmdCopyBuffer(command_buffer, src_buffer.getBuffer(), dst_buffer.getBuffer(), 1, &buffer_copy_region);
 
-    commandBufferManager.endAndSubmitCommandBuffer(device, transfer_command_pool, transfer_queue, command_buffer);
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      device, transfer_command_pool, transfer_queue, command_buffer);
 }
 
 void Kataglyphis::VulkanBufferManager::copyImageBuffer(VkDevice device,
@@ -38,10 +43,11 @@ void Kataglyphis::VulkanBufferManager::copyImageBuffer(VkDevice device,
   uint32_t height)
 {
     // create buffer
-    VkCommandBuffer transfer_command_buffer = commandBufferManager.beginCommandBuffer(device, transfer_command_pool);
+    VkCommandBuffer transfer_command_buffer =
+      Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device, transfer_command_pool);
     if (transfer_command_buffer == VK_NULL_HANDLE) {
-      spdlog::error("Skipping image buffer copy due to invalid command buffer.");
-      return;
+        spdlog::error("Skipping image buffer copy due to invalid command buffer.");
+        return;
     }
 
     VkBufferImageCopy image_region{};
@@ -52,15 +58,15 @@ void Kataglyphis::VulkanBufferManager::copyImageBuffer(VkDevice device,
     image_region.imageSubresource.mipLevel = 0;
     image_region.imageSubresource.baseArrayLayer = 0;
     image_region.imageSubresource.layerCount = 1;
-    image_region.imageOffset = { 0, 0, 0 };// offset into image
-    image_region.imageExtent = { width, height, 1 };
+    image_region.imageOffset = { .x = 0, .y = 0, .z = 0 };// offset into image
+    image_region.imageExtent = { .width = width, .height = height, .depth = 1 };
 
     // copy buffer to given image
     vkCmdCopyBufferToImage(
       transfer_command_buffer, src_buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &image_region);
 
-    commandBufferManager.endAndSubmitCommandBuffer(
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
       device, transfer_command_pool, transfer_queue, transfer_command_buffer);
 }
 
-Kataglyphis::VulkanBufferManager::~VulkanBufferManager() {}
+Kataglyphis::VulkanBufferManager::~VulkanBufferManager() = default;

@@ -7,18 +7,18 @@
 #include "scene/sky_box/SkyBox.hpp"
 #include "scene/texture/Texture.hpp"
 
-class GeometryPass : public RenderPassSceneDependend
+class GeometryPass final : public RenderPassSceneDependend
 {
   public:
     GeometryPass();
 
     void execute(glm::mat4 projection_matrix,
-      std::shared_ptr<Camera> main_camera,
+      const std::shared_ptr<Camera> &main_camera,
       GLuint window_width,
       GLuint window_height,
       GLuint gbuffer_id,
       GLfloat delta_time,
-      std::shared_ptr<Scene>);
+      const std::shared_ptr<Scene> &);
 
     void create_shader_program();
 

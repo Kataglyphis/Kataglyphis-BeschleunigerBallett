@@ -6,16 +6,16 @@
 #include "scene/ViewFrustumCulling.hpp"
 #include "scene/light/directional_light/DirectionalLight.hpp"
 
-class DirectionalShadowMapPass : public RenderPassSceneDependend
+class DirectionalShadowMapPass final : public RenderPassSceneDependend
 {
   public:
     DirectionalShadowMapPass();
 
     void execute(glm::mat4 projection,
-      std::shared_ptr<Camera> main_camera,
+      const std::shared_ptr<Camera> &main_camera,
       GLuint window_width,
       GLuint window_height,
-      std::shared_ptr<Scene> scene);
+      const std::shared_ptr<Scene> &scene);
 
     void create_shader_program();
 

@@ -1,17 +1,12 @@
 #include "scene/ObjMaterial.hpp"
 
-ObjMaterial::ObjMaterial()
+ObjMaterial::ObjMaterial() : shininess(0.f), ior(1.0f), dissolve(1.f), illum(0), textureID(-1)
 {
-    this->ambient = glm::vec3(0.1f, 0.1f, 0.1f);
-    this->diffuse = glm::vec3(0.7f, 0.7f, 0.7f);
-    this->specular = glm::vec3(1.0f, 1.0f, 1.0f);
-    this->transmittance = glm::vec3(0.0f, 0.0f, 0.0f);
-    this->emission = glm::vec3(0.0f, 0.0f, 0.10);
-    this->shininess = 0.f;
-    this->ior = 1.0f;
-    this->dissolve = 1.f;
-    this->illum = 0;
-    this->textureID = -1;
+    this->ambient = glm::vec3(0.1F, 0.1F, 0.1F);
+    this->diffuse = glm::vec3(0.7F, 0.7F, 0.7F);
+    this->specular = glm::vec3(1.0F, 1.0F, 1.0F);
+    this->transmittance = glm::vec3(0.0F, 0.0F, 0.0F);
+    this->emission = glm::vec3(0.0F, 0.0F, 0.10);
 }
 
 ObjMaterial::ObjMaterial(glm::vec3 ambient,
@@ -24,17 +19,8 @@ ObjMaterial::ObjMaterial(glm::vec3 ambient,
   float dissolve,
   int illum,
   int textureID)
-{
-    this->ambient = ambient;
-    this->diffuse = diffuse;
-    this->specular = specular;
-    this->transmittance = transmittance;
-    this->emission = emission;
-    this->shininess = shininess;
-    this->ior = ior;
-    this->dissolve = dissolve;
-    this->illum = illum;
-    this->textureID = textureID;
-}
+  : ambient(ambient), diffuse(diffuse), specular(specular), transmittance(transmittance), emission(emission),
+    shininess(shininess), ior(ior), dissolve(dissolve), illum(illum), textureID(textureID)
+{}
 
-ObjMaterial::~ObjMaterial() {}
+ObjMaterial::~ObjMaterial() = default;

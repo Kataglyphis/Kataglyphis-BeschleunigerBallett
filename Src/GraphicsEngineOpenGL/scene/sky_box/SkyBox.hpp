@@ -32,6 +32,5 @@ class SkyBox
     std::shared_ptr<Mesh> sky_mesh;
     std::shared_ptr<ShaderProgram> shader_program;
 
-    GLuint texture_id;
-    GLuint uniform_projection, uniform_view;
+    GLuint texture_id{};
 };

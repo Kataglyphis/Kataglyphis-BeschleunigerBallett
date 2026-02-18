@@ -1,27 +1,30 @@
 #include "window/Window.hpp"
+#include "GLFW/glfw3.h"
 #include "spdlog/spdlog.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
 #include <imgui.h>
-#include <imgui_impl_glfw.h>
-#include <imgui_impl_vulkan.h>
 
-#include <stdexcept>
+#include <print>
+#include <vulkan/vulkan_core.h>
 
 using namespace Kataglyphis::Frontend;
 // GLFW Callback functions
 static void onErrorCallback(int error, const char *description)
 {
-    fprintf(stderr, "GLFW Error %d: %s\n", error, description);
+    std::println(stderr, "GLFW Error {}: {}", error, description);
 }
 
 Window::Window()
   :
 
-    window_width(800.f), window_height(600.f), x_change(0.0f), y_change(0.0f), framebuffer_resized(false)
+    window_width(800.F), window_height(600.F), x_change(0.0F), y_change(0.0F), framebuffer_resized(false)
 
 {
     // all keys non-pressed in the beginning
-    for (size_t i = 0; i < 1024; i++) { keys[i] = 0; }
+    for (bool &key : keys) { key = 0; }
 
     initialize();
 }
@@ -30,35 +33,36 @@ Window::Window()
 Window::Window(uint32_t window_width, uint32_t window_height)
   :
 
-    window_width(window_width), window_height(window_height), x_change(0.0f), y_change(0.0f), framebuffer_resized(false)
+    window_width(window_width), window_height(window_height), x_change(0.0F), y_change(0.0F), framebuffer_resized(false)
 
 {
     // all keys non-pressed in the beginning
-    for (size_t i = 0; i < 1024; i++) { keys[i] = 0; }
+    for (bool &key : keys) { key = 0; }
 
     initialize();
 }
 
-int Window::initialize()
+auto Window::initialize() -> int
 {
     glfwSetErrorCallback(onErrorCallback);
-    if (!glfwInit()) {
-        printf("GLFW Init failed!");
+    if (glfwInit() == 0) {
+        std::print("GLFW Init failed!");
         glfwTerminate();
         return 1;
     }
 
-    if (!glfwVulkanSupported()) { spdlog::error("No Vulkan Supported!"); }
+    if (glfwVulkanSupported() == 0) { spdlog::error("No Vulkan Supported!"); }
 
     // allow it to resize
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
     // retrieve new window
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    main_window = glfwCreateWindow(window_width, window_height, "\\__/ Epic graphics from hell \\__/ ", NULL, NULL);
+    main_window =
+      glfwCreateWindow(window_width, window_height, "\\__/ Epic graphics from hell \\__/ ", nullptr, nullptr);
 
-    if (!main_window) {
-        printf("GLFW Window creation failed!");
+    if (main_window == nullptr) {
+        std::print("GLFW Window creation failed!");
         glfwTerminate();
         return 1;
     }
@@ -85,29 +89,29 @@ void Window::set_buffer_size(float window_buffer_width, float window_buffer_heig
     this->window_buffer_height = window_buffer_height;
 }
 
-float Window::get_x_change()
+auto Window::get_x_change() -> float
 {
-    float the_change = x_change;
-    x_change = 0.0f;
+    float const the_change = x_change;
+    x_change = 0.0F;
     return the_change;
 }
 
-float Window::get_y_change()
+auto Window::get_y_change() -> float
 {
-    float the_change = y_change;
-    y_change = 0.0f;
+    float const the_change = y_change;
+    y_change = 0.0F;
     return the_change;
 }
 
-float Window::get_height() { return float(window_height); }
+auto Window::get_height() const -> float { return static_cast<float>(window_height); }
 
-float Window::get_width() { return float(window_width); }
+auto Window::get_width() const -> float { return static_cast<float>(window_width); }
 
-bool Window::framebuffer_size_has_changed() { return framebuffer_resized; }
+auto Window::framebuffer_size_has_changed() const -> bool { return framebuffer_resized; }
 
 void Window::init_callbacks()
 {
-    // TODO: remember this section for our later game logic
+    // TODO(jsh): remember this section for our later game logic
     // for the space ship to fly around
     glfwSetWindowUserPointer(main_window, this);
     glfwSetKeyCallback(main_window, &key_callback);
@@ -117,7 +121,7 @@ void Window::init_callbacks()
 
 void Window::framebuffer_size_callback(GLFWwindow *window, int width, int height)
 {
-    auto app = reinterpret_cast<Window *>(glfwGetWindowUserPointer(window));
+    auto *app = reinterpret_cast<Window *>(glfwGetWindowUserPointer(window));
     app->framebuffer_resized = true;
     app->window_width = width;
     app->window_height = height;
@@ -125,9 +129,9 @@ void Window::framebuffer_size_callback(GLFWwindow *window, int width, int height
 
 void Window::reset_framebuffer_has_changed() { this->framebuffer_resized = false; }
 
-void Window::key_callback(GLFWwindow *window, int key, int code, int action, int mode)
+void Window::key_callback(GLFWwindow *window, int key, int /*code*/, int action, int /*mode*/)
 {
-    Window *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
+    auto *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
 
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) { glfwSetWindowShouldClose(window, VK_TRUE); }
 
@@ -143,7 +147,7 @@ void Window::key_callback(GLFWwindow *window, int key, int code, int action, int
 
 void Window::mouse_callback(GLFWwindow *window, double x_pos, double y_pos)
 {
-    Window *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
+    auto *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
 
     // need to handle first occurance of a mouse moving event
     if (the_window->mouse_first_moved) {
@@ -161,22 +165,22 @@ void Window::mouse_callback(GLFWwindow *window, double x_pos, double y_pos)
     the_window->last_y = static_cast<float>(y_pos);
 }
 
-void Window::mouse_button_callback(GLFWwindow *window, int button, int action, int mods)
+void Window::mouse_button_callback(GLFWwindow *window, int button, int action, int /*mods*/)
 {
     if (ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse) {
         ImGuiIO &io = ImGui::GetIO();
-        io.AddMouseButtonEvent(button, action);
+        io.AddMouseButtonEvent(button, action != 0);
         return;
     }
 
-    Window *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
+    auto *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
 
     if ((action == GLFW_PRESS) && (button == GLFW_MOUSE_BUTTON_RIGHT)) {
         glfwSetCursorPosCallback(window, mouse_callback);
     } else {
         the_window->mouse_first_moved = true;
-        glfwSetCursorPosCallback(window, NULL);
+        glfwSetCursorPosCallback(window, nullptr);
     }
 }
 
-Window::~Window() {}
+Window::~Window() = default;

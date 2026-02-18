@@ -1,17 +1,22 @@
 #include "Raytracing.hpp"
 
 #include <array>
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <sstream>
+#include <string>
 #include <vector>
+#include <vulkan/vulkan_core.h>
 
 #include "common/MemoryHelper.hpp"
 #include "common/Utilities.hpp"
-#include "renderer/VulkanRendererConfig.hpp"
 #include "util/File.hpp"
 #include "vulkan_base/ShaderHelper.hpp"
+#include "vulkan_base/VulkanDevice.hpp"
+#include "vulkan_base/VulkanSwapChain.hpp"
 
-Kataglyphis::VulkanRendererInternals::Raytracing::Raytracing() {}
+Kataglyphis::VulkanRendererInternals::Raytracing::Raytracing() = default;
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::init(VulkanDevice *device,
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
@@ -34,14 +39,14 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(VkCommandB
   VulkanSwapChain *vulkanSwapChain,
   const std::vector<VkDescriptorSet> &descriptorSets)
 {
-    uint32_t handle_size = raytracing_properties.shaderGroupHandleSize;
-    uint32_t handle_size_aligned = align_up(handle_size, raytracing_properties.shaderGroupHandleAlignment);
+    uint32_t const handle_size = raytracing_properties.shaderGroupHandleSize;
+    uint32_t const handle_size_aligned = align_up(handle_size, raytracing_properties.shaderGroupHandleAlignment);
 
-    PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR = reinterpret_cast<PFN_vkGetBufferDeviceAddressKHR>(
+    auto vkGetBufferDeviceAddressKHR = reinterpret_cast<PFN_vkGetBufferDeviceAddressKHR>(
       vkGetDeviceProcAddr(device->getLogicalDevice(), "vkGetBufferDeviceAddressKHR"));
 
-    PFN_vkCmdTraceRaysKHR pvkCmdTraceRaysKHR =
-      (PFN_vkCmdTraceRaysKHR)vkGetDeviceProcAddr(device->getLogicalDevice(), "vkCmdTraceRaysKHR");
+    auto pvkCmdTraceRaysKHR =
+      reinterpret_cast<PFN_vkCmdTraceRaysKHR>(vkGetDeviceProcAddr(device->getLogicalDevice(), "vkCmdTraceRaysKHR"));
 
     VkBufferDeviceAddressInfoKHR bufferDeviceAI{};
     bufferDeviceAI.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
@@ -62,7 +67,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(VkCommandB
     hit_region.size = handle_size_aligned;
 
     // for GCC doen't allow references on rvalues go like that ...
-    pc.clear_color = { 0.2f, 0.65f, 0.4f, 1.0f };
+    pc.clear_color = { 0.2F, 0.65F, 0.4F, 1.0F };
     // just "Push" constants to given shader stage directly (no buffer)
     vkCmdPushConstants(commandBuffer,
       pipeline_layout,
@@ -104,7 +109,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::cleanUp()
     vkDestroyPipelineLayout(device->getLogicalDevice(), pipeline_layout, nullptr);
 }
 
-Kataglyphis::VulkanRendererInternals::Raytracing::~Raytracing() {}
+Kataglyphis::VulkanRendererInternals::Raytracing::~Raytracing() = default;
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::createPCRange()
 {
@@ -118,20 +123,19 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createPCRange()
 void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
 {
-    PFN_vkCreateRayTracingPipelinesKHR pvkCreateRayTracingPipelinesKHR =
-      (PFN_vkCreateRayTracingPipelinesKHR)vkGetDeviceProcAddr(
-        device->getLogicalDevice(), "vkCreateRayTracingPipelinesKHR");
+    auto pvkCreateRayTracingPipelinesKHR = reinterpret_cast<PFN_vkCreateRayTracingPipelinesKHR>(
+      vkGetDeviceProcAddr(device->getLogicalDevice(), "vkCreateRayTracingPipelinesKHR"));
 
     std::stringstream raytracing_shader_dir;
-    std::filesystem::path cwd = std::filesystem::current_path();
+    std::filesystem::path const cwd = std::filesystem::current_path();
     raytracing_shader_dir << cwd.string();
     raytracing_shader_dir << RELATIVE_RESOURCE_PATH;
     raytracing_shader_dir << "Shaders/raytracing/";
 
-    std::string raygen_shader = "raytrace.rgen";
-    std::string chit_shader = "raytrace.rchit";
-    std::string miss_shader = "raytrace.rmiss";
-    std::string shadow_shader = "shadow.rmiss";
+    std::string const raygen_shader = "raytrace.rgen";
+    std::string const chit_shader = "raytrace.rchit";
+    std::string const miss_shader = "raytrace.rmiss";
+    std::string const shadow_shader = "shadow.rmiss";
 
     ShaderHelper shaderHelper;
     shaderHelper.compileShader(raytracing_shader_dir.str(), raygen_shader);
@@ -144,10 +148,10 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
     File raymissFile(shaderHelper.getShaderSpvDir(raytracing_shader_dir.str(), miss_shader));
     File shadowFile(shaderHelper.getShaderSpvDir(raytracing_shader_dir.str(), shadow_shader));
 
-    std::vector<char> raygen_shader_code = raygenFile.readCharSequence();
-    std::vector<char> raychit_shader_code = raychitFile.readCharSequence();
-    std::vector<char> raymiss_shader_code = raymissFile.readCharSequence();
-    std::vector<char> shadow_shader_code = shadowFile.readCharSequence();
+    std::vector<char> const raygen_shader_code = raygenFile.readCharSequence();
+    std::vector<char> const raychit_shader_code = raychitFile.readCharSequence();
+    std::vector<char> const raymiss_shader_code = raymissFile.readCharSequence();
+    std::vector<char> const shadow_shader_code = shadowFile.readCharSequence();
 
     // build shader modules to link to graphics pipeline
     VkShaderModule raygen_shader_module = shaderHelper.createShaderModule(device, raygen_shader_code);
@@ -262,7 +266,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
     /*raytracing_pipeline_create_info.pLibraryInfo =
        &pipeline_library_create_info;
           raytracing_pipeline_create_info.pLibraryInterface = NULL;*/
-    // TODO: HARDCODED FOR NOW;
+    // TODO(jsh): HARDCODED FOR NOW;
     raytracing_pipeline_create_info.maxPipelineRayRecursionDepth = 2;
     raytracing_pipeline_create_info.layout = pipeline_layout;
 
@@ -285,9 +289,8 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
 void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
 {
     // load in functionality for raytracing shader group handles
-    PFN_vkGetRayTracingShaderGroupHandlesKHR pvkGetRayTracingShaderGroupHandlesKHR =
-      (PFN_vkGetRayTracingShaderGroupHandlesKHR)vkGetDeviceProcAddr(
-        device->getLogicalDevice(), "vkGetRayTracingShaderGroupHandlesKHR");
+    auto pvkGetRayTracingShaderGroupHandlesKHR = reinterpret_cast<PFN_vkGetRayTracingShaderGroupHandlesKHR>(
+      vkGetDeviceProcAddr(device->getLogicalDevice(), "vkGetRayTracingShaderGroupHandlesKHR"));
 
     raytracing_properties = VkPhysicalDeviceRayTracingPipelinePropertiesKHR{};
     raytracing_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
@@ -298,15 +301,15 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
 
     vkGetPhysicalDeviceProperties2(device->getPhysicalDevice(), &properties);
 
-    uint32_t handle_size = raytracing_properties.shaderGroupHandleSize;
-    uint32_t handle_size_aligned = align_up(handle_size, raytracing_properties.shaderGroupHandleAlignment);
+    uint32_t const handle_size = raytracing_properties.shaderGroupHandleSize;
+    uint32_t const handle_size_aligned = align_up(handle_size, raytracing_properties.shaderGroupHandleAlignment);
 
-    uint32_t group_count = static_cast<uint32_t>(shader_groups.size());
-    uint32_t sbt_size = group_count * handle_size_aligned;
+    auto const group_count = static_cast<uint32_t>(shader_groups.size());
+    uint32_t const sbt_size = group_count * handle_size_aligned;
 
     std::vector<uint8_t> handles(sbt_size);
 
-    VkResult result = pvkGetRayTracingShaderGroupHandlesKHR(
+    VkResult const result = pvkGetRayTracingShaderGroupHandlesKHR(
       device->getLogicalDevice(), graphicsPipeline, 0, group_count, sbt_size, handles.data());
     ASSERT_VULKAN(result, "Failed to get ray tracing shader group handles!")
 
@@ -322,8 +325,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
     missShaderBindingTableBuffer.create(
       device, 2 * handle_size, bufferUsageFlags, memoryPropertyFlags, memoryAllocateFlags);
 
-    hitShaderBindingTableBuffer.create(
-      device, handle_size, bufferUsageFlags, memoryPropertyFlags, memoryAllocateFlags);
+    hitShaderBindingTableBuffer.create(device, handle_size, bufferUsageFlags, memoryPropertyFlags, memoryAllocateFlags);
 
     void *mapped_raygen = nullptr;
     vkMapMemory(device->getLogicalDevice(),
@@ -343,5 +345,5 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
 
     memcpy(mapped_raygen, handles.data(), handle_size);
     memcpy(mapped_miss, handles.data() + handle_size_aligned, handle_size * 2);
-    memcpy(mapped_rchit, handles.data() + handle_size_aligned * 3, handle_size);
+    memcpy(mapped_rchit, handles.data() + (handle_size_aligned * 3), handle_size);
 }

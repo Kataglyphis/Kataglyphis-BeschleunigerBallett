@@ -52,7 +52,7 @@ class DirectionalLight : public Light
     ~DirectionalLight();
 
   private:
-    std::vector<glm::vec4> get_frustum_corners_world_space(const glm::mat4 &proj, const glm::mat4 &view);
+    static std::vector<glm::vec4> get_frustum_corners_world_space(const glm::mat4 &proj, const glm::mat4 &view);
     void calc_cascaded_slots();
 
     std::shared_ptr<CascadedShadowMap> shadow_map;
@@ -60,6 +60,6 @@ class DirectionalLight : public Light
     glm::vec3 direction;
     GLfloat shadow_near_plane, shadow_far_plane;
 
-    std::array<GLfloat, NUM_CASCADES + 1> cascade_slots;
+    std::array<GLfloat, NUM_CASCADES + 1> cascade_slots{};
     std::vector<glm::mat4> cascade_light_matrices;
 };

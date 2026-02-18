@@ -1,5 +1,5 @@
 #include "LightingPassShaderProgram.hpp"
 
-LightingPassShaderProgram::LightingPassShaderProgram() {}
+LightingPassShaderProgram::LightingPassShaderProgram() = default;
 
-LightingPassShaderProgram::~LightingPassShaderProgram() {}
+LightingPassShaderProgram::~LightingPassShaderProgram() = default;

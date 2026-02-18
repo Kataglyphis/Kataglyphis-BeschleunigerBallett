@@ -1,8 +1,9 @@
 #include "LoadingScreen.hpp"
-#include "renderer/OpenGLRendererConfig.hpp"
 
 #include "scene/texture/RepeatMode.hpp"
 #include <filesystem>
+#include <memory>
+#include <glad/glad.h>
 #include <sstream>
 
 LoadingScreen::LoadingScreen() { create_shader_program(); }
@@ -10,7 +11,7 @@ LoadingScreen::LoadingScreen() { create_shader_program(); }
 void LoadingScreen::init()
 {
     std::stringstream texture_base_dir;
-    std::filesystem::path cwd = std::filesystem::current_path();
+    std::filesystem::path const cwd = std::filesystem::current_path();
     texture_base_dir << cwd.string();
     texture_base_dir << RELATIVE_RESOURCE_PATH;
     texture_base_dir << "Textures/";
@@ -48,4 +49,4 @@ void LoadingScreen::create_shader_program()
       "loading_screen/loading_screen.vert", "loading_screen/loading_screen.frag");
 }
 
-LoadingScreen::~LoadingScreen() {}
+LoadingScreen::~LoadingScreen() = default;

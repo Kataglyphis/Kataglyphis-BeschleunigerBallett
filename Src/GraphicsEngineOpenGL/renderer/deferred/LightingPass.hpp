@@ -15,15 +15,15 @@
 // #include "util/RandomNumbers.hpp"
 #include "scene/Scene.hpp"
 
-class LightingPass : public RenderPass
+class LightingPass final : public RenderPass
 {
   public:
     LightingPass();
 
     void execute(glm::mat4 projection_matrix,
-      std::shared_ptr<Camera>,
-      std::shared_ptr<Scene> scene,
-      std::shared_ptr<GBuffer> gbuffer,
+      const std::shared_ptr<Camera> &main_camera,
+      const std::shared_ptr<Scene> &scene,
+      const std::shared_ptr<GBuffer> &gbuffer,
       float delta_time);
 
     void create_shader_program();
@@ -34,9 +34,9 @@ class LightingPass : public RenderPass
     glm::vec3 current_offset;
 
     void set_uniforms(glm::mat4 projection_matrix,
-      std::shared_ptr<Camera> main_camera,
-      std::shared_ptr<Scene> scene,
-      std::shared_ptr<GBuffer> gbuffer,
+      const std::shared_ptr<Camera> &main_camera,
+      const std::shared_ptr<Scene> &scene,
+      const std::shared_ptr<GBuffer> &gbuffer,
       float delta_time);
 
     std::shared_ptr<LightingPassShaderProgram> shader_program;

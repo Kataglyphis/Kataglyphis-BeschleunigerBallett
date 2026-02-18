@@ -33,19 +33,19 @@ class Window
     ~Window();
 
   private:
-    GLFWwindow *main_window;
+    GLFWwindow *main_window{};
 
     GLint window_width, window_height;
     // what key(-s) was/were pressed
-    bool keys[1024];
-    GLfloat last_x;
-    GLfloat last_y;
+    bool keys[1024]{};
+    GLfloat last_x{};
+    GLfloat last_y{};
     GLfloat x_change;
     GLfloat y_change;
-    bool mouse_first_moved;
+    bool mouse_first_moved{};
 
     // buffers to store our window data to
-    GLint window_buffer_width, window_buffer_height;
+    GLint window_buffer_width{}, window_buffer_height{};
 
     // we need to start our window callbacks for interaction
     void init_callbacks();

@@ -1,9 +1,10 @@
 #include "util/RandomNumbers.hpp"
 
 #include "hostDevice/bindings.hpp"
-#include "hostDevice/host_device_shared.hpp"
 
 #include "hostDevice/GlobalValues.hpp"
+#include <glad/glad.h>
+#include <memory>
 #include <random>
 
 RandomNumbers::RandomNumbers()
@@ -23,9 +24,9 @@ RandomNumbers::RandomNumbers()
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
-void RandomNumbers::read()
+void RandomNumbers::read() const
 {
-    glActiveTexture(GL_TEXTURE0 + (GLenum)RANDOM_NUMBERS_SLOT);
+    glActiveTexture(GL_TEXTURE0 + static_cast<GLenum>(RANDOM_NUMBERS_SLOT));
     glBindTexture(GL_TEXTURE_2D, random_number_id);
 }
 
@@ -39,7 +40,7 @@ void RandomNumbers::generate_random_numbers()
         for (int k = 0; k < MAX_RESOLUTION_Y; k++) {
             const GLfloat random_offset[4] = { dis(gen64), dis(gen64), dis(gen64), dis(gen64) };
 
-            GLuint index = (MAX_RESOLUTION_Y * i + k) * 4;
+            GLuint const index = (MAX_RESOLUTION_Y * i + k) * 4;
 
             *(random_number_data.get() + index) = random_offset[0];
             *(random_number_data.get() + index + 1) = random_offset[1];

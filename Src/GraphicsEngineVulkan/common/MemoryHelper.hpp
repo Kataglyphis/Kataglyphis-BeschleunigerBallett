@@ -3,9 +3,12 @@
 
 namespace Kataglyphis {
 // aligned piece of memory appropiately and when necessary return bigger piece
-static uint32_t align_up(uint32_t memory, uint32_t alignment) { return (memory + alignment - 1) & ~(alignment - 1); }
+[[maybe_unused]] static uint32_t align_up(uint32_t memory, uint32_t alignment)
+{
+        return (memory + alignment - 1) & ~(alignment - 1);
+}
 
-static uint32_t
+[[maybe_unused]] static uint32_t
   find_memory_type_index(VkPhysicalDevice physical_device, uint32_t allowed_types, VkMemoryPropertyFlags properties)
 {
     // get properties of physical device memory

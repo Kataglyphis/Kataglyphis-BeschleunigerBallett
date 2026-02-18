@@ -1,12 +1,25 @@
 #include "renderer/Renderer.hpp"
+#include "renderer/deferred/GBuffer.hpp"
+#include "scene/light/point_light/OmniShadowMapPass.hpp"
+#include "scene/light/directional_light/DirectionalShadowMapPass.hpp"
+#include "renderer/deferred/GeometryPass.hpp"
+#include "renderer/deferred/LightingPass.hpp"
+#include "camera/Camera.hpp"
+#include "scene/Scene.hpp"
+#include "scene/light/point_light/PointLight.hpp"
+#include "renderer/deferred/RenderPass.hpp"
 
-#include <gsl/gsl>
+#include <glad/glad.h>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <cstddef>
+#include <memory>
+#include <vector>
 
 Renderer::Renderer(GLuint window_width, GLuint window_height)
   :
 
     window_width(window_width), window_height(window_height),
-    gbuffer(std::make_shared<GBuffer>(window_width, window_height)), shader_includes(),
+    gbuffer(std::make_shared<GBuffer>(window_width, window_height)),
     omni_shadow_map_pass(std::make_shared<OmniShadowMapPass>()),
     directional_shadow_map_pass(std::make_shared<DirectionalShadowMapPass>()),
     geometry_pass(std::make_shared<GeometryPass>()), lighting_pass(std::make_shared<LightingPass>())
@@ -20,8 +33,8 @@ Renderer::Renderer(GLuint window_width, GLuint window_height)
     gbuffer->create();
 }
 
-void Renderer::drawFrame(std::shared_ptr<Camera> main_camera,
-  std::shared_ptr<Scene> scene,
+void Renderer::drawFrame(const std::shared_ptr<Camera> &main_camera,
+  const std::shared_ptr<Scene> &scene,
   glm::mat4 projection_matrix,
   GLfloat delta_time)
 {
@@ -54,7 +67,7 @@ void Renderer::reload_shader_programs()
     // also reload all shader include files
     shader_includes = ShaderIncludes();
 
-    for (std::shared_ptr<RenderPass> render_pass : render_passes) { render_pass->create_shader_program(); }
+    for (const std::shared_ptr<RenderPass> &render_pass : render_passes) { render_pass->create_shader_program(); }
 }
 
-Renderer::~Renderer() {}
+Renderer::~Renderer() = default;

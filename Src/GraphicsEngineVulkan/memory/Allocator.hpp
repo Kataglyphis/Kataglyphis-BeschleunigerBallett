@@ -16,6 +16,6 @@ class Allocator
     ~Allocator();
 
   private:
-    VmaAllocator vmaAllocator;
+    VmaAllocator vmaAllocator{};
 };
 }// namespace Kataglyphis

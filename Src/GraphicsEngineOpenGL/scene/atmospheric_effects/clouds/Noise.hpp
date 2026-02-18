@@ -21,8 +21,8 @@ class Noise
     void create_res128_noise();
     void create_res32_noise();
 
-    void read_res128_noise();
-    void read_res32_noise();
+    void read_res128_noise() const;
+    void read_res32_noise() const;
 
     void update();
 
@@ -41,19 +41,19 @@ class Noise
 
     void delete_textures();
 
-    void print_comp_shader_capabilities();
+    static void print_comp_shader_capabilities();
 
     // first texture dim = 128^3
-    GLuint texture_1_id;
+    GLuint texture_1_id{};
     GLuint texture_dim_1;
     std::shared_ptr<ComputeShaderProgram> texture_1_shader_program;
 
     // 2nd texture dim = 32^3
-    GLuint texture_2_id;
+    GLuint texture_2_id{};
     GLuint texture_dim_2;
     std::shared_ptr<ComputeShaderProgram> texture_2_shader_program;
 
-    GLuint cell_ids[NUM_CELL_POSITIONS];
-    GLuint num_cells_per_axis[NUM_CELL_POSITIONS];
+    GLuint cell_ids[NUM_CELL_POSITIONS]{};
+    GLuint num_cells_per_axis[NUM_CELL_POSITIONS]{};
     std::array<std::vector<GLfloat>, NUM_CELL_POSITIONS> cell_data;
 };

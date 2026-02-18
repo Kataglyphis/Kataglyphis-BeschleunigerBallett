@@ -5,7 +5,7 @@ class App
   public:
     App();
 
-    int run();
+    static int run();
 
     ~App();
 

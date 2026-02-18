@@ -1,13 +1,21 @@
+#include <algorithm>
+
 #include "camera/Camera.hpp"
+#include <glm/geometric.hpp>
+#include "GLFW/glfw3.h"
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glm/ext/matrix_transform.hpp>
+#include <cmath>
+#include <glm/trigonometric.hpp>
 
 Camera::Camera()
   :
 
-    position(glm::vec3(0.0f, 50.0f, 0.0f)),
+    position(glm::vec3(0.0F, 50.0F, 0.0F)),
     // here we want the normal coord. axis z is showing to us !!
-    front(glm::vec3(0.0f, 0.0f, -1.0f)), world_up(glm::vec3(0.0f, 1.0f, 0.0f)),
-    right(glm::normalize(glm::cross(front, world_up))), up(glm::normalize(glm::cross(right, front))), yaw(-60.0f),
-    pitch(0.0f), movement_speed(35.0f), turn_speed(0.25f), near_plane(0.1f), far_plane(1000.f), fov(45.f)
+    front(glm::vec3(0.0F, 0.0F, -1.0F)), world_up(glm::vec3(0.0F, 1.0F, 0.0F)),
+    right(glm::normalize(glm::cross(front, world_up))), up(glm::normalize(glm::cross(right, front))), yaw(-60.0F),
+    pitch(0.0F), movement_speed(35.0F), turn_speed(0.25F), near_plane(0.1F), far_plane(1000.F), fov(45.F)
 
 {}
 
@@ -24,15 +32,15 @@ Camera::Camera(glm::vec3 start_position,
 
     position(start_position),
     // here we want the normal coord. axis z is showing to us !!
-    front(glm::vec3(0.0f, 0.0f, -1.0f)), world_up(start_up), right(glm::normalize(glm::cross(front, world_up))),
+    front(glm::vec3(0.0F, 0.0F, -1.0F)), world_up(start_up), right(glm::normalize(glm::cross(front, world_up))),
     up(glm::normalize(glm::cross(right, front))), yaw(start_yaw), pitch(start_pitch), movement_speed(start_move_speed),
     turn_speed(start_turn_speed), near_plane(near_plane), far_plane(far_plane), fov(fov)
 
 {}
 
-void Camera::key_control(bool *keys, float delta_time)
+void Camera::key_control(const bool *keys, float delta_time)
 {
-    float velocity = movement_speed * delta_time;
+    float const velocity = movement_speed * delta_time;
 
     if (keys[GLFW_KEY_W]) { position += front * velocity; }
 
@@ -57,9 +65,9 @@ void Camera::mouse_control(float x_change, float y_change)
     yaw += x_change;
     pitch += y_change;
 
-    if (pitch > 89.0f) { pitch = 89.0f; }
+    pitch = std::min(pitch, 89.0f);
 
-    if (pitch < -89.0f) { pitch = -89.0f; }
+    pitch = std::max(pitch, -89.0f);
 
     // by changing the rotations you need to update all parameters
     // for we retrieve them later for further calculations!
@@ -74,13 +82,13 @@ void Camera::set_fov(float fov) { this->fov = fov; }
 
 void Camera::set_camera_position(glm::vec3 new_camera_position) { this->position = new_camera_position; }
 
-glm::mat4 Camera::get_viewmatrix() const
+auto Camera::get_viewmatrix() const -> glm::mat4
 {
     // very necessary for further calc
     return glm::lookAt(position, position + front, up);
 }
 
-Camera::~Camera() {}
+Camera::~Camera() = default;
 
 void Camera::update()
 {

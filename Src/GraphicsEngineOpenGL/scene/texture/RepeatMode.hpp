@@ -1,6 +1,6 @@
 #pragma once
 #include "TextureWrappingMode.hpp"
-class RepeatMode : public TextureWrappingMode
+class RepeatMode final : public TextureWrappingMode
 {
   public:
     RepeatMode();

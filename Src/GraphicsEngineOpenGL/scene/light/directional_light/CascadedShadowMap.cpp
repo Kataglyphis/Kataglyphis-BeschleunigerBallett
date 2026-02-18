@@ -1,8 +1,12 @@
 #include "scene/light/directional_light/CascadedShadowMap.hpp"
 
-#include <iostream>
+#include <glad/glad.h>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <cstddef>
+#include <vector>
 
 #include "hostDevice/bindings.hpp"
+#include "hostDevice/host_device_shared.hpp"
 #include "spdlog/spdlog.h"
 
 CascadedShadowMap::CascadedShadowMap()
@@ -13,7 +17,7 @@ CascadedShadowMap::CascadedShadowMap()
 
 {}
 
-bool CascadedShadowMap::init(GLuint width, GLuint height, GLuint num_cascades)
+auto CascadedShadowMap::init(GLuint width, GLuint height, GLuint num_cascades) -> bool
 {
     shadow_width = width;
     shadow_height = height;
@@ -39,7 +43,7 @@ bool CascadedShadowMap::init(GLuint width, GLuint height, GLuint num_cascades)
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
-    constexpr float bordercolor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    constexpr float bordercolor[] = { 1.0F, 1.0F, 1.0F, 1.0F };
     glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, bordercolor);
 
     glBindFramebuffer(GL_FRAMEBUFFER, FBO);
@@ -47,7 +51,7 @@ bool CascadedShadowMap::init(GLuint width, GLuint height, GLuint num_cascades)
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
 
-    int status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    int const status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) { spdlog::error("ERROR::FRAMEBUFFER:: Framebuffer is not complete!"); }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -63,7 +67,7 @@ bool CascadedShadowMap::init(GLuint width, GLuint height, GLuint num_cascades)
     return true;
 }
 
-void CascadedShadowMap::write_light_matrices(std::vector<glm::mat4x4> &lightMatrices)
+void CascadedShadowMap::write_light_matrices(std::vector<glm::mat4x4> &lightMatrices) const
 {
     glBindBuffer(GL_UNIFORM_BUFFER, matrices_UBO);
     for (size_t i = 0; i < lightMatrices.size(); ++i) {
@@ -72,9 +76,9 @@ void CascadedShadowMap::write_light_matrices(std::vector<glm::mat4x4> &lightMatr
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
-void CascadedShadowMap::write() { glBindFramebuffer(GL_FRAMEBUFFER, FBO); }
+void CascadedShadowMap::write() const { glBindFramebuffer(GL_FRAMEBUFFER, FBO); }
 
-void CascadedShadowMap::read(GLenum texture_unit)
+void CascadedShadowMap::read(GLenum texture_unit) const
 {
     glActiveTexture(GL_TEXTURE0 + texture_unit);
     glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_maps);
@@ -86,7 +90,7 @@ void CascadedShadowMap::set_intensity(GLfloat intensity) { this->intensity = int
 
 CascadedShadowMap::~CascadedShadowMap()
 {
-    if (FBO) { glDeleteFramebuffers(1, &FBO); }
+    if (FBO != 0u) { glDeleteFramebuffers(1, &FBO); }
 
-    if (shadow_maps) { glDeleteTextures(1, &shadow_maps); }
+    if (shadow_maps != 0u) { glDeleteTextures(1, &shadow_maps); }
 }

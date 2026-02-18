@@ -3,7 +3,9 @@ param(
   [string]$BuildDir,
   [string]$BuildDirRelease,
   [string]$ClangProfilePreset = 'x64-ClangCL-Windows-Profile',
-  [switch]$CoverageShowSources
+  [switch]$CoverageShowSources,
+  [switch]$RunClangFormat,
+  [switch]$RunClangTidy
 )
 
 $ErrorActionPreference = 'Stop'
@@ -62,6 +64,24 @@ function Test-ConfigurationSelected {
   return $selectedConfigurations.Contains($Name)
 }
 
+function Get-ProjectSourceFiles {
+  param(
+    [Parameter(Mandatory)]
+    [string]$RootPath,
+    [Parameter(Mandatory)]
+    [string[]]$Extensions
+  )
+
+  $sourceRoot = Join-Path $RootPath 'Src'
+  if (-not (Test-Path $sourceRoot)) {
+    return @()
+  }
+
+  return Get-ChildItem -Path $sourceRoot -Recurse -File |
+    Where-Object { $Extensions -contains $_.Extension.ToLowerInvariant() } |
+    ForEach-Object { $_.FullName }
+}
+
 $buildContext = New-BuildContext -Workspace $workspaceRoot -LogDir 'logs\windows' -StopOnError
 Open-BuildLog -Context $buildContext
 
@@ -75,6 +95,8 @@ Write-BuildLog -Context $buildContext -Message "BUILD_DIR_RELEASE=$BuildDirRelea
 Write-BuildLog -Context $buildContext -Message "CLANG_PROFILE_PRESET=$ClangProfilePreset"
 Write-BuildLog -Context $buildContext -Message "CONFIGURATIONS=$(([string[]]$selectedConfigurations -join ', '))"
 Write-BuildLog -Context $buildContext -Message "COVERAGE_SHOW_SOURCES=$CoverageShowSources"
+Write-BuildLog -Context $buildContext -Message "RUN_CLANG_FORMAT=$RunClangFormat"
+Write-BuildLog -Context $buildContext -Message "RUN_CLANG_TIDY=$RunClangTidy"
 
 try {
   if (Test-ConfigurationSelected -Name 'msvc-debug') {
@@ -100,6 +122,25 @@ try {
     Invoke-BuildStep -Context $buildContext -StepName 'ClangCL Debug' -Critical -Script {
       Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('-B', $BuildDir, '--preset', 'x64-ClangCL-Windows-Debug', '-Dmyproject_ENABLE_CPPCHECK=OFF')
       Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('--build', $BuildDir)
+
+      if ($RunClangFormat) {
+        $formatFiles = Get-ProjectSourceFiles -RootPath $workspaceRoot -Extensions @('.h', '.hpp', '.c', '.cc', '.cpp')
+        foreach ($file in $formatFiles) {
+          Invoke-BuildExternal -Context $buildContext -File 'clang-format' -Parameters @('-i', $file)
+        }
+      }
+
+      if ($RunClangTidy) {
+        $compileCommands = Join-Path $BuildDir 'compile_commands.json'
+        if (Test-Path $compileCommands) {
+          $tidyFiles = Get-ProjectSourceFiles -RootPath $workspaceRoot -Extensions @('.c', '.cc', '.cpp')
+          foreach ($file in $tidyFiles) {
+            Invoke-BuildExternal -Context $buildContext -File 'clang-tidy' -Parameters @('-p', $BuildDir, '--quiet', '--fix', '--fix-errors', '--format-style=file', $file)
+          }
+        } else {
+          Write-BuildLog -Context $buildContext -Message "Skipping clang-tidy: compile_commands.json not found in $BuildDir"
+        }
+      }
 
       Push-Location $BuildDir
       try {

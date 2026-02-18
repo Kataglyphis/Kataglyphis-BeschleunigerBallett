@@ -59,7 +59,7 @@ class Scene
 
     void loadModel(VulkanDevice *device, VkCommandPool commandPool);
 
-    void add_model(std::shared_ptr<Model> model);
+    void add_model(const std::shared_ptr<Model> &model);
     void add_object_description(ObjectDescription object_description);
 
     void cleanUp();

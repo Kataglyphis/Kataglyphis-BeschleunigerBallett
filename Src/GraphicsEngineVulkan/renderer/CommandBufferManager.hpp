@@ -6,8 +6,8 @@ class CommandBufferManager
   public:
     CommandBufferManager();
 
-    VkCommandBuffer beginCommandBuffer(VkDevice device, VkCommandPool command_pool);
-    void endAndSubmitCommandBuffer(VkDevice device,
+    static VkCommandBuffer beginCommandBuffer(VkDevice device, VkCommandPool command_pool);
+    static void endAndSubmitCommandBuffer(VkDevice device,
       VkCommandPool command_pool,
       VkQueue queue,
       VkCommandBuffer &command_buffer);

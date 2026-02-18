@@ -24,7 +24,7 @@ class AABB
 
     void init(GLfloat minX, GLfloat maxX, GLfloat minY, GLfloat maxY, GLfloat minZ, GLfloat maxZ);
 
-    glm::vec3 get_radius();
+    glm::vec3 get_radius() const;
 
     void render();
 
@@ -38,5 +38,5 @@ class AABB
 
     std::vector<glm::vec3> corners;
 
-    GLfloat minX, maxX, minY, maxY, minZ, maxZ;
+    GLfloat minX{}, maxX{}, minY{}, maxY{}, minZ{}, maxZ{};
 };

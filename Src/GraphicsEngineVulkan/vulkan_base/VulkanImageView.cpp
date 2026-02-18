@@ -1,7 +1,10 @@
 #include "vulkan_base/VulkanImageView.hpp"
 #include "common/Utilities.hpp"
+#include "vulkan_base/VulkanDevice.hpp"
+#include <cstdint>
+#include <vulkan/vulkan_core.h>
 
-Kataglyphis::VulkanImageView::VulkanImageView() {}
+Kataglyphis::VulkanImageView::VulkanImageView() = default;
 
 void Kataglyphis::VulkanImageView::setImageView(VkImageView imageView) { this->imageView = imageView; }
 
@@ -33,10 +36,10 @@ void Kataglyphis::VulkanImageView::create(VulkanDevice *device,
     view_create_info.subresourceRange.layerCount = 1;// number of array levels to view
 
     // create image view
-    VkResult result = vkCreateImageView(device->getLogicalDevice(), &view_create_info, nullptr, &imageView);
+    VkResult const result = vkCreateImageView(device->getLogicalDevice(), &view_create_info, nullptr, &imageView);
     ASSERT_VULKAN(result, "Failed to create an image view!")
 }
 
 void Kataglyphis::VulkanImageView::cleanUp() { vkDestroyImageView(device->getLogicalDevice(), imageView, nullptr); }
 
-Kataglyphis::VulkanImageView::~VulkanImageView() {}
+Kataglyphis::VulkanImageView::~VulkanImageView() = default;

@@ -44,18 +44,18 @@ class VulkanDevice
     ~VulkanDevice();
 
   private:
-    VkPhysicalDevice physical_device;
-    VkPhysicalDeviceProperties device_properties;
+    VkPhysicalDevice physical_device{};
+    VkPhysicalDeviceProperties device_properties{};
 
-    VkDevice logical_device;
+    VkDevice logical_device{};
 
     VulkanInstance *instance;
     VkSurfaceKHR *surface;
 
     // available queues
-    VkQueue graphics_queue;
-    VkQueue presentation_queue;
-    VkQueue compute_queue;
+    VkQueue graphics_queue{};
+    VkQueue presentation_queue{};
+    VkQueue compute_queue{};
     bool deviceSupportsHardwareAcceleratedRRT = true;
 
     void get_physical_device();

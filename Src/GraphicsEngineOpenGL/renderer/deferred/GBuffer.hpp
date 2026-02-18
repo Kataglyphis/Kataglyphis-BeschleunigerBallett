@@ -16,7 +16,7 @@ class GBuffer
     GBuffer(GLint window_width, GLint window_height);
 
     void create();
-    void read(std::shared_ptr<ShaderProgram> shader_program);
+    void read(const std::shared_ptr<ShaderProgram> &shader_program) const;
 
     void update_window_params(GLuint window_width, GLuint window_height);
 
@@ -25,9 +25,9 @@ class GBuffer
     ~GBuffer();
 
   private:
-    GLuint g_buffer;
+    GLuint g_buffer{};
 
-    GLuint g_position, g_normal, g_albedo, g_material_id, g_depth;
+    GLuint g_position{}, g_normal{}, g_albedo{}, g_material_id{}, g_depth{};
 
     GLuint g_buffer_attachment[G_BUFFER_SIZE] = { GL_COLOR_ATTACHMENT0,
         GL_COLOR_ATTACHMENT1,

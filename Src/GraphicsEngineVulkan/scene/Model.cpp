@@ -1,14 +1,20 @@
 #include "Model.hpp"
 
 #include "common/Utilities.hpp"
-#include <iostream>
-#include <unordered_map>
+#include "scene/ObjMaterial.hpp"
+#include "scene/Texture.hpp"
+#include "scene/Vertex.hpp"
+#include "vulkan_base/VulkanDevice.hpp"
+#include <cstdint>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <vector>
+#include <vulkan/vulkan_core.h>
 
 using namespace Kataglyphis;
 
-Model::Model() {}
+Model::Model() = default;
 
-Model::Model(VulkanDevice *device) { this->device = device; }
+Model::Model(VulkanDevice *device) : device(device) {}
 
 void Model::cleanUp()
 {
@@ -34,13 +40,13 @@ void Model::add_new_mesh(VulkanDevice *device,
 
 void Model::set_model(glm::mat4 model) { this->model = model; }
 
-void Model::addTexture(Texture newTexture)
+void Model::addTexture(const Texture &newTexture)
 {
     modelTextures.push_back(newTexture);
     addSampler(newTexture);
 }
 
-uint32_t Model::getPrimitiveCount()
+auto Model::getPrimitiveCount() -> uint32_t
 {
     /*uint32_t number_of_indices = 0;
 
@@ -54,11 +60,11 @@ uint32_t Model::getPrimitiveCount()
     return mesh.getIndexCount() / 3;
 }
 
-Model::~Model() {}
+Model::~Model() = default;
 
 void Model::addSampler(Texture newTexture)
 {
-    VkSampler newSampler;
+    VkSampler newSampler = nullptr;
     VkPhysicalDeviceFeatures physical_device_features{};
     vkGetPhysicalDeviceFeatures(device->getPhysicalDevice(), &physical_device_features);
 
@@ -73,13 +79,13 @@ void Model::addSampler(Texture newTexture)
     sampler_create_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
     sampler_create_info.unnormalizedCoordinates = VK_FALSE;
     sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    sampler_create_info.mipLodBias = 0.0f;
-    sampler_create_info.minLod = 0.0f;
+    sampler_create_info.mipLodBias = 0.0F;
+    sampler_create_info.minLod = 0.0F;
     sampler_create_info.maxLod = newTexture.getMipLevel();
     sampler_create_info.anisotropyEnable = physical_device_features.samplerAnisotropy;
-    sampler_create_info.maxAnisotropy = physical_device_features.samplerAnisotropy ? 16.0f : 1.0f;
+    sampler_create_info.maxAnisotropy = (physical_device_features.samplerAnisotropy != 0u) ? 16.0F : 1.0F;
 
-    VkResult result = vkCreateSampler(device->getLogicalDevice(), &sampler_create_info, nullptr, &newSampler);
+    VkResult const result = vkCreateSampler(device->getLogicalDevice(), &sampler_create_info, nullptr, &newSampler);
     ASSERT_VULKAN(result, "Failed to create a texture sampler!")
 
     modelTextureSamplers.push_back(newSampler);

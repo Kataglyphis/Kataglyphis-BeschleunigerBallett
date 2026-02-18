@@ -36,7 +36,7 @@ class PostStage
     VkFormat depth_format{ VK_FORMAT_UNDEFINED };
     void createDepthbufferImage();
 
-    VkSampler offscreenTextureSampler;
+    VkSampler offscreenTextureSampler{};
     void createOffscreenTextureSampler();
 
     VkPushConstantRange push_constant_range{ VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM, 0, 0 };

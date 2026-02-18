@@ -1,6 +1,7 @@
 #include "scene/texture/RepeatMode.hpp"
+#include <glad/glad.h>
 
-RepeatMode::RepeatMode() {}
+RepeatMode::RepeatMode() = default;
 
 void RepeatMode::activate()
 {
@@ -8,4 +9,4 @@ void RepeatMode::activate()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 }
 
-RepeatMode::~RepeatMode() {}
+RepeatMode::~RepeatMode() = default;

@@ -27,14 +27,14 @@ class Model
     std::vector<VkSampler> &getTextureSamplers() { return modelTextureSamplers; }
     std::vector<std::string> getTextureList() { return texture_list; };
     uint32_t getMeshCount() { return 1; };
-    Mesh *getMesh(size_t index) { return &mesh; };
+    Mesh *getMesh(size_t /*index*/) { return &mesh; };
     glm::mat4 getModel() { return model; };
     uint32_t getCustomInstanceIndex() { return mesh_model_index; };
     uint32_t getPrimitiveCount();
     ObjectDescription getObjectDescription() { return mesh.getObjectDescription(); };
 
     void set_model(glm::mat4 model);
-    void addTexture(Texture newTexture);
+    void addTexture(const Texture &newTexture);
 
     ~Model();
 
@@ -45,7 +45,7 @@ class Model
 
     uint32_t mesh_model_index{ static_cast<uint32_t>(-1) };
     Mesh mesh;
-    glm::mat4 model;
+    glm::mat4 model{};
 
     std::vector<std::string> texture_list;
     std::vector<Texture> modelTextures;

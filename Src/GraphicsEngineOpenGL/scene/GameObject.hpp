@@ -29,7 +29,7 @@ class GameObject
   private:
     std::shared_ptr<Model> model;
 
-    GLfloat scale_factor;
-    Rotation rot;
-    glm::vec3 translation;
+    GLfloat scale_factor{};
+    Rotation rot{};
+    glm::vec3 translation{};
 };

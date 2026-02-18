@@ -35,8 +35,6 @@ TEST(Integration, VulkanEngine)
 	int window_width = 1200;
   int window_height = 768;
 
-  float delta_time = 0.0f;
-  float last_time = 0.0f;
   using namespace Kataglyphis;
   std::unique_ptr<Kataglyphis::Frontend::Window> window =
       std::make_unique<Kataglyphis::Frontend::Window>(window_width, window_height);

@@ -25,6 +25,6 @@ class VulkanImageView
   private:
     VulkanDevice *device{ VK_NULL_HANDLE };
 
-    VkImageView imageView;
+    VkImageView imageView{};
 };
 }// namespace Kataglyphis

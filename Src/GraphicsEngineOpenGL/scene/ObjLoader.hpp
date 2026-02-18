@@ -10,7 +10,7 @@ class ObjLoader
   public:
     ObjLoader();
 
-    void load(std::string modelFile,
+    void load(const std::string &modelFile,
       std::vector<Vertex> &vertices,
       std::vector<unsigned int> &indices,
       std::vector<std::string> &texture_list,

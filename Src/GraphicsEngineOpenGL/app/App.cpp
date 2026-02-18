@@ -6,30 +6,24 @@
 #include <GLFW/glfw3.h>
 // clang-format on
 
-#include <cstdio>
-#include <iostream>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/trigonometric.hpp>
 
-#include <filesystem>
 #include <memory>
-#include <mutex>
-#include <string>
 #include <thread>
-#include <vector>
 
 #include "gui/GUI.hpp"
 #include "renderer/Renderer.hpp"
 #include "renderer/loading_screen/LoadingScreen.hpp"
-#include "util/File.hpp"
 
 // all scene/game logic/ game object related stuff
 #include "camera/Camera.hpp"
 #include "debug/DebugApp.hpp"
-#include "hostDevice/GlobalValues.hpp"
-#include "hostDevice/host_device_shared.hpp"
 #include "scene/Scene.hpp"
 #include "window/Window.hpp"
 
-int main()
+auto main() -> int
 {
 
     // https://discourse.glfw.org/t/dont-want-a-console-window/401
@@ -47,9 +41,9 @@ int main()
 
     // make sure ti initialize window first
     // this will create opengl context!
-    std::shared_ptr<Window> main_window = std::make_shared<Window>(window_width, window_height);
+    std::shared_ptr<Window> const main_window = std::make_shared<Window>(window_width, window_height);
 
-    DebugApp debugCallbacks;
+    DebugApp const debugCallbacks;
 
     Renderer renderer(window_width, window_height);
 
@@ -59,17 +53,17 @@ int main()
     LoadingScreen loading_screen;
     loading_screen.init();
 
-    std::shared_ptr<Camera> main_camera = std::make_shared<Camera>();
+    std::shared_ptr<Camera> const main_camera = std::make_shared<Camera>();
 
-    std::shared_ptr<Scene> scene = std::make_shared<Scene>(main_camera, main_window);
+    std::shared_ptr<Scene> const scene = std::make_shared<Scene>(main_camera, main_window);
 
     // load scene in an other thread than the rendering thread; would block
     // otherwise
     std::thread t1 = scene->spwan();
     t1.detach();
 
-    GLfloat delta_time = 0.0f;
-    GLfloat last_time = 0.0f;
+    GLfloat delta_time = 0.0F;
+    GLfloat last_time = 0.0F;
 
     // enable depth testing
     glEnable(GL_DEPTH_TEST);
@@ -84,20 +78,20 @@ int main()
     while (!main_window->get_should_close()) {
         glViewport(0, 0, window_width, window_height);
 
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClearColor(0.0F, 0.0F, 0.0F, 1.0F);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // we need the projection matrix, just use glm::perspective function
-        glm::mat4 projection_matrix = glm::perspectiveFov(glm::radians(main_camera->get_fov()),
-          (GLfloat)window_width,
-          (GLfloat)window_height,
+        glm::mat4 const projection_matrix = glm::perspectiveFov(glm::radians(main_camera->get_fov()),
+          static_cast<GLfloat>(window_width),
+          static_cast<GLfloat>(window_height),
           main_camera->get_near_plane(),
           main_camera->get_far_plane());
 
         // we should make the application independet of processor speed :)
         //  take time into account is crucial
         //  concept of delta time: https://bell0bytes.eu/keeping-track-of-time/
-        GLfloat now = (float)glfwGetTime();
+        auto const now = static_cast<float>(glfwGetTime());
         delta_time = now - last_time;
         last_time = now;
 
@@ -109,9 +103,9 @@ int main()
         main_camera->mouse_control(main_window->get_x_change(), main_window->get_y_change());
 
         if (scene->is_loaded()) {
-            if (!loading_screen_finished) loading_screen_finished = true;
+            if (!loading_screen_finished) { loading_screen_finished = true; }
 
-            if (!scene->get_context_setup()) scene->setup_game_object_context();
+            if (!scene->get_context_setup()) { scene->setup_game_object_context(); }
 
             renderer.drawFrame(main_camera, scene, projection_matrix, delta_time);
 
@@ -125,17 +119,16 @@ int main()
         bool shader_hot_reload_triggered = false;
         gui.render(!scene->is_loaded(), scene->get_progress(), shader_hot_reload_triggered);
 
-        if (shader_hot_reload_triggered) renderer.reload_shader_programs();
+        if (shader_hot_reload_triggered) { renderer.reload_shader_programs(); }
 
         gui.update_user_input(scene);
 
         main_window->update_viewport();
-        GLuint new_window_width = main_window->get_buffer_width();
-        GLuint new_window_height = main_window->get_buffer_height();
+        GLuint const new_window_width = main_window->get_buffer_width();
+        GLuint const new_window_height = main_window->get_buffer_height();
 
-        if ((static_cast<GLint>(new_window_width) == window_width
-              && static_cast<GLint>(new_window_height) == window_height)
-            == false) {
+          if (!(static_cast<GLint>(new_window_width) == window_width
+              && static_cast<GLint>(new_window_height) == window_height)) {
             window_height = new_window_height;
             window_width = new_window_width;
             renderer.update_window_params(window_width, window_height);

@@ -1,14 +1,20 @@
 #include "scene/Mesh.hpp"
 
+#include <cstdint>
 #include <cstring>
-#include <memory>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glm/matrix.hpp>
+#include <vector>
+#include <vulkan/vulkan_core.h>
 
-#include "common/Utilities.hpp"
+#include "scene/ObjMaterial.hpp"
+#include "scene/Vertex.hpp"
 #include "vulkan_base/VulkanBuffer.hpp"
+#include "vulkan_base/VulkanDevice.hpp"
 
 using namespace Kataglyphis;
 
-Mesh::Mesh() {}
+Mesh::Mesh() = default;
 
 void Mesh::cleanUp()
 {
@@ -26,16 +32,16 @@ Mesh::Mesh(VulkanDevice *device,
   std::vector<uint32_t> &indices,
   std::vector<unsigned int> &materialIndex,
   std::vector<ObjMaterial> &materials)
+  : vertex_count(static_cast<uint32_t>(vertices.size())), index_count(static_cast<uint32_t>(indices.size())),
+    device(device)
 {
     // glm uses column major matrices so transpose it for Vulkan want row major
     // here
-    glm::mat4 transpose_transform = glm::transpose(glm::mat4(1.0f));
+    glm::mat4 transpose_transform = glm::transpose(glm::mat4(1.0F));
     VkTransformMatrixKHR out_matrix;
     std::memcpy(&out_matrix, &transpose_transform, sizeof(VkTransformMatrixKHR));
 
-    index_count = static_cast<uint32_t>(indices.size());
-    vertex_count = static_cast<uint32_t>(vertices.size());
-    this->device = device;
+
     object_description = ObjectDescription{};
     createVertexBuffer(transfer_queue, transfer_command_pool, vertices);
     createIndexBuffer(transfer_queue, transfer_command_pool, indices);
@@ -66,74 +72,64 @@ Mesh::Mesh(VulkanDevice *device,
         object_description.material_address = vkGetBufferDeviceAddress(device->getLogicalDevice(), &material_info);
     }
 
-    model = glm::mat4(1.0f);
+    model = glm::mat4(1.0F);
 }
 
 void Mesh::setModel(glm::mat4 new_model) { model = new_model; }
 
-Mesh::~Mesh() {}
+Mesh::~Mesh() = default;
 
-void Mesh::createVertexBuffer(VkQueue transfer_queue,
+void Mesh::createVertexBuffer(VkQueue /*transfer_queue*/,
   VkCommandPool transfer_command_pool,
   std::vector<Vertex> &vertices)
 {
-    VkBufferUsageFlags usage_flags = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT
-                                     | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-  VkMemoryPropertyFlags memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-  VkMemoryAllocateFlags memory_allocate_flags = 0;
+    VkBufferUsageFlags usage_flags =
+      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    VkMemoryPropertyFlags const memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    VkMemoryAllocateFlags memory_allocate_flags = 0;
 
     if (device->supportsHardwareAcceleratedRRT()) {
         usage_flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
                        | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
-    memory_allocate_flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+        memory_allocate_flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
     }
 
-    vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
-      transfer_command_pool,
-      vertexBuffer,
-      usage_flags,
-      memory_property_flags,
-      vertices,
-      memory_allocate_flags);
+    vulkanBufferManager.createBufferAndUploadVectorOnDevice(
+      device, transfer_command_pool, vertexBuffer, usage_flags, memory_property_flags, vertices, memory_allocate_flags);
 }
 
-void Mesh::createIndexBuffer(VkQueue transfer_queue,
+void Mesh::createIndexBuffer(VkQueue /*transfer_queue*/,
   VkCommandPool transfer_command_pool,
   std::vector<uint32_t> &indices)
 {
     VkBufferUsageFlags usage_flags =
       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-  VkMemoryPropertyFlags memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-  VkMemoryAllocateFlags memory_allocate_flags = 0;
+    VkMemoryPropertyFlags const memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    VkMemoryAllocateFlags memory_allocate_flags = 0;
 
     if (device->supportsHardwareAcceleratedRRT()) {
         usage_flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
                        | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
-    memory_allocate_flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+        memory_allocate_flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
     }
 
-    vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
-      transfer_command_pool,
-      indexBuffer,
-      usage_flags,
-      memory_property_flags,
-      indices,
-      memory_allocate_flags);
+    vulkanBufferManager.createBufferAndUploadVectorOnDevice(
+      device, transfer_command_pool, indexBuffer, usage_flags, memory_property_flags, indices, memory_allocate_flags);
 }
 
-void Mesh::createMaterialIDBuffer(VkQueue transfer_queue,
+void Mesh::createMaterialIDBuffer(VkQueue /*transfer_queue*/,
   VkCommandPool transfer_command_pool,
   std::vector<unsigned int> &materialIndex)
 {
     VkBufferUsageFlags usage_flags =
       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-  VkMemoryPropertyFlags memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-  VkMemoryAllocateFlags memory_allocate_flags = 0;
+    VkMemoryPropertyFlags const memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    VkMemoryAllocateFlags memory_allocate_flags = 0;
 
     if (device->supportsHardwareAcceleratedRRT()) {
         usage_flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
                        | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
-    memory_allocate_flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+        memory_allocate_flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
     }
 
     vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
@@ -145,19 +141,19 @@ void Mesh::createMaterialIDBuffer(VkQueue transfer_queue,
       memory_allocate_flags);
 }
 
-void Mesh::createMaterialBuffer(VkQueue transfer_queue,
+void Mesh::createMaterialBuffer(VkQueue /*transfer_queue*/,
   VkCommandPool transfer_command_pool,
   std::vector<ObjMaterial> &materials)
 {
     VkBufferUsageFlags usage_flags =
       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-  VkMemoryPropertyFlags memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-  VkMemoryAllocateFlags memory_allocate_flags = 0;
+    VkMemoryPropertyFlags const memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    VkMemoryAllocateFlags memory_allocate_flags = 0;
 
     if (device->supportsHardwareAcceleratedRRT()) {
         usage_flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
                        | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
-    memory_allocate_flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+        memory_allocate_flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
     }
 
     vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,

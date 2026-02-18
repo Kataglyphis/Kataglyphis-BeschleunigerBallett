@@ -2,12 +2,15 @@
 #include "util/File.hpp"
 #include "spdlog/spdlog.h"
 
+#include <cstddef>
 #include <fstream>
 #include <iostream>
+#include <string>
+#include <vector>
 
-Kataglyphis::File::File(const std::string &file_location) { this->file_location = file_location; }
+Kataglyphis::File::File(const std::string &file_location) : file_location(file_location) {}
 
-std::string Kataglyphis::File::read()
+auto Kataglyphis::File::read() -> std::string
 {
     std::string content;
     std::ifstream file_stream(file_location, std::ios::in);
@@ -17,7 +20,7 @@ std::string Kataglyphis::File::read()
         return "";
     }
 
-    std::string line = "";
+    std::string line;
     while (!file_stream.eof()) {
         std::getline(file_stream, line);
         content.append(line + "\n");
@@ -27,7 +30,7 @@ std::string Kataglyphis::File::read()
     return content;
 }
 
-std::vector<char> Kataglyphis::File::readCharSequence()
+auto Kataglyphis::File::readCharSequence() -> std::vector<char>
 {
     // open stream from given file
     // std::ios::binary tells stream to read file as binary
@@ -37,7 +40,7 @@ std::vector<char> Kataglyphis::File::readCharSequence()
     // check if file stream sucessfully opened
     if (!file.is_open()) { spdlog::error("Failed to open a file on location: {}!", file_location); }
 
-    size_t file_size = (size_t)file.tellg();
+    size_t const file_size = (size_t)file.tellg();
     std::vector<char> file_buffer(file_size);
 
     // move read position to start of file
@@ -51,11 +54,12 @@ std::vector<char> Kataglyphis::File::readCharSequence()
     return file_buffer;
 }
 
-std::string Kataglyphis::File::getBaseDir()
+auto Kataglyphis::File::getBaseDir() -> std::string
 {
-    if (file_location.find_last_of("/\\") != std::string::npos)
+    if (file_location.find_last_of("/\\") != std::string::npos) {
         return file_location.substr(0, file_location.find_last_of("/\\"));
+    }
     return "";
 }
 
-Kataglyphis::File::~File() {}
+Kataglyphis::File::~File() = default;

@@ -5,12 +5,12 @@
 #include "scene/Scene.hpp"
 #include "scene/light/point_light/PointLight.hpp"
 
-class OmniShadowMapPass : public RenderPassSceneDependend
+class OmniShadowMapPass final : public RenderPassSceneDependend
 {
   public:
     OmniShadowMapPass();
 
-    void execute(std::shared_ptr<PointLight> p_light, std::shared_ptr<Scene> scene);
+    void execute(const std::shared_ptr<PointLight> &p_light, const std::shared_ptr<Scene> &scene);
 
     void set_game_object_uniforms(glm::mat4 model, glm::mat4 normal_model);
 

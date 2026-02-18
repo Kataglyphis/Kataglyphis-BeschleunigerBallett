@@ -17,11 +17,11 @@ class Scene
 {
   public:
     Scene();
-    Scene(std::shared_ptr<Camera> main_camera, std::shared_ptr<Window> main_window);
+    Scene(const std::shared_ptr<Camera> &main_camera, std::shared_ptr<Window> main_window);
 
     std::thread spwan()
     {
-        return std::thread([=] { load_models(); });
+      return std::thread([this] { load_models(); });
     }
 
     GLuint get_point_light_count() const;
@@ -48,7 +48,7 @@ class Scene
     ~Scene();
 
   private:
-    bool object_is_visible(std::shared_ptr<GameObject> game_object);
+    bool object_is_visible(const std::shared_ptr<GameObject> &game_object);
 
     std::shared_ptr<Camera> main_camera;
 

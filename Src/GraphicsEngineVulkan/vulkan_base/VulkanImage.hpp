@@ -44,10 +44,10 @@ class VulkanImage
     VulkanDevice *device{ VK_NULL_HANDLE };
     Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
 
-    VkImage image;
-    VkDeviceMemory imageMemory;
+    VkImage image{};
+    VkDeviceMemory imageMemory{};
 
-    VkAccessFlags accessFlagsForImageLayout(VkImageLayout layout);
-    VkPipelineStageFlags pipelineStageForLayout(VkImageLayout oldImageLayout);
+    static VkAccessFlags accessFlagsForImageLayout(VkImageLayout layout);
+    static VkPipelineStageFlags pipelineStageForLayout(VkImageLayout oldImageLayout);
 };
 }// namespace Kataglyphis

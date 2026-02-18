@@ -24,7 +24,7 @@ class Camera
       float far_plane,
       float fov);
 
-    void key_control(bool *keys, float delta_time);
+    void key_control(const bool *keys, float delta_time);
     void mouse_control(float x_change, float y_change);
 
     glm::vec3 get_camera_position() const { return position; };

@@ -1,6 +1,7 @@
 #include "ClampToEdgeMode.hpp"
+#include <glad/glad.h>
 
-ClampToEdgeMode::ClampToEdgeMode() {}
+ClampToEdgeMode::ClampToEdgeMode() = default;
 
 void ClampToEdgeMode::activate()
 {
@@ -8,4 +9,4 @@ void ClampToEdgeMode::activate()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 }
 
-ClampToEdgeMode::~ClampToEdgeMode() {}
+ClampToEdgeMode::~ClampToEdgeMode() = default;

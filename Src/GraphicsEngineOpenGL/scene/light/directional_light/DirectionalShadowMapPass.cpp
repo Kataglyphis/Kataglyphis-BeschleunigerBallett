@@ -1,16 +1,25 @@
 #include "scene/light/directional_light/DirectionalShadowMapPass.hpp"
+#include "camera/Camera.hpp"
+#include "scene/Scene.hpp"
+#include "scene/light/directional_light/DirectionalLight.hpp"
+#include "hostDevice/host_device_shared.hpp"
+#include "hostDevice/bindings.hpp"
+#include "scene/GameObject.hpp"
 
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glad/glad.h>
 #include <memory>
+#include <vector>
 
 DirectionalShadowMapPass::DirectionalShadowMapPass() { create_shader_program(); }
 
-void DirectionalShadowMapPass::execute(glm::mat4 projection,
-  std::shared_ptr<Camera> main_camera,
+void DirectionalShadowMapPass::execute(glm::mat4 /*projection*/,
+  const std::shared_ptr<Camera> &main_camera,
   GLuint window_width,
   GLuint window_height,
-  std::shared_ptr<Scene> scene)
+  const std::shared_ptr<Scene> &scene)
 {
-    std::shared_ptr<DirectionalLight> sun = scene->get_sun();
+    std::shared_ptr<DirectionalLight> const sun = scene->get_sun();
     // retreive shadow map before our geometry pass
     sun->calc_orthogonal_projections(
       main_camera->get_viewmatrix(), main_camera->get_fov(), window_width, window_height, NUM_CASCADES);
@@ -32,9 +41,9 @@ void DirectionalShadowMapPass::execute(glm::mat4 projection,
 
     shader_program->setUniformBlockBinding(UNIFORM_LIGHT_MATRICES_BINDING, "LightSpaceMatrices");
 
-    std::vector<std::shared_ptr<GameObject>> game_objects = scene->get_game_objects();
+    std::vector<std::shared_ptr<GameObject>> const game_objects = scene->get_game_objects();
 
-    for (std::shared_ptr<GameObject> object : game_objects) {
+    for (const std::shared_ptr<GameObject> &object : game_objects) {
         /* if (object_is_visible(object)) {*/
 
         set_game_object_uniforms(object->get_world_trafo(), object->get_normal_world_trafo());
@@ -56,10 +65,10 @@ void DirectionalShadowMapPass::create_shader_program()
       "rasterizer/shadows/directional_shadow_map.frag");
 }
 
-void DirectionalShadowMapPass::set_game_object_uniforms(glm::mat4 model, glm::mat4 normal_model)
+void DirectionalShadowMapPass::set_game_object_uniforms(glm::mat4 model, glm::mat4 /*normal_model*/)
 {
     // DO NOT set neither normal model nor material_id hence we didn't need it
     shader_program->setUniformMatrix4fv(model, "model");
 }
 
-DirectionalShadowMapPass::~DirectionalShadowMapPass() {}
+DirectionalShadowMapPass::~DirectionalShadowMapPass() = default;

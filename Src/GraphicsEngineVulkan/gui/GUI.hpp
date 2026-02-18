@@ -39,8 +39,10 @@ class GUI
     ~GUI();
 
   private:
-    void create_gui_context(
-      Window *window, const VkInstance &instance, const VkRenderPass &post_render_pass, uint32_t image_count);
+    void create_gui_context(Window *window,
+      const VkInstance &instance,
+      const VkRenderPass &post_render_pass,
+      uint32_t image_count);
 
     VulkanDevice *device{ VK_NULL_HANDLE };
     Window *window{ VK_NULL_HANDLE };

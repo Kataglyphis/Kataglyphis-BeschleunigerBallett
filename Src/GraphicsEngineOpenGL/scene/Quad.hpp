@@ -6,12 +6,12 @@ class Quad
   public:
     Quad();
 
-    void render();
+    void render() const;
 
     ~Quad();
 
   private:
-    GLuint q_vao, q_vbo;
+    GLuint q_vao{}, q_vbo{};
 
     float vertices[20] = {
 

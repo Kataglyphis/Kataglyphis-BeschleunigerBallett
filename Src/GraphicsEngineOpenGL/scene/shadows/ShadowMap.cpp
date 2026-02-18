@@ -1,6 +1,9 @@
 #include "scene/shadows/ShadowMap.hpp"
 
-#include <stdio.h>
+#include <glad/glad.h>
+#include <cstdio>
+
+#include <print>
 
 ShadowMap::ShadowMap()
   :
@@ -9,7 +12,7 @@ ShadowMap::ShadowMap()
 
 {}
 
-bool ShadowMap::init(GLuint width, GLuint height)
+auto ShadowMap::init(GLuint width, GLuint height) -> bool
 {
     shadow_width = width;
     shadow_height = height;
@@ -27,7 +30,7 @@ bool ShadowMap::init(GLuint width, GLuint height)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
-    float border_color[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    float border_color[] = { 1.0F, 1.0F, 1.0F, 1.0F };
     glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, border_color);
 
     glBindFramebuffer(GL_FRAMEBUFFER, FBO);
@@ -36,10 +39,10 @@ bool ShadowMap::init(GLuint width, GLuint height)
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
 
-    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    GLenum const status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 
     if (status != GL_FRAMEBUFFER_COMPLETE) {
-        printf("Framebuffer error: %i\n", status);
+        std::println("Framebuffer error: {}", status);
         return false;
     }
 
@@ -58,7 +61,7 @@ void ShadowMap::read(GLenum texture_unit)
 
 ShadowMap::~ShadowMap()
 {
-    if (FBO) { glDeleteFramebuffers(1, &FBO); }
+    if (FBO != 0u) { glDeleteFramebuffers(1, &FBO); }
 
-    if (shadow_map) { glDeleteTextures(1, &shadow_map); }
+    if (shadow_map != 0u) { glDeleteTextures(1, &shadow_map); }
 }

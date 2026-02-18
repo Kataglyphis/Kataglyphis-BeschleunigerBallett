@@ -50,7 +50,7 @@ class Mesh
     VulkanBuffer materialIdsBuffer;
     VulkanBuffer materialsBuffer;
 
-    glm::mat4 model;
+    glm::mat4 model{};
 
     uint32_t vertex_count{ static_cast<uint32_t>(-1) };
     uint32_t index_count{ static_cast<uint32_t>(-1) };

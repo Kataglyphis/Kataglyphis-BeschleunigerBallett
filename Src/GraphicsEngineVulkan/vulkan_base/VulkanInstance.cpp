@@ -1,10 +1,13 @@
 #include "vulkan_base/VulkanInstance.hpp"
-#include "vulkan_base/VulkanDebug.hpp"
+#include "GLFW/glfw3.h"
+#include "spdlog/spdlog.h"
 
 #include "common/Utilities.hpp"
 #include "vulkan_base/VulkanDebug.hpp"
-#include <string.h>
-#include <string>
+#include <cstdint>
+#include <cstring>
+#include <vector>
+#include <vulkan/vulkan_core.h>
 
 Kataglyphis::VulkanInstance::VulkanInstance()
 {
@@ -42,8 +45,8 @@ Kataglyphis::VulkanInstance::VulkanInstance()
 
     // Setup extensions the instance will use
     uint32_t glfw_extensions_count = 0;// GLFW may require multiple extensions
-    const char **glfw_extensions;// Extensions passed as array of cstrings, so
-                                 // need pointer(array) to pointer
+    const char **glfw_extensions = nullptr;// Extensions passed as array of cstrings, so
+                                           // need pointer(array) to pointer
 
     // set GLFW extensions
     glfw_extensions = glfwGetRequiredInstanceExtensions(&glfw_extensions_count);
@@ -62,13 +65,13 @@ Kataglyphis::VulkanInstance::VulkanInstance()
     create_info.ppEnabledExtensionNames = instance_extensions.data();
 
     // create instance
-    VkResult result = vkCreateInstance(&create_info, nullptr, &instance);
+    VkResult const result = vkCreateInstance(&create_info, nullptr, &instance);
     ASSERT_VULKAN(result, "Failed to create a Vulkan instance!");
 }
 
-bool Kataglyphis::VulkanInstance::check_validation_layer_support()
+auto Kataglyphis::VulkanInstance::check_validation_layer_support() -> bool
 {
-    uint32_t layerCount;
+    uint32_t layerCount = 0;
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
 
     std::vector<VkLayerProperties> availableLayers(layerCount);
@@ -90,7 +93,7 @@ bool Kataglyphis::VulkanInstance::check_validation_layer_support()
     return true;
 }
 
-bool Kataglyphis::VulkanInstance::check_instance_extension_support(std::vector<const char *> *check_extensions)
+auto Kataglyphis::VulkanInstance::check_instance_extension_support(std::vector<const char *> *check_extensions) -> bool
 {
     // Need to get number of extensions to create array of correct size to hold
     // extensions
@@ -106,7 +109,7 @@ bool Kataglyphis::VulkanInstance::check_instance_extension_support(std::vector<c
         bool has_extension = false;
 
         for (const auto &extension : extensions) {
-            if (strcmp(check_extension, extension.extensionName)) {
+            if (strcmp(check_extension, extension.extensionName) != 0 != 0) {
                 has_extension = true;
                 break;
             }
@@ -120,4 +123,4 @@ bool Kataglyphis::VulkanInstance::check_instance_extension_support(std::vector<c
 
 void Kataglyphis::VulkanInstance::cleanUp() { vkDestroyInstance(instance, nullptr); }
 
-Kataglyphis::VulkanInstance::~VulkanInstance() {}
+Kataglyphis::VulkanInstance::~VulkanInstance() = default;
