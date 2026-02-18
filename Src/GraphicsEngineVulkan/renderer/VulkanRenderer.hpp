@@ -38,6 +38,7 @@ class VulkanRenderer
     void updateStateDueToUserInput(Kataglyphis::Frontend::GUI *gui);
     void finishAllRenderCommands();
     void update_raytracing_descriptor_set(uint32_t image_index);
+    bool hasDeviceLost() const { return device_lost_detected; }
 
     void cleanUp();
 
@@ -132,5 +133,6 @@ class VulkanRenderer
     void createRaytracingDescriptorPool();
 
     bool checkChangedFramebufferSize();
+    bool device_lost_detected{ false };
 };
 }// namespace Kataglyphis

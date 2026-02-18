@@ -15,6 +15,7 @@
 #include "gui/GUI.hpp"
 #include "renderer/VulkanRenderer.hpp"
 #include "window/Window.hpp"
+#include "spdlog/spdlog.h"
 
 Kataglyphis::App::App() = default;
 
@@ -57,10 +58,14 @@ auto Kataglyphis::App::run() -> int
         vulkan_renderer.drawFrame();
     }
 
-    vulkan_renderer.finishAllRenderCommands();
+    if (!vulkan_renderer.hasDeviceLost()) { vulkan_renderer.finishAllRenderCommands(); }
 
-    scene->cleanUp();
-    gui->cleanUp();
+    if (!vulkan_renderer.hasDeviceLost()) {
+      scene->cleanUp();
+      gui->cleanUp();
+    } else {
+      spdlog::warn("Skipping scene/gui Vulkan teardown because device is lost.");
+    }
     window->cleanUp();
     vulkan_renderer.cleanUp();
 

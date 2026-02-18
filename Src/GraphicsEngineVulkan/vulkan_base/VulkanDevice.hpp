@@ -38,6 +38,7 @@ class VulkanDevice
     VkQueue getPresentationQueue() const { return presentation_queue; };
     Kataglyphis::VulkanRendererInternals::SwapChainDetails getSwapchainDetails();
     bool supportsHardwareAcceleratedRRT() { return deviceSupportsHardwareAcceleratedRRT; };
+    bool supportsBufferDeviceAddress() const { return deviceSupportsBufferDeviceAddress; };
 
     void cleanUp();
 
@@ -57,6 +58,7 @@ class VulkanDevice
     VkQueue presentation_queue{};
     VkQueue compute_queue{};
     bool deviceSupportsHardwareAcceleratedRRT = true;
+    bool deviceSupportsBufferDeviceAddress = false;
 
     void get_physical_device();
     void create_logical_device();

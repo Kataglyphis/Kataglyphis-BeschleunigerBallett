@@ -1,8 +1,11 @@
 #include "app/App.hpp"
 
 #include <cstdint>
+#include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <system_error>
 #include <vector>
 
@@ -12,12 +15,47 @@
 #include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 #include <iostream>
+#include <string>
 
 extern "C" {
 auto rusty_extern_c_integer() -> int32_t;
 }
 
 namespace {
+auto normalize_gpu_mode(std::string value) -> std::string
+{
+    for (auto &character : value) {
+        character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+    }
+
+    if (value == "auto" || value == "dedicated" || value == "integrated") { return value; }
+    return "";
+}
+
+void apply_gpu_selection_from_args(std::span<char *const> arguments)
+{
+    for (std::size_t index = 1; index < arguments.size(); ++index) {
+        const std::string argument = arguments[index];
+        const std::string prefix = "--gpu=";
+        if (argument.rfind(prefix, 0) != 0) { continue; }
+
+        const std::string gpu_mode = normalize_gpu_mode(argument.substr(prefix.size()));
+        if (gpu_mode.empty()) {
+            spdlog::warn("Invalid value for --gpu. Valid values are: auto, dedicated, integrated.");
+            return;
+        }
+
+#if defined(_WIN32)
+        _putenv_s("KATAGLYPHIS_VK_GPU", gpu_mode.c_str());
+#else
+        setenv("KATAGLYPHIS_VK_GPU", gpu_mode.c_str(), 1);
+#endif
+
+        spdlog::info("GPU selection mode set via CLI: {}", gpu_mode);
+        return;
+    }
+}
+
 void initialize_logging()
 {
     auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
@@ -49,9 +87,10 @@ void initialize_logging()
 }
 }// namespace
 
-auto main() -> int
+auto main(int argc, char **argv) -> int
 {
     initialize_logging();
+    apply_gpu_selection_from_args(std::span<char *const>(argv, static_cast<std::size_t>(argc)));
 
     if (USE_RUST) {
         const auto value = rusty_extern_c_integer();
@@ -59,6 +98,5 @@ auto main() -> int
         spdlog::info("Rust extern value: {}", value);
     }
 
-    Kataglyphis::App application;
-    return application.run();
+    return Kataglyphis::App::run();
 }

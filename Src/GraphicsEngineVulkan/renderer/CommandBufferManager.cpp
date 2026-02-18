@@ -35,7 +35,7 @@ auto Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuf
     result = vkBeginCommandBuffer(command_buffer, &begin_info);
     if (result != VK_SUCCESS) {
         spdlog::error("Failed to begin command buffer! (VkResult={})", static_cast<int>(result));
-        vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
+        command_buffer = VK_NULL_HANDLE;
         return VK_NULL_HANDLE;
     }
 
@@ -47,6 +47,9 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
   VkQueue queue,
   VkCommandBuffer &command_buffer)
 {
+    static_cast<void>(device);
+    static_cast<void>(command_pool);
+
     if (command_buffer == VK_NULL_HANDLE) {
         spdlog::error("Cannot submit null command buffer.");
         return;
@@ -56,7 +59,6 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
     VkResult result = vkEndCommandBuffer(command_buffer);
     if (result != VK_SUCCESS) {
         spdlog::error("Failed to end command buffer! (VkResult={})", static_cast<int>(result));
-        vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
         command_buffer = VK_NULL_HANDLE;
         return;
     }
@@ -71,7 +73,6 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
     result = vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
     if (result != VK_SUCCESS) {
         spdlog::error("Failed to submit to queue! (VkResult={})", static_cast<int>(result));
-        vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
         command_buffer = VK_NULL_HANDLE;
         return;
     }
@@ -79,13 +80,12 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
     result = vkQueueWaitIdle(queue);
     if (result != VK_SUCCESS) {
         spdlog::error("Failed to wait queue idle! (VkResult={})", static_cast<int>(result));
-        vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
         command_buffer = VK_NULL_HANDLE;
         return;
     }
 
-    // free temporary command buffer back to pool
-    vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
+        // Temporary command buffers are released when the command pool is destroyed.
+        // Avoid explicit free to prevent freeing potentially pending buffers.
     command_buffer = VK_NULL_HANDLE;
 }
 

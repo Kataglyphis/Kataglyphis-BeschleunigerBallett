@@ -15,14 +15,28 @@ using namespace Kataglyphis;
 
 Kataglyphis::Texture::Texture() = default;
 
+namespace {
+auto supportsLinearBlit(VkPhysicalDevice physical_device, VkFormat image_format) -> bool
+{
+  VkFormatProperties format_properties{};
+  vkGetPhysicalDeviceFormatProperties(physical_device, image_format, &format_properties);
+  return (format_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0U;
+}
+}
+
 void Kataglyphis::Texture::createFromFile(VulkanDevice *device, VkCommandPool commandPool, const std::string &fileName)
 {
-    int width;
-    int height;
+  int width = 0;
+  int height = 0;
     VkDeviceSize size = 0;
     stbi_uc *image_data = loadTextureData(fileName, &width, &height, &size);
 
+    constexpr VkFormat texture_format = VK_FORMAT_R8G8B8A8_UNORM;
     mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
+    if (!supportsLinearBlit(device->getPhysicalDevice(), texture_format)) {
+      spdlog::warn("Linear blit not supported for texture format; using single mip level.");
+      mip_levels = 1;
+    }
 
     // create staging buffer to hold loaded data, ready to copy to device
     VulkanBuffer stagingBuffer;
@@ -44,7 +58,7 @@ void Kataglyphis::Texture::createFromFile(VulkanDevice *device, VkCommandPool co
       width,
       height,
       mip_levels,
-      VK_FORMAT_R8G8B8A8_UNORM,
+      texture_format,
       VK_IMAGE_TILING_OPTIMAL,
       VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
@@ -68,20 +82,29 @@ void Kataglyphis::Texture::createFromFile(VulkanDevice *device, VkCommandPool co
       width,
       height);
 
-    // generate mipmaps
-    generateMipMaps(device->getPhysicalDevice(),
-      device->getLogicalDevice(),
-      commandPool,
-      device->getGraphicsQueue(),
-      vulkanImage.getImage(),
-      VK_FORMAT_R8G8B8A8_SRGB,
-      width,
-      height,
-      mip_levels);
+    if (mip_levels > 1) {
+        generateMipMaps(device->getPhysicalDevice(),
+          device->getLogicalDevice(),
+          commandPool,
+          device->getGraphicsQueue(),
+          vulkanImage.getImage(),
+          texture_format,
+          width,
+          height,
+          mip_levels);
+    } else {
+        vulkanImage.transitionImageLayout(device->getLogicalDevice(),
+          device->getGraphicsQueue(),
+          commandPool,
+          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+          VK_IMAGE_ASPECT_COLOR_BIT,
+          1);
+    }
 
     stagingBuffer.cleanUp();
 
-    createImageView(device, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, mip_levels);
+    createImageView(device, texture_format, VK_IMAGE_ASPECT_COLOR_BIT, mip_levels);
 }
 
 void Kataglyphis::Texture::setImage(VkImage image) { vulkanImage.setImage(image); }
@@ -149,7 +172,7 @@ void Kataglyphis::Texture::generateMipMaps(VkPhysicalDevice physical_device,
     VkFormatProperties formatProperties;
     vkGetPhysicalDeviceFormatProperties(physical_device, image_format, &formatProperties);
 
-    if ((formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) == 0u) {
+    if ((formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) == 0U) {
         spdlog::error("Texture image format does not support linear blitting!");
     }
 

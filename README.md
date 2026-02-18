@@ -208,6 +208,18 @@ For more information regarding the build environment refer to my
   $ {WORKING_DIR}/GraphicsEngineVulkan/buildEngine[.sh/.bat]
   ```
 
+### Packaging
+
+On Linux, binary packages are generated with CPack (`TGZ` and `DEB`).
+You can additionally enable AppImage packaging via:
+
+```sh
+cmake -S . -B build -DCPACK_ENABLE_APPIMAGE=ON
+cmake --build build --target package
+```
+
+For AppImage, `appimagetool` has to be available in your `PATH`.
+
 # Shaders
 I provide two ways for compiling shaders with. Hence if you want to add new
 files as `#include` in your shaders you have to modify the files: (should be self-explanatory)<br/>

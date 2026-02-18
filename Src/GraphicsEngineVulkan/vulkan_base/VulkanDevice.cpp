@@ -9,6 +9,8 @@
 #include "spdlog/spdlog.h"
 #include "vulkan_base/VulkanInstance.hpp"
 #include <cstdlib>
+#include <cctype>
+#include <string>
 #include <limits>
 #include <set>
 #include <vector>
@@ -19,6 +21,73 @@ constexpr int DEVICE_TYPE_SCORE_DISCRETE = 10000;
 constexpr int DEVICE_TYPE_SCORE_INTEGRATED = 1000;
 constexpr int DEVICE_TYPE_SCORE_VIRTUAL = 100;
 constexpr int DEVICE_TYPE_SCORE_CPU = 10;
+
+enum class GpuSelectionMode : std::uint8_t {
+    Auto,
+    Dedicated,
+    Integrated
+};
+
+auto readGpuSelectionFromEnvironment() -> std::string
+{
+#if defined(_WIN32)
+    std::size_t required_size = 0;
+    if (getenv_s(&required_size, nullptr, 0, "KATAGLYPHIS_VK_GPU") != 0 || required_size == 0) { return ""; }
+
+    std::string value(required_size, '\0');
+    if (getenv_s(&required_size, value.data(), value.size(), "KATAGLYPHIS_VK_GPU") != 0 || required_size == 0) {
+        return "";
+    }
+
+    value.resize(required_size - 1);
+    return value;
+#else
+    const char *value = std::getenv("KATAGLYPHIS_VK_GPU");
+    if (value == nullptr) { return ""; }
+    return std::string(value);
+#endif
+}
+
+auto parseGpuSelectionMode() -> GpuSelectionMode
+{
+    std::string mode = readGpuSelectionFromEnvironment();
+    if (mode.empty()) { return GpuSelectionMode::Auto; }
+
+    for (auto &character : mode) {
+        character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
+    }
+
+    if (mode == "dedicated") { return GpuSelectionMode::Dedicated; }
+    if (mode == "integrated") { return GpuSelectionMode::Integrated; }
+
+    return GpuSelectionMode::Auto;
+}
+
+auto gpuSelectionModeToString(GpuSelectionMode mode) -> const char *
+{
+    switch (mode) {
+    case GpuSelectionMode::Dedicated:
+        return "dedicated";
+    case GpuSelectionMode::Integrated:
+        return "integrated";
+    case GpuSelectionMode::Auto:
+    default:
+        return "auto";
+    }
+}
+
+auto matchesSelectionMode(const VkPhysicalDeviceProperties &properties, GpuSelectionMode mode) -> bool
+{
+    switch (mode) {
+    case GpuSelectionMode::Dedicated:
+        return properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+    case GpuSelectionMode::Integrated:
+        return properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+    case GpuSelectionMode::Auto:
+    default:
+        return true;
+    }
+}
 
 auto scorePhysicalDevice(const VkPhysicalDeviceProperties &properties) -> int
 {
@@ -123,6 +192,8 @@ auto Kataglyphis::VulkanDevice::getQueueFamilies() -> Kataglyphis::VulkanRendere
 
 void Kataglyphis::VulkanDevice::get_physical_device()
 {
+    const GpuSelectionMode selection_mode = parseGpuSelectionMode();
+
     // Enumerate physical devices the vkInstance can access
     uint32_t device_count = 0;
     vkEnumeratePhysicalDevices(instance->getVulkanInstance(), &device_count, nullptr);
@@ -135,19 +206,38 @@ void Kataglyphis::VulkanDevice::get_physical_device()
     vkEnumeratePhysicalDevices(instance->getVulkanInstance(), &device_count, device_list.data());
 
     int best_device_score = std::numeric_limits<int>::min();
+    int best_device_score_fallback = std::numeric_limits<int>::min();
+    VkPhysicalDevice fallback_device = VK_NULL_HANDLE;
+    VkPhysicalDeviceProperties fallback_properties{};
 
     for (const auto &device : device_list) {
-        if (check_device_suitable(device)) {
-            VkPhysicalDeviceProperties candidate_properties;
-            vkGetPhysicalDeviceProperties(device, &candidate_properties);
+        if (!check_device_suitable(device)) { continue; }
 
-            const int candidate_score = scorePhysicalDevice(candidate_properties);
-            if (candidate_score > best_device_score) {
-                best_device_score = candidate_score;
-                physical_device = device;
-                device_properties = candidate_properties;
-            }
+        VkPhysicalDeviceProperties candidate_properties;
+        vkGetPhysicalDeviceProperties(device, &candidate_properties);
+
+        const int candidate_score = scorePhysicalDevice(candidate_properties);
+        if (candidate_score > best_device_score_fallback) {
+            best_device_score_fallback = candidate_score;
+            fallback_device = device;
+            fallback_properties = candidate_properties;
         }
+
+        if (!matchesSelectionMode(candidate_properties, selection_mode)) { continue; }
+
+        if (candidate_score > best_device_score) {
+            best_device_score = candidate_score;
+            physical_device = device;
+            device_properties = candidate_properties;
+        }
+    }
+
+    if (physical_device == VK_NULL_HANDLE && fallback_device != VK_NULL_HANDLE) {
+        physical_device = fallback_device;
+        device_properties = fallback_properties;
+        spdlog::warn(
+          "No suitable Vulkan GPU matching selection mode '{}' found. Falling back to auto device selection.",
+          gpuSelectionModeToString(selection_mode));
     }
 
     if (physical_device == VK_NULL_HANDLE) {
@@ -160,6 +250,7 @@ void Kataglyphis::VulkanDevice::get_physical_device()
     spdlog::info("Selected Vulkan physical device: {} ({})",
       device_properties.deviceName,
       deviceTypeToString(device_properties.deviceType));
+        spdlog::info("Vulkan GPU selection mode: {}", gpuSelectionModeToString(selection_mode));
 }
 
 void Kataglyphis::VulkanDevice::create_logical_device()
@@ -253,6 +344,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     features2.features.geometryShader = VK_TRUE;
     features2.features.fragmentStoresAndAtomics = VK_TRUE;
     features2.features.logicOp = VK_TRUE;
+    features2.features.robustBufferAccess = available_features2.features.robustBufferAccess;
 
     // -- PREPARE FOR HAVING MORE EXTENSION BECAUSE WE NEED RAYTRACING
     // CAPABILITIES
@@ -272,10 +364,18 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         return false;
     };
 
-    const bool hasBufferDeviceAddressFeature = available_features12.bufferDeviceAddress == VK_TRUE;
+        const bool hasBufferDeviceAddressFeature = available_features12.bufferDeviceAddress == VK_TRUE;
+        deviceSupportsBufferDeviceAddress = hasBufferDeviceAddressFeature;
     const bool hasRequiredDescriptorIndexingFeatures =
       available_features12.descriptorIndexing == VK_TRUE && available_features12.runtimeDescriptorArray == VK_TRUE
       && available_features12.shaderSampledImageArrayNonUniformIndexing == VK_TRUE;
+
+        spdlog::info("Feature support: bufferDeviceAddress={}, descriptorIndexing={}, runtimeDescriptorArray={}, sampledImageArrayNonUniformIndexing={}, robustBufferAccess={}",
+            hasBufferDeviceAddressFeature,
+            available_features12.descriptorIndexing == VK_TRUE,
+            available_features12.runtimeDescriptorArray == VK_TRUE,
+            available_features12.shaderSampledImageArrayNonUniformIndexing == VK_TRUE,
+            available_features2.features.robustBufferAccess == VK_TRUE);
 
     for (const char *extensionName : device_extensions_for_raytracing) {
         if (!isExtensionSupported(extensionName)) {
@@ -309,6 +409,12 @@ void Kataglyphis::VulkanDevice::create_logical_device()
 
     if (!deviceSupportsHardwareAcceleratedRRT && !hasBufferDeviceAddressFeature) {
         spdlog::info("bufferDeviceAddress feature is not supported; related shader capabilities may be unavailable.");
+    }
+
+    if (features2.features.robustBufferAccess == VK_TRUE) {
+        spdlog::info("Enabling robustBufferAccess for additional GPU memory access safety.");
+    } else {
+        spdlog::info("robustBufferAccess is not supported on this device.");
     }
 
     features2.pNext = &features12;

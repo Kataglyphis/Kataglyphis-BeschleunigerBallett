@@ -2,6 +2,7 @@
 
 .cache
 
+build_release/
 logs/
 
 dist

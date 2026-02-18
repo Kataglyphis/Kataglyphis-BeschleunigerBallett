@@ -190,7 +190,7 @@ try {
       Invoke-BuildExternal -Context $buildContext -File 'clang' -Parameters @('--version')
       Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('-B', $BuildDirRelease, '--preset', 'x64-ClangCL-Windows-Release', '-Dmyproject_ENABLE_CPPCHECK=OFF', '-DWINDOWS_CI=ON')
       $env:CMAKE_BUILD_PARALLEL_LEVEL = $env:NUMBER_OF_PROCESSORS
-      Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('--build', $BuildDirRelease, '-DWINDOWS_CI=ON')
+      Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('--build', $BuildDirRelease)
       Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('--build', $BuildDirRelease, '--target', 'package', '--verbose')
     } | Out-Null
   }

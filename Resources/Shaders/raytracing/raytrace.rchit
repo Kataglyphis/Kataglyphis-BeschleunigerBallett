@@ -94,6 +94,7 @@ void main() {
     // material id is stored per primitive
     vec3 ambient = vec3(0.f);
     int texture_id = materials.m[materialIDs.i[gl_PrimitiveID]].textureID;
+    texture_id = clamp(texture_id, 0, MAX_TEXTURE_COUNT - 1);
     ambient += texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), texture_coordinates).xyz;
     //ambient += materials.m[materialIDs.i[gl_PrimitiveID]].diffuse;
 

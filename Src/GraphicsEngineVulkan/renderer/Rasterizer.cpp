@@ -21,6 +21,13 @@
 #include "vulkan_base/VulkanImage.hpp"
 #include "vulkan_base/VulkanSwapChain.hpp"
 
+namespace {
+auto hasStencilComponent(VkFormat format) -> bool
+{
+  return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
+}
+}
+
 Kataglyphis::VulkanRendererInternals::Rasterizer::Rasterizer() = default;
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::init(VulkanDevice *device,
@@ -161,9 +168,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
 
     // framebuffer data will be stored as an image, but images can be given
     // different layouts to give optimal use for certain operations
-    color_attachment.initialLayout = VK_IMAGE_LAYOUT_GENERAL;// image data layout before render pass starts
-    color_attachment.finalLayout = VK_IMAGE_LAYOUT_GENERAL;// image data layout after render pass (to
-                                                           // change to)
+    color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;// image data layout before render pass starts
+    color_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;// image data layout after render pass
 
     // depth attachment of render pass
     VkAttachmentDescription depth_attachment{};
@@ -288,11 +294,6 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(VkCommandP
 
         texture.createImageView(device, offscreen_format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 
-        // --- WE NEED A DIFFERENT LAYOUT FOR USAGE
-        VulkanImage &image = texture.getVulkanImage();
-        image.transitionImageLayout(
-          cmdBuffer, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 1, VK_IMAGE_ASPECT_COLOR_BIT);
-
         offscreenTextures[index] = texture;
     }
 
@@ -315,7 +316,10 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(VkCommandP
 
     // depth buffer image view
     // MIP LEVELS: for depth texture we only want 1 level :)
-    depthBufferImage.createImageView(device, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 1);
+    VkImageAspectFlags depth_aspect_flags = VK_IMAGE_ASPECT_DEPTH_BIT;
+    if (hasStencilComponent(depth_format)) { depth_aspect_flags |= VK_IMAGE_ASPECT_STENCIL_BIT; }
+
+    depthBufferImage.createImageView(device, depth_format, depth_aspect_flags, 1);
 
     // --- WE NEED A DIFFERENT LAYOUT FOR USAGE
     VulkanImage &vulkanImage = depthBufferImage.getVulkanImage();
@@ -324,7 +328,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(VkCommandP
       commandPool,
       VK_IMAGE_LAYOUT_UNDEFINED,
       VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-      VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+      depth_aspect_flags,
       1);
 
     Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(

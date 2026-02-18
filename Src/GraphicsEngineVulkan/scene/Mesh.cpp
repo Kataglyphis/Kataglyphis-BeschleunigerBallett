@@ -48,7 +48,7 @@ Mesh::Mesh(VulkanDevice *device,
     createMaterialIDBuffer(transfer_queue, transfer_command_pool, materialIndex);
     createMaterialBuffer(transfer_queue, transfer_command_pool, materials);
 
-    if (device->supportsHardwareAcceleratedRRT()) {
+    if (device->supportsBufferDeviceAddress()) {
         VkBufferDeviceAddressInfo vertex_info{};
         vertex_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_KHR;
         vertex_info.buffer = vertexBuffer.getBuffer();
@@ -88,9 +88,11 @@ void Mesh::createVertexBuffer(VkQueue /*transfer_queue*/,
     VkMemoryPropertyFlags const memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     VkMemoryAllocateFlags memory_allocate_flags = 0;
 
-    if (device->supportsHardwareAcceleratedRRT()) {
-        usage_flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
-                       | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+    if (device->supportsBufferDeviceAddress()) {
+      usage_flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+      if (device->supportsHardwareAcceleratedRRT()) {
+        usage_flags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+      }
         memory_allocate_flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
     }
 
@@ -107,9 +109,11 @@ void Mesh::createIndexBuffer(VkQueue /*transfer_queue*/,
     VkMemoryPropertyFlags const memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     VkMemoryAllocateFlags memory_allocate_flags = 0;
 
-    if (device->supportsHardwareAcceleratedRRT()) {
-        usage_flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
-                       | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+    if (device->supportsBufferDeviceAddress()) {
+      usage_flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+      if (device->supportsHardwareAcceleratedRRT()) {
+        usage_flags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+      }
         memory_allocate_flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
     }
 
@@ -126,9 +130,11 @@ void Mesh::createMaterialIDBuffer(VkQueue /*transfer_queue*/,
     VkMemoryPropertyFlags const memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     VkMemoryAllocateFlags memory_allocate_flags = 0;
 
-    if (device->supportsHardwareAcceleratedRRT()) {
-        usage_flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
-                       | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+    if (device->supportsBufferDeviceAddress()) {
+      usage_flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+      if (device->supportsHardwareAcceleratedRRT()) {
+        usage_flags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+      }
         memory_allocate_flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
     }
 
@@ -150,9 +156,11 @@ void Mesh::createMaterialBuffer(VkQueue /*transfer_queue*/,
     VkMemoryPropertyFlags const memory_property_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     VkMemoryAllocateFlags memory_allocate_flags = 0;
 
-    if (device->supportsHardwareAcceleratedRRT()) {
-        usage_flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
-                       | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+    if (device->supportsBufferDeviceAddress()) {
+      usage_flags |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+      if (device->supportsHardwareAcceleratedRRT()) {
+        usage_flags |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+      }
         memory_allocate_flags |= VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
     }
 

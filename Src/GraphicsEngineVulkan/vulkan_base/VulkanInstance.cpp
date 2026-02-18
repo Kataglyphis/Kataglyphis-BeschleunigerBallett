@@ -2,12 +2,18 @@
 #include "GLFW/glfw3.h"
 #include "spdlog/spdlog.h"
 
+#include "renderer/VulkanRendererConfig.hpp"
+
 #include "common/Utilities.hpp"
 #include "vulkan_base/VulkanDebug.hpp"
 #include <cstdint>
 #include <cstring>
 #include <vector>
 #include <vulkan/vulkan_core.h>
+
+#ifndef VULKAN_API_VERSION
+#define VULKAN_API_VERSION VK_API_VERSION_1_3
+#endif
 
 Kataglyphis::VulkanInstance::VulkanInstance()
 {
@@ -23,7 +29,7 @@ Kataglyphis::VulkanInstance::VulkanInstance()
     app_info.applicationVersion = VK_MAKE_VERSION(1, 3, 1);// custom version of app
     app_info.pEngineName = "Cataglyphis Renderer";// custom engine name
     app_info.engineVersion = VK_MAKE_VERSION(1, 3, 3);// custom engine version
-    app_info.apiVersion = VK_API_VERSION_1_3;// the vulkan version
+    app_info.apiVersion = VULKAN_API_VERSION;// the vulkan version
 
     // creation info for a VkInstance
     VkInstanceCreateInfo create_info{};

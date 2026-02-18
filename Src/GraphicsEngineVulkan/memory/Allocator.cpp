@@ -1,7 +1,12 @@
 #include "memory/Allocator.hpp"
 
 #include "common/Utilities.hpp"
+#include "renderer/VulkanRendererConfig.hpp"
 #include <vulkan/vulkan_core.h>
+
+#ifndef VULKAN_API_VERSION
+#define VULKAN_API_VERSION VK_API_VERSION_1_3
+#endif
 
 using namespace Kataglyphis;
 
@@ -13,7 +18,7 @@ Allocator::Allocator(const VkDevice &device, const VkPhysicalDevice &physicalDev
     // https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/quick_start.html
     VmaAllocatorCreateInfo allocatorCreateInfo = {};
     allocatorCreateInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
-    allocatorCreateInfo.vulkanApiVersion = VK_API_VERSION_1_3;
+    allocatorCreateInfo.vulkanApiVersion = VULKAN_API_VERSION;
     allocatorCreateInfo.physicalDevice = physicalDevice;
     allocatorCreateInfo.device = device;
     allocatorCreateInfo.instance = instance;
