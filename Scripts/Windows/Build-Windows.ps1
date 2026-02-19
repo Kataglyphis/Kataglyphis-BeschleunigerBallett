@@ -5,7 +5,17 @@ param(
   [string]$ClangProfilePreset = 'x64-ClangCL-Windows-Profile',
   [switch]$CoverageShowSources,
   [switch]$RunClangFormat,
-  [switch]$RunClangTidy
+  [switch]$RunClangTidy,
+  [switch]$CreateMsix,
+  [string]$MsixIdentityName = 'GraphicsEngine',
+  [string]$MsixPublisher = 'CN=Jonas Heinle',
+  [string]$MsixVersion = '1.4.2.0',
+  [string]$MsixArchitecture = 'x64',
+  [string]$MsixDisplayName = 'GraphicsEngine',
+  [string]$MsixPublisherDisplayName = 'Jonas Heinle',
+  [string]$MsixExecutable = 'bin/GraphicsEngine.exe',
+  [string]$MsixCertPath,
+  [string]$MsixCertPassword
 )
 
 $ErrorActionPreference = 'Stop'
@@ -82,6 +92,71 @@ function Get-ProjectSourceFiles {
     ForEach-Object { $_.FullName }
 }
 
+function Find-WindowsSdkTool {
+  param(
+    [Parameter(Mandatory)]
+    [string]$ToolName
+  )
+
+  $command = Get-Command $ToolName -ErrorAction SilentlyContinue
+  if ($null -ne $command -and -not [string]::IsNullOrWhiteSpace($command.Source)) {
+    return $command.Source
+  }
+
+  $kitsRoot = 'C:\Program Files (x86)\Windows Kits\10\bin'
+  if (-not (Test-Path $kitsRoot)) {
+    return $null
+  }
+
+  $sdkVersions = Get-ChildItem -Path $kitsRoot -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
+    Sort-Object { [version]$_.Name } -Descending
+
+  foreach ($sdkVersion in $sdkVersions) {
+    $candidate = Join-Path $sdkVersion.FullName (Join-Path 'x64' $ToolName)
+    if (Test-Path $candidate) {
+      return $candidate
+    }
+  }
+
+  return $null
+}
+
+function ConvertTo-XmlEscaped {
+  param(
+    [AllowNull()]
+    [string]$Value
+  )
+
+  if ($null -eq $Value) {
+    return ''
+  }
+
+  return [System.Security.SecurityElement]::Escape($Value)
+}
+
+function ConvertTo-MsixRelativePath {
+  param(
+    [AllowNull()]
+    [string]$Value
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Value)) {
+    return ''
+  }
+
+  $normalizedPath = $Value.Replace('\\', '/').Replace('\', '/')
+  while ($normalizedPath.StartsWith('./')) {
+    $normalizedPath = $normalizedPath.Substring(2)
+  }
+
+  while ($normalizedPath.StartsWith('/')) {
+    $normalizedPath = $normalizedPath.Substring(1)
+  }
+
+  return $normalizedPath
+}
+
 $buildContext = New-BuildContext -Workspace $workspaceRoot -LogDir 'logs\windows' -StopOnError
 Open-BuildLog -Context $buildContext
 
@@ -97,6 +172,7 @@ Write-BuildLog -Context $buildContext -Message "CONFIGURATIONS=$(([string[]]$sel
 Write-BuildLog -Context $buildContext -Message "COVERAGE_SHOW_SOURCES=$CoverageShowSources"
 Write-BuildLog -Context $buildContext -Message "RUN_CLANG_FORMAT=$RunClangFormat"
 Write-BuildLog -Context $buildContext -Message "RUN_CLANG_TIDY=$RunClangTidy"
+Write-BuildLog -Context $buildContext -Message "CREATE_MSIX=$CreateMsix"
 
 try {
   if (Test-ConfigurationSelected -Name 'msvc-debug') {
@@ -192,6 +268,102 @@ try {
       $env:CMAKE_BUILD_PARALLEL_LEVEL = $env:NUMBER_OF_PROCESSORS
       Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('--build', $BuildDirRelease)
       Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('--build', $BuildDirRelease, '--target', 'package', '--verbose')
+
+      if ($CreateMsix) {
+        $makeAppxPath = Find-WindowsSdkTool -ToolName 'makeappx.exe'
+        if ([string]::IsNullOrWhiteSpace($makeAppxPath)) {
+          throw 'MSIX packaging requested, but makeappx.exe was not found. Install Windows 10/11 SDK or add it to PATH.'
+        }
+
+        $msixRoot = Join-Path $BuildDirRelease 'msix'
+        $stagingRoot = Join-Path $msixRoot 'staging'
+        $assetsDir = Join-Path $stagingRoot 'Assets'
+
+        Remove-BuildRoot -Context $buildContext -Path $msixRoot | Out-Null
+        New-Item -Path $assetsDir -ItemType Directory -Force | Out-Null
+
+        Invoke-BuildExternal -Context $buildContext -File 'cmake' -Parameters @('--install', $BuildDirRelease, '--prefix', $stagingRoot)
+
+        $logoSource = Join-Path $workspaceRoot 'images\logo.png'
+        if (-not (Test-Path $logoSource)) {
+          throw "MSIX packaging requested, but logo file not found: $logoSource"
+        }
+
+        Copy-Item -Path $logoSource -Destination (Join-Path $assetsDir 'StoreLogo.png') -Force
+        Copy-Item -Path $logoSource -Destination (Join-Path $assetsDir 'Square44x44Logo.png') -Force
+        Copy-Item -Path $logoSource -Destination (Join-Path $assetsDir 'Square150x150Logo.png') -Force
+
+        $identityNameEscaped = ConvertTo-XmlEscaped -Value $MsixIdentityName
+        $publisherEscaped = ConvertTo-XmlEscaped -Value $MsixPublisher
+        $versionEscaped = ConvertTo-XmlEscaped -Value $MsixVersion
+        $displayNameEscaped = ConvertTo-XmlEscaped -Value $MsixDisplayName
+        $publisherDisplayNameEscaped = ConvertTo-XmlEscaped -Value $MsixPublisherDisplayName
+        $msixExecutablePath = ConvertTo-MsixRelativePath -Value $MsixExecutable
+        $executableEscaped = ConvertTo-XmlEscaped -Value $msixExecutablePath
+
+        $manifestContent = @"
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+  <Identity Name="$identityNameEscaped" Publisher="$publisherEscaped" Version="$versionEscaped" ProcessorArchitecture="$MsixArchitecture" />
+  <Properties>
+    <DisplayName>$displayNameEscaped</DisplayName>
+    <PublisherDisplayName>$publisherDisplayNameEscaped</PublisherDisplayName>
+    <Logo>Assets/StoreLogo.png</Logo>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+  <Applications>
+    <Application Id="App" Executable="$executableEscaped" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="$displayNameEscaped"
+        Description="$displayNameEscaped"
+        Square44x44Logo="Assets/Square44x44Logo.png"
+        Square150x150Logo="Assets/Square150x150Logo.png"
+        BackgroundColor="transparent" />
+    </Application>
+  </Applications>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>
+"@
+
+        $manifestPath = Join-Path $stagingRoot 'AppxManifest.xml'
+        Set-Content -Path $manifestPath -Value $manifestContent -Encoding UTF8
+
+        $msixFileName = "$MsixIdentityName-$MsixVersion-$MsixArchitecture.msix"
+        $msixOutputPath = Join-Path $msixRoot $msixFileName
+        Invoke-BuildExternal -Context $buildContext -File $makeAppxPath -Parameters @('pack', '/d', $stagingRoot, '/p', $msixOutputPath, '/o')
+
+        if (-not [string]::IsNullOrWhiteSpace($MsixCertPath)) {
+          $signtoolPath = Find-WindowsSdkTool -ToolName 'signtool.exe'
+          if ([string]::IsNullOrWhiteSpace($signtoolPath)) {
+            throw 'MSIX signing requested, but signtool.exe was not found. Install Windows 10/11 SDK or add it to PATH.'
+          }
+
+          if (-not (Test-Path $MsixCertPath)) {
+            throw "MSIX signing certificate not found: $MsixCertPath"
+          }
+
+          $signArguments = @('sign', '/fd', 'SHA256', '/f', $MsixCertPath, '/a')
+          if (-not [string]::IsNullOrWhiteSpace($MsixCertPassword)) {
+            $signArguments += @('/p', $MsixCertPassword)
+          }
+
+          $signArguments += $msixOutputPath
+          Invoke-BuildExternal -Context $buildContext -File $signtoolPath -Parameters $signArguments
+        } else {
+          Write-BuildLog -Context $buildContext -Message "MSIX package created but not signed: $msixOutputPath"
+        }
+      }
     } | Out-Null
   }
 } finally {
