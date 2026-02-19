@@ -90,31 +90,18 @@ jobs:
             -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
             -e PRESET=${{ env.PRESET }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-
-            PRESET="${PRESET}"
-
-            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-
-            cmake --preset "${PRESET}"
-            cmake --build --preset "${PRESET}"
-            '
+            bash ./Scripts/Linux/cmake-configure-build.sh
 
       - name: Run Unit/Integration tests
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
-            -w /workspace/${{ env.BUILD_DIR }} \
+            -w /workspace \
+            -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
+            -e BUILD_DIR=${{ env.BUILD_DIR }} \
             -e BUILD_TYPE=${{ env.BUILD_TYPE }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-            ctest -C "${BUILD_TYPE}" --verbose --extra-verbose --debug -T test --output-on-failure -E Integration.VulkanEngine RendererTest.BasicSetup
-            '
+            bash ./Scripts/Linux/run-ctest.sh
 
       - name: Run fuzzer tests
         run: |
@@ -129,12 +116,7 @@ jobs:
             -e BUILD_DIR=${{ env.BUILD_DIR }} \
             -e COVERAGE_JSON=${{ env.COVERAGE_JSON }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            llvm-profdata merge -sparse "${BUILD_DIR}/Test/compile/default.profraw" -o "${BUILD_DIR}/compileTestSuite.profdata"
-            llvm-cov report "${BUILD_DIR}/compileTestSuite" -instr-profile="${BUILD_DIR}/compileTestSuite.profdata"
-            llvm-cov export "${BUILD_DIR}/compileTestSuite" -format=text -instr-profile="${BUILD_DIR}/compileTestSuite.profdata" > "${COVERAGE_JSON}"
-            '
+            bash ./Scripts/Linux/build-coverage-llvm.sh
         working-directory: ${{ github.workspace }}
 
       - name: Codecov
@@ -159,26 +141,18 @@ jobs:
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            clang++ --analyze -DUSE_RUST=1 -Xanalyzer -analyzer-output=html $(find Src -name "*.cpp" -o -name "*.cc")
-            '
+            bash ./Scripts/Linux/run-clang-analyze-html.sh
 
       - name: Run Clang static analysis (scan-build)
         continue-on-error: true
         run: |
-          mkdir -p scan-build-reports
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             -e BUILD_DIR=${{ env.BUILD_DIR }} \
             -e PRESET=${{ env.PRESET }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-            scan-build -o scan-build-reports cmake --build "${BUILD_DIR}" --preset "${PRESET}"
-            '
+            bash ./Scripts/Linux/run-clang-scan-build.sh
 
       #################################################################################################################
       ############################# Now run on performance benchmarking/profiling #####################################
@@ -191,18 +165,9 @@ jobs:
             -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
             -e BUILD_DIR=${{ env.BUILD_DIR }} \
             -e PRESET=${{ env.PROFILE_PRESET }} \
+            -e CLEAN_BUILD_DIR=true \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-            echo "Using preset: ${PRESET}"
-            rm -rf "${BUILD_DIR}"
-
-            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-
-            cmake -B "${BUILD_DIR}" --preset "${PRESET}"
-            cmake --build "${BUILD_DIR}" --preset "${PRESET}"
-            '
+            bash ./Scripts/Linux/cmake-configure-build.sh
 
       - name: Run performance benchmarks
         run: |
@@ -211,10 +176,7 @@ jobs:
             -w /workspace \
             -e BUILD_DIR=${{ env.BUILD_DIR }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            "${BUILD_DIR}/perfTestSuite"
-            '
+            bash ./Scripts/Linux/run-perf-suite.sh
 
       #################################################################################################################
       ######################################## Build docs #############################################################
@@ -226,10 +188,7 @@ jobs:
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            uv venv
-            '
+            bash ./Scripts/Linux/uv-venv-create.sh
 
       - name: Setup python env
         if: ${{ inputs.runner == 'ubuntu-24.04' }}
@@ -238,11 +197,7 @@ jobs:
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            . ".venv/bin/activate"
-            uv pip install -r requirements.txt
-            '
+            bash ./Scripts/Linux/uv-install-requirements.sh
 
       # . "$HOME/.local/bin/env"
       - name: Build web page
@@ -253,14 +208,7 @@ jobs:
             -w /workspace \
             -e DOCS_OUT=${{ env.DOCS_OUT }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            cp ${DOCS_OUT}/*.svg ./docs/source/_static
-            cd docs/source
-            uv run python graphviz_generator.py
-            cd ..
-            uv run make html
-            '
+            bash ./Scripts/Linux/docs-build-web.sh
 
       - name: 📂 Sync files to domain
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
@@ -290,29 +238,20 @@ jobs:
             -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
             -e BUILD_DIR=${{ env.BUILD_DIR }} \
             -e PRESET=${{ env.PRESET }} \
+            -e CLEAN_BUILD_DIR=true \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-            rm -rf "${BUILD_DIR}"
-            cmake -B "${BUILD_DIR}" --preset "${PRESET}"
-            cmake --build "${BUILD_DIR}" --preset "${PRESET}"
-            '
+            bash ./Scripts/Linux/cmake-configure-build.sh
 
       - name: Run Unit/Integration tests (gcc)
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
-            -w /workspace/${{ env.BUILD_DIR }} \
+            -w /workspace \
+            -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
+            -e BUILD_DIR=${{ env.BUILD_DIR }} \
             -e BUILD_TYPE=${{ env.BUILD_TYPE }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-            ctest -C "${BUILD_TYPE}" --verbose --extra-verbose --debug -T test --output-on-failure -E Integration.VulkanEngine RendererTest.BasicSetup
-            '
+            bash ./Scripts/Linux/run-ctest.sh
 
       - name: Run fuzzer tests (gcc)
         run: |
@@ -325,10 +264,7 @@ jobs:
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            gcovr -r .
-            '
+            bash ./Scripts/Linux/build-coverage-gcovr.sh
 
       - name: Configure/build CMake for Profiling (gcc)
         run: |
@@ -338,20 +274,14 @@ jobs:
             -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
             -e BUILD_DIR=${{ env.BUILD_DIR }} \
             -e PRESET=${{ env.PROFILE_PRESET }} \
+            -e CLEAN_BUILD_DIR=true \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-            echo "Using preset: ${PRESET}"
-            rm -rf "${BUILD_DIR}"
-
-            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-            cmake -B "${BUILD_DIR}" --preset "${PRESET}"
-            cmake --build "${BUILD_DIR}" --preset "${PRESET}"
-            '
+            bash ./Scripts/Linux/cmake-configure-build.sh
 
       - name: Run performance benchmarks (gcc)
-        run: ${{ env.BUILD_DIR }}/perfTestSuite
+        run: ./Scripts/Linux/run-perf-suite.sh
+        env:
+          BUILD_DIR: ${{ env.BUILD_DIR }}
         working-directory: ${{ github.workspace }}
 
       #################################################################################################################
@@ -365,15 +295,11 @@ jobs:
             -w /workspace \
             -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
             -e BUILD_RELEASE_DIR=${{ env.BUILD_RELEASE_DIR }} \
+            -e BUILD_DIR=${{ env.BUILD_RELEASE_DIR }} \
+            -e PRESET=linux-release-clang \
+            -e CMAKE_BUILD_CONFIG=Release \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-
-            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-            cmake -B "${BUILD_RELEASE_DIR}" --preset linux-release-clang
-            cmake --build "${BUILD_RELEASE_DIR}" --config Release
-            '
+            bash ./Scripts/Linux/cmake-configure-build.sh
 
       - name: Package
         run: |
@@ -382,14 +308,11 @@ jobs:
             -w /workspace \
             -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
             -e BUILD_RELEASE_DIR=${{ env.BUILD_RELEASE_DIR }} \
+            -e BUILD_DIR=${{ env.BUILD_RELEASE_DIR }} \
+            -e SKIP_CONFIGURE=true \
+            -e CMAKE_BUILD_TARGET=package \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-
-            cmake --build "${BUILD_RELEASE_DIR}" --target package
-            '
+            bash ./Scripts/Linux/cmake-configure-build.sh
 
       - name: Upload Linux Packages (Clang only)
         uses: actions/upload-artifact@v6.0.0
