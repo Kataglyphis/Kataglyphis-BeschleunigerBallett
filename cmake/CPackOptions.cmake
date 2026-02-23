@@ -35,11 +35,15 @@ set(CPACK_PACKAGE_HOMEPAGE_URL "${CMAKE_PROJECT_HOMEPAGE_URL}")
 # There is a bug in NSI that does not handle full UNIX paths properly.
 # Make sure there is at least one set of four backlashes.
 # https://gitlab.kitware.com/cmake/community/-/wikis/doc/cpack/Packaging-With-CPack
-set(CPACK_PACKAGE_ICON ${CMAKE_CURRENT_SOURCE_DIR}/images/Engine_logo.bmp)
+set(CPACK_PACKAGE_ICON ${CMAKE_CURRENT_SOURCE_DIR}/images/Engine_logo.png)
 set(CPACK_RESOURCE_FILE_WELCOME ${CMAKE_CURRENT_SOURCE_DIR}/docs/packaging/WelcomeFile.txt)
 # try to use all cores
 set(CPACK_THREADS 0)
 set(CPACK_SOURCE_IGNORE_FILES /.git /.*build.*)
+
+set(CPACK_ENABLE_APPIMAGE
+  ON
+  CACHE BOOL "Enable AppImage package generation on Linux")
 
 set(ENABLE_WIX_PACKAGING
   OFF
@@ -147,6 +151,73 @@ else()
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "libc6 (>= 2.31)")
     # Automatisches Shlib-Skipping vermeiden falls nötig
     set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+
+    if(CPACK_ENABLE_APPIMAGE)
+      find_program(_APPIMAGETOOL_EXECUTABLE NAMES appimagetool)
+
+      if(NOT _APPIMAGETOOL_EXECUTABLE)
+        set(_APPIMAGETOOL_DIR "${CMAKE_BINARY_DIR}/tools")
+        file(MAKE_DIRECTORY "${_APPIMAGETOOL_DIR}")
+
+        set(_APPIMAGETOOL_URL "")
+        if(_arch_lc STREQUAL "x86_64" OR _arch_lc STREQUAL "amd64")
+          set(_APPIMAGETOOL_URL "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage")
+          set(_APPIMAGETOOL_LOCAL "${_APPIMAGETOOL_DIR}/appimagetool-x86_64.AppImage")
+        elseif(_arch_lc STREQUAL "aarch64" OR _arch_lc STREQUAL "arm64")
+          set(_APPIMAGETOOL_URL "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage")
+          set(_APPIMAGETOOL_LOCAL "${_APPIMAGETOOL_DIR}/appimagetool-aarch64.AppImage")
+        endif()
+
+        if(_APPIMAGETOOL_URL)
+          if(NOT EXISTS "${_APPIMAGETOOL_LOCAL}")
+            message(STATUS "appimagetool nicht gefunden. Lade ${_APPIMAGETOOL_URL}")
+            file(
+              DOWNLOAD "${_APPIMAGETOOL_URL}" "${_APPIMAGETOOL_LOCAL}"
+              SHOW_PROGRESS
+              STATUS _APPIMAGETOOL_DOWNLOAD_STATUS
+              TLS_VERIFY ON)
+            list(GET _APPIMAGETOOL_DOWNLOAD_STATUS 0 _APPIMAGETOOL_DOWNLOAD_CODE)
+            if(NOT _APPIMAGETOOL_DOWNLOAD_CODE EQUAL 0)
+              message(WARNING "AppImage aktiviert, aber appimagetool Download fehlgeschlagen: ${_APPIMAGETOOL_DOWNLOAD_STATUS}")
+            endif()
+          endif()
+
+          if(EXISTS "${_APPIMAGETOOL_LOCAL}")
+            file(
+              CHMOD "${_APPIMAGETOOL_LOCAL}"
+              PERMISSIONS
+                OWNER_READ OWNER_WRITE OWNER_EXECUTE
+                GROUP_READ GROUP_EXECUTE
+                WORLD_READ WORLD_EXECUTE)
+            set(_APPIMAGETOOL_EXECUTABLE "${_APPIMAGETOOL_LOCAL}")
+          endif()
+        else()
+          message(WARNING "CPACK_ENABLE_APPIMAGE=ON, aber Architektur '${_arch_lc}' wird für Auto-Download aktuell nicht unterstützt.")
+        endif()
+      endif()
+
+      if(_APPIMAGETOOL_EXECUTABLE)
+        set(_APPIMAGETOOL_WRAPPER "${CMAKE_BINARY_DIR}/tools/appimagetool-wrapper.sh")
+        file(
+          WRITE "${_APPIMAGETOOL_WRAPPER}"
+          "#!/usr/bin/env sh\nAPPIMAGE_EXTRACT_AND_RUN=1 \"${_APPIMAGETOOL_EXECUTABLE}\" \"$@\"\n")
+        file(
+          CHMOD "${_APPIMAGETOOL_WRAPPER}"
+          PERMISSIONS
+            OWNER_READ OWNER_WRITE OWNER_EXECUTE
+            GROUP_READ GROUP_EXECUTE
+            WORLD_READ WORLD_EXECUTE)
+
+        list(APPEND CPACK_GENERATOR "AppImage")
+        set(CPACK_APPIMAGE_TOOL_EXECUTABLE "${_APPIMAGETOOL_WRAPPER}")
+        set(CPACK_APPIMAGE_DESKTOP_FILE "GraphicsEngine.desktop")
+        set(CPACK_PACKAGE_ICON "Engine_logo")
+        set(CPACK_PACKAGE_EXECUTABLES "GraphicsEngine" "GraphicsEngine")
+        message(STATUS "AppImage Packaging aktiviert mit appimagetool: ${_APPIMAGETOOL_EXECUTABLE}")
+      else()
+        message(WARNING "CPACK_ENABLE_APPIMAGE=ON, aber kein appimagetool verfügbar. AppImage Packaging wird übersprungen.")
+      endif()
+    endif()
   endif()
 endif()
 

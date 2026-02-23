@@ -95,6 +95,20 @@ install(DIRECTORY images/ DESTINATION images/)
 install(DIRECTORY Resources/Shaders/ DESTINATION Resources/Shaders/)
 install(DIRECTORY Resources/Textures/ DESTINATION Resources/Textures/)
 install(DIRECTORY Resources/Models/crytek-sponza/ DESTINATION Resources/Models/crytek-sponza/)
-install(DIRECTORY ExternalLib/IMGUI/misc/fonts/ DESTINATION ExternalLib/IMGUI/misc/fonts/)
+install(
+  FILES ExternalLib/IMGUI/misc/fonts/Cousine-Regular.ttf
+        ExternalLib/IMGUI/misc/fonts/DroidSans.ttf
+        ExternalLib/IMGUI/misc/fonts/Karla-Regular.ttf
+        ExternalLib/IMGUI/misc/fonts/ProggyClean.ttf
+        ExternalLib/IMGUI/misc/fonts/ProggyTiny.ttf
+        ExternalLib/IMGUI/misc/fonts/Roboto-Medium.ttf
+  DESTINATION ExternalLib/IMGUI/misc/fonts/)
+if(UNIX AND NOT APPLE)
+  install(FILES docs/packaging/GraphicsEngine.desktop DESTINATION usr/share/applications)
+  install(FILES docs/packaging/GraphicsEngine.appdata.xml DESTINATION usr/share/metainfo RENAME de.jonasheinle.GraphicsEngine.appdata.xml)
+  install(FILES images/Engine_logo.png DESTINATION usr/share/icons/hicolor/256x256/apps RENAME Engine_logo.png)
+  install(FILES images/Engine_logo.png DESTINATION usr/share/icons/hicolor/256x256/apps RENAME Engine_logo)
+  install(FILES images/Engine_logo.png DESTINATION . RENAME Engine_logo.png)
+endif()
 
 include(cmake/CPackOptions.cmake)

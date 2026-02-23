@@ -28,14 +28,82 @@ source_vulkan_env() {
   echo "[cmake-configure-build] Vulkan setup-env.sh nicht gefunden – fahre ohne explizites Sourcing fort."
 }
 
+PRESET_ARG=""
+BUILD_DIR_ARG=""
+CLEAN_BUILD_DIR_ARG=""
+SKIP_CONFIGURE_ARG=""
+CMAKE_BUILD_CONFIG_ARG=""
+CMAKE_BUILD_TARGET_ARG=""
+VULKAN_VERSION_ARG=""
+VULKAN_SETUP_SCRIPT_ARG=""
+VULKAN_SDK_ARG=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --preset)
+      PRESET_ARG="${2:-}"
+      shift 2
+      ;;
+    --build-dir)
+      BUILD_DIR_ARG="${2:-}"
+      shift 2
+      ;;
+    --clean-build-dir)
+      CLEAN_BUILD_DIR_ARG="${2:-}"
+      shift 2
+      ;;
+    --skip-configure)
+      SKIP_CONFIGURE_ARG="${2:-}"
+      shift 2
+      ;;
+    --build-config)
+      CMAKE_BUILD_CONFIG_ARG="${2:-}"
+      shift 2
+      ;;
+    --build-target)
+      CMAKE_BUILD_TARGET_ARG="${2:-}"
+      shift 2
+      ;;
+    --vulkan-version)
+      VULKAN_VERSION_ARG="${2:-}"
+      shift 2
+      ;;
+    --vulkan-setup-script)
+      VULKAN_SETUP_SCRIPT_ARG="${2:-}"
+      shift 2
+      ;;
+    --vulkan-sdk)
+      VULKAN_SDK_ARG="${2:-}"
+      shift 2
+      ;;
+    -*)
+      echo "Unbekanntes Argument: $1" >&2
+      exit 1
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if [[ -n "${VULKAN_VERSION_ARG}" ]]; then
+  VULKAN_VERSION="${VULKAN_VERSION_ARG}"
+fi
+if [[ -n "${VULKAN_SETUP_SCRIPT_ARG}" ]]; then
+  VULKAN_SETUP_SCRIPT="${VULKAN_SETUP_SCRIPT_ARG}"
+fi
+if [[ -n "${VULKAN_SDK_ARG}" ]]; then
+  VULKAN_SDK="${VULKAN_SDK_ARG}"
+fi
+
 source_vulkan_env
 
-PRESET="${PRESET:-${1:-}}"
-BUILD_DIR="${BUILD_DIR:-}"
-CLEAN_BUILD_DIR="${CLEAN_BUILD_DIR:-false}"
-SKIP_CONFIGURE="${SKIP_CONFIGURE:-false}"
-CMAKE_BUILD_CONFIG="${CMAKE_BUILD_CONFIG:-}"
-CMAKE_BUILD_TARGET="${CMAKE_BUILD_TARGET:-}"
+PRESET="${PRESET_ARG:-${PRESET:-${1:-}}}"
+BUILD_DIR="${BUILD_DIR_ARG:-${BUILD_DIR:-}}"
+CLEAN_BUILD_DIR="${CLEAN_BUILD_DIR_ARG:-${CLEAN_BUILD_DIR:-false}}"
+SKIP_CONFIGURE="${SKIP_CONFIGURE_ARG:-${SKIP_CONFIGURE:-false}}"
+CMAKE_BUILD_CONFIG="${CMAKE_BUILD_CONFIG_ARG:-${CMAKE_BUILD_CONFIG:-}}"
+CMAKE_BUILD_TARGET="${CMAKE_BUILD_TARGET_ARG:-${CMAKE_BUILD_TARGET:-}}"
 
 if [[ "${CLEAN_BUILD_DIR}" == "true" && -n "${BUILD_DIR}" ]]; then
   rm -rf "${BUILD_DIR}"

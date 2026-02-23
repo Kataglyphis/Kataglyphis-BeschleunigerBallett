@@ -211,14 +211,36 @@ For more information regarding the build environment refer to my
 ### Packaging
 
 On Linux, binary packages are generated with CPack (`TGZ` and `DEB`).
-You can additionally enable AppImage packaging via:
+Use this repeatable workflow after a clean checkout or after deleting build folders:
+
+1. Configure and build in `Release` mode
+2. Generate release packages (`TGZ`, `DEB`)
+3. Generate AppImage packages as standard packaging step
 
 ```sh
-cmake -S . -B build -DCPACK_ENABLE_APPIMAGE=ON
-cmake --build build --target package
+# 1) Release configure + build
+bash ./Scripts/Linux/cmake-configure-build.sh \
+  --vulkan-setup-script /opt/vulkan/1.4.341.1/setup-env.sh \
+  --preset linux-release-clang \
+  --build-dir build-release \
+  --build-config Release
+
+# 2) CPack package target (TGZ + DEB)
+bash ./Scripts/Linux/cmake-configure-build.sh \
+  --vulkan-setup-script /opt/vulkan/1.4.341.1/setup-env.sh \
+  --build-dir build-release \
+  --skip-configure true \
+  --build-target package
+
+# 3) Standard AppImage packaging
+cmake -S . -B build-release-appimage \
+  --preset linux-release-clang \
+  -DCPACK_ENABLE_APPIMAGE=ON
+cmake --build build-release-appimage --config Release --target package
 ```
 
-For AppImage, `appimagetool` has to be available in your `PATH`.
+Generated artifacts are written to the selected build folder (for example `*.tar.gz`, `*.deb`, and AppImage artifacts).
+For AppImage builds, `appimagetool` must be available in your `PATH`.
 
 # Shaders
 I provide two ways for compiling shaders with. Hence if you want to add new

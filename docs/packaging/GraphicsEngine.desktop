@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=GraphicsEngine
+Comment=Epic GPU accelerated rendering engine using Vulkan and C++
+Exec=GraphicsEngine
+Icon=Engine_logo
+Terminal=false
+Categories=Graphics;Development;

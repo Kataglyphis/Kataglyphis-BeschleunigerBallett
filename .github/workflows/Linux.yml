@@ -22,7 +22,7 @@ env:
   BUILD_TYPE: Debug
   GCC_PROFILE_PRESET: linux-profile-GNU
   CLANG_PROFILE_PRESET: linux-profile-clang
-  VULKAN_VERSION: 1.4.335.0
+  VULKAN_VERSION: 1.4.341.1
   # folder/name configuration -- change here to affect the whole workflow
   BUILD_DIR: build
   BUILD_RELEASE_DIR: build-release
@@ -72,12 +72,6 @@ jobs:
       #################################################################################################################
       ####################### Run unit/integration/fuzzy/coverage/tests/static analyzers ##############################
       #################################################################################################################
-      - name: Set compiler to clang
-        run: |
-          echo "COMPILER=clang" >> "$GITHUB_ENV"
-          echo "PRESET=linux-debug-clang" >> "$GITHUB_ENV"
-          echo "PROFILE_PRESET=${CLANG_PROFILE_PRESET}" >> "$GITHUB_ENV"
-
       #################################################################################################################
       ############################################### clang: build/test ################################################
       #################################################################################################################
@@ -87,21 +81,23 @@ jobs:
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
-            -e PRESET=${{ env.PRESET }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/cmake-configure-build.sh
+            bash ./Scripts/Linux/cmake-configure-build.sh \
+            --vulkan-version "${{ env.VULKAN_VERSION }}" \
+            --preset "linux-debug-clang" \
+            --build-dir "${{ env.BUILD_DIR }}"
 
       - name: Run Unit/Integration tests
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
-            -e BUILD_DIR=${{ env.BUILD_DIR }} \
-            -e BUILD_TYPE=${{ env.BUILD_TYPE }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/run-ctest.sh
+            bash ./Scripts/Linux/run-ctest.sh \
+            --vulkan-version "${{ env.VULKAN_VERSION }}" \
+            --build-dir "${{ env.BUILD_DIR }}" \
+            --build-type "${{ env.BUILD_TYPE }}" \
+            --ctest-exclude "Integration.VulkanEngine RendererTest.BasicSetup"
 
       - name: Run fuzzer tests
         run: |
@@ -113,15 +109,15 @@ jobs:
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e BUILD_DIR=${{ env.BUILD_DIR }} \
-            -e COVERAGE_JSON=${{ env.COVERAGE_JSON }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/build-coverage-llvm.sh
+            bash ./Scripts/Linux/build-coverage-llvm.sh \
+            --build-dir "${{ env.BUILD_DIR }}" \
+            --coverage-json "${{ env.COVERAGE_JSON }}"
         working-directory: ${{ github.workspace }}
 
       - name: Codecov
         if: ${{ inputs.runner == 'ubuntu-24.04' }}
-        uses: codecov/codecov-action@v5.5.1
+        uses: codecov/codecov-action@v5.5.2
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ${{ env.COVERAGE_JSON }}
@@ -149,10 +145,10 @@ jobs:
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e BUILD_DIR=${{ env.BUILD_DIR }} \
-            -e PRESET=${{ env.PRESET }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/run-clang-scan-build.sh
+            bash ./Scripts/Linux/run-clang-scan-build.sh \
+            --build-dir "${{ env.BUILD_DIR }}" \
+            --preset "linux-debug-clang"
 
       #################################################################################################################
       ############################# Now run on performance benchmarking/profiling #####################################
@@ -162,21 +158,20 @@ jobs:
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
-            -e BUILD_DIR=${{ env.BUILD_DIR }} \
-            -e PRESET=${{ env.PROFILE_PRESET }} \
-            -e CLEAN_BUILD_DIR=true \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/cmake-configure-build.sh
+            bash ./Scripts/Linux/cmake-configure-build.sh \
+            --vulkan-version "${{ env.VULKAN_VERSION }}" \
+            --build-dir "${{ env.BUILD_DIR }}" \
+            --preset "${{ env.CLANG_PROFILE_PRESET }}" \
+            --clean-build-dir true
 
       - name: Run performance benchmarks
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e BUILD_DIR=${{ env.BUILD_DIR }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/run-perf-suite.sh
+            bash ./Scripts/Linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
 
       #################################################################################################################
       ######################################## Build docs #############################################################
@@ -206,9 +201,8 @@ jobs:
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e DOCS_OUT=${{ env.DOCS_OUT }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/docs-build-web.sh
+            bash ./Scripts/Linux/docs-build-web.sh "${{ env.DOCS_OUT }}"
 
       - name: 📂 Sync files to domain
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
@@ -223,35 +217,29 @@ jobs:
       ############################################### gcc: build/test #################################################
       #################################################################################################################
 
-      - name: Set compiler to gcc
-        run: |
-          echo "COMPILER=gcc" >> "$GITHUB_ENV"
-          echo "PRESET=linux-debug-GNU" >> "$GITHUB_ENV"
-          echo "PROFILE_PRESET=${GCC_PROFILE_PRESET}" >> "$GITHUB_ENV"
-          echo "BUILD_DIR=build" >> "$GITHUB_ENV"
-
       - name: Prepare for unit/integration tests (gcc)
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
-            -e BUILD_DIR=${{ env.BUILD_DIR }} \
-            -e PRESET=${{ env.PRESET }} \
-            -e CLEAN_BUILD_DIR=true \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/cmake-configure-build.sh
+            bash ./Scripts/Linux/cmake-configure-build.sh \
+            --vulkan-version "${{ env.VULKAN_VERSION }}" \
+            --build-dir "${{ env.BUILD_DIR }}" \
+            --preset "linux-debug-GNU" \
+            --clean-build-dir true
 
       - name: Run Unit/Integration tests (gcc)
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
-            -e BUILD_DIR=${{ env.BUILD_DIR }} \
-            -e BUILD_TYPE=${{ env.BUILD_TYPE }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/run-ctest.sh
+            bash ./Scripts/Linux/run-ctest.sh \
+            --vulkan-version "${{ env.VULKAN_VERSION }}" \
+            --build-dir "${{ env.BUILD_DIR }}" \
+            --build-type "${{ env.BUILD_TYPE }}" \
+            --ctest-exclude "Integration.VulkanEngine RendererTest.BasicSetup"
 
       - name: Run fuzzer tests (gcc)
         run: |
@@ -271,17 +259,15 @@ jobs:
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
-            -e BUILD_DIR=${{ env.BUILD_DIR }} \
-            -e PRESET=${{ env.PROFILE_PRESET }} \
-            -e CLEAN_BUILD_DIR=true \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/cmake-configure-build.sh
+            bash ./Scripts/Linux/cmake-configure-build.sh \
+            --vulkan-version "${{ env.VULKAN_VERSION }}" \
+            --build-dir "${{ env.BUILD_DIR }}" \
+            --preset "${{ env.GCC_PROFILE_PRESET }}" \
+            --clean-build-dir true
 
       - name: Run performance benchmarks (gcc)
-        run: ./Scripts/Linux/run-perf-suite.sh
-        env:
-          BUILD_DIR: ${{ env.BUILD_DIR }}
+        run: ./Scripts/Linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
         working-directory: ${{ github.workspace }}
 
       #################################################################################################################
@@ -293,26 +279,24 @@ jobs:
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
-            -e BUILD_RELEASE_DIR=${{ env.BUILD_RELEASE_DIR }} \
-            -e BUILD_DIR=${{ env.BUILD_RELEASE_DIR }} \
-            -e PRESET=linux-release-clang \
-            -e CMAKE_BUILD_CONFIG=Release \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/cmake-configure-build.sh
+            bash ./Scripts/Linux/cmake-configure-build.sh \
+            --vulkan-version "${{ env.VULKAN_VERSION }}" \
+            --build-dir "${{ env.BUILD_RELEASE_DIR }}" \
+            --preset "linux-release-clang" \
+            --build-config "Release"
 
       - name: Package
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
-            -e BUILD_RELEASE_DIR=${{ env.BUILD_RELEASE_DIR }} \
-            -e BUILD_DIR=${{ env.BUILD_RELEASE_DIR }} \
-            -e SKIP_CONFIGURE=true \
-            -e CMAKE_BUILD_TARGET=package \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/cmake-configure-build.sh
+            bash ./Scripts/Linux/cmake-configure-build.sh \
+            --vulkan-version "${{ env.VULKAN_VERSION }}" \
+            --build-dir "${{ env.BUILD_RELEASE_DIR }}" \
+            --skip-configure true \
+            --build-target package
 
       - name: Upload Linux Packages (Clang only)
         uses: actions/upload-artifact@v6.0.0

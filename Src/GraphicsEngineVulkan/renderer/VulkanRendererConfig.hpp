@@ -13,4 +13,4 @@
 #define VULKAN_API_VERSION_PATCH 0
 #define VULKAN_API_VERSION 4210688
 
-#define GLSLC_EXE "C:/Users/jsh/scoop/apps/vulkan/current/Bin/glslc.exe"
+#define GLSLC_EXE "/opt/vulkan/1.4.341.1/x86_64/bin/glslc"
