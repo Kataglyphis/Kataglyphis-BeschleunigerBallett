@@ -65,7 +65,8 @@ jobs:
             powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\\workspace\\Scripts\\Windows\\Build-Windows.ps1" `
             -BuildDir "C:\\workspace\\build" `
             -BuildDirRelease "C:\\workspace\\build_release" `
-            -ClangProfilePreset "x64-ClangCL-Windows-Profile"
+            -ClangProfilePreset "x64-ClangCL-Windows-Profile" `
+            -CreateMsix
 
       # I limited the size of the builded package for storage restriction reasons on a github runner
       # see also the install commands in the bottom of the CMakeLists.txt
@@ -74,6 +75,9 @@ jobs:
         with:
           name: windows-installers-container
           path: |
-            ${{ github.workspace }}/build_release/*.msi
-            ${{ github.workspace }}/build_release/*.exe
-            ${{ github.workspace }}/build_release/*.zip
+            ${{ github.workspace }}/build_release/**/*.msi
+            ${{ github.workspace }}/build_release/**/*.exe
+            ${{ github.workspace }}/build_release/**/*.zip
+            ${{ github.workspace }}/build_release/**/*.msix
+            ${{ github.workspace }}/build_release/**/*.dll
+            ${{ github.workspace }}/build_release/**/*.lib
