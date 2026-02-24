@@ -1,7 +1,7 @@
-#include "app/App.hpp"
+import kataglyphis.vulkan.app;
 
-#include <cstdint>
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
@@ -51,7 +51,8 @@ void apply_gpu_selection_from_args(std::span<char *const> arguments)
         setenv("KATAGLYPHIS_VK_GPU", gpu_mode.c_str(), 1);
 #endif
 
-        spdlog::info("GPU selection mode set via CLI: {}", gpu_mode);
+        spdlog::default_logger_raw()->log(
+          spdlog::level::info, std::string("GPU selection mode set via CLI: ") + gpu_mode);
         return;
     }
 }
@@ -95,7 +96,8 @@ auto main(int argc, char **argv) -> int
     if (USE_RUST) {
         const auto value = rusty_extern_c_integer();
         std::cout << "A value given directly by extern c function " << value << "\n";
-        spdlog::info("Rust extern value: {}", value);
+        spdlog::default_logger_raw()->log(
+          spdlog::level::info, std::string("Rust extern value: ") + std::to_string(value));
     }
 
     return Kataglyphis::App::run();

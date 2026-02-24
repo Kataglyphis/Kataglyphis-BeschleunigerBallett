@@ -1,29 +1,32 @@
-#include "scene/sky_box/SkyBox.hpp"
+module;
 
 #include <array>
 #include <cassert>
-#include <cstdint>
-#include <cstdlib>
-#include <cstdio>
 #include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <filesystem>
 #include <memory>
 #include <print>
-#include <glad/glad.h>
-#include <glm/ext/matrix_float4x4.hpp>
-#include <glm/ext/matrix_float3x3.hpp>
 #include <sstream>
 #include <string>
-#include <ctime>
 #include <vector>
 
+#include <glad/glad.h>
+#include <glm/ext/matrix_float3x3.hpp>
+#include <glm/ext/matrix_float4x4.hpp>
 #include <stb_image.h>
 
 #include "hostDevice/bindings.hpp"
-#include "renderer/ShaderProgram.hpp"
-#include "scene/Mesh.hpp"
-#include "scene/Vertex.hpp"
+#include "renderer/OpenGLRendererConfig.hpp"
+
+module kataglyphis.opengl.sky_box;
+
+import kataglyphis.opengl.vertex;
+import kataglyphis.opengl.shader_program;
+import kataglyphis.opengl.mesh;
 
 SkyBox::SkyBox()
 {

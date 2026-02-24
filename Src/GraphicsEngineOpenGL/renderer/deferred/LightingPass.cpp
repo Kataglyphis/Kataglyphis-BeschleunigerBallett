@@ -1,13 +1,4 @@
-#include "renderer/deferred/LightingPass.hpp"
-#include "camera/Camera.hpp"
-#include "renderer/deferred/GBuffer.hpp"
-#include "hostDevice/bindings.hpp"
-#include "hostDevice/host_device_shared.hpp"
-#include "scene/ObjMaterial.hpp"
-#include "scene/Scene.hpp"
-#include "scene/atmospheric_effects/clouds/Clouds.hpp"
-#include "scene/light/directional_light/DirectionalLight.hpp"
-#include "scene/light/point_light/PointLight.hpp"
+module;
 
 #include <cassert>
 #include <cstdint>
@@ -20,17 +11,27 @@
 #include <utility>
 #include <vector>
 
-LightingPass::LightingPass()
-  :
-    current_offset(glm::vec3(0.0F))
-{
-    create_shader_program();
-}
+#include "hostDevice/bindings.hpp"
+#include "hostDevice/host_device_shared.hpp"
+
+module kataglyphis.opengl.lighting_pass;
+
+import kataglyphis.opengl.camera;
+import kataglyphis.opengl.directional_light;
+import kataglyphis.opengl.point_light;
+import kataglyphis.opengl.directional_light.cascaded_shadow_map;
+import kataglyphis.opengl.point_light.omni_dir_shadow_map;
+import kataglyphis.opengl.scene;
+import kataglyphis.opengl.obj_material;
+import kataglyphis.opengl.clouds;
+import kataglyphis.opengl.gbuffer;
+
+LightingPass::LightingPass() : current_offset(glm::vec3(0.0F)) { create_shader_program(); }
 
 void LightingPass::execute(glm::mat4 projection_matrix,
-    const std::shared_ptr<Camera> &main_camera,
+  const std::shared_ptr<Camera> &main_camera,
   const std::shared_ptr<Scene> &scene,
-    const std::shared_ptr<GBuffer> &gbuffer,
+  const std::shared_ptr<GBuffer> &gbuffer,
   float delta_time)
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

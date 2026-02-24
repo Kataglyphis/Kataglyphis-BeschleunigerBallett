@@ -1,5 +1,4 @@
-#include "renderer/RenderPassSceneDependend.hpp"
-#include "renderer/deferred/RenderPass.hpp"
+module kataglyphis.opengl.render_pass_scene_dependend;
 
 RenderPassSceneDependend::RenderPassSceneDependend() : RenderPass() {}
 

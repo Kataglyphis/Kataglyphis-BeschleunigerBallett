@@ -1,20 +1,25 @@
-#include "GameObject.hpp"
+module;
+
 #include <memory>
-#include "scene/Model.hpp"
 #include <string>
-#include <glm/ext/vector_float3.hpp>
+
 #include <glad/glad.h>
-#include "scene/Rotation.hpp"
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
-#include <glm/trigonometric.hpp>
+#include <glm/ext/vector_float3.hpp>
 #include <glm/matrix.hpp>
-#include "scene/AABB.hpp"
+#include <glm/trigonometric.hpp>
+
+module kataglyphis.opengl.game_object;
+
+import kataglyphis.opengl.model;
+import kataglyphis.opengl.aabb;
+import kataglyphis.opengl.rotation;
 
 GameObject::GameObject() : model(std::make_shared<Model>(Model())) {}
 
 GameObject::GameObject(const std::string &model_path, glm::vec3 translation, GLfloat scale, Rotation rot)
-    : model(std::make_shared<Model>()), scale_factor(scale), rot(rot), translation(translation)
+  : model(std::make_shared<Model>()), scale_factor(scale), rot(rot), translation(translation)
 {
     model->load_model_in_ram(model_path);
 }

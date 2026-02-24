@@ -1,6 +1,4 @@
-#include "app/App.hpp"
-#include "scene/Camera.hpp"
-#include "scene/Scene.hpp"
+module;
 
 #include <cstdlib>
 #define GLFW_INCLUDE_NONE
@@ -10,12 +8,18 @@
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
+#include <format>
 #include <memory>
 
-#include "gui/GUI.hpp"
-#include "renderer/VulkanRenderer.hpp"
-#include "window/Window.hpp"
 #include "spdlog/spdlog.h"
+
+module kataglyphis.vulkan.app;
+
+import kataglyphis.vulkan.camera;
+import kataglyphis.vulkan.gui;
+import kataglyphis.vulkan.renderer;
+import kataglyphis.vulkan.scene;
+import kataglyphis.vulkan.window;
 
 Kataglyphis::App::App() = default;
 
@@ -61,10 +65,10 @@ auto Kataglyphis::App::run() -> int
     if (!vulkan_renderer.hasDeviceLost()) { vulkan_renderer.finishAllRenderCommands(); }
 
     if (!vulkan_renderer.hasDeviceLost()) {
-      scene->cleanUp();
-      gui->cleanUp();
+        scene->cleanUp();
+        gui->cleanUp();
     } else {
-      spdlog::warn("Skipping scene/gui Vulkan teardown because device is lost.");
+        spdlog::warn("Skipping scene/gui Vulkan teardown because device is lost.");
     }
     window->cleanUp();
     vulkan_renderer.cleanUp();

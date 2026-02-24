@@ -2,7 +2,7 @@
 
 #include <vulkan/vulkan.h>
 
-#include "vulkan_base/VulkanBuffer.hpp"
+import kataglyphis.vulkan.buffer;
 namespace Kataglyphis::VulkanRendererInternals {
 struct TopLevelAccelerationStructure
 {

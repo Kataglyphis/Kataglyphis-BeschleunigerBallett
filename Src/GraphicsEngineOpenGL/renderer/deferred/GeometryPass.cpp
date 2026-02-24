@@ -1,18 +1,23 @@
-#include "renderer/deferred/GeometryPass.hpp"
-#include "camera/Camera.hpp"
-#include "scene/Scene.hpp"
-#include "scene/ObjMaterial.hpp"
-#include "hostDevice/bindings.hpp"
-#include "scene/GameObject.hpp"
-#include "scene/atmospheric_effects/clouds/Clouds.hpp"
+module;
 
-#include <glm/ext/matrix_float4x4.hpp>
 #include <memory>
 #include <glad/glad.h>
 #include <cstdint>
 #include <sstream>
 #include <vector>
 #include <utility>
+#include <glm/ext/matrix_float4x4.hpp>
+
+#include "hostDevice/bindings.hpp"
+
+module kataglyphis.opengl.geometry_pass;
+
+import kataglyphis.opengl.camera;
+import kataglyphis.opengl.scene;
+import kataglyphis.opengl.obj_material;
+import kataglyphis.opengl.game_object;
+import kataglyphis.opengl.clouds;
+
 GeometryPass::GeometryPass() { create_shader_program(); }
 
 void GeometryPass::execute(glm::mat4 projection_matrix,
@@ -41,8 +46,7 @@ void GeometryPass::execute(glm::mat4 projection_matrix,
     shader_program->setUniformMatrix4fv(view_matrix, "view");
 
     std::stringstream ss;
-    for (uint32_t i = 0; std::cmp_less(i, scene->get_texture_count(0)); i++)
-    {
+    for (uint32_t i = 0; std::cmp_less(i, scene->get_texture_count(0)); i++) {
         ss << "model_textures[" << i << "]";
         shader_program->setUniformInt(MODEL_TEXTURES_SLOT + i, ss.str());
         ss.clear();

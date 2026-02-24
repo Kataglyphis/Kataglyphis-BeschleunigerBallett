@@ -3,9 +3,10 @@
 
 #include <vector>
 
-#include "renderer/CommandBufferManager.hpp"
+import kataglyphis.vulkan.command_buffer_manager;
 
-#include "vulkan_base/VulkanBuffer.hpp"
+import kataglyphis.vulkan.buffer;
+import kataglyphis.vulkan.device;
 
 #include <cstring>
 

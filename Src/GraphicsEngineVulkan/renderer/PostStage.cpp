@@ -1,7 +1,9 @@
-#include "PostStage.hpp"
+module;
+
+#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 #include <array>
-#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <sstream>
@@ -10,17 +12,19 @@
 
 #include "common/FormatHelper.hpp"
 #include "renderer/pushConstants/PushConstantPost.hpp"
-#include "scene/Vertex.hpp"
-#include "util/File.hpp"
-#include "vulkan_base/ShaderHelper.hpp"
-
 
 #include "common/Utilities.hpp"
-#include "vulkan_base/VulkanDevice.hpp"
-#include "vulkan_base/VulkanSwapChain.hpp"
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
-#include <vulkan/vulkan_core.h>
+
+module kataglyphis.vulkan.post_stage;
+
+import kataglyphis.vulkan.file;
+import kataglyphis.vulkan.vertex;
+import kataglyphis.vulkan.texture;
+import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.swapchain;
+import kataglyphis.vulkan.shader_helper;
 
 Kataglyphis::VulkanRendererInternals::PostStage::PostStage() = default;
 
@@ -106,7 +110,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(VkCommandBu
 
 void Kataglyphis::VulkanRendererInternals::PostStage::cleanUp()
 {
-    depthBufferImage.cleanUp();
+    depthBufferImage->cleanUp();
     for (auto *framebuffer : framebuffers) { vkDestroyFramebuffer(device->getLogicalDevice(), framebuffer, nullptr); }
 
     vkDestroySampler(device->getLogicalDevice(), offscreenTextureSampler, nullptr);
@@ -129,7 +133,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createDepthbufferImage()
     // create depth buffer image
     // MIP LEVELS: for depth texture we only want 1 level :)
     const VkExtent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-    depthBufferImage.createImage(device,
+    depthBufferImage = std::make_unique<Texture>();
+    depthBufferImage->createImage(device,
       swap_chain_extent.width,
       swap_chain_extent.height,
       1,
@@ -140,7 +145,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createDepthbufferImage()
 
     // depth buffer image view
     // MIP LEVELS: for depth texture we only want 1 level :)
-    depthBufferImage.createImageView(device, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
+    depthBufferImage->createImageView(device, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createOffscreenTextureSampler()
@@ -448,7 +453,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createFramebuffer()
     for (size_t i = 0; i < vulkanSwapChain->getNumberSwapChainImages(); i++) {
         Texture &swap_chain_image = vulkanSwapChain->getSwapChainImage(i);
 
-        std::array<VkImageView, 2> attachments = { swap_chain_image.getImageView(), depthBufferImage.getImageView() };
+        std::array<VkImageView, 2> attachments = { swap_chain_image.getImageView(), depthBufferImage->getImageView() };
 
         VkFramebufferCreateInfo frame_buffer_create_info{};
         frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;

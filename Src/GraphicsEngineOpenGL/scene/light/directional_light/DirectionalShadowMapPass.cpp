@@ -1,15 +1,20 @@
-#include "scene/light/directional_light/DirectionalShadowMapPass.hpp"
-#include "camera/Camera.hpp"
-#include "scene/Scene.hpp"
-#include "scene/light/directional_light/DirectionalLight.hpp"
-#include "hostDevice/host_device_shared.hpp"
-#include "hostDevice/bindings.hpp"
-#include "scene/GameObject.hpp"
+module;
 
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glad/glad.h>
 #include <memory>
 #include <vector>
+
+#include "hostDevice/host_device_shared.hpp"
+#include "hostDevice/bindings.hpp"
+
+module kataglyphis.opengl.directional_shadow_map_pass;
+
+import kataglyphis.opengl.camera;
+import kataglyphis.opengl.directional_light;
+import kataglyphis.opengl.directional_light.cascaded_shadow_map;
+import kataglyphis.opengl.scene;
+import kataglyphis.opengl.game_object;
 
 DirectionalShadowMapPass::DirectionalShadowMapPass() { create_shader_program(); }
 

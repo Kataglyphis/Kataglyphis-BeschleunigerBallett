@@ -3,6 +3,7 @@
 .cache
 
 build_release/
+build-*
 logs/
 
 dist

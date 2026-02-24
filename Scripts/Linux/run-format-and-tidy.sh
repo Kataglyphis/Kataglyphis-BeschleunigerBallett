@@ -23,6 +23,35 @@ Options:
 EOF
 }
 
+ensure_cmake_format() {
+  if command -v cmake-format >/dev/null 2>&1; then
+    return
+  fi
+
+  if ! command -v uv >/dev/null 2>&1; then
+    echo "Required tool not found: uv (needed to manage .venv and install requirements)" >&2
+    exit 1
+  fi
+
+  echo "cmake-format not found. Preparing Python environment..."
+
+  if [[ -d "${ROOT_DIR}/.venv" ]]; then
+    echo "Found .venv - activating and installing requirements..."
+  else
+    echo "No .venv found - creating one with uv..."
+    uv venv "${ROOT_DIR}/.venv"
+  fi
+
+  # shellcheck disable=SC1091
+  source "${ROOT_DIR}/.venv/bin/activate"
+  uv pip install -r "${ROOT_DIR}/requirements.txt"
+
+  if ! command -v cmake-format >/dev/null 2>&1; then
+    echo "cmake-format is still not available after installing requirements." >&2
+    exit 1
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --build-dir)
@@ -44,6 +73,8 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+ensure_cmake_format
 
 for tool in cmake-format clang-format clang-tidy; do
   if ! command -v "$tool" >/dev/null 2>&1; then
@@ -73,7 +104,7 @@ fi
 
 echo "[2/3] Running clang-format..."
 mapfile -t cpp_files < <(find Src Test \
-  -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.h' -o -name '*.hh' -o -name '*.hpp' -o -name '*.hxx' \))
+  -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.h' -o -name '*.hh' -o -name '*.hpp' -o -name '*.hxx' -o -name '*.ixx' -o -name '*.cppm' -o -name '*.ccm' -o -name '*.cxxm' -o -name '*.mpp' \))
 
 if [[ ${#cpp_files[@]} -gt 0 ]]; then
   clang-format -i "${cpp_files[@]}"

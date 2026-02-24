@@ -1,8 +1,12 @@
-#include "vulkan_base/VulkanImageView.hpp"
+module;
+
 #include "common/Utilities.hpp"
-#include "vulkan_base/VulkanDevice.hpp"
 #include <cstdint>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.h>
+
+module kataglyphis.vulkan.image_view;
+
+import kataglyphis.vulkan.device;
 
 Kataglyphis::VulkanImageView::VulkanImageView() = default;
 

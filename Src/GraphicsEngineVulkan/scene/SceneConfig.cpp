@@ -1,4 +1,4 @@
-#include "SceneConfig.hpp"
+module;
 
 #include <filesystem>
 #include <glm/ext/matrix_float4x4.hpp>
@@ -7,6 +7,8 @@
 #include <string>
 #include <system_error>
 // #define SULO_MODE 1
+
+module kataglyphis.vulkan.scene_config;
 
 namespace sceneConfig {
 

@@ -1,12 +1,9 @@
-#include "gui/GUI.hpp"
+module;
 
 #include "common/Utilities.hpp"
-#include "renderer/QueueFamilyIndices.hpp"
-#include "vulkan_base/VulkanDevice.hpp"
 
 #include "../../shared/imgui/KataglyphisImGuiFonts.hpp"
 #include "../../shared/imgui/KataglyphisImGuiStyle.hpp"
-#include "window/Window.hpp"
 
 #include <cstdint>
 
@@ -15,13 +12,16 @@
 #include <imgui_impl_vulkan.h>
 #include <vulkan/vulkan_core.h>
 
+module kataglyphis.vulkan.gui;
+
+import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.queue_family_indices;
+import kataglyphis.vulkan.window;
+
 using namespace Kataglyphis::Frontend;
 
 namespace {
-void applyKataglyphisDarkTheme()
-{
-    Kataglyphis::Frontend::applyKataglyphisImGuiDarkTheme();
-}
+void applyKataglyphisDarkTheme() { Kataglyphis::Frontend::applyKataglyphisImGuiDarkTheme(); }
 }// namespace
 
 GUI::GUI(Window *window) : window(window) {}

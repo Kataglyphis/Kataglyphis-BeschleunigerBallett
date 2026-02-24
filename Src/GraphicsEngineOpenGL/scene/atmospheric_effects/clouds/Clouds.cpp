@@ -1,11 +1,17 @@
-#include "scene/atmospheric_effects/clouds/Clouds.hpp"
+module;
+
 #include <memory>
-#include "renderer/ShaderProgram.hpp"
-#include "scene/atmospheric_effects/clouds/Noise.hpp"
-#include "util/RandomNumbers.hpp"
-#include <glm/ext/matrix_float4x4.hpp>
 #include <glad/glad.h>
+#include <glm/glm.hpp>
+#include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
+
+module kataglyphis.opengl.clouds;
+
+import kataglyphis.opengl.noise;
+import kataglyphis.opengl.shader_program;
+import kataglyphis.opengl.aabb;
+import kataglyphis.opengl.random_numbers;
 
 Clouds::Clouds()
   :

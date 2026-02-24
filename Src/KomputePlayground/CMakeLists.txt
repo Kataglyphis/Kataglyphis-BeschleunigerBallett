@@ -20,9 +20,12 @@ option(KOMPUTE_OPT_FROM_SOURCE "Whether to build example from source or from git
 # Compiling shader
 # To add more shaders simply copy the vulkan_compile_shader command and replace it with your new shader
 vulkan_compile_shader(
-    INFILE shader/my_shader.comp
-    OUTFILE shader/my_shader.hpp
-    NAMESPACE "shader")
+  INFILE
+  shader/my_shader.comp
+  OUTFILE
+  shader/my_shader.hpp
+  NAMESPACE
+  "shader")
 
 # Then add it to the library, so you can access it later in your code
 add_library(shader INTERFACE "shader/my_shader.hpp")

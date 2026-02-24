@@ -1,18 +1,24 @@
-#include "Noise.hpp"
-#include "hostDevice/host_device_shared.hpp"
-#include "compute/ComputeShaderProgram.hpp"
-#include "hostDevice/bindings.hpp"
+module;
 
 #include <glad/glad.h>
 #include <cmath>
-#include <memory>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
+#include <memory>
 #include <print>
 #include <random>
-#include <cstdint>
 #include <sstream>
+#include <string>
 #include <utility>
+#include <vector>
+
+#include "hostDevice/bindings.hpp"
+#include "hostDevice/host_device_shared.hpp"
+
+module kataglyphis.opengl.noise;
+
+import kataglyphis.opengl.compute_shader_program;
 
 Noise::Noise()
   :
@@ -178,14 +184,11 @@ void Noise::generate_cells(GLuint num_cells_per_axis, GLuint cell_index)
     std::uniform_real_distribution<float> dis(0, 1);
 
     // depth
-    for (int i = 0; std::cmp_less(i, num_cells_per_axis); i++)
-    {
+    for (int i = 0; std::cmp_less(i, num_cells_per_axis); i++) {
         // height
-        for (int k = 0; std::cmp_less(k, num_cells_per_axis); k++)
-        {
+        for (int k = 0; std::cmp_less(k, num_cells_per_axis); k++) {
             // width
-            for (int m = 0; std::cmp_less(m, num_cells_per_axis); m++)
-            {
+            for (int m = 0; std::cmp_less(m, num_cells_per_axis); m++) {
                 // from:
                 // https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/glTexImage3D.xhtml
                 // "The first element corresponds to the lower left corner of the

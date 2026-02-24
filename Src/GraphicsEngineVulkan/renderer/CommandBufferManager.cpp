@@ -1,7 +1,11 @@
-#include "renderer/CommandBufferManager.hpp"
+module;
 
 #include "spdlog/spdlog.h"
+
+#include <string>
 #include <vulkan/vulkan_core.h>
+
+module kataglyphis.vulkan.command_buffer_manager;
 
 Kataglyphis::VulkanRendererInternals::CommandBufferManager::CommandBufferManager() = default;
 
@@ -21,7 +25,9 @@ auto Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuf
     // allocate command buffer from pool
     VkResult result = vkAllocateCommandBuffers(device, &alloc_info, &command_buffer);
     if (result != VK_SUCCESS || command_buffer == VK_NULL_HANDLE) {
-        spdlog::error("Failed to allocate command buffer! (VkResult={})", static_cast<int>(result));
+        spdlog::default_logger_raw()->log(spdlog::level::err,
+          std::string("Failed to allocate command buffer! (VkResult=") + std::to_string(static_cast<int>(result))
+            + ")");
         return VK_NULL_HANDLE;
     }
 
@@ -34,7 +40,8 @@ auto Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuf
     // begin recording transfer commands
     result = vkBeginCommandBuffer(command_buffer, &begin_info);
     if (result != VK_SUCCESS) {
-        spdlog::error("Failed to begin command buffer! (VkResult={})", static_cast<int>(result));
+        spdlog::default_logger_raw()->log(spdlog::level::err,
+          std::string("Failed to begin command buffer! (VkResult=") + std::to_string(static_cast<int>(result)) + ")");
         command_buffer = VK_NULL_HANDLE;
         return VK_NULL_HANDLE;
     }
@@ -51,14 +58,15 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
     static_cast<void>(command_pool);
 
     if (command_buffer == VK_NULL_HANDLE) {
-        spdlog::error("Cannot submit null command buffer.");
+        spdlog::default_logger_raw()->log(spdlog::level::err, "Cannot submit null command buffer.");
         return;
     }
 
     // end commands
     VkResult result = vkEndCommandBuffer(command_buffer);
     if (result != VK_SUCCESS) {
-        spdlog::error("Failed to end command buffer! (VkResult={})", static_cast<int>(result));
+        spdlog::default_logger_raw()->log(spdlog::level::err,
+          std::string("Failed to end command buffer! (VkResult=") + std::to_string(static_cast<int>(result)) + ")");
         command_buffer = VK_NULL_HANDLE;
         return;
     }
@@ -72,21 +80,21 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
     // submit transfer command to transfer queue and wait until it finishes
     result = vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
     if (result != VK_SUCCESS) {
-        spdlog::error("Failed to submit to queue! (VkResult={})", static_cast<int>(result));
+        spdlog::default_logger_raw()->log(spdlog::level::err,
+          std::string("Failed to submit to queue! (VkResult=") + std::to_string(static_cast<int>(result)) + ")");
         command_buffer = VK_NULL_HANDLE;
         return;
     }
 
     result = vkQueueWaitIdle(queue);
     if (result != VK_SUCCESS) {
-        spdlog::error("Failed to wait queue idle! (VkResult={})", static_cast<int>(result));
+        spdlog::default_logger_raw()->log(spdlog::level::err,
+          std::string("Failed to wait queue idle! (VkResult=") + std::to_string(static_cast<int>(result)) + ")");
         command_buffer = VK_NULL_HANDLE;
         return;
     }
 
-        // Temporary command buffers are released when the command pool is destroyed.
-        // Avoid explicit free to prevent freeing potentially pending buffers.
+    // Temporary command buffers are released when the command pool is destroyed.
+    // Avoid explicit free to prevent freeing potentially pending buffers.
     command_buffer = VK_NULL_HANDLE;
 }
-
-Kataglyphis::VulkanRendererInternals::CommandBufferManager::~CommandBufferManager() = default;

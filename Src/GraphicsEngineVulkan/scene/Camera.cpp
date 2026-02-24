@@ -1,4 +1,4 @@
-#include "scene/Camera.hpp"
+module;
 
 #include <GLFW/glfw3.h>
 #include <glm/geometric.hpp>
@@ -8,6 +8,8 @@
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/trigonometric.hpp>
+
+module kataglyphis.vulkan.camera;
 
 Camera::Camera()
   :

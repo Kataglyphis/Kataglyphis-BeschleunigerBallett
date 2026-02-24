@@ -1,34 +1,33 @@
-#include "renderer/ShaderIncludes.hpp"
-
-// clang-format off
-// you must include glad before glfw!
-// therefore disable clang-format for this section
-#include <cstdint>
-#include <glad/glad.h>
-// clang-format on
-
-#include <cstdio>
-#include <cstring>
+module;
 
 #include <cassert>
+#include <cstdio>
+#include <cstring>
 #include <filesystem>
+#include <glad/glad.h>
 #include <sstream>
+#include <string>
 #include <vector>
 
 #include "spdlog/spdlog.h"
-#include "util/File.hpp"
+#include "renderer/OpenGLRendererConfig.hpp"
 
-// this method is setting all files we want to use in a shader per #include
-// you have to specify the name(how file appears in shader)
-// and its actual file location relatively
-// https://www.khronos.org/registry/OpenGL/extensions/ARB/ARB_shading_language_include.txt
+module kataglyphis.opengl.shader_includes;
+
+import kataglyphis.opengl.file;
+
 ShaderIncludes::ShaderIncludes()
 {
     assert(includeNames.size() == file_locations_relative.size());
 
-    if (GLAD_GL_ARB_shading_language_include == 0 || glNamedStringARB == nullptr) {
-        spdlog::warn("GL_ARB_shading_language_include is not available on this OpenGL driver/context. "
-                     "Shader include registration is skipped.");
+    // Check if the extension is supported via glad
+    // The previous check was: if (GLAD_GL_ARB_shading_language_include == 0 || glNamedStringARB == nullptr)
+    // However, glNamedStringARB is a function pointer loaded by glad, so we should check if it's not null.
+    // Also check the integer flag provided by glad.
+    if (!GLAD_GL_ARB_shading_language_include) {
+        spdlog::warn(
+          "GL_ARB_shading_language_include is not available on this OpenGL driver/context. "
+          "Shader include registration is skipped.");
         return;
     }
 
@@ -49,11 +48,13 @@ ShaderIncludes::ShaderIncludes()
         std::string const file_content = file.read();
         char tmpstr[2000];
         snprintf(tmpstr, 2000, "/%s", includeNames[i]);
-        glNamedStringARB(GL_SHADER_INCLUDE_ARB,
-          static_cast<GLint>(strlen(tmpstr)),
-          tmpstr,
-          static_cast<GLint>(strlen(file_content.c_str())),
-          file_content.c_str());
+        if (glNamedStringARB) {
+            glNamedStringARB(GL_SHADER_INCLUDE_ARB,
+              static_cast<GLint>(strlen(tmpstr)),
+              tmpstr,
+              static_cast<GLint>(strlen(file_content.c_str())),
+              file_content.c_str());
+        }
     }
 }
 

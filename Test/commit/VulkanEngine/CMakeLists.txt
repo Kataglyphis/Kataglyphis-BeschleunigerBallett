@@ -12,8 +12,11 @@ set(SHADER_SRC_DIR ${WORKING_DIRECTORY}Resources/Shaders/)
 include(${PROJECT_SRC_DIR}cmake/filters/SetShaderFilters.cmake)
 include(${PROJECT_SRC_DIR}cmake/filters/SetProjectFilters.cmake)
 include(${PROJECT_SRC_DIR}cmake/filters/SetExternalLibsFilters.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
 
 set(COMMIT_TEST_SUITE commitTestSuite)
+
+kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES "${PROJECT_SRC_DIR}")
 
 file(GLOB_RECURSE RENDERER_COMMIT_TEST_FILTER "*.cpp")
 
@@ -70,21 +73,15 @@ else()
   target_compile_definitions(${COMMIT_TEST_SUITE} PRIVATE USE_RUST=0)
 endif()
 
-if(NOT MSVC)
-  target_compile_definitions(
-    ${COMMIT_TEST_SUITE}
-    PRIVATE RELATIVE_RESOURCE_PATH="/../../../../Resources/"
-            RELATIVE_INCLUDE_PATH="/../../../../Src/GraphicsEngineVulkan/"
-            RELATIVE_IMGUI_FONTS_PATH="/../../../../ExternalLib/IMGUI/misc/fonts/"
-            ShaderIncludesString="${ShaderIncludesString}")
-else()
-  target_compile_definitions(
-    ${COMMIT_TEST_SUITE}
-    PRIVATE RELATIVE_RESOURCE_PATH="/../../../../Resources/"
-            RELATIVE_INCLUDE_PATH="/../../../../Src/GraphicsEngineVulkan/"
-            RELATIVE_IMGUI_FONTS_PATH="/../../../../ExternalLib/IMGUI/misc/fonts/"
-            ShaderIncludesString="${ShaderIncludesString}")
-endif()
+kataglyphis_apply_runtime_compile_definitions(
+  ${COMMIT_TEST_SUITE}
+  RESOURCE_PATH_NON_MSVC "/../../../../Resources/"
+  RESOURCE_PATH_MSVC "/../../../../Resources/"
+  INCLUDE_PATH_NON_MSVC "/../../../../Src/GraphicsEngineVulkan/"
+  INCLUDE_PATH_MSVC "/../../../../Src/GraphicsEngineVulkan/"
+  IMGUI_FONTS_PATH_NON_MSVC "/../../../../ExternalLib/IMGUI/misc/fonts/"
+  IMGUI_FONTS_PATH_MSVC "/../../../../ExternalLib/IMGUI/misc/fonts/"
+  SHADER_INCLUDES_STRING "${ShaderIncludesString}")
 
 configure_file(${PROJECT_SRC_DIR}/VulkanRendererConfig.hpp.in "${PROJECT_SRC_DIR}/renderer/VulkanRendererConfig.hpp")
 
@@ -109,6 +106,19 @@ target_sources(
          FILES
          ${VULKANRENDERER_HEADERS}
          ${SHADER_HEADERS})
+
+target_sources(
+  ${COMMIT_TEST_SUITE}
+  PUBLIC FILE_SET
+         CXX_MODULES
+         TYPE
+         CXX_MODULES
+         BASE_DIRS
+         ${PROJECT_INCLUDE_DIR}
+         FILES
+         ${VULKAN_MODULE_INTERFACE_FILES})
+
+set_target_properties(${COMMIT_TEST_SUITE} PROPERTIES CXX_SCAN_FOR_MODULES ON)
 
 target_include_directories(${COMMIT_TEST_SUITE} PRIVATE ${Vulkan_INCLUDE_DIRS})
 

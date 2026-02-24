@@ -1,4 +1,4 @@
-#include "Raytracing.hpp"
+module;
 
 #include <array>
 #include <cstdint>
@@ -11,10 +11,12 @@
 
 #include "common/MemoryHelper.hpp"
 #include "common/Utilities.hpp"
-#include "util/File.hpp"
-#include "vulkan_base/ShaderHelper.hpp"
-#include "vulkan_base/VulkanDevice.hpp"
-#include "vulkan_base/VulkanSwapChain.hpp"
+#include "renderer/pushConstants/PushConstantRayTracing.hpp"
+
+module kataglyphis.vulkan.raytracing;
+
+import kataglyphis.vulkan.file;
+import kataglyphis.vulkan.shader_helper;
 
 Kataglyphis::VulkanRendererInternals::Raytracing::Raytracing() = default;
 

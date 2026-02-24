@@ -1,10 +1,14 @@
-#include "scene/Mesh.hpp"
-#include "scene/Vertex.hpp"
+module;
 
-#include <cstdint>
-#include <glad/glad.h>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
+
+#include <glad/glad.h>
+
+module kataglyphis.opengl.mesh;
+
+import kataglyphis.opengl.vertex;
 
 Mesh::Mesh() : m_vao(-1), m_ibo(-1), m_drawCount(0) {}
 

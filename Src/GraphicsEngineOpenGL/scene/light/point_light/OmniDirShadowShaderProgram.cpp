@@ -1,4 +1,8 @@
-#include "OmniDirShadowShaderProgram.hpp"
+module;
+
+module kataglyphis.opengl.omni_dir_shadow_shader_program;
+
+import kataglyphis.opengl.shader_program;
 
 OmniDirShadowShaderProgram::OmniDirShadowShaderProgram() = default;
 

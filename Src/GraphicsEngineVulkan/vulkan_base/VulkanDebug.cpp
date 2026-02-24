@@ -1,4 +1,4 @@
-#include "vulkan_base/VulkanDebug.hpp"
+module;
 
 #include <cstdio>
 #include <iostream>
@@ -8,6 +8,8 @@
 #include <vulkan/vulkan_core.h>
 
 #include "common/Utilities.hpp"
+
+module kataglyphis.vulkan.debug;
 
 namespace Kataglyphis::debug {
 static PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;

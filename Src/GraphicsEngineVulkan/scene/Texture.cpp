@@ -1,15 +1,23 @@
-#include "scene/Texture.hpp"
+module;
 
 #include "spdlog/spdlog.h"
-#include "vulkan_base/VulkanBuffer.hpp"
-#include "vulkan_base/VulkanDevice.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <stb_image.h>
 #include <string>
 #include <vulkan/vulkan_core.h>
+
+module kataglyphis.vulkan.texture;
+
+import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.buffer;
+import kataglyphis.vulkan.buffer_manager;
+import kataglyphis.vulkan.image;
+import kataglyphis.vulkan.image_view;
+import kataglyphis.vulkan.command_buffer_manager;
 
 using namespace Kataglyphis;
 
@@ -18,24 +26,24 @@ Kataglyphis::Texture::Texture() = default;
 namespace {
 auto supportsLinearBlit(VkPhysicalDevice physical_device, VkFormat image_format) -> bool
 {
-  VkFormatProperties format_properties{};
-  vkGetPhysicalDeviceFormatProperties(physical_device, image_format, &format_properties);
-  return (format_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0U;
+    VkFormatProperties format_properties{};
+    vkGetPhysicalDeviceFormatProperties(physical_device, image_format, &format_properties);
+    return (format_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0U;
 }
-}
+}// namespace
 
 void Kataglyphis::Texture::createFromFile(VulkanDevice *device, VkCommandPool commandPool, const std::string &fileName)
 {
-  int width = 0;
-  int height = 0;
+    int width = 0;
+    int height = 0;
     VkDeviceSize size = 0;
     stbi_uc *image_data = loadTextureData(fileName, &width, &height, &size);
 
     constexpr VkFormat texture_format = VK_FORMAT_R8G8B8A8_UNORM;
     mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
     if (!supportsLinearBlit(device->getPhysicalDevice(), texture_format)) {
-      spdlog::warn("Linear blit not supported for texture format; using single mip level.");
-      mip_levels = 1;
+        spdlog::warn("Linear blit not supported for texture format; using single mip level.");
+        mip_levels = 1;
     }
 
     // create staging buffer to hold loaded data, ready to copy to device

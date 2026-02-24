@@ -1,12 +1,15 @@
+module;
+
 #include <algorithm>
 
-#include "camera/Camera.hpp"
 #include <glm/geometric.hpp>
 #include "GLFW/glfw3.h"
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <cmath>
 #include <glm/trigonometric.hpp>
+
+module kataglyphis.opengl.camera;
 
 Camera::Camera()
   :

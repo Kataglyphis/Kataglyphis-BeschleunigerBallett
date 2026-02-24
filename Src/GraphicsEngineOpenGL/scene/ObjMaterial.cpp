@@ -1,4 +1,8 @@
-#include "scene/ObjMaterial.hpp"
+module;
+
+#include <glm/ext/vector_float3.hpp>
+
+module kataglyphis.opengl.obj_material;
 
 ObjMaterial::ObjMaterial() : shininess(0.f), ior(1.0f), dissolve(1.f), illum(0), textureID(-1)
 {

@@ -1,5 +1,6 @@
-#include "GeometryPassShaderProgram.hpp"
-// #include "hostDevice/host_device_shared.hpp"
+module;
+
+module kataglyphis.opengl.geometry_pass_shader_program;
 
 GeometryPassShaderProgram::GeometryPassShaderProgram() = default;
 

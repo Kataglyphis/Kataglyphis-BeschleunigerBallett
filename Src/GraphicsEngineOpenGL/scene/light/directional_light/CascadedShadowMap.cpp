@@ -1,5 +1,4 @@
-#include "scene/light/directional_light/CascadedShadowMap.hpp"
-
+module;
 #include <glad/glad.h>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <cstddef>
@@ -8,6 +7,8 @@
 #include "hostDevice/bindings.hpp"
 #include "hostDevice/host_device_shared.hpp"
 #include "spdlog/spdlog.h"
+
+module kataglyphis.opengl.directional_light.cascaded_shadow_map;
 
 CascadedShadowMap::CascadedShadowMap()
   :

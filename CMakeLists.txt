@@ -8,7 +8,7 @@ project(
   HOMEPAGE_URL "https://jonasheinle.de/"
   LANGUAGES CXX C)
 
-set(AUTHOR "Jonas Heinle") 
+set(AUTHOR "Jonas Heinle")
 
 # Set WINDOWS_CI to OFF by default
 # WINDOWS CI is only able to verify successful compiling ... Windows ... lel
@@ -21,7 +21,10 @@ set(RUST_FEATURES
     CACHE BOOL "Enable Rust features in our project.")
 
 # Auto-detect custom GCC toolchain for Clang on Linux to avoid workflow env setup
-if(UNIX AND NOT APPLE AND EXISTS "/opt/gcc-15.2.0" AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+if(UNIX
+   AND NOT APPLE
+   AND EXISTS "/opt/gcc-15.2.0"
+   AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   set(_GCC_TOOLCHAIN_ROOT "/opt/gcc-15.2.0")
   set(_GCC_TOOLCHAIN_LIB "${_GCC_TOOLCHAIN_ROOT}/lib64")
   if(NOT EXISTS "${_GCC_TOOLCHAIN_LIB}")
@@ -32,8 +35,10 @@ if(UNIX AND NOT APPLE AND EXISTS "/opt/gcc-15.2.0" AND CMAKE_CXX_COMPILER_ID STR
     message(STATUS "Using GCC toolchain at ${_GCC_TOOLCHAIN_ROOT} for Clang")
     string(APPEND CMAKE_C_FLAGS " --gcc-toolchain=${_GCC_TOOLCHAIN_ROOT}")
     string(APPEND CMAKE_CXX_FLAGS " --gcc-toolchain=${_GCC_TOOLCHAIN_ROOT}")
-    string(APPEND CMAKE_EXE_LINKER_FLAGS " -L${_GCC_TOOLCHAIN_LIB} -Wl,-rpath,${_GCC_TOOLCHAIN_LIB} --gcc-toolchain=${_GCC_TOOLCHAIN_ROOT}")
-    string(APPEND CMAKE_SHARED_LINKER_FLAGS " -L${_GCC_TOOLCHAIN_LIB} -Wl,-rpath,${_GCC_TOOLCHAIN_LIB} --gcc-toolchain=${_GCC_TOOLCHAIN_ROOT}")
+    string(APPEND CMAKE_EXE_LINKER_FLAGS
+           " -L${_GCC_TOOLCHAIN_LIB} -Wl,-rpath,${_GCC_TOOLCHAIN_LIB} --gcc-toolchain=${_GCC_TOOLCHAIN_ROOT}")
+    string(APPEND CMAKE_SHARED_LINKER_FLAGS
+           " -L${_GCC_TOOLCHAIN_LIB} -Wl,-rpath,${_GCC_TOOLCHAIN_LIB} --gcc-toolchain=${_GCC_TOOLCHAIN_ROOT}")
   else()
     message(WARNING "GCC toolchain found at ${_GCC_TOOLCHAIN_ROOT}, but no lib or lib64 dir exists.")
   endif()
@@ -105,10 +110,22 @@ install(
   DESTINATION ExternalLib/IMGUI/misc/fonts/)
 if(UNIX AND NOT APPLE)
   install(FILES docs/packaging/GraphicsEngine.desktop DESTINATION usr/share/applications)
-  install(FILES docs/packaging/GraphicsEngine.appdata.xml DESTINATION usr/share/metainfo RENAME de.jonasheinle.GraphicsEngine.appdata.xml)
-  install(FILES images/Engine_logo.png DESTINATION usr/share/icons/hicolor/256x256/apps RENAME Engine_logo.png)
-  install(FILES images/Engine_logo.png DESTINATION usr/share/icons/hicolor/256x256/apps RENAME Engine_logo)
-  install(FILES images/Engine_logo.png DESTINATION . RENAME Engine_logo.png)
+  install(
+    FILES docs/packaging/GraphicsEngine.appdata.xml
+    DESTINATION usr/share/metainfo
+    RENAME de.jonasheinle.GraphicsEngine.appdata.xml)
+  install(
+    FILES images/Engine_logo.png
+    DESTINATION usr/share/icons/hicolor/256x256/apps
+    RENAME Engine_logo.png)
+  install(
+    FILES images/Engine_logo.png
+    DESTINATION usr/share/icons/hicolor/256x256/apps
+    RENAME Engine_logo)
+  install(
+    FILES images/Engine_logo.png
+    DESTINATION .
+    RENAME Engine_logo.png)
 endif()
 
 include(cmake/CPackOptions.cmake)

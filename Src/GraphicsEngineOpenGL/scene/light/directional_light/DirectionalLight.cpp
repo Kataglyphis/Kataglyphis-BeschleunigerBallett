@@ -1,22 +1,21 @@
-#include <memory>
+module;
 
+#include <memory>
 #include <utility>
-
-#include "scene/light/directional_light/DirectionalLight.hpp"
-#include "scene/light/Light.hpp"
-#include <memory>
-#include "scene/light/directional_light/CascadedShadowMap.hpp"
-#include "hostDevice/host_device_shared.hpp"
-#include <glm/ext/matrix_float4x4.hpp>
-#include <glm/ext/matrix_clip_space.hpp>
-#include <glad/glad.h>
-#include <glm/ext/matrix_transform.hpp>
 #include <vector>
-#include <glm/ext/vector_float4.hpp>
-#include <glm/matrix.hpp>
-#include <glm/trigonometric.hpp>
-#include <limits>
 #include <algorithm>
+#include <limits>
+
+#include <glad/glad.h>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
+
+#include "hostDevice/host_device_shared.hpp"
+
+module kataglyphis.opengl.directional_light;
+
+import kataglyphis.opengl.directional_light.cascaded_shadow_map;
 
 DirectionalLight::DirectionalLight()
   :
@@ -113,8 +112,7 @@ void DirectionalLight::calc_cascaded_slots()
 
     for (int i = 0; i < NUM_CASCADES + 1; i++) { cascade_slots[i] = 100000.F; }
 
-    for (int i = 0; std::cmp_less(i, number_of_elements + 1); i++)
-    {
+    for (int i = 0; std::cmp_less(i, number_of_elements + 1); i++) {
         if (i == 0) {
             (cascade_slots)[i] = shadow_near_plane;
 
@@ -137,8 +135,7 @@ void DirectionalLight::calc_orthogonal_projections(glm::mat4 camera_view_matrix,
     // calc the start and end point for our cascaded shadow maps
     calc_cascaded_slots();
 
-    for (int i = 0; std::cmp_less(i, current_num_cascades); i++)
-    {
+    for (int i = 0; std::cmp_less(i, current_num_cascades); i++) {
         glm::mat4 const curr_cascade_proj = glm::perspective(glm::radians(fov),
           static_cast<float>(window_width) / static_cast<float>(window_height),
           cascade_slots[i],

@@ -1,4 +1,4 @@
-#include "Rasterizer.hpp"
+module;
 
 #include <array>
 #include <cstddef>
@@ -8,35 +8,37 @@
 #include <vector>
 #include <vulkan/vulkan_core.h>
 
-#include "common/FormatHelper.hpp"
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
-#include "scene/Scene.hpp"
-#include "scene/Texture.hpp"
-#include "scene/Vertex.hpp"
-#include "util/File.hpp"
-#include "vulkan_base/ShaderHelper.hpp"
+
+#include "common/FormatHelper.hpp"
 
 #include "common/Utilities.hpp"
-#include "vulkan_base/VulkanDevice.hpp"
-#include "vulkan_base/VulkanImage.hpp"
-#include "vulkan_base/VulkanSwapChain.hpp"
+
+module kataglyphis.vulkan.rasterizer;
+
+import kataglyphis.vulkan.file;
+import kataglyphis.vulkan.vertex;
+import kataglyphis.vulkan.texture;
+import kataglyphis.vulkan.image;
+import kataglyphis.vulkan.scene;
+import kataglyphis.vulkan.shader_helper;
 
 namespace {
 auto hasStencilComponent(VkFormat format) -> bool
 {
-  return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
+    return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
 }
-}
+}// namespace
 
 Kataglyphis::VulkanRendererInternals::Rasterizer::Rasterizer() = default;
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::init(VulkanDevice *device,
-  VulkanSwapChain *vulkanSwapChain,
+  VulkanSwapChain *swap_chain,
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts,
   VkCommandPool &commandPool)
 {
     this->device = device;
-    this->vulkanSwapChain = vulkanSwapChain;
+    this->vulkanSwapChain = swap_chain;
 
     createTextures(commandPool);
     createRenderPass();
@@ -54,12 +56,12 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::shaderHotReload(
 
 auto Kataglyphis::VulkanRendererInternals::Rasterizer::getOffscreenTexture(uint32_t index) -> Kataglyphis::Texture &
 {
-    return offscreenTextures[index];
+    return *offscreenTextures[index];
 }
 
-void Kataglyphis::VulkanRendererInternals::Rasterizer::setPushConstant(PushConstantRasterizer pushConstant)
+void Kataglyphis::VulkanRendererInternals::Rasterizer::setPushConstant(PushConstantRasterizer push_constant)
 {
-    this->pushConstant = pushConstant;
+    this->pushConstant = push_constant;
 }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(VkCommandBuffer &commandBuffer,
@@ -137,11 +139,13 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(VkCommandB
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::cleanUp()
 {
-    for (auto *framebuffer : framebuffer) { vkDestroyFramebuffer(device->getLogicalDevice(), framebuffer, nullptr); }
+    for (auto *framebuffer_handle : framebuffer) {
+        vkDestroyFramebuffer(device->getLogicalDevice(), framebuffer_handle, nullptr);
+    }
 
-    for (Texture texture : offscreenTextures) { texture.cleanUp(); }
+    for (const auto &texture : offscreenTextures) { texture->cleanUp(); }
 
-    depthBufferImage.cleanUp();
+    depthBufferImage->cleanUp();
 
     vkDestroyPipeline(device->getLogicalDevice(), graphics_pipeline, nullptr);
     vkDestroyPipelineLayout(device->getLogicalDevice(), pipeline_layout, nullptr);
@@ -243,8 +247,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createFramebuffer()
     framebuffer.resize(vulkanSwapChain->getNumberSwapChainImages());
 
     for (size_t i = 0; i < framebuffer.size(); i++) {
-        std::array<VkImageView, 2> attachments = { offscreenTextures[i].getImageView(),
-            depthBufferImage.getImageView() };
+        std::array<VkImageView, 2> attachments = { offscreenTextures[i]->getImageView(),
+            depthBufferImage->getImageView() };
 
         VkFramebufferCreateInfo frame_buffer_create_info{};
         frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -278,11 +282,11 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(VkCommandP
       device->getLogicalDevice(), commandPool);
 
     for (uint32_t index = 0; index < vulkanSwapChain->getNumberSwapChainImages(); index++) {
-        Texture texture{};
+        auto texture = std::make_unique<Texture>();
         const VkExtent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
         constexpr VkFormat offscreen_format = VK_FORMAT_R8G8B8A8_UNORM;
 
-        texture.createImage(device,
+        texture->createImage(device,
           swap_chain_extent.width,
           swap_chain_extent.height,
           1,
@@ -292,9 +296,9 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(VkCommandP
             | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-        texture.createImageView(device, offscreen_format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+        texture->createImageView(device, offscreen_format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 
-        offscreenTextures[index] = texture;
+        offscreenTextures[index] = std::move(texture);
     }
 
     VkFormat const depth_format = choose_supported_format(device->getPhysicalDevice(),
@@ -305,7 +309,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(VkCommandP
     // create depth buffer image
     // MIP LEVELS: for depth texture we only want 1 level :)
     const VkExtent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-    depthBufferImage.createImage(device,
+    depthBufferImage = std::make_unique<Texture>();
+    depthBufferImage->createImage(device,
       swap_chain_extent.width,
       swap_chain_extent.height,
       1,
@@ -319,10 +324,10 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(VkCommandP
     VkImageAspectFlags depth_aspect_flags = VK_IMAGE_ASPECT_DEPTH_BIT;
     if (hasStencilComponent(depth_format)) { depth_aspect_flags |= VK_IMAGE_ASPECT_STENCIL_BIT; }
 
-    depthBufferImage.createImageView(device, depth_format, depth_aspect_flags, 1);
+    depthBufferImage->createImageView(device, depth_format, depth_aspect_flags, 1);
 
     // --- WE NEED A DIFFERENT LAYOUT FOR USAGE
-    VulkanImage &vulkanImage = depthBufferImage.getVulkanImage();
+    VulkanImage &vulkanImage = depthBufferImage->getVulkanImage();
     vulkanImage.transitionImageLayout(device->getLogicalDevice(),
       device->getGraphicsQueue(),
       commandPool,

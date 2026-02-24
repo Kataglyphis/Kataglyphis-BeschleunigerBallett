@@ -1,14 +1,18 @@
-#include "Model.hpp"
+module;
 
 #include "common/Utilities.hpp"
-#include "scene/ObjMaterial.hpp"
-#include "scene/Texture.hpp"
-#include "scene/Vertex.hpp"
-#include "vulkan_base/VulkanDevice.hpp"
 #include <cstdint>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <vector>
 #include <vulkan/vulkan_core.h>
+
+module kataglyphis.vulkan.model;
+
+import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.obj_material;
+import kataglyphis.vulkan.texture;
+import kataglyphis.vulkan.mesh;
+import kataglyphis.vulkan.vertex;
 
 using namespace Kataglyphis;
 
@@ -18,7 +22,7 @@ Model::Model(VulkanDevice *device) : device(device) {}
 
 void Model::cleanUp()
 {
-    for (Texture texture : modelTextures) { texture.cleanUp(); }
+    for (Texture &texture : modelTextures) { texture.cleanUp(); }
 
     for (VkSampler texture_sampler : modelTextureSamplers) {
         vkDestroySampler(device->getLogicalDevice(), texture_sampler, nullptr);
@@ -81,7 +85,7 @@ void Model::addSampler(Texture newTexture)
     sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     sampler_create_info.mipLodBias = 0.0F;
     sampler_create_info.minLod = 0.0F;
-    sampler_create_info.maxLod = newTexture.getMipLevel();
+    sampler_create_info.maxLod = static_cast<float>(newTexture.getMipLevel());
     sampler_create_info.anisotropyEnable = physical_device_features.samplerAnisotropy;
     sampler_create_info.maxAnisotropy = (physical_device_features.samplerAnisotropy != 0u) ? 16.0F : 1.0F;
 

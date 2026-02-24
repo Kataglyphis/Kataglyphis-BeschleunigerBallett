@@ -1,14 +1,16 @@
-#include "renderer/deferred/GBuffer.hpp"
+module;
+
+#include <cstdio>
+#include <glad/glad.h>
+#include <memory>
+#include <print>
 
 #include "hostDevice/GlobalValues.hpp"
 #include "hostDevice/bindings.hpp"
-#include "renderer/ShaderProgram.hpp"
 
-#include <glad/glad.h>
-#include <memory>
-#include <cstdio>
+module kataglyphis.opengl.gbuffer;
 
-#include <print>
+import kataglyphis.opengl.shader_program;
 
 GBuffer::GBuffer() : window_width(1024), window_height(768) {}
 

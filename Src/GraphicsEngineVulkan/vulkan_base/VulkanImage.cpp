@@ -1,10 +1,15 @@
-#include "vulkan_base/VulkanImage.hpp"
+module;
+
+#include <cstdint>
+#include <vulkan/vulkan.h>
 
 #include "common/MemoryHelper.hpp"
 #include "common/Utilities.hpp"
-#include "vulkan_base/VulkanDevice.hpp"
-#include <cstdint>
-#include <vulkan/vulkan_core.h>
+
+module kataglyphis.vulkan.image;
+
+import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.command_buffer_manager;
 
 Kataglyphis::VulkanImage::VulkanImage() = default;
 
@@ -178,7 +183,7 @@ auto Kataglyphis::VulkanImage::accessFlagsForImageLayout(VkImageLayout layout) -
         return VK_ACCESS_SHADER_READ_BIT;
     case VK_IMAGE_LAYOUT_GENERAL:
         return VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
-          | VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+               | VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
     default:
         return VkAccessFlags();
     }

@@ -1,5 +1,8 @@
-#include "MirroredRepeatMode.hpp"
+module;
+
 #include <glad/glad.h>
+
+module kataglyphis.opengl.mirrored_repeat_mode;
 
 MirroredRepeatMode::MirroredRepeatMode() = default;
 

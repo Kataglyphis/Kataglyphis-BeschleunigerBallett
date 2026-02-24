@@ -1,22 +1,26 @@
-#include "Model.hpp"
-
-#include "hostDevice/bindings.hpp"
-
-#include "scene/AABB.hpp"
-#include "scene/ObjMaterial.hpp"
-#include "scene/Mesh.hpp"
-#include "scene/texture/RepeatMode.hpp"
-#include "scene/texture/Texture.hpp"
+module;
 
 #include <cstdint>
 #include <cstdio>
+#include <memory>
+#include <print>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include <glad/glad.h>
 #include <glm/ext/vector_float4.hpp>
-#include <memory>
-#include <string>
-#include <print>
-#include <vector>
-#include <utility>
+
+#include "hostDevice/bindings.hpp"
+
+module kataglyphis.opengl.model;
+
+import kataglyphis.opengl.aabb;
+import kataglyphis.opengl.obj_material;
+import kataglyphis.opengl.mesh;
+import kataglyphis.opengl.repeat_mode;
+import kataglyphis.opengl.texture;
+import kataglyphis.opengl.obj_loader;
 
 Model::Model() : aabb(std::make_shared<AABB>()) {}
 

@@ -1,12 +1,15 @@
-#include "memory/Allocator.hpp"
+module;
 
 #include "common/Utilities.hpp"
 #include "renderer/VulkanRendererConfig.hpp"
+#include <vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
 
 #ifndef VULKAN_API_VERSION
 #define VULKAN_API_VERSION VK_API_VERSION_1_3
 #endif
+
+module kataglyphis.vulkan.allocator;
 
 using namespace Kataglyphis;
 

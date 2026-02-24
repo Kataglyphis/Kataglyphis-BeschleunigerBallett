@@ -1,4 +1,8 @@
-#include "compute/ComputeShaderProgram.hpp"
+module;
+
+module kataglyphis.opengl.compute_shader_program;
+
+import kataglyphis.opengl.shader_program;
 
 ComputeShaderProgram::ComputeShaderProgram() = default;
 

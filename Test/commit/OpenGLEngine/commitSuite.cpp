@@ -1,41 +1,27 @@
 #include <gtest/gtest.h>
 
-#include <sstream>
 #include <filesystem>
-#include <vector>
 #include <glad/glad.h>
+#define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+#include <sstream>
+#include <vector>
 
-#include <iostream>
 #include <cstdio>
+#include <iostream>
 
 #include <memory>
 #include <string>
 
-#include "scene/ObjLoader.hpp"
-#include "scene/Rotation.hpp"
-#include "renderer/OpenGLRendererConfig.hpp"
-#include "scene/GameObject.hpp"
-
-#include "renderer/Renderer.hpp"
-#include "debug/DebugApp.hpp"
-#include "gui/GUI.hpp"
-#include "renderer/loading_screen/LoadingScreen.hpp"
-
-#include "util/File.hpp"
-
-// all scene/game logic/ game object related stuff
-#include "camera/Camera.hpp"
-#include "debug/DebugApp.hpp"
-#include "hostDevice/GlobalValues.hpp"
-#include "scene/Scene.hpp"
-#include "window/Window.hpp"
-#include "hostDevice/host_device_shared.hpp"
+import kataglyphis.opengl.scene;
+import kataglyphis.opengl.renderer;
 
 // Demonstrate some basic assertions.
-TEST(RendererTest, BasicSetup) {
+TEST(RendererTest, BasicSetup)
+{
 
-	GLint window_width = 1200;
+    GLint window_width = 1200;
     GLint window_height = 800;
 
     // make sure ti initialize window first
@@ -69,29 +55,24 @@ TEST(RendererTest, BasicSetup) {
     // GLfloat now = (float)glfwGetTime();
     // delta_time = now - last_time;
     // last_time = now;
-
 }
 
 TEST(ObjLoaderTest, blob)
 {
-	
-std::vector<std::shared_ptr<GameObject>> gameObjects;
+    glm::vec3 sponza_offset = glm::vec3(0.f, 0.0f, 0.0f);
+    //   GLfloat sponza_scale = 10.f;
+    //   Rotation sponza_rot;
+    //   sponza_rot.degrees = 0.0f;
+    //   sponza_rot.axis = glm::vec3(0.0f, 1.0f, 0.0f);
 
-  glm::vec3 sponza_offset = glm::vec3(0.f, 0.0f, 0.0f);
-//   GLfloat sponza_scale = 10.f;
-//   Rotation sponza_rot;
-//   sponza_rot.degrees = 0.0f;
-//   sponza_rot.axis = glm::vec3(0.0f, 1.0f, 0.0f);
+    //   std::stringstream modelFile;
+    //   std::filesystem::path cwd = std::filesystem::current_path();
+    //   modelFile << cwd.string();
+    //   modelFile << RELATIVE_RESOURCE_PATH << "Models/dinosaurs.obj";
 
-//   std::stringstream modelFile;
-//   std::filesystem::path cwd = std::filesystem::current_path();
-//   modelFile << cwd.string();
-//   modelFile << RELATIVE_RESOURCE_PATH << "Models/dinosaurs.obj";
-
-//   ASSERT_EQ(static_cast<uint32_t>(gameObjects.size()), 0);
-//   std::shared_ptr<GameObject> sponza = std::make_shared<GameObject>(
-//       modelFile.str(), sponza_offset, sponza_scale, sponza_rot);
-//   gameObjects.push_back(sponza);
-//   ASSERT_EQ(static_cast<uint32_t>(gameObjects.size()), 1);
-
+    //   ASSERT_EQ(static_cast<uint32_t>(gameObjects.size()), 0);
+    //   std::shared_ptr<GameObject> sponza = std::make_shared<GameObject>(
+    //       modelFile.str(), sponza_offset, sponza_scale, sponza_rot);
+    //   gameObjects.push_back(sponza);
+    //   ASSERT_EQ(static_cast<uint32_t>(gameObjects.size()), 1);
 }

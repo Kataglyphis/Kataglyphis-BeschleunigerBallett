@@ -1,7 +1,8 @@
-#include "scene/Quad.hpp"
+module;
 
 #include <glad/glad.h>
 
+module kataglyphis.opengl.quad;
 
 Quad::Quad()
 {

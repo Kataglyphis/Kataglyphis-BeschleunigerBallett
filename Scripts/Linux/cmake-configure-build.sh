@@ -3,6 +3,12 @@ set -euo pipefail
 
 git config --global --add safe.directory /workspace || true
 
+DEFAULT_PRESET="linux-debug-clang"
+DEFAULT_BUILD_DIR="build"
+DEFAULT_CLEAN_BUILD_DIR="false"
+DEFAULT_SKIP_CONFIGURE="false"
+DEFAULT_VULKAN_SETUP_SCRIPT="/opt/vulkan/1.4.341.1/setup-env.sh"
+
 source_vulkan_env() {
   if [[ -n "${VULKAN_SETUP_SCRIPT:-}" && -f "${VULKAN_SETUP_SCRIPT}" ]]; then
     . "${VULKAN_SETUP_SCRIPT}"
@@ -22,6 +28,10 @@ source_vulkan_env() {
 
   if [[ -n "${VULKAN_SDK:-}" && -f "${VULKAN_SDK}/setup-env.sh" ]]; then
     . "${VULKAN_SDK}/setup-env.sh"
+    return
+  fi
+
+  if command -v glslc >/dev/null 2>&1; then
     return
   fi
 
@@ -96,12 +106,16 @@ if [[ -n "${VULKAN_SDK_ARG}" ]]; then
   VULKAN_SDK="${VULKAN_SDK_ARG}"
 fi
 
+if [[ -z "${VULKAN_SETUP_SCRIPT_ARG}" && -z "${VULKAN_SETUP_SCRIPT:-}" && -f "${DEFAULT_VULKAN_SETUP_SCRIPT}" ]]; then
+  VULKAN_SETUP_SCRIPT="${DEFAULT_VULKAN_SETUP_SCRIPT}"
+fi
+
 source_vulkan_env
 
-PRESET="${PRESET_ARG:-${PRESET:-${1:-}}}"
-BUILD_DIR="${BUILD_DIR_ARG:-${BUILD_DIR:-}}"
-CLEAN_BUILD_DIR="${CLEAN_BUILD_DIR_ARG:-${CLEAN_BUILD_DIR:-false}}"
-SKIP_CONFIGURE="${SKIP_CONFIGURE_ARG:-${SKIP_CONFIGURE:-false}}"
+PRESET="${PRESET_ARG:-${PRESET:-${1:-${DEFAULT_PRESET}}}}"
+BUILD_DIR="${BUILD_DIR_ARG:-${BUILD_DIR:-${DEFAULT_BUILD_DIR}}}"
+CLEAN_BUILD_DIR="${CLEAN_BUILD_DIR_ARG:-${CLEAN_BUILD_DIR:-${DEFAULT_CLEAN_BUILD_DIR}}}"
+SKIP_CONFIGURE="${SKIP_CONFIGURE_ARG:-${SKIP_CONFIGURE:-${DEFAULT_SKIP_CONFIGURE}}}"
 CMAKE_BUILD_CONFIG="${CMAKE_BUILD_CONFIG_ARG:-${CMAKE_BUILD_CONFIG:-}}"
 CMAKE_BUILD_TARGET="${CMAKE_BUILD_TARGET_ARG:-${CMAKE_BUILD_TARGET:-}}"
 
@@ -110,11 +124,6 @@ if [[ "${CLEAN_BUILD_DIR}" == "true" && -n "${BUILD_DIR}" ]]; then
 fi
 
 if [[ "${SKIP_CONFIGURE}" != "true" ]]; then
-  if [[ -z "${PRESET}" ]]; then
-    echo "PRESET ist erforderlich (Env oder erstes Argument)." >&2
-    exit 1
-  fi
-
   if [[ -n "${BUILD_DIR}" ]]; then
     cmake -B "${BUILD_DIR}" --preset "${PRESET}"
   else

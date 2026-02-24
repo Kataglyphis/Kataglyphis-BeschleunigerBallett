@@ -1,17 +1,20 @@
+module;
+
 #include <memory>
 #include <string>
-#include "scene/texture/TextureWrappingMode.hpp"
 #include <cstdio>
 #include <glad/glad.h>
 #define STB_IMAGE_IMPLEMENTATION
 
-#include "scene/texture/Texture.hpp"
-
-#include "scene/texture/RepeatMode.hpp"
-
-#include <utility>
+#include <stb_image.h>
 #include <utility>
 #include <print>
+
+module kataglyphis.opengl.texture;
+
+import kataglyphis.opengl.texture_wrapping_mode;
+import kataglyphis.opengl.repeat_mode;
+import kataglyphis.opengl.clamp_to_edge_mode;
 
 Texture::Texture()
   :

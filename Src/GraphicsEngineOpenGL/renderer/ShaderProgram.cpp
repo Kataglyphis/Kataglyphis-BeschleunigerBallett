@@ -1,23 +1,26 @@
-#include "renderer/ShaderProgram.hpp"
+module;
 
+#include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
-#include <glad/glad.h>
-#include <print>
-#include <glm/ext/vector_float3.hpp>
-#include <glm/ext/matrix_float4x4.hpp>
-#include <glm/gtc/type_ptr.hpp>
-#include <sstream>
-
-#include "util/File.hpp"
-
-#include <cassert>
 #include <iostream>
 #include <optional>
+#include <print>
 #include <sstream>
+#include <string>
 #include <unordered_set>
+
+#include <glad/glad.h>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glm/ext/vector_float3.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
+module kataglyphis.opengl.shader_program;
+
+import kataglyphis.opengl.file;
 
 namespace {
 auto trim(std::string value) -> std::string
@@ -38,9 +41,24 @@ auto find_file_recursively(const std::filesystem::path &base_dir, const std::str
     return std::nullopt;
 }
 
+auto detect_glsl_version_number() -> int
+{
+    GLint major = 0;
+    GLint minor = 0;
+    glGetIntegerv(GL_MAJOR_VERSION, &major);
+    glGetIntegerv(GL_MINOR_VERSION, &minor);
+
+    if (major <= 0) { return 450; }
+
+    int const requested_version = (major * 100) + (minor * 10);
+    return std::clamp(requested_version, 330, 460);
+}
+
 auto preprocess_shader_source(const std::filesystem::path &shader_file,
   const std::filesystem::path &shader_root,
-  std::unordered_set<std::string> &include_stack) -> std::string
+  std::unordered_set<std::string> &include_stack,
+  bool &version_directive_written,
+  int glsl_version_number) -> std::string
 {
     std::string const canonical_key = std::filesystem::weakly_canonical(shader_file).string();
     if (include_stack.contains(canonical_key)) {
@@ -60,7 +78,13 @@ auto preprocess_shader_source(const std::filesystem::path &shader_file,
     while (std::getline(source_stream, line)) {
         std::string const stripped = trim(line);
 
-        if (stripped.starts_with("#extension GL_ARB_shading_language_include")) {
+        if (stripped.starts_with("#extension GL_ARB_shading_language_include")) { continue; }
+
+        if (stripped.starts_with("#version")) {
+            if (!version_directive_written) {
+                output << "#version " << glsl_version_number << '\n';
+                version_directive_written = true;
+            }
             continue;
         }
 
@@ -87,13 +111,14 @@ auto preprocess_shader_source(const std::filesystem::path &shader_file,
                 }
 
                 if (!include_path.empty() && std::filesystem::exists(include_path)) {
-                    output << preprocess_shader_source(include_path, shader_root, include_stack) << '\n';
+                    output << preprocess_shader_source(
+                      include_path, shader_root, include_stack, version_directive_written, glsl_version_number)
+                           << '\n';
                     continue;
                 }
 
-                std::println("Failed to resolve shader include '{}' while processing '{}'.",
-                  include_target,
-                  shader_file.string());
+                std::println(
+                  "Failed to resolve shader include '{}' while processing '{}'.", include_target, shader_file.string());
             }
         }
 
@@ -108,7 +133,9 @@ auto load_shader_source_with_includes(const std::filesystem::path &shader_file,
   const std::filesystem::path &shader_root) -> std::string
 {
     std::unordered_set<std::string> include_stack;
-    return preprocess_shader_source(shader_file, shader_root, include_stack);
+    bool version_directive_written = false;
+    return preprocess_shader_source(
+      shader_file, shader_root, include_stack, version_directive_written, detect_glsl_version_number());
 }
 }// namespace
 
@@ -151,14 +178,14 @@ void ShaderProgram::create_from_files(const char *vertex_location,
   const char *geometry_location,
   const char *fragment_location)
 {
-        std::filesystem::path const shader_root(shader_base_dir);
-        std::filesystem::path const vertex_shader = shader_root / vertex_location;
-        std::filesystem::path const geometry_shader = shader_root / geometry_location;
-        std::filesystem::path const fragment_shader = shader_root / fragment_location;
+    std::filesystem::path const shader_root(shader_base_dir);
+    std::filesystem::path const vertex_shader = shader_root / vertex_location;
+    std::filesystem::path const geometry_shader = shader_root / geometry_location;
+    std::filesystem::path const fragment_shader = shader_root / fragment_location;
 
-        std::string const vertex_string = load_shader_source_with_includes(vertex_shader, shader_root);
-        std::string const geometry_string = load_shader_source_with_includes(geometry_shader, shader_root);
-        std::string const fragment_string = load_shader_source_with_includes(fragment_shader, shader_root);
+    std::string const vertex_string = load_shader_source_with_includes(vertex_shader, shader_root);
+    std::string const geometry_string = load_shader_source_with_includes(geometry_shader, shader_root);
+    std::string const fragment_string = load_shader_source_with_includes(fragment_shader, shader_root);
 
     const char *vertex_code = vertex_string.c_str();
     const char *geometry_code = geometry_string.c_str();
@@ -266,7 +293,7 @@ void ShaderProgram::compile_shader_program(const char *vertex_code,
   const char *fragment_code)
 {
     program_id = glCreateProgram();
-        program_is_linked = false;
+    program_is_linked = false;
 
     if (program_id == 0u) {
         std::println("Error creating shader program!");

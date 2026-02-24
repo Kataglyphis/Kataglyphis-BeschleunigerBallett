@@ -1,10 +1,4 @@
-#include "renderer/accelerationStructures/ASManager.hpp"
-#include "scene/Mesh.hpp"
-#include "scene/Model.hpp"
-#include "scene/Scene.hpp"
-#include "scene/Vertex.hpp"
-#include "vulkan_base/VulkanBuffer.hpp"
-#include "vulkan_base/VulkanDevice.hpp"
+module;
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -13,13 +7,24 @@
 #include <glm/matrix.hpp>
 #include <memory>
 #include <vector>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.h>
+
+module kataglyphis.vulkan.as_manager;
+
+import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.buffer;
+import kataglyphis.vulkan.vertex;
+import kataglyphis.vulkan.model;
+import kataglyphis.vulkan.mesh;
+import kataglyphis.vulkan.scene;
+import kataglyphis.vulkan.command_buffer_manager;
+import kataglyphis.vulkan.buffer_manager;
 
 Kataglyphis::VulkanRendererInternals::ASManager::ASManager() = default;
 
 void Kataglyphis::VulkanRendererInternals::ASManager::createASForScene(VulkanDevice *device,
   VkCommandPool commandPool,
-  Scene *scene)
+  Kataglyphis::Scene *scene)
 {
     this->vulkanDevice = device;
     createBLAS(device, commandPool, scene);
@@ -28,7 +33,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createASForScene(VulkanDev
 
 void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(VulkanDevice *device,
   VkCommandPool commandPool,
-  Scene *scene)
+  Kataglyphis::Scene *scene)
 {
     // LOAD ALL NECESSARY FUNCTIONS STRAIGHT IN THE BEGINNING
     // all functionality from extensions has to be loaded in the beginning
@@ -131,7 +136,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(VulkanDevice *d
 
 void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *device,
   VkCommandPool commandPool,
-  Scene *scene)
+  Kataglyphis::Scene *scene)
 {
     // LOAD ALL NECESSARY FUNCTIONS STRAIGHT IN THE BEGINNING
     // all functionality from extensions has to be loaded in the beginning
@@ -409,7 +414,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createAccelerationStructur
 }
 
 void Kataglyphis::VulkanRendererInternals::ASManager::objectToVkGeometryKHR(VulkanDevice *device,
-  Mesh *mesh,
+  Kataglyphis::Mesh *mesh,
   VkAccelerationStructureGeometryKHR &acceleration_structure_geometry,
   VkAccelerationStructureBuildRangeInfoKHR &acceleration_structure_build_range_info)
 {

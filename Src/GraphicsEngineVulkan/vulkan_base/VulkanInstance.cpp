@@ -1,19 +1,20 @@
-#include "vulkan_base/VulkanInstance.hpp"
+module;
+
 #include "GLFW/glfw3.h"
 #include "spdlog/spdlog.h"
 
 #include "renderer/VulkanRendererConfig.hpp"
 
 #include "common/Utilities.hpp"
-#include "vulkan_base/VulkanDebug.hpp"
 #include <cstdint>
 #include <cstring>
 #include <vector>
+#include <vulkan/vulkan.h>
 #include <vulkan/vulkan_core.h>
 
-#ifndef VULKAN_API_VERSION
-#define VULKAN_API_VERSION VK_API_VERSION_1_3
-#endif
+module kataglyphis.vulkan.instance;
+
+import kataglyphis.vulkan.debug;
 
 Kataglyphis::VulkanInstance::VulkanInstance()
 {

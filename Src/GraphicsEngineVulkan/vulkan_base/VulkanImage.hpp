@@ -1,8 +1,8 @@
 #pragma once
 #include <vulkan/vulkan.h>
 
-#include "renderer/CommandBufferManager.hpp"
-#include "vulkan_base/VulkanDevice.hpp"
+import kataglyphis.vulkan.command_buffer_manager;
+import kataglyphis.vulkan.device;
 
 namespace Kataglyphis {
 class VulkanImage

@@ -1,5 +1,9 @@
 include(GoogleTest)
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT(CMAKE_BUILD_TYPE STREQUAL "Profile" ))
+set(KATAGLYPHIS_ENABLE_FUZZ_TESTS
+    ON
+    CACHE BOOL "Enable fuzz tests" FORCE)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT (CMAKE_BUILD_TYPE STREQUAL "Profile"))
   message(STATUS "This is a Linux system.")
 
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")

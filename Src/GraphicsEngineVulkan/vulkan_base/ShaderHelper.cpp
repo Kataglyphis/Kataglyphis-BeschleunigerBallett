@@ -1,3 +1,5 @@
+module;
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
@@ -11,11 +13,11 @@
 
 #include "common/Utilities.hpp"
 #include "renderer/VulkanRendererConfig.hpp"
-#include "vulkan_base/ShaderHelper.hpp"
 #include "vulkan_base/ShaderIncludes.hpp"
 
 #include "spdlog/spdlog.h"
-#include "vulkan_base/VulkanDevice.hpp"
+
+module kataglyphis.vulkan.shader_helper;
 
 namespace {
 constexpr int kShaderSearchMaxDepth = 8;
@@ -81,7 +83,8 @@ void Kataglyphis::ShaderHelper::compileShader(const std::string &shader_src_dir,
       << ShaderIncludes::getShaderIncludes();
     //<< log_stdout_and_stderr.str();
 
-    spdlog::info("The shader compile command is the following: {}", cmdShaderCompile.str());
+    spdlog::default_logger_raw()->log(
+      spdlog::level::info, std::string("The shader compile command is the following: ") + cmdShaderCompile.str());
     // std::cout << cmdShaderCompile.str().c_str();
 
     system(cmdShaderCompile.str().c_str());

@@ -1,8 +1,14 @@
-#include "vulkan_base/VulkanBufferManager.hpp"
+module;
+
 #include "spdlog/spdlog.h"
-#include "vulkan_base/VulkanBuffer.hpp"
 #include <cstdint>
 #include <vulkan/vulkan_core.h>
+
+module kataglyphis.vulkan.buffer_manager;
+
+import kataglyphis.vulkan.command_buffer_manager;
+import kataglyphis.vulkan.buffer;
+import kataglyphis.vulkan.device;
 
 Kataglyphis::VulkanBufferManager::VulkanBufferManager() = default;
 

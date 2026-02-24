@@ -1,7 +1,4 @@
-#include "scene/light/point_light/OmniShadowMapPass.hpp"
-#include "scene/light/point_light/PointLight.hpp"
-#include "scene/Scene.hpp"
-#include "scene/GameObject.hpp"
+module;
 
 #include <memory>
 #include <glad/glad.h>
@@ -9,6 +6,13 @@
 #include <cstdint>
 #include <sstream>
 #include <vector>
+
+module kataglyphis.opengl.omni_shadow_map_pass;
+
+import kataglyphis.opengl.point_light;
+import kataglyphis.opengl.point_light.omni_dir_shadow_map;
+import kataglyphis.opengl.scene;
+import kataglyphis.opengl.game_object;
 
 OmniShadowMapPass::OmniShadowMapPass() { create_shader_program(); }
 

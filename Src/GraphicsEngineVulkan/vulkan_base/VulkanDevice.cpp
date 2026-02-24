@@ -1,20 +1,20 @@
-#include "vulkan_base/VulkanDevice.hpp"
+module;
 
 #include <cstdint>
 #include <cstring>
 
 #include "common/Utilities.hpp"
-#include "renderer/QueueFamilyIndices.hpp"
-#include "renderer/SwapChainDetails.hpp"
 #include "spdlog/spdlog.h"
-#include "vulkan_base/VulkanInstance.hpp"
-#include <cstdlib>
+#include <algorithm>
 #include <cctype>
-#include <string>
+#include <cstdlib>
 #include <limits>
 #include <set>
+#include <string>
 #include <vector>
 #include <vulkan/vulkan_core.h>
+
+module kataglyphis.vulkan.device;
 
 namespace {
 constexpr int DEVICE_TYPE_SCORE_DISCRETE = 10000;
@@ -22,11 +22,7 @@ constexpr int DEVICE_TYPE_SCORE_INTEGRATED = 1000;
 constexpr int DEVICE_TYPE_SCORE_VIRTUAL = 100;
 constexpr int DEVICE_TYPE_SCORE_CPU = 10;
 
-enum class GpuSelectionMode : std::uint8_t {
-    Auto,
-    Dedicated,
-    Integrated
-};
+enum class GpuSelectionMode : std::uint8_t { Auto, Dedicated, Integrated };
 
 auto readGpuSelectionFromEnvironment() -> std::string
 {
@@ -53,9 +49,9 @@ auto parseGpuSelectionMode() -> GpuSelectionMode
     std::string mode = readGpuSelectionFromEnvironment();
     if (mode.empty()) { return GpuSelectionMode::Auto; }
 
-    for (auto &character : mode) {
-        character = static_cast<char>(std::tolower(static_cast<unsigned char>(character)));
-    }
+    std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char character) {
+        return static_cast<char>(std::tolower(character));
+    });
 
     if (mode == "dedicated") { return GpuSelectionMode::Dedicated; }
     if (mode == "integrated") { return GpuSelectionMode::Integrated; }
@@ -161,17 +157,17 @@ auto Kataglyphis::VulkanDevice::getQueueFamilies() -> Kataglyphis::VulkanRendere
 
     // Go through each queue family and check if it has at least 1 of required
     // types we need to keep track th eindex by our own
-    int index = 0;
+    uint32_t index = 0;
     for (const auto &queue_family : queue_family_list) {
         // first check if queue family has at least 1 queue in that family
         // Queue can be multiple types defined through bitfield. Need to bitwise AND
         // with VK_QUE_*_BIT to check if has required  type
         if (queue_family.queueCount > 0 && ((queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0u)) {
-            indices.graphics_family = index;// if queue family valid, than get index
+            indices.graphics_family = static_cast<int>(index);// if queue family valid, than get index
         }
 
         if (queue_family.queueCount > 0 && ((queue_family.queueFlags & VK_QUEUE_COMPUTE_BIT) != 0u)) {
-            indices.compute_family = index;
+            indices.compute_family = static_cast<int>(index);
         }
 
         // check if queue family suppports presentation
@@ -179,7 +175,9 @@ auto Kataglyphis::VulkanDevice::getQueueFamilies() -> Kataglyphis::VulkanRendere
         vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, index, *surface, &presentation_support);
         // check if queue is presentation type (can be both graphics and
         // presentation)
-        if (queue_family.queueCount > 0 && (presentation_support != 0u)) { indices.presentation_family = index; }
+        if (queue_family.queueCount > 0 && (presentation_support != 0u)) {
+            indices.presentation_family = static_cast<int>(index);
+        }
 
         // check if queue family indices are in a valid state
         if (indices.is_valid()) { break; }
@@ -235,9 +233,9 @@ void Kataglyphis::VulkanDevice::get_physical_device()
     if (physical_device == VK_NULL_HANDLE && fallback_device != VK_NULL_HANDLE) {
         physical_device = fallback_device;
         device_properties = fallback_properties;
-        spdlog::warn(
-          "No suitable Vulkan GPU matching selection mode '{}' found. Falling back to auto device selection.",
-          gpuSelectionModeToString(selection_mode));
+        spdlog::default_logger_raw()->log(spdlog::level::warn,
+          std::string("No suitable Vulkan GPU matching selection mode '") + gpuSelectionModeToString(selection_mode)
+            + "' found. Falling back to auto device selection.");
     }
 
     if (physical_device == VK_NULL_HANDLE) {
@@ -247,10 +245,11 @@ void Kataglyphis::VulkanDevice::get_physical_device()
 
     // get properties of our new device
     vkGetPhysicalDeviceProperties(physical_device, &device_properties);
-    spdlog::info("Selected Vulkan physical device: {} ({})",
-      device_properties.deviceName,
-      deviceTypeToString(device_properties.deviceType));
-        spdlog::info("Vulkan GPU selection mode: {}", gpuSelectionModeToString(selection_mode));
+    spdlog::default_logger_raw()->log(spdlog::level::info,
+      std::string("Selected Vulkan physical device: ") + device_properties.deviceName + " ("
+        + deviceTypeToString(device_properties.deviceType) + ")");
+    spdlog::default_logger_raw()->log(
+      spdlog::level::info, std::string("Vulkan GPU selection mode: ") + gpuSelectionModeToString(selection_mode));
 }
 
 void Kataglyphis::VulkanDevice::create_logical_device()
@@ -269,7 +268,8 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     for (int const queue_family_index : queue_family_indices) {
         VkDeviceQueueCreateInfo queue_create_info{};
         queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queue_create_info.queueFamilyIndex = queue_family_index;// the index of the family to create a queue from
+        queue_create_info.queueFamilyIndex =
+          static_cast<uint32_t>(queue_family_index);// the index of the family to create a queue from
         queue_create_info.queueCount = 1;// number of queues to create
         float const priority = 1.0F;
         queue_create_info.pQueuePriorities = &priority;// Vulkan needs to know how to handle multiple queues, so
@@ -278,8 +278,13 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         queue_create_infos.push_back(queue_create_info);
     }
 
+    VkPhysicalDeviceVulkan13Features available_features13{};
+    available_features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+    available_features13.pNext = nullptr;
+
     VkPhysicalDeviceVulkan12Features available_features12{};
     available_features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+    available_features12.pNext = &available_features13;
 
     VkPhysicalDeviceFeatures2 available_features2{};
     available_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
@@ -290,21 +295,21 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     VkPhysicalDeviceRayTracingPipelineFeaturesKHR ray_tracing_pipeline_features{};
     ray_tracing_pipeline_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
     ray_tracing_pipeline_features.pNext = nullptr;
-    ray_tracing_pipeline_features.rayTracingPipeline = VK_TRUE;
+    ray_tracing_pipeline_features.rayTracingPipeline = VK_FALSE;
 
     // -- ENABLE ACCELERATION STRUCTURES
     VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration_structure_features{};
     acceleration_structure_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
     acceleration_structure_features.pNext = &ray_tracing_pipeline_features;
-    acceleration_structure_features.accelerationStructure = VK_TRUE;
-    acceleration_structure_features.accelerationStructureCaptureReplay = VK_TRUE;
+    acceleration_structure_features.accelerationStructure = VK_FALSE;
+    acceleration_structure_features.accelerationStructureCaptureReplay = VK_FALSE;
     acceleration_structure_features.accelerationStructureIndirectBuild = VK_FALSE;
     acceleration_structure_features.accelerationStructureHostCommands = VK_FALSE;
     acceleration_structure_features.descriptorBindingAccelerationStructureUpdateAfterBind = VK_FALSE;
 
     VkPhysicalDeviceVulkan13Features features13{};
     features13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-    features13.maintenance4 = VK_TRUE;
+    features13.maintenance4 = VK_FALSE;
     features13.robustImageAccess = VK_FALSE;
     features13.inlineUniformBlock = VK_FALSE;
     features13.descriptorBindingInlineUniformBlockUpdateAfterBind = VK_FALSE;
@@ -324,7 +329,24 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     VkPhysicalDeviceRayQueryFeaturesKHR rayQueryFeature{};
     rayQueryFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
     rayQueryFeature.pNext = &features13;
-    rayQueryFeature.rayQuery = VK_TRUE;
+    rayQueryFeature.rayQuery = VK_FALSE;
+
+    VkPhysicalDeviceRayQueryFeaturesKHR availableRayQueryFeature{};
+    availableRayQueryFeature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR availableRayTracingPipelineFeatures{};
+    availableRayTracingPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+    availableRayTracingPipelineFeatures.pNext = &availableRayQueryFeature;
+
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR availableAccelerationStructureFeatures{};
+    availableAccelerationStructureFeatures.sType =
+      VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    availableAccelerationStructureFeatures.pNext = &availableRayTracingPipelineFeatures;
+
+    VkPhysicalDeviceFeatures2 availableRayTracingFeatures2{};
+    availableRayTracingFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    availableRayTracingFeatures2.pNext = &availableAccelerationStructureFeatures;
+    vkGetPhysicalDeviceFeatures2(physical_device, &availableRayTracingFeatures2);
 
     VkPhysicalDeviceVulkan12Features features12{};
     features12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
@@ -364,23 +386,25 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         return false;
     };
 
-        const bool hasBufferDeviceAddressFeature = available_features12.bufferDeviceAddress == VK_TRUE;
-        deviceSupportsBufferDeviceAddress = hasBufferDeviceAddressFeature;
+    const bool hasBufferDeviceAddressFeature = available_features12.bufferDeviceAddress == VK_TRUE;
+    deviceSupportsBufferDeviceAddress = hasBufferDeviceAddressFeature;
     const bool hasRequiredDescriptorIndexingFeatures =
       available_features12.descriptorIndexing == VK_TRUE && available_features12.runtimeDescriptorArray == VK_TRUE
       && available_features12.shaderSampledImageArrayNonUniformIndexing == VK_TRUE;
 
-        spdlog::info("Feature support: bufferDeviceAddress={}, descriptorIndexing={}, runtimeDescriptorArray={}, sampledImageArrayNonUniformIndexing={}, robustBufferAccess={}",
-            hasBufferDeviceAddressFeature,
-            available_features12.descriptorIndexing == VK_TRUE,
-            available_features12.runtimeDescriptorArray == VK_TRUE,
-            available_features12.shaderSampledImageArrayNonUniformIndexing == VK_TRUE,
-            available_features2.features.robustBufferAccess == VK_TRUE);
+    spdlog::default_logger_raw()->log(spdlog::level::info,
+      std::string("Feature support: bufferDeviceAddress=") + (hasBufferDeviceAddressFeature ? "true" : "false")
+        + ", descriptorIndexing=" + (available_features12.descriptorIndexing == VK_TRUE ? "true" : "false")
+        + ", runtimeDescriptorArray=" + (available_features12.runtimeDescriptorArray == VK_TRUE ? "true" : "false")
+        + ", sampledImageArrayNonUniformIndexing="
+        + (available_features12.shaderSampledImageArrayNonUniformIndexing == VK_TRUE ? "true" : "false")
+        + ", robustBufferAccess=" + (available_features2.features.robustBufferAccess == VK_TRUE ? "true" : "false"));
 
     for (const char *extensionName : device_extensions_for_raytracing) {
         if (!isExtensionSupported(extensionName)) {
             deviceSupportsHardwareAcceleratedRRT = false;
-            spdlog::info("Required extension not supported: {}", extensionName);
+            spdlog::default_logger_raw()->log(
+              spdlog::level::info, std::string("Required extension not supported: ") + extensionName);
         }
     }
 
@@ -395,6 +419,29 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         spdlog::info("bufferDeviceAddress feature is not supported; disabling hardware ray tracing path.");
     }
 
+    const bool hasMaintenance4Feature = available_features13.maintenance4 == VK_TRUE;
+
+    const bool hasRequiredRayTracingFeatures = availableAccelerationStructureFeatures.accelerationStructure == VK_TRUE
+                                               && availableRayTracingPipelineFeatures.rayTracingPipeline == VK_TRUE
+                                               && availableRayQueryFeature.rayQuery == VK_TRUE;
+
+    if (deviceSupportsHardwareAcceleratedRRT && !hasRequiredRayTracingFeatures) {
+        deviceSupportsHardwareAcceleratedRRT = false;
+        spdlog::default_logger_raw()->log(spdlog::level::info,
+          std::string("Required ray tracing features are not fully supported (accelerationStructure=")
+            + (availableAccelerationStructureFeatures.accelerationStructure == VK_TRUE ? "true" : "false")
+            + ", rayTracingPipeline="
+            + (availableRayTracingPipelineFeatures.rayTracingPipeline == VK_TRUE ? "true" : "false")
+            + ", rayQuery=" + (availableRayQueryFeature.rayQuery == VK_TRUE ? "true" : "false")
+            + "); disabling hardware ray tracing path.");
+    }
+
+    if (deviceSupportsHardwareAcceleratedRRT && !hasMaintenance4Feature) {
+        deviceSupportsHardwareAcceleratedRRT = false;
+        spdlog::default_logger_raw()->log(spdlog::level::info,
+          "Vulkan 1.3 maintenance4 feature is not supported; disabling hardware ray tracing/path tracing path.");
+    }
+
     if (deviceSupportsHardwareAcceleratedRRT) {
         // COPY ALL NECESSARY EXTENSIONS FOR RAYTRACING TO THE EXTENSION
         extensions.insert(
@@ -404,6 +451,12 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         features12.descriptorIndexing = VK_TRUE;
         features12.runtimeDescriptorArray = VK_TRUE;
         features12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+        features13.maintenance4 = VK_TRUE;
+
+        acceleration_structure_features.accelerationStructure = VK_TRUE;
+        acceleration_structure_features.accelerationStructureCaptureReplay = VK_FALSE;
+        ray_tracing_pipeline_features.rayTracingPipeline = VK_TRUE;
+        rayQueryFeature.rayQuery = VK_TRUE;
         features12.pNext = &rayQueryFeature;
     }
 
@@ -436,48 +489,54 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     // create logical device for the given physical device
     VkResult const result = vkCreateDevice(physical_device, &device_create_info, nullptr, &logical_device);
     ASSERT_VULKAN(result, "Failed to create a logical device!");
+    if (result != VK_SUCCESS || logical_device == VK_NULL_HANDLE) {
+        spdlog::critical("Unable to continue without a valid Vulkan logical device.");
+        std::abort();
+    }
 
     //  Queues are created at the same time as the device...
     // So we want handle to queues
     // From given logical device of given queue family, of given queue index (0
     // since only one queue), place reference in given VkQueue
-    vkGetDeviceQueue(logical_device, indices.graphics_family, 0, &graphics_queue);
-    vkGetDeviceQueue(logical_device, indices.presentation_family, 0, &presentation_queue);
-    vkGetDeviceQueue(logical_device, indices.compute_family, 0, &compute_queue);
+    vkGetDeviceQueue(logical_device, static_cast<uint32_t>(indices.graphics_family), 0, &graphics_queue);
+    vkGetDeviceQueue(logical_device, static_cast<uint32_t>(indices.presentation_family), 0, &presentation_queue);
+    vkGetDeviceQueue(logical_device, static_cast<uint32_t>(indices.compute_family), 0, &compute_queue);
 }
 
-auto Kataglyphis::VulkanDevice::getQueueFamilies(VkPhysicalDevice physical_device)
+auto Kataglyphis::VulkanDevice::getQueueFamilies(VkPhysicalDevice selectedPhysicalDevice)
   -> Kataglyphis::VulkanRendererInternals::QueueFamilyIndices
 {
     Kataglyphis::VulkanRendererInternals::QueueFamilyIndices indices{};
 
     uint32_t queue_family_count = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, nullptr);
+    vkGetPhysicalDeviceQueueFamilyProperties(selectedPhysicalDevice, &queue_family_count, nullptr);
 
     std::vector<VkQueueFamilyProperties> queue_family_list(queue_family_count);
-    vkGetPhysicalDeviceQueueFamilyProperties(physical_device, &queue_family_count, queue_family_list.data());
+    vkGetPhysicalDeviceQueueFamilyProperties(selectedPhysicalDevice, &queue_family_count, queue_family_list.data());
 
     // Go through each queue family and check if it has at least 1 of required
     // types we need to keep track th eindex by our own
-    int index = 0;
+    uint32_t index = 0;
     for (const auto &queue_family : queue_family_list) {
         // first check if queue family has at least 1 queue in that family
         // Queue can be multiple types defined through bitfield. Need to bitwise AND
         // with VK_QUE_*_BIT to check if has required  type
         if (queue_family.queueCount > 0 && ((queue_family.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0u)) {
-            indices.graphics_family = index;// if queue family valid, than get index
+            indices.graphics_family = static_cast<int>(index);// if queue family valid, than get index
         }
 
         if (queue_family.queueCount > 0 && ((queue_family.queueFlags & VK_QUEUE_COMPUTE_BIT) != 0u)) {
-            indices.compute_family = index;
+            indices.compute_family = static_cast<int>(index);
         }
 
         // check if queue family suppports presentation
         VkBool32 presentation_support = 0u;
-        vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, index, *surface, &presentation_support);
+        vkGetPhysicalDeviceSurfaceSupportKHR(selectedPhysicalDevice, index, *surface, &presentation_support);
         // check if queue is presentation type (can be both graphics and
         // presentation)
-        if (queue_family.queueCount > 0 && (presentation_support != 0u)) { indices.presentation_family = index; }
+        if (queue_family.queueCount > 0 && (presentation_support != 0u)) {
+            indices.presentation_family = static_cast<int>(index);
+        }
 
         // check if queue family indices are in a valid state
         if (indices.is_valid()) { break; }
@@ -520,10 +579,6 @@ auto Kataglyphis::VulkanDevice::getSwapchainDetails(VkPhysicalDevice device)
 
 auto Kataglyphis::VulkanDevice::check_device_suitable(VkPhysicalDevice device) -> bool
 {
-    // Information about device itself (ID, name, type, vendor, etc)
-    VkPhysicalDeviceProperties device_properties;
-    vkGetPhysicalDeviceProperties(device, &device_properties);
-
     VkPhysicalDeviceFeatures device_features;
     vkGetPhysicalDeviceFeatures(device, &device_features);
 

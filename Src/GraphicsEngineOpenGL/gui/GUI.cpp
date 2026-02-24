@@ -1,5 +1,7 @@
-#include "gui/GUI.hpp"
+module;
 
+#include <algorithm>
+#include <cstdio>
 #include <glm/ext/vector_float3.hpp>
 #include <glad/glad.h>
 #include <imgui.h>
@@ -14,11 +16,16 @@
 #include "../../shared/imgui/KataglyphisImGuiStyle.hpp"
 #include "hostDevice/GlobalValues.hpp"
 #include "hostDevice/host_device_shared.hpp"
-#include "scene/Scene.hpp"
-#include "scene/atmospheric_effects/clouds/Clouds.hpp"
-#include "scene/light/directional_light/DirectionalLight.hpp"
-#include "scene/texture/RepeatMode.hpp"
-#include "window/Window.hpp"
+
+module kataglyphis.opengl.gui;
+
+import kataglyphis.opengl.scene;
+import kataglyphis.opengl.window;
+import kataglyphis.opengl.directional_light;
+import kataglyphis.opengl.directional_light.cascaded_shadow_map;
+import kataglyphis.opengl.clouds;
+import kataglyphis.opengl.texture;
+import kataglyphis.opengl.repeat_mode;
 
 GUI::GUI()
   : direcional_light_radiance(4.0f), cloud_speed(6), cloud_scale(0.63f), cloud_density(0.493f),
@@ -65,8 +72,8 @@ GUI::GUI()
 
     std::stringstream texture_logo;
     texture_logo << texture_base_dir.str() << "Loading_Screen/Engine_logo.png";
-    logo_tex = Texture(texture_logo.str().c_str(), std::make_shared<RepeatMode>());
-    logo_tex.load_texture_with_alpha_channel();
+    logo_tex = std::make_unique<Texture>(texture_logo.str().c_str(), std::make_shared<RepeatMode>());
+    logo_tex->load_texture_with_alpha_channel();
 }
 
 void GUI::init(const std::shared_ptr<Window> &main_window)
@@ -78,7 +85,13 @@ void GUI::init(const std::shared_ptr<Window> &main_window)
     Kataglyphis::Frontend::configureKataglyphisImGuiFonts(io);
     // Setup Platform/Renderer bindings
     ImGui_ImplGlfw_InitForOpenGL(main_window->get_window(), false);
-    const char *glsl_version = "#version 460";
+    GLint major = 0;
+    GLint minor = 0;
+    glGetIntegerv(GL_MAJOR_VERSION, &major);
+    glGetIntegerv(GL_MINOR_VERSION, &minor);
+    int const glsl_version_number = std::clamp((major * 100) + (minor * 10), 330, 460);
+    char glsl_version[32] = { 0 };
+    std::snprintf(glsl_version, sizeof(glsl_version), "#version %d", glsl_version_number);
     ImGui_ImplOpenGL3_Init(glsl_version);
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
@@ -191,7 +204,7 @@ void GUI::render(bool loading_in_progress, float progress, bool &shader_hot_relo
       "Application average %.3f ms/frame (%.1f FPS)", 1000.0F / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
     // ImGui::ShowDemoWindow();
     // (void*)(intptr_t)
-    ImGui::Image(logo_tex.get_id(), ImVec2(200, 200), ImVec2(0, 1), ImVec2(1, 0));
+    ImGui::Image(logo_tex->get_id(), ImVec2(200, 200), ImVec2(0, 1), ImVec2(1, 0));
 
     ImGui::End();
 

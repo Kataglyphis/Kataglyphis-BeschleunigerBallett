@@ -91,4 +91,4 @@ inline void applyKataglyphisImGuiDarkTheme()
     style.ScrollbarSize = 14.0F;
     style.GrabMinSize = 12.0F;
 }
-} // namespace Kataglyphis::Frontend
+}// namespace Kataglyphis::Frontend

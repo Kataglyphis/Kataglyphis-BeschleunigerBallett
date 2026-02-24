@@ -1,4 +1,4 @@
-#include "vulkan_base/VulkanBuffer.hpp"
+module;
 
 #include <cstdint>
 #include <vulkan/vulkan_core.h>
@@ -6,7 +6,10 @@
 #include "common/MemoryHelper.hpp"
 #include "common/Utilities.hpp"
 #include "spdlog/spdlog.h"
-#include "vulkan_base/VulkanDevice.hpp"
+
+module kataglyphis.vulkan.buffer;
+
+import kataglyphis.vulkan.device;
 
 Kataglyphis::VulkanBuffer::VulkanBuffer() = default;
 

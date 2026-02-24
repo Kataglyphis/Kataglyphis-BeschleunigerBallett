@@ -1,5 +1,8 @@
-#include "scene/texture/RepeatMode.hpp"
+module;
+
 #include <glad/glad.h>
+
+module kataglyphis.opengl.repeat_mode;
 
 RepeatMode::RepeatMode() = default;
 

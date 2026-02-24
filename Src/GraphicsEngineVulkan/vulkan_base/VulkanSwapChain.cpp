@@ -1,4 +1,4 @@
-#include "vulkan_base/VulkanSwapChain.hpp"
+module;
 
 #include <algorithm>
 #include <cstddef>
@@ -9,11 +9,13 @@
 
 #include "GLFW/glfw3.h"
 #include "common/Utilities.hpp"
-#include "renderer/QueueFamilyIndices.hpp"
-#include "renderer/SwapChainDetails.hpp"
-#include "scene/Texture.hpp"
-#include "vulkan_base/VulkanDevice.hpp"
-#include "window/Window.hpp"
+
+module kataglyphis.vulkan.swapchain;
+
+import kataglyphis.vulkan.queue_family_indices;
+import kataglyphis.vulkan.swap_chain_details;
+import kataglyphis.vulkan.texture;
+import kataglyphis.vulkan.window;
 
 Kataglyphis::VulkanSwapChain::VulkanSwapChain() = default;
 
@@ -168,7 +170,6 @@ auto Kataglyphis::VulkanSwapChain::choose_swap_extent(const VkSurfaceCapabilitie
     // is size of window
     if (surface_capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
         return surface_capabilities.currentExtent;
-
     }
     int width, height;
     glfwGetFramebufferSize(window->get_window(), &width, &height);

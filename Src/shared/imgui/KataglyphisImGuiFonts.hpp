@@ -66,4 +66,4 @@ inline void configureKataglyphisImGuiFonts(ImGuiIO &imguiIo)
     constexpr float defaultFontSizePixels = 30.0F;
     configureKataglyphisImGuiFonts(imguiIo, defaultFontSizePixels);
 }
-} // namespace Kataglyphis::Frontend
+}// namespace Kataglyphis::Frontend

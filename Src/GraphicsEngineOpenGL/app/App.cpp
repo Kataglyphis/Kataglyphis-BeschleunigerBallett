@@ -10,18 +10,18 @@
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/trigonometric.hpp>
 
+#include <iostream>
 #include <memory>
 #include <thread>
 
-#include "gui/GUI.hpp"
-#include "renderer/Renderer.hpp"
-#include "renderer/loading_screen/LoadingScreen.hpp"
-
-// all scene/game logic/ game object related stuff
-#include "camera/Camera.hpp"
 #include "debug/DebugApp.hpp"
-#include "scene/Scene.hpp"
-#include "window/Window.hpp"
+
+import kataglyphis.opengl.camera;
+import kataglyphis.opengl.scene;
+import kataglyphis.opengl.renderer;
+import kataglyphis.opengl.window;
+import kataglyphis.opengl.gui;
+import kataglyphis.opengl.loading_screen;
 
 auto main() -> int
 {
@@ -43,9 +43,15 @@ auto main() -> int
     // this will create opengl context!
     std::shared_ptr<Window> const main_window = std::make_shared<Window>(window_width, window_height);
 
+    if (!main_window->is_initialized()) {
+        std::cerr << "Failed to initialize GLFW window/OpenGL context. Check graphics driver and display setup."
+                  << '\n';
+        return 1;
+    }
+
     DebugApp const debugCallbacks;
 
-    Renderer renderer(window_width, window_height);
+    Renderer renderer(static_cast<GLuint>(window_width), static_cast<GLuint>(window_height));
 
     GUI gui;
     gui.init(main_window);
@@ -127,10 +133,10 @@ auto main() -> int
         GLuint const new_window_width = main_window->get_buffer_width();
         GLuint const new_window_height = main_window->get_buffer_height();
 
-          if (!(static_cast<GLint>(new_window_width) == window_width
+        if (!(static_cast<GLint>(new_window_width) == window_width
               && static_cast<GLint>(new_window_height) == window_height)) {
-            window_height = new_window_height;
-            window_width = new_window_width;
+            window_height = static_cast<GLint>(new_window_height);
+            window_width = static_cast<GLint>(new_window_width);
             renderer.update_window_params(window_width, window_height);
         }
 

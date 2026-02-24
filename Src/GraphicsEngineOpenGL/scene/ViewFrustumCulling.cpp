@@ -1,16 +1,20 @@
-#include <utility>
+module;
 
-#include "scene/ViewFrustumCulling.hpp"
-#include <glm/ext/vector_float3.hpp>
 #include <glad/glad.h>
-#include <memory>
-#include "camera/Camera.hpp"
-#include "scene/AABB.hpp"
+#include <glm/ext/vector_float3.hpp>
 #include <glm/ext/matrix_float4x4.hpp>
-#include <vector>
-#include "hostDevice/GlobalValues.hpp"
 #include <glm/geometric.hpp>
 #include <glm/trigonometric.hpp>
+#include <memory>
+#include <vector>
+#include <utility>
+
+#include "hostDevice/GlobalValues.hpp"
+
+module kataglyphis.opengl.view_frustum_culling;
+
+import kataglyphis.opengl.camera;
+import kataglyphis.opengl.aabb;
 
 ViewFrustumCulling::ViewFrustumCulling()
   :
@@ -93,8 +97,7 @@ auto ViewFrustumCulling::corners_outside_plane(std::vector<glm::vec3> aabb_corne
 {
     GLint outcode = outcode_pattern;
 
-    for (int i = 0; std::cmp_less(i, aabb_corners.size()); i++)
-    {
+    for (int i = 0; std::cmp_less(i, aabb_corners.size()); i++) {
         if (plane_point_distance(plane, aabb_corners[i]) < 0.0F) {
             if (i == 0) {
                 outcode = outcode_pattern;
@@ -196,39 +199,6 @@ void ViewFrustumCulling::update_frustum_param(GLfloat near_plane,
     // [5]: right
     frustum_planes[5].normal = normalize(aux_normal);
     frustum_planes[5].position = aux_position;
-
-    std::vector<glm::vec3> const frustum_corners;
-
-    // frustum_corners.push_back(near_center - main_camera->get_right_axis() *
-    // near_width -
-    //  main_camera->get_up_axis() * near_height);// left bottom front
-    //
-    // frustum_corners.push_back(far_center - main_camera->get_right_axis() *
-    // far_width -
-    //  main_camera->get_up_axis() * far_height);// left bottom back
-    //
-    // frustum_corners.push_back(near_center - main_camera->get_right_axis() *
-    // near_width +
-    //   main_camera->get_up_axis() * near_height); // left top front
-    //
-    // frustum_corners.push_back(far_center - main_camera->get_right_axis() *
-    // far_width +
-    //   main_camera->get_up_axis() * far_height);// left top back
-    //
-    // frustum_corners.push_back(near_center + main_camera->get_right_axis() *
-    // near_width -
-    //  main_camera->get_up_axis() * near_height); // right bottom front
-    //
-    // frustum_corners.push_back(far_center + main_camera->get_right_axis() *
-    // far_width -
-    //  main_camera->get_up_axis() * far_height);//right bottom back
-    //
-    // frustum_corners.push_back(near_center + main_camera->get_right_axis() *
-    // near_width +
-    //  main_camera->get_up_axis() * near_height);//right top front
-    //
-    // frustum_corners.push_back(far_center + main_camera->get_right_axis() *
-    // far_width + main_camera->get_up_axis() * far_height);//right top back
 
     // init(frustum_corners);
 }

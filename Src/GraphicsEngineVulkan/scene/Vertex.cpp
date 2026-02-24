@@ -1,19 +1,11 @@
-#include "scene/Vertex.hpp"
+module;
+
 #include <array>
 #include <cstddef>
+#include <glm/glm.hpp>
 #include <vulkan/vulkan_core.h>
 
-Vertex::Vertex()
-{
-    this->pos = glm::vec3(-1.F);
-    this->normal = glm::vec3(-1.F);
-    this->color = glm::vec3(-1.F);
-    this->texture_coords = glm::vec3(-1.F);
-}
-
-Vertex::Vertex(glm::vec3 pos, glm::vec3 normal, glm::vec3 color, glm::vec2 texture_coords)
-  : pos(pos), normal(normal), color(color), texture_coords(texture_coords)
-{}
+module kataglyphis.vulkan.vertex;
 
 namespace vertex {
 

@@ -1,19 +1,22 @@
-#include "window/Window.hpp"
-#include "GLFW/glfw3.h"
+module;
 
+#include <array>
+#include <cstdio>
 #include <glad/glad.h>
+#include <GLFW/glfw3.h>
 #include <imgui.h>
-
 #include <iostream>
 #include <print>
-#include <cstdio>
+#include <utility>
+
+module kataglyphis.opengl.window;
 
 Window::Window() : window_width(800), window_height(600), x_change(0.0F), y_change(0.0F)
 {
     // all keys non-pressed in the beginning
     for (bool &key : keys) { key = 0; }
 
-    initialize();
+    initialized = initialize() == 0;
 }
 
 // please use this constructor; never the standard
@@ -25,7 +28,7 @@ Window::Window(GLint window_width, GLint window_height)
     // all keys non-pressed in the beginning
     for (bool &key : keys) { key = 0; }
 
-    initialize();
+    initialized = initialize() == 0;
 }
 
 auto Window::initialize() -> int
@@ -36,33 +39,42 @@ auto Window::initialize() -> int
         return 1;
     }
 
-    // setup glfw window properties
-
-    // lets work with nothing older than version 3
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
-
-    // core profile = no backward compatibility
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-    // allow forward compatibility
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-
-    // allow it to resize
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-
-#ifdef NDEBUG
-    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, false);
-#else
-    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, 1);
+    auto const apply_window_hints = [](int major, int minor) {
+        glfwDefaultWindowHints();
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, major);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, minor);
+        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+#ifdef __APPLE__
+        glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
+        glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+#ifdef NDEBUG
+        glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, false);
+#else
+        glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, 1);
+#endif
+    };
 
-    // retrieve new window
-    main_window =
-      glfwCreateWindow(window_width, window_height, "\\__/ Epic graphics from hell \\__/", nullptr, nullptr);
+    std::array<std::pair<int, int>, 4> const gl_versions = {
+        std::pair{ 4, 6 }, std::pair{ 4, 5 }, std::pair{ 4, 4 }, std::pair{ 4, 3 }
+    };
+
+    for (auto const &[major, minor] : gl_versions) {
+        apply_window_hints(major, minor);
+        main_window =
+          glfwCreateWindow(window_width, window_height, "\\__/ Epic graphics from hell \\__/", nullptr, nullptr);
+        if (main_window != nullptr) {
+            std::println("Created OpenGL context {}.{}", major, minor);
+            break;
+        }
+    }
 
     if (main_window == nullptr) {
-        std::print("GLFW Window creation failed!");
+        char const *description = nullptr;
+        auto const error_code = glfwGetError(&description);
+        std::println("GLFW Window creation failed! Error code: {} message: {}",
+          error_code,
+          description != nullptr ? description : "no description");
         glfwTerminate();
         return 1;
     }

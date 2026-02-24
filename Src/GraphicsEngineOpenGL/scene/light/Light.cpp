@@ -1,6 +1,9 @@
-#include "scene/light/Light.hpp"
-#include <glm/ext/vector_float3.hpp>
+module;
+
 #include <glad/glad.h>
+#include <glm/ext/vector_float3.hpp>
+
+module kataglyphis.opengl.light;
 
 Light::Light()
   :

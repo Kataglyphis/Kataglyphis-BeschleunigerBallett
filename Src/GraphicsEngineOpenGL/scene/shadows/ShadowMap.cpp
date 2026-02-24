@@ -1,9 +1,9 @@
-#include "scene/shadows/ShadowMap.hpp"
-
+module;
 #include <glad/glad.h>
 #include <cstdio>
-
 #include <print>
+
+module kataglyphis.opengl.shadows.shadow_map;
 
 ShadowMap::ShadowMap()
   :

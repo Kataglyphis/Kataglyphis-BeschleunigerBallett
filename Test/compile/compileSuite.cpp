@@ -1,4 +1,3 @@
-#include "vulkan_base/VulkanBuffer.hpp"
 #include <gtest/gtest.h>
 
 // Demonstrate some basic assertions.

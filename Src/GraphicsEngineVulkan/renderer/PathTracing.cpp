@@ -1,4 +1,4 @@
-#include "PathTracing.hpp"
+module;
 
 #include <algorithm>
 #include <array>
@@ -10,14 +10,16 @@
 #include <vector>
 #include <vulkan/vulkan_core.h>
 
-#include "renderer/QueueFamilyIndices.hpp"
-#include "util/File.hpp"
-#include "vulkan_base/ShaderHelper.hpp"
-
 #include "common/Utilities.hpp"
-#include "vulkan_base/VulkanDevice.hpp"
-#include "vulkan_base/VulkanImage.hpp"
-#include "vulkan_base/VulkanSwapChain.hpp"
+#include "renderer/pushConstants/PushConstantPathTracing.hpp"
+
+module kataglyphis.vulkan.path_tracing;
+
+import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.queue_family_indices;
+import kataglyphis.vulkan.file;
+import kataglyphis.vulkan.image;
+import kataglyphis.vulkan.shader_helper;
 
 // Good source:
 // https://github.com/nvpro-samples/vk_mini_path_tracer/blob/main/vk_mini_path_tracer/main.cpp
@@ -82,8 +84,8 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(VkCommand
     VkImageMemoryBarrier presentToPathTracingImageBarrier{};
     presentToPathTracingImageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     presentToPathTracingImageBarrier.pNext = nullptr;
-    presentToPathTracingImageBarrier.srcQueueFamilyIndex = indices.graphics_family;
-    presentToPathTracingImageBarrier.dstQueueFamilyIndex = indices.compute_family;
+    presentToPathTracingImageBarrier.srcQueueFamilyIndex = static_cast<uint32_t>(indices.graphics_family);
+    presentToPathTracingImageBarrier.dstQueueFamilyIndex = static_cast<uint32_t>(indices.compute_family);
     presentToPathTracingImageBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
     presentToPathTracingImageBarrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     presentToPathTracingImageBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
@@ -133,8 +135,8 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(VkCommand
     VkImageMemoryBarrier pathTracingToPresentImageBarrier{};
     pathTracingToPresentImageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     pathTracingToPresentImageBarrier.pNext = nullptr;
-    pathTracingToPresentImageBarrier.srcQueueFamilyIndex = indices.compute_family;
-    pathTracingToPresentImageBarrier.dstQueueFamilyIndex = indices.graphics_family;
+    pathTracingToPresentImageBarrier.srcQueueFamilyIndex = static_cast<uint32_t>(indices.compute_family);
+    pathTracingToPresentImageBarrier.dstQueueFamilyIndex = static_cast<uint32_t>(indices.graphics_family);
     pathTracingToPresentImageBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     pathTracingToPresentImageBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     pathTracingToPresentImageBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;

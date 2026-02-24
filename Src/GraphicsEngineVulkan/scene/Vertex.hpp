@@ -1,61 +1,28 @@
-// this little "hack" is needed for using it on the
-// CPU side as well for the GPU side :)
-// inspired by the NVDIDIA tutorial:
-// https://nvpro-samples.github.io/vk_raytracing_tutorial_KHR/
-#ifdef __cplusplus
 #pragma once
-#define GLM_ENABLE_EXPERIMENTAL
-#include <vulkan/vulkan.h>
 
-#include <array>
+#ifdef __cplusplus
 #include <glm/glm.hpp>
-#include <glm/gtx/hash.hpp>
-#include <vector>
+#define KTG_VEC2 glm::vec2
+#define KTG_VEC3 glm::vec3
+#else
+#define KTG_VEC2 vec2
+#define KTG_VEC3 vec3
+#endif
 
-class Vertex
+struct Vertex
 {
-  public:
-    Vertex();
-    Vertex(glm::vec3 pos, glm::vec3 normal, glm::vec3 color, glm::vec2 texture_coords);
+    KTG_VEC3 pos;
+    KTG_VEC3 normal;
+    KTG_VEC3 color;
+    KTG_VEC2 texture_coords;
 
-    glm::vec3 pos{};
-    glm::vec3 normal{};
-    glm::vec3 color{};
-    glm::vec2 texture_coords{};
-
+#ifdef __cplusplus
     bool operator==(const Vertex &other) const
     {
         return pos == other.pos && normal == other.normal && texture_coords == other.texture_coords;
     }
-};
-
-namespace vertex {
-
-std::array<VkVertexInputAttributeDescription, 4> getVertexInputAttributeDesc();
-
-}
-
-namespace std {
-template<> struct hash<Vertex>
-{
-    size_t operator()(Vertex const &vertex) const
-    {
-        size_t h1 = hash<glm::vec3>()(vertex.pos);
-        size_t h2 = hash<glm::vec3>()(vertex.color);
-        size_t h3 = hash<glm::vec2>()(vertex.texture_coords);
-        size_t h4 = hash<glm::vec3>()(vertex.normal);
-
-        return (((((((h2 << 1) ^ h1) >> 1) ^ h3) << 1) ^ h4));
-    }
-};
-}// namespace std
-#else
-struct Vertex
-{
-    vec3 pos;
-    vec3 normal;
-    vec3 color;
-    vec2 texture_coords;
-};
-
 #endif
+};
+
+#undef KTG_VEC2
+#undef KTG_VEC3

@@ -1,24 +1,26 @@
-#include "scene/Scene.hpp"
+module;
 
-#include "hostDevice/host_device_shared.hpp"
-#include "scene/light/directional_light/DirectionalLight.hpp"
 #include <cstdint>
-#include "scene/atmospheric_effects/clouds/Clouds.hpp"
-#include "scene/ViewFrustumCulling.hpp"
-#include "window/Window.hpp"
-#include "scene/light/point_light/PointLight.hpp"
-#include "scene/Rotation.hpp"
-#include "scene/GameObject.hpp"
-#include "scene/ObjMaterial.hpp"
 #include <filesystem>
 #include <memory>
 #include <glad/glad.h>
+#include <glm/glm.hpp>
 #include <mutex>
 #include <sstream>
 #include <utility>
-#include <utility>
 #include <vector>
 #include <string>
+
+#include "hostDevice/host_device_shared.hpp"
+module kataglyphis.opengl.scene;
+
+import kataglyphis.opengl.directional_light;
+import kataglyphis.opengl.point_light;
+import kataglyphis.opengl.clouds;
+import kataglyphis.opengl.window;
+import kataglyphis.opengl.view_frustum_culling;
+import kataglyphis.opengl.game_object;
+import kataglyphis.opengl.obj_material;
 
 Scene::Scene()
   :
@@ -142,7 +144,7 @@ void Scene::unbind_textures_and_buffer() { game_objects[0]->get_model()->unbind_
 
 auto Scene::get_texture_count(int /*index*/) -> int { return game_objects[0]->get_model()->get_texture_count(); }
 
-void Scene::set_context_setup(bool context_setup) { this->context_setup = context_setup; }
+void Scene::set_context_setup(bool is_context_setup) { this->context_setup = is_context_setup; }
 
 auto Scene::get_context_setup() const -> bool { return context_setup; }
 

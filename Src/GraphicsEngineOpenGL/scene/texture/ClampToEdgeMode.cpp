@@ -1,5 +1,8 @@
-#include "ClampToEdgeMode.hpp"
+module;
+
 #include <glad/glad.h>
+
+module kataglyphis.opengl.clamp_to_edge_mode;
 
 ClampToEdgeMode::ClampToEdgeMode() = default;
 

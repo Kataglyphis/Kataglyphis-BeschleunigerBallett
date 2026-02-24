@@ -1,9 +1,11 @@
-#include "OmniDirShadowMap.hpp"
-#include "scene/shadows/ShadowMap.hpp"
+module;
 #include <glad/glad.h>
 #include <cstdio>
-
 #include <print>
+
+module kataglyphis.opengl.point_light.omni_dir_shadow_map;
+
+import kataglyphis.opengl.shadows.shadow_map;
 
 OmniDirShadowMap::OmniDirShadowMap() = default;
 

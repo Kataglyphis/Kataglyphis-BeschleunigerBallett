@@ -1,13 +1,17 @@
-#include "scene/AABB.hpp"
-#include "scene/Mesh.hpp"
+module;
 
-#include <vector>
-#include <glm/ext/vector_float3.hpp>
-#include <glm/ext/matrix_float4x4.hpp>
-#include <glad/glad.h>
-#include <glm/ext/vector_float2.hpp>
-#include <memory>
 #include <cstdlib>
+#include <memory>
+#include <vector>
+
+#include <glad/glad.h>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glm/ext/vector_float2.hpp>
+#include <glm/ext/vector_float3.hpp>
+
+module kataglyphis.opengl.aabb;
+
+import kataglyphis.opengl.mesh;
 
 AABB::AABB() = default;
 
@@ -21,40 +25,40 @@ auto AABB::get_corners(glm::mat4 model) -> std::vector<glm::vec3>
     return corners_world_space;
 }
 
-void AABB::init(GLfloat minX, GLfloat maxX, GLfloat minY, GLfloat maxY, GLfloat minZ, GLfloat maxZ)
+void AABB::init(GLfloat min_x, GLfloat max_x, GLfloat min_y, GLfloat max_y, GLfloat min_z, GLfloat max_z)
 {
-    this->minX = minX;
-    this->maxX = maxX;
-    this->minY = minY;
-    this->maxY = maxY;
-    this->minZ = minZ;
-    this->maxZ = maxZ;
+    this->minX = min_x;
+    this->maxX = max_x;
+    this->minY = min_y;
+    this->maxY = max_y;
+    this->minZ = min_z;
+    this->maxZ = max_z;
 
-    corners.emplace_back(minX, minY, minZ);
-    corners.emplace_back(minX, minY, maxZ);
-    corners.emplace_back(minX, maxY, minZ);
-    corners.emplace_back(minX, maxY, maxZ);
-    corners.emplace_back(maxX, minY, minZ);
-    corners.emplace_back(maxX, minY, maxZ);
-    corners.emplace_back(maxX, maxY, minZ);
-    corners.emplace_back(maxX, maxY, maxZ);
+    corners.emplace_back(min_x, min_y, min_z);
+    corners.emplace_back(min_x, min_y, max_z);
+    corners.emplace_back(min_x, max_y, min_z);
+    corners.emplace_back(min_x, max_y, max_z);
+    corners.emplace_back(max_x, min_y, min_z);
+    corners.emplace_back(max_x, min_y, max_z);
+    corners.emplace_back(max_x, max_y, min_z);
+    corners.emplace_back(max_x, max_y, max_z);
 
     // 0: left  bottom  front
-    vertices.emplace_back(glm::vec3(minX, minY, maxZ), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
+    vertices.emplace_back(glm::vec3(min_x, min_y, max_z), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
     // 1: right bottom  front
-    vertices.emplace_back(glm::vec3(maxX, minY, maxZ), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
+    vertices.emplace_back(glm::vec3(max_x, min_y, max_z), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
     // 2: left  top     front
-    vertices.emplace_back(glm::vec3(minX, maxY, maxZ), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
+    vertices.emplace_back(glm::vec3(min_x, max_y, max_z), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
     // 3: right top     front
-    vertices.emplace_back(glm::vec3(maxX, maxY, maxZ), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
+    vertices.emplace_back(glm::vec3(max_x, max_y, max_z), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
     // 4: left  bottom  far
-    vertices.emplace_back(glm::vec3(minX, minY, minZ), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
+    vertices.emplace_back(glm::vec3(min_x, min_y, min_z), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
     // 5: right bottom  far
-    vertices.emplace_back(glm::vec3(maxX, minY, minZ), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
+    vertices.emplace_back(glm::vec3(max_x, min_y, min_z), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
     // 6: left  top     far
-    vertices.emplace_back(glm::vec3(minX, maxY, minZ), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
+    vertices.emplace_back(glm::vec3(min_x, max_y, min_z), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
     // 7: right top     far
-    vertices.emplace_back(glm::vec3(maxX, maxY, minZ), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
+    vertices.emplace_back(glm::vec3(max_x, max_y, min_z), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
 
     indices = { // note that we start from 0!
 

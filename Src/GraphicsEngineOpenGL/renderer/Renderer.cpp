@@ -1,19 +1,22 @@
-#include "renderer/Renderer.hpp"
-#include "renderer/deferred/GBuffer.hpp"
-#include "scene/light/point_light/OmniShadowMapPass.hpp"
-#include "scene/light/directional_light/DirectionalShadowMapPass.hpp"
-#include "renderer/deferred/GeometryPass.hpp"
-#include "renderer/deferred/LightingPass.hpp"
-#include "camera/Camera.hpp"
-#include "scene/Scene.hpp"
-#include "scene/light/point_light/PointLight.hpp"
-#include "renderer/deferred/RenderPass.hpp"
+module;
 
 #include <glad/glad.h>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <cstddef>
 #include <memory>
 #include <vector>
+
+module kataglyphis.opengl.renderer;
+
+import kataglyphis.opengl.camera;
+import kataglyphis.opengl.gbuffer;
+import kataglyphis.opengl.scene;
+import kataglyphis.opengl.render_pass;
+import kataglyphis.opengl.omni_shadow_map_pass;
+import kataglyphis.opengl.directional_shadow_map_pass;
+import kataglyphis.opengl.geometry_pass;
+import kataglyphis.opengl.lighting_pass;
+import kataglyphis.opengl.point_light;
 
 Renderer::Renderer(GLuint window_width, GLuint window_height)
   :

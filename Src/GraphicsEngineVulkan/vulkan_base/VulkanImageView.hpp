@@ -1,7 +1,7 @@
 #pragma once
 #include <vulkan/vulkan.h>
 
-#include "vulkan_base/VulkanDevice.hpp"
+import kataglyphis.vulkan.device;
 namespace Kataglyphis {
 class VulkanImageView
 {

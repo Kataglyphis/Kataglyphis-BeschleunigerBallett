@@ -8,6 +8,7 @@ include(cmake/filters/SetShaderFilters.cmake)
 include(cmake/filters/SetProjectFilters.cmake)
 include(cmake/SetSourceGroups.cmake)
 include(cmake/filters/SetExternalLibsFilters.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
 
 file(GLOB_RECURSE OPENGLRENDERER_SOURCES "*.cpp")
 
@@ -15,25 +16,26 @@ file(GLOB_RECURSE SHADER_HEADERS "${SHADER_SRC_DIR}/*.hpp")
 
 file(GLOB_RECURSE OPENGLRENDERER_HEADERS "*.hpp")
 
-set(OpenGlEnigneTargetName "GraphicsEngineOpenGLBackend")
+kataglyphis_collect_module_interfaces(OPENGL_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}")
+
+set(OpenGlEngineTargetName "GraphicsEngineOpenGLBackend")
 
 # add the executable
-add_executable(${OpenGlEnigneTargetName})
+add_executable(${OpenGlEngineTargetName})
 
-# Treat MSVC and clang-cl on Windows differently in a sense of deployment
-# https://clang.llvm.org/docs/UsersManual.html
-if(WIN32 AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC))
-  target_compile_definitions(${OpenGlEnigneTargetName} PRIVATE RELATIVE_RESOURCE_PATH="/../../Resources/")
-else()
-  target_compile_definitions(${OpenGlEnigneTargetName} PRIVATE RELATIVE_RESOURCE_PATH="/../Resources/")
-endif()
+set_target_properties(${OpenGlEngineTargetName} PROPERTIES CXX_SCAN_FOR_MODULES ON)
+
+kataglyphis_apply_runtime_compile_definitions(
+  ${OpenGlEngineTargetName}
+  RESOURCE_PATH_NON_MSVC "/../Resources/"
+  RESOURCE_PATH_MSVC "/../../Resources/")
 
 # we are using this dir strings for removing hard coded file locations
 # at c++ side
 configure_file(OpenGLRendererConfig.hpp.in "renderer/OpenGLRendererConfig.hpp")
 
 target_sources(
-  ${OpenGlEnigneTargetName}
+  ${OpenGlEngineTargetName}
   PUBLIC ${OPENGLRENDERER_SOURCES}
          ${PBR_SHADER_FILTER}
          ${BRDF_SHADER_FILTER}
@@ -55,10 +57,19 @@ target_sources(
          ${OPENGLRENDERER_HEADERS}
          ${SHADER_HEADERS})
 
-target_include_directories(${OpenGlEnigneTargetName} PRIVATE ${OPENGL_INCLUDE_DIRS} ${Vulkan_INCLUDE_DIRS})
+target_sources(
+  ${OpenGlEngineTargetName}
+  PUBLIC FILE_SET
+         CXX_MODULES
+         TYPE
+         CXX_MODULES
+         FILES
+                 ${OPENGL_MODULE_INTERFACE_FILES})
+
+target_include_directories(${OpenGlEngineTargetName} PRIVATE ${OPENGL_INCLUDE_DIRS} ${Vulkan_INCLUDE_DIRS})
 
 target_link_libraries(
-  ${OpenGlEnigneTargetName}
+  ${OpenGlEngineTargetName}
   PUBLIC # for imgui
          ${CMAKE_DL_LIBS}
          Threads::Threads

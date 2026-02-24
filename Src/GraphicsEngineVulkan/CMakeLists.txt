@@ -8,6 +8,7 @@ include(cmake/filters/SetShaderFilters.cmake)
 include(cmake/filters/SetProjectFilters.cmake)
 include(cmake/SetSourceGroups.cmake)
 include(cmake/filters/SetExternalLibsFilters.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
 
 file(GLOB_RECURSE VULKANRENDERER_SOURCES "*.cpp")
 
@@ -18,16 +19,13 @@ file(
 
 file(GLOB_RECURSE VULKANRENDERER_HEADERS "*.hpp")
 
+kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}")
+
 if(RUST_FEATURES)
 
-  corrosion_import_crate(
-    MANIFEST_PATH rusty_code/Cargo.toml
-  )
+  corrosion_import_crate(MANIFEST_PATH rusty_code/Cargo.toml)
   if(WIN32)
-    corrosion_set_env_vars(
-              rusty_code
-              CXXFLAGS=/EHsc
-    )
+    corrosion_set_env_vars(rusty_code CXXFLAGS=/EHsc)
   else()
     # Native-only corrosion/toolchain setup (no cross-building)
     # Optionally override with -DGCC_TOOLCHAIN_PATH=/path/to/gcc when configuring
@@ -40,14 +38,20 @@ if(RUST_FEATURES)
     # Nur setzen, wenn wir im GNU/GCC Preset sind
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
       if(_HAS_DEFAULT_GCC_TOOLCHAIN)
-        set(GCC_TOOLCHAIN_PATH "${_DEFAULT_GCC_TOOLCHAIN}" CACHE PATH "GCC toolchain root")
+        set(GCC_TOOLCHAIN_PATH
+            "${_DEFAULT_GCC_TOOLCHAIN}"
+            CACHE PATH "GCC toolchain root")
       else()
-        set(GCC_TOOLCHAIN_PATH "" CACHE PATH "GCC toolchain root" FORCE)
+        set(GCC_TOOLCHAIN_PATH
+            ""
+            CACHE PATH "GCC toolchain root" FORCE)
       endif()
       set(RUST_CXXFLAGS "-fexceptions")
     else()
       # Falls Clang aktiv ist, nur dann toolchain-Flag setzen, wenn der Pfad existiert
-      set(GCC_TOOLCHAIN_PATH "" CACHE PATH "GCC toolchain root" FORCE)
+      set(GCC_TOOLCHAIN_PATH
+          ""
+          CACHE PATH "GCC toolchain root" FORCE)
       if(_HAS_DEFAULT_GCC_TOOLCHAIN)
         set(RUST_CXXFLAGS "--gcc-toolchain=${_DEFAULT_GCC_TOOLCHAIN} -fexceptions")
       else()
@@ -72,14 +76,20 @@ if(RUST_FEATURES)
     if(GCC_TOOLCHAIN_PATH AND EXISTS "${GCC_TOOLCHAIN_PATH}")
       # Try to find reasonable native compiler binary names
       if(HOST_ARCH STREQUAL "x86_64")
-        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/x86_64-pc-linux-gnu-gcc" "${GCC_TOOLCHAIN_PATH}/bin/gcc")
-        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/x86_64-pc-linux-gnu-g++" "${GCC_TOOLCHAIN_PATH}/bin/g++")
+        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/x86_64-pc-linux-gnu-gcc"
+                                             "${GCC_TOOLCHAIN_PATH}/bin/gcc")
+        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/x86_64-pc-linux-gnu-g++"
+                                             "${GCC_TOOLCHAIN_PATH}/bin/g++")
       elseif(HOST_ARCH STREQUAL "aarch64")
-        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/aarch64-linux-gnu-gcc" "${GCC_TOOLCHAIN_PATH}/bin/gcc")
-        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/aarch64-linux-gnu-g++" "${GCC_TOOLCHAIN_PATH}/bin/g++")
+        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/aarch64-linux-gnu-gcc"
+                                             "${GCC_TOOLCHAIN_PATH}/bin/gcc")
+        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/aarch64-linux-gnu-g++"
+                                             "${GCC_TOOLCHAIN_PATH}/bin/g++")
       elseif(HOST_ARCH STREQUAL "riscv64")
-        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/riscv64-unknown-linux-gnu-gcc" "${GCC_TOOLCHAIN_PATH}/bin/gcc")
-        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/riscv64-unknown-linux-gnu-g++" "${GCC_TOOLCHAIN_PATH}/bin/g++")
+        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/riscv64-unknown-linux-gnu-gcc"
+                                             "${GCC_TOOLCHAIN_PATH}/bin/gcc")
+        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/riscv64-unknown-linux-gnu-g++"
+                                             "${GCC_TOOLCHAIN_PATH}/bin/g++")
       else()
         find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/gcc")
         find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/g++")
@@ -109,30 +119,27 @@ if(RUST_FEATURES)
         rusty_code
         CC=${GCC_TOOLCHAIN_GCC}
         CXX=${GCC_TOOLCHAIN_GXX}
-        "CXXFLAGS=${RUST_CXXFLAGS}"
-      )
+        "CXXFLAGS=${RUST_CXXFLAGS}")
 
-      message(STATUS "Configured native corrosion: CC=${GCC_TOOLCHAIN_GCC} CXX=${GCC_TOOLCHAIN_GXX} CXXFLAGS=${RUST_CXXFLAGS}")
+      message(
+        STATUS "Configured native corrosion: CC=${GCC_TOOLCHAIN_GCC} CXX=${GCC_TOOLCHAIN_GXX} CXXFLAGS=${RUST_CXXFLAGS}"
+      )
       if(GCC_LIB_PATH)
         message(STATUS "GCC library path: ${GCC_LIB_PATH}")
       endif()
     else()
       message(STATUS "No GCC_TOOLCHAIN_PATH (${GCC_TOOLCHAIN_PATH}) found — using system compilers (native build)")
       # Still set minimal sensible env so corrosion has deterministic env on non-Windows hosts
-      corrosion_set_env_vars(
-        rusty_code
-        "CXXFLAGS=${RUST_CXXFLAGS}"
-      )
+      corrosion_set_env_vars(rusty_code "CXXFLAGS=${RUST_CXXFLAGS}")
     endif()
   endif()
-  
+
   corrosion_add_cxxbridge(
     rusty_bridge
     CRATE
     rusty_code
     FILES
-    lib.rs
-    )
+    lib.rs)
 endif()
 
 # add the executable
@@ -173,23 +180,15 @@ else()
   target_compile_definitions(${PROJECT_NAME} PRIVATE USE_RUST=0)
 endif()
 
-# Treat MSVC and clang-cl on Windows differently in a sense of deployment
-# https://clang.llvm.org/docs/UsersManual.html
-if(WIN32 AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC))
-  target_compile_definitions(
-    ${PROJECT_NAME}
-    PRIVATE RELATIVE_RESOURCE_PATH="/../../Resources/"
-            RELATIVE_INCLUDE_PATH="/../../Src/GraphicsEngineVulkan/"
-            RELATIVE_IMGUI_FONTS_PATH="/../../ExternalLib/IMGUI/misc/fonts/"
-            ShaderIncludesString="${ShaderIncludesString}")
-else()
-  target_compile_definitions(
-    ${PROJECT_NAME}
-    PRIVATE RELATIVE_RESOURCE_PATH="/../Resources/"
-            RELATIVE_INCLUDE_PATH="/../Src/GraphicsEngineVulkan/"
-            RELATIVE_IMGUI_FONTS_PATH="/../ExternalLib/IMGUI/misc/fonts/"
-            ShaderIncludesString="${ShaderIncludesString}")
-endif()
+kataglyphis_apply_runtime_compile_definitions(
+  ${PROJECT_NAME}
+  RESOURCE_PATH_NON_MSVC "/../Resources/"
+  RESOURCE_PATH_MSVC "/../../Resources/"
+  INCLUDE_PATH_NON_MSVC "/../Src/GraphicsEngineVulkan/"
+  INCLUDE_PATH_MSVC "/../../Src/GraphicsEngineVulkan/"
+  IMGUI_FONTS_PATH_NON_MSVC "/../ExternalLib/IMGUI/misc/fonts/"
+  IMGUI_FONTS_PATH_MSVC "/../../ExternalLib/IMGUI/misc/fonts/"
+  SHADER_INCLUDES_STRING "${ShaderIncludesString}")
 
 configure_file(VulkanRendererConfig.hpp.in "${CMAKE_CURRENT_SOURCE_DIR}/renderer/VulkanRendererConfig.hpp")
 
@@ -213,6 +212,17 @@ target_sources(
          FILES
          ${VULKANRENDERER_HEADERS}
          ${SHADER_HEADERS})
+
+target_sources(
+  ${PROJECT_NAME}
+  PUBLIC FILE_SET
+         CXX_MODULES
+         TYPE
+         CXX_MODULES
+         BASE_DIRS
+         ${PROJECT_INCLUDE_DIR}
+         FILES
+         ${VULKAN_MODULE_INTERFACE_FILES})
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS})
 

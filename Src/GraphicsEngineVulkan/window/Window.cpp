@@ -1,4 +1,4 @@
-#include "window/Window.hpp"
+module;
 #include "GLFW/glfw3.h"
 #include "spdlog/spdlog.h"
 
@@ -9,6 +9,8 @@
 
 #include <print>
 #include <vulkan/vulkan_core.h>
+
+module kataglyphis.vulkan.window;
 
 using namespace Kataglyphis::Frontend;
 // GLFW Callback functions

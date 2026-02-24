@@ -1,24 +1,28 @@
-#include "ObjLoader.hpp"
-#include "scene/Model.hpp"
-#include "scene/ObjMaterial.hpp"
-#include "scene/Texture.hpp"
-#include "scene/Vertex.hpp"
-#include "vulkan_base/VulkanDevice.hpp"
+module;
+
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
-#include <glm/ext/vector_float2.hpp>
-#include <glm/geometric.hpp>
 #include <memory>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 #define TINYOBJLOADER_IMPLEMENTATION
-#include <tiny_obj_loader.h>
-
-#include "util/File.hpp"
+#include <glm/ext/vector_float2.hpp>
+#include <glm/geometric.hpp>
+#include <glm/vec3.hpp>
 #include <iostream>
+#include <tiny_obj_loader.h>
 #include <unordered_map>
+
+module kataglyphis.vulkan.obj_loader;
+
+import kataglyphis.vulkan.vertex;
+import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.obj_material;
+import kataglyphis.vulkan.model;
+import kataglyphis.vulkan.texture;
+import kataglyphis.vulkan.file;
 
 using namespace Kataglyphis;
 
@@ -33,7 +37,6 @@ auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model
 
     // first load txtures from model
     std::vector<std::string> textureNames = loadTexturesAndMaterials(modelFile);
-    std::vector<int> matToTex(textureNames.size());
 
     // now that we have the names lets create the vulkan side of textures
     for (size_t i = 0; i < textureNames.size(); i++) {
@@ -44,10 +47,8 @@ auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model
             Texture texture;
             texture.createFromFile(device, command_pool, textureNames[i]);
             new_model->addTexture(texture);
-            matToTex[i] = new_model->getTextureCount();
 
         } else {
-            matToTex[i] = 0;
         }
     }
 
@@ -179,10 +180,10 @@ void ObjLoader::loadVertices(const std::string &fileName)
                     tex_coords = glm::vec2(tx, ty);
                 }
 
-                Vertex const vert{ pos, normals, color, tex_coords };
+                Vertex const vert{ .pos = pos, .normal = normals, .color = color, .texture_coords = tex_coords };
 
                 if (!vertices_map.contains(vert)) {
-                    vertices_map[vert] = vertices.size();
+                    vertices_map[vert] = static_cast<uint32_t>(vertices.size());
                     vertices.push_back(vert);
                 }
 
@@ -193,7 +194,7 @@ void ObjLoader::loadVertices(const std::string &fileName)
 
             // per-face material; face usually is triangle
             // matToTex[shapes[s].mesh.material_ids[f]]
-            materialIndex.push_back(shape.mesh.material_ids[f]);
+            materialIndex.push_back(static_cast<uint32_t>(shape.mesh.material_ids[f]));
         }
     }
 

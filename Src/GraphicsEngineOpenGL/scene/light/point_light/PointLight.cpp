@@ -1,13 +1,16 @@
-#include "scene/light/point_light/PointLight.hpp"
-#include <glm/ext/vector_float3.hpp>
-#include <glad/glad.h>
-#include "scene/light/Light.hpp"
+module;
+
+#include <vector>
 #include <memory>
-#include "scene/light/point_light/OmniDirShadowMap.hpp"
+#include <glad/glad.h>
+#include <glm/ext/vector_float3.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/trigonometric.hpp>
-#include <vector>
 #include <glm/ext/matrix_transform.hpp>
+
+module kataglyphis.opengl.point_light;
+
+import kataglyphis.opengl.point_light.omni_dir_shadow_map;
 
 PointLight::PointLight()
   :

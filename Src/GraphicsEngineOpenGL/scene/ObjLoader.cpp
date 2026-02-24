@@ -1,25 +1,33 @@
-#include "ObjLoader.hpp"
-#include <string>
-#include <vector>
-#include "scene/Vertex.hpp"
-#include "scene/ObjMaterial.hpp"
-#include <glm/ext/vector_float4.hpp>
-#include <cstdlib>
-#include <glad/glad.h>
-#include <stdexcept>
-#include <sstream>
+module;
+
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <algorithm>
+#include <cstdlib>
+#include <filesystem>
+#include <iostream>
+#include <sstream>
+#include <stdexcept>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+#include <glad/glad.h>
 #include <glm/ext/vector_float2.hpp>
+#include <glm/ext/vector_float3.hpp>
+#include <glm/ext/vector_float4.hpp>
 #include <glm/geometric.hpp>
 
 #define TINYOBJLOADER_IMPLEMENTATION
-#include "hostDevice/host_device_shared.hpp"
-#include <filesystem>
-#include <iostream>
 #include <tiny_obj_loader.h>
-#include <unordered_map>
+
+#include "hostDevice/host_device_shared.hpp"
+#include "renderer/OpenGLRendererConfig.hpp"
+
+module kataglyphis.opengl.obj_loader;
+
+import kataglyphis.opengl.obj_material;
+import kataglyphis.opengl.vertex;
 
 ObjLoader::ObjLoader() = default;
 

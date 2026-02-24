@@ -11,13 +11,16 @@ set(SHADER_SRC_DIR ${WORKING_DIRECTORY}Resources/Shaders/)
 include(${PROJECT_SRC_DIR}cmake/filters/SetShaderFilters.cmake)
 include(${PROJECT_SRC_DIR}cmake/filters/SetProjectFilters.cmake)
 include(${PROJECT_SRC_DIR}cmake/filters/SetExternalLibsFilters.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
 
 set(COMMIT_TEST_SUITE_OPENGL commitTestSuiteOpenGL)
+
+kataglyphis_collect_module_interfaces(OPENGL_MODULE_INTERFACE_FILES "${PROJECT_SRC_DIR}")
 
 file(GLOB_RECURSE OPENGLRENDERER_SOURCES "${PROJECT_SRC_DIR}/*.cpp")
 
 # Specify the file to exclude
-list(REMOVE_ITEM  OPENGLRENDERER_SOURCES "${PROJECT_SRC_DIR}/app/App.cpp")
+list(REMOVE_ITEM OPENGLRENDERER_SOURCES "${PROJECT_SRC_DIR}/app/App.cpp")
 
 file(GLOB_RECURSE OPENGLRENDERER_COMMIT_TEST_SUITE_SOURCES "*.cpp")
 
@@ -26,12 +29,12 @@ file(GLOB_RECURSE SHADER_HEADERS "${SHADER_SRC_DIR}/*.hpp")
 file(GLOB_RECURSE OPENGLRENDERER_HEADERS "${SHADER_SRC_DIR}/*.hpp")
 
 add_executable(${COMMIT_TEST_SUITE_OPENGL})
+set_target_properties(${COMMIT_TEST_SUITE_OPENGL} PROPERTIES CXX_SCAN_FOR_MODULES ON)
 
-if(NOT MSVC)
-  target_compile_definitions(${COMMIT_TEST_SUITE_OPENGL} PRIVATE RELATIVE_RESOURCE_PATH="/../../../../Resources/")
-else()
-  target_compile_definitions(${COMMIT_TEST_SUITE_OPENGL} PRIVATE RELATIVE_RESOURCE_PATH="/../../Resources/")
-endif()
+kataglyphis_apply_runtime_compile_definitions(
+  ${COMMIT_TEST_SUITE_OPENGL}
+  RESOURCE_PATH_NON_MSVC "/../../../../Resources/"
+  RESOURCE_PATH_MSVC "/../../Resources/")
 # we are using this dir strings for removing hard coded file locations
 # at c++ side
 configure_file(${PROJECT_SRC_DIR}/OpenGLRendererConfig.hpp.in "${PROJECT_SRC_DIR}/renderer/OpenGLRendererConfig.hpp")
@@ -59,6 +62,17 @@ target_sources(
          FILES
          ${OPENGLRENDERER_HEADERS}
          ${SHADER_HEADERS})
+
+target_sources(
+  ${COMMIT_TEST_SUITE_OPENGL}
+  PUBLIC FILE_SET
+         CXX_MODULES
+         TYPE
+         CXX_MODULES
+         BASE_DIRS
+         ${PROJECT_INCLUDE_DIR}
+         FILES
+         ${OPENGL_MODULE_INTERFACE_FILES})
 
 target_include_directories(${COMMIT_TEST_SUITE_OPENGL} PRIVATE ${OPENGL_INCLUDE_DIRS} ${Vulkan_INCLUDE_DIRS})
 

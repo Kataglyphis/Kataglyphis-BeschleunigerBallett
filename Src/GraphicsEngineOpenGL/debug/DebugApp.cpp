@@ -106,14 +106,9 @@ DebugApp::DebugApp()
         glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
         glDebugMessageCallback(glDebugOutput, nullptr);
         glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
-                constexpr GLuint redundant_fbo_message_id = 8;
-                glDebugMessageControl(
-                    GL_DEBUG_SOURCE_API,
-                    GL_DEBUG_TYPE_PERFORMANCE,
-                    GL_DEBUG_SEVERITY_LOW,
-                    1,
-                    &redundant_fbo_message_id,
-                    GL_FALSE);
+        constexpr GLuint redundant_fbo_message_id = 8;
+        glDebugMessageControl(
+          GL_DEBUG_SOURCE_API, GL_DEBUG_TYPE_PERFORMANCE, GL_DONT_CARE, 1, &redundant_fbo_message_id, GL_FALSE);
     }
 #endif
 }
