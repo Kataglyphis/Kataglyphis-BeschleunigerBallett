@@ -28,6 +28,16 @@ set(BENCHMARK_USE_BUNDLED_GTEST
     OFF
     CACHE BOOL "Disable the bundled GTest usage.")
 
+if(myproject_DISABLE_EXCEPTIONS)
+  set(BENCHMARK_ENABLE_EXCEPTIONS
+    OFF
+    CACHE BOOL "Disable benchmark exceptions to match project configuration." FORCE)
+else()
+  set(BENCHMARK_ENABLE_EXCEPTIONS
+    ON
+    CACHE BOOL "Enable benchmark exceptions to match project configuration." FORCE)
+endif()
+
 add_subdirectory(GOOGLE_BENCHMARK)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND BUILD_TESTING AND NOT(CMAKE_BUILD_TYPE STREQUAL "Profile" ))

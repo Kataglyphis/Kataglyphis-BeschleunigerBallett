@@ -89,18 +89,26 @@ source_vulkan_env
 
 BUILD_DIR="${BUILD_DIR_ARG:-${BUILD_DIR:-}}"
 BUILD_TYPE="${BUILD_TYPE_ARG:-${BUILD_TYPE:-Debug}}"
-CTEST_EXCLUDE="${CTEST_EXCLUDE_ARG:-${CTEST_EXCLUDE:-Integration.VulkanEngine RendererTest.BasicSetup}}"
+CTEST_EXCLUDE="${CTEST_EXCLUDE_ARG:-${CTEST_EXCLUDE:-}}"
 
 if [[ -n "${BUILD_DIR}" ]]; then
   cd "${BUILD_DIR}"
 fi
 
-ctest \
-  -C "${BUILD_TYPE}" \
-  --verbose \
-  --extra-verbose \
-  --debug \
-  -T test \
-  --output-on-failure \
-  -E "${CTEST_EXCLUDE}" \
-  "$@"
+CTEST_CMD=(
+  ctest
+  -C "${BUILD_TYPE}"
+  --verbose
+  --extra-verbose
+  --debug
+  -T test
+  --output-on-failure
+)
+
+if [[ -n "${CTEST_EXCLUDE}" ]]; then
+  CTEST_CMD+=( -E "${CTEST_EXCLUDE}" )
+fi
+
+CTEST_CMD+=( "$@" )
+
+"${CTEST_CMD[@]}"

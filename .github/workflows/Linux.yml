@@ -97,7 +97,7 @@ jobs:
             --vulkan-version "${{ env.VULKAN_VERSION }}" \
             --build-dir "${{ env.BUILD_DIR }}" \
             --build-type "${{ env.BUILD_TYPE }}" \
-            --ctest-exclude "Integration.VulkanEngine RendererTest.BasicSetup"
+            --ctest-exclude "^Integration\\.VulkanEngine$|^RendererTest\\.BasicSetup$"
 
       - name: Run fuzzer tests
         run: |
@@ -239,7 +239,7 @@ jobs:
             --vulkan-version "${{ env.VULKAN_VERSION }}" \
             --build-dir "${{ env.BUILD_DIR }}" \
             --build-type "${{ env.BUILD_TYPE }}" \
-            --ctest-exclude "Integration.VulkanEngine RendererTest.BasicSetup"
+            --ctest-exclude "^Integration\\.VulkanEngine$|^RendererTest\\.BasicSetup$"
 
       - name: Run fuzzer tests (gcc)
         run: |

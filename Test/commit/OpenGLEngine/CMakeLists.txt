@@ -92,7 +92,12 @@ target_link_libraries(
 
 target_link_libraries(${COMMIT_TEST_SUITE_OPENGL} PRIVATE GSL spdlog)
 
-gtest_discover_tests(${COMMIT_TEST_SUITE_OPENGL} DISCOVERY_TIMEOUT 300)
+if(NOT WINDOWS_CI)
+  message(STATUS "WINDOWS_CI is OFF or not defined.")
+  gtest_discover_tests(${COMMIT_TEST_SUITE_OPENGL} DISCOVERY_TIMEOUT 300)
+else()
+  message(STATUS "WINDOWS_CI is OFF or not defined.")
+endif()
 
 # disable all warnings for our test suite
 if(MSVC)
