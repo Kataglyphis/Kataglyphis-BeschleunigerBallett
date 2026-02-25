@@ -23,12 +23,14 @@ set(OpenGlEngineTargetName "GraphicsEngineOpenGLBackend")
 # add the executable
 add_executable(${OpenGlEngineTargetName})
 
-set_target_properties(${OpenGlEngineTargetName} PROPERTIES CXX_SCAN_FOR_MODULES ON)
+set_target_properties(${OpenGlEngineTargetName} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
 
 kataglyphis_apply_runtime_compile_definitions(
   ${OpenGlEngineTargetName}
-  RESOURCE_PATH_NON_MSVC "/../Resources/"
-  RESOURCE_PATH_MSVC "/../../Resources/")
+  RESOURCE_PATH_NON_MSVC
+  "/../Resources/"
+  RESOURCE_PATH_MSVC
+  "/../../Resources/")
 
 # we are using this dir strings for removing hard coded file locations
 # at c++ side
@@ -64,7 +66,7 @@ target_sources(
          TYPE
          CXX_MODULES
          FILES
-                 ${OPENGL_MODULE_INTERFACE_FILES})
+         ${OPENGL_MODULE_INTERFACE_FILES})
 
 target_include_directories(${OpenGlEngineTargetName} PRIVATE ${OPENGL_INCLUDE_DIRS} ${Vulkan_INCLUDE_DIRS})
 

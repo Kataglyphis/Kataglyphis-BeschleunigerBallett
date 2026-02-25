@@ -1,15 +1,18 @@
 include(CMakeParseArguments)
 
 function(kataglyphis_collect_module_interfaces out_var base_dir)
-  file(GLOB_RECURSE _module_interface_relative_files
-       RELATIVE "${base_dir}"
-       "${base_dir}/*.ixx")
+  file(
+    GLOB_RECURSE _module_interface_relative_files
+    RELATIVE "${base_dir}"
+    "${base_dir}/*.ixx")
   list(SORT _module_interface_relative_files)
 
   set(_module_interface_files "${_module_interface_relative_files}")
   list(TRANSFORM _module_interface_files PREPEND "${base_dir}/")
 
-  set(${out_var} "${_module_interface_files}" PARENT_SCOPE)
+  set(${out_var}
+      "${_module_interface_files}"
+      PARENT_SCOPE)
 endfunction()
 
 function(kataglyphis_apply_runtime_compile_definitions target)
@@ -23,7 +26,12 @@ function(kataglyphis_apply_runtime_compile_definitions target)
       IMGUI_FONTS_PATH_MSVC
       SHADER_INCLUDES_STRING)
   set(multiValueArgs)
-  cmake_parse_arguments(KAT "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+  cmake_parse_arguments(
+    KAT
+    "${options}"
+    "${oneValueArgs}"
+    "${multiValueArgs}"
+    ${ARGN})
 
   set(_compile_defs)
   if(MSVC)

@@ -20,7 +20,11 @@ kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES "${PROJECT_S
 
 file(GLOB_RECURSE RENDERER_COMMIT_TEST_FILTER "*.cpp")
 
-message("Render commit test filter is: ${RENDERER_COMMIT_TEST_FILTER}")
+if(MYPROJECT_CMAKE_DEBUG_LOG)
+  message(STATUS "Render commit test filter is: ${RENDERER_COMMIT_TEST_FILTER}")
+else()
+  message(VERBOSE "Render commit test filter is: ${RENDERER_COMMIT_TEST_FILTER}")
+endif()
 
 file(GLOB_RECURSE VULKANRENDERER_SOURCES "${PROJECT_SRC_DIR}/*.cpp")
 
@@ -65,7 +69,11 @@ string(
           ShaderIncludesString
           "${ShaderIncludes}")
 
-message("The shader include string is the following: ${ShaderIncludesString}")
+if(MYPROJECT_CMAKE_DEBUG_LOG)
+  message(STATUS "Shader include string: ${ShaderIncludesString}")
+else()
+  message(VERBOSE "Shader include string: ${ShaderIncludesString}")
+endif()
 
 if(RUST_FEATURES)
   target_compile_definitions(${COMMIT_TEST_SUITE} PRIVATE USE_RUST=1)
@@ -75,13 +83,20 @@ endif()
 
 kataglyphis_apply_runtime_compile_definitions(
   ${COMMIT_TEST_SUITE}
-  RESOURCE_PATH_NON_MSVC "/../../../../Resources/"
-  RESOURCE_PATH_MSVC "/../../../../Resources/"
-  INCLUDE_PATH_NON_MSVC "/../../../../Src/GraphicsEngineVulkan/"
-  INCLUDE_PATH_MSVC "/../../../../Src/GraphicsEngineVulkan/"
-  IMGUI_FONTS_PATH_NON_MSVC "/../../../../ExternalLib/IMGUI/misc/fonts/"
-  IMGUI_FONTS_PATH_MSVC "/../../../../ExternalLib/IMGUI/misc/fonts/"
-  SHADER_INCLUDES_STRING "${ShaderIncludesString}")
+  RESOURCE_PATH_NON_MSVC
+  "/../../../../Resources/"
+  RESOURCE_PATH_MSVC
+  "/../../../../Resources/"
+  INCLUDE_PATH_NON_MSVC
+  "/../../../../Src/GraphicsEngineVulkan/"
+  INCLUDE_PATH_MSVC
+  "/../../../../Src/GraphicsEngineVulkan/"
+  IMGUI_FONTS_PATH_NON_MSVC
+  "/../../../../ExternalLib/IMGUI/misc/fonts/"
+  IMGUI_FONTS_PATH_MSVC
+  "/../../../../ExternalLib/IMGUI/misc/fonts/"
+  SHADER_INCLUDES_STRING
+  "${ShaderIncludesString}")
 
 configure_file(${PROJECT_SRC_DIR}/VulkanRendererConfig.hpp.in "${PROJECT_SRC_DIR}/renderer/VulkanRendererConfig.hpp")
 
@@ -118,7 +133,7 @@ target_sources(
          FILES
          ${VULKAN_MODULE_INTERFACE_FILES})
 
-set_target_properties(${COMMIT_TEST_SUITE} PROPERTIES CXX_SCAN_FOR_MODULES ON)
+set_target_properties(${COMMIT_TEST_SUITE} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
 
 target_include_directories(${COMMIT_TEST_SUITE} PRIVATE ${Vulkan_INCLUDE_DIRS})
 
@@ -147,7 +162,7 @@ if(NOT WINDOWS_CI)
   message(STATUS "WINDOWS_CI is OFF or not defined.")
   gtest_discover_tests(${COMMIT_TEST_SUITE} DISCOVERY_TIMEOUT 300)
 else()
-  message(STATUS "WINDOWS_CI is OFF or not defined.")
+  message(STATUS "WINDOWS_CI is ON. Skipping gtest_discover_tests for Vulkan commit tests.")
 endif()
 
 if(RUST_FEATURES)

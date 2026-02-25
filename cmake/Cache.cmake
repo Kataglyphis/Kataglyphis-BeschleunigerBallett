@@ -37,6 +37,23 @@ function(myproject_enable_cache)
      "${COMPILER_CACHE}"
      STREQUAL
      "")
+    set(_cache_supported ON)
+
+    if(COMPILER_CACHE STREQUAL "sccache"
+       AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+       AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15
+       AND CMAKE_CXX_SCAN_FOR_MODULES)
+      set(_cache_supported OFF)
+      message(
+        WARNING
+          "Disabling sccache for GNU ${CMAKE_CXX_COMPILER_VERSION} with C++ module scanning: this toolchain combination can fail dependency generation during module builds."
+      )
+    endif()
+
+    if(NOT _cache_supported)
+      return()
+    endif()
+
     find_program(
       CACHE_BINARY
       NAMES "${COMPILER_CACHE}"

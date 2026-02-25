@@ -38,7 +38,7 @@ file(
 # endif()
 
 add_executable(${PERF_TEST_SUITE})
-set_target_properties(${PERF_TEST_SUITE} PROPERTIES CXX_SCAN_FOR_MODULES ON)
+set_target_properties(${PERF_TEST_SUITE} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
 
 set(ShaderIncludes
     -I
@@ -77,13 +77,20 @@ endif()
 
 kataglyphis_apply_runtime_compile_definitions(
   ${PERF_TEST_SUITE}
-  RESOURCE_PATH_NON_MSVC "/../../Resources/"
-  RESOURCE_PATH_MSVC "/../../Resources/"
-  INCLUDE_PATH_NON_MSVC "/../../Src/GraphicsEngineVulkan/"
-  INCLUDE_PATH_MSVC "/../../Src/GraphicsEngineVulkan/"
-  IMGUI_FONTS_PATH_NON_MSVC "/../../ExternalLib/IMGUI/misc/fonts/"
-  IMGUI_FONTS_PATH_MSVC "/../../ExternalLib/IMGUI/misc/fonts/"
-  SHADER_INCLUDES_STRING "${ShaderIncludesString}")
+  RESOURCE_PATH_NON_MSVC
+  "/../../Resources/"
+  RESOURCE_PATH_MSVC
+  "/../../Resources/"
+  INCLUDE_PATH_NON_MSVC
+  "/../../Src/GraphicsEngineVulkan/"
+  INCLUDE_PATH_MSVC
+  "/../../Src/GraphicsEngineVulkan/"
+  IMGUI_FONTS_PATH_NON_MSVC
+  "/../../ExternalLib/IMGUI/misc/fonts/"
+  IMGUI_FONTS_PATH_MSVC
+  "/../../ExternalLib/IMGUI/misc/fonts/"
+  SHADER_INCLUDES_STRING
+  "${ShaderIncludesString}")
 
 configure_file(${PROJECT_SRC_DIR}/VulkanRendererConfig.hpp.in "${PROJECT_SRC_DIR}/renderer/VulkanRendererConfig.hpp")
 

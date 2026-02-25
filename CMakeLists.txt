@@ -19,13 +19,20 @@ set(WINDOWS_CI
 set(RUST_FEATURES
     ON
     CACHE BOOL "Enable Rust features in our project.")
+set(MYPROJECT_CMAKE_DEBUG_LOG
+    OFF
+    CACHE BOOL "Enable additional verbose CMake configure logging")
+
+set(MYPROJECT_GCC_TOOLCHAIN_PATH
+    ""
+    CACHE PATH "Optional GCC toolchain root used by Clang and Rust tooling on Linux (for example /opt/gcc-15.2.0)")
 
 # Auto-detect custom GCC toolchain for Clang on Linux to avoid workflow env setup
 if(UNIX
    AND NOT APPLE
-   AND EXISTS "/opt/gcc-15.2.0"
+   AND MYPROJECT_GCC_TOOLCHAIN_PATH
    AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-  set(_GCC_TOOLCHAIN_ROOT "/opt/gcc-15.2.0")
+  set(_GCC_TOOLCHAIN_ROOT "${MYPROJECT_GCC_TOOLCHAIN_PATH}")
   set(_GCC_TOOLCHAIN_LIB "${_GCC_TOOLCHAIN_ROOT}/lib64")
   if(NOT EXISTS "${_GCC_TOOLCHAIN_LIB}")
     set(_GCC_TOOLCHAIN_LIB "${_GCC_TOOLCHAIN_ROOT}/lib")
@@ -74,7 +81,7 @@ if(NOT WINDOWS_CI AND BUILD_TESTING)
   enable_testing()
   message(STATUS "WINDOWS_CI is OFF or not defined.")
 else()
-  message(STATUS "WINDOWS_CI is OFF or not defined.")
+  message(STATUS "WINDOWS_CI is ON or BUILD_TESTING is disabled.")
 endif()
 
 if(BUILD_TESTING)

@@ -31,37 +31,20 @@ macro(myproject_setup_options)
 
   myproject_supports_sanitizers()
 
-  if(NOT PROJECT_IS_TOP_LEVEL OR myproject_PACKAGING_MAINTAINER_MODE)
-    option(myproject_ENABLE_IPO "Enable IPO/LTO" ON)
-    option(myproject_ENABLE_STATIC_ANALYZER "Enable Static Analyzer" OFF)
-    option(myproject_WARNINGS_AS_ERRORS "Treat Warnings As Errors" OFF)
-    option(myproject_ENABLE_SANITIZER_ADDRESS "Enable address sanitizer" OFF)
-    option(myproject_ENABLE_SANITIZER_LEAK "Enable leak sanitizer" OFF)
-    option(myproject_ENABLE_SANITIZER_UNDEFINED "Enable undefined sanitizer" OFF)
-    option(myproject_ENABLE_SANITIZER_THREAD "Enable thread sanitizer" OFF)
-    option(myproject_ENABLE_SANITIZER_MEMORY "Enable memory sanitizer" OFF)
-    option(myproject_ENABLE_UNITY_BUILD "Enable unity builds" OFF)
-    option(myproject_ENABLE_CLANG_TIDY "Enable clang-tidy" OFF)
-    option(myproject_ENABLE_CPPCHECK "Enable cpp-check analysis" ON)
-    option(myproject_ENABLE_PCH "Enable precompiled headers" OFF)
-    option(myproject_ENABLE_CACHE "Enable ccache" ON)
-    option(myproject_ENABLE_IWYU "Enable IWYU" ON)
-  else()
-    option(myproject_ENABLE_IPO "Enable IPO/LTO" ON)
-    option(myproject_ENABLE_STATIC_ANALYZER "Enable Static Analyzer" OFF)
-    option(myproject_WARNINGS_AS_ERRORS "Treat Warnings As Errors" OFF)
-    option(myproject_ENABLE_SANITIZER_ADDRESS "Enable address sanitizer" OFF) # ${SUPPORTS_ASAN}
-    option(myproject_ENABLE_SANITIZER_LEAK "Enable leak sanitizer" OFF)
-    option(myproject_ENABLE_SANITIZER_UNDEFINED "Enable undefined sanitizer" OFF) # ${SUPPORTS_UBSAN}
-    option(myproject_ENABLE_SANITIZER_THREAD "Enable thread sanitizer" OFF)
-    option(myproject_ENABLE_SANITIZER_MEMORY "Enable memory sanitizer" OFF)
-    option(myproject_ENABLE_UNITY_BUILD "Enable unity builds" OFF)
-    option(myproject_ENABLE_CLANG_TIDY "Enable clang-tidy" OFF)
-    option(myproject_ENABLE_CPPCHECK "Enable cpp-check analysis" ON)
-    option(myproject_ENABLE_PCH "Enable precompiled headers" OFF)
-    option(myproject_ENABLE_CACHE "Enable ccache" ON)
-    option(myproject_ENABLE_IWYU "Enable IWYU" ON)
-  endif()
+  option(myproject_ENABLE_IPO "Enable IPO/LTO" ON)
+  option(myproject_ENABLE_STATIC_ANALYZER "Enable Static Analyzer" OFF)
+  option(myproject_WARNINGS_AS_ERRORS "Treat Warnings As Errors" OFF)
+  option(myproject_ENABLE_SANITIZER_ADDRESS "Enable address sanitizer" OFF) # ${SUPPORTS_ASAN}
+  option(myproject_ENABLE_SANITIZER_LEAK "Enable leak sanitizer" OFF)
+  option(myproject_ENABLE_SANITIZER_UNDEFINED "Enable undefined sanitizer" OFF) # ${SUPPORTS_UBSAN}
+  option(myproject_ENABLE_SANITIZER_THREAD "Enable thread sanitizer" OFF)
+  option(myproject_ENABLE_SANITIZER_MEMORY "Enable memory sanitizer" OFF)
+  option(myproject_ENABLE_UNITY_BUILD "Enable unity builds" OFF)
+  option(myproject_ENABLE_CLANG_TIDY "Enable clang-tidy" OFF)
+  option(myproject_ENABLE_CPPCHECK "Enable cpp-check analysis" ON)
+  option(myproject_ENABLE_PCH "Enable precompiled headers" OFF)
+  option(myproject_ENABLE_CACHE "Enable ccache" ON)
+  option(myproject_ENABLE_IWYU "Enable IWYU" ON)
 
   if(NOT PROJECT_IS_TOP_LEVEL)
     mark_as_advanced(
@@ -92,7 +75,18 @@ macro(myproject_global_options)
 
   set(CMAKE_C_STANDARD 17)
   set(CMAKE_C_STANDARD_REQUIRED True)
-  set(CMAKE_CXX_SCAN_FOR_MODULES ON)
+
+  set(myproject_CXX_SCAN_FOR_MODULES ON)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
+    set(myproject_CXX_SCAN_FOR_MODULES OFF)
+    message(
+      STATUS "Disabling C++ module scanning for clang-cl to avoid CMake generate-time dependency scanner failures.")
+  endif()
+
+  set(CMAKE_CXX_SCAN_FOR_MODULES ${myproject_CXX_SCAN_FOR_MODULES})
+  set(MYPROJECT_CXX_SCAN_FOR_MODULES
+      ${myproject_CXX_SCAN_FOR_MODULES}
+      CACHE INTERNAL "Global C++ module scan switch for project targets")
 
   set(myproject_CPP_MODULES_SUPPORTED OFF)
   if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28)

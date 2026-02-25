@@ -29,7 +29,10 @@ if(RUST_FEATURES)
   else()
     # Native-only corrosion/toolchain setup (no cross-building)
     # Optionally override with -DGCC_TOOLCHAIN_PATH=/path/to/gcc when configuring
-    set(_DEFAULT_GCC_TOOLCHAIN "/opt/gcc-15.2.0")
+    set(_DEFAULT_GCC_TOOLCHAIN "")
+    if(DEFINED MYPROJECT_GCC_TOOLCHAIN_PATH AND MYPROJECT_GCC_TOOLCHAIN_PATH)
+      set(_DEFAULT_GCC_TOOLCHAIN "${MYPROJECT_GCC_TOOLCHAIN_PATH}")
+    endif()
     set(_HAS_DEFAULT_GCC_TOOLCHAIN OFF)
     if(EXISTS "${_DEFAULT_GCC_TOOLCHAIN}")
       set(_HAS_DEFAULT_GCC_TOOLCHAIN ON)
@@ -182,13 +185,20 @@ endif()
 
 kataglyphis_apply_runtime_compile_definitions(
   ${PROJECT_NAME}
-  RESOURCE_PATH_NON_MSVC "/../Resources/"
-  RESOURCE_PATH_MSVC "/../../Resources/"
-  INCLUDE_PATH_NON_MSVC "/../Src/GraphicsEngineVulkan/"
-  INCLUDE_PATH_MSVC "/../../Src/GraphicsEngineVulkan/"
-  IMGUI_FONTS_PATH_NON_MSVC "/../ExternalLib/IMGUI/misc/fonts/"
-  IMGUI_FONTS_PATH_MSVC "/../../ExternalLib/IMGUI/misc/fonts/"
-  SHADER_INCLUDES_STRING "${ShaderIncludesString}")
+  RESOURCE_PATH_NON_MSVC
+  "/../Resources/"
+  RESOURCE_PATH_MSVC
+  "/../../Resources/"
+  INCLUDE_PATH_NON_MSVC
+  "/../Src/GraphicsEngineVulkan/"
+  INCLUDE_PATH_MSVC
+  "/../../Src/GraphicsEngineVulkan/"
+  IMGUI_FONTS_PATH_NON_MSVC
+  "/../ExternalLib/IMGUI/misc/fonts/"
+  IMGUI_FONTS_PATH_MSVC
+  "/../../ExternalLib/IMGUI/misc/fonts/"
+  SHADER_INCLUDES_STRING
+  "${ShaderIncludesString}")
 
 configure_file(VulkanRendererConfig.hpp.in "${CMAKE_CURRENT_SOURCE_DIR}/renderer/VulkanRendererConfig.hpp")
 
@@ -251,18 +261,12 @@ endif()
 # compile shaders as part of my cmake routine right away :)
 include(cmake/CompileShadersToSPV.cmake)
 
-foreach(Shader ${POST_SHADER_FILTER})
-  add_shader(${PROJECT_NAME} ${Shader})
-endforeach()
+set(ALL_VULKAN_SHADER_FILTERS
+    ${POST_SHADER_FILTER}
+    ${RAYTRACING_SHADER_FILTER}
+    ${RASTER_SHADER_FILTER}
+    ${PATH_TRACING_SHADER_FILTER})
 
-foreach(Shader ${RAYTRACING_SHADER_FILTER})
-  add_shader(${PROJECT_NAME} ${Shader})
-endforeach()
-
-foreach(Shader ${RASTER_SHADER_FILTER})
-  add_shader(${PROJECT_NAME} ${Shader})
-endforeach()
-
-foreach(Shader ${PATH_TRACING_SHADER_FILTER})
+foreach(Shader ${ALL_VULKAN_SHADER_FILTERS})
   add_shader(${PROJECT_NAME} ${Shader})
 endforeach()

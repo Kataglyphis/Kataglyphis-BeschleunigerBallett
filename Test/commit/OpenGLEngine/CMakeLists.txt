@@ -29,12 +29,14 @@ file(GLOB_RECURSE SHADER_HEADERS "${SHADER_SRC_DIR}/*.hpp")
 file(GLOB_RECURSE OPENGLRENDERER_HEADERS "${SHADER_SRC_DIR}/*.hpp")
 
 add_executable(${COMMIT_TEST_SUITE_OPENGL})
-set_target_properties(${COMMIT_TEST_SUITE_OPENGL} PROPERTIES CXX_SCAN_FOR_MODULES ON)
+set_target_properties(${COMMIT_TEST_SUITE_OPENGL} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
 
 kataglyphis_apply_runtime_compile_definitions(
   ${COMMIT_TEST_SUITE_OPENGL}
-  RESOURCE_PATH_NON_MSVC "/../../../../Resources/"
-  RESOURCE_PATH_MSVC "/../../Resources/")
+  RESOURCE_PATH_NON_MSVC
+  "/../../../../Resources/"
+  RESOURCE_PATH_MSVC
+  "/../../Resources/")
 # we are using this dir strings for removing hard coded file locations
 # at c++ side
 configure_file(${PROJECT_SRC_DIR}/OpenGLRendererConfig.hpp.in "${PROJECT_SRC_DIR}/renderer/OpenGLRendererConfig.hpp")
@@ -96,7 +98,7 @@ if(NOT WINDOWS_CI)
   message(STATUS "WINDOWS_CI is OFF or not defined.")
   gtest_discover_tests(${COMMIT_TEST_SUITE_OPENGL} DISCOVERY_TIMEOUT 300)
 else()
-  message(STATUS "WINDOWS_CI is OFF or not defined.")
+  message(STATUS "WINDOWS_CI is ON. Skipping gtest_discover_tests for OpenGL commit tests.")
 endif()
 
 # disable all warnings for our test suite

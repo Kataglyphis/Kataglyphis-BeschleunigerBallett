@@ -112,6 +112,8 @@ fi
 
 echo "[3/3] Running clang-tidy..."
 clang_tidy_args=( -p "${BUILD_DIR}" )
+echo "Disabling for internal bug of clang-tidy..."
+clang_tidy_args+=( -checks=-modernize-use-scoped-lock )
 if [[ "${CLANG_TIDY_FIX}" == "true" ]]; then
   clang_tidy_args+=( -fix )
 fi
