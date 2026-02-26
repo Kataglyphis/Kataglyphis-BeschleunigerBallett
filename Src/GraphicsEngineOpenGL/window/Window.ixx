@@ -3,6 +3,8 @@ module;
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
+#include "../../shared/frontend/WindowInputState.hpp"
+
 export module kataglyphis.opengl.window;
 
 export class Window
@@ -10,8 +12,12 @@ export class Window
   public:
     Window();
     Window(GLint window_width, GLint window_height);
+    Window(const Window &) = delete;
+    auto operator=(const Window &) -> Window & = delete;
+    Window(Window &&) = delete;
+    auto operator=(Window &&) -> Window & = delete;
 
-    bool get_should_close() { return main_window == nullptr || glfwWindowShouldClose(main_window); }
+    bool get_should_close() { return main_window == nullptr || glfwWindowShouldClose(main_window) != 0; }
     void swap_buffers()
     {
         if (main_window != nullptr) { glfwSwapBuffers(main_window); }
@@ -24,15 +30,15 @@ export class Window
 
     void update_viewport();
 
-    GLuint get_buffer_width() const { return window_buffer_width; }
-    GLuint get_buffer_height() const { return window_buffer_height; }
+    GLuint get_buffer_width() const { return static_cast<GLuint>(window_buffer_width); }
+    GLuint get_buffer_height() const { return static_cast<GLuint>(window_buffer_height); }
 
     GLfloat get_x_change();
     GLfloat get_y_change();
 
     GLFWwindow *get_window() { return main_window; }
 
-    bool *get_keys() { return keys; }
+    bool *get_keys() { return input_state.keys.data(); }
 
     ~Window();
 
@@ -42,12 +48,7 @@ export class Window
 
     GLint window_width, window_height;
     // what key(-s) was/were pressed
-    bool keys[1024]{};
-    GLfloat last_x{};
-    GLfloat last_y{};
-    GLfloat x_change;
-    GLfloat y_change;
-    bool mouse_first_moved{};
+    Kataglyphis::Frontend::WindowInputState input_state;
 
     // buffers to store our window data to
     GLint window_buffer_width{}, window_buffer_height{};

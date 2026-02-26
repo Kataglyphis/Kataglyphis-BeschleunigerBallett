@@ -15,6 +15,8 @@ module;
 
 module kataglyphis.vulkan.app;
 
+import kataglyphis.shared.frontend.frame_input;
+
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.gui;
 import kataglyphis.vulkan.renderer;
@@ -43,13 +45,10 @@ auto Kataglyphis::App::run() -> int
         // poll all events incoming from user
         glfwPollEvents();
 
-        // handle events for the camera
-        camera->key_control(window->get_keys(), delta_time);
-        camera->mouse_control(window->get_x_change(), window->get_y_change());
+        Kataglyphis::Frontend::update_frame_timing(delta_time, last_time);
 
-        auto const now = static_cast<float>(glfwGetTime());
-        delta_time = now - last_time;
-        last_time = now;
+        // handle events for the camera
+        Kataglyphis::Frontend::process_camera_input(window.get(), camera.get(), delta_time);
 
         scene->update_user_input(gui.get());
 

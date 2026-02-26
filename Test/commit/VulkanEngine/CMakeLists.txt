@@ -17,6 +17,7 @@ include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
 set(COMMIT_TEST_SUITE commitTestSuite)
 
 kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES "${PROJECT_SRC_DIR}")
+kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${WORKING_DIRECTORY}Src/shared")
 
 file(GLOB_RECURSE RENDERER_COMMIT_TEST_FILTER "*.cpp")
 
@@ -129,9 +130,10 @@ target_sources(
          TYPE
          CXX_MODULES
          BASE_DIRS
-         ${PROJECT_INCLUDE_DIR}
+         ${WORKING_DIRECTORY}Src/
          FILES
-         ${VULKAN_MODULE_INTERFACE_FILES})
+         ${VULKAN_MODULE_INTERFACE_FILES}
+         ${SHARED_MODULE_INTERFACE_FILES})
 
 set_target_properties(${COMMIT_TEST_SUITE} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
 

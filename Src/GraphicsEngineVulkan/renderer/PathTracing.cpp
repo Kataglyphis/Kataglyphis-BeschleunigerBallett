@@ -88,7 +88,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(VkCommand
     presentToPathTracingImageBarrier.dstQueueFamilyIndex = static_cast<uint32_t>(indices.compute_family);
     presentToPathTracingImageBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
     presentToPathTracingImageBarrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    presentToPathTracingImageBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    presentToPathTracingImageBarrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     presentToPathTracingImageBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
     presentToPathTracingImageBarrier.subresourceRange = subresourceRange;
     presentToPathTracingImageBarrier.image = vulkanImage.getImage();
@@ -140,7 +140,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(VkCommand
     pathTracingToPresentImageBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     pathTracingToPresentImageBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     pathTracingToPresentImageBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-    pathTracingToPresentImageBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    pathTracingToPresentImageBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     pathTracingToPresentImageBarrier.image = vulkanImage.getImage();
     pathTracingToPresentImageBarrier.subresourceRange = subresourceRange;
 

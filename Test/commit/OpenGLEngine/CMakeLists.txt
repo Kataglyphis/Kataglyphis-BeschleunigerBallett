@@ -16,6 +16,7 @@ include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
 set(COMMIT_TEST_SUITE_OPENGL commitTestSuiteOpenGL)
 
 kataglyphis_collect_module_interfaces(OPENGL_MODULE_INTERFACE_FILES "${PROJECT_SRC_DIR}")
+kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${WORKING_DIRECTORY}Src/shared")
 
 file(GLOB_RECURSE OPENGLRENDERER_SOURCES "${PROJECT_SRC_DIR}/*.cpp")
 
@@ -72,9 +73,10 @@ target_sources(
          TYPE
          CXX_MODULES
          BASE_DIRS
-         ${PROJECT_INCLUDE_DIR}
+         ${WORKING_DIRECTORY}Src/
          FILES
-         ${OPENGL_MODULE_INTERFACE_FILES})
+         ${OPENGL_MODULE_INTERFACE_FILES}
+         ${SHARED_MODULE_INTERFACE_FILES})
 
 target_include_directories(${COMMIT_TEST_SUITE_OPENGL} PRIVATE ${OPENGL_INCLUDE_DIRS} ${Vulkan_INCLUDE_DIRS})
 

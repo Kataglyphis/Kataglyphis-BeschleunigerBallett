@@ -17,6 +17,7 @@ file(GLOB_RECURSE SHADER_HEADERS "${SHADER_SRC_DIR}/*.hpp")
 file(GLOB_RECURSE OPENGLRENDERER_HEADERS "*.hpp")
 
 kataglyphis_collect_module_interfaces(OPENGL_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}")
+kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
 
 set(OpenGlEngineTargetName "GraphicsEngineOpenGLBackend")
 
@@ -65,8 +66,11 @@ target_sources(
          CXX_MODULES
          TYPE
          CXX_MODULES
+                             BASE_DIRS
+                             ${CMAKE_CURRENT_SOURCE_DIR}/..
          FILES
-         ${OPENGL_MODULE_INTERFACE_FILES})
+                             ${OPENGL_MODULE_INTERFACE_FILES}
+                             ${SHARED_MODULE_INTERFACE_FILES})
 
 target_include_directories(${OpenGlEngineTargetName} PRIVATE ${OPENGL_INCLUDE_DIRS} ${Vulkan_INCLUDE_DIRS})
 

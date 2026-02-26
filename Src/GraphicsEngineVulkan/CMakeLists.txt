@@ -20,6 +20,7 @@ file(
 file(GLOB_RECURSE VULKANRENDERER_HEADERS "*.hpp")
 
 kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}")
+kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
 
 if(RUST_FEATURES)
 
@@ -230,9 +231,10 @@ target_sources(
          TYPE
          CXX_MODULES
          BASE_DIRS
-         ${PROJECT_INCLUDE_DIR}
+         ${CMAKE_CURRENT_SOURCE_DIR}/..
          FILES
-         ${VULKAN_MODULE_INTERFACE_FILES})
+         ${VULKAN_MODULE_INTERFACE_FILES}
+         ${SHARED_MODULE_INTERFACE_FILES})
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS})
 

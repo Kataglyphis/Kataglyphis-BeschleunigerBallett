@@ -5,6 +5,7 @@ module;
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 #define TINYOBJLOADER_IMPLEMENTATION
@@ -46,7 +47,7 @@ auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model
             // Otherwise, create texture and set value to index of new texture
             Texture texture;
             texture.createFromFile(device, command_pool, textureNames[i]);
-            new_model->addTexture(texture);
+            new_model->addTexture(std::move(texture));
 
         } else {
         }
@@ -180,7 +181,7 @@ void ObjLoader::loadVertices(const std::string &fileName)
                     tex_coords = glm::vec2(tx, ty);
                 }
 
-                Vertex const vert{ .pos = pos, .normal = normals, .color = color, .texture_coords = tex_coords };
+                Vertex const vert{ pos, normals, color, tex_coords };
 
                 if (!vertices_map.contains(vert)) {
                     vertices_map[vert] = static_cast<uint32_t>(vertices.size());
@@ -205,7 +206,7 @@ void ObjLoader::loadVertices(const std::string &fileName)
             Vertex &v1 = vertices[indices[i + 1]];
             Vertex &v2 = vertices[indices[i + 2]];
 
-            glm::vec3 const n = glm::normalize(glm::cross((v1.pos - v0.pos), (v2.pos - v0.pos)));
+            glm::vec3 const n = glm::normalize(glm::cross((v1.position - v0.position), (v2.position - v0.position)));
             v0.normal = n;
             v1.normal = n;
             v2.normal = n;

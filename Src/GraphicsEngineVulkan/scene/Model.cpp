@@ -3,6 +3,7 @@ module;
 #include "common/Utilities.hpp"
 #include <cstdint>
 #include <glm/ext/matrix_float4x4.hpp>
+#include <utility>
 #include <vector>
 #include <vulkan/vulkan_core.h>
 
@@ -31,7 +32,7 @@ void Model::cleanUp()
     mesh.cleanUp();
 }
 
-void Model::add_new_mesh(VulkanDevice *device,
+void Model::add_new_mesh(VulkanDevice *vulkan_device,
   VkQueue transfer_queue,
   VkCommandPool command_pool,
   std::vector<Vertex> &vertices,
@@ -39,15 +40,15 @@ void Model::add_new_mesh(VulkanDevice *device,
   std::vector<unsigned int> &materialIndex,
   std::vector<ObjMaterial> &materials)
 {
-    this->mesh = Mesh(device, transfer_queue, command_pool, vertices, indices, materialIndex, materials);
+        this->mesh = Mesh(vulkan_device, transfer_queue, command_pool, vertices, indices, materialIndex, materials);
 }
 
-void Model::set_model(glm::mat4 model) { this->model = model; }
+void Model::set_model(glm::mat4 new_model) { this->model = new_model; }
 
-void Model::addTexture(const Texture &newTexture)
+void Model::addTexture(Texture &&newTexture)
 {
-    modelTextures.push_back(newTexture);
-    addSampler(newTexture);
+    modelTextures.emplace_back(std::move(newTexture));
+    addSampler(modelTextures.back());
 }
 
 auto Model::getPrimitiveCount() -> uint32_t
@@ -66,7 +67,7 @@ auto Model::getPrimitiveCount() -> uint32_t
 
 Model::~Model() = default;
 
-void Model::addSampler(Texture newTexture)
+void Model::addSampler(const Texture &newTexture)
 {
     VkSampler newSampler = nullptr;
     VkPhysicalDeviceFeatures physical_device_features{};

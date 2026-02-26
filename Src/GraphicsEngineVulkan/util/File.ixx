@@ -1,5 +1,7 @@
 module;
 
+#include "../../shared/util/FileLocationHolder.hpp"
+
 #include <string>
 #include <vector>
 
@@ -7,6 +9,7 @@ export module kataglyphis.vulkan.file;
 
 export namespace Kataglyphis {
 class File
+  : private Kataglyphis::Shared::FileLocationHolder
 {
   public:
     explicit File(const std::string &file_location);
@@ -18,6 +21,5 @@ class File
     ~File();
 
   private:
-    std::string file_location;
 };
 }// namespace Kataglyphis

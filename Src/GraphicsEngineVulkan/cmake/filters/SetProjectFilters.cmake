@@ -65,10 +65,7 @@ set(VULKAN_BASE_FILTER
     ${PROJECT_VULKAN_BASE_SRC_DIR}VulkanSwapChain.cpp
     ${PROJECT_VULKAN_BASE_INCLUDE_DIR}ShaderIncludes.hpp
     ${PROJECT_VULKAN_BASE_SRC_DIR}ShaderHelper.ixx
-    ${PROJECT_VULKAN_BASE_INCLUDE_DIR}VulkanBufferManager.hpp
-    ${PROJECT_VULKAN_BASE_SRC_DIR}VulkanDebug.ixx
-    ${PROJECT_VULKAN_BASE_INCLUDE_DIR}VulkanImage.hpp
-    ${PROJECT_VULKAN_BASE_INCLUDE_DIR}VulkanImageView.hpp)
+    ${PROJECT_VULKAN_BASE_SRC_DIR}VulkanDebug.ixx)
 # ---- VULKAN_BASE FILTER  --- END
 
 # ---- SCENE FILTER  --- BEGIN

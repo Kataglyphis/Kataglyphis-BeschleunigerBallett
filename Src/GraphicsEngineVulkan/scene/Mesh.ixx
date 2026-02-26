@@ -26,6 +26,10 @@ class Mesh
       std::vector<ObjMaterial> &materials);
 
     Mesh();
+    Mesh(const Mesh &) = delete;
+    auto operator=(const Mesh &) -> Mesh & = delete;
+    Mesh(Mesh &&other) noexcept = default;
+    auto operator=(Mesh &&other) noexcept -> Mesh & = default;
 
     void cleanUp();
 

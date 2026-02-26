@@ -9,6 +9,7 @@ export module kataglyphis.vulkan.raytracing;
 
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.buffer;
+import kataglyphis.vulkan.image;
 import kataglyphis.vulkan.swapchain;
 
 export namespace Kataglyphis::VulkanRendererInternals {
@@ -22,6 +23,7 @@ class Raytracing
     void shaderHotReload(const std::vector<VkDescriptorSetLayout> &descriptor_set_layouts);
 
     void recordCommands(VkCommandBuffer &commandBuffer,
+      VulkanImage &renderImage,
       VulkanSwapChain *vulkanSwapChain,
       const std::vector<VkDescriptorSet> &descriptorSets);
 

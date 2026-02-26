@@ -2,6 +2,8 @@ module;
 
 #include <GLFW/glfw3.h>
 
+#include "../../shared/frontend/WindowInputState.hpp"
+
 export module kataglyphis.vulkan.window;
 
 export namespace Kataglyphis::Frontend {
@@ -24,7 +26,7 @@ class Window
     float get_height() const;
     float get_width() const;
 
-    bool *get_keys() { return keys; }
+    bool *get_keys() { return input_state.keys.data(); }
     bool framebuffer_size_has_changed() const;
     void reset_framebuffer_has_changed();
 
@@ -36,12 +38,7 @@ class Window
   private:
     GLFWwindow *main_window{};
     uint32_t window_width, window_height;
-    bool keys[1024]{};
-    float last_x{};
-    float last_y{};
-    float x_change;
-    float y_change;
-    bool mouse_first_moved{};
+    Kataglyphis::Frontend::WindowInputState input_state;
     bool framebuffer_resized;
 
     int window_buffer_width{}, window_buffer_height{};

@@ -10,6 +10,10 @@ class VulkanImageView
 {
   public:
     VulkanImageView();
+    VulkanImageView(const VulkanImageView &) = delete;
+    auto operator=(const VulkanImageView &) -> VulkanImageView & = delete;
+    VulkanImageView(VulkanImageView &&other) noexcept;
+    auto operator=(VulkanImageView &&other) noexcept -> VulkanImageView &;
 
     void setImageView(VkImageView imageView);
 

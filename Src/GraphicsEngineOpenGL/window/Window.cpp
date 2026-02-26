@@ -11,10 +11,11 @@ module;
 
 module kataglyphis.opengl.window;
 
-Window::Window() : window_width(800), window_height(600), x_change(0.0F), y_change(0.0F)
+import kataglyphis.shared.frontend.window_input_callbacks;
+
+Window::Window() : window_width(800), window_height(600)
 {
-    // all keys non-pressed in the beginning
-    for (bool &key : keys) { key = 0; }
+    Kataglyphis::Frontend::reset_window_keys(input_state.keys.data());
 
     initialized = initialize() == 0;
 }
@@ -23,10 +24,9 @@ Window::Window() : window_width(800), window_height(600), x_change(0.0F), y_chan
 Window::Window(GLint window_width, GLint window_height)
   :
 
-    window_width(window_width), window_height(window_height), x_change(0.0F), y_change(0.0F)
+        window_width(window_width), window_height(window_height)
 {
-    // all keys non-pressed in the beginning
-    for (bool &key : keys) { key = 0; }
+        Kataglyphis::Frontend::reset_window_keys(input_state.keys.data());
 
     initialized = initialize() == 0;
 }
@@ -116,16 +116,12 @@ void Window::update_viewport()
 
 auto Window::get_x_change() -> GLfloat
 {
-    GLfloat const the_change = x_change;
-    x_change = 0.0F;
-    return the_change;
+    return Kataglyphis::Frontend::consume_axis_delta(input_state.x_change);
 }
 
 auto Window::get_y_change() -> GLfloat
 {
-    GLfloat const the_change = y_change;
-    y_change = 0.0F;
-    return the_change;
+    return Kataglyphis::Frontend::consume_axis_delta(input_state.y_change);
 }
 
 Window::~Window()
@@ -148,53 +144,25 @@ void Window::framebuffer_size_callback(GLFWwindow * /*window*/, int /*width*/, i
 void Window::key_callback(GLFWwindow *window, int key, int /*code*/, int action, int /*mode*/)
 {
     auto *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
-
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) { glfwSetWindowShouldClose(window, GL_TRUE); }
-
-    if (key >= 0 && key < 1024) {
-        if (action == GLFW_PRESS) {
-            the_window->keys[key] = true;
-
-        } else if (action == GLFW_RELEASE) {
-            the_window->keys[key] = false;
-        }
-    }
+    Kataglyphis::Frontend::handle_key_callback(window, the_window->input_state.keys.data(), key, action);
 }
 
 void Window::mouse_callback(GLFWwindow *window, double x_pos, double y_pos)
 {
     auto *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
-
-    // need to handle first occurance of a mouse moving event
-    if (the_window->mouse_first_moved) {
-        the_window->last_x = static_cast<float>(x_pos);
-        the_window->last_y = static_cast<float>(y_pos);
-        the_window->mouse_first_moved = false;
-    }
-
-    the_window->x_change = static_cast<float>(x_pos - the_window->last_x);
-    // take care of correct substraction :)
-    the_window->y_change = static_cast<float>(the_window->last_y - y_pos);
-
-    // update params
-    the_window->last_x = static_cast<float>(x_pos);
-    the_window->last_y = static_cast<float>(y_pos);
+    Kataglyphis::Frontend::handle_mouse_callback(window,
+    the_window->input_state.last_x,
+    the_window->input_state.last_y,
+    the_window->input_state.x_change,
+    the_window->input_state.y_change,
+    the_window->input_state.mouse_first_moved,
+      x_pos,
+      y_pos);
 }
 
 void Window::mouse_button_callback(GLFWwindow *window, int button, int action, int /*mods*/)
 {
-
-    if (ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse) {
-        ImGuiIO &io = ImGui::GetIO();
-        io.AddMouseButtonEvent(button, action != 0);
-        return;
-    }
     auto *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
-
-    if ((action == GLFW_PRESS) && (button == GLFW_MOUSE_BUTTON_RIGHT)) {
-        glfwSetCursorPosCallback(window, mouse_callback);
-    } else {
-        the_window->mouse_first_moved = true;
-        glfwSetCursorPosCallback(window, nullptr);
-    }
+    Kataglyphis::Frontend::handle_mouse_button_callback(
+    window, the_window->input_state.mouse_first_moved, button, action, mouse_callback);
 }

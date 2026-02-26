@@ -10,6 +10,10 @@ class VulkanBuffer
 {
   public:
     VulkanBuffer();
+    VulkanBuffer(const VulkanBuffer &) = delete;
+    auto operator=(const VulkanBuffer &) -> VulkanBuffer & = delete;
+    VulkanBuffer(VulkanBuffer &&other) noexcept;
+    auto operator=(VulkanBuffer &&other) noexcept -> VulkanBuffer &;
 
     void create(VulkanDevice *vulkanDevice,
       VkDeviceSize buffer_size,

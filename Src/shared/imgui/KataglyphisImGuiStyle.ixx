@@ -1,8 +1,10 @@
-#pragma once
+module;
 
 #include <imgui.h>
 
-namespace Kataglyphis::Frontend {
+export module kataglyphis.shared.imgui.style;
+
+export namespace Kataglyphis::Frontend {
 inline void applyKataglyphisImGuiDarkTheme()
 {
     ImGuiStyle &style = ImGui::GetStyle();

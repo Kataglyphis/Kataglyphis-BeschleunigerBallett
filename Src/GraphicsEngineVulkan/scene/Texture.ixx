@@ -17,13 +17,17 @@ class Texture
 {
   public:
     Texture();
+    Texture(const Texture &) = delete;
+    auto operator=(const Texture &) -> Texture & = delete;
+    Texture(Texture &&other) noexcept = default;
+    auto operator=(Texture &&other) noexcept -> Texture & = default;
 
     void createFromFile(VulkanDevice *device, VkCommandPool commandPool, const std::string &fileName);
 
     void setImage(VkImage image);
     void setImageView(VkImageView imageView);
 
-    uint32_t getMipLevel() { return mip_levels; };
+    uint32_t getMipLevel() const { return mip_levels; };
     VulkanImage &getVulkanImage() { return vulkanImage; };
     VulkanImageView &getVulkanImageView() { return vulkanImageView; };
     VkImage &getImage() { return vulkanImage.getImage(); };

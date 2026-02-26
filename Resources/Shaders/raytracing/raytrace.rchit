@@ -80,7 +80,7 @@ void main() {
     const vec3 barycentrics = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
 
     // compte coordinate of hit position 
-    const vec3 hit_pos = v0.pos * barycentrics.x + v1.pos * barycentrics.y + v2.pos * barycentrics.z;
+    const vec3 hit_pos = v0.position * barycentrics.x + v1.position * barycentrics.y + v2.position * barycentrics.z;
     const vec3 world_hit_pos = vec3(gl_ObjectToWorldEXT * vec4(hit_pos, 1.0f));
 
     //compute normal at hit position 

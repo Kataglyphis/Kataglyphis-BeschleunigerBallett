@@ -1,6 +1,7 @@
 module;
 
 #include <cstdint>
+#include <utility>
 #include <vulkan/vulkan.h>
 
 #include "common/MemoryHelper.hpp"
@@ -12,6 +13,31 @@ import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.command_buffer_manager;
 
 Kataglyphis::VulkanImage::VulkanImage() = default;
+
+Kataglyphis::VulkanImage::VulkanImage(VulkanImage &&other) noexcept
+  : device(other.device), image(other.image), imageMemory(other.imageMemory)
+{
+    other.device = VK_NULL_HANDLE;
+    other.image = VK_NULL_HANDLE;
+    other.imageMemory = VK_NULL_HANDLE;
+}
+
+auto Kataglyphis::VulkanImage::operator=(VulkanImage &&other) noexcept -> VulkanImage &
+{
+    if (this != &other) {
+        cleanUp();
+
+        device = other.device;
+        image = other.image;
+        imageMemory = other.imageMemory;
+
+        other.device = VK_NULL_HANDLE;
+        other.image = VK_NULL_HANDLE;
+        other.imageMemory = VK_NULL_HANDLE;
+    }
+
+    return *this;
+}
 
 void Kataglyphis::VulkanImage::create(VulkanDevice *device,
   uint32_t width,
@@ -160,8 +186,13 @@ void Kataglyphis::VulkanImage::setImage(VkImage image) { this->image = image; }
 
 void Kataglyphis::VulkanImage::cleanUp()
 {
-    vkDestroyImage(device->getLogicalDevice(), image, nullptr);
-    vkFreeMemory(device->getLogicalDevice(), imageMemory, nullptr);
+    if (device != VK_NULL_HANDLE) {
+        if (image != VK_NULL_HANDLE) { vkDestroyImage(device->getLogicalDevice(), image, nullptr); }
+        if (imageMemory != VK_NULL_HANDLE) { vkFreeMemory(device->getLogicalDevice(), imageMemory, nullptr); }
+    }
+
+    image = VK_NULL_HANDLE;
+    imageMemory = VK_NULL_HANDLE;
 }
 
 Kataglyphis::VulkanImage::~VulkanImage() = default;

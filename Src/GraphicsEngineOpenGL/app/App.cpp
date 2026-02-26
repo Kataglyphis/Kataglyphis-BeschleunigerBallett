@@ -16,6 +16,8 @@
 
 #include "debug/DebugApp.hpp"
 
+import kataglyphis.shared.frontend.frame_input;
+
 import kataglyphis.opengl.camera;
 import kataglyphis.opengl.scene;
 import kataglyphis.opengl.renderer;
@@ -97,16 +99,13 @@ auto main() -> int
         // we should make the application independet of processor speed :)
         //  take time into account is crucial
         //  concept of delta time: https://bell0bytes.eu/keeping-track-of-time/
-        auto const now = static_cast<float>(glfwGetTime());
-        delta_time = now - last_time;
-        last_time = now;
+        Kataglyphis::Frontend::update_frame_timing(delta_time, last_time);
 
         // poll all events incoming from user
         glfwPollEvents();
 
         // handle events for the camera
-        main_camera->key_control(main_window->get_keys(), delta_time);
-        main_camera->mouse_control(main_window->get_x_change(), main_window->get_y_change());
+        Kataglyphis::Frontend::process_camera_input(main_window.get(), main_camera.get(), delta_time);
 
         if (scene->is_loaded()) {
             if (!loading_screen_finished) { loading_screen_finished = true; }

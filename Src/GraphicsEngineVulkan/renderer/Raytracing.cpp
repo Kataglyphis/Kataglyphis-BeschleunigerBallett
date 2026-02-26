@@ -38,6 +38,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::shaderHotReload(
 }
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(VkCommandBuffer &commandBuffer,
+  VulkanImage &renderImage,
   VulkanSwapChain *vulkanSwapChain,
   const std::vector<VkDescriptorSet> &descriptorSets)
 {
@@ -80,6 +81,36 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(VkCommandB
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, graphicsPipeline);
 
+    VkImageSubresourceRange subresourceRange{};
+    subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    subresourceRange.baseMipLevel = 0;
+    subresourceRange.levelCount = 1;
+    subresourceRange.baseArrayLayer = 0;
+    subresourceRange.layerCount = 1;
+
+    VkImageMemoryBarrier rasterizerToRaytracingImageBarrier{};
+    rasterizerToRaytracingImageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    rasterizerToRaytracingImageBarrier.pNext = nullptr;
+    rasterizerToRaytracingImageBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    rasterizerToRaytracingImageBarrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    rasterizerToRaytracingImageBarrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    rasterizerToRaytracingImageBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    rasterizerToRaytracingImageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    rasterizerToRaytracingImageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    rasterizerToRaytracingImageBarrier.image = renderImage.getImage();
+    rasterizerToRaytracingImageBarrier.subresourceRange = subresourceRange;
+
+    vkCmdPipelineBarrier(commandBuffer,
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+      VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+      0,
+      0,
+      nullptr,
+      0,
+      nullptr,
+      1,
+      &rasterizerToRaytracingImageBarrier);
+
     vkCmdBindDescriptorSets(commandBuffer,
       VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
       pipeline_layout,
@@ -98,6 +129,29 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(VkCommandB
       swap_chain_extent.width,
       swap_chain_extent.height,
       1);
+
+    VkImageMemoryBarrier raytracingToPostImageBarrier{};
+    raytracingToPostImageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    raytracingToPostImageBarrier.pNext = nullptr;
+    raytracingToPostImageBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    raytracingToPostImageBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    raytracingToPostImageBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    raytracingToPostImageBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    raytracingToPostImageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    raytracingToPostImageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    raytracingToPostImageBarrier.image = renderImage.getImage();
+    raytracingToPostImageBarrier.subresourceRange = subresourceRange;
+
+    vkCmdPipelineBarrier(commandBuffer,
+      VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+      0,
+      0,
+      nullptr,
+      0,
+      nullptr,
+      1,
+      &raytracingToPostImageBarrier);
 }
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::cleanUp()

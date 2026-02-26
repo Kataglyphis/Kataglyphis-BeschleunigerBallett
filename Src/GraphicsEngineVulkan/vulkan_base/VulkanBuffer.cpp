@@ -1,6 +1,7 @@
 module;
 
 #include <cstdint>
+#include <utility>
 #include <vulkan/vulkan_core.h>
 
 #include "common/MemoryHelper.hpp"
@@ -12,6 +13,34 @@ module kataglyphis.vulkan.buffer;
 import kataglyphis.vulkan.device;
 
 Kataglyphis::VulkanBuffer::VulkanBuffer() = default;
+
+Kataglyphis::VulkanBuffer::VulkanBuffer(VulkanBuffer &&other) noexcept
+  : device(other.device), buffer(other.buffer), bufferMemory(other.bufferMemory), created(other.created)
+{
+  other.device = VK_NULL_HANDLE;
+  other.buffer = VK_NULL_HANDLE;
+  other.bufferMemory = VK_NULL_HANDLE;
+  other.created = false;
+}
+
+auto Kataglyphis::VulkanBuffer::operator=(VulkanBuffer &&other) noexcept -> VulkanBuffer &
+{
+  if (this != &other) {
+    cleanUp();
+
+    device = other.device;
+    buffer = other.buffer;
+    bufferMemory = other.bufferMemory;
+    created = other.created;
+
+    other.device = VK_NULL_HANDLE;
+    other.buffer = VK_NULL_HANDLE;
+    other.bufferMemory = VK_NULL_HANDLE;
+    other.created = false;
+  }
+
+  return *this;
+}
 
 void Kataglyphis::VulkanBuffer::create(VulkanDevice *device,
   VkDeviceSize buffer_size,
@@ -73,10 +102,14 @@ void Kataglyphis::VulkanBuffer::create(VulkanDevice *device,
 
 void Kataglyphis::VulkanBuffer::cleanUp()
 {
-    if (created) {
+  if (created && device != VK_NULL_HANDLE) {
         vkDestroyBuffer(device->getLogicalDevice(), buffer, nullptr);
         vkFreeMemory(device->getLogicalDevice(), bufferMemory, nullptr);
     }
+
+  buffer = VK_NULL_HANDLE;
+  bufferMemory = VK_NULL_HANDLE;
+  created = false;
 }
 
 Kataglyphis::VulkanBuffer::~VulkanBuffer() = default;

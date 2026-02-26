@@ -1,5 +1,6 @@
 module;
 #include <cstring>
+#include <spdlog/spdlog.h>
 #include <vector>
 #include <vulkan/vulkan.h>
 
@@ -14,6 +15,13 @@ class VulkanBufferManager
 {
   public:
     VulkanBufferManager();
+
+    void copyBuffer(VkDevice device,
+      VkQueue transfer_queue,
+      VkCommandPool transfer_command_pool,
+      VulkanBuffer &src_buffer,
+      VulkanBuffer &dst_buffer,
+      VkDeviceSize buffer_size);
 
     void copyBuffer(VkDevice device,
       VkQueue transfer_queue,
@@ -36,6 +44,16 @@ class VulkanBufferManager
       VulkanBuffer &vulkanBuffer,
       VkBufferUsageFlags dstBufferUsageFlags,
       VkMemoryPropertyFlags dstBufferMemoryPropertyFlags,
+      const std::vector<T> &data,
+      VkMemoryAllocateFlags dstBufferMemoryAllocateFlags = 0,
+      VkQueue transfer_queue = VK_NULL_HANDLE);
+
+    template<typename T>
+    void createBufferAndUploadVectorOnDevice(VulkanDevice *device,
+      VkCommandPool commandPool,
+      VulkanBuffer &vulkanBuffer,
+      VkBufferUsageFlags dstBufferUsageFlags,
+      VkMemoryPropertyFlags dstBufferMemoryPropertyFlags,
       std::vector<T> &data,
       VkMemoryAllocateFlags dstBufferMemoryAllocateFlags = 0);
 
@@ -51,10 +69,11 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(VulkanDevic
   VulkanBuffer &vulkanBuffer,
   VkBufferUsageFlags dstBufferUsageFlags,
   VkMemoryPropertyFlags dstBufferMemoryPropertyFlags,
-  std::vector<T> &bufferData,
-  VkMemoryAllocateFlags dstBufferMemoryAllocateFlags)
+  const std::vector<T> &data,
+  VkMemoryAllocateFlags dstBufferMemoryAllocateFlags,
+  VkQueue transfer_queue)
 {
-    VkDeviceSize bufferSize = sizeof(T) * bufferData.size();
+    VkDeviceSize bufferSize = sizeof(T) * data.size();
     if (bufferSize == 0) {
         bufferSize = sizeof(uint32_t);
         vulkanBuffer.create(
@@ -62,35 +81,49 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(VulkanDevic
         return;
     }
 
-    // temporary buffer to "stage" vertex data before transfering to GPU
     VulkanBuffer stagingBuffer;
 
-    // create buffer and allocate memory to it
     stagingBuffer.create(device,
       bufferSize,
       VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-    // Map memory to vertex buffer
-    // 1.) create pointer to a point in normal memory
-    void *data;
-    // 2.) map the vertex buffer memory to that point
-    vkMapMemory(device->getLogicalDevice(), stagingBuffer.getBufferMemory(), 0, bufferSize, 0, &data);
-    // 3.) copy memory from vertices vector to the point
-    std::memcpy(data, bufferData.data(), static_cast<size_t>(bufferSize));
-    // 4.) unmap the vertex buffer memory
+    void *mapped_data;
+    vkMapMemory(device->getLogicalDevice(), stagingBuffer.getBufferMemory(), 0, bufferSize, 0, &mapped_data);
+    std::memcpy(mapped_data, data.data(), static_cast<size_t>(bufferSize));
     vkUnmapMemory(device->getLogicalDevice(), stagingBuffer.getBufferMemory());
 
-    // create buffer with TRANSFER_DST_BIT to mark as recipient of transfer data
-    // (also VERTEX_BUFFER) buffer memory is to be DEVICE_LOCAL_BIT meaning memory
-    // is on the GPU and only accessible by it and not CPU (host)
     vulkanBuffer.create(
       device, bufferSize, dstBufferUsageFlags, dstBufferMemoryPropertyFlags, dstBufferMemoryAllocateFlags);
 
-    // copy staging buffer to vertex buffer on GPU
-    copyBuffer(
-      device->getLogicalDevice(), device->getGraphicsQueue(), commandPool, stagingBuffer, vulkanBuffer, bufferSize);
+    VkQueue const queue = (transfer_queue != VK_NULL_HANDLE) ? transfer_queue : device->getGraphicsQueue();
+    auto const copy_buffer_ref = static_cast<void (VulkanBufferManager::*)(VkDevice,
+      VkQueue,
+      VkCommandPool,
+      VulkanBuffer &,
+      VulkanBuffer &,
+      VkDeviceSize)>(&VulkanBufferManager::copyBuffer);
+    (this->*copy_buffer_ref)(device->getLogicalDevice(), queue, commandPool, stagingBuffer, vulkanBuffer, bufferSize);
 
     stagingBuffer.cleanUp();
+}
+
+template<typename T>
+inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(VulkanDevice *device,
+  VkCommandPool commandPool,
+  VulkanBuffer &vulkanBuffer,
+  VkBufferUsageFlags dstBufferUsageFlags,
+  VkMemoryPropertyFlags dstBufferMemoryPropertyFlags,
+  std::vector<T> &data,
+  VkMemoryAllocateFlags dstBufferMemoryAllocateFlags)
+{
+    createBufferAndUploadVectorOnDevice(device,
+      commandPool,
+      vulkanBuffer,
+      dstBufferUsageFlags,
+      dstBufferMemoryPropertyFlags,
+      static_cast<const std::vector<T> &>(data),
+      dstBufferMemoryAllocateFlags,
+      VK_NULL_HANDLE);
 }
 }// namespace Kataglyphis

@@ -549,7 +549,9 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
             raytracingDescriptorSet[image_index] };
 
         if (guiRendererSharedVars.raytracing) {
-            raytracingStage.recordCommands(commandBuffer, &vulkanSwapChain, raytracing_descriptor_sets);
+            Texture &renderResult = rasterizer.getOffscreenTexture(image_index);
+            raytracingStage.recordCommands(
+              commandBuffer, renderResult.getVulkanImage(), &vulkanSwapChain, raytracing_descriptor_sets);
         } else if (guiRendererSharedVars.pathTracing) {
             Texture &renderResult = rasterizer.getOffscreenTexture(image_index);
             pathTracing.recordCommands(

@@ -2,6 +2,7 @@ module;
 
 #include "common/Utilities.hpp"
 #include <cstdint>
+#include <utility>
 #include <vulkan/vulkan.h>
 
 module kataglyphis.vulkan.image_view;
@@ -9,6 +10,28 @@ module kataglyphis.vulkan.image_view;
 import kataglyphis.vulkan.device;
 
 Kataglyphis::VulkanImageView::VulkanImageView() = default;
+
+Kataglyphis::VulkanImageView::VulkanImageView(VulkanImageView &&other) noexcept
+  : device(other.device), imageView(other.imageView)
+{
+  other.device = VK_NULL_HANDLE;
+  other.imageView = VK_NULL_HANDLE;
+}
+
+auto Kataglyphis::VulkanImageView::operator=(VulkanImageView &&other) noexcept -> VulkanImageView &
+{
+  if (this != &other) {
+    cleanUp();
+
+    device = other.device;
+    imageView = other.imageView;
+
+    other.device = VK_NULL_HANDLE;
+    other.imageView = VK_NULL_HANDLE;
+  }
+
+  return *this;
+}
 
 void Kataglyphis::VulkanImageView::setImageView(VkImageView imageView) { this->imageView = imageView; }
 
@@ -44,6 +67,13 @@ void Kataglyphis::VulkanImageView::create(VulkanDevice *device,
     ASSERT_VULKAN(result, "Failed to create an image view!")
 }
 
-void Kataglyphis::VulkanImageView::cleanUp() { vkDestroyImageView(device->getLogicalDevice(), imageView, nullptr); }
+void Kataglyphis::VulkanImageView::cleanUp()
+{
+  if (device != VK_NULL_HANDLE && imageView != VK_NULL_HANDLE) {
+    vkDestroyImageView(device->getLogicalDevice(), imageView, nullptr);
+  }
+
+  imageView = VK_NULL_HANDLE;
+}
 
 Kataglyphis::VulkanImageView::~VulkanImageView() = default;

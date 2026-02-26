@@ -2,9 +2,6 @@ module;
 
 #include "common/Utilities.hpp"
 
-#include "../../shared/imgui/KataglyphisImGuiFonts.hpp"
-#include "../../shared/imgui/KataglyphisImGuiStyle.hpp"
-
 #include <cstdint>
 
 #include <imgui.h>
@@ -13,6 +10,10 @@ module;
 #include <vulkan/vulkan_core.h>
 
 module kataglyphis.vulkan.gui;
+
+import kataglyphis.shared.frontend.common_gui_panels;
+import kataglyphis.shared.imgui.fonts;
+import kataglyphis.shared.imgui.style;
 
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.queue_family_indices;
@@ -105,30 +106,15 @@ void GUI::render()
 
     ImGui::Separator();
 
-    if (ImGui::CollapsingHeader("GUI Settings")) {
-        ImGuiStyle &style = ImGui::GetStyle();
-
-        if (ImGui::SliderFloat("Frame Rounding", &style.FrameRounding, 0.0F, 12.0F, "%.0f")) {
-            style.GrabRounding = style.FrameRounding;// Make GrabRounding always the
-                                                     // same value as FrameRounding
-        }
-        {
-            bool border = (style.FrameBorderSize > 0.0F);
-            if (ImGui::Checkbox("FrameBorder", &border)) { style.FrameBorderSize = border ? 1.0F : 0.0F; }
-        }
-        ImGui::SliderFloat("WindowRounding", &style.WindowRounding, 0.0F, 12.0F, "%.0f");
-    }
+    Kataglyphis::Frontend::renderCommonGuiStyleSettings();
 
     ImGui::Separator();
 
-    if (ImGui::CollapsingHeader("KEY Bindings")) {
-        ImGui::Text("WASD for moving Forward, backward and to the side\n QE for rotating ");
-    }
+    Kataglyphis::Frontend::renderCommonKeyBindings();
 
     ImGui::Separator();
 
-    ImGui::Text(
-      "Application average %.3f ms/frame (%.1f FPS)", 1000.0F / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+    Kataglyphis::Frontend::renderCommonFrameStats();
 
     ImGui::End();
 }

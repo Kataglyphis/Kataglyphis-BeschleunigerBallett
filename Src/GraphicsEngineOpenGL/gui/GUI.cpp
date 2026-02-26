@@ -11,13 +11,14 @@ module;
 #include <filesystem>
 #include <memory>
 #include <sstream>
-
-#include "../../shared/imgui/KataglyphisImGuiFonts.hpp"
-#include "../../shared/imgui/KataglyphisImGuiStyle.hpp"
 #include "hostDevice/GlobalValues.hpp"
 #include "hostDevice/host_device_shared.hpp"
 
 module kataglyphis.opengl.gui;
+
+import kataglyphis.shared.frontend.common_gui_panels;
+import kataglyphis.shared.imgui.fonts;
+import kataglyphis.shared.imgui.style;
 
 import kataglyphis.opengl.scene;
 import kataglyphis.opengl.window;
@@ -179,29 +180,15 @@ void GUI::render(bool loading_in_progress, float progress, bool &shader_hot_relo
 
     ImGui::Separator();
 
-    if (ImGui::CollapsingHeader("GUI Settings")) {
-        ImGuiStyle &style = ImGui::GetStyle();
-        if (ImGui::SliderFloat("Frame Rounding", &style.FrameRounding, 0.0F, 12.0F, "%.0f")) {
-            style.GrabRounding = style.FrameRounding;// Make GrabRounding always the
-                                                     // same value as FrameRounding
-        }
-        {
-            bool border = (style.FrameBorderSize > 0.0F);
-            if (ImGui::Checkbox("FrameBorder", &border)) { style.FrameBorderSize = border ? 1.0F : 0.0F; }
-        }
-        ImGui::SliderFloat("WindowRounding", &style.WindowRounding, 0.0F, 12.0F, "%.0f");
-    }
+    Kataglyphis::Frontend::renderCommonGuiStyleSettings();
 
     ImGui::Separator();
 
-    if (ImGui::CollapsingHeader("KEY Bindings")) {
-        ImGui::Text("WASD for moving Forward, backward and to the side\n QE for rotating ");
-    }
+    Kataglyphis::Frontend::renderCommonKeyBindings();
 
     ImGui::Separator();
 
-    ImGui::Text(
-      "Application average %.3f ms/frame (%.1f FPS)", 1000.0F / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+    Kataglyphis::Frontend::renderCommonFrameStats();
     // ImGui::ShowDemoWindow();
     // (void*)(intptr_t)
     ImGui::Image(logo_tex->get_id(), ImVec2(200, 200), ImVec2(0, 1), ImVec2(1, 0));

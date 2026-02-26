@@ -11,6 +11,10 @@ class VulkanImage
 {
   public:
     VulkanImage();
+    VulkanImage(const VulkanImage &) = delete;
+    auto operator=(const VulkanImage &) -> VulkanImage & = delete;
+    VulkanImage(VulkanImage &&other) noexcept;
+    auto operator=(VulkanImage &&other) noexcept -> VulkanImage &;
 
     void create(VulkanDevice *device,
       uint32_t width,

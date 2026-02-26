@@ -23,7 +23,7 @@ class Model
 
     void cleanUp();
 
-    void add_new_mesh(VulkanDevice *device,
+    void add_new_mesh(VulkanDevice *vulkan_device,
       VkQueue transfer_queue,
       VkCommandPool command_pool,
       std::vector<Vertex> &vertices,
@@ -42,15 +42,15 @@ class Model
     uint32_t getPrimitiveCount();
     ObjectDescription getObjectDescription() { return mesh.getObjectDescription(); };
 
-    void set_model(glm::mat4 model);
-    void addTexture(const Texture &newTexture);
+    void set_model(glm::mat4 new_model);
+    void addTexture(Texture &&newTexture);
 
     ~Model();
 
   private:
     VulkanDevice *device{ VK_NULL_HANDLE };
 
-    void addSampler(Texture newTexture);
+    void addSampler(const Texture &newTexture);
 
     uint32_t mesh_model_index{ static_cast<uint32_t>(-1) };
     Mesh mesh;

@@ -16,6 +16,7 @@ include(cmake/SetTestFilters.cmake)
 set(PERF_TEST_SUITE perfTestSuite)
 
 kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES "${PROJECT_SRC_DIR}")
+kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${WORKING_DIRECTORY}Src/shared")
 
 file(
   GLOB_RECURSE VULKANRENDERER_SOURCES
@@ -123,9 +124,10 @@ target_sources(
          TYPE
          CXX_MODULES
          BASE_DIRS
-         ${PROJECT_INCLUDE_DIR}
+         ${WORKING_DIRECTORY}Src/
          FILES
-         ${VULKAN_MODULE_INTERFACE_FILES})
+         ${VULKAN_MODULE_INTERFACE_FILES}
+         ${SHARED_MODULE_INTERFACE_FILES})
 
 target_include_directories(${PERF_TEST_SUITE} PRIVATE ${Vulkan_INCLUDE_DIRS})
 

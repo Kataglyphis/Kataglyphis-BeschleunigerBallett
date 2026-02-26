@@ -1,11 +1,13 @@
-#pragma once
+module;
 
 #include <array>
 #include <filesystem>
 
 #include <imgui.h>
 
-namespace Kataglyphis::Frontend {
+export module kataglyphis.shared.imgui.fonts;
+
+export namespace Kataglyphis::Frontend {
 inline auto resolveKataglyphisImGuiFontDirectory(const std::filesystem::path &cwd) -> std::filesystem::path
 {
 #ifdef RELATIVE_IMGUI_FONTS_PATH
