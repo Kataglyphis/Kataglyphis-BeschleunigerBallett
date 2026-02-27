@@ -6,6 +6,7 @@ module;
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/matrix.hpp>
 #include <memory>
+#include <utility>
 #include <vector>
 #include <vulkan/vulkan.h>
 
@@ -129,7 +130,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(VulkanDevice *d
     Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
       device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer);
 
-    for (auto &b : build_as_structures) { blas.emplace_back(b.single_blas); }
+    for (auto &b : build_as_structures) { blas.emplace_back(std::move(b.single_blas)); }
 
     scratchBuffer.cleanUp();
 }
