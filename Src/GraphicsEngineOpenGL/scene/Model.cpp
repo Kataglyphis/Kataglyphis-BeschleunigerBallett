@@ -2,8 +2,8 @@ module;
 
 #include <cstdint>
 #include <cstdio>
+#include <iostream>
 #include <memory>
-#include <print>
 #include <string>
 #include <utility>
 #include <vector>
@@ -46,7 +46,7 @@ void Model::create_render_context()
         texture_list[i] = std::make_shared<Texture>(textures[i].c_str(), std::make_shared<RepeatMode>());
 
         if (!texture_list[i]->load_SRGB_texture_without_alpha_channel()) {
-            std::println("Failed to load texture at: {}", textures[i]);
+            std::cerr << "Failed to load texture at: " << textures[i] << '\n';
             texture_list[i].reset();
         }
     }

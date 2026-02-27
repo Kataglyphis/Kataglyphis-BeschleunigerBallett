@@ -6,7 +6,6 @@ module;
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 #include <iostream>
-#include <print>
 #include <utility>
 
 module kataglyphis.opengl.window;
@@ -34,7 +33,7 @@ Window::Window(GLint window_width, GLint window_height)
 auto Window::initialize() -> int
 {
     if (glfwInit() == 0) {
-        std::print("GLFW Init failed!");
+        std::cerr << "GLFW Init failed!" << '\n';
         glfwTerminate();
         return 1;
     }
@@ -64,7 +63,7 @@ auto Window::initialize() -> int
         main_window =
           glfwCreateWindow(window_width, window_height, "\\__/ Epic graphics from hell \\__/", nullptr, nullptr);
         if (main_window != nullptr) {
-            std::println("Created OpenGL context {}.{}", major, minor);
+                        std::cout << "Created OpenGL context " << major << '.' << minor << '\n';
             break;
         }
     }
@@ -72,9 +71,8 @@ auto Window::initialize() -> int
     if (main_window == nullptr) {
         char const *description = nullptr;
         auto const error_code = glfwGetError(&description);
-        std::println("GLFW Window creation failed! Error code: {} message: {}",
-          error_code,
-          description != nullptr ? description : "no description");
+                std::cerr << "GLFW Window creation failed! Error code: " << error_code << " message: "
+                                    << (description != nullptr ? description : "no description") << '\n';
         glfwTerminate();
         return 1;
     }

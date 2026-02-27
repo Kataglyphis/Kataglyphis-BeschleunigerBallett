@@ -8,8 +8,8 @@ module;
 #include <cstdlib>
 #include <ctime>
 #include <filesystem>
+#include <iostream>
 #include <memory>
-#include <print>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -68,7 +68,7 @@ SkyBox::SkyBox()
     for (size_t i = 0; i < 6; i++) {
         unsigned char *texture_data = stbi_load(skybox_faces[i].c_str(), &width, &height, &bit_depth, 0);
         if (texture_data == nullptr) {
-            std::println("Failed to find: {}", skybox_faces[i]);
+        std::cerr << "Failed to find: " << skybox_faces[i] << '\n';
             return;
         }
 

@@ -3,28 +3,30 @@ set(KATAGLYPHIS_ENABLE_FUZZ_TESTS
     ON
     CACHE BOOL "Enable fuzz tests" FORCE)
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT (CMAKE_BUILD_TYPE STREQUAL "Profile"))
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo"))
   message(STATUS "This is a Linux system.")
 
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
     fuzztest_setup_fuzzing_flags()
-    # Remove AddressSanitizer flags if disabled
-    string(
-      REPLACE "-fsanitize=address"
-              ""
-              CMAKE_C_FLAGS
-              "${CMAKE_C_FLAGS}")
-    string(
-      REPLACE "-fsanitize=address"
-              ""
-              CMAKE_CXX_FLAGS
-              "${CMAKE_CXX_FLAGS}")
-    string(
-      REPLACE "-fsanitize=address"
-              ""
-              CMAKE_EXE_LINKER_FLAGS
-              "${CMAKE_EXE_LINKER_FLAGS}")
-    remove_definitions(-DADDRESS_SANITIZER)
+    if(NOT FUZZTEST_FUZZING_MODE)
+      # Remove AddressSanitizer flags only when fuzzing mode is disabled.
+      string(
+        REPLACE "-fsanitize=address"
+                ""
+                CMAKE_C_FLAGS
+                "${CMAKE_C_FLAGS}")
+      string(
+        REPLACE "-fsanitize=address"
+                ""
+                CMAKE_CXX_FLAGS
+                "${CMAKE_CXX_FLAGS}")
+      string(
+        REPLACE "-fsanitize=address"
+                ""
+                CMAKE_EXE_LINKER_FLAGS
+                "${CMAKE_EXE_LINKER_FLAGS}")
+      remove_definitions(-DADDRESS_SANITIZER)
+    endif()
     add_executable(first_fuzz_test dummy.cpp)
 
     link_fuzztest(first_fuzz_test)

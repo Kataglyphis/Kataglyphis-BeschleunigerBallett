@@ -8,7 +8,6 @@ module;
 #include <filesystem>
 #include <iostream>
 #include <optional>
-#include <print>
 #include <sstream>
 #include <string>
 #include <unordered_set>
@@ -62,7 +61,7 @@ auto preprocess_shader_source(const std::filesystem::path &shader_file,
 {
     std::string const canonical_key = std::filesystem::weakly_canonical(shader_file).string();
     if (include_stack.contains(canonical_key)) {
-        std::println("Detected recursive shader include: {}", canonical_key);
+        std::cerr << "Detected recursive shader include: " << canonical_key << '\n';
         return {};
     }
 
@@ -117,8 +116,8 @@ auto preprocess_shader_source(const std::filesystem::path &shader_file,
                     continue;
                 }
 
-                std::println(
-                  "Failed to resolve shader include '{}' while processing '{}'.", include_target, shader_file.string());
+                                std::cerr << "Failed to resolve shader include '" << include_target << "' while processing '"
+                                                    << shader_file.string() << "'." << '\n';
             }
         }
 
@@ -224,7 +223,7 @@ void ShaderProgram::validate_program() const
 
     if (result == 0) {
         glGetProgramInfoLog(program_id, sizeof(eLog), nullptr, eLog);
-        std::println("Error validating program: '{}'", eLog);
+        std::cerr << "Error validating program: '" << eLog << "'" << '\n';
         return;
     }
 }
@@ -259,8 +258,8 @@ void ShaderProgram::add_shader(GLuint program, const char *shader_code, GLenum s
 
     if (result == 0) {
         glGetShaderInfoLog(shader, sizeof(eLog), nullptr, eLog);
-        std::println("Error compiling the {} shader:  '{}'", shader_type, eLog);
-        std::print("{}", shader_code);
+        std::cerr << "Error compiling the " << shader_type << " shader:  '" << eLog << "'" << '\n';
+        std::cerr << shader_code;
         return;
     }
 
@@ -275,7 +274,7 @@ void ShaderProgram::compile_shader_program(const char *vertex_code, const char *
     program_is_linked = false;
 
     if (program_id == 0u) {
-        std::println("Error creating shader program !");
+        std::cerr << "Error creating shader program !" << '\n';
         return;
     }
     // we will always need one vertex ShaderProgram
@@ -296,7 +295,7 @@ void ShaderProgram::compile_shader_program(const char *vertex_code,
     program_is_linked = false;
 
     if (program_id == 0u) {
-        std::println("Error creating shader program!");
+        std::cerr << "Error creating shader program!" << '\n';
         return;
     }
 
@@ -313,7 +312,7 @@ void ShaderProgram::compile_compute_shader_program(const char *compute_code)
     program_is_linked = false;
 
     if (program_id == 0u) {
-        std::println("Error creating shader program!");
+        std::cerr << "Error creating shader program!" << '\n';
         return;
     }
 
@@ -333,7 +332,7 @@ void ShaderProgram::compile_program()
 
     if (result == 0) {
         glGetProgramInfoLog(program_id, sizeof(eLog), nullptr, eLog);
-        std::println("Error linking program: '{}'", eLog);
+        std::cerr << "Error linking program: '" << eLog << "'" << '\n';
         program_is_linked = false;
         return;
     }

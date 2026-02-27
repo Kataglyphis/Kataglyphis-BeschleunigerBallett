@@ -3,7 +3,7 @@ module;
 #include <cstdio>
 #include <glad/glad.h>
 #include <memory>
-#include <print>
+#include <iostream>
 
 #include "hostDevice/GlobalValues.hpp"
 #include "hostDevice/bindings.hpp"
@@ -59,7 +59,7 @@ void GBuffer::create()
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, g_depth);
 
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        std::print("Framebuffer not complete!");
+        std::cerr << "Framebuffer not complete!" << '\n';
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

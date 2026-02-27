@@ -1,7 +1,7 @@
 module;
 #include <glad/glad.h>
 #include <cstdio>
-#include <print>
+#include <iostream>
 
 module kataglyphis.opengl.point_light.omni_dir_shadow_map;
 
@@ -49,7 +49,7 @@ auto OmniDirShadowMap::init(GLuint width, GLuint height) -> bool
     GLenum const status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 
     if (status != GL_FRAMEBUFFER_COMPLETE) {
-        std::println("Framebuffer error: {}", status);
+        std::cerr << "Framebuffer error: " << status << '\n';
         return false;
     }
 

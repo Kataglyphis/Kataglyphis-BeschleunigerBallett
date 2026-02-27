@@ -200,9 +200,9 @@ macro(myproject_local_options)
     ""
     "")
 
-  # Only when building with -DCMAKE_BUILD_TYPE=Profile,
+  # Only when building with -DCMAKE_BUILD_TYPE=RelWithDebInfo,
   # on non-Windows and using GCC or Clang
-  if(CMAKE_BUILD_TYPE STREQUAL "Profile"
+  if(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo"
      AND (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
      AND NOT WIN32)
 

@@ -63,8 +63,13 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --skip-configure)
-      SKIP_CONFIGURE_ARG="${2:-}"
-      shift 2
+      if [[ $# -ge 2 && "${2}" != -* ]]; then
+        SKIP_CONFIGURE_ARG="${2}"
+        shift 2
+      else
+        SKIP_CONFIGURE_ARG="true"
+        shift
+      fi
       ;;
     --build-config)
       CMAKE_BUILD_CONFIG_ARG="${2:-}"

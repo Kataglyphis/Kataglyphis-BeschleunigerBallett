@@ -5,9 +5,9 @@ module;
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <iostream>
 #include <imgui.h>
 
-#include <print>
 #include <vulkan/vulkan_core.h>
 
 module kataglyphis.vulkan.window;
@@ -18,7 +18,7 @@ using namespace Kataglyphis::Frontend;
 // GLFW Callback functions
 static void onErrorCallback(int error, const char *description)
 {
-    std::println(stderr, "GLFW Error {}: {}", error, description);
+    std::cerr << "GLFW Error " << error << ": " << description << '\n';
 }
 
 Window::Window()
@@ -48,7 +48,7 @@ auto Window::initialize() -> int
 {
     glfwSetErrorCallback(onErrorCallback);
     if (glfwInit() == 0) {
-        std::print("GLFW Init failed!");
+        std::cerr << "GLFW Init failed!" << '\n';
         glfwTerminate();
         return 1;
     }
@@ -64,7 +64,7 @@ auto Window::initialize() -> int
       glfwCreateWindow(window_width, window_height, "\\__/ Epic graphics from hell \\__/ ", nullptr, nullptr);
 
     if (main_window == nullptr) {
-        std::print("GLFW Window creation failed!");
+        std::cerr << "GLFW Window creation failed!" << '\n';
         glfwTerminate();
         return 1;
     }

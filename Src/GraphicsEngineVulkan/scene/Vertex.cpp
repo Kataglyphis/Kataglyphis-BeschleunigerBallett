@@ -18,7 +18,7 @@ auto getVertexInputAttributeDesc() -> std::array<VkVertexInputAttributeDescripti
     attribute_describtions[0].location = 0;
     attribute_describtions[0].format = VK_FORMAT_R32G32B32_SFLOAT;// format data will take (also helps define
                                                                   // size of data)
-    attribute_describtions[0].offset = offsetof(Vertex, pos);
+    attribute_describtions[0].offset = offsetof(Vertex, position);
 
     // normal coord attribute
     attribute_describtions[1].binding = 0;

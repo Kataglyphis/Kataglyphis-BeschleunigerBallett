@@ -3,7 +3,7 @@ module;
 #include "../../shared/util/FileLocationHolder.hpp"
 
 #include <fstream>
-#include <print>
+#include <iostream>
 #include <string>
 
 module kataglyphis.opengl.file;
@@ -15,7 +15,7 @@ File::File(const std::string &file_location) : Kataglyphis::Shared::FileLocation
 auto File::read() -> std::string
 {
     if (!Kataglyphis::Shared::fileExists(get_file_location())) {
-        std::print("Failed to read {}. File does not exist.", get_file_location());
+        std::cerr << "Failed to read " << get_file_location() << ". File does not exist." << '\n';
         return "";
     }
 

@@ -1,7 +1,7 @@
 module;
 #include <glad/glad.h>
 #include <cstdio>
-#include <print>
+#include <iostream>
 
 module kataglyphis.opengl.shadows.shadow_map;
 
@@ -42,7 +42,7 @@ auto ShadowMap::init(GLuint width, GLuint height) -> bool
     GLenum const status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 
     if (status != GL_FRAMEBUFFER_COMPLETE) {
-        std::println("Framebuffer error: {}", status);
+        std::cerr << "Framebuffer error: " << status << '\n';
         return false;
     }
 

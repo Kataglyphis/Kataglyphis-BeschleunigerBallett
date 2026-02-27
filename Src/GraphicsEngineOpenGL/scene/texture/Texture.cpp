@@ -3,12 +3,12 @@ module;
 #include <memory>
 #include <string>
 #include <cstdio>
+#include <iostream>
 #include <glad/glad.h>
 #define STB_IMAGE_IMPLEMENTATION
 
 #include <stb_image.h>
 #include <utility>
-#include <print>
 
 module kataglyphis.opengl.texture;
 
@@ -39,7 +39,7 @@ auto Texture::load_texture_without_alpha_channel() -> bool
     stbi_set_flip_vertically_on_load(1);
     unsigned char *texture_data = stbi_load(file_location.c_str(), &width, &height, &bit_depth, 0);
     if (texture_data == nullptr) {
-        std::println("Failed to find: {}", file_location);
+        std::cerr << "Failed to find: " << file_location << '\n';
         return false;
     }
 
@@ -70,7 +70,7 @@ auto Texture::load_texture_with_alpha_channel() -> bool
     stbi_set_flip_vertically_on_load(1);
     unsigned char *texture_data = stbi_load(file_location.c_str(), &width, &height, &bit_depth, 0);
     if (texture_data == nullptr) {
-        std::println("Failed to find: {}", file_location);
+        std::cerr << "Failed to find: " << file_location << '\n';
         return false;
     }
 
@@ -104,7 +104,7 @@ auto Texture::load_SRGB_texture_without_alpha_channel() -> bool
     stbi_set_flip_vertically_on_load(1);
     unsigned char *texture_data = stbi_load(file_location.c_str(), &width, &height, &bit_depth, 0);
     if (texture_data == nullptr) {
-        std::println("Failed to find: {}", file_location);
+        std::cerr << "Failed to find: " << file_location << '\n';
         return false;
     }
 
@@ -135,7 +135,7 @@ auto Texture::load_SRGB_texture_with_alpha_channel() -> bool
     stbi_set_flip_vertically_on_load(1);
     unsigned char *texture_data = stbi_load(file_location.c_str(), &width, &height, &bit_depth, 0);
     if (texture_data == nullptr) {
-        std::println("Failed to find: {}", file_location);
+        std::cerr << "Failed to find: " << file_location << '\n';
         return false;
     }
 
