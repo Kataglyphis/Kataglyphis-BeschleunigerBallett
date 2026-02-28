@@ -32,7 +32,7 @@ ViewFrustumCulling::ViewFrustumCulling()
     near_bottom_right(glm::vec3(0.F)),
 
     far_top_left(glm::vec3(0.F)), far_top_right(glm::vec3(0.F)), far_bottom_left(glm::vec3(0.F)),
-    far_bottom_right(glm::vec3(0.F))
+    far_bottom_right(glm::vec3(0.0f))
 
 {}
 
