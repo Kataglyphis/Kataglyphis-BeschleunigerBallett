@@ -45,12 +45,13 @@ if(RUST_FEATURES)
         set(GCC_TOOLCHAIN_PATH
             "${_DEFAULT_GCC_TOOLCHAIN}"
             CACHE PATH "GCC toolchain root")
+        set(RUST_CXXFLAGS "--gcc-toolchain=${_DEFAULT_GCC_TOOLCHAIN} -fexceptions")
       else()
         set(GCC_TOOLCHAIN_PATH
             ""
             CACHE PATH "GCC toolchain root" FORCE)
+        set(RUST_CXXFLAGS "-fexceptions")
       endif()
-      set(RUST_CXXFLAGS "-fexceptions")
     else()
       # Falls Clang aktiv ist, nur dann toolchain-Flag setzen, wenn der Pfad existiert
       set(GCC_TOOLCHAIN_PATH
