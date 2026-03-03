@@ -6,7 +6,7 @@ project(
   VERSION 1.4.2
   DESCRIPTION "Epic GPU accelerated rendering, compute engine using Vulkan and C++,C,Rust"
   HOMEPAGE_URL "https://jonasheinle.de/"
-  LANGUAGES CXX C)
+  LANGUAGES NONE)
 
 set(AUTHOR "Jonas Heinle")
 
@@ -30,8 +30,7 @@ set(MYPROJECT_GCC_TOOLCHAIN_PATH
 # Auto-detect custom GCC toolchain for Clang on Linux to avoid workflow env setup
 if(UNIX
    AND NOT APPLE
-   AND MYPROJECT_GCC_TOOLCHAIN_PATH
-   AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+   AND MYPROJECT_GCC_TOOLCHAIN_PATH)
   set(_GCC_TOOLCHAIN_ROOT "${MYPROJECT_GCC_TOOLCHAIN_PATH}")
   set(_GCC_TOOLCHAIN_LIB "${_GCC_TOOLCHAIN_ROOT}/lib64")
   if(NOT EXISTS "${_GCC_TOOLCHAIN_LIB}")
@@ -50,6 +49,8 @@ if(UNIX
     message(WARNING "GCC toolchain found at ${_GCC_TOOLCHAIN_ROOT}, but no lib or lib64 dir exists.")
   endif()
 endif()
+
+enable_language(CXX C)
 
 if(RUST_FEATURES)
   message(STATUS "Rust features are enabled.")
