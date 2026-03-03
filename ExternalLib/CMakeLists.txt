@@ -46,25 +46,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND BUILD_TESTING AND NOT(CMAKE_BUILD_TYPE
 
     message("Adding Fuzztest")
 
-    option(
-      KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE
-      "Build FUZZTEST in fuzzing mode (injects AddressSanitizer/coverage flags; keep OFF for normal builds)"
-      ON)
-
-    if(KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE)
-      set(FUZZTEST_FUZZING_MODE
-          ON
-          CACHE BOOL "" FORCE)
-    else()
-      # Important: FUZZTEST's fuzzing mode modifies global CMake flags.
-      # If this value is accidentally flipped in an existing build directory,
-      # subsequent incremental builds can start mixing ASan-instrumented objects
-      # with non-ASan link steps, resulting in undefined references to __asan_*.
-      set(FUZZTEST_FUZZING_MODE
-          OFF
-          CACHE BOOL "" FORCE)
-    endif()
-
     add_subdirectory(FUZZTEST)
   endif()
 endif()
