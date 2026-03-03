@@ -41,11 +41,16 @@ macro(myproject_setup_options)
   # Default-enable UBSan under the same conditions when supported.
   # For multi-config generators (Visual Studio/Xcode) CMAKE_BUILD_TYPE is empty at configure time,
   # so we keep the default OFF and let users enable it explicitly.
-  if(PROJECT_IS_TOP_LEVEL AND SUPPORTS_ASAN AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+  if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(_myproject_default_enable_asan ON)
-  endif()
-  if(PROJECT_IS_TOP_LEVEL AND SUPPORTS_UBSAN AND CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(_myproject_default_enable_ubsan ON)
+  else()
+    if(PROJECT_IS_TOP_LEVEL AND SUPPORTS_ASAN AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+      set(_myproject_default_enable_asan ON)
+    endif()
+    if(PROJECT_IS_TOP_LEVEL AND SUPPORTS_UBSAN AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+      set(_myproject_default_enable_ubsan ON)
+    endif()
   endif()
 
   option(myproject_ENABLE_SANITIZER_ADDRESS "Enable address sanitizer" ${_myproject_default_enable_asan}) # ${SUPPORTS_ASAN}

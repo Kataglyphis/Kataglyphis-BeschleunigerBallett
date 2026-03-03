@@ -75,6 +75,11 @@ if(myproject_ENABLE_SANITIZER_ADDRESS)
   add_link_options(-fsanitize=address)
 endif()
 
+if(myproject_ENABLE_SANITIZER_UNDEFINED)
+  add_compile_options(-fsanitize=undefined)
+  add_link_options(-fsanitize=undefined)
+endif()
+
 include(cmake/SystemLibDependencies.cmake)
 include(Src/GraphicsEngineVulkan/cmake/filters/SetExternalLibsFilters.cmake)
 add_subdirectory(ExternalLib)
