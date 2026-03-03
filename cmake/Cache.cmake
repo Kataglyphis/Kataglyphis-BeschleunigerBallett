@@ -45,25 +45,25 @@ function(myproject_enable_cache)
      STREQUAL
      "")
     find_program(
-      CACHE_BINARY
+      CACHE_BINARY_${COMPILER_CACHE}
       NAMES "${COMPILER_CACHE}"
       DOC "Path to the compiler cache executable"
-    )# creates CACHE_BINARY or <VAR>-NOTFOUND :contentReference[oaicite:5]{index=5}
+    )# creates CACHE_BINARY_${COMPILER_CACHE} or <VAR>-NOTFOUND
 
-    if(CACHE_BINARY
+    if(CACHE_BINARY_${COMPILER_CACHE}
        AND NOT
-           CACHE_BINARY
+           CACHE_BINARY_${COMPILER_CACHE}
            STREQUAL
            "${PATH}-NOTFOUND")
-      message(STATUS "${COMPILER_CACHE} found at ${CACHE_BINARY}. Enabling compiler cache.")
+      message(STATUS "${COMPILER_CACHE} found at ${CACHE_BINARY_${COMPILER_CACHE}}. Enabling compiler cache.")
 
       # 6. Hook into C/C++ compiler launches
       set(CMAKE_C_COMPILER_LAUNCHER
-          "${CACHE_BINARY}"
-          CACHE STRING "C compiler cache launcher")
+          "${CACHE_BINARY_${COMPILER_CACHE}}"
+          CACHE STRING "C compiler cache launcher" FORCE)
       set(CMAKE_CXX_COMPILER_LAUNCHER
-          "${CACHE_BINARY}"
-          CACHE STRING "CXX compiler cache launcher")
+          "${CACHE_BINARY_${COMPILER_CACHE}}"
+          CACHE STRING "CXX compiler cache launcher" FORCE)
 
       # 7. MSVC: Embedded PDBs for cache consistency
       if(MSVC)
@@ -90,6 +90,11 @@ function(myproject_enable_cache)
 
     else()
       message(WARNING "${COMPILER_CACHE} was requested but not found. Skipping cache integration.")
+      unset(CMAKE_C_COMPILER_LAUNCHER CACHE)
+      unset(CMAKE_CXX_COMPILER_LAUNCHER CACHE)
     endif()
+  else()
+    unset(CMAKE_C_COMPILER_LAUNCHER CACHE)
+    unset(CMAKE_CXX_COMPILER_LAUNCHER CACHE)
   endif()
 endfunction()
