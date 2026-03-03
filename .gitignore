@@ -4,6 +4,7 @@
 
 build_release/
 build-*
+build_*/
 logs/
 
 dist

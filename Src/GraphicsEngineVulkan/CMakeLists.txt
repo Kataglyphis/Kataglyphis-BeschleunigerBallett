@@ -136,6 +136,15 @@ if(RUST_FEATURES)
   target_link_libraries(${PROJECT_NAME} PUBLIC kataglyphis_rustprojecttemplate)
 endif()
 
+# Enable ASan and UBSan in Debug mode on Linux
+target_compile_options(${PROJECT_NAME} PRIVATE
+    $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address,undefined>
+    $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fno-omit-frame-pointer>
+)
+target_link_options(${PROJECT_NAME} PRIVATE
+    $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address,undefined>
+)
+
 # compile shaders as part of my cmake routine right away :)
 include(cmake/CompileShadersToSPV.cmake)
 
