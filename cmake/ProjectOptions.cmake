@@ -375,6 +375,6 @@ macro(myproject_local_options)
     endif()
   endif()
 
-  # include(cmake/Speedup.cmake)
+  include(cmake/Speedup.cmake)
 
 endmacro()

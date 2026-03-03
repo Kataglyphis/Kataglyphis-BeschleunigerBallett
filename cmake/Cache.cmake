@@ -6,6 +6,13 @@ function(myproject_enable_cache)
       ""
       CACHE STRING "Compiler cache to be used (ccache or sccache; leave empty to disable)")
 
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    if("${COMPILER_CACHE}" STREQUAL "sccache")
+      message(STATUS "GNU GCC is used, using ccache instead of sccache.")
+      set(COMPILER_CACHE "ccache" CACHE STRING "Compiler cache to be used (ccache or sccache; leave empty to disable)" FORCE)
+    endif()
+  endif()
+
   # 2. Determine allowed backends
   if(MSVC AND WIN32)
     set(_allowed_values sccache)
@@ -37,23 +44,6 @@ function(myproject_enable_cache)
      "${COMPILER_CACHE}"
      STREQUAL
      "")
-    set(_cache_supported ON)
-
-    if(COMPILER_CACHE STREQUAL "sccache"
-       AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
-       AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15
-       AND CMAKE_CXX_SCAN_FOR_MODULES)
-      set(_cache_supported OFF)
-      message(
-        WARNING
-          "Disabling sccache for GNU ${CMAKE_CXX_COMPILER_VERSION} with C++ module scanning: this toolchain combination can fail dependency generation during module builds."
-      )
-    endif()
-
-    if(NOT _cache_supported)
-      return()
-    endif()
-
     find_program(
       CACHE_BINARY
       NAMES "${COMPILER_CACHE}"
