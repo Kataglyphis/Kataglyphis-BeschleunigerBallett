@@ -1,5 +1,10 @@
 include(GoogleTest)
 
+if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  message(STATUS "Skipping compile tests: build type is '${CMAKE_BUILD_TYPE}', requires Debug.")
+  return()
+endif()
+
 set(WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../)
 
 # update current positions
@@ -161,7 +166,7 @@ else()
 endif()
 
 if(RUST_FEATURES)
-  target_link_libraries(${COMPILE_TEST_SUITE} PUBLIC rusty_code)
+  target_link_libraries(${COMPILE_TEST_SUITE} PUBLIC kataglyphis_rustprojecttemplate)
 endif()
 
 # disable all warnings for our test suite

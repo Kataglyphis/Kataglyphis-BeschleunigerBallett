@@ -1,5 +1,10 @@
 set(WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../)
 
+if(NOT CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+  message(STATUS "Skipping perf tests: build type is '${CMAKE_BUILD_TYPE}', requires RelWithDebInfo.")
+  return()
+endif()
+
 # update current positions
 set(PROJECT_SRC_DIR ${WORKING_DIRECTORY}Src/GraphicsEngineVulkan/)
 set(PROJECT_INCLUDE_DIR ${WORKING_DIRECTORY}Src/GraphicsEngineVulkan/)
@@ -32,11 +37,6 @@ file(
   GLOB_RECURSE VULKANRENDERER_HEADERS
   RELATIVE ${PROJECT_SRC_DIR}
   "*.hpp")
-
-# if(RUST_FEATURES)
-#   corrosion_import_crate(MANIFEST_PATH ${PROJECT_SRC_DIR}rusty_code/Cargo.toml)
-#   corrosion_add_cxxbridge(rusty_bridge_perf CRATE rusty_code FILES lib.rs)
-# endif()
 
 add_executable(${PERF_TEST_SUITE})
 set_target_properties(${PERF_TEST_SUITE} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
@@ -151,7 +151,7 @@ target_link_libraries(
           spdlog)
 
 if(RUST_FEATURES)
-  target_link_libraries(${PERF_TEST_SUITE} PUBLIC rusty_code)
+  target_link_libraries(${PERF_TEST_SUITE} PUBLIC kataglyphis_rustprojecttemplate)
 endif()
 
 # disable all warnings for our test suite

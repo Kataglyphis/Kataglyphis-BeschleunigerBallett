@@ -34,9 +34,23 @@ macro(myproject_setup_options)
   option(myproject_ENABLE_IPO "Enable IPO/LTO" ON)
   option(myproject_ENABLE_STATIC_ANALYZER "Enable Static Analyzer" OFF)
   option(myproject_WARNINGS_AS_ERRORS "Treat Warnings As Errors" OFF)
-  option(myproject_ENABLE_SANITIZER_ADDRESS "Enable address sanitizer" OFF) # ${SUPPORTS_ASAN}
+
+  set(_myproject_default_enable_asan OFF)
+  set(_myproject_default_enable_ubsan OFF)
+  # Default-enable ASan for top-level single-config Debug builds (e.g. Ninja) when supported.
+  # Default-enable UBSan under the same conditions when supported.
+  # For multi-config generators (Visual Studio/Xcode) CMAKE_BUILD_TYPE is empty at configure time,
+  # so we keep the default OFF and let users enable it explicitly.
+  if(PROJECT_IS_TOP_LEVEL AND SUPPORTS_ASAN AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(_myproject_default_enable_asan ON)
+  endif()
+  if(PROJECT_IS_TOP_LEVEL AND SUPPORTS_UBSAN AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(_myproject_default_enable_ubsan ON)
+  endif()
+
+  option(myproject_ENABLE_SANITIZER_ADDRESS "Enable address sanitizer" ${_myproject_default_enable_asan}) # ${SUPPORTS_ASAN}
   option(myproject_ENABLE_SANITIZER_LEAK "Enable leak sanitizer" OFF)
-  option(myproject_ENABLE_SANITIZER_UNDEFINED "Enable undefined sanitizer" OFF) # ${SUPPORTS_UBSAN}
+  option(myproject_ENABLE_SANITIZER_UNDEFINED "Enable undefined sanitizer" ${_myproject_default_enable_ubsan}) # ${SUPPORTS_UBSAN}
   option(myproject_ENABLE_SANITIZER_THREAD "Enable thread sanitizer" OFF)
   option(myproject_ENABLE_SANITIZER_MEMORY "Enable memory sanitizer" OFF)
   option(myproject_ENABLE_UNITY_BUILD "Enable unity builds" OFF)

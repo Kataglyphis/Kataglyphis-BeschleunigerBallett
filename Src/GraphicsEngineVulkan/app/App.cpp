@@ -69,8 +69,9 @@ auto Kataglyphis::App::run() -> int
     } else {
         spdlog::warn("Skipping scene/gui Vulkan teardown because device is lost.");
     }
-    window->cleanUp();
+
     vulkan_renderer.cleanUp();
+    window->cleanUp();
 
     return EXIT_SUCCESS;
 }

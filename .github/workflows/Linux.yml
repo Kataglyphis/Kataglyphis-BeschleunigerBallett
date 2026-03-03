@@ -308,3 +308,5 @@ jobs:
             ${{ env.BUILD_RELEASE_DIR }}/*.tar.gz
             ${{ env.BUILD_RELEASE_DIR }}/*.tgz
             ${{ env.BUILD_RELEASE_DIR }}/*.deb
+            ${{ env.BUILD_RELEASE_DIR }}/*.AppImage
+            ${{ env.BUILD_RELEASE_DIR }}/*.flatpak

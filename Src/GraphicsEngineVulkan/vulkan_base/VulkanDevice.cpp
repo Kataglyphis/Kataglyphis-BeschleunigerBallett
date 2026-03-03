@@ -262,20 +262,23 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     std::set<int> const queue_family_indices = {
         indices.graphics_family, indices.presentation_family, indices.compute_family
     };
+    std::vector<float> queue_priorities(queue_family_indices.size(), 1.0F);
+    queue_create_infos.reserve(queue_family_indices.size());
 
     // Queue the logical device needs to create and info to do so (only 1 for now,
     // will add more later!)
+    std::size_t priority_index = 0;
     for (int const queue_family_index : queue_family_indices) {
         VkDeviceQueueCreateInfo queue_create_info{};
         queue_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
         queue_create_info.queueFamilyIndex =
           static_cast<uint32_t>(queue_family_index);// the index of the family to create a queue from
         queue_create_info.queueCount = 1;// number of queues to create
-        float const priority = 1.0F;
-        queue_create_info.pQueuePriorities = &priority;// Vulkan needs to know how to handle multiple queues, so
+        queue_create_info.pQueuePriorities = &queue_priorities[priority_index];// Vulkan needs to know how to handle multiple queues, so
                                                        // decide priority (1 = highest)
 
         queue_create_infos.push_back(queue_create_info);
+        ++priority_index;
     }
 
     VkPhysicalDeviceVulkan13Features available_features13{};

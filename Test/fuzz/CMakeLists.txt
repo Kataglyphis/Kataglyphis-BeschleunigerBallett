@@ -1,35 +1,31 @@
 include(GoogleTest)
-set(KATAGLYPHIS_ENABLE_FUZZ_TESTS
-    ON
-    CACHE BOOL "Enable fuzz tests" FORCE)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux"
+   AND CMAKE_CXX_COMPILER_ID MATCHES ".*Clang"
+   AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+  message(STATUS "Linux + Clang + Debug detected: enabling fuzz test targets.")
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo"))
-  message(STATUS "This is a Linux system.")
+  add_executable(first_fuzz_test dummy.cpp)
 
-  if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
-    fuzztest_setup_fuzzing_flags()
-    if(NOT FUZZTEST_FUZZING_MODE)
-      # Remove AddressSanitizer flags only when fuzzing mode is disabled.
-      string(
-        REPLACE "-fsanitize=address"
-                ""
-                CMAKE_C_FLAGS
-                "${CMAKE_C_FLAGS}")
-      string(
-        REPLACE "-fsanitize=address"
-                ""
-                CMAKE_CXX_FLAGS
-                "${CMAKE_CXX_FLAGS}")
-      string(
-        REPLACE "-fsanitize=address"
-                ""
-                CMAKE_EXE_LINKER_FLAGS
-                "${CMAKE_EXE_LINKER_FLAGS}")
-      remove_definitions(-DADDRESS_SANITIZER)
-    endif()
-    add_executable(first_fuzz_test dummy.cpp)
-
-    link_fuzztest(first_fuzz_test)
-    gtest_discover_tests(first_fuzz_test)
+  if(KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE OR (FUZZTEST_COMPATIBILITY_MODE STREQUAL "libfuzzer"))
+    target_compile_options(
+      first_fuzz_test
+      PRIVATE -g
+              -UNDEBUG
+              -fsanitize=address
+              -fsanitize-coverage=inline-8bit-counters
+              -fsanitize-coverage=trace-cmp)
+    target_compile_definitions(
+      first_fuzz_test
+      PRIVATE FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+              ADDRESS_SANITIZER)
+    target_link_options(first_fuzz_test PRIVATE -fsanitize=address)
   endif()
+
+  if(FUZZTEST_COMPATIBILITY_MODE STREQUAL "libfuzzer")
+    target_compile_options(first_fuzz_test PRIVATE -fsanitize=fuzzer-no-link)
+    target_compile_definitions(first_fuzz_test PRIVATE FUZZTEST_COMPATIBILITY_MODE)
+  endif()
+
+  link_fuzztest(first_fuzz_test)
+  gtest_discover_tests(first_fuzz_test)
 endif()

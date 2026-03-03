@@ -26,6 +26,12 @@ add_executable(${OpenGlEngineTargetName})
 
 set_target_properties(${OpenGlEngineTargetName} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
 
+if(RUST_FEATURES)
+       target_compile_definitions(${OpenGlEngineTargetName} PRIVATE USE_RUST=1)
+else()
+       target_compile_definitions(${OpenGlEngineTargetName} PRIVATE USE_RUST=0)
+endif()
+
 kataglyphis_apply_runtime_compile_definitions(
   ${OpenGlEngineTargetName}
   RESOURCE_PATH_NON_MSVC
@@ -92,3 +98,7 @@ target_link_libraries(
          # enable sanitizers
          myproject_options
   PRIVATE GSL spdlog nlohmann_json::nlohmann_json)
+
+if(RUST_FEATURES)
+       target_link_libraries(${OpenGlEngineTargetName} PUBLIC kataglyphis_rustprojecttemplate)
+endif()
