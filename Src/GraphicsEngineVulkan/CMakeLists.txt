@@ -13,10 +13,8 @@ include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
 file(GLOB_RECURSE VULKANRENDERER_SOURCES "*.cpp")
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15)
-  set_source_files_properties(
-    ${CMAKE_CURRENT_SOURCE_DIR}/renderer/VulkanRenderer.cpp
-    PROPERTIES
-      COMPILE_OPTIONS "-fno-lto")
+  set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/renderer/VulkanRenderer.cpp PROPERTIES COMPILE_OPTIONS
+                                                                                                 "-fno-lto")
 endif()
 
 file(
@@ -144,13 +142,9 @@ if(RUST_FEATURES)
 endif()
 
 # Enable ASan and UBSan in Debug mode on Linux
-target_compile_options(${PROJECT_NAME} PRIVATE
-    $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>
-    $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fno-omit-frame-pointer>
-)
-target_link_options(${PROJECT_NAME} PRIVATE
-    $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>
-)
+target_compile_options(${PROJECT_NAME} PRIVATE $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>
+                                               $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fno-omit-frame-pointer>)
+target_link_options(${PROJECT_NAME} PRIVATE $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>)
 
 # compile shaders as part of my cmake routine right away :)
 include(cmake/CompileShadersToSPV.cmake)

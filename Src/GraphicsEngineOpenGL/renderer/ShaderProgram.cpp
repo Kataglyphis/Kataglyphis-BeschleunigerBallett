@@ -116,8 +116,8 @@ auto preprocess_shader_source(const std::filesystem::path &shader_file,
                     continue;
                 }
 
-                                std::cerr << "Failed to resolve shader include '" << include_target << "' while processing '"
-                                                    << shader_file.string() << "'." << '\n';
+                std::cerr << "Failed to resolve shader include '" << include_target << "' while processing '"
+                          << shader_file.string() << "'." << '\n';
             }
         }
 

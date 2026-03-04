@@ -106,11 +106,11 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(VulkanDevice *device,
     swap_chain_images.clear();
 
     for (size_t i = 0; i < images.size(); i++) {
-      VkImage image = images[static_cast<uint32_t>(i)];
-      swap_chain_images.emplace_back();
-      Texture &swap_chain_image = swap_chain_images.back();
-      swap_chain_image.setImage(image);
-      swap_chain_image.createImageView(device, swap_chain_image_format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+        VkImage image = images[static_cast<uint32_t>(i)];
+        swap_chain_images.emplace_back();
+        Texture &swap_chain_image = swap_chain_images.back();
+        swap_chain_image.setImage(image);
+        swap_chain_image.createImageView(device, swap_chain_image_format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
     }
 }
 

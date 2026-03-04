@@ -40,7 +40,7 @@ void Model::add_new_mesh(VulkanDevice *vulkan_device,
   std::vector<unsigned int> &materialIndex,
   std::vector<ObjMaterial> &materials)
 {
-        this->mesh = Mesh(vulkan_device, transfer_queue, command_pool, vertices, indices, materialIndex, materials);
+    this->mesh = Mesh(vulkan_device, transfer_queue, command_pool, vertices, indices, materialIndex, materials);
 }
 
 void Model::set_model(glm::mat4 new_model) { this->model = new_model; }

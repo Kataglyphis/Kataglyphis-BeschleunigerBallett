@@ -274,8 +274,9 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         queue_create_info.queueFamilyIndex =
           static_cast<uint32_t>(queue_family_index);// the index of the family to create a queue from
         queue_create_info.queueCount = 1;// number of queues to create
-        queue_create_info.pQueuePriorities = &queue_priorities[priority_index];// Vulkan needs to know how to handle multiple queues, so
-                                                       // decide priority (1 = highest)
+        queue_create_info.pQueuePriorities =
+          &queue_priorities[priority_index];// Vulkan needs to know how to handle multiple queues, so
+                                            // decide priority (1 = highest)
 
         queue_create_infos.push_back(queue_create_info);
         ++priority_index;

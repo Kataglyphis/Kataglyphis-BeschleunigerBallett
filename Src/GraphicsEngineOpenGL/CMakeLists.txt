@@ -27,9 +27,9 @@ add_executable(${OpenGlEngineTargetName})
 set_target_properties(${OpenGlEngineTargetName} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
 
 if(RUST_FEATURES)
-       target_compile_definitions(${OpenGlEngineTargetName} PRIVATE USE_RUST=1)
+  target_compile_definitions(${OpenGlEngineTargetName} PRIVATE USE_RUST=1)
 else()
-       target_compile_definitions(${OpenGlEngineTargetName} PRIVATE USE_RUST=0)
+  target_compile_definitions(${OpenGlEngineTargetName} PRIVATE USE_RUST=0)
 endif()
 
 kataglyphis_apply_runtime_compile_definitions(
@@ -72,11 +72,11 @@ target_sources(
          CXX_MODULES
          TYPE
          CXX_MODULES
-                             BASE_DIRS
-                             ${CMAKE_CURRENT_SOURCE_DIR}/..
+         BASE_DIRS
+         ${CMAKE_CURRENT_SOURCE_DIR}/..
          FILES
-                             ${OPENGL_MODULE_INTERFACE_FILES}
-                             ${SHARED_MODULE_INTERFACE_FILES})
+         ${OPENGL_MODULE_INTERFACE_FILES}
+         ${SHARED_MODULE_INTERFACE_FILES})
 
 target_include_directories(${OpenGlEngineTargetName} PRIVATE ${OPENGL_INCLUDE_DIRS} ${Vulkan_INCLUDE_DIRS})
 
@@ -100,14 +100,11 @@ target_link_libraries(
   PRIVATE GSL spdlog nlohmann_json::nlohmann_json)
 
 if(RUST_FEATURES)
-       target_link_libraries(${OpenGlEngineTargetName} PUBLIC kataglyphis_rustprojecttemplate)
+  target_link_libraries(${OpenGlEngineTargetName} PUBLIC kataglyphis_rustprojecttemplate)
 endif()
 
 # Enable ASan and UBSan in Debug mode on Linux
-target_compile_options(${OpenGlEngineTargetName} PRIVATE
-    $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>
-    $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fno-omit-frame-pointer>
-)
-target_link_options(${OpenGlEngineTargetName} PRIVATE
-    $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>
-)
+target_compile_options(
+  ${OpenGlEngineTargetName} PRIVATE $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>
+                                    $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fno-omit-frame-pointer>)
+target_link_options(${OpenGlEngineTargetName} PRIVATE $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>)

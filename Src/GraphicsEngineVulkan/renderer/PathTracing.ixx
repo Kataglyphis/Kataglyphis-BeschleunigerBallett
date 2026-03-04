@@ -46,9 +46,9 @@ class PathTracing
 
     struct
     {
-      uint32_t maxComputeWorkGroupCount[3] = { 0, 0, 0 };
-      uint32_t maxComputeWorkGroupInvocations = 0;
-      uint32_t maxComputeWorkGroupSize[3] = { 0, 0, 0 };
+        uint32_t maxComputeWorkGroupCount[3] = { 0, 0, 0 };
+        uint32_t maxComputeWorkGroupInvocations = 0;
+        uint32_t maxComputeWorkGroupSize[3] = { 0, 0, 0 };
 
     } computeLimits;
 

@@ -4,6 +4,4 @@ module;
 
 export module kataglyphis.shared.scene.vertex;
 
-export {
-using ::Vertex;
-}
+export { using ::Vertex; }

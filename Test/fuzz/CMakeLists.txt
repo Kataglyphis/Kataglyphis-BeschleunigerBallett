@@ -16,10 +16,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT (CMAKE_BUILD_TYPE STREQUAL "RelWit
                 -fsanitize=address
                 -fsanitize-coverage=inline-8bit-counters
                 -fsanitize-coverage=trace-cmp)
-      target_compile_definitions(
-        first_fuzz_test
-        PRIVATE FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
-                ADDRESS_SANITIZER)
+      target_compile_definitions(first_fuzz_test PRIVATE FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION ADDRESS_SANITIZER)
       target_link_options(first_fuzz_test PRIVATE -fsanitize=address)
     endif()
 

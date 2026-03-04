@@ -14,23 +14,23 @@ Kataglyphis::VulkanImageView::VulkanImageView() = default;
 Kataglyphis::VulkanImageView::VulkanImageView(VulkanImageView &&other) noexcept
   : device(other.device), imageView(other.imageView)
 {
-  other.device = VK_NULL_HANDLE;
-  other.imageView = VK_NULL_HANDLE;
+    other.device = VK_NULL_HANDLE;
+    other.imageView = VK_NULL_HANDLE;
 }
 
 auto Kataglyphis::VulkanImageView::operator=(VulkanImageView &&other) noexcept -> VulkanImageView &
 {
-  if (this != &other) {
-    cleanUp();
+    if (this != &other) {
+        cleanUp();
 
-    device = other.device;
-    imageView = other.imageView;
+        device = other.device;
+        imageView = other.imageView;
 
-    other.device = VK_NULL_HANDLE;
-    other.imageView = VK_NULL_HANDLE;
-  }
+        other.device = VK_NULL_HANDLE;
+        other.imageView = VK_NULL_HANDLE;
+    }
 
-  return *this;
+    return *this;
 }
 
 void Kataglyphis::VulkanImageView::setImageView(VkImageView imageView) { this->imageView = imageView; }
@@ -69,11 +69,11 @@ void Kataglyphis::VulkanImageView::create(VulkanDevice *device,
 
 void Kataglyphis::VulkanImageView::cleanUp()
 {
-  if (device != VK_NULL_HANDLE && imageView != VK_NULL_HANDLE) {
-    vkDestroyImageView(device->getLogicalDevice(), imageView, nullptr);
-  }
+    if (device != VK_NULL_HANDLE && imageView != VK_NULL_HANDLE) {
+        vkDestroyImageView(device->getLogicalDevice(), imageView, nullptr);
+    }
 
-  imageView = VK_NULL_HANDLE;
+    imageView = VK_NULL_HANDLE;
 }
 
 Kataglyphis::VulkanImageView::~VulkanImageView() = default;

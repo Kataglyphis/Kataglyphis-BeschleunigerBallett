@@ -17,20 +17,20 @@ Camera::Camera()
   :
 
     camera_state{ .position = glm::vec3(0.0F, 50.0F, 0.0F),
-    // here we want the normal coord. axis z is showing to us !!
-      .front = glm::vec3(0.0F, 0.0F, -1.0F),
-      .world_up = glm::vec3(0.0F, 1.0F, 0.0F),
-      .right = glm::normalize(glm::cross(glm::vec3(0.0F, 0.0F, -1.0F), glm::vec3(0.0F, 1.0F, 0.0F))),
-      .up = glm::normalize(glm::cross(
-        glm::normalize(glm::cross(glm::vec3(0.0F, 0.0F, -1.0F), glm::vec3(0.0F, 1.0F, 0.0F))),
-        glm::vec3(0.0F, 0.0F, -1.0F))),
-      .yaw = -60.0F,
-      .pitch = 0.0F,
-      .movement_speed = 35.0F,
-      .turn_speed = 0.25F,
-      .near_plane = 0.1F,
-      .far_plane = 1000.F,
-      .fov = 45.F }
+        // here we want the normal coord. axis z is showing to us !!
+        .front = glm::vec3(0.0F, 0.0F, -1.0F),
+        .world_up = glm::vec3(0.0F, 1.0F, 0.0F),
+        .right = glm::normalize(glm::cross(glm::vec3(0.0F, 0.0F, -1.0F), glm::vec3(0.0F, 1.0F, 0.0F))),
+        .up = glm::normalize(
+          glm::cross(glm::normalize(glm::cross(glm::vec3(0.0F, 0.0F, -1.0F), glm::vec3(0.0F, 1.0F, 0.0F))),
+            glm::vec3(0.0F, 0.0F, -1.0F))),
+        .yaw = -60.0F,
+        .pitch = 0.0F,
+        .movement_speed = 35.0F,
+        .turn_speed = 0.25F,
+        .near_plane = 0.1F,
+        .far_plane = 1000.F,
+        .fov = 45.F }
 
 {}
 
@@ -46,50 +46,48 @@ Camera::Camera(glm::vec3 start_position,
   :
 
     camera_state{ .position = start_position,
-    // here we want the normal coord. axis z is showing to us !!
-      .front = glm::vec3(0.0F, 0.0F, -1.0F),
-      .world_up = start_up,
-      .right = glm::normalize(glm::cross(glm::vec3(0.0F, 0.0F, -1.0F), start_up)),
-      .up = glm::normalize(
-        glm::cross(glm::normalize(glm::cross(glm::vec3(0.0F, 0.0F, -1.0F), start_up)), glm::vec3(0.0F, 0.0F, -1.0F))),
-      .yaw = start_yaw,
-      .pitch = start_pitch,
-      .movement_speed = start_move_speed,
-      .turn_speed = start_turn_speed,
-      .near_plane = near_plane,
-      .far_plane = far_plane,
-      .fov = fov }
+        // here we want the normal coord. axis z is showing to us !!
+        .front = glm::vec3(0.0F, 0.0F, -1.0F),
+        .world_up = start_up,
+        .right = glm::normalize(glm::cross(glm::vec3(0.0F, 0.0F, -1.0F), start_up)),
+        .up = glm::normalize(
+          glm::cross(glm::normalize(glm::cross(glm::vec3(0.0F, 0.0F, -1.0F), start_up)), glm::vec3(0.0F, 0.0F, -1.0F))),
+        .yaw = start_yaw,
+        .pitch = start_pitch,
+        .movement_speed = start_move_speed,
+        .turn_speed = start_turn_speed,
+        .near_plane = near_plane,
+        .far_plane = far_plane,
+        .fov = fov }
 
 {}
 
 void Camera::key_control(const bool *keys, float delta_time)
 {
-    Kataglyphis::Frontend::apply_keyboard_input(
-      { camera_state.position,
-        camera_state.front,
-        camera_state.world_up,
-        camera_state.right,
-        camera_state.up,
-        camera_state.yaw,
-        camera_state.pitch,
-        camera_state.movement_speed,
-        camera_state.turn_speed },
+    Kataglyphis::Frontend::apply_keyboard_input({ camera_state.position,
+                                                  camera_state.front,
+                                                  camera_state.world_up,
+                                                  camera_state.right,
+                                                  camera_state.up,
+                                                  camera_state.yaw,
+                                                  camera_state.pitch,
+                                                  camera_state.movement_speed,
+                                                  camera_state.turn_speed },
       keys,
       delta_time);
 }
 
 void Camera::mouse_control(float x_change, float y_change)
 {
-    Kataglyphis::Frontend::apply_mouse_input(
-      { camera_state.position,
-        camera_state.front,
-        camera_state.world_up,
-        camera_state.right,
-        camera_state.up,
-        camera_state.yaw,
-        camera_state.pitch,
-        camera_state.movement_speed,
-        camera_state.turn_speed },
+    Kataglyphis::Frontend::apply_mouse_input({ camera_state.position,
+                                               camera_state.front,
+                                               camera_state.world_up,
+                                               camera_state.right,
+                                               camera_state.up,
+                                               camera_state.yaw,
+                                               camera_state.pitch,
+                                               camera_state.movement_speed,
+                                               camera_state.turn_speed },
       x_change,
       y_change);
 }
@@ -112,14 +110,13 @@ Camera::~Camera() = default;
 
 void Camera::update()
 {
-    Kataglyphis::Frontend::update_camera_vectors(
-      { camera_state.position,
-        camera_state.front,
-        camera_state.world_up,
-        camera_state.right,
-        camera_state.up,
-        camera_state.yaw,
-        camera_state.pitch,
-        camera_state.movement_speed,
-        camera_state.turn_speed });
+    Kataglyphis::Frontend::update_camera_vectors({ camera_state.position,
+      camera_state.front,
+      camera_state.world_up,
+      camera_state.right,
+      camera_state.up,
+      camera_state.yaw,
+      camera_state.pitch,
+      camera_state.movement_speed,
+      camera_state.turn_speed });
 }

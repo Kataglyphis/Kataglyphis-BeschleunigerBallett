@@ -1,6 +1,9 @@
 set(WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../)
 
-if(NOT CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+if(NOT
+   CMAKE_BUILD_TYPE
+   STREQUAL
+   "RelWithDebInfo")
   message(STATUS "Skipping perf tests: build type is '${CMAKE_BUILD_TYPE}', requires RelWithDebInfo.")
   return()
 endif()

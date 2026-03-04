@@ -1,6 +1,9 @@
 include(GoogleTest)
 
-if(NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+if(NOT
+   CMAKE_BUILD_TYPE
+   STREQUAL
+   "Debug")
   message(STATUS "Skipping compile tests: build type is '${CMAKE_BUILD_TYPE}', requires Debug.")
   return()
 endif()

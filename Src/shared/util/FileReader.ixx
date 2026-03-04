@@ -9,10 +9,7 @@ export module kataglyphis.shared.util.file_reader;
 
 export namespace Kataglyphis::Shared {
 
-inline bool fileExists(const std::string &file_location)
-{
-    return std::filesystem::exists(file_location);
-}
+inline bool fileExists(const std::string &file_location) { return std::filesystem::exists(file_location); }
 
 inline std::string readTextFile(const std::string &file_location)
 {
@@ -22,9 +19,7 @@ inline std::string readTextFile(const std::string &file_location)
     if (!file_stream.is_open()) { return {}; }
 
     std::string line;
-    while (std::getline(file_stream, line)) {
-        content.append(line).append("\n");
-    }
+    while (std::getline(file_stream, line)) { content.append(line).append("\n"); }
 
     return content;
 }

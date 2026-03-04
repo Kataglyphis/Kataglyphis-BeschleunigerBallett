@@ -76,7 +76,12 @@ if(myproject_ENABLE_SANITIZER_ADDRESS)
   add_link_options(-fsanitize=address)
 endif()
 
-if(myproject_ENABLE_COVERAGE AND NOT CMAKE_BUILD_TYPE STREQUAL "Release" AND CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+if(myproject_ENABLE_COVERAGE
+   AND NOT
+       CMAKE_BUILD_TYPE
+       STREQUAL
+       "Release"
+   AND CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
   add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
   add_link_options(-fprofile-instr-generate -fcoverage-mapping)
 endif()
@@ -115,7 +120,8 @@ if(BUILD_TESTING)
   else()
     message(
       STATUS
-        "Skipping test suites for CMAKE_BUILD_TYPE='${CMAKE_BUILD_TYPE}'. Use Debug for commit/compile/fuzz or RelWithDebInfo for perf.")
+        "Skipping test suites for CMAKE_BUILD_TYPE='${CMAKE_BUILD_TYPE}'. Use Debug for commit/compile/fuzz or RelWithDebInfo for perf."
+    )
   endif()
 else()
   message(STATUS "Tests are disabled.!")

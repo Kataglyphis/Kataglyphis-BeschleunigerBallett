@@ -141,7 +141,8 @@ jobs:
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/run-clang-analyze-html.sh
+            bash ./Scripts/Linux/run_static_analysis.sh \
+            --only-clang-analyze-html
 
       - name: Run Clang static analysis (scan-build)
         continue-on-error: true
@@ -152,7 +153,8 @@ jobs:
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/run-clang-scan-build.sh \
+            bash ./Scripts/Linux/run_static_analysis.sh \
+            --only-scan-build \
             --build-dir "${{ env.BUILD_DIR }}" \
             --preset "linux-debug-clang"
 
