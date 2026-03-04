@@ -19,18 +19,18 @@ export class ObjMaterial
 				this->emission = glm::vec3(0.0F, 0.0F, 0.10F);
 		}
 
-		ObjMaterial(glm::vec3 ambient,
-			glm::vec3 diffuse,
-			glm::vec3 specular,
-			glm::vec3 transmittance,
-			glm::vec3 emission,
-			float shininess,
-			float ior,
-			float dissolve,
-			int illum,
-			int textureID)
-			: ambient(ambient), diffuse(diffuse), specular(specular), transmittance(transmittance), emission(emission),
-				shininess(shininess), ior(ior), dissolve(dissolve), illum(illum), textureID(textureID)
+		ObjMaterial(glm::vec3 p_ambient,
+			glm::vec3 p_diffuse,
+			glm::vec3 p_specular,
+			glm::vec3 p_transmittance,
+			glm::vec3 p_emission,
+			float p_shininess,
+			float p_ior,
+			float p_dissolve,
+			int p_illum,
+			int p_textureID)
+			: ambient(p_ambient), diffuse(p_diffuse), specular(p_specular), transmittance(p_transmittance), emission(p_emission),
+				shininess(p_shininess), ior(p_ior), dissolve(p_dissolve), illum(p_illum), textureID(p_textureID)
 		{}
 
 		glm::vec3 get_ambient() const { return ambient; };
