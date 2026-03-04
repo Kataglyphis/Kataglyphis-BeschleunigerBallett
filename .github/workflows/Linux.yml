@@ -141,7 +141,7 @@ jobs:
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/run_static_analysis.sh \
+            bash ./Scripts/Linux/run_static_analysis_format.sh \
             --only-clang-analyze-html
 
       - name: Run Clang static analysis (scan-build)
@@ -153,7 +153,7 @@ jobs:
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/run_static_analysis.sh \
+            bash ./Scripts/Linux/run_static_analysis_format.sh \
             --only-scan-build \
             --build-dir "${{ env.BUILD_DIR }}" \
             --preset "linux-debug-clang"
@@ -186,25 +186,7 @@ jobs:
       #################################################################################################################
       ######################################## Build docs #############################################################
       #################################################################################################################
-      - name: Set Astral UV venv
-        if: ${{ inputs.runner == 'ubuntu-24.04' }}
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/uv-venv-create.sh
 
-      - name: Setup python env
-        if: ${{ inputs.runner == 'ubuntu-24.04' }}
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/uv-install-requirements.sh
-
-      # . "$HOME/.local/bin/env"
       - name: Build web page
         if: ${{ inputs.runner == 'ubuntu-24.04' }}
         run: |

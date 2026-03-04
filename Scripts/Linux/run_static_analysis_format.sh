@@ -167,7 +167,7 @@ run_clang_analyze_html() {
 
 usage() {
   cat <<'EOF'
-Usage: run_static_analysis.sh [options]
+Usage: run_static_analysis_format.sh [options]
 
 Single entrypoint for formatting and static analysis.
 
