@@ -117,18 +117,26 @@ fi
 
 source_vulkan_env
 
-PRESET="${PRESET_ARG:-${PRESET:-${1:-${DEFAULT_PRESET}}}}"
+PRESET="${PRESET_ARG:-${PRESET:-${1:-}}}"
 BUILD_DIR="${BUILD_DIR_ARG:-${BUILD_DIR:-${DEFAULT_BUILD_DIR}}}"
 CLEAN_BUILD_DIR="${CLEAN_BUILD_DIR_ARG:-${CLEAN_BUILD_DIR:-${DEFAULT_CLEAN_BUILD_DIR}}}"
 SKIP_CONFIGURE="${SKIP_CONFIGURE_ARG:-${SKIP_CONFIGURE:-${DEFAULT_SKIP_CONFIGURE}}}"
 CMAKE_BUILD_CONFIG="${CMAKE_BUILD_CONFIG_ARG:-${CMAKE_BUILD_CONFIG:-}}"
 CMAKE_BUILD_TARGET="${CMAKE_BUILD_TARGET_ARG:-${CMAKE_BUILD_TARGET:-}}"
 
+if [[ "${SKIP_CONFIGURE}" != "true" && -z "${PRESET}" ]]; then
+  PRESET="${DEFAULT_PRESET}"
+fi
+
 if [[ "${CLEAN_BUILD_DIR}" == "true" && -n "${BUILD_DIR}" ]]; then
   rm -rf "${BUILD_DIR}"
 fi
 
 if [[ "${SKIP_CONFIGURE}" != "true" ]]; then
+  if [[ -z "${PRESET}" ]]; then
+    echo "Missing --preset for configure step." >&2
+    exit 1
+  fi
   if [[ -n "${BUILD_DIR}" ]]; then
     cmake -B "${BUILD_DIR}" --preset "${PRESET}"
   else
@@ -140,7 +148,7 @@ build_cmd=(cmake --build)
 if [[ -n "${BUILD_DIR}" ]]; then
   build_cmd+=("${BUILD_DIR}")
 fi
-if [[ -n "${PRESET}" ]]; then
+if [[ -n "${PRESET}" && -z "${BUILD_DIR}" ]]; then
   build_cmd+=(--preset "${PRESET}")
 fi
 if [[ -n "${CMAKE_BUILD_CONFIG}" ]]; then
