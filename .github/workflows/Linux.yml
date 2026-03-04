@@ -136,6 +136,8 @@ jobs:
         continue-on-error: true
         run: |
           docker run --rm \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
+            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
@@ -145,6 +147,8 @@ jobs:
         continue-on-error: true
         run: |
           docker run --rm \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
+            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
@@ -158,6 +162,8 @@ jobs:
       - name: Configure/build CMake for Profiling (select preset by compiler)
         run: |
           docker run --rm \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
+            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
@@ -279,6 +285,8 @@ jobs:
       - name: Configure/build CMake for Release
         run: |
           docker run --rm \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
+            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
@@ -291,6 +299,8 @@ jobs:
       - name: Package
         run: |
           docker run --rm \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
+            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
