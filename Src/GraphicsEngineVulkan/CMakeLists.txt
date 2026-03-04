@@ -12,6 +12,13 @@ include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
 
 file(GLOB_RECURSE VULKANRENDERER_SOURCES "*.cpp")
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15)
+  set_source_files_properties(
+    ${CMAKE_CURRENT_SOURCE_DIR}/renderer/VulkanRenderer.cpp
+    PROPERTIES
+      COMPILE_OPTIONS "-fno-lto")
+endif()
+
 file(
   GLOB_RECURSE SHADER_HEADERS
   RELATIVE ${SHADER_SRC_DIR}
