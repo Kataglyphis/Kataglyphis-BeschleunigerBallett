@@ -61,7 +61,7 @@ export class ViewFrustumCulling
         glm::vec3 position;
     };
 
-    frustum_plane frustum_planes[NUM_FRUSTUM_PLANES]{};
+    frustum_plane frustum_planes[NUM_FRUSTUM_PLANES];
 
     void init(std::vector<glm::vec3> frustum_corner);
 

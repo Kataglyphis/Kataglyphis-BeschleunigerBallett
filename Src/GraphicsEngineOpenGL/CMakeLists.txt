@@ -105,9 +105,9 @@ endif()
 
 # Enable ASan and UBSan in Debug mode on Linux
 target_compile_options(${OpenGlEngineTargetName} PRIVATE
-    $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address,undefined>
+    $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>
     $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fno-omit-frame-pointer>
 )
 target_link_options(${OpenGlEngineTargetName} PRIVATE
-    $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address,undefined>
+    $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>
 )
