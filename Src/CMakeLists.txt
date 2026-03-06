@@ -7,6 +7,16 @@ if(RUST_FEATURES)
     CRATES
     kataglyphis_rustprojecttemplate)
 
+  if(WIN32)
+    target_link_libraries(
+      kataglyphis_rustprojecttemplate
+      INTERFACE kernel32
+                ntdll
+                userenv
+                ws2_32
+                dbghelp)
+  endif()
+
   corrosion_add_cxxbridge(
     kataglyphis_rustprojecttemplate_bridge
     CRATE
