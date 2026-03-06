@@ -3,14 +3,14 @@
 .cache
 
 build_release/
-build-*
+build-*/
 build_*/
 logs/
 
 dist
 .mypy_cache
 .conda
-build
+build*/
 *.profraw
 
 
