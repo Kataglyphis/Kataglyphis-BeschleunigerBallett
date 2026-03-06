@@ -83,6 +83,8 @@ Scene::Scene(const std::shared_ptr<Camera> &main_camera, std::shared_ptr<Window>
 
 auto Scene::get_point_light_count() const -> GLuint { return static_cast<uint32_t>(point_lights.size()); }
 
+auto Scene::spwan() -> std::thread { return std::thread(&Scene::load_models, this); }
+
 auto Scene::get_sun() -> std::shared_ptr<DirectionalLight> { return sun; }
 
 auto Scene::get_point_lights() const -> std::vector<std::shared_ptr<PointLight>> { return point_lights; }

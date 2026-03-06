@@ -26,10 +26,7 @@ export class Scene
     Scene();
     Scene(const std::shared_ptr<Camera> &main_camera, std::shared_ptr<Window> main_window);
 
-    std::thread spwan()
-    {
-        return std::thread([this] { load_models(); });
-    }
+    std::thread spwan();
 
     GLuint get_point_light_count() const;
     std::shared_ptr<DirectionalLight> get_sun();

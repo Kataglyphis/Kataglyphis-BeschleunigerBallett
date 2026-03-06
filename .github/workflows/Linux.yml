@@ -295,7 +295,7 @@ jobs:
             --build-target package
 
       - name: Upload Linux Packages (Clang only)
-        uses: actions/upload-artifact@v6.0.0
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: linux-packages
           path: |
