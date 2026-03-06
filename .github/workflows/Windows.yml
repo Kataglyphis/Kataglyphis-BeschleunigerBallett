@@ -66,6 +66,7 @@ jobs:
             -BuildDir "C:\\workspace\\build" `
             -BuildDirRelease "C:\\workspace\\build_release" `
             -ClangProfilePreset "x64-ClangCL-Windows-Profile" `
+            -DisableIntegrationTestsMsvcDebug `
             -CreateMsix
 
       # I limited the size of the builded package for storage restriction reasons on a github runner

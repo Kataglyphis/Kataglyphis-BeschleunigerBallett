@@ -20,10 +20,9 @@ if(RUST_FEATURES)
   if(WIN32)
     # Ensure that Rust links MSVC debug runtime correctly in Debug mode
     # and properly sets iterator debug level to match CMake targets
-    corrosion_set_env_vars(kataglyphis_rustprojecttemplate 
-        "CXXFLAGS=/EHsc $<$<CONFIG:Debug>:/MDd>$<$<NOT:$<CONFIG:Debug>>:/MD>"
-        "CFLAGS=$<$<CONFIG:Debug>:/MDd>$<$<NOT:$<CONFIG:Debug>>:/MD>"
-    )
+    corrosion_set_env_vars(
+      kataglyphis_rustprojecttemplate "CXXFLAGS=/EHsc $<$<CONFIG:Debug>:/MDd>$<$<NOT:$<CONFIG:Debug>>:/MD>"
+      "CFLAGS=$<$<CONFIG:Debug>:/MDd>$<$<NOT:$<CONFIG:Debug>>:/MD>")
   else()
     if(NOT DEFINED GCC_TOOLCHAIN_PATH)
       set(GCC_TOOLCHAIN_PATH

@@ -1,7 +1,12 @@
 include(CMakeParseArguments)
 
 function(kataglyphis_collect_module_interfaces out_var base_dir)
-  string(REGEX REPLACE "/+$" "" base_dir "${base_dir}")
+  string(
+    REGEX
+    REPLACE "/+$"
+            ""
+            base_dir
+            "${base_dir}")
   file(
     GLOB_RECURSE _module_interface_relative_files
     RELATIVE "${base_dir}"

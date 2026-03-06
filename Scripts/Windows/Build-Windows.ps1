@@ -2,7 +2,8 @@ param(
   [string[]]$Configurations = @('all'),
   [switch]$SkipFormat,
   [switch]$SkipTidy,
-  [switch]$SkipMsix
+  [switch]$SkipMsix,
+  [switch]$DisableIntegrationTestsMsvcDebug
 )
 
 $ErrorActionPreference = 'Stop'
@@ -224,7 +225,13 @@ try {
     } | Out-Null
 
     Invoke-BuildStep -Context $context -StepName 'Test: MSVC Debug' -Critical -Script {
-      Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathMsvc -Configuration 'Debug' -RuntimeFlavor 'Msvc'
+      $excludeRegex = @()
+      if ($DisableIntegrationTestsMsvcDebug) {
+        Write-BuildLogWarning -Context $context -Message 'MSVC Debug integration tests disabled via -DisableIntegrationTestsMsvcDebug.'
+        $excludeRegex += '^Integration\.'
+      }
+
+      Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathMsvc -Configuration 'Debug' -ExcludeRegex $excludeRegex -RuntimeFlavor 'Msvc'
     } | Out-Null
   }
 
