@@ -9,7 +9,9 @@ import kataglyphis.vulkan.app;
 #include <system_error>
 #include <vector>
 
+#if USE_RUST
 #include "kataglyphis_rustprojecttemplate_bridge/lib.h"
+#endif
 #include "spdlog/common.h"
 #include "spdlog/logger.h"
 #include "spdlog/sinks/basic_file_sink.h"
@@ -90,12 +92,14 @@ auto main(int argc, char **argv) -> int
     initialize_logging();
     apply_gpu_selection_from_args(std::span<char *const>(argv, static_cast<std::size_t>(argc)));
 
+    #if USE_RUST
     if (USE_RUST) {
         const auto value = rusty_cxxbridge_integer();
         std::cout << "A value given by the Rust bridge function " << value << "\n";
         spdlog::default_logger_raw()->log(
           spdlog::level::info, std::string("Rust extern value: ") + std::to_string(value));
     }
+#endif
 
     return Kataglyphis::App::run();
 }
