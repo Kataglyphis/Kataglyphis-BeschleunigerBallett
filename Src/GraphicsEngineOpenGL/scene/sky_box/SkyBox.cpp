@@ -20,7 +20,6 @@ module;
 #include <stb_image.h>
 
 #include "hostDevice/bindings.hpp"
-#include "renderer/OpenGLRendererConfig.hpp"
 
 module kataglyphis.opengl.sky_box;
 

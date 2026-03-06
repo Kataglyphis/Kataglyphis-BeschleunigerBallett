@@ -3,8 +3,6 @@ module;
 #include "GLFW/glfw3.h"
 #include "spdlog/spdlog.h"
 
-#include "renderer/VulkanRendererConfig.hpp"
-
 #include "common/Utilities.hpp"
 #include <cstdint>
 #include <cstring>
@@ -14,6 +12,7 @@ module;
 
 module kataglyphis.vulkan.instance;
 
+import kataglyphis.vulkan.config;
 import kataglyphis.vulkan.debug;
 
 Kataglyphis::VulkanInstance::VulkanInstance()
@@ -30,7 +29,7 @@ Kataglyphis::VulkanInstance::VulkanInstance()
     app_info.applicationVersion = VK_MAKE_VERSION(1, 3, 1);// custom version of app
     app_info.pEngineName = "Cataglyphis Renderer";// custom engine name
     app_info.engineVersion = VK_MAKE_VERSION(1, 3, 3);// custom engine version
-    app_info.apiVersion = VULKAN_API_VERSION;// the vulkan version
+    app_info.apiVersion = Kataglyphis::RendererConfig::vulkanApiVersion;// the vulkan version
 
     // creation info for a VkInstance
     VkInstanceCreateInfo create_info{};

@@ -126,15 +126,52 @@ function Invoke-ClangTidyFixStep {
     [string]$BuildRoot
   )
 
+  function Ensure-CompileCommandsDatabase {
+    param(
+      [Parameter(Mandatory)]
+      [pscustomobject]$Context,
+      [Parameter(Mandatory)]
+      [string]$BuildRoot
+    )
+
+    $compileDb = Join-Path $BuildRoot 'compile_commands.json'
+    if (Test-Path $compileDb) {
+      return $compileDb
+    }
+
+    $buildNinja = Join-Path $BuildRoot 'build.ninja'
+    if (-not (Test-Path $buildNinja)) {
+      throw "compile_commands.json not found at: $compileDb"
+    }
+
+    $ninjaCommand = Get-Command 'ninja' -ErrorAction SilentlyContinue
+    if (-not $ninjaCommand) {
+      throw "compile_commands.json not found at: $compileDb"
+    }
+
+    Write-BuildLogWarning -Context $Context -Message 'compile_commands.json missing; generating it from ninja compdb.'
+
+    $compdbOutput = & $ninjaCommand.Source '-C' $BuildRoot '-t' 'compdb' 2>&1
+    if ($LASTEXITCODE -ne 0) {
+      $compdbError = ($compdbOutput | Out-String).Trim()
+      throw "Failed to generate compile_commands.json via ninja -t compdb: $compdbError"
+    }
+
+    Set-Content -Path $compileDb -Value $compdbOutput -Encoding utf8
+
+    if (-not (Test-Path $compileDb)) {
+      throw "compile_commands.json not found at: $compileDb"
+    }
+
+    return $compileDb
+  }
+
   $clangTidyCommand = Get-Command 'clang-tidy' -ErrorAction SilentlyContinue
   if (-not $clangTidyCommand) {
     throw 'clang-tidy not found on PATH.'
   }
 
-  $compileDb = Join-Path $BuildRoot 'compile_commands.json'
-  if (-not (Test-Path $compileDb)) {
-    throw "compile_commands.json not found at: $compileDb"
-  }
+  $compileDb = Ensure-CompileCommandsDatabase -Context $Context -BuildRoot $BuildRoot
 
   $srcDir = Join-Path $WorkspacePath 'Src'
   $tidyFiles = @(Get-ChildItem -Path $srcDir -Recurse -File -ErrorAction SilentlyContinue |
@@ -151,7 +188,6 @@ function Invoke-ClangTidyFixStep {
       '-p', $BuildRoot,
       '--checks=-misc-include-cleaner',
       '--fix',
-      '--fix-errors',
       $tidyFile
     ) | Out-Null
   }

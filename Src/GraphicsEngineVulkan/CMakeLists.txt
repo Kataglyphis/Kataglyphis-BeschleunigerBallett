@@ -30,6 +30,8 @@ kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${CMAKE_CUR
 # add the executable
 add_executable(${PROJECT_NAME})
 
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
+
 set(ShaderIncludes
     -I
     ${SHADER_SRC_DIR}
@@ -82,7 +84,12 @@ kataglyphis_apply_runtime_compile_definitions(
   SHADER_INCLUDES_STRING
   "${ShaderIncludesString}")
 
-configure_file(VulkanRendererConfig.hpp.in "${CMAKE_CURRENT_SOURCE_DIR}/renderer/VulkanRendererConfig.hpp")
+set(VULKAN_RENDERER_CONFIG_MODULE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(VULKAN_RENDERER_CONFIG_MODULE_FILE "${VULKAN_RENDERER_CONFIG_MODULE_DIR}/VulkanRendererConfig.ixx")
+file(MAKE_DIRECTORY "${VULKAN_RENDERER_CONFIG_MODULE_DIR}")
+configure_file(VulkanRendererConfig.ixx.in "${VULKAN_RENDERER_CONFIG_MODULE_FILE}" @ONLY)
+set_source_files_properties("${VULKAN_RENDERER_CONFIG_MODULE_FILE}" PROPERTIES GENERATED TRUE)
+list(APPEND VULKAN_MODULE_INTERFACE_FILES "${VULKAN_RENDERER_CONFIG_MODULE_FILE}")
 
 target_sources(
   ${PROJECT_NAME}
@@ -113,6 +120,7 @@ target_sources(
          CXX_MODULES
          BASE_DIRS
          ${CMAKE_CURRENT_SOURCE_DIR}/..
+         ${VULKAN_RENDERER_CONFIG_MODULE_DIR}
          FILES
          ${VULKAN_MODULE_INTERFACE_FILES}
          ${SHARED_MODULE_INTERFACE_FILES})
@@ -138,7 +146,7 @@ target_link_libraries(
   PRIVATE GSL spdlog::spdlog nlohmann_json::nlohmann_json)
 
 if(RUST_FEATURES)
-  target_link_libraries(${PROJECT_NAME} PUBLIC kataglyphis_rustprojecttemplate)
+  target_link_libraries(${PROJECT_NAME} PUBLIC kataglyphis_rustprojecttemplate kataglyphis_rustprojecttemplate_bridge)
 endif()
 
 # Enable ASan and UBSan in Debug mode on Linux

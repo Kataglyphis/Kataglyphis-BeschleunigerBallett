@@ -52,6 +52,8 @@ endif()
 
 enable_language(CXX C)
 
+include(cmake/ClangClModules.cmake)
+
 if(RUST_FEATURES)
   message(STATUS "Rust features are enabled.")
   if(MSVC)
@@ -70,11 +72,6 @@ myproject_setup_options()
 myproject_global_options()
 
 myproject_local_options()
-
-if(myproject_ENABLE_SANITIZER_ADDRESS)
-  add_compile_options(-fsanitize=address)
-  add_link_options(-fsanitize=address)
-endif()
 
 if(myproject_ENABLE_COVERAGE
    AND NOT
@@ -99,12 +96,12 @@ endif()
 
 add_subdirectory(Src)
 
-if(NOT WINDOWS_CI AND BUILD_TESTING)
+if(BUILD_TESTING)
   include(CTest)
   enable_testing()
-  message(STATUS "WINDOWS_CI is OFF or not defined.")
+  message(STATUS "BUILD_TESTING is ON - enabling CTest.")
 else()
-  message(STATUS "WINDOWS_CI is ON or BUILD_TESTING is disabled.")
+  message(STATUS "BUILD_TESTING is OFF - skipping CTest enablement.")
 endif()
 
 if(BUILD_TESTING)

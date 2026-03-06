@@ -1,7 +1,6 @@
 module;
 
 #include "common/Utilities.hpp"
-#include "renderer/VulkanRendererConfig.hpp"
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan_core.h>
 
@@ -10,6 +9,8 @@ module;
 #endif
 
 module kataglyphis.vulkan.allocator;
+
+import kataglyphis.vulkan.config;
 
 using namespace Kataglyphis;
 
@@ -21,7 +22,7 @@ Allocator::Allocator(const VkDevice &device, const VkPhysicalDevice &physicalDev
     // https://gpuopen-librariesandsdks.github.io/VulkanMemoryAllocator/html/quick_start.html
     VmaAllocatorCreateInfo allocatorCreateInfo = {};
     allocatorCreateInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
-    allocatorCreateInfo.vulkanApiVersion = VULKAN_API_VERSION;
+    allocatorCreateInfo.vulkanApiVersion = Kataglyphis::RendererConfig::vulkanApiVersion;
     allocatorCreateInfo.physicalDevice = physicalDevice;
     allocatorCreateInfo.device = device;
     allocatorCreateInfo.instance = instance;

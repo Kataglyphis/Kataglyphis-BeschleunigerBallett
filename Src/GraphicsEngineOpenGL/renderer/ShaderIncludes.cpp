@@ -10,7 +10,6 @@ module;
 #include <vector>
 
 #include "spdlog/spdlog.h"
-#include "renderer/OpenGLRendererConfig.hpp"
 
 module kataglyphis.opengl.shader_includes;
 

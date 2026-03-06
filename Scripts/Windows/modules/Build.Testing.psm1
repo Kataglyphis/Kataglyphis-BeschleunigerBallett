@@ -2,6 +2,77 @@ Set-StrictMode -Version Latest
 
 $script:MsvcAsanRuntimeDir = $null
 
+function Add-AsanRuntimeDirIfPresent {
+  param(
+    [Parameter(Mandatory)]
+    [object]$RuntimeDirs,
+    [string]$CandidateDir
+  )
+
+  if ([string]::IsNullOrWhiteSpace($CandidateDir)) {
+    return
+  }
+
+  $asanRuntime = Join-Path $CandidateDir 'clang_rt.asan_dynamic-x86_64.dll'
+  if ((Test-Path $CandidateDir) -and (Test-Path $asanRuntime) -and -not $RuntimeDirs.Contains($CandidateDir)) {
+    $RuntimeDirs.Add($CandidateDir)
+  }
+}
+
+function Get-VisualStudioAsanRuntimeDirs {
+  $runtimeDirs = [System.Collections.Generic.List[string]]::new()
+  $visualStudioRoots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}) |
+    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+    ForEach-Object { Join-Path $_ 'Microsoft Visual Studio' } |
+    Where-Object { Test-Path $_ }
+
+  foreach ($root in $visualStudioRoots) {
+    try {
+      Get-ChildItem -Path $root -Directory -ErrorAction Stop | ForEach-Object {
+        Get-ChildItem -Path $_.FullName -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+          $msvcToolsRoot = Join-Path $_.FullName 'VC\Tools\MSVC'
+          if (-not (Test-Path $msvcToolsRoot)) {
+            return
+          }
+
+          Get-ChildItem -Path $msvcToolsRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            Add-AsanRuntimeDirIfPresent -RuntimeDirs $runtimeDirs -CandidateDir (Join-Path $_.FullName 'bin\Hostx64\x64')
+          }
+        }
+      }
+    } catch {
+    }
+  }
+
+  return @($runtimeDirs)
+}
+
+function Get-LlvmAsanRuntimeDirs {
+  $runtimeDirs = [System.Collections.Generic.List[string]]::new()
+  $clangCommand = Get-Command 'clang-cl.exe' -ErrorAction SilentlyContinue
+
+  if ($clangCommand) {
+    $clangBinDir = Split-Path $clangCommand.Source -Parent
+    $llvmRoot = Split-Path $clangBinDir -Parent
+    $clangLibRoot = Join-Path $llvmRoot 'lib\clang'
+    if (Test-Path $clangLibRoot) {
+      Get-ChildItem -Path $clangLibRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+        Add-AsanRuntimeDirIfPresent -RuntimeDirs $runtimeDirs -CandidateDir (Join-Path $_.FullName 'lib\windows')
+      }
+    }
+  }
+
+  try {
+    $clangResourceDir = & 'clang-cl.exe' --print-resource-dir 2>$null
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($clangResourceDir)) {
+      Add-AsanRuntimeDirIfPresent -RuntimeDirs $runtimeDirs -CandidateDir (Join-Path $clangResourceDir.Trim() 'lib\windows')
+    }
+  } catch {
+  }
+
+  return @($runtimeDirs)
+}
+
 function Resolve-TestExecutable {
   param(
     [Parameter(Mandatory)]
@@ -43,34 +114,36 @@ function Get-AsanRuntimeDirs {
     [string]$RuntimeFlavor = 'Auto'
   )
 
-  $asanRuntimeDirs = @()
+  $asanRuntimeDirs = [System.Collections.Generic.List[string]]::new()
 
   if ($RuntimeFlavor -eq 'Auto' -or $RuntimeFlavor -eq 'Msvc') {
     if ($script:MsvcAsanRuntimeDir) {
-      $asanRuntimeDirs += $script:MsvcAsanRuntimeDir
+      Add-AsanRuntimeDirIfPresent -RuntimeDirs $asanRuntimeDirs -CandidateDir $script:MsvcAsanRuntimeDir
     } elseif ($env:VCToolsInstallDir) {
       $fromEnv = Join-Path $env:VCToolsInstallDir 'bin\Hostx64\x64'
-      if (Test-Path (Join-Path $fromEnv 'clang_rt.asan_dynamic-x86_64.dll')) {
+      Add-AsanRuntimeDirIfPresent -RuntimeDirs $asanRuntimeDirs -CandidateDir $fromEnv
+      if ($asanRuntimeDirs.Count -gt 0) {
         $script:MsvcAsanRuntimeDir = $fromEnv
-        $asanRuntimeDirs += $fromEnv
+      }
+    }
+
+    if ($asanRuntimeDirs.Count -eq 0) {
+      foreach ($runtimeDir in Get-VisualStudioAsanRuntimeDirs) {
+        Add-AsanRuntimeDirIfPresent -RuntimeDirs $asanRuntimeDirs -CandidateDir $runtimeDir
+        if (-not $script:MsvcAsanRuntimeDir) {
+          $script:MsvcAsanRuntimeDir = $runtimeDir
+        }
       }
     }
   }
 
   if ($RuntimeFlavor -eq 'Auto' -or $RuntimeFlavor -eq 'Clang') {
-    try {
-      $clangResourceDir = & 'clang-cl.exe' --print-resource-dir 2>$null
-      if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($clangResourceDir)) {
-        $clangRuntimeDir = Join-Path $clangResourceDir.Trim() 'lib\windows'
-        if (Test-Path (Join-Path $clangRuntimeDir 'clang_rt.asan_dynamic-x86_64.dll')) {
-          $asanRuntimeDirs += $clangRuntimeDir
-        }
-      }
-    } catch {
+    foreach ($runtimeDir in Get-LlvmAsanRuntimeDirs) {
+      Add-AsanRuntimeDirIfPresent -RuntimeDirs $asanRuntimeDirs -CandidateDir $runtimeDir
     }
   }
 
-  return @($asanRuntimeDirs | Select-Object -Unique)
+  return @($asanRuntimeDirs)
 }
 
 function Invoke-WithRuntimePath {

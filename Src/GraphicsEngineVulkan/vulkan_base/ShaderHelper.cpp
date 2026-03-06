@@ -12,12 +12,13 @@ module;
 #include <vulkan/vulkan_core.h>
 
 #include "common/Utilities.hpp"
-#include "renderer/VulkanRendererConfig.hpp"
 #include "vulkan_base/ShaderIncludes.hpp"
 
 #include "spdlog/spdlog.h"
 
 module kataglyphis.vulkan.shader_helper;
+
+import kataglyphis.vulkan.config;
 
 namespace {
 constexpr int kShaderSearchMaxDepth = 8;
@@ -79,8 +80,8 @@ void Kataglyphis::ShaderHelper::compileShader(const std::string &shader_src_dir,
     log_stdout_and_stderr << " > " << shader_log_file.str() << " 2> " << shader_log_file.str();
 
     cmdShaderCompile//<< adminPriviliges.str()
-      << GLSLC_EXE << target << std::quoted(resolved_shader_src_path) << " -o " << std::quoted(shader_spv_path) << " "
-      << ShaderIncludes::getShaderIncludes();
+      << Kataglyphis::RendererConfig::glslcExe << target << std::quoted(resolved_shader_src_path) << " -o "
+      << std::quoted(shader_spv_path) << " " << ShaderIncludes::getShaderIncludes();
     //<< log_stdout_and_stderr.str();
 
     spdlog::default_logger_raw()->log(

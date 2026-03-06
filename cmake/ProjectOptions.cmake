@@ -2,16 +2,52 @@ include(CMakeDependentOption)
 include(CheckCXXCompilerFlag)
 
 macro(myproject_supports_sanitizers)
+  set(_MYPROJECT_IS_CLANG_CL OFF)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
+    set(_MYPROJECT_IS_CLANG_CL ON)
+  endif()
+
   if((CMAKE_CXX_COMPILER_ID MATCHES ".*Clang.*" OR CMAKE_CXX_COMPILER_ID MATCHES ".*GNU.*") AND NOT WIN32)
+    set(SUPPORTS_UBSAN ON)
+  elseif(_MYPROJECT_IS_CLANG_CL)
     set(SUPPORTS_UBSAN ON)
   else()
     set(SUPPORTS_UBSAN OFF)
   endif()
 
-  if((CMAKE_CXX_COMPILER_ID MATCHES ".*Clang.*" OR CMAKE_CXX_COMPILER_ID MATCHES ".*GNU.*") AND WIN32)
-    set(SUPPORTS_ASAN OFF)
-  else()
+  if(MSVC OR ((CMAKE_CXX_COMPILER_ID MATCHES ".*Clang.*" OR CMAKE_CXX_COMPILER_ID MATCHES ".*GNU.*") AND NOT WIN32))
     set(SUPPORTS_ASAN ON)
+  else()
+    set(SUPPORTS_ASAN OFF)
+  endif()
+endmacro()
+
+macro(myproject_default_debug_sanitizers)
+  set(DEFAULT_ASAN OFF)
+  set(DEFAULT_UBSAN OFF)
+
+  set(_MYPROJECT_HAS_DEBUG_CONFIG OFF)
+  if(CMAKE_CONFIGURATION_TYPES)
+    foreach(_myproject_config IN LISTS CMAKE_CONFIGURATION_TYPES)
+      if(_myproject_config STREQUAL "Debug")
+        set(_MYPROJECT_HAS_DEBUG_CONFIG ON)
+        break()
+      endif()
+    endforeach()
+  elseif(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(_MYPROJECT_HAS_DEBUG_CONFIG ON)
+  endif()
+
+  if(_MYPROJECT_HAS_DEBUG_CONFIG AND SUPPORTS_ASAN)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR MSVC)
+      set(DEFAULT_ASAN ON)
+    endif()
+  endif()
+
+  if(_MYPROJECT_HAS_DEBUG_CONFIG AND SUPPORTS_UBSAN)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC))
+      set(DEFAULT_UBSAN ON)
+    endif()
   endif()
 endmacro()
 
@@ -30,18 +66,7 @@ macro(myproject_setup_options)
   #   OFF)
 
   myproject_supports_sanitizers()
-
-  if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set(DEFAULT_ASAN ON)
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
-      set(DEFAULT_UBSAN OFF)
-    else()
-      set(DEFAULT_UBSAN ON)
-    endif()
-  else()
-    set(DEFAULT_ASAN OFF)
-    set(DEFAULT_UBSAN OFF)
-  endif()
+  myproject_default_debug_sanitizers()
 
   if(NOT PROJECT_IS_TOP_LEVEL OR myproject_PACKAGING_MAINTAINER_MODE)
     option(myproject_ENABLE_IPO "Enable IPO/LTO" ON)
@@ -75,18 +100,6 @@ macro(myproject_setup_options)
     option(myproject_ENABLE_IWYU "Enable IWYU" ON)
   endif()
 
-  if(NOT
-     CMAKE_BUILD_TYPE
-     STREQUAL
-     "Debug")
-    if(myproject_ENABLE_SANITIZER_UNDEFINED)
-      message(STATUS "Disabling UBSan: this project enables it only for Debug builds.")
-    endif()
-    set(myproject_ENABLE_SANITIZER_UNDEFINED
-        OFF
-        CACHE BOOL "Enable undefined sanitizer" FORCE)
-  endif()
-
   if(NOT PROJECT_IS_TOP_LEVEL)
     mark_as_advanced(
       myproject_ENABLE_IPO
@@ -118,16 +131,22 @@ macro(myproject_global_options)
   set(CMAKE_C_STANDARD_REQUIRED True)
 
   set(myproject_CXX_SCAN_FOR_MODULES ON)
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
-    set(myproject_CXX_SCAN_FOR_MODULES OFF)
-    message(
-      STATUS "Disabling C++ module scanning for clang-cl to avoid CMake generate-time dependency scanner failures.")
+  set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    if(MYPROJECT_CLANG_CL_MODULE_SCAN_READY)
+      set(myproject_CXX_SCAN_FOR_MODULES ON)
+      message(STATUS "Using clang-cl module scan override for project targets.")
+    else()
+      set(myproject_CXX_SCAN_FOR_MODULES OFF)
+    endif()
   endif()
 
-  set(CMAKE_CXX_SCAN_FOR_MODULES ${myproject_CXX_SCAN_FOR_MODULES})
   set(MYPROJECT_CXX_SCAN_FOR_MODULES
       ${myproject_CXX_SCAN_FOR_MODULES}
       CACHE INTERNAL "Global C++ module scan switch for project targets")
+
+  message(STATUS "Global C++ modules scan disabled; project targets can opt in explicitly.")
 
   set(myproject_CPP_MODULES_SUPPORTED OFF)
   if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28)
@@ -175,15 +194,9 @@ macro(myproject_global_options)
     set(_CLANG_CL_SAFE_WARNINGS
         "-fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-error=character-conversion -Wno-unknown-warning-option -Wno-error=unknown-warning-option"
     )
-    set(CMAKE_CXX_FLAGS_DEBUG
-        "${CMAKE_CXX_FLAGS_DEBUG} /Od ${_CLANG_CL_SAFE_WARNINGS}"
-    )
-    set(CMAKE_CXX_FLAGS_RELEASE
-        "${CMAKE_CXX_FLAGS_RELEASE} /O2 -DNDEBUG ${_CLANG_CL_SAFE_WARNINGS}"
-    )
-    set(CMAKE_CXX_FLAGS_PROFILE
-        "${CMAKE_CXX_FLAGS_PROFILE} /O2 -DNDEBUG ${_CLANG_CL_SAFE_WARNINGS}"
-    )
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od ${_CLANG_CL_SAFE_WARNINGS}")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 -DNDEBUG ${_CLANG_CL_SAFE_WARNINGS}")
+    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} /O2 -DNDEBUG ${_CLANG_CL_SAFE_WARNINGS}")
     # https://clang.llvm.org/docs/ClangCommandLineReference.html
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g -ggdb -std=c++23 -fcolor-diagnostics") # -std=c++2a
@@ -199,7 +212,6 @@ macro(myproject_global_options)
 
   if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
      AND MSVC
-     AND CMAKE_BUILD_TYPE STREQUAL "Debug"
      AND myproject_ENABLE_SANITIZER_ADDRESS)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
   endif()
@@ -297,19 +309,14 @@ macro(myproject_local_options)
     endif()
   endif()
 
-  if(NOT
-     CMAKE_BUILD_TYPE
-     STREQUAL
-     "Release")
-    include(cmake/Sanitizers.cmake)
-    myproject_enable_sanitizers(
-      myproject_options
-      ${myproject_ENABLE_SANITIZER_ADDRESS}
-      ${myproject_ENABLE_SANITIZER_LEAK}
-      ${myproject_ENABLE_SANITIZER_UNDEFINED}
-      ${myproject_ENABLE_SANITIZER_THREAD}
-      ${myproject_ENABLE_SANITIZER_MEMORY})
-  endif()
+  include(cmake/Sanitizers.cmake)
+  myproject_enable_sanitizers(
+    myproject_options
+    ${myproject_ENABLE_SANITIZER_ADDRESS}
+    ${myproject_ENABLE_SANITIZER_LEAK}
+    ${myproject_ENABLE_SANITIZER_UNDEFINED}
+    ${myproject_ENABLE_SANITIZER_THREAD}
+    ${myproject_ENABLE_SANITIZER_MEMORY})
 
   set_target_properties(myproject_options PROPERTIES UNITY_BUILD ${myproject_ENABLE_UNITY_BUILD})
 

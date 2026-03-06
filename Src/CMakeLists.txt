@@ -6,6 +6,14 @@ if(RUST_FEATURES)
     staticlib
     CRATES
     kataglyphis_rustprojecttemplate)
+
+  corrosion_add_cxxbridge(
+    kataglyphis_rustprojecttemplate_bridge
+    CRATE
+    kataglyphis_rustprojecttemplate
+    FILES
+    lib.rs)
+
   if(WIN32)
     corrosion_set_env_vars(kataglyphis_rustprojecttemplate CXXFLAGS=/EHsc)
   else()

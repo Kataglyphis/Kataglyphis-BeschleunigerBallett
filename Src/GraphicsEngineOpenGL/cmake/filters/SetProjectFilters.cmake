@@ -38,7 +38,6 @@ set(RENDERER_FILTER
     ${PROJECT_RENDERER_SRC_DIR}ShaderIncludes.ixx
     ${PROJECT_RENDERER_SRC_DIR}ShaderProgram.cpp
     ${PROJECT_RENDERER_SRC_DIR}ShaderProgram.ixx
-    ${PROJECT_RENDERER_SRC_DIR}OpenGLRendererConfig.hpp
     ${PROJECT_RENDERER_SRC_DIR}deferred/RenderPass.ixx
     ${PROJECT_RENDERER_SRC_DIR}deferred/GeometryPass.ixx
     ${PROJECT_RENDERER_SRC_DIR}deferred/GeometryPass.cpp

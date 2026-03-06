@@ -130,6 +130,12 @@ target_include_directories(GLAD PRIVATE GLAD/include ${OPENGL_INCLUDE_DIRS})
 set_target_properties(GLAD PROPERTIES CXX_CLANG_TIDY "" CXX_CPPCHECK "")
 
 if(RUST_FEATURES)
+  if(WIN32)
+    set(Rust_CARGO
+        "${CMAKE_SOURCE_DIR}/Scripts/Windows/cargo-retry.cmd"
+        CACHE FILEPATH "Cargo wrapper used to retry transient Windows file-lock failures" FORCE)
+  endif()
+
   FetchContent_Declare(
     Corrosion
     GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git

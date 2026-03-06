@@ -16,6 +16,7 @@ set(PROJECT_INCLUDE_DIR ${WORKING_DIRECTORY}Src/GraphicsEngineVulkan/)
 set(EXTERNAL_LIB_SRC_DIR ${WORKING_DIRECTORY}ExternalLib/)
 set(SHADER_SRC_DIR ${WORKING_DIRECTORY}Resources/Shaders/)
 
+include(${WORKING_DIRECTORY}Test/cmake/CommonTestBuild.cmake)
 include(${PROJECT_SRC_DIR}cmake/filters/SetShaderFilters.cmake)
 include(${PROJECT_SRC_DIR}cmake/filters/SetProjectFilters.cmake)
 include(${PROJECT_SRC_DIR}/cmake/filters/SetExternalLibsFilters.cmake)
@@ -102,7 +103,12 @@ kataglyphis_apply_runtime_compile_definitions(
   SHADER_INCLUDES_STRING
   "${ShaderIncludesString}")
 
-configure_file(${PROJECT_SRC_DIR}/VulkanRendererConfig.hpp.in "${PROJECT_SRC_DIR}/renderer/VulkanRendererConfig.hpp")
+set(VULKAN_RENDERER_CONFIG_MODULE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(VULKAN_RENDERER_CONFIG_MODULE_FILE "${VULKAN_RENDERER_CONFIG_MODULE_DIR}/VulkanRendererConfig.ixx")
+file(MAKE_DIRECTORY "${VULKAN_RENDERER_CONFIG_MODULE_DIR}")
+configure_file(${PROJECT_SRC_DIR}/VulkanRendererConfig.ixx.in "${VULKAN_RENDERER_CONFIG_MODULE_FILE}" @ONLY)
+set_source_files_properties("${VULKAN_RENDERER_CONFIG_MODULE_FILE}" PROPERTIES GENERATED TRUE)
+list(APPEND VULKAN_MODULE_INTERFACE_FILES "${VULKAN_RENDERER_CONFIG_MODULE_FILE}")
 
 target_sources(
   ${COMPILE_TEST_SUITE}
@@ -134,6 +140,7 @@ target_sources(
          CXX_MODULES
          BASE_DIRS
          ${WORKING_DIRECTORY}Src/
+         ${VULKAN_RENDERER_CONFIG_MODULE_DIR}
          FILES
          ${VULKAN_MODULE_INTERFACE_FILES}
          ${SHARED_MODULE_INTERFACE_FILES})
@@ -161,12 +168,7 @@ target_link_libraries(
           GSL
           spdlog)
 
-if(NOT WINDOWS_CI)
-  message(STATUS "WINDOWS_CI is OFF or not defined.")
-  gtest_discover_tests(${COMPILE_TEST_SUITE} DISCOVERY_TIMEOUT 300)
-else()
-  message(STATUS "WINDOWS_CI is ON. Skipping gtest_discover_tests for compile tests.")
-endif()
+kataglyphis_configure_gtest_discovery(${COMPILE_TEST_SUITE})
 
 if(RUST_FEATURES)
   target_link_libraries(${COMPILE_TEST_SUITE} PUBLIC kataglyphis_rustprojecttemplate)

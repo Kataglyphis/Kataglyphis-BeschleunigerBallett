@@ -96,7 +96,12 @@ kataglyphis_apply_runtime_compile_definitions(
   SHADER_INCLUDES_STRING
   "${ShaderIncludesString}")
 
-configure_file(${PROJECT_SRC_DIR}/VulkanRendererConfig.hpp.in "${PROJECT_SRC_DIR}/renderer/VulkanRendererConfig.hpp")
+set(VULKAN_RENDERER_CONFIG_MODULE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(VULKAN_RENDERER_CONFIG_MODULE_FILE "${VULKAN_RENDERER_CONFIG_MODULE_DIR}/VulkanRendererConfig.ixx")
+file(MAKE_DIRECTORY "${VULKAN_RENDERER_CONFIG_MODULE_DIR}")
+configure_file(${PROJECT_SRC_DIR}/VulkanRendererConfig.ixx.in "${VULKAN_RENDERER_CONFIG_MODULE_FILE}" @ONLY)
+set_source_files_properties("${VULKAN_RENDERER_CONFIG_MODULE_FILE}" PROPERTIES GENERATED TRUE)
+list(APPEND VULKAN_MODULE_INTERFACE_FILES "${VULKAN_RENDERER_CONFIG_MODULE_FILE}")
 
 target_sources(
   ${PERF_TEST_SUITE}
@@ -128,6 +133,7 @@ target_sources(
          CXX_MODULES
          BASE_DIRS
          ${WORKING_DIRECTORY}Src/
+         ${VULKAN_RENDERER_CONFIG_MODULE_DIR}
          FILES
          ${VULKAN_MODULE_INTERFACE_FILES}
          ${SHARED_MODULE_INTERFACE_FILES})

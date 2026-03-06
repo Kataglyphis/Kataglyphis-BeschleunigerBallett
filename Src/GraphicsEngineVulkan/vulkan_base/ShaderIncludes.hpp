@@ -1,5 +1,4 @@
 #pragma once
-#include "renderer/VulkanRendererConfig.hpp"
 #include "spdlog/spdlog.h"
 #include <filesystem>
 #include <string>

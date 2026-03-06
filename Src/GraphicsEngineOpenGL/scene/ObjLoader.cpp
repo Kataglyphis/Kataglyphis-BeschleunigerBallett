@@ -22,7 +22,6 @@ module;
 #include <tiny_obj_loader.h>
 
 #include "hostDevice/host_device_shared.hpp"
-#include "renderer/OpenGLRendererConfig.hpp"
 
 module kataglyphis.opengl.obj_loader;
 

@@ -1,13 +1,13 @@
 module;
 
 #include <string>
+#include <string_view>
 #include <vector>
 #include <vulkan/vulkan.h>
 
-#include "renderer/VulkanRendererConfig.hpp"
-
 export module kataglyphis.vulkan.shader_helper;
 
+import kataglyphis.vulkan.config;
 import kataglyphis.vulkan.device;
 
 export namespace Kataglyphis {
@@ -24,6 +24,8 @@ class ShaderHelper
     ~ShaderHelper();
 
   private:
-    std::string target = " --target-env=vulkan" VULKAN_VERSION_MAJOR "." VULKAN_VERSION_MINOR " ";
+    std::string target = std::string(" --target-env=vulkan")
+      + std::string(Kataglyphis::RendererConfig::vulkanVersionMajor) + "."
+      + std::string(Kataglyphis::RendererConfig::vulkanVersionMinor) + " ";
 };
 }// namespace Kataglyphis

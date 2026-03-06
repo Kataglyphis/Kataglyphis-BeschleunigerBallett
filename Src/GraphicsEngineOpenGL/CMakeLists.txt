@@ -41,7 +41,12 @@ kataglyphis_apply_runtime_compile_definitions(
 
 # we are using this dir strings for removing hard coded file locations
 # at c++ side
-configure_file(OpenGLRendererConfig.hpp.in "renderer/OpenGLRendererConfig.hpp")
+set(OPENGL_RENDERER_CONFIG_MODULE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(OPENGL_RENDERER_CONFIG_MODULE_FILE "${OPENGL_RENDERER_CONFIG_MODULE_DIR}/OpenGLRendererConfig.ixx")
+file(MAKE_DIRECTORY "${OPENGL_RENDERER_CONFIG_MODULE_DIR}")
+configure_file(OpenGLRendererConfig.ixx.in "${OPENGL_RENDERER_CONFIG_MODULE_FILE}" @ONLY)
+set_source_files_properties("${OPENGL_RENDERER_CONFIG_MODULE_FILE}" PROPERTIES GENERATED TRUE)
+list(APPEND OPENGL_MODULE_INTERFACE_FILES "${OPENGL_RENDERER_CONFIG_MODULE_FILE}")
 
 target_sources(
   ${OpenGlEngineTargetName}
@@ -74,6 +79,7 @@ target_sources(
          CXX_MODULES
          BASE_DIRS
          ${CMAKE_CURRENT_SOURCE_DIR}/..
+         ${OPENGL_RENDERER_CONFIG_MODULE_DIR}
          FILES
          ${OPENGL_MODULE_INTERFACE_FILES}
          ${SHARED_MODULE_INTERFACE_FILES})

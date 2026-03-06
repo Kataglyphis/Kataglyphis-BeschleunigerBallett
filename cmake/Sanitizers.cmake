@@ -90,16 +90,27 @@ function(
       endif()
 
       if(_CLANGCL_COMPILE_SAN_FLAGS)
-        target_compile_options(${project_name} INTERFACE ${_CLANGCL_COMPILE_SAN_FLAGS} /Zi /INCREMENTAL:NO)
+        set(_CLANGCL_COMPILE_SAN_DEBUG_FLAGS "")
+        foreach(_clangcl_flag IN LISTS _CLANGCL_COMPILE_SAN_FLAGS)
+          list(APPEND _CLANGCL_COMPILE_SAN_DEBUG_FLAGS "$<$<CONFIG:Debug>:${_clangcl_flag}>")
+        endforeach()
+
+        set(_CLANGCL_LINK_SAN_DEBUG_FLAGS "")
+        foreach(_clangcl_flag IN LISTS _CLANGCL_LINK_SAN_FLAGS)
+          list(APPEND _CLANGCL_LINK_SAN_DEBUG_FLAGS "$<$<CONFIG:Debug>:${_clangcl_flag}>")
+        endforeach()
+
+        target_compile_options(${project_name} INTERFACE ${_CLANGCL_COMPILE_SAN_DEBUG_FLAGS} "$<$<CONFIG:Debug>:/Zi>")
         target_link_options(
           ${project_name}
           INTERFACE
-          /INCREMENTAL:NO
-          ${_CLANGCL_LINK_SAN_FLAGS})
+          "$<$<CONFIG:Debug>:/INCREMENTAL:NO>"
+          ${_CLANGCL_LINK_SAN_DEBUG_FLAGS})
       endif()
 
       if("address" IN_LIST SANITIZERS)
-        target_compile_definitions(${project_name} INTERFACE _DISABLE_VECTOR_ANNOTATION _DISABLE_STRING_ANNOTATION)
+        target_compile_definitions(${project_name} INTERFACE "$<$<CONFIG:Debug>:_DISABLE_VECTOR_ANNOTATION>"
+                                                             "$<$<CONFIG:Debug>:_DISABLE_STRING_ANNOTATION>")
 
         execute_process(
           COMMAND ${CMAKE_CXX_COMPILER} --print-resource-dir
@@ -111,9 +122,11 @@ function(
           set(_ASAN_THUNK_LIB "${_CLANG_RUNTIME_DIR}/clang_rt.asan_dynamic_runtime_thunk-x86_64.lib")
           if(EXISTS "${_ASAN_DYNAMIC_LIB}" AND EXISTS "${_ASAN_THUNK_LIB}")
             target_link_directories(${project_name} INTERFACE "${_CLANG_RUNTIME_DIR}")
-            target_link_libraries(${project_name} INTERFACE clang_rt.asan_dynamic-x86_64
-                                                          clang_rt.asan_dynamic_runtime_thunk-x86_64)
-            target_link_options(${project_name} INTERFACE /WHOLEARCHIVE:clang_rt.asan_dynamic_runtime_thunk-x86_64.lib)
+            target_link_libraries(
+              ${project_name} INTERFACE "$<$<CONFIG:Debug>:clang_rt.asan_dynamic-x86_64>"
+                                        "$<$<CONFIG:Debug>:clang_rt.asan_dynamic_runtime_thunk-x86_64>")
+            target_link_options(${project_name} INTERFACE
+                                "$<$<CONFIG:Debug>:/WHOLEARCHIVE:clang_rt.asan_dynamic_runtime_thunk-x86_64.lib>")
           else()
             message(WARNING "clang-cl ASan runtime libraries not found in ${_CLANG_RUNTIME_DIR}")
           endif()
@@ -129,12 +142,14 @@ function(
             "Using MSVC sanitizers requires setting the MSVC environment before building the project. Please manually open the MSVC command prompt and rebuild the project."
         )
       endif()
-      target_compile_options(${project_name} INTERFACE /fsanitize=${LIST_OF_SANITIZERS} /Zi /INCREMENTAL:NO)
-      target_compile_definitions(${project_name} INTERFACE _DISABLE_VECTOR_ANNOTATION _DISABLE_STRING_ANNOTATION)
-      target_link_options(${project_name} INTERFACE /INCREMENTAL:NO)
+      target_compile_options(${project_name} INTERFACE "$<$<CONFIG:Debug>:/fsanitize=${LIST_OF_SANITIZERS}>"
+                                                       "$<$<CONFIG:Debug>:/Zi>")
+      target_compile_definitions(${project_name} INTERFACE "$<$<CONFIG:Debug>:_DISABLE_VECTOR_ANNOTATION>"
+                                                           "$<$<CONFIG:Debug>:_DISABLE_STRING_ANNOTATION>")
+      target_link_options(${project_name} INTERFACE "$<$<CONFIG:Debug>:/INCREMENTAL:NO>")
     else()
-      target_compile_options(${project_name} INTERFACE -fsanitize=${LIST_OF_SANITIZERS})
-      target_link_options(${project_name} INTERFACE -fsanitize=${LIST_OF_SANITIZERS})
+      target_compile_options(${project_name} INTERFACE "$<$<CONFIG:Debug>:-fsanitize=${LIST_OF_SANITIZERS}>")
+      target_link_options(${project_name} INTERFACE "$<$<CONFIG:Debug>:-fsanitize=${LIST_OF_SANITIZERS}>")
     endif()
   endif()
 

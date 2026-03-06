@@ -9,6 +9,7 @@ import kataglyphis.vulkan.app;
 #include <system_error>
 #include <vector>
 
+#include "kataglyphis_rustprojecttemplate_bridge/lib.h"
 #include "spdlog/common.h"
 #include "spdlog/logger.h"
 #include "spdlog/sinks/basic_file_sink.h"
@@ -16,10 +17,6 @@ import kataglyphis.vulkan.app;
 #include "spdlog/spdlog.h"
 #include <iostream>
 #include <string>
-
-extern "C" {
-auto rusty_extern_c_integer() -> int32_t;
-}
 
 namespace {
 auto normalize_gpu_mode(std::string value) -> std::string
@@ -94,8 +91,8 @@ auto main(int argc, char **argv) -> int
     apply_gpu_selection_from_args(std::span<char *const>(argv, static_cast<std::size_t>(argc)));
 
     if (USE_RUST) {
-        const auto value = rusty_extern_c_integer();
-        std::cout << "A value given directly by extern c function " << value << "\n";
+        const auto value = rusty_cxxbridge_integer();
+        std::cout << "A value given by the Rust bridge function " << value << "\n";
         spdlog::default_logger_raw()->log(
           spdlog::level::info, std::string("Rust extern value: ") + std::to_string(value));
     }
