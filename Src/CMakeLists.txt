@@ -18,11 +18,23 @@ if(RUST_FEATURES)
   endif()
 
   if(WIN32)
-    # Ensure that Rust links MSVC debug runtime correctly in Debug mode
-    # and properly sets iterator debug level to match CMake targets
-    corrosion_set_env_vars(
-      kataglyphis_rustprojecttemplate "CXXFLAGS=/EHsc $<$<CONFIG:Debug>:/MDd>$<$<NOT:$<CONFIG:Debug>>:/MD>"
-      "CFLAGS=$<$<CONFIG:Debug>:/MDd>$<$<NOT:$<CONFIG:Debug>>:/MD>")
+    set(_RUST_WINDOWS_DEBUG_CXXFLAGS "/MDd /D_DEBUG /D_ITERATOR_DEBUG_LEVEL=2")
+    set(_RUST_WINDOWS_DEBUG_CFLAGS "/MDd /D_DEBUG")
+
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+       AND MSVC
+       AND myproject_ENABLE_SANITIZER_ADDRESS)
+      set(_RUST_WINDOWS_DEBUG_CXXFLAGS "/MD /D_ITERATOR_DEBUG_LEVEL=0")
+      set(_RUST_WINDOWS_DEBUG_CFLAGS "/MD")
+    endif()
+
+    set(_RUST_WINDOWS_CXXFLAGS
+        "/EHsc $<$<CONFIG:Debug>:${_RUST_WINDOWS_DEBUG_CXXFLAGS}>$<$<NOT:$<CONFIG:Debug>>:/MD /DNDEBUG /D_ITERATOR_DEBUG_LEVEL=0>"
+    )
+    set(_RUST_WINDOWS_CFLAGS "$<$<CONFIG:Debug>:${_RUST_WINDOWS_DEBUG_CFLAGS}>$<$<NOT:$<CONFIG:Debug>>:/MD /DNDEBUG>")
+
+    corrosion_set_env_vars(kataglyphis_rustprojecttemplate "CXXFLAGS=${_RUST_WINDOWS_CXXFLAGS}"
+                           "CFLAGS=${_RUST_WINDOWS_CFLAGS}")
   else()
     if(NOT DEFINED GCC_TOOLCHAIN_PATH)
       set(GCC_TOOLCHAIN_PATH
@@ -70,7 +82,6 @@ if(RUST_FEATURES)
     lib.rs)
 
 endif()
-
 
 add_subdirectory(GraphicsEngineOpenGL)
 add_subdirectory(GraphicsEngineVulkan)
