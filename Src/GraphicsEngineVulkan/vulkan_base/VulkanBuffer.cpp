@@ -17,29 +17,29 @@ Kataglyphis::VulkanBuffer::VulkanBuffer() = default;
 Kataglyphis::VulkanBuffer::VulkanBuffer(VulkanBuffer &&other) noexcept
   : device(other.device), buffer(other.buffer), bufferMemory(other.bufferMemory), created(other.created)
 {
-  other.device = VK_NULL_HANDLE;
-  other.buffer = VK_NULL_HANDLE;
-  other.bufferMemory = VK_NULL_HANDLE;
-  other.created = false;
-}
-
-auto Kataglyphis::VulkanBuffer::operator=(VulkanBuffer &&other) noexcept -> VulkanBuffer &
-{
-  if (this != &other) {
-    cleanUp();
-
-    device = other.device;
-    buffer = other.buffer;
-    bufferMemory = other.bufferMemory;
-    created = other.created;
-
     other.device = VK_NULL_HANDLE;
     other.buffer = VK_NULL_HANDLE;
     other.bufferMemory = VK_NULL_HANDLE;
     other.created = false;
-  }
+}
 
-  return *this;
+auto Kataglyphis::VulkanBuffer::operator=(VulkanBuffer &&other) noexcept -> VulkanBuffer &
+{
+    if (this != &other) {
+        cleanUp();
+
+        device = other.device;
+        buffer = other.buffer;
+        bufferMemory = other.bufferMemory;
+        created = other.created;
+
+        other.device = VK_NULL_HANDLE;
+        other.buffer = VK_NULL_HANDLE;
+        other.bufferMemory = VK_NULL_HANDLE;
+        other.created = false;
+    }
+
+    return *this;
 }
 
 void Kataglyphis::VulkanBuffer::create(VulkanDevice *device,
@@ -102,14 +102,14 @@ void Kataglyphis::VulkanBuffer::create(VulkanDevice *device,
 
 void Kataglyphis::VulkanBuffer::cleanUp()
 {
-  if (created && device != VK_NULL_HANDLE) {
+    if (created && device != VK_NULL_HANDLE) {
         vkDestroyBuffer(device->getLogicalDevice(), buffer, nullptr);
         vkFreeMemory(device->getLogicalDevice(), bufferMemory, nullptr);
     }
 
-  buffer = VK_NULL_HANDLE;
-  bufferMemory = VK_NULL_HANDLE;
-  created = false;
+    buffer = VK_NULL_HANDLE;
+    bufferMemory = VK_NULL_HANDLE;
+    created = false;
 }
 
 Kataglyphis::VulkanBuffer::~VulkanBuffer() = default;

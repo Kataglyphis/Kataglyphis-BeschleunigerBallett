@@ -7,6 +7,7 @@ DEFAULT_PRESET="linux-debug-clang"
 DEFAULT_BUILD_DIR="build"
 DEFAULT_CLEAN_BUILD_DIR="false"
 DEFAULT_SKIP_CONFIGURE="false"
+DEFAULT_USE_THREAD_SANITIZER="false"
 DEFAULT_VULKAN_SETUP_SCRIPT="/opt/vulkan/1.4.341.1/setup-env.sh"
 
 source_vulkan_env() {
@@ -42,6 +43,7 @@ PRESET_ARG=""
 BUILD_DIR_ARG=""
 CLEAN_BUILD_DIR_ARG=""
 SKIP_CONFIGURE_ARG=""
+USE_THREAD_SANITIZER_ARG=""
 CMAKE_BUILD_CONFIG_ARG=""
 CMAKE_BUILD_TARGET_ARG=""
 VULKAN_VERSION_ARG=""
@@ -68,6 +70,15 @@ while [[ $# -gt 0 ]]; do
         shift 2
       else
         SKIP_CONFIGURE_ARG="true"
+        shift
+      fi
+      ;;
+    --use-thread-sanitizer)
+      if [[ $# -ge 2 && "${2}" != -* ]]; then
+        USE_THREAD_SANITIZER_ARG="${2}"
+        shift 2
+      else
+        USE_THREAD_SANITIZER_ARG="true"
         shift
       fi
       ;;
@@ -121,8 +132,20 @@ PRESET="${PRESET_ARG:-${PRESET:-${1:-${DEFAULT_PRESET}}}}"
 BUILD_DIR="${BUILD_DIR_ARG:-${BUILD_DIR:-${DEFAULT_BUILD_DIR}}}"
 CLEAN_BUILD_DIR="${CLEAN_BUILD_DIR_ARG:-${CLEAN_BUILD_DIR:-${DEFAULT_CLEAN_BUILD_DIR}}}"
 SKIP_CONFIGURE="${SKIP_CONFIGURE_ARG:-${SKIP_CONFIGURE:-${DEFAULT_SKIP_CONFIGURE}}}"
+USE_THREAD_SANITIZER="${USE_THREAD_SANITIZER_ARG:-${USE_THREAD_SANITIZER:-${DEFAULT_USE_THREAD_SANITIZER}}}"
 CMAKE_BUILD_CONFIG="${CMAKE_BUILD_CONFIG_ARG:-${CMAKE_BUILD_CONFIG:-}}"
 CMAKE_BUILD_TARGET="${CMAKE_BUILD_TARGET_ARG:-${CMAKE_BUILD_TARGET:-}}"
+
+if [[ "${USE_THREAD_SANITIZER}" == "true" ]]; then
+  case "${PRESET}" in
+    linux-debug-clang)
+      PRESET="linux-debug-tsan-clang"
+      ;;
+    linux-debug-GNU)
+      PRESET="linux-debug-tsan-GNU"
+      ;;
+  esac
+fi
 
 if [[ "${CLEAN_BUILD_DIR}" == "true" && -n "${BUILD_DIR}" ]]; then
   rm -rf "${BUILD_DIR}"

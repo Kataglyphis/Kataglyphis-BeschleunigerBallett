@@ -17,50 +17,48 @@ Camera::Camera()
   :
 
     camera_state{ .position = glm::vec3(0.0F, 100.0F, -80.0F),
-      .front = glm::vec3(0.0F, 0.0F, -1.F),
-      .world_up = glm::vec3(0.0F, 1.0F, 0.0F),
-      .right = glm::normalize(glm::cross(glm::vec3(0.0F, 0.0F, -1.F), glm::vec3(0.0F, 1.0F, 0.0F))),
-      .up = glm::normalize(glm::cross(
-        glm::normalize(glm::cross(glm::vec3(0.0F, 0.0F, -1.F), glm::vec3(0.0F, 1.0F, 0.0F))),
-        glm::vec3(0.0F, 0.0F, -1.F))),
-      .yaw = 80.F,
-      .pitch = -40.0F,
-      .movement_speed = 200.F,
-      .turn_speed = 0.25F,
-      .near_plane = 0.1F,
-      .far_plane = 4000.F,
-      .fov = 45.F }
+        .front = glm::vec3(0.0F, 0.0F, -1.F),
+        .world_up = glm::vec3(0.0F, 1.0F, 0.0F),
+        .right = glm::normalize(glm::cross(glm::vec3(0.0F, 0.0F, -1.F), glm::vec3(0.0F, 1.0F, 0.0F))),
+        .up = glm::normalize(
+          glm::cross(glm::normalize(glm::cross(glm::vec3(0.0F, 0.0F, -1.F), glm::vec3(0.0F, 1.0F, 0.0F))),
+            glm::vec3(0.0F, 0.0F, -1.F))),
+        .yaw = 80.F,
+        .pitch = -40.0F,
+        .movement_speed = 200.F,
+        .turn_speed = 0.25F,
+        .near_plane = 0.1F,
+        .far_plane = 4000.F,
+        .fov = 45.F }
 
 {}
 
 void Camera::key_control(const bool *keys, float delta_time)
 {
-    Kataglyphis::Frontend::apply_keyboard_input(
-      { camera_state.position,
-        camera_state.front,
-        camera_state.world_up,
-        camera_state.right,
-        camera_state.up,
-        camera_state.yaw,
-        camera_state.pitch,
-        camera_state.movement_speed,
-        camera_state.turn_speed },
+    Kataglyphis::Frontend::apply_keyboard_input({ camera_state.position,
+                                                  camera_state.front,
+                                                  camera_state.world_up,
+                                                  camera_state.right,
+                                                  camera_state.up,
+                                                  camera_state.yaw,
+                                                  camera_state.pitch,
+                                                  camera_state.movement_speed,
+                                                  camera_state.turn_speed },
       keys,
       delta_time);
 }
 
 void Camera::mouse_control(float x_change, float y_change)
 {
-    Kataglyphis::Frontend::apply_mouse_input(
-      { camera_state.position,
-        camera_state.front,
-        camera_state.world_up,
-        camera_state.right,
-        camera_state.up,
-        camera_state.yaw,
-        camera_state.pitch,
-        camera_state.movement_speed,
-        camera_state.turn_speed },
+    Kataglyphis::Frontend::apply_mouse_input({ camera_state.position,
+                                               camera_state.front,
+                                               camera_state.world_up,
+                                               camera_state.right,
+                                               camera_state.up,
+                                               camera_state.yaw,
+                                               camera_state.pitch,
+                                               camera_state.movement_speed,
+                                               camera_state.turn_speed },
       x_change,
       y_change);
 }
@@ -83,14 +81,13 @@ Camera::~Camera() = default;
 
 void Camera::update()
 {
-    Kataglyphis::Frontend::update_camera_vectors(
-      { camera_state.position,
-        camera_state.front,
-        camera_state.world_up,
-        camera_state.right,
-        camera_state.up,
-        camera_state.yaw,
-        camera_state.pitch,
-        camera_state.movement_speed,
-        camera_state.turn_speed });
+    Kataglyphis::Frontend::update_camera_vectors({ camera_state.position,
+      camera_state.front,
+      camera_state.world_up,
+      camera_state.right,
+      camera_state.up,
+      camera_state.yaw,
+      camera_state.pitch,
+      camera_state.movement_speed,
+      camera_state.turn_speed });
 }

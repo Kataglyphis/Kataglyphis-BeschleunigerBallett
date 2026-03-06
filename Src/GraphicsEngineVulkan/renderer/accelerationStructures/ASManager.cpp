@@ -131,9 +131,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(VulkanDevice *d
       device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer);
 
     blas.reserve(build_as_structures.size());
-    for (auto &b : build_as_structures) {
-        blas.emplace_back(std::move(b.single_blas));
-    }
+    for (auto &b : build_as_structures) { blas.emplace_back(std::move(b.single_blas)); }
 
     scratchBuffer.cleanUp();
 }

@@ -9,6 +9,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/mat4x4.hpp>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -44,8 +45,21 @@ TEST(Integration, VulkanEngine)
     std::unique_ptr<Kataglyphis::Frontend::GUI> gui = std::make_unique<Kataglyphis::Frontend::GUI>(window.get());
     std::unique_ptr<Camera> camera = std::make_unique<Camera>();
 
-    Kataglyphis::VulkanRenderer vulkan_renderer{ window.get(), scene.get(), gui.get(), camera.get() };
+    auto vulkan_renderer =
+      std::make_unique<Kataglyphis::VulkanRenderer>(window.get(), scene.get(), gui.get(), camera.get());
 
-    vulkan_renderer.finishAllRenderCommands();
-    vulkan_renderer.cleanUp();
+    if (!vulkan_renderer->hasDeviceLost()) { vulkan_renderer->finishAllRenderCommands(); }
+
+    if (!vulkan_renderer->hasDeviceLost()) {
+        scene->cleanUp();
+        gui->cleanUp();
+    }
+
+    vulkan_renderer->cleanUp();
+    vulkan_renderer.reset();
+    camera.reset();
+    gui.reset();
+    scene.reset();
+    window->cleanUp();
+    window.reset();
 }

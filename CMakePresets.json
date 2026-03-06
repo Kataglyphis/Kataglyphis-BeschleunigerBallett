@@ -117,6 +117,52 @@
 			}
 		},
 		{
+			"name": "linux-debug-tsan-clang",
+			"displayName": "Linux Debug Clang (ThreadSanitizer)",
+			"description": "Linux Debug with ThreadSanitizer",
+			"generator": "Ninja",
+			"binaryDir": "${sourceDir}/build-tsan-clang/",
+			"installDir": "${sourceDir}/build-tsan-clang/",
+			"cacheVariables": {
+				"CMAKE_VERBOSE_MAKEFILE": "ON",
+				"CMAKE_BUILD_TYPE": "Debug",
+				"CMAKE_C_COMPILER": "clang",
+				"CMAKE_CXX_COMPILER": "clang++",
+				"RUST_FEATURES": "ON",
+				"COMPILER_CACHE": "sccache",
+				"BUILD_TESTING": "TRUE",
+				"USE_THREAD_SANITIZER": "ON"
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Linux"
+			}
+		},
+		{
+			"name": "linux-debug-tsan-GNU",
+			"displayName": "Linux Debug GNU (ThreadSanitizer)",
+			"description": "Linux Debug with ThreadSanitizer",
+			"generator": "Ninja",
+			"binaryDir": "${sourceDir}/build-tsan-gcc/",
+			"installDir": "${sourceDir}/build-tsan-gcc/",
+			"cacheVariables": {
+				"CMAKE_VERBOSE_MAKEFILE": "ON",
+				"CMAKE_BUILD_TYPE": "Debug",
+				"CMAKE_C_COMPILER": "gcc",
+				"CMAKE_CXX_COMPILER": "g++",
+				"RUST_FEATURES": "ON",
+				"COMPILER_CACHE": "sccache",
+				"BUILD_TESTING": "TRUE",
+				"USE_THREAD_SANITIZER": "ON"
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Linux"
+			}
+		},
+		{
 			"name": "linux-profile-GNU",
 			"displayName": "Linux Profile GNU",
 			"description": "Go with Linux",
@@ -296,6 +342,28 @@
 			}
 		},
 		{
+			"name": "x64-ClangCL-Windows-Debug-TSan",
+			"description": "Windows and Clang (ThreadSanitizer)",
+			"generator": "Ninja",
+			"binaryDir": "${sourceDir}/build-clangcl-tsan/",
+			"installDir": "${sourceDir}/build-clangcl-tsan/",
+			"cacheVariables": {
+				"CMAKE_VERBOSE_MAKEFILE": "ON",
+				"CMAKE_C_COMPILER": "clang-cl",
+				"CMAKE_CXX_COMPILER": "clang-cl",
+				"RUST_FEATURES": "ON",
+				"CMAKE_BUILD_TYPE": "Debug",
+				"COMPILER_CACHE": "sccache",
+				"BUILD_TESTING": "TRUE",
+				"USE_THREAD_SANITIZER": "ON"
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		},
+		{
 			"name": "x64-ClangCL-Windows-Release",
 			"description": "Windows and Clang",
 			"generator": "Ninja",
@@ -423,6 +491,16 @@
 			"configurePreset": "linux-debug-GNU"
 		},
 		{
+			"name": "linux-debug-tsan-clang",
+			"jobs": 0,
+			"configurePreset": "linux-debug-tsan-clang"
+		},
+		{
+			"name": "linux-debug-tsan-GNU",
+			"jobs": 0,
+			"configurePreset": "linux-debug-tsan-GNU"
+		},
+		{
 			"name": "linux-profile-GNU",
 			"jobs": 0,
 			"configurePreset": "linux-profile-GNU"
@@ -492,6 +570,12 @@
       "configurePreset": "x64-ClangCL-Windows-Debug",
       "configuration": "Debug"
     },
+		{
+			"name": "x64-ClangCL-Windows-Debug-TSan",
+			"jobs": 0,
+			"configurePreset": "x64-ClangCL-Windows-Debug-TSan",
+			"configuration": "Debug"
+		},
     {
       "name": "x64-ClangCL-Windows-Release",
       "jobs": 0,

@@ -132,8 +132,8 @@ void Noise::print_comp_shader_capabilities()
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 1, &work_grp_cnt[1]);
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 2, &work_grp_cnt[2]);
 
-        std::cout << "max global (total) work group counts x:" << work_grp_cnt[0] << " y:" << work_grp_cnt[1]
-                            << " z:" << work_grp_cnt[2] << '\n';
+    std::cout << "max global (total) work group counts x:" << work_grp_cnt[0] << " y:" << work_grp_cnt[1]
+              << " z:" << work_grp_cnt[2] << '\n';
 
     int work_grp_size[3];
 
@@ -141,8 +141,8 @@ void Noise::print_comp_shader_capabilities()
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 1, &work_grp_size[1]);
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 2, &work_grp_size[2]);
 
-        std::cout << "max local (in one shader) work group sizes x:" << work_grp_size[0] << " y:" << work_grp_size[1]
-                            << " z:" << work_grp_size[2] << '\n';
+    std::cout << "max local (in one shader) work group sizes x:" << work_grp_size[0] << " y:" << work_grp_size[1]
+              << " z:" << work_grp_size[2] << '\n';
 }
 
 void Noise::update()

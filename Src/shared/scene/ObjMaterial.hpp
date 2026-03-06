@@ -56,9 +56,9 @@ struct ObjMaterial
 
     int get_illum() const { return illum; }
     int get_textureID() const { return textureID; }
-  #endif
+#endif
 };
 
-  #undef KTG_VEC3
+#undef KTG_VEC3
 
-  #endif
+#endif

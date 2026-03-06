@@ -31,13 +31,48 @@ macro(myproject_setup_options)
 
   myproject_supports_sanitizers()
 
+  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+      set(DEFAULT_ASAN ON)
+    elseif(MSVC AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
+      set(DEFAULT_ASAN ON)
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
+      set(DEFAULT_ASAN ON)
+    else()
+      set(DEFAULT_ASAN OFF)
+    endif()
+  else()
+    set(DEFAULT_ASAN OFF)
+  endif()
+
+  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND SUPPORTS_UBSAN)
+      set(DEFAULT_UBSAN ON)
+    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
+      set(DEFAULT_UBSAN ON)
+    else()
+      set(DEFAULT_UBSAN OFF)
+    endif()
+  else()
+    set(DEFAULT_UBSAN OFF)
+  endif()
+
+  option(USE_THREAD_SANITIZER "Use ThreadSanitizer instead of Address/UndefinedBehavior Sanitizer" OFF)
+  if(USE_THREAD_SANITIZER)
+    set(DEFAULT_ASAN OFF)
+    set(DEFAULT_UBSAN OFF)
+    set(DEFAULT_TSAN ON)
+  else()
+    set(DEFAULT_TSAN OFF)
+  endif()
+
   option(myproject_ENABLE_IPO "Enable IPO/LTO" ON)
   option(myproject_ENABLE_STATIC_ANALYZER "Enable Static Analyzer" OFF)
   option(myproject_WARNINGS_AS_ERRORS "Treat Warnings As Errors" OFF)
-  option(myproject_ENABLE_SANITIZER_ADDRESS "Enable address sanitizer" OFF) # ${SUPPORTS_ASAN}
+  option(myproject_ENABLE_SANITIZER_ADDRESS "Enable address sanitizer" ${DEFAULT_ASAN})
   option(myproject_ENABLE_SANITIZER_LEAK "Enable leak sanitizer" OFF)
-  option(myproject_ENABLE_SANITIZER_UNDEFINED "Enable undefined sanitizer" OFF) # ${SUPPORTS_UBSAN}
-  option(myproject_ENABLE_SANITIZER_THREAD "Enable thread sanitizer" OFF)
+  option(myproject_ENABLE_SANITIZER_UNDEFINED "Enable undefined sanitizer" ${DEFAULT_UBSAN})
+  option(myproject_ENABLE_SANITIZER_THREAD "Enable thread sanitizer" ${DEFAULT_TSAN})
   option(myproject_ENABLE_SANITIZER_MEMORY "Enable memory sanitizer" OFF)
   option(myproject_ENABLE_UNITY_BUILD "Enable unity builds" OFF)
   option(myproject_ENABLE_CLANG_TIDY "Enable clang-tidy" OFF)
@@ -45,6 +80,18 @@ macro(myproject_setup_options)
   option(myproject_ENABLE_PCH "Enable precompiled headers" OFF)
   option(myproject_ENABLE_CACHE "Enable ccache" ON)
   option(myproject_ENABLE_IWYU "Enable IWYU" ON)
+
+  if(NOT
+     CMAKE_BUILD_TYPE
+     STREQUAL
+     "Debug")
+    if(myproject_ENABLE_SANITIZER_UNDEFINED)
+      message(STATUS "Disabling UBSan: this project enables it only for Debug builds.")
+    endif()
+    set(myproject_ENABLE_SANITIZER_UNDEFINED
+        OFF
+        CACHE BOOL "Enable undefined sanitizer" FORCE)
+  endif()
 
   if(NOT PROJECT_IS_TOP_LEVEL)
     mark_as_advanced(
@@ -131,14 +178,17 @@ macro(myproject_global_options)
     # https://clang.llvm.org/docs/UsersManual.html
     # this is the clang-cl case
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
+    set(_CLANG_CL_SAFE_WARNINGS
+        "-fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-error=character-conversion -Wno-unknown-warning-option -Wno-error=unknown-warning-option"
+    )
     set(CMAKE_CXX_FLAGS_DEBUG
-        "${CMAKE_CXX_FLAGS_DEBUG} /Od -fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-unknown-warning-option"
+        "${CMAKE_CXX_FLAGS_DEBUG} /Od ${_CLANG_CL_SAFE_WARNINGS}"
     )
     set(CMAKE_CXX_FLAGS_RELEASE
-        "${CMAKE_CXX_FLAGS_RELEASE} /O2 -DNDEBUG -fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-unknown-warning-option"
+        "${CMAKE_CXX_FLAGS_RELEASE} /O2 -DNDEBUG ${_CLANG_CL_SAFE_WARNINGS}"
     )
     set(CMAKE_CXX_FLAGS_PROFILE
-        "${CMAKE_CXX_FLAGS_PROFILE} /O2 -DNDEBUG -fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-unknown-warning-option"
+        "${CMAKE_CXX_FLAGS_PROFILE} /O2 -DNDEBUG ${_CLANG_CL_SAFE_WARNINGS}"
     )
     # https://clang.llvm.org/docs/ClangCommandLineReference.html
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
@@ -153,7 +203,18 @@ macro(myproject_global_options)
   set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR})
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR})
 
-  set(CMAKE_LINK_WHAT_YOU_USE TRUE)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+     AND MSVC
+     AND CMAKE_BUILD_TYPE STREQUAL "Debug"
+     AND myproject_ENABLE_SANITIZER_ADDRESS)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+  endif()
+
+  if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(CMAKE_LINK_WHAT_YOU_USE FALSE)
+  else()
+    set(CMAKE_LINK_WHAT_YOU_USE TRUE)
+  endif()
 
   if(myproject_ENABLE_IPO)
     include(cmake/InterproceduralOptimization.cmake)

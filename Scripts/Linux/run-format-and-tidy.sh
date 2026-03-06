@@ -114,6 +114,8 @@ echo "[3/3] Running clang-tidy..."
 clang_tidy_args=( -p "${BUILD_DIR}" )
 echo "Disabling for internal bug of clang-tidy..."
 clang_tidy_args+=( -checks=-modernize-use-scoped-lock )
+echo "Disabling include-cleaner fixes because this project uses C++ modules..."
+clang_tidy_args+=( -checks=-misc-include-cleaner )
 if [[ "${CLANG_TIDY_FIX}" == "true" ]]; then
   clang_tidy_args+=( -fix )
 fi

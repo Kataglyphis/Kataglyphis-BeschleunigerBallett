@@ -66,11 +66,11 @@ target_sources(
          CXX_MODULES
          TYPE
          CXX_MODULES
-                             BASE_DIRS
-                             ${CMAKE_CURRENT_SOURCE_DIR}/..
+         BASE_DIRS
+         ${CMAKE_CURRENT_SOURCE_DIR}/..
          FILES
-                             ${OPENGL_MODULE_INTERFACE_FILES}
-                             ${SHARED_MODULE_INTERFACE_FILES})
+         ${OPENGL_MODULE_INTERFACE_FILES}
+         ${SHARED_MODULE_INTERFACE_FILES})
 
 target_include_directories(${OpenGlEngineTargetName} PRIVATE ${OPENGL_INCLUDE_DIRS} ${Vulkan_INCLUDE_DIRS})
 

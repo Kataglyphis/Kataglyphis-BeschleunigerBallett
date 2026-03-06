@@ -34,7 +34,7 @@ void copy_buffer_impl(VkDevice device,
     Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
       device, transfer_command_pool, transfer_queue, command_buffer);
 }
-}
+}// namespace
 
 Kataglyphis::VulkanBufferManager::VulkanBufferManager() = default;
 

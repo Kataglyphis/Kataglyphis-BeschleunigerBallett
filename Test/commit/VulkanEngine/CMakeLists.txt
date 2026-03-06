@@ -161,8 +161,13 @@ target_link_libraries(
           spdlog)
 
 if(NOT WINDOWS_CI)
-  message(STATUS "WINDOWS_CI is OFF or not defined.")
-  gtest_discover_tests(${COMMIT_TEST_SUITE} DISCOVERY_TIMEOUT 300)
+  message(STATUS "Enabling gtest_discover_tests for ${COMMIT_TEST_SUITE}.")
+  gtest_discover_tests(
+    ${COMMIT_TEST_SUITE}
+    DISCOVERY_TIMEOUT
+    300
+    DISCOVERY_MODE
+    PRE_TEST)
 else()
   message(STATUS "WINDOWS_CI is ON. Skipping gtest_discover_tests for Vulkan commit tests.")
 endif()

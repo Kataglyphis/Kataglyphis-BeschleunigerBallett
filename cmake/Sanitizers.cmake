@@ -7,9 +7,9 @@ function(
   ENABLE_SANITIZER_THREAD
   ENABLE_SANITIZER_MEMORY)
 
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
-    set(SANITIZERS "")
+  set(SANITIZERS "")
 
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
     if(${ENABLE_SANITIZER_ADDRESS})
       list(APPEND SANITIZERS "address")
     endif()
@@ -62,25 +62,79 @@ function(
     LIST_OF_SANITIZERS)
 
   if(LIST_OF_SANITIZERS)
-    if(NOT
-       "${LIST_OF_SANITIZERS}"
-       STREQUAL
-       "")
-      if(NOT MSVC)
-        target_compile_options(${project_name} INTERFACE -fsanitize=${LIST_OF_SANITIZERS})
-        target_link_options(${project_name} INTERFACE -fsanitize=${LIST_OF_SANITIZERS})
-      else()
-        string(FIND "$ENV{PATH}" "$ENV{VSINSTALLDIR}" index_of_vs_install_dir)
-        if("${index_of_vs_install_dir}" STREQUAL "-1")
-          message(
-            SEND_ERROR
-              "Using MSVC sanitizers requires setting the MSVC environment before building the project. Please manually open the MSVC command prompt and rebuild the project."
-          )
-        endif()
-        target_compile_options(${project_name} INTERFACE /fsanitize=${LIST_OF_SANITIZERS} /Zi /INCREMENTAL:NO)
-        target_compile_definitions(${project_name} INTERFACE _DISABLE_VECTOR_ANNOTATION _DISABLE_STRING_ANNOTATION)
-        target_link_options(${project_name} INTERFACE /INCREMENTAL:NO)
+    if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang" AND MSVC)
+      set(_CLANGCL_COMPILE_SAN_FLAGS "")
+      set(_CLANGCL_LINK_SAN_FLAGS "")
+
+      if("address" IN_LIST SANITIZERS)
+        list(APPEND _CLANGCL_COMPILE_SAN_FLAGS /fsanitize=address)
       endif()
+
+      if("undefined" IN_LIST SANITIZERS)
+        list(APPEND _CLANGCL_COMPILE_SAN_FLAGS -fsanitize=undefined)
+        list(APPEND _CLANGCL_LINK_SAN_FLAGS -fsanitize=undefined)
+      endif()
+
+      if("thread" IN_LIST SANITIZERS)
+        message(
+          WARNING
+            "clang-cl ThreadSanitizer is not supported for target x86_64-pc-windows-msvc; ignoring thread sanitizer request"
+        )
+      endif()
+
+      if("leak" IN_LIST SANITIZERS OR "memory" IN_LIST SANITIZERS)
+        message(
+          WARNING
+            "clang-cl with MSVC ABI currently supports AddressSanitizer and UndefinedBehaviorSanitizer in this configuration"
+        )
+      endif()
+
+      if(_CLANGCL_COMPILE_SAN_FLAGS)
+        target_compile_options(${project_name} INTERFACE ${_CLANGCL_COMPILE_SAN_FLAGS} /Zi /INCREMENTAL:NO)
+        target_link_options(
+          ${project_name}
+          INTERFACE
+          /INCREMENTAL:NO
+          ${_CLANGCL_LINK_SAN_FLAGS})
+      endif()
+
+      if("address" IN_LIST SANITIZERS)
+        target_compile_definitions(${project_name} INTERFACE _DISABLE_VECTOR_ANNOTATION _DISABLE_STRING_ANNOTATION)
+
+        execute_process(
+          COMMAND ${CMAKE_CXX_COMPILER} --print-resource-dir
+          OUTPUT_VARIABLE _CLANG_RESOURCE_DIR
+          OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+        if(_CLANG_RESOURCE_DIR)
+          set(_CLANG_RUNTIME_DIR "${_CLANG_RESOURCE_DIR}/lib/windows")
+          set(_ASAN_DYNAMIC_LIB "${_CLANG_RUNTIME_DIR}/clang_rt.asan_dynamic-x86_64.lib")
+          set(_ASAN_THUNK_LIB "${_CLANG_RUNTIME_DIR}/clang_rt.asan_dynamic_runtime_thunk-x86_64.lib")
+          if(EXISTS "${_ASAN_DYNAMIC_LIB}" AND EXISTS "${_ASAN_THUNK_LIB}")
+            target_link_directories(${project_name} INTERFACE "${_CLANG_RUNTIME_DIR}")
+            target_link_libraries(${project_name} INTERFACE clang_rt.asan_dynamic-x86_64
+                                                          clang_rt.asan_dynamic_runtime_thunk-x86_64)
+            target_link_options(${project_name} INTERFACE /WHOLEARCHIVE:clang_rt.asan_dynamic_runtime_thunk-x86_64.lib)
+          else()
+            message(WARNING "clang-cl ASan runtime libraries not found in ${_CLANG_RUNTIME_DIR}")
+          endif()
+        else()
+          message(WARNING "Unable to detect clang resource directory for clang-cl ASan runtime linkage")
+        endif()
+      endif()
+    elseif(MSVC)
+      string(FIND "$ENV{PATH}" "$ENV{VSINSTALLDIR}" index_of_vs_install_dir)
+      if("${index_of_vs_install_dir}" STREQUAL "-1")
+        message(
+          SEND_ERROR
+            "Using MSVC sanitizers requires setting the MSVC environment before building the project. Please manually open the MSVC command prompt and rebuild the project."
+        )
+      endif()
+      target_compile_options(${project_name} INTERFACE /fsanitize=${LIST_OF_SANITIZERS} /Zi /INCREMENTAL:NO)
+      target_compile_definitions(${project_name} INTERFACE _DISABLE_VECTOR_ANNOTATION _DISABLE_STRING_ANNOTATION)
+      target_link_options(${project_name} INTERFACE /INCREMENTAL:NO)
+    else()
+      target_compile_options(${project_name} INTERFACE -fsanitize=${LIST_OF_SANITIZERS})
+      target_link_options(${project_name} INTERFACE -fsanitize=${LIST_OF_SANITIZERS})
     endif()
   endif()
 

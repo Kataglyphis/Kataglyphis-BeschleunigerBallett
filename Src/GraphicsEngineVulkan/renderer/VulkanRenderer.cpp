@@ -445,18 +445,15 @@ void Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
     std::memcpy(mapped_global_ubo, global_ubo_data.data(), sizeof(VulkanRendererInternals::GlobalUBO));
     vkUnmapMemory(device->getLogicalDevice(), stagingGlobalUBO.getBufferMemory());
 
-        auto const copy_buffer_ref = static_cast<void (Kataglyphis::VulkanBufferManager::*)(VkDevice,
-            VkQueue,
-            VkCommandPool,
-            VulkanBuffer &,
-            VulkanBuffer &,
-            VkDeviceSize)>(&Kataglyphis::VulkanBufferManager::copyBuffer);
-        (vulkanBufferManager.*copy_buffer_ref)(device->getLogicalDevice(),
-            device->getGraphicsQueue(),
-            graphics_command_pool,
-            stagingGlobalUBO,
-            globalUBOBuffer[image_index],
-            sizeof(VulkanRendererInternals::GlobalUBO));
+    auto const copy_buffer_ref = static_cast<void (Kataglyphis::VulkanBufferManager::*)(
+      VkDevice, VkQueue, VkCommandPool, VulkanBuffer &, VulkanBuffer &, VkDeviceSize)>(
+      &Kataglyphis::VulkanBufferManager::copyBuffer);
+    (vulkanBufferManager.*copy_buffer_ref)(device->getLogicalDevice(),
+      device->getGraphicsQueue(),
+      graphics_command_pool,
+      stagingGlobalUBO,
+      globalUBOBuffer[image_index],
+      sizeof(VulkanRendererInternals::GlobalUBO));
 
     stagingGlobalUBO.cleanUp();
 
@@ -476,12 +473,12 @@ void Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
     std::memcpy(mapped_scene_ubo, scene_ubo_data.data(), sizeof(VulkanRendererInternals::SceneUBO));
     vkUnmapMemory(device->getLogicalDevice(), stagingSceneUBO.getBufferMemory());
 
-        (vulkanBufferManager.*copy_buffer_ref)(device->getLogicalDevice(),
-            device->getGraphicsQueue(),
-            graphics_command_pool,
-            stagingSceneUBO,
-            sceneUBOBuffer[image_index],
-            sizeof(VulkanRendererInternals::SceneUBO));
+    (vulkanBufferManager.*copy_buffer_ref)(device->getLogicalDevice(),
+      device->getGraphicsQueue(),
+      graphics_command_pool,
+      stagingSceneUBO,
+      sceneUBOBuffer[image_index],
+      sizeof(VulkanRendererInternals::SceneUBO));
 
     stagingSceneUBO.cleanUp();
 }
@@ -588,6 +585,7 @@ void Kataglyphis::VulkanRenderer::cleanUp()
     if (device->supportsHardwareAcceleratedRRT()) {
         pathTracing.cleanUp();
         raytracingStage.cleanUp();
+        asManager.cleanUp();
     }
 
     rasterizer.cleanUp();
@@ -625,6 +623,9 @@ void Kataglyphis::VulkanRenderer::cleanUp()
     }
 
     vulkanSwapChain.cleanUp();
+    allocator.cleanUp();
+    device->cleanUp();
+    device.reset();
 
     if (surface != VK_NULL_HANDLE) {
         vkDestroySurfaceKHR(instance.getVulkanInstance(), surface, nullptr);
@@ -632,8 +633,7 @@ void Kataglyphis::VulkanRenderer::cleanUp()
     }
 
     if (Kataglyphis::ENABLE_VALIDATION_LAYERS) { debug::freeDebugCallback(instance.getVulkanInstance()); }
-
-    device.reset();
+    instance.cleanUp();
 }
 
 Kataglyphis::VulkanRenderer::~VulkanRenderer() { cleanUp(); }
