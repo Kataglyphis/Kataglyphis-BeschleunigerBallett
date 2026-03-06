@@ -92,7 +92,7 @@ auto main(int argc, char **argv) -> int
     initialize_logging();
     apply_gpu_selection_from_args(std::span<char *const>(argv, static_cast<std::size_t>(argc)));
 
-    #if USE_RUST
+#if USE_RUST
     if (USE_RUST) {
         const auto value = rusty_cxxbridge_integer();
         std::cout << "A value given by the Rust bridge function " << value << "\n";
