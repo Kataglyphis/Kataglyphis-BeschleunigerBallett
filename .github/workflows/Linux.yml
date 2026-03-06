@@ -79,6 +79,8 @@ jobs:
       - name: Prepare for unit/integration tests
         run: |
           docker run --rm \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
+            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
@@ -134,19 +136,25 @@ jobs:
         continue-on-error: true
         run: |
           docker run --rm \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
+            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/run-clang-analyze-html.sh
+            bash ./Scripts/Linux/run_static_analysis_format.sh \
+            --only-clang-analyze-html
 
       - name: Run Clang static analysis (scan-build)
         continue-on-error: true
         run: |
           docker run --rm \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
+            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/run-clang-scan-build.sh \
+            bash ./Scripts/Linux/run_static_analysis_format.sh \
+            --only-scan-build \
             --build-dir "${{ env.BUILD_DIR }}" \
             --preset "linux-debug-clang"
 
@@ -156,6 +164,8 @@ jobs:
       - name: Configure/build CMake for Profiling (select preset by compiler)
         run: |
           docker run --rm \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
+            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
@@ -176,25 +186,7 @@ jobs:
       #################################################################################################################
       ######################################## Build docs #############################################################
       #################################################################################################################
-      - name: Set Astral UV venv
-        if: ${{ inputs.runner == 'ubuntu-24.04' }}
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/uv-venv-create.sh
 
-      - name: Setup python env
-        if: ${{ inputs.runner == 'ubuntu-24.04' }}
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/uv-install-requirements.sh
-
-      # . "$HOME/.local/bin/env"
       - name: Build web page
         if: ${{ inputs.runner == 'ubuntu-24.04' }}
         run: |
@@ -277,6 +269,8 @@ jobs:
       - name: Configure/build CMake for Release
         run: |
           docker run --rm \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
+            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
@@ -289,6 +283,8 @@ jobs:
       - name: Package
         run: |
           docker run --rm \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
+            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
@@ -306,3 +302,5 @@ jobs:
             ${{ env.BUILD_RELEASE_DIR }}/*.tar.gz
             ${{ env.BUILD_RELEASE_DIR }}/*.tgz
             ${{ env.BUILD_RELEASE_DIR }}/*.deb
+            ${{ env.BUILD_RELEASE_DIR }}/*.AppImage
+            ${{ env.BUILD_RELEASE_DIR }}/*.flatpak

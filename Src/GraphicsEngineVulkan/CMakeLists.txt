@@ -12,6 +12,11 @@ include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
 
 file(GLOB_RECURSE VULKANRENDERER_SOURCES "*.cpp")
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15)
+  set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/renderer/VulkanRenderer.cpp PROPERTIES COMPILE_OPTIONS
+                                                                                                 "-fno-lto")
+endif()
+
 file(
   GLOB_RECURSE SHADER_HEADERS
   RELATIVE ${SHADER_SRC_DIR}
@@ -21,130 +26,6 @@ file(GLOB_RECURSE VULKANRENDERER_HEADERS "*.hpp")
 
 kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}")
 kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
-
-if(RUST_FEATURES)
-
-  corrosion_import_crate(MANIFEST_PATH rusty_code/Cargo.toml)
-  if(WIN32)
-    corrosion_set_env_vars(rusty_code CXXFLAGS=/EHsc)
-  else()
-    # Native-only corrosion/toolchain setup (no cross-building)
-    # Optionally override with -DGCC_TOOLCHAIN_PATH=/path/to/gcc when configuring
-    set(_DEFAULT_GCC_TOOLCHAIN "")
-    if(DEFINED MYPROJECT_GCC_TOOLCHAIN_PATH AND MYPROJECT_GCC_TOOLCHAIN_PATH)
-      set(_DEFAULT_GCC_TOOLCHAIN "${MYPROJECT_GCC_TOOLCHAIN_PATH}")
-    endif()
-    set(_HAS_DEFAULT_GCC_TOOLCHAIN OFF)
-    if(EXISTS "${_DEFAULT_GCC_TOOLCHAIN}")
-      set(_HAS_DEFAULT_GCC_TOOLCHAIN ON)
-    endif()
-
-    # Nur setzen, wenn wir im GNU/GCC Preset sind
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-      if(_HAS_DEFAULT_GCC_TOOLCHAIN)
-        set(GCC_TOOLCHAIN_PATH
-            "${_DEFAULT_GCC_TOOLCHAIN}"
-            CACHE PATH "GCC toolchain root")
-      else()
-        set(GCC_TOOLCHAIN_PATH
-            ""
-            CACHE PATH "GCC toolchain root" FORCE)
-      endif()
-      set(RUST_CXXFLAGS "-fexceptions")
-    else()
-      # Falls Clang aktiv ist, nur dann toolchain-Flag setzen, wenn der Pfad existiert
-      set(GCC_TOOLCHAIN_PATH
-          ""
-          CACHE PATH "GCC toolchain root" FORCE)
-      if(_HAS_DEFAULT_GCC_TOOLCHAIN)
-        set(RUST_CXXFLAGS "--gcc-toolchain=${_DEFAULT_GCC_TOOLCHAIN} -fexceptions")
-      else()
-        set(RUST_CXXFLAGS "-fexceptions")
-      endif()
-    endif()
-
-    # detect host arch for logging (no cross-compile behavior)
-    string(TOLOWER "${CMAKE_HOST_SYSTEM_PROCESSOR}" _hostproc)
-    if(_hostproc MATCHES "^(x86_64|amd64)$")
-      set(HOST_ARCH "x86_64")
-    elseif(_hostproc MATCHES "^(aarch64|arm64|armv8)$")
-      set(HOST_ARCH "aarch64")
-    elseif(_hostproc MATCHES "^(riscv64)$")
-      set(HOST_ARCH "riscv64")
-    else()
-      set(HOST_ARCH "${_hostproc}")
-    endif()
-
-    message(STATUS "Native-only build. HOST_ARCH=${HOST_ARCH}")
-
-    if(GCC_TOOLCHAIN_PATH AND EXISTS "${GCC_TOOLCHAIN_PATH}")
-      # Try to find reasonable native compiler binary names
-      if(HOST_ARCH STREQUAL "x86_64")
-        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/x86_64-pc-linux-gnu-gcc"
-                                             "${GCC_TOOLCHAIN_PATH}/bin/gcc")
-        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/x86_64-pc-linux-gnu-g++"
-                                             "${GCC_TOOLCHAIN_PATH}/bin/g++")
-      elseif(HOST_ARCH STREQUAL "aarch64")
-        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/aarch64-linux-gnu-gcc"
-                                             "${GCC_TOOLCHAIN_PATH}/bin/gcc")
-        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/aarch64-linux-gnu-g++"
-                                             "${GCC_TOOLCHAIN_PATH}/bin/g++")
-      elseif(HOST_ARCH STREQUAL "riscv64")
-        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/riscv64-unknown-linux-gnu-gcc"
-                                             "${GCC_TOOLCHAIN_PATH}/bin/gcc")
-        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/riscv64-unknown-linux-gnu-g++"
-                                             "${GCC_TOOLCHAIN_PATH}/bin/g++")
-      else()
-        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/gcc")
-        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/g++")
-      endif()
-
-      if(NOT GCC_TOOLCHAIN_GCC)
-        message(WARNING "Toolchain gcc not found in ${GCC_TOOLCHAIN_PATH}; falling back to system 'gcc'")
-        set(GCC_TOOLCHAIN_GCC "gcc")
-      endif()
-      if(NOT GCC_TOOLCHAIN_GXX)
-        message(WARNING "Toolchain g++ not found in ${GCC_TOOLCHAIN_PATH}; falling back to system 'g++'")
-        set(GCC_TOOLCHAIN_GXX "g++")
-      endif()
-
-      # prefer lib64 then lib; optional for setting LDFLAGS/rpath
-      if(EXISTS "${GCC_TOOLCHAIN_PATH}/lib64")
-        set(GCC_LIB_PATH "${GCC_TOOLCHAIN_PATH}/lib64")
-      elseif(EXISTS "${GCC_TOOLCHAIN_PATH}/lib")
-        set(GCC_LIB_PATH "${GCC_TOOLCHAIN_PATH}/lib")
-      else()
-        message(WARNING "No lib or lib64 under ${GCC_TOOLCHAIN_PATH}; skipping LDFLAGS/rpath setup")
-        unset(GCC_LIB_PATH)
-      endif()
-
-      # DO NOT inject toolchain C++ includes. Only set CC/CXX and LDFLAGS/rpath for native run.
-      corrosion_set_env_vars(
-        rusty_code
-        CC=${GCC_TOOLCHAIN_GCC}
-        CXX=${GCC_TOOLCHAIN_GXX}
-        "CXXFLAGS=${RUST_CXXFLAGS}")
-
-      message(
-        STATUS "Configured native corrosion: CC=${GCC_TOOLCHAIN_GCC} CXX=${GCC_TOOLCHAIN_GXX} CXXFLAGS=${RUST_CXXFLAGS}"
-      )
-      if(GCC_LIB_PATH)
-        message(STATUS "GCC library path: ${GCC_LIB_PATH}")
-      endif()
-    else()
-      message(STATUS "No GCC_TOOLCHAIN_PATH (${GCC_TOOLCHAIN_PATH}) found — using system compilers (native build)")
-      # Still set minimal sensible env so corrosion has deterministic env on non-Windows hosts
-      corrosion_set_env_vars(rusty_code "CXXFLAGS=${RUST_CXXFLAGS}")
-    endif()
-  endif()
-
-  corrosion_add_cxxbridge(
-    rusty_bridge
-    CRATE
-    rusty_code
-    FILES
-    lib.rs)
-endif()
 
 # add the executable
 add_executable(${PROJECT_NAME})
@@ -257,8 +138,13 @@ target_link_libraries(
   PRIVATE GSL spdlog::spdlog nlohmann_json::nlohmann_json)
 
 if(RUST_FEATURES)
-  target_link_libraries(${PROJECT_NAME} PUBLIC rusty_code)
+  target_link_libraries(${PROJECT_NAME} PUBLIC kataglyphis_rustprojecttemplate)
 endif()
+
+# Enable ASan and UBSan in Debug mode on Linux
+target_compile_options(${PROJECT_NAME} PRIVATE $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>
+                                               $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fno-omit-frame-pointer>)
+target_link_options(${PROJECT_NAME} PRIVATE $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>)
 
 # compile shaders as part of my cmake routine right away :)
 include(cmake/CompileShadersToSPV.cmake)

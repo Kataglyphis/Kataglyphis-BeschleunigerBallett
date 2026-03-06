@@ -4,6 +4,4 @@ module;
 
 export module kataglyphis.shared.scene.obj_material;
 
-export {
-using ::ObjMaterial;
-}
+export { using ::ObjMaterial; }

@@ -45,7 +45,6 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::init(VulkanDevice *devic
     computeLimits.maxComputeWorkGroupSize[1] = physicalDeviceProps.limits.maxComputeWorkGroupSize[1];
     computeLimits.maxComputeWorkGroupSize[2] = physicalDeviceProps.limits.maxComputeWorkGroupSize[2];
 
-    queryResults.resize(query_count);
     createQueryPool();
 
     createPipeline(descriptorSetLayouts);

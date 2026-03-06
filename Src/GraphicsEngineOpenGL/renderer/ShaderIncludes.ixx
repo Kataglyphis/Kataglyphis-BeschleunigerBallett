@@ -15,17 +15,6 @@ export class ShaderIncludes
     ~ShaderIncludes();
 
   private:
-    bool isExtensionSupported(const std::string &extension)
-    {
-        GLint numExtensions = 0;
-        glGetIntegerv(GL_NUM_EXTENSIONS, &numExtensions);
-
-        for (int i = 0; i < numExtensions; ++i) {
-            const char *ext = reinterpret_cast<const char *>(glGetStringi(GL_EXTENSIONS, i));
-            if (extension == ext) { return true; }
-        }
-        return false;
-    }
     std::vector<const char *> includeNames = { "host_device_shared.hpp",
         "Matlib.glsl",
         "microfacet.glsl",

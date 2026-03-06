@@ -107,7 +107,7 @@
 				"CMAKE_C_COMPILER": "gcc",
 				"CMAKE_CXX_COMPILER": "g++",
         "RUST_FEATURES": "ON",
-				"COMPILER_CACHE": "sccache",
+				"COMPILER_CACHE": "ccache",
 				"BUILD_TESTING": "TRUE"
 			},
 			"condition": {
@@ -175,7 +175,7 @@
 				"CMAKE_C_COMPILER": "gcc",
 				"CMAKE_CXX_COMPILER": "g++",
         "RUST_FEATURES": "ON",
-				"COMPILER_CACHE": "sccache",
+				"COMPILER_CACHE": "ccache",
 				"BUILD_TESTING": "TRUE"
 			},
 			"condition": {
@@ -196,7 +196,7 @@
 				"CMAKE_BUILD_TYPE": "RelWithDebInfo",
 				"CMAKE_C_COMPILER": "gcc",
 				"CMAKE_CXX_COMPILER": "g++",
-				"COMPILER_CACHE": "sccache",
+				"COMPILER_CACHE": "ccache",
         "RUST_FEATURES": "ON",
         "BUILD_TESTING": "FALSE"
 			},
@@ -218,7 +218,7 @@
 				"CMAKE_BUILD_TYPE": "Release",
 				"CMAKE_C_COMPILER": "gcc",
 				"CMAKE_CXX_COMPILER": "g++",
-				"COMPILER_CACHE": "sccache",
+				"COMPILER_CACHE": "ccache",
         "RUST_FEATURES": "ON",
         "BUILD_TESTING": "FALSE"
 			},

@@ -97,12 +97,9 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(VulkanDevic
       device, bufferSize, dstBufferUsageFlags, dstBufferMemoryPropertyFlags, dstBufferMemoryAllocateFlags);
 
     VkQueue const queue = (transfer_queue != VK_NULL_HANDLE) ? transfer_queue : device->getGraphicsQueue();
-    auto const copy_buffer_ref = static_cast<void (VulkanBufferManager::*)(VkDevice,
-      VkQueue,
-      VkCommandPool,
-      VulkanBuffer &,
-      VulkanBuffer &,
-      VkDeviceSize)>(&VulkanBufferManager::copyBuffer);
+    auto const copy_buffer_ref = static_cast<void (VulkanBufferManager::*)(
+      VkDevice, VkQueue, VkCommandPool, VulkanBuffer &, VulkanBuffer &, VkDeviceSize)>(
+      &VulkanBufferManager::copyBuffer);
     (this->*copy_buffer_ref)(device->getLogicalDevice(), queue, commandPool, stagingBuffer, vulkanBuffer, bufferSize);
 
     stagingBuffer.cleanUp();

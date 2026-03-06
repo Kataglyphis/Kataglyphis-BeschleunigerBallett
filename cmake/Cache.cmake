@@ -6,6 +6,15 @@ function(myproject_enable_cache)
       ""
       CACHE STRING "Compiler cache to be used (ccache or sccache; leave empty to disable)")
 
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    if("${COMPILER_CACHE}" STREQUAL "sccache")
+      message(STATUS "GNU GCC is used, using ccache instead of sccache.")
+      set(COMPILER_CACHE
+          "ccache"
+          CACHE STRING "Compiler cache to be used (ccache or sccache; leave empty to disable)" FORCE)
+    endif()
+  endif()
+
   # 2. Determine allowed backends
   if(MSVC AND WIN32)
     set(_allowed_values sccache)
@@ -37,43 +46,25 @@ function(myproject_enable_cache)
      "${COMPILER_CACHE}"
      STREQUAL
      "")
-    set(_cache_supported ON)
-
-    if(COMPILER_CACHE STREQUAL "sccache"
-       AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
-       AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15
-       AND CMAKE_CXX_SCAN_FOR_MODULES)
-      set(_cache_supported OFF)
-      message(
-        WARNING
-          "Disabling sccache for GNU ${CMAKE_CXX_COMPILER_VERSION} with C++ module scanning: this toolchain combination can fail dependency generation during module builds."
-      )
-    endif()
-
-    if(NOT _cache_supported)
-      return()
-    endif()
-
     find_program(
-      CACHE_BINARY
+      CACHE_BINARY_${COMPILER_CACHE}
       NAMES "${COMPILER_CACHE}"
-      DOC "Path to the compiler cache executable"
-    )# creates CACHE_BINARY or <VAR>-NOTFOUND :contentReference[oaicite:5]{index=5}
+      DOC "Path to the compiler cache executable") # creates CACHE_BINARY_${COMPILER_CACHE} or <VAR>-NOTFOUND
 
-    if(CACHE_BINARY
+    if(CACHE_BINARY_${COMPILER_CACHE}
        AND NOT
-           CACHE_BINARY
+           CACHE_BINARY_${COMPILER_CACHE}
            STREQUAL
            "${PATH}-NOTFOUND")
-      message(STATUS "${COMPILER_CACHE} found at ${CACHE_BINARY}. Enabling compiler cache.")
+      message(STATUS "${COMPILER_CACHE} found at ${CACHE_BINARY_${COMPILER_CACHE}}. Enabling compiler cache.")
 
       # 6. Hook into C/C++ compiler launches
       set(CMAKE_C_COMPILER_LAUNCHER
-          "${CACHE_BINARY}"
-          CACHE STRING "C compiler cache launcher")
+          "${CACHE_BINARY_${COMPILER_CACHE}}"
+          CACHE STRING "C compiler cache launcher" FORCE)
       set(CMAKE_CXX_COMPILER_LAUNCHER
-          "${CACHE_BINARY}"
-          CACHE STRING "CXX compiler cache launcher")
+          "${CACHE_BINARY_${COMPILER_CACHE}}"
+          CACHE STRING "CXX compiler cache launcher" FORCE)
 
       # 7. MSVC: Embedded PDBs for cache consistency
       if(MSVC)
@@ -100,6 +91,11 @@ function(myproject_enable_cache)
 
     else()
       message(WARNING "${COMPILER_CACHE} was requested but not found. Skipping cache integration.")
+      unset(CMAKE_C_COMPILER_LAUNCHER CACHE)
+      unset(CMAKE_CXX_COMPILER_LAUNCHER CACHE)
     endif()
+  else()
+    unset(CMAKE_C_COMPILER_LAUNCHER CACHE)
+    unset(CMAKE_CXX_COMPILER_LAUNCHER CACHE)
   endif()
 endfunction()

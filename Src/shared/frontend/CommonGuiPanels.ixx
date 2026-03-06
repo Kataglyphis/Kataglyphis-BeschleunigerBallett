@@ -44,8 +44,8 @@ inline void renderCommonFrameStats()
     std::ostringstream text;
     text << std::fixed;
     if (fps > 0.0) {
-        text << "Application average " << std::setprecision(3) << frame_time_ms << " ms/frame ("
-             << std::setprecision(1) << fps << " FPS)";
+        text << "Application average " << std::setprecision(3) << frame_time_ms << " ms/frame (" << std::setprecision(1)
+             << fps << " FPS)";
     } else {
         text << "Application average N/A (" << std::setprecision(1) << fps << " FPS)";
     }

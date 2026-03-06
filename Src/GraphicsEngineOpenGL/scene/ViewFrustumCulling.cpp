@@ -17,24 +17,37 @@ import kataglyphis.opengl.camera;
 import kataglyphis.opengl.aabb;
 
 ViewFrustumCulling::ViewFrustumCulling()
-  :
+{
+    VBO = -1;
+    VAO = -1;
+    EBO = -1;
+    m_drawCount = 0;
 
-    VBO(-1), VAO(-1), EBO(-1), m_drawCount(0),
-    // we get that as input
-    near_plane(0.F), far_plane(0.F), fov(0.F), ratio(0.F),
+    near_plane = 0.F;
+    far_plane = 0.F;
+    fov = 0.F;
+    ratio = 0.F;
 
-    // calculate as soon as we become params
-    tan(0.F), near_height(0.F), near_width(0.F), far_height(0.F), far_width(0.F),
+    tan = 0.F;
+    near_height = 0.F;
+    near_width = 0.F;
+    far_height = 0.F;
+    far_width = 0.F;
 
-    dir(glm::vec3(0.F)), near_center(glm::vec3(0.F)), far_center(glm::vec3(0.F)),
+    dir = glm::vec3(0.F);
+    near_center = glm::vec3(0.F);
+    far_center = glm::vec3(0.F);
 
-    near_top_left(glm::vec3(0.F)), near_top_right(glm::vec3(0.F)), near_bottom_left(glm::vec3(0.F)),
-    near_bottom_right(glm::vec3(0.F)),
+    near_top_left = glm::vec3(0.F);
+    near_top_right = glm::vec3(0.F);
+    near_bottom_left = glm::vec3(0.F);
+    near_bottom_right = glm::vec3(0.F);
 
-    far_top_left(glm::vec3(0.F)), far_top_right(glm::vec3(0.F)), far_bottom_left(glm::vec3(0.F)),
-    far_bottom_right(glm::vec3(0.F))
-
-{}
+    far_top_left = glm::vec3(0.F);
+    far_top_right = glm::vec3(0.F);
+    far_bottom_left = glm::vec3(0.F);
+    far_bottom_right = glm::vec3(0.0f, 0.0f, 0.0f);
+}
 
 auto ViewFrustumCulling::is_inside(GLfloat ratio,
   const std::shared_ptr<Camera> &main_camera,

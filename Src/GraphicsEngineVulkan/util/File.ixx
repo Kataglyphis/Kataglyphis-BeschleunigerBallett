@@ -8,8 +8,7 @@ module;
 export module kataglyphis.vulkan.file;
 
 export namespace Kataglyphis {
-class File
-  : private Kataglyphis::Shared::FileLocationHolder
+class File : private Kataglyphis::Shared::FileLocationHolder
 {
   public:
     explicit File(const std::string &file_location);

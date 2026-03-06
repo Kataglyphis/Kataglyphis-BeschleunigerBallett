@@ -36,11 +36,6 @@ file(GLOB_RECURSE SHADER_HEADERS "${SHADER_SRC_DIR}/*.hpp")
 
 file(GLOB_RECURSE VULKANRENDERER_HEADERS "${PROJECT_SRC_DIR}/*.hpp")
 
-# if(RUST_FEATURES)
-#   corrosion_import_crate(MANIFEST_PATH ${PROJECT_SRC_DIR}rusty_code/Cargo.toml)
-#   corrosion_add_cxxbridge(rusty_bridge_commit CRATE rusty_code FILES lib.rs)
-# endif()
-
 add_executable(${COMMIT_TEST_SUITE})
 
 set(ShaderIncludes
@@ -173,7 +168,7 @@ else()
 endif()
 
 if(RUST_FEATURES)
-  target_link_libraries(${COMMIT_TEST_SUITE} PUBLIC rusty_code)
+  target_link_libraries(${COMMIT_TEST_SUITE} PUBLIC kataglyphis_rustprojecttemplate)
 endif()
 
 # disable all warnings for our test suite

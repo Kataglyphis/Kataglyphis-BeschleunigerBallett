@@ -6,7 +6,7 @@ project(
   VERSION 1.4.2
   DESCRIPTION "Epic GPU accelerated rendering, compute engine using Vulkan and C++,C,Rust"
   HOMEPAGE_URL "https://jonasheinle.de/"
-  LANGUAGES CXX C)
+  LANGUAGES NONE)
 
 set(AUTHOR "Jonas Heinle")
 
@@ -30,8 +30,7 @@ set(MYPROJECT_GCC_TOOLCHAIN_PATH
 # Auto-detect custom GCC toolchain for Clang on Linux to avoid workflow env setup
 if(UNIX
    AND NOT APPLE
-   AND MYPROJECT_GCC_TOOLCHAIN_PATH
-   AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+   AND MYPROJECT_GCC_TOOLCHAIN_PATH)
   set(_GCC_TOOLCHAIN_ROOT "${MYPROJECT_GCC_TOOLCHAIN_PATH}")
   set(_GCC_TOOLCHAIN_LIB "${_GCC_TOOLCHAIN_ROOT}/lib64")
   if(NOT EXISTS "${_GCC_TOOLCHAIN_LIB}")
@@ -50,6 +49,8 @@ if(UNIX
     message(WARNING "GCC toolchain found at ${_GCC_TOOLCHAIN_ROOT}, but no lib or lib64 dir exists.")
   endif()
 endif()
+
+enable_language(CXX C)
 
 if(RUST_FEATURES)
   message(STATUS "Rust features are enabled.")
@@ -70,9 +71,31 @@ myproject_global_options()
 
 myproject_local_options()
 
+if(myproject_ENABLE_SANITIZER_ADDRESS)
+  add_compile_options(-fsanitize=address)
+  add_link_options(-fsanitize=address)
+endif()
+
+if(myproject_ENABLE_COVERAGE
+   AND NOT
+       CMAKE_BUILD_TYPE
+       STREQUAL
+       "Release"
+   AND CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+  add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
+  add_link_options(-fprofile-instr-generate -fcoverage-mapping)
+endif()
+
 include(cmake/SystemLibDependencies.cmake)
 include(Src/GraphicsEngineVulkan/cmake/filters/SetExternalLibsFilters.cmake)
 add_subdirectory(ExternalLib)
+
+if(BUILD_TESTING
+   AND NOT WIN32
+   AND CMAKE_CXX_COMPILER_ID MATCHES "Clang"
+   AND NOT (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo"))
+  # Fuzz flags should be applied on the target, not globally
+endif()
 
 add_subdirectory(Src)
 
@@ -86,10 +109,20 @@ endif()
 
 if(BUILD_TESTING)
   message(STATUS "Tests are enabled.!")
-  add_subdirectory(Test/commit)
-  add_subdirectory(Test/compile)
-  add_subdirectory(Test/perf)
-  add_subdirectory(Test/fuzz)
+  if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    add_subdirectory(Test/commit)
+    add_subdirectory(Test/compile)
+    add_subdirectory(Test/fuzz)
+    message(STATUS "Building test suites: commit, compile, fuzz (Debug)")
+  elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+    add_subdirectory(Test/perf)
+    message(STATUS "Building test suite: perf (RelWithDebInfo)")
+  else()
+    message(
+      STATUS
+        "Skipping test suites for CMAKE_BUILD_TYPE='${CMAKE_BUILD_TYPE}'. Use Debug for commit/compile/fuzz or RelWithDebInfo for perf."
+    )
+  endif()
 else()
   message(STATUS "Tests are disabled.!")
 endif()
