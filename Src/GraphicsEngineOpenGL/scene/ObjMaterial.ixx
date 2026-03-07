@@ -59,7 +59,7 @@ export class ObjMaterial
     int illum;
     int textureID;
 
-    ~ObjMaterial();
+    ~ObjMaterial() = default;
 
   private:
 };
