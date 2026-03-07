@@ -39,7 +39,7 @@ auto Kataglyphis::VulkanImage::operator=(VulkanImage &&other) noexcept -> Vulkan
     return *this;
 }
 
-void Kataglyphis::VulkanImage::create(VulkanDevice *device,
+void Kataglyphis::VulkanImage::create(VulkanDevice *in_device,
   uint32_t width,
   uint32_t height,
   uint32_t mip_levels,
@@ -48,7 +48,7 @@ void Kataglyphis::VulkanImage::create(VulkanDevice *device,
   VkImageUsageFlags use_flags,
   VkMemoryPropertyFlags prop_flags)
 {
-    this->device = device;
+    this->device = in_device;
     // CREATE image
     // image creation info
     VkImageCreateInfo image_create_info{};
@@ -88,7 +88,7 @@ void Kataglyphis::VulkanImage::create(VulkanDevice *device,
     vkBindImageMemory(device->getLogicalDevice(), image, imageMemory, 0);
 }
 
-void Kataglyphis::VulkanImage::transitionImageLayout(VkDevice device,
+void Kataglyphis::VulkanImage::transitionImageLayout(VkDevice in_logical_device,
   VkQueue queue,
   VkCommandPool command_pool,
   VkImageLayout old_layout,
@@ -97,7 +97,7 @@ void Kataglyphis::VulkanImage::transitionImageLayout(VkDevice device,
   uint32_t mip_levels)
 {
     VkCommandBuffer command_buffer =
-      Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device, command_pool);
+      Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(in_logical_device, command_pool);
 
     // VK_IMAGE_ASPECT_COLOR_BIT
     VkImageMemoryBarrier memory_barrier{};
@@ -136,7 +136,7 @@ void Kataglyphis::VulkanImage::transitionImageLayout(VkDevice device,
     );
 
     Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      device, command_pool, queue, command_buffer);
+      in_logical_device, command_pool, queue, command_buffer);
 }
 
 void Kataglyphis::VulkanImage::transitionImageLayout(VkCommandBuffer command_buffer,
@@ -182,7 +182,7 @@ void Kataglyphis::VulkanImage::transitionImageLayout(VkCommandBuffer command_buf
     );
 }
 
-void Kataglyphis::VulkanImage::setImage(VkImage image) { this->image = image; }
+void Kataglyphis::VulkanImage::setImage(VkImage in_image) { this->image = in_image; }
 
 void Kataglyphis::VulkanImage::cleanUp()
 {

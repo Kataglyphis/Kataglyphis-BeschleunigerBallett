@@ -13,5 +13,5 @@ export class MirroredRepeatMode : public TextureWrappingMode
 
     void activate() override;
 
-    ~MirroredRepeatMode();
+    virtual ~MirroredRepeatMode();
 };

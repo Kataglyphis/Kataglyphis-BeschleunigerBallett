@@ -33,15 +33,15 @@ auto Kataglyphis::VulkanImageView::operator=(VulkanImageView &&other) noexcept -
     return *this;
 }
 
-void Kataglyphis::VulkanImageView::setImageView(VkImageView imageView) { this->imageView = imageView; }
+void Kataglyphis::VulkanImageView::setImageView(VkImageView in_imageView) { this->imageView = in_imageView; }
 
-void Kataglyphis::VulkanImageView::create(VulkanDevice *device,
+void Kataglyphis::VulkanImageView::create(VulkanDevice *in_device,
   VkImage image,
   VkFormat format,
   VkImageAspectFlags aspect_flags,
   uint32_t mip_levels)
 {
-    this->device = device;
+    this->device = in_device;
 
     VkImageViewCreateInfo view_create_info{};
     view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;

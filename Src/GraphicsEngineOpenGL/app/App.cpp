@@ -67,7 +67,7 @@ auto main() -> int
 
     // load scene in an other thread than the rendering thread; would block
     // otherwise
-    std::thread t1 = scene->spwan();
+    std::thread t1 = scene->spawn();
     t1.detach();
 
     GLfloat delta_time = 0.0F;
@@ -136,7 +136,7 @@ auto main() -> int
               && static_cast<GLint>(new_window_height) == window_height)) {
             window_height = static_cast<GLint>(new_window_height);
             window_width = static_cast<GLint>(new_window_width);
-            renderer.update_window_params(window_width, window_height);
+            renderer.update_window_params(static_cast<GLuint>(window_width), static_cast<GLuint>(window_height));
         }
 
         main_window->swap_buffers();

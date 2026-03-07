@@ -15,12 +15,12 @@ export class GBuffer
 {
   public:
     GBuffer();
-    GBuffer(GLint window_width, GLint window_height);
+    GBuffer(GLuint window_width, GLuint window_height);
 
     void create();
     void read(const std::shared_ptr<ShaderProgram> &shader_program) const;
 
-    void update_window_params(GLuint window_width, GLuint window_height);
+    void update_window_params(GLuint in_window_width, GLuint in_window_height);
 
     GLuint get_id() const { return g_buffer; };
 

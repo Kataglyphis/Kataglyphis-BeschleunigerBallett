@@ -1011,7 +1011,7 @@ void Kataglyphis::VulkanRenderer::create_command_pool()
         pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;// we are ready now to
                                                                           // re-record our
                                                                           // command buffers
-        pool_info.queueFamilyIndex = queue_family_indices.graphics_family;// queue family type that buffers from this
+        pool_info.queueFamilyIndex = static_cast<uint32_t>(queue_family_indices.graphics_family);// queue family type that buffers from this
                                                                           // command pool will use
 
         // create a graphics queue family command pool
@@ -1026,7 +1026,7 @@ void Kataglyphis::VulkanRenderer::create_command_pool()
         pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;// we are ready now to
                                                                           // re-record our
                                                                           // command buffers
-        pool_info.queueFamilyIndex = queue_family_indices.compute_family;// queue family type that buffers
+        pool_info.queueFamilyIndex = static_cast<uint32_t>(queue_family_indices.compute_family);// queue family type that buffers
                                                                          // from this command pool will use
 
         // create a graphics queue family command pool

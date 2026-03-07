@@ -122,21 +122,21 @@ void Kataglyphis::Texture::setImageView(VkImageView imageView) { vulkanImageView
 void Kataglyphis::Texture::createImage(VulkanDevice *device,
   uint32_t width,
   uint32_t height,
-  uint32_t mip_levels,
+  uint32_t in_mip_levels,
   VkFormat format,
   VkImageTiling tiling,
   VkImageUsageFlags use_flags,
   VkMemoryPropertyFlags prop_flags)
 {
-    vulkanImage.create(device, width, height, mip_levels, format, tiling, use_flags, prop_flags);
+    vulkanImage.create(device, width, height, in_mip_levels, format, tiling, use_flags, prop_flags);
 }
 
 void Kataglyphis::Texture::createImageView(VulkanDevice *device,
   VkFormat format,
   VkImageAspectFlags aspect_flags,
-  uint32_t mip_levels)
+  uint32_t in_mip_levels)
 {
-    vulkanImageView.create(device, vulkanImage.getImage(), format, aspect_flags, mip_levels);
+    vulkanImageView.create(device, vulkanImage.getImage(), format, aspect_flags, in_mip_levels);
 }
 
 void Kataglyphis::Texture::cleanUp()
@@ -174,7 +174,7 @@ void Kataglyphis::Texture::generateMipMaps(VkPhysicalDevice physical_device,
   VkFormat image_format,
   int32_t width,
   int32_t height,
-  uint32_t mip_levels)
+  uint32_t in_mip_levels)
 {
     // Check if image format supports linear blitting
     VkFormatProperties formatProperties;

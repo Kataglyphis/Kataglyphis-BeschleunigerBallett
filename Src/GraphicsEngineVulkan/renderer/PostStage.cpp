@@ -28,11 +28,11 @@ import kataglyphis.vulkan.shader_helper;
 
 Kataglyphis::VulkanRendererInternals::PostStage::PostStage() = default;
 
-void Kataglyphis::VulkanRendererInternals::PostStage::init(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::PostStage::init(VulkanDevice *in_device,
   VulkanSwapChain *vulkanSwapChain,
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
 {
-    this->device = device;
+    this->device = in_device;
     this->vulkanSwapChain = vulkanSwapChain;
 
     createOffscreenTextureSampler();

@@ -19,11 +19,11 @@ import kataglyphis.vulkan.window;
 
 Kataglyphis::VulkanSwapChain::VulkanSwapChain() = default;
 
-void Kataglyphis::VulkanSwapChain::initVulkanContext(VulkanDevice *device,
+void Kataglyphis::VulkanSwapChain::initVulkanContext(VulkanDevice *in_device,
   Kataglyphis::Frontend::Window *window,
   const VkSurfaceKHR &surface)
 {
-    this->device = device;
+    this->device = in_device;
     this->window = window;
 
     // get swap chain details so we can pick the best settings

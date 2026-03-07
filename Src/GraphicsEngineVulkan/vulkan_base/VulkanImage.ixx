@@ -16,7 +16,7 @@ class VulkanImage
     VulkanImage(VulkanImage &&other) noexcept;
     auto operator=(VulkanImage &&other) noexcept -> VulkanImage &;
 
-    void create(VulkanDevice *device,
+    void create(VulkanDevice *in_device,
       uint32_t width,
       uint32_t height,
       uint32_t mip_levels,
@@ -25,7 +25,7 @@ class VulkanImage
       VkImageUsageFlags use_flags,
       VkMemoryPropertyFlags prop_flags);
 
-    void transitionImageLayout(VkDevice device,
+    void transitionImageLayout(VkDevice in_logical_device,
       VkQueue queue,
       VkCommandPool command_pool,
       VkImageLayout old_layout,

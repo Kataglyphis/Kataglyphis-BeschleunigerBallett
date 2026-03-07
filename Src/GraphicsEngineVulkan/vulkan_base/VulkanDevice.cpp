@@ -1,6 +1,7 @@
 module;
 
 #include <cstdint>
+#include "renderer/SwapChainDetails.hpp"
 #include <cstring>
 
 #include "common/Utilities.hpp"

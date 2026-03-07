@@ -17,7 +17,7 @@ class PathTracing
   public:
     PathTracing();
 
-    void init(VulkanDevice *device, const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts);
+    void init(VulkanDevice *in_device, const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts);
 
     void shaderHotReload(const std::vector<VkDescriptorSetLayout> &descriptor_set_layouts);
 

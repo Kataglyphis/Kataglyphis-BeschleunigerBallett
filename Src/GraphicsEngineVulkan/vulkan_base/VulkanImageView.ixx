@@ -19,7 +19,7 @@ class VulkanImageView
 
     VkImageView &getImageView() { return imageView; };
 
-    void create(VulkanDevice *device,
+    void create(VulkanDevice *in_device,
       VkImage image,
       VkFormat format,
       VkImageAspectFlags aspect_flags,

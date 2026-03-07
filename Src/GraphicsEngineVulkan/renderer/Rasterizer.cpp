@@ -32,12 +32,12 @@ auto hasStencilComponent(VkFormat format) -> bool
 
 Kataglyphis::VulkanRendererInternals::Rasterizer::Rasterizer() = default;
 
-void Kataglyphis::VulkanRendererInternals::Rasterizer::init(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::Rasterizer::init(VulkanDevice *in_device,
   VulkanSwapChain *swap_chain,
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts,
   VkCommandPool &commandPool)
 {
-    this->device = device;
+    this->device = in_device;
     this->vulkanSwapChain = swap_chain;
 
     createTextures(commandPool);

@@ -16,7 +16,7 @@ class PostStage
   public:
     PostStage();
 
-    void init(VulkanDevice *device,
+    void init(VulkanDevice *in_device,
       VulkanSwapChain *vulkanSwapChain,
       const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts);
 

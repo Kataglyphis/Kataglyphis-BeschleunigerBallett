@@ -26,10 +26,10 @@ import kataglyphis.vulkan.shader_helper;
 
 Kataglyphis::VulkanRendererInternals::PathTracing::PathTracing() = default;
 
-void Kataglyphis::VulkanRendererInternals::PathTracing::init(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::PathTracing::init(VulkanDevice *in_device,
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
 {
-    this->device = device;
+    this->device = in_device;
 
     VkPhysicalDeviceProperties const physicalDeviceProps = device->getPhysicalDeviceProperties();
     timeStampPeriod = physicalDeviceProps.limits.timestampPeriod;

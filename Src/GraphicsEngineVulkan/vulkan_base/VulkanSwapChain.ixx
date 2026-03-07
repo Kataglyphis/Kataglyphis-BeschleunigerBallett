@@ -15,7 +15,7 @@ class VulkanSwapChain
   public:
     VulkanSwapChain();
 
-    void initVulkanContext(VulkanDevice *device, Kataglyphis::Frontend::Window *window, const VkSurfaceKHR &surface);
+    void initVulkanContext(VulkanDevice *in_device, Kataglyphis::Frontend::Window *window, const VkSurfaceKHR &surface);
 
     const VkSwapchainKHR &getSwapChain() const { return swapchain; };
     uint32_t getNumberSwapChainImages() const { return static_cast<uint32_t>(swap_chain_images.size()); };

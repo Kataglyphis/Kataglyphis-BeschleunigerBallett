@@ -20,7 +20,7 @@ class Rasterizer
   public:
     Rasterizer();
 
-    void init(VulkanDevice *device,
+    void init(VulkanDevice *in_device,
       VulkanSwapChain *swap_chain,
       const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts,
       VkCommandPool &commandPool);

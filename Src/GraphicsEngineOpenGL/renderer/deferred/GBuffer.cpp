@@ -14,7 +14,7 @@ import kataglyphis.opengl.shader_program;
 
 GBuffer::GBuffer() : window_width(1024), window_height(768) {}
 
-GBuffer::GBuffer(GLint window_width, GLint window_height) : window_width(window_width), window_height(window_height) {}
+GBuffer::GBuffer(GLuint window_width, GLuint window_height) : window_width(window_width), window_height(window_height) {}
 
 void GBuffer::create()
 {
@@ -69,30 +69,30 @@ void GBuffer::read(const std::shared_ptr<ShaderProgram> &shader_program) const
 {
     // GBUFFER
     GLuint texture_index = GBUFFER_TEXTURES_SLOT;
-    shader_program->setUniformInt(texture_index, "g_position");
+    shader_program->setUniformInt(static_cast<GLint>(texture_index), "g_position");
     glActiveTexture(GL_TEXTURE0 + texture_index);
     glBindTexture(GL_TEXTURE_2D, g_position);
 
     texture_index++;
-    shader_program->setUniformInt(texture_index, "g_normal");
+    shader_program->setUniformInt(static_cast<GLint>(texture_index), "g_normal");
     glActiveTexture(GL_TEXTURE0 + texture_index);
     glBindTexture(GL_TEXTURE_2D, g_normal);
 
     texture_index++;
-    shader_program->setUniformInt(texture_index, "g_albedo");
+    shader_program->setUniformInt(static_cast<GLint>(texture_index), "g_albedo");
     glActiveTexture(GL_TEXTURE0 + texture_index);
     glBindTexture(GL_TEXTURE_2D, g_albedo);
 
     texture_index++;
-    shader_program->setUniformInt(texture_index, "g_material_id");
+    shader_program->setUniformInt(static_cast<GLint>(texture_index), "g_material_id");
     glActiveTexture(GL_TEXTURE0 + texture_index);
     glBindTexture(GL_TEXTURE_2D, g_material_id);
 }
 
-void GBuffer::update_window_params(GLuint window_width, GLuint window_height)
+void GBuffer::update_window_params(GLuint in_window_width, GLuint in_window_height)
 {
-    this->window_width = window_width;
-    this->window_height = window_height;
+    this->window_width = in_window_width;
+    this->window_height = in_window_height;
 }
 
 GBuffer::~GBuffer()

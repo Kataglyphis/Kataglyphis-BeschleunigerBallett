@@ -20,10 +20,10 @@ import kataglyphis.vulkan.shader_helper;
 
 Kataglyphis::VulkanRendererInternals::Raytracing::Raytracing() = default;
 
-void Kataglyphis::VulkanRendererInternals::Raytracing::init(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::Raytracing::init(VulkanDevice *in_device,
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
 {
-    this->device = device;
+    this->device = in_device;
 
     createPCRange();
     createGraphicsPipeline(descriptorSetLayouts);
