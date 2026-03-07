@@ -1,7 +1,7 @@
 #ifndef KATAGLYPHIS_SHARED_FRONTEND_CAMERA_STATE_HPP
 #define KATAGLYPHIS_SHARED_FRONTEND_CAMERA_STATE_HPP
 
-#include <glm/glm.hpp>
+#include <glm/vec3.hpp>
 
 namespace Kataglyphis::Frontend {
 struct CameraState

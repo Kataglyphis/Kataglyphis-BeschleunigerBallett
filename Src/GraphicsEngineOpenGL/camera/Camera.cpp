@@ -13,6 +13,8 @@ module kataglyphis.opengl.camera;
 
 import kataglyphis.shared.frontend.camera_controller;
 
+glm::vec3 Camera::get_camera_direction() const { return glm::normalize(camera_state.front); }
+
 Camera::Camera()
   :
 

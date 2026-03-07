@@ -2,12 +2,12 @@ module;
 
 #include <vector>
 #include <vulkan/vulkan.h>
+#include "renderer/SwapChainDetails.hpp"
 
 export module kataglyphis.vulkan.device;
 
 import kataglyphis.vulkan.instance;
 import kataglyphis.vulkan.queue_family_indices;
-import kataglyphis.vulkan.swap_chain_details;
 
 export namespace Kataglyphis {
 class VulkanDevice

@@ -1,6 +1,6 @@
 module;
 
-#include <glm/glm.hpp>
+#include <glm/mat4x4.hpp>
 
 export module kataglyphis.opengl.render_pass_scene_dependend;
 

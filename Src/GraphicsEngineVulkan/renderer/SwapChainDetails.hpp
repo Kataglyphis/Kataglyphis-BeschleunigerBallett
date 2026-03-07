@@ -1,12 +1,9 @@
-module;
-
-#include <vulkan/vulkan.h>
+#pragma once
 
 #include <vector>
+#include <vulkan/vulkan_core.h>
 
-export module kataglyphis.vulkan.swap_chain_details;
-
-export namespace Kataglyphis::VulkanRendererInternals {
+namespace Kataglyphis::VulkanRendererInternals {
 struct SwapChainDetails
 {
     VkSurfaceCapabilitiesKHR surface_capabilities;

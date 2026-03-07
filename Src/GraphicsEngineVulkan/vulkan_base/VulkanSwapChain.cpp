@@ -6,6 +6,7 @@ module;
 #include <limits>
 #include <vector>
 #include <vulkan/vulkan_core.h>
+#include "renderer/SwapChainDetails.hpp"
 
 #include "GLFW/glfw3.h"
 #include "common/Utilities.hpp"
@@ -13,7 +14,6 @@ module;
 module kataglyphis.vulkan.swapchain;
 
 import kataglyphis.vulkan.queue_family_indices;
-import kataglyphis.vulkan.swap_chain_details;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.window;
 

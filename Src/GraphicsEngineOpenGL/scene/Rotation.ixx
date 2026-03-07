@@ -1,12 +1,11 @@
 module;
 
-#include <glad/glad.h>
-#include <glm/glm.hpp>
+#include <glm/vec3.hpp>
 
 export module kataglyphis.opengl.rotation;
 
 export struct Rotation
 {
-    GLfloat degrees;
+    float degrees;
     glm::vec3 axis;
 };
