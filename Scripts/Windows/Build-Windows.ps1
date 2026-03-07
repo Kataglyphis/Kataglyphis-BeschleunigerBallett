@@ -98,13 +98,16 @@ if ($null -eq $Configurations -or $Configurations.Count -eq 0 -or ($Configuratio
     $selectedConfigurations.Add($configurationName) | Out-Null
   }
 } else {
-  foreach ($configurationName in $Configurations) {
-    if ([string]::IsNullOrWhiteSpace($configurationName)) { continue }
-    $normalized = $configurationName.Trim().ToLowerInvariant()
-    if (-not ($availableConfigurations -contains $normalized)) {
-      throw "Unknown configuration '$configurationName'. Supported values: all, $($availableConfigurations -join ', ')"
+  foreach ($item in $Configurations) {
+    if ([string]::IsNullOrWhiteSpace($item)) { continue }
+    foreach ($configurationName in $item -split ',') {
+      if ([string]::IsNullOrWhiteSpace($configurationName)) { continue }
+      $normalized = $configurationName.Trim().ToLowerInvariant()
+      if (-not ($availableConfigurations -contains $normalized)) {
+        throw "Unknown configuration '$configurationName'. Supported values: all, $($availableConfigurations -join ', ')"
+      }
+      $selectedConfigurations.Add($normalized) | Out-Null
     }
-    $selectedConfigurations.Add($normalized) | Out-Null
   }
 }
 
