@@ -63,11 +63,7 @@ jobs:
             -w "C:\workspace" `
             $image `
             powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\\workspace\\Scripts\\Windows\\Build-Windows.ps1" `
-            -BuildDir "C:\\workspace\\build" `
-            -BuildDirRelease "C:\\workspace\\build_release" `
-            -ClangProfilePreset "x64-ClangCL-Windows-Profile" `
-            -DisableIntegrationTestsMsvcDebug `
-            -CreateMsix
+            -Configurations clang-debug,clang-tsan,profile,clang-release
 
       # I limited the size of the builded package for storage restriction reasons on a github runner
       # see also the install commands in the bottom of the CMakeLists.txt
