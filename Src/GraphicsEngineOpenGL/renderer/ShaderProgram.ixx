@@ -1,9 +1,10 @@
 module;
 
+#include <string>
+#include <string_view>
 #include <glad/glad.h>
 #include <glm/vec3.hpp>
 #include <glm/mat4x4.hpp>
-#include <string>
 
 export module kataglyphis.opengl.shader_program;
 
