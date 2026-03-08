@@ -3,6 +3,7 @@ param(
   [switch]$SkipFormat,
   [switch]$SkipTidy,
   [switch]$SkipTests,
+  [switch]$SkipPerfTests,
   [switch]$SkipMsix,
   [switch]$DisableIntegrationTestsMsvcDebug
 )
@@ -291,23 +292,25 @@ try {
       Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathProfile -Preset $presetClangProfile -Configuration 'RelWithDebInfo' -CleanBuildRoot
     } | Out-Null
 
-    Invoke-BuildStep -Context $context -StepName 'Benchmarks' -Critical -Script {
-      Push-Location $buildPathProfile
-      try {
-        $benchmarkExe = Resolve-TestExecutable -BuildRoot $buildPathProfile -ExecutableName 'perfTestSuite.exe'
-        if (-not $benchmarkExe) {
-          Write-BuildLog -Context $context -Message 'Benchmark executable not found. Skipping benchmark run.'
-          return
-        }
+    if (-not $SkipPerfTests) {
+      Invoke-BuildStep -Context $context -StepName 'Benchmarks' -Critical -Script {
+        Push-Location $buildPathProfile
+        try {
+          $benchmarkExe = Resolve-TestExecutable -BuildRoot $buildPathProfile -ExecutableName 'perfTestSuite.exe'
+          if (-not $benchmarkExe) {
+            Write-BuildLog -Context $context -Message 'Benchmark executable not found. Skipping benchmark run.'
+            return
+          }
 
-        Invoke-BuildExternal -Context $context -File $benchmarkExe -Parameters @(
-          '--benchmark_out=results.json',
-          '--benchmark_out_format=json'
-        ) | Out-Null
-      } finally {
-        Pop-Location
-      }
-    } | Out-Null
+          Invoke-BuildExternal -Context $context -File $benchmarkExe -Parameters @(
+            '--benchmark_out=results.json',
+            '--benchmark_out_format=json'
+          ) | Out-Null
+        } finally {
+          Pop-Location
+        }
+      } | Out-Null
+    }
   }
 
   if (Test-ConfigurationSelected -Name 'clang-release') {
