@@ -26,9 +26,13 @@ Kataglyphis::VulkanInstance::VulkanInstance()
     VkApplicationInfo app_info{};
     app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     app_info.pApplicationName = "\\__/ Epic Graphics from hell \\__/";// custom name of app
-    app_info.applicationVersion = VK_MAKE_VERSION(1, 3, 1);// custom version of app
+    app_info.applicationVersion = VK_MAKE_VERSION(Kataglyphis::RendererConfig::projectVersionMajor,
+      Kataglyphis::RendererConfig::projectVersionMinor,
+      Kataglyphis::RendererConfig::projectVersionPatch);// custom version of app
     app_info.pEngineName = "Cataglyphis Renderer";// custom engine name
-    app_info.engineVersion = VK_MAKE_VERSION(1, 3, 3);// custom engine version
+    app_info.engineVersion = VK_MAKE_VERSION(Kataglyphis::RendererConfig::projectVersionMajor,
+      Kataglyphis::RendererConfig::projectVersionMinor,
+      Kataglyphis::RendererConfig::projectVersionPatch);// custom engine version
     app_info.apiVersion = Kataglyphis::RendererConfig::vulkanApiVersion;// the vulkan version
 
     // creation info for a VkInstance

@@ -8,6 +8,11 @@ export module kataglyphis.vulkan.config;
 export namespace Kataglyphis::RendererConfig {
 inline constexpr std::string_view vulkanRendererVersionMajor = "@PROJECT_VERSION_MAJOR@";
 inline constexpr std::string_view vulkanRendererVersionMinor = "@PROJECT_VERSION_MINOR@";
+inline constexpr std::string_view vulkanRendererVersionPatch = "@PROJECT_VERSION_PATCH@";
+
+inline constexpr std::uint32_t projectVersionMajor = @PROJECT_VERSION_MAJOR@u;
+inline constexpr std::uint32_t projectVersionMinor = @PROJECT_VERSION_MINOR@u;
+inline constexpr std::uint32_t projectVersionPatch = @PROJECT_VERSION_PATCH@u;
 
 inline constexpr std::string_view vulkanVersionMajor = "@VULKAN_VERSION_MAJOR@";
 inline constexpr std::string_view vulkanVersionMinor = "@VULKAN_VERSION_MINOR@";

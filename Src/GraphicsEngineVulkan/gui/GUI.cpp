@@ -55,7 +55,7 @@ void GUI::render()
     // ImGui::ShowDemoWindow();
 
     // render your GUI
-    ImGui::Begin("GUI v1.4.4");
+    ImGui::Begin("GUI v" PROJECT_VERSION);
 
     if (ImGui::CollapsingHeader("Hot shader reload")) {
         if (ImGui::Button("All shader!")) { guiRendererSharedVars.shader_hot_reload_triggered = true; }
