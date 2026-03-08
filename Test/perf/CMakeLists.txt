@@ -18,6 +18,7 @@ include(${WORKING_DIRECTORY}Src/GraphicsEngineVulkan/cmake/filters/SetShaderFilt
 include(${WORKING_DIRECTORY}Src/GraphicsEngineVulkan/cmake/filters/SetProjectFilters.cmake)
 include(${WORKING_DIRECTORY}Src/GraphicsEngineVulkan/cmake/filters/SetExternalLibsFilters.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
+include(${WORKING_DIRECTORY}Test/cmake/CommonTestBuild.cmake)
 
 include(cmake/SetTestFilters.cmake)
 
