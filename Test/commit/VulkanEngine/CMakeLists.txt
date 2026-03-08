@@ -17,8 +17,6 @@ include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
 
 set(COMMIT_TEST_SUITE commitTestSuite)
 
-kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES "${PROJECT_SRC_DIR}")
-kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${WORKING_DIRECTORY}Src/shared")
 
 file(GLOB_RECURSE RENDERER_COMMIT_TEST_FILTER "*.cpp")
 
@@ -39,43 +37,12 @@ file(GLOB_RECURSE VULKANRENDERER_HEADERS "${PROJECT_SRC_DIR}/*.hpp")
 
 add_executable(${COMMIT_TEST_SUITE})
 
-set(ShaderIncludes
-    -I
-    ${SHADER_SRC_DIR}
-    -I
-    ${SHADER_SRC_DIR}common/
-    -I
-    ${SHADER_SRC_DIR}pbr/
-    -I
-    ${SHADER_SRC_DIR}pbr/brdf/
-    -I
-    ${SHADER_SRC_DIR}hostDevice/
-    -I
-    ${PROJECT_SRC_DIR}
-    -I
-    ${PROJECT_SRC_DIR}/renderer/
-    -I
-    ${PROJECT_SRC_DIR}/renderer/pushConstants/
-    -I
-    ${PROJECT_SRC_DIR}/scene/)
-
-# Join the paths into a single space-separated string
-string(
-  REPLACE ";"
-          " "
-          ShaderIncludesString
-          "${ShaderIncludes}")
+kataglyphis_setup_vulkan_test_target(${COMMIT_TEST_SUITE})
 
 if(MYPROJECT_CMAKE_DEBUG_LOG)
   message(STATUS "Shader include string: ${ShaderIncludesString}")
 else()
   message(VERBOSE "Shader include string: ${ShaderIncludesString}")
-endif()
-
-if(RUST_FEATURES)
-  target_compile_definitions(${COMMIT_TEST_SUITE} PRIVATE USE_RUST=1)
-else()
-  target_compile_definitions(${COMMIT_TEST_SUITE} PRIVATE USE_RUST=0)
 endif()
 
 kataglyphis_apply_runtime_compile_definitions(
@@ -94,13 +61,6 @@ kataglyphis_apply_runtime_compile_definitions(
   "/../../../../ExternalLib/IMGUI/misc/fonts/"
   SHADER_INCLUDES_STRING
   "${ShaderIncludesString}")
-
-set(VULKAN_RENDERER_CONFIG_MODULE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
-set(VULKAN_RENDERER_CONFIG_MODULE_FILE "${VULKAN_RENDERER_CONFIG_MODULE_DIR}/VulkanRendererConfig.ixx")
-file(MAKE_DIRECTORY "${VULKAN_RENDERER_CONFIG_MODULE_DIR}")
-configure_file(${PROJECT_SRC_DIR}/VulkanRendererConfig.ixx.in "${VULKAN_RENDERER_CONFIG_MODULE_FILE}" @ONLY)
-set_source_files_properties("${VULKAN_RENDERER_CONFIG_MODULE_FILE}" PROPERTIES GENERATED TRUE)
-list(APPEND VULKAN_MODULE_INTERFACE_FILES "${VULKAN_RENDERER_CONFIG_MODULE_FILE}")
 
 target_sources(
   ${COMMIT_TEST_SUITE}
@@ -123,21 +83,6 @@ target_sources(
          FILES
          ${VULKANRENDERER_HEADERS}
          ${SHADER_HEADERS})
-
-target_sources(
-  ${COMMIT_TEST_SUITE}
-  PUBLIC FILE_SET
-         CXX_MODULES
-         TYPE
-         CXX_MODULES
-         BASE_DIRS
-         ${WORKING_DIRECTORY}Src/
-         ${VULKAN_RENDERER_CONFIG_MODULE_DIR}
-         FILES
-         ${VULKAN_MODULE_INTERFACE_FILES}
-         ${SHARED_MODULE_INTERFACE_FILES})
-
-set_target_properties(${COMMIT_TEST_SUITE} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
 
 target_include_directories(${COMMIT_TEST_SUITE} PRIVATE ${Vulkan_INCLUDE_DIRS})
 
@@ -163,16 +108,3 @@ target_link_libraries(
           spdlog)
 
 kataglyphis_configure_gtest_discovery(${COMMIT_TEST_SUITE})
-
-if(RUST_FEATURES)
-  target_link_libraries(${COMMIT_TEST_SUITE} PUBLIC kataglyphis_rustprojecttemplate)
-endif()
-
-# disable all warnings for our test suite
-if(MSVC)
-  target_compile_options(${COMMIT_TEST_SUITE} INTERFACE /w)
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-  target_compile_options(${COMMIT_TEST_SUITE} INTERFACE -w)
-else()
-  target_compile_options(${COMMIT_TEST_SUITE} INTERFACE -w)
-endif()

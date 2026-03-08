@@ -17,6 +17,7 @@ module;
 module kataglyphis.opengl.gui;
 
 import kataglyphis.shared.frontend.common_gui_panels;
+import kataglyphis.shared.frontend.gui_graphic_settings_panels;
 import kataglyphis.shared.imgui.fonts;
 import kataglyphis.shared.imgui.style;
 
@@ -29,7 +30,7 @@ import kataglyphis.opengl.texture;
 import kataglyphis.opengl.repeat_mode;
 
 GUI::GUI()
-  : direcional_light_radiance(4.0f), cloud_speed(6), cloud_scale(0.63f), cloud_density(0.493f),
+  : cloud_speed(6), cloud_scale(0.63f), cloud_density(0.493f),
     cloud_pillowness(0.966f), cloud_cirrus_effect(0.034f), cloud_powder_effect(true), cloud_num_march_steps(8),
     cloud_num_march_steps_to_light(3), shadow_map_res_index(3), shadow_resolution_changed(false),
     num_shadow_cascades(NUM_CASCADES), pcf_radius(2), cascaded_shadow_intensity(0.65f)
@@ -37,13 +38,14 @@ GUI::GUI()
     // give some arbitrary values; we will update these values after 1 frame :)
 
 
-    this->directional_light_color[0] = 1;
-    this->directional_light_color[1] = 1;
-    this->directional_light_color[2] = 1;
+    this->guiSceneSharedVars.direcional_light_radiance = 4.0f;
+    this->guiSceneSharedVars.directional_light_color[0] = 1.0f;
+    this->guiSceneSharedVars.directional_light_color[1] = 1.0f;
+    this->guiSceneSharedVars.directional_light_color[2] = 1.0f;
 
-    this->directional_light_direction[0] = -0.1F;
-    this->directional_light_direction[1] = -1.F;
-    this->directional_light_direction[2] = -0.1F;
+    this->guiSceneSharedVars.directional_light_direction[0] = -0.1f;
+    this->guiSceneSharedVars.directional_light_direction[1] = -1.0f;
+    this->guiSceneSharedVars.directional_light_direction[2] = -0.1f;
 
 
     this->cloud_mesh_scale[0] = 1000.F;
@@ -116,21 +118,19 @@ void GUI::render(bool loading_in_progress, float progress, bool &shader_hot_relo
         ImGui::Separator();
     }
 
-    if (ImGui::CollapsingHeader("Hot shader reload")) {
-        if (ImGui::Button("Hot reload ALL shaders!")) { shader_hot_reload_triggered = true; }
-    }
+    Kataglyphis::Frontend::renderHotShaderReload(shader_hot_reload_triggered);
 
     ImGui::Separator();
 
     if (ImGui::CollapsingHeader("Graphic Settings")) {
         if (ImGui::TreeNode("Directional Light")) {
             ImGui::Separator();
-            ImGui::SliderFloat("Radiance", &direcional_light_radiance, 0.0F, 50.0F);
+            ImGui::SliderFloat("Radiance", &guiSceneSharedVars.direcional_light_radiance, 0.0F, 50.0F);
             ImGui::Separator();
             // Edit a color (stored as ~4 floats)
-            ImGui::ColorEdit3("Directional Light Color", directional_light_color);
+            ImGui::ColorEdit3("Directional Light Color", guiSceneSharedVars.directional_light_color);
             ImGui::Separator();
-            ImGui::SliderFloat3("Light Direction", directional_light_direction, -1.F, 1.0F);
+            ImGui::SliderFloat3("Light Direction", guiSceneSharedVars.directional_light_direction, -1.F, 1.0F);
 
             if (ImGui::TreeNode("Shadows")) {
                 int const shadow_map_res_index_before = shadow_map_res_index;
@@ -203,17 +203,17 @@ void GUI::render(bool loading_in_progress, float progress, bool &shader_hot_relo
 void GUI::update_user_input(const std::shared_ptr<Scene> &scene)
 {
     std::shared_ptr<DirectionalLight> const main_light = scene->get_sun();
-    main_light->set_radiance(direcional_light_radiance);
+    main_light->set_radiance(guiSceneSharedVars.direcional_light_radiance);
     main_light->get_shadow_map()->set_intensity(cascaded_shadow_intensity);
     main_light->get_shadow_map()->set_pcf_radius(pcf_radius);
 
     glm::vec3 const new_main_light_color(
-      directional_light_color[0], directional_light_color[1], directional_light_color[2]);
+      guiSceneSharedVars.directional_light_color[0], guiSceneSharedVars.directional_light_color[1], guiSceneSharedVars.directional_light_color[2]);
 
     main_light->set_color(new_main_light_color);
 
     glm::vec3 const new_main_light_pos(
-      directional_light_direction[0], directional_light_direction[1], directional_light_direction[2]);
+      guiSceneSharedVars.directional_light_direction[0], guiSceneSharedVars.directional_light_direction[1], guiSceneSharedVars.directional_light_direction[2]);
 
     main_light->set_direction(new_main_light_pos);
 

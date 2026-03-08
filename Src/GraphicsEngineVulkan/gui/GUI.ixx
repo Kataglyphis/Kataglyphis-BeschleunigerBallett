@@ -8,7 +8,7 @@ export module kataglyphis.vulkan.gui;
 import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.gui_renderer_shared_vars;
-import kataglyphis.vulkan.gui_scene_shared_vars;
+import kataglyphis.shared.frontend.gui_scene_shared_vars;
 import kataglyphis.vulkan.window;
 
 export namespace Kataglyphis::Frontend {
@@ -23,7 +23,7 @@ class GUI
       const VkCommandPool &graphics_command_pool,
       uint32_t image_count);
 
-    GUISceneSharedVars getGuiSceneSharedVars() { return guiSceneSharedVars; };
+    Kataglyphis::Frontend::GUISceneSharedVars getGuiSceneSharedVars() { return guiSceneSharedVars; };
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &getGuiRendererSharedVars()
     {
         return guiRendererSharedVars;
@@ -48,7 +48,7 @@ class GUI
     VkDescriptorPool gui_descriptor_pool{ VK_NULL_HANDLE };
     Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
 
-    GUISceneSharedVars guiSceneSharedVars;
+    Kataglyphis::Frontend::GUISceneSharedVars guiSceneSharedVars;
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars guiRendererSharedVars;
 
     bool renderUserSelectionForRRT = true;

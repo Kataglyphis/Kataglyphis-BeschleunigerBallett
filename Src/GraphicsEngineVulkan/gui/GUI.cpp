@@ -12,6 +12,7 @@ module;
 module kataglyphis.vulkan.gui;
 
 import kataglyphis.shared.frontend.common_gui_panels;
+import kataglyphis.shared.frontend.gui_graphic_settings_panels;
 import kataglyphis.shared.imgui.fonts;
 import kataglyphis.shared.imgui.style;
 
@@ -57,9 +58,7 @@ void GUI::render()
     // render your GUI
     ImGui::Begin("GUI v" PROJECT_VERSION);
 
-    if (ImGui::CollapsingHeader("Hot shader reload")) {
-        if (ImGui::Button("All shader!")) { guiRendererSharedVars.shader_hot_reload_triggered = true; }
-    }
+    Kataglyphis::Frontend::renderHotShaderReload(guiRendererSharedVars.shader_hot_reload_triggered);
 
     ImGui::Separator();
 
@@ -91,17 +90,7 @@ void GUI::render()
     ImGui::Separator();
 
     if (ImGui::CollapsingHeader("Graphic Settings")) {
-        if (ImGui::TreeNode("Directional Light")) {
-            ImGui::Separator();
-            ImGui::SliderFloat("Ambient intensity", &guiSceneSharedVars.direcional_light_radiance, 0.0F, 50.0F);
-            ImGui::Separator();
-            // Edit a color (stored as ~4 floats)
-            ImGui::ColorEdit3("Directional Light Color", guiSceneSharedVars.directional_light_color);
-            ImGui::Separator();
-            ImGui::SliderFloat3("Light Direction", guiSceneSharedVars.directional_light_direction, -1.F, 1.0F);
-
-            ImGui::TreePop();
-        }
+        Kataglyphis::Frontend::renderDirectionalLightSettings(guiSceneSharedVars);
     }
 
     ImGui::Separator();

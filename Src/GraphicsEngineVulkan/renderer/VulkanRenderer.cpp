@@ -43,7 +43,7 @@ module kataglyphis.vulkan.renderer;
 
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.gui_renderer_shared_vars;
-import kataglyphis.vulkan.gui_scene_shared_vars;
+import kataglyphis.shared.frontend.gui_scene_shared_vars;
 import kataglyphis.vulkan.object_description;
 import kataglyphis.vulkan.queue_family_indices;
 import kataglyphis.vulkan.debug;
@@ -142,7 +142,7 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
   Camera *camera_data,
   Kataglyphis::Frontend::Window *window_data)
 {
-    const GUISceneSharedVars guiSceneSharedVars = scene_data->getGuiSceneSharedVars();
+    const Kataglyphis::Frontend::GUISceneSharedVars guiSceneSharedVars = scene_data->getGuiSceneSharedVars();
 
     globalUBO.view = camera_data->calculate_viewmatrix();
     globalUBO.projection = glm::perspective(glm::radians(camera_data->get_fov()),

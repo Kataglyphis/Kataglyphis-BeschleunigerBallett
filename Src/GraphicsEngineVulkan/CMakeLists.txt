@@ -1,14 +1,5 @@
-# update current positions
-set(PROJECT_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/)
-set(PROJECT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/)
-set(EXTERNAL_LIB_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}../../ExternalLib/)
-set(SHADER_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/Shaders/)
-
-include(cmake/filters/SetShaderFilters.cmake)
-include(cmake/filters/SetProjectFilters.cmake)
-include(cmake/SetSourceGroups.cmake)
-include(cmake/filters/SetExternalLibsFilters.cmake)
-include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/EngineBackendMacros.cmake)
+kataglyphis_setup_engine_dirs_and_filters()
 
 file(GLOB_RECURSE VULKANRENDERER_SOURCES "*.cpp")
 
@@ -30,7 +21,7 @@ kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${CMAKE_CUR
 # add the executable
 add_executable(${PROJECT_NAME})
 
-set_target_properties(${PROJECT_NAME} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
+kataglyphis_setup_engine_backend(${PROJECT_NAME} Vulkan VULKAN)
 
 set(ShaderIncludes
     -I
@@ -61,12 +52,6 @@ string(
 
 message("The shader include string is the following: ${ShaderIncludesString}")
 
-if(RUST_FEATURES)
-  target_compile_definitions(${PROJECT_NAME} PRIVATE USE_RUST=1)
-else()
-  target_compile_definitions(${PROJECT_NAME} PRIVATE USE_RUST=0)
-endif()
-
 kataglyphis_apply_runtime_compile_definitions(
   ${PROJECT_NAME}
   RESOURCE_PATH_NON_MSVC
@@ -83,13 +68,6 @@ kataglyphis_apply_runtime_compile_definitions(
   "/../../ExternalLib/IMGUI/misc/fonts/"
   SHADER_INCLUDES_STRING
   "${ShaderIncludesString}")
-
-set(VULKAN_RENDERER_CONFIG_MODULE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
-set(VULKAN_RENDERER_CONFIG_MODULE_FILE "${VULKAN_RENDERER_CONFIG_MODULE_DIR}/VulkanRendererConfig.ixx")
-file(MAKE_DIRECTORY "${VULKAN_RENDERER_CONFIG_MODULE_DIR}")
-configure_file(VulkanRendererConfig.ixx.in "${VULKAN_RENDERER_CONFIG_MODULE_FILE}" @ONLY)
-set_source_files_properties("${VULKAN_RENDERER_CONFIG_MODULE_FILE}" PROPERTIES GENERATED TRUE)
-list(APPEND VULKAN_MODULE_INTERFACE_FILES "${VULKAN_RENDERER_CONFIG_MODULE_FILE}")
 
 target_sources(
   ${PROJECT_NAME}
@@ -111,19 +89,6 @@ target_sources(
          FILES
          ${VULKANRENDERER_HEADERS}
          ${SHADER_HEADERS})
-
-target_sources(
-  ${PROJECT_NAME}
-  PUBLIC FILE_SET
-         CXX_MODULES
-         TYPE
-         CXX_MODULES
-         BASE_DIRS
-         ${CMAKE_CURRENT_SOURCE_DIR}/..
-         ${VULKAN_RENDERER_CONFIG_MODULE_DIR}
-         FILES
-         ${VULKAN_MODULE_INTERFACE_FILES}
-         ${SHARED_MODULE_INTERFACE_FILES})
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS})
 
@@ -148,11 +113,6 @@ target_link_libraries(
 if(RUST_FEATURES)
   target_link_libraries(${PROJECT_NAME} PUBLIC kataglyphis_rustprojecttemplate kataglyphis_rustprojecttemplate_bridge)
 endif()
-
-# Enable ASan and UBSan in Debug mode on Linux
-target_compile_options(${PROJECT_NAME} PRIVATE $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>
-                                               $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fno-omit-frame-pointer>)
-target_link_options(${PROJECT_NAME} PRIVATE $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>)
 
 # compile shaders as part of my cmake routine right away :)
 include(cmake/CompileShadersToSPV.cmake)

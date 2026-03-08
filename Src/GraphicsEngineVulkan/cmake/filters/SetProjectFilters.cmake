@@ -88,7 +88,6 @@ set(SCENE_FILTER
     ${PROJECT_SCENE_SRC_DIR}Vertex.ixx
     ${PROJECT_SCENE_INCLUDE_DIR}Scene.hpp
     ${PROJECT_SCENE_SRC_DIR}SceneConfig.ixx
-    ${PROJECT_SCENE_SRC_DIR}GUISceneSharedVars.ixx
     ${PROJECT_SCENE_SRC_DIR}ObjectDescription.ixx
     ${PROJECT_SCENE_INCLUDE_DIR}Texture.hpp)
 # ---- SCENE FILTER  --- END

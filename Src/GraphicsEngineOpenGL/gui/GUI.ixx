@@ -3,6 +3,7 @@ module;
 #include <memory>
 
 export module kataglyphis.opengl.gui;
+import kataglyphis.shared.frontend.gui_scene_shared_vars;
 
 import kataglyphis.opengl.window;
 import kataglyphis.opengl.scene;
@@ -24,9 +25,7 @@ export class GUI
   private:
     std::unique_ptr<Texture> logo_tex;
 
-    float direcional_light_radiance;
-    float directional_light_color[3]{};
-    float directional_light_direction[3]{};
+    Kataglyphis::Frontend::GUISceneSharedVars guiSceneSharedVars;
 
     int cloud_speed;
     float cloud_scale;
