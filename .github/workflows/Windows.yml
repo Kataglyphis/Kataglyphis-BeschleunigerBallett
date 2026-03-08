@@ -64,7 +64,7 @@ jobs:
             $image `
             powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\\workspace\\Scripts\\Windows\\Build-Windows.ps1" `
             -Configurations all `
-            -SkipFormat -SkipTidy -SkipTests
+            -SkipFormat -SkipTidy -SkipTests -SkipPerfTests
 
       # I limited the size of the builded package for storage restriction reasons on a github runner
       # see also the install commands in the bottom of the CMakeLists.txt
