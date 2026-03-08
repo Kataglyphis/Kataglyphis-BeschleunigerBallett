@@ -334,7 +334,14 @@ try {
 
       $msixName = Get-OrDefault $env:MSIX_PACKAGE_NAME (Get-ConfigValue -Config $config -Path 'Msix.PackageNameDefault')
       $msixPublisher = Get-OrDefault $env:MSIX_PUBLISHER (Get-ConfigValue -Config $config -Path 'Msix.Publisher')
-      $msixVersion = Get-OrDefault $env:MSIX_VERSION (Get-ConfigValue -Config $config -Path 'Msix.Version')
+      
+      $versionFile = Join-Path $workspacePath 'version.txt'
+      if (Test-Path $versionFile) {
+        $msixVersion = (Get-Content -Path $versionFile).Trim() + '.0'
+      } else {
+        $msixVersion = Get-OrDefault $env:MSIX_VERSION (Get-ConfigValue -Config $config -Path 'Msix.Version')
+      }
+      
       $msixMinVersion = Get-OrDefault $env:MSIX_MIN_VERSION (Get-ConfigValue -Config $config -Path 'Msix.MinVersion')
 
       $msixStaging = Join-Path $buildPathRelease 'msix-staging'

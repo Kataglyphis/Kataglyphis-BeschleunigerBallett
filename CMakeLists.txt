@@ -1,12 +1,18 @@
 cmake_minimum_required(VERSION 4.2.0)
 
 # set the project name
+file(READ "version.txt" PROJECT_VERSION_STR)
+string(STRIP "${PROJECT_VERSION_STR}" PROJECT_VERSION_STR)
+
 project(
   GraphicsEngine
-  VERSION 1.4.2
+  VERSION ${PROJECT_VERSION_STR}
   DESCRIPTION "Epic GPU accelerated rendering, compute engine using Vulkan and C++,C,Rust"
   HOMEPAGE_URL "https://jonasheinle.de/"
   LANGUAGES NONE)
+
+# Make version available to C++ code globally
+add_compile_definitions(PROJECT_VERSION="${PROJECT_VERSION_STR}")
 
 set(AUTHOR "Jonas Heinle")
 

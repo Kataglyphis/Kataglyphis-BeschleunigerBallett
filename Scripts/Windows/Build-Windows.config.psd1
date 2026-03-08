@@ -22,7 +22,7 @@
   Msix = @{
     PackageNameDefault = 'GraphicsEngine'
     Publisher = 'CN=Jonas Heinle'
-    Version = '1.4.2.0'
+    Version = '1.5.0.0'
     MinVersion = '10.0.17763.0'
     ManifestTemplate = 'Scripts/Windows/AppxManifest.xml.template'
   }

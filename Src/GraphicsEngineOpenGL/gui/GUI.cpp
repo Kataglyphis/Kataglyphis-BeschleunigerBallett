@@ -107,7 +107,7 @@ void GUI::render(bool loading_in_progress, float progress, bool &shader_hot_relo
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
     // render your GUI
-    ImGui::Begin("GUI v1.3.3");
+    ImGui::Begin("GUI v" PROJECT_VERSION);
 
     if (loading_in_progress) {
         ImGui::ProgressBar(progress, ImVec2(0.0F, 0.0F));

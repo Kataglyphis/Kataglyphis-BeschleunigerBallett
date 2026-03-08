@@ -9,7 +9,8 @@
 project = "Kataglyphis-Renderer"
 copyright = "2024, Jonas Heinle"
 author = "Jonas Heinle"
-release = "1.3"
+with open("../../version.txt", "r") as f:
+    release = f.read().strip()
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
