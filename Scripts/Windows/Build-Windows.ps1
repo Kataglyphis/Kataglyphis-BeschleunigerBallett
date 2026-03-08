@@ -2,6 +2,7 @@ param(
   [string[]]$Configurations = @('all'),
   [switch]$SkipFormat,
   [switch]$SkipTidy,
+  [switch]$SkipTests,
   [switch]$SkipMsix,
   [switch]$DisableIntegrationTestsMsvcDebug
 )
@@ -227,15 +228,17 @@ try {
       Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathMsvc -Preset $presetMsvcDebug -Configuration 'Debug' -CleanBuildRoot
     } | Out-Null
 
-    Invoke-BuildStep -Context $context -StepName 'Test: MSVC Debug' -Critical -Script {
-      $excludeRegex = @()
-      if ($DisableIntegrationTestsMsvcDebug) {
-        Write-BuildLogWarning -Context $context -Message 'MSVC Debug integration tests disabled via -DisableIntegrationTestsMsvcDebug.'
-        $excludeRegex += '^Integration\.'
-      }
+    if (-not $SkipTests) {
+      Invoke-BuildStep -Context $context -StepName 'Test: MSVC Debug' -Critical -Script {
+        $excludeRegex = @()
+        if ($DisableIntegrationTestsMsvcDebug) {
+          Write-BuildLogWarning -Context $context -Message 'MSVC Debug integration tests disabled via -DisableIntegrationTestsMsvcDebug.'
+          $excludeRegex += '^Integration\.'
+        }
 
-      Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathMsvc -Configuration 'Debug' -ExcludeRegex $excludeRegex -RuntimeFlavor 'Msvc'
-    } | Out-Null
+        Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathMsvc -Configuration 'Debug' -ExcludeRegex $excludeRegex -RuntimeFlavor 'Msvc'
+      } | Out-Null
+    }
   }
 
   if (Test-ConfigurationSelected -Name 'msvc-release') {
@@ -255,9 +258,11 @@ try {
       } | Out-Null
     }
 
-    Invoke-BuildStep -Context $context -StepName 'Test: Clang Debug' -Critical -Script {
-      Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathClang -Configuration 'Debug' -RuntimeFlavor 'Clang'
-    } | Out-Null
+    if (-not $SkipTests) {
+      Invoke-BuildStep -Context $context -StepName 'Test: Clang Debug' -Critical -Script {
+        Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathClang -Configuration 'Debug' -RuntimeFlavor 'Clang'
+      } | Out-Null
+    }
   }
 
   if (Test-ConfigurationSelected -Name 'clang-tsan') {
@@ -275,7 +280,9 @@ try {
 
       Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathClangTsan -Preset $presetClangDebugTsan -Configuration 'Debug' -CleanBuildRoot
 
-      Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathClangTsan -Configuration 'Debug' -RuntimeFlavor 'Clang'
+      if (-not $SkipTests) {
+        Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathClangTsan -Configuration 'Debug' -RuntimeFlavor 'Clang'
+      }
     }
   }
 
