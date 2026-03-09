@@ -1,61 +1,45 @@
+module;
 
-#include "util/File.hpp"
+#include "../../shared/util/FileLocationHolder.hpp"
+
 #include "spdlog/spdlog.h"
 
+#include <cstddef>
 #include <fstream>
-#include <iostream>
+#include <string>
+#include <vector>
 
-Kataglyphis::File::File(const std::string &file_location) { this->file_location = file_location; }
+module kataglyphis.vulkan.file;
 
-std::string Kataglyphis::File::read()
+import kataglyphis.shared.util.file_reader;
+
+Kataglyphis::File::File(const std::string &file_location) : Kataglyphis::Shared::FileLocationHolder(file_location) {}
+
+auto Kataglyphis::File::read() -> std::string
 {
-    std::string content;
-    std::ifstream file_stream(file_location, std::ios::in);
-
-    if (!file_stream.is_open()) {
-        spdlog::error("Failed to read %s. File does not exist.", file_location.c_str());
+    if (!Kataglyphis::Shared::fileExists(get_file_location())) {
+        spdlog::default_logger_raw()->log(
+          spdlog::level::err, std::string("Failed to read ") + get_file_location() + ". File does not exist.");
         return "";
     }
 
-    std::string line = "";
-    while (!file_stream.eof()) {
-        std::getline(file_stream, line);
-        content.append(line + "\n");
-    }
-
-    file_stream.close();
+    std::string const content = Kataglyphis::Shared::readTextFile(get_file_location());
     return content;
 }
 
-std::vector<char> Kataglyphis::File::readCharSequence()
+auto Kataglyphis::File::readCharSequence() -> std::vector<char>
 {
-    // open stream from given file
-    // std::ios::binary tells stream to read file as binary
-    // std::ios:ate tells stream to start reading from end of file
-    std::ifstream file(file_location, std::ios::binary | std::ios::ate);
+    if (!Kataglyphis::Shared::fileExists(get_file_location())) {
+        spdlog::default_logger_raw()->log(
+          spdlog::level::err, std::string("Failed to open a file on location: ") + get_file_location() + "!");
+        return {};
+    }
 
-    // check if file stream sucessfully opened
-    if (!file.is_open()) { spdlog::error("Failed to open a file on location: {}!", file_location); }
-
-    size_t file_size = (size_t)file.tellg();
-    std::vector<char> file_buffer(file_size);
-
-    // move read position to start of file
-    file.seekg(0);
-
-    // read the file data into the buffer (stream "file_size" in total)
-    file.read(file_buffer.data(), file_size);
-
-    file.close();
+    std::vector<char> const file_buffer = Kataglyphis::Shared::readBinaryFile(get_file_location());
 
     return file_buffer;
 }
 
-std::string Kataglyphis::File::getBaseDir()
-{
-    if (file_location.find_last_of("/\\") != std::string::npos)
-        return file_location.substr(0, file_location.find_last_of("/\\"));
-    return "";
-}
+auto Kataglyphis::File::getBaseDir() -> std::string { return Kataglyphis::Shared::getBaseDir(get_file_location()); }
 
-Kataglyphis::File::~File() {}
+Kataglyphis::File::~File() = default;

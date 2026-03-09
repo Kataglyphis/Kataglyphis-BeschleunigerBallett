@@ -1,6 +1,24 @@
-#include "Noise.hpp"
+module;
 
+#include <glad/glad.h>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <iostream>
+#include <memory>
+#include <random>
 #include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "hostDevice/bindings.hpp"
+#include "hostDevice/host_device_shared.hpp"
+
+module kataglyphis.opengl.noise;
+
+import kataglyphis.opengl.compute_shader_program;
 
 Noise::Noise()
   :
@@ -71,7 +89,8 @@ void Noise::generate_res128_noise_texture()
     glActiveTexture(GL_TEXTURE0 + NOISE_128D_TEXTURES_SLOT);
     glBindTexture(GL_TEXTURE_3D, texture_1_id);
 
-    glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA32F, texture_dim_1, texture_dim_1, texture_dim_1, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexImage3D(
+      GL_TEXTURE_3D, 0, GL_RGBA32F, texture_dim_1, texture_dim_1, texture_dim_1, 0, GL_RGBA, GL_FLOAT, nullptr);
 
     glBindImageTexture(NOISE_128D_IMAGE_SLOT, texture_1_id, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
 
@@ -91,7 +110,8 @@ void Noise::generate_res32_noise_texture()
     glActiveTexture(GL_TEXTURE0 + NOISE_32D_TEXTURES_SLOT);
     glBindTexture(GL_TEXTURE_3D, texture_2_id);
 
-    glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA32F, texture_dim_2, texture_dim_2, texture_dim_2, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexImage3D(
+      GL_TEXTURE_3D, 0, GL_RGBA32F, texture_dim_2, texture_dim_2, texture_dim_2, 0, GL_RGBA, GL_FLOAT, nullptr);
 
     glBindImageTexture(NOISE_32D_IMAGE_SLOT, texture_2_id, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F);
 
@@ -112,7 +132,8 @@ void Noise::print_comp_shader_capabilities()
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 1, &work_grp_cnt[1]);
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 2, &work_grp_cnt[2]);
 
-    printf("max global (total) work group counts x:%i y:%i z:%i\n", work_grp_cnt[0], work_grp_cnt[1], work_grp_cnt[2]);
+    std::cout << "max global (total) work group counts x:" << work_grp_cnt[0] << " y:" << work_grp_cnt[1]
+              << " z:" << work_grp_cnt[2] << '\n';
 
     int work_grp_size[3];
 
@@ -120,10 +141,8 @@ void Noise::print_comp_shader_capabilities()
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 1, &work_grp_size[1]);
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 2, &work_grp_size[2]);
 
-    printf("max local (in one shader) work group sizes x:%i y:%i z:%i\n",
-      work_grp_size[0],
-      work_grp_size[1],
-      work_grp_size[2]);
+    std::cout << "max local (in one shader) work group sizes x:" << work_grp_size[0] << " y:" << work_grp_size[1]
+              << " z:" << work_grp_size[2] << '\n';
 }
 
 void Noise::update()
@@ -163,11 +182,11 @@ void Noise::generate_cells(GLuint num_cells_per_axis, GLuint cell_index)
     std::uniform_real_distribution<float> dis(0, 1);
 
     // depth
-    for (int i = 0; i < static_cast<int>(num_cells_per_axis); i++) {
+    for (int i = 0; std::cmp_less(i, num_cells_per_axis); i++) {
         // height
-        for (int k = 0; k < static_cast<int>(num_cells_per_axis); k++) {
+        for (int k = 0; std::cmp_less(k, num_cells_per_axis); k++) {
             // width
-            for (int m = 0; m < static_cast<int>(num_cells_per_axis); m++) {
+            for (int m = 0; std::cmp_less(m, num_cells_per_axis); m++) {
                 // from:
                 // https://www.khronos.org/registry/OpenGL-Refpages/gl4/html/glTexImage3D.xhtml
                 // "The first element corresponds to the lower left corner of the
@@ -178,12 +197,12 @@ void Noise::generate_cells(GLuint num_cells_per_axis, GLuint cell_index)
 
                 const GLfloat random_offset[3] = { dis(gen64), dis(gen64), dis(gen64) };
 
-                GLfloat position[3] = { (m + random_offset[0]), (k + random_offset[1]), (i + random_offset[2]) };
+                GLfloat const position[3] = { (m + random_offset[0]), (k + random_offset[1]), (i + random_offset[2]) };
 
                 cell_data[cell_index].push_back(position[0]);
                 cell_data[cell_index].push_back(position[1]);
                 cell_data[cell_index].push_back(position[2]);
-                cell_data[cell_index].push_back(1.0f);
+                cell_data[cell_index].push_back(1.0F);
 
                 // i leave this more c-style approach for my further me
                 // to clearify things :)
@@ -266,17 +285,17 @@ void Noise::create_res32_noise()
     glBindTexture(GL_TEXTURE_3D, 0);
 }
 
-void Noise::read_res128_noise()
+void Noise::read_res128_noise() const
 {
-    GLuint texture_index = GL_TEXTURE0 + NOISE_128D_TEXTURES_SLOT;
-    glActiveTexture((GLenum)texture_index);
+    GLuint const texture_index = GL_TEXTURE0 + NOISE_128D_TEXTURES_SLOT;
+    glActiveTexture(static_cast<GLenum>(texture_index));
     glBindTexture(GL_TEXTURE_3D, texture_1_id);
 }
 
-void Noise::read_res32_noise()
+void Noise::read_res32_noise() const
 {
-    GLuint texture_index = GL_TEXTURE0 + NOISE_32D_TEXTURES_SLOT;
-    glActiveTexture((GLenum)texture_index);
+    GLuint const texture_index = GL_TEXTURE0 + NOISE_32D_TEXTURES_SLOT;
+    glActiveTexture(static_cast<GLenum>(texture_index));
     glBindTexture(GL_TEXTURE_3D, texture_2_id);
 }
 

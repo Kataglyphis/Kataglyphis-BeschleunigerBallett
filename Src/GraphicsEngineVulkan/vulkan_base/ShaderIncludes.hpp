@@ -1,5 +1,4 @@
 #pragma once
-#include "renderer/VulkanRendererConfig.hpp"
 #include "spdlog/spdlog.h"
 #include <filesystem>
 #include <string>
@@ -9,7 +8,8 @@ namespace Kataglyphis::ShaderIncludes {
 
 std::string getShaderIncludes()
 {
-    spdlog::info("The shader includes are the following: {}", ShaderIncludesString);
+    spdlog::default_logger_raw()->log(
+      spdlog::level::info, std::string("The shader includes are the following: ") + ShaderIncludesString);
 
     return ShaderIncludesString;
 }

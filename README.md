@@ -4,13 +4,13 @@
   </a>
 
   <h1>Kataglyphis-BeschleunigerBallett</h1>
- 
-  <h4>A graphics engine built on top of Vulkan+OpenGL. Serves also as playground 
-for learning various best practices in Graphic APIs, CMake, Rust, ... 🌋🌋🌋 </h4>
-</div>
 
+  <h4>A modern graphics engine built on top of Vulkan+OpenGL. Serves also as playground 
+for learning various best practices in Graphic APIs, CMake, Rust, Modern C++ ... 🌋🌋🌋 </h4>
+</div>
+ 
 <div align="center">
-  <br>
+  <br> 
   <a href="https://jonasheinle.de"><img src="images/vulkan-logo.png" alt="VulkanEngine" width="200"></a>
   <a href="https://jonasheinle.de"><img src="images/Engine_logo.png" alt="VulkanEngine" width="200"></a>
   <a href="https://jonasheinle.de"><img src="images/glm_logo.png" alt="VulkanEngine" width="200"></a>
@@ -207,6 +207,40 @@ For more information regarding the build environment refer to my
   ```sh
   $ {WORKING_DIR}/GraphicsEngineVulkan/buildEngine[.sh/.bat]
   ```
+
+### Packaging
+
+On Linux, binary packages are generated with CPack (`TGZ` and `DEB`).
+Use this repeatable workflow after a clean checkout or after deleting build folders:
+
+1. Configure and build in `Release` mode
+2. Generate release packages (`TGZ`, `DEB`)
+3. Generate AppImage packages as standard packaging step
+
+```sh
+# 1) Release configure + build
+bash ./Scripts/Linux/cmake-configure-build.sh \
+  --vulkan-setup-script /opt/vulkan/1.4.341.1/setup-env.sh \
+  --preset linux-release-clang \
+  --build-dir build-release \
+  --build-config Release
+
+# 2) CPack package target (TGZ + DEB)
+bash ./Scripts/Linux/cmake-configure-build.sh \
+  --vulkan-setup-script /opt/vulkan/1.4.341.1/setup-env.sh \
+  --build-dir build-release \
+  --skip-configure true \
+  --build-target package
+
+# 3) Standard AppImage packaging
+cmake -S . -B build-release-appimage \
+  --preset linux-release-clang \
+  -DCPACK_ENABLE_APPIMAGE=ON
+cmake --build build-release-appimage --config Release --target package
+```
+
+Generated artifacts are written to the selected build folder (for example `*.tar.gz`, `*.deb`, and AppImage artifacts).
+For AppImage builds, `appimagetool` must be available in your `PATH`.
 
 # Shaders
 I provide two ways for compiling shaders with. Hence if you want to add new

@@ -1,16 +1,52 @@
-#include "vulkan_base/VulkanBuffer.hpp"
+module;
 
-#include <stdexcept>
+#include <cstdint>
+#include <utility>
+#include <vulkan/vulkan_core.h>
 
 #include "common/MemoryHelper.hpp"
 #include "common/Utilities.hpp"
+#include "spdlog/spdlog.h"
 
-Kataglyphis::VulkanBuffer::VulkanBuffer() {}
+module kataglyphis.vulkan.buffer;
+
+import kataglyphis.vulkan.device;
+
+Kataglyphis::VulkanBuffer::VulkanBuffer() = default;
+
+Kataglyphis::VulkanBuffer::VulkanBuffer(VulkanBuffer &&other) noexcept
+  : device(other.device), buffer(other.buffer), bufferMemory(other.bufferMemory), created(other.created)
+{
+    other.device = VK_NULL_HANDLE;
+    other.buffer = VK_NULL_HANDLE;
+    other.bufferMemory = VK_NULL_HANDLE;
+    other.created = false;
+}
+
+auto Kataglyphis::VulkanBuffer::operator=(VulkanBuffer &&other) noexcept -> VulkanBuffer &
+{
+    if (this != &other) {
+        cleanUp();
+
+        device = other.device;
+        buffer = other.buffer;
+        bufferMemory = other.bufferMemory;
+        created = other.created;
+
+        other.device = VK_NULL_HANDLE;
+        other.buffer = VK_NULL_HANDLE;
+        other.bufferMemory = VK_NULL_HANDLE;
+        other.created = false;
+    }
+
+    return *this;
+}
 
 void Kataglyphis::VulkanBuffer::create(VulkanDevice *device,
   VkDeviceSize buffer_size,
   VkBufferUsageFlags buffer_usage_flags,
-  VkMemoryPropertyFlags buffer_propertiy_flags)
+  VkMemoryPropertyFlags buffer_propertiy_flags,
+  VkMemoryAllocateFlags buffer_allocate_flags)
 {
     this->device = device;
 
@@ -34,8 +70,16 @@ void Kataglyphis::VulkanBuffer::create(VulkanDevice *device,
     VkMemoryAllocateInfo memory_alloc_info{};
     memory_alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     memory_alloc_info.allocationSize = memory_requirements.size;
+    memory_alloc_info.pNext = nullptr;
 
-    uint32_t memory_type_index = Kataglyphis::find_memory_type_index(
+    VkMemoryAllocateFlagsInfo memory_allocate_flags_info{};
+    if (buffer_allocate_flags != 0) {
+        memory_allocate_flags_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+        memory_allocate_flags_info.flags = buffer_allocate_flags;
+        memory_alloc_info.pNext = &memory_allocate_flags_info;
+    }
+
+    uint32_t const memory_type_index = Kataglyphis::find_memory_type_index(
       device->getPhysicalDevice(), memory_requirements.memoryTypeBits, buffer_propertiy_flags);
 
     // VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |		/* memory is visible to
@@ -58,10 +102,14 @@ void Kataglyphis::VulkanBuffer::create(VulkanDevice *device,
 
 void Kataglyphis::VulkanBuffer::cleanUp()
 {
-    if (created) {
+    if (created && device != VK_NULL_HANDLE) {
         vkDestroyBuffer(device->getLogicalDevice(), buffer, nullptr);
         vkFreeMemory(device->getLogicalDevice(), bufferMemory, nullptr);
     }
+
+    buffer = VK_NULL_HANDLE;
+    bufferMemory = VK_NULL_HANDLE;
+    created = false;
 }
 
-Kataglyphis::VulkanBuffer::~VulkanBuffer() {}
+Kataglyphis::VulkanBuffer::~VulkanBuffer() = default;

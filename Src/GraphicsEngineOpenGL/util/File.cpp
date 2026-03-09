@@ -1,42 +1,26 @@
-#include "util/File.hpp"
+module;
+
+#include "../../shared/util/FileLocationHolder.hpp"
 
 #include <fstream>
 #include <iostream>
+#include <string>
 
-File::File(const std::string &file_location) { this->file_location = file_location; }
+module kataglyphis.opengl.file;
 
-std::string File::read()
+import kataglyphis.shared.util.file_reader;
+
+File::File(const std::string &file_location) : Kataglyphis::Shared::FileLocationHolder(file_location) {}
+
+auto File::read() -> std::string
 {
-    std::string content;
-    std::string fileLocationWrappedInquotationMarks = makePathsWithBlanksPossible(file_location);
-    std::ifstream file_stream(file_location, std::ios::in);
-
-    if (!file_stream.is_open()) {
-        printf("Failed to read %s. File does not exist.", file_location.c_str());
+    if (!Kataglyphis::Shared::fileExists(get_file_location())) {
+        std::cerr << "Failed to read " << get_file_location() << ". File does not exist." << '\n';
         return "";
     }
 
-    std::string line = "";
-    while (!file_stream.eof()) {
-        std::getline(file_stream, line);
-        content.append(line + "\n");
-    }
-
-    file_stream.close();
+    std::string const content = Kataglyphis::Shared::readTextFile(get_file_location());
     return content;
 }
 
-File::~File() {}
-
-// https:www.howtogeek.com/694949/how-to-escape-spaces-in-file-paths-on-the-windows-command-line/
-// enclosure path with quotation mark
-std::string File::makePathsWithBlanksPossible(const std::string &file_location_with_possible_blanks)
-{
-
-    std::string new_file_location = file_location_with_possible_blanks;
-    const std::string quotationMark = std::string("\"");
-    new_file_location.insert(0, quotationMark);
-    new_file_location += (quotationMark);
-
-    return std::string();
-}
+File::~File() = default;

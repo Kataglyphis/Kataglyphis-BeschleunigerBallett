@@ -1,20 +1,34 @@
-#include "Model.hpp"
+module;
 
-#include "hostDevice/GlobalValues.hpp"
+#include <cstdint>
+#include <cstdio>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include <glad/glad.h>
+#include <glm/ext/vector_float4.hpp>
+
 #include "hostDevice/bindings.hpp"
 
-#include "scene/texture/RepeatMode.hpp"
+module kataglyphis.opengl.model;
 
-#include <iostream>
-#include <unordered_map>
+import kataglyphis.opengl.aabb;
+import kataglyphis.opengl.obj_material;
+import kataglyphis.opengl.mesh;
+import kataglyphis.opengl.repeat_mode;
+import kataglyphis.opengl.texture;
+import kataglyphis.opengl.obj_loader;
 
 Model::Model() : aabb(std::make_shared<AABB>()) {}
 
-std::shared_ptr<AABB> Model::get_aabb() { return aabb; }
+auto Model::get_aabb() -> std::shared_ptr<AABB> { return aabb; }
 
-std::vector<ObjMaterial> Model::get_materials() const { return materials; }
+auto Model::get_materials() const -> std::vector<ObjMaterial> { return materials; }
 
-int Model::get_texture_count() const { return static_cast<uint32_t>(texture_list.size()); }
+auto Model::get_texture_count() const -> int { return static_cast<uint32_t>(texture_list.size()); }
 
 void Model::load_model_in_ram(const std::string &model_path)
 {
@@ -32,7 +46,7 @@ void Model::create_render_context()
         texture_list[i] = std::make_shared<Texture>(textures[i].c_str(), std::make_shared<RepeatMode>());
 
         if (!texture_list[i]->load_SRGB_texture_without_alpha_channel()) {
-            printf("Failed to load texture at: %s\n", textures[i].c_str());
+            std::cerr << "Failed to load texture at: " << textures[i] << '\n';
             texture_list[i].reset();
         }
     }
@@ -52,7 +66,7 @@ void Model::create_render_context()
 void Model::bind_ressources()
 {
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, STORAGE_BUFFER_MATERIAL_ID_BINDING, ssbo);
-    for (int i = 0; i < static_cast<int>(texture_list.size()); i++) {
+    for (int i = 0; std::cmp_less(i, texture_list.size()); i++) {
         texture_list[i]->use_texture(i + MODEL_TEXTURES_SLOT);
     }
 }
@@ -60,7 +74,7 @@ void Model::bind_ressources()
 void Model::unbind_resources()
 {
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
-    for (int i = 0; i < static_cast<int>(texture_list.size()); i++) {
+    for (int i = 0; std::cmp_less(i, texture_list.size()); i++) {
         texture_list[i]->unbind_texture(i + MODEL_TEXTURES_SLOT);
     }
 }

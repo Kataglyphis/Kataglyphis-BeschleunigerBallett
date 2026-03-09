@@ -1,9 +1,15 @@
-#include "OmniDirShadowMap.hpp"
-#include <stdio.h>
+module;
+#include <glad/glad.h>
+#include <cstdio>
+#include <iostream>
 
-OmniDirShadowMap::OmniDirShadowMap() : ShadowMap() {}
+module kataglyphis.opengl.point_light.omni_dir_shadow_map;
 
-bool OmniDirShadowMap::init(GLuint width, GLuint height)
+import kataglyphis.opengl.shadows.shadow_map;
+
+OmniDirShadowMap::OmniDirShadowMap() = default;
+
+auto OmniDirShadowMap::init(GLuint width, GLuint height) -> bool
 {
     shadow_width = width;
     shadow_height = height;
@@ -16,7 +22,7 @@ bool OmniDirShadowMap::init(GLuint width, GLuint height)
     for (size_t i = 0; i < 6; i++) {
         // keep in mind that all following f.e. negative_x, positive_y,...etc. are
         // reachable by simply increment positive_x stepwise
-        glTexImage2D((GLenum)(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i),
+        glTexImage2D(static_cast<GLenum>(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i),
           0,
           GL_DEPTH_COMPONENT,
           shadow_width,
@@ -40,10 +46,10 @@ bool OmniDirShadowMap::init(GLuint width, GLuint height)
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
 
-    GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    GLenum const status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 
     if (status != GL_FRAMEBUFFER_COMPLETE) {
-        printf("Framebuffer error: %i\n", status);
+        std::cerr << "Framebuffer error: " << status << '\n';
         return false;
     }
 
@@ -60,4 +66,4 @@ void OmniDirShadowMap::read(GLenum texture_unit)
     glBindTexture(GL_TEXTURE_CUBE_MAP, shadow_map);
 }
 
-OmniDirShadowMap::~OmniDirShadowMap() {}
+OmniDirShadowMap::~OmniDirShadowMap() = default;

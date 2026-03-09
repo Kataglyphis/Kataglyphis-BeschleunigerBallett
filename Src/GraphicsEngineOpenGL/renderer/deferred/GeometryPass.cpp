@@ -1,18 +1,32 @@
-#include "renderer/deferred/GeometryPass.hpp"
-#include "scene/ViewFrustumCulling.hpp"
-#include "scene/atmospheric_effects/clouds/Clouds.hpp"
-#include "scene/light/directional_light/DirectionalLight.hpp"
+module;
 
+#include <memory>
+#include <glad/glad.h>
+#include <cstdint>
 #include <sstream>
-GeometryPass::GeometryPass() : skybox() { create_shader_program(); }
+#include <vector>
+#include <utility>
+#include <glm/ext/matrix_float4x4.hpp>
+
+#include "hostDevice/bindings.hpp"
+
+module kataglyphis.opengl.geometry_pass;
+
+import kataglyphis.opengl.camera;
+import kataglyphis.opengl.scene;
+import kataglyphis.opengl.obj_material;
+import kataglyphis.opengl.game_object;
+import kataglyphis.opengl.clouds;
+
+GeometryPass::GeometryPass() { create_shader_program(); }
 
 void GeometryPass::execute(glm::mat4 projection_matrix,
-  std::shared_ptr<Camera> main_camera,
+  const std::shared_ptr<Camera> &main_camera,
   GLuint window_width,
   GLuint window_height,
   GLuint gbuffer_id,
   GLfloat delta_time,
-  std::shared_ptr<Scene> scene)
+  const std::shared_ptr<Scene> &scene)
 {
     glBindFramebuffer(GL_FRAMEBUFFER, gbuffer_id);
 
@@ -25,14 +39,14 @@ void GeometryPass::execute(glm::mat4 projection_matrix,
 
     shader_program->use_shader_program();
 
-    glm::mat4 view_matrix = main_camera->get_viewmatrix();
+    glm::mat4 const view_matrix = main_camera->get_viewmatrix();
     std::vector<ObjMaterial> materials = scene->get_materials();
 
     shader_program->setUniformMatrix4fv(projection_matrix, "projection");
     shader_program->setUniformMatrix4fv(view_matrix, "view");
 
     std::stringstream ss;
-    for (uint32_t i = 0; i < static_cast<uint32_t>(scene->get_texture_count(0)); i++) {
+    for (uint32_t i = 0; std::cmp_less(i, scene->get_texture_count(0)); i++) {
         ss << "model_textures[" << i << "]";
         shader_program->setUniformInt(MODEL_TEXTURES_SLOT + i, ss.str());
         ss.clear();
@@ -100,9 +114,9 @@ void GeometryPass::execute(glm::mat4 projection_matrix,
     // glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     //
 
-    std::vector<std::shared_ptr<GameObject>> game_objects = scene->get_game_objects();
+    std::vector<std::shared_ptr<GameObject>> const game_objects = scene->get_game_objects();
 
-    for (std::shared_ptr<GameObject> object : game_objects) {
+    for (const std::shared_ptr<GameObject> &object : game_objects) {
         /* if (object_is_visible(object)) {*/
 
         set_game_object_uniforms(object->get_world_trafo(), object->get_normal_world_trafo());
@@ -117,7 +131,7 @@ void GeometryPass::execute(glm::mat4 projection_matrix,
       glFrontFace(GL_CCW);*/
     // render the AABB for the clouds
     glDisable(GL_CULL_FACE);
-    std::shared_ptr<Clouds> clouds = scene->get_clouds();
+    std::shared_ptr<Clouds> const clouds = scene->get_clouds();
     clouds->render(projection_matrix, view_matrix, window_width, window_height);
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -136,4 +150,4 @@ void GeometryPass::set_game_object_uniforms(glm::mat4 model, glm::mat4 normal_mo
     shader_program->setUniformMatrix4fv(normal_model, "normal_model");
 }
 
-GeometryPass::~GeometryPass() {}
+GeometryPass::~GeometryPass() = default;

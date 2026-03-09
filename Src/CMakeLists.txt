@@ -1,3 +1,88 @@
+if(RUST_FEATURES)
+  corrosion_import_crate(
+    MANIFEST_PATH
+    ../ExternalLib/Kataglyphis-RustProjectTemplate/Cargo.toml
+    CRATE_TYPES
+    staticlib
+    CRATES
+    kataglyphis_rustprojecttemplate)
+
+  if(WIN32)
+    target_link_libraries(
+      kataglyphis_rustprojecttemplate
+      INTERFACE kernel32
+                ntdll
+                userenv
+                ws2_32
+                dbghelp)
+  endif()
+
+  if(WIN32)
+    set(_RUST_WINDOWS_DEBUG_CXXFLAGS "/MDd /D_DEBUG /D_ITERATOR_DEBUG_LEVEL=2")
+    set(_RUST_WINDOWS_DEBUG_CFLAGS "/MDd /D_DEBUG")
+
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+       AND MSVC
+       AND myproject_ENABLE_SANITIZER_ADDRESS)
+      set(_RUST_WINDOWS_DEBUG_CXXFLAGS "/MD /D_ITERATOR_DEBUG_LEVEL=0")
+      set(_RUST_WINDOWS_DEBUG_CFLAGS "/MD")
+    endif()
+
+    set(_RUST_WINDOWS_CXXFLAGS
+        "/EHsc $<$<CONFIG:Debug>:${_RUST_WINDOWS_DEBUG_CXXFLAGS}>$<$<NOT:$<CONFIG:Debug>>:/MD /DNDEBUG /D_ITERATOR_DEBUG_LEVEL=0>"
+    )
+    set(_RUST_WINDOWS_CFLAGS "$<$<CONFIG:Debug>:${_RUST_WINDOWS_DEBUG_CFLAGS}>$<$<NOT:$<CONFIG:Debug>>:/MD /DNDEBUG>")
+
+    corrosion_set_env_vars(kataglyphis_rustprojecttemplate "CXXFLAGS=${_RUST_WINDOWS_CXXFLAGS}"
+                           "CFLAGS=${_RUST_WINDOWS_CFLAGS}")
+  else()
+    if(NOT DEFINED GCC_TOOLCHAIN_PATH)
+      set(GCC_TOOLCHAIN_PATH
+          ""
+          CACHE PATH "Optional GCC toolchain root")
+    endif()
+
+    set(RUST_CC "${CMAKE_C_COMPILER}")
+    set(RUST_CXX "${CMAKE_CXX_COMPILER}")
+    if(NOT RUST_CC)
+      set(RUST_CC "cc")
+    endif()
+    if(NOT RUST_CXX)
+      set(RUST_CXX "c++")
+    endif()
+
+    set(_gcc_toolchain_root "")
+    if(GCC_TOOLCHAIN_PATH AND EXISTS "${GCC_TOOLCHAIN_PATH}")
+      set(_gcc_toolchain_root "${GCC_TOOLCHAIN_PATH}")
+    elseif(DEFINED MYPROJECT_GCC_TOOLCHAIN_PATH AND EXISTS "${MYPROJECT_GCC_TOOLCHAIN_PATH}")
+      set(_gcc_toolchain_root "${MYPROJECT_GCC_TOOLCHAIN_PATH}")
+    endif()
+
+    set(RUST_CXXFLAGS "-fexceptions")
+    if(_gcc_toolchain_root AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+      set(RUST_CXXFLAGS "--gcc-toolchain=${_gcc_toolchain_root} -fexceptions")
+    endif()
+    if(DEFINED ENV{CXXFLAGS})
+      set(RUST_CXXFLAGS "$ENV{CXXFLAGS} ${RUST_CXXFLAGS}")
+    endif()
+    corrosion_set_env_vars(
+      kataglyphis_rustprojecttemplate
+      CC=${RUST_CC}
+      CXX=${RUST_CXX}
+      "CXXFLAGS=${RUST_CXXFLAGS}")
+
+    message(STATUS "Configured native corrosion: CC=${RUST_CC} CXX=${RUST_CXX} CXXFLAGS=${RUST_CXXFLAGS}")
+  endif()
+
+  corrosion_add_cxxbridge(
+    kataglyphis_rustprojecttemplate_bridge
+    CRATE
+    kataglyphis_rustprojecttemplate
+    FILES
+    lib.rs)
+
+endif()
+
 add_subdirectory(GraphicsEngineOpenGL)
 add_subdirectory(GraphicsEngineVulkan)
 add_subdirectory(KomputePlayground)

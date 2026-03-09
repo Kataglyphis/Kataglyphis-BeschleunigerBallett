@@ -1,9 +1,14 @@
-#include "scene/light/Light.hpp"
+module;
+
+#include <glad/glad.h>
+#include <glm/ext/vector_float3.hpp>
+
+module kataglyphis.opengl.light;
 
 Light::Light()
   :
 
-    color(glm::vec3(1.0f)), radiance(1.0f)
+    color(glm::vec3(1.0F)), radiance(1.0F)
 
 {}
 
@@ -14,4 +19,4 @@ Light::Light(GLfloat red, GLfloat green, GLfloat blue, GLfloat radiance)
 
 {}
 
-Light::~Light() {}
+Light::~Light() = default;

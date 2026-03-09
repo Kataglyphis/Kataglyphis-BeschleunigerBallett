@@ -1,30 +1,38 @@
-#include "PostStage.hpp"
+module;
+
+#include <vulkan/vulkan.h>
+#include <vulkan/vulkan_core.h>
 
 #include <array>
+#include <cstdint>
 #include <filesystem>
+#include <sstream>
+#include <string>
 #include <vector>
 
 #include "common/FormatHelper.hpp"
-#include "gui/GUI.hpp"
 #include "renderer/pushConstants/PushConstantPost.hpp"
-#include "scene/Vertex.hpp"
-#include "util/File.hpp"
-#include "vulkan_base/ShaderHelper.hpp"
-
-#include "renderer/VulkanRendererConfig.hpp"
 
 #include "common/Utilities.hpp"
 #include <imgui.h>
-#include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
 
-Kataglyphis::VulkanRendererInternals::PostStage::PostStage() {}
+module kataglyphis.vulkan.post_stage;
 
-void Kataglyphis::VulkanRendererInternals::PostStage::init(VulkanDevice *device,
+import kataglyphis.vulkan.file;
+import kataglyphis.vulkan.vertex;
+import kataglyphis.vulkan.texture;
+import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.swapchain;
+import kataglyphis.vulkan.shader_helper;
+
+Kataglyphis::VulkanRendererInternals::PostStage::PostStage() = default;
+
+void Kataglyphis::VulkanRendererInternals::PostStage::init(VulkanDevice *in_device,
   VulkanSwapChain *vulkanSwapChain,
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
 {
-    this->device = device;
+    this->device = in_device;
     this->vulkanSwapChain = vulkanSwapChain;
 
     createOffscreenTextureSampler();
@@ -52,7 +60,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(VkCommandBu
     VkRenderPassBeginInfo render_pass_begin_info{};
     render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     render_pass_begin_info.renderPass = render_pass;// render pass to begin
-    render_pass_begin_info.renderArea.offset = { 0, 0 };// start point of render pass in pixels
+    render_pass_begin_info.renderArea.offset = { .x = 0, .y = 0 };// start point of render pass in pixels
     const VkExtent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
     render_pass_begin_info.renderArea.extent = swap_chain_extent;// size of region to run render pass on (starting at
                                                                  // offset)
@@ -60,8 +68,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(VkCommandBu
     // make sure the order you put the values into the array matches with the
     // attchment order you have defined previous
     std::array<VkClearValue, 2> clear_values = {};
-    clear_values[0].color = { 0.2f, 0.65f, 0.4f, 1.0f };
-    clear_values[1].depthStencil = { 1.0f, 0 };
+    clear_values[0].color = { { 0.2F, 0.65F, 0.4F, 1.0F } };
+    clear_values[1].depthStencil = { 1.0F, 0 };
 
     render_pass_begin_info.pClearValues = clear_values.data();
     render_pass_begin_info.clearValueCount = static_cast<uint32_t>(clear_values.size());
@@ -102,8 +110,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(VkCommandBu
 
 void Kataglyphis::VulkanRendererInternals::PostStage::cleanUp()
 {
-    depthBufferImage.cleanUp();
-    for (auto framebuffer : framebuffers) { vkDestroyFramebuffer(device->getLogicalDevice(), framebuffer, nullptr); }
+    depthBufferImage->cleanUp();
+    for (auto *framebuffer : framebuffers) { vkDestroyFramebuffer(device->getLogicalDevice(), framebuffer, nullptr); }
 
     vkDestroySampler(device->getLogicalDevice(), offscreenTextureSampler, nullptr);
 
@@ -112,7 +120,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::cleanUp()
     vkDestroyPipelineLayout(device->getLogicalDevice(), pipeline_layout, nullptr);
 }
 
-Kataglyphis::VulkanRendererInternals::PostStage::~PostStage() {}
+Kataglyphis::VulkanRendererInternals::PostStage::~PostStage() = default;
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createDepthbufferImage()
 {
@@ -125,7 +133,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createDepthbufferImage()
     // create depth buffer image
     // MIP LEVELS: for depth texture we only want 1 level :)
     const VkExtent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-    depthBufferImage.createImage(device,
+    depthBufferImage = std::make_unique<Texture>();
+    depthBufferImage->createImage(device,
       swap_chain_extent.width,
       swap_chain_extent.height,
       1,
@@ -136,11 +145,14 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createDepthbufferImage()
 
     // depth buffer image view
     // MIP LEVELS: for depth texture we only want 1 level :)
-    depthBufferImage.createImageView(device, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
+    depthBufferImage->createImageView(device, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createOffscreenTextureSampler()
 {
+    VkPhysicalDeviceFeatures physical_device_features{};
+    vkGetPhysicalDeviceFeatures(device->getPhysicalDevice(), &physical_device_features);
+
     // sampler create info
     VkSamplerCreateInfo sampler_create_info{};
     sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -152,13 +164,13 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createOffscreenTextureSamp
     sampler_create_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
     sampler_create_info.unnormalizedCoordinates = VK_FALSE;
     sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    sampler_create_info.mipLodBias = 0.0f;
-    sampler_create_info.minLod = 0.0f;
-    sampler_create_info.maxLod = 0.0f;
-    sampler_create_info.anisotropyEnable = VK_TRUE;
-    sampler_create_info.maxAnisotropy = 16;// max anisotropy sample level
+    sampler_create_info.mipLodBias = 0.0F;
+    sampler_create_info.minLod = 0.0F;
+    sampler_create_info.maxLod = 0.0F;
+    sampler_create_info.anisotropyEnable = physical_device_features.samplerAnisotropy;
+    sampler_create_info.maxAnisotropy = (physical_device_features.samplerAnisotropy != 0u) ? 16.0F : 1.0F;
 
-    VkResult result =
+    VkResult const result =
       vkCreateSampler(device->getLogicalDevice(), &sampler_create_info, nullptr, &offscreenTextureSampler);
     ASSERT_VULKAN(result, "Failed to create a texture sampler!")
 }
@@ -226,7 +238,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
     subpass.pDepthStencilAttachment = &depth_attachment_reference;
 
     // need to determine when layout transitions occur using subpass dependencies
-    std::array<VkSubpassDependency, 1> subpass_dependencies;
+    std::array<VkSubpassDependency, 1> subpass_dependencies{};
 
     // conversion from VK_IMAGE_LAYOUT_UNDEFINED to
     // VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL transition must happen after ....
@@ -251,7 +263,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
     render_pass_create_info.dependencyCount = static_cast<uint32_t>(subpass_dependencies.size());
     render_pass_create_info.pDependencies = subpass_dependencies.data();
 
-    VkResult result = vkCreateRenderPass(device->getLogicalDevice(), &render_pass_create_info, nullptr, &render_pass);
+    VkResult const result =
+      vkCreateRenderPass(device->getLogicalDevice(), &render_pass_create_info, nullptr, &render_pass);
     ASSERT_VULKAN(result, "Failed to create render pass!")
 }
 
@@ -259,19 +272,19 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
 {
     std::stringstream post_shader_dir;
-    std::filesystem::path cwd = std::filesystem::current_path();
+    std::filesystem::path const cwd = std::filesystem::current_path();
     post_shader_dir << cwd.string();
     post_shader_dir << RELATIVE_RESOURCE_PATH;
     post_shader_dir << "Shaders/post/";
 
-    std::string post_vert_shader = "post.vert";
-    std::string post_frag_shader = "post.frag";
+    std::string const post_vert_shader = "post.vert";
+    std::string const post_frag_shader = "post.frag";
 
     ShaderHelper shaderHelper;
     File vertexShaderFile(shaderHelper.getShaderSpvDir(post_shader_dir.str(), post_vert_shader));
-    std::vector<char> vertex_shader_code = vertexShaderFile.readCharSequence();
+    std::vector<char> const vertex_shader_code = vertexShaderFile.readCharSequence();
     File fragmentShaderFile(shaderHelper.getShaderSpvDir(post_shader_dir.str(), post_frag_shader));
-    std::vector<char> fragment_shader_code = fragmentShaderFile.readCharSequence();
+    std::vector<char> const fragment_shader_code = fragmentShaderFile.readCharSequence();
 
     shaderHelper.compileShader(post_shader_dir.str(), post_vert_shader);
     shaderHelper.compileShader(post_shader_dir.str(), post_frag_shader);
@@ -298,15 +311,6 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
     std::vector<VkPipelineShaderStageCreateInfo> shader_stages = { vertex_shader_create_info,
         fragment_shader_create_info };
 
-    // how the data for a single vertex (including info such as position, color,
-    // texture coords, normals, etc) is as a whole
-    VkVertexInputBindingDescription binding_description{};
-    binding_description.binding = 0;
-    binding_description.stride = sizeof(Vertex);
-    binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-    std::array<VkVertexInputAttributeDescription, 4> attribute_describtions = vertex::getVertexInputAttributeDesc();
-
     // CREATE PIPELINE
     // 1.) Vertex input
     VkPipelineVertexInputStateCreateInfo vertex_input_create_info{};
@@ -325,17 +329,17 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
     // viewport & scissor
     // create a viewport info struct
     VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
+    viewport.x = 0.0F;
+    viewport.y = 0.0F;
     const VkExtent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-    viewport.width = (float)swap_chain_extent.width;
-    viewport.height = (float)swap_chain_extent.height;
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
+    viewport.width = static_cast<float>(swap_chain_extent.width);
+    viewport.height = static_cast<float>(swap_chain_extent.height);
+    viewport.minDepth = 0.0F;
+    viewport.maxDepth = 1.0F;
 
     // create a scissor info struct
     VkRect2D scissor{};
-    scissor.offset = { 0, 0 };
+    scissor.offset = { .x = 0, .y = 0 };
     scissor.extent = swap_chain_extent;
 
     VkPipelineViewportStateCreateInfo viewport_state_create_info{};
@@ -351,7 +355,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
     rasterizer_create_info.depthClampEnable = VK_FALSE;
     rasterizer_create_info.rasterizerDiscardEnable = VK_FALSE;
     rasterizer_create_info.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterizer_create_info.lineWidth = 1.0f;
+    rasterizer_create_info.lineWidth = 1.0F;
     rasterizer_create_info.cullMode = VK_CULL_MODE_NONE;
     // winding to determine which side is front; y-coordinate is inverted in
     // comparison to OpenGL
@@ -386,7 +390,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
     color_blending_create_info.logicOp = VK_LOGIC_OP_CLEAR;
     color_blending_create_info.attachmentCount = 1;
     color_blending_create_info.pAttachments = &color_state;
-    for (int i = 0; i < 4; i++) { color_blending_create_info.blendConstants[0] = 0.f; }
+    for (int i = 0; i < 4; i++) { color_blending_create_info.blendConstants[0] = 0.F; }
     // -- PIPELINE LAYOUT --
     VkPipelineLayoutCreateInfo pipeline_layout_create_info{};
     pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -449,7 +453,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createFramebuffer()
     for (size_t i = 0; i < vulkanSwapChain->getNumberSwapChainImages(); i++) {
         Texture &swap_chain_image = vulkanSwapChain->getSwapChainImage(i);
 
-        std::array<VkImageView, 2> attachments = { swap_chain_image.getImageView(), depthBufferImage.getImageView() };
+        std::array<VkImageView, 2> attachments = { swap_chain_image.getImageView(), depthBufferImage->getImageView() };
 
         VkFramebufferCreateInfo frame_buffer_create_info{};
         frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -461,7 +465,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createFramebuffer()
         frame_buffer_create_info.height = swap_chain_extent.height;// framebuffer height
         frame_buffer_create_info.layers = 1;// framebuffer layer
 
-        VkResult result =
+        VkResult const result =
           vkCreateFramebuffer(device->getLogicalDevice(), &frame_buffer_create_info, nullptr, &framebuffers[i]);
         ASSERT_VULKAN(result, "Failed to create framebuffer!")
     }

@@ -1,37 +1,66 @@
-#include "scene/ViewFrustumCulling.hpp"
+module;
+
+#include <glad/glad.h>
+#include <glm/ext/vector_float3.hpp>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glm/geometric.hpp>
+#include <glm/trigonometric.hpp>
+#include <memory>
+#include <vector>
+#include <utility>
+
+#include "hostDevice/GlobalValues.hpp"
+
+module kataglyphis.opengl.view_frustum_culling;
+
+import kataglyphis.opengl.camera;
+import kataglyphis.opengl.aabb;
 
 ViewFrustumCulling::ViewFrustumCulling()
-  :
-
-    VBO(-1), VAO(-1), EBO(-1), m_drawCount(0),
-    // we get that as input
-    near_plane(0.f), far_plane(0.f), fov(0.f), ratio(0.f),
-
-    // calculate as soon as we become params
-    tan(0.f), near_height(0.f), near_width(0.f), far_height(0.f), far_width(0.f), main_camera(),
-
-    dir(glm::vec3(0.f)), near_center(glm::vec3(0.f)), far_center(glm::vec3(0.f)),
-
-    near_top_left(glm::vec3(0.f)), near_top_right(glm::vec3(0.f)), near_bottom_left(glm::vec3(0.f)),
-    near_bottom_right(glm::vec3(0.f)),
-
-    far_top_left(glm::vec3(0.f)), far_top_right(glm::vec3(0.f)), far_bottom_left(glm::vec3(0.f)),
-    far_bottom_right(glm::vec3(0.f))
-
-{}
-
-bool ViewFrustumCulling::is_inside(GLfloat ratio,
-  std::shared_ptr<Camera> main_camera,
-  std::shared_ptr<AABB> bounding_box,
-  glm::mat4 model)
 {
-    GLfloat near_plane = main_camera->get_near_plane();
-    GLfloat far_plane = main_camera->get_far_plane();
-    GLfloat fov = main_camera->get_fov();
+    VBO = -1;
+    VAO = -1;
+    EBO = -1;
+    m_drawCount = 0;
+
+    near_plane = 0.F;
+    far_plane = 0.F;
+    fov = 0.F;
+    ratio = 0.F;
+
+    tan = 0.F;
+    near_height = 0.F;
+    near_width = 0.F;
+    far_height = 0.F;
+    far_width = 0.F;
+
+    dir = glm::vec3(0.F);
+    near_center = glm::vec3(0.F);
+    far_center = glm::vec3(0.F);
+
+    near_top_left = glm::vec3(0.F);
+    near_top_right = glm::vec3(0.F);
+    near_bottom_left = glm::vec3(0.F);
+    near_bottom_right = glm::vec3(0.F);
+
+    far_top_left = glm::vec3(0.F);
+    far_top_right = glm::vec3(0.F);
+    far_bottom_left = glm::vec3(0.F);
+    far_bottom_right = glm::vec3(0.0f, 0.0f, 0.0f);
+}
+
+auto ViewFrustumCulling::is_inside(GLfloat ratio,
+  const std::shared_ptr<Camera> &main_camera,
+  const std::shared_ptr<AABB> &bounding_box,
+  glm::mat4 model) -> bool
+{
+    GLfloat const near_plane = main_camera->get_near_plane();
+    GLfloat const far_plane = main_camera->get_far_plane();
+    GLfloat const fov = main_camera->get_fov();
 
     update_frustum_param(near_plane, far_plane, fov, ratio, main_camera);
 
-    std::vector<glm::vec3> aabb_corners = bounding_box->get_corners(model);
+    std::vector<glm::vec3> const aabb_corners = bounding_box->get_corners(model);
 
     // layout:                      [0]: near plane, [1] far plane, [2] up    ,
     // [3] bottom , [4]: left , [5]: right outcodes (binary) :  100000 , 010000 ,
@@ -39,20 +68,20 @@ bool ViewFrustumCulling::is_inside(GLfloat ratio,
     // , 2           , 1
     bool result = true;
 
-    GLint outcode_near_plane = 32;
-    GLint outcode_far_plane = 16;
-    GLint outcode_up = 4;
-    GLint outcode_bottom = 8;
-    GLint outcode_left = 2;
-    GLint outcode_right = 1;
+    GLint const outcode_near_plane = 32;
+    GLint const outcode_far_plane = 16;
+    GLint const outcode_up = 4;
+    GLint const outcode_bottom = 8;
+    GLint const outcode_left = 2;
+    GLint const outcode_right = 1;
     // GLint outcode;
 
-    GLint outcodes_pattern[NUM_FRUSTUM_PLANES] = {
+    GLint const outcodes_pattern[NUM_FRUSTUM_PLANES] = {
         outcode_near_plane, outcode_far_plane, outcode_up, outcode_bottom, outcode_left, outcode_right
     };
 
     for (int i = 0; i < NUM_FRUSTUM_PLANES; i++) {
-        frustum_plane plane = frustum_planes[i];
+        frustum_plane const plane = frustum_planes[i];
 
         if (corners_outside_plane(aabb_corners, plane, outcodes_pattern[i])) {
             result = false;
@@ -63,26 +92,26 @@ bool ViewFrustumCulling::is_inside(GLfloat ratio,
     return result;
 }
 
-void ViewFrustumCulling::render_view_frustum()
+void ViewFrustumCulling::render_view_frustum() const
 {
     // seeing as we only have a single VAO there's no need to bind it every time,
     // but we'll do so to keep things a bit more organized
     glBindVertexArray(VAO);
     // glDrawArrays(GL_TRIANGLES, 0, 6);
-    glDrawElements(GL_TRIANGLES, m_drawCount, GL_UNSIGNED_INT, 0);
+    glDrawElements(GL_TRIANGLES, m_drawCount, GL_UNSIGNED_INT, nullptr);
 
     // unbind all again
     glBindVertexArray(0);
 }
 
-bool ViewFrustumCulling::corners_outside_plane(std::vector<glm::vec3> aabb_corners,
+auto ViewFrustumCulling::corners_outside_plane(std::vector<glm::vec3> aabb_corners,
   frustum_plane plane,
-  GLuint outcode_pattern)
+  GLuint outcode_pattern) -> bool
 {
     GLint outcode = outcode_pattern;
 
-    for (int i = 0; i < static_cast<int>(aabb_corners.size()); i++) {
-        if (plane_point_distance(plane, aabb_corners[i]) < 0.0f) {
+    for (int i = 0; std::cmp_less(i, aabb_corners.size()); i++) {
+        if (plane_point_distance(plane, aabb_corners[i]) < 0.0F) {
             if (i == 0) {
                 outcode = outcode_pattern;
             } else {
@@ -97,17 +126,17 @@ bool ViewFrustumCulling::corners_outside_plane(std::vector<glm::vec3> aabb_corne
         }
     }
 
-    return (outcode != 0) ? true : false;
+    return outcode != 0;
 }
 
-GLfloat ViewFrustumCulling::plane_point_distance(frustum_plane plane, glm::vec3 corner)
+auto ViewFrustumCulling::plane_point_distance(frustum_plane plane, glm::vec3 corner) -> GLfloat
 {
-    GLfloat result = 0.0f;
+    GLfloat result = 0.0F;
 
-    glm::vec3 plane_normal = plane.normal;
-    glm::vec3 plane_position = plane.position;
+    glm::vec3 const plane_normal = plane.normal;
+    glm::vec3 const plane_position = plane.position;
 
-    GLfloat d = glm::dot(plane_normal, plane_position);
+    GLfloat const d = glm::dot(plane_normal, plane_position);
 
     result = (glm::dot(plane_normal, corner) - d) / glm::length(plane_normal);
 
@@ -118,14 +147,14 @@ void ViewFrustumCulling::update_frustum_param(GLfloat near_plane,
   GLfloat far_plane,
   GLfloat fov,
   GLfloat ratio,
-  std::shared_ptr<Camera> main_camera)
+  const std::shared_ptr<Camera> &main_camera)
 {
     this->near_plane = near_plane;
     this->far_plane = far_plane;
     this->fov = fov;
     this->ratio = ratio;
 
-    tan = glm::tan(glm::radians(fov) * 0.5f);
+    tan = glm::tan(glm::radians(fov) * 0.5F);
     near_height = near_plane * tan;
     near_width = near_height * ratio;
     far_height = far_plane * tan;
@@ -136,7 +165,9 @@ void ViewFrustumCulling::update_frustum_param(GLfloat near_plane,
     near_center = main_camera->get_camera_position() + main_camera->get_camera_direction() * near_plane;
     far_center = main_camera->get_camera_position() + main_camera->get_camera_direction() * far_plane;
 
-    glm::vec3 aux_position, aux, aux_normal;
+    glm::vec3 aux_position;
+    glm::vec3 aux;
+    glm::vec3 aux_normal;
 
     // layout:  [0]: near plane
     frustum_planes[0].normal = main_camera->get_camera_direction();
@@ -181,39 +212,6 @@ void ViewFrustumCulling::update_frustum_param(GLfloat near_plane,
     // [5]: right
     frustum_planes[5].normal = normalize(aux_normal);
     frustum_planes[5].position = aux_position;
-
-    std::vector<glm::vec3> frustum_corners;
-
-    // frustum_corners.push_back(near_center - main_camera->get_right_axis() *
-    // near_width -
-    //  main_camera->get_up_axis() * near_height);// left bottom front
-    //
-    // frustum_corners.push_back(far_center - main_camera->get_right_axis() *
-    // far_width -
-    //  main_camera->get_up_axis() * far_height);// left bottom back
-    //
-    // frustum_corners.push_back(near_center - main_camera->get_right_axis() *
-    // near_width +
-    //   main_camera->get_up_axis() * near_height); // left top front
-    //
-    // frustum_corners.push_back(far_center - main_camera->get_right_axis() *
-    // far_width +
-    //   main_camera->get_up_axis() * far_height);// left top back
-    //
-    // frustum_corners.push_back(near_center + main_camera->get_right_axis() *
-    // near_width -
-    //  main_camera->get_up_axis() * near_height); // right bottom front
-    //
-    // frustum_corners.push_back(far_center + main_camera->get_right_axis() *
-    // far_width -
-    //  main_camera->get_up_axis() * far_height);//right bottom back
-    //
-    // frustum_corners.push_back(near_center + main_camera->get_right_axis() *
-    // near_width +
-    //  main_camera->get_up_axis() * near_height);//right top front
-    //
-    // frustum_corners.push_back(far_center + main_camera->get_right_axis() *
-    // far_width + main_camera->get_up_axis() * far_height);//right top back
 
     // init(frustum_corners);
 }
@@ -311,7 +309,7 @@ void ViewFrustumCulling::init(std::vector<glm::vec3> frustum_corner)
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)nullptr);
     glEnableVertexAttribArray(0);
 
     // note that this is allowed, the call to glVertexAttribPointer registered VBO

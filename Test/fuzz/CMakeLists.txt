@@ -1,27 +1,29 @@
 include(GoogleTest)
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT(CMAKE_BUILD_TYPE STREQUAL "Profile" ))
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo"))
   message(STATUS "This is a Linux system.")
 
+  # Fuzz testing needs special treatment only in debug mode!
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
-    fuzztest_setup_fuzzing_flags()
-    # Remove AddressSanitizer flags if disabled
-    string(
-      REPLACE "-fsanitize=address"
-              ""
-              CMAKE_C_FLAGS
-              "${CMAKE_C_FLAGS}")
-    string(
-      REPLACE "-fsanitize=address"
-              ""
-              CMAKE_CXX_FLAGS
-              "${CMAKE_CXX_FLAGS}")
-    string(
-      REPLACE "-fsanitize=address"
-              ""
-              CMAKE_EXE_LINKER_FLAGS
-              "${CMAKE_EXE_LINKER_FLAGS}")
-    remove_definitions(-DADDRESS_SANITIZER)
+    message(STATUS "Linux + Clang detected: enabling fuzz test targets.")
+
     add_executable(first_fuzz_test dummy.cpp)
+
+    if(KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE OR (FUZZTEST_COMPATIBILITY_MODE STREQUAL "libfuzzer"))
+      target_compile_options(
+        first_fuzz_test
+        PRIVATE -g
+                -UNDEBUG
+                -fsanitize=address
+                -fsanitize-coverage=inline-8bit-counters
+                -fsanitize-coverage=trace-cmp)
+      target_compile_definitions(first_fuzz_test PRIVATE FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION ADDRESS_SANITIZER)
+      target_link_options(first_fuzz_test PRIVATE -fsanitize=address)
+    endif()
+
+    if(FUZZTEST_COMPATIBILITY_MODE STREQUAL "libfuzzer")
+      target_compile_options(first_fuzz_test PRIVATE -fsanitize=fuzzer-no-link)
+      target_compile_definitions(first_fuzz_test PRIVATE FUZZTEST_COMPATIBILITY_MODE)
+    endif()
 
     link_fuzztest(first_fuzz_test)
     gtest_discover_tests(first_fuzz_test)

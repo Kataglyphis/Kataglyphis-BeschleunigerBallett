@@ -1,16 +1,29 @@
-#include "scene/atmospheric_effects/clouds/Clouds.hpp"
+module;
+
+#include <memory>
+#include <glad/glad.h>
+#include <glm/glm.hpp>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glm/ext/matrix_transform.hpp>
+
+module kataglyphis.opengl.clouds;
+
+import kataglyphis.opengl.noise;
+import kataglyphis.opengl.shader_program;
+import kataglyphis.opengl.aabb;
+import kataglyphis.opengl.random_numbers;
 
 Clouds::Clouds()
   :
 
     shader_program(std::make_shared<ShaderProgram>(ShaderProgram{})), noise(std::make_shared<Noise>()),
-    random_numbers(std::make_shared<RandomNumbers>()), model(glm::mat4(1.f)), aabb(AABB()),
+    random_numbers(std::make_shared<RandomNumbers>()), model(glm::mat4(1.F)),
 
-    minX(-1.f), maxX(1.f), minY(-1.f), maxY(1.f), minZ(-1.f), maxZ(1.f),
+    minX(-1.F), maxX(1.F), minY(-1.F), maxY(1.F), minZ(-1.F), maxZ(1.F),
 
-    movement_direction(glm::vec3(0.0f, 0.0f, 1.0f)), scale_factor(glm::vec3(1.f)), translation(glm::vec3(0.0f)),
+    movement_direction(glm::vec3(0.0F, 0.0F, 1.0F)), scale_factor(glm::vec3(1.F)), translation(glm::vec3(0.0F)),
 
-    movement_speed(0.65f), density(0.7f), scale(0.63f), pillowness(1.0f), cirrus_effect(0.0f),
+    movement_speed(0.65F), density(0.7F), scale(0.63F), pillowness(1.0F), cirrus_effect(0.0F),
 
     num_march_steps(8), num_march_steps_to_light(3),
 
@@ -24,7 +37,10 @@ Clouds::Clouds()
     aabb.init(minX, maxX, minY, maxY, minZ, maxZ);
 }
 
-void Clouds::render(glm::mat4 projection_matrix, glm::mat4 view_matrix, GLuint window_width, GLuint window_height)
+void Clouds::render(glm::mat4 projection_matrix,
+  glm::mat4 view_matrix,
+  GLuint /*window_width*/,
+  GLuint /*window_height*/)
 {
     shader_program->use_shader_program();
     shader_program->setUniformMatrix4fv(projection_matrix, "projection");
@@ -67,9 +83,9 @@ void Clouds::set_scale(glm::vec3 scale) { scale_factor = scale; }
 
 void Clouds::set_translation(glm::vec3 translation) { this->translation = translation; }
 
-glm::mat4 Clouds::get_model() const
+auto Clouds::get_model() const -> glm::mat4
 {
-    glm::mat4 model = glm::mat4(1.f);
+    auto model = glm::mat4(1.F);
     model = glm::translate(model, translation);
     model = glm::scale(model, scale_factor);
     return model;
@@ -84,4 +100,4 @@ void Clouds::set_num_march_steps_to_light(GLuint num_march_steps_to_light)
     this->num_march_steps_to_light = num_march_steps_to_light;
 }
 
-Clouds::~Clouds() {}
+Clouds::~Clouds() = default;

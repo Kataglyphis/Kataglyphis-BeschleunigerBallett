@@ -1,52 +1,64 @@
-#include "scene/AABB.hpp"
+module;
 
-#include <algorithm>
+#include <cstdlib>
+#include <memory>
+#include <vector>
 
-AABB::AABB() {}
+#include <glad/glad.h>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glm/ext/vector_float2.hpp>
+#include <glm/ext/vector_float3.hpp>
 
-std::vector<glm::vec3> AABB::get_corners(glm::mat4 model)
+module kataglyphis.opengl.aabb;
+
+import kataglyphis.opengl.mesh;
+
+AABB::AABB() = default;
+
+auto AABB::get_corners(glm::mat4 model) -> std::vector<glm::vec3>
 {
     std::vector<glm::vec3> corners_world_space;
 
-    for (glm::vec3 corner : corners) { corners_world_space.push_back(glm::vec3(model * glm::vec4(corner, 1.0f))); }
+    corners_world_space.reserve(corners.size());
+    for (glm::vec3 const corner : corners) { corners_world_space.emplace_back(model * glm::vec4(corner, 1.0F)); }
 
     return corners_world_space;
 }
 
-void AABB::init(GLfloat minX, GLfloat maxX, GLfloat minY, GLfloat maxY, GLfloat minZ, GLfloat maxZ)
+void AABB::init(GLfloat min_x, GLfloat max_x, GLfloat min_y, GLfloat max_y, GLfloat min_z, GLfloat max_z)
 {
-    this->minX = minX;
-    this->maxX = maxX;
-    this->minY = minY;
-    this->maxY = maxY;
-    this->minZ = minZ;
-    this->maxZ = maxZ;
+    this->minX = min_x;
+    this->maxX = max_x;
+    this->minY = min_y;
+    this->maxY = max_y;
+    this->minZ = min_z;
+    this->maxZ = max_z;
 
-    corners.push_back(glm::vec3(minX, minY, minZ));
-    corners.push_back(glm::vec3(minX, minY, maxZ));
-    corners.push_back(glm::vec3(minX, maxY, minZ));
-    corners.push_back(glm::vec3(minX, maxY, maxZ));
-    corners.push_back(glm::vec3(maxX, minY, minZ));
-    corners.push_back(glm::vec3(maxX, minY, maxZ));
-    corners.push_back(glm::vec3(maxX, maxY, minZ));
-    corners.push_back(glm::vec3(maxX, maxY, maxZ));
+    corners.emplace_back(min_x, min_y, min_z);
+    corners.emplace_back(min_x, min_y, max_z);
+    corners.emplace_back(min_x, max_y, min_z);
+    corners.emplace_back(min_x, max_y, max_z);
+    corners.emplace_back(max_x, min_y, min_z);
+    corners.emplace_back(max_x, min_y, max_z);
+    corners.emplace_back(max_x, max_y, min_z);
+    corners.emplace_back(max_x, max_y, max_z);
 
     // 0: left  bottom  front
-    vertices.push_back(Vertex(glm::vec3(minX, minY, maxZ), glm::vec3(0.f), glm::vec3(0.f), glm::vec2(0.f)));
+    vertices.emplace_back(glm::vec3(min_x, min_y, max_z), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
     // 1: right bottom  front
-    vertices.push_back(Vertex(glm::vec3(maxX, minY, maxZ), glm::vec3(0.f), glm::vec3(0.f), glm::vec2(0.f)));
+    vertices.emplace_back(glm::vec3(max_x, min_y, max_z), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
     // 2: left  top     front
-    vertices.push_back(Vertex(glm::vec3(minX, maxY, maxZ), glm::vec3(0.f), glm::vec3(0.f), glm::vec2(0.f)));
+    vertices.emplace_back(glm::vec3(min_x, max_y, max_z), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
     // 3: right top     front
-    vertices.push_back(Vertex(glm::vec3(maxX, maxY, maxZ), glm::vec3(0.f), glm::vec3(0.f), glm::vec2(0.f)));
+    vertices.emplace_back(glm::vec3(max_x, max_y, max_z), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
     // 4: left  bottom  far
-    vertices.push_back(Vertex(glm::vec3(minX, minY, minZ), glm::vec3(0.f), glm::vec3(0.f), glm::vec2(0.f)));
+    vertices.emplace_back(glm::vec3(min_x, min_y, min_z), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
     // 5: right bottom  far
-    vertices.push_back(Vertex(glm::vec3(maxX, minY, minZ), glm::vec3(0.f), glm::vec3(0.f), glm::vec2(0.f)));
+    vertices.emplace_back(glm::vec3(max_x, min_y, min_z), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
     // 6: left  top     far
-    vertices.push_back(Vertex(glm::vec3(minX, maxY, minZ), glm::vec3(0.f), glm::vec3(0.f), glm::vec2(0.f)));
+    vertices.emplace_back(glm::vec3(min_x, max_y, min_z), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
     // 7: right top     far
-    vertices.push_back(Vertex(glm::vec3(maxX, maxY, minZ), glm::vec3(0.f), glm::vec3(0.f), glm::vec2(0.f)));
+    vertices.emplace_back(glm::vec3(max_x, max_y, min_z), glm::vec3(0.F), glm::vec3(0.F), glm::vec2(0.F));
 
     indices = { // note that we start from 0!
 
@@ -103,8 +115,11 @@ void AABB::init(GLfloat minX, GLfloat maxX, GLfloat minY, GLfloat maxY, GLfloat 
     mesh = std::make_shared<Mesh>(vertices, indices);
 }
 
-glm::vec3 AABB::get_radius() { return glm::vec3(std::abs(maxX - minX), std::abs(maxY - minY), std::abs(maxZ - minZ)); }
+auto AABB::get_radius() const -> glm::vec3
+{
+    return { std::abs(maxX - minX), std::abs(maxY - minY), std::abs(maxZ - minZ) };
+}
 
 void AABB::render() { mesh->render(); }
 
-AABB::~AABB() {}
+AABB::~AABB() = default;

@@ -1,26 +1,44 @@
-#include "Rasterizer.hpp"
+module;
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
+#include <sstream>
 #include <vector>
+#include <vulkan/vulkan_core.h>
+
+#include "renderer/pushConstants/PushConstantRasterizer.hpp"
 
 #include "common/FormatHelper.hpp"
-#include "scene/Vertex.hpp"
-#include "util/File.hpp"
-#include "vulkan_base/ShaderHelper.hpp"
 
 #include "common/Utilities.hpp"
-#include "renderer/VulkanRendererConfig.hpp"
 
-Kataglyphis::VulkanRendererInternals::Rasterizer::Rasterizer() {}
+module kataglyphis.vulkan.rasterizer;
 
-void Kataglyphis::VulkanRendererInternals::Rasterizer::init(VulkanDevice *device,
-  VulkanSwapChain *vulkanSwapChain,
+import kataglyphis.vulkan.file;
+import kataglyphis.vulkan.vertex;
+import kataglyphis.vulkan.texture;
+import kataglyphis.vulkan.image;
+import kataglyphis.vulkan.scene;
+import kataglyphis.vulkan.shader_helper;
+
+namespace {
+auto hasStencilComponent(VkFormat format) -> bool
+{
+    return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
+}
+}// namespace
+
+Kataglyphis::VulkanRendererInternals::Rasterizer::Rasterizer() = default;
+
+void Kataglyphis::VulkanRendererInternals::Rasterizer::init(VulkanDevice *in_device,
+  VulkanSwapChain *swap_chain,
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts,
   VkCommandPool &commandPool)
 {
-    this->device = device;
-    this->vulkanSwapChain = vulkanSwapChain;
+    this->device = in_device;
+    this->vulkanSwapChain = swap_chain;
 
     createTextures(commandPool);
     createRenderPass();
@@ -36,14 +54,14 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::shaderHotReload(
     createGraphicsPipeline(descriptor_set_layouts);
 }
 
-Kataglyphis::Texture &Kataglyphis::VulkanRendererInternals::Rasterizer::getOffscreenTexture(uint32_t index)
+auto Kataglyphis::VulkanRendererInternals::Rasterizer::getOffscreenTexture(uint32_t index) -> Kataglyphis::Texture &
 {
-    return offscreenTextures[index];
+    return *offscreenTextures[index];
 }
 
-void Kataglyphis::VulkanRendererInternals::Rasterizer::setPushConstant(PushConstantRasterizer pushConstant)
+void Kataglyphis::VulkanRendererInternals::Rasterizer::setPushConstant(PushConstantRasterizer push_constant)
 {
-    this->pushConstant = pushConstant;
+    this->pushConstant = push_constant;
 }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(VkCommandBuffer &commandBuffer,
@@ -56,15 +74,15 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(VkCommandB
     VkRenderPassBeginInfo render_pass_begin_info{};
     render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     render_pass_begin_info.renderPass = render_pass;
-    render_pass_begin_info.renderArea.offset = { 0, 0 };
+    render_pass_begin_info.renderArea.offset = { .x = 0, .y = 0 };
     const VkExtent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
     render_pass_begin_info.renderArea.extent = swap_chain_extent;
 
     // make sure the order you put the values into the array matches with the
     // attchment order you have defined previous
     std::array<VkClearValue, 2> clear_values = {};
-    clear_values[0].color = { 0.2f, 0.65f, 0.4f, 1.0f };
-    clear_values[1].depthStencil = { 1.0f, 0 };
+    clear_values[0].color = { { 0.2F, 0.65F, 0.4F, 1.0F } };
+    clear_values[1].depthStencil = { 1.0F, 0 };
 
     render_pass_begin_info.pClearValues = clear_values.data();
     render_pass_begin_info.clearValueCount = static_cast<uint32_t>(clear_values.size());
@@ -76,7 +94,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(VkCommandB
     // bind pipeline to be used in render pass
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
 
-    for (uint32_t m = 0; m < static_cast<uint32_t>(scene->getModelCount()); m++) {
+    for (uint32_t m = 0; m < scene->getModelCount(); m++) {
         // for GCC doen't allow references on rvalues go like that ...
         pushConstant.model = scene->getModelMatrix(0);
         // just "Push" constants to given shader stage directly (no buffer)
@@ -89,7 +107,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(VkCommandB
 
         for (unsigned int k = 0; k < scene->getMeshCount(m); k++) {
             // list of vertex buffers we want to draw
-            VkBuffer vertex_buffers[] = { scene->getVertexBuffer(m, k) };// buffers to bind
+            VkBuffer const vertex_buffers[] = { scene->getVertexBuffer(m, k) };// buffers to bind
             VkDeviceSize offsets[] = { 0 };
             vkCmdBindVertexBuffers(commandBuffer,
               0,
@@ -111,7 +129,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(VkCommandB
               nullptr);
 
             // execute pipeline
-            vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(scene->getIndexCount(m, k)), 1, 0, 0, 0);
+            vkCmdDrawIndexed(commandBuffer, scene->getIndexCount(m, k), 1, 0, 0, 0);
         }
     }
 
@@ -121,25 +139,27 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(VkCommandB
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::cleanUp()
 {
-    for (auto framebuffer : framebuffer) { vkDestroyFramebuffer(device->getLogicalDevice(), framebuffer, nullptr); }
+    for (auto *framebuffer_handle : framebuffer) {
+        vkDestroyFramebuffer(device->getLogicalDevice(), framebuffer_handle, nullptr);
+    }
 
-    for (Texture texture : offscreenTextures) { texture.cleanUp(); }
+    for (const auto &texture : offscreenTextures) { texture->cleanUp(); }
 
-    depthBufferImage.cleanUp();
+    depthBufferImage->cleanUp();
 
     vkDestroyPipeline(device->getLogicalDevice(), graphics_pipeline, nullptr);
     vkDestroyPipelineLayout(device->getLogicalDevice(), pipeline_layout, nullptr);
     vkDestroyRenderPass(device->getLogicalDevice(), render_pass, nullptr);
 }
 
-Kataglyphis::VulkanRendererInternals::Rasterizer::~Rasterizer() {}
+Kataglyphis::VulkanRendererInternals::Rasterizer::~Rasterizer() = default;
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
 {
     // Color attachment of render pass
     VkAttachmentDescription color_attachment{};
-    const VkFormat &swap_chain_image_format = vulkanSwapChain->getSwapChainFormat();
-    color_attachment.format = swap_chain_image_format;// format to use for attachment
+    constexpr VkFormat offscreen_format = VK_FORMAT_R8G8B8A8_UNORM;
+    color_attachment.format = offscreen_format;// format to use for attachment
     color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;// number of samples to write for multisampling
     color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;// describes what to do with attachment
                                                           // before rendering
@@ -152,9 +172,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
 
     // framebuffer data will be stored as an image, but images can be given
     // different layouts to give optimal use for certain operations
-    color_attachment.initialLayout = VK_IMAGE_LAYOUT_GENERAL;// image data layout before render pass starts
-    color_attachment.finalLayout = VK_IMAGE_LAYOUT_GENERAL;// image data layout after render pass (to
-                                                           // change to)
+    color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;// image data layout before render pass starts
+    color_attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;// image data layout after render pass
 
     // depth attachment of render pass
     VkAttachmentDescription depth_attachment{};
@@ -191,7 +210,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
     subpass.pDepthStencilAttachment = &depth_attachment_reference;
 
     // need to determine when layout transitions occur using subpass dependencies
-    std::array<VkSubpassDependency, 1> subpass_dependencies;
+    std::array<VkSubpassDependency, 1> subpass_dependencies{};
 
     // conversion from VK_IMAGE_LAYOUT_UNDEFINED to
     // VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL transition must happen after ....
@@ -218,7 +237,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
     render_pass_create_info.dependencyCount = static_cast<uint32_t>(subpass_dependencies.size());
     render_pass_create_info.pDependencies = subpass_dependencies.data();
 
-    VkResult result = vkCreateRenderPass(device->getLogicalDevice(), &render_pass_create_info, nullptr, &render_pass);
+    VkResult const result =
+      vkCreateRenderPass(device->getLogicalDevice(), &render_pass_create_info, nullptr, &render_pass);
     ASSERT_VULKAN(result, "Failed to create render pass!")
 }
 
@@ -227,8 +247,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createFramebuffer()
     framebuffer.resize(vulkanSwapChain->getNumberSwapChainImages());
 
     for (size_t i = 0; i < framebuffer.size(); i++) {
-        std::array<VkImageView, 2> attachments = { offscreenTextures[i].getImageView(),
-            depthBufferImage.getImageView() };
+        std::array<VkImageView, 2> attachments = { offscreenTextures[i]->getImageView(),
+            depthBufferImage->getImageView() };
 
         VkFramebufferCreateInfo frame_buffer_create_info{};
         frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -240,7 +260,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createFramebuffer()
         frame_buffer_create_info.height = swap_chain_extent.height;
         frame_buffer_create_info.layers = 1;
 
-        VkResult result =
+        VkResult const result =
           vkCreateFramebuffer(device->getLogicalDevice(), &frame_buffer_create_info, nullptr, &framebuffer[i]);
         ASSERT_VULKAN(result, "Failed to create framebuffer!");
     }
@@ -258,34 +278,30 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(VkCommandP
 {
     offscreenTextures.resize(vulkanSwapChain->getNumberSwapChainImages());
 
-    VkCommandBuffer cmdBuffer = commandBufferManager.beginCommandBuffer(device->getLogicalDevice(), commandPool);
+    VkCommandBuffer cmdBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
+      device->getLogicalDevice(), commandPool);
 
-    for (uint32_t index = 0; index < static_cast<uint32_t>(vulkanSwapChain->getNumberSwapChainImages()); index++) {
-        Texture texture{};
+    for (uint32_t index = 0; index < vulkanSwapChain->getNumberSwapChainImages(); index++) {
+        auto texture = std::make_unique<Texture>();
         const VkExtent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-        const VkFormat &swap_chain_image_format = vulkanSwapChain->getSwapChainFormat();
+        constexpr VkFormat offscreen_format = VK_FORMAT_R8G8B8A8_UNORM;
 
-        texture.createImage(device,
+        texture->createImage(device,
           swap_chain_extent.width,
           swap_chain_extent.height,
           1,
-          swap_chain_image_format,
+          offscreen_format,
           VK_IMAGE_TILING_OPTIMAL,
           VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT
             | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-        texture.createImageView(device, swap_chain_image_format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+        texture->createImageView(device, offscreen_format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 
-        // --- WE NEED A DIFFERENT LAYOUT FOR USAGE
-        VulkanImage &image = texture.getVulkanImage();
-        image.transitionImageLayout(
-          cmdBuffer, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 1, VK_IMAGE_ASPECT_COLOR_BIT);
-
-        offscreenTextures[index] = texture;
+        offscreenTextures[index] = std::move(texture);
     }
 
-    VkFormat depth_format = choose_supported_format(device->getPhysicalDevice(),
+    VkFormat const depth_format = choose_supported_format(device->getPhysicalDevice(),
       { VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT },
       VK_IMAGE_TILING_OPTIMAL,
       VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
@@ -293,7 +309,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(VkCommandP
     // create depth buffer image
     // MIP LEVELS: for depth texture we only want 1 level :)
     const VkExtent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-    depthBufferImage.createImage(device,
+    depthBufferImage = std::make_unique<Texture>();
+    depthBufferImage->createImage(device,
       swap_chain_extent.width,
       swap_chain_extent.height,
       1,
@@ -304,19 +321,22 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(VkCommandP
 
     // depth buffer image view
     // MIP LEVELS: for depth texture we only want 1 level :)
-    depthBufferImage.createImageView(device, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 1);
+    VkImageAspectFlags depth_aspect_flags = VK_IMAGE_ASPECT_DEPTH_BIT;
+    if (hasStencilComponent(depth_format)) { depth_aspect_flags |= VK_IMAGE_ASPECT_STENCIL_BIT; }
+
+    depthBufferImage->createImageView(device, depth_format, depth_aspect_flags, 1);
 
     // --- WE NEED A DIFFERENT LAYOUT FOR USAGE
-    VulkanImage &vulkanImage = depthBufferImage.getVulkanImage();
+    VulkanImage &vulkanImage = depthBufferImage->getVulkanImage();
     vulkanImage.transitionImageLayout(device->getLogicalDevice(),
       device->getGraphicsQueue(),
       commandPool,
       VK_IMAGE_LAYOUT_UNDEFINED,
       VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-      VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT,
+      depth_aspect_flags,
       1);
 
-    commandBufferManager.endAndSubmitCommandBuffer(
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
       device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), cmdBuffer);
 }
 
@@ -324,7 +344,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
 {
     std::stringstream rasterizer_shader_dir;
-    std::filesystem::path cwd = std::filesystem::current_path();
+    std::filesystem::path const cwd = std::filesystem::current_path();
     rasterizer_shader_dir << cwd.string();
     rasterizer_shader_dir << RELATIVE_RESOURCE_PATH;
     rasterizer_shader_dir << "Shaders/rasterizer/";
@@ -335,8 +355,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
 
     File vertexFile(shaderHelper.getShaderSpvDir(rasterizer_shader_dir.str(), "shader.vert"));
     File fragmentFile(shaderHelper.getShaderSpvDir(rasterizer_shader_dir.str(), "shader.frag"));
-    std::vector<char> vertex_shader_code = vertexFile.readCharSequence();
-    std::vector<char> fragment_shader_code = fragmentFile.readCharSequence();
+    std::vector<char> const vertex_shader_code = vertexFile.readCharSequence();
+    std::vector<char> const fragment_shader_code = fragmentFile.readCharSequence();
 
     // build shader modules to link to graphics pipeline
     VkShaderModule vertex_shader_module = shaderHelper.createShaderModule(device, vertex_shader_code);
@@ -389,17 +409,17 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
     // viewport & scissor
     // create a viewport info struct
     VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
+    viewport.x = 0.0F;
+    viewport.y = 0.0F;
     const VkExtent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-    viewport.width = (float)swap_chain_extent.width;
-    viewport.height = (float)swap_chain_extent.height;
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
+    viewport.width = static_cast<float>(swap_chain_extent.width);
+    viewport.height = static_cast<float>(swap_chain_extent.height);
+    viewport.minDepth = 0.0F;
+    viewport.maxDepth = 1.0F;
 
     // create a scissor info struct
     VkRect2D scissor{};
-    scissor.offset = { 0, 0 };
+    scissor.offset = { .x = 0, .y = 0 };
     scissor.extent = swap_chain_extent;
 
     VkPipelineViewportStateCreateInfo viewport_state_create_info{};
@@ -415,7 +435,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
     rasterizer_create_info.depthClampEnable = VK_FALSE;
     rasterizer_create_info.rasterizerDiscardEnable = VK_FALSE;
     rasterizer_create_info.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterizer_create_info.lineWidth = 1.0f;
+    rasterizer_create_info.lineWidth = 1.0F;
     rasterizer_create_info.cullMode = VK_CULL_MODE_BACK_BIT;//
     // winding to determine which side is front; y-coordinate is inverted in
     // comparison to OpenGL

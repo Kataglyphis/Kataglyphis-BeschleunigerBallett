@@ -6,6 +6,11 @@
 #define VulkanRenderer_VERSION_MINOR "4"
 
 #define VULKAN_VERSION_MAJOR "1"
-#define VULKAN_VERSION_MINOR "3"
+#define VULKAN_VERSION_MINOR "4"
 
-#define GLSLC_EXE "/home/bigjuicyjones/1.4.321.1/aarch64/bin/glslc"
+#define VULKAN_API_VERSION_MAJOR 1
+#define VULKAN_API_VERSION_MINOR 4
+#define VULKAN_API_VERSION_PATCH 0
+#define VULKAN_API_VERSION 4210688
+
+#define GLSLC_EXE "C:/Users/jsh/scoop/apps/vulkan/current/Bin/glslc.exe"

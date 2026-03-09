@@ -1,6 +1,10 @@
-#include "MirroredRepeatMode.hpp"
+module;
 
-MirroredRepeatMode::MirroredRepeatMode() {}
+#include <glad/glad.h>
+
+module kataglyphis.opengl.mirrored_repeat_mode;
+
+MirroredRepeatMode::MirroredRepeatMode() = default;
 
 void MirroredRepeatMode::activate()
 {
@@ -8,4 +12,4 @@ void MirroredRepeatMode::activate()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
 }
 
-MirroredRepeatMode::~MirroredRepeatMode() {}
+MirroredRepeatMode::~MirroredRepeatMode() = default;

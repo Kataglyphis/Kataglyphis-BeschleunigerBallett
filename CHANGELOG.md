@@ -27,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.5.0] - 2026-03-08
+
+### Changed
+- Centralized project versioning system using `version.txt`.
+
+---
+
 ## [1.4.2] - 2025-11-14
 
 ### Added

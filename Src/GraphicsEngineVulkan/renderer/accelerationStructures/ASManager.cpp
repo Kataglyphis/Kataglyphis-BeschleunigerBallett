@@ -1,10 +1,31 @@
-#include "renderer/accelerationStructures/ASManager.hpp"
+module;
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glm/matrix.hpp>
+#include <memory>
+#include <utility>
+#include <vector>
+#include <vulkan/vulkan.h>
 
-Kataglyphis::VulkanRendererInternals::ASManager::ASManager() {}
+module kataglyphis.vulkan.as_manager;
+
+import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.buffer;
+import kataglyphis.vulkan.vertex;
+import kataglyphis.vulkan.model;
+import kataglyphis.vulkan.mesh;
+import kataglyphis.vulkan.scene;
+import kataglyphis.vulkan.command_buffer_manager;
+import kataglyphis.vulkan.buffer_manager;
+
+Kataglyphis::VulkanRendererInternals::ASManager::ASManager() = default;
 
 void Kataglyphis::VulkanRendererInternals::ASManager::createASForScene(VulkanDevice *device,
   VkCommandPool commandPool,
-  Scene *scene)
+  Kataglyphis::Scene *scene)
 {
     this->vulkanDevice = device;
     createBLAS(device, commandPool, scene);
@@ -13,7 +34,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createASForScene(VulkanDev
 
 void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(VulkanDevice *device,
   VkCommandPool commandPool,
-  Scene *scene)
+  Kataglyphis::Scene *scene)
 {
     // LOAD ALL NECESSARY FUNCTIONS STRAIGHT IN THE BEGINNING
     // all functionality from extensions has to be loaded in the beginning
@@ -21,13 +42,13 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(VulkanDevice *d
     // graphics card we already uploaded objects and created vertex and index
     // buffers respectively
 
-    PFN_vkGetBufferDeviceAddressKHR pvkGetBufferDeviceAddressKHR =
-      (PFN_vkGetBufferDeviceAddressKHR)vkGetDeviceProcAddr(device->getLogicalDevice(), "vkGetBufferDeviceAddress");
+    auto pvkGetBufferDeviceAddressKHR = reinterpret_cast<PFN_vkGetBufferDeviceAddressKHR>(
+      vkGetDeviceProcAddr(device->getLogicalDevice(), "vkGetBufferDeviceAddress"));
 
     std::vector<BlasInput> blas_input(scene->getModelCount());
 
-    for (uint32_t model_index = 0; model_index < static_cast<uint32_t>(scene->getModelCount()); model_index++) {
-        std::shared_ptr<Model> mesh_model = scene->get_model_list()[model_index];
+    for (uint32_t model_index = 0; model_index < scene->getModelCount(); model_index++) {
+        std::shared_ptr<Model> const mesh_model = scene->get_model_list()[model_index];
         // blas_input.emplace_back();
         blas_input[model_index].as_geometry.reserve(mesh_model->getMeshCount());
         blas_input[model_index].as_build_offset_info.reserve(mesh_model->getMeshCount());
@@ -53,7 +74,6 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(VulkanDevice *d
     build_as_structures.resize(scene->getModelCount());
 
     VkDeviceSize max_scratch_size = 0;
-    VkDeviceSize total_size_all_BLAS = 0;
 
     for (unsigned int i = 0; i < scene->getModelCount(); i++) {
         VkDeviceSize current_scretch_size = 0;
@@ -62,7 +82,6 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(VulkanDevice *d
         createAccelerationStructureInfosBLAS(
           device, build_as_structures[i], blas_input[i], current_scretch_size, current_size);
 
-        total_size_all_BLAS += current_size;
         max_scratch_size = std::max(max_scratch_size, current_scretch_size);
     }
 
@@ -71,19 +90,21 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(VulkanDevice *d
     scratchBuffer.create(device,
       max_scratch_size,
       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
     VkBufferDeviceAddressInfo scratch_buffer_device_address_info{};
     scratch_buffer_device_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
     scratch_buffer_device_address_info.buffer = scratchBuffer.getBuffer();
 
-    VkDeviceAddress scratch_buffer_address =
+    VkDeviceAddress const scratch_buffer_address =
       pvkGetBufferDeviceAddressKHR(device->getLogicalDevice(), &scratch_buffer_device_address_info);
 
     VkDeviceOrHostAddressKHR scratch_device_or_host_address{};
     scratch_device_or_host_address.deviceAddress = scratch_buffer_address;
 
-    VkCommandBuffer command_buffer = commandBufferManager.beginCommandBuffer(device->getLogicalDevice(), commandPool);
+    VkCommandBuffer command_buffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
+      device->getLogicalDevice(), commandPool);
 
     for (size_t i = 0; i < scene->getModelCount(); i++) {
         createSingleBlas(device, command_buffer, build_as_structures[i], scratch_buffer_address);
@@ -106,41 +127,37 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(VulkanDevice *d
           nullptr);
     }
 
-    commandBufferManager.endAndSubmitCommandBuffer(
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
       device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer);
 
-    for (auto &b : build_as_structures) { blas.emplace_back(b.single_blas); }
+    for (auto &b : build_as_structures) { blas.emplace_back(std::move(b.single_blas)); }
 
     scratchBuffer.cleanUp();
 }
 
 void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *device,
   VkCommandPool commandPool,
-  Scene *scene)
+  Kataglyphis::Scene *scene)
 {
     // LOAD ALL NECESSARY FUNCTIONS STRAIGHT IN THE BEGINNING
     // all functionality from extensions has to be loaded in the beginning
     // we need a reference to the device location of our geometry laying on the
     // graphics card we already uploaded objects and created vertex and index
     // buffers respectively
-    PFN_vkGetAccelerationStructureBuildSizesKHR pvkGetAccelerationStructureBuildSizesKHR =
-      (PFN_vkGetAccelerationStructureBuildSizesKHR)vkGetDeviceProcAddr(
-        device->getLogicalDevice(), "vkGetAccelerationStructureBuildSizesKHR");
+    auto pvkGetAccelerationStructureBuildSizesKHR = reinterpret_cast<PFN_vkGetAccelerationStructureBuildSizesKHR>(
+      vkGetDeviceProcAddr(device->getLogicalDevice(), "vkGetAccelerationStructureBuildSizesKHR"));
 
-    PFN_vkCreateAccelerationStructureKHR pvkCreateAccelerationStructureKHR =
-      (PFN_vkCreateAccelerationStructureKHR)vkGetDeviceProcAddr(
-        device->getLogicalDevice(), "vkCreateAccelerationStructureKHR");
+    auto pvkCreateAccelerationStructureKHR = reinterpret_cast<PFN_vkCreateAccelerationStructureKHR>(
+      vkGetDeviceProcAddr(device->getLogicalDevice(), "vkCreateAccelerationStructureKHR"));
 
-    PFN_vkGetBufferDeviceAddressKHR pvkGetBufferDeviceAddressKHR =
-      (PFN_vkGetBufferDeviceAddressKHR)vkGetDeviceProcAddr(device->getLogicalDevice(), "vkGetBufferDeviceAddress");
+    auto pvkGetBufferDeviceAddressKHR = reinterpret_cast<PFN_vkGetBufferDeviceAddressKHR>(
+      vkGetDeviceProcAddr(device->getLogicalDevice(), "vkGetBufferDeviceAddress"));
 
-    PFN_vkCmdBuildAccelerationStructuresKHR pvkCmdBuildAccelerationStructuresKHR =
-      (PFN_vkCmdBuildAccelerationStructuresKHR)vkGetDeviceProcAddr(
-        device->getLogicalDevice(), "vkCmdBuildAccelerationStructuresKHR");
+    auto pvkCmdBuildAccelerationStructuresKHR = reinterpret_cast<PFN_vkCmdBuildAccelerationStructuresKHR>(
+      vkGetDeviceProcAddr(device->getLogicalDevice(), "vkCmdBuildAccelerationStructuresKHR"));
 
-    PFN_vkGetAccelerationStructureDeviceAddressKHR pvkGetAccelerationStructureDeviceAddressKHR =
-      (PFN_vkGetAccelerationStructureDeviceAddressKHR)vkGetDeviceProcAddr(
-        device->getLogicalDevice(), "vkGetAccelerationStructureDeviceAddressKHR");
+    auto pvkGetAccelerationStructureDeviceAddressKHR = reinterpret_cast<PFN_vkGetAccelerationStructureDeviceAddressKHR>(
+      vkGetDeviceProcAddr(device->getLogicalDevice(), "vkGetAccelerationStructureDeviceAddressKHR"));
 
     std::vector<VkAccelerationStructureInstanceKHR> tlas_instances;
     tlas_instances.reserve(scene->getModelCount());
@@ -157,7 +174,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
           VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
         acceleration_structure_device_address_info.accelerationStructure = blas[model_index].vulkanAS;
 
-        VkDeviceAddress acceleration_structure_device_address = pvkGetAccelerationStructureDeviceAddressKHR(
+        VkDeviceAddress const acceleration_structure_device_address = pvkGetAccelerationStructureDeviceAddressKHR(
           device->getLogicalDevice(), &acceleration_structure_device_address_info);
 
         VkAccelerationStructureInstanceKHR geometry_instance{};
@@ -172,7 +189,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
         tlas_instances.emplace_back(geometry_instance);
     }
 
-    VkCommandBuffer command_buffer = commandBufferManager.beginCommandBuffer(device->getLogicalDevice(), commandPool);
+    VkCommandBuffer command_buffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
+      device->getLogicalDevice(), commandPool);
 
     VulkanBuffer geometryInstanceBuffer;
 
@@ -181,14 +199,15 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
       geometryInstanceBuffer,
       VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR
         | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-      tlas_instances);
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+      tlas_instances,
+      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
     VkBufferDeviceAddressInfo geometry_instance_buffer_device_address_info{};
     geometry_instance_buffer_device_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
     geometry_instance_buffer_device_address_info.buffer = geometryInstanceBuffer.getBuffer();
 
-    VkDeviceAddress geometry_instance_buffer_address =
+    VkDeviceAddress const geometry_instance_buffer_address =
       pvkGetBufferDeviceAddressKHR(device->getLogicalDevice(), &geometry_instance_buffer_device_address_info);
 
     // Make sure the copy of the instance buffer are copied before triggering the
@@ -239,7 +258,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
     acceleration_structure_build_sizes_info.updateScratchSize = 0;
     acceleration_structure_build_sizes_info.buildScratchSize = 0;
 
-    uint32_t count_instance = static_cast<uint32_t>(tlas_instances.size());
+    auto const count_instance = static_cast<uint32_t>(tlas_instances.size());
     pvkGetAccelerationStructureBuildSizesKHR(device->getLogicalDevice(),
       VK_ACCELERATION_STRUCTURE_BUILD_TYPE_HOST_KHR,
       &acceleration_structure_build_geometry_info,
@@ -252,7 +271,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
       acceleration_structure_build_sizes_info.accelerationStructureSize,
       VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
         | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
     VkAccelerationStructureCreateInfoKHR acceleration_structure_create_info{};
     acceleration_structure_create_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
@@ -272,13 +292,14 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
     scratchBuffer.create(device,
       acceleration_structure_build_sizes_info.buildScratchSize,
       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
     VkBufferDeviceAddressInfo scratch_buffer_device_address_info{};
     scratch_buffer_device_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
     scratch_buffer_device_address_info.buffer = scratchBuffer.getBuffer();
 
-    VkDeviceAddress scratch_buffer_address =
+    VkDeviceAddress const scratch_buffer_address =
       pvkGetBufferDeviceAddressKHR(device->getLogicalDevice(), &scratch_buffer_device_address_info);
 
     // update build info
@@ -292,13 +313,13 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
     acceleration_structure_build_range_info.firstVertex = 0;
     acceleration_structure_build_range_info.transformOffset = 0;
 
-    VkAccelerationStructureBuildRangeInfoKHR *acceleration_structure_build_range_infos =
+    VkAccelerationStructureBuildRangeInfoKHR const *acceleration_structure_build_range_infos =
       &acceleration_structure_build_range_info;
 
     pvkCmdBuildAccelerationStructuresKHR(
       command_buffer, 1, &acceleration_structure_build_geometry_info, &acceleration_structure_build_range_infos);
 
-    commandBufferManager.endAndSubmitCommandBuffer(
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
       device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer);
     scratchBuffer.cleanUp();
     geometryInstanceBuffer.cleanUp();
@@ -306,35 +327,32 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
 
 void Kataglyphis::VulkanRendererInternals::ASManager::cleanUp()
 {
-    PFN_vkDestroyAccelerationStructureKHR pvkDestroyAccelerationStructureKHR =
-      (PFN_vkDestroyAccelerationStructureKHR)vkGetDeviceProcAddr(
-        vulkanDevice->getLogicalDevice(), "vkDestroyAccelerationStructureKHR");
+    auto pvkDestroyAccelerationStructureKHR = reinterpret_cast<PFN_vkDestroyAccelerationStructureKHR>(
+      vkGetDeviceProcAddr(vulkanDevice->getLogicalDevice(), "vkDestroyAccelerationStructureKHR"));
 
     pvkDestroyAccelerationStructureKHR(vulkanDevice->getLogicalDevice(), tlas.vulkanAS, nullptr);
 
     tlas.vulkanBuffer.cleanUp();
 
-    for (size_t index = 0; index < blas.size(); index++) {
-        pvkDestroyAccelerationStructureKHR(vulkanDevice->getLogicalDevice(), blas[index].vulkanAS, nullptr);
+    for (auto &bla : blas) {
+        pvkDestroyAccelerationStructureKHR(vulkanDevice->getLogicalDevice(), bla.vulkanAS, nullptr);
 
-        blas[index].vulkanBuffer.cleanUp();
+        bla.vulkanBuffer.cleanUp();
     }
 }
 
-Kataglyphis::VulkanRendererInternals::ASManager::~ASManager() {}
+Kataglyphis::VulkanRendererInternals::ASManager::~ASManager() = default;
 
 void Kataglyphis::VulkanRendererInternals::ASManager::createSingleBlas(VulkanDevice *device,
   VkCommandBuffer command_buffer,
   BuildAccelerationStructure &build_as_structure,
   VkDeviceAddress scratch_device_or_host_address)
 {
-    PFN_vkCreateAccelerationStructureKHR pvkCreateAccelerationStructureKHR =
-      (PFN_vkCreateAccelerationStructureKHR)vkGetDeviceProcAddr(
-        device->getLogicalDevice(), "vkCreateAccelerationStructureKHR");
+    auto pvkCreateAccelerationStructureKHR = reinterpret_cast<PFN_vkCreateAccelerationStructureKHR>(
+      vkGetDeviceProcAddr(device->getLogicalDevice(), "vkCreateAccelerationStructureKHR"));
 
-    PFN_vkCmdBuildAccelerationStructuresKHR pvkCmdBuildAccelerationStructuresKHR =
-      (PFN_vkCmdBuildAccelerationStructuresKHR)vkGetDeviceProcAddr(
-        device->getLogicalDevice(), "vkCmdBuildAccelerationStructuresKHR");
+    auto pvkCmdBuildAccelerationStructuresKHR = reinterpret_cast<PFN_vkCmdBuildAccelerationStructuresKHR>(
+      vkGetDeviceProcAddr(device->getLogicalDevice(), "vkCmdBuildAccelerationStructuresKHR"));
 
     VkAccelerationStructureCreateInfoKHR acceleration_structure_create_info{};
     acceleration_structure_create_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
@@ -345,7 +363,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createSingleBlas(VulkanDev
       build_as_structure.size_info.accelerationStructureSize,
       VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
         | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+      VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
     acceleration_structure_create_info.buffer = blasVulkanBuffer.getBuffer();
     VkAccelerationStructureKHR &blas_as = build_as_structure.single_blas.vulkanAS;
@@ -365,9 +384,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createAccelerationStructur
   VkDeviceSize &current_scretch_size,
   VkDeviceSize &current_size)
 {
-    PFN_vkGetAccelerationStructureBuildSizesKHR pvkGetAccelerationStructureBuildSizesKHR =
-      (PFN_vkGetAccelerationStructureBuildSizesKHR)vkGetDeviceProcAddr(
-        device->getLogicalDevice(), "vkGetAccelerationStructureBuildSizesKHR");
+    auto pvkGetAccelerationStructureBuildSizesKHR = reinterpret_cast<PFN_vkGetAccelerationStructureBuildSizesKHR>(
+      vkGetDeviceProcAddr(device->getLogicalDevice(), "vkGetAccelerationStructureBuildSizesKHR"));
 
     build_as_structure.build_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
     build_as_structure.build_info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
@@ -382,8 +400,9 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createAccelerationStructur
 
     std::vector<uint32_t> max_primitive_cnt(blas_input.as_build_offset_info.size());
 
-    for (uint32_t temp = 0; temp < static_cast<uint32_t>(blas_input.as_build_offset_info.size()); temp++)
+    for (uint32_t temp = 0; temp < static_cast<uint32_t>(blas_input.as_build_offset_info.size()); temp++) {
         max_primitive_cnt[temp] = blas_input.as_build_offset_info[temp].primitiveCount;
+    }
 
     pvkGetAccelerationStructureBuildSizesKHR(device->getLogicalDevice(),
       VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
@@ -396,7 +415,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createAccelerationStructur
 }
 
 void Kataglyphis::VulkanRendererInternals::ASManager::objectToVkGeometryKHR(VulkanDevice *device,
-  Mesh *mesh,
+  Kataglyphis::Mesh *mesh,
   VkAccelerationStructureGeometryKHR &acceleration_structure_geometry,
   VkAccelerationStructureBuildRangeInfoKHR &acceleration_structure_build_range_info)
 {
@@ -405,8 +424,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::objectToVkGeometryKHR(Vulk
     // we need a reference to the device location of our geometry laying on the
     // graphics card we already uploaded objects and created vertex and index
     // buffers respectively
-    PFN_vkGetBufferDeviceAddressKHR pvkGetBufferDeviceAddressKHR =
-      (PFN_vkGetBufferDeviceAddressKHR)vkGetDeviceProcAddr(device->getLogicalDevice(), "vkGetBufferDeviceAddress");
+    auto pvkGetBufferDeviceAddressKHR = reinterpret_cast<PFN_vkGetBufferDeviceAddressKHR>(
+      vkGetDeviceProcAddr(device->getLogicalDevice(), "vkGetBufferDeviceAddress"));
 
     // all starts with the address of our vertex and index data we already
     // uploaded in buffers earlier when loading the meshes/models
@@ -421,9 +440,9 @@ void Kataglyphis::VulkanRendererInternals::ASManager::objectToVkGeometryKHR(Vulk
     index_buffer_device_address_info.pNext = nullptr;
 
     // receiving address to move on
-    VkDeviceAddress vertex_buffer_address =
+    VkDeviceAddress const vertex_buffer_address =
       pvkGetBufferDeviceAddressKHR(device->getLogicalDevice(), &vertex_buffer_device_address_info);
-    VkDeviceAddress index_buffer_address =
+    VkDeviceAddress const index_buffer_address =
       pvkGetBufferDeviceAddressKHR(device->getLogicalDevice(), &index_buffer_device_address_info);
 
     // convert to const address for further processing

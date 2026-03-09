@@ -1,5 +1,13 @@
 set(WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../)
 
+if(NOT
+   CMAKE_BUILD_TYPE
+   STREQUAL
+   "RelWithDebInfo")
+  message(STATUS "Skipping perf tests: build type is '${CMAKE_BUILD_TYPE}', requires RelWithDebInfo.")
+  return()
+endif()
+
 # update current positions
 set(PROJECT_SRC_DIR ${WORKING_DIRECTORY}Src/GraphicsEngineVulkan/)
 set(PROJECT_INCLUDE_DIR ${WORKING_DIRECTORY}Src/GraphicsEngineVulkan/)
@@ -9,10 +17,13 @@ set(SHADER_SRC_DIR ${WORKING_DIRECTORY}Resources/Shaders/)
 include(${WORKING_DIRECTORY}Src/GraphicsEngineVulkan/cmake/filters/SetShaderFilters.cmake)
 include(${WORKING_DIRECTORY}Src/GraphicsEngineVulkan/cmake/filters/SetProjectFilters.cmake)
 include(${WORKING_DIRECTORY}Src/GraphicsEngineVulkan/cmake/filters/SetExternalLibsFilters.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
+include(${WORKING_DIRECTORY}Test/cmake/CommonTestBuild.cmake)
 
 include(cmake/SetTestFilters.cmake)
 
 set(PERF_TEST_SUITE perfTestSuite)
+
 
 file(
   GLOB_RECURSE VULKANRENDERER_SOURCES
@@ -29,63 +40,26 @@ file(
   RELATIVE ${PROJECT_SRC_DIR}
   "*.hpp")
 
-# if(RUST_FEATURES)
-#   corrosion_import_crate(MANIFEST_PATH ${PROJECT_SRC_DIR}rusty_code/Cargo.toml)
-#   corrosion_add_cxxbridge(rusty_bridge_perf CRATE rusty_code FILES lib.rs)
-# endif()
-
 add_executable(${PERF_TEST_SUITE})
 
-set(ShaderIncludes
-    -I
-    ${SHADER_SRC_DIR}
-    -I
-    ${SHADER_SRC_DIR}common/
-    -I
-    ${SHADER_SRC_DIR}pbr/
-    -I
-    ${SHADER_SRC_DIR}pbr/brdf/
-    -I
-    ${SHADER_SRC_DIR}hostDevice/
-    -I
-    ${PROJECT_SRC_DIR}/renderer/
-    -I
-    ${PROJECT_SRC_DIR}/renderer/pushConstants/
-    -I
-    ${PROJECT_SRC_DIR}/scene/)
+kataglyphis_setup_vulkan_test_target(${PERF_TEST_SUITE})
 
-# Join the paths into a single space-separated string
-string(
-  REPLACE ";"
-          " "
-          ShaderIncludesString
-          "${ShaderIncludes}")
-
-message("The shader include string is the following: ${ShaderIncludesString}")
-
-if(RUST_FEATURES)
-  target_compile_definitions(${PROJECT_NAME} PRIVATE USE_RUST=1)
-else()
-  target_compile_definitions(${PROJECT_NAME} PRIVATE USE_RUST=0)
-endif()
-
-if(NOT MSVC)
-  target_compile_definitions(
-    ${PERF_TEST_SUITE}
-    PRIVATE RELATIVE_RESOURCE_PATH="/../../Resources/"
-            RELATIVE_INCLUDE_PATH="/../../Src/GraphicsEngineVulkan/"
-            RELATIVE_IMGUI_FONTS_PATH="/../../ExternalLib/IMGUI/misc/fonts/"
-            ShaderIncludesString="${ShaderIncludesString}")
-else()
-  target_compile_definitions(
-    ${PERF_TEST_SUITE}
-    PRIVATE RELATIVE_RESOURCE_PATH="/../../Resources/"
-            RELATIVE_INCLUDE_PATH="/../../Src/GraphicsEngineVulkan/"
-            RELATIVE_IMGUI_FONTS_PATH="/../../ExternalLib/IMGUI/misc/fonts/"
-            ShaderIncludesString="${ShaderIncludesString}")
-endif()
-
-configure_file(${PROJECT_SRC_DIR}/VulkanRendererConfig.hpp.in "${PROJECT_SRC_DIR}/renderer/VulkanRendererConfig.hpp")
+kataglyphis_apply_runtime_compile_definitions(
+  ${PERF_TEST_SUITE}
+  RESOURCE_PATH_NON_MSVC
+  "/../../Resources/"
+  RESOURCE_PATH_MSVC
+  "/../../Resources/"
+  INCLUDE_PATH_NON_MSVC
+  "/../../Src/GraphicsEngineVulkan/"
+  INCLUDE_PATH_MSVC
+  "/../../Src/GraphicsEngineVulkan/"
+  IMGUI_FONTS_PATH_NON_MSVC
+  "/../../ExternalLib/IMGUI/misc/fonts/"
+  IMGUI_FONTS_PATH_MSVC
+  "/../../ExternalLib/IMGUI/misc/fonts/"
+  SHADER_INCLUDES_STRING
+  "${ShaderIncludesString}")
 
 target_sources(
   ${PERF_TEST_SUITE}
@@ -130,15 +104,3 @@ target_link_libraries(
           GSL
           spdlog)
 
-if(RUST_FEATURES)
-  target_link_libraries(${PERF_TEST_SUITE} PUBLIC rusty_code)
-endif()
-
-# disable all warnings for our test suite
-if(MSVC)
-  target_compile_options(${PERF_TEST_SUITE} INTERFACE /w)
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-  target_compile_options(${PERF_TEST_SUITE} INTERFACE -w)
-else()
-  target_compile_options(${PERF_TEST_SUITE} INTERFACE -w)
-endif()

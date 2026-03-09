@@ -9,7 +9,8 @@
 project = "Kataglyphis-Renderer"
 copyright = "2024, Jonas Heinle"
 author = "Jonas Heinle"
-release = "1.3"
+with open("../../version.txt", "r") as f:
+    release = f.read().strip()
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
@@ -49,11 +50,12 @@ exclude_patterns = []
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = "sphinx_rtd_theme"
+html_theme = "sphinx_book_theme"
 html_theme_options = {
-    "style_nav_header_background": "#6af0ad",
-    "palette": "dark",  # Set dark mode as default
-    "fixed_sidebar": True,
+    "repository_url": "https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett",
+    "use_repository_button": True,
+    "show_navbar_depth": 2,
+    "navigation_with_keys": True,
 }
 html_static_path = ["_static"]
 # Here we assume that the file is at _static/css/custom.css

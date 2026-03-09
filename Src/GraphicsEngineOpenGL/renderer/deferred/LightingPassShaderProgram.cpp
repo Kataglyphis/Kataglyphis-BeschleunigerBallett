@@ -1,5 +1,7 @@
-#include "LightingPassShaderProgram.hpp"
+module;
 
-LightingPassShaderProgram::LightingPassShaderProgram() {}
+module kataglyphis.opengl.lighting_pass_shader_program;
 
-LightingPassShaderProgram::~LightingPassShaderProgram() {}
+LightingPassShaderProgram::LightingPassShaderProgram() = default;
+
+LightingPassShaderProgram::~LightingPassShaderProgram() = default;

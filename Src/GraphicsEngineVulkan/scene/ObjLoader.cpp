@@ -1,28 +1,43 @@
-#include "ObjLoader.hpp"
-#define TINYOBJLOADER_IMPLEMENTATION
-#include <tiny_obj_loader.h>
+module;
 
-#include "util/File.hpp"
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+#include <vulkan/vulkan_core.h>
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <glm/ext/vector_float2.hpp>
+#include <glm/geometric.hpp>
+#include <glm/vec3.hpp>
 #include <iostream>
+#include <tiny_obj_loader.h>
 #include <unordered_map>
+
+module kataglyphis.vulkan.obj_loader;
+
+import kataglyphis.vulkan.vertex;
+import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.obj_material;
+import kataglyphis.vulkan.model;
+import kataglyphis.vulkan.texture;
+import kataglyphis.vulkan.file;
 
 using namespace Kataglyphis;
 
 ObjLoader::ObjLoader(VulkanDevice *device, VkQueue transfer_queue, VkCommandPool command_pool)
-{
-    this->device = device;
-    this->transfer_queue = transfer_queue;
-    this->command_pool = command_pool;
-}
+  : device(device), transfer_queue(transfer_queue), command_pool(command_pool)
+{}
 
-std::shared_ptr<Model> ObjLoader::loadModel(const std::string &modelFile)
+auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model>
 {
     // the model we want to load
     std::shared_ptr<Model> new_model = std::make_shared<Model>(device);
 
     // first load txtures from model
     std::vector<std::string> textureNames = loadTexturesAndMaterials(modelFile);
-    std::vector<int> matToTex(textureNames.size());
 
     // now that we have the names lets create the vulkan side of textures
     for (size_t i = 0; i < textureNames.size(); i++) {
@@ -32,11 +47,9 @@ std::shared_ptr<Model> ObjLoader::loadModel(const std::string &modelFile)
             // Otherwise, create texture and set value to index of new texture
             Texture texture;
             texture.createFromFile(device, command_pool, textureNames[i]);
-            new_model->addTexture(texture);
-            matToTex[i] = new_model->getTextureCount();
+            new_model->addTexture(std::move(texture));
 
         } else {
-            matToTex[i] = 0;
         }
     }
 
@@ -47,9 +60,9 @@ std::shared_ptr<Model> ObjLoader::loadModel(const std::string &modelFile)
     return new_model;
 }
 
-std::vector<std::string> ObjLoader::loadTexturesAndMaterials(const std::string &modelFile)
+auto ObjLoader::loadTexturesAndMaterials(const std::string &modelFile) -> std::vector<std::string>
 {
-    tinyobj::ObjReaderConfig reader_config;
+    tinyobj::ObjReaderConfig const reader_config;
     tinyobj::ObjReader reader;
 
     if (!reader.ParseFromFile(modelFile, reader_config)) {
@@ -59,14 +72,14 @@ std::vector<std::string> ObjLoader::loadTexturesAndMaterials(const std::string &
 
     if (!reader.Warning().empty()) { std::cout << "TinyObjReader: " << reader.Warning(); }
 
-    auto &tol_materials = reader.GetMaterials();
+    const auto &tol_materials = reader.GetMaterials();
     textures.reserve(tol_materials.size());
 
     int texture_id = 0;
 
     // we now iterate over all materials to get diffuse textures
-    for (size_t i = 0; i < tol_materials.size(); i++) {
-        const tinyobj::material_t *mp = &tol_materials[i];
+    for (const auto &tol_material : tol_materials) {
+        const tinyobj::material_t *mp = &tol_material;
         ObjMaterial material{};
         material.ambient = glm::vec3(mp->ambient[0], mp->ambient[1], mp->ambient[2]);
         material.diffuse = glm::vec3(mp->diffuse[0], mp->diffuse[1], mp->diffuse[2]);
@@ -78,10 +91,10 @@ std::vector<std::string> ObjLoader::loadTexturesAndMaterials(const std::string &
         material.shininess = mp->shininess;
         material.illum = mp->illum;
 
-        if (mp->diffuse_texname.length() > 0) {
-            std::string relative_texture_filename = mp->diffuse_texname;
+        if (!mp->diffuse_texname.empty()) {
+            std::string const relative_texture_filename = mp->diffuse_texname;
             File model_file(modelFile);
-            std::string texture_filename = model_file.getBaseDir() + "/textures/" + relative_texture_filename;
+            std::string const texture_filename = model_file.getBaseDir() + "/textures/" + relative_texture_filename;
 
             textures.push_back(texture_filename);
             material.textureID = texture_id;
@@ -89,21 +102,21 @@ std::vector<std::string> ObjLoader::loadTexturesAndMaterials(const std::string &
 
         } else {
             material.textureID = 0;
-            textures.push_back("");
+            textures.emplace_back("");
         }
 
         materials.push_back(material);
     }
 
     // for the case no .mtl file is given place some random standard material ...
-    if (tol_materials.empty()) { materials.emplace_back(ObjMaterial()); }
+    if (tol_materials.empty()) { materials.emplace_back(); }
 
     return textures;
 }
 
 void ObjLoader::loadVertices(const std::string &fileName)
 {
-    tinyobj::ObjReaderConfig reader_config;
+    tinyobj::ObjReaderConfig const reader_config;
     // reader_config.mtl_search_path = ""; // Path to material files
 
     tinyobj::ObjReader reader;
@@ -115,64 +128,63 @@ void ObjLoader::loadVertices(const std::string &fileName)
 
     if (!reader.Warning().empty()) { std::cout << "TinyObjReader: " << reader.Warning(); }
 
-    auto &attrib = reader.GetAttrib();
-    auto &shapes = reader.GetShapes();
-    auto &materials = reader.GetMaterials();
-
+    const auto &attrib = reader.GetAttrib();
+    const auto &shapes = reader.GetShapes();
     std::unordered_map<Vertex, uint32_t> vertices_map{};
 
     // Loop over shapes
-    for (size_t s = 0; s < shapes.size(); s++) {
+    for (const auto &shape : shapes) {
         // prepare for enlargement
-        vertices.reserve(shapes[s].mesh.indices.size() + vertices.size());
-        indices.reserve(shapes[s].mesh.indices.size() + indices.size());
+        vertices.reserve(shape.mesh.indices.size() + vertices.size());
+        indices.reserve(shape.mesh.indices.size() + indices.size());
 
         // Loop over faces(polygon)
         size_t index_offset = 0;
-        for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
-            size_t fv = size_t(shapes[s].mesh.num_face_vertices[f]);
+        for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); f++) {
+            auto const fv = static_cast<size_t>(shape.mesh.num_face_vertices[f]);
 
             // Loop over vertices in the face.
             for (size_t v = 0; v < fv; v++) {
                 // access to vertex
-                tinyobj::index_t idx = shapes[s].mesh.indices[index_offset + v];
-                tinyobj::real_t vx = attrib.vertices[3 * size_t(idx.vertex_index) + 0];
-                tinyobj::real_t vy = attrib.vertices[3 * size_t(idx.vertex_index) + 1];
-                tinyobj::real_t vz = attrib.vertices[3 * size_t(idx.vertex_index) + 2];
-                glm::vec3 pos = { vx, vy, vz };
+                tinyobj::index_t const idx = shape.mesh.indices[index_offset + v];
+                tinyobj::real_t const vx = attrib.vertices[(3 * static_cast<size_t>(idx.vertex_index)) + 0];
+                tinyobj::real_t const vy = attrib.vertices[(3 * static_cast<size_t>(idx.vertex_index)) + 1];
+                tinyobj::real_t const vz = attrib.vertices[(3 * static_cast<size_t>(idx.vertex_index)) + 2];
+                glm::vec3 const pos = { vx, vy, vz };
 
-                glm::vec3 normals(0.0f);
+                glm::vec3 normals(0.0F);
                 // Check if `normal_index` is zero or positive. negative = no normal
                 // data
                 if (idx.normal_index >= 0 && !attrib.normals.empty()) {
-                    tinyobj::real_t nx = attrib.normals[3 * size_t(idx.normal_index) + 0];
-                    tinyobj::real_t ny = attrib.normals[3 * size_t(idx.normal_index) + 1];
-                    tinyobj::real_t nz = attrib.normals[3 * size_t(idx.normal_index) + 2];
+                    tinyobj::real_t const nx = attrib.normals[(3 * static_cast<size_t>(idx.normal_index)) + 0];
+                    tinyobj::real_t const ny = attrib.normals[(3 * static_cast<size_t>(idx.normal_index)) + 1];
+                    tinyobj::real_t const nz = attrib.normals[(3 * static_cast<size_t>(idx.normal_index)) + 2];
                     normals = glm::vec3(nx, ny, nz);
                 }
 
-                glm::vec3 color(-1.f);
+                glm::vec3 color(-1.F);
                 if (!attrib.colors.empty()) {
-                    tinyobj::real_t red = attrib.colors[3 * size_t(idx.vertex_index) + 0];
-                    tinyobj::real_t green = attrib.colors[3 * size_t(idx.vertex_index) + 1];
-                    tinyobj::real_t blue = attrib.colors[3 * size_t(idx.vertex_index) + 2];
+                    tinyobj::real_t const red = attrib.colors[(3 * static_cast<size_t>(idx.vertex_index)) + 0];
+                    tinyobj::real_t const green = attrib.colors[(3 * static_cast<size_t>(idx.vertex_index)) + 1];
+                    tinyobj::real_t const blue = attrib.colors[(3 * static_cast<size_t>(idx.vertex_index)) + 2];
                     color = glm::vec3(red, green, blue);
                 }
 
-                glm::vec2 tex_coords(0.0f);
+                glm::vec2 tex_coords(0.0F);
                 // Check if `texcoord_index` is zero or positive. negative = no texcoord
                 // data
                 if (idx.texcoord_index >= 0 && !attrib.texcoords.empty()) {
-                    tinyobj::real_t tx = attrib.texcoords[2 * size_t(idx.texcoord_index) + 0];
+                    tinyobj::real_t const tx = attrib.texcoords[(2 * static_cast<size_t>(idx.texcoord_index)) + 0];
                     // flip y coordinate !!
-                    tinyobj::real_t ty = 1.f - attrib.texcoords[2 * size_t(idx.texcoord_index) + 1];
+                    tinyobj::real_t const ty =
+                      1.F - attrib.texcoords[(2 * static_cast<size_t>(idx.texcoord_index)) + 1];
                     tex_coords = glm::vec2(tx, ty);
                 }
 
-                Vertex vert{ pos, normals, color, tex_coords };
+                Vertex const vert{ pos, normals, color, tex_coords };
 
-                if (vertices_map.count(vert) == 0) {
-                    vertices_map[vert] = vertices.size();
+                if (!vertices_map.contains(vert)) {
+                    vertices_map[vert] = static_cast<uint32_t>(vertices.size());
                     vertices.push_back(vert);
                 }
 
@@ -183,7 +195,7 @@ void ObjLoader::loadVertices(const std::string &fileName)
 
             // per-face material; face usually is triangle
             // matToTex[shapes[s].mesh.material_ids[f]]
-            materialIndex.push_back(shapes[s].mesh.material_ids[f]);
+            materialIndex.push_back(static_cast<uint32_t>(shape.mesh.material_ids[f]));
         }
     }
 
@@ -194,7 +206,7 @@ void ObjLoader::loadVertices(const std::string &fileName)
             Vertex &v1 = vertices[indices[i + 1]];
             Vertex &v2 = vertices[indices[i + 2]];
 
-            glm::vec3 n = glm::normalize(glm::cross((v1.pos - v0.pos), (v2.pos - v0.pos)));
+            glm::vec3 const n = glm::normalize(glm::cross((v1.position - v0.position), (v2.position - v0.position)));
             v0.normal = n;
             v1.normal = n;
             v2.normal = n;

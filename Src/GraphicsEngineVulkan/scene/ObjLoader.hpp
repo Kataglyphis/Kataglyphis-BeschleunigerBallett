@@ -4,8 +4,9 @@
 #include <memory>
 
 #include "Model.hpp"
-#include "scene/ObjMaterial.hpp"
-#include "scene/Vertex.hpp"
+
+import kataglyphis.vulkan.obj_material;
+import kataglyphis.vulkan.vertex;
 
 namespace Kataglyphis {
 class ObjLoader

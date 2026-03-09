@@ -1,25 +1,36 @@
-#include "scene/sky_box/SkyBox.hpp"
+module;
 
 #include <array>
 #include <cassert>
-#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <ctime>
 #include <filesystem>
-#include <random>
+#include <iostream>
+#include <memory>
 #include <sstream>
-#include <time.h>
+#include <string>
 #include <vector>
 
+#include <glad/glad.h>
+#include <glm/ext/matrix_float3x3.hpp>
+#include <glm/ext/matrix_float4x4.hpp>
 #include <stb_image.h>
 
 #include "hostDevice/bindings.hpp"
-#include "renderer/OpenGLRendererConfig.hpp"
-#include "scene/Vertex.hpp"
+
+module kataglyphis.opengl.sky_box;
+
+import kataglyphis.opengl.vertex;
+import kataglyphis.opengl.shader_program;
+import kataglyphis.opengl.mesh;
 
 SkyBox::SkyBox()
 {
     std::stringstream skybox_base_dir;
-    std::filesystem::path cwd = std::filesystem::current_path();
+    std::filesystem::path const cwd = std::filesystem::current_path();
     skybox_base_dir << cwd.string();
     skybox_base_dir << RELATIVE_RESOURCE_PATH;
     skybox_base_dir << "Textures/Skybox/DOOM2016/";
@@ -31,8 +42,8 @@ SkyBox::SkyBox()
 
     std::vector<std::string> skybox_faces;
 
-    for (uint32_t i = 0; i < static_cast<uint32_t>(skybox_textures.size()); i++) {
-        texture_loading << skybox_base_dir.str() << skybox_textures[i];
+    for (const auto &skybox_texture : skybox_textures) {
+        texture_loading << skybox_base_dir.str() << skybox_texture;
         skybox_faces.push_back(texture_loading.str());
         texture_loading.str(std::string());
     }
@@ -49,12 +60,14 @@ SkyBox::SkyBox()
     glGenTextures(1, &texture_id);
     glBindTexture(GL_TEXTURE_CUBE_MAP, texture_id);
 
-    int width, height, bit_depth;
+    int width;
+    int height;
+    int bit_depth;
 
     for (size_t i = 0; i < 6; i++) {
         unsigned char *texture_data = stbi_load(skybox_faces[i].c_str(), &width, &height, &bit_depth, 0);
-        if (!texture_data) {
-            printf("Failed to find: %s\n", skybox_faces[i].c_str());
+        if (texture_data == nullptr) {
+            std::cerr << "Failed to find: " << skybox_faces[i] << '\n';
             return;
         }
 
@@ -124,43 +137,43 @@ SkyBox::SkyBox()
 
     std::vector<Vertex> sky_box_vertices = {
 
-        Vertex(glm::vec3(-1.0f, 1.0f, -1.0f),
-          glm::vec3(0.0f, 0.0f, 0.0f),
-          glm::vec3(0.0f, 0.0f, 0.0f),
-          glm::vec2(0.0f, 0.0f)),
+        Vertex(glm::vec3(-1.0F, 1.0F, -1.0F),
+          glm::vec3(0.0F, 0.0F, 0.0F),
+          glm::vec3(0.0F, 0.0F, 0.0F),
+          glm::vec2(0.0F, 0.0F)),
 
-        Vertex(glm::vec3(-1.0f, -1.0f, -1.0f),
-          glm::vec3(0.0f, 0.0f, 0.0f),
-          glm::vec3(0.0f, 0.0f, 0.0f),
-          glm::vec2(0.0f, 0.0f)),
+        Vertex(glm::vec3(-1.0F, -1.0F, -1.0F),
+          glm::vec3(0.0F, 0.0F, 0.0F),
+          glm::vec3(0.0F, 0.0F, 0.0F),
+          glm::vec2(0.0F, 0.0F)),
 
-        Vertex(glm::vec3(1.0f, 1.0f, -1.0f),
-          glm::vec3(0.0f, 0.0f, 0.0f),
-          glm::vec3(0.0f, 0.0f, 0.0f),
-          glm::vec2(0.0f, 0.0f)),
+        Vertex(glm::vec3(1.0F, 1.0F, -1.0F),
+          glm::vec3(0.0F, 0.0F, 0.0F),
+          glm::vec3(0.0F, 0.0F, 0.0F),
+          glm::vec2(0.0F, 0.0F)),
 
-        Vertex(glm::vec3(1.0f, -1.0f, -1.0f),
-          glm::vec3(0.0f, 0.0f, 0.0f),
-          glm::vec3(0.0f, 0.0f, 0.0f),
-          glm::vec2(0.0f, 0.0f)),
+        Vertex(glm::vec3(1.0F, -1.0F, -1.0F),
+          glm::vec3(0.0F, 0.0F, 0.0F),
+          glm::vec3(0.0F, 0.0F, 0.0F),
+          glm::vec2(0.0F, 0.0F)),
 
-        Vertex(glm::vec3(-1.0f, 1.0f, 1.0f),
-          glm::vec3(0.0f, 0.0f, 0.0f),
-          glm::vec3(0.0f, 0.0f, 0.0f),
-          glm::vec2(0.0f, 0.0f)),
+        Vertex(glm::vec3(-1.0F, 1.0F, 1.0F),
+          glm::vec3(0.0F, 0.0F, 0.0F),
+          glm::vec3(0.0F, 0.0F, 0.0F),
+          glm::vec2(0.0F, 0.0F)),
 
         Vertex(
-          glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec2(0.0f, 0.0f)),
+          glm::vec3(1.0F, 1.0F, 1.0F), glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(0.0F, 0.0F, 0.0F), glm::vec2(0.0F, 0.0F)),
 
-        Vertex(glm::vec3(-1.0f, -1.0f, 1.0f),
-          glm::vec3(0.0f, 0.0f, 0.0f),
-          glm::vec3(0.0f, 0.0f, 0.0f),
-          glm::vec2(0.0f, 0.0f)),
+        Vertex(glm::vec3(-1.0F, -1.0F, 1.0F),
+          glm::vec3(0.0F, 0.0F, 0.0F),
+          glm::vec3(0.0F, 0.0F, 0.0F),
+          glm::vec2(0.0F, 0.0F)),
 
-        Vertex(glm::vec3(1.0f, -1.0f, 1.0f),
-          glm::vec3(0.0f, 0.0f, 0.0f),
-          glm::vec3(0.0f, 0.0f, 0.0f),
-          glm::vec2(0.0f, 0.0f)),
+        Vertex(glm::vec3(1.0F, -1.0F, 1.0F),
+          glm::vec3(0.0F, 0.0F, 0.0F),
+          glm::vec3(0.0F, 0.0F, 0.0F),
+          glm::vec2(0.0F, 0.0F)),
 
     };
 
@@ -169,15 +182,15 @@ SkyBox::SkyBox()
 
 void SkyBox::draw_sky_box(glm::mat4 projection_matrix,
   glm::mat4 view_matrix,
-  GLuint window_width,
-  GLuint window_height,
+  GLuint /*window_width*/,
+  GLuint /*window_height*/,
   GLfloat delta_time)
 {
     // https://learnopengl.com/Advanced-OpenGL/Cubemaps
-    GLfloat velocity = movement_speed * delta_time;
+    GLfloat const velocity = movement_speed * delta_time;
     shader_playback_time = static_cast<GLfloat>(fmod(shader_playback_time + velocity, 10000));
 
-    glm::mat4 new_view_matrix = glm::mat4(glm::mat3(view_matrix));
+    glm::mat4 const new_view_matrix = glm::mat4(glm::mat3(view_matrix));
 
     glDepthMask(GL_FALSE);
     glDepthFunc(GL_LEQUAL);

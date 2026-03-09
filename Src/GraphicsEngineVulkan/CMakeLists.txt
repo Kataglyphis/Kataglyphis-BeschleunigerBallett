@@ -1,15 +1,12 @@
-# update current positions
-set(PROJECT_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/)
-set(PROJECT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/)
-set(EXTERNAL_LIB_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}../../ExternalLib/)
-set(SHADER_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/Shaders/)
-
-include(cmake/filters/SetShaderFilters.cmake)
-include(cmake/filters/SetProjectFilters.cmake)
-include(cmake/SetSourceGroups.cmake)
-include(cmake/filters/SetExternalLibsFilters.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/EngineBackendMacros.cmake)
+kataglyphis_setup_engine_dirs_and_filters()
 
 file(GLOB_RECURSE VULKANRENDERER_SOURCES "*.cpp")
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15)
+  set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/renderer/VulkanRenderer.cpp PROPERTIES COMPILE_OPTIONS
+                                                                                                 "-fno-lto")
+endif()
 
 file(
   GLOB_RECURSE SHADER_HEADERS
@@ -18,111 +15,13 @@ file(
 
 file(GLOB_RECURSE VULKANRENDERER_HEADERS "*.hpp")
 
-if(RUST_FEATURES)
-
-  corrosion_import_crate(
-    MANIFEST_PATH rusty_code/Cargo.toml
-  )
-  if(WIN32)
-    corrosion_set_env_vars(
-              rusty_code
-              CXXFLAGS=/EHsc
-    )
-  else()
-    # Native-only corrosion/toolchain setup (no cross-building)
-    # Optionally override with -DGCC_TOOLCHAIN_PATH=/path/to/gcc when configuring
-    # Nur setzen, wenn wir im GNU/GCC Preset sind
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        set(GCC_TOOLCHAIN_PATH "/opt/gcc-15.2.0" CACHE PATH "GCC toolchain root")
-        set(RUST_CXXFLAGS "-fexceptions")
-    else()
-        # Falls Clang aktiv ist, leeren wir den Pfad oder setzen ihn auf 'OFF'
-        set(GCC_TOOLCHAIN_PATH "" CACHE PATH "GCC toolchain root" FORCE)
-        set(RUST_CXXFLAGS "--gcc-toolchain=/opt/gcc-15.2.0 -fexceptions")
-    endif()
-
-    # detect host arch for logging (no cross-compile behavior)
-    string(TOLOWER "${CMAKE_HOST_SYSTEM_PROCESSOR}" _hostproc)
-    if(_hostproc MATCHES "^(x86_64|amd64)$")
-      set(HOST_ARCH "x86_64")
-    elseif(_hostproc MATCHES "^(aarch64|arm64|armv8)$")
-      set(HOST_ARCH "aarch64")
-    elseif(_hostproc MATCHES "^(riscv64)$")
-      set(HOST_ARCH "riscv64")
-    else()
-      set(HOST_ARCH "${_hostproc}")
-    endif()
-
-    message(STATUS "Native-only build. HOST_ARCH=${HOST_ARCH}")
-
-    if(GCC_TOOLCHAIN_PATH AND EXISTS "${GCC_TOOLCHAIN_PATH}")
-      # Try to find reasonable native compiler binary names
-      if(HOST_ARCH STREQUAL "x86_64")
-        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/x86_64-pc-linux-gnu-gcc" "${GCC_TOOLCHAIN_PATH}/bin/gcc")
-        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/x86_64-pc-linux-gnu-g++" "${GCC_TOOLCHAIN_PATH}/bin/g++")
-      elseif(HOST_ARCH STREQUAL "aarch64")
-        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/aarch64-linux-gnu-gcc" "${GCC_TOOLCHAIN_PATH}/bin/gcc")
-        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/aarch64-linux-gnu-g++" "${GCC_TOOLCHAIN_PATH}/bin/g++")
-      elseif(HOST_ARCH STREQUAL "riscv64")
-        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/riscv64-unknown-linux-gnu-gcc" "${GCC_TOOLCHAIN_PATH}/bin/gcc")
-        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/riscv64-unknown-linux-gnu-g++" "${GCC_TOOLCHAIN_PATH}/bin/g++")
-      else()
-        find_program(GCC_TOOLCHAIN_GCC NAMES "${GCC_TOOLCHAIN_PATH}/bin/gcc")
-        find_program(GCC_TOOLCHAIN_GXX NAMES "${GCC_TOOLCHAIN_PATH}/bin/g++")
-      endif()
-
-      if(NOT GCC_TOOLCHAIN_GCC)
-        message(WARNING "Toolchain gcc not found in ${GCC_TOOLCHAIN_PATH}; falling back to system 'gcc'")
-        set(GCC_TOOLCHAIN_GCC "gcc")
-      endif()
-      if(NOT GCC_TOOLCHAIN_GXX)
-        message(WARNING "Toolchain g++ not found in ${GCC_TOOLCHAIN_PATH}; falling back to system 'g++'")
-        set(GCC_TOOLCHAIN_GXX "g++")
-      endif()
-
-      # prefer lib64 then lib; optional for setting LDFLAGS/rpath
-      if(EXISTS "${GCC_TOOLCHAIN_PATH}/lib64")
-        set(GCC_LIB_PATH "${GCC_TOOLCHAIN_PATH}/lib64")
-      elseif(EXISTS "${GCC_TOOLCHAIN_PATH}/lib")
-        set(GCC_LIB_PATH "${GCC_TOOLCHAIN_PATH}/lib")
-      else()
-        message(WARNING "No lib or lib64 under ${GCC_TOOLCHAIN_PATH}; skipping LDFLAGS/rpath setup")
-        unset(GCC_LIB_PATH)
-      endif()
-
-      # DO NOT inject toolchain C++ includes. Only set CC/CXX and LDFLAGS/rpath for native run.
-      corrosion_set_env_vars(
-        rusty_code
-        CC=${GCC_TOOLCHAIN_GCC}
-        CXX=${GCC_TOOLCHAIN_GXX}
-        "CXXFLAGS=${RUST_CXXFLAGS}"
-      )
-
-      message(STATUS "Configured native corrosion: CC=${GCC_TOOLCHAIN_GCC} CXX=${GCC_TOOLCHAIN_GXX} CXXFLAGS=${RUST_CXXFLAGS}")
-      if(GCC_LIB_PATH)
-        message(STATUS "GCC library path: ${GCC_LIB_PATH}")
-      endif()
-    else()
-      message(STATUS "No GCC_TOOLCHAIN_PATH (${GCC_TOOLCHAIN_PATH}) found — using system compilers (native build)")
-      # Still set minimal sensible env so corrosion has deterministic env on non-Windows hosts
-      corrosion_set_env_vars(
-        rusty_code
-        "CXXFLAGS=${RUST_CXXFLAGS}"
-      )
-    endif()
-  endif()
-  
-  corrosion_add_cxxbridge(
-    rusty_bridge
-    CRATE
-    rusty_code
-    FILES
-    lib.rs
-    )
-endif()
+kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}")
+kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
 
 # add the executable
 add_executable(${PROJECT_NAME})
+
+kataglyphis_setup_engine_backend(${PROJECT_NAME} Vulkan VULKAN)
 
 set(ShaderIncludes
     -I
@@ -153,31 +52,22 @@ string(
 
 message("The shader include string is the following: ${ShaderIncludesString}")
 
-if(RUST_FEATURES)
-  target_compile_definitions(${PROJECT_NAME} PRIVATE USE_RUST=1)
-else()
-  target_compile_definitions(${PROJECT_NAME} PRIVATE USE_RUST=0)
-endif()
-
-# Treat MSVC and clang-cl on Windows differently in a sense of deployment
-# https://clang.llvm.org/docs/UsersManual.html
-if(WIN32 AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC))
-  target_compile_definitions(
-    ${PROJECT_NAME}
-    PRIVATE RELATIVE_RESOURCE_PATH="/../../Resources/"
-            RELATIVE_INCLUDE_PATH="/../../Src/GraphicsEngineVulkan/"
-            RELATIVE_IMGUI_FONTS_PATH="/../../ExternalLib/IMGUI/misc/fonts/"
-            ShaderIncludesString="${ShaderIncludesString}")
-else()
-  target_compile_definitions(
-    ${PROJECT_NAME}
-    PRIVATE RELATIVE_RESOURCE_PATH="/../Resources/"
-            RELATIVE_INCLUDE_PATH="/../Src/GraphicsEngineVulkan/"
-            RELATIVE_IMGUI_FONTS_PATH="/../ExternalLib/IMGUI/misc/fonts/"
-            ShaderIncludesString="${ShaderIncludesString}")
-endif()
-
-configure_file(VulkanRendererConfig.hpp.in "${CMAKE_CURRENT_SOURCE_DIR}/renderer/VulkanRendererConfig.hpp")
+kataglyphis_apply_runtime_compile_definitions(
+  ${PROJECT_NAME}
+  RESOURCE_PATH_NON_MSVC
+  "/../Resources/"
+  RESOURCE_PATH_MSVC
+  "/../../Resources/"
+  INCLUDE_PATH_NON_MSVC
+  "/../Src/GraphicsEngineVulkan/"
+  INCLUDE_PATH_MSVC
+  "/../../Src/GraphicsEngineVulkan/"
+  IMGUI_FONTS_PATH_NON_MSVC
+  "/../ExternalLib/IMGUI/misc/fonts/"
+  IMGUI_FONTS_PATH_MSVC
+  "/../../ExternalLib/IMGUI/misc/fonts/"
+  SHADER_INCLUDES_STRING
+  "${ShaderIncludesString}")
 
 target_sources(
   ${PROJECT_NAME}
@@ -221,24 +111,18 @@ target_link_libraries(
   PRIVATE GSL spdlog::spdlog nlohmann_json::nlohmann_json)
 
 if(RUST_FEATURES)
-  target_link_libraries(${PROJECT_NAME} PUBLIC rusty_code)
+  target_link_libraries(${PROJECT_NAME} PUBLIC kataglyphis_rustprojecttemplate kataglyphis_rustprojecttemplate_bridge)
 endif()
 
 # compile shaders as part of my cmake routine right away :)
 include(cmake/CompileShadersToSPV.cmake)
 
-foreach(Shader ${POST_SHADER_FILTER})
-  add_shader(${PROJECT_NAME} ${Shader})
-endforeach()
+set(ALL_VULKAN_SHADER_FILTERS
+    ${POST_SHADER_FILTER}
+    ${RAYTRACING_SHADER_FILTER}
+    ${RASTER_SHADER_FILTER}
+    ${PATH_TRACING_SHADER_FILTER})
 
-foreach(Shader ${RAYTRACING_SHADER_FILTER})
-  add_shader(${PROJECT_NAME} ${Shader})
-endforeach()
-
-foreach(Shader ${RASTER_SHADER_FILTER})
-  add_shader(${PROJECT_NAME} ${Shader})
-endforeach()
-
-foreach(Shader ${PATH_TRACING_SHADER_FILTER})
+foreach(Shader ${ALL_VULKAN_SHADER_FILTERS})
   add_shader(${PROJECT_NAME} ${Shader})
 endforeach()

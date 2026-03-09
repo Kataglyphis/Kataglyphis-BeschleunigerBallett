@@ -1,29 +1,43 @@
-#include "gui/GUI.hpp"
+module;
 
 #include "common/Utilities.hpp"
-#include "renderer/QueueFamilyIndices.hpp"
-#include "vulkan_base/VulkanDevice.hpp"
 
-#include "renderer/VulkanRendererConfig.hpp"
-
-#include <filesystem>
+#include <cstdint>
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
+#include <vulkan/vulkan_core.h>
+
+module kataglyphis.vulkan.gui;
+
+import kataglyphis.shared.frontend.common_gui_panels;
+import kataglyphis.shared.frontend.gui_graphic_settings_panels;
+import kataglyphis.shared.imgui.fonts;
+import kataglyphis.shared.imgui.style;
+
+import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.queue_family_indices;
+import kataglyphis.vulkan.window;
 
 using namespace Kataglyphis::Frontend;
 
-GUI::GUI(Window *window) { this->window = window; }
+namespace {
+void applyKataglyphisDarkTheme() { Kataglyphis::Frontend::applyKataglyphisImGuiDarkTheme(); }
+}// namespace
+
+GUI::GUI(Window *window) : window(window) {}
 
 void GUI::initializeVulkanContext(VulkanDevice *device,
   const VkInstance &instance,
   const VkRenderPass &post_render_pass,
-  const VkCommandPool &graphics_command_pool)
+  const VkCommandPool &graphics_command_pool,
+  uint32_t image_count)
 {
     this->device = device;
+    (void)graphics_command_pool;
 
-    create_gui_context(window, instance, post_render_pass);
+    create_gui_context(window, instance, post_render_pass, image_count);
     // create_fonts_and_upload(graphics_command_pool);
 }
 
@@ -42,11 +56,9 @@ void GUI::render()
     // ImGui::ShowDemoWindow();
 
     // render your GUI
-    ImGui::Begin("GUI v1.4.4");
+    ImGui::Begin("GUI v" PROJECT_VERSION);
 
-    if (ImGui::CollapsingHeader("Hot shader reload")) {
-        if (ImGui::Button("All shader!")) { guiRendererSharedVars.shader_hot_reload_triggered = true; }
-    }
+    Kataglyphis::Frontend::renderHotShaderReload(guiRendererSharedVars.shader_hot_reload_triggered);
 
     ImGui::Separator();
 
@@ -78,45 +90,20 @@ void GUI::render()
     ImGui::Separator();
 
     if (ImGui::CollapsingHeader("Graphic Settings")) {
-        if (ImGui::TreeNode("Directional Light")) {
-            ImGui::Separator();
-            ImGui::SliderFloat("Ambient intensity", &guiSceneSharedVars.direcional_light_radiance, 0.0f, 50.0f);
-            ImGui::Separator();
-            // Edit a color (stored as ~4 floats)
-            ImGui::ColorEdit3("Directional Light Color", guiSceneSharedVars.directional_light_color);
-            ImGui::Separator();
-            ImGui::SliderFloat3("Light Direction", guiSceneSharedVars.directional_light_direction, -1.f, 1.0f);
-
-            ImGui::TreePop();
-        }
+        Kataglyphis::Frontend::renderDirectionalLightSettings(guiSceneSharedVars);
     }
 
     ImGui::Separator();
 
-    if (ImGui::CollapsingHeader("GUI Settings")) {
-        ImGuiStyle &style = ImGui::GetStyle();
-
-        if (ImGui::SliderFloat("Frame Rounding", &style.FrameRounding, 0.0f, 12.0f, "%.0f")) {
-            style.GrabRounding = style.FrameRounding;// Make GrabRounding always the
-                                                     // same value as FrameRounding
-        }
-        {
-            bool border = (style.FrameBorderSize > 0.0f);
-            if (ImGui::Checkbox("FrameBorder", &border)) { style.FrameBorderSize = border ? 1.0f : 0.0f; }
-        }
-        ImGui::SliderFloat("WindowRounding", &style.WindowRounding, 0.0f, 12.0f, "%.0f");
-    }
+    Kataglyphis::Frontend::renderCommonGuiStyleSettings();
 
     ImGui::Separator();
 
-    if (ImGui::CollapsingHeader("KEY Bindings")) {
-        ImGui::Text("WASD for moving Forward, backward and to the side\n QE for rotating ");
-    }
+    Kataglyphis::Frontend::renderCommonKeyBindings();
 
     ImGui::Separator();
 
-    ImGui::Text(
-      "Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+    Kataglyphis::Frontend::renderCommonFrameStats();
 
     ImGui::End();
 }
@@ -130,43 +117,18 @@ void GUI::cleanUp()
     vkDestroyDescriptorPool(device->getLogicalDevice(), gui_descriptor_pool, nullptr);
 }
 
-void GUI::create_gui_context(Window *window, const VkInstance &instance, const VkRenderPass &post_render_pass)
+void GUI::create_gui_context(Window *window,
+  const VkInstance &instance,
+  const VkRenderPass &post_render_pass,
+  uint32_t image_count)
 {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO &io = ImGui::GetIO();
     (void)io;
 
-    float size_pixels = 18;
+    Kataglyphis::Frontend::configureKataglyphisImGuiFonts(io);
 
-    std::stringstream fontDir;
-    std::filesystem::path cwd = std::filesystem::current_path();
-    fontDir << cwd.string();
-    fontDir << RELATIVE_IMGUI_FONTS_PATH;
-
-    std::stringstream robo_font;
-    robo_font << fontDir.str() << "Roboto-Medium.ttf";
-    std::stringstream Cousine_font;
-    Cousine_font << fontDir.str() << "Cousine-Regular.ttf";
-    std::stringstream DroidSans_font;
-    DroidSans_font << fontDir.str() << "DroidSans.ttf";
-    std::stringstream Karla_font;
-    Karla_font << fontDir.str() << "Karla-Regular.ttf";
-    std::stringstream proggy_clean_font;
-    proggy_clean_font << fontDir.str() << "ProggyClean.ttf";
-    std::stringstream proggy_tiny_font;
-    proggy_tiny_font << fontDir.str() << "ProggyTiny.ttf";
-
-    io.Fonts->AddFontFromFileTTF(robo_font.str().c_str(), size_pixels);
-    io.Fonts->AddFontFromFileTTF(Cousine_font.str().c_str(), size_pixels);
-    io.Fonts->AddFontFromFileTTF(DroidSans_font.str().c_str(), size_pixels);
-    io.Fonts->AddFontFromFileTTF(Karla_font.str().c_str(), size_pixels);
-    io.Fonts->AddFontFromFileTTF(proggy_clean_font.str().c_str(), size_pixels);
-    io.Fonts->AddFontFromFileTTF(proggy_tiny_font.str().c_str(), size_pixels);
-
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10);
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 10);
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1);
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;// Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableSetMousePos;
     io.WantCaptureMouse = true;
@@ -175,7 +137,7 @@ void GUI::create_gui_context(Window *window, const VkInstance &instance, const V
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
-    // ImGui::StyleColorsClassic();
+    applyKataglyphisDarkTheme();
 
     ImGui_ImplGlfw_InitForVulkan(window->get_window(), false);
 
@@ -196,13 +158,14 @@ void GUI::create_gui_context(Window *window, const VkInstance &instance, const V
     gui_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     gui_pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     gui_pool_info.maxSets = 10 * IM_ARRAYSIZE(gui_pool_sizes);
-    gui_pool_info.poolSizeCount = (uint32_t)IM_ARRAYSIZE(gui_pool_sizes);
+    gui_pool_info.poolSizeCount = static_cast<uint32_t> IM_ARRAYSIZE(gui_pool_sizes);
     gui_pool_info.pPoolSizes = gui_pool_sizes;
 
-    VkResult result = vkCreateDescriptorPool(device->getLogicalDevice(), &gui_pool_info, nullptr, &gui_descriptor_pool);
+    VkResult const result =
+      vkCreateDescriptorPool(device->getLogicalDevice(), &gui_pool_info, nullptr, &gui_descriptor_pool);
     ASSERT_VULKAN(result, "Failed to create a gui descriptor pool!")
 
-    Kataglyphis::VulkanRendererInternals::QueueFamilyIndices indices = device->getQueueFamilies();
+    Kataglyphis::VulkanRendererInternals::QueueFamilyIndices const indices = device->getQueueFamilies();
 
     ImGui_ImplVulkan_InitInfo init_info = {};
     init_info.Instance = instance;
@@ -214,7 +177,7 @@ void GUI::create_gui_context(Window *window, const VkInstance &instance, const V
     init_info.DescriptorPool = gui_descriptor_pool;
     init_info.PipelineCache = VK_NULL_HANDLE;
     init_info.MinImageCount = 2;
-    init_info.ImageCount = MAX_FRAME_DRAWS;
+    init_info.ImageCount = image_count;
     init_info.Allocator = VK_NULL_HANDLE;
     init_info.CheckVkResultFn = VK_NULL_HANDLE;
     init_info.PipelineInfoMain.Subpass = 0;
@@ -223,4 +186,4 @@ void GUI::create_gui_context(Window *window, const VkInstance &instance, const V
     ImGui_ImplVulkan_Init(&init_info);// post_render_pass
 }
 
-GUI::~GUI() {}
+GUI::~GUI() = default;

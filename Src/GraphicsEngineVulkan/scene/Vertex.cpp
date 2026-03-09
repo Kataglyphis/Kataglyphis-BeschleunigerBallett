@@ -1,33 +1,24 @@
-#include "scene/Vertex.hpp"
+module;
 
-Vertex::Vertex()
-{
-    this->pos = glm::vec3(-1.f);
-    this->normal = glm::vec3(-1.f);
-    this->color = glm::vec3(-1.f);
-    this->texture_coords = glm::vec3(-1.f);
-}
+#include <array>
+#include <cstddef>
+#include <glm/glm.hpp>
+#include <vulkan/vulkan_core.h>
 
-Vertex::Vertex(glm::vec3 pos, glm::vec3 normal, glm::vec3 color, glm::vec2 texture_coords)
-{
-    this->pos = pos;
-    this->normal = normal;
-    this->color = color;
-    this->texture_coords = texture_coords;
-}
+module kataglyphis.vulkan.vertex;
 
 namespace vertex {
 
-std::array<VkVertexInputAttributeDescription, 4> getVertexInputAttributeDesc()
+auto getVertexInputAttributeDesc() -> std::array<VkVertexInputAttributeDescription, 4>
 {
-    std::array<VkVertexInputAttributeDescription, 4> attribute_describtions;
+    std::array<VkVertexInputAttributeDescription, 4> attribute_describtions{};
 
     // Position attribute
     attribute_describtions[0].binding = 0;
     attribute_describtions[0].location = 0;
     attribute_describtions[0].format = VK_FORMAT_R32G32B32_SFLOAT;// format data will take (also helps define
                                                                   // size of data)
-    attribute_describtions[0].offset = offsetof(Vertex, pos);
+    attribute_describtions[0].offset = offsetof(Vertex, position);
 
     // normal coord attribute
     attribute_describtions[1].binding = 0;

@@ -1,10 +1,22 @@
-#include "scene/light/point_light/OmniShadowMapPass.hpp"
+module;
 
+#include <memory>
+#include <glad/glad.h>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <cstdint>
 #include <sstream>
+#include <vector>
+
+module kataglyphis.opengl.omni_shadow_map_pass;
+
+import kataglyphis.opengl.point_light;
+import kataglyphis.opengl.point_light.omni_dir_shadow_map;
+import kataglyphis.opengl.scene;
+import kataglyphis.opengl.game_object;
 
 OmniShadowMapPass::OmniShadowMapPass() { create_shader_program(); }
 
-void OmniShadowMapPass::execute(std::shared_ptr<PointLight> p_light, std::shared_ptr<Scene> scene)
+void OmniShadowMapPass::execute(const std::shared_ptr<PointLight> &p_light, const std::shared_ptr<Scene> &scene)
 {
     shader_program->use_shader_program();
 
@@ -27,9 +39,9 @@ void OmniShadowMapPass::execute(std::shared_ptr<PointLight> p_light, std::shared
 
     shader_program->validate_program();
 
-    std::vector<std::shared_ptr<GameObject>> game_objects = scene->get_game_objects();
+    std::vector<std::shared_ptr<GameObject>> const game_objects = scene->get_game_objects();
 
-    for (std::shared_ptr<GameObject> object : game_objects) {
+    for (const std::shared_ptr<GameObject> &object : game_objects) {
         /* if (object_is_visible(object)) {*/
         set_game_object_uniforms(object->get_world_trafo(), object->get_normal_world_trafo());
 
@@ -40,7 +52,7 @@ void OmniShadowMapPass::execute(std::shared_ptr<PointLight> p_light, std::shared
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void OmniShadowMapPass::set_game_object_uniforms(glm::mat4 model, glm::mat4 normal_model)
+void OmniShadowMapPass::set_game_object_uniforms(glm::mat4 model, glm::mat4 /*normal_model*/)
 {
     shader_program->setUniformMatrix4fv(model, "model");
 }
@@ -53,4 +65,4 @@ void OmniShadowMapPass::create_shader_program()
       "rasterizer/shadows/omni_shadow_map.frag");
 }
 
-OmniShadowMapPass::~OmniShadowMapPass() {}
+OmniShadowMapPass::~OmniShadowMapPass() = default;

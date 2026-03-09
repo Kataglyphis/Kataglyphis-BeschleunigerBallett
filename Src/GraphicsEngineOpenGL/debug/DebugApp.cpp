@@ -4,24 +4,24 @@
 // you must include glad before glfw!
 // therefore disable clang-format for this section
 #include <glad/glad.h>
-#include <GLFW/glfw3.h>
 // clang-format on
 
 #include <iostream>
+#include <string>
 // stolen from: https://learnopengl.com/In-Practice/Debugging
-void APIENTRY glDebugOutput(GLenum source,
+static void APIENTRY glDebugOutput(GLenum source,
   GLenum type,
   unsigned int id,
   GLenum severity,
-  GLsizei length,
+  GLsizei /*length*/,
   const char *message,
-  const void *userParam)
+  const void * /*userParam*/)
 {
     // ignore non-significant error/warning codes
-    if (id == 131169 || id == 131185 || id == 131218 || id == 131204) return;
+    if (id == 131169 || id == 131185 || id == 131218 || id == 131204 || id == 8) { return; }
 
-    std::cout << "---------------" << std::endl;
-    std::cout << "Debug message (" << id << "): " << message << std::endl;
+    std::cout << "---------------" << '\n';
+    std::cout << "Debug message (" << id << "): " << message << '\n';
 
     switch (source) {
     case GL_DEBUG_SOURCE_API:
@@ -43,7 +43,7 @@ void APIENTRY glDebugOutput(GLenum source,
         std::cout << "Source: Other";
         break;
     }
-    std::cout << std::endl;
+    std::cout << '\n';
 
     switch (type) {
     case GL_DEBUG_TYPE_ERROR:
@@ -74,7 +74,7 @@ void APIENTRY glDebugOutput(GLenum source,
         std::cout << "Type: Other";
         break;
     }
-    std::cout << std::endl;
+    std::cout << '\n';
 
     switch (severity) {
     case GL_DEBUG_SEVERITY_HIGH:
@@ -90,33 +90,36 @@ void APIENTRY glDebugOutput(GLenum source,
         std::cout << "Severity: notification";
         break;
     }
-    std::cout << std::endl;
-    std::cout << std::endl;
+    std::cout << '\n';
+    std::cout << '\n';
 }
 DebugApp::DebugApp()
 {
 #ifdef NDEBUG
     // nondebug
 #else
-    int flags;
+    int flags = 0;
     glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
-    if (flags & GL_CONTEXT_FLAG_DEBUG_BIT) {
+    if ((flags & GL_CONTEXT_FLAG_DEBUG_BIT) != 0) {
         // initialize debug output
         glEnable(GL_DEBUG_OUTPUT);
         glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
         glDebugMessageCallback(glDebugOutput, nullptr);
         glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
+        constexpr GLuint redundant_fbo_message_id = 8;
+        glDebugMessageControl(
+          GL_DEBUG_SOURCE_API, GL_DEBUG_TYPE_PERFORMANCE, GL_DONT_CARE, 1, &redundant_fbo_message_id, GL_FALSE);
     }
 #endif
 }
 
-bool DebugApp::areErrorPrintAll(const std::string &AdditionalArrayMessage, const char *file, int line)
+auto DebugApp::areErrorPrintAll(const std::string &AdditionalArrayMessage, const char *file, int line) -> bool
 {
 #ifdef NDEBUG
     // nondebug
     return false;
 #else
-    GLenum err;
+    GLenum err = 0;
     bool isError = false;
     while ((err = glGetError()) != GL_NO_ERROR) {
         std::string errorCode;
@@ -145,7 +148,7 @@ bool DebugApp::areErrorPrintAll(const std::string &AdditionalArrayMessage, const
         }
         std::cout << "Error, " << errorCode << " | "
                   << "\nAdditional Error Message: " << AdditionalArrayMessage << " "
-                  << "In File: " << file << ", Line: " << line << std::endl;
+                  << "In File: " << file << ", Line: " << line << '\n';
         isError = true;
     }
 
@@ -154,14 +157,14 @@ bool DebugApp::areErrorPrintAll(const std::string &AdditionalArrayMessage, const
 #endif
 }
 
-bool DebugApp::arePreError(const std::string &AdditionalArrayMessage, const char *file, int line)
+auto DebugApp::arePreError(const std::string &AdditionalArrayMessage, const char *file, int line) -> bool
 {
 #ifdef NDEBUG
     // nondebug
     return false;
 #else
     // debug code
-    GLenum err;
+    GLenum err = 0;
     bool isError = false;
     while ((err = glGetError()) != GL_NO_ERROR) {
         std::string errorCode;
@@ -191,7 +194,7 @@ bool DebugApp::arePreError(const std::string &AdditionalArrayMessage, const char
         std::cout << errorCode << " Error appears befor executing the function, "
                   << " | "
                   << "\nAdditional Error Message: " << AdditionalArrayMessage << " "
-                  << "In File: " << file << ", Line: " << line << std::endl;
+                  << "In File: " << file << ", Line: " << line << '\n';
         isError = true;
     }
 
@@ -200,4 +203,4 @@ bool DebugApp::arePreError(const std::string &AdditionalArrayMessage, const char
 #endif
 }
 
-DebugApp::~DebugApp() {}
+DebugApp::~DebugApp() = default;

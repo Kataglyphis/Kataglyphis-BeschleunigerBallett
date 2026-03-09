@@ -4,7 +4,7 @@
 #define RENDERER_CONFIG_GUARD
 
 #define OpenGLRenderer_VERSION_MAJOR "1"
-#define OpenGLRenderer_VERSION_MINOR "3"
+#define OpenGLRenderer_VERSION_MINOR "4"
 
 #define OPENGL_VERSION_MAJOR "4"
 #define OPENGL_VERSION_MINOR "6"

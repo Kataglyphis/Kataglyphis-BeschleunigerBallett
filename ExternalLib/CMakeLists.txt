@@ -28,20 +28,25 @@ set(BENCHMARK_USE_BUNDLED_GTEST
     OFF
     CACHE BOOL "Disable the bundled GTest usage.")
 
+if(myproject_DISABLE_EXCEPTIONS)
+  set(BENCHMARK_ENABLE_EXCEPTIONS
+    OFF
+    CACHE BOOL "Disable benchmark exceptions to match project configuration." FORCE)
+else()
+  set(BENCHMARK_ENABLE_EXCEPTIONS
+    ON
+    CACHE BOOL "Enable benchmark exceptions to match project configuration." FORCE)
+endif()
+
 add_subdirectory(GOOGLE_BENCHMARK)
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND BUILD_TESTING AND NOT(CMAKE_BUILD_TYPE STREQUAL "Profile" ))
-  message(STATUS "This is a Linux system.")
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND BUILD_TESTING AND NOT(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo" ))
 
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
 
     message("Adding Fuzztest")
+
     add_subdirectory(FUZZTEST)
-    if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
-      set(FUZZTEST_FUZZING_MODE
-          ON
-          CACHE BOOL "" FORCE)
-    endif()
   endif()
 endif()
 
@@ -125,6 +130,12 @@ target_include_directories(GLAD PRIVATE GLAD/include ${OPENGL_INCLUDE_DIRS})
 set_target_properties(GLAD PROPERTIES CXX_CLANG_TIDY "" CXX_CPPCHECK "")
 
 if(RUST_FEATURES)
+  if(WIN32)
+    set(Rust_CARGO
+        "${CMAKE_SOURCE_DIR}/Scripts/Windows/cargo-retry.cmd"
+        CACHE FILEPATH "Cargo wrapper used to retry transient Windows file-lock failures" FORCE)
+  endif()
+
   FetchContent_Declare(
     Corrosion
     GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
@@ -145,7 +156,46 @@ endif()
 
 set(KOMPUTE_OPT_BUILD_EXAMPLES OFF)
 set(KOMPUTE_OPT_BUILD_TESTS OFF)
-set(KOMPUTE_OPT_USE_VULKAN_VERSION "1.4.328.1")
+
+# Determine Vulkan version dynamically, falling back to the previous constant if nothing is detected.
+set(KOMPUTE_OPT_USE_VULKAN_VERSION "" CACHE STRING "Override the Vulkan version Kompute requests.")
+if(KOMPUTE_OPT_USE_VULKAN_VERSION STREQUAL "")
+  if(DEFINED Vulkan_VERSION)
+    set(KOMPUTE_OPT_USE_VULKAN_VERSION "${Vulkan_VERSION}")
+  elseif(DEFINED VULKAN_VERSION_MAJOR AND DEFINED VULKAN_VERSION_MINOR AND DEFINED VULKAN_VERSION_PATCH)
+    set(KOMPUTE_OPT_USE_VULKAN_VERSION "${VULKAN_VERSION_MAJOR}.${VULKAN_VERSION_MINOR}.${VULKAN_VERSION_PATCH}")
+  elseif(DEFINED Vulkan_VERSION_MAJOR AND DEFINED Vulkan_VERSION_MINOR AND DEFINED Vulkan_VERSION_PATCH)
+    set(KOMPUTE_OPT_USE_VULKAN_VERSION "${Vulkan_VERSION_MAJOR}.${Vulkan_VERSION_MINOR}.${Vulkan_VERSION_PATCH}")
+  else()
+    set(KOMPUTE_OPT_USE_VULKAN_VERSION "1.4.328.1")
+  endif()
+else()
+  message(STATUS "Kompute Vulkan version overridden to ${KOMPUTE_OPT_USE_VULKAN_VERSION}")
+endif()
+
+set(KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG_OVERRIDE ""
+    CACHE STRING "Optional manual override for the built-in Vulkan-Headers tag Kompute uses (for example v1.4.328).")
+
+string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" _kompute_vulkan_semver "${KOMPUTE_OPT_USE_VULKAN_VERSION}")
+if(_kompute_vulkan_semver)
+  set(_kompute_default_header_tag "v${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
+else()
+  set(_kompute_default_header_tag "v1.3.231")
+endif()
+
+if(KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG_OVERRIDE STREQUAL "")
+  set(KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG "${_kompute_default_header_tag}" CACHE STRING "Resolved Vulkan-Headers tag Kompute uses." FORCE)
+  message(STATUS "Kompute Vulkan-Headers tag set from detected Vulkan version: ${KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG}")
+else()
+  set(KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG "${KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG_OVERRIDE}" CACHE STRING "Resolved Vulkan-Headers tag Kompute uses." FORCE)
+  message(STATUS "Kompute Vulkan-Headers tag overridden to ${KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG}")
+endif()
+
+if(TARGET Vulkan::Headers)
+  set(KOMPUTE_OPT_USE_BUILT_IN_VULKAN_HEADER OFF CACHE BOOL "Use Vulkan headers from parent project if already provided." FORCE)
+  message(STATUS "Using existing Vulkan::Headers target from parent project; disabling Kompute built-in Vulkan-Headers.")
+endif()
+
 set(KOMPUTE_OPT_DISABLE_VULKAN_VERSION_CHECK ON)
 
 if(WIN32)

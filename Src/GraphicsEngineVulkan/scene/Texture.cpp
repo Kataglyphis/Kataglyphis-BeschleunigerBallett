@@ -1,21 +1,50 @@
-#include "scene/Texture.hpp"
+module;
 
-#include "common/Utilities.hpp"
 #include "spdlog/spdlog.h"
+#include <algorithm>
 #include <cmath>
-#include <stdexcept>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <stb_image.h>
+#include <string>
+#include <vulkan/vulkan_core.h>
+
+module kataglyphis.vulkan.texture;
+
+import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.buffer;
+import kataglyphis.vulkan.buffer_manager;
+import kataglyphis.vulkan.image;
+import kataglyphis.vulkan.image_view;
+import kataglyphis.vulkan.command_buffer_manager;
 
 using namespace Kataglyphis;
 
-Kataglyphis::Texture::Texture() {}
+Kataglyphis::Texture::Texture() = default;
+
+namespace {
+auto supportsLinearBlit(VkPhysicalDevice physical_device, VkFormat image_format) -> bool
+{
+    VkFormatProperties format_properties{};
+    vkGetPhysicalDeviceFormatProperties(physical_device, image_format, &format_properties);
+    return (format_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0U;
+}
+}// namespace
 
 void Kataglyphis::Texture::createFromFile(VulkanDevice *device, VkCommandPool commandPool, const std::string &fileName)
 {
-    int width, height;
-    VkDeviceSize size;
+    int width = 0;
+    int height = 0;
+    VkDeviceSize size = 0;
     stbi_uc *image_data = loadTextureData(fileName, &width, &height, &size);
 
+    constexpr VkFormat texture_format = VK_FORMAT_R8G8B8A8_UNORM;
     mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
+    if (!supportsLinearBlit(device->getPhysicalDevice(), texture_format)) {
+        spdlog::warn("Linear blit not supported for texture format; using single mip level.");
+        mip_levels = 1;
+    }
 
     // create staging buffer to hold loaded data, ready to copy to device
     VulkanBuffer stagingBuffer;
@@ -25,7 +54,7 @@ void Kataglyphis::Texture::createFromFile(VulkanDevice *device, VkCommandPool co
       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
     // copy image data to staging buffer
-    void *data;
+    void *data = nullptr;
     vkMapMemory(device->getLogicalDevice(), stagingBuffer.getBufferMemory(), 0, size, 0, &data);
     memcpy(data, image_data, static_cast<size_t>(size));
     vkUnmapMemory(device->getLogicalDevice(), stagingBuffer.getBufferMemory());
@@ -37,7 +66,7 @@ void Kataglyphis::Texture::createFromFile(VulkanDevice *device, VkCommandPool co
       width,
       height,
       mip_levels,
-      VK_FORMAT_R8G8B8A8_UNORM,
+      texture_format,
       VK_IMAGE_TILING_OPTIMAL,
       VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
@@ -61,20 +90,29 @@ void Kataglyphis::Texture::createFromFile(VulkanDevice *device, VkCommandPool co
       width,
       height);
 
-    // generate mipmaps
-    generateMipMaps(device->getPhysicalDevice(),
-      device->getLogicalDevice(),
-      commandPool,
-      device->getGraphicsQueue(),
-      vulkanImage.getImage(),
-      VK_FORMAT_R8G8B8A8_SRGB,
-      width,
-      height,
-      mip_levels);
+    if (mip_levels > 1) {
+        generateMipMaps(device->getPhysicalDevice(),
+          device->getLogicalDevice(),
+          commandPool,
+          device->getGraphicsQueue(),
+          vulkanImage.getImage(),
+          texture_format,
+          width,
+          height,
+          mip_levels);
+    } else {
+        vulkanImage.transitionImageLayout(device->getLogicalDevice(),
+          device->getGraphicsQueue(),
+          commandPool,
+          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+          VK_IMAGE_ASPECT_COLOR_BIT,
+          1);
+    }
 
     stagingBuffer.cleanUp();
 
-    createImageView(device, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT, mip_levels);
+    createImageView(device, texture_format, VK_IMAGE_ASPECT_COLOR_BIT, mip_levels);
 }
 
 void Kataglyphis::Texture::setImage(VkImage image) { vulkanImage.setImage(image); }
@@ -84,21 +122,21 @@ void Kataglyphis::Texture::setImageView(VkImageView imageView) { vulkanImageView
 void Kataglyphis::Texture::createImage(VulkanDevice *device,
   uint32_t width,
   uint32_t height,
-  uint32_t mip_levels,
+  uint32_t in_mip_levels,
   VkFormat format,
   VkImageTiling tiling,
   VkImageUsageFlags use_flags,
   VkMemoryPropertyFlags prop_flags)
 {
-    vulkanImage.create(device, width, height, mip_levels, format, tiling, use_flags, prop_flags);
+    vulkanImage.create(device, width, height, in_mip_levels, format, tiling, use_flags, prop_flags);
 }
 
 void Kataglyphis::Texture::createImageView(VulkanDevice *device,
   VkFormat format,
   VkImageAspectFlags aspect_flags,
-  uint32_t mip_levels)
+  uint32_t in_mip_levels)
 {
-    vulkanImageView.create(device, vulkanImage.getImage(), format, aspect_flags, mip_levels);
+    vulkanImageView.create(device, vulkanImage.getImage(), format, aspect_flags, in_mip_levels);
 }
 
 void Kataglyphis::Texture::cleanUp()
@@ -107,18 +145,20 @@ void Kataglyphis::Texture::cleanUp()
     vulkanImage.cleanUp();
 }
 
-Kataglyphis::Texture::~Texture() {}
+Kataglyphis::Texture::~Texture() = default;
 
-stbi_uc *
-  Kataglyphis::Texture::loadTextureData(const std::string &file_name, int *width, int *height, VkDeviceSize *image_size)
+auto Kataglyphis::Texture::loadTextureData(const std::string &file_name,
+  int *width,
+  int *height,
+  VkDeviceSize *image_size) -> stbi_uc *
 {
     // number of channels image uses
-    int channels;
+    int channels = 0;
     // load pixel data for image
     // std::string file_loc = "../Resources/Textures/" + file_name;
     stbi_uc *image = stbi_load(file_name.c_str(), width, height, &channels, STBI_rgb_alpha);
 
-    if (!image) { spdlog::error("Failed to load a texture file! (" + file_name + ")"); }
+    if (image == nullptr) { spdlog::error("Failed to load a texture file! (" + file_name + ")"); }
 
     // calculate image size using given and known data
     *image_size = *width * *height * 4;
@@ -134,17 +174,18 @@ void Kataglyphis::Texture::generateMipMaps(VkPhysicalDevice physical_device,
   VkFormat image_format,
   int32_t width,
   int32_t height,
-  uint32_t mip_levels)
+  uint32_t in_mip_levels)
 {
     // Check if image format supports linear blitting
     VkFormatProperties formatProperties;
     vkGetPhysicalDeviceFormatProperties(physical_device, image_format, &formatProperties);
 
-    if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
+    if ((formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) == 0U) {
         spdlog::error("Texture image format does not support linear blitting!");
     }
 
-    VkCommandBuffer command_buffer = commandBufferManager.beginCommandBuffer(device, command_pool);
+    VkCommandBuffer command_buffer =
+      Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device, command_pool);
 
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -185,16 +226,18 @@ void Kataglyphis::Texture::generateMipMaps(VkPhysicalDevice physical_device,
         VkImageBlit blit{};
 
         // -- OFFSETS describing the 3D-dimesnion of the region
-        blit.srcOffsets[0] = { 0, 0, 0 };
-        blit.srcOffsets[1] = { tmp_width, tmp_height, 1 };
+        blit.srcOffsets[0] = { .x = 0, .y = 0, .z = 0 };
+        blit.srcOffsets[1] = { .x = tmp_width, .y = tmp_height, .z = 1 };
         blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         // copy from previous level
         blit.srcSubresource.mipLevel = i - 1;
         blit.srcSubresource.baseArrayLayer = 0;
         blit.srcSubresource.layerCount = 1;
         // -- OFFSETS describing the 3D-dimesnion of the region
-        blit.dstOffsets[0] = { 0, 0, 0 };
-        blit.dstOffsets[1] = { tmp_width > 1 ? tmp_width / 2 : 1, tmp_height > 1 ? tmp_height / 2 : 1, 1 };
+        blit.dstOffsets[0] = { .x = 0, .y = 0, .z = 0 };
+        blit.dstOffsets[1] = {
+            .x = tmp_width > 1 ? tmp_width / 2 : 1, .y = tmp_height > 1 ? tmp_height / 2 : 1, .z = 1
+        };
         blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         // -- COPY to next mipmap level
         blit.dstSubresource.mipLevel = i;
@@ -227,8 +270,8 @@ void Kataglyphis::Texture::generateMipMaps(VkPhysicalDevice physical_device,
           1,
           &barrier);
 
-        if (tmp_width > 1) tmp_width /= 2;
-        if (tmp_height > 1) tmp_height /= 2;
+        if (tmp_width > 1) { tmp_width /= 2; }
+        if (tmp_height > 1) { tmp_height /= 2; }
     }
 
     barrier.subresourceRange.baseMipLevel = mip_levels - 1;
@@ -248,5 +291,6 @@ void Kataglyphis::Texture::generateMipMaps(VkPhysicalDevice physical_device,
       1,
       &barrier);
 
-    commandBufferManager.endAndSubmitCommandBuffer(device, command_pool, queue, command_buffer);
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      device, command_pool, queue, command_buffer);
 }

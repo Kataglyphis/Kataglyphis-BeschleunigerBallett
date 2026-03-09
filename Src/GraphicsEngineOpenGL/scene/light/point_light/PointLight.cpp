@@ -1,9 +1,21 @@
-#include "scene/light/point_light/PointLight.hpp"
+module;
+
+#include <vector>
+#include <memory>
+#include <glad/glad.h>
+#include <glm/ext/vector_float3.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/trigonometric.hpp>
+#include <glm/ext/matrix_transform.hpp>
+
+module kataglyphis.opengl.point_light;
+
+import kataglyphis.opengl.point_light.omni_dir_shadow_map;
 
 PointLight::PointLight()
   :
 
-    position(glm::vec3(0.0f)), constant(1.0f), linear(0.0f), exponent(0.0f), far_plane(0.f)
+    position(glm::vec3(0.0F)), constant(1.0F), linear(0.0F), exponent(0.0F), far_plane(0.F)
 
 {}
 
@@ -27,12 +39,12 @@ PointLight::PointLight(GLuint shadow_width,
 
     position(glm::vec3(x_pos, y_pos, z_pos)), constant(con), linear(lin), exponent(exp), far_plane(far)
 {
-    float aspect = (float)shadow_width / (float)shadow_height;
-    light_proj = glm::perspective(glm::radians(90.0f), aspect, near, far);
+    float const aspect = static_cast<float>(shadow_width) / static_cast<float>(shadow_height);
+    light_proj = glm::perspective(glm::radians(90.0F), aspect, near, far);
     omni_dir_shadow_map->init(shadow_width, shadow_height);
 }
 
-std::vector<glm::mat4> PointLight::calculate_light_transform()
+auto PointLight::calculate_light_transform() -> std::vector<glm::mat4>
 {
     std::vector<glm::mat4> light_matrices;
     // make sure all light matrices align with the order we were defining in
@@ -60,8 +72,8 @@ std::vector<glm::mat4> PointLight::calculate_light_transform()
 
 void PointLight::set_position(glm::vec3 position) { this->position = position; }
 
-GLfloat PointLight::get_far_plane() { return far_plane; }
+auto PointLight::get_far_plane() const -> GLfloat { return far_plane; }
 
-glm::vec3 PointLight::get_position() { return position; }
+auto PointLight::get_position() -> glm::vec3 { return position; }
 
-PointLight::~PointLight() {}
+PointLight::~PointLight() = default;

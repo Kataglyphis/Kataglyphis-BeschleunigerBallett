@@ -1,6 +1,10 @@
-#include "ClampToEdgeMode.hpp"
+module;
 
-ClampToEdgeMode::ClampToEdgeMode() {}
+#include <glad/glad.h>
+
+module kataglyphis.opengl.clamp_to_edge_mode;
+
+ClampToEdgeMode::ClampToEdgeMode() = default;
 
 void ClampToEdgeMode::activate()
 {
@@ -8,4 +12,4 @@ void ClampToEdgeMode::activate()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 }
 
-ClampToEdgeMode::~ClampToEdgeMode() {}
+ClampToEdgeMode::~ClampToEdgeMode() = default;

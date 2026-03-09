@@ -3,6 +3,9 @@
 
 message("The shader inlcudes are the following: ${ShaderIncludes}")
 
+set(GLSLC_TARGET_ENV "vulkan${VULKAN_VERSION_MAJOR}.${VULKAN_VERSION_MINOR}")
+message("Shader target environment is: ${GLSLC_TARGET_ENV}")
+
 function(add_shader TARGET SHADER)
   find_program(GLSLC glslc)
 
@@ -19,7 +22,7 @@ function(add_shader TARGET SHADER)
 
   add_custom_command(
     OUTPUT ${current-output-path}
-    COMMAND ${GLSLC} --target-env=vulkan1.3 ${current-shader-path} -o ${current-output-path} ${ShaderIncludes}
+    COMMAND ${GLSLC} --target-env=${GLSLC_TARGET_ENV} ${current-shader-path} -o ${current-output-path} ${ShaderIncludes}
     DEPENDS ${current-shader-path}
     IMPLICIT_DEPENDS CXX ${current-shader-path}
     VERBATIM)

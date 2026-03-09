@@ -1,35 +1,59 @@
-#include "SceneConfig.hpp"
-#include "renderer/VulkanRendererConfig.hpp"
+module;
 
 #include <filesystem>
-#include <sstream>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <glm/ext/matrix_transform.hpp>
+#include <glm/trigonometric.hpp>
+#include <string>
+#include <system_error>
 // #define SULO_MODE 1
+
+module kataglyphis.vulkan.scene_config;
 
 namespace sceneConfig {
 
-std::string getModelFile()
+namespace {
+    auto resolveModelPath(const std::string &relativeModelPath) -> std::string
+    {
+        std::error_code filesystem_error;
+        const std::filesystem::path current_path = std::filesystem::current_path(filesystem_error);
+        if (filesystem_error) { return relativeModelPath; }
+
+        const std::filesystem::path direct_candidate =
+          std::filesystem::path(current_path.string() + RELATIVE_RESOURCE_PATH) / relativeModelPath;
+        if (std::filesystem::exists(direct_candidate, filesystem_error)) { return direct_candidate.string(); }
+
+        auto search_path = current_path;
+        constexpr int kModelSearchDepth = 8;
+        for (int depth = 0; depth < kModelSearchDepth; ++depth) {
+            const std::filesystem::path candidate = search_path / "Resources" / relativeModelPath;
+            if (std::filesystem::exists(candidate, filesystem_error)) { return candidate.string(); }
+
+            if (filesystem_error || !search_path.has_parent_path()) { break; }
+
+            search_path = search_path.parent_path();
+        }
+
+        return direct_candidate.string();
+    }
+}// namespace
+
+auto getModelFile() -> std::string
 {
-    std::stringstream modelFile;
-    std::filesystem::path cwd = std::filesystem::current_path();
-    modelFile << cwd.string();
-    modelFile << RELATIVE_RESOURCE_PATH;
+    std::string relativeModelPath;
 
 #if NDEBUG
-    modelFile << "Models/crytek-sponza/";
-    modelFile << "sponza_triag.obj";
+    relativeModelPath = "Models/crytek-sponza/sponza_triag.obj";
 
 #else
 #ifdef SULO_MODE
-    modelFile << "Model/Sulo/WolfStahl/";
-    // modelFile << "Wolf-Stahl.obj";
-    modelFile << "SuloLongDongLampe_v2.obj";
+    relativeModelPath = "Model/Sulo/WolfStahl/SuloLongDongLampe_v2.obj";
 #else
-    modelFile << "Models/VikingRoom/";
-    modelFile << "viking_room.obj";
+    relativeModelPath = "Models/VikingRoom/viking_room.obj";
 #endif
 #endif
 
-    return modelFile.str();
+    return resolveModelPath(relativeModelPath);
     // std::string modelFile =
     // "Models/crytek-sponza/sponza_triag.obj"; std::string modelFile
     // = "Models/Dinosaurs/dinosaurs.obj"; std::string modelFile =
@@ -45,9 +69,9 @@ std::string getModelFile()
     // "Models/San_Miguel/san-miguel-low-poly.obj";
 }
 
-glm::mat4 getModelMatrix()
+auto getModelMatrix() -> glm::mat4
 {
-    glm::mat4 modelMatrix(1.0f);
+    glm::mat4 modelMatrix(1.0F);
 
 #if NDEBUG
 
@@ -65,9 +89,9 @@ glm::mat4 getModelMatrix()
 #if SULO_MODE
     modelMatrix = glm::scale(modelMatrix, glm::vec3(60.0f, 60.0f, 60.0f));
 #else
-    modelMatrix = glm::scale(modelMatrix, glm::vec3(60.0f, 60.0f, 60.0f));
-    modelMatrix = glm::rotate(modelMatrix, glm::radians(-90.f), glm::vec3(1.0f, 0.0f, 0.0f));
-    modelMatrix = glm::rotate(modelMatrix, glm::radians(90.f), glm::vec3(0.0f, 0.0f, 1.0f));
+    modelMatrix = glm::scale(modelMatrix, glm::vec3(60.0F, 60.0F, 60.0F));
+    modelMatrix = glm::rotate(modelMatrix, glm::radians(-90.F), glm::vec3(1.0F, 0.0F, 0.0F));
+    modelMatrix = glm::rotate(modelMatrix, glm::radians(90.F), glm::vec3(0.0F, 0.0F, 1.0F));
 #endif
 
 #endif

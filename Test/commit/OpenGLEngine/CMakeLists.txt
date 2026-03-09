@@ -8,16 +8,21 @@ set(PROJECT_INCLUDE_DIR ${WORKING_DIRECTORY}Src/GraphicsEngineOpenGL/)
 set(EXTERNAL_LIB_SRC_DIR ${WORKING_DIRECTORY}ExternalLib/)
 set(SHADER_SRC_DIR ${WORKING_DIRECTORY}Resources/Shaders/)
 
+include(${WORKING_DIRECTORY}Test/cmake/CommonTestBuild.cmake)
 include(${PROJECT_SRC_DIR}cmake/filters/SetShaderFilters.cmake)
 include(${PROJECT_SRC_DIR}cmake/filters/SetProjectFilters.cmake)
 include(${PROJECT_SRC_DIR}cmake/filters/SetExternalLibsFilters.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
 
 set(COMMIT_TEST_SUITE_OPENGL commitTestSuiteOpenGL)
+
+kataglyphis_collect_module_interfaces(OPENGL_MODULE_INTERFACE_FILES "${PROJECT_SRC_DIR}")
+kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${WORKING_DIRECTORY}Src/shared")
 
 file(GLOB_RECURSE OPENGLRENDERER_SOURCES "${PROJECT_SRC_DIR}/*.cpp")
 
 # Specify the file to exclude
-list(REMOVE_ITEM  OPENGLRENDERER_SOURCES "${PROJECT_SRC_DIR}/app/App.cpp")
+list(REMOVE_ITEM OPENGLRENDERER_SOURCES "${PROJECT_SRC_DIR}/app/App.cpp")
 
 file(GLOB_RECURSE OPENGLRENDERER_COMMIT_TEST_SUITE_SOURCES "*.cpp")
 
@@ -26,15 +31,23 @@ file(GLOB_RECURSE SHADER_HEADERS "${SHADER_SRC_DIR}/*.hpp")
 file(GLOB_RECURSE OPENGLRENDERER_HEADERS "${SHADER_SRC_DIR}/*.hpp")
 
 add_executable(${COMMIT_TEST_SUITE_OPENGL})
+set_target_properties(${COMMIT_TEST_SUITE_OPENGL} PROPERTIES CXX_COMPILER_LAUNCHER "")
+set_target_properties(${COMMIT_TEST_SUITE_OPENGL} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
 
-if(NOT MSVC)
-  target_compile_definitions(${COMMIT_TEST_SUITE_OPENGL} PRIVATE RELATIVE_RESOURCE_PATH="/../../../../Resources/")
-else()
-  target_compile_definitions(${COMMIT_TEST_SUITE_OPENGL} PRIVATE RELATIVE_RESOURCE_PATH="/../../Resources/")
-endif()
+kataglyphis_apply_runtime_compile_definitions(
+  ${COMMIT_TEST_SUITE_OPENGL}
+  RESOURCE_PATH_NON_MSVC
+  "/../../../../Resources/"
+  RESOURCE_PATH_MSVC
+  "/../../Resources/")
 # we are using this dir strings for removing hard coded file locations
 # at c++ side
-configure_file(${PROJECT_SRC_DIR}/OpenGLRendererConfig.hpp.in "${PROJECT_SRC_DIR}/renderer/OpenGLRendererConfig.hpp")
+set(OPENGL_RENDERER_CONFIG_MODULE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(OPENGL_RENDERER_CONFIG_MODULE_FILE "${OPENGL_RENDERER_CONFIG_MODULE_DIR}/OpenGLRendererConfig.ixx")
+file(MAKE_DIRECTORY "${OPENGL_RENDERER_CONFIG_MODULE_DIR}")
+configure_file(${PROJECT_SRC_DIR}/OpenGLRendererConfig.ixx.in "${OPENGL_RENDERER_CONFIG_MODULE_FILE}" @ONLY)
+set_source_files_properties("${OPENGL_RENDERER_CONFIG_MODULE_FILE}" PROPERTIES GENERATED TRUE)
+list(APPEND OPENGL_MODULE_INTERFACE_FILES "${OPENGL_RENDERER_CONFIG_MODULE_FILE}")
 
 target_sources(
   ${COMMIT_TEST_SUITE_OPENGL}
@@ -60,6 +73,19 @@ target_sources(
          ${OPENGLRENDERER_HEADERS}
          ${SHADER_HEADERS})
 
+target_sources(
+  ${COMMIT_TEST_SUITE_OPENGL}
+  PUBLIC FILE_SET
+         CXX_MODULES
+         TYPE
+         CXX_MODULES
+         BASE_DIRS
+         ${WORKING_DIRECTORY}Src/
+         ${OPENGL_RENDERER_CONFIG_MODULE_DIR}
+         FILES
+         ${OPENGL_MODULE_INTERFACE_FILES}
+         ${SHARED_MODULE_INTERFACE_FILES})
+
 target_include_directories(${COMMIT_TEST_SUITE_OPENGL} PRIVATE ${OPENGL_INCLUDE_DIRS} ${Vulkan_INCLUDE_DIRS})
 
 target_link_libraries(
@@ -78,7 +104,7 @@ target_link_libraries(
 
 target_link_libraries(${COMMIT_TEST_SUITE_OPENGL} PRIVATE GSL spdlog)
 
-gtest_discover_tests(${COMMIT_TEST_SUITE_OPENGL} DISCOVERY_TIMEOUT 300)
+kataglyphis_configure_gtest_discovery(${COMMIT_TEST_SUITE_OPENGL})
 
 # disable all warnings for our test suite
 if(MSVC)

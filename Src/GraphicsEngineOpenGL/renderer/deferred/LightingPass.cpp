@@ -1,32 +1,43 @@
-#include "renderer/deferred/LightingPass.hpp"
-#include "scene/ObjMaterial.hpp"
-#include "scene/atmospheric_effects/clouds/Clouds.hpp"
+module;
 
 #include <cassert>
-#include <chrono>
-#include <ctime>
+#include <cstdint>
+#include <glm/ext/vector_float3.hpp>
+#include <glm/ext/matrix_float4x4.hpp>
+#include <memory>
+#include <glad/glad.h>
+#include <glm/ext/vector_float4.hpp>
 #include <sstream>
-#include <time.h>
+#include <utility>
+#include <vector>
 
-LightingPass::LightingPass()
-  :
+#include "hostDevice/bindings.hpp"
+#include "hostDevice/host_device_shared.hpp"
 
-    current_offset(glm::vec3(0.0f)), quad()
+module kataglyphis.opengl.lighting_pass;
 
-{
-    create_shader_program();
-}
+import kataglyphis.opengl.camera;
+import kataglyphis.opengl.directional_light;
+import kataglyphis.opengl.point_light;
+import kataglyphis.opengl.directional_light.cascaded_shadow_map;
+import kataglyphis.opengl.point_light.omni_dir_shadow_map;
+import kataglyphis.opengl.scene;
+import kataglyphis.opengl.obj_material;
+import kataglyphis.opengl.clouds;
+import kataglyphis.opengl.gbuffer;
+
+LightingPass::LightingPass() : current_offset(glm::vec3(0.0F)) { create_shader_program(); }
 
 void LightingPass::execute(glm::mat4 projection_matrix,
-  std::shared_ptr<Camera> main_camera,
-  std::shared_ptr<Scene> scene,
-  std::shared_ptr<GBuffer> gbuffer,
+  const std::shared_ptr<Camera> &main_camera,
+  const std::shared_ptr<Scene> &scene,
+  const std::shared_ptr<GBuffer> &gbuffer,
   float delta_time)
 {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    std::shared_ptr<DirectionalLight> main_light = scene->get_sun();
-    std::shared_ptr<Clouds> cloud = scene->get_clouds();
+    std::shared_ptr<DirectionalLight> const main_light = scene->get_sun();
+    std::shared_ptr<Clouds> const cloud = scene->get_clouds();
     std::vector<std::shared_ptr<PointLight>> point_lights = scene->get_point_lights();
 
     shader_program->use_shader_program();
@@ -55,18 +66,18 @@ void LightingPass::create_shader_program()
 }
 
 void LightingPass::set_uniforms(glm::mat4 projection_matrix,
-  std::shared_ptr<Camera> main_camera,
-  std::shared_ptr<Scene> scene,
-  std::shared_ptr<GBuffer> gbuffer,
+  const std::shared_ptr<Camera> &main_camera,
+  const std::shared_ptr<Scene> &scene,
+  const std::shared_ptr<GBuffer> &gbuffer,
   float delta_time)
 {
     // VP
-    glm::mat4 view_matrix = main_camera->get_viewmatrix();
+    glm::mat4 const view_matrix = main_camera->get_viewmatrix();
     shader_program->setUniformMatrix4fv(view_matrix, "view");
     shader_program->setUniformMatrix4fv(projection_matrix, "projection");
 
     // SUN UNIFORMS
-    std::shared_ptr<DirectionalLight> main_light = scene->get_sun();
+    std::shared_ptr<DirectionalLight> const main_light = scene->get_sun();
     shader_program->setUniformFloat(main_light->get_radiance(), "directional_light.base.radiance");
     shader_program->setUniformVec3(main_light->get_color(), "directional_light.base.color");
     shader_program->setUniformVec3(main_light->get_direction(), "directional_light.direction");
@@ -78,7 +89,7 @@ void LightingPass::set_uniforms(glm::mat4 projection_matrix,
 
     std::stringstream ss;
     for (uint32_t i = 0; i < NUM_CASCADES; i++) {
-        glm::vec4 clip_end_slot = projection_matrix * glm::vec4(0.0f, 0.0f, -cascade_slots[i + 1], 1.0f);
+        glm::vec4 const clip_end_slot = projection_matrix * glm::vec4(0.0F, 0.0F, -cascade_slots[i + 1], 1.0F);
         ss << "cascade_endpoints[" << i << "]";
         shader_program->setUniformFloat(clip_end_slot.z, ss.str());
         ss.clear();
@@ -127,7 +138,7 @@ void LightingPass::set_uniforms(glm::mat4 projection_matrix,
         ss.str(std::string());
 
         ss << "omni_shadow_maps[" << i << "].shadow_map";
-        shader_program->setUniformInt((GLint)(P_LIGHT_SHADOW_TEXTURES_SLOT + i), ss.str());
+        shader_program->setUniformInt(static_cast<GLint>(P_LIGHT_SHADOW_TEXTURES_SLOT + i), ss.str());
         ss.clear();
         ss.str(std::string());
 
@@ -138,7 +149,7 @@ void LightingPass::set_uniforms(glm::mat4 projection_matrix,
     }
 
     // CAMERA
-    glm::vec3 camera_position = main_camera->get_camera_position();
+    glm::vec3 const camera_position = main_camera->get_camera_position();
     shader_program->setUniformVec3(camera_position, "eye_position");
 
     // MATERIALS
@@ -197,24 +208,24 @@ void LightingPass::set_uniforms(glm::mat4 projection_matrix,
 
     // CLOUDS
 
-    std::shared_ptr<Clouds> cloud = scene->get_clouds();
+    std::shared_ptr<Clouds> const cloud = scene->get_clouds();
 
     shader_program->setUniformVec3(cloud->get_radius(), "cloud.radius");
-    GLfloat velocity = cloud->get_movement_speed() * delta_time;
+    GLfloat const velocity = cloud->get_movement_speed() * delta_time;
     current_offset = current_offset + cloud->get_movement_direction() * velocity;
     shader_program->setUniformVec3(current_offset, "cloud.offset");
     shader_program->setUniformMatrix4fv(cloud->get_model(), "cloud.model_to_world");
     shader_program->setUniformFloat(cloud->get_scale(), "cloud.scale");
-    shader_program->setUniformFloat(1.f - cloud->get_density(), "cloud.threshold");
+    shader_program->setUniformFloat(1.F - cloud->get_density(), "cloud.threshold");
     shader_program->setUniformFloat(cloud->get_pillowness(), "cloud.pillowness");
     shader_program->setUniformFloat(cloud->get_cirrus_effect(), "cloud.cirrus_effect");
     shader_program->setUniformInt(cloud->get_num_march_steps(), "cloud.num_march_steps");
     shader_program->setUniformInt(cloud->get_num_march_steps_to_light(), "cloud.num_march_steps_to_light");
 
     if (cloud->get_powder_effect()) {
-        shader_program->setUniformInt(true, "cloud.powder_effect");
+        shader_program->setUniformInt(1, "cloud.powder_effect");
     } else {
-        shader_program->setUniformInt(false, "cloud.powder_effect");
+        shader_program->setUniformInt(0, "cloud.powder_effect");
     }
 
     shader_program->setUniformBlockBinding(UNIFORM_LIGHT_MATRICES_BINDING, "LightSpaceMatrices");
@@ -227,4 +238,4 @@ void LightingPass::set_uniforms(glm::mat4 projection_matrix,
     shader_program->validate_program();
 }
 
-LightingPass::~LightingPass() {}
+LightingPass::~LightingPass() = default;

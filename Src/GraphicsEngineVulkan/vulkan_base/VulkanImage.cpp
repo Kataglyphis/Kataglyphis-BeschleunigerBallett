@@ -1,11 +1,45 @@
-#include "vulkan_base/VulkanImage.hpp"
+module;
+
+#include <cstdint>
+#include <utility>
+#include <vulkan/vulkan.h>
 
 #include "common/MemoryHelper.hpp"
 #include "common/Utilities.hpp"
 
-Kataglyphis::VulkanImage::VulkanImage() {}
+module kataglyphis.vulkan.image;
 
-void Kataglyphis::VulkanImage::create(VulkanDevice *device,
+import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.command_buffer_manager;
+
+Kataglyphis::VulkanImage::VulkanImage() = default;
+
+Kataglyphis::VulkanImage::VulkanImage(VulkanImage &&other) noexcept
+  : device(other.device), image(other.image), imageMemory(other.imageMemory)
+{
+    other.device = VK_NULL_HANDLE;
+    other.image = VK_NULL_HANDLE;
+    other.imageMemory = VK_NULL_HANDLE;
+}
+
+auto Kataglyphis::VulkanImage::operator=(VulkanImage &&other) noexcept -> VulkanImage &
+{
+    if (this != &other) {
+        cleanUp();
+
+        device = other.device;
+        image = other.image;
+        imageMemory = other.imageMemory;
+
+        other.device = VK_NULL_HANDLE;
+        other.image = VK_NULL_HANDLE;
+        other.imageMemory = VK_NULL_HANDLE;
+    }
+
+    return *this;
+}
+
+void Kataglyphis::VulkanImage::create(VulkanDevice *in_device,
   uint32_t width,
   uint32_t height,
   uint32_t mip_levels,
@@ -14,7 +48,7 @@ void Kataglyphis::VulkanImage::create(VulkanDevice *device,
   VkImageUsageFlags use_flags,
   VkMemoryPropertyFlags prop_flags)
 {
-    this->device = device;
+    this->device = in_device;
     // CREATE image
     // image creation info
     VkImageCreateInfo image_create_info{};
@@ -54,7 +88,7 @@ void Kataglyphis::VulkanImage::create(VulkanDevice *device,
     vkBindImageMemory(device->getLogicalDevice(), image, imageMemory, 0);
 }
 
-void Kataglyphis::VulkanImage::transitionImageLayout(VkDevice device,
+void Kataglyphis::VulkanImage::transitionImageLayout(VkDevice in_logical_device,
   VkQueue queue,
   VkCommandPool command_pool,
   VkImageLayout old_layout,
@@ -62,7 +96,8 @@ void Kataglyphis::VulkanImage::transitionImageLayout(VkDevice device,
   VkImageAspectFlags aspectMask,
   uint32_t mip_levels)
 {
-    VkCommandBuffer command_buffer = commandBufferManager.beginCommandBuffer(device, command_pool);
+    VkCommandBuffer command_buffer =
+      Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(in_logical_device, command_pool);
 
     // VK_IMAGE_ASPECT_COLOR_BIT
     VkImageMemoryBarrier memory_barrier{};
@@ -82,8 +117,8 @@ void Kataglyphis::VulkanImage::transitionImageLayout(VkDevice device,
     memory_barrier.srcAccessMask = accessFlagsForImageLayout(old_layout);
     memory_barrier.dstAccessMask = accessFlagsForImageLayout(new_layout);
 
-    VkPipelineStageFlags src_stage = pipelineStageForLayout(old_layout);
-    VkPipelineStageFlags dst_stage = pipelineStageForLayout(new_layout);
+    VkPipelineStageFlags const src_stage = pipelineStageForLayout(old_layout);
+    VkPipelineStageFlags const dst_stage = pipelineStageForLayout(new_layout);
 
     vkCmdPipelineBarrier(
 
@@ -100,7 +135,8 @@ void Kataglyphis::VulkanImage::transitionImageLayout(VkDevice device,
 
     );
 
-    commandBufferManager.endAndSubmitCommandBuffer(device, command_pool, queue, command_buffer);
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      in_logical_device, command_pool, queue, command_buffer);
 }
 
 void Kataglyphis::VulkanImage::transitionImageLayout(VkCommandBuffer command_buffer,
@@ -125,8 +161,8 @@ void Kataglyphis::VulkanImage::transitionImageLayout(VkCommandBuffer command_buf
     memory_barrier.srcAccessMask = accessFlagsForImageLayout(old_layout);
     memory_barrier.dstAccessMask = accessFlagsForImageLayout(new_layout);
 
-    VkPipelineStageFlags src_stage = pipelineStageForLayout(old_layout);
-    VkPipelineStageFlags dst_stage = pipelineStageForLayout(new_layout);
+    VkPipelineStageFlags const src_stage = pipelineStageForLayout(old_layout);
+    VkPipelineStageFlags const dst_stage = pipelineStageForLayout(new_layout);
 
     // if transitioning from new image to image ready to receive data
 
@@ -146,17 +182,22 @@ void Kataglyphis::VulkanImage::transitionImageLayout(VkCommandBuffer command_buf
     );
 }
 
-void Kataglyphis::VulkanImage::setImage(VkImage image) { this->image = image; }
+void Kataglyphis::VulkanImage::setImage(VkImage in_image) { this->image = in_image; }
 
 void Kataglyphis::VulkanImage::cleanUp()
 {
-    vkDestroyImage(device->getLogicalDevice(), image, nullptr);
-    vkFreeMemory(device->getLogicalDevice(), imageMemory, nullptr);
+    if (device != VK_NULL_HANDLE) {
+        if (image != VK_NULL_HANDLE) { vkDestroyImage(device->getLogicalDevice(), image, nullptr); }
+        if (imageMemory != VK_NULL_HANDLE) { vkFreeMemory(device->getLogicalDevice(), imageMemory, nullptr); }
+    }
+
+    image = VK_NULL_HANDLE;
+    imageMemory = VK_NULL_HANDLE;
 }
 
-Kataglyphis::VulkanImage::~VulkanImage() {}
+Kataglyphis::VulkanImage::~VulkanImage() = default;
 
-VkAccessFlags Kataglyphis::VulkanImage::accessFlagsForImageLayout(VkImageLayout layout)
+auto Kataglyphis::VulkanImage::accessFlagsForImageLayout(VkImageLayout layout) -> VkAccessFlags
 {
     switch (layout) {
     case VK_IMAGE_LAYOUT_PREINITIALIZED:
@@ -171,12 +212,15 @@ VkAccessFlags Kataglyphis::VulkanImage::accessFlagsForImageLayout(VkImageLayout 
         return VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
         return VK_ACCESS_SHADER_READ_BIT;
+    case VK_IMAGE_LAYOUT_GENERAL:
+        return VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+               | VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
     default:
         return VkAccessFlags();
     }
 }
 
-VkPipelineStageFlags Kataglyphis::VulkanImage::pipelineStageForLayout(VkImageLayout oldImageLayout)
+auto Kataglyphis::VulkanImage::pipelineStageForLayout(VkImageLayout oldImageLayout) -> VkPipelineStageFlags
 {
     switch (oldImageLayout) {
     case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
@@ -196,6 +240,8 @@ VkPipelineStageFlags Kataglyphis::VulkanImage::pipelineStageForLayout(VkImageLay
         return VK_PIPELINE_STAGE_HOST_BIT;
     case VK_IMAGE_LAYOUT_UNDEFINED:
         return VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    case VK_IMAGE_LAYOUT_GENERAL:
+        return VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
     default:
         return VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
     }

@@ -1,26 +1,37 @@
-#include "PathTracing.hpp"
+module;
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
-
-#include "util/File.hpp"
-#include "vulkan_base/ShaderHelper.hpp"
+#include <sstream>
+#include <string>
+#include <vector>
+#include <vulkan/vulkan_core.h>
 
 #include "common/Utilities.hpp"
-#include "renderer/VulkanRendererConfig.hpp"
+#include "renderer/pushConstants/PushConstantPathTracing.hpp"
+
+module kataglyphis.vulkan.path_tracing;
+
+import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.queue_family_indices;
+import kataglyphis.vulkan.file;
+import kataglyphis.vulkan.image;
+import kataglyphis.vulkan.shader_helper;
 
 // Good source:
 // https://github.com/nvpro-samples/vk_mini_path_tracer/blob/main/vk_mini_path_tracer/main.cpp
 
-Kataglyphis::VulkanRendererInternals::PathTracing::PathTracing() {}
+Kataglyphis::VulkanRendererInternals::PathTracing::PathTracing() = default;
 
-void Kataglyphis::VulkanRendererInternals::PathTracing::init(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::PathTracing::init(VulkanDevice *in_device,
   const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
 {
-    this->device = device;
+    this->device = in_device;
 
-    VkPhysicalDeviceProperties physicalDeviceProps = device->getPhysicalDeviceProperties();
+    VkPhysicalDeviceProperties const physicalDeviceProps = device->getPhysicalDeviceProperties();
     timeStampPeriod = physicalDeviceProps.limits.timestampPeriod;
 
     // save the limits for handling all special cases later on
@@ -34,7 +45,6 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::init(VulkanDevice *devic
     computeLimits.maxComputeWorkGroupSize[1] = physicalDeviceProps.limits.maxComputeWorkGroupSize[1];
     computeLimits.maxComputeWorkGroupSize[2] = physicalDeviceProps.limits.maxComputeWorkGroupSize[2];
 
-    queryResults.resize(query_count);
     createQueryPool();
 
     createPipeline(descriptorSetLayouts);
@@ -48,7 +58,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::shaderHotReload(
 }
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(VkCommandBuffer &commandBuffer,
-  uint32_t image_index,
+  uint32_t /*image_index*/,
   VulkanImage &vulkanImage,
   VulkanSwapChain *vulkanSwapChain,
   const std::vector<VkDescriptorSet> &descriptorSets)
@@ -61,7 +71,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(VkCommand
     vkCmdWriteTimestamp(
       commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool, query++);
 
-    Kataglyphis::VulkanRendererInternals::QueueFamilyIndices indices = device->getQueueFamilies();
+    Kataglyphis::VulkanRendererInternals::QueueFamilyIndices const indices = device->getQueueFamilies();
 
     VkImageSubresourceRange subresourceRange{};
     subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -73,11 +83,11 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(VkCommand
     VkImageMemoryBarrier presentToPathTracingImageBarrier{};
     presentToPathTracingImageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     presentToPathTracingImageBarrier.pNext = nullptr;
-    presentToPathTracingImageBarrier.srcQueueFamilyIndex = indices.graphics_family;
-    presentToPathTracingImageBarrier.dstQueueFamilyIndex = indices.compute_family;
+    presentToPathTracingImageBarrier.srcQueueFamilyIndex = static_cast<uint32_t>(indices.graphics_family);
+    presentToPathTracingImageBarrier.dstQueueFamilyIndex = static_cast<uint32_t>(indices.compute_family);
     presentToPathTracingImageBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
     presentToPathTracingImageBarrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    presentToPathTracingImageBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    presentToPathTracingImageBarrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     presentToPathTracingImageBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
     presentToPathTracingImageBarrier.subresourceRange = subresourceRange;
     presentToPathTracingImageBarrier.image = vulkanImage.getImage();
@@ -94,10 +104,10 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(VkCommand
       1,
       &presentToPathTracingImageBarrier);
 
-    VkExtent2D imageSize = vulkanSwapChain->getSwapChainExtent();
+    VkExtent2D const imageSize = vulkanSwapChain->getSwapChainExtent();
     push_constant.width = imageSize.width;
     push_constant.height = imageSize.height;
-    push_constant.clearColor = { 0.2f, 0.65f, 0.4f, 1.0f };
+    push_constant.clearColor = { 0.2F, 0.65F, 0.4F, 1.0F };
 
     vkCmdPushConstants(
       commandBuffer, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstantPathTracing), &push_constant);
@@ -111,25 +121,25 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(VkCommand
       static_cast<uint32_t>(descriptorSets.size()),
       descriptorSets.data(),
       0,
-      0);
+      nullptr);
 
-    uint32_t workGroupCountX = std::max(
+    uint32_t const workGroupCountX = std::max(
       (imageSize.width + specializationData.specWorkGroupSizeX - 1) / specializationData.specWorkGroupSizeX, 1U);
-    uint32_t workGroupCountY = std::max(
+    uint32_t const workGroupCountY = std::max(
       (imageSize.height + specializationData.specWorkGroupSizeY - 1) / specializationData.specWorkGroupSizeY, 1U);
-    uint32_t workGroupCountZ = 1;
+    uint32_t const workGroupCountZ = 1;
 
     vkCmdDispatch(commandBuffer, workGroupCountX, workGroupCountY, workGroupCountZ);
 
     VkImageMemoryBarrier pathTracingToPresentImageBarrier{};
     pathTracingToPresentImageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     pathTracingToPresentImageBarrier.pNext = nullptr;
-    pathTracingToPresentImageBarrier.srcQueueFamilyIndex = indices.compute_family;
-    pathTracingToPresentImageBarrier.dstQueueFamilyIndex = indices.graphics_family;
+    pathTracingToPresentImageBarrier.srcQueueFamilyIndex = static_cast<uint32_t>(indices.compute_family);
+    pathTracingToPresentImageBarrier.dstQueueFamilyIndex = static_cast<uint32_t>(indices.graphics_family);
     pathTracingToPresentImageBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
     pathTracingToPresentImageBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     pathTracingToPresentImageBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-    pathTracingToPresentImageBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    pathTracingToPresentImageBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     pathTracingToPresentImageBarrier.image = vulkanImage.getImage();
     pathTracingToPresentImageBarrier.subresourceRange = subresourceRange;
 
@@ -146,18 +156,6 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(VkCommand
 
     vkCmdWriteTimestamp(
       commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool, query++);
-    VkResult result = vkGetQueryPoolResults(device->getLogicalDevice(),
-      queryPool,
-      0,
-      query_count,
-      queryResults.size() * sizeof(uint64_t),
-      queryResults.data(),
-      static_cast<VkDeviceSize>(sizeof(uint64_t)),
-      VK_QUERY_RESULT_64_BIT);
-
-    if (result != VK_NOT_READY) {
-        pathTracingTiming = (static_cast<float>(queryResults[1] - queryResults[0]) * timeStampPeriod) / 1000000.f;
-    }
 }
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::cleanUp()
@@ -168,7 +166,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::cleanUp()
     vkDestroyQueryPool(device->getLogicalDevice(), queryPool, nullptr);
 }
 
-Kataglyphis::VulkanRendererInternals::PathTracing::~PathTracing() {}
+Kataglyphis::VulkanRendererInternals::PathTracing::~PathTracing() = default;
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::createQueryPool()
 {
@@ -176,11 +174,10 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createQueryPool()
     queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
     // This query pool will store pipeline statistics
     queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
-    // Pipeline counters to be returned for this pool
-    queryPoolInfo.pipelineStatistics = VK_QUERY_PIPELINE_STATISTIC_COMPUTE_SHADER_INVOCATIONS_BIT;
+    queryPoolInfo.pipelineStatistics = 0;
     queryPoolInfo.queryCount = query_count;
-    ASSERT_VULKAN(
-      vkCreateQueryPool(device->getLogicalDevice(), &queryPoolInfo, NULL, &queryPool), "Failed to create query pool!");
+    ASSERT_VULKAN(vkCreateQueryPool(device->getLogicalDevice(), &queryPoolInfo, nullptr, &queryPool),
+      "Failed to create query pool!");
 }
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
@@ -204,16 +201,16 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
 
     // create pipeline
     std::stringstream pathTracing_shader_dir;
-    std::filesystem::path cwd = std::filesystem::current_path();
+    std::filesystem::path const cwd = std::filesystem::current_path();
     pathTracing_shader_dir << cwd.string();
     pathTracing_shader_dir << RELATIVE_RESOURCE_PATH;
     pathTracing_shader_dir << "Shaders/path_tracing/";
 
-    std::string pathTracing_shader = "path_tracing.comp";
+    std::string const pathTracing_shader = "path_tracing.comp";
 
     ShaderHelper shaderHelper;
     File pathTracingShaderFile(shaderHelper.getShaderSpvDir(pathTracing_shader_dir.str(), pathTracing_shader));
-    std::vector<char> pathTracingShadercode = pathTracingShaderFile.readCharSequence();
+    std::vector<char> const pathTracingShadercode = pathTracingShaderFile.readCharSequence();
 
     shaderHelper.compileShader(pathTracing_shader_dir.str(), pathTracing_shader);
 

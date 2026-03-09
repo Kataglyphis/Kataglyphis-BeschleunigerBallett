@@ -22,7 +22,7 @@ env:
   BUILD_TYPE: Debug
   GCC_PROFILE_PRESET: linux-profile-GNU
   CLANG_PROFILE_PRESET: linux-profile-clang
-  VULKAN_VERSION: 1.4.335.0
+  VULKAN_VERSION: 1.4.341.1
   # folder/name configuration -- change here to affect the whole workflow
   BUILD_DIR: build
   BUILD_RELEASE_DIR: build-release
@@ -72,12 +72,6 @@ jobs:
       #################################################################################################################
       ####################### Run unit/integration/fuzzy/coverage/tests/static analyzers ##############################
       #################################################################################################################
-      - name: Set compiler to clang
-        run: |
-          echo "COMPILER=clang" >> "$GITHUB_ENV"
-          echo "PRESET=linux-debug-clang" >> "$GITHUB_ENV"
-          echo "PROFILE_PRESET=${CLANG_PROFILE_PRESET}" >> "$GITHUB_ENV"
-
       #################################################################################################################
       ############################################### clang: build/test ################################################
       #################################################################################################################
@@ -85,50 +79,27 @@ jobs:
       - name: Prepare for unit/integration tests
         run: |
           docker run --rm \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
+            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
-            -e PRESET=${{ env.PRESET }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-
-            PRESET="${PRESET}"
-
-            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-
-            # --- START FIX ---
-            # 1. Force use of Clang/Clang++
-            export CC=clang
-            export CXX=clang++
-
-            # 2. Point Clang to the custom GCC headers and library
-            # This fixes the "type_traits not found" error
-            export CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0 $CXXFLAGS"
-
-            # 3. Ensure the linker finds the newer libstdc++
-            # We add rpath so the binary finds these libs at runtime/test time locally
-            export LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0 $LDFLAGS"
-            # --- END FIX ---
-
-            cmake --preset "${PRESET}"
-            cmake --build --preset "${PRESET}"
-            '
+            bash ./Scripts/Linux/cmake-configure-build.sh \
+            --vulkan-version "${{ env.VULKAN_VERSION }}" \
+            --preset "linux-debug-clang" \
+            --build-dir "${{ env.BUILD_DIR }}"
 
       - name: Run Unit/Integration tests
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
-            -w /workspace/${{ env.BUILD_DIR }} \
-            -e BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-            ctest -C "${BUILD_TYPE}" --verbose --extra-verbose --debug -T test --output-on-failure -E Integration.VulkanEngine RendererTest.BasicSetup
-            '
+            bash ./Scripts/Linux/run-ctest.sh \
+            --vulkan-version "${{ env.VULKAN_VERSION }}" \
+            --build-dir "${{ env.BUILD_DIR }}" \
+            --build-type "${{ env.BUILD_TYPE }}" \
+            --ctest-exclude "^Integration\\.VulkanEngine$|^RendererTest\\.BasicSetup$"
 
       - name: Run fuzzer tests
         run: |
@@ -140,20 +111,15 @@ jobs:
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e BUILD_DIR=${{ env.BUILD_DIR }} \
-            -e COVERAGE_JSON=${{ env.COVERAGE_JSON }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            llvm-profdata merge -sparse "${BUILD_DIR}/Test/compile/default.profraw" -o "${BUILD_DIR}/compileTestSuite.profdata"
-            llvm-cov report "${BUILD_DIR}/compileTestSuite" -instr-profile="${BUILD_DIR}/compileTestSuite.profdata"
-            llvm-cov export "${BUILD_DIR}/compileTestSuite" -format=text -instr-profile="${BUILD_DIR}/compileTestSuite.profdata" > "${COVERAGE_JSON}"
-            '
+            bash ./Scripts/Linux/build-coverage-llvm.sh \
+            --build-dir "${{ env.BUILD_DIR }}" \
+            --coverage-json "${{ env.COVERAGE_JSON }}"
         working-directory: ${{ github.workspace }}
 
       - name: Codecov
         if: ${{ inputs.runner == 'ubuntu-24.04' }}
-        uses: codecov/codecov-action@v5.5.1
+        uses: codecov/codecov-action@v5.5.2
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ${{ env.COVERAGE_JSON }}
@@ -170,29 +136,27 @@ jobs:
         continue-on-error: true
         run: |
           docker run --rm \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
+            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            clang++ --analyze -DUSE_RUST=1 -Xanalyzer -analyzer-output=html $(find Src -name "*.cpp" -o -name "*.cc")
-            '
+            bash ./Scripts/Linux/run_static_analysis_format.sh \
+            --only-clang-analyze-html
 
       - name: Run Clang static analysis (scan-build)
         continue-on-error: true
         run: |
-          mkdir -p scan-build-reports
           docker run --rm \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
+            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e BUILD_DIR=${{ env.BUILD_DIR }} \
-            -e PRESET=${{ env.PRESET }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-            scan-build -o scan-build-reports cmake --build "${BUILD_DIR}" --preset "${PRESET}"
-            '
+            bash ./Scripts/Linux/run_static_analysis_format.sh \
+            --only-scan-build \
+            --build-dir "${{ env.BUILD_DIR }}" \
+            --preset "linux-debug-clang"
 
       #################################################################################################################
       ############################# Now run on performance benchmarking/profiling #####################################
@@ -200,95 +164,37 @@ jobs:
       - name: Configure/build CMake for Profiling (select preset by compiler)
         run: |
           docker run --rm \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
+            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
-            -e BUILD_DIR=${{ env.BUILD_DIR }} \
-            -e PRESET=${{ env.PROFILE_PRESET }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-            echo "Using preset: ${PRESET}"
-            rm -rf "${BUILD_DIR}"
-
-            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-
-            # --- START FIX ---
-            # 1. Force use of Clang/Clang++
-            export CC=clang
-            export CXX=clang++
-
-            # 2. Point Clang to the custom GCC headers and library
-            # This fixes the "type_traits not found" error
-            export CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0 $CXXFLAGS"
-
-            # 3. Ensure the linker finds the newer libstdc++
-            # We add rpath so the binary finds these libs at runtime/test time locally
-            export LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0 $LDFLAGS"
-            # --- END FIX ---
-
-            cmake -B "${BUILD_DIR}" --preset "${PRESET}"
-            cmake --build "${BUILD_DIR}" --preset "${PRESET}"
-            '
+            bash ./Scripts/Linux/cmake-configure-build.sh \
+            --vulkan-version "${{ env.VULKAN_VERSION }}" \
+            --build-dir "${{ env.BUILD_DIR }}" \
+            --preset "${{ env.CLANG_PROFILE_PRESET }}" \
+            --clean-build-dir true
 
       - name: Run performance benchmarks
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e BUILD_DIR=${{ env.BUILD_DIR }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            "${BUILD_DIR}/perfTestSuite"
-            '
+            bash ./Scripts/Linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
 
       #################################################################################################################
       ######################################## Build docs #############################################################
       #################################################################################################################
-      - name: Set Astral UV venv
-        if: ${{ inputs.runner == 'ubuntu-24.04' }}
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            uv venv
-            '
 
-      - name: Setup python env
-        if: ${{ inputs.runner == 'ubuntu-24.04' }}
-        run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            . ".venv/bin/activate"
-            uv pip install -r requirements.txt
-            '
-
-      # . "$HOME/.local/bin/env"
       - name: Build web page
         if: ${{ inputs.runner == 'ubuntu-24.04' }}
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e DOCS_OUT=${{ env.DOCS_OUT }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            cp ${DOCS_OUT}/*.svg ./docs/source/_static
-            cd docs/source
-            uv run python graphviz_generator.py
-            cd ..
-            uv run make html
-            '
+            bash ./Scripts/Linux/docs-build-web.sh "${{ env.DOCS_OUT }}"
 
       - name: 📂 Sync files to domain
         uses: SamKirkland/FTP-Deploy-Action@v4.3.6
@@ -303,44 +209,29 @@ jobs:
       ############################################### gcc: build/test #################################################
       #################################################################################################################
 
-      - name: Set compiler to gcc
-        run: |
-          echo "COMPILER=gcc" >> "$GITHUB_ENV"
-          echo "PRESET=linux-debug-GNU" >> "$GITHUB_ENV"
-          echo "PROFILE_PRESET=${GCC_PROFILE_PRESET}" >> "$GITHUB_ENV"
-          echo "BUILD_DIR=build" >> "$GITHUB_ENV"
-
       - name: Prepare for unit/integration tests (gcc)
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
-            -e BUILD_DIR=${{ env.BUILD_DIR }} \
-            -e PRESET=${{ env.PRESET }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-            rm -rf "${BUILD_DIR}"
-            cmake -B "${BUILD_DIR}" --preset "${PRESET}"
-            cmake --build "${BUILD_DIR}" --preset "${PRESET}"
-            '
+            bash ./Scripts/Linux/cmake-configure-build.sh \
+            --vulkan-version "${{ env.VULKAN_VERSION }}" \
+            --build-dir "${{ env.BUILD_DIR }}" \
+            --preset "linux-debug-GNU" \
+            --clean-build-dir true
 
       - name: Run Unit/Integration tests (gcc)
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
-            -w /workspace/${{ env.BUILD_DIR }} \
-            -e BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-            ctest -C "${BUILD_TYPE}" --verbose --extra-verbose --debug -T test --output-on-failure -E Integration.VulkanEngine RendererTest.BasicSetup
-            '
+            bash ./Scripts/Linux/run-ctest.sh \
+            --vulkan-version "${{ env.VULKAN_VERSION }}" \
+            --build-dir "${{ env.BUILD_DIR }}" \
+            --build-type "${{ env.BUILD_TYPE }}" \
+            --ctest-exclude "^Integration\\.VulkanEngine$|^RendererTest\\.BasicSetup$"
 
       - name: Run fuzzer tests (gcc)
         run: |
@@ -353,33 +244,22 @@ jobs:
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            gcovr -r .
-            '
+            bash ./Scripts/Linux/build-coverage-gcovr.sh
 
       - name: Configure/build CMake for Profiling (gcc)
         run: |
           docker run --rm \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
-            -e BUILD_DIR=${{ env.BUILD_DIR }} \
-            -e PRESET=${{ env.PROFILE_PRESET }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-            echo "Using preset: ${PRESET}"
-            rm -rf "${BUILD_DIR}"
-
-            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-            cmake -B "${BUILD_DIR}" --preset "${PRESET}"
-            cmake --build "${BUILD_DIR}" --preset "${PRESET}"
-            '
+            bash ./Scripts/Linux/cmake-configure-build.sh \
+            --vulkan-version "${{ env.VULKAN_VERSION }}" \
+            --build-dir "${{ env.BUILD_DIR }}" \
+            --preset "${{ env.GCC_PROFILE_PRESET }}" \
+            --clean-build-dir true
 
       - name: Run performance benchmarks (gcc)
-        run: ${{ env.BUILD_DIR }}/perfTestSuite
+        run: ./Scripts/Linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
         working-directory: ${{ github.workspace }}
 
       #################################################################################################################
@@ -389,69 +269,38 @@ jobs:
       - name: Configure/build CMake for Release
         run: |
           docker run --rm \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
+            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
-            -e BUILD_RELEASE_DIR=${{ env.BUILD_RELEASE_DIR }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-
-            # --- START FIX ---
-            # 1. Force use of Clang/Clang++
-            export CC=clang
-            export CXX=clang++
-
-            # 2. Point Clang to the custom GCC headers and library
-            # This fixes the "type_traits not found" error
-            export CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0 $CXXFLAGS"
-
-            # 3. Ensure the linker finds the newer libstdc++
-            # We add rpath so the binary finds these libs at runtime/test time locally
-            export LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0 $LDFLAGS"
-            # --- END FIX ---
-
-            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-            cmake -B "${BUILD_RELEASE_DIR}" --preset linux-release-clang
-            cmake --build "${BUILD_RELEASE_DIR}" --config Release
-            '
+            bash ./Scripts/Linux/cmake-configure-build.sh \
+            --vulkan-version "${{ env.VULKAN_VERSION }}" \
+            --build-dir "${{ env.BUILD_RELEASE_DIR }}" \
+            --preset "linux-release-clang" \
+            --build-config "Release"
 
       - name: Package
         run: |
           docker run --rm \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
+            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
-            -e VULKAN_VERSION=${{ env.VULKAN_VERSION }} \
-            -e BUILD_RELEASE_DIR=${{ env.BUILD_RELEASE_DIR }} \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash -lc '
-            set -e
-            git config --global --add safe.directory /workspace || true
-            . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-
-            # --- START FIX ---
-            # 1. Force use of Clang/Clang++
-            export CC=clang
-            export CXX=clang++
-
-            # 2. Point Clang to the custom GCC headers and library
-            # This fixes the "type_traits not found" error
-            export CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0 $CXXFLAGS"
-
-            # 3. Ensure the linker finds the newer libstdc++
-            # We add rpath so the binary finds these libs at runtime/test time locally
-            export LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0 $LDFLAGS"
-            # --- END FIX ---
-
-            cmake --build "${BUILD_RELEASE_DIR}" --target package
-            '
+            bash ./Scripts/Linux/cmake-configure-build.sh \
+            --vulkan-version "${{ env.VULKAN_VERSION }}" \
+            --build-dir "${{ env.BUILD_RELEASE_DIR }}" \
+            --skip-configure true \
+            --build-target package
 
       - name: Upload Linux Packages (Clang only)
-        uses: actions/upload-artifact@v6.0.0
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: linux-packages
           path: |
             ${{ env.BUILD_RELEASE_DIR }}/*.tar.gz
             ${{ env.BUILD_RELEASE_DIR }}/*.tgz
             ${{ env.BUILD_RELEASE_DIR }}/*.deb
+            ${{ env.BUILD_RELEASE_DIR }}/*.AppImage
+            ${{ env.BUILD_RELEASE_DIR }}/*.flatpak
