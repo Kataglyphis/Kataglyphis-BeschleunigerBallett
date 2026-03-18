@@ -88,7 +88,7 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(VulkanDevic
       vk::BufferUsageFlagBits::eTransferSrc,
       vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    void *mapped_data = device->getLogicalDevice().mapMemory(stagingBuffer.getBufferMemory(), 0, bufferSize);
+    void *mapped_data = device->getLogicalDevice().mapMemory(stagingBuffer.getBufferMemory(), 0, bufferSize).value;
     std::memcpy(mapped_data, data.data(), static_cast<size_t>(bufferSize));
     device->getLogicalDevice().unmapMemory(stagingBuffer.getBufferMemory());
 
