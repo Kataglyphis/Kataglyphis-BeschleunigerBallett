@@ -127,6 +127,8 @@ target_sources(
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS})
 
+target_compile_definitions(${PROJECT_NAME} PRIVATE VULKAN_HPP_NO_EXCEPTIONS)
+
 target_link_libraries(
   ${PROJECT_NAME}
   PUBLIC ${CMAKE_DL_LIBS}
