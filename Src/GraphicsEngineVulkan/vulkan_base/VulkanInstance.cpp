@@ -7,6 +7,7 @@ module;
 #include <cstdint>
 #include <cstring>
 #include <vector>
+#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #include <vulkan/vulkan.hpp>
 
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
@@ -18,7 +19,7 @@ import kataglyphis.vulkan.debug;
 
 Kataglyphis::VulkanInstance::VulkanInstance()
 {
-    static vk::DynamicLoader dl;
+    static vk::detail::DynamicLoader dl;
     VULKAN_HPP_DEFAULT_DISPATCHER.init(dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr"));
 
     if (Kataglyphis::ENABLE_VALIDATION_LAYERS && !check_validation_layer_support()) {
