@@ -60,14 +60,15 @@ VKAPI_ATTR static VkBool32 VKAPI_CALL debugUtilsMessengerCallback(
     return VK_FALSE;
 }
 
-void setupDebugging(vk::Instance instance, vk::DebugReportFlags /*flags*/, vk::DebugReportCallbackEXT /*callBack*/)
+void setupDebugging(vk::Instance instance, vk::DebugReportFlagsEXT /*flags*/, vk::DebugReportCallbackEXT /*callBack*/)
 {
     vk::DebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCI{};
     debugUtilsMessengerCI.messageSeverity =
       vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError;
     debugUtilsMessengerCI.messageType =
       vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation;
-    debugUtilsMessengerCI.pfnUserCallback = debugUtilsMessengerCallback;
+    debugUtilsMessengerCI.pfnUserCallback =
+      reinterpret_cast<PFN_vkDebugUtilsMessengerCallbackEXT>(debugUtilsMessengerCallback);
 
     vk::Result result;
     std::tie(result, debugUtilsMessenger) = instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCI, nullptr);

@@ -72,12 +72,12 @@ Kataglyphis::VulkanInstance::VulkanInstance()
     create_info.ppEnabledExtensionNames = instance_extensions.data();
 
     // create instance
-    instance = vk::createInstance(create_info);
+    instance = vk::createInstance(create_info).value;
 }
 
 auto Kataglyphis::VulkanInstance::check_validation_layer_support() -> bool
 {
-    std::vector<vk::LayerProperties> availableLayers = vk::enumerateInstanceLayerProperties();
+    std::vector<vk::LayerProperties> availableLayers = vk::enumerateInstanceLayerProperties().value;
 
     for (const char *layerName : validationLayers) {
         bool layerFound = false;
@@ -98,7 +98,7 @@ auto Kataglyphis::VulkanInstance::check_validation_layer_support() -> bool
 auto Kataglyphis::VulkanInstance::check_instance_extension_support(std::vector<const char *> *check_extensions) -> bool
 {
     // create a list of vk::ExtensionProperties
-    std::vector<vk::ExtensionProperties> extensions = vk::enumerateInstanceExtensionProperties();
+    std::vector<vk::ExtensionProperties> extensions = vk::enumerateInstanceExtensionProperties().value;
 
     // check if given extensions are in list of available extensions
     for (const auto &check_extension : *check_extensions) {
