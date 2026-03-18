@@ -65,7 +65,7 @@ void Kataglyphis::VulkanImage::create(VulkanDevice *in_device,
     image_create_info.samples = vk::SampleCountFlagBits::e1;// number of samples for multisampling
     image_create_info.sharingMode = vk::SharingMode::eExclusive;// whether image can be shared between queues
 
-    image = device->getLogicalDevice().createImage(image_create_info);
+    image = device->getLogicalDevice().createImage(image_create_info).value;
 
     // CREATE memory for image
     // get memory requirements for a type of image
@@ -77,7 +77,7 @@ void Kataglyphis::VulkanImage::create(VulkanDevice *in_device,
     memory_alloc_info.memoryTypeIndex =
       Kataglyphis::find_memory_type_index(device->getPhysicalDevice(), memory_requirements.memoryTypeBits, prop_flags);
 
-    imageMemory = device->getLogicalDevice().allocateMemory(memory_alloc_info);
+    imageMemory = device->getLogicalDevice().allocateMemory(memory_alloc_info).value;
 
     // connect memory to image
     device->getLogicalDevice().bindImageMemory(image, imageMemory, 0);

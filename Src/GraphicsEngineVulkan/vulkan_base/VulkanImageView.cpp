@@ -62,7 +62,7 @@ void Kataglyphis::VulkanImageView::create(VulkanDevice *in_device,
     view_create_info.subresourceRange.layerCount = 1;// number of array levels to view
 
     // create image view
-    imageView = device->getLogicalDevice().createImageView(view_create_info);
+    imageView = device->getLogicalDevice().createImageView(view_create_info).value;
 }
 
 void Kataglyphis::VulkanImageView::cleanUp()

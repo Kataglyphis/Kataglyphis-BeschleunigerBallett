@@ -113,7 +113,7 @@ auto Kataglyphis::ShaderHelper::createShaderModule(VulkanDevice *device, const s
     shader_module_create_info.pCode = reinterpret_cast<const uint32_t *>(code.data());// pointer to code
 
     // C++ API throws on failure, no manual error check needed
-    vk::ShaderModule shader_module = device->getLogicalDevice().createShaderModule(shader_module_create_info);
+    vk::ShaderModule shader_module = device->getLogicalDevice().createShaderModule(shader_module_create_info).value;
 
     return shader_module;
 }

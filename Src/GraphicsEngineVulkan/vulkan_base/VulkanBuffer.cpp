@@ -58,7 +58,7 @@ void Kataglyphis::VulkanBuffer::create(VulkanDevice *device,
     // similar to swap chain images, can share vertex buffers
     buffer_info.sharingMode = vk::SharingMode::eExclusive;
 
-    buffer = device->getLogicalDevice().createBuffer(buffer_info);
+    buffer = device->getLogicalDevice().createBuffer(buffer_info).value;
 
     // get buffer memory requirements
     vk::MemoryRequirements memory_requirements = device->getLogicalDevice().getBufferMemoryRequirements(buffer);
@@ -86,7 +86,7 @@ void Kataglyphis::VulkanBuffer::create(VulkanDevice *device,
     memory_alloc_info.memoryTypeIndex = memory_type_index;
 
     // allocate memory to VkDeviceMemory
-    bufferMemory = device->getLogicalDevice().allocateMemory(memory_alloc_info);
+    bufferMemory = device->getLogicalDevice().allocateMemory(memory_alloc_info).value;
 
     // allocate memory to given buffer
     device->getLogicalDevice().bindBufferMemory(buffer, bufferMemory, 0);
