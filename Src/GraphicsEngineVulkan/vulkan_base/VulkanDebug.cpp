@@ -4,17 +4,14 @@ module;
 #include <iostream>
 #include <sstream>
 #include <string>
-#include <vulkan/vk_platform.h>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.hpp>
 
 #include "common/Utilities.hpp"
 
 module kataglyphis.vulkan.debug;
 
 namespace Kataglyphis::debug {
-static PFN_vkCreateDebugUtilsMessengerEXT vkCreateDebugUtilsMessengerEXT;
-static PFN_vkDestroyDebugUtilsMessengerEXT vkDestroyDebugUtilsMessengerEXT;
-static VkDebugUtilsMessengerEXT debugUtilsMessenger;
+static vk::DebugUtilsMessengerEXT debugUtilsMessenger;
 
 VKAPI_ATTR static VkBool32 VKAPI_CALL debugUtilsMessengerCallback(
   VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -63,28 +60,22 @@ VKAPI_ATTR static VkBool32 VKAPI_CALL debugUtilsMessengerCallback(
     return VK_FALSE;
 }
 
-void setupDebugging(VkInstance instance, VkDebugReportFlagsEXT /*flags*/, VkDebugReportCallbackEXT /*callBack*/)
+void setupDebugging(vk::Instance instance, vk::DebugReportFlags /*flags*/, vk::DebugReportCallbackEXT /*callBack*/)
 {
-    vkCreateDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
-      vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT"));
-    vkDestroyDebugUtilsMessengerEXT = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
-      vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT"));
-
-    VkDebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCI{};
-    debugUtilsMessengerCI.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    vk::DebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCI{};
     debugUtilsMessengerCI.messageSeverity =
-      VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+      vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError;
     debugUtilsMessengerCI.messageType =
-      VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
+      vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation;
     debugUtilsMessengerCI.pfnUserCallback = debugUtilsMessengerCallback;
-    ASSERT_VULKAN(vkCreateDebugUtilsMessengerEXT(instance, &debugUtilsMessengerCI, nullptr, &debugUtilsMessenger),
-      "Failed to create debug messenger")
+
+    vk::Result result;
+    std::tie(result, debugUtilsMessenger) = instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCI, nullptr);
+    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create debug messenger")
 }
 
-void freeDebugCallback(VkInstance instance)
+void freeDebugCallback(vk::Instance instance)
 {
-    if (debugUtilsMessenger != VK_NULL_HANDLE) {
-        vkDestroyDebugUtilsMessengerEXT(instance, debugUtilsMessenger, nullptr);
-    }
+    if (debugUtilsMessenger) { instance.destroyDebugUtilsMessengerEXT(debugUtilsMessenger, nullptr); }
 }
 }// namespace Kataglyphis::debug

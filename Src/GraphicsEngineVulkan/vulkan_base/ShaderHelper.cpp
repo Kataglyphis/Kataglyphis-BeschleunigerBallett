@@ -9,9 +9,8 @@ module;
 #include <string>
 #include <system_error>
 #include <vector>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.hpp>
 
-#include "common/Utilities.hpp"
 #include "vulkan_base/ShaderIncludes.hpp"
 
 #include "spdlog/spdlog.h"
@@ -106,19 +105,15 @@ auto Kataglyphis::ShaderHelper::getShaderSpvDir(const std::string &shader_src_di
 }
 
 auto Kataglyphis::ShaderHelper::createShaderModule(VulkanDevice *device, const std::vector<char> &code)
-  -> VkShaderModule
+  -> vk::ShaderModule
 {
     // shader module create info
-    VkShaderModuleCreateInfo shader_module_create_info{};
-    shader_module_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    vk::ShaderModuleCreateInfo shader_module_create_info{};
     shader_module_create_info.codeSize = code.size();// size of code
     shader_module_create_info.pCode = reinterpret_cast<const uint32_t *>(code.data());// pointer to code
 
-    VkShaderModule shader_module = nullptr;
-    VkResult const result =
-      vkCreateShaderModule(device->getLogicalDevice(), &shader_module_create_info, nullptr, &shader_module);
-
-    ASSERT_VULKAN(result, "Failed to create a shader module!")
+    // C++ API throws on failure, no manual error check needed
+    vk::ShaderModule shader_module = device->getLogicalDevice().createShaderModule(shader_module_create_info);
 
     return shader_module;
 }

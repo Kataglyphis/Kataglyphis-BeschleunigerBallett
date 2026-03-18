@@ -1,7 +1,7 @@
 module;
 
 #include <vk_mem_alloc.h>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.allocator;
 
@@ -11,7 +11,7 @@ class Allocator
 {
   public:
     Allocator();
-    Allocator(const VkDevice &device, const VkPhysicalDevice &physicalDevice, const VkInstance &instance);
+    Allocator(const vk::Device &device, const vk::PhysicalDevice &physicalDevice, const vk::Instance &instance);
 
     void cleanUp();
 

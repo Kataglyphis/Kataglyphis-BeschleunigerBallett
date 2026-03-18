@@ -3,7 +3,7 @@ module;
 #include <array>
 #include <memory>
 #include <vector>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.renderer;
 
@@ -60,7 +60,7 @@ class VulkanRenderer
 
     // surface defined on windows as WIN32 window system, Linux f.e. X11, MacOS
     // also their own
-    VkSurfaceKHR surface{};
+    vk::SurfaceKHR surface{};
     void create_surface();
 
     std::unique_ptr<VulkanDevice> device;
@@ -75,8 +75,8 @@ class VulkanRenderer
     bool record_commands(uint32_t image_index);
     void create_command_pool();
     void cleanUpCommandPools();
-    VkCommandPool graphics_command_pool{};
-    VkCommandPool compute_command_pool{};
+    vk::CommandPool graphics_command_pool{};
+    vk::CommandPool compute_command_pool{};
 
     // uniform buffers
     VulkanRendererInternals::GlobalUBO globalUBO{};
@@ -87,7 +87,7 @@ class VulkanRenderer
     void update_uniform_buffers(uint32_t image_index);
     void cleanUpUBOs();
 
-    std::vector<VkCommandBuffer> command_buffers;
+    std::vector<vk::CommandBuffer> command_buffers;
     Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
     void create_command_buffers();
 
@@ -103,10 +103,10 @@ class VulkanRenderer
     // -- synchronization
     uint32_t current_frame{ 0 };
     uint32_t frame_sync_count{ 1 };
-    std::vector<VkSemaphore> image_available;
-    std::vector<VkSemaphore> render_finished_by_image;
-    std::vector<VkFence> in_flight_fences;
-    std::vector<VkFence> images_in_flight_fences;
+    std::vector<vk::Semaphore> image_available;
+    std::vector<vk::Semaphore> render_finished_by_image;
+    std::vector<vk::Fence> in_flight_fences;
+    std::vector<vk::Fence> images_in_flight_fences;
     void createSynchronization();
     void cleanUpSync();
 
@@ -114,23 +114,23 @@ class VulkanRenderer
     VulkanBuffer objectDescriptionBuffer;
     void create_object_description_buffer();
 
-    VkDescriptorPool descriptorPoolSharedRenderStages{};
+    vk::DescriptorPool descriptorPoolSharedRenderStages{};
     void createDescriptorPoolSharedRenderStages();
-    VkDescriptorSetLayout sharedRenderDescriptorSetLayout{};
+    vk::DescriptorSetLayout sharedRenderDescriptorSetLayout{};
     void createSharedRenderDescriptorSetLayouts();
-    std::vector<VkDescriptorSet> sharedRenderDescriptorSet;
+    std::vector<vk::DescriptorSet> sharedRenderDescriptorSet;
     void createSharedRenderDescriptorSet();
     void updateTexturesInSharedRenderDescriptorSet();
 
-    VkDescriptorPool post_descriptor_pool{ VK_NULL_HANDLE };
-    VkDescriptorSetLayout post_descriptor_set_layout{ VK_NULL_HANDLE };
-    std::vector<VkDescriptorSet> post_descriptor_set;
+    vk::DescriptorPool post_descriptor_pool{};
+    vk::DescriptorSetLayout post_descriptor_set_layout{};
+    std::vector<vk::DescriptorSet> post_descriptor_set;
     void create_post_descriptor_layout();
     void updatePostDescriptorSets();
 
-    VkDescriptorPool raytracingDescriptorPool{ VK_NULL_HANDLE };
-    std::vector<VkDescriptorSet> raytracingDescriptorSet;
-    VkDescriptorSetLayout raytracingDescriptorSetLayout{ VK_NULL_HANDLE };
+    vk::DescriptorPool raytracingDescriptorPool{};
+    std::vector<vk::DescriptorSet> raytracingDescriptorSet;
+    vk::DescriptorSetLayout raytracingDescriptorSetLayout{};
 
     void createRaytracingDescriptorSetLayouts();
     void createRaytracingDescriptorSets();

@@ -1,6 +1,6 @@
 module;
 #include <vector>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include "renderer/accelerationStructures/BottomLevelAccelerationStructure.hpp"
 #include "renderer/accelerationStructures/TopLevelAccelerationStructure.hpp"
@@ -17,16 +17,16 @@ import kataglyphis.vulkan.buffer;
 export namespace Kataglyphis::VulkanRendererInternals {
 struct BuildAccelerationStructure
 {
-    VkAccelerationStructureBuildGeometryInfoKHR build_info;
-    VkAccelerationStructureBuildSizesInfoKHR size_info;
-    const VkAccelerationStructureBuildRangeInfoKHR *range_info;
+    vk::AccelerationStructureBuildGeometryInfoKHR build_info;
+    vk::AccelerationStructureBuildSizesInfoKHR size_info;
+    const vk::AccelerationStructureBuildRangeInfoKHR *range_info;
     BottomLevelAccelerationStructure single_blas;
 };
 
 struct BlasInput
 {
-    std::vector<VkAccelerationStructureGeometryKHR> as_geometry;
-    std::vector<VkAccelerationStructureBuildRangeInfoKHR> as_build_offset_info;
+    std::vector<vk::AccelerationStructureGeometryKHR> as_geometry;
+    std::vector<vk::AccelerationStructureBuildRangeInfoKHR> as_build_offset_info;
 };
 
 class ASManager
@@ -34,20 +34,20 @@ class ASManager
   public:
     ASManager();
 
-    VkAccelerationStructureKHR &getTLAS() { return tlas.vulkanAS; };
+    vk::AccelerationStructureKHR &getTLAS() { return tlas.vulkanAS; };
 
-    void createASForScene(VulkanDevice *device, VkCommandPool commandPool, Kataglyphis::Scene *scene);
+    void createASForScene(VulkanDevice *device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
 
-    void createBLAS(VulkanDevice *device, VkCommandPool commandPool, Kataglyphis::Scene *scene);
+    void createBLAS(VulkanDevice *device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
 
-    void createTLAS(VulkanDevice *device, VkCommandPool commandPool, Kataglyphis::Scene *scene);
+    void createTLAS(VulkanDevice *device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
 
     void cleanUp();
 
     ~ASManager();
 
   private:
-    VulkanDevice *vulkanDevice{ VK_NULL_HANDLE };
+    VulkanDevice *vulkanDevice{ nullptr };
     Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
     Kataglyphis::VulkanBufferManager vulkanBufferManager;
 
@@ -55,19 +55,19 @@ class ASManager
     TopLevelAccelerationStructure tlas;
 
     static void createSingleBlas(VulkanDevice *device,
-      VkCommandBuffer command_buffer,
+      vk::CommandBuffer command_buffer,
       BuildAccelerationStructure &build_as_structure,
-      VkDeviceAddress scratch_device_or_host_address);
+      vk::DeviceAddress scratch_device_or_host_address);
 
     static void createAccelerationStructureInfosBLAS(VulkanDevice *device,
       BuildAccelerationStructure &build_as_structure,
       BlasInput &blas_input,
-      VkDeviceSize &current_scretch_size,
-      VkDeviceSize &current_size);
+      vk::DeviceSize &current_scretch_size,
+      vk::DeviceSize &current_size);
 
     static void objectToVkGeometryKHR(VulkanDevice *device,
       Kataglyphis::Mesh *mesh,
-      VkAccelerationStructureGeometryKHR &acceleration_structure_geometry,
-      VkAccelerationStructureBuildRangeInfoKHR &acceleration_structure_build_range_info);
+      vk::AccelerationStructureGeometryKHR &acceleration_structure_geometry,
+      vk::AccelerationStructureBuildRangeInfoKHR &acceleration_structure_build_range_info);
 };
 }// namespace Kataglyphis::VulkanRendererInternals

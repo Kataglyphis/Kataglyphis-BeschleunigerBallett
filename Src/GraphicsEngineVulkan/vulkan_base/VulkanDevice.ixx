@@ -1,7 +1,7 @@
 module;
 
 #include <vector>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include "renderer/SwapChainDetails.hpp"
 
 export module kataglyphis.vulkan.device;
@@ -13,15 +13,15 @@ export namespace Kataglyphis {
 class VulkanDevice
 {
   public:
-    VulkanDevice(VulkanInstance *instance, VkSurfaceKHR *surface);
+    VulkanDevice(VulkanInstance *instance, vk::SurfaceKHR *surface);
 
-    VkPhysicalDeviceProperties getPhysicalDeviceProperties() { return device_properties; };
-    VkPhysicalDevice getPhysicalDevice() const { return physical_device; };
-    VkDevice getLogicalDevice() const { return logical_device; };
+    vk::PhysicalDeviceProperties getPhysicalDeviceProperties() { return device_properties; };
+    vk::PhysicalDevice getPhysicalDevice() const { return physical_device; };
+    vk::Device getLogicalDevice() const { return logical_device; };
     Kataglyphis::VulkanRendererInternals::QueueFamilyIndices getQueueFamilies();
-    VkQueue getGraphicsQueue() const { return graphics_queue; };
-    VkQueue getComputeQueue() const { return compute_queue; };
-    VkQueue getPresentationQueue() const { return presentation_queue; };
+    vk::Queue getGraphicsQueue() const { return graphics_queue; };
+    vk::Queue getComputeQueue() const { return compute_queue; };
+    vk::Queue getPresentationQueue() const { return presentation_queue; };
     Kataglyphis::VulkanRendererInternals::SwapChainDetails getSwapchainDetails();
     bool supportsHardwareAcceleratedRRT() { return deviceSupportsHardwareAcceleratedRRT; };
     bool supportsBufferDeviceAddress() const { return deviceSupportsBufferDeviceAddress; };
@@ -31,28 +31,28 @@ class VulkanDevice
     ~VulkanDevice();
 
   private:
-    VkPhysicalDevice physical_device{};
-    VkPhysicalDeviceProperties device_properties{};
+    vk::PhysicalDevice physical_device{};
+    vk::PhysicalDeviceProperties device_properties{};
 
-    VkDevice logical_device{};
+    vk::Device logical_device{};
 
     VulkanInstance *instance;
-    VkSurfaceKHR *surface;
+    vk::SurfaceKHR *surface;
 
-    VkQueue graphics_queue{};
-    VkQueue presentation_queue{};
-    VkQueue compute_queue{};
+    vk::Queue graphics_queue{};
+    vk::Queue presentation_queue{};
+    vk::Queue compute_queue{};
     bool deviceSupportsHardwareAcceleratedRRT = true;
     bool deviceSupportsBufferDeviceAddress = false;
 
     void get_physical_device();
     void create_logical_device();
 
-    Kataglyphis::VulkanRendererInternals::QueueFamilyIndices getQueueFamilies(VkPhysicalDevice selectedPhysicalDevice);
-    Kataglyphis::VulkanRendererInternals::SwapChainDetails getSwapchainDetails(VkPhysicalDevice device);
+    Kataglyphis::VulkanRendererInternals::QueueFamilyIndices getQueueFamilies(vk::PhysicalDevice selectedPhysicalDevice);
+    Kataglyphis::VulkanRendererInternals::SwapChainDetails getSwapchainDetails(vk::PhysicalDevice device);
 
-    bool check_device_suitable(VkPhysicalDevice device);
-    bool check_device_extension_support(VkPhysicalDevice device);
+    bool check_device_suitable(vk::PhysicalDevice device);
+    bool check_device_extension_support(vk::PhysicalDevice device);
 
     const std::vector<const char *> device_extensions = {
 

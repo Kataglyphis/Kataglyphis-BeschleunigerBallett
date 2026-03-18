@@ -10,7 +10,7 @@ module;
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/trigonometric.hpp>
 #include <limits>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.hpp>
 
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
@@ -62,23 +62,24 @@ import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.allocator;
 import kataglyphis.vulkan.window;
 
+namespace {
+vk::Result toVkResult(VkResult result) { return static_cast<vk::Result>(result); }
+}// namespace
+
 Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *window,
   Scene *scene,
   Kataglyphis::Frontend::GUI *gui,
   Camera *camera)
-  :
-
-    window(window), scene(scene), gui(gui)
-
+  : window(window), scene(scene), gui(gui)
 {
-    // ... same content as before ...
     updateUniforms(scene, camera, window);
 
     instance = VulkanInstance();
 
-    VkDebugReportFlagsEXT const debugReportFlags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT;
+    vk::DebugReportFlagsEXT const debugReportFlags =
+      vk::DebugReportFlagBitsEXT::eError | vk::DebugReportFlagBitsEXT::eWarning;
     if (Kataglyphis::ENABLE_VALIDATION_LAYERS) {
-        debug::setupDebugging(instance.getVulkanInstance(), debugReportFlags, VK_NULL_HANDLE);
+        debug::setupDebuging(instance.getVulkanInstance(), debugReportFlags, nullptr);
     }
 
     create_surface();
@@ -96,17 +97,17 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     createSynchronization();
 
     createSharedRenderDescriptorSetLayouts();
-    std::vector<VkDescriptorSetLayout> const descriptor_set_layouts_rasterizer = { sharedRenderDescriptorSetLayout };
+    std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_rasterizer = { sharedRenderDescriptorSetLayout };
     rasterizer.init(device.get(), &vulkanSwapChain, descriptor_set_layouts_rasterizer, graphics_command_pool);
     create_post_descriptor_layout();
-    std::vector<VkDescriptorSetLayout> const descriptor_set_layouts_post = { post_descriptor_set_layout };
+    std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_post = { post_descriptor_set_layout };
     postStage.init(device.get(), &vulkanSwapChain, descriptor_set_layouts_post);
     createDescriptorPoolSharedRenderStages();
     createSharedRenderDescriptorSet();
 
     updatePostDescriptorSets();
 
-    std::vector<VkDescriptorSetLayout> layouts;
+    std::vector<vk::DescriptorSetLayout> layouts;
     layouts.push_back(sharedRenderDescriptorSetLayout);
     if (device->supportsHardwareAcceleratedRRT()) {
         createRaytracingDescriptorPool();
@@ -171,21 +172,20 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Fronten
     }
 }
 
-void Kataglyphis::VulkanRenderer::finishAllRenderCommands() { vkDeviceWaitIdle(device->getLogicalDevice()); }
+void Kataglyphis::VulkanRenderer::finishAllRenderCommands() { device->getLogicalDevice().waitIdle(); }
 
 void Kataglyphis::VulkanRenderer::shaderHotReload()
 {
-    // wait until no actions being run on device before destroying
-    vkDeviceWaitIdle(device->getLogicalDevice());
+    device->getLogicalDevice().waitIdle();
 
-    std::vector<VkDescriptorSetLayout> const descriptor_set_layouts = { sharedRenderDescriptorSetLayout };
+    std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts = { sharedRenderDescriptorSetLayout };
     rasterizer.shaderHotReload(descriptor_set_layouts);
 
-    std::vector<VkDescriptorSetLayout> const descriptor_set_layouts_post = { post_descriptor_set_layout };
+    std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_post = { post_descriptor_set_layout };
     postStage.shaderHotReload(descriptor_set_layouts_post);
 
     if (device->supportsHardwareAcceleratedRRT()) {
-        std::vector<VkDescriptorSetLayout> const layouts = { sharedRenderDescriptorSetLayout,
+        std::vector<vk::DescriptorSetLayout> const layouts = { sharedRenderDescriptorSetLayout,
             raytracingDescriptorSetLayout };
         raytracingStage.shaderHotReload(layouts);
         pathTracing.shaderHotReload(layouts);
@@ -199,9 +199,9 @@ void Kataglyphis::VulkanRenderer::drawFrame()
         if (imgui_context != nullptr && imgui_context->WithinFrameScope) { ImGui::EndFrame(); }
     };
 
-    const auto abort_frame_with_fatal_error = [&](const char *message, VkResult error_code) -> void {
-        spdlog::error(fmt::format("{} (VkResult={})", message, static_cast<int>(error_code)));
-        if (error_code == VK_ERROR_DEVICE_LOST) { device_lost_detected = true; }
+    const auto abort_frame_with_fatal_error = [&](const char *message, vk::Result error_code) -> void {
+        spdlog::error(fmt::format("{} (vk::Result={})", message, static_cast<int>(error_code)));
+        if (error_code == vk::Result::eErrorDeviceLost) { device_lost_detected = true; }
         if (window != nullptr && window->get_window() != nullptr) {
             glfwSetWindowShouldClose(window->get_window(), GLFW_TRUE);
         }
@@ -214,24 +214,18 @@ void Kataglyphis::VulkanRenderer::drawFrame()
         return;
     }
 
-    // We need to skip one frame
-    // Due to ImGui need to call ImGui::NewFrame() again
-    // if we recreated swapchain
     if (checkChangedFramebufferSize()) {
         end_imgui_frame_if_needed();
         return;
     }
 
-    /*1. Get next available image to draw to and set something to signal when
-       we're finished with the image  (a semaphore) wait for given fence to signal
-       (open) from last draw before continuing*/
     if (current_frame >= in_flight_fences.size() || current_frame >= image_available.size()) {
         spdlog::error(fmt::format("Frame synchronization index out of range: {}", current_frame));
         end_imgui_frame_if_needed();
         return;
     }
 
-    if (in_flight_fences[current_frame] == VK_NULL_HANDLE || image_available[current_frame] == VK_NULL_HANDLE) {
+    if (!in_flight_fences[current_frame] || !image_available[current_frame]) {
         spdlog::error(fmt::format("Synchronization handles are invalid for frame {}.", current_frame));
         if (window != nullptr && window->get_window() != nullptr) {
             glfwSetWindowShouldClose(window->get_window(), GLFW_TRUE);
@@ -240,29 +234,23 @@ void Kataglyphis::VulkanRenderer::drawFrame()
         return;
     }
 
-    VkResult result = vkWaitForFences(
-      device->getLogicalDevice(), 1, &in_flight_fences[current_frame], VK_TRUE, std::numeric_limits<uint64_t>::max());
-    if (result != VK_SUCCESS) {
+    vk::Result result = device->getLogicalDevice().waitForFences(
+      1, &in_flight_fences[current_frame], VK_TRUE, std::numeric_limits<uint64_t>::max());
+    if (result != vk::Result::eSuccess) {
         abort_frame_with_fatal_error("Failed to wait for fences!", result);
         return;
     }
 
-    // -- GET NEXT IMAGE --
     uint32_t image_index = 0;
-    result = vkAcquireNextImageKHR(device->getLogicalDevice(),
-      vulkanSwapChain.getSwapChain(),
-      std::numeric_limits<uint64_t>::max(),
-      image_available[current_frame],
-      VK_NULL_HANDLE,
-      &image_index);
+    std::tie(result, image_index) = device->getLogicalDevice().acquireNextImageKHR(
+      vulkanSwapChain.getSwapChain(), std::numeric_limits<uint64_t>::max(), image_available[current_frame], nullptr);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-        // recreate_swap_chain();
+    if (result == vk::Result::eErrorOutOfDateKHR) {
         end_imgui_frame_if_needed();
         return;
     }
 
-    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+    if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
         abort_frame_with_fatal_error("Failed to acquire next image!", result);
         return;
     }
@@ -273,38 +261,33 @@ void Kataglyphis::VulkanRenderer::drawFrame()
         return;
     }
 
-    if (image_index >= render_finished_by_image.size() || render_finished_by_image[image_index] == VK_NULL_HANDLE) {
+    if (image_index >= render_finished_by_image.size() || !render_finished_by_image[image_index]) {
         spdlog::error(fmt::format("Render-finished semaphore missing for swapchain image {}.", image_index));
         end_imgui_frame_if_needed();
         return;
     }
 
-    //// check if previous frame is using this image (i.e. there is its fence to
-    /// wait on)
-    if (images_in_flight_fences[image_index] != VK_NULL_HANDLE) {
+    if (images_in_flight_fences[image_index]) {
         result =
-          vkWaitForFences(device->getLogicalDevice(), 1, &images_in_flight_fences[image_index], VK_TRUE, UINT64_MAX);
-        if (result != VK_SUCCESS) {
+          device->getLogicalDevice().waitForFences(1, &images_in_flight_fences[image_index], VK_TRUE, UINT64_MAX);
+        if (result != vk::Result::eSuccess) {
             abort_frame_with_fatal_error("Failed to wait for image in-flight fence!", result);
             return;
         }
     }
 
-    // mark the image as now being in use by this frame
     images_in_flight_fences[image_index] = in_flight_fences[current_frame];
 
-    result = vkResetCommandBuffer(command_buffers[image_index], 0);
-    if (result != VK_SUCCESS) {
+    result = command_buffers[image_index].reset(0);
+    if (result != vk::Result::eSuccess) {
         abort_frame_with_fatal_error("Failed to reset command buffer!", result);
         return;
     }
 
-    VkCommandBufferBeginInfo buffer_begin_info{};
-    buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    // start recording commands to command buffer
-    result = vkBeginCommandBuffer(command_buffers[image_index], &buffer_begin_info);
-    if (result != VK_SUCCESS) {
+    vk::CommandBufferBeginInfo buffer_begin_info{};
+    buffer_begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+    result = command_buffers[image_index].begin(&buffer_begin_info);
+    if (result != vk::Result::eSuccess) {
         abort_frame_with_fatal_error("Failed to start recording a command buffer!", result);
         return;
     }
@@ -325,47 +308,33 @@ void Kataglyphis::VulkanRenderer::drawFrame()
         return;
     }
 
-    // stop recording to command buffer
-    result = vkEndCommandBuffer(command_buffers[image_index]);
-    if (result != VK_SUCCESS) {
+    result = command_buffers[image_index].end();
+    if (result != vk::Result::eSuccess) {
         abort_frame_with_fatal_error("Failed to stop recording a command buffer!", result);
         return;
     }
 
-    // 2. Submit command buffer to queue for execution, making sure it waits for
-    // the image to be signalled as available before drawing and signals when it
-    // has finished rendering
-    // -- SUBMIT COMMAND BUFFER TO RENDER --
-    VkSubmitInfo submit_info{};
-    submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submit_info.waitSemaphoreCount = 1;// number of semaphores to wait on
-    submit_info.pWaitSemaphores = &image_available[current_frame];// list of semaphores to wait on
+    vk::SubmitInfo submit_info{};
+    submit_info.waitSemaphoreCount = 1;
+    submit_info.pWaitSemaphores = &image_available[current_frame];
 
-    VkPipelineStageFlags const wait_stages = {
+    vk::PipelineStageFlags const wait_stages = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
 
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT /*|
-                    VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT |
-                    VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR*/
+    submit_info.pWaitDstStageMask = &wait_stages;
 
-    };
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &command_buffers[image_index];
+    submit_info.signalSemaphoreCount = 1;
+    submit_info.pSignalSemaphores = &render_finished_by_image[image_index];
 
-    submit_info.pWaitDstStageMask = &wait_stages;// stages to check semaphores at
-
-    submit_info.commandBufferCount = 1;// number of command buffers to submit
-    submit_info.pCommandBuffers = &command_buffers[image_index];// command buffer to submit
-    submit_info.signalSemaphoreCount = 1;// number of semaphores to signal
-    submit_info.pSignalSemaphores = &render_finished_by_image[image_index];// semaphores to signal when command
-                                                                           // buffer finishes
-
-    result = vkResetFences(device->getLogicalDevice(), 1, &in_flight_fences[current_frame]);
-    if (result != VK_SUCCESS) {
+    result = device->getLogicalDevice().resetFences(1, &in_flight_fences[current_frame]);
+    if (result != vk::Result::eSuccess) {
         abort_frame_with_fatal_error("Failed to reset fences!", result);
         return;
     }
 
-    // submit command buffer to queue
-    result = vkQueueSubmit(device->getGraphicsQueue(), 1, &submit_info, in_flight_fences[current_frame]);
-    if (result != VK_SUCCESS) {
+    result = device->getGraphicsQueue().submit(1, &submit_info, in_flight_fences[current_frame]);
+    if (result != vk::Result::eSuccess) {
         spdlog::error(
           fmt::format("Queue submit context: frame={}, imageIndex={}, renderMode={}, supportsRRT={}, cmdBufferIndex={}",
             current_frame,
@@ -377,26 +346,22 @@ void Kataglyphis::VulkanRenderer::drawFrame()
         return;
     }
 
-    // 3. Present image to screen when it has signalled finished rendering
-    // -- PRESENT RENDERED IMAGE TO SCREEN --
-    VkPresentInfoKHR present_info{};
-    present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    present_info.waitSemaphoreCount = 1;// number of semaphores to wait on
-    present_info.pWaitSemaphores = &render_finished_by_image[image_index];// semaphores to wait on
-    present_info.swapchainCount = 1;// number of swapchains to present to
-    const VkSwapchainKHR swapchain = vulkanSwapChain.getSwapChain();
-    present_info.pSwapchains = &swapchain;// swapchains to present images to
-    present_info.pImageIndices = &image_index;// index of images in swapchain to present
+    vk::PresentInfoKHR present_info{};
+    present_info.waitSemaphoreCount = 1;
+    present_info.pWaitSemaphores = &render_finished_by_image[image_index];
+    present_info.swapchainCount = 1;
+    const vk::SwapchainKHR swapchain = vulkanSwapChain.getSwapChain();
+    present_info.pSwapchains = &swapchain;
+    present_info.pImageIndices = &image_index;
 
-    result = vkQueuePresentKHR(device->getPresentationQueue(), &present_info);
+    result = device->getPresentationQueue().presentKHR(&present_info);
 
-    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-        // recreate_swap_chain();
+    if (result == vk::Result::eErrorOutOfDateKHR) {
         end_imgui_frame_if_needed();
         return;
     }
 
-    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+    if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
         abort_frame_with_fatal_error("Failed to present image!", result);
         return;
     }
@@ -432,21 +397,16 @@ void Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
     VulkanBuffer stagingGlobalUBO;
     stagingGlobalUBO.create(device.get(),
       sizeof(VulkanRendererInternals::GlobalUBO),
-      VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+      vk::BufferUsageFlagBits::eTransferSrc,
+      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    void *mapped_global_ubo = nullptr;
-    vkMapMemory(device->getLogicalDevice(),
-      stagingGlobalUBO.getBufferMemory(),
-      0,
-      sizeof(VulkanRendererInternals::GlobalUBO),
-      0,
-      &mapped_global_ubo);
+    void *mapped_global_ubo = device->getLogicalDevice().mapMemory(
+      stagingGlobalUBO.getBufferMemory(), 0, sizeof(VulkanRendererInternals::GlobalUBO), {});
     std::memcpy(mapped_global_ubo, global_ubo_data.data(), sizeof(VulkanRendererInternals::GlobalUBO));
-    vkUnmapMemory(device->getLogicalDevice(), stagingGlobalUBO.getBufferMemory());
+    device->getLogicalDevice().unmapMemory(stagingGlobalUBO.getBufferMemory());
 
     auto const copy_buffer_ref = static_cast<void (Kataglyphis::VulkanBufferManager::*)(
-      VkDevice, VkQueue, VkCommandPool, VulkanBuffer &, VulkanBuffer &, VkDeviceSize)>(
+      vk::Device, vk::Queue, vk::CommandPool, VulkanBuffer &, VulkanBuffer &, vk::DeviceSize)>(
       &Kataglyphis::VulkanBufferManager::copyBuffer);
     (vulkanBufferManager.*copy_buffer_ref)(device->getLogicalDevice(),
       device->getGraphicsQueue(),
@@ -460,18 +420,13 @@ void Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
     VulkanBuffer stagingSceneUBO;
     stagingSceneUBO.create(device.get(),
       sizeof(VulkanRendererInternals::SceneUBO),
-      VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+      vk::BufferUsageFlagBits::eTransferSrc,
+      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    void *mapped_scene_ubo = nullptr;
-    vkMapMemory(device->getLogicalDevice(),
-      stagingSceneUBO.getBufferMemory(),
-      0,
-      sizeof(VulkanRendererInternals::SceneUBO),
-      0,
-      &mapped_scene_ubo);
+    void *mapped_scene_ubo = device->getLogicalDevice().mapMemory(
+      stagingSceneUBO.getBufferMemory(), 0, sizeof(VulkanRendererInternals::SceneUBO), {});
     std::memcpy(mapped_scene_ubo, scene_ubo_data.data(), sizeof(VulkanRendererInternals::SceneUBO));
-    vkUnmapMemory(device->getLogicalDevice(), stagingSceneUBO.getBufferMemory());
+    device->getLogicalDevice().unmapMemory(stagingSceneUBO.getBufferMemory());
 
     (vulkanBufferManager.*copy_buffer_ref)(device->getLogicalDevice(),
       device->getGraphicsQueue(),
@@ -490,45 +445,36 @@ void Kataglyphis::VulkanRenderer::update_raytracing_descriptor_set(uint32_t imag
         return;
     }
 
-    VkWriteDescriptorSetAccelerationStructureKHR descriptor_set_acceleration_structure{};
-    descriptor_set_acceleration_structure.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
-    descriptor_set_acceleration_structure.pNext = nullptr;
+    vk::WriteDescriptorSetAccelerationStructureKHR descriptor_set_acceleration_structure{};
     descriptor_set_acceleration_structure.accelerationStructureCount = 1;
-    VkAccelerationStructureKHR &vulkanTLAS = asManager.getTLAS();
+    vk::AccelerationStructureKHR &vulkanTLAS = asManager.getTLAS();
     descriptor_set_acceleration_structure.pAccelerationStructures = &vulkanTLAS;
 
-    VkWriteDescriptorSet write_descriptor_set_acceleration_structure{};
-    write_descriptor_set_acceleration_structure.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    vk::WriteDescriptorSet write_descriptor_set_acceleration_structure{};
     write_descriptor_set_acceleration_structure.pNext = &descriptor_set_acceleration_structure;
     write_descriptor_set_acceleration_structure.dstSet = raytracingDescriptorSet[image_index];
     write_descriptor_set_acceleration_structure.dstBinding = TLAS_BINDING;
     write_descriptor_set_acceleration_structure.dstArrayElement = 0;
     write_descriptor_set_acceleration_structure.descriptorCount = 1;
-    write_descriptor_set_acceleration_structure.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    write_descriptor_set_acceleration_structure.descriptorType = vk::DescriptorType::eAccelerationStructureKHR;
 
-    VkDescriptorImageInfo image_info{};
+    vk::DescriptorImageInfo image_info{};
     Texture &renderResult = rasterizer.getOffscreenTexture(image_index);
     image_info.imageView = renderResult.getImageView();
-    image_info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    image_info.imageLayout = vk::ImageLayout::eGeneral;
 
-    VkWriteDescriptorSet descriptor_image_writer{};
-    descriptor_image_writer.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptor_image_writer.pNext = nullptr;
+    vk::WriteDescriptorSet descriptor_image_writer{};
     descriptor_image_writer.dstSet = raytracingDescriptorSet[image_index];
     descriptor_image_writer.dstBinding = OUT_IMAGE_BINDING;
     descriptor_image_writer.dstArrayElement = 0;
     descriptor_image_writer.descriptorCount = 1;
-    descriptor_image_writer.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    descriptor_image_writer.descriptorType = vk::DescriptorType::eStorageImage;
     descriptor_image_writer.pImageInfo = &image_info;
 
-    std::vector<VkWriteDescriptorSet> write_descriptor_sets = { write_descriptor_set_acceleration_structure,
+    std::vector<vk::WriteDescriptorSet> write_descriptor_sets = { write_descriptor_set_acceleration_structure,
         descriptor_image_writer };
 
-    vkUpdateDescriptorSets(device->getLogicalDevice(),
-      static_cast<uint32_t>(write_descriptor_sets.size()),
-      write_descriptor_sets.data(),
-      0,
-      nullptr);
+    device->getLogicalDevice().updateDescriptorSets(write_descriptor_sets, {});
 }
 
 bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
@@ -539,16 +485,16 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
         return false;
     }
 
-    VkCommandBuffer &commandBuffer = command_buffers[image_index];
+    vk::CommandBuffer &commandBuffer = command_buffers[image_index];
 
-    std::vector<VkDescriptorSet> rasterizer_descriptor_sets = { sharedRenderDescriptorSet[image_index] };
+    std::vector<vk::DescriptorSet> rasterizer_descriptor_sets = { sharedRenderDescriptorSet[image_index] };
     rasterizer.recordCommands(commandBuffer, image_index, scene, rasterizer_descriptor_sets);
 
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
       gui->getGuiRendererSharedVars();
 
     if (device->supportsHardwareAcceleratedRRT() && image_index < raytracingDescriptorSet.size()) {
-        std::vector<VkDescriptorSet> raytracing_descriptor_sets = { sharedRenderDescriptorSet[image_index],
+        std::vector<vk::DescriptorSet> raytracing_descriptor_sets = { sharedRenderDescriptorSet[image_index],
             raytracingDescriptorSet[image_index] };
 
         if (guiRendererSharedVars.raytracing) {
@@ -562,7 +508,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
         }
     }
 
-    std::vector<VkDescriptorSet> post_descriptor_sets = { post_descriptor_set[image_index] };
+    std::vector<vk::DescriptorSet> post_descriptor_sets = { post_descriptor_set[image_index] };
     postStage.recordCommands(commandBuffer, image_index, post_descriptor_sets);
 
     return true;
@@ -580,7 +526,7 @@ void Kataglyphis::VulkanRenderer::cleanUp()
 {
     if (!device) { return; }
 
-    vkDeviceWaitIdle(device->getLogicalDevice());
+    device->getLogicalDevice().waitIdle();
 
     if (device->supportsHardwareAcceleratedRRT()) {
         pathTracing.cleanUp();
@@ -597,29 +543,29 @@ void Kataglyphis::VulkanRenderer::cleanUp()
     cleanUpUBOs();
     cleanUpCommandPools();
 
-    if (post_descriptor_pool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device->getLogicalDevice(), post_descriptor_pool, nullptr);
-        post_descriptor_pool = VK_NULL_HANDLE;
+    if (post_descriptor_pool) {
+        device->getLogicalDevice().destroyDescriptorPool(post_descriptor_pool);
+        post_descriptor_pool = nullptr;
     }
-    if (post_descriptor_set_layout != VK_NULL_HANDLE) {
-        vkDestroyDescriptorSetLayout(device->getLogicalDevice(), post_descriptor_set_layout, nullptr);
-        post_descriptor_set_layout = VK_NULL_HANDLE;
+    if (post_descriptor_set_layout) {
+        device->getLogicalDevice().destroyDescriptorSetLayout(post_descriptor_set_layout);
+        post_descriptor_set_layout = nullptr;
     }
-    if (descriptorPoolSharedRenderStages != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device->getLogicalDevice(), descriptorPoolSharedRenderStages, nullptr);
-        descriptorPoolSharedRenderStages = VK_NULL_HANDLE;
+    if (descriptorPoolSharedRenderStages) {
+        device->getLogicalDevice().destroyDescriptorPool(descriptorPoolSharedRenderStages);
+        descriptorPoolSharedRenderStages = nullptr;
     }
-    if (sharedRenderDescriptorSetLayout != VK_NULL_HANDLE) {
-        vkDestroyDescriptorSetLayout(device->getLogicalDevice(), sharedRenderDescriptorSetLayout, nullptr);
-        sharedRenderDescriptorSetLayout = VK_NULL_HANDLE;
+    if (sharedRenderDescriptorSetLayout) {
+        device->getLogicalDevice().destroyDescriptorSetLayout(sharedRenderDescriptorSetLayout);
+        sharedRenderDescriptorSetLayout = nullptr;
     }
-    if (raytracingDescriptorPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device->getLogicalDevice(), raytracingDescriptorPool, nullptr);
-        raytracingDescriptorPool = VK_NULL_HANDLE;
+    if (raytracingDescriptorPool) {
+        device->getLogicalDevice().destroyDescriptorPool(raytracingDescriptorPool);
+        raytracingDescriptorPool = nullptr;
     }
-    if (raytracingDescriptorSetLayout != VK_NULL_HANDLE) {
-        vkDestroyDescriptorSetLayout(device->getLogicalDevice(), raytracingDescriptorSetLayout, nullptr);
-        raytracingDescriptorSetLayout = VK_NULL_HANDLE;
+    if (raytracingDescriptorSetLayout) {
+        device->getLogicalDevice().destroyDescriptorSetLayout(raytracingDescriptorSetLayout);
+        raytracingDescriptorSetLayout = nullptr;
     }
 
     vulkanSwapChain.cleanUp();
@@ -627,9 +573,9 @@ void Kataglyphis::VulkanRenderer::cleanUp()
     device->cleanUp();
     device.reset();
 
-    if (surface != VK_NULL_HANDLE) {
-        vkDestroySurfaceKHR(instance.getVulkanInstance(), surface, nullptr);
-        surface = VK_NULL_HANDLE;
+    if (surface) {
+        instance.getVulkanInstance().destroySurfaceKHR(surface);
+        surface = nullptr;
     }
 
     if (Kataglyphis::ENABLE_VALIDATION_LAYERS) { debug::freeDebugCallback(instance.getVulkanInstance()); }
@@ -640,76 +586,58 @@ Kataglyphis::VulkanRenderer::~VulkanRenderer() { cleanUp(); }
 
 void Kataglyphis::VulkanRenderer::create_surface()
 {
-    // create surface (creates a surface create info struct, runs the create
-    // surface function, returns result)
-    ASSERT_VULKAN(glfwCreateWindowSurface(instance.getVulkanInstance(), window->get_window(), nullptr, &surface),
+    VkSurfaceKHR rawSurface = VK_NULL_HANDLE;
+    ASSERT_VULKAN(glfwCreateWindowSurface(instance.getVulkanInstance(), window->get_window(), nullptr, &rawSurface),
       "Failed to create a surface!");
+    surface = vk::SurfaceKHR(rawSurface);
 }
 
 void Kataglyphis::VulkanRenderer::create_post_descriptor_layout()
 {
-    // UNIFORM VALUES DESCRIPTOR SET LAYOUT
-    // globalUBO Binding info
-    VkDescriptorSetLayoutBinding post_sampler_layout_binding{};
-    post_sampler_layout_binding.binding = 0;// binding point in shader (designated by binding number in shader)
-    post_sampler_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;// type of descriptor
-                                                                                           // (uniform, dynamic uniform,
-                                                                                           // image sampler, etc)
-    post_sampler_layout_binding.descriptorCount = 1;// number of descriptors for binding
-    post_sampler_layout_binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;// we need to say at which shader we bind
-                                                                          // this uniform to
-    post_sampler_layout_binding.pImmutableSamplers = nullptr;// for texture: can make sampler data unchangeable
-                                                             // (immutable) by specifying in layout
+    vk::DescriptorSetLayoutBinding post_sampler_layout_binding{};
+    post_sampler_layout_binding.binding = 0;
+    post_sampler_layout_binding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    post_sampler_layout_binding.descriptorCount = 1;
+    post_sampler_layout_binding.stageFlags = vk::ShaderStageFlagBits::eFragment;
+    post_sampler_layout_binding.pImmutableSamplers = nullptr;
 
-    std::vector<VkDescriptorSetLayoutBinding> layout_bindings = { post_sampler_layout_binding };
+    std::vector<vk::DescriptorSetLayoutBinding> layout_bindings = { post_sampler_layout_binding };
 
-    // create descriptor set layout with given bindings
-    VkDescriptorSetLayoutCreateInfo layout_create_info{};
-    layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layout_create_info.bindingCount = static_cast<uint32_t>(layout_bindings.size());// only have 1 for the globalUBO
-    layout_create_info.pBindings = layout_bindings.data();// array of binding infos
+    vk::DescriptorSetLayoutCreateInfo layout_create_info{};
+    layout_create_info.bindingCount = static_cast<uint32_t>(layout_bindings.size());
+    layout_create_info.pBindings = layout_bindings.data();
 
-    // create descriptor set layout
-    VkResult result = vkCreateDescriptorSetLayout(
-      device->getLogicalDevice(), &layout_create_info, nullptr, &post_descriptor_set_layout);
-    ASSERT_VULKAN(result, "Failed to create descriptor set layout!")
+    vk::Result result =
+      device->getLogicalDevice().createDescriptorSetLayout(&layout_create_info, nullptr, &post_descriptor_set_layout);
+    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create descriptor set layout!")
 
-    VkDescriptorPoolSize post_pool_size{};
-    post_pool_size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    vk::DescriptorPoolSize post_pool_size{};
+    post_pool_size.type = vk::DescriptorType::eCombinedImageSampler;
     post_pool_size.descriptorCount = vulkanSwapChain.getNumberSwapChainImages();
 
-    // list of pool sizes
-    std::vector<VkDescriptorPoolSize> descriptor_pool_sizes = { post_pool_size };
+    std::vector<vk::DescriptorPoolSize> descriptor_pool_sizes = { post_pool_size };
 
-    VkDescriptorPoolCreateInfo pool_create_info{};
-    pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    pool_create_info.maxSets = vulkanSwapChain.getNumberSwapChainImages();// maximum number of descriptor sets
-                                                                          // that can be created from pool
-    pool_create_info.poolSizeCount =
-      static_cast<uint32_t>(descriptor_pool_sizes.size());// amount of pool sizes being passed
-    pool_create_info.pPoolSizes = descriptor_pool_sizes.data();// pool sizes to create pool with
+    vk::DescriptorPoolCreateInfo pool_create_info{};
+    pool_create_info.maxSets = vulkanSwapChain.getNumberSwapChainImages();
+    pool_create_info.poolSizeCount = static_cast<uint32_t>(descriptor_pool_sizes.size());
+    pool_create_info.pPoolSizes = descriptor_pool_sizes.data();
 
-    // create descriptor pool
-    result = vkCreateDescriptorPool(device->getLogicalDevice(), &pool_create_info, nullptr, &post_descriptor_pool);
-    ASSERT_VULKAN(result, "Failed to create a descriptor pool!")
+    result = device->getLogicalDevice().createDescriptorPool(&pool_create_info, nullptr, &post_descriptor_pool);
+    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create a descriptor pool!")
 
-    // resize descriptor set list so one for every buffer
     post_descriptor_set.resize(vulkanSwapChain.getNumberSwapChainImages());
 
-    std::vector<VkDescriptorSetLayout> set_layouts(
+    std::vector<vk::DescriptorSetLayout> set_layouts(
       vulkanSwapChain.getNumberSwapChainImages(), post_descriptor_set_layout);
 
-    // descriptor set allocation info
-    VkDescriptorSetAllocateInfo set_alloc_info{};
-    set_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    set_alloc_info.descriptorPool = post_descriptor_pool;// pool to allocate descriptor set from
-    set_alloc_info.descriptorSetCount = vulkanSwapChain.getNumberSwapChainImages();// number of sets to allocate
-    set_alloc_info.pSetLayouts = set_layouts.data();// layouts to use to allocate sets (1:1 relationship)
+    vk::DescriptorSetAllocateInfo set_alloc_info{};
+    set_alloc_info.descriptorPool = post_descriptor_pool;
+    set_alloc_info.descriptorSetCount = vulkanSwapChain.getNumberSwapChainImages();
+    set_alloc_info.pSetLayouts = set_layouts.data();
 
-    // allocate descriptor sets (multiple)
-    result = vkAllocateDescriptorSets(device->getLogicalDevice(), &set_alloc_info, post_descriptor_set.data());
-    ASSERT_VULKAN(result, "Failed to create descriptor sets!")
-    if (result != VK_SUCCESS) {
+    result = device->getLogicalDevice().allocateDescriptorSets(&set_alloc_info, post_descriptor_set.data());
+    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create descriptor sets!")
+    if (result != vk::Result::eSuccess) {
         post_descriptor_set.clear();
         return;
     }
@@ -722,65 +650,55 @@ void Kataglyphis::VulkanRenderer::updatePostDescriptorSets()
         return;
     }
 
-    // update all of descriptor set buffer bindings
     for (size_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
-        // texture image info
-        VkDescriptorImageInfo image_info{};
-        image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        vk::DescriptorImageInfo image_info{};
+        image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
         Texture &renderResult = rasterizer.getOffscreenTexture(static_cast<uint32_t>(i));
         image_info.imageView = renderResult.getImageView();
         image_info.sampler = postStage.getOffscreenSampler();
 
-        // descriptor write info
-        VkWriteDescriptorSet descriptor_write{};
-        descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        vk::WriteDescriptorSet descriptor_write{};
         descriptor_write.dstSet = post_descriptor_set[i];
         descriptor_write.dstBinding = 0;
         descriptor_write.dstArrayElement = 0;
-        descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptor_write.descriptorType = vk::DescriptorType::eCombinedImageSampler;
         descriptor_write.descriptorCount = 1;
         descriptor_write.pImageInfo = &image_info;
 
-        // update new descriptor set
-        vkUpdateDescriptorSets(device->getLogicalDevice(), 1, &descriptor_write, 0, nullptr);
+        device->getLogicalDevice().updateDescriptorSets(1, &descriptor_write, 0, nullptr);
     }
 }
 
 void Kataglyphis::VulkanRenderer::createRaytracingDescriptorPool()
 {
-    std::array<VkDescriptorPoolSize, 2> descriptor_pool_sizes{};
+    std::array<vk::DescriptorPoolSize, 2> descriptor_pool_sizes{};
     const uint32_t swapchain_image_count = vulkanSwapChain.getNumberSwapChainImages();
 
-    descriptor_pool_sizes[0].type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    descriptor_pool_sizes[0].type = vk::DescriptorType::eAccelerationStructureKHR;
     descriptor_pool_sizes[0].descriptorCount = swapchain_image_count;
 
-    descriptor_pool_sizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    descriptor_pool_sizes[1].type = vk::DescriptorType::eStorageImage;
     descriptor_pool_sizes[1].descriptorCount = swapchain_image_count;
 
-    VkDescriptorPoolCreateInfo descriptor_pool_create_info{};
-    descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    vk::DescriptorPoolCreateInfo descriptor_pool_create_info{};
     descriptor_pool_create_info.poolSizeCount = static_cast<uint32_t>(descriptor_pool_sizes.size());
     descriptor_pool_create_info.pPoolSizes = descriptor_pool_sizes.data();
     descriptor_pool_create_info.maxSets = swapchain_image_count;
 
-    VkResult const result = vkCreateDescriptorPool(
-      device->getLogicalDevice(), &descriptor_pool_create_info, nullptr, &raytracingDescriptorPool);
-    ASSERT_VULKAN(result, "Failed to create command pool!")
+    vk::Result const result =
+      device->getLogicalDevice().createDescriptorPool(&descriptor_pool_create_info, nullptr, &raytracingDescriptorPool);
+    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create command pool!")
 }
 
 void Kataglyphis::VulkanRenderer::cleanUpSync()
 {
-    for (VkSemaphore semaphore : render_finished_by_image) {
-        if (semaphore != VK_NULL_HANDLE) { vkDestroySemaphore(device->getLogicalDevice(), semaphore, nullptr); }
+    for (vk::Semaphore semaphore : render_finished_by_image) {
+        if (semaphore) { device->getLogicalDevice().destroySemaphore(semaphore); }
     }
 
     for (uint32_t i = 0; i < frame_sync_count; i++) {
-        if (image_available[i] != VK_NULL_HANDLE) {
-            vkDestroySemaphore(device->getLogicalDevice(), image_available[i], nullptr);
-        }
-        if (in_flight_fences[i] != VK_NULL_HANDLE) {
-            vkDestroyFence(device->getLogicalDevice(), in_flight_fences[i], nullptr);
-        }
+        if (image_available[i]) { device->getLogicalDevice().destroySemaphore(image_available[i]); }
+        if (in_flight_fences[i]) { device->getLogicalDevice().destroyFence(in_flight_fences[i]); }
     }
 }
 
@@ -791,143 +709,123 @@ void Kataglyphis::VulkanRenderer::create_object_description_buffer()
     vulkanBufferManager.createBufferAndUploadVectorOnDevice(device.get(),
       graphics_command_pool,
       objectDescriptionBuffer,
-      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+      vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
+      vk::MemoryPropertyFlagBits::eDeviceLocal,
       objectDescriptions);
 
-    // update the object description set
-    // update all of descriptor set buffer bindings
     for (size_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
-        VkDescriptorBufferInfo object_descriptions_buffer_info{};
-        // image_info.sampler = VK_DESCRIPTOR_TYPE_SAMPLER;
+        vk::DescriptorBufferInfo object_descriptions_buffer_info{};
         object_descriptions_buffer_info.buffer = objectDescriptionBuffer.getBuffer();
         object_descriptions_buffer_info.offset = 0;
         object_descriptions_buffer_info.range = VK_WHOLE_SIZE;
 
-        VkWriteDescriptorSet descriptor_object_descriptions_writer{};
-        descriptor_object_descriptions_writer.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        vk::WriteDescriptorSet descriptor_object_descriptions_writer{};
         descriptor_object_descriptions_writer.pNext = nullptr;
         descriptor_object_descriptions_writer.dstSet = sharedRenderDescriptorSet[i];
         descriptor_object_descriptions_writer.dstBinding = OBJECT_DESCRIPTION_BINDING;
         descriptor_object_descriptions_writer.dstArrayElement = 0;
         descriptor_object_descriptions_writer.descriptorCount = 1;
-        descriptor_object_descriptions_writer.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptor_object_descriptions_writer.descriptorType = vk::DescriptorType::eStorageBuffer;
         descriptor_object_descriptions_writer.pImageInfo = nullptr;
         descriptor_object_descriptions_writer.pBufferInfo = &object_descriptions_buffer_info;
-        descriptor_object_descriptions_writer.pTexelBufferView = nullptr;// information about buffer data to bind
+        descriptor_object_descriptions_writer.pTexelBufferView = nullptr;
 
-        std::vector<VkWriteDescriptorSet> write_descriptor_sets = { descriptor_object_descriptions_writer };
+        std::vector<vk::WriteDescriptorSet> write_descriptor_sets = { descriptor_object_descriptions_writer };
 
-        // update the descriptor sets with new buffer/binding info
-        vkUpdateDescriptorSets(device->getLogicalDevice(),
-          static_cast<uint32_t>(write_descriptor_sets.size()),
-          write_descriptor_sets.data(),
-          0,
-          nullptr);
+        device->getLogicalDevice().updateDescriptorSets(
+          static_cast<uint32_t>(write_descriptor_sets.size()), write_descriptor_sets.data(), 0, nullptr);
     }
 }
 
 void Kataglyphis::VulkanRenderer::createRaytracingDescriptorSetLayouts()
 {
     {
-        std::array<VkDescriptorSetLayoutBinding, 2> descriptor_set_layout_bindings{};
+        std::array<vk::DescriptorSetLayoutBinding, 2> descriptor_set_layout_bindings{};
 
-        // here comes the top level acceleration structure
         descriptor_set_layout_bindings[0].binding = TLAS_BINDING;
         descriptor_set_layout_bindings[0].descriptorCount = 1;
-        descriptor_set_layout_bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+        descriptor_set_layout_bindings[0].descriptorType = vk::DescriptorType::eAccelerationStructureKHR;
         descriptor_set_layout_bindings[0].pImmutableSamplers = nullptr;
-        // load them into the raygeneration and chlosest hit shader
-        descriptor_set_layout_bindings[0].stageFlags =
-          VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
-        // here comes to previous rendered image
+        descriptor_set_layout_bindings[0].stageFlags = vk::ShaderStageFlagBits::eRaygenKHR
+                                                       | vk::ShaderStageFlagBits::eClosestHitKHR
+                                                       | vk::ShaderStageFlagBits::eCompute;
+
         descriptor_set_layout_bindings[1].binding = OUT_IMAGE_BINDING;
         descriptor_set_layout_bindings[1].descriptorCount = 1;
-        descriptor_set_layout_bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        descriptor_set_layout_bindings[1].descriptorType = vk::DescriptorType::eStorageImage;
         descriptor_set_layout_bindings[1].pImmutableSamplers = nullptr;
-        // load them into the raygeneration and chlosest hit shader
-        descriptor_set_layout_bindings[1].stageFlags =
-          VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+        descriptor_set_layout_bindings[1].stageFlags = vk::ShaderStageFlagBits::eRaygenKHR
+                                                       | vk::ShaderStageFlagBits::eClosestHitKHR
+                                                       | vk::ShaderStageFlagBits::eCompute;
 
-        VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info{};
-        descriptor_set_layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        vk::DescriptorSetLayoutCreateInfo descriptor_set_layout_create_info{};
         descriptor_set_layout_create_info.bindingCount = static_cast<uint32_t>(descriptor_set_layout_bindings.size());
         descriptor_set_layout_create_info.pBindings = descriptor_set_layout_bindings.data();
 
-        VkResult const result = vkCreateDescriptorSetLayout(
-          device->getLogicalDevice(), &descriptor_set_layout_create_info, nullptr, &raytracingDescriptorSetLayout);
-        ASSERT_VULKAN(result, "Failed to create raytracing descriptor set layout!")
+        vk::Result const result = device->getLogicalDevice().createDescriptorSetLayout(
+          &descriptor_set_layout_create_info, nullptr, &raytracingDescriptorSetLayout);
+        ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create raytracing descriptor set layout!")
     }
 }
 
 void Kataglyphis::VulkanRenderer::createRaytracingDescriptorSets()
 {
-    // resize descriptor set list so one for every buffer
     raytracingDescriptorSet.resize(vulkanSwapChain.getNumberSwapChainImages());
 
-    std::vector<VkDescriptorSetLayout> set_layouts(
+    std::vector<vk::DescriptorSetLayout> set_layouts(
       vulkanSwapChain.getNumberSwapChainImages(), raytracingDescriptorSetLayout);
 
-    VkDescriptorSetAllocateInfo descriptor_set_allocate_info{};
-    descriptor_set_allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    ;
+    vk::DescriptorSetAllocateInfo descriptor_set_allocate_info{};
     descriptor_set_allocate_info.descriptorPool = raytracingDescriptorPool;
     descriptor_set_allocate_info.descriptorSetCount = vulkanSwapChain.getNumberSwapChainImages();
     descriptor_set_allocate_info.pSetLayouts = set_layouts.data();
 
-    VkResult const result = vkAllocateDescriptorSets(
-      device->getLogicalDevice(), &descriptor_set_allocate_info, raytracingDescriptorSet.data());
-    ASSERT_VULKAN(result, "Failed to allocate raytracing descriptor set!")
+    vk::Result const result =
+      device->getLogicalDevice().allocateDescriptorSets(&descriptor_set_allocate_info, raytracingDescriptorSet.data());
+    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to allocate raytracing descriptor set!")
 }
 
 void Kataglyphis::VulkanRenderer::updateRaytracingDescriptorSets()
 {
     for (size_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
-        VkWriteDescriptorSetAccelerationStructureKHR descriptor_set_acceleration_structure{};
-        descriptor_set_acceleration_structure.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+        vk::WriteDescriptorSetAccelerationStructureKHR descriptor_set_acceleration_structure{};
         descriptor_set_acceleration_structure.pNext = nullptr;
         descriptor_set_acceleration_structure.accelerationStructureCount = 1;
-        VkAccelerationStructureKHR &vulkanTLAS = asManager.getTLAS();
+        vk::AccelerationStructureKHR &vulkanTLAS = asManager.getTLAS();
         descriptor_set_acceleration_structure.pAccelerationStructures = &vulkanTLAS;
 
-        VkWriteDescriptorSet write_descriptor_set_acceleration_structure{};
-        write_descriptor_set_acceleration_structure.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        vk::WriteDescriptorSet write_descriptor_set_acceleration_structure{};
         write_descriptor_set_acceleration_structure.pNext = &descriptor_set_acceleration_structure;
         write_descriptor_set_acceleration_structure.dstSet = raytracingDescriptorSet[i];
         write_descriptor_set_acceleration_structure.dstBinding = TLAS_BINDING;
         write_descriptor_set_acceleration_structure.dstArrayElement = 0;
         write_descriptor_set_acceleration_structure.descriptorCount = 1;
-        write_descriptor_set_acceleration_structure.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+        write_descriptor_set_acceleration_structure.descriptorType = vk::DescriptorType::eAccelerationStructureKHR;
         write_descriptor_set_acceleration_structure.pImageInfo = nullptr;
         write_descriptor_set_acceleration_structure.pBufferInfo = nullptr;
         write_descriptor_set_acceleration_structure.pTexelBufferView = nullptr;
 
-        VkDescriptorImageInfo image_info{};
+        vk::DescriptorImageInfo image_info{};
         Texture &renderResult = rasterizer.getOffscreenTexture(static_cast<uint32_t>(i));
         image_info.imageView = renderResult.getImageView();
-        image_info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        image_info.imageLayout = vk::ImageLayout::eGeneral;
 
-        VkWriteDescriptorSet descriptor_image_writer{};
-        descriptor_image_writer.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        vk::WriteDescriptorSet descriptor_image_writer{};
         descriptor_image_writer.pNext = nullptr;
         descriptor_image_writer.dstSet = raytracingDescriptorSet[i];
         descriptor_image_writer.dstBinding = OUT_IMAGE_BINDING;
         descriptor_image_writer.dstArrayElement = 0;
         descriptor_image_writer.descriptorCount = 1;
-        descriptor_image_writer.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        descriptor_image_writer.descriptorType = vk::DescriptorType::eStorageImage;
         descriptor_image_writer.pImageInfo = &image_info;
         descriptor_image_writer.pBufferInfo = nullptr;
         descriptor_image_writer.pTexelBufferView = nullptr;
 
-        std::vector<VkWriteDescriptorSet> write_descriptor_sets = { write_descriptor_set_acceleration_structure,
+        std::vector<vk::WriteDescriptorSet> write_descriptor_sets = { write_descriptor_set_acceleration_structure,
             descriptor_image_writer };
 
-        // update the descriptor sets with new buffer/binding info
-        vkUpdateDescriptorSets(device->getLogicalDevice(),
-          static_cast<uint32_t>(write_descriptor_sets.size()),
-          write_descriptor_sets.data(),
-          0,
-          nullptr);
+        device->getLogicalDevice().updateDescriptorSets(
+          static_cast<uint32_t>(write_descriptor_sets.size()), write_descriptor_sets.data(), 0, nullptr);
     }
 }
 
@@ -935,134 +833,112 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorSetLayouts()
 {
     const bool raytracing_available = device->supportsHardwareAcceleratedRRT();
 
-    VkShaderStageFlags global_ubo_stages = VK_SHADER_STAGE_VERTEX_BIT;
-    VkShaderStageFlags scene_ubo_stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    VkShaderStageFlags object_description_stages = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    VkShaderStageFlags sampler_stages = VK_SHADER_STAGE_FRAGMENT_BIT;
-    VkShaderStageFlags textures_stages = VK_SHADER_STAGE_FRAGMENT_BIT;
+    vk::ShaderStageFlags global_ubo_stages = vk::ShaderStageFlagBits::eVertex;
+    vk::ShaderStageFlags scene_ubo_stages = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
+    vk::ShaderStageFlags object_description_stages =
+      vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
+    vk::ShaderStageFlags sampler_stages = vk::ShaderStageFlagBits::eFragment;
+    vk::ShaderStageFlags textures_stages = vk::ShaderStageFlagBits::eFragment;
 
     if (raytracing_available) {
-        global_ubo_stages |= VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
-        scene_ubo_stages |=
-          VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
-        object_description_stages |= VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
-        sampler_stages |= VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
-        textures_stages |= VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+        global_ubo_stages |= vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eCompute;
+        scene_ubo_stages |= vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR
+                            | vk::ShaderStageFlagBits::eCompute;
+        object_description_stages |= vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eCompute;
+        sampler_stages |= vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eCompute;
+        textures_stages |= vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eCompute;
     }
 
-    std::array<VkDescriptorSetLayoutBinding, 5> descriptor_set_layout_bindings{};
-    // UNIFORM VALUES DESCRIPTOR SET LAYOUT
-    // globalUBO Binding info
+    std::array<vk::DescriptorSetLayoutBinding, 5> descriptor_set_layout_bindings{};
     descriptor_set_layout_bindings[0].binding = globalUBO_BINDING;
-    descriptor_set_layout_bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptor_set_layout_bindings[0].descriptorType = vk::DescriptorType::eUniformBuffer;
     descriptor_set_layout_bindings[0].descriptorCount = 1;
     descriptor_set_layout_bindings[0].stageFlags = global_ubo_stages;
     descriptor_set_layout_bindings[0].pImmutableSamplers = nullptr;
 
-    // our model matrix which updates every frame for each object
     descriptor_set_layout_bindings[1].binding = sceneUBO_BINDING;
-    descriptor_set_layout_bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptor_set_layout_bindings[1].descriptorType = vk::DescriptorType::eUniformBuffer;
     descriptor_set_layout_bindings[1].descriptorCount = 1;
     descriptor_set_layout_bindings[1].stageFlags = scene_ubo_stages;
     descriptor_set_layout_bindings[1].pImmutableSamplers = nullptr;
 
     descriptor_set_layout_bindings[2].binding = OBJECT_DESCRIPTION_BINDING;
     descriptor_set_layout_bindings[2].descriptorCount = 1;
-    descriptor_set_layout_bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    descriptor_set_layout_bindings[2].descriptorType = vk::DescriptorType::eStorageBuffer;
     descriptor_set_layout_bindings[2].pImmutableSamplers = nullptr;
-    // load them into the raygeneration and chlosest hit shader
     descriptor_set_layout_bindings[2].stageFlags = object_description_stages;
 
-    // CREATE TEXTURE/SAMPLER DESCRIPTOR SET LAYOUT (must match hostDevice_shared_vars.hpp)
-    // textures binding info
     descriptor_set_layout_bindings[3].binding = TEXTURES_BINDING;
-    descriptor_set_layout_bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    descriptor_set_layout_bindings[3].descriptorType = vk::DescriptorType::eSampledImage;
     descriptor_set_layout_bindings[3].descriptorCount = MAX_TEXTURE_COUNT;
     descriptor_set_layout_bindings[3].stageFlags = textures_stages;
     descriptor_set_layout_bindings[3].pImmutableSamplers = nullptr;
 
-    // sampler binding info
     descriptor_set_layout_bindings[4].binding = SAMPLER_BINDING;
-    descriptor_set_layout_bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+    descriptor_set_layout_bindings[4].descriptorType = vk::DescriptorType::eSampler;
     descriptor_set_layout_bindings[4].descriptorCount = MAX_TEXTURE_COUNT;
     descriptor_set_layout_bindings[4].stageFlags = sampler_stages;
     descriptor_set_layout_bindings[4].pImmutableSamplers = nullptr;
 
-    // create descriptor set layout with given bindings
-    VkDescriptorSetLayoutCreateInfo layout_create_info{};
-    layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    vk::DescriptorSetLayoutCreateInfo layout_create_info{};
     layout_create_info.bindingCount = static_cast<uint32_t>(descriptor_set_layout_bindings.size());
     layout_create_info.pBindings = descriptor_set_layout_bindings.data();
 
-    // create descriptor set layout
-    VkResult const result = vkCreateDescriptorSetLayout(
-      device->getLogicalDevice(), &layout_create_info, nullptr, &sharedRenderDescriptorSetLayout);
-    ASSERT_VULKAN(result, "Failed to create descriptor set layout!")
+    vk::Result const result = device->getLogicalDevice().createDescriptorSetLayout(
+      &layout_create_info, nullptr, &sharedRenderDescriptorSetLayout);
+    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create descriptor set layout!")
 }
 
 void Kataglyphis::VulkanRenderer::create_command_pool()
 {
-    // get indices of queue familes from device
     Kataglyphis::VulkanRendererInternals::QueueFamilyIndices const queue_family_indices = device->getQueueFamilies();
 
     {
-        VkCommandPoolCreateInfo pool_info{};
-        pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;// we are ready now to
-                                                                          // re-record our
-                                                                          // command buffers
-        pool_info.queueFamilyIndex = static_cast<uint32_t>(queue_family_indices.graphics_family);// queue family type that buffers from this
-                                                                          // command pool will use
+        vk::CommandPoolCreateInfo pool_info{};
+        pool_info.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
+        pool_info.queueFamilyIndex = static_cast<uint32_t>(queue_family_indices.graphics_family);
 
-        // create a graphics queue family command pool
-        VkResult const result =
-          vkCreateCommandPool(device->getLogicalDevice(), &pool_info, nullptr, &graphics_command_pool);
-        ASSERT_VULKAN(result, "Failed to create command pool!")
+        vk::Result const result =
+          device->getLogicalDevice().createCommandPool(&pool_info, nullptr, &graphics_command_pool);
+        ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create command pool!")
     }
 
     {
-        VkCommandPoolCreateInfo pool_info{};
-        pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;// we are ready now to
-                                                                          // re-record our
-                                                                          // command buffers
-        pool_info.queueFamilyIndex = static_cast<uint32_t>(queue_family_indices.compute_family);// queue family type that buffers
-                                                                         // from this command pool will use
+        vk::CommandPoolCreateInfo pool_info{};
+        pool_info.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
+        pool_info.queueFamilyIndex = static_cast<uint32_t>(queue_family_indices.compute_family);
 
-        // create a graphics queue family command pool
-        VkResult const result =
-          vkCreateCommandPool(device->getLogicalDevice(), &pool_info, nullptr, &compute_command_pool);
-        ASSERT_VULKAN(result, "Failed to create command pool!")
+        vk::Result const result =
+          device->getLogicalDevice().createCommandPool(&pool_info, nullptr, &compute_command_pool);
+        ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create command pool!")
     }
 }
 
 void Kataglyphis::VulkanRenderer::cleanUpCommandPools()
 {
-    if (graphics_command_pool != VK_NULL_HANDLE) {
-        vkDestroyCommandPool(device->getLogicalDevice(), graphics_command_pool, nullptr);
-        graphics_command_pool = VK_NULL_HANDLE;
+    if (graphics_command_pool) {
+        device->getLogicalDevice().destroyCommandPool(graphics_command_pool);
+        graphics_command_pool = nullptr;
     }
-    if (compute_command_pool != VK_NULL_HANDLE) {
-        vkDestroyCommandPool(device->getLogicalDevice(), compute_command_pool, nullptr);
-        compute_command_pool = VK_NULL_HANDLE;
+    if (compute_command_pool) {
+        device->getLogicalDevice().destroyCommandPool(compute_command_pool);
+        compute_command_pool = nullptr;
     }
 }
 
 void Kataglyphis::VulkanRenderer::create_command_buffers()
 {
-    // resize command buffer count to have one for each framebuffer
     command_buffers.resize(vulkanSwapChain.getNumberSwapChainImages());
 
-    VkCommandBufferAllocateInfo command_buffer_alloc_info{};
-    command_buffer_alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    vk::CommandBufferAllocateInfo command_buffer_alloc_info{};
     command_buffer_alloc_info.commandPool = graphics_command_pool;
-    command_buffer_alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    command_buffer_alloc_info.level = vk::CommandBufferLevel::ePrimary;
 
     command_buffer_alloc_info.commandBufferCount = static_cast<uint32_t>(command_buffers.size());
 
-    VkResult const result =
-      vkAllocateCommandBuffers(device->getLogicalDevice(), &command_buffer_alloc_info, command_buffers.data());
-    ASSERT_VULKAN(result, "Failed to allocate command buffers!")
+    vk::Result const result =
+      device->getLogicalDevice().allocateCommandBuffers(&command_buffer_alloc_info, command_buffers.data());
+    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to allocate command buffers!")
 }
 
 void Kataglyphis::VulkanRenderer::createSynchronization()
@@ -1070,28 +946,24 @@ void Kataglyphis::VulkanRenderer::createSynchronization()
     frame_sync_count = std::min<uint32_t>(
       static_cast<uint32_t>(Kataglyphis::MAX_FRAME_DRAWS), vulkanSwapChain.getNumberSwapChainImages());
 
-    image_available.resize(frame_sync_count, VK_NULL_HANDLE);
-    render_finished_by_image.resize(vulkanSwapChain.getNumberSwapChainImages(), VK_NULL_HANDLE);
-    in_flight_fences.resize(frame_sync_count, VK_NULL_HANDLE);
-    images_in_flight_fences.resize(vulkanSwapChain.getNumberSwapChainImages(), VK_NULL_HANDLE);
+    image_available.resize(frame_sync_count);
+    render_finished_by_image.resize(vulkanSwapChain.getNumberSwapChainImages());
+    in_flight_fences.resize(frame_sync_count);
+    images_in_flight_fences.resize(vulkanSwapChain.getNumberSwapChainImages());
 
-    // semaphore creation information
-    VkSemaphoreCreateInfo semaphore_create_info{};
-    semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    vk::SemaphoreCreateInfo semaphore_create_info{};
 
-    // fence creation information
-    VkFenceCreateInfo fence_create_info{};
-    fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    vk::FenceCreateInfo fence_create_info{};
+    fence_create_info.flags = vk::FenceCreateFlagBits::eSignaled;
 
     for (uint32_t i = 0; i < frame_sync_count; i++) {
-        const VkResult image_available_result =
-          vkCreateSemaphore(device->getLogicalDevice(), &semaphore_create_info, nullptr, &image_available[i]);
-        const VkResult in_flight_fence_result =
-          vkCreateFence(device->getLogicalDevice(), &fence_create_info, nullptr, &in_flight_fences[i]);
+        auto [image_available_result, image_available_handle] =
+          device->getLogicalDevice().createSemaphore(semaphore_create_info);
+        auto [in_flight_fence_result, in_flight_fence_handle] =
+          device->getLogicalDevice().createFence(fence_create_info);
 
-        if (image_available_result != VK_SUCCESS || in_flight_fence_result != VK_SUCCESS
-            || image_available[i] == VK_NULL_HANDLE || in_flight_fences[i] == VK_NULL_HANDLE) {
+        if (image_available_result != vk::Result::eSuccess || in_flight_fence_result != vk::Result::eSuccess
+            || !image_available_handle || !in_flight_fence_handle) {
             spdlog::error(
               fmt::format("Failed to create synchronization objects for frame {} (imageAvailable={}, fence={}).",
                 i,
@@ -1100,169 +972,143 @@ void Kataglyphis::VulkanRenderer::createSynchronization()
             frame_sync_count = 0;
             return;
         }
+
+        image_available[i] = image_available_handle;
+        in_flight_fences[i] = in_flight_fence_handle;
     }
 
     for (uint32_t image = 0; image < vulkanSwapChain.getNumberSwapChainImages(); ++image) {
-        const VkResult render_finished_result = vkCreateSemaphore(
-          device->getLogicalDevice(), &semaphore_create_info, nullptr, &render_finished_by_image[image]);
+        auto [render_finished_result, render_finished_handle] =
+          device->getLogicalDevice().createSemaphore(semaphore_create_info);
 
-        if (render_finished_result != VK_SUCCESS || render_finished_by_image[image] == VK_NULL_HANDLE) {
+        if (render_finished_result != vk::Result::eSuccess || !render_finished_handle) {
             spdlog::error(fmt::format("Failed to create render-finished semaphore for swapchain image {} ({}).",
               image,
               static_cast<int>(render_finished_result)));
             frame_sync_count = 0;
             return;
         }
+
+        render_finished_by_image[image] = render_finished_handle;
     }
 }
 
 void Kataglyphis::VulkanRenderer::create_uniform_buffers()
 {
-    // one uniform buffer for each image (and by extension, command buffer)
     globalUBOBuffer.resize(vulkanSwapChain.getNumberSwapChainImages());
     sceneUBOBuffer.resize(vulkanSwapChain.getNumberSwapChainImages());
 
-    //// temporary buffer to "stage" vertex data before transfering to GPU
-    // VulkanBuffer	stagingBuffer;
     std::vector<VulkanRendererInternals::GlobalUBO> globalUBOdata;
     globalUBOdata.push_back(globalUBO);
 
     std::vector<VulkanRendererInternals::SceneUBO> sceneUBOdata;
     sceneUBOdata.push_back(sceneUBO);
 
-    // create uniform buffers
     for (size_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
         vulkanBufferManager.createBufferAndUploadVectorOnDevice(device.get(),
           graphics_command_pool,
           globalUBOBuffer[i],
-          VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+          vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst,
+          vk::MemoryPropertyFlagBits::eDeviceLocal,
           globalUBOdata);
 
         vulkanBufferManager.createBufferAndUploadVectorOnDevice(device.get(),
           graphics_command_pool,
           sceneUBOBuffer[i],
-          VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+          vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst,
+          vk::MemoryPropertyFlagBits::eDeviceLocal,
           sceneUBOdata);
     }
 }
 
 void Kataglyphis::VulkanRenderer::createDescriptorPoolSharedRenderStages()
 {
-    // CREATE UNIFORM DESCRIPTOR POOL
-    // type of descriptors + how many descriptors, not descriptor sets (combined
-    // makes the pool size) ViewProjection Pool
-    VkDescriptorPoolSize vp_pool_size{};
-    vp_pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    vk::DescriptorPoolSize vp_pool_size{};
+    vp_pool_size.type = vk::DescriptorType::eUniformBuffer;
     vp_pool_size.descriptorCount = static_cast<uint32_t>(globalUBOBuffer.size());
 
-    // DIRECTION POOL
-    VkDescriptorPoolSize directions_pool_size{};
-    directions_pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    vk::DescriptorPoolSize directions_pool_size{};
+    directions_pool_size.type = vk::DescriptorType::eUniformBuffer;
     directions_pool_size.descriptorCount = static_cast<uint32_t>(sceneUBOBuffer.size());
 
-    VkDescriptorPoolSize object_descriptions_pool_size{};
-    object_descriptions_pool_size.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    vk::DescriptorPoolSize object_descriptions_pool_size{};
+    object_descriptions_pool_size.type = vk::DescriptorType::eStorageBuffer;
     object_descriptions_pool_size.descriptorCount =
       static_cast<uint32_t>(sizeof(ObjectDescription) * Kataglyphis::MAX_OBJECTS);
 
-    // TEXTURE SAMPLER POOL
-    VkDescriptorPoolSize sampler_pool_size{};
-    sampler_pool_size.type = VK_DESCRIPTOR_TYPE_SAMPLER;
+    vk::DescriptorPoolSize sampler_pool_size{};
+    sampler_pool_size.type = vk::DescriptorType::eSampler;
     sampler_pool_size.descriptorCount = MAX_TEXTURE_COUNT * vulkanSwapChain.getNumberSwapChainImages();
 
-    VkDescriptorPoolSize sampled_image_pool_size{};
-    sampled_image_pool_size.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+    vk::DescriptorPoolSize sampled_image_pool_size{};
+    sampled_image_pool_size.type = vk::DescriptorType::eSampledImage;
     sampled_image_pool_size.descriptorCount = MAX_TEXTURE_COUNT * vulkanSwapChain.getNumberSwapChainImages();
 
-    // list of pool sizes
-    std::vector<VkDescriptorPoolSize> descriptor_pool_sizes = {
+    std::vector<vk::DescriptorPoolSize> descriptor_pool_sizes = {
         vp_pool_size, directions_pool_size, object_descriptions_pool_size, sampler_pool_size, sampled_image_pool_size
     };
 
-    VkDescriptorPoolCreateInfo pool_create_info{};
-    pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    pool_create_info.maxSets = vulkanSwapChain.getNumberSwapChainImages();// maximum number of descriptor sets
-                                                                          // that can be created from pool
-    pool_create_info.poolSizeCount =
-      static_cast<uint32_t>(descriptor_pool_sizes.size());// amount of pool sizes being passed
-    pool_create_info.pPoolSizes = descriptor_pool_sizes.data();// pool sizes to create pool with
+    vk::DescriptorPoolCreateInfo pool_create_info{};
+    pool_create_info.maxSets = vulkanSwapChain.getNumberSwapChainImages();
+    pool_create_info.poolSizeCount = static_cast<uint32_t>(descriptor_pool_sizes.size());
+    pool_create_info.pPoolSizes = descriptor_pool_sizes.data();
 
-    // create descriptor pool
-    VkResult const result =
-      vkCreateDescriptorPool(device->getLogicalDevice(), &pool_create_info, nullptr, &descriptorPoolSharedRenderStages);
-    ASSERT_VULKAN(result, "Failed to create a descriptor pool!")
+    vk::Result const result =
+      device->getLogicalDevice().createDescriptorPool(&pool_create_info, nullptr, &descriptorPoolSharedRenderStages);
+    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create a descriptor pool!")
 }
 
 void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorSet()
 {
-    // resize descriptor set list so one for every buffer
     sharedRenderDescriptorSet.resize(vulkanSwapChain.getNumberSwapChainImages());
 
-    std::vector<VkDescriptorSetLayout> set_layouts(
+    std::vector<vk::DescriptorSetLayout> set_layouts(
       vulkanSwapChain.getNumberSwapChainImages(), sharedRenderDescriptorSetLayout);
 
-    // descriptor set allocation info
-    VkDescriptorSetAllocateInfo set_alloc_info{};
-    set_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    set_alloc_info.descriptorPool = descriptorPoolSharedRenderStages;// pool to allocate descriptor set from
-    set_alloc_info.descriptorSetCount = vulkanSwapChain.getNumberSwapChainImages();// number of sets to allocate
-    set_alloc_info.pSetLayouts = set_layouts.data();// layouts to use to allocate sets (1:1 relationship)
+    vk::DescriptorSetAllocateInfo set_alloc_info{};
+    set_alloc_info.descriptorPool = descriptorPoolSharedRenderStages;
+    set_alloc_info.descriptorSetCount = vulkanSwapChain.getNumberSwapChainImages();
+    set_alloc_info.pSetLayouts = set_layouts.data();
 
-    // allocate descriptor sets (multiple)
-    VkResult const result =
-      vkAllocateDescriptorSets(device->getLogicalDevice(), &set_alloc_info, sharedRenderDescriptorSet.data());
-    ASSERT_VULKAN(result, "Failed to create descriptor sets!")
-    if (result != VK_SUCCESS) {
+    vk::Result const result =
+      device->getLogicalDevice().allocateDescriptorSets(&set_alloc_info, sharedRenderDescriptorSet.data());
+    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create descriptor sets!")
+    if (result != vk::Result::eSuccess) {
         sharedRenderDescriptorSet.clear();
         return;
     }
 
-    // update all of descriptor set buffer bindings
     for (size_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
-        // VIEW PROJECTION DESCRIPTOR
-        // buffer info and data offset info
-        VkDescriptorBufferInfo globalUBO_buffer_info{};
-        globalUBO_buffer_info.buffer = globalUBOBuffer[i].getBuffer();// buffer to get data from
-        globalUBO_buffer_info.offset = 0;// position of start of data
-        globalUBO_buffer_info.range = sizeof(globalUBO);// size of data
+        vk::DescriptorBufferInfo globalUBO_buffer_info{};
+        globalUBO_buffer_info.buffer = globalUBOBuffer[i].getBuffer();
+        globalUBO_buffer_info.offset = 0;
+        globalUBO_buffer_info.range = sizeof(globalUBO);
 
-        // data about connection between binding and buffer
-        VkWriteDescriptorSet globalUBO_set_write{};
-        globalUBO_set_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        globalUBO_set_write.dstSet = sharedRenderDescriptorSet[i];// descriptor set to update
-        globalUBO_set_write.dstBinding = 0;// binding to update (matches with binding on layout/shader)
-        globalUBO_set_write.dstArrayElement = 0;// index in array to update
-        globalUBO_set_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;// type of descriptor
-        globalUBO_set_write.descriptorCount = 1;// amount to update
-        globalUBO_set_write.pBufferInfo = &globalUBO_buffer_info;// information about buffer data to bind
+        vk::WriteDescriptorSet globalUBO_set_write{};
+        globalUBO_set_write.dstSet = sharedRenderDescriptorSet[i];
+        globalUBO_set_write.dstBinding = 0;
+        globalUBO_set_write.dstArrayElement = 0;
+        globalUBO_set_write.descriptorType = vk::DescriptorType::eUniformBuffer;
+        globalUBO_set_write.descriptorCount = 1;
+        globalUBO_set_write.pBufferInfo = &globalUBO_buffer_info;
 
-        // VIEW PROJECTION DESCRIPTOR
-        // buffer info and data offset info
-        VkDescriptorBufferInfo sceneUBO_buffer_info{};
-        sceneUBO_buffer_info.buffer = sceneUBOBuffer[i].getBuffer();// buffer to get data from
-        sceneUBO_buffer_info.offset = 0;// position of start of data
-        sceneUBO_buffer_info.range = sizeof(sceneUBO);// size of data
+        vk::DescriptorBufferInfo sceneUBO_buffer_info{};
+        sceneUBO_buffer_info.buffer = sceneUBOBuffer[i].getBuffer();
+        sceneUBO_buffer_info.offset = 0;
+        sceneUBO_buffer_info.range = sizeof(sceneUBO);
 
-        // data about connection between binding and buffer
-        VkWriteDescriptorSet sceneUBO_set_write{};
-        sceneUBO_set_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        sceneUBO_set_write.dstSet = sharedRenderDescriptorSet[i];// descriptor set to update
-        sceneUBO_set_write.dstBinding = 1;// binding to update (matches with binding on layout/shader)
-        sceneUBO_set_write.dstArrayElement = 0;// index in array to update
-        sceneUBO_set_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;// type of descriptor
-        sceneUBO_set_write.descriptorCount = 1;// amount to update
-        sceneUBO_set_write.pBufferInfo = &sceneUBO_buffer_info;// information about buffer data to bind
+        vk::WriteDescriptorSet sceneUBO_set_write{};
+        sceneUBO_set_write.dstSet = sharedRenderDescriptorSet[i];
+        sceneUBO_set_write.dstBinding = 1;
+        sceneUBO_set_write.dstArrayElement = 0;
+        sceneUBO_set_write.descriptorType = vk::DescriptorType::eUniformBuffer;
+        sceneUBO_set_write.descriptorCount = 1;
+        sceneUBO_set_write.pBufferInfo = &sceneUBO_buffer_info;
 
-        std::vector<VkWriteDescriptorSet> write_descriptor_sets = { globalUBO_set_write, sceneUBO_set_write };
+        std::vector<vk::WriteDescriptorSet> write_descriptor_sets = { globalUBO_set_write, sceneUBO_set_write };
 
-        // update the descriptor sets with new buffer/binding info
-        vkUpdateDescriptorSets(device->getLogicalDevice(),
-          static_cast<uint32_t>(write_descriptor_sets.size()),
-          write_descriptor_sets.data(),
-          0,
-          nullptr);
+        device->getLogicalDevice().updateDescriptorSets(
+          static_cast<uint32_t>(write_descriptor_sets.size()), write_descriptor_sets.data(), 0, nullptr);
     }
 }
 
@@ -1287,65 +1133,53 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
         return;
     }
 
-    std::vector<VkDescriptorImageInfo> image_info_textures;
+    std::vector<vk::DescriptorImageInfo> image_info_textures;
     image_info_textures.resize(MAX_TEXTURE_COUNT);
     for (uint32_t i = 0; i < texture_count_for_descriptors; i++) {
-        image_info_textures[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        image_info_textures[i].imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
         image_info_textures[i].imageView = modelTextures[i].getImageView();
         image_info_textures[i].sampler = nullptr;
     }
     for (uint32_t i = texture_count_for_descriptors; i < MAX_TEXTURE_COUNT; i++) {
-        image_info_textures[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        image_info_textures[i].imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
         image_info_textures[i].imageView = modelTextures[0].getImageView();
         image_info_textures[i].sampler = nullptr;
     }
 
-    std::vector<VkSampler> &modelTextureSampler = scene->getTextureSampler(0);
-    std::vector<VkDescriptorImageInfo> image_info_texture_sampler;
+    std::vector<vk::Sampler> &modelTextureSampler = scene->getTextureSampler(0);
+    std::vector<vk::DescriptorImageInfo> image_info_texture_sampler;
     image_info_texture_sampler.resize(MAX_TEXTURE_COUNT);
     for (uint32_t i = 0; i < texture_count_for_descriptors; i++) {
-        image_info_texture_sampler[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        image_info_texture_sampler[i].imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
         image_info_texture_sampler[i].imageView = nullptr;
         image_info_texture_sampler[i].sampler = modelTextureSampler[i];
     }
     for (uint32_t i = texture_count_for_descriptors; i < MAX_TEXTURE_COUNT; i++) {
-        image_info_texture_sampler[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        image_info_texture_sampler[i].imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
         image_info_texture_sampler[i].imageView = nullptr;
         image_info_texture_sampler[i].sampler = modelTextureSampler[0];
     }
 
     for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
-        // descriptor write info
-        VkWriteDescriptorSet descriptor_write{};
-        descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        vk::WriteDescriptorSet descriptor_write{};
         descriptor_write.dstSet = sharedRenderDescriptorSet[i];
         descriptor_write.dstBinding = TEXTURES_BINDING;
         descriptor_write.dstArrayElement = 0;
-        descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+        descriptor_write.descriptorType = vk::DescriptorType::eSampledImage;
         descriptor_write.descriptorCount = MAX_TEXTURE_COUNT;
         descriptor_write.pImageInfo = image_info_textures.data();
 
-        /*VkDescriptorImageInfo sampler_info;
-                    sampler_info.imageView = nullptr;
-                    sampler_info.sampler = modelTextureSampler[0];
-                    sampler_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;*/
-
-        VkWriteDescriptorSet descriptor_sampler_write{};
-        descriptor_sampler_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        vk::WriteDescriptorSet descriptor_sampler_write{};
         descriptor_sampler_write.dstSet = sharedRenderDescriptorSet[i];
         descriptor_sampler_write.dstBinding = SAMPLER_BINDING;
         descriptor_sampler_write.dstArrayElement = 0;
-        descriptor_sampler_write.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+        descriptor_sampler_write.descriptorType = vk::DescriptorType::eSampler;
         descriptor_sampler_write.descriptorCount = MAX_TEXTURE_COUNT;
         descriptor_sampler_write.pImageInfo = image_info_texture_sampler.data();
 
-        std::vector<VkWriteDescriptorSet> write_descriptor_sets = { descriptor_write, descriptor_sampler_write };
+        std::vector<vk::WriteDescriptorSet> write_descriptor_sets = { descriptor_write, descriptor_sampler_write };
 
-        // update new descriptor set
-        vkUpdateDescriptorSets(device->getLogicalDevice(),
-          static_cast<uint32_t>(write_descriptor_sets.size()),
-          write_descriptor_sets.data(),
-          0,
-          nullptr);
+        device->getLogicalDevice().updateDescriptorSets(
+          static_cast<uint32_t>(write_descriptor_sets.size()), write_descriptor_sets.data(), 0, nullptr);
     }
 }

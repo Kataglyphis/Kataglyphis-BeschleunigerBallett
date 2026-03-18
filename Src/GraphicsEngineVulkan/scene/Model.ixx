@@ -3,7 +3,7 @@ module;
 #include <memory>
 #include <string>
 #include <vector>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.model;
 
@@ -24,8 +24,8 @@ class Model
     void cleanUp();
 
     void add_new_mesh(VulkanDevice *vulkan_device,
-      VkQueue transfer_queue,
-      VkCommandPool command_pool,
+      vk::Queue transfer_queue,
+      vk::CommandPool command_pool,
       std::vector<Vertex> &vertices,
       std::vector<unsigned int> &indices,
       std::vector<unsigned int> &materialIndex,
@@ -33,7 +33,7 @@ class Model
 
     uint32_t getTextureCount() { return static_cast<uint32_t>(modelTextures.size()); };
     std::vector<Texture> &getTextures() { return modelTextures; }
-    std::vector<VkSampler> &getTextureSamplers() { return modelTextureSamplers; }
+    std::vector<vk::Sampler> &getTextureSamplers() { return modelTextureSamplers; }
     std::vector<std::string> getTextureList() { return texture_list; };
     uint32_t getMeshCount() { return 1; };
     Mesh *getMesh(size_t /*index*/) { return &mesh; };
@@ -48,7 +48,7 @@ class Model
     ~Model();
 
   private:
-    VulkanDevice *device{ VK_NULL_HANDLE };
+    VulkanDevice *device{ nullptr };
 
     void addSampler(const Texture &newTexture);
 
@@ -58,6 +58,6 @@ class Model
 
     std::vector<std::string> texture_list;
     std::vector<Texture> modelTextures;
-    std::vector<VkSampler> modelTextureSamplers;
+    std::vector<vk::Sampler> modelTextureSamplers;
 };
 }// namespace Kataglyphis

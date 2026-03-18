@@ -1,6 +1,6 @@
 module;
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.command_buffer_manager;
 
@@ -10,11 +10,11 @@ class CommandBufferManager
   public:
     CommandBufferManager();
 
-    static VkCommandBuffer beginCommandBuffer(VkDevice device, VkCommandPool command_pool);
-    static void endAndSubmitCommandBuffer(VkDevice device,
-      VkCommandPool command_pool,
-      VkQueue queue,
-      VkCommandBuffer &command_buffer);
+    static vk::CommandBuffer beginCommandBuffer(vk::Device device, vk::CommandPool command_pool);
+    static void endAndSubmitCommandBuffer(vk::Device device,
+      vk::CommandPool command_pool,
+      vk::Queue queue,
+      vk::CommandBuffer &command_buffer);
 
     ~CommandBufferManager() = default;
 

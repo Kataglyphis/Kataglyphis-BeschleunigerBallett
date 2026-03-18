@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.image;
 
@@ -20,40 +20,40 @@ class VulkanImage
       uint32_t width,
       uint32_t height,
       uint32_t mip_levels,
-      VkFormat format,
-      VkImageTiling tiling,
-      VkImageUsageFlags use_flags,
-      VkMemoryPropertyFlags prop_flags);
+      vk::Format format,
+      vk::ImageTiling tiling,
+      vk::ImageUsageFlags use_flags,
+      vk::MemoryPropertyFlags prop_flags);
 
-    void transitionImageLayout(VkDevice in_logical_device,
-      VkQueue queue,
-      VkCommandPool command_pool,
-      VkImageLayout old_layout,
-      VkImageLayout new_layout,
-      VkImageAspectFlags aspectMask,
+    void transitionImageLayout(vk::Device in_logical_device,
+      vk::Queue queue,
+      vk::CommandPool command_pool,
+      vk::ImageLayout old_layout,
+      vk::ImageLayout new_layout,
+      vk::ImageAspectFlags aspectMask,
       uint32_t mip_levels);
 
-    void transitionImageLayout(VkCommandBuffer command_buffer,
-      VkImageLayout old_layout,
-      VkImageLayout new_layout,
+    void transitionImageLayout(vk::CommandBuffer command_buffer,
+      vk::ImageLayout old_layout,
+      vk::ImageLayout new_layout,
       uint32_t mip_levels,
-      VkImageAspectFlags aspectMask);
+      vk::ImageAspectFlags aspectMask);
 
-    void setImage(VkImage image);
-    VkImage &getImage() { return image; };
+    void setImage(vk::Image image);
+    vk::Image &getImage() { return image; };
 
     void cleanUp();
 
     ~VulkanImage();
 
   private:
-    VulkanDevice *device{ VK_NULL_HANDLE };
+    VulkanDevice *device{ nullptr };
     Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
 
-    VkImage image{};
-    VkDeviceMemory imageMemory{};
+    vk::Image image{};
+    vk::DeviceMemory imageMemory{};
 
-    static VkAccessFlags accessFlagsForImageLayout(VkImageLayout layout);
-    static VkPipelineStageFlags pipelineStageForLayout(VkImageLayout oldImageLayout);
+    static vk::AccessFlags accessFlagsForImageLayout(vk::ImageLayout layout);
+    static vk::PipelineStageFlags pipelineStageForLayout(vk::ImageLayout oldImageLayout);
 };
 }// namespace Kataglyphis

@@ -1,6 +1,6 @@
 module;
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_core.h>
 
 #include <array>
@@ -30,7 +30,7 @@ Kataglyphis::VulkanRendererInternals::PostStage::PostStage() = default;
 
 void Kataglyphis::VulkanRendererInternals::PostStage::init(VulkanDevice *in_device,
   VulkanSwapChain *vulkanSwapChain,
-  const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
+  const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
 {
     this->device = in_device;
     this->vulkanSwapChain = vulkanSwapChain;
@@ -45,217 +45,170 @@ void Kataglyphis::VulkanRendererInternals::PostStage::init(VulkanDevice *in_devi
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::shaderHotReload(
-  const std::vector<VkDescriptorSetLayout> &descriptor_set_layouts)
+  const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts)
 {
-    vkDestroyPipeline(device->getLogicalDevice(), graphics_pipeline, nullptr);
+    device->getLogicalDevice().destroyPipeline(graphics_pipeline);
     createGraphicsPipeline(descriptor_set_layouts);
 }
 
-void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(VkCommandBuffer &commandBuffer,
+void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::CommandBuffer &commandBuffer,
   uint32_t image_index,
-  const std::vector<VkDescriptorSet> &descriptorSets)
+  const std::vector<vk::DescriptorSet> &descriptorSets)
 {
-    // information about how to begin a render pass (only needed for graphical
-    // applications)
-    VkRenderPassBeginInfo render_pass_begin_info{};
-    render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    render_pass_begin_info.renderPass = render_pass;// render pass to begin
-    render_pass_begin_info.renderArea.offset = { .x = 0, .y = 0 };// start point of render pass in pixels
-    const VkExtent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-    render_pass_begin_info.renderArea.extent = swap_chain_extent;// size of region to run render pass on (starting at
-                                                                 // offset)
+    vk::RenderPassBeginInfo render_pass_begin_info;
+    render_pass_begin_info.renderPass = render_pass;
+    render_pass_begin_info.renderArea.offset = vk::Offset2D{ 0, 0 };
+    const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
+    render_pass_begin_info.renderArea.extent = swap_chain_extent;
 
-    // make sure the order you put the values into the array matches with the
-    // attchment order you have defined previous
-    std::array<VkClearValue, 2> clear_values = {};
-    clear_values[0].color = { { 0.2F, 0.65F, 0.4F, 1.0F } };
-    clear_values[1].depthStencil = { 1.0F, 0 };
+    std::array<vk::ClearValue, 2> clear_values;
+    clear_values[0].color = vk::ClearColorValue{ 0.2F, 0.65F, 0.4F, 1.0F };
+    clear_values[1].depthStencil = vk::ClearDepthStencilValue{ 1.0F, 0 };
 
-    render_pass_begin_info.pClearValues = clear_values.data();
-    render_pass_begin_info.clearValueCount = static_cast<uint32_t>(clear_values.size());
+    render_pass_begin_info.clearValues = clear_values;
 
-    // used framebuffer depends on the swap chain and therefore is changing for
-    // each command buffer
     render_pass_begin_info.framebuffer = framebuffers[image_index];
 
-    // begin render pass
-    vkCmdBeginRenderPass(commandBuffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+    commandBuffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
     auto aspectRatio = static_cast<float>(swap_chain_extent.width) / static_cast<float>(swap_chain_extent.height);
     PushConstantPost pc_post{};
     pc_post.aspect_ratio = aspectRatio;
-    vkCmdPushConstants(commandBuffer,
-      pipeline_layout,
-      VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+    commandBuffer.pushConstants(pipeline_layout,
+      vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
       0,
       sizeof(PushConstantPost),
       &pc_post);
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
-    vkCmdBindDescriptorSets(commandBuffer,
-      VK_PIPELINE_BIND_POINT_GRAPHICS,
-      pipeline_layout,
-      0,
-      static_cast<uint32_t>(descriptorSets.size()),
-      descriptorSets.data(),
-      0,
-      nullptr);
-    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline);
+    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout, 0, descriptorSets, nullptr);
+    commandBuffer.draw(3, 1, 0, 0);
 
-    // Rendering gui
     ImGui::Render();
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), static_cast<VkCommandBuffer>(commandBuffer));
 
-    // end render pass
-    vkCmdEndRenderPass(commandBuffer);
+    commandBuffer.endRenderPass();
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::cleanUp()
 {
     depthBufferImage->cleanUp();
-    for (auto *framebuffer : framebuffers) { vkDestroyFramebuffer(device->getLogicalDevice(), framebuffer, nullptr); }
+    for (auto &framebuffer : framebuffers) { device->getLogicalDevice().destroyFramebuffer(framebuffer); }
 
-    vkDestroySampler(device->getLogicalDevice(), offscreenTextureSampler, nullptr);
+    device->getLogicalDevice().destroySampler(offscreenTextureSampler);
 
-    vkDestroyRenderPass(device->getLogicalDevice(), render_pass, nullptr);
-    vkDestroyPipeline(device->getLogicalDevice(), graphics_pipeline, nullptr);
-    vkDestroyPipelineLayout(device->getLogicalDevice(), pipeline_layout, nullptr);
+    device->getLogicalDevice().destroyRenderPass(render_pass);
+    device->getLogicalDevice().destroyPipeline(graphics_pipeline);
+    device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
 }
 
 Kataglyphis::VulkanRendererInternals::PostStage::~PostStage() = default;
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createDepthbufferImage()
 {
-    // get supported format for depth buffer
     depth_format = Kataglyphis::choose_supported_format(device->getPhysicalDevice(),
-      { VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT },
-      VK_IMAGE_TILING_OPTIMAL,
-      VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+      { vk::Format::eD32SfloatS8Uint, vk::Format::eD32Sfloat, vk::Format::eD24UnormS8Uint },
+      vk::ImageTiling::eOptimal,
+      vk::FormatFeatureFlagBits::eDepthStencilAttachment);
 
-    // create depth buffer image
-    // MIP LEVELS: for depth texture we only want 1 level :)
-    const VkExtent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
+    const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
     depthBufferImage = std::make_unique<Texture>();
     depthBufferImage->createImage(device,
       swap_chain_extent.width,
       swap_chain_extent.height,
       1,
       depth_format,
-      VK_IMAGE_TILING_OPTIMAL,
-      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+      vk::ImageTiling::eOptimal,
+      vk::ImageUsageFlagBits::eDepthStencilAttachment,
+      vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-    // depth buffer image view
-    // MIP LEVELS: for depth texture we only want 1 level :)
-    depthBufferImage->createImageView(device, depth_format, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
+    depthBufferImage->createImageView(device, depth_format, vk::ImageAspectFlagBits::eDepth, 1);
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createOffscreenTextureSampler()
 {
-    VkPhysicalDeviceFeatures physical_device_features{};
-    vkGetPhysicalDeviceFeatures(device->getPhysicalDevice(), &physical_device_features);
+    vk::PhysicalDeviceFeatures physical_device_features = device->getPhysicalDevice().getFeatures();
 
-    // sampler create info
-    VkSamplerCreateInfo sampler_create_info{};
-    sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    sampler_create_info.magFilter = VK_FILTER_LINEAR;
-    sampler_create_info.minFilter = VK_FILTER_LINEAR;
-    sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sampler_create_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+    vk::SamplerCreateInfo sampler_create_info;
+    sampler_create_info.magFilter = vk::Filter::eLinear;
+    sampler_create_info.minFilter = vk::Filter::eLinear;
+    sampler_create_info.addressModeU = vk::SamplerAddressMode::eRepeat;
+    sampler_create_info.addressModeV = vk::SamplerAddressMode::eRepeat;
+    sampler_create_info.addressModeW = vk::SamplerAddressMode::eRepeat;
+    sampler_create_info.borderColor = vk::BorderColor::eFloatOpaqueBlack;
     sampler_create_info.unnormalizedCoordinates = VK_FALSE;
-    sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    sampler_create_info.mipmapMode = vk::SamplerMipmapMode::eLinear;
     sampler_create_info.mipLodBias = 0.0F;
     sampler_create_info.minLod = 0.0F;
     sampler_create_info.maxLod = 0.0F;
     sampler_create_info.anisotropyEnable = physical_device_features.samplerAnisotropy;
     sampler_create_info.maxAnisotropy = (physical_device_features.samplerAnisotropy != 0u) ? 16.0F : 1.0F;
 
-    VkResult const result =
-      vkCreateSampler(device->getLogicalDevice(), &sampler_create_info, nullptr, &offscreenTextureSampler);
+    vk::Result const result =
+      device->getLogicalDevice().createSampler(&sampler_create_info, nullptr, &offscreenTextureSampler);
     ASSERT_VULKAN(result, "Failed to create a texture sampler!")
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createPushConstantRange()
 {
-    push_constant_range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    push_constant_range.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
     push_constant_range.offset = 0;
     push_constant_range.size = sizeof(PushConstantPost);
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
 {
-    // Color attachment of render pass
-    VkAttachmentDescription color_attachment{};
-    const VkFormat &swap_chain_image_format = vulkanSwapChain->getSwapChainFormat();
-    color_attachment.format = swap_chain_image_format;// format to use for attachment
-    color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;// number of samples to write for multisampling
-    color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;// describes what to do with attachment
-                                                          // before rendering
-    color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;// describes what to do with attachment
-                                                            // after rendering
-    color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;// describes what to do with stencil
-                                                                     // before rendering
-    color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;// describes what to do with stencil
-                                                                       // after rendering
+    vk::AttachmentDescription color_attachment;
+    const vk::Format &swap_chain_image_format = vulkanSwapChain->getSwapChainFormat();
+    color_attachment.format = swap_chain_image_format;
+    color_attachment.samples = vk::SampleCountFlagBits::e1;
+    color_attachment.loadOp = vk::AttachmentLoadOp::eClear;
+    color_attachment.storeOp = vk::AttachmentStoreOp::eStore;
+    color_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
+    color_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
 
-    // framebuffer data will be stored as an image, but images can be given
-    // different layouts to give optimal use for certain operations
-    color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;// image data layout before render pass starts
-    color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;// image data layout after render pass
-                                                                   // (to change to)
+    color_attachment.initialLayout = vk::ImageLayout::eUndefined;
+    color_attachment.finalLayout = vk::ImageLayout::ePresentSrcKHR;
 
-    // depth attachment of render pass
-    VkAttachmentDescription depth_attachment{};
+    vk::AttachmentDescription depth_attachment;
     depth_attachment.format = Kataglyphis::choose_supported_format(device->getPhysicalDevice(),
-      { VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT },
-      VK_IMAGE_TILING_OPTIMAL,
-      VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
-    depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+      { vk::Format::eD32SfloatS8Uint, vk::Format::eD32Sfloat, vk::Format::eD24UnormS8Uint },
+      vk::ImageTiling::eOptimal,
+      vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+    depth_attachment.samples = vk::SampleCountFlagBits::e1;
+    depth_attachment.loadOp = vk::AttachmentLoadOp::eClear;
+    depth_attachment.storeOp = vk::AttachmentStoreOp::eDontCare;
+    depth_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
+    depth_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
+    depth_attachment.initialLayout = vk::ImageLayout::eUndefined;
+    depth_attachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
 
-    // attachment reference uses an attachment index that refers to index in the
-    // attachment list passed to renderPassCreateInfo
-    VkAttachmentReference color_attachment_reference{};
+    vk::AttachmentReference color_attachment_reference;
     color_attachment_reference.attachment = 0;
-    color_attachment_reference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    color_attachment_reference.layout = vk::ImageLayout::eColorAttachmentOptimal;
 
-    // attachment reference
-    VkAttachmentReference depth_attachment_reference{};
+    vk::AttachmentReference depth_attachment_reference;
     depth_attachment_reference.attachment = 1;
-    depth_attachment_reference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depth_attachment_reference.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
 
-    // information about a particular subpass the render pass is using
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;// pipeline type subpass is to be bound
-                                                                // to
+    vk::SubpassDescription subpass;
+    subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &color_attachment_reference;
     subpass.pDepthStencilAttachment = &depth_attachment_reference;
 
-    // need to determine when layout transitions occur using subpass dependencies
-    std::array<VkSubpassDependency, 1> subpass_dependencies{};
+    std::array<vk::SubpassDependency, 1> subpass_dependencies;
 
-    // conversion from VK_IMAGE_LAYOUT_UNDEFINED to
-    // VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL transition must happen after ....
-    subpass_dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;// subpass index (VK_SUBPASS_EXTERNAL = Special
-                                                             // value meaning outside of renderpass)
-    subpass_dependencies[0].srcStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;// pipeline stage
-    subpass_dependencies[0].srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;// stage access mask (memory access)
+    subpass_dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    subpass_dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eBottomOfPipe;
+    subpass_dependencies[0].srcAccessMask = vk::AccessFlagBits::eMemoryRead;
     subpass_dependencies[0].dstSubpass = 0;
-    subpass_dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    subpass_dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_READ_BIT;
-    subpass_dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+    subpass_dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    subpass_dependencies[0].dstAccessMask =
+      vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eColorAttachmentRead;
+    subpass_dependencies[0].dependencyFlags = vk::DependencyFlagBits::eByRegion;
 
-    std::array<VkAttachmentDescription, 2> render_pass_attachments = { color_attachment, depth_attachment };
+    std::array<vk::AttachmentDescription, 2> render_pass_attachments = { color_attachment, depth_attachment };
 
-    // create info for render pass
-    VkRenderPassCreateInfo render_pass_create_info{};
-    render_pass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    vk::RenderPassCreateInfo render_pass_create_info;
     render_pass_create_info.attachmentCount = static_cast<uint32_t>(render_pass_attachments.size());
     render_pass_create_info.pAttachments = render_pass_attachments.data();
     render_pass_create_info.subpassCount = 1;
@@ -263,13 +216,13 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
     render_pass_create_info.dependencyCount = static_cast<uint32_t>(subpass_dependencies.size());
     render_pass_create_info.pDependencies = subpass_dependencies.data();
 
-    VkResult const result =
-      vkCreateRenderPass(device->getLogicalDevice(), &render_pass_create_info, nullptr, &render_pass);
+    vk::Result const result =
+      device->getLogicalDevice().createRenderPass(&render_pass_create_info, nullptr, &render_pass);
     ASSERT_VULKAN(result, "Failed to create render pass!")
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
-  const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
+  const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
 {
     std::stringstream post_shader_dir;
     std::filesystem::path const cwd = std::filesystem::current_path();
@@ -289,133 +242,101 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
     shaderHelper.compileShader(post_shader_dir.str(), post_vert_shader);
     shaderHelper.compileShader(post_shader_dir.str(), post_frag_shader);
 
-    // build shader modules to link to graphics pipeline
-    VkShaderModule vertex_shader_module = shaderHelper.createShaderModule(device, vertex_shader_code);
-    VkShaderModule fragment_shader_module = shaderHelper.createShaderModule(device, fragment_shader_code);
+    vk::ShaderModule vertex_shader_module = shaderHelper.createShaderModule(device, vertex_shader_code);
+    vk::ShaderModule fragment_shader_module = shaderHelper.createShaderModule(device, fragment_shader_code);
 
-    // shader stage creation information
-    // vertex stage creation information
-    VkPipelineShaderStageCreateInfo vertex_shader_create_info{};
-    vertex_shader_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertex_shader_create_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vk::PipelineShaderStageCreateInfo vertex_shader_create_info;
+    vertex_shader_create_info.stage = vk::ShaderStageFlagBits::eVertex;
     vertex_shader_create_info.module = vertex_shader_module;
     vertex_shader_create_info.pName = "main";
 
-    // fragment stage creation information
-    VkPipelineShaderStageCreateInfo fragment_shader_create_info{};
-    fragment_shader_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragment_shader_create_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    vk::PipelineShaderStageCreateInfo fragment_shader_create_info;
+    fragment_shader_create_info.stage = vk::ShaderStageFlagBits::eFragment;
     fragment_shader_create_info.module = fragment_shader_module;
     fragment_shader_create_info.pName = "main";
 
-    std::vector<VkPipelineShaderStageCreateInfo> shader_stages = { vertex_shader_create_info,
+    std::vector<vk::PipelineShaderStageCreateInfo> shader_stages = { vertex_shader_create_info,
         fragment_shader_create_info };
 
-    // CREATE PIPELINE
-    // 1.) Vertex input
-    VkPipelineVertexInputStateCreateInfo vertex_input_create_info{};
-    vertex_input_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vk::PipelineVertexInputStateCreateInfo vertex_input_create_info;
     vertex_input_create_info.vertexBindingDescriptionCount = 0;
     vertex_input_create_info.pVertexBindingDescriptions = nullptr;
     vertex_input_create_info.vertexAttributeDescriptionCount = 0;
     vertex_input_create_info.pVertexAttributeDescriptions = nullptr;
 
-    // input assembly
-    VkPipelineInputAssemblyStateCreateInfo input_assembly{};
-    input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    vk::PipelineInputAssemblyStateCreateInfo input_assembly;
+    input_assembly.topology = vk::PrimitiveTopology::eTriangleList;
     input_assembly.primitiveRestartEnable = VK_FALSE;
 
-    // viewport & scissor
-    // create a viewport info struct
-    VkViewport viewport{};
+    vk::Viewport viewport;
     viewport.x = 0.0F;
     viewport.y = 0.0F;
-    const VkExtent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
+    const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
     viewport.width = static_cast<float>(swap_chain_extent.width);
     viewport.height = static_cast<float>(swap_chain_extent.height);
     viewport.minDepth = 0.0F;
     viewport.maxDepth = 1.0F;
 
-    // create a scissor info struct
-    VkRect2D scissor{};
-    scissor.offset = { .x = 0, .y = 0 };
+    vk::Rect2D scissor;
+    scissor.offset = vk::Offset2D{ 0, 0 };
     scissor.extent = swap_chain_extent;
 
-    VkPipelineViewportStateCreateInfo viewport_state_create_info{};
-    viewport_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    vk::PipelineViewportStateCreateInfo viewport_state_create_info;
     viewport_state_create_info.viewportCount = 1;
     viewport_state_create_info.pViewports = &viewport;
     viewport_state_create_info.scissorCount = 1;
     viewport_state_create_info.pScissors = &scissor;
 
-    // RASTERIZER
-    VkPipelineRasterizationStateCreateInfo rasterizer_create_info{};
-    rasterizer_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    vk::PipelineRasterizationStateCreateInfo rasterizer_create_info;
     rasterizer_create_info.depthClampEnable = VK_FALSE;
     rasterizer_create_info.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer_create_info.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer_create_info.polygonMode = vk::PolygonMode::eFill;
     rasterizer_create_info.lineWidth = 1.0F;
-    rasterizer_create_info.cullMode = VK_CULL_MODE_NONE;
-    // winding to determine which side is front; y-coordinate is inverted in
-    // comparison to OpenGL
-    rasterizer_create_info.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer_create_info.cullMode = vk::CullModeFlagBits::eNone;
+    rasterizer_create_info.frontFace = vk::FrontFace::eCounterClockwise;
     rasterizer_create_info.depthBiasClamp = VK_FALSE;
 
-    // -- MULTISAMPLING --
-    VkPipelineMultisampleStateCreateInfo multisample_create_info{};
-    multisample_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    vk::PipelineMultisampleStateCreateInfo multisample_create_info;
     multisample_create_info.sampleShadingEnable = VK_FALSE;
-    multisample_create_info.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisample_create_info.rasterizationSamples = vk::SampleCountFlagBits::e1;
 
-    // -- BLENDING --
-    // blend attachment state
-    VkPipelineColorBlendAttachmentState color_state{};
-    color_state.colorWriteMask =
-      VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    vk::PipelineColorBlendAttachmentState color_state;
+    color_state.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG
+                                 | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
 
     color_state.blendEnable = VK_TRUE;
-    // blending uses equation: (srcColorBlendFactor * new_color) color_blend_op
-    // (dstColorBlendFactor * old_color)
-    color_state.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-    color_state.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-    color_state.colorBlendOp = VK_BLEND_OP_ADD;
-    color_state.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    color_state.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-    color_state.alphaBlendOp = VK_BLEND_OP_ADD;
+    color_state.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
+    color_state.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
+    color_state.colorBlendOp = vk::BlendOp::eAdd;
+    color_state.srcAlphaBlendFactor = vk::BlendFactor::eOne;
+    color_state.dstAlphaBlendFactor = vk::BlendFactor::eZero;
+    color_state.alphaBlendOp = vk::BlendOp::eAdd;
 
-    VkPipelineColorBlendStateCreateInfo color_blending_create_info{};
-    color_blending_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    color_blending_create_info.logicOpEnable = VK_FALSE;// alternative to calculations is to use logical operations
-    color_blending_create_info.logicOp = VK_LOGIC_OP_CLEAR;
+    vk::PipelineColorBlendStateCreateInfo color_blending_create_info;
+    color_blending_create_info.logicOpEnable = VK_FALSE;
+    color_blending_create_info.logicOp = vk::LogicOp::eClear;
     color_blending_create_info.attachmentCount = 1;
     color_blending_create_info.pAttachments = &color_state;
     for (int i = 0; i < 4; i++) { color_blending_create_info.blendConstants[0] = 0.F; }
-    // -- PIPELINE LAYOUT --
-    VkPipelineLayoutCreateInfo pipeline_layout_create_info{};
-    pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+
+    vk::PipelineLayoutCreateInfo pipeline_layout_create_info;
     pipeline_layout_create_info.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
     pipeline_layout_create_info.pSetLayouts = descriptorSetLayouts.data();
     pipeline_layout_create_info.pushConstantRangeCount = 1;
     pipeline_layout_create_info.pPushConstantRanges = &push_constant_range;
 
-    // create pipeline layout
-    VkResult result =
-      vkCreatePipelineLayout(device->getLogicalDevice(), &pipeline_layout_create_info, nullptr, &pipeline_layout);
+    vk::Result result =
+      device->getLogicalDevice().createPipelineLayout(&pipeline_layout_create_info, nullptr, &pipeline_layout);
     ASSERT_VULKAN(result, "Failed to create pipeline layout!")
 
-    // -- DEPTH STENCIL TESTING --
-    VkPipelineDepthStencilStateCreateInfo depth_stencil_create_info{};
-    depth_stencil_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    vk::PipelineDepthStencilStateCreateInfo depth_stencil_create_info;
     depth_stencil_create_info.depthTestEnable = VK_TRUE;
     depth_stencil_create_info.depthWriteEnable = VK_TRUE;
-    depth_stencil_create_info.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+    depth_stencil_create_info.depthCompareOp = vk::CompareOp::eLessOrEqual;
     depth_stencil_create_info.depthBoundsTestEnable = VK_FALSE;
     depth_stencil_create_info.stencilTestEnable = VK_FALSE;
 
-    // -- GRAPHICS PIPELINE CREATION --
-    VkGraphicsPipelineCreateInfo graphics_pipeline_create_info{};
-    graphics_pipeline_create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    vk::GraphicsPipelineCreateInfo graphics_pipeline_create_info;
     graphics_pipeline_create_info.stageCount = static_cast<uint32_t>(shader_stages.size());
     graphics_pipeline_create_info.pStages = shader_stages.data();
     graphics_pipeline_create_info.pVertexInputState = &vertex_input_create_info;
@@ -430,43 +351,41 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
     graphics_pipeline_create_info.renderPass = render_pass;
     graphics_pipeline_create_info.subpass = 0;
 
-    // pipeline derivatives : can create multiple pipelines that derive from one
-    // another for optimization
-    graphics_pipeline_create_info.basePipelineHandle = VK_NULL_HANDLE;
+    graphics_pipeline_create_info.basePipelineHandle = nullptr;
     graphics_pipeline_create_info.basePipelineIndex = -1;
 
-    // create graphics pipeline
-    result = vkCreateGraphicsPipelines(
-      device->getLogicalDevice(), VK_NULL_HANDLE, 1, &graphics_pipeline_create_info, nullptr, &graphics_pipeline);
-    ASSERT_VULKAN(result, "Failed to create a graphics pipeline!")
+    auto create_result = device->getLogicalDevice().createGraphicsPipeline(nullptr, graphics_pipeline_create_info);
+    if (create_result.result == vk::Result::eSuccess) {
+        graphics_pipeline = create_result.value;
+    } else {
+        ASSERT_VULKAN(create_result.result, "Failed to create a graphics pipeline!")
+    }
 
-    // Destroy shader modules, no longer needed after pipeline created
-    vkDestroyShaderModule(device->getLogicalDevice(), vertex_shader_module, nullptr);
-    vkDestroyShaderModule(device->getLogicalDevice(), fragment_shader_module, nullptr);
+    device->getLogicalDevice().destroyShaderModule(vertex_shader_module);
+    device->getLogicalDevice().destroyShaderModule(fragment_shader_module);
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createFramebuffer()
 {
-    // resize framebuffer size to equal swap chain image count
     framebuffers.resize(vulkanSwapChain->getNumberSwapChainImages());
 
     for (size_t i = 0; i < vulkanSwapChain->getNumberSwapChainImages(); i++) {
         Texture &swap_chain_image = vulkanSwapChain->getSwapChainImage(i);
 
-        std::array<VkImageView, 2> attachments = { swap_chain_image.getImageView(), depthBufferImage->getImageView() };
+        std::array<vk::ImageView, 2> attachments = { swap_chain_image.getImageView(),
+            depthBufferImage->getImageView() };
 
-        VkFramebufferCreateInfo frame_buffer_create_info{};
-        frame_buffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        frame_buffer_create_info.renderPass = render_pass;// render pass layout the framebuffer will be used with
+        vk::FramebufferCreateInfo frame_buffer_create_info;
+        frame_buffer_create_info.renderPass = render_pass;
         frame_buffer_create_info.attachmentCount = static_cast<uint32_t>(attachments.size());
-        frame_buffer_create_info.pAttachments = attachments.data();// list of attachments (1:1 with render pass)
-        const VkExtent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-        frame_buffer_create_info.width = swap_chain_extent.width;// framebuffer width
-        frame_buffer_create_info.height = swap_chain_extent.height;// framebuffer height
-        frame_buffer_create_info.layers = 1;// framebuffer layer
+        frame_buffer_create_info.pAttachments = attachments.data();
+        const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
+        frame_buffer_create_info.width = swap_chain_extent.width;
+        frame_buffer_create_info.height = swap_chain_extent.height;
+        frame_buffer_create_info.layers = 1;
 
-        VkResult const result =
-          vkCreateFramebuffer(device->getLogicalDevice(), &frame_buffer_create_info, nullptr, &framebuffers[i]);
+        vk::Result const result =
+          device->getLogicalDevice().createFramebuffer(&frame_buffer_create_info, nullptr, &framebuffers[i]);
         ASSERT_VULKAN(result, "Failed to create framebuffer!")
     }
 }

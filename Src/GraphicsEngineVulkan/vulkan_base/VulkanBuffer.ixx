@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.buffer;
 
@@ -16,23 +16,23 @@ class VulkanBuffer
     auto operator=(VulkanBuffer &&other) noexcept -> VulkanBuffer &;
 
     void create(VulkanDevice *vulkanDevice,
-      VkDeviceSize buffer_size,
-      VkBufferUsageFlags buffer_usage_flags,
-      VkMemoryPropertyFlags buffer_propertiy_flags,
-      VkMemoryAllocateFlags buffer_allocate_flags = 0);
+      vk::DeviceSize buffer_size,
+      vk::BufferUsageFlags buffer_usage_flags,
+      vk::MemoryPropertyFlags buffer_propertiy_flags,
+      vk::MemoryAllocateFlags buffer_allocate_flags = {});
 
     void cleanUp();
 
-    VkBuffer &getBuffer() { return buffer; };
-    VkDeviceMemory &getBufferMemory() { return bufferMemory; };
+    vk::Buffer &getBuffer() { return buffer; };
+    vk::DeviceMemory &getBufferMemory() { return bufferMemory; };
 
     ~VulkanBuffer();
 
   private:
-    VulkanDevice *device{ VK_NULL_HANDLE };
+    VulkanDevice *device{ nullptr };
 
-    VkBuffer buffer{ VK_NULL_HANDLE };
-    VkDeviceMemory bufferMemory{ VK_NULL_HANDLE };
+    vk::Buffer buffer{};
+    vk::DeviceMemory bufferMemory{};
 
     bool created{ false };
 };

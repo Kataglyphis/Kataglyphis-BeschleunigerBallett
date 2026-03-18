@@ -7,8 +7,7 @@ module;
 #include <cstdint>
 #include <cstring>
 #include <vector>
-#include <vulkan/vulkan.h>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.hpp>
 
 module kataglyphis.vulkan.instance;
 
@@ -23,8 +22,7 @@ Kataglyphis::VulkanInstance::VulkanInstance()
 
     // info about app
     // most data doesn't affect program; is for developer convenience
-    VkApplicationInfo app_info{};
-    app_info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    vk::ApplicationInfo app_info{};
     app_info.pApplicationName = "\\__/ Epic Graphics from hell \\__/";// custom name of app
     app_info.applicationVersion = VK_MAKE_VERSION(Kataglyphis::RendererConfig::projectVersionMajor,
       Kataglyphis::RendererConfig::projectVersionMinor,
@@ -35,9 +33,8 @@ Kataglyphis::VulkanInstance::VulkanInstance()
       Kataglyphis::RendererConfig::projectVersionPatch);// custom engine version
     app_info.apiVersion = Kataglyphis::RendererConfig::vulkanApiVersion;// the vulkan version
 
-    // creation info for a VkInstance
-    VkInstanceCreateInfo create_info{};
-    create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    // creation info for a vk::Instance
+    vk::InstanceCreateInfo create_info{};
     create_info.pApplicationInfo = &app_info;
 
     // add validation layers IF enabled to the creeate info struct
@@ -75,17 +72,12 @@ Kataglyphis::VulkanInstance::VulkanInstance()
     create_info.ppEnabledExtensionNames = instance_extensions.data();
 
     // create instance
-    VkResult const result = vkCreateInstance(&create_info, nullptr, &instance);
-    ASSERT_VULKAN(result, "Failed to create a Vulkan instance!");
+    instance = vk::createInstance(create_info);
 }
 
 auto Kataglyphis::VulkanInstance::check_validation_layer_support() -> bool
 {
-    uint32_t layerCount = 0;
-    vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
-
-    std::vector<VkLayerProperties> availableLayers(layerCount);
-    vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+    std::vector<vk::LayerProperties> availableLayers = vk::enumerateInstanceLayerProperties();
 
     for (const char *layerName : validationLayers) {
         bool layerFound = false;
@@ -105,14 +97,8 @@ auto Kataglyphis::VulkanInstance::check_validation_layer_support() -> bool
 
 auto Kataglyphis::VulkanInstance::check_instance_extension_support(std::vector<const char *> *check_extensions) -> bool
 {
-    // Need to get number of extensions to create array of correct size to hold
-    // extensions
-    uint32_t extension_count = 0;
-    vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, nullptr);
-
-    // create a list of VkExtensionProperties using count
-    std::vector<VkExtensionProperties> extensions(extension_count);
-    vkEnumerateInstanceExtensionProperties(nullptr, &extension_count, extensions.data());
+    // create a list of vk::ExtensionProperties
+    std::vector<vk::ExtensionProperties> extensions = vk::enumerateInstanceExtensionProperties();
 
     // check if given extensions are in list of available extensions
     for (const auto &check_extension : *check_extensions) {
@@ -131,6 +117,6 @@ auto Kataglyphis::VulkanInstance::check_instance_extension_support(std::vector<c
     return true;
 }
 
-void Kataglyphis::VulkanInstance::cleanUp() { vkDestroyInstance(instance, nullptr); }
+void Kataglyphis::VulkanInstance::cleanUp() { instance.destroy(); }
 
 Kataglyphis::VulkanInstance::~VulkanInstance() = default;

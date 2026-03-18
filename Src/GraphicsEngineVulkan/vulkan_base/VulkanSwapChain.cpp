@@ -1,12 +1,12 @@
 module;
 
+#include "renderer/SwapChainDetails.hpp"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <vector>
-#include <vulkan/vulkan_core.h>
-#include "renderer/SwapChainDetails.hpp"
+#include <vulkan/vulkan.hpp>
 
 #include "GLFW/glfw3.h"
 #include "common/Utilities.hpp"
@@ -21,7 +21,7 @@ Kataglyphis::VulkanSwapChain::VulkanSwapChain() = default;
 
 void Kataglyphis::VulkanSwapChain::initVulkanContext(VulkanDevice *in_device,
   Kataglyphis::Frontend::Window *window,
-  const VkSurfaceKHR &surface)
+  const vk::SurfaceKHR &surface)
 {
     this->device = in_device;
     this->window = window;
@@ -33,9 +33,9 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(VulkanDevice *in_device,
     // 2. choose best presentation mode
     // 3. choose swap chain image resolution
 
-    VkSurfaceFormatKHR const surface_format = choose_best_surface_format(swap_chain_details.formats);
-    VkPresentModeKHR const present_mode = choose_best_presentation_mode(swap_chain_details.presentation_mode);
-    VkExtent2D const extent = choose_swap_extent(swap_chain_details.surface_capabilities);
+    vk::SurfaceFormatKHR const surface_format = choose_best_surface_format(swap_chain_details.formats);
+    vk::PresentModeKHR const present_mode = choose_best_presentation_mode(swap_chain_details.presentation_mode);
+    vk::Extent2D const extent = choose_swap_extent(swap_chain_details.surface_capabilities);
 
     // how many images are in the swap chain; get 1 more than the minimum to allow
     // tiple buffering
@@ -47,8 +47,10 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(VulkanDevice *in_device,
         image_count = swap_chain_details.surface_capabilities.maxImageCount;
     }
 
-    VkSwapchainCreateInfoKHR swap_chain_create_info{};
-    swap_chain_create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    // get queue family indices
+    Kataglyphis::VulkanRendererInternals::QueueFamilyIndices const indices = device->getQueueFamilies();
+
+    vk::SwapchainCreateInfoKHR swap_chain_create_info{};
     swap_chain_create_info.surface = surface;// swapchain surface
     swap_chain_create_info.imageFormat = surface_format.format;// swapchain format
     swap_chain_create_info.imageColorSpace = surface_format.colorSpace;// swapchain color space
@@ -56,17 +58,15 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(VulkanDevice *in_device,
     swap_chain_create_info.imageExtent = extent;// swapchain image extents
     swap_chain_create_info.minImageCount = image_count;// minimum images in swapchain
     swap_chain_create_info.imageArrayLayers = 1;// number of layers for each image in chain
-    swap_chain_create_info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT
-                                        | VK_IMAGE_USAGE_STORAGE_BIT
-                                        | VK_IMAGE_USAGE_TRANSFER_DST_BIT;// what attachment images will be used
-                                                                          // as
+    swap_chain_create_info.imageUsage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
+                                        | vk::ImageUsageFlagBits::eStorage
+                                        | vk::ImageUsageFlagBits::eTransferDst;// what attachment images will be used
+                                                                               // as
     swap_chain_create_info.preTransform =
       swap_chain_details.surface_capabilities.currentTransform;// transform to perform on swap chain images
-    swap_chain_create_info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;// dont do blending; everything opaque
-    swap_chain_create_info.clipped = VK_TRUE;// of course activate clipping ! :)
-
-    // get queue family indices
-    Kataglyphis::VulkanRendererInternals::QueueFamilyIndices const indices = device->getQueueFamilies();
+    swap_chain_create_info.compositeAlpha =
+      vk::CompositeAlphaFlagBitsKHR::eOpaque;// dont do blending; everything opaque
+    swap_chain_create_info.clipped = vk::True;// of course activate clipping ! :)
 
     // if graphics and presentation families are different then swapchain must let
     // images be shared between families
@@ -74,72 +74,65 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(VulkanDevice *in_device,
         uint32_t queue_family_indices[] = { static_cast<uint32_t>(indices.graphics_family),
             static_cast<uint32_t>(indices.presentation_family) };
 
-        swap_chain_create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;// image share handling
+        swap_chain_create_info.imageSharingMode = vk::SharingMode::eConcurrent;// image share handling
         swap_chain_create_info.queueFamilyIndexCount = 2;// number of queues to share images between
         swap_chain_create_info.pQueueFamilyIndices = queue_family_indices;// array of queues to share between
 
     } else {
-        swap_chain_create_info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        swap_chain_create_info.imageSharingMode = vk::SharingMode::eExclusive;
         swap_chain_create_info.queueFamilyIndexCount = 0;
         swap_chain_create_info.pQueueFamilyIndices = nullptr;
     }
 
     // if old swap chain been destroyed and this one replaces it then link old one
     // to quickly hand over responsibilities
-    swap_chain_create_info.oldSwapchain = VK_NULL_HANDLE;
+    swap_chain_create_info.oldSwapchain = nullptr;
 
     // create swap chain
-    VkResult const result =
-      vkCreateSwapchainKHR(device->getLogicalDevice(), &swap_chain_create_info, nullptr, &swapchain);
-    ASSERT_VULKAN(result, "Failed create swapchain!");
+    swapchain = device->getLogicalDevice().createSwapchainKHR(swap_chain_create_info);
 
     // store for later reference
     swap_chain_image_format = surface_format.format;
     swap_chain_extent = extent;
 
-    // get swapchain images (first count, then values)
-    uint32_t swapchain_image_count = 0;
-    vkGetSwapchainImagesKHR(device->getLogicalDevice(), swapchain, &swapchain_image_count, nullptr);
-    std::vector<VkImage> images(swapchain_image_count);
-    vkGetSwapchainImagesKHR(device->getLogicalDevice(), swapchain, &swapchain_image_count, images.data());
+    // get swapchain images
+    std::vector<vk::Image> images = device->getLogicalDevice().getSwapchainImagesKHR(swapchain);
 
     swap_chain_images.clear();
 
     for (size_t i = 0; i < images.size(); i++) {
-        VkImage image = images[static_cast<uint32_t>(i)];
+        vk::Image image = images[static_cast<uint32_t>(i)];
         swap_chain_images.emplace_back();
         Texture &swap_chain_image = swap_chain_images.back();
         swap_chain_image.setImage(image);
-        swap_chain_image.createImageView(device, swap_chain_image_format, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+        swap_chain_image.createImageView(device, swap_chain_image_format, vk::ImageAspectFlagBits::eColor, 1);
     }
 }
 
 void Kataglyphis::VulkanSwapChain::cleanUp()
 {
-    for (Texture &image : swap_chain_images) {
-        vkDestroyImageView(device->getLogicalDevice(), image.getImageView(), nullptr);
-    }
+    for (Texture &image : swap_chain_images) { device->getLogicalDevice().destroyImageView(image.getImageView()); }
 
-    vkDestroySwapchainKHR(device->getLogicalDevice(), swapchain, nullptr);
+    device->getLogicalDevice().destroySwapchainKHR(swapchain);
 }
 
 Kataglyphis::VulkanSwapChain::~VulkanSwapChain() = default;
 
-auto Kataglyphis::VulkanSwapChain::choose_best_surface_format(const std::vector<VkSurfaceFormatKHR> &formats)
-  -> VkSurfaceFormatKHR
+auto Kataglyphis::VulkanSwapChain::choose_best_surface_format(const std::vector<vk::SurfaceFormatKHR> &formats)
+  -> vk::SurfaceFormatKHR
 {
     // best format is subjective, but I go with:
-    //  Format:           VK_FORMAT_R8G8B8A8_UNORM (backup-format:
-    //  VK_FORMAT_B8G8R8A8_UNORM) color_space:  VK_COLOR_SPACE_SRGB_NONLINEAR_KHR
+    //  Format:           vk::Format::eR8G8B8A8Unorm (backup-format:
+    //  vk::Format::eB8G8R8A8Unorm) color_space:  vk::ColorSpaceKHR::eSrgbNonlinear
     //  the condition in if means all formats are available (no restrictions)
-    if (formats.size() == 1 && formats[0].format == VK_FORMAT_UNDEFINED) {
-        return { VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
+    if (formats.size() == 1 && formats[0].format == vk::Format::eUndefined) {
+        return { vk::Format::eR8G8B8A8Unorm, vk::ColorSpaceKHR::eSrgbNonlinear };
     }
 
     // if restricted, search  for optimal format
     for (const auto &format : formats) {
-        if ((format.format == VK_FORMAT_R8G8B8A8_UNORM || format.format == VK_FORMAT_B8G8R8A8_UNORM)
-            && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+        if ((format.format == vk::Format::eR8G8B8A8Unorm || format.format == vk::Format::eB8G8R8A8Unorm)
+            && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
             return format;
         }
     }
@@ -149,19 +142,19 @@ auto Kataglyphis::VulkanSwapChain::choose_best_surface_format(const std::vector<
 }
 
 auto Kataglyphis::VulkanSwapChain::choose_best_presentation_mode(
-  const std::vector<VkPresentModeKHR> &presentation_modes) -> VkPresentModeKHR
+  const std::vector<vk::PresentModeKHR> &presentation_modes) -> vk::PresentModeKHR
 {
     // look for mailbox presentation mode
     for (const auto &presentation_mode : presentation_modes) {
-        if (presentation_mode == VK_PRESENT_MODE_MAILBOX_KHR) { return presentation_mode; }
+        if (presentation_mode == vk::PresentModeKHR::eMailbox) { return presentation_mode; }
     }
 
     // if can't find, use FIFO as Vulkan spec says it must be present
-    return VK_PRESENT_MODE_FIFO_KHR;
+    return vk::PresentModeKHR::eFifo;
 }
 
-auto Kataglyphis::VulkanSwapChain::choose_swap_extent(const VkSurfaceCapabilitiesKHR &surface_capabilities)
-  -> VkExtent2D
+auto Kataglyphis::VulkanSwapChain::choose_swap_extent(const vk::SurfaceCapabilitiesKHR &surface_capabilities)
+  -> vk::Extent2D
 {
     // if current extent is at numeric limits, than extent can vary. Otherwise it
     // is size of window
@@ -172,7 +165,7 @@ auto Kataglyphis::VulkanSwapChain::choose_swap_extent(const VkSurfaceCapabilitie
     glfwGetFramebufferSize(window->get_window(), &width, &height);
 
     // create new extent using window size
-    VkExtent2D new_extent{};
+    vk::Extent2D new_extent{};
     new_extent.width = static_cast<uint32_t>(width);
     new_extent.height = static_cast<uint32_t>(height);
 

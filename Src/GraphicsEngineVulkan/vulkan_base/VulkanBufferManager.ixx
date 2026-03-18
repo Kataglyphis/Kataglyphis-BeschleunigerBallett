@@ -2,7 +2,7 @@ module;
 #include <cstring>
 #include <spdlog/spdlog.h>
 #include <vector>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.buffer_manager;
 
@@ -16,46 +16,46 @@ class VulkanBufferManager
   public:
     VulkanBufferManager();
 
-    void copyBuffer(VkDevice device,
-      VkQueue transfer_queue,
-      VkCommandPool transfer_command_pool,
+    void copyBuffer(vk::Device device,
+      vk::Queue transfer_queue,
+      vk::CommandPool transfer_command_pool,
       VulkanBuffer &src_buffer,
       VulkanBuffer &dst_buffer,
-      VkDeviceSize buffer_size);
+      vk::DeviceSize buffer_size);
 
-    void copyBuffer(VkDevice device,
-      VkQueue transfer_queue,
-      VkCommandPool transfer_command_pool,
+    void copyBuffer(vk::Device device,
+      vk::Queue transfer_queue,
+      vk::CommandPool transfer_command_pool,
       VulkanBuffer src_buffer,
       VulkanBuffer dst_buffer,
-      VkDeviceSize buffer_size);
+      vk::DeviceSize buffer_size);
 
-    void copyImageBuffer(VkDevice device,
-      VkQueue transfer_queue,
-      VkCommandPool transfer_command_pool,
-      VkBuffer src_buffer,
-      VkImage image,
+    void copyImageBuffer(vk::Device device,
+      vk::Queue transfer_queue,
+      vk::CommandPool transfer_command_pool,
+      vk::Buffer src_buffer,
+      vk::Image image,
       uint32_t width,
       uint32_t height);
 
     template<typename T>
     void createBufferAndUploadVectorOnDevice(VulkanDevice *device,
-      VkCommandPool commandPool,
+      vk::CommandPool commandPool,
       VulkanBuffer &vulkanBuffer,
-      VkBufferUsageFlags dstBufferUsageFlags,
-      VkMemoryPropertyFlags dstBufferMemoryPropertyFlags,
+      vk::BufferUsageFlags dstBufferUsageFlags,
+      vk::MemoryPropertyFlags dstBufferMemoryPropertyFlags,
       const std::vector<T> &data,
-      VkMemoryAllocateFlags dstBufferMemoryAllocateFlags = 0,
-      VkQueue transfer_queue = VK_NULL_HANDLE);
+      vk::MemoryAllocateFlags dstBufferMemoryAllocateFlags = {},
+      vk::Queue transfer_queue = {});
 
     template<typename T>
     void createBufferAndUploadVectorOnDevice(VulkanDevice *device,
-      VkCommandPool commandPool,
+      vk::CommandPool commandPool,
       VulkanBuffer &vulkanBuffer,
-      VkBufferUsageFlags dstBufferUsageFlags,
-      VkMemoryPropertyFlags dstBufferMemoryPropertyFlags,
+      vk::BufferUsageFlags dstBufferUsageFlags,
+      vk::MemoryPropertyFlags dstBufferMemoryPropertyFlags,
       std::vector<T> &data,
-      VkMemoryAllocateFlags dstBufferMemoryAllocateFlags = 0);
+      vk::MemoryAllocateFlags dstBufferMemoryAllocateFlags = {});
 
     ~VulkanBufferManager();
 
@@ -65,15 +65,15 @@ class VulkanBufferManager
 
 template<typename T>
 inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(VulkanDevice *device,
-  VkCommandPool commandPool,
+  vk::CommandPool commandPool,
   VulkanBuffer &vulkanBuffer,
-  VkBufferUsageFlags dstBufferUsageFlags,
-  VkMemoryPropertyFlags dstBufferMemoryPropertyFlags,
+  vk::BufferUsageFlags dstBufferUsageFlags,
+  vk::MemoryPropertyFlags dstBufferMemoryPropertyFlags,
   const std::vector<T> &data,
-  VkMemoryAllocateFlags dstBufferMemoryAllocateFlags,
-  VkQueue transfer_queue)
+  vk::MemoryAllocateFlags dstBufferMemoryAllocateFlags,
+  vk::Queue transfer_queue)
 {
-    VkDeviceSize bufferSize = sizeof(T) * data.size();
+    vk::DeviceSize bufferSize = sizeof(T) * data.size();
     if (bufferSize == 0) {
         bufferSize = sizeof(uint32_t);
         vulkanBuffer.create(
@@ -85,20 +85,19 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(VulkanDevic
 
     stagingBuffer.create(device,
       bufferSize,
-      VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+      vk::BufferUsageFlagBits::eTransferSrc,
+      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    void *mapped_data;
-    vkMapMemory(device->getLogicalDevice(), stagingBuffer.getBufferMemory(), 0, bufferSize, 0, &mapped_data);
+    void *mapped_data = device->getLogicalDevice().mapMemory(stagingBuffer.getBufferMemory(), 0, bufferSize);
     std::memcpy(mapped_data, data.data(), static_cast<size_t>(bufferSize));
-    vkUnmapMemory(device->getLogicalDevice(), stagingBuffer.getBufferMemory());
+    device->getLogicalDevice().unmapMemory(stagingBuffer.getBufferMemory());
 
     vulkanBuffer.create(
       device, bufferSize, dstBufferUsageFlags, dstBufferMemoryPropertyFlags, dstBufferMemoryAllocateFlags);
 
-    VkQueue const queue = (transfer_queue != VK_NULL_HANDLE) ? transfer_queue : device->getGraphicsQueue();
+    vk::Queue const queue = transfer_queue ? transfer_queue : device->getGraphicsQueue();
     auto const copy_buffer_ref = static_cast<void (VulkanBufferManager::*)(
-      VkDevice, VkQueue, VkCommandPool, VulkanBuffer &, VulkanBuffer &, VkDeviceSize)>(
+      vk::Device, vk::Queue, vk::CommandPool, VulkanBuffer &, VulkanBuffer &, vk::DeviceSize)>(
       &VulkanBufferManager::copyBuffer);
     (this->*copy_buffer_ref)(device->getLogicalDevice(), queue, commandPool, stagingBuffer, vulkanBuffer, bufferSize);
 
@@ -107,12 +106,12 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(VulkanDevic
 
 template<typename T>
 inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(VulkanDevice *device,
-  VkCommandPool commandPool,
+  vk::CommandPool commandPool,
   VulkanBuffer &vulkanBuffer,
-  VkBufferUsageFlags dstBufferUsageFlags,
-  VkMemoryPropertyFlags dstBufferMemoryPropertyFlags,
+  vk::BufferUsageFlags dstBufferUsageFlags,
+  vk::MemoryPropertyFlags dstBufferMemoryPropertyFlags,
   std::vector<T> &data,
-  VkMemoryAllocateFlags dstBufferMemoryAllocateFlags)
+  vk::MemoryAllocateFlags dstBufferMemoryAllocateFlags)
 {
     createBufferAndUploadVectorOnDevice(device,
       commandPool,
@@ -121,6 +120,6 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(VulkanDevic
       dstBufferMemoryPropertyFlags,
       static_cast<const std::vector<T> &>(data),
       dstBufferMemoryAllocateFlags,
-      VK_NULL_HANDLE);
+      vk::Queue{});
 }
 }// namespace Kataglyphis

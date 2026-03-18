@@ -3,7 +3,7 @@ module;
 #include "renderer/pushConstants/PushConstantRayTracing.hpp"
 #include <glm/glm.hpp>
 #include <vector>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.raytracing;
 
@@ -18,43 +18,43 @@ class Raytracing
   public:
     Raytracing();
 
-    void init(VulkanDevice *in_device, const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts);
+    void init(VulkanDevice *in_device, const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts);
 
-    void shaderHotReload(const std::vector<VkDescriptorSetLayout> &descriptor_set_layouts);
+    void shaderHotReload(const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts);
 
-    void recordCommands(VkCommandBuffer &commandBuffer,
+    void recordCommands(vk::CommandBuffer &commandBuffer,
       VulkanImage &renderImage,
       VulkanSwapChain *vulkanSwapChain,
-      const std::vector<VkDescriptorSet> &descriptorSets);
+      const std::vector<vk::DescriptorSet> &descriptorSets);
 
     void cleanUp();
 
     ~Raytracing();
 
   private:
-    VulkanDevice *device{ VK_NULL_HANDLE };
-    [[maybe_unused]] VulkanSwapChain *vulkanSwapChain{ VK_NULL_HANDLE };
+    VulkanDevice *device{ nullptr };
+    [[maybe_unused]] VulkanSwapChain *vulkanSwapChain{ nullptr };
 
-    VkPipeline graphicsPipeline{ VK_NULL_HANDLE };
-    VkPipelineLayout pipeline_layout{ VK_NULL_HANDLE };
+    vk::Pipeline graphicsPipeline{};
+    vk::PipelineLayout pipeline_layout{};
     PushConstantRaytracing pc{ glm::vec4(0.f) };
-    VkPushConstantRange pc_ranges{ VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM, 0, 0 };
+    vk::PushConstantRange pc_ranges{ vk::ShaderStageFlagBits::eAll, 0, 0 };
 
-    std::vector<VkRayTracingShaderGroupCreateInfoKHR> shader_groups;
+    std::vector<vk::RayTracingShaderGroupCreateInfoKHR> shader_groups;
     VulkanBuffer shaderBindingTableBuffer;
     VulkanBuffer raygenShaderBindingTableBuffer;
     VulkanBuffer missShaderBindingTableBuffer;
     VulkanBuffer hitShaderBindingTableBuffer;
 
-    VkStridedDeviceAddressRegionKHR rgen_region{};
-    VkStridedDeviceAddressRegionKHR miss_region{};
-    VkStridedDeviceAddressRegionKHR hit_region{};
-    VkStridedDeviceAddressRegionKHR call_region{};
+    vk::StridedDeviceAddressRegionKHR rgen_region{};
+    vk::StridedDeviceAddressRegionKHR miss_region{};
+    vk::StridedDeviceAddressRegionKHR hit_region{};
+    vk::StridedDeviceAddressRegionKHR call_region{};
 
-    VkPhysicalDeviceRayTracingPipelinePropertiesKHR raytracing_properties{};
+    vk::PhysicalDeviceRayTracingPipelinePropertiesKHR raytracing_properties{};
 
     void createPCRange();
-    void createGraphicsPipeline(const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts);
+    void createGraphicsPipeline(const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts);
     void createSBT();
 };
 }// namespace Kataglyphis::VulkanRendererInternals

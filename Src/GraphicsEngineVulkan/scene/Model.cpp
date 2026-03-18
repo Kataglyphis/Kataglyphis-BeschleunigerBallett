@@ -5,7 +5,7 @@ module;
 #include <glm/ext/matrix_float4x4.hpp>
 #include <utility>
 #include <vector>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.hpp>
 
 module kataglyphis.vulkan.model;
 
@@ -25,16 +25,16 @@ void Model::cleanUp()
 {
     for (Texture &texture : modelTextures) { texture.cleanUp(); }
 
-    for (VkSampler texture_sampler : modelTextureSamplers) {
-        vkDestroySampler(device->getLogicalDevice(), texture_sampler, nullptr);
+    for (vk::Sampler texture_sampler : modelTextureSamplers) {
+        device->getLogicalDevice().destroySampler(texture_sampler);
     }
 
     mesh.cleanUp();
 }
 
 void Model::add_new_mesh(VulkanDevice *vulkan_device,
-  VkQueue transfer_queue,
-  VkCommandPool command_pool,
+  vk::Queue transfer_queue,
+  vk::CommandPool command_pool,
   std::vector<Vertex> &vertices,
   std::vector<unsigned int> &indices,
   std::vector<unsigned int> &materialIndex,
@@ -69,29 +69,24 @@ Model::~Model() = default;
 
 void Model::addSampler(const Texture &newTexture)
 {
-    VkSampler newSampler = nullptr;
-    VkPhysicalDeviceFeatures physical_device_features{};
-    vkGetPhysicalDeviceFeatures(device->getPhysicalDevice(), &physical_device_features);
+    vk::PhysicalDeviceFeatures physical_device_features = device->getPhysicalDevice().getFeatures();
 
-    // sampler create info
-    VkSamplerCreateInfo sampler_create_info{};
-    sampler_create_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    sampler_create_info.magFilter = VK_FILTER_LINEAR;
-    sampler_create_info.minFilter = VK_FILTER_LINEAR;
-    sampler_create_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sampler_create_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sampler_create_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sampler_create_info.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+    vk::SamplerCreateInfo sampler_create_info{};
+    sampler_create_info.magFilter = vk::Filter::eLinear;
+    sampler_create_info.minFilter = vk::Filter::eLinear;
+    sampler_create_info.addressModeU = vk::SamplerAddressMode::eRepeat;
+    sampler_create_info.addressModeV = vk::SamplerAddressMode::eRepeat;
+    sampler_create_info.addressModeW = vk::SamplerAddressMode::eRepeat;
+    sampler_create_info.borderColor = vk::BorderColor::eFloatOpaqueBlack;
     sampler_create_info.unnormalizedCoordinates = VK_FALSE;
-    sampler_create_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    sampler_create_info.mipmapMode = vk::SamplerMipmapMode::eLinear;
     sampler_create_info.mipLodBias = 0.0F;
     sampler_create_info.minLod = 0.0F;
     sampler_create_info.maxLod = static_cast<float>(newTexture.getMipLevel());
     sampler_create_info.anisotropyEnable = physical_device_features.samplerAnisotropy;
     sampler_create_info.maxAnisotropy = (physical_device_features.samplerAnisotropy != 0u) ? 16.0F : 1.0F;
 
-    VkResult const result = vkCreateSampler(device->getLogicalDevice(), &sampler_create_info, nullptr, &newSampler);
-    ASSERT_VULKAN(result, "Failed to create a texture sampler!")
+    vk::Sampler newSampler = device->getLogicalDevice().createSampler(sampler_create_info);
 
     modelTextureSamplers.push_back(newSampler);
 }

@@ -2,7 +2,7 @@ module;
 
 #include <cstdint>
 #include <utility>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.hpp>
 
 #include "common/MemoryHelper.hpp"
 #include "common/Utilities.hpp"
@@ -17,9 +17,9 @@ Kataglyphis::VulkanBuffer::VulkanBuffer() = default;
 Kataglyphis::VulkanBuffer::VulkanBuffer(VulkanBuffer &&other) noexcept
   : device(other.device), buffer(other.buffer), bufferMemory(other.bufferMemory), created(other.created)
 {
-    other.device = VK_NULL_HANDLE;
-    other.buffer = VK_NULL_HANDLE;
-    other.bufferMemory = VK_NULL_HANDLE;
+    other.device = nullptr;
+    other.buffer = vk::Buffer{};
+    other.bufferMemory = vk::DeviceMemory{};
     other.created = false;
 }
 
@@ -33,9 +33,9 @@ auto Kataglyphis::VulkanBuffer::operator=(VulkanBuffer &&other) noexcept -> Vulk
         bufferMemory = other.bufferMemory;
         created = other.created;
 
-        other.device = VK_NULL_HANDLE;
-        other.buffer = VK_NULL_HANDLE;
-        other.bufferMemory = VK_NULL_HANDLE;
+        other.device = nullptr;
+        other.buffer = vk::Buffer{};
+        other.bufferMemory = vk::DeviceMemory{};
         other.created = false;
     }
 
@@ -43,38 +43,33 @@ auto Kataglyphis::VulkanBuffer::operator=(VulkanBuffer &&other) noexcept -> Vulk
 }
 
 void Kataglyphis::VulkanBuffer::create(VulkanDevice *device,
-  VkDeviceSize buffer_size,
-  VkBufferUsageFlags buffer_usage_flags,
-  VkMemoryPropertyFlags buffer_propertiy_flags,
-  VkMemoryAllocateFlags buffer_allocate_flags)
+  vk::DeviceSize buffer_size,
+  vk::BufferUsageFlags buffer_usage_flags,
+  vk::MemoryPropertyFlags buffer_propertiy_flags,
+  vk::MemoryAllocateFlags buffer_allocate_flags)
 {
     this->device = device;
 
     // information to create a buffer (doesn't include assigning memory)
-    VkBufferCreateInfo buffer_info{};
-    buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    vk::BufferCreateInfo buffer_info{};
     buffer_info.size = buffer_size;
     // multiple types of buffer possible, e.g. vertex buffer
     buffer_info.usage = buffer_usage_flags;
     // similar to swap chain images, can share vertex buffers
-    buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    buffer_info.sharingMode = vk::SharingMode::eExclusive;
 
-    VkResult result = vkCreateBuffer(device->getLogicalDevice(), &buffer_info, nullptr, &buffer);
-    ASSERT_VULKAN(result, "Failed to create a buffer!");
+    buffer = device->getLogicalDevice().createBuffer(buffer_info);
 
     // get buffer memory requirements
-    VkMemoryRequirements memory_requirements{};
-    vkGetBufferMemoryRequirements(device->getLogicalDevice(), buffer, &memory_requirements);
+    vk::MemoryRequirements memory_requirements = device->getLogicalDevice().getBufferMemoryRequirements(buffer);
 
     // allocate memory to buffer
-    VkMemoryAllocateInfo memory_alloc_info{};
-    memory_alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    vk::MemoryAllocateInfo memory_alloc_info{};
     memory_alloc_info.allocationSize = memory_requirements.size;
     memory_alloc_info.pNext = nullptr;
 
-    VkMemoryAllocateFlagsInfo memory_allocate_flags_info{};
-    if (buffer_allocate_flags != 0) {
-        memory_allocate_flags_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+    vk::MemoryAllocateFlagsInfo memory_allocate_flags_info{};
+    if (buffer_allocate_flags) {
         memory_allocate_flags_info.flags = buffer_allocate_flags;
         memory_alloc_info.pNext = &memory_allocate_flags_info;
     }
@@ -91,24 +86,23 @@ void Kataglyphis::VulkanBuffer::create(VulkanDevice *device,
     memory_alloc_info.memoryTypeIndex = memory_type_index;
 
     // allocate memory to VkDeviceMemory
-    result = vkAllocateMemory(device->getLogicalDevice(), &memory_alloc_info, nullptr, &bufferMemory);
-    ASSERT_VULKAN(result, "Failed to allocate memory for buffer!");
+    bufferMemory = device->getLogicalDevice().allocateMemory(memory_alloc_info);
 
     // allocate memory to given buffer
-    vkBindBufferMemory(device->getLogicalDevice(), buffer, bufferMemory, 0);
+    device->getLogicalDevice().bindBufferMemory(buffer, bufferMemory, 0);
 
     created = true;
 }
 
 void Kataglyphis::VulkanBuffer::cleanUp()
 {
-    if (created && device != VK_NULL_HANDLE) {
-        vkDestroyBuffer(device->getLogicalDevice(), buffer, nullptr);
-        vkFreeMemory(device->getLogicalDevice(), bufferMemory, nullptr);
+    if (created && device != nullptr) {
+        device->getLogicalDevice().destroyBuffer(buffer);
+        device->getLogicalDevice().freeMemory(bufferMemory);
     }
 
-    buffer = VK_NULL_HANDLE;
-    bufferMemory = VK_NULL_HANDLE;
+    buffer = vk::Buffer{};
+    bufferMemory = vk::DeviceMemory{};
     created = false;
 }
 

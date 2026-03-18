@@ -4,7 +4,7 @@ module;
 #include <glm/gtc/matrix_transform.hpp>
 #include <memory>
 #include <vector>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.scene;
 
@@ -35,7 +35,7 @@ class Scene
     {
         return model_list[static_cast<size_t>(model_index)]->getTextures();
     };
-    std::vector<VkSampler> &getTextureSampler(uint32_t model_index)
+    std::vector<vk::Sampler> &getTextureSampler(uint32_t model_index)
     {
         return model_list[static_cast<size_t>(model_index)]->getTextureSamplers();
     };
@@ -49,13 +49,13 @@ class Scene
     {
         return static_cast<uint32_t>(model_list[static_cast<size_t>(model_index)]->getMeshCount());
     };
-    VkBuffer getVertexBuffer(uint32_t model_index, uint32_t mesh_index)
+    vk::Buffer getVertexBuffer(uint32_t model_index, uint32_t mesh_index)
     {
         return model_list[static_cast<size_t>(model_index)]
           ->getMesh(static_cast<size_t>(mesh_index))
           ->getVertexBuffer();
     };
-    VkBuffer getIndexBuffer(uint32_t model_index, uint32_t mesh_index)
+    vk::Buffer getIndexBuffer(uint32_t model_index, uint32_t mesh_index)
     {
         return model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index))->getIndexBuffer();
     };
@@ -68,7 +68,7 @@ class Scene
     std::vector<ObjectDescription> getObjectDescriptions() { return object_descriptions; };
     std::vector<std::shared_ptr<Model>> const &get_model_list() { return model_list; };
 
-    void loadModel(VulkanDevice *device, VkCommandPool commandPool);
+    void loadModel(VulkanDevice *device, vk::CommandPool commandPool);
 
     void add_model(const std::shared_ptr<Model> &model);
     void add_object_description(ObjectDescription object_description);

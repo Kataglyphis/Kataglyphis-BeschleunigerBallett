@@ -3,45 +3,27 @@ module;
 #include <array>
 #include <cstddef>
 #include <glm/glm.hpp>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.hpp>
 
 module kataglyphis.vulkan.vertex;
 
 namespace vertex {
 
-auto getVertexInputAttributeDesc() -> std::array<VkVertexInputAttributeDescription, 4>
+auto getVertexInputAttributeDesc() -> std::array<vk::VertexInputAttributeDescription, 4>
 {
-    std::array<VkVertexInputAttributeDescription, 4> attribute_describtions{};
+    std::array<vk::VertexInputAttributeDescription, 4> attribute_describtions{};
 
-    // Position attribute
-    attribute_describtions[0].binding = 0;
-    attribute_describtions[0].location = 0;
-    attribute_describtions[0].format = VK_FORMAT_R32G32B32_SFLOAT;// format data will take (also helps define
-                                                                  // size of data)
-    attribute_describtions[0].offset = offsetof(Vertex, position);
+    attribute_describtions[0] =
+      vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, position));
 
-    // normal coord attribute
-    attribute_describtions[1].binding = 0;
-    attribute_describtions[1].location = 1;
-    attribute_describtions[1].format = VK_FORMAT_R32G32B32_SFLOAT;// format data will take (also helps define
-                                                                  // size of data)
-    attribute_describtions[1].offset = offsetof(Vertex, normal);// where this attribute is defined in the data
-                                                                // for a single vertex
+    attribute_describtions[1] =
+      vk::VertexInputAttributeDescription(0, 1, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, normal));
 
-    // normal coord attribute
-    attribute_describtions[2].binding = 0;
-    attribute_describtions[2].location = 2;
-    attribute_describtions[2].format = VK_FORMAT_R32G32B32_SFLOAT;// format data will take (also helps define
-                                                                  // size of data)
-    attribute_describtions[2].offset = offsetof(Vertex, color);
+    attribute_describtions[2] =
+      vk::VertexInputAttributeDescription(0, 2, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color));
 
-    attribute_describtions[3].binding = 0;
-    // texture coord attribute
-    attribute_describtions[3].location = 3;
-    attribute_describtions[3].format = VK_FORMAT_R32G32_SFLOAT;// format data will take (also helps define size
-                                                               // of data)
-    attribute_describtions[3].offset = offsetof(Vertex, texture_coords);// where this attribute is defined in
-                                                                        // the data for a single vertex
+    attribute_describtions[3] =
+      vk::VertexInputAttributeDescription(0, 3, vk::Format::eR32G32Sfloat, offsetof(Vertex, texture_coords));
 
     return attribute_describtions;
 }

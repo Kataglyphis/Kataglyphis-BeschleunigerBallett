@@ -1,7 +1,7 @@
 module;
 
 #include <memory>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.gui;
 
@@ -18,9 +18,9 @@ class GUI
     GUI(Window *window);
 
     void initializeVulkanContext(VulkanDevice *device,
-      const VkInstance &instance,
-      const VkRenderPass &post_render_pass,
-      const VkCommandPool &graphics_command_pool,
+      const vk::Instance &instance,
+      const vk::RenderPass &post_render_pass,
+      const vk::CommandPool &graphics_command_pool,
       uint32_t image_count);
 
     GUISceneSharedVars getGuiSceneSharedVars() { return guiSceneSharedVars; };
@@ -39,13 +39,13 @@ class GUI
 
   private:
     void create_gui_context(Window *window,
-      const VkInstance &instance,
-      const VkRenderPass &post_render_pass,
+      const vk::Instance &instance,
+      const vk::RenderPass &post_render_pass,
       uint32_t image_count);
 
-    VulkanDevice *device{ VK_NULL_HANDLE };
-    Window *window{ VK_NULL_HANDLE };
-    VkDescriptorPool gui_descriptor_pool{ VK_NULL_HANDLE };
+    VulkanDevice *device{ nullptr };
+    Window *window{ nullptr };
+    vk::DescriptorPool gui_descriptor_pool{};
     Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
 
     GUISceneSharedVars guiSceneSharedVars;

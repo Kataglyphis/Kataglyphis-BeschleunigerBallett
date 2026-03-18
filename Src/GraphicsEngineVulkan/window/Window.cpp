@@ -8,7 +8,7 @@ module;
 #include <imgui.h>
 #include <iostream>
 
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.hpp>
 
 module kataglyphis.vulkan.window;
 

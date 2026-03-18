@@ -1,6 +1,6 @@
 module;
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.debug;
 
@@ -17,7 +17,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL messageCallback(VkDebugReportFlagsEXT flags,
   const char *pMsg,
   void *pUserData);
 
-void setupDebugging(VkInstance instance, VkDebugReportFlagsEXT flags, VkDebugReportCallbackEXT callBack);
-void freeDebugCallback(VkInstance instance);
+void setupDebugging(vk::Instance instance, vk::DebugReportFlagsEXT flags, vk::DebugReportCallbackEXT callBack);
+void freeDebugCallback(vk::Instance instance);
 
 }// namespace Kataglyphis::debug

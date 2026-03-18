@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <stdexcept>
 #include <vector>
@@ -8,28 +8,27 @@
 #include "spdlog/spdlog.h"
 
 namespace Kataglyphis {
-static VkFormat choose_supported_format(VkPhysicalDevice physical_device,
-  const std::vector<VkFormat> &formats,
-  VkImageTiling tiling,
-  VkFormatFeatureFlags feature_flags)
+static vk::Format choose_supported_format(vk::PhysicalDevice physical_device,
+  const std::vector<vk::Format> &formats,
+  vk::ImageTiling tiling,
+  vk::FormatFeatureFlags feature_flags)
 {
     // loop through options and find compatible one
-    for (VkFormat format : formats) {
+    for (vk::Format format : formats) {
         // get properties for give format on this device
-        VkFormatProperties properties;
-        vkGetPhysicalDeviceFormatProperties(physical_device, format, &properties);
+        vk::FormatProperties properties = physical_device.getFormatProperties(format);
 
         // depending on tiling choice, need to check for different bit flag
-        if (tiling == VK_IMAGE_TILING_LINEAR && (properties.linearTilingFeatures & feature_flags) == feature_flags) {
+        if (tiling == vk::ImageTiling::eLinear && (properties.linearTilingFeatures & feature_flags) == feature_flags) {
             return format;
 
-        } else if (tiling == VK_IMAGE_TILING_OPTIMAL
+        } else if (tiling == vk::ImageTiling::eOptimal
                    && (properties.optimalTilingFeatures & feature_flags) == feature_flags) {
             return format;
         }
     }
 
     spdlog::error("Failed to find supported format!");
-    return VK_FORMAT_UNDEFINED;
+    return vk::Format::eUndefined;
 }
 }// namespace Kataglyphis

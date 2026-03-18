@@ -3,7 +3,7 @@ module;
 #include "scene/Vertex.hpp"
 
 #define GLM_ENABLE_EXPERIMENTAL
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <array>
 
@@ -12,5 +12,5 @@ export module kataglyphis.vulkan.vertex;
 export using ::Vertex;
 
 export namespace vertex {
-std::array<VkVertexInputAttributeDescription, 4> getVertexInputAttributeDesc();
+std::array<vk::VertexInputAttributeDescription, 4> getVertexInputAttributeDesc();
 }

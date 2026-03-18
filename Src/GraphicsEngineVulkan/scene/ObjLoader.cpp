@@ -7,7 +7,7 @@ module;
 #include <string>
 #include <utility>
 #include <vector>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.hpp>
 #define TINYOBJLOADER_IMPLEMENTATION
 #include <glm/ext/vector_float2.hpp>
 #include <glm/geometric.hpp>
@@ -27,7 +27,7 @@ import kataglyphis.vulkan.file;
 
 using namespace Kataglyphis;
 
-ObjLoader::ObjLoader(VulkanDevice *device, VkQueue transfer_queue, VkCommandPool command_pool)
+ObjLoader::ObjLoader(VulkanDevice *device, vk::Queue transfer_queue, vk::CommandPool command_pool)
   : device(device), transfer_queue(transfer_queue), command_pool(command_pool)
 {}
 

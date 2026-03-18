@@ -3,7 +3,7 @@ module;
 #include "common/Utilities.hpp"
 #include <cstdint>
 #include <utility>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 module kataglyphis.vulkan.image_view;
 
@@ -14,8 +14,8 @@ Kataglyphis::VulkanImageView::VulkanImageView() = default;
 Kataglyphis::VulkanImageView::VulkanImageView(VulkanImageView &&other) noexcept
   : device(other.device), imageView(other.imageView)
 {
-    other.device = VK_NULL_HANDLE;
-    other.imageView = VK_NULL_HANDLE;
+    other.device = nullptr;
+    other.imageView = nullptr;
 }
 
 auto Kataglyphis::VulkanImageView::operator=(VulkanImageView &&other) noexcept -> VulkanImageView &
@@ -26,33 +26,32 @@ auto Kataglyphis::VulkanImageView::operator=(VulkanImageView &&other) noexcept -
         device = other.device;
         imageView = other.imageView;
 
-        other.device = VK_NULL_HANDLE;
-        other.imageView = VK_NULL_HANDLE;
+        other.device = nullptr;
+        other.imageView = nullptr;
     }
 
     return *this;
 }
 
-void Kataglyphis::VulkanImageView::setImageView(VkImageView in_imageView) { this->imageView = in_imageView; }
+void Kataglyphis::VulkanImageView::setImageView(vk::ImageView in_imageView) { this->imageView = in_imageView; }
 
 void Kataglyphis::VulkanImageView::create(VulkanDevice *in_device,
-  VkImage image,
-  VkFormat format,
-  VkImageAspectFlags aspect_flags,
+  vk::Image image,
+  vk::Format format,
+  vk::ImageAspectFlags aspect_flags,
   uint32_t mip_levels)
 {
     this->device = in_device;
 
-    VkImageViewCreateInfo view_create_info{};
-    view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    vk::ImageViewCreateInfo view_create_info{};
     view_create_info.image = image;// image to create view for
-    view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;// typ of image
+    view_create_info.viewType = vk::ImageViewType::e2D;// typ of image
     view_create_info.format = format;
-    view_create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;// allows remapping of rgba components to
-                                                                  // other rgba values
-    view_create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-    view_create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+    view_create_info.components.r = vk::ComponentSwizzle::eIdentity;// allows remapping of rgba components to
+                                                                    // other rgba values
+    view_create_info.components.g = vk::ComponentSwizzle::eIdentity;
+    view_create_info.components.b = vk::ComponentSwizzle::eIdentity;
+    view_create_info.components.a = vk::ComponentSwizzle::eIdentity;
 
     // subresources allow the view to view only a part of an image
     view_create_info.subresourceRange.aspectMask = aspect_flags;// which aspect of an image to view (e.g. color bit for
@@ -63,17 +62,14 @@ void Kataglyphis::VulkanImageView::create(VulkanDevice *in_device,
     view_create_info.subresourceRange.layerCount = 1;// number of array levels to view
 
     // create image view
-    VkResult const result = vkCreateImageView(device->getLogicalDevice(), &view_create_info, nullptr, &imageView);
-    ASSERT_VULKAN(result, "Failed to create an image view!")
+    imageView = device->getLogicalDevice().createImageView(view_create_info);
 }
 
 void Kataglyphis::VulkanImageView::cleanUp()
 {
-    if (device != VK_NULL_HANDLE && imageView != VK_NULL_HANDLE) {
-        vkDestroyImageView(device->getLogicalDevice(), imageView, nullptr);
-    }
+    if (device != nullptr && imageView) { device->getLogicalDevice().destroyImageView(imageView); }
 
-    imageView = VK_NULL_HANDLE;
+    imageView = nullptr;
 }
 
 Kataglyphis::VulkanImageView::~VulkanImageView() = default;

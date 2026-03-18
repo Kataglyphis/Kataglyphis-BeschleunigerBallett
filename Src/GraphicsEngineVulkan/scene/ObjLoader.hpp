@@ -1,5 +1,5 @@
 #pragma once
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include <memory>
 
@@ -12,14 +12,14 @@ namespace Kataglyphis {
 class ObjLoader
 {
   public:
-    ObjLoader(VulkanDevice *device, VkQueue transfer_queue, VkCommandPool command_pool);
+    ObjLoader(VulkanDevice *device, vk::Queue transfer_queue, vk::CommandPool command_pool);
 
     std::shared_ptr<Model> loadModel(const std::string &modelFile);
 
   private:
     Kataglyphis::VulkanDevice *device;
-    VkQueue transfer_queue;
-    VkCommandPool command_pool;
+    vk::Queue transfer_queue;
+    vk::CommandPool command_pool;
 
     std::vector<Vertex> vertices;
     std::vector<unsigned int> indices;

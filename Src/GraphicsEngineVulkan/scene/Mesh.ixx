@@ -1,7 +1,7 @@
 module;
 #include <glm/glm.hpp>
 #include <vector>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.mesh;
 
@@ -18,8 +18,8 @@ class Mesh
 {
   public:
     Mesh(VulkanDevice *device,
-      VkQueue transfer_queue,
-      VkCommandPool transfer_command_pool,
+      vk::Queue transfer_queue,
+      vk::CommandPool transfer_command_pool,
       std::vector<Vertex> &vertices,
       std::vector<uint32_t> &indices,
       std::vector<unsigned int> &materialIndex,
@@ -37,9 +37,9 @@ class Mesh
     glm::mat4 getModel() { return model; };
     uint32_t getVertexCount() { return vertex_count; };
     uint32_t getIndexCount() { return index_count; };
-    VkBuffer &getVertexBuffer() { return vertexBuffer.getBuffer(); };
-    VkBuffer &getMaterialIDBuffer() { return materialIdsBuffer.getBuffer(); };
-    VkBuffer &getIndexBuffer() { return indexBuffer.getBuffer(); };
+    vk::Buffer &getVertexBuffer() { return vertexBuffer.getBuffer(); };
+    vk::Buffer &getMaterialIDBuffer() { return materialIdsBuffer.getBuffer(); };
+    vk::Buffer &getIndexBuffer() { return indexBuffer.getBuffer(); };
 
     void setModel(glm::mat4 new_model);
 
@@ -64,18 +64,18 @@ class Mesh
     uint32_t vertex_count{ static_cast<uint32_t>(-1) };
     uint32_t index_count{ static_cast<uint32_t>(-1) };
 
-    VulkanDevice *device{ VK_NULL_HANDLE };
+    VulkanDevice *device{ nullptr };
 
-    void createVertexBuffer(VkQueue transfer_queue, VkCommandPool transfer_command_pool, std::vector<Vertex> &vertices);
+    void createVertexBuffer(vk::Queue transfer_queue, vk::CommandPool transfer_command_pool, std::vector<Vertex> &vertices);
 
-    void createIndexBuffer(VkQueue transfer_queue, VkCommandPool transfer_command_pool, std::vector<uint32_t> &indices);
+    void createIndexBuffer(vk::Queue transfer_queue, vk::CommandPool transfer_command_pool, std::vector<uint32_t> &indices);
 
-    void createMaterialIDBuffer(VkQueue transfer_queue,
-      VkCommandPool transfer_command_pool,
+    void createMaterialIDBuffer(vk::Queue transfer_queue,
+      vk::CommandPool transfer_command_pool,
       std::vector<unsigned int> &materialIndex);
 
-    void createMaterialBuffer(VkQueue transfer_queue,
-      VkCommandPool transfer_command_pool,
+    void createMaterialBuffer(vk::Queue transfer_queue,
+      vk::CommandPool transfer_command_pool,
       std::vector<ObjMaterial> &materials);
 };
 }// namespace Kataglyphis

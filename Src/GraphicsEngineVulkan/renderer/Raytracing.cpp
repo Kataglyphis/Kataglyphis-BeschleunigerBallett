@@ -7,7 +7,7 @@ module;
 #include <sstream>
 #include <string>
 #include <vector>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.hpp>
 
 #include "common/MemoryHelper.hpp"
 #include "common/Utilities.hpp"
@@ -21,7 +21,7 @@ import kataglyphis.vulkan.shader_helper;
 Kataglyphis::VulkanRendererInternals::Raytracing::Raytracing() = default;
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::init(VulkanDevice *in_device,
-  const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
+  const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
 {
     this->device = in_device;
 
@@ -31,127 +31,94 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::init(VulkanDevice *in_dev
 }
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::shaderHotReload(
-  const std::vector<VkDescriptorSetLayout> &descriptor_set_layouts)
+  const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts)
 {
-    vkDestroyPipeline(device->getLogicalDevice(), graphicsPipeline, nullptr);
+    device->getLogicalDevice().destroyPipeline(graphicsPipeline);
     createGraphicsPipeline(descriptor_set_layouts);
 }
 
-void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(VkCommandBuffer &commandBuffer,
+void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::CommandBuffer &commandBuffer,
   VulkanImage &renderImage,
   VulkanSwapChain *vulkanSwapChain,
-  const std::vector<VkDescriptorSet> &descriptorSets)
+  const std::vector<vk::DescriptorSet> &descriptorSets)
 {
     uint32_t const handle_size = raytracing_properties.shaderGroupHandleSize;
     uint32_t const handle_size_aligned = align_up(handle_size, raytracing_properties.shaderGroupHandleAlignment);
 
-    auto vkGetBufferDeviceAddressKHR = reinterpret_cast<PFN_vkGetBufferDeviceAddressKHR>(
-      vkGetDeviceProcAddr(device->getLogicalDevice(), "vkGetBufferDeviceAddressKHR"));
+    vk::Device logical_device = device->getLogicalDevice();
 
-    auto pvkCmdTraceRaysKHR =
-      reinterpret_cast<PFN_vkCmdTraceRaysKHR>(vkGetDeviceProcAddr(device->getLogicalDevice(), "vkCmdTraceRaysKHR"));
-
-    VkBufferDeviceAddressInfoKHR bufferDeviceAI{};
-    bufferDeviceAI.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+    vk::BufferDeviceAddressInfo bufferDeviceAI{};
     bufferDeviceAI.buffer = raygenShaderBindingTableBuffer.getBuffer();
 
-    rgen_region.deviceAddress = vkGetBufferDeviceAddressKHR(device->getLogicalDevice(), &bufferDeviceAI);
+    rgen_region.deviceAddress = logical_device.getBufferAddress(bufferDeviceAI);
     rgen_region.stride = handle_size_aligned;
     rgen_region.size = handle_size_aligned;
 
     bufferDeviceAI.buffer = missShaderBindingTableBuffer.getBuffer();
-    miss_region.deviceAddress = vkGetBufferDeviceAddressKHR(device->getLogicalDevice(), &bufferDeviceAI);
+    miss_region.deviceAddress = logical_device.getBufferAddress(bufferDeviceAI);
     miss_region.stride = handle_size_aligned;
     miss_region.size = handle_size_aligned;
 
     bufferDeviceAI.buffer = hitShaderBindingTableBuffer.getBuffer();
-    hit_region.deviceAddress = vkGetBufferDeviceAddressKHR(device->getLogicalDevice(), &bufferDeviceAI);
+    hit_region.deviceAddress = logical_device.getBufferAddress(bufferDeviceAI);
     hit_region.stride = handle_size_aligned;
     hit_region.size = handle_size_aligned;
 
-    // for GCC doen't allow references on rvalues go like that ...
     pc.clear_color = { 0.2F, 0.65F, 0.4F, 1.0F };
-    // just "Push" constants to given shader stage directly (no buffer)
-    vkCmdPushConstants(commandBuffer,
-      pipeline_layout,
-      VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR,
+    commandBuffer.pushConstants(pipeline_layout,
+      vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eMissKHR,
       0,
-      sizeof(PushConstantRaytracing),
-      &pc);
+      sizeof(PushConstantRayTracing),
+      reinterpret_cast<void *>(&pc));
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, graphicsPipeline);
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, graphicsPipeline);
 
-    VkImageSubresourceRange subresourceRange{};
-    subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    vk::ImageSubresourceRange subresourceRange{};
+    subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
     subresourceRange.baseMipLevel = 0;
     subresourceRange.levelCount = 1;
     subresourceRange.baseArrayLayer = 0;
     subresourceRange.layerCount = 1;
 
-    VkImageMemoryBarrier rasterizerToRaytracingImageBarrier{};
-    rasterizerToRaytracingImageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    rasterizerToRaytracingImageBarrier.pNext = nullptr;
-    rasterizerToRaytracingImageBarrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    rasterizerToRaytracingImageBarrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    rasterizerToRaytracingImageBarrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    rasterizerToRaytracingImageBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    vk::ImageMemoryBarrier rasterizerToRaytracingImageBarrier{};
+    rasterizerToRaytracingImageBarrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    rasterizerToRaytracingImageBarrier.dstAccessMask = vk::AccessFlagBits::eShaderWrite;
+    rasterizerToRaytracingImageBarrier.oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    rasterizerToRaytracingImageBarrier.newLayout = vk::ImageLayout::eGeneral;
     rasterizerToRaytracingImageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     rasterizerToRaytracingImageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     rasterizerToRaytracingImageBarrier.image = renderImage.getImage();
     rasterizerToRaytracingImageBarrier.subresourceRange = subresourceRange;
 
-    vkCmdPipelineBarrier(commandBuffer,
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-      VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-      0,
-      0,
-      nullptr,
-      0,
-      nullptr,
-      1,
-      &rasterizerToRaytracingImageBarrier);
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+      vk::PipelineStageFlagBits::eRayTracingShaderKHR,
+      {},
+      {},
+      {},
+      rasterizerToRaytracingImageBarrier);
 
-    vkCmdBindDescriptorSets(commandBuffer,
-      VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-      pipeline_layout,
-      0,
-      static_cast<uint32_t>(descriptorSets.size()),
-      descriptorSets.data(),
-      0,
-      nullptr);
+    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, pipeline_layout, 0, descriptorSets, {});
 
-    const VkExtent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-    pvkCmdTraceRaysKHR(commandBuffer,
-      &rgen_region,
-      &miss_region,
-      &hit_region,
-      &call_region,
-      swap_chain_extent.width,
-      swap_chain_extent.height,
-      1);
+    const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
+    commandBuffer.traceRaysKHR(
+      rgen_region, miss_region, hit_region, call_region, swap_chain_extent.width, swap_chain_extent.height, 1);
 
-    VkImageMemoryBarrier raytracingToPostImageBarrier{};
-    raytracingToPostImageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    raytracingToPostImageBarrier.pNext = nullptr;
-    raytracingToPostImageBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    raytracingToPostImageBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    raytracingToPostImageBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-    raytracingToPostImageBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    vk::ImageMemoryBarrier raytracingToPostImageBarrier{};
+    raytracingToPostImageBarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
+    raytracingToPostImageBarrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+    raytracingToPostImageBarrier.oldLayout = vk::ImageLayout::eGeneral;
+    raytracingToPostImageBarrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
     raytracingToPostImageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     raytracingToPostImageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     raytracingToPostImageBarrier.image = renderImage.getImage();
     raytracingToPostImageBarrier.subresourceRange = subresourceRange;
 
-    vkCmdPipelineBarrier(commandBuffer,
-      VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-      0,
-      0,
-      nullptr,
-      0,
-      nullptr,
-      1,
-      &raytracingToPostImageBarrier);
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eRayTracingShaderKHR,
+      vk::PipelineStageFlagBits::eFragmentShader,
+      {},
+      {},
+      {},
+      raytracingToPostImageBarrier);
 }
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::cleanUp()
@@ -161,27 +128,23 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::cleanUp()
     missShaderBindingTableBuffer.cleanUp();
     hitShaderBindingTableBuffer.cleanUp();
 
-    vkDestroyPipeline(device->getLogicalDevice(), graphicsPipeline, nullptr);
-    vkDestroyPipelineLayout(device->getLogicalDevice(), pipeline_layout, nullptr);
+    device->getLogicalDevice().destroyPipeline(graphicsPipeline);
+    device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
 }
 
 Kataglyphis::VulkanRendererInternals::Raytracing::~Raytracing() = default;
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::createPCRange()
 {
-    // define push constant values (no 'create' needed)
     pc_ranges.stageFlags =
-      VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR;
+      vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eMissKHR;
     pc_ranges.offset = 0;
-    pc_ranges.size = sizeof(PushConstantRaytracing);// size of data being passed
+    pc_ranges.size = sizeof(PushConstantRayTracing);
 }
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
-  const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
+  const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
 {
-    auto pvkCreateRayTracingPipelinesKHR = reinterpret_cast<PFN_vkCreateRayTracingPipelinesKHR>(
-      vkGetDeviceProcAddr(device->getLogicalDevice(), "vkCreateRayTracingPipelinesKHR"));
-
     std::stringstream raytracing_shader_dir;
     std::filesystem::path const cwd = std::filesystem::current_path();
     raytracing_shader_dir << cwd.string();
@@ -209,153 +172,113 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
     std::vector<char> const raymiss_shader_code = raymissFile.readCharSequence();
     std::vector<char> const shadow_shader_code = shadowFile.readCharSequence();
 
-    // build shader modules to link to graphics pipeline
-    VkShaderModule raygen_shader_module = shaderHelper.createShaderModule(device, raygen_shader_code);
-    VkShaderModule raychit_shader_module = shaderHelper.createShaderModule(device, raychit_shader_code);
-    VkShaderModule raymiss_shader_module = shaderHelper.createShaderModule(device, raymiss_shader_code);
-    VkShaderModule shadow_shader_module = shaderHelper.createShaderModule(device, shadow_shader_code);
+    vk::ShaderModule raygen_shader_module = shaderHelper.createShaderModule(device, raygen_shader_code);
+    vk::ShaderModule raychit_shader_module = shaderHelper.createShaderModule(device, raychit_shader_code);
+    vk::ShaderModule raymiss_shader_module = shaderHelper.createShaderModule(device, raymiss_shader_code);
+    vk::ShaderModule shadow_shader_module = shaderHelper.createShaderModule(device, shadow_shader_code);
 
-    // create all shader stage infos for creating a group
-    VkPipelineShaderStageCreateInfo rgen_shader_stage_info{};
-    rgen_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    rgen_shader_stage_info.stage = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+    vk::PipelineShaderStageCreateInfo rgen_shader_stage_info{};
+    rgen_shader_stage_info.stage = vk::ShaderStageFlagBits::eRaygenKHR;
     rgen_shader_stage_info.module = raygen_shader_module;
     rgen_shader_stage_info.pName = "main";
 
-    VkPipelineShaderStageCreateInfo rmiss_shader_stage_info{};
-    rmiss_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    rmiss_shader_stage_info.stage = VK_SHADER_STAGE_MISS_BIT_KHR;
+    vk::PipelineShaderStageCreateInfo rmiss_shader_stage_info{};
+    rmiss_shader_stage_info.stage = vk::ShaderStageFlagBits::eMissKHR;
     rmiss_shader_stage_info.module = raymiss_shader_module;
     rmiss_shader_stage_info.pName = "main";
 
-    VkPipelineShaderStageCreateInfo shadow_shader_stage_info{};
-    shadow_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    shadow_shader_stage_info.stage = VK_SHADER_STAGE_MISS_BIT_KHR;
+    vk::PipelineShaderStageCreateInfo shadow_shader_stage_info{};
+    shadow_shader_stage_info.stage = vk::ShaderStageFlagBits::eMissKHR;
     shadow_shader_stage_info.module = shadow_shader_module;
     shadow_shader_stage_info.pName = "main";
 
-    VkPipelineShaderStageCreateInfo rchit_shader_stage_info{};
-    rchit_shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    rchit_shader_stage_info.stage = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+    vk::PipelineShaderStageCreateInfo rchit_shader_stage_info{};
+    rchit_shader_stage_info.stage = vk::ShaderStageFlagBits::eClosestHitKHR;
     rchit_shader_stage_info.module = raychit_shader_module;
     rchit_shader_stage_info.pName = "main";
 
-    // we have all shader stages together
-    std::array<VkPipelineShaderStageCreateInfo, 4> shader_stages = {
+    std::array<vk::PipelineShaderStageCreateInfo, 4> shader_stages = {
         rgen_shader_stage_info, rmiss_shader_stage_info, shadow_shader_stage_info, rchit_shader_stage_info
     };
 
     enum StageIndices { eRaygen, eMiss, eMiss2, eClosestHit, eShaderGroupCount };
 
     shader_groups.reserve(4);
-    VkRayTracingShaderGroupCreateInfoKHR shader_group_create_infos[4];
+    vk::RayTracingShaderGroupCreateInfoKHR shader_group_create_infos[4];
 
-    shader_group_create_infos[0].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-    shader_group_create_infos[0].pNext = nullptr;
-    shader_group_create_infos[0].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+    shader_group_create_infos[0].type = vk::RayTracingShaderGroupTypeKHR::eGeneral;
     shader_group_create_infos[0].generalShader = eRaygen;
     shader_group_create_infos[0].closestHitShader = VK_SHADER_UNUSED_KHR;
     shader_group_create_infos[0].anyHitShader = VK_SHADER_UNUSED_KHR;
     shader_group_create_infos[0].intersectionShader = VK_SHADER_UNUSED_KHR;
-    shader_group_create_infos[0].pShaderGroupCaptureReplayHandle = nullptr;
 
     shader_groups.push_back(shader_group_create_infos[0]);
 
-    shader_group_create_infos[1].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-    shader_group_create_infos[1].pNext = nullptr;
-    shader_group_create_infos[1].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+    shader_group_create_infos[1].type = vk::RayTracingShaderGroupTypeKHR::eGeneral;
     shader_group_create_infos[1].generalShader = eMiss;
     shader_group_create_infos[1].closestHitShader = VK_SHADER_UNUSED_KHR;
     shader_group_create_infos[1].anyHitShader = VK_SHADER_UNUSED_KHR;
     shader_group_create_infos[1].intersectionShader = VK_SHADER_UNUSED_KHR;
-    shader_group_create_infos[1].pShaderGroupCaptureReplayHandle = nullptr;
 
     shader_groups.push_back(shader_group_create_infos[1]);
 
-    shader_group_create_infos[2].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-    shader_group_create_infos[2].pNext = nullptr;
-    shader_group_create_infos[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+    shader_group_create_infos[2].type = vk::RayTracingShaderGroupTypeKHR::eGeneral;
     shader_group_create_infos[2].generalShader = eMiss2;
     shader_group_create_infos[2].closestHitShader = VK_SHADER_UNUSED_KHR;
     shader_group_create_infos[2].anyHitShader = VK_SHADER_UNUSED_KHR;
     shader_group_create_infos[2].intersectionShader = VK_SHADER_UNUSED_KHR;
-    shader_group_create_infos[2].pShaderGroupCaptureReplayHandle = nullptr;
 
     shader_groups.push_back(shader_group_create_infos[2]);
 
-    shader_group_create_infos[3].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-    shader_group_create_infos[3].pNext = nullptr;
-    shader_group_create_infos[3].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+    shader_group_create_infos[3].type = vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup;
     shader_group_create_infos[3].generalShader = VK_SHADER_UNUSED_KHR;
     shader_group_create_infos[3].closestHitShader = eClosestHit;
     shader_group_create_infos[3].anyHitShader = VK_SHADER_UNUSED_KHR;
     shader_group_create_infos[3].intersectionShader = VK_SHADER_UNUSED_KHR;
-    shader_group_create_infos[3].pShaderGroupCaptureReplayHandle = nullptr;
 
     shader_groups.push_back(shader_group_create_infos[3]);
 
-    VkPipelineLayoutCreateInfo pipeline_layout_create_info{};
-    pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    vk::PipelineLayoutCreateInfo pipeline_layout_create_info{};
     pipeline_layout_create_info.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
     pipeline_layout_create_info.pSetLayouts = descriptorSetLayouts.data();
     pipeline_layout_create_info.pushConstantRangeCount = 1;
     pipeline_layout_create_info.pPushConstantRanges = &pc_ranges;
 
-    VkResult result =
-      vkCreatePipelineLayout(device->getLogicalDevice(), &pipeline_layout_create_info, nullptr, &pipeline_layout);
+    vk::Result result =
+      device->getLogicalDevice().createPipelineLayout(&pipeline_layout_create_info, nullptr, &pipeline_layout);
     ASSERT_VULKAN(result, "Failed to create raytracing pipeline layout!")
 
-    VkPipelineLibraryCreateInfoKHR pipeline_library_create_info{};
-    pipeline_library_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR;
-    pipeline_library_create_info.pNext = nullptr;
+    vk::PipelineLibraryCreateInfoKHR pipeline_library_create_info{};
     pipeline_library_create_info.libraryCount = 0;
     pipeline_library_create_info.pLibraries = nullptr;
 
-    VkRayTracingPipelineCreateInfoKHR raytracing_pipeline_create_info{};
-    raytracing_pipeline_create_info.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
-    raytracing_pipeline_create_info.pNext = nullptr;
-    raytracing_pipeline_create_info.flags = 0;
+    vk::RayTracingPipelineCreateInfoKHR raytracing_pipeline_create_info{};
+    raytracing_pipeline_create_info.flags = {};
     raytracing_pipeline_create_info.stageCount = static_cast<uint32_t>(shader_stages.size());
     raytracing_pipeline_create_info.pStages = shader_stages.data();
     raytracing_pipeline_create_info.groupCount = static_cast<uint32_t>(shader_groups.size());
     raytracing_pipeline_create_info.pGroups = shader_groups.data();
-    /*raytracing_pipeline_create_info.pLibraryInfo =
-       &pipeline_library_create_info;
-          raytracing_pipeline_create_info.pLibraryInterface = NULL;*/
-    // TODO(jsh): HARDCODED FOR NOW;
     raytracing_pipeline_create_info.maxPipelineRayRecursionDepth = 2;
     raytracing_pipeline_create_info.layout = pipeline_layout;
 
-    result = pvkCreateRayTracingPipelinesKHR(device->getLogicalDevice(),
-      VK_NULL_HANDLE,
-      VK_NULL_HANDLE,
-      1,
-      &raytracing_pipeline_create_info,
-      nullptr,
-      &graphicsPipeline);
+    vk::Result result2 = device->getLogicalDevice().createRayTracingPipelinesKHR(
+      nullptr, nullptr, raytracing_pipeline_create_info, nullptr, &graphicsPipeline);
+    ASSERT_VULKAN(result2, "Failed to create raytracing pipeline!")
 
-    ASSERT_VULKAN(result, "Failed to create raytracing pipeline!")
-
-    vkDestroyShaderModule(device->getLogicalDevice(), raygen_shader_module, nullptr);
-    vkDestroyShaderModule(device->getLogicalDevice(), raymiss_shader_module, nullptr);
-    vkDestroyShaderModule(device->getLogicalDevice(), raychit_shader_module, nullptr);
-    vkDestroyShaderModule(device->getLogicalDevice(), shadow_shader_module, nullptr);
+    device->getLogicalDevice().destroyShaderModule(raygen_shader_module);
+    device->getLogicalDevice().destroyShaderModule(raymiss_shader_module);
+    device->getLogicalDevice().destroyShaderModule(raychit_shader_module);
+    device->getLogicalDevice().destroyShaderModule(shadow_shader_module);
 }
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
 {
-    // load in functionality for raytracing shader group handles
-    auto pvkGetRayTracingShaderGroupHandlesKHR = reinterpret_cast<PFN_vkGetRayTracingShaderGroupHandlesKHR>(
-      vkGetDeviceProcAddr(device->getLogicalDevice(), "vkGetRayTracingShaderGroupHandlesKHR"));
+    raytracing_properties = vk::PhysicalDeviceRayTracingPipelinePropertiesKHR{};
 
-    raytracing_properties = VkPhysicalDeviceRayTracingPipelinePropertiesKHR{};
-    raytracing_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
-
-    VkPhysicalDeviceProperties2 properties{};
-    properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    vk::PhysicalDeviceProperties2 properties{};
     properties.pNext = &raytracing_properties;
 
-    vkGetPhysicalDeviceProperties2(device->getPhysicalDevice(), &properties);
+    device->getPhysicalDevice().getProperties2(&properties);
 
     uint32_t const handle_size = raytracing_properties.shaderGroupHandleSize;
     uint32_t const handle_size_aligned = align_up(handle_size, raytracing_properties.shaderGroupHandleAlignment);
@@ -365,15 +288,15 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
 
     std::vector<uint8_t> handles(sbt_size);
 
-    VkResult const result = pvkGetRayTracingShaderGroupHandlesKHR(
-      device->getLogicalDevice(), graphicsPipeline, 0, group_count, sbt_size, handles.data());
+    vk::Result result =
+      device->getLogicalDevice().getRayTracingShaderGroupHandlesKHR(graphicsPipeline, 0, group_count, handles);
     ASSERT_VULKAN(result, "Failed to get ray tracing shader group handles!")
 
-    const VkBufferUsageFlags bufferUsageFlags =
-      VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-    const VkMemoryPropertyFlags memoryPropertyFlags =
-      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    const VkMemoryAllocateFlags memoryAllocateFlags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+    const vk::BufferUsageFlags bufferUsageFlags =
+      vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+    const vk::MemoryPropertyFlags memoryPropertyFlags =
+      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
+    const vk::MemoryAllocateFlags memoryAllocateFlags = vk::MemoryAllocateFlagBits::eDeviceAddress;
 
     raygenShaderBindingTableBuffer.create(
       device, handle_size, bufferUsageFlags, memoryPropertyFlags, memoryAllocateFlags);
@@ -383,21 +306,14 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
 
     hitShaderBindingTableBuffer.create(device, handle_size, bufferUsageFlags, memoryPropertyFlags, memoryAllocateFlags);
 
-    void *mapped_raygen = nullptr;
-    vkMapMemory(device->getLogicalDevice(),
-      raygenShaderBindingTableBuffer.getBufferMemory(),
-      0,
-      VK_WHOLE_SIZE,
-      0,
-      &mapped_raygen);
+    void *mapped_raygen =
+      device->getLogicalDevice().mapMemory(raygenShaderBindingTableBuffer.getBufferMemory(), 0, VK_WHOLE_SIZE, {});
 
-    void *mapped_miss = nullptr;
-    vkMapMemory(
-      device->getLogicalDevice(), missShaderBindingTableBuffer.getBufferMemory(), 0, VK_WHOLE_SIZE, 0, &mapped_miss);
+    void *mapped_miss =
+      device->getLogicalDevice().mapMemory(missShaderBindingTableBuffer.getBufferMemory(), 0, VK_WHOLE_SIZE, {});
 
-    void *mapped_rchit = nullptr;
-    vkMapMemory(
-      device->getLogicalDevice(), hitShaderBindingTableBuffer.getBufferMemory(), 0, VK_WHOLE_SIZE, 0, &mapped_rchit);
+    void *mapped_rchit =
+      device->getLogicalDevice().mapMemory(hitShaderBindingTableBuffer.getBufferMemory(), 0, VK_WHOLE_SIZE, {});
 
     memcpy(mapped_raygen, handles.data(), handle_size);
     memcpy(mapped_miss, handles.data() + handle_size_aligned, handle_size * 2);

@@ -2,7 +2,7 @@ module;
 
 #include <cstdint>
 #include <utility>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include "common/MemoryHelper.hpp"
 #include "common/Utilities.hpp"
@@ -17,9 +17,9 @@ Kataglyphis::VulkanImage::VulkanImage() = default;
 Kataglyphis::VulkanImage::VulkanImage(VulkanImage &&other) noexcept
   : device(other.device), image(other.image), imageMemory(other.imageMemory)
 {
-    other.device = VK_NULL_HANDLE;
-    other.image = VK_NULL_HANDLE;
-    other.imageMemory = VK_NULL_HANDLE;
+    other.device = nullptr;
+    other.image = nullptr;
+    other.imageMemory = nullptr;
 }
 
 auto Kataglyphis::VulkanImage::operator=(VulkanImage &&other) noexcept -> VulkanImage &
@@ -31,9 +31,9 @@ auto Kataglyphis::VulkanImage::operator=(VulkanImage &&other) noexcept -> Vulkan
         image = other.image;
         imageMemory = other.imageMemory;
 
-        other.device = VK_NULL_HANDLE;
-        other.image = VK_NULL_HANDLE;
-        other.imageMemory = VK_NULL_HANDLE;
+        other.device = nullptr;
+        other.image = nullptr;
+        other.imageMemory = nullptr;
     }
 
     return *this;
@@ -43,17 +43,16 @@ void Kataglyphis::VulkanImage::create(VulkanDevice *in_device,
   uint32_t width,
   uint32_t height,
   uint32_t mip_levels,
-  VkFormat format,
-  VkImageTiling tiling,
-  VkImageUsageFlags use_flags,
-  VkMemoryPropertyFlags prop_flags)
+  vk::Format format,
+  vk::ImageTiling tiling,
+  vk::ImageUsageFlags use_flags,
+  vk::MemoryPropertyFlags prop_flags)
 {
     this->device = in_device;
     // CREATE image
     // image creation info
-    VkImageCreateInfo image_create_info{};
-    image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    image_create_info.imageType = VK_IMAGE_TYPE_2D;// type of image (1D, 2D, 3D)
+    vk::ImageCreateInfo image_create_info{};
+    image_create_info.imageType = vk::ImageType::e2D;// type of image (1D, 2D, 3D)
     image_create_info.extent.width = width;// width if image extent
     image_create_info.extent.height = height;// height if image extent
     image_create_info.extent.depth = 1;// height if image extent
@@ -61,47 +60,42 @@ void Kataglyphis::VulkanImage::create(VulkanDevice *in_device,
     image_create_info.arrayLayers = 1;// number of levels in image array
     image_create_info.format = format;// format type of image
     image_create_info.tiling = tiling;// tiling of image ("arranged" for optimal reading)
-    image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;// layout of image data on creation
+    image_create_info.initialLayout = vk::ImageLayout::eUndefined;// layout of image data on creation
     image_create_info.usage = use_flags;// bit flags defining what image will be used for
-    image_create_info.samples = VK_SAMPLE_COUNT_1_BIT;// number of samples for multisampling
-    image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;// whether image can be shared between queues
+    image_create_info.samples = vk::SampleCountFlagBits::e1;// number of samples for multisampling
+    image_create_info.sharingMode = vk::SharingMode::eExclusive;// whether image can be shared between queues
 
-    VkResult result = vkCreateImage(device->getLogicalDevice(), &image_create_info, nullptr, &image);
-    ASSERT_VULKAN(result, "Failed to create an image!")
+    image = device->getLogicalDevice().createImage(image_create_info);
 
     // CREATE memory for image
     // get memory requirements for a type of image
-    VkMemoryRequirements memory_requirements;
-    vkGetImageMemoryRequirements(device->getLogicalDevice(), image, &memory_requirements);
+    vk::MemoryRequirements memory_requirements = device->getLogicalDevice().getImageMemoryRequirements(image);
 
     // allocate memory using image requirements and user defined properties
-    VkMemoryAllocateInfo memory_alloc_info{};
-    memory_alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    vk::MemoryAllocateInfo memory_alloc_info{};
     memory_alloc_info.allocationSize = memory_requirements.size;
     memory_alloc_info.memoryTypeIndex =
       Kataglyphis::find_memory_type_index(device->getPhysicalDevice(), memory_requirements.memoryTypeBits, prop_flags);
 
-    result = vkAllocateMemory(device->getLogicalDevice(), &memory_alloc_info, nullptr, &imageMemory);
-    ASSERT_VULKAN(result, "Failed to allocate memory!")
+    imageMemory = device->getLogicalDevice().allocateMemory(memory_alloc_info);
 
     // connect memory to image
-    vkBindImageMemory(device->getLogicalDevice(), image, imageMemory, 0);
+    device->getLogicalDevice().bindImageMemory(image, imageMemory, 0);
 }
 
-void Kataglyphis::VulkanImage::transitionImageLayout(VkDevice in_logical_device,
-  VkQueue queue,
-  VkCommandPool command_pool,
-  VkImageLayout old_layout,
-  VkImageLayout new_layout,
-  VkImageAspectFlags aspectMask,
+void Kataglyphis::VulkanImage::transitionImageLayout(vk::Device in_logical_device,
+  vk::Queue queue,
+  vk::CommandPool command_pool,
+  vk::ImageLayout old_layout,
+  vk::ImageLayout new_layout,
+  vk::ImageAspectFlags aspectMask,
   uint32_t mip_levels)
 {
-    VkCommandBuffer command_buffer =
+    vk::CommandBuffer command_buffer =
       Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(in_logical_device, command_pool);
 
-    // VK_IMAGE_ASPECT_COLOR_BIT
-    VkImageMemoryBarrier memory_barrier{};
-    memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    // vk::ImageAspectFlagBits::eColor
+    vk::ImageMemoryBarrier memory_barrier{};
     memory_barrier.oldLayout = old_layout;
     memory_barrier.newLayout = new_layout;
     memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;// Queue family to transition from
@@ -117,36 +111,28 @@ void Kataglyphis::VulkanImage::transitionImageLayout(VkDevice in_logical_device,
     memory_barrier.srcAccessMask = accessFlagsForImageLayout(old_layout);
     memory_barrier.dstAccessMask = accessFlagsForImageLayout(new_layout);
 
-    VkPipelineStageFlags const src_stage = pipelineStageForLayout(old_layout);
-    VkPipelineStageFlags const dst_stage = pipelineStageForLayout(new_layout);
+    vk::PipelineStageFlags const src_stage = pipelineStageForLayout(old_layout);
+    vk::PipelineStageFlags const dst_stage = pipelineStageForLayout(new_layout);
 
-    vkCmdPipelineBarrier(
-
-      command_buffer,
-      src_stage,
+    command_buffer.pipelineBarrier(src_stage,
       dst_stage,// pipeline stages (match to src and dst accessmask)
-      0,// no dependency flags
-      0,
-      nullptr,// memory barrier count + data
-      0,
-      nullptr,// buffer memory barrier count + data
-      1,
-      &memory_barrier// image memory barrier count + data
-
+      {},// no dependency flags
+      nullptr,// memory barriers
+      nullptr,// buffer memory barriers
+      memory_barrier// image memory barriers
     );
 
     Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
       in_logical_device, command_pool, queue, command_buffer);
 }
 
-void Kataglyphis::VulkanImage::transitionImageLayout(VkCommandBuffer command_buffer,
-  VkImageLayout old_layout,
-  VkImageLayout new_layout,
+void Kataglyphis::VulkanImage::transitionImageLayout(vk::CommandBuffer command_buffer,
+  vk::ImageLayout old_layout,
+  vk::ImageLayout new_layout,
   uint32_t mip_levels,
-  VkImageAspectFlags aspectMask)
+  vk::ImageAspectFlags aspectMask)
 {
-    VkImageMemoryBarrier memory_barrier{};
-    memory_barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    vk::ImageMemoryBarrier memory_barrier{};
     memory_barrier.oldLayout = old_layout;
     memory_barrier.newLayout = new_layout;
     memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;// Queue family to transition from
@@ -161,88 +147,82 @@ void Kataglyphis::VulkanImage::transitionImageLayout(VkCommandBuffer command_buf
     memory_barrier.srcAccessMask = accessFlagsForImageLayout(old_layout);
     memory_barrier.dstAccessMask = accessFlagsForImageLayout(new_layout);
 
-    VkPipelineStageFlags const src_stage = pipelineStageForLayout(old_layout);
-    VkPipelineStageFlags const dst_stage = pipelineStageForLayout(new_layout);
+    vk::PipelineStageFlags const src_stage = pipelineStageForLayout(old_layout);
+    vk::PipelineStageFlags const dst_stage = pipelineStageForLayout(new_layout);
 
     // if transitioning from new image to image ready to receive data
 
-    vkCmdPipelineBarrier(
-
-      command_buffer,
-      src_stage,
+    command_buffer.pipelineBarrier(src_stage,
       dst_stage,// pipeline stages (match to src and dst accessmask)
-      0,// no dependency flags
-      0,
-      nullptr,// memory barrier count + data
-      0,
-      nullptr,// buffer memory barrier count + data
-      1,
-      &memory_barrier// image memory barrier count + data
-
+      {},// no dependency flags
+      nullptr,// memory barriers
+      nullptr,// buffer memory barriers
+      memory_barrier// image memory barriers
     );
 }
 
-void Kataglyphis::VulkanImage::setImage(VkImage in_image) { this->image = in_image; }
+void Kataglyphis::VulkanImage::setImage(vk::Image in_image) { this->image = in_image; }
 
 void Kataglyphis::VulkanImage::cleanUp()
 {
-    if (device != VK_NULL_HANDLE) {
-        if (image != VK_NULL_HANDLE) { vkDestroyImage(device->getLogicalDevice(), image, nullptr); }
-        if (imageMemory != VK_NULL_HANDLE) { vkFreeMemory(device->getLogicalDevice(), imageMemory, nullptr); }
+    if (device != nullptr) {
+        if (image) { device->getLogicalDevice().destroyImage(image); }
+        if (imageMemory) { device->getLogicalDevice().freeMemory(imageMemory); }
     }
 
-    image = VK_NULL_HANDLE;
-    imageMemory = VK_NULL_HANDLE;
+    image = nullptr;
+    imageMemory = nullptr;
 }
 
 Kataglyphis::VulkanImage::~VulkanImage() = default;
 
-auto Kataglyphis::VulkanImage::accessFlagsForImageLayout(VkImageLayout layout) -> VkAccessFlags
+auto Kataglyphis::VulkanImage::accessFlagsForImageLayout(vk::ImageLayout layout) -> vk::AccessFlags
 {
     switch (layout) {
-    case VK_IMAGE_LAYOUT_PREINITIALIZED:
-        return VK_ACCESS_HOST_WRITE_BIT;
-    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-        return VK_ACCESS_TRANSFER_WRITE_BIT;
-    case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-        return VK_ACCESS_TRANSFER_READ_BIT;
-    case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-        return VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-        return VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-        return VK_ACCESS_SHADER_READ_BIT;
-    case VK_IMAGE_LAYOUT_GENERAL:
-        return VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
-               | VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+    case vk::ImageLayout::ePreinitialized:
+        return vk::AccessFlagBits::eHostWrite;
+    case vk::ImageLayout::eTransferDstOptimal:
+        return vk::AccessFlagBits::eTransferWrite;
+    case vk::ImageLayout::eTransferSrcOptimal:
+        return vk::AccessFlagBits::eTransferRead;
+    case vk::ImageLayout::eColorAttachmentOptimal:
+        return vk::AccessFlagBits::eColorAttachmentWrite;
+    case vk::ImageLayout::eDepthStencilAttachmentOptimal:
+        return vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+    case vk::ImageLayout::eShaderReadOnlyOptimal:
+        return vk::AccessFlagBits::eShaderRead;
+    case vk::ImageLayout::eGeneral:
+        return vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite
+               | vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eTransferRead
+               | vk::AccessFlagBits::eTransferWrite;
     default:
-        return VkAccessFlags();
+        return vk::AccessFlags();
     }
 }
 
-auto Kataglyphis::VulkanImage::pipelineStageForLayout(VkImageLayout oldImageLayout) -> VkPipelineStageFlags
+auto Kataglyphis::VulkanImage::pipelineStageForLayout(vk::ImageLayout oldImageLayout) -> vk::PipelineStageFlags
 {
     switch (oldImageLayout) {
-    case VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL:
-    case VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL:
-        return VK_PIPELINE_STAGE_TRANSFER_BIT;
-    case VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL:
-        return VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    case VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL:
-        return VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;// We do this to allow queue
-                                                  // other than graphic return
-                                                  // VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    case VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL:
-        return VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;// We do this to allow queue
-                                                  // other than graphic return
-                                                  // VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    case VK_IMAGE_LAYOUT_PREINITIALIZED:
-        return VK_PIPELINE_STAGE_HOST_BIT;
-    case VK_IMAGE_LAYOUT_UNDEFINED:
-        return VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-    case VK_IMAGE_LAYOUT_GENERAL:
-        return VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+    case vk::ImageLayout::eTransferDstOptimal:
+    case vk::ImageLayout::eTransferSrcOptimal:
+        return vk::PipelineStageFlagBits::eTransfer;
+    case vk::ImageLayout::eColorAttachmentOptimal:
+        return vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    case vk::ImageLayout::eDepthStencilAttachmentOptimal:
+        return vk::PipelineStageFlagBits::eAllCommands;// We do this to allow queue
+                                                       // other than graphic return
+                                                       // vk::PipelineStageFlagBits::eEarlyFragmentTests;
+    case vk::ImageLayout::eShaderReadOnlyOptimal:
+        return vk::PipelineStageFlagBits::eAllCommands;// We do this to allow queue
+                                                       // other than graphic return
+                                                       // vk::PipelineStageFlagBits::eFragmentShader;
+    case vk::ImageLayout::ePreinitialized:
+        return vk::PipelineStageFlagBits::eHost;
+    case vk::ImageLayout::eUndefined:
+        return vk::PipelineStageFlagBits::eTopOfPipe;
+    case vk::ImageLayout::eGeneral:
+        return vk::PipelineStageFlagBits::eAllCommands;
     default:
-        return VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+        return vk::PipelineStageFlagBits::eBottomOfPipe;
     }
 }

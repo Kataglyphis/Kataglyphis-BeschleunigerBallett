@@ -8,7 +8,7 @@ module;
 #include <vector>
 
 #include <glm/ext/matrix_float4x4.hpp>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.hpp>
 
 #include "spdlog/spdlog.h"
 
@@ -27,7 +27,7 @@ Scene::Scene() = default;
 
 void Scene::update_user_input(Kataglyphis::Frontend::GUI *gui) { guiSceneSharedVars = gui->getGuiSceneSharedVars(); }
 
-void Scene::loadModel(VulkanDevice *device, VkCommandPool commandPool)
+void Scene::loadModel(VulkanDevice *device, vk::CommandPool commandPool)
 {
     ObjLoader obj_loader(device, device->getGraphicsQueue(), commandPool);
 

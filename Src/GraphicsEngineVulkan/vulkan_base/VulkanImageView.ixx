@@ -1,5 +1,5 @@
 module;
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.image_view;
 
@@ -15,14 +15,14 @@ class VulkanImageView
     VulkanImageView(VulkanImageView &&other) noexcept;
     auto operator=(VulkanImageView &&other) noexcept -> VulkanImageView &;
 
-    void setImageView(VkImageView imageView);
+    void setImageView(vk::ImageView imageView);
 
-    VkImageView &getImageView() { return imageView; };
+    vk::ImageView &getImageView() { return imageView; };
 
     void create(VulkanDevice *in_device,
-      VkImage image,
-      VkFormat format,
-      VkImageAspectFlags aspect_flags,
+      vk::Image image,
+      vk::Format format,
+      vk::ImageAspectFlags aspect_flags,
       uint32_t mip_levels);
 
     void cleanUp();
@@ -30,8 +30,8 @@ class VulkanImageView
     ~VulkanImageView();
 
   private:
-    VulkanDevice *device{ VK_NULL_HANDLE };
+    VulkanDevice *device{ nullptr };
 
-    VkImageView imageView{};
+    vk::ImageView imageView{};
 };
 }// namespace Kataglyphis

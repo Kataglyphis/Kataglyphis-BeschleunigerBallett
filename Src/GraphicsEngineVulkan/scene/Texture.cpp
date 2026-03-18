@@ -8,7 +8,7 @@ module;
 #include <cstring>
 #include <stb_image.h>
 #include <string>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.hpp>
 
 module kataglyphis.vulkan.texture;
 
@@ -24,42 +24,41 @@ using namespace Kataglyphis;
 Kataglyphis::Texture::Texture() = default;
 
 namespace {
-auto supportsLinearBlit(VkPhysicalDevice physical_device, VkFormat image_format) -> bool
+auto supportsLinearBlit(vk::PhysicalDevice physical_device, vk::Format image_format) -> bool
 {
-    VkFormatProperties format_properties{};
-    vkGetPhysicalDeviceFormatProperties(physical_device, image_format, &format_properties);
-    return (format_properties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0U;
+    vk::FormatProperties format_properties = physical_device.getFormatProperties(image_format);
+    return (format_properties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear)
+           != vk::FormatFeatureFlags{};
 }
 }// namespace
 
-void Kataglyphis::Texture::createFromFile(VulkanDevice *device, VkCommandPool commandPool, const std::string &fileName)
+void Kataglyphis::Texture::createFromFile(VulkanDevice *device,
+  vk::CommandPool commandPool,
+  const std::string &fileName)
 {
     int width = 0;
     int height = 0;
-    VkDeviceSize size = 0;
+    vk::DeviceSize size = 0;
     stbi_uc *image_data = loadTextureData(fileName, &width, &height, &size);
 
-    constexpr VkFormat texture_format = VK_FORMAT_R8G8B8A8_UNORM;
+    constexpr vk::Format texture_format = vk::Format::eR8G8B8A8Unorm;
     mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
     if (!supportsLinearBlit(device->getPhysicalDevice(), texture_format)) {
         spdlog::warn("Linear blit not supported for texture format; using single mip level.");
         mip_levels = 1;
     }
 
-    // create staging buffer to hold loaded data, ready to copy to device
     VulkanBuffer stagingBuffer;
     stagingBuffer.create(device,
       size,
-      VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+      vk::BufferUsageFlagBits::eTransferSrc,
+      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    // copy image data to staging buffer
     void *data = nullptr;
-    vkMapMemory(device->getLogicalDevice(), stagingBuffer.getBufferMemory(), 0, size, 0, &data);
+    data = device->getLogicalDevice().mapMemory(stagingBuffer.getBufferMemory(), 0, size);
     memcpy(data, image_data, static_cast<size_t>(size));
-    vkUnmapMemory(device->getLogicalDevice(), stagingBuffer.getBufferMemory());
+    device->getLogicalDevice().unmapMemory(stagingBuffer.getBufferMemory());
 
-    // free original image data
     stbi_image_free(image_data);
 
     createImage(device,
@@ -67,21 +66,18 @@ void Kataglyphis::Texture::createFromFile(VulkanDevice *device, VkCommandPool co
       height,
       mip_levels,
       texture_format,
-      VK_IMAGE_TILING_OPTIMAL,
-      VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+      vk::ImageTiling::eOptimal,
+      vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+      vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-    // copy data to image
-    // transition image to be DST for copy operation
     vulkanImage.transitionImageLayout(device->getLogicalDevice(),
       device->getGraphicsQueue(),
       commandPool,
-      VK_IMAGE_LAYOUT_UNDEFINED,
-      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-      VK_IMAGE_ASPECT_COLOR_BIT,
+      vk::ImageLayout::eUndefined,
+      vk::ImageLayout::eTransferDstOptimal,
+      vk::ImageAspectFlagBits::eColor,
       mip_levels);
 
-    // copy data to image
     vulkanBufferManager.copyImageBuffer(device->getLogicalDevice(),
       device->getGraphicsQueue(),
       commandPool,
@@ -104,36 +100,36 @@ void Kataglyphis::Texture::createFromFile(VulkanDevice *device, VkCommandPool co
         vulkanImage.transitionImageLayout(device->getLogicalDevice(),
           device->getGraphicsQueue(),
           commandPool,
-          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-          VK_IMAGE_ASPECT_COLOR_BIT,
+          vk::ImageLayout::eTransferDstOptimal,
+          vk::ImageLayout::eShaderReadOnlyOptimal,
+          vk::ImageAspectFlagBits::eColor,
           1);
     }
 
     stagingBuffer.cleanUp();
 
-    createImageView(device, texture_format, VK_IMAGE_ASPECT_COLOR_BIT, mip_levels);
+    createImageView(device, texture_format, vk::ImageAspectFlagBits::eColor, mip_levels);
 }
 
-void Kataglyphis::Texture::setImage(VkImage image) { vulkanImage.setImage(image); }
+void Kataglyphis::Texture::setImage(vk::Image image) { vulkanImage.setImage(image); }
 
-void Kataglyphis::Texture::setImageView(VkImageView imageView) { vulkanImageView.setImageView(imageView); }
+void Kataglyphis::Texture::setImageView(vk::ImageView imageView) { vulkanImageView.setImageView(imageView); }
 
 void Kataglyphis::Texture::createImage(VulkanDevice *device,
   uint32_t width,
   uint32_t height,
   uint32_t in_mip_levels,
-  VkFormat format,
-  VkImageTiling tiling,
-  VkImageUsageFlags use_flags,
-  VkMemoryPropertyFlags prop_flags)
+  vk::Format format,
+  vk::ImageTiling tiling,
+  vk::ImageUsageFlags use_flags,
+  vk::MemoryPropertyFlags prop_flags)
 {
     vulkanImage.create(device, width, height, in_mip_levels, format, tiling, use_flags, prop_flags);
 }
 
 void Kataglyphis::Texture::createImageView(VulkanDevice *device,
-  VkFormat format,
-  VkImageAspectFlags aspect_flags,
+  vk::Format format,
+  vk::ImageAspectFlags aspect_flags,
   uint32_t in_mip_levels)
 {
     vulkanImageView.create(device, vulkanImage.getImage(), format, aspect_flags, in_mip_levels);
@@ -150,146 +146,115 @@ Kataglyphis::Texture::~Texture() = default;
 auto Kataglyphis::Texture::loadTextureData(const std::string &file_name,
   int *width,
   int *height,
-  VkDeviceSize *image_size) -> stbi_uc *
+  vk::DeviceSize *image_size) -> stbi_uc *
 {
-    // number of channels image uses
     int channels = 0;
-    // load pixel data for image
-    // std::string file_loc = "../Resources/Textures/" + file_name;
     stbi_uc *image = stbi_load(file_name.c_str(), width, height, &channels, STBI_rgb_alpha);
 
     if (image == nullptr) { spdlog::error("Failed to load a texture file! (" + file_name + ")"); }
 
-    // calculate image size using given and known data
     *image_size = *width * *height * 4;
 
     return image;
 }
 
-void Kataglyphis::Texture::generateMipMaps(VkPhysicalDevice physical_device,
-  VkDevice device,
-  VkCommandPool command_pool,
-  VkQueue queue,
-  VkImage image,
-  VkFormat image_format,
+void Kataglyphis::Texture::generateMipMaps(vk::PhysicalDevice physical_device,
+  vk::Device device,
+  vk::CommandPool command_pool,
+  vk::Queue queue,
+  vk::Image image,
+  vk::Format image_format,
   int32_t width,
   int32_t height,
   uint32_t in_mip_levels)
 {
-    // Check if image format supports linear blitting
-    VkFormatProperties formatProperties;
-    vkGetPhysicalDeviceFormatProperties(physical_device, image_format, &formatProperties);
+    vk::FormatProperties formatProperties = physical_device.getFormatProperties(image_format);
 
-    if ((formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) == 0U) {
+    if ((formatProperties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear)
+        == vk::FormatFeatureFlags{}) {
         spdlog::error("Texture image format does not support linear blitting!");
     }
 
-    VkCommandBuffer command_buffer =
+    vk::CommandBuffer command_buffer =
       Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device, command_pool);
 
-    VkImageMemoryBarrier barrier{};
-    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    vk::ImageMemoryBarrier barrier{};
     barrier.image = image;
-    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
+    barrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
+    barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = 1;
     barrier.subresourceRange.levelCount = 1;
 
-    // TEMP VARS needed for decreasing step by step for factor 2
     int32_t tmp_width = width;
     int32_t tmp_height = height;
 
-    // -- WE START AT 1 !
     for (uint32_t i = 1; i < mip_levels; i++) {
-        // WAIT for previous mip map level for being ready
         barrier.subresourceRange.baseMipLevel = i - 1;
-        // HERE we TRANSITION for having a SRC format now
-        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+        barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+        barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+        barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
 
-        vkCmdPipelineBarrier(command_buffer,
-          VK_PIPELINE_STAGE_TRANSFER_BIT,
-          VK_PIPELINE_STAGE_TRANSFER_BIT,
-          0,
-          0,
-          nullptr,
-          0,
-          nullptr,
-          1,
-          &barrier);
+        command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+          vk::PipelineStageFlagBits::eTransfer,
+          vk::DependencyFlags{},
+          {},
+          {},
+          barrier);
 
-        // when barrier over we can now blit :)
-        VkImageBlit blit{};
+        vk::ImageBlit blit{};
 
-        // -- OFFSETS describing the 3D-dimesnion of the region
-        blit.srcOffsets[0] = { .x = 0, .y = 0, .z = 0 };
-        blit.srcOffsets[1] = { .x = tmp_width, .y = tmp_height, .z = 1 };
-        blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        // copy from previous level
+        blit.srcOffsets[0] = vk::Offset3D{ 0, 0, 0 };
+        blit.srcOffsets[1] = vk::Offset3D{ tmp_width, tmp_height, 1 };
+        blit.srcSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
         blit.srcSubresource.mipLevel = i - 1;
         blit.srcSubresource.baseArrayLayer = 0;
         blit.srcSubresource.layerCount = 1;
-        // -- OFFSETS describing the 3D-dimesnion of the region
-        blit.dstOffsets[0] = { .x = 0, .y = 0, .z = 0 };
-        blit.dstOffsets[1] = {
-            .x = tmp_width > 1 ? tmp_width / 2 : 1, .y = tmp_height > 1 ? tmp_height / 2 : 1, .z = 1
-        };
-        blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        // -- COPY to next mipmap level
+
+        blit.dstOffsets[0] = vk::Offset3D{ 0, 0, 0 };
+        blit.dstOffsets[1] = vk::Offset3D{ tmp_width > 1 ? tmp_width / 2 : 1, tmp_height > 1 ? tmp_height / 2 : 1, 1 };
+        blit.dstSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
         blit.dstSubresource.mipLevel = i;
         blit.dstSubresource.baseArrayLayer = 0;
         blit.dstSubresource.layerCount = 1;
 
-        vkCmdBlitImage(command_buffer,
+        command_buffer.blitImage(image,
+          vk::ImageLayout::eTransferSrcOptimal,
           image,
-          VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-          image,
-          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-          1,
-          &blit,
-          VK_FILTER_LINEAR);
+          vk::ImageLayout::eTransferDstOptimal,
+          blit,
+          vk::Filter::eLinear);
 
-        // REARRANGE image formats for having the correct image formats again
-        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
+        barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        barrier.srcAccessMask = vk::AccessFlagBits::eTransferRead;
+        barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
 
-        vkCmdPipelineBarrier(command_buffer,
-          VK_PIPELINE_STAGE_TRANSFER_BIT,
-          VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-          0,
-          0,
-          nullptr,
-          0,
-          nullptr,
-          1,
-          &barrier);
+        command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+          vk::PipelineStageFlagBits::eFragmentShader,
+          vk::DependencyFlags{},
+          {},
+          {},
+          barrier);
 
         if (tmp_width > 1) { tmp_width /= 2; }
         if (tmp_height > 1) { tmp_height /= 2; }
     }
 
     barrier.subresourceRange.baseMipLevel = mip_levels - 1;
-    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+    barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+    barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
 
-    vkCmdPipelineBarrier(command_buffer,
-      VK_PIPELINE_STAGE_TRANSFER_BIT,
-      VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-      0,
-      0,
-      nullptr,
-      0,
-      nullptr,
-      1,
-      &barrier);
+    command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+      vk::PipelineStageFlagBits::eFragmentShader,
+      vk::DependencyFlags{},
+      {},
+      {},
+      barrier);
 
     Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
       device, command_pool, queue, command_buffer);

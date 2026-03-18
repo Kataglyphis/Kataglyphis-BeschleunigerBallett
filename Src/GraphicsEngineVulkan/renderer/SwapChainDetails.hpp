@@ -1,13 +1,13 @@
 #pragma once
 
 #include <vector>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.hpp>
 
 namespace Kataglyphis::VulkanRendererInternals {
 struct SwapChainDetails
 {
-    VkSurfaceCapabilitiesKHR surface_capabilities;
-    std::vector<VkSurfaceFormatKHR> formats;
-    std::vector<VkPresentModeKHR> presentation_mode;
+    vk::SurfaceCapabilitiesKHR surface_capabilities;
+    std::vector<vk::SurfaceFormatKHR> formats;
+    std::vector<vk::PresentModeKHR> presentation_mode;
 };
 }// namespace Kataglyphis::VulkanRendererInternals

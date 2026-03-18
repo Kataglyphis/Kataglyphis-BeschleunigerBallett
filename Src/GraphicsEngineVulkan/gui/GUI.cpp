@@ -2,12 +2,13 @@ module;
 
 #include "common/Utilities.hpp"
 
+#include <array>
 #include <cstdint>
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.hpp>
 
 module kataglyphis.vulkan.gui;
 
@@ -28,9 +29,9 @@ void applyKataglyphisDarkTheme() { Kataglyphis::Frontend::applyKataglyphisImGuiD
 GUI::GUI(Window *window) : window(window) {}
 
 void GUI::initializeVulkanContext(VulkanDevice *device,
-  const VkInstance &instance,
-  const VkRenderPass &post_render_pass,
-  const VkCommandPool &graphics_command_pool,
+  const vk::Instance &instance,
+  const vk::RenderPass &post_render_pass,
+  const vk::CommandPool &graphics_command_pool,
   uint32_t image_count)
 {
     this->device = device;
@@ -125,12 +126,12 @@ void GUI::cleanUp()
     ImGui_ImplVulkan_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
-    vkDestroyDescriptorPool(device->getLogicalDevice(), gui_descriptor_pool, nullptr);
+    device->getLogicalDevice().destroyDescriptorPool(gui_descriptor_pool);
 }
 
 void GUI::create_gui_context(Window *window,
-  const VkInstance &instance,
-  const VkRenderPass &post_render_pass,
+  const vk::Instance &instance,
+  const vk::RenderPass &post_render_pass,
   uint32_t image_count)
 {
     IMGUI_CHECKVERSION();
@@ -153,28 +154,27 @@ void GUI::create_gui_context(Window *window,
     ImGui_ImplGlfw_InitForVulkan(window->get_window(), false);
 
     // Create Descriptor Pool
-    VkDescriptorPoolSize gui_pool_sizes[] = { { VK_DESCRIPTOR_TYPE_SAMPLER, 10 },
-        { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 10 },
-        { VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 10 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 10 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 10 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 10 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 10 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 10 },
-        { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 10 },
-        { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 10 },
-        { VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 100 } };
+    std::array<vk::DescriptorPoolSize, 11> gui_pool_sizes = { { { vk::DescriptorType::eSampler, 10 },
+      { vk::DescriptorType::eCombinedImageSampler, 10 },
+      { vk::DescriptorType::eSampledImage, 10 },
+      { vk::DescriptorType::eStorageImage, 10 },
+      { vk::DescriptorType::eUniformTexelBuffer, 10 },
+      { vk::DescriptorType::eStorageTexelBuffer, 10 },
+      { vk::DescriptorType::eUniformBuffer, 10 },
+      { vk::DescriptorType::eStorageBuffer, 10 },
+      { vk::DescriptorType::eUniformBufferDynamic, 10 },
+      { vk::DescriptorType::eStorageBufferDynamic, 10 },
+      { vk::DescriptorType::eInputAttachment, 100 } } };
 
-    VkDescriptorPoolCreateInfo gui_pool_info = {};
-    gui_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    gui_pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    gui_pool_info.maxSets = 10 * IM_ARRAYSIZE(gui_pool_sizes);
-    gui_pool_info.poolSizeCount = static_cast<uint32_t> IM_ARRAYSIZE(gui_pool_sizes);
-    gui_pool_info.pPoolSizes = gui_pool_sizes;
+    vk::DescriptorPoolCreateInfo gui_pool_info{};
+    gui_pool_info.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet;
+    gui_pool_info.maxSets = 10 * static_cast<uint32_t>(gui_pool_sizes.size());
+    gui_pool_info.poolSizeCount = static_cast<uint32_t>(gui_pool_sizes.size());
+    gui_pool_info.pPoolSizes = gui_pool_sizes.data();
 
-    VkResult const result =
-      vkCreateDescriptorPool(device->getLogicalDevice(), &gui_pool_info, nullptr, &gui_descriptor_pool);
-    ASSERT_VULKAN(result, "Failed to create a gui descriptor pool!")
+    gui_descriptor_pool = device->getLogicalDevice().createDescriptorPool(gui_pool_info);
+    ASSERT_VULKAN(VkResult(gui_descriptor_pool.result), "Failed to create a gui descriptor pool!")
+    gui_descriptor_pool = gui_descriptor_pool.value;
 
     Kataglyphis::VulkanRendererInternals::QueueFamilyIndices const indices = device->getQueueFamilies();
 

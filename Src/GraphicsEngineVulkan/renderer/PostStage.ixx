@@ -2,7 +2,7 @@ module;
 
 #include <memory>
 #include <vector>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.post_stage;
 
@@ -18,40 +18,40 @@ class PostStage
 
     void init(VulkanDevice *in_device,
       VulkanSwapChain *vulkanSwapChain,
-      const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts);
+      const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts);
 
-    void shaderHotReload(const std::vector<VkDescriptorSetLayout> &descriptor_set_layouts);
+    void shaderHotReload(const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts);
 
-    VkRenderPass &getRenderPass() { return render_pass; };
-    VkSampler &getOffscreenSampler() { return offscreenTextureSampler; };
+    vk::RenderPass &getRenderPass() { return render_pass; };
+    vk::Sampler &getOffscreenSampler() { return offscreenTextureSampler; };
 
-    void recordCommands(VkCommandBuffer &commandBuffer,
+    void recordCommands(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
-      const std::vector<VkDescriptorSet> &descriptorSets);
+      const std::vector<vk::DescriptorSet> &descriptorSets);
     void cleanUp();
 
     ~PostStage();
 
   private:
-    VulkanDevice *device{ VK_NULL_HANDLE };
-    VulkanSwapChain *vulkanSwapChain{ VK_NULL_HANDLE };
+    VulkanDevice *device{ nullptr };
+    VulkanSwapChain *vulkanSwapChain{ nullptr };
 
-    std::vector<VkFramebuffer> framebuffers;
+    std::vector<vk::Framebuffer> framebuffers;
     std::unique_ptr<Kataglyphis::Texture> depthBufferImage;
-    VkFormat depth_format{ VK_FORMAT_UNDEFINED };
+    vk::Format depth_format{ vk::Format::eUndefined };
     void createDepthbufferImage();
 
-    VkSampler offscreenTextureSampler{};
+    vk::Sampler offscreenTextureSampler{};
     void createOffscreenTextureSampler();
 
-    VkPushConstantRange push_constant_range{ VK_SHADER_STAGE_FLAG_BITS_MAX_ENUM, 0, 0 };
-    VkRenderPass render_pass{ VK_NULL_HANDLE };
-    VkPipeline graphics_pipeline{ VK_NULL_HANDLE };
-    VkPipelineLayout pipeline_layout{ VK_NULL_HANDLE };
+    vk::PushConstantRange push_constant_range{ vk::ShaderStageFlagBits::eAll, 0, 0 };
+    vk::RenderPass render_pass{};
+    vk::Pipeline graphics_pipeline{};
+    vk::PipelineLayout pipeline_layout{};
 
     void createPushConstantRange();
     void createRenderpass();
-    void createGraphicsPipeline(const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts);
+    void createGraphicsPipeline(const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts);
     void createFramebuffer();
 };
 }// namespace Kataglyphis::VulkanRendererInternals

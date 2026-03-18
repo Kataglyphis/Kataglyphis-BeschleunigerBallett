@@ -2,7 +2,7 @@ module;
 
 #include <stb_image.h>
 #include <string>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.texture;
 
@@ -22,27 +22,27 @@ class Texture
     Texture(Texture &&other) noexcept = default;
     auto operator=(Texture &&other) noexcept -> Texture & = default;
 
-    void createFromFile(VulkanDevice *device, VkCommandPool commandPool, const std::string &fileName);
+    void createFromFile(VulkanDevice *device, vk::CommandPool commandPool, const std::string &fileName);
 
-    void setImage(VkImage image);
-    void setImageView(VkImageView imageView);
+    void setImage(vk::Image image);
+    void setImageView(vk::ImageView imageView);
 
     uint32_t getMipLevel() const { return mip_levels; };
     VulkanImage &getVulkanImage() { return vulkanImage; };
     VulkanImageView &getVulkanImageView() { return vulkanImageView; };
-    VkImage &getImage() { return vulkanImage.getImage(); };
-    VkImageView &getImageView() { return vulkanImageView.getImageView(); };
+    vk::Image &getImage() { return vulkanImage.getImage(); };
+    vk::ImageView &getImageView() { return vulkanImageView.getImageView(); };
 
     void createImage(VulkanDevice *device,
       uint32_t width,
       uint32_t height,
       uint32_t in_mip_levels,
-      VkFormat format,
-      VkImageTiling tiling,
-      VkImageUsageFlags use_flags,
-      VkMemoryPropertyFlags prop_flags);
+      vk::Format format,
+      vk::ImageTiling tiling,
+      vk::ImageUsageFlags use_flags,
+      vk::MemoryPropertyFlags prop_flags);
 
-    void createImageView(VulkanDevice *device, VkFormat format, VkImageAspectFlags aspect_flags, uint32_t in_mip_levels);
+    void createImageView(VulkanDevice *device, vk::Format format, vk::ImageAspectFlags aspect_flags, uint32_t in_mip_levels);
 
     void cleanUp();
 
@@ -51,14 +51,14 @@ class Texture
   private:
     uint32_t mip_levels = 0;
 
-    static stbi_uc *loadTextureData(const std::string &file_name, int *width, int *height, VkDeviceSize *image_size);
+    static stbi_uc *loadTextureData(const std::string &file_name, int *width, int *height, vk::DeviceSize *image_size);
 
-    void generateMipMaps(VkPhysicalDevice physical_device,
-      VkDevice device,
-      VkCommandPool command_pool,
-      VkQueue queue,
-      VkImage image,
-      VkFormat image_format,
+    void generateMipMaps(vk::PhysicalDevice physical_device,
+      vk::Device device,
+      vk::CommandPool command_pool,
+      vk::Queue queue,
+      vk::Image image,
+      vk::Format image_format,
       int32_t width,
       int32_t height,
       uint32_t in_mip_levels);

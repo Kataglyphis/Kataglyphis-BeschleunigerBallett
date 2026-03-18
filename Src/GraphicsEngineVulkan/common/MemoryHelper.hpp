@@ -1,5 +1,5 @@
 #pragma once
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 namespace Kataglyphis {
 // aligned piece of memory appropiately and when necessary return bigger piece
@@ -9,11 +9,10 @@ namespace Kataglyphis {
 }
 
 [[maybe_unused]] static uint32_t
-  find_memory_type_index(VkPhysicalDevice physical_device, uint32_t allowed_types, VkMemoryPropertyFlags properties)
+  find_memory_type_index(vk::PhysicalDevice physical_device, uint32_t allowed_types, vk::MemoryPropertyFlags properties)
 {
     // get properties of physical device memory
-    VkPhysicalDeviceMemoryProperties memory_properties{};
-    vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+    vk::PhysicalDeviceMemoryProperties memory_properties = physical_device.getMemoryProperties();
 
     for (uint32_t i = 0; i < memory_properties.memoryTypeCount; i++) {
         if ((allowed_types & (1 << i))

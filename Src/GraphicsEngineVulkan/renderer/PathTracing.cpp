@@ -8,7 +8,7 @@ module;
 #include <sstream>
 #include <string>
 #include <vector>
-#include <vulkan/vulkan_core.h>
+#include <vulkan/vulkan.hpp>
 
 #include "common/Utilities.hpp"
 #include "renderer/pushConstants/PushConstantPathTracing.hpp"
@@ -27,14 +27,13 @@ import kataglyphis.vulkan.shader_helper;
 Kataglyphis::VulkanRendererInternals::PathTracing::PathTracing() = default;
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::init(VulkanDevice *in_device,
-  const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
+  const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
 {
     this->device = in_device;
 
-    VkPhysicalDeviceProperties const physicalDeviceProps = device->getPhysicalDeviceProperties();
+    vk::PhysicalDeviceProperties const physicalDeviceProps = device->getPhysicalDeviceProperties();
     timeStampPeriod = physicalDeviceProps.limits.timestampPeriod;
 
-    // save the limits for handling all special cases later on
     computeLimits.maxComputeWorkGroupCount[0] = physicalDeviceProps.limits.maxComputeWorkGroupCount[0];
     computeLimits.maxComputeWorkGroupCount[1] = physicalDeviceProps.limits.maxComputeWorkGroupCount[1];
     computeLimits.maxComputeWorkGroupCount[2] = physicalDeviceProps.limits.maxComputeWorkGroupCount[2];
@@ -51,77 +50,61 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::init(VulkanDevice *in_de
 }
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::shaderHotReload(
-  const std::vector<VkDescriptorSetLayout> &descriptor_set_layouts)
+  const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts)
 {
-    vkDestroyPipeline(device->getLogicalDevice(), pipeline, nullptr);
+    device->getLogicalDevice().destroyPipeline(pipeline);
     createPipeline(descriptor_set_layouts);
 }
 
-void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(VkCommandBuffer &commandBuffer,
+void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::CommandBuffer &commandBuffer,
   uint32_t /*image_index*/,
   VulkanImage &vulkanImage,
   VulkanSwapChain *vulkanSwapChain,
-  const std::vector<VkDescriptorSet> &descriptorSets)
+  const std::vector<vk::DescriptorSet> &descriptorSets)
 {
-    // we have reset the pool; hence start by 0
     uint32_t query = 0;
 
-    vkCmdResetQueryPool(commandBuffer, queryPool, 0, query_count);
+    commandBuffer.resetQueryPool(queryPool, 0, query_count);
 
-    vkCmdWriteTimestamp(
-      commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool, query++);
+    commandBuffer.writeTimestamp(vk::PipelineStageFlagBits::eComputeShader, queryPool, query++);
 
     Kataglyphis::VulkanRendererInternals::QueueFamilyIndices const indices = device->getQueueFamilies();
 
-    VkImageSubresourceRange subresourceRange{};
-    subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    vk::ImageSubresourceRange subresourceRange{};
+    subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
     subresourceRange.baseMipLevel = 0;
     subresourceRange.baseArrayLayer = 0;
     subresourceRange.levelCount = 1;
     subresourceRange.layerCount = 1;
 
-    VkImageMemoryBarrier presentToPathTracingImageBarrier{};
-    presentToPathTracingImageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    presentToPathTracingImageBarrier.pNext = nullptr;
+    vk::ImageMemoryBarrier presentToPathTracingImageBarrier{};
     presentToPathTracingImageBarrier.srcQueueFamilyIndex = static_cast<uint32_t>(indices.graphics_family);
     presentToPathTracingImageBarrier.dstQueueFamilyIndex = static_cast<uint32_t>(indices.compute_family);
-    presentToPathTracingImageBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    presentToPathTracingImageBarrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    presentToPathTracingImageBarrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    presentToPathTracingImageBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    presentToPathTracingImageBarrier.srcAccessMask = vk::AccessFlagBits::eShaderRead;
+    presentToPathTracingImageBarrier.dstAccessMask = vk::AccessFlagBits::eShaderWrite;
+    presentToPathTracingImageBarrier.oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    presentToPathTracingImageBarrier.newLayout = vk::ImageLayout::eGeneral;
     presentToPathTracingImageBarrier.subresourceRange = subresourceRange;
     presentToPathTracingImageBarrier.image = vulkanImage.getImage();
 
-    vkCmdPipelineBarrier(commandBuffer,
-      VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eVertexShader,
+      vk::PipelineStageFlagBits::eComputeShader,
+      vk::DependencyFlags{},
+      {},
+      {},
+      { presentToPathTracingImageBarrier });
 
-      0,
-      0,
-      nullptr,
-      0,
-      nullptr,
-      1,
-      &presentToPathTracingImageBarrier);
-
-    VkExtent2D const imageSize = vulkanSwapChain->getSwapChainExtent();
+    vk::Extent2D const imageSize = vulkanSwapChain->getSwapChainExtent();
     push_constant.width = imageSize.width;
     push_constant.height = imageSize.height;
     push_constant.clearColor = { 0.2F, 0.65F, 0.4F, 1.0F };
 
-    vkCmdPushConstants(
-      commandBuffer, pipeline_layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(PushConstantPathTracing), &push_constant);
+    commandBuffer.pushConstants(
+      pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(PushConstantPathTracing), &push_constant);
 
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline);
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
 
-    vkCmdBindDescriptorSets(commandBuffer,
-      VK_PIPELINE_BIND_POINT_COMPUTE,
-      pipeline_layout,
-      0,
-      static_cast<uint32_t>(descriptorSets.size()),
-      descriptorSets.data(),
-      0,
-      nullptr);
+    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipeline_layout, 0, descriptorSets, nullptr);
 
     uint32_t const workGroupCountX = std::max(
       (imageSize.width + specializationData.specWorkGroupSizeX - 1) / specializationData.specWorkGroupSizeX, 1U);
@@ -129,77 +112,63 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(VkCommand
       (imageSize.height + specializationData.specWorkGroupSizeY - 1) / specializationData.specWorkGroupSizeY, 1U);
     uint32_t const workGroupCountZ = 1;
 
-    vkCmdDispatch(commandBuffer, workGroupCountX, workGroupCountY, workGroupCountZ);
+    commandBuffer.dispatch(workGroupCountX, workGroupCountY, workGroupCountZ);
 
-    VkImageMemoryBarrier pathTracingToPresentImageBarrier{};
-    pathTracingToPresentImageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    pathTracingToPresentImageBarrier.pNext = nullptr;
+    vk::ImageMemoryBarrier pathTracingToPresentImageBarrier{};
     pathTracingToPresentImageBarrier.srcQueueFamilyIndex = static_cast<uint32_t>(indices.compute_family);
     pathTracingToPresentImageBarrier.dstQueueFamilyIndex = static_cast<uint32_t>(indices.graphics_family);
-    pathTracingToPresentImageBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    pathTracingToPresentImageBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    pathTracingToPresentImageBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
-    pathTracingToPresentImageBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    pathTracingToPresentImageBarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
+    pathTracingToPresentImageBarrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+    pathTracingToPresentImageBarrier.oldLayout = vk::ImageLayout::eGeneral;
+    pathTracingToPresentImageBarrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
     pathTracingToPresentImageBarrier.image = vulkanImage.getImage();
     pathTracingToPresentImageBarrier.subresourceRange = subresourceRange;
 
-    vkCmdPipelineBarrier(commandBuffer,
-      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-      VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-      0,
-      0,
-      nullptr,
-      0,
-      nullptr,
-      1,
-      &pathTracingToPresentImageBarrier);
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
+      vk::PipelineStageFlagBits::eVertexShader,
+      vk::DependencyFlags{},
+      {},
+      {},
+      { pathTracingToPresentImageBarrier });
 
-    vkCmdWriteTimestamp(
-      commandBuffer, VkPipelineStageFlagBits::VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, queryPool, query++);
+    commandBuffer.writeTimestamp(vk::PipelineStageFlagBits::eComputeShader, queryPool, query++);
 }
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::cleanUp()
 {
-    vkDestroyPipeline(device->getLogicalDevice(), pipeline, nullptr);
-    vkDestroyPipelineLayout(device->getLogicalDevice(), pipeline_layout, nullptr);
+    device->getLogicalDevice().destroyPipeline(pipeline);
+    device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
 
-    vkDestroyQueryPool(device->getLogicalDevice(), queryPool, nullptr);
+    device->getLogicalDevice().destroyQueryPool(queryPool);
 }
 
 Kataglyphis::VulkanRendererInternals::PathTracing::~PathTracing() = default;
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::createQueryPool()
 {
-    VkQueryPoolCreateInfo queryPoolInfo = {};
-    queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-    // This query pool will store pipeline statistics
-    queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
-    queryPoolInfo.pipelineStatistics = 0;
+    vk::QueryPoolCreateInfo queryPoolInfo{};
+    queryPoolInfo.queryType = vk::QueryType::eTimestamp;
+    queryPoolInfo.pipelineStatistics = {};
     queryPoolInfo.queryCount = query_count;
-    ASSERT_VULKAN(vkCreateQueryPool(device->getLogicalDevice(), &queryPoolInfo, nullptr, &queryPool),
-      "Failed to create query pool!");
+    queryPool = device->getLogicalDevice().createQueryPool(queryPoolInfo);
 }
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
-  const std::vector<VkDescriptorSetLayout> &descriptorSetLayouts)
+  const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
 {
-    VkPushConstantRange push_constant_range{};
-    push_constant_range.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    vk::PushConstantRange push_constant_range{};
+    push_constant_range.stageFlags = vk::ShaderStageFlagBits::eCompute;
     push_constant_range.offset = 0;
     push_constant_range.size = sizeof(PushConstantPathTracing);
 
-    VkPipelineLayoutCreateInfo compute_pipeline_layout_create_info{};
-    compute_pipeline_layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    vk::PipelineLayoutCreateInfo compute_pipeline_layout_create_info{};
     compute_pipeline_layout_create_info.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
     compute_pipeline_layout_create_info.pushConstantRangeCount = 1;
     compute_pipeline_layout_create_info.pPushConstantRanges = &push_constant_range;
     compute_pipeline_layout_create_info.pSetLayouts = descriptorSetLayouts.data();
 
-    ASSERT_VULKAN(vkCreatePipelineLayout(
-                    device->getLogicalDevice(), &compute_pipeline_layout_create_info, nullptr, &pipeline_layout),
-      "Failed to create compute path tracing pipeline layout!");
+    pipeline_layout = device->getLogicalDevice().createPipelineLayout(compute_pipeline_layout_create_info);
 
-    // create pipeline
     std::stringstream pathTracing_shader_dir;
     std::filesystem::path const cwd = std::filesystem::current_path();
     pathTracing_shader_dir << cwd.string();
@@ -214,11 +183,9 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
 
     shaderHelper.compileShader(pathTracing_shader_dir.str(), pathTracing_shader);
 
-    // build shader modules to link to graphics pipeline
-    VkShaderModule pathTracingModule = shaderHelper.createShaderModule(device, pathTracingShadercode);
+    vk::ShaderModule pathTracingModule = shaderHelper.createShaderModule(device, pathTracingShadercode);
 
-    // Specialization constant for workgroup size
-    std::array<VkSpecializationMapEntry, 2> specEntries{};
+    std::array<vk::SpecializationMapEntry, 2> specEntries{};
 
     specEntries[0].constantID = 0;
     specEntries[0].size = sizeof(specializationData.specWorkGroupSizeX);
@@ -228,34 +195,26 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
     specEntries[1].size = sizeof(specializationData.specWorkGroupSizeY);
     specEntries[1].offset = offsetof(SpecializationData, specWorkGroupSizeY);
 
-    // specEntries[2].constantID = 2;
-    // specEntries[2].size = sizeof(specializationData.specWorkGroupSizeZ);
-    // specEntries[2].offset = offsetof(SpecializationData, specWorkGroupSizeZ);
-
-    VkSpecializationInfo specInfo{};
+    vk::SpecializationInfo specInfo{};
     specInfo.dataSize = sizeof(specializationData);
     specInfo.mapEntryCount = static_cast<uint32_t>(specEntries.size());
     specInfo.pMapEntries = specEntries.data();
     specInfo.pData = &specializationData;
 
-    VkPipelineShaderStageCreateInfo compute_shader_integrate_create_info{};
-    compute_shader_integrate_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    compute_shader_integrate_create_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    vk::PipelineShaderStageCreateInfo compute_shader_integrate_create_info{};
+    compute_shader_integrate_create_info.stage = vk::ShaderStageFlagBits::eCompute;
     compute_shader_integrate_create_info.module = pathTracingModule;
     compute_shader_integrate_create_info.pSpecializationInfo = &specInfo;
     compute_shader_integrate_create_info.pName = "main";
 
-    // -- COMPUTE PIPELINE CREATION --
-    VkComputePipelineCreateInfo compute_pipeline_create_info{};
-    compute_pipeline_create_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    vk::ComputePipelineCreateInfo compute_pipeline_create_info{};
     compute_pipeline_create_info.stage = compute_shader_integrate_create_info;
     compute_pipeline_create_info.layout = pipeline_layout;
-    compute_pipeline_create_info.flags = 0;
-    // create compute pipeline
-    ASSERT_VULKAN(vkCreateComputePipelines(
-                    device->getLogicalDevice(), VK_NULL_HANDLE, 1, &compute_pipeline_create_info, nullptr, &pipeline),
-      "Failed to create a compute pipeline!");
+    compute_pipeline_create_info.flags = vk::PipelineCreateFlags{};
 
-    // Destroy shader modules, no longer needed after pipeline created
-    vkDestroyShaderModule(device->getLogicalDevice(), pathTracingModule, nullptr);
+    auto result = device->getLogicalDevice().createComputePipeline(nullptr, compute_pipeline_create_info);
+    if (result.result != vk::Result::eSuccess) { throw std::runtime_error("Failed to create a compute pipeline!"); }
+    pipeline = result.value;
+
+    device->getLogicalDevice().destroyShaderModule(pathTracingModule);
 }

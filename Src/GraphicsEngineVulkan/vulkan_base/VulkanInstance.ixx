@@ -1,7 +1,7 @@
 module;
 
 #include <vector>
-#include <vulkan/vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.instance;
 
@@ -11,14 +11,14 @@ class VulkanInstance
   public:
     VulkanInstance();
 
-    VkInstance &getVulkanInstance() { return instance; };
+    vk::Instance &getVulkanInstance() { return instance; };
 
     void cleanUp();
 
     ~VulkanInstance();
 
   private:
-    VkInstance instance{};
+    vk::Instance instance{};
 
     std::vector<const char *> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 
