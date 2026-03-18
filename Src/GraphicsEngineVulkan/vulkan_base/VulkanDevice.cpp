@@ -168,7 +168,7 @@ auto Kataglyphis::VulkanDevice::getQueueFamilies() -> Kataglyphis::VulkanRendere
         }
 
         // check if queue family suppports presentation
-        vk::Bool32 presentation_support = physical_device.getSurfaceSupportKHR(index, *surface);
+        vk::Bool32 presentation_support = physical_device.getSurfaceSupportKHR(index, *surface).value;
         // check if queue is presentation type (can be both graphics and
         // presentation)
         if (queue_family.queueCount > 0 && presentation_support) {
@@ -189,7 +189,7 @@ void Kataglyphis::VulkanDevice::get_physical_device()
     const GpuSelectionMode selection_mode = parseGpuSelectionMode();
 
     // Enumerate physical devices the vkInstance can access
-    std::vector<vk::PhysicalDevice> device_list = instance->getVulkanInstance().enumeratePhysicalDevices();
+    std::vector<vk::PhysicalDevice> device_list = instance->getVulkanInstance().enumeratePhysicalDevices().value;
 
     // if no devices available, then none support of Vulkan
     if (device_list.empty()) { spdlog::error("Can not find GPU's that support Vulkan Instance!"); }
@@ -352,7 +352,8 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     std::vector<const char *> extensions(device_extensions);
 
     // Query available extensions for the physical device
-    std::vector<vk::ExtensionProperties> availableExtensions = physical_device.enumerateDeviceExtensionProperties();
+    std::vector<vk::ExtensionProperties> availableExtensions =
+      physical_device.enumerateDeviceExtensionProperties().value;
 
     // Helper function to check if an extension is supported
     auto isExtensionSupported = [&availableExtensions](const char *extensionName) -> bool {
@@ -501,7 +502,7 @@ auto Kataglyphis::VulkanDevice::getQueueFamilies(vk::PhysicalDevice selectedPhys
         }
 
         // check if queue family suppports presentation
-        vk::Bool32 presentation_support = selectedPhysicalDevice.getSurfaceSupportKHR(index, *surface);
+        vk::Bool32 presentation_support = selectedPhysicalDevice.getSurfaceSupportKHR(index, *surface).value;
         // check if queue is presentation type (can be both graphics and
         // presentation)
         if (queue_family.queueCount > 0 && presentation_support) {
@@ -523,13 +524,13 @@ auto Kataglyphis::VulkanDevice::getSwapchainDetails(vk::PhysicalDevice device)
     Kataglyphis::VulkanRendererInternals::SwapChainDetails swapchain_details{};
     // get the surface capabilities for the given surface on the given physical
     // device
-    swapchain_details.surface_capabilities = device.getSurfaceCapabilitiesKHR(*surface);
+    swapchain_details.surface_capabilities = device.getSurfaceCapabilitiesKHR(*surface).value;
 
     // get list of formats
-    swapchain_details.formats = device.getSurfaceFormatsKHR(*surface);
+    swapchain_details.formats = device.getSurfaceFormatsKHR(*surface).value;
 
     // get list of presentation modes
-    swapchain_details.presentation_mode = device.getSurfacePresentModesKHR(*surface);
+    swapchain_details.presentation_mode = device.getSurfacePresentModesKHR(*surface).value;
 
     return swapchain_details;
 }
@@ -554,7 +555,7 @@ auto Kataglyphis::VulkanDevice::check_device_suitable(vk::PhysicalDevice device)
 
 auto Kataglyphis::VulkanDevice::check_device_extension_support(vk::PhysicalDevice device) -> bool
 {
-    std::vector<vk::ExtensionProperties> extensions = device.enumerateDeviceExtensionProperties();
+    std::vector<vk::ExtensionProperties> extensions = device.enumerateDeviceExtensionProperties().value;
 
     if (extensions.empty()) { return false; }
 
