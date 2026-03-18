@@ -9,6 +9,8 @@ module;
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
+
 module kataglyphis.vulkan.instance;
 
 import kataglyphis.vulkan.config;
@@ -16,6 +18,9 @@ import kataglyphis.vulkan.debug;
 
 Kataglyphis::VulkanInstance::VulkanInstance()
 {
+    static vk::DynamicLoader dl;
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(dl.getProcAddress<PFN_vkGetInstanceProcAddr>("vkGetInstanceProcAddr"));
+
     if (Kataglyphis::ENABLE_VALIDATION_LAYERS && !check_validation_layer_support()) {
         spdlog::error("Validation layers requested, but not available!");
     }
@@ -73,6 +78,8 @@ Kataglyphis::VulkanInstance::VulkanInstance()
 
     // create instance
     instance = vk::createInstance(create_info).value;
+
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
 }
 
 auto Kataglyphis::VulkanInstance::check_validation_layer_support() -> bool

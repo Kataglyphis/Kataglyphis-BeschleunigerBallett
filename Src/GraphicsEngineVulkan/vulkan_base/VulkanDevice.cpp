@@ -470,6 +470,8 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         std::abort();
     }
 
+    VULKAN_HPP_DEFAULT_DISPATCHER.init(logical_device);
+
     //  Queues are created at the same time as the device...
     // So we want handle to queues
     // From given logical device of given queue family, of given queue index (0

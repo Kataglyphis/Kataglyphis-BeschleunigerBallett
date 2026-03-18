@@ -50,17 +50,17 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
     vk::BufferDeviceAddressInfo bufferDeviceAI{};
     bufferDeviceAI.buffer = raygenShaderBindingTableBuffer.getBuffer();
 
-    rgen_region.deviceAddress = logical_device.getBufferAddress(bufferDeviceAI);
+    rgen_region.deviceAddress = logical_device.getBufferDeviceAddress(bufferDeviceAI);
     rgen_region.stride = handle_size_aligned;
     rgen_region.size = handle_size_aligned;
 
     bufferDeviceAI.buffer = missShaderBindingTableBuffer.getBuffer();
-    miss_region.deviceAddress = logical_device.getBufferAddress(bufferDeviceAI);
+    miss_region.deviceAddress = logical_device.getBufferDeviceAddress(bufferDeviceAI);
     miss_region.stride = handle_size_aligned;
     miss_region.size = handle_size_aligned;
 
     bufferDeviceAI.buffer = hitShaderBindingTableBuffer.getBuffer();
-    hit_region.deviceAddress = logical_device.getBufferAddress(bufferDeviceAI);
+    hit_region.deviceAddress = logical_device.getBufferDeviceAddress(bufferDeviceAI);
     hit_region.stride = handle_size_aligned;
     hit_region.size = handle_size_aligned;
 
