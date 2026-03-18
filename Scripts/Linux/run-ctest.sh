@@ -1,64 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
+
 git config --global --add safe.directory /workspace || true
-
-source_vulkan_env() {
-  if [[ -n "${VULKAN_SETUP_SCRIPT:-}" && -f "${VULKAN_SETUP_SCRIPT}" ]]; then
-    . "${VULKAN_SETUP_SCRIPT}"
-    return
-  fi
-
-  if [[ -n "${VULKAN_VERSION:-}" ]]; then
-    if [[ -f "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh" ]]; then
-      . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-      return
-    fi
-    if [[ -f "${HOME}/vulkan/${VULKAN_VERSION}/setup-env.sh" ]]; then
-      . "${HOME}/vulkan/${VULKAN_VERSION}/setup-env.sh"
-      return
-    fi
-  fi
-
-  if [[ -n "${VULKAN_SDK:-}" && -f "${VULKAN_SDK}/setup-env.sh" ]]; then
-    . "${VULKAN_SDK}/setup-env.sh"
-    return
-  fi
-
-  echo "[run-ctest] Vulkan setup-env.sh nicht gefunden – fahre ohne explizites Sourcing fort."
-}
-
-VULKAN_VERSION_ARG=""
-VULKAN_SETUP_SCRIPT_ARG=""
-VULKAN_SDK_ARG=""
-BUILD_DIR_ARG=""
-BUILD_TYPE_ARG=""
-CTEST_EXCLUDE_ARG=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --vulkan-version)
-      VULKAN_VERSION_ARG="${2:-}"
+      VULKAN_VERSION="${2:-}"
       shift 2
       ;;
     --vulkan-setup-script)
-      VULKAN_SETUP_SCRIPT_ARG="${2:-}"
+      VULKAN_SETUP_SCRIPT="${2:-}"
       shift 2
       ;;
     --vulkan-sdk)
-      VULKAN_SDK_ARG="${2:-}"
+      VULKAN_SDK="${2:-}"
       shift 2
       ;;
     --build-dir)
-      BUILD_DIR_ARG="${2:-}"
+      BUILD_DIR="${2:-}"
       shift 2
       ;;
     --build-type)
-      BUILD_TYPE_ARG="${2:-}"
+      BUILD_TYPE="${2:-}"
       shift 2
       ;;
     --ctest-exclude)
-      CTEST_EXCLUDE_ARG="${2:-}"
+      CTEST_EXCLUDE="${2:-}"
       shift 2
       ;;
     --)
@@ -66,8 +38,7 @@ while [[ $# -gt 0 ]]; do
       break
       ;;
     -*)
-      echo "Unbekanntes Argument: $1" >&2
-      exit 1
+      err "Unknown argument: $1"
       ;;
     *)
       break
@@ -75,23 +46,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -n "${VULKAN_VERSION_ARG}" ]]; then
-  VULKAN_VERSION="${VULKAN_VERSION_ARG}"
-fi
-if [[ -n "${VULKAN_SETUP_SCRIPT_ARG}" ]]; then
-  VULKAN_SETUP_SCRIPT="${VULKAN_SETUP_SCRIPT_ARG}"
-fi
-if [[ -n "${VULKAN_SDK_ARG}" ]]; then
-  VULKAN_SDK="${VULKAN_SDK_ARG}"
-fi
-
 source_vulkan_env
 
-BUILD_DIR="${BUILD_DIR_ARG:-${BUILD_DIR:-}}"
-BUILD_TYPE="${BUILD_TYPE_ARG:-${BUILD_TYPE:-Debug}}"
-CTEST_EXCLUDE="${CTEST_EXCLUDE_ARG:-${CTEST_EXCLUDE:-}}"
+BUILD_DIR="${BUILD_DIR:-${BUILD_DIR_DEFAULT:-build}}"
+BUILD_TYPE="${BUILD_TYPE:-${BUILD_TYPE_DEFAULT:-Debug}}"
+CTEST_EXCLUDE="${CTEST_EXCLUDE:-${CTEST_EXCLUDE_DEFAULT:-}}"
 
 if [[ -n "${BUILD_DIR}" ]]; then
+  info "Changing to build directory: ${BUILD_DIR}"
   cd "${BUILD_DIR}"
 fi
 
@@ -106,9 +68,11 @@ CTEST_CMD=(
 )
 
 if [[ -n "${CTEST_EXCLUDE}" ]]; then
+  info "Excluding tests matching: ${CTEST_EXCLUDE}"
   CTEST_CMD+=( -E "${CTEST_EXCLUDE}" )
 fi
 
 CTEST_CMD+=( "$@" )
 
+info "Executing: ${CTEST_CMD[*]}"
 "${CTEST_CMD[@]}"

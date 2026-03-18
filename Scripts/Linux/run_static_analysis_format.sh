@@ -1,34 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd -- "${SCRIPT_DIR}/../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-BUILD_DIR="build"
-PRESET=""
-SCAN_BUILD_OUT="scan-build-reports"
-CLANG_TIDY_FIX="false"
-RUN_CLANG_ANALYZE_HTML="false"
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
 
-RUN_FORMAT_AND_TIDY="true"
-RUN_SCAN_BUILD="true"
+BUILD_DIR="${BUILD_DIR:-build}"
+PRESET="${PRESET:-}"
+SCAN_BUILD_OUT="${SCAN_BUILD_OUT:-scan-build-reports}"
+CLANG_TIDY_FIX="${CLANG_TIDY_FIX:-false}"
+RUN_CLANG_ANALYZE_HTML="${RUN_CLANG_ANALYZE_HTML:-false}"
+
+RUN_FORMAT_AND_TIDY="${RUN_FORMAT_AND_TIDY:-true}"
+RUN_SCAN_BUILD="${RUN_SCAN_BUILD:-true}"
 
 ensure_cmake_format() {
-  if command -v cmake-format >/dev/null 2>&1; then
+  if has_tool cmake-format; then
     return
   fi
 
-  if ! command -v uv >/dev/null 2>&1; then
-    echo "Required tool not found: uv (needed to manage .venv and install requirements)" >&2
-    exit 1
+  if ! has_tool uv; then
+    err "Required tool not found: uv (needed to manage .venv and install requirements)"
   fi
 
-  echo "cmake-format not found. Preparing Python environment..."
+  info "cmake-format not found. Preparing Python environment..."
 
   if [[ -d "${ROOT_DIR}/.venv" ]]; then
-    echo "Found .venv - activating and installing requirements..."
+    info "Found .venv - activating and installing requirements..."
   else
-    echo "No .venv found - creating one with uv..."
+    info "No .venv found - creating one with uv..."
     uv venv "${ROOT_DIR}/.venv"
   fi
 
@@ -36,28 +38,21 @@ ensure_cmake_format() {
   source "${ROOT_DIR}/.venv/bin/activate"
   uv pip install -r "${ROOT_DIR}/requirements.txt"
 
-  if ! command -v cmake-format >/dev/null 2>&1; then
-    echo "cmake-format is still not available after installing requirements." >&2
-    exit 1
+  if ! has_tool cmake-format; then
+    err "cmake-format is still not available after installing requirements."
   fi
 }
 
 run_format_and_tidy() {
   ensure_cmake_format
 
-  for tool in cmake-format clang-format clang-tidy; do
-    if ! command -v "$tool" >/dev/null 2>&1; then
-      echo "Required tool not found: $tool" >&2
-      exit 1
-    fi
-  done
+  require_tools cmake-format clang-format clang-tidy
 
   if [[ ! -f "${BUILD_DIR}/compile_commands.json" ]]; then
-    echo "Missing ${BUILD_DIR}/compile_commands.json" >&2
-    echo "Run CMake configure first, e.g. Scripts/Linux/cmake-configure-build.sh --build-dir ${BUILD_DIR} --preset <preset>" >&2
-    exit 1
+    err "Missing ${BUILD_DIR}/compile_commands.json. Run CMake configure first, e.g. Scripts/Linux/cmake-configure-build.sh --build-dir ${BUILD_DIR} --preset <preset>"
   fi
 
+  info "Formatting CMake files..."
   mapfile -t cmake_files < <(find . \
     -type f \( -name 'CMakeLists.txt' -o -name '*.cmake' \) \
     -not -path './build/*' \
@@ -78,6 +73,7 @@ run_format_and_tidy() {
 
   local cpp_files=()
   if [[ ${#cpp_search_dirs[@]} -gt 0 ]]; then
+    info "Finding C/C++ source files..."
     mapfile -t cpp_files < <(find "${cpp_search_dirs[@]}" \
       -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.h' -o -name '*.hh' -o -name '*.hpp' -o -name '*.hxx' -o -name '*.ixx' -o -name '*.cppm' -o -name '*.ccm' -o -name '*.cxxm' -o -name '*.mpp' \))
   fi
@@ -89,6 +85,7 @@ run_format_and_tidy() {
   fi
 
   if [[ ${#cpp_files[@]} -gt 0 ]]; then
+    info "Running clang-format on ${#cpp_files[@]} files..."
     clang-format -i "${cpp_files[@]}"
   fi
 
@@ -99,6 +96,7 @@ run_format_and_tidy() {
   # If the compile DB was generated in a container (/workspace), remap paths for local runs.
   if grep -q '/workspace' "${compile_db_path}"; then
     temp_db_dir="$(mktemp -d)"
+    info "Remapping container paths in compile_commands.json..."
     sed "s#\"/workspace#\"${ROOT_DIR}#g" "${compile_db_path}" > "${temp_db_dir}/compile_commands.json"
 
     # Drop container-only GCC toolchain flags if that toolchain path is unavailable locally.
@@ -114,13 +112,14 @@ run_format_and_tidy() {
   fi
 
   local clang_tidy_args=( -p "${clang_tidy_build_dir}" )
-  echo "Disabling for internal bug of clang-tidy..."
+  warn "Disabling for internal bug of clang-tidy..."
   clang_tidy_args+=( -checks=-modernize-use-scoped-lock )
   if [[ "${CLANG_TIDY_FIX}" == "true" ]]; then
     clang_tidy_args+=( -fix )
   fi
 
   if [[ ${#clang_tidy_files[@]} -gt 0 ]]; then
+    info "Running clang-tidy on ${#clang_tidy_files[@]} files..."
     clang-tidy "${clang_tidy_args[@]}" "${clang_tidy_files[@]}"
   fi
 
@@ -130,10 +129,7 @@ run_format_and_tidy() {
 }
 
 run_scan_build() {
-  if ! command -v scan-build >/dev/null 2>&1; then
-    echo "Required tool not found: scan-build" >&2
-    exit 1
-  fi
+  require_tools scan-build
 
   mkdir -p "${SCAN_BUILD_OUT}"
 
@@ -142,26 +138,25 @@ run_scan_build() {
     scan_cmd+=(--preset "${PRESET}")
   fi
 
+  info "Running scan-build..."
   "${scan_cmd[@]}"
 }
 
 run_clang_analyze_html() {
-  if ! command -v clang++ >/dev/null 2>&1; then
-    echo "Required tool not found: clang++" >&2
-    exit 1
-  fi
+  require_tools clang++
 
   if [[ ! -d "Src" ]]; then
-    echo "Skipping clang++ --analyze: Src directory not found."
+    warn "Skipping clang++ --analyze: Src directory not found."
     return
   fi
 
   mapfile -t src_cpp_files < <(find Src -type f \( -name '*.cpp' -o -name '*.cc' \))
   if [[ ${#src_cpp_files[@]} -eq 0 ]]; then
-    echo "Skipping clang++ --analyze: no Src/*.cpp or Src/*.cc files found."
+    warn "Skipping clang++ --analyze: no Src/*.cpp or Src/*.cc files found."
     return
   fi
 
+  info "Running clang++ --analyze (HTML output)..."
   clang++ --analyze -DUSE_RUST=1 -Xanalyzer -analyzer-output=html "${src_cpp_files[@]}"
 }
 
@@ -233,9 +228,7 @@ while [[ $# -gt 0 ]]; do
       exit 0
       ;;
     *)
-      echo "Unknown argument: $1" >&2
-      usage
-      exit 1
+      err "Unknown argument: $1"
       ;;
   esac
 done
@@ -256,27 +249,26 @@ if [[ "${RUN_CLANG_ANALYZE_HTML}" == "true" ]]; then
 fi
 
 if [[ ${total_steps} -eq 0 ]]; then
-  echo "Nothing to run. Use --help for available options."
-  exit 1
+  err "Nothing to run. Use --help for available options."
 fi
 
 step=1
 
 if [[ "${RUN_FORMAT_AND_TIDY}" == "true" ]]; then
-  echo "[${step}/${total_steps}] Running format + clang-tidy..."
+  info "[${step}/${total_steps}] Running format + clang-tidy..."
   run_format_and_tidy
   ((step += 1))
 fi
 
 if [[ "${RUN_SCAN_BUILD}" == "true" ]]; then
-  echo "[${step}/${total_steps}] Running scan-build..."
+  info "[${step}/${total_steps}] Running scan-build..."
   run_scan_build
   ((step += 1))
 fi
 
 if [[ "${RUN_CLANG_ANALYZE_HTML}" == "true" ]]; then
-  echo "[${step}/${total_steps}] Running clang++ --analyze HTML report generation..."
+  info "[${step}/${total_steps}] Running clang++ --analyze HTML report generation..."
   run_clang_analyze_html
 fi
 
-echo "Done: static analysis and formatting pipeline completed."
+info "Static analysis and formatting pipeline completed successfully."
