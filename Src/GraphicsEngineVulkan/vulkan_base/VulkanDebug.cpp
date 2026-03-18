@@ -67,7 +67,8 @@ void setupDebugging(vk::Instance instance, vk::DebugReportFlagsEXT /*flags*/, vk
       vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError;
     debugUtilsMessengerCI.messageType =
       vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation;
-    debugUtilsMessengerCI.pfnUserCallback = debugUtilsMessengerCallback;
+    debugUtilsMessengerCI.pfnUserCallback =
+      reinterpret_cast<PFN_DebugUtilsMessengerCallbackEXT>(debugUtilsMessengerCallback);
 
     vk::Result result;
     std::tie(result, debugUtilsMessenger) = instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCI, nullptr);
