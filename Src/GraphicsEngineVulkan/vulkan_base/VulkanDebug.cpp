@@ -5,6 +5,7 @@ module;
 #include <sstream>
 #include <string>
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_structs.hpp>
 
 #include "common/Utilities.hpp"
 
