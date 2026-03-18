@@ -13,6 +13,9 @@ DEFAULT_CLEAN_BUILD_DIR="false"
 DEFAULT_SKIP_CONFIGURE="false"
 DEFAULT_USE_THREAD_SANITIZER="false"
 DEFAULT_VULKAN_SETUP_SCRIPT="/opt/vulkan/1.4.341.1/setup-env.sh"
+DEFAULT_MB_PER_JOB="4000"  # 4GB RAM per parallel job
+
+PARALLEL_JOBS=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -45,6 +48,14 @@ while [[ $# -gt 0 ]]; do
         USE_THREAD_SANITIZER_ARG="true"
         shift
       fi
+      ;;
+    --parallel)
+      PARALLEL_JOBS="${2:-}"
+      shift 2
+      ;;
+    --mb-per-job)
+      DEFAULT_MB_PER_JOB="${2:-}"
+      shift 2
       ;;
     --build-config)
       CMAKE_BUILD_CONFIG_ARG="${2:-}"
@@ -120,6 +131,14 @@ if [[ "${SKIP_CONFIGURE}" != "true" ]]; then
   fi
 fi
 
+# Compute optimal parallel jobs based on available memory
+if [[ -z "${PARALLEL_JOBS}" ]]; then
+  PARALLEL_JOBS=$(get_build_jobs "${DEFAULT_MB_PER_JOB}")
+  info "Auto-detected parallel jobs: ${PARALLEL_JOBS} (memory-aware)"
+else
+  info "Using specified parallel jobs: ${PARALLEL_JOBS}"
+fi
+
 build_cmd=(cmake --build)
 if [[ -n "${BUILD_DIR}" ]]; then
   build_cmd+=("${BUILD_DIR}")
@@ -133,6 +152,7 @@ fi
 if [[ -n "${CMAKE_BUILD_TARGET}" ]]; then
   build_cmd+=(--target "${CMAKE_BUILD_TARGET}")
 fi
+build_cmd+=(--parallel "${PARALLEL_JOBS}")
 
 info "Executing: ${build_cmd[*]}"
 "${build_cmd[@]}"

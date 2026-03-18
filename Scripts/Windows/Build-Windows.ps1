@@ -45,6 +45,8 @@ $modulePaths = @(
   (Join-Path $containerHubModulesRoot 'WindowsScripts.Shared.psm1'),
   (Join-Path $containerHubModulesRoot 'WindowsBuild.Common.psm1'),
   (Join-Path $containerHubModulesRoot 'WindowsToolchain.Common.psm1'),
+  (Join-Path $containerHubModulesRoot 'WindowsUv.Common.psm1'),
+  (Join-Path $containerHubModulesRoot 'WindowsCodeQL.Common.psm1'),
   (Join-Path $localModulesRoot 'Build.CMake.psm1'),
   (Join-Path $localModulesRoot 'Build.Formatting.psm1'),
   (Join-Path $localModulesRoot 'Build.Testing.psm1'),
@@ -60,6 +62,8 @@ foreach ($modulePath in $modulePaths) {
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsBuild.Common.psm1') -Force
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsToolchain.Common.psm1') -Force
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsScripts.Shared.psm1') -Force
+Import-Module (Join-Path $containerHubModulesRoot 'WindowsUv.Common.psm1') -Force
+Import-Module (Join-Path $containerHubModulesRoot 'WindowsCodeQL.Common.psm1') -Force
 Import-Module (Join-Path $localModulesRoot 'Build.CMake.psm1') -Force
 Import-Module (Join-Path $localModulesRoot 'Build.Formatting.psm1') -Force
 Import-Module (Join-Path $localModulesRoot 'Build.Testing.psm1') -Force

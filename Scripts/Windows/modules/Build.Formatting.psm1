@@ -58,7 +58,7 @@ function Get-ProjectCppFiles {
           Where-Object {
             ($_.ToString() -notmatch '\\build([\\-]|\\)') -and
             ($_.ToString() -notmatch '\\ExternalLib\\') -and
-            ($_.ToString() -notmatch '\\_deps\\') -and
+            ($_.ToString() -match '\\_deps\\') -and
             ($_.ToString() -notmatch '\\vcpkg_installed\\')
           })
         return @($trackedPaths | Sort-Object -Unique)
@@ -86,7 +86,9 @@ function Initialize-UvVenvPython {
     [Parameter(Mandatory)]
     [pscustomobject]$Context,
     [Parameter(Mandatory)]
-    [string]$WorkspacePath
+    [string]$WorkspacePath,
+    [string]$PythonVersion = '3.12',
+    [string]$EnvName = '.venv'
   )
 
   $uvCommand = Get-Command 'uv' -ErrorAction SilentlyContinue
@@ -94,15 +96,37 @@ function Initialize-UvVenvPython {
     throw 'uv not found on PATH. Install Astral uv before running formatting steps.'
   }
 
-  $venvPath = Join-Path $WorkspacePath '.venv'
+  $venvPath = Join-Path $WorkspacePath $EnvName
   $venvPython = Join-Path $venvPath 'Scripts\python.exe'
   $requirementsPath = Join-Path $WorkspacePath 'requirements.txt'
 
-  if (-not (Test-Path $venvPython)) {
-    Invoke-BuildExternal -Context $Context -File $uvCommand.Source -Parameters @('venv', '--allow-existing', $venvPath) | Out-Null
+  $logInfo = {
+    param([string]$Message)
+    Write-BuildLog -Context $Context -Message $Message
+  }
+  $logWarning = {
+    param([string]$Message)
+    Write-BuildLogWarning -Context $Context -Message $Message
+  }
+  $commandRunner = {
+    param([string]$File, [string[]]$Parameters)
+    Invoke-BuildExternal -Context $Context -File $File -Parameters $Parameters | Out-Null
   }
 
+  if (-not (Test-Path $venvPython)) {
+    New-UvProjectEnvironment -Workspace $WorkspacePath -PythonVersion $PythonVersion -EnvName $EnvName `
+      -CommandRunner $commandRunner -LogInfo $logInfo -LogWarning $logWarning
+    $env:UV_PROJECT_ENVIRONMENT = $venvPath
+  }
+
+  if (-not (Test-Path $requirementsPath)) {
+    Write-BuildLog -Context $Context -Message "No requirements.txt found at $requirementsPath, skipping dependency sync."
+    return $venvPython
+  }
+
+  Write-BuildLog -Context $Context -Message "Installing requirements from $requirementsPath..."
   Invoke-BuildExternal -Context $Context -File $uvCommand.Source -Parameters @('pip', 'install', '--python', $venvPython, '-r', $requirementsPath) | Out-Null
+
   return $venvPython
 }
 

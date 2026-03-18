@@ -53,6 +53,17 @@ html[data-theme="dark"] {
   margin-bottom: 1.4rem;
   background: linear-gradient(140deg, #ffffff 10%, #f1fbf5 100%);
   box-shadow: 0 8px 24px rgba(33, 82, 59, 0.1);
+  color: var(--text-main);
+}
+
+html[data-theme="dark"] .hero-section {
+  background: linear-gradient(140deg, #1a2a22 10%, #0d1a14 100%) !important;
+  border-color: #2b4a3a !important;
+  color: #e7efe9 !important;
+}
+
+html[data-theme="dark"] .hero-section p {
+  color: #b8cbc0 !important;
 }
 
 html[data-theme="dark"] .bd-sidebar-primary {
