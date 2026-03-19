@@ -241,7 +241,8 @@
 				"CMAKE_BUILD_TYPE": "Debug",
         "RUST_FEATURES": "ON",
 				"BUILD_TESTING": "TRUE",
-				"COMPILER_CACHE": "sccache"
+				"COMPILER_CACHE": "sccache",
+				"myproject_ENABLE_SANITIZER_ADDRESS": "OFF"
 			},
 			"condition": {
 				"type": "equals",
