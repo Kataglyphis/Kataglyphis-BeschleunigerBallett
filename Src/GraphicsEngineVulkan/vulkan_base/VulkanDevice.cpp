@@ -1,7 +1,5 @@
 module;
 
-#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
-
 #include "renderer/SwapChainDetails.hpp"
 #include <cstdint>
 #include <cstring>
@@ -15,8 +13,6 @@ module;
 #include <set>
 #include <string>
 #include <vulkan/vulkan.hpp>
-
-VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
 module kataglyphis.vulkan.device;
 
