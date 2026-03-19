@@ -61,13 +61,7 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
     }
 
     // end commands
-    vk::Result const end_result = command_buffer.end();
-    if (end_result != vk::Result::eSuccess) {
-        spdlog::default_logger_raw()->log(
-          spdlog::level::err, "Failed to end command buffer! (vk::Result={})", static_cast<int>(end_result));
-        command_buffer = vk::CommandBuffer{};
-        return;
-    }
+    command_buffer.end();
 
     // queue submission information
     vk::SubmitInfo submit_info{};
@@ -83,13 +77,7 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
         return;
     }
 
-    vk::Result const wait_result = queue.waitIdle();
-    if (wait_result != vk::Result::eSuccess) {
-        spdlog::default_logger_raw()->log(
-          spdlog::level::err, "Failed to wait queue idle! (vk::Result={})", static_cast<int>(wait_result));
-        command_buffer = vk::CommandBuffer{};
-        return;
-    }
+    queue.waitIdle();
 
     // Temporary command buffers are released when the command pool is destroyed.
     // Avoid explicit free to prevent freeing potentially pending buffers.
