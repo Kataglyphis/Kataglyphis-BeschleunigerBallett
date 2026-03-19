@@ -22,16 +22,11 @@ auto Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuf
     alloc_info.commandBufferCount = 1;
 
     // allocate command buffer from pool
-    std::vector<vk::CommandBuffer> buffers;
-    try {
-        buffers = device.allocateCommandBuffers(alloc_info);
-    } catch (vk::SystemError &e) {
+    std::vector<vk::CommandBuffer> buffers(1);
+    vk::Result const result = device.allocateCommandBuffers(&alloc_info, buffers.data());
+    if (result != vk::Result::eSuccess || buffers.empty()) {
         spdlog::default_logger_raw()->log(
-          spdlog::level::err, std::string("Failed to allocate command buffer! (error: ") + e.what() + ")");
-        return vk::CommandBuffer{};
-    }
-    if (buffers.empty()) {
-        spdlog::default_logger_raw()->log(spdlog::level::err, "Failed to allocate command buffer!");
+          spdlog::level::err, "Failed to allocate command buffer! (vk::Result={})", static_cast<int>(result));
         return vk::CommandBuffer{};
     }
     command_buffer = buffers[0];
@@ -42,11 +37,10 @@ auto Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuf
     begin_info.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
 
     // begin recording transfer commands
-    try {
-        command_buffer.begin(begin_info);
-    } catch (vk::SystemError &e) {
+    vk::Result const begin_result = command_buffer.begin(&begin_info);
+    if (begin_result != vk::Result::eSuccess) {
         spdlog::default_logger_raw()->log(
-          spdlog::level::err, std::string("Failed to begin command buffer! (error: ") + e.what() + ")");
+          spdlog::level::err, "Failed to begin command buffer! (vk::Result={})", static_cast<int>(begin_result));
         return vk::CommandBuffer{};
     }
 
@@ -67,11 +61,10 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
     }
 
     // end commands
-    try {
-        command_buffer.end();
-    } catch (vk::SystemError &e) {
+    vk::Result const end_result = command_buffer.end();
+    if (end_result != vk::Result::eSuccess) {
         spdlog::default_logger_raw()->log(
-          spdlog::level::err, std::string("Failed to end command buffer! (error: ") + e.what() + ")");
+          spdlog::level::err, "Failed to end command buffer! (vk::Result={})", static_cast<int>(end_result));
         command_buffer = vk::CommandBuffer{};
         return;
     }
@@ -82,20 +75,18 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
     submit_info.pCommandBuffers = &command_buffer;
 
     // submit transfer command to transfer queue and wait until it finishes
-    try {
-        queue.submit(submit_info);
-    } catch (vk::SystemError &e) {
+    vk::Result const submit_result = queue.submit(1, &submit_info, vk::Fence{});
+    if (submit_result != vk::Result::eSuccess) {
         spdlog::default_logger_raw()->log(
-          spdlog::level::err, std::string("Failed to submit to queue! (error: ") + e.what() + ")");
+          spdlog::level::err, "Failed to submit to queue! (vk::Result={})", static_cast<int>(submit_result));
         command_buffer = vk::CommandBuffer{};
         return;
     }
 
-    try {
-        queue.waitIdle();
-    } catch (vk::SystemError &e) {
+    vk::Result const wait_result = queue.waitIdle();
+    if (wait_result != vk::Result::eSuccess) {
         spdlog::default_logger_raw()->log(
-          spdlog::level::err, std::string("Failed to wait queue idle! (error: ") + e.what() + ")");
+          spdlog::level::err, "Failed to wait queue idle! (vk::Result={})", static_cast<int>(wait_result));
         command_buffer = vk::CommandBuffer{};
         return;
     }
