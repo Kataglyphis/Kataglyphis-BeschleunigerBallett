@@ -147,6 +147,8 @@ target_sources(
 
 target_include_directories(${COMPILE_TEST_SUITE} PRIVATE ${Vulkan_INCLUDE_DIRS})
 
+target_compile_definitions(${COMPILE_TEST_SUITE} PRIVATE VULKAN_HPP_NO_EXCEPTIONS VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1)
+
 target_link_libraries(
   ${COMPILE_TEST_SUITE}
   PUBLIC ${CMAKE_DL_LIBS}
