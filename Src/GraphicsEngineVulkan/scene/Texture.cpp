@@ -55,7 +55,7 @@ void Kataglyphis::Texture::createFromFile(VulkanDevice *device,
       vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
     void *data = nullptr;
-    data = device->getLogicalDevice().mapMemory(stagingBuffer.getBufferMemory(), 0, size);
+    data = device->getLogicalDevice().mapMemory(stagingBuffer.getBufferMemory(), 0, size).value;
     memcpy(data, image_data, static_cast<size_t>(size));
     device->getLogicalDevice().unmapMemory(stagingBuffer.getBufferMemory());
 

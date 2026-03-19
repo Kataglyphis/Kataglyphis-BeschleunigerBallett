@@ -62,11 +62,14 @@ Mesh::Mesh(VulkanDevice *device,
         vk::BufferDeviceAddressInfo material_info{};
         material_info.buffer = materialsBuffer.getBuffer();
 
-        object_description.index_address = device->getLogicalDevice().getBufferDeviceAddress(index_info);
-        object_description.vertex_address = device->getLogicalDevice().getBufferDeviceAddress(vertex_info);
+        object_description.index_address =
+          device->getLogicalDevice().getBufferDeviceAddress(index_info, VULKAN_HPP_DEFAULT_DISPATCHER);
+        object_description.vertex_address =
+          device->getLogicalDevice().getBufferDeviceAddress(vertex_info, VULKAN_HPP_DEFAULT_DISPATCHER);
         object_description.material_index_address =
-          device->getLogicalDevice().getBufferDeviceAddress(material_index_info);
-        object_description.material_address = device->getLogicalDevice().getBufferDeviceAddress(material_info);
+          device->getLogicalDevice().getBufferDeviceAddress(material_index_info, VULKAN_HPP_DEFAULT_DISPATCHER);
+        object_description.material_address =
+          device->getLogicalDevice().getBufferDeviceAddress(material_info, VULKAN_HPP_DEFAULT_DISPATCHER);
     }
 
     model = glm::mat4(1.0F);
