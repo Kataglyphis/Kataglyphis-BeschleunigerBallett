@@ -86,7 +86,8 @@ void Model::addSampler(const Texture &newTexture)
     sampler_create_info.anisotropyEnable = physical_device_features.samplerAnisotropy;
     sampler_create_info.maxAnisotropy = (physical_device_features.samplerAnisotropy != 0u) ? 16.0F : 1.0F;
 
-    vk::Sampler newSampler = device->getLogicalDevice().createSampler(sampler_create_info).value;
+    vk::ResultValue<vk::Sampler> sampler_result = device->getLogicalDevice().createSampler(sampler_create_info);
+    vk::Sampler newSampler = sampler_result.value;
 
     modelTextureSamplers.push_back(newSampler);
 }

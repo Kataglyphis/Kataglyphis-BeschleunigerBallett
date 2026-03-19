@@ -79,8 +79,10 @@ void Mesh::createVertexBuffer(vk::Queue /*transfer_queue*/,
   vk::CommandPool transfer_command_pool,
   std::vector<Vertex> &vertices)
 {
-    vk::BufferUsageFlags usage_flags = vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eVertexBuffer
-                                       | vk::BufferUsageFlagBits::eStorageBuffer;
+    vk::BufferUsageFlags usage_flags = {};
+    usage_flags |= vk::BufferUsageFlagBits::eTransferDst;
+    usage_flags |= vk::BufferUsageFlagBits::eVertexBuffer;
+    usage_flags |= vk::BufferUsageFlagBits::eStorageBuffer;
     vk::MemoryPropertyFlags const memory_property_flags = vk::MemoryPropertyFlagBits::eDeviceLocal;
     vk::MemoryAllocateFlags memory_allocate_flags = {};
 
@@ -100,8 +102,10 @@ void Mesh::createIndexBuffer(vk::Queue /*transfer_queue*/,
   vk::CommandPool transfer_command_pool,
   std::vector<uint32_t> &indices)
 {
-    vk::BufferUsageFlags usage_flags = vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer
-                                       | vk::BufferUsageFlagBits::eStorageBuffer;
+    vk::BufferUsageFlags usage_flags = {};
+    usage_flags |= vk::BufferUsageFlagBits::eTransferDst;
+    usage_flags |= vk::BufferUsageFlagBits::eIndexBuffer;
+    usage_flags |= vk::BufferUsageFlagBits::eStorageBuffer;
     vk::MemoryPropertyFlags const memory_property_flags = vk::MemoryPropertyFlagBits::eDeviceLocal;
     vk::MemoryAllocateFlags memory_allocate_flags = {};
 
@@ -121,8 +125,10 @@ void Mesh::createMaterialIDBuffer(vk::Queue /*transfer_queue*/,
   vk::CommandPool transfer_command_pool,
   std::vector<unsigned int> &materialIndex)
 {
-    vk::BufferUsageFlags usage_flags = vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer
-                                       | vk::BufferUsageFlagBits::eStorageBuffer;
+    vk::BufferUsageFlags usage_flags = {};
+    usage_flags |= vk::BufferUsageFlagBits::eTransferDst;
+    usage_flags |= vk::BufferUsageFlagBits::eIndexBuffer;
+    usage_flags |= vk::BufferUsageFlagBits::eStorageBuffer;
     vk::MemoryPropertyFlags const memory_property_flags = vk::MemoryPropertyFlagBits::eDeviceLocal;
     vk::MemoryAllocateFlags memory_allocate_flags = {};
 
@@ -147,8 +153,10 @@ void Mesh::createMaterialBuffer(vk::Queue /*transfer_queue*/,
   vk::CommandPool transfer_command_pool,
   std::vector<ObjMaterial> &materials)
 {
-    vk::BufferUsageFlags usage_flags = vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer
-                                       | vk::BufferUsageFlagBits::eStorageBuffer;
+    vk::BufferUsageFlags usage_flags = {};
+    usage_flags |= vk::BufferUsageFlagBits::eTransferDst;
+    usage_flags |= vk::BufferUsageFlagBits::eIndexBuffer;
+    usage_flags |= vk::BufferUsageFlagBits::eStorageBuffer;
     vk::MemoryPropertyFlags const memory_property_flags = vk::MemoryPropertyFlagBits::eDeviceLocal;
     vk::MemoryAllocateFlags memory_allocate_flags = {};
 

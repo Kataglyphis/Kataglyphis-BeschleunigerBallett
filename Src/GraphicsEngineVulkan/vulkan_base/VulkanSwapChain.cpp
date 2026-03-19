@@ -89,14 +89,17 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(VulkanDevice *in_device,
     swap_chain_create_info.oldSwapchain = nullptr;
 
     // create swap chain
-    swapchain = device->getLogicalDevice().createSwapchainKHR(swap_chain_create_info).value;
+    vk::ResultValue<vk::SwapchainKHR> swapchain_result =
+      device->getLogicalDevice().createSwapchainKHR(swap_chain_create_info);
+    swapchain = swapchain_result.value;
 
     // store for later reference
     swap_chain_image_format = surface_format.format;
     swap_chain_extent = extent;
 
     // get swapchain images
-    std::vector<vk::Image> images = device->getLogicalDevice().getSwapchainImagesKHR(swapchain).value;
+    vk::ResultValue<std::vector<vk::Image>> images_result = device->getLogicalDevice().getSwapchainImagesKHR(swapchain);
+    std::vector<vk::Image> images = images_result.value;
 
     swap_chain_images.clear();
 
@@ -171,10 +174,13 @@ auto Kataglyphis::VulkanSwapChain::choose_swap_extent(const vk::SurfaceCapabilit
 
     // surface also defines max and min, so make sure within boundaries bly
     // clamping value
-    new_extent.width = std::max(
-      surface_capabilities.minImageExtent.width, std::min(surface_capabilities.maxImageExtent.width, new_extent.width));
-    new_extent.height = std::max(surface_capabilities.minImageExtent.height,
-      std::min(surface_capabilities.maxImageExtent.height, new_extent.height));
+    uint32_t minWidth = surface_capabilities.minImageExtent.width;
+    uint32_t maxWidth = surface_capabilities.maxImageExtent.width;
+    uint32_t minHeight = surface_capabilities.minImageExtent.height;
+    uint32_t maxHeight = surface_capabilities.maxImageExtent.height;
+
+    new_extent.width = std::max(minWidth, std::min(maxWidth, new_extent.width));
+    new_extent.height = std::max(minHeight, std::min(maxHeight, new_extent.height));
 
     return new_extent;
 }
