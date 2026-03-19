@@ -51,8 +51,8 @@ inline void handle_mouse_callback(GLFWwindow *window,
         mouse_first_moved = false;
     }
 
-    x_change = static_cast<float>(x_pos - last_x);
-    y_change = static_cast<float>(last_y - y_pos);
+    x_change = static_cast<float>(x_pos) - last_x;
+    y_change = last_y - static_cast<float>(y_pos);
 
     last_x = static_cast<float>(x_pos);
     last_y = static_cast<float>(y_pos);

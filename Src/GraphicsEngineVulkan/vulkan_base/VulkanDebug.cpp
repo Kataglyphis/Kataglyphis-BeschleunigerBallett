@@ -15,21 +15,25 @@ namespace Kataglyphis::debug {
 static vk::DebugUtilsMessengerEXT debugUtilsMessenger;
 
 VKAPI_ATTR static VkBool32 VKAPI_CALL debugUtilsMessengerCallback(
-  VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-  VkDebugUtilsMessageTypeFlagsEXT /*messageType*/,
-  const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
+  vk::DebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+  vk::DebugUtilsMessageTypeFlagsEXT /*messageType*/,
+  const vk::DebugUtilsMessengerCallbackDataEXT *pCallbackData,
   void * /*pUserData*/)
 {
     // Select prefix depending on flags passed to the callback
     std::string prefix;
 
-    if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) != 0) {
+    if ((messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose)
+        == vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose) {
         prefix = "VERBOSE: ";
-    } else if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) != 0) {
+    } else if ((messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo)
+               == vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo) {
         prefix = "INFO: ";
-    } else if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0) {
+    } else if ((messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning)
+               == vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning) {
         prefix = "WARNING: ";
-    } else if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0) {
+    } else if ((messageSeverity & vk::DebugUtilsMessageSeverityFlagBitsEXT::eError)
+               == vk::DebugUtilsMessageSeverityFlagBitsEXT::eError) {
         prefix = "ERROR: ";
     }
 
@@ -39,13 +43,13 @@ VKAPI_ATTR static VkBool32 VKAPI_CALL debugUtilsMessengerCallback(
                  << "] : " << pCallbackData->pMessage;
 
 #ifdef __ANDROID__
-    if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+    if (messageSeverity >= vk::DebugUtilsMessageSeverityFlagBitsEXT::eError) {
         LOGE("%s", debugMessage.str().c_str());
     } else {
         LOGD("%s", debugMessage.str().c_str());
     }
 #else
-    if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+    if (messageSeverity >= vk::DebugUtilsMessageSeverityFlagBitsEXT::eError) {
         std::cerr << debugMessage.str() << "\n";
     } else {
         std::cout << debugMessage.str() << "\n";
@@ -68,8 +72,7 @@ void setupDebugging(vk::Instance instance, vk::DebugReportFlagsEXT /*flags*/, vk
       vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError;
     debugUtilsMessengerCI.messageType =
       vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation;
-    debugUtilsMessengerCI.pfnUserCallback =
-      reinterpret_cast<vk::PFN_DebugUtilsMessengerCallbackEXT>(debugUtilsMessengerCallback);
+    debugUtilsMessengerCI.pfnUserCallback = debugUtilsMessengerCallback;
 
     vk::Result result;
     std::tie(result, debugUtilsMessenger) = instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCI, nullptr);

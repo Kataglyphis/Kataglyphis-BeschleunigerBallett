@@ -24,6 +24,7 @@ module;
 #include <array>
 #include <cstring>
 #include <memory>
+#include <tuple>
 #include <vector>
 
 #ifndef VMA_IMPLEMENTATION
@@ -63,7 +64,7 @@ import kataglyphis.vulkan.allocator;
 import kataglyphis.vulkan.window;
 
 namespace {
-vk::Result toVkResult(VkResult result) { return static_cast<vk::Result>(result); }
+[[maybe_unused]] vk::Result toVkResult(VkResult result) { return static_cast<vk::Result>(result); }
 }// namespace
 
 Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *window,
@@ -79,7 +80,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     vk::DebugReportFlagsEXT const debugReportFlags =
       vk::DebugReportFlagBitsEXT::eError | vk::DebugReportFlagBitsEXT::eWarning;
     if (Kataglyphis::ENABLE_VALIDATION_LAYERS) {
-        debug::setupDebuging(instance.getVulkanInstance(), debugReportFlags, nullptr);
+        debug::setupDebugging(instance.getVulkanInstance(), debugReportFlags, nullptr);
     }
 
     create_surface();
@@ -172,11 +173,11 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Fronten
     }
 }
 
-void Kataglyphis::VulkanRenderer::finishAllRenderCommands() { device->getLogicalDevice().waitIdle(); }
+void Kataglyphis::VulkanRenderer::finishAllRenderCommands() { std::ignore = device->getLogicalDevice().waitIdle(); }
 
 void Kataglyphis::VulkanRenderer::shaderHotReload()
 {
-    device->getLogicalDevice().waitIdle();
+    std::ignore = device->getLogicalDevice().waitIdle();
 
     std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts = { sharedRenderDescriptorSetLayout };
     rasterizer.shaderHotReload(descriptor_set_layouts);
@@ -278,7 +279,7 @@ void Kataglyphis::VulkanRenderer::drawFrame()
 
     images_in_flight_fences[image_index] = in_flight_fences[current_frame];
 
-    result = command_buffers[image_index].reset(0);
+    result = command_buffers[image_index].reset(vk::CommandBufferResetFlags{});
     if (result != vk::Result::eSuccess) {
         abort_frame_with_fatal_error("Failed to reset command buffer!", result);
         return;
@@ -400,8 +401,10 @@ void Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
       vk::BufferUsageFlagBits::eTransferSrc,
       vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    void *mapped_global_ubo = device->getLogicalDevice().mapMemory(
-      stagingGlobalUBO.getBufferMemory(), 0, sizeof(VulkanRendererInternals::GlobalUBO), {});
+    void *mapped_global_ubo =
+      device->getLogicalDevice()
+        .mapMemory(stagingGlobalUBO.getBufferMemory(), 0, sizeof(VulkanRendererInternals::GlobalUBO), {})
+        .value;
     std::memcpy(mapped_global_ubo, global_ubo_data.data(), sizeof(VulkanRendererInternals::GlobalUBO));
     device->getLogicalDevice().unmapMemory(stagingGlobalUBO.getBufferMemory());
 
@@ -423,8 +426,10 @@ void Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
       vk::BufferUsageFlagBits::eTransferSrc,
       vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    void *mapped_scene_ubo = device->getLogicalDevice().mapMemory(
-      stagingSceneUBO.getBufferMemory(), 0, sizeof(VulkanRendererInternals::SceneUBO), {});
+    void *mapped_scene_ubo =
+      device->getLogicalDevice()
+        .mapMemory(stagingSceneUBO.getBufferMemory(), 0, sizeof(VulkanRendererInternals::SceneUBO), {})
+        .value;
     std::memcpy(mapped_scene_ubo, scene_ubo_data.data(), sizeof(VulkanRendererInternals::SceneUBO));
     device->getLogicalDevice().unmapMemory(stagingSceneUBO.getBufferMemory());
 
@@ -526,7 +531,7 @@ void Kataglyphis::VulkanRenderer::cleanUp()
 {
     if (!device) { return; }
 
-    device->getLogicalDevice().waitIdle();
+    std::ignore = device->getLogicalDevice().waitIdle();
 
     if (device->supportsHardwareAcceleratedRRT()) {
         pathTracing.cleanUp();

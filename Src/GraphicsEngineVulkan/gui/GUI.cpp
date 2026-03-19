@@ -28,13 +28,13 @@ void applyKataglyphisDarkTheme() { Kataglyphis::Frontend::applyKataglyphisImGuiD
 
 GUI::GUI(Window *window) : window(window) {}
 
-void GUI::initializeVulkanContext(VulkanDevice *device,
+void GUI::initializeVulkanContext(VulkanDevice *vulkan_device,
   const vk::Instance &instance,
   const vk::RenderPass &post_render_pass,
   const vk::CommandPool &graphics_command_pool,
   uint32_t image_count)
 {
-    this->device = device;
+    this->device = vulkan_device;
     (void)graphics_command_pool;
 
     create_gui_context(window, instance, post_render_pass, image_count);
@@ -129,7 +129,7 @@ void GUI::cleanUp()
     device->getLogicalDevice().destroyDescriptorPool(gui_descriptor_pool);
 }
 
-void GUI::create_gui_context(Window *window,
+void GUI::create_gui_context(Window *frontend_window,
   const vk::Instance &instance,
   const vk::RenderPass &post_render_pass,
   uint32_t image_count)
@@ -151,7 +151,7 @@ void GUI::create_gui_context(Window *window,
     ImGui::StyleColorsDark();
     applyKataglyphisDarkTheme();
 
-    ImGui_ImplGlfw_InitForVulkan(window->get_window(), false);
+    ImGui_ImplGlfw_InitForVulkan(frontend_window->get_window(), false);
 
     // Create Descriptor Pool
     std::array<vk::DescriptorPoolSize, 11> gui_pool_sizes = { { { vk::DescriptorType::eSampler, 10 },
@@ -182,7 +182,7 @@ void GUI::create_gui_context(Window *window,
     init_info.Instance = instance;
     init_info.PhysicalDevice = device->getPhysicalDevice();
     init_info.Device = device->getLogicalDevice();
-    init_info.QueueFamily = indices.graphics_family;
+    init_info.QueueFamily = static_cast<uint32_t>(indices.graphics_family);
     init_info.Queue = device->getGraphicsQueue();
     init_info.PipelineInfoMain.RenderPass = post_render_pass;
     init_info.DescriptorPool = gui_descriptor_pool;

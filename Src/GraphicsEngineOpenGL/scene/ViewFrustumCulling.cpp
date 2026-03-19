@@ -18,9 +18,9 @@ import kataglyphis.opengl.aabb;
 
 ViewFrustumCulling::ViewFrustumCulling()
 {
-    VBO = -1;
-    VAO = -1;
-    EBO = -1;
+    VBO = 0;
+    VAO = 0;
+    EBO = 0;
     m_drawCount = 0;
 
     near_plane = 0.F;
@@ -49,16 +49,16 @@ ViewFrustumCulling::ViewFrustumCulling()
     far_bottom_right = glm::vec3(0.0f, 0.0f, 0.0f);
 }
 
-auto ViewFrustumCulling::is_inside(GLfloat ratio,
-  const std::shared_ptr<Camera> &main_camera,
+auto ViewFrustumCulling::is_inside(GLfloat cam_ratio,
+  const std::shared_ptr<Camera> &cam,
   const std::shared_ptr<AABB> &bounding_box,
   glm::mat4 model) -> bool
 {
-    GLfloat const near_plane = main_camera->get_near_plane();
-    GLfloat const far_plane = main_camera->get_far_plane();
-    GLfloat const fov = main_camera->get_fov();
+    GLfloat const cam_near_plane = cam->get_near_plane();
+    GLfloat const cam_far_plane = cam->get_far_plane();
+    GLfloat const cam_fov = cam->get_fov();
 
-    update_frustum_param(near_plane, far_plane, fov, ratio, main_camera);
+    update_frustum_param(cam_near_plane, cam_far_plane, cam_fov, cam_ratio, cam);
 
     std::vector<glm::vec3> const aabb_corners = bounding_box->get_corners(model);
 
@@ -80,10 +80,10 @@ auto ViewFrustumCulling::is_inside(GLfloat ratio,
         outcode_near_plane, outcode_far_plane, outcode_up, outcode_bottom, outcode_left, outcode_right
     };
 
-    for (int i = 0; i < NUM_FRUSTUM_PLANES; i++) {
+    for (size_t i = 0; i < NUM_FRUSTUM_PLANES; i++) {
         frustum_plane const plane = frustum_planes[i];
 
-        if (corners_outside_plane(aabb_corners, plane, outcodes_pattern[i])) {
+        if (corners_outside_plane(aabb_corners, plane, static_cast<GLuint>(outcodes_pattern[i]))) {
             result = false;
             break;
         }
@@ -108,9 +108,9 @@ auto ViewFrustumCulling::corners_outside_plane(std::vector<glm::vec3> aabb_corne
   frustum_plane plane,
   GLuint outcode_pattern) -> bool
 {
-    GLint outcode = outcode_pattern;
+    GLuint outcode = outcode_pattern;
 
-    for (int i = 0; std::cmp_less(i, aabb_corners.size()); i++) {
+    for (size_t i = 0; std::cmp_less(i, aabb_corners.size()); i++) {
         if (plane_point_distance(plane, aabb_corners[i]) < 0.0F) {
             if (i == 0) {
                 outcode = outcode_pattern;
@@ -143,71 +143,71 @@ auto ViewFrustumCulling::plane_point_distance(frustum_plane plane, glm::vec3 cor
     return result;
 }
 
-void ViewFrustumCulling::update_frustum_param(GLfloat near_plane,
-  GLfloat far_plane,
-  GLfloat fov,
-  GLfloat ratio,
-  const std::shared_ptr<Camera> &main_camera)
+void ViewFrustumCulling::update_frustum_param(GLfloat np,
+  GLfloat fp,
+  GLfloat f,
+  GLfloat r,
+  const std::shared_ptr<Camera> &cam)
 {
-    this->near_plane = near_plane;
-    this->far_plane = far_plane;
-    this->fov = fov;
-    this->ratio = ratio;
+    this->near_plane = np;
+    this->far_plane = fp;
+    this->fov = f;
+    this->ratio = r;
 
-    tan = glm::tan(glm::radians(fov) * 0.5F);
-    near_height = near_plane * tan;
-    near_width = near_height * ratio;
-    far_height = far_plane * tan;
-    far_width = far_height * ratio;
+    tan = glm::tan(glm::radians(f) * 0.5F);
+    near_height = np * tan;
+    near_width = near_height * r;
+    far_height = fp * tan;
+    far_width = far_height * r;
 
-    this->main_camera = main_camera;
+    this->main_camera = cam;
 
-    near_center = main_camera->get_camera_position() + main_camera->get_camera_direction() * near_plane;
-    far_center = main_camera->get_camera_position() + main_camera->get_camera_direction() * far_plane;
+    near_center = cam->get_camera_position() + cam->get_camera_direction() * np;
+    far_center = cam->get_camera_position() + cam->get_camera_direction() * fp;
 
     glm::vec3 aux_position;
     glm::vec3 aux;
     glm::vec3 aux_normal;
 
     // layout:  [0]: near plane
-    frustum_planes[0].normal = main_camera->get_camera_direction();
+    frustum_planes[0].normal = cam->get_camera_direction();
     frustum_planes[0].position = near_center;
 
     // [1] far plane
-    frustum_planes[1].normal = -main_camera->get_camera_direction();
+    frustum_planes[1].normal = -cam->get_camera_direction();
     frustum_planes[1].position = far_center;
 
-    aux_position = near_center + main_camera->get_up_axis() * near_height;
-    aux = aux_position - main_camera->get_camera_position();
+    aux_position = near_center + cam->get_up_axis() * near_height;
+    aux = aux_position - cam->get_camera_position();
     aux = glm::normalize(aux);
-    aux_normal = glm::cross(aux, main_camera->get_right_axis());
+    aux_normal = glm::cross(aux, cam->get_right_axis());
 
     // [2] top
     frustum_planes[2].normal = normalize(aux_normal);
     frustum_planes[2].position = aux_position;
 
-    aux_position = near_center - main_camera->get_up_axis() * near_height;
-    aux = aux_position - main_camera->get_camera_position();
+    aux_position = near_center - cam->get_up_axis() * near_height;
+    aux = aux_position - cam->get_camera_position();
     aux = glm::normalize(aux);
-    aux_normal = glm::cross(main_camera->get_right_axis(), aux);
+    aux_normal = glm::cross(cam->get_right_axis(), aux);
 
     // [3] bottom
     frustum_planes[3].normal = normalize(aux_normal);
     frustum_planes[3].position = aux_position;
 
-    aux_position = near_center - main_camera->get_right_axis() * near_width;
-    aux = aux_position - main_camera->get_camera_position();
+    aux_position = near_center - cam->get_right_axis() * near_width;
+    aux = aux_position - cam->get_camera_position();
     aux = glm::normalize(aux);
-    aux_normal = glm::cross(aux, main_camera->get_up_axis());
+    aux_normal = glm::cross(aux, cam->get_up_axis());
 
     // [4]: left
     frustum_planes[4].normal = normalize(aux_normal);
     frustum_planes[4].position = aux_position;
 
-    aux_position = near_center + main_camera->get_right_axis() * near_width;
-    aux = aux_position - main_camera->get_camera_position();
+    aux_position = near_center + cam->get_right_axis() * near_width;
+    aux = aux_position - cam->get_camera_position();
     aux = glm::normalize(aux);
-    aux_normal = glm::cross(main_camera->get_up_axis(), aux);
+    aux_normal = glm::cross(cam->get_up_axis(), aux);
 
     // [5]: right
     frustum_planes[5].normal = normalize(aux_normal);
@@ -309,7 +309,7 @@ void ViewFrustumCulling::init(std::vector<glm::vec3> frustum_corner)
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)nullptr);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
     glEnableVertexAttribArray(0);
 
     // note that this is allowed, the call to glVertexAttribPointer registered VBO

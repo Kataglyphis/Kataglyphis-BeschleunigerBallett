@@ -1,6 +1,7 @@
 module;
 
 #include <cstdint>
+#include <tuple>
 #include <utility>
 #include <vulkan/vulkan.hpp>
 
@@ -80,7 +81,7 @@ void Kataglyphis::VulkanImage::create(VulkanDevice *in_device,
     imageMemory = device->getLogicalDevice().allocateMemory(memory_alloc_info).value;
 
     // connect memory to image
-    device->getLogicalDevice().bindImageMemory(image, imageMemory, 0);
+    std::ignore = device->getLogicalDevice().bindImageMemory(image, imageMemory, 0);
 }
 
 void Kataglyphis::VulkanImage::transitionImageLayout(vk::Device in_logical_device,

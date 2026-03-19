@@ -70,7 +70,7 @@ auto PointLight::calculate_light_transform() -> std::vector<glm::mat4>
     return light_matrices;
 }
 
-void PointLight::set_position(glm::vec3 position) { this->position = position; }
+void PointLight::set_position(glm::vec3 pos) { this->position = pos; }
 
 auto PointLight::get_far_plane() const -> GLfloat { return far_plane; }
 

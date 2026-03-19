@@ -60,8 +60,11 @@ auto Window::initialize() -> int
 
     // retrieve new window
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    main_window =
-      glfwCreateWindow(window_width, window_height, "\\__/ Epic graphics from hell \\__/ ", nullptr, nullptr);
+    main_window = glfwCreateWindow(static_cast<int>(window_width),
+      static_cast<int>(window_height),
+      "\\__/ Epic graphics from hell \\__/ ",
+      nullptr,
+      nullptr);
 
     if (main_window == nullptr) {
         std::cerr << "GLFW Window creation failed!" << '\n';
@@ -85,10 +88,10 @@ void Window::cleanUp()
 
 void Window::update_viewport() { glfwGetFramebufferSize(main_window, &window_buffer_width, &window_buffer_height); }
 
-void Window::set_buffer_size(float window_buffer_width, float window_buffer_height)
+void Window::set_buffer_size(float width, float height)
 {
-    this->window_buffer_width = window_buffer_width;
-    this->window_buffer_height = window_buffer_height;
+    this->window_buffer_width = static_cast<int>(width);
+    this->window_buffer_height = static_cast<int>(height);
 }
 
 auto Window::get_x_change() -> float { return Kataglyphis::Frontend::consume_axis_delta(input_state.x_change); }
@@ -115,8 +118,8 @@ void Window::framebuffer_size_callback(GLFWwindow *window, int width, int height
 {
     auto *app = reinterpret_cast<Window *>(glfwGetWindowUserPointer(window));
     app->framebuffer_resized = true;
-    app->window_width = width;
-    app->window_height = height;
+    app->window_width = static_cast<uint32_t>(width);
+    app->window_height = static_cast<uint32_t>(height);
 }
 
 void Window::reset_framebuffer_has_changed() { this->framebuffer_resized = false; }

@@ -52,7 +52,7 @@ auto CascadedShadowMap::init(GLuint width, GLuint height, GLuint num_cascades) -
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
 
-    int const status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    GLenum const status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     if (status != GL_FRAMEBUFFER_COMPLETE) { spdlog::error("ERROR::FRAMEBUFFER:: Framebuffer is not complete!"); }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -87,7 +87,7 @@ void CascadedShadowMap::read(GLenum texture_unit) const
 
 void CascadedShadowMap::set_pcf_radius(GLuint radius) { pcf_radius = radius; }
 
-void CascadedShadowMap::set_intensity(GLfloat intensity) { this->intensity = intensity; }
+void CascadedShadowMap::set_intensity(GLfloat value) { this->intensity = value; }
 
 CascadedShadowMap::~CascadedShadowMap()
 {

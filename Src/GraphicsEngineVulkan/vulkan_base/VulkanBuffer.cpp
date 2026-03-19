@@ -42,13 +42,13 @@ auto Kataglyphis::VulkanBuffer::operator=(VulkanBuffer &&other) noexcept -> Vulk
     return *this;
 }
 
-void Kataglyphis::VulkanBuffer::create(VulkanDevice *device,
+void Kataglyphis::VulkanBuffer::create(VulkanDevice *vulkan_device,
   vk::DeviceSize buffer_size,
   vk::BufferUsageFlags buffer_usage_flags,
   vk::MemoryPropertyFlags buffer_propertiy_flags,
   vk::MemoryAllocateFlags buffer_allocate_flags)
 {
-    this->device = device;
+    device = vulkan_device;
 
     // information to create a buffer (doesn't include assigning memory)
     vk::BufferCreateInfo buffer_info{};
@@ -89,7 +89,7 @@ void Kataglyphis::VulkanBuffer::create(VulkanDevice *device,
     bufferMemory = device->getLogicalDevice().allocateMemory(memory_alloc_info).value;
 
     // allocate memory to given buffer
-    device->getLogicalDevice().bindBufferMemory(buffer, bufferMemory, 0);
+    std::ignore = device->getLogicalDevice().bindBufferMemory(buffer, bufferMemory, 0);
 
     created = true;
 }

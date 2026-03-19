@@ -29,11 +29,11 @@ import kataglyphis.vulkan.shader_helper;
 Kataglyphis::VulkanRendererInternals::PostStage::PostStage() = default;
 
 void Kataglyphis::VulkanRendererInternals::PostStage::init(VulkanDevice *in_device,
-  VulkanSwapChain *vulkanSwapChain,
+  VulkanSwapChain *swapchain,
   const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
 {
     this->device = in_device;
-    this->vulkanSwapChain = vulkanSwapChain;
+    this->vulkanSwapChain = swapchain;
 
     createOffscreenTextureSampler();
 
@@ -65,7 +65,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
     clear_values[0].color = vk::ClearColorValue{ 0.2F, 0.65F, 0.4F, 1.0F };
     clear_values[1].depthStencil = vk::ClearDepthStencilValue{ 1.0F, 0 };
 
-    render_pass_begin_info.clearValues = clear_values;
+    render_pass_begin_info.pClearValues = clear_values.data();
+    render_pass_begin_info.clearValueCount = static_cast<uint32_t>(clear_values.size());
 
     render_pass_begin_info.framebuffer = framebuffers[image_index];
 
@@ -370,7 +371,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createFramebuffer()
     framebuffers.resize(vulkanSwapChain->getNumberSwapChainImages());
 
     for (size_t i = 0; i < vulkanSwapChain->getNumberSwapChainImages(); i++) {
-        Texture &swap_chain_image = vulkanSwapChain->getSwapChainImage(i);
+        Texture &swap_chain_image = vulkanSwapChain->getSwapChainImage(static_cast<uint32_t>(i));
 
         std::array<vk::ImageView, 2> attachments = { swap_chain_image.getImageView(),
             depthBufferImage->getImageView() };

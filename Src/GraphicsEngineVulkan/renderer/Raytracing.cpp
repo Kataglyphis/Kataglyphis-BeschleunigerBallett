@@ -39,7 +39,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::shaderHotReload(
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::CommandBuffer &commandBuffer,
   VulkanImage &renderImage,
-  VulkanSwapChain *vulkanSwapChain,
+  [[maybe_unused]] VulkanSwapChain *swapchain,
   const std::vector<vk::DescriptorSet> &descriptorSets)
 {
     uint32_t const handle_size = raytracing_properties.shaderGroupHandleSize;
@@ -50,17 +50,20 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
     vk::BufferDeviceAddressInfo bufferDeviceAI{};
     bufferDeviceAI.buffer = raygenShaderBindingTableBuffer.getBuffer();
 
-    rgen_region.deviceAddress = logical_device.getBufferDeviceAddress(bufferDeviceAI);
+    rgen_region.deviceAddress = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetBufferDeviceAddress(
+      static_cast<VkDevice>(logical_device), reinterpret_cast<VkBufferDeviceAddressInfo *>(&bufferDeviceAI));
     rgen_region.stride = handle_size_aligned;
     rgen_region.size = handle_size_aligned;
 
     bufferDeviceAI.buffer = missShaderBindingTableBuffer.getBuffer();
-    miss_region.deviceAddress = logical_device.getBufferDeviceAddress(bufferDeviceAI);
+    miss_region.deviceAddress = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetBufferDeviceAddress(
+      static_cast<VkDevice>(logical_device), reinterpret_cast<VkBufferDeviceAddressInfo *>(&bufferDeviceAI));
     miss_region.stride = handle_size_aligned;
     miss_region.size = handle_size_aligned;
 
     bufferDeviceAI.buffer = hitShaderBindingTableBuffer.getBuffer();
-    hit_region.deviceAddress = logical_device.getBufferDeviceAddress(bufferDeviceAI);
+    hit_region.deviceAddress = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetBufferDeviceAddress(
+      static_cast<VkDevice>(logical_device), reinterpret_cast<VkBufferDeviceAddressInfo *>(&bufferDeviceAI));
     hit_region.stride = handle_size_aligned;
     hit_region.size = handle_size_aligned;
 
@@ -68,7 +71,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
     commandBuffer.pushConstants(pipeline_layout,
       vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eMissKHR,
       0,
-      sizeof(PushConstantRayTracing),
+      sizeof(PushConstantRaytracing),
       reinterpret_cast<void *>(&pc));
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, graphicsPipeline);
@@ -139,7 +142,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createPCRange()
     pc_ranges.stageFlags =
       vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eMissKHR;
     pc_ranges.offset = 0;
-    pc_ranges.size = sizeof(PushConstantRayTracing);
+    pc_ranges.size = sizeof(PushConstantRaytracing);
 }
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
@@ -262,7 +265,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
     raytracing_pipeline_create_info.layout = pipeline_layout;
 
     vk::Result result2 = device->getLogicalDevice().createRayTracingPipelinesKHR(
-      nullptr, nullptr, raytracing_pipeline_create_info, nullptr, &graphicsPipeline);
+      nullptr, nullptr, 1, &raytracing_pipeline_create_info, nullptr, &graphicsPipeline, VULKAN_HPP_DEFAULT_DISPATCHER);
     ASSERT_VULKAN(result2, "Failed to create raytracing pipeline!")
 
     device->getLogicalDevice().destroyShaderModule(raygen_shader_module);
@@ -288,8 +291,8 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
 
     std::vector<uint8_t> handles(sbt_size);
 
-    vk::Result result =
-      device->getLogicalDevice().getRayTracingShaderGroupHandlesKHR(graphicsPipeline, 0, group_count, handles);
+    vk::Result result = device->getLogicalDevice().getRayTracingShaderGroupHandlesKHR(
+      graphicsPipeline, 0, group_count, sbt_size, handles.data(), VULKAN_HPP_DEFAULT_DISPATCHER);
     ASSERT_VULKAN(result, "Failed to get ray tracing shader group handles!")
 
     const vk::BufferUsageFlags bufferUsageFlags =

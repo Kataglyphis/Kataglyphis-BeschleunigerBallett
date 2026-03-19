@@ -141,7 +141,7 @@ set_target_properties(${COMMIT_TEST_SUITE} PROPERTIES CXX_SCAN_FOR_MODULES ${MYP
 
 target_include_directories(${COMMIT_TEST_SUITE} PRIVATE ${Vulkan_INCLUDE_DIRS})
 
-target_compile_definitions(${COMMIT_TEST_SUITE} PRIVATE VULKAN_HPP_NO_EXCEPTIONS)
+target_compile_definitions(${COMMIT_TEST_SUITE} PRIVATE VULKAN_HPP_NO_EXCEPTIONS VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1)
 
 target_link_libraries(
   ${COMMIT_TEST_SUITE}

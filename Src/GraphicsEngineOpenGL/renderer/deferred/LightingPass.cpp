@@ -96,7 +96,7 @@ void LightingPass::set_uniforms(glm::mat4 projection_matrix,
         ss.str(std::string());
     }
 
-    shader_program->setUniformInt(main_light->get_shadow_map()->get_pcf_radius(), "pcf_radius");
+    shader_program->setUniformInt(static_cast<GLint>(main_light->get_shadow_map()->get_pcf_radius()), "pcf_radius");
 
     // READ GBUFFER
     gbuffer->read(shader_program);
@@ -104,7 +104,7 @@ void LightingPass::set_uniforms(glm::mat4 projection_matrix,
     // POINT LIGHTS
     std::vector<std::shared_ptr<PointLight>> point_lights = scene->get_point_lights();
 
-    shader_program->setUniformInt(static_cast<uint32_t>(point_lights.size()), "point_light_count");
+    shader_program->setUniformInt(static_cast<GLint>(point_lights.size()), "point_light_count");
 
     for (uint32_t i = 0; i < static_cast<uint32_t>(point_lights.size()); i++) {
         ss << "point_lights[" << i << "].base.color";
@@ -219,8 +219,9 @@ void LightingPass::set_uniforms(glm::mat4 projection_matrix,
     shader_program->setUniformFloat(1.F - cloud->get_density(), "cloud.threshold");
     shader_program->setUniformFloat(cloud->get_pillowness(), "cloud.pillowness");
     shader_program->setUniformFloat(cloud->get_cirrus_effect(), "cloud.cirrus_effect");
-    shader_program->setUniformInt(cloud->get_num_march_steps(), "cloud.num_march_steps");
-    shader_program->setUniformInt(cloud->get_num_march_steps_to_light(), "cloud.num_march_steps_to_light");
+    shader_program->setUniformInt(static_cast<GLint>(cloud->get_num_march_steps()), "cloud.num_march_steps");
+    shader_program->setUniformInt(
+      static_cast<GLint>(cloud->get_num_march_steps_to_light()), "cloud.num_march_steps_to_light");
 
     if (cloud->get_powder_effect()) {
         shader_program->setUniformInt(1, "cloud.powder_effect");

@@ -36,8 +36,8 @@ void RandomNumbers::generate_random_numbers()
     std::mt19937_64 gen64(25121995);
     std::uniform_real_distribution<float> dis(0, 1);
 
-    for (int i = 0; i < MAX_RESOLUTION_X; i++) {
-        for (int k = 0; k < MAX_RESOLUTION_Y; k++) {
+    for (GLuint i = 0; i < MAX_RESOLUTION_X; i++) {
+        for (GLuint k = 0; k < MAX_RESOLUTION_Y; k++) {
             const GLfloat random_offset[4] = { dis(gen64), dis(gen64), dis(gen64), dis(gen64) };
 
             GLuint const index = (MAX_RESOLUTION_Y * i + k) * 4;

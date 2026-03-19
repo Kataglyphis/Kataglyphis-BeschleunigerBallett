@@ -1,4 +1,5 @@
 #pragma once
+#include <limits>
 #include <vulkan/vulkan.hpp>
 
 namespace Kataglyphis {
@@ -24,6 +25,6 @@ namespace Kataglyphis {
         }
     }
 
-    return -1;
+    return std::numeric_limits<uint32_t>::max();
 }
 }// namespace Kataglyphis

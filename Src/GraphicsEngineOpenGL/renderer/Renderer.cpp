@@ -57,11 +57,11 @@ void Renderer::drawFrame(const std::shared_ptr<Camera> &main_camera,
     lighting_pass->execute(projection_matrix, main_camera, scene, gbuffer, delta_time);
 }
 
-void Renderer::update_window_params(GLuint window_width, GLuint window_height)
+void Renderer::update_window_params(GLuint width, GLuint height)
 {
-    this->window_width = window_width;
-    this->window_height = window_height;
-    gbuffer->update_window_params(window_width, window_height);
+    window_width = width;
+    window_height = height;
+    gbuffer->update_window_params(width, height);
     gbuffer->create();
 }
 

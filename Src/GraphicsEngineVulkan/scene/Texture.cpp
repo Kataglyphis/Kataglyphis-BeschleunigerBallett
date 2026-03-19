@@ -62,8 +62,8 @@ void Kataglyphis::Texture::createFromFile(VulkanDevice *device,
     stbi_image_free(image_data);
 
     createImage(device,
-      width,
-      height,
+      static_cast<uint32_t>(width),
+      static_cast<uint32_t>(height),
       mip_levels,
       texture_format,
       vk::ImageTiling::eOptimal,
@@ -83,8 +83,8 @@ void Kataglyphis::Texture::createFromFile(VulkanDevice *device,
       commandPool,
       stagingBuffer.getBuffer(),
       vulkanImage.getImage(),
-      width,
-      height);
+      static_cast<uint32_t>(width),
+      static_cast<uint32_t>(height));
 
     if (mip_levels > 1) {
         generateMipMaps(device->getPhysicalDevice(),
@@ -153,7 +153,7 @@ auto Kataglyphis::Texture::loadTextureData(const std::string &file_name,
 
     if (image == nullptr) { spdlog::error("Failed to load a texture file! (" + file_name + ")"); }
 
-    *image_size = *width * *height * 4;
+    *image_size = static_cast<vk::DeviceSize>(*width) * static_cast<vk::DeviceSize>(*height) * 4;
 
     return image;
 }
@@ -166,7 +166,7 @@ void Kataglyphis::Texture::generateMipMaps(vk::PhysicalDevice physical_device,
   vk::Format image_format,
   int32_t width,
   int32_t height,
-  uint32_t in_mip_levels)
+  [[maybe_unused]] uint32_t in_mip_levels)
 {
     vk::FormatProperties formatProperties = physical_device.getFormatProperties(image_format);
 

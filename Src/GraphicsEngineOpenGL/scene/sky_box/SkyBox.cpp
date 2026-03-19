@@ -188,7 +188,7 @@ void SkyBox::draw_sky_box(glm::mat4 projection_matrix,
 {
     // https://learnopengl.com/Advanced-OpenGL/Cubemaps
     GLfloat const velocity = movement_speed * delta_time;
-    shader_playback_time = static_cast<GLfloat>(fmod(shader_playback_time + velocity, 10000));
+    shader_playback_time = std::fmod(shader_playback_time + velocity, 10000.0F);
 
     glm::mat4 const new_view_matrix = glm::mat4(glm::mat3(view_matrix));
 

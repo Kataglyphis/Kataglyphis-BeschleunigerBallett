@@ -10,7 +10,7 @@ module kataglyphis.opengl.mesh;
 
 import kataglyphis.opengl.vertex;
 
-Mesh::Mesh() : m_vao(-1), m_ibo(-1), m_drawCount(0) {}
+Mesh::Mesh() : m_vao(0), m_ibo(0), m_drawCount(0) {}
 
 Mesh::Mesh(std::vector<Vertex> &vertices, std::vector<unsigned int> &indices)
   :
@@ -37,16 +37,18 @@ Mesh::Mesh(std::vector<Vertex> &vertices, std::vector<unsigned int> &indices)
     // enable Vertex Atrribs for Pos, Norm, Textcood
     //  Vertex Position
     // Stride bytes: just the size of Vertex, offset = use offsetof funktion
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, position));
+    glVertexAttribPointer(
+      0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void *>(offsetof(Vertex, position)));
     glEnableVertexAttribArray(0);
     // Vertex Normal
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, normal));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void *>(offsetof(Vertex, normal)));
     glEnableVertexAttribArray(1);
     // Vertex Normal
-    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)offsetof(Vertex, color));
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void *>(offsetof(Vertex, color)));
     glEnableVertexAttribArray(2);
     // Vertex Texture Cood
-    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)(offsetof(Vertex, texture_coords)));
+    glVertexAttribPointer(
+      3, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), reinterpret_cast<void *>(offsetof(Vertex, texture_coords)));
     glEnableVertexAttribArray(3);
 
     // unbind everything after setting the attribs

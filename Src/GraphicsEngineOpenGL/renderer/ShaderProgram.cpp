@@ -154,11 +154,11 @@ ShaderProgram::ShaderProgram()
     shader_base_dir = aux.str();
 }
 
-void ShaderProgram::create_from_files(const char *vertex_location, const char *fragment_location)
+void ShaderProgram::create_from_files(const char *vert_loc, const char *frag_loc)
 {
     std::filesystem::path const shader_root(shader_base_dir);
-    std::filesystem::path const vertex_shader = shader_root / vertex_location;
-    std::filesystem::path const fragment_shader = shader_root / fragment_location;
+    std::filesystem::path const vertex_shader = shader_root / vert_loc;
+    std::filesystem::path const fragment_shader = shader_root / frag_loc;
 
     std::string const vertex_string = load_shader_source_with_includes(vertex_shader, shader_root);
     std::string const fragment_string = load_shader_source_with_includes(fragment_shader, shader_root);
@@ -167,20 +167,18 @@ void ShaderProgram::create_from_files(const char *vertex_location, const char *f
     const char *vertex_code = vertex_string.c_str();
     const char *fragment_code = fragment_string.c_str();
 
-    this->vertex_location = (vertex_location);
-    this->fragment_location = (fragment_location);
+    this->vertex_location = (vert_loc);
+    this->fragment_location = (frag_loc);
 
     compile_shader_program(vertex_code, fragment_code);
 }
 
-void ShaderProgram::create_from_files(const char *vertex_location,
-  const char *geometry_location,
-  const char *fragment_location)
+void ShaderProgram::create_from_files(const char *vert_loc, const char *geom_loc, const char *frag_loc)
 {
     std::filesystem::path const shader_root(shader_base_dir);
-    std::filesystem::path const vertex_shader = shader_root / vertex_location;
-    std::filesystem::path const geometry_shader = shader_root / geometry_location;
-    std::filesystem::path const fragment_shader = shader_root / fragment_location;
+    std::filesystem::path const vertex_shader = shader_root / vert_loc;
+    std::filesystem::path const geometry_shader = shader_root / geom_loc;
+    std::filesystem::path const fragment_shader = shader_root / frag_loc;
 
     std::string const vertex_string = load_shader_source_with_includes(vertex_shader, shader_root);
     std::string const geometry_string = load_shader_source_with_includes(geometry_shader, shader_root);
@@ -190,22 +188,22 @@ void ShaderProgram::create_from_files(const char *vertex_location,
     const char *geometry_code = geometry_string.c_str();
     const char *fragment_code = fragment_string.c_str();
 
-    this->vertex_location = vertex_location;
-    this->fragment_location = fragment_location;
-    this->geometry_location = geometry_location;
+    this->vertex_location = vert_loc;
+    this->fragment_location = frag_loc;
+    this->geometry_location = geom_loc;
 
     compile_shader_program(vertex_code, geometry_code, fragment_code);
 }
 
-void ShaderProgram::create_computer_shader_program_from_file(const char *compute_location)
+void ShaderProgram::create_computer_shader_program_from_file(const char *comp_loc)
 {
     std::filesystem::path const shader_root(shader_base_dir);
-    std::filesystem::path const comp_shader = shader_root / compute_location;
+    std::filesystem::path const comp_shader = shader_root / comp_loc;
     std::string const file = load_shader_source_with_includes(comp_shader, shader_root);
 
     const char *compute_code = file.c_str();
 
-    this->compute_location = compute_location;
+    this->compute_location = comp_loc;
 
     compile_compute_shader_program(compute_code);
 }
@@ -383,9 +381,9 @@ auto ShaderProgram::setUniformMatrix4fv(glm::mat4 matrix, const std::string &sha
 auto ShaderProgram::setUniformBlockBinding(GLuint block_binding, const std::string &shaderUniformName) const -> bool
 {
     bool validity = true;
-    GLint const uniform_location = glGetUniformBlockIndex(program_id, shaderUniformName.c_str());
+    GLuint const uniform_location = glGetUniformBlockIndex(program_id, shaderUniformName.c_str());
 
-    (uniform_location < 0) ? validity = false : validity = true;
+    (uniform_location == GL_INVALID_INDEX) ? validity = false : validity = true;
 
     if (validity) {
         glUniformBlockBinding(program_id, uniform_location, block_binding);
@@ -415,8 +413,9 @@ auto ShaderProgram::getUniformLocation(const std::string &shaderUniformName, boo
         return 0;
     }
 
-    GLuint const uniform_location = glGetUniformLocation(program_id, shaderUniformName.c_str());
+    GLint const uniform_location = glGetUniformLocation(program_id, shaderUniformName.c_str());
     validity = validateUniformLocation(uniform_location);
+    if (!validity) { return 0; }
 
 #ifdef NDEBUG
     // nondebug
@@ -433,7 +432,7 @@ auto ShaderProgram::getUniformLocation(const std::string &shaderUniformName, boo
 
 #endif
 
-    return uniform_location;
+    return static_cast<GLuint>(uniform_location);
 }
 
 void ShaderProgram::clear_shader_program()

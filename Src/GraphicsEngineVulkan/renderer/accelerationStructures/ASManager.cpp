@@ -85,7 +85,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(VulkanDevice *d
     scratch_buffer_device_address_info.buffer = scratchBuffer.getBuffer();
 
     vk::DeviceAddress const scratch_buffer_address =
-      device->getLogicalDevice().getBufferDeviceAddress(scratch_buffer_device_address_info);
+      VULKAN_HPP_DEFAULT_DISPATCHER.vkGetBufferDeviceAddress(static_cast<VkDevice>(device->getLogicalDevice()),
+        reinterpret_cast<VkBufferDeviceAddressInfo *>(&scratch_buffer_device_address_info));
 
     vk::CommandBuffer command_buffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
       device->getLogicalDevice(), commandPool);
@@ -121,7 +122,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
     tlas_instances.reserve(scene->getModelCount());
 
     for (size_t model_index = 0; model_index < scene->getModelCount(); model_index++) {
-        glm::mat4 transpose_transform = glm::transpose(scene->getModelMatrix(static_cast<int>(model_index)));
+        glm::mat4 transpose_transform = glm::transpose(scene->getModelMatrix(static_cast<uint32_t>(model_index)));
         vk::TransformMatrixKHR out_matrix;
         memcpy(&out_matrix, &transpose_transform, sizeof(vk::TransformMatrixKHR));
 
@@ -133,10 +134,11 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
 
         vk::AccelerationStructureInstanceKHR geometry_instance{};
         geometry_instance.transform = out_matrix;
-        geometry_instance.instanceCustomIndex = model_index;
+        geometry_instance.instanceCustomIndex = static_cast<uint32_t>(model_index);
         geometry_instance.mask = 0xFF;
         geometry_instance.instanceShaderBindingTableRecordOffset = 0;
-        geometry_instance.flags = vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable;
+        geometry_instance.flags =
+          static_cast<VkGeometryInstanceFlagsKHR>(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable);
         geometry_instance.accelerationStructureReference = acceleration_structure_device_address;
         geometry_instance.instanceShaderBindingTableRecordOffset = 0;
 
@@ -161,7 +163,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
     geometry_instance_buffer_device_address_info.buffer = geometryInstanceBuffer.getBuffer();
 
     vk::DeviceAddress const geometry_instance_buffer_address =
-      device->getLogicalDevice().getBufferDeviceAddress(geometry_instance_buffer_device_address_info);
+      VULKAN_HPP_DEFAULT_DISPATCHER.vkGetBufferDeviceAddress(static_cast<VkDevice>(device->getLogicalDevice()),
+        reinterpret_cast<VkBufferDeviceAddressInfo *>(&geometry_instance_buffer_device_address_info));
 
     vk::MemoryBarrier barrier;
     barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
@@ -213,7 +216,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
     acceleration_structure_create_info.deviceAddress = 0;
 
     vk::AccelerationStructureKHR &tlAS = tlas.vulkanAS;
-    tlAS = device->getLogicalDevice().createAccelerationStructureKHR(acceleration_structure_create_info);
+    tlAS = device->getLogicalDevice().createAccelerationStructureKHR(acceleration_structure_create_info).value;
 
     VulkanBuffer scratchBuffer;
 
@@ -228,7 +231,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
     scratch_buffer_device_address_info.buffer = scratchBuffer.getBuffer();
 
     vk::DeviceAddress const scratch_buffer_address =
-      device->getLogicalDevice().getBufferDeviceAddress(scratch_buffer_device_address_info);
+      VULKAN_HPP_DEFAULT_DISPATCHER.vkGetBufferDeviceAddress(static_cast<VkDevice>(device->getLogicalDevice()),
+        reinterpret_cast<VkBufferDeviceAddressInfo *>(&scratch_buffer_device_address_info));
 
     acceleration_structure_build_geometry_info.scratchData.deviceAddress = scratch_buffer_address;
     acceleration_structure_build_geometry_info.srcAccelerationStructure = nullptr;
@@ -254,12 +258,12 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
 
 void Kataglyphis::VulkanRendererInternals::ASManager::cleanUp()
 {
-    device->getLogicalDevice().destroyAccelerationStructureKHR(tlas.vulkanAS);
+    vulkanDevice->getLogicalDevice().destroyAccelerationStructureKHR(tlas.vulkanAS);
 
     tlas.vulkanBuffer.cleanUp();
 
     for (auto &bla : blas) {
-        device->getLogicalDevice().destroyAccelerationStructureKHR(bla.vulkanAS);
+        vulkanDevice->getLogicalDevice().destroyAccelerationStructureKHR(bla.vulkanAS);
 
         bla.vulkanBuffer.cleanUp();
     }
@@ -285,7 +289,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createSingleBlas(VulkanDev
 
     acceleration_structure_create_info.buffer = blasVulkanBuffer.getBuffer();
     vk::AccelerationStructureKHR &blas_as = build_as_structure.single_blas.vulkanAS;
-    blas_as = device->getLogicalDevice().createAccelerationStructureKHR(acceleration_structure_create_info);
+    blas_as = device->getLogicalDevice().createAccelerationStructureKHR(acceleration_structure_create_info).value;
 
     build_as_structure.build_info.dstAccelerationStructure = blas_as;
     build_as_structure.build_info.scratchData.deviceAddress = scratch_device_or_host_address;
@@ -334,9 +338,11 @@ void Kataglyphis::VulkanRendererInternals::ASManager::objectToVkGeometryKHR(Vulk
     index_buffer_device_address_info.buffer = mesh->getIndexBuffer();
 
     vk::DeviceAddress const vertex_buffer_address =
-      device->getLogicalDevice().getBufferDeviceAddress(vertex_buffer_device_address_info);
+      VULKAN_HPP_DEFAULT_DISPATCHER.vkGetBufferDeviceAddress(static_cast<VkDevice>(device->getLogicalDevice()),
+        reinterpret_cast<VkBufferDeviceAddressInfo *>(&vertex_buffer_device_address_info));
     vk::DeviceAddress const index_buffer_address =
-      device->getLogicalDevice().getBufferDeviceAddress(index_buffer_device_address_info);
+      VULKAN_HPP_DEFAULT_DISPATCHER.vkGetBufferDeviceAddress(static_cast<VkDevice>(device->getLogicalDevice()),
+        reinterpret_cast<VkBufferDeviceAddressInfo *>(&index_buffer_device_address_info));
 
     vk::DeviceOrHostAddressConstKHR vertex_device_or_host_address_const{};
     vertex_device_or_host_address_const.deviceAddress = vertex_buffer_address;

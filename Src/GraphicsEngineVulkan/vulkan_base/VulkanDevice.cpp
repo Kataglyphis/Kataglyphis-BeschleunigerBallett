@@ -575,3 +575,10 @@ auto Kataglyphis::VulkanDevice::check_device_extension_support(vk::PhysicalDevic
 
     return true;
 }
+
+auto Kataglyphis::VulkanDevice::getBufferDeviceAddress(const vk::BufferDeviceAddressInfo &info) const
+  -> vk::DeviceAddress
+{
+    return VULKAN_HPP_DEFAULT_DISPATCHER.vkGetBufferDeviceAddress(
+      static_cast<VkDevice>(logical_device), reinterpret_cast<const VkBufferDeviceAddressInfo *>(&info));
+}

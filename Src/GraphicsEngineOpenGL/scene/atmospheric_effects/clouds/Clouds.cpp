@@ -69,35 +69,32 @@ void Clouds::create_noise_textures()
 
 void Clouds::set_powder_effect(bool cloud_powder_effect) { this->powder_effect = cloud_powder_effect; }
 
-void Clouds::set_cirrus_effect(GLfloat cirrus_effect) { this->cirrus_effect = cirrus_effect; }
+void Clouds::set_cirrus_effect(GLfloat ce) { this->cirrus_effect = ce; }
 
 void Clouds::set_pillowness(GLfloat cloud_pillowness) { this->pillowness = cloud_pillowness; }
 
-void Clouds::set_scale(GLfloat scale) { this->scale = scale; }
+void Clouds::set_scale(GLfloat sc) { this->scale = sc; }
 
-void Clouds::set_density(GLfloat density) { this->density = density; }
+void Clouds::set_density(GLfloat dens) { this->density = dens; }
 
 void Clouds::set_movement_speed(GLfloat speed) { movement_speed = speed; }
 
-void Clouds::set_scale(glm::vec3 scale) { scale_factor = scale; }
+void Clouds::set_scale(glm::vec3 sc) { scale_factor = sc; }
 
-void Clouds::set_translation(glm::vec3 translation) { this->translation = translation; }
+void Clouds::set_translation(glm::vec3 trans) { this->translation = trans; }
 
 auto Clouds::get_model() const -> glm::mat4
 {
-    auto model = glm::mat4(1.F);
-    model = glm::translate(model, translation);
-    model = glm::scale(model, scale_factor);
-    return model;
+    auto m = glm::mat4(1.F);
+    m = glm::translate(m, translation);
+    m = glm::scale(m, scale_factor);
+    return m;
 }
 
 void Clouds::set_movement_direction(glm::vec3 movement_dir) { this->movement_direction = movement_dir; }
 
-void Clouds::set_num_march_steps(GLuint num_march_steps) { this->num_march_steps = num_march_steps; }
+void Clouds::set_num_march_steps(GLuint steps) { this->num_march_steps = steps; }
 
-void Clouds::set_num_march_steps_to_light(GLuint num_march_steps_to_light)
-{
-    this->num_march_steps_to_light = num_march_steps_to_light;
-}
+void Clouds::set_num_march_steps_to_light(GLuint steps) { this->num_march_steps_to_light = steps; }
 
 Clouds::~Clouds() = default;

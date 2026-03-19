@@ -24,13 +24,13 @@ GameObject::GameObject(const std::string &model_path, glm::vec3 translation, GLf
     model->load_model_in_ram(model_path);
 }
 
-void GameObject::init(const std::string &model_path, glm::vec3 translation, GLfloat scale, Rotation rot)
+void GameObject::init(const std::string &model_path, glm::vec3 trans, GLfloat sc, Rotation rotation)
 {
     model = std::make_shared<Model>(Model());
     model->load_model_in_ram(model_path);
-    this->translation = translation;
-    this->scale_factor = scale;
-    this->rot = rot;
+    this->translation = trans;
+    this->scale_factor = sc;
+    this->rot = rotation;
 }
 
 auto GameObject::get_world_trafo() -> glm::mat4
@@ -57,8 +57,8 @@ auto GameObject::get_model() -> std::shared_ptr<Model> { return model; }
 
 void GameObject::translate(glm::vec3 translate) { this->translation = translate; }
 
-void GameObject::rotate(Rotation rot) { this->rot = rot; }
+void GameObject::rotate(Rotation rotation) { this->rot = rotation; }
 
-void GameObject::scale(GLfloat scale_factor) { this->scale_factor = scale_factor; }
+void GameObject::scale(GLfloat sc) { this->scale_factor = sc; }
 
 GameObject::~GameObject() = default;

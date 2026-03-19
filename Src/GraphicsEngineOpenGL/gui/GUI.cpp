@@ -205,7 +205,7 @@ void GUI::update_user_input(const std::shared_ptr<Scene> &scene)
     std::shared_ptr<DirectionalLight> const main_light = scene->get_sun();
     main_light->set_radiance(direcional_light_radiance);
     main_light->get_shadow_map()->set_intensity(cascaded_shadow_intensity);
-    main_light->get_shadow_map()->set_pcf_radius(pcf_radius);
+    main_light->get_shadow_map()->set_pcf_radius(static_cast<GLuint>(pcf_radius));
 
     glm::vec3 const new_main_light_color(
       directional_light_color[0], directional_light_color[1], directional_light_color[2]);

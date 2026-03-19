@@ -150,7 +150,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createQueryPool()
     queryPoolInfo.queryType = vk::QueryType::eTimestamp;
     queryPoolInfo.pipelineStatistics = {};
     queryPoolInfo.queryCount = query_count;
-    queryPool = device->getLogicalDevice().createQueryPool(queryPoolInfo);
+    queryPool = device->getLogicalDevice().createQueryPool(queryPoolInfo).value;
 }
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
@@ -167,7 +167,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
     compute_pipeline_layout_create_info.pPushConstantRanges = &push_constant_range;
     compute_pipeline_layout_create_info.pSetLayouts = descriptorSetLayouts.data();
 
-    pipeline_layout = device->getLogicalDevice().createPipelineLayout(compute_pipeline_layout_create_info);
+    pipeline_layout = device->getLogicalDevice().createPipelineLayout(compute_pipeline_layout_create_info).value;
 
     std::stringstream pathTracing_shader_dir;
     std::filesystem::path const cwd = std::filesystem::current_path();

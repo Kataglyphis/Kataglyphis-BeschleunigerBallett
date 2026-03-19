@@ -20,11 +20,11 @@ import kataglyphis.vulkan.window;
 Kataglyphis::VulkanSwapChain::VulkanSwapChain() = default;
 
 void Kataglyphis::VulkanSwapChain::initVulkanContext(VulkanDevice *in_device,
-  Kataglyphis::Frontend::Window *window,
+  Kataglyphis::Frontend::Window *frontend_window,
   const vk::SurfaceKHR &surface)
 {
     this->device = in_device;
-    this->window = window;
+    this->window = frontend_window;
 
     // get swap chain details so we can pick the best settings
     Kataglyphis::VulkanRendererInternals::SwapChainDetails const swap_chain_details = device->getSwapchainDetails();
@@ -89,14 +89,14 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(VulkanDevice *in_device,
     swap_chain_create_info.oldSwapchain = nullptr;
 
     // create swap chain
-    swapchain = device->getLogicalDevice().createSwapchainKHR(swap_chain_create_info);
+    swapchain = device->getLogicalDevice().createSwapchainKHR(swap_chain_create_info).value;
 
     // store for later reference
     swap_chain_image_format = surface_format.format;
     swap_chain_extent = extent;
 
     // get swapchain images
-    std::vector<vk::Image> images = device->getLogicalDevice().getSwapchainImagesKHR(swapchain);
+    std::vector<vk::Image> images = device->getLogicalDevice().getSwapchainImagesKHR(swapchain).value;
 
     swap_chain_images.clear();
 

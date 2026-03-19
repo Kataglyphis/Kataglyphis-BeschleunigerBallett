@@ -25,6 +25,7 @@ class VulkanDevice
     Kataglyphis::VulkanRendererInternals::SwapChainDetails getSwapchainDetails();
     bool supportsHardwareAcceleratedRRT() { return deviceSupportsHardwareAcceleratedRRT; };
     bool supportsBufferDeviceAddress() const { return deviceSupportsBufferDeviceAddress; };
+    vk::DeviceAddress getBufferDeviceAddress(const vk::BufferDeviceAddressInfo &info) const;
 
     void cleanUp();
 
