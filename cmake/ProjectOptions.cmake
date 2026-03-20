@@ -287,11 +287,9 @@ macro(myproject_local_options)
     else()
       message(MESSAGE "libprofiler not found, falling back to gprof (-pg)")
       target_compile_options(myproject_options INTERFACE -pg)
-      target_link_libraries(myproject_options INTERFACE -pg)
+target_link_libraries(myproject_options INTERFACE -pg)
     endif()
   endif()
-
-endif()
 
   # Always disable C++ exceptions - /EHs- for MSVC, -fno-exceptions for GCC/Clang
   if(MSVC AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
