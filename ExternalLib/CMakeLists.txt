@@ -89,11 +89,9 @@ target_include_directories(ktx SYSTEM INTERFACE KTX/include KTX/other_include/KH
 
 add_subdirectory(GLFW)
 
-if(myproject_DISABLE_EXCEPTIONS)
-  set(SPDLOG_NO_EXCEPTIONS
-      ON
-      CACHE BOOL "Disable SPDLOG exceptions.")
-endif()
+set(SPDLOG_NO_EXCEPTIONS
+    ON
+    CACHE BOOL "Disable SPDLOG exceptions (required when exceptions are disabled globally)" FORCE)
 
 add_subdirectory(SPDLOG)
 
