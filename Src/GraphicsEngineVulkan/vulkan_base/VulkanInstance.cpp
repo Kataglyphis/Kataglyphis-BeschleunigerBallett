@@ -15,8 +15,6 @@ module kataglyphis.vulkan.instance;
 import kataglyphis.vulkan.config;
 import kataglyphis.vulkan.debug;
 
-VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
-
 Kataglyphis::VulkanInstance::VulkanInstance()
 {
     static vk::detail::DynamicLoader dl;
