@@ -962,10 +962,12 @@ void Kataglyphis::VulkanRenderer::createSynchronization()
     fence_create_info.flags = vk::FenceCreateFlagBits::eSignaled;
 
     for (uint32_t i = 0; i < frame_sync_count; i++) {
-        auto [image_available_result, image_available_handle] =
-          device->getLogicalDevice().createSemaphore(semaphore_create_info);
-        auto [in_flight_fence_result, in_flight_fence_handle] =
-          device->getLogicalDevice().createFence(fence_create_info);
+        auto image_available_result_value = device->getLogicalDevice().createSemaphore(semaphore_create_info);
+        auto image_available_result = image_available_result_value.result;
+        auto image_available_handle = image_available_result_value.value;
+        auto in_flight_fence_result_value = device->getLogicalDevice().createFence(fence_create_info);
+        auto in_flight_fence_result = in_flight_fence_result_value.result;
+        auto in_flight_fence_handle = in_flight_fence_result_value.value;
 
         if (image_available_result != vk::Result::eSuccess || in_flight_fence_result != vk::Result::eSuccess
             || !image_available_handle || !in_flight_fence_handle) {
@@ -983,8 +985,9 @@ void Kataglyphis::VulkanRenderer::createSynchronization()
     }
 
     for (uint32_t image = 0; image < vulkanSwapChain.getNumberSwapChainImages(); ++image) {
-        auto [render_finished_result, render_finished_handle] =
-          device->getLogicalDevice().createSemaphore(semaphore_create_info);
+        auto render_finished_result_value = device->getLogicalDevice().createSemaphore(semaphore_create_info);
+        auto render_finished_result = render_finished_result_value.result;
+        auto render_finished_handle = render_finished_result_value.value;
 
         if (render_finished_result != vk::Result::eSuccess || !render_finished_handle) {
             spdlog::error(fmt::format("Failed to create render-finished semaphore for swapchain image {} ({}).",
