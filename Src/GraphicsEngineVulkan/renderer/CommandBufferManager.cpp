@@ -61,7 +61,7 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
     }
 
     // end commands
-    command_buffer.end();
+    static_cast<void>(command_buffer.end());// MSVC ICE workaround: explicit discard of [[nodiscard]] return
 
     // queue submission information
     vk::SubmitInfo submit_info{};
@@ -77,7 +77,7 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
         return;
     }
 
-    queue.waitIdle();
+    static_cast<void>(queue.waitIdle());// MSVC ICE workaround: explicit discard of [[nodiscard]] return
 
     // Temporary command buffers are released when the command pool is destroyed.
     // Avoid explicit free to prevent freeing potentially pending buffers.

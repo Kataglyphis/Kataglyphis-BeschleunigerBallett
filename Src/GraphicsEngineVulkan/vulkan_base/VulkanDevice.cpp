@@ -362,19 +362,19 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         return false;
     };
 
-    const bool hasBufferDeviceAddressFeature = available_features12.bufferDeviceAddress == true;
+    const bool hasBufferDeviceAddressFeature = available_features12.bufferDeviceAddress == VK_TRUE;
     deviceSupportsBufferDeviceAddress = hasBufferDeviceAddressFeature;
     const bool hasRequiredDescriptorIndexingFeatures =
-      available_features12.descriptorIndexing == true && available_features12.runtimeDescriptorArray == true
-      && available_features12.shaderSampledImageArrayNonUniformIndexing == true;
+      available_features12.descriptorIndexing == VK_TRUE && available_features12.runtimeDescriptorArray == VK_TRUE
+      && available_features12.shaderSampledImageArrayNonUniformIndexing == VK_TRUE;
 
     spdlog::default_logger_raw()->log(spdlog::level::info,
       std::string("Feature support: bufferDeviceAddress=") + (hasBufferDeviceAddressFeature ? "true" : "false")
-        + ", descriptorIndexing=" + (available_features12.descriptorIndexing == true ? "true" : "false")
-        + ", runtimeDescriptorArray=" + (available_features12.runtimeDescriptorArray == true ? "true" : "false")
+        + ", descriptorIndexing=" + (available_features12.descriptorIndexing == VK_TRUE ? "true" : "false")
+        + ", runtimeDescriptorArray=" + (available_features12.runtimeDescriptorArray == VK_TRUE ? "true" : "false")
         + ", sampledImageArrayNonUniformIndexing="
-        + (available_features12.shaderSampledImageArrayNonUniformIndexing == true ? "true" : "false")
-        + ", robustBufferAccess=" + (available_features2.features.robustBufferAccess == true ? "true" : "false"));
+        + (available_features12.shaderSampledImageArrayNonUniformIndexing == VK_TRUE ? "true" : "false")
+        + ", robustBufferAccess=" + (available_features2.features.robustBufferAccess == VK_TRUE ? "true" : "false"));
 
     for (const char *extensionName : device_extensions_for_raytracing) {
         if (!isExtensionSupported(extensionName)) {
@@ -395,20 +395,20 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         spdlog::info("bufferDeviceAddress feature is not supported; disabling hardware ray tracing path.");
     }
 
-    const bool hasMaintenance4Feature = available_features13.maintenance4 == true;
+    const bool hasMaintenance4Feature = available_features13.maintenance4 == VK_TRUE;
 
-    const bool hasRequiredRayTracingFeatures = availableAccelerationStructureFeatures.accelerationStructure == true
-                                               && availableRayTracingPipelineFeatures.rayTracingPipeline == true
-                                               && availableRayQueryFeature.rayQuery == true;
+    const bool hasRequiredRayTracingFeatures = availableAccelerationStructureFeatures.accelerationStructure == VK_TRUE
+                                               && availableRayTracingPipelineFeatures.rayTracingPipeline == VK_TRUE
+                                               && availableRayQueryFeature.rayQuery == VK_TRUE;
 
     if (deviceSupportsHardwareAcceleratedRRT && !hasRequiredRayTracingFeatures) {
         deviceSupportsHardwareAcceleratedRRT = false;
         spdlog::default_logger_raw()->log(spdlog::level::info,
           std::string("Required ray tracing features are not fully supported (accelerationStructure=")
-            + (availableAccelerationStructureFeatures.accelerationStructure == true ? "true" : "false")
+            + (availableAccelerationStructureFeatures.accelerationStructure == VK_TRUE ? "true" : "false")
             + ", rayTracingPipeline="
-            + (availableRayTracingPipelineFeatures.rayTracingPipeline == true ? "true" : "false")
-            + ", rayQuery=" + (availableRayQueryFeature.rayQuery == true ? "true" : "false")
+            + (availableRayTracingPipelineFeatures.rayTracingPipeline == VK_TRUE ? "true" : "false")
+            + ", rayQuery=" + (availableRayQueryFeature.rayQuery == VK_TRUE ? "true" : "false")
             + "); disabling hardware ray tracing path.");
     }
 
@@ -440,7 +440,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         spdlog::info("bufferDeviceAddress feature is not supported; related shader capabilities may be unavailable.");
     }
 
-    if (features2.features.robustBufferAccess == true) {
+    if (features2.features.robustBufferAccess == VK_TRUE) {
         spdlog::info("Enabling robustBufferAccess for additional GPU memory access safety.");
     } else {
         spdlog::info("robustBufferAccess is not supported on this device.");

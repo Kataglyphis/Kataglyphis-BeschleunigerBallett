@@ -57,11 +57,12 @@ macro(myproject_default_debug_sanitizers)
 endmacro()
 
 macro(myproject_setup_options)
-  option(myproject_ENABLE_HARDENING "Enable hardening" ON)
+option(myproject_ENABLE_HARDENING "Enable hardening" ON)
   option(myproject_ENABLE_COVERAGE "Enable coverage reporting" ON)
-  option(myproject_DISABLE_EXCEPTIONS "Disable C++ exceptions" ON)
   option(myproject_ENABLE_GPROF "Enable profiling with gprof (adds -pg flags)" ON)
   option(myproject_ENABLE_GLOBAL_HARDENING "Enable global hardening" OFF)
+  # Exceptions are always disabled for consistent behavior across all builds
+  # This avoids /EHs vs /EHs- conflicts and reduces binary size
   # turn off for avoiding potential conflicts with dependencies
   # cmake_dependent_option(
   #   myproject_ENABLE_GLOBAL_HARDENING
@@ -120,8 +121,7 @@ macro(myproject_setup_options)
       myproject_ENABLE_CPPCHECK
       myproject_ENABLE_COVERAGE
       myproject_ENABLE_PCH
-      myproject_ENABLE_CACHE
-      myproject_DISABLE_EXCEPTIONS)
+      myproject_ENABLE_CACHE)
   endif()
 
 endmacro()
@@ -291,27 +291,17 @@ macro(myproject_local_options)
     endif()
   endif()
 
-  if(myproject_DISABLE_EXCEPTIONS)
-    if(MSVC AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
-      target_compile_options(myproject_options INTERFACE /EHs-) # Disable exceptions
-    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
-      message(STATUS "Using clang-cl and disable exceptions with /GX-")
-      target_compile_options(myproject_options INTERFACE /EHs-) # Disable exceptions
-    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-      target_compile_options(myproject_options INTERFACE -fno-exceptions)
-    else()
-      message(WARNING "Disabling exceptions is not supported for this compiler.")
-    endif()
+endif()
+
+  # Always disable C++ exceptions - /EHs- for MSVC, -fno-exceptions for GCC/Clang
+  if(MSVC AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
+    target_compile_options(myproject_options INTERFACE /EHs-)
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
+    target_compile_options(myproject_options INTERFACE /EHs-)
+  elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(myproject_options INTERFACE -fno-exceptions)
   else()
-    if(MSVC AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
-      target_compile_options(myproject_options INTERFACE /EHs) # Enable exceptions
-    elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
-      target_compile_options(myproject_options INTERFACE /EHs) # Enable exceptions
-    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-      target_compile_options(myproject_options INTERFACE -fexceptions)
-    else()
-      message(WARNING "Enabling exceptions is not supported for this compiler.")
-    endif()
+    message(WARNING "Disabling exceptions is not supported for this compiler.")
   endif()
 
   include(cmake/Sanitizers.cmake)
