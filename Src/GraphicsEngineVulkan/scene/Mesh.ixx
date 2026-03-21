@@ -27,9 +27,9 @@ class Mesh
 
     Mesh();
     Mesh(const Mesh &) = delete;
-    auto operator=(const Mesh &) -> Mesh & = delete;
+    Mesh &operator=(const Mesh &) = delete;
     Mesh(Mesh &&other) noexcept = default;
-    auto operator=(Mesh &&other) noexcept -> Mesh & = default;
+    Mesh &operator=(Mesh &&other) noexcept = default;
 
     void cleanUp();
 

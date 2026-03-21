@@ -11,9 +11,9 @@ class VulkanBuffer
   public:
     VulkanBuffer();
     VulkanBuffer(const VulkanBuffer &) = delete;
-    auto operator=(const VulkanBuffer &) -> VulkanBuffer & = delete;
+    VulkanBuffer &operator=(const VulkanBuffer &) = delete;
     VulkanBuffer(VulkanBuffer &&other) noexcept;
-    auto operator=(VulkanBuffer &&other) noexcept -> VulkanBuffer &;
+    VulkanBuffer &operator=(VulkanBuffer &&other) noexcept;
 
     void create(VulkanDevice *vulkanDevice,
       vk::DeviceSize buffer_size,

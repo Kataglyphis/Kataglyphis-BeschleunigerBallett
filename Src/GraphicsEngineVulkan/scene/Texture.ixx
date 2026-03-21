@@ -18,9 +18,9 @@ class Texture
   public:
     Texture();
     Texture(const Texture &) = delete;
-    auto operator=(const Texture &) -> Texture & = delete;
+    Texture &operator=(const Texture &) = delete;
     Texture(Texture &&other) noexcept = default;
-    auto operator=(Texture &&other) noexcept -> Texture & = default;
+    Texture &operator=(Texture &&other) noexcept = default;
 
     void createFromFile(VulkanDevice *device, vk::CommandPool commandPool, const std::string &fileName);
 

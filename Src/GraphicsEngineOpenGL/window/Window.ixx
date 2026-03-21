@@ -13,9 +13,9 @@ export class Window
     Window();
     Window(GLint window_width, GLint window_height);
     Window(const Window &) = delete;
-    auto operator=(const Window &) -> Window & = delete;
+    Window &operator=(const Window &) = delete;
     Window(Window &&) = delete;
-    auto operator=(Window &&) -> Window & = delete;
+    Window &operator=(Window &&) = delete;
 
     bool get_should_close() { return main_window == nullptr || glfwWindowShouldClose(main_window) != 0; }
     void swap_buffers()

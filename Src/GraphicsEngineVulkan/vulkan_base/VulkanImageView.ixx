@@ -11,9 +11,9 @@ class VulkanImageView
   public:
     VulkanImageView();
     VulkanImageView(const VulkanImageView &) = delete;
-    auto operator=(const VulkanImageView &) -> VulkanImageView & = delete;
+    VulkanImageView &operator=(const VulkanImageView &) = delete;
     VulkanImageView(VulkanImageView &&other) noexcept;
-    auto operator=(VulkanImageView &&other) noexcept -> VulkanImageView &;
+    VulkanImageView &operator=(VulkanImageView &&other) noexcept;
 
     void setImageView(vk::ImageView imageView);
 

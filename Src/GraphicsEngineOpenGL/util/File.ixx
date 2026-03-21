@@ -11,9 +11,9 @@ export class File : private Kataglyphis::Shared::FileLocationHolder
   public:
     explicit File(const std::string &file_location);
     File(const File &) = default;
-    auto operator=(const File &) -> File & = default;
+    File &operator=(const File &) = default;
     File(File &&) = default;
-    auto operator=(File &&) -> File & = default;
+    File &operator=(File &&) = default;
 
     std::string read();
 

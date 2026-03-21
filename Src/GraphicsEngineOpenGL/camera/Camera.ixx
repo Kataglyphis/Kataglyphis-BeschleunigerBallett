@@ -19,9 +19,9 @@ export class Camera
   public:
     Camera();
     Camera(const Camera &) = default;
-    auto operator=(const Camera &) -> Camera & = default;
+    Camera &operator=(const Camera &) = default;
     Camera(Camera &&) = default;
-    auto operator=(Camera &&) -> Camera & = default;
+    Camera &operator=(Camera &&) = default;
 
     Camera(glm::vec3 start_position,
       glm::vec3 start_up,
