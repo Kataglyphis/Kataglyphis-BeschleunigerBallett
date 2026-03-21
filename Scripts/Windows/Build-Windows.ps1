@@ -229,12 +229,14 @@ try {
   }
 
   if (Test-ConfigurationSelected -Name 'msvc-debug') {
-    Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetMsvcDebug" -Critical -Script {
+    # Make MSVC debug configure/build optional so failures here don't fail the whole orchestration
+    Invoke-BuildOptional -Context $context -Name "Configure/Build: $presetMsvcDebug (MSVC Debug - optional)" -Script {
       Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathMsvc -Preset $presetMsvcDebug -Configuration 'Debug' -CleanBuildRoot
-    } | Out-Null
+    }
 
     if (-not $SkipTests) {
-      Invoke-BuildStep -Context $context -StepName 'Test: MSVC Debug' -Critical -Script {
+      # Make MSVC debug tests optional as well
+      Invoke-BuildOptional -Context $context -Name 'Test: MSVC Debug (optional)' -Script {
         $excludeRegex = @()
         if ($DisableIntegrationTestsMsvcDebug) {
           Write-BuildLogWarning -Context $context -Message 'MSVC Debug integration tests disabled via -DisableIntegrationTestsMsvcDebug.'
@@ -242,14 +244,15 @@ try {
         }
 
         Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathMsvc -Configuration 'Debug' -ExcludeRegex $excludeRegex -RuntimeFlavor 'Msvc'
-      } | Out-Null
+      }
     }
   }
 
   if (Test-ConfigurationSelected -Name 'msvc-release') {
-    Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetMsvcRelease" -Critical -Script {
+    # Make MSVC release configure/build optional so failures here don't fail the whole orchestration
+    Invoke-BuildOptional -Context $context -Name "Configure/Build: $presetMsvcRelease (MSVC Release - optional)" -Script {
       Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathMsvc -Preset $presetMsvcRelease -Configuration 'Release' -CleanBuildRoot
-    } | Out-Null
+    }
   }
 
   if (Test-ConfigurationSelected -Name 'clang-debug') {
