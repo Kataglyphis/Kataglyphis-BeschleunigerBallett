@@ -52,7 +52,8 @@ class Model
 
     void addSampler(const Texture &newTexture);
 
-    uint32_t mesh_model_index{ static_cast<uint32_t>(-1) };
+    static constexpr uint32_t INVALID_MESH_INDEX = ~uint32_t(0);
+    uint32_t mesh_model_index{ INVALID_MESH_INDEX };
     Mesh mesh;
     glm::mat4 model{};
 

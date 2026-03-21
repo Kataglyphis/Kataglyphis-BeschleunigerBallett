@@ -48,10 +48,11 @@ class Mesh
   private:
     VulkanBufferManager vulkanBufferManager;
 
-    ObjectDescription object_description{ static_cast<uint64_t>(-1),
-        static_cast<uint64_t>(-1),
-        static_cast<uint64_t>(-1),
-        static_cast<uint64_t>(-1) };
+    static constexpr uint64_t INVALID_ADDR = ~uint64_t(0);
+    ObjectDescription object_description{ INVALID_ADDR,
+        INVALID_ADDR,
+        INVALID_ADDR,
+        INVALID_ADDR };
 
     VulkanBuffer vertexBuffer;
     VulkanBuffer indexBuffer;
@@ -61,8 +62,9 @@ class Mesh
 
     glm::mat4 model{};
 
-    uint32_t vertex_count{ static_cast<uint32_t>(-1) };
-    uint32_t index_count{ static_cast<uint32_t>(-1) };
+    static constexpr uint32_t INVALID_COUNT = ~uint32_t(0);
+    uint32_t vertex_count{ INVALID_COUNT };
+    uint32_t index_count{ INVALID_COUNT };
 
     VulkanDevice *device{ nullptr };
 
