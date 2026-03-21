@@ -40,7 +40,7 @@ class Model
     glm::mat4 getModel() { return model; };
     uint32_t getCustomInstanceIndex() { return mesh_model_index; };
     uint32_t getPrimitiveCount();
-    ObjectDescription getObjectDescription() { return mesh.getObjectDescription(); };
+    ObjectDescription getObjectDescription() { auto __od = mesh.getObjectDescription(); return __od; };
 
     void set_model(glm::mat4 new_model);
     void addTexture(Texture &&newTexture);

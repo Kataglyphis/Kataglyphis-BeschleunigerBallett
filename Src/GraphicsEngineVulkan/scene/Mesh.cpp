@@ -168,7 +168,8 @@ void Mesh::createMaterialBuffer(vk::Queue /*transfer_queue*/,
         memory_allocate_flags |= vk::MemoryAllocateFlagBits::eDeviceAddress;
     }
 
-    vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
+    auto &__vbm = vulkanBufferManager;
+    __vbm.createBufferAndUploadVectorOnDevice(device,
       transfer_command_pool,
       materialsBuffer,
       usage_flags,

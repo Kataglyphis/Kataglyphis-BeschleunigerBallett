@@ -18,7 +18,7 @@ class VulkanSwapChain
     void initVulkanContext(VulkanDevice *in_device, Kataglyphis::Frontend::Window *window, const vk::SurfaceKHR &surface);
 
     const vk::SwapchainKHR &getSwapChain() const { return swapchain; };
-    uint32_t getNumberSwapChainImages() const { return static_cast<uint32_t>(swap_chain_images.size()); };
+    uint32_t getNumberSwapChainImages() const { auto __tmp_sz = swap_chain_images.size(); return static_cast<uint32_t>(__tmp_sz); };
     const vk::Extent2D &getSwapChainExtent() const { return swap_chain_extent; };
     const vk::Format &getSwapChainFormat() const { return swap_chain_image_format; };
     Texture &getSwapChainImage(uint32_t index) { return swap_chain_images[index]; };
