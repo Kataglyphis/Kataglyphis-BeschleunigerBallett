@@ -114,7 +114,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
         createRaytracingDescriptorPool();
         createRaytracingDescriptorSetLayouts();
         layouts.push_back(raytracingDescriptorSetLayout);
-        raytracingStage.init(device.get(), layouts);
+        raytracingStage.init(device.get(), layouts, &vulkanSwapChain);
         pathTracing.init(device.get(), layouts);
     }
 

@@ -87,7 +87,7 @@ jobs:
             bash ./Scripts/Linux/cmake-configure-build.sh \
             --vulkan-version "${{ env.VULKAN_VERSION }}" \
             --preset "linux-debug-clang" \
-            --build-dir "${{ env.BUILD_DIR }}"
+            --build-dir "${{ env.BUILD_DIR }}" 2>&1 | tee output.log
 
       - name: Run Unit/Integration tests
         run: |
@@ -99,7 +99,7 @@ jobs:
             --vulkan-version "${{ env.VULKAN_VERSION }}" \
             --build-dir "${{ env.BUILD_DIR }}" \
             --build-type "${{ env.BUILD_TYPE }}" \
-            --ctest-exclude "^Integration\\.VulkanEngine$|^RendererTest\\.BasicSetup$"
+            --ctest-exclude "^Integration\\.VulkanEngine$|^RendererTest\\.BasicSetup$" 2>&1 | tee output.log
 
       - name: Run fuzzer tests
         run: |
@@ -114,7 +114,7 @@ jobs:
             "${{ env.CONTAINER_IMAGE }}" \
             bash ./Scripts/Linux/build-coverage-llvm.sh \
             --build-dir "${{ env.BUILD_DIR }}" \
-            --coverage-json "${{ env.COVERAGE_JSON }}"
+            --coverage-json "${{ env.COVERAGE_JSON }}" 2>&1 | tee output.log
         working-directory: ${{ github.workspace }}
 
       - name: Codecov
@@ -142,7 +142,7 @@ jobs:
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
             bash ./Scripts/Linux/run_static_analysis_format.sh \
-            --only-clang-analyze-html
+            --only-clang-analyze-html 2>&1 | tee output.log 
 
       - name: Run Clang static analysis (scan-build)
         continue-on-error: true
@@ -156,7 +156,7 @@ jobs:
             bash ./Scripts/Linux/run_static_analysis_format.sh \
             --only-scan-build \
             --build-dir "${{ env.BUILD_DIR }}" \
-            --preset "linux-debug-clang"
+            --preset "linux-debug-clang" 2>&1 | tee output.log
 
       #################################################################################################################
       ############################# Now run on performance benchmarking/profiling #####################################
@@ -173,7 +173,7 @@ jobs:
             --vulkan-version "${{ env.VULKAN_VERSION }}" \
             --build-dir "${{ env.BUILD_DIR }}" \
             --preset "${{ env.CLANG_PROFILE_PRESET }}" \
-            --clean-build-dir true
+            --clean-build-dir true 2>&1 | tee output.log
 
       - name: Run performance benchmarks
         run: |
@@ -181,7 +181,7 @@ jobs:
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
+            bash ./Scripts/Linux/run-perf-suite.sh "${{ env.BUILD_DIR }}" 2>&1 | tee output.log
 
       #################################################################################################################
       ######################################## Build docs #############################################################
@@ -219,7 +219,7 @@ jobs:
             --vulkan-version "${{ env.VULKAN_VERSION }}" \
             --build-dir "${{ env.BUILD_DIR }}" \
             --preset "linux-debug-GNU" \
-            --clean-build-dir true
+            --clean-build-dir true 2>&1 | tee output.log
 
       - name: Run Unit/Integration tests (gcc)
         run: |
@@ -231,7 +231,7 @@ jobs:
             --vulkan-version "${{ env.VULKAN_VERSION }}" \
             --build-dir "${{ env.BUILD_DIR }}" \
             --build-type "${{ env.BUILD_TYPE }}" \
-            --ctest-exclude "^Integration\\.VulkanEngine$|^RendererTest\\.BasicSetup$"
+            --ctest-exclude "^Integration\\.VulkanEngine$|^RendererTest\\.BasicSetup$" 2>&1 | tee output.log
 
       - name: Run fuzzer tests (gcc)
         run: |
@@ -244,7 +244,7 @@ jobs:
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
-            bash ./Scripts/Linux/build-coverage-gcovr.sh
+            bash ./Scripts/Linux/build-coverage-gcovr.sh 2>&1 | tee output.log
 
       - name: Configure/build CMake for Profiling (gcc)
         run: |
@@ -256,7 +256,7 @@ jobs:
             --vulkan-version "${{ env.VULKAN_VERSION }}" \
             --build-dir "${{ env.BUILD_DIR }}" \
             --preset "${{ env.GCC_PROFILE_PRESET }}" \
-            --clean-build-dir true
+            --clean-build-dir true 2>&1 | tee output.log
 
       - name: Run performance benchmarks (gcc)
         run: ./Scripts/Linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
@@ -278,7 +278,7 @@ jobs:
             --vulkan-version "${{ env.VULKAN_VERSION }}" \
             --build-dir "${{ env.BUILD_RELEASE_DIR }}" \
             --preset "linux-release-clang" \
-            --build-config "Release"
+            --build-config "Release" 2>&1 | tee output.log
 
       - name: Package
         run: |
@@ -292,7 +292,7 @@ jobs:
             --vulkan-version "${{ env.VULKAN_VERSION }}" \
             --build-dir "${{ env.BUILD_RELEASE_DIR }}" \
             --skip-configure true \
-            --build-target package
+            --build-target package 2>&1 | tee output.log
 
       - name: Upload Linux Packages (Clang only)
         uses: actions/upload-artifact@v7.0.0

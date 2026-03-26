@@ -18,7 +18,8 @@ class Raytracing
   public:
     Raytracing();
 
-    void init(VulkanDevice *in_device, const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts);
+    void init(VulkanDevice *in_device, const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts,
+      VulkanSwapChain *swapchain);
 
     void shaderHotReload(const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts);
 

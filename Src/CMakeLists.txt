@@ -1,3 +1,16 @@
+option(ENABLE_RUST "Enable building the Rust helper crate" ON)
+option(ENABLE_RUST_CXXBRIDGE "Enable generation of the CXX bridge (with_cxxbridge feature)" ON)
+
+# Force the CXX bridge to be enabled unconditionally (including Emscripten builds).
+# This ensures the cxx bridge headers are always generated and the Cargo feature
+# is propagated by CMake when requested.
+set(ENABLE_RUST_CXXBRIDGE ON CACHE BOOL "Enable generation of the CXX bridge (with_cxxbridge feature)" FORCE)
+
+# Populate RUST_FEATURES for corrosion if requested.
+if(ENABLE_RUST AND ENABLE_RUST_CXXBRIDGE)
+  set(RUST_FEATURES with_cxxbridge)
+endif()
+
 if(RUST_FEATURES)
   corrosion_import_crate(
     MANIFEST_PATH
@@ -6,6 +19,10 @@ if(RUST_FEATURES)
     staticlib
     CRATES
     kataglyphis_rustprojecttemplate)
+
+  if(RUST_FEATURES)
+    corrosion_set_features(kataglyphis_rustprojecttemplate FEATURES ${RUST_FEATURES})
+  endif()
 
   if(WIN32)
     target_link_libraries(

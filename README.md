@@ -50,6 +50,7 @@ see also [**__Official homepage__**](https://beschleunigerballette.jonasheinle.d
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
+- [Third-party Licenses](#third-party-licenses)
 - [Contact](#contact)
 - [Acknowledgements](#acknowledgements)
 - [Literature](#literature)
@@ -290,6 +291,10 @@ Contributions are what make the open source community such an amazing place to b
 ## License
 
 Distributed under the MIT-License. See `LICENSE` for more information.
+
+## Third-party Licenses
+
+See the full third-party license overview in the docs: [docs/LICENSES-README.md](docs/LICENSES-README.md)
 
 
 <!-- CONTACT -->

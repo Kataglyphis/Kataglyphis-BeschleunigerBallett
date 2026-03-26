@@ -251,6 +251,19 @@ try {
   if (Test-ConfigurationSelected -Name 'msvc-release') {
     # Make MSVC release configure/build optional so failures here don't fail the whole orchestration
     Invoke-BuildOptional -Context $context -Name "Configure/Build: $presetMsvcRelease (MSVC Release - optional)" -Script {
+      # Precompile shaders for release builds to avoid runtime glslc dependency
+      $compileShadersScript = Join-Path $PSScriptRoot 'compile-shaders.ps1'
+      if (Test-Path $compileShadersScript) {
+        # Derive TargetEnv from VULKAN_VERSION if available, else fallback to vulkan1.4
+        $targetEnv = 'vulkan1.4'
+        if ($env:VULKAN_VERSION) {
+          if ($env:VULKAN_VERSION -match '^([0-9]+)\.([0-9]+)') { $targetEnv = "vulkan$($matches[1]).$($matches[2])" }
+        }
+        Write-BuildLog -Context $context -Message "Precompiling shaders (MSVC Release) -> targetEnv=$targetEnv"
+        & $compileShadersScript -TargetEnv $targetEnv
+      } else {
+        Write-BuildLogWarning -Context $context -Message "Shader compile script not found: $compileShadersScript"
+      }
       Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathMsvc -Preset $presetMsvcRelease -Configuration 'Release' -CleanBuildRoot
     }
   }
@@ -322,6 +335,19 @@ try {
 
   if (Test-ConfigurationSelected -Name 'clang-release') {
     Invoke-BuildStep -Context $context -StepName "Release build/package: $presetClangRelease" -Critical -Script {
+      # Precompile shaders for release builds to avoid runtime glslc dependency
+      $compileShadersScript = Join-Path $PSScriptRoot 'compile-shaders.ps1'
+      if (Test-Path $compileShadersScript) {
+        # Derive TargetEnv from VULKAN_VERSION if available, else fallback to vulkan1.4
+        $targetEnv = 'vulkan1.4'
+        if ($env:VULKAN_VERSION) {
+          if ($env:VULKAN_VERSION -match '^([0-9]+)\.([0-9]+)') { $targetEnv = "vulkan$($matches[1]).$($matches[2])" }
+        }
+        Write-BuildLog -Context $context -Message "Precompiling shaders (Clang Release) -> targetEnv=$targetEnv"
+        & $compileShadersScript -TargetEnv $targetEnv
+      } else {
+        Write-BuildLogWarning -Context $context -Message "Shader compile script not found: $compileShadersScript"
+      }
       Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathRelease -Preset $presetClangRelease -Configuration 'Release' -CleanBuildRoot
 
       Invoke-BuildExternal -Context $context -File 'cmake' -Parameters @(

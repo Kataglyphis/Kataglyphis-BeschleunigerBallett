@@ -16,6 +16,7 @@ import kataglyphis.vulkan.app;
 #include "spdlog/logger.h"
 #include "spdlog/sinks/basic_file_sink.h"
 #include "spdlog/sinks/stdout_color_sinks.h"
+#include "spdlog/sinks/null_sink.h"
 #include "spdlog/spdlog.h"
 #include <iostream>
 #include <string>
@@ -58,6 +59,15 @@ void apply_gpu_selection_from_args(std::span<char *const> arguments)
 
 void initialize_logging()
 {
+    // In Release builds disable logging entirely to avoid runtime overhead and log files
+#ifdef NDEBUG
+    auto null_sink_ptr = std::make_shared<spdlog::sinks::null_sink_mt>();
+    std::vector<spdlog::sink_ptr> sinks{ null_sink_ptr };
+    auto logger = std::make_shared<spdlog::logger>("GraphicsEngineVulkan", sinks.begin(), sinks.end());
+    logger->set_level(spdlog::level::off);
+    logger->flush_on(spdlog::level::off);
+    spdlog::set_default_logger(logger);
+#else
     auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
     console_sink->set_level(spdlog::level::info);
 
@@ -84,6 +94,7 @@ void initialize_logging()
 
     spdlog::set_default_logger(logger);
     spdlog::info("Logger initialized.");
+#endif
 }
 }// namespace
 

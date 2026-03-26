@@ -59,7 +59,11 @@ void GUI::render()
     ImGui::Begin("GUI v" PROJECT_VERSION);
 
     if (ImGui::CollapsingHeader("Hot shader reload")) {
+#ifndef NDEBUG
         if (ImGui::Button("All shader!")) { guiRendererSharedVars.shader_hot_reload_triggered = true; }
+#else
+        ImGui::TextDisabled("All shader! (disabled in Release build)");
+#endif
     }
 
     ImGui::Separator();

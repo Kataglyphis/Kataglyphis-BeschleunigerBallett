@@ -74,6 +74,24 @@ void Kataglyphis::ShaderHelper::compileShader(const std::string &shader_src_dir,
     std::filesystem::create_directories(shader_spv_path_object.parent_path(), filesystem_error);
 
     std::string shader_spv_path = shader_spv_path_object.string();
+
+    // If the SPV file already exists, skip runtime compilation.
+    if (std::filesystem::exists(shader_spv_path, filesystem_error) && !filesystem_error) {
+        spdlog::default_logger_raw()->log(
+          spdlog::level::info, std::string("SPV already present, skipping runtime compile for: ") + shader_spv_path);
+        return;
+    }
+
+    // By default, disable runtime shader compilation in Release builds unless explicitly enabled
+#ifndef KAT_ENABLE_RUNTIME_SHADER_COMPILATION
+# ifdef NDEBUG
+#  define KAT_ENABLE_RUNTIME_SHADER_COMPILATION 0
+# else
+#  define KAT_ENABLE_RUNTIME_SHADER_COMPILATION 1
+# endif
+#endif
+
+#if KAT_ENABLE_RUNTIME_SHADER_COMPILATION
     shader_log_file << shader_src_dir << shader_name << ".log.txt";
     std::stringstream log_stdout_and_stderr;
     log_stdout_and_stderr << " > " << shader_log_file.str() << " 2> " << shader_log_file.str();
@@ -81,13 +99,17 @@ void Kataglyphis::ShaderHelper::compileShader(const std::string &shader_src_dir,
     cmdShaderCompile//<< adminPriviliges.str()
       << Kataglyphis::RendererConfig::glslcExe << target << std::quoted(resolved_shader_src_path) << " -o "
       << std::quoted(shader_spv_path) << " " << ShaderIncludes::getShaderIncludes();
-    //<< log_stdout_and_stderr.str();
 
     spdlog::default_logger_raw()->log(
       spdlog::level::info, std::string("The shader compile command is the following: ") + cmdShaderCompile.str());
-    // std::cout << cmdShaderCompile.str().c_str();
 
     system(cmdShaderCompile.str().c_str());
+#else
+    spdlog::default_logger_raw()->log(
+      spdlog::level::warn,
+      std::string("Runtime shader compilation disabled (release). Missing SPV: ") + shader_spv_path);
+    return;
+#endif
 }
 
 auto Kataglyphis::ShaderHelper::getShaderSpvDir(const std::string &shader_src_dir, const std::string &shader_name)

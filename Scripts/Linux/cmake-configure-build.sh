@@ -155,4 +155,21 @@ fi
 build_cmd+=(--parallel "${PARALLEL_JOBS}")
 
 info "Executing: ${build_cmd[*]}"
+
+# Precompile shaders for Release builds to avoid runtime glslc dependency
+should_compile_shaders=false
+lower_preset="${PRESET,,}"
+if [[ "${lower_preset}" == *"release"* || "${CMAKE_BUILD_CONFIG}" == "Release" ]]; then
+  should_compile_shaders=true
+fi
+
+if [[ "${should_compile_shaders}" == "true" ]]; then
+  info "Release build detected — precompiling shaders"
+  # Derive a target-env like 'vulkan1.4' from VULKAN_VERSION if available
+  TARGET_ENV="vulkan1.4"
+  if [[ -n "${VULKAN_VERSION:-}" && "${VULKAN_VERSION}" =~ ^([0-9]+)\.([0-9]+) ]]; then
+    TARGET_ENV="vulkan${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+  fi
+  bash "${SCRIPT_DIR}/compile-shaders.sh" --target-env "${TARGET_ENV}" || warn "Shader precompilation failed"
+fi
 "${build_cmd[@]}"

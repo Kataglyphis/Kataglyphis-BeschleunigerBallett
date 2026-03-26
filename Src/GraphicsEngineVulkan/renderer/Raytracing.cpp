@@ -11,19 +11,23 @@ module;
 
 #include "common/MemoryHelper.hpp"
 #include "common/Utilities.hpp"
+#include <spdlog/spdlog.h>
 #include "renderer/pushConstants/PushConstantRayTracing.hpp"
 
 module kataglyphis.vulkan.raytracing;
 
 import kataglyphis.vulkan.file;
 import kataglyphis.vulkan.shader_helper;
+import kataglyphis.vulkan.swapchain;
 
 Kataglyphis::VulkanRendererInternals::Raytracing::Raytracing() = default;
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::init(VulkanDevice *in_device,
-  const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
+  const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts,
+  VulkanSwapChain *swapchain)
 {
     this->device = in_device;
+    this->vulkanSwapChain = swapchain;
 
     createPCRange();
     createGraphicsPipeline(descriptorSetLayouts);
@@ -102,7 +106,12 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
 
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, pipeline_layout, 0, descriptorSets, {});
 
-    const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
+    VulkanSwapChain *effectiveSwapChain = swapchain ? swapchain : this->vulkanSwapChain;
+    if (!effectiveSwapChain) {
+      spdlog::error("Raytracing::recordCommands: VulkanSwapChain is null");
+      return;
+    }
+    const vk::Extent2D &swap_chain_extent = effectiveSwapChain->getSwapChainExtent();
     commandBuffer.traceRaysKHR(
       rgen_region, miss_region, hit_region, call_region, swap_chain_extent.width, swap_chain_extent.height, 1);
 
