@@ -64,10 +64,16 @@ jobs:
           docker run --rm `
             --mount "type=bind,source=${{ github.workspace }},target=C:\workspace" `
             -w "C:\workspace" `
+            -e MSIX_CERT_PASSWORD='${{ secrets.MSIX_CERT_PASSWORD }}' `
             $image `
             powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\\workspace\\Scripts\\Windows\\Build-Windows.ps1" `
-            -Configurations all `
-            -SkipFormat -SkipTidy -SkipTests -SkipPerfTests
+            -Configurations "clang-debug,clang-release" `
+            -SkipFormat -SkipTidy -SkipTests -SkipPerfTests `
+            -WebDavHostname '${{ secrets.WEBDAV_HOSTNAME }}' `
+            -WebDavUsername '${{ secrets.WEBDAV_USERNAME }}' `
+            -WebDavPassword '${{ secrets.WEBDAV_PASSWORD }}' `
+            -RemoteBasePath '${{ secrets.REMOTE_BASE_PATH }}' `
+            -LocalAssetsFolder 'C:\workspace'
 
       # I limited the size of the builded package for storage restriction reasons on a github runner
       # see also the install commands in the bottom of the CMakeLists.txt
