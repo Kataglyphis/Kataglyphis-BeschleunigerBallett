@@ -5,6 +5,7 @@ param(
   [switch]$SkipTests,
   [switch]$SkipPerfTests,
   [switch]$SkipMsix,
+  [switch]$SkipBuild,
   [switch]$DisableIntegrationTestsMsvcDebug
 )
 
@@ -117,6 +118,16 @@ if ($null -eq $Configurations -or $Configurations.Count -eq 0 -or ($Configuratio
   }
 }
 
+# If SkipBuild is requested, clear any selected build configurations so
+# configuration-specific configure/build steps are not executed. This keeps
+# non-build steps (formatting, tidy, etc.) running. However, packaging and
+# signing (which run as part of the clang-release step) are often desired
+# even when skipping build. If the Release build output directory already
+# exists we preserve 'clang-release' so packaging/signing still run.
+if ($SkipBuild) {
+  $selectedConfigurations.Clear()
+}
+
 function Test-ConfigurationSelected {
   param([Parameter(Mandatory)][string]$Name)
   return $selectedConfigurations.Contains($Name)
@@ -207,7 +218,9 @@ $context = New-BuildContext -Workspace $workspacePath -LogDir $logDir -StopOnErr
 
 try {
   Open-BuildLog -Context $context
-
+  if ($SkipBuild) {
+    Write-BuildLogWarning -Context $context -Message 'Skipping all configure/build steps due to -SkipBuild.'
+  }
   Write-BuildLog -Context $context -Message "Workspace: $workspacePath"
   Write-BuildLog -Context $context -Message "Configurations=$(([string[]]$selectedConfigurations -join ', '))"
 
@@ -335,21 +348,29 @@ try {
 
   if (Test-ConfigurationSelected -Name 'clang-release') {
     Invoke-BuildStep -Context $context -StepName "Release build/package: $presetClangRelease" -Critical -Script {
-      # Precompile shaders for release builds to avoid runtime glslc dependency
-      $compileShadersScript = Join-Path $PSScriptRoot 'compile-shaders.ps1'
-      if (Test-Path $compileShadersScript) {
-        # Derive TargetEnv from VULKAN_VERSION if available, else fallback to vulkan1.4
-        $targetEnv = 'vulkan1.4'
-        if ($env:VULKAN_VERSION) {
-          if ($env:VULKAN_VERSION -match '^([0-9]+)\.([0-9]+)') { $targetEnv = "vulkan$($matches[1]).$($matches[2])" }
-        }
-        Write-BuildLog -Context $context -Message "Precompiling shaders (Clang Release) -> targetEnv=$targetEnv"
-        & $compileShadersScript -TargetEnv $targetEnv
+      if ($SkipBuild) {
+        # When -SkipBuild is requested, skip configure/build but still run
+        # the packaging step (assumes a previous Release build exists).
+        Write-BuildLog -Context $context -Message 'Skipping Clang Release build due to -SkipBuild.'
       } else {
-        Write-BuildLogWarning -Context $context -Message "Shader compile script not found: $compileShadersScript"
+        # Precompile shaders for release builds to avoid runtime glslc dependency
+        $compileShadersScript = Join-Path $PSScriptRoot 'compile-shaders.ps1'
+        if (Test-Path $compileShadersScript) {
+          # Derive TargetEnv from VULKAN_VERSION if available, else fallback to vulkan1.4
+          $targetEnv = 'vulkan1.4'
+          if ($env:VULKAN_VERSION) {
+            if ($env:VULKAN_VERSION -match '^([0-9]+)\.([0-9]+)') { $targetEnv = "vulkan$($matches[1]).$($matches[2])" }
+          }
+          Write-BuildLog -Context $context -Message "Precompiling shaders (Clang Release) -> targetEnv=$targetEnv"
+          & $compileShadersScript -TargetEnv $targetEnv
+        } else {
+          Write-BuildLogWarning -Context $context -Message "Shader compile script not found: $compileShadersScript"
+        }
+        Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathRelease -Preset $presetClangRelease -Configuration 'Release' -CleanBuildRoot
       }
-      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathRelease -Preset $presetClangRelease -Configuration 'Release' -CleanBuildRoot
 
+      # Always attempt packaging when clang-release is selected; packaging
+      # should not be skipped by -SkipBuild.
       Invoke-BuildExternal -Context $context -File 'cmake' -Parameters @(
         '--build', $buildPathRelease,
         '--target', 'package',
@@ -358,7 +379,7 @@ try {
     } | Out-Null
   }
 
-  if ((Test-ConfigurationSelected -Name 'clang-release') -and (-not $SkipMsix)) {
+  if (-not $SkipMsix) {
     Invoke-BuildOptional -Context $context -Name 'MSIX packaging' -Script {
       $makeappxPath = Resolve-WindowsSdkToolPath -ToolName 'makeappx.exe' -OverridePath $null
       if (-not $makeappxPath) {
