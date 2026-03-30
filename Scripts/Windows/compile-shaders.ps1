@@ -46,7 +46,10 @@ $includeDirs = Get-ChildItem -Path $shadersRoot -Directory -Recurse -ErrorAction
 $includeArgs = @()
 foreach ($d in $includeDirs) { $includeArgs += '-I'; $includeArgs += $d }
 
-$patterns = @('*.vert','*.frag','*.comp','*.rgen','*.rchit','*.rmiss','*.geom','*.tesc','*.tese','*.glsl')
+ # Only compile shader entry points. Many .glsl files are shared headers/includes
+ # and should not be compiled directly to SPIR-V. Remove '*.glsl' from the
+ # patterns so we only compile explicit shader stage files.
+ $patterns = @('*.vert','*.frag','*.comp','*.rgen','*.rchit','*.rmiss','*.geom','*.tesc','*.tese')
 $files = Get-ChildItem -Path $shadersRoot -Recurse -File -Include $patterns -ErrorAction SilentlyContinue
 
 foreach ($file in $files) {
@@ -60,7 +63,20 @@ foreach ($file in $files) {
   }
 
   Write-Host "[INFO] Compiling $($file.FullName) -> $outFile"
-  & $glslcPath "--target-env=$TargetEnv" $file.FullName '-o' $outFile $includeArgs
+
+  # Build glslc arguments. Define VULKAN for shader branches that need it when
+  # compiling for a Vulkan target. Include search paths afterwards.
+  $args = @("--target-env=$TargetEnv")
+  # Use a project-specific define to avoid colliding with built-in or external
+  # definitions named 'VULKAN'. Some toolchains predefine 'VULKAN' which can
+  # cause macro redefinition errors. We define `KAT_VULKAN` instead.
+  if ($TargetEnv -match '^vulkan') { $args += '-DKAT_VULKAN' }
+  $args += $file.FullName
+  $args += '-o'
+  $args += $outFile
+  $args += $includeArgs
+
+  & $glslcPath $args
   if ($LASTEXITCODE -ne 0) {
     Write-Warning "glslc failed for $($file.FullName)"
   }

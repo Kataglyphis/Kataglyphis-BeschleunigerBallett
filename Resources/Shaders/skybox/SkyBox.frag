@@ -7,10 +7,16 @@
 layout(location = 2) out vec3 g_albedo;
 layout(location = 3) out vec3  g_material_id;
 
-in vec3 tex_coords;
-in vec4 world_pos;
+layout(location = 0) in vec3 tex_coords;
+layout(location = 1) in vec4 world_pos;
 
-uniform samplerCube skybox;
+// For Vulkan we need an explicit binding on samplers. Use the project prefix
+// define KAT_VULKAN (passed as -DKAT_VULKAN by the compile script).
+#ifdef KAT_VULKAN
+layout(set = 0, binding = 1) uniform samplerCube skybox;
+#else
+layout(binding = 1) uniform samplerCube skybox;
+#endif
 
 void main()
   {
