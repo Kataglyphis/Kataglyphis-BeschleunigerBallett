@@ -110,4 +110,11 @@ function New-TransparentPng {
   }
 }
 
-Export-ModuleMember -Function Resolve-WindowsSdkToolPath, Expand-XmlTemplateTokens, New-TransparentPng
+# Approved-verb wrapper functions for discoverability
+function Get-WindowsSdkToolPath { param($ToolName,$OverridePath) return Resolve-WindowsSdkToolPath -ToolName $ToolName -OverridePath $OverridePath }
+
+function ConvertTo-XmlSafeText { param($Value) return ConvertTo-XmlEscapedText -Value $Value }
+
+function New-TransparentImage { param($Path,$Width,$Height) return New-TransparentPng -Path $Path -Width $Width -Height $Height }
+
+Export-ModuleMember -Function Resolve-WindowsSdkToolPath, Expand-XmlTemplateTokens, New-TransparentPng, Get-WindowsSdkToolPath, ConvertTo-XmlSafeText, New-TransparentImage

@@ -18,31 +18,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-function Get-OrDefault([string]$Value, [string]$DefaultValue) {
-  if ([string]::IsNullOrWhiteSpace($Value)) { return $DefaultValue }
-  return $Value
-}
-
-function Get-ConfigValue {
-  param(
-    [Parameter(Mandatory)]
-    $Config,
-    [Parameter(Mandatory)]
-    [string]$Path
-  )
-
-  $cursor = $Config
-  foreach ($segment in ($Path -split '\.')) {
-    if ($null -eq $cursor) { return $null }
-    try {
-      $cursor = $cursor[$segment]
-    } catch {
-      return $null
-    }
-  }
-
-  return $cursor
-}
+# Config helpers moved to WindowsConfig.Common.psm1
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $containerHubModulesRoot = Join-Path $repoRoot 'ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules'
@@ -54,6 +30,10 @@ $modulePaths = @(
   (Join-Path $containerHubModulesRoot 'WindowsToolchain.Common.psm1'),
   (Join-Path $containerHubModulesRoot 'WindowsUv.Common.psm1'),
   (Join-Path $containerHubModulesRoot 'WindowsCodeQL.Common.psm1'),
+  (Join-Path $containerHubModulesRoot 'WindowsConfig.Common.psm1'),
+  (Join-Path $containerHubModulesRoot 'WindowsClang.Common.psm1'),
+  (Join-Path $containerHubModulesRoot 'WindowsWebDav.Common.psm1'),
+  (Join-Path $containerHubModulesRoot 'WindowsMsix.Common.psm1'),
   (Join-Path $localModulesRoot 'Build.CMake.psm1'),
   (Join-Path $localModulesRoot 'Build.Formatting.psm1'),
   (Join-Path $localModulesRoot 'Build.Testing.psm1'),
@@ -71,6 +51,11 @@ Import-Module (Join-Path $containerHubModulesRoot 'WindowsToolchain.Common.psm1'
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsScripts.Shared.psm1') -Force
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsUv.Common.psm1') -Force
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsCodeQL.Common.psm1') -Force
+Import-Module (Join-Path $containerHubModulesRoot 'WindowsConfig.Common.psm1') -Force
+Import-Module (Join-Path $containerHubModulesRoot 'WindowsClang.Common.psm1') -Force
+Import-Module (Join-Path $containerHubModulesRoot 'WindowsWebDav.Common.psm1') -Force
+Import-Module (Join-Path $containerHubModulesRoot 'WindowsMsix.Common.psm1') -Force
+Import-Module (Join-Path $containerHubModulesRoot 'WindowsMsix.Signing.psm1') -Force
 Import-Module (Join-Path $localModulesRoot 'Build.CMake.psm1') -Force
 Import-Module (Join-Path $localModulesRoot 'Build.Formatting.psm1') -Force
 Import-Module (Join-Path $localModulesRoot 'Build.Testing.psm1') -Force
@@ -105,24 +90,7 @@ $presetClangProfile = Get-OrDefault $env:CLANG_PROFILE_PRESET (Get-ConfigValue -
 $presetClangRelease = Get-OrDefault $env:PRESET_CLANGCL_RELEASE (Get-ConfigValue -Config $config -Path 'Build.Presets.ClangClRelease')
 
 $availableConfigurations = @('msvc-debug', 'msvc-release', 'clang-debug', 'clang-tsan', 'profile', 'clang-release')
-$selectedConfigurations = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-if ($null -eq $Configurations -or $Configurations.Count -eq 0 -or ($Configurations -contains 'all')) {
-  foreach ($configurationName in $availableConfigurations) {
-    $selectedConfigurations.Add($configurationName) | Out-Null
-  }
-} else {
-  foreach ($item in $Configurations) {
-    if ([string]::IsNullOrWhiteSpace($item)) { continue }
-    foreach ($configurationName in $item -split ',') {
-      if ([string]::IsNullOrWhiteSpace($configurationName)) { continue }
-      $normalized = $configurationName.Trim().ToLowerInvariant()
-      if (-not ($availableConfigurations -contains $normalized)) {
-        throw "Unknown configuration '$configurationName'. Supported values: all, $($availableConfigurations -join ', ')"
-      }
-      $selectedConfigurations.Add($normalized) | Out-Null
-    }
-  }
-}
+$selectedConfigurations = Get-SelectedConfigurations -Configurations $Configurations -AvailableConfigurations $availableConfigurations
 
 # If SkipBuild is requested, clear any selected build configurations so
 # configuration-specific configure/build steps are not executed. This keeps
@@ -143,83 +111,6 @@ if ($buildPathClangTsan -eq $buildPathClang) {
   $buildPathClangTsan = Join-Path $workspacePath 'build-clangcl-tsan'
 }
 
-function Invoke-ClangTidyFixStep {
-  param(
-    [Parameter(Mandatory)]
-    [pscustomobject]$Context,
-    [Parameter(Mandatory)]
-    [string]$WorkspacePath,
-    [Parameter(Mandatory)]
-    [string]$BuildRoot
-  )
-
-  function Ensure-CompileCommandsDatabase {
-    param(
-      [Parameter(Mandatory)]
-      [pscustomobject]$Context,
-      [Parameter(Mandatory)]
-      [string]$BuildRoot
-    )
-
-    $compileDb = Join-Path $BuildRoot 'compile_commands.json'
-    if (Test-Path $compileDb) {
-      return $compileDb
-    }
-
-    $buildNinja = Join-Path $BuildRoot 'build.ninja'
-    if (-not (Test-Path $buildNinja)) {
-      throw "compile_commands.json not found at: $compileDb"
-    }
-
-    $ninjaCommand = Get-Command 'ninja' -ErrorAction SilentlyContinue
-    if (-not $ninjaCommand) {
-      throw "compile_commands.json not found at: $compileDb"
-    }
-
-    Write-BuildLogWarning -Context $Context -Message 'compile_commands.json missing; generating it from ninja compdb.'
-
-    $compdbOutput = & $ninjaCommand.Source '-C' $BuildRoot '-t' 'compdb' 2>&1
-    if ($LASTEXITCODE -ne 0) {
-      $compdbError = ($compdbOutput | Out-String).Trim()
-      throw "Failed to generate compile_commands.json via ninja -t compdb: $compdbError"
-    }
-
-    Set-Content -Path $compileDb -Value $compdbOutput -Encoding utf8
-
-    if (-not (Test-Path $compileDb)) {
-      throw "compile_commands.json not found at: $compileDb"
-    }
-
-    return $compileDb
-  }
-
-  $clangTidyCommand = Get-Command 'clang-tidy' -ErrorAction SilentlyContinue
-  if (-not $clangTidyCommand) {
-    throw 'clang-tidy not found on PATH.'
-  }
-
-  $compileDb = Ensure-CompileCommandsDatabase -Context $Context -BuildRoot $BuildRoot
-
-  $srcDir = Join-Path $WorkspacePath 'Src'
-  $tidyFiles = @(Get-ChildItem -Path $srcDir -Recurse -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Extension -in @('.cpp', '.cc', '.cxx') } |
-    Select-Object -ExpandProperty FullName)
-
-  if ($tidyFiles.Count -eq 0) {
-    Write-BuildLog -Context $Context -Message 'No C/C++ source files found under Src for clang-tidy.'
-    return
-  }
-
-  foreach ($tidyFile in $tidyFiles) {
-    Invoke-BuildExternal -Context $Context -File $clangTidyCommand.Source -Parameters @(
-      '-p', $BuildRoot,
-      '--checks=-misc-include-cleaner',
-      '--fix',
-      $tidyFile
-    ) | Out-Null
-  }
-}
-
 $context = New-BuildContext -Workspace $workspacePath -LogDir $logDir -StopOnError
 
 try {
@@ -237,48 +128,8 @@ try {
     $webdavLocal = if (-not [string]::IsNullOrWhiteSpace($LocalAssetsFolder)) { $LocalAssetsFolder } else { if ($env:WEB_DAV_LOCAL_BASE_PATH) { $env:WEB_DAV_LOCAL_BASE_PATH } else { $workspacePath } }
 
     if (-not [string]::IsNullOrWhiteSpace($webdavHost) -and -not [string]::IsNullOrWhiteSpace($webdavUser) -and -not [string]::IsNullOrWhiteSpace($webdavPass) -and -not [string]::IsNullOrWhiteSpace($webdavRemote)) {
-      $earlyScript = Join-Path $workspacePath 'Scripts\download_pfx_files.py'
-      Write-BuildLog -Context $context -Message "DEBUG: Early WebDAV script path (raw): $earlyScript"
-
       Invoke-BuildOptional -Context $context -Name 'Early WebDAV .pfx download' -Script {
-        if (-not (Test-Path $earlyScript)) {
-          Write-BuildLogWarning -Context $context -Message "Early WebDAV script not found: $earlyScript"
-          return
-        }
-
-        # Prefer explicit 'uv' on PATH and invoke the script with 'uv run'.
-        # We intentionally avoid calling a naked python executable.
-        $uvCmd = Get-Command 'uv' -ErrorAction SilentlyContinue
-        if (-not $uvCmd) {
-          Write-BuildLogWarning -Context $context -Message 'uv not found on PATH; cannot run early WebDAV script.'
-          return
-        }
-
-        # Ensure a uv-managed venv exists (.venv in workspace) and install the WebDAV client into it.
-        $venvPath = Join-Path $workspacePath '.venv'
-        Write-BuildLog -Context $context -Message "DEBUG: Ensuring uv venv at: $venvPath (activation: .venv\Scripts\Activate)"
-
-        # Create/ensure the venv. Non-fatal; if this fails we continue to the download attempt.
-        try {
-          Invoke-BuildExternal -Context $context -File $uvCmd.Source -Parameters @('venv', $venvPath) -IgnoreExitCode | Out-Null
-        } catch {
-          Write-BuildLogWarning -Context $context -Message "uv venv creation failed: $($_.Exception.Message)"
-        }
-
-        # Upgrade pip and install the Kataglyphis WebDAV client from the repository.
-        try {
-          Write-BuildLog -Context $context -Message "DEBUG: Running: $($uvCmd.Source) pip install --upgrade pip"
-          Invoke-BuildExternal -Context $context -File $uvCmd.Source -Parameters @('pip', 'install', '--upgrade', 'pip') -IgnoreExitCode | Out-Null
-
-          Write-BuildLog -Context $context -Message "DEBUG: Installing Kataglyphis WebDAV client into uv venv: git+https://github.com/Kataglyphis/Kataglyphis-WebDavClient"
-          Invoke-BuildExternal -Context $context -File $uvCmd.Source -Parameters @('pip', 'install', 'git+https://github.com/Kataglyphis/Kataglyphis-WebDavClient') -IgnoreExitCode | Out-Null
-        } catch {
-          Write-BuildLogWarning -Context $context -Message "uv pip install step failed: $($_.Exception.Message)"
-        }
-
-        # Invoke the downloader via 'uv run'. Redact the password in the logged command line.
-        Write-BuildLog -Context $context -Message "DEBUG: Invoking early WebDAV download with: $($uvCmd.Source) run $earlyScript $webdavHost $webdavUser <redacted> $webdavRemote $webdavLocal"
-        Invoke-BuildExternal -Context $context -File $uvCmd.Source -Parameters @('run', $earlyScript, $webdavHost, $webdavUser, $webdavPass, $webdavRemote, $webdavLocal) -IgnoreExitCode
+        Invoke-EarlyWebDavDownload -Context $context -WorkspacePath $workspacePath -WebDavHost $webdavHost -WebDavUser $webdavUser -WebDavPass $webdavPass -WebDavRemote $webdavRemote -WebDavLocal $webdavLocal
       }
     } else {
       Write-BuildLog -Context $context -Message 'DEBUG: Early WebDAV step skipped: missing WebDAV parameters.'
@@ -511,75 +362,8 @@ try {
       $msixOutPath = Join-Path $buildPathRelease "$msixName.msix"
       Invoke-BuildExternal -Context $context -File $makeappxPath -Parameters @('pack', '/d', $msixStaging, '/p', $msixOutPath, '/o') | Out-Null
 
-      # Attempt to sign the generated MSIX using a .pfx located at the repository root.
-      # The signing password may be provided via the MSIX_PFX_PASSWORD environment variable.
-      try {
-        $signtoolPath = Resolve-WindowsSdkToolPath -ToolName 'signtool.exe' -OverridePath $null
-        if ([string]::IsNullOrWhiteSpace($signtoolPath)) {
-          Write-BuildLogWarning -Context $context -Message 'signtool.exe not found. Skipping MSIX signing.'
-        } else {
-          # Look for an explicit .pfx in the workspace root (non-recursive).
-          $pfxFiles = Get-ChildItem -Path $workspacePath -Filter '*.pfx' -File -ErrorAction SilentlyContinue
-          $pfxFiles = @($pfxFiles)
-          if (($null -ne $pfxFiles) -and ($pfxFiles.Count -gt 0)) {
-            $pfx = $pfxFiles[0].FullName
-            Write-BuildLog -Context $context -Message "Found PFX for signing: $($pfxFiles[0].Name)"
-
-            # Prefer MSIX_PFX_PASSWORD, fall back to MSIX_CERT_PASSWORD for CI compatibility
-            $pfxPassword = Get-OrDefault $env:MSIX_PFX_PASSWORD $env:MSIX_CERT_PASSWORD
-            $timestampUrl = Get-OrDefault $env:MSIX_TIMESTAMP_URL 'http://timestamp.digicert.com'
-
-            $sigArgs = @('sign', '/fd', 'SHA256', '/f', $pfx)
-            if (-not [string]::IsNullOrWhiteSpace($pfxPassword)) {
-              $sigArgs += @('/p', $pfxPassword)
-            } else {
-              Write-BuildLogWarning -Context $context -Message 'MSIX_PFX_PASSWORD not set. Attempting to sign without password (PFX may be unprotected).' 
-            }
-            # Use RFC3161 timestamping with SHA256
-            $sigArgs += @('/tr', $timestampUrl, '/td', 'SHA256', $msixOutPath)
-
-            Write-BuildLog -Context $context -Message "Signing MSIX: $msixOutPath"
-            Invoke-BuildExternal -Context $context -File $signtoolPath -Parameters $sigArgs | Out-Null
-
-            # Import the signing certificate into the LocalMachine trust store so
-            # subsequent signtool verify calls succeed when using a self-signed PFX.
-            try {
-              # Ensure we are elevated before attempting to write to LocalMachine stores.
-              $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-              if (-not $isAdmin) {
-                Write-BuildLogWarning -Context $context -Message 'Not running as Administrator; skipping PFX import into LocalMachine certificate store. signtool verify may fail.'
-              } else {
-                Write-BuildLog -Context $context -Message 'Importing PFX into Cert:\\LocalMachine\\Root to trust the signing chain for verification.'
-                if (-not [string]::IsNullOrWhiteSpace($pfxPassword)) {
-                  $securePassword = ConvertTo-SecureString -String $pfxPassword -AsPlainText -Force
-                  $imported = Import-PfxCertificate -FilePath $pfx -CertStoreLocation 'Cert:\\LocalMachine\\Root' -Password $securePassword -ErrorAction Stop
-                } else {
-                  $imported = Import-PfxCertificate -FilePath $pfx -CertStoreLocation 'Cert:\\LocalMachine\\Root' -ErrorAction Stop
-                }
-
-                if ($imported -ne $null) {
-                  # Import-PfxCertificate can return an array; log the thumbprints of imported certs.
-                  $thumbprints = @()
-                  if ($imported -is [System.Array]) { $thumbprints = $imported | ForEach-Object { $_.Thumbprint } }
-                  else { $thumbprints = @($imported.Thumbprint) }
-                  Write-BuildLog -Context $context -Message "Imported certificate(s) into LocalMachine\\Root: $([string]::Join(', ', $thumbprints))"
-                }
-              }
-            } catch {
-              Write-BuildLogWarning -Context $context -Message ("PFX import failed: $($_.Exception.Message)")
-            }
-
-            # Verify signature
-            Write-BuildLog -Context $context -Message "Verifying MSIX signature: $msixOutPath"
-            Invoke-BuildExternal -Context $context -File $signtoolPath -Parameters @('verify', '/pa', '/v', $msixOutPath) | Out-Null
-            Write-BuildLog -Context $context -Message 'MSIX signing/verification completed.'
-          } else {
-            Write-BuildLogWarning -Context $context -Message 'No .pfx found at repository root; MSIX will not be signed.'
-          }
-        }
-      } catch {
-        Write-BuildLogWarning -Context $context -Message ("MSIX signing step failed: $($_.Exception.Message)")
-      }
+      # Attempt to sign the generated MSIX using the signing helper module.
+      Invoke-MsixSign -Context $context -WorkspacePath $workspacePath -MsixOutPath $msixOutPath
     }
   }
 
