@@ -243,6 +243,17 @@ cmake --build build-release-appimage --config Release --target package
 Generated artifacts are written to the selected build folder (for example `*.tar.gz`, `*.deb`, and AppImage artifacts).
 For AppImage builds, `appimagetool` must be available in your `PATH`.
 
+Windows MSIX signing
+--------------------
+When the Windows build produces an MSIX package the build script can sign it using a PFX certificate located at the repository root. Provide the certificate password via environment variable `MSIX_PFX_PASSWORD`. The script also accepts `MSIX_CERT_PASSWORD` as a fallback for CI environments that use that name for the secret.
+
+Set the secret in your CI (recommended) or export it in your environment before running the Windows build script. Example (GitHub Actions):
+
+  - name: Build Windows
+    env:
+      MSIX_CERT_PASSWORD: ${{ secrets.MSIX_CERT_PASSWORD }}
+
+
 # Shaders
 I provide two ways for compiling shaders with. Hence if you want to add new
 files as `#include` in your shaders you have to modify the files: (should be self-explanatory)<br/>

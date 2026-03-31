@@ -6,7 +6,13 @@ param(
   [switch]$SkipPerfTests,
   [switch]$SkipMsix,
   [switch]$SkipBuild,
-  [switch]$DisableIntegrationTestsMsvcDebug
+  [switch]$DisableIntegrationTestsMsvcDebug,
+  # WebDAV: prefer explicit script parameters (these match CLI flags), fall back to env vars
+  [string]$WebDavHostname,
+  [string]$WebDavUsername,
+  [string]$WebDavPassword,
+  [string]$RemoteBasePath,
+  [string]$LocalAssetsFolder
 )
 
 $ErrorActionPreference = 'Stop'
@@ -218,6 +224,68 @@ $context = New-BuildContext -Workspace $workspacePath -LogDir $logDir -StopOnErr
 
 try {
   Open-BuildLog -Context $context
+  # If WebDAV parameters are supplied via environment variables, attempt an
+  # early download of .pfx files before other build steps. This is optional
+  # and will not fail the orchestration if it errors.
+  try {
+    # Prefer explicit script parameters passed on the command-line, fall back to
+    # environment variables for CI compatibility.
+    $webdavHost = if (-not [string]::IsNullOrWhiteSpace($WebDavHostname)) { $WebDavHostname } else { $env:WEB_DAV_HOSTNAME }
+    $webdavUser = if (-not [string]::IsNullOrWhiteSpace($WebDavUsername)) { $WebDavUsername } else { $env:WEB_DAV_USERNAME }
+    $webdavPass = if (-not [string]::IsNullOrWhiteSpace($WebDavPassword)) { $WebDavPassword } else { $env:WEB_DAV_PASSWORD }
+    $webdavRemote = if (-not [string]::IsNullOrWhiteSpace($RemoteBasePath)) { $RemoteBasePath } else { $env:WEB_DAV_REMOTE_BASE_PATH }
+    $webdavLocal = if (-not [string]::IsNullOrWhiteSpace($LocalAssetsFolder)) { $LocalAssetsFolder } else { if ($env:WEB_DAV_LOCAL_BASE_PATH) { $env:WEB_DAV_LOCAL_BASE_PATH } else { $workspacePath } }
+
+    if (-not [string]::IsNullOrWhiteSpace($webdavHost) -and -not [string]::IsNullOrWhiteSpace($webdavUser) -and -not [string]::IsNullOrWhiteSpace($webdavPass) -and -not [string]::IsNullOrWhiteSpace($webdavRemote)) {
+      $earlyScript = Join-Path $workspacePath 'Scripts\download_pfx_files.py'
+      Write-BuildLog -Context $context -Message "DEBUG: Early WebDAV script path (raw): $earlyScript"
+
+      Invoke-BuildOptional -Context $context -Name 'Early WebDAV .pfx download' -Script {
+        if (-not (Test-Path $earlyScript)) {
+          Write-BuildLogWarning -Context $context -Message "Early WebDAV script not found: $earlyScript"
+          return
+        }
+
+        # Prefer explicit 'uv' on PATH and invoke the script with 'uv run'.
+        # We intentionally avoid calling a naked python executable.
+        $uvCmd = Get-Command 'uv' -ErrorAction SilentlyContinue
+        if (-not $uvCmd) {
+          Write-BuildLogWarning -Context $context -Message 'uv not found on PATH; cannot run early WebDAV script.'
+          return
+        }
+
+        # Ensure a uv-managed venv exists (.venv in workspace) and install the WebDAV client into it.
+        $venvPath = Join-Path $workspacePath '.venv'
+        Write-BuildLog -Context $context -Message "DEBUG: Ensuring uv venv at: $venvPath (activation: .venv\Scripts\Activate)"
+
+        # Create/ensure the venv. Non-fatal; if this fails we continue to the download attempt.
+        try {
+          Invoke-BuildExternal -Context $context -File $uvCmd.Source -Parameters @('venv', $venvPath) -IgnoreExitCode | Out-Null
+        } catch {
+          Write-BuildLogWarning -Context $context -Message "uv venv creation failed: $($_.Exception.Message)"
+        }
+
+        # Upgrade pip and install the Kataglyphis WebDAV client from the repository.
+        try {
+          Write-BuildLog -Context $context -Message "DEBUG: Running: $($uvCmd.Source) pip install --upgrade pip"
+          Invoke-BuildExternal -Context $context -File $uvCmd.Source -Parameters @('pip', 'install', '--upgrade', 'pip') -IgnoreExitCode | Out-Null
+
+          Write-BuildLog -Context $context -Message "DEBUG: Installing Kataglyphis WebDAV client into uv venv: git+https://github.com/Kataglyphis/Kataglyphis-WebDavClient"
+          Invoke-BuildExternal -Context $context -File $uvCmd.Source -Parameters @('pip', 'install', 'git+https://github.com/Kataglyphis/Kataglyphis-WebDavClient') -IgnoreExitCode | Out-Null
+        } catch {
+          Write-BuildLogWarning -Context $context -Message "uv pip install step failed: $($_.Exception.Message)"
+        }
+
+        # Invoke the downloader via 'uv run'. Redact the password in the logged command line.
+        Write-BuildLog -Context $context -Message "DEBUG: Invoking early WebDAV download with: $($uvCmd.Source) run $earlyScript $webdavHost $webdavUser <redacted> $webdavRemote $webdavLocal"
+        Invoke-BuildExternal -Context $context -File $uvCmd.Source -Parameters @('run', $earlyScript, $webdavHost, $webdavUser, $webdavPass, $webdavRemote, $webdavLocal) -IgnoreExitCode
+      }
+    } else {
+      Write-BuildLog -Context $context -Message 'DEBUG: Early WebDAV step skipped: missing WebDAV parameters.'
+    }
+  } catch {
+    Write-BuildLogWarning -Context $context -Message "Early WebDAV invocation failed: $($_.Exception.Message)"
+  }
   if ($SkipBuild) {
     Write-BuildLogWarning -Context $context -Message 'Skipping all configure/build steps due to -SkipBuild.'
   }
@@ -457,7 +525,8 @@ try {
             $pfx = $pfxFiles[0].FullName
             Write-BuildLog -Context $context -Message "Found PFX for signing: $($pfxFiles[0].Name)"
 
-            $pfxPassword = $env:MSIX_PFX_PASSWORD
+            # Prefer MSIX_PFX_PASSWORD, fall back to MSIX_CERT_PASSWORD for CI compatibility
+            $pfxPassword = Get-OrDefault $env:MSIX_PFX_PASSWORD $env:MSIX_CERT_PASSWORD
             $timestampUrl = Get-OrDefault $env:MSIX_TIMESTAMP_URL 'http://timestamp.digicert.com'
 
             $sigArgs = @('sign', '/fd', 'SHA256', '/f', $pfx)
@@ -471,6 +540,34 @@ try {
 
             Write-BuildLog -Context $context -Message "Signing MSIX: $msixOutPath"
             Invoke-BuildExternal -Context $context -File $signtoolPath -Parameters $sigArgs | Out-Null
+
+            # Import the signing certificate into the LocalMachine trust store so
+            # subsequent signtool verify calls succeed when using a self-signed PFX.
+            try {
+              # Ensure we are elevated before attempting to write to LocalMachine stores.
+              $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+              if (-not $isAdmin) {
+                Write-BuildLogWarning -Context $context -Message 'Not running as Administrator; skipping PFX import into LocalMachine certificate store. signtool verify may fail.'
+              } else {
+                Write-BuildLog -Context $context -Message 'Importing PFX into Cert:\\LocalMachine\\Root to trust the signing chain for verification.'
+                if (-not [string]::IsNullOrWhiteSpace($pfxPassword)) {
+                  $securePassword = ConvertTo-SecureString -String $pfxPassword -AsPlainText -Force
+                  $imported = Import-PfxCertificate -FilePath $pfx -CertStoreLocation 'Cert:\\LocalMachine\\Root' -Password $securePassword -ErrorAction Stop
+                } else {
+                  $imported = Import-PfxCertificate -FilePath $pfx -CertStoreLocation 'Cert:\\LocalMachine\\Root' -ErrorAction Stop
+                }
+
+                if ($imported -ne $null) {
+                  # Import-PfxCertificate can return an array; log the thumbprints of imported certs.
+                  $thumbprints = @()
+                  if ($imported -is [System.Array]) { $thumbprints = $imported | ForEach-Object { $_.Thumbprint } }
+                  else { $thumbprints = @($imported.Thumbprint) }
+                  Write-BuildLog -Context $context -Message "Imported certificate(s) into LocalMachine\\Root: $([string]::Join(', ', $thumbprints))"
+                }
+              }
+            } catch {
+              Write-BuildLogWarning -Context $context -Message ("PFX import failed: $($_.Exception.Message)")
+            }
 
             # Verify signature
             Write-BuildLog -Context $context -Message "Verifying MSIX signature: $msixOutPath"
