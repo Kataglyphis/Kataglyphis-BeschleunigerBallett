@@ -442,6 +442,47 @@ try {
 
       $msixOutPath = Join-Path $buildPathRelease "$msixName.msix"
       Invoke-BuildExternal -Context $context -File $makeappxPath -Parameters @('pack', '/d', $msixStaging, '/p', $msixOutPath, '/o') | Out-Null
+
+      # Attempt to sign the generated MSIX using a .pfx located at the repository root.
+      # The signing password may be provided via the MSIX_PFX_PASSWORD environment variable.
+      try {
+        $signtoolPath = Resolve-WindowsSdkToolPath -ToolName 'signtool.exe' -OverridePath $null
+        if ([string]::IsNullOrWhiteSpace($signtoolPath)) {
+          Write-BuildLogWarning -Context $context -Message 'signtool.exe not found. Skipping MSIX signing.'
+        } else {
+          # Look for an explicit .pfx in the workspace root (non-recursive).
+          $pfxFiles = Get-ChildItem -Path $workspacePath -Filter '*.pfx' -File -ErrorAction SilentlyContinue
+          $pfxFiles = @($pfxFiles)
+          if (($null -ne $pfxFiles) -and ($pfxFiles.Count -gt 0)) {
+            $pfx = $pfxFiles[0].FullName
+            Write-BuildLog -Context $context -Message "Found PFX for signing: $($pfxFiles[0].Name)"
+
+            $pfxPassword = $env:MSIX_PFX_PASSWORD
+            $timestampUrl = Get-OrDefault $env:MSIX_TIMESTAMP_URL 'http://timestamp.digicert.com'
+
+            $sigArgs = @('sign', '/fd', 'SHA256', '/f', $pfx)
+            if (-not [string]::IsNullOrWhiteSpace($pfxPassword)) {
+              $sigArgs += @('/p', $pfxPassword)
+            } else {
+              Write-BuildLogWarning -Context $context -Message 'MSIX_PFX_PASSWORD not set. Attempting to sign without password (PFX may be unprotected).' 
+            }
+            # Use RFC3161 timestamping with SHA256
+            $sigArgs += @('/tr', $timestampUrl, '/td', 'SHA256', $msixOutPath)
+
+            Write-BuildLog -Context $context -Message "Signing MSIX: $msixOutPath"
+            Invoke-BuildExternal -Context $context -File $signtoolPath -Parameters $sigArgs | Out-Null
+
+            # Verify signature
+            Write-BuildLog -Context $context -Message "Verifying MSIX signature: $msixOutPath"
+            Invoke-BuildExternal -Context $context -File $signtoolPath -Parameters @('verify', '/pa', '/v', $msixOutPath) | Out-Null
+            Write-BuildLog -Context $context -Message 'MSIX signing/verification completed.'
+          } else {
+            Write-BuildLogWarning -Context $context -Message 'No .pfx found at repository root; MSIX will not be signed.'
+          }
+        }
+      } catch {
+        Write-BuildLogWarning -Context $context -Message ("MSIX signing step failed: $($_.Exception.Message)")
+      }
     }
   }
 
