@@ -65,6 +65,7 @@ jobs:
             --mount "type=bind,source=${{ github.workspace }},target=C:\workspace" `
             -w "C:\workspace" `
             -e MSIX_CERT_PASSWORD='${{ secrets.MSIX_CERT_PASSWORD }}' `
+            -e PSModulePath='C:\workspace\MyLibrary\modules;C:\Program Files\WindowsPowerShell\Modules;C:\Program Files\PowerShell\7\Modules' `
             $image `
             powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\\workspace\\Scripts\\Windows\\Build-Windows.ps1" `
             -Configurations "clang-debug,clang-release" `
