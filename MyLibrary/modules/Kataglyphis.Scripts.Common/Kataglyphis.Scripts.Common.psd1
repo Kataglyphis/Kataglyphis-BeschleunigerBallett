@@ -7,7 +7,7 @@
     CompanyName = 'Kataglyphis'
     Copyright = '(c) Kataglyphis'
     Description = 'Common helper functions (paths, timestamps, parameter list conversion)'
-    FunctionsToExport = @()
+    # Let the module export functions as declared by Export-ModuleMember in the .psm1
     PrivateData = @{
         Tags = @('kataglyphis','shared','helpers')
     }
