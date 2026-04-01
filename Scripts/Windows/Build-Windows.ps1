@@ -23,32 +23,17 @@ Set-StrictMode -Version Latest
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $containerHubModulesRoot = Join-Path $repoRoot 'ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules'
 $localModulesRoot = Join-Path $PSScriptRoot 'modules'
-
-$modulePaths = @(
-  (Join-Path $containerHubModulesRoot 'WindowsScripts.Shared.psm1'),
-  (Join-Path $containerHubModulesRoot 'WindowsBuild.Common.psm1'),
-  (Join-Path $containerHubModulesRoot 'WindowsToolchain.Common.psm1'),
-  (Join-Path $containerHubModulesRoot 'WindowsUv.Common.psm1'),
-  (Join-Path $containerHubModulesRoot 'WindowsCodeQL.Common.psm1'),
-  (Join-Path $containerHubModulesRoot 'WindowsConfig.Common.psm1'),
-  (Join-Path $containerHubModulesRoot 'WindowsClang.Common.psm1'),
-  (Join-Path $containerHubModulesRoot 'WindowsWebDav.Common.psm1'),
-  (Join-Path $containerHubModulesRoot 'WindowsMsix.Common.psm1'),
-  (Join-Path $localModulesRoot 'Build.CMake.psm1'),
-  (Join-Path $localModulesRoot 'Build.Formatting.psm1'),
-  (Join-Path $localModulesRoot 'Build.Testing.psm1'),
-  (Join-Path $localModulesRoot 'Build.Packaging.psm1')
-)
-
-foreach ($modulePath in $modulePaths) {
-  if (-not (Test-Path $modulePath)) {
-    throw "Required module not found: $modulePath"
-  }
+# Ensure our module path includes MyLibrary modules for local runs
+$myModules = Join-Path $repoRoot 'MyLibrary\modules'
+if (-not ($env:PSModulePath -like "*$myModules*")) {
+    $env:PSModulePath = "$myModules;$env:PSModulePath"
 }
 
+# Import core Kataglyphis modules by name
+Import-Module Kataglyphis.Scripts.Common -Force
+Import-Module Kataglyphis.Scripts.Logging -Force
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsBuild.Common.psm1') -Force
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsToolchain.Common.psm1') -Force
-Import-Module (Join-Path $containerHubModulesRoot 'WindowsScripts.Shared.psm1') -Force
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsUv.Common.psm1') -Force
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsCodeQL.Common.psm1') -Force
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsConfig.Common.psm1') -Force
