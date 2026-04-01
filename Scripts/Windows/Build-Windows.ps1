@@ -31,18 +31,19 @@ if (-not ($env:PSModulePath -like "*$myModules*")) {
 
 # Import core Kataglyphis modules by name. If named import fails (e.g. PSModulePath not honored),
 # fall back to loading the module .psm1 directly from MyLibrary/modules.
-try {
-    Import-Module Kataglyphis.Scripts.Common -Force -ErrorAction Stop
-} catch {
-    $localCommon = Join-Path $myModules 'Kataglyphis.Scripts.Common\Kataglyphis.Scripts.Common.psm1'
-    if (Test-Path $localCommon) { Import-Module $localCommon -Force } else { throw $_ }
+$localCommon = Join-Path $myModules 'Kataglyphis.Scripts.Common\Kataglyphis.Scripts.Common.psm1'
+if (Test-Path $localCommon) {
+    Import-Module $localCommon -Force
+} else {
+    # Fall back to named import if the module is installed in PSModulePath
+    Import-Module Kataglyphis.Scripts.Common -Force
 }
 
-try {
-    Import-Module Kataglyphis.Scripts.Logging -Force -ErrorAction Stop
-} catch {
-    $localLogging = Join-Path $myModules 'Kataglyphis.Scripts.Logging\Kataglyphis.Scripts.Logging.psm1'
-    if (Test-Path $localLogging) { Import-Module $localLogging -Force } else { throw $_ }
+$localLogging = Join-Path $myModules 'Kataglyphis.Scripts.Logging\Kataglyphis.Scripts.Logging.psm1'
+if (Test-Path $localLogging) {
+    Import-Module $localLogging -Force
+} else {
+    Import-Module Kataglyphis.Scripts.Logging -Force
 }
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsBuild.Common.psm1') -Force
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsToolchain.Common.psm1') -Force
