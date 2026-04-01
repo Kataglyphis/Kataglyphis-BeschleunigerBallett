@@ -4,6 +4,17 @@
 
 .cache
 
+# Virtual environment used by early WebDAV script and tests
+.venv/
+
+# Test artifacts
+Scripts/Windows/tests/__temp*/
+**/test-*/
+
+# MSIX and packaging outputs
+*.msix
+**/msix-staging/
+
 build_release/
 build-*/
 build_*/
