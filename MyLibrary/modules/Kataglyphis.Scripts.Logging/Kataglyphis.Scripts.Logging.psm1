@@ -1,14 +1,12 @@
 Set-StrictMode -Version Latest
 
 # Import common utilities by name if available, otherwise fall back to local shared file
-$sharedModulePath = Join-Path $PSScriptRoot '..\Kataglyphis.Scripts.Common\Kataglyphis.Scripts.Common.psm1'
+# Ensure common module is available via local path or PSModulePath
 try {
     Import-Module Kataglyphis.Scripts.Common -ErrorAction Stop
 } catch {
-    if (-not (Test-Path $sharedModulePath)) {
-        throw "Required shared module not found: $sharedModulePath"
-    }
-    Import-Module $sharedModulePath -Force
+    $localCommon = Join-Path $PSScriptRoot '..\Kataglyphis.Scripts.Common\Kataglyphis.Scripts.Common.psm1'
+    if (Test-Path $localCommon) { Import-Module $localCommon -Force } else { throw $_ }
 }
 
 function New-LogContext {
