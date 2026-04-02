@@ -55,9 +55,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
     
-          # Build PSModulePath separately to avoid quoting hell
-          # Use 8.3 short names to avoid ALL space issues
-          $psModulePath = 'C:\workspace\MyLibrary\modules;C:\PROGRA~1\WindowsPowerShell\Modules;C:\PROGRA~1\PowerShell\7\Modules'
+          # Build PSModulePath - use 8.3 short names to avoid space issues
+          $psModulePath = 'C:\PROGRA~1\WindowsPowerShell\Modules;C:\PROGRA~1\PowerShell\7\Modules'
     
           docker pull $image
           docker run --rm `

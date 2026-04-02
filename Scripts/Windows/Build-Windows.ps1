@@ -23,28 +23,10 @@ Set-StrictMode -Version Latest
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $containerHubModulesRoot = Join-Path $repoRoot 'ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules'
 $localModulesRoot = Join-Path $PSScriptRoot 'modules'
-# Ensure our module path includes MyLibrary modules for local runs
-$myModules = Join-Path $repoRoot 'MyLibrary\modules'
-if (-not ($env:PSModulePath -like "*$myModules*")) {
-    $env:PSModulePath = "$myModules;$env:PSModulePath"
-}
 
-# Import core Kataglyphis modules by name. If named import fails (e.g. PSModulePath not honored),
-# fall back to loading the module .psm1 directly from MyLibrary/modules.
-$localCommon = Join-Path $myModules 'Kataglyphis.Scripts.Common\Kataglyphis.Scripts.Common.psm1'
-if (Test-Path $localCommon) {
-    Import-Module $localCommon -Force
-} else {
-    # Fall back to named import if the module is installed in PSModulePath
-    Import-Module Kataglyphis.Scripts.Common -Force
-}
-
-$localLogging = Join-Path $myModules 'Kataglyphis.Scripts.Logging\Kataglyphis.Scripts.Logging.psm1'
-if (Test-Path $localLogging) {
-    Import-Module $localLogging -Force
-} else {
-    Import-Module Kataglyphis.Scripts.Logging -Force
-}
+# Import ContainerHub modules (includes shared helpers and logging)
+Import-Module (Join-Path $containerHubModulesRoot 'WindowsScripts.Shared.psm1') -Force
+Import-Module (Join-Path $containerHubModulesRoot 'WindowsLogging.Common.psm1') -Force
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsBuild.Common.psm1') -Force
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsToolchain.Common.psm1') -Force
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsUv.Common.psm1') -Force
