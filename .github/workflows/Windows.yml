@@ -59,7 +59,8 @@ jobs:
           $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
     
           # Build PSModulePath separately to avoid quoting hell
-          $psModulePath = 'C:\workspace\MyLibrary\modules;C:\Program Files\WindowsPowerShell\Modules;C:\Program Files\PowerShell\7\Modules'
+          # Use 8.3 short names to avoid ALL space issues
+          $psModulePath = 'C:\workspace\MyLibrary\modules;C:\PROGRA~1\WindowsPowerShell\Modules;C:\PROGRA~1\PowerShell\7\Modules'
     
           docker pull $image
           docker run --rm `
