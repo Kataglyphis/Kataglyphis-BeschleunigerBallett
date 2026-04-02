@@ -3,6 +3,10 @@ Set-StrictMode -Version Latest
 function ConvertTo-XmlEscapedText {
   param([AllowNull()][string]$Value)
 
+  if (Get-Command -Name Kataglyphis_ConvertTo-XmlEscapedText -ErrorAction SilentlyContinue) {
+    return Kataglyphis_ConvertTo-XmlEscapedText -Value $Value
+  }
+
   if ($null -eq $Value) {
     return ''
   }
@@ -17,6 +21,10 @@ function Resolve-WindowsSdkToolPath {
     [AllowNull()]
     [string]$OverridePath
   )
+
+  if (Get-Command -Name Kataglyphis_Resolve-WindowsSdkToolPath -ErrorAction SilentlyContinue) {
+    return Kataglyphis_Resolve-WindowsSdkToolPath -ToolName $ToolName -OverridePath $OverridePath
+  }
 
   if (-not [string]::IsNullOrWhiteSpace($OverridePath)) {
     if (Test-Path $OverridePath) {
