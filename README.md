@@ -8,7 +8,7 @@
   <h4>A modern graphics engine built on top of Vulkan+OpenGL. Serves also as playground 
 for learning various best practices in Graphic APIs, CMake, Rust, Modern C++ ... 🌋🌋🌋 </h4>
 </div>
- 
+
 <div align="center"> 
   <br> 
   <a href="https://jonasheinle.de"><img src="images/vulkan-logo.png" alt="VulkanEngine" width="200"></a>
