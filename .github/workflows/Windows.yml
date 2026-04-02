@@ -52,22 +52,23 @@ jobs:
           password: ${{ secrets.GHCR_PAT }}
 
       - name: Build/Test/Package inside ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64
-        # Allow this step to fail without failing the whole workflow (MSVC presets may fail)
-        continue-on-error: true
+        continue-on-error: false
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-
           $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
+    
+          # Build PSModulePath separately to avoid quoting hell
+          $psModulePath = 'C:\workspace\MyLibrary\modules;C:\Program Files\WindowsPowerShell\Modules;C:\Program Files\PowerShell\7\Modules'
+    
           docker pull $image
-
           docker run --rm `
             --mount "type=bind,source=${{ github.workspace }},target=C:\workspace" `
             -w "C:\workspace" `
             -e MSIX_CERT_PASSWORD='${{ secrets.MSIX_CERT_PASSWORD }}' `
-            -e PSModulePath='C:\workspace\MyLibrary\modules;C:\Program Files\WindowsPowerShell\Modules;C:\Program Files\PowerShell\7\Modules' `
+            -e "PSModulePath=$psModulePath" `
             $image `
-            powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\\workspace\\Scripts\\Windows\\Build-Windows.ps1" `
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\workspace\Scripts\Windows\Build-Windows.ps1" `
             -Configurations "clang-debug,clang-release" `
             -SkipFormat -SkipTidy -SkipTests -SkipPerfTests `
             -WebDavHostname '${{ secrets.WEBDAV_HOSTNAME }}' `
@@ -75,7 +76,7 @@ jobs:
             -WebDavPassword '${{ secrets.WEBDAV_PASSWORD }}' `
             -RemoteBasePath '${{ secrets.REMOTE_BASE_PATH }}' `
             -LocalAssetsFolder 'C:\workspace'
-
+            
       # I limited the size of the builded package for storage restriction reasons on a github runner
       # see also the install commands in the bottom of the CMakeLists.txt
       - name: Upload Installers & Zip
