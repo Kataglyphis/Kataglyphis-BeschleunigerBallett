@@ -148,6 +148,8 @@ target_link_libraries(
   PRIVATE GSL spdlog::spdlog nlohmann_json::nlohmann_json)
 
 if(RUST_FEATURES)
+  # Ensure CXX bridge headers are generated before module scanning
+  add_dependencies(${PROJECT_NAME} kataglyphis_rustprojecttemplate_bridge)
   target_link_libraries(${PROJECT_NAME} PUBLIC kataglyphis_rustprojecttemplate kataglyphis_rustprojecttemplate_bridge)
 endif()
 

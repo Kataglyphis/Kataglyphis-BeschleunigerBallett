@@ -10,13 +10,13 @@ import kataglyphis.vulkan.app;
 #include <vector>
 
 #if USE_RUST
-#include "kataglyphis_rustprojecttemplate_bridge/lib.h"
+#include "kataglyphis_rustprojecttemplate_bridge/native_only.h"
 #endif
 #include "spdlog/common.h"
 #include "spdlog/logger.h"
 #include "spdlog/sinks/basic_file_sink.h"
-#include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/sinks/null_sink.h"
+#include "spdlog/sinks/stdout_color_sinks.h"
 #include "spdlog/spdlog.h"
 #include <iostream>
 #include <string>

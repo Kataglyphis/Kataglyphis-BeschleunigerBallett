@@ -1,17 +1,11 @@
 option(ENABLE_RUST "Enable building the Rust helper crate" ON)
-option(ENABLE_RUST_CXXBRIDGE "Enable generation of the CXX bridge (with_cxxbridge feature)" ON)
+option(ENABLE_RUST_CXXBRIDGE "Enable generation of the CXX bridge" ON)
 
 # Force the CXX bridge to be enabled unconditionally (including Emscripten builds).
-# This ensures the cxx bridge headers are always generated and the Cargo feature
-# is propagated by CMake when requested.
-set(ENABLE_RUST_CXXBRIDGE ON CACHE BOOL "Enable generation of the CXX bridge (with_cxxbridge feature)" FORCE)
+# This ensures the cxx bridge headers are always generated.
+set(ENABLE_RUST_CXXBRIDGE ON CACHE BOOL "Enable generation of the CXX bridge" FORCE)
 
-# Populate RUST_FEATURES for corrosion if requested.
-if(ENABLE_RUST AND ENABLE_RUST_CXXBRIDGE)
-  set(RUST_FEATURES with_cxxbridge)
-endif()
-
-if(RUST_FEATURES)
+if(ENABLE_RUST)
   corrosion_import_crate(
     MANIFEST_PATH
     ../ExternalLib/Kataglyphis-RustProjectTemplate/Cargo.toml
@@ -20,9 +14,7 @@ if(RUST_FEATURES)
     CRATES
     kataglyphis_rustprojecttemplate)
 
-  if(RUST_FEATURES)
-    corrosion_set_features(kataglyphis_rustprojecttemplate FEATURES ${RUST_FEATURES})
-  endif()
+
 
   if(WIN32)
     target_link_libraries(
@@ -91,12 +83,14 @@ if(RUST_FEATURES)
     message(STATUS "Configured native corrosion: CC=${RUST_CC} CXX=${RUST_CXX} CXXFLAGS=${RUST_CXXFLAGS}")
   endif()
 
-  corrosion_add_cxxbridge(
-    kataglyphis_rustprojecttemplate_bridge
-    CRATE
-    kataglyphis_rustprojecttemplate
-    FILES
-    lib.rs)
+  if(ENABLE_RUST_CXXBRIDGE)
+    corrosion_add_cxxbridge(
+      kataglyphis_rustprojecttemplate_bridge
+      CRATE
+      kataglyphis_rustprojecttemplate
+      FILES
+      native_only.rs)
+  endif()
 
 endif()
 
