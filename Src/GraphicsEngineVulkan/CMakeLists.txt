@@ -12,6 +12,10 @@ include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
 
 file(GLOB_RECURSE VULKANRENDERER_SOURCES "*.cpp")
 
+# Separate Main.cpp from library sources
+set(VULKANRENDERER_MAIN_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/Main.cpp")
+list(REMOVE_ITEM VULKANRENDERER_SOURCES "${VULKANRENDERER_MAIN_SOURCE}")
+
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15)
   set_source_files_properties(${CMAKE_CURRENT_SOURCE_DIR}/renderer/VulkanRenderer.cpp PROPERTIES COMPILE_OPTIONS
                                                                                                  "-fno-lto")
@@ -26,11 +30,6 @@ file(GLOB_RECURSE VULKANRENDERER_HEADERS "*.hpp")
 
 kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}")
 kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
-
-# add the executable
-add_executable(${PROJECT_NAME})
-
-set_target_properties(${PROJECT_NAME} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
 
 set(ShaderIncludes
     -I
@@ -61,14 +60,30 @@ string(
 
 message("The shader include string is the following: ${ShaderIncludesString}")
 
+# Generate config module file (shared between library and executable)
+set(VULKAN_RENDERER_CONFIG_MODULE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(VULKAN_RENDERER_CONFIG_MODULE_FILE "${VULKAN_RENDERER_CONFIG_MODULE_DIR}/VulkanRendererConfig.ixx")
+file(MAKE_DIRECTORY "${VULKAN_RENDERER_CONFIG_MODULE_DIR}")
+configure_file(VulkanRendererConfig.ixx.in "${VULKAN_RENDERER_CONFIG_MODULE_FILE}" @ONLY)
+set_source_files_properties("${VULKAN_RENDERER_CONFIG_MODULE_FILE}" PROPERTIES GENERATED TRUE)
+list(APPEND VULKAN_MODULE_INTERFACE_FILES "${VULKAN_RENDERER_CONFIG_MODULE_FILE}")
+
+# =============================================================================
+# VulkanEngineCore - STATIC Library (compiled ONCE, reused by exe and tests)
+# STATIC library handles C++20 module propagation better than OBJECT
+# =============================================================================
+add_library(VulkanEngineCore STATIC)
+
+set_target_properties(VulkanEngineCore PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
+
 if(RUST_FEATURES)
-  target_compile_definitions(${PROJECT_NAME} PRIVATE USE_RUST=1)
+  target_compile_definitions(VulkanEngineCore PUBLIC USE_RUST=1)
 else()
-  target_compile_definitions(${PROJECT_NAME} PRIVATE USE_RUST=0)
+  target_compile_definitions(VulkanEngineCore PUBLIC USE_RUST=0)
 endif()
 
 kataglyphis_apply_runtime_compile_definitions(
-  ${PROJECT_NAME}
+  VulkanEngineCore
   RESOURCE_PATH_NON_MSVC
   "/../Resources/"
   RESOURCE_PATH_MSVC
@@ -84,25 +99,16 @@ kataglyphis_apply_runtime_compile_definitions(
   SHADER_INCLUDES_STRING
   "${ShaderIncludesString}")
 
-set(VULKAN_RENDERER_CONFIG_MODULE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
-set(VULKAN_RENDERER_CONFIG_MODULE_FILE "${VULKAN_RENDERER_CONFIG_MODULE_DIR}/VulkanRendererConfig.ixx")
-file(MAKE_DIRECTORY "${VULKAN_RENDERER_CONFIG_MODULE_DIR}")
-configure_file(VulkanRendererConfig.ixx.in "${VULKAN_RENDERER_CONFIG_MODULE_FILE}" @ONLY)
-set_source_files_properties("${VULKAN_RENDERER_CONFIG_MODULE_FILE}" PROPERTIES GENERATED TRUE)
-list(APPEND VULKAN_MODULE_INTERFACE_FILES "${VULKAN_RENDERER_CONFIG_MODULE_FILE}")
-
 target_sources(
-  ${PROJECT_NAME}
-  PUBLIC ${RASTER_SHADER_FILTER}
-         ${RAYTRACING_SHADER_FILTER}
-         ${COMMON_SHADER_FILTER}
-         ${POST_SHADER_FILTER}
-         ${BRDF_SHADER_FILTER}
-         ${PBR_SHADER_FILTER}
-         ${PATH_TRACING_SHADER_FILTER}
-         ${VULKANRENDERER_SOURCES}
-         # this is great; no CPPCHECK,CLANG_TIDY here
-         $<TARGET_OBJECTS:IMGUI>
+  VulkanEngineCore
+  PRIVATE ${RASTER_SHADER_FILTER}
+          ${RAYTRACING_SHADER_FILTER}
+          ${COMMON_SHADER_FILTER}
+          ${POST_SHADER_FILTER}
+          ${BRDF_SHADER_FILTER}
+          ${PBR_SHADER_FILTER}
+          ${PATH_TRACING_SHADER_FILTER}
+          ${VULKANRENDERER_SOURCES}
   PUBLIC FILE_SET
          HEADERS
          BASE_DIRS
@@ -113,7 +119,7 @@ target_sources(
          ${SHADER_HEADERS})
 
 target_sources(
-  ${PROJECT_NAME}
+  VulkanEngineCore
   PUBLIC FILE_SET
          CXX_MODULES
          TYPE
@@ -125,12 +131,12 @@ target_sources(
          ${VULKAN_MODULE_INTERFACE_FILES}
          ${SHARED_MODULE_INTERFACE_FILES})
 
-target_include_directories(${PROJECT_NAME} PRIVATE ${Vulkan_INCLUDE_DIRS})
+target_include_directories(VulkanEngineCore PUBLIC ${Vulkan_INCLUDE_DIRS})
 
-target_compile_definitions(${PROJECT_NAME} PRIVATE VULKAN_HPP_NO_EXCEPTIONS VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1)
+target_compile_definitions(VulkanEngineCore PUBLIC VULKAN_HPP_NO_EXCEPTIONS VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1)
 
 target_link_libraries(
-  ${PROJECT_NAME}
+  VulkanEngineCore
   PUBLIC ${CMAKE_DL_LIBS}
          Threads::Threads
          Vulkan::Vulkan
@@ -145,18 +151,38 @@ target_link_libraries(
          myproject_warnings
          # enable sanitizers
          myproject_options
-  PRIVATE GSL spdlog::spdlog nlohmann_json::nlohmann_json)
+         # spdlog/nlohmann_json/GSL need to be PUBLIC because Main.cpp and test files use them
+         GSL
+         spdlog::spdlog
+         nlohmann_json::nlohmann_json)
 
 if(RUST_FEATURES)
   # Ensure CXX bridge headers are generated before module scanning
-  add_dependencies(${PROJECT_NAME} kataglyphis_rustprojecttemplate_bridge)
-  target_link_libraries(${PROJECT_NAME} PUBLIC kataglyphis_rustprojecttemplate kataglyphis_rustprojecttemplate_bridge)
+  add_dependencies(VulkanEngineCore kataglyphis_rustprojecttemplate_bridge)
+  target_link_libraries(VulkanEngineCore PUBLIC kataglyphis_rustprojecttemplate kataglyphis_rustprojecttemplate_bridge)
 endif()
 
-# Enable ASan and UBSan in Debug mode on Linux
-target_compile_options(${PROJECT_NAME} PRIVATE $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>
+# Enable ASan and UBSan in Debug mode on Linux (applied to library so tests also benefit)
+target_compile_options(VulkanEngineCore PUBLIC $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>
                                                $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fno-omit-frame-pointer>)
-target_link_options(${PROJECT_NAME} PRIVATE $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>)
+target_link_options(VulkanEngineCore PUBLIC $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>)
+
+# =============================================================================
+# GraphicsEngine - Main Executable (uses VulkanEngineCore static library)
+# =============================================================================
+add_executable(${PROJECT_NAME})
+
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
+
+target_sources(
+  ${PROJECT_NAME}
+  PRIVATE ${VULKANRENDERER_MAIN_SOURCE}
+          # IMGUI object library - excluded from static analysis
+          $<TARGET_OBJECTS:IMGUI>)
+
+# Link VulkanEngineCore - modules with PUBLIC FILE_SET CXX_MODULES should propagate to consumers
+# In CMake 3.28+, linking against a library with PUBLIC CXX_MODULES should make those modules importable
+target_link_libraries(${PROJECT_NAME} PRIVATE VulkanEngineCore)
 
 # compile shaders as part of my cmake routine right away :)
 include(cmake/CompileShadersToSPV.cmake)
