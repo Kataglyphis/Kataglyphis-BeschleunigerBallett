@@ -1,27 +1,36 @@
 include(CMakeParseArguments)
 
-function(kataglyphis_collect_module_interfaces out_var base_dir)
-  # Normalize the base directory path for cross-platform compatibility
-  cmake_path(SET _normalized_base_dir NORMALIZE "${base_dir}")
+# Collects C++20 module interface files (.ixx) from a directory.
+# Sets two variables in parent scope:
+#   ${out_files_var} - List of absolute paths to module interface files
+#   ${out_base_dir_var} - The normalized absolute base directory (for use in FILE_SET BASE_DIRS)
+#
+# Usage:
+#   kataglyphis_collect_module_interfaces(MY_FILES MY_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/modules")
+#
+function(kataglyphis_collect_module_interfaces out_files_var out_base_dir_var base_dir)
+  # Convert to absolute path first, then normalize for cross-platform compatibility
+  # This is critical for Windows where path resolution must be exact
+  cmake_path(ABSOLUTE_PATH base_dir OUTPUT_VARIABLE _abs_base_dir NORMALIZE)
   
   file(
     GLOB_RECURSE _module_interface_relative_files
-    RELATIVE "${_normalized_base_dir}"
-    "${_normalized_base_dir}/*.ixx")
+    RELATIVE "${_abs_base_dir}"
+    "${_abs_base_dir}/*.ixx")
   list(SORT _module_interface_relative_files)
 
-  set(_module_interface_files "${_module_interface_relative_files}")
-  list(TRANSFORM _module_interface_files PREPEND "${_normalized_base_dir}/")
-  
-  # Normalize each file path for Windows compatibility
-  set(_normalized_files "")
-  foreach(_file IN LISTS _module_interface_files)
-    cmake_path(SET _normalized_file NORMALIZE "${_file}")
-    list(APPEND _normalized_files "${_normalized_file}")
+  # Build absolute paths for each file
+  set(_absolute_files "")
+  foreach(_rel_file IN LISTS _module_interface_relative_files)
+    cmake_path(APPEND _abs_base_dir "${_rel_file}" OUTPUT_VARIABLE _abs_file)
+    list(APPEND _absolute_files "${_abs_file}")
   endforeach()
 
-  set(${out_var}
-      "${_normalized_files}"
+  set(${out_files_var}
+      "${_absolute_files}"
+      PARENT_SCOPE)
+  set(${out_base_dir_var}
+      "${_abs_base_dir}"
       PARENT_SCOPE)
 endfunction()
 

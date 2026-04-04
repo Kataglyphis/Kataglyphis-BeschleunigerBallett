@@ -28,15 +28,11 @@ file(
 
 file(GLOB_RECURSE VULKANRENDERER_HEADERS "*.hpp")
 
-kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}")
-kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
+kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES VULKAN_MODULE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES SHARED_MODULE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
 
-# Normalize BASE_DIRS paths for Windows compatibility
-# On Windows, path separators and relative path resolution can differ between
-# where files are collected and where BASE_DIRS expects them
-# IMPORTANT: BASE_DIRS must match the actual directories where module files are collected from
-cmake_path(SET VULKAN_MODULE_BASE_DIR NORMALIZE "${CMAKE_CURRENT_SOURCE_DIR}")
-cmake_path(SET SHARED_MODULE_BASE_DIR NORMALIZE "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
+# The BASE_DIRS are now set by kataglyphis_collect_module_interfaces
+# ensuring exact path match between collected files and their base directories
 
 set(ShaderIncludes
     -I
@@ -74,9 +70,10 @@ file(MAKE_DIRECTORY "${VULKAN_RENDERER_CONFIG_MODULE_DIR}")
 configure_file(VulkanRendererConfig.ixx.in "${VULKAN_RENDERER_CONFIG_MODULE_FILE}" @ONLY)
 set_source_files_properties("${VULKAN_RENDERER_CONFIG_MODULE_FILE}" PROPERTIES GENERATED TRUE)
 
-# Normalize the generated config module path for Windows compatibility
-cmake_path(SET _normalized_config_module NORMALIZE "${VULKAN_RENDERER_CONFIG_MODULE_FILE}")
-list(APPEND VULKAN_MODULE_INTERFACE_FILES "${_normalized_config_module}")
+# Convert generated config module paths to absolute for Windows compatibility
+cmake_path(ABSOLUTE_PATH VULKAN_RENDERER_CONFIG_MODULE_DIR OUTPUT_VARIABLE VULKAN_CONFIG_MODULE_BASE_DIR NORMALIZE)
+cmake_path(ABSOLUTE_PATH VULKAN_RENDERER_CONFIG_MODULE_FILE OUTPUT_VARIABLE _abs_config_module NORMALIZE)
+list(APPEND VULKAN_MODULE_INTERFACE_FILES "${_abs_config_module}")
 
 # =============================================================================
 # VulkanEngineCore - STATIC Library (compiled ONCE, reused by exe and tests)
@@ -127,9 +124,6 @@ target_sources(
          FILES
          ${VULKANRENDERER_HEADERS}
          ${SHADER_HEADERS})
-
-# Normalize generated module directory path for Windows compatibility
-cmake_path(SET VULKAN_CONFIG_MODULE_BASE_DIR NORMALIZE "${VULKAN_RENDERER_CONFIG_MODULE_DIR}")
 
 target_sources(
   VulkanEngineCore
