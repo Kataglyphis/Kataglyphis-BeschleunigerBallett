@@ -184,6 +184,24 @@ target_sources(
 # In CMake 3.28+, linking against a library with PUBLIC CXX_MODULES should make those modules importable
 target_link_libraries(${PROJECT_NAME} PRIVATE VulkanEngineCore)
 
+# Explicitly declare module sources for the executable on Windows
+# CMake's C++20 module propagation can have issues on Windows with Ninja
+# This ensures the module scanner knows where to find module interface files
+if(WIN32)
+  target_sources(
+    ${PROJECT_NAME}
+    PUBLIC FILE_SET
+           CXX_MODULES
+           TYPE
+           CXX_MODULES
+           BASE_DIRS
+           ${CMAKE_CURRENT_SOURCE_DIR}/..
+           ${VULKAN_RENDERER_CONFIG_MODULE_DIR}
+           FILES
+           ${VULKAN_MODULE_INTERFACE_FILES}
+           ${SHARED_MODULE_INTERFACE_FILES})
+endif()
+
 # compile shaders as part of my cmake routine right away :)
 include(cmake/CompileShadersToSPV.cmake)
 
