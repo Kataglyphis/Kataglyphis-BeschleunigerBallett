@@ -70,9 +70,9 @@ file(MAKE_DIRECTORY "${VULKAN_RENDERER_CONFIG_MODULE_DIR}")
 configure_file(VulkanRendererConfig.ixx.in "${VULKAN_RENDERER_CONFIG_MODULE_FILE}" @ONLY)
 set_source_files_properties("${VULKAN_RENDERER_CONFIG_MODULE_FILE}" PROPERTIES GENERATED TRUE)
 
-# Convert generated config module paths to absolute for Windows compatibility
-cmake_path(ABSOLUTE_PATH VULKAN_RENDERER_CONFIG_MODULE_DIR OUTPUT_VARIABLE VULKAN_CONFIG_MODULE_BASE_DIR NORMALIZE)
-cmake_path(ABSOLUTE_PATH VULKAN_RENDERER_CONFIG_MODULE_FILE OUTPUT_VARIABLE _abs_config_module NORMALIZE)
+# Use file(REAL_PATH) to get canonical paths for Windows compatibility
+file(REAL_PATH "${VULKAN_RENDERER_CONFIG_MODULE_DIR}" VULKAN_CONFIG_MODULE_BASE_DIR)
+file(REAL_PATH "${VULKAN_RENDERER_CONFIG_MODULE_FILE}" _abs_config_module)
 list(APPEND VULKAN_MODULE_INTERFACE_FILES "${_abs_config_module}")
 
 # =============================================================================

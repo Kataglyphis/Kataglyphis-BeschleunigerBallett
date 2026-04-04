@@ -47,9 +47,9 @@ file(MAKE_DIRECTORY "${OPENGL_RENDERER_CONFIG_MODULE_DIR}")
 configure_file(OpenGLRendererConfig.ixx.in "${OPENGL_RENDERER_CONFIG_MODULE_FILE}" @ONLY)
 set_source_files_properties("${OPENGL_RENDERER_CONFIG_MODULE_FILE}" PROPERTIES GENERATED TRUE)
 
-# Convert generated config module paths to absolute for Windows compatibility
-cmake_path(ABSOLUTE_PATH OPENGL_RENDERER_CONFIG_MODULE_DIR OUTPUT_VARIABLE OPENGL_CONFIG_MODULE_BASE_DIR NORMALIZE)
-cmake_path(ABSOLUTE_PATH OPENGL_RENDERER_CONFIG_MODULE_FILE OUTPUT_VARIABLE _abs_config_module NORMALIZE)
+# Use file(REAL_PATH) to get canonical paths for Windows compatibility
+file(REAL_PATH "${OPENGL_RENDERER_CONFIG_MODULE_DIR}" OPENGL_CONFIG_MODULE_BASE_DIR)
+file(REAL_PATH "${OPENGL_RENDERER_CONFIG_MODULE_FILE}" _abs_config_module)
 list(APPEND OPENGL_MODULE_INTERFACE_FILES "${_abs_config_module}")
 
 target_sources(
