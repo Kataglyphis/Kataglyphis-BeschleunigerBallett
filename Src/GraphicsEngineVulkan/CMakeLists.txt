@@ -31,6 +31,12 @@ file(GLOB_RECURSE VULKANRENDERER_HEADERS "*.hpp")
 kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}")
 kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
 
+# Normalize BASE_DIRS paths for Windows compatibility
+# On Windows, path separators and relative path resolution can differ between
+# where files are collected and where BASE_DIRS expects them
+cmake_path(SET VULKAN_MODULE_BASE_DIR NORMALIZE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+cmake_path(SET SHARED_MODULE_BASE_DIR NORMALIZE "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
+
 set(ShaderIncludes
     -I
     ${SHADER_SRC_DIR}
@@ -66,7 +72,10 @@ set(VULKAN_RENDERER_CONFIG_MODULE_FILE "${VULKAN_RENDERER_CONFIG_MODULE_DIR}/Vul
 file(MAKE_DIRECTORY "${VULKAN_RENDERER_CONFIG_MODULE_DIR}")
 configure_file(VulkanRendererConfig.ixx.in "${VULKAN_RENDERER_CONFIG_MODULE_FILE}" @ONLY)
 set_source_files_properties("${VULKAN_RENDERER_CONFIG_MODULE_FILE}" PROPERTIES GENERATED TRUE)
-list(APPEND VULKAN_MODULE_INTERFACE_FILES "${VULKAN_RENDERER_CONFIG_MODULE_FILE}")
+
+# Normalize the generated config module path for Windows compatibility
+cmake_path(SET _normalized_config_module NORMALIZE "${VULKAN_RENDERER_CONFIG_MODULE_FILE}")
+list(APPEND VULKAN_MODULE_INTERFACE_FILES "${_normalized_config_module}")
 
 # =============================================================================
 # VulkanEngineCore - STATIC Library (compiled ONCE, reused by exe and tests)
@@ -118,6 +127,9 @@ target_sources(
          ${VULKANRENDERER_HEADERS}
          ${SHADER_HEADERS})
 
+# Normalize generated module directory path for Windows compatibility
+cmake_path(SET VULKAN_CONFIG_MODULE_BASE_DIR NORMALIZE "${VULKAN_RENDERER_CONFIG_MODULE_DIR}")
+
 target_sources(
   VulkanEngineCore
   PUBLIC FILE_SET
@@ -125,8 +137,9 @@ target_sources(
          TYPE
          CXX_MODULES
          BASE_DIRS
-         ${CMAKE_CURRENT_SOURCE_DIR}/..
-         ${VULKAN_RENDERER_CONFIG_MODULE_DIR}
+         ${VULKAN_MODULE_BASE_DIR}
+         ${SHARED_MODULE_BASE_DIR}
+         ${VULKAN_CONFIG_MODULE_BASE_DIR}
          FILES
          ${VULKAN_MODULE_INTERFACE_FILES}
          ${SHARED_MODULE_INTERFACE_FILES})
@@ -183,24 +196,6 @@ target_sources(
 # Link VulkanEngineCore - modules with PUBLIC FILE_SET CXX_MODULES should propagate to consumers
 # In CMake 3.28+, linking against a library with PUBLIC CXX_MODULES should make those modules importable
 target_link_libraries(${PROJECT_NAME} PRIVATE VulkanEngineCore)
-
-# Explicitly declare module sources for the executable on Windows
-# CMake's C++20 module propagation can have issues on Windows with Ninja
-# This ensures the module scanner knows where to find module interface files
-if(WIN32)
-  target_sources(
-    ${PROJECT_NAME}
-    PUBLIC FILE_SET
-           CXX_MODULES
-           TYPE
-           CXX_MODULES
-           BASE_DIRS
-           ${CMAKE_CURRENT_SOURCE_DIR}/..
-           ${VULKAN_RENDERER_CONFIG_MODULE_DIR}
-           FILES
-           ${VULKAN_MODULE_INTERFACE_FILES}
-           ${SHARED_MODULE_INTERFACE_FILES})
-endif()
 
 # compile shaders as part of my cmake routine right away :)
 include(cmake/CompileShadersToSPV.cmake)

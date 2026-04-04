@@ -1,23 +1,27 @@
 include(CMakeParseArguments)
 
 function(kataglyphis_collect_module_interfaces out_var base_dir)
-  string(
-    REGEX
-    REPLACE "/+$"
-            ""
-            base_dir
-            "${base_dir}")
+  # Normalize the base directory path for cross-platform compatibility
+  cmake_path(SET _normalized_base_dir NORMALIZE "${base_dir}")
+  
   file(
     GLOB_RECURSE _module_interface_relative_files
-    RELATIVE "${base_dir}"
-    "${base_dir}/*.ixx")
+    RELATIVE "${_normalized_base_dir}"
+    "${_normalized_base_dir}/*.ixx")
   list(SORT _module_interface_relative_files)
 
   set(_module_interface_files "${_module_interface_relative_files}")
-  list(TRANSFORM _module_interface_files PREPEND "${base_dir}/")
+  list(TRANSFORM _module_interface_files PREPEND "${_normalized_base_dir}/")
+  
+  # Normalize each file path for Windows compatibility
+  set(_normalized_files "")
+  foreach(_file IN LISTS _module_interface_files)
+    cmake_path(SET _normalized_file NORMALIZE "${_file}")
+    list(APPEND _normalized_files "${_normalized_file}")
+  endforeach()
 
   set(${out_var}
-      "${_module_interface_files}"
+      "${_normalized_files}"
       PARENT_SCOPE)
 endfunction()
 

@@ -36,33 +36,6 @@ target_link_libraries(
           gtest
           gtest_main)
 
-# Explicitly declare module sources for the test executable on Windows
-# CMake's C++20 module propagation can have issues on Windows with Ninja
-# This ensures the module scanner knows where to find module interface files
-if(WIN32)
-  # Get module interface files using the same helper function
-  include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
-  kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES "${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan")
-  kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${CMAKE_SOURCE_DIR}/Src/shared")
-  
-  # Include generated config module
-  set(VULKAN_RENDERER_CONFIG_MODULE_DIR "${CMAKE_BINARY_DIR}/Src/GraphicsEngineVulkan/generated")
-  list(APPEND VULKAN_MODULE_INTERFACE_FILES "${VULKAN_RENDERER_CONFIG_MODULE_DIR}/VulkanRendererConfig.ixx")
-  
-  target_sources(
-    ${COMMIT_TEST_SUITE}
-    PUBLIC FILE_SET
-           CXX_MODULES
-           TYPE
-           CXX_MODULES
-           BASE_DIRS
-           ${CMAKE_SOURCE_DIR}/Src
-           ${VULKAN_RENDERER_CONFIG_MODULE_DIR}
-           FILES
-           ${VULKAN_MODULE_INTERFACE_FILES}
-           ${SHARED_MODULE_INTERFACE_FILES})
-endif()
-
 # Use the project root as working directory so relative paths match the main executable
 kataglyphis_configure_gtest_discovery(${COMMIT_TEST_SUITE})
 
