@@ -34,8 +34,9 @@ kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${CMAKE_CUR
 # Normalize BASE_DIRS paths for Windows compatibility
 # On Windows, path separators and relative path resolution can differ between
 # where files are collected and where BASE_DIRS expects them
-cmake_path(SET VULKAN_MODULE_BASE_DIR NORMALIZE "${CMAKE_CURRENT_SOURCE_DIR}/..")
-cmake_path(SET SHARED_MODULE_BASE_DIR NORMALIZE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+# IMPORTANT: BASE_DIRS must match the actual directories where module files are collected from
+cmake_path(SET VULKAN_MODULE_BASE_DIR NORMALIZE "${CMAKE_CURRENT_SOURCE_DIR}")
+cmake_path(SET SHARED_MODULE_BASE_DIR NORMALIZE "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
 
 set(ShaderIncludes
     -I
