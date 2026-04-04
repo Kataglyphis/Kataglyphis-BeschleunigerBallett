@@ -28,11 +28,8 @@ file(
 
 file(GLOB_RECURSE VULKANRENDERER_HEADERS "*.hpp")
 
-kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES VULKAN_MODULE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES SHARED_MODULE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
-
-# The BASE_DIRS are now set by kataglyphis_collect_module_interfaces
-# ensuring exact path match between collected files and their base directories
+kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}")
+kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
 
 set(ShaderIncludes
     -I
@@ -69,11 +66,7 @@ set(VULKAN_RENDERER_CONFIG_MODULE_FILE "${VULKAN_RENDERER_CONFIG_MODULE_DIR}/Vul
 file(MAKE_DIRECTORY "${VULKAN_RENDERER_CONFIG_MODULE_DIR}")
 configure_file(VulkanRendererConfig.ixx.in "${VULKAN_RENDERER_CONFIG_MODULE_FILE}" @ONLY)
 set_source_files_properties("${VULKAN_RENDERER_CONFIG_MODULE_FILE}" PROPERTIES GENERATED TRUE)
-
-# Use file(REAL_PATH) to get canonical paths for Windows compatibility
-file(REAL_PATH "${VULKAN_RENDERER_CONFIG_MODULE_DIR}" VULKAN_CONFIG_MODULE_BASE_DIR)
-file(REAL_PATH "${VULKAN_RENDERER_CONFIG_MODULE_FILE}" _abs_config_module)
-list(APPEND VULKAN_MODULE_INTERFACE_FILES "${_abs_config_module}")
+list(APPEND VULKAN_MODULE_INTERFACE_FILES "${VULKAN_RENDERER_CONFIG_MODULE_FILE}")
 
 # =============================================================================
 # VulkanEngineCore - STATIC Library (compiled ONCE, reused by exe and tests)
@@ -132,9 +125,8 @@ target_sources(
          TYPE
          CXX_MODULES
          BASE_DIRS
-         ${VULKAN_MODULE_BASE_DIR}
-         ${SHARED_MODULE_BASE_DIR}
-         ${VULKAN_CONFIG_MODULE_BASE_DIR}
+         ${CMAKE_CURRENT_SOURCE_DIR}/..
+         ${VULKAN_RENDERER_CONFIG_MODULE_DIR}
          FILES
          ${VULKAN_MODULE_INTERFACE_FILES}
          ${SHARED_MODULE_INTERFACE_FILES})

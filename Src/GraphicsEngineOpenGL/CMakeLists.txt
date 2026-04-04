@@ -16,8 +16,8 @@ file(GLOB_RECURSE SHADER_HEADERS "${SHADER_SRC_DIR}/*.hpp")
 
 file(GLOB_RECURSE OPENGLRENDERER_HEADERS "*.hpp")
 
-kataglyphis_collect_module_interfaces(OPENGL_MODULE_INTERFACE_FILES OPENGL_MODULE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES SHARED_MODULE_BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
+kataglyphis_collect_module_interfaces(OPENGL_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}")
+kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
 
 set(OpenGlEngineTargetName "GraphicsEngineOpenGLBackend")
 
@@ -46,11 +46,7 @@ set(OPENGL_RENDERER_CONFIG_MODULE_FILE "${OPENGL_RENDERER_CONFIG_MODULE_DIR}/Ope
 file(MAKE_DIRECTORY "${OPENGL_RENDERER_CONFIG_MODULE_DIR}")
 configure_file(OpenGLRendererConfig.ixx.in "${OPENGL_RENDERER_CONFIG_MODULE_FILE}" @ONLY)
 set_source_files_properties("${OPENGL_RENDERER_CONFIG_MODULE_FILE}" PROPERTIES GENERATED TRUE)
-
-# Use file(REAL_PATH) to get canonical paths for Windows compatibility
-file(REAL_PATH "${OPENGL_RENDERER_CONFIG_MODULE_DIR}" OPENGL_CONFIG_MODULE_BASE_DIR)
-file(REAL_PATH "${OPENGL_RENDERER_CONFIG_MODULE_FILE}" _abs_config_module)
-list(APPEND OPENGL_MODULE_INTERFACE_FILES "${_abs_config_module}")
+list(APPEND OPENGL_MODULE_INTERFACE_FILES "${OPENGL_RENDERER_CONFIG_MODULE_FILE}")
 
 target_sources(
   ${OpenGlEngineTargetName}
@@ -82,9 +78,8 @@ target_sources(
          TYPE
          CXX_MODULES
          BASE_DIRS
-         ${OPENGL_MODULE_BASE_DIR}
-         ${SHARED_MODULE_BASE_DIR}
-         ${OPENGL_CONFIG_MODULE_BASE_DIR}
+         ${CMAKE_CURRENT_SOURCE_DIR}/..
+         ${OPENGL_RENDERER_CONFIG_MODULE_DIR}
          FILES
          ${OPENGL_MODULE_INTERFACE_FILES}
          ${SHARED_MODULE_INTERFACE_FILES})
