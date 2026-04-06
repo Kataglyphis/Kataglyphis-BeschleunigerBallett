@@ -58,8 +58,6 @@ endif()
 
 enable_language(CXX C)
 
-include(cmake/ClangClModules.cmake)
-
 if(RUST_FEATURES)
   message(STATUS "Rust features are enabled.")
   if(MSVC)

@@ -139,11 +139,14 @@ macro(myproject_global_options)
   set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
   if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
-    if(MYPROJECT_CLANG_CL_MODULE_SCAN_READY)
-      set(myproject_CXX_SCAN_FOR_MODULES ON)
-      message(STATUS "Using clang-cl module scan override for project targets.")
-    else()
+    # Enable C++20 modules for clang-cl by default (requires Clang >= 17)
+    # Set MYPROJECT_CLANG_CL_MODULE_SCAN_READY=OFF to disable if issues arise
+    if(DEFINED MYPROJECT_CLANG_CL_MODULE_SCAN_READY AND NOT MYPROJECT_CLANG_CL_MODULE_SCAN_READY)
       set(myproject_CXX_SCAN_FOR_MODULES OFF)
+      message(STATUS "C++ module scanning explicitly disabled for clang-cl.")
+    else()
+      set(myproject_CXX_SCAN_FOR_MODULES ON)
+      message(STATUS "C++ module scanning enabled for clang-cl.")
     endif()
   endif()
 
