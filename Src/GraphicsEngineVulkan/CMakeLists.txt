@@ -21,10 +21,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_G
                                                                                                  "-fno-lto")
 endif()
 
-file(
-  GLOB_RECURSE SHADER_HEADERS
-  RELATIVE ${SHADER_SRC_DIR}
-  "*.hpp")
+file(GLOB_RECURSE SHADER_HEADERS "${SHADER_SRC_DIR}*.hpp")
 
 file(GLOB_RECURSE VULKANRENDERER_HEADERS "*.hpp")
 
