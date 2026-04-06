@@ -46,7 +46,7 @@ set(CPACK_ENABLE_APPIMAGE
     CACHE BOOL "Enable AppImage package generation on Linux")
 
 set(ENABLE_WIX_PACKAGING
-    OFF
+    ON
     CACHE BOOL "Enable WiX MSI package generation on Windows")
 
 # Windows (egal ob MSVC oder Clang/clang-cl) -> NSIS + WIX Binaries erzeugen
