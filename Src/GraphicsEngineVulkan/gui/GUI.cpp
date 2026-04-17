@@ -77,6 +77,15 @@ void GUI::render()
         ImGui::RadioButton("Path tracing", &e, 2);
     }
 
+    if (e == 0) {
+        ImGui::Separator();
+        static int raster_mode = 0;
+        ImGui::RadioButton("Forward", &raster_mode, 0);
+        ImGui::SameLine();
+        ImGui::RadioButton("Deferred", &raster_mode, 1);
+        guiRendererSharedVars.rasterizationMode = raster_mode == 0 ? VulkanRendererInternals::FrontendShared::RasterizationMode::Forward : VulkanRendererInternals::FrontendShared::RasterizationMode::Deferred;
+    }
+
     switch (e) {
     case 0:
         guiRendererSharedVars.raytracing = false;

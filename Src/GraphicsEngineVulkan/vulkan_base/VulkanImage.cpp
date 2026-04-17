@@ -47,24 +47,29 @@ void Kataglyphis::VulkanImage::create(VulkanDevice *in_device,
   vk::Format format,
   vk::ImageTiling tiling,
   vk::ImageUsageFlags use_flags,
-  vk::MemoryPropertyFlags prop_flags)
+  vk::MemoryPropertyFlags prop_flags,
+  uint32_t array_layers,
+  vk::ImageCreateFlags create_flags,
+  vk::ImageType image_type,
+  uint32_t depth)
 {
     this->device = in_device;
     // CREATE image
     // image creation info
     vk::ImageCreateInfo image_create_info{};
-    image_create_info.imageType = vk::ImageType::e2D;// type of image (1D, 2D, 3D)
+    image_create_info.imageType = image_type;// type of image (1D, 2D, 3D)
     image_create_info.extent.width = width;// width if image extent
     image_create_info.extent.height = height;// height if image extent
-    image_create_info.extent.depth = 1;// height if image extent
+    image_create_info.extent.depth = depth;// height if image extent
     image_create_info.mipLevels = mip_levels;// number of mipmap levels
-    image_create_info.arrayLayers = 1;// number of levels in image array
+    image_create_info.arrayLayers = array_layers;// number of levels in image array
     image_create_info.format = format;// format type of image
     image_create_info.tiling = tiling;// tiling of image ("arranged" for optimal reading)
     image_create_info.initialLayout = vk::ImageLayout::eUndefined;// layout of image data on creation
     image_create_info.usage = use_flags;// bit flags defining what image will be used for
     image_create_info.samples = vk::SampleCountFlagBits::e1;// number of samples for multisampling
     image_create_info.sharingMode = vk::SharingMode::eExclusive;// whether image can be shared between queues
+    image_create_info.flags = create_flags;
 
     image = device->getLogicalDevice().createImage(image_create_info).value;
 

@@ -98,7 +98,7 @@ void main() {
     ambient += texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), texture_coordinates).xyz;
     //ambient += materials.m[materialIDs.i[gl_PrimitiveID]].diffuse;
 
-    vec3 L = normalize(vec3(-sceneUBO.light_dir)); 
+    vec3 L = normalize(vec3(-sceneUBO.dirLight.direction)); 
     // no need to normalize
 	vec3 N = normalize(normal_hit);
 	vec3 V = normalize(sceneUBO.cam_pos.xyz - hit_pos);

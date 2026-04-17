@@ -5,7 +5,8 @@
 
 #ifdef __cplusplus
 #pragma once
-#include <glm/mat4x4.hpp>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec4.hpp>
@@ -18,9 +19,39 @@ using uint = unsigned int;
 namespace Kataglyphis::VulkanRendererInternals {
 #endif
 
+#define MAX_POINT_LIGHTS 4
+#define MAX_CASCADES 3
+
+struct DirectionalLightData {
+    vec4 direction;
+    vec4 color; // w = radiance
+};
+
+struct PointLightData {
+    vec4 position;
+    vec4 color; // w = radiance
+    vec4 attenuation; // x: constant, y: linear, z: exponent, w: far_plane
+};
+
 struct SceneUBO
 {
-    vec4 light_dir;
+    // Directional light
+    DirectionalLightData dirLight;
+
+    // Point lights
+    PointLightData pointLights[MAX_POINT_LIGHTS];
+    uint numPointLights;
+    
+    // padding for alignment (std140)
+    uint padding0;
+    uint padding1;
+    uint padding2;
+
+    // Cascaded shadow maps
+    vec4 cascadeSplits; // up to 4 cascades
+    mat4 cascadeLightSpaceMatrices[MAX_CASCADES];
+
+    // Camera
     vec4 view_dir;
     // xyz is position; w = fov
     vec4 cam_pos;

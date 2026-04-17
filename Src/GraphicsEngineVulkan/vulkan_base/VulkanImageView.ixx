@@ -23,7 +23,9 @@ class VulkanImageView
       vk::Image image,
       vk::Format format,
       vk::ImageAspectFlags aspect_flags,
-      uint32_t mip_levels);
+      uint32_t mip_levels,
+      vk::ImageViewType view_type = vk::ImageViewType::e2D,
+      uint32_t array_layers = 1);
 
     void cleanUp();
 

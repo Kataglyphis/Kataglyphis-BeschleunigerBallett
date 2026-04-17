@@ -64,7 +64,7 @@ void main() {
     MaterialIDs materialIDs		= MaterialIDs(obj_res.material_index_address);	// material id per triangle (face)
 	Materials materials			= Materials(obj_res.material_address);			// array of all materials
 
-	vec3 L = normalize(vec3(-sceneUBO.light_dir));
+	vec3 L = normalize(vec3(-sceneUBO.dirLight.direction));
 	vec3 N = normalize(shading_normal);
 	vec3 V = normalize(sceneUBO.cam_pos.xyz - worldPosition);
 	

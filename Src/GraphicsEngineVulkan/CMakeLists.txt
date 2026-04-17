@@ -128,7 +128,7 @@ target_sources(
          ${VULKAN_MODULE_INTERFACE_FILES}
          ${SHARED_MODULE_INTERFACE_FILES})
 
-target_include_directories(VulkanEngineCore PUBLIC ${Vulkan_INCLUDE_DIRS})
+target_include_directories(VulkanEngineCore PUBLIC ${Vulkan_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 target_compile_definitions(VulkanEngineCore PUBLIC VULKAN_HPP_NO_EXCEPTIONS VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1)
 

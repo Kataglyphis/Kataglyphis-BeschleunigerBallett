@@ -108,35 +108,70 @@ void Kataglyphis::Texture::createFromFile(VulkanDevice *device,
 
     stagingBuffer.cleanUp();
 
-    createImageView(device, texture_format, vk::ImageAspectFlagBits::eColor, mip_levels);
+    createImageView(device, texture_format, vk::ImageAspectFlagBits::eColor, mip_levels, vk::ImageViewType::e2D, 1);
 }
 
 void Kataglyphis::Texture::setImage(vk::Image image) { vulkanImage.setImage(image); }
 
 void Kataglyphis::Texture::setImageView(vk::ImageView imageView) { vulkanImageView.setImageView(imageView); }
 
-void Kataglyphis::Texture::createImage(VulkanDevice *device,
+void Kataglyphis::Texture::createImage(VulkanDevice *in_device,
   uint32_t width,
   uint32_t height,
   uint32_t in_mip_levels,
   vk::Format format,
   vk::ImageTiling tiling,
   vk::ImageUsageFlags use_flags,
-  vk::MemoryPropertyFlags prop_flags)
+  vk::MemoryPropertyFlags prop_flags,
+  uint32_t array_layers,
+  vk::ImageCreateFlags create_flags,
+  vk::ImageType image_type,
+  uint32_t depth)
 {
-    vulkanImage.create(device, width, height, in_mip_levels, format, tiling, use_flags, prop_flags);
+    this->device = in_device;
+    vulkanImage.create(in_device, width, height, in_mip_levels, format, tiling, use_flags, prop_flags, array_layers, create_flags, image_type, depth);
 }
 
-void Kataglyphis::Texture::createImageView(VulkanDevice *device,
+void Kataglyphis::Texture::createImageView(VulkanDevice *in_device,
   vk::Format format,
   vk::ImageAspectFlags aspect_flags,
-  uint32_t in_mip_levels)
+  uint32_t in_mip_levels,
+  vk::ImageViewType view_type,
+  uint32_t array_layers)
 {
-    vulkanImageView.create(device, vulkanImage.getImage(), format, aspect_flags, in_mip_levels);
+    this->device = in_device;
+    vulkanImageView.create(in_device, vulkanImage.getImage(), format, aspect_flags, in_mip_levels, view_type, array_layers);
+}
+
+void Kataglyphis::Texture::createTextureSampler(VulkanDevice *in_device, vk::Filter filter, vk::SamplerAddressMode addressMode)
+{
+    this->device = in_device;
+    vk::SamplerCreateInfo samplerInfo{};
+    samplerInfo.magFilter = filter;
+    samplerInfo.minFilter = filter;
+    samplerInfo.addressModeU = addressMode;
+    samplerInfo.addressModeV = addressMode;
+    samplerInfo.addressModeW = addressMode;
+    samplerInfo.anisotropyEnable = VK_FALSE;
+    samplerInfo.maxAnisotropy = 1.0f;
+    samplerInfo.borderColor = vk::BorderColor::eIntOpaqueBlack;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = vk::CompareOp::eAlways;
+    samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
+    samplerInfo.mipLodBias = 0.0f;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = static_cast<float>(mip_levels);
+
+    textureSampler = device->getLogicalDevice().createSampler(samplerInfo).value;
 }
 
 void Kataglyphis::Texture::cleanUp()
 {
+    if (textureSampler && device) {
+        device->getLogicalDevice().destroySampler(textureSampler);
+        textureSampler = nullptr;
+    }
     vulkanImageView.cleanUp();
     vulkanImage.cleanUp();
 }

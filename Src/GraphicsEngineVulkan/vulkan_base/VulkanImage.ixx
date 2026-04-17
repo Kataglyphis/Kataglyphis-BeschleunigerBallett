@@ -23,7 +23,11 @@ class VulkanImage
       vk::Format format,
       vk::ImageTiling tiling,
       vk::ImageUsageFlags use_flags,
-      vk::MemoryPropertyFlags prop_flags);
+      vk::MemoryPropertyFlags prop_flags,
+      uint32_t array_layers = 1,
+      vk::ImageCreateFlags create_flags = {},
+      vk::ImageType image_type = vk::ImageType::e2D,
+      uint32_t depth = 1);
 
     void transitionImageLayout(vk::Device in_logical_device,
       vk::Queue queue,

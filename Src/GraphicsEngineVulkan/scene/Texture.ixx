@@ -32,6 +32,7 @@ class Texture
     VulkanImageView &getVulkanImageView() { return vulkanImageView; };
     vk::Image &getImage() { return vulkanImage.getImage(); };
     vk::ImageView &getImageView() { return vulkanImageView.getImageView(); };
+    vk::Sampler &getSampler() { return textureSampler; }
 
     void createImage(VulkanDevice *device,
       uint32_t width,
@@ -40,9 +41,15 @@ class Texture
       vk::Format format,
       vk::ImageTiling tiling,
       vk::ImageUsageFlags use_flags,
-      vk::MemoryPropertyFlags prop_flags);
+      vk::MemoryPropertyFlags prop_flags,
+      uint32_t array_layers = 1,
+      vk::ImageCreateFlags create_flags = {},
+      vk::ImageType image_type = vk::ImageType::e2D,
+      uint32_t depth = 1);
 
-    void createImageView(VulkanDevice *device, vk::Format format, vk::ImageAspectFlags aspect_flags, uint32_t in_mip_levels);
+    void createImageView(VulkanDevice *device, vk::Format format, vk::ImageAspectFlags aspect_flags, uint32_t in_mip_levels, vk::ImageViewType view_type = vk::ImageViewType::e2D, uint32_t array_layers = 1);
+
+    void createTextureSampler(VulkanDevice *device, vk::Filter filter = vk::Filter::eLinear, vk::SamplerAddressMode addressMode = vk::SamplerAddressMode::eRepeat);
 
     void cleanUp();
 
@@ -68,5 +75,7 @@ class Texture
 
     VulkanImage vulkanImage;
     VulkanImageView vulkanImageView;
+    vk::Sampler textureSampler = nullptr;
+    VulkanDevice *device = nullptr;
 };
 }// namespace Kataglyphis

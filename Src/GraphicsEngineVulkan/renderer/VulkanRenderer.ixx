@@ -20,7 +20,12 @@ import kataglyphis.vulkan.instance;
 import kataglyphis.vulkan.path_tracing;
 import kataglyphis.vulkan.post_stage;
 import kataglyphis.vulkan.rasterizer;
+import kataglyphis.vulkan.deferred_rasterizer;
 import kataglyphis.vulkan.raytracing;
+import kataglyphis.vulkan.cascaded_shadow_map;
+import kataglyphis.vulkan.omni_dir_shadow_map;
+import kataglyphis.vulkan.sky_box;
+import kataglyphis.vulkan.clouds;
 import kataglyphis.vulkan.scene_ubo;
 import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.scene;
@@ -93,8 +98,15 @@ class VulkanRenderer
 
     Kataglyphis::VulkanRendererInternals::Raytracing raytracingStage;
     Kataglyphis::VulkanRendererInternals::Rasterizer rasterizer;
+    Kataglyphis::VulkanRendererInternals::DeferredRasterizer deferredRasterizer;
     Kataglyphis::VulkanRendererInternals::PathTracing pathTracing;
     Kataglyphis::VulkanRendererInternals::PostStage postStage;
+
+    // Atmospheric & Lighting Additions
+    Kataglyphis::SkyBox skyBox;
+    Kataglyphis::Clouds clouds;
+    Kataglyphis::CascadedShadowMap dirShadowMap;
+    Kataglyphis::OmniDirShadowMap pointShadowMap;
 
     // new era of memory management for my project
     // for now on integrate vma
@@ -127,6 +139,12 @@ class VulkanRenderer
     std::vector<vk::DescriptorSet> post_descriptor_set;
     void create_post_descriptor_layout();
     void updatePostDescriptorSets();
+
+    vk::DescriptorPool gbuffer_descriptor_pool{};
+    vk::DescriptorSetLayout gbuffer_descriptor_set_layout{};
+    std::vector<vk::DescriptorSet> gbuffer_descriptor_set;
+    void create_gbuffer_descriptor_layout();
+    void updateGBufferDescriptorSets();
 
     vk::DescriptorPool raytracingDescriptorPool{};
     std::vector<vk::DescriptorSet> raytracingDescriptorSet;

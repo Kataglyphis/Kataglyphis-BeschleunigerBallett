@@ -1,0 +1,20 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+
+layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(set = 0, binding = 0, rgba16f) uniform writeonly image3D noiseVolume;
+
+// Placeholder for worley/perlin fractal noise generation
+void main() {
+    ivec3 texelCoord = ivec3(gl_GlobalInvocationID.xyz);
+    ivec3 size = imageSize(noiseVolume);
+
+    if(texelCoord.x >= size.x || texelCoord.y >= size.y || texelCoord.z >= size.z) {
+        return;
+    }
+
+    float n = fract(sin(dot(vec3(texelCoord), vec3(12.9898, 78.233, 45.164))) * 43758.5453);
+    
+    imageStore(noiseVolume, texelCoord, vec4(n, n, n, 1.0));
+}

@@ -39,13 +39,15 @@ void Kataglyphis::VulkanImageView::create(VulkanDevice *in_device,
   vk::Image image,
   vk::Format format,
   vk::ImageAspectFlags aspect_flags,
-  uint32_t mip_levels)
+  uint32_t mip_levels,
+  vk::ImageViewType view_type,
+  uint32_t array_layers)
 {
     this->device = in_device;
 
     vk::ImageViewCreateInfo view_create_info{};
     view_create_info.image = image;// image to create view for
-    view_create_info.viewType = vk::ImageViewType::e2D;// typ of image
+    view_create_info.viewType = view_type;// typ of image
     view_create_info.format = format;
     view_create_info.components.r = vk::ComponentSwizzle::eIdentity;// allows remapping of rgba components to
                                                                     // other rgba values
@@ -56,10 +58,12 @@ void Kataglyphis::VulkanImageView::create(VulkanDevice *in_device,
     // subresources allow the view to view only a part of an image
     view_create_info.subresourceRange.aspectMask = aspect_flags;// which aspect of an image to view (e.g. color bit for
                                                                 // viewing color)
+
     view_create_info.subresourceRange.baseMipLevel = 0;// start mipmap level to view from
     view_create_info.subresourceRange.levelCount = mip_levels;// number of mipmap levels to view
+
     view_create_info.subresourceRange.baseArrayLayer = 0;// start array level to view from
-    view_create_info.subresourceRange.layerCount = 1;// number of array levels to view
+    view_create_info.subresourceRange.layerCount = array_layers;// number of array levels to view
 
     // create image view
     imageView = device->getLogicalDevice().createImageView(view_create_info).value;

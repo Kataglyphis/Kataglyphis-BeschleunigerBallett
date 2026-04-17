@@ -42,8 +42,12 @@ Write-Host "[INFO] Using glslc: $glslcPath"
 Write-Host "[INFO] Precompiling shaders under $shadersRoot -> target-env=$TargetEnv"
 
 # collect include dirs
+$includeArgs = @(
+  '-I', (Join-Path $scriptRoot 'Src\GraphicsEngineVulkan'),
+  '-I', (Join-Path $scriptRoot 'Src\GraphicsEngineVulkan\renderer'),
+  '-I', (Join-Path $scriptRoot 'Src\shared')
+)
 $includeDirs = Get-ChildItem -Path $shadersRoot -Directory -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
-$includeArgs = @()
 foreach ($d in $includeDirs) { $includeArgs += '-I'; $includeArgs += $d }
 
  # Only compile shader entry points. Many .glsl files are shared headers/includes

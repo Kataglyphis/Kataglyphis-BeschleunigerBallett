@@ -39,7 +39,11 @@ fi
 echo "[INFO] Precompiling shaders under ${SHADERS_ROOT} -> target-env=${TARGET_ENV}"
 
 # Build include flags from all shader subdirectories
-INCLUDES=()
+INCLUDES=(
+  "-I" "${PROJECT_ROOT}/Src/GraphicsEngineVulkan"
+  "-I" "${PROJECT_ROOT}/Src/GraphicsEngineVulkan/renderer"
+  "-I" "${PROJECT_ROOT}/Src/shared"
+)
 while IFS= read -r -d $'\0' d; do
   INCLUDES+=("-I" "${d}")
 done < <(find "${SHADERS_ROOT}" -type d -print0)
@@ -57,6 +61,6 @@ while IFS= read -r -d $'\0' shader; do
 
   echo "[INFO] Compiling ${shader} -> ${outfile}"
   glslc --target-env="${TARGET_ENV}" "${shader}" -o "${outfile}" "${INCLUDES[@]}"
-done < <(find "${SHADERS_ROOT}" -type f -regextype posix-extended -regex '.*\.(vert|frag|comp|rgen|rchit|rmiss|geom|tesc|tese|glsl)$' -print0)
+done < <(find "${SHADERS_ROOT}" -type f -regextype posix-extended -regex '.*\.(vert|frag|comp|rgen|rchit|rmiss|geom|tesc|tese)$' -print0)
 
 echo "[INFO] Shader precompilation finished"
