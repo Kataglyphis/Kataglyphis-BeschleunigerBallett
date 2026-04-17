@@ -60,7 +60,7 @@ while IFS= read -r -d $'\0' shader; do
   outfile="${outdir}/$(basename "${shader}").spv"
 
   echo "[INFO] Compiling ${shader} -> ${outfile}"
-  glslc --target-env="${TARGET_ENV}" "${shader}" -o "${outfile}" "${INCLUDES[@]}"
+  glslc --target-env="${TARGET_ENV}" "-DKAT_VULKAN" "${shader}" -o "${outfile}" "${INCLUDES[@]}"
 done < <(find "${SHADERS_ROOT}" -type f -regextype posix-extended -regex '.*\.(vert|frag|comp|rgen|rchit|rmiss|geom|tesc|tese)$' -print0)
 
 echo "[INFO] Shader precompilation finished"

@@ -7,12 +7,23 @@
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
+#ifdef KAT_VULKAN
+layout(rgba32f, binding = NOISE_32D_IMAGE_SLOT) uniform image3D noise;
+
+const float resolution = float(32.f);
+
+layout(binding = NOISE_CELL_POSITIONS_SLOT) uniform sampler3D   cell_positions  [NUM_CELL_POSITIONS];
+layout(push_constant) uniform PushConstants {
+    int         num_cells       [NUM_CELL_POSITIONS];
+};
+#else
 layout(rgba32f, location = NOISE_32D_IMAGE_SLOT) uniform image3D noise;
 
 const float resolution = float(32.f);
 
 uniform sampler3D   cell_positions  [NUM_CELL_POSITIONS];
 uniform int         num_cells       [NUM_CELL_POSITIONS];
+#endif
 
 void main() {
     

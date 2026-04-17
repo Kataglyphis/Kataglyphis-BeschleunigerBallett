@@ -20,6 +20,47 @@
 
 #include "/clouds.glsl"
 
+#ifdef KAT_VULKAN
+layout(location = 0) in vec2 tex_coords;
+layout(location = 0) out vec4 color;
+
+layout(binding = 0) uniform sampler2D g_position;
+layout(binding = 1) uniform sampler2D g_normal;
+layout(binding = 2) uniform sampler2D g_albedo;
+layout(binding = 3) uniform sampler2D g_material_id;
+
+layout(binding = 4) uniform sampler2DArray directional_shadow_maps;
+layout(binding = 5) uniform sampler3D noise_texture_1;
+layout(binding = 6) uniform sampler3D noise_texture_2;
+layout(binding = 7) uniform sampler2D random_number;
+layout(binding = 8) uniform samplerCube omni_shadow_maps_samplers[MAX_POINT_LIGHTS];
+
+layout(binding = 9) uniform LightingData {
+    DirectionalLight directional_light;
+    float cascade_endpoints[NUM_CASCADES];
+    int pcf_radius;
+    Clouds cloud;
+    PointLight point_lights[MAX_POINT_LIGHTS];
+    float omni_shadow_maps_far_plane[MAX_POINT_LIGHTS];
+    int point_light_count;
+    Material materials[MAX_MATERIALS];
+    vec3 eye_position;
+    mat4 view;
+    mat4 projection;
+} lightingData;
+
+#define directional_light (lightingData.directional_light)
+#define cascade_endpoints (lightingData.cascade_endpoints)
+#define pcf_radius (lightingData.pcf_radius)
+#define cloud (lightingData.cloud)
+#define point_lights (lightingData.point_lights)
+#define point_light_count (lightingData.point_light_count)
+#define materials (lightingData.materials)
+#define eye_position (lightingData.eye_position)
+#define view (lightingData.view)
+#define projection (lightingData.projection)
+
+#else
 in vec2 tex_coords;
 
 out vec4 color;
@@ -35,12 +76,6 @@ uniform DirectionalLight    directional_light;
 uniform sampler2DArray      directional_shadow_maps;
 uniform float               cascade_endpoints[NUM_CASCADES];
 uniform int                 pcf_radius;
-
-layout (std140, binding = UNIFORM_LIGHT_MATRICES_BINDING) uniform LightSpaceMatrices
-{
-    mat4 lightSpaceMatrices[NUM_CASCADES];
-};
-
 
 //sampler for our noise textures
 uniform Clouds      cloud;
@@ -61,6 +96,12 @@ uniform Material    materials[MAX_MATERIALS];
 uniform vec3 eye_position;
 uniform mat4 view;
 uniform mat4 projection;
+#endif
+
+layout (std140, binding = UNIFORM_LIGHT_MATRICES_BINDING) uniform LightSpaceMatrices
+{
+    mat4 lightSpaceMatrices[NUM_CASCADES];
+};
 
 
 vec4 calc_light_by_direction(   Light light, vec3 direction, float shadow_factor,
@@ -112,8 +153,13 @@ vec4 calc_point_lights(vec4 frag_pos) {
 
     for(int i = 0; i < point_light_count; i++) {
 
+#ifdef KAT_VULKAN
         total_color += calc_point_light(frag_pos.xyz, eye_position,
-                                        point_lights[i], omni_shadow_maps[i]);
+                                        point_lights[i], omni_shadow_maps_samplers[i], lightingData.omni_shadow_maps_far_plane[i]);
+#else
+        total_color += calc_point_light(frag_pos.xyz, eye_position,
+                                        point_lights[i], omni_shadow_maps[i].shadow_map, omni_shadow_maps[i].far_plane);
+#endif
 
     }
 
@@ -133,7 +179,7 @@ bool belongs_to_clouds(int material_id) {
 }
 
 void main () {
-    
+
     vec4 albedo     = texture(g_albedo, tex_coords);
     vec4 frag_pos   = texture(g_position, tex_coords);
     int material_id = int(texture(g_material_id, tex_coords).r);
@@ -170,4 +216,5 @@ void main () {
     color = vec4(gamma_correction(color.xyz),1.0);
 
 }
+
 

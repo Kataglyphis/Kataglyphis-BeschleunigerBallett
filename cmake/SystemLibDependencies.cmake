@@ -28,10 +28,3 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm" OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch
 endif()
 
 find_package(Threads REQUIRED)
-
-# we depend on OpenGL
-find_package(OpenGL REQUIRED COMPONENTS OpenGL)
-# configure OpenGL version
-set(OPENGL_VERSION_MAJOR 4)
-set(OPENGL_VERSION_MINOR 6)
-set(OpenGL_GL_PREFERENCE GLVND)

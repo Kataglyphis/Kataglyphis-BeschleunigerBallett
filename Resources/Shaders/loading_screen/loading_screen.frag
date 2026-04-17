@@ -1,10 +1,10 @@
 #version 460
 
-in vec2 tex_coords;
+layout(location = 0) in vec2 tex_coords;
 
-out vec4 color;
+layout(location = 0) out vec4 color;
 
-uniform sampler2D loading_screen;
+layout(binding = 0) uniform sampler2D loading_screen;
 
 void main() {
 

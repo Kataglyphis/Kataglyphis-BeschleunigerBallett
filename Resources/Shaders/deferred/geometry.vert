@@ -5,11 +5,11 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 #extension GL_EXT_buffer_reference2 : require
 
-#include "../common/raycommon.glsl"
-#include "../hostDevice/host_device_shared_vars.hpp"
-#include "../../../Src/GraphicsEngineVulkan/renderer/GlobalUBO.hpp"
-#include "../../../Src/GraphicsEngineVulkan/renderer/SceneUBO.hpp"
-#include "../../../Src/GraphicsEngineVulkan/renderer/pushConstants/PushConstantRasterizer.hpp"
+#include "raycommon.glsl"
+#include "host_device_shared_vars.hpp"
+#include "GlobalUBO.hpp"
+#include "SceneUBO.hpp"
+#include "pushConstants/PushConstantRasterizer.hpp"
 
 layout (location = 0) in vec3 positions; 
 layout (location = 1) in vec3 normal;

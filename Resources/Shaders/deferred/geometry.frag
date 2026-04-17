@@ -5,12 +5,12 @@
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 #extension GL_EXT_buffer_reference2 : require
 
-#include "../common/raycommon.glsl"
-#include "../hostDevice/host_device_shared_vars.hpp"
-#include "../../../Src/GraphicsEngineVulkan/renderer/SceneUBO.hpp"
-#include "../../../Src/GraphicsEngineVulkan/scene/ObjMaterial.hpp"
-#include "../../../Src/GraphicsEngineVulkan/scene/Vertex.hpp"
-#include "../../../Src/GraphicsEngineVulkan/ObjectDescription.hpp"
+#include "raycommon.glsl"
+#include "host_device_shared_vars.hpp"
+#include "SceneUBO.hpp"
+#include "scene/ObjMaterial.hpp"
+#include "scene/Vertex.hpp"
+#include "ObjectDescription.hpp"
 
 layout (location = 0) in vec2 texture_coordinates;
 layout (location = 1) in vec3 shading_normal;

@@ -9,6 +9,18 @@ layout(location = 1) in vec3 in_normal;
 layout(location = 2) in vec3 in_color;
 layout(location = 3) in vec2 in_tex_coord;
 
+#ifdef KAT_VULKAN
+layout(location = 0) out vec2	tex_coords;
+layout(location = 1) out vec3	frag_pos;
+layout(location = 2) out vec3	normal;
+
+layout(push_constant) uniform PushConstants {
+	mat4 projection;                
+	mat4 view;                                                            
+	mat4 model;
+	mat4 normal_model;
+};
+#else
 out vec2	tex_coords;
 out vec3	frag_pos;
 out vec3	normal;
@@ -18,6 +30,7 @@ uniform mat4 projection;
 uniform mat4 view;                                                            
 uniform mat4 model;
 uniform mat4 normal_model;
+#endif
 
 void main() {
 	

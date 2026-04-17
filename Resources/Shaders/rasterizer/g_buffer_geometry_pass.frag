@@ -11,19 +11,31 @@ layout(location = 1) out vec3   g_normal;
 layout(location = 2) out vec3   g_albedo;
 layout(location = 3) out vec3   g_material_id;
 
+#ifdef KAT_VULKAN
+layout(location = 0) in vec2     tex_coords;
+layout(location = 1) in vec3     frag_pos;
+layout(location = 2) in vec3     normal;
+
+layout(binding = 1) uniform MaterialBlock {
+    Material materials[MAX_MATERIALS];
+};
+
+layout(binding = 2) uniform sampler2D model_textures[MAX_TEXTURE_COUNT];
+#else
 in vec2     tex_coords;
 in vec3     frag_pos;
 in vec3     normal;
-
-layout(std430, binding = STORAGE_BUFFER_MATERIAL_ID_BINDING) buffer materialIndexPerPrimitive
-{
-    vec4 materialIndex_SSBO[];
-};
 
 uniform Material materials[MAX_MATERIALS];
 
 //all textures from the current model
 uniform sampler2D model_textures[MAX_TEXTURE_COUNT];
+#endif
+
+layout(std430, binding = STORAGE_BUFFER_MATERIAL_ID_BINDING) buffer materialIndexPerPrimitive
+{
+    vec4 materialIndex_SSBO[];
+};
 
 void main() {
     

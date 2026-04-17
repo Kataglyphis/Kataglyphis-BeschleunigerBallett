@@ -97,9 +97,6 @@ add_subdirectory(SPDLOG)
 
 add_subdirectory(NLOHMANN_JSON)
 
-add_library(glad INTERFACE)
-target_include_directories(glad SYSTEM INTERFACE GLAD/include)
-
 # https://stackoverflow.com/questions/49591804/clang-tidy-cmake-exclude-file-from-check/49591908#49591908
 # with this trick IMGUI will be excluded from time consuming static code analysis
 # we do not want to analyze imgui ...
@@ -110,22 +107,12 @@ target_link_libraries(
   IMGUI
   PRIVATE ${CMAKE_DL_LIBS}
           Vulkan::Vulkan
-          ${OPENGL_LIBRARIES}
           glfw
           imgui)
 
-target_include_directories(IMGUI PRIVATE ${Vulkan_INCLUDE_DIRS} ${OPENGL_INCLUDE_DIRS})
+target_include_directories(IMGUI PRIVATE ${Vulkan_INCLUDE_DIRS})
 
 set_target_properties(IMGUI PROPERTIES CXX_CLANG_TIDY "" CXX_CPPCHECK "")
-
-# GLAD LIB
-add_library(GLAD OBJECT ${GLAD_FILTER})
-
-target_link_libraries(GLAD PRIVATE ${OPENGL_LIBRARIES})
-
-target_include_directories(GLAD PRIVATE GLAD/include ${OPENGL_INCLUDE_DIRS})
-
-set_target_properties(GLAD PROPERTIES CXX_CLANG_TIDY "" CXX_CPPCHECK "")
 
 if(RUST_FEATURES)
   if(WIN32)

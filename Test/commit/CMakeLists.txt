@@ -7,4 +7,3 @@ if(NOT
 endif()
 
 add_subdirectory(VulkanEngine)
-add_subdirectory(OpenGLEngine)

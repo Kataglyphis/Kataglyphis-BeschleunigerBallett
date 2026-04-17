@@ -3,9 +3,15 @@
 layout (triangles) in;
 layout (triangle_strip, max_vertices=18) out;
 
+#ifdef KAT_VULKAN
+layout(push_constant) uniform PushConstants {
+	mat4 light_matrices[6];
+};
+layout(location = 0) out vec4 frag_pos;
+#else
 uniform mat4 light_matrices[6];
-
 out vec4 frag_pos;
+#endif
 
 void main() {
 

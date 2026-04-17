@@ -4,15 +4,15 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
-#include "../common/raycommon.glsl"
-#include "../hostDevice/host_device_shared_vars.hpp"
-#include "../../../Src/GraphicsEngineVulkan/renderer/SceneUBO.hpp"
+#include "raycommon.glsl"
+#include "host_device_shared_vars.hpp"
+#include "SceneUBO.hpp"
 
-#include "../rasterizer/unreal4.glsl"
-#include "../rasterizer/disney.glsl"
-#include "../rasterizer/pbrBook.glsl"
-#include "../rasterizer/phong.glsl"
-#include "../rasterizer/frostbite.glsl"
+#include "unreal4.glsl"
+#include "disney.glsl"
+#include "pbrBook.glsl"
+#include "phong.glsl"
+#include "frostbite.glsl"
 
 layout(location = 0) in vec2 inUV;
 
