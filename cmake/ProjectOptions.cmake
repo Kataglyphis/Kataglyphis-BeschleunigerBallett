@@ -8,7 +8,9 @@ macro(myproject_supports_sanitizers)
   endif()
 
   if((CMAKE_CXX_COMPILER_ID MATCHES ".*Clang.*" OR CMAKE_CXX_COMPILER_ID MATCHES ".*GNU.*") AND NOT WIN32)
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15.0 AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16.0)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+       AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 15.0
+       AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16.0)
       message(WARNING "Disabling UBSan for GCC 15 due to compiler ICE with C++ modules.")
       set(SUPPORTS_UBSAN OFF)
     else()
@@ -57,7 +59,7 @@ macro(myproject_default_debug_sanitizers)
 endmacro()
 
 macro(myproject_setup_options)
-option(myproject_ENABLE_HARDENING "Enable hardening" ON)
+  option(myproject_ENABLE_HARDENING "Enable hardening" ON)
   option(myproject_ENABLE_COVERAGE "Enable coverage reporting" ON)
   option(myproject_ENABLE_GPROF "Enable profiling with gprof (adds -pg flags)" ON)
   option(myproject_ENABLE_GLOBAL_HARDENING "Enable global hardening" OFF)
@@ -188,10 +190,26 @@ macro(myproject_global_options)
   # set build type specific flags
   if(MSVC AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
     # Remove /RTC1 as it's incompatible with ASan
-    string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
-    string(REPLACE "-RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
-    string(REPLACE "/RTC1" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
-    string(REPLACE "-RTC1" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
+    string(
+      REPLACE "/RTC1"
+              ""
+              CMAKE_CXX_FLAGS_DEBUG
+              "${CMAKE_CXX_FLAGS_DEBUG}")
+    string(
+      REPLACE "-RTC1"
+              ""
+              CMAKE_CXX_FLAGS_DEBUG
+              "${CMAKE_CXX_FLAGS_DEBUG}")
+    string(
+      REPLACE "/RTC1"
+              ""
+              CMAKE_C_FLAGS_DEBUG
+              "${CMAKE_C_FLAGS_DEBUG}")
+    string(
+      REPLACE "-RTC1"
+              ""
+              CMAKE_C_FLAGS_DEBUG
+              "${CMAKE_C_FLAGS_DEBUG}")
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /DEBUG /Od /std:c++23preview")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /std:c++23preview")
     set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} /O2 /std:c++23preview")
@@ -208,10 +226,26 @@ macro(myproject_global_options)
         "-fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-error=character-conversion -Wno-unknown-warning-option -Wno-error=unknown-warning-option"
     )
     # Remove /RTC1 as it's incompatible with ASan in clang-cl
-    string(REPLACE "/RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
-    string(REPLACE "-RTC1" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
-    string(REPLACE "/RTC1" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
-    string(REPLACE "-RTC1" "" CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
+    string(
+      REPLACE "/RTC1"
+              ""
+              CMAKE_CXX_FLAGS_DEBUG
+              "${CMAKE_CXX_FLAGS_DEBUG}")
+    string(
+      REPLACE "-RTC1"
+              ""
+              CMAKE_CXX_FLAGS_DEBUG
+              "${CMAKE_CXX_FLAGS_DEBUG}")
+    string(
+      REPLACE "/RTC1"
+              ""
+              CMAKE_C_FLAGS_DEBUG
+              "${CMAKE_C_FLAGS_DEBUG}")
+    string(
+      REPLACE "-RTC1"
+              ""
+              CMAKE_C_FLAGS_DEBUG
+              "${CMAKE_C_FLAGS_DEBUG}")
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od ${_CLANG_CL_SAFE_WARNINGS}")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 -DNDEBUG ${_CLANG_CL_SAFE_WARNINGS}")
     set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} /O2 -DNDEBUG ${_CLANG_CL_SAFE_WARNINGS}")
@@ -300,7 +334,7 @@ macro(myproject_local_options)
     else()
       message(MESSAGE "libprofiler not found, falling back to gprof (-pg)")
       target_compile_options(myproject_options INTERFACE -pg)
-target_link_libraries(myproject_options INTERFACE -pg)
+      target_link_libraries(myproject_options INTERFACE -pg)
     endif()
   endif()
 

@@ -4,8 +4,7 @@
 # ---- GUI FILTER  --- BEGIN
 set(EXTERNAL_LIB_GUI_SRC_DIR ${EXTERNAL_LIB_SRC_DIR}IMGUI/)
 set(_KATAGLYPHIS_IMGUI_BACKENDS
-    ${EXTERNAL_LIB_GUI_SRC_DIR}backends/imgui_impl_glfw.h
-    ${EXTERNAL_LIB_GUI_SRC_DIR}backends/imgui_impl_glfw.cpp
+    ${EXTERNAL_LIB_GUI_SRC_DIR}backends/imgui_impl_glfw.h ${EXTERNAL_LIB_GUI_SRC_DIR}backends/imgui_impl_glfw.cpp
     ${KATAGLYPHIS_IMGUI_EXTRA_BACKENDS})
 
 set(IMGUI_FILTER
@@ -24,5 +23,3 @@ set(IMGUI_FILTER
     ${_KATAGLYPHIS_IMGUI_BACKENDS})
 unset(_KATAGLYPHIS_IMGUI_BACKENDS)
 # ---- GUI FILTER  --- END
-
-

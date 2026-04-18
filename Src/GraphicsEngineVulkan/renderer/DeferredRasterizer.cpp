@@ -369,6 +369,21 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
     std::array<vk::PipelineShaderStageCreateInfo, 2> lightStages = { lightVertStage, lightFragStage };
 
     vk::PipelineVertexInputStateCreateInfo emptyVertexInputInfo{};
+    vk::VertexInputBindingDescription dummyBinding{};
+    dummyBinding.binding = 0;
+    dummyBinding.stride = 16;
+    dummyBinding.inputRate = vk::VertexInputRate::eVertex;
+
+    vk::VertexInputAttributeDescription dummyAttribute{};
+    dummyAttribute.binding = 0;
+    dummyAttribute.location = 0;
+    dummyAttribute.format = vk::Format::eR32G32B32A32Sfloat;
+    dummyAttribute.offset = 0;
+
+    emptyVertexInputInfo.vertexBindingDescriptionCount = 1;
+    emptyVertexInputInfo.pVertexBindingDescriptions = &dummyBinding;
+    emptyVertexInputInfo.vertexAttributeDescriptionCount = 1;
+    emptyVertexInputInfo.pVertexAttributeDescriptions = &dummyAttribute;
 
     rasterizer.cullMode = vk::CullModeFlagBits::eNone;
     depthStencil.depthTestEnable = VK_FALSE;
@@ -386,15 +401,22 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
 
     lightingPipelineLayout = device->getLogicalDevice().createPipelineLayout(lightPipelineLayoutInfo).value;
 
-    pipelineInfo.stageCount = lightStages.size();
-    pipelineInfo.pStages = lightStages.data();
-    pipelineInfo.pVertexInputState = &emptyVertexInputInfo;
-    pipelineInfo.pDepthStencilState = &depthStencil;
-    pipelineInfo.pColorBlendState = &lightColorBlending;
-    pipelineInfo.layout = lightingPipelineLayout;
-    pipelineInfo.subpass = 1;
+    vk::GraphicsPipelineCreateInfo lightingPipelineInfo{};
+    lightingPipelineInfo.stageCount = lightStages.size();
+    lightingPipelineInfo.pStages = lightStages.data();
+    lightingPipelineInfo.pVertexInputState = &emptyVertexInputInfo;
+    lightingPipelineInfo.pInputAssemblyState = &inputAssembly;
+    lightingPipelineInfo.pViewportState = &viewportState;
+    lightingPipelineInfo.pRasterizationState = &rasterizer;
+    lightingPipelineInfo.pMultisampleState = &multisampling;
+    lightingPipelineInfo.pDepthStencilState = &depthStencil;
+    lightingPipelineInfo.pColorBlendState = &lightColorBlending;
+    lightingPipelineInfo.pDynamicState = &dynamicState;
+    lightingPipelineInfo.layout = lightingPipelineLayout;
+    lightingPipelineInfo.renderPass = renderPass;
+    lightingPipelineInfo.subpass = 1;
 
-    lightingPipeline = device->getLogicalDevice().createGraphicsPipeline(nullptr, pipelineInfo).value;
+    lightingPipeline = device->getLogicalDevice().createGraphicsPipeline(nullptr, lightingPipelineInfo).value;
 
     device->getLogicalDevice().destroyShaderModule(lightVertModule);
     device->getLogicalDevice().destroyShaderModule(lightFragModule);

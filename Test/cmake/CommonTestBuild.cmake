@@ -14,8 +14,7 @@ function(kataglyphis_configure_gtest_discovery test_target)
       300
       DISCOVERY_MODE
       PRE_TEST
-      WORKING_DIRECTORY
-      ${CMAKE_SOURCE_DIR})
+      WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
   else()
     message(STATUS "KATAGLYPHIS_ENABLE_GTEST_DISCOVERY is OFF - skipping gtest_discover_tests for ${test_target}.")
   endif()

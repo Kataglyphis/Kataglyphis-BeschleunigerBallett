@@ -276,8 +276,11 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     vk::PhysicalDeviceVulkan12Features available_features12{};
     available_features12.pNext = &available_features13;
 
+    vk::PhysicalDeviceVulkan11Features available_features11{};
+    available_features11.pNext = &available_features12;
+
     vk::PhysicalDeviceFeatures2 available_features2{};
-    available_features2.pNext = &available_features12;
+    available_features2.pNext = &available_features11;
     physical_device.getFeatures2(&available_features2);
 
     // --ENABLE RAY TRACING PIPELINE
@@ -301,7 +304,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     features13.descriptorBindingInlineUniformBlockUpdateAfterBind = false;
     features13.pipelineCreationCacheControl = false;
     features13.privateData = false;
-    features13.shaderDemoteToHelperInvocation = false;
+    features13.shaderDemoteToHelperInvocation = available_features13.shaderDemoteToHelperInvocation;
     features13.shaderTerminateInvocation = false;
     features13.subgroupSizeControl = false;
     features13.computeFullSubgroups = false;
@@ -329,7 +332,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     physical_device.getFeatures2(&availableRayTracingFeatures2);
 
     vk::PhysicalDeviceVulkan12Features features12{};
-    features12.pNext = nullptr;
+    features12.pNext = &features13;
     features12.bufferDeviceAddress = available_features12.bufferDeviceAddress;
     features12.scalarBlockLayout = available_features12.scalarBlockLayout;
     features12.descriptorIndexing = available_features12.descriptorIndexing;
@@ -337,14 +340,18 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     features12.shaderSampledImageArrayNonUniformIndexing =
       available_features12.shaderSampledImageArrayNonUniformIndexing;
 
+    vk::PhysicalDeviceVulkan11Features features11{};
+    features11.pNext = &features12;
+    features11.multiview = available_features11.multiview;
+
     vk::PhysicalDeviceFeatures2 features2{};
     features2.pNext = nullptr;
-    features2.features.samplerAnisotropy = true;
-    features2.features.shaderInt64 = true;
-    features2.features.geometryShader = true;
-    features2.features.fragmentStoresAndAtomics = true;
-    features2.features.logicOp = true;
-    features2.features.robustBufferAccess = available_features2.features.robustBufferAccess;
+    features2.features.samplerAnisotropy = available_features2.features.samplerAnisotropy;
+    features2.features.shaderInt64 = available_features2.features.shaderInt64;
+    features2.features.geometryShader = available_features2.features.geometryShader;
+    features2.features.fragmentStoresAndAtomics = available_features2.features.fragmentStoresAndAtomics;
+    features2.features.logicOp = available_features2.features.logicOp;
+    features2.features.robustBufferAccess = VK_FALSE;
 
     // -- PREPARE FOR HAVING MORE EXTENSION BECAUSE WE NEED RAYTRACING
     // CAPABILITIES
@@ -446,7 +453,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         spdlog::info("robustBufferAccess is not supported on this device.");
     }
 
-    features2.pNext = &features12;
+    features2.pNext = &features11;
 
     // information to create logical device (sometimes called "device")
     vk::DeviceCreateInfo device_create_info{};
@@ -462,9 +469,14 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     device_create_info.pNext = &features2;
 
     // create logical device for the given physical device
-    vk::Result const result = physical_device.createDevice(&device_create_info, nullptr, &logical_device);
-    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create a logical device!");
-    if (result != vk::Result::eSuccess || !logical_device) {
+    VkDevice c_device;
+    VkResult const result = vkCreateDevice(static_cast<VkPhysicalDevice>(physical_device), reinterpret_cast<const VkDeviceCreateInfo*>(&device_create_info), nullptr, &c_device);
+    logical_device = c_device;
+    if (result != VK_SUCCESS) {
+        spdlog::critical("Failed to create logical device. Vulkan Result: {}", static_cast<int>(result));
+    }
+    ASSERT_VULKAN(result, "Failed to create a logical device!");
+    if (result != VK_SUCCESS || !logical_device) {
         spdlog::critical("Unable to continue without a valid Vulkan logical device.");
         std::abort();
     }

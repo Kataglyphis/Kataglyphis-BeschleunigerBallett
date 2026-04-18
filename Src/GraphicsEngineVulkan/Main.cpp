@@ -89,7 +89,7 @@ void initialize_logging()
 
     auto logger = std::make_shared<spdlog::logger>("GraphicsEngineVulkan", sinks.begin(), sinks.end());
     logger->set_level(spdlog::level::trace);
-    logger->flush_on(spdlog::level::warn);
+    logger->flush_on(spdlog::level::trace);
     logger->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%^%l%$] %v");
 
     spdlog::set_default_logger(logger);
@@ -112,5 +112,7 @@ auto main(int argc, char **argv) -> int
     }
 #endif
 
-    return Kataglyphis::App::run();
+    const int result = Kataglyphis::App::run();
+    spdlog::shutdown();
+    return result;
 }

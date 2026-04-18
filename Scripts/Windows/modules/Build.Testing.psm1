@@ -160,11 +160,19 @@ function Invoke-WithRuntimePath {
     $env:PATH = (($normalizedRuntimeDirs -join ';') + ';' + $oldPath)
   }
 
+  $oldAsanOptions = $env:ASAN_OPTIONS
+  $env:ASAN_OPTIONS = "log_path=asan.log:report_globals=1:$oldAsanOptions"
+
   try {
     & $Script
   } finally {
     if ($normalizedRuntimeDirs.Length -gt 0) {
       $env:PATH = $oldPath
+    }
+    if ($null -ne $oldAsanOptions) {
+      $env:ASAN_OPTIONS = $oldAsanOptions
+    } else {
+      Remove-Item Env:\ASAN_OPTIONS -ErrorAction SilentlyContinue
     }
   }
 }

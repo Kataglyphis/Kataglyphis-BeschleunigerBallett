@@ -43,4 +43,17 @@ Write-Host "Starting $ExePath..."
 Write-Host "Working Directory: $WorkDir"
 
 # Use Start-Process so it executes properly without locking up the script but waits for completion
-Start-Process -FilePath $ExePath -WorkingDirectory $WorkDir -Wait -NoNewWindow
+
+# Enable AddressSanitizer logging for the run script
+$OldAsanOptions = $env:ASAN_OPTIONS
+$env:ASAN_OPTIONS = "log_path=asan.log:report_globals=1:$OldAsanOptions"
+
+try {
+    Start-Process -FilePath $ExePath -WorkingDirectory $WorkDir -Wait -NoNewWindow
+} finally {
+    if ($null -ne $OldAsanOptions) {
+        $env:ASAN_OPTIONS = $OldAsanOptions
+    } else {
+        Remove-Item Env:\ASAN_OPTIONS -ErrorAction SilentlyContinue
+    }
+}

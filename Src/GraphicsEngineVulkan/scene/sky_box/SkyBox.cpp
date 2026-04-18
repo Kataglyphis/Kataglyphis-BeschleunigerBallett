@@ -36,8 +36,7 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
     std::stringstream skybox_base_dir;
     std::filesystem::path const cwd = std::filesystem::current_path();
     skybox_base_dir << cwd.string();
-    skybox_base_dir << RELATIVE_RESOURCE_PATH;
-    skybox_base_dir << "Textures/Skybox/DOOM2016/";
+    skybox_base_dir << "/Resources/Textures/Skybox/DOOM2016/";
 
     std::array<std::string, 6> skybox_textures = {
         "DOOM16RT.png", "DOOM16LF.png", "DOOM16UP.png", "DOOM16DN.png", "DOOM16FT.png", "DOOM16BK.png"

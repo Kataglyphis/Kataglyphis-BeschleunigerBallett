@@ -99,9 +99,13 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     createSynchronization();
 
     createSharedRenderDescriptorSetLayouts();
+    create_gbuffer_descriptor_layout();
+
     std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_rasterizer = { sharedRenderDescriptorSetLayout };
+    std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_deferred = { sharedRenderDescriptorSetLayout, gbuffer_descriptor_set_layout };
+    
     rasterizer.init(device.get(), &vulkanSwapChain, descriptor_set_layouts_rasterizer, graphics_command_pool);
-    deferredRasterizer.init(device.get(), &vulkanSwapChain, descriptor_set_layouts_rasterizer, graphics_command_pool);
+    deferredRasterizer.init(device.get(), &vulkanSwapChain, descriptor_set_layouts_deferred, graphics_command_pool);
 
     // Initialize atmospheric effects and shadows
     skyBox.init(device.get(), graphics_command_pool);
@@ -110,7 +114,6 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     pointShadowMap.init(device.get(), 1024, 1024);
 
     create_post_descriptor_layout();
-    create_gbuffer_descriptor_layout();
     std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_post = { post_descriptor_set_layout };
     postStage.init(device.get(), &vulkanSwapChain, descriptor_set_layouts_post);
     createDescriptorPoolSharedRenderStages();

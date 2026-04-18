@@ -37,11 +37,7 @@ target_sources(
 
 # Link against VulkanEngineCore static library
 # This brings in all necessary libraries, includes, and module BMIs
-target_link_libraries(
-  ${COMPILE_TEST_SUITE}
-  PRIVATE VulkanEngineCore
-          gtest_main
-          gtest)
+target_link_libraries(${COMPILE_TEST_SUITE} PRIVATE VulkanEngineCore gtest_main gtest)
 
 # Use the project root as working directory so relative paths match the main executable
 kataglyphis_configure_gtest_discovery(${COMPILE_TEST_SUITE})

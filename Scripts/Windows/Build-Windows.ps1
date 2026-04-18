@@ -96,6 +96,9 @@ if ($buildPathClangTsan -eq $buildPathClang) {
 
 $context = New-BuildContext -Workspace $workspacePath -LogDir $logDir -StopOnError
 
+# Ensure no running instance of the application or crash handler is blocking the build output
+Stop-Process -Name "GraphicsEngine", "WerFault" -Force -ErrorAction SilentlyContinue
+
 try {
   Open-BuildLog -Context $context
   # If WebDAV parameters are supplied via environment variables, attempt an

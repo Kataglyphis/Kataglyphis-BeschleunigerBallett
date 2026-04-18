@@ -3,7 +3,9 @@ option(ENABLE_RUST_CXXBRIDGE "Enable generation of the CXX bridge" ON)
 
 # Force the CXX bridge to be enabled unconditionally (including Emscripten builds).
 # This ensures the cxx bridge headers are always generated.
-set(ENABLE_RUST_CXXBRIDGE ON CACHE BOOL "Enable generation of the CXX bridge" FORCE)
+set(ENABLE_RUST_CXXBRIDGE
+    ON
+    CACHE BOOL "Enable generation of the CXX bridge" FORCE)
 
 if(ENABLE_RUST)
   corrosion_import_crate(
@@ -13,8 +15,6 @@ if(ENABLE_RUST)
     staticlib
     CRATES
     kataglyphis_rustprojecttemplate)
-
-
 
   if(WIN32)
     target_link_libraries(

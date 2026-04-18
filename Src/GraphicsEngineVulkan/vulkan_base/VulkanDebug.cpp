@@ -6,6 +6,7 @@ module;
 #include <string>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_structs.hpp>
+#include "spdlog/spdlog.h"
 
 #include "common/Utilities.hpp"
 
@@ -50,11 +51,14 @@ VKAPI_ATTR static VkBool32 VKAPI_CALL debugUtilsMessengerCallback(
     }
 #else
     if (messageSeverity >= vk::DebugUtilsMessageSeverityFlagBitsEXT::eError) {
-        std::cerr << debugMessage.str() << "\n";
+        spdlog::error(debugMessage.str());
+    } else if (messageSeverity >= vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning) {
+        spdlog::warn(debugMessage.str());
+    } else if (messageSeverity >= vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo) {
+        spdlog::info(debugMessage.str());
     } else {
-        std::cout << debugMessage.str() << "\n";
+        spdlog::debug(debugMessage.str());
     }
-    fflush(stdout);
 #endif
 
     // The return value of this callback controls whether the Vulkan call that
