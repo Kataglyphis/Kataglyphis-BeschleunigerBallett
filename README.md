@@ -253,6 +253,21 @@ Set the secret in your CI (recommended) or export it in your environment before 
     env:
       MSIX_CERT_PASSWORD: ${{ secrets.MSIX_CERT_PASSWORD }}
 
+### Running the program after a release build
+
+To run the program after a release build on Windows and log its output, use the following PowerShell command:
+
+```powershell
+& ./Scripts/Windows/run_clangcl_release.ps1 2>&1 | Tee-Object -FilePath logs/release/run.log
+```
+
+### Running the program after a debug build
+
+To run the program after a debug build on Windows and log its output, use the following PowerShell command:
+
+```powershell
+& ./Scripts/Windows/run_clangcl_debug.ps1 2>&1 | Tee-Object -FilePath logs/debug/run.log
+```
 
 # Shaders
 I provide two ways for compiling shaders with. Hence if you want to add new

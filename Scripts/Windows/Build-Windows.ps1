@@ -6,6 +6,9 @@ param(
   [switch]$SkipPerfTests,
   [switch]$SkipMsix,
   [switch]$SkipBuild,
+  [switch]$VerboseBuild,
+  [int]$ParallelJobs = 0,
+  [switch]$DisableSccache,
   [switch]$DisableIntegrationTestsMsvcDebug,
   # WebDAV: prefer explicit script parameters (these match CLI flags), fall back to env vars
   [string]$WebDavHostname,
@@ -122,6 +125,10 @@ try {
   }
   Write-BuildLog -Context $context -Message "Workspace: $workspacePath"
   Write-BuildLog -Context $context -Message "Configurations=$(([string[]]$selectedConfigurations -join ', '))"
+  Write-BuildLog -Context $context -Message "DEBUG: ParallelJobs=$ParallelJobs (0=all cores)"
+  Write-BuildLog -Context $context -Message "DEBUG: VerboseBuild=$VerboseBuild"
+  Write-BuildLog -Context $context -Message "DEBUG: DisableSccache=$DisableSccache"
+  Write-BuildLog -Context $context -Message "DEBUG: System ProcessorCount=$([Environment]::ProcessorCount)"
 
   Invoke-BuildStep -Context $context -StepName 'Tool versions' -Critical -Script {
     Invoke-ToolchainChecks -Context $context -ToolArguments @{
@@ -143,7 +150,7 @@ try {
   if (Test-ConfigurationSelected -Name 'msvc-debug') {
     # Make MSVC debug configure/build optional so failures here don't fail the whole orchestration
     Invoke-BuildOptional -Context $context -Name "Configure/Build: $presetMsvcDebug (MSVC Debug - optional)" -Script {
-      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathMsvc -Preset $presetMsvcDebug -Configuration 'Debug' -CleanBuildRoot
+      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathMsvc -Preset $presetMsvcDebug -Configuration 'Debug' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
     }
 
     if (-not $SkipTests) {
@@ -176,13 +183,13 @@ try {
       } else {
         Write-BuildLogWarning -Context $context -Message "Shader compile script not found: $compileShadersScript"
       }
-      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathMsvc -Preset $presetMsvcRelease -Configuration 'Release' -CleanBuildRoot
+      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathMsvc -Preset $presetMsvcRelease -Configuration 'Release' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
     }
   }
 
   if (Test-ConfigurationSelected -Name 'clang-debug') {
     Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangDebug" -Critical -Script {
-      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathClang -Preset $presetClangDebug -Configuration 'Debug' -CleanBuildRoot
+      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathClang -Preset $presetClangDebug -Configuration 'Debug' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
     } | Out-Null
 
     if (-not $SkipTidy) {
@@ -211,7 +218,7 @@ try {
         throw 'clang-cl ThreadSanitizer is not supported for target x86_64-pc-windows-msvc in this toolchain. Skipping optional TSan build/test.'
       }
 
-      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathClangTsan -Preset $presetClangDebugTsan -Configuration 'Debug' -CleanBuildRoot
+      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathClangTsan -Preset $presetClangDebugTsan -Configuration 'Debug' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
 
       if (-not $SkipTests) {
         Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathClangTsan -Configuration 'Debug' -RuntimeFlavor 'Clang'
@@ -221,7 +228,7 @@ try {
 
   if (Test-ConfigurationSelected -Name 'profile') {
     Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangProfile" -Critical -Script {
-      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathProfile -Preset $presetClangProfile -Configuration 'RelWithDebInfo' -CleanBuildRoot
+      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathProfile -Preset $presetClangProfile -Configuration 'RelWithDebInfo' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
     } | Out-Null
 
     if (-not $SkipPerfTests) {
@@ -265,16 +272,25 @@ try {
         } else {
           Write-BuildLogWarning -Context $context -Message "Shader compile script not found: $compileShadersScript"
         }
-        Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathRelease -Preset $presetClangRelease -Configuration 'Release' -CleanBuildRoot
+        Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathRelease -Preset $presetClangRelease -Configuration 'Release' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
       }
 
       # Always attempt packaging when clang-release is selected; packaging
       # should not be skipped by -SkipBuild.
-      Invoke-BuildExternal -Context $context -File 'cmake' -Parameters @(
+      $packageArgs = @(
         '--build', $buildPathRelease,
         '--target', 'package',
         '--config', 'Release'
-      ) | Out-Null
+      )
+      if ($ParallelJobs -gt 0) {
+        $packageArgs += @('--parallel', $ParallelJobs.ToString())
+        Write-BuildLog -Context $context -Message "DEBUG: Package build using --parallel $ParallelJobs"
+      } else {
+        $packageArgs += @('--parallel')
+        Write-BuildLog -Context $context -Message "DEBUG: Package build using --parallel (all cores)"
+      }
+      Write-BuildLog -Context $context -Message "DEBUG: Package command: cmake $($packageArgs -join ' ')"
+      Invoke-BuildExternal -Context $context -File 'cmake' -Parameters $packageArgs | Out-Null
     } | Out-Null
   }
 
