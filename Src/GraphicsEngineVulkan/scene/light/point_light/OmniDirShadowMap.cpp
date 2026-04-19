@@ -16,7 +16,7 @@ namespace Kataglyphis {
 
 static std::unordered_map<OmniDirShadowMap*, vk::ImageView> g_layerViewMap;
 
-void OmniDirShadowMap::init(VulkanDevice *in_device, uint32_t width, uint32_t height)
+void OmniDirShadowMap::init(std::shared_ptr<VulkanDevice>in_device, uint32_t width, uint32_t height)
 {
     this->device = in_device;
     this->shadowWidth = width;
@@ -25,7 +25,7 @@ void OmniDirShadowMap::init(VulkanDevice *in_device, uint32_t width, uint32_t he
     vk::Format depthFormat = Kataglyphis::choose_supported_format(device->getPhysicalDevice(), { vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint }, vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eDepthStencilAttachment);
 
     // Create Cube Map
-    shadowMapCube = new Texture();
+    shadowMapCube = std::make_unique<Texture>();
     shadowMapCube->createImage(device, shadowWidth, shadowHeight, 1, depthFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, 6, vk::ImageCreateFlagBits::eCubeCompatible);
 
     shadowMapCube->createImageView(device, depthFormat, vk::ImageAspectFlagBits::eDepth, 1, vk::ImageViewType::eCube, 6);
@@ -115,7 +115,7 @@ void OmniDirShadowMap::cleanUp()
         device->getLogicalDevice().destroyRenderPass(renderPass);
         if (shadowMapCube) {
             shadowMapCube->cleanUp();
-            delete shadowMapCube;
+            shadowMapCube.reset();
         }
     }
 }

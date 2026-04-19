@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 
 #include <array>
 #include <cstddef>
@@ -24,7 +25,7 @@ using namespace Kataglyphis::VulkanRendererInternals;
 
 DeferredRasterizer::DeferredRasterizer() = default;
 
-void DeferredRasterizer::init(VulkanDevice *in_device,
+void DeferredRasterizer::init(std::shared_ptr<VulkanDevice>in_device,
   VulkanSwapChain *swap_chain,
   const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts,
   vk::CommandPool &commandPool)

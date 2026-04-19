@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 
 #include <cstdint>
 #include <cstring>
@@ -28,19 +29,23 @@ void Mesh::cleanUp()
     materialsBuffer.cleanUp();
 }
 
-Mesh::Mesh(VulkanDevice *device,
+Mesh::Mesh(std::shared_ptr<VulkanDevice>device,
   vk::Queue transfer_queue,
   vk::CommandPool transfer_command_pool,
-  std::vector<Vertex> &vertices,
-  std::vector<uint32_t> &indices,
-  std::vector<unsigned int> &materialIndex,
-  std::vector<ObjMaterial> &materials)
+  const std::vector<Vertex> &vertices,
+  const std::vector<uint32_t> &indices,
+  const std::vector<unsigned int> &materialIndex,
+  const std::vector<ObjMaterial> &materials)
   : vertex_count(static_cast<uint32_t>(vertices.size())), index_count(static_cast<uint32_t>(indices.size())),
     device(device)
 {
     glm::mat4 transpose_transform = glm::transpose(glm::mat4(1.0F));
     vk::TransformMatrixKHR out_matrix;
-    std::memcpy(&out_matrix, &transpose_transform, sizeof(vk::TransformMatrixKHR));
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            out_matrix.matrix[i][j] = transpose_transform[i][j];
+        }
+    }
 
 
     object_description = ObjectDescription{};
@@ -77,7 +82,7 @@ Mesh::~Mesh() = default;
 
 void Mesh::createVertexBuffer(vk::Queue /*transfer_queue*/,
   vk::CommandPool transfer_command_pool,
-  std::vector<Vertex> &vertices)
+  const std::vector<Vertex> &vertices)
 {
     vk::BufferUsageFlags usage_flags = {};
     usage_flags |= vk::BufferUsageFlagBits::eTransferDst;
@@ -94,17 +99,13 @@ void Mesh::createVertexBuffer(vk::Queue /*transfer_queue*/,
         memory_allocate_flags |= vk::MemoryAllocateFlagBits::eDeviceAddress;
     }
 
-    if (vertices.empty()) {
-        vertices.push_back(Vertex()); // Avoid allocating 0 size buffer
-    }
-
     vulkanBufferManager.createBufferAndUploadVectorOnDevice(
       device, transfer_command_pool, vertexBuffer, usage_flags, memory_property_flags, vertices, memory_allocate_flags);
 }
 
 void Mesh::createIndexBuffer(vk::Queue /*transfer_queue*/,
   vk::CommandPool transfer_command_pool,
-  std::vector<uint32_t> &indices)
+  const std::vector<uint32_t> &indices)
 {
     vk::BufferUsageFlags usage_flags = {};
     usage_flags |= vk::BufferUsageFlagBits::eTransferDst;
@@ -119,10 +120,6 @@ void Mesh::createIndexBuffer(vk::Queue /*transfer_queue*/,
             usage_flags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
         }
         memory_allocate_flags |= vk::MemoryAllocateFlagBits::eDeviceAddress;
-    }
-
-    if (indices.empty()) {
-        indices.push_back(0); // Avoid allocating 0 size buffer
     }
 
     vulkanBufferManager.createBufferAndUploadVectorOnDevice(
@@ -131,7 +128,7 @@ void Mesh::createIndexBuffer(vk::Queue /*transfer_queue*/,
 
 void Mesh::createMaterialIDBuffer(vk::Queue /*transfer_queue*/,
   vk::CommandPool transfer_command_pool,
-  std::vector<unsigned int> &materialIndex)
+  const std::vector<unsigned int> &materialIndex)
 {
     vk::BufferUsageFlags usage_flags = {};
     usage_flags |= vk::BufferUsageFlagBits::eTransferDst;
@@ -146,10 +143,6 @@ void Mesh::createMaterialIDBuffer(vk::Queue /*transfer_queue*/,
             usage_flags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
         }
         memory_allocate_flags |= vk::MemoryAllocateFlagBits::eDeviceAddress;
-    }
-
-    if (materialIndex.empty()) {
-        materialIndex.push_back(0); // Avoid allocating 0 size buffer
     }
 
     vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
@@ -163,7 +156,7 @@ void Mesh::createMaterialIDBuffer(vk::Queue /*transfer_queue*/,
 
 void Mesh::createMaterialBuffer(vk::Queue /*transfer_queue*/,
   vk::CommandPool transfer_command_pool,
-  std::vector<ObjMaterial> &materials)
+  const std::vector<ObjMaterial> &materials)
 {
     vk::BufferUsageFlags usage_flags = {};
     usage_flags |= vk::BufferUsageFlagBits::eTransferDst;
@@ -181,9 +174,6 @@ void Mesh::createMaterialBuffer(vk::Queue /*transfer_queue*/,
     }
 
     auto &__vbm = vulkanBufferManager;
-    if (materials.empty()) {
-        materials.push_back(ObjMaterial{});
-    }
     __vbm.createBufferAndUploadVectorOnDevice(device,
       transfer_command_pool,
       materialsBuffer,

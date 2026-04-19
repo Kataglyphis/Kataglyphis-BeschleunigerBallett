@@ -1,16 +1,37 @@
 <#
 .SYNOPSIS
-Starts the compiled GraphicsEngine executable inside the debug directory and sets necessary environment variables.
+Starts the compiled executable inside the debug directory and sets necessary environment variables.
 #>
+
+param (
+    [string]$ExeName = "GraphicsEngine.exe",
+    [Parameter(ValueFromRemainingArguments=$true)]
+    [string[]]$ExeArgs
+)
 
 $ErrorActionPreference = "Stop"
 
 # Locate the built executable 
-$ExeName = "GraphicsEngine.exe"
 
 $ProjectRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
 
-# Add project bin directories to PATH (for ASAN DLLs, Vulkan DLLs, etc.)
+# Setup Vulkan Environment
+$VulkanSdkRoot = (Get-ChildItem -Path "C:\VulkanSDK" -Directory | Sort-Object Name -Descending | Select-Object -First 1).FullName
+
+if ($null -ne $VulkanSdkRoot -and (Test-Path $VulkanSdkRoot)) {
+    Write-Host "Vulkan SDK found at $VulkanSdkRoot. Setting up environment..."
+    $env:VULKAN_SDK = $VulkanSdkRoot
+    
+    $VulkanBin = Join-Path $VulkanSdkRoot "Bin"
+    $VulkanLib = Join-Path $VulkanSdkRoot "Lib"
+    
+    if ($env:PATH -notmatch [regex]::Escape($VulkanBin)) {
+        $env:PATH = "$VulkanBin;$VulkanLib;$env:PATH"
+    }
+    $env:VK_LAYER_PATH = $VulkanBin
+}
+
+# Add project bin directories to PATH (for ASAN DLLs, etc.)
 $env:PATH = "$(Join-Path $ProjectRoot 'build-clangcl-debug\bin');$(Join-Path $ProjectRoot 'bin');$env:PATH"
 
 # Search in known build directories created by CMake presets
@@ -35,22 +56,39 @@ if (-not (Test-Path $ExePath)) {
 
 $ExeDir = Split-Path $ExePath
 
-# 3. Start the application
-# We use the project root as the working directory so it can discover `images/` and `Resources/` 
-$WorkDir = $ProjectRoot
+    # 3. Start the application
+    # We use the project root as the working directory so it can discover `images/` and `Resources/` 
+    $WorkDir = $ProjectRoot
+    Set-Location -Path $WorkDir
+    
+    Write-Host "Starting $ExePath..."
+    Write-Host "Working Directory: $WorkDir"
 
-Write-Host "Starting $ExePath..."
-Write-Host "Working Directory: $WorkDir"
+    # Force Vulkan to use the Proprietary AMD Driver instead of the buggy amdvlk open-source driver
+    $ProprietaryDriver = "C:\WINDOWS\System32\DriverStore\FileRepository\u0198974.inf_amd64_dcac9659486b668a\B025819\amd-vulkan64.json"
+    if (Test-Path $ProprietaryDriver) {
+        $env:VK_ICD_FILENAMES = $ProprietaryDriver
+    }
+    
+    # Also disable Vulkan validation layers if they cause intercepts
+    $env:VK_LAYER_PATH = ""
+    $env:VK_INSTANCE_LAYERS = ""
 
-# Use Start-Process so it executes properly without locking up the script but waits for completion
+    # Use minimal AddressSanitizer options to prevent interfering with AMD's internal allocations
+    $OldAsanOptions = $env:ASAN_OPTIONS
+    $env:ASAN_OPTIONS = "report_globals=0:windows_hook_rtl_allocators=false:$OldAsanOptions"
 
-# Enable AddressSanitizer logging for the run script
-$OldAsanOptions = $env:ASAN_OPTIONS
-$env:ASAN_OPTIONS = "log_path=asan.log:report_globals=1:$OldAsanOptions"
-
-try {
-    Start-Process -FilePath $ExePath -WorkingDirectory $WorkDir -Wait -NoNewWindow
-} finally {
+    try {
+        if ($ExeArgs) {
+            & $ExePath $ExeArgs
+        } else {
+            & $ExePath
+        }
+        $ExitCode = $LASTEXITCODE
+        if ($ExitCode -ne 0) { 
+            Write-Warning "Process failed with exit code $ExitCode" 
+        }
+    } finally {
     if ($null -ne $OldAsanOptions) {
         $env:ASAN_OPTIONS = $OldAsanOptions
     } else {

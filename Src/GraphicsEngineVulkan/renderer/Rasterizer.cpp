@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 
 #include <array>
 #include <cstddef>
@@ -32,7 +33,7 @@ auto hasStencilComponent(vk::Format format) -> bool
 
 Kataglyphis::VulkanRendererInternals::Rasterizer::Rasterizer() = default;
 
-void Kataglyphis::VulkanRendererInternals::Rasterizer::init(VulkanDevice *in_device,
+void Kataglyphis::VulkanRendererInternals::Rasterizer::init(std::shared_ptr<VulkanDevice>in_device,
   VulkanSwapChain *swap_chain,
   const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts,
   vk::CommandPool &commandPool)

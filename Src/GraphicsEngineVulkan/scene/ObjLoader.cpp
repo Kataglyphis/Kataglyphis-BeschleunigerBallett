@@ -30,12 +30,19 @@ import kataglyphis.vulkan.file;
 
 using namespace Kataglyphis;
 
-ObjLoader::ObjLoader(VulkanDevice *device, vk::Queue transfer_queue, vk::CommandPool command_pool)
+ObjLoader::ObjLoader(std::shared_ptr<VulkanDevice>device, vk::Queue transfer_queue, vk::CommandPool command_pool)
   : device(device), transfer_queue(transfer_queue), command_pool(command_pool)
 {}
 
 auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model>
 {
+    // clear prior state if loadModel is called multiple times on the same instance
+    textures.clear();
+    materials.clear();
+    vertices.clear();
+    indices.clear();
+    materialIndex.clear();
+
     // the model we want to load
     std::shared_ptr<Model> new_model = std::make_shared<Model>(device);
 

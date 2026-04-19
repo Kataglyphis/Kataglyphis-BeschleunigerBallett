@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 #include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.image;
@@ -16,7 +17,7 @@ class VulkanImage
     VulkanImage(VulkanImage &&other) noexcept;
     VulkanImage &operator=(VulkanImage &&other) noexcept;
 
-    void create(VulkanDevice *in_device,
+    void create(std::shared_ptr<VulkanDevice>in_device,
       uint32_t width,
       uint32_t height,
       uint32_t mip_levels,
@@ -51,7 +52,7 @@ class VulkanImage
     ~VulkanImage();
 
   private:
-    VulkanDevice *device{ nullptr };
+    std::shared_ptr<VulkanDevice>device{ nullptr };
     Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
 
     vk::Image image{};

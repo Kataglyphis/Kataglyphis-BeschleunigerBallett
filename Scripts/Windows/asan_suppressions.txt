@@ -1,0 +1,7 @@
+# AddressSanitizer Suppressions for Windows
+# Ignore memory access violations and intercepts inside the AMD Vulkan driver.
+
+interceptor_via_lib:amdvlk64.dll
+interceptor_via_lib:amdvlk32.dll
+interceptor_via_lib:VkLayer_khronos_validation.dll
+interceptor_via_lib:ntdll.dll

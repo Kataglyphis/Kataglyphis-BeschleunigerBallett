@@ -16,7 +16,7 @@ class PostStage
   public:
     PostStage();
 
-    void init(VulkanDevice *in_device,
+    void init(std::shared_ptr<VulkanDevice>in_device,
       VulkanSwapChain *vulkanSwapChain,
       const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts);
 
@@ -33,7 +33,7 @@ class PostStage
     ~PostStage();
 
   private:
-    VulkanDevice *device{ nullptr };
+    std::shared_ptr<VulkanDevice>device{ nullptr };
     VulkanSwapChain *vulkanSwapChain{ nullptr };
 
     std::vector<vk::Framebuffer> framebuffers;

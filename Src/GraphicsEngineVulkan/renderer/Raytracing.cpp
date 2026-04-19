@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 
 #include <array>
 #include <cstdint>
@@ -22,7 +23,7 @@ import kataglyphis.vulkan.swapchain;
 
 Kataglyphis::VulkanRendererInternals::Raytracing::Raytracing() = default;
 
-void Kataglyphis::VulkanRendererInternals::Raytracing::init(VulkanDevice *in_device,
+void Kataglyphis::VulkanRendererInternals::Raytracing::init(std::shared_ptr<VulkanDevice>in_device,
   const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts,
   VulkanSwapChain *swapchain)
 {

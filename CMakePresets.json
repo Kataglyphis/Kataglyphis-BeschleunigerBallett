@@ -1,4 +1,4 @@
-﻿{
+{
 	"version": 10,
 	"cmakeMinimumRequired": {
 		"major": 4,
@@ -367,6 +367,29 @@
 			}
 		},
 		{
+			"name": "x64-ClangCL-Windows-Debug-Fuzz",
+			"description": "Windows and Clang (Fuzz)",
+			"generator": "Ninja",
+			"binaryDir": "${sourceDir}/build-clangcl-fuzz/",
+			"installDir": "${sourceDir}/build-clangcl-fuzz/",
+			"cacheVariables": {
+				"CMAKE_VERBOSE_MAKEFILE": "ON",
+				"CMAKE_C_COMPILER": "clang-cl",
+				"CMAKE_CXX_COMPILER": "clang-cl",
+				"CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+				"RUST_FEATURES": "ON",
+				"CMAKE_BUILD_TYPE": "Debug",
+				"COMPILER_CACHE": "sccache",
+				"BUILD_TESTING": "TRUE",
+				"KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE": "ON"
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		},
+		{
 			"name": "x64-ClangCL-Windows-Release",
 			"description": "Windows and Clang",
 			"generator": "Ninja",
@@ -577,6 +600,12 @@
 			"name": "x64-ClangCL-Windows-Debug-TSan",
 			"jobs": 0,
 			"configurePreset": "x64-ClangCL-Windows-Debug-TSan",
+			"configuration": "Debug"
+		},
+		{
+			"name": "x64-ClangCL-Windows-Debug-Fuzz",
+			"jobs": 0,
+			"configurePreset": "x64-ClangCL-Windows-Debug-Fuzz",
 			"configuration": "Debug"
 		},
     {

@@ -1,6 +1,8 @@
-module;
+﻿module;
+#include <memory>
 
 #include <cstdint>
+#include <limits>
 #include <utility>
 #include <vulkan/vulkan.hpp>
 
@@ -42,7 +44,7 @@ auto Kataglyphis::VulkanBuffer::operator=(VulkanBuffer &&other) noexcept -> Vulk
     return *this;
 }
 
-void Kataglyphis::VulkanBuffer::create(VulkanDevice *vulkan_device,
+void Kataglyphis::VulkanBuffer::create(std::shared_ptr<VulkanDevice>vulkan_device,
   vk::DeviceSize buffer_size,
   vk::BufferUsageFlags buffer_usage_flags,
   vk::MemoryPropertyFlags buffer_propertiy_flags,
@@ -85,7 +87,7 @@ void Kataglyphis::VulkanBuffer::create(VulkanDevice *vulkan_device,
     // CPU side
     // */ VK_MEMORY_PROPERTY_HOST_COHERENT_BIT	/* data is placed straight into
     // buffer */);
-    if (memory_type_index < 0) { spdlog::error("Failed to find suitable memory type!"); }
+    if (memory_type_index == std::numeric_limits<uint32_t>::max()) { spdlog::error("Failed to find suitable memory type!"); }
 
     memory_alloc_info.memoryTypeIndex = memory_type_index;
 
@@ -110,4 +112,4 @@ void Kataglyphis::VulkanBuffer::cleanUp()
     created = false;
 }
 
-Kataglyphis::VulkanBuffer::~VulkanBuffer() = default;
+Kataglyphis::VulkanBuffer::~VulkanBuffer() { cleanUp(); }

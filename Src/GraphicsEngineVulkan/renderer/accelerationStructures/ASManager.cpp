@@ -23,7 +23,7 @@ import kataglyphis.vulkan.buffer_manager;
 
 Kataglyphis::VulkanRendererInternals::ASManager::ASManager() = default;
 
-void Kataglyphis::VulkanRendererInternals::ASManager::createASForScene(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::ASManager::createASForScene(std::shared_ptr<VulkanDevice>device,
   vk::CommandPool commandPool,
   Kataglyphis::Scene *scene)
 {
@@ -35,7 +35,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createASForScene(VulkanDev
     createTLAS(device, commandPool, scene);
 }
 
-void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(std::shared_ptr<VulkanDevice>device,
   vk::CommandPool commandPool,
   Kataglyphis::Scene *scene)
 {
@@ -117,7 +117,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(VulkanDevice *d
     scratchBuffer.cleanUp();
 }
 
-void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(std::shared_ptr<VulkanDevice>device,
   vk::CommandPool commandPool,
   Kataglyphis::Scene *scene)
 {
@@ -274,7 +274,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::cleanUp()
 
 Kataglyphis::VulkanRendererInternals::ASManager::~ASManager() = default;
 
-void Kataglyphis::VulkanRendererInternals::ASManager::createSingleBlas(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::ASManager::createSingleBlas(std::shared_ptr<VulkanDevice>device,
   vk::CommandBuffer command_buffer,
   BuildAccelerationStructure &build_as_structure,
   vk::DeviceAddress scratch_device_or_host_address)
@@ -300,7 +300,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createSingleBlas(VulkanDev
     command_buffer.buildAccelerationStructuresKHR(1, &build_as_structure.build_info, &build_as_structure.range_info);
 }
 
-void Kataglyphis::VulkanRendererInternals::ASManager::createAccelerationStructureInfosBLAS(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::ASManager::createAccelerationStructureInfosBLAS(std::shared_ptr<VulkanDevice>device,
   BuildAccelerationStructure &build_as_structure,
   BlasInput &blas_input,
   vk::DeviceSize &current_scretch_size,
@@ -329,7 +329,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createAccelerationStructur
     current_scretch_size = build_as_structure.size_info.buildScratchSize;
 }
 
-void Kataglyphis::VulkanRendererInternals::ASManager::objectToVkGeometryKHR(VulkanDevice *device,
+void Kataglyphis::VulkanRendererInternals::ASManager::objectToVkGeometryKHR(std::shared_ptr<VulkanDevice>device,
   Kataglyphis::Mesh *mesh,
   vk::AccelerationStructureGeometryKHR &acceleration_structure_geometry,
   vk::AccelerationStructureBuildRangeInfoKHR &acceleration_structure_build_range_info)

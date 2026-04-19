@@ -19,7 +19,7 @@ namespace Kataglyphis {
 // Global map to store per-layer image views
 static std::unordered_map<CascadedShadowMap*, std::vector<vk::ImageView>> g_layerViewsMap;
 
-void CascadedShadowMap::init(VulkanDevice *in_device, uint32_t width, uint32_t height, uint32_t num_cascades)
+void CascadedShadowMap::init(std::shared_ptr<VulkanDevice>in_device, uint32_t width, uint32_t height, uint32_t num_cascades)
 {
     this->device = in_device;
     this->shadowWidth = width;
@@ -31,7 +31,7 @@ void CascadedShadowMap::init(VulkanDevice *in_device, uint32_t width, uint32_t h
     vk::Format depthFormat = Kataglyphis::choose_supported_format(device->getPhysicalDevice(), { vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint }, vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eDepthStencilAttachment);
 
     // Create 2D Texture Array for Cascades
-    shadowMapArray = new Texture();
+    shadowMapArray = std::make_unique<Texture>();
     shadowMapArray->createImage(device, shadowWidth, shadowHeight, 1, depthFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, numCascades);
 
     // Create a view for the entire array (used in descriptor set for reading later)
@@ -220,8 +220,8 @@ void CascadedShadowMap::cleanUp()
         device->getLogicalDevice().destroyRenderPass(renderPass);
         if (shadowMapArray) {
             shadowMapArray->cleanUp();
-            delete shadowMapArray;
+            shadowMapArray.reset();
         }
     }
-    }
+}
 }

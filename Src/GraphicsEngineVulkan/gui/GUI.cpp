@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 
 #include "common/Utilities.hpp"
 
@@ -28,7 +29,7 @@ void applyKataglyphisDarkTheme() { Kataglyphis::Frontend::applyKataglyphisImGuiD
 
 GUI::GUI(Window *window) : window(window) {}
 
-void GUI::initializeVulkanContext(VulkanDevice *vulkan_device,
+void GUI::initializeVulkanContext(std::shared_ptr<VulkanDevice>vulkan_device,
   const vk::Instance &instance,
   const vk::RenderPass &post_render_pass,
   const vk::CommandPool &graphics_command_pool,

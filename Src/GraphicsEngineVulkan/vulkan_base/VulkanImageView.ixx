@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 #include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.image_view;
@@ -19,7 +20,7 @@ class VulkanImageView
 
     vk::ImageView &getImageView() { return imageView; };
 
-    void create(VulkanDevice *in_device,
+    void create(std::shared_ptr<VulkanDevice>in_device,
       vk::Image image,
       vk::Format format,
       vk::ImageAspectFlags aspect_flags,
@@ -32,7 +33,7 @@ class VulkanImageView
     ~VulkanImageView();
 
   private:
-    VulkanDevice *device{ nullptr };
+    std::shared_ptr<VulkanDevice>device{ nullptr };
 
     vk::ImageView imageView{};
 };

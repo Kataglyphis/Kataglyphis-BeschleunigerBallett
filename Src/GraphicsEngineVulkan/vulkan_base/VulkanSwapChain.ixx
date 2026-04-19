@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -15,7 +16,7 @@ class VulkanSwapChain
   public:
     VulkanSwapChain();
 
-    void initVulkanContext(VulkanDevice *in_device, Kataglyphis::Frontend::Window *window, const vk::SurfaceKHR &surface);
+    void initVulkanContext(std::shared_ptr<VulkanDevice>in_device, Kataglyphis::Frontend::Window *window, const vk::SurfaceKHR &surface);
 
     const vk::SwapchainKHR &getSwapChain() const { return swapchain; };
     uint32_t getNumberSwapChainImages() const { auto __tmp_sz = swap_chain_images.size(); return static_cast<uint32_t>(__tmp_sz); };
@@ -28,7 +29,7 @@ class VulkanSwapChain
     ~VulkanSwapChain();
 
   private:
-    VulkanDevice *device{ nullptr };
+    std::shared_ptr<VulkanDevice>device{ nullptr };
     Kataglyphis::Frontend::Window *window{ nullptr };
 
     vk::SwapchainKHR swapchain{};

@@ -17,7 +17,7 @@ class SkyBox
   public:
     SkyBox();
 
-    void init(VulkanDevice *device, vk::CommandPool commandPool);
+    void init(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool);
 
     void recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, const std::vector<vk::DescriptorSet> &descriptorSets);
 
@@ -29,7 +29,7 @@ class SkyBox
     ~SkyBox();
 
   private:
-    VulkanDevice *device{ nullptr };
+    std::shared_ptr<VulkanDevice>device{ nullptr };
 
     std::unique_ptr<Kataglyphis::Mesh> skyMesh;
     std::unique_ptr<Kataglyphis::Texture> cubeMapTexture;

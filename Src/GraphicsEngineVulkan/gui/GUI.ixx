@@ -17,7 +17,7 @@ class GUI
   public:
     GUI(Window *window);
 
-    void initializeVulkanContext(VulkanDevice *device,
+    void initializeVulkanContext(std::shared_ptr<VulkanDevice>device,
       const vk::Instance &instance,
       const vk::RenderPass &post_render_pass,
       const vk::CommandPool &graphics_command_pool,
@@ -43,7 +43,7 @@ class GUI
       const vk::RenderPass &post_render_pass,
       uint32_t image_count);
 
-    VulkanDevice *device{ nullptr };
+    std::shared_ptr<VulkanDevice>device{ nullptr };
     Window *window{ nullptr };
     vk::DescriptorPool gui_descriptor_pool{};
     Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;

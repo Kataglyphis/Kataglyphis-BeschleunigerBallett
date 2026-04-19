@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 
 #include <algorithm>
 #include <cstdint>
@@ -126,7 +127,7 @@ auto Kataglyphis::ShaderHelper::getShaderSpvDir(const std::string &shader_src_di
     return shader_spv_path_object.string();
 }
 
-auto Kataglyphis::ShaderHelper::createShaderModule(VulkanDevice *device, const std::vector<char> &code)
+auto Kataglyphis::ShaderHelper::createShaderModule(std::shared_ptr<VulkanDevice>device, const std::vector<char> &code)
   -> vk::ShaderModule
 {
     // shader module create info

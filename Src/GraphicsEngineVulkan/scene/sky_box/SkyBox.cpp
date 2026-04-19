@@ -1,4 +1,5 @@
 module;
+#include <memory>
 #include <array>
 #include <filesystem>
 #include <sstream>
@@ -23,7 +24,7 @@ namespace Kataglyphis {
 
 SkyBox::SkyBox() = default;
 
-void SkyBox::init(VulkanDevice *in_device, vk::CommandPool commandPool)
+void SkyBox::init(std::shared_ptr<VulkanDevice>in_device, vk::CommandPool commandPool)
 {
     this->device = in_device;
 
@@ -51,6 +52,7 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
 
     // I will write out a basic implementation here
     int width, height, bit_depth;
+    std::vector<std::unique_ptr<unsigned char, decltype(&stbi_image_free)>> face_data_ptrs;
     std::vector<unsigned char*> face_data(6);
     vk::DeviceSize layerSize = 0;
     vk::DeviceSize imageSize = 0;
@@ -58,6 +60,7 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
     for (size_t i = 0; i < 6; i++) {
         std::string path = skybox_base_dir.str() + skybox_textures[i];
         face_data[i] = stbi_load(path.c_str(), &width, &height, &bit_depth, 4); // force RGBA
+        face_data_ptrs.push_back(std::unique_ptr<unsigned char, decltype(&stbi_image_free)>(face_data[i], stbi_image_free));
         if (!face_data[i]) {
             spdlog::error("Failed to load skybox texture: {}", path);
             return;
@@ -79,7 +82,7 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
     cubeMapTexture->createTextureSampler(device);
 
     for (size_t i = 0; i < 6; i++) {
-        stbi_image_free(face_data[i]);
+        // Memory automatically freed by face_data_ptrs
     }
 }
 

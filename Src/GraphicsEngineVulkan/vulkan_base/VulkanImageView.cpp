@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 
 #include "common/Utilities.hpp"
 #include <cstdint>
@@ -35,7 +36,7 @@ auto Kataglyphis::VulkanImageView::operator=(VulkanImageView &&other) noexcept -
 
 void Kataglyphis::VulkanImageView::setImageView(vk::ImageView in_imageView) { this->imageView = in_imageView; }
 
-void Kataglyphis::VulkanImageView::create(VulkanDevice *in_device,
+void Kataglyphis::VulkanImageView::create(std::shared_ptr<VulkanDevice>in_device,
   vk::Image image,
   vk::Format format,
   vk::ImageAspectFlags aspect_flags,
@@ -76,4 +77,4 @@ void Kataglyphis::VulkanImageView::cleanUp()
     imageView = nullptr;
 }
 
-Kataglyphis::VulkanImageView::~VulkanImageView() = default;
+Kataglyphis::VulkanImageView::~VulkanImageView() { cleanUp(); }

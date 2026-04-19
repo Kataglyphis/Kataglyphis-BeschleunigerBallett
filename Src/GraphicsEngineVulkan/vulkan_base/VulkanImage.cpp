@@ -1,6 +1,8 @@
-module;
+﻿module;
+#include <memory>
 
 #include <cstdint>
+#include <limits>
 #include <tuple>
 #include <utility>
 #include <vulkan/vulkan.hpp>
@@ -40,7 +42,7 @@ auto Kataglyphis::VulkanImage::operator=(VulkanImage &&other) noexcept -> Vulkan
     return *this;
 }
 
-void Kataglyphis::VulkanImage::create(VulkanDevice *in_device,
+void Kataglyphis::VulkanImage::create(std::shared_ptr<VulkanDevice>in_device,
   uint32_t width,
   uint32_t height,
   uint32_t mip_levels,
@@ -80,8 +82,9 @@ void Kataglyphis::VulkanImage::create(VulkanDevice *in_device,
     // allocate memory using image requirements and user defined properties
     vk::MemoryAllocateInfo memory_alloc_info{};
     memory_alloc_info.allocationSize = memory_requirements.size;
-    memory_alloc_info.memoryTypeIndex =
-      Kataglyphis::find_memory_type_index(device->getPhysicalDevice(), memory_requirements.memoryTypeBits, prop_flags);
+    uint32_t memory_type_index = Kataglyphis::find_memory_type_index(device->getPhysicalDevice(), memory_requirements.memoryTypeBits, prop_flags);
+    if (memory_type_index == std::numeric_limits<uint32_t>::max()) { spdlog::error("Failed to find suitable memory type!"); }
+    memory_alloc_info.memoryTypeIndex = memory_type_index;
 
     imageMemory = device->getLogicalDevice().allocateMemory(memory_alloc_info).value;
 
@@ -180,7 +183,7 @@ void Kataglyphis::VulkanImage::cleanUp()
     imageMemory = nullptr;
 }
 
-Kataglyphis::VulkanImage::~VulkanImage() = default;
+Kataglyphis::VulkanImage::~VulkanImage() { cleanUp(); }
 
 auto Kataglyphis::VulkanImage::accessFlagsForImageLayout(vk::ImageLayout layout) -> vk::AccessFlags
 {

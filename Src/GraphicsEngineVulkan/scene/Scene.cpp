@@ -27,7 +27,7 @@ Scene::Scene() = default;
 
 void Scene::update_user_input(Kataglyphis::Frontend::GUI *gui) { guiSceneSharedVars = gui->getGuiSceneSharedVars(); }
 
-void Scene::loadModel(VulkanDevice *device, vk::CommandPool commandPool)
+void Scene::loadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool)
 {
     ObjLoader obj_loader(device, device->getGraphicsQueue(), commandPool);
 
@@ -76,6 +76,6 @@ auto Scene::getNumberMeshes() -> uint32_t
     return number_of_meshes;
 }
 
-Scene::~Scene() = default;
+Scene::~Scene() { cleanUp(); }
 
 }// namespace Kataglyphis

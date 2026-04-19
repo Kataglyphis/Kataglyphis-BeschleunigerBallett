@@ -1,4 +1,5 @@
 module;
+#include <memory>
 
 #include "spdlog/spdlog.h"
 #include <algorithm>
@@ -23,6 +24,39 @@ using namespace Kataglyphis;
 
 Kataglyphis::Texture::Texture() = default;
 
+Kataglyphis::Texture::Texture(Texture &&other) noexcept
+  : mip_levels(other.mip_levels),
+    commandBufferManager(std::move(other.commandBufferManager)),
+    vulkanBufferManager(std::move(other.vulkanBufferManager)),
+    vulkanImage(std::move(other.vulkanImage)),
+    vulkanImageView(std::move(other.vulkanImageView)),
+    textureSampler(other.textureSampler),
+    device(other.device)
+{
+    other.textureSampler = nullptr;
+    other.device = nullptr;
+    other.mip_levels = 0;
+}
+
+Kataglyphis::Texture &Kataglyphis::Texture::operator=(Texture &&other) noexcept
+{
+    if (this != &other) {
+        cleanUp();
+        mip_levels = other.mip_levels;
+        commandBufferManager = std::move(other.commandBufferManager);
+        vulkanBufferManager = std::move(other.vulkanBufferManager);
+        vulkanImage = std::move(other.vulkanImage);
+        vulkanImageView = std::move(other.vulkanImageView);
+        textureSampler = other.textureSampler;
+        device = other.device;
+
+        other.textureSampler = nullptr;
+        other.device = nullptr;
+        other.mip_levels = 0;
+    }
+    return *this;
+}
+
 namespace {
 auto supportsLinearBlit(vk::PhysicalDevice physical_device, vk::Format image_format) -> bool
 {
@@ -32,7 +66,7 @@ auto supportsLinearBlit(vk::PhysicalDevice physical_device, vk::Format image_for
 }
 }// namespace
 
-void Kataglyphis::Texture::createFromFile(VulkanDevice *device,
+void Kataglyphis::Texture::createFromFile(std::shared_ptr<VulkanDevice>device,
   vk::CommandPool commandPool,
   const std::string &fileName)
 {
@@ -40,6 +74,7 @@ void Kataglyphis::Texture::createFromFile(VulkanDevice *device,
     int height = 0;
     vk::DeviceSize size = 0;
     unsigned char *image_data = loadTextureData(fileName, &width, &height, &size);
+    std::unique_ptr<unsigned char, decltype(&stbi_image_free)> image_data_ptr(image_data, stbi_image_free);
 
     constexpr vk::Format texture_format = vk::Format::eR8G8B8A8Unorm;
     mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
@@ -59,7 +94,7 @@ void Kataglyphis::Texture::createFromFile(VulkanDevice *device,
     memcpy(data, image_data, static_cast<size_t>(size));
     device->getLogicalDevice().unmapMemory(stagingBuffer.getBufferMemory());
 
-    stbi_image_free(image_data);
+    // Memory automatically freed by image_data_ptr
 
     createImage(device,
       static_cast<uint32_t>(width),
@@ -115,7 +150,7 @@ void Kataglyphis::Texture::setImage(vk::Image image) { vulkanImage.setImage(imag
 
 void Kataglyphis::Texture::setImageView(vk::ImageView imageView) { vulkanImageView.setImageView(imageView); }
 
-void Kataglyphis::Texture::createImage(VulkanDevice *in_device,
+void Kataglyphis::Texture::createImage(std::shared_ptr<VulkanDevice>in_device,
   uint32_t width,
   uint32_t height,
   uint32_t in_mip_levels,
@@ -132,7 +167,7 @@ void Kataglyphis::Texture::createImage(VulkanDevice *in_device,
     vulkanImage.create(in_device, width, height, in_mip_levels, format, tiling, use_flags, prop_flags, array_layers, create_flags, image_type, depth);
 }
 
-void Kataglyphis::Texture::createImageView(VulkanDevice *in_device,
+void Kataglyphis::Texture::createImageView(std::shared_ptr<VulkanDevice>in_device,
   vk::Format format,
   vk::ImageAspectFlags aspect_flags,
   uint32_t in_mip_levels,
@@ -143,7 +178,7 @@ void Kataglyphis::Texture::createImageView(VulkanDevice *in_device,
     vulkanImageView.create(in_device, vulkanImage.getImage(), format, aspect_flags, in_mip_levels, view_type, array_layers);
 }
 
-void Kataglyphis::Texture::createTextureSampler(VulkanDevice *in_device, vk::Filter filter, vk::SamplerAddressMode addressMode)
+void Kataglyphis::Texture::createTextureSampler(std::shared_ptr<VulkanDevice>in_device, vk::Filter filter, vk::SamplerAddressMode addressMode)
 {
     this->device = in_device;
     vk::SamplerCreateInfo samplerInfo{};
@@ -176,7 +211,7 @@ void Kataglyphis::Texture::cleanUp()
     vulkanImage.cleanUp();
 }
 
-Kataglyphis::Texture::~Texture() = default;
+Kataglyphis::Texture::~Texture() { cleanUp(); }
 
 auto Kataglyphis::Texture::loadTextureData(const std::string &file_name,
   int *width,

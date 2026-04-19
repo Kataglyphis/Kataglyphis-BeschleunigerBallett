@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 
 #include "renderer/pushConstants/PushConstantRayTracing.hpp"
 #include <glm/glm.hpp>
@@ -18,7 +19,7 @@ class Raytracing
   public:
     Raytracing();
 
-    void init(VulkanDevice *in_device, const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts,
+    void init(std::shared_ptr<VulkanDevice>in_device, const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts,
       VulkanSwapChain *swapchain);
 
     void shaderHotReload(const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts);
@@ -33,7 +34,7 @@ class Raytracing
     ~Raytracing();
 
   private:
-    VulkanDevice *device{ nullptr };
+    std::shared_ptr<VulkanDevice>device{ nullptr };
     [[maybe_unused]] VulkanSwapChain *vulkanSwapChain{ nullptr };
 
     vk::Pipeline graphicsPipeline{};

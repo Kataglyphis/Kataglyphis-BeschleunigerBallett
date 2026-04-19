@@ -6,6 +6,7 @@
     BuildDirMsvc = 'build-msvc-debug'
     BuildDirClangCl = 'build-clangcl-debug'
     BuildDirClangClTsan = 'build-clangcl-tsan'
+    BuildDirClangClFuzz = 'build-clangcl-fuzz'
     BuildDirProfile = 'build-clangcl-profile'
     BuildDirRelease = 'build-clangcl-release'
 
@@ -14,6 +15,7 @@
       MsvcRelease = 'x64-MSVC-Windows-Release'
       ClangClDebug = 'x64-ClangCL-Windows-Debug'
       ClangClDebugTsan = 'x64-ClangCL-Windows-Debug-TSan'
+      ClangClFuzz = 'x64-ClangCL-Windows-Debug-Fuzz'
       ClangClProfile = 'x64-ClangCL-Windows-Profile'
       ClangClRelease = 'x64-ClangCL-Windows-Release'
     }

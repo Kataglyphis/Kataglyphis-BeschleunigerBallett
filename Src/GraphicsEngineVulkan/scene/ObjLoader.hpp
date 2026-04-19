@@ -12,12 +12,12 @@ namespace Kataglyphis {
 class ObjLoader
 {
   public:
-    ObjLoader(VulkanDevice *device, vk::Queue transfer_queue, vk::CommandPool command_pool);
+    ObjLoader(std::shared_ptr<VulkanDevice>device, vk::Queue transfer_queue, vk::CommandPool command_pool);
 
     std::shared_ptr<Model> loadModel(const std::string &modelFile);
 
   private:
-    Kataglyphis::VulkanDevice *device;
+    std::shared_ptr<VulkanDevice> device;
     vk::Queue transfer_queue;
     vk::CommandPool command_pool;
 

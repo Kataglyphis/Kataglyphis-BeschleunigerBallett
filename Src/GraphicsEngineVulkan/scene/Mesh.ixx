@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 #include <glm/glm.hpp>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -17,13 +18,13 @@ export namespace Kataglyphis {
 class Mesh
 {
   public:
-    Mesh(VulkanDevice *device,
+    Mesh(std::shared_ptr<VulkanDevice>device,
       vk::Queue transfer_queue,
       vk::CommandPool transfer_command_pool,
-      std::vector<Vertex> &vertices,
-      std::vector<uint32_t> &indices,
-      std::vector<unsigned int> &materialIndex,
-      std::vector<ObjMaterial> &materials);
+      const std::vector<Vertex> &vertices,
+      const std::vector<uint32_t> &indices,
+      const std::vector<unsigned int> &materialIndex,
+      const std::vector<ObjMaterial> &materials);
 
     Mesh();
     Mesh(const Mesh &) = delete;
@@ -66,18 +67,18 @@ class Mesh
     uint32_t vertex_count{ INVALID_COUNT };
     uint32_t index_count{ INVALID_COUNT };
 
-    VulkanDevice *device{ nullptr };
+    std::shared_ptr<VulkanDevice>device{ nullptr };
 
-    void createVertexBuffer(vk::Queue transfer_queue, vk::CommandPool transfer_command_pool, std::vector<Vertex> &vertices);
+    void createVertexBuffer(vk::Queue transfer_queue, vk::CommandPool transfer_command_pool, const std::vector<Vertex> &vertices);
 
-    void createIndexBuffer(vk::Queue transfer_queue, vk::CommandPool transfer_command_pool, std::vector<uint32_t> &indices);
+    void createIndexBuffer(vk::Queue transfer_queue, vk::CommandPool transfer_command_pool, const std::vector<uint32_t> &indices);
 
     void createMaterialIDBuffer(vk::Queue transfer_queue,
       vk::CommandPool transfer_command_pool,
-      std::vector<unsigned int> &materialIndex);
+      const std::vector<unsigned int> &materialIndex);
 
     void createMaterialBuffer(vk::Queue transfer_queue,
       vk::CommandPool transfer_command_pool,
-      std::vector<ObjMaterial> &materials);
+      const std::vector<ObjMaterial> &materials);
 };
 }// namespace Kataglyphis

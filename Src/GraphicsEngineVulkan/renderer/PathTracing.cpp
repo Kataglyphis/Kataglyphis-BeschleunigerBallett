@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 
 #include <algorithm>
 #include <array>
@@ -26,7 +27,7 @@ import kataglyphis.vulkan.shader_helper;
 
 Kataglyphis::VulkanRendererInternals::PathTracing::PathTracing() = default;
 
-void Kataglyphis::VulkanRendererInternals::PathTracing::init(VulkanDevice *in_device,
+void Kataglyphis::VulkanRendererInternals::PathTracing::init(std::shared_ptr<VulkanDevice>in_device,
   const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
 {
     this->device = in_device;

@@ -21,9 +21,9 @@ class CascadedShadowMap
   public:
     CascadedShadowMap() = default;
 
-    void init(VulkanDevice *device, uint32_t width, uint32_t height, uint32_t num_cascades);
+    void init(std::shared_ptr<VulkanDevice>device, uint32_t width, uint32_t height, uint32_t num_cascades);
     
-    Kataglyphis::Texture* getShadowMapArray() { return shadowMapArray; }
+    Kataglyphis::Texture* getShadowMapArray() { return shadowMapArray.get(); }
     std::vector<vk::Framebuffer>& getFramebuffers() { return framebuffers; }
     vk::RenderPass getRenderPass() const { return renderPass; }
 
@@ -38,12 +38,12 @@ class CascadedShadowMap
     ~CascadedShadowMap() = default;
 
   private:
-    VulkanDevice *device{ nullptr };
+    std::shared_ptr<VulkanDevice>device{ nullptr };
     uint32_t shadowWidth{ 0 };
     uint32_t shadowHeight{ 0 };
     uint32_t numCascades{ 0 };
 
-    Kataglyphis::Texture* shadowMapArray{nullptr};
+    std::unique_ptr<Kataglyphis::Texture> shadowMapArray;
     vk::RenderPass renderPass;
     std::vector<vk::Framebuffer> framebuffers;
     

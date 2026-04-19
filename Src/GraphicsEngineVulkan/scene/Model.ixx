@@ -19,11 +19,11 @@ class Model
 {
   public:
     Model();
-    Model(VulkanDevice *device);
+    Model(std::shared_ptr<VulkanDevice>device);
 
     void cleanUp();
 
-    void add_new_mesh(VulkanDevice *vulkan_device,
+    void add_new_mesh(std::shared_ptr<VulkanDevice>vulkan_device,
       vk::Queue transfer_queue,
       vk::CommandPool command_pool,
       std::vector<Vertex> &vertices,
@@ -48,7 +48,7 @@ class Model
     ~Model();
 
   private:
-    VulkanDevice *device{ nullptr };
+    std::shared_ptr<VulkanDevice>device{ nullptr };
 
     void addSampler(const Texture &newTexture);
 

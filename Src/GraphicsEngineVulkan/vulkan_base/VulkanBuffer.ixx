@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 #include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.buffer;
@@ -15,7 +16,7 @@ class VulkanBuffer
     VulkanBuffer(VulkanBuffer &&other) noexcept;
     VulkanBuffer &operator=(VulkanBuffer &&other) noexcept;
 
-    void create(VulkanDevice *vulkanDevice,
+    void create(std::shared_ptr<VulkanDevice>vulkanDevice,
       vk::DeviceSize buffer_size,
       vk::BufferUsageFlags buffer_usage_flags,
       vk::MemoryPropertyFlags buffer_propertiy_flags,
@@ -29,7 +30,7 @@ class VulkanBuffer
     ~VulkanBuffer();
 
   private:
-    VulkanDevice *device{ nullptr };
+    std::shared_ptr<VulkanDevice>device{ nullptr };
 
     vk::Buffer buffer{};
     vk::DeviceMemory bufferMemory{};

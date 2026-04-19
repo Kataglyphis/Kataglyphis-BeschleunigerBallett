@@ -16,22 +16,22 @@ class Clouds
   public:
     Clouds() = default;
 
-    void init(VulkanDevice *device, vk::CommandPool commandPool, vk::DescriptorSetLayout sharedLayout, uint32_t width, uint32_t height);
+    void init(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, vk::DescriptorSetLayout sharedLayout, uint32_t width, uint32_t height);
 
     void recordComputeCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, const std::vector<vk::DescriptorSet> &descriptorSets);
 
     void cleanUp();
 
-    Kataglyphis::Texture* getCloudNoiseTexture() { return cloudNoiseTexture; }
-    Kataglyphis::Texture* getCloudOutputTexture() { return cloudOutputTexture; }
+    Kataglyphis::Texture* getCloudNoiseTexture() { return cloudNoiseTexture.get(); }
+    Kataglyphis::Texture* getCloudOutputTexture() { return cloudOutputTexture.get(); }
 
     ~Clouds() = default;
 
   private:
-    VulkanDevice *device{ nullptr };
+    std::shared_ptr<VulkanDevice>device{ nullptr };
 
-    Kataglyphis::Texture* cloudNoiseTexture{nullptr};
-    Kataglyphis::Texture* cloudOutputTexture{nullptr};
+    std::unique_ptr<Kataglyphis::Texture> cloudNoiseTexture;
+    std::unique_ptr<Kataglyphis::Texture> cloudOutputTexture;
 
     vk::DescriptorSetLayout descriptorSetLayout;
     vk::DescriptorPool descriptorPool;

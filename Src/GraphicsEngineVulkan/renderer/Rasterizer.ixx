@@ -20,7 +20,7 @@ class Rasterizer
   public:
     Rasterizer();
 
-    void init(VulkanDevice *in_device,
+    void init(std::shared_ptr<VulkanDevice>in_device,
       VulkanSwapChain *swap_chain,
       const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts,
       vk::CommandPool &commandPool);
@@ -41,7 +41,7 @@ class Rasterizer
     ~Rasterizer();
 
   private:
-    VulkanDevice *device{ nullptr };
+    std::shared_ptr<VulkanDevice>device{ nullptr };
     VulkanSwapChain *vulkanSwapChain{ nullptr };
 
     CommandBufferManager commandBufferManager;

@@ -86,13 +86,13 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
 
     create_surface();
 
-    device = std::make_unique<VulkanDevice>(&instance, &surface);
+    device = std::make_shared<VulkanDevice>(&instance, &surface);
 
     allocator = Allocator(device->getLogicalDevice(), device->getPhysicalDevice(), instance.getVulkanInstance());
 
     create_command_pool();
 
-    vulkanSwapChain.initVulkanContext(device.get(), window, surface);
+    vulkanSwapChain.initVulkanContext(device, window, surface);
     create_uniform_buffers();
     create_command_buffers();
 
@@ -104,18 +104,18 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_rasterizer = { sharedRenderDescriptorSetLayout };
     std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_deferred = { sharedRenderDescriptorSetLayout, gbuffer_descriptor_set_layout };
     
-    rasterizer.init(device.get(), &vulkanSwapChain, descriptor_set_layouts_rasterizer, graphics_command_pool);
-    deferredRasterizer.init(device.get(), &vulkanSwapChain, descriptor_set_layouts_deferred, graphics_command_pool);
+    rasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_rasterizer, graphics_command_pool);
+    deferredRasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_deferred, graphics_command_pool);
 
     // Initialize atmospheric effects and shadows
-    skyBox.init(device.get(), graphics_command_pool);
-    clouds.init(device.get(), graphics_command_pool, sharedRenderDescriptorSetLayout, vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
-    dirShadowMap.init(device.get(), 2048, 2048, MAX_CASCADES);
-    pointShadowMap.init(device.get(), 1024, 1024);
+    skyBox.init(device, graphics_command_pool);
+    clouds.init(device, graphics_command_pool, sharedRenderDescriptorSetLayout, vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
+    dirShadowMap.init(device, 2048, 2048, MAX_CASCADES);
+    pointShadowMap.init(device, 1024, 1024);
 
     create_post_descriptor_layout();
     std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_post = { post_descriptor_set_layout };
-    postStage.init(device.get(), &vulkanSwapChain, descriptor_set_layouts_post);
+    postStage.init(device, &vulkanSwapChain, descriptor_set_layouts_post);
     createDescriptorPoolSharedRenderStages();
     createSharedRenderDescriptorSet();
 
@@ -128,15 +128,15 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
         createRaytracingDescriptorPool();
         createRaytracingDescriptorSetLayouts();
         layouts.push_back(raytracingDescriptorSetLayout);
-        raytracingStage.init(device.get(), layouts, &vulkanSwapChain);
-        pathTracing.init(device.get(), layouts);
+        raytracingStage.init(device, layouts, &vulkanSwapChain);
+        pathTracing.init(device, layouts);
     }
 
-    scene->loadModel(device.get(), graphics_command_pool);
+    scene->loadModel(device, graphics_command_pool);
     updateTexturesInSharedRenderDescriptorSet();
 
     if (device->supportsHardwareAcceleratedRRT()) {
-        asManager.createASForScene(device.get(), graphics_command_pool, scene);
+        asManager.createASForScene(device, graphics_command_pool, scene);
     }
 
     create_object_description_buffer();
@@ -146,7 +146,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
         updateRaytracingDescriptorSets();
     }
 
-    gui->initializeVulkanContext(device.get(),
+    gui->initializeVulkanContext(device,
       instance.getVulkanInstance(),
       postStage.getRenderPass(),
       graphics_command_pool,
@@ -238,7 +238,7 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Fronten
         else if (guiSceneSharedVars.shadow_map_res_index == 2) shadow_res = 2048;
         else if (guiSceneSharedVars.shadow_map_res_index == 3) shadow_res = 4096;
 
-        dirShadowMap.init(device.get(), shadow_res, shadow_res, guiSceneSharedVars.num_shadow_cascades);
+        dirShadowMap.init(device, shadow_res, shadow_res, guiSceneSharedVars.num_shadow_cascades);
         
         // We must recreate descriptor sets that depend on the shadow map
         updateTexturesInSharedRenderDescriptorSet();
@@ -468,7 +468,7 @@ void Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
     scene_ubo_data.push_back(sceneUBO);
 
     VulkanBuffer stagingGlobalUBO;
-    stagingGlobalUBO.create(device.get(),
+    stagingGlobalUBO.create(device,
       sizeof(VulkanRendererInternals::GlobalUBO),
       vk::BufferUsageFlagBits::eTransferSrc,
       vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
@@ -493,7 +493,7 @@ void Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
     stagingGlobalUBO.cleanUp();
 
     VulkanBuffer stagingSceneUBO;
-    stagingSceneUBO.create(device.get(),
+    stagingSceneUBO.create(device,
       sizeof(VulkanRendererInternals::SceneUBO),
       vk::BufferUsageFlagBits::eTransferSrc,
       vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
@@ -830,7 +830,7 @@ void Kataglyphis::VulkanRenderer::create_object_description_buffer()
     std::vector<ObjectDescription> objectDescriptions = scene->getObjectDescriptions();
 
     if (!objectDescriptions.empty()) {
-        vulkanBufferManager.createBufferAndUploadVectorOnDevice(device.get(),
+        vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
           graphics_command_pool,
           objectDescriptionBuffer,
           vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
@@ -838,7 +838,7 @@ void Kataglyphis::VulkanRenderer::create_object_description_buffer()
           objectDescriptions);
     } else {
         // Create an empty buffer (1 byte) if no object descriptions are present to avoid validation error
-        vulkanBufferManager.createBufferAndUploadVectorOnDevice(device.get(),
+        vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
           graphics_command_pool,
           objectDescriptionBuffer,
           vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
@@ -1143,14 +1143,14 @@ void Kataglyphis::VulkanRenderer::create_uniform_buffers()
     sceneUBOdata.push_back(sceneUBO);
 
     for (size_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
-        vulkanBufferManager.createBufferAndUploadVectorOnDevice(device.get(),
+        vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
           graphics_command_pool,
           globalUBOBuffer[i],
           vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst,
           vk::MemoryPropertyFlagBits::eDeviceLocal,
           globalUBOdata);
 
-        vulkanBufferManager.createBufferAndUploadVectorOnDevice(device.get(),
+        vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
           graphics_command_pool,
           sceneUBOBuffer[i],
           vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst,

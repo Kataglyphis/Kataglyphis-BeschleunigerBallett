@@ -16,7 +16,7 @@ import kataglyphis.vulkan.file;
 
 namespace Kataglyphis {
 
-void Clouds::init(VulkanDevice *device, vk::CommandPool commandPool, vk::DescriptorSetLayout sharedLayout, uint32_t width, uint32_t height)
+void Clouds::init(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, vk::DescriptorSetLayout sharedLayout, uint32_t width, uint32_t height)
 {
     this->device = device;
     this->width = width;
@@ -30,7 +30,7 @@ void Clouds::init(VulkanDevice *device, vk::CommandPool commandPool, vk::Descrip
 void Clouds::createTextures(vk::CommandPool commandPool)
 {
     // Create 3D Texture for Noise
-    cloudNoiseTexture = new Texture();
+    cloudNoiseTexture = std::make_unique<Texture>();
     cloudNoiseTexture->createImage(device, 128, 128, 1, vk::Format::eR16G16B16A16Sfloat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, 1, vk::ImageCreateFlags{}, vk::ImageType::e3D, 128);
     cloudNoiseTexture->createImageView(device, vk::Format::eR16G16B16A16Sfloat, vk::ImageAspectFlagBits::eColor, 1, vk::ImageViewType::e3D, 1);
     cloudNoiseTexture->createTextureSampler(device);
@@ -41,7 +41,7 @@ void Clouds::createTextures(vk::CommandPool commandPool)
     Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer);
 
     // Create 2D Texture for Cloud Output
-    cloudOutputTexture = new Texture();
+    cloudOutputTexture = std::make_unique<Texture>();
     // Assume screen size or half-screen size for performance
     cloudOutputTexture->createImage(device, width, height, 1, vk::Format::eR16G16B16A16Sfloat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, 1, vk::ImageCreateFlags{}, vk::ImageType::e2D, 1);
     cloudOutputTexture->createImageView(device, vk::Format::eR16G16B16A16Sfloat, vk::ImageAspectFlagBits::eColor, 1, vk::ImageViewType::e2D, 1);
@@ -273,8 +273,8 @@ void Clouds::cleanUp()
         if (cloudComputePipeline) device->getLogicalDevice().destroyPipeline(cloudComputePipeline);
         if (cloudPipelineLayout) device->getLogicalDevice().destroyPipelineLayout(cloudPipelineLayout);
     }
-    if (cloudNoiseTexture) { cloudNoiseTexture->cleanUp(); delete cloudNoiseTexture; }
-    if (cloudOutputTexture) { cloudOutputTexture->cleanUp(); delete cloudOutputTexture; }
+    if (cloudNoiseTexture) { cloudNoiseTexture->cleanUp(); cloudNoiseTexture.reset(); }
+    if (cloudOutputTexture) { cloudOutputTexture->cleanUp(); cloudOutputTexture.reset(); }
 }
 
 }

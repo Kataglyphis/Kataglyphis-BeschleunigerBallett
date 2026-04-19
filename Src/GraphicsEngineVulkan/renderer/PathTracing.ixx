@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 
 #include "renderer/pushConstants/PushConstantPathTracing.hpp"
 #include <glm/glm.hpp>
@@ -17,7 +18,7 @@ class PathTracing
   public:
     PathTracing();
 
-    void init(VulkanDevice *in_device, const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts);
+    void init(std::shared_ptr<VulkanDevice>in_device, const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts);
 
     void shaderHotReload(const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts);
 
@@ -32,7 +33,7 @@ class PathTracing
     ~PathTracing();
 
   private:
-    VulkanDevice *device{ nullptr };
+    std::shared_ptr<VulkanDevice>device{ nullptr };
 
     vk::PipelineLayout pipeline_layout{};
     vk::Pipeline pipeline{};

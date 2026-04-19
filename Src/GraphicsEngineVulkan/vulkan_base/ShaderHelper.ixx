@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 
 #include <string>
 #include <string_view>
@@ -19,7 +20,7 @@ class ShaderHelper
     void compileShader(const std::string &shader_src_dir, const std::string &shader_name);
     static std::string getShaderSpvDir(const std::string &shader_src_dir, const std::string &shader_name);
 
-    static vk::ShaderModule createShaderModule(VulkanDevice *device, const std::vector<char> &code);
+    static vk::ShaderModule createShaderModule(std::shared_ptr<VulkanDevice>device, const std::vector<char> &code);
 
     ~ShaderHelper();
 

@@ -69,10 +69,11 @@ $presetMsvcDebug = Get-OrDefault $env:PRESET_MSVC_DEBUG (Get-ConfigValue -Config
 $presetMsvcRelease = Get-OrDefault $env:PRESET_MSVC_RELEASE (Get-ConfigValue -Config $config -Path 'Build.Presets.MsvcRelease')
 $presetClangDebug = Get-OrDefault $env:PRESET_CLANGCL_DEBUG (Get-ConfigValue -Config $config -Path 'Build.Presets.ClangClDebug')
 $presetClangDebugTsan = Get-OrDefault $env:PRESET_CLANGCL_DEBUG_TSAN (Get-ConfigValue -Config $config -Path 'Build.Presets.ClangClDebugTsan')
+$presetClangFuzz = Get-OrDefault $env:PRESET_CLANGCL_FUZZ (Get-ConfigValue -Config $config -Path 'Build.Presets.ClangClFuzz')
 $presetClangProfile = Get-OrDefault $env:CLANG_PROFILE_PRESET (Get-ConfigValue -Config $config -Path 'Build.Presets.ClangClProfile')
 $presetClangRelease = Get-OrDefault $env:PRESET_CLANGCL_RELEASE (Get-ConfigValue -Config $config -Path 'Build.Presets.ClangClRelease')
 
-$availableConfigurations = @('msvc-debug', 'msvc-release', 'clang-debug', 'clang-tsan', 'profile', 'clang-release')
+$availableConfigurations = @('msvc-debug', 'msvc-release', 'clang-debug', 'clang-tsan', 'clang-profile', 'clang-release')
 $selectedConfigurations = Get-SelectedConfigurations -Configurations $Configurations -AvailableConfigurations $availableConfigurations
 
 # If SkipBuild is requested, clear any selected build configurations so
@@ -209,7 +210,7 @@ try {
   }
 
   if (Test-ConfigurationSelected -Name 'clang-tsan') {
-    Invoke-BuildOptional -Context $context -Name 'ClangCL-TSan (optional)' -Script {
+    Invoke-BuildStep -Context $context -StepName 'Configure/Build: ClangCL-TSan' -Critical -Script {
       $clangClCommand = Get-Command 'clang-cl.exe' -ErrorAction SilentlyContinue
       if (-not $clangClCommand) {
         throw 'clang-cl.exe not found on PATH. Install LLVM/Visual Studio Clang tools and run from a Developer PowerShell.'
@@ -217,19 +218,25 @@ try {
 
       Invoke-BuildExternal -Context $context -File $clangClCommand.Source -Parameters @('--version') | Out-Null
 
-      if (-not (Test-ClangClThreadSanitizerSupport -ClangClPath $clangClCommand.Source)) {
-        throw 'clang-cl ThreadSanitizer is not supported for target x86_64-pc-windows-msvc in this toolchain. Skipping optional TSan build/test.'
-      }
-
       Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathClangTsan -Preset $presetClangDebugTsan -Configuration 'Debug' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
 
       if (-not $SkipTests) {
         Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathClangTsan -Configuration 'Debug' -RuntimeFlavor 'Clang'
       }
-    }
+    } | Out-Null
   }
 
-  if (Test-ConfigurationSelected -Name 'profile') {
+  if (Test-ConfigurationSelected -Name 'clang-fuzz') {
+    Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangFuzz" -Critical -Script {
+      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathClangFuzz -Preset $presetClangFuzz -Configuration 'Debug' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
+
+      if (-not $SkipTests) {
+        Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathClangFuzz -Configuration 'Debug' -RuntimeFlavor 'Clang'
+      }
+    } | Out-Null
+  }
+
+  if (Test-ConfigurationSelected -Name 'clang-profile') {
     Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangProfile" -Critical -Script {
       Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathProfile -Preset $presetClangProfile -Configuration 'RelWithDebInfo' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
     } | Out-Null

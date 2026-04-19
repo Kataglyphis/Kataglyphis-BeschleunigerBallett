@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_core.h>
@@ -28,7 +29,7 @@ import kataglyphis.vulkan.shader_helper;
 
 Kataglyphis::VulkanRendererInternals::PostStage::PostStage() = default;
 
-void Kataglyphis::VulkanRendererInternals::PostStage::init(VulkanDevice *in_device,
+void Kataglyphis::VulkanRendererInternals::PostStage::init(std::shared_ptr<VulkanDevice>in_device,
   VulkanSwapChain *swapchain,
   const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
 {

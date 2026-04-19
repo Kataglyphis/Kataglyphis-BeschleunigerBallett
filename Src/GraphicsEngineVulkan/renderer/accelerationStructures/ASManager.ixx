@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -36,36 +37,36 @@ class ASManager
 
     vk::AccelerationStructureKHR &getTLAS() { return tlas.vulkanAS; };
 
-    void createASForScene(VulkanDevice *device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
+    void createASForScene(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
 
-    void createBLAS(VulkanDevice *device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
+    void createBLAS(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
 
-    void createTLAS(VulkanDevice *device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
+    void createTLAS(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
 
     void cleanUp();
 
     ~ASManager();
 
   private:
-    VulkanDevice *vulkanDevice{ nullptr };
+    std::shared_ptr<VulkanDevice>vulkanDevice{ nullptr };
     Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
     Kataglyphis::VulkanBufferManager vulkanBufferManager;
 
     std::vector<BottomLevelAccelerationStructure> blas;
     TopLevelAccelerationStructure tlas;
 
-    static void createSingleBlas(VulkanDevice *device,
+    static void createSingleBlas(std::shared_ptr<VulkanDevice>device,
       vk::CommandBuffer command_buffer,
       BuildAccelerationStructure &build_as_structure,
       vk::DeviceAddress scratch_device_or_host_address);
 
-    static void createAccelerationStructureInfosBLAS(VulkanDevice *device,
+    static void createAccelerationStructureInfosBLAS(std::shared_ptr<VulkanDevice>device,
       BuildAccelerationStructure &build_as_structure,
       BlasInput &blas_input,
       vk::DeviceSize &current_scretch_size,
       vk::DeviceSize &current_size);
 
-    static void objectToVkGeometryKHR(VulkanDevice *device,
+    static void objectToVkGeometryKHR(std::shared_ptr<VulkanDevice>device,
       Kataglyphis::Mesh *mesh,
       vk::AccelerationStructureGeometryKHR &acceleration_structure_geometry,
       vk::AccelerationStructureBuildRangeInfoKHR &acceleration_structure_build_range_info);

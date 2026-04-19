@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Starts the compiled executable inside the release directory and sets necessary environment variables.
+Starts the compiled executable inside the profile directory and sets necessary environment variables.
 #>
 
 param (
@@ -16,23 +16,29 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
 
 # Search in known build directories created by CMake presets
-$ReleaseDir = Join-Path $ProjectRoot "build-clangcl-release"
+$ProfileDir = Join-Path $ProjectRoot "build-clangcl-profile"
 
 # Attempt to find the exe path (fallback for single or multi-config generators)
-$ExePath = Join-Path $ReleaseDir $ExeName
+$ExePath = Join-Path $ProfileDir $ExeName
 
 if (-not (Test-Path $ExePath)) {
-    $ExePath = Join-Path $ReleaseDir "bin\$ExeName"
+    $ExePath = Join-Path $ProfileDir "bin\$ExeName"
 }
 if (-not (Test-Path $ExePath)) {
-    $ExePath = Join-Path $ReleaseDir "bin\Release\$ExeName"
+    $ExePath = Join-Path $ProfileDir "bin\Profile\$ExeName"
 }
 if (-not (Test-Path $ExePath)) {
-    $ExePath = Join-Path $ReleaseDir "Release\$ExeName"
+    $ExePath = Join-Path $ProfileDir "Profile\$ExeName"
+}
+if (-not (Test-Path $ExePath)) {
+    $ExePath = Join-Path $ProfileDir "bin\RelWithDebInfo\$ExeName"
+}
+if (-not (Test-Path $ExePath)) {
+    $ExePath = Join-Path $ProfileDir "RelWithDebInfo\$ExeName"
 }
 
 if (-not (Test-Path $ExePath)) {
-    throw "Executable '$ExeName' not found inside $ReleaseDir. Please run the 'build_clangcl_release.ps1' script first."
+    throw "Executable '$ExeName' not found inside $ProfileDir. Please build the profile preset first."
 }
 
 # 3. Start the application
@@ -43,8 +49,15 @@ Write-Host "Starting $ExePath..."
 Write-Host "Working Directory: $WorkDir"
 
 # Use Start-Process so it executes properly without locking up the script but waits for completion
-Set-Location -Path $WorkDir
+
 try {
+    # Force Vulkan to use the Proprietary AMD Driver to prevent AMD open-source driver access violations
+    $ProprietaryDriver = "C:\WINDOWS\System32\DriverStore\FileRepository\u0198974.inf_amd64_dcac9659486b668a\B025819\amd-vulkan64.json"
+    if (Test-Path $ProprietaryDriver) {
+        $env:VK_ICD_FILENAMES = $ProprietaryDriver
+    }
+
+    Set-Location -Path $WorkDir
     if ($ExeArgs) {
         & $ExePath $ExeArgs
     } else {

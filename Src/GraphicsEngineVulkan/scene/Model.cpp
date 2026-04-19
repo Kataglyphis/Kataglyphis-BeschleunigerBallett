@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 
 #include "common/Utilities.hpp"
 #include <cstdint>
@@ -19,20 +20,23 @@ using namespace Kataglyphis;
 
 Model::Model() = default;
 
-Model::Model(VulkanDevice *device) : device(device) {}
+Model::Model(std::shared_ptr<VulkanDevice>device) : device(device) {}
 
 void Model::cleanUp()
 {
+    if (device == nullptr) return;
     for (Texture &texture : modelTextures) { texture.cleanUp(); }
+    modelTextures.clear();
 
     for (vk::Sampler texture_sampler : modelTextureSamplers) {
         device->getLogicalDevice().destroySampler(texture_sampler);
     }
+    modelTextureSamplers.clear();
 
     mesh.cleanUp();
 }
 
-void Model::add_new_mesh(VulkanDevice *vulkan_device,
+void Model::add_new_mesh(std::shared_ptr<VulkanDevice>vulkan_device,
   vk::Queue transfer_queue,
   vk::CommandPool command_pool,
   std::vector<Vertex> &vertices,
@@ -65,7 +69,7 @@ auto Model::getPrimitiveCount() -> uint32_t
     return mesh.getIndexCount() / 3;
 }
 
-Model::~Model() = default;
+Model::~Model() { cleanUp(); }
 
 void Model::addSampler(const Texture &newTexture)
 {

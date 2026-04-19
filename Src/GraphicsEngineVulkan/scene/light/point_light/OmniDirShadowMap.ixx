@@ -14,9 +14,9 @@ class OmniDirShadowMap
   public:
     OmniDirShadowMap() = default;
 
-    void init(VulkanDevice *device, uint32_t width, uint32_t height);
+    void init(std::shared_ptr<VulkanDevice>device, uint32_t width, uint32_t height);
     
-    Kataglyphis::Texture* getShadowMapCube() { return shadowMapCube; }
+    Kataglyphis::Texture* getShadowMapCube() { return shadowMapCube.get(); }
     vk::Framebuffer getFramebuffer() const { return framebuffer; }
     vk::RenderPass getRenderPass() const { return renderPass; }
 
@@ -27,11 +27,11 @@ class OmniDirShadowMap
     ~OmniDirShadowMap() = default;
 
   private:
-    VulkanDevice *device{ nullptr };
+    std::shared_ptr<VulkanDevice>device{ nullptr };
     uint32_t shadowWidth{ 0 };
     uint32_t shadowHeight{ 0 };
 
-    Kataglyphis::Texture* shadowMapCube{nullptr};
+    std::unique_ptr<Kataglyphis::Texture> shadowMapCube;
     vk::RenderPass renderPass;
     vk::Framebuffer framebuffer;
 

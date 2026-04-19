@@ -68,7 +68,7 @@ class Scene
     std::vector<ObjectDescription> getObjectDescriptions() { return object_descriptions; };
     std::vector<std::shared_ptr<Model>> const &get_model_list() { return model_list; };
 
-    void loadModel(VulkanDevice *device, vk::CommandPool commandPool);
+    void loadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool);
 
     void add_model(const std::shared_ptr<Model> &model);
     void add_object_description(ObjectDescription object_description);

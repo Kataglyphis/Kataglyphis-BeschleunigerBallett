@@ -68,7 +68,7 @@ class VulkanRenderer
     vk::SurfaceKHR surface{};
     void create_surface();
 
-    std::unique_ptr<VulkanDevice> device;
+    std::shared_ptr<VulkanDevice> device;
 
     VulkanSwapChain vulkanSwapChain;
 

@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 
 #include "renderer/SwapChainDetails.hpp"
 #include <algorithm>
@@ -19,7 +20,7 @@ import kataglyphis.vulkan.window;
 
 Kataglyphis::VulkanSwapChain::VulkanSwapChain() = default;
 
-void Kataglyphis::VulkanSwapChain::initVulkanContext(VulkanDevice *in_device,
+void Kataglyphis::VulkanSwapChain::initVulkanContext(std::shared_ptr<VulkanDevice>in_device,
   Kataglyphis::Frontend::Window *frontend_window,
   const vk::SurfaceKHR &surface)
 {

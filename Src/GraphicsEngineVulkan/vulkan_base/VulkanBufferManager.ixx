@@ -1,4 +1,5 @@
-module;
+﻿module;
+#include <memory>
 #include <cstring>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -31,7 +32,7 @@ class VulkanBufferManager
       uint32_t height);
 
     template<typename T>
-    void createBufferAndUploadVectorOnDevice(VulkanDevice *device,
+    void createBufferAndUploadVectorOnDevice(std::shared_ptr<VulkanDevice>device,
       vk::CommandPool commandPool,
       VulkanBuffer &vulkanBuffer,
       vk::BufferUsageFlags dstBufferUsageFlags,
@@ -41,7 +42,7 @@ class VulkanBufferManager
       vk::Queue transfer_queue = {});
 
     template<typename T>
-    void createBufferAndUploadVectorOnDevice(VulkanDevice *device,
+    void createBufferAndUploadVectorOnDevice(std::shared_ptr<VulkanDevice>device,
       vk::CommandPool commandPool,
       VulkanBuffer &vulkanBuffer,
       vk::BufferUsageFlags dstBufferUsageFlags,
@@ -56,7 +57,7 @@ class VulkanBufferManager
 };
 
 template<typename T>
-inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(VulkanDevice *device,
+inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(std::shared_ptr<VulkanDevice>device,
   vk::CommandPool commandPool,
   VulkanBuffer &vulkanBuffer,
   vk::BufferUsageFlags dstBufferUsageFlags,
@@ -94,7 +95,7 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(VulkanDevic
 }
 
 template<typename T>
-inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(VulkanDevice *device,
+inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(std::shared_ptr<VulkanDevice>device,
   vk::CommandPool commandPool,
   VulkanBuffer &vulkanBuffer,
   vk::BufferUsageFlags dstBufferUsageFlags,

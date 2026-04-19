@@ -232,12 +232,15 @@ function Invoke-CmakeConfigureAndBuild {
     throw "CMake build failed with exit code $buildExitCode"
   }
 
-  # Check if this is a clang-cl debug build and copy the sanitizer dlls to the bin directory
-  if ($Configuration -eq 'Debug' -and $Preset -match 'clang') {
-    Write-BuildLog -Context $Context -Message "DEBUG: Post-build step: Copying ASan DLLs for clang-cl debug build..."
+  # Check if this is a debug build and copy the sanitizer dlls to the bin directory
+  if ($Configuration -eq 'Debug') {
+    Write-BuildLog -Context $Context -Message "DEBUG: Post-build step: Copying Sanitizer DLLs for debug build..."
     $binDir = Join-Path $BuildPath "bin\Debug"
     if (-not (Test-Path $binDir)) {
         $binDir = Join-Path $BuildPath "bin"
+    }
+    if (-not (Test-Path $binDir)) {
+        $binDir = $BuildPath
     }
 
     if (Test-Path $binDir) {
@@ -254,15 +257,32 @@ function Invoke-CmakeConfigureAndBuild {
 
         $ClangRootPaths += "C:\Program Files\LLVM"
         $ClangRootPaths += "C:\Program Files (x86)\LLVM"
+        
+        # Add MSVC VC Tools path for MSVC ASAN dlls
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (Test-Path $vswhere) {
+            $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            if ($vsPath) {
+                $vcToolsPath = Get-ChildItem -Path "$vsPath\VC\Tools\MSVC\*" -Directory | Select-Object -First 1
+                if ($vcToolsPath) {
+                    $ClangRootPaths += $vcToolsPath.FullName
+                }
+            }
+        }
 
         $SanitizerDllsCopied = $false
 
-        foreach ($ClangRoot in $ClangRootPaths) {
-            if (-not (Test-Path $ClangRoot)) { continue }
+        foreach ($RootPath in $ClangRootPaths) {
+            if (-not (Test-Path $RootPath)) { continue }
 
-            $SanitizerDlls = Get-ChildItem -Path "$ClangRoot\lib\clang\*\lib\windows\clang_rt.*san_dynamic-*.dll" -ErrorAction SilentlyContinue
+            # Check LLVM paths
+            $SanitizerDlls = Get-ChildItem -Path "$RootPath\lib\clang\*\lib\windows\clang_rt.*san*.dll" -ErrorAction SilentlyContinue
             if (-not $SanitizerDlls) {
-                $SanitizerDlls = Get-ChildItem -Path "$ClangRoot\lib\windows\clang_rt.*san_dynamic-*.dll" -ErrorAction SilentlyContinue
+                $SanitizerDlls = Get-ChildItem -Path "$RootPath\lib\windows\clang_rt.*san*.dll" -ErrorAction SilentlyContinue
+            }
+            # Check MSVC paths
+            if (-not $SanitizerDlls) {
+                $SanitizerDlls = Get-ChildItem -Path "$RootPath\bin\Hostx64\x64\clang_rt.*san*.dll" -ErrorAction SilentlyContinue
             }
 
             if ($SanitizerDlls) {
@@ -271,15 +291,14 @@ function Invoke-CmakeConfigureAndBuild {
                     Write-BuildLog -Context $Context -Message "DEBUG: Copied $($dll.Name) to $binDir"
                 }
                 $SanitizerDllsCopied = $true
-                break
             }
         }
         
         if (-not $SanitizerDllsCopied) {
-            Write-BuildLogWarning -Context $Context -Message "Could not find clang_rt ASan/UBSan dynamic DLLs to copy."
+            Write-BuildLogWarning -Context $Context -Message "Could not find Sanitizer dynamic DLLs to copy."
         }
     } else {
-        Write-BuildLogWarning -Context $Context -Message "Bin directory $binDir not found. Cannot copy ASan DLLs."
+        Write-BuildLogWarning -Context $Context -Message "Bin directory $binDir not found. Cannot copy Sanitizer DLLs."
     }
   }
 

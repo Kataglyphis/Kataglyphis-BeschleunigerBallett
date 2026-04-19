@@ -20,10 +20,10 @@ class Texture
     Texture();
     Texture(const Texture &) = delete;
     Texture &operator=(const Texture &) = delete;
-    Texture(Texture &&other) noexcept = default;
-    Texture &operator=(Texture &&other) noexcept = default;
+    Texture(Texture &&other) noexcept;
+    Texture &operator=(Texture &&other) noexcept;
 
-    void createFromFile(VulkanDevice *device, vk::CommandPool commandPool, const std::string &fileName);
+    void createFromFile(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, const std::string &fileName);
 
     void setImage(vk::Image image);
     void setImageView(vk::ImageView imageView);
@@ -35,7 +35,7 @@ class Texture
     vk::ImageView &getImageView() { return vulkanImageView.getImageView(); };
     vk::Sampler &getSampler() { return textureSampler; }
 
-    void createImage(VulkanDevice *device,
+    void createImage(std::shared_ptr<VulkanDevice>device,
       uint32_t width,
       uint32_t height,
       uint32_t in_mip_levels,
@@ -48,9 +48,9 @@ class Texture
       vk::ImageType image_type = vk::ImageType::e2D,
       uint32_t depth = 1);
 
-    void createImageView(VulkanDevice *device, vk::Format format, vk::ImageAspectFlags aspect_flags, uint32_t in_mip_levels, vk::ImageViewType view_type = vk::ImageViewType::e2D, uint32_t array_layers = 1);
+    void createImageView(std::shared_ptr<VulkanDevice>device, vk::Format format, vk::ImageAspectFlags aspect_flags, uint32_t in_mip_levels, vk::ImageViewType view_type = vk::ImageViewType::e2D, uint32_t array_layers = 1);
 
-    void createTextureSampler(VulkanDevice *device, vk::Filter filter = vk::Filter::eLinear, vk::SamplerAddressMode addressMode = vk::SamplerAddressMode::eRepeat);
+    void createTextureSampler(std::shared_ptr<VulkanDevice>device, vk::Filter filter = vk::Filter::eLinear, vk::SamplerAddressMode addressMode = vk::SamplerAddressMode::eRepeat);
 
     void cleanUp();
 
@@ -77,6 +77,6 @@ class Texture
     VulkanImage vulkanImage;
     VulkanImageView vulkanImageView;
     vk::Sampler textureSampler = nullptr;
-    VulkanDevice *device = nullptr;
+    std::shared_ptr<VulkanDevice>device = nullptr;
 };
 }// namespace Kataglyphis
