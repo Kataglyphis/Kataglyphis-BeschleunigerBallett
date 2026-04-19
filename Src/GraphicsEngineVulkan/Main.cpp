@@ -12,6 +12,7 @@ import kataglyphis.vulkan.app;
 #if USE_RUST
 #include "kataglyphis_rustprojecttemplate_bridge/native_only.h"
 #endif
+#include <CLI/CLI.hpp>
 #include "spdlog/common.h"
 #include "spdlog/logger.h"
 #include "spdlog/sinks/basic_file_sink.h"
@@ -30,31 +31,6 @@ auto normalize_gpu_mode(std::string value) -> std::string
 
     if (value == "auto" || value == "dedicated" || value == "integrated") { return value; }
     return "";
-}
-
-void apply_gpu_selection_from_args(std::span<char *const> arguments)
-{
-    for (std::size_t index = 1; index < arguments.size(); ++index) {
-        const std::string argument = arguments[index];
-        const std::string prefix = "--gpu=";
-        if (argument.rfind(prefix, 0) != 0) { continue; }
-
-        const std::string gpu_mode = normalize_gpu_mode(argument.substr(prefix.size()));
-        if (gpu_mode.empty()) {
-            spdlog::warn("Invalid value for --gpu. Valid values are: auto, dedicated, integrated.");
-            return;
-        }
-
-#if defined(_WIN32)
-        _putenv_s("KATAGLYPHIS_VK_GPU", gpu_mode.c_str());
-#else
-        setenv("KATAGLYPHIS_VK_GPU", gpu_mode.c_str(), 1);
-#endif
-
-        spdlog::default_logger_raw()->log(
-          spdlog::level::info, std::string("GPU selection mode set via CLI: ") + gpu_mode);
-        return;
-    }
 }
 
 void initialize_logging()
@@ -101,7 +77,35 @@ void initialize_logging()
 auto main(int argc, char **argv) -> int
 {
     initialize_logging();
-    apply_gpu_selection_from_args(std::span<char *const>(argv, static_cast<std::size_t>(argc)));
+
+    CLI::App app{ "Kataglyphis BeschleunigerBallett Graphics Engine" };
+    std::string gpu_mode;
+    app.add_option("--gpu", gpu_mode, "GPU selection mode (auto, dedicated, integrated)");
+
+#if defined(__cpp_exceptions) || defined(__EXCEPTIONS) || defined(_CPPUNWIND)
+    try {
+        app.parse(argc, argv);
+    } catch (const CLI::ParseError &e) {
+        return app.exit(e);
+    }
+#else
+    app.parse(argc, argv);
+#endif
+
+    if (!gpu_mode.empty()) {
+        const std::string normalized_mode = normalize_gpu_mode(gpu_mode);
+        if (normalized_mode.empty()) {
+            spdlog::warn("Invalid value for --gpu. Valid values are: auto, dedicated, integrated.");
+        } else {
+#if defined(_WIN32)
+            _putenv_s("KATAGLYPHIS_VK_GPU", normalized_mode.c_str());
+#else
+            setenv("KATAGLYPHIS_VK_GPU", normalized_mode.c_str(), 1);
+#endif
+            spdlog::default_logger_raw()->log(
+                spdlog::level::info, std::string("GPU selection mode set via CLI: ") + normalized_mode);
+        }
+    }
 
 #if USE_RUST
     if (USE_RUST) {

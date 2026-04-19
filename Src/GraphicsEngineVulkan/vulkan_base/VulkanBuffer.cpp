@@ -50,6 +50,10 @@ void Kataglyphis::VulkanBuffer::create(VulkanDevice *vulkan_device,
 {
     device = vulkan_device;
 
+    if (buffer_size == 0) {
+        buffer_size = 4; // Prevent VUID-VkBufferCreateInfo-size-00912
+    }
+
     // information to create a buffer (doesn't include assigning memory)
     vk::BufferCreateInfo buffer_info{};
     buffer_info.size = buffer_size;

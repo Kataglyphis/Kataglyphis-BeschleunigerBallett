@@ -94,6 +94,10 @@ void Mesh::createVertexBuffer(vk::Queue /*transfer_queue*/,
         memory_allocate_flags |= vk::MemoryAllocateFlagBits::eDeviceAddress;
     }
 
+    if (vertices.empty()) {
+        vertices.push_back(Vertex()); // Avoid allocating 0 size buffer
+    }
+
     vulkanBufferManager.createBufferAndUploadVectorOnDevice(
       device, transfer_command_pool, vertexBuffer, usage_flags, memory_property_flags, vertices, memory_allocate_flags);
 }
@@ -117,6 +121,10 @@ void Mesh::createIndexBuffer(vk::Queue /*transfer_queue*/,
         memory_allocate_flags |= vk::MemoryAllocateFlagBits::eDeviceAddress;
     }
 
+    if (indices.empty()) {
+        indices.push_back(0); // Avoid allocating 0 size buffer
+    }
+
     vulkanBufferManager.createBufferAndUploadVectorOnDevice(
       device, transfer_command_pool, indexBuffer, usage_flags, memory_property_flags, indices, memory_allocate_flags);
 }
@@ -138,6 +146,10 @@ void Mesh::createMaterialIDBuffer(vk::Queue /*transfer_queue*/,
             usage_flags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
         }
         memory_allocate_flags |= vk::MemoryAllocateFlagBits::eDeviceAddress;
+    }
+
+    if (materialIndex.empty()) {
+        materialIndex.push_back(0); // Avoid allocating 0 size buffer
     }
 
     vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
@@ -169,6 +181,9 @@ void Mesh::createMaterialBuffer(vk::Queue /*transfer_queue*/,
     }
 
     auto &__vbm = vulkanBufferManager;
+    if (materials.empty()) {
+        materials.push_back(ObjMaterial{});
+    }
     __vbm.createBufferAndUploadVectorOnDevice(device,
       transfer_command_pool,
       materialsBuffer,

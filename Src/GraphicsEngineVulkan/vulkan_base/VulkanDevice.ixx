@@ -54,25 +54,5 @@ class VulkanDevice
 
     bool check_device_suitable(vk::PhysicalDevice device);
     bool check_device_extension_support(vk::PhysicalDevice device);
-
-    const std::vector<const char *> device_extensions = {
-
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME
-
-    };
-
-    const std::vector<const char *> device_extensions_for_raytracing = {
-
-        VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
-        VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
-        VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
-        VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-        VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
-        VK_KHR_SPIRV_1_4_EXTENSION_NAME,
-        VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
-        VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
-        VK_KHR_RAY_QUERY_EXTENSION_NAME
-
-    };
 };
 }// namespace Kataglyphis

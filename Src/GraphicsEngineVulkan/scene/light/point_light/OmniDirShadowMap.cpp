@@ -5,12 +5,16 @@ module;
 #include "common/FormatHelper.hpp"
 #include "common/Utilities.hpp"
 
+#include <unordered_map>
+
 module kataglyphis.vulkan.omni_dir_shadow_map;
 
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.texture;
 
 namespace Kataglyphis {
+
+static std::unordered_map<OmniDirShadowMap*, vk::ImageView> g_layerViewMap;
 
 void OmniDirShadowMap::init(VulkanDevice *in_device, uint32_t width, uint32_t height)
 {
@@ -21,7 +25,7 @@ void OmniDirShadowMap::init(VulkanDevice *in_device, uint32_t width, uint32_t he
     vk::Format depthFormat = Kataglyphis::choose_supported_format(device->getPhysicalDevice(), { vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint }, vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eDepthStencilAttachment);
 
     // Create Cube Map
-    shadowMapCube = std::make_unique<Texture>();
+    shadowMapCube = new Texture();
     shadowMapCube->createImage(device, shadowWidth, shadowHeight, 1, depthFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, 6, vk::ImageCreateFlagBits::eCubeCompatible);
 
     shadowMapCube->createImageView(device, depthFormat, vk::ImageAspectFlagBits::eDepth, 1, vk::ImageViewType::eCube, 6);
@@ -86,12 +90,13 @@ void OmniDirShadowMap::createFramebuffers()
     viewInfo.subresourceRange.baseArrayLayer = 0;
     viewInfo.subresourceRange.layerCount = 6;
 
-    vk::ImageView layerView = device->getLogicalDevice().createImageView(viewInfo).value;
+    vk::ImageView view = device->getLogicalDevice().createImageView(viewInfo).value;
+    g_layerViewMap[this] = view;
 
     vk::FramebufferCreateInfo framebufferInfo{};
     framebufferInfo.renderPass = renderPass;
     framebufferInfo.attachmentCount = 1;
-    framebufferInfo.pAttachments = &layerView;
+    framebufferInfo.pAttachments = &g_layerViewMap[this];
     framebufferInfo.width = shadowWidth;
     framebufferInfo.height = shadowHeight;
     framebufferInfo.layers = 1; // Handled by Multiview viewMask
@@ -102,10 +107,15 @@ void OmniDirShadowMap::createFramebuffers()
 void OmniDirShadowMap::cleanUp()
 {
     if (device) {
+        if (g_layerViewMap.find(this) != g_layerViewMap.end()) {
+            device->getLogicalDevice().destroyImageView(g_layerViewMap[this]);
+            g_layerViewMap.erase(this);
+        }
         device->getLogicalDevice().destroyFramebuffer(framebuffer);
         device->getLogicalDevice().destroyRenderPass(renderPass);
         if (shadowMapCube) {
             shadowMapCube->cleanUp();
+            delete shadowMapCube;
         }
     }
 }

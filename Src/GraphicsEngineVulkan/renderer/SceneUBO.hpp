@@ -43,8 +43,8 @@ struct SceneUBO
     uint numPointLights;
     
     // padding for alignment (std140)
-    uint padding0;
-    uint padding1;
+    uint pcfRadius;
+    float cascadedShadowIntensity;
     uint padding2;
 
     // Cascaded shadow maps
@@ -55,6 +55,12 @@ struct SceneUBO
     vec4 view_dir;
     // xyz is position; w = fov
     vec4 cam_pos;
+    
+    // Clouds
+    vec4 cloudMovementDirection; // w = speed
+    vec4 cloudMeshScale; // w = cloudScale
+    vec4 cloudMeshOffset; // w = cloudDensity
+    vec4 cloudParameters; // x = pillowness, y = cirrus_effect, z = powder_effect, w = numMarchSteps
 };
 #ifdef __cplusplus
 }// namespace Kataglyphis::VulkanRendererInternals

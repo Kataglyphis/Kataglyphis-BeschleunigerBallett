@@ -39,7 +39,7 @@ void Kataglyphis::Texture::createFromFile(VulkanDevice *device,
     int width = 0;
     int height = 0;
     vk::DeviceSize size = 0;
-    stbi_uc *image_data = loadTextureData(fileName, &width, &height, &size);
+    unsigned char *image_data = loadTextureData(fileName, &width, &height, &size);
 
     constexpr vk::Format texture_format = vk::Format::eR8G8B8A8Unorm;
     mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
@@ -181,10 +181,10 @@ Kataglyphis::Texture::~Texture() = default;
 auto Kataglyphis::Texture::loadTextureData(const std::string &file_name,
   int *width,
   int *height,
-  vk::DeviceSize *image_size) -> stbi_uc *
+  vk::DeviceSize *image_size) -> unsigned char *
 {
     int channels = 0;
-    stbi_uc *image = stbi_load(file_name.c_str(), width, height, &channels, STBI_rgb_alpha);
+    unsigned char *image = stbi_load(file_name.c_str(), width, height, &channels, STBI_rgb_alpha);
 
     if (image == nullptr) { spdlog::error("Failed to load a texture file! (" + file_name + ")"); }
 

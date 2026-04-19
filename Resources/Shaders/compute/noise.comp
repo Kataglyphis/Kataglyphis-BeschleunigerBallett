@@ -5,7 +5,79 @@ layout (local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
 layout(set = 0, binding = 0, rgba16f) uniform writeonly image3D noiseVolume;
 
-// Placeholder for worley/perlin fractal noise generation
+// Hash function for procedural noise
+vec3 hash33(vec3 p3) {
+    p3 = fract(p3 * vec3(.1031, .1030, .0973));
+    p3 += dot(p3, p3.yxz+33.33);
+    return fract((p3.xxy + p3.yxx)*p3.zyx);
+}
+
+// Procedural Worley Noise
+float worley(vec3 p, float numCells) {
+    p *= numCells;
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    
+    float minDist = 1.0;
+    for(int z = -1; z <= 1; z++) {
+        for(int y = -1; y <= 1; y++) {
+            for(int x = -1; x <= 1; x++) {
+                vec3 neighbor = vec3(float(x), float(y), float(z));
+                // Tile the grid to ensure wrapping
+                vec3 neighborWorld = mod(i + neighbor, numCells);
+                vec3 point = hash33(neighborWorld);
+                vec3 diff = neighbor + point - f;
+                float dist = length(diff);
+                minDist = min(minDist, dist);
+            }
+        }
+    }
+    return minDist;
+}
+
+// Simple 3D Perlin-like noise (Simplex/Value)
+float hash13(vec3 p3) {
+    p3  = fract(p3 * .1031);
+    p3 += dot(p3, p3.zyx + 31.32);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+float valueNoise(vec3 x) {
+    vec3 i = floor(x);
+    vec3 f = fract(x);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(hash13(i + vec3(0,0,0)), hash13(i + vec3(1,0,0)), f.x),
+                   mix(hash13(i + vec3(0,1,0)), hash13(i + vec3(1,1,0)), f.x), f.y),
+               mix(mix(hash13(i + vec3(0,0,1)), hash13(i + vec3(1,0,1)), f.x),
+                   mix(hash13(i + vec3(0,1,1)), hash13(i + vec3(1,1,1)), f.x), f.y), f.z);
+}
+
+float fbm_value(vec3 x, int octaves) {
+    float v = 0.0;
+    float a = 0.5;
+    vec3 shift = vec3(100.0);
+    for (int i = 0; i < octaves; ++i) {
+        v += a * valueNoise(x);
+        x = x * 2.0 + shift;
+        a *= 0.5;
+    }
+    return v;
+}
+
+float fbm_worley(vec3 p, vec3 freqs, float H) {
+    float gain = exp2(-H);
+    float amplitude = 0.6;
+    float result = 0.0;
+
+    result += amplitude * worley(p, freqs.x);
+    amplitude *= gain;
+    result += amplitude * worley(p, freqs.y);
+    amplitude *= gain;
+    result += amplitude * worley(p, freqs.z);
+    
+    return result;
+}
+
 void main() {
     ivec3 texelCoord = ivec3(gl_GlobalInvocationID.xyz);
     ivec3 size = imageSize(noiseVolume);
@@ -14,7 +86,27 @@ void main() {
         return;
     }
 
-    float n = fract(sin(dot(vec3(texelCoord), vec3(12.9898, 78.233, 45.164))) * 43758.5453);
-    
-    imageStore(noiseVolume, texelCoord, vec4(n, n, n, 1.0));
+    vec3 uv = vec3(texelCoord) / vec3(size);
+
+    float worley_1 = worley(uv, 4.0);
+    float worley_2 = worley(uv, 8.0);
+    float worley_3 = worley(uv, 16.0);
+    float worley_4 = worley(uv, 32.0);
+    float worley_5 = worley(uv, 64.0);
+
+    vec3 freqs1 = vec3(4.0, 8.0, 16.0);
+    vec3 freqs2 = vec3(8.0, 16.0, 32.0);
+    vec3 freqs3 = vec3(16.0, 32.0, 64.0);
+
+    float base_worley = 1.0 - fbm_worley(uv, freqs1, 0.85);
+    float perlin = fbm_value(uv * 4.0, 5);
+
+    vec4 pixel = vec4(
+        1.0 - fbm_worley(uv, freqs1, 0.85),
+        1.0 - fbm_worley(uv, freqs2, 0.85),
+        1.0 - fbm_worley(uv, freqs3, 0.85),
+        base_worley * 0.8 + perlin * 0.2
+    );
+
+    imageStore(noiseVolume, texelCoord, pixel);
 }

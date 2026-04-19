@@ -122,11 +122,17 @@ void DeferredRasterizer::cleanUp()
         logicalDevice.destroyFramebuffer(fb);
     }
 
+    for (auto& tex : offscreenTextures) { if (tex) tex->cleanUp(); }
     offscreenTextures.clear();
+    for (auto& tex : gBufferPositions) { if (tex) tex->cleanUp(); }
     gBufferPositions.clear();
+    for (auto& tex : gBufferNormals) { if (tex) tex->cleanUp(); }
     gBufferNormals.clear();
+    for (auto& tex : gBufferAlbedos) { if (tex) tex->cleanUp(); }
     gBufferAlbedos.clear();
+    for (auto& tex : gBufferMaterials) { if (tex) tex->cleanUp(); }
     gBufferMaterials.clear();
+    if (depthBufferImage) { depthBufferImage->cleanUp(); }
     depthBufferImage.reset();
 }
 
@@ -471,6 +477,20 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
     renderPassInfo.pClearValues = clearValues.data();
 
     commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+
+    vk::Viewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(vulkanSwapChain->getSwapChainExtent().width);
+    viewport.height = static_cast<float>(vulkanSwapChain->getSwapChainExtent().height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    commandBuffer.setViewport(0, 1, &viewport);
+
+    vk::Rect2D scissor{};
+    scissor.offset = vk::Offset2D{ 0, 0 };
+    scissor.extent = vulkanSwapChain->getSwapChainExtent();
+    commandBuffer.setScissor(0, 1, &scissor);
 
     // Subpass 0: Geometry
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, geometryPipeline);

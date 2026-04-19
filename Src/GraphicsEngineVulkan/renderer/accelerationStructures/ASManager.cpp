@@ -28,6 +28,9 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createASForScene(VulkanDev
   Kataglyphis::Scene *scene)
 {
     this->vulkanDevice = device;
+    if (scene == nullptr || scene->getModelCount() == 0) {
+        return;
+    }
     createBLAS(device, commandPool, scene);
     createTLAS(device, commandPool, scene);
 }
@@ -194,7 +197,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(VulkanDevice *d
     vk::AccelerationStructureBuildSizesInfoKHR acceleration_structure_build_sizes_info{};
 
     auto const count_instance = static_cast<uint32_t>(tlas_instances.size());
-    device->getLogicalDevice().getAccelerationStructureBuildSizesKHR(vk::AccelerationStructureBuildTypeKHR::eHost,
+    device->getLogicalDevice().getAccelerationStructureBuildSizesKHR(vk::AccelerationStructureBuildTypeKHR::eDevice,
       &acceleration_structure_build_geometry_info,
       &count_instance,
       &acceleration_structure_build_sizes_info);

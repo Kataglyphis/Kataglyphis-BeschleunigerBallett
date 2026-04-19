@@ -48,15 +48,7 @@ void Kataglyphis::VulkanBufferManager::copyBuffer(vk::Device device,
     copy_buffer_impl(device, transfer_queue, transfer_command_pool, src_buffer, dst_buffer, buffer_size);
 }
 
-void Kataglyphis::VulkanBufferManager::copyBuffer(vk::Device device,
-  vk::Queue transfer_queue,
-  vk::CommandPool transfer_command_pool,
-  VulkanBuffer src_buffer,
-  VulkanBuffer dst_buffer,
-  vk::DeviceSize buffer_size)
-{
-    copy_buffer_impl(device, transfer_queue, transfer_command_pool, src_buffer, dst_buffer, buffer_size);
-}
+
 
 void Kataglyphis::VulkanBufferManager::copyImageBuffer(vk::Device device,
   vk::Queue transfer_queue,

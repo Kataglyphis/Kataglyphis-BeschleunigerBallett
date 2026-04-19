@@ -109,7 +109,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
 
     // Initialize atmospheric effects and shadows
     skyBox.init(device.get(), graphics_command_pool);
-    clouds.init(device.get(), graphics_command_pool);
+    clouds.init(device.get(), graphics_command_pool, sharedRenderDescriptorSetLayout, vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
     dirShadowMap.init(device.get(), 2048, 2048, MAX_CASCADES);
     pointShadowMap.init(device.get(), 1024, 1024);
 
@@ -174,6 +174,46 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
       1.0F);
 
     sceneUBO.cam_pos = glm::vec4(camera_data->get_camera_position(), camera_data->get_fov());
+
+    // Populate GUI state into SceneUBO
+    sceneUBO.pcfRadius = static_cast<unsigned int>(guiSceneSharedVars.pcf_radius);
+    sceneUBO.cascadedShadowIntensity = guiSceneSharedVars.cascaded_shadow_intensity;
+
+    // Calculate CSM cascades
+    dirShadowMap.updateCascades(globalUBO.view, camera_data->get_fov(),
+        static_cast<float>(window_data->get_width()) / static_cast<float>(window_data->get_height()),
+        camera_data->get_near_plane(), camera_data->get_far_plane(),
+        glm::vec3(sceneUBO.dirLight.direction));
+
+    const auto& cascadeData = dirShadowMap.getCascadeData();
+    for (size_t i = 0; i < std::min(cascadeData.size(), static_cast<size_t>(MAX_CASCADES)); ++i) {
+        sceneUBO.cascadeSplits[static_cast<int>(i)] = cascadeData[i].splitDepth;
+        sceneUBO.cascadeLightSpaceMatrices[i] = cascadeData[i].viewProjMatrix;
+    }
+
+    sceneUBO.cloudMovementDirection = glm::vec4(
+        guiSceneSharedVars.cloud_movement_direction[0],
+        guiSceneSharedVars.cloud_movement_direction[1],
+        guiSceneSharedVars.cloud_movement_direction[2],
+        static_cast<float>(guiSceneSharedVars.cloud_speed));
+
+    sceneUBO.cloudMeshScale = glm::vec4(
+        guiSceneSharedVars.cloud_mesh_scale[0],
+        guiSceneSharedVars.cloud_mesh_scale[1],
+        guiSceneSharedVars.cloud_mesh_scale[2],
+        guiSceneSharedVars.cloud_scale);
+
+    sceneUBO.cloudMeshOffset = glm::vec4(
+        guiSceneSharedVars.cloud_mesh_offset[0],
+        guiSceneSharedVars.cloud_mesh_offset[1],
+        guiSceneSharedVars.cloud_mesh_offset[2],
+        guiSceneSharedVars.cloud_density);
+
+    sceneUBO.cloudParameters = glm::vec4(
+        guiSceneSharedVars.cloud_pillowness,
+        guiSceneSharedVars.cloud_cirrus_effect,
+        guiSceneSharedVars.cloud_powder_effect ? 1.0f : 0.0f,
+        static_cast<float>(guiSceneSharedVars.cloud_num_march_steps));
 }
 
 void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Frontend::GUI *frontend_gui)
@@ -184,6 +224,24 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Fronten
     if (guiRendererSharedVars.shader_hot_reload_triggered) {
         shaderHotReload();
         guiRendererSharedVars.shader_hot_reload_triggered = false;
+    }
+
+    GUISceneSharedVars &guiSceneSharedVars = scene->getGuiSceneSharedVars();
+    if (guiSceneSharedVars.shadow_resolution_changed) {
+        guiSceneSharedVars.shadow_resolution_changed = false;
+
+        (void)device->getLogicalDevice().waitIdle();
+        dirShadowMap.cleanUp();
+        
+        int shadow_res = 512;
+        if (guiSceneSharedVars.shadow_map_res_index == 1) shadow_res = 1024;
+        else if (guiSceneSharedVars.shadow_map_res_index == 2) shadow_res = 2048;
+        else if (guiSceneSharedVars.shadow_map_res_index == 3) shadow_res = 4096;
+
+        dirShadowMap.init(device.get(), shadow_res, shadow_res, guiSceneSharedVars.num_shadow_cascades);
+        
+        // We must recreate descriptor sets that depend on the shadow map
+        updateTexturesInSharedRenderDescriptorSet();
     }
 }
 
@@ -643,7 +701,14 @@ void Kataglyphis::VulkanRenderer::create_post_descriptor_layout()
     post_sampler_layout_binding.stageFlags = vk::ShaderStageFlagBits::eFragment;
     post_sampler_layout_binding.pImmutableSamplers = nullptr;
 
-    std::vector<vk::DescriptorSetLayoutBinding> layout_bindings = { post_sampler_layout_binding };
+    vk::DescriptorSetLayoutBinding cloud_sampler_layout_binding{};
+    cloud_sampler_layout_binding.binding = 1;
+    cloud_sampler_layout_binding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    cloud_sampler_layout_binding.descriptorCount = 1;
+    cloud_sampler_layout_binding.stageFlags = vk::ShaderStageFlagBits::eFragment;
+    cloud_sampler_layout_binding.pImmutableSamplers = nullptr;
+
+    std::vector<vk::DescriptorSetLayoutBinding> layout_bindings = { post_sampler_layout_binding, cloud_sampler_layout_binding };
 
     vk::DescriptorSetLayoutCreateInfo layout_create_info{};
     layout_create_info.bindingCount = static_cast<uint32_t>(layout_bindings.size());
@@ -655,7 +720,7 @@ void Kataglyphis::VulkanRenderer::create_post_descriptor_layout()
 
     vk::DescriptorPoolSize post_pool_size{};
     post_pool_size.type = vk::DescriptorType::eCombinedImageSampler;
-    post_pool_size.descriptorCount = vulkanSwapChain.getNumberSwapChainImages();
+    post_pool_size.descriptorCount = vulkanSwapChain.getNumberSwapChainImages() * 2; // 2 samplers per image
 
     std::vector<vk::DescriptorPoolSize> descriptor_pool_sizes = { post_pool_size };
 
@@ -709,7 +774,21 @@ void Kataglyphis::VulkanRenderer::updatePostDescriptorSets()
         descriptor_write.descriptorCount = 1;
         descriptor_write.pImageInfo = &image_info;
 
-        device->getLogicalDevice().updateDescriptorSets(1, &descriptor_write, 0, nullptr);
+        vk::DescriptorImageInfo cloud_info{};
+        cloud_info.imageLayout = vk::ImageLayout::eGeneral;
+        cloud_info.imageView = clouds.getCloudOutputTexture()->getImageView();
+        cloud_info.sampler = clouds.getCloudOutputTexture()->getSampler();
+
+        vk::WriteDescriptorSet cloud_write{};
+        cloud_write.dstSet = post_descriptor_set[i];
+        cloud_write.dstBinding = 1;
+        cloud_write.dstArrayElement = 0;
+        cloud_write.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+        cloud_write.descriptorCount = 1;
+        cloud_write.pImageInfo = &cloud_info;
+
+        std::array<vk::WriteDescriptorSet, 2> writes = { descriptor_write, cloud_write };
+        device->getLogicalDevice().updateDescriptorSets(static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
     }
 }
 
@@ -750,12 +829,22 @@ void Kataglyphis::VulkanRenderer::create_object_description_buffer()
 {
     std::vector<ObjectDescription> objectDescriptions = scene->getObjectDescriptions();
 
-    vulkanBufferManager.createBufferAndUploadVectorOnDevice(device.get(),
-      graphics_command_pool,
-      objectDescriptionBuffer,
-      vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
-      vk::MemoryPropertyFlagBits::eDeviceLocal,
-      objectDescriptions);
+    if (!objectDescriptions.empty()) {
+        vulkanBufferManager.createBufferAndUploadVectorOnDevice(device.get(),
+          graphics_command_pool,
+          objectDescriptionBuffer,
+          vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
+          vk::MemoryPropertyFlagBits::eDeviceLocal,
+          objectDescriptions);
+    } else {
+        // Create an empty buffer (1 byte) if no object descriptions are present to avoid validation error
+        vulkanBufferManager.createBufferAndUploadVectorOnDevice(device.get(),
+          graphics_command_pool,
+          objectDescriptionBuffer,
+          vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
+          vk::MemoryPropertyFlagBits::eDeviceLocal,
+          std::vector<uint32_t>{0});
+    }
 
     for (size_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
         vk::DescriptorBufferInfo object_descriptions_buffer_info{};

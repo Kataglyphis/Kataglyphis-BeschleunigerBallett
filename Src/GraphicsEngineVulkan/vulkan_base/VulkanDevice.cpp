@@ -127,6 +127,22 @@ auto deviceTypeToString(vk::PhysicalDeviceType type) -> const char *
 }
 }// namespace
 
+const std::vector<const char *> device_extensions = {
+    VK_KHR_SWAPCHAIN_EXTENSION_NAME
+};
+
+const std::vector<const char *> device_extensions_for_raytracing = {
+    VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+    VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+    VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
+    VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+    VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+    VK_KHR_SPIRV_1_4_EXTENSION_NAME,
+    VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
+    VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
+    VK_KHR_RAY_QUERY_EXTENSION_NAME
+};
+
 Kataglyphis::VulkanDevice::VulkanDevice(VulkanInstance *instance, vk::SurfaceKHR *surface)
   : instance(instance), surface(surface)
 {

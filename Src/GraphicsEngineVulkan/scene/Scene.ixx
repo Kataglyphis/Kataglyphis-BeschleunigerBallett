@@ -29,7 +29,7 @@ class Scene
     void update_user_input(Kataglyphis::Frontend::GUI *gui);
     void update_model_matrix(glm::mat4 model_matrix, uint32_t model_id);
 
-    const GUISceneSharedVars &getGuiSceneSharedVars() { return guiSceneSharedVars; };
+    GUISceneSharedVars &getGuiSceneSharedVars() { return guiSceneSharedVars; };
 
     std::vector<Texture> &getTextures(uint32_t model_index)
     {

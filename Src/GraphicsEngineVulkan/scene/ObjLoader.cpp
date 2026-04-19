@@ -9,9 +9,12 @@ module;
 #include <vector>
 #include <vulkan/vulkan.hpp>
 #define TINYOBJLOADER_IMPLEMENTATION
+#define TINYOBJLOADER_DISABLE_FAST_FLOAT
 #include <glm/ext/vector_float2.hpp>
 #include <glm/geometric.hpp>
 #include <glm/vec3.hpp>
+#include <algorithm>
+#include <iterator>
 #include <iostream>
 #include <tiny_obj_loader.h>
 #include <unordered_map>

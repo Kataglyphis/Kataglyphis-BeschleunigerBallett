@@ -114,6 +114,40 @@ void GUI::render()
             ImGui::Separator();
             ImGui::SliderFloat3("Light Direction", guiSceneSharedVars.directional_light_direction, -1.F, 1.0F);
 
+            if (ImGui::TreeNode("Shadows")) {
+                int const shadow_map_res_index_before = guiSceneSharedVars.shadow_map_res_index;
+                ImGui::Combo("Shadow Map Resolution",
+                  &guiSceneSharedVars.shadow_map_res_index,
+                  guiSceneSharedVars.available_shadow_map_resolutions,
+                  4);
+                if (shadow_map_res_index_before != guiSceneSharedVars.shadow_map_res_index) { guiSceneSharedVars.shadow_resolution_changed = true; }
+
+                int const num_cascades_before = guiSceneSharedVars.num_shadow_cascades;
+                ImGui::SliderInt("# cascades", &guiSceneSharedVars.num_shadow_cascades, 1, 8);
+                if (num_cascades_before != guiSceneSharedVars.num_shadow_cascades) { guiSceneSharedVars.shadow_resolution_changed = true; }
+
+                ImGui::SliderInt("PCF radius", &guiSceneSharedVars.pcf_radius, 1, 20);
+                ImGui::SliderFloat("Shadow intensity", &guiSceneSharedVars.cascaded_shadow_intensity, 0.0F, 1.0F);
+
+                ImGui::TreePop();
+            }
+
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Cloud Settings")) {
+            ImGui::SliderInt("Speed", &guiSceneSharedVars.cloud_speed, 0, 30);
+            ImGui::SliderInt("# march steps", &guiSceneSharedVars.cloud_num_march_steps, 1, 128);
+            ImGui::SliderInt("# march steps to light", &guiSceneSharedVars.cloud_num_march_steps_to_light, 1, 128);
+            ImGui::SliderFloat3("Movement Direction", guiSceneSharedVars.cloud_movement_direction, -10.F, 10.0F);
+            ImGui::SliderFloat("Illumination intensity", &guiSceneSharedVars.cloud_scale, 0.F, 1.0F);
+            ImGui::SliderFloat("Density", &guiSceneSharedVars.cloud_density, 0.F, 1.0F);
+            ImGui::SliderFloat("Pillowness", &guiSceneSharedVars.cloud_pillowness, 0.F, 1.0F);
+            ImGui::SliderFloat("Cirrus effect", &guiSceneSharedVars.cloud_cirrus_effect, 0.F, 1.0F);
+            ImGui::Checkbox("Powder effect", &guiSceneSharedVars.cloud_powder_effect);
+            ImGui::SliderFloat3("Scale", guiSceneSharedVars.cloud_mesh_scale, 0.F, 1000.0F);
+            ImGui::SliderFloat3("Translation", guiSceneSharedVars.cloud_mesh_offset, -200.F, 400.0F);
+
             ImGui::TreePop();
         }
     }

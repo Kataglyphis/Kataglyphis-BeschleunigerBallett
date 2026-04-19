@@ -1,6 +1,5 @@
 module;
 #include <cstring>
-#include <spdlog/spdlog.h>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -21,13 +20,6 @@ class VulkanBufferManager
       vk::CommandPool transfer_command_pool,
       VulkanBuffer &src_buffer,
       VulkanBuffer &dst_buffer,
-      vk::DeviceSize buffer_size);
-
-    void copyBuffer(vk::Device device,
-      vk::Queue transfer_queue,
-      vk::CommandPool transfer_command_pool,
-      VulkanBuffer src_buffer,
-      VulkanBuffer dst_buffer,
       vk::DeviceSize buffer_size);
 
     void copyImageBuffer(vk::Device device,
@@ -96,10 +88,7 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(VulkanDevic
       device, bufferSize, dstBufferUsageFlags, dstBufferMemoryPropertyFlags, dstBufferMemoryAllocateFlags);
 
     vk::Queue const queue = transfer_queue ? transfer_queue : device->getGraphicsQueue();
-    auto const copy_buffer_ref = static_cast<void (VulkanBufferManager::*)(
-      vk::Device, vk::Queue, vk::CommandPool, VulkanBuffer &, VulkanBuffer &, vk::DeviceSize)>(
-      &VulkanBufferManager::copyBuffer);
-    (this->*copy_buffer_ref)(device->getLogicalDevice(), queue, commandPool, stagingBuffer, vulkanBuffer, bufferSize);
+    copyBuffer(device->getLogicalDevice(), queue, commandPool, stagingBuffer, vulkanBuffer, bufferSize);
 
     stagingBuffer.cleanUp();
 }

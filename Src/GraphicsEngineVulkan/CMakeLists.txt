@@ -105,6 +105,7 @@ target_sources(
           ${BRDF_SHADER_FILTER}
           ${PBR_SHADER_FILTER}
           ${PATH_TRACING_SHADER_FILTER}
+          ${COMPUTE_SHADER_FILTER}
           ${VULKANRENDERER_SOURCES}
   PUBLIC FILE_SET
          HEADERS
@@ -151,6 +152,7 @@ target_link_libraries(
          # spdlog/nlohmann_json/GSL need to be PUBLIC because Main.cpp and test files use them
          GSL
          spdlog::spdlog
+         CLI11::CLI11
          nlohmann_json::nlohmann_json)
 
 if(RUST_FEATURES)
@@ -188,7 +190,8 @@ set(ALL_VULKAN_SHADER_FILTERS
     ${POST_SHADER_FILTER}
     ${RAYTRACING_SHADER_FILTER}
     ${RASTER_SHADER_FILTER}
-    ${PATH_TRACING_SHADER_FILTER})
+    ${PATH_TRACING_SHADER_FILTER}
+    ${COMPUTE_SHADER_FILTER})
 
 foreach(Shader ${ALL_VULKAN_SHADER_FILTERS})
   add_shader(${PROJECT_NAME} ${Shader})

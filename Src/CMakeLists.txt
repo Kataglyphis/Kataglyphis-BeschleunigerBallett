@@ -7,7 +7,7 @@ set(ENABLE_RUST_CXXBRIDGE
     ON
     CACHE BOOL "Enable generation of the CXX bridge" FORCE)
 
-if(ENABLE_RUST)
+if(RUST_FEATURES)
   corrosion_import_crate(
     MANIFEST_PATH
     ../ExternalLib/Kataglyphis-RustProjectTemplate/Cargo.toml

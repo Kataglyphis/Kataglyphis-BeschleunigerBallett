@@ -4,9 +4,79 @@
 layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, rgba16f) uniform writeonly image2D outputImage;
-layout(set = 0, binding = 1) uniform sampler3D noiseTexture;
+layout(set = 0, binding = 1) uniform sampler3D noiseTexture; // using one for now
 
+#include "GlobalUBO.hpp"
 #include "SceneUBO.hpp"
+#include "Matlib.glsl"
+
+layout(set = 1, binding = 0) uniform GlobalData {
+    GlobalUBO globalUBO;
+};
+
+layout(set = 1, binding = 1) uniform SceneData {
+    SceneUBO ubo;
+} scene;
+
+struct Clouds {
+    int     num_march_steps;
+    int     num_march_steps_to_light;
+    vec3    radius;
+    vec3    offset;
+    mat4    model_to_world;
+    float   threshold;
+    float   scale;
+    float   pillowness;
+    float   cirrus_effect;
+    bool    powder_effect;
+};
+
+float sample_density(vec3 position, Clouds cloud, sampler3D noise_tex) {
+    // we are tiling a noise texture
+    vec3 uvw_128 = abs(mod(position + cloud.offset, 256.0)) / 256.0;
+    vec4 noise_128 = texture(noise_tex, uvw_128);
+
+    // threshold = 1 - density (cloud.threshold corresponds to cloudDensity in UBO)
+    float base_density = ((cloud.pillowness * 0.25)) * max(0.0, noise_128.r - cloud.threshold) * cloud.scale
+                            + ((1.0 - cloud.pillowness) * 0.125) * max(0.0, noise_128.g - cloud.threshold) * cloud.scale
+                            + ((1.0 - cloud.pillowness) * 0.125) * max(0.0, noise_128.b - cloud.threshold) * cloud.scale;
+
+    base_density = base_density * (1.0 - cloud.cirrus_effect) + 
+                   max(0.0, noise_128.a - cloud.threshold) * cloud.scale * (cloud.cirrus_effect);
+
+    // Simplification for second noise
+    vec3 uvw_32 = abs(mod(position + cloud.offset, 64.0)) / 64.0;
+    vec4 noise_32 = texture(noise_tex, uvw_32);
+
+    float fine_density = 0.6 * max(0.0, noise_32.r - cloud.threshold) * cloud.scale
+                       + 0.15 * max(0.0, noise_32.g - cloud.threshold) * cloud.scale
+                       + 0.15 * max(0.0, noise_32.b - cloud.threshold) * cloud.scale;
+
+    return base_density + fine_density * 0.3;
+}
+
+float phase_HG(float cosTheta, float g) {
+    float denom = 1.0 + g * g + 2.0 * g * cosTheta;
+    return (1.0 / (4.0 * PI)) * ((1.0 - g * g) / (denom * sqrt(denom)));
+}
+
+float light_march(vec3 sample_pos, vec3 eye_position, DirectionalLightData directional_light, Clouds cloud, sampler3D noise_tex) {
+    float total_density = 0.0;
+    float light_absorption = 1.0;
+    vec3 direction_to_light = normalize(directional_light.direction.xyz);
+    vec2 oT, oU;
+    vec3 oN;
+    int oF;
+    bool intersection = box_intersect_with_ray(eye_position, direction_to_light, inverse(cloud.model_to_world), cloud.model_to_world, cloud.radius, oT, oN, oU, oF);
+
+    for (int i = 0; i < cloud.num_march_steps_to_light; i++) {
+        float step_size = (float(i) / float(cloud.num_march_steps_to_light)) * (oT.y - oT.x);
+        vec3 p = sample_pos + direction_to_light * step_size;
+        total_density += sample_density(p, cloud, noise_tex);
+    }
+    total_density /= float(cloud.num_march_steps_to_light);
+    return exp(-total_density * light_absorption);
+}
 
 void main() {
     ivec2 texelCoord = ivec2(gl_GlobalInvocationID.xy);
@@ -16,7 +86,73 @@ void main() {
         return;
     }
 
-    vec4 color = vec4(1.0, 1.0, 1.0, 0.5); // Placeholder cloud color
+    vec2 uv = vec2(texelCoord) / vec2(size);
+    vec2 ndc = uv * 2.0 - 1.0;
 
-    imageStore(outputImage, texelCoord, color);
+    vec4 clip = vec4(ndc, 1.0, 1.0);
+    vec4 eyeCoords = inverse(globalUBO.projection) * clip;
+    eyeCoords = vec4(eyeCoords.xy, -1.0, 0.0);
+    vec3 ray_direction = normalize((inverse(globalUBO.view) * eyeCoords).xyz);
+    vec3 eye_position = scene.ubo.cam_pos.xyz;
+
+    Clouds cloud;
+    cloud.num_march_steps = int(max(scene.ubo.cloudParameters.w, 4.0));
+    cloud.num_march_steps_to_light = 4;
+    cloud.scale = scene.ubo.cloudMeshScale.w;
+    cloud.threshold = scene.ubo.cloudMeshOffset.w;
+    cloud.pillowness = scene.ubo.cloudParameters.x;
+    cloud.cirrus_effect = scene.ubo.cloudParameters.y;
+    cloud.powder_effect = scene.ubo.cloudParameters.z > 0.5;
+
+    cloud.radius = scene.ubo.cloudMeshScale.xyz * cloud.scale * 10.0; // Scaled up for world
+    cloud.offset = scene.ubo.cloudMeshOffset.xyz;
+
+    cloud.model_to_world = mat4(1.0);
+    // scale
+    cloud.model_to_world[0][0] = cloud.radius.x;
+    cloud.model_to_world[1][1] = cloud.radius.y;
+    cloud.model_to_world[2][2] = cloud.radius.z;
+    // offset
+    cloud.model_to_world[3][0] = cloud.offset.x;
+    cloud.model_to_world[3][1] = cloud.offset.y;
+    cloud.model_to_world[3][2] = cloud.offset.z;
+
+    vec2 oT, oU;
+    vec3 oN;
+    int oF;
+    bool intersection = box_intersect_with_ray(eye_position, ray_direction, inverse(cloud.model_to_world), cloud.model_to_world, cloud.radius, oT, oN, oU, oF);
+
+    float light_energy = 0.0;
+    float transmittance = 1.0;
+
+    if (intersection && oT.y > 0.0) {
+        oT.x = max(0.0, oT.x); // Clamp to camera
+        for (int i = 0; i < cloud.num_march_steps; i++) {
+            float step_size = (float(i) / float(cloud.num_march_steps)) * (oT.y - oT.x);
+            vec3 sample_pos = eye_position + ray_direction * (oT.x + step_size);
+
+            float density_of_sample = sample_density(sample_pos, cloud, noiseTexture);
+
+            float light_transmittance = light_march(sample_pos, eye_position, scene.ubo.dirLight, cloud, noiseTexture);
+
+            light_energy += density_of_sample * step_size * transmittance * light_transmittance *
+                            phase_HG(dot(normalize(ray_direction), normalize(scene.ubo.dirLight.direction.xyz)), 0.5);
+
+            transmittance *= exp(-density_of_sample * step_size);
+
+            if (transmittance < 0.01) {
+                break;
+            }
+
+            if (cloud.powder_effect) {
+                float powderness = 1.0 - exp(-(density_of_sample * step_size) / 2.0);
+                transmittance += powderness;
+            }
+        }
+    }
+
+    vec3 cloud_color = light_energy * scene.ubo.dirLight.color.xyz * scene.ubo.dirLight.color.w;
+    vec4 final_color = vec4(cloud_color, 1.0 - transmittance);
+
+    imageStore(outputImage, texelCoord, final_color);
 }

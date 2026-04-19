@@ -1,7 +1,8 @@
 module;
 
-#include <stb_image.h>
 #include <string>
+#include <vector>
+#include <memory>
 #include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.texture;
@@ -58,7 +59,7 @@ class Texture
   private:
     uint32_t mip_levels = 0;
 
-    static stbi_uc *loadTextureData(const std::string &file_name, int *width, int *height, vk::DeviceSize *image_size);
+    static unsigned char *loadTextureData(const std::string &file_name, int *width, int *height, vk::DeviceSize *image_size);
 
     void generateMipMaps(vk::PhysicalDevice physical_device,
       vk::Device device,
