@@ -60,6 +60,22 @@ $ExeDir = Split-Path $ExePath
     # We use the project root as the working directory so it can discover `images/` and `Resources/` 
     $WorkDir = $ProjectRoot
     Set-Location -Path $WorkDir
+
+    # Run tests using CTest before starting the application
+    Write-Host "Running tests via CTest in $DebugDir..."
+    $OldAsanOptions = $env:ASAN_OPTIONS
+    # Use minimal AddressSanitizer options to prevent interfering with AMD's internal allocations
+    $env:ASAN_OPTIONS = "log_path=logs/asan.log:report_globals=0:windows_hook_rtl_allocators=false:$OldAsanOptions"
+    
+    try {
+        Push-Location $DebugDir
+        & ctest -C Debug --output-on-failure
+        if ($LASTEXITCODE -ne 0) {
+            throw "Tests failed with exit code $LASTEXITCODE. Aborting application launch."
+        }
+    } finally {
+        Pop-Location
+    }
     
     Write-Host "Starting $ExePath..."
     Write-Host "Working Directory: $WorkDir"
