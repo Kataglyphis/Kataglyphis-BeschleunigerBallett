@@ -63,6 +63,31 @@ $ExeDir = Split-Path $ExePath
 
     # Run tests using CTest before starting the application
     Write-Host "Running tests via CTest in $DebugDir..."
+
+    # Rewrite container absolute paths to host absolute paths for CTest
+    $OriginalWorkspace = "C:/workspace"
+    $CurrentWorkspace = $ProjectRoot.Replace('\', '/')
+    $OriginalCMake = "C:/Program Files/CMake/share/cmake-4.3"
+    $CurrentCMake = "C:/Program Files/CMake/share/cmake-4.2"
+
+    if (($OriginalWorkspace -ne $CurrentWorkspace) -or ($OriginalCMake -ne $CurrentCMake)) {
+        Get-ChildItem -Path $DebugDir -Include "CTestTestfile.cmake", "DartConfiguration.tcl", "*_include.cmake" -Recurse | ForEach-Object {
+            $content = Get-Content $_.FullName -Raw
+            $modified = $false
+            if ($content -match [regex]::Escape($OriginalWorkspace)) {
+                $content = $content.Replace($OriginalWorkspace, $CurrentWorkspace)
+                $modified = $true
+            }
+            if ($content -match [regex]::Escape($OriginalCMake)) {
+                $content = $content.Replace($OriginalCMake, $CurrentCMake)
+                $modified = $true
+            }
+            if ($modified) {
+                Set-Content -Path $_.FullName -Value $content -NoNewline
+            }
+        }
+    }
+
     $OldAsanOptions = $env:ASAN_OPTIONS
     # Use minimal AddressSanitizer options to prevent interfering with AMD's internal allocations
     $env:ASAN_OPTIONS = "log_path=logs/asan.log:report_globals=0:windows_hook_rtl_allocators=false:$OldAsanOptions"
