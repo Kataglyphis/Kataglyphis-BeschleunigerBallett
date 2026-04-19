@@ -76,7 +76,7 @@ $ExeDir = Split-Path $ExePath
 
     # Use minimal AddressSanitizer options to prevent interfering with AMD's internal allocations
     $OldAsanOptions = $env:ASAN_OPTIONS
-    $env:ASAN_OPTIONS = "report_globals=0:windows_hook_rtl_allocators=false:$OldAsanOptions"
+    $env:ASAN_OPTIONS = "log_path=logs/asan.log:report_globals=0:windows_hook_rtl_allocators=false:$OldAsanOptions"
 
     try {
         if ($ExeArgs) {

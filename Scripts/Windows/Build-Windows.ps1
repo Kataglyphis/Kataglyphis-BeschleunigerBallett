@@ -39,10 +39,9 @@ Import-Module (Join-Path $containerHubModulesRoot 'WindowsClang.Common.psm1') -F
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsWebDav.Common.psm1') -Force
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsMsix.Common.psm1') -Force
 Import-Module (Join-Path $containerHubModulesRoot 'WindowsMsix.Signing.psm1') -Force
-Import-Module (Join-Path $localModulesRoot 'Build.CMake.psm1') -Force
-Import-Module (Join-Path $localModulesRoot 'Build.Formatting.psm1') -Force
-Import-Module (Join-Path $localModulesRoot 'Build.Testing.psm1') -Force
-Import-Module (Join-Path $localModulesRoot 'Build.Packaging.psm1') -Force
+Import-Module (Join-Path $containerHubModulesRoot 'WindowsCMake.Common.psm1') -Force
+Import-Module (Join-Path $containerHubModulesRoot 'WindowsFormatting.Common.psm1') -Force
+Import-Module (Join-Path $containerHubModulesRoot 'WindowsTesting.Common.psm1') -Force
 
 $defaultConfigPath = Join-Path $PSScriptRoot 'Build-Windows.config.psd1'
 $configPath = Get-OrDefault $env:BUILD_WINDOWS_CONFIG $defaultConfigPath
