@@ -72,15 +72,15 @@ $presetClangFuzz = Get-OrDefault $env:PRESET_CLANGCL_FUZZ (Get-ConfigValue -Conf
 $presetClangProfile = Get-OrDefault $env:CLANG_PROFILE_PRESET (Get-ConfigValue -Config $config -Path 'Build.Presets.ClangClProfile')
 $presetClangRelease = Get-OrDefault $env:PRESET_CLANGCL_RELEASE (Get-ConfigValue -Config $config -Path 'Build.Presets.ClangClRelease')
 
-$availableConfigurations = @('msvc-debug', 'msvc-release', 'clang-debug', 'clang-tsan', 'clang-profile', 'clang-release')
+$availableConfigurations = @('msvc-debug', 'msvc-release', 'clangcl-debug', 'clangcl-tsan', 'clangcl-profile', 'clangcl-release')
 $selectedConfigurations = Get-SelectedConfigurations -Configurations $Configurations -AvailableConfigurations $availableConfigurations
 
 # If SkipBuild is requested, clear any selected build configurations so
 # configuration-specific configure/build steps are not executed. This keeps
 # non-build steps (formatting, tidy, etc.) running. However, packaging and
-# signing (which run as part of the clang-release step) are often desired
+# signing (which run as part of the clangcl-release step) are often desired
 # even when skipping build. If the Release build output directory already
-# exists we preserve 'clang-release' so packaging/signing still run.
+# exists we preserve 'clangcl-release' so packaging/signing still run.
 if ($SkipBuild) {
   $selectedConfigurations.Clear()
 }
@@ -190,7 +190,7 @@ try {
     }
   }
 
-  if (Test-ConfigurationSelected -Name 'clang-debug') {
+  if (Test-ConfigurationSelected -Name 'clangcl-debug') {
     Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangDebug" -Critical -Script {
       Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathClang -Preset $presetClangDebug -Configuration 'Debug' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
     } | Out-Null
@@ -208,7 +208,7 @@ try {
     }
   }
 
-  if (Test-ConfigurationSelected -Name 'clang-tsan') {
+  if (Test-ConfigurationSelected -Name 'clangcl-tsan') {
     Invoke-BuildStep -Context $context -StepName 'Configure/Build: ClangCL-TSan' -Critical -Script {
       $clangClCommand = Get-Command 'clang-cl.exe' -ErrorAction SilentlyContinue
       if (-not $clangClCommand) {
@@ -225,7 +225,7 @@ try {
     } | Out-Null
   }
 
-  if (Test-ConfigurationSelected -Name 'clang-fuzz') {
+  if (Test-ConfigurationSelected -Name 'clangcl-fuzz') {
     Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangFuzz" -Critical -Script {
       Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathClangFuzz -Preset $presetClangFuzz -Configuration 'Debug' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
 
@@ -235,7 +235,7 @@ try {
     } | Out-Null
   }
 
-  if (Test-ConfigurationSelected -Name 'clang-profile') {
+  if (Test-ConfigurationSelected -Name 'clangcl-profile') {
     Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangProfile" -Critical -Script {
       Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathProfile -Preset $presetClangProfile -Configuration 'RelWithDebInfo' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
     } | Out-Null
@@ -261,7 +261,7 @@ try {
     }
   }
 
-  if (Test-ConfigurationSelected -Name 'clang-release') {
+  if (Test-ConfigurationSelected -Name 'clangcl-release') {
     Invoke-BuildStep -Context $context -StepName "Release build/package: $presetClangRelease" -Critical -Script {
       if ($SkipBuild) {
         # When -SkipBuild is requested, skip configure/build but still run
@@ -284,7 +284,7 @@ try {
         Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathRelease -Preset $presetClangRelease -Configuration 'Release' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
       }
 
-      # Always attempt packaging when clang-release is selected; packaging
+      # Always attempt packaging when clangcl-release is selected; packaging
       # should not be skipped by -SkipBuild.
       $packageArgs = @(
         '--build', $buildPathRelease,

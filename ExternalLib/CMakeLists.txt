@@ -1,5 +1,15 @@
 include(FetchContent)
 
+FetchContent_Declare(
+  absl
+  URL https://github.com/abseil/abseil-cpp/releases/download/20240116.1/abseil-cpp-20240116.1.tar.gz
+)
+set(ABSL_PROPAGATE_CXX_STD ON)
+set(BUILD_TESTING_OLD "${BUILD_TESTING}")
+set(BUILD_TESTING OFF)
+FetchContent_MakeAvailable(absl)
+set(BUILD_TESTING "${BUILD_TESTING_OLD}")
+
 if(BUILD_TESTING)
   # include google test to project
   FetchContent_Declare(googletest
@@ -97,6 +107,11 @@ add_subdirectory(SPDLOG)
 
 add_subdirectory(NLOHMANN_JSON)
 
+set(TOMLPLUSPLUS_BUILD_MODULES
+    ON
+    CACHE BOOL "Enable tomlplusplus C++ module support" FORCE)
+add_subdirectory(tomlplusplus)
+
 # https://stackoverflow.com/questions/49591804/clang-tidy-cmake-exclude-file-from-check/49591908#49591908
 # with this trick IMGUI will be excluded from time consuming static code analysis
 # we do not want to analyze imgui ...
@@ -187,4 +202,3 @@ if(WIN32)
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 endif()
 add_subdirectory(KOMPUTE)
-add_subdirectory(CLI11)

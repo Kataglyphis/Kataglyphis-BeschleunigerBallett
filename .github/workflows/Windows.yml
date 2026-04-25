@@ -66,7 +66,7 @@ jobs:
             -e "PSModulePath=$psModulePath" `
             $image `
             powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\workspace\Scripts\Windows\Build-Windows.ps1" `
-            -Configurations "clang-debug,clang-profile,clang-release" `
+            -Configurations "clangcl-debug,clangcl-profile,clangcl-release" `
             -SkipFormat -SkipTidy -SkipTests -SkipPerfTests `
             -WebDavHostname '${{ secrets.WEBDAV_HOSTNAME }}' `
             -WebDavUsername '${{ secrets.WEBDAV_USERNAME }}' `

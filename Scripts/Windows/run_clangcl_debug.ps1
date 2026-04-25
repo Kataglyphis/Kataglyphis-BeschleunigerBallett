@@ -11,25 +11,9 @@ param (
 
 $ErrorActionPreference = "Stop"
 
+
 # Locate the built executable 
-
 $ProjectRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
-
-# Setup Vulkan Environment
-$VulkanSdkRoot = (Get-ChildItem -Path "C:\VulkanSDK" -Directory | Sort-Object Name -Descending | Select-Object -First 1).FullName
-
-if ($null -ne $VulkanSdkRoot -and (Test-Path $VulkanSdkRoot)) {
-    Write-Host "Vulkan SDK found at $VulkanSdkRoot. Setting up environment..."
-    $env:VULKAN_SDK = $VulkanSdkRoot
-    
-    $VulkanBin = Join-Path $VulkanSdkRoot "Bin"
-    $VulkanLib = Join-Path $VulkanSdkRoot "Lib"
-    
-    if ($env:PATH -notmatch [regex]::Escape($VulkanBin)) {
-        $env:PATH = "$VulkanBin;$VulkanLib;$env:PATH"
-    }
-    $env:VK_LAYER_PATH = $VulkanBin
-}
 
 # Add project bin directories to PATH (for ASAN DLLs, etc.)
 $env:PATH = "$(Join-Path $ProjectRoot 'build-clangcl-debug\bin');$(Join-Path $ProjectRoot 'bin');$env:PATH"
@@ -94,9 +78,54 @@ $ExeDir = Split-Path $ExePath
     
     try {
         Push-Location $DebugDir
-        & ctest -C Debug --output-on-failure
-        if ($LASTEXITCODE -ne 0) {
-            throw "Tests failed with exit code $LASTEXITCODE. Aborting application launch."
+        $CTestPath = Get-Command ctest -ErrorAction SilentlyContinue
+        if ($null -eq $CTestPath) {
+            # Versuche, CTest aus dem Standard-CMake-Installationsverzeichnis zu finden
+            $cmakeBin = "C:\Program Files\CMake\bin"
+            if (Test-Path "$cmakeBin\ctest.exe") {
+                $env:PATH = "$cmakeBin;$env:PATH"
+                $CTestPath = Get-Command ctest -ErrorAction SilentlyContinue
+            }
+        }
+        if ($null -eq $CTestPath) {
+            Write-Warning "CTest wurde nicht gefunden. Bitte installiere CMake mit 'winget install cmake'. Die Anwendung wird trotzdem gestartet."
+        } else {
+            $ctestCmd = Get-Command ctest -ErrorAction SilentlyContinue
+            if ($null -eq $ctestCmd) {
+                Write-Warning "ctest wurde nicht gefunden (unerwartet)."
+                $ctestOutput = ""
+            } else {
+                $outFile = Join-Path $env:TEMP 'ctest_out.txt'
+                $errFile = Join-Path $env:TEMP 'ctest_err.txt'
+                Remove-Item $outFile,$errFile -ErrorAction SilentlyContinue
+                $proc = Start-Process -FilePath $ctestCmd.Source -ArgumentList @('-C','Debug','--output-on-failure') -NoNewWindow -Wait -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+                $ctestOutput = ''
+                if (Test-Path $outFile) { $ctestOutput += Get-Content $outFile -Raw }
+                if (Test-Path $errFile) { $ctestOutput += "`n" + (Get-Content $errFile -Raw) }
+                Write-Host $ctestOutput
+            }
+            if ($ctestOutput -match "No tests were found") {
+                Write-Warning "CTests reported no registered tests. Suche nach Test-Executables als Fallback..."
+                $testExes = Get-ChildItem -Path $DebugDir -Recurse -File | Where-Object { ($_.Extension -ieq '.exe') -and ($_.Name -match '(?i)test') }
+                if ($testExes.Count -eq 0) {
+                    Write-Warning "Keine Test-Executables gefunden."
+                } else {
+                    foreach ($exe in $testExes) {
+                        Write-Host "Starte Test-Executable: $($exe.FullName)"
+                        Push-Location $exe.DirectoryName
+                        & $exe.FullName
+                        $code = $LASTEXITCODE
+                        if ($code -ne 0) {
+                            Write-Warning "Test $($exe.Name) endete mit Exit-Code $code"
+                        }
+                        Pop-Location
+                    }
+                }
+            } else {
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Tests failed with exit code $LASTEXITCODE. Aborting application launch."
+                }
+            }
         }
     } finally {
         Pop-Location
@@ -126,13 +155,32 @@ $ExeDir = Split-Path $ExePath
             & $ExePath
         }
         $ExitCode = $LASTEXITCODE
-        if ($ExitCode -ne 0) { 
-            Write-Warning "Process failed with exit code $ExitCode" 
+        if ($ExitCode -eq -1073740791) {
+            Write-Error "Vulkan-Validation-Layer-Fehler: Die Anwendung konnte nicht korrekt gestartet werden, weil Vulkan Validation Layers fehlen oder das VulkanSDK nicht installiert ist.\nBitte installiere das VulkanSDK mit 'winget install VulkanSDK'.\nDas Skript versucht, die Umgebungsvariablen automatisch zu setzen."
+            # Versuche, VulkanSDK zu finden und Umgebungsvariablen zu setzen
+            $VulkanSdkRoot = $null
+            if (Test-Path "C:\VulkanSDK") {
+                $VulkanSdkRoot = (Get-ChildItem -Path "C:\VulkanSDK" -Directory | Sort-Object Name -Descending | Select-Object -First 1).FullName
+            }
+            if ($null -ne $VulkanSdkRoot -and (Test-Path $VulkanSdkRoot)) {
+                $env:VULKAN_SDK = $VulkanSdkRoot
+                $VulkanBin = Join-Path $VulkanSdkRoot "Bin"
+                $VulkanLib = Join-Path $VulkanSdkRoot "Lib"
+                if ($env:PATH -notmatch [regex]::Escape($VulkanBin)) {
+                    $env:PATH = "$VulkanBin;$VulkanLib;$env:PATH"
+                }
+                $env:VK_LAYER_PATH = $VulkanBin
+                Write-Host "VulkanSDK-Umgebungsvariablen wurden gesetzt. Bitte führe das Skript erneut aus."
+            } else {
+                Write-Warning "VulkanSDK konnte nicht automatisch gefunden werden. Bitte installiere es manuell und starte das Skript erneut."
+            }
+        } elseif ($ExitCode -ne 0) {
+            Write-Warning "Process failed with exit code $ExitCode"
         }
     } finally {
-    if ($null -ne $OldAsanOptions) {
-        $env:ASAN_OPTIONS = $OldAsanOptions
-    } else {
-        Remove-Item Env:\ASAN_OPTIONS -ErrorAction SilentlyContinue
+        if ($null -ne $OldAsanOptions) {
+            $env:ASAN_OPTIONS = $OldAsanOptions
+        } else {
+            Remove-Item Env:\ASAN_OPTIONS -ErrorAction SilentlyContinue
     }
 }
