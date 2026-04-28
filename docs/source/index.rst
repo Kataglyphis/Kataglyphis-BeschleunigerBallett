@@ -38,6 +38,7 @@ Welcome to the documentation for Kataglyphis-Renderer (BeschleunigerBallett).
    README.md
    api/library_root
    graphviz_files
+   wsl2_vulkan
 
 Indices and tables
 ==================

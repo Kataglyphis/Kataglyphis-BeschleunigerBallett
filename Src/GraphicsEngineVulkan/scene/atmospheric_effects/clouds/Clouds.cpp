@@ -229,11 +229,21 @@ void Clouds::createComputePipelines(vk::DescriptorSetLayout sharedLayout)
 void Clouds::dispatchNoiseGeneration()
 {
     // Dispatch to fill the 3D texture
+    auto queueFamilies = device->getQueueFamilies();
+    if (queueFamilies.compute_family < 0) {
+        spdlog::warn("No compute queue family available, skipping noise generation dispatch");
+        return;
+    }
+
     vk::CommandPool commandPool;
     vk::CommandPoolCreateInfo poolInfo{};
-    poolInfo.queueFamilyIndex = device->getQueueFamilies().compute_family;
+    poolInfo.queueFamilyIndex = static_cast<uint32_t>(queueFamilies.compute_family);
     poolInfo.flags = vk::CommandPoolCreateFlagBits::eTransient;
     auto poolRes = device->getLogicalDevice().createCommandPool(poolInfo);
+    if (poolRes.result != vk::Result::eSuccess) {
+        spdlog::error("Failed to create command pool for noise generation");
+        return;
+    }
     commandPool = poolRes.value;
 
     vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);

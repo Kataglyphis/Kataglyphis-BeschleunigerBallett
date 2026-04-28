@@ -109,8 +109,19 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
 
     // Initialize atmospheric effects and shadows
     skyBox.init(device, graphics_command_pool);
+    skyBox.createRenderPass(vulkanSwapChain.getSwapChainFormat());
+    skyBox.createGraphicsPipeline(sharedRenderDescriptorSetLayout);
+
+    std::vector<vk::ImageView> skyboxImageViews(vulkanSwapChain.getNumberSwapChainImages());
+    for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
+        skyboxImageViews[i] = vulkanSwapChain.getSwapChainImage(i).getImageView();
+    }
+    skyBox.createFramebuffers(vulkanSwapChain.getNumberSwapChainImages(), skyboxImageViews,
+        vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
+
     clouds.init(device, graphics_command_pool, sharedRenderDescriptorSetLayout, vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
     dirShadowMap.init(device, 2048, 2048, MAX_CASCADES);
+    dirShadowMap.createGraphicsPipeline();
     pointShadowMap.init(device, 1024, 1024);
 
     create_post_descriptor_layout();
@@ -570,9 +581,13 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
     vk::CommandBuffer &commandBuffer = command_buffers[image_index];
 
     std::vector<vk::DescriptorSet> rasterizer_descriptor_sets = { sharedRenderDescriptorSet[image_index] };
-    
+
     clouds.recordComputeCommands(commandBuffer, image_index, rasterizer_descriptor_sets);
-    
+
+    dirShadowMap.recordCommands(commandBuffer, image_index, scene, rasterizer_descriptor_sets);
+
+    skyBox.recordCommands(commandBuffer, image_index, rasterizer_descriptor_sets);
+
     if (guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward) {
         rasterizer.recordCommands(commandBuffer, image_index, scene, rasterizer_descriptor_sets);
     } else {
@@ -1035,7 +1050,10 @@ void Kataglyphis::VulkanRenderer::create_command_pool()
 
         vk::Result const result =
           device->getLogicalDevice().createCommandPool(&pool_info, nullptr, &graphics_command_pool);
-        ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create command pool!")
+        if (result != vk::Result::eSuccess) {
+            spdlog::error("Failed to create graphics command pool! Error: {}", static_cast<int>(result));
+            std::abort();
+        }
     }
 
     {
@@ -1045,7 +1063,10 @@ void Kataglyphis::VulkanRenderer::create_command_pool()
 
         vk::Result const result =
           device->getLogicalDevice().createCommandPool(&pool_info, nullptr, &compute_command_pool);
-        ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create command pool!")
+        if (result != vk::Result::eSuccess) {
+            spdlog::error("Failed to create compute command pool! Error: {}", static_cast<int>(result));
+            std::abort();
+        }
     }
 }
 

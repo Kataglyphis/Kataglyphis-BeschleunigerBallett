@@ -398,6 +398,11 @@ Docker
 
 ## Common issues
 
+### WSL2 — Vulkan (NVIDIA)
+
+Wenn in WSL2 nach dem Start der Anwendung nur "llvmpipe" (Mesa Software‑Renderer) angezeigt wird, siehe die Troubleshooting‑Seite: [docs/source/wsl2_vulkan.rst](docs/source/wsl2_vulkan.rst) für Schritt‑für‑Schritt‑Anweisungen zur Installation des NVIDIA‑ICD und zum Neustart von WSL (`wsl --shutdown`).
+
+
   * Problem: 
     If **__Validation Layers__** could not be found:
     ```bash
