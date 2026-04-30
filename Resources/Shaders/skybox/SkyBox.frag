@@ -16,7 +16,7 @@ layout(push_constant) uniform _PushConstantSkyBox {
 
 void main() {
     if (bool(skybox_enabled)) {
-        g_albedo = vec4(texture(skybox, normalize(vec3(in_worldDir.x, -in_worldDir.y, in_worldDir.z))).xyz, 1.0);
+        g_albedo = vec4(texture(skybox, normalize(vec3(in_worldDir.x, in_worldDir.y, in_worldDir.z))).xyz, 1.0);
     } else {
         g_albedo = vec4(0.0, 0.0, 0.5, 1.0);
     }
