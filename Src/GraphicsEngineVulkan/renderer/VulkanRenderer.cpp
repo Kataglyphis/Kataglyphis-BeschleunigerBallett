@@ -660,6 +660,10 @@ void Kataglyphis::VulkanRenderer::cleanUpDescriptorResources()
         device->getLogicalDevice().destroyDescriptorSetLayout(gbuffer_descriptor_set_layout);
         gbuffer_descriptor_set_layout = nullptr;
     }
+    if (sharedRenderDescriptorSetLayout) {
+        device->getLogicalDevice().destroyDescriptorSetLayout(sharedRenderDescriptorSetLayout);
+        sharedRenderDescriptorSetLayout = nullptr;
+    }
 
     sharedRenderDescriptorSet.clear();
     post_descriptor_set.clear();
