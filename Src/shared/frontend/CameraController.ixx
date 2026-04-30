@@ -27,9 +27,9 @@ struct CameraControllerState
 
 inline void update_camera_vectors(CameraControllerState state)
 {
-    state.front.x = std::cos(glm::radians(state.yaw)) * std::cos(glm::radians(state.pitch));
+    state.front.x = std::cos(glm::radians(state.pitch)) * std::cos(glm::radians(state.yaw));
     state.front.y = std::sin(glm::radians(state.pitch));
-    state.front.z = std::sin(glm::radians(state.yaw)) * std::cos(glm::radians(state.pitch));
+    state.front.z = std::cos(glm::radians(state.pitch)) * std::sin(glm::radians(state.yaw));
     state.front = glm::normalize(state.front);
 
     state.right = glm::normalize(glm::cross(state.front, state.world_up));
@@ -54,7 +54,7 @@ inline void apply_mouse_input(CameraControllerState state, float x_change, float
     y_change *= state.turn_speed;
 
     state.yaw += x_change;
-    state.pitch += y_change;
+    state.pitch += y_change; // Y-axis aligned for look behavior
 
     state.pitch = std::min(state.pitch, 89.0F);
     state.pitch = std::max(state.pitch, -89.0F);

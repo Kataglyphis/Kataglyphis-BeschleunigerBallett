@@ -72,7 +72,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
     hit_region.stride = handle_size_aligned;
     hit_region.size = handle_size_aligned;
 
-    pc.clear_color = { 0.2F, 0.65F, 0.4F, 1.0F };
+    pc.clear_color = { 0.0F, 0.0F, 0.0F, 0.0F };
     commandBuffer.pushConstants(pipeline_layout,
       vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eMissKHR,
       0,

@@ -76,8 +76,8 @@ void main() {
 	//ambient			+= materials.m[materialIDs.i[gl_PrimitiveID]].diffuse;
 
 	float roughness = 0.9;
-	vec3 light_color = vec3(1.f);
-	float light_intensity = 1.0f;
+	vec3 light_color = sceneUBO.dirLight.color.rgb;
+	float light_intensity = sceneUBO.dirLight.color.w;
 
 	vec3 color = vec3(0);
 	// mode : switching between PBR models

@@ -18,6 +18,8 @@ class VulkanSwapChain
 
     void initVulkanContext(std::shared_ptr<VulkanDevice>in_device, Kataglyphis::Frontend::Window *window, const vk::SurfaceKHR &surface);
 
+    void recreate(std::shared_ptr<VulkanDevice>in_device, const vk::SurfaceKHR &surface);
+
     const vk::SwapchainKHR &getSwapChain() const { return swapchain; };
     uint32_t getNumberSwapChainImages() const { auto __tmp_sz = swap_chain_images.size(); return static_cast<uint32_t>(__tmp_sz); };
     const vk::Extent2D &getSwapChainExtent() const { return swap_chain_extent; };

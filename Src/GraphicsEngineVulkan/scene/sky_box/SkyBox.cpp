@@ -66,6 +66,8 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
         imageSize += layerSize;
     }
 
+    spdlog::info("SkyBox: All 6 textures loaded, width={}, height={}, totalImageSize={}", width, height, imageSize);
+
     cubeMapTexture->createImage(device, static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1, vk::Format::eR8G8B8A8Unorm, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, 6, vk::ImageCreateFlagBits::eCubeCompatible);
 
     VulkanBuffer stagingBuffer;
@@ -183,48 +185,86 @@ void SkyBox::createDescriptorSetForCubeMap()
     device->getLogicalDevice().updateDescriptorSets(1, &write, 0, nullptr);
 }
 
-void SkyBox::createRenderPass(vk::Format format)
+void SkyBox::createRenderPass(vk::Format format, vk::Format depthFormat)
 {
     vk::AttachmentDescription colorAttachment{};
     colorAttachment.format = format;
     colorAttachment.samples = vk::SampleCountFlagBits::e1;
-    colorAttachment.loadOp = vk::AttachmentLoadOp::eDontCare;
+    colorAttachment.loadOp = vk::AttachmentLoadOp::eClear;
     colorAttachment.storeOp = vk::AttachmentStoreOp::eStore;
     colorAttachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
     colorAttachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
     colorAttachment.initialLayout = vk::ImageLayout::eUndefined;
-    colorAttachment.finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    colorAttachment.finalLayout = vk::ImageLayout::eColorAttachmentOptimal;
+
+    vk::AttachmentDescription depthAttachment{};
+    depthAttachment.format = depthFormat;
+    depthAttachment.samples = vk::SampleCountFlagBits::e1;
+    depthAttachment.loadOp = vk::AttachmentLoadOp::eClear;
+    depthAttachment.storeOp = vk::AttachmentStoreOp::eStore;
+    depthAttachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
+    depthAttachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
+    depthAttachment.initialLayout = vk::ImageLayout::eUndefined;
+    depthAttachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+
+    std::array attachments = {colorAttachment, depthAttachment};
 
     vk::AttachmentReference colorRef{};
     colorRef.attachment = 0;
     colorRef.layout = vk::ImageLayout::eColorAttachmentOptimal;
 
+    vk::AttachmentReference depthRef{};
+    depthRef.attachment = 1;
+    depthRef.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+
     vk::SubpassDescription subpass{};
     subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorRef;
+    subpass.pDepthStencilAttachment = &depthRef;
+
+    std::array<vk::SubpassDependency, 2> dependencies{};
+
+    dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[0].dstSubpass = 0;
+    dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependencies[0].srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    dependencies[0].dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eColorAttachmentRead;
+    dependencies[0].dependencyFlags = vk::DependencyFlagBits::eByRegion;
+
+    dependencies[1].srcSubpass = 0;
+    dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[1].srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependencies[1].dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependencies[1].srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    dependencies[1].dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead;
+    dependencies[1].dependencyFlags = vk::DependencyFlagBits::eByRegion;
 
     vk::RenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.attachmentCount = 2;
+    renderPassInfo.pAttachments = attachments.data();
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
+    renderPassInfo.pDependencies = dependencies.data();
 
     auto result = device->getLogicalDevice().createRenderPass(renderPassInfo);
     ASSERT_VULKAN(VkResult(result.result), "Failed to create skybox render pass!");
     renderPass = result.value;
 }
 
-void SkyBox::createFramebuffers(size_t count, const std::vector<vk::ImageView>& imageViews, uint32_t width, uint32_t height)
+void SkyBox::createFramebuffers(size_t count, const std::vector<vk::ImageView>& imageViews, const std::vector<vk::ImageView>& depthViews, uint32_t width, uint32_t height)
 {
     framebufferWidth = width;
     framebufferHeight = height;
     framebuffers.resize(count);
     for (size_t i = 0; i < count; i++) {
+        std::array attachments = {imageViews[i], depthViews[i]};
         vk::FramebufferCreateInfo fbInfo{};
         fbInfo.renderPass = renderPass;
-        fbInfo.attachmentCount = 1;
-        fbInfo.pAttachments = &imageViews[i];
+        fbInfo.attachmentCount = 2;
+        fbInfo.pAttachments = attachments.data();
         fbInfo.width = width;
         fbInfo.height = height;
         fbInfo.layers = 1;
@@ -284,7 +324,7 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
     vk::PipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.depthTestEnable = VK_FALSE;
     depthStencil.depthWriteEnable = VK_FALSE;
-    depthStencil.depthCompareOp = vk::CompareOp::eLessOrEqual;
+    depthStencil.depthCompareOp = vk::CompareOp::eAlways;
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 
@@ -307,8 +347,7 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = vk::PolygonMode::eFill;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = vk::CullModeFlagBits::eBack;
-    rasterizer.frontFace = vk::FrontFace::eCounterClockwise;
+    rasterizer.cullMode = vk::CullModeFlagBits::eNone;
     rasterizer.depthBiasEnable = VK_FALSE;
 
     vk::PipelineMultisampleStateCreateInfo multisampling{};
@@ -323,6 +362,13 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.setLayoutCount = 2;
     pipelineLayoutInfo.pSetLayouts = combinedLayouts.data();
+
+    vk::PushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eFragment;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(uint32_t);
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
     auto layoutRes = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
     ASSERT_VULKAN(VkResult(layoutRes.result), "Failed to create skybox pipeline layout!");
@@ -353,24 +399,18 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
 
 void SkyBox::createMesh(vk::CommandPool commandPool)
 {
+    // Fullscreen quad indices
     std::vector<unsigned int> indices = {
-        0, 1, 2, 2, 1, 3, // front
-        2, 3, 5, 5, 3, 7, // right
-        5, 7, 4, 4, 7, 6, // back
-        4, 6, 0, 0, 6, 1, // left
-        4, 0, 5, 5, 0, 2, // top
-        1, 6, 3, 3, 6, 7  // bottom
+        0, 1, 2,
+        2, 1, 3
     };
 
+    // Fullscreen quad vertices with UVs
     std::vector<Vertex> vertices = {
-        Vertex(glm::vec3(-1.0F,  1.0F, -1.0F), glm::vec3(0), glm::vec3(0), glm::vec2(0)),
-        Vertex(glm::vec3(-1.0F, -1.0F, -1.0F), glm::vec3(0), glm::vec3(0), glm::vec2(0)),
-        Vertex(glm::vec3( 1.0F,  1.0F, -1.0F), glm::vec3(0), glm::vec3(0), glm::vec2(0)),
-        Vertex(glm::vec3( 1.0F, -1.0F, -1.0F), glm::vec3(0), glm::vec3(0), glm::vec2(0)),
-        Vertex(glm::vec3(-1.0F,  1.0F,  1.0F), glm::vec3(0), glm::vec3(0), glm::vec2(0)),
-        Vertex(glm::vec3( 1.0F,  1.0F,  1.0F), glm::vec3(0), glm::vec3(0), glm::vec2(0)),
-        Vertex(glm::vec3(-1.0F, -1.0F,  1.0F), glm::vec3(0), glm::vec3(0), glm::vec2(0)),
-        Vertex(glm::vec3( 1.0F, -1.0F,  1.0F), glm::vec3(0), glm::vec3(0), glm::vec2(0))
+        Vertex(glm::vec3(-1.0F, -1.0F, 0.0F), glm::vec3(0), glm::vec3(0), glm::vec2(0.0F, 0.0F)),
+        Vertex(glm::vec3( 1.0F, -1.0F, 0.0F), glm::vec3(0), glm::vec3(0), glm::vec2(1.0F, 0.0F)),
+        Vertex(glm::vec3(-1.0F,  1.0F, 0.0F), glm::vec3(0), glm::vec3(0), glm::vec2(0.0F, 1.0F)),
+        Vertex(glm::vec3( 1.0F,  1.0F, 0.0F), glm::vec3(0), glm::vec3(0), glm::vec2(1.0F, 1.0F))
     };
 
     skyMesh = std::make_unique<Kataglyphis::Mesh>();
@@ -379,12 +419,14 @@ void SkyBox::createMesh(vk::CommandPool commandPool)
     skyMesh = std::make_unique<Mesh>(device, device->getGraphicsQueue(), commandPool, vertices, indices, materialIndex, materials);
 }
 
-void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, const std::vector<vk::DescriptorSet> &descriptorSets)
+void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, const std::vector<vk::DescriptorSet> &descriptorSets, bool skyboxEnabled)
 {
     if (image_index >= framebuffers.size() || framebuffers.empty()) {
         spdlog::error("SkyBox: framebuffer not created or index out of range!");
         return;
     }
+
+    spdlog::debug("SkyBox: enabled={}, fbSize={}, indexCount={}", skyboxEnabled, framebuffers.size(), skyMesh->getIndexCount());
 
     vk::RenderPassBeginInfo renderPassInfo{};
     renderPassInfo.renderPass = renderPass;
@@ -392,16 +434,36 @@ void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_ind
     renderPassInfo.renderArea.offset = vk::Offset2D{0, 0};
     renderPassInfo.renderArea.extent = vk::Extent2D{framebufferWidth, framebufferHeight};
 
-    vk::ClearValue clearValue{};
-    clearValue.color = vk::ClearColorValue{std::array<float, 4>{0, 0, 0, 1}};
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearValue;
+    std::array clearValues = {
+        vk::ClearValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}},
+        vk::ClearValue{vk::ClearDepthStencilValue{1.0f, 0}}
+    };
+    renderPassInfo.clearValueCount = 2;
+    renderPassInfo.pClearValues = clearValues.data();
 
     commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+
+    vk::Viewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(framebufferWidth);
+    viewport.height = static_cast<float>(framebufferHeight);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    commandBuffer.setViewport(0, 1, &viewport);
+
+    vk::Rect2D scissor{};
+    scissor.offset = vk::Offset2D{ 0, 0 };
+    scissor.extent = vk::Extent2D{ framebufferWidth, framebufferHeight };
+    commandBuffer.setScissor(0, 1, &scissor);
+
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
 
     std::vector<vk::DescriptorSet> skyboxDescriptorSets = {descriptorSets[0], descriptorSet};
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, skyboxDescriptorSets, nullptr);
+
+    uint32_t skyboxEnabledVal = skyboxEnabled ? 1u : 0u;
+    commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(uint32_t), &skyboxEnabledVal);
 
     std::vector<vk::Buffer> const vertex_buffers = { skyMesh->getVertexBuffer() };
     vk::DeviceSize offsets[] = { 0 };
@@ -434,5 +496,16 @@ void SkyBox::cleanUp()
 }
 
 SkyBox::~SkyBox() = default;
+
+void SkyBox::destroyFramebuffers()
+{
+    for (auto fb : framebuffers) { device->getLogicalDevice().destroyFramebuffer(fb); }
+    framebuffers.clear();
+}
+
+void SkyBox::recreateFrameResources(size_t count, const std::vector<vk::ImageView>& imageViews, const std::vector<vk::ImageView>& depthViews, uint32_t width, uint32_t height)
+{
+    createFramebuffers(count, imageViews, depthViews, width, height);
+}
 
 }

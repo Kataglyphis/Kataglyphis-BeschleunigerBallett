@@ -23,6 +23,8 @@ inline float consume_axis_delta(float &axis_change)
 
 inline void handle_key_callback(GLFWwindow *window, bool *keys, int key, int action)
 {
+    if (ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureKeyboard) { return; }
+
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) { glfwSetWindowShouldClose(window, GLFW_TRUE); }
 
     if (key >= 0 && key < window_key_count) {
@@ -44,6 +46,7 @@ inline void handle_mouse_callback(GLFWwindow *window,
   double y_pos)
 {
     (void)window;
+    if (ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse) { return; }
 
     if (mouse_first_moved) {
         last_x = static_cast<float>(x_pos);
@@ -58,13 +61,9 @@ inline void handle_mouse_callback(GLFWwindow *window,
     last_y = static_cast<float>(y_pos);
 }
 
-inline bool imgui_wants_mouse_capture(int button, int action)
+inline bool imgui_wants_mouse_capture()
 {
-    if (ImGui::GetCurrentContext() == nullptr || !ImGui::GetIO().WantCaptureMouse) { return false; }
-
-    ImGuiIO &io = ImGui::GetIO();
-    io.AddMouseButtonEvent(button, action != 0);
-    return true;
+    return ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse;
 }
 
 inline void handle_mouse_button_callback(GLFWwindow *window,
@@ -73,7 +72,7 @@ inline void handle_mouse_button_callback(GLFWwindow *window,
   int action,
   GLFWcursorposfun mouse_callback)
 {
-    if (imgui_wants_mouse_capture(button, action)) { return; }
+    if (imgui_wants_mouse_capture()) { return; }
 
     if ((action == GLFW_PRESS) && (button == GLFW_MOUSE_BUTTON_RIGHT)) {
         glfwSetCursorPosCallback(window, mouse_callback);

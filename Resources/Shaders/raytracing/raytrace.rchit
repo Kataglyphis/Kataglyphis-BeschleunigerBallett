@@ -131,6 +131,7 @@ void main() {
     float light_intensity = 1.f;
 
 	payload.hit_value = ambient;
+    payload.is_hit = 1.0;
 	// mode : switching between PBR models
 	// [0] --> EPIC GAMES 
 	// [1] --> PBR BOOK 

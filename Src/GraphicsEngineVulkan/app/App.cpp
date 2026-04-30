@@ -26,8 +26,8 @@ Kataglyphis::App::App() = default;
 
 auto Kataglyphis::App::run() -> int
 {
-    int const window_width = 1200;
-    int const window_height = 768;
+    int const window_width = 1280;
+    int const window_height = 720;
 
     float delta_time = 0.0F;
     float last_time = 0.0F;
@@ -49,14 +49,15 @@ auto Kataglyphis::App::run() -> int
         // handle events for the camera
         Kataglyphis::Frontend::process_camera_input(window.get(), camera.get(), delta_time);
 
-        scene->update_user_input(gui.get());
-
-        vulkan_renderer.updateStateDueToUserInput(gui.get());
-        vulkan_renderer.updateUniforms(scene.get(), camera.get(), window.get());
-
         //// retrieve updates from the UI
         gui->render();
 
+        // Then update Scene/Renderer state with the NEW GUI values
+        scene->update_user_input(gui.get());
+        vulkan_renderer.updateStateDueToUserInput(gui.get());
+        vulkan_renderer.updateUniforms(scene.get(), camera.get(), window.get());
+
+        // Finally draw the frame with the updated state
         vulkan_renderer.drawFrame();
     }
 

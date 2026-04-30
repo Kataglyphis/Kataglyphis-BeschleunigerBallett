@@ -115,12 +115,23 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(std::shared_ptr<VulkanDevic
 
 void Kataglyphis::VulkanSwapChain::cleanUp()
 {
-    for (Texture &image : swap_chain_images) { device->getLogicalDevice().destroyImageView(image.getImageView()); }
+    for (Texture &image : swap_chain_images) {
+        device->getLogicalDevice().destroyImageView(image.getImageView());
+        image.setImageView(vk::ImageView{});
+        image.setImage(vk::Image{});
+    }
+    swap_chain_images.clear();
 
     device->getLogicalDevice().destroySwapchainKHR(swapchain);
 }
 
 Kataglyphis::VulkanSwapChain::~VulkanSwapChain() = default;
+
+void Kataglyphis::VulkanSwapChain::recreate(std::shared_ptr<VulkanDevice>in_device, const vk::SurfaceKHR &surface)
+{
+    cleanUp();
+    initVulkanContext(in_device, window, surface);
+}
 
 auto Kataglyphis::VulkanSwapChain::choose_best_surface_format(const std::vector<vk::SurfaceFormatKHR> &formats)
   -> vk::SurfaceFormatKHR

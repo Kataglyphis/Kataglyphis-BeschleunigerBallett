@@ -15,23 +15,21 @@ import kataglyphis.shared.frontend.camera_controller;
 
 Camera::Camera()
   :
-
-    camera_state{ .position = glm::vec3(0.0F, 100.0F, -80.0F),
-        .front = glm::vec3(0.0F, 0.0F, -1.F),
+    camera_state{ .position = glm::vec3(0.0F, 2.0F, 0.0F),
+        .front = {},
         .world_up = glm::vec3(0.0F, 1.0F, 0.0F),
-        .right = glm::normalize(glm::cross(glm::vec3(0.0F, 0.0F, -1.F), glm::vec3(0.0F, 1.0F, 0.0F))),
-        .up = glm::normalize(
-          glm::cross(glm::normalize(glm::cross(glm::vec3(0.0F, 0.0F, -1.F), glm::vec3(0.0F, 1.0F, 0.0F))),
-            glm::vec3(0.0F, 0.0F, -1.F))),
-        .yaw = 80.F,
-        .pitch = -40.0F,
-        .movement_speed = 200.F,
+        .right = {},
+        .up = {},
+        .yaw = -90.F,
+        .pitch = 0.0F,
+        .movement_speed = 10.F,
         .turn_speed = 0.25F,
         .near_plane = 0.1F,
         .far_plane = 4000.F,
         .fov = 45.F }
-
-{}
+{
+    update();
+}
 
 void Camera::key_control(const bool *keys, float delta_time)
 {
@@ -46,6 +44,7 @@ void Camera::key_control(const bool *keys, float delta_time)
                                                   camera_state.turn_speed },
       keys,
       delta_time);
+    update();
 }
 
 void Camera::mouse_control(float x_change, float y_change)
@@ -74,7 +73,7 @@ void Camera::set_camera_position(glm::vec3 new_camera_position) { camera_state.p
 auto Camera::calculate_viewmatrix() -> glm::mat4
 {
     // very necessary for further calc
-    return glm::lookAt(camera_state.position, camera_state.position + camera_state.front, camera_state.up);
+    return glm::lookAt(camera_state.position, camera_state.position + camera_state.front, camera_state.world_up);
 }
 
 Camera::~Camera() = default;

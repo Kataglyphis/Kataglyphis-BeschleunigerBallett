@@ -212,6 +212,7 @@ void CascadedShadowMap::createFramebuffers()
 void CascadedShadowMap::cleanUp()
 {
     if (device) {
+        spdlog::info("CascadedShadowMap: Destroying pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphicsPipeline);
         auto it = g_layerViewsMap.find(this);
         if (it != g_layerViewsMap.end()) {
             for (auto view : it->second) {
@@ -438,6 +439,7 @@ void CascadedShadowMap::createGraphicsPipeline()
     auto pipelineRes = device->getLogicalDevice().createGraphicsPipeline(nullptr, pipelineInfo);
     ASSERT_VULKAN(VkResult(pipelineRes.result), "Failed to create shadow map graphics pipeline!");
     graphicsPipeline = pipelineRes.value;
+    spdlog::info("CascadedShadowMap: Created pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphicsPipeline);
 
     device->getLogicalDevice().destroyShaderModule(vertModule);
     device->getLogicalDevice().destroyShaderModule(geomModule);

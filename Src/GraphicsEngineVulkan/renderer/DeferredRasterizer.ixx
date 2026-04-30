@@ -41,6 +41,9 @@ class DeferredRasterizer
       Kataglyphis::Scene *scene,
       const std::vector<vk::DescriptorSet> &descriptorSets);
 
+    void recreateFrameResources(vk::CommandPool commandPool);
+    void destroyFramebuffers();
+
     void cleanUp();
 
     ~DeferredRasterizer();

@@ -16,14 +16,17 @@ APP_ARGS=()
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [--exe-name NAME] [--build-dir DIR] [--build-type TYPE] [--] [app args...]
+Usage: $(basename "$0") [--exe-name NAME] [--build-dir DIR] [--build-type TYPE] [--clean-and-rebuild-shaders] [--] [app args...]
 
 Starts the built application from the debug build directory. Defaults:
   --exe-name ${DEFAULT_EXE_NAME}
   --build-dir ${DEFAULT_BUILD_DIR}
   --build-type ${DEFAULT_BUILD_TYPE}
+  --clean-and-rebuild-shaders: Deletes all .spv files and runs the compiler script before running
 EOF
 }
+
+CLEAN_AND_REBUILD_SHADERS=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -38,6 +41,10 @@ while [[ $# -gt 0 ]]; do
     --build-type)
       BUILD_TYPE="${2:-}"
       shift 2
+      ;;
+    --clean-and-rebuild-shaders)
+      CLEAN_AND_REBUILD_SHADERS=true
+      shift
       ;;
     -h|--help)
       usage
@@ -185,6 +192,16 @@ export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
 
 # Enable Vulkan loader debug output by default (can be overridden externally)
 export VK_LOADER_DEBUG="${VK_LOADER_DEBUG:-all}"
+
+if [[ "${CLEAN_AND_REBUILD_SHADERS}" = true ]]; then
+  info "Cleaning and rebuilding shaders..."
+  find "${PROJECT_ROOT}/Resources/Shaders" -name "*.spv" -delete
+  if [[ -f "${SCRIPT_DIR}/compile-shaders.sh" ]]; then
+    bash "${SCRIPT_DIR}/compile-shaders.sh"
+  else
+    warn "compile-shaders.sh not found, skipping rebuild step"
+  fi
+fi
 
 WORK_DIR="${PROJECT_ROOT}"
 info "Starting: ${EXE_PATH}"

@@ -23,7 +23,7 @@ class GUI
       const vk::CommandPool &graphics_command_pool,
       uint32_t image_count);
 
-    GUISceneSharedVars getGuiSceneSharedVars() { return guiSceneSharedVars; };
+    GUISceneSharedVars &getGuiSceneSharedVars() { return guiSceneSharedVars; };
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &getGuiRendererSharedVars()
     {
         return guiRendererSharedVars;

@@ -23,7 +23,8 @@ class Texture
     Texture(Texture &&other) noexcept;
     Texture &operator=(Texture &&other) noexcept;
 
-    void createFromFile(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, const std::string &fileName);
+    bool createFromFile(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, const std::string &fileName);
+    void createDefaultTexture(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool);
 
     void setImage(vk::Image image);
     void setImageView(vk::ImageView imageView);

@@ -26,6 +26,20 @@ export struct GUISceneSharedVars
     float cloud_pillowness = 0.966f;
     float cloud_cirrus_effect = 0.034f;
     bool cloud_powder_effect = true;
+    bool clouds_enabled = false;
     float cloud_mesh_scale[3] = { 1000.f, 5.f, 1000.f };
     float cloud_mesh_offset[3] = { -0.364f, 367.f, -18.351f };
+
+    // Shadows
+    bool shadows_enabled = true;
+
+    // Skybox
+    bool skybox_enabled = true;
+
+    // Model selection
+    int selected_model_index = -1;
+    bool model_reload_requested = false;
+    bool model_transform_changed = false;
+    float model_position[3] = { 0.f, 0.f, 0.f };
+    float model_rotation[3] = { 0.f, 0.f, 0.f };
 };

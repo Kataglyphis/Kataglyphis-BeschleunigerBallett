@@ -101,8 +101,8 @@ HitInfo getObjectHitInfo(rayQueryEXT rayQuery)
 
     // Get the vertices of the triangle
     const Vertex v0 = vertices.v[i.x];
-    const Vertex v1 = vertices.v[i.x];
-    const Vertex v2 = vertices.v[i.x];
+    const Vertex v1 = vertices.v[i.y];
+    const Vertex v2 = vertices.v[i.z];
 
     // Get the barycentric coordinates of the intersection
     vec3 barycentrics = vec3(0.0, rayQueryGetIntersectionBarycentricsEXT(rayQuery, true));
@@ -166,7 +166,7 @@ void main() {
         vec2 randomPixelCenterCS = randomPixelCenterUV * 2.0f - 1.0f;
 
         vec4 target = inverse(globalUBO.projection) * vec4( randomPixelCenterCS.x, 
-                                                            -randomPixelCenterCS.y, 
+                                                            randomPixelCenterCS.y, 
                                                             1, 
                                                             1);
 
@@ -235,6 +235,7 @@ void main() {
         }
     }
 
-    imageStore(image, ivec2(pixel), vec4(summedPixelColor / float(NUM_SAMPLES), 1.0));
+    float finalAlpha = (summedPixelColor.r + summedPixelColor.g + summedPixelColor.b > 0.001) ? 1.0 : 0.0;
+    imageStore(image, ivec2(pixel), vec4(summedPixelColor / float(NUM_SAMPLES), finalAlpha));
 
 }

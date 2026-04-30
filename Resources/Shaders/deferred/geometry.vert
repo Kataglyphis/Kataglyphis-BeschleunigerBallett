@@ -35,14 +35,11 @@ out gl_PerVertex
 };
 
 void main () {
-	vec4 opengl_position = globalUBO.projection * globalUBO.view * pc_raster.model * vec4(positions, 1.0f);
-	vec4 vulkan_position = vec4(opengl_position.x, -opengl_position.y, opengl_position.z, opengl_position.w);
+	gl_Position = globalUBO.projection * globalUBO.view * pc_raster.model * vec4(positions, 1.0f);
 	
 	worldPosition = vec3(pc_raster.model * vec4(positions, 1.0f));
-	worldPosition.y *= -1;
+	// worldPosition.y *= -1;
 	shading_normal = vec3(transpose(inverse(pc_raster.model)) * vec4(normal, 0.0f));
 	texture_coordinates = tex_coords;
 	fragment_color = color;
-
-	gl_Position = vulkan_position;
 }

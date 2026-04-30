@@ -54,7 +54,10 @@ void Kataglyphis::VulkanRendererInternals::PostStage::shaderHotReload(
 
 void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::CommandBuffer &commandBuffer,
   uint32_t image_index,
-  const std::vector<vk::DescriptorSet> &descriptorSets)
+  const std::vector<vk::DescriptorSet> &descriptorSets,
+  bool cloudsEnabled,
+  bool shadowsEnabled,
+  bool skyboxEnabled)
 {
     vk::RenderPassBeginInfo render_pass_begin_info;
     render_pass_begin_info.renderPass = render_pass;
@@ -72,9 +75,27 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
     render_pass_begin_info.framebuffer = framebuffers[image_index];
 
     commandBuffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
+
+    vk::Viewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(swap_chain_extent.width);
+    viewport.height = static_cast<float>(swap_chain_extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    commandBuffer.setViewport(0, 1, &viewport);
+
+    vk::Rect2D scissor{};
+    scissor.offset = vk::Offset2D{ 0, 0 };
+    scissor.extent = swap_chain_extent;
+    commandBuffer.setScissor(0, 1, &scissor);
+
     auto aspectRatio = static_cast<float>(swap_chain_extent.width) / static_cast<float>(swap_chain_extent.height);
     PushConstantPost pc_post{};
     pc_post.aspect_ratio = aspectRatio;
+    pc_post.clouds_enabled = cloudsEnabled ? 1u : 0u;
+    pc_post.shadows_enabled = shadowsEnabled ? 1u : 0u;
+    pc_post.skybox_enabled = skyboxEnabled ? 1u : 0u;
     commandBuffer.pushConstants(pipeline_layout,
       vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
       0,
@@ -103,6 +124,20 @@ void Kataglyphis::VulkanRendererInternals::PostStage::cleanUp()
 }
 
 Kataglyphis::VulkanRendererInternals::PostStage::~PostStage() = default;
+
+void Kataglyphis::VulkanRendererInternals::PostStage::destroyFramebuffers()
+{
+    for (auto &framebuffer : framebuffers) { device->getLogicalDevice().destroyFramebuffer(framebuffer); }
+    framebuffers.clear();
+}
+
+void Kataglyphis::VulkanRendererInternals::PostStage::recreateFrameResources()
+{
+    depthBufferImage->cleanUp();
+
+    createDepthbufferImage();
+    createFramebuffer();
+}
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createDepthbufferImage()
 {
@@ -162,12 +197,12 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
     const vk::Format &swap_chain_image_format = vulkanSwapChain->getSwapChainFormat();
     color_attachment.format = swap_chain_image_format;
     color_attachment.samples = vk::SampleCountFlagBits::e1;
-    color_attachment.loadOp = vk::AttachmentLoadOp::eClear;
+    color_attachment.loadOp = vk::AttachmentLoadOp::eLoad;
     color_attachment.storeOp = vk::AttachmentStoreOp::eStore;
     color_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
     color_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
 
-    color_attachment.initialLayout = vk::ImageLayout::eUndefined;
+    color_attachment.initialLayout = vk::ImageLayout::eColorAttachmentOptimal;
     color_attachment.finalLayout = vk::ImageLayout::ePresentSrcKHR;
 
     vk::AttachmentDescription depth_attachment;
@@ -180,7 +215,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
     depth_attachment.storeOp = vk::AttachmentStoreOp::eDontCare;
     depth_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
     depth_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
-    depth_attachment.initialLayout = vk::ImageLayout::eUndefined;
+    depth_attachment.initialLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
     depth_attachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
 
     vk::AttachmentReference color_attachment_reference;
@@ -200,8 +235,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
     std::array<vk::SubpassDependency, 1> subpass_dependencies;
 
     subpass_dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-    subpass_dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eBottomOfPipe;
-    subpass_dependencies[0].srcAccessMask = vk::AccessFlagBits::eMemoryRead;
+    subpass_dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    subpass_dependencies[0].srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
     subpass_dependencies[0].dstSubpass = 0;
     subpass_dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
     subpass_dependencies[0].dstAccessMask =
@@ -285,9 +320,14 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
 
     vk::PipelineViewportStateCreateInfo viewport_state_create_info;
     viewport_state_create_info.viewportCount = 1;
-    viewport_state_create_info.pViewports = &viewport;
+    viewport_state_create_info.pViewports = nullptr;
     viewport_state_create_info.scissorCount = 1;
-    viewport_state_create_info.pScissors = &scissor;
+    viewport_state_create_info.pScissors = nullptr;
+
+    std::vector<vk::DynamicState> dynamic_states = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+    vk::PipelineDynamicStateCreateInfo dynamic_state_create_info;
+    dynamic_state_create_info.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
+    dynamic_state_create_info.pDynamicStates = dynamic_states.data();
 
     vk::PipelineRasterizationStateCreateInfo rasterizer_create_info;
     rasterizer_create_info.depthClampEnable = VK_FALSE;
@@ -344,7 +384,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
     graphics_pipeline_create_info.pVertexInputState = &vertex_input_create_info;
     graphics_pipeline_create_info.pInputAssemblyState = &input_assembly;
     graphics_pipeline_create_info.pViewportState = &viewport_state_create_info;
-    graphics_pipeline_create_info.pDynamicState = nullptr;
+    graphics_pipeline_create_info.pDynamicState = &dynamic_state_create_info;
     graphics_pipeline_create_info.pRasterizationState = &rasterizer_create_info;
     graphics_pipeline_create_info.pMultisampleState = &multisample_create_info;
     graphics_pipeline_create_info.pColorBlendState = &color_blending_create_info;

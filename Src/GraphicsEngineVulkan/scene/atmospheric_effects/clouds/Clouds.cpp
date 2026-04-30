@@ -272,6 +272,40 @@ void Clouds::recordComputeCommands(vk::CommandBuffer &commandBuffer, uint32_t im
     commandBuffer.dispatch((width + 15) / 16, (height + 15) / 16, 1);
 }
 
+void Clouds::recreateFrameResources(vk::CommandPool commandPool, uint32_t width, uint32_t height)
+{
+    this->width = width;
+    this->height = height;
+
+    if (cloudOutputTexture) {
+        cloudOutputTexture->cleanUp();
+    }
+
+    cloudOutputTexture = std::make_unique<Texture>();
+    cloudOutputTexture->createImage(device, width, height, 1, vk::Format::eR16G16B16A16Sfloat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, 1, vk::ImageCreateFlags{}, vk::ImageType::e2D, 1);
+    cloudOutputTexture->createImageView(device, vk::Format::eR16G16B16A16Sfloat, vk::ImageAspectFlagBits::eColor, 1, vk::ImageViewType::e2D, 1);
+    cloudOutputTexture->createTextureSampler(device);
+
+    vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);
+    cloudOutputTexture->getVulkanImage().transitionImageLayout(commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, 1, vk::ImageAspectFlagBits::eColor);
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer);
+
+    // Update descriptor set
+    vk::DescriptorImageInfo outputImageInfo{};
+    outputImageInfo.imageLayout = vk::ImageLayout::eGeneral;
+    outputImageInfo.imageView = cloudOutputTexture->getImageView();
+
+    vk::WriteDescriptorSet descriptorWrite{};
+    descriptorWrite.dstSet = descriptorSet;
+    descriptorWrite.dstBinding = 0;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = vk::DescriptorType::eStorageImage;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pImageInfo = &outputImageInfo;
+
+    device->getLogicalDevice().updateDescriptorSets(1, &descriptorWrite, 0, nullptr);
+}
+
 void Clouds::cleanUp()
 {
     if (device) {

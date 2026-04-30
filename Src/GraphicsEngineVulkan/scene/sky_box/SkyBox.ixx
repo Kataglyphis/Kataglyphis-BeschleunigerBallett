@@ -21,10 +21,13 @@ class SkyBox
 
     void init(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool);
 
-    void createRenderPass(vk::Format format);
-    void createFramebuffers(size_t count, const std::vector<vk::ImageView>& imageViews, uint32_t width, uint32_t height);
+    void createRenderPass(vk::Format format, vk::Format depthFormat);
+    void createFramebuffers(size_t count, const std::vector<vk::ImageView>& imageViews, const std::vector<vk::ImageView>& depthViews, uint32_t width, uint32_t height);
     void createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout);
-    void recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, const std::vector<vk::DescriptorSet> &descriptorSets);
+    void recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, const std::vector<vk::DescriptorSet> &descriptorSets, bool skyboxEnabled);
+
+    void recreateFrameResources(size_t count, const std::vector<vk::ImageView>& imageViews, const std::vector<vk::ImageView>& depthViews, uint32_t width, uint32_t height);
+    void destroyFramebuffers();
 
     void cleanUp();
 
