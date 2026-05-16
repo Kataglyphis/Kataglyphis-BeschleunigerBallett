@@ -5,8 +5,7 @@
 
   <h1>Kataglyphis-BeschleunigerBallett</h1>
 
-  <h4>A modern graphics engine built on top of Vulkan+OpenGL. Serves also as playground 
-for learning various best practices in Graphic APIs, CMake, Rust, Modern C++ ... 🌋🌋🌋 </h4>
+  <h4>Experimental graphics engine and renderer playground for Vulkan, OpenGL, modern CMake, testing, packaging, and optional Rust integration.</h4>
 </div>
 
 <div align="center"> 
@@ -29,388 +28,205 @@ see also [**__Official homepage__**](https://beschleunigerballette.jonasheinle.d
 [![Twitter](https://img.shields.io/twitter/follow/Cataglyphis_?style=social)](https://twitter.com/Cataglyphis_)
 [![YouTube](https://img.shields.io/youtube/channel/subscribers/UC3LZiH4sZzzaVBCUV8knYeg?style=social)](https://www.youtube.com/channel/UC3LZiH4sZzzaVBCUV8knYeg)
 
-<!-- TABLE OF CONTENTS -->
-## Table of Contents
+## Overview
 
-- [About The Project](#about-the-project)
-  - [Built With](#built-with)
-  - [Key Features](#key-features)
-  - [Dependencies](#dependencies)
-  - [Useful tools](#useful-tools-you-might-also-considering-)
-  - [Benchmarking](#benchmarking)
-  - [VSCode Extensions](#vscode-extensions)
-- [Getting Started](#getting-started)
-  - [Specific version requirements](#specific-version-requirements)
-  - [Installation](#installation)
-- [Shaders](#shaders)
-- [Tests](#tests)
-- [Docker](#docker)
-  - [Linux](#linux)
-  - [Windows](#windows)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
-- [License](#license)
-- [Third-party Licenses](#third-party-licenses)
-- [Contact](#contact)
-- [Acknowledgements](#acknowledgements)
-- [Literature](#literature)
-- [Common issues](#common-issues)
+Kataglyphis-BeschleunigerBallett is a renderer and graphics-engine playground used to explore modern graphics APIs and the surrounding engineering workflow. The repository combines Vulkan and OpenGL rendering work with build automation, packaging, testing, documentation, and optional Rust integration.
 
-<!-- ABOUT THE PROJECT -->
-## About The Project
+## Highlights
 
-<div align="center">
-  <br>
-  <a href="https://jonasheinle.de"><img src="images/VulkanEngine/Screenshot1.png" alt="VulkanEngine" width="400"></a>
-  <a href="https://jonasheinle.de"><img src="images/VulkanEngine/Screenshot2.png" alt="VulkanEngine" width="400"></a>
-  <a href="https://jonasheinle.de"><img src="images/VulkanEngine/Screenshot3.png" alt="VulkanEngine" width="700"></a>
-</div>
+- Vulkan renderer with rasterization, ray tracing, path tracing, PBR, OBJ loading, and mip mapping
+- OpenGL renderer with dynamic lights, multiple shadow techniques, clouds, compute shaders, skyboxes, and PBR
+- Tooling around CMake presets, CI, code coverage, benchmarking, fuzzing, packaging, Sphinx, Doxygen, and Graphviz
+- Linux and Windows as the primary development targets
 
-<div align="center">
-  <br>
-  <a href="https://jonasheinle.de"><img src="images/OpenGLEngine/Screenshot1.png" alt="VulkanEngine" width="600"></a>
-  <a href="https://jonasheinle.de"><img src="images/OpenGLEngine/Screenshot2.png" alt="VulkanEngine" width="600"></a>
-  <br>
-  <a href="https://jonasheinle.de"><img src="images/OpenGLEngine/Screenshot3.png" alt="VulkanEngine" width="200"></a>
-  <a href="https://jonasheinle.de"><img src="images/OpenGLEngine/Screenshot4.png" alt="VulkanEngine" width="200"></a>
-</div>
+## Repository Layout
 
-This project provides me a solid Vulkan/OpenGL renderer starting point for implementing 
-modern established rendering techniques and getting quickly started in own research topics.  
-As this project evolved it gained additional functionality:
+| Path | Purpose |
+| --- | --- |
+| `Src/` | Engine and renderer source code |
+| `Resources/` | Shaders and runtime assets |
+| `Scripts/Linux/` | Linux build, test, coverage, analysis, and docs helpers |
+| `Scripts/Windows/` | Windows build, run, and dependency setup helpers |
+| `Test/` | Tests |
+| `docs/source/` | Hand-written Sphinx pages |
+| `Documents/` | Generated PDF and reference artifacts |
+| `ExternalLib/` | Third-party dependencies and submodules |
 
-* collecting/using [CMake best practices](https://github.com/Kataglyphis/Kataglyphis-CMakeTemplate)
-* collecting/using C++ best practices and testing new lang features :blush:
-* collecting experience in fuzzy/benchmark testing in C++
-* collecting experience in integrating :love_letter: Rust :love_letter: code in Cmake projects
+## Requirements
 
-I frequently test under Linux and Windows.  
-For more information regarding the build environment refer to my 
-[Kataglyphis-ContainerHub](https://github.com/Kataglyphis/Kataglyphis-ContainerHub) repository.  
+- C++23
+- C17
+- CMake 4.1 or newer
+- Vulkan SDK 1.4 compatible environment for Vulkan builds
+- OpenGL 4.6 capable driver/runtime for OpenGL builds
+- Python plus `requirements.txt` for docs and formatting tools
+- Optional Rust toolchain for experimental Rust-enabled builds
 
-### Key Features
+## Quick Start
 
-<div align="center">
+### Clone
 
+```bash
+git clone --branch develop --recurse-submodules git@github.com:Kataglyphis/Kataglyphis-BeschleunigerBallett.git
+cd Kataglyphis-BeschleunigerBallett
+```
 
-|            Category           |           Feature                             |  Implement Status  |
-|-------------------------------|-----------------------------------------------|:------------------:|
-|  **Vulkan Render agnostic**   | Rasterizer                                    |         ✔️         |
-|                               | Raytracing                                    |         ✔️         |
-|                               | Path tracing                                  |         ✔️         |
-|                               | PBR support (UE4, Disney, etc.)               |         ✔️         |
-|                               | .obj Model loading                            |         ✔️         |
-|                               | Mip Mapping                                   |         ✔️         |
-|  **OpenGL Render agnostic**   |                                               |                    |
-|                               | Directional Lights                            |         ✔️         |
-|                               | Point Lights                                  |         ✔️         |
-|                               | Spot Lights                                   |         ✔️         |
-|                               | Directional Shadow Mapping                    |         ✔️         |
-|                               | Omni-Directional Shadow Mapping               |         ✔️         |
-|                               | Cascaded Shadow Mapping                       |         ✔️         |
-|                               | Cloud system                                  |         ✔️         |
-|                               | 3D-worley noise generation                    |         ✔️         |
-|                               | .obj Model loading                            |         ✔️         |
-|                               | PBR support (UE4,disney,phong, etc.)          |         ✔️         |
-|                               | Support for `#include` directives in shaders. |         ✔️         |
-|                               | Sky box                                       |         ✔️         |
-|                               | Supporting compute shader                     |         ✔️         |
-|                               | On the fly 3D worley/perlin noise creation    |         ✔️         |
-|      **C++/CMake agnostic**   | Code coverage for Clang                       |         ✔️         |
-|                               | Advanced unit testing                         |         🔶         |
-|                               | Advanced performance testing                  |         🔶         |
-|                               | Advanced fuzz testing                         |         🔶         |
+### Configure and build with CMake presets
 
-</div>
+```bash
+cmake --list-presets
+cmake --preset <preset-name>
+cmake --build build --config Debug
+ctest --test-dir build --output-on-failure
+```
 
-**Legend:**
-- ✔️ - completed  
-- 🔶 - in progress  
-- ❌ - not started
+For Visual Studio style generators on Windows, add `-C Debug` or `-C Release` to `ctest` as needed.
 
+### Linux helper script
 
-### Dependencies
+```bash
+bash ./Scripts/Linux/cmake-configure-build.sh \
+  --preset linux-debug-clang \
+  --build-dir build \
+  --build-config Debug
+```
 
-* [Vulkan 1.4](https://www.vulkan.org/)
-* [OpenGL 4.6](https://www.opengl.org//)
-* [GLAD](https://glad.dav1d.de/)
-* [glm](https://github.com/g-truc/glm)
-* [glfw](https://www.glfw.org/)
-* [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader)
-* [stb](https://github.com/nothings/stb)
-* [vma](https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator)
-* [tinygltf](https://github.com/syoyo/tinygltf)
-* [gtest](https://github.com/google/googletest)
-* [gbenchmark](https://github.com/google/benchmark)
-* [google fuzztest](https://github.com/google/fuzztest)
-* [cmake](https://cmake.org/)
-* [gsl](https://github.com/Microsoft/GSL)
-* [nlohmann_json](https://github.com/nlohmann/json)
-* [SPDLOG](https://github.com/gabime/spdlog)
+### Windows helper scripts
 
-##### Optional
-* [Rust](https://www.rust-lang.org/)
-* [corrision-rs](https://github.com/corrosion-rs/corrosion)
-* [cxx](https://cxx.rs/)
-* [uv](https://github.com/astral-sh/uv)
+Use the build orchestration script when you want one entry point for formatting, configuration, build, and tests:
 
-### Useful tools (you might also considering :) )
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 -Configurations clang-debug
+```
 
-* [NSIS](https://nsis.sourceforge.io/Main_Page)
-* [doxygen](https://www.doxygen.nl/index.html)
-* [cppcheck](https://cppcheck.sourceforge.io/)
-* [renderdoc](https://renderdoc.org/)
-* [nsightgraphics](https://developer.nvidia.com/nsight-graphics)
-* [valgrind](https://valgrind.org/)
-* [clangtidy](https://github.com/llvm/llvm-project)
-* [visualstudio](https://visualstudio.microsoft.com/de/)
-* [ClangPowerTools](https://www.clangpowertools.com/)
-* [Codecov](https://app.codecov.io/gh)
-* [Ccache](https://ccache.dev/)
-* [Sccache](https://github.com/mozilla/sccache)
+Run helpers after building:
 
-#### Benchmarking
-* [gperftools](https://github.com/gperftools/gperftools)
+```powershell
+& ./Scripts/Windows/run_clangcl_debug.ps1 2>&1 | Tee-Object -FilePath logs/debug/run.log
+& ./Scripts/Windows/run_clangcl_release.ps1 2>&1 | Tee-Object -FilePath logs/release/run.log
+```
 
-### VSCode Extensions
-* [CMake format](https://github.com/cheshirekow/cmake_format)
-* [CMake tools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cmake-tools)
-* [CppTools](https://github.com/microsoft/vscode-cpptools)
+## Documentation
 
-<!-- GETTING STARTED -->
-## Getting Started
+The repository ships two documentation entry points:
 
-### Specific version requirements
+- this README for repository-level orientation
+- the Sphinx site under `docs/` for getting started, workflow notes, Graphviz output, and optional API reference material
 
-**C++23** or higher required.<br />
-**C17** or higher required.<br />
-**CMake 4.2.0** or higher required.<br />
+Build the Sphinx HTML docs locally:
 
-### Installation
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m sphinx -M html docs/source docs/build -E
+```
 
-> **__NOTE:__**
-> On Windows use Git Bash
+If Doxygen XML is available, the Sphinx build automatically includes the generated C++ API reference. If no XML is present, the hand-written docs still build cleanly and the API section stays hidden.
 
+## Tests and Analysis
 
-1. Clone the repo
-   ```bash
-   git clone --branch develop --recurse-submodules git@github.com:Kataglyphis/Kataglyphis-BeschleunigerBallett.git
-   ```
-2. Use the scripts (in the `Scripts` folder for installing dependencies on your system) 
-3. Then build your solution with [CMAKE] (https://cmake.org/) <br />
-  You can follow my steps from my [CMake best practices](https://github.com/Kataglyphis/Kataglyphis-CMakeTemplate) repo.  
-  For now the features in Rust are experimental. If you want to use them install
-  Rust and set `RUST_FEATURES=ON` on your CMake build.
+- `ctest` runs the configured test suite from the active build directory
+- `Scripts/Linux/run-ctest.sh` wraps Linux test execution
+- `Scripts/Linux/build-coverage-gcovr.sh` and `Scripts/Linux/build-coverage-llvm.sh` generate coverage reports
+- `Scripts/Linux/run-perf-suite.sh` runs performance-oriented checks
+- `Scripts/Windows/Build-Windows.ps1` can orchestrate formatting, tidy, builds, tests, and packaging
 
-  Alternatively you can use the build scripts I use for my standard configuration: <br/>
-  * [`buildEngine.sh`] 
-  * [`buildEngine.bat`]
-  ```sh
-  $ {WORKING_DIR}/GraphicsEngineVulkan/buildEngine[.sh/.bat]
-  ```
+## Packaging
 
-### Packaging
+### Linux
 
-On Linux, binary packages are generated with CPack (`TGZ` and `DEB`).
-Use this repeatable workflow after a clean checkout or after deleting build folders:
+Binary packages are generated with CPack. A typical release workflow is:
 
-1. Configure and build in `Release` mode
-2. Generate release packages (`TGZ`, `DEB`)
-3. Generate AppImage packages as standard packaging step
-
-```sh
-# 1) Release configure + build
+```bash
 bash ./Scripts/Linux/cmake-configure-build.sh \
   --vulkan-setup-script /opt/vulkan/1.4.341.1/setup-env.sh \
   --preset linux-release-clang \
   --build-dir build-release \
   --build-config Release
 
-# 2) CPack package target (TGZ + DEB)
 bash ./Scripts/Linux/cmake-configure-build.sh \
   --vulkan-setup-script /opt/vulkan/1.4.341.1/setup-env.sh \
   --build-dir build-release \
   --skip-configure true \
   --build-target package
 
-# 3) Standard AppImage packaging
 cmake -S . -B build-release-appimage \
   --preset linux-release-clang \
   -DCPACK_ENABLE_APPIMAGE=ON
 cmake --build build-release-appimage --config Release --target package
 ```
 
-Generated artifacts are written to the selected build folder (for example `*.tar.gz`, `*.deb`, and AppImage artifacts).
-For AppImage builds, `appimagetool` must be available in your `PATH`.
+Artifacts land in the selected build directory. For AppImage builds, `appimagetool` must be available in `PATH`.
 
-Windows MSIX signing
---------------------
-When the Windows build produces an MSIX package the build script can sign it using a PFX certificate located at the repository root. Provide the certificate password via environment variable `MSIX_PFX_PASSWORD`. The script also accepts `MSIX_CERT_PASSWORD` as a fallback for CI environments that use that name for the secret.
+### Windows
 
-Set the secret in your CI (recommended) or export it in your environment before running the Windows build script. Example (GitHub Actions):
+The Windows release build can produce an MSIX package. For signing, place the PFX certificate at the repository root and provide the password via `MSIX_PFX_PASSWORD` or `MSIX_CERT_PASSWORD`.
 
-  - name: Build Windows
-    env:
-      MSIX_CERT_PASSWORD: ${{ secrets.MSIX_CERT_PASSWORD }}
+## Shaders
 
-### Running the program after a release build
+Shader include handling is wired through these files:
 
-To run the program after a release build on Windows and log its output, use the following PowerShell command:
+- `Src/GraphicsEngineVulkan/vulkan_base/ShaderIncludes.hpp`
+- `Src/GraphicsEngineVulkan/cmake/CompileShadersToSPV.cmake`
 
-```powershell
-& ./Scripts/Windows/run_clangcl_release.ps1 2>&1 | Tee-Object -FilePath logs/release/run.log
-```
+Update both when you add new include-driven shader files.
 
-### Running the program after a debug build
+## Docker and Build Environments
 
-To run the program after a debug build on Windows and log its output, use the following PowerShell command:
+Containerized and reproducible environment details live in [Kataglyphis-ContainerHub](https://github.com/Kataglyphis/Kataglyphis-ContainerHub).
 
-```powershell
-& ./Scripts/Windows/run_clangcl_debug.ps1 2>&1 | Tee-Object -FilePath logs/debug/run.log
-```
+## Roadmap
 
-# Shaders
-I provide two ways for compiling shaders with. Hence if you want to add new
-files as `#include` in your shaders you have to modify the files: (should be self-explanatory)<br/>
-* [`include/vulkan_base/ShaderIncludes.hpp`] 
-* [`cmake/CompileShadersToSPV.cmake`]
+- Keep the renderer and tooling foundations healthy on Linux and Windows
+- Expand test, fuzz, and performance coverage
+- Continue documenting build, packaging, and API workflows
+- Keep generated reference material easy to reproduce locally
 
-appropriately.</br>
-
-
-# Tests
-I follow the test setup as descriped in: [CMake best practices](https://github.com/Kataglyphis/Kataglyphis-CMakeTemplate) 
-
-# Docker
-
-You can find all details in my [Kataglyphis-ContainerHub](https://github.com/Kataglyphis/Kataglyphis-ContainerHub) repository.  
-
-## Linux
-
-If you want to run it on NVIDIA GPUs you will have to  
-install the [NVIDIA Container Toolkit](Kataglyphis-BeschleunigerBallett)  
-before you proceed with the next steps.
-
-## Windows
-
-> **__NOTE:__** Pls for GPU accelerated Windows Docker
-> have a look [here](https://learn.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/gpu-acceleration)
-
-<!-- ROADMAP -->
-# Roadmap
-Watch the refman generated by doxygen. <br/>
-* [Watch it here](Documents/refman.pdf)
-
-<!-- CONTRIBUTING -->
 ## Contributing
 
-Contributions are what make the open source community such an amazing place to be learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+Contributions are welcome. A good change keeps code, docs, and build scripts aligned.
 
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+1. Fork the project
+2. Create a feature branch
+3. Implement and test the change
+4. Update documentation when behavior or workflows change
+5. Open a pull request
 
-
-<!-- LICENSE -->
 ## License
 
-Distributed under the MIT-License. See `LICENSE` for more information.
+Distributed under the MIT License. See `LICENSE` for more information.
 
 ## Third-party Licenses
 
-See the full third-party license overview in the docs: [docs/LICENSES-README.md](docs/LICENSES-README.md)
+See the full third-party license overview in [docs/LICENSES-README.md](docs/LICENSES-README.md).
 
-
-<!-- CONTACT -->
 ## Contact
 
 Jonas Heinle - [@Cataglyphis_](https://twitter.com/Cataglyphis_) - renderdude@jotrockenmitlocken.de
 
-Project Link: [https://github.com/Kataglyphis/GraphicsEngineVulkan](https://github.com/Kataglyphis/GraphicsEngineVulkan)
+Project link: [https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett)
 
+## Further Reading
 
+- [Official homepage](https://beschleunigerballette.jonasheinle.de/)
+- [Kataglyphis-ContainerHub](https://github.com/Kataglyphis/Kataglyphis-ContainerHub)
+- [Doxygen PDF reference](Documents/refman.pdf)
+- [Sphinx docs source](docs/source)
 
-<!-- ACKNOWLEDGEMENTS -->
-## Acknowledgements
+## Common Issue: Missing Vulkan validation layers
 
-You will find important links to information in the code.
-But here in general some good sources of information:
+If validation layers are not available, startup can fail with errors like:
 
-Thanks for free 3D Models: 
-* [Morgan McGuire, Computer Graphics Archive, July 2017 (https://casual-effects.com/data)](http://casual-effects.com/data/)
+```bash
+[error] Validation layers requested, but not available!
+[error] Failed to create a Vulkan instance!
+ERROR: vkGetInstanceProcAddr: Invalid instance
+```
 
-* [Viking room](https://sketchfab.com/3d-models/viking-room-a49f1b8e4f5c4ecf9e1fe7d81915ad38)
+On Linux, install the runtime packages first:
 
-* [Loading Screen Image](https://www.golem.de/news/raumfahrt-spacex-macht-sicherheitstest-bei-hoechster-belastung-2001-146124.html)
+```bash
+sudo apt install libvulkan1 vulkan-tools vulkan-validationlayers
+```
 
-
-## Literature 
-
-Some very helpful literature, tutorials, etc. 
-
-* [View Frustum Culling](http://www.lighthouse3d.com/tutorials/view-frustum-culling/geometric-approach-extracting-the-planes/)
-
-OpenGL 
-* [learnopengl.com](https://learnopengl.com/)
-* [ogldev.org](https://ogldev.org/)
-* [Cascaded Shadow Maps](https://ahbejarano.gitbook.io/lwjglgamedev/chapter26)
-* [Compute Shader in OpenGL](https://antongerdelan.net/opengl/compute.html)
-
-Clouds
-* [pbr-book](https://www.pbr-book.org/)
-* [Inigo Quilez](https://iquilezles.org)
-* [Shadertoy Horizon Zero Dawn](https://www.shadertoy.com/view/WddSDr)
-* [Sebastian Lague](https://m.youtube.com/watch?v=4QOcCGI6xOU&t=97s)
-* [Horizon Zero Dawn](http://advances.realtimerendering.com/s2015/The%20Real-time%20Volumetric%20Cloudscapes%20of%20Horizon%20-%20Zero%20Dawn%20-%20ARTR.pdf)
-* [Clouds and noise](https://thebookofshaders.com/12/)
-* [Shadertoy Clouds using 3D Perlin noise](https://www.shadertoy.com/view/XlKyRw)
-
-Noise
-* [Worley noise online demo](https://github.com/Erkaman/glsl-worley)
-
-Vulkan
-* [Udemy course by Ben Cook](https://www.udemy.com/share/102M903@JMHgpMsdMW336k2s5Ftz9FMx769wYAEQ7p6GMAPBsFuVUbWRgq7k2uY6qBCG6UWNPQ==/)
-* [Vulkan Tutorial](https://vulkan-tutorial.com/)
-* [Vulkan Raytracing Tutorial](https://developer.nvidia.com/rtx/raytracing/vkray)
-* [Vulkan Tutorial; especially chapter about integrating imgui](https://frguthmann.github.io/posts/vulkan_imgui/)
-* [NVidia Raytracing tutorial with Vulkan](https://nvpro-samples.github.io/vk_raytracing_tutorial_KHR/)
-* [Blog from Sascha Willems](https://www.saschawillems.de/)
-
-Physically Based Shading
-* [Advanced Global Illumination by Dutre, Bala, Bekaert](https://www.oreilly.com/library/view/advanced-global-illumination/9781439864951/)
-* [The Bible: PBR book](https://pbr-book.org/3ed-2018/Reflection_Models/Microfacet_Models)
-* [Real shading in Unreal engine 4](https://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf)
-* [Physically Based Shading at Disney](https://blog.selfshadow.com/publications/s2012-shading-course/burley/s2012_pbs_disney_brdf_notes_v3.pdf)
-* [RealTimeRendering](https://www.realtimerendering.com/)
-* [Understanding the Masking-Shadowing Function in Microfacet-Based BRDFs](https://hal.inria.fr/hal-01024289/)
-* [Sampling the GGX Distribution of Visible Normals](https://pdfs.semanticscholar.org/63bc/928467d760605cdbf77a25bb7c3ad957e40e.pdf)
-
-Path tracing
-* [NVIDIA Path tracing Tutorial](https://github.com/nvpro-samples/vk_mini_path_tracer/blob/main/vk_mini_path_tracer/main.cpp)
-
-Docker
-* [Vulkan Minimal Docker setup](https://github.com/j3soon/docker-vulkan-runtime)
-* [scoop](https://scoop.sh/#/apps)
-* [Docker container windows GPU](https://learn.microsoft.com/de-de/virtualization/windowscontainers/deploy-containers/gpu-acceleration)
-* [Docker windows](https://hub.docker.com/r/microsoft/windows)
-
-## Common issues
-
-  * Problem: 
-    If **__Validation Layers__** could not be found:
-    ```bash
-    A value given directly by extern c function 322
-    [XXXX-XX-XX 10:30:40.877] [error] Validation layers requested, but not available!
-    [XXXX-XX-XX 10:30:40.879] [error] Failed to create a Vulkan instance!
-    [XXXX-XX-XX 10:30:40.880] [error] Validation layers requested, but not available!
-    [XXXX-XX-XX 10:30:40.882] [error] Failed to create a Vulkan instance!
-    ERROR:             vkGetInstanceProcAddr: Invalid instance [VUID-vkGetInstanceProcAddr-instance-parameter]
-    ```
-    Solution for linux:
-    ```bash
-    sudo apt install libvulkan1 vulkan-tools vulkan-validationlayers
-    ```
-    Otherwise you would have to install them via sdk.
+Otherwise install the validation layers through the Vulkan SDK used on your system.
 

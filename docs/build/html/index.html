@@ -1,341 +1,497 @@
 
-
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" data-content_root="./">
-<head>
-  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Kataglyphis-Renderer documentation &mdash; Kataglyphis-Renderer 1.3 documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
-      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
-      <link rel="stylesheet" type="text/css" href="_static/graphviz.css?v=4ae1632d" />
-      <link rel="stylesheet" type="text/css" href="_static/collapsible-lists/css/tree_view.css?v=a885cde7" />
-      <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
-      <link rel="stylesheet" type="text/css" href="_static/css/custom.css" />
 
+<html lang="en" data-content_root="./" >
+
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Kataglyphis-BeschleunigerBallett Documentation &#8212; Kataglyphis-Renderer 1.5.0 documentation</title>
   
-      <script src="_static/jquery.js?v=5d32c60e"></script>
-      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=c55cb9cb"></script>
-      <script src="_static/doctools.js?v=fd6eb6e6"></script>
-      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
-      <script src="_static/collapsible-lists/js/CollapsibleLists.compressed.js?v=73120307"></script>
-      <script src="_static/collapsible-lists/js/apply-collapsible-lists.js?v=660e4f45"></script>
-      <script src="_static/design-tabs.js?v=f930bc37"></script>
-    <script src="_static/js/theme.js"></script>
+  
+  
+  <script data-cfasync="false">
+    document.documentElement.dataset.mode = localStorage.getItem("mode") || "";
+    document.documentElement.dataset.theme = localStorage.getItem("theme") || "";
+  </script>
+  <!--
+    this give us a css class that will be invisible only if js is disabled
+  -->
+  <noscript>
+    <style>
+      .pst-js-only { display: none !important; }
+
+    </style>
+  </noscript>
+  
+  <!-- Loaded before other Sphinx assets -->
+  <link href="_static/styles/theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+<link href="_static/styles/pydata-sphinx-theme.css?digest=8878045cc6db502f8baf" rel="stylesheet" />
+
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=8f2a1f02" />
+    <link rel="stylesheet" type="text/css" href="_static/styles/sphinx-book-theme.css?v=3c74b3bc" />
+    <link rel="stylesheet" type="text/css" href="_static/graphviz.css?v=4ae1632d" />
+    <link rel="stylesheet" type="text/css" href="_static/sphinx-design.min.css?v=95c83b7e" />
+    <link rel="stylesheet" type="text/css" href="_static/css/custom.css?v=be8bd914" />
+  
+  <!-- So that users can add custom icons -->
+  <script src="_static/scripts/fontawesome.js?digest=8878045cc6db502f8baf"></script>
+  <!-- Pre-loaded scripts that we'll load fully later -->
+  <link rel="preload" as="script" href="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf" />
+<link rel="preload" as="script" href="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf" />
+
+    <script src="_static/documentation_options.js?v=5eae0ad3"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/scripts/sphinx-book-theme.js?v=fab101a9"></script>
+    <script src="_static/design-tabs.js?v=f930bc37"></script>
+    <script>DOCUMENTATION_OPTIONS.pagename = 'index';</script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Kataglyphis Renderer" href="README.html" /> 
-</head>
+    <link rel="next" title="Project Overview" href="README.html" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="docsearch:language" content="en"/>
+  <meta name="docsearch:version" content="" />
+  </head>
+  
+  
+  <body data-bs-spy="scroll" data-bs-target=".bd-toc-nav" data-offset="180" data-bs-root-margin="0px 0px -60%" data-default-mode="">
 
-<body class="wy-body-for-nav"> 
-  <div class="wy-grid-for-nav">
-    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
-      <div class="wy-side-scroll">
-        <div class="wy-side-nav-search"  style="background: #6af0ad" >
+  
+  
+  <div id="pst-skip-link" class="skip-link d-print-none"><a href="#main-content">Skip to main content</a></div>
+  
+  <div id="pst-scroll-pixel-helper"></div>
+  
+  <button type="button" class="btn rounded-pill" id="pst-back-to-top">
+    <i class="fa-solid fa-arrow-up"></i>Back to top</button>
 
-          
-          
-          <a href="#" class="icon icon-home">
-            Kataglyphis-Renderer
-          </a>
-<div role="search">
-  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
-    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
-    <input type="hidden" name="check_keywords" value="yes" />
-    <input type="hidden" name="area" value="default" />
-  </form>
+  
+  <dialog id="pst-search-dialog">
+    
+<form class="bd-search d-flex align-items-center"
+      action="search.html"
+      method="get">
+  <i class="fa-solid fa-magnifying-glass"></i>
+  <input type="search"
+         class="form-control"
+         name="q"
+         placeholder="Search..."
+         aria-label="Search..."
+         autocomplete="off"
+         autocorrect="off"
+         autocapitalize="off"
+         spellcheck="false"/>
+  <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd>K</kbd></span>
+</form>
+  </dialog>
+
+  <div class="pst-async-banner-revealer d-none">
+  <aside id="bd-header-version-warning" class="d-none d-print-none" aria-label="Version warning"></aside>
 </div>
-        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
-              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="README.html">Kataglyphis Renderer</a></li>
-<li class="toctree-l1"><a class="reference internal" href="README.html#shaders">Shaders</a></li>
-<li class="toctree-l1"><a class="reference internal" href="README.html#tests">Tests</a></li>
-<li class="toctree-l1"><a class="reference internal" href="README.html#format-cmake-files">Format cmake files</a></li>
-<li class="toctree-l1"><a class="reference internal" href="README.html#format-code-files">Format code files</a></li>
-<li class="toctree-l1"><a class="reference internal" href="README.html#docs">Docs</a></li>
+
+  
+    <header class="bd-header navbar navbar-expand-lg bd-navbar d-print-none">
+    </header>
+  
+
+  <div class="bd-container">
+    <div class="bd-container__inner bd-page-width">
+      
+      
+      
+        
+      
+      <dialog id="pst-primary-sidebar-modal"></dialog>
+      <div id="pst-primary-sidebar" class="bd-sidebar-primary bd-sidebar">
+        
+
+  
+  <div class="sidebar-header-items sidebar-primary__section">
+    
+    
+    
+    
+  </div>
+  
+    <div class="sidebar-primary-items__start sidebar-primary__section">
+        <div class="sidebar-primary-item">
+
+  
+    
+  
+
+<a class="navbar-brand logo" href="#">
+  
+  
+  
+  
+  
+  
+    <p class="title logo__title">Kataglyphis-Renderer 1.5.0 documentation</p>
+  
+</a></div>
+        <div class="sidebar-primary-item">
+
+<button class="btn search-button-field search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+ <i class="fa-solid fa-magnifying-glass"></i>
+ <span class="search-button__default-text">Search</span>
+ <span class="search-button__kbd-shortcut"><kbd class="kbd-shortcut__modifier">Ctrl</kbd>+<kbd class="kbd-shortcut__modifier">K</kbd></span>
+</button></div>
+        <div class="sidebar-primary-item"><nav class="bd-links bd-docs-nav" aria-label="Main">
+    <div class="bd-toc-item navbar-nav active">
+        <p aria-level="2" class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="nav bd-sidenav">
+<li class="toctree-l1"><a class="reference internal" href="README.html">Project Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="documentation_workflow.html">Documentation Workflow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="graphviz_files.html">Graphviz Include Graphs</a></li>
 <li class="toctree-l1"><a class="reference internal" href="api/library_root.html">Library API</a></li>
-<li class="toctree-l1"><a class="reference internal" href="graphviz_files.html">Graphviz Include Graphs</a></li>
 </ul>
 
-        </div>
+    </div>
+</nav></div>
+    </div>
+  
+  
+  <div class="sidebar-primary-items__end sidebar-primary__section">
+      <div class="sidebar-primary-item">
+<div id="ethical-ad-placement"
+      class="flat"
+      data-ea-publisher="readthedocs"
+      data-ea-type="readthedocs-sidebar"
+      data-ea-manual="true">
+</div></div>
+  </div>
+
+
       </div>
-    </nav>
+      
+      <main id="main-content" class="bd-main" role="main">
+        
+        
 
-    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu"  style="background: #6af0ad" >
-          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="#">Kataglyphis-Renderer</a>
-      </nav>
+<div class="sbt-scroll-pixel-helper"></div>
 
-      <div class="wy-nav-content">
-        <div class="rst-content">
-          <div role="navigation" aria-label="Page navigation">
-  <ul class="wy-breadcrumbs">
-      <li><a href="#" class="icon icon-home" aria-label="Home"></a></li>
-      <li class="breadcrumb-item active">Kataglyphis-Renderer documentation</li>
-      <li class="wy-breadcrumbs-aside">
-            <a href="_sources/index.rst.txt" rel="nofollow"> View page source</a>
-      </li>
-  </ul>
-  <hr/>
-</div>
-          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
-           <div itemprop="articleBody">
-             
-  <section id="kataglyphis-renderer-documentation">
-<h1>Kataglyphis-Renderer documentation<a class="headerlink" href="#kataglyphis-renderer-documentation" title="Link to this heading"></a></h1>
-<div class="toctree-wrapper compound">
-<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
-<ul>
-<li class="toctree-l1"><a class="reference internal" href="README.html">Kataglyphis Renderer</a></li>
-<li class="toctree-l1"><a class="reference internal" href="README.html#shaders">Shaders</a></li>
-<li class="toctree-l1"><a class="reference internal" href="README.html#tests">Tests</a></li>
-<li class="toctree-l1"><a class="reference internal" href="README.html#format-cmake-files">Format cmake files</a></li>
-<li class="toctree-l1"><a class="reference internal" href="README.html#format-code-files">Format code files</a></li>
-<li class="toctree-l1"><a class="reference internal" href="README.html#docs">Docs</a></li>
-<li class="toctree-l1"><a class="reference internal" href="api/library_root.html">Library API</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="api/namespace_Kataglyphis.html">Namespace Kataglyphis</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/namespace_Kataglyphis__debug.html">Namespace Kataglyphis::debug</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/namespace_Kataglyphis__Frontend.html">Namespace Kataglyphis::Frontend</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/namespace_Kataglyphis__ShaderIncludes.html">Namespace Kataglyphis::ShaderIncludes</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/namespace_Kataglyphis__VulkanRendererInternals.html">Namespace Kataglyphis::VulkanRendererInternals</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/namespace_Kataglyphis__VulkanRendererInternals__FrontendShared.html">Namespace Kataglyphis::VulkanRendererInternals::FrontendShared</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/namespace_sceneConfig.html">Namespace sceneConfig</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/namespace_std.html">Namespace std</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/namespace_vertex.html">Namespace vertex</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structGlobalUBO.html">Struct GlobalUBO</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structGUISceneSharedVars.html">Struct GUISceneSharedVars</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structKataglyphis_1_1VulkanRendererInternals_1_1BlasInput.html">Struct BlasInput</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structKataglyphis_1_1VulkanRendererInternals_1_1BottomLevelAccelerationStructure.html">Struct BottomLevelAccelerationStructure</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structKataglyphis_1_1VulkanRendererInternals_1_1BuildAccelerationStructure.html">Struct BuildAccelerationStructure</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structKataglyphis_1_1VulkanRendererInternals_1_1FrontendShared_1_1GUIRendererSharedVars.html">Struct GUIRendererSharedVars</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structKataglyphis_1_1VulkanRendererInternals_1_1PathTracing_1_1SpecializationData.html">Struct PathTracing::SpecializationData</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structKataglyphis_1_1VulkanRendererInternals_1_1QueueFamilyIndices.html">Struct QueueFamilyIndices</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structKataglyphis_1_1VulkanRendererInternals_1_1SwapChainDetails.html">Struct SwapChainDetails</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structKataglyphis_1_1VulkanRendererInternals_1_1TopLevelAccelerationStructure.html">Struct TopLevelAccelerationStructure</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structObjectDescription.html">Struct ObjectDescription</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structPushConstantPathTracing.html">Struct PushConstantPathTracing</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structPushConstantPost.html">Struct PushConstantPost</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structPushConstantRasterizer.html">Struct PushConstantRasterizer</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structPushConstantRaytracing.html">Struct PushConstantRaytracing</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structRotation.html">Struct Rotation</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structSceneUBO.html">Struct SceneUBO</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structstd_1_1hash_3_01Vertex_01_4.html">Template Struct hash&lt; Vertex &gt;</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structVertex.html">Struct Vertex</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/structViewFrustumCulling_1_1frustum__plane.html">Struct ViewFrustumCulling::frustum_plane</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classAABB.html">Class AABB</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classCamera.html">Class Camera</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classCascadedShadowMap.html">Class CascadedShadowMap</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classClampToEdgeMode.html">Class ClampToEdgeMode</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classClouds.html">Class Clouds</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classComputeShaderProgram.html">Class ComputeShaderProgram</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classDebugApp.html">Class DebugApp</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classDirectionalLight.html">Class DirectionalLight</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classDirectionalShadowMapPass.html">Class DirectionalShadowMapPass</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classFile.html">Class File</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classGameObject.html">Class GameObject</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classGBuffer.html">Class GBuffer</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classGeometryPass.html">Class GeometryPass</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classGeometryPassShaderProgram.html">Class GeometryPassShaderProgram</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classGUI.html">Class GUI</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1Allocator.html">Class Allocator</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1App.html">Class App</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1File.html">Class File</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1Frontend_1_1GUI.html">Class GUI</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1Frontend_1_1Window.html">Class Window</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1Mesh.html">Class Mesh</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1Model.html">Class Model</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1ObjLoader.html">Class ObjLoader</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1Scene.html">Class Scene</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1ShaderHelper.html">Class ShaderHelper</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1Texture.html">Class Texture</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1VulkanBuffer.html">Class VulkanBuffer</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1VulkanBufferManager.html">Class VulkanBufferManager</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1VulkanDevice.html">Class VulkanDevice</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1VulkanImage.html">Class VulkanImage</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1VulkanImageView.html">Class VulkanImageView</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1VulkanInstance.html">Class VulkanInstance</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1VulkanRenderer.html">Class VulkanRenderer</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1VulkanRendererInternals_1_1ASManager.html">Class ASManager</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1VulkanRendererInternals_1_1CommandBufferManager.html">Class CommandBufferManager</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1VulkanRendererInternals_1_1PathTracing.html">Class PathTracing</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1VulkanRendererInternals_1_1PostStage.html">Class PostStage</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1VulkanRendererInternals_1_1Rasterizer.html">Class Rasterizer</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1VulkanRendererInternals_1_1Raytracing.html">Class Raytracing</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classKataglyphis_1_1VulkanSwapChain.html">Class VulkanSwapChain</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classLight.html">Class Light</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classLightingPass.html">Class LightingPass</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classLightingPassShaderProgram.html">Class LightingPassShaderProgram</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classLoadingScreen.html">Class LoadingScreen</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classMesh.html">Class Mesh</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classMirroredRepeatMode.html">Class MirroredRepeatMode</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classModel.html">Class Model</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classNoise.html">Class Noise</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classObjLoader.html">Class ObjLoader</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/class_structObjMaterial.html">Class ObjMaterial</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classOmniDirShadowMap.html">Class OmniDirShadowMap</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classOmniDirShadowShaderProgram.html">Class OmniDirShadowShaderProgram</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classOmniShadowMapPass.html">Class OmniShadowMapPass</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classPointLight.html">Class PointLight</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classQuad.html">Class Quad</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classRandomNumbers.html">Class RandomNumbers</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classRenderer.html">Class Renderer</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classRenderPass.html">Class RenderPass</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classRenderPassSceneDependend.html">Class RenderPassSceneDependend</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classRepeatMode.html">Class RepeatMode</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classScene.html">Class Scene</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classShaderIncludes.html">Class ShaderIncludes</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classShaderProgram.html">Class ShaderProgram</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classShadowMap.html">Class ShadowMap</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classSkyBox.html">Class SkyBox</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classTexture.html">Class Texture</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classTextureWrappingMode.html">Class TextureWrappingMode</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classViewFrustumCulling.html">Class ViewFrustumCulling</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/classWindow.html">Class Window</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_Perlin_8hpp_1ad4090fa1e3d75426afb7da7ef303017e.html">Function fade</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_Perlin_8hpp_1acb5e656b468026dbdc0c0baa307c49b3.html">Function getPermutationVector</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_DebugApp_8cpp_1af833243b97061a22e702b3b11a7b647c.html">Function glDebugOutput</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_Perlin_8hpp_1ad9fdc97a49d7564ca65b307b9a5e1b35.html">Function grad</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_namespaceKataglyphis_1a857b8bfe48ef82869951aa9fa5414435.html">Function Kataglyphis::align_up</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_namespaceKataglyphis_1ae172cea98b440bc5037467cbc04c2227.html">Function Kataglyphis::choose_supported_format</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_namespaceKataglyphis_1_1debug_1afccda8b0f890f4bdb1b943c1e5c64013.html">Function Kataglyphis::debug::debugUtilsMessengerCallback</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_namespaceKataglyphis_1_1debug_1adbcdd6cbedfc67963471aea854e2b139.html">Function Kataglyphis::debug::freeDebugCallback</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_namespaceKataglyphis_1_1debug_1ae6a69c1e385df7f20057d15376a99ed4.html">Function Kataglyphis::debug::messageCallback</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_namespaceKataglyphis_1_1debug_1af7004572039e47ca3aeec70d0f0b2cc2.html">Function Kataglyphis::debug::setupDebugging</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_namespaceKataglyphis_1a075f27efba52dea280a5ef2288f01b00.html">Function Kataglyphis::find_memory_type_index</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_namespaceKataglyphis_1_1ShaderIncludes_1a34d9f89089c749f8911c29a4701952c6.html">Function Kataglyphis::ShaderIncludes::getShaderIncludes</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_Perlin_8hpp_1ad969873f63a702a5965a68b6082a0897.html">Function lerp</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_GraphicsEngineOpenGL_2app_2App_8cpp_1ae66f6b31b5ad750f1fe042a706a4e3d4.html">Function main()</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_Main_8cpp_1ae66f6b31b5ad750f1fe042a706a4e3d4.html">Function main()</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_GraphicsEngineVulkan_2window_2Window_8cpp_1a946e3408b0f38d15a9c567a9d00c2c46.html">Function onErrorCallback</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_Perlin_8hpp_1a35157b8efa76162c016a3298f54f43b5.html">Function perlin_noise</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_Main_8cpp_1abd2d87a111808f88d8f31d5c331c7a1f.html">Function rusty_extern_c_integer</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_namespacesceneConfig_1a6c53371694e44e40c835e48f27def71f.html">Function sceneConfig::getModelFile</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_namespacesceneConfig_1a71330a511f748716643e88a4d446875c.html">Function sceneConfig::getModelMatrix</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/function_namespacevertex_1a183ebeb3b6fde1df5bd8e204127514ba.html">Function vertex::getVertexInputAttributeDesc</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_host__device__shared_8hpp_1aa437d67662de083704e7fb6c6b32bb40.html">Variable CLOUDS_MATERIAL_ID</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_GlobalValues_8hpp_1abadbe5e4569238b8941b70e9721e4740.html">Variable G_BUFFER_SIZE</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_namespaceKataglyphis_1_1debug_1ad5ee9b2c16c2911ca139567462da4a8b.html">Variable Kataglyphis::debug::debugUtilsMessenger</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_namespaceKataglyphis_1_1debug_1afad0e60dfe9c824e9339461162b92587.html">Variable Kataglyphis::debug::validationLayerCount</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_namespaceKataglyphis_1_1debug_1a01d85fcac9903c22c023e7b6e73445a0.html">Variable Kataglyphis::debug::validationLayerNames</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_namespaceKataglyphis_1_1debug_1acd9f725af546406c42fa09bbff6c0a96.html">Variable Kataglyphis::debug::vkCreateDebugUtilsMessengerEXT</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_namespaceKataglyphis_1_1debug_1aa8ac1389af79bdaaf2a1a80026dfada0.html">Variable Kataglyphis::debug::vkDestroyDebugUtilsMessengerEXT</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_namespaceKataglyphis_1aad76455eb0bdf2dfc2279cf1f613ca11.html">Variable Kataglyphis::ENABLE_VALIDATION_LAYERS</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_namespaceKataglyphis_1a556513a45d358eae23c4c99d3a5beb0d.html">Variable Kataglyphis::MAX_FRAME_DRAWS</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_namespaceKataglyphis_1a61708d81059b7437090840615deaa037.html">Variable Kataglyphis::MAX_OBJECTS</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_host__device__shared_8hpp_1afaa201acc17911367dbffba9aad2a69a.html">Variable MAX_MATERIALS</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_host__device__shared_8hpp_1a991a0bb648e97839d1392618e8e7340d.html">Variable MAX_POINT_LIGHTS</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_host__device__shared_8hpp_1aec898d582e4364700455ca5272d89891.html">Variable MAX_TEXTURE_COUNT</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_host__device__shared__vars_8hpp_1aec898d582e4364700455ca5272d89891.html">Variable MAX_TEXTURE_COUNT</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_host__device__shared_8hpp_1a58ab116350055b66986e91b6c99ad4ef.html">Variable NUM_CASCADES</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_host__device__shared_8hpp_1adacca7d242edb71b53adfbbee34f9147.html">Variable NUM_CELL_POSITIONS</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_GlobalValues_8hpp_1a1c9db1367859e10bbe2740c675d228a1.html">Variable NUM_CLOUDS</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_GlobalValues_8hpp_1ac8343ff8e7950ec5ad29488f3f66549a.html">Variable NUM_FRUSTUM_PLANES</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_host__device__shared_8hpp_1aa08a577393243b86dfd2a97e61443673.html">Variable PI</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/variable_host__device__shared_8hpp_1a19c71c6c39925c2f3dcc0970dc1a5a30.html">Variable SKYBOX_MATERIAL_ID</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_Utilities_8hpp_1a964aa4f722009cf9bc95de11896fa26d.html">Define ASSERT_VULKAN</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_bindings_8hpp_1ac36ba418d7f8ae5c2087a6adde404302.html">Define D_LIGHT_SHADOW_TEXTURES_SLOT</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_bindings_8hpp_1a31363a524a58bb08ee547d9827c12c52.html">Define GBUFFER_TEXTURES_SLOT</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_GraphicsEngineVulkan_2app_2App_8cpp_1a088324ad8995e3eb76024e3e79083d48.html">Define GLFW_INCLUDE_NONE</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanRenderer_8cpp_1a088324ad8995e3eb76024e3e79083d48.html">Define GLFW_INCLUDE_NONE</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanInstance_8hpp_1a088324ad8995e3eb76024e3e79083d48.html">Define GLFW_INCLUDE_NONE</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_GraphicsEngineVulkan_2window_2Window_8hpp_1a088324ad8995e3eb76024e3e79083d48.html">Define GLFW_INCLUDE_NONE</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_GraphicsEngineVulkan_2app_2App_8cpp_1ab91f325a54d3e35fe831a86d6382c2a9.html">Define GLFW_INCLUDE_VULKAN</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanRenderer_8cpp_1ab91f325a54d3e35fe831a86d6382c2a9.html">Define GLFW_INCLUDE_VULKAN</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanInstance_8hpp_1ab91f325a54d3e35fe831a86d6382c2a9.html">Define GLFW_INCLUDE_VULKAN</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_GraphicsEngineVulkan_2window_2Window_8hpp_1ab91f325a54d3e35fe831a86d6382c2a9.html">Define GLFW_INCLUDE_VULKAN</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_GraphicsEngineOpenGL_2scene_2Vertex_8hpp_1abd75661fe7969e19439052a5f69ba5d1.html">Define GLM_ENABLE_EXPERIMENTAL</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_GraphicsEngineVulkan_2app_2App_8cpp_1aa53e0967978ad7a8792f6961156ec968.html">Define GLM_FORCE_DEPTH_ZERO_TO_ONE</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_GraphicsEngineVulkan_2app_2App_8cpp_1a816ab7d5c2ce1f0a01216042837beb93.html">Define GLM_FORCE_RADIANS</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_host__device__shared__vars_8hpp_1a3d15aca3592b0d8835f1e1c1c8a83a3d.html">Define globalUBO_BINDING</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanRendererConfig_8h_1ad85f217b1504423d3f62d8294d9db0f5.html">Define GLSLC_EXE</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanRendererConfig_8hpp_1ad85f217b1504423d3f62d8294d9db0f5.html">Define GLSLC_EXE</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_GlobalValues_8hpp_1a281397dbde1a87608c6350fb68dc2c9b.html">Define MAX_RESOLUTION_X</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_GlobalValues_8hpp_1a082cf569e4acab0d9a143c750fb1bc33.html">Define MAX_RESOLUTION_Y</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_bindings_8hpp_1a9b0d1cd1d0e10441196f4451e91713c8.html">Define MODEL_TEXTURES_SLOT</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_bindings_8hpp_1ab33e9e629597c653feccb86cd28e138e.html">Define NOISE_128D_IMAGE_SLOT</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_bindings_8hpp_1a68c720249fec89156cfd1a1eeb356c25.html">Define NOISE_128D_TEXTURES_SLOT</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_bindings_8hpp_1ae102fd04de1e0f7e67114690a8191da4.html">Define NOISE_32D_IMAGE_SLOT</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_bindings_8hpp_1a94ab45fae493b604905baff7c57d9745.html">Define NOISE_32D_TEXTURES_SLOT</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_bindings_8hpp_1a6180bc0c05d7bf1f7ac7ab028fbd9bd7.html">Define NOISE_CELL_POSITIONS_SLOT</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_Utilities_8hpp_1ac6d43ad7c815693d2c3f1d38683912f2.html">Define NOT_YET_IMPLEMENTED</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_GlobalValues_8hpp_1a940e59fee68aa3e904e465e9c13b32a1.html">Define NUM_MIN_CASCADES</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_host__device__shared__vars_8hpp_1a6e156f65e8cd7fbdee2ccdceb084c9f7.html">Define OBJECT_DESCRIPTION_BINDING</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_OpenGLRendererConfig_8hpp_1af9f9cd3d34e4b510b2626e4cf9137b70.html">Define OPENGL_VERSION_MAJOR</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_OpenGLRendererConfig_8hpp_1a6845a5c7db4a30ada21a2ec30fe3dc80.html">Define OPENGL_VERSION_MINOR</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_OpenGLRendererConfig_8hpp_1a47ccf36173fff455daa7119b15833f0a.html">Define OpenGLRenderer_VERSION_MAJOR</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_OpenGLRendererConfig_8hpp_1a06c4dfa6a90bedd2f4c8065d41126363.html">Define OpenGLRenderer_VERSION_MINOR</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_host__device__shared__vars_8hpp_1a0fe56ad9ab47385adcec8048567686cf.html">Define OUT_IMAGE_BINDING</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_bindings_8hpp_1aebcea6f2b0037163df5486ea47118eff.html">Define P_LIGHT_SHADOW_TEXTURES_SLOT</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_host__device__shared_8hpp_1a4d8497deccd888025a41fdf8e995396d.html">Define PI_DEF</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_bindings_8hpp_1a05989250a93ec0f9dfe63bad8ae1d95c.html">Define RANDOM_NUMBERS_SLOT</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanRendererConfig_8h_1a3d6b117c9bae005ef97507393d6af1ee.html">Define RELATIVE_IMGUI_FONTS_PATH</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanRendererConfig_8h_1a21612190890d0d71e82a71c6bb2b524b.html">Define RELATIVE_RESOURCE_PATH</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_host__device__shared__vars_8hpp_1a2d402b48d6650108adba83a6bf5596bb.html">Define SAMPLER_BINDING</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_host__device__shared__vars_8hpp_1a99efd4c9729eb90726a841884182f094.html">Define sceneUBO_BINDING</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_bindings_8hpp_1a2309a50ca4d83b91328dea7a1a52284a.html">Define SKYBOX_TEXTURES_SLOT</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanRenderer_8cpp_1a18372412ad2fc3ce1e3240b3cf0efe78.html">Define STB_IMAGE_IMPLEMENTATION</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_GraphicsEngineOpenGL_2scene_2texture_2Texture_8cpp_1a18372412ad2fc3ce1e3240b3cf0efe78.html">Define STB_IMAGE_IMPLEMENTATION</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_bindings_8hpp_1a934aa1a1a657e97b7ce0af0aaf957d9d.html">Define STORAGE_BUFFER_MATERIAL_ID_BINDING</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_host__device__shared__vars_8hpp_1ac1e645b4c586fb53cb290e0a1f811b68.html">Define TEXTURES_BINDING</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_GraphicsEngineOpenGL_2scene_2ObjLoader_8cpp_1af14fac7fbc250522a78849d58d5b0811.html">Define TINYOBJLOADER_IMPLEMENTATION</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_GraphicsEngineVulkan_2scene_2ObjLoader_8cpp_1af14fac7fbc250522a78849d58d5b0811.html">Define TINYOBJLOADER_IMPLEMENTATION</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_host__device__shared__vars_8hpp_1aa895893893c7abcb5fa6dadc8e276a79.html">Define TLAS_BINDING</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_bindings_8hpp_1a6cffb6c61d3a48bb1b5b5afe62b6331d.html">Define UNIFORM_LIGHT_MATRICES_BINDING</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanRenderer_8cpp_1abea80547807da765ebe9fce1c6dd6a8d.html">Define VMA_IMPLEMENTATION</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanRendererConfig_8h_1aa79a25802dd9a53936ba8b734ad8a44c.html">Define VULKAN_VERSION_MAJOR</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanRendererConfig_8hpp_1aa79a25802dd9a53936ba8b734ad8a44c.html">Define VULKAN_VERSION_MAJOR</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanRendererConfig_8h_1ae5fd0d014b1a581c0473ae3e826ff1ab.html">Define VULKAN_VERSION_MINOR</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanRendererConfig_8hpp_1ae5fd0d014b1a581c0473ae3e826ff1ab.html">Define VULKAN_VERSION_MINOR</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanRendererConfig_8h_1a04547974aab6616742b970a38eb6999c.html">Define VulkanRenderer_VERSION_MAJOR</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanRendererConfig_8hpp_1a04547974aab6616742b970a38eb6999c.html">Define VulkanRenderer_VERSION_MAJOR</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanRendererConfig_8h_1aa98b688897d8e82a300ab44d239ee739.html">Define VulkanRenderer_VERSION_MINOR</a></li>
-<li class="toctree-l2"><a class="reference internal" href="api/define_VulkanRendererConfig_8hpp_1aa98b688897d8e82a300ab44d239ee739.html">Define VulkanRenderer_VERSION_MINOR</a></li>
-</ul>
+          <div class="bd-content">
+            <div class="bd-article-container">
+              
+              <div class="bd-header-article d-print-none">
+<div class="header-article-items header-article__inner">
+  
+    <div class="header-article-items__start">
+      
+        <div class="header-article-item"><button class="sidebar-toggle primary-toggle btn btn-sm" title="Toggle primary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <span class="fa-solid fa-bars"></span>
+</button></div>
+      
+    </div>
+  
+  
+    <div class="header-article-items__end">
+      
+        <div class="header-article-item">
+
+<div class="article-header-buttons">
+
+
+<a href="https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett" target="_blank"
+   class="btn btn-sm btn-source-repository-button"
+   title="Source repository"
+   data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fab fa-github"></i>
+  </span>
+
+</a>
+
+
+
+
+
+
+<div class="dropdown dropdown-download-buttons">
+  <button class="btn dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Download this page">
+    <i class="fas fa-download"></i>
+  </button>
+  <ul class="dropdown-menu">
+      
+      
+      
+      <li><a href="_sources/index.rst" target="_blank"
+   class="btn btn-sm btn-download-source-button dropdown-item"
+   title="Download source file"
+   data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file"></i>
+  </span>
+<span class="btn__text-container">.rst</span>
+</a>
 </li>
+      
+      
+      
+      
+      <li>
+<button onclick="window.print()"
+  class="btn btn-sm btn-download-pdf-button dropdown-item"
+  title="Print to PDF"
+  data-bs-placement="left" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-file-pdf"></i>
+  </span>
+<span class="btn__text-container">.pdf</span>
+</button>
+</li>
+      
+  </ul>
+</div>
+
+
+
+
+<button onclick="toggleFullScreen()"
+  class="btn btn-sm btn-fullscreen-button pst-navbar-icon"
+  title="Fullscreen mode"
+  data-bs-placement="bottom" data-bs-toggle="tooltip"
+>
+  
+
+<span class="btn__icon-container">
+  <i class="fas fa-expand"></i>
+  </span>
+
+</button>
+
+
+
+<button class="btn btn-sm nav-link pst-navbar-icon theme-switch-button pst-js-only" aria-label="Color mode" data-bs-title="Color mode"  data-bs-placement="bottom" data-bs-toggle="tooltip">
+  <i class="theme-switch fa-solid fa-sun                fa-lg" data-mode="light" title="Light"></i>
+  <i class="theme-switch fa-solid fa-moon               fa-lg" data-mode="dark"  title="Dark"></i>
+  <i class="theme-switch fa-solid fa-circle-half-stroke fa-lg" data-mode="auto"  title="System Settings"></i>
+</button>
+
+
+<button class="btn btn-sm pst-navbar-icon search-button search-button__button pst-js-only" title="Search" aria-label="Search" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <i class="fa-solid fa-magnifying-glass fa-lg"></i>
+</button>
+<button class="sidebar-toggle secondary-toggle btn btn-sm pst-navbar-icon" title="Toggle secondary sidebar" data-bs-placement="bottom" data-bs-toggle="tooltip">
+    <span class="fa-solid fa-list"></span>
+</button>
+</div></div>
+      
+    </div>
+  
+</div>
+</div>
+              
+              
+
+<div id="jb-print-docs-body" class="onlyprint">
+    <h1>Kataglyphis-BeschleunigerBallett Documentation</h1>
+    <!-- Table of contents -->
+    <div id="print-main-content">
+        <div id="jb-print-toc">
+            
+            <div>
+                <h2> Contents </h2>
+            </div>
+            <nav aria-label="Page">
+                <ul class="visible nav section-nav flex-column">
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#">Kataglyphis-BeschleunigerBallett Documentation</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#indices-and-tables">Indices and tables</a></li>
+</ul>
+
+            </nav>
+        </div>
+    </div>
+</div>
+
+              
+                
+<div id="searchbox"></div>
+                <article class="bd-article">
+                  
+  <section id="kataglyphis-beschleunigerballett-documentation">
+<h1>Kataglyphis-BeschleunigerBallett Documentation<a class="headerlink" href="#kataglyphis-beschleunigerballett-documentation" title="Link to this heading">#</a></h1>
+<p class="hero-section">Build and maintenance guide for Kataglyphis-BeschleunigerBallett.</p>
+<ul class="simple">
+<li><p>Project overview and repository map</p></li>
+<li><p>Build, run, packaging, and docs workflow</p></li>
+<li><p>Optional generated API and Graphviz reference material</p></li>
+</ul>
+<div class="sd-container-fluid sd-sphinx-override sd-mb-4 docutils">
+<div class="sd-row sd-row-cols-2 sd-row-cols-xs-2 sd-row-cols-sm-2 sd-row-cols-md-2 sd-row-cols-lg-2 sd-g-2 sd-g-xs-2 sd-g-sm-2 sd-g-md-2 sd-g-lg-2 docutils">
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Project Overview</div>
+<p class="sd-card-text">Understand the renderer scope, repository layout, and platform targets.</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="README.html"><span class="doc">Project Overview</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Getting Started</div>
+<p class="sd-card-text">Clone, configure, build, test, and run the project on Linux or Windows.</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="getting_started.html"><span class="doc">Getting Started</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Documentation Workflow</div>
+<p class="sd-card-text">Build the Sphinx site, enable API docs, and regenerate Graphviz content.</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="documentation_workflow.html"><span class="doc">Documentation Workflow</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+Graphviz Architecture</div>
+<p class="sd-card-text">Open generated include graphs or follow the regeneration steps.</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="graphviz_files.html"><span class="doc">Graphviz Include Graphs</span></a></div>
+</div>
+<div class="sd-col sd-d-flex-row docutils">
+<div class="sd-card sd-sphinx-override sd-w-100 sd-shadow-sm sd-card-hover docutils">
+<div class="sd-card-body docutils">
+<div class="sd-card-title sd-font-weight-bold docutils">
+API Reference</div>
+<p class="sd-card-text">Open the C++ API entry page. When Doxygen XML is available, this page is replaced by the generated reference.</p>
+</div>
+<a class="sd-stretched-link sd-hide-link-text reference internal" href="api/library_root.html"><span class="doc">Library API</span></a></div>
+</div>
+</div>
+</div>
+<div class="toctree-wrapper compound">
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="README.html">Project Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="getting_started.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="documentation_workflow.html">Documentation Workflow</a></li>
 <li class="toctree-l1"><a class="reference internal" href="graphviz_files.html">Graphviz Include Graphs</a></li>
+<li class="toctree-l1"><a class="reference internal" href="api/library_root.html">Library API</a></li>
 </ul>
 </div>
 </section>
 <section id="indices-and-tables">
-<h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Link to this heading"></a></h1>
+<h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Link to this heading">#</a></h1>
 <ul class="simple">
 <li><p><a class="reference internal" href="genindex.html"><span class="std std-ref">Index</span></a></p></li>
-<li><p><a class="reference internal" href="py-modindex.html"><span class="std std-ref">Module Index</span></a></p></li>
 <li><p><a class="reference internal" href="search.html"><span class="std std-ref">Search Page</span></a></p></li>
 </ul>
 </section>
 
 
-           </div>
-          </div>
-          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="README.html" class="btn btn-neutral float-right" title="Kataglyphis Renderer" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
-    </div>
+                </article>
+              
 
-  <hr/>
-
-  <div role="contentinfo">
-    <p>&#169; Copyright 2024, Jonas Heinle.</p>
-  </div>
-
-  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
-    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
-    provided by <a href="https://readthedocs.org">Read the Docs</a>.
-   
-
-</footer>
-        </div>
+              
+              
+              
+              
+                <footer class="prev-next-footer d-print-none">
+                  
+<div class="prev-next-area">
+    <a class="right-next"
+       href="README.html"
+       title="next page">
+      <div class="prev-next-info">
+        <p class="prev-next-subtitle">next</p>
+        <p class="prev-next-title">Project Overview</p>
       </div>
-    </section>
-  </div>
-  <script>
-      jQuery(function () {
-          SphinxRtdTheme.Navigation.enable(true);
-      });
-  </script> 
+      <i class="fa-solid fa-angle-right"></i>
+    </a>
+</div>
+                </footer>
+              
+            </div>
+            
+            
+              
+                <dialog id="pst-secondary-sidebar-modal"></dialog>
+                <div id="pst-secondary-sidebar" class="bd-sidebar-secondary bd-toc"><div class="sidebar-secondary-items sidebar-secondary__inner">
 
-</body>
+
+  <div class="sidebar-secondary-item"><div
+    id="pst-page-navigation-heading-2"
+    class="page-toc tocsection onthispage">
+    <i class="fa-solid fa-list"></i> Contents
+  </div>
+  <nav id="pst-page-toc-nav" class="page-toc" aria-labelledby="pst-page-navigation-heading-2">
+    <ul class="visible nav section-nav flex-column">
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#">Kataglyphis-BeschleunigerBallett Documentation</a></li>
+<li class="toc-h1 nav-item toc-entry"><a class="reference internal nav-link" href="#indices-and-tables">Indices and tables</a></li>
+</ul>
+
+  </nav></div>
+
+</div></div>
+              
+            
+          </div>
+          <footer class="bd-footer-content">
+            
+<div class="bd-footer-content__inner container">
+  
+  <div class="footer-item">
+    
+<p class="component-author">
+By Jonas Heinle
+</p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+
+  <p class="copyright">
+    
+      © Copyright 2024, Jonas Heinle.
+      <br/>
+    
+  </p>
+
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+  <div class="footer-item">
+    
+  </div>
+  
+</div>
+          </footer>
+        
+
+      </main>
+    </div>
+  </div>
+  
+  <!-- Scripts loaded after <body> so the DOM is not blocked -->
+  <script defer src="_static/scripts/bootstrap.js?digest=8878045cc6db502f8baf"></script>
+<script defer src="_static/scripts/pydata-sphinx-theme.js?digest=8878045cc6db502f8baf"></script>
+
+  <footer class="bd-footer">
+  </footer>
+  </body>
 </html>

@@ -152,7 +152,6 @@ target_link_libraries(
          # spdlog/nlohmann_json/GSL need to be PUBLIC because Main.cpp and test files use them
          GSL
          spdlog::spdlog
-         CLI11::CLI11
          nlohmann_json::nlohmann_json)
 
 if(RUST_FEATURES)

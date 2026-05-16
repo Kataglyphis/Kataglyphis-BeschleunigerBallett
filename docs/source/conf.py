@@ -3,7 +3,6 @@
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
-import sys
 from pathlib import Path
 
 # Import shared configuration from ContainerHub
@@ -48,14 +47,39 @@ else:
     html_static_path = ["_static"]
     html_css_files = ["css/custom.css"]
 
+DOCS_SOURCE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = DOCS_SOURCE_DIR.parent.parent
+
+
+def _find_doxygen_xml_dir() -> Path | None:
+    env_override_raw = __import__("os").environ.get("KATAGLYPHIS_DOXYGEN_XML_DIR")
+    if env_override_raw:
+        env_override = Path(env_override_raw)
+        if (env_override / "index.xml").exists():
+            return env_override
+
+    candidates = [
+        REPO_ROOT / "build" / "build" / "xml",
+        REPO_ROOT / "build" / "xml",
+        REPO_ROOT / "build-clangcl-debug" / "xml",
+        REPO_ROOT / "build-clangcl-release" / "xml",
+        REPO_ROOT / "build-clangcl-profile" / "xml",
+        REPO_ROOT / "build-clangcl-tsan" / "xml",
+    ]
+    for candidate in candidates:
+        if (candidate / "index.xml").exists():
+            return candidate
+
+    return None
+
+
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "Kataglyphis-Renderer"
 copyright = "2024, Jonas Heinle"
 author = "Jonas Heinle"
-with open("../../version.txt", "r") as f:
-    release = f.read().strip()
+release = (REPO_ROOT / "version.txt").read_text(encoding="utf-8").strip()
 
 # -- Project-specific overrides ------------------------------------------------
 # Update repository URL for this project
@@ -66,23 +90,10 @@ html_theme_options["repository_url"] = (
 # -- Add project-specific extensions -------------------------------------------
 extensions.extend(
     [
-        "breathe",
-        "exhale",
         "sphinx.ext.graphviz",
         "sphinx.ext.inheritance_diagram",
     ]
 )
-
-# -- Exhale configuration (for C++ API docs) -----------------------------------
-exhale_args = {
-    "containmentFolder": "./api",
-    "rootFileName": "library_root.rst",
-    "rootFileTitle": "Library API",
-    "doxygenStripFromPath": "../..",
-    "createTreeView": True,
-    "contentsDirectives": True,
-    "exhaleExecutesDoxygen": False,
-}
 
 # -- MyST extension configuration -----------------------------------------------
 myst_enable_extensions = [
@@ -92,9 +103,21 @@ myst_enable_extensions = [
     "deflist",
 ]
 
-# -- Breathe configuration (for Doxygen integration) ---------------------------
-breathe_projects = {"Kataglyphis-Renderer": "../../build/build/xml"}
-breathe_default_project = "Kataglyphis-Renderer"
+# -- Breathe / Exhale configuration (optional C++ API docs) --------------------
+doxygen_xml_dir = _find_doxygen_xml_dir()
+if doxygen_xml_dir is not None:
+    extensions.extend(["breathe", "exhale"])
+    breathe_projects = {"Kataglyphis-Renderer": str(doxygen_xml_dir)}
+    breathe_default_project = "Kataglyphis-Renderer"
+    exhale_args = {
+        "containmentFolder": "./api",
+        "rootFileName": "library_root.rst",
+        "rootFileTitle": "Library API",
+        "doxygenStripFromPath": str(REPO_ROOT),
+        "createTreeView": True,
+        "contentsDirectives": True,
+        "exhaleExecutesDoxygen": False,
+    }
 
 # -- General configuration ---------------------------------------------------
 templates_path = ["_templates"]

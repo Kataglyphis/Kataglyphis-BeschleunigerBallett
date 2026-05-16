@@ -4,6 +4,8 @@
 
 .cache
 
+docs/build/**/*
+
 # Virtual environment used by early WebDAV script and tests
 .venv/
 
