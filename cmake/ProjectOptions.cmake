@@ -246,6 +246,29 @@ macro(myproject_global_options)
               ""
               CMAKE_C_FLAGS_DEBUG
               "${CMAKE_C_FLAGS_DEBUG}")
+    if(myproject_ENABLE_SANITIZER_ADDRESS)
+      # clang-cl ASan uses the non-debug DLL runtime on Windows.
+      string(
+        REPLACE "/MDd"
+                ""
+                CMAKE_CXX_FLAGS_DEBUG
+                "${CMAKE_CXX_FLAGS_DEBUG}")
+      string(
+        REPLACE "-MDd"
+                ""
+                CMAKE_CXX_FLAGS_DEBUG
+                "${CMAKE_CXX_FLAGS_DEBUG}")
+      string(
+        REPLACE "/MDd"
+                ""
+                CMAKE_C_FLAGS_DEBUG
+                "${CMAKE_C_FLAGS_DEBUG}")
+      string(
+        REPLACE "-MDd"
+                ""
+                CMAKE_C_FLAGS_DEBUG
+                "${CMAKE_C_FLAGS_DEBUG}")
+    endif()
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od ${_CLANG_CL_SAFE_WARNINGS}")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 -DNDEBUG ${_CLANG_CL_SAFE_WARNINGS}")
     set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} /O2 -DNDEBUG ${_CLANG_CL_SAFE_WARNINGS}")

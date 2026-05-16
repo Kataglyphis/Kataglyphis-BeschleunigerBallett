@@ -1,5 +1,18 @@
 include(FetchContent)
 
+function(_myproject_collect_targets_recursive dir out_var)
+  get_property(_dir_targets DIRECTORY "${dir}" PROPERTY BUILDSYSTEM_TARGETS)
+  set(_targets ${_dir_targets})
+
+  get_property(_subdirs DIRECTORY "${dir}" PROPERTY SUBDIRECTORIES)
+  foreach(_subdir IN LISTS _subdirs)
+    _myproject_collect_targets_recursive("${_subdir}" _subdir_targets)
+    list(APPEND _targets ${_subdir_targets})
+  endforeach()
+
+  set(${out_var} "${_targets}" PARENT_SCOPE)
+endfunction()
+
 set(ABSL_TAG 20260107.1)
 FetchContent_Declare(
   abseil-cpp
@@ -12,6 +25,22 @@ set(BUILD_TESTING_OLD "${BUILD_TESTING}")
 set(BUILD_TESTING OFF)
 FetchContent_MakeAvailable(abseil-cpp)
 set(BUILD_TESTING "${BUILD_TESTING_OLD}")
+
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+   AND MSVC
+   AND myproject_ENABLE_SANITIZER_ADDRESS)
+  # Abseil overrides the MSVC runtime selection in its own CMakeLists.
+  # Force it back to /MD so its STL mode matches the rest of the Windows ASan build.
+  _myproject_collect_targets_recursive("${CMAKE_CURRENT_BINARY_DIR}" _external_targets)
+  foreach(_external_target IN LISTS _external_targets)
+    if(_external_target MATCHES "^absl_")
+      get_target_property(_external_target_type "${_external_target}" TYPE)
+      if(NOT _external_target_type STREQUAL "INTERFACE_LIBRARY")
+        set_property(TARGET "${_external_target}" PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+      endif()
+    endif()
+  endforeach()
+endif()
 
 if(BUILD_TESTING)
   # include google test to project

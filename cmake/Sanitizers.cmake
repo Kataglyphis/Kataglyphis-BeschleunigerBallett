@@ -110,7 +110,8 @@ function(
 
       if("address" IN_LIST SANITIZERS)
         target_compile_definitions(${project_name} INTERFACE "$<$<CONFIG:Debug>:_DISABLE_VECTOR_ANNOTATION>"
-                                                             "$<$<CONFIG:Debug>:_DISABLE_STRING_ANNOTATION>")
+                                                             "$<$<CONFIG:Debug>:_DISABLE_STRING_ANNOTATION>"
+                                                             "$<$<CONFIG:Debug>:_DISABLE_OPTIONAL_ANNOTATION>")
 
         execute_process(
           COMMAND ${CMAKE_CXX_COMPILER} --print-resource-dir
@@ -145,7 +146,8 @@ function(
       target_compile_options(${project_name} INTERFACE "$<$<CONFIG:Debug>:/fsanitize=${LIST_OF_SANITIZERS}>"
                                                        "$<$<CONFIG:Debug>:/Zi>")
       target_compile_definitions(${project_name} INTERFACE "$<$<CONFIG:Debug>:_DISABLE_VECTOR_ANNOTATION>"
-                                                           "$<$<CONFIG:Debug>:_DISABLE_STRING_ANNOTATION>")
+                                                            "$<$<CONFIG:Debug>:_DISABLE_STRING_ANNOTATION>"
+                                                            "$<$<CONFIG:Debug>:_DISABLE_OPTIONAL_ANNOTATION>")
       target_link_options(${project_name} INTERFACE "$<$<CONFIG:Debug>:/INCREMENTAL:NO>")
     else()
       target_compile_options(${project_name} INTERFACE "$<$<CONFIG:Debug>:-fsanitize=${LIST_OF_SANITIZERS}>")
