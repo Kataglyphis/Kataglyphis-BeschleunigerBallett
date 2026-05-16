@@ -55,15 +55,11 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
     
-          # Build PSModulePath - use 8.3 short names to avoid space issues
-          $psModulePath = 'C:\PROGRA~1\WindowsPowerShell\Modules;C:\PROGRA~1\PowerShell\7\Modules'
-    
           docker pull $image
-          docker run --rm --cpus 4`
+          docker run --rm --memory 16g --cpus 4`
             --mount "type=bind,source=${{ github.workspace }},target=C:\workspace" `
             -w "C:\workspace" `
             -e MSIX_CERT_PASSWORD='${{ secrets.MSIX_CERT_PASSWORD }}' `
-            -e "PSModulePath=$psModulePath" `
             $image `
             powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\workspace\Scripts\Windows\Build-Windows.ps1" `
             -Configurations "clangcl-debug,clangcl-profile,clangcl-release" `
