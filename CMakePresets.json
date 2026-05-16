@@ -335,7 +335,8 @@
 				"RUST_FEATURES": "ON",
 				"CMAKE_BUILD_TYPE": "Debug",
 				"COMPILER_CACHE": "sccache",
-				"BUILD_TESTING": "TRUE"
+				"BUILD_TESTING": "TRUE",
+				"KATAGLYPHIS_ENABLE_GTEST_DISCOVERY": "OFF"
 			},
 			"condition": {
 				"type": "equals",

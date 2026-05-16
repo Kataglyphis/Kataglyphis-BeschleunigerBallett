@@ -66,15 +66,20 @@ auto supportsLinearBlit(vk::PhysicalDevice physical_device, vk::Format image_for
 }
 }// namespace
 
-void Kataglyphis::Texture::createFromFile(std::shared_ptr<VulkanDevice>device,
+auto Kataglyphis::Texture::createFromFile(std::shared_ptr<VulkanDevice>device,
   vk::CommandPool commandPool,
-  const std::string &fileName)
+  const std::string &fileName) -> bool
 {
     int width = 0;
     int height = 0;
     vk::DeviceSize size = 0;
     unsigned char *image_data = loadTextureData(fileName, &width, &height, &size);
     std::unique_ptr<unsigned char, decltype(&stbi_image_free)> image_data_ptr(image_data, stbi_image_free);
+
+    if (!image_data || width == 0 || height == 0) {
+        spdlog::warn("Texture file could not be loaded, skipping creation: {}", fileName);
+        return false;
+    }
 
     constexpr vk::Format texture_format = vk::Format::eR8G8B8A8Unorm;
     mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
@@ -144,6 +149,67 @@ void Kataglyphis::Texture::createFromFile(std::shared_ptr<VulkanDevice>device,
     stagingBuffer.cleanUp();
 
     createImageView(device, texture_format, vk::ImageAspectFlagBits::eColor, mip_levels, vk::ImageViewType::e2D, 1);
+
+    return true;
+}
+
+void Kataglyphis::Texture::createDefaultTexture(std::shared_ptr<VulkanDevice>in_device,
+  vk::CommandPool commandPool)
+{
+    constexpr uint32_t default_tex_width = 1;
+    constexpr uint32_t default_tex_height = 1;
+    constexpr vk::DeviceSize default_size = 4;
+    constexpr vk::Format texture_format = vk::Format::eR8G8B8A8Unorm;
+    constexpr unsigned char white_pixel[4] = { 255, 255, 255, 255 };
+
+    mip_levels = 1;
+
+    VulkanBuffer stagingBuffer;
+    stagingBuffer.create(in_device,
+      default_size,
+      vk::BufferUsageFlagBits::eTransferSrc,
+      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    void *data = in_device->getLogicalDevice().mapMemory(stagingBuffer.getBufferMemory(), 0, default_size).value;
+    memcpy(data, white_pixel, default_size);
+    in_device->getLogicalDevice().unmapMemory(stagingBuffer.getBufferMemory());
+
+    createImage(in_device,
+      default_tex_width,
+      default_tex_height,
+      mip_levels,
+      texture_format,
+      vk::ImageTiling::eOptimal,
+      vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+      vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    vulkanImage.transitionImageLayout(in_device->getLogicalDevice(),
+      in_device->getGraphicsQueue(),
+      commandPool,
+      vk::ImageLayout::eUndefined,
+      vk::ImageLayout::eTransferDstOptimal,
+      vk::ImageAspectFlagBits::eColor,
+      mip_levels);
+
+    vulkanBufferManager.copyImageBuffer(in_device->getLogicalDevice(),
+      in_device->getGraphicsQueue(),
+      commandPool,
+      stagingBuffer.getBuffer(),
+      vulkanImage.getImage(),
+      default_tex_width,
+      default_tex_height);
+
+    vulkanImage.transitionImageLayout(in_device->getLogicalDevice(),
+      in_device->getGraphicsQueue(),
+      commandPool,
+      vk::ImageLayout::eTransferDstOptimal,
+      vk::ImageLayout::eShaderReadOnlyOptimal,
+      vk::ImageAspectFlagBits::eColor,
+      1);
+
+    stagingBuffer.cleanUp();
+
+    createImageView(in_device, texture_format, vk::ImageAspectFlagBits::eColor, mip_levels, vk::ImageViewType::e2D, 1);
 }
 
 void Kataglyphis::Texture::setImage(vk::Image image) { vulkanImage.setImage(image); }

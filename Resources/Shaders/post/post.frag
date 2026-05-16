@@ -20,16 +20,17 @@ void main()
   float gamma = 1. / 2.2;
 
   vec3 color = texture(noisyTxt, uv).rgb;
-  vec4 cloud = texture(cloudTxt, uv);
+  float alpha = texture(noisyTxt, uv).a;
   
-  // Blend clouds on top
-  // cloud.a contains (1.0 - transmittance) and cloud.rgb is pre-multiplied by energy
-  // color = cloud + color * transmittance
-  color = cloud.rgb + color * (1.0 - cloud.a);
+  if (bool(pc_post.clouds_enabled)) {
+      vec4 cloud = texture(cloudTxt, uv);
+      color = cloud.rgb + color * (1.0 - cloud.a);
+      alpha = cloud.a + alpha * (1.0 - cloud.a);
+  }
 
-  //reinhardts tonemapping 
+  //reinhardts tonemapping
   vec3 tonemapped_color = color / (color + vec3(1.f));
 
-  fragColor   = vec4(pow(tonemapped_color, vec3(gamma)),1.0f);
+  fragColor   = vec4(pow(tonemapped_color, vec3(gamma)), alpha);
 
 }

@@ -51,7 +51,7 @@ Build and maintenance guide for Kataglyphis-BeschleunigerBallett.
    getting_started.md
    documentation_workflow.md
    graphviz_files
-   api/library_root
+   wsl2_vulkan
 
 Indices and tables
 ==================

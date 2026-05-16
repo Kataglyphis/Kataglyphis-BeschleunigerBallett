@@ -52,6 +52,8 @@ class VulkanRenderer
 
     void cleanUp();
 
+    void recreateSwapChain();
+
     ~VulkanRenderer();
 
   private:
@@ -75,6 +77,7 @@ class VulkanRenderer
     Kataglyphis::Frontend::Window *window;
     Scene *scene;
     Kataglyphis::Frontend::GUI *gui;
+    Camera *camera;
 
     // -- pools
     bool record_commands(uint32_t image_index);
@@ -86,8 +89,10 @@ class VulkanRenderer
     // uniform buffers
     VulkanRendererInternals::GlobalUBO globalUBO{};
     std::vector<VulkanBuffer> globalUBOBuffer;
+    std::vector<void*> globalUBOMapped;
     VulkanRendererInternals::SceneUBO sceneUBO{};
     std::vector<VulkanBuffer> sceneUBOBuffer;
+    std::vector<void*> sceneUBOMapped;
     void create_uniform_buffers();
     void update_uniform_buffers(uint32_t image_index);
     void cleanUpUBOs();
@@ -139,6 +144,7 @@ class VulkanRenderer
     std::vector<vk::DescriptorSet> post_descriptor_set;
     void create_post_descriptor_layout();
     void updatePostDescriptorSets();
+    void updateUBODescriptorSets();
 
     vk::DescriptorPool gbuffer_descriptor_pool{};
     vk::DescriptorSetLayout gbuffer_descriptor_set_layout{};
@@ -154,6 +160,10 @@ class VulkanRenderer
     void createRaytracingDescriptorSets();
     void updateRaytracingDescriptorSets();
     void createRaytracingDescriptorPool();
+
+    void updateAllDescriptorSets();
+    void cleanUpDescriptorResources();
+    void initDescriptorResources();
 
     bool checkChangedFramebufferSize();
     bool device_lost_detected{ false };

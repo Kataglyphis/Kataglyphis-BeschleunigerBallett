@@ -39,6 +39,15 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(std::shared_ptr
   vk::CommandPool commandPool,
   Kataglyphis::Scene *scene)
 {
+    // Clear old BLAS if any
+    for (auto &bla : blas) {
+        if (bla.vulkanAS) {
+            vulkanDevice->getLogicalDevice().destroyAccelerationStructureKHR(bla.vulkanAS);
+        }
+        bla.vulkanBuffer.cleanUp();
+    }
+    blas.clear();
+
     std::vector<BlasInput> blas_input(scene->getModelCount());
 
     for (uint32_t model_index = 0; model_index < scene->getModelCount(); model_index++) {
@@ -121,6 +130,13 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(std::shared_ptr
   vk::CommandPool commandPool,
   Kataglyphis::Scene *scene)
 {
+    // Clear old TLAS
+    if (tlas.vulkanAS) {
+        device->getLogicalDevice().destroyAccelerationStructureKHR(tlas.vulkanAS);
+        tlas.vulkanAS = nullptr;
+    }
+    tlas.vulkanBuffer.cleanUp();
+
     std::vector<vk::AccelerationStructureInstanceKHR> tlas_instances;
     tlas_instances.reserve(scene->getModelCount());
 

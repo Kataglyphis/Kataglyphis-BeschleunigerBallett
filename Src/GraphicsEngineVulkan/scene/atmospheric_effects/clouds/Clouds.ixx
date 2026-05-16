@@ -20,6 +20,8 @@ class Clouds
 
     void recordComputeCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, const std::vector<vk::DescriptorSet> &descriptorSets);
 
+    void recreateFrameResources(vk::CommandPool commandPool, uint32_t width, uint32_t height);
+
     void cleanUp();
 
     Kataglyphis::Texture* getCloudNoiseTexture() { return cloudNoiseTexture.get(); }

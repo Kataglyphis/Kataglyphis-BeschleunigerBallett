@@ -54,13 +54,17 @@ auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model
         // If material had no texture, set '0' to indicate no texture, texture 0
         // will be reserved for a default texture
         if (!textureNames[i].empty()) {
-            // Otherwise, create texture and set value to index of new texture
             Texture texture;
-            texture.createFromFile(device, command_pool, textureNames[i]);
-            new_model->addTexture(std::move(texture));
-
-        } else {
+            if (texture.createFromFile(device, command_pool, textureNames[i])) {
+                new_model->addTexture(std::move(texture));
+            }
         }
+    }
+
+    if (new_model->getTextureCount() == 0) {
+        Texture defaultTexture;
+        defaultTexture.createDefaultTexture(device, command_pool);
+        new_model->addTexture(std::move(defaultTexture));
     }
 
     loadVertices(modelFile);

@@ -20,6 +20,7 @@ import kataglyphis.shared.imgui.style;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.queue_family_indices;
 import kataglyphis.vulkan.window;
+import kataglyphis.vulkan.scene_config;
 
 using namespace Kataglyphis::Frontend;
 
@@ -58,6 +59,54 @@ void GUI::render()
 
     // render your GUI
     ImGui::Begin("GUI v" PROJECT_VERSION);
+
+    if (ImGui::CollapsingHeader("Model Selection")) {
+        const std::vector<std::string> model_paths = sceneConfig::getAvailableModelPaths();
+        const std::vector<std::string> model_names = sceneConfig::getAvailableModelDisplayNames();
+        const int model_count = static_cast<int>(model_paths.size());
+        
+        // Find index of standard model if needed or keep existing index
+        if (guiSceneSharedVars.selected_model_index == -1 && model_count > 0) {
+            std::string standardModelPath = "Models/VikingRoom/viking_room.obj";
+            for(int i=0; i<model_count; ++i) {
+                if(model_paths[i] == standardModelPath) {
+                    guiSceneSharedVars.selected_model_index = i;
+                    break;
+                }
+            }
+        }
+        
+        const int num_model_names = static_cast<int>(model_names.size());
+
+        if (model_count > 0 && model_count == num_model_names) {
+            int prev_index = guiSceneSharedVars.selected_model_index;
+            const char *current_display = (prev_index >= 0 && prev_index < model_count)
+              ? model_names[static_cast<size_t>(prev_index)].c_str()
+              : "Select a model...";
+
+            if (ImGui::BeginCombo("Model", current_display)) {
+                for (int i = 0; i < model_count; i++) {
+                    const bool is_selected = (guiSceneSharedVars.selected_model_index == i);
+                    if (ImGui::Selectable(model_names[static_cast<size_t>(i)].c_str(), is_selected)) {
+                        guiSceneSharedVars.selected_model_index = i;
+                        guiSceneSharedVars.model_reload_requested = true;
+                    }
+                    if (is_selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            if (ImGui::DragFloat3("Position", guiSceneSharedVars.model_position, 0.1f)) {
+                guiSceneSharedVars.model_transform_changed = true;
+            }
+            if (ImGui::DragFloat3("Rotation", guiSceneSharedVars.model_rotation, 0.1f)) {
+                guiSceneSharedVars.model_transform_changed = true;
+            }
+        } else {
+            ImGui::TextDisabled("No .obj models found in Resources/Models/");
+        }
+    }
 
     if (ImGui::CollapsingHeader("Hot shader reload")) {
 #ifndef NDEBUG
@@ -106,6 +155,8 @@ void GUI::render()
     ImGui::Separator();
 
     if (ImGui::CollapsingHeader("Graphic Settings")) {
+        ImGui::Checkbox("Enable Skybox", &guiSceneSharedVars.skybox_enabled);
+
         if (ImGui::TreeNode("Directional Light")) {
             ImGui::Separator();
             ImGui::SliderFloat("Ambient intensity", &guiSceneSharedVars.direcional_light_radiance, 0.0F, 50.0F);
@@ -116,19 +167,22 @@ void GUI::render()
             ImGui::SliderFloat3("Light Direction", guiSceneSharedVars.directional_light_direction, -1.F, 1.0F);
 
             if (ImGui::TreeNode("Shadows")) {
-                int const shadow_map_res_index_before = guiSceneSharedVars.shadow_map_res_index;
-                ImGui::Combo("Shadow Map Resolution",
-                  &guiSceneSharedVars.shadow_map_res_index,
-                  guiSceneSharedVars.available_shadow_map_resolutions,
-                  4);
-                if (shadow_map_res_index_before != guiSceneSharedVars.shadow_map_res_index) { guiSceneSharedVars.shadow_resolution_changed = true; }
+                ImGui::Checkbox("Enable Shadows", &guiSceneSharedVars.shadows_enabled);
+                if (guiSceneSharedVars.shadows_enabled) {
+                    int const shadow_map_res_index_before = guiSceneSharedVars.shadow_map_res_index;
+                    ImGui::Combo("Shadow Map Resolution",
+                      &guiSceneSharedVars.shadow_map_res_index,
+                      guiSceneSharedVars.available_shadow_map_resolutions,
+                      4);
+                    if (shadow_map_res_index_before != guiSceneSharedVars.shadow_map_res_index) { guiSceneSharedVars.shadow_resolution_changed = true; }
 
-                int const num_cascades_before = guiSceneSharedVars.num_shadow_cascades;
-                ImGui::SliderInt("# cascades", &guiSceneSharedVars.num_shadow_cascades, 1, 8);
-                if (num_cascades_before != guiSceneSharedVars.num_shadow_cascades) { guiSceneSharedVars.shadow_resolution_changed = true; }
+                    int const num_cascades_before = guiSceneSharedVars.num_shadow_cascades;
+                    ImGui::SliderInt("# cascades", &guiSceneSharedVars.num_shadow_cascades, 1, 8);
+                    if (num_cascades_before != guiSceneSharedVars.num_shadow_cascades) { guiSceneSharedVars.shadow_resolution_changed = true; }
 
-                ImGui::SliderInt("PCF radius", &guiSceneSharedVars.pcf_radius, 1, 20);
-                ImGui::SliderFloat("Shadow intensity", &guiSceneSharedVars.cascaded_shadow_intensity, 0.0F, 1.0F);
+                    ImGui::SliderInt("PCF radius", &guiSceneSharedVars.pcf_radius, 1, 20);
+                    ImGui::SliderFloat("Shadow intensity", &guiSceneSharedVars.cascaded_shadow_intensity, 0.0F, 1.0F);
+                }
 
                 ImGui::TreePop();
             }
@@ -137,17 +191,20 @@ void GUI::render()
         }
 
         if (ImGui::TreeNode("Cloud Settings")) {
-            ImGui::SliderInt("Speed", &guiSceneSharedVars.cloud_speed, 0, 30);
-            ImGui::SliderInt("# march steps", &guiSceneSharedVars.cloud_num_march_steps, 1, 128);
-            ImGui::SliderInt("# march steps to light", &guiSceneSharedVars.cloud_num_march_steps_to_light, 1, 128);
-            ImGui::SliderFloat3("Movement Direction", guiSceneSharedVars.cloud_movement_direction, -10.F, 10.0F);
-            ImGui::SliderFloat("Illumination intensity", &guiSceneSharedVars.cloud_scale, 0.F, 1.0F);
-            ImGui::SliderFloat("Density", &guiSceneSharedVars.cloud_density, 0.F, 1.0F);
-            ImGui::SliderFloat("Pillowness", &guiSceneSharedVars.cloud_pillowness, 0.F, 1.0F);
-            ImGui::SliderFloat("Cirrus effect", &guiSceneSharedVars.cloud_cirrus_effect, 0.F, 1.0F);
-            ImGui::Checkbox("Powder effect", &guiSceneSharedVars.cloud_powder_effect);
-            ImGui::SliderFloat3("Scale", guiSceneSharedVars.cloud_mesh_scale, 0.F, 1000.0F);
-            ImGui::SliderFloat3("Translation", guiSceneSharedVars.cloud_mesh_offset, -200.F, 400.0F);
+            ImGui::Checkbox("Enable Clouds", &guiSceneSharedVars.clouds_enabled);
+            if (guiSceneSharedVars.clouds_enabled) {
+                ImGui::SliderInt("Speed", &guiSceneSharedVars.cloud_speed, 0, 30);
+                ImGui::SliderInt("# march steps", &guiSceneSharedVars.cloud_num_march_steps, 1, 128);
+                ImGui::SliderInt("# march steps to light", &guiSceneSharedVars.cloud_num_march_steps_to_light, 1, 128);
+                ImGui::SliderFloat3("Movement Direction", guiSceneSharedVars.cloud_movement_direction, -10.F, 10.0F);
+                ImGui::SliderFloat("Illumination intensity", &guiSceneSharedVars.cloud_scale, 0.F, 1.0F);
+                ImGui::SliderFloat("Density", &guiSceneSharedVars.cloud_density, 0.F, 1.0F);
+                ImGui::SliderFloat("Pillowness", &guiSceneSharedVars.cloud_pillowness, 0.F, 1.0F);
+                ImGui::SliderFloat("Cirrus effect", &guiSceneSharedVars.cloud_cirrus_effect, 0.F, 1.0F);
+                ImGui::Checkbox("Powder effect", &guiSceneSharedVars.cloud_powder_effect);
+                ImGui::SliderFloat3("Scale", guiSceneSharedVars.cloud_mesh_scale, 0.F, 1000.0F);
+                ImGui::SliderFloat3("Translation", guiSceneSharedVars.cloud_mesh_offset, -200.F, 400.0F);
+            }
 
             ImGui::TreePop();
         }
@@ -191,7 +248,6 @@ void GUI::create_gui_context(Window *frontend_window,
 
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;// Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableSetMousePos;
-    io.WantCaptureMouse = true;
     // io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad
     // Controls
 

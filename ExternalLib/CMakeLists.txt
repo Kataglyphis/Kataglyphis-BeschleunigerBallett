@@ -1,5 +1,18 @@
 include(FetchContent)
 
+set(ABSL_TAG 20260107.1)
+FetchContent_Declare(
+  abseil-cpp
+  GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
+  GIT_TAG ${ABSL_TAG}
+  GIT_SHALLOW 1
+)
+set(ABSL_PROPAGATE_CXX_STD ON)
+set(BUILD_TESTING_OLD "${BUILD_TESTING}")
+set(BUILD_TESTING OFF)
+FetchContent_MakeAvailable(abseil-cpp)
+set(BUILD_TESTING "${BUILD_TESTING_OLD}")
+
 if(BUILD_TESTING)
   # include google test to project
   FetchContent_Declare(googletest
@@ -43,7 +56,7 @@ add_subdirectory(GOOGLE_BENCHMARK)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND BUILD_TESTING AND NOT(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo" ) AND NOT(CMAKE_BUILD_TYPE STREQUAL "Release"))
 
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
-
+    set(RE2_INSTALL OFF)
     message("Adding Fuzztest")
 
     add_subdirectory(FUZZTEST)
@@ -96,6 +109,11 @@ set(SPDLOG_NO_EXCEPTIONS
 add_subdirectory(SPDLOG)
 
 add_subdirectory(NLOHMANN_JSON)
+
+set(TOMLPLUSPLUS_BUILD_MODULES
+    ON
+    CACHE BOOL "Enable tomlplusplus C++ module support" FORCE)
+add_subdirectory(tomlplusplus)
 
 # https://stackoverflow.com/questions/49591804/clang-tidy-cmake-exclude-file-from-check/49591908#49591908
 # with this trick IMGUI will be excluded from time consuming static code analysis

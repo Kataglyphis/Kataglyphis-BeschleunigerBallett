@@ -27,10 +27,10 @@ Describe 'WindowsConfig.Common' {
     }
 
     It 'parses comma-separated values and normalizes' {
-      $avail = @('msvc-debug','clang-release')
-      $set = Get-SelectedConfigurations -Configurations @('MSVC-DEBUG, clang-release') -AvailableConfigurations $avail
+      $avail = @('msvc-debug','clangcl-release')
+      $set = Get-SelectedConfigurations -Configurations @('MSVC-DEBUG, clangcl-release') -AvailableConfigurations $avail
       $set.Contains('msvc-debug') | Should Be $true
-      $set.Contains('clang-release') | Should Be $true
+      $set.Contains('clangcl-release') | Should Be $true
     }
 
     It 'throws on unknown config' {

@@ -73,13 +73,37 @@ source_vulkan_env() {
       . "${HOME}/vulkan/${VULKAN_VERSION}/setup-env.sh"
       return 0
     fi
+    # Also accept SDKs installed into a subdirectory (arch folder), e.g.
+    # /opt/vulkan/<version>/x86_64/setup-env.sh
+    shopt -s nullglob >/dev/null 2>&1 || true
+    for s in /opt/vulkan/${VULKAN_VERSION}/*/setup-env.sh "${HOME}/vulkan/${VULKAN_VERSION}"/*/setup-env.sh; do
+      if [[ -f "${s}" ]]; then
+        info "Sourcing Vulkan env from ${s}"
+        . "${s}"
+        shopt -u nullglob >/dev/null 2>&1 || true
+        return 0
+      fi
+    done
+    shopt -u nullglob >/dev/null 2>&1 || true
   fi
 
   if [[ -n "${VULKAN_SDK:-}" && -f "${VULKAN_SDK}/setup-env.sh" ]]; then
-    info "Sourcing Vulkan env from \${VULKAN_SDK}/setup-env.sh"
+    info "Sourcing Vulkan env from ${VULKAN_SDK}/setup-env.sh"
     . "${VULKAN_SDK}/setup-env.sh"
     return 0
   fi
+
+  # Fallback: source the first setup-env.sh found under /opt/vulkan or ~/vulkan
+  shopt -s nullglob >/dev/null 2>&1 || true
+  for s in /opt/vulkan/*/setup-env.sh "${HOME}/vulkan"/*/setup-env.sh; do
+    if [[ -f "${s}" ]]; then
+      info "Sourcing Vulkan env from ${s}"
+      . "${s}"
+      shopt -u nullglob >/dev/null 2>&1 || true
+      return 0
+    fi
+  done
+  shopt -u nullglob >/dev/null 2>&1 || true
 
   if command -v glslc >/dev/null 2>&1; then
     info "glslc found in PATH, skipping explicit Vulkan env sourcing"
@@ -130,7 +154,8 @@ get_script_root() {
 
 # Get project root directory
 get_project_root() {
-  cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd
+  # common.sh lives in Scripts/Linux/lib; go three levels up to reach repo root
+  cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd
 }
 
 # Source module from ContainerHub's specific category (optional advanced use)

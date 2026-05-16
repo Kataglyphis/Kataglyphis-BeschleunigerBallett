@@ -1,27 +1,23 @@
 #version 460
 
-#extension GL_ARB_shading_language_include : require
+#extension GL_GOOGLE_include_directive : enable
 
-#include "/host_device_shared.hpp"
+#include "host_device_shared.hpp"
 
-layout(location = 2) out vec3 g_albedo;
-layout(location = 3) out vec3  g_material_id;
+layout(location = 0) out vec4 g_albedo;
 
-layout(location = 0) in vec3 tex_coords;
-layout(location = 1) in vec4 world_pos;
+layout(location = 0) in vec3 in_worldDir;
 
-// For Vulkan we need an explicit binding on samplers. Use the project prefix
-// define KAT_VULKAN (passed as -DKAT_VULKAN by the compile script).
-#ifdef KAT_VULKAN
-layout(set = 0, binding = 1) uniform samplerCube skybox;
-#else
-layout(binding = 1) uniform samplerCube skybox;
-#endif
+layout(set = 1, binding = 1) uniform samplerCube skybox;
 
-void main()
-  {
+layout(push_constant) uniform _PushConstantSkyBox {
+    uint skybox_enabled;
+};
 
-    g_albedo = texture(skybox, tex_coords).xyz;
-    g_material_id = vec3(SKYBOX_MATERIAL_ID);
-
-  }
+void main() {
+    if (bool(skybox_enabled)) {
+        g_albedo = vec4(texture(skybox, normalize(vec3(in_worldDir.x, in_worldDir.y, in_worldDir.z))).xyz, 1.0);
+    } else {
+        g_albedo = vec4(0.0, 0.0, 0.5, 1.0);
+    }
+}

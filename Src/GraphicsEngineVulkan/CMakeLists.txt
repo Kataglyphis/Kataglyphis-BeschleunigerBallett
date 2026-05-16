@@ -152,7 +152,8 @@ target_link_libraries(
          # spdlog/nlohmann_json/GSL need to be PUBLIC because Main.cpp and test files use them
          GSL
          spdlog::spdlog
-         nlohmann_json::nlohmann_json)
+         nlohmann_json::nlohmann_json
+         tomlplusplus_modules)
 
 if(RUST_FEATURES)
   # Ensure CXX bridge headers are generated before module scanning
@@ -180,7 +181,7 @@ target_sources(
 
 # Link VulkanEngineCore - modules with PUBLIC FILE_SET CXX_MODULES should propagate to consumers
 # In CMake 3.28+, linking against a library with PUBLIC CXX_MODULES should make those modules importable
-target_link_libraries(${PROJECT_NAME} PRIVATE VulkanEngineCore)
+target_link_libraries(${PROJECT_NAME} PRIVATE VulkanEngineCore absl::flags_parse)
 
 # compile shaders as part of my cmake routine right away :)
 include(cmake/CompileShadersToSPV.cmake)

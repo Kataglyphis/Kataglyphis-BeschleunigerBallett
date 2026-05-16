@@ -112,6 +112,7 @@ void DeferredRasterizer::createPushConstantRange()
 
 void DeferredRasterizer::cleanUp()
 {
+    spdlog::info("DeferredRasterizer: Destroying geometryPipeline: 0x{:x}, lightingPipeline: 0x{:x}", (uint64_t)(VkPipeline)geometryPipeline, (uint64_t)(VkPipeline)lightingPipeline);
     auto logicalDevice = device->getLogicalDevice();
     logicalDevice.destroyPipeline(geometryPipeline);
     logicalDevice.destroyPipelineLayout(geometryPipelineLayout);
@@ -122,6 +123,7 @@ void DeferredRasterizer::cleanUp()
     for (auto &fb : framebuffer) {
         logicalDevice.destroyFramebuffer(fb);
     }
+    framebuffer.clear();
 
     for (auto& tex : offscreenTextures) { if (tex) tex->cleanUp(); }
     offscreenTextures.clear();
@@ -138,6 +140,34 @@ void DeferredRasterizer::cleanUp()
 }
 
 DeferredRasterizer::~DeferredRasterizer() = default;
+
+void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::destroyFramebuffers()
+{
+    for (auto &fb : framebuffer) { 
+        spdlog::info("DeferredRasterizer: Destroying framebuffer: 0x{:x}", (uint64_t)(VkFramebuffer)fb);
+        device->getLogicalDevice().destroyFramebuffer(fb); 
+    }
+    framebuffer.clear();
+}
+
+void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::recreateFrameResources(vk::CommandPool commandPool)
+{
+    for (auto& tex : offscreenTextures) { if (tex) tex->cleanUp(); }
+    offscreenTextures.clear();
+    for (auto& tex : gBufferPositions) { if (tex) tex->cleanUp(); }
+    gBufferPositions.clear();
+    for (auto& tex : gBufferNormals) { if (tex) tex->cleanUp(); }
+    gBufferNormals.clear();
+    for (auto& tex : gBufferAlbedos) { if (tex) tex->cleanUp(); }
+    gBufferAlbedos.clear();
+    for (auto& tex : gBufferMaterials) { if (tex) tex->cleanUp(); }
+    gBufferMaterials.clear();
+    if (depthBufferImage) { depthBufferImage->cleanUp(); }
+    depthBufferImage.reset();
+
+    createTextures(commandPool);
+    createFramebuffer();
+}
 
 void DeferredRasterizer::createRenderPass()
 {
@@ -156,7 +186,7 @@ void DeferredRasterizer::createRenderPass()
     vk::Format materialFormat = vk::Format::eR8G8B8A8Unorm;
     vk::Format depthFormat = Kataglyphis::choose_supported_format(device->getPhysicalDevice(), { vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint }, vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eDepthStencilAttachment);
 
-    auto createAttachmentDesc = [](vk::Format format, vk::ImageLayout finalLayout, bool isDepth = false) {
+    auto createAttachmentDesc = [](vk::Format format, vk::ImageLayout finalLayout, [[maybe_unused]] bool isDepth = false) {
         vk::AttachmentDescription desc;
         desc.format = format;
         desc.samples = vk::SampleCountFlagBits::e1;
@@ -297,7 +327,14 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
 
     vk::PipelineViewportStateCreateInfo viewportState{};
     viewportState.viewportCount = 1;
+    viewportState.pViewports = nullptr;
     viewportState.scissorCount = 1;
+    viewportState.pScissors = nullptr;
+
+    std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+    vk::PipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
 
     vk::PipelineRasterizationStateCreateInfo rasterizer{};
     rasterizer.depthClampEnable = VK_FALSE;
@@ -332,11 +369,6 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
     colorBlending.attachmentCount = static_cast<uint32_t>(colorBlendAttachments.size());
     colorBlending.pAttachments = colorBlendAttachments.data();
 
-    std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
-    vk::PipelineDynamicStateCreateInfo dynamicState{};
-    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-    dynamicState.pDynamicStates = dynamicStates.data();
-
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
     pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
@@ -361,6 +393,7 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
     pipelineInfo.subpass = 0;
 
     geometryPipeline = device->getLogicalDevice().createGraphicsPipeline(nullptr, pipelineInfo).value;
+    spdlog::info("DeferredRasterizer: Created geometryPipeline: 0x{:x}", (uint64_t)(VkPipeline)geometryPipeline);
 
     device->getLogicalDevice().destroyShaderModule(geomVertModule);
     device->getLogicalDevice().destroyShaderModule(geomFragModule);
@@ -424,6 +457,7 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
     lightingPipelineInfo.subpass = 1;
 
     lightingPipeline = device->getLogicalDevice().createGraphicsPipeline(nullptr, lightingPipelineInfo).value;
+    spdlog::info("DeferredRasterizer: Created lightingPipeline: 0x{:x}", (uint64_t)(VkPipeline)lightingPipeline);
 
     device->getLogicalDevice().destroyShaderModule(lightVertModule);
     device->getLogicalDevice().destroyShaderModule(lightFragModule);
@@ -454,6 +488,7 @@ void DeferredRasterizer::createFramebuffer()
         auto result = device->getLogicalDevice().createFramebuffer(framebufferInfo);
         ASSERT_VULKAN(VkResult(result.result), "Failed to create deferred framebuffer!");
         framebuffer[i] = result.value;
+        spdlog::info("DeferredRasterizer: Created framebuffer[{}]: 0x{:x}", i, (uint64_t)(VkFramebuffer)framebuffer[i]);
     }
 }
 
@@ -467,7 +502,7 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
     renderPassInfo.renderArea.extent = vulkanSwapChain->getSwapChainExtent();
 
     std::array<vk::ClearValue, 6> clearValues{};
-    clearValues[0].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[0].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}};
     clearValues[1].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}};
     clearValues[2].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}};
     clearValues[3].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
@@ -497,7 +532,7 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, geometryPipeline);
 
     for (uint32_t m = 0; m < scene->getModelCount(); m++) {
-        pushConstant.model = scene->getModelMatrix(0); // Match Rasterizer hardcoded index
+        pushConstant.model = scene->getModelMatrix(m);
         commandBuffer.pushConstants(
           geometryPipelineLayout, vk::ShaderStageFlagBits::eAll, 0, sizeof(PushConstantRasterizer), &pushConstant);
 

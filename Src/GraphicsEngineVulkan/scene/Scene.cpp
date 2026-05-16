@@ -32,13 +32,18 @@ void Scene::loadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool comma
     ObjLoader obj_loader(device, device->getGraphicsQueue(), commandPool);
 
     std::string const modelFileName = sceneConfig::getModelFile();
+    spdlog::info("Loading model: {}", modelFileName);
     std::shared_ptr<Model> const new_model = obj_loader.loadModel(modelFileName);
-
-    add_model(new_model);
-
-    glm::mat4 const modelMatrix = sceneConfig::getModelMatrix();
-
-    update_model_matrix(modelMatrix, 0);
+    
+    if (new_model) {
+        add_model(new_model);
+        spdlog::info("Model added successfully.");
+        glm::mat4 const modelMatrix = sceneConfig::getModelMatrix();
+        update_model_matrix(modelMatrix, 0);
+    } else {
+        spdlog::error("Failed to load model: {}", modelFileName);
+        return;
+    }
 }
 
 void Scene::add_model(const std::shared_ptr<Model> &model)
@@ -55,11 +60,25 @@ void Scene::add_object_description(ObjectDescription object_description)
 void Scene::update_model_matrix(glm::mat4 model_matrix, uint32_t model_id)
 {
     if (model_id >= getModelCount()) {
-        spdlog::error("Wrong model id value!");
+        spdlog::error("Wrong model id value! model_id: {}, model_count: {}", model_id, getModelCount());
         return;
     }
 
     model_list[static_cast<size_t>(model_id)]->set_model(model_matrix);
+}
+
+void Scene::reloadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, const std::string &modelPath)
+{
+    cleanUp();
+    model_list.clear();
+    object_descriptions.clear();
+
+    ObjLoader obj_loader(device, device->getGraphicsQueue(), commandPool);
+    std::shared_ptr<Model> const new_model = obj_loader.loadModel(modelPath);
+    add_model(new_model);
+
+    glm::mat4 const modelMatrix = sceneConfig::getModelMatrix();
+    update_model_matrix(modelMatrix, 0);
 }
 
 void Scene::cleanUp()

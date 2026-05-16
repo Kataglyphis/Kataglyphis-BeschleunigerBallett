@@ -37,6 +37,7 @@
 [submodule "ExternalLib/Kataglyphis-RustProjectTemplate"]
 	path = ExternalLib/Kataglyphis-RustProjectTemplate
 	url = git@github.com:Kataglyphis/Kataglyphis-RustProjectTemplate.git
-[submodule "ExternalLib/CLI11"]
-	path = ExternalLib/CLI11
-	url = https://github.com/CLIUtils/CLI11.git
+
+[submodule "ExternalLib/tomlplusplus"]
+	path = ExternalLib/tomlplusplus
+	url = https://github.com/marzer/tomlplusplus.git

@@ -24,10 +24,19 @@ class PostStage
 
     vk::RenderPass &getRenderPass() { return render_pass; };
     vk::Sampler &getOffscreenSampler() { return offscreenTextureSampler; };
+    vk::ImageView getDepthBufferImageView() { return depthBufferImage->getImageView(); };
+    vk::Image &getDepthBufferImage() { return depthBufferImage->getImage(); };
+    vk::Format getDepthFormat() { return depth_format; };
+
+    void recreateFrameResources();
+    void destroyFramebuffers();
 
     void recordCommands(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
-      const std::vector<vk::DescriptorSet> &descriptorSets);
+      const std::vector<vk::DescriptorSet> &descriptorSets,
+      bool cloudsEnabled,
+      bool shadowsEnabled,
+      bool skyboxEnabled);
     void cleanUp();
 
     ~PostStage();

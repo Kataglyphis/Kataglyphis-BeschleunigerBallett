@@ -13,6 +13,10 @@ import kataglyphis.vulkan.app;
 #if USE_RUST
 #include "kataglyphis_rustprojecttemplate_bridge/native_only.h"
 #endif
+
+#include "absl/flags/flag.h"
+#include "absl/flags/parse.h"
+#include "absl/flags/usage.h"
 #include "spdlog/common.h"
 #include "spdlog/logger.h"
 #include "spdlog/sinks/basic_file_sink.h"
@@ -21,6 +25,11 @@ import kataglyphis.vulkan.app;
 #include "spdlog/spdlog.h"
 #include <iostream>
 #include <string>
+
+ABSL_FLAG(std::string,
+          gpu,
+          "",
+          "GPU selection mode (auto, dedicated, integrated)");
 
 namespace {
 enum class CommandLineParseResultKind {
@@ -141,18 +150,10 @@ auto main(int argc, char **argv) -> int
 {
     initialize_logging();
 
-    const CommandLineParseResult parse_result = parse_command_line(argc, argv);
-    if (parse_result.kind == CommandLineParseResultKind::ExitSuccess) {
-        spdlog::shutdown();
-        return 0;
-    }
-    if (parse_result.kind == CommandLineParseResultKind::ExitFailure) {
-        spdlog::shutdown();
-        return 1;
-    }
+    absl::SetProgramUsageMessage("Kataglyphis BeschleunigerBallett Graphics Engine");
+    absl::ParseCommandLine(argc, argv);
 
-    const std::string &gpu_mode = parse_result.gpu_mode;
-
+    const std::string gpu_mode = absl::GetFlag(FLAGS_gpu);
     if (!gpu_mode.empty()) {
         const std::string normalized_mode = normalize_gpu_mode(gpu_mode);
         if (normalized_mode.empty()) {

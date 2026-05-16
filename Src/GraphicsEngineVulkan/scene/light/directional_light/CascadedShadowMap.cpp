@@ -2,6 +2,8 @@ module;
 #include <vector>
 #include <unordered_map>
 #include <memory>
+#include <filesystem>
+#include <sstream>
 #include <vulkan/vulkan.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -13,6 +15,12 @@ module kataglyphis.vulkan.cascaded_shadow_map;
 
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.texture;
+import kataglyphis.vulkan.file;
+import kataglyphis.vulkan.shader_helper;
+import kataglyphis.vulkan.scene;
+import kataglyphis.vulkan.vertex;
+import kataglyphis.vulkan.buffer;
+import kataglyphis.vulkan.buffer_manager;
 
 namespace Kataglyphis {
 
@@ -204,6 +212,7 @@ void CascadedShadowMap::createFramebuffers()
 void CascadedShadowMap::cleanUp()
 {
     if (device) {
+        spdlog::info("CascadedShadowMap: Destroying pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphicsPipeline);
         auto it = g_layerViewsMap.find(this);
         if (it != g_layerViewsMap.end()) {
             for (auto view : it->second) {
@@ -218,10 +227,273 @@ void CascadedShadowMap::cleanUp()
         framebuffers.clear();
 
         device->getLogicalDevice().destroyRenderPass(renderPass);
+        if (graphicsPipeline) { device->getLogicalDevice().destroyPipeline(graphicsPipeline); }
+        if (pipelineLayout) { device->getLogicalDevice().destroyPipelineLayout(pipelineLayout); }
+        if (descriptorSetLayout) { device->getLogicalDevice().destroyDescriptorSetLayout(descriptorSetLayout); }
+        if (descriptorPool) { device->getLogicalDevice().destroyDescriptorPool(descriptorPool); }
         if (shadowMapArray) {
             shadowMapArray->cleanUp();
             shadowMapArray.reset();
         }
+        lightMatricesBuffer.cleanUp();
+    }
+}
+
+void CascadedShadowMap::createDescriptorSetAndPipeline()
+{
+    vk::DescriptorSetLayoutBinding lightMatricesBinding{};
+    lightMatricesBinding.binding = 1;  // UNIFORM_LIGHT_MATRICES_BINDING = 1
+    lightMatricesBinding.descriptorCount = 1;
+    lightMatricesBinding.descriptorType = vk::DescriptorType::eUniformBuffer;
+    lightMatricesBinding.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eGeometry;
+
+    vk::DescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &lightMatricesBinding;
+
+    auto layoutRes = device->getLogicalDevice().createDescriptorSetLayout(layoutInfo);
+    ASSERT_VULKAN(VkResult(layoutRes.result), "Failed to create shadow map descriptor set layout!");
+    descriptorSetLayout = layoutRes.value;
+
+    vk::DescriptorPoolSize poolSize{};
+    poolSize.type = vk::DescriptorType::eUniformBuffer;
+    poolSize.descriptorCount = 1;
+
+    vk::DescriptorPoolCreateInfo poolInfo{};
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.maxSets = 1;
+
+    auto poolRes = device->getLogicalDevice().createDescriptorPool(poolInfo);
+    ASSERT_VULKAN(VkResult(poolRes.result), "Failed to create shadow map descriptor pool!");
+    descriptorPool = poolRes.value;
+
+    vk::DescriptorSetAllocateInfo allocInfo{};
+    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &descriptorSetLayout;
+
+    auto allocRes = device->getLogicalDevice().allocateDescriptorSets(allocInfo);
+    ASSERT_VULKAN(VkResult(allocRes.result), "Failed to allocate shadow map descriptor set!");
+    descriptorSet = allocRes.value[0];
+
+    std::vector<glm::mat4> lightMatrices(numCascades);
+    for (size_t i = 0; i < lightMatrices.size(); i++) {
+        lightMatrices[i] = cascadeData[i].viewProjMatrix;
+    }
+
+    vk::CommandPool transferCommandPool{};
+    vk::CommandPoolCreateInfo poolCreateInfo{};
+    poolCreateInfo.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
+    poolCreateInfo.queueFamilyIndex = static_cast<uint32_t>(device->getQueueFamilies().graphics_family);
+    auto poolResult = device->getLogicalDevice().createCommandPool(poolCreateInfo);
+    if (poolResult.result != vk::Result::eSuccess) {
+        spdlog::error("Failed to create transfer command pool for cascaded shadow map! Error: {}", static_cast<int>(poolResult.result));
+        std::abort();
+    }
+    transferCommandPool = poolResult.value;
+
+    VulkanBufferManager vbm;
+    vbm.createBufferAndUploadVectorOnDevice(device, transferCommandPool, lightMatricesBuffer,
+        vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+        lightMatrices);
+
+    device->getLogicalDevice().destroyCommandPool(transferCommandPool);
+
+    vk::DescriptorBufferInfo bufferInfo{};
+    bufferInfo.buffer = lightMatricesBuffer.getBuffer();
+    bufferInfo.offset = 0;
+    bufferInfo.range = sizeof(glm::mat4) * numCascades;
+
+    vk::WriteDescriptorSet write{};
+    write.dstSet = descriptorSet;
+    write.dstBinding = 1;  // UNIFORM_LIGHT_MATRICES_BINDING = 1
+    write.dstArrayElement = 0;
+    write.descriptorType = vk::DescriptorType::eUniformBuffer;
+    write.descriptorCount = 1;
+    write.pBufferInfo = &bufferInfo;
+
+    device->getLogicalDevice().updateDescriptorSets(1, &write, 0, nullptr);
+}
+
+void CascadedShadowMap::createGraphicsPipeline()
+{
+    createDescriptorSetAndPipeline();
+
+    std::stringstream shadow_shader_dir;
+    std::filesystem::path const cwd = std::filesystem::current_path();
+    shadow_shader_dir << cwd.string() << RELATIVE_RESOURCE_PATH << "Shaders/rasterizer/shadows/";
+
+    ShaderHelper shaderHelper;
+    shaderHelper.compileShader(shadow_shader_dir.str(), "directional_shadow_map.vert");
+    shaderHelper.compileShader(shadow_shader_dir.str(), "directional_shadow_map.geom");
+    shaderHelper.compileShader(shadow_shader_dir.str(), "directional_shadow_map.frag");
+
+    File vertFile(shaderHelper.getShaderSpvDir(shadow_shader_dir.str(), "directional_shadow_map.vert"));
+    File geomFile(shaderHelper.getShaderSpvDir(shadow_shader_dir.str(), "directional_shadow_map.geom"));
+    File fragFile(shaderHelper.getShaderSpvDir(shadow_shader_dir.str(), "directional_shadow_map.frag"));
+
+    vk::ShaderModule vertModule = shaderHelper.createShaderModule(device, vertFile.readCharSequence());
+    vk::ShaderModule geomModule = shaderHelper.createShaderModule(device, geomFile.readCharSequence());
+    vk::ShaderModule fragModule = shaderHelper.createShaderModule(device, fragFile.readCharSequence());
+
+    vk::PipelineShaderStageCreateInfo vertStageInfo{};
+    vertStageInfo.stage = vk::ShaderStageFlagBits::eVertex;
+    vertStageInfo.module = vertModule;
+    vertStageInfo.pName = "main";
+
+    vk::PipelineShaderStageCreateInfo geomStageInfo{};
+    geomStageInfo.stage = vk::ShaderStageFlagBits::eGeometry;
+    geomStageInfo.module = geomModule;
+    geomStageInfo.pName = "main";
+
+    vk::PipelineShaderStageCreateInfo fragStageInfo{};
+    fragStageInfo.stage = vk::ShaderStageFlagBits::eFragment;
+    fragStageInfo.module = fragModule;
+    fragStageInfo.pName = "main";
+
+    std::array skyStages = {vertStageInfo, geomStageInfo, fragStageInfo};
+
+    vk::VertexInputBindingDescription bindingDesc{};
+    bindingDesc.binding = 0;
+    bindingDesc.stride = sizeof(Vertex);
+    bindingDesc.inputRate = vk::VertexInputRate::eVertex;
+
+    vk::VertexInputAttributeDescription posAttr{};
+    posAttr.location = 0;
+    posAttr.binding = 0;
+    posAttr.format = vk::Format::eR32G32B32Sfloat;
+    posAttr.offset = 0;
+
+    std::array vertexBindingDescs = {bindingDesc};
+    std::array vertexAttrDescs = {posAttr};
+
+    vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexBindingDescs.size());
+    vertexInputInfo.pVertexBindingDescriptions = vertexBindingDescs.data();
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexAttrDescs.size());
+    vertexInputInfo.pVertexAttributeDescriptions = vertexAttrDescs.data();
+
+    vk::PipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    vk::PipelineViewportStateCreateInfo viewportState{};
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    std::vector<vk::DynamicState> dynamicStates = {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
+    vk::PipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    vk::PipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = vk::PolygonMode::eFill;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = vk::CullModeFlagBits::eBack;
+    rasterizer.frontFace = vk::FrontFace::eCounterClockwise;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    vk::PipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
+
+    vk::PipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = vk::CompareOp::eLess;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = VK_FALSE;
+
+    vk::PushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eVertex;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(glm::mat4);
+
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+
+    auto layoutRes = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
+    ASSERT_VULKAN(VkResult(layoutRes.result), "Failed to create shadow map pipeline layout!");
+    pipelineLayout = layoutRes.value;
+
+    vk::GraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.stageCount = static_cast<uint32_t>(skyStages.size());
+    pipelineInfo.pStages = skyStages.data();
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.layout = pipelineLayout;
+    pipelineInfo.renderPass = renderPass;
+    pipelineInfo.subpass = 0;
+
+    auto pipelineRes = device->getLogicalDevice().createGraphicsPipeline(nullptr, pipelineInfo);
+    ASSERT_VULKAN(VkResult(pipelineRes.result), "Failed to create shadow map graphics pipeline!");
+    graphicsPipeline = pipelineRes.value;
+    spdlog::info("CascadedShadowMap: Created pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphicsPipeline);
+
+    device->getLogicalDevice().destroyShaderModule(vertModule);
+    device->getLogicalDevice().destroyShaderModule(geomModule);
+    device->getLogicalDevice().destroyShaderModule(fragModule);
+}
+
+void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, const std::vector<vk::DescriptorSet> &descriptorSets)
+{
+    for (uint32_t cascade = 0; cascade < numCascades; cascade++) {
+        vk::RenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.renderPass = renderPass;
+        renderPassInfo.framebuffer = framebuffers[cascade];
+        renderPassInfo.renderArea.offset = vk::Offset2D{0, 0};
+        renderPassInfo.renderArea.extent = vk::Extent2D{shadowWidth, shadowHeight};
+
+        vk::ClearValue clearValue{};
+        clearValue.depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clearValue;
+
+        commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
+
+        vk::Viewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(shadowWidth);
+        viewport.height = static_cast<float>(shadowHeight);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        commandBuffer.setViewport(0, viewport);
+
+        vk::Rect2D scissor{};
+        scissor.offset = vk::Offset2D{0, 0};
+        scissor.extent = vk::Extent2D{shadowWidth, shadowHeight};
+        commandBuffer.setScissor(0, scissor);
+
+        std::vector<vk::DescriptorSet> shadowDescriptorSets = {descriptorSet};
+        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, shadowDescriptorSets, nullptr);
+
+        glm::mat4 modelMatrix = glm::mat4(1.0f);
+        commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &modelMatrix);
+
+        for (uint32_t m = 0; m < scene->getModelCount(); m++) {
+            for (uint32_t k = 0; k < scene->getMeshCount(m); k++) {
+                std::vector<vk::Buffer> const vertex_buffers = { scene->getVertexBuffer(m, k) };
+                vk::DeviceSize offsets[] = { 0 };
+                commandBuffer.bindVertexBuffers(0, vertex_buffers, offsets);
+                commandBuffer.bindIndexBuffer(scene->getIndexBuffer(m, k), 0, vk::IndexType::eUint32);
+                commandBuffer.drawIndexed(scene->getIndexCount(m, k), 1, 0, 0, 0);
+            }
+        }
+
+        commandBuffer.endRenderPass();
     }
 }
 }

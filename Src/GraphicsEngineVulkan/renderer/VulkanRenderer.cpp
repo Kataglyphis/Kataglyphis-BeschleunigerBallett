@@ -8,6 +8,7 @@ module;
 
 #include <cstdint>
 #include <glm/ext/matrix_clip_space.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <glm/trigonometric.hpp>
 #include <limits>
 #include <vulkan/vulkan.hpp>
@@ -50,6 +51,7 @@ import kataglyphis.vulkan.object_description;
 import kataglyphis.vulkan.queue_family_indices;
 import kataglyphis.vulkan.debug;
 import kataglyphis.vulkan.scene;
+import kataglyphis.vulkan.scene_config;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.as_manager;
 import kataglyphis.vulkan.buffer_manager;
@@ -72,10 +74,8 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
   Scene *scene,
   Kataglyphis::Frontend::GUI *gui,
   Camera *camera)
-  : window(window), scene(scene), gui(gui)
+  : window(window), scene(scene), gui(gui), camera(camera)
 {
-    updateUniforms(scene, camera, window);
-
     instance = VulkanInstance();
 
     vk::DebugReportFlagsEXT const debugReportFlags =
@@ -98,8 +98,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
 
     createSynchronization();
 
-    createSharedRenderDescriptorSetLayouts();
-    create_gbuffer_descriptor_layout();
+    initDescriptorResources();
 
     std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_rasterizer = { sharedRenderDescriptorSetLayout };
     std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_deferred = { sharedRenderDescriptorSetLayout, gbuffer_descriptor_set_layout };
@@ -107,44 +106,51 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     rasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_rasterizer, graphics_command_pool);
     deferredRasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_deferred, graphics_command_pool);
 
-    // Initialize atmospheric effects and shadows
-    skyBox.init(device, graphics_command_pool);
     clouds.init(device, graphics_command_pool, sharedRenderDescriptorSetLayout, vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
     dirShadowMap.init(device, 2048, 2048, MAX_CASCADES);
+    dirShadowMap.createGraphicsPipeline();
     pointShadowMap.init(device, 1024, 1024);
 
-    create_post_descriptor_layout();
     std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_post = { post_descriptor_set_layout };
     postStage.init(device, &vulkanSwapChain, descriptor_set_layouts_post);
-    createDescriptorPoolSharedRenderStages();
-    createSharedRenderDescriptorSet();
 
-    updatePostDescriptorSets();
-    updateGBufferDescriptorSets();
-
-    std::vector<vk::DescriptorSetLayout> layouts;
-    layouts.push_back(sharedRenderDescriptorSetLayout);
     if (device->supportsHardwareAcceleratedRRT()) {
         createRaytracingDescriptorPool();
         createRaytracingDescriptorSetLayouts();
-        layouts.push_back(raytracingDescriptorSetLayout);
+        createRaytracingDescriptorSets();
+
+        std::vector<vk::DescriptorSetLayout> const layouts = { sharedRenderDescriptorSetLayout,
+            raytracingDescriptorSetLayout };
         raytracingStage.init(device, layouts, &vulkanSwapChain);
         pathTracing.init(device, layouts);
     }
 
-    scene->loadModel(device, graphics_command_pool);
-    updateTexturesInSharedRenderDescriptorSet();
+    updateUniforms(scene, camera, window);
+    updateAllDescriptorSets();
 
+    std::vector<vk::ImageView> skyboxImageViews(vulkanSwapChain.getNumberSwapChainImages());
+    std::vector<vk::ImageView> skyboxDepthViews(vulkanSwapChain.getNumberSwapChainImages());
+    for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
+        skyboxImageViews[i] = vulkanSwapChain.getSwapChainImage(i).getImageView();
+        skyboxDepthViews[i] = postStage.getDepthBufferImageView();
+    }
+
+    skyBox.init(device, graphics_command_pool);
+    skyBox.createRenderPass(vulkanSwapChain.getSwapChainFormat(), postStage.getDepthFormat());
+    skyBox.createGraphicsPipeline(sharedRenderDescriptorSetLayout);
+    skyBox.createFramebuffers(vulkanSwapChain.getNumberSwapChainImages(), skyboxImageViews, skyboxDepthViews,
+        vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
+
+    scene->loadModel(device, graphics_command_pool);
+    
     if (device->supportsHardwareAcceleratedRRT()) {
         asManager.createASForScene(device, graphics_command_pool, scene);
     }
 
     create_object_description_buffer();
-
-    if (device->supportsHardwareAcceleratedRRT()) {
-        createRaytracingDescriptorSets();
-        updateRaytracingDescriptorSets();
-    }
+    
+    // Final update after model loading
+    updateAllDescriptorSets();
 
     gui->initializeVulkanContext(device,
       instance.getVulkanInstance(),
@@ -156,24 +162,33 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
 
 void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
   Camera *camera_data,
-  Kataglyphis::Frontend::Window *window_data)
+  [[maybe_unused]] Kataglyphis::Frontend::Window *window_data)
 {
     const GUISceneSharedVars guiSceneSharedVars = scene_data->getGuiSceneSharedVars();
 
+    const vk::Extent2D extent = vulkanSwapChain.getSwapChainExtent();
+    float const aspect_ratio = (extent.height > 0) ? static_cast<float>(extent.width) / static_cast<float>(extent.height) : 1.0f;
+
     globalUBO.view = camera_data->calculate_viewmatrix();
     globalUBO.projection = glm::perspective(glm::radians(camera_data->get_fov()),
-      static_cast<float>(window_data->get_width()) / static_cast<float>(window_data->get_height()),
+      aspect_ratio,
       camera_data->get_near_plane(),
       camera_data->get_far_plane());
+    globalUBO.projection[1][1] *= -1;
 
-    sceneUBO.view_dir = glm::vec4(camera_data->get_camera_direction(), 1.0F);
+    sceneUBO.view_dir = glm::vec4(camera_data->get_camera_direction().x, camera_data->get_camera_direction().y, camera_data->get_camera_direction().z, 1.0F);
 
     sceneUBO.dirLight.direction = glm::vec4(guiSceneSharedVars.directional_light_direction[0],
       guiSceneSharedVars.directional_light_direction[1],
       guiSceneSharedVars.directional_light_direction[2],
       1.0F);
 
-    sceneUBO.cam_pos = glm::vec4(camera_data->get_camera_position(), camera_data->get_fov());
+    sceneUBO.dirLight.color = glm::vec4(guiSceneSharedVars.directional_light_color[0],
+      guiSceneSharedVars.directional_light_color[1],
+      guiSceneSharedVars.directional_light_color[2],
+      guiSceneSharedVars.direcional_light_radiance);
+
+    sceneUBO.cam_pos = glm::vec4(camera_data->get_camera_position().x, camera_data->get_camera_position().y, camera_data->get_camera_position().z, camera_data->get_fov());
 
     // Populate GUI state into SceneUBO
     sceneUBO.pcfRadius = static_cast<unsigned int>(guiSceneSharedVars.pcf_radius);
@@ -181,7 +196,7 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
 
     // Calculate CSM cascades
     dirShadowMap.updateCascades(globalUBO.view, camera_data->get_fov(),
-        static_cast<float>(window_data->get_width()) / static_cast<float>(window_data->get_height()),
+        aspect_ratio,
         camera_data->get_near_plane(), camera_data->get_far_plane(),
         glm::vec3(sceneUBO.dirLight.direction));
 
@@ -233,15 +248,70 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Fronten
         (void)device->getLogicalDevice().waitIdle();
         dirShadowMap.cleanUp();
         
-        int shadow_res = 512;
+        uint32_t shadow_res = 512;
         if (guiSceneSharedVars.shadow_map_res_index == 1) shadow_res = 1024;
         else if (guiSceneSharedVars.shadow_map_res_index == 2) shadow_res = 2048;
         else if (guiSceneSharedVars.shadow_map_res_index == 3) shadow_res = 4096;
 
-        dirShadowMap.init(device, shadow_res, shadow_res, guiSceneSharedVars.num_shadow_cascades);
+        dirShadowMap.init(device, shadow_res, shadow_res, static_cast<uint32_t>(guiSceneSharedVars.num_shadow_cascades));
         
         // We must recreate descriptor sets that depend on the shadow map
         updateTexturesInSharedRenderDescriptorSet();
+    }
+
+    if (guiSceneSharedVars.model_transform_changed) {
+        guiSceneSharedVars.model_transform_changed = false;
+        frontend_gui->getGuiSceneSharedVars().model_transform_changed = false;
+
+        glm::mat4 modelMatrix = glm::mat4(1.0f);
+        modelMatrix = glm::scale(modelMatrix, glm::vec3(60.0f, 60.0f, 60.0f)); // Apply original scale
+        
+        // Apply world position directly to the matrix's translation column
+        modelMatrix[3] = glm::vec4(guiSceneSharedVars.model_position[0], 
+                                   guiSceneSharedVars.model_position[1], 
+                                   guiSceneSharedVars.model_position[2], 
+                                   1.0f);
+        
+        // ZYX rotation order
+        modelMatrix = glm::rotate(modelMatrix, glm::radians(guiSceneSharedVars.model_rotation[2]), glm::vec3(0.0f, 0.0f, 1.0f));
+        modelMatrix = glm::rotate(modelMatrix, glm::radians(guiSceneSharedVars.model_rotation[1]), glm::vec3(0.0f, 1.0f, 0.0f));
+        modelMatrix = glm::rotate(modelMatrix, glm::radians(guiSceneSharedVars.model_rotation[0]), glm::vec3(1.0f, 0.0f, 0.0f));
+        
+        if (guiSceneSharedVars.selected_model_index >= 0) {
+            scene->update_model_matrix(modelMatrix, 0);
+            
+            // Re-upload object descriptions as the transform changed
+            (void)device->getLogicalDevice().waitIdle();
+            objectDescriptionBuffer.cleanUp();
+            create_object_description_buffer();
+            updateAllDescriptorSets();
+        }
+
+
+    }
+
+    if (guiSceneSharedVars.model_reload_requested) {
+        guiSceneSharedVars.model_reload_requested = false;
+
+        const auto model_paths = sceneConfig::getAvailableModelPaths();
+        const int sel = guiSceneSharedVars.selected_model_index;
+        if (sel >= 0 && sel < static_cast<int>(model_paths.size())) {
+            const std::string selected_path = model_paths[static_cast<size_t>(sel)];
+            const std::string resolved_path = sceneConfig::resolveModelPath(selected_path);
+
+            (void)device->getLogicalDevice().waitIdle();
+
+            scene->reloadModel(device, graphics_command_pool, resolved_path);
+
+            if (device->supportsHardwareAcceleratedRRT()) {
+                asManager.createASForScene(device, graphics_command_pool, scene);
+            }
+
+            objectDescriptionBuffer.cleanUp();
+            create_object_description_buffer();
+
+            updateTexturesInSharedRenderDescriptorSet();
+        }
     }
 }
 
@@ -288,8 +358,9 @@ void Kataglyphis::VulkanRenderer::drawFrame()
     }
 
     if (checkChangedFramebufferSize()) {
-        end_imgui_frame_if_needed();
-        return;
+        if (frame_sync_count > 0 && !in_flight_fences.empty()) {
+            recreateSwapChain();
+        }
     }
 
     if (current_frame >= in_flight_fences.size() || current_frame >= image_available.size()) {
@@ -320,10 +391,16 @@ void Kataglyphis::VulkanRenderer::drawFrame()
 
     if (result == vk::Result::eErrorOutOfDateKHR) {
         end_imgui_frame_if_needed();
+        recreateSwapChain();
         return;
     }
 
-    if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
+    if (result == vk::Result::eSuboptimalKHR) {
+        recreateSwapChain();
+        return;
+    }
+
+    if (result != vk::Result::eSuccess) {
         abort_frame_with_fatal_error("Failed to acquire next image!", result);
         return;
     }
@@ -429,12 +506,9 @@ void Kataglyphis::VulkanRenderer::drawFrame()
 
     result = device->getPresentationQueue().presentKHR(&present_info);
 
-    if (result == vk::Result::eErrorOutOfDateKHR) {
-        end_imgui_frame_if_needed();
-        return;
-    }
-
-    if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
+    if (result == vk::Result::eErrorOutOfDateKHR || result == vk::Result::eSuboptimalKHR) {
+        recreateSwapChain();
+    } else if (result != vk::Result::eSuccess) {
         abort_frame_with_fatal_error("Failed to present image!", result);
         return;
     }
@@ -454,65 +528,155 @@ bool Kataglyphis::VulkanRenderer::checkChangedFramebufferSize()
     return false;
 }
 
+void Kataglyphis::VulkanRenderer::recreateSwapChain()
+{
+    int width = 0, height = 0;
+    glfwGetFramebufferSize(window->get_window(), &width, &height);
+    while (width == 0 || height == 0) {
+        glfwGetFramebufferSize(window->get_window(), &width, &height);
+        glfwWaitEvents();
+    }
+
+    std::ignore = device->getLogicalDevice().waitIdle();
+
+    uint32_t oldImageCount = vulkanSwapChain.getNumberSwapChainImages();
+
+    // Destroy framebuffers that reference swapchain image views
+    // before recreating the swapchain
+    postStage.destroyFramebuffers();
+    rasterizer.destroyFramebuffers();
+    deferredRasterizer.destroyFramebuffers();
+    skyBox.destroyFramebuffers();
+
+    vulkanSwapChain.recreate(device, surface);
+
+    uint32_t newImageCount = vulkanSwapChain.getNumberSwapChainImages();
+
+    // Recreate depth buffers and framebuffers with new swapchain
+    postStage.recreateFrameResources();
+    rasterizer.recreateFrameResources(graphics_command_pool);
+    deferredRasterizer.recreateFrameResources(graphics_command_pool);
+    clouds.recreateFrameResources(graphics_command_pool, vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
+
+    std::vector<vk::ImageView> skyboxImageViews(vulkanSwapChain.getNumberSwapChainImages());
+    std::vector<vk::ImageView> skyboxDepthViews(vulkanSwapChain.getNumberSwapChainImages());
+    for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
+        skyboxImageViews[i] = vulkanSwapChain.getSwapChainImage(i).getImageView();
+        skyboxDepthViews[i] = postStage.getDepthBufferImageView();
+    }
+
+    skyBox.recreateFrameResources(vulkanSwapChain.getNumberSwapChainImages(), skyboxImageViews, skyboxDepthViews,
+        vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
+
+    // If the image count changed, we must recreate descriptor pools and sets too
+    if (newImageCount != oldImageCount) {
+        cleanUpDescriptorResources();
+        initDescriptorResources();
+    }
+
+    updateAllDescriptorSets();
+
+    create_command_buffers();
+    createSynchronization();
+}
+
 void Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
 {
-    if (image_index >= globalUBOBuffer.size() || image_index >= sceneUBOBuffer.size()) {
+    if (image_index >= globalUBOMapped.size() || image_index >= sceneUBOMapped.size()) {
         spdlog::error(fmt::format("Uniform buffer index out of range: {}", image_index));
         return;
     }
 
-    std::vector<VulkanRendererInternals::GlobalUBO> global_ubo_data;
-    global_ubo_data.push_back(globalUBO);
+    std::memcpy(globalUBOMapped[image_index], &globalUBO, sizeof(VulkanRendererInternals::GlobalUBO));
+    std::memcpy(sceneUBOMapped[image_index], &sceneUBO, sizeof(VulkanRendererInternals::SceneUBO));
+}
 
-    std::vector<VulkanRendererInternals::SceneUBO> scene_ubo_data;
-    scene_ubo_data.push_back(sceneUBO);
+void Kataglyphis::VulkanRenderer::updateUBODescriptorSets()
+{
+    for (size_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
+        vk::DescriptorBufferInfo globalUBO_buffer_info{};
+        globalUBO_buffer_info.buffer = globalUBOBuffer[i].getBuffer();
+        globalUBO_buffer_info.offset = 0;
+        globalUBO_buffer_info.range = sizeof(globalUBO);
 
-    VulkanBuffer stagingGlobalUBO;
-    stagingGlobalUBO.create(device,
-      sizeof(VulkanRendererInternals::GlobalUBO),
-      vk::BufferUsageFlagBits::eTransferSrc,
-      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+        vk::WriteDescriptorSet globalUBO_set_write{};
+        globalUBO_set_write.dstSet = sharedRenderDescriptorSet[i];
+        globalUBO_set_write.dstBinding = 0;
+        globalUBO_set_write.dstArrayElement = 0;
+        globalUBO_set_write.descriptorType = vk::DescriptorType::eUniformBuffer;
+        globalUBO_set_write.descriptorCount = 1;
+        globalUBO_set_write.pBufferInfo = &globalUBO_buffer_info;
 
-    void *mapped_global_ubo =
-      device->getLogicalDevice()
-        .mapMemory(stagingGlobalUBO.getBufferMemory(), 0, sizeof(VulkanRendererInternals::GlobalUBO), {})
-        .value;
-    std::memcpy(mapped_global_ubo, global_ubo_data.data(), sizeof(VulkanRendererInternals::GlobalUBO));
-    device->getLogicalDevice().unmapMemory(stagingGlobalUBO.getBufferMemory());
+        vk::DescriptorBufferInfo sceneUBO_buffer_info{};
+        sceneUBO_buffer_info.buffer = sceneUBOBuffer[i].getBuffer();
+        sceneUBO_buffer_info.offset = 0;
+        sceneUBO_buffer_info.range = sizeof(sceneUBO);
 
-    auto const copy_buffer_ref = static_cast<void (Kataglyphis::VulkanBufferManager::*)(
-      vk::Device, vk::Queue, vk::CommandPool, VulkanBuffer &, VulkanBuffer &, vk::DeviceSize)>(
-      &Kataglyphis::VulkanBufferManager::copyBuffer);
-    (vulkanBufferManager.*copy_buffer_ref)(device->getLogicalDevice(),
-      device->getGraphicsQueue(),
-      graphics_command_pool,
-      stagingGlobalUBO,
-      globalUBOBuffer[image_index],
-      sizeof(VulkanRendererInternals::GlobalUBO));
+        vk::WriteDescriptorSet sceneUBO_set_write{};
+        sceneUBO_set_write.dstSet = sharedRenderDescriptorSet[i];
+        sceneUBO_set_write.dstBinding = 1;
+        sceneUBO_set_write.dstArrayElement = 0;
+        sceneUBO_set_write.descriptorType = vk::DescriptorType::eUniformBuffer;
+        sceneUBO_set_write.descriptorCount = 1;
+        sceneUBO_set_write.pBufferInfo = &sceneUBO_buffer_info;
 
-    stagingGlobalUBO.cleanUp();
+        std::vector<vk::WriteDescriptorSet> write_descriptor_sets = { globalUBO_set_write, sceneUBO_set_write };
 
-    VulkanBuffer stagingSceneUBO;
-    stagingSceneUBO.create(device,
-      sizeof(VulkanRendererInternals::SceneUBO),
-      vk::BufferUsageFlagBits::eTransferSrc,
-      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+        device->getLogicalDevice().updateDescriptorSets(
+          static_cast<uint32_t>(write_descriptor_sets.size()), write_descriptor_sets.data(), 0, nullptr);
+    }
+}
 
-    void *mapped_scene_ubo =
-      device->getLogicalDevice()
-        .mapMemory(stagingSceneUBO.getBufferMemory(), 0, sizeof(VulkanRendererInternals::SceneUBO), {})
-        .value;
-    std::memcpy(mapped_scene_ubo, scene_ubo_data.data(), sizeof(VulkanRendererInternals::SceneUBO));
-    device->getLogicalDevice().unmapMemory(stagingSceneUBO.getBufferMemory());
+void Kataglyphis::VulkanRenderer::updateAllDescriptorSets()
+{
+    updateUBODescriptorSets();
+    updatePostDescriptorSets();
+    updateGBufferDescriptorSets();
+    updateTexturesInSharedRenderDescriptorSet();
+    if (device->supportsHardwareAcceleratedRRT()) {
+        updateRaytracingDescriptorSets();
+    }
+}
 
-    (vulkanBufferManager.*copy_buffer_ref)(device->getLogicalDevice(),
-      device->getGraphicsQueue(),
-      graphics_command_pool,
-      stagingSceneUBO,
-      sceneUBOBuffer[image_index],
-      sizeof(VulkanRendererInternals::SceneUBO));
+void Kataglyphis::VulkanRenderer::cleanUpDescriptorResources()
+{
+    if (descriptorPoolSharedRenderStages) {
+        device->getLogicalDevice().destroyDescriptorPool(descriptorPoolSharedRenderStages);
+        descriptorPoolSharedRenderStages = nullptr;
+    }
+    if (post_descriptor_pool) {
+        device->getLogicalDevice().destroyDescriptorPool(post_descriptor_pool);
+        post_descriptor_pool = nullptr;
+    }
+    if (gbuffer_descriptor_pool) {
+        device->getLogicalDevice().destroyDescriptorPool(gbuffer_descriptor_pool);
+        gbuffer_descriptor_pool = nullptr;
+    }
+    if (post_descriptor_set_layout) {
+        device->getLogicalDevice().destroyDescriptorSetLayout(post_descriptor_set_layout);
+        post_descriptor_set_layout = nullptr;
+    }
+    if (gbuffer_descriptor_set_layout) {
+        device->getLogicalDevice().destroyDescriptorSetLayout(gbuffer_descriptor_set_layout);
+        gbuffer_descriptor_set_layout = nullptr;
+    }
+    if (sharedRenderDescriptorSetLayout) {
+        device->getLogicalDevice().destroyDescriptorSetLayout(sharedRenderDescriptorSetLayout);
+        sharedRenderDescriptorSetLayout = nullptr;
+    }
 
-    stagingSceneUBO.cleanUp();
+    sharedRenderDescriptorSet.clear();
+    post_descriptor_set.clear();
+    gbuffer_descriptor_set.clear();
+}
+
+void Kataglyphis::VulkanRenderer::initDescriptorResources()
+{
+    createSharedRenderDescriptorSetLayouts();
+    createDescriptorPoolSharedRenderStages();
+    createSharedRenderDescriptorSet();
+    create_post_descriptor_layout();
+    create_gbuffer_descriptor_layout();
 }
 
 void Kataglyphis::VulkanRenderer::update_raytracing_descriptor_set(uint32_t image_index)
@@ -525,6 +689,9 @@ void Kataglyphis::VulkanRenderer::update_raytracing_descriptor_set(uint32_t imag
     vk::WriteDescriptorSetAccelerationStructureKHR descriptor_set_acceleration_structure{};
     descriptor_set_acceleration_structure.accelerationStructureCount = 1;
     vk::AccelerationStructureKHR &vulkanTLAS = asManager.getTLAS();
+    if (!vulkanTLAS) {
+        return;
+    }
     descriptor_set_acceleration_structure.pAccelerationStructures = &vulkanTLAS;
 
     vk::WriteDescriptorSet write_descriptor_set_acceleration_structure{};
@@ -567,12 +734,20 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
       gui->getGuiRendererSharedVars();
 
+    GUISceneSharedVars &guiSceneSharedVars = scene->getGuiSceneSharedVars();
+
     vk::CommandBuffer &commandBuffer = command_buffers[image_index];
 
     std::vector<vk::DescriptorSet> rasterizer_descriptor_sets = { sharedRenderDescriptorSet[image_index] };
-    
-    clouds.recordComputeCommands(commandBuffer, image_index, rasterizer_descriptor_sets);
-    
+
+    if (guiSceneSharedVars.clouds_enabled) {
+        clouds.recordComputeCommands(commandBuffer, image_index, rasterizer_descriptor_sets);
+    }
+
+    if (guiSceneSharedVars.shadows_enabled) {
+        dirShadowMap.recordCommands(commandBuffer, image_index, scene, rasterizer_descriptor_sets);
+    }
+
     if (guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward) {
         rasterizer.recordCommands(commandBuffer, image_index, scene, rasterizer_descriptor_sets);
     } else {
@@ -595,18 +770,43 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
         }
     }
 
+    skyBox.recordCommands(commandBuffer, image_index, rasterizer_descriptor_sets, guiSceneSharedVars.skybox_enabled);
+
+    vk::ImageMemoryBarrier colorBarrier{};
+    colorBarrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    colorBarrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead;
+    colorBarrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    colorBarrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    colorBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    colorBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    colorBarrier.image = vulkanSwapChain.getSwapChainImage(image_index).getImage();
+    colorBarrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    colorBarrier.subresourceRange.baseMipLevel = 0;
+    colorBarrier.subresourceRange.levelCount = 1;
+    colorBarrier.subresourceRange.baseArrayLayer = 0;
+    colorBarrier.subresourceRange.layerCount = 1;
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::DependencyFlags{}, {}, {}, colorBarrier);
+
     std::vector<vk::DescriptorSet> post_descriptor_sets = { post_descriptor_set[image_index] };
-    postStage.recordCommands(commandBuffer, image_index, post_descriptor_sets);
+    postStage.recordCommands(commandBuffer, image_index, post_descriptor_sets, guiSceneSharedVars.clouds_enabled, guiSceneSharedVars.shadows_enabled, guiSceneSharedVars.skybox_enabled);
 
     return true;
 }
 
 void Kataglyphis::VulkanRenderer::cleanUpUBOs()
 {
-    for (VulkanBuffer &buffer : globalUBOBuffer) { buffer.cleanUp(); }
-    for (VulkanBuffer &buffer : sceneUBOBuffer) { buffer.cleanUp(); }
+    for (size_t i = 0; i < globalUBOBuffer.size(); i++) {
+        device->getLogicalDevice().unmapMemory(globalUBOBuffer[i].getBufferMemory());
+        globalUBOBuffer[i].cleanUp();
+    }
+    for (size_t i = 0; i < sceneUBOBuffer.size(); i++) {
+        device->getLogicalDevice().unmapMemory(sceneUBOBuffer[i].getBufferMemory());
+        sceneUBOBuffer[i].cleanUp();
+    }
     globalUBOBuffer.clear();
+    globalUBOMapped.clear();
     sceneUBOBuffer.clear();
+    sceneUBOMapped.clear();
 }
 
 void Kataglyphis::VulkanRenderer::cleanUp()
@@ -634,31 +834,8 @@ void Kataglyphis::VulkanRenderer::cleanUp()
     cleanUpSync();
     cleanUpUBOs();
     cleanUpCommandPools();
+    cleanUpDescriptorResources();
 
-    if (post_descriptor_pool) {
-        device->getLogicalDevice().destroyDescriptorPool(post_descriptor_pool);
-        post_descriptor_pool = nullptr;
-    }
-    if (post_descriptor_set_layout) {
-        device->getLogicalDevice().destroyDescriptorSetLayout(post_descriptor_set_layout);
-        post_descriptor_set_layout = nullptr;
-    }
-    if (gbuffer_descriptor_pool) {
-        device->getLogicalDevice().destroyDescriptorPool(gbuffer_descriptor_pool);
-        gbuffer_descriptor_pool = nullptr;
-    }
-    if (gbuffer_descriptor_set_layout) {
-        device->getLogicalDevice().destroyDescriptorSetLayout(gbuffer_descriptor_set_layout);
-        gbuffer_descriptor_set_layout = nullptr;
-    }
-    if (descriptorPoolSharedRenderStages) {
-        device->getLogicalDevice().destroyDescriptorPool(descriptorPoolSharedRenderStages);
-        descriptorPoolSharedRenderStages = nullptr;
-    }
-    if (sharedRenderDescriptorSetLayout) {
-        device->getLogicalDevice().destroyDescriptorSetLayout(sharedRenderDescriptorSetLayout);
-        sharedRenderDescriptorSetLayout = nullptr;
-    }
     if (raytracingDescriptorPool) {
         device->getLogicalDevice().destroyDescriptorPool(raytracingDescriptorPool);
         raytracingDescriptorPool = nullptr;
@@ -714,9 +891,12 @@ void Kataglyphis::VulkanRenderer::create_post_descriptor_layout()
     layout_create_info.bindingCount = static_cast<uint32_t>(layout_bindings.size());
     layout_create_info.pBindings = layout_bindings.data();
 
-    vk::Result result =
-      device->getLogicalDevice().createDescriptorSetLayout(&layout_create_info, nullptr, &post_descriptor_set_layout);
-    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create descriptor set layout!")
+    auto result = device->getLogicalDevice().createDescriptorSetLayout(layout_create_info);
+    if (result.result != vk::Result::eSuccess) {
+        spdlog::error("Failed to create post descriptor set layout!");
+        return;
+    }
+    post_descriptor_set_layout = result.value;
 
     vk::DescriptorPoolSize post_pool_size{};
     post_pool_size.type = vk::DescriptorType::eCombinedImageSampler;
@@ -729,8 +909,12 @@ void Kataglyphis::VulkanRenderer::create_post_descriptor_layout()
     pool_create_info.poolSizeCount = static_cast<uint32_t>(descriptor_pool_sizes.size());
     pool_create_info.pPoolSizes = descriptor_pool_sizes.data();
 
-    result = device->getLogicalDevice().createDescriptorPool(&pool_create_info, nullptr, &post_descriptor_pool);
-    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create a descriptor pool!")
+    auto pool_result = device->getLogicalDevice().createDescriptorPool(pool_create_info);
+    if (pool_result.result != vk::Result::eSuccess) {
+        spdlog::error("Failed to create post descriptor pool!");
+        return;
+    }
+    post_descriptor_pool = pool_result.value;
 
     post_descriptor_set.resize(vulkanSwapChain.getNumberSwapChainImages());
 
@@ -742,12 +926,13 @@ void Kataglyphis::VulkanRenderer::create_post_descriptor_layout()
     set_alloc_info.descriptorSetCount = vulkanSwapChain.getNumberSwapChainImages();
     set_alloc_info.pSetLayouts = set_layouts.data();
 
-    result = device->getLogicalDevice().allocateDescriptorSets(&set_alloc_info, post_descriptor_set.data());
-    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create descriptor sets!")
-    if (result != vk::Result::eSuccess) {
+    auto alloc_result = device->getLogicalDevice().allocateDescriptorSets(set_alloc_info);
+    if (alloc_result.result != vk::Result::eSuccess) {
+        spdlog::error("Failed to allocate post descriptor sets!");
         post_descriptor_set.clear();
         return;
     }
+    post_descriptor_set = alloc_result.value;
 }
 
 void Kataglyphis::VulkanRenderer::updatePostDescriptorSets()
@@ -818,11 +1003,15 @@ void Kataglyphis::VulkanRenderer::cleanUpSync()
     for (vk::Semaphore semaphore : render_finished_by_image) {
         if (semaphore) { device->getLogicalDevice().destroySemaphore(semaphore); }
     }
+    render_finished_by_image.clear();
 
-    for (uint32_t i = 0; i < frame_sync_count; i++) {
+    for (uint32_t i = 0; i < image_available.size(); i++) {
         if (image_available[i]) { device->getLogicalDevice().destroySemaphore(image_available[i]); }
         if (in_flight_fences[i]) { device->getLogicalDevice().destroyFence(in_flight_fences[i]); }
     }
+    image_available.clear();
+    in_flight_fences.clear();
+    images_in_flight_fences.clear();
 }
 
 void Kataglyphis::VulkanRenderer::create_object_description_buffer()
@@ -920,11 +1109,15 @@ void Kataglyphis::VulkanRenderer::createRaytracingDescriptorSets()
 
 void Kataglyphis::VulkanRenderer::updateRaytracingDescriptorSets()
 {
+    vk::AccelerationStructureKHR &vulkanTLAS = asManager.getTLAS();
+    if (!vulkanTLAS) {
+        return;
+    }
+
     for (size_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
         vk::WriteDescriptorSetAccelerationStructureKHR descriptor_set_acceleration_structure{};
         descriptor_set_acceleration_structure.pNext = nullptr;
         descriptor_set_acceleration_structure.accelerationStructureCount = 1;
-        vk::AccelerationStructureKHR &vulkanTLAS = asManager.getTLAS();
         descriptor_set_acceleration_structure.pAccelerationStructures = &vulkanTLAS;
 
         vk::WriteDescriptorSet write_descriptor_set_acceleration_structure{};
@@ -1019,9 +1212,12 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorSetLayouts()
     layout_create_info.bindingCount = static_cast<uint32_t>(descriptor_set_layout_bindings.size());
     layout_create_info.pBindings = descriptor_set_layout_bindings.data();
 
-    vk::Result const result = device->getLogicalDevice().createDescriptorSetLayout(
-      &layout_create_info, nullptr, &sharedRenderDescriptorSetLayout);
-    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create descriptor set layout!")
+    auto result = device->getLogicalDevice().createDescriptorSetLayout(layout_create_info);
+    if (result.result != vk::Result::eSuccess) {
+        spdlog::error("Failed to create shared render descriptor set layout!");
+        return;
+    }
+    sharedRenderDescriptorSetLayout = result.value;
 }
 
 void Kataglyphis::VulkanRenderer::create_command_pool()
@@ -1035,7 +1231,10 @@ void Kataglyphis::VulkanRenderer::create_command_pool()
 
         vk::Result const result =
           device->getLogicalDevice().createCommandPool(&pool_info, nullptr, &graphics_command_pool);
-        ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create command pool!")
+        if (result != vk::Result::eSuccess) {
+            spdlog::error("Failed to create graphics command pool! Error: {}", static_cast<int>(result));
+            std::abort();
+        }
     }
 
     {
@@ -1045,7 +1244,10 @@ void Kataglyphis::VulkanRenderer::create_command_pool()
 
         vk::Result const result =
           device->getLogicalDevice().createCommandPool(&pool_info, nullptr, &compute_command_pool);
-        ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create command pool!")
+        if (result != vk::Result::eSuccess) {
+            spdlog::error("Failed to create compute command pool! Error: {}", static_cast<int>(result));
+            std::abort();
+        }
     }
 }
 
@@ -1063,6 +1265,9 @@ void Kataglyphis::VulkanRenderer::cleanUpCommandPools()
 
 void Kataglyphis::VulkanRenderer::create_command_buffers()
 {
+    if (!command_buffers.empty()) {
+        device->getLogicalDevice().freeCommandBuffers(graphics_command_pool, command_buffers);
+    }
     command_buffers.resize(vulkanSwapChain.getNumberSwapChainImages());
 
     vk::CommandBufferAllocateInfo command_buffer_alloc_info{};
@@ -1080,6 +1285,18 @@ void Kataglyphis::VulkanRenderer::createSynchronization()
 {
     frame_sync_count = std::min<uint32_t>(
       static_cast<uint32_t>(Kataglyphis::MAX_FRAME_DRAWS), vulkanSwapChain.getNumberSwapChainImages());
+
+    if (!image_available.empty()) {
+        for (uint32_t i = 0; i < image_available.size(); i++) {
+            if (in_flight_fences[i]) { device->getLogicalDevice().destroyFence(in_flight_fences[i]); }
+        }
+        for (vk::Semaphore semaphore : image_available) {
+            if (semaphore) { device->getLogicalDevice().destroySemaphore(semaphore); }
+        }
+        for (vk::Semaphore semaphore : render_finished_by_image) {
+            if (semaphore) { device->getLogicalDevice().destroySemaphore(semaphore); }
+        }
+    }
 
     image_available.resize(frame_sync_count);
     render_finished_by_image.resize(vulkanSwapChain.getNumberSwapChainImages());
@@ -1129,33 +1346,39 @@ void Kataglyphis::VulkanRenderer::createSynchronization()
 
         render_finished_by_image[image] = render_finished_handle;
     }
+
+    for (uint32_t image = 0; image < vulkanSwapChain.getNumberSwapChainImages(); ++image) {
+        images_in_flight_fences[image] = nullptr;
+    }
+
+    current_frame = 0;
 }
 
 void Kataglyphis::VulkanRenderer::create_uniform_buffers()
 {
-    globalUBOBuffer.resize(vulkanSwapChain.getNumberSwapChainImages());
-    sceneUBOBuffer.resize(vulkanSwapChain.getNumberSwapChainImages());
+    const uint32_t imageCount = vulkanSwapChain.getNumberSwapChainImages();
+    globalUBOBuffer.resize(imageCount);
+    globalUBOMapped.resize(imageCount);
+    sceneUBOBuffer.resize(imageCount);
+    sceneUBOMapped.resize(imageCount);
 
-    std::vector<VulkanRendererInternals::GlobalUBO> globalUBOdata;
-    globalUBOdata.push_back(globalUBO);
+    for (size_t i = 0; i < imageCount; i++) {
+        globalUBOBuffer[i].create(device,
+          sizeof(VulkanRendererInternals::GlobalUBO),
+          vk::BufferUsageFlagBits::eUniformBuffer,
+          vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+        
+        globalUBOMapped[i] = device->getLogicalDevice().mapMemory(globalUBOBuffer[i].getBufferMemory(), 0, sizeof(VulkanRendererInternals::GlobalUBO)).value;
 
-    std::vector<VulkanRendererInternals::SceneUBO> sceneUBOdata;
-    sceneUBOdata.push_back(sceneUBO);
+        sceneUBOBuffer[i].create(device,
+          sizeof(VulkanRendererInternals::SceneUBO),
+          vk::BufferUsageFlagBits::eUniformBuffer,
+          vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    for (size_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
-        vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
-          graphics_command_pool,
-          globalUBOBuffer[i],
-          vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst,
-          vk::MemoryPropertyFlagBits::eDeviceLocal,
-          globalUBOdata);
-
-        vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
-          graphics_command_pool,
-          sceneUBOBuffer[i],
-          vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst,
-          vk::MemoryPropertyFlagBits::eDeviceLocal,
-          sceneUBOdata);
+        sceneUBOMapped[i] = device->getLogicalDevice().mapMemory(sceneUBOBuffer[i].getBufferMemory(), 0, sizeof(VulkanRendererInternals::SceneUBO)).value;
+        
+        // Initial upload
+        update_uniform_buffers(static_cast<uint32_t>(i));
     }
 }
 
@@ -1208,13 +1431,13 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorSet()
     set_alloc_info.descriptorSetCount = vulkanSwapChain.getNumberSwapChainImages();
     set_alloc_info.pSetLayouts = set_layouts.data();
 
-    vk::Result const result =
-      device->getLogicalDevice().allocateDescriptorSets(&set_alloc_info, sharedRenderDescriptorSet.data());
-    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create descriptor sets!")
-    if (result != vk::Result::eSuccess) {
+    auto result = device->getLogicalDevice().allocateDescriptorSets(set_alloc_info);
+    if (result.result != vk::Result::eSuccess) {
+        spdlog::error("Failed to allocate shared render descriptor sets!");
         sharedRenderDescriptorSet.clear();
         return;
     }
+    sharedRenderDescriptorSet = result.value;
 
     for (size_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
         vk::DescriptorBufferInfo globalUBO_buffer_info{};
@@ -1252,57 +1475,40 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorSet()
 
 void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
 {
-    if (sharedRenderDescriptorSet.size() < vulkanSwapChain.getNumberSwapChainImages()) {
-        spdlog::error("Shared render descriptor sets are not available; skipping texture update.");
+    if (sharedRenderDescriptorSet.empty()) {
+        return;
+    }
+
+    if (scene->getModelCount() == 0) {
         return;
     }
 
     std::vector<Texture> &modelTextures = scene->getTextures(0);
     const uint32_t scene_texture_count = scene->getTextureCount(0);
-    const uint32_t texture_count_for_descriptors = std::min<uint32_t>(scene_texture_count, MAX_TEXTURE_COUNT);
-    if (scene_texture_count > MAX_TEXTURE_COUNT) {
-        spdlog::warn(fmt::format("Scene has {} textures, but MAX_TEXTURE_COUNT is {}. Clamping descriptor updates.",
-          scene_texture_count,
-          MAX_TEXTURE_COUNT));
-    }
-
-    if (texture_count_for_descriptors == 0) {
-        spdlog::error("No textures available for descriptor update.");
+    if (scene_texture_count == 0) {
         return;
     }
 
-    std::vector<vk::DescriptorImageInfo> image_info_textures;
-    image_info_textures.resize(MAX_TEXTURE_COUNT);
-    for (uint32_t i = 0; i < texture_count_for_descriptors; i++) {
-        image_info_textures[i].imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        image_info_textures[i].imageView = modelTextures[i].getImageView();
-        image_info_textures[i].sampler = nullptr;
-    }
-    for (uint32_t i = texture_count_for_descriptors; i < MAX_TEXTURE_COUNT; i++) {
-        image_info_textures[i].imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        image_info_textures[i].imageView = modelTextures[0].getImageView();
-        image_info_textures[i].sampler = nullptr;
-    }
-
+    const uint32_t texture_count_for_descriptors = std::min<uint32_t>(scene_texture_count, MAX_TEXTURE_COUNT);
     std::vector<vk::Sampler> &modelTextureSampler = scene->getTextureSampler(0);
-    std::vector<vk::DescriptorImageInfo> image_info_texture_sampler;
-    image_info_texture_sampler.resize(MAX_TEXTURE_COUNT);
-    for (uint32_t i = 0; i < texture_count_for_descriptors; i++) {
+
+    std::vector<vk::DescriptorImageInfo> image_info_textures(MAX_TEXTURE_COUNT);
+    std::vector<vk::DescriptorImageInfo> image_info_texture_sampler(MAX_TEXTURE_COUNT);
+
+    for (uint32_t i = 0; i < MAX_TEXTURE_COUNT; i++) {
+        const uint32_t texture_index = (i < texture_count_for_descriptors) ? i : 0;
+        
+        image_info_textures[i].imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        image_info_textures[i].imageView = modelTextures[texture_index].getImageView();
+        
         image_info_texture_sampler[i].imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        image_info_texture_sampler[i].imageView = nullptr;
-        image_info_texture_sampler[i].sampler = modelTextureSampler[i];
-    }
-    for (uint32_t i = texture_count_for_descriptors; i < MAX_TEXTURE_COUNT; i++) {
-        image_info_texture_sampler[i].imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        image_info_texture_sampler[i].imageView = nullptr;
-        image_info_texture_sampler[i].sampler = modelTextureSampler[0];
+        image_info_texture_sampler[i].sampler = modelTextureSampler[texture_index];
     }
 
     for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
         vk::WriteDescriptorSet descriptor_write{};
         descriptor_write.dstSet = sharedRenderDescriptorSet[i];
         descriptor_write.dstBinding = TEXTURES_BINDING;
-        descriptor_write.dstArrayElement = 0;
         descriptor_write.descriptorType = vk::DescriptorType::eSampledImage;
         descriptor_write.descriptorCount = MAX_TEXTURE_COUNT;
         descriptor_write.pImageInfo = image_info_textures.data();
@@ -1310,20 +1516,17 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
         vk::WriteDescriptorSet descriptor_sampler_write{};
         descriptor_sampler_write.dstSet = sharedRenderDescriptorSet[i];
         descriptor_sampler_write.dstBinding = SAMPLER_BINDING;
-        descriptor_sampler_write.dstArrayElement = 0;
         descriptor_sampler_write.descriptorType = vk::DescriptorType::eSampler;
         descriptor_sampler_write.descriptorCount = MAX_TEXTURE_COUNT;
         descriptor_sampler_write.pImageInfo = image_info_texture_sampler.data();
 
-        std::vector<vk::WriteDescriptorSet> write_descriptor_sets = { descriptor_write, descriptor_sampler_write };
-
-        device->getLogicalDevice().updateDescriptorSets(
-          static_cast<uint32_t>(write_descriptor_sets.size()), write_descriptor_sets.data(), 0, nullptr);
+        std::array<vk::WriteDescriptorSet, 2> write_descriptor_sets = { descriptor_write, descriptor_sampler_write };
+        device->getLogicalDevice().updateDescriptorSets(write_descriptor_sets, nullptr);
     }
 }
 void Kataglyphis::VulkanRenderer::create_gbuffer_descriptor_layout()
 {
-    std::array<vk::DescriptorSetLayoutBinding, 5> layout_bindings;
+    std::array<vk::DescriptorSetLayoutBinding, 5> layout_bindings{};
     for(uint32_t i = 0; i < 5; i++) {
         layout_bindings[i].binding = i;
         layout_bindings[i].descriptorType = vk::DescriptorType::eInputAttachment;
@@ -1337,7 +1540,10 @@ void Kataglyphis::VulkanRenderer::create_gbuffer_descriptor_layout()
     layout_create_info.pBindings = layout_bindings.data();
 
     auto result = device->getLogicalDevice().createDescriptorSetLayout(layout_create_info);
-    ASSERT_VULKAN(VkResult(result.result), "Failed to create gbuffer descriptor set layout!")
+    if (result.result != vk::Result::eSuccess) {
+        spdlog::error("Failed to create gbuffer descriptor set layout!");
+        return;
+    }
     gbuffer_descriptor_set_layout = result.value;
 
     vk::DescriptorPoolSize pool_size{};
@@ -1350,7 +1556,10 @@ void Kataglyphis::VulkanRenderer::create_gbuffer_descriptor_layout()
     pool_info.maxSets = static_cast<uint32_t>(vulkanSwapChain.getNumberSwapChainImages());
 
     auto pool_result = device->getLogicalDevice().createDescriptorPool(pool_info);
-    ASSERT_VULKAN(VkResult(pool_result.result), "Failed to create gbuffer descriptor pool!")
+    if (pool_result.result != vk::Result::eSuccess) {
+        spdlog::error("Failed to create gbuffer descriptor pool!");
+        return;
+    }
     gbuffer_descriptor_pool = pool_result.value;
 
     std::vector<vk::DescriptorSetLayout> layouts(vulkanSwapChain.getNumberSwapChainImages(), gbuffer_descriptor_set_layout);
@@ -1360,7 +1569,10 @@ void Kataglyphis::VulkanRenderer::create_gbuffer_descriptor_layout()
     alloc_info.pSetLayouts = layouts.data();
 
     auto alloc_result = device->getLogicalDevice().allocateDescriptorSets(alloc_info);
-    ASSERT_VULKAN(VkResult(alloc_result.result), "Failed to allocate gbuffer descriptor sets!")
+    if (alloc_result.result != vk::Result::eSuccess) {
+        spdlog::error("Failed to allocate gbuffer descriptor sets!");
+        return;
+    }
     gbuffer_descriptor_set = alloc_result.value;
 }
 

@@ -12,6 +12,11 @@ Kataglyphis::VulkanRendererInternals::CommandBufferManager::CommandBufferManager
 auto Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(vk::Device device,
   vk::CommandPool command_pool) -> vk::CommandBuffer
 {
+    if (!command_pool) {
+        spdlog::error("beginCommandBuffer called with VK_NULL_HANDLE commandPool!");
+        return vk::CommandBuffer{};
+    }
+
     // command buffer to hold transfer commands
     vk::CommandBuffer command_buffer{};
 

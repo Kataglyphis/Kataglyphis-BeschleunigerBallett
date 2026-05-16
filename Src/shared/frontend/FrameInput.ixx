@@ -16,8 +16,8 @@ inline void update_frame_timing(float &delta_time, float &last_time)
 template<typename WindowType, typename CameraType>
 inline void process_camera_input(WindowType *window, CameraType *camera, float delta_time)
 {
-    camera->key_control(window->get_keys(), delta_time);
     camera->mouse_control(window->get_x_change(), window->get_y_change());
+    camera->key_control(window->get_keys(), delta_time);
 }
 
 }// namespace Kataglyphis::Frontend

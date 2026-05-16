@@ -82,7 +82,11 @@ if(myproject_ENABLE_COVERAGE
        CMAKE_BUILD_TYPE
        STREQUAL
        "Release"
-   AND CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+   AND CMAKE_CXX_COMPILER_ID MATCHES ".*Clang"
+   AND NOT
+       CMAKE_CXX_SIMULATE_ID
+       STREQUAL
+       "MSVC")
   add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
   add_link_options(-fprofile-instr-generate -fcoverage-mapping)
 endif()

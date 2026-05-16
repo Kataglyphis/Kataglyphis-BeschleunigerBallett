@@ -77,7 +77,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
     render_pass_begin_info.renderArea.extent = swap_chain_extent;
 
     std::array<vk::ClearValue, 2> clear_values = {};
-    clear_values[0].color = vk::ClearColorValue{ std::array<float, 4>{ 0.2F, 0.65F, 0.4F, 1.0F } };
+    clear_values[0].color = vk::ClearColorValue{ std::array<float, 4>{ 0.0F, 0.0F, 0.0F, 0.0F } };
     clear_values[1].depthStencil = vk::ClearDepthStencilValue{ 1.0F, 0 };
 
     render_pass_begin_info.pClearValues = clear_values.data();
@@ -86,10 +86,24 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
 
     commandBuffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
 
+    vk::Viewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(swap_chain_extent.width);
+    viewport.height = static_cast<float>(swap_chain_extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    commandBuffer.setViewport(0, 1, &viewport);
+
+    vk::Rect2D scissor{};
+    scissor.offset = vk::Offset2D{ 0, 0 };
+    scissor.extent = swap_chain_extent;
+    commandBuffer.setScissor(0, 1, &scissor);
+
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline);
 
     for (uint32_t m = 0; m < scene->getModelCount(); m++) {
-        pushConstant.model = scene->getModelMatrix(0);
+        pushConstant.model = scene->getModelMatrix(m);
         commandBuffer.pushConstants(
           pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(PushConstantRasterizer), &pushConstant);
 
@@ -112,6 +126,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::cleanUp()
 {
+    spdlog::info("Rasterizer: Destroying pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphics_pipeline);
     for (auto &framebuffer_handle : framebuffer) { device->getLogicalDevice().destroyFramebuffer(framebuffer_handle); }
 
     for (const auto &texture : offscreenTextures) { texture->cleanUp(); }
@@ -124,6 +139,26 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::cleanUp()
 }
 
 Kataglyphis::VulkanRendererInternals::Rasterizer::~Rasterizer() = default;
+
+void Kataglyphis::VulkanRendererInternals::Rasterizer::destroyFramebuffers()
+{
+    for (auto &framebuffer_handle : framebuffer) { 
+        spdlog::info("Rasterizer: Destroying framebuffer: 0x{:x}", (uint64_t)(VkFramebuffer)framebuffer_handle);
+        device->getLogicalDevice().destroyFramebuffer(framebuffer_handle); 
+    }
+    framebuffer.clear();
+}
+
+void Kataglyphis::VulkanRendererInternals::Rasterizer::recreateFrameResources(vk::CommandPool commandPool)
+{
+    for (const auto &texture : offscreenTextures) { texture->cleanUp(); }
+    offscreenTextures.clear();
+
+    depthBufferImage->cleanUp();
+
+    createTextures(commandPool);
+    createFramebuffer();
+}
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
 {
@@ -215,6 +250,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createFramebuffer()
         auto result = device->getLogicalDevice().createFramebuffer(frame_buffer_create_info);
         if (result.result == vk::Result::eSuccess) {
             framebuffer[i] = result.value;
+            spdlog::info("Rasterizer: Created framebuffer[{}]: 0x{:x}", i, (uint64_t)(VkFramebuffer)framebuffer[i]);
         } else {
             ASSERT_VULKAN(static_cast<VkResult>(result.result), "Failed to create framebuffer!")
         }
@@ -355,9 +391,14 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
 
     vk::PipelineViewportStateCreateInfo viewport_state_create_info;
     viewport_state_create_info.viewportCount = 1;
-    viewport_state_create_info.pViewports = &viewport;
+    viewport_state_create_info.pViewports = nullptr;
     viewport_state_create_info.scissorCount = 1;
-    viewport_state_create_info.pScissors = &scissor;
+    viewport_state_create_info.pScissors = nullptr;
+
+    std::vector<vk::DynamicState> dynamic_states = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+    vk::PipelineDynamicStateCreateInfo dynamic_state_create_info;
+    dynamic_state_create_info.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
+    dynamic_state_create_info.pDynamicStates = dynamic_states.data();
 
     vk::PipelineRasterizationStateCreateInfo rasterizer_create_info;
     rasterizer_create_info.depthClampEnable = VK_FALSE;
@@ -415,7 +456,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
     graphics_pipeline_create_info.pVertexInputState = &vertex_input_create_info;
     graphics_pipeline_create_info.pInputAssemblyState = &input_assembly;
     graphics_pipeline_create_info.pViewportState = &viewport_state_create_info;
-    graphics_pipeline_create_info.pDynamicState = nullptr;
+    graphics_pipeline_create_info.pDynamicState = &dynamic_state_create_info;
     graphics_pipeline_create_info.pRasterizationState = &rasterizer_create_info;
     graphics_pipeline_create_info.pMultisampleState = &multisample_create_info;
     graphics_pipeline_create_info.pColorBlendState = &color_blending_create_info;
@@ -429,6 +470,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
     auto pipeline_result = device->getLogicalDevice().createGraphicsPipelines(nullptr, graphics_pipeline_create_info);
     if (pipeline_result.result == vk::Result::eSuccess) {
         graphics_pipeline = pipeline_result.value.front();
+        spdlog::info("Rasterizer: Created pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphics_pipeline);
     } else {
         ASSERT_VULKAN(static_cast<VkResult>(pipeline_result.result), "Failed to create a graphics pipeline!")
     }

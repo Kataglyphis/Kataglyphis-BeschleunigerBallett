@@ -98,7 +98,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
     vk::Extent2D const imageSize = vulkanSwapChain->getSwapChainExtent();
     push_constant.width = imageSize.width;
     push_constant.height = imageSize.height;
-    push_constant.clearColor = { 0.2F, 0.65F, 0.4F, 1.0F };
+    push_constant.clearColor = { 0.0F, 0.0F, 0.0F, 0.0F };
 
     commandBuffer.pushConstants(
       pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(PushConstantPathTracing), &push_constant);

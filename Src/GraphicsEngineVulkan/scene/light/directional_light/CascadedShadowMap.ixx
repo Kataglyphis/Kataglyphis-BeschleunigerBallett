@@ -8,6 +8,8 @@ export module kataglyphis.vulkan.cascaded_shadow_map;
 
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.texture;
+import kataglyphis.vulkan.scene;
+import kataglyphis.vulkan.buffer;
 
 export namespace Kataglyphis {
 
@@ -22,7 +24,10 @@ class CascadedShadowMap
     CascadedShadowMap() = default;
 
     void init(std::shared_ptr<VulkanDevice>device, uint32_t width, uint32_t height, uint32_t num_cascades);
-    
+
+    void createGraphicsPipeline();
+    void recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, const std::vector<vk::DescriptorSet> &descriptorSets);
+
     Kataglyphis::Texture* getShadowMapArray() { return shadowMapArray.get(); }
     std::vector<vk::Framebuffer>& getFramebuffers() { return framebuffers; }
     vk::RenderPass getRenderPass() const { return renderPass; }
@@ -46,11 +51,19 @@ class CascadedShadowMap
     std::unique_ptr<Kataglyphis::Texture> shadowMapArray;
     vk::RenderPass renderPass;
     std::vector<vk::Framebuffer> framebuffers;
-    
+
+    vk::Pipeline graphicsPipeline{};
+    vk::PipelineLayout pipelineLayout{};
+    vk::DescriptorSetLayout descriptorSetLayout{};
+    vk::DescriptorPool descriptorPool{};
+    vk::DescriptorSet descriptorSet{};
+    VulkanBuffer lightMatricesBuffer;
+
     std::vector<CascadeData> cascadeData;
 
     void createRenderPass();
     void createFramebuffers();
+    void createDescriptorSetAndPipeline();
     std::vector<glm::vec4> getFrustumCornersWorldSpace(const glm::mat4& proj, const glm::mat4& view);
 };
 }
