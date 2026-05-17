@@ -39,6 +39,13 @@ target_sources(
 # This brings in all necessary libraries, includes, and module BMIs
 target_link_libraries(${COMPILE_TEST_SUITE} PRIVATE VulkanEngineCore gtest_main gtest)
 
+if(WIN32 AND MSVC)
+  # Delay-load the Vulkan loader so basic gtest discovery does not require the
+  # system Vulkan runtime to be installed up front.
+  target_link_options(${COMPILE_TEST_SUITE} PRIVATE /DELAYLOAD:vulkan-1.dll)
+  target_link_libraries(${COMPILE_TEST_SUITE} PRIVATE delayimp)
+endif()
+
 # Use the project root as working directory so relative paths match the main executable
 kataglyphis_configure_gtest_discovery(${COMPILE_TEST_SUITE})
 

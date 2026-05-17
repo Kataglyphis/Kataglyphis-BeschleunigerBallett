@@ -19,7 +19,7 @@ if errorlevel 1 goto done
 if !ATTEMPT! GEQ %MAX_RETRIES% goto done
 
 echo cargo-retry.cmd: detected transient Windows file lock during cargo build, retrying attempt !ATTEMPT! of %MAX_RETRIES% after %RETRY_DELAY_SECONDS%s.
-timeout /t %RETRY_DELAY_SECONDS% /nobreak >nul
+powershell.exe -NoProfile -Command "Start-Sleep -Seconds %RETRY_DELAY_SECONDS%" >nul
 set /A ATTEMPT+=1
 goto retry
 

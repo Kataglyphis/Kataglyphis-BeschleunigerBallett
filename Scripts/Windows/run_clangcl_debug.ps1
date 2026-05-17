@@ -1,186 +1,295 @@
 <#
 .SYNOPSIS
-Starts the compiled executable inside the debug directory and sets necessary environment variables.
+Runs the local clang-cl debug test flow, optional fuzz tests, and then launches the app.
 #>
 
 param (
     [string]$ExeName = "GraphicsEngine.exe",
-    [Parameter(ValueFromRemainingArguments=$true)]
+    [switch]$SkipTests,
+    [switch]$SkipFuzzTests,
+    [switch]$SkipAppLaunch,
+    [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$ExeArgs
 )
 
 $ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
 
-
-# Locate the built executable 
 $ProjectRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
+$ContainerHubModulesRoot = Join-Path $ProjectRoot 'ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules'
+$DebugDir = Join-Path $ProjectRoot 'build-clangcl-debug'
+$FuzzDir = $DebugDir
 
-# Add project bin directories to PATH (for ASAN DLLs, etc.)
-$env:PATH = "$(Join-Path $ProjectRoot 'build-clangcl-debug\bin');$(Join-Path $ProjectRoot 'bin');$env:PATH"
+Import-Module (Join-Path $ContainerHubModulesRoot 'WindowsBuild.Common.psm1') -Force
+Import-Module (Join-Path $ContainerHubModulesRoot 'WindowsTesting.Common.psm1') -Force
 
-# Search in known build directories created by CMake presets
-$DebugDir = Join-Path $ProjectRoot "build-clangcl-debug"
+function Add-DirectoryToPath {
+    param([string]$Directory)
 
-# Attempt to find the exe path (fallback for single or multi-config generators)
-$ExePath = Join-Path $DebugDir $ExeName
+    if ([string]::IsNullOrWhiteSpace($Directory) -or -not (Test-Path $Directory)) {
+        return
+    }
 
-if (-not (Test-Path $ExePath)) {
-    $ExePath = Join-Path $DebugDir "bin\$ExeName"
-}
-if (-not (Test-Path $ExePath)) {
-    $ExePath = Join-Path $DebugDir "bin\Debug\$ExeName"
-}
-if (-not (Test-Path $ExePath)) {
-    $ExePath = Join-Path $DebugDir "Debug\$ExeName"
-}
-
-if (-not (Test-Path $ExePath)) {
-    throw "Executable '$ExeName' not found inside $DebugDir. Please run the 'build_clangcl_debug.ps1' script first."
+    $currentEntries = @($env:PATH -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($currentEntries -notcontains $Directory) {
+        $env:PATH = "$Directory;$env:PATH"
+    }
 }
 
-$ExeDir = Split-Path $ExePath
+function Add-DirectoriesToPath {
+    param([string[]]$Directories)
 
-    # 3. Start the application
-    # We use the project root as the working directory so it can discover `images/` and `Resources/` 
-    $WorkDir = $ProjectRoot
-    Set-Location -Path $WorkDir
+    foreach ($directory in $Directories) {
+        Add-DirectoryToPath $directory
+    }
+}
 
-    # Run tests using CTest before starting the application
-    Write-Host "Running tests via CTest in $DebugDir..."
+function Get-PreferredToolPath {
+    param(
+        [Parameter(Mandatory)]
+        [string]$CommandName,
+        [string[]]$CandidatePaths = @()
+    )
 
-    # Rewrite container absolute paths to host absolute paths for CTest
-    $OriginalWorkspace = "C:/workspace"
-    $CurrentWorkspace = $ProjectRoot.Replace('\', '/')
-    $OriginalCMake = "C:/Program Files/CMake/share/cmake-4.3"
-    $CurrentCMake = "C:/Program Files/CMake/share/cmake-4.2"
-
-    if (($OriginalWorkspace -ne $CurrentWorkspace) -or ($OriginalCMake -ne $CurrentCMake)) {
-        Get-ChildItem -Path $DebugDir -Include "CTestTestfile.cmake", "DartConfiguration.tcl", "*_include.cmake" -Recurse | ForEach-Object {
-            $content = Get-Content $_.FullName -Raw
-            $modified = $false
-            if ($content -match [regex]::Escape($OriginalWorkspace)) {
-                $content = $content.Replace($OriginalWorkspace, $CurrentWorkspace)
-                $modified = $true
-            }
-            if ($content -match [regex]::Escape($OriginalCMake)) {
-                $content = $content.Replace($OriginalCMake, $CurrentCMake)
-                $modified = $true
-            }
-            if ($modified) {
-                Set-Content -Path $_.FullName -Value $content -NoNewline
-            }
+    foreach ($candidate in $CandidatePaths) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path $candidate)) {
+            return (Resolve-Path $candidate).Path
         }
     }
 
-    $OldAsanOptions = $env:ASAN_OPTIONS
-    # Use minimal AddressSanitizer options to prevent interfering with AMD's internal allocations
-    $env:ASAN_OPTIONS = "log_path=logs/asan.log:report_globals=0:windows_hook_rtl_allocators=false:$OldAsanOptions"
-    
-    try {
-        Push-Location $DebugDir
-        $CTestPath = Get-Command ctest -ErrorAction SilentlyContinue
-        if ($null -eq $CTestPath) {
-            # Versuche, CTest aus dem Standard-CMake-Installationsverzeichnis zu finden
-            $cmakeBin = "C:\Program Files\CMake\bin"
-            if (Test-Path "$cmakeBin\ctest.exe") {
-                $env:PATH = "$cmakeBin;$env:PATH"
-                $CTestPath = Get-Command ctest -ErrorAction SilentlyContinue
-            }
+    $command = Get-Command $CommandName -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
+
+    return $null
+}
+
+function Resolve-PreferredTool {
+    param(
+        [Parameter(Mandatory)]
+        [string]$CommandName,
+        [string[]]$CandidatePaths = @()
+    )
+
+    $toolPath = Get-PreferredToolPath -CommandName $CommandName -CandidatePaths $CandidatePaths
+    if ($toolPath) {
+        Add-DirectoryToPath (Split-Path $toolPath -Parent)
+    }
+
+    return $toolPath
+}
+
+function Get-CMakeShareDir {
+    param([string]$CMakeExePath)
+
+    if ([string]::IsNullOrWhiteSpace($CMakeExePath)) {
+        return $null
+    }
+
+    $cmakeBinDir = Split-Path $CMakeExePath -Parent
+    $cmakeRoot = Split-Path $cmakeBinDir -Parent
+    $shareRoot = Join-Path $cmakeRoot 'share'
+    if (-not (Test-Path $shareRoot)) {
+        return $null
+    }
+
+    $shareDir = Get-ChildItem -Path $shareRoot -Directory -Filter 'cmake-*' -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending |
+        Select-Object -First 1
+
+    if (-not $shareDir) {
+        return $null
+    }
+
+    return $shareDir.FullName.Replace('\', '/')
+}
+
+function Update-CTestMetadataPaths {
+    param(
+        [Parameter(Mandatory)]
+        [string]$BuildRoot,
+        [Parameter(Mandatory)]
+        [string]$WorkspaceRoot,
+        [string]$CMakeShareDir
+    )
+
+    if (-not (Test-Path $BuildRoot)) {
+        return
+    }
+
+    $workspacePathUnix = $WorkspaceRoot.Replace('\', '/')
+    $files = Get-ChildItem -Path $BuildRoot -Recurse -File -Include 'CTestTestfile.cmake', 'DartConfiguration.tcl', '*_include.cmake', '*_discovery.cmake', '*_tests.cmake' -ErrorAction SilentlyContinue
+    $asciiEncoding = [System.Text.Encoding]::ASCII
+
+    foreach ($file in $files) {
+        $originalContent = [System.IO.File]::ReadAllText($file.FullName)
+        $updatedContent = $originalContent.Replace('C:/workspace', $workspacePathUnix)
+
+        if (-not [string]::IsNullOrWhiteSpace($CMakeShareDir)) {
+            $updatedContent = [regex]::Replace($updatedContent, 'C:/Program Files/CMake/share/cmake-[0-9.]+', $CMakeShareDir)
+            $updatedContent = [regex]::Replace($updatedContent, 'C:/Strawberry/c/share/cmake-[0-9.]+', $CMakeShareDir)
         }
-        if ($null -eq $CTestPath) {
-            Write-Warning "CTest wurde nicht gefunden. Bitte installiere CMake mit 'winget install cmake'. Die Anwendung wird trotzdem gestartet."
-        } else {
-            $ctestCmd = Get-Command ctest -ErrorAction SilentlyContinue
-            if ($null -eq $ctestCmd) {
-                Write-Warning "ctest wurde nicht gefunden (unerwartet)."
-                $ctestOutput = ""
-            } else {
-                $outFile = Join-Path $env:TEMP 'ctest_out.txt'
-                $errFile = Join-Path $env:TEMP 'ctest_err.txt'
-                Remove-Item $outFile,$errFile -ErrorAction SilentlyContinue
-                $proc = Start-Process -FilePath $ctestCmd.Source -ArgumentList @('-C','Debug','--output-on-failure') -NoNewWindow -Wait -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
-                $ctestOutput = ''
-                if (Test-Path $outFile) { $ctestOutput += Get-Content $outFile -Raw }
-                if (Test-Path $errFile) { $ctestOutput += "`n" + (Get-Content $errFile -Raw) }
-                Write-Host $ctestOutput
-            }
-            if ($ctestOutput -match "No tests were found") {
-                Write-Warning "CTests reported no registered tests. Suche nach Test-Executables als Fallback..."
-                $testExes = Get-ChildItem -Path $DebugDir -Recurse -File | Where-Object { ($_.Extension -ieq '.exe') -and ($_.Name -match '(?i)test') }
-                if ($testExes.Count -eq 0) {
-                    Write-Warning "Keine Test-Executables gefunden."
-                } else {
-                    foreach ($exe in $testExes) {
-                        Write-Host "Starte Test-Executable: $($exe.FullName)"
-                        Push-Location $exe.DirectoryName
-                        & $exe.FullName
-                        $code = $LASTEXITCODE
-                        if ($code -ne 0) {
-                            Write-Warning "Test $($exe.Name) endete mit Exit-Code $code"
-                        }
-                        Pop-Location
+
+        if ($updatedContent -cne $originalContent) {
+            [System.IO.File]::WriteAllText($file.FullName, $updatedContent, $asciiEncoding)
+        }
+    }
+}
+
+function Resolve-AppExecutablePath {
+    param(
+        [Parameter(Mandatory)]
+        [string]$BuildRoot,
+        [Parameter(Mandatory)]
+        [string]$ExecutableName
+    )
+
+    $candidateRelativePaths = @(
+        $ExecutableName,
+        (Join-Path 'bin' $ExecutableName),
+        (Join-Path 'bin' (Join-Path 'Debug' $ExecutableName)),
+        (Join-Path 'Debug' $ExecutableName)
+    )
+
+    foreach ($relativePath in $candidateRelativePaths) {
+        $candidate = Join-Path $BuildRoot $relativePath
+        if (Test-Path $candidate) {
+            return (Resolve-Path $candidate).Path
+        }
+    }
+
+    $foundExecutable = Get-ChildItem -Path $BuildRoot -Filter $ExecutableName -File -Recurse -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+    if ($foundExecutable) {
+        return $foundExecutable.FullName
+    }
+
+    return $null
+}
+
+$cmakeExePath = Resolve-PreferredTool -CommandName 'cmake.exe' -CandidatePaths @(
+    'C:\Program Files\CMake\bin\cmake.exe'
+)
+$ctestExePath = Resolve-PreferredTool -CommandName 'ctest.exe' -CandidatePaths @(
+    'C:\Program Files\CMake\bin\ctest.exe'
+)
+$clangClExePath = Resolve-PreferredTool -CommandName 'clang-cl.exe' -CandidatePaths @(
+    'C:\Program Files\LLVM\bin\clang-cl.exe',
+    (Join-Path $env:USERPROFILE 'scoop\apps\llvm\current\bin\clang-cl.exe')
+)
+
+Add-DirectoriesToPath @(
+    $DebugDir,
+    (Join-Path $DebugDir 'bin'),
+    $FuzzDir,
+    (Join-Path $FuzzDir 'bin'),
+    (Join-Path $ProjectRoot 'bin')
+)
+
+$context = New-BuildContext -Workspace $ProjectRoot -LogDir 'logs\windows' -StopOnError
+$currentCMakeShareDir = Get-CMakeShareDir -CMakeExePath $cmakeExePath
+
+if (-not $ctestExePath) {
+    throw "ctest.exe not found. Install CMake or add it to PATH before running this script."
+}
+
+if (-not $clangClExePath) {
+    Write-BuildLogWarning -Context $context -Message 'clang-cl.exe was not found on PATH or in the default LLVM install locations. Clang ASan runtime discovery may fail for fuzz tests.'
+}
+
+$WorkDir = $ProjectRoot
+$originalAsanOptions = $env:ASAN_OPTIONS
+
+Open-BuildLog -Context $context
+
+try {
+    Set-Location -Path $WorkDir
+
+    if (-not $SkipTests) {
+        Write-BuildLog -Context $context -Message "Running tests via CTest in $DebugDir..."
+        Update-CTestMetadataPaths -BuildRoot $DebugDir -WorkspaceRoot $ProjectRoot -CMakeShareDir $currentCMakeShareDir
+        Invoke-CtestDiscoveredTests -Context $context -BuildRoot $DebugDir -Configuration 'Debug' -RuntimeFlavor 'Clang'
+
+        if (-not $SkipFuzzTests) {
+            if (Test-Path $FuzzDir) {
+                Write-BuildLog -Context $context -Message "Running local fuzz executables in $FuzzDir..."
+
+                foreach ($fuzzExecutable in @('first_fuzz_test.exe', 'example_fuzz_test.exe')) {
+                    $resolvedFuzzExecutable = Resolve-TestExecutable -BuildRoot $FuzzDir -ExecutableName $fuzzExecutable
+                    if (-not $resolvedFuzzExecutable) {
+                        throw "Expected fuzz executable '$fuzzExecutable' was not found inside $FuzzDir."
+                    }
+
+                    $ranFuzzExecutable = Invoke-ManualTestExecutable -Context $context -BuildRoot $FuzzDir -ExecutableName $fuzzExecutable -RuntimeFlavor 'Clang'
+                    if (-not $ranFuzzExecutable) {
+                        throw "Fuzz executable '$fuzzExecutable' did not start successfully. Check the Clang ASan runtime setup."
                     }
                 }
             } else {
-                if ($LASTEXITCODE -ne 0) {
-                    throw "Tests failed with exit code $LASTEXITCODE. Aborting application launch."
-                }
+                Write-BuildLogWarning -Context $context -Message "Fuzz build directory '$FuzzDir' does not exist. Skipping fuzz executable run."
             }
         }
-    } finally {
-        Pop-Location
     }
-    
-    Write-Host "Starting $ExePath..."
-    Write-Host "Working Directory: $WorkDir"
 
-    # Force Vulkan to use the Proprietary AMD Driver instead of the buggy amdvlk open-source driver
-    $ProprietaryDriver = "C:\WINDOWS\System32\DriverStore\FileRepository\u0198974.inf_amd64_dcac9659486b668a\B025819\amd-vulkan64.json"
-    if (Test-Path $ProprietaryDriver) {
-        $env:VK_ICD_FILENAMES = $ProprietaryDriver
+    if ($SkipAppLaunch) {
+        Write-BuildLog -Context $context -Message 'Skipping application launch because -SkipAppLaunch was requested.'
+        return
     }
-    
-    # Also disable Vulkan validation layers if they cause intercepts
-    $env:VK_LAYER_PATH = ""
-    $env:VK_INSTANCE_LAYERS = ""
 
-    # Use minimal AddressSanitizer options to prevent interfering with AMD's internal allocations
-    $OldAsanOptions = $env:ASAN_OPTIONS
-    $env:ASAN_OPTIONS = "log_path=logs/asan.log:report_globals=0:windows_hook_rtl_allocators=false:$OldAsanOptions"
+    $ExePath = Resolve-AppExecutablePath -BuildRoot $DebugDir -ExecutableName $ExeName
+    if (-not $ExePath) {
+        throw "Executable '$ExeName' not found inside $DebugDir. Please run the 'build_clangcl_debug.ps1' script first."
+    }
 
-    try {
-        if ($ExeArgs) {
-            & $ExePath $ExeArgs
+    Write-BuildLog -Context $context -Message "Starting $ExePath..."
+    Write-BuildLog -Context $context -Message "Working Directory: $WorkDir"
+
+    # Force Vulkan to use the proprietary AMD driver instead of the AMDVLK open-source driver.
+    $proprietaryDriver = 'C:\WINDOWS\System32\DriverStore\FileRepository\u0198974.inf_amd64_dcac9659486b668a\B025819\amd-vulkan64.json'
+    if (Test-Path $proprietaryDriver) {
+        $env:VK_ICD_FILENAMES = $proprietaryDriver
+    }
+
+    $env:VK_LAYER_PATH = ''
+    $env:VK_INSTANCE_LAYERS = ''
+    $env:ASAN_OPTIONS = "log_path=logs/asan.log:report_globals=0:windows_hook_rtl_allocators=false:$originalAsanOptions"
+
+    if ($ExeArgs) {
+        & $ExePath $ExeArgs
+    } else {
+        & $ExePath
+    }
+
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -eq -1073740791) {
+        Write-Error "Vulkan validation layers are missing or VulkanSDK is not installed. Install it with 'winget install VulkanSDK'."
+
+        $vulkanSdkRoot = $null
+        if (Test-Path 'C:\VulkanSDK') {
+            $vulkanSdkRoot = (Get-ChildItem -Path 'C:\VulkanSDK' -Directory | Sort-Object Name -Descending | Select-Object -First 1).FullName
+        }
+
+        if ($null -ne $vulkanSdkRoot -and (Test-Path $vulkanSdkRoot)) {
+            $env:VULKAN_SDK = $vulkanSdkRoot
+            $vulkanBin = Join-Path $vulkanSdkRoot 'Bin'
+            $vulkanLib = Join-Path $vulkanSdkRoot 'Lib'
+            Add-DirectoryToPath $vulkanLib
+            Add-DirectoryToPath $vulkanBin
+            $env:VK_LAYER_PATH = $vulkanBin
+            Write-BuildLog -Context $context -Message 'VulkanSDK environment variables were updated. Run the script again.'
         } else {
-            & $ExePath
+            Write-BuildLogWarning -Context $context -Message 'VulkanSDK could not be detected automatically. Install it and run the script again.'
         }
-        $ExitCode = $LASTEXITCODE
-        if ($ExitCode -eq -1073740791) {
-            Write-Error "Vulkan-Validation-Layer-Fehler: Die Anwendung konnte nicht korrekt gestartet werden, weil Vulkan Validation Layers fehlen oder das VulkanSDK nicht installiert ist.\nBitte installiere das VulkanSDK mit 'winget install VulkanSDK'.\nDas Skript versucht, die Umgebungsvariablen automatisch zu setzen."
-            # Versuche, VulkanSDK zu finden und Umgebungsvariablen zu setzen
-            $VulkanSdkRoot = $null
-            if (Test-Path "C:\VulkanSDK") {
-                $VulkanSdkRoot = (Get-ChildItem -Path "C:\VulkanSDK" -Directory | Sort-Object Name -Descending | Select-Object -First 1).FullName
-            }
-            if ($null -ne $VulkanSdkRoot -and (Test-Path $VulkanSdkRoot)) {
-                $env:VULKAN_SDK = $VulkanSdkRoot
-                $VulkanBin = Join-Path $VulkanSdkRoot "Bin"
-                $VulkanLib = Join-Path $VulkanSdkRoot "Lib"
-                if ($env:PATH -notmatch [regex]::Escape($VulkanBin)) {
-                    $env:PATH = "$VulkanBin;$VulkanLib;$env:PATH"
-                }
-                $env:VK_LAYER_PATH = $VulkanBin
-                Write-Host "VulkanSDK-Umgebungsvariablen wurden gesetzt. Bitte führe das Skript erneut aus."
-            } else {
-                Write-Warning "VulkanSDK konnte nicht automatisch gefunden werden. Bitte installiere es manuell und starte das Skript erneut."
-            }
-        } elseif ($ExitCode -ne 0) {
-            Write-Warning "Process failed with exit code $ExitCode"
-        }
-    } finally {
-        if ($null -ne $OldAsanOptions) {
-            $env:ASAN_OPTIONS = $OldAsanOptions
-        } else {
-            Remove-Item Env:\ASAN_OPTIONS -ErrorAction SilentlyContinue
+    } elseif ($exitCode -ne 0) {
+        Write-BuildLogWarning -Context $context -Message "Process failed with exit code $exitCode"
     }
+} finally {
+    if ($null -ne $originalAsanOptions) {
+        $env:ASAN_OPTIONS = $originalAsanOptions
+    } else {
+        Remove-Item Env:\ASAN_OPTIONS -ErrorAction SilentlyContinue
+    }
+
+    Close-BuildLog -Context $context
 }

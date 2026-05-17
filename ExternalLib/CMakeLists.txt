@@ -13,6 +13,25 @@ function(_myproject_collect_targets_recursive dir out_var)
   set(${out_var} "${_targets}" PARENT_SCOPE)
 endfunction()
 
+function(_myproject_append_link_library target dependency)
+  if(NOT TARGET "${target}" OR NOT TARGET "${dependency}")
+    return()
+  endif()
+
+  get_target_property(_target_type "${target}" TYPE)
+  if(NOT _target_type MATCHES "^(STATIC_LIBRARY|SHARED_LIBRARY|MODULE_LIBRARY|OBJECT_LIBRARY|EXECUTABLE)$")
+    return()
+  endif()
+
+  get_target_property(_existing_link_libraries "${target}" LINK_LIBRARIES)
+  list(FIND _existing_link_libraries "${dependency}" _dependency_index)
+  if(_dependency_index EQUAL -1)
+    # Append directly to LINK_LIBRARIES so we can extend third-party targets
+    # regardless of whether they used the plain or keyword TLL signature.
+    set_property(TARGET "${target}" APPEND PROPERTY LINK_LIBRARIES "${dependency}")
+  endif()
+endfunction()
+
 set(ABSL_TAG 20260107.1)
 FetchContent_Declare(
   abseil-cpp
@@ -26,6 +45,14 @@ set(BUILD_TESTING OFF)
 FetchContent_MakeAvailable(abseil-cpp)
 set(BUILD_TESTING "${BUILD_TESTING_OLD}")
 
+if(WIN32 AND MSVC AND KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE)
+  add_library(kataglyphis_fuzztest_windows_asan INTERFACE)
+  myproject_enable_sanitizers(kataglyphis_fuzztest_windows_asan ON OFF OFF OFF OFF)
+
+  # Keep Windows STL annotation mode consistent across the external fuzz build.
+  add_compile_definitions(_DISABLE_VECTOR_ANNOTATION _DISABLE_STRING_ANNOTATION _DISABLE_OPTIONAL_ANNOTATION)
+endif()
+
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
    AND MSVC
    AND myproject_ENABLE_SANITIZER_ADDRESS)
@@ -37,6 +64,10 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
       get_target_property(_external_target_type "${_external_target}" TYPE)
       if(NOT _external_target_type STREQUAL "INTERFACE_LIBRARY")
         set_property(TARGET "${_external_target}" PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+
+        if(TARGET kataglyphis_fuzztest_windows_asan)
+          target_link_libraries("${_external_target}" PRIVATE kataglyphis_fuzztest_windows_asan)
+        endif()
       endif()
     endif()
   endforeach()
@@ -82,13 +113,53 @@ endif()
 
 add_subdirectory(GOOGLE_BENCHMARK)
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND BUILD_TESTING AND NOT(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo" ) AND NOT(CMAKE_BUILD_TYPE STREQUAL "Release"))
+if(BUILD_TESTING
+   AND NOT (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
+   AND NOT (CMAKE_BUILD_TYPE STREQUAL "Release"))
 
-  if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+  if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang"
+     AND (CMAKE_SYSTEM_NAME STREQUAL "Linux"
+          OR (WIN32 AND MSVC AND KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE)))
     set(RE2_INSTALL OFF)
+    set(ANTLR_BUILD_CPP_TESTS OFF CACHE BOOL "Disable vendored ANTLR runtime tests." FORCE)
+
     message("Adding Fuzztest")
 
     add_subdirectory(FUZZTEST)
+
+    if(WIN32 AND MSVC AND KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE)
+      if(TARGET kataglyphis_fuzztest_windows_asan)
+        foreach(_fuzztest_windows_asan_target IN ITEMS
+                antlr_frontend
+                backend
+                code_generation
+                generated_antlr_parser
+                grammar_domain_code_generator)
+          _myproject_append_link_library("${_fuzztest_windows_asan_target}" kataglyphis_fuzztest_windows_asan)
+        endforeach()
+
+        _myproject_collect_targets_recursive("${CMAKE_CURRENT_BINARY_DIR}" _external_targets)
+        foreach(_external_target IN LISTS _external_targets)
+          if(_external_target MATCHES "^fuzztest_")
+            _myproject_append_link_library("${_external_target}" kataglyphis_fuzztest_windows_asan)
+          endif()
+        endforeach()
+      endif()
+
+      if(TARGET re2 AND TARGET kataglyphis_fuzztest_windows_asan)
+        target_link_libraries(re2 PRIVATE kataglyphis_fuzztest_windows_asan)
+      endif()
+
+      foreach(_antlr_target IN ITEMS antlr4_static antlr4_shared)
+        if(TARGET "${_antlr_target}")
+          # Keep ANTLR on the same CRT/STL mode as the clang-cl fuzz build.
+          set_property(TARGET "${_antlr_target}" PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+
+          # ANTLR 4.13.2 misses <chrono> in ProfilingATNSimulator.cpp.
+          target_compile_options("${_antlr_target}" PRIVATE /FIchrono)
+        endif()
+      endforeach()
+    endif()
   endif()
 endif()
 

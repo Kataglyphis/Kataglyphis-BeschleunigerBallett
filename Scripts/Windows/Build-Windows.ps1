@@ -68,7 +68,6 @@ $presetMsvcDebug = Get-OrDefault $env:PRESET_MSVC_DEBUG (Get-ConfigValue -Config
 $presetMsvcRelease = Get-OrDefault $env:PRESET_MSVC_RELEASE (Get-ConfigValue -Config $config -Path 'Build.Presets.MsvcRelease')
 $presetClangDebug = Get-OrDefault $env:PRESET_CLANGCL_DEBUG (Get-ConfigValue -Config $config -Path 'Build.Presets.ClangClDebug')
 $presetClangDebugTsan = Get-OrDefault $env:PRESET_CLANGCL_DEBUG_TSAN (Get-ConfigValue -Config $config -Path 'Build.Presets.ClangClDebugTsan')
-$presetClangFuzz = Get-OrDefault $env:PRESET_CLANGCL_FUZZ (Get-ConfigValue -Config $config -Path 'Build.Presets.ClangClFuzz')
 $presetClangProfile = Get-OrDefault $env:CLANG_PROFILE_PRESET (Get-ConfigValue -Config $config -Path 'Build.Presets.ClangClProfile')
 $presetClangRelease = Get-OrDefault $env:PRESET_CLANGCL_RELEASE (Get-ConfigValue -Config $config -Path 'Build.Presets.ClangClRelease')
 
@@ -77,10 +76,7 @@ $selectedConfigurations = Get-SelectedConfigurations -Configurations $Configurat
 
 # If SkipBuild is requested, clear any selected build configurations so
 # configuration-specific configure/build steps are not executed. This keeps
-# non-build steps (formatting, tidy, etc.) running. However, packaging and
-# signing (which run as part of the clangcl-release step) are often desired
-# even when skipping build. If the Release build output directory already
-# exists we preserve 'clangcl-release' so packaging/signing still run.
+# non-build steps such as formatting running.
 if ($SkipBuild) {
   $selectedConfigurations.Clear()
 }
@@ -88,6 +84,45 @@ if ($SkipBuild) {
 function Test-ConfigurationSelected {
   param([Parameter(Mandatory)][string]$Name)
   return $selectedConfigurations.Contains($Name)
+}
+
+$script:clangClVersionLogged = $false
+
+function Invoke-ConfiguredBuild {
+  param(
+    [Parameter(Mandatory)][string]$BuildPath,
+    [Parameter(Mandatory)][string]$Preset,
+    [Parameter(Mandatory)][string]$Configuration
+  )
+
+  Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $BuildPath -Preset $Preset -Configuration $Configuration -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
+}
+
+function Invoke-ShaderPrecompile {
+  param([Parameter(Mandatory)][string]$BuildLabel)
+
+  $compileShadersScript = Join-Path $PSScriptRoot 'compile-shaders.ps1'
+  if (-not (Test-Path $compileShadersScript)) {
+    Write-BuildLogWarning -Context $context -Message "Shader compile script not found: $compileShadersScript"
+    return
+  }
+
+  Write-BuildLog -Context $context -Message "Precompiling shaders ($BuildLabel)"
+  & $compileShadersScript
+}
+
+function Assert-ClangClAvailable {
+  if ($script:clangClVersionLogged) {
+    return
+  }
+
+  $clangClCommand = Get-Command 'clang-cl.exe' -ErrorAction SilentlyContinue
+  if (-not $clangClCommand) {
+    throw 'clang-cl.exe not found on PATH. Install LLVM/Visual Studio Clang tools and run from a Developer PowerShell.'
+  }
+
+  Invoke-BuildExternal -Context $context -File $clangClCommand.Source -Parameters @('--version') | Out-Null
+  $script:clangClVersionLogged = $true
 }
 
 if ($buildPathClangTsan -eq $buildPathClang) {
@@ -107,11 +142,11 @@ try {
   try {
     # Prefer explicit script parameters passed on the command-line, fall back to
     # environment variables for CI compatibility.
-    $webdavHost = if (-not [string]::IsNullOrWhiteSpace($WebDavHostname)) { $WebDavHostname } else { $env:WEB_DAV_HOSTNAME }
-    $webdavUser = if (-not [string]::IsNullOrWhiteSpace($WebDavUsername)) { $WebDavUsername } else { $env:WEB_DAV_USERNAME }
-    $webdavPass = if (-not [string]::IsNullOrWhiteSpace($WebDavPassword)) { $WebDavPassword } else { $env:WEB_DAV_PASSWORD }
-    $webdavRemote = if (-not [string]::IsNullOrWhiteSpace($RemoteBasePath)) { $RemoteBasePath } else { $env:WEB_DAV_REMOTE_BASE_PATH }
-    $webdavLocal = if (-not [string]::IsNullOrWhiteSpace($LocalAssetsFolder)) { $LocalAssetsFolder } else { if ($env:WEB_DAV_LOCAL_BASE_PATH) { $env:WEB_DAV_LOCAL_BASE_PATH } else { $workspacePath } }
+    $webdavHost = if (-not [string]::IsNullOrWhiteSpace($WebDavHostname)) { $WebDavHostname } elseif (-not [string]::IsNullOrWhiteSpace($env:WEBDAV_HOSTNAME)) { $env:WEBDAV_HOSTNAME } else { $env:WEB_DAV_HOSTNAME }
+    $webdavUser = if (-not [string]::IsNullOrWhiteSpace($WebDavUsername)) { $WebDavUsername } elseif (-not [string]::IsNullOrWhiteSpace($env:WEBDAV_USERNAME)) { $env:WEBDAV_USERNAME } else { $env:WEB_DAV_USERNAME }
+    $webdavPass = if (-not [string]::IsNullOrWhiteSpace($WebDavPassword)) { $WebDavPassword } elseif (-not [string]::IsNullOrWhiteSpace($env:WEBDAV_PASSWORD)) { $env:WEBDAV_PASSWORD } else { $env:WEB_DAV_PASSWORD }
+    $webdavRemote = if (-not [string]::IsNullOrWhiteSpace($RemoteBasePath)) { $RemoteBasePath } elseif (-not [string]::IsNullOrWhiteSpace($env:REMOTE_BASE_PATH)) { $env:REMOTE_BASE_PATH } else { $env:WEB_DAV_REMOTE_BASE_PATH }
+    $webdavLocal = if (-not [string]::IsNullOrWhiteSpace($LocalAssetsFolder)) { $LocalAssetsFolder } elseif (-not [string]::IsNullOrWhiteSpace($env:WEBDAV_LOCAL_BASE_PATH)) { $env:WEBDAV_LOCAL_BASE_PATH } elseif (-not [string]::IsNullOrWhiteSpace($env:WEB_DAV_LOCAL_BASE_PATH)) { $env:WEB_DAV_LOCAL_BASE_PATH } else { $workspacePath }
 
     if (-not [string]::IsNullOrWhiteSpace($webdavHost) -and -not [string]::IsNullOrWhiteSpace($webdavUser) -and -not [string]::IsNullOrWhiteSpace($webdavPass) -and -not [string]::IsNullOrWhiteSpace($webdavRemote)) {
       Invoke-BuildOptional -Context $context -Name 'Early WebDAV .pfx download' -Script {
@@ -173,26 +208,14 @@ try {
   if (Test-ConfigurationSelected -Name 'msvc-release') {
     # Make MSVC release configure/build optional so failures here don't fail the whole orchestration
     Invoke-BuildOptional -Context $context -Name "Configure/Build: $presetMsvcRelease (MSVC Release - optional)" -Script {
-      # Precompile shaders for release builds to avoid runtime glslc dependency
-      $compileShadersScript = Join-Path $PSScriptRoot 'compile-shaders.ps1'
-      if (Test-Path $compileShadersScript) {
-        # Derive TargetEnv from VULKAN_VERSION if available, else fallback to vulkan1.4
-        $targetEnv = 'vulkan1.4'
-        if ($env:VULKAN_VERSION) {
-          if ($env:VULKAN_VERSION -match '^([0-9]+)\.([0-9]+)') { $targetEnv = "vulkan$($matches[1]).$($matches[2])" }
-        }
-        Write-BuildLog -Context $context -Message "Precompiling shaders (MSVC Release) -> targetEnv=$targetEnv"
-        & $compileShadersScript -TargetEnv $targetEnv
-      } else {
-        Write-BuildLogWarning -Context $context -Message "Shader compile script not found: $compileShadersScript"
-      }
-      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathMsvc -Preset $presetMsvcRelease -Configuration 'Release' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
+      Invoke-ShaderPrecompile -BuildLabel 'MSVC Release'
+      Invoke-ConfiguredBuild -BuildPath $buildPathMsvc -Preset $presetMsvcRelease -Configuration 'Release'
     }
   }
 
   if (Test-ConfigurationSelected -Name 'clangcl-debug') {
     Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangDebug" -Critical -Script {
-      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathClang -Preset $presetClangDebug -Configuration 'Debug' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
+      Invoke-ConfiguredBuild -BuildPath $buildPathClang -Preset $presetClangDebug -Configuration 'Debug'
     } | Out-Null
 
     if (-not $SkipTidy) {
@@ -210,14 +233,8 @@ try {
 
   if (Test-ConfigurationSelected -Name 'clangcl-tsan') {
     Invoke-BuildStep -Context $context -StepName 'Configure/Build: ClangCL-TSan' -Critical -Script {
-      $clangClCommand = Get-Command 'clang-cl.exe' -ErrorAction SilentlyContinue
-      if (-not $clangClCommand) {
-        throw 'clang-cl.exe not found on PATH. Install LLVM/Visual Studio Clang tools and run from a Developer PowerShell.'
-      }
-
-      Invoke-BuildExternal -Context $context -File $clangClCommand.Source -Parameters @('--version') | Out-Null
-
-      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathClangTsan -Preset $presetClangDebugTsan -Configuration 'Debug' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
+      Assert-ClangClAvailable
+      Invoke-ConfiguredBuild -BuildPath $buildPathClangTsan -Preset $presetClangDebugTsan -Configuration 'Debug'
 
       if (-not $SkipTests) {
         Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathClangTsan -Configuration 'Debug' -RuntimeFlavor 'Clang'
@@ -225,19 +242,9 @@ try {
     } | Out-Null
   }
 
-  if (Test-ConfigurationSelected -Name 'clangcl-fuzz') {
-    Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangFuzz" -Critical -Script {
-      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathClangFuzz -Preset $presetClangFuzz -Configuration 'Debug' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
-
-      if (-not $SkipTests) {
-        Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathClangFuzz -Configuration 'Debug' -RuntimeFlavor 'Clang'
-      }
-    } | Out-Null
-  }
-
   if (Test-ConfigurationSelected -Name 'clangcl-profile') {
     Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangProfile" -Critical -Script {
-      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathProfile -Preset $presetClangProfile -Configuration 'RelWithDebInfo' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
+      Invoke-ConfiguredBuild -BuildPath $buildPathProfile -Preset $presetClangProfile -Configuration 'RelWithDebInfo'
     } | Out-Null
 
     if (-not $SkipPerfTests) {
@@ -268,20 +275,8 @@ try {
         # the packaging step (assumes a previous Release build exists).
         Write-BuildLog -Context $context -Message 'Skipping Clang Release build due to -SkipBuild.'
       } else {
-        # Precompile shaders for release builds to avoid runtime glslc dependency
-        $compileShadersScript = Join-Path $PSScriptRoot 'compile-shaders.ps1'
-        if (Test-Path $compileShadersScript) {
-          # Derive TargetEnv from VULKAN_VERSION if available, else fallback to vulkan1.4
-          $targetEnv = 'vulkan1.4'
-          if ($env:VULKAN_VERSION) {
-            if ($env:VULKAN_VERSION -match '^([0-9]+)\.([0-9]+)') { $targetEnv = "vulkan$($matches[1]).$($matches[2])" }
-          }
-          Write-BuildLog -Context $context -Message "Precompiling shaders (Clang Release) -> targetEnv=$targetEnv"
-          & $compileShadersScript -TargetEnv $targetEnv
-        } else {
-          Write-BuildLogWarning -Context $context -Message "Shader compile script not found: $compileShadersScript"
-        }
-        Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathRelease -Preset $presetClangRelease -Configuration 'Release' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
+        Invoke-ShaderPrecompile -BuildLabel 'ClangCL Release'
+        Invoke-ConfiguredBuild -BuildPath $buildPathRelease -Preset $presetClangRelease -Configuration 'Release'
       }
 
       # Always attempt packaging when clangcl-release is selected; packaging
@@ -303,7 +298,7 @@ try {
     } | Out-Null
   }
 
-  if (-not $SkipMsix) {
+  if ((-not $SkipMsix) -and (Test-ConfigurationSelected -Name 'clangcl-release')) {
     Invoke-BuildOptional -Context $context -Name 'MSIX packaging' -Script {
       $makeappxPath = Resolve-WindowsSdkToolPath -ToolName 'makeappx.exe' -OverridePath $null
       if (-not $makeappxPath) {
@@ -370,6 +365,8 @@ try {
       # Attempt to sign the generated MSIX using the signing helper module.
       Invoke-MsixSign -Context $context -WorkspacePath $workspacePath -MsixOutPath $msixOutPath
     }
+  } elseif (-not $SkipMsix) {
+    Write-BuildLog -Context $context -Message 'DEBUG: MSIX packaging skipped because clangcl-release was not selected.'
   }
 
   Write-BuildLogSuccess -Context $context -Message 'Windows build orchestration completed.'

@@ -280,19 +280,16 @@
 			}
 		},
 		{
-			"name": "x64-ClangCL-Windows-RelWithDebInfo",
+			"name": "x64-ClangCL-Windows-Base",
+			"hidden": true,
 			"description": "Windows and Clang",
 			"generator": "Ninja",
-			"binaryDir": "${sourceDir}/build_release/",
-			"installDir": "${sourceDir}/build_release/",
 			"cacheVariables": {
 				"CMAKE_VERBOSE_MAKEFILE": "ON",
 				"CMAKE_C_COMPILER": "clang-cl",
 				"CMAKE_CXX_COMPILER": "clang-cl",
 				"RUST_FEATURES": "ON",
-				"CMAKE_BUILD_TYPE": "RelWithDebInfo",
-				"COMPILER_CACHE": "sccache",
-        "BUILD_TESTING": "FALSE"
+				"COMPILER_CACHE": "sccache"
 			},
 			"condition": {
 				"type": "equals",
@@ -300,116 +297,71 @@
 				"rhs": "Windows"
 			}
 		},
+		{
+			"name": "x64-ClangCL-Windows-Debug-Base",
+			"hidden": true,
+			"inherits": "x64-ClangCL-Windows-Base",
+			"cacheVariables": {
+				"CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+				"CMAKE_BUILD_TYPE": "Debug",
+				"BUILD_TESTING": "TRUE"
+			}
+		},
+		{
+			"name": "x64-ClangCL-Windows-RelWithDebInfo-Base",
+			"hidden": true,
+			"inherits": "x64-ClangCL-Windows-Base",
+			"binaryDir": "${sourceDir}/build_release/",
+			"installDir": "${sourceDir}/build_release/",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "RelWithDebInfo",
+				"BUILD_TESTING": "FALSE"
+			}
+		},
+		{
+			"name": "x64-ClangCL-Windows-Release-Base",
+			"hidden": true,
+			"inherits": "x64-ClangCL-Windows-Base",
+			"binaryDir": "${sourceDir}/build_release/",
+			"installDir": "${sourceDir}/build_release/",
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Release",
+				"BUILD_TESTING": "FALSE"
+			}
+		},
+		{
+			"name": "x64-ClangCL-Windows-RelWithDebInfo",
+			"inherits": "x64-ClangCL-Windows-RelWithDebInfo-Base"
+		},
     {
       "name": "x64-ClangCL-Windows-Profile",
-      "description": "Windows and Clang",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build_release/",
-      "installDir": "${sourceDir}/build_release/",
+	      "inherits": "x64-ClangCL-Windows-RelWithDebInfo-Base",
       "cacheVariables": {
-        "CMAKE_VERBOSE_MAKEFILE": "ON",
-        "CMAKE_C_COMPILER": "clang-cl",
-        "CMAKE_CXX_COMPILER": "clang-cl",
-        "RUST_FEATURES": "ON",
-				"CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "COMPILER_CACHE": "sccache",
-        "BUILD_TESTING": "TRUE"
-      },
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
-      }
+	        "BUILD_TESTING": "TRUE"
+	      }
     },
 		{
 			"name": "x64-ClangCL-Windows-Debug",
-			"description": "Windows and Clang",
-			"generator": "Ninja",
+			"inherits": "x64-ClangCL-Windows-Debug-Base",
 			"binaryDir": "${sourceDir}/build-clangcl-debug/",
 			"installDir": "${sourceDir}/build-clangcl-debug/",
 			"cacheVariables": {
-				"CMAKE_VERBOSE_MAKEFILE": "ON",
-				"CMAKE_C_COMPILER": "clang-cl",
-				"CMAKE_CXX_COMPILER": "clang-cl",
-				"CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-				"RUST_FEATURES": "ON",
-				"CMAKE_BUILD_TYPE": "Debug",
-				"COMPILER_CACHE": "sccache",
-				"BUILD_TESTING": "TRUE",
-				"KATAGLYPHIS_ENABLE_GTEST_DISCOVERY": "OFF"
-			},
-			"condition": {
-				"type": "equals",
-				"lhs": "${hostSystemName}",
-				"rhs": "Windows"
+				"KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE": "ON"
 			}
 		},
 		{
 			"name": "x64-ClangCL-Windows-Debug-TSan",
+			"inherits": "x64-ClangCL-Windows-Debug-Base",
 			"description": "Windows and Clang (ThreadSanitizer)",
-			"generator": "Ninja",
 			"binaryDir": "${sourceDir}/build-clangcl-tsan/",
 			"installDir": "${sourceDir}/build-clangcl-tsan/",
 			"cacheVariables": {
-				"CMAKE_VERBOSE_MAKEFILE": "ON",
-				"CMAKE_C_COMPILER": "clang-cl",
-				"CMAKE_CXX_COMPILER": "clang-cl",
-				"CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-				"RUST_FEATURES": "ON",
-				"CMAKE_BUILD_TYPE": "Debug",
-				"COMPILER_CACHE": "sccache",
-				"BUILD_TESTING": "TRUE",
 				"USE_THREAD_SANITIZER": "ON"
-			},
-			"condition": {
-				"type": "equals",
-				"lhs": "${hostSystemName}",
-				"rhs": "Windows"
-			}
-		},
-		{
-			"name": "x64-ClangCL-Windows-Debug-Fuzz",
-			"description": "Windows and Clang (Fuzz)",
-			"generator": "Ninja",
-			"binaryDir": "${sourceDir}/build-clangcl-fuzz/",
-			"installDir": "${sourceDir}/build-clangcl-fuzz/",
-			"cacheVariables": {
-				"CMAKE_VERBOSE_MAKEFILE": "ON",
-				"CMAKE_C_COMPILER": "clang-cl",
-				"CMAKE_CXX_COMPILER": "clang-cl",
-				"CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-				"RUST_FEATURES": "ON",
-				"CMAKE_BUILD_TYPE": "Debug",
-				"COMPILER_CACHE": "sccache",
-				"BUILD_TESTING": "TRUE",
-				"KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE": "ON"
-			},
-			"condition": {
-				"type": "equals",
-				"lhs": "${hostSystemName}",
-				"rhs": "Windows"
 			}
 		},
 		{
 			"name": "x64-ClangCL-Windows-Release",
-			"description": "Windows and Clang",
-			"generator": "Ninja",
-			"binaryDir": "${sourceDir}/build_release/",
-			"installDir": "${sourceDir}/build_release/",
-			"cacheVariables": {
-				"CMAKE_VERBOSE_MAKEFILE": "ON",
-				"CMAKE_C_COMPILER": "clang-cl",
-				"CMAKE_CXX_COMPILER": "clang-cl",
-				"RUST_FEATURES": "ON",
-				"COMPILER_CACHE": "sccache",
-				"CMAKE_BUILD_TYPE": "Release",
-        "BUILD_TESTING": "FALSE"
-			},
-			"condition": {
-				"type": "equals",
-				"lhs": "${hostSystemName}",
-				"rhs": "Windows"
-			}
+			"inherits": "x64-ClangCL-Windows-Release-Base"
 		},
 		{
 			"name": "x64-Clang-Windows-RelWithDebInfo",
@@ -563,8 +515,25 @@
 			"configurePreset": "x64-Clang-Windows-Profile"
 		},
 		{
+			"name": "x64-ClangCL-Windows-Build",
+			"hidden": true,
+			"jobs": 0
+		},
+		{
+			"name": "x64-ClangCL-Windows-Build-Debug",
+			"hidden": true,
+			"inherits": "x64-ClangCL-Windows-Build",
+			"configuration": "Debug"
+		},
+		{
+			"name": "x64-ClangCL-Windows-Build-Release",
+			"hidden": true,
+			"inherits": "x64-ClangCL-Windows-Build",
+			"configuration": "Release"
+		},
+		{
 			"name": "x64-ClangCL-Windows-Profile",
-			"jobs": 0,
+			"inherits": "x64-ClangCL-Windows-Build",
 			"configurePreset": "x64-ClangCL-Windows-Profile"
 		},
 		{
@@ -591,29 +560,20 @@
 			"configurePreset": "x64-Clang-Windows-Release",
 			"configuration": "Release"
 		},
-    {
-      "name": "x64-ClangCL-Windows-Debug",
-      "jobs": 0,
-      "configurePreset": "x64-ClangCL-Windows-Debug",
-      "configuration": "Debug"
-    },
 		{
-			"name": "x64-ClangCL-Windows-Debug-TSan",
-			"jobs": 0,
-			"configurePreset": "x64-ClangCL-Windows-Debug-TSan",
-			"configuration": "Debug"
+			"name": "x64-ClangCL-Windows-Debug",
+			"inherits": "x64-ClangCL-Windows-Build-Debug",
+			"configurePreset": "x64-ClangCL-Windows-Debug"
 		},
 		{
-			"name": "x64-ClangCL-Windows-Debug-Fuzz",
-			"jobs": 0,
-			"configurePreset": "x64-ClangCL-Windows-Debug-Fuzz",
-			"configuration": "Debug"
+			"name": "x64-ClangCL-Windows-Debug-TSan",
+			"inherits": "x64-ClangCL-Windows-Build-Debug",
+			"configurePreset": "x64-ClangCL-Windows-Debug-TSan"
 		},
     {
       "name": "x64-ClangCL-Windows-Release",
-      "jobs": 0,
-      "configurePreset": "x64-ClangCL-Windows-Release",
-      "configuration": "Release"
+	      "inherits": "x64-ClangCL-Windows-Build-Release",
+	      "configurePreset": "x64-ClangCL-Windows-Release"
     }
 	],
   "testPresets": [
