@@ -7,6 +7,7 @@ param (
     [string]$ExeName = "GraphicsEngine.exe",
     [switch]$SkipTests,
     [switch]$SkipFuzzTests,
+    [switch]$RunVulkanIntegrationTest,
     [switch]$SkipAppLaunch,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$ExeArgs
@@ -30,10 +31,10 @@ function Add-DirectoryToPath {
         return
     }
 
+    $resolvedDirectory = (Resolve-Path $Directory).Path
     $currentEntries = @($env:PATH -split ';' | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    if ($currentEntries -notcontains $Directory) {
-        $env:PATH = "$Directory;$env:PATH"
-    }
+    $remainingEntries = @($currentEntries | Where-Object { $_ -ne $resolvedDirectory })
+    $env:PATH = (@($resolvedDirectory) + $remainingEntries) -join ';'
 }
 
 function Add-DirectoriesToPath {
@@ -209,7 +210,13 @@ try {
     if (-not $SkipTests) {
         Write-BuildLog -Context $context -Message "Running tests via CTest in $DebugDir..."
         Update-CTestMetadataPaths -BuildRoot $DebugDir -WorkspaceRoot $ProjectRoot -CMakeShareDir $currentCMakeShareDir
-        Invoke-CtestDiscoveredTests -Context $context -BuildRoot $DebugDir -Configuration 'Debug' -RuntimeFlavor 'Clang'
+        $excludeRegex = @()
+        if (-not $RunVulkanIntegrationTest) {
+            $excludeRegex += '^Integration\.VulkanEngine$'
+            Write-BuildLogWarning -Context $context -Message 'Skipping Integration.VulkanEngine in the local host runner. Use -RunVulkanIntegrationTest to include it explicitly.'
+        }
+
+        Invoke-CtestDiscoveredTests -Context $context -BuildRoot $DebugDir -Configuration 'Debug' -ExcludeRegex $excludeRegex -RuntimeFlavor 'Clang'
 
         if (-not $SkipFuzzTests) {
             if (Test-Path $FuzzDir) {

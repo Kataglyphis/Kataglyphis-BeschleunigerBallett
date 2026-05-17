@@ -32,6 +32,156 @@ function(_myproject_append_link_library target dependency)
   endif()
 endfunction()
 
+function(_myproject_add_system_interface_library target)
+  add_library(${target} INTERFACE)
+  target_include_directories(${target} SYSTEM INTERFACE ${ARGN})
+endfunction()
+
+function(_myproject_set_cache_bool variable value description)
+  set(${variable} ${value} CACHE BOOL "${description}")
+endfunction()
+
+function(_myproject_force_cache_bool variable value description)
+  set(${variable} ${value} CACHE BOOL "${description}" FORCE)
+endfunction()
+
+function(_myproject_force_cache_string variable value description)
+  set(${variable} "${value}" CACHE STRING "${description}" FORCE)
+endfunction()
+
+function(_myproject_collect_external_targets out_var)
+  _myproject_collect_targets_recursive("${CMAKE_CURRENT_BINARY_DIR}" _external_targets)
+  set(${out_var} "${_external_targets}" PARENT_SCOPE)
+endfunction()
+
+function(_myproject_set_msvc_runtime_if_linkable target runtime_library)
+  if(NOT TARGET "${target}")
+    return()
+  endif()
+
+  get_target_property(_target_type "${target}" TYPE)
+  if(_target_type STREQUAL "INTERFACE_LIBRARY")
+    return()
+  endif()
+
+  set_property(TARGET "${target}" PROPERTY MSVC_RUNTIME_LIBRARY "${runtime_library}")
+endfunction()
+
+function(_myproject_append_link_library_to_targets dependency)
+  if(NOT TARGET "${dependency}")
+    return()
+  endif()
+
+  foreach(_target IN LISTS ARGN)
+    _myproject_append_link_library("${_target}" "${dependency}")
+  endforeach()
+endfunction()
+
+function(_myproject_append_link_library_to_matching_targets dependency target_regex)
+  if(NOT TARGET "${dependency}")
+    return()
+  endif()
+
+  _myproject_collect_external_targets(_external_targets)
+  foreach(_external_target IN LISTS _external_targets)
+    if(_external_target MATCHES "${target_regex}")
+      _myproject_append_link_library("${_external_target}" "${dependency}")
+    endif()
+  endforeach()
+endfunction()
+
+function(_myproject_configure_windows_antlr_target target)
+  if(NOT TARGET "${target}")
+    return()
+  endif()
+
+  _myproject_set_msvc_runtime_if_linkable("${target}" "MultiThreadedDLL")
+  # ANTLR 4.13.2 misses <chrono> in ProfilingATNSimulator.cpp.
+  target_compile_options("${target}" PRIVATE /FIchrono)
+endfunction()
+
+function(_myproject_find_or_install_cxxbridge out_var)
+  find_program(_myproject_cxxbridge cxxbridge PATHS "$ENV{HOME}/.cargo/bin/")
+  if(NOT _myproject_cxxbridge OR _myproject_cxxbridge MATCHES "-NOTFOUND$")
+    message("Could not find cxxbridge, trying to install with `cargo install cxxbridge-cmd'")
+    find_program(_myproject_cargo cargo PATHS "$ENV{HOME}/.cargo/bin/")
+    if(NOT _myproject_cargo OR _myproject_cargo MATCHES "-NOTFOUND$")
+      message(FATAL_ERROR "Requires cargo available in path, install via rustup https://rustup.rs/")
+    endif()
+    execute_process(COMMAND ${_myproject_cargo} install cxxbridge-cmd)
+    find_program(_myproject_cxxbridge cxxbridge PATHS "$ENV{HOME}/.cargo/bin/")
+  endif()
+
+  set(${out_var} "${_myproject_cxxbridge}" PARENT_SCOPE)
+endfunction()
+
+function(_myproject_resolve_kompute_vulkan_version out_var)
+  if(DEFINED Vulkan_VERSION)
+    set(_myproject_kompute_vulkan_version "${Vulkan_VERSION}")
+  elseif(DEFINED VULKAN_VERSION_MAJOR AND DEFINED VULKAN_VERSION_MINOR AND DEFINED VULKAN_VERSION_PATCH)
+    set(_myproject_kompute_vulkan_version "${VULKAN_VERSION_MAJOR}.${VULKAN_VERSION_MINOR}.${VULKAN_VERSION_PATCH}")
+  elseif(DEFINED Vulkan_VERSION_MAJOR AND DEFINED Vulkan_VERSION_MINOR AND DEFINED Vulkan_VERSION_PATCH)
+    set(_myproject_kompute_vulkan_version "${Vulkan_VERSION_MAJOR}.${Vulkan_VERSION_MINOR}.${Vulkan_VERSION_PATCH}")
+  else()
+    set(_myproject_kompute_vulkan_version "1.4.328.1")
+  endif()
+
+  set(${out_var} "${_myproject_kompute_vulkan_version}" PARENT_SCOPE)
+endfunction()
+
+function(_myproject_resolve_kompute_vulkan_header_tag out_var kompute_vulkan_version)
+  string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" _myproject_kompute_vulkan_semver "${kompute_vulkan_version}")
+  if(_myproject_kompute_vulkan_semver)
+    set(_myproject_kompute_header_tag "v${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
+  else()
+    set(_myproject_kompute_header_tag "v1.3.231")
+  endif()
+
+  set(${out_var} "${_myproject_kompute_header_tag}" PARENT_SCOPE)
+endfunction()
+
+macro(_myproject_configure_kompute_vulkan)
+  set(KOMPUTE_OPT_BUILD_EXAMPLES OFF)
+  set(KOMPUTE_OPT_BUILD_TESTS OFF)
+
+  # Determine Vulkan version dynamically, falling back to the previous constant if nothing is detected.
+  set(KOMPUTE_OPT_USE_VULKAN_VERSION "" CACHE STRING "Override the Vulkan version Kompute requests.")
+  if(KOMPUTE_OPT_USE_VULKAN_VERSION STREQUAL "")
+    _myproject_resolve_kompute_vulkan_version(_myproject_kompute_vulkan_version)
+    set(KOMPUTE_OPT_USE_VULKAN_VERSION "${_myproject_kompute_vulkan_version}")
+  else()
+    message(STATUS "Kompute Vulkan version overridden to ${KOMPUTE_OPT_USE_VULKAN_VERSION}")
+  endif()
+
+  set(KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG_OVERRIDE ""
+      CACHE STRING "Optional manual override for the built-in Vulkan-Headers tag Kompute uses (for example v1.4.328).")
+
+  if(KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG_OVERRIDE STREQUAL "")
+    _myproject_resolve_kompute_vulkan_header_tag(_myproject_kompute_header_tag "${KOMPUTE_OPT_USE_VULKAN_VERSION}")
+    _myproject_force_cache_string(
+      KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG
+      "${_myproject_kompute_header_tag}"
+      "Resolved Vulkan-Headers tag Kompute uses.")
+    message(STATUS "Kompute Vulkan-Headers tag set from detected Vulkan version: ${KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG}")
+  else()
+    _myproject_force_cache_string(
+      KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG
+      "${KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG_OVERRIDE}"
+      "Resolved Vulkan-Headers tag Kompute uses.")
+    message(STATUS "Kompute Vulkan-Headers tag overridden to ${KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG}")
+  endif()
+
+  if(TARGET Vulkan::Headers)
+    _myproject_force_cache_bool(KOMPUTE_OPT_USE_BUILT_IN_VULKAN_HEADER OFF "Use Vulkan headers from parent project if already provided.")
+    message(STATUS "Using existing Vulkan::Headers target from parent project; disabling Kompute built-in Vulkan-Headers.")
+  endif()
+
+  set(KOMPUTE_OPT_DISABLE_VULKAN_VERSION_CHECK ON)
+
+  unset(_myproject_kompute_header_tag)
+  unset(_myproject_kompute_vulkan_version)
+endmacro()
+
 set(ABSL_TAG 20260107.1)
 FetchContent_Declare(
   abseil-cpp
@@ -45,7 +195,12 @@ set(BUILD_TESTING OFF)
 FetchContent_MakeAvailable(abseil-cpp)
 set(BUILD_TESTING "${BUILD_TESTING_OLD}")
 
+set(_MYPROJECT_WINDOWS_FUZZTEST_ASAN OFF)
 if(WIN32 AND MSVC AND KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE)
+  set(_MYPROJECT_WINDOWS_FUZZTEST_ASAN ON)
+endif()
+
+if(_MYPROJECT_WINDOWS_FUZZTEST_ASAN)
   add_library(kataglyphis_fuzztest_windows_asan INTERFACE)
   myproject_enable_sanitizers(kataglyphis_fuzztest_windows_asan ON OFF OFF OFF OFF)
 
@@ -58,16 +213,13 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
    AND myproject_ENABLE_SANITIZER_ADDRESS)
   # Abseil overrides the MSVC runtime selection in its own CMakeLists.
   # Force it back to /MD so its STL mode matches the rest of the Windows ASan build.
-  _myproject_collect_targets_recursive("${CMAKE_CURRENT_BINARY_DIR}" _external_targets)
+  _myproject_collect_external_targets(_external_targets)
   foreach(_external_target IN LISTS _external_targets)
     if(_external_target MATCHES "^absl_")
-      get_target_property(_external_target_type "${_external_target}" TYPE)
-      if(NOT _external_target_type STREQUAL "INTERFACE_LIBRARY")
-        set_property(TARGET "${_external_target}" PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+      _myproject_set_msvc_runtime_if_linkable("${_external_target}" "MultiThreadedDLL")
 
-        if(TARGET kataglyphis_fuzztest_windows_asan)
-          target_link_libraries("${_external_target}" PRIVATE kataglyphis_fuzztest_windows_asan)
-        endif()
+      if(TARGET kataglyphis_fuzztest_windows_asan)
+        _myproject_append_link_library("${_external_target}" kataglyphis_fuzztest_windows_asan)
       endif()
     endif()
   endforeach()
@@ -79,36 +231,19 @@ if(BUILD_TESTING)
                        URL https://github.com/google/googletest/archive/56efe3983185e3f37e43415d1afa97e3860f187f.zip)
 
   # For Windows: Prevent overriding the parent project's compiler/linker settings
-  set(gtest_force_shared_crt
-      ON
-      CACHE BOOL "" FORCE)
+  _myproject_force_cache_bool(gtest_force_shared_crt ON "")
   FetchContent_MakeAvailable(googletest)
 endif()
 
-# We will not need to test benchmark lib itself.
-set(BENCHMARK_ENABLE_TESTING
-    OFF
-    CACHE BOOL "Disable benchmark testing as we don't need it.")
-# We will not need to test benchmark lib itself.
-set(BENCHMARK_INSTALL_DOCS
-    OFF
-    CACHE BOOL "Disable benchmark testing as we don't need it.")
-# We will not need to install benchmark since we link it statically.
-set(BENCHMARK_ENABLE_INSTALL
-    OFF
-    CACHE BOOL "Disable benchmark install to avoid overwriting vendor install.")
-set(BENCHMARK_USE_BUNDLED_GTEST
-    OFF
-    CACHE BOOL "Disable the bundled GTest usage.")
+_myproject_set_cache_bool(BENCHMARK_ENABLE_TESTING OFF "Disable benchmark testing as we don't need it.")
+_myproject_set_cache_bool(BENCHMARK_INSTALL_DOCS OFF "Disable benchmark testing as we don't need it.")
+_myproject_set_cache_bool(BENCHMARK_ENABLE_INSTALL OFF "Disable benchmark install to avoid overwriting vendor install.")
+_myproject_set_cache_bool(BENCHMARK_USE_BUNDLED_GTEST OFF "Disable the bundled GTest usage.")
 
 if(myproject_DISABLE_EXCEPTIONS)
-  set(BENCHMARK_ENABLE_EXCEPTIONS
-    OFF
-    CACHE BOOL "Disable benchmark exceptions to match project configuration." FORCE)
+  _myproject_force_cache_bool(BENCHMARK_ENABLE_EXCEPTIONS OFF "Disable benchmark exceptions to match project configuration.")
 else()
-  set(BENCHMARK_ENABLE_EXCEPTIONS
-    ON
-    CACHE BOOL "Enable benchmark exceptions to match project configuration." FORCE)
+  _myproject_force_cache_bool(BENCHMARK_ENABLE_EXCEPTIONS ON "Enable benchmark exceptions to match project configuration.")
 endif()
 
 add_subdirectory(GOOGLE_BENCHMARK)
@@ -118,46 +253,31 @@ if(BUILD_TESTING
    AND NOT (CMAKE_BUILD_TYPE STREQUAL "Release"))
 
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang"
-     AND (CMAKE_SYSTEM_NAME STREQUAL "Linux"
-          OR (WIN32 AND MSVC AND KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE)))
+     AND (CMAKE_SYSTEM_NAME STREQUAL "Linux" OR _MYPROJECT_WINDOWS_FUZZTEST_ASAN))
     set(RE2_INSTALL OFF)
-    set(ANTLR_BUILD_CPP_TESTS OFF CACHE BOOL "Disable vendored ANTLR runtime tests." FORCE)
+    _myproject_force_cache_bool(ANTLR_BUILD_CPP_TESTS OFF "Disable vendored ANTLR runtime tests.")
 
     message("Adding Fuzztest")
 
     add_subdirectory(FUZZTEST)
 
-    if(WIN32 AND MSVC AND KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE)
-      if(TARGET kataglyphis_fuzztest_windows_asan)
-        foreach(_fuzztest_windows_asan_target IN ITEMS
-                antlr_frontend
-                backend
-                code_generation
-                generated_antlr_parser
-                grammar_domain_code_generator)
-          _myproject_append_link_library("${_fuzztest_windows_asan_target}" kataglyphis_fuzztest_windows_asan)
-        endforeach()
+    if(_MYPROJECT_WINDOWS_FUZZTEST_ASAN)
+      _myproject_append_link_library_to_targets(
+        kataglyphis_fuzztest_windows_asan
+        antlr_frontend
+        backend
+        code_generation
+        generated_antlr_parser
+        grammar_domain_code_generator)
 
-        _myproject_collect_targets_recursive("${CMAKE_CURRENT_BINARY_DIR}" _external_targets)
-        foreach(_external_target IN LISTS _external_targets)
-          if(_external_target MATCHES "^fuzztest_")
-            _myproject_append_link_library("${_external_target}" kataglyphis_fuzztest_windows_asan)
-          endif()
-        endforeach()
-      endif()
+      _myproject_append_link_library_to_matching_targets(kataglyphis_fuzztest_windows_asan "^fuzztest_")
 
       if(TARGET re2 AND TARGET kataglyphis_fuzztest_windows_asan)
         target_link_libraries(re2 PRIVATE kataglyphis_fuzztest_windows_asan)
       endif()
 
       foreach(_antlr_target IN ITEMS antlr4_static antlr4_shared)
-        if(TARGET "${_antlr_target}")
-          # Keep ANTLR on the same CRT/STL mode as the clang-cl fuzz build.
-          set_property(TARGET "${_antlr_target}" PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
-
-          # ANTLR 4.13.2 misses <chrono> in ProfilingATNSimulator.cpp.
-          target_compile_options("${_antlr_target}" PRIVATE /FIchrono)
-        endif()
+        _myproject_configure_windows_antlr_target("${_antlr_target}")
       endforeach()
     endif()
   endif()
@@ -170,49 +290,28 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(GSL)
 
 # set all glfw dependencies
-set(GLFW_BUILD_DOCS
-    OFF
-    CACHE BOOL "" FORCE)
-set(GLFW_BUILD_TESTS
-    OFF
-    CACHE BOOL "" FORCE)
-set(GLFW_BUILD_EXAMPLES
-    OFF
-    CACHE BOOL "" FORCE)
+_myproject_force_cache_bool(GLFW_BUILD_DOCS OFF "")
+_myproject_force_cache_bool(GLFW_BUILD_TESTS OFF "")
+_myproject_force_cache_bool(GLFW_BUILD_EXAMPLES OFF "")
 
-add_library(tinyobjloader INTERFACE)
-# this helps us so no error messages for third party will be generated:
-# https://stackoverflow.com/questions/49591804/clang-tidy-cmake-exclude-file-from-check
-target_include_directories(tinyobjloader SYSTEM INTERFACE TINY_OBJ_LOADER)
-
-add_library(stb INTERFACE)
-target_include_directories(stb SYSTEM INTERFACE STB)
-
-add_library(imgui INTERFACE)
-target_include_directories(imgui SYSTEM INTERFACE IMGUI IMGUI/backends)
-
-add_library(glm INTERFACE)
-target_include_directories(glm SYSTEM INTERFACE GLM)
-
-add_library(vma INTERFACE)
-target_include_directories(vma SYSTEM INTERFACE VULKAN_MEMORY_ALLOCATOR/include)
-
-add_library(ktx INTERFACE)
-target_include_directories(ktx SYSTEM INTERFACE KTX/include KTX/other_include/KHR)
+# These wrappers keep third-party headers as SYSTEM includes so our analysis and
+# warning settings stay focused on project code.
+_myproject_add_system_interface_library(tinyobjloader TINY_OBJ_LOADER)
+_myproject_add_system_interface_library(stb STB)
+_myproject_add_system_interface_library(imgui IMGUI IMGUI/backends)
+_myproject_add_system_interface_library(glm GLM)
+_myproject_add_system_interface_library(vma VULKAN_MEMORY_ALLOCATOR/include)
+_myproject_add_system_interface_library(ktx KTX/include KTX/other_include/KHR)
 
 add_subdirectory(GLFW)
 
-set(SPDLOG_NO_EXCEPTIONS
-    ON
-    CACHE BOOL "Disable SPDLOG exceptions (required when exceptions are disabled globally)" FORCE)
+_myproject_force_cache_bool(SPDLOG_NO_EXCEPTIONS ON "Disable SPDLOG exceptions (required when exceptions are disabled globally)")
 
 add_subdirectory(SPDLOG)
 
 add_subdirectory(NLOHMANN_JSON)
 
-set(TOMLPLUSPLUS_BUILD_MODULES
-    ON
-    CACHE BOOL "Enable tomlplusplus C++ module support" FORCE)
+_myproject_force_cache_bool(TOMLPLUSPLUS_BUILD_MODULES ON "Enable tomlplusplus C++ module support")
 add_subdirectory(tomlplusplus)
 
 # https://stackoverflow.com/questions/49591804/clang-tidy-cmake-exclude-file-from-check/49591908#49591908
@@ -245,61 +344,10 @@ if(RUST_FEATURES)
     GIT_TAG master)
   FetchContent_MakeAvailable(Corrosion)
 
-  find_program(CXXBRIDGE cxxbridge PATHS "$ENV{HOME}/.cargo/bin/")
-  if(CXXBRIDGE STREQUAL "CXXBRIDGE-NOTFOUND")
-    message("Could not find cxxbridge, trying to install with `cargo install cxxbridge-cmd'")
-    find_program(CARGO cargo PATHS "$ENV{HOME}/.cargo/bin/")
-    if(CARGO STREQUAL "CARGO-NOTFOUND")
-      message(FATAL_ERROR "Requires cargo available in path, install via rustup https://rustup.rs/")
-    endif()
-    execute_process(COMMAND ${CARGO} install cxxbridge-cmd)
-    find_program(CXXBRIDGE cxxbridge PATHS "$ENV{HOME}/.cargo/bin/")
-  endif()
+  _myproject_find_or_install_cxxbridge(CXXBRIDGE)
 endif()
 
-set(KOMPUTE_OPT_BUILD_EXAMPLES OFF)
-set(KOMPUTE_OPT_BUILD_TESTS OFF)
-
-# Determine Vulkan version dynamically, falling back to the previous constant if nothing is detected.
-set(KOMPUTE_OPT_USE_VULKAN_VERSION "" CACHE STRING "Override the Vulkan version Kompute requests.")
-if(KOMPUTE_OPT_USE_VULKAN_VERSION STREQUAL "")
-  if(DEFINED Vulkan_VERSION)
-    set(KOMPUTE_OPT_USE_VULKAN_VERSION "${Vulkan_VERSION}")
-  elseif(DEFINED VULKAN_VERSION_MAJOR AND DEFINED VULKAN_VERSION_MINOR AND DEFINED VULKAN_VERSION_PATCH)
-    set(KOMPUTE_OPT_USE_VULKAN_VERSION "${VULKAN_VERSION_MAJOR}.${VULKAN_VERSION_MINOR}.${VULKAN_VERSION_PATCH}")
-  elseif(DEFINED Vulkan_VERSION_MAJOR AND DEFINED Vulkan_VERSION_MINOR AND DEFINED Vulkan_VERSION_PATCH)
-    set(KOMPUTE_OPT_USE_VULKAN_VERSION "${Vulkan_VERSION_MAJOR}.${Vulkan_VERSION_MINOR}.${Vulkan_VERSION_PATCH}")
-  else()
-    set(KOMPUTE_OPT_USE_VULKAN_VERSION "1.4.328.1")
-  endif()
-else()
-  message(STATUS "Kompute Vulkan version overridden to ${KOMPUTE_OPT_USE_VULKAN_VERSION}")
-endif()
-
-set(KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG_OVERRIDE ""
-    CACHE STRING "Optional manual override for the built-in Vulkan-Headers tag Kompute uses (for example v1.4.328).")
-
-string(REGEX MATCH "^([0-9]+)\\.([0-9]+)\\.([0-9]+)" _kompute_vulkan_semver "${KOMPUTE_OPT_USE_VULKAN_VERSION}")
-if(_kompute_vulkan_semver)
-  set(_kompute_default_header_tag "v${CMAKE_MATCH_1}.${CMAKE_MATCH_2}.${CMAKE_MATCH_3}")
-else()
-  set(_kompute_default_header_tag "v1.3.231")
-endif()
-
-if(KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG_OVERRIDE STREQUAL "")
-  set(KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG "${_kompute_default_header_tag}" CACHE STRING "Resolved Vulkan-Headers tag Kompute uses." FORCE)
-  message(STATUS "Kompute Vulkan-Headers tag set from detected Vulkan version: ${KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG}")
-else()
-  set(KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG "${KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG_OVERRIDE}" CACHE STRING "Resolved Vulkan-Headers tag Kompute uses." FORCE)
-  message(STATUS "Kompute Vulkan-Headers tag overridden to ${KOMPUTE_OPT_BUILT_IN_VULKAN_HEADER_TAG}")
-endif()
-
-if(TARGET Vulkan::Headers)
-  set(KOMPUTE_OPT_USE_BUILT_IN_VULKAN_HEADER OFF CACHE BOOL "Use Vulkan headers from parent project if already provided." FORCE)
-  message(STATUS "Using existing Vulkan::Headers target from parent project; disabling Kompute built-in Vulkan-Headers.")
-endif()
-
-set(KOMPUTE_OPT_DISABLE_VULKAN_VERSION_CHECK ON)
+_myproject_configure_kompute_vulkan()
 
 if(WIN32)
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)

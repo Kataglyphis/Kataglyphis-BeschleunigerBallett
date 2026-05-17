@@ -3,19 +3,43 @@
     WorkspaceRootEnv = 'WORKSPACE_PATH'
     LogDir = 'logs/windows'
 
-    BuildDirMsvc = 'build-msvc-debug'
-    BuildDirClangCl = 'build-clangcl-debug'
-    BuildDirClangClTsan = 'build-clangcl-tsan'
-    BuildDirProfile = 'build-clangcl-profile'
-    BuildDirRelease = 'build-clangcl-release'
-
-    Presets = @{
-      MsvcDebug = 'x64-MSVC-Windows-Debug'
-      MsvcRelease = 'x64-MSVC-Windows-Release'
-      ClangClDebug = 'x64-ClangCL-Windows-Debug'
-      ClangClDebugTsan = 'x64-ClangCL-Windows-Debug-TSan'
-      ClangClProfile = 'x64-ClangCL-Windows-Profile'
-      ClangClRelease = 'x64-ClangCL-Windows-Release'
+    Configurations = @{
+      'msvc-debug' = @{
+        BuildDir = 'build-msvc-debug'
+        BuildDirEnv = 'BUILD_DIR_MSVC'
+        Preset = 'x64-MSVC-Windows-Debug'
+        PresetEnv = 'PRESET_MSVC_DEBUG'
+      }
+      'msvc-release' = @{
+        BuildDir = 'build-msvc-debug'
+        BuildDirEnv = 'BUILD_DIR_MSVC'
+        Preset = 'x64-MSVC-Windows-Release'
+        PresetEnv = 'PRESET_MSVC_RELEASE'
+      }
+      'clangcl-debug' = @{
+        BuildDir = 'build-clangcl-debug'
+        BuildDirEnv = 'BUILD_DIR_CLANGCL'
+        Preset = 'x64-ClangCL-Windows-Debug'
+        PresetEnv = 'PRESET_CLANGCL_DEBUG'
+      }
+      'clangcl-tsan' = @{
+        BuildDir = 'build-clangcl-tsan'
+        BuildDirEnv = 'BUILD_DIR_CLANGCL_TSAN'
+        Preset = 'x64-ClangCL-Windows-Debug-TSan'
+        PresetEnv = 'PRESET_CLANGCL_DEBUG_TSAN'
+      }
+      'clangcl-profile' = @{
+        BuildDir = 'build-clangcl-profile'
+        BuildDirEnv = 'BUILD_DIR_PROFILE'
+        Preset = 'x64-ClangCL-Windows-Profile'
+        PresetEnv = 'CLANG_PROFILE_PRESET'
+      }
+      'clangcl-release' = @{
+        BuildDir = 'build-clangcl-release'
+        BuildDirEnv = 'BUILD_DIR_RELEASE'
+        Preset = 'x64-ClangCL-Windows-Release'
+        PresetEnv = 'PRESET_CLANGCL_RELEASE'
+      }
     }
   }
 

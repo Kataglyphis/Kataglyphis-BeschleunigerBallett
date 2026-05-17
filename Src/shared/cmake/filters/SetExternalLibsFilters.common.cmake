@@ -1,25 +1,22 @@
-# setting all project filters
-# ---- EXTERNAL LIBS FILTER  --- BEGIN
+if(NOT COMMAND kataglyphis_set_imgui_filter)
+  function(kataglyphis_set_imgui_filter external_lib_root)
+    set(_kataglyphis_imgui_root "${external_lib_root}/IMGUI/")
+    set(_kataglyphis_imgui_filter
+        "${_kataglyphis_imgui_root}imconfig.h"
+        "${_kataglyphis_imgui_root}imgui.cpp"
+        "${_kataglyphis_imgui_root}imgui.h"
+        "${_kataglyphis_imgui_root}imgui_demo.cpp"
+        "${_kataglyphis_imgui_root}imgui_draw.cpp"
+        "${_kataglyphis_imgui_root}imgui_internal.h"
+        "${_kataglyphis_imgui_root}imgui_tables.cpp"
+        "${_kataglyphis_imgui_root}imgui_widgets.cpp"
+        "${_kataglyphis_imgui_root}imstb_rectpack.h"
+        "${_kataglyphis_imgui_root}imstb_textedit.h"
+        "${_kataglyphis_imgui_root}imstb_truetype.h"
+        "${_kataglyphis_imgui_root}backends/imgui_impl_glfw.h"
+        "${_kataglyphis_imgui_root}backends/imgui_impl_glfw.cpp"
+        ${ARGN})
 
-# ---- GUI FILTER  --- BEGIN
-set(EXTERNAL_LIB_GUI_SRC_DIR ${EXTERNAL_LIB_SRC_DIR}IMGUI/)
-set(_KATAGLYPHIS_IMGUI_BACKENDS
-    ${EXTERNAL_LIB_GUI_SRC_DIR}backends/imgui_impl_glfw.h ${EXTERNAL_LIB_GUI_SRC_DIR}backends/imgui_impl_glfw.cpp
-    ${KATAGLYPHIS_IMGUI_EXTRA_BACKENDS})
-
-set(IMGUI_FILTER
-    ${IMGUI_FILTER}
-    ${EXTERNAL_LIB_GUI_SRC_DIR}imconfig.h
-    ${EXTERNAL_LIB_GUI_SRC_DIR}imgui.cpp
-    ${EXTERNAL_LIB_GUI_SRC_DIR}imgui.h
-    ${EXTERNAL_LIB_GUI_SRC_DIR}imgui_demo.cpp
-    ${EXTERNAL_LIB_GUI_SRC_DIR}imgui_draw.cpp
-    ${EXTERNAL_LIB_GUI_SRC_DIR}imgui_internal.h
-    ${EXTERNAL_LIB_GUI_SRC_DIR}imgui_tables.cpp
-    ${EXTERNAL_LIB_GUI_SRC_DIR}imgui_widgets.cpp
-    ${EXTERNAL_LIB_GUI_SRC_DIR}imstb_rectpack.h
-    ${EXTERNAL_LIB_GUI_SRC_DIR}imstb_textedit.h
-    ${EXTERNAL_LIB_GUI_SRC_DIR}imstb_truetype.h
-    ${_KATAGLYPHIS_IMGUI_BACKENDS})
-unset(_KATAGLYPHIS_IMGUI_BACKENDS)
-# ---- GUI FILTER  --- END
+    set(IMGUI_FILTER "${_kataglyphis_imgui_filter}" PARENT_SCOPE)
+  endfunction()
+endif()

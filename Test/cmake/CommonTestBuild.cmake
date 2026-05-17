@@ -1,3 +1,33 @@
+include(GoogleTest)
+
+function(kataglyphis_disable_test_warnings test_target)
+  if(MSVC)
+    target_compile_options(${test_target} PRIVATE /w)
+  else()
+    target_compile_options(${test_target} PRIVATE -w)
+  endif()
+endfunction()
+
+function(kataglyphis_configure_common_test_target test_target)
+  set_target_properties(${test_target} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
+  kataglyphis_disable_test_warnings(${test_target})
+endfunction()
+
+function(kataglyphis_add_imgui_test_sources test_target)
+  target_sources(
+    ${test_target}
+    PRIVATE
+      # IMGUI object library - excluded from static analysis
+      $<TARGET_OBJECTS:IMGUI>)
+endfunction()
+
+function(kataglyphis_enable_windows_vulkan_delay_load test_target)
+  if(WIN32 AND MSVC)
+    target_link_options(${test_target} PRIVATE /DELAYLOAD:vulkan-1.dll)
+    target_link_libraries(${test_target} PRIVATE delayimp)
+  endif()
+endfunction()
+
 function(kataglyphis_configure_gtest_discovery test_target)
   if(NOT DEFINED KATAGLYPHIS_ENABLE_GTEST_DISCOVERY)
     set(KATAGLYPHIS_ENABLE_GTEST_DISCOVERY ON)

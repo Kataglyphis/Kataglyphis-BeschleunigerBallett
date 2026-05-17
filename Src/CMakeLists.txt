@@ -1,11 +1,74 @@
-option(ENABLE_RUST "Enable building the Rust helper crate" ON)
-option(ENABLE_RUST_CXXBRIDGE "Enable generation of the CXX bridge" ON)
+function(_myproject_resolve_rust_gcc_toolchain_root out_var)
+  if(NOT DEFINED GCC_TOOLCHAIN_PATH)
+    set(GCC_TOOLCHAIN_PATH
+        ""
+        CACHE PATH "Optional GCC toolchain root")
+  endif()
 
-# Force the CXX bridge to be enabled unconditionally (including Emscripten builds).
-# This ensures the cxx bridge headers are always generated.
-set(ENABLE_RUST_CXXBRIDGE
-    ON
-    CACHE BOOL "Enable generation of the CXX bridge" FORCE)
+  set(_gcc_toolchain_root "")
+  if(GCC_TOOLCHAIN_PATH AND EXISTS "${GCC_TOOLCHAIN_PATH}")
+    set(_gcc_toolchain_root "${GCC_TOOLCHAIN_PATH}")
+  elseif(DEFINED MYPROJECT_GCC_TOOLCHAIN_PATH AND EXISTS "${MYPROJECT_GCC_TOOLCHAIN_PATH}")
+    set(_gcc_toolchain_root "${MYPROJECT_GCC_TOOLCHAIN_PATH}")
+  endif()
+
+  set(${out_var} "${_gcc_toolchain_root}" PARENT_SCOPE)
+endfunction()
+
+function(_myproject_configure_windows_rust_crate rust_target)
+  target_link_libraries(
+    ${rust_target}
+    INTERFACE kernel32
+              ntdll
+              userenv
+              ws2_32
+              dbghelp)
+
+  set(_RUST_WINDOWS_DEBUG_CXXFLAGS "/MDd /D_DEBUG /D_ITERATOR_DEBUG_LEVEL=2")
+  set(_RUST_WINDOWS_DEBUG_CFLAGS "/MDd /D_DEBUG")
+
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+     AND MSVC
+     AND myproject_ENABLE_SANITIZER_ADDRESS)
+    set(_RUST_WINDOWS_DEBUG_CXXFLAGS "/MD /D_ITERATOR_DEBUG_LEVEL=0")
+    set(_RUST_WINDOWS_DEBUG_CFLAGS "/MD")
+  endif()
+
+  set(_RUST_WINDOWS_CXXFLAGS
+      "/EHsc $<$<CONFIG:Debug>:${_RUST_WINDOWS_DEBUG_CXXFLAGS}>$<$<NOT:$<CONFIG:Debug>>:/MD /DNDEBUG /D_ITERATOR_DEBUG_LEVEL=0>")
+  set(_RUST_WINDOWS_CFLAGS "$<$<CONFIG:Debug>:${_RUST_WINDOWS_DEBUG_CFLAGS}>$<$<NOT:$<CONFIG:Debug>>:/MD /DNDEBUG>")
+
+  corrosion_set_env_vars(${rust_target} "CXXFLAGS=${_RUST_WINDOWS_CXXFLAGS}" "CFLAGS=${_RUST_WINDOWS_CFLAGS}")
+endfunction()
+
+function(_myproject_configure_native_rust_crate rust_target)
+  _myproject_resolve_rust_gcc_toolchain_root(_gcc_toolchain_root)
+
+  set(RUST_CC "${CMAKE_C_COMPILER}")
+  set(RUST_CXX "${CMAKE_CXX_COMPILER}")
+  if(NOT RUST_CC)
+    set(RUST_CC "cc")
+  endif()
+  if(NOT RUST_CXX)
+    set(RUST_CXX "c++")
+  endif()
+
+  set(RUST_CXXFLAGS "-fexceptions")
+  if(_gcc_toolchain_root AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set(RUST_CXXFLAGS "--gcc-toolchain=${_gcc_toolchain_root} -fexceptions")
+  endif()
+  if(DEFINED ENV{CXXFLAGS})
+    set(RUST_CXXFLAGS "$ENV{CXXFLAGS} ${RUST_CXXFLAGS}")
+  endif()
+
+  corrosion_set_env_vars(
+    ${rust_target}
+    CC=${RUST_CC}
+    CXX=${RUST_CXX}
+    "CXXFLAGS=${RUST_CXXFLAGS}")
+
+  message(STATUS "Configured native corrosion: CC=${RUST_CC} CXX=${RUST_CXX} CXXFLAGS=${RUST_CXXFLAGS}")
+endfunction()
 
 if(RUST_FEATURES)
   corrosion_import_crate(
@@ -17,80 +80,18 @@ if(RUST_FEATURES)
     kataglyphis_rustprojecttemplate)
 
   if(WIN32)
-    target_link_libraries(
-      kataglyphis_rustprojecttemplate
-      INTERFACE kernel32
-                ntdll
-                userenv
-                ws2_32
-                dbghelp)
-  endif()
-
-  if(WIN32)
-    set(_RUST_WINDOWS_DEBUG_CXXFLAGS "/MDd /D_DEBUG /D_ITERATOR_DEBUG_LEVEL=2")
-    set(_RUST_WINDOWS_DEBUG_CFLAGS "/MDd /D_DEBUG")
-
-    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
-       AND MSVC
-       AND myproject_ENABLE_SANITIZER_ADDRESS)
-      set(_RUST_WINDOWS_DEBUG_CXXFLAGS "/MD /D_ITERATOR_DEBUG_LEVEL=0")
-      set(_RUST_WINDOWS_DEBUG_CFLAGS "/MD")
-    endif()
-
-    set(_RUST_WINDOWS_CXXFLAGS
-        "/EHsc $<$<CONFIG:Debug>:${_RUST_WINDOWS_DEBUG_CXXFLAGS}>$<$<NOT:$<CONFIG:Debug>>:/MD /DNDEBUG /D_ITERATOR_DEBUG_LEVEL=0>"
-    )
-    set(_RUST_WINDOWS_CFLAGS "$<$<CONFIG:Debug>:${_RUST_WINDOWS_DEBUG_CFLAGS}>$<$<NOT:$<CONFIG:Debug>>:/MD /DNDEBUG>")
-
-    corrosion_set_env_vars(kataglyphis_rustprojecttemplate "CXXFLAGS=${_RUST_WINDOWS_CXXFLAGS}"
-                           "CFLAGS=${_RUST_WINDOWS_CFLAGS}")
+    _myproject_configure_windows_rust_crate(kataglyphis_rustprojecttemplate)
   else()
-    if(NOT DEFINED GCC_TOOLCHAIN_PATH)
-      set(GCC_TOOLCHAIN_PATH
-          ""
-          CACHE PATH "Optional GCC toolchain root")
-    endif()
-
-    set(RUST_CC "${CMAKE_C_COMPILER}")
-    set(RUST_CXX "${CMAKE_CXX_COMPILER}")
-    if(NOT RUST_CC)
-      set(RUST_CC "cc")
-    endif()
-    if(NOT RUST_CXX)
-      set(RUST_CXX "c++")
-    endif()
-
-    set(_gcc_toolchain_root "")
-    if(GCC_TOOLCHAIN_PATH AND EXISTS "${GCC_TOOLCHAIN_PATH}")
-      set(_gcc_toolchain_root "${GCC_TOOLCHAIN_PATH}")
-    elseif(DEFINED MYPROJECT_GCC_TOOLCHAIN_PATH AND EXISTS "${MYPROJECT_GCC_TOOLCHAIN_PATH}")
-      set(_gcc_toolchain_root "${MYPROJECT_GCC_TOOLCHAIN_PATH}")
-    endif()
-
-    set(RUST_CXXFLAGS "-fexceptions")
-    if(_gcc_toolchain_root AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-      set(RUST_CXXFLAGS "--gcc-toolchain=${_gcc_toolchain_root} -fexceptions")
-    endif()
-    if(DEFINED ENV{CXXFLAGS})
-      set(RUST_CXXFLAGS "$ENV{CXXFLAGS} ${RUST_CXXFLAGS}")
-    endif()
-    corrosion_set_env_vars(
-      kataglyphis_rustprojecttemplate
-      CC=${RUST_CC}
-      CXX=${RUST_CXX}
-      "CXXFLAGS=${RUST_CXXFLAGS}")
-
-    message(STATUS "Configured native corrosion: CC=${RUST_CC} CXX=${RUST_CXX} CXXFLAGS=${RUST_CXXFLAGS}")
+    _myproject_configure_native_rust_crate(kataglyphis_rustprojecttemplate)
   endif()
 
-  if(ENABLE_RUST_CXXBRIDGE)
-    corrosion_add_cxxbridge(
-      kataglyphis_rustprojecttemplate_bridge
-      CRATE
-      kataglyphis_rustprojecttemplate
-      FILES
-      native_only.rs)
-  endif()
+  # Keep the CXX bridge generated unconditionally so bridge headers are always available.
+  corrosion_add_cxxbridge(
+    kataglyphis_rustprojecttemplate_bridge
+    CRATE
+    kataglyphis_rustprojecttemplate
+    FILES
+    native_only.rs)
 
 endif()
 

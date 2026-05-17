@@ -1,9 +1,4 @@
-include(GoogleTest)
-
-# all testing related stuff
-set(WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../../)
-
-include(${WORKING_DIRECTORY}Test/cmake/CommonTestBuild.cmake)
+include(${CMAKE_SOURCE_DIR}/Test/cmake/CommonTestBuild.cmake)
 
 set(COMMIT_TEST_SUITE commitTestSuite)
 
@@ -18,36 +13,17 @@ endif()
 
 add_executable(${COMMIT_TEST_SUITE})
 
-# Enable C++20 module scanning so we can import modules from VulkanEngineCore
-set_target_properties(${COMMIT_TEST_SUITE} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
+kataglyphis_configure_common_test_target(${COMMIT_TEST_SUITE})
 
-# Only add test sources and IMGUI objects - NOT VulkanEngineCore sources
-target_sources(
-  ${COMMIT_TEST_SUITE}
-  PRIVATE ${RENDERER_COMMIT_TEST_FILTER}
-          # IMGUI object library - excluded from static analysis
-          $<TARGET_OBJECTS:IMGUI>)
+# Only add test sources - NOT VulkanEngineCore sources
+target_sources(${COMMIT_TEST_SUITE} PRIVATE ${RENDERER_COMMIT_TEST_FILTER})
+kataglyphis_add_imgui_test_sources(${COMMIT_TEST_SUITE})
 
 # Link against VulkanEngineCore static library
 # This brings in all necessary libraries, includes, and module BMIs
 target_link_libraries(${COMMIT_TEST_SUITE} PRIVATE VulkanEngineCore gtest gtest_main)
 
-if(WIN32 AND MSVC)
-  # The Windows container image may not provide the Vulkan loader runtime.
-  # Delay-load it so gtest discovery can start the executable and the test can
-  # decide at runtime whether Vulkan is actually available.
-  target_link_options(${COMMIT_TEST_SUITE} PRIVATE /DELAYLOAD:vulkan-1.dll)
-  target_link_libraries(${COMMIT_TEST_SUITE} PRIVATE delayimp)
-endif()
+kataglyphis_enable_windows_vulkan_delay_load(${COMMIT_TEST_SUITE})
 
 # Use the project root as working directory so relative paths match the main executable
 kataglyphis_configure_gtest_discovery(${COMMIT_TEST_SUITE})
-
-# disable all warnings for our test suite
-if(MSVC)
-  target_compile_options(${COMMIT_TEST_SUITE} PRIVATE /w)
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-  target_compile_options(${COMMIT_TEST_SUITE} PRIVATE -w)
-else()
-  target_compile_options(${COMMIT_TEST_SUITE} PRIVATE -w)
-endif()

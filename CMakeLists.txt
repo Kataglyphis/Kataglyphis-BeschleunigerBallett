@@ -95,29 +95,17 @@ include(cmake/SystemLibDependencies.cmake)
 include(Src/GraphicsEngineVulkan/cmake/filters/SetExternalLibsFilters.cmake)
 add_subdirectory(ExternalLib)
 
-if(BUILD_TESTING
-   AND NOT WIN32
-   AND CMAKE_CXX_COMPILER_ID MATCHES "Clang"
-   AND NOT (CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo"))
-  # Fuzz flags should be applied on the target, not globally
-endif()
-
 add_subdirectory(Src)
 
 if(BUILD_TESTING)
   include(CTest)
   enable_testing()
   message(STATUS "BUILD_TESTING is ON - enabling CTest.")
-else()
-  message(STATUS "BUILD_TESTING is OFF - skipping CTest enablement.")
-endif()
-
-if(BUILD_TESTING)
   message(STATUS "Tests are enabled.!")
   if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_subdirectory(Test/commit)
-    add_subdirectory(Test/compile)
-    add_subdirectory(Test/fuzz)
+    foreach(_myproject_debug_test_dir IN ITEMS Test/commit Test/compile Test/fuzz)
+      add_subdirectory(${_myproject_debug_test_dir})
+    endforeach()
     message(STATUS "Building test suites: commit, compile, fuzz (Debug)")
   elseif(CMAKE_BUILD_TYPE STREQUAL "RelWithDebInfo")
     add_subdirectory(Test/perf)
@@ -129,6 +117,7 @@ if(BUILD_TESTING)
     )
   endif()
 else()
+  message(STATUS "BUILD_TESTING is OFF - skipping CTest enablement.")
   message(STATUS "Tests are disabled.!")
 endif()
 
@@ -138,20 +127,26 @@ install(
   CONFIGURATIONS Release
   RUNTIME DESTINATION bin)
 
-# we keep the relative paths in the install dir
-# keep in mind that install dir will be in front of this relative path ...
-# I want to use the .ico file in the images folder
-install(DIRECTORY images/ DESTINATION images/)
-install(DIRECTORY Resources/Shaders/ DESTINATION Resources/Shaders/)
-install(DIRECTORY Resources/Textures/ DESTINATION Resources/Textures/)
-install(DIRECTORY Resources/Models/crytek-sponza/ DESTINATION Resources/Models/crytek-sponza/)
+set(_myproject_runtime_resource_dirs
+    images
+    Resources/Shaders
+    Resources/Textures
+    Resources/Models/crytek-sponza)
+
+foreach(_myproject_resource_dir IN LISTS _myproject_runtime_resource_dirs)
+  install(DIRECTORY ${_myproject_resource_dir}/ DESTINATION ${_myproject_resource_dir}/)
+endforeach()
+
+set(_myproject_imgui_fonts
+    ExternalLib/IMGUI/misc/fonts/Cousine-Regular.ttf
+    ExternalLib/IMGUI/misc/fonts/DroidSans.ttf
+    ExternalLib/IMGUI/misc/fonts/Karla-Regular.ttf
+    ExternalLib/IMGUI/misc/fonts/ProggyClean.ttf
+    ExternalLib/IMGUI/misc/fonts/ProggyTiny.ttf
+    ExternalLib/IMGUI/misc/fonts/Roboto-Medium.ttf)
+
 install(
-  FILES ExternalLib/IMGUI/misc/fonts/Cousine-Regular.ttf
-        ExternalLib/IMGUI/misc/fonts/DroidSans.ttf
-        ExternalLib/IMGUI/misc/fonts/Karla-Regular.ttf
-        ExternalLib/IMGUI/misc/fonts/ProggyClean.ttf
-        ExternalLib/IMGUI/misc/fonts/ProggyTiny.ttf
-        ExternalLib/IMGUI/misc/fonts/Roboto-Medium.ttf
+  FILES ${_myproject_imgui_fonts}
   DESTINATION ExternalLib/IMGUI/misc/fonts/)
 if(UNIX AND NOT APPLE)
   install(FILES docs/packaging/GraphicsEngine.desktop DESTINATION usr/share/applications)

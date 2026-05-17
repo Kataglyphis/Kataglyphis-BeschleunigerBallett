@@ -1,134 +1,150 @@
 # setting all project filters
 # ---- PROJECT FILTER  --- BEGIN
-# ---- GUI FILTER  --- BEGIN
-set(PROJECT_GUI_SRC_DIR ${PROJECT_SRC_DIR}gui/)
-set(PROJECT_GUI_INCLUDE_DIR ${PROJECT_INCLUDE_DIR}gui/)
-set(GUI_FILTER ${GUI_FILTER} ${PROJECT_GUI_SRC_DIR}GUI.cpp ${PROJECT_GUI_SRC_DIR}GUI.ixx)
-# ---- GUI FILTER  --- END
+kataglyphis_append_prefixed_files(
+  GUI_FILTER
+  "${PROJECT_SRC_DIR}gui/"
+  GUI.cpp
+  GUI.ixx)
 
-# ---- RENDERER FILTER  --- BEGIN
-set(PROJECT_RENDERER_SRC_DIR ${PROJECT_SRC_DIR}renderer/)
-set(PROJECT_RENDERER_INCLUDE_DIR ${PROJECT_INCLUDE_DIR}renderer/)
-set(RENDERER_FILTER
-    ${RENDERER_FILTER}
-    ${PROJECT_RENDERER_SRC_DIR}VulkanRenderer.cpp
-    ${PROJECT_RENDERER_SRC_DIR}VulkanRenderer.ixx
-    ${PROJECT_RENDERER_SRC_DIR}PathTracing.cpp
-    ${PROJECT_RENDERER_SRC_DIR}PathTracing.ixx
-    ${PROJECT_RENDERER_SRC_DIR}Raytracing.cpp
-    ${PROJECT_RENDERER_SRC_DIR}Raytracing.ixx
-    ${PROJECT_RENDERER_SRC_DIR}Rasterizer.cpp
-    ${PROJECT_RENDERER_SRC_DIR}Rasterizer.ixx
-    ${PROJECT_RENDERER_SRC_DIR}PostStage.cpp
-    ${PROJECT_RENDERER_SRC_DIR}PostStage.ixx
-    ${PROJECT_RENDERER_SRC_DIR}CommandBufferManager.cpp
-    ${PROJECT_RENDERER_INCLUDE_DIR}GlobalUBO.hpp
-    ${PROJECT_RENDERER_SRC_DIR}GUIRendererSharedVars.ixx
-    ${PROJECT_RENDERER_INCLUDE_DIR}SceneUBO.hpp)
-# ---- RENDERER FILTER  --- END
+kataglyphis_append_prefixed_files(
+  RENDERER_FILTER
+  "${PROJECT_SRC_DIR}renderer/"
+  VulkanRenderer.cpp
+  VulkanRenderer.ixx
+  PathTracing.cpp
+  PathTracing.ixx
+  Raytracing.cpp
+  Raytracing.ixx
+  Rasterizer.cpp
+  Rasterizer.ixx
+  PostStage.cpp
+  PostStage.ixx
+  CommandBufferManager.cpp)
+kataglyphis_append_prefixed_files(
+  RENDERER_FILTER
+  "${PROJECT_INCLUDE_DIR}renderer/"
+  GlobalUBO.hpp)
+kataglyphis_append_prefixed_files(
+  RENDERER_FILTER
+  "${PROJECT_SRC_DIR}renderer/"
+  GUIRendererSharedVars.ixx)
+kataglyphis_append_prefixed_files(
+  RENDERER_FILTER
+  "${PROJECT_INCLUDE_DIR}renderer/"
+  SceneUBO.hpp)
 
-# ---- PC FILTER  --- BEGIN
-set(PROJECT_PC_INCLUDE_DIR ${PROJECT_INCLUDE_DIR}renderer/pushConstants/)
-set(PC_FILTER
-    ${PC_FILTER}
-    ${PROJECT_PC_INCLUDE_DIR}PushConstantPathTracing.ixx
-    ${PROJECT_PC_INCLUDE_DIR}PushConstantPost.ixx
-    ${PROJECT_PC_INCLUDE_DIR}PushConstantRasterizer.ixx
-    ${PROJECT_PC_INCLUDE_DIR}PushConstantRayTracing.ixx)
-# ---- PC FILTER  --- END
+kataglyphis_append_prefixed_files(
+  PC_FILTER
+  "${PROJECT_INCLUDE_DIR}renderer/pushConstants/"
+  PushConstantPathTracing.ixx
+  PushConstantPost.ixx
+  PushConstantRasterizer.ixx
+  PushConstantRayTracing.ixx)
 
-# ---- AS FILTER  --- BEGIN
-set(PROJECT_AS_SRC_DIR ${PROJECT_SRC_DIR}renderer/accelerationStructures/)
-set(PROJECT_AS_INCLUDE_DIR ${PROJECT_INCLUDE_DIR}renderer/accelerationStructures/)
-set(AS_FILTER
-    ${AS_FILTER}
-    ${PROJECT_AS_SRC_DIR}ASManager.ixx
-    ${PROJECT_AS_INCLUDE_DIR}BottomLevelAccelerationStructure.hpp
-    ${PROJECT_AS_INCLUDE_DIR}TopLevelAccelerationStructure.hpp
-    ${PROJECT_AS_SRC_DIR}ASManager.cpp)
-# ---- AS FILTER  --- END
+kataglyphis_append_prefixed_files(
+  AS_FILTER
+  "${PROJECT_SRC_DIR}renderer/accelerationStructures/"
+  ASManager.ixx)
+kataglyphis_append_prefixed_files(
+  AS_FILTER
+  "${PROJECT_INCLUDE_DIR}renderer/accelerationStructures/"
+  BottomLevelAccelerationStructure.hpp
+  TopLevelAccelerationStructure.hpp)
+kataglyphis_append_prefixed_files(
+  AS_FILTER
+  "${PROJECT_SRC_DIR}renderer/accelerationStructures/"
+  ASManager.cpp)
 
-# ---- VULKAN_BASE FILTER  --- BEGIN
-set(PROJECT_VULKAN_BASE_SRC_DIR ${PROJECT_SRC_DIR}vulkan_base/)
-set(PROJECT_VULKAN_BASE_INCLUDE_DIR ${PROJECT_INCLUDE_DIR}vulkan_base/)
-set(VULKAN_BASE_FILTER
-    ${VULKAN_BASE_FILTER}
-    ${PROJECT_VULKAN_BASE_SRC_DIR}ShaderHelper.cpp
-    ${PROJECT_VULKAN_BASE_SRC_DIR}VulkanBuffer.cpp
-    ${PROJECT_VULKAN_BASE_SRC_DIR}VulkanBufferManager.cpp
-    ${PROJECT_VULKAN_BASE_SRC_DIR}VulkanDebug.cpp
-    ${PROJECT_VULKAN_BASE_SRC_DIR}VulkanDevice.cpp
-    ${PROJECT_VULKAN_BASE_SRC_DIR}VulkanImage.cpp
-    ${PROJECT_VULKAN_BASE_SRC_DIR}VulkanImageView.cpp
-    ${PROJECT_VULKAN_BASE_SRC_DIR}VulkanInstance.cpp
-    ${PROJECT_VULKAN_BASE_SRC_DIR}VulkanSwapChain.cpp
-    ${PROJECT_VULKAN_BASE_INCLUDE_DIR}ShaderIncludes.hpp
-    ${PROJECT_VULKAN_BASE_SRC_DIR}ShaderHelper.ixx
-    ${PROJECT_VULKAN_BASE_SRC_DIR}VulkanDebug.ixx)
-# ---- VULKAN_BASE FILTER  --- END
+kataglyphis_append_prefixed_files(
+  VULKAN_BASE_FILTER
+  "${PROJECT_SRC_DIR}vulkan_base/"
+  ShaderHelper.cpp
+  VulkanBuffer.cpp
+  VulkanBufferManager.cpp
+  VulkanDebug.cpp
+  VulkanDevice.cpp
+  VulkanImage.cpp
+  VulkanImageView.cpp
+  VulkanInstance.cpp
+  VulkanSwapChain.cpp)
+kataglyphis_append_prefixed_files(
+  VULKAN_BASE_FILTER
+  "${PROJECT_INCLUDE_DIR}vulkan_base/"
+  ShaderIncludes.hpp)
+kataglyphis_append_prefixed_files(
+  VULKAN_BASE_FILTER
+  "${PROJECT_SRC_DIR}vulkan_base/"
+  ShaderHelper.ixx
+  VulkanDebug.ixx)
 
-# ---- SCENE FILTER  --- BEGIN
-set(PROJECT_SCENE_SRC_DIR ${PROJECT_SRC_DIR}scene/)
-set(PROJECT_SCENE_INCLUDE_DIR ${PROJECT_INCLUDE_DIR}scene/)
-set(SCENE_FILTER
-    ${SCENE_FILTER}
-    ${PROJECT_SCENE_SRC_DIR}ObjLoader.cpp
-    ${PROJECT_SCENE_SRC_DIR}Model.cpp
-    ${PROJECT_SCENE_SRC_DIR}Mesh.cpp
-    ${PROJECT_SCENE_SRC_DIR}Scene.cpp
-    ${PROJECT_SCENE_SRC_DIR}Camera.cpp
-    ${PROJECT_SCENE_SRC_DIR}SceneConfig.cpp
-    ${PROJECT_SCENE_SRC_DIR}Texture.cpp
-    ${PROJECT_SCENE_SRC_DIR}Vertex.cpp
-    ${PROJECT_SCENE_SRC_DIR}Camera.ixx
-    ${PROJECT_SCENE_INCLUDE_DIR}ObjMaterial.hpp
-    ${PROJECT_SCENE_INCLUDE_DIR}Model.hpp
-    ${PROJECT_SCENE_INCLUDE_DIR}ObjLoader.hpp
-    ${PROJECT_SCENE_INCLUDE_DIR}Mesh.hpp
-    ${PROJECT_SCENE_SRC_DIR}Vertex.ixx
-    ${PROJECT_SCENE_INCLUDE_DIR}Scene.hpp
-    ${PROJECT_SCENE_SRC_DIR}SceneConfig.ixx
-    ${PROJECT_SCENE_SRC_DIR}GUISceneSharedVars.ixx
-    ${PROJECT_SCENE_SRC_DIR}ObjectDescription.ixx
-    ${PROJECT_SCENE_INCLUDE_DIR}Texture.hpp)
-# ---- SCENE FILTER  --- END
+kataglyphis_append_prefixed_files(
+  SCENE_FILTER
+  "${PROJECT_SRC_DIR}scene/"
+  ObjLoader.cpp
+  Model.cpp
+  Mesh.cpp
+  Scene.cpp
+  Camera.cpp
+  SceneConfig.cpp
+  Texture.cpp
+  Vertex.cpp
+  Camera.ixx)
+kataglyphis_append_prefixed_files(
+  SCENE_FILTER
+  "${PROJECT_INCLUDE_DIR}scene/"
+  ObjMaterial.hpp
+  Model.hpp
+  ObjLoader.hpp
+  Mesh.hpp)
+kataglyphis_append_prefixed_files(
+  SCENE_FILTER
+  "${PROJECT_SRC_DIR}scene/"
+  Vertex.ixx)
+kataglyphis_append_prefixed_files(
+  SCENE_FILTER
+  "${PROJECT_INCLUDE_DIR}scene/"
+  Scene.hpp)
+kataglyphis_append_prefixed_files(
+  SCENE_FILTER
+  "${PROJECT_SRC_DIR}scene/"
+  SceneConfig.ixx
+  GUISceneSharedVars.ixx
+  ObjectDescription.ixx)
+kataglyphis_append_prefixed_files(
+  SCENE_FILTER
+  "${PROJECT_INCLUDE_DIR}scene/"
+  Texture.hpp)
 
-# ---- WINDOW FILTER  --- BEGIN
-set(PROJECT_WINDOW_SRC_DIR ${PROJECT_SRC_DIR}window/)
-set(PROJECT_WINDOW_INCLUDE_DIR ${PROJECT_INCLUDE_DIR}window/)
-set(WINDOW_FILTER ${WINDOW_FILTER} ${PROJECT_WINDOW_SRC_DIR}Window.cpp ${PROJECT_WINDOW_SRC_DIR}Window.ixx)
-# ---- WINDOW FILTER  --- END
+kataglyphis_append_prefixed_files(
+  WINDOW_FILTER
+  "${PROJECT_SRC_DIR}window/"
+  Window.cpp
+  Window.ixx)
 
-# ---- UTIL FILTER  --- BEGIN
-set(PROJECT_UTIL_SRC_DIR ${PROJECT_SRC_DIR}util/)
-set(PROJECT_UTIL_INCLUDE_DIR ${PROJECT_INCLUDE_DIR}util/)
-set(UTIL_FILTER ${UTIL_FILTER} ${PROJECT_UTIL_SRC_DIR}File.ixx ${PROJECT_UTIL_SRC_DIR}File.module.cpp)
-# ---- UTIL FILTER  --- END
+kataglyphis_append_prefixed_files(
+  UTIL_FILTER
+  "${PROJECT_SRC_DIR}util/"
+  File.ixx
+  File.module.cpp)
 
-# ---- APP FILTER  --- BEGIN
-set(PROJECT_APP_SRC_DIR ${PROJECT_SRC_DIR}app/)
-set(PROJECT_APP_INCLUDE_DIR ${PROJECT_INCLUDE_DIR}app/)
-set(APP_FILTER ${APP_FILTER} ${PROJECT_APP_SRC_DIR}App.cpp ${PROJECT_APP_SRC_DIR}App.ixx)
-# ---- APP FILTER  --- END
+kataglyphis_append_prefixed_files(
+  APP_FILTER
+  "${PROJECT_SRC_DIR}app/"
+  App.cpp
+  App.ixx)
 
-# ---- COMMON FILTER  --- BEGIN
-set(PROJECT_COMMON_SRC_DIR ${PROJECT_SRC_DIR}common/)
-set(PROJECT_COMMON_INCLUDE_DIR ${PROJECT_INCLUDE_DIR}common/)
-set(COMMON_FILTER
-    ${COMMON_FILTER}
-    ${PROJECT_COMMON_INCLUDE_DIR}FormatHelper.hpp
-    ${PROJECT_COMMON_INCLUDE_DIR}Globals.hpp
-    ${PROJECT_COMMON_INCLUDE_DIR}MemoryHelper.hpp
-    ${PROJECT_COMMON_INCLUDE_DIR}Utilities.hpp)
-# ---- COMMON FILTER  --- END
+kataglyphis_append_prefixed_files(
+  COMMON_FILTER
+  "${PROJECT_INCLUDE_DIR}common/"
+  FormatHelper.hpp
+  Globals.hpp
+  MemoryHelper.hpp
+  Utilities.hpp)
 
-# ---- MEMORY FILTER  --- BEGIN
-set(PROJECT_MEMORY_SRC_DIR ${PROJECT_SRC_DIR}memory/)
-set(PROJECT_MEMORY_INCLUDE_DIR ${PROJECT_INCLUDE_DIR}memory/)
-set(MEMORY_FILTER ${MEMORY_FILTER} ${PROJECT_MEMORY_SRC_DIR}Allocator.ixx ${PROJECT_MEMORY_SRC_DIR}Allocator.cpp)
-# ---- MEMORY FILTER  --- END
+kataglyphis_append_prefixed_files(
+  MEMORY_FILTER
+  "${PROJECT_SRC_DIR}memory/"
+  Allocator.ixx
+  Allocator.cpp)
 
-# ---- MAIN FILTER  --- BEGIN
-set(PROJECT_MAIN_SRC_DIR ${PROJECT_SRC_DIR})
-set(MAIN_FILTER ${MAIN_FILTER} ${PROJECT_MAIN_SRC_DIR}Main.cpp)
-# ---- MAIN FILTER  --- END
+kataglyphis_append_prefixed_files(MAIN_FILTER "${PROJECT_SRC_DIR}" Main.cpp)

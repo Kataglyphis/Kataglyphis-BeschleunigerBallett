@@ -1,14 +1,23 @@
 # update current positions
 set(PROJECT_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/)
 set(PROJECT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/)
-set(EXTERNAL_LIB_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}../../ExternalLib/)
 set(SHADER_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/Shaders/)
 
+set(_KATAGLYPHIS_SOURCE_INCLUDE_DIRS
+    ${SHADER_SRC_DIR}
+    ${SHADER_SRC_DIR}common/
+    ${SHADER_SRC_DIR}pbr/
+    ${SHADER_SRC_DIR}pbr/brdf/
+    ${SHADER_SRC_DIR}hostDevice/
+    ${CMAKE_CURRENT_SOURCE_DIR}/
+    ${CMAKE_CURRENT_SOURCE_DIR}/renderer/
+    ${CMAKE_CURRENT_SOURCE_DIR}/renderer/pushConstants/
+    ${CMAKE_CURRENT_SOURCE_DIR}/scene/)
+
+include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
 include(cmake/filters/SetShaderFilters.cmake)
 include(cmake/filters/SetProjectFilters.cmake)
 include(cmake/SetSourceGroups.cmake)
-include(cmake/filters/SetExternalLibsFilters.cmake)
-include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
 
 file(GLOB_RECURSE VULKANRENDERER_SOURCES "*.cpp")
 
@@ -28,32 +37,12 @@ file(GLOB_RECURSE VULKANRENDERER_HEADERS "*.hpp")
 kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}")
 kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
 
-set(ShaderIncludes
-    -I
-    ${SHADER_SRC_DIR}
-    -I
-    ${SHADER_SRC_DIR}common/
-    -I
-    ${SHADER_SRC_DIR}pbr/
-    -I
-    ${SHADER_SRC_DIR}pbr/brdf/
-    -I
-    ${SHADER_SRC_DIR}hostDevice/
-    -I
-    ${CMAKE_CURRENT_SOURCE_DIR}/
-    -I
-    ${CMAKE_CURRENT_SOURCE_DIR}/renderer/
-    -I
-    ${CMAKE_CURRENT_SOURCE_DIR}/renderer/pushConstants/
-    -I
-    ${CMAKE_CURRENT_SOURCE_DIR}/scene/)
+set(ShaderIncludes)
+foreach(_kataglyphis_include_dir IN LISTS _KATAGLYPHIS_SOURCE_INCLUDE_DIRS)
+  list(APPEND ShaderIncludes -I ${_kataglyphis_include_dir})
+endforeach()
 
-# Join the paths into a single space-separated string
-string(
-  REPLACE ";"
-          " "
-          ShaderIncludesString
-          "${ShaderIncludes}")
+kataglyphis_join_list(ShaderIncludesString " " ${ShaderIncludes})
 
 message("The shader include string is the following: ${ShaderIncludesString}")
 
@@ -71,7 +60,7 @@ list(APPEND VULKAN_MODULE_INTERFACE_FILES "${VULKAN_RENDERER_CONFIG_MODULE_FILE}
 # =============================================================================
 add_library(VulkanEngineCore STATIC)
 
-set_target_properties(VulkanEngineCore PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
+kataglyphis_set_module_scan(VulkanEngineCore)
 
 if(RUST_FEATURES)
   target_compile_definitions(VulkanEngineCore PUBLIC USE_RUST=1)
@@ -171,7 +160,7 @@ target_link_options(VulkanEngineCore PUBLIC $<$<AND:$<CONFIG:Debug>,$<PLATFORM_I
 # =============================================================================
 add_executable(${PROJECT_NAME})
 
-set_target_properties(${PROJECT_NAME} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
+kataglyphis_set_module_scan(${PROJECT_NAME})
 
 target_sources(
   ${PROJECT_NAME}

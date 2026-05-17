@@ -21,6 +21,26 @@ function(kataglyphis_collect_module_interfaces out_var base_dir)
       PARENT_SCOPE)
 endfunction()
 
+function(kataglyphis_set_module_scan target)
+  set_target_properties(${target} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
+endfunction()
+
+function(kataglyphis_join_list out_var glue)
+  string(REPLACE ";" "${glue}" _joined_value "${ARGN}")
+  set(${out_var} "${_joined_value}" PARENT_SCOPE)
+endfunction()
+
+macro(kataglyphis_append_prefixed_files list_var prefix)
+  foreach(_kataglyphis_relative_file IN LISTS ARGN)
+    list(APPEND ${list_var} "${prefix}${_kataglyphis_relative_file}")
+  endforeach()
+  unset(_kataglyphis_relative_file)
+endmacro()
+
+macro(kataglyphis_add_source_group group_name file_list_var)
+  source_group("${group_name}" FILES ${${file_list_var}})
+endmacro()
+
 function(kataglyphis_apply_runtime_compile_definitions target)
   set(options)
   set(oneValueArgs

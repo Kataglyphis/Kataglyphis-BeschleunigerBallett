@@ -29,6 +29,77 @@ macro(myproject_supports_sanitizers)
   endif()
 endmacro()
 
+macro(myproject_define_core_options)
+  option(myproject_ENABLE_IPO "Enable IPO/LTO" ON)
+  option(myproject_ENABLE_STATIC_ANALYZER "Enable Static Analyzer" OFF)
+  option(myproject_WARNINGS_AS_ERRORS "Treat Warnings As Errors" OFF)
+  option(myproject_ENABLE_SANITIZER_ADDRESS "Enable address sanitizer" ${DEFAULT_ASAN})
+  option(myproject_ENABLE_SANITIZER_LEAK "Enable leak sanitizer" OFF)
+  option(myproject_ENABLE_SANITIZER_UNDEFINED "Enable undefined sanitizer" ${DEFAULT_UBSAN})
+  option(myproject_ENABLE_SANITIZER_THREAD "Enable thread sanitizer" OFF)
+  option(myproject_ENABLE_SANITIZER_MEMORY "Enable memory sanitizer" OFF)
+  option(myproject_ENABLE_UNITY_BUILD "Enable unity builds" OFF)
+  option(myproject_ENABLE_CLANG_TIDY "Enable clang-tidy" OFF)
+  option(myproject_ENABLE_CPPCHECK "Enable cpp-check analysis" ON)
+  option(myproject_ENABLE_PCH "Enable precompiled headers" OFF)
+  option(myproject_ENABLE_CACHE "Enable ccache" ON)
+  option(myproject_ENABLE_IWYU "Enable IWYU" ON)
+endmacro()
+
+macro(myproject_strip_flag_from_var variable_name flag)
+  string(REPLACE "${flag}" "" _myproject_updated_value "${${variable_name}}")
+  set(${variable_name} "${_myproject_updated_value}")
+endmacro()
+
+macro(myproject_strip_msvc_debug_runtime_flags)
+  foreach(_myproject_flag_var IN ITEMS CMAKE_CXX_FLAGS_DEBUG CMAKE_C_FLAGS_DEBUG)
+    myproject_strip_flag_from_var(${_myproject_flag_var} "/RTC1")
+    myproject_strip_flag_from_var(${_myproject_flag_var} "-RTC1")
+  endforeach()
+endmacro()
+
+macro(myproject_strip_clang_cl_asan_debug_runtime_flags)
+  foreach(_myproject_flag_var IN ITEMS CMAKE_CXX_FLAGS_DEBUG CMAKE_C_FLAGS_DEBUG)
+    myproject_strip_flag_from_var(${_myproject_flag_var} "/MDd")
+    myproject_strip_flag_from_var(${_myproject_flag_var} "-MDd")
+  endforeach()
+endmacro()
+
+macro(myproject_apply_compiler_build_flags)
+  if(MSVC AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
+    myproject_strip_msvc_debug_runtime_flags()
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /DEBUG /Od /std:c++23preview")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /std:c++23preview")
+    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} /O2 /std:c++23preview")
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0 -std=c++23 -ggdb")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -std=c++23 -DNDEBUG")
+    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} -O3 -std=c++23 -DNDEBUG")
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
+    set(_CLANG_CL_SAFE_WARNINGS
+        "-fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-error=character-conversion -Wno-unknown-warning-option -Wno-error=unknown-warning-option")
+    myproject_strip_msvc_debug_runtime_flags()
+    if(myproject_ENABLE_SANITIZER_ADDRESS)
+      myproject_strip_clang_cl_asan_debug_runtime_flags()
+    endif()
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od ${_CLANG_CL_SAFE_WARNINGS}")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 -DNDEBUG ${_CLANG_CL_SAFE_WARNINGS}")
+    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} /O2 -DNDEBUG ${_CLANG_CL_SAFE_WARNINGS}")
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g -ggdb -std=c++23 -fcolor-diagnostics")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -std=c++23 -fcolor-diagnostics")
+    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} -O3 -DNDEBUG -std=c++23 -fcolor-diagnostics")
+  endif()
+endmacro()
+
+function(myproject_enable_local_hardening target)
+  include(cmake/Hardening.cmake)
+  # Current project behavior always keeps the UBSan minimal runtime disabled,
+  # even though older logic computed a value first.
+  set(_MYPROJECT_ENABLE_UBSAN_MINIMAL_RUNTIME FALSE)
+  myproject_enable_hardening(${target} OFF ${_MYPROJECT_ENABLE_UBSAN_MINIMAL_RUNTIME})
+endfunction()
+
 macro(myproject_default_debug_sanitizers)
   set(DEFAULT_ASAN OFF)
   set(DEFAULT_UBSAN OFF)
@@ -76,37 +147,7 @@ macro(myproject_setup_options)
   myproject_supports_sanitizers()
   myproject_default_debug_sanitizers()
 
-  if(NOT PROJECT_IS_TOP_LEVEL OR myproject_PACKAGING_MAINTAINER_MODE)
-    option(myproject_ENABLE_IPO "Enable IPO/LTO" ON)
-    option(myproject_ENABLE_STATIC_ANALYZER "Enable Static Analyzer" OFF)
-    option(myproject_WARNINGS_AS_ERRORS "Treat Warnings As Errors" OFF)
-    option(myproject_ENABLE_SANITIZER_ADDRESS "Enable address sanitizer" ${DEFAULT_ASAN})
-    option(myproject_ENABLE_SANITIZER_LEAK "Enable leak sanitizer" OFF)
-    option(myproject_ENABLE_SANITIZER_UNDEFINED "Enable undefined sanitizer" ${DEFAULT_UBSAN})
-    option(myproject_ENABLE_SANITIZER_THREAD "Enable thread sanitizer" OFF)
-    option(myproject_ENABLE_SANITIZER_MEMORY "Enable memory sanitizer" OFF)
-    option(myproject_ENABLE_UNITY_BUILD "Enable unity builds" OFF)
-    option(myproject_ENABLE_CLANG_TIDY "Enable clang-tidy" OFF)
-    option(myproject_ENABLE_CPPCHECK "Enable cpp-check analysis" ON)
-    option(myproject_ENABLE_PCH "Enable precompiled headers" OFF)
-    option(myproject_ENABLE_CACHE "Enable ccache" ON)
-    option(myproject_ENABLE_IWYU "Enable IWYU" ON)
-  else()
-    option(myproject_ENABLE_IPO "Enable IPO/LTO" ON)
-    option(myproject_ENABLE_STATIC_ANALYZER "Enable Static Analyzer" OFF)
-    option(myproject_WARNINGS_AS_ERRORS "Treat Warnings As Errors" OFF)
-    option(myproject_ENABLE_SANITIZER_ADDRESS "Enable address sanitizer" ${DEFAULT_ASAN}) # ${SUPPORTS_ASAN}
-    option(myproject_ENABLE_SANITIZER_LEAK "Enable leak sanitizer" OFF)
-    option(myproject_ENABLE_SANITIZER_UNDEFINED "Enable undefined sanitizer" ${DEFAULT_UBSAN}) # ${SUPPORTS_UBSAN}
-    option(myproject_ENABLE_SANITIZER_THREAD "Enable thread sanitizer" OFF)
-    option(myproject_ENABLE_SANITIZER_MEMORY "Enable memory sanitizer" OFF)
-    option(myproject_ENABLE_UNITY_BUILD "Enable unity builds" OFF)
-    option(myproject_ENABLE_CLANG_TIDY "Enable clang-tidy" OFF)
-    option(myproject_ENABLE_CPPCHECK "Enable cpp-check analysis" ON)
-    option(myproject_ENABLE_PCH "Enable precompiled headers" OFF)
-    option(myproject_ENABLE_CACHE "Enable ccache" ON)
-    option(myproject_ENABLE_IWYU "Enable IWYU" ON)
-  endif()
+  myproject_define_core_options()
 
   if(NOT PROJECT_IS_TOP_LEVEL)
     mark_as_advanced(
@@ -188,96 +229,7 @@ macro(myproject_global_options)
   message(STATUS "C++ modules are enabled for compiler '${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}'.")
 
   # set build type specific flags
-  if(MSVC AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
-    # Remove /RTC1 as it's incompatible with ASan
-    string(
-      REPLACE "/RTC1"
-              ""
-              CMAKE_CXX_FLAGS_DEBUG
-              "${CMAKE_CXX_FLAGS_DEBUG}")
-    string(
-      REPLACE "-RTC1"
-              ""
-              CMAKE_CXX_FLAGS_DEBUG
-              "${CMAKE_CXX_FLAGS_DEBUG}")
-    string(
-      REPLACE "/RTC1"
-              ""
-              CMAKE_C_FLAGS_DEBUG
-              "${CMAKE_C_FLAGS_DEBUG}")
-    string(
-      REPLACE "-RTC1"
-              ""
-              CMAKE_C_FLAGS_DEBUG
-              "${CMAKE_C_FLAGS_DEBUG}")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /DEBUG /Od /std:c++23preview")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /std:c++23preview")
-    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} /O2 /std:c++23preview")
-  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    # https://gcc.gnu.org/onlinedocs/gcc/Debugging-Options.html
-    # https://gcc.gnu.org/onlinedocs/gcc/Option-Summary.html
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0 -std=c++23 -ggdb")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -std=c++23 -DNDEBUG")
-    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} -O3 -std=c++23 -DNDEBUG")
-    # https://clang.llvm.org/docs/UsersManual.html
-    # this is the clang-cl case
-  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
-    set(_CLANG_CL_SAFE_WARNINGS
-        "-fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-error=character-conversion -Wno-unknown-warning-option -Wno-error=unknown-warning-option"
-    )
-    # Remove /RTC1 as it's incompatible with ASan in clang-cl
-    string(
-      REPLACE "/RTC1"
-              ""
-              CMAKE_CXX_FLAGS_DEBUG
-              "${CMAKE_CXX_FLAGS_DEBUG}")
-    string(
-      REPLACE "-RTC1"
-              ""
-              CMAKE_CXX_FLAGS_DEBUG
-              "${CMAKE_CXX_FLAGS_DEBUG}")
-    string(
-      REPLACE "/RTC1"
-              ""
-              CMAKE_C_FLAGS_DEBUG
-              "${CMAKE_C_FLAGS_DEBUG}")
-    string(
-      REPLACE "-RTC1"
-              ""
-              CMAKE_C_FLAGS_DEBUG
-              "${CMAKE_C_FLAGS_DEBUG}")
-    if(myproject_ENABLE_SANITIZER_ADDRESS)
-      # clang-cl ASan uses the non-debug DLL runtime on Windows.
-      string(
-        REPLACE "/MDd"
-                ""
-                CMAKE_CXX_FLAGS_DEBUG
-                "${CMAKE_CXX_FLAGS_DEBUG}")
-      string(
-        REPLACE "-MDd"
-                ""
-                CMAKE_CXX_FLAGS_DEBUG
-                "${CMAKE_CXX_FLAGS_DEBUG}")
-      string(
-        REPLACE "/MDd"
-                ""
-                CMAKE_C_FLAGS_DEBUG
-                "${CMAKE_C_FLAGS_DEBUG}")
-      string(
-        REPLACE "-MDd"
-                ""
-                CMAKE_C_FLAGS_DEBUG
-                "${CMAKE_C_FLAGS_DEBUG}")
-    endif()
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /Od ${_CLANG_CL_SAFE_WARNINGS}")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 -DNDEBUG ${_CLANG_CL_SAFE_WARNINGS}")
-    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} /O2 -DNDEBUG ${_CLANG_CL_SAFE_WARNINGS}")
-    # https://clang.llvm.org/docs/ClangCommandLineReference.html
-  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g -ggdb -std=c++23 -fcolor-diagnostics") # -std=c++2a
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG -std=c++23 -fcolor-diagnostics")
-    set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} -O3 -DNDEBUG -std=c++23 -fcolor-diagnostics") # -std=c++2a
-  endif()
+  myproject_apply_compiler_build_flags()
 
   # control where the static and shared libraries are built so that on windows
   # we don't need to tinker with the path to run the executable
@@ -308,18 +260,9 @@ macro(myproject_global_options)
 
   if(myproject_ENABLE_HARDENING AND myproject_ENABLE_GLOBAL_HARDENING)
     include(cmake/Hardening.cmake)
-    if(NOT SUPPORTS_UBSAN
-       OR myproject_ENABLE_SANITIZER_UNDEFINED
-       OR myproject_ENABLE_SANITIZER_ADDRESS
-       OR myproject_ENABLE_SANITIZER_THREAD
-       OR myproject_ENABLE_SANITIZER_LEAK)
-      set(ENABLE_UBSAN_MINIMAL_RUNTIME FALSE)
-    else()
-      set(ENABLE_UBSAN_MINIMAL_RUNTIME TRUE)
-    endif()
-    set(ENABLE_UBSAN_MINIMAL_RUNTIME FALSE)
-    message("${myproject_ENABLE_HARDENING} ${ENABLE_UBSAN_MINIMAL_RUNTIME} ${myproject_ENABLE_SANITIZER_UNDEFINED}")
-    myproject_enable_hardening(myproject_options ON ${ENABLE_UBSAN_MINIMAL_RUNTIME})
+    set(_MYPROJECT_ENABLE_UBSAN_MINIMAL_RUNTIME FALSE)
+    message("${myproject_ENABLE_HARDENING} ${_MYPROJECT_ENABLE_UBSAN_MINIMAL_RUNTIME} ${myproject_ENABLE_SANITIZER_UNDEFINED}")
+    myproject_enable_hardening(myproject_options ON ${_MYPROJECT_ENABLE_UBSAN_MINIMAL_RUNTIME})
   endif()
 endmacro()
 
@@ -362,9 +305,7 @@ macro(myproject_local_options)
   endif()
 
   # Always disable C++ exceptions - /EHs- for MSVC, -fno-exceptions for GCC/Clang
-  if(MSVC AND NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"))
-    target_compile_options(myproject_options INTERFACE /EHs-)
-  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
+  if(MSVC)
     target_compile_options(myproject_options INTERFACE /EHs-)
   elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(myproject_options INTERFACE -fno-exceptions)
@@ -423,18 +364,7 @@ macro(myproject_local_options)
   endif()
 
   if(myproject_ENABLE_HARDENING AND NOT myproject_ENABLE_GLOBAL_HARDENING)
-    include(cmake/Hardening.cmake)
-    if(NOT SUPPORTS_UBSAN
-       OR myproject_ENABLE_SANITIZER_UNDEFINED
-       OR myproject_ENABLE_SANITIZER_ADDRESS
-       OR myproject_ENABLE_SANITIZER_THREAD
-       OR myproject_ENABLE_SANITIZER_LEAK)
-      set(ENABLE_UBSAN_MINIMAL_RUNTIME FALSE)
-    else()
-      set(ENABLE_UBSAN_MINIMAL_RUNTIME TRUE)
-    endif()
-    set(ENABLE_UBSAN_MINIMAL_RUNTIME FALSE)
-    myproject_enable_hardening(myproject_options OFF ${ENABLE_UBSAN_MINIMAL_RUNTIME})
+    myproject_enable_local_hardening(myproject_options)
   endif()
 
   if(NOT

@@ -1,5 +1,3 @@
-include(GoogleTest)
-
 if(NOT
    CMAKE_BUILD_TYPE
    STREQUAL
@@ -20,26 +18,23 @@ endif()
 
 message(STATUS "Clang detected: enabling fuzz test targets.")
 
-include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/CommonTestBuild.cmake)
+include(${CMAKE_SOURCE_DIR}/Test/cmake/CommonTestBuild.cmake)
 
-add_executable(first_fuzz_test dummy.cpp)
-add_executable(example_fuzz_test example_fuzz_test.cpp)
+function(kataglyphis_add_fuzz_test fuzz_target source_file)
+  add_executable(${fuzz_target} ${source_file})
 
-set(_KATAGLYPHIS_FUZZ_TEST_TARGETS first_fuzz_test example_fuzz_test)
-
-foreach(_kataglyphis_fuzz_target IN LISTS _KATAGLYPHIS_FUZZ_TEST_TARGETS)
   if(MSVC)
-    target_link_libraries(${_kataglyphis_fuzz_target} PRIVATE kataglyphis_fuzztest_windows_asan)
+    target_link_libraries(${fuzz_target} PRIVATE kataglyphis_fuzztest_windows_asan)
 
     target_compile_options(
-      ${_kataglyphis_fuzz_target}
+      ${fuzz_target}
       PRIVATE /Z7
               -UNDEBUG
               -fsanitize-coverage=inline-8bit-counters
               -fsanitize-coverage=trace-cmp)
   else()
     target_compile_options(
-      ${_kataglyphis_fuzz_target}
+      ${fuzz_target}
       PRIVATE -g
               -UNDEBUG
               -fsanitize=address
@@ -48,19 +43,22 @@ foreach(_kataglyphis_fuzz_target IN LISTS _KATAGLYPHIS_FUZZ_TEST_TARGETS)
   endif()
 
   target_compile_definitions(
-    ${_kataglyphis_fuzz_target}
+    ${fuzz_target}
     PRIVATE FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
             ADDRESS_SANITIZER)
 
   if(NOT MSVC)
-    target_link_options(${_kataglyphis_fuzz_target} PRIVATE -fsanitize=address)
+    target_link_options(${fuzz_target} PRIVATE -fsanitize=address)
   endif()
 
   if(FUZZTEST_COMPATIBILITY_MODE STREQUAL "libfuzzer")
-    target_compile_options(${_kataglyphis_fuzz_target} PRIVATE -fsanitize=fuzzer-no-link)
-    target_compile_definitions(${_kataglyphis_fuzz_target} PRIVATE FUZZTEST_COMPATIBILITY_MODE)
+    target_compile_options(${fuzz_target} PRIVATE -fsanitize=fuzzer-no-link)
+    target_compile_definitions(${fuzz_target} PRIVATE FUZZTEST_COMPATIBILITY_MODE)
   endif()
 
-  link_fuzztest(${_kataglyphis_fuzz_target})
-  kataglyphis_configure_gtest_discovery(${_kataglyphis_fuzz_target})
-endforeach()
+  link_fuzztest(${fuzz_target})
+  kataglyphis_configure_gtest_discovery(${fuzz_target})
+endfunction()
+
+kataglyphis_add_fuzz_test(first_fuzz_test dummy.cpp)
+kataglyphis_add_fuzz_test(example_fuzz_test example_fuzz_test.cpp)

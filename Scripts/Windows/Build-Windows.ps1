@@ -58,20 +58,57 @@ $workspacePath = Resolve-WorkspacePath -Path $workspaceRoot
 
 $logDir = Get-OrDefault $env:BUILD_LOG_DIR (Get-ConfigValue -Config $config -Path 'Build.LogDir')
 
-$buildPathMsvc = Join-Path $workspacePath (Get-OrDefault $env:BUILD_DIR_MSVC (Get-ConfigValue -Config $config -Path 'Build.BuildDirMsvc'))
-$buildPathClang = Join-Path $workspacePath (Get-OrDefault $env:BUILD_DIR_CLANGCL (Get-ConfigValue -Config $config -Path 'Build.BuildDirClangCl'))
-$buildPathClangTsan = Join-Path $workspacePath (Get-OrDefault $env:BUILD_DIR_CLANGCL_TSAN (Get-ConfigValue -Config $config -Path 'Build.BuildDirClangClTsan'))
-$buildPathProfile = Join-Path $workspacePath (Get-OrDefault $env:BUILD_DIR_PROFILE (Get-ConfigValue -Config $config -Path 'Build.BuildDirProfile'))
-$buildPathRelease = Join-Path $workspacePath (Get-OrDefault $env:BUILD_DIR_RELEASE (Get-ConfigValue -Config $config -Path 'Build.BuildDirRelease'))
+function Get-EnvironmentVariableValue {
+  param([Parameter(Mandatory)][string]$Name)
 
-$presetMsvcDebug = Get-OrDefault $env:PRESET_MSVC_DEBUG (Get-ConfigValue -Config $config -Path 'Build.Presets.MsvcDebug')
-$presetMsvcRelease = Get-OrDefault $env:PRESET_MSVC_RELEASE (Get-ConfigValue -Config $config -Path 'Build.Presets.MsvcRelease')
-$presetClangDebug = Get-OrDefault $env:PRESET_CLANGCL_DEBUG (Get-ConfigValue -Config $config -Path 'Build.Presets.ClangClDebug')
-$presetClangDebugTsan = Get-OrDefault $env:PRESET_CLANGCL_DEBUG_TSAN (Get-ConfigValue -Config $config -Path 'Build.Presets.ClangClDebugTsan')
-$presetClangProfile = Get-OrDefault $env:CLANG_PROFILE_PRESET (Get-ConfigValue -Config $config -Path 'Build.Presets.ClangClProfile')
-$presetClangRelease = Get-OrDefault $env:PRESET_CLANGCL_RELEASE (Get-ConfigValue -Config $config -Path 'Build.Presets.ClangClRelease')
+  $envItem = Get-Item -Path "Env:$Name" -ErrorAction SilentlyContinue
+  if ($null -eq $envItem) {
+    return $null
+  }
+
+  return $envItem.Value
+}
+
+function Get-BuildConfigurationSpec {
+  param(
+    [Parameter(Mandatory)][string]$Name,
+    [Parameter(Mandatory)]$Config,
+    [Parameter(Mandatory)][string]$WorkspacePath
+  )
+
+  $configuration = Get-ConfigValue -Config $Config -Path "Build.Configurations.$Name"
+  if ($null -eq $configuration) {
+    throw "Build configuration '$Name' not found in $configPath"
+  }
+
+  $buildDir = Get-OrDefault (Get-EnvironmentVariableValue -Name $configuration['BuildDirEnv']) $configuration['BuildDir']
+  $preset = Get-OrDefault (Get-EnvironmentVariableValue -Name $configuration['PresetEnv']) $configuration['Preset']
+
+  return @{
+    BuildPath = Join-Path $WorkspacePath $buildDir
+    Preset = $preset
+  }
+}
 
 $availableConfigurations = @('msvc-debug', 'msvc-release', 'clangcl-debug', 'clangcl-tsan', 'clangcl-profile', 'clangcl-release')
+$buildConfigurationSpecs = @{}
+foreach ($configurationName in $availableConfigurations) {
+  $buildConfigurationSpecs[$configurationName] = Get-BuildConfigurationSpec -Name $configurationName -Config $config -WorkspacePath $workspacePath
+}
+
+$buildPathMsvcDebug = $buildConfigurationSpecs['msvc-debug']['BuildPath']
+$presetMsvcDebug = $buildConfigurationSpecs['msvc-debug']['Preset']
+$buildPathMsvcRelease = $buildConfigurationSpecs['msvc-release']['BuildPath']
+$presetMsvcRelease = $buildConfigurationSpecs['msvc-release']['Preset']
+$buildPathClangDebug = $buildConfigurationSpecs['clangcl-debug']['BuildPath']
+$presetClangDebug = $buildConfigurationSpecs['clangcl-debug']['Preset']
+$buildPathClangTsan = $buildConfigurationSpecs['clangcl-tsan']['BuildPath']
+$presetClangDebugTsan = $buildConfigurationSpecs['clangcl-tsan']['Preset']
+$buildPathClangProfile = $buildConfigurationSpecs['clangcl-profile']['BuildPath']
+$presetClangProfile = $buildConfigurationSpecs['clangcl-profile']['Preset']
+$buildPathClangRelease = $buildConfigurationSpecs['clangcl-release']['BuildPath']
+$presetClangRelease = $buildConfigurationSpecs['clangcl-release']['Preset']
+
 $selectedConfigurations = Get-SelectedConfigurations -Configurations $Configurations -AvailableConfigurations $availableConfigurations
 
 # If SkipBuild is requested, clear any selected build configurations so
@@ -125,7 +162,7 @@ function Assert-ClangClAvailable {
   $script:clangClVersionLogged = $true
 }
 
-if ($buildPathClangTsan -eq $buildPathClang) {
+if ($buildPathClangTsan -eq $buildPathClangDebug) {
   $buildPathClangTsan = Join-Path $workspacePath 'build-clangcl-tsan'
 }
 
@@ -188,7 +225,7 @@ try {
   if (Test-ConfigurationSelected -Name 'msvc-debug') {
     # Make MSVC debug configure/build optional so failures here don't fail the whole orchestration
     Invoke-BuildOptional -Context $context -Name "Configure/Build: $presetMsvcDebug (MSVC Debug - optional)" -Script {
-      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathMsvc -Preset $presetMsvcDebug -Configuration 'Debug' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
+      Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathMsvcDebug -Preset $presetMsvcDebug -Configuration 'Debug' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
     }
 
     if (-not $SkipTests) {
@@ -200,7 +237,7 @@ try {
           $excludeRegex += '^Integration\.'
         }
 
-        Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathMsvc -Configuration 'Debug' -ExcludeRegex $excludeRegex -RuntimeFlavor 'Msvc'
+        Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathMsvcDebug -Configuration 'Debug' -ExcludeRegex $excludeRegex -RuntimeFlavor 'Msvc'
       }
     }
   }
@@ -209,24 +246,24 @@ try {
     # Make MSVC release configure/build optional so failures here don't fail the whole orchestration
     Invoke-BuildOptional -Context $context -Name "Configure/Build: $presetMsvcRelease (MSVC Release - optional)" -Script {
       Invoke-ShaderPrecompile -BuildLabel 'MSVC Release'
-      Invoke-ConfiguredBuild -BuildPath $buildPathMsvc -Preset $presetMsvcRelease -Configuration 'Release'
+      Invoke-ConfiguredBuild -BuildPath $buildPathMsvcRelease -Preset $presetMsvcRelease -Configuration 'Release'
     }
   }
 
   if (Test-ConfigurationSelected -Name 'clangcl-debug') {
     Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangDebug" -Critical -Script {
-      Invoke-ConfiguredBuild -BuildPath $buildPathClang -Preset $presetClangDebug -Configuration 'Debug'
+      Invoke-ConfiguredBuild -BuildPath $buildPathClangDebug -Preset $presetClangDebug -Configuration 'Debug'
     } | Out-Null
 
     if (-not $SkipTidy) {
       Invoke-BuildStep -Context $context -StepName 'clang-tidy --fix (Src)' -Critical -Script {
-        Invoke-ClangTidyFixStep -Context $context -WorkspacePath $workspacePath -BuildRoot $buildPathClang
+        Invoke-ClangTidyFixStep -Context $context -WorkspacePath $workspacePath -BuildRoot $buildPathClangDebug
       } | Out-Null
     }
 
     if (-not $SkipTests) {
       Invoke-BuildStep -Context $context -StepName 'Test: Clang Debug' -Critical -Script {
-        Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathClang -Configuration 'Debug' -RuntimeFlavor 'Clang'
+        Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathClangDebug -Configuration 'Debug' -RuntimeFlavor 'Clang'
       } | Out-Null
     }
   }
@@ -244,14 +281,14 @@ try {
 
   if (Test-ConfigurationSelected -Name 'clangcl-profile') {
     Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangProfile" -Critical -Script {
-      Invoke-ConfiguredBuild -BuildPath $buildPathProfile -Preset $presetClangProfile -Configuration 'RelWithDebInfo'
+      Invoke-ConfiguredBuild -BuildPath $buildPathClangProfile -Preset $presetClangProfile -Configuration 'RelWithDebInfo'
     } | Out-Null
 
     if (-not $SkipPerfTests) {
       Invoke-BuildStep -Context $context -StepName 'Benchmarks' -Critical -Script {
-        Push-Location $buildPathProfile
+        Push-Location $buildPathClangProfile
         try {
-          $benchmarkExe = Resolve-TestExecutable -BuildRoot $buildPathProfile -ExecutableName 'perfTestSuite.exe'
+          $benchmarkExe = Resolve-TestExecutable -BuildRoot $buildPathClangProfile -ExecutableName 'perfTestSuite.exe'
           if (-not $benchmarkExe) {
             Write-BuildLog -Context $context -Message 'Benchmark executable not found. Skipping benchmark run.'
             return
@@ -276,13 +313,13 @@ try {
         Write-BuildLog -Context $context -Message 'Skipping Clang Release build due to -SkipBuild.'
       } else {
         Invoke-ShaderPrecompile -BuildLabel 'ClangCL Release'
-        Invoke-ConfiguredBuild -BuildPath $buildPathRelease -Preset $presetClangRelease -Configuration 'Release'
+        Invoke-ConfiguredBuild -BuildPath $buildPathClangRelease -Preset $presetClangRelease -Configuration 'Release'
       }
 
       # Always attempt packaging when clangcl-release is selected; packaging
       # should not be skipped by -SkipBuild.
       $packageArgs = @(
-        '--build', $buildPathRelease,
+        '--build', $buildPathClangRelease,
         '--target', 'package',
         '--config', 'Release'
       )
@@ -317,14 +354,14 @@ try {
       
       $msixMinVersion = Get-OrDefault $env:MSIX_MIN_VERSION (Get-ConfigValue -Config $config -Path 'Msix.MinVersion')
 
-      $msixStaging = Join-Path $buildPathRelease 'msix-staging'
+      $msixStaging = Join-Path $buildPathClangRelease 'msix-staging'
       $assetsDir = Join-Path $msixStaging 'Assets'
       if (Test-Path $msixStaging) {
         Remove-BuildRoot -Context $context -Path $msixStaging | Out-Null
       }
 
       Invoke-BuildExternal -Context $context -File 'cmake' -Parameters @(
-        '--install', $buildPathRelease,
+        '--install', $buildPathClangRelease,
         '--config', 'Release',
         '--prefix', $msixStaging
       ) | Out-Null
@@ -359,7 +396,7 @@ try {
         throw "Expected executable not found in MSIX staging: $exeRelPath"
       }
 
-      $msixOutPath = Join-Path $buildPathRelease "$msixName.msix"
+      $msixOutPath = Join-Path $buildPathClangRelease "$msixName.msix"
       Invoke-BuildExternal -Context $context -File $makeappxPath -Parameters @('pack', '/d', $msixStaging, '/p', $msixOutPath, '/o') | Out-Null
 
       # Attempt to sign the generated MSIX using the signing helper module.
