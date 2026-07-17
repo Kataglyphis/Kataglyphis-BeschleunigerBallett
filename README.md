@@ -93,11 +93,31 @@ bash ./Scripts/Linux/cmake-configure-build.sh \
 
 ### Windows helper scripts
 
-Use the build orchestration script when you want one entry point for formatting, configuration, build, and tests:
+Use the build orchestration script when you want one entry point for formatting, configuration, build, and tests. Available configurations: `msvc-debug`, `msvc-release`, `clangcl-debug` (Debug with ASAN/UBSan), `clangcl-tsan`, `clangcl-profile` (RelWithDebInfo with benchmarks), `clangcl-release`.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 -Configurations clang-debug
+# single configuration
+powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 -Configurations clangcl-debug
+
+# full sanitizer/profile/release sweep
+powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
+  -Configurations "clangcl-debug,clangcl-tsan,clangcl-profile,clangcl-release"
 ```
+
+Note: sanitizers are Debug-only. `clangcl-debug` enables AddressSanitizer and UBSan by default; `clangcl-tsan` requests ThreadSanitizer, but clang-cl does not support TSan on Windows, so that preset builds a plain Debug binary without sanitizers — use the `linux-debug-tsan-*` presets for real TSan runs.
+
+### Windows container build (Stevedore)
+
+The same builds run fully containerized in the ContainerHub developer image `ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64` — this is what CI does. Install [Stevedore](https://github.com/slonopotamus/stevedore) (`winget install stevedore`, then reboot) and run:
+
+```powershell
+# defaults to clangcl-debug,clangcl-tsan,clangcl-profile,clangcl-release
+powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1
+```
+
+The script uses Stevedore's `docker.exe` (never `nerdctl` — broken DNS/CNI on Windows), prefers process isolation for full CPU count, and bind-mounts the repo to a fresh path. If the repo lives on a Dev Drive whose filters are not allow-listed for containers, it automatically falls back to streaming the sources into the container via tar and streaming the build trees back out; to enable the faster bind mount instead, run once (elevated) `fsutil devdrv setfiltersallowed bindFlt, wcifs` and remount the volume.
+
+Builds are supported against the recorded submodule pins (`git submodule update --checkout --recursive` restores them). In particular, the Windows scripts import PowerShell modules from the `ExternalLib/Kataglyphis-ContainerHub` submodule, and newer ContainerHub `main` removed the module layout these scripts depend on; a drifted `ExternalLib/FUZZTEST` likewise breaks CMake configure (see `AGENTS.md`).
 
 Run helpers after building:
 
@@ -172,7 +192,7 @@ Update both when you add new include-driven shader files.
 
 ## Docker and Build Environments
 
-Containerized and reproducible environment details live in [Kataglyphis-ContainerHub](https://github.com/Kataglyphis/Kataglyphis-ContainerHub).
+Containerized and reproducible environment details live in [Kataglyphis-ContainerHub](https://github.com/Kataglyphis/Kataglyphis-ContainerHub). On Windows the container runtime is [Stevedore](https://github.com/slonopotamus/stevedore); `Scripts/Windows/Build-Windows-Container.ps1` builds this project inside the prebuilt toolchain image (see the Windows container build section above), and `.github/workflows/Windows.yml` runs the same flow in CI.
 
 ## Roadmap
 
@@ -227,6 +247,8 @@ On Linux, install the runtime packages first:
 ```bash
 sudo apt install libvulkan1 vulkan-tools vulkan-validationlayers
 ```
+
+On Windows, Debug builds abort at startup with exit code `-1073740791` (`0xC0000409`) when the validation layers are missing. Install the Vulkan SDK (`winget install VulkanSDK`), or point `VK_LAYER_PATH` at a directory containing `VkLayer_khronos_validation.dll`/`.json` (extractable from the ContainerHub toolchain image). Profile and Release builds run without validation layers.
 
 
 ## Literature 

@@ -1,0 +1,171 @@
+# AGENTS.md
+
+Guidance for AI agents and new contributors working in Kataglyphis-BeschleunigerBallett
+(a Vulkan/OpenGL graphics-engine playground: C++23/C17, CMake presets, optional Rust).
+
+## Build System Overview
+
+Everything is driven by `CMakePresets.json`. Do not invent ad-hoc CMake command lines;
+pick a preset. `cmake --list-presets` shows what is available per platform.
+
+### Windows configurations (Build-Windows.ps1)
+
+`Scripts/Windows/Build-Windows.ps1` is the single entry point for Windows builds. Its
+`-Configurations` names (comma-separated) map to presets and build directories via
+`Scripts/Windows/Build-Windows.config.psd1`:
+
+| Configuration | Preset | Build dir | What you get |
+| --- | --- | --- | --- |
+| `clangcl-debug` | `x64-ClangCL-Windows-Debug` | `build-clangcl-debug` | Debug + **ASAN** + UBSan, FuzzTest fuzzing mode |
+| `clangcl-tsan` | `x64-ClangCL-Windows-Debug-TSan` | `build-clangcl-tsan` | Debug, TSan requested (see caveat below), ASAN off |
+| `clangcl-profile` | `x64-ClangCL-Windows-Profile` | `build-clangcl-profile` | RelWithDebInfo + tests/benchmarks |
+| `clangcl-release` | `x64-ClangCL-Windows-Release` | `build-clangcl-release` | Release + CPack packaging |
+| `msvc-debug` / `msvc-release` | `x64-MSVC-Windows-*` | `build-msvc-debug` | MSVC (cl) builds, optional steps |
+
+Typical full sweep (ASAN debug, TSan debug, profile, release):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
+  -Configurations "clangcl-debug,clangcl-tsan,clangcl-profile,clangcl-release" `
+  -SkipFormat -SkipTidy -SkipTests -SkipPerfTests -SkipMsix
+```
+
+### Sanitizer semantics (do not guess — this is how it actually works)
+
+- Sanitizer flags are applied **only to the Debug configuration**
+  (`$<$<CONFIG:Debug>:...>` in `cmake/Sanitizers.cmake`). Profile/Release builds are
+  never sanitized.
+- ASAN and UBSan default **ON** for Debug builds (Linux GCC/Clang, MSVC, clang-cl);
+  see `myproject_default_debug_sanitizers` in `cmake/ProjectOptions.cmake`.
+- TSan presets set `myproject_ENABLE_SANITIZER_THREAD=ON` and force
+  `myproject_ENABLE_SANITIZER_ADDRESS=OFF` (TSan and ASAN are mutually exclusive —
+  `Sanitizers.cmake` drops TSan if ASAN is on).
+- **clang-cl does not support TSan** (`x86_64-pc-windows-msvc`); the Windows TSan
+  preset therefore configures with a warning and builds a plain Debug binary with
+  **no sanitizers** (it also sets `myproject_ENABLE_SANITIZER_UNDEFINED=OFF`, see
+  the CRT note below). It exists for cross-platform preset parity; real TSan runs
+  need the Linux presets (`linux-debug-tsan-clang` / `linux-debug-tsan-GNU`).
+- The presets' `USE_THREAD_SANITIZER` cache variable is **legacy plumbing consumed by
+  nothing in CMake** — the effective switch is `myproject_ENABLE_SANITIZER_THREAD`.
+  Keep both in sync if you touch the TSan presets.
+- **On clang-cl, UBSan only works together with ASAN — never standalone.** With
+  ASAN on, the UBSan handlers are folded into `clang_rt.asan_dynamic` (release
+  CRT, `/MD`), and three places switch the whole Debug build to the release CRT,
+  keyed on `myproject_ENABLE_SANITIZER_ADDRESS`: the `/MDd` strip and the
+  `CMAKE_MSVC_RUNTIME_LIBRARY` override in `cmake/ProjectOptions.cmake`, plus the
+  Rust-bridge `CXXFLAGS` in `Src/CMakeLists.txt`
+  (`_myproject_configure_windows_rust_crate`). Standalone UBSan instead pulls
+  `clang_rt.ubsan_standalone*`, which is built `MT_StaticRelease` (static CRT) —
+  it can never link against this project's `/MD`/`/MDd` dependency mix; lld-link
+  fails with `/failifmismatch` on `RuntimeLibrary`/`_ITERATOR_DEBUG_LEVEL`
+  (verified 2026-07-16). So on Windows: enable UBSan only alongside ASAN, and
+  turn both off together (as the TSan preset does).
+
+## Containerized Windows Builds (Stevedore)
+
+Windows builds run inside the ContainerHub developer image
+`ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64` (clang-cl, CMake, Ninja,
+Vulkan SDK, Rust, sccache — everything preinstalled). CI does exactly this
+(`.github/workflows/Windows.yml`); locally use:
+
+```powershell
+# Builds clangcl-debug,clangcl-tsan,clangcl-profile,clangcl-release by default
+powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1
+```
+
+Key facts (hard-won; see `ExternalLib/Kataglyphis-ContainerHub/docs/windows-builds.md`):
+
+- **Use Stevedore's `docker.exe`** (`winget install stevedore`; binary at
+  `%ProgramFiles%\Stevedore\bin\docker.exe` or `D:\Stevedore\bin\docker.exe`).
+  `nerdctl` is broken on Windows (no DNS in BuildKit, missing CNI `nat` plugin).
+- **Process isolation** (`--isolation process`) exposes all host CPUs; Hyper-V
+  isolation caps containers at 2 CPUs unless `--cpu-count` is passed.
+- **Mount to a fresh target** (the script uses `C:\ws-mnt`): mounting over a
+  directory baked into the image (like `C:\workspace`) fails at
+  `CreateComputeSystem` on hosts whose OS build differs from the image base.
+- **Dev Drive sources cannot be bind-mounted** until the container filters are
+  allow-listed: `docker run` fails with "Der Dateisystem-Minifilter kann nicht an
+  das Entwicklervolume angefügt werden". One-time fix (elevated, then remount):
+  `fsutil devdrv setfiltersallowed bindFlt, wcifs`. Until then the script
+  automatically falls back to a tar-pipe transport: sources are streamed into a
+  container-local `C:\ws`, built there, and build trees + logs are streamed back.
+- `docker exec` bypasses the image entrypoint; the script re-invokes
+  `C:\temp\scripts\entrypoint.cmd` explicitly so the VS developer environment and
+  the clang-cl ASAN runtime DLL directory are on `PATH`.
+
+## Critical Invariant: Submodule Pins
+
+Builds are only supported against the **recorded submodule gitlinks** — the commits CI
+builds green. Checking submodules out at their upstream branch tips breaks things in
+practice; two observed failure modes (2026-07):
+
+- `ExternalLib/FUZZTEST` at a newer commit fails configure with
+  `Target "fuzztest_fuzzing_bit_gen" links to: absl::random_mocking_access ... not found`
+  (newer FuzzTest expects a newer Abseil than the build provides).
+- `ExternalLib/Kataglyphis-ContainerHub` at `main` is missing the PowerShell module
+  layout `Scripts/Windows` depends on (details below).
+
+`git submodule update --checkout --recursive` restores every pin. If a drifted
+submodule is what you actually want, update the gitlink AND fix the fallout in the
+same change.
+
+### ContainerHub module layout
+
+`Scripts/Windows/Build-Windows.ps1`, the run helpers, and the Pester tests import
+PowerShell modules from
+`ExternalLib/Kataglyphis-ContainerHub/windows/scripts/modules/`
+(`WindowsLogging.Common.psm1`, `WindowsCMake.Common.psm1`, `WindowsConfig.Common.psm1`,
+`WindowsMsix.*.psm1`, …).
+
+**ContainerHub `main` refactored that module layer away** (commit `b391a1d` and
+descendants) — functions such as `Invoke-CmakeConfigureAndBuild`, `Get-OrDefault`,
+`Get-SelectedConfigurations`, and `Invoke-CtestDiscoveredTests` no longer exist there.
+Checking the submodule out at `main` breaks every Windows build at `Import-Module`.
+
+Keep the submodule at the **recorded gitlink** (`git submodule update
+ExternalLib/Kataglyphis-ContainerHub` restores it). If you bump the submodule past the
+refactor, you must port `Scripts/Windows/*.ps1` and `Scripts/Windows/tests/*` to the
+new module layout (or vendor the removed modules into this repo) in the same change.
+`Build-Windows-Container.ps1` fails fast with a clear message when the pin is wrong.
+
+## Running on the Host (Windows)
+
+Containers cannot present a swapchain — run the built binaries on the bare host,
+from the **repo root** as working directory (`Scripts/Windows/run_clangcl_*.ps1`
+wrap this). Verified 2026-07-17 on the AMD RX 9070 XT: all four clang-cl builds
+render (~32 FPS ImGui overlay).
+
+- **Debug builds require the Vulkan validation layers on the host** — without
+  them the app dies at startup with exit code `-1073740791` (`0xC0000409`,
+  vulkan.hpp assert after "Validation layers requested, but not available!").
+  Install the Vulkan SDK (`winget install VulkanSDK`), or point `VK_LAYER_PATH`
+  at a directory containing `VkLayer_khronos_validation.{dll,json}` (they can be
+  extracted from the ContainerHub image under
+  `C:\Users\ContainerAdministrator\scoop\apps\vulkan\current\Bin`).
+  Profile/Release builds run without validation layers.
+- The ASAN debug binary needs `clang_rt.asan_dynamic-x86_64.dll`; the build
+  copies it next to `GraphicsEngine.exe`, and the run helpers set `ASAN_OPTIONS`
+  with a **relative** `log_path` (an absolute `C:\...` path breaks ASAN option
+  parsing at the drive-letter colon).
+
+## Linux Builds
+
+`Scripts/Linux/cmake-configure-build.sh` wraps configure+build
+(`--preset linux-debug-clang`, `--build-dir build`, …). TSan presets:
+`linux-debug-tsan-clang`, `linux-debug-tsan-GNU`. Coverage, ctest, and perf wrappers
+live next to it. Vulkan SDK env can be injected with `--vulkan-setup-script`.
+
+## Testing
+
+- C++ tests: `ctest --test-dir <build-dir> --output-on-failure` (add `-C Debug` for
+  multi-config generators). `Build-Windows.ps1` runs them unless `-SkipTests`.
+- Benchmarks: `clangcl-profile` builds `perfTestSuite.exe`; run via
+  `Build-Windows.ps1` without `-SkipPerfTests`.
+- PowerShell module tests: Pester suites under `Scripts/Windows/tests/`.
+
+## Docs
+
+- `README.md` — repo-level orientation.
+- `docs/source/` — Sphinx pages (`getting_started.md`, `documentation_workflow.md`).
+- Keep docs, scripts, and presets aligned: when you change build behavior, update
+  `README.md`, `docs/source/getting_started.md`, and this file in the same change.

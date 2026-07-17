@@ -131,7 +131,9 @@
 				"RUST_FEATURES": "ON",
 				"COMPILER_CACHE": "sccache",
 				"BUILD_TESTING": "TRUE",
-				"USE_THREAD_SANITIZER": "ON"
+				"USE_THREAD_SANITIZER": "ON",
+				"myproject_ENABLE_SANITIZER_THREAD": "ON",
+				"myproject_ENABLE_SANITIZER_ADDRESS": "OFF"
 			},
 			"condition": {
 				"type": "equals",
@@ -154,7 +156,9 @@
 				"RUST_FEATURES": "ON",
 				"COMPILER_CACHE": "sccache",
 				"BUILD_TESTING": "TRUE",
-				"USE_THREAD_SANITIZER": "ON"
+				"USE_THREAD_SANITIZER": "ON",
+				"myproject_ENABLE_SANITIZER_THREAD": "ON",
+				"myproject_ENABLE_SANITIZER_ADDRESS": "OFF"
 			},
 			"condition": {
 				"type": "equals",
@@ -356,7 +360,10 @@
 			"binaryDir": "${sourceDir}/build-clangcl-tsan/",
 			"installDir": "${sourceDir}/build-clangcl-tsan/",
 			"cacheVariables": {
-				"USE_THREAD_SANITIZER": "ON"
+				"USE_THREAD_SANITIZER": "ON",
+				"myproject_ENABLE_SANITIZER_THREAD": "ON",
+				"myproject_ENABLE_SANITIZER_ADDRESS": "OFF",
+				"myproject_ENABLE_SANITIZER_UNDEFINED": "OFF"
 			}
 		},
 		{
