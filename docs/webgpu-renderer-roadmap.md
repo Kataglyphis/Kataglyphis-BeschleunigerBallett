@@ -104,7 +104,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | ✅ Screenshot capture | S | Done 2026-07-18: viewer S key → 1080p PNG via offscreen readback (turntable video later) |
 | Golden-image CI on Linux | M | lavapipe/llvmpipe software Vulkan on the Ubuntu runner so the GPU tests stop skipping in CI |
 | Error telemetry | S | Route `log` + panic reports through `kataglyphis_telemetry` |
-| cargo-deny + licenses | S | The workspace already runs deny — verify the new deps stay clean each phase |
+| ✅ cargo-deny verification | S | Run 2026-07-18: **licenses ok**. Advisories flag 3 pre-existing transitive issues (all predate the renderer, from commits `6daaac6`/`4969ab6`): `quick-xml 0.39.4` (2 CVEs, Linux/Wayland only, pinned by `wayland-scanner` ← `smithay-client-toolkit` ← `winit`) and unmaintained `ttf-parser` (via egui fonts). Not fixable locally — they need upstream winit/egui bumps. Left un-ignored deliberately so they stay visible |
 | ✅ API docs + examples | M | Done 2026-07-18: crate README, `headless_render` example, warning-free `cargo doc --no-deps` |
 
 ## Phase G — Ecosystem integration (BeschleunigerBallett ↔ template)
