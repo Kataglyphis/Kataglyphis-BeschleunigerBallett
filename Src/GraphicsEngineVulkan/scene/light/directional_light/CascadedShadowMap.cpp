@@ -44,6 +44,7 @@ void CascadedShadowMap::init(std::shared_ptr<VulkanDevice>in_device, uint32_t wi
 
     // Create a view for the entire array (used in descriptor set for reading later)
     shadowMapArray->createImageView(device, depthFormat, vk::ImageAspectFlagBits::eDepth, 1, vk::ImageViewType::e2DArray, numCascades);
+    shadowMapArray->createTextureSampler(device, vk::Filter::eLinear, vk::SamplerAddressMode::eClampToEdge);
 
     createRenderPass();
     createFramebuffers();

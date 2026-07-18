@@ -11,7 +11,7 @@ export struct GUISceneSharedVars
     // Shadows
     int shadow_map_res_index = 3;
     bool shadow_resolution_changed = false;
-    int num_shadow_cascades = 5; // Default value, will be synced
+    int num_shadow_cascades = 3; // must stay <= MAX_CASCADES (SceneUBO array size)
     int pcf_radius = 2;
     float cascaded_shadow_intensity = 0.65f;
     const char* available_shadow_map_resolutions[4] = { "512", "1024", "2048", "4096" };

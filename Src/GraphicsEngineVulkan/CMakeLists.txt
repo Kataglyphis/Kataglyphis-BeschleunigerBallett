@@ -62,6 +62,10 @@ add_library(VulkanEngineCore STATIC)
 
 kataglyphis_set_module_scan(VulkanEngineCore)
 
+# GLM must match Vulkan's clip conventions in EVERY translation unit doing
+# projection math (previously only App.cpp defined these).
+target_compile_definitions(VulkanEngineCore PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_RADIANS)
+
 if(RUST_FEATURES)
   target_compile_definitions(VulkanEngineCore PUBLIC USE_RUST=1)
 else()

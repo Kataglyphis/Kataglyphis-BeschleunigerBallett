@@ -201,10 +201,12 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
         glm::vec3(sceneUBO.dirLight.direction));
 
     const auto& cascadeData = dirShadowMap.getCascadeData();
-    for (size_t i = 0; i < std::min(cascadeData.size(), static_cast<size_t>(MAX_CASCADES)); ++i) {
+    const size_t active_cascades = std::min(cascadeData.size(), static_cast<size_t>(MAX_CASCADES));
+    for (size_t i = 0; i < active_cascades; ++i) {
         sceneUBO.cascadeSplits[static_cast<int>(i)] = cascadeData[i].splitDepth;
         sceneUBO.cascadeLightSpaceMatrices[i] = cascadeData[i].viewProjMatrix;
     }
+    sceneUBO.numCascades = guiSceneSharedVars.shadows_enabled ? static_cast<unsigned int>(active_cascades) : 0U;
 
     sceneUBO.cloudMovementDirection = glm::vec4(
         guiSceneSharedVars.cloud_movement_direction[0],
@@ -1215,7 +1217,7 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorSetLayouts()
         textures_stages |= vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eCompute;
     }
 
-    std::array<vk::DescriptorSetLayoutBinding, 5> descriptor_set_layout_bindings{};
+    std::array<vk::DescriptorSetLayoutBinding, 6> descriptor_set_layout_bindings{};
     descriptor_set_layout_bindings[0].binding = globalUBO_BINDING;
     descriptor_set_layout_bindings[0].descriptorType = vk::DescriptorType::eUniformBuffer;
     descriptor_set_layout_bindings[0].descriptorCount = 1;
@@ -1245,6 +1247,13 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorSetLayouts()
     descriptor_set_layout_bindings[4].descriptorCount = MAX_TEXTURE_COUNT;
     descriptor_set_layout_bindings[4].stageFlags = sampler_stages;
     descriptor_set_layout_bindings[4].pImmutableSamplers = nullptr;
+
+    // Cascaded shadow map array, consumed by the forward lighting shader.
+    descriptor_set_layout_bindings[5].binding = SHADOW_MAP_BINDING;
+    descriptor_set_layout_bindings[5].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    descriptor_set_layout_bindings[5].descriptorCount = 1;
+    descriptor_set_layout_bindings[5].stageFlags = vk::ShaderStageFlagBits::eFragment;
+    descriptor_set_layout_bindings[5].pImmutableSamplers = nullptr;
 
     vk::DescriptorSetLayoutCreateInfo layout_create_info{};
     layout_create_info.bindingCount = static_cast<uint32_t>(descriptor_set_layout_bindings.size());
@@ -1433,9 +1442,16 @@ void Kataglyphis::VulkanRenderer::createDescriptorPoolSharedRenderStages()
     sampled_image_pool_size.type = vk::DescriptorType::eSampledImage;
     sampled_image_pool_size.descriptorCount = MAX_TEXTURE_COUNT * vulkanSwapChain.getNumberSwapChainImages();
 
-    std::vector<vk::DescriptorPoolSize> descriptor_pool_sizes = {
-        vp_pool_size, directions_pool_size, object_descriptions_pool_size, sampler_pool_size, sampled_image_pool_size
-    };
+    vk::DescriptorPoolSize shadow_map_pool_size{};
+    shadow_map_pool_size.type = vk::DescriptorType::eCombinedImageSampler;
+    shadow_map_pool_size.descriptorCount = vulkanSwapChain.getNumberSwapChainImages();
+
+    std::vector<vk::DescriptorPoolSize> descriptor_pool_sizes = { vp_pool_size,
+        directions_pool_size,
+        object_descriptions_pool_size,
+        sampler_pool_size,
+        sampled_image_pool_size,
+        shadow_map_pool_size };
 
     vk::DescriptorPoolCreateInfo pool_create_info{};
     pool_create_info.maxSets = vulkanSwapChain.getNumberSwapChainImages();
@@ -1505,6 +1521,26 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
 {
     if (sharedRenderDescriptorSet.empty()) {
         return;
+    }
+
+    // Bind the CSM depth array first: it exists independently of scene
+    // textures, so it must not sit behind the model early-returns below.
+    if (Kataglyphis::Texture *shadow_map_array = dirShadowMap.getShadowMapArray();
+        shadow_map_array != nullptr && shadow_map_array->getSampler()) {
+        vk::DescriptorImageInfo shadow_map_info{};
+        shadow_map_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        shadow_map_info.imageView = shadow_map_array->getImageView();
+        shadow_map_info.sampler = shadow_map_array->getSampler();
+
+        for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
+            vk::WriteDescriptorSet shadow_map_write{};
+            shadow_map_write.dstSet = sharedRenderDescriptorSet[i];
+            shadow_map_write.dstBinding = SHADOW_MAP_BINDING;
+            shadow_map_write.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+            shadow_map_write.descriptorCount = 1;
+            shadow_map_write.pImageInfo = &shadow_map_info;
+            device->getLogicalDevice().updateDescriptorSets(1, &shadow_map_write, 0, nullptr);
+        }
     }
 
     if (scene->getModelCount() == 0) {

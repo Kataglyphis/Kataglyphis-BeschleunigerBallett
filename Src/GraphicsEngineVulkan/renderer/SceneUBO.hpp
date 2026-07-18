@@ -45,7 +45,7 @@ struct SceneUBO
     // padding for alignment (std140)
     uint pcfRadius;
     float cascadedShadowIntensity;
-    uint padding2;
+    uint numCascades;
 
     // Cascaded shadow maps
     vec4 cascadeSplits; // up to 4 cascades
