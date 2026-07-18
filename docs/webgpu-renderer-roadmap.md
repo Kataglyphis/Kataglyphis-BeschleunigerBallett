@@ -62,7 +62,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | ✅ Image-based lighting (analytic v1) | L | Done 2026-07-18: hemisphere irradiance + roughness-blended sky reflection + Karis split-sum approx from the analytic sky; HDR-cubemap IBL for arbitrary env maps still open |
 | ✅ `KHR_lights_punctual` | M | Done 2026-07-18: point/spot/directional, KHR range window + spot cones, up to 4 lights (shadowless; punctual shadows are the next row) |
 | Point/spot shadows | L | Shadow atlas or cube shadows; after punctual lights |
-| Cascaded shadow maps | L | Port the C++ `CascadedShadowMap` design; needed once scenes get large |
+| ✅ Cascaded shadow maps | L | Done 2026-07-18: 3 cascades in a depth array, view-distance selection, per-cascade fitting |
 | ✅ Bloom | M | Done 2026-07-18: half-res brightpass + 9-tap separable Gaussian, strength slider in the overlay |
 | ✅ SSAO | M | Done 2026-07-18: depth-only reconstruction, half-res + 3x3 blur, tonemap composite, overlay slider |
 | ✅ Exposure control (manual EV) | S/M | Done 2026-07-18: exp2(EV) before ACES + overlay slider; histogram auto-exposure still open |
