@@ -63,7 +63,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | ✅ `KHR_lights_punctual` | M | Done 2026-07-18: point/spot/directional, KHR range window + spot cones, up to 4 lights (shadowless; punctual shadows are the next row) |
 | Point/spot shadows | L | Shadow atlas or cube shadows; after punctual lights |
 | Cascaded shadow maps | L | Port the C++ `CascadedShadowMap` design; needed once scenes get large |
-| Bloom | M | Threshold + separable blur chain on the HDR target, composited before tonemap |
+| ✅ Bloom | M | Done 2026-07-18: half-res brightpass + 9-tap separable Gaussian, strength slider in the overlay |
 | SSAO | M | Depth+normal reconstruction; half-res + blur |
 | Exposure control / auto-exposure | S/M | Manual EV first; histogram-based auto later |
 | Clustered / Forward+ lighting | XL | Only when light counts demand it |
