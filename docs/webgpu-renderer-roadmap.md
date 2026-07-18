@@ -111,6 +111,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 
 | Feature | Effort | Notes |
 | --- | --- | --- |
+| ✅ Shared shader pipeline | M | Done 2026-07-18: WGSL→SPIR-V/GLSL450 export via naga (`export_shaders` example, guarded by a test); see `docs/shader-sharing.md` |
 | Shared asset pipeline | M | OBJ→glTF conversion for the C++ engine's `Resources/Models` so both renderers eat the same scenes |
 | Side-by-side comparison harness | M | Same scene, same camera: Vulkan C++ vs WebGPU Rust screenshots diffed — a regression net for BOTH renderers |
 | Compute playground | L | Particles / GPU skinning via compute passes; the Rust sibling of the Kompute experiments |
