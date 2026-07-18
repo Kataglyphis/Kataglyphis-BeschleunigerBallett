@@ -45,10 +45,10 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | Feature | Effort | Notes |
 | --- | --- | --- |
 | ✅ Interactive camera controls | M | Done 2026-07-18: drag-orbit + wheel-zoom, auto-orbit until first interaction, native + web (fly/WASD later) |
-| glTF node animations | M | TRS channels, step/linear/cubic interpolation, looping |
+| ✅ glTF node animations | M | Done 2026-07-18: TRS channels (linear/step; cubic→linear), looping, node hierarchy with animated AABBs |
 | Skinning | L | Joints/weights vertex attributes, joint-matrix uniform/storage buffer, GPU skinning in the vertex stage |
 | Morph targets | M | After skinning; weights animated |
-| Runtime scene graph | M | Mutable transforms + dirty propagation instead of baked world matrices; prerequisite for animation & editor-ish tooling |
+| ✅ Runtime scene graph | M | Done 2026-07-18: node table with parents + local TRS, world recompute per frame (dirty-flag optimization later) |
 | GLB verification | S | `import_slice` should already handle binary glTF — add a golden test with a .glb |
 | Drag-and-drop model loading | M | Native: file dialog/drop; web: File API + drop zone; replaces the current CLI-arg-only flow |
 | Multiple cameras from glTF | S | Use the file's cameras when present |
@@ -65,7 +65,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | Cascaded shadow maps | L | Port the C++ `CascadedShadowMap` design; needed once scenes get large |
 | ✅ Bloom | M | Done 2026-07-18: half-res brightpass + 9-tap separable Gaussian, strength slider in the overlay |
 | ✅ SSAO | M | Done 2026-07-18: depth-only reconstruction, half-res + 3x3 blur, tonemap composite, overlay slider |
-| Exposure control / auto-exposure | S/M | Manual EV first; histogram-based auto later |
+| ✅ Exposure control (manual EV) | S/M | Done 2026-07-18: exp2(EV) before ACES + overlay slider; histogram auto-exposure still open |
 | Clustered / Forward+ lighting | XL | Only when light counts demand it |
 
 ## Phase D — Performance & scale (Colosseum-ready)
