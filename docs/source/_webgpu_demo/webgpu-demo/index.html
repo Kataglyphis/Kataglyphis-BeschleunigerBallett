@@ -8,11 +8,29 @@
     body { display: flex; flex-direction: column; }
     header { padding: 0.6rem 1rem; font-size: 0.9rem; opacity: 0.8; flex: none; }
     #demo { flex: 1 1 auto; min-height: 0; }
+    #unsupported { padding: 1rem 1.5rem; max-width: 46rem; }
+    #unsupported h2 { margin: 0 0 .5rem; font-size: 1.1rem; }
+    #unsupported code { background: #23232e; padding: .1rem .3rem; border-radius: 3px; }
     #demo canvas { display: block; outline: none; }
   </style>
 </head>
 <body>
-  <header>Kataglyphis WebGPU + glTF demo — requires a WebGPU-capable browser (Chrome/Edge 113+, Firefox 141+).</header>
+  <header>
+    Kataglyphis WebGPU + glTF demo —
+    <span id="status">checking WebGPU support…</span>
+  </header>
+  <div id="unsupported" hidden>
+    <h2>WebGPU is not available in this browser</h2>
+    <p>
+      This demo needs the WebGPU API. It is available in Chrome/Edge 113+,
+      Firefox 141+, and Safari 26+. On Linux you may need to enable
+      <code>chrome://flags/#enable-unsafe-webgpu</code>.
+    </p>
+    <p>
+      The same renderer also runs natively on Vulkan/DX12/Metal:
+      <code>cargo run -p kataglyphis_webgpu_renderer --example viewer</code>
+    </p>
+  </div>
   <div id="demo"></div>
   <pre id="log" style="padding:0 1rem; font-size:0.75rem; color:#e88;"></pre>
   <script type="module">
@@ -25,11 +43,20 @@
     window.addEventListener('error', (e) => append('window.onerror', [e.message]));
     window.addEventListener('unhandledrejection', (e) => append('unhandledrejection', [e.reason]));
 
-    import init from './pkg/kataglyphis_webgpu_renderer.js';
-    init().catch((err) => {
-      document.querySelector('header').textContent = 'Failed to start: ' + err;
-      console.error(err);
-    });
+    const statusEl = document.getElementById('status');
+    if (!navigator.gpu) {
+      // Graceful fallback instead of a silently black canvas.
+      document.getElementById('unsupported').hidden = false;
+      document.getElementById('demo').hidden = true;
+      statusEl.textContent = 'unsupported browser';
+    } else {
+      statusEl.textContent = 'drag to orbit · wheel to zoom';
+      const init = (await import('./pkg/kataglyphis_webgpu_renderer.js')).default;
+      init().catch((err) => {
+        statusEl.textContent = 'failed to start: ' + err;
+        console.error(err);
+      });
+    }
   </script>
 </body>
 </html>

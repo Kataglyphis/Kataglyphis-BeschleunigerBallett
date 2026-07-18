@@ -49,9 +49,9 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | ✅ Skinning | L | Done 2026-07-18: JOINTS_0/WEIGHTS_0, per-primitive joint storage buffer, skinned forward + shadow passes |
 | Morph targets | M | After skinning; weights animated |
 | ✅ Runtime scene graph | M | Done 2026-07-18: node table with parents + local TRS, world recompute per frame (dirty-flag optimization later) |
-| GLB verification | S | `import_slice` should already handle binary glTF — add a golden test with a .glb |
-| Drag-and-drop model loading | M | Native: file dialog/drop; web: File API + drop zone; replaces the current CLI-arg-only flow |
-| Multiple cameras from glTF | S | Use the file's cameras when present |
+| ✅ GLB verification | S | Done 2026-07-18: generated cube.glb + load test |
+| 🟡 Drag-and-drop model loading | M | Done 2026-07-18 for native (drop a .gltf/.glb on the viewer); web File API drop zone still open |
+| ✅ Multiple cameras from glTF | S | Done 2026-07-18: parsed into `CpuScene::cameras` (yfov/znear/zfar + node pose); viewer still uses its orbit camera by default |
 | `EXT_meshopt_compression` / Draco | L | Decompression on load; meshopt first (pure Rust decoder exists) |
 
 ## Phase C — Lighting & atmosphere (C++ engine parity)
@@ -90,7 +90,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | ✅ Responsive canvas | S | Done 2026-07-18: CSS-driven layout, backing store follows clientSize × devicePixelRatio per frame |
 | Touch controls | M | Pinch-zoom orbit for mobile WebGPU (Chrome Android) |
 | Model picker UI | S | Query param + dropdown of bundled scenes |
-| WebGPU-unsupported fallback page | S | Clear message + link; optionally a pre-rendered video/gif |
+| ✅ WebGPU-unsupported fallback page | S | Done 2026-07-18: `navigator.gpu` check with requirements + native command |
 | `webgl` backend feature flag | M | wgpu's GL backend for older browsers, feature-gated with reduced effects |
 | Demo scene: Colosseum | M | License-checked photogrammetry scan (CC-BY: attribute in `LICENSES-ASSETS.md`), LFS or download step — never committed raw; needs Phase D compression to be pleasant |
 
@@ -105,7 +105,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | Golden-image CI on Linux | M | lavapipe/llvmpipe software Vulkan on the Ubuntu runner so the GPU tests stop skipping in CI |
 | Error telemetry | S | Route `log` + panic reports through `kataglyphis_telemetry` |
 | cargo-deny + licenses | S | The workspace already runs deny — verify the new deps stay clean each phase |
-| API docs + examples | M | `cargo doc` polish, a `headless_render` example, README with the browser screenshot |
+| ✅ API docs + examples | M | Done 2026-07-18: crate README, `headless_render` example, warning-free `cargo doc --no-deps` |
 
 ## Phase G — Ecosystem integration (BeschleunigerBallett ↔ template)
 
