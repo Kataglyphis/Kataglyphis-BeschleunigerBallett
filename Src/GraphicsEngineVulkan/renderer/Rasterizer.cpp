@@ -101,6 +101,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
     commandBuffer.setScissor(0, 1, &scissor);
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline);
+    // The set is identical for every mesh: bind once, not per draw.
+    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout, 0, descriptorSets, nullptr);
 
     for (uint32_t m = 0; m < scene->getModelCount(); m++) {
         pushConstant.model = scene->getModelMatrix(m);
@@ -108,14 +110,11 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
           pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(PushConstantRasterizer), &pushConstant);
 
         for (unsigned int k = 0; k < scene->getMeshCount(m); k++) {
-            std::vector<vk::Buffer> const vertex_buffers = { scene->getVertexBuffer(m, k) };
-            vk::DeviceSize offsets[] = { 0 };
-            commandBuffer.bindVertexBuffers(0, vertex_buffers, offsets);
+            const vk::Buffer vertex_buffer = scene->getVertexBuffer(m, k);
+            const vk::DeviceSize offset = 0;
+            commandBuffer.bindVertexBuffers(0, 1, &vertex_buffer, &offset);
 
             commandBuffer.bindIndexBuffer(scene->getIndexBuffer(m, k), 0, vk::IndexType::eUint32);
-
-            commandBuffer.bindDescriptorSets(
-              vk::PipelineBindPoint::eGraphics, pipeline_layout, 0, descriptorSets, nullptr);
 
             commandBuffer.drawIndexed(scene->getIndexCount(m, k), 1, 0, 0, 0);
         }
