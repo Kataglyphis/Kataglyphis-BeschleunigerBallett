@@ -1,6 +1,6 @@
 # Plan: WebGPU + glTF Renderer in Rust
 
-Status: **milestones 1–3 implemented** (2026-07-18) as
+Status: **milestones 1–4 implemented** (2026-07-18) as
 `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer`
 (`kataglyphis_webgpu_renderer`): wgpu 27 context with headless + windowed
 paths, resize/Outdated/Lost-safe surface lifecycle (attachment sizes derive
@@ -15,7 +15,14 @@ Milestone 3 (2026-07-18): sRGB base-color textures with a white fallback
 proves sampling), HDR Rgba16Float offscreen target, and an ACES tonemap
 fullscreen pass (`render/tonemap.rs`) used by both the viewer and headless
 readback. Follow-up noted: honor glTF sampler filters/wrap modes (currently
-always linear/repeat), mipmaps. Milestones 4+ below remain open.
+always linear/repeat), mipmaps.
+Milestone 4 (2026-07-18): directional shadow mapping — depth-only pass from
+the light's POV into a 2048² Depth32Float map (uniforms-only bind group: the
+full group samples the map the pass writes), orthographic light frustum
+fitted to the scene AABB, 3x3 PCF with slope-scaled bias in the forward
+pass; golden test `shadow_darkens_plane_under_cube` over a generated
+`cube_on_plane.gltf`. Milestones 5 (WASM) and 6 (parity extras) remain open;
+WASM needs a hosting/deploy decision first.
 
 ## Why wgpu
 
