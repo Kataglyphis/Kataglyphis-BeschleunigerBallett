@@ -72,7 +72,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 
 | Feature | Effort | Notes |
 | --- | --- | --- |
-| Frustum culling | S | Per-primitive AABBs already computable from the loader |
+| ✅ Frustum culling | S | Done 2026-07-18: world AABBs + Gribb-Hartmann planes, camera passes only |
 | GPU instancing | M | Instance buffer path for repeated meshes |
 | KTX2/BasisU compressed textures | L | Transcode to BCn (native) / supported formats (web); huge VRAM + load-time win for photogrammetry |
 | LOD pipeline | L | meshoptimizer-style simplification offline + runtime selection |
@@ -101,7 +101,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | ✅ egui overlay (plan milestone 6) | M | Done 2026-07-18: FPS/frametime + light azimuth/elevation/intensity/ambient sliders, native + web |
 | Hot shader reload | M | Native file-watch on `src/shaders/`, pipeline rebuild; mirrors the C++ "Hot shader reload" button |
 | Render graph | XL | Declarative passes with tracked resources; do it *before* pass count explodes (bloom+SSAO+shadows is the trigger point) |
-| Screenshot/turntable capture | S | Native readback → PNG; also useful for docs and regression baselines |
+| ✅ Screenshot capture | S | Done 2026-07-18: viewer S key → 1080p PNG via offscreen readback (turntable video later) |
 | Golden-image CI on Linux | M | lavapipe/llvmpipe software Vulkan on the Ubuntu runner so the GPU tests stop skipping in CI |
 | Error telemetry | S | Route `log` + panic reports through `kataglyphis_telemetry` |
 | cargo-deny + licenses | S | The workspace already runs deny — verify the new deps stay clean each phase |
