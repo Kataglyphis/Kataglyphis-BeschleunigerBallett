@@ -44,7 +44,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 
 | Feature | Effort | Notes |
 | --- | --- | --- |
-| Interactive camera controls | M | Orbit (drag) + fly (WASD) matching the C++ camera semantics; pointer events on web, mouse on native |
+| ✅ Interactive camera controls | M | Done 2026-07-18: drag-orbit + wheel-zoom, auto-orbit until first interaction, native + web (fly/WASD later) |
 | glTF node animations | M | TRS channels, step/linear/cubic interpolation, looping |
 | Skinning | L | Joints/weights vertex attributes, joint-matrix uniform/storage buffer, GPU skinning in the vertex stage |
 | Morph targets | M | After skinning; weights animated |
@@ -98,7 +98,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 
 | Feature | Effort | Notes |
 | --- | --- | --- |
-| egui overlay (plan milestone 6) | M | FPS/frametime, light + tonemap sliders, mode toggles — parity with the C++ ImGui overlay; egui-wgpu is already in the workspace (gui crate) |
+| ✅ egui overlay (plan milestone 6) | M | Done 2026-07-18: FPS/frametime + light azimuth/elevation/intensity/ambient sliders, native + web |
 | Hot shader reload | M | Native file-watch on `src/shaders/`, pipeline rebuild; mirrors the C++ "Hot shader reload" button |
 | Render graph | XL | Declarative passes with tracked resources; do it *before* pass count explodes (bloom+SSAO+shadows is the trigger point) |
 | Screenshot/turntable capture | S | Native readback → PNG; also useful for docs and regression baselines |
