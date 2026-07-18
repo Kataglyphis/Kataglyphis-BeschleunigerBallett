@@ -32,7 +32,8 @@ control flow — use `textureSampleCompareLevel` (an invalid module silently
 voids the whole submit: pure black canvas, no page-visible error). CI runs
 the crate's tests via Invoke-DebugTests.ps1. Public hosting (e.g. GitHub
 Pages) still open. Milestone 6 (parity extras: egui overlay, skybox,
-animations) remains open.
+animations) remains open. **The full follow-on feature roadmap lives in
+[webgpu-renderer-roadmap.md](webgpu-renderer-roadmap.md).**
 
 ## Why wgpu
 
