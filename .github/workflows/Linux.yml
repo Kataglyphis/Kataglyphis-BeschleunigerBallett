@@ -99,11 +99,13 @@ jobs:
             --vulkan-version "${{ env.VULKAN_VERSION }}" \
             --build-dir "${{ env.BUILD_DIR }}" \
             --build-type "${{ env.BUILD_TYPE }}" \
-            --ctest-exclude "^Integration\\.VulkanEngine$|^RendererTest\\.BasicSetup$" 2>&1 | tee output.log
+            --ctest-exclude "^Integration\\.VulkanEngine$" 2>&1 | tee output.log
 
       - name: Run fuzzer tests
         run: |
           ${{ env.BUILD_DIR }}/first_fuzz_test
+          # Real engine surface: OBJ parsing hardening (ObjLoader mirror).
+          ${{ env.BUILD_DIR }}/obj_parsing_fuzz_test
         working-directory: ${{ github.workspace }}
 
       - name: Build Code Coverage
@@ -231,7 +233,7 @@ jobs:
             --vulkan-version "${{ env.VULKAN_VERSION }}" \
             --build-dir "${{ env.BUILD_DIR }}" \
             --build-type "${{ env.BUILD_TYPE }}" \
-            --ctest-exclude "^Integration\\.VulkanEngine$|^RendererTest\\.BasicSetup$" 2>&1 | tee output.log
+            --ctest-exclude "^Integration\\.VulkanEngine$" 2>&1 | tee output.log
 
       - name: Run fuzzer tests (gcc)
         run: |

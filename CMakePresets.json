@@ -367,6 +367,18 @@
 			}
 		},
 		{
+			"name": "x64-ClangCL-Windows-Debug-ASan",
+			"inherits": "x64-ClangCL-Windows-Debug-Base",
+			"description": "Windows and Clang (AddressSanitizer)",
+			"binaryDir": "${sourceDir}/build-clangcl-asan/",
+			"installDir": "${sourceDir}/build-clangcl-asan/",
+			"cacheVariables": {
+				"myproject_ENABLE_SANITIZER_THREAD": "OFF",
+				"myproject_ENABLE_SANITIZER_ADDRESS": "ON",
+				"myproject_ENABLE_SANITIZER_UNDEFINED": "OFF"
+			}
+		},
+		{
 			"name": "x64-ClangCL-Windows-Release",
 			"inherits": "x64-ClangCL-Windows-Release-Base"
 		},
@@ -576,6 +588,11 @@
 			"name": "x64-ClangCL-Windows-Debug-TSan",
 			"inherits": "x64-ClangCL-Windows-Build-Debug",
 			"configurePreset": "x64-ClangCL-Windows-Debug-TSan"
+		},
+		{
+			"name": "x64-ClangCL-Windows-Debug-ASan",
+			"inherits": "x64-ClangCL-Windows-Build-Debug",
+			"configurePreset": "x64-ClangCL-Windows-Debug-ASan"
 		},
     {
       "name": "x64-ClangCL-Windows-Release",

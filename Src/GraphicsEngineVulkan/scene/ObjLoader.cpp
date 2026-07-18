@@ -136,8 +136,10 @@ void ObjLoader::loadVertices(const std::string &fileName)
     tinyobj::ObjReader reader;
 
     if (!reader.ParseFromFile(fileName, reader_config)) {
+        // A malformed asset must not kill the process (the GUI can feed
+        // arbitrary files via model reload) - load nothing instead.
         if (!reader.Error().empty()) { std::cerr << "TinyObjReader: " << reader.Error(); }
-        exit(EXIT_FAILURE);
+        return;
     }
 
     if (!reader.Warning().empty()) { std::cout << "TinyObjReader: " << reader.Warning(); }
@@ -161,15 +163,22 @@ void ObjLoader::loadVertices(const std::string &fileName)
             for (size_t v = 0; v < fv; v++) {
                 // access to vertex
                 tinyobj::index_t const idx = shape.mesh.indices[index_offset + v];
-                tinyobj::real_t const vx = attrib.vertices[(3 * static_cast<size_t>(idx.vertex_index)) + 0];
-                tinyobj::real_t const vy = attrib.vertices[(3 * static_cast<size_t>(idx.vertex_index)) + 1];
-                tinyobj::real_t const vz = attrib.vertices[(3 * static_cast<size_t>(idx.vertex_index)) + 2];
+                // Malformed files can carry negative or out-of-range indices
+                // (fuzz-found hazard): validate before every array access.
+                const auto vertex_index = static_cast<size_t>(idx.vertex_index);
+                if (idx.vertex_index < 0 || (3 * vertex_index) + 2 >= attrib.vertices.size()) {
+                    continue;
+                }
+                tinyobj::real_t const vx = attrib.vertices[(3 * vertex_index) + 0];
+                tinyobj::real_t const vy = attrib.vertices[(3 * vertex_index) + 1];
+                tinyobj::real_t const vz = attrib.vertices[(3 * vertex_index) + 2];
                 glm::vec3 const pos = { vx, vy, vz };
 
                 glm::vec3 normals(0.0F);
                 // Check if `normal_index` is zero or positive. negative = no normal
                 // data
-                if (idx.normal_index >= 0 && !attrib.normals.empty()) {
+                if (idx.normal_index >= 0
+                    && (3 * static_cast<size_t>(idx.normal_index)) + 2 < attrib.normals.size()) {
                     tinyobj::real_t const nx = attrib.normals[(3 * static_cast<size_t>(idx.normal_index)) + 0];
                     tinyobj::real_t const ny = attrib.normals[(3 * static_cast<size_t>(idx.normal_index)) + 1];
                     tinyobj::real_t const nz = attrib.normals[(3 * static_cast<size_t>(idx.normal_index)) + 2];
@@ -177,17 +186,18 @@ void ObjLoader::loadVertices(const std::string &fileName)
                 }
 
                 glm::vec3 color(-1.F);
-                if (!attrib.colors.empty()) {
-                    tinyobj::real_t const red = attrib.colors[(3 * static_cast<size_t>(idx.vertex_index)) + 0];
-                    tinyobj::real_t const green = attrib.colors[(3 * static_cast<size_t>(idx.vertex_index)) + 1];
-                    tinyobj::real_t const blue = attrib.colors[(3 * static_cast<size_t>(idx.vertex_index)) + 2];
+                if ((3 * vertex_index) + 2 < attrib.colors.size()) {
+                    tinyobj::real_t const red = attrib.colors[(3 * vertex_index) + 0];
+                    tinyobj::real_t const green = attrib.colors[(3 * vertex_index) + 1];
+                    tinyobj::real_t const blue = attrib.colors[(3 * vertex_index) + 2];
                     color = glm::vec3(red, green, blue);
                 }
 
                 glm::vec2 tex_coords(0.0F);
                 // Check if `texcoord_index` is zero or positive. negative = no texcoord
                 // data
-                if (idx.texcoord_index >= 0 && !attrib.texcoords.empty()) {
+                if (idx.texcoord_index >= 0
+                    && (2 * static_cast<size_t>(idx.texcoord_index)) + 1 < attrib.texcoords.size()) {
                     tinyobj::real_t const tx = attrib.texcoords[(2 * static_cast<size_t>(idx.texcoord_index)) + 0];
                     // flip y coordinate !!
                     tinyobj::real_t const ty =
