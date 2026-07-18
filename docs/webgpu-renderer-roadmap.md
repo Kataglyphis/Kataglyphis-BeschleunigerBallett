@@ -59,7 +59,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | Feature | Effort | Notes |
 | --- | --- | --- |
 | ✅ Skybox pass | M | Done 2026-07-18: procedural gradient + analytic sun following the light sliders (HDR equirect/cubemap upgrade later with IBL) |
-| Image-based lighting | L | Irradiance (SH or convolved cubemap) + prefiltered specular + BRDF LUT; the single biggest visual jump |
+| ✅ Image-based lighting (analytic v1) | L | Done 2026-07-18: hemisphere irradiance + roughness-blended sky reflection + Karis split-sum approx from the analytic sky; HDR-cubemap IBL for arbitrary env maps still open |
 | `KHR_lights_punctual` | M | Point/spot/directional lights from the glTF |
 | Point/spot shadows | L | Shadow atlas or cube shadows; after punctual lights |
 | Cascaded shadow maps | L | Port the C++ `CascadedShadowMap` design; needed once scenes get large |
