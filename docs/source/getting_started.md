@@ -88,7 +88,7 @@ Details worth knowing:
 - The script always uses Stevedore's `docker.exe`; `nerdctl` is not usable for builds or runs on Windows.
 - Process isolation is the default so the container sees all host CPUs.
 - The repo is bind-mounted to a fresh container path. If the repo lives on a Dev Drive that has not allow-listed the container filesystem filters, bind mounts fail; the script then falls back to streaming the sources into the container via tar and streaming the resulting build trees and logs back into the working tree. To enable the faster bind-mount path on a Dev Drive, run once from an elevated prompt `fsutil devdrv setfiltersallowed bindFlt, wcifs` and remount the volume.
-- Builds are supported against the recorded submodule pins; restore them with `git submodule update --checkout --recursive`. In particular the Windows scripts import PowerShell modules from the `ExternalLib/Kataglyphis-ContainerHub` submodule (ContainerHub `main` removed that module layout), and a drifted `ExternalLib/FUZZTEST` breaks CMake configure (see `AGENTS.md`).
+- Builds are supported against the recorded submodule pins; restore them with `git submodule update --checkout --recursive`. The Windows scripts resolve PowerShell modules from the `ExternalLib/Kataglyphis-ContainerHub` submodule when available, falling back to vendored copies in `Scripts/Windows/modules` (see `Scripts/Windows/Resolve-BuildModule.ps1`). When bumping `ExternalLib/FUZZTEST`, keep `ABSL_TAG` in `ExternalLib/CMakeLists.txt` >= FuzzTest's own Abseil pin (see `AGENTS.md`).
 
 ## Packaging
 

@@ -182,7 +182,11 @@ macro(_myproject_configure_kompute_vulkan)
   unset(_myproject_kompute_vulkan_version)
 endmacro()
 
-set(ABSL_TAG 20260107.1)
+# Must stay >= the absl_TAG FuzzTest pins in
+# ExternalLib/FUZZTEST/cmake/BuildDependencies.cmake — this declaration comes
+# first and wins, and older LTS releases lack targets FuzzTest links against
+# (e.g. absl::random_mocking_access).
+set(ABSL_TAG 20260526.0)
 FetchContent_Declare(
   abseil-cpp
   GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git

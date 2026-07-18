@@ -1,7 +1,8 @@
 Describe 'WindowsConfig.Common' {
 
   BeforeAll {
-    $modulePath = Resolve-Path -Path (Join-Path $PSScriptRoot '..\..\..\ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules\WindowsConfig.Common.psm1')
+    . (Join-Path $PSScriptRoot '..\Resolve-BuildModule.ps1')
+    $modulePath = Resolve-BuildModulePath -Name 'WindowsConfig.Common'
     Import-Module $modulePath -Force
   }
 
@@ -35,7 +36,11 @@ Describe 'WindowsConfig.Common' {
 
     It 'throws on unknown config' {
       $avail = @('x')
-      { Get-SelectedConfigurations -Configurations @('unknown') -AvailableConfigurations $avail } | Should Throw
+      # Explicit try/catch instead of 'Should Throw': Pester 3.4.0 (in-box
+      # Windows version) fails to observe the exception from this module call.
+      $threw = $false
+      try { Get-SelectedConfigurations -Configurations @('unknown') -AvailableConfigurations $avail | Out-Null } catch { $threw = $true }
+      $threw | Should Be $true
     }
   }
 }

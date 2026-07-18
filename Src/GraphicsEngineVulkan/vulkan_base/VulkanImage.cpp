@@ -18,11 +18,12 @@ import kataglyphis.vulkan.command_buffer_manager;
 Kataglyphis::VulkanImage::VulkanImage() = default;
 
 Kataglyphis::VulkanImage::VulkanImage(VulkanImage &&other) noexcept
-  : device(other.device), image(other.image), imageMemory(other.imageMemory)
+  : device(other.device), image(other.image), imageMemory(other.imageMemory), owns_image(other.owns_image)
 {
     other.device = nullptr;
     other.image = nullptr;
     other.imageMemory = nullptr;
+    other.owns_image = false;
 }
 
 auto Kataglyphis::VulkanImage::operator=(VulkanImage &&other) noexcept -> VulkanImage &
@@ -33,10 +34,12 @@ auto Kataglyphis::VulkanImage::operator=(VulkanImage &&other) noexcept -> Vulkan
         device = other.device;
         image = other.image;
         imageMemory = other.imageMemory;
+        owns_image = other.owns_image;
 
         other.device = nullptr;
         other.image = nullptr;
         other.imageMemory = nullptr;
+        other.owns_image = false;
     }
 
     return *this;
@@ -56,6 +59,7 @@ void Kataglyphis::VulkanImage::create(std::shared_ptr<VulkanDevice>in_device,
   uint32_t depth)
 {
     this->device = in_device;
+    this->owns_image = true;
     // CREATE image
     // image creation info
     vk::ImageCreateInfo image_create_info{};
@@ -170,17 +174,24 @@ void Kataglyphis::VulkanImage::transitionImageLayout(vk::CommandBuffer command_b
     );
 }
 
-void Kataglyphis::VulkanImage::setImage(vk::Image in_image) { this->image = in_image; }
+void Kataglyphis::VulkanImage::setImage(vk::Image in_image)
+{
+    this->image = in_image;
+    // Wrapped external images (e.g. swapchain images) are owned by their
+    // creator; destroying them here would be a double free.
+    this->owns_image = false;
+}
 
 void Kataglyphis::VulkanImage::cleanUp()
 {
-    if (device != nullptr) {
+    if (owns_image && device != nullptr) {
         if (image) { device->getLogicalDevice().destroyImage(image); }
         if (imageMemory) { device->getLogicalDevice().freeMemory(imageMemory); }
     }
 
     image = nullptr;
     imageMemory = nullptr;
+    owns_image = false;
 }
 
 Kataglyphis::VulkanImage::~VulkanImage() { cleanUp(); }

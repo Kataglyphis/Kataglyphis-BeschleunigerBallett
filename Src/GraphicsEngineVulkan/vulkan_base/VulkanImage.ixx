@@ -57,6 +57,9 @@ class VulkanImage
 
     vk::Image image{};
     vk::DeviceMemory imageMemory{};
+    // False for wrapped external images (setImage, e.g. swapchain images),
+    // whose lifetime belongs to their creator. Mirrors VulkanBuffer's flag.
+    bool owns_image{ false };
 
     static vk::AccessFlags accessFlagsForImageLayout(vk::ImageLayout layout);
     static vk::PipelineStageFlags pipelineStageForLayout(vk::ImageLayout oldImageLayout);

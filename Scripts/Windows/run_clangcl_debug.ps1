@@ -17,12 +17,11 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $ProjectRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
-$ContainerHubModulesRoot = Join-Path $ProjectRoot 'ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules'
 $DebugDir = Join-Path $ProjectRoot 'build-clangcl-debug'
 $FuzzDir = $DebugDir
 
-Import-Module (Join-Path $ContainerHubModulesRoot 'WindowsBuild.Common.psm1') -Force
-Import-Module (Join-Path $ContainerHubModulesRoot 'WindowsTesting.Common.psm1') -Force
+. (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
+Import-BuildModule @('WindowsBuild.Common', 'WindowsTesting.Common')
 
 function Add-DirectoryToPath {
     param([string]$Directory)

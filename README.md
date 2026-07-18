@@ -117,7 +117,7 @@ powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Contain
 
 The script uses Stevedore's `docker.exe` (never `nerdctl` — broken DNS/CNI on Windows), prefers process isolation for full CPU count, and bind-mounts the repo to a fresh path. If the repo lives on a Dev Drive whose filters are not allow-listed for containers, it automatically falls back to streaming the sources into the container via tar and streaming the build trees back out; to enable the faster bind mount instead, run once (elevated) `fsutil devdrv setfiltersallowed bindFlt, wcifs` and remount the volume.
 
-Builds are supported against the recorded submodule pins (`git submodule update --checkout --recursive` restores them). In particular, the Windows scripts import PowerShell modules from the `ExternalLib/Kataglyphis-ContainerHub` submodule, and newer ContainerHub `main` removed the module layout these scripts depend on; a drifted `ExternalLib/FUZZTEST` likewise breaks CMake configure (see `AGENTS.md`).
+Builds are supported against the recorded submodule pins (`git submodule update --checkout --recursive` restores them). The Windows scripts resolve PowerShell modules from the `ExternalLib/Kataglyphis-ContainerHub` submodule when available, with vendored fallbacks in `Scripts/Windows/modules` for modules removed upstream (see `Scripts/Windows/Resolve-BuildModule.ps1` and `AGENTS.md`). When bumping `ExternalLib/FUZZTEST`, keep `ABSL_TAG` in `ExternalLib/CMakeLists.txt` at least as new as the Abseil pin in FuzzTest's `cmake/BuildDependencies.cmake`.
 
 Run helpers after building:
 

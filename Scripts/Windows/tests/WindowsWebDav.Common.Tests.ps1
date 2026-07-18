@@ -1,11 +1,7 @@
 Describe 'WindowsWebDav.Common' {
   BeforeAll {
-    $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path
-    $modulesRoot = Join-Path $repoRoot 'ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules'
-    Import-Module (Join-Path $modulesRoot 'WindowsScripts.Shared.psm1') -Force
-    Import-Module (Join-Path $modulesRoot 'WindowsLogging.Common.psm1') -Force
-    Import-Module (Join-Path $modulesRoot 'WindowsBuild.Common.psm1') -Force
-    Import-Module (Join-Path $modulesRoot 'WindowsWebDav.Common.psm1') -Force
+    . (Join-Path $PSScriptRoot '..\Resolve-BuildModule.ps1')
+    Import-BuildModule @('WindowsScripts.Shared', 'WindowsLogging.Common', 'WindowsBuild.Common', 'WindowsWebDav.Common')
     $script:workspace = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ('webdav-test-' + (Get-Random))) -Force
   }
 

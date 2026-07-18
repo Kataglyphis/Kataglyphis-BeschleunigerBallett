@@ -1,7 +1,7 @@
 Describe 'WindowsMsix.Common' {
   BeforeAll {
-    $modulesRoot = Resolve-Path -Path (Join-Path $PSScriptRoot '..\..\..\ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules')
-    Import-Module (Join-Path $modulesRoot 'WindowsMsix.Common.psm1') -Force
+    . (Join-Path $PSScriptRoot '..\Resolve-BuildModule.ps1')
+    Import-BuildModule 'WindowsMsix.Common'
     $script:tmp = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ('msix-test-' + (Get-Random))) -Force
   }
 

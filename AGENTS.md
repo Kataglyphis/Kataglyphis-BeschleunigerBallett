@@ -96,37 +96,35 @@ Key facts (hard-won; see `ExternalLib/Kataglyphis-ContainerHub/docs/windows-buil
 ## Critical Invariant: Submodule Pins
 
 Builds are only supported against the **recorded submodule gitlinks** — the commits CI
-builds green. Checking submodules out at their upstream branch tips breaks things in
-practice; two observed failure modes (2026-07):
+builds green. `git submodule update --checkout --recursive` restores every pin. If a
+drifted submodule is what you actually want, update the gitlink AND fix the fallout in
+the same change.
 
-- `ExternalLib/FUZZTEST` at a newer commit fails configure with
-  `Target "fuzztest_fuzzing_bit_gen" links to: absl::random_mocking_access ... not found`
-  (newer FuzzTest expects a newer Abseil than the build provides).
-- `ExternalLib/Kataglyphis-ContainerHub` at `main` is missing the PowerShell module
-  layout `Scripts/Windows` depends on (details below).
+Known coupling to watch when bumping pins:
 
-`git submodule update --checkout --recursive` restores every pin. If a drifted
-submodule is what you actually want, update the gitlink AND fix the fallout in the
-same change.
+- `ExternalLib/FUZZTEST` pins its own Abseil LTS in
+  `cmake/BuildDependencies.cmake`; this repo's `ABSL_TAG` in
+  `ExternalLib/CMakeLists.txt` is declared first and wins, so it must stay >= the
+  FuzzTest pin or configure fails with missing `absl::*` targets (observed:
+  `absl::random_mocking_access`).
 
-### ContainerHub module layout
+### PowerShell build modules (ContainerHub first, vendored fallback)
 
-`Scripts/Windows/Build-Windows.ps1`, the run helpers, and the Pester tests import
-PowerShell modules from
-`ExternalLib/Kataglyphis-ContainerHub/windows/scripts/modules/`
-(`WindowsLogging.Common.psm1`, `WindowsCMake.Common.psm1`, `WindowsConfig.Common.psm1`,
-`WindowsMsix.*.psm1`, …).
+`Scripts/Windows/Build-Windows.ps1`, the run helpers, and the Pester tests resolve
+PowerShell modules through `Scripts/Windows/Resolve-BuildModule.ps1`
+(`Resolve-BuildModulePath` / `Import-BuildModule`): a module is imported from
+`ExternalLib/Kataglyphis-ContainerHub/windows/scripts/modules/` when it exists
+there (preferred — reusable scripts live upstream and are shared across
+projects), otherwise from the vendored fallback **`Scripts/Windows/modules/`**.
 
-**ContainerHub `main` refactored that module layer away** (commit `b391a1d` and
-descendants) — functions such as `Invoke-CmakeConfigureAndBuild`, `Get-OrDefault`,
-`Get-SelectedConfigurations`, and `Invoke-CtestDiscoveredTests` no longer exist there.
-Checking the submodule out at `main` breaks every Windows build at `Import-Module`.
-
-Keep the submodule at the **recorded gitlink** (`git submodule update
-ExternalLib/Kataglyphis-ContainerHub` restores it). If you bump the submodule past the
-refactor, you must port `Scripts/Windows/*.ps1` and `Scripts/Windows/tests/*` to the
-new module layout (or vendor the removed modules into this repo) in the same change.
-`Build-Windows-Container.ps1` fails fast with a clear message when the pin is wrong.
+The vendored directory holds only what ContainerHub's module refactor (commit
+`b391a1d`) deleted upstream: `WindowsLogging`, `WindowsCMake`, `WindowsConfig`,
+`WindowsClang`, `WindowsFormatting`, `WindowsTesting`, `WindowsWebDav`,
+`WindowsMsix.Common`, `WindowsMsix.Signing` — plus `WindowsScripts.Shared`,
+which the vendored modules import internally by sibling path (direct imports of
+it still prefer the ContainerHub copy). If a module reappears upstream it wins
+automatically; if you improve a fallback module, consider upstreaming it to
+ContainerHub and deleting the vendored copy in the same change.
 
 ## Running on the Host (Windows)
 

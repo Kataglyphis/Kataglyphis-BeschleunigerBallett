@@ -66,15 +66,11 @@ function Resolve-DockerExe {
   throw 'docker.exe not found. Install Stevedore (winget install stevedore) or pass -DockerExe.'
 }
 
-# Preflight: Build-Windows.ps1 needs the ContainerHub module layout of the
-# RECORDED submodule pin. A checkout of ContainerHub 'main' (post module
-# refactor) lacks these modules and every build fails at Import-Module.
-$sentinelModule = Join-Path $repoRoot 'ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules\WindowsLogging.Common.psm1'
-if (-not (Test-Path $sentinelModule)) {
-  throw ("ContainerHub submodule is missing $sentinelModule. " +
-    'The checked-out submodule commit does not match the recorded pin. Fix with: ' +
-    'git submodule update ExternalLib/Kataglyphis-ContainerHub')
-}
+# Preflight: Build-Windows.ps1 resolves modules from ContainerHub first, then
+# the vendored fallback (Scripts/Windows/modules). Fail fast if a module that
+# only exists vendored (deleted upstream in ContainerHub b391a1d) is missing.
+. (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
+$null = Resolve-BuildModulePath -Name 'WindowsLogging.Common'
 
 $docker = Resolve-DockerExe -Override $DockerExe
 Write-Host "Using docker: $docker"
@@ -106,9 +102,18 @@ function Get-BuildCommandArgs {
 function Test-BindMountUsable {
   if ($NoBindMount) { return $false }
   Write-Host 'Probing bind mount support...'
-  & $docker run --rm @isolationArgs `
-    --mount "type=bind,source=$repoRoot,target=$mountTarget" `
-    --entrypoint cmd $Image /c "dir $mountTarget\CMakePresets.json > nul" 2>&1 | Out-Null
+  # The probe is EXPECTED to fail on Dev Drive hosts; docker's stderr must not
+  # become a terminating NativeCommandError (Windows PowerShell turns redirected
+  # native stderr into ErrorRecords, and $ErrorActionPreference is 'Stop').
+  $previousPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    & $docker run --rm @isolationArgs `
+      --mount "type=bind,source=$repoRoot,target=$mountTarget" `
+      --entrypoint cmd $Image /c "dir $mountTarget\CMakePresets.json > nul" 2>&1 | Out-Null
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
   return ($LASTEXITCODE -eq 0)
 }
 
@@ -172,11 +177,19 @@ function Invoke-TarPipeBuild {
       Write-Host "Keeping container '$container' for debugging (remove with: docker rm -f $container)."
     } else {
       # On hosts with the wcifs layer-teardown quirk the immediate remove can
-      # fail even though a later manual 'docker rm' succeeds — surface it.
-      & $docker rm -f $container 2>&1 | Out-Null
-      & $docker inspect $container 2>&1 | Out-Null
-      if ($LASTEXITCODE -eq 0) {
-        Write-Warning "Container '$container' could not be removed yet (wcifs teardown lock?). Remove it later with: docker rm -f $container"
+      # fail even though a later manual 'docker rm' succeeds — surface it, but
+      # never let docker's stderr become a terminating error and flip a green
+      # build to exit 1 (same NativeCommandError trap as in the probe above).
+      $previousPreference = $ErrorActionPreference
+      $ErrorActionPreference = 'Continue'
+      try {
+        & $docker rm -f $container 2>&1 | Out-Null
+        & $docker inspect $container 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+          Write-Warning "Container '$container' could not be removed yet (wcifs teardown lock?). Remove it later with: docker rm -f $container"
+        }
+      } finally {
+        $ErrorActionPreference = $previousPreference
       }
     }
   }

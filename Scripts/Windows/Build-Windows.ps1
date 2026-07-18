@@ -24,24 +24,30 @@ Set-StrictMode -Version Latest
 # Config helpers moved to WindowsConfig.Common.psm1
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$containerHubModulesRoot = Join-Path $repoRoot 'ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules'
-$localModulesRoot = Join-Path $PSScriptRoot 'modules'
 
-# Import ContainerHub modules (includes shared helpers and logging)
-Import-Module (Join-Path $containerHubModulesRoot 'WindowsScripts.Shared.psm1') -Force
-Import-Module (Join-Path $containerHubModulesRoot 'WindowsLogging.Common.psm1') -Force
-Import-Module (Join-Path $containerHubModulesRoot 'WindowsBuild.Common.psm1') -Force
-Import-Module (Join-Path $containerHubModulesRoot 'WindowsToolchain.Common.psm1') -Force
-Import-Module (Join-Path $containerHubModulesRoot 'WindowsUv.Common.psm1') -Force
-Import-Module (Join-Path $containerHubModulesRoot 'WindowsCodeQL.Common.psm1') -Force
-Import-Module (Join-Path $containerHubModulesRoot 'WindowsConfig.Common.psm1') -Force
-Import-Module (Join-Path $containerHubModulesRoot 'WindowsClang.Common.psm1') -Force
-Import-Module (Join-Path $containerHubModulesRoot 'WindowsWebDav.Common.psm1') -Force
-Import-Module (Join-Path $containerHubModulesRoot 'WindowsMsix.Common.psm1') -Force
-Import-Module (Join-Path $containerHubModulesRoot 'WindowsMsix.Signing.psm1') -Force
-Import-Module (Join-Path $containerHubModulesRoot 'WindowsCMake.Common.psm1') -Force
-Import-Module (Join-Path $containerHubModulesRoot 'WindowsFormatting.Common.psm1') -Force
-Import-Module (Join-Path $containerHubModulesRoot 'WindowsTesting.Common.psm1') -Force
+# Modules come from the ContainerHub submodule when available (preferred, so
+# reusable scripts live upstream); modules its refactor removed are vendored
+# in Scripts/Windows/modules. See Resolve-BuildModule.ps1.
+. (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
+
+# Import order matters: WindowsBuild.Common is imported after the vendored
+# logging module so its (upstream, self-contained) logging wins when present.
+Import-BuildModule @(
+  'WindowsScripts.Shared',
+  'WindowsLogging.Common',
+  'WindowsBuild.Common',
+  'WindowsToolchain.Common',
+  'WindowsUv.Common',
+  'WindowsCodeQL.Common',
+  'WindowsConfig.Common',
+  'WindowsClang.Common',
+  'WindowsWebDav.Common',
+  'WindowsMsix.Common',
+  'WindowsMsix.Signing',
+  'WindowsCMake.Common',
+  'WindowsFormatting.Common',
+  'WindowsTesting.Common'
+)
 
 $defaultConfigPath = Join-Path $PSScriptRoot 'Build-Windows.config.psd1'
 $configPath = Get-OrDefault $env:BUILD_WINDOWS_CONFIG $defaultConfigPath

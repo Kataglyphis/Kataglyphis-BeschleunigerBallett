@@ -231,6 +231,11 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
         static_cast<float>(guiSceneSharedVars.cloud_num_march_steps));
 }
 
+auto Kataglyphis::VulkanRenderer::supportsHardwareRaytracing() const -> bool
+{
+    return device && device->supportsHardwareAcceleratedRRT();
+}
+
 void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Frontend::GUI *frontend_gui)
 {
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars =
@@ -395,12 +400,10 @@ void Kataglyphis::VulkanRenderer::drawFrame()
         return;
     }
 
-    if (result == vk::Result::eSuboptimalKHR) {
-        recreateSwapChain();
-        return;
-    }
-
-    if (result != vk::Result::eSuccess) {
+    // eSuboptimalKHR still delivered a usable image and signaled the acquire
+    // semaphore, so this frame must be rendered and presented; presentKHR's
+    // result handling below recreates the swapchain afterwards.
+    if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
         abort_frame_with_fatal_error("Failed to acquire next image!", result);
         return;
     }
@@ -568,10 +571,30 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
     skyBox.recreateFrameResources(vulkanSwapChain.getNumberSwapChainImages(), skyboxImageViews, skyboxDepthViews,
         vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
 
-    // If the image count changed, we must recreate descriptor pools and sets too
+    // If the image count changed, every per-swapchain-image resource must be
+    // re-provisioned, not just the descriptor pools: the UBO vectors size the
+    // shared descriptor pool and are indexed per image by the descriptor
+    // updates below, and the raytracing pool/sets are allocated per image.
     if (newImageCount != oldImageCount) {
+        cleanUpUBOs();
+        create_uniform_buffers();
+
         cleanUpDescriptorResources();
         initDescriptorResources();
+
+        if (device->supportsHardwareAcceleratedRRT()) {
+            if (raytracingDescriptorPool) {
+                device->getLogicalDevice().destroyDescriptorPool(raytracingDescriptorPool);
+                raytracingDescriptorPool = nullptr;
+            }
+            raytracingDescriptorSet.clear();
+            createRaytracingDescriptorPool();
+            createRaytracingDescriptorSets();
+        }
+
+        // The freshly allocated shared sets lost the object-description
+        // binding, which updateAllDescriptorSets() does not rewrite.
+        updateObjectDescriptionDescriptorSets();
     }
 
     updateAllDescriptorSets();
@@ -1000,16 +1023,22 @@ void Kataglyphis::VulkanRenderer::createRaytracingDescriptorPool()
 
 void Kataglyphis::VulkanRenderer::cleanUpSync()
 {
+    // Iterate each vector on its own: after a partial createSynchronization
+    // failure their lengths can differ, and a shared loop bound would leak
+    // whatever the longer vector still holds.
     for (vk::Semaphore semaphore : render_finished_by_image) {
         if (semaphore) { device->getLogicalDevice().destroySemaphore(semaphore); }
     }
     render_finished_by_image.clear();
 
-    for (uint32_t i = 0; i < image_available.size(); i++) {
-        if (image_available[i]) { device->getLogicalDevice().destroySemaphore(image_available[i]); }
-        if (in_flight_fences[i]) { device->getLogicalDevice().destroyFence(in_flight_fences[i]); }
+    for (vk::Semaphore semaphore : image_available) {
+        if (semaphore) { device->getLogicalDevice().destroySemaphore(semaphore); }
     }
     image_available.clear();
+
+    for (vk::Fence fence : in_flight_fences) {
+        if (fence) { device->getLogicalDevice().destroyFence(fence); }
+    }
     in_flight_fences.clear();
     images_in_flight_fences.clear();
 }
@@ -1035,7 +1064,16 @@ void Kataglyphis::VulkanRenderer::create_object_description_buffer()
           std::vector<uint32_t>{0});
     }
 
+    updateObjectDescriptionDescriptorSets();
+}
+
+void Kataglyphis::VulkanRenderer::updateObjectDescriptionDescriptorSets()
+{
+    if (!objectDescriptionBuffer.getBuffer()) { return; }
+
     for (size_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
+        if (i >= sharedRenderDescriptorSet.size()) { break; }
+
         vk::DescriptorBufferInfo object_descriptions_buffer_info{};
         object_descriptions_buffer_info.buffer = objectDescriptionBuffer.getBuffer();
         object_descriptions_buffer_info.offset = 0;
@@ -1286,17 +1324,7 @@ void Kataglyphis::VulkanRenderer::createSynchronization()
     frame_sync_count = std::min<uint32_t>(
       static_cast<uint32_t>(Kataglyphis::MAX_FRAME_DRAWS), vulkanSwapChain.getNumberSwapChainImages());
 
-    if (!image_available.empty()) {
-        for (uint32_t i = 0; i < image_available.size(); i++) {
-            if (in_flight_fences[i]) { device->getLogicalDevice().destroyFence(in_flight_fences[i]); }
-        }
-        for (vk::Semaphore semaphore : image_available) {
-            if (semaphore) { device->getLogicalDevice().destroySemaphore(semaphore); }
-        }
-        for (vk::Semaphore semaphore : render_finished_by_image) {
-            if (semaphore) { device->getLogicalDevice().destroySemaphore(semaphore); }
-        }
-    }
+    cleanUpSync();
 
     image_available.resize(frame_sync_count);
     render_finished_by_image.resize(vulkanSwapChain.getNumberSwapChainImages());

@@ -1,7 +1,7 @@
 Describe 'WindowsMsix.Signing' {
   BeforeAll {
-    $modulesRoot = Resolve-Path -Path (Join-Path $PSScriptRoot '..\..\..\ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules')
-    Import-Module (Join-Path $modulesRoot 'WindowsMsix.Common.psm1') -Force
+    . (Join-Path $PSScriptRoot '..\Resolve-BuildModule.ps1')
+    Import-BuildModule 'WindowsMsix.Common'
     # Provide stubs for external cmdlets/functions so tests never call real signtool or import certs.
     $global:invokedArgs = $null
     function Invoke-BuildExternal { param($Context,$File,$Parameters) $global:invokedArgs = @{ File = $File; Params = $Parameters }; return 0 }
@@ -13,7 +13,7 @@ Describe 'WindowsMsix.Signing' {
     function Test-Administrator { return $false }
 
     # Import WindowsBuild.Common first so its exported Invoke-BuildExternal can be stubbed/overridden by tests.
-    Import-Module (Join-Path $modulesRoot 'WindowsBuild.Common.psm1') -Force
+    Import-BuildModule 'WindowsBuild.Common'
 
     # Provide stubs for external cmdlets/functions so tests never call real signtool or import certs.
     function Invoke-BuildExternal { param($Context,$File,$Parameters) $global:invokedArgs = @{ File = $File; Params = $Parameters }; return 0 }
@@ -24,7 +24,7 @@ Describe 'WindowsMsix.Signing' {
     # Test-Administrator is defined in the module; provide a default so Mock/override works reliably in Pester v3.
     function Test-Administrator { return $false }
 
-    Import-Module (Join-Path $modulesRoot 'WindowsMsix.Signing.psm1') -Force
+    Import-BuildModule 'WindowsMsix.Signing'
     $script:workspace = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ('msix-sign-test-' + (Get-Random))) -Force
     $script:ctx = New-BuildContext -Workspace $script:workspace -LogDir (Join-Path $script:workspace 'logs')
   }

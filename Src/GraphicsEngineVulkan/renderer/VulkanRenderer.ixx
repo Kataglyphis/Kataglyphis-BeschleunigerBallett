@@ -49,6 +49,7 @@ class VulkanRenderer
     void finishAllRenderCommands();
     void update_raytracing_descriptor_set(uint32_t image_index);
     bool hasDeviceLost() const { return device_lost_detected; }
+    bool supportsHardwareRaytracing() const;
 
     void cleanUp();
 
@@ -130,6 +131,7 @@ class VulkanRenderer
     Kataglyphis::VulkanRendererInternals::ASManager asManager;
     VulkanBuffer objectDescriptionBuffer;
     void create_object_description_buffer();
+    void updateObjectDescriptionDescriptorSets();
 
     vk::DescriptorPool descriptorPoolSharedRenderStages{};
     void createDescriptorPoolSharedRenderStages();

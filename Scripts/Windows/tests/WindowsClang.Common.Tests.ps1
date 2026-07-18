@@ -1,6 +1,7 @@
 Describe 'WindowsClang.Common' {
   BeforeAll {
-    $modulePath = Resolve-Path -Path (Join-Path $PSScriptRoot '..\..\..\ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules\WindowsClang.Common.psm1')
+    . (Join-Path $PSScriptRoot '..\Resolve-BuildModule.ps1')
+    $modulePath = Resolve-BuildModulePath -Name 'WindowsClang.Common'
     Import-Module $modulePath -Force
     $tmp = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ('test-build-' + (Get-Random))) -Force
     $script:buildRoot = $tmp.FullName
@@ -13,7 +14,11 @@ Describe 'WindowsClang.Common' {
   Context 'Get-CompileCommandsDatabase' {
     It 'throws if build.ninja missing' {
       Mock -CommandName Test-Path { return $false } -ParameterFilter { $Path -like '*build.ninja' }
-      { Get-CompileCommandsDatabase -Context @{ } -BuildRoot $script:buildRoot } | Should Throw
+      # Explicit try/catch instead of 'Should Throw': Pester 3.4.0 (in-box
+      # Windows version) fails to observe the exception from this module call.
+      $threw = $false
+      try { Get-CompileCommandsDatabase -Context @{ } -BuildRoot $script:buildRoot | Out-Null } catch { $threw = $true }
+      $threw | Should Be $true
     }
 
     It 'returns existing compile_commands.json when present' {
