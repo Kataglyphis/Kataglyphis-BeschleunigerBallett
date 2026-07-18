@@ -74,7 +74,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | --- | --- | --- |
 | ✅ Frustum culling | S | Done 2026-07-18: world AABBs + Gribb-Hartmann planes, camera passes only |
 | GPU instancing | M | Instance buffer path for repeated meshes |
-| KTX2/BasisU compressed textures | L | Transcode to BCn (native) / supported formats (web); huge VRAM + load-time win for photogrammetry |
+| 🟡 KTX2 compressed textures | L | Done 2026-07-18: KTX2 container + BC1/3/5/7 passthrough with graceful fallback where BC is unavailable. Basis ETC1S/UASTC transcoding (and the web path) still open |
 | LOD pipeline | L | meshoptimizer-style simplification offline + runtime selection |
 | Async asset loading | M | Background thread native / fetch + progress on web; loading UI |
 | Indirect draws | M | `draw_indexed_indirect` batching once culling is GPU-side |
