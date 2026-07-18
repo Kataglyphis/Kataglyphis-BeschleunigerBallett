@@ -29,16 +29,16 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 
 | Feature | Effort | Notes |
 | --- | --- | --- |
-| glTF sampler filters + wrap modes | S | Currently always linear/repeat; honor NEAREST etc. (the checker demo visibly wants this) |
-| Mipmap generation | M | Compute or render-pass downsampling at upload; fixes shimmer on the Colosseum-class assets |
-| Normal matrix | S | Correct lighting under non-uniform scale (inverse-transpose per primitive) |
-| Normal mapping | M | glTF tangents; MikkTSpace-style generation when absent |
-| Full metallic-roughness BRDF | M | GGX + Smith + Fresnel-Schlick, replacing the current Lambert; metallic/roughness texture sampling |
-| Emissive + occlusion maps | S | Straightforward once the BRDF lands; `KHR_materials_emissive_strength` |
+| ✅ glTF sampler filters + wrap modes | S | Done 2026-07-18: nearest/linear + repeat/mirror/clamp honored per material texture |
+| ✅ Mipmap generation | M | Done 2026-07-18: CPU box-filter chains at upload, sRGB-aware averaging |
+| ✅ Normal matrix | S | Done 2026-07-18: inverse-transpose per primitive |
+| ✅ Normal mapping | M | Done 2026-07-18: glTF tangents or Lengyel-style generation (MikkTSpace parity later if baked assets demand it) |
+| ✅ Full metallic-roughness BRDF | M | Done 2026-07-18: GGX + Smith + Fresnel-Schlick; metallic/roughness texture sampling |
+| ✅ Emissive + occlusion maps | S | Done 2026-07-18 (`KHR_materials_emissive_strength` still open) |
 | Alpha modes | M | OPAQUE / MASK (alpha-cutoff in shader) / BLEND (sorted back-to-front pass) |
 | `KHR_texture_transform` | S | Common in atlas-packed assets |
-| Double-sided materials | S | Per-primitive cull-mode selection |
-| sRGB/linear audit | S | One pass over every texture/attachment decision, documented in a table |
+| ✅ Double-sided materials | S | Done 2026-07-18: per-primitive pipeline variant |
+| sRGB/linear audit | S | Partially covered (per-slot srgb flags); document the full table |
 
 ## Phase B — Scene, animation, input
 
