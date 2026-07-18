@@ -36,9 +36,9 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | ✅ Full metallic-roughness BRDF | M | Done 2026-07-18: GGX + Smith + Fresnel-Schlick; metallic/roughness texture sampling |
 | ✅ Emissive + occlusion maps | S | Done 2026-07-18 (`KHR_materials_emissive_strength` still open) |
 | ✅ Alpha modes | M | Done 2026-07-18: MASK cutoff discard + sorted BLEND pass with transparency-aware shadow casting (per-pixel alpha-tested shadows for textured masks still open) |
-| `KHR_texture_transform` | S | Common in atlas-packed assets |
+| ✅ `KHR_texture_transform` | S | Done 2026-07-18: base color slot (other slots as needed) |
 | ✅ Double-sided materials | S | Done 2026-07-18: per-primitive pipeline variant |
-| sRGB/linear audit | S | Partially covered (per-slot srgb flags); document the full table |
+| ✅ sRGB/linear audit | S | Done 2026-07-18: full table in `docs/webgpu-srgb-audit.md`; one known deviation (web swapchain non-sRGB) |
 
 ## Phase B — Scene, animation, input
 
