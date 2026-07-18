@@ -100,7 +100,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | --- | --- | --- |
 | ✅ egui overlay (plan milestone 6) | M | Done 2026-07-18: FPS/frametime + light azimuth/elevation/intensity/ambient sliders, native + web |
 | ✅ Hot shader reload | M | Done 2026-07-18: mtime polling + R key, validation-scoped rebuild keeps old pipelines on bad WGSL |
-| Render graph | XL | Declarative passes with tracked resources; do it *before* pass count explodes (bloom+SSAO+shadows is the trigger point) |
+| ✅ Render graph (v1) | XL | Done 2026-07-18: passes declare read/write resources, validated in debug builds; explicit order retained. Auto-scheduling/aliasing still open |
 | ✅ Screenshot capture | S | Done 2026-07-18: viewer S key → 1080p PNG via offscreen readback (turntable video later) |
 | Golden-image CI on Linux | M | lavapipe/llvmpipe software Vulkan on the Ubuntu runner so the GPU tests stop skipping in CI |
 | Error telemetry | S | Route `log` + panic reports through `kataglyphis_telemetry` |
