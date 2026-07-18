@@ -178,6 +178,8 @@ auto main(int argc, char **argv) -> int
     }
 #endif
 
+    // Exceptions are disabled project-wide (/EHs-, VULKAN_HPP_NO_EXCEPTIONS);
+    // unrecoverable Vulkan failures fail fast via ASSERT_VULKAN's abort().
     const int result = Kataglyphis::App::run();
     spdlog::shutdown();
     return result;
