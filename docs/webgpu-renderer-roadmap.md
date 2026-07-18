@@ -99,7 +99,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | Feature | Effort | Notes |
 | --- | --- | --- |
 | ✅ egui overlay (plan milestone 6) | M | Done 2026-07-18: FPS/frametime + light azimuth/elevation/intensity/ambient sliders, native + web |
-| Hot shader reload | M | Native file-watch on `src/shaders/`, pipeline rebuild; mirrors the C++ "Hot shader reload" button |
+| ✅ Hot shader reload | M | Done 2026-07-18: mtime polling + R key, validation-scoped rebuild keeps old pipelines on bad WGSL |
 | Render graph | XL | Declarative passes with tracked resources; do it *before* pass count explodes (bloom+SSAO+shadows is the trigger point) |
 | ✅ Screenshot capture | S | Done 2026-07-18: viewer S key → 1080p PNG via offscreen readback (turntable video later) |
 | Golden-image CI on Linux | M | lavapipe/llvmpipe software Vulkan on the Ubuntu runner so the GPU tests stop skipping in CI |
