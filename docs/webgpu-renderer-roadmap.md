@@ -35,7 +35,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | ✅ Normal mapping | M | Done 2026-07-18: glTF tangents or Lengyel-style generation (MikkTSpace parity later if baked assets demand it) |
 | ✅ Full metallic-roughness BRDF | M | Done 2026-07-18: GGX + Smith + Fresnel-Schlick; metallic/roughness texture sampling |
 | ✅ Emissive + occlusion maps | S | Done 2026-07-18 (`KHR_materials_emissive_strength` still open) |
-| Alpha modes | M | OPAQUE / MASK (alpha-cutoff in shader) / BLEND (sorted back-to-front pass) |
+| ✅ Alpha modes | M | Done 2026-07-18: MASK cutoff discard + sorted BLEND pass with transparency-aware shadow casting (per-pixel alpha-tested shadows for textured masks still open) |
 | `KHR_texture_transform` | S | Common in atlas-packed assets |
 | ✅ Double-sided materials | S | Done 2026-07-18: per-primitive pipeline variant |
 | sRGB/linear audit | S | Partially covered (per-slot srgb flags); document the full table |
