@@ -64,7 +64,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | Point/spot shadows | L | Shadow atlas or cube shadows; after punctual lights |
 | Cascaded shadow maps | L | Port the C++ `CascadedShadowMap` design; needed once scenes get large |
 | ✅ Bloom | M | Done 2026-07-18: half-res brightpass + 9-tap separable Gaussian, strength slider in the overlay |
-| SSAO | M | Depth+normal reconstruction; half-res + blur |
+| ✅ SSAO | M | Done 2026-07-18: depth-only reconstruction, half-res + 3x3 blur, tonemap composite, overlay slider |
 | Exposure control / auto-exposure | S/M | Manual EV first; histogram-based auto later |
 | Clustered / Forward+ lighting | XL | Only when light counts demand it |
 
