@@ -1,6 +1,6 @@
 # Plan: WebGPU + glTF Renderer in Rust
 
-Status: **milestones 1–2 implemented** (2026-07-18) as
+Status: **milestones 1–3 implemented** (2026-07-18) as
 `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer`
 (`kataglyphis_webgpu_renderer`): wgpu 27 context with headless + windowed
 paths, resize/Outdated/Lost-safe surface lifecycle (attachment sizes derive
@@ -10,7 +10,12 @@ normal synthesis), forward pass with a directional light, orbit camera, a
 `viewer` example (`cargo run -p kataglyphis_webgpu_renderer --example viewer
 [model.gltf]`), and headless golden tests against a bundled generated
 `tests/assets/cube.gltf` (structural pixel assertions in sRGB space).
-Milestones 3+ below remain open.
+Milestone 3 (2026-07-18): sRGB base-color textures with a white fallback
+(glTF images decoded to RGBA8; a checkered `cube_textured.gltf` golden test
+proves sampling), HDR Rgba16Float offscreen target, and an ACES tonemap
+fullscreen pass (`render/tonemap.rs`) used by both the viewer and headless
+readback. Follow-up noted: honor glTF sampler filters/wrap modes (currently
+always linear/repeat), mipmaps. Milestones 4+ below remain open.
 
 ## Why wgpu
 
