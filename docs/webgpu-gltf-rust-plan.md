@@ -1,6 +1,6 @@
 # Plan: WebGPU + glTF Renderer in Rust
 
-Status: **milestones 1–4 implemented** (2026-07-18) as
+Status: **milestones 1–5 implemented** (2026-07-18) as
 `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer`
 (`kataglyphis_webgpu_renderer`): wgpu 27 context with headless + windowed
 paths, resize/Outdated/Lost-safe surface lifecycle (attachment sizes derive
@@ -21,8 +21,18 @@ the light's POV into a 2048² Depth32Float map (uniforms-only bind group: the
 full group samples the map the pass writes), orthographic light frustum
 fitted to the scene AABB, 3x3 PCF with slope-scaled bias in the forward
 pass; golden test `shadow_darkens_plane_under_cube` over a generated
-`cube_on_plane.gltf`. Milestones 5 (WASM) and 6 (parity extras) remain open;
-WASM needs a hosting/deploy decision first.
+`cube_on_plane.gltf`.
+Milestone 5 (2026-07-18): wasm32/WebGPU browser demo — cdylib +
+wasm-bindgen entry (`src/wasm_demo.rs`) rendering the embedded shadow scene
+in Chrome; verified locally (build wasm32 + `wasm-bindgen --target web`,
+serve `crates/webgpu_renderer/web/`). Hard-won lessons: winit does not size
+the canvas backing store (explicitly set it or the surface renders at ~1x1),
+and Chrome's WGSL validator rejects `textureSampleCompare` in non-uniform
+control flow — use `textureSampleCompareLevel` (an invalid module silently
+voids the whole submit: pure black canvas, no page-visible error). CI runs
+the crate's tests via Invoke-DebugTests.ps1. Public hosting (e.g. GitHub
+Pages) still open. Milestone 6 (parity extras: egui overlay, skybox,
+animations) remains open.
 
 ## Why wgpu
 
