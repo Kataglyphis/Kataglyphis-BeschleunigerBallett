@@ -46,7 +46,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | --- | --- | --- |
 | ✅ Interactive camera controls | M | Done 2026-07-18: drag-orbit + wheel-zoom, auto-orbit until first interaction, native + web (fly/WASD later) |
 | ✅ glTF node animations | M | Done 2026-07-18: TRS channels (linear/step; cubic→linear), looping, node hierarchy with animated AABBs |
-| Skinning | L | Joints/weights vertex attributes, joint-matrix uniform/storage buffer, GPU skinning in the vertex stage |
+| ✅ Skinning | L | Done 2026-07-18: JOINTS_0/WEIGHTS_0, per-primitive joint storage buffer, skinned forward + shadow passes |
 | Morph targets | M | After skinning; weights animated |
 | ✅ Runtime scene graph | M | Done 2026-07-18: node table with parents + local TRS, world recompute per frame (dirty-flag optimization later) |
 | GLB verification | S | `import_slice` should already handle binary glTF — add a golden test with a .glb |
