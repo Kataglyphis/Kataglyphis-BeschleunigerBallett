@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Kataglyphis WebGPU glTF demo</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #14141c; color: #dcdce6; font-family: system-ui, sans-serif; }
+    body { display: flex; flex-direction: column; }
+    header { padding: 0.6rem 1rem; font-size: 0.9rem; opacity: 0.8; flex: none; }
+    #demo { flex: 1 1 auto; min-height: 0; }
+    #demo canvas { display: block; outline: none; }
+  </style>
+</head>
+<body>
+  <header>Kataglyphis WebGPU + glTF demo — requires a WebGPU-capable browser (Chrome/Edge 113+, Firefox 141+).</header>
+  <div id="demo"></div>
+  <pre id="log" style="padding:0 1rem; font-size:0.75rem; color:#e88;"></pre>
+  <script type="module">
+    const logEl = document.getElementById('log');
+    const append = (kind, args) => {
+      logEl.textContent += kind + ': ' + args.map(a => String(a?.stack ?? a)).join(' ') + '\n';
+    };
+    const origError = console.error.bind(console);
+    console.error = (...args) => { append('error', args); origError(...args); };
+    window.addEventListener('error', (e) => append('window.onerror', [e.message]));
+    window.addEventListener('unhandledrejection', (e) => append('unhandledrejection', [e.reason]));
+
+    import init from './pkg/kataglyphis_webgpu_renderer.js';
+    init().catch((err) => {
+      document.querySelector('header').textContent = 'Failed to start: ' + err;
+      console.error(err);
+    });
+  </script>
+</body>
+</html>

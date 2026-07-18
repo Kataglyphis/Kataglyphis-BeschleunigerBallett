@@ -42,6 +42,12 @@ Build and maintenance guide for Kataglyphis-BeschleunigerBallett.
 
       Open the C++ API entry page. When Doxygen XML is available, this page is replaced by the generated reference.
 
+   .. grid-item-card:: WebGPU Demo (live)
+      :link: webgpu_demo
+      :link-type: doc
+
+      Run the Rust WebGPU/glTF renderer in your browser: PBR, shadows, and ACES tonemapping via WebAssembly.
+
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
@@ -52,6 +58,7 @@ Build and maintenance guide for Kataglyphis-BeschleunigerBallett.
    documentation_workflow.md
    graphviz_files
    wsl2_vulkan
+   webgpu_demo.md
 
 Indices and tables
 ==================

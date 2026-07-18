@@ -86,8 +86,8 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 
 | Feature | Effort | Notes |
 | --- | --- | --- |
-| GitHub Pages deploy | S | CI job: wasm build + `wasm-bindgen` + publish `web/`; makes the demo shareable with a URL |
-| Responsive canvas | S | Resize with the browser window + devicePixelRatio handling (currently fixed 1024×640) |
+| ✅ Web deploy (via Sphinx docs site) | S | Done 2026-07-18: demo ships inside the Sphinx site (`docs/source/_webgpu_demo` + `html_extra_path`, page `webgpu_demo.md`), deployed by the existing docs FTP pipeline. Rebuild + recopy when the demo changes |
+| ✅ Responsive canvas | S | Done 2026-07-18: CSS-driven layout, backing store follows clientSize × devicePixelRatio per frame |
 | Touch controls | M | Pinch-zoom orbit for mobile WebGPU (Chrome Android) |
 | Model picker UI | S | Query param + dropdown of bundled scenes |
 | WebGPU-unsupported fallback page | S | Clear message + link; optionally a pre-rendered video/gif |

@@ -95,6 +95,12 @@ extensions.extend(
     ]
 )
 
+# -- Extra static payloads ------------------------------------------------------
+# Copied verbatim into the site root: the WebGPU/glTF WASM demo (built from
+# ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer; see
+# docs/webgpu-gltf-rust-plan.md for the rebuild commands).
+html_extra_path = ["_webgpu_demo"]
+
 # -- MyST extension configuration -----------------------------------------------
 myst_enable_extensions = [
     "dollarmath",
