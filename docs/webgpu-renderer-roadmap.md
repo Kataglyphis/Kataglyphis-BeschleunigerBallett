@@ -58,7 +58,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 
 | Feature | Effort | Notes |
 | --- | --- | --- |
-| Skybox pass | M | HDR equirect → cubemap; mirrors the C++ SkyBox stage |
+| ✅ Skybox pass | M | Done 2026-07-18: procedural gradient + analytic sun following the light sliders (HDR equirect/cubemap upgrade later with IBL) |
 | Image-based lighting | L | Irradiance (SH or convolved cubemap) + prefiltered specular + BRDF LUT; the single biggest visual jump |
 | `KHR_lights_punctual` | M | Point/spot/directional lights from the glTF |
 | Point/spot shadows | L | Shadow atlas or cube shadows; after punctual lights |
