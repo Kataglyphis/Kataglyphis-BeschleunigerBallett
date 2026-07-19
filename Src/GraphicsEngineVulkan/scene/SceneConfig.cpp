@@ -112,7 +112,11 @@ auto getModelFile() -> std::string
 #ifdef SULO_MODE
     relativeModelPath = "Model/Sulo/WolfStahl/SuloLongDongLampe_v2.obj";
 #else
-    relativeModelPath = "Models/VikingRoom/viking_room.obj";
+    // Dinosaurs is the default debug scene because it SHOWS the cascaded
+    // shadow maps: it carries its own 20x20 ground plane at y=0 with the
+    // figures standing up to y=3.64, so the shadows land on a visible floor
+    // instead of only self-shadowing a single object.
+    relativeModelPath = "Models/Dinosaurs/dinosaurs.obj";
 #endif
 #endif
 
@@ -152,7 +156,11 @@ auto getModelMatrix() -> glm::mat4
 #if SULO_MODE
     modelMatrix = glm::scale(modelMatrix, glm::vec3(60.0f, 60.0f, 60.0f));
 #else
-    modelMatrix = glm::scale(modelMatrix, glm::vec3(60.0F, 60.0F, 60.0F));
+    // Dinosaurs is already ~20 units across, so it needs no scaling. The old
+    // 60x scale existed for the tiny viking_room and made the camera start
+    // INSIDE the geometry (all backfaces, culled -> black viewport), while
+    // stretching the scene far beyond a cascade's useful resolution.
+    modelMatrix = glm::scale(modelMatrix, glm::vec3(1.0F, 1.0F, 1.0F));
 #endif
 
 #endif

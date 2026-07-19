@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <glm/geometric.hpp>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
@@ -33,11 +34,28 @@ TEST(CameraUnit, DefaultStateLooksDownNegativeZ)
 {
     Camera camera;
 
-    expect_vec3_near(camera.get_camera_position(), glm::vec3(0.0F, 2.0F, 0.0F));
-    // yaw = -90, pitch = 0 -> front = (0, 0, -1)
-    expect_vec3_near(camera.get_camera_direction(), glm::vec3(0.0F, 0.0F, -1.0F));
-    expect_vec3_near(camera.get_right_axis(), glm::vec3(1.0F, 0.0F, 0.0F));
-    expect_vec3_near(camera.get_up_axis(), glm::vec3(0.0F, 1.0F, 0.0F));
+    // The default POSITION and PITCH are scene-framing choices (Camera.cpp
+    // frames the debug scene so its shadows are visible at startup) and were
+    // retuned when that scene changed. Asserting them as literals made this
+    // test fail for a deliberate, correct change, so it now asserts the
+    // orientation contract that must hold regardless of framing.
+    const glm::vec3 front = camera.get_camera_direction();
+    const glm::vec3 right = camera.get_right_axis();
+    const glm::vec3 up = camera.get_up_axis();
+
+    EXPECT_NEAR(glm::length(front), 1.0F, kEpsilon);
+    EXPECT_LT(front.z, -0.9F) << "yaw -90 must look predominantly down -Z";
+    EXPECT_NEAR(front.x, 0.0F, kEpsilon);
+
+    // Right stays the world +X for yaw -90 whatever the pitch is.
+    expect_vec3_near(right, glm::vec3(1.0F, 0.0F, 0.0F));
+
+    // The basis must stay orthonormal.
+    EXPECT_NEAR(glm::dot(front, right), 0.0F, kEpsilon);
+    EXPECT_NEAR(glm::dot(front, up), 0.0F, kEpsilon);
+    EXPECT_NEAR(glm::dot(right, up), 0.0F, kEpsilon);
+    EXPECT_NEAR(glm::length(up), 1.0F, kEpsilon);
+    EXPECT_GT(up.y, 0.0F) << "up must not be flipped";
 
     EXPECT_NEAR(camera.get_yaw(), -90.0F, kEpsilon);
     EXPECT_GT(camera.get_far_plane(), camera.get_near_plane());
@@ -87,16 +105,21 @@ TEST(CameraUnit, KeyControlMovesAlongFront)
     Camera camera;
     std::array<bool, GLFW_KEY_LAST + 1> keys{};
 
+    // Relative to the camera's OWN start and front, so retuning the default
+    // framing cannot break this - what matters is that W moves exactly
+    // movement_speed * dt along front, and S undoes it.
+    const glm::vec3 start = camera.get_camera_position();
+    const glm::vec3 front = camera.get_camera_direction();
+    constexpr float kStep = 10.0F * 0.5F;// movement_speed * dt
+
     keys[GLFW_KEY_W] = true;
     camera.key_control(keys.data(), 0.5F);
-
-    // movement_speed 10 * dt 0.5 along front (0,0,-1) from (0,2,0)
-    expect_vec3_near(camera.get_camera_position(), glm::vec3(0.0F, 2.0F, -5.0F));
+    expect_vec3_near(camera.get_camera_position(), start + front * kStep);
 
     keys[GLFW_KEY_W] = false;
     keys[GLFW_KEY_S] = true;
     camera.key_control(keys.data(), 0.5F);
-    expect_vec3_near(camera.get_camera_position(), glm::vec3(0.0F, 2.0F, 0.0F));
+    expect_vec3_near(camera.get_camera_position(), start);
 }
 
 TEST(CameraUnit, ViewMatrixMatchesLookAt)

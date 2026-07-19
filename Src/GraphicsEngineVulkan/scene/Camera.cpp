@@ -13,8 +13,21 @@ module kataglyphis.vulkan.camera;
 
 import kataglyphis.shared.frontend.camera_controller;
 
+// Debug starts on the Dinosaurs scene (see SceneConfig::getModelFile), which
+// spans x/z [-10,10] with figures up to y=3.64 on their own ground plane.
+// These defaults put the camera outside it, looking slightly down, so the
+// cascaded shadows on the floor are visible the moment the app opens.
+//
+// far_plane matters as much as the position here: cascade splits are computed
+// as farPlane * (i / numCascades), so a 4000-unit far plane put the first
+// cascade at 1333 units and spread a 2048x2048 shadow map across it - a
+// 20-unit scene then landed on a handful of texels. 150 keeps cascade 0 at
+// ~50 units, which is tight enough for crisp shadows while still allowing
+// some flying around.
 Camera::Camera()
   :
+#if NDEBUG
+    // Release loads crytek-sponza, which needs the wide-open defaults.
     camera_state{ .position = glm::vec3(0.0F, 2.0F, 0.0F),
         .front = {},
         .world_up = glm::vec3(0.0F, 1.0F, 0.0F),
@@ -27,6 +40,20 @@ Camera::Camera()
         .near_plane = 0.1F,
         .far_plane = 4000.F,
         .fov = 45.F }
+#else
+    camera_state{ .position = glm::vec3(0.0F, 6.0F, 26.0F),
+        .front = {},
+        .world_up = glm::vec3(0.0F, 1.0F, 0.0F),
+        .right = {},
+        .up = {},
+        .yaw = -90.F,
+        .pitch = -10.0F,
+        .movement_speed = 10.F,
+        .turn_speed = 0.25F,
+        .near_plane = 0.1F,
+        .far_plane = 150.F,
+        .fov = 45.F }
+#endif
 {
     update();
 }
