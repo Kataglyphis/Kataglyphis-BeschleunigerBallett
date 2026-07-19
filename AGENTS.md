@@ -130,6 +130,36 @@ behaves strangely, delete the build directory for a clean cold build. Full
 measurements, including two approaches that do not work, in
 [`docs/container-build-caching.md`](docs/container-build-caching.md).
 
+## Rule: Reusable Work Belongs in ContainerHub
+
+**Before writing a script, module, or doc here, ask whether another project
+could use it. If yes, it goes into `ExternalLib/Kataglyphis-ContainerHub` and
+this repo consumes it — never a copy.**
+
+What belongs upstream:
+
+- **PowerShell** that is not specific to this engine: container lifecycle,
+  transfers, toolchain discovery, isolation settings, image handling. Add it to
+  `windows/scripts/modules/` and consume it via
+  `Scripts/Windows/Resolve-BuildModule.ps1` (ContainerHub first, vendored
+  fallback second).
+- **Knowledge about the container image or Windows containers in general** —
+  build performance, platform traps, setup fixes. ContainerHub's `docs/` is the
+  single home; link to it from here.
+- **Anything learned the hard way** that is not about this renderer: write down
+  the symptom, not just the fix, so the next person recognises it.
+
+What stays here: engine code, shaders, this project's presets and build
+orchestration (build-directory names, `Build-Windows.ps1` arguments,
+project-specific exclusions), and `Resolve-BuildModule.ps1` itself — it is the
+bootstrap that *finds* ContainerHub, so it cannot live inside it.
+
+Worked example: the container-reuse work (2026-07) put seven functions in
+`WindowsContainerBuild.Reuse.psm1` and two documents in ContainerHub's `docs/`,
+while this repo kept only the tar-pipe orchestration for its own build
+directories. Both repos are committed and pushed together, and the submodule
+pin is bumped in the same change.
+
 ## Critical Invariant: Submodule Pins
 
 Builds are only supported against the **recorded submodule gitlinks** — the commits CI
@@ -241,7 +271,8 @@ pass each catch classes of problem the debug loop cannot. See
 
 ## Docs
 
-Each topic has exactly one home; link, do not copy.
+Each topic has exactly one home; link, do not copy. Reusable topics live in
+ContainerHub (see the rule above), project-specific ones here.
 
 | Where | Owns |
 | --- | --- |

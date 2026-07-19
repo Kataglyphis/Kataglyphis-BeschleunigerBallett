@@ -61,12 +61,44 @@ $incs = Get-ChildItem Resources/Shaders -Recurse -Directory | ForEach-Object { "
 Note that `glslangValidator` (Vulkan SDK) and `glslc` differ slightly in
 include handling; the build script uses `glslc`.
 
+## The second failure mode: silent glslc failures (fixed 2026-07-19)
+
+An earlier version of this document claimed that ten "legacy OpenGL-era"
+shaders (`clouds/CloudsRectangle.*`, `rasterizer/g_buffer_*`,
+`rasterizer/shadows/omni_shadow_map.*`) could not compile under the Vulkan
+include convention, and that this was acceptable because no pipeline used
+them. **Both halves were wrong.**
+
+The real cause was that `compile-shaders.ps1` passed every shader
+*subdirectory* to `glslc` as an include path, but never the shader **root**.
+Any include written with a directory prefix — `#include
+"hostDevice/host_device_shared_vars.hpp"` — therefore could not resolve. All
+ten compile once the root is on the path.
+
+This stayed invisible because a `glslc` failure was only a `Write-Warning`.
+The previous `.spv` remained on disk and the build reported success, so:
+
+- `rasterizer/shader.frag` — loaded by the **main pipeline every frame**, not
+  a legacy file at all — was among the failures. Edits to it silently did
+  nothing, which compounds the stale-SPIR-V problem above and may account for
+  shadow behaviour that resisted diagnosis.
+- The failures were durable enough to be mistaken for a property of the
+  shaders and written into this document as a known limitation.
+
+**Fixes:**
+
+- `$shadersRoot` is now passed to `glslc` ahead of the subdirectories.
+- A failed `glslc` invocation now **fails the script** (non-zero exit) and
+  lists every shader that failed, instead of warning and continuing.
+- `BuildIntegrity.EveryShaderSourceHasCompiledBinary` asserts that every
+  shader source has a `.spv`, so a silently-skipped shader fails a test.
+
+Lesson worth keeping: a warning that nothing acts on is indistinguishable from
+success, and "these files just don't compile" is a claim to verify, not to
+document.
+
 ## Known gaps
 
-- Ten legacy OpenGL-era shaders (`clouds/CloudsRectangle.*`,
-  `rasterizer/g_buffer_*`, `rasterizer/shadows/omni_shadow_map.*`) fail to
-  compile with the Vulkan include convention. They are not part of any Vulkan
-  pipeline; leave them or port them deliberately.
 - `.spv` files are committed to the repo. That makes stale binaries possible
   in a fresh clone; the timestamp checks now handle it, but treating them as
   build artifacts would be cleaner.

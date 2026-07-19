@@ -3,7 +3,10 @@ include(${CMAKE_SOURCE_DIR}/Test/cmake/CommonTestBuild.cmake)
 set(COMMIT_TEST_SUITE commitTestSuite)
 
 # Only the test sources - NOT the VulkanEngine sources
-file(GLOB RENDERER_COMMIT_TEST_FILTER "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
+# CONFIGURE_DEPENDS: build trees now persist between container builds
+# (see docs/container-build-caching.md), so without it a NEW test file is
+# silently never compiled - CMake would not re-run the glob.
+file(GLOB RENDERER_COMMIT_TEST_FILTER CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
 
 if(MYPROJECT_CMAKE_DEBUG_LOG)
   message(STATUS "Render commit test filter is: ${RENDERER_COMMIT_TEST_FILTER}")

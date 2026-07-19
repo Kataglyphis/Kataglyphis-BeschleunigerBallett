@@ -239,7 +239,8 @@ TEST(GoldenRender, RendersNonBlankFrame)
 // shaders again, the two means become identical and this fails.
 // DISABLED: this test currently FAILS and the failure is REAL - enabling the
 // cascaded shadow map does not measurably darken the frame (measured:
-// ~700 pixels darkened vs ~700 brightened out of 466944, i.e. noise).
+// darkened and brightened pixel counts are both noise-level; see the 2026-07-19
+// re-measurement below).
 //
 // Five genuine defects were found and fixed while chasing it (NDC z
 // unprojected from -1 under GLM_FORCE_DEPTH_ZERO_TO_ONE; the light-matrix UBO
@@ -247,10 +248,23 @@ TEST(GoldenRender, RendersNonBlankFrame)
 // shader assuming single-pass layered rendering the renderer does not do;
 // glm::ortho handed negative light-view z as near/far plus a light camera one
 // unit from the scene; cascade selection by radial distance instead of view
-// depth). Shadows still do not darken, and the last measurement could not be
-// explained: forcing the forward fragment shader to output a constant colour
-// did not change the captured frame at all, which suggests the captured image
-// does not reflect that shader.
+// depth). Shadows still do not darken.
+//
+// UPDATE 2026-07-19: the observation that "forcing the forward fragment shader
+// to output a constant colour did not change the captured frame" is now
+// EXPLAINED, and it was not a renderer bug. rasterizer/shader.frag was failing
+// to compile (the shader root was missing from glslc's include paths) and
+// compile-shaders.ps1 only warned, so the stale .spv kept being used - every
+// edit to that shader was a no-op. See docs/shader-build-pipeline.md.
+//
+// That does NOT fix this test. Re-measured with genuinely current SPIR-V:
+// mean luminance 27.2922 (intensity 0) vs 27.3229 (intensity 1), 391 pixels
+// darkened vs 481 brightened of 466944. The shadow term still has no effect on
+// the image, and raising the intensity very slightly BRIGHTENS it. The defect
+// is real and independent of the shader-staleness bugs - but note that every
+// diagnosis performed before 2026-07-19 was made against a binary that did not
+// match its source, so those conclusions are worth re-deriving rather than
+// trusting.
 //
 // Tracked in ROADMAP.md. Re-enable by removing DISABLED_ once the cause is
 // found - do NOT relax the assertion to make it pass.

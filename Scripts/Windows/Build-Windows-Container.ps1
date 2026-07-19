@@ -128,8 +128,12 @@ function Invoke-TarPipeBuild {
   $container = $persistentContainerName
   $ws = 'C:\ws'
 
-  $reusedContainer = Get-ReusableBuildContainer -DockerExe $docker -Name $container -Image $Image `
+  # Returns the container actually used: a blocked -Fresh removal falls back to
+  # a uniquely named container, so never assume it matches $persistentContainerName.
+  $containerInfo = Get-ReusableBuildContainer -DockerExe $docker -Name $container -Image $Image `
     -RunArgs ($isolationArgs + $cacheArgs) -Fresh:$FreshContainer
+  $reusedContainer = $containerInfo.Reused
+  $container = $containerInfo.Name
 
   try {
     & $docker exec $container cmd /c "mkdir $ws" | Out-Null
@@ -196,10 +200,14 @@ function Invoke-TarPipeBuild {
       # database (clang-tidy) and logs. Copying the whole ~8.5 GB tree back was
       # pure overhead, and its deep cargo/cxxbridge paths are what produced the
       # "Artifact extraction failed" warnings.
-      $includeArgs = ($existing | ForEach-Object {
-          if ($_ -eq 'logs') { $_ } else { "$_/*.exe $_/*.dll $_/*.pdb $_/compile_commands.json" }
-        }) -join ' '
-      $tarOut = "`"$docker`" exec $container cmd /c `"cd /d $ws && tar -cf - $includeArgs`" | tar -xf - -C `"$repoRoot`""
+      # tar does NOT expand globs (it reports "Cannot stat" and produces an
+      # empty archive), so select by EXCLUSION instead. Dropping the heavy
+      # intermediates keeps the transfer small while the host still gets the
+      # executables, debug info, compile database and logs it needs. The
+      # container keeps the full tree, so nothing here has to seed a rebuild.
+      $skip = @('*/CMakeFiles', '*/_deps', '*/cargo', '*.obj', '*.lib', '*.ilk', '*.pcm', '*/corrosion')
+      $excludeArgs = ($skip | ForEach-Object { "--exclude `"$_`"" }) -join ' '
+      $tarOut = "`"$docker`" exec $container tar -cf - $excludeArgs -C $ws $($existing -join ' ') | tar -xf - -C `"$repoRoot`""
       cmd /c $tarOut
       if ($LASTEXITCODE -ne 0) {
         Write-Warning "Artifact extraction reported errors (exit $LASTEXITCODE) - check executable timestamps."

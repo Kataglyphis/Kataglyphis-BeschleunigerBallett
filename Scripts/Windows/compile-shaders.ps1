@@ -41,12 +41,19 @@ if (-not $glslcPath) {
 Write-Host "[INFO] Using glslc: $glslcPath"
 Write-Host "[INFO] Precompiling shaders under $shadersRoot -> target-env=$TargetEnv"
 
+$failed = @()
+
 # collect include dirs
 $includeArgs = @(
   '-I', (Join-Path $scriptRoot 'Src\GraphicsEngineVulkan'),
   '-I', (Join-Path $scriptRoot 'Src\GraphicsEngineVulkan\renderer'),
   '-I', (Join-Path $scriptRoot 'Src\shared')
 )
+# The shader ROOT must come before the subdirectories: includes written with a
+# directory prefix (e.g. "hostDevice/host_device_shared_vars.hpp") resolve
+# against it, and passing only the subdirectories made every shader that uses
+# one fail - rasterizer/shader.frag and the raytracing shaders among them.
+$includeArgs += '-I'; $includeArgs += $shadersRoot
 $includeDirs = Get-ChildItem -Path $shadersRoot -Directory -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
 foreach ($d in $includeDirs) { $includeArgs += '-I'; $includeArgs += $d }
 
@@ -103,7 +110,19 @@ foreach ($file in $files) {
   & $glslcPath $args
   if ($LASTEXITCODE -ne 0) {
     Write-Warning "glslc failed for $($file.FullName)"
+    $failed += $file.FullName
   }
+}
+
+# A warning here used to be the end of it: the previous .spv stayed on disk and
+# the build went green, so a shader that stopped compiling kept running from a
+# stale binary. That hid a missing include path for months and silently froze
+# rasterizer/shader.frag, which the main pipeline loads every frame. Every
+# shader in the tree compiles today, so a failure is a real regression - fail
+# the build and say which ones.
+if ($failed.Count -gt 0) {
+  Write-Error ("Shader compilation failed for $($failed.Count) shader(s):`n  " + ($failed -join "`n  "))
+  exit 1
 }
 
 Write-Host "[INFO] Shader precompilation finished"
