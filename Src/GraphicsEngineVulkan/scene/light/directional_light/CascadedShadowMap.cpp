@@ -53,6 +53,31 @@ void CascadedShadowMap::init(std::shared_ptr<VulkanDevice>in_device, uint32_t wi
     createFramebuffers();
 }
 
+namespace {
+// Free so computeCascadeData() can be called without a CascadedShadowMap (and
+// therefore without a Vulkan device) in tests.
+std::vector<glm::vec4> frustumCornersWorldSpace(const glm::mat4 &proj, const glm::mat4 &view)
+{
+    const auto inv = glm::inverse(proj * view);
+
+    std::vector<glm::vec4> frustumCorners;
+    for (unsigned int x = 0; x < 2; ++x) {
+        for (unsigned int y = 0; y < 2; ++y) {
+            for (unsigned int z = 0; z < 2; ++z) {
+                // X/Y span the NDC cube [-1, 1], but depth does NOT: the engine
+                // is built with GLM_FORCE_DEPTH_ZERO_TO_ONE (Vulkan convention),
+                // so NDC z runs 0..1.
+                const glm::vec4 pt =
+                  inv * glm::vec4((2.0F * x) - 1.0F, (2.0F * y) - 1.0F, static_cast<float>(z), 1.0F);
+                frustumCorners.push_back(pt / pt.w);
+            }
+        }
+    }
+
+    return frustumCorners;
+}
+}// namespace
+
 std::vector<glm::vec4> CascadedShadowMap::getFrustumCornersWorldSpace(const glm::mat4& proj, const glm::mat4& view)
 {
     const auto inv = glm::inverse(proj * view);
@@ -76,8 +101,26 @@ std::vector<glm::vec4> CascadedShadowMap::getFrustumCornersWorldSpace(const glm:
     return frustumCorners;
 }
 
-void CascadedShadowMap::updateCascades(const glm::mat4& cameraView, float cameraFov, float aspect, float nearPlane, float farPlane, const glm::vec3& lightDir)
+ShadowPushConstants makeShadowPush(const glm::mat4 &modelMatrix, uint32_t cascadeIndex)
 {
+    // Deliberately trivial, and deliberately a named function: this used to be
+    // written inline as `glm::mat4(1.0f)`, so the shadow pass rendered casters
+    // at the wrong scale and nothing was ever occluded. A unit test now pins
+    // that the caller's matrix is what goes to the GPU.
+    return ShadowPushConstants{ modelMatrix, cascadeIndex };
+}
+
+std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
+  const glm::mat4 &cameraView,
+  float cameraFov,
+  float aspect,
+  float nearPlane,
+  float farPlane,
+  const glm::vec3 &lightDir)
+{
+    std::vector<CascadeData> cascadeData(numCascades);
+    if (numCascades == 0U) { return cascadeData; }
+
     std::vector<float> cascadeSplits(numCascades + 1);
 
     for (uint32_t i = 0; i < numCascades + 1; i++) {
@@ -92,7 +135,7 @@ void CascadedShadowMap::updateCascades(const glm::mat4& cameraView, float camera
     for (uint32_t i = 0; i < numCascades; i++) {
         glm::mat4 const curr_cascade_proj = glm::perspective(glm::radians(cameraFov), aspect, cascadeSplits[i], cascadeSplits[i + 1]);
 
-        std::vector<glm::vec4> frustumCornerWorldSpace = getFrustumCornersWorldSpace(curr_cascade_proj, cameraView);
+        std::vector<glm::vec4> frustumCornerWorldSpace = frustumCornersWorldSpace(curr_cascade_proj, cameraView);
 
         glm::vec3 center = glm::vec3(0, 0, 0);
         for (const auto &v : frustumCornerWorldSpace) { center += glm::vec3(v); }
@@ -152,6 +195,18 @@ void CascadedShadowMap::updateCascades(const glm::mat4& cameraView, float camera
         // A simple way is to pass the positive distance
         cascadeData[i].splitDepth = cascadeSplits[i + 1];
     }
+
+    return cascadeData;
+}
+
+void CascadedShadowMap::updateCascades(const glm::mat4 &cameraView,
+  float cameraFov,
+  float aspect,
+  float nearPlane,
+  float farPlane,
+  const glm::vec3 &lightDir)
+{
+    cascadeData = computeCascadeData(numCascades, cameraView, cameraFov, aspect, nearPlane, farPlane, lightDir);
 
     // Push the freshly computed matrices into the UBO the shadow geometry
     // shader renders with. Without this the buffer keeps whatever was in
@@ -498,12 +553,6 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
         std::vector<vk::DescriptorSet> shadowDescriptorSets = {descriptorSet};
         commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, shadowDescriptorSets, nullptr);
 
-        struct ShadowPush
-        {
-            glm::mat4 model;
-            uint32_t cascadeIndex;
-        };
-
         for (uint32_t m = 0; m < scene->getModelCount(); m++) {
             // The shadow caster must be transformed by the SAME model matrix
             // the forward pass uses (Rasterizer::recordCommands). This pushed a
@@ -516,11 +565,11 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
             //
             // It was also pushed once per cascade instead of once per model, so
             // per-model transforms were ignored even had the matrix been right.
-            ShadowPush push{ scene->getModelMatrix(m), cascade };
+            const ShadowPushConstants push = makeShadowPush(scene->getModelMatrix(m), cascade);
             commandBuffer.pushConstants(pipelineLayout,
               vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eGeometry,
               0,
-              sizeof(ShadowPush),
+              sizeof(ShadowPushConstants),
               &push);
 
             for (uint32_t k = 0; k < scene->getMeshCount(m); k++) {

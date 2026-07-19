@@ -18,6 +18,32 @@ struct CascadeData {
     glm::mat4 viewProjMatrix;
 };
 
+// Push constants consumed by directional_shadow_map.vert/.geom.
+struct ShadowPushConstants
+{
+    glm::mat4 model;
+    uint32_t cascadeIndex;
+};
+
+// Free functions so the cascade maths and the caster transform can be tested
+// WITHOUT a Vulkan device - CascadedShadowMap itself cannot be constructed
+// without one, which is why neither had any coverage while a hard-coded
+// identity model matrix silently disabled shadows entirely.
+
+// Splits and light-space matrices for `numCascades` cascades. Pure maths.
+std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
+  const glm::mat4 &cameraView,
+  float cameraFov,
+  float aspect,
+  float nearPlane,
+  float farPlane,
+  const glm::vec3 &lightDir);
+
+// The caster transform. This exists as a named function purely so a test can
+// pin the invariant that was once broken: the shadow pass must transform
+// casters by the SAME model matrix as the forward pass, not by identity.
+ShadowPushConstants makeShadowPush(const glm::mat4 &modelMatrix, uint32_t cascadeIndex);
+
 class CascadedShadowMap
 {
   public:
