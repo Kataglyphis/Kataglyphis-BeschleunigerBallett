@@ -8,7 +8,7 @@ L (multi-day), XL (multi-week).
 
 ## C++ Vulkan engine
 
-- [ ] **Stage/renderer-level RAII** (L) — leaf types (`VulkanBuffer`/`VulkanImage`)
+- [x] **Stage/renderer-level RAII** (L, stages done 2026-07-19; renderer-level cleanup consolidation still open) — leaf types (`VulkanBuffer`/`VulkanImage`)
   are move-only with destructor release; extend the pattern upward through the
   render stages and `VulkanRenderer` so the hand-ordered 48-line `cleanUp()`
   and the device-lost special-casing in `App.cpp` disappear.
