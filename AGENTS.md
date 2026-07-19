@@ -86,11 +86,32 @@ here. Two documents cover it:
 - [`ExternalLib/Kataglyphis-ContainerHub/docs/windows-builds.md`](ExternalLib/Kataglyphis-ContainerHub/docs/windows-builds.md)
   — the image itself: build sequence, Stevedore setup, invariants.
 - [`ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md`](ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md)
-  — building *inside* it: the reusable-container pattern and its safety rails,
-  why sccache cannot cache a C++23 modules build, why a named volume cannot be
-  a CMake build directory, the Windows path limit that silently truncates tar
-  transfers, the Dev Drive bind-mount restriction, `docker exec` bypassing the
-  entrypoint, and the wcifs teardown lock.
+  — building *inside* it: **both transports and how to set each one up**
+  (§ Transports), the reusable-container pattern and its safety rails, why
+  sccache cannot cache a C++23 modules build, why a named volume cannot be a
+  CMake build directory, the Windows path limit that silently truncates tar
+  transfers, `docker exec` bypassing the entrypoint, and the wcifs teardown
+  lock.
+
+### Two transports — both supported
+
+Sources get into the container either by **tar-pipe** (default) or by **bind
+mount** (`-UseBindMount`). Both work; keep both.
+
+| | no-change ninja | no-change wall |
+| --- | --- | --- |
+| tar-pipe + reusable container (default) | **9.6 s** | **44 s** |
+| bind mount | 32.7 s | 159 s |
+
+The bind mount is slower **on this Dev Drive host**: the build tree then lives
+on D: and every ninja stat and object write crosses the `bindFlt` filter. That
+result is host-specific — on a non-Dev-Drive volume or a smaller tree it can
+invert, so measure before switching rather than trusting the default.
+
+Bind mounting needs one elevated setup step plus a reboot, and both transports
+must mount at the same in-container path (`C:\ws`) or CMake rejects the cache.
+Setup, verification, revert and the reasoning:
+[§ Transports](ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md#transports-how-to-set-up-both).
 
 The reusable PowerShell is upstream too
 (`windows/scripts/modules/WindowsContainerBuild.Reuse.psm1`:
