@@ -20,6 +20,7 @@ import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.image;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.shader_helper;
+import kataglyphis.vulkan.pipeline_builder;
 
 using namespace Kataglyphis::VulkanRendererInternals;
 
@@ -315,59 +316,6 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
     bindingDescription.inputRate = vk::VertexInputRate::eVertex;
     
     std::array<vk::VertexInputAttributeDescription, 4> attributeDescriptions = vertex::getVertexInputAttributeDesc();
-    vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
-    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
-
-    vk::PipelineInputAssemblyStateCreateInfo inputAssembly{};
-    inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
-    inputAssembly.primitiveRestartEnable = VK_FALSE;
-
-    vk::PipelineViewportStateCreateInfo viewportState{};
-    viewportState.viewportCount = 1;
-    viewportState.pViewports = nullptr;
-    viewportState.scissorCount = 1;
-    viewportState.pScissors = nullptr;
-
-    std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
-    vk::PipelineDynamicStateCreateInfo dynamicState{};
-    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-    dynamicState.pDynamicStates = dynamicStates.data();
-
-    vk::PipelineRasterizationStateCreateInfo rasterizer{};
-    rasterizer.depthClampEnable = VK_FALSE;
-    rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer.polygonMode = vk::PolygonMode::eFill;
-    rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = vk::CullModeFlagBits::eBack;
-    rasterizer.frontFace = vk::FrontFace::eCounterClockwise;
-    rasterizer.depthBiasEnable = VK_FALSE;
-
-    vk::PipelineMultisampleStateCreateInfo multisampling{};
-    multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
-
-    vk::PipelineDepthStencilStateCreateInfo depthStencil{};
-    depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
-    depthStencil.depthCompareOp = vk::CompareOp::eLess;
-    depthStencil.depthBoundsTestEnable = VK_FALSE;
-    depthStencil.stencilTestEnable = VK_FALSE;
-
-    vk::PipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
-    colorBlendAttachment.blendEnable = VK_FALSE;
-
-    std::array<vk::PipelineColorBlendAttachmentState, 4> colorBlendAttachments = {
-        colorBlendAttachment, colorBlendAttachment, colorBlendAttachment, colorBlendAttachment
-    };
-
-    vk::PipelineColorBlendStateCreateInfo colorBlending{};
-    colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = static_cast<uint32_t>(colorBlendAttachments.size());
-    colorBlending.pAttachments = colorBlendAttachments.data();
 
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
@@ -377,22 +325,12 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
 
     geometryPipelineLayout = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo).value;
 
-    vk::GraphicsPipelineCreateInfo pipelineInfo{};
-    pipelineInfo.stageCount = geomStages.size();
-    pipelineInfo.pStages = geomStages.data();
-    pipelineInfo.pVertexInputState = &vertexInputInfo;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
-    pipelineInfo.pViewportState = &viewportState;
-    pipelineInfo.pRasterizationState = &rasterizer;
-    pipelineInfo.pMultisampleState = &multisampling;
-    pipelineInfo.pDepthStencilState = &depthStencil;
-    pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.pDynamicState = &dynamicState;
-    pipelineInfo.layout = geometryPipelineLayout;
-    pipelineInfo.renderPass = renderPass;
-    pipelineInfo.subpass = 0;
-
-    geometryPipeline = device->getLogicalDevice().createGraphicsPipeline(nullptr, pipelineInfo).value;
+    PipelineBuilder geometryPipelineBuilder;
+    geometryPipeline =
+      geometryPipelineBuilder.setShaderStages({ geomStages.begin(), geomStages.end() })
+        .setVertexInput({ bindingDescription }, { attributeDescriptions.begin(), attributeDescriptions.end() })
+        .setColorAttachmentCount(4)
+        .build(device->getLogicalDevice(), geometryPipelineLayout, renderPass, 0);
     spdlog::info("DeferredRasterizer: Created geometryPipeline: 0x{:x}", (uint64_t)(VkPipeline)geometryPipeline);
 
     device->getLogicalDevice().destroyShaderModule(geomVertModule);
@@ -408,7 +346,6 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
     vk::PipelineShaderStageCreateInfo lightFragStage{ {}, vk::ShaderStageFlagBits::eFragment, lightFragModule, "main" };
     std::array<vk::PipelineShaderStageCreateInfo, 2> lightStages = { lightVertStage, lightFragStage };
 
-    vk::PipelineVertexInputStateCreateInfo emptyVertexInputInfo{};
     vk::VertexInputBindingDescription dummyBinding{};
     dummyBinding.binding = 0;
     dummyBinding.stride = 16;
@@ -420,20 +357,6 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
     dummyAttribute.format = vk::Format::eR32G32B32A32Sfloat;
     dummyAttribute.offset = 0;
 
-    emptyVertexInputInfo.vertexBindingDescriptionCount = 1;
-    emptyVertexInputInfo.pVertexBindingDescriptions = &dummyBinding;
-    emptyVertexInputInfo.vertexAttributeDescriptionCount = 1;
-    emptyVertexInputInfo.pVertexAttributeDescriptions = &dummyAttribute;
-
-    rasterizer.cullMode = vk::CullModeFlagBits::eNone;
-    depthStencil.depthTestEnable = VK_FALSE;
-    depthStencil.depthWriteEnable = VK_FALSE;
-
-    vk::PipelineColorBlendStateCreateInfo lightColorBlending{};
-    lightColorBlending.logicOpEnable = VK_FALSE;
-    lightColorBlending.attachmentCount = 1;
-    lightColorBlending.pAttachments = &colorBlendAttachment;
-
     vk::PipelineLayoutCreateInfo lightPipelineLayoutInfo{};
     lightPipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
     lightPipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
@@ -441,22 +364,13 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
 
     lightingPipelineLayout = device->getLogicalDevice().createPipelineLayout(lightPipelineLayoutInfo).value;
 
-    vk::GraphicsPipelineCreateInfo lightingPipelineInfo{};
-    lightingPipelineInfo.stageCount = lightStages.size();
-    lightingPipelineInfo.pStages = lightStages.data();
-    lightingPipelineInfo.pVertexInputState = &emptyVertexInputInfo;
-    lightingPipelineInfo.pInputAssemblyState = &inputAssembly;
-    lightingPipelineInfo.pViewportState = &viewportState;
-    lightingPipelineInfo.pRasterizationState = &rasterizer;
-    lightingPipelineInfo.pMultisampleState = &multisampling;
-    lightingPipelineInfo.pDepthStencilState = &depthStencil;
-    lightingPipelineInfo.pColorBlendState = &lightColorBlending;
-    lightingPipelineInfo.pDynamicState = &dynamicState;
-    lightingPipelineInfo.layout = lightingPipelineLayout;
-    lightingPipelineInfo.renderPass = renderPass;
-    lightingPipelineInfo.subpass = 1;
-
-    lightingPipeline = device->getLogicalDevice().createGraphicsPipeline(nullptr, lightingPipelineInfo).value;
+    PipelineBuilder lightingPipelineBuilder;
+    lightingPipeline = lightingPipelineBuilder.setShaderStages({ lightStages.begin(), lightStages.end() })
+                         .setVertexInput({ dummyBinding }, { dummyAttribute })
+                         .setCullMode(vk::CullModeFlagBits::eNone)
+                         .setDepthTest(false)
+                         .setDepthWrite(false)
+                         .build(device->getLogicalDevice(), lightingPipelineLayout, renderPass, 1);
     spdlog::info("DeferredRasterizer: Created lightingPipeline: 0x{:x}", (uint64_t)(VkPipeline)lightingPipeline);
 
     device->getLogicalDevice().destroyShaderModule(lightVertModule);

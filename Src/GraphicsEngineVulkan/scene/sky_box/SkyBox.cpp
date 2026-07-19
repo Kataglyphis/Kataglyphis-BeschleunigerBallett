@@ -23,6 +23,7 @@ import kataglyphis.vulkan.file;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.buffer;
 import kataglyphis.vulkan.command_buffer_manager;
+import kataglyphis.vulkan.pipeline_builder;
 
 namespace Kataglyphis {
 
@@ -311,53 +312,6 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
 
     std::array<vk::VertexInputAttributeDescription, 4> attributeDescriptions = vertex::getVertexInputAttributeDesc();
 
-    vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
-    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
-    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
-
-    vk::PipelineInputAssemblyStateCreateInfo inputAssembly{};
-    inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
-    inputAssembly.primitiveRestartEnable = VK_FALSE;
-
-    vk::PipelineDepthStencilStateCreateInfo depthStencil{};
-    depthStencil.depthTestEnable = VK_FALSE;
-    depthStencil.depthWriteEnable = VK_FALSE;
-    depthStencil.depthCompareOp = vk::CompareOp::eAlways;
-    depthStencil.depthBoundsTestEnable = VK_FALSE;
-    depthStencil.stencilTestEnable = VK_FALSE;
-
-    vk::PipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
-    colorBlendAttachment.blendEnable = VK_FALSE;
-
-    vk::PipelineColorBlendStateCreateInfo colorBlending{};
-    colorBlending.logicOpEnable = VK_FALSE;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
-
-    std::vector<vk::DynamicState> dynamicStates = {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
-    vk::PipelineDynamicStateCreateInfo dynamicState{};
-    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-    dynamicState.pDynamicStates = dynamicStates.data();
-
-    vk::PipelineRasterizationStateCreateInfo rasterizer{};
-    rasterizer.depthClampEnable = VK_FALSE;
-    rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer.polygonMode = vk::PolygonMode::eFill;
-    rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = vk::CullModeFlagBits::eNone;
-    rasterizer.depthBiasEnable = VK_FALSE;
-
-    vk::PipelineMultisampleStateCreateInfo multisampling{};
-    multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
-
-    vk::PipelineViewportStateCreateInfo viewportState{};
-    viewportState.viewportCount = 1;
-    viewportState.scissorCount = 1;
-
     std::array<vk::DescriptorSetLayout, 2> combinedLayouts = {sharedLayout, descriptorSetLayout};
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.setLayoutCount = 2;
@@ -374,24 +328,15 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
     ASSERT_VULKAN(VkResult(layoutRes.result), "Failed to create skybox pipeline layout!");
     pipelineLayout = layoutRes.value;
 
-    vk::GraphicsPipelineCreateInfo pipelineInfo{};
-    pipelineInfo.stageCount = static_cast<uint32_t>(skyStages.size());
-    pipelineInfo.pStages = skyStages.data();
-    pipelineInfo.pVertexInputState = &vertexInputInfo;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
-    pipelineInfo.pViewportState = &viewportState;
-    pipelineInfo.pDynamicState = &dynamicState;
-    pipelineInfo.pRasterizationState = &rasterizer;
-    pipelineInfo.pMultisampleState = &multisampling;
-    pipelineInfo.pDepthStencilState = &depthStencil;
-    pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.layout = pipelineLayout;
-    pipelineInfo.renderPass = renderPass;
-    pipelineInfo.subpass = 0;
-
-    auto pipelineRes = device->getLogicalDevice().createGraphicsPipeline(nullptr, pipelineInfo);
-    ASSERT_VULKAN(VkResult(pipelineRes.result), "Failed to create skybox graphics pipeline!");
-    graphicsPipeline = pipelineRes.value;
+    PipelineBuilder pipelineBuilder;
+    graphicsPipeline =
+      pipelineBuilder.setShaderStages({ skyStages.begin(), skyStages.end() })
+        .setVertexInput({ bindingDescription }, { attributeDescriptions.begin(), attributeDescriptions.end() })
+        .setCullMode(vk::CullModeFlagBits::eNone)
+        .setDepthTest(false)
+        .setDepthWrite(false)
+        .setDepthCompareOp(vk::CompareOp::eAlways)
+        .build(device->getLogicalDevice(), pipelineLayout, renderPass, 0, "Failed to create skybox graphics pipeline!");
 
     device->getLogicalDevice().destroyShaderModule(vertexShaderModule);
     device->getLogicalDevice().destroyShaderModule(fragmentShaderModule);

@@ -58,6 +58,7 @@ kataglyphis_append_prefixed_files(
 kataglyphis_append_prefixed_files(
   VULKAN_BASE_FILTER
   "${PROJECT_SRC_DIR}vulkan_base/"
+  PipelineBuilder.cpp
   ShaderHelper.cpp
   VulkanBuffer.cpp
   VulkanBufferManager.cpp
@@ -74,6 +75,7 @@ kataglyphis_append_prefixed_files(
 kataglyphis_append_prefixed_files(
   VULKAN_BASE_FILTER
   "${PROJECT_SRC_DIR}vulkan_base/"
+  PipelineBuilder.ixx
   ShaderHelper.ixx
   VulkanDebug.ixx)
 

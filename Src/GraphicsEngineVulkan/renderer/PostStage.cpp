@@ -26,6 +26,7 @@ import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.shader_helper;
+import kataglyphis.vulkan.pipeline_builder;
 
 Kataglyphis::VulkanRendererInternals::PostStage::PostStage() = default;
 
@@ -295,72 +296,6 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
     std::vector<vk::PipelineShaderStageCreateInfo> shader_stages = { vertex_shader_create_info,
         fragment_shader_create_info };
 
-    vk::PipelineVertexInputStateCreateInfo vertex_input_create_info;
-    vertex_input_create_info.vertexBindingDescriptionCount = 0;
-    vertex_input_create_info.pVertexBindingDescriptions = nullptr;
-    vertex_input_create_info.vertexAttributeDescriptionCount = 0;
-    vertex_input_create_info.pVertexAttributeDescriptions = nullptr;
-
-    vk::PipelineInputAssemblyStateCreateInfo input_assembly;
-    input_assembly.topology = vk::PrimitiveTopology::eTriangleList;
-    input_assembly.primitiveRestartEnable = VK_FALSE;
-
-    vk::Viewport viewport;
-    viewport.x = 0.0F;
-    viewport.y = 0.0F;
-    const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-    viewport.width = static_cast<float>(swap_chain_extent.width);
-    viewport.height = static_cast<float>(swap_chain_extent.height);
-    viewport.minDepth = 0.0F;
-    viewport.maxDepth = 1.0F;
-
-    vk::Rect2D scissor;
-    scissor.offset = vk::Offset2D{ 0, 0 };
-    scissor.extent = swap_chain_extent;
-
-    vk::PipelineViewportStateCreateInfo viewport_state_create_info;
-    viewport_state_create_info.viewportCount = 1;
-    viewport_state_create_info.pViewports = nullptr;
-    viewport_state_create_info.scissorCount = 1;
-    viewport_state_create_info.pScissors = nullptr;
-
-    std::vector<vk::DynamicState> dynamic_states = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
-    vk::PipelineDynamicStateCreateInfo dynamic_state_create_info;
-    dynamic_state_create_info.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
-    dynamic_state_create_info.pDynamicStates = dynamic_states.data();
-
-    vk::PipelineRasterizationStateCreateInfo rasterizer_create_info;
-    rasterizer_create_info.depthClampEnable = VK_FALSE;
-    rasterizer_create_info.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer_create_info.polygonMode = vk::PolygonMode::eFill;
-    rasterizer_create_info.lineWidth = 1.0F;
-    rasterizer_create_info.cullMode = vk::CullModeFlagBits::eNone;
-    rasterizer_create_info.frontFace = vk::FrontFace::eCounterClockwise;
-    rasterizer_create_info.depthBiasClamp = VK_FALSE;
-
-    vk::PipelineMultisampleStateCreateInfo multisample_create_info;
-    multisample_create_info.sampleShadingEnable = VK_FALSE;
-    multisample_create_info.rasterizationSamples = vk::SampleCountFlagBits::e1;
-
-    vk::PipelineColorBlendAttachmentState color_state;
-    color_state.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG
-                                 | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
-
-    color_state.blendEnable = VK_TRUE;
-    color_state.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha;
-    color_state.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha;
-    color_state.colorBlendOp = vk::BlendOp::eAdd;
-    color_state.srcAlphaBlendFactor = vk::BlendFactor::eOne;
-    color_state.dstAlphaBlendFactor = vk::BlendFactor::eZero;
-    color_state.alphaBlendOp = vk::BlendOp::eAdd;
-
-    vk::PipelineColorBlendStateCreateInfo color_blending_create_info;
-    color_blending_create_info.logicOpEnable = VK_FALSE;
-    color_blending_create_info.logicOp = vk::LogicOp::eClear;
-    color_blending_create_info.attachmentCount = 1;
-    color_blending_create_info.pAttachments = &color_state;
-    for (int i = 0; i < 4; i++) { color_blending_create_info.blendConstants[0] = 0.F; }
-
     vk::PipelineLayoutCreateInfo pipeline_layout_create_info;
     pipeline_layout_create_info.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
     pipeline_layout_create_info.pSetLayouts = descriptorSetLayouts.data();
@@ -371,37 +306,13 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
       device->getLogicalDevice().createPipelineLayout(&pipeline_layout_create_info, nullptr, &pipeline_layout);
     ASSERT_VULKAN(result, "Failed to create pipeline layout!")
 
-    vk::PipelineDepthStencilStateCreateInfo depth_stencil_create_info;
-    depth_stencil_create_info.depthTestEnable = VK_TRUE;
-    depth_stencil_create_info.depthWriteEnable = VK_TRUE;
-    depth_stencil_create_info.depthCompareOp = vk::CompareOp::eLessOrEqual;
-    depth_stencil_create_info.depthBoundsTestEnable = VK_FALSE;
-    depth_stencil_create_info.stencilTestEnable = VK_FALSE;
-
-    vk::GraphicsPipelineCreateInfo graphics_pipeline_create_info;
-    graphics_pipeline_create_info.stageCount = static_cast<uint32_t>(shader_stages.size());
-    graphics_pipeline_create_info.pStages = shader_stages.data();
-    graphics_pipeline_create_info.pVertexInputState = &vertex_input_create_info;
-    graphics_pipeline_create_info.pInputAssemblyState = &input_assembly;
-    graphics_pipeline_create_info.pViewportState = &viewport_state_create_info;
-    graphics_pipeline_create_info.pDynamicState = &dynamic_state_create_info;
-    graphics_pipeline_create_info.pRasterizationState = &rasterizer_create_info;
-    graphics_pipeline_create_info.pMultisampleState = &multisample_create_info;
-    graphics_pipeline_create_info.pColorBlendState = &color_blending_create_info;
-    graphics_pipeline_create_info.pDepthStencilState = &depth_stencil_create_info;
-    graphics_pipeline_create_info.layout = pipeline_layout;
-    graphics_pipeline_create_info.renderPass = render_pass;
-    graphics_pipeline_create_info.subpass = 0;
-
-    graphics_pipeline_create_info.basePipelineHandle = nullptr;
-    graphics_pipeline_create_info.basePipelineIndex = -1;
-
-    auto create_result = device->getLogicalDevice().createGraphicsPipeline(nullptr, graphics_pipeline_create_info);
-    if (create_result.result == vk::Result::eSuccess) {
-        graphics_pipeline = create_result.value;
-    } else {
-        ASSERT_VULKAN(create_result.result, "Failed to create a graphics pipeline!")
-    }
+    PipelineBuilder pipeline_builder;
+    graphics_pipeline = pipeline_builder.setShaderStages(shader_stages)
+                          .setCullMode(vk::CullModeFlagBits::eNone)
+                          .setAlphaBlending(true)
+                          .setDepthCompareOp(vk::CompareOp::eLessOrEqual)
+                          .setBasePipelineIndex(-1)
+                          .build(device->getLogicalDevice(), pipeline_layout, render_pass);
 
     device->getLogicalDevice().destroyShaderModule(vertex_shader_module);
     device->getLogicalDevice().destroyShaderModule(fragment_shader_module);

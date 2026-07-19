@@ -21,6 +21,7 @@ import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.buffer;
 import kataglyphis.vulkan.buffer_manager;
+import kataglyphis.vulkan.pipeline_builder;
 
 namespace Kataglyphis {
 
@@ -366,48 +367,6 @@ void CascadedShadowMap::createGraphicsPipeline()
     posAttr.format = vk::Format::eR32G32B32Sfloat;
     posAttr.offset = 0;
 
-    std::array vertexBindingDescs = {bindingDesc};
-    std::array vertexAttrDescs = {posAttr};
-
-    vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
-    vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(vertexBindingDescs.size());
-    vertexInputInfo.pVertexBindingDescriptions = vertexBindingDescs.data();
-    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexAttrDescs.size());
-    vertexInputInfo.pVertexAttributeDescriptions = vertexAttrDescs.data();
-
-    vk::PipelineInputAssemblyStateCreateInfo inputAssembly{};
-    inputAssembly.topology = vk::PrimitiveTopology::eTriangleList;
-    inputAssembly.primitiveRestartEnable = VK_FALSE;
-
-    vk::PipelineViewportStateCreateInfo viewportState{};
-    viewportState.viewportCount = 1;
-    viewportState.scissorCount = 1;
-
-    std::vector<vk::DynamicState> dynamicStates = {vk::DynamicState::eViewport, vk::DynamicState::eScissor};
-    vk::PipelineDynamicStateCreateInfo dynamicState{};
-    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
-    dynamicState.pDynamicStates = dynamicStates.data();
-
-    vk::PipelineRasterizationStateCreateInfo rasterizer{};
-    rasterizer.depthClampEnable = VK_FALSE;
-    rasterizer.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer.polygonMode = vk::PolygonMode::eFill;
-    rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = vk::CullModeFlagBits::eBack;
-    rasterizer.frontFace = vk::FrontFace::eCounterClockwise;
-    rasterizer.depthBiasEnable = VK_FALSE;
-
-    vk::PipelineMultisampleStateCreateInfo multisampling{};
-    multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = vk::SampleCountFlagBits::e1;
-
-    vk::PipelineDepthStencilStateCreateInfo depthStencil{};
-    depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
-    depthStencil.depthCompareOp = vk::CompareOp::eLess;
-    depthStencil.depthBoundsTestEnable = VK_FALSE;
-    depthStencil.stencilTestEnable = VK_FALSE;
-
     vk::PushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eVertex;
     pushConstantRange.offset = 0;
@@ -423,23 +382,13 @@ void CascadedShadowMap::createGraphicsPipeline()
     ASSERT_VULKAN(VkResult(layoutRes.result), "Failed to create shadow map pipeline layout!");
     pipelineLayout = layoutRes.value;
 
-    vk::GraphicsPipelineCreateInfo pipelineInfo{};
-    pipelineInfo.stageCount = static_cast<uint32_t>(skyStages.size());
-    pipelineInfo.pStages = skyStages.data();
-    pipelineInfo.pVertexInputState = &vertexInputInfo;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
-    pipelineInfo.pViewportState = &viewportState;
-    pipelineInfo.pDynamicState = &dynamicState;
-    pipelineInfo.pRasterizationState = &rasterizer;
-    pipelineInfo.pMultisampleState = &multisampling;
-    pipelineInfo.pDepthStencilState = &depthStencil;
-    pipelineInfo.layout = pipelineLayout;
-    pipelineInfo.renderPass = renderPass;
-    pipelineInfo.subpass = 0;
-
-    auto pipelineRes = device->getLogicalDevice().createGraphicsPipeline(nullptr, pipelineInfo);
-    ASSERT_VULKAN(VkResult(pipelineRes.result), "Failed to create shadow map graphics pipeline!");
-    graphicsPipeline = pipelineRes.value;
+    PipelineBuilder pipelineBuilder;
+    graphicsPipeline =
+      pipelineBuilder.setShaderStages({ skyStages.begin(), skyStages.end() })
+        .setVertexInput({ bindingDesc }, { posAttr })
+        .setUseColorBlendState(false)
+        .build(
+          device->getLogicalDevice(), pipelineLayout, renderPass, 0, "Failed to create shadow map graphics pipeline!");
     spdlog::info("CascadedShadowMap: Created pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphicsPipeline);
 
     device->getLogicalDevice().destroyShaderModule(vertModule);
