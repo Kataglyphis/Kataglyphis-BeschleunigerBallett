@@ -50,42 +50,24 @@ Set-StrictMode -Version Latest
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $mountTarget = 'C:\ws-mnt'
 
-function Resolve-DockerExe {
-  param([string]$Override)
-
-  $candidates = @(
-    $Override,
-    $env:DOCKER_EXE,
-    (Join-Path $env:ProgramFiles 'Stevedore\bin\docker.exe'),
-    'D:\Stevedore\bin\docker.exe'
-  ) | Where-Object { $_ }
-
-  foreach ($candidate in $candidates) {
-    if (Test-Path $candidate) { return (Resolve-Path $candidate).Path }
-  }
-
-  $onPath = Get-Command docker -ErrorAction SilentlyContinue
-  if ($onPath) { return $onPath.Source }
-
-  throw 'docker.exe not found. Install Stevedore (winget install stevedore) or pass -DockerExe.'
-}
-
 # Preflight: Build-Windows.ps1 resolves modules from ContainerHub first, then
 # the vendored fallback (Scripts/Windows/modules). Fail fast if a module that
 # only exists vendored (deleted upstream in ContainerHub b391a1d) is missing.
 . (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
 $null = Resolve-BuildModulePath -Name 'WindowsLogging.Common'
 
+# Reusable build-container helpers live upstream in ContainerHub - they apply to
+# any project built in that image, not just this engine. Must load before first
+# use (Resolve-DockerExe below).
+# Rationale + measurements: ContainerHub docs/windows-container-build-performance.md
+Import-Module (Resolve-BuildModulePath -Name 'WindowsContainerBuild.Reuse') -Force -Global
+
 $docker = Resolve-DockerExe -Override $DockerExe
 Write-Host "Using docker: $docker"
 Write-Host "Image: $Image"
 Write-Host "Configurations: $Configurations"
 
-$isolationArgs = @('--isolation', $Isolation)
-if ($Isolation -eq 'hyperv') {
-  $cpus = if ($CpuCount -gt 0) { $CpuCount } else { [Environment]::ProcessorCount }
-  $isolationArgs += @('--cpu-count', "$cpus", '--memory', "${MemoryGb}g")
-}
+$isolationArgs = Get-ContainerIsolationArgs -Isolation $Isolation -CpuCount $CpuCount -MemoryGb $MemoryGb
 
 # Arguments handed to the image entrypoint (VsDevCmd + ASAN runtime PATH, then %*).
 # Every token must be free of spaces: it travels docker CLI -> cmd /S /C -> %*.
@@ -123,29 +105,13 @@ $cacheArgs = @(
 # specified", both with a fresh volume and a populated one. See
 # docs/container-build-caching.md for the full measurement.
 
-# Reusable build-container helpers live upstream in ContainerHub (they apply to
-# any project built in that image, not just this engine):
-#   windows/scripts/modules/WindowsContainerBuild.Reuse.psm1
-# Rationale and measurements: ContainerHub docs/windows-container-build-performance.md
-Import-Module (Resolve-BuildModulePath -Name 'WindowsContainerBuild.Reuse') -Force -Global
 $persistentContainerName = 'bb-build-persistent'
 
 function Test-BindMountUsable {
   if ($NoBindMount) { return $false }
   Write-Host 'Probing bind mount support...'
-  # The probe is EXPECTED to fail on Dev Drive hosts; docker's stderr must not
-  # become a terminating NativeCommandError (Windows PowerShell turns redirected
-  # native stderr into ErrorRecords, and $ErrorActionPreference is 'Stop').
-  $previousPreference = $ErrorActionPreference
-  $ErrorActionPreference = 'Continue'
-  try {
-    & $docker run --rm @isolationArgs `
-      --mount "type=bind,source=$repoRoot,target=$mountTarget" `
-      --entrypoint cmd $Image /c "dir $mountTarget\CMakePresets.json > nul" 2>&1 | Out-Null
-  } finally {
-    $ErrorActionPreference = $previousPreference
-  }
-  return ($LASTEXITCODE -eq 0)
+  return (Test-ContainerBindMount -DockerExe $docker -Image $Image -SourcePath $repoRoot `
+      -TargetPath $mountTarget -ProbeFile 'CMakePresets.json' -RunArgs $isolationArgs)
 }
 
 function Invoke-BindMountBuild {
