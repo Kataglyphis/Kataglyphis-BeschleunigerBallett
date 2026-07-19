@@ -19,6 +19,9 @@ class Raytracing
   public:
     Raytracing();
 
+    Raytracing(const Raytracing &) = delete;
+    Raytracing &operator=(const Raytracing &) = delete;
+
     void init(std::shared_ptr<VulkanDevice>in_device, const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts,
       VulkanSwapChain *swapchain);
 

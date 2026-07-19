@@ -23,6 +23,9 @@ class CascadedShadowMap
   public:
     CascadedShadowMap() = default;
 
+    CascadedShadowMap(const CascadedShadowMap &) = delete;
+    CascadedShadowMap &operator=(const CascadedShadowMap &) = delete;
+
     void init(std::shared_ptr<VulkanDevice>device, uint32_t width, uint32_t height, uint32_t num_cascades);
 
     void createGraphicsPipeline();
@@ -40,7 +43,7 @@ class CascadedShadowMap
     const std::vector<CascadeData>& getCascadeData() const { return cascadeData; }
 
     void cleanUp();
-    ~CascadedShadowMap() = default;
+    ~CascadedShadowMap() { cleanUp(); }
 
   private:
     std::shared_ptr<VulkanDevice>device{ nullptr };

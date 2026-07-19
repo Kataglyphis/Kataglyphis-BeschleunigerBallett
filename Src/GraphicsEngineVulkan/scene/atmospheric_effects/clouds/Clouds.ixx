@@ -16,6 +16,9 @@ class Clouds
   public:
     Clouds() = default;
 
+    Clouds(const Clouds &) = delete;
+    Clouds &operator=(const Clouds &) = delete;
+
     void init(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, vk::DescriptorSetLayout sharedLayout, uint32_t width, uint32_t height);
 
     void recordComputeCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, const std::vector<vk::DescriptorSet> &descriptorSets);
@@ -27,7 +30,7 @@ class Clouds
     Kataglyphis::Texture* getCloudNoiseTexture() { return cloudNoiseTexture.get(); }
     Kataglyphis::Texture* getCloudOutputTexture() { return cloudOutputTexture.get(); }
 
-    ~Clouds() = default;
+    ~Clouds() { cleanUp(); }
 
   private:
     std::shared_ptr<VulkanDevice>device{ nullptr };

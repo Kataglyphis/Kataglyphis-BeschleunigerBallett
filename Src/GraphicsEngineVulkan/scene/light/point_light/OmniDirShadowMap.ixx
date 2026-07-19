@@ -14,6 +14,9 @@ class OmniDirShadowMap
   public:
     OmniDirShadowMap() = default;
 
+    OmniDirShadowMap(const OmniDirShadowMap &) = delete;
+    OmniDirShadowMap &operator=(const OmniDirShadowMap &) = delete;
+
     void init(std::shared_ptr<VulkanDevice>device, uint32_t width, uint32_t height);
     
     Kataglyphis::Texture* getShadowMapCube() { return shadowMapCube.get(); }
@@ -24,7 +27,7 @@ class OmniDirShadowMap
     uint32_t getHeight() const { return shadowHeight; }
 
     void cleanUp();
-    ~OmniDirShadowMap() = default;
+    ~OmniDirShadowMap() { cleanUp(); }
 
   private:
     std::shared_ptr<VulkanDevice>device{ nullptr };

@@ -113,13 +113,32 @@ void DeferredRasterizer::createPushConstantRange()
 
 void DeferredRasterizer::cleanUp()
 {
+    // Idempotent: safe to call again after an explicit cleanUp (the destructor
+    // is only a safety net for the forgotten path).
+    if (!device) { return; }
+
     spdlog::info("DeferredRasterizer: Destroying geometryPipeline: 0x{:x}, lightingPipeline: 0x{:x}", (uint64_t)(VkPipeline)geometryPipeline, (uint64_t)(VkPipeline)lightingPipeline);
     auto logicalDevice = device->getLogicalDevice();
-    logicalDevice.destroyPipeline(geometryPipeline);
-    logicalDevice.destroyPipelineLayout(geometryPipelineLayout);
-    logicalDevice.destroyPipeline(lightingPipeline);
-    logicalDevice.destroyPipelineLayout(lightingPipelineLayout);
-    logicalDevice.destroyRenderPass(renderPass);
+    if (geometryPipeline) {
+        logicalDevice.destroyPipeline(geometryPipeline);
+        geometryPipeline = nullptr;
+    }
+    if (geometryPipelineLayout) {
+        logicalDevice.destroyPipelineLayout(geometryPipelineLayout);
+        geometryPipelineLayout = nullptr;
+    }
+    if (lightingPipeline) {
+        logicalDevice.destroyPipeline(lightingPipeline);
+        lightingPipeline = nullptr;
+    }
+    if (lightingPipelineLayout) {
+        logicalDevice.destroyPipelineLayout(lightingPipelineLayout);
+        lightingPipelineLayout = nullptr;
+    }
+    if (renderPass) {
+        logicalDevice.destroyRenderPass(renderPass);
+        renderPass = nullptr;
+    }
 
     for (auto &fb : framebuffer) {
         logicalDevice.destroyFramebuffer(fb);
@@ -138,9 +157,11 @@ void DeferredRasterizer::cleanUp()
     gBufferMaterials.clear();
     if (depthBufferImage) { depthBufferImage->cleanUp(); }
     depthBufferImage.reset();
+
+    device.reset();
 }
 
-DeferredRasterizer::~DeferredRasterizer() = default;
+DeferredRasterizer::~DeferredRasterizer() { cleanUp(); }
 
 void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::destroyFramebuffers()
 {

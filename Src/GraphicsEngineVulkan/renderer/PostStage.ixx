@@ -16,6 +16,9 @@ class PostStage
   public:
     PostStage();
 
+    PostStage(const PostStage &) = delete;
+    PostStage &operator=(const PostStage &) = delete;
+
     void init(std::shared_ptr<VulkanDevice>in_device,
       VulkanSwapChain *vulkanSwapChain,
       const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts);

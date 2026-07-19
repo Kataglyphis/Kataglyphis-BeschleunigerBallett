@@ -126,19 +126,39 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::cleanUp()
 {
+    // Idempotent: safe to call again after an explicit cleanUp (the destructor
+    // is only a safety net for the forgotten path).
+    if (!device) { return; }
+
     spdlog::info("Rasterizer: Destroying pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphics_pipeline);
     for (auto &framebuffer_handle : framebuffer) { device->getLogicalDevice().destroyFramebuffer(framebuffer_handle); }
+    framebuffer.clear();
 
-    for (const auto &texture : offscreenTextures) { texture->cleanUp(); }
+    for (const auto &texture : offscreenTextures) {
+        if (texture) { texture->cleanUp(); }
+    }
+    offscreenTextures.clear();
 
-    depthBufferImage->cleanUp();
+    if (depthBufferImage) { depthBufferImage->cleanUp(); }
+    depthBufferImage.reset();
 
-    device->getLogicalDevice().destroyPipeline(graphics_pipeline);
-    device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
-    device->getLogicalDevice().destroyRenderPass(render_pass);
+    if (graphics_pipeline) {
+        device->getLogicalDevice().destroyPipeline(graphics_pipeline);
+        graphics_pipeline = nullptr;
+    }
+    if (pipeline_layout) {
+        device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
+        pipeline_layout = nullptr;
+    }
+    if (render_pass) {
+        device->getLogicalDevice().destroyRenderPass(render_pass);
+        render_pass = nullptr;
+    }
+
+    device.reset();
 }
 
-Kataglyphis::VulkanRendererInternals::Rasterizer::~Rasterizer() = default;
+Kataglyphis::VulkanRendererInternals::Rasterizer::~Rasterizer() { cleanUp(); }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::destroyFramebuffers()
 {

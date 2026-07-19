@@ -309,17 +309,46 @@ void Clouds::recreateFrameResources(vk::CommandPool commandPool, uint32_t width,
 
 void Clouds::cleanUp()
 {
-    if (device) {
+    // Idempotent: safe to call again after an explicit cleanUp (the destructor
+    // is only a safety net for the forgotten path).
+    if (!device) { return; }
+
+    if (descriptorPool) {
         device->getLogicalDevice().destroyDescriptorPool(descriptorPool);
-        device->getLogicalDevice().destroyDescriptorSetLayout(descriptorSetLayout);
-        device->getLogicalDevice().destroyDescriptorSetLayout(noiseDescriptorSetLayout);
-        if (noiseComputePipeline) device->getLogicalDevice().destroyPipeline(noiseComputePipeline);
-        if (noisePipelineLayout) device->getLogicalDevice().destroyPipelineLayout(noisePipelineLayout);
-        if (cloudComputePipeline) device->getLogicalDevice().destroyPipeline(cloudComputePipeline);
-        if (cloudPipelineLayout) device->getLogicalDevice().destroyPipelineLayout(cloudPipelineLayout);
+        descriptorPool = nullptr;
     }
-    if (cloudNoiseTexture) { cloudNoiseTexture->cleanUp(); cloudNoiseTexture.reset(); }
-    if (cloudOutputTexture) { cloudOutputTexture->cleanUp(); cloudOutputTexture.reset(); }
+    descriptorSet = nullptr;// freed with the pool
+    noiseDescriptorSet = nullptr;// freed with the pool
+    if (descriptorSetLayout) {
+        device->getLogicalDevice().destroyDescriptorSetLayout(descriptorSetLayout);
+        descriptorSetLayout = nullptr;
+    }
+    if (noiseDescriptorSetLayout) {
+        device->getLogicalDevice().destroyDescriptorSetLayout(noiseDescriptorSetLayout);
+        noiseDescriptorSetLayout = nullptr;
+    }
+    if (noiseComputePipeline) {
+        device->getLogicalDevice().destroyPipeline(noiseComputePipeline);
+        noiseComputePipeline = nullptr;
+    }
+    if (noisePipelineLayout) {
+        device->getLogicalDevice().destroyPipelineLayout(noisePipelineLayout);
+        noisePipelineLayout = nullptr;
+    }
+    if (cloudComputePipeline) {
+        device->getLogicalDevice().destroyPipeline(cloudComputePipeline);
+        cloudComputePipeline = nullptr;
+    }
+    if (cloudPipelineLayout) {
+        device->getLogicalDevice().destroyPipelineLayout(cloudPipelineLayout);
+        cloudPipelineLayout = nullptr;
+    }
+    if (cloudNoiseTexture) { cloudNoiseTexture->cleanUp(); }
+    cloudNoiseTexture.reset();
+    if (cloudOutputTexture) { cloudOutputTexture->cleanUp(); }
+    cloudOutputTexture.reset();
+
+    device.reset();
 }
 
 }

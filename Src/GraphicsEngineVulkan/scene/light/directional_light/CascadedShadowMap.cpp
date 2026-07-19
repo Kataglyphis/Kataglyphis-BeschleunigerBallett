@@ -213,32 +213,53 @@ void CascadedShadowMap::createFramebuffers()
 
 void CascadedShadowMap::cleanUp()
 {
-    if (device) {
-        spdlog::info("CascadedShadowMap: Destroying pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphicsPipeline);
-        auto it = g_layerViewsMap.find(this);
-        if (it != g_layerViewsMap.end()) {
-            for (auto view : it->second) {
-                device->getLogicalDevice().destroyImageView(view);
-            }
-            g_layerViewsMap.erase(it);
-        }
+    // Idempotent: safe to call again after an explicit cleanUp (the destructor
+    // is only a safety net for the forgotten path). Must leave the object
+    // reusable: VulkanRenderer re-inits this stage when shadow settings change.
+    if (!device) { return; }
 
-        for (auto fb : framebuffers) {
-            device->getLogicalDevice().destroyFramebuffer(fb);
+    spdlog::info("CascadedShadowMap: Destroying pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphicsPipeline);
+    auto it = g_layerViewsMap.find(this);
+    if (it != g_layerViewsMap.end()) {
+        for (auto view : it->second) {
+            device->getLogicalDevice().destroyImageView(view);
         }
-        framebuffers.clear();
-
-        device->getLogicalDevice().destroyRenderPass(renderPass);
-        if (graphicsPipeline) { device->getLogicalDevice().destroyPipeline(graphicsPipeline); }
-        if (pipelineLayout) { device->getLogicalDevice().destroyPipelineLayout(pipelineLayout); }
-        if (descriptorSetLayout) { device->getLogicalDevice().destroyDescriptorSetLayout(descriptorSetLayout); }
-        if (descriptorPool) { device->getLogicalDevice().destroyDescriptorPool(descriptorPool); }
-        if (shadowMapArray) {
-            shadowMapArray->cleanUp();
-            shadowMapArray.reset();
-        }
-        lightMatricesBuffer.cleanUp();
+        g_layerViewsMap.erase(it);
     }
+
+    for (auto fb : framebuffers) {
+        device->getLogicalDevice().destroyFramebuffer(fb);
+    }
+    framebuffers.clear();
+
+    if (renderPass) {
+        device->getLogicalDevice().destroyRenderPass(renderPass);
+        renderPass = nullptr;
+    }
+    if (graphicsPipeline) {
+        device->getLogicalDevice().destroyPipeline(graphicsPipeline);
+        graphicsPipeline = nullptr;
+    }
+    if (pipelineLayout) {
+        device->getLogicalDevice().destroyPipelineLayout(pipelineLayout);
+        pipelineLayout = nullptr;
+    }
+    if (descriptorSetLayout) {
+        device->getLogicalDevice().destroyDescriptorSetLayout(descriptorSetLayout);
+        descriptorSetLayout = nullptr;
+    }
+    if (descriptorPool) {
+        device->getLogicalDevice().destroyDescriptorPool(descriptorPool);
+        descriptorPool = nullptr;
+    }
+    descriptorSet = nullptr;// freed with the pool
+    if (shadowMapArray) {
+        shadowMapArray->cleanUp();
+        shadowMapArray.reset();
+    }
+    lightMatricesBuffer.cleanUp();
+
+    device.reset();
 }
 
 void CascadedShadowMap::createDescriptorSetAndPipeline()

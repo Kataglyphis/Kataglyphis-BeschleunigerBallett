@@ -137,13 +137,28 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::cleanUp()
 {
-    device->getLogicalDevice().destroyPipeline(pipeline);
-    device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
+    // Idempotent: safe to call again after an explicit cleanUp (the destructor
+    // is only a safety net for the forgotten path). Also covers the case where
+    // init() was never called (no hardware raytracing support).
+    if (!device) { return; }
 
-    device->getLogicalDevice().destroyQueryPool(queryPool);
+    if (pipeline) {
+        device->getLogicalDevice().destroyPipeline(pipeline);
+        pipeline = nullptr;
+    }
+    if (pipeline_layout) {
+        device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
+        pipeline_layout = nullptr;
+    }
+    if (queryPool) {
+        device->getLogicalDevice().destroyQueryPool(queryPool);
+        queryPool = nullptr;
+    }
+
+    device.reset();
 }
 
-Kataglyphis::VulkanRendererInternals::PathTracing::~PathTracing() = default;
+Kataglyphis::VulkanRendererInternals::PathTracing::~PathTracing() { cleanUp(); }
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::createQueryPool()
 {

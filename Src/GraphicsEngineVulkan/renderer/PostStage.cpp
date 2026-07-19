@@ -114,17 +114,37 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
 
 void Kataglyphis::VulkanRendererInternals::PostStage::cleanUp()
 {
-    depthBufferImage->cleanUp();
+    // Idempotent: safe to call again after an explicit cleanUp (the destructor
+    // is only a safety net for the forgotten path).
+    if (!device) { return; }
+
+    if (depthBufferImage) { depthBufferImage->cleanUp(); }
+    depthBufferImage.reset();
+
     for (auto &framebuffer : framebuffers) { device->getLogicalDevice().destroyFramebuffer(framebuffer); }
+    framebuffers.clear();
 
-    device->getLogicalDevice().destroySampler(offscreenTextureSampler);
+    if (offscreenTextureSampler) {
+        device->getLogicalDevice().destroySampler(offscreenTextureSampler);
+        offscreenTextureSampler = nullptr;
+    }
+    if (render_pass) {
+        device->getLogicalDevice().destroyRenderPass(render_pass);
+        render_pass = nullptr;
+    }
+    if (graphics_pipeline) {
+        device->getLogicalDevice().destroyPipeline(graphics_pipeline);
+        graphics_pipeline = nullptr;
+    }
+    if (pipeline_layout) {
+        device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
+        pipeline_layout = nullptr;
+    }
 
-    device->getLogicalDevice().destroyRenderPass(render_pass);
-    device->getLogicalDevice().destroyPipeline(graphics_pipeline);
-    device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
+    device.reset();
 }
 
-Kataglyphis::VulkanRendererInternals::PostStage::~PostStage() = default;
+Kataglyphis::VulkanRendererInternals::PostStage::~PostStage() { cleanUp(); }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::destroyFramebuffers()
 {

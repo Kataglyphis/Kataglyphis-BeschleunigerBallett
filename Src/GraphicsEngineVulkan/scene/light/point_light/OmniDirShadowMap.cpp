@@ -106,17 +106,27 @@ void OmniDirShadowMap::createFramebuffers()
 
 void OmniDirShadowMap::cleanUp()
 {
-    if (device) {
-        if (g_layerViewMap.find(this) != g_layerViewMap.end()) {
-            device->getLogicalDevice().destroyImageView(g_layerViewMap[this]);
-            g_layerViewMap.erase(this);
-        }
-        device->getLogicalDevice().destroyFramebuffer(framebuffer);
-        device->getLogicalDevice().destroyRenderPass(renderPass);
-        if (shadowMapCube) {
-            shadowMapCube->cleanUp();
-            shadowMapCube.reset();
-        }
+    // Idempotent: safe to call again after an explicit cleanUp (the destructor
+    // is only a safety net for the forgotten path).
+    if (!device) { return; }
+
+    if (g_layerViewMap.find(this) != g_layerViewMap.end()) {
+        device->getLogicalDevice().destroyImageView(g_layerViewMap[this]);
+        g_layerViewMap.erase(this);
     }
+    if (framebuffer) {
+        device->getLogicalDevice().destroyFramebuffer(framebuffer);
+        framebuffer = nullptr;
+    }
+    if (renderPass) {
+        device->getLogicalDevice().destroyRenderPass(renderPass);
+        renderPass = nullptr;
+    }
+    if (shadowMapCube) {
+        shadowMapCube->cleanUp();
+        shadowMapCube.reset();
+    }
+
+    device.reset();
 }
 }

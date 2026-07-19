@@ -426,26 +426,48 @@ void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_ind
 
 void SkyBox::cleanUp()
 {
-    if (device) {
-        for (auto fb : framebuffers) {
-            device->getLogicalDevice().destroyFramebuffer(fb);
-        }
-        framebuffers.clear();
-        if (graphicsPipeline) { device->getLogicalDevice().destroyPipeline(graphicsPipeline); }
-        if (pipelineLayout) { device->getLogicalDevice().destroyPipelineLayout(pipelineLayout); }
-        if (descriptorSetLayout) { device->getLogicalDevice().destroyDescriptorSetLayout(descriptorSetLayout); }
-        if (descriptorPool) { device->getLogicalDevice().destroyDescriptorPool(descriptorPool); }
-        if (renderPass) { device->getLogicalDevice().destroyRenderPass(renderPass); }
+    // Idempotent: safe to call again after an explicit cleanUp (the destructor
+    // is only a safety net for the forgotten path).
+    if (!device) { return; }
+
+    for (auto fb : framebuffers) {
+        device->getLogicalDevice().destroyFramebuffer(fb);
+    }
+    framebuffers.clear();
+    if (graphicsPipeline) {
+        device->getLogicalDevice().destroyPipeline(graphicsPipeline);
+        graphicsPipeline = nullptr;
+    }
+    if (pipelineLayout) {
+        device->getLogicalDevice().destroyPipelineLayout(pipelineLayout);
+        pipelineLayout = nullptr;
+    }
+    if (descriptorSetLayout) {
+        device->getLogicalDevice().destroyDescriptorSetLayout(descriptorSetLayout);
+        descriptorSetLayout = nullptr;
+    }
+    if (descriptorPool) {
+        device->getLogicalDevice().destroyDescriptorPool(descriptorPool);
+        descriptorPool = nullptr;
+    }
+    descriptorSet = nullptr;// freed with the pool
+    if (renderPass) {
+        device->getLogicalDevice().destroyRenderPass(renderPass);
+        renderPass = nullptr;
     }
     if (skyMesh) {
         skyMesh->cleanUp();
     }
+    skyMesh.reset();
     if (cubeMapTexture) {
         cubeMapTexture->cleanUp();
     }
+    cubeMapTexture.reset();
+
+    device.reset();
 }
 
-SkyBox::~SkyBox() = default;
+SkyBox::~SkyBox() { cleanUp(); }
 
 void SkyBox::destroyFramebuffers()
 {

@@ -20,6 +20,9 @@ class DeferredRasterizer
   public:
     DeferredRasterizer();
 
+    DeferredRasterizer(const DeferredRasterizer &) = delete;
+    DeferredRasterizer &operator=(const DeferredRasterizer &) = delete;
+
     void init(std::shared_ptr<VulkanDevice>in_device,
       VulkanSwapChain *swap_chain,
       const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts,

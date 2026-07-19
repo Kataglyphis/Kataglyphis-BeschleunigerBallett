@@ -258,7 +258,10 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Fronten
         else if (guiSceneSharedVars.shadow_map_res_index == 3) shadow_res = 4096;
 
         dirShadowMap.init(device, shadow_res, shadow_res, static_cast<uint32_t>(guiSceneSharedVars.num_shadow_cascades));
-        
+        // cleanUp() destroyed the pipeline, descriptor resources and the light
+        // matrices buffer; recreate them (same sequence as at startup).
+        dirShadowMap.createGraphicsPipeline();
+
         // We must recreate descriptor sets that depend on the shadow map
         updateTexturesInSharedRenderDescriptorSet();
     }
