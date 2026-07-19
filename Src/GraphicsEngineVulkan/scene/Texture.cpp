@@ -266,6 +266,9 @@ void Kataglyphis::Texture::createTextureSampler(std::shared_ptr<VulkanDevice>in_
 
 void Kataglyphis::Texture::cleanUp()
 {
+    // Release any staging memory held by the buffer manager while the VMA
+    // allocator is still alive.
+    vulkanBufferManager.cleanUp();
     if (textureSampler && device) {
         device->getLogicalDevice().destroySampler(textureSampler);
         textureSampler = nullptr;

@@ -82,4 +82,30 @@ void Kataglyphis::VulkanBufferManager::copyImageBuffer(vk::Device device,
       device, transfer_command_pool, transfer_queue, transfer_command_buffer);
 }
 
+void Kataglyphis::VulkanBufferManager::ensureStagingBufferCapacity(const std::shared_ptr<VulkanDevice> &device,
+  vk::DeviceSize size)
+{
+    if (stagingBuffer.getMappedData() != nullptr && stagingBufferCapacity >= size) { return; }
+
+    // Grow geometrically so repeated uploads converge to zero reallocations.
+    constexpr vk::DeviceSize initial_capacity = 64ULL * 1024ULL;
+    vk::DeviceSize new_capacity = stagingBufferCapacity > initial_capacity ? stagingBufferCapacity : initial_capacity;
+    while (new_capacity < size) { new_capacity *= 2; }
+
+    // Safe to destroy here: every upload submit is fence-synchronized before
+    // returning, so no previously recorded copy can still reference it.
+    stagingBuffer.cleanUp();
+    stagingBuffer.create(device,
+      new_capacity,
+      vk::BufferUsageFlagBits::eTransferSrc,
+      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+    stagingBufferCapacity = new_capacity;
+}
+
+void Kataglyphis::VulkanBufferManager::cleanUp()
+{
+    stagingBuffer.cleanUp();
+    stagingBufferCapacity = 0;
+}
+
 Kataglyphis::VulkanBufferManager::~VulkanBufferManager() = default;

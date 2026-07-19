@@ -277,6 +277,9 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(std::shared_ptr
 
 void Kataglyphis::VulkanRendererInternals::ASManager::cleanUp()
 {
+    // Release the reusable staging buffer while the VMA allocator is alive.
+    vulkanBufferManager.cleanUp();
+
     vulkanDevice->getLogicalDevice().destroyAccelerationStructureKHR(tlas.vulkanAS);
 
     tlas.vulkanBuffer.cleanUp();

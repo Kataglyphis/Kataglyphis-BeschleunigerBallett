@@ -22,6 +22,7 @@ Mesh::Mesh() = default;
 
 void Mesh::cleanUp()
 {
+    vulkanBufferManager.cleanUp();
     vertexBuffer.cleanUp();
     indexBuffer.cleanUp();
     objectDescriptionBuffer.cleanUp();
@@ -53,6 +54,11 @@ Mesh::Mesh(std::shared_ptr<VulkanDevice>device,
     createIndexBuffer(transfer_queue, transfer_command_pool, indices);
     createMaterialIDBuffer(transfer_queue, transfer_command_pool, materialIndex);
     createMaterialBuffer(transfer_queue, transfer_command_pool, materials);
+
+    // All uploads for this mesh are done; release the shared staging buffer
+    // now (it was reused across the four uploads above) so each mesh does not
+    // retain vertex-buffer-sized host memory for its whole lifetime.
+    vulkanBufferManager.cleanUp();
 
     if (device->supportsBufferDeviceAddress()) {
         vk::BufferDeviceAddressInfo vertex_info{};

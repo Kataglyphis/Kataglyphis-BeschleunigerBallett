@@ -847,6 +847,9 @@ void Kataglyphis::VulkanRenderer::cleanUp()
     postStage.cleanUp();
 
     objectDescriptionBuffer.cleanUp();
+    // Release the buffer manager's reusable staging buffer while the VMA
+    // allocator (torn down in device->cleanUp() below) is still alive.
+    vulkanBufferManager.cleanUp();
 
     cleanUpSync();
     cleanUpUBOs();

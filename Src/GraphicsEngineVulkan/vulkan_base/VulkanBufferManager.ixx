@@ -15,6 +15,11 @@ class VulkanBufferManager
 {
   public:
     VulkanBufferManager();
+    // The reusable staging buffer makes the manager move-only.
+    VulkanBufferManager(const VulkanBufferManager &) = delete;
+    VulkanBufferManager &operator=(const VulkanBufferManager &) = delete;
+    VulkanBufferManager(VulkanBufferManager &&) noexcept = default;
+    VulkanBufferManager &operator=(VulkanBufferManager &&) noexcept = default;
 
     void copyBuffer(vk::Device device,
       vk::Queue transfer_queue,
@@ -50,10 +55,25 @@ class VulkanBufferManager
       std::vector<T> &data,
       vk::MemoryAllocateFlags dstBufferMemoryAllocateFlags = {});
 
+    // Releases the reusable staging buffer. Must run (or the manager be
+    // destroyed) while the device's VMA allocator is still alive, i.e.
+    // before VulkanDevice::cleanUp(). Safe to call multiple times; the
+    // staging buffer is lazily recreated on the next upload.
+    void cleanUp();
+
     ~VulkanBufferManager();
 
   private:
     Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
+
+    // Persistently mapped (VMA_ALLOCATION_CREATE_MAPPED_BIT) staging buffer
+    // reused across uploads instead of being created/destroyed per upload.
+    // Grown geometrically whenever an upload exceeds its capacity. Reuse is
+    // safe because every upload submit is fence-synchronized before return.
+    VulkanBuffer stagingBuffer;
+    vk::DeviceSize stagingBufferCapacity{ 0 };
+
+    void ensureStagingBufferCapacity(const std::shared_ptr<VulkanDevice> &device, vk::DeviceSize size);
 };
 
 template<typename T>
@@ -74,14 +94,9 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(std::shared
         return;
     }
 
-    VulkanBuffer stagingBuffer;
+    ensureStagingBufferCapacity(device, bufferSize);
 
-    stagingBuffer.create(device,
-      bufferSize,
-      vk::BufferUsageFlagBits::eTransferSrc,
-      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-    // Host-visible buffers are persistently mapped by VMA.
+    // The staging buffer is host-visible and therefore persistently mapped by VMA.
     std::memcpy(stagingBuffer.getMappedData(), data.data(), static_cast<size_t>(bufferSize));
 
     vulkanBuffer.create(
@@ -90,7 +105,8 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(std::shared
     vk::Queue const queue = transfer_queue ? transfer_queue : device->getGraphicsQueue();
     copyBuffer(device->getLogicalDevice(), queue, commandPool, stagingBuffer, vulkanBuffer, bufferSize);
 
-    stagingBuffer.cleanUp();
+    // stagingBuffer is intentionally kept alive for reuse by the next upload;
+    // it is released in cleanUp().
 }
 
 template<typename T>

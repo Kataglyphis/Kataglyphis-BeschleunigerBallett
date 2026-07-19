@@ -2,6 +2,7 @@ module;
 
 #include "spdlog/spdlog.h"
 
+#include <cstdint>
 #include <string>
 #include <vulkan/vulkan.hpp>
 
@@ -57,7 +58,6 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
   vk::Queue queue,
   vk::CommandBuffer &command_buffer)
 {
-    static_cast<void>(device);
     static_cast<void>(command_pool);
 
     if (!command_buffer) {
@@ -73,16 +73,42 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &command_buffer;
 
-    // submit transfer command to transfer queue and wait until it finishes
-    vk::Result const submit_result = queue.submit(1, &submit_info, vk::Fence{});
+    // Submit with a fence and wait only for THIS submission instead of
+    // queue.waitIdle(): still fully synchronous for the caller (staging
+    // resources may be destroyed right after we return), but other work
+    // already queued (e.g. a frame in flight) is no longer serialized
+    // behind every upload/layout transition.
+    vk::FenceCreateInfo fence_create_info{};
+    vk::Fence fence{};
+    vk::Result const fence_result = device.createFence(&fence_create_info, nullptr, &fence);
+    if (fence_result != vk::Result::eSuccess) {
+        spdlog::default_logger_raw()->log(spdlog::level::warn,
+          "Failed to create submit fence, falling back to queue.waitIdle()! (vk::Result={})",
+          static_cast<int>(fence_result));
+        fence = vk::Fence{};
+    }
+
+    vk::Result const submit_result = queue.submit(1, &submit_info, fence);
     if (submit_result != vk::Result::eSuccess) {
         spdlog::default_logger_raw()->log(
           spdlog::level::err, "Failed to submit to queue! (vk::Result={})", static_cast<int>(submit_result));
+        if (fence) { device.destroyFence(fence); }
         command_buffer = vk::CommandBuffer{};
         return;
     }
 
-    static_cast<void>(queue.waitIdle());// MSVC ICE workaround: explicit discard of [[nodiscard]] return
+    if (fence) {
+        vk::Result const wait_result = device.waitForFences(1, &fence, VK_TRUE, UINT64_MAX);
+        if (wait_result != vk::Result::eSuccess) {
+            spdlog::default_logger_raw()->log(spdlog::level::err,
+              "Failed to wait for submit fence, falling back to queue.waitIdle()! (vk::Result={})",
+              static_cast<int>(wait_result));
+            static_cast<void>(queue.waitIdle());// MSVC ICE workaround: explicit discard of [[nodiscard]] return
+        }
+        device.destroyFence(fence);
+    } else {
+        static_cast<void>(queue.waitIdle());// MSVC ICE workaround: explicit discard of [[nodiscard]] return
+    }
 
     // Temporary command buffers are released when the command pool is destroyed.
     // Avoid explicit free to prevent freeing potentially pending buffers.
