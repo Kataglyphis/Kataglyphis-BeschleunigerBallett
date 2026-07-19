@@ -16,7 +16,7 @@ L (multi-day), XL (multi-week).
   after the skybox pass looks redundant; remove only after a run with
   synchronization validation enabled confirms the post pass's external
   dependency covers it.
-- [ ] **GPU timestamps + debug labels per pass** (M) — nothing is measured
+- [x] **GPU timestamps + debug labels per pass** (M, done 2026-07-19; GUI panel visual check pending next unlocked desktop session) — nothing is measured
   on-device today (one unused query pair in PathTracing). Prerequisite for
   honest performance work; label every pass for RenderDoc while at it.
 - [ ] **`DescriptorManager` extraction** (M) — `VulkanRenderer` still owns four
