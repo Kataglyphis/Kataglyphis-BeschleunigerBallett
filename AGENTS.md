@@ -80,25 +80,26 @@ Vulkan SDK, Rust, sccache — everything preinstalled). CI does exactly this
 powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1
 ```
 
-Key facts (hard-won; see `ExternalLib/Kataglyphis-ContainerHub/docs/windows-builds.md`):
+**All Windows-container knowledge lives in ContainerHub** — do not restate it
+here. Two documents cover it:
 
-- **Use Stevedore's `docker.exe`** (`winget install stevedore`; binary at
-  `%ProgramFiles%\Stevedore\bin\docker.exe` or `D:\Stevedore\bin\docker.exe`).
-  `nerdctl` is broken on Windows (no DNS in BuildKit, missing CNI `nat` plugin).
-- **Process isolation** (`--isolation process`) exposes all host CPUs; Hyper-V
-  isolation caps containers at 2 CPUs unless `--cpu-count` is passed.
-- **Mount to a fresh target** (the script uses `C:\ws-mnt`): mounting over a
-  directory baked into the image (like `C:\workspace`) fails at
-  `CreateComputeSystem` on hosts whose OS build differs from the image base.
-- **Dev Drive sources cannot be bind-mounted** until the container filters are
-  allow-listed: `docker run` fails with "Der Dateisystem-Minifilter kann nicht an
-  das Entwicklervolume angefügt werden". One-time fix (elevated, then remount):
-  `fsutil devdrv setfiltersallowed bindFlt, wcifs`. Until then the script
-  automatically falls back to a tar-pipe transport: sources are streamed into a
-  container-local `C:\ws`, built there, and build trees + logs are streamed back.
-- `docker exec` bypasses the image entrypoint; the script re-invokes
-  `C:\temp\scripts\entrypoint.cmd` explicitly so the VS developer environment and
-  the clang-cl ASAN runtime DLL directory are on `PATH`.
+- [`ExternalLib/Kataglyphis-ContainerHub/docs/windows-builds.md`](ExternalLib/Kataglyphis-ContainerHub/docs/windows-builds.md)
+  — the image itself: build sequence, Stevedore setup, invariants.
+- [`ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md`](ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md)
+  — building *inside* it: the reusable-container pattern and its safety rails,
+  why sccache cannot cache a C++23 modules build, why a named volume cannot be
+  a CMake build directory, the Windows path limit that silently truncates tar
+  transfers, the Dev Drive bind-mount restriction, `docker exec` bypassing the
+  entrypoint, and the wcifs teardown lock.
+
+The reusable PowerShell is upstream too
+(`windows/scripts/modules/WindowsContainerBuild.Reuse.psm1`:
+`Get-ReusableBuildContainer`, `Copy-IntoBuildContainer`,
+`Copy-FromBuildContainer`, `Resolve-DockerExe`, `Get-ContainerIsolationArgs`,
+`Test-ContainerBindMount`, `Remove-BuildContainerSafe`); this repo's script
+imports it through `Scripts/Windows/Resolve-BuildModule.ps1` and keeps only
+project-specific orchestration (build-directory names, `Build-Windows.ps1`
+arguments, the cargo exclusions).
 
 ## Shaders: always compiled, never stale
 
