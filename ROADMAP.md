@@ -19,7 +19,7 @@ L (multi-day), XL (multi-week).
 - [x] **GPU timestamps + debug labels per pass** (M, done 2026-07-19; GUI panel visual check pending next unlocked desktop session) — nothing is measured
   on-device today (one unused query pair in PathTracing). Prerequisite for
   honest performance work; label every pass for RenderDoc while at it.
-- [ ] **`DescriptorManager` extraction** (M) — `VulkanRenderer` still owns four
+- [x] **`DescriptorManager` extraction** (M, done 2026-07-19 as `DescriptorSetGroup`; VulkanRenderer -617 lines) — `VulkanRenderer` still owns four
   structurally identical descriptor layout/pool/update triads (~55 members,
   ~71 methods overall); mirror the PipelineBuilder move.
 - [ ] **Async asset loading** (L) — model load/reload and AS builds block the
