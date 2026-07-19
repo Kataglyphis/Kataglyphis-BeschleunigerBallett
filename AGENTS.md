@@ -161,6 +161,22 @@ live next to it. Vulkan SDK env can be injected with `--vulkan-setup-script`.
   `Build-Windows.ps1` without `-SkipPerfTests`.
 - PowerShell module tests: Pester suites under `Scripts/Windows/tests/`.
 
+## Code Conventions (C++ engine)
+
+- **Exceptions are disabled project-wide** (`/EHs-`, `-fno-exceptions`,
+  `VULKAN_HPP_NO_EXCEPTIONS`): vulkan.hpp calls return `ResultValue`;
+  `throw`/`try` will not compile. `ASSERT_VULKAN(val, "msg")` logs critical
+  and aborts — use it on creation/allocation calls only.
+- Graphics pipelines are built via `kataglyphis.vulkan.pipeline_builder`
+  (vulkan_base/PipelineBuilder) — do not hand-roll the create-info chain.
+- Buffer/image memory goes through VMA (allocator owned by `VulkanDevice`);
+  `VulkanBuffer`/`VulkanImage` are move-only with destructor release
+  (`cleanUp()` remains for explicit early teardown and is idempotent).
+- A `VkPipelineCache` persists to `pipeline_cache/kataglyphis_pipeline.cache`
+  (gitignored, written on graceful shutdown only).
+- The improvement campaign log (what changed, what is queued):
+  `docs/cpp-renderer-improvements.md`.
+
 ## Docs
 
 - `README.md` — repo-level orientation.

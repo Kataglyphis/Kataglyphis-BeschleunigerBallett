@@ -30,13 +30,14 @@ see also [**__Official homepage__**](https://beschleunigerballette.jonasheinle.d
 
 ## Overview
 
-Kataglyphis-BeschleunigerBallett is a renderer and graphics-engine playground used to explore modern graphics APIs and the surrounding engineering workflow. The repository combines Vulkan and OpenGL rendering work with build automation, packaging, testing, documentation, and optional Rust integration.
+Kataglyphis-BeschleunigerBallett is a renderer and graphics-engine playground used to explore modern graphics APIs and the surrounding engineering workflow. The repository combines a C++23-modules Vulkan engine, a companion Rust WebGPU renderer (native + browser), build automation, packaging, testing, documentation, and Rust integration.
 
 ## Highlights
 
-- Vulkan renderer with rasterization, ray tracing, path tracing, PBR, OBJ loading, and mip mapping
-- OpenGL renderer with dynamic lights, multiple shadow techniques, clouds, compute shaders, skyboxes, and PBR
-- Tooling around CMake presets, CI, code coverage, benchmarking, fuzzing, packaging, Sphinx, Doxygen, and Graphviz
+- Vulkan renderer (C++23 modules) with forward + deferred rasterization, ray tracing, path tracing, PBR, cascaded shadow maps (consumed by both lighting paths), skybox, volumetric clouds, OBJ loading, and mip mapping
+- VMA-backed memory, fence-synced uploads with a persistent staging buffer, a persisted `VkPipelineCache`, and fail-fast Vulkan error handling (exceptions are disabled project-wide)
+- Companion Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer`): glTF 2.0/GLB, PBR + IBL, CSM, SSAO, bloom, skinning, animations, LOD — runs natively and in the browser; shaders exportable to SPIR-V/GLSL for this engine (see `docs/shader-sharing.md`)
+- Tooling around CMake presets, CI, code coverage, benchmarking, fuzzing (including a real OBJ-parsing fuzz target), packaging, Sphinx, Doxygen, and Graphviz
 - Linux and Windows as the primary development targets
 
 ## Repository Layout
@@ -200,6 +201,12 @@ Containerized and reproducible environment details live in [Kataglyphis-Containe
 - Expand test, fuzz, and performance coverage
 - Continue documenting build, packaging, and API workflows
 - Keep generated reference material easy to reproduce locally
+
+Renderer-specific plans and status live in `docs/`:
+`webgpu-renderer-roadmap.md` (Rust WebGPU renderer),
+`cpp-renderer-improvements.md` (C++ engine improvement campaign),
+`shader-sharing.md` (sharing shader code between both renderers), and
+`webgpu-srgb-audit.md` (color-space audit).
 
 ## Contributing
 
