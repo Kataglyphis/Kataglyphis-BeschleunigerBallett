@@ -502,14 +502,27 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
         {
             glm::mat4 model;
             uint32_t cascadeIndex;
-        } push{ glm::mat4(1.0f), cascade };
-        commandBuffer.pushConstants(pipelineLayout,
-          vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eGeometry,
-          0,
-          sizeof(ShadowPush),
-          &push);
+        };
 
         for (uint32_t m = 0; m < scene->getModelCount(); m++) {
+            // The shadow caster must be transformed by the SAME model matrix
+            // the forward pass uses (Rasterizer::recordCommands). This pushed a
+            // hard-coded identity, so with the scene's uniform scale of 60 the
+            // caster was rendered at 1/60 the size of the visible model: the
+            // depth map stayed at its 1.0 clear value everywhere the camera
+            // could sample it, every fragment compared as unoccluded, and the
+            // shadow term was 0 for the entire frame. That is why cascaded
+            // shadows never darkened anything.
+            //
+            // It was also pushed once per cascade instead of once per model, so
+            // per-model transforms were ignored even had the matrix been right.
+            ShadowPush push{ scene->getModelMatrix(m), cascade };
+            commandBuffer.pushConstants(pipelineLayout,
+              vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eGeometry,
+              0,
+              sizeof(ShadowPush),
+              &push);
+
             for (uint32_t k = 0; k < scene->getMeshCount(m); k++) {
                 const vk::Buffer vertex_buffer = scene->getVertexBuffer(m, k);
                 const vk::DeviceSize offset = 0;

@@ -275,8 +275,28 @@ TEST(GoldenRender, RendersNonBlankFrame)
 // match its source, so those conclusions are worth re-deriving rather than
 // trusting.
 //
-// Tracked in ROADMAP.md. Re-enable by removing DISABLED_ once the cause is
-// found - do NOT relax the assertion to make it pass.
+// UPDATE 2026-07-19 (second pass): the cause WAS found and fixed - the shadow
+// pass pushed a hard-coded identity model matrix while the forward pass pushed
+// the scene's matrix (a uniform scale of 60), so the caster was rendered at
+// 1/60 size and the depth map stayed at its 1.0 clear value. Measured against
+// forced black/white references, as a fraction of geometry pixels:
+//
+//                              before fix   after fix
+//   shadow map has depth            0%         46%
+//   fragment occluded (shadow>0)    0%         36%
+//
+// Shadows are therefore being computed now. This test still cannot SEE them:
+// the model renders only ~3% above a forced-black reference, so
+// `color *= 1 - shadow * intensity` moves whole-frame mean luminance by ~0.06
+// against a run-to-run noise floor of ~0.04, and per-pixel deltas fall under
+// the 4.0 CHANGE_THRESHOLD.
+//
+// What remains is a TEST-SCENE problem, not a renderer one: the scene must be
+// lit brightly enough for a 36% occlusion to clear the threshold. Raising
+// direcional_light_radiance to 60 did NOT brighten the frame (mean went
+// 28.51 -> 28.03), so the lighting path needs understanding before this is
+// re-enabled. Do NOT simply lower CHANGE_THRESHOLD - the noise floor is
+// already ~600 pixels at 4.0.
 TEST(GoldenRender, DISABLED_ShadowsDarkenSomePixels)
 {
     SKIP_WITHOUT_GPU();
@@ -297,11 +317,20 @@ TEST(GoldenRender, DISABLED_ShadowsDarkenSomePixels)
     // "the shadow map is sampled" from "the shadow pass runs".
     scene_vars.shadows_enabled = true;
 
-    // The default camera sits at (0, 2, 0) looking along -Z, which puts the
-    // model (bounds x[-0.59,0.74] y[-0.72,0.74] z[-0.11,0.93]) directly BELOW
-    // it and entirely out of frame. Verified by forcing shader.frag to emit
-    // solid magenta: the captured mean luminance did not move at all.
-    harness.camera->set_camera_position(glm::vec3(0.0F, 0.5F, 2.0F));
+    // Frame the model. Two things make the default camera useless here:
+    //
+    //  1. It sits at (0, 2, 0) looking along -Z, which puts the model behind
+    //     it (measured clip.w = -0.409, ndc.y = -11.8).
+    //  2. The scene applies a uniform scale of 60 to the model, so the raw OBJ
+    //     bounds x[-0.59,0.74] y[-0.72,0.74] z[-0.11,0.93] become roughly
+    //     x[-35,44] y[-43,44] z[-6.5,55.5], centred at (4.7, 0.5, 24.5) with a
+    //     bounding radius of ~48. Any camera placed a couple of units from the
+    //     origin is INSIDE the geometry and sees only backfaces, which are
+    //     culled - which is why "move the camera closer" produced no geometry.
+    //
+    // Sit back along +Z from the scaled centre so the whole model is in front
+    // of the camera and inside the 45 degree vertical fov.
+    harness.camera->set_camera_position(glm::vec3(4.7F, 0.5F, 174.5F));
 
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
