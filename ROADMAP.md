@@ -12,7 +12,7 @@ L (multi-day), XL (multi-week).
   are move-only with destructor release; extend the pattern upward through the
   render stages and `VulkanRenderer` so the hand-ordered 48-line `cleanUp()`
   and the device-lost special-casing in `App.cpp` disappear.
-- [ ] **Sync-validated barrier removal** (S) — the same-layout swapchain barrier
+- [x] **Sync-validated barrier removal** (S, done 2026-07-19 — and sync validation first exposed 10 real depth-sync hazards, fixed in the same unit) — the same-layout swapchain barrier
   after the skybox pass looks redundant; remove only after a run with
   synchronization validation enabled confirms the post pass's external
   dependency covers it.
