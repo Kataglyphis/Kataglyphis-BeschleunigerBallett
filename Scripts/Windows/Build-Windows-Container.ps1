@@ -37,7 +37,11 @@ param(
   # Force the tar-pipe transport even if a bind mount would work.
   [switch]$NoBindMount,
   # Keep the fallback container around for debugging instead of removing it.
-  [switch]$KeepContainer
+  [switch]$KeepContainer,
+  # Discard the reusable build container and start from a clean one. Use when a
+  # build behaves strangely, or after deleting files that the container may
+  # still hold (sources are overwritten in place, never pruned).
+  [switch]$FreshContainer
 )
 
 $ErrorActionPreference = 'Stop'
@@ -119,6 +123,50 @@ $cacheArgs = @(
 # specified", both with a fresh volume and a populated one. See
 # docs/container-build-caching.md for the full measurement.
 
+# A single reusable build container. Creating a fresh container per build meant
+# the build tree had to be streamed in AND out every time (~17 GB), which now
+# dominates build time. Reusing one container keeps the tree in place: only
+# sources go in, and only the artifacts the host actually needs come out.
+$persistentContainerName = 'bb-build-persistent'
+
+function Get-ReusableBuildContainer {
+  param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$ImageRef)
+
+  $previousPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    $imageId = (& $docker inspect -f '{{.Id}}' $ImageRef 2>$null | Select-Object -First 1)
+    $state = (& $docker inspect -f '{{.State.Running}}|{{.Image}}' $Name 2>$null | Select-Object -First 1)
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
+
+  if ($state) {
+    $parts = $state -split '\|'
+    $isRunning = ($parts[0] -eq 'true')
+    $containerImage = if ($parts.Count -gt 1) { $parts[1] } else { '' }
+
+    if ($imageId -and $containerImage -and ($containerImage -ne $imageId)) {
+      Write-Host 'Build image changed - recreating the reusable container.'
+      & $docker rm -f $Name 2>&1 | Out-Null
+    } elseif ($isRunning) {
+      Write-Host "Reusing build container '$Name' (build tree preserved)."
+      return $true
+    } else {
+      Write-Host "Starting existing build container '$Name'..."
+      & $docker start $Name 2>&1 | Out-Null
+      if ($LASTEXITCODE -eq 0) { return $true }
+      & $docker rm -f $Name 2>&1 | Out-Null
+    }
+  }
+
+  Write-Host "Creating build container '$Name'..."
+  & $docker run -d --name $Name @isolationArgs @cacheArgs --entrypoint cmd $ImageRef `
+    /c 'ping -n 604800 127.0.0.1 > nul' | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw 'Failed to start build container.' }
+  return $false
+}
+
 function Test-BindMountUsable {
   if ($NoBindMount) { return $false }
   Write-Host 'Probing bind mount support...'
@@ -148,12 +196,14 @@ function Invoke-BindMountBuild {
 
 function Invoke-TarPipeBuild {
   Write-Host 'Bind mount unavailable - falling back to tar-pipe transport.'
-  $container = "bb-build-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+  $container = $persistentContainerName
   $ws = 'C:\ws'
 
-  & $docker run -d --name $container @isolationArgs @cacheArgs --entrypoint cmd $Image `
-    /c 'ping -n 604800 127.0.0.1 > nul' | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw 'Failed to start build container.' }
+  if ($FreshContainer) {
+    Write-Host 'FreshContainer requested - discarding any existing build container.'
+    & $docker rm -f $container 2>&1 | Out-Null
+  }
+  $reusedContainer = Get-ReusableBuildContainer -Name $container -ImageRef $Image
 
   try {
     & $docker exec $container cmd /c "mkdir $ws" | Out-Null
@@ -173,6 +223,7 @@ function Invoke-TarPipeBuild {
     # avoids mounting the build dir as a volume, which CMake cannot configure
     # inside (see docs/container-build-caching.md).
     foreach ($configuration in ($Configurations -split ',')) {
+      if ($reusedContainer) { break }# tree already lives in the container
       $trimmedConfiguration = $configuration.Trim()
       if (-not $trimmedConfiguration) { continue }
       $buildDirName = "build-$trimmedConfiguration"
@@ -214,15 +265,29 @@ function Invoke-TarPipeBuild {
       # on the way in: its cxxbridge paths exceed the Windows path limit and
       # abort the extraction ("Artifact extraction failed"). Excluding it keeps
       # the executables and ninja state - what the host actually needs - intact.
-      $excludeArgs = ($existing | ForEach-Object { "--exclude `"$_/cargo`"" }) -join ' '
-      $tarOut = "`"$docker`" exec $container tar -cf - $excludeArgs -C $ws $($existing -join ' ') | tar -xf - -C `"$repoRoot`""
+      # The build tree now stays in the reusable container, so the host only
+      # needs what it actually runs: executables, their debug info, the compile
+      # database (clang-tidy) and logs. Copying the whole ~8.5 GB tree back was
+      # pure overhead, and its deep cargo/cxxbridge paths are what produced the
+      # "Artifact extraction failed" warnings.
+      $includeArgs = ($existing | ForEach-Object {
+          if ($_ -eq 'logs') { $_ } else { "$_/*.exe $_/*.dll $_/*.pdb $_/compile_commands.json" }
+        }) -join ' '
+      $tarOut = "`"$docker`" exec $container cmd /c `"cd /d $ws && tar -cf - $includeArgs`" | tar -xf - -C `"$repoRoot`""
       cmd /c $tarOut
-      if ($LASTEXITCODE -ne 0) { Write-Warning "Artifact extraction failed (exit $LASTEXITCODE)." }
+      if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Artifact extraction reported errors (exit $LASTEXITCODE) - check executable timestamps."
+      }
     }
 
     if ($buildExit -ne 0) { throw "Container build failed (exit $buildExit)." }
   } finally {
-    if ($KeepContainer) {
+    if ($true) {
+      # The container is intentionally reused across builds - that is what makes
+      # builds incremental without moving the tree. Remove it with
+      # 'docker rm -f bb-build-persistent' or rerun with -FreshContainer.
+      Write-Host "Keeping build container '$container' for the next build (reset: -FreshContainer)."
+    } elseif ($KeepContainer) {
       Write-Host "Keeping container '$container' for debugging (remove with: docker rm -f $container)."
     } else {
       # On hosts with the wcifs layer-teardown quirk the immediate remove can

@@ -8,9 +8,47 @@ restating it.
 
 | Approach | Result |
 | --- | --- |
-| Streaming the build tree in/out (**in use**) | ✅ ~230 s vs ~360–480 s cold |
+| **Reusable build container (in use)** | ✅ **48 s** no-change, **63 s** one-header change |
+| Streaming the build tree in/out | 🟡 ~230 s — worked, but moved ~17 GB per build |
 | sccache persistent volume | ❌ 0.00 % hit rate — cache stays empty |
 | Named volume for the build directory | ❌ CMake cannot configure inside it |
+
+**Measured 2026-07-19 (clangcl-debug):**
+
+| Scenario | Time |
+| --- | --- |
+| Cold (fresh container, tree seeded) | 137 s |
+| No source changes | **48 s** |
+| One header touched | **63 s** |
+| Previously (fresh container every build) | 352–484 s |
+
+Verified: 16/16 tests pass against the incrementally built binaries and host
+executable timestamps match the build end (no stale artifacts).
+
+## What is actually cached
+
+Not compiler output — **build state**. One container (`bb-build-persistent`)
+is reused across builds, so ninja's dependency graph, C++23 module BMIs and
+object files stay exactly where they were. Nothing needs to be transferred or
+recomputed:
+
+- **Inbound:** sources only. `tar` preserves mtimes, so ninja sees just the
+  files that really changed.
+- **Outbound:** only what the host runs - `*.exe`, `*.dll`, `*.pdb`,
+  `compile_commands.json`, logs. The host copy is no longer the incremental
+  seed, so there is no reason to copy ~8.5 GB back. This also removed the
+  `Artifact extraction failed` warnings, which came from deep
+  `cargo/cxxbridge` paths in that bulk copy.
+
+### Safety rails
+
+- **Image change is detected** (`docker inspect` of the container image ID vs
+  the referenced image) and the container is recreated. You cannot silently
+  build against a stale toolchain.
+- **`-FreshContainer`** discards the container and starts clean. Needed
+  because sources are overwritten in place and never pruned: a file DELETED
+  on the host still exists inside the container until it is recreated.
+- Reset by hand: `docker rm -f bb-build-persistent`.
 
 ## The transport
 
@@ -19,7 +57,10 @@ Drive hosts reject the filesystem minifilter, so it falls back to a
 **tar-pipe**: sources are streamed into a fresh container, built there, and
 build trees + logs are streamed back out.
 
-## What works: streaming the build tree back in
+## Previous approach: streaming the build tree back in
+
+(Superseded by container reuse, kept because the mechanics still apply when a
+container has to be recreated.)
 
 The host already holds the previous build tree (it is streamed *out* after
 every build), so it is streamed *in* as well. ninja then rebuilds only what
