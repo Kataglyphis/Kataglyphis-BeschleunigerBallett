@@ -13,13 +13,16 @@ validation-layer-clean runtime check where rendering changed.
 | `20107238` | **Real fuzzing + CI + ASan presets** | `ObjLoader::loadVertices` bounds-hardened (negative/out-of-range indices → OOB reads; `exit()` on parse error killed the app on GUI model reload). `obj_parsing_fuzz_test` mirrors the walk; 60 s coverage-guided ASan fuzzing, zero findings. Stale `RendererTest.BasicSetup` ctest filter removed; fuzz target added to Linux CI; `x64-ClangCL-Windows-Debug-ASan` presets added (matrix had TSan only) |
 | `9e900dbd` | **Fail-fast `ASSERT_VULKAN`** | Was log-and-continue → null-handle UB later. Exceptions are disabled project-wide (`/EHs-`, `VULKAN_HPP_NO_EXCEPTIONS`), so the macro now logs critical + `abort()`. All 41 call sites audited: creation/allocation only |
 | `522d0c9f` | **Draw-loop perf** | Invariant descriptor set bound once instead of per mesh; per-draw `std::vector<vk::Buffer>` heap churn removed (rasterizer + all CSM cascade loops) |
-| (see git log) | **Staging ring + fence-synced uploads** | Per-upload `queue.waitIdle()` → per-submit fence; one persistent mapped staging buffer with geometric growth |
+| `be60a235` | **Deferred-path shadows** | Shared `common/cascaded_shadow.glsl`; both lighting paths use the same cascades |
+| `ad77cbdd` | **Pipeline cache** | Persisted in `VulkanDevice`, all pipeline sites consume it; two-run verified (saves on graceful exit only) |
+| `b06aaf27` (folded in) | **RAII leaf types** | `VulkanBuffer`/`VulkanImage` became move-only with destructor release during the VMA rewrite; verified via full teardown tests + clean exit |
+| `326a6eae` | **Staging ring + fence-synced uploads** | Per-upload `queue.waitIdle()` → per-submit fence; one persistent mapped staging buffer with geometric growth |
 | `b06aaf27` | **VMA adoption** | Allocator moved into `VulkanDevice`; `VulkanBuffer`/`VulkanImage` on `vmaCreateBuffer/Image`; persistently mapped UBOs via `MAPPED_BIT`; RT device addresses intact. Verified incl. RT/path-trace GPU tests |
 | `d120610c` | **PipelineBuilder** | The copy-pasted ~70–100-line pipeline-construction block across Rasterizer/PostStage/DeferredRasterizer/SkyBox/CascadedShadowMap became `kataglyphis.vulkan.pipeline_builder`; stages state only what differs. −416/+51 at call sites; configurations preserved bit-for-bit |
 
 ## In progress
 
-(nothing — next up: pipeline cache + prebuilt SPIR-V)
+(nothing — remaining queue: stage/renderer-level RAII, sync-validated barrier removal, GPU timestamps)
 
 ## Queued (design notes)
 
