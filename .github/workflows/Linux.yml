@@ -108,6 +108,27 @@ jobs:
           ${{ env.BUILD_DIR }}/obj_parsing_fuzz_test
         working-directory: ${{ github.workspace }}
 
+      # AddressSanitizer + UBSan: catches the memory errors the OBJ-loader
+      # hardening was about. Non-GPU tests only.
+      - name: Configure/build with AddressSanitizer
+        run: |
+          docker run --rm             -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0"             -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0"             -v ${{ github.workspace }}:/workspace             -w /workspace             "${{ env.CONTAINER_IMAGE }}"             bash ./Scripts/Linux/cmake-configure-build.sh             --vulkan-version "${{ env.VULKAN_VERSION }}"             --preset "linux-debug-asan-clang"             --build-dir "build-asan-clang" 2>&1 | tee output-asan.log
+
+      - name: Run tests under AddressSanitizer
+        run: |
+          docker run --rm             -e ASAN_OPTIONS="detect_leaks=1:abort_on_error=1"             -e UBSAN_OPTIONS="print_stacktrace=1:halt_on_error=1"             -v ${{ github.workspace }}:/workspace             -w /workspace             "${{ env.CONTAINER_IMAGE }}"             bash ./Scripts/Linux/run-ctest.sh             --vulkan-version "${{ env.VULKAN_VERSION }}"             --build-dir "build-asan-clang"             --build-type "${{ env.BUILD_TYPE }}"             --ctest-exclude "^Integration\." 2>&1 | tee output-asan.log
+
+      # ThreadSanitizer: the presets existed but nothing ever ran them, so
+      # data races could only be found by hand. Non-GPU tests only - the
+      # Integration suites need an adapter the CI container does not have.
+      - name: Configure/build with ThreadSanitizer
+        run: |
+          docker run --rm             -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0"             -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0"             -v ${{ github.workspace }}:/workspace             -w /workspace             "${{ env.CONTAINER_IMAGE }}"             bash ./Scripts/Linux/cmake-configure-build.sh             --vulkan-version "${{ env.VULKAN_VERSION }}"             --preset "linux-debug-tsan-clang"             --build-dir "build-tsan" 2>&1 | tee output-tsan.log
+
+      - name: Run tests under ThreadSanitizer
+        run: |
+          docker run --rm             -e TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1"             -v ${{ github.workspace }}:/workspace             -w /workspace             "${{ env.CONTAINER_IMAGE }}"             bash ./Scripts/Linux/run-ctest.sh             --vulkan-version "${{ env.VULKAN_VERSION }}"             --build-dir "build-tsan"             --build-type "${{ env.BUILD_TYPE }}"             --ctest-exclude "^Integration\." 2>&1 | tee output-tsan.log
+
       - name: Build Code Coverage
         run: |
           docker run --rm \

@@ -142,6 +142,32 @@
 			}
 		},
 		{
+			"name": "linux-debug-asan-clang",
+			"displayName": "Linux Debug Clang (ThreadSanitizer)",
+			"description": "Linux Clang debug with AddressSanitizer + UBSan",
+			"generator": "Ninja",
+			"binaryDir": "${sourceDir}/build-asan-clang/",
+			"installDir": "${sourceDir}/build-asan-clang/",
+			"cacheVariables": {
+				"CMAKE_VERBOSE_MAKEFILE": "ON",
+				"CMAKE_BUILD_TYPE": "Debug",
+				"CMAKE_C_COMPILER": "clang",
+				"CMAKE_CXX_COMPILER": "clang++",
+				"RUST_FEATURES": "ON",
+				"COMPILER_CACHE": "sccache",
+				"BUILD_TESTING": "TRUE",
+				"USE_THREAD_SANITIZER": "OFF",
+				"myproject_ENABLE_SANITIZER_THREAD": "OFF",
+				"myproject_ENABLE_SANITIZER_ADDRESS": "ON",
+				"myproject_ENABLE_SANITIZER_UNDEFINED": "ON"
+			},
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Linux"
+			}
+		},
+		{
 			"name": "linux-debug-tsan-GNU",
 			"displayName": "Linux Debug GNU (ThreadSanitizer)",
 			"description": "Linux Debug with ThreadSanitizer",
@@ -519,6 +545,11 @@
 			"jobs": 0,
 			"configurePreset": "x64-Clang-Windows-Release",
 			"configuration": "Release"
+		},
+		{
+			"name": "linux-debug-asan-clang",
+			"jobs": 0,
+			"configurePreset": "linux-debug-asan-clang"
 		}
 	],
 	"testPresets": [
@@ -585,6 +616,18 @@
 			"name": "test-x64-ClangCL-Windows-Profile",
 			"configurePreset": "x64-ClangCL-Windows-Profile",
 			"description": "Windows ClangCL profile (benchmarks)",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			}
+		},
+		{
+			"name": "test-linux-debug-asan-clang",
+			"configurePreset": "linux-debug-asan-clang",
+			"description": "Linux Clang AddressSanitizer tests",
 			"output": {
 				"outputOnFailure": true
 			},
