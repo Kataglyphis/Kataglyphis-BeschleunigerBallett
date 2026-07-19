@@ -95,3 +95,4 @@ build-release*
 # ASan logs
 asan.log*
 .venv-docs/
+pipeline_cache/
