@@ -118,6 +118,11 @@ logs come out. Measured 48 s for a no-change rebuild and 63 s after touching a
 header, against 352-484 s when every build got a fresh container. Use
 `-FreshContainer` to start clean (deleted files are not pruned from a reused
 container; an image change recreates it automatically).
+
+The general Windows-container findings behind this — the pattern, its safety
+rails, and three approaches that do NOT work — are documented once in
+ContainerHub:
+`ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md`.
 `sccache` is wired to a persistent volume but does **not** help — this is a
 C++23 modules build and its hit rate is measured at 0%. If a build ever
 behaves strangely, delete the build directory for a clean cold build. Full

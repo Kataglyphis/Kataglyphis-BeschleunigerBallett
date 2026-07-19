@@ -1,8 +1,15 @@
 # Container Build Caching & Incremental Builds
 
-How to avoid recompiling everything on every container build, what was
-measured, and what does **not** work. `AGENTS.md` links here rather than
-restating it.
+How builds in this repo stay fast, and the measurements behind it.
+`AGENTS.md` links here rather than restating it.
+
+> **General Windows-container findings live in ContainerHub**, where they are
+> reusable across projects:
+> [`ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md`](../ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md)
+> — the reusable-container pattern and its safety rails, why sccache cannot
+> cache a C++23 modules build, why a named volume cannot be a CMake build
+> directory, and the Windows path-limit trap that silently truncates tar
+> transfers. This page keeps only what is specific to *this* repository.
 
 ## Summary
 
