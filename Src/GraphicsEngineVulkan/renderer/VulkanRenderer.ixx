@@ -12,6 +12,7 @@ import kataglyphis.vulkan.buffer_manager;
 import kataglyphis.vulkan.buffer;
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.command_buffer_manager;
+import kataglyphis.vulkan.descriptor_set_group;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.global_ubo;
 import kataglyphis.vulkan.gui;
@@ -184,35 +185,24 @@ class VulkanRenderer
     void create_object_description_buffer();
     void updateObjectDescriptionDescriptorSets();
 
-    vk::DescriptorPool descriptorPoolSharedRenderStages{};
-    void createDescriptorPoolSharedRenderStages();
-    vk::DescriptorSetLayout sharedRenderDescriptorSetLayout{};
-    void createSharedRenderDescriptorSetLayouts();
-    std::vector<vk::DescriptorSet> sharedRenderDescriptorSet;
-    void createSharedRenderDescriptorSet();
+    // -- descriptor set groups (each owns one layout + pool + per-swapchain-
+    // image sets; see kataglyphis.vulkan.descriptor_set_group)
+    DescriptorSetGroup sharedRenderDescriptors;
+    void createSharedRenderDescriptorResources();
     void updateTexturesInSharedRenderDescriptorSet();
-
-    vk::DescriptorPool post_descriptor_pool{};
-    vk::DescriptorSetLayout post_descriptor_set_layout{};
-    std::vector<vk::DescriptorSet> post_descriptor_set;
-    void create_post_descriptor_layout();
-    void updatePostDescriptorSets();
     void updateUBODescriptorSets();
 
-    vk::DescriptorPool gbuffer_descriptor_pool{};
-    vk::DescriptorSetLayout gbuffer_descriptor_set_layout{};
-    std::vector<vk::DescriptorSet> gbuffer_descriptor_set;
-    void create_gbuffer_descriptor_layout();
+    DescriptorSetGroup postDescriptors;
+    void create_post_descriptor_resources();
+    void updatePostDescriptorSets();
+
+    DescriptorSetGroup gbufferDescriptors;
+    void create_gbuffer_descriptor_resources();
     void updateGBufferDescriptorSets();
 
-    vk::DescriptorPool raytracingDescriptorPool{};
-    std::vector<vk::DescriptorSet> raytracingDescriptorSet;
-    vk::DescriptorSetLayout raytracingDescriptorSetLayout{};
-
-    void createRaytracingDescriptorSetLayouts();
-    void createRaytracingDescriptorSets();
+    DescriptorSetGroup raytracingDescriptors;
+    void createRaytracingDescriptorResources();
     void updateRaytracingDescriptorSets();
-    void createRaytracingDescriptorPool();
 
     void updateAllDescriptorSets();
     void cleanUpDescriptorResources();
