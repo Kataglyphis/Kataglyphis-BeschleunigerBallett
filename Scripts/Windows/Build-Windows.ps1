@@ -258,6 +258,7 @@ try {
 
   if (Test-ConfigurationSelected -Name 'clangcl-debug') {
     Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangDebug" -Critical -Script {
+      Invoke-ShaderPrecompile -BuildLabel 'ClangCL Debug'
       Invoke-ConfiguredBuild -BuildPath $buildPathClangDebug -Preset $presetClangDebug -Configuration 'Debug'
     } | Out-Null
 

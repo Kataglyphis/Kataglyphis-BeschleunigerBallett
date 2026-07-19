@@ -99,6 +99,18 @@ function Get-BuildCommandArgs {
   return $psArgs
 }
 
+# Persistent compiler cache: sccache stores objects in the container FS by
+# default, which is discarded with the container - so every build was a cold
+# full rebuild. A named volume survives containers and makes repeat builds
+# mostly cache hits.
+$sccacheVolume = 'kataglyphis-sccache'
+$sccacheDir = 'C:\sccache'
+$cacheArgs = @(
+  '-v', "${sccacheVolume}:${sccacheDir}",
+  '-e', "SCCACHE_DIR=${sccacheDir}",
+  '-e', 'SCCACHE_CACHE_SIZE=20G'
+)
+
 function Test-BindMountUsable {
   if ($NoBindMount) { return $false }
   Write-Host 'Probing bind mount support...'
@@ -120,7 +132,7 @@ function Test-BindMountUsable {
 function Invoke-BindMountBuild {
   Write-Host 'Bind mount usable - building directly in the working tree.'
   $buildArgs = Get-BuildCommandArgs -WorkspacePath $mountTarget
-  & $docker run --rm @isolationArgs `
+  & $docker run --rm @isolationArgs @cacheArgs `
     --mount "type=bind,source=$repoRoot,target=$mountTarget" `
     -w $mountTarget $Image @buildArgs
   if ($LASTEXITCODE -ne 0) { throw "Container build failed (exit $LASTEXITCODE)." }
@@ -131,7 +143,7 @@ function Invoke-TarPipeBuild {
   $container = "bb-build-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
   $ws = 'C:\ws'
 
-  & $docker run -d --name $container @isolationArgs --entrypoint cmd $Image `
+  & $docker run -d --name $container @isolationArgs @cacheArgs --entrypoint cmd $Image `
     /c 'ping -n 604800 127.0.0.1 > nul' | Out-Null
   if ($LASTEXITCODE -ne 0) { throw 'Failed to start build container.' }
 

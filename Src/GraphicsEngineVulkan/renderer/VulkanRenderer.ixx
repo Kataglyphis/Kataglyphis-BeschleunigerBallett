@@ -1,6 +1,7 @@
 module;
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -51,6 +52,26 @@ class VulkanRenderer
     void update_raytracing_descriptor_set(uint32_t image_index);
     bool hasDeviceLost() const { return device_lost_detected; }
     bool supportsHardwareRaytracing() const;
+
+    // -- headless frame capture (test / tooling instrumentation)
+    //
+    // The capture is recorded *inside* the frame's own command buffer, right
+    // after the post stage has transitioned the swapchain image to
+    // ePresentSrcKHR and before the present. Copying the image after
+    // vkQueuePresentKHR would mean touching an image owned by the presentation
+    // engine, so instead the copy is armed one frame ahead:
+    //
+    //     renderer->requestFrameCapture();
+    //     ... one normal frame (updateUniforms + drawFrame) ...
+    //     auto pixels = renderer->takeCapturedFrame(width, height);
+    //
+    // takeCapturedFrame() waits on the fence of the frame that recorded the
+    // copy, so it never calls waitIdle and never blocks the frame path.
+    // Returns tightly packed RGBA8 (swizzled from BGRA when the swapchain uses
+    // a B8G8R8A8 format), or an empty vector when nothing was captured.
+    bool supportsFrameCapture() const;
+    void requestFrameCapture();
+    std::vector<uint8_t> takeCapturedFrame(uint32_t &outWidth, uint32_t &outHeight);
 
     void cleanUp();
 
@@ -179,6 +200,21 @@ class VulkanRenderer
     // Reads back the previous results of image_index's slice (never waits) and
     // publishes smoothed per-pass milliseconds to the GUI shared vars.
     void readGpuTimings(uint32_t image_index);
+
+    // -- frame capture state (see requestFrameCapture above)
+    // capture_armed: a copy must be recorded into the next frame's command
+    // buffer. capture_fence: the in-flight fence of the frame that recorded
+    // it; waiting on it makes the staging buffer safe to read.
+    bool capture_armed{ false };
+    bool capture_pending{ false };
+    vk::Fence capture_fence{};
+    VulkanBuffer captureBuffer;
+    vk::DeviceSize capture_buffer_size{ 0 };
+    uint32_t capture_width{ 0 };
+    uint32_t capture_height{ 0 };
+    vk::Format capture_format{ vk::Format::eUndefined };
+    void recordFrameCapture(vk::CommandBuffer &commandBuffer, uint32_t image_index);
+    void cleanUpFrameCapture();
 
     Kataglyphis::VulkanRendererInternals::ASManager asManager;
     VulkanBuffer objectDescriptionBuffer;

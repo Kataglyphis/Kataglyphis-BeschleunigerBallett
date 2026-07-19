@@ -1,4 +1,6 @@
 module;
+#include <algorithm>
+#include <cstring>
 #include <vector>
 #include <unordered_map>
 #include <memory>
@@ -59,7 +61,13 @@ std::vector<glm::vec4> CascadedShadowMap::getFrustumCornersWorldSpace(const glm:
     for (unsigned int x = 0; x < 2; ++x) {
         for (unsigned int y = 0; y < 2; ++y) {
             for (unsigned int z = 0; z < 2; ++z) {
-                const glm::vec4 pt = inv * glm::vec4((2.0F * x) - 1.0F, (2.0F * y) - 1.0F, (2.0F * z) - 1.0F, 1.0F);
+                // X/Y span the NDC cube [-1, 1], but depth does NOT: the engine
+                // is built with GLM_FORCE_DEPTH_ZERO_TO_ONE (Vulkan convention),
+                // so NDC z runs 0..1. Unprojecting from -1 put the near-plane
+                // corners far behind the camera and blew up every cascade's
+                // extent, which is why the sampled shadow term was always 0.
+                const glm::vec4 pt =
+                  inv * glm::vec4((2.0F * x) - 1.0F, (2.0F * y) - 1.0F, static_cast<float>(z), 1.0F);
                 frustumCorners.push_back(pt / pt.w);
             }
         }
@@ -90,7 +98,23 @@ void CascadedShadowMap::updateCascades(const glm::mat4& cameraView, float camera
         for (const auto &v : frustumCornerWorldSpace) { center += glm::vec3(v); }
         center /= frustumCornerWorldSpace.size();
 
-        glm::mat4 const light_view_matrix = glm::lookAt(center - lightDir, center, glm::vec3(0.0F, 1.0F, 0.0F));
+        // Radius of the cascade's frustum, used to place the light camera far
+        // enough back that the whole cascade sits IN FRONT of it. The eye used
+        // to be center - lightDir (one unit away), which put part of the
+        // cascade behind the light's near plane.
+        float radius = 0.0F;
+        for (const auto &v : frustumCornerWorldSpace) {
+            radius = std::max(radius, glm::length(glm::vec3(v) - center));
+        }
+
+        glm::vec3 light_direction = lightDir;
+        if (glm::length(light_direction) < 1e-6F) { light_direction = glm::vec3(0.0F, -1.0F, 0.0F); }
+        light_direction = glm::normalize(light_direction);
+        const glm::vec3 up_axis =
+          (std::abs(light_direction.y) > 0.99F) ? glm::vec3(0.0F, 0.0F, 1.0F) : glm::vec3(0.0F, 1.0F, 0.0F);
+
+        glm::mat4 const light_view_matrix =
+          glm::lookAt(center - (light_direction * (radius * 2.0F + 10.0F)), center, up_axis);
 
         float minX = std::numeric_limits<float>::max();
         float maxX = std::numeric_limits<float>::lowest();
@@ -109,16 +133,35 @@ void CascadedShadowMap::updateCascades(const glm::mat4& cameraView, float camera
             maxZ = std::max(maxZ, v_light_view.z);
         }
 
-        constexpr float zMult = 10.0F;
-        if (minZ < 0) minZ *= zMult; else minZ /= zMult;
-        if (maxZ < 0) maxZ /= zMult; else maxZ *= zMult;
+        // Light view space is right-handed and looks down -Z, so corner z
+        // values are NEGATIVE. glm::ortho takes positive near/far DISTANCES:
+        // near = -maxZ (closest corner), far = -minZ (farthest). Passing the
+        // raw negative values mapped nearly every fragment outside [0,1]
+        // depth - measured: only ~5% of visible fragments landed inside the
+        // shadow map, which is why the sampled shadow term was noise.
+        constexpr float zPadding = 10.0F;// keep casters just outside the box
+        float near_distance = std::max(0.01F, -maxZ - zPadding);
+        float far_distance = (-minZ) + zPadding;
+        if (far_distance <= near_distance) { far_distance = near_distance + 1.0F; }
 
-        glm::mat4 const light_projection = glm::ortho(minX, maxX, minY, maxY, minZ, maxZ);
+        glm::mat4 const light_projection =
+          glm::ortho(minX, maxX, minY, maxY, near_distance, far_distance);
 
         cascadeData[i].viewProjMatrix = light_projection * light_view_matrix;
         // The split depth is the far plane of this cascade frustum, but measured in view space depth
         // A simple way is to pass the positive distance
         cascadeData[i].splitDepth = cascadeSplits[i + 1];
+    }
+
+    // Push the freshly computed matrices into the UBO the shadow geometry
+    // shader renders with. Without this the buffer keeps whatever was in
+    // cascadeData when createGraphicsPipeline() ran at init - i.e. default
+    // constructed matrices - so the shadow map was rendered from a garbage
+    // viewpoint while the lighting shader sampled it with the correct ones.
+    if (void *mapped = lightMatricesBuffer.getMappedData(); mapped != nullptr) {
+        std::vector<glm::mat4> lightMatrices(cascadeData.size());
+        for (size_t i = 0; i < cascadeData.size(); i++) { lightMatrices[i] = cascadeData[i].viewProjMatrix; }
+        std::memcpy(mapped, lightMatrices.data(), lightMatrices.size() * sizeof(glm::mat4));
     }
 }
 
@@ -389,9 +432,9 @@ void CascadedShadowMap::createGraphicsPipeline()
     posAttr.offset = 0;
 
     vk::PushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eVertex;
+    pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eGeometry;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(glm::mat4);
+    pushConstantRange.size = sizeof(glm::mat4) + sizeof(uint32_t);
 
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.setLayoutCount = 1;
@@ -455,8 +498,16 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
         std::vector<vk::DescriptorSet> shadowDescriptorSets = {descriptorSet};
         commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, shadowDescriptorSets, nullptr);
 
-        glm::mat4 modelMatrix = glm::mat4(1.0f);
-        commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(glm::mat4), &modelMatrix);
+        struct ShadowPush
+        {
+            glm::mat4 model;
+            uint32_t cascadeIndex;
+        } push{ glm::mat4(1.0f), cascade };
+        commandBuffer.pushConstants(pipelineLayout,
+          vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eGeometry,
+          0,
+          sizeof(ShadowPush),
+          &push);
 
         for (uint32_t m = 0; m < scene->getModelCount(); m++) {
             for (uint32_t k = 0; k < scene->getMeshCount(m); k++) {

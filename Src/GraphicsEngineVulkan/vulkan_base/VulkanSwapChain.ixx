@@ -25,6 +25,10 @@ class VulkanSwapChain
     const vk::Extent2D &getSwapChainExtent() const { return swap_chain_extent; };
     const vk::Format &getSwapChainFormat() const { return swap_chain_image_format; };
     Texture &getSwapChainImage(uint32_t index) { return swap_chain_images[index]; };
+    // True when the surface advertised eTransferSrc among its supported usage
+    // flags and the swapchain was therefore created with it. Only then may a
+    // swapchain image be used as the source of a copy (frame capture).
+    bool supportsTransferSrc() const { return transfer_src_supported; };
 
     void cleanUp();
 
@@ -39,6 +43,7 @@ class VulkanSwapChain
     std::vector<Texture> swap_chain_images;
     vk::Format swap_chain_image_format{ vk::Format::eB8G8R8A8Unorm };
     vk::Extent2D swap_chain_extent{ 0, 0 };
+    bool transfer_src_supported{ false };
 
     static vk::SurfaceFormatKHR choose_best_surface_format(const std::vector<vk::SurfaceFormatKHR> &formats);
     static vk::PresentModeKHR choose_best_presentation_mode(const std::vector<vk::PresentModeKHR> &presentation_modes);

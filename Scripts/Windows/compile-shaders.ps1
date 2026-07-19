@@ -56,15 +56,35 @@ foreach ($d in $includeDirs) { $includeArgs += '-I'; $includeArgs += $d }
  $patterns = @('*.vert','*.frag','*.comp','*.rgen','*.rchit','*.rmiss','*.geom','*.tesc','*.tese')
 $files = Get-ChildItem -Path $shadersRoot -Recurse -File -Include $patterns -ErrorAction SilentlyContinue
 
+# Shared headers/includes: any of these being newer than a .spv makes it stale.
+# Conservative (rebuilds more than strictly needed) but cheap and never wrong.
+$includeFiles = @(Get-ChildItem -Path $shadersRoot -Recurse -File -Include '*.glsl', '*.hpp', '*.h' -ErrorAction SilentlyContinue)
+
 foreach ($file in $files) {
   $outDir = Join-Path $file.Directory.FullName 'spv'
   if (-not (Test-Path $outDir)) { New-Item -Path $outDir -ItemType Directory | Out-Null }
   $outFile = Join-Path $outDir ($file.Name + '.spv')
 
+  # Recompile when the .spv is MISSING or OLDER than any input. An
+  # existence-only check (what this used to do) meant every shader edit after
+  # the first build was silently ignored - the GPU kept running stale SPIR-V
+  # and shader changes appeared to have no effect. Includes are considered
+  # too, so editing a shared .glsl rebuilds its dependents.
+  $needsCompile = $true
   if (Test-Path $outFile) {
-    Write-Host "[INFO] Skipping existing: $outFile"
-    continue
+    $outStamp = (Get-Item $outFile).LastWriteTimeUtc
+    $newestInput = (Get-Item $file.FullName).LastWriteTimeUtc
+    foreach ($inc in $includeFiles) {
+      if ($inc.LastWriteTimeUtc -gt $newestInput) { $newestInput = $inc.LastWriteTimeUtc }
+    }
+    if ($outStamp -ge $newestInput) {
+      $needsCompile = $false
+      Write-Host "[INFO] Up to date: $outFile"
+    } else {
+      Write-Host "[INFO] Stale, recompiling: $outFile"
+    }
   }
+  if (-not $needsCompile) { continue }
 
   Write-Host "[INFO] Compiling $($file.FullName) -> $outFile"
 

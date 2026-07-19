@@ -100,6 +100,24 @@ Key facts (hard-won; see `ExternalLib/Kataglyphis-ContainerHub/docs/windows-buil
   `C:\temp\scripts\entrypoint.cmd` explicitly so the VS developer environment and
   the clang-cl ASAN runtime DLL directory are on `PATH`.
 
+## Shaders: always compiled, never stale
+
+GLSL under `Resources/Shaders/**` is compiled to `spv/*.spv` by
+`Scripts/Windows/compile-shaders.ps1` (run by `Build-Windows.ps1` for **every**
+configuration) with a runtime fallback in `ShaderHelper`. Both layers now
+compare timestamps: a `.spv` is reused only when it is newer than its source
+**and** every shared include. Until 2026-07-19 both merely checked whether the
+file existed, so every shader edit after the first build was silently ignored
+and the GPU ran stale SPIR-V. Full account, plus the fast
+regenerate-without-rebuilding loop: [`docs/shader-build-pipeline.md`](docs/shader-build-pipeline.md).
+
+
+Compiler caching: `sccache` writes to a persistent Docker named volume
+(`kataglyphis-sccache`), so objects survive between containers — without it
+every build was a cold full rebuild. Build trees are still not shared, so
+ninja itself is not incremental yet. See
+[`docs/container-build-caching.md`](docs/container-build-caching.md).
+
 ## Critical Invariant: Submodule Pins
 
 Builds are only supported against the **recorded submodule gitlinks** — the commits CI
@@ -224,6 +242,8 @@ Each topic has exactly one home; link, do not copy.
 | `docs/shader-sharing.md` | WGSL -> SPIR-V/GLSL pipeline between both renderers |
 | `docs/webgpu-srgb-audit.md` | Colour-space decisions and the one known deviation |
 | `docs/code-quality.md` | clang-format / clang-tidy / cmake-format commands + cadence |
+| `docs/shader-build-pipeline.md` | GLSL→SPIR-V build step, staleness rules, fast shader iteration |
+| `docs/container-build-caching.md` | Container transport, sccache volume, incremental-build options |
 | `docs/source/` | Sphinx pages (`getting_started.md`, `documentation_workflow.md`) |
 
 - Keep docs, scripts, and presets aligned: when you change build behavior, update

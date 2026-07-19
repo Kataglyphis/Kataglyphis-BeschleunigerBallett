@@ -76,11 +76,24 @@ void Kataglyphis::ShaderHelper::compileShader(const std::string &shader_src_dir,
 
     std::string shader_spv_path = shader_spv_path_object.string();
 
-    // If the SPV file already exists, skip runtime compilation.
+    // Reuse the SPV only when it is NEWER than its source. The previous check
+    // was existence-only, so once a .spv had been produced every later edit to
+    // the .glsl was silently ignored - shader changes appeared to have no
+    // effect and were impossible to iterate on.
     if (std::filesystem::exists(shader_spv_path, filesystem_error) && !filesystem_error) {
+        std::error_code source_time_error;
+        std::error_code spv_time_error;
+        const auto source_time = std::filesystem::last_write_time(resolved_shader_src_path, source_time_error);
+        const auto spv_time = std::filesystem::last_write_time(shader_spv_path, spv_time_error);
+
+        const bool spv_is_current = !source_time_error && !spv_time_error && spv_time >= source_time;
+        if (spv_is_current) {
+            spdlog::default_logger_raw()->log(
+              spdlog::level::info, std::string("SPV up to date, skipping runtime compile for: ") + shader_spv_path);
+            return;
+        }
         spdlog::default_logger_raw()->log(
-          spdlog::level::info, std::string("SPV already present, skipping runtime compile for: ") + shader_spv_path);
-        return;
+          spdlog::level::info, std::string("SPV is older than its source, recompiling: ") + shader_spv_path);
     }
 
     // By default, disable runtime shader compilation in Release builds unless explicitly enabled

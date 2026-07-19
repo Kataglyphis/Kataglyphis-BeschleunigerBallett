@@ -9,7 +9,11 @@ float calc_cascaded_shadow(vec3 world_pos, vec3 N, vec3 L) {
     int cascade_count = int(sceneUBO.numCascades);
     if (cascade_count <= 0) { return 0.0; }
 
-    float frag_distance = length(sceneUBO.cam_pos.xyz - world_pos);
+    // Cascades are split along VIEW DEPTH, so select with depth along the
+    // camera forward axis. Radial distance is larger off-axis and pushed
+    // fragments into a cascade whose light-space box does not contain them,
+    // so they projected outside the shadow map and were treated as unlit.
+    float frag_distance = dot(world_pos - sceneUBO.cam_pos.xyz, normalize(sceneUBO.view_dir.xyz));
     int cascade_index = cascade_count - 1;
     for (int i = 0; i < cascade_count; i++) {
         if (frag_distance < sceneUBO.cascadeSplits[i]) {

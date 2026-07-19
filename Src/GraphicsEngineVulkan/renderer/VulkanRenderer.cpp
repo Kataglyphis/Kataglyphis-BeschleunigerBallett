@@ -510,6 +510,10 @@ void Kataglyphis::VulkanRenderer::drawFrame()
         return;
     }
 
+    // A capture recorded into this command buffer completes when this frame's
+    // in-flight fence signals; takeCapturedFrame() waits on exactly that.
+    if (capture_pending) { capture_fence = in_flight_fences[current_frame]; }
+
     vk::PresentInfoKHR present_info{};
     present_info.waitSemaphoreCount = 1;
     present_info.pWaitSemaphores = &render_finished_by_image[image_index];
@@ -552,6 +556,12 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
     }
 
     std::ignore = device->getLogicalDevice().waitIdle();
+
+    // createSynchronization() below destroys and recreates every fence, so a
+    // capture fence recorded against the old set must be dropped. The waitIdle
+    // above already guarantees a pending capture's copy has completed, so the
+    // staged pixels stay readable - only the (now dangling) fence goes away.
+    capture_fence = vk::Fence{};
 
     uint32_t oldImageCount = vulkanSwapChain.getNumberSwapChainImages();
 
@@ -788,12 +798,186 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
     }
     write_pass_timestamp(GpuTimedPass::Post, false);
 
+    // The post render pass left the swapchain image in ePresentSrcKHR; capture
+    // copies from it here, still inside this frame's command buffer, and
+    // restores the layout before the present below.
+    if (capture_armed) { recordFrameCapture(commandBuffer, image_index); }
+
     if (record_gpu_timings) {
         gpu_timing_pass_mask[image_index] = recorded_pass_mask;
         gpu_timing_slice_recorded[image_index] = true;
     }
 
     return true;
+}
+
+auto Kataglyphis::VulkanRenderer::supportsFrameCapture() const -> bool
+{
+    return device != nullptr && !device_lost_detected && vulkanSwapChain.supportsTransferSrc();
+}
+
+void Kataglyphis::VulkanRenderer::requestFrameCapture()
+{
+    if (!supportsFrameCapture()) {
+        spdlog::warn("Frame capture requested but the surface does not support eTransferSrc; ignoring.");
+        return;
+    }
+
+    capture_armed = true;
+    capture_pending = false;
+    capture_fence = vk::Fence{};
+}
+
+void Kataglyphis::VulkanRenderer::recordFrameCapture(vk::CommandBuffer &commandBuffer, uint32_t image_index)
+{
+    capture_armed = false;
+
+    if (!supportsFrameCapture()) { return; }
+
+    const vk::Extent2D extent = vulkanSwapChain.getSwapChainExtent();
+    if (extent.width == 0 || extent.height == 0) { return; }
+
+    const vk::DeviceSize required_size =
+      static_cast<vk::DeviceSize>(extent.width) * static_cast<vk::DeviceSize>(extent.height) * 4ULL;
+
+    // (Re)allocate the staging buffer only when the extent grew or it does not
+    // exist yet. Safe here because a resize goes through recreateSwapChain(),
+    // which waits idle and clears any pending capture.
+    if (capture_buffer_size < required_size) {
+        captureBuffer.cleanUp();
+        captureBuffer.create(device,
+          required_size,
+          vk::BufferUsageFlagBits::eTransferDst,
+          vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+        capture_buffer_size = required_size;
+    }
+
+    if (captureBuffer.getMappedData() == nullptr) {
+        spdlog::error("Frame capture staging buffer is not host mapped; capture skipped.");
+        return;
+    }
+
+    vk::Image &swapchain_image = vulkanSwapChain.getSwapChainImage(image_index).getImage();
+
+    vk::ImageMemoryBarrier to_transfer_src{};
+    to_transfer_src.oldLayout = vk::ImageLayout::ePresentSrcKHR;
+    to_transfer_src.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+    to_transfer_src.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
+    to_transfer_src.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
+    to_transfer_src.image = swapchain_image;
+    to_transfer_src.subresourceRange = vk::ImageSubresourceRange{ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 };
+    to_transfer_src.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    to_transfer_src.dstAccessMask = vk::AccessFlagBits::eTransferRead;
+
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
+      vk::PipelineStageFlagBits::eTransfer,
+      vk::DependencyFlags{},
+      0,
+      nullptr,
+      0,
+      nullptr,
+      1,
+      &to_transfer_src);
+
+    vk::BufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;// tightly packed
+    region.bufferImageHeight = 0;
+    region.imageSubresource = vk::ImageSubresourceLayers{ vk::ImageAspectFlagBits::eColor, 0, 0, 1 };
+    region.imageOffset = vk::Offset3D{ 0, 0, 0 };
+    region.imageExtent = vk::Extent3D{ extent.width, extent.height, 1 };
+
+    commandBuffer.copyImageToBuffer(
+      swapchain_image, vk::ImageLayout::eTransferSrcOptimal, captureBuffer.getBuffer(), 1, &region);
+
+    // Restore the layout the present expects.
+    vk::ImageMemoryBarrier back_to_present{};
+    back_to_present.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
+    back_to_present.newLayout = vk::ImageLayout::ePresentSrcKHR;
+    back_to_present.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
+    back_to_present.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
+    back_to_present.image = swapchain_image;
+    back_to_present.subresourceRange = vk::ImageSubresourceRange{ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 };
+    back_to_present.srcAccessMask = vk::AccessFlagBits::eTransferRead;
+    back_to_present.dstAccessMask = vk::AccessFlagBits{};
+
+    // Make the copy visible to host reads of the staging buffer as well.
+    vk::BufferMemoryBarrier buffer_to_host{};
+    buffer_to_host.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
+    buffer_to_host.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
+    buffer_to_host.buffer = captureBuffer.getBuffer();
+    buffer_to_host.offset = 0;
+    buffer_to_host.size = required_size;
+    buffer_to_host.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+    buffer_to_host.dstAccessMask = vk::AccessFlagBits::eHostRead;
+
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+      vk::PipelineStageFlagBits::eBottomOfPipe | vk::PipelineStageFlagBits::eHost,
+      vk::DependencyFlags{},
+      0,
+      nullptr,
+      1,
+      &buffer_to_host,
+      1,
+      &back_to_present);
+
+    capture_width = extent.width;
+    capture_height = extent.height;
+    capture_format = vulkanSwapChain.getSwapChainFormat();
+    capture_pending = true;
+    // Set to the frame's in-flight fence by drawFrame right after the submit.
+    capture_fence = vk::Fence{};
+}
+
+auto Kataglyphis::VulkanRenderer::takeCapturedFrame(uint32_t &outWidth, uint32_t &outHeight) -> std::vector<uint8_t>
+{
+    outWidth = 0;
+    outHeight = 0;
+
+    if (!capture_pending || device_lost_detected || !device) { return {}; }
+
+    capture_pending = false;
+
+    if (capture_fence) {
+        const vk::Result wait_result = device->getLogicalDevice().waitForFences(
+          1, &capture_fence, VK_TRUE, std::numeric_limits<uint64_t>::max());
+        if (wait_result != vk::Result::eSuccess) {
+            spdlog::error(fmt::format("Failed to wait for the frame capture fence (vk::Result={})",
+              static_cast<int>(wait_result)));
+            if (wait_result == vk::Result::eErrorDeviceLost) { device_lost_detected = true; }
+            return {};
+        }
+    }
+
+    const void *mapped = captureBuffer.getMappedData();
+    if (mapped == nullptr || capture_width == 0 || capture_height == 0) { return {}; }
+
+    const size_t pixel_count = static_cast<size_t>(capture_width) * static_cast<size_t>(capture_height);
+    std::vector<uint8_t> pixels(pixel_count * 4U);
+    std::memcpy(pixels.data(), mapped, pixels.size());
+
+    // Normalize to RGBA8 regardless of the swapchain's channel order.
+    const bool is_bgra = capture_format == vk::Format::eB8G8R8A8Unorm || capture_format == vk::Format::eB8G8R8A8Srgb
+                         || capture_format == vk::Format::eB8G8R8A8Snorm
+                         || capture_format == vk::Format::eB8G8R8A8Uint;
+    if (is_bgra) {
+        for (size_t i = 0; i < pixels.size(); i += 4U) { std::swap(pixels[i], pixels[i + 2U]); }
+    }
+
+    outWidth = capture_width;
+    outHeight = capture_height;
+    return pixels;
+}
+
+void Kataglyphis::VulkanRenderer::cleanUpFrameCapture()
+{
+    captureBuffer.cleanUp();
+    capture_buffer_size = 0;
+    capture_armed = false;
+    capture_pending = false;
+    capture_fence = vk::Fence{};
+    capture_width = 0;
+    capture_height = 0;
 }
 
 void Kataglyphis::VulkanRenderer::createGpuTimingResources()
@@ -938,6 +1122,7 @@ void Kataglyphis::VulkanRenderer::cleanUp()
     postStage.cleanUp();
 
     objectDescriptionBuffer.cleanUp();
+    cleanUpFrameCapture();
     // Release the buffer manager's reusable staging buffer while the VMA
     // allocator (torn down in device->cleanUp() below) is still alive.
     vulkanBufferManager.cleanUp();

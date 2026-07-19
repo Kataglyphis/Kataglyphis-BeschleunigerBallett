@@ -4,6 +4,7 @@ layout (location = 0) in vec3 pos;
 
 layout(push_constant) uniform PushConstants {
 	mat4 model;
+	uint cascadeIndex;// consumed by the geometry stage
 };
 
 void main() {
