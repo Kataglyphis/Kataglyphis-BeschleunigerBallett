@@ -23,6 +23,10 @@ struct GlobalUBO
 {
     mat4 projection;
     mat4 view;
+    // Precomputed on the CPU once per frame: the clouds compute shader
+    // needs these per pixel, where inverse() is ruinously expensive.
+    mat4 inv_projection;
+    mat4 inv_view;
 };
 #ifdef __cplusplus
 }// namespace Kataglyphis::VulkanRendererInternals

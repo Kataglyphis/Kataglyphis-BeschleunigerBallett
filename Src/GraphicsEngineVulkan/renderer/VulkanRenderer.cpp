@@ -197,6 +197,10 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
         camera_data->get_near_plane(), camera_data->get_far_plane(),
         glm::vec3(sceneUBO.dirLight.direction));
 
+    // Inverses for the clouds compute shader (see GlobalUBO.hpp).
+    globalUBO.inv_projection = glm::inverse(globalUBO.projection);
+    globalUBO.inv_view = glm::inverse(globalUBO.view);
+
     const auto& cascadeData = dirShadowMap.getCascadeData();
     const size_t active_cascades = std::min(cascadeData.size(), static_cast<size_t>(MAX_CASCADES));
     for (size_t i = 0; i < active_cascades; ++i) {
