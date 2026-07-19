@@ -151,9 +151,17 @@ function Invoke-CmakeConfigureAndBuild {
     }
   }
 
-  if ($CleanBuildRoot) {
+  # KATAGLYPHIS_KEEP_BUILD_ROOT is set when the build directory is a mounted
+  # volume (persistent build tree). Wiping a mount point leaves CMake unable to
+  # configure - it fails in CMakeTestCXXCompiler with
+  # "ninja: error: loading 'build.ninja'". Keeping the tree is also the entire
+  # point of mounting it: ninja can then work incrementally.
+  $keepBuildRoot = -not [string]::IsNullOrWhiteSpace($env:KATAGLYPHIS_KEEP_BUILD_ROOT)
+  if ($CleanBuildRoot -and -not $keepBuildRoot) {
     $label = if ([string]::IsNullOrWhiteSpace($CleanLabel)) { $Preset } else { $CleanLabel }
     Remove-BuildRootSafe -Context $Context -Path $BuildPath -Label $label
+  } elseif ($CleanBuildRoot) {
+    Write-BuildLog -Context $Context -Message "Keeping build root (persistent volume): $BuildPath"
   }
 
   $configureArgs = @('-B', $BuildPath, '--preset', $Preset)

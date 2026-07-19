@@ -112,10 +112,12 @@ and the GPU ran stale SPIR-V. Full account, plus the fast
 regenerate-without-rebuilding loop: [`docs/shader-build-pipeline.md`](docs/shader-build-pipeline.md).
 
 
-Compiler caching: `sccache` writes to a persistent Docker named volume
-(`kataglyphis-sccache`), so objects survive between containers — without it
-every build was a cold full rebuild. Build trees are still not shared, so
-ninja itself is not incremental yet. See
+Builds are **incremental**: the previous build tree is streamed back into the
+container so ninja rebuilds only what changed (~230 s vs ~360-480 s cold).
+`sccache` is wired to a persistent volume but does **not** help — this is a
+C++23 modules build and its hit rate is measured at 0%. If a build ever
+behaves strangely, delete the build directory for a clean cold build. Full
+measurements, including two approaches that do not work, in
 [`docs/container-build-caching.md`](docs/container-build-caching.md).
 
 ## Critical Invariant: Submodule Pins

@@ -135,6 +135,20 @@ that are *not* exercised that way and should be run periodically:
   SPIR-V (falling back to runtime compilation when the source is newer)
   would cut startup and make hot-reload stalls proportional to the one
   shader that changed.
+- **Build transfers now dominate (~17 GB/build).** Incremental builds work
+  (~230 s vs ~360-480 s cold) but 8.5 GB moves each way. A long-lived build
+  container with source-only re-sync would remove both transfers entirely;
+  needs lifecycle handling and a way to extract executables for host tests.
+- **Outbound `Artifact extraction failed (exit 1)`** is still reported even
+  with the cargo subtree excluded. Artifacts do arrive (verified), but a real
+  failure here would leave stale host binaries - worth a proper fix.
+- ~~Build speed is stuck at ~350-480 s per build~~ (superseded by the above)
+  sccache: 0.00% hit rate on an identical tree (C++23 modules defeat its
+  hashing). Named volume for the build tree: CMake cannot configure inside a
+  mounted Windows volume. Untested ideas: a long-lived build container with
+  source re-sync instead of a fresh container per build, or a bind mount to a
+  non-Dev-Drive host path. Full measurements in
+  `docs/container-build-caching.md`.
 - **sccache writes nothing (0 bytes) despite the volume being mounted.** The
   named volume and `SCCACHE_DIR` take effect (sccache reports `C:\sccache`),
   but a full build leaves the cache empty, so hit rate stays at 0%. Diagnose

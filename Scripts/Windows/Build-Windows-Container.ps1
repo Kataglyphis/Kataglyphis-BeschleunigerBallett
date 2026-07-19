@@ -108,8 +108,16 @@ $sccacheDir = 'C:\sccache'
 $cacheArgs = @(
   '-v', "${sccacheVolume}:${sccacheDir}",
   '-e', "SCCACHE_DIR=${sccacheDir}",
-  '-e', 'SCCACHE_CACHE_SIZE=20G'
+  '-e', 'SCCACHE_CACHE_SIZE=20G',
+  # Build trees are streamed in for incremental builds - do not wipe them.
+  '-e', 'KATAGLYPHIS_KEEP_BUILD_ROOT=1'
 )
+
+# NOTE: mounting the build directory as a named volume was TRIED and does not
+# work here - CMake's compiler test fails inside a mounted volume with
+# "ninja: error: loading 'build.ninja': The system cannot find the file
+# specified", both with a fresh volume and a populated one. See
+# docs/container-build-caching.md for the full measurement.
 
 function Test-BindMountUsable {
   if ($NoBindMount) { return $false }
@@ -159,6 +167,30 @@ function Invoke-TarPipeBuild {
     cmd /c $tarIn
     if ($LASTEXITCODE -ne 0) { throw "Source transfer failed (exit $LASTEXITCODE)." }
 
+    # Incremental builds: the host already holds the previous build tree (it is
+    # streamed back out after every build), so stream it back IN. ninja then
+    # rebuilds only what changed instead of ~690 objects from scratch. This
+    # avoids mounting the build dir as a volume, which CMake cannot configure
+    # inside (see docs/container-build-caching.md).
+    foreach ($configuration in ($Configurations -split ',')) {
+      $trimmedConfiguration = $configuration.Trim()
+      if (-not $trimmedConfiguration) { continue }
+      $buildDirName = "build-$trimmedConfiguration"
+      $hostBuildDir = Join-Path $repoRoot $buildDirName
+      if (Test-Path $hostBuildDir) {
+        Write-Host "Streaming existing $buildDirName into the container (incremental build)..."
+        # Exclude the cargo tree: its cxxbridge output nests deep enough to blow
+        # past the Windows path limit inside the container ("Can't create ...
+        # Invalid argument"), which failed the whole transfer. Cargo rebuilds
+        # its own artifacts cheaply, so skipping them costs little.
+        $tarBuildIn = "tar -cf - --exclude `"$buildDirName/cargo`" -C `"$repoRoot`" `"$buildDirName`" | `"$docker`" exec -i $container tar -xf - -C $ws"
+        cmd /c $tarBuildIn
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "  transfer reported errors - ninja will rebuild whatever did not arrive"
+        }
+      }
+    }
+
     $buildArgs = Get-BuildCommandArgs -WorkspacePath $ws
     # docker exec bypasses the image entrypoint, so invoke it explicitly to get
     # the VS developer environment and the clang-cl ASAN runtime on PATH.
@@ -178,7 +210,12 @@ function Invoke-TarPipeBuild {
       if ($LASTEXITCODE -eq 0) { $existing += $dir }
     }
     if ($existing.Count -gt 0) {
-      $tarOut = "`"$docker`" exec $container tar -cf - -C $ws $($existing -join ' ') | tar -xf - -C `"$repoRoot`""
+      # Exclude the cargo tree on the way out for the same reason it is excluded
+      # on the way in: its cxxbridge paths exceed the Windows path limit and
+      # abort the extraction ("Artifact extraction failed"). Excluding it keeps
+      # the executables and ninja state - what the host actually needs - intact.
+      $excludeArgs = ($existing | ForEach-Object { "--exclude `"$_/cargo`"" }) -join ' '
+      $tarOut = "`"$docker`" exec $container tar -cf - $excludeArgs -C $ws $($existing -join ' ') | tar -xf - -C `"$repoRoot`""
       cmd /c $tarOut
       if ($LASTEXITCODE -ne 0) { Write-Warning "Artifact extraction failed (exit $LASTEXITCODE)." }
     }

@@ -1,78 +1,107 @@
-# Container Build Caching
+# Container Build Caching & Incremental Builds
 
-Why Windows container builds took ~6 minutes every time, and what now makes
-them faster. `AGENTS.md` links here rather than restating it.
+How to avoid recompiling everything on every container build, what was
+measured, and what does **not** work. `AGENTS.md` links here rather than
+restating it.
+
+## Summary
+
+| Approach | Result |
+| --- | --- |
+| Streaming the build tree in/out (**in use**) | ✅ ~230 s vs ~360–480 s cold |
+| sccache persistent volume | ❌ 0.00 % hit rate — cache stays empty |
+| Named volume for the build directory | ❌ CMake cannot configure inside it |
 
 ## The transport
 
 `Scripts/Windows/Build-Windows-Container.ps1` prefers a bind mount, but Dev
 Drive hosts reject the filesystem minifilter, so it falls back to a
 **tar-pipe**: sources are streamed into a fresh container, built there, and
-the build tree is streamed back. Build trees are excluded on the way in
-(`--exclude "./build-*"`).
+build trees + logs are streamed back out.
 
-## What was wrong (fixed 2026-07-19)
+## What works: streaming the build tree back in
 
-`sccache` ran on every compile, but its cache lived under
-`C:\Users\ContainerAdministrator\AppData\Local\Mozilla\sccache\cache` —
-**inside the container**, which is destroyed after each build. Every build
-therefore started with an empty cache and recompiled all ~900 objects. The
-statistics in the build log made this visible: `Cache hits 0`,
-`Cache misses 0`, `Cache hits rate -`.
+The host already holds the previous build tree (it is streamed *out* after
+every build), so it is streamed *in* as well. ninja then rebuilds only what
+changed instead of ~690 objects. The in-container path is always
+`C:\ws\build-<config>`, so CMake's baked-in absolute paths stay valid.
 
-**Attempted fix (mechanism works, benefit NOT yet realised):** a persistent
-Docker **named volume** (`kataglyphis-sccache`) mounted at `C:\sccache`, with
-`SCCACHE_DIR` pointing at it and a 20 GB budget, wired into both the
-bind-mount and tar-pipe code paths.
+Two details make it work:
 
-**Measured 2026-07-19 — it does not help yet.** sccache reports the volume as
-its location (`Cache location Local disk: "C:\sccache"`, `Max cache size
-20 GiB`), so the env var and mount take effect. But after a full build:
+- **`KATAGLYPHIS_KEEP_BUILD_ROOT=1`** is passed to the container.
+  `Invoke-CmakeConfigureAndBuild` normally wipes the build root before
+  configuring (`Remove-BuildRootSafe`), which would defeat the whole point.
+  Host builds are unaffected — nothing sets the variable there.
+- **The `cargo/` subtree is excluded in both directions.** Rust cxxbridge
+  output nests deep enough to exceed the Windows path limit inside the
+  container:
+
+  ```
+  ...cargo/.../out/cxxbridge/include/.../native_only.rs:
+    Can't create '\\?\C:\ws\...': Invalid argument
+  tar: Error exit delayed from previous errors
+  ```
+
+  One such failure aborts the whole transfer, so excluding it is what turned a
+  partial transfer into a working one. Cargo artifacts rebuild cheaply.
+
+**Measured (2026-07-19, clangcl-debug, no source changes):** ~229 s, versus
+352–484 s for cold builds. Verified that host executables are current
+afterwards (timestamps match the build end) and that 16/16 tests pass.
+
+### Remaining cost
+
+~17 GB moves per build (8.5 GB in, 8.5 GB out), which now dominates. Ideas,
+untested:
+
+- **Keep one long-lived build container** and re-sync only sources into it.
+  The build tree never leaves the container, so both transfers disappear.
+  Needs container lifecycle management (reuse if present, recreate on image
+  change) and a way to pull executables out for host-side test runs.
+- Stream only executables + logs back out, keeping the full tree in the
+  container. Conflicts with the current design, where the *host* copy is what
+  seeds the next build's incremental state.
+
+### Known warning
+
+The outbound step can still report `Artifact extraction failed (exit 1)`.
+Executables and logs arrive regardless (verified by timestamp and by running
+the tests), so it is noisy rather than harmful — but it deserves a proper
+fix, since a genuinely failed extraction would leave stale binaries on the
+host, and stale artifacts have already cost this project hours (see
+[`shader-build-pipeline.md`](shader-build-pipeline.md)).
+
+## What does not work: sccache
+
+`sccache` runs on every compile and its cache location can be redirected to a
+persistent named volume (`kataglyphis-sccache` at `C:\sccache`,
+`SCCACHE_DIR`), which the logs confirm it uses. It still does not help:
 
 ```
 Compile requests            907
 Cache hits rate            0.00 %
 Cache misses                780
-Cache size                0 bytes   <-- nothing is being written
+Cache size                    0 bytes
 ```
 
-Zero bytes stored means this is a **write** problem, not a key-stability
-problem. Candidates, in order of suspicion:
+Zero stored bytes on a **byte-identical tree** — this is a C++23 **modules**
+build, and sccache cannot hash module compilations reliably, so nothing is
+ever cached. The volume is harmless and remains wired up in case sccache
+gains module support; do not expect a speedup from it today.
 
-1. The container user (`ContainerAdministrator`) may lack write permission on
-   the mounted Windows named volume.
-2. The build stops the sccache server (`sccache --stop-server`, see
-   `WindowsCMake.Common.psm1`); if it is killed before flushing, entries may
-   never land.
-3. Windows named-volume semantics under process isolation.
+## What does not work: named volume for the build directory
 
-Next diagnostic: run `sccache --show-stats` inside a container with the
-volume mounted, write a file to `C:\sccache` manually, and check for an
-error. Until then, builds remain ~350-480 s cold.
+Mounting `kataglyphis-build-<config>` at `C:\ws\build-<config>` looked like
+the cleaner alternative. CMake fails inside it:
 
-Inspect or reset it:
-
-```powershell
-docker volume ls | Select-String sccache
-docker volume rm kataglyphis-sccache   # force a cold rebuild
+```
+CMakeTestCXXCompiler.cmake:71 (message)
+  ninja: error: loading 'build.ninja': The system cannot find the file specified.
 ```
 
-## Still open: incremental builds
-
-The build tree is **not** shared with the container (~8.2 GB for
-`build-clangcl-debug`), so ninja always starts from scratch and rebuilds its
-dependency graph even when sccache serves the objects. Two options, neither
-implemented:
-
-- **Named volume for the build directory** (e.g.
-  `kataglyphis-build-clangcl-debug` mounted at `C:\ws\build-clangcl-debug`) —
-  gives true incremental builds without moving gigabytes. CMake stores
-  absolute paths, so the in-container path must stay stable (`C:\ws\...`),
-  which it does.
-- **Streaming the build tree in and out** — simple, but moves ~8 GB per build
-  and is likely slower than it saves.
-
-Measure before choosing. Tracked in `BACKLOG.md`.
+This reproduces with a **freshly created** volume, so it is not stale state —
+Windows container volumes are filter-driver backed and do not behave like an
+ordinary directory for these operations. The plumbing was reverted.
 
 ## Gotchas
 
@@ -82,5 +111,8 @@ Measure before choosing. Tracked in `BACKLOG.md`.
   A lingering container makes it look like a build is still running — compare
   the newest `logs/windows/build-summary-*.json` timestamp against the
   container start time before assuming.
-- Host `cmake` (3.29) cannot read this repo's `CMakePresets.json` (`version:
-  10`); only the container's newer CMake can.
+- Host `cmake` (3.29) cannot read this repo's `CMakePresets.json`
+  (`version: 10`); only the container's newer CMake can.
+- Reset an incremental build if it ever behaves strangely:
+  `Remove-Item -Recurse -Force build-clangcl-debug` — the next build is cold
+  but clean.
