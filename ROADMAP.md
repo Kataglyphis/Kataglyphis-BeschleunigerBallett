@@ -30,7 +30,7 @@ L (multi-day), XL (multi-week).
   render at half resolution, before anyone flips `clouds_enabled` on.
 - [ ] **glTF loading** (L) — reuse the Rust renderer's test assets and enable
   the cross-renderer comparison harness below.
-- [ ] **CMake preset diet** (M) — 57 presets, 48 build vs 1 test preset,
+- [x] **CMake preset diet** (M, done 2026-07-19: 26/24/1 -> 23/22/6; the real problem was one test preset, not preset count) — 57 presets, 48 build vs 1 test preset,
   asymmetric compiler coverage; halve it and align MSVC/ClangCL variants.
 - [ ] **CI sanitizers** (M) — TSan presets exist but no workflow runs them; the
   new ASan preset should gate at least the unit tests on Linux.
