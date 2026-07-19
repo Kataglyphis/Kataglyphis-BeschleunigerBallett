@@ -32,6 +32,29 @@ gates on it.
   (`--benchmark_out=... --benchmark_out_format=json`); storing one baseline
   per machine and diffing beats eyeballing console output.
 
+### Measured baseline (2026-07-19, clangcl-profile, 32-core 4.3 GHz)
+
+| Benchmark | Time |
+| --- | --- |
+| `BM_CameraViewMatrix` | 10.1 ns |
+| `BM_ProjectionAndInverses` | 30.3 ns |
+| `BM_CameraKeyControl` / `MouseControl` | ~34 ns |
+| `BM_AvailableModelPaths` | 859 ns |
+| `BM_ResolveModelPath_Hit` | 4.1 us |
+| `BM_ResolveModelPath_Miss` | 15.7 us |
+| `BM_ObjParse_Plane` (1 KB) | 23 us |
+| `BM_ObjParse_Suzanne` (1 MB) | 7.1 ms |
+
+Two things this baseline already tells us:
+
+- **Asset loading blocks for a long time.** 1 MB of OBJ costs ~7 ms of
+  pure parsing; `dinosaurs.obj` is 27 MB, so a load is plausibly ~200 ms
+  of frozen main thread. That is the concrete case for the async
+  asset-loading item in `ROADMAP.md` - it was previously argued from
+  first principles only.
+- **`resolveModelPath` is ~4x slower when it misses** (8 parent-directory
+  probes). Fine once at startup, bad in a loop.
+
 ## Recurring validation runs
 
 Debug-only builds are the default working loop (fast, sanitized). Things

@@ -21,4 +21,5 @@ kataglyphis_add_imgui_test_sources(${PERF_TEST_SUITE})
 target_link_libraries(
   ${PERF_TEST_SUITE}
   PRIVATE VulkanEngineCore
-          benchmark::benchmark)
+          benchmark::benchmark
+          tinyobjloader)
