@@ -213,7 +213,8 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
     compute_pipeline_create_info.layout = pipeline_layout;
     compute_pipeline_create_info.flags = vk::PipelineCreateFlags{};
 
-    auto result = device->getLogicalDevice().createComputePipeline(nullptr, compute_pipeline_create_info);
+    auto result =
+      device->getLogicalDevice().createComputePipeline(device->getPipelineCache(), compute_pipeline_create_info);
     if (result.result == vk::Result::eSuccess) {
         pipeline = result.value;
     } else {

@@ -387,8 +387,12 @@ void CascadedShadowMap::createGraphicsPipeline()
       pipelineBuilder.setShaderStages({ skyStages.begin(), skyStages.end() })
         .setVertexInput({ bindingDesc }, { posAttr })
         .setUseColorBlendState(false)
-        .build(
-          device->getLogicalDevice(), pipelineLayout, renderPass, 0, "Failed to create shadow map graphics pipeline!");
+        .build(device->getLogicalDevice(),
+          pipelineLayout,
+          renderPass,
+          device->getPipelineCache(),
+          0,
+          "Failed to create shadow map graphics pipeline!");
     spdlog::info("CascadedShadowMap: Created pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphicsPipeline);
 
     device->getLogicalDevice().destroyShaderModule(vertModule);

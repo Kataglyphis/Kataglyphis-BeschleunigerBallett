@@ -330,7 +330,7 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
       geometryPipelineBuilder.setShaderStages({ geomStages.begin(), geomStages.end() })
         .setVertexInput({ bindingDescription }, { attributeDescriptions.begin(), attributeDescriptions.end() })
         .setColorAttachmentCount(4)
-        .build(device->getLogicalDevice(), geometryPipelineLayout, renderPass, 0);
+        .build(device->getLogicalDevice(), geometryPipelineLayout, renderPass, device->getPipelineCache(), 0);
     spdlog::info("DeferredRasterizer: Created geometryPipeline: 0x{:x}", (uint64_t)(VkPipeline)geometryPipeline);
 
     device->getLogicalDevice().destroyShaderModule(geomVertModule);
@@ -370,7 +370,7 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
                          .setCullMode(vk::CullModeFlagBits::eNone)
                          .setDepthTest(false)
                          .setDepthWrite(false)
-                         .build(device->getLogicalDevice(), lightingPipelineLayout, renderPass, 1);
+                         .build(device->getLogicalDevice(), lightingPipelineLayout, renderPass, device->getPipelineCache(), 1);
     spdlog::info("DeferredRasterizer: Created lightingPipeline: 0x{:x}", (uint64_t)(VkPipeline)lightingPipeline);
 
     device->getLogicalDevice().destroyShaderModule(lightVertModule);

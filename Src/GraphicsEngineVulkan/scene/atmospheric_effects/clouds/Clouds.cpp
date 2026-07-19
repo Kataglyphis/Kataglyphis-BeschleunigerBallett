@@ -192,7 +192,7 @@ void Clouds::createComputePipelines(vk::DescriptorSetLayout sharedLayout)
     pipelineInfo.stage = computeStageInfo;
     pipelineInfo.layout = cloudPipelineLayout;
 
-    auto compResult = device->getLogicalDevice().createComputePipeline(nullptr, pipelineInfo);
+    auto compResult = device->getLogicalDevice().createComputePipeline(device->getPipelineCache(), pipelineInfo);
     ASSERT_VULKAN(VkResult(compResult.result), "Failed to create cloud compute pipeline!");
     cloudComputePipeline = compResult.value;
 
@@ -219,7 +219,8 @@ void Clouds::createComputePipelines(vk::DescriptorSetLayout sharedLayout)
     noisePipelineInfo.stage = noiseStageInfo;
     noisePipelineInfo.layout = noisePipelineLayout;
 
-    auto noiseCompResult = device->getLogicalDevice().createComputePipeline(nullptr, noisePipelineInfo);
+    auto noiseCompResult =
+      device->getLogicalDevice().createComputePipeline(device->getPipelineCache(), noisePipelineInfo);
     ASSERT_VULKAN(VkResult(noiseCompResult.result), "Failed to create noise pipeline!");
     noiseComputePipeline = noiseCompResult.value;
 

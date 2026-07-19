@@ -35,11 +35,13 @@ class PipelineBuilder
     PipelineBuilder &setDepthCompareOp(vk::CompareOp compare_op);
     PipelineBuilder &setBasePipelineIndex(int32_t base_pipeline_index);
 
-    // Creates the pipeline via createGraphicsPipelines(nullptr, ...);
+    // Creates the pipeline via createGraphicsPipelines(pipeline_cache, ...);
     // aborts through ASSERT_VULKAN with error_message on failure.
+    // pipeline_cache may be null (no caching).
     [[nodiscard]] vk::Pipeline build(vk::Device device,
       vk::PipelineLayout pipeline_layout,
       vk::RenderPass render_pass,
+      vk::PipelineCache pipeline_cache = nullptr,
       uint32_t subpass = 0,
       const char *error_message = "Failed to create a graphics pipeline!") const;
 

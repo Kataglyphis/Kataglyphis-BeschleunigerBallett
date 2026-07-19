@@ -85,6 +85,7 @@ Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setBasePipelineIndex
 vk::Pipeline Kataglyphis::PipelineBuilder::build(vk::Device device,
   vk::PipelineLayout pipeline_layout,
   vk::RenderPass render_pass,
+  vk::PipelineCache pipeline_cache,
   uint32_t subpass,
   const char *error_message) const
 {
@@ -170,7 +171,7 @@ vk::Pipeline Kataglyphis::PipelineBuilder::build(vk::Device device,
     graphics_pipeline_create_info.basePipelineHandle = nullptr;
     graphics_pipeline_create_info.basePipelineIndex = base_pipeline_index;
 
-    auto pipeline_result = device.createGraphicsPipelines(nullptr, graphics_pipeline_create_info);
+    auto pipeline_result = device.createGraphicsPipelines(pipeline_cache, graphics_pipeline_create_info);
     if (pipeline_result.result != vk::Result::eSuccess) {
         ASSERT_VULKAN(pipeline_result.result, error_message)
     }

@@ -9,9 +9,12 @@ module;
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <set>
 #include <string>
+#include <vector>
 #include <vulkan/vulkan.hpp>
 
 module kataglyphis.vulkan.device;
@@ -110,6 +113,14 @@ auto scorePhysicalDevice(const vk::PhysicalDeviceProperties &properties) -> int
     return score;
 }
 
+// On-disk location of the persisted VkPipelineCache blob, relative to the
+// working directory (the engine already resolves Resources/ and logs/ the
+// same way).
+auto pipelineCacheFilePath() -> std::filesystem::path
+{
+    return std::filesystem::path("pipeline_cache") / "kataglyphis_pipeline.cache";
+}
+
 auto deviceTypeToString(vk::PhysicalDeviceType type) -> const char *
 {
     switch (type) {
@@ -150,6 +161,7 @@ Kataglyphis::VulkanDevice::VulkanDevice(VulkanInstance *instance, vk::SurfaceKHR
 
     get_physical_device();
     create_logical_device();
+    create_pipeline_cache();
 }
 
 auto Kataglyphis::VulkanDevice::getSwapchainDetails() -> Kataglyphis::VulkanRendererInternals::SwapChainDetails
@@ -159,10 +171,104 @@ auto Kataglyphis::VulkanDevice::getSwapchainDetails() -> Kataglyphis::VulkanRend
 
 void Kataglyphis::VulkanDevice::cleanUp()
 {
+    // Persist the pipeline cache to disk and destroy it before the logical
+    // device it was created from goes away.
+    save_and_destroy_pipeline_cache();
     // The allocator must outlive every buffer/image allocation but has to be
     // destroyed before the logical device it was created from.
     allocator.cleanUp();
     logical_device.destroy();
+}
+
+void Kataglyphis::VulkanDevice::create_pipeline_cache()
+{
+    std::vector<char> initial_data;
+    const std::filesystem::path cache_file = pipelineCacheFilePath();
+
+    std::error_code file_error;
+    if (std::filesystem::exists(cache_file, file_error) && !file_error) {
+        std::ifstream cache_stream(cache_file, std::ios::binary | std::ios::ate);
+        if (cache_stream) {
+            const std::streamsize cache_size = cache_stream.tellg();
+            if (cache_size > 0) {
+                initial_data.resize(static_cast<std::size_t>(cache_size));
+                cache_stream.seekg(0, std::ios::beg);
+                if (!cache_stream.read(initial_data.data(), cache_size)) {
+                    spdlog::warn("Failed to read pipeline cache file '{}'; starting with an empty pipeline cache.",
+                      cache_file.string());
+                    initial_data.clear();
+                }
+            }
+        } else {
+            spdlog::warn("Could not open pipeline cache file '{}'; starting with an empty pipeline cache.",
+              cache_file.string());
+        }
+    }
+
+    vk::PipelineCacheCreateInfo pipeline_cache_create_info{};
+    pipeline_cache_create_info.initialDataSize = initial_data.size();
+    pipeline_cache_create_info.pInitialData = initial_data.empty() ? nullptr : initial_data.data();
+
+    auto cache_result = logical_device.createPipelineCache(pipeline_cache_create_info);
+    if (cache_result.result != vk::Result::eSuccess && !initial_data.empty()) {
+        // Stale/corrupt on-disk data (e.g. after a driver update) must never
+        // be fatal; retry once with an empty cache.
+        spdlog::warn("Creating the pipeline cache from '{}' failed (result {}); retrying with an empty cache.",
+          cache_file.string(),
+          static_cast<int>(cache_result.result));
+        pipeline_cache_create_info.initialDataSize = 0;
+        pipeline_cache_create_info.pInitialData = nullptr;
+        cache_result = logical_device.createPipelineCache(pipeline_cache_create_info);
+    }
+
+    if (cache_result.result != vk::Result::eSuccess) {
+        spdlog::warn("Failed to create a Vulkan pipeline cache (result {}); continuing without one.",
+          static_cast<int>(cache_result.result));
+        pipeline_cache = nullptr;
+        return;
+    }
+
+    pipeline_cache = cache_result.value;
+    if (initial_data.empty()) {
+        spdlog::info("Created an empty Vulkan pipeline cache (no cache file at '{}').", cache_file.string());
+    } else {
+        spdlog::info(
+          "Created Vulkan pipeline cache seeded with {} bytes from '{}'.", initial_data.size(), cache_file.string());
+    }
+}
+
+void Kataglyphis::VulkanDevice::save_and_destroy_pipeline_cache()
+{
+    if (!pipeline_cache) { return; }
+
+    auto cache_data = logical_device.getPipelineCacheData(pipeline_cache);
+    if (cache_data.result == vk::Result::eSuccess && !cache_data.value.empty()) {
+        const std::filesystem::path cache_file = pipelineCacheFilePath();
+        std::error_code dir_error;
+        std::filesystem::create_directories(cache_file.parent_path(), dir_error);
+        if (dir_error) {
+            spdlog::warn("Could not create pipeline cache directory '{}': {}. Pipeline cache not persisted.",
+              cache_file.parent_path().string(),
+              dir_error.message());
+        } else {
+            std::ofstream cache_stream(cache_file, std::ios::binary | std::ios::trunc);
+            if (cache_stream
+                && cache_stream.write(reinterpret_cast<const char *>(cache_data.value.data()),
+                  static_cast<std::streamsize>(cache_data.value.size()))) {
+                spdlog::info(
+                  "Persisted Vulkan pipeline cache ({} bytes) to '{}'.", cache_data.value.size(), cache_file.string());
+            } else {
+                spdlog::warn("Failed to write pipeline cache file '{}'. Pipeline cache not persisted.",
+                  cache_file.string());
+            }
+        }
+    } else if (cache_data.result != vk::Result::eSuccess) {
+        spdlog::warn("vkGetPipelineCacheData failed (result {}). Pipeline cache not persisted.",
+          static_cast<int>(cache_data.result));
+    }
+
+    logical_device.destroyPipelineCache(pipeline_cache);
+    pipeline_cache = nullptr;
 }
 
 Kataglyphis::VulkanDevice::~VulkanDevice() = default;

@@ -274,8 +274,13 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
     raytracing_pipeline_create_info.maxPipelineRayRecursionDepth = 2;
     raytracing_pipeline_create_info.layout = pipeline_layout;
 
-    vk::Result result2 = device->getLogicalDevice().createRayTracingPipelinesKHR(
-      nullptr, nullptr, 1, &raytracing_pipeline_create_info, nullptr, &graphicsPipeline, VULKAN_HPP_DEFAULT_DISPATCHER);
+    vk::Result result2 = device->getLogicalDevice().createRayTracingPipelinesKHR(nullptr,
+      device->getPipelineCache(),
+      1,
+      &raytracing_pipeline_create_info,
+      nullptr,
+      &graphicsPipeline,
+      VULKAN_HPP_DEFAULT_DISPATCHER);
     ASSERT_VULKAN(result2, "Failed to create raytracing pipeline!")
 
     device->getLogicalDevice().destroyShaderModule(raygen_shader_module);

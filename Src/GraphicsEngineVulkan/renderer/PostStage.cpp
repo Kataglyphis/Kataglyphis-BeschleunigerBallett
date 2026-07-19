@@ -312,7 +312,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
                           .setAlphaBlending(true)
                           .setDepthCompareOp(vk::CompareOp::eLessOrEqual)
                           .setBasePipelineIndex(-1)
-                          .build(device->getLogicalDevice(), pipeline_layout, render_pass);
+                          .build(device->getLogicalDevice(), pipeline_layout, render_pass, device->getPipelineCache());
 
     device->getLogicalDevice().destroyShaderModule(vertex_shader_module);
     device->getLogicalDevice().destroyShaderModule(fragment_shader_module);

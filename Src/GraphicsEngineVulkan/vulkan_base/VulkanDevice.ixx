@@ -33,6 +33,9 @@ class VulkanDevice
     // Minimum alignment for allocations backing buffers whose device address
     // is consumed directly (SBTs, acceleration structure scratch).
     vk::DeviceSize getMinDeviceAddressAlignment() const { return deviceAddressAlignment; };
+    // Device-wide pipeline cache persisted to disk across runs. May be a null
+    // handle if cache creation failed; every Vulkan entry point accepts that.
+    vk::PipelineCache getPipelineCache() const { return pipeline_cache; };
 
     void cleanUp();
 
@@ -58,8 +61,14 @@ class VulkanDevice
     // logical device; destroyed in cleanUp() right before the logical device.
     Allocator allocator;
 
+    // Pipeline cache seeded from disk on startup and written back in
+    // cleanUp(). All cache file I/O failures are non-fatal.
+    vk::PipelineCache pipeline_cache{};
+
     void get_physical_device();
     void create_logical_device();
+    void create_pipeline_cache();
+    void save_and_destroy_pipeline_cache();
 
     Kataglyphis::VulkanRendererInternals::QueueFamilyIndices getQueueFamilies(vk::PhysicalDevice selectedPhysicalDevice);
     Kataglyphis::VulkanRendererInternals::SwapChainDetails getSwapchainDetails(vk::PhysicalDevice device);

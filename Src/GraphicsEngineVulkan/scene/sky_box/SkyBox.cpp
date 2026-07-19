@@ -336,7 +336,12 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
         .setDepthTest(false)
         .setDepthWrite(false)
         .setDepthCompareOp(vk::CompareOp::eAlways)
-        .build(device->getLogicalDevice(), pipelineLayout, renderPass, 0, "Failed to create skybox graphics pipeline!");
+        .build(device->getLogicalDevice(),
+          pipelineLayout,
+          renderPass,
+          device->getPipelineCache(),
+          0,
+          "Failed to create skybox graphics pipeline!");
 
     device->getLogicalDevice().destroyShaderModule(vertexShaderModule);
     device->getLogicalDevice().destroyShaderModule(fragmentShaderModule);

@@ -290,7 +290,7 @@ void GUI::create_gui_context(Window *frontend_window,
     init_info.Queue = device->getGraphicsQueue();
     init_info.PipelineInfoMain.RenderPass = post_render_pass;
     init_info.DescriptorPool = gui_descriptor_pool;
-    init_info.PipelineCache = VK_NULL_HANDLE;
+    init_info.PipelineCache = device->getPipelineCache();
     init_info.MinImageCount = 2;
     init_info.ImageCount = image_count;
     init_info.Allocator = VK_NULL_HANDLE;

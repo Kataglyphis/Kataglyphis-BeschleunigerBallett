@@ -385,7 +385,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
         .setVertexInput({ binding_description }, { attribute_describtions.begin(), attribute_describtions.end() })
         .setAlphaBlending(true)
         .setBasePipelineIndex(-1)
-        .build(device->getLogicalDevice(), pipeline_layout, render_pass);
+        .build(device->getLogicalDevice(), pipeline_layout, render_pass, device->getPipelineCache());
     spdlog::info("Rasterizer: Created pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphics_pipeline);
 
     device->getLogicalDevice().destroyShaderModule(vertex_shader_module);
