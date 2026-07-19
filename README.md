@@ -116,7 +116,22 @@ The same builds run fully containerized in the ContainerHub developer image `ghc
 powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1
 ```
 
-The script uses Stevedore's `docker.exe` (never `nerdctl` — broken DNS/CNI on Windows), prefers process isolation for full CPU count, and bind-mounts the repo to a fresh path. If the repo lives on a Dev Drive whose filters are not allow-listed for containers, it automatically falls back to streaming the sources into the container via tar and streaming the build trees back out; to enable the faster bind mount instead, run once (elevated) `fsutil devdrv setfiltersallowed bindFlt, wcifs` and remount the volume.
+The script uses Stevedore's `docker.exe` (never `nerdctl` — broken DNS/CNI on Windows) and prefers process isolation for full CPU count.
+
+Builds are **incremental**: one reusable container (`bb-build-persistent`) keeps the build tree, so a no-change rebuild takes ~9.6 s of ninja (~44 s wall) instead of the 352–484 s a fresh container per build used to cost. Use `-FreshContainer` to reset — note that a file *deleted* on the host keeps building inside a reused container until then.
+
+Two transports move the sources in and the artifacts out, and **both are supported**:
+
+- **tar-pipe (default)** — no host setup, works on a Dev Drive as-is.
+- **bind mount (`-UseBindMount`)** — no copying, but on a Dev Drive it needs the container filters allow-listed once (elevated, then reboot):
+
+  ```powershell
+  fsutil devdrv setFiltersAllowed /volume D: "bindFlt,wcifs"
+  ```
+
+  The filter list must be **one quoted argument** — `bindFlt, wcifs` unquoted is parsed as two and fails.
+
+Counter-intuitively the bind mount measured **slower** on this Dev Drive host (32.7 s ninja vs 9.6 s), because the build tree then sits behind a filesystem filter and every ninja stat crosses it — hence the tar-pipe default. That result is host-specific and can invert elsewhere, so measure before switching. Setup, verification, revert and the full numbers: [ContainerHub § Transports](ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md#transports-how-to-set-up-both) and [`docs/container-build-caching.md`](docs/container-build-caching.md).
 
 Builds are supported against the recorded submodule pins (`git submodule update --checkout --recursive` restores them). The Windows scripts resolve PowerShell modules from the `ExternalLib/Kataglyphis-ContainerHub` submodule when available, with vendored fallbacks in `Scripts/Windows/modules` for modules removed upstream (see `Scripts/Windows/Resolve-BuildModule.ps1` and `AGENTS.md`). When bumping `ExternalLib/FUZZTEST`, keep `ABSL_TAG` in `ExternalLib/CMakeLists.txt` at least as new as the Abseil pin in FuzzTest's `cmake/BuildDependencies.cmake`.
 
@@ -133,6 +148,18 @@ The repository ships two documentation entry points:
 
 - this README for repository-level orientation
 - the Sphinx site under `docs/` for getting started, workflow notes, Graphviz output, and optional API reference material
+
+Topic guides (each topic has exactly one home — `AGENTS.md` links to these rather than restating them):
+
+| Doc | Covers |
+| --- | --- |
+| [`docs/container-build-caching.md`](docs/container-build-caching.md) | This repo's build caching: measurements, both transports, `KATAGLYPHIS_KEEP_BUILD_ROOT`, delivery verification |
+| [`docs/shader-build-pipeline.md`](docs/shader-build-pipeline.md) | GLSL → SPIR-V, the stale-binary and silent-`glslc`-failure traps, fast shader iteration |
+| [`docs/code-quality.md`](docs/code-quality.md) | clang-tidy / clang-format commands and when to run them |
+| [`docs/cpp-renderer-improvements.md`](docs/cpp-renderer-improvements.md) | Renderer architecture work: what changed and why |
+| [`ExternalLib/Kataglyphis-ContainerHub/docs/`](ExternalLib/Kataglyphis-ContainerHub/docs/) | Everything reusable about Windows containers — image, transports and their setup, performance findings |
+
+Renderer-agnostic and Windows-container knowledge lives in the ContainerHub submodule so other projects can consume it; see the "Reusable Work Belongs in ContainerHub" rule in `AGENTS.md`.
 
 Build the Sphinx HTML docs locally:
 
@@ -208,8 +235,9 @@ live in [`BACKLOG.md`](BACKLOG.md).
 Renderer-specific plans and status live in `docs/`:
 `webgpu-renderer-roadmap.md` (Rust WebGPU renderer),
 `cpp-renderer-improvements.md` (C++ engine improvement campaign),
-`shader-sharing.md` (sharing shader code between both renderers), and
-`webgpu-srgb-audit.md` (color-space audit).
+`shader-sharing.md` (sharing shader code between both renderers),
+`webgpu-srgb-audit.md` (color-space audit), and
+`webgpu-gltf-rust-plan.md` (glTF loading plan for the Rust renderer).
 
 ## Contributing
 
