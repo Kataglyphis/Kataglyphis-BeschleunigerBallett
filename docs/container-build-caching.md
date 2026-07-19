@@ -25,6 +25,14 @@ The wall clock exceeds the build step because sources stream in and artifacts
 stream back out on every run; that transport cost is now the dominant term,
 not compilation.
 
+**The transport is still the right trade.** Bind mounting instead (which
+removes the transport entirely) was enabled and measured on 2026-07-19 and is
+**slower**: 32.7 s ninja / 159 s wall for the same no-change build, because the
+build tree then sits on the Dev Drive and every file operation crosses the
+`bindFlt` filter. The script therefore defaults to the tar-pipe;
+`-UseBindMount` opts in. Full measurements and the caveat about when the trade
+inverts: [ContainerHub](../ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md).
+
 Verified against these numbers: 21/21 commit tests and 18/18 Pester tests pass
 on the incrementally built binaries.
 

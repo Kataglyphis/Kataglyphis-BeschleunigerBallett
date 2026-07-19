@@ -15,9 +15,17 @@
 #        fsutil devdrv setfiltersallowed bindFlt, wcifs
 #      then remount the volume (or reboot).
 #
-# The mount target is a FRESH path (C:\ws-mnt) on purpose: mounting over a
-# directory baked into the image (C:\workspace) fails at CreateComputeSystem on
-# hosts whose OS build differs from the image base build.
+# The mount target is C:\ws - the SAME path the tar-pipe transport uses, and
+# that matters: CMake bakes absolute paths into CMakeCache.txt and refuses to
+# reuse a cache generated elsewhere ("The source C:/ws-mnt/CMakeLists.txt does
+# not match the source C:/ws/CMakeLists.txt used to generate cache"). Sharing
+# one path means a tree built under either transport stays usable by the other,
+# so switching between them does not force a cold rebuild.
+#
+# It must still be a path that is NOT baked into the image: mounting over a
+# directory that exists in the image (C:\workspace) fails at CreateComputeSystem
+# when the host OS build differs from the image base build. C:\ws is absent from
+# the image (verified) and is created by the mount.
 
 param(
   # Comma-separated Build-Windows.ps1 configurations to build.
@@ -34,8 +42,9 @@ param(
   [int]$MemoryGb = 16,
   [switch]$RunTests,
   [int]$ParallelJobs = 0,
-  # Force the tar-pipe transport even if a bind mount would work.
-  [switch]$NoBindMount,
+  # Opt into the bind-mount transport. Off by default because it is MEASURED
+  # SLOWER on this Dev Drive host - see Test-BindMountUsable below.
+  [switch]$UseBindMount,
   # Keep the fallback container around for debugging instead of removing it.
   [switch]$KeepContainer,
   # Discard the reusable build container and start from a clean one. Use when a
@@ -48,7 +57,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$mountTarget = 'C:\ws-mnt'
+$mountTarget = 'C:\ws'
 
 # Preflight: Build-Windows.ps1 resolves modules from ContainerHub first, then
 # the vendored fallback (Scripts/Windows/modules). Fail fast if a module that
@@ -108,7 +117,25 @@ $cacheArgs = @(
 $persistentContainerName = 'bb-build-persistent'
 
 function Test-BindMountUsable {
-  if ($NoBindMount) { return $false }
+  # Bind mounting looks like the obvious win - no tar transport at all - and it
+  # is SLOWER here. Measured 2026-07-19 on this Dev Drive host, same tree, both
+  # transports at C:\ws:
+  #
+  #   no-change build   tar-pipe + reused container   9.6 s ninja / 44 s wall
+  #   no-change build   bind mount                   32.7 s ninja / 159 s wall
+  #   cold build        tar-pipe                    327.9 s / 364 s
+  #   cold build        bind mount                  318.1 s / 474 s
+  #
+  # Removing the transport does not pay for what it adds: the build tree then
+  # lives on the Dev Drive and every ninja stat and object write crosses the
+  # bindFlt filter from inside the container. Copying the sources in bulk once
+  # is cheaper than paying filtered I/O on ~1000 targets. Repeated to confirm
+  # it was not a first-run artifact (32.7 s vs 34.5 s).
+  #
+  # Kept behind an opt-in switch because the trade may invert elsewhere: on a
+  # non-Dev-Drive volume, or with a much smaller build tree, the transport can
+  # dominate instead.
+  if (-not $UseBindMount) { return $false }
   Write-Host 'Probing bind mount support...'
   return (Test-ContainerBindMount -DockerExe $docker -Image $Image -SourcePath $repoRoot `
       -TargetPath $mountTarget -ProbeFile 'CMakePresets.json' -RunArgs $isolationArgs)
@@ -124,7 +151,11 @@ function Invoke-BindMountBuild {
 }
 
 function Invoke-TarPipeBuild {
-  Write-Host 'Bind mount unavailable - falling back to tar-pipe transport.'
+  if ($UseBindMount) {
+    Write-Host 'Bind mount requested but unusable - falling back to tar-pipe transport.'
+  } else {
+    Write-Host 'Using tar-pipe transport with a reusable container (faster here; -UseBindMount to override).'
+  }
   $container = $persistentContainerName
   $ws = 'C:\ws'
 
