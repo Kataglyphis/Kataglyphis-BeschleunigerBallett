@@ -25,7 +25,7 @@ L (multi-day), XL (multi-week).
 - [ ] **Async asset loading** (L) — model load/reload and AS builds block the
   main thread; move to a worker with fence-based handoff (staging ring
   already removed the per-upload queue stalls).
-- [ ] **Clouds compute cost** (M) — per-pixel `inverse()` of two matrices at
+- [x] **Clouds compute cost** (M, inversions hoisted 2026-07-19, A/B verified; half-res dispatch still open as a quality tradeoff) — per-pixel `inverse()` of two matrices at
   full resolution with up to 128 march steps; move inversions into the UBO,
   render at half resolution, before anyone flips `clouds_enabled` on.
 - [ ] **glTF loading** (L) — reuse the Rust renderer's test assets and enable
