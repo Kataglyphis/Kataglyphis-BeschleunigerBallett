@@ -24,7 +24,9 @@ L (multi-day), XL (multi-week).
   ~71 methods overall); mirror the PipelineBuilder move.
 - [ ] **Async asset loading** (L) — model load/reload and AS builds block the
   main thread; move to a worker with fence-based handoff (staging ring
-  already removed the per-upload queue stalls).
+  already removed the per-upload queue stalls). **Now quantified**: OBJ
+  parsing alone is ~7 ms/MB (`BM_ObjParse_Suzanne`), so the bundled 27 MB
+  model implies ~200 ms of frozen main thread.
 - [x] **Clouds compute cost** (M, inversions hoisted 2026-07-19, A/B verified; half-res dispatch still open as a quality tradeoff) — per-pixel `inverse()` of two matrices at
   full resolution with up to 128 march steps; move inversions into the UBO,
   render at half resolution, before anyone flips `clouds_enabled` on.
@@ -37,7 +39,7 @@ L (multi-day), XL (multi-week).
 - [ ] **C++ golden rendering tests** (L) — port the Rust pattern: headless
   render-to-texture + structural pixel assertions (would have caught the
   unused-shadow-map bug); requires an offscreen path in `VulkanRenderer`.
-- [ ] **Perf suite that measures the engine** (M) — Google Benchmark currently
+- [x] **Perf suite that measures the engine** (M, done 2026-07-19: camera/projection/scene-config/OBJ-parse benchmarks, baseline in BACKLOG.md; CTest registration still open) — Google Benchmark currently
   benchmarks `std::string`; benchmark frame recording / upload paths instead
   and register with CTest.
 - [ ] **Fuzz more surfaces** (S each) — SceneConfig parsing, shader-file
