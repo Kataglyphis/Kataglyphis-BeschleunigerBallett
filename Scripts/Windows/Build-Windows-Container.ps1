@@ -123,49 +123,12 @@ $cacheArgs = @(
 # specified", both with a fresh volume and a populated one. See
 # docs/container-build-caching.md for the full measurement.
 
-# A single reusable build container. Creating a fresh container per build meant
-# the build tree had to be streamed in AND out every time (~17 GB), which now
-# dominates build time. Reusing one container keeps the tree in place: only
-# sources go in, and only the artifacts the host actually needs come out.
+# Reusable build-container helpers live upstream in ContainerHub (they apply to
+# any project built in that image, not just this engine):
+#   windows/scripts/modules/WindowsContainerBuild.Reuse.psm1
+# Rationale and measurements: ContainerHub docs/windows-container-build-performance.md
+Import-Module (Resolve-BuildModulePath -Name 'WindowsContainerBuild.Reuse') -Force -Global
 $persistentContainerName = 'bb-build-persistent'
-
-function Get-ReusableBuildContainer {
-  param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$ImageRef)
-
-  $previousPreference = $ErrorActionPreference
-  $ErrorActionPreference = 'Continue'
-  try {
-    $imageId = (& $docker inspect -f '{{.Id}}' $ImageRef 2>$null | Select-Object -First 1)
-    $state = (& $docker inspect -f '{{.State.Running}}|{{.Image}}' $Name 2>$null | Select-Object -First 1)
-  } finally {
-    $ErrorActionPreference = $previousPreference
-  }
-
-  if ($state) {
-    $parts = $state -split '\|'
-    $isRunning = ($parts[0] -eq 'true')
-    $containerImage = if ($parts.Count -gt 1) { $parts[1] } else { '' }
-
-    if ($imageId -and $containerImage -and ($containerImage -ne $imageId)) {
-      Write-Host 'Build image changed - recreating the reusable container.'
-      & $docker rm -f $Name 2>&1 | Out-Null
-    } elseif ($isRunning) {
-      Write-Host "Reusing build container '$Name' (build tree preserved)."
-      return $true
-    } else {
-      Write-Host "Starting existing build container '$Name'..."
-      & $docker start $Name 2>&1 | Out-Null
-      if ($LASTEXITCODE -eq 0) { return $true }
-      & $docker rm -f $Name 2>&1 | Out-Null
-    }
-  }
-
-  Write-Host "Creating build container '$Name'..."
-  & $docker run -d --name $Name @isolationArgs @cacheArgs --entrypoint cmd $ImageRef `
-    /c 'ping -n 604800 127.0.0.1 > nul' | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw 'Failed to start build container.' }
-  return $false
-}
 
 function Test-BindMountUsable {
   if ($NoBindMount) { return $false }
@@ -199,11 +162,8 @@ function Invoke-TarPipeBuild {
   $container = $persistentContainerName
   $ws = 'C:\ws'
 
-  if ($FreshContainer) {
-    Write-Host 'FreshContainer requested - discarding any existing build container.'
-    & $docker rm -f $container 2>&1 | Out-Null
-  }
-  $reusedContainer = Get-ReusableBuildContainer -Name $container -ImageRef $Image
+  $reusedContainer = Get-ReusableBuildContainer -DockerExe $docker -Name $container -Image $Image `
+    -RunArgs ($isolationArgs + $cacheArgs) -Fresh:$FreshContainer
 
   try {
     & $docker exec $container cmd /c "mkdir $ws" | Out-Null
