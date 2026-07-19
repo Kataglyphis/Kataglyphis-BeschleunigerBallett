@@ -181,6 +181,21 @@ that are *not* exercised that way and should be run periodically:
 - `Scripts/Windows/Build-Windows-Container.ps1` takes `-Configurations`,
   not `-Preset`; passing the wrong one silently builds **all four**
   configurations.
+- **A source file deleted on the host keeps building inside the reusable
+  container.** Reproduced 2026-07-19: added a probe test, built (it ran),
+  deleted the file, rebuilt - the test still ran, and the `.cpp` was still
+  present at `C:\ws\...` inside the container. The inbound `tar` extracts
+  over the existing tree and never prunes, so tests can keep passing against
+  code that no longer exists, and a file whose deletion breaks the build
+  looks fine locally and fails in CI.
+
+  Workaround today: `-FreshContainer`, or delete the file inside the
+  container. Proper fix (**not yet implemented - do this deliberately, not
+  in a hurry**): prune the source tree inside the container before streaming,
+  keeping `build-*` and `logs`. Sources re-stream in seconds; only the build
+  tree is expensive, and that is what must survive. The risk is that a
+  wrong pattern deletes the build tree on every build, so it needs a careful
+  exclusion test before it goes in.
 
 ## Architecture debt not yet sized
 
