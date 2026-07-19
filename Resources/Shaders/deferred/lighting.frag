@@ -27,6 +27,9 @@ layout(input_attachment_index = 4, set = 1, binding = 4) uniform subpassInput in
 layout (set = 0, binding = sceneUBO_BINDING) uniform _SceneUBO {
 	SceneUBO sceneUBO;
 };
+layout(set = 0, binding = SHADOW_MAP_BINDING) uniform sampler2DArray directional_shadow_maps;
+
+#include "cascaded_shadow.glsl"
 
 void main() {
     vec4 position = subpassLoad(inPosition);
@@ -48,6 +51,8 @@ void main() {
     float light_intensity = sceneUBO.dirLight.color.w;
 
     vec3 color = evaluatePBRBooksPBR(ambient, N, L, V, roughness, light_color, light_intensity);
+    float shadow = calc_cascaded_shadow(position.xyz, N, L);
+    color *= 1.0 - shadow * sceneUBO.cascadedShadowIntensity;
 
     // Apply point lights
     for(uint i = 0; i < sceneUBO.numPointLights; i++) {
