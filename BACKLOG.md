@@ -67,6 +67,22 @@ that are *not* exercised that way and should be run periodically:
   increasing, cascade frustums covering the camera frustum, no NaNs at
   degenerate FOV/aspect.
 
+## Code quality (see `docs/code-quality.md` for the commands)
+
+- **Decide on the formatting sweep.** 72 of 125 own sources under `Src/` and
+  `Test/` do not match `.clang-format` (measured 2026-07-19). Fixing this is
+  one enormous commit that will collide with anything in flight, so it wants
+  a deliberate moment (right after a merge point) plus a
+  `.git-blame-ignore-revs` entry. Alternative: format-on-touch only, and let
+  the drift shrink over time.
+- **Containerized builds never lint.** `Build-Windows-Container.ps1` passes
+  `-SkipFormat -SkipTidy` unconditionally; the fast loop therefore cannot
+  catch style or tidy regressions. Options: a separate periodic container
+  run without the skips, or a pre-push hook that formats touched files.
+- **clang-tidy cannot see C++23 module TUs** (module BMIs reference the
+  container layout). Either run tidy inside the container, or accept that
+  coverage is limited to the non-module surface.
+
 ## Housekeeping candidates
 
 - The `x64-Clang-Windows-Release` preset survives only because

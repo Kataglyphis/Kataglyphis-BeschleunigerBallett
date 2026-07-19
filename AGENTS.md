@@ -177,6 +177,14 @@ over exact-value comparisons, and make GPU-dependent tests skip themselves
 when no adapter is present rather than fail. Ideas worth picking up live in
 [`BACKLOG.md`](BACKLOG.md); sized commitments live in [`ROADMAP.md`](ROADMAP.md).
 
+**Formatting and static analysis.** clang-format/clang-tidy/cmake-format
+commands, the host gotchas (LLVM is not on `PATH`; the container-generated
+`compile_commands.json` points at `C:/ws`; C++23 module TUs are skipped by
+clang-tidy), and the suggested cadence live in
+[`docs/code-quality.md`](docs/code-quality.md). Note that
+`Build-Windows-Container.ps1` hard-codes `-SkipFormat -SkipTidy`, so
+containerized builds never run them.
+
 **Run more than the debug loop periodically.** `clangcl-debug` is the fast
 default, but `clangcl-profile` (optimized, and the only configuration where
 benchmarks mean anything), `clangcl-tsan`, and a synchronization-validation
@@ -215,6 +223,7 @@ Each topic has exactly one home; link, do not copy.
 | `docs/webgpu-renderer-roadmap.md` | Rust WebGPU renderer status per feature |
 | `docs/shader-sharing.md` | WGSL -> SPIR-V/GLSL pipeline between both renderers |
 | `docs/webgpu-srgb-audit.md` | Colour-space decisions and the one known deviation |
+| `docs/code-quality.md` | clang-format / clang-tidy / cmake-format commands + cadence |
 | `docs/source/` | Sphinx pages (`getting_started.md`, `documentation_workflow.md`) |
 
 - Keep docs, scripts, and presets aligned: when you change build behavior, update
