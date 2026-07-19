@@ -2,12 +2,11 @@
 #include <memory>
 
 #include <cstdint>
-#include <limits>
 #include <tuple>
 #include <utility>
+#include <vk_mem_alloc.h>
 #include <vulkan/vulkan.hpp>
 
-#include "common/MemoryHelper.hpp"
 #include "common/Utilities.hpp"
 
 module kataglyphis.vulkan.image;
@@ -18,11 +17,11 @@ import kataglyphis.vulkan.command_buffer_manager;
 Kataglyphis::VulkanImage::VulkanImage() = default;
 
 Kataglyphis::VulkanImage::VulkanImage(VulkanImage &&other) noexcept
-  : device(other.device), image(other.image), imageMemory(other.imageMemory), owns_image(other.owns_image)
+  : device(other.device), image(other.image), allocation(other.allocation), owns_image(other.owns_image)
 {
     other.device = nullptr;
     other.image = nullptr;
-    other.imageMemory = nullptr;
+    other.allocation = VK_NULL_HANDLE;
     other.owns_image = false;
 }
 
@@ -33,12 +32,12 @@ auto Kataglyphis::VulkanImage::operator=(VulkanImage &&other) noexcept -> Vulkan
 
         device = other.device;
         image = other.image;
-        imageMemory = other.imageMemory;
+        allocation = other.allocation;
         owns_image = other.owns_image;
 
         other.device = nullptr;
         other.image = nullptr;
-        other.imageMemory = nullptr;
+        other.allocation = VK_NULL_HANDLE;
         other.owns_image = false;
     }
 
@@ -77,23 +76,24 @@ void Kataglyphis::VulkanImage::create(std::shared_ptr<VulkanDevice>in_device,
     image_create_info.sharingMode = vk::SharingMode::eExclusive;// whether image can be shared between queues
     image_create_info.flags = create_flags;
 
-    image = device->getLogicalDevice().createImage(image_create_info).value;
+    // CREATE image and its backing memory in one step through VMA. The
+    // requested vk::MemoryPropertyFlags (typically eDeviceLocal) are enforced
+    // exactly via requiredFlags.
+    VmaAllocationCreateInfo allocation_create_info{};
+    allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO;
+    allocation_create_info.requiredFlags = static_cast<VkMemoryPropertyFlags>(prop_flags);
 
-    // CREATE memory for image
-    // get memory requirements for a type of image
-    vk::MemoryRequirements memory_requirements = device->getLogicalDevice().getImageMemoryRequirements(image);
+    const VkImageCreateInfo &c_image_create_info = static_cast<const VkImageCreateInfo &>(image_create_info);
+    VkImage c_image = VK_NULL_HANDLE;
+    ASSERT_VULKAN(vmaCreateImage(device->getVmaAllocator(),
+                    &c_image_create_info,
+                    &allocation_create_info,
+                    &c_image,
+                    &allocation,
+                    nullptr),
+      "Failed to create image via VMA!")
 
-    // allocate memory using image requirements and user defined properties
-    vk::MemoryAllocateInfo memory_alloc_info{};
-    memory_alloc_info.allocationSize = memory_requirements.size;
-    uint32_t memory_type_index = Kataglyphis::find_memory_type_index(device->getPhysicalDevice(), memory_requirements.memoryTypeBits, prop_flags);
-    if (memory_type_index == std::numeric_limits<uint32_t>::max()) { spdlog::error("Failed to find suitable memory type!"); }
-    memory_alloc_info.memoryTypeIndex = memory_type_index;
-
-    imageMemory = device->getLogicalDevice().allocateMemory(memory_alloc_info).value;
-
-    // connect memory to image
-    std::ignore = device->getLogicalDevice().bindImageMemory(image, imageMemory, 0);
+    image = c_image;
 }
 
 void Kataglyphis::VulkanImage::transitionImageLayout(vk::Device in_logical_device,
@@ -184,13 +184,12 @@ void Kataglyphis::VulkanImage::setImage(vk::Image in_image)
 
 void Kataglyphis::VulkanImage::cleanUp()
 {
-    if (owns_image && device != nullptr) {
-        if (image) { device->getLogicalDevice().destroyImage(image); }
-        if (imageMemory) { device->getLogicalDevice().freeMemory(imageMemory); }
+    if (owns_image && device != nullptr && image) {
+        vmaDestroyImage(device->getVmaAllocator(), static_cast<VkImage>(image), allocation);
     }
 
     image = nullptr;
-    imageMemory = nullptr;
+    allocation = VK_NULL_HANDLE;
     owns_image = false;
 }
 

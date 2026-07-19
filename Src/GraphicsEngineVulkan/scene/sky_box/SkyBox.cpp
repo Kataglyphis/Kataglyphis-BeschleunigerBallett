@@ -74,12 +74,12 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
     VulkanBuffer stagingBuffer;
     stagingBuffer.create(device, imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    void* mappedData = device->getLogicalDevice().mapMemory(stagingBuffer.getBufferMemory(), 0, imageSize).value;
+    // Host-visible buffers are persistently mapped by VMA.
+    void* mappedData = stagingBuffer.getMappedData();
     for (size_t i = 0; i < 6; i++) {
         void* layerOffset = static_cast<char*>(mappedData) + i * layerSize;
         std::memcpy(layerOffset, face_data[i], static_cast<size_t>(layerSize));
     }
-    device->getLogicalDevice().unmapMemory(stagingBuffer.getBufferMemory());
 
     for (size_t i = 0; i < 6; i++) { stbi_image_free(face_data[i]); }
 

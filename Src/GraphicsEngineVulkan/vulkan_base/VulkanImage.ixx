@@ -1,5 +1,6 @@
 ﻿module;
 #include <memory>
+#include <vk_mem_alloc.h>
 #include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.image;
@@ -56,7 +57,9 @@ class VulkanImage
     Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
 
     vk::Image image{};
-    vk::DeviceMemory imageMemory{};
+    // Backing memory owned by the device's VMA allocator; VK_NULL_HANDLE for
+    // wrapped external images (setImage).
+    VmaAllocation allocation{ VK_NULL_HANDLE };
     // False for wrapped external images (setImage, e.g. swapchain images),
     // whose lifetime belongs to their creator. Mirrors VulkanBuffer's flag.
     bool owns_image{ false };

@@ -81,9 +81,8 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(std::shared
       vk::BufferUsageFlagBits::eTransferSrc,
       vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    void *mapped_data = device->getLogicalDevice().mapMemory(stagingBuffer.getBufferMemory(), 0, bufferSize).value;
-    std::memcpy(mapped_data, data.data(), static_cast<size_t>(bufferSize));
-    device->getLogicalDevice().unmapMemory(stagingBuffer.getBufferMemory());
+    // Host-visible buffers are persistently mapped by VMA.
+    std::memcpy(stagingBuffer.getMappedData(), data.data(), static_cast<size_t>(bufferSize));
 
     vulkanBuffer.create(
       device, bufferSize, dstBufferUsageFlags, dstBufferMemoryPropertyFlags, dstBufferMemoryAllocateFlags);

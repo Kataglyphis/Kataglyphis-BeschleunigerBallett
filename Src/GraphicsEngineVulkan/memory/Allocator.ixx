@@ -11,13 +11,18 @@ class Allocator
 {
   public:
     Allocator();
-    Allocator(const vk::Device &device, const vk::PhysicalDevice &physicalDevice, const vk::Instance &instance);
+    Allocator(const vk::Device &device,
+      const vk::PhysicalDevice &physicalDevice,
+      const vk::Instance &instance,
+      bool enableBufferDeviceAddress = true);
+
+    VmaAllocator getVmaAllocator() const { return vmaAllocator; }
 
     void cleanUp();
 
     ~Allocator();
 
   private:
-    VmaAllocator vmaAllocator{};
+    VmaAllocator vmaAllocator{ VK_NULL_HANDLE };
 };
 }// namespace Kataglyphis

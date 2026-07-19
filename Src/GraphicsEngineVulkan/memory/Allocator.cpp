@@ -16,10 +16,15 @@ using namespace Kataglyphis;
 
 Allocator::Allocator() = default;
 
-Allocator::Allocator(const vk::Device &device, const vk::PhysicalDevice &physicalDevice, const vk::Instance &instance)
+Allocator::Allocator(const vk::Device &device,
+  const vk::PhysicalDevice &physicalDevice,
+  const vk::Instance &instance,
+  bool enableBufferDeviceAddress)
 {
     VmaAllocatorCreateInfo allocatorCreateInfo = {};
-    allocatorCreateInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+    // VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT requires the
+    // bufferDeviceAddress feature to be enabled on the logical device.
+    if (enableBufferDeviceAddress) { allocatorCreateInfo.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT; }
     allocatorCreateInfo.vulkanApiVersion = Kataglyphis::RendererConfig::vulkanApiVersion;
     allocatorCreateInfo.physicalDevice = static_cast<VkPhysicalDevice>(physicalDevice);
     allocatorCreateInfo.device = static_cast<VkDevice>(device);
@@ -28,6 +33,12 @@ Allocator::Allocator(const vk::Device &device, const vk::PhysicalDevice &physica
     ASSERT_VULKAN(vmaCreateAllocator(&allocatorCreateInfo, &vmaAllocator), "Failed to create vma allocator!")
 }
 
-void Allocator::cleanUp() { vmaDestroyAllocator(vmaAllocator); }
+void Allocator::cleanUp()
+{
+    if (vmaAllocator != VK_NULL_HANDLE) {
+        vmaDestroyAllocator(vmaAllocator);
+        vmaAllocator = VK_NULL_HANDLE;
+    }
+}
 
 Allocator::~Allocator() = default;

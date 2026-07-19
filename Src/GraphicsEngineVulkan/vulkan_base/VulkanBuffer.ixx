@@ -1,5 +1,6 @@
-﻿module;
+module;
 #include <memory>
+#include <vk_mem_alloc.h>
 #include <vulkan/vulkan.hpp>
 
 export module kataglyphis.vulkan.buffer;
@@ -25,7 +26,10 @@ class VulkanBuffer
     void cleanUp();
 
     vk::Buffer &getBuffer() { return buffer; };
-    vk::DeviceMemory &getBufferMemory() { return bufferMemory; };
+    // Host-visible buffers are created persistently mapped
+    // (VMA_ALLOCATION_CREATE_MAPPED_BIT); returns nullptr for device-local
+    // buffers. Valid until cleanUp()/destruction; no unmap necessary.
+    void *getMappedData() const { return mappedData; };
 
     ~VulkanBuffer();
 
@@ -33,7 +37,8 @@ class VulkanBuffer
     std::shared_ptr<VulkanDevice>device{ nullptr };
 
     vk::Buffer buffer{};
-    vk::DeviceMemory bufferMemory{};
+    VmaAllocation allocation{ VK_NULL_HANDLE };
+    void *mappedData{ nullptr };
 
     bool created{ false };
 };

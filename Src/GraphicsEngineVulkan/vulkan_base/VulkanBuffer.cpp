@@ -1,12 +1,12 @@
-﻿module;
+module;
 #include <memory>
 
 #include <cstdint>
-#include <limits>
+#include <tuple>
 #include <utility>
+#include <vk_mem_alloc.h>
 #include <vulkan/vulkan.hpp>
 
-#include "common/MemoryHelper.hpp"
 #include "common/Utilities.hpp"
 #include "spdlog/spdlog.h"
 
@@ -17,11 +17,13 @@ import kataglyphis.vulkan.device;
 Kataglyphis::VulkanBuffer::VulkanBuffer() = default;
 
 Kataglyphis::VulkanBuffer::VulkanBuffer(VulkanBuffer &&other) noexcept
-  : device(other.device), buffer(other.buffer), bufferMemory(other.bufferMemory), created(other.created)
+  : device(other.device), buffer(other.buffer), allocation(other.allocation), mappedData(other.mappedData),
+    created(other.created)
 {
     other.device = nullptr;
     other.buffer = vk::Buffer{};
-    other.bufferMemory = vk::DeviceMemory{};
+    other.allocation = VK_NULL_HANDLE;
+    other.mappedData = nullptr;
     other.created = false;
 }
 
@@ -32,12 +34,14 @@ auto Kataglyphis::VulkanBuffer::operator=(VulkanBuffer &&other) noexcept -> Vulk
 
         device = other.device;
         buffer = other.buffer;
-        bufferMemory = other.bufferMemory;
+        allocation = other.allocation;
+        mappedData = other.mappedData;
         created = other.created;
 
         other.device = nullptr;
         other.buffer = vk::Buffer{};
-        other.bufferMemory = vk::DeviceMemory{};
+        other.allocation = VK_NULL_HANDLE;
+        other.mappedData = nullptr;
         other.created = false;
     }
 
@@ -64,38 +68,54 @@ void Kataglyphis::VulkanBuffer::create(std::shared_ptr<VulkanDevice>vulkan_devic
     // similar to swap chain images, can share vertex buffers
     buffer_info.sharingMode = vk::SharingMode::eExclusive;
 
-    buffer = device->getLogicalDevice().createBuffer(buffer_info).value;
-
-    // get buffer memory requirements
-    vk::MemoryRequirements memory_requirements = device->getLogicalDevice().getBufferMemoryRequirements(buffer);
-
-    // allocate memory to buffer
-    vk::MemoryAllocateInfo memory_alloc_info{};
-    memory_alloc_info.allocationSize = memory_requirements.size;
-    memory_alloc_info.pNext = nullptr;
-
-    vk::MemoryAllocateFlagsInfo memory_allocate_flags_info{};
-    if (buffer_allocate_flags) {
-        memory_allocate_flags_info.flags = buffer_allocate_flags;
-        memory_alloc_info.pNext = &memory_allocate_flags_info;
+    // Map the requested vk::MemoryPropertyFlags onto a VMA allocation:
+    // - requiredFlags guarantees an exact superset of the requested properties
+    //   (e.g. HOST_VISIBLE | HOST_COHERENT or DEVICE_LOCAL).
+    // - Host-visible buffers additionally get sequential-write host access and
+    //   are persistently mapped, replacing the former mapMemory/unmapMemory
+    //   pattern at the call sites.
+    VmaAllocationCreateInfo allocation_create_info{};
+    allocation_create_info.usage = VMA_MEMORY_USAGE_AUTO;
+    allocation_create_info.requiredFlags = static_cast<VkMemoryPropertyFlags>(buffer_propertiy_flags);
+    if (buffer_propertiy_flags & vk::MemoryPropertyFlagBits::eHostVisible) {
+        allocation_create_info.flags |=
+          VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
     }
 
-    uint32_t const memory_type_index = Kataglyphis::find_memory_type_index(
-      device->getPhysicalDevice(), memory_requirements.memoryTypeBits, buffer_propertiy_flags);
+    // vk::MemoryAllocateFlagBits::eDeviceAddress is handled by VMA itself: the
+    // allocator is created with VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT
+    // and adds VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT to every allocation whose
+    // buffer usage contains eShaderDeviceAddress. The parameter is kept for
+    // source compatibility with existing callers.
+    std::ignore = buffer_allocate_flags;
 
-    // VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |		/* memory is visible to
-    // CPU side
-    // */ VK_MEMORY_PROPERTY_HOST_COHERENT_BIT	/* data is placed straight into
-    // buffer */);
-    if (memory_type_index == std::numeric_limits<uint32_t>::max()) { spdlog::error("Failed to find suitable memory type!"); }
+    const VkBufferCreateInfo &c_buffer_info = static_cast<const VkBufferCreateInfo &>(buffer_info);
+    VkBuffer c_buffer = VK_NULL_HANDLE;
+    VmaAllocationInfo allocation_info{};
+    if (buffer_usage_flags & vk::BufferUsageFlagBits::eShaderDeviceAddress) {
+        // The device address of these buffers is consumed directly (SBT
+        // regions, acceleration structure scratch); enforce the alignment the
+        // implementation requires for such addresses.
+        ASSERT_VULKAN(vmaCreateBufferWithAlignment(device->getVmaAllocator(),
+                        &c_buffer_info,
+                        &allocation_create_info,
+                        static_cast<VkDeviceSize>(device->getMinDeviceAddressAlignment()),
+                        &c_buffer,
+                        &allocation,
+                        &allocation_info),
+          "Failed to create device-address buffer via VMA!")
+    } else {
+        ASSERT_VULKAN(vmaCreateBuffer(device->getVmaAllocator(),
+                        &c_buffer_info,
+                        &allocation_create_info,
+                        &c_buffer,
+                        &allocation,
+                        &allocation_info),
+          "Failed to create buffer via VMA!")
+    }
 
-    memory_alloc_info.memoryTypeIndex = memory_type_index;
-
-    // allocate memory to VkDeviceMemory
-    bufferMemory = device->getLogicalDevice().allocateMemory(memory_alloc_info).value;
-
-    // allocate memory to given buffer
-    std::ignore = device->getLogicalDevice().bindBufferMemory(buffer, bufferMemory, 0);
+    buffer = c_buffer;
+    mappedData = allocation_info.pMappedData;
 
     created = true;
 }
@@ -103,12 +123,12 @@ void Kataglyphis::VulkanBuffer::create(std::shared_ptr<VulkanDevice>vulkan_devic
 void Kataglyphis::VulkanBuffer::cleanUp()
 {
     if (created && device != nullptr) {
-        device->getLogicalDevice().destroyBuffer(buffer);
-        device->getLogicalDevice().freeMemory(bufferMemory);
+        vmaDestroyBuffer(device->getVmaAllocator(), static_cast<VkBuffer>(buffer), allocation);
     }
 
     buffer = vk::Buffer{};
-    bufferMemory = vk::DeviceMemory{};
+    allocation = VK_NULL_HANDLE;
+    mappedData = nullptr;
     created = false;
 }
 

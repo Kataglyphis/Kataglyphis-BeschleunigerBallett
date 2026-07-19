@@ -157,7 +157,13 @@ auto Kataglyphis::VulkanDevice::getSwapchainDetails() -> Kataglyphis::VulkanRend
     return getSwapchainDetails(physical_device);
 }
 
-void Kataglyphis::VulkanDevice::cleanUp() { logical_device.destroy(); }
+void Kataglyphis::VulkanDevice::cleanUp()
+{
+    // The allocator must outlive every buffer/image allocation but has to be
+    // destroyed before the logical device it was created from.
+    allocator.cleanUp();
+    logical_device.destroy();
+}
 
 Kataglyphis::VulkanDevice::~VulkanDevice() = default;
 
@@ -442,6 +448,23 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     }
 
     if (deviceSupportsHardwareAcceleratedRRT) {
+        // Buffers whose device address is consumed directly (SBTs, AS scratch)
+        // must be aligned to shaderGroupBaseAlignment respectively
+        // minAccelerationStructureScratchOffsetAlignment. The former dedicated
+        // allocations satisfied this implicitly (offset 0); with VMA
+        // suballocation the alignment has to be requested explicitly.
+        vk::PhysicalDeviceAccelerationStructurePropertiesKHR acceleration_structure_properties{};
+        vk::PhysicalDeviceRayTracingPipelinePropertiesKHR ray_tracing_pipeline_properties{};
+        ray_tracing_pipeline_properties.pNext = &acceleration_structure_properties;
+        vk::PhysicalDeviceProperties2 properties2{};
+        properties2.pNext = &ray_tracing_pipeline_properties;
+        physical_device.getProperties2(&properties2);
+
+        deviceAddressAlignment = std::max<vk::DeviceSize>(
+          { vk::DeviceSize{ 1 },
+            ray_tracing_pipeline_properties.shaderGroupBaseAlignment,
+            acceleration_structure_properties.minAccelerationStructureScratchOffsetAlignment });
+
         // COPY ALL NECESSARY EXTENSIONS FOR RAYTRACING TO THE EXTENSION
         extensions.insert(
           extensions.begin(), device_extensions_for_raytracing.begin(), device_extensions_for_raytracing.end());
@@ -506,6 +529,12 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     graphics_queue = logical_device.getQueue(static_cast<uint32_t>(indices.graphics_family), 0);
     presentation_queue = logical_device.getQueue(static_cast<uint32_t>(indices.presentation_family), 0);
     compute_queue = logical_device.getQueue(static_cast<uint32_t>(indices.compute_family), 0);
+
+    // Central VMA allocator for all buffer/image memory. Only request the
+    // buffer-device-address capability when the feature was actually enabled
+    // on the logical device above.
+    allocator = Allocator(
+      logical_device, physical_device, instance->getVulkanInstance(), deviceSupportsBufferDeviceAddress);
 }
 
 auto Kataglyphis::VulkanDevice::getQueueFamilies(vk::PhysicalDevice selectedPhysicalDevice)

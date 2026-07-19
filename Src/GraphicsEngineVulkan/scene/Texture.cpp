@@ -94,10 +94,8 @@ auto Kataglyphis::Texture::createFromFile(std::shared_ptr<VulkanDevice>device,
       vk::BufferUsageFlagBits::eTransferSrc,
       vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    void *data = nullptr;
-    data = device->getLogicalDevice().mapMemory(stagingBuffer.getBufferMemory(), 0, size).value;
-    memcpy(data, image_data, static_cast<size_t>(size));
-    device->getLogicalDevice().unmapMemory(stagingBuffer.getBufferMemory());
+    // Host-visible buffers are persistently mapped by VMA.
+    memcpy(stagingBuffer.getMappedData(), image_data, static_cast<size_t>(size));
 
     // Memory automatically freed by image_data_ptr
 
@@ -170,9 +168,8 @@ void Kataglyphis::Texture::createDefaultTexture(std::shared_ptr<VulkanDevice>in_
       vk::BufferUsageFlagBits::eTransferSrc,
       vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-    void *data = in_device->getLogicalDevice().mapMemory(stagingBuffer.getBufferMemory(), 0, default_size).value;
-    memcpy(data, white_pixel, default_size);
-    in_device->getLogicalDevice().unmapMemory(stagingBuffer.getBufferMemory());
+    // Host-visible buffers are persistently mapped by VMA.
+    memcpy(stagingBuffer.getMappedData(), white_pixel, default_size);
 
     createImage(in_device,
       default_tex_width,

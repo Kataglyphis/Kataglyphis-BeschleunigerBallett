@@ -63,7 +63,6 @@ import kataglyphis.vulkan.gui;
 import kataglyphis.vulkan.scene_ubo;
 import kataglyphis.vulkan.global_ubo;
 import kataglyphis.vulkan.swapchain;
-import kataglyphis.vulkan.allocator;
 import kataglyphis.vulkan.window;
 
 namespace {
@@ -87,8 +86,6 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     create_surface();
 
     device = std::make_shared<VulkanDevice>(&instance, &surface);
-
-    allocator = Allocator(device->getLogicalDevice(), device->getPhysicalDevice(), instance.getVulkanInstance());
 
     create_command_pool();
 
@@ -820,14 +817,9 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
 
 void Kataglyphis::VulkanRenderer::cleanUpUBOs()
 {
-    for (size_t i = 0; i < globalUBOBuffer.size(); i++) {
-        device->getLogicalDevice().unmapMemory(globalUBOBuffer[i].getBufferMemory());
-        globalUBOBuffer[i].cleanUp();
-    }
-    for (size_t i = 0; i < sceneUBOBuffer.size(); i++) {
-        device->getLogicalDevice().unmapMemory(sceneUBOBuffer[i].getBufferMemory());
-        sceneUBOBuffer[i].cleanUp();
-    }
+    // Buffers are persistently mapped by VMA; unmapping happens on destruction.
+    for (size_t i = 0; i < globalUBOBuffer.size(); i++) { globalUBOBuffer[i].cleanUp(); }
+    for (size_t i = 0; i < sceneUBOBuffer.size(); i++) { sceneUBOBuffer[i].cleanUp(); }
     globalUBOBuffer.clear();
     globalUBOMapped.clear();
     sceneUBOBuffer.clear();
@@ -871,7 +863,8 @@ void Kataglyphis::VulkanRenderer::cleanUp()
     }
 
     vulkanSwapChain.cleanUp();
-    allocator.cleanUp();
+    // The device tears down its VMA allocator (after all buffers/images above,
+    // before the logical device).
     device->cleanUp();
     device.reset();
 
@@ -1405,14 +1398,15 @@ void Kataglyphis::VulkanRenderer::create_uniform_buffers()
           vk::BufferUsageFlagBits::eUniformBuffer,
           vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
         
-        globalUBOMapped[i] = device->getLogicalDevice().mapMemory(globalUBOBuffer[i].getBufferMemory(), 0, sizeof(VulkanRendererInternals::GlobalUBO)).value;
+        // Host-visible UBOs are persistently mapped by VMA.
+        globalUBOMapped[i] = globalUBOBuffer[i].getMappedData();
 
         sceneUBOBuffer[i].create(device,
           sizeof(VulkanRendererInternals::SceneUBO),
           vk::BufferUsageFlagBits::eUniformBuffer,
           vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
-        sceneUBOMapped[i] = device->getLogicalDevice().mapMemory(sceneUBOBuffer[i].getBufferMemory(), 0, sizeof(VulkanRendererInternals::SceneUBO)).value;
+        sceneUBOMapped[i] = sceneUBOBuffer[i].getMappedData();
         
         // Initial upload
         update_uniform_buffers(static_cast<uint32_t>(i));

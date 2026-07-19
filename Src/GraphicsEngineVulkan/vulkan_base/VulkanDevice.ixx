@@ -1,11 +1,13 @@
 module;
 
 #include <vector>
+#include <vk_mem_alloc.h>
 #include <vulkan/vulkan.hpp>
 #include "renderer/SwapChainDetails.hpp"
 
 export module kataglyphis.vulkan.device;
 
+import kataglyphis.vulkan.allocator;
 import kataglyphis.vulkan.instance;
 import kataglyphis.vulkan.queue_family_indices;
 
@@ -26,6 +28,11 @@ class VulkanDevice
     bool supportsHardwareAcceleratedRRT() { return deviceSupportsHardwareAcceleratedRRT; };
     bool supportsBufferDeviceAddress() const { return deviceSupportsBufferDeviceAddress; };
     vk::DeviceAddress getBufferDeviceAddress(const vk::BufferDeviceAddressInfo &info) const;
+    Allocator &getAllocator() { return allocator; };
+    VmaAllocator getVmaAllocator() const { return allocator.getVmaAllocator(); };
+    // Minimum alignment for allocations backing buffers whose device address
+    // is consumed directly (SBTs, acceleration structure scratch).
+    vk::DeviceSize getMinDeviceAddressAlignment() const { return deviceAddressAlignment; };
 
     void cleanUp();
 
@@ -45,6 +52,11 @@ class VulkanDevice
     vk::Queue compute_queue{};
     bool deviceSupportsHardwareAcceleratedRRT = true;
     bool deviceSupportsBufferDeviceAddress = false;
+    vk::DeviceSize deviceAddressAlignment{ 1 };
+
+    // VMA allocator owning all buffer/image memory. Created right after the
+    // logical device; destroyed in cleanUp() right before the logical device.
+    Allocator allocator;
 
     void get_physical_device();
     void create_logical_device();

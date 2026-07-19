@@ -7,7 +7,6 @@ module;
 
 export module kataglyphis.vulkan.renderer;
 
-import kataglyphis.vulkan.allocator;
 import kataglyphis.vulkan.as_manager;
 import kataglyphis.vulkan.buffer_manager;
 import kataglyphis.vulkan.buffer;
@@ -113,10 +112,6 @@ class VulkanRenderer
     Kataglyphis::Clouds clouds;
     Kataglyphis::CascadedShadowMap dirShadowMap;
     Kataglyphis::OmniDirShadowMap pointShadowMap;
-
-    // new era of memory management for my project
-    // for now on integrate vma
-    Allocator allocator;
 
     // -- synchronization
     uint32_t current_frame{ 0 };

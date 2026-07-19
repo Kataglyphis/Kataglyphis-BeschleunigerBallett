@@ -319,15 +319,12 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
 
     hitShaderBindingTableBuffer.create(device, handle_size, bufferUsageFlags, memoryPropertyFlags, memoryAllocateFlags);
 
-    void *mapped_raygen = device->getLogicalDevice()
-                            .mapMemory(raygenShaderBindingTableBuffer.getBufferMemory(), 0, VK_WHOLE_SIZE, {})
-                            .value;
+    // SBT buffers are host-visible and therefore persistently mapped by VMA.
+    void *mapped_raygen = raygenShaderBindingTableBuffer.getMappedData();
 
-    void *mapped_miss =
-      device->getLogicalDevice().mapMemory(missShaderBindingTableBuffer.getBufferMemory(), 0, VK_WHOLE_SIZE, {}).value;
+    void *mapped_miss = missShaderBindingTableBuffer.getMappedData();
 
-    void *mapped_rchit =
-      device->getLogicalDevice().mapMemory(hitShaderBindingTableBuffer.getBufferMemory(), 0, VK_WHOLE_SIZE, {}).value;
+    void *mapped_rchit = hitShaderBindingTableBuffer.getMappedData();
 
     memcpy(mapped_raygen, handles.data(), handle_size);
     memcpy(mapped_miss, handles.data() + handle_size_aligned, handle_size * 2);
