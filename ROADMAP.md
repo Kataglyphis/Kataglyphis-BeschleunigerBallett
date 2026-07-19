@@ -59,7 +59,7 @@ L (multi-day), XL (multi-week).
 - [x] **Perf suite that measures the engine** (M, done 2026-07-19: camera/projection/scene-config/OBJ-parse benchmarks, baseline in BACKLOG.md; CTest registration still open) — Google Benchmark currently
   benchmarks `std::string`; benchmark frame recording / upload paths instead
   and register with CTest.
-- [ ] **Fuzz more surfaces** (S each) — SceneConfig parsing, shader-file
+- [x] **Fuzz more surfaces** (S each — SceneConfig done 2026-07-19; also fixed fuzz targets never enabling CXX_SCAN_FOR_MODULES, which had made engine modules unfuzzable. Shader-file reader and GUI round-trip still open) — SceneConfig parsing, shader-file
   reader, GUI state round-trip; the harness is proven on OBJ parsing.
 
 ## Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
