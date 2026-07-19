@@ -224,12 +224,22 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
     std::array<vk::SubpassDependency, 1> subpass_dependencies{};
 
     subpass_dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-    subpass_dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    subpass_dependencies[0].srcAccessMask = vk::AccessFlags{};
+    // Depth is cleared via loadOp after an initial layout transition; the
+    // dependency must cover EARLY/LATE_FRAGMENT_TESTS + depth writes or the
+    // clear races the transition (SYNC-HAZARD-WRITE-AFTER-WRITE).
+    subpass_dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput
+                                           | vk::PipelineStageFlagBits::eEarlyFragmentTests
+                                           | vk::PipelineStageFlagBits::eLateFragmentTests;
+    // The single depth buffer is shared across frames in flight: the
+    // previous frame's storeOp write must be made available before this
+    // frame's clear (cross-submission WAW otherwise).
+    subpass_dependencies[0].srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
 
     subpass_dependencies[0].dstSubpass = 0;
-    subpass_dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    subpass_dependencies[0].dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    subpass_dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput
+                                           | vk::PipelineStageFlagBits::eEarlyFragmentTests;
+    subpass_dependencies[0].dstAccessMask =
+      vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
     subpass_dependencies[0].dependencyFlags = vk::DependencyFlags{};
 
     std::array<vk::AttachmentDescription, 2> render_pass_attachments = { color_attachment, depth_attachment };

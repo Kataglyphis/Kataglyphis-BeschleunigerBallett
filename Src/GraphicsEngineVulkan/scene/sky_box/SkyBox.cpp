@@ -228,10 +228,18 @@ void SkyBox::createRenderPass(vk::Format format, vk::Format depthFormat)
 
     dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencies[0].dstSubpass = 0;
-    dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    dependencies[0].srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-    dependencies[0].dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eColorAttachmentRead;
+    // Cover the depth attachment's transition + load as well (sync hazard
+    // otherwise; see Rasterizer render pass comment).
+    dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput
+                                   | vk::PipelineStageFlagBits::eEarlyFragmentTests
+                                   | vk::PipelineStageFlagBits::eLateFragmentTests;
+    dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput
+                                   | vk::PipelineStageFlagBits::eEarlyFragmentTests;
+    dependencies[0].srcAccessMask =
+      vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+    dependencies[0].dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite
+                                    | vk::AccessFlagBits::eColorAttachmentRead
+                                    | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
     dependencies[0].dependencyFlags = vk::DependencyFlagBits::eByRegion;
 
     dependencies[1].srcSubpass = 0;

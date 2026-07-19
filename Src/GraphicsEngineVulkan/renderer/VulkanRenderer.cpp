@@ -797,20 +797,10 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
 
     skyBox.recordCommands(commandBuffer, image_index, rasterizer_descriptor_sets, guiSceneSharedVars.skybox_enabled);
 
-    vk::ImageMemoryBarrier colorBarrier{};
-    colorBarrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-    colorBarrier.dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead;
-    colorBarrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
-    colorBarrier.newLayout = vk::ImageLayout::eColorAttachmentOptimal;
-    colorBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    colorBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    colorBarrier.image = vulkanSwapChain.getSwapChainImage(image_index).getImage();
-    colorBarrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    colorBarrier.subresourceRange.baseMipLevel = 0;
-    colorBarrier.subresourceRange.levelCount = 1;
-    colorBarrier.subresourceRange.baseArrayLayer = 0;
-    colorBarrier.subresourceRange.layerCount = 1;
-    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::DependencyFlags{}, {}, {}, colorBarrier);
+    // NOTE: a same-layout swapchain barrier
+    // (eColorAttachmentOptimal -> eColorAttachmentOptimal) used to sit here;
+    // synchronization validation (khronos_validation.validate_sync) confirms
+    // the post render pass's external dependency already covers the ordering.
 
     std::vector<vk::DescriptorSet> post_descriptor_sets = { post_descriptor_set[image_index] };
     postStage.recordCommands(commandBuffer, image_index, post_descriptor_sets, guiSceneSharedVars.clouds_enabled, guiSceneSharedVars.shadows_enabled, guiSceneSharedVars.skybox_enabled);
