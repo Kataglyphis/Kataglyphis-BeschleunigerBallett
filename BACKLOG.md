@@ -106,6 +106,97 @@ that are *not* exercised that way and should be run periodically:
   container layout). Either run tidy inside the container, or accept that
   coverage is limited to the non-module surface.
 
+## CI and release gaps
+
+- **Windows CI tests nothing.** `Windows.yml` passes `-SkipTests
+  -SkipPerfTests`; it only proves the code compiles. Every behavioural
+  guarantee on Windows comes from a human running the suite locally, even
+  though the GPU integration tests pass here routinely. Options: a
+  self-hosted runner with a GPU, or at minimum run the non-GPU tests
+  (camera/scene-config/fuzz) on the hosted runner.
+- **Packaging paths are never exercised.** DEB (`linux-release-deb`), WiX
+  (`windows-clang-release-wix`) and MSIX are configured but nothing builds
+  them in CI, so breakage surfaces at release time.
+- **Coverage is clang-only** (Linux). GCC and Windows contribute no
+  coverage data, which skews what Codecov reports.
+- **Docs builds are unverified.** Sphinx/Doxygen output is deployed by
+  `Linux.yml` but nothing checks for broken links or missing pages first.
+- **Golden-image CI** for the Rust renderer: the headless tests already
+  render; storing reference images per GPU vendor would catch shader
+  regressions that structural assertions miss (they were designed to be
+  driver-independent, which is also their blind spot).
+
+## Startup and build-time costs
+
+- **GLSL is recompiled from source at every pipeline build.** The
+  persisted `VkPipelineCache` helps the driver side, but `ShaderHelper`
+  still runs the front end on every startup and every hot reload.
+  `Resources/Shaders/**/spv/*.spv` already exists - consuming prebuilt
+  SPIR-V (falling back to runtime compilation when the source is newer)
+  would cut startup and make hot-reload stalls proportional to the one
+  shader that changed.
+- **Container builds take ~6 minutes**, dominated by streaming the tree
+  in and the build tree back (the Dev Drive blocks bind mounts, see
+  [[stevedore-container-builds]]). Worth timing `sccache` hit rates and
+  checking whether a persistent named volume for the build tree beats the
+  tar-pipe.
+- **Module dependency scanning** (`clang-scan-deps`) runs over all 53
+  `.ixx` files each configure; measure before assuming it is free.
+
+## Developer-experience papercuts (all hit during the 2026-07 campaign)
+
+- Host `cmake` is 3.29 and **cannot read this repo's `CMakePresets.json`**
+  (`version: 10`); only the container's newer CMake can. Anyone running
+  `cmake --list-presets` on the host gets a confusing parse error.
+- **LLVM is not on `PATH`** despite being installed - see
+  `docs/code-quality.md` for the absolute paths.
+- **Swapchain screenshots read black while the desktop session is
+  locked**, with no error - a capture path that silently lies. Always
+  take a control capture of a known-good app before believing a black
+  frame is a regression.
+- **Build containers occasionally survive a successful build**
+  (`wcifs teardown lock`); a stale container makes it look like a build is
+  still running. Compare the newest `logs/windows/build-summary-*.json`
+  timestamp against container start before assuming.
+- `Scripts/Windows/Build-Windows-Container.ps1` takes `-Configurations`,
+  not `-Preset`; passing the wrong one silently builds **all four**
+  configurations.
+
+## Architecture debt not yet sized
+
+- **`VulkanRenderer` is still the hub.** PipelineBuilder (-416 lines) and
+  DescriptorSetGroup (-617) shrank it a lot, but it still owns the
+  swapchain, sync objects, UBOs, five stages and four foreign pointers
+  (`Window*`, `Scene*`, `GUI*`, `Camera*`). Candidate extractions:
+  `FrameSync` (fences/semaphores/frame index), `SwapchainTarget`
+  (swapchain + framebuffers + recreation), a stage registry so adding a
+  pass does not mean editing the renderer.
+- **Device-lost teardown is special-cased in `App.cpp`** (scene/GUI
+  cleanup is skipped) - a symptom of ownership living in the wrong place.
+  Full RAII up the stack would remove the special case entirely.
+- **`GUI*` is a mutable cross-cutting dependency**: both `Scene` and
+  `VulkanRenderer` read GUI state each frame. A plain settings struct
+  owned by the app, passed by const reference, would decouple them.
+- **One object only.** `shader.frag` hard-codes `object_description.i[0]`
+  ("for now only one object allowed"); the whole material/descriptor path
+  assumes it. Multi-object support is a prerequisite for any real scene.
+
+## Rust renderer ideas (unsized)
+
+- **Render-graph v2**: the current graph validates declared read/write
+  wiring but does not schedule or alias resources. Automatic barrier
+  placement and transient-resource aliasing are the natural next steps -
+  worth it only when pass count grows again.
+- **Texture streaming / bindless**: the renderer binds per-primitive sets;
+  a bindless array plus streaming would be needed for photogrammetry-scale
+  scenes (the Colosseum case).
+- **wgpu timestamp queries** to mirror the C++ per-pass GPU timings, so
+  the side-by-side comparison harness can compare *timings*, not just
+  pixels.
+- **Wasm size budget**: the demo payload is ~3.7 MB uncompressed and
+  nothing tracks it; `wasm-opt -Oz` plus a CI size gate would keep the
+  Sphinx-hosted demo honest.
+
 ## Housekeeping candidates
 
 - The `x64-Clang-Windows-Release` preset survives only because
