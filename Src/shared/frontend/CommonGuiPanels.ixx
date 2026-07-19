@@ -52,4 +52,26 @@ inline void renderCommonFrameStats()
     ImGui::TextUnformatted(text.str().c_str());
 }
 
+// Per-pass GPU timings panel. `pass_ms` holds `pass_count` smoothed values in
+// milliseconds; entries < 0 render as "n/a" (pass disabled or no sample yet).
+// When `supported` is false (no timestamp support on the queue family) the
+// panel only shows "unavailable".
+inline void renderGpuTimingsPanel(bool supported, const float *pass_ms, const char *const *pass_names, int pass_count)
+{
+    if (!ImGui::CollapsingHeader("GPU timings")) { return; }
+
+    if (!supported) {
+        ImGui::TextDisabled("unavailable (no timestamp support on this queue family)");
+        return;
+    }
+
+    for (int i = 0; i < pass_count; i++) {
+        if (pass_ms[i] >= 0.0F) {
+            ImGui::Text("%-18s %6.3f ms", pass_names[i], static_cast<double>(pass_ms[i]));
+        } else {
+            ImGui::Text("%-18s    n/a", pass_names[i]);
+        }
+    }
+}
+
 }// namespace Kataglyphis::Frontend

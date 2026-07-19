@@ -20,6 +20,7 @@
 
 module kataglyphis.vulkan.post_stage;
 
+import kataglyphis.vulkan.debug;
 import kataglyphis.vulkan.file;
 import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.texture;
@@ -106,8 +107,11 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout, 0, descriptorSets, nullptr);
     commandBuffer.draw(3, 1, 0, 0);
 
-    ImGui::Render();
-    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), static_cast<VkCommandBuffer>(commandBuffer));
+    {
+        Kataglyphis::debug::ScopedCmdLabel const gui_label(commandBuffer, "gui", { 0.90F, 0.70F, 0.20F, 1.0F });
+        ImGui::Render();
+        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), static_cast<VkCommandBuffer>(commandBuffer));
+    }
 
     commandBuffer.endRenderPass();
 }

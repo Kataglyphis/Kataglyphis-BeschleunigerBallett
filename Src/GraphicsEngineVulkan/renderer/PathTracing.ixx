@@ -43,10 +43,11 @@ class PathTracing
     [[maybe_unused]] vk::PushConstantRange pc_range{ vk::ShaderStageFlagBits::eAll, 0, 0 };
     PushConstantPathTracing push_constant{ glm::vec4(0.f), 0, 0 };
 
-    float timeStampPeriod{ 0 };
-    [[maybe_unused]] uint64_t pathTracingTiming{ 0 };
-    uint32_t query_count{ 2 };
-    vk::QueryPool queryPool{};
+    // NOTE: this stage used to own a private 2-query timestamp pool that was
+    // written every frame but never read back. Per-pass GPU timing now lives
+    // centrally in VulkanRenderer (one pool, per-swapchain-image slices, read
+    // back a frame later); the renderer's "Main" pass brackets this stage, so
+    // the private pool was removed instead of being wired in.
 
     struct
     {
@@ -65,7 +66,6 @@ class PathTracing
 
     SpecializationData specializationData;
 
-    void createQueryPool();
     void createPipeline(const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts);
 };
 }// namespace Kataglyphis::VulkanRendererInternals

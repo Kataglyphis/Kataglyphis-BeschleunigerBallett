@@ -15,6 +15,7 @@ import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.global_ubo;
 import kataglyphis.vulkan.gui;
+import kataglyphis.vulkan.gui_renderer_shared_vars;
 import kataglyphis.vulkan.instance;
 import kataglyphis.vulkan.path_tracing;
 import kataglyphis.vulkan.post_stage;
@@ -122,6 +123,61 @@ class VulkanRenderer
     std::vector<vk::Fence> images_in_flight_fences;
     void createSynchronization();
     void cleanUpSync();
+
+    // -- per-pass GPU timing (timestamp query pool)
+    // Layout: one slice of GPU_TIMING_QUERIES_PER_IMAGE queries per swapchain
+    // image, two queries (start/end) per timed pass. A frame resets only its
+    // own image's slice inside its command buffer, and results are read back
+    // for that slice on the NEXT use of the image (after its fence signaled),
+    // so queries are never reset while still in flight.
+    static constexpr uint32_t GPU_TIMING_QUERIES_PER_PASS = 2;
+    static constexpr uint32_t GPU_TIMING_QUERIES_PER_IMAGE =
+      GPU_TIMING_QUERIES_PER_PASS
+      * static_cast<uint32_t>(VulkanRendererInternals::FrontendShared::GPU_TIMED_PASS_COUNT);
+    bool gpu_timings_supported{ false };
+    float gpu_timestamp_period{ 0.0f };
+    uint64_t gpu_timestamp_mask{ ~0ULL };
+    vk::QueryPool gpu_timing_query_pool{};
+    // Per swapchain image: bitmask of passes actually recorded last time.
+    std::vector<uint32_t> gpu_timing_pass_mask;
+    // Per swapchain image: whether the slice was ever reset+written (freshly
+    // created pools contain queries in an undefined state that must not be
+    // read).
+    std::vector<bool> gpu_timing_slice_recorded;
+
+    struct GpuPassAverage
+    {
+        static constexpr uint32_t WINDOW = 30;
+        std::array<float, WINDOW> samples{};
+        uint32_t count{ 0 };
+        uint32_t next{ 0 };
+        float sum{ 0.0f };
+        float add(float value)
+        {
+            if (count == WINDOW) {
+                sum -= samples[next];
+            } else {
+                count++;
+            }
+            samples[next] = value;
+            sum += value;
+            next = (next + 1) % WINDOW;
+            return sum / static_cast<float>(count);
+        }
+        void reset()
+        {
+            count = 0;
+            next = 0;
+            sum = 0.0f;
+        }
+    };
+    std::array<GpuPassAverage, VulkanRendererInternals::FrontendShared::GPU_TIMED_PASS_COUNT> gpu_pass_averages{};
+
+    void createGpuTimingResources();
+    void destroyGpuTimingResources();
+    // Reads back the previous results of image_index's slice (never waits) and
+    // publishes smoothed per-pass milliseconds to the GUI shared vars.
+    void readGpuTimings(uint32_t image_index);
 
     Kataglyphis::VulkanRendererInternals::ASManager asManager;
     VulkanBuffer objectDescriptionBuffer;

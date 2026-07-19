@@ -1,5 +1,6 @@
 module;
 
+#include <array>
 #include <cstdio>
 #include <iostream>
 #include <sstream>
@@ -86,5 +87,26 @@ void setupDebugging(vk::Instance instance, vk::DebugReportFlagsEXT /*flags*/, vk
 void freeDebugCallback(vk::Instance instance)
 {
     if (debugUtilsMessenger) { instance.destroyDebugUtilsMessengerEXT(debugUtilsMessenger, nullptr); }
+}
+
+void beginCmdLabel(vk::CommandBuffer commandBuffer, const char *name, const std::array<float, 4> &color)
+{
+    // VK_EXT_debug_utils is only enabled together with the validation layers;
+    // the dynamic dispatcher leaves the pointer null otherwise.
+    if (VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdBeginDebugUtilsLabelEXT == nullptr) { return; }
+
+    vk::DebugUtilsLabelEXT label{};
+    label.pLabelName = name;
+    label.color[0] = color[0];
+    label.color[1] = color[1];
+    label.color[2] = color[2];
+    label.color[3] = color[3];
+    commandBuffer.beginDebugUtilsLabelEXT(label);
+}
+
+void endCmdLabel(vk::CommandBuffer commandBuffer)
+{
+    if (VULKAN_HPP_DEFAULT_DISPATCHER.vkCmdEndDebugUtilsLabelEXT == nullptr) { return; }
+    commandBuffer.endDebugUtilsLabelEXT();
 }
 }// namespace Kataglyphis::debug

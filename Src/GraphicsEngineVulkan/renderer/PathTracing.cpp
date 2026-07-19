@@ -33,7 +33,6 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::init(std::shared_ptr<Vul
     this->device = in_device;
 
     vk::PhysicalDeviceProperties const physicalDeviceProps = device->getPhysicalDeviceProperties();
-    timeStampPeriod = physicalDeviceProps.limits.timestampPeriod;
 
     computeLimits.maxComputeWorkGroupCount[0] = physicalDeviceProps.limits.maxComputeWorkGroupCount[0];
     computeLimits.maxComputeWorkGroupCount[1] = physicalDeviceProps.limits.maxComputeWorkGroupCount[1];
@@ -44,8 +43,6 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::init(std::shared_ptr<Vul
     computeLimits.maxComputeWorkGroupSize[0] = physicalDeviceProps.limits.maxComputeWorkGroupSize[0];
     computeLimits.maxComputeWorkGroupSize[1] = physicalDeviceProps.limits.maxComputeWorkGroupSize[1];
     computeLimits.maxComputeWorkGroupSize[2] = physicalDeviceProps.limits.maxComputeWorkGroupSize[2];
-
-    createQueryPool();
 
     createPipeline(descriptorSetLayouts);
 }
@@ -63,12 +60,6 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
   VulkanSwapChain *vulkanSwapChain,
   const std::vector<vk::DescriptorSet> &descriptorSets)
 {
-    uint32_t query = 0;
-
-    commandBuffer.resetQueryPool(queryPool, 0, query_count);
-
-    commandBuffer.writeTimestamp(vk::PipelineStageFlagBits::eComputeShader, queryPool, query++);
-
     Kataglyphis::VulkanRendererInternals::QueueFamilyIndices const indices = device->getQueueFamilies();
 
     vk::ImageSubresourceRange subresourceRange{};
@@ -131,8 +122,6 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
       {},
       {},
       { pathTracingToPresentImageBarrier });
-
-    commandBuffer.writeTimestamp(vk::PipelineStageFlagBits::eComputeShader, queryPool, query++);
 }
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::cleanUp()
@@ -150,24 +139,11 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::cleanUp()
         device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
         pipeline_layout = nullptr;
     }
-    if (queryPool) {
-        device->getLogicalDevice().destroyQueryPool(queryPool);
-        queryPool = nullptr;
-    }
 
     device.reset();
 }
 
 Kataglyphis::VulkanRendererInternals::PathTracing::~PathTracing() { cleanUp(); }
-
-void Kataglyphis::VulkanRendererInternals::PathTracing::createQueryPool()
-{
-    vk::QueryPoolCreateInfo queryPoolInfo{};
-    queryPoolInfo.queryType = vk::QueryType::eTimestamp;
-    queryPoolInfo.pipelineStatistics = {};
-    queryPoolInfo.queryCount = query_count;
-    queryPool = device->getLogicalDevice().createQueryPool(queryPoolInfo).value;
-}
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
   const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)

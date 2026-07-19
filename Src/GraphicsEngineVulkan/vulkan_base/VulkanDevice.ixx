@@ -36,6 +36,11 @@ class VulkanDevice
     // Device-wide pipeline cache persisted to disk across runs. May be a null
     // handle if cache creation failed; every Vulkan entry point accepts that.
     vk::PipelineCache getPipelineCache() const { return pipeline_cache; };
+    // Nanoseconds per timestamp tick (physical-device limit).
+    float getTimestampPeriod() const { return device_properties.limits.timestampPeriod; };
+    // timestampValidBits of the graphics queue family; 0 means the queue
+    // family does not support timestamp queries at all.
+    uint32_t getGraphicsQueueTimestampValidBits() const { return graphics_queue_timestamp_valid_bits; };
 
     void cleanUp();
 
@@ -56,6 +61,7 @@ class VulkanDevice
     bool deviceSupportsHardwareAcceleratedRRT = true;
     bool deviceSupportsBufferDeviceAddress = false;
     vk::DeviceSize deviceAddressAlignment{ 1 };
+    uint32_t graphics_queue_timestamp_valid_bits{ 0 };
 
     // VMA allocator owning all buffer/image memory. Created right after the
     // logical device; destroyed in cleanUp() right before the logical device.

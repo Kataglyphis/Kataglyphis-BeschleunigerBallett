@@ -374,6 +374,18 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     // get the queue family indices for the chosen physical device
     Kataglyphis::VulkanRendererInternals::QueueFamilyIndices const indices = getQueueFamilies();
 
+    // Cache the timestamp support of the graphics queue family. 0 valid bits
+    // means vkCmdWriteTimestamp is not usable on that queue at all; the
+    // renderer's GPU-timing feature keys off this value.
+    {
+        std::vector<vk::QueueFamilyProperties> const queue_family_props = physical_device.getQueueFamilyProperties();
+        if (indices.graphics_family >= 0
+            && static_cast<size_t>(indices.graphics_family) < queue_family_props.size()) {
+            graphics_queue_timestamp_valid_bits =
+              queue_family_props[static_cast<size_t>(indices.graphics_family)].timestampValidBits;
+        }
+    }
+
     // vector for queue creation information and set for family indices
     std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
     std::set<int> const queue_family_indices = {
