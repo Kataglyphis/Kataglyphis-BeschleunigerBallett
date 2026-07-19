@@ -6,8 +6,17 @@
 // the cascaded shadow maps were rendered for months while no shader sampled
 // them - every existing test still passed because nothing ever inspected a
 // rendered pixel. ShadowsDarkenSomePixels below is the direct guard for that.
+//
+// CAUTION when adding assertions here (learned 2026-07-19): the captured frame
+// is dominated by the ImGui overlay, and the 3D scene contributes far fewer
+// pixels than it looks. Classifying pixels by "pure" colour silently measures
+// only the GUI, because the capture is tonemapped - a shader emitting (0,1,0)
+// does not arrive as (0,255,0). Any pixel-classifying diagnostic added here
+// must first be validated against a control (e.g. a shader forced to a known
+// constant) before its numbers are trusted.
 
 #include <gtest/gtest.h>
+#include <glm/glm.hpp>
 #include <iostream>
 #include <vulkan/vulkan.hpp>
 #define GLFW_INCLUDE_NONE
@@ -287,6 +296,12 @@ TEST(GoldenRender, DISABLED_ShadowsDarkenSomePixels)
     // only the intensity the lighting shaders apply changes. That isolates
     // "the shadow map is sampled" from "the shadow pass runs".
     scene_vars.shadows_enabled = true;
+
+    // The default camera sits at (0, 2, 0) looking along -Z, which puts the
+    // model (bounds x[-0.59,0.74] y[-0.72,0.74] z[-0.11,0.93]) directly BELOW
+    // it and entirely out of frame. Verified by forcing shader.frag to emit
+    // solid magenta: the captured mean luminance did not move at all.
+    harness.camera->set_camera_position(glm::vec3(0.0F, 0.5F, 2.0F));
 
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
