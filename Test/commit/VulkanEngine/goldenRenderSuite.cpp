@@ -291,12 +291,28 @@ TEST(GoldenRender, RendersNonBlankFrame)
 // against a run-to-run noise floor of ~0.04, and per-pixel deltas fall under
 // the 4.0 CHANGE_THRESHOLD.
 //
-// What remains is a TEST-SCENE problem, not a renderer one: the scene must be
-// lit brightly enough for a 36% occlusion to clear the threshold. Raising
-// direcional_light_radiance to 60 did NOT brighten the frame (mean went
-// 28.51 -> 28.03), so the lighting path needs understanding before this is
-// re-enabled. Do NOT simply lower CHANGE_THRESHOLD - the noise floor is
-// already ~600 pixels at 4.0.
+// UPDATE 2026-07-19 (third pass, after the debug scene changed to Dinosaurs):
+// the scene is now bright (mean luminance 65 vs 26) and the geometry fills a
+// large part of the frame, so the old brightness objection is gone. The test
+// still fails, and the reason is now specific and worth knowing:
+//
+//   measured against forced black/white reference frames,
+//   only 1.4% of geometry fragments are occluded by CSM.
+//
+// The prominent shadow visible under the dinosaurs in the app is BAKED INTO
+// THE MODEL, not cast by the shadow maps - flipping cascaded_shadow_intensity
+// from 0 to 1 moves only ~331 pixels out of 466944. Do not mistake the one for
+// the other when eyeballing this scene.
+//
+// So CSM works (0% -> 1.4% occlusion after the model-matrix fix) but casts
+// very little in this scene. The likely cause is cascade resolution: splits
+// are uniform over [near, far], so cascade 0 still spans ~50 units for a
+// 20-unit scene, and the depth bias then swallows most self-shadowing. A
+// practical/logarithmic split scheme is the next thing to try - the comment in
+// CascadedShadowMap::updateCascades already flags the uniform split as
+// provisional.
+//
+// Do NOT lower CHANGE_THRESHOLD to force a pass.
 TEST(GoldenRender, DISABLED_ShadowsDarkenSomePixels)
 {
     SKIP_WITHOUT_GPU();
@@ -317,20 +333,10 @@ TEST(GoldenRender, DISABLED_ShadowsDarkenSomePixels)
     // "the shadow map is sampled" from "the shadow pass runs".
     scene_vars.shadows_enabled = true;
 
-    // Frame the model. Two things make the default camera useless here:
-    //
-    //  1. It sits at (0, 2, 0) looking along -Z, which puts the model behind
-    //     it (measured clip.w = -0.409, ndc.y = -11.8).
-    //  2. The scene applies a uniform scale of 60 to the model, so the raw OBJ
-    //     bounds x[-0.59,0.74] y[-0.72,0.74] z[-0.11,0.93] become roughly
-    //     x[-35,44] y[-43,44] z[-6.5,55.5], centred at (4.7, 0.5, 24.5) with a
-    //     bounding radius of ~48. Any camera placed a couple of units from the
-    //     origin is INSIDE the geometry and sees only backfaces, which are
-    //     culled - which is why "move the camera closer" produced no geometry.
-    //
-    // Sit back along +Z from the scaled centre so the whole model is in front
-    // of the camera and inside the 45 degree vertical fov.
-    harness.camera->set_camera_position(glm::vec3(4.7F, 0.5F, 174.5F));
+    // The default camera now frames the debug scene (Dinosaurs on its own
+    // ground plane) from outside, so no override is needed here. It used to be
+    // required because the scene was scaled 60x and the camera started inside
+    // the geometry - see the commit that changed the debug scene.
 
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
@@ -341,6 +347,14 @@ TEST(GoldenRender, DISABLED_ShadowsDarkenSomePixels)
     scene_vars.cascaded_shadow_intensity = 0.0F;
     harness.render_frames(SETTLE_FRAMES);
     const std::vector<uint8_t> without_shadows = harness.capture_frame(width, height);
+
+    // Self-calibrating noise mask. The ImGui overlay redraws every frame - the
+    // FPS/ms readout alone flips several hundred pixels - so a raw comparison
+    // of two captures reports ~600 "brightened" pixels that have nothing to do
+    // with shadows. Capture the SAME state twice and treat every pixel that
+    // moved as unusable, then compare shadows only on the stable remainder.
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> noise_reference = harness.capture_frame(width, height);
     ASSERT_FALSE(without_shadows.empty()) << "Capture without shadows returned no pixels.";
 
     scene_vars.cascaded_shadow_intensity = 1.0F;
@@ -363,10 +377,19 @@ TEST(GoldenRender, DISABLED_ShadowsDarkenSomePixels)
     const size_t pixel_count = with_shadows.size() / 4U;
     size_t darkened = 0;
     size_t brightened = 0;
+    size_t unstable = 0;
     double shadowed_region_sum_with = 0.0;
     double shadowed_region_sum_without = 0.0;
 
     for (size_t pixel = 0; pixel < pixel_count; ++pixel) {
+        // Skip anything that moved between two identical captures - that pixel
+        // is overlay/dither, and cannot testify about shadows either way.
+        if (std::abs(luminance_of(without_shadows, pixel) - luminance_of(noise_reference, pixel))
+            > CHANGE_THRESHOLD) {
+            ++unstable;
+            continue;
+        }
+
         const double lum_without = luminance_of(without_shadows, pixel);
         const double lum_with = luminance_of(with_shadows, pixel);
         const double delta = lum_without - lum_with;
@@ -385,8 +408,8 @@ TEST(GoldenRender, DISABLED_ShadowsDarkenSomePixels)
 
     GTEST_LOG_(INFO) << "whole-frame mean luminance: intensity 0.0 = " << mean_luminance(without_shadows)
                      << ", intensity 1.0 = " << mean_luminance(with_shadows) << "; pixels darkened = " << darkened
-                     << " (" << (darkened_fraction * 100.0) << "%), brightened = " << brightened << " of "
-                     << pixel_count;
+                     << " (" << (darkened_fraction * 100.0) << "%), brightened = " << brightened
+                     << ", unstable/overlay skipped = " << unstable << " of " << pixel_count;
 
     // 1. A shadowed region must exist at all.
     ASSERT_GT(darkened, 0U) << "Not a single pixel changed when the shadow intensity went from 0.0 to 1.0. "
