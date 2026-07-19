@@ -45,6 +45,9 @@ validation-layer-clean runtime check where rendering changed.
 
 ## Verification pattern
 
+This is the canonical description; `AGENTS.md` links here rather than
+restating it.
+
 Container build (`Scripts/Windows/Build-Windows-Container.ps1
 -Configurations 'clangcl-debug'`, tar-pipe fallback on Dev Drive) →
 `build-clangcl-debug/commitTestSuite.exe` directly (host ctest cannot read

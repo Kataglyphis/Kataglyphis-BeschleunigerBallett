@@ -202,7 +202,9 @@ Containerized and reproducible environment details live in [Kataglyphis-Containe
 - Continue documenting build, packaging, and API workflows
 - Keep generated reference material easy to reproduce locally
 
-All open work is consolidated in [`ROADMAP.md`](ROADMAP.md).
+All open work is consolidated in [`ROADMAP.md`](ROADMAP.md); unsized ideas
+and recurring chores (perf tests, periodic profile/TSan/sync-validation runs)
+live in [`BACKLOG.md`](BACKLOG.md).
 Renderer-specific plans and status live in `docs/`:
 `webgpu-renderer-roadmap.md` (Rust WebGPU renderer),
 `cpp-renderer-improvements.md` (C++ engine improvement campaign),

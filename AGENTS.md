@@ -22,6 +22,13 @@ pick a preset. `cmake --list-presets` shows what is available per platform.
 | `clangcl-release` | `x64-ClangCL-Windows-Release` | `build-clangcl-release` | Release + CPack packaging |
 | `msvc-debug` / `msvc-release` | `x64-MSVC-Windows-*` | `build-msvc-debug` | MSVC (cl) builds, optional steps |
 
+There is also a configure-only `x64-ClangCL-Windows-Debug-ASan` preset
+(AddressSanitizer without the fuzzing-mode extras). Test presets exist per
+main configuration (`test-<configure-preset>`); the plain-Clang
+`x64-Clang-Windows-{Debug,Profile,RelWithDebInfo}` presets were removed in
+2026-07 as unused duplicates of the ClangCL set. `x64-Clang-Windows-Release`
+stays: the `windows-clang-release-wix` package preset builds on it.
+
 Typical full sweep (ASAN debug, TSan debug, profile, release):
 
 ```powershell
@@ -157,9 +164,24 @@ live next to it. Vulkan SDK env can be injected with `--vulkan-setup-script`.
 
 - C++ tests: `ctest --test-dir <build-dir> --output-on-failure` (add `-C Debug` for
   multi-config generators). `Build-Windows.ps1` runs them unless `-SkipTests`.
+  Test presets exist per main configuration (`test-<configure-preset>`).
 - Benchmarks: `clangcl-profile` builds `perfTestSuite.exe`; run via
   `Build-Windows.ps1` without `-SkipPerfTests`.
 - PowerShell module tests: Pester suites under `Scripts/Windows/tests/`.
+
+**Adding tests is always in scope.** You do not need permission to improve
+or extend the suites — a change that fixes behaviour should generally arrive
+with a test that would have caught it. Prefer assertions that survive driver
+and machine differences (structural pixel properties, invariants, ordering)
+over exact-value comparisons, and make GPU-dependent tests skip themselves
+when no adapter is present rather than fail. Ideas worth picking up live in
+[`BACKLOG.md`](BACKLOG.md); sized commitments live in [`ROADMAP.md`](ROADMAP.md).
+
+**Run more than the debug loop periodically.** `clangcl-debug` is the fast
+default, but `clangcl-profile` (optimized, and the only configuration where
+benchmarks mean anything), `clangcl-tsan`, and a synchronization-validation
+pass each catch classes of problem the debug loop cannot. See
+[`BACKLOG.md`](BACKLOG.md) for what each one is for.
 
 ## Code Conventions (C++ engine)
 
@@ -174,12 +196,26 @@ live next to it. Vulkan SDK env can be injected with `--vulkan-setup-script`.
   (`cleanUp()` remains for explicit early teardown and is idempotent).
 - A `VkPipelineCache` persists to `pipeline_cache/kataglyphis_pipeline.cache`
   (gitignored, written on graceful shutdown only).
-- The improvement campaign log (what changed, what is queued):
-  `docs/cpp-renderer-improvements.md`.
+- Per-unit verification pattern (container build -> direct test exe ->
+  validation run) and the log of what changed and why:
+  [`docs/cpp-renderer-improvements.md`](docs/cpp-renderer-improvements.md).
+  Do not restate it here — that document is the source of truth.
 
 ## Docs
 
-- `README.md` — repo-level orientation.
-- `docs/source/` — Sphinx pages (`getting_started.md`, `documentation_workflow.md`).
+Each topic has exactly one home; link, do not copy.
+
+| Where | Owns |
+| --- | --- |
+| `README.md` | Repo-level orientation, feature highlights |
+| `ROADMAP.md` | Agreed future work, sized, with blocked items marked |
+| `BACKLOG.md` | Unsized ideas and recurring chores (perf tests, periodic runs) |
+| `AGENTS.md` (this file) | How to build/test/run here, invariants, code conventions |
+| `docs/cpp-renderer-improvements.md` | C++ engine change log + verification pattern |
+| `docs/webgpu-renderer-roadmap.md` | Rust WebGPU renderer status per feature |
+| `docs/shader-sharing.md` | WGSL -> SPIR-V/GLSL pipeline between both renderers |
+| `docs/webgpu-srgb-audit.md` | Colour-space decisions and the one known deviation |
+| `docs/source/` | Sphinx pages (`getting_started.md`, `documentation_workflow.md`) |
+
 - Keep docs, scripts, and presets aligned: when you change build behavior, update
   `README.md`, `docs/source/getting_started.md`, and this file in the same change.
