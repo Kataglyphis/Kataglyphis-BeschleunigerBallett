@@ -20,10 +20,35 @@ therefore started with an empty cache and recompiled all ~900 objects. The
 statistics in the build log made this visible: `Cache hits 0`,
 `Cache misses 0`, `Cache hits rate -`.
 
-**Fix:** a persistent Docker **named volume** (`kataglyphis-sccache`) mounted
-at `C:\sccache`, with `SCCACHE_DIR` pointing at it and a 20 GB budget. The
-volume outlives containers, so objects cached by one build are reused by the
-next. Wired into both the bind-mount and tar-pipe code paths.
+**Attempted fix (mechanism works, benefit NOT yet realised):** a persistent
+Docker **named volume** (`kataglyphis-sccache`) mounted at `C:\sccache`, with
+`SCCACHE_DIR` pointing at it and a 20 GB budget, wired into both the
+bind-mount and tar-pipe code paths.
+
+**Measured 2026-07-19 — it does not help yet.** sccache reports the volume as
+its location (`Cache location Local disk: "C:\sccache"`, `Max cache size
+20 GiB`), so the env var and mount take effect. But after a full build:
+
+```
+Compile requests            907
+Cache hits rate            0.00 %
+Cache misses                780
+Cache size                0 bytes   <-- nothing is being written
+```
+
+Zero bytes stored means this is a **write** problem, not a key-stability
+problem. Candidates, in order of suspicion:
+
+1. The container user (`ContainerAdministrator`) may lack write permission on
+   the mounted Windows named volume.
+2. The build stops the sccache server (`sccache --stop-server`, see
+   `WindowsCMake.Common.psm1`); if it is killed before flushing, entries may
+   never land.
+3. Windows named-volume semantics under process isolation.
+
+Next diagnostic: run `sccache --show-stats` inside a container with the
+volume mounted, write a file to `C:\sccache` manually, and check for an
+error. Until then, builds remain ~350-480 s cold.
 
 Inspect or reset it:
 

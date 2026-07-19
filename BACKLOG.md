@@ -135,6 +135,12 @@ that are *not* exercised that way and should be run periodically:
   SPIR-V (falling back to runtime compilation when the source is newer)
   would cut startup and make hot-reload stalls proportional to the one
   shader that changed.
+- **sccache writes nothing (0 bytes) despite the volume being mounted.** The
+  named volume and `SCCACHE_DIR` take effect (sccache reports `C:\sccache`),
+  but a full build leaves the cache empty, so hit rate stays at 0%. Diagnose
+  write permissions for `ContainerAdministrator` on the volume, and whether
+  `sccache --stop-server` kills the server before it flushes. See
+  `docs/container-build-caching.md`.
 - **Container builds take ~6 minutes**, dominated by streaming the tree
   in and the build tree back (the Dev Drive blocks bind mounts, see
   [[stevedore-container-builds]]). Worth timing `sccache` hit rates and

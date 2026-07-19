@@ -106,6 +106,8 @@ jobs:
           ${{ env.BUILD_DIR }}/first_fuzz_test
           # Real engine surface: OBJ parsing hardening (ObjLoader mirror).
           ${{ env.BUILD_DIR }}/obj_parsing_fuzz_test
+          # Real engine surface: scene-config path resolution.
+          ${{ env.BUILD_DIR }}/scene_config_fuzz_test
         working-directory: ${{ github.workspace }}
 
       # AddressSanitizer + UBSan: catches the memory errors the OBJ-loader

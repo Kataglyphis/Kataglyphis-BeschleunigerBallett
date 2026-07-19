@@ -23,6 +23,11 @@ include(${CMAKE_SOURCE_DIR}/Test/cmake/CommonTestBuild.cmake)
 function(kataglyphis_add_fuzz_test fuzz_target source_file)
   add_executable(${fuzz_target} ${source_file})
 
+  # Fuzz targets that import engine modules need module scanning enabled,
+  # exactly like the unit-test targets (see Test/cmake/CommonTestBuild.cmake).
+  # Without it clang reports: module 'kataglyphis.vulkan.*' not found.
+  set_target_properties(${fuzz_target} PROPERTIES CXX_SCAN_FOR_MODULES ${MYPROJECT_CXX_SCAN_FOR_MODULES})
+
   if(MSVC)
     target_link_libraries(${fuzz_target} PRIVATE kataglyphis_fuzztest_windows_asan)
 
@@ -65,3 +70,7 @@ kataglyphis_add_fuzz_test(example_fuzz_test example_fuzz_test.cpp)
 # Real engine surface: OBJ parsing (mirrors ObjLoader::loadVertices).
 kataglyphis_add_fuzz_test(obj_parsing_fuzz_test obj_parsing_fuzz_test.cpp)
 target_link_libraries(obj_parsing_fuzz_test PRIVATE tinyobjloader)
+
+# Real engine surface: scene-config path resolution (GUI model selection).
+kataglyphis_add_fuzz_test(scene_config_fuzz_test scene_config_fuzz_test.cpp)
+target_link_libraries(scene_config_fuzz_test PRIVATE VulkanEngineCore)
