@@ -215,6 +215,38 @@ function Invoke-TarPipeBuild {
     }
 
     if ($buildExit -ne 0) { throw "Container build failed (exit $buildExit)." }
+
+    # A green build is not proof that anything was produced or delivered. Both
+    # halves of that have already failed here, silently:
+    #   - a build was cut off partway and still looked successful, leaving no
+    #     commitTestSuite.exe at all;
+    #   - the outbound tar used globs, which tar does not expand, so it copied
+    #     NOTHING and only appeared to work because stale host artifacts were
+    #     already in place.
+    # Compare what the container actually has against what reached the host.
+    # Existence, not timestamps: on a no-change build ninja does not relink, so
+    # the executables are legitimately older than this run.
+    foreach ($dir in $existing) {
+      if ($dir -eq 'logs') { continue }
+
+      $containerExes = @(& $docker exec $container cmd /c "dir /b $ws\$dir\*.exe 2>nul" |
+        ForEach-Object { $_.Trim() } | Where-Object { $_ })
+
+      if ($containerExes.Count -eq 0) {
+        throw ("Build reported success but produced no executables in $dir. " +
+          'The build was almost certainly cut off before linking - check the tail of the build log ' +
+          'for a step count that never reached its total.')
+      }
+
+      $notDelivered = @($containerExes | Where-Object { -not (Test-Path (Join-Path (Join-Path $repoRoot $dir) $_)) })
+      if ($notDelivered.Count -gt 0) {
+        throw ("$($notDelivered.Count) executable(s) built in the container never reached the host " +
+          "($dir): $($notDelivered -join ', '). The outbound transfer is broken - anything you run " +
+          'on the host is stale.')
+      }
+
+      Write-Host "Verified $($containerExes.Count) executable(s) delivered from $dir."
+    }
   } finally {
     if ($true) {
       # The container is intentionally reused across builds - that is what makes

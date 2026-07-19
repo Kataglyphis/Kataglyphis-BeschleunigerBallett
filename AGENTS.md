@@ -115,19 +115,19 @@ regenerate-without-rebuilding loop: [`docs/shader-build-pipeline.md`](docs/shade
 
 Builds are **incremental** via a reusable container (`bb-build-persistent`):
 the build tree never leaves it, so only sources go in and only executables +
-logs come out. Measured 48 s for a no-change rebuild and 63 s after touching a
-header, against 352-484 s when every build got a fresh container. Use
-`-FreshContainer` to start clean (deleted files are not pruned from a reused
-container; an image change recreates it automatically).
+logs come out. Measured 2026-07-19: **9.6 s** build step (44 s wall) for a
+no-change rebuild, against 352-484 s when every build got a fresh container.
+Use `-FreshContainer` to start clean — **a file deleted on the host keeps
+building inside a reused container** until it is recreated (an image change
+recreates it automatically).
 
-The general Windows-container findings behind this — the pattern, its safety
-rails, and three approaches that do NOT work — are documented once in
-ContainerHub:
-`ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md`.
-`sccache` is wired to a persistent volume but does **not** help — this is a
-C++23 modules build and its hit rate is measured at 0%. If a build ever
-behaves strangely, delete the build directory for a clean cold build. Full
-measurements, including two approaches that do not work, in
+The build **fails** if the container produced no executables, or if any it
+produced did not reach the host. Both have happened silently.
+
+Why this works and what does not, measured once and not repeated: the general
+Windows-container findings are in
+[ContainerHub](ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md);
+this repo's own numbers and wiring are in
 [`docs/container-build-caching.md`](docs/container-build-caching.md).
 
 ## Rule: Reusable Work Belongs in ContainerHub
