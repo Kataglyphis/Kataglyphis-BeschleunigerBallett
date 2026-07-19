@@ -18,7 +18,7 @@
 				"CMAKE_BUILD_TYPE": "Debug",
 				"CMAKE_C_COMPILER": "clang",
 				"CMAKE_CXX_COMPILER": "clang++",
-        "RUST_FEATURES": "ON",
+				"RUST_FEATURES": "ON",
 				"COMPILER_CACHE": "sccache",
 				"BUILD_TESTING": "TRUE"
 			},
@@ -40,7 +40,7 @@
 				"CMAKE_BUILD_TYPE": "RelWithDebInfo",
 				"CMAKE_C_COMPILER": "clang",
 				"CMAKE_CXX_COMPILER": "clang++",
-        "RUST_FEATURES": "ON",
+				"RUST_FEATURES": "ON",
 				"COMPILER_CACHE": "sccache",
 				"BUILD_TESTING": "TRUE"
 			},
@@ -62,7 +62,7 @@
 				"CMAKE_BUILD_TYPE": "RelWithDebInfo",
 				"CMAKE_C_COMPILER": "clang",
 				"CMAKE_CXX_COMPILER": "clang++",
-        "RUST_FEATURES": "ON",
+				"RUST_FEATURES": "ON",
 				"COMPILER_CACHE": "sccache",
 				"BUILD_TESTING": "FALSE"
 			},
@@ -84,9 +84,9 @@
 				"CMAKE_BUILD_TYPE": "Release",
 				"CMAKE_C_COMPILER": "clang",
 				"CMAKE_CXX_COMPILER": "clang++",
-        "RUST_FEATURES": "ON",
+				"RUST_FEATURES": "ON",
 				"COMPILER_CACHE": "sccache",
-		    "BUILD_TESTING": "FALSE"
+				"BUILD_TESTING": "FALSE"
 			},
 			"condition": {
 				"type": "equals",
@@ -106,7 +106,7 @@
 				"CMAKE_BUILD_TYPE": "Debug",
 				"CMAKE_C_COMPILER": "gcc",
 				"CMAKE_CXX_COMPILER": "g++",
-        "RUST_FEATURES": "ON",
+				"RUST_FEATURES": "ON",
 				"COMPILER_CACHE": "ccache",
 				"BUILD_TESTING": "TRUE"
 			},
@@ -178,7 +178,7 @@
 				"CMAKE_BUILD_TYPE": "RelWithDebInfo",
 				"CMAKE_C_COMPILER": "gcc",
 				"CMAKE_CXX_COMPILER": "g++",
-        "RUST_FEATURES": "ON",
+				"RUST_FEATURES": "ON",
 				"COMPILER_CACHE": "ccache",
 				"BUILD_TESTING": "TRUE"
 			},
@@ -201,8 +201,8 @@
 				"CMAKE_C_COMPILER": "gcc",
 				"CMAKE_CXX_COMPILER": "g++",
 				"COMPILER_CACHE": "ccache",
-        "RUST_FEATURES": "ON",
-        "BUILD_TESTING": "FALSE"
+				"RUST_FEATURES": "ON",
+				"BUILD_TESTING": "FALSE"
 			},
 			"condition": {
 				"type": "equals",
@@ -223,8 +223,8 @@
 				"CMAKE_C_COMPILER": "gcc",
 				"CMAKE_CXX_COMPILER": "g++",
 				"COMPILER_CACHE": "ccache",
-        "RUST_FEATURES": "ON",
-        "BUILD_TESTING": "FALSE"
+				"RUST_FEATURES": "ON",
+				"BUILD_TESTING": "FALSE"
 			},
 			"condition": {
 				"type": "equals",
@@ -243,7 +243,7 @@
 				"CMAKE_C_COMPILER": "cl",
 				"CMAKE_CXX_COMPILER": "cl",
 				"CMAKE_BUILD_TYPE": "Debug",
-        "RUST_FEATURES": "ON",
+				"RUST_FEATURES": "ON",
 				"BUILD_TESTING": "TRUE",
 				"COMPILER_CACHE": "sccache",
 				"myproject_ENABLE_SANITIZER_ADDRESS": "OFF"
@@ -268,10 +268,10 @@
 				"CMAKE_VERBOSE_MAKEFILE": "ON",
 				"CMAKE_C_COMPILER": "cl",
 				"CMAKE_CXX_COMPILER": "cl",
-        "RUST_FEATURES": "ON",
+				"RUST_FEATURES": "ON",
 				"CMAKE_BUILD_TYPE": "Release",
 				"COMPILER_CACHE": "sccache",
-        "BUILD_TESTING": "FALSE"
+				"BUILD_TESTING": "FALSE"
 			},
 			"condition": {
 				"type": "equals",
@@ -337,13 +337,13 @@
 			"name": "x64-ClangCL-Windows-RelWithDebInfo",
 			"inherits": "x64-ClangCL-Windows-RelWithDebInfo-Base"
 		},
-    {
-      "name": "x64-ClangCL-Windows-Profile",
-	      "inherits": "x64-ClangCL-Windows-RelWithDebInfo-Base",
-      "cacheVariables": {
-	        "BUILD_TESTING": "TRUE"
-	      }
-    },
+		{
+			"name": "x64-ClangCL-Windows-Profile",
+			"inherits": "x64-ClangCL-Windows-RelWithDebInfo-Base",
+			"cacheVariables": {
+				"BUILD_TESTING": "TRUE"
+			}
+		},
 		{
 			"name": "x64-ClangCL-Windows-Debug",
 			"inherits": "x64-ClangCL-Windows-Debug-Base",
@@ -383,48 +383,6 @@
 			"inherits": "x64-ClangCL-Windows-Release-Base"
 		},
 		{
-			"name": "x64-Clang-Windows-RelWithDebInfo",
-			"description": "Windows and Clang",
-			"generator": "Ninja",
-			"binaryDir": "${sourceDir}/build/",
-			"installDir": "${sourceDir}/build/",
-			"cacheVariables": {
-				"CMAKE_VERBOSE_MAKEFILE": "ON",
-				"CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
-				"CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang++.exe",
-				"RUST_FEATURES": "OFF",
-				"CMAKE_BUILD_TYPE": "RelWithDebInfo",
-				"COMPILER_CACHE": "sccache",
-        "BUILD_TESTING": "FALSE"
-			},
-			"condition": {
-				"type": "equals",
-				"lhs": "${hostSystemName}",
-				"rhs": "Windows"
-			}
-		},
-		{
-			"name": "x64-Clang-Windows-Debug",
-			"description": "Windows and Clang",
-			"generator": "Ninja",
-			"binaryDir": "${sourceDir}/build/",
-			"installDir": "${sourceDir}/build/",
-			"cacheVariables": {
-				"CMAKE_VERBOSE_MAKEFILE": "ON",
-				"CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
-				"CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang++.exe",
-				"RUST_FEATURES": "OFF",
-				"CMAKE_BUILD_TYPE": "Debug",
-				"COMPILER_CACHE": "sccache",
-				"BUILD_TESTING": "TRUE"
-			},
-			"condition": {
-				"type": "equals",
-				"lhs": "${hostSystemName}",
-				"rhs": "Windows"
-			}
-		},
-		{
 			"name": "x64-Clang-Windows-Release",
 			"description": "Windows and Clang",
 			"generator": "Ninja",
@@ -444,32 +402,6 @@
 				"lhs": "${hostSystemName}",
 				"rhs": "Windows"
 			}
-		},
-		{
-			"name": "x64-Clang-Windows-Profile",
-			"description": "Windows and Clang",
-			"generator": "Ninja",
-			"binaryDir": "${sourceDir}/build/",
-			"installDir": "${sourceDir}/build/",
-			"cacheVariables": {
-				"CMAKE_VERBOSE_MAKEFILE": "ON",
-				"CMAKE_C_COMPILER": "C:/Program Files/LLVM/bin/clang.exe",
-				"CMAKE_CXX_COMPILER": "C:/Program Files/LLVM/bin/clang++.exe",
-				"RUST_FEATURES": "OFF",
-				"CMAKE_BUILD_TYPE": "RelWithDebInfo",
-				"COMPILER_CACHE": "sccache",
-				"BUILD_TESTING": "TRUE"
-			},
-			"condition": {
-				"type": "equals",
-				"lhs": "${hostSystemName}",
-				"rhs": "Windows"
-			},
-			"vendor": {
-				"microsoft.com/VisualStudioSettings/CMake/1.0": {
-					"intelliSenseMode": "windows-clang-x64"
-				}
-			}
 		}
 	],
 	"buildPresets": [
@@ -478,7 +410,7 @@
 			"jobs": 0,
 			"configurePreset": "linux-debug-clang"
 		},
-    {
+		{
 			"name": "linux-debug-clang",
 			"jobs": 0,
 			"configurePreset": "linux-debug-clang"
@@ -529,11 +461,6 @@
 			"configurePreset": "linux-release-GNU"
 		},
 		{
-			"name": "x64-Clang-Windows-Profile",
-			"jobs": 0,
-			"configurePreset": "x64-Clang-Windows-Profile"
-		},
-		{
 			"name": "x64-ClangCL-Windows-Build",
 			"hidden": true,
 			"jobs": 0
@@ -568,18 +495,6 @@
 			"configuration": "Release"
 		},
 		{
-			"name": "x64-Clang-Windows-Debug",
-			"jobs": 0,
-			"configurePreset": "x64-Clang-Windows-Debug",
-			"configuration": "Debug"
-		},
-		{
-			"name": "x64-Clang-Windows-Release",
-			"jobs": 0,
-			"configurePreset": "x64-Clang-Windows-Release",
-			"configuration": "Release"
-		},
-		{
 			"name": "x64-ClangCL-Windows-Debug",
 			"inherits": "x64-ClangCL-Windows-Build-Debug",
 			"configurePreset": "x64-ClangCL-Windows-Debug"
@@ -594,89 +509,155 @@
 			"inherits": "x64-ClangCL-Windows-Build-Debug",
 			"configurePreset": "x64-ClangCL-Windows-Debug-ASan"
 		},
-    {
-      "name": "x64-ClangCL-Windows-Release",
-	      "inherits": "x64-ClangCL-Windows-Build-Release",
-	      "configurePreset": "x64-ClangCL-Windows-Release"
-    }
+		{
+			"name": "x64-ClangCL-Windows-Release",
+			"inherits": "x64-ClangCL-Windows-Build-Release",
+			"configurePreset": "x64-ClangCL-Windows-Release"
+		},
+		{
+			"name": "x64-Clang-Windows-Release",
+			"jobs": 0,
+			"configurePreset": "x64-Clang-Windows-Release",
+			"configuration": "Release"
+		}
 	],
-  "testPresets": [
-    {
-      "name": "default",
-      "configurePreset": "linux-debug-clang",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error",
-        "stopOnFailure": true
-      }
-    }
-  ],
-  "packagePresets": [
-    {
-      "name": "default",
-      "configurePreset": "linux-debug-clang",
-      "generators": [
-        "TGZ",
-        "DEB"
-      ]
-    },
-    {
-      "name": "linux-release-deb",
-      "displayName": "Linux Release TGZ+DEB",
-      "description": "Erzeugt TGZ und DEB Package für Release",
-      "configurePreset": "linux-release-clang",
-      "generators": [
-        "TGZ",
-        "DEB"
-      ],
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Linux"
-      }
-    },
-    {
-      "name": "windows-clang-release-wix",
-      "displayName": "Windows Release Clang NSIS+WIX",
-      "description": "Erzeugt NSIS (.exe) und WIX (.msi) Installer via CPack",
-      "configurePreset": "x64-Clang-Windows-Release",
-      "generators": [
-        "NSIS",
-        "WIX",
-        "ZIP"
-      ],
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
-      }
-    }
-  ],
-  "workflowPresets": [
-    {
-      "name": "linux-debug-clang-workflow",
-      "displayName": "Linux Debug Clang Workflow",
-      "description": "Workflow preset for linux-debug-clang",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "linux-debug-clang"
-        },
-        {
-          "type": "build",
-          "name": "default"
-        },
-        {
-          "type": "test",
-          "name": "default"
-        },
-        {
-          "type": "package",
-          "name": "default"
-        }
-      ]
-    }
-  ]
+	"testPresets": [
+		{
+			"name": "default",
+			"configurePreset": "linux-debug-clang",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": true
+			}
+		},
+		{
+			"name": "test-linux-debug-GNU",
+			"configurePreset": "linux-debug-GNU",
+			"description": "Linux GNU debug tests",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			}
+		},
+		{
+			"name": "test-x64-ClangCL-Windows-Debug",
+			"configurePreset": "x64-ClangCL-Windows-Debug",
+			"description": "Windows ClangCL debug tests (ASan)",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			}
+		},
+		{
+			"name": "test-x64-ClangCL-Windows-Debug-ASan",
+			"configurePreset": "x64-ClangCL-Windows-Debug-ASan",
+			"description": "Windows ClangCL AddressSanitizer tests",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			}
+		},
+		{
+			"name": "test-x64-ClangCL-Windows-Debug-TSan",
+			"configurePreset": "x64-ClangCL-Windows-Debug-TSan",
+			"description": "Windows ClangCL ThreadSanitizer tests",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			}
+		},
+		{
+			"name": "test-x64-ClangCL-Windows-Profile",
+			"configurePreset": "x64-ClangCL-Windows-Profile",
+			"description": "Windows ClangCL profile (benchmarks)",
+			"output": {
+				"outputOnFailure": true
+			},
+			"execution": {
+				"noTestsAction": "error",
+				"stopOnFailure": false
+			}
+		}
+	],
+	"packagePresets": [
+		{
+			"name": "default",
+			"configurePreset": "linux-debug-clang",
+			"generators": [
+				"TGZ",
+				"DEB"
+			]
+		},
+		{
+			"name": "linux-release-deb",
+			"displayName": "Linux Release TGZ+DEB",
+			"description": "Erzeugt TGZ und DEB Package für Release",
+			"configurePreset": "linux-release-clang",
+			"generators": [
+				"TGZ",
+				"DEB"
+			],
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Linux"
+			}
+		},
+		{
+			"name": "windows-clang-release-wix",
+			"displayName": "Windows Release Clang NSIS+WIX",
+			"description": "Erzeugt NSIS (.exe) und WIX (.msi) Installer via CPack",
+			"configurePreset": "x64-Clang-Windows-Release",
+			"generators": [
+				"NSIS",
+				"WIX",
+				"ZIP"
+			],
+			"condition": {
+				"type": "equals",
+				"lhs": "${hostSystemName}",
+				"rhs": "Windows"
+			}
+		}
+	],
+	"workflowPresets": [
+		{
+			"name": "linux-debug-clang-workflow",
+			"displayName": "Linux Debug Clang Workflow",
+			"description": "Workflow preset for linux-debug-clang",
+			"steps": [
+				{
+					"type": "configure",
+					"name": "linux-debug-clang"
+				},
+				{
+					"type": "build",
+					"name": "default"
+				},
+				{
+					"type": "test",
+					"name": "default"
+				},
+				{
+					"type": "package",
+					"name": "default"
+				}
+			]
+		}
+	]
 }
