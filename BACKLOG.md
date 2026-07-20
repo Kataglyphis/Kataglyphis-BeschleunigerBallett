@@ -408,12 +408,33 @@ unconditional control capture before its output is believed.
 - **Outbound `Artifact extraction failed (exit 1)`** is still reported even
   with the cargo subtree excluded. Artifacts do arrive (verified), but a real
   failure here would leave stale host binaries — worth a proper fix.
-- **sccache writes nothing (0 bytes) despite the volume being mounted.** The
-  named volume and `SCCACHE_DIR` take effect (sccache reports `C:\sccache`),
-  but a full build leaves the cache empty, so hit rate stays at 0%. Diagnose
-  write permissions for `ContainerAdministrator` on the volume, and whether
-  `sccache --stop-server` kills the server before it flushes. See
-  `docs/container-build-caching.md`.
+- **sccache: every write fails, and modules bypass it entirely** (measured
+  2026-07-20; corrects the previous "writes nothing (0 bytes)" note, which was
+  wrong - the cache holds 981 KiB and simply never grows).
+
+  Two independent problems, worth separating:
+
+  1. **Every attempted write errors.** Reproduced twice: 66 write errors from
+     66 misses in one build, then 1 from 1 in a single-file rebuild. The cache
+     size does not move between runs. Cause still unknown - `SCCACHE_ERROR_LOG`
+     and `SCCACHE_LOG` are now passed to the container (they were not), the
+     server was stopped so it would restart and pick them up, and **no error
+     log file appeared**. Next thing to try: run sccache by hand inside the
+     container against a trivial TU, outside the build orchestration, so the
+     failure is not buried in ninja output.
+  2. **C++23 module TUs never reach sccache at all.** Module BMI compiles
+     invoke `clang-cl.exe` directly rather than through
+     `CMAKE_CXX_COMPILER_LAUNCHER`, so most of this build is uncacheable
+     regardless of (1). Even a perfect fix to the write errors leaves the hit
+     rate bounded by the non-module surface. That reframes the whole item: it
+     is worth much less than "20 GiB cache, 0% hit rate" suggests.
+
+  Related gotcha found while trying to force a rebuild: **touching a source
+  file usually does NOT cause the container to recompile it.** One touch
+  produced a rebuild, three later ones produced none. That makes "touch and
+  rebuild" unreliable as a workflow here and is consistent with the tar
+  extraction issue already recorded below - worth pinning down, since it also
+  means a real edit could in principle be missed.
 - **`-FreshContainer` strands the build cache** on the wcifs fallback path:
   the next build takes 367 s instead of 44 s.
 - **Module dependency scanning** (`clang-scan-deps`) runs over all 53

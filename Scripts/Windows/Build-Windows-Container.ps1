@@ -107,6 +107,11 @@ $cacheArgs = @(
   '-v', "${sccacheVolume}:${sccacheDir}",
   '-e', "SCCACHE_DIR=${sccacheDir}",
   '-e', 'SCCACHE_CACHE_SIZE=20G',
+  # Without these, a failing cache write is silent: sccache reports the count
+  # in its stats and discards the reason. Measured 2026-07-20: 66 write errors
+  # out of 66 misses, i.e. every single write failing, with no way to see why.
+  '-e', "SCCACHE_ERROR_LOG=${sccacheDir}\sccache-error.log",
+  '-e', 'SCCACHE_LOG=warn',
   # Build trees are streamed in for incremental builds - do not wipe them.
   '-e', 'KATAGLYPHIS_KEEP_BUILD_ROOT=1'
 )
