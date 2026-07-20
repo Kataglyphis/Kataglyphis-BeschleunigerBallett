@@ -227,8 +227,13 @@ size and a decision, or gets dropped.
   `gltf` loader, including one that converts a real engine asset. Supports
   positions/normals/UVs and fan-triangulated convex faces; rejects relative
   indices, malformed indices and unknown directives rather than dropping them
-  silently. Materials are NOT carried across - `usemtl`/`mtllib` are ignored,
-  so a converted asset renders with the default material until that is added.
+  silently. Materials carry across as base colour + alpha, one glTF primitive
+  per `usemtl` run, sharing one vertex buffer.
+
+  Known lossy edges, deliberately: `Ks`/`Ns` are dropped (no faithful PBR
+  equivalent from a Phong-era format), and `map_Kd` texture references are not
+  emitted yet - a textured OBJ converts to a flat base colour. That last one
+  is the next step if the comparison harness needs textured assets.
 
 ## Dependencies / housekeeping
 
