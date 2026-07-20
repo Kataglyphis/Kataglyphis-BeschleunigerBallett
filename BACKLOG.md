@@ -536,6 +536,16 @@ unconditional control capture before its output is believed.
 
 ## CI and release gaps
 
+- [x] **The Rust template's Ubuntu lane was also silently red** (fixed
+  2026-07-20) — every visible run failed with `cargo_debug.sh: No such file or
+  directory`: ContainerHub reorganised its scripts into numbered directories
+  and the workflow kept the old `linux/scripts/rust/` paths (the packaging
+  step had been migrated, so it was a partial migration). Eight paths updated,
+  and the lane moved from the stale `:latest` image to `:latest-cross` like
+  the main repo. Found by pointing `gh` at that repo's pipeline for the first
+  time — same lesson as here: a lane nobody reads is a lane that stays red.
+  ContainerHub's own pipeline checked the same way: green.
+
 - **Windows CI runs the CPU-only tests** (since 2026-07-20): 36 tests across
   BuildIntegrity, CameraUnit, SceneConfigUnit, CascadedShadowMapUnit,
   GuiSceneVarsRoundTrip and HelloTestCommit, plus the three fuzz targets'
