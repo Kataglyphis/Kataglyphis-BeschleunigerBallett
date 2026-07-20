@@ -697,38 +697,48 @@ unconditional control capture before its output is believed.
   left its clear value. Five earlier defects were found and fixed while
   chasing this one; the CPU unit tests in `cascadedShadowMapSuite.cpp` and the
   `ShadowPushCarriesTheSceneModelMatrix` regression guard came out of it.
-### #74 The Linux CI lane has been red since 28 April — IN PROGRESS
+### #74 The Linux lane's fuzzer step has been red since 17 May — IN PROGRESS
 
-Found by pointing `gh` at the pipeline for the first time (see
-ContainerHub `docs/github-cli-pipeline-monitoring.md`). Every push today failed,
-**including docs-only commits**, and the last green run on
-`Linux build + test + coverage on Ubuntu 24.04 x86` was 2026-04-28. Roughly
-three months, always the same step: **Run fuzzer tests**.
+Found by pointing `gh` at the pipeline for the first time (see ContainerHub
+`docs/github-cli-pipeline-monitoring.md`). Every push today failed, docs-only
+commits included.
 
-The failure is `AddressSanitizer: SEGV on unknown address 0x000000000000` in
-`first_fuzz_test`, which is built from `Test/fuzz/dummy.cpp` and nothing else -
-two trivially correct tests. The binary crashes on *any* invocation, including
-the `gtest_discover_tests` listing run during the build itself, so this is the
-fuzztest runtime dying before our code executes.
+**Correcting my own first write-up of this.** I originally recorded "red since
+28 April, always the same step" after checking three recent runs and
+generalising. Sampling the run history properly shows two *different* outages:
 
-Ruled out so far:
+| Window | Failing step |
+|---|---|
+| 2026-04-19 → at least 2026-04-30 | `Run performance benchmarks (gcc)` |
+| 2026-05-17 → today | `Run fuzzer tests` |
 
-- **Our code.** dummy.cpp is `EXPECT_EQ(1 + 2, 2 + 1)` plus a commutativity
-  fuzz test, and docs-only commits fail identically.
-- **FUZZTEST pin drift.** The submodule is pinned at `ad66c13` and CI checks out
-  that same commit. The pin moved on 2026-02-27 and 2026-05-17 - neither
-  matches the 2026-04-28 breakage.
+There is also a lone green run on 2026-04-28 between them, so "continuously red
+since April" was wrong too.
 
-Leading hypothesis, **not yet confirmed**: `Linux.yml` pins the toolchain as
-`ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest`. That tag floats, so a
-rebuild of the image changes clang/libstdc++ under CI with no commit in this
-repository - which is exactly the signature of a pipeline that goes red on a
-day nothing relevant was pushed. The logs show clang 22 with
-`--gcc-toolchain=/opt/gcc-15.2.0`, both very new.
+I also wrote that FUZZTEST pin drift was "ruled out", because the pin moved on
+02-27 and 05-17 and neither matched a 04-28 breakage. With the real fuzzer
+breakage date — **2026-05-17** — the pin bump matches it exactly: commit
+`09c60723` "fuzzing now on windows" moved FUZZTEST `b73724d4` -> `8fec7468`,
+and the step has failed on every run since. The lesson is that ruling something
+out against a date I had not verified was worth nothing.
 
-Confirming it needs a Linux container, which this Windows dev box cannot run
-directly (Stevedore is the Windows-container runtime). Next step is to pin the
-image to a digest and see whether an older digest is green - which is worth
-doing regardless of the outcome, because a floating toolchain tag means CI is
-not reproducible.
+The failure itself: `AddressSanitizer: SEGV on unknown address 0x000000000000`
+in `first_fuzz_test`, built from `dummy.cpp` alone — `EXPECT_EQ(1 + 2, 2 + 1)`
+and a commutativity property. It crashes on *any* invocation, including the
+`gtest_discover_tests` listing during the build, so the runtime dies before our
+code runs, and a null address means a call through a null function pointer.
+`fuzztest_gtest_main.cc` is unchanged across the range; 53 commits moved, many
+of them centipede runner changes.
 
+Also ruled out, with evidence this time: the **floating `:latest` toolchain
+tag**, which was my leading hypothesis. The `latest` amd64 image config reports
+`created: 2026-04-16`, which is *before* the last green run — the same image
+was in use green and red, so the toolchain did not change under CI. Worth
+pinning to a digest anyway, since a floating tag means CI is not reproducible,
+but it is not this bug.
+
+Open as PR #32 (draft, diagnostic): reverts only the pin, to confirm cause. The
+lane only builds on `main`/`develop` pushes and PRs, so a PR is the only way to
+run the experiment without committing to `develop`. A green fuzzer step there
+confirms the range; the real fix is then a forward fix or a narrower pin, since
+reverting outright gives back whatever Windows fuzzing `09c60723` added.
