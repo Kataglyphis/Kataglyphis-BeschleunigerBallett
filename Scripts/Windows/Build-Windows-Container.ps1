@@ -29,7 +29,7 @@
 
 param(
   # Comma-separated Build-Windows.ps1 configurations to build.
-  [string]$Configurations = 'clangcl-debug,clangcl-tsan,clangcl-profile,clangcl-release',
+  [string]$Configurations = 'clangcl-debug,clangcl-profile,clangcl-release',
   [string]$Image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64',
   # Explicit docker.exe path; falls back to $env:DOCKER_EXE, the Stevedore
   # install locations, then 'docker' on PATH.

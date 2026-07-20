@@ -96,7 +96,7 @@ function Get-BuildConfigurationSpec {
   }
 }
 
-$availableConfigurations = @('msvc-debug', 'msvc-release', 'clangcl-debug', 'clangcl-tsan', 'clangcl-profile', 'clangcl-release')
+$availableConfigurations = @('msvc-debug', 'msvc-release', 'clangcl-debug', 'clangcl-profile', 'clangcl-release')
 $buildConfigurationSpecs = @{}
 foreach ($configurationName in $availableConfigurations) {
   $buildConfigurationSpecs[$configurationName] = Get-BuildConfigurationSpec -Name $configurationName -Config $config -WorkspacePath $workspacePath
@@ -108,8 +108,6 @@ $buildPathMsvcRelease = $buildConfigurationSpecs['msvc-release']['BuildPath']
 $presetMsvcRelease = $buildConfigurationSpecs['msvc-release']['Preset']
 $buildPathClangDebug = $buildConfigurationSpecs['clangcl-debug']['BuildPath']
 $presetClangDebug = $buildConfigurationSpecs['clangcl-debug']['Preset']
-$buildPathClangTsan = $buildConfigurationSpecs['clangcl-tsan']['BuildPath']
-$presetClangDebugTsan = $buildConfigurationSpecs['clangcl-tsan']['Preset']
 $buildPathClangProfile = $buildConfigurationSpecs['clangcl-profile']['BuildPath']
 $presetClangProfile = $buildConfigurationSpecs['clangcl-profile']['Preset']
 $buildPathClangRelease = $buildConfigurationSpecs['clangcl-release']['BuildPath']
@@ -166,10 +164,6 @@ function Assert-ClangClAvailable {
 
   Invoke-BuildExternal -Context $context -File $clangClCommand.Source -Parameters @('--version') | Out-Null
   $script:clangClVersionLogged = $true
-}
-
-if ($buildPathClangTsan -eq $buildPathClangDebug) {
-  $buildPathClangTsan = Join-Path $workspacePath 'build-clangcl-tsan'
 }
 
 $context = New-BuildContext -Workspace $workspacePath -LogDir $logDir -StopOnError
@@ -273,17 +267,6 @@ try {
         Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathClangDebug -Configuration 'Debug' -RuntimeFlavor 'Clang'
       } | Out-Null
     }
-  }
-
-  if (Test-ConfigurationSelected -Name 'clangcl-tsan') {
-    Invoke-BuildStep -Context $context -StepName 'Configure/Build: ClangCL-TSan' -Critical -Script {
-      Assert-ClangClAvailable
-      Invoke-ConfiguredBuild -BuildPath $buildPathClangTsan -Preset $presetClangDebugTsan -Configuration 'Debug'
-
-      if (-not $SkipTests) {
-        Invoke-CtestDiscoveredTests -Context $context -BuildRoot $buildPathClangTsan -Configuration 'Debug' -RuntimeFlavor 'Clang'
-      }
-    } | Out-Null
   }
 
   if (Test-ConfigurationSelected -Name 'clangcl-profile') {

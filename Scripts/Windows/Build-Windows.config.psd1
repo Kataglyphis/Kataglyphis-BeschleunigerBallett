@@ -22,12 +22,6 @@
         Preset = 'x64-ClangCL-Windows-Debug'
         PresetEnv = 'PRESET_CLANGCL_DEBUG'
       }
-      'clangcl-tsan' = @{
-        BuildDir = 'build-clangcl-tsan'
-        BuildDirEnv = 'BUILD_DIR_CLANGCL_TSAN'
-        Preset = 'x64-ClangCL-Windows-Debug-TSan'
-        PresetEnv = 'PRESET_CLANGCL_DEBUG_TSAN'
-      }
       'clangcl-profile' = @{
         BuildDir = 'build-clangcl-profile'
         BuildDirEnv = 'BUILD_DIR_PROFILE'

@@ -380,19 +380,6 @@
 			}
 		},
 		{
-			"name": "x64-ClangCL-Windows-Debug-TSan",
-			"inherits": "x64-ClangCL-Windows-Debug-Base",
-			"description": "Windows and Clang (ThreadSanitizer)",
-			"binaryDir": "${sourceDir}/build-clangcl-tsan/",
-			"installDir": "${sourceDir}/build-clangcl-tsan/",
-			"cacheVariables": {
-				"USE_THREAD_SANITIZER": "ON",
-				"myproject_ENABLE_SANITIZER_THREAD": "ON",
-				"myproject_ENABLE_SANITIZER_ADDRESS": "OFF",
-				"myproject_ENABLE_SANITIZER_UNDEFINED": "OFF"
-			}
-		},
-		{
 			"name": "x64-ClangCL-Windows-Debug-ASan",
 			"inherits": "x64-ClangCL-Windows-Debug-Base",
 			"description": "Windows and Clang (AddressSanitizer)",
@@ -526,11 +513,6 @@
 			"configurePreset": "x64-ClangCL-Windows-Debug"
 		},
 		{
-			"name": "x64-ClangCL-Windows-Debug-TSan",
-			"inherits": "x64-ClangCL-Windows-Build-Debug",
-			"configurePreset": "x64-ClangCL-Windows-Debug-TSan"
-		},
-		{
 			"name": "x64-ClangCL-Windows-Debug-ASan",
 			"inherits": "x64-ClangCL-Windows-Build-Debug",
 			"configurePreset": "x64-ClangCL-Windows-Debug-ASan"
@@ -601,18 +583,6 @@
 			}
 		},
 		{
-			"name": "test-x64-ClangCL-Windows-Debug-TSan",
-			"configurePreset": "x64-ClangCL-Windows-Debug-TSan",
-			"description": "Windows ClangCL ThreadSanitizer tests",
-			"output": {
-				"outputOnFailure": true
-			},
-			"execution": {
-				"noTestsAction": "error",
-				"stopOnFailure": false
-			}
-		},
-		{
 			"name": "test-x64-ClangCL-Windows-Profile",
 			"configurePreset": "x64-ClangCL-Windows-Profile",
 			"description": "Windows ClangCL profile (benchmarks)",
@@ -649,7 +619,7 @@
 		{
 			"name": "linux-release-deb",
 			"displayName": "Linux Release TGZ+DEB",
-			"description": "Erzeugt TGZ und DEB Package für Release",
+			"description": "Erzeugt TGZ und DEB Package f\u00fcr Release",
 			"configurePreset": "linux-release-clang",
 			"generators": [
 				"TGZ",

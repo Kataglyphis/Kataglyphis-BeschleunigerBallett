@@ -17,7 +17,6 @@ pick a preset. `cmake --list-presets` shows what is available per platform.
 | Configuration | Preset | Build dir | What you get |
 | --- | --- | --- | --- |
 | `clangcl-debug` | `x64-ClangCL-Windows-Debug` | `build-clangcl-debug` | Debug + **ASAN** + UBSan, FuzzTest fuzzing mode |
-| `clangcl-tsan` | `x64-ClangCL-Windows-Debug-TSan` | `build-clangcl-tsan` | Debug, TSan requested (see caveat below), ASAN off |
 | `clangcl-profile` | `x64-ClangCL-Windows-Profile` | `build-clangcl-profile` | RelWithDebInfo + tests/benchmarks |
 | `clangcl-release` | `x64-ClangCL-Windows-Release` | `build-clangcl-release` | Release + CPack packaging |
 | `msvc-debug` / `msvc-release` | `x64-MSVC-Windows-*` | `build-msvc-debug` | MSVC (cl) builds, optional steps |
@@ -29,11 +28,11 @@ main configuration (`test-<configure-preset>`); the plain-Clang
 2026-07 as unused duplicates of the ClangCL set. `x64-Clang-Windows-Release`
 stays: the `windows-clang-release-wix` package preset builds on it.
 
-Typical full sweep (ASAN debug, TSan debug, profile, release):
+Typical full sweep (ASAN debug, profile, release):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
-  -Configurations "clangcl-debug,clangcl-tsan,clangcl-profile,clangcl-release" `
+  -Configurations "clangcl-debug,clangcl-profile,clangcl-release" `
   -SkipFormat -SkipTidy -SkipTests -SkipPerfTests -SkipMsix
 ```
 
@@ -44,17 +43,18 @@ powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
   never sanitized.
 - ASAN and UBSan default **ON** for Debug builds (Linux GCC/Clang, MSVC, clang-cl);
   see `myproject_default_debug_sanitizers` in `cmake/ProjectOptions.cmake`.
-- TSan presets set `myproject_ENABLE_SANITIZER_THREAD=ON` and force
+- Linux TSan presets (`linux-debug-tsan-clang` / `linux-debug-tsan-GNU`) set
+  `myproject_ENABLE_SANITIZER_THREAD=ON` and force
   `myproject_ENABLE_SANITIZER_ADDRESS=OFF` (TSan and ASAN are mutually exclusive —
-  `Sanitizers.cmake` drops TSan if ASAN is on).
-- **clang-cl does not support TSan** (`x86_64-pc-windows-msvc`); the Windows TSan
-  preset therefore configures with a warning and builds a plain Debug binary with
-  **no sanitizers** (it also sets `myproject_ENABLE_SANITIZER_UNDEFINED=OFF`, see
-  the CRT note below). It exists for cross-platform preset parity; real TSan runs
-  need the Linux presets (`linux-debug-tsan-clang` / `linux-debug-tsan-GNU`).
-- The presets' `USE_THREAD_SANITIZER` cache variable is **legacy plumbing consumed by
+  `Sanitizers.cmake` drops TSan if ASAN is on). **These are the only builds that
+  detect data races.**
+- **clang-cl does not support TSan** (`x86_64-pc-windows-msvc`):
+  `Sanitizers.cmake` warns and drops the request, producing a plain Debug binary.
+  A Windows `clangcl-tsan` preset existed for "preset parity" until 2026-07-20
+  and was removed — it silently built a duplicate of `clangcl-debug`, cost ~185 s
+  per full build, and its green runs read as evidence of race-freedom.
+- The `USE_THREAD_SANITIZER` cache variable is **legacy plumbing consumed by
   nothing in CMake** — the effective switch is `myproject_ENABLE_SANITIZER_THREAD`.
-  Keep both in sync if you touch the TSan presets.
 - **On clang-cl, UBSan only works together with ASAN — never standalone.** With
   ASAN on, the UBSan handlers are folded into `clang_rt.asan_dynamic` (release
   CRT, `/MD`), and three places switch the whole Debug build to the release CRT,
@@ -66,7 +66,7 @@ powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
   it can never link against this project's `/MD`/`/MDd` dependency mix; lld-link
   fails with `/failifmismatch` on `RuntimeLibrary`/`_ITERATOR_DEBUG_LEVEL`
   (verified 2026-07-16). So on Windows: enable UBSan only alongside ASAN, and
-  turn both off together (as the TSan preset does).
+  turn both off together.
 
 ## Containerized Windows Builds (Stevedore)
 
@@ -76,7 +76,7 @@ Vulkan SDK, Rust, sccache — everything preinstalled). CI does exactly this
 (`.github/workflows/Windows.yml`); locally use:
 
 ```powershell
-# Builds clangcl-debug,clangcl-tsan,clangcl-profile,clangcl-release by default
+# Builds clangcl-debug,clangcl-profile,clangcl-release by default
 powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1
 ```
 
@@ -272,11 +272,12 @@ benchmarks mean anything) and a synchronization-validation pass each catch
 classes of problem the debug loop cannot. See [`BACKLOG.md`](BACKLOG.md) for
 what each one is for.
 
-**`clangcl-tsan` does not actually enable ThreadSanitizer** — clang-cl does
-not support it on this target, so the preset silently builds a plain debug
-build and a green run proves nothing about data races. Use the Linux
-`linux-debug-tsan-clang` preset for race detection. Details in
-[`BACKLOG.md`](BACKLOG.md).
+**There is no Windows ThreadSanitizer.** clang-cl does not support
+`-fsanitize=thread` on this target, so a Windows "TSan" build is just a debug
+build and a green run proves nothing about data races. The `clangcl-tsan`
+preset that claimed otherwise was removed on 2026-07-20 — it cost ~185 s per
+full build to produce a duplicate of `clangcl-debug`. Use the Linux
+`linux-debug-tsan-clang` preset, which CI runs, for race detection.
 
 ## Code Conventions (C++ engine)
 
