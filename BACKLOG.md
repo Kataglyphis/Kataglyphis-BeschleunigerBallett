@@ -480,13 +480,16 @@ unconditional control capture before its output is believed.
 
 ## Startup and build-time costs
 
-- **GLSL is recompiled from source at every pipeline build.** The
-  persisted `VkPipelineCache` helps the driver side, but `ShaderHelper`
-  still runs the front end on every startup and every hot reload.
-  `Resources/Shaders/**/spv/*.spv` already exists — consuming prebuilt
-  SPIR-V (falling back to runtime compilation when the source is newer)
-  would cut startup and make hot-reload stalls proportional to the one
-  shader that changed.
+- [x] **GLSL is NOT recompiled at every startup** (stale entry, corrected
+  2026-07-20). This item asked for exactly the behaviour `ShaderHelper` already
+  has: it consumes the prebuilt `Resources/Shaders/**/spv/*.spv` and falls back
+  to runtime compilation only when the source is newer than the SPIR-V. That
+  landed with the "never run stale shaders" fix, which replaced an
+  existence-only check - under which every edit after the first was silently
+  ignored.
+
+  Verified rather than assumed: a startup logs **18 "SPV up to date, skipping
+  runtime compile" and 0 recompiles**. Nothing to do here.
 - **Build transfers dominate (~17 GB/build).** Incremental builds work
   (~230 s vs ~360-480 s cold) but 8.5 GB moves each way. A long-lived build
   container with source-only re-sync would remove both transfers entirely;
