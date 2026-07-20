@@ -196,8 +196,16 @@ size and a decision, or gets dropped.
   zoom. Ratio-based so the gesture is DPI-independent and reversible; the
   pinch baseline resets on any finger-count change so adding or lifting a
   finger cannot lurch the camera. 7 tests, verified to bite.
-- [ ] **GPU instancing + indirect draws** (M) — structure exists for neither;
-  needed before large scenes.
+- [x] **GPU instancing** (done 2026-07-20) — per-instance transform buffer,
+  one identity instance by default so there is a single code path; the
+  transform reaches normals and the shadow pass too. `set_instances` /
+  `instance_count` on `ForwardRenderer`, 3 tests including one that catches
+  copies drawn on top of each other.
+- [ ] **Indirect draws** (M) — instancing landed without them. Indirect only
+  pays once draw arguments come from the GPU (culling compute, batched
+  submission); with CPU-side instance counts it adds a buffer round trip for
+  nothing. Revisit alongside GPU occlusion culling below, which is what would
+  produce those arguments.
 - [ ] **Clustered/tiled lighting** (L) — 4-light cap is fine today; lift it
   when a real scene needs it.
 - [ ] **GPU occlusion culling** (L) — frustum culling shipped; depth-pyramid
