@@ -114,7 +114,17 @@ size and a decision, or gets dropped.
   applies the sRGB transfer function itself when the target is non-sRGB.
   Guarded by a headless test comparing an sRGB and a non-sRGB render; without
   the encode the two means differ by 49 levels (177.17 vs 127.77).
-- [ ] **Auto-exposure** (M) — manual EV shipped; histogram-based auto next.
+- [ ] **Auto-exposure — maths done, GPU wiring open** (M, half landed
+  2026-07-20) — `render/auto_exposure.rs` has log-space histogram binning,
+  geometric-mean extraction, exposure derivation against middle grey and
+  framerate-independent adaptation, with 15 tests covering the black-scene,
+  out-of-range and one-bright-pixel cases.
+
+  What remains is the GPU half: a compute shader building the histogram from
+  the HDR target, a reduction pass, and the tonemap reading an adapted
+  exposure from a buffer rather than the manual `exposure_ev` uniform. Keep
+  the manual slider as an override - auto-exposure hunting is much easier to
+  diagnose when it can be switched off.
 - [ ] **Per-pixel alpha-tested shadows** (M, not S — attempted and reverted
   2026-07-20) — textured MASK materials cast by base-alpha only, so a foliage
   card (white base-color factor, cut-out entirely in the texture) casts the
