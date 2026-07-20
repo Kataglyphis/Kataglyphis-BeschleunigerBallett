@@ -280,14 +280,21 @@ if(BUILD_TESTING
     # they have no include path for. Both headers are ordinary guarded
     # headers, so force-including them where they are not needed is harmless.
     # Drop this when upstream adds the includes.
+    # Absolute paths on purpose. The relative form compiled under clang-cl's
+    # /FI on Windows but failed under clang's -include on Linux CI with "no
+    # such file or directory" even though the -I to the abseil source WAS on
+    # the same command line - the interaction between -include resolution and
+    # the sccache wrapper was not worth debugging when an absolute path
+    # resolves under every compiler, wrapper and cwd. The headers' own
+    # includes still resolve through the normal -I chain.
     if(MSVC)
       set(_myproject_fuzztest_absl_fix
-          /FIabsl/random/internal/distribution_caller.h
-          /FIabsl/random/internal/mock_helpers.h)
+          "/FI${abseil-cpp_SOURCE_DIR}/absl/random/internal/distribution_caller.h"
+          "/FI${abseil-cpp_SOURCE_DIR}/absl/random/internal/mock_helpers.h")
     else()
       set(_myproject_fuzztest_absl_fix
-          -include absl/random/internal/distribution_caller.h
-          -include absl/random/internal/mock_helpers.h)
+          "-include" "${abseil-cpp_SOURCE_DIR}/absl/random/internal/distribution_caller.h"
+          "-include" "${abseil-cpp_SOURCE_DIR}/absl/random/internal/mock_helpers.h")
     endif()
     _myproject_collect_external_targets(_fuzztest_fix_targets)
     foreach(_fuzztest_fix_target IN LISTS _fuzztest_fix_targets)
