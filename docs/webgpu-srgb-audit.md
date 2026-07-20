@@ -18,8 +18,19 @@ all render math stay linear.
 | Bloom chain (A/B) | `Rgba16Float` | linear | Operates on HDR energy above threshold |
 | Shadow map | `Depth32Float` | n/a | Depth |
 | Swapchain (native) | first sRGB format from surface caps | sRGB | Tonemap writes linear; hardware encodes |
-| Swapchain (web) | browser-preferred (often `Bgra8Unorm`, non-sRGB) | caveat | WebGPU canvases don't offer sRGB formats; output is slightly dark on web. Known deviation — fix is a manual `linear_to_srgb` in the tonemap shader when the target is non-sRGB (roadmap refinement) |
+| Swapchain (web) | browser-preferred (often `Bgra8Unorm`, non-sRGB) | sRGB | WebGPU canvases don't offer sRGB formats, so the tonemap shader applies the IEC 61966-2-1 transfer function itself when the target is non-sRGB (`TonemapPass::encode_srgb`, `params.w`). Fixed 2026-07-20 |
 | Headless readback target | `Rgba8UnormSrgb` | sRGB | Golden tests assert sRGB-encoded bytes (documented in `tests/headless.rs`) |
 | egui overlay | surface format | matches target | egui-wgpu handles its own color management |
 
-Single known deviation: the **web swapchain non-sRGB caveat** above.
+**No known deviations.** The web swapchain caveat was closed on 2026-07-20.
+
+The fix is guarded by `non_srgb_target_is_gamma_encoded_like_an_srgb_one`
+(`crates/webgpu_renderer/tests/headless.rs`), which renders the same scene to
+an sRGB and a non-sRGB target and asserts their mean byte values agree within
+2 levels. Verified to fail without the encode: 177.17 vs 127.77, a 49-level
+gap — which is the "slightly dark on web" symptom, quantified.
+
+Note the shader uses the exact piecewise transfer function, not
+`pow(x, 1/2.2)`. The approximation is visibly wrong in the darks and would
+make the web build differ from native, which is precisely the class of bug
+this table exists to prevent.

@@ -88,9 +88,10 @@ size and a decision, or gets dropped.
 - [ ] **meshoptimizer-grade decimation** (S integration) — swap the
   vertex-clustering `simplify_primitive` for quadric-error simplification;
   API already isolates the swap to one function.
-- [ ] **Web swapchain sRGB fix** (S) — browsers expose no sRGB surface format,
-  so the web demo renders slightly dark; add a shader-side encode when the
-  target is non-sRGB (documented in `docs/webgpu-srgb-audit.md`).
+- [x] **Web swapchain sRGB fix** (done 2026-07-20) — the tonemap shader now
+  applies the sRGB transfer function itself when the target is non-sRGB.
+  Guarded by a headless test comparing an sRGB and a non-sRGB render; without
+  the encode the two means differ by 49 levels (177.17 vs 127.77).
 - [ ] **Auto-exposure** (M) — manual EV shipped; histogram-based auto next.
 - [ ] **Per-pixel alpha-tested shadows** (S) — textured MASK materials
   currently cast by base-alpha only.
