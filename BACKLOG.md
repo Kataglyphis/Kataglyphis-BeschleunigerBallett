@@ -114,29 +114,19 @@ size and a decision, or gets dropped.
   applies the sRGB transfer function itself when the target is non-sRGB.
   Guarded by a headless test comparing an sRGB and a non-sRGB render; without
   the encode the two means differ by 49 levels (177.17 vs 127.77).
-- [ ] **Auto-exposure — maths done, GPU wiring open** (M, half landed
-  2026-07-20) — `render/auto_exposure.rs` has log-space histogram binning,
-  geometric-mean extraction, exposure derivation against middle grey and
-  framerate-independent adaptation, with 15 tests covering the black-scene,
-  out-of-range and one-bright-pixel cases.
+- [x] **Auto-exposure** (done 2026-07-20) — histogram compute pass, GPU
+  reduction to an adapted EV, and the tonemap reading it from a buffer. No
+  per-frame readback anywhere on the frame path. Manual EV survives as an
+  override and routes through the same buffer. 13 tests across the CPU maths,
+  the compute passes and the end-to-end wiring; the last two verified to fail
+  when the exposure is disconnected.
 
-  The histogram compute pass landed too (`render/histogram.rs`,
-  `shaders/histogram.wgsl`) - the renderer's first compute pipeline - with 3
-  tests pinning the shader's binning to the CPU function, the dispatch tail,
-  and the per-frame clear.
+  Defaults OFF (`ForwardRenderer::auto_exposure`). Turning it on by default is
+  a look decision, not a technical one, and wants eyes on a few real scenes
+  first. `frame_delta_seconds` defaults to a nominal 60 Hz - callers driving
+  real frames should set it, or adaptation runs at the wrong rate on any other
+  refresh.
 
-  The reduction landed too: `cs_reduce_exposure` produces an adapted EV in a
-  GPU buffer, with 5 tests pinning it to the CPU maths and covering direction,
-  smoothing, the all-black hold and manual passthrough.
-
-  **All that remains is the last hop:** the tonemap reading
-  `HistogramPass::exposure_buffer()` instead of its `params.z` uniform, and
-  ForwardRenderer calling `encode`/`encode_reduce` each frame with a real
-  delta time. Until that lands, auto-exposure computes correctly and affects
-  nothing.
-
-  Both `read_back` helpers are diagnostic-only and must NOT reach the frame
-  path; they stall the queue.
 - [ ] **Per-pixel alpha-tested shadows** (M, not S — attempted and reverted
   2026-07-20) — textured MASK materials cast by base-alpha only, so a foliage
   card (white base-color factor, cut-out entirely in the texture) casts the
