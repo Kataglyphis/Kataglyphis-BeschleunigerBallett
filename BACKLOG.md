@@ -332,6 +332,16 @@ size and a decision, or gets dropped.
   Remaining honest gaps: camera framing differs and the conversion carries no
   textures yet.
 
+  **A real correctness bug surfaced while measuring the shadow pass** (fixed
+  same day): the cascade index `vs_shadow` projects with was written into every
+  primitive's *shared* uniform buffer once per cascade inside a single encoder,
+  and `Queue::write_buffer` applies all writes before the command buffer runs -
+  so all three shadow layers rendered with cascade 2's matrix while the
+  fragment stage sampled them as 0/1/2. Near shadows were mis-projected;
+  "a shadow exists" tests could not see it. Fixed with three static per-cascade
+  index buffers bound at group(1), correct by construction. Shadowed-pixel
+  count on cube_on_plane went 5015 -> 11792.
+
 - [x] **Shader export wired into the build** (done 2026-07-20) — opt-in
   `-ExportWgslShaders` on both `Build-Windows.ps1` and
   `Build-Windows-Container.ps1`, non-critical so a missing cargo toolchain
