@@ -18,16 +18,6 @@ size and a decision, or gets dropped.
 
 ## C++ Vulkan engine
 
-- [ ] **Cascade splits are uniform, so shadows are coarse** (M, opened
-  2026-07-20) — the CSM caster bug is **fixed** (`bf6fa37e`: the shadow pass
-  transformed casters by a hard-coded identity matrix while the forward pass
-  used the scene's). Shadows now render and are visible. What remains is
-  quality: splits are uniform over `[near, far]`, so cascade 0 still spans
-  ~50 units for a ~20-unit scene and the depth bias swallows most
-  self-shadowing — measured 1.4% occlusion. A practical/logarithmic split is
-  the fix; `computeCascadeData` already flags its uniform split as
-  provisional, and `cascadedShadowMapSuite.cpp` pins the invariants that must
-  survive the change.
 - [ ] **Two shadow instruments disagree and I do not know which is right**
   (M, opened 2026-07-20) — **resolve this before trusting any shadow
   measurement, including the ones in the commit that fixed the culling bug.**
@@ -67,10 +57,8 @@ size and a decision, or gets dropped.
   implies ~200 ms of frozen main thread.
 - [ ] **glTF loading** (L) — reuse the Rust renderer's test assets and enable
   the cross-renderer comparison harness below.
-- [ ] **Register the perf suite with CTest** (S) — the benchmarks now measure
-  the engine, but they are registered outside CTest, so nothing gates on them.
-- [ ] **Fuzz the remaining surfaces** (S each) — shader-file reader and GUI
-  state round-trip. SceneConfig and OBJ parsing are done.
+- [ ] **Fuzz the remaining surfaces** (S each) — KTX2 / texture loading is
+  what is left. SceneConfig, OBJ parsing and the shader-file reader are done.
 - [ ] **Renderer-level RAII cleanup consolidation** (M) — the stage-level work
   landed 2026-07-19; `VulkanRenderer`'s hand-ordered `cleanUp()` and the
   device-lost special-casing in `App.cpp` are what is left.
@@ -414,6 +402,23 @@ unconditional control capture before its output is believed.
   scene-config / OBJ-parse benchmarks; baseline table above.
 - **SceneConfig fuzzing** (2026-07-19) — also fixed fuzz targets never
   enabling `CXX_SCAN_FOR_MODULES`, which had made engine modules unfuzzable.
+- **Shadow casters were culled by the shadow pass** (2026-07-20, `f429634f`)
+  — the camera projection is Y-flipped for Vulkan, reversing triangle winding;
+  the cascade matrices come from `glm::ortho` with no such flip, so back-face
+  culling removed exactly the faces the camera keeps. The depth map sat at its
+  clear value for ~99.8% of sampled texels. Culling is now off for that
+  pipeline. Note the earlier "1.4% occlusion" figure never reproduced (it
+  measured 0.031% on re-run) — see the open instrument item above.
+- **Cascade fitting** (2026-07-20) — shadows fit a `shadow_distance` (60)
+  rather than the camera far plane: 3.80 -> 3.04 cm/texel over the subject.
+  A practical/logarithmic split blend exists but defaults OFF (lambda 0)
+  because measurement did not support enabling it.
+- **Perf suite registered with CTest** (2026-07-20) — gates on "the
+  benchmarks execute", not on a time budget; see the commit for why.
+- **GUI -> Scene round-trip tests** (2026-07-20) — five CPU-only tests over
+  the two-copy split that is a suspect in the instrument disagreement.
+- **Shader-file reader fuzzing** (2026-07-20) — found `fileExists` throwing
+  on permission-denied paths, which is a terminate with exceptions disabled.
 - **CSM caster transform** (2026-07-20, `bf6fa37e`) — the shadow pass used a
   hard-coded identity model matrix while the forward pass used the scene's
   (a scale of 60), so casters rendered at 1/60 size and the depth map never
