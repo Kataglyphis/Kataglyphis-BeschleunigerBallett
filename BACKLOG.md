@@ -697,3 +697,38 @@ unconditional control capture before its output is believed.
   left its clear value. Five earlier defects were found and fixed while
   chasing this one; the CPU unit tests in `cascadedShadowMapSuite.cpp` and the
   `ShadowPushCarriesTheSceneModelMatrix` regression guard came out of it.
+### #74 The Linux CI lane has been red since 28 April — IN PROGRESS
+
+Found by pointing `gh` at the pipeline for the first time (see
+ContainerHub `docs/github-cli-pipeline-monitoring.md`). Every push today failed,
+**including docs-only commits**, and the last green run on
+`Linux build + test + coverage on Ubuntu 24.04 x86` was 2026-04-28. Roughly
+three months, always the same step: **Run fuzzer tests**.
+
+The failure is `AddressSanitizer: SEGV on unknown address 0x000000000000` in
+`first_fuzz_test`, which is built from `Test/fuzz/dummy.cpp` and nothing else -
+two trivially correct tests. The binary crashes on *any* invocation, including
+the `gtest_discover_tests` listing run during the build itself, so this is the
+fuzztest runtime dying before our code executes.
+
+Ruled out so far:
+
+- **Our code.** dummy.cpp is `EXPECT_EQ(1 + 2, 2 + 1)` plus a commutativity
+  fuzz test, and docs-only commits fail identically.
+- **FUZZTEST pin drift.** The submodule is pinned at `ad66c13` and CI checks out
+  that same commit. The pin moved on 2026-02-27 and 2026-05-17 - neither
+  matches the 2026-04-28 breakage.
+
+Leading hypothesis, **not yet confirmed**: `Linux.yml` pins the toolchain as
+`ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest`. That tag floats, so a
+rebuild of the image changes clang/libstdc++ under CI with no commit in this
+repository - which is exactly the signature of a pipeline that goes red on a
+day nothing relevant was pushed. The logs show clang 22 with
+`--gcc-toolchain=/opt/gcc-15.2.0`, both very new.
+
+Confirming it needs a Linux container, which this Windows dev box cannot run
+directly (Stevedore is the Windows-container runtime). Next step is to pin the
+image to a digest and see whether an older digest is green - which is worth
+doing regardless of the outcome, because a floating toolchain tag means CI is
+not reproducible.
+
