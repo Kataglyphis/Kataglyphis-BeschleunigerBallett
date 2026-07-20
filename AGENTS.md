@@ -256,7 +256,7 @@ with a test that would have caught it. Prefer assertions that survive driver
 and machine differences (structural pixel properties, invariants, ordering)
 over exact-value comparisons, and make GPU-dependent tests skip themselves
 when no adapter is present rather than fail. Ideas worth picking up live in
-[`BACKLOG.md`](BACKLOG.md); sized commitments live in [`ROADMAP.md`](ROADMAP.md).
+[`BACKLOG.md`](BACKLOG.md), alongside the sized commitments.
 
 **Formatting and static analysis.** clang-format/clang-tidy/cmake-format
 commands, the host gotchas (LLVM is not on `PATH`; the container-generated
@@ -298,8 +298,7 @@ ContainerHub (see the rule above), project-specific ones here.
 | Where | Owns |
 | --- | --- |
 | `README.md` | Repo-level orientation, feature highlights |
-| `ROADMAP.md` | Agreed future work, sized, with blocked items marked |
-| `BACKLOG.md` | Unsized ideas and recurring chores (perf tests, periodic runs) |
+| `BACKLOG.md` | **All** open work: sized commitments, then unsized ideas and recurring chores |
 | `AGENTS.md` (this file) | How to build/test/run here, invariants, code conventions |
 | `docs/cpp-renderer-improvements.md` | C++ engine change log + verification pattern |
 | `docs/webgpu-renderer-roadmap.md` | Rust WebGPU renderer status per feature |

@@ -1,33 +1,124 @@
 # BACKLOG
 
-Ideas and recurring chores that are **not** committed roadmap items. Things
-here are candidates: they graduate to [`ROADMAP.md`](ROADMAP.md) when they
-get a size and a decision, or get dropped. Roadmap = what we agreed to do;
-backlog = what we might.
+The single list of open work across the whole project — sized commitments and
+unsized ideas together. Detailed per-area status lives in `docs/`
+(`cpp-renderer-improvements.md`, `webgpu-renderer-roadmap.md`,
+`shader-sharing.md`); this file is what is still to do.
+
+Sizes: S (< half a day), M (a day-ish), L (multi-day), XL (multi-week).
+Checkbox items are sized and agreed; the prose sections below the fold are
+candidates that have not been sized yet. A candidate graduates by acquiring a
+size and a decision, or gets dropped.
+
+> Merged from the former `ROADMAP.md` on 2026-07-20. There is no longer a
+> separate roadmap file — one list, so a stale entry in one place cannot
+> contradict a fresh one in the other. That had already happened: the roadmap
+> still described cascaded shadows as completely broken a day after they were
+> fixed.
+
+## C++ Vulkan engine
+
+- [ ] **Cascade splits are uniform, so shadows are coarse** (M, opened
+  2026-07-20) — the CSM caster bug is **fixed** (`bf6fa37e`: the shadow pass
+  transformed casters by a hard-coded identity matrix while the forward pass
+  used the scene's). Shadows now render and are visible. What remains is
+  quality: splits are uniform over `[near, far]`, so cascade 0 still spans
+  ~50 units for a ~20-unit scene and the depth bias swallows most
+  self-shadowing — measured 1.4% occlusion. A practical/logarithmic split is
+  the fix; `computeCascadeData` already flags its uniform split as
+  provisional, and `cascadedShadowMapSuite.cpp` pins the invariants that must
+  survive the change.
+- [ ] **Re-enable `DISABLED_ShadowsDarkenSomePixels`** (S, blocked on the
+  split scheme above) — the golden test measures real occlusion and 1.4% is
+  below anything worth asserting. Re-enable rather than relax it.
+- [ ] **Async asset loading** (L) — model load/reload and AS builds block the
+  main thread; move to a worker with fence-based handoff (staging ring
+  already removed the per-upload queue stalls). **Quantified**: OBJ parsing
+  alone is ~7 ms/MB (`BM_ObjParse_Suzanne`), so the bundled 27 MB model
+  implies ~200 ms of frozen main thread.
+- [ ] **glTF loading** (L) — reuse the Rust renderer's test assets and enable
+  the cross-renderer comparison harness below.
+- [ ] **Register the perf suite with CTest** (S) — the benchmarks now measure
+  the engine, but they are registered outside CTest, so nothing gates on them.
+- [ ] **Fuzz the remaining surfaces** (S each) — shader-file reader and GUI
+  state round-trip. SceneConfig and OBJ parsing are done.
+- [ ] **Renderer-level RAII cleanup consolidation** (M) — the stage-level work
+  landed 2026-07-19; `VulkanRenderer`'s hand-ordered `cleanUp()` and the
+  device-lost special-casing in `App.cpp` are what is left.
+
+## Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **Basis ETC1S/UASTC transcoding** (M) — KTX2 BCn passthrough is done;
+  supercompressed files are rejected with a clear error until a transcoder
+  dependency lands (also unlocks compressed textures on the web path).
+- [ ] **meshoptimizer-grade decimation** (S integration) — swap the
+  vertex-clustering `simplify_primitive` for quadric-error simplification;
+  API already isolates the swap to one function.
+- [ ] **Web swapchain sRGB fix** (S) — browsers expose no sRGB surface format,
+  so the web demo renders slightly dark; add a shader-side encode when the
+  target is non-sRGB (documented in `docs/webgpu-srgb-audit.md`).
+- [ ] **Auto-exposure** (M) — manual EV shipped; histogram-based auto next.
+- [ ] **Per-pixel alpha-tested shadows** (S) — textured MASK materials
+  currently cast by base-alpha only.
+- [ ] **HDR-cubemap IBL** (M) — replace the analytic hemisphere approximation
+  with a real prefiltered environment map; MikkTSpace tangents alongside.
+- [ ] **Web drop-zone / model picker** (S) — native drag-and-drop shipped;
+  browser File API pending.
+- [ ] **Touch controls** (S) — orbit/zoom gestures for the embedded demo.
+- [ ] **GPU instancing + indirect draws** (M) — structure exists for neither;
+  needed before large scenes.
+- [ ] **Clustered/tiled lighting** (L) — 4-light cap is fine today; lift it
+  when a real scene needs it.
+- [ ] **GPU occlusion culling** (L) — frustum culling shipped; depth-pyramid
+  occlusion later.
+- [ ] **WebXR** (XL) — parked.
+- [ ] **Colosseum demo scene** (blocked on you) — pick a licensed
+  photogrammetry scan; LOD + KTX2 machinery is ready, keep the asset out of
+  git.
+
+## Cross-renderer
+
+- [ ] **Shader export in the C++ build** (S) — wire
+  `cargo run --example export_shaders` into `Build-Windows.ps1` emitting to
+  `Resources/Shaders/generated/` so the Vulkan engine picks up WGSL changes
+  automatically (`docs/shader-sharing.md`).
+- [ ] **Side-by-side comparison harness** (M) — same scene, same camera,
+  Vulkan vs WebGPU screenshot diff; with shared BRDF math this becomes a
+  regression net for both renderers (needs C++ glTF + offscreen path above).
+- [ ] **OBJ→glTF conversion** (S) — make `Resources/Models` consumable by the
+  Rust renderer.
+
+## Dependencies / housekeeping
+
+- [ ] **cargo-deny advisories** (blocked upstream) — `quick-xml 0.39.4` CVEs
+  (Linux/Wayland only, pinned via winit) and unmaintained `ttf-parser` (egui
+  fonts); revisit on winit/egui releases. Deliberately not ignored in
+  `deny.toml` so they stay visible.
+- [ ] **FUZZTEST checkout watcher** (S investigation) — an unidentified host
+  process occasionally re-checks-out `ExternalLib/FUZZTEST` to the latest
+  date tag; find and disarm it (pin is currently correct at `ad66c13`).
+
+---
+
+Everything below is **unsized**: ideas and recurring chores that have not been
+committed to.
 
 ## Performance testing
 
-The perf suite currently benchmarks `std::string` create/copy — it measures
-nothing about this engine, and it is registered outside CTest, so nothing
-gates on it.
-
-- **Benchmarks that mean something.** Candidates, in rough value order:
+- **Benchmarks still missing**, in rough value order:
   - `record_commands` wall time per frame for each render mode (forward,
     deferred, RT, path tracing) at a fixed scene + camera — the closest
     proxy to "did a refactor make the frame path slower".
   - Upload path: `createBufferAndUploadVectorOnDevice` for a few payload
     sizes, now that the staging buffer is reused (guards against a
     regression back to per-upload create/destroy).
-  - `ObjLoader::loadModel` on a bundled model — parsing plus mesh build.
-  - Cascade math: `CascadedShadowMap::updateCascades` (pure CPU, no GPU
-    needed, so it can run in CI).
   - Pure-CPU units are the ones worth gating in CI; anything touching the
     GPU is machine-dependent and belongs in the "run it locally" bucket.
 - **GPU-side numbers already exist**: per-pass timestamps land in
   `GUIRendererSharedVars::gpuTimings` (GUI "GPU timings" header). A headless
   mode that renders N frames and dumps the per-pass averages as JSON would
   turn them into a comparable artifact instead of a number a human squints
-  at.
+  at. Nothing asserts a budget for `GpuTimedPass::ShadowCascades` today.
 - **Regression tracking**: Google Benchmark can emit JSON
   (`--benchmark_out=... --benchmark_out_format=json`); storing one baseline
   per machine and diffing beats eyeballing console output.
@@ -50,8 +141,8 @@ Two things this baseline already tells us:
 - **Asset loading blocks for a long time.** 1 MB of OBJ costs ~7 ms of
   pure parsing; `dinosaurs.obj` is 27 MB, so a load is plausibly ~200 ms
   of frozen main thread. That is the concrete case for the async
-  asset-loading item in `ROADMAP.md` - it was previously argued from
-  first principles only.
+  asset-loading item above — it was previously argued from first
+  principles only.
 - **`resolveModelPath` is ~4x slower when it misses** (8 parent-directory
   probes). Fine once at startup, bad in a loop.
 
@@ -78,17 +169,22 @@ that are *not* exercised that way and should be run periodically:
 
 - Headless offscreen rendering in the C++ engine, mirroring the Rust
   renderer's structural pixel assertions (colour dominance, coverage
-  ratios, energy deltas rather than exact images). This is the missing
-  piece that would have caught the "shadow map rendered but never sampled"
-  bug — tracked as a sized item in `ROADMAP.md`.
-- Fuzz the remaining untrusted inputs: `SceneConfig` parsing, the shader
-  file reader, KTX2/texture loading paths.
+  ratios, energy deltas rather than exact images). The capture path exists
+  (`goldenRenderSuite.cpp`); what is thin is the set of assertions built on
+  it.
+- Fuzz the remaining untrusted inputs: the shader file reader, KTX2/texture
+  loading paths.
 - A GUI-state round-trip test (`GUISceneSharedVars` → renderer → back)
   so option plumbing cannot silently break, as the cascade-count default
   did.
-- Property tests for `CascadedShadowMap::updateCascades`: splits strictly
-  increasing, cascade frustums covering the camera frustum, no NaNs at
-  degenerate FOV/aspect.
+
+**Caution learned the hard way** (2026-07-19, cost most of a day): captures
+are **tonemapped**, and the ImGui overlay is composited into them. A pixel
+classifier written against raw scene colours (`r < 60 && b < 60`) silently
+measured only the overlay and produced two confident, wrong conclusions
+("numCascades reads 0 in the shader", "a CPU/GPU UBO race") that had to be
+retracted. Any new pixel assertion needs a liveness check and an
+unconditional control capture before its output is believed.
 
 ## Code quality (see `docs/code-quality.md` for the commands)
 
@@ -97,7 +193,7 @@ that are *not* exercised that way and should be run periodically:
   one enormous commit that will collide with anything in flight, so it wants
   a deliberate moment (right after a merge point) plus a
   `.git-blame-ignore-revs` entry. Alternative: format-on-touch only, and let
-  the drift shrink over time.
+  the drift shrink over time. **Owner decision, not an agent's.**
 - **Containerized builds never lint.** `Build-Windows-Container.ps1` passes
   `-SkipFormat -SkipTidy` unconditionally; the fast loop therefore cannot
   catch style or tidy regressions. Options: a separate periodic container
@@ -113,7 +209,7 @@ that are *not* exercised that way and should be run periodically:
   guarantee on Windows comes from a human running the suite locally, even
   though the GPU integration tests pass here routinely. Options: a
   self-hosted runner with a GPU, or at minimum run the non-GPU tests
-  (camera/scene-config/fuzz) on the hosted runner.
+  (camera/scene-config/shadow-maths/fuzz) on the hosted runner.
 - **Packaging paths are never exercised.** DEB (`linux-release-deb`), WiX
   (`windows-clang-release-wix`) and MSIX are configured but nothing builds
   them in CI, so breakage surfaces at release time.
@@ -131,35 +227,25 @@ that are *not* exercised that way and should be run periodically:
 - **GLSL is recompiled from source at every pipeline build.** The
   persisted `VkPipelineCache` helps the driver side, but `ShaderHelper`
   still runs the front end on every startup and every hot reload.
-  `Resources/Shaders/**/spv/*.spv` already exists - consuming prebuilt
+  `Resources/Shaders/**/spv/*.spv` already exists — consuming prebuilt
   SPIR-V (falling back to runtime compilation when the source is newer)
   would cut startup and make hot-reload stalls proportional to the one
   shader that changed.
-- **Build transfers now dominate (~17 GB/build).** Incremental builds work
+- **Build transfers dominate (~17 GB/build).** Incremental builds work
   (~230 s vs ~360-480 s cold) but 8.5 GB moves each way. A long-lived build
   container with source-only re-sync would remove both transfers entirely;
   needs lifecycle handling and a way to extract executables for host tests.
 - **Outbound `Artifact extraction failed (exit 1)`** is still reported even
   with the cargo subtree excluded. Artifacts do arrive (verified), but a real
-  failure here would leave stale host binaries - worth a proper fix.
-- ~~Build speed is stuck at ~350-480 s per build~~ (superseded by the above)
-  sccache: 0.00% hit rate on an identical tree (C++23 modules defeat its
-  hashing). Named volume for the build tree: CMake cannot configure inside a
-  mounted Windows volume. Untested ideas: a long-lived build container with
-  source re-sync instead of a fresh container per build, or a bind mount to a
-  non-Dev-Drive host path. Full measurements in
-  `docs/container-build-caching.md`.
+  failure here would leave stale host binaries — worth a proper fix.
 - **sccache writes nothing (0 bytes) despite the volume being mounted.** The
   named volume and `SCCACHE_DIR` take effect (sccache reports `C:\sccache`),
   but a full build leaves the cache empty, so hit rate stays at 0%. Diagnose
   write permissions for `ContainerAdministrator` on the volume, and whether
   `sccache --stop-server` kills the server before it flushes. See
   `docs/container-build-caching.md`.
-- **Container builds take ~6 minutes**, dominated by streaming the tree
-  in and the build tree back (the Dev Drive blocks bind mounts, see
-  [[stevedore-container-builds]]). Worth timing `sccache` hit rates and
-  checking whether a persistent named volume for the build tree beats the
-  tar-pipe.
+- **`-FreshContainer` strands the build cache** on the wcifs fallback path:
+  the next build takes 367 s instead of 44 s.
 - **Module dependency scanning** (`clang-scan-deps`) runs over all 53
   `.ixx` files each configure; measure before assuming it is free.
 
@@ -167,13 +253,23 @@ that are *not* exercised that way and should be run periodically:
 
 - Host `cmake` is 3.29 and **cannot read this repo's `CMakePresets.json`**
   (`version: 10`); only the container's newer CMake can. Anyone running
-  `cmake --list-presets` on the host gets a confusing parse error.
-- **LLVM is not on `PATH`** despite being installed - see
+  `cmake --list-presets` on the host gets a confusing parse error. Host
+  `ctest` cannot read the build trees either — run the gtest executables
+  directly.
+- **LLVM is not on `PATH`** despite being installed — see
   `docs/code-quality.md` for the absolute paths.
+- **`run_clangcl_debug.ps1` sets `VK_LAYER_PATH = ''`**, which crashes the
+  app at startup with `0xC0000409`. Launch with
+  `VK_LAYER_PATH='C:\VulkanSDK\1.4.350.0\Bin'`.
 - **Swapchain screenshots read black while the desktop session is
-  locked**, with no error - a capture path that silently lies. Always
+  locked**, with no error — a capture path that silently lies. Always
   take a control capture of a known-good app before believing a black
-  frame is a regression.
+  frame is a regression. The offscreen capture path used by the golden
+  tests does *not* have this problem.
+- **Restoring a file from a backup can defeat ninja.** `Move-Item` restores
+  the original mtime, so if the backup is older than the compiled object,
+  the rebuild is skipped and you test the old binary while believing you
+  reverted. Touch the file after restoring.
 - **Build containers occasionally survive a successful build**
   (`wcifs teardown lock`); a stale container makes it look like a build is
   still running. Compare the newest `logs/windows/build-summary-*.json`
@@ -183,14 +279,14 @@ that are *not* exercised that way and should be run periodically:
   configurations.
 - **A source file deleted on the host keeps building inside the reusable
   container.** Reproduced 2026-07-19: added a probe test, built (it ran),
-  deleted the file, rebuilt - the test still ran, and the `.cpp` was still
+  deleted the file, rebuilt — the test still ran, and the `.cpp` was still
   present at `C:\ws\...` inside the container. The inbound `tar` extracts
   over the existing tree and never prunes, so tests can keep passing against
   code that no longer exists, and a file whose deletion breaks the build
   looks fine locally and fails in CI.
 
   Workaround today: `-FreshContainer`, or delete the file inside the
-  container. Proper fix (**not yet implemented - do this deliberately, not
+  container. Proper fix (**not yet implemented — do this deliberately, not
   in a hurry**): prune the source tree inside the container before streaming,
   keeping `build-*` and `logs`. Sources re-stream in seconds; only the build
   tree is expensive, and that is what must survive. The risk is that a
@@ -207,7 +303,7 @@ that are *not* exercised that way and should be run periodically:
   (swapchain + framebuffers + recreation), a stage registry so adding a
   pass does not mean editing the renderer.
 - **Device-lost teardown is special-cased in `App.cpp`** (scene/GUI
-  cleanup is skipped) - a symptom of ownership living in the wrong place.
+  cleanup is skipped) — a symptom of ownership living in the wrong place.
   Full RAII up the stack would remove the special case entirely.
 - **`GUI*` is a mutable cross-cutting dependency**: both `Scene` and
   `VulkanRenderer` read GUI state each frame. A plain settings struct
@@ -220,7 +316,7 @@ that are *not* exercised that way and should be run periodically:
 
 - **Render-graph v2**: the current graph validates declared read/write
   wiring but does not schedule or alias resources. Automatic barrier
-  placement and transient-resource aliasing are the natural next steps -
+  placement and transient-resource aliasing are the natural next steps —
   worth it only when pass count grows again.
 - **Texture streaming / bindless**: the renderer binds per-primitive sets;
   a bindless array plus streaming would be needed for photogrammetry-scale
@@ -239,3 +335,33 @@ that are *not* exercised that way and should be run periodically:
   ClangCL, that preset can go too.
 - `imgui.ini` is tracked and changes whenever a window is dragged — decide
   whether it is source (layout you want shipped) or user state (gitignore).
+
+---
+
+## Completed (kept for the reasoning, not the status)
+
+- **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
+  are move-only with destructor release; extended through the render stages.
+- **Sync-validated barrier removal** (2026-07-19) — sync validation first
+  exposed 10 real depth-sync hazards, fixed in the same unit.
+- **GPU timestamps + debug labels per pass** (2026-07-19).
+- **`DescriptorSetGroup` extraction** (2026-07-19, VulkanRenderer -617 lines).
+- **Clouds compute cost** (2026-07-19) — per-pixel `inverse()` hoisted into
+  the UBO, A/B verified. Half-res dispatch still open as a quality tradeoff.
+- **CMake preset diet** (2026-07-19: 26/24/1 → 23/22/6) — the real problem
+  was one test preset, not preset count.
+- **CI sanitizers** (2026-07-19) — ASan+UBSan and TSan steps on Linux CI plus
+  a `linux-debug-asan-clang` preset.
+- **C++ golden rendering tests** (2026-07-19) — headless capture
+  (`requestFrameCapture`/`takeCapturedFrame`, fence-synced) plus structural
+  assertions. Works while the desktop is locked, unlike screenshots.
+- **Perf suite that measures the engine** (2026-07-19) — camera / projection /
+  scene-config / OBJ-parse benchmarks; baseline table above.
+- **SceneConfig fuzzing** (2026-07-19) — also fixed fuzz targets never
+  enabling `CXX_SCAN_FOR_MODULES`, which had made engine modules unfuzzable.
+- **CSM caster transform** (2026-07-20, `bf6fa37e`) — the shadow pass used a
+  hard-coded identity model matrix while the forward pass used the scene's
+  (a scale of 60), so casters rendered at 1/60 size and the depth map never
+  left its clear value. Five earlier defects were found and fixed while
+  chasing this one; the CPU unit tests in `cascadedShadowMapSuite.cpp` and the
+  `ShadowPushCarriesTheSceneModelMatrix` regression guard came out of it.
