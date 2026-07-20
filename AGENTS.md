@@ -268,9 +268,15 @@ containerized builds never run them.
 
 **Run more than the debug loop periodically.** `clangcl-debug` is the fast
 default, but `clangcl-profile` (optimized, and the only configuration where
-benchmarks mean anything), `clangcl-tsan`, and a synchronization-validation
-pass each catch classes of problem the debug loop cannot. See
-[`BACKLOG.md`](BACKLOG.md) for what each one is for.
+benchmarks mean anything) and a synchronization-validation pass each catch
+classes of problem the debug loop cannot. See [`BACKLOG.md`](BACKLOG.md) for
+what each one is for.
+
+**`clangcl-tsan` does not actually enable ThreadSanitizer** — clang-cl does
+not support it on this target, so the preset silently builds a plain debug
+build and a green run proves nothing about data races. Use the Linux
+`linux-debug-tsan-clang` preset for race detection. Details in
+[`BACKLOG.md`](BACKLOG.md).
 
 ## Code Conventions (C++ engine)
 

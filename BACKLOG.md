@@ -185,7 +185,20 @@ that are *not* exercised that way and should be run periodically:
   and it is the only configuration where the benchmarks are meaningful
   (debug timings are noise). Run it after any perf-relevant change and
   before a release; it also builds `perfTestSuite.exe`.
-- **`clangcl-tsan`** — data races only show up here; nothing runs it today.
+- **`clangcl-tsan` does NOT detect data races** — checked 2026-07-20 by
+  building it and inspecting the result. `cmake/Sanitizers.cmake` warns
+  "clang-cl ThreadSanitizer is not supported for target
+  x86_64-pc-windows-msvc" and drops the request, so the preset produces a
+  plain debug build: no `-fsanitize=thread` in `build.ninja`, no `__tsan_*`
+  symbols in the binary. The suite passes 40/40 under it and that result
+  means nothing. This entry previously read "data races only show up here;
+  nothing runs it today", which was wrong in a way that would have made a
+  green run look like evidence.
+
+  Race coverage on Windows is therefore unavailable today. `ThreadSanitizer`
+  works on Linux (`linux-debug-tsan-clang`), which CI runs. Decide whether to
+  rename the Windows preset to something that does not promise TSan, or drop
+  it; leaving it named `tsan` invites exactly the false assurance above.
 - **Synchronization validation** — `khronos_validation.validate_sync = true`
   in `vk_layer_settings.txt` next to the executable. This found 10 real
   WRITE-AFTER-WRITE hazards in July 2026; it is not part of any automated
