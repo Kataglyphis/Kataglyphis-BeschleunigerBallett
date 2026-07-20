@@ -230,10 +230,15 @@ size and a decision, or gets dropped.
   silently. Materials carry across as base colour + alpha, one glTF primitive
   per `usemtl` run, sharing one vertex buffer.
 
-  Known lossy edges, deliberately: `Ks`/`Ns` are dropped (no faithful PBR
-  equivalent from a Phong-era format), and `map_Kd` texture references are not
-  emitted yet - a textured OBJ converts to a flat base colour. That last one
-  is the next step if the comparison harness needs textured assets.
+  `map_Kd` becomes a glTF image/texture/sampler, deduplicated across
+  materials, with the file copied next to the output so the document is
+  self-contained.
+
+  Known lossy edge, deliberately: `Ks`/`Ns` are dropped - a Phong-era format
+  has no faithful PBR equivalent, and a guessed one would differ from the
+  source in a way nobody can audit. Normal, roughness and occlusion maps
+  (`map_Bump`, `map_Ns`, `map_d`) are likewise not carried; add them only if a
+  comparison actually needs them.
 
 ## Dependencies / housekeeping
 
