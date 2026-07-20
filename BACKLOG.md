@@ -155,9 +155,32 @@ size and a decision, or gets dropped.
 - [ ] **Basis ETC1S/UASTC transcoding** (M) — KTX2 BCn passthrough is done;
   supercompressed files are rejected with a clear error until a transcoder
   dependency lands (also unlocks compressed textures on the web path).
-- [ ] **meshoptimizer-grade decimation** (M, not S) — swap the
-  vertex-clustering `simplify_primitive` for quadric-error simplification;
-  the API still isolates the swap to one function.
+- [ ] **Put the LOD system on the render path** (M) — **the gap that matters
+  more than any remaining simplifier work.** `build_lod_chain`, `select_lod`
+  and both simplifiers are implemented, tested (103 Rust tests) and reachable
+  from nothing: no render pass or example touches them. Needs per-frame
+  distance evaluation against primitive bounds, a decision on whether levels
+  are pre-uploaded or swapped on demand, and a test that a distant object
+  actually draws fewer triangles than a near one.
+
+  Recorded because I walked into this twice in one day. I shipped `qem.rs` with
+  no callers, "fixed" it by adding `build_lod_chain_with`, and wrote a commit
+  message saying QEM was no longer dead code — when in fact I had connected one
+  unreachable function to another. A function existing, and being tested, is
+  not the same as it running.
+
+- [x] **meshoptimizer-grade decimation** (done 2026-07-20, but see the
+  integration item above) — quadric-error simplification shipped in
+  `scene/qem.rs`, selectable via `build_lod_chain_with(.., Simplifier::Quadric)`.
+  Held to the SAME 18-triangle budget as clustering on a 512-triangle grid with
+  one raised vertex: QEM keeps the spike at peak 2.000 (max deviation 6.66e-8),
+  clustering reports peak 0.000 — it does not shorten the spike, it loses it,
+  because the tip lands alone in its cell and every triangle using it is then
+  dropped as degenerate. A co-planar grid goes 450 -> 4 triangles at 5.06e-6.
+  **`build_lod_chain` still defaults to clustering**, and neither is called by
+  the renderer.
+
+  Historical note on the clusterer it replaces:
 
   Partly improved 2026-07-20: clustered vertices now merge to their cell
   CENTROID rather than the first vertex seen, which removes a vertex-order
@@ -250,9 +273,16 @@ size and a decision, or gets dropped.
 - [ ] **GPU occlusion culling** (L) — frustum culling shipped; depth-pyramid
   occlusion later.
 - [ ] **WebXR** (XL) — parked.
-- [ ] **Colosseum demo scene** (blocked on you) — pick a licensed
-  photogrammetry scan; LOD + KTX2 machinery is ready, keep the asset out of
-  git.
+- [ ] **Colosseum demo scene** (blocked on you AND on the LOD gap below) —
+  pick a licensed photogrammetry scan, keep the asset out of git.
+
+  **Correcting "LOD + KTX2 machinery is ready", which was the most misleading
+  line in this file.** It is true of the code and false of the integration: the
+  LOD subsystem is library-and-tests-only. Nothing in `src/render` or
+  `examples/` builds a chain or calls `select_lod` — verified 2026-07-20, the
+  only references outside `lod.rs`, `qem.rs` and `tests/` are the `pub use`
+  re-exports in `lib.rs`. Dropping in a scan is not a switch to flip; it needs
+  the integration item below first.
 
 ## Cross-renderer
 
@@ -394,16 +424,29 @@ that are *not* exercised that way and should be run periodically:
 
 ## Test coverage ideas
 
-- Headless offscreen rendering in the C++ engine, mirroring the Rust
-  renderer's structural pixel assertions (colour dominance, coverage
-  ratios, energy deltas rather than exact images). The capture path exists
-  (`goldenRenderSuite.cpp`); what is thin is the set of assertions built on
-  it.
-- Fuzz the remaining untrusted inputs: the shader file reader, KTX2/texture
-  loading paths.
-- A GUI-state round-trip test (`GUISceneSharedVars` → renderer → back)
-  so option plumbing cannot silently break, as the cascade-count default
-  did.
+> **This section was rewritten on 2026-07-20 because it had rotted.** An audit
+> of every open item against the code found the stale ones clustered almost
+> entirely here: two of its three bullets were fully done and the third was
+> substantially overtaken. They rotted for a structural reason worth
+> remembering — each was completed *as part of a sized item elsewhere* (the
+> fuzzing `[x]` above, the GUI round-trip in Completed), and nobody walked back
+> up to the unsized prose to strike it. **Any unsized prose that shadows a
+> sized item will rot the same way.** Prefer extending the sized item.
+
+- ~~Fuzz the shader file reader and KTX2/texture loading~~ — **done**;
+  `Test/fuzz/shader_file_reader_fuzz_test.cpp` and
+  `Test/fuzz/texture_loading_fuzz_test.cpp` exist and are registered. KTX2 was
+  deliberately descoped: the C++ engine does not use it.
+- ~~GUI-state round-trip test~~ — **done**;
+  `Test/commit/VulkanEngine/guiSceneVarsRoundTripSuite.cpp`, and it is in the
+  Windows CI filter.
+- Headless offscreen assertions in the C++ engine — **re-scoped, not done.**
+  "What is thin is the set of assertions" was written when
+  `goldenRenderSuite.cpp` had one or two tests; it now carries six, including
+  `DeferredMatchesForwardRoughly`, `FrustumCullingDropsOffscreenMeshesOnly` and
+  `SecondModelLoadsAndRenders`. What is still genuinely missing is coverage of
+  the *shadow* path beyond the single darkened-pixel ratio, and of the
+  post-processing chain.
 
 **Always dump the picture, not just the number** (2026-07-20).
 `GoldenRender.DISABLED_DumpsFrameToPng` writes the captured frame, the same
