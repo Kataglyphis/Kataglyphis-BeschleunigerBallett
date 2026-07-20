@@ -11,6 +11,7 @@
 #include "raycommon.glsl"
 
 #include "hostDevice/host_device_shared_vars.hpp"
+#include "pushConstants/PushConstantRasterizer.hpp"
 
 #include "unreal4.glsl"
 #include "disney.glsl"
@@ -58,12 +59,21 @@ layout(set = 0, binding = SHADOW_MAP_BINDING) uniform sampler2DArray directional
 
 #include "cascaded_shadow.glsl"
 
+// Must match shader.vert's declaration exactly - the block is shared across
+// stages and GLSL requires identical layout in each.
+layout (push_constant) uniform _PushConstantRasterizer {
+	PushConstantRasterizer pc_raster;
+};
+
 layout (location = 0) out vec4 out_color;
 
 void main() {
 	
 	
-	ObjectDescription obj_res	= object_description.i[0];						// for now only one object allowed :)
+	// Indexed per draw. This read object_description.i[0] unconditionally
+	// until 2026-07-20, so every model was shaded with the FIRST model's
+	// material and geometry buffer addresses.
+	ObjectDescription obj_res	= object_description.i[pc_raster.objectIndex];
     MaterialIDs materialIDs		= MaterialIDs(obj_res.material_index_address);	// material id per triangle (face)
 	Materials materials			= Materials(obj_res.material_address);			// array of all materials
 

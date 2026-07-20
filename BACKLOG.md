@@ -465,9 +465,19 @@ unconditional control capture before its output is believed.
 - **`GUI*` is a mutable cross-cutting dependency**: both `Scene` and
   `VulkanRenderer` read GUI state each frame. A plain settings struct
   owned by the app, passed by const reference, would decouple them.
-- **One object only.** `shader.frag` hard-codes `object_description.i[0]`
-  ("for now only one object allowed"); the whole material/descriptor path
-  assumes it. Multi-object support is a prerequisite for any real scene.
+- **One object: half fixed** (2026-07-20). The shaders no longer hard-code
+  `object_description.i[0]` - `PushConstantRasterizer` carries an
+  `objectIndex` set per model, and both the forward and deferred fragment
+  shaders index with it. **But no test exercises index != 0**, because the
+  scene loads exactly one model, so every draw still uses index 0 in practice.
+  The change is validation-clean and the layout contract is guarded
+  (`pushConstantSuite.cpp`), which is not the same as demonstrated.
+
+  What remains before "multi-object" is true: a scene that loads more than one
+  model (`Scene::add_model` is public but building a second `Model` needs the
+  loader plumbed through), and a test that renders two models with different
+  materials and asserts they do not shade identically. Until then, treat this
+  as "the indexing is in place", not "multi-object works".
 
 ## Rust renderer ideas (unsized)
 

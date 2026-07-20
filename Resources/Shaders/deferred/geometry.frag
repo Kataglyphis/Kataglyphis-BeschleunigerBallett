@@ -7,10 +7,17 @@
 
 #include "raycommon.glsl"
 #include "host_device_shared_vars.hpp"
+#include "pushConstants/PushConstantRasterizer.hpp"
 #include "SceneUBO.hpp"
 #include "scene/ObjMaterial.hpp"
 #include "scene/Vertex.hpp"
 #include "ObjectDescription.hpp"
+
+// Must match geometry.vert's declaration exactly - the block is shared across
+// stages and GLSL requires identical layout in each.
+layout (push_constant) uniform _PushConstantRasterizer {
+	PushConstantRasterizer pc_raster;
+};
 
 layout (location = 0) in vec2 texture_coordinates;
 layout (location = 1) in vec3 shading_normal;
@@ -35,7 +42,8 @@ layout(location = 2) out vec4 outAlbedo;
 layout(location = 3) out vec4 outMaterial;
 
 void main() {
-    ObjectDescription obj_res = object_description.i[0];
+    // Indexed per draw; see shader.frag.
+    ObjectDescription obj_res = object_description.i[pc_raster.objectIndex];
     MaterialIDs materialIDs = MaterialIDs(obj_res.material_index_address);
     Materials materials = Materials(obj_res.material_address);
 

@@ -112,8 +112,12 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
 
     for (uint32_t m = 0; m < scene->getModelCount(); m++) {
         pushConstant.model = scene->getModelMatrix(m);
-        commandBuffer.pushConstants(
-          pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(PushConstantRasterizer), &pushConstant);
+        pushConstant.objectIndex = m;
+        commandBuffer.pushConstants(pipeline_layout,
+          vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+          0,
+          sizeof(PushConstantRasterizer),
+          &pushConstant);
 
         for (unsigned int k = 0; k < scene->getMeshCount(m); k++) {
             ++meshesConsidered;
@@ -305,7 +309,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createFramebuffer()
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::createPushConstantRange()
 {
-    push_constant_range.stageFlags = vk::ShaderStageFlagBits::eVertex;
+    // Fragment too: the frag shader indexes object_description with it.
+    push_constant_range.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
     push_constant_range.offset = 0;
     push_constant_range.size = sizeof(PushConstantRasterizer);
 }

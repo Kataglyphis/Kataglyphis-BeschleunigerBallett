@@ -19,6 +19,14 @@ namespace Kataglyphis::VulkanRendererInternals {
 struct PushConstantRasterizer
 {
     mat4 model;// matrix of the instance
+    // Which entry of the object_description array this draw belongs to.
+    //
+    // The fragment shaders used to hard-code index 0 ("for now only one
+    // object allowed"), so every model was shaded with the FIRST model's
+    // material and geometry buffer addresses. With one model in the scene
+    // that is invisible; with two it silently textures the second using the
+    // first's materials.
+    uint objectIndex;
 };
 
 #ifdef __cplusplus

@@ -472,6 +472,7 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
 
     for (uint32_t m = 0; m < scene->getModelCount(); m++) {
         pushConstant.model = scene->getModelMatrix(m);
+        pushConstant.objectIndex = m;
         commandBuffer.pushConstants(
           geometryPipelineLayout, vk::ShaderStageFlagBits::eAll, 0, sizeof(PushConstantRasterizer), &pushConstant);
 
