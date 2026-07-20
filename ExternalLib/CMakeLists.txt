@@ -282,19 +282,24 @@ if(BUILD_TESTING
     # Drop this when upstream adds the includes.
     # Absolute paths on purpose. The relative form compiled under clang-cl's
     # /FI on Windows but failed under clang's -include on Linux CI with "no
-    # such file or directory" even though the -I to the abseil source WAS on
-    # the same command line - the interaction between -include resolution and
-    # the sccache wrapper was not worth debugging when an absolute path
-    # resolves under every compiler, wrapper and cwd. The headers' own
-    # includes still resolve through the normal -I chain.
+    # such file or directory": an absolute path resolves under every compiler,
+    # wrapper and cwd, and the headers' own includes still travel the -I chain.
+    #
+    # The SHELL: prefix is load-bearing on the clang path. Without it, CMake
+    # de-duplicates the repeated `-include` flag and emits
+    # `-include A.h B.h` - so B.h is parsed as a SECOND input file, and clang
+    # dies with "cannot specify -o when generating multiple output files".
+    # SHELL: keeps each flag+path group intact and exempt from de-duplication.
+    # clang-cl's /FI needs no such help: /FIpath is one token that never
+    # collides.
     if(MSVC)
       set(_myproject_fuzztest_absl_fix
           "/FI${abseil-cpp_SOURCE_DIR}/absl/random/internal/distribution_caller.h"
           "/FI${abseil-cpp_SOURCE_DIR}/absl/random/internal/mock_helpers.h")
     else()
       set(_myproject_fuzztest_absl_fix
-          "-include" "${abseil-cpp_SOURCE_DIR}/absl/random/internal/distribution_caller.h"
-          "-include" "${abseil-cpp_SOURCE_DIR}/absl/random/internal/mock_helpers.h")
+          "SHELL:-include ${abseil-cpp_SOURCE_DIR}/absl/random/internal/distribution_caller.h"
+          "SHELL:-include ${abseil-cpp_SOURCE_DIR}/absl/random/internal/mock_helpers.h")
     endif()
     _myproject_collect_external_targets(_fuzztest_fix_targets)
     foreach(_fuzztest_fix_target IN LISTS _fuzztest_fix_targets)
