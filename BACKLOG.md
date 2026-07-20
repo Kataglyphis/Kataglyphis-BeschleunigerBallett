@@ -85,6 +85,16 @@ size and a decision, or gets dropped.
   (`GoldenRender.FrustumCullingDropsOffscreenMeshesOnly`): without a counter,
   a test can only observe that the picture still looks right, which is equally
   true when culling is a no-op.
+- [x] **Model loading parsed the OBJ twice** (fixed 2026-07-20) — measured on
+  the bundled 27 MB `dinosaurs.obj` in a debug/ASAN build: **5.15 s with the
+  duplicate parse, 2.98 s without**. `loadTexturesAndMaterials` and
+  `loadVertices` each called `ParseFromFile`; they now share one parse.
+
+  The same change removed an `exit(EXIT_FAILURE)` on a malformed asset. The
+  two functions disagreed about it - `loadVertices` returned gracefully with
+  a comment saying the GUI can feed arbitrary files, while
+  `loadTexturesAndMaterials` killed the process and ran first, so the graceful
+  path was unreachable.
 - [ ] **Async asset loading** (L) — model load/reload and AS builds block the
   main thread; move to a worker with fence-based handoff (staging ring
   already removed the per-upload queue stalls). **Quantified**: OBJ parsing

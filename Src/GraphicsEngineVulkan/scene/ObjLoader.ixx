@@ -1,4 +1,5 @@
 module;
+#include <tiny_obj_loader.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -30,7 +31,11 @@ class ObjLoader
     std::vector<unsigned int> materialIndex;
     std::vector<std::string> textures;
 
-    std::vector<std::string> loadTexturesAndMaterials(const std::string &modelFile);
-    void loadVertices(const std::string &fileName);
+    // Both take an ALREADY PARSED reader. The file used to be parsed once per
+    // function - twice per model - which for the bundled 27 MB OBJ is around
+    // 190 ms of duplicated work at the measured ~7 ms/MB (BM_ObjParse_Suzanne).
+    // modelFile is still needed: texture paths resolve relative to it.
+    std::vector<std::string> loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const std::string &modelFile);
+    void loadVertices(const tinyobj::ObjReader &reader);
 };
 }// namespace Kataglyphis

@@ -8,6 +8,7 @@ module;
 #include <utility>
 #include <vector>
 #include <vulkan/vulkan.hpp>
+#include "spdlog/spdlog.h"
 #define TINYOBJLOADER_IMPLEMENTATION
 #define TINYOBJLOADER_DISABLE_FAST_FLOAT
 #include <glm/ext/vector_float2.hpp>
@@ -43,11 +44,25 @@ auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model
     indices.clear();
     materialIndex.clear();
 
+    // ONE parse, shared by both extraction passes below. This used to happen
+    // inside each of them, so every model was read and tokenised twice.
+    tinyobj::ObjReaderConfig const reader_config;
+    tinyobj::ObjReader reader;
+    if (!reader.ParseFromFile(modelFile, reader_config)) {
+        // Must not kill the process: the GUI model picker can hand this
+        // arbitrary files. loadVertices already returned gracefully here, but
+        // loadTexturesAndMaterials called exit(EXIT_FAILURE) and ran first,
+        // so a malformed asset took the application down regardless.
+        if (!reader.Error().empty()) { spdlog::error("TinyObjReader: {}", reader.Error()); }
+        return nullptr;
+    }
+    if (!reader.Warning().empty()) { spdlog::warn("TinyObjReader: {}", reader.Warning()); }
+
     // the model we want to load
     std::shared_ptr<Model> new_model = std::make_shared<Model>(device);
 
     // first load txtures from model
-    std::vector<std::string> textureNames = loadTexturesAndMaterials(modelFile);
+    std::vector<std::string> textureNames = loadTexturesAndMaterials(reader, modelFile);
 
     // now that we have the names lets create the vulkan side of textures
     for (size_t i = 0; i < textureNames.size(); i++) {
@@ -67,25 +82,16 @@ auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model
         new_model->addTexture(std::move(defaultTexture));
     }
 
-    loadVertices(modelFile);
+    loadVertices(reader);
 
     new_model->add_new_mesh(device, transfer_queue, command_pool, vertices, indices, materialIndex, this->materials);
 
     return new_model;
 }
 
-auto ObjLoader::loadTexturesAndMaterials(const std::string &modelFile) -> std::vector<std::string>
+auto ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const std::string &modelFile)
+  -> std::vector<std::string>
 {
-    tinyobj::ObjReaderConfig const reader_config;
-    tinyobj::ObjReader reader;
-
-    if (!reader.ParseFromFile(modelFile, reader_config)) {
-        if (!reader.Error().empty()) { std::cerr << "TinyObjReader: " << reader.Error(); }
-        exit(EXIT_FAILURE);
-    }
-
-    if (!reader.Warning().empty()) { std::cout << "TinyObjReader: " << reader.Warning(); }
-
     const auto &tol_materials = reader.GetMaterials();
     textures.reserve(tol_materials.size());
 
@@ -128,22 +134,8 @@ auto ObjLoader::loadTexturesAndMaterials(const std::string &modelFile) -> std::v
     return textures;
 }
 
-void ObjLoader::loadVertices(const std::string &fileName)
+void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
 {
-    tinyobj::ObjReaderConfig const reader_config;
-    // reader_config.mtl_search_path = ""; // Path to material files
-
-    tinyobj::ObjReader reader;
-
-    if (!reader.ParseFromFile(fileName, reader_config)) {
-        // A malformed asset must not kill the process (the GUI can feed
-        // arbitrary files via model reload) - load nothing instead.
-        if (!reader.Error().empty()) { std::cerr << "TinyObjReader: " << reader.Error(); }
-        return;
-    }
-
-    if (!reader.Warning().empty()) { std::cout << "TinyObjReader: " << reader.Warning(); }
-
     const auto &attrib = reader.GetAttrib();
     const auto &shapes = reader.GetShapes();
     std::unordered_map<Vertex, uint32_t> vertices_map{};
