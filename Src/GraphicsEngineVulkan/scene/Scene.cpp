@@ -1,4 +1,5 @@
 module;
+#include <optional>
 
 #include <algorithm>
 #include <cstdint>
@@ -44,6 +45,31 @@ void Scene::loadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool comma
         spdlog::error("Failed to load model: {}", modelFileName);
         return;
     }
+}
+
+std::optional<uint32_t> Scene::loadAdditionalModel(std::shared_ptr<VulkanDevice> device,
+  vk::CommandPool commandPool,
+  const std::string &modelPath,
+  const glm::mat4 &modelMatrix)
+{
+    ObjLoader obj_loader(device, device->getGraphicsQueue(), commandPool);
+
+    // Resolve like loadModel() does: callers pass a path relative to
+    // Resources/, and the working directory differs between the app and the
+    // test executables.
+    const std::string resolved = sceneConfig::resolveModelPath(modelPath);
+    spdlog::info("Loading additional model: {}", resolved);
+    std::shared_ptr<Model> const new_model = obj_loader.loadModel(resolved);
+    if (!new_model) {
+        spdlog::error("Failed to load additional model: {}", modelPath);
+        return std::nullopt;
+    }
+
+    add_model(new_model);
+    const uint32_t model_index = getModelCount() - 1U;
+    update_model_matrix(modelMatrix, model_index);
+    spdlog::info("Additional model added at index {}.", model_index);
+    return model_index;
 }
 
 void Scene::add_model(const std::shared_ptr<Model> &model)

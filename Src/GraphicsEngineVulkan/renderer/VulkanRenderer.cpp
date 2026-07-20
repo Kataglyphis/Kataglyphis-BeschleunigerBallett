@@ -650,6 +650,29 @@ void Kataglyphis::VulkanRenderer::updateUBODescriptorSets()
     }
 }
 
+std::optional<uint32_t> Kataglyphis::VulkanRenderer::addModel(const std::string &modelPath,
+  const glm::mat4 &modelMatrix)
+{
+    if (!scene || !device) { return std::nullopt; }
+
+    // Uploads happen on the graphics queue; make sure nothing is mid-flight
+    // reading the descriptor sets this is about to rewrite.
+    std::ignore = device->getLogicalDevice().waitIdle();
+
+    const std::optional<uint32_t> index =
+      scene->loadAdditionalModel(device, graphics_command_pool, modelPath, modelMatrix);
+    if (!index.has_value()) { return std::nullopt; }
+
+    // Release the old buffer BEFORE building the replacement. Skipping this
+    // leaks the previous allocation and trips VMA's
+    // "some allocations were not freed" assertion when the block is
+    // destroyed - which is how the two-model test first failed.
+    objectDescriptionBuffer.cleanUp();
+    create_object_description_buffer();
+    updateAllDescriptorSets();
+    return index;
+}
+
 void Kataglyphis::VulkanRenderer::updateAllDescriptorSets()
 {
     updateUBODescriptorSets();

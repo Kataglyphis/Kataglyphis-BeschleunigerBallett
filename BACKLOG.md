@@ -465,19 +465,20 @@ unconditional control capture before its output is believed.
 - **`GUI*` is a mutable cross-cutting dependency**: both `Scene` and
   `VulkanRenderer` read GUI state each frame. A plain settings struct
   owned by the app, passed by const reference, would decouple them.
-- **One object: half fixed** (2026-07-20). The shaders no longer hard-code
-  `object_description.i[0]` - `PushConstantRasterizer` carries an
-  `objectIndex` set per model, and both the forward and deferred fragment
-  shaders index with it. **But no test exercises index != 0**, because the
-  scene loads exactly one model, so every draw still uses index 0 in practice.
-  The change is validation-clean and the layout contract is guarded
-  (`pushConstantSuite.cpp`), which is not the same as demonstrated.
+- **Multi-object rendering works** (2026-07-20). The shaders index
+  `object_description.i[pc_raster.objectIndex]` rather than hard-coding 0,
+  `Scene::loadAdditionalModel` / `VulkanRenderer::addModel` can add a model
+  without replacing the scene, and `GoldenRender.SecondModelLoadsAndRenders`
+  loads a second model at index 1 and asserts it reaches the draw loop and
+  changes the frame.
 
-  What remains before "multi-object" is true: a scene that loads more than one
-  model (`Scene::add_model` is public but building a second `Model` needs the
-  loader plumbed through), and a test that renders two models with different
-  materials and asserts they do not shade identically. Until then, treat this
-  as "the indexing is in place", not "multi-object works".
+  Still not isolated: the test proves a second model loads, is counted and
+  contributes pixels, but does not prove the index ARITHMETIC - two models
+  whose materials differ enough to tell apart driver-independently would be
+  needed for that. The layout contract is guarded in `pushConstantSuite.cpp`.
+
+  The scene still loads one model by default; a multi-model debug scene is a
+  separate decision about what the app should open on.
 
 ## Rust renderer ideas (unsized)
 

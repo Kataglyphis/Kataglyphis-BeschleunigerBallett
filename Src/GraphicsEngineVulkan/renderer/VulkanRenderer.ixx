@@ -1,4 +1,7 @@
 module;
+#include <optional>
+#include <string>
+#include <glm/glm.hpp>
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -46,6 +49,17 @@ class VulkanRenderer
     void drawFrame();
 
     void updateUniforms(Scene *scene_data, Camera *camera_data, Kataglyphis::Frontend::Window *window_data);
+
+    /// Adds a model to the current scene without replacing what is already
+    /// there, and refreshes the descriptor sets that reference scene
+    /// resources. Returns the new model's index - the value the raster paths
+    /// push as objectIndex - or std::nullopt if loading failed.
+    ///
+    /// Lives here rather than on Scene alone because the caller would
+    /// otherwise need the renderer's device and command pool, and because
+    /// forgetting the descriptor refresh leaves the new model sampling
+    /// whatever the previous scene had bound.
+    std::optional<uint32_t> addModel(const std::string &modelPath, const glm::mat4 &modelMatrix);
 
     void updateStateDueToUserInput(Kataglyphis::Frontend::GUI *frontend_gui);
     void finishAllRenderCommands();

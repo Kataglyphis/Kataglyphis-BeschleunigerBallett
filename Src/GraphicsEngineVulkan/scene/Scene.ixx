@@ -1,4 +1,5 @@
 module;
+#include <optional>
 #include <algorithm>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -109,6 +110,19 @@ class Scene
     void loadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool);
 
     void reloadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, const std::string &modelPath);
+
+    /// Loads an ADDITIONAL model, leaving existing ones in place, and returns
+    /// its model index (the value the raster paths push as objectIndex) or
+    /// std::nullopt if loading failed.
+    ///
+    /// loadModel() deliberately loads exactly one model from SceneConfig and
+    /// reloadModel() replaces the scene, so until now nothing could produce a
+    /// scene with two models - which meant the per-draw objectIndex could not
+    /// be exercised even though the shaders index with it.
+    std::optional<uint32_t> loadAdditionalModel(std::shared_ptr<VulkanDevice> device,
+      vk::CommandPool commandPool,
+      const std::string &modelPath,
+      const glm::mat4 &modelMatrix);
 
     void add_model(const std::shared_ptr<Model> &model);
     void add_object_description(ObjectDescription object_description);

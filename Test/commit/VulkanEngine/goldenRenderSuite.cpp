@@ -17,6 +17,7 @@
 
 #include <gtest/gtest.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
 #include <vulkan/vulkan.hpp>
 #define GLFW_INCLUDE_NONE
@@ -31,6 +32,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -752,4 +754,73 @@ TEST(GoldenRender, FrustumCullingDropsOffscreenMeshesOnly)
       << "with culling disabled every mesh must be submitted regardless of the camera";
 
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
+}
+
+// A scene with TWO models, which is what makes the per-draw objectIndex
+// observable at all.
+//
+// The fragment shaders read object_description.i[pc_raster.objectIndex]. With
+// one model in the scene that index is always 0, so the indexing could be
+// entirely broken and nothing would show it - which is exactly the state this
+// engine was in while shader.frag carried "for now only one object allowed".
+//
+// What this asserts, and what it does not: it proves a second model loads,
+// reaches the raster path, and contributes pixels. It does NOT isolate the
+// index arithmetic - proving that would need two models whose materials
+// differ enough to tell apart in a driver-independent way. The layout
+// contract is guarded separately in pushConstantSuite.cpp.
+TEST(GoldenRender, SecondModelLoadsAndRenders)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    renderer_vars.frustum_culling_enabled = true;
+
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    const unsigned int meshes_with_one_model = renderer_vars.visibility.meshes_total;
+    ASSERT_GT(meshes_with_one_model, 0U);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> before = harness.capture_frame(width, height);
+    ASSERT_FALSE(before.empty());
+
+    // The shadow rig is a solid slab over a plane - large, untextured and
+    // unmistakable, so it cannot fail to change the frame if it renders.
+    // Placed between the camera and the existing scene.
+    const glm::mat4 placement = glm::translate(glm::mat4(1.0F), glm::vec3(0.0F, 2.0F, 12.0F))
+                                * glm::scale(glm::mat4(1.0F), glm::vec3(0.15F));
+    const std::optional<uint32_t> second =
+      harness.renderer->addModel("Models/ShadowTest/shadow_rig.obj", placement);
+
+    ASSERT_TRUE(second.has_value()) << "the second model failed to load";
+    EXPECT_EQ(*second, 1U) << "the second model must be index 1 - this is the objectIndex the raster path pushes";
+
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost after adding a model.";
+
+    // The raster path must now consider more meshes than before.
+    EXPECT_GT(renderer_vars.visibility.meshes_total, meshes_with_one_model)
+      << "adding a model did not change how many meshes the raster path considered; "
+         "the new model never reached the draw loop";
+
+    const std::vector<uint8_t> after = harness.capture_frame(width, height);
+    ASSERT_EQ(after.size(), before.size());
+
+    size_t changed = 0;
+    for (size_t pixel = 0; pixel + 3 < after.size(); pixel += 4) {
+        if (std::abs(luminance_of(after, pixel / 4) - luminance_of(before, pixel / 4)) > 4.0) { ++changed; }
+    }
+    EXPECT_GT(changed, 500U) << "the second model loaded and was counted, but changed only " << changed
+                             << " pixels - it is being drawn somewhere invisible, or not drawn at all";
 }
