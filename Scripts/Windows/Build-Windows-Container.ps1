@@ -97,20 +97,39 @@ function Get-BuildCommandArgs {
   return $psArgs
 }
 
-# Persistent compiler cache: sccache stores objects in the container FS by
-# default, which is discarded with the container - so every build was a cold
-# full rebuild. A named volume survives containers and makes repeat builds
-# mostly cache hits.
-$sccacheVolume = 'kataglyphis-sccache'
-$sccacheDir = 'C:\sccache'
+# Persistent compiler cache - in the CONTAINER filesystem, deliberately NOT on
+# a named volume.
+#
+# The volume was the cause of the "every sccache write fails" mystery.
+# Diagnosed 2026-07-20 by running the server by hand with SCCACHE_LOG=trace:
+# every DiskCache::put_raw died with os error 3 ("The system cannot find the
+# path specified") when SCCACHE_DIR sat on the wcifs volume mount, while
+# PowerShell in the same container could write the same paths - including
+# \?\-prefixed ones - without error. Pointing SCCACHE_DIR at a
+# container-local directory made the very next compile pair go miss -> HIT
+# with zero write errors, so the failure is specific to how the sccache
+# server writes (tempfile + rename) on a wcifs volume, and no cache written
+# through that mount was ever going to persist anything.
+#
+# Container-local means the cache dies with the container - which is fine,
+# because builds run in the PERSISTENT container (bb-build-persistent); the
+# cache survives exactly as long as the thing that uses it. A volume that
+# takes 100% write errors persisted nothing anyway.
+$sccacheDir = 'C:\sccache-local'
 $cacheArgs = @(
-  '-v', "${sccacheVolume}:${sccacheDir}",
   '-e', "SCCACHE_DIR=${sccacheDir}",
   '-e', 'SCCACHE_CACHE_SIZE=20G',
   # Without these, a failing cache write is silent: sccache reports the count
   # in its stats and discards the reason. Measured 2026-07-20: 66 write errors
   # out of 66 misses, i.e. every single write failing, with no way to see why.
-  '-e', "SCCACHE_ERROR_LOG=${sccacheDir}\sccache-error.log",
+  # The error log must NOT live under $sccacheDir: sccache's disk cache
+  # creates its own directory, but the server OPENS THE ERROR LOG FIRST and
+  # dies if its parent does not exist - and then every sccache-wrapped tool
+  # fails with "Timed out waiting for server startup". With
+  # RUSTC_WRAPPER=sccache that poisons even `cargo tree`, which corrosion
+  # reports as "Failed to find a dependency on cxxbridge-cmd" - three
+  # indirections from the cause. C:\ always exists.
+  '-e', 'SCCACHE_ERROR_LOG=C:\sccache-error.log',
   '-e', 'SCCACHE_LOG=warn',
   # Build trees are streamed in for incremental builds - do not wipe them.
   '-e', 'KATAGLYPHIS_KEEP_BUILD_ROOT=1'

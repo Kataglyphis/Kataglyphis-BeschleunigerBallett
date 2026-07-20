@@ -728,6 +728,44 @@ unconditional control capture before its output is believed.
   left its clear value. Five earlier defects were found and fixed while
   chasing this one; the CPU unit tests in `cascadedShadowMapSuite.cpp` and the
   `ShadowPushCarriesTheSceneModelMatrix` regression guard came out of it.
+### sccache solved, and the abseil incompatibility that hid behind everything (2026-07-20)
+
+**sccache: root cause was the volume mount.** Ran the server by hand with
+trace logging: every `DiskCache::put_raw` died with os error 3 on the wcifs
+volume at `C:\sccache`, while PowerShell could write the same paths - the
+failure is specific to how the server writes (tempfile + rename) on wcifs.
+`SCCACHE_DIR` now lives in the container FS (`C:\sccache-local`), which is
+fine because builds run in the persistent container - the cache lives exactly
+as long as the thing using it, and a volume with 100% write errors persisted
+nothing anyway. Verified after the fix: **757 cache writes, 0 errors**.
+
+Two traps found while fixing it, both mine:
+
+- `SCCACHE_ERROR_LOG` must not live under `SCCACHE_DIR`: the server opens the
+  log BEFORE the disk cache creates its directory, dies if the parent is
+  missing, and then every wrapped tool fails with "Timed out waiting for
+  server startup". With `RUSTC_WRAPPER=sccache` that poisons `cargo tree`,
+  which corrosion reports as "Failed to find a dependency on cxxbridge-cmd" -
+  three indirections from the cause. The log now sits at `C:\sccache-error.log`.
+- A fresh container exposed that the "working" Windows fuzz build was stale
+  objects: FUZZTEST at main does not compile against the abseil LTS it itself
+  pins.
+
+**The abseil incompatibility (both platforms, one bug):** `fuzzing_bit_gen.h`
+friend-declares `absl::random_internal::{DistributionCaller, MockHelpers}`
+without including their headers, and in abseil LTS 20260526 `bit_gen_ref.h`
+no longer provides them transitively. Upstream's Bazel CI layers includes
+differently, so they do not see it. Fixed in two places with the reason for
+the asymmetry recorded: the `fuzztest_*` library targets get a force-include
+flag, but OUR fuzz targets cannot - a force-include flows into the
+synthesized C++20 module BMI compiles of imported engine modules, which have
+no abseil include path (tomlplusplus BMI failed with exactly that) - so the
+sources include the two headers before `fuzztest.h` instead, which module
+synthesis never sees. Full Windows container build: 3/3 steps, 66 tests pass.
+
+The module-TU bypass still caps sccache's payoff; that part of the sccache
+item stays open.
+
 ### #74 The Linux fuzzer lane — ROOT CAUSE FOUND AND FIXED (2026-07-20)
 
 Red since 2026-05-17. **The cause was an ODR violation, not FUZZTEST and not

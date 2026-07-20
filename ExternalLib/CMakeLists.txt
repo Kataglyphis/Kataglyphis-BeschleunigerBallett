@@ -265,6 +265,42 @@ if(BUILD_TESTING
 
     add_subdirectory(FUZZTEST)
 
+    # FuzzTest at main (ad66c13) does not compile against the abseil LTS it
+    # itself pins (20260526.0): fuzzing_bit_gen.h friend-declares
+    # absl::random_internal::{DistributionCaller, MockHelpers} without
+    # including their headers, and in this LTS bit_gen_ref.h no longer pulls
+    # them in transitively. Upstream's Bazel build layers includes differently,
+    # which is why their CI does not notice. Broke BOTH lanes here - Linux CI
+    # outright, Windows only after a truly fresh rebuild, because the reused
+    # container had stale objects compiled against an older abseil.
+    #
+    # Force-include the two headers into every fuzztest_* target. Applied per
+    # TARGET, not per directory: GLFW, SPDLOG and friends are declared later in
+    # this same scope, and a directory-scoped flag would hand them a header
+    # they have no include path for. Both headers are ordinary guarded
+    # headers, so force-including them where they are not needed is harmless.
+    # Drop this when upstream adds the includes.
+    if(MSVC)
+      set(_myproject_fuzztest_absl_fix
+          /FIabsl/random/internal/distribution_caller.h
+          /FIabsl/random/internal/mock_helpers.h)
+    else()
+      set(_myproject_fuzztest_absl_fix
+          -include absl/random/internal/distribution_caller.h
+          -include absl/random/internal/mock_helpers.h)
+    endif()
+    _myproject_collect_external_targets(_fuzztest_fix_targets)
+    foreach(_fuzztest_fix_target IN LISTS _fuzztest_fix_targets)
+      if(_fuzztest_fix_target MATCHES "^fuzztest_")
+        get_target_property(_fix_target_type "${_fuzztest_fix_target}" TYPE)
+        if(NOT _fix_target_type STREQUAL "INTERFACE_LIBRARY")
+          target_compile_options("${_fuzztest_fix_target}" PRIVATE ${_myproject_fuzztest_absl_fix})
+        endif()
+      endif()
+    endforeach()
+    unset(_myproject_fuzztest_absl_fix)
+    unset(_fuzztest_fix_targets)
+
     if(_MYPROJECT_WINDOWS_FUZZTEST_ASAN)
       _myproject_append_link_library_to_targets(
         kataglyphis_fuzztest_windows_asan
