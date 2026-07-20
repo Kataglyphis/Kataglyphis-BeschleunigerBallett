@@ -185,3 +185,65 @@ TEST(FrustumUnit, CullingFollowsTheModelMatrix)
     EXPECT_TRUE(isVisible(planes, transformAABB(inView, object)));
     EXPECT_FALSE(isVisible(planes, transformAABB(wayOffLeft, object)));
 }
+
+// The shadow-caster variant, and why it is not just isVisible with a flag.
+//
+// A cascade's ortho box is fitted to the camera frustum slice it covers, with
+// only a small padding toward the light. Geometry BETWEEN the light and that
+// box still casts into it - its shadow travels along the box's own depth axis
+// - but it sits outside the near plane. Culling it is the classic
+// missing-shadow-from-tall-geometry bug, and it looks like the shadow simply
+// not existing rather than like a culling error.
+TEST(FrustumUnit, ShadowCasterTestIgnoresOnlyTheNearPlane)
+{
+    // An ORTHOGRAPHIC light matrix, because that is the only thing this
+    // function is ever handed - a cascade's light-space view-projection.
+    //
+    // The distinction matters: under a PERSPECTIVE frustum the side planes
+    // also reject anything behind the apex, so dropping the near plane alone
+    // would not admit a caster between light and box. Under an ortho box the
+    // side planes run parallel to the light direction, which is exactly why
+    // dropping the near plane is both sufficient and safe. Testing this
+    // against a perspective matrix would assert a property the function does
+    // not have and is not asked for.
+    const glm::mat4 lightView =
+      glm::lookAt(glm::vec3(0.0F, 20.0F, 0.0F), glm::vec3(0.0F, 0.0F, 0.0F), glm::vec3(0.0F, 0.0F, -1.0F));
+    const glm::mat4 lightProjection = glm::ortho(-10.0F, 10.0F, -10.0F, 10.0F, 1.0F, 40.0F);
+    const FrustumPlanes planes = extractFrustumPlanes(lightProjection * lightView);
+
+    // Inside the box: both tests agree.
+    const AABB inside = box_at({ 0.0F, 0.0F, 0.0F }, 1.0F);
+    EXPECT_TRUE(isVisible(planes, inside));
+    EXPECT_TRUE(isVisibleAsShadowCaster(planes, inside));
+
+    // Between the light and the box - above the near plane, still casting
+    // straight down into it. This is the whole point of the variant.
+    const AABB betweenLightAndBox = box_at({ 0.0F, 35.0F, 0.0F }, 1.0F);
+    EXPECT_FALSE(isVisible(planes, betweenLightAndBox)) << "the camera test must still reject it";
+    EXPECT_TRUE(isVisibleAsShadowCaster(planes, betweenLightAndBox))
+      << "a caster between the light and the cascade still casts into it";
+
+    // Side and far planes stay in force: something outside them in the
+    // light's XY casts its shadow outside the box too, and something past the
+    // far plane is behind everything the cascade covers.
+    EXPECT_FALSE(isVisibleAsShadowCaster(planes, box_at({ -100.0F, 0.0F, 0.0F }, 1.0F))) << "far in light X";
+    EXPECT_FALSE(isVisibleAsShadowCaster(planes, box_at({ 100.0F, 0.0F, 0.0F }, 1.0F))) << "far in light X";
+    EXPECT_FALSE(isVisibleAsShadowCaster(planes, box_at({ 0.0F, 0.0F, 100.0F }, 1.0F))) << "far in light Y";
+    EXPECT_FALSE(isVisibleAsShadowCaster(planes, box_at({ 0.0F, -50.0F, 0.0F }, 1.0F))) << "beyond the far plane";
+}
+
+TEST(FrustumUnit, ShadowCasterTestKeepsTheOtherGuarantees)
+{
+    const FrustumPlanes planes = extractFrustumPlanes(default_view_projection());
+
+
+    // Unknown bounds must render rather than vanish, same as isVisible.
+    AABB unknown{};
+    unknown.min = glm::vec3(1.0F);
+    unknown.max = glm::vec3(-1.0F);
+    ASSERT_FALSE(unknown.isValid());
+    EXPECT_TRUE(isVisibleAsShadowCaster(planes, unknown));
+
+    // And a box enclosing everything is still a caster.
+    EXPECT_TRUE(isVisibleAsShadowCaster(planes, box_at({ 0.0F, 0.0F, 0.0F }, 1000.0F)));
+}

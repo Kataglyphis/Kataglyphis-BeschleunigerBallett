@@ -9,6 +9,7 @@ export module kataglyphis.vulkan.cascaded_shadow_map;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.scene;
+import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.buffer;
 
 export namespace Kataglyphis {
@@ -86,10 +87,18 @@ class CascadedShadowMap
       float splitLambda = 0.5F);
     const std::vector<CascadeData>& getCascadeData() const { return cascadeData; }
 
+    /// Caster draws submitted / considered across all cascades in the last
+    /// recordCommands call. Summed over cascades, so a 3-cascade scene with
+    /// one mesh considers 3.
+    unsigned int getCastersDrawn() const { return castersDrawn; }
+    unsigned int getCastersConsidered() const { return castersConsidered; }
+
     void cleanUp();
     ~CascadedShadowMap() { cleanUp(); }
 
   private:
+    unsigned int castersDrawn{ 0 };
+    unsigned int castersConsidered{ 0 };
     std::shared_ptr<VulkanDevice>device{ nullptr };
     uint32_t shadowWidth{ 0 };
     uint32_t shadowHeight{ 0 };

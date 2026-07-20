@@ -53,34 +53,43 @@ FrustumPlanes extractFrustumPlanes(const glm::mat4 &m)
     return planes;
 }
 
-bool isVisible(const FrustumPlanes &planes, const AABB &box)
+namespace {
+/// Shared body of the visibility tests. `skipPlane` lets the shadow-caster
+/// variant drop the near plane without duplicating the p-vertex logic.
+bool visibleAgainstPlanes(const FrustumPlanes &planes, const AABB &box, int skipPlane)
 {
-    // An invalid (never-initialised) box means "we do not know how big this
-    // is". Treat it as visible: drawing something unnecessarily is a cost,
-    // not a bug, whereas culling it is a missing object.
     if (!box.isValid()) { return true; }
 
-    for (const glm::vec4 &plane : planes) {
+    for (int index = 0; index < static_cast<int>(planes.size()); ++index) {
+        if (index == skipPlane) { continue; }
+        const glm::vec4 &plane = planes[static_cast<size_t>(index)];
         const glm::vec3 normal{ plane };
-        if (glm::dot(normal, normal) < 1e-16F) { continue; }// degenerate, ignore
+        if (glm::dot(normal, normal) < 1e-16F) { continue; }
 
-        // p-vertex: the box corner furthest along the plane normal. If even
-        // that corner is behind the plane, every corner is, and the box is
-        // provably outside. Testing the centre instead would cull boxes that
-        // straddle the plane.
         const glm::vec3 positive{
             normal.x >= 0.0F ? box.max.x : box.min.x,
             normal.y >= 0.0F ? box.max.y : box.min.y,
             normal.z >= 0.0F ? box.max.z : box.min.z,
         };
 
-        // A small tolerance keeps geometry exactly on the boundary visible;
-        // popping at the screen edge is far more noticeable than one extra
-        // draw.
         constexpr float kEpsilon = 1e-4F;
         if (glm::dot(normal, positive) + plane.w < -kEpsilon) { return false; }
     }
     return true;
+}
+
+/// Index of the near plane in the array extractFrustumPlanes builds.
+constexpr int kNearPlaneIndex = 4;
+}// namespace
+
+bool isVisibleAsShadowCaster(const FrustumPlanes &planes, const AABB &box)
+{
+    return visibleAgainstPlanes(planes, box, kNearPlaneIndex);
+}
+
+bool isVisible(const FrustumPlanes &planes, const AABB &box)
+{
+    return visibleAgainstPlanes(planes, box, -1);
 }
 
 AABB transformAABB(const glm::mat4 &model, const AABB &box)

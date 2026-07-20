@@ -21,6 +21,7 @@ import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.file;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.scene;
+import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.buffer;
 import kataglyphis.vulkan.buffer_manager;
@@ -579,6 +580,9 @@ void CascadedShadowMap::createGraphicsPipeline()
 
 void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, const std::vector<vk::DescriptorSet> &descriptorSets)
 {
+    castersDrawn = 0;
+    castersConsidered = 0;
+
     for (uint32_t cascade = 0; cascade < numCascades; cascade++) {
         vk::RenderPassBeginInfo renderPassInfo{};
         renderPassInfo.renderPass = renderPass;
@@ -611,6 +615,17 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
         std::vector<vk::DescriptorSet> shadowDescriptorSets = {descriptorSet};
         commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, shadowDescriptorSets, nullptr);
 
+        // Cull against THIS CASCADE'S light frustum, not the camera's.
+        //
+        // The distinction matters and is easy to get backwards: geometry
+        // outside the camera view can still cast a shadow into it, so culling
+        // casters by the camera frustum deletes shadows. Geometry outside the
+        // cascade's own ortho box genuinely cannot affect that cascade's depth
+        // map - nothing samples it there - so this test is safe, and it is
+        // where the saving is: without it every mesh is drawn once per
+        // cascade regardless of which slice of the view it covers.
+        const FrustumPlanes cascadeFrustum = extractFrustumPlanes(cascadeData[cascade].viewProjMatrix);
+
         for (uint32_t m = 0; m < scene->getModelCount(); m++) {
             // The shadow caster must be transformed by the SAME model matrix
             // the forward pass uses (Rasterizer::recordCommands). This pushed a
@@ -631,6 +646,12 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
               &push);
 
             for (uint32_t k = 0; k < scene->getMeshCount(m); k++) {
+                ++castersConsidered;
+                if (!isVisibleAsShadowCaster(cascadeFrustum, transformAABB(scene->getModelMatrix(m), scene->getMeshBounds(m, k)))) {
+                    continue;
+                }
+                ++castersDrawn;
+
                 const vk::Buffer vertex_buffer = scene->getVertexBuffer(m, k);
                 const vk::DeviceSize offset = 0;
                 commandBuffer.bindVertexBuffers(0, 1, &vertex_buffer, &offset);

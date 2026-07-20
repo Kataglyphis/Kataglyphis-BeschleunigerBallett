@@ -61,9 +61,18 @@ size and a decision, or gets dropped.
   provably outside the view. Toggle:
   `GUIRendererSharedVars::frustum_culling_enabled`.
 
-  Deliberately NOT applied to the shadow pass - geometry beside or behind the
-  camera still casts into view, so culling casters by the camera frustum
-  deletes shadows rather than saving work.
+  The shadow pass is culled too, but against **each cascade's own light
+  frustum**, never the camera's. The distinction is the whole point: geometry
+  beside or behind the camera still casts into view, so a camera-frustum test
+  would delete shadows, whereas geometry outside a cascade's ortho box cannot
+  affect that cascade's depth map.
+
+  That test also ignores the near plane (`isVisibleAsShadowCaster`). A caster
+  between the light and the box - tall geometry, a ceiling - sits outside the
+  near plane and still casts into the box, because its shadow travels along
+  the box's depth axis. Dropping only the near plane is safe precisely because
+  the cascade projection is orthographic, so the side planes run parallel to
+  the light; under a perspective frustum the same trick would not work.
 
   Honest scope: the debug scene is one model with one mesh, so this saves
   nothing measurable today. It pays off with the multi-object work below, and

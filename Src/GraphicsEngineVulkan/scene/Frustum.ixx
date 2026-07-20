@@ -42,6 +42,20 @@ FrustumPlanes extractFrustumPlanes(const glm::mat4 &viewProjection);
 /// volume.
 bool isVisible(const FrustumPlanes &planes, const AABB &boxWorldSpace);
 
+/// Visibility test for SHADOW CASTERS against a light frustum.
+///
+/// Identical to [`isVisible`] except that the NEAR plane is ignored, and that
+/// difference is a correctness requirement rather than an optimisation.
+///
+/// A cascade's ortho box is fitted to the camera frustum slice it covers, with
+/// only a small padding toward the light. Geometry between the light and that
+/// box - a tall object, a ceiling - lies outside the near plane but still
+/// casts into the box, because its shadow travels along the box's own depth
+/// axis. Culling it produces the classic missing-shadow-from-tall-geometry
+/// bug. The side and far planes are safe: something outside them in the
+/// light's XY casts its shadow outside too.
+bool isVisibleAsShadowCaster(const FrustumPlanes &planes, const AABB &boxWorldSpace);
+
 /// Transforms an object-space AABB by a model matrix and returns the AABB of
 /// the result.
 ///
