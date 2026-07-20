@@ -74,3 +74,8 @@ target_link_libraries(obj_parsing_fuzz_test PRIVATE tinyobjloader)
 # Real engine surface: scene-config path resolution (GUI model selection).
 kataglyphis_add_fuzz_test(scene_config_fuzz_test scene_config_fuzz_test.cpp)
 target_link_libraries(scene_config_fuzz_test PRIVATE VulkanEngineCore)
+
+# Real engine surface: the file reader every shader load goes through
+# (ShaderHelper -> File::readCharSequence -> VkShaderModule, unvalidated).
+kataglyphis_add_fuzz_test(shader_file_reader_fuzz_test shader_file_reader_fuzz_test.cpp)
+target_link_libraries(shader_file_reader_fuzz_test PRIVATE VulkanEngineCore)
