@@ -293,7 +293,13 @@ if(BUILD_TESTING
     foreach(_fuzztest_fix_target IN LISTS _fuzztest_fix_targets)
       if(_fuzztest_fix_target MATCHES "^fuzztest_")
         get_target_property(_fix_target_type "${_fuzztest_fix_target}" TYPE)
-        if(NOT _fix_target_type STREQUAL "INTERFACE_LIBRARY")
+        # Only targets that link abseil get the force-include. Any TU that
+        # includes the broken header necessarily links absl (it uses absl
+        # types), while targets like fuzztest_sha1 link no absl, have no absl
+        # include path, and fail to RESOLVE the forced header - which is
+        # exactly how the first version of this fix broke the Linux build.
+        get_target_property(_fix_target_libs "${_fuzztest_fix_target}" LINK_LIBRARIES)
+        if(NOT _fix_target_type STREQUAL "INTERFACE_LIBRARY" AND "${_fix_target_libs}" MATCHES "absl")
           target_compile_options("${_fuzztest_fix_target}" PRIVATE ${_myproject_fuzztest_absl_fix})
         endif()
       endif()
