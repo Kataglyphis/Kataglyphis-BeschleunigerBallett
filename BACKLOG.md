@@ -713,6 +713,21 @@ was in use green and red, so the toolchain did not change under CI. Worth
 pinning to a digest anyway, since a floating tag means CI is not reproducible,
 but it is not this bug.
 
+**Narrowed further, without needing CI.** Across `b73724d4..8fec7468` the
+FUZZTEST **CMake surface did not change at all** - no commits touch `cmake/` or
+`CMakeLists.txt` - so our build wiring is not implicated. What did move is the
+**centipede adaptor** (`fuzztest/internal/centipede_adaptor.cc`): env-var
+propagation to spawned binaries, runner cleanup timeouts, early-termination
+exit paths, reporter disable/abort behaviour. That is precisely the runtime
+that starts up in non-libfuzzer mode, which is the mode this project builds
+(`FUZZTEST_COMPATIBILITY_MODE` is not `libfuzzer` here). A null-pointer call
+during adaptor startup fits every symptom.
+
+**Fixing the fuzzer will probably not turn the lane green.** Every step after
+it - including `Run performance benchmarks (gcc)`, the *other* known failure -
+currently reports `skipped`, so their true state is unknown and has been for
+months. Expect a second problem behind this one.
+
 Open as PR #32 (draft, diagnostic): reverts only the pin, to confirm cause. The
 lane only builds on `main`/`develop` pushes and PRs, so a PR is the only way to
 run the experiment without committing to `develop`. A green fuzzer step there
