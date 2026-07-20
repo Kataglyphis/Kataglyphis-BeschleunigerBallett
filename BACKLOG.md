@@ -93,8 +93,45 @@ size and a decision, or gets dropped.
   Guarded by a headless test comparing an sRGB and a non-sRGB render; without
   the encode the two means differ by 49 levels (177.17 vs 127.77).
 - [ ] **Auto-exposure** (M) — manual EV shipped; histogram-based auto next.
-- [ ] **Per-pixel alpha-tested shadows** (S) — textured MASK materials
-  currently cast by base-alpha only.
+- [ ] **Per-pixel alpha-tested shadows** (M, not S — attempted and reverted
+  2026-07-20) — textured MASK materials cast by base-alpha only, so a foliage
+  card (white base-color factor, cut-out entirely in the texture) casts the
+  shadow of the solid quad it is modelled as.
+
+  A full implementation was written and then **reverted because it could not
+  be shown to work**: `vs_shadow_masked`/`fs_shadow_masked` in `forward.wgsl`,
+  a `shadow_masked_bind_group_layout` carrying base color at bindings 3/4, a
+  second shadow pipeline used only for MASK primitives, and per-primitive
+  routing. It compiles, runs, and changes nothing measurable.
+
+  What the next attempt does NOT need to re-derive:
+
+  - The masked pipeline **does** run: an unconditional `discard` in
+    `fs_shadow_masked` removes the shadow entirely (0 shadowed pixels).
+  - Routing is correct: printing `casts_shadow`/`alpha_masked` per primitive
+    shows the MASK card on the masked pipeline.
+  - The interpolated UV reaches the fragment stage and varies:
+    `if (in.uv.x > 0.5) { discard; }` halves the shadow (496 -> 260 pixels).
+  - `base_uv` equals `in.uv` (identity KHR_texture_transform), so the
+    transform is not at fault.
+  - **The sampled alpha is >= 0.5 everywhere even for a half-transparent
+    texture**, at mip 0 via `textureSampleLevel`. The same texture on the same
+    primitive cuts out correctly in the FORWARD pass (bright pixels
+    60482 -> 56913), so the texture reaches the GPU and the forward alpha test
+    works. Everything points at the view bound at binding 3 of the masked
+    shadow bind group not being the material's base color texture, but
+    `views[0]` is demonstrably the base color slot and I could not prove it.
+
+  Also worth keeping: **a closed cube is useless as the test caster.** Its
+  shadow is the union of six faces' projections, so discarding half of every
+  face leaves the silhouette unchanged — an alpha test that provably ran moved
+  the shadowed pixel count by under 10%. Use a single-sided card (the plane
+  mesh, cloned and raised) as the caster.
+
+  One correction to the old note here: `casts_shadow` skipping MASK
+  primitives whose `base_color[3] < cutoff` was CORRECT — such a material is
+  invisible in the forward pass too. The defect is the SHAPE of a visible
+  cut-out's shadow, not its absence.
 - [ ] **HDR-cubemap IBL** (M) — replace the analytic hemisphere approximation
   with a real prefiltered environment map; MikkTSpace tangents alongside.
 - [ ] **Web drop-zone / model picker** (S) — native drag-and-drop shipped;
