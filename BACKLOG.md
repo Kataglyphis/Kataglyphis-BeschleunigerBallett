@@ -274,6 +274,14 @@ unconditional control capture before its output is believed.
   Closing that gap needs a self-hosted runner with a GPU. **A suite added to
   the repo does not run in CI unless it is added to the filter in
   `Windows.yml`.**
+
+  **And none of it runs by default.** `Windows.yml` is gated on
+  `if: contains(github.event.head_commit.message, '[build-win]')`, so the
+  whole workflow — build included — is skipped unless a commit message opts
+  in. That predates this work and is presumably a runner-cost decision, but
+  it means "Windows CI passes" is usually a statement about a workflow that
+  never ran. Worth deciding deliberately: run on PRs to `main`, run nightly,
+  or keep it opt-in and stop treating a green tick as Windows coverage.
 - **Packaging paths are never exercised.** DEB (`linux-release-deb`), WiX
   (`windows-clang-release-wix`) and MSIX are configured but nothing builds
   them in CI, so breakage surfaces at release time.
