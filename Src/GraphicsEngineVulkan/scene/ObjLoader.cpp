@@ -70,8 +70,40 @@ auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model
     if (!parseCpu(modelFile)) { return nullptr; }
 
     const auto parse_done = clock::now();
+    std::shared_ptr<Model> new_model = uploadParsed();
+    const auto upload_done = clock::now();
 
-    // the model we want to load
+    const auto ms = [](auto from, auto to) {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count();
+    };
+    // Split at the boundary that matters: everything before parse_done is
+    // device-free and can move to a worker; everything after must stay on the
+    // thread that owns the device.
+    spdlog::info(
+      "Model load: CPU parse {} ms (threadable), GPU textures+upload {} ms (must stay on this thread), "
+      "total {} ms ({} verts, {} indices)",
+      ms(load_started, parse_done),
+      ms(parse_done, upload_done),
+      ms(load_started, upload_done),
+      vertices.size(),
+      indices.size());
+
+    return new_model;
+}
+
+auto ObjLoader::uploadParsed() -> std::shared_ptr<Model>
+{
+    // GPU half. Must run on the thread that owns the device; parseCpu can run
+    // anywhere.
+    if (!device) {
+        spdlog::error("uploadParsed called on a device-free ObjLoader");
+        return nullptr;
+    }
+    if (vertices.empty()) {
+        spdlog::error("uploadParsed called before a successful parseCpu");
+        return nullptr;
+    }
+
     std::shared_ptr<Model> new_model = std::make_shared<Model>(device);
 
     const std::vector<std::string> &textureNames = textureNamesFromLastParse;
@@ -94,29 +126,7 @@ auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model
         new_model->addTexture(std::move(defaultTexture));
     }
 
-    const auto textures_done = clock::now();
-
     new_model->add_new_mesh(device, transfer_queue, command_pool, vertices, indices, materialIndex, this->materials);
-    const auto upload_done = clock::now();
-
-    // Load-time breakdown, so async work targets whatever actually dominates
-    // rather than whatever is assumed to. Left in permanently: it is one log
-    // line per model load and it is the only place these costs are visible.
-    const auto ms = [](auto from, auto to) {
-        return std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count();
-    };
-    // Split at the boundary that matters now: everything before parse_done is
-    // device-free and can move to a worker; everything after must stay on the
-    // thread that owns the device.
-    spdlog::info(
-      "Model load: CPU parse {} ms (threadable), GPU textures+upload {} ms (must stay on this thread), "
-      "total {} ms ({} verts, {} indices)",
-      ms(load_started, parse_done),
-      ms(parse_done, upload_done),
-      ms(load_started, upload_done),
-      vertices.size(),
-      indices.size());
-
     return new_model;
 }
 

@@ -110,10 +110,24 @@ size and a decision, or gets dropped.
   run it with no device, including one that parses on a `std::thread` and
   compares every index against a main-thread parse.
 
-  What remains is only the orchestration: spawn the parse, poll it from the
-  frame loop, and call the upload half when it completes. The interesting
-  design question left is what the renderer shows meanwhile - the current
-  code blocks, so there is no "loading" state anywhere in the app.
+  The worker exists too: `AsyncModelParse` (`scene/AsyncModelParse.ixx`) runs
+  `parseCpu` on a `std::thread` with start/poll/take, 5 tests covering the
+  handoff, failure reporting, supersede-in-flight, and that the destructor
+  JOINS rather than detaches. `ObjLoader::uploadParsed` is the matching GPU
+  half.
+
+  **What remains is wiring it into the frame loop**, and the reason it is not
+  done yet is test fallout rather than difficulty: the golden and integration
+  suites construct the engine and render immediately, so a model that arrives
+  several frames later changes what those tests see. Doing it means teaching
+  the harness to wait for the load, which is worth doing deliberately rather
+  than at the end of a session.
+
+  Also worth knowing before touching this: **there is no race detector on this
+  platform** (see the TSan note further down - clang-cl does not support it).
+  The threading here is guarded by ASAN plus the logic tests, not by TSan, so
+  the design deliberately keeps shared state to two atomics and a moved
+  unique_ptr rather than anything that would need one.
 
   **Measured breakdown** (2026-07-20, debug/ASAN, 27 MB dinosaurs.obj,
   166563 verts / 894174 indices) - `ObjLoader::loadModel` now logs this on

@@ -34,6 +34,14 @@ class ObjLoader
     /// the instance empty.
     bool parseCpu(const std::string &modelFile);
 
+    /// Builds the Vulkan-side Model from the last parseCpu result.
+    ///
+    /// MUST run on the thread that owns the device. Returns nullptr on a
+    /// device-free loader or before a successful parse - the pairing is a
+    /// programming error, not a runtime condition, so it logs rather than
+    /// failing silently.
+    std::shared_ptr<Model> uploadParsed();
+
     /// Results of the last parseCpu / loadModel. Exposed so a worker can hand
     /// the data to the thread that owns the device.
     const std::vector<Vertex> &getVertices() const { return vertices; }
