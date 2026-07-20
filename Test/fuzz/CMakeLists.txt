@@ -92,7 +92,15 @@ function(kataglyphis_add_fuzz_test fuzz_target source_file)
   endif()
 
   link_fuzztest(${fuzz_target})
-  kataglyphis_configure_gtest_discovery(${fuzz_target})
+
+  # Deliberately NOT gtest_discover_tests'd. The CI "Run fuzzer tests" step
+  # invokes these binaries DIRECTLY (build-asan-clang/first_fuzz_test ...), so
+  # ctest never needs to know about them. Registering them for discovery makes
+  # ctest EXECUTE each fuzz binary at discovery time to enumerate its cases -
+  # and in the plain linux-debug-clang unit/integration build (no project-wide
+  # ASan) that binary hits the abseil-container ODR SEGV at startup, failing
+  # the entire unit/integration ctest run. Fuzzers are not unit tests; keep
+  # them out of ctest discovery.
 endfunction()
 
 kataglyphis_add_fuzz_test(first_fuzz_test dummy.cpp)
