@@ -28,9 +28,38 @@ size and a decision, or gets dropped.
   the fix; `computeCascadeData` already flags its uniform split as
   provisional, and `cascadedShadowMapSuite.cpp` pins the invariants that must
   survive the change.
-- [ ] **Re-enable `DISABLED_ShadowsDarkenSomePixels`** (S, blocked on the
-  split scheme above) — the golden test measures real occlusion and 1.4% is
-  below anything worth asserting. Re-enable rather than relax it.
+- [ ] **Two shadow instruments disagree and I do not know which is right**
+  (M, opened 2026-07-20) — **resolve this before trusting any shadow
+  measurement, including the ones in the commit that fixed the culling bug.**
+
+  `GoldenRender.DISABLED_ShadowsDarkenSomePixels` reports that moving
+  `cascaded_shadow_intensity` from 0.0 to 1.0 darkens 11.60% of pixels and
+  drops whole-frame mean luminance from 63.70 to 47.77.
+  `GoldenRender.DISABLED_DumpsFrameToPng` captures the same two states from
+  the same harness in the same binary, and an independent measurement of the
+  written PNGs gives mean 61.09 vs 61.14 — no change at all, and the
+  amplified difference image is blank apart from the ImGui FPS digits.
+
+  Both cannot be true. Known asymmetries, none yet confirmed as the cause:
+  the golden test captures intensity 0.0 first and 1.0 last while the dump
+  does the reverse; the renderer reads `scene->getGuiSceneSharedVars()`
+  (`VulkanRenderer.cpp:164`) while every test writes to
+  `gui->getGuiSceneSharedVars()`, synced once per frame by
+  `Scene::update_user_input`; and the golden numbers were taken across
+  captures separated by more render frames.
+
+  Until this is settled, **the claim "cascaded shadows now cast correctly" is
+  unverified.** What IS verified is narrower and independent of both
+  instruments: the shadow depth map used to sit at its clear value for ~99.8%
+  of sampled texels and now receives geometry (proved by forcing constants
+  through `calc_cascaded_shadow` and by a forced full-coverage triangle in the
+  shadow geometry shader). That the map is written does not by itself prove
+  the sampled term is right.
+
+- [ ] **Re-enable `DISABLED_ShadowsDarkenSomePixels`** (S, blocked on the item
+  above) — do not re-enable it while its metric is in doubt; a green test
+  built on an instrument that cannot be reproduced is worse than a disabled
+  one. Re-enable rather than relax it once the disagreement is resolved.
 - [ ] **Async asset loading** (L) — model load/reload and AS builds block the
   main thread; move to a worker with fence-based handoff (staging ring
   already removed the per-upload queue stalls). **Quantified**: OBJ parsing
@@ -177,6 +206,19 @@ that are *not* exercised that way and should be run periodically:
 - A GUI-state round-trip test (`GUISceneSharedVars` → renderer → back)
   so option plumbing cannot silently break, as the cascade-count default
   did.
+
+**Always dump the picture, not just the number** (2026-07-20).
+`GoldenRender.DISABLED_DumpsFrameToPng` writes the captured frame, the same
+frame with the effect disabled, and an amplified difference, to PNG:
+
+    KATAGLYPHIS_FRAME_DUMP=out ./commitTestSuite.exe \
+      --gtest_also_run_disabled_tests --gtest_filter=*DumpsFrameToPng*
+
+A count says how much changed; only the shape says whether what changed is
+the effect. This exists because measurement alone twice produced confident
+wrong calls on shadows — a shadow baked into the model reported as cast, and
+a classifier that only ever saw the ImGui overlay. It immediately earned its
+keep by contradicting the golden shadow metric (see the open item above).
 
 **Caution learned the hard way** (2026-07-19, cost most of a day): captures
 are **tonemapped**, and the ImGui overlay is composited into them. A pixel
