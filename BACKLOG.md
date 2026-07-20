@@ -222,8 +222,13 @@ size and a decision, or gets dropped.
 - [ ] **Side-by-side comparison harness** (M) — same scene, same camera,
   Vulkan vs WebGPU screenshot diff; with shared BRDF math this becomes a
   regression net for both renderers (needs C++ glTF + offscreen path above).
-- [ ] **OBJ→glTF conversion** (S) — make `Resources/Models` consumable by the
-  Rust renderer.
+- [x] **OBJ→glTF conversion** (done 2026-07-20) —
+  `asset::obj_to_gltf::convert_file`, 7 tests round-tripping through the real
+  `gltf` loader, including one that converts a real engine asset. Supports
+  positions/normals/UVs and fan-triangulated convex faces; rejects relative
+  indices, malformed indices and unknown directives rather than dropping them
+  silently. Materials are NOT carried across - `usemtl`/`mtllib` are ignored,
+  so a converted asset renders with the default material until that is added.
 
 ## Dependencies / housekeeping
 
