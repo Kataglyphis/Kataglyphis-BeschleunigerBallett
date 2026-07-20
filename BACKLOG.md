@@ -260,12 +260,17 @@ unconditional control capture before its output is believed.
 
 ## CI and release gaps
 
-- **Windows CI tests nothing.** `Windows.yml` passes `-SkipTests
-  -SkipPerfTests`; it only proves the code compiles. Every behavioural
-  guarantee on Windows comes from a human running the suite locally, even
-  though the GPU integration tests pass here routinely. Options: a
-  self-hosted runner with a GPU, or at minimum run the non-GPU tests
-  (camera/scene-config/shadow-maths/fuzz) on the hosted runner.
+- **Windows CI runs the CPU-only tests** (since 2026-07-20): 36 tests across
+  BuildIntegrity, CameraUnit, SceneConfigUnit, CascadedShadowMapUnit,
+  GuiSceneVarsRoundTrip and HelloTestCommit, plus the three fuzz targets'
+  seed corpora. Runs in ~14 ms. **The GPU suites (Integration, GoldenRender)
+  still do not run anywhere except locally** - they are excluded by name
+  rather than left to self-skip, because the container ships the Vulkan
+  loader and `SKIP_WITHOUT_GPU` only asks `glfwVulkanSupported()`, which can
+  answer yes with no device present and then abort during device creation.
+  Closing that gap needs a self-hosted runner with a GPU. **A suite added to
+  the repo does not run in CI unless it is added to the filter in
+  `Windows.yml`.**
 - **Packaging paths are never exercised.** DEB (`linux-release-deb`), WiX
   (`windows-clang-release-wix`) and MSIX are configured but nothing builds
   them in CI, so breakage surfaces at release time.

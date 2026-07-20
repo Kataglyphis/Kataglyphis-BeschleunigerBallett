@@ -69,7 +69,65 @@ jobs:
             -WebDavPassword '${{ secrets.WEBDAV_PASSWORD }}' `
             -RemoteBasePath '${{ secrets.REMOTE_BASE_PATH }}' `
             -LocalAssetsFolder 'C:\workspace'
-            
+
+      # Until 2026-07-20 this workflow passed -SkipTests -SkipPerfTests and
+      # nothing else ran, so Windows CI proved only that the code compiles -
+      # every behavioural guarantee came from a human running the suite locally.
+      #
+      # The build step above still skips ctest deliberately. GitHub's hosted
+      # runners have no GPU, but the container DOES ship the Vulkan loader, so
+      # the GPU suites do not reliably self-skip: SKIP_WITHOUT_GPU only asks
+      # glfwVulkanSupported(), which can answer yes on a machine with a loader
+      # and no device, after which device creation aborts the process. So the
+      # GPU suites (Integration, GoldenRender) stay out, by name rather than by
+      # hoping they skip, and the CPU-only ones run here.
+      #
+      # If you add a suite, add it to this filter or it will not run in CI.
+      - name: Run CPU-only tests inside the container
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
+          $cpuOnlySuites = @(
+            'BuildIntegrity.*'
+            'CameraUnit.*'
+            'SceneConfigUnit.*'
+            'CascadedShadowMapUnit.*'
+            'GuiSceneVarsRoundTrip.*'
+            'HelloTestCommit.*'
+          ) -join ':'
+
+          docker run --rm --memory 16g --cpus 4 `
+            --mount "type=bind,source=${{ github.workspace }},target=C:\workspace" `
+            -w "C:\workspace" `
+            $image `
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `
+              "& 'C:\workspace\build-clangcl-debug\commitTestSuite.exe' --gtest_filter='$cpuOnlySuites'; exit `$LASTEXITCODE"
+
+      # Fuzz targets run their seed corpus in unit-test mode - fast, CPU-only,
+      # and the shader-file reader target found a real terminate-on-throw bug
+      # from a seed on its first run.
+      - name: Run fuzz target seeds inside the container
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
+
+          docker run --rm --memory 16g --cpus 4 `
+            --mount "type=bind,source=${{ github.workspace }},target=C:\workspace" `
+            -w "C:\workspace" `
+            $image `
+            powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `
+              "`$ErrorActionPreference='Stop';
+               foreach (`$t in @('obj_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test')) {
+                 `$exe = Join-Path 'C:\workspace\build-clangcl-debug' (`$t + '.exe')
+                 if (-not (Test-Path `$exe)) { Write-Host \"missing `$exe - fuzz targets are Debug+clang-cl only\"; continue }
+                 Write-Host \"--- `$t\"
+                 & `$exe
+                 if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }
+               }
+               exit 0"
+
       # I limited the size of the builded package for storage restriction reasons on a github runner
       # see also the install commands in the bottom of the CMakeLists.txt
       - name: Upload Installers & Zip
