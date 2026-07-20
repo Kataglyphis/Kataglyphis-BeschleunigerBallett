@@ -57,15 +57,43 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
 
     for (size_t i = 0; i < 6; i++) {
         std::string path = skybox_base_dir.str() + skybox_textures[i];
-        face_data[i] = stbi_load(path.c_str(), &width, &height, &bit_depth, 4);
+        int face_width = 0;
+        int face_height = 0;
+        face_data[i] = stbi_load(path.c_str(), &face_width, &face_height, &bit_depth, 4);
         if (!face_data[i]) {
             spdlog::error("Failed to load skybox texture: {}", path);
             for (size_t j = 0; j < i; j++) { stbi_image_free(face_data[j]); }
             return;
         }
-        layerSize = static_cast<vk::DeviceSize>(width) * static_cast<vk::DeviceSize>(height) * 4;
-        imageSize += layerSize;
+
+        // Every face MUST match the first, and this is a memory-safety check,
+        // not a validation nicety. width/height/layerSize used to be single
+        // variables overwritten by each iteration, so only the LAST face's
+        // dimensions survived - while the memcpy loop below copies layerSize
+        // bytes out of EVERY face. A cubemap whose last face was larger than
+        // the first therefore read off the end of the earlier allocations, and
+        // one whose last face was smaller wrote its layers at overlapping
+        // offsets. It never fired only because the six shipped PNGs happen to
+        // be identical in size.
+        if (i == 0) {
+            width = face_width;
+            height = face_height;
+        } else if (face_width != width || face_height != height) {
+            spdlog::error("Skybox face '{}' is {}x{} but the first face is {}x{}; all six faces must match.",
+              path, face_width, face_height, width, height);
+            for (size_t j = 0; j <= i; j++) { stbi_image_free(face_data[j]); }
+            return;
+        }
+
+        if (face_width <= 0 || face_height <= 0) {
+            spdlog::error("Skybox face '{}' decoded to a degenerate {}x{}.", path, face_width, face_height);
+            for (size_t j = 0; j <= i; j++) { stbi_image_free(face_data[j]); }
+            return;
+        }
     }
+
+    layerSize = static_cast<vk::DeviceSize>(width) * static_cast<vk::DeviceSize>(height) * 4;
+    imageSize = layerSize * 6;
 
     spdlog::info("SkyBox: All 6 textures loaded, width={}, height={}, totalImageSize={}", width, height, imageSize);
 

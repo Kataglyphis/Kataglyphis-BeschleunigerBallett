@@ -70,8 +70,11 @@ size and a decision, or gets dropped.
   implies ~200 ms of frozen main thread.
 - [ ] **glTF loading** (L) — reuse the Rust renderer's test assets and enable
   the cross-renderer comparison harness below.
-- [ ] **Fuzz the remaining surfaces** (S each) — KTX2 / texture loading is
-  what is left. SceneConfig, OBJ parsing and the shader-file reader are done.
+- [x] **Fuzz the untrusted input surfaces** (done 2026-07-20) — SceneConfig,
+  OBJ parsing, the shader-file reader and texture decoding all have targets,
+  and all four run their seed corpora in Windows CI. KTX2 is deliberately not
+  covered: the C++ engine does not use it (the KTX dependency belongs to the
+  Rust renderer, which has its own tests).
 - [ ] **Renderer-level RAII cleanup consolidation** (M) — the stage-level work
   landed 2026-07-19; `VulkanRenderer`'s hand-ordered `cleanUp()` and the
   device-lost special-casing in `App.cpp` are what is left.

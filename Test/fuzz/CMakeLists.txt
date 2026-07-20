@@ -79,3 +79,12 @@ target_link_libraries(scene_config_fuzz_test PRIVATE VulkanEngineCore)
 # (ShaderHelper -> File::readCharSequence -> VkShaderModule, unvalidated).
 kataglyphis_add_fuzz_test(shader_file_reader_fuzz_test shader_file_reader_fuzz_test.cpp)
 target_link_libraries(shader_file_reader_fuzz_test PRIVATE VulkanEngineCore)
+
+# Real engine surface: texture decoding (stb_image). Every material texture and
+# every skybox face goes through it, and its reported byte count sizes a
+# staging buffer that is then memcpy'd into.
+kataglyphis_add_fuzz_test(texture_loading_fuzz_test texture_loading_fuzz_test.cpp)
+target_link_libraries(texture_loading_fuzz_test PRIVATE VulkanEngineCore)
+# Importing the texture module drags in the renderer's ImGui references, unlike
+# the lighter modules the other fuzz targets use.
+kataglyphis_add_imgui_test_sources(texture_loading_fuzz_test)

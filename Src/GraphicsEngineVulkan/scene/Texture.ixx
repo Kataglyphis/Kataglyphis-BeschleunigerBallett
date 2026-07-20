@@ -55,12 +55,21 @@ class Texture
 
     void cleanUp();
 
+    // Decodes an image file to tightly packed RGBA8. Returns nullptr on
+    // failure; on success `*image_size` is exactly width * height * 4 and the
+    // caller owns the buffer (free with stbi_image_free).
+    //
+    // Public because it is a stateless utility that needs no Vulkan device,
+    // and because it is the surface texture_loading_fuzz_test exercises: the
+    // byte count it reports sizes a staging buffer that is then memcpy'd into,
+    // so a mismatch between the count and the returned allocation is a heap
+    // overflow rather than a bad picture.
+    static unsigned char *loadTextureData(const std::string &file_name, int *width, int *height, vk::DeviceSize *image_size);
+
     ~Texture();
 
   private:
     uint32_t mip_levels = 0;
-
-    static unsigned char *loadTextureData(const std::string &file_name, int *width, int *height, vk::DeviceSize *image_size);
 
     void generateMipMaps(vk::PhysicalDevice physical_device,
       vk::Device device,

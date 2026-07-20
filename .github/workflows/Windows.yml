@@ -119,7 +119,7 @@ jobs:
             $image `
             powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `
               "`$ErrorActionPreference='Stop';
-               foreach (`$t in @('obj_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test')) {
+               foreach (`$t in @('obj_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')) {
                  `$exe = Join-Path 'C:\workspace\build-clangcl-debug' (`$t + '.exe')
                  if (-not (Test-Path `$exe)) { Write-Host \"missing `$exe - fuzz targets are Debug+clang-cl only\"; continue }
                  Write-Host \"--- `$t\"
