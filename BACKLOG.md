@@ -120,11 +120,17 @@ size and a decision, or gets dropped.
   framerate-independent adaptation, with 15 tests covering the black-scene,
   out-of-range and one-bright-pixel cases.
 
-  What remains is the GPU half: a compute shader building the histogram from
-  the HDR target, a reduction pass, and the tonemap reading an adapted
-  exposure from a buffer rather than the manual `exposure_ev` uniform. Keep
-  the manual slider as an override - auto-exposure hunting is much easier to
-  diagnose when it can be switched off.
+  The histogram compute pass landed too (`render/histogram.rs`,
+  `shaders/histogram.wgsl`) - the renderer's first compute pipeline - with 3
+  tests pinning the shader's binning to the CPU function, the dispatch tail,
+  and the per-frame clear.
+
+  What remains: a reduction pass turning the histogram into an adapted
+  exposure on the GPU, and the tonemap reading that instead of the manual
+  `exposure_ev` uniform. Keep the manual slider as an override - auto-exposure
+  hunting is much easier to diagnose when it can be switched off. The
+  histogram's `read_back` is diagnostic-only and must NOT end up on the frame
+  path; it stalls the queue.
 - [ ] **Per-pixel alpha-tested shadows** (M, not S — attempted and reverted
   2026-07-20) — textured MASK materials cast by base-alpha only, so a foliage
   card (white base-color factor, cut-out entirely in the texture) casts the
