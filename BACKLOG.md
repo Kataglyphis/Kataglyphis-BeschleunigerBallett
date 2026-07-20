@@ -546,6 +546,25 @@ unconditional control capture before its output is believed.
 
 ## CI and release gaps
 
+- [ ] **The Linux CI image is 8.7 GB and its pull is the lane's bottleneck**
+  (researched 2026-07-20). Repeatedly observed today: `Pull container image`
+  stalling 40+ minutes, dwarfing the build. The lane pulls the full
+  `:latest-cross` (gstreamer, opencv, ffmpeg, onnx, torch, android SDK) to run
+  a clang/cmake/vulkan/rust build + fuzz tests. Measured alternatives on ghcr:
+  `:toolchain` is **3.2 GB** (16 layers) and `:compiler` 3.3 GB, both vs 8.7 GB
+  / 49 layers — a ~63% pull reduction.
+
+  **Not a safe drop-in, and the blocker is identified.** The C++ engine itself
+  has zero media/ML deps (grepped), but the build runs with `RUST_FEATURES=ON`,
+  which integrates the Rust project via corrosion. The media crate's gstreamer
+  support is feature-gated OFF by default (`crates/media/Cargo.toml`), so the
+  question is precisely which features `RUST_FEATURES=ON` activates and whether
+  any pull system libs (gstreamer/opencv) or heavy crates (onnx/torch) absent
+  from `:toolchain`. Resolving that, then switching `CONTAINER_IMAGE`, is worth
+  a dedicated validation cycle — deferred rather than stacked on the in-flight
+  fuzz-fix run. If the toolchain image suffices, every future Linux run gets
+  ~5 GB lighter and materially more reliable.
+
 - [x] **The Rust template's Ubuntu lane was also silently red** (fixed
   2026-07-20) — every visible run failed with `cargo_debug.sh: No such file or
   directory`: ContainerHub reorganised its scripts into numbered directories
