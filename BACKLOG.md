@@ -546,7 +546,7 @@ unconditional control capture before its output is believed.
 
 ## CI and release gaps
 
-- [ ] **The Linux CI image is 8.7 GB and its pull is the lane's bottleneck**
+- [x] **Stay on the 8.7 GB `:latest-cross` image** (decided by the user 2026-07-20)
   (researched 2026-07-20). Repeatedly observed today: `Pull container image`
   stalling 40+ minutes, dwarfing the build. The lane pulls the full
   `:latest-cross` (gstreamer, opencv, ffmpeg, onnx, torch, android SDK) to run
@@ -564,6 +564,10 @@ unconditional control capture before its output is believed.
   a dedicated validation cycle — deferred rather than stacked on the in-flight
   fuzz-fix run. If the toolchain image suffices, every future Linux run gets
   ~5 GB lighter and materially more reliable.
+
+  **Decision: keep `:latest-cross`.** The user chose the full image over a
+  slim-image switch, so both Linux lanes stay on it and the pull cost is
+  accepted. The research above is kept for the record, not as an open action.
 
 - [x] **The Rust template's Ubuntu lane was also silently red** (fixed
   2026-07-20) — every visible run failed with `cargo_debug.sh: No such file or
