@@ -371,22 +371,76 @@ TEST(GoldenRender, DISABLED_DumpsFrameToPng)
 
     write("-shadows-on", frame);
 
-    // The same frame with shadows contributing nothing, plus an amplified
-    // difference. The difference is the point: a number tells you how many
-    // pixels changed, but only the SHAPE tells you whether what changed is a
-    // shadow or uniform self-shadowing acne across every lit surface.
+    // Now repeat ShadowsDarkenSomePixels' sequence EXACTLY - same order (0.0
+    // captured before 1.0), same SETTLE_FRAMES, same noise reference - and
+    // report this test's own mean of each buffer next to the PNG of that same
+    // buffer. The two tests disagree about whether shadow intensity changes
+    // the frame at all; running the identical sequence here is what
+    // distinguishes "the sequence matters" from "one of the metrics is
+    // wrong", and dumping the very bytes the mean was taken over is what
+    // distinguishes "the metric is wrong" from "the PNG path is lossy".
     auto &scene_vars = harness.gui->getGuiSceneSharedVars();
-    const float restore_intensity = scene_vars.cascaded_shadow_intensity;
+
     scene_vars.cascaded_shadow_intensity = 0.0F;
-    // Deliberately far more than SETTLE_FRAMES: this dump exists to be
-    // trusted, so it must not depend on how quickly a GUI value reaches the
-    // UBO ring.
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> golden_order_off = harness.capture_frame(width, height);
+
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> golden_order_noise = harness.capture_frame(width, height);
+
+    scene_vars.cascaded_shadow_intensity = 1.0F;
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> golden_order_on = harness.capture_frame(width, height);
+
+    ASSERT_EQ(golden_order_off.size(), golden_order_on.size());
+    GTEST_LOG_(INFO) << "golden-order means: intensity 0.0 = " << mean_luminance(golden_order_off)
+                     << ", noise reference (same 0.0 state) = " << mean_luminance(golden_order_noise)
+                     << ", intensity 1.0 = " << mean_luminance(golden_order_on);
+
+    write("-golden-order-off", golden_order_off);
+    write("-golden-order-on", golden_order_on);
+
+    // Same pair with PCF reduced to a single tap. The 5x5 kernel averages 25
+    // depth comparisons, so a lacy occluder - the debug scene's caster is a
+    // dinosaur SKELETON, thin bones with gaps - yields partial occlusion
+    // everywhere and never reaches full shadow. One tap makes the term binary:
+    // if the shadow goes strong-but-speckled here, the weak shadow is the
+    // occluder's geometry, not a defect.
+    const int restore_pcf = scene_vars.pcf_radius;
+    scene_vars.pcf_radius = 0;
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> single_tap_on = harness.capture_frame(width, height);
+    scene_vars.cascaded_shadow_intensity = 0.0F;
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> single_tap_off = harness.capture_frame(width, height);
+    scene_vars.pcf_radius = restore_pcf;
+    scene_vars.cascaded_shadow_intensity = 1.0F;
+
+    GTEST_LOG_(INFO) << "single-tap PCF means: intensity 1.0 = " << mean_luminance(single_tap_on)
+                     << ", intensity 0.0 = " << mean_luminance(single_tap_off);
+    write("-singletap-on", single_tap_on);
+
+    std::vector<uint8_t> single_tap_delta(single_tap_on.size(), 255);
+    for (size_t i = 0; i + 3 < single_tap_on.size(); i += 4) {
+        for (size_t channel = 0; channel < 3; ++channel) {
+            const int d = static_cast<int>(single_tap_off[i + channel]) - static_cast<int>(single_tap_on[i + channel]);
+            single_tap_delta[i + channel] = static_cast<uint8_t>(255 - std::clamp(d * 4, 0, 255));
+        }
+    }
+    write("-singletap-delta", single_tap_delta);
+
+    // The dump's original order (1.0 captured first, then 0.0) with a settle
+    // far longer than SETTLE_FRAMES, so a slow GUI-to-UBO propagation cannot
+    // be the explanation for whatever this one shows.
+    scene_vars.cascaded_shadow_intensity = 0.0F;
     harness.render_frames(20);
     uint32_t off_width = 0;
     uint32_t off_height = 0;
     const std::vector<uint8_t> unshadowed = harness.capture_frame(off_width, off_height);
-    scene_vars.cascaded_shadow_intensity = restore_intensity;
     ASSERT_EQ(unshadowed.size(), frame.size());
+
+    GTEST_LOG_(INFO) << "dump-order means: intensity 1.0 (first capture) = " << mean_luminance(frame)
+                     << ", intensity 0.0 (after 20 frames) = " << mean_luminance(unshadowed);
 
     write("-shadows-off", unshadowed);
 
@@ -394,11 +448,23 @@ TEST(GoldenRender, DISABLED_DumpsFrameToPng)
     for (size_t i = 0; i + 3 < frame.size(); i += 4) {
         for (size_t channel = 0; channel < 3; ++channel) {
             const int delta = static_cast<int>(unshadowed[i + channel]) - static_cast<int>(frame[i + channel]);
-            // 4x gain, inverted: darkening shows up as black on white.
-            difference[i + channel] = static_cast<uint8_t>(255 - std::clamp(delta * 4, 0, 255));
+            // 32x gain, inverted: darkening shows up as black on white. The gain is
+            // high because the shadow this scene casts is genuinely faint - see
+            // the shadow notes in BACKLOG.md before reading anything into it.
+            difference[i + channel] = static_cast<uint8_t>(255 - std::clamp(delta * 32, 0, 255));
         }
     }
     write("-shadow-delta", difference);
+
+    // Delta of the golden-order pair too, at the same gain.
+    std::vector<uint8_t> golden_delta(golden_order_on.size(), 255);
+    for (size_t i = 0; i + 3 < golden_order_on.size(); i += 4) {
+        for (size_t channel = 0; channel < 3; ++channel) {
+            const int d = static_cast<int>(golden_order_off[i + channel]) - static_cast<int>(golden_order_on[i + channel]);
+            golden_delta[i + channel] = static_cast<uint8_t>(255 - std::clamp(d * 32, 0, 255));
+        }
+    }
+    write("-golden-order-delta", golden_delta);
 }
 
 TEST(GoldenRender, DISABLED_ShadowsDarkenSomePixels)

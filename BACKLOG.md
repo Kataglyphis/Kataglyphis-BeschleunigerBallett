@@ -18,38 +18,51 @@ size and a decision, or gets dropped.
 
 ## C++ Vulkan engine
 
-- [ ] **Two shadow instruments disagree and I do not know which is right**
-  (M, opened 2026-07-20) — **resolve this before trusting any shadow
-  measurement, including the ones in the commit that fixed the culling bug.**
+- [ ] **Shadows are correct in shape but far too faint** (M, opened
+  2026-07-20) — after the culling fix, the cascaded shadow is real: the
+  difference image shows a correctly shaped, correctly placed cast shadow on
+  the ground, falling in the light's direction, plus self-shadowing on the
+  model. It is just very weak. Measured with `cascaded_shadow_intensity` at
+  maximum: 0.13% of pixels darken past a 4-level threshold, whole-frame mean
+  luminance moves 65.05 -> 65.01, and almost no fragment (0.07%) reaches
+  majority occlusion. The difference only becomes visible at 32x gain.
 
-  `GoldenRender.DISABLED_ShadowsDarkenSomePixels` reports that moving
-  `cascaded_shadow_intensity` from 0.0 to 1.0 darkens 11.60% of pixels and
-  drops whole-frame mean luminance from 63.70 to 47.77.
-  `GoldenRender.DISABLED_DumpsFrameToPng` captures the same two states from
-  the same harness in the same binary, and an independent measurement of the
-  written PNGs gives mean 61.09 vs 61.14 — no change at all, and the
-  amplified difference image is blank apart from the ImGui FPS digits.
+  Best current hypothesis, **not yet proven**: the debug scene's caster is a
+  dinosaur SKELETON - thin bones with gaps - so the 5x5 PCF kernel averages
+  mostly-unoccluded taps and never reaches full shadow. Supporting evidence:
+  dropping PCF to a single tap makes the darkening ~8x stronger (mean delta
+  0.09 vs 0.011). Not conclusive.
 
-  Both cannot be true. Known asymmetries, none yet confirmed as the cause:
-  the golden test captures intensity 0.0 first and 1.0 last while the dump
-  does the reverse; the renderer reads `scene->getGuiSceneSharedVars()`
-  (`VulkanRenderer.cpp:164`) while every test writes to
-  `gui->getGuiSceneSharedVars()`, synced once per frame by
-  `Scene::update_user_input`; and the golden numbers were taken across
-  captures separated by more render frames.
+  Next step: measure with a SOLID occluder over a receiving plane. A quick
+  attempt using `CornellBox-Original.obj` was inconclusive because the debug
+  camera framing is wrong for it (the camera sits outside a closed room), so
+  this needs a scene built for the purpose, or the camera moved with it.
 
-  Until this is settled, **the claim "cascaded shadows now cast correctly" is
-  unverified.** What IS verified is narrower and independent of both
-  instruments: the shadow depth map used to sit at its clear value for ~99.8%
-  of sampled texels and now receives geometry (proved by forcing constants
-  through `calc_cascaded_shadow` and by a forced full-coverage triangle in the
-  shadow geometry shader). That the map is written does not by itself prove
-  the sampled term is right.
+  Ruled out: the depth map is empty (it is written - 11.62% of sampled texels
+  carry geometry); fragments falling outside the map (11.58% land inside);
+  a SceneUBO layout mismatch on `pcfRadius` (C++ and GLSL share one struct
+  declaration and the std140 packing works out).
 
 - [ ] **Re-enable `DISABLED_ShadowsDarkenSomePixels`** (S, blocked on the item
-  above) — do not re-enable it while its metric is in doubt; a green test
-  built on an instrument that cannot be reproduced is worse than a disabled
-  one. Re-enable rather than relax it once the disagreement is resolved.
+  above) — it currently passes at 0.131% against a 0.1% threshold, which is
+  too close to the line to enable: any small scene or lighting change flips
+  it. Re-enable once shadows are strong enough that the margin is real, and
+  raise the threshold with them rather than leaving it where a near-miss
+  passes.
+
+> **The "two instruments disagree" entry that used to be here was my own
+> error, and the mistake is worth keeping.** The golden test appeared to
+> report 11.60% darkened / mean 63.70 -> 47.77 while an independent
+> measurement of the same states showed no change. The golden numbers had
+> been taken with **stale probe SPIR-V still compiled in** - a forced
+> full-coverage triangle in the shadow geometry shader plus a forced return
+> in `calc_cascaded_shadow`. That is why the figure matched the forced-1.0
+> ceiling to two decimal places: it *was* the forced probe.
+> `BuildIntegrity.CompiledShadersAreNotOlderThanTheirSources` caught the
+> staleness minutes later and I did not connect it to the measurement I had
+> just taken. Both instruments now agree. **After touching any shader,
+> recompile and re-run the integrity tests BEFORE trusting a rendered
+> measurement - including one taken moments earlier.**
 - [ ] **Async asset loading** (L) — model load/reload and AS builds block the
   main thread; move to a worker with fence-based handoff (staging ring
   already removed the per-upload queue stalls). **Quantified**: OBJ parsing
