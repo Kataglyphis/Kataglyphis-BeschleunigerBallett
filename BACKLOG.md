@@ -298,6 +298,18 @@ size and a decision, or gets dropped.
 
 ## Cross-renderer
 
+- [x] **Side-by-side timing comparison, first increment** (2026-07-20) —
+  `Scripts/Compare-RendererTimings.ps1` runs both renderers headlessly and
+  prints per-pass GPU milliseconds in one table: the C++ engine via
+  `KATAGLYPHIS_GPU_TIMING_JSON` over the golden harness, the Rust renderer via
+  the `dump_gpu_timings` example. Same JSON schema on both sides, one parser.
+  Measured on this machine (different scenes/resolutions — schema parity, not
+  a benchmark): C++ ShadowCascades 0.067 / Main 0.039 / Post 0.038 / Sky
+  0.024; Rust Bloom 0.031 / ShadowCascades 0.026 / Forward 0.020 / Histogram
+  0.017 / Ssao 0.013 / Tonemap 0.009. What would make it a real comparison:
+  the SAME scene through both (the OBJ→glTF converter is the bridge) at the
+  same resolution — that is the next increment.
+
 - [x] **Shader export wired into the build** (done 2026-07-20) — opt-in
   `-ExportWgslShaders` on both `Build-Windows.ps1` and
   `Build-Windows-Container.ps1`, non-critical so a missing cargo toolchain
