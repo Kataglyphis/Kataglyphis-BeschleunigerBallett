@@ -303,12 +303,25 @@ size and a decision, or gets dropped.
   prints per-pass GPU milliseconds in one table: the C++ engine via
   `KATAGLYPHIS_GPU_TIMING_JSON` over the golden harness, the Rust renderer via
   the `dump_gpu_timings` example. Same JSON schema on both sides, one parser.
-  Measured on this machine (different scenes/resolutions — schema parity, not
-  a benchmark): C++ ShadowCascades 0.067 / Main 0.039 / Post 0.038 / Sky
-  0.024; Rust Bloom 0.031 / ShadowCascades 0.026 / Forward 0.020 / Histogram
-  0.017 / Ssao 0.013 / Tonemap 0.009. What would make it a real comparison:
-  the SAME scene through both (the OBJ→glTF converter is the bridge) at the
-  same resolution — that is the next increment.
+  **Now same-scene, same-resolution** (second increment, same day): the script
+  converts the Dinosaurs OBJ to glTF via the new `obj2gltf` example —
+  data-exact, 166563 positions / 894174 indices on both sides — and times the
+  Rust renderer on it at the C++ harness's 1200x768.
+
+  | Pass | C++/Vulkan ms | Rust/WebGPU ms |
+  |---|---|---|
+  | ShadowCascades | 0.067 | **0.119** |
+  | Main / Forward | 0.041 | 0.100 |
+  | Sky | 0.025 | — |
+  | Post / (Ssao+Bloom+Tonemap+…) | 0.041 | 0.072 |
+
+  **First real finding from the harness:** on identical geometry the Rust
+  shadow pass costs 1.8x the C++ one — consistent with it drawing every caster
+  at full detail while the C++ engine culls per cascade (the #66 work).
+  Per-cascade caster culling in the Rust renderer is now a measurable,
+  motivated item rather than a guess. Remaining honest gaps: camera framing
+  differs and the conversion carries no textures yet, so treat numbers as
+  comparable workloads, not shader-for-shader benchmarks.
 
 - [x] **Shader export wired into the build** (done 2026-07-20) — opt-in
   `-ExportWgslShaders` on both `Build-Windows.ps1` and

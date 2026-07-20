@@ -12,9 +12,15 @@
 # by name and leaves the other column empty rather than pretending the
 # renderers are structurally identical.
 #
-# The numbers are NOT a benchmark of each other: different scenes, different
-# resolutions, different work per pass. What they share is the schema and the
-# units, which is what the comparison harness needs to grow from.
+# SAME scene, SAME resolution: the C++ golden harness renders the bundled
+# Dinosaurs OBJ at 1200x768; this script converts that OBJ to glTF (the Rust
+# renderer's format) via the obj2gltf example and times the Rust renderer on
+# the converted scene at the same 1200x768. The conversion is data-exact -
+# 166563 positions / 894174 indices on both sides, matching the C++ loader's
+# own log line. Remaining honest differences: the pipelines are structurally
+# different (Clouds/Sky vs Ssao/Bloom/Histogram), the camera framing differs,
+# and the conversion currently carries no textures - so treat per-pass numbers
+# as comparable workloads, not as a shader-for-shader benchmark.
 
 [CmdletBinding()]
 param(
@@ -41,10 +47,21 @@ try {
     $env:KATAGLYPHIS_GPU_TIMING_JSON = ''
 }
 
-Write-Host '== Rust/WebGPU (dump_gpu_timings example) =='
+# Convert the same OBJ the C++ harness renders into glTF for the Rust side.
+# Cached: the conversion is deterministic, and reconverting 27 MB per run
+# would dominate the harness's own runtime.
+$dinoObj = Join-Path $RepoRoot 'Resources\Models\Dinosaurs\dinosaurs.obj'
+$dinoGltf = Join-Path $OutDir 'dinosaurs.gltf'
 Push-Location (Join-Path $RepoRoot 'ExternalLib\Kataglyphis-RustProjectTemplate')
 try {
-    cargo run -p kataglyphis_webgpu_renderer --example dump_gpu_timings --quiet -- $rustJson 2>$null | Out-Null
+    if (-not (Test-Path $dinoGltf) -or
+        (Get-Item $dinoObj).LastWriteTime -gt (Get-Item $dinoGltf).LastWriteTime) {
+        Write-Host '== Converting Dinosaurs OBJ -> glTF =='
+        cargo run -p kataglyphis_webgpu_renderer --example obj2gltf --quiet -- $dinoObj $dinoGltf 2>$null | Out-Null
+    }
+
+    Write-Host '== Rust/WebGPU (dump_gpu_timings, same scene, 1200x768) =='
+    cargo run -p kataglyphis_webgpu_renderer --example dump_gpu_timings --quiet -- $rustJson $dinoGltf 1200 768 2>$null | Out-Null
 } finally {
     Pop-Location
 }
