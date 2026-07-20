@@ -116,9 +116,22 @@ size and a decision, or gets dropped.
 - [ ] **Basis ETC1S/UASTC transcoding** (M) — KTX2 BCn passthrough is done;
   supercompressed files are rejected with a clear error until a transcoder
   dependency lands (also unlocks compressed textures on the web path).
-- [ ] **meshoptimizer-grade decimation** (S integration) — swap the
+- [ ] **meshoptimizer-grade decimation** (M, not S) — swap the
   vertex-clustering `simplify_primitive` for quadric-error simplification;
-  API already isolates the swap to one function.
+  the API still isolates the swap to one function.
+
+  Partly improved 2026-07-20: clustered vertices now merge to their cell
+  CENTROID rather than the first vertex seen, which removes a vertex-order
+  dependency and pulls the simplified surface toward the middle of the
+  geometry instead of an arbitrary cell corner. That is a better clusterer,
+  not decimation.
+
+  What QEM would add and this cannot: merged positions placed to minimise
+  distance to the original SURFACE rather than to the original vertices,
+  preserving silhouettes and creases that clustering rounds off. Re-sized S ->
+  M: a subtly wrong QEM looks fine on a cube and falls apart on real meshes,
+  so this wants a photogrammetry-scale asset to validate against before it is
+  worth attempting.
 - [x] **Web swapchain sRGB fix** (done 2026-07-20) — the tonemap shader now
   applies the sRGB transfer function itself when the target is non-sRGB.
   Guarded by a headless test comparing an sRGB and a non-sRGB render; without
