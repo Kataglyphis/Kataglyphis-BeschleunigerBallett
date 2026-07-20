@@ -728,94 +728,55 @@ unconditional control capture before its output is believed.
   left its clear value. Five earlier defects were found and fixed while
   chasing this one; the CPU unit tests in `cascadedShadowMapSuite.cpp` and the
   `ShadowPushCarriesTheSceneModelMatrix` regression guard came out of it.
-### #74 The Linux lane's fuzzer step has been red since 17 May — IN PROGRESS
+### #74 The Linux fuzzer lane — ROOT CAUSE FOUND AND FIXED (2026-07-20)
 
-Found by pointing `gh` at the pipeline for the first time (see ContainerHub
-`docs/github-cli-pipeline-monitoring.md`). Every push today failed, docs-only
-commits included.
+Red since 2026-05-17. **The cause was an ODR violation, not FUZZTEST and not
+the toolchain**, and both of my earlier hypotheses were wrong.
 
-**Correcting my own first write-up of this.** I originally recorded "red since
-28 April, always the same step" after checking three recent runs and
-generalising. Sampling the run history properly shows two *different* outages:
+`Test/fuzz/CMakeLists.txt` applied `-fsanitize=address` **per fuzz target**,
+while the abseil that FuzzTest links was built without it. Abseil's
+`raw_hash_set` layout depends on whether ASan is active, so the two disagreed
+about container internals and the binary died during startup — before reaching
+a single test, which is why it crashed even while merely *listing* tests.
 
-| Window | Failing step |
+Reproduced locally in the CI image (Rancher Desktop — see ContainerHub
+`docs/rancher-desktop-linux-containers.md`), same source, same compiler, one
+variable changed:
+
+| ASan applied to | Result |
 |---|---|
-| 2026-04-19 → at least 2026-04-30 | `Run performance benchmarks (gcc)` |
-| 2026-05-17 → today | `Run fuzzer tests` |
+| the fuzz target only (what CI did) | `raw_hash_set.h:1016` assertion, *"Try enabling sanitizers."* / SEGV |
+| **every TU** | **2 tests PASSED** |
 
-There is also a lone green run on 2026-04-28 between them, so "continuously red
-since April" was wrong too.
+The local build also gave a legible assertion where CI only ever showed
+`SEGV on unknown address 0x000000000000`. Three months of that bare SEGV cost
+far more than the twenty minutes the container took.
 
-I also wrote that FUZZTEST pin drift was "ruled out", because the pin moved on
-02-27 and 05-17 and neither matched a 04-28 breakage. With the real fuzzer
-breakage date — **2026-05-17** — the pin bump matches it exactly: commit
-`09c60723` "fuzzing now on windows" moved FUZZTEST `b73724d4` -> `8fec7468`,
-and the step has failed on every run since. The lesson is that ruling something
-out against a date I had not verified was worth nothing.
+**Windows was never affected**, and the reason is the whole story: on Windows
+`ExternalLib/CMakeLists.txt` builds a `kataglyphis_fuzztest_windows_asan`
+interface library and propagates the flags to abseil, re2 and every
+`fuzztest_*` target by hand. Linux got the per-target flag and none of that
+propagation. The bug is that asymmetry.
 
-The failure itself: `AddressSanitizer: SEGV on unknown address 0x000000000000`
-in `first_fuzz_test`, built from `dummy.cpp` alone — `EXPECT_EQ(1 + 2, 2 + 1)`
-and a commutativity property. It crashes on *any* invocation, including the
-`gtest_discover_tests` listing during the build, so the runtime dies before our
-code runs, and a null address means a call through a null function pointer.
-`fuzztest_gtest_main.cc` is unchanged across the range; 53 commits moved, many
-of them centipede runner changes.
+**The fix:** fuzz targets now *require* `myproject_ENABLE_SANITIZER_ADDRESS`
+project-wide on Linux and refuse to build otherwise, the per-target flag is
+gone, and CI runs them from `build-asan-clang` instead of the plain Debug tree.
 
-Also ruled out, with evidence this time: the **floating `:latest` toolchain
-tag**, which was my leading hypothesis. The `latest` amd64 image config reports
-`created: 2026-04-16`, which is *before* the last green run — the same image
-was in use green and red, so the toolchain did not change under CI. Worth
-pinning to a digest anyway, since a floating tag means CI is not reproducible,
-but it is not this bug.
+**Two other things this turned up:**
 
-**Narrowed further, without needing CI.** Across `b73724d4..8fec7468` the
-FUZZTEST **CMake surface did not change at all** - no commits touch `cmake/` or
-`CMakeLists.txt` - so our build wiring is not implicated. What did move is the
-**centipede adaptor** (`fuzztest/internal/centipede_adaptor.cc`): env-var
-propagation to spawned binaries, runner cleanup timeouts, early-termination
-exit paths, reporter disable/abort behaviour. That is precisely the runtime
-that starts up in non-libfuzzer mode, which is the mode this project builds
-(`FUZZTEST_COMPATIBILITY_MODE` is not `libfuzzer` here). A null-pointer call
-during adaptor startup fits every symptom.
+- `:latest` had not been rebuilt since 2026-04-16 while `:latest-cross` is
+  refreshed routinely. CI now builds against `:latest-cross`.
+- That switch exposed a hardcoded `--gcc-toolchain=/opt/gcc-15.2.0` in 32
+  places in `Linux.yml`; the cross image ships **gcc-16.1.0**, so linking
+  failed with `cannot find crtbeginS.o`. Updated. Worth deriving rather than
+  hardcoding if it moves again.
 
-**Fixing the fuzzer will probably not turn the lane green.** Every step after
-it - including `Run performance benchmarks (gcc)`, the *other* known failure -
-currently reports `skipped`, so their true state is unknown and has been for
-months. Expect a second problem behind this one.
+**Still expect a second failure behind this one.** Every step after the fuzzer
+has reported `skipped` for months, including the separately-known
+`Run performance benchmarks (gcc)` which failed on its own from 2026-04-19.
+Their real state is still unknown.
 
-**PR #32 ran the experiment and it came back inconclusive — my hypothesis is
-NOT confirmed.** Reverting the pin never produced a fuzzer run at all:
-`first_fuzz_test` failed to *compile*.
-
-    fuzzing_bit_gen.h:113: no class named 'MockHelpers' in namespace 'absl::random_internal'
-    build/first_fuzz_test: No such file or directory
-
-A compile failure, not the null-address SEGV under test, so it says nothing
-about whether the bump causes the crash.
-
-**What it did surface, and why "revert the pin" was never a clean control:**
-the two pins carry different abseil tags via FUZZTEST's own
-`cmake/BuildDependencies.cmake`.
-
-| FUZZTEST pin | `absl_TAG` |
-|---|---|
-| `b73724d4` (pre-05-17, last green here) | `20260107.1` |
-| `ad66c13` (current) | `20260526.0` |
-
-`MockHelpers` was removed from `absl::random_internal`, so that build got an
-abseil newer than the old FUZZTEST expects — despite that pin naming
-`20260107.1` itself, which I do not yet understand. Reverting the submodule
-moves two variables at once, so it could never have isolated the cause.
-
-Ruled out while chasing it: no `actions/cache` in the workflow, so this is not
-a stale `_deps` tree; and nothing in the project declares abseil itself
-(`Src/GraphicsEngineVulkan/CMakeLists.txt:177` only links `absl::flags_parse`).
-
-**Next step is a Linux environment to iterate in.** Three 25-minute CI round
-trips have produced one compile error and no information about the SEGV, and
-the control moves abseil along with FUZZTEST. This needs a shell where the
-build can be poked at directly, not more remote guesses.
-
-**Still expect a second failure behind this one:** every step after the fuzzer
-reports `skipped`, including the separately-known `Run performance benchmarks
-(gcc)`, so their real state has been invisible for months.
+**Lesson recorded on my own process:** I ruled out FUZZTEST pin drift against a
+breakage date I had not verified, then spent three CI round trips on a control
+that moved two variables at once. The local reproduction took one container run
+and answered it outright. Get the failing thing into a shell before theorising.

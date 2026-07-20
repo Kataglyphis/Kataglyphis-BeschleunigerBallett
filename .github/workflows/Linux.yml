@@ -85,8 +85,8 @@ jobs:
       - name: Prepare for unit/integration tests
         run: |
           docker run --rm \
-            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
-            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-16.1.0" \
+            -e LDFLAGS="-L/opt/gcc-16.1.0/lib64 -Wl,-rpath,/opt/gcc-16.1.0/lib64 --gcc-toolchain=/opt/gcc-16.1.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
@@ -107,20 +107,29 @@ jobs:
             --build-type "${{ env.BUILD_TYPE }}" \
             --ctest-exclude "^Integration\\.VulkanEngine$" 2>&1 | tee output.log
 
-      - name: Run fuzzer tests
-        run: |
-          ${{ env.BUILD_DIR }}/first_fuzz_test
-          # Real engine surface: OBJ parsing hardening (ObjLoader mirror).
-          ${{ env.BUILD_DIR }}/obj_parsing_fuzz_test
-          # Real engine surface: scene-config path resolution.
-          ${{ env.BUILD_DIR }}/scene_config_fuzz_test
-        working-directory: ${{ github.workspace }}
-
       # AddressSanitizer + UBSan: catches the memory errors the OBJ-loader
       # hardening was about. Non-GPU tests only.
       - name: Configure/build with AddressSanitizer
         run: |
-          docker run --rm             -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0"             -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0"             -v ${{ github.workspace }}:/workspace             -w /workspace             "${{ env.CONTAINER_IMAGE }}"             bash ./Scripts/Linux/cmake-configure-build.sh             --vulkan-version "${{ env.VULKAN_VERSION }}"             --preset "linux-debug-asan-clang"             --build-dir "build-asan-clang" 2>&1 | tee output-asan.log
+          docker run --rm             -e CXXFLAGS="--gcc-toolchain=/opt/gcc-16.1.0"             -e LDFLAGS="-L/opt/gcc-16.1.0/lib64 -Wl,-rpath,/opt/gcc-16.1.0/lib64 --gcc-toolchain=/opt/gcc-16.1.0"             -v ${{ github.workspace }}:/workspace             -w /workspace             "${{ env.CONTAINER_IMAGE }}"             bash ./Scripts/Linux/cmake-configure-build.sh             --vulkan-version "${{ env.VULKAN_VERSION }}"             --preset "linux-debug-asan-clang"             --build-dir "build-asan-clang" 2>&1 | tee output-asan.log
+
+      # Fuzz targets run from the ASAN build, NOT the plain Debug one.
+      #
+      # They used to run from ${{ env.BUILD_DIR }}, where only the fuzz target
+      # itself carried -fsanitize=address while the abseil FuzzTest links
+      # against did not. Abseil's container layout is ASan-dependent, so that
+      # is an ODR violation, and it crashed on startup - reproduced locally in
+      # this same image: raw_hash_set.h "Try enabling sanitizers." assertion
+      # with per-target ASan, all tests passing with ASan applied to every TU.
+      # It broke the lane from 2026-05-17 until 2026-07-20.
+      - name: Run fuzzer tests
+        run: |
+          build-asan-clang/first_fuzz_test
+          # Real engine surface: OBJ parsing hardening (ObjLoader mirror).
+          build-asan-clang/obj_parsing_fuzz_test
+          # Real engine surface: scene-config path resolution.
+          build-asan-clang/scene_config_fuzz_test
+        working-directory: ${{ github.workspace }}
 
       - name: Run tests under AddressSanitizer
         run: |
@@ -131,7 +140,7 @@ jobs:
       # Integration suites need an adapter the CI container does not have.
       - name: Configure/build with ThreadSanitizer
         run: |
-          docker run --rm             -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0"             -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0"             -v ${{ github.workspace }}:/workspace             -w /workspace             "${{ env.CONTAINER_IMAGE }}"             bash ./Scripts/Linux/cmake-configure-build.sh             --vulkan-version "${{ env.VULKAN_VERSION }}"             --preset "linux-debug-tsan-clang"             --build-dir "build-tsan" 2>&1 | tee output-tsan.log
+          docker run --rm             -e CXXFLAGS="--gcc-toolchain=/opt/gcc-16.1.0"             -e LDFLAGS="-L/opt/gcc-16.1.0/lib64 -Wl,-rpath,/opt/gcc-16.1.0/lib64 --gcc-toolchain=/opt/gcc-16.1.0"             -v ${{ github.workspace }}:/workspace             -w /workspace             "${{ env.CONTAINER_IMAGE }}"             bash ./Scripts/Linux/cmake-configure-build.sh             --vulkan-version "${{ env.VULKAN_VERSION }}"             --preset "linux-debug-tsan-clang"             --build-dir "build-tsan" 2>&1 | tee output-tsan.log
 
       - name: Run tests under ThreadSanitizer
         run: |
@@ -167,8 +176,8 @@ jobs:
         continue-on-error: true
         run: |
           docker run --rm \
-            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
-            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-16.1.0" \
+            -e LDFLAGS="-L/opt/gcc-16.1.0/lib64 -Wl,-rpath,/opt/gcc-16.1.0/lib64 --gcc-toolchain=/opt/gcc-16.1.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
@@ -179,8 +188,8 @@ jobs:
         continue-on-error: true
         run: |
           docker run --rm \
-            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
-            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-16.1.0" \
+            -e LDFLAGS="-L/opt/gcc-16.1.0/lib64 -Wl,-rpath,/opt/gcc-16.1.0/lib64 --gcc-toolchain=/opt/gcc-16.1.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
@@ -195,8 +204,8 @@ jobs:
       - name: Configure/build CMake for Profiling (select preset by compiler)
         run: |
           docker run --rm \
-            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
-            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-16.1.0" \
+            -e LDFLAGS="-L/opt/gcc-16.1.0/lib64 -Wl,-rpath,/opt/gcc-16.1.0/lib64 --gcc-toolchain=/opt/gcc-16.1.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
@@ -300,8 +309,8 @@ jobs:
       - name: Configure/build CMake for Release
         run: |
           docker run --rm \
-            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
-            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-16.1.0" \
+            -e LDFLAGS="-L/opt/gcc-16.1.0/lib64 -Wl,-rpath,/opt/gcc-16.1.0/lib64 --gcc-toolchain=/opt/gcc-16.1.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
@@ -314,8 +323,8 @@ jobs:
       - name: Package
         run: |
           docker run --rm \
-            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-15.2.0" \
-            -e LDFLAGS="-L/opt/gcc-15.2.0/lib64 -Wl,-rpath,/opt/gcc-15.2.0/lib64 --gcc-toolchain=/opt/gcc-15.2.0" \
+            -e CXXFLAGS="--gcc-toolchain=/opt/gcc-16.1.0" \
+            -e LDFLAGS="-L/opt/gcc-16.1.0/lib64 -Wl,-rpath,/opt/gcc-16.1.0/lib64 --gcc-toolchain=/opt/gcc-16.1.0" \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             "${{ env.CONTAINER_IMAGE }}" \
