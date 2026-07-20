@@ -323,14 +323,24 @@ size and a decision, or gets dropped.
   0.119 ms**, refuting the attribution: the converted scene is one primitive
   intersecting every cascade, so there was nothing to cull. Both shadow maps
   are 2048², so resolution is ruled out too. The structural difference that
-  remains: the Rust renderer runs **three separate shadow render passes and
-  rewrites every primitive's uniforms per cascade**, where the C++ engine
-  renders all cascades in one pass through a geometry shader. Single-pass
-  multiview (or at minimum hoisting the per-cascade uniform rewrites) is the
-  measured next target. The culling stays — `considered` scales with
-  primitive count, so it pays on multi-object scenes like the Colosseum.
-  Remaining honest gaps: camera framing differs and the conversion carries no
-  textures yet.
+  remains: the Rust renderer runs **three separate shadow render passes**,
+  where the C++ engine renders all cascades in one geometry-shader pass.
+
+  **That single-pass approach is NOT portably reproducible, and is not a target**
+  (verified 2026-07-20): wgpu's `multiview` needs the native-only MULTIVIEW
+  feature, absent from WebGPU core, and WGSL cannot write the render-target
+  array-layer index from a vertex shader without it. This renderer targets web
+  (`wasm_demo.rs`), and WebGPU has no geometry shaders, so there is no portable
+  one-pass equivalent — the three-pass structure is the correct design and the
+  ~2× cost is inherent to portable WebGPU, not a deficiency. The per-cascade
+  uniform rewrites I also flagged are already gone: the cascade-matrix fix
+  replaced them with static per-cascade index buffers. So this line of
+  optimisation is closed.
+
+  The culling stays — `considered` scales with primitive count, so it pays on
+  multi-object scenes like the Colosseum. Honest gap that remains: camera
+  framing differs between the two renderers in the comparison (the dino scene
+  has no textures, so that is not a gap — its `.mtl` carries no `map_Kd`).
 
   **A real correctness bug surfaced while measuring the shadow pass** (fixed
   same day): the cascade index `vs_shadow` projects with was written into every
