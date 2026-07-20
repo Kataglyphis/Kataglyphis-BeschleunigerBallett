@@ -771,8 +771,39 @@ it - including `Run performance benchmarks (gcc)`, the *other* known failure -
 currently reports `skipped`, so their true state is unknown and has been for
 months. Expect a second problem behind this one.
 
-Open as PR #32 (draft, diagnostic): reverts only the pin, to confirm cause. The
-lane only builds on `main`/`develop` pushes and PRs, so a PR is the only way to
-run the experiment without committing to `develop`. A green fuzzer step there
-confirms the range; the real fix is then a forward fix or a narrower pin, since
-reverting outright gives back whatever Windows fuzzing `09c60723` added.
+**PR #32 ran the experiment and it came back inconclusive — my hypothesis is
+NOT confirmed.** Reverting the pin never produced a fuzzer run at all:
+`first_fuzz_test` failed to *compile*.
+
+    fuzzing_bit_gen.h:113: no class named 'MockHelpers' in namespace 'absl::random_internal'
+    build/first_fuzz_test: No such file or directory
+
+A compile failure, not the null-address SEGV under test, so it says nothing
+about whether the bump causes the crash.
+
+**What it did surface, and why "revert the pin" was never a clean control:**
+the two pins carry different abseil tags via FUZZTEST's own
+`cmake/BuildDependencies.cmake`.
+
+| FUZZTEST pin | `absl_TAG` |
+|---|---|
+| `b73724d4` (pre-05-17, last green here) | `20260107.1` |
+| `ad66c13` (current) | `20260526.0` |
+
+`MockHelpers` was removed from `absl::random_internal`, so that build got an
+abseil newer than the old FUZZTEST expects — despite that pin naming
+`20260107.1` itself, which I do not yet understand. Reverting the submodule
+moves two variables at once, so it could never have isolated the cause.
+
+Ruled out while chasing it: no `actions/cache` in the workflow, so this is not
+a stale `_deps` tree; and nothing in the project declares abseil itself
+(`Src/GraphicsEngineVulkan/CMakeLists.txt:177` only links `absl::flags_parse`).
+
+**Next step is a Linux environment to iterate in.** Three 25-minute CI round
+trips have produced one compile error and no information about the SEGV, and
+the control moves abseil along with FUZZTEST. This needs a shell where the
+build can be poked at directly, not more remote guesses.
+
+**Still expect a second failure behind this one:** every step after the fuzzer
+reports `skipped`, including the separately-known `Run performance benchmarks
+(gcc)`, so their real state has been invisible for months.
