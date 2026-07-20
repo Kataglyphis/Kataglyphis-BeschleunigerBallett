@@ -99,7 +99,15 @@ size and a decision, or gets dropped.
   main thread; move to a worker with fence-based handoff (staging ring
   already removed the per-upload queue stalls). **Quantified**: OBJ parsing
   alone is ~7 ms/MB (`BM_ObjParse_Suzanne`), so the bundled 27 MB model
-  implies ~200 ms of frozen main thread.
+  implies ~200 ms of frozen main thread in an optimised build - measured at
+  2.98 s in debug/ASAN after the double-parse fix above, which is the number a
+  developer actually waits through on every run.
+
+  The prerequisite refactor is done: `loadTexturesAndMaterials` and
+  `loadVertices` take a parsed `tinyobj::ObjReader` rather than a path, so the
+  CPU-side parse is already separable from the Vulkan upload. Moving it to a
+  worker means calling `ParseFromFile` off-thread and handing the reader
+  across; the GPU calls must stay on the owning thread.
 - [ ] **glTF loading** (L) — reuse the Rust renderer's test assets and enable
   the cross-renderer comparison harness below.
 - [x] **Fuzz the untrusted input surfaces** (done 2026-07-20) — SceneConfig,
