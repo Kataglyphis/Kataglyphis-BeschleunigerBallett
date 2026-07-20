@@ -1,3 +1,18 @@
+# Shell scripts MUST be LF regardless of anyone's core.autocrlf. They run only
+# inside the Linux CI container, and a lone CR from a Windows checkout makes
+# bash read `\r` as a command - "$'\r': command not found", exit 127 - which
+# looks like a missing tool but is a line-ending fault. Git already stores
+# these as LF; this makes the guarantee explicit so a differently-configured
+# client cannot commit a CRLF variant and break the Linux lane.
+*.sh    text eol=lf
+*.bash  text eol=lf
+
+# Windows-only scripts stay CRLF-friendly; they never run under bash.
+*.ps1   text eol=crlf
+*.psm1  text eol=crlf
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+
 # exclude all files from language analysis which do not directly contribute to engine
 ExternalLib/** linguist-vendored
 Documents/** linguist-vendored
