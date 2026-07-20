@@ -108,6 +108,28 @@ size and a decision, or gets dropped.
   CPU-side parse is already separable from the Vulkan upload. Moving it to a
   worker means calling `ParseFromFile` off-thread and handing the reader
   across; the GPU calls must stay on the owning thread.
+
+  **Measured breakdown** (2026-07-20, debug/ASAN, 27 MB dinosaurs.obj,
+  166563 verts / 894174 indices) - `ObjLoader::loadModel` now logs this on
+  every load:
+
+  | Phase | Time | Share |
+  | --- | --- | --- |
+  | tinyobj parse | 1897 ms | 64% |
+  | vertex build (dedup) | 1028 ms | 35% |
+  | textures | 4 ms | 0.1% |
+  | GPU upload | 14 ms | 0.5% |
+
+  That settles the design: **99% of the freeze is device-free CPU work**, so a
+  worker thread removes essentially all of it and leaves ~14 ms of GPU upload
+  on the owning thread. Absolute values are debug/ASAN and inflated roughly
+  10x against `BM_ObjParse_Suzanne`'s ~7 ms/MB, but the ratio is what picks
+  the approach.
+
+  Second finding worth its own attention: the **vertex build is 35%**, which
+  is the `unordered_map<Vertex, uint32_t>` dedup, not parsing. Threading hides
+  it; reserving the map and using a cheaper hash would actually remove it.
+  Worth doing regardless of async, since it also costs on every model reload.
 - [ ] **glTF loading** (L) — reuse the Rust renderer's test assets and enable
   the cross-renderer comparison harness below.
 - [x] **Fuzz the untrusted input surfaces** (done 2026-07-20) — SceneConfig,

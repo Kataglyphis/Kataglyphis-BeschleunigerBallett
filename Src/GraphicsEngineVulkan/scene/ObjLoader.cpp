@@ -1,5 +1,6 @@
 module;
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -46,6 +47,9 @@ auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model
 
     // ONE parse, shared by both extraction passes below. This used to happen
     // inside each of them, so every model was read and tokenised twice.
+    using clock = std::chrono::steady_clock;
+    const auto load_started = clock::now();
+
     tinyobj::ObjReaderConfig const reader_config;
     tinyobj::ObjReader reader;
     if (!reader.ParseFromFile(modelFile, reader_config)) {
@@ -57,6 +61,8 @@ auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model
         return nullptr;
     }
     if (!reader.Warning().empty()) { spdlog::warn("TinyObjReader: {}", reader.Warning()); }
+
+    const auto parse_done = clock::now();
 
     // the model we want to load
     std::shared_ptr<Model> new_model = std::make_shared<Model>(device);
@@ -82,9 +88,29 @@ auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model
         new_model->addTexture(std::move(defaultTexture));
     }
 
+    const auto textures_done = clock::now();
+
     loadVertices(reader);
+    const auto vertices_done = clock::now();
 
     new_model->add_new_mesh(device, transfer_queue, command_pool, vertices, indices, materialIndex, this->materials);
+    const auto upload_done = clock::now();
+
+    // Load-time breakdown, so async work targets whatever actually dominates
+    // rather than whatever is assumed to. Left in permanently: it is one log
+    // line per model load and it is the only place these costs are visible.
+    const auto ms = [](auto from, auto to) {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count();
+    };
+    spdlog::info(
+      "Model load: parse {} ms, textures {} ms, vertex build {} ms, GPU upload {} ms, total {} ms ({} verts, {} indices)",
+      ms(load_started, parse_done),
+      ms(parse_done, textures_done),
+      ms(textures_done, vertices_done),
+      ms(vertices_done, upload_done),
+      ms(load_started, upload_done),
+      vertices.size(),
+      indices.size());
 
     return new_model;
 }
