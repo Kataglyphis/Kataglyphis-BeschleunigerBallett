@@ -315,13 +315,22 @@ size and a decision, or gets dropped.
   | Sky | 0.025 | — |
   | Post / (Ssao+Bloom+Tonemap+…) | 0.041 | 0.072 |
 
-  **First real finding from the harness:** on identical geometry the Rust
-  shadow pass costs 1.8x the C++ one — consistent with it drawing every caster
-  at full detail while the C++ engine culls per cascade (the #66 work).
-  Per-cascade caster culling in the Rust renderer is now a measurable,
-  motivated item rather than a guess. Remaining honest gaps: camera framing
-  differs and the conversion carries no textures yet, so treat numbers as
-  comparable workloads, not shader-for-shader benchmarks.
+  **First finding from the harness, and its correction the same day:** the
+  Rust shadow pass costs 1.8x the C++ one on identical geometry. I attributed
+  that to missing per-cascade caster culling, implemented the culling (same
+  near-plane-exempt design as #66, tested to engage AND to preserve the
+  visible shadow) — and the harness showed ShadowCascades **unchanged at
+  0.119 ms**, refuting the attribution: the converted scene is one primitive
+  intersecting every cascade, so there was nothing to cull. Both shadow maps
+  are 2048², so resolution is ruled out too. The structural difference that
+  remains: the Rust renderer runs **three separate shadow render passes and
+  rewrites every primitive's uniforms per cascade**, where the C++ engine
+  renders all cascades in one pass through a geometry shader. Single-pass
+  multiview (or at minimum hoisting the per-cascade uniform rewrites) is the
+  measured next target. The culling stays — `considered` scales with
+  primitive count, so it pays on multi-object scenes like the Colosseum.
+  Remaining honest gaps: camera framing differs and the conversion carries no
+  textures yet.
 
 - [x] **Shader export wired into the build** (done 2026-07-20) — opt-in
   `-ExportWgslShaders` on both `Build-Windows.ps1` and
