@@ -32,6 +32,7 @@
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
@@ -189,6 +190,43 @@ size_t distinct_luminance_buckets(const std::vector<uint8_t> &rgba)
     }
     return static_cast<size_t>(std::count(seen.begin(), seen.end(), true));
 }
+
+// Forces the scene the engine loads for the lifetime of the object, via the
+// KATAGLYPHIS_MODEL_OVERRIDE hook in SceneConfig::getModelFile.
+//
+// A test must pick its scene for what the scene MEASURES, not for how it
+// looks. The shipped debug scene is a dinosaur skeleton - good to open the app
+// on, terrible as a shadow caster, because PCF averages 25 taps and the gaps
+// between thin bones leave most of them unoccluded. Measured on the same
+// renderer: 0.13% of pixels darkened over the skeleton, 6.45% over a solid
+// box. Asserting against the skeleton would mean choosing between a threshold
+// so low it proves nothing and a test that fails for a correct renderer.
+class ScopedModelOverride
+{
+  public:
+    explicit ScopedModelOverride(const char *relative_path) { set(relative_path); }
+    ScopedModelOverride(const ScopedModelOverride &) = delete;
+    ScopedModelOverride &operator=(const ScopedModelOverride &) = delete;
+    ~ScopedModelOverride() { set(""); }
+
+  private:
+    static void set(const char *value)
+    {
+#ifdef _WIN32
+        std::ignore = _putenv_s("KATAGLYPHIS_MODEL_OVERRIDE", value);
+#else
+        if (*value == '\0') {
+            std::ignore = unsetenv("KATAGLYPHIS_MODEL_OVERRIDE");
+        } else {
+            std::ignore = setenv("KATAGLYPHIS_MODEL_OVERRIDE", value, 1);
+        }
+#endif
+    }
+};
+
+// A ground plane with a solid 6x6x6 box floating above it - nothing else.
+// Generated deliberately for shadow measurement; see the header of the file.
+constexpr const char *SHADOW_RIG_MODEL = "Models/ShadowTest/shadow_rig.obj";
 
 // Common preconditions: a Vulkan-capable GLFW plus a surface that lets us copy
 // out of a swapchain image at all.
@@ -467,10 +505,19 @@ TEST(GoldenRender, DISABLED_DumpsFrameToPng)
     write("-golden-order-delta", golden_delta);
 }
 
-TEST(GoldenRender, DISABLED_ShadowsDarkenSomePixels)
+// The direct guard for "the shadow map is rendered but nothing samples it",
+// which went unnoticed for months, and for the culling bug that replaced it
+// (the shadow pass culled its own casters, leaving the depth map at its clear
+// value for ~99.8% of sampled texels).
+//
+// Runs against a purpose-built rig - a solid box over a plane - rather than
+// the shipped debug scene. See ScopedModelOverride for why that distinction
+// is what makes this test assertable at all.
+TEST(GoldenRender, ShadowsDarkenSomePixels)
 {
     SKIP_WITHOUT_GPU();
 
+    const ScopedModelOverride use_shadow_rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
     if (!harness.renderer->supportsFrameCapture()) {
         GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
@@ -569,7 +616,12 @@ TEST(GoldenRender, DISABLED_ShadowsDarkenSomePixels)
     ASSERT_GT(darkened, 0U) << "Not a single pixel changed when the shadow intensity went from 0.0 to 1.0. "
                                "The cascaded shadow map is rendered but its result never reaches the lighting "
                                "shaders.";
-    EXPECT_GT(darkened_fraction, 0.001)
+    // Measured 6.45% on the rig. The threshold sits well below that but far
+    // above the 0.13% the skeleton scene produced, so it cannot be satisfied
+    // by the noise-level occlusion that a broken shadow path still emits.
+    // Raise it if the rig or its framing changes; do NOT lower it to make a
+    // failing renderer pass.
+    EXPECT_GT(darkened_fraction, 0.02)
       << "Only " << (darkened_fraction * 100.0)
       << "% of pixels were meaningfully darkened by shadows; expected a visible shadowed region.";
 

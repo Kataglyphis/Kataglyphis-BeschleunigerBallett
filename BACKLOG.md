@@ -18,37 +18,16 @@ size and a decision, or gets dropped.
 
 ## C++ Vulkan engine
 
-- [ ] **Shadows are correct in shape but far too faint** (M, opened
-  2026-07-20) — after the culling fix, the cascaded shadow is real: the
-  difference image shows a correctly shaped, correctly placed cast shadow on
-  the ground, falling in the light's direction, plus self-shadowing on the
-  model. It is just very weak. Measured with `cascaded_shadow_intensity` at
-  maximum: 0.13% of pixels darken past a 4-level threshold, whole-frame mean
-  luminance moves 65.05 -> 65.01, and almost no fragment (0.07%) reaches
-  majority occlusion. The difference only becomes visible at 32x gain.
-
-  Best current hypothesis, **not yet proven**: the debug scene's caster is a
-  dinosaur SKELETON - thin bones with gaps - so the 5x5 PCF kernel averages
-  mostly-unoccluded taps and never reaches full shadow. Supporting evidence:
-  dropping PCF to a single tap makes the darkening ~8x stronger (mean delta
-  0.09 vs 0.011). Not conclusive.
-
-  Next step: measure with a SOLID occluder over a receiving plane. A quick
-  attempt using `CornellBox-Original.obj` was inconclusive because the debug
-  camera framing is wrong for it (the camera sits outside a closed room), so
-  this needs a scene built for the purpose, or the camera moved with it.
-
-  Ruled out: the depth map is empty (it is written - 11.62% of sampled texels
-  carry geometry); fragments falling outside the map (11.58% land inside);
-  a SceneUBO layout mismatch on `pcfRadius` (C++ and GLSL share one struct
-  declaration and the std140 packing works out).
-
-- [ ] **Re-enable `DISABLED_ShadowsDarkenSomePixels`** (S, blocked on the item
-  above) — it currently passes at 0.131% against a 0.1% threshold, which is
-  too close to the line to enable: any small scene or lighting change flips
-  it. Re-enable once shadows are strong enough that the margin is real, and
-  raise the threshold with them rather than leaving it where a near-miss
-  passes.
+- [x] **Cascaded shadows work** (settled 2026-07-20) — the faintness was the
+  test scene, not the renderer. Measured on the same build: 0.13% of pixels
+  darkened with the dinosaur SKELETON as caster, **6.45% with a solid box**.
+  Thin bones leave most of the 5x5 PCF kernel's 25 taps unoccluded, so the
+  shadow never reaches full strength. `GoldenRender.ShadowsDarkenSomePixels`
+  is enabled again, runs against a purpose-built rig
+  (`Resources/Models/ShadowTest/shadow_rig.obj`, a solid box over a plane) via
+  the new `KATAGLYPHIS_MODEL_OVERRIDE` hook, and asserts >2% against a
+  measured 6.42%. Verified to fail (0.038%) when the culling bug is
+  reintroduced, so it guards rather than decorates.
 
 > **The "two instruments disagree" entry that used to be here was my own
 > error, and the mistake is worth keeping.** The golden test appeared to
