@@ -139,6 +139,140 @@ TEST(CascadedShadowMapUnit, EachCascadeCoversItsOwnFrustumSlice)
     }
 }
 
+// The split scheme. shadowDistance decouples "how far do we cast shadows"
+// from "how far can the camera see" - fitting cascades to a 150-unit far
+// plane for a scene that ends at 36 spends most of the shadow map on nothing.
+TEST(CascadedShadowMapUnit, ShadowDistanceClampsTheCascadeRange)
+{
+    constexpr float kShadowDistance = 60.0F;
+    const std::vector<CascadeData> cascades = computeCascadeData(
+      kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), kShadowDistance, 0.5F);
+
+    ASSERT_EQ(cascades.size(), kCascades);
+    // The last cascade must end exactly on the shadow distance: short of it
+    // leaves a band that samples nothing and renders unshadowed.
+    EXPECT_NEAR(cascades.back().splitDepth, kShadowDistance, 1e-3F);
+    for (const CascadeData &cascade : cascades) { EXPECT_LE(cascade.splitDepth, kShadowDistance + 1e-3F); }
+}
+
+TEST(CascadedShadowMapUnit, ShadowDistanceBeyondTheFarPlaneIsClampedToIt)
+{
+    const std::vector<CascadeData> cascades = computeCascadeData(
+      kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), kFar * 10.0F, 0.5F);
+
+    ASSERT_EQ(cascades.size(), kCascades);
+    EXPECT_NEAR(cascades.back().splitDepth, kFar, 1e-3F) << "cascades must never extend past what the camera sees";
+}
+
+TEST(CascadedShadowMapUnit, ZeroShadowDistanceFallsBackToTheFarPlane)
+{
+    // The documented escape hatch, and what every existing caller relied on
+    // before shadowDistance existed.
+    const std::vector<CascadeData> cascades =
+      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F);
+
+    ASSERT_EQ(cascades.size(), kCascades);
+    EXPECT_NEAR(cascades.back().splitDepth, kFar, 1e-3F);
+}
+
+TEST(CascadedShadowMapUnit, LambdaZeroReproducesUniformSplits)
+{
+    const std::vector<CascadeData> cascades =
+      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.0F);
+
+    ASSERT_EQ(cascades.size(), kCascades);
+    for (size_t i = 0; i < cascades.size(); ++i) {
+        const float p = static_cast<float>(i + 1) / static_cast<float>(kCascades);
+        EXPECT_NEAR(cascades[i].splitDepth, kNear + ((kFar - kNear) * p), 1e-2F)
+          << "lambda 0 must be the uniform scheme exactly, so it stays a usable baseline";
+    }
+}
+
+// Raising lambda pulls the splits toward the camera. This is the property
+// that makes near geometry crisp - and the same property that STARVES a
+// subject framed from a distance, which measurement showed and intuition did
+// not: at lambda 0.85 the debug scene's subject falls into the last cascade
+// and its texel density gets 3x worse than uniform. The default is 0.5 for
+// that reason; this test exists so raising it is a deliberate act.
+TEST(CascadedShadowMapUnit, HigherLambdaPullsSplitsTowardTheCamera)
+{
+    const std::vector<CascadeData> low =
+      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.1F);
+    const std::vector<CascadeData> high =
+      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.9F);
+
+    ASSERT_EQ(low.size(), high.size());
+    ASSERT_GE(low.size(), 2U);
+    // Every split but the last, which is pinned to the shadow far distance.
+    for (size_t i = 0; i + 1 < low.size(); ++i) {
+        EXPECT_LT(high[i].splitDepth, low[i].splitDepth) << "cascade " << i << " did not tighten with lambda";
+    }
+    EXPECT_NEAR(low.back().splitDepth, high.back().splitDepth, 1e-3F);
+}
+
+TEST(CascadedShadowMapUnit, OutOfRangeLambdaIsClamped)
+{
+    const std::vector<CascadeData> below =
+      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, -5.0F);
+    const std::vector<CascadeData> uniform =
+      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.0F);
+    const std::vector<CascadeData> above =
+      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 5.0F);
+    const std::vector<CascadeData> logarithmic =
+      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 1.0F);
+
+    ASSERT_EQ(below.size(), kCascades);
+    for (size_t i = 0; i < kCascades; ++i) {
+        EXPECT_NEAR(below[i].splitDepth, uniform[i].splitDepth, 1e-3F);
+        EXPECT_NEAR(above[i].splitDepth, logarithmic[i].splitDepth, 1e-3F);
+        EXPECT_TRUE(is_finite(below[i].viewProjMatrix));
+        EXPECT_TRUE(is_finite(above[i].viewProjMatrix));
+    }
+}
+
+// The point of the whole exercise, asserted rather than claimed in a comment.
+//
+// A cascade's light-space box is fitted with glm::ortho, whose first row
+// scales world X by 2/(right-left). The view part is a rigid transform, so the
+// length of the composed matrix's first row recovers that scale, and the box
+// width falls out as 2/|row0|. Divided by the shadow map resolution it is
+// world units per texel - what actually decides whether an edge is crisp.
+TEST(CascadedShadowMapUnit, ShadowDistanceImprovesTexelDensityOverTheSubject)
+{
+    constexpr float kShadowMapRes = 2048.0F;
+    // Where dinosaurs.obj sits along the view axis for the debug camera.
+    constexpr float kSubjectNear = 16.2F;
+    constexpr float kSubjectFar = 36.5F;
+
+    const auto worst_density = [](const std::vector<CascadeData> &cascades) {
+        float near_d = kNear;
+        float worst = 0.0F;
+        for (const CascadeData &cascade : cascades) {
+            const bool covers_subject = !(cascade.splitDepth < kSubjectNear || near_d > kSubjectFar);
+            if (covers_subject) {
+                const glm::mat4 &m = cascade.viewProjMatrix;
+                const float row0 = glm::length(glm::vec3(m[0][0], m[1][0], m[2][0]));
+                worst = std::max(worst, (2.0F / row0) / kShadowMapRes);
+            }
+            near_d = cascade.splitDepth;
+        }
+        return worst;
+    };
+
+    const float fitted_to_far_plane =
+      worst_density(computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.0F));
+    // The lambda here must match GUISceneSharedVars::cascade_split_lambda, or
+    // this measures a configuration nobody runs. It is 0 for a measured
+    // reason - see the table in CascadedShadowMap.cpp.
+    const float fitted_to_shadow_distance =
+      worst_density(computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 60.0F, 0.0F));
+
+    ASSERT_GT(fitted_to_far_plane, 0.0F) << "no cascade covered the subject - the test framing is wrong";
+    ASSERT_GT(fitted_to_shadow_distance, 0.0F) << "no cascade covered the subject - shadow distance is too short";
+    EXPECT_LT(fitted_to_shadow_distance, fitted_to_far_plane)
+      << "clamping the shadow range must make the subject's cascade tighter, not looser";
+}
+
 TEST(CascadedShadowMapUnit, DegenerateLightDirectionDoesNotProduceGarbage)
 {
     // A zero light vector must fall back to a sane direction rather than

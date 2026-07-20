@@ -31,13 +31,24 @@ struct ShadowPushConstants
 // identity model matrix silently disabled shadows entirely.
 
 // Splits and light-space matrices for `numCascades` cascades. Pure maths.
+//
+// shadowDistance clamps how far shadows are fitted, independently of the
+// camera far plane - geometry beyond it is simply unshadowed, which is far
+// cheaper than spreading the map over space nothing occupies. Pass <= 0 to
+// fall back to farPlane (the old behaviour).
+//
+// splitLambda blends logarithmic (1.0) against uniform (0.0) splits. See the
+// measurements in the implementation before raising it: high lambda starves
+// subjects that are framed from a distance.
 std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
   const glm::mat4 &cameraView,
   float cameraFov,
   float aspect,
   float nearPlane,
   float farPlane,
-  const glm::vec3 &lightDir);
+  const glm::vec3 &lightDir,
+  float shadowDistance = 0.0F,
+  float splitLambda = 0.5F);
 
 // The caster transform. This exists as a named function purely so a test can
 // pin the invariant that was once broken: the shadow pass must transform
@@ -65,7 +76,14 @@ class CascadedShadowMap
     uint32_t getHeight() const { return shadowHeight; }
     uint32_t getNumCascades() const { return numCascades; }
 
-    void updateCascades(const glm::mat4& cameraView, float cameraFov, float aspect, float nearPlane, float farPlane, const glm::vec3& lightDir);
+    void updateCascades(const glm::mat4 &cameraView,
+      float cameraFov,
+      float aspect,
+      float nearPlane,
+      float farPlane,
+      const glm::vec3 &lightDir,
+      float shadowDistance = 0.0F,
+      float splitLambda = 0.5F);
     const std::vector<CascadeData>& getCascadeData() const { return cascadeData; }
 
     void cleanUp();

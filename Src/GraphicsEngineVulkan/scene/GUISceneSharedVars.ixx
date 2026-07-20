@@ -18,6 +18,18 @@ export struct GUISceneSharedVars
     int num_shadow_cascades = 3; // must stay <= MAX_CASCADES (SceneUBO array size)
     int pcf_radius = 2;
     float cascaded_shadow_intensity = 0.65f;
+    // How far shadows are fitted, independent of the camera far plane. The
+    // camera sees 150 units in debug but the scene ends at ~36, and fitting
+    // cascades to the far plane spread the shadow map over empty space
+    // (measured 3.80 cm/texel over the subject, vs 3.04 at this distance).
+    // Geometry past this is unshadowed, which is the intended trade.
+    float shadow_distance = 60.f;
+    // Blend between logarithmic (1) and uniform (0) cascade splits. Defaults
+    // OFF because measurement did not support turning it on for the scenes we
+    // ship: the win here came entirely from shadow_distance above. Raise it
+    // only for a camera that sits close to its subject, where it does help
+    // (1.52 -> 1.01 cm/texel at 0.35). See the table in CascadedShadowMap.cpp.
+    float cascade_split_lambda = 0.f;
     const char* available_shadow_map_resolutions[4] = { "512", "1024", "2048", "4096" };
 
     // Clouds

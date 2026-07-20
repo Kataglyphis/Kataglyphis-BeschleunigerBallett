@@ -29,9 +29,13 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <vector>
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb_image_write.h>
 
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.gui;
@@ -313,6 +317,90 @@ TEST(GoldenRender, RendersNonBlankFrame)
 // provisional.
 //
 // Do NOT lower CHANGE_THRESHOLD to force a pass.
+// Not an assertion - an eyeball. Writes the captured frame to a PNG so a
+// human (or a Read tool) can look at what the structural tests are measuring.
+// This exists because measurement alone twice led to confident wrong calls on
+// this exact feature: a shadow baked into the model was reported as cast, and
+// a pixel classifier that only ever saw the ImGui overlay produced two
+// retracted conclusions. Numbers say how much changed; only a picture says
+// whether it is a shadow.
+//
+// DISABLED_ by default because it writes a file and asserts nothing. Run with
+//   --gtest_also_run_disabled_tests --gtest_filter=*DumpsFrameToPng*
+TEST(GoldenRender, DISABLED_DumpsFrameToPng)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.gui->getGuiSceneSharedVars().shadows_enabled = true;
+    // Maximum intensity, matching ShadowsDarkenSomePixels: the two must
+    // measure the same configuration or they cannot be compared, and they
+    // disagreed once precisely because this defaulted to 0.65 here.
+    harness.gui->getGuiSceneSharedVars().cascaded_shadow_intensity = 1.0F;
+
+    harness.render_frames(WARMUP_FRAMES);
+    harness.render_frames(SETTLE_FRAMES);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+    ASSERT_FALSE(frame.empty()) << "Capture returned no pixels.";
+
+    const char *out_path = std::getenv("KATAGLYPHIS_FRAME_DUMP");
+    const std::string base = (out_path != nullptr) ? out_path : "frame-dump";
+    const auto write = [&](const std::string &suffix, const std::vector<uint8_t> &pixels) {
+        const std::string path = base + suffix + ".png";
+        ASSERT_NE(stbi_write_png(path.c_str(),
+                    static_cast<int>(width),
+                    static_cast<int>(height),
+                    4,
+                    pixels.data(),
+                    static_cast<int>(width) * 4),
+          0)
+          << "Failed to write " << path;
+        std::cout << "[  INFO ] wrote " << path << " (" << width << "x" << height << ")\n";
+    };
+
+    write("-shadows-on", frame);
+
+    // The same frame with shadows contributing nothing, plus an amplified
+    // difference. The difference is the point: a number tells you how many
+    // pixels changed, but only the SHAPE tells you whether what changed is a
+    // shadow or uniform self-shadowing acne across every lit surface.
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    const float restore_intensity = scene_vars.cascaded_shadow_intensity;
+    scene_vars.cascaded_shadow_intensity = 0.0F;
+    // Deliberately far more than SETTLE_FRAMES: this dump exists to be
+    // trusted, so it must not depend on how quickly a GUI value reaches the
+    // UBO ring.
+    harness.render_frames(20);
+    uint32_t off_width = 0;
+    uint32_t off_height = 0;
+    const std::vector<uint8_t> unshadowed = harness.capture_frame(off_width, off_height);
+    scene_vars.cascaded_shadow_intensity = restore_intensity;
+    ASSERT_EQ(unshadowed.size(), frame.size());
+
+    write("-shadows-off", unshadowed);
+
+    std::vector<uint8_t> difference(frame.size(), 255);
+    for (size_t i = 0; i + 3 < frame.size(); i += 4) {
+        for (size_t channel = 0; channel < 3; ++channel) {
+            const int delta = static_cast<int>(unshadowed[i + channel]) - static_cast<int>(frame[i + channel]);
+            // 4x gain, inverted: darkening shows up as black on white.
+            difference[i + channel] = static_cast<uint8_t>(255 - std::clamp(delta * 4, 0, 255));
+        }
+    }
+    write("-shadow-delta", difference);
+}
+
 TEST(GoldenRender, DISABLED_ShadowsDarkenSomePixels)
 {
     SKIP_WITHOUT_GPU();

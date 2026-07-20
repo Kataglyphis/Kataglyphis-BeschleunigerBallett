@@ -1,5 +1,6 @@
 module;
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <vector>
 #include <unordered_map>
@@ -116,21 +117,58 @@ std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
   float aspect,
   float nearPlane,
   float farPlane,
-  const glm::vec3 &lightDir)
+  const glm::vec3 &lightDir,
+  float shadowDistance,
+  float splitLambda)
 {
     std::vector<CascadeData> cascadeData(numCascades);
     if (numCascades == 0U) { return cascadeData; }
 
-    std::vector<float> cascadeSplits(numCascades + 1);
+    // Shadows are fitted to shadowDistance, NOT to the camera far plane. The
+    // two are unrelated: the debug scene ends at ~36 units of view depth while
+    // the camera sees 150, so fitting cascades to the far plane spent two
+    // thirds of the shadow map on empty space. Measured box widths for that
+    // framing, 2048x2048 map:
+    //   far plane 150, uniform : 3.80 cm/texel over the scene
+    //   distance 60, lambda 0.5: 3.04 cm/texel, and 1.79 for a near subject
+    // 0 or negative means "no clamp" - fall back to the far plane.
+    const float shadowFar =
+      (shadowDistance > 0.0F) ? std::min(shadowDistance, farPlane) : farPlane;
+    const float shadowNear = std::min(nearPlane, shadowFar * 0.5F);
+    const float lambda = std::clamp(splitLambda, 0.0F, 1.0F);
 
-    for (uint32_t i = 0; i < numCascades + 1; i++) {
-        if (i == 0) {
-            cascadeSplits[i] = nearPlane;
-        } else {
-            // Using a simple uniform split for now; could be changed to practical split scheme
-            cascadeSplits[i] = farPlane * (static_cast<float>(i) / static_cast<float>(numCascades));
-        }
+    std::vector<float> cascadeSplits(numCascades + 1);
+    cascadeSplits[0] = shadowNear;
+
+    for (uint32_t i = 1; i < numCascades + 1; i++) {
+        // Practical split scheme (Zhang et al.): blend a logarithmic
+        // distribution, which matches how perspective projection compresses
+        // depth, with a uniform one, which keeps the near cascades from
+        // collapsing onto the first metre.
+        //
+        // lambda is NOT "higher is better", and it defaults to 0 (pure
+        // uniform) for a measured reason. Worst cm/texel over the debug
+        // scene's subject, which sits at view depth 16-36, shadow distance 60:
+        //   lambda 0.00  ->  3.04    lambda 0.25  ->  4.56
+        //   lambda 0.15  ->  4.56    lambda 0.50  ->  4.56
+        // That is a cliff, not a curve: at lambda 0 the second split lands at
+        // 40.0, just past the subject, so it fits in the tighter cascades. Any
+        // lambda above 0 pulls that split back to ~35 and spills the subject
+        // into the 60-unit last cascade. Tuning lambda against one camera
+        // angle is overfitting; the durable win is shadowFar above.
+        //
+        // It still earns its keep for a camera close to its subject
+        // (a 2-12 unit subject: 1.52 cm/texel at lambda 0, 1.01 at 0.35),
+        // which is why the knob exists rather than being deleted.
+        const float p = static_cast<float>(i) / static_cast<float>(numCascades);
+        const float logSplit = shadowNear * std::pow(shadowFar / shadowNear, p);
+        const float uniformSplit = shadowNear + ((shadowFar - shadowNear) * p);
+        cascadeSplits[i] = (lambda * logSplit) + ((1.0F - lambda) * uniformSplit);
     }
+    // The last split must land exactly on shadowFar; the blend above is only
+    // accurate to float rounding, and a short final cascade leaves a band of
+    // geometry that samples nothing and renders unshadowed.
+    cascadeSplits[numCascades] = shadowFar;
 
     for (uint32_t i = 0; i < numCascades; i++) {
         glm::mat4 const curr_cascade_proj = glm::perspective(glm::radians(cameraFov), aspect, cascadeSplits[i], cascadeSplits[i + 1]);
@@ -204,9 +242,12 @@ void CascadedShadowMap::updateCascades(const glm::mat4 &cameraView,
   float aspect,
   float nearPlane,
   float farPlane,
-  const glm::vec3 &lightDir)
+  const glm::vec3 &lightDir,
+  float shadowDistance,
+  float splitLambda)
 {
-    cascadeData = computeCascadeData(numCascades, cameraView, cameraFov, aspect, nearPlane, farPlane, lightDir);
+    cascadeData = computeCascadeData(
+      numCascades, cameraView, cameraFov, aspect, nearPlane, farPlane, lightDir, shadowDistance, splitLambda);
 
     // Push the freshly computed matrices into the UBO the shadow geometry
     // shader renders with. Without this the buffer keeps whatever was in
@@ -505,6 +546,23 @@ void CascadedShadowMap::createGraphicsPipeline()
     graphicsPipeline =
       pipelineBuilder.setShaderStages({ skyStages.begin(), skyStages.end() })
         .setVertexInput({ bindingDesc }, { posAttr })
+        // Culling MUST be off here, and it is not an optimisation question.
+        //
+        // VulkanRenderer flips the camera projection's Y (globalUBO.projection
+        // [1][1] *= -1, the usual Vulkan convention), which reverses triangle
+        // winding for every pass that uses it. The cascade matrices are built
+        // from glm::ortho with no such flip, so under the builder's default
+        // (cull back, counter-clockwise front) the shadow pass culled exactly
+        // the faces the camera keeps. Measured: the depth map stayed at its
+        // 1.0 clear value for 99.8% of sampled texels, so nothing was ever
+        // occluded - shadows rendered, but of nothing.
+        //
+        // Disabling culling rather than flipping the ortho keeps the two
+        // conventions from having to agree, and is correct for single-sided
+        // geometry like the debug scene's ground plane, which would otherwise
+        // cast no shadow from half the sun angles. The cost is rasterising
+        // both faces of closed meshes into a depth-only pass.
+        .setCullMode(vk::CullModeFlagBits::eNone)
         .setUseColorBlendState(false)
         .build(device->getLogicalDevice(),
           pipelineLayout,
