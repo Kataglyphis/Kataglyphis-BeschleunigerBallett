@@ -61,6 +61,11 @@ class VulkanRenderer
     /// whatever the previous scene had bound.
     std::optional<uint32_t> addModel(const std::string &modelPath, const glm::mat4 &modelMatrix);
 
+    /// True while the startup model is still parsing on its worker. Tests and
+    /// tools that need the scene populated must render frames until this
+    /// clears - the renderer draws the sky meanwhile rather than blocking.
+    [[nodiscard]] bool isModelLoadPending() const { return scene != nullptr && scene->isModelLoadPending(); }
+
     void updateStateDueToUserInput(Kataglyphis::Frontend::GUI *frontend_gui);
     void finishAllRenderCommands();
     void update_raytracing_descriptor_set(uint32_t image_index);
@@ -253,6 +258,8 @@ class VulkanRenderer
     DescriptorSetGroup raytracingDescriptors;
     void createRaytracingDescriptorResources();
     void updateRaytracingDescriptorSets();
+
+    void finishModelLoad();
 
     void updateAllDescriptorSets();
     void cleanUpDescriptorResources();

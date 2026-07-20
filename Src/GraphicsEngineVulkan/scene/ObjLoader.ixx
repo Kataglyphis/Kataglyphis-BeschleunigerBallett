@@ -42,6 +42,19 @@ class ObjLoader
     /// failing silently.
     std::shared_ptr<Model> uploadParsed();
 
+    /// Moves another loader's parse results into this one, so a device-owning
+    /// loader can upload what a device-free worker produced. Copying the
+    /// arrays instead would duplicate tens of MB for no reason.
+    void adoptParsed(ObjLoader &&other)
+    {
+        vertices = std::move(other.vertices);
+        indices = std::move(other.indices);
+        materials = std::move(other.materials);
+        materialIndex = std::move(other.materialIndex);
+        textures = std::move(other.textures);
+        textureNamesFromLastParse = std::move(other.textureNamesFromLastParse);
+    }
+
     /// Results of the last parseCpu / loadModel. Exposed so a worker can hand
     /// the data to the thread that owns the device.
     const std::vector<Vertex> &getVertices() const { return vertices; }

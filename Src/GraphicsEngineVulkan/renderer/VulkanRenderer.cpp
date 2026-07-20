@@ -140,15 +140,15 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     skyBox.createFramebuffers(vulkanSwapChain.getNumberSwapChainImages(), skyboxImageViews, skyboxDepthViews,
         vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
 
-    scene->loadModel(device, graphics_command_pool);
-    
-    if (device->supportsHardwareAcceleratedRRT()) {
-        asManager.createASForScene(device, graphics_command_pool, scene);
-    }
+    // Start the parse and carry on initialising. Everything that depends on
+    // scene CONTENTS - acceleration structures, the object description buffer,
+    // the descriptor sets that reference them - moves into
+    // finishModelLoad(), which runs on the frame the model arrives.
+    scene->beginModelLoadAsync();
 
+    // Descriptors still need valid contents before the first frame, or the
+    // renderer samples never-written bindings while the model loads.
     create_object_description_buffer();
-    
-    // Final update after model loading
     updateAllDescriptorSets();
 
     gui->initializeVulkanContext(device,
@@ -243,8 +243,25 @@ auto Kataglyphis::VulkanRenderer::supportsHardwareRaytracing() const -> bool
     return device && device->supportsHardwareAcceleratedRRT();
 }
 
+void Kataglyphis::VulkanRenderer::finishModelLoad()
+{
+    // Rebuild everything that reads scene contents. Skipping any of these
+    // leaves the model present but invisible, or sampled through descriptors
+    // that still point at the empty scene.
+    if (device->supportsHardwareAcceleratedRRT()) {
+        asManager.createASForScene(device, graphics_command_pool, scene);
+    }
+    objectDescriptionBuffer.cleanUp();
+    create_object_description_buffer();
+    updateAllDescriptorSets();
+}
+
 void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Frontend::GUI *frontend_gui)
 {
+    // Poll the background parse before anything else this frame: the rest of
+    // the frame should see the model on the same frame it becomes available.
+    if (scene->pollModelLoad(device, graphics_command_pool)) { finishModelLoad(); }
+
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars =
       frontend_gui->getGuiRendererSharedVars();
 

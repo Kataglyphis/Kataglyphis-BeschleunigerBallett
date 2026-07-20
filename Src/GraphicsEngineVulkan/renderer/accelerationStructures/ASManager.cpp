@@ -277,6 +277,12 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(std::shared_ptr
 
 void Kataglyphis::VulkanRendererInternals::ASManager::cleanUp()
 {
+    // Nothing was ever built. This is the normal path when the model is still
+    // parsing at shutdown, or when the device has no ray-tracing support:
+    // createASForScene is what supplies the device, so without it every handle
+    // below is null and vulkanDevice is a null dereference.
+    if (!vulkanDevice) { return; }
+
     // Release the reusable staging buffer while the VMA allocator is alive.
     vulkanBufferManager.cleanUp();
 

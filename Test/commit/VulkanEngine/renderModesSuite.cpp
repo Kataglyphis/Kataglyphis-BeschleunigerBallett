@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include "EngineLoadWait.hpp"
 #include <vulkan/vulkan.hpp>
 #define GLFW_INCLUDE_NONE
 #define GLFW_INCLUDE_VULKAN
@@ -38,6 +39,18 @@ void run_frames(Kataglyphis::Frontend::Window *window,
   int frame_count,
   const std::string &mode_label)
 {
+    // The model parses on a worker thread now, so the first frames of a fresh
+    // renderer show an empty scene. Every mode below is meant to be exercised
+    // against real geometry.
+    Kataglyphis::TestSupport::waitForModelLoad(renderer, [&] {
+        glfwPollEvents();
+        gui->render();
+        scene->update_user_input(gui);
+        renderer->updateStateDueToUserInput(gui);
+        renderer->updateUniforms(scene, camera, window);
+        renderer->drawFrame();
+    });
+
     for (int frame = 0; frame < frame_count; ++frame) {
         glfwPollEvents();
         gui->render();

@@ -72,6 +72,45 @@ std::optional<uint32_t> Scene::loadAdditionalModel(std::shared_ptr<VulkanDevice>
     return model_index;
 }
 
+void Scene::beginModelLoadAsync()
+{
+    const std::string modelFileName = sceneConfig::getModelFile();
+    spdlog::info("Loading model asynchronously: {}", modelFileName);
+    pendingModelParse.start(modelFileName);
+    modelLoadPending = true;
+}
+
+bool Scene::isModelLoadPending() const { return modelLoadPending; }
+
+bool Scene::pollModelLoad(std::shared_ptr<VulkanDevice> device, vk::CommandPool commandPool)
+{
+    if (!modelLoadPending || !pendingModelParse.isFinished()) { return false; }
+
+    modelLoadPending = false;
+
+    std::unique_ptr<ObjLoader> parsed = pendingModelParse.takeResult();
+    if (!parsed) {
+        spdlog::error("Asynchronous model parse failed; the scene stays empty.");
+        return false;
+    }
+
+    // The GPU half runs HERE, on the thread that owns the device. It is the
+    // ~15 ms the frame loop still pays; the 2800 ms parse already happened
+    // on the worker.
+    ObjLoader uploader(device, device->getGraphicsQueue(), commandPool);
+    uploader.adoptParsed(std::move(*parsed));
+    std::shared_ptr<Model> const new_model = uploader.uploadParsed();
+    if (!new_model) {
+        spdlog::error("Uploading the parsed model failed.");
+        return false;
+    }
+
+    add_model(new_model);
+    update_model_matrix(sceneConfig::getModelMatrix(), 0);
+    spdlog::info("Model added successfully (async).");
+    return true;
+}
+
 void Scene::add_model(const std::shared_ptr<Model> &model)
 {
     model_list.push_back(model);

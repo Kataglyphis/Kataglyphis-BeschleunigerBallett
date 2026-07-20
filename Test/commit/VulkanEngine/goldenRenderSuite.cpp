@@ -16,6 +16,7 @@
 // constant) before its numbers are trusted.
 
 #include <gtest/gtest.h>
+#include "EngineLoadWait.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
@@ -101,8 +102,17 @@ struct EngineHarness
         renderer->drawFrame();
     }
 
+    /// Pumps frames until the asynchronously parsed model is in the scene.
+    /// Called by render_frames so every existing test keeps meaning what it
+    /// meant when loading was blocking.
+    void wait_for_model()
+    {
+        Kataglyphis::TestSupport::waitForModelLoad(renderer.get(), [this] { render_frame(); });
+    }
+
     void render_frames(int count)
     {
+        wait_for_model();
         for (int frame = 0; frame < count; ++frame) { render_frame(); }
     }
 
