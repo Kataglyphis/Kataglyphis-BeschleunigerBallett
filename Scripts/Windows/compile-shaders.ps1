@@ -54,18 +54,25 @@ $includeArgs = @(
 # against it, and passing only the subdirectories made every shader that uses
 # one fail - rasterizer/shader.frag and the raytracing shaders among them.
 $includeArgs += '-I'; $includeArgs += $shadersRoot
-$includeDirs = Get-ChildItem -Path $shadersRoot -Directory -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+# 'generated' holds naga output exported from the Rust renderer's WGSL. Those
+# artifacts carry WebGPU binding decorations, not this engine's descriptor
+# layout, so they are NOT engine shaders: glslc must not compile them, they
+# must not act as include roots, and their timestamps must not mark real
+# shaders stale. See docs/shader-sharing.md.
+$isGenerated = { param($candidatePath) $candidatePath -match '[\\/]generated([\\/]|$)' }
+$includeDirs = Get-ChildItem -Path $shadersRoot -Directory -Recurse -ErrorAction SilentlyContinue |
+  Where-Object { -not (& $isGenerated $_.FullName) } | ForEach-Object { $_.FullName }
 foreach ($d in $includeDirs) { $includeArgs += '-I'; $includeArgs += $d }
 
  # Only compile shader entry points. Many .glsl files are shared headers/includes
  # and should not be compiled directly to SPIR-V. Remove '*.glsl' from the
  # patterns so we only compile explicit shader stage files.
  $patterns = @('*.vert','*.frag','*.comp','*.rgen','*.rchit','*.rmiss','*.geom','*.tesc','*.tese')
-$files = Get-ChildItem -Path $shadersRoot -Recurse -File -Include $patterns -ErrorAction SilentlyContinue
+$files = @(Get-ChildItem -Path $shadersRoot -Recurse -File -Include $patterns -ErrorAction SilentlyContinue | Where-Object { -not (& $isGenerated $_.FullName) })
 
 # Shared headers/includes: any of these being newer than a .spv makes it stale.
 # Conservative (rebuilds more than strictly needed) but cheap and never wrong.
-$includeFiles = @(Get-ChildItem -Path $shadersRoot -Recurse -File -Include '*.glsl', '*.hpp', '*.h' -ErrorAction SilentlyContinue)
+$includeFiles = @(Get-ChildItem -Path $shadersRoot -Recurse -File -Include '*.glsl', '*.hpp', '*.h' -ErrorAction SilentlyContinue | Where-Object { -not (& $isGenerated $_.FullName) })
 
 foreach ($file in $files) {
   $outDir = Join-Path $file.Directory.FullName 'spv'

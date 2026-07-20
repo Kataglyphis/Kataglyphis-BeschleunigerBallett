@@ -113,10 +113,16 @@ size and a decision, or gets dropped.
 
 ## Cross-renderer
 
-- [ ] **Shader export in the C++ build** (S) — wire
-  `cargo run --example export_shaders` into `Build-Windows.ps1` emitting to
-  `Resources/Shaders/generated/` so the Vulkan engine picks up WGSL changes
-  automatically (`docs/shader-sharing.md`).
+- [x] **Shader export wired into the build** (done 2026-07-20) — opt-in
+  `-ExportWgslShaders` on both `Build-Windows.ps1` and
+  `Build-Windows-Container.ps1`, non-critical so a missing cargo toolchain
+  warns rather than failing a C++ build. Output is gitignored.
+- [ ] **Consume the generated SPIR-V in `VulkanRenderer`** (M) — the export
+  pipeline is wired and guarded but nothing reads its output yet, so a WGSL
+  change still does not reach the Vulkan engine. The blocker is real and
+  documented in `docs/shader-sharing.md`: WebGPU bind groups are not Vulkan
+  descriptor sets, so the generated modules' binding decorations have to be
+  reconciled with this engine's layout before they can be loaded.
 - [ ] **Side-by-side comparison harness** (M) — same scene, same camera,
   Vulkan vs WebGPU screenshot diff; with shared BRDF math this becomes a
   regression net for both renderers (needs C++ glTF + offscreen path above).

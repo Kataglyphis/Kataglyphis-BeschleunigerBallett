@@ -4,6 +4,8 @@ param(
   # Rewrite sources with clang-format/cmake-format instead of only reporting
   # drift. Off by default: see the formatting block below for why.
   [switch]$ApplyFormat,
+  # Re-export the Rust renderer WGSL to Resources/Shaders/generated.
+  [switch]$ExportWgslShaders,
   [switch]$SkipTidy,
   [switch]$SkipTests,
   [switch]$SkipPerfTests,
@@ -215,6 +217,41 @@ try {
     } -RequiredTools @('cmake', 'ninja') -FailOnMissingRequiredTools
   } | Out-Null
 
+  # WGSL -> SPIR-V/GLSL export from the Rust renderer (docs/shader-sharing.md).
+  #
+  # Opt-in via -ExportWgslShaders, and non-critical: the export needs a cargo
+  # toolchain and takes a first-build compile of the renderer crate, neither of
+  # which should be able to fail a C++ build. WGSL is the source of truth for
+  # the shared BRDF/tonemap math, so this is how a WGSL change reaches the
+  # Vulkan engine.
+  #
+  # Output lands in Resources/Shaders/generated, which compile-shaders.ps1 and
+  # buildIntegritySuite.cpp both skip on purpose - those artifacts carry WebGPU
+  # binding decorations, so glslc must not compile them and their timestamps
+  # must not mark real shaders stale.
+  if ($ExportWgslShaders) {
+    Invoke-BuildStep -Context $context -StepName "Export WGSL shaders (naga)" -Script {
+      $cargo = Get-Command "cargo" -ErrorAction SilentlyContinue
+      if (-not $cargo) {
+        Write-BuildLogWarning -Context $context -Message "cargo not found on PATH; skipping WGSL shader export."
+        return
+      }
+      $rustRoot = Join-Path $workspacePath "ExternalLib\Kataglyphis-RustProjectTemplate"
+      if (-not (Test-Path $rustRoot)) {
+        Write-BuildLogWarning -Context $context -Message "Rust renderer submodule not present; skipping WGSL shader export."
+        return
+      }
+      $outDir = Join-Path $workspacePath "Resources\Shaders\generated"
+      Push-Location $rustRoot
+      try {
+        Invoke-BuildExternal -Context $context -File $cargo.Source -Parameters @(
+          "run", "-q", "-p", "kataglyphis_webgpu_renderer",
+          "--example", "export_shaders", "--", $outDir) | Out-Null
+      } finally {
+        Pop-Location
+      }
+    } | Out-Null
+  }
   # Formatting REPORTS by default and only rewrites with -ApplyFormat.
   #
   # Until 2026-07-20 Get-ProjectCppFiles had an inverted _deps filter and

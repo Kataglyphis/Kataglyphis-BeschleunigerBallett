@@ -29,6 +29,20 @@ fs::path find_repo_root()
     return {};
 }
 
+// Artifacts under Resources/Shaders/generated are naga output exported from
+// the Rust renderer's WGSL (docs/shader-sharing.md). They carry WebGPU binding
+// decorations rather than this engine's descriptor layout, so they are not
+// engine shaders: nothing includes them, glslc does not compile them, and
+// re-exporting them must not mark every real shader stale. Regenerating them
+// would otherwise fail every staleness test in this file at once.
+bool is_generated_artifact(const fs::path &path)
+{
+    for (const auto &part : path) {
+        if (part == "generated") { return true; }
+    }
+    return false;
+}
+
 // mtime of the most recently edited shared include, or false if there are none.
 bool newest_shared_include(const fs::path &shader_root, fs::file_time_type &out)
 {
@@ -37,6 +51,7 @@ bool newest_shared_include(const fs::path &shader_root, fs::file_time_type &out)
     for (fs::recursive_directory_iterator it(shader_root, error), end; it != end; it.increment(error)) {
         if (error) { break; }
         if (!it->is_regular_file(error) || it->path().extension() != ".glsl") { continue; }
+        if (is_generated_artifact(it->path())) { continue; }
         const auto stamp = fs::last_write_time(it->path(), error);
         if (error) { continue; }
         if (!found || stamp > out) {
@@ -49,6 +64,10 @@ bool newest_shared_include(const fs::path &shader_root, fs::file_time_type &out)
 
 bool is_shader_source(const fs::path &path)
 {
+    // Exported naga artifacts are not sources this engine compiles - see
+    // is_generated_artifact above.
+    if (is_generated_artifact(path)) { return false; }
+
     static const std::vector<std::string> kStageExtensions = {
         ".vert", ".frag", ".comp", ".geom", ".rgen", ".rchit", ".rmiss", ".tesc", ".tese"
     };

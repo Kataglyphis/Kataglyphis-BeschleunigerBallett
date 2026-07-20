@@ -8,9 +8,33 @@ C++ engine offline.
 ## The pipeline (working today)
 
 ```powershell
+# Wired into the build (2026-07-20). Opt-in, and non-critical: a missing cargo
+# toolchain warns and skips rather than failing a C++ build.
+powershell -File .\Scripts\Windows\Build-Windows.ps1 -ExportWgslShaders ...
+powershell -File .\Scripts\Windows\Build-Windows-Container.ps1 -ExportWgslShaders ...
+
+# Export only, no C++ build (the host cmake cannot read this repo's presets):
+powershell -File .\Scripts\Windows\Build-Windows.ps1 `
+  -SkipBuild -SkipFormat -SkipTests -SkipPerfTests -SkipMsix -ExportWgslShaders
+
+# Or drive the example directly:
 cargo run -p kataglyphis_webgpu_renderer --example export_shaders -- <out_dir>
 # default out_dir: target/shader-export
 ```
+
+Output goes to `Resources/Shaders/generated/`, which is **gitignored** — these
+are derived artifacts and would churn on every export.
+
+**The container flag exports inside the container.** `Build-Windows-Container.ps1
+-ExportWgslShaders` writes to `C:\ws\Resources\Shaders\generated`, and the
+container streams back only build trees and logs, so the artifacts do not
+appear on the host. That is the right behaviour for a containerized build (the
+C++ build there sees them) but it means the host-side flag above is what a
+developer wants when inspecting the output.
+
+**Nothing in the C++ engine consumes these yet.** The pipeline is wired and
+guarded; adopting the generated SPIR-V in `VulkanRenderer` is a separate step,
+and the binding-decoration mismatch in the table below is why.
 
 Emits, per shader in `crates/webgpu_renderer/src/shaders/`:
 
@@ -23,6 +47,12 @@ Emits, per shader in `crates/webgpu_renderer/src/shaders/`:
 `tests/shader_export.rs` guards the path: every shader must parse,
 validate, and produce SPIR-V with a correct magic number, so a WGSL change
 that would break the C++ side fails in CI.
+
+`compile-shaders.ps1` and `buildIntegritySuite.cpp` both skip anything under a
+`generated/` directory, and that exclusion is load-bearing: the exported GLSL
+carries WebGPU binding decorations, so glslc would try to compile files that
+are not engine shaders, and the fresh timestamps would mark every real shader
+stale at once. Both were observed failing before the exclusions went in.
 
 ## Why WGSL as the source of truth (not GLSL)
 
