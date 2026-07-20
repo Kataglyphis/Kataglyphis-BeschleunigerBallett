@@ -66,9 +66,19 @@ size and a decision, or gets dropped.
   and all four run their seed corpora in Windows CI. KTX2 is deliberately not
   covered: the C++ engine does not use it (the KTX dependency belongs to the
   Rust renderer, which has its own tests).
-- [ ] **Renderer-level RAII cleanup consolidation** (M) — the stage-level work
-  landed 2026-07-19; `VulkanRenderer`'s hand-ordered `cleanUp()` and the
-  device-lost special-casing in `App.cpp` are what is left.
+- [ ] **Renderer-level RAII cleanup consolidation** (M, **blocked on being
+  testable**) — the stage-level work landed 2026-07-19; `VulkanRenderer`'s
+  hand-ordered `cleanUp()` and the device-lost special-casing in `App.cpp`
+  are what is left.
+
+  Deliberately not attempted 2026-07-20. The whole point of the change is the
+  device-lost path — `App.cpp` skips `scene->cleanUp()`/`gui->cleanUp()` when
+  the device is lost — and device loss cannot be induced here, so removing
+  that guard would be an untestable behaviour change to the one path that
+  only runs when things have already gone wrong. The payoff is code
+  cleanliness, not a user-visible defect. Get a way to simulate device loss
+  first (a device-simulation layer, or a deliberate fault injection behind a
+  debug flag); then the refactor is safe and its correctness is checkable.
 
 ## Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
