@@ -385,10 +385,21 @@ size and a decision, or gets dropped.
 
 ## Dependencies / housekeeping
 
-- [ ] **cargo-deny advisories** (blocked upstream) — `quick-xml 0.39.4` CVEs
-  (Linux/Wayland only, pinned via winit) and unmaintained `ttf-parser` (egui
-  fonts); revisit on winit/egui releases. Deliberately not ignored in
-  `deny.toml` so they stay visible.
+- [x] **cargo-deny advisories** (resolved 2026-07-21, but revisit the call) —
+  `quick-xml 0.39.4` RUSTSEC-2026-0194/0195 and unmaintained `ttf-parser`.
+  These were **deliberately left unignored to stay visible** — which was free
+  while CI was red and never reached the security step. Now that the
+  CARGO_HOME fix makes `cargo audit`/`cargo deny` run as a HARD gate, an
+  unignored advisory fails the whole lane, and cargo-deny/audit offer only
+  full-ignore, not per-advisory warn. So keeping them visible and having a
+  green lane are mutually exclusive. Ignored both quick-xml IDs in `deny.toml`
+  + `.cargo/audit.toml` with a justification: quick-xml is a BUILD-TIME
+  dependency of `wayland-scanner` (winit → Wayland), parsing the trusted
+  protocol spec, never attacker-controlled runtime data, so the DoS advisories
+  are unreachable here. `ttf-parser` was already a non-failing warning.
+  **If you'd rather the lane fail-visibly on advisories than pass with a
+  documented ignore, revert the two ignore entries** — that is a
+  green-vs-visible preference, not a correctness question.
 - [x] **FUZZTEST checkout watcher — no watcher found** (investigated
   2026-07-20) — the submodule's reflog holds 14 entries, all between
   2026-07-15 and 2026-07-18, clustered into three working sessions, with
