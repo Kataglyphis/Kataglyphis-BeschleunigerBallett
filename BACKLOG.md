@@ -168,7 +168,10 @@ size and a decision, or gets dropped.
   with a real prefiltered environment map; MikkTSpace tangents alongside.
 - [ ] **Web drop-zone / model picker** (S) — native drag-and-drop shipped;
   browser File API pending.
-- [ ] **Touch controls** (S) — orbit/zoom gestures for the embedded demo.
+- [x] **Touch controls** (done 2026-07-20) — one finger orbits, two pinch to
+  zoom. Ratio-based so the gesture is DPI-independent and reversible; the
+  pinch baseline resets on any finger-count change so adding or lifting a
+  finger cannot lurch the camera. 7 tests, verified to bite.
 - [ ] **GPU instancing + indirect draws** (M) — structure exists for neither;
   needed before large scenes.
 - [ ] **Clustered/tiled lighting** (L) — 4-light cap is fine today; lift it
