@@ -7,6 +7,18 @@ source "${SCRIPT_DIR}/lib/common.sh"
 
 git config --global --add safe.directory /workspace || true
 
+# The :latest-cross image runs as uid 1001 with CARGO_HOME=/usr/local/cargo
+# owned by root, so the Corrosion/cargo half of the configure dies with
+# "failed to create directory /usr/local/cargo/registry" - which took the
+# whole Linux lane down when combined with the tee exit-code masking in
+# Linux.yml (fixed there with shell: bash / pipefail). Redirect cargo to a
+# writable home rather than requiring the image to hand us its own.
+if [[ ! -w "${CARGO_HOME:-/usr/local/cargo}" ]]; then
+  export CARGO_HOME="${TMPDIR:-/tmp}/cargo-home"
+  mkdir -p "${CARGO_HOME}"
+  echo "CARGO_HOME not writable in this image; using ${CARGO_HOME}"
+fi
+
 DEFAULT_PRESET="linux-debug-clang"
 DEFAULT_BUILD_DIR="build"
 DEFAULT_CLEAN_BUILD_DIR="false"

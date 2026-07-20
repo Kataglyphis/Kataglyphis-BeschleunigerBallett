@@ -18,6 +18,14 @@ on:
       GHCR_PAT:
         required: true
 
+# Every build step here pipes through `tee`, and the runner's default shell
+# has no pipefail - so for months, failed configures and builds reported
+# SUCCESS and only steps without tee (the fuzzer run) ever surfaced failure.
+# An explicit `shell: bash` runs with `-eo pipefail`, which unmasks them.
+defaults:
+  run:
+    shell: bash
+
 env:
   BUILD_TYPE: Debug
   GCC_PROFILE_PRESET: linux-profile-GNU

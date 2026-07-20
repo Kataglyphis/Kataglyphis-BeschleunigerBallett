@@ -771,10 +771,22 @@ gone, and CI runs them from `build-asan-clang` instead of the plain Debug tree.
   failed with `cannot find crtbeginS.o`. Updated. Worth deriving rather than
   hardcoding if it moves again.
 
-**Still expect a second failure behind this one.** Every step after the fuzzer
-has reported `skipped` for months, including the separately-known
-`Run performance benchmarks (gcc)` which failed on its own from 2026-04-19.
-Their real state is still unknown.
+**The second failure arrived on schedule, plus a third problem that explains
+the lane's whole history of lying.** The ODR-fix run failed differently:
+`build-asan-clang/first_fuzz_test: No such file or directory`. The ASan build
+step had reported success in ~30 seconds — because it failed at configure and
+`cmd 2>&1 | tee log` reports tee's exit code, and the runner's default shell
+has no pipefail. **Every build step in `Linux.yml` was masked this way**; only
+the fuzzer step, which has no `tee`, could ever surface failure. That is why
+the lane's failures always landed on the fuzzer step regardless of what was
+actually broken. Fixed with an explicit `shell: bash` default (`-eo pipefail`).
+
+The underlying configure failure: the `:latest-cross` image runs as uid 1001
+(`kataglyphis`) with `CARGO_HOME=/usr/local/cargo` owned by root, so
+Corrosion's cargo dies with "failed to create directory .../registry".
+Verified in the image locally; `cmake-configure-build.sh` now falls back to a
+writable `${TMPDIR:-/tmp}/cargo-home` when the configured one is unwritable
+(fallback itself verified in the image: cargo 1.93.1 runs).
 
 **Lesson recorded on my own process:** I ruled out FUZZTEST pin drift against a
 breakage date I had not verified, then spent three CI round trips on a control
