@@ -166,6 +166,19 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
     const auto &shapes = reader.GetShapes();
     std::unordered_map<Vertex, uint32_t> vertices_map{};
 
+    // Reserve up front. Without this the map rehashes its way up from nothing
+    // while inserting hundreds of thousands of entries, and every rehash
+    // re-buckets everything already inserted. Face vertices is an upper bound
+    // on unique vertices, so this over-reserves for well-shared meshes - a
+    // few MB of buckets against a second of rehashing.
+    size_t total_face_vertices = 0;
+    for (const auto &shape : shapes) { total_face_vertices += shape.mesh.indices.size(); }
+    vertices_map.reserve(total_face_vertices);
+    // indices ends up exactly this long. vertices is left to the per-shape
+    // reserve below: reserving face-vertex count for it would hold ~39 MB for
+    // a mesh that needs ~7 MB, since sharing is the normal case.
+    indices.reserve(total_face_vertices);
+
     // Loop over shapes
     for (const auto &shape : shapes) {
         // prepare for enlargement
@@ -225,12 +238,14 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
 
                 Vertex const vert{ pos, normals, color, tex_coords };
 
-                if (!vertices_map.contains(vert)) {
-                    vertices_map[vert] = static_cast<uint32_t>(vertices.size());
-                    vertices.push_back(vert);
-                }
-
-                indices.push_back(vertices_map[vert]);
+                // ONE hash lookup per vertex. This was three - contains(),
+                // then operator[] to insert, then operator[] again to read -
+                // and at ~900k face vertices that is 1.8 million redundant
+                // hashes and probes.
+                const auto [entry, inserted] =
+                  vertices_map.try_emplace(vert, static_cast<uint32_t>(vertices.size()));
+                if (inserted) { vertices.push_back(vert); }
+                indices.push_back(entry->second);
             }
 
             index_offset += fv;

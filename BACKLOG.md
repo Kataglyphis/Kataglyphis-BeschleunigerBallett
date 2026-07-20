@@ -126,10 +126,16 @@ size and a decision, or gets dropped.
   10x against `BM_ObjParse_Suzanne`'s ~7 ms/MB, but the ratio is what picks
   the approach.
 
-  Second finding worth its own attention: the **vertex build is 35%**, which
-  is the `unordered_map<Vertex, uint32_t>` dedup, not parsing. Threading hides
-  it; reserving the map and using a cheaper hash would actually remove it.
-  Worth doing regardless of async, since it also costs on every model reload.
+  The vertex build was 35% of that. Partly addressed 2026-07-20 - map
+  reserved, three hash lookups per vertex collapsed to one, and the Vertex
+  hash given real mixing: **1028 ms -> 867 ms (16%)**, total 2945 -> 2790 ms.
+  Less than hoped, and the remaining ~870 ms is dominated by hashing and
+  probing under ASAN rather than by anything structural.
+
+  Not attempted: hashing the raw float bytes instead of via
+  `std::hash<glm::vec3>`. It would be faster and is UNSOUND here - `+0.0` and
+  `-0.0` compare equal but have different bit patterns, so equal vertices
+  would hash differently and the dedup would silently emit duplicates.
 - [ ] **glTF loading** (L) — reuse the Rust renderer's test assets and enable
   the cross-renderer comparison harness below.
 - [x] **Fuzz the untrusted input surfaces** (done 2026-07-20) — SceneConfig,

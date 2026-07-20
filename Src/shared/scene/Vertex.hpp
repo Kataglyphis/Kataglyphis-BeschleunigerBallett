@@ -47,11 +47,23 @@ template<> struct hash<Vertex>
 {
     size_t operator()(Vertex const &vertex) const
     {
-        size_t const hash_position = hash<glm::vec3>()(vertex.position);
-        size_t const hash_normal = hash<glm::vec3>()(vertex.normal);
-        size_t const hash_texture = hash<glm::vec2>()(vertex.texture_coords);
+        // XOR with 1- and 2-bit shifts barely mixes: two vertices differing
+        // only in normal land in nearby buckets, and clustered buckets turn
+        // hash lookups into linear scans. This is the usual 64-bit combine
+        // (boost's, with a 64-bit constant), which spreads each component
+        // across the whole word before combining.
+        auto combine = [](size_t seed, size_t value) {
+            return seed ^ (value + 0x9e3779b97f4a7c15ULL + (seed << 6U) + (seed >> 2U));
+        };
 
-        return hash_position ^ (hash_normal << 1U) ^ (hash_texture << 2U);
+        size_t seed = hash<glm::vec3>()(vertex.position);
+        seed = combine(seed, hash<glm::vec3>()(vertex.normal));
+        seed = combine(seed, hash<glm::vec2>()(vertex.texture_coords));
+        // color participates in operator==, so it must participate here too -
+        // omitting it is legal but makes every colour variant of a position
+        // collide.
+        seed = combine(seed, hash<glm::vec3>()(vertex.color));
+        return seed;
     }
 };
 
