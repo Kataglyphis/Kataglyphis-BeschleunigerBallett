@@ -28,7 +28,13 @@ env:
   BUILD_RELEASE_DIR: build-release
   DOCS_OUT: build/build/html
   COVERAGE_JSON: build/coverage.json
-  CONTAINER_IMAGE: ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest
+  # :latest-cross, NOT :latest. The plain tag is the old single-arch build and
+  # had not been rebuilt since 2026-04-16 - three months of toolchain drift
+  # behind the cross lane, which is rebuilt routinely (2026-07-20 at the time
+  # of writing). Both publish linux/amd64, arm64 and riscv64. Use the same tag
+  # locally so a CI failure is reproducible on a dev box; see ContainerHub
+  # docs/rancher-desktop-linux-containers.md.
+  CONTAINER_IMAGE: ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest-cross
 
 jobs:
   build_and_test:
