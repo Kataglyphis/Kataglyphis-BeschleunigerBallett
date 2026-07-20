@@ -155,19 +155,31 @@ size and a decision, or gets dropped.
 - [ ] **Basis ETC1S/UASTC transcoding** (M) — KTX2 BCn passthrough is done;
   supercompressed files are rejected with a clear error until a transcoder
   dependency lands (also unlocks compressed textures on the web path).
-- [ ] **Put the LOD system on the render path** (M) — **the gap that matters
-  more than any remaining simplifier work.** `build_lod_chain`, `select_lod`
-  and both simplifiers are implemented, tested (103 Rust tests) and reachable
-  from nothing: no render pass or example touches them. Needs per-frame
-  distance evaluation against primitive bounds, a decision on whether levels
-  are pre-uploaded or swapped on demand, and a test that a distant object
-  actually draws fewer triangles than a near one.
+- [x] **LOD is on the render path** (done 2026-07-20) — levels are built once
+  in `upload_scene` with `Simplifier::Quadric` and pre-uploaded as their own
+  vertex/index buffers; selection is per-primitive per-frame on camera distance
+  to `world_center`, through the same `select_lod` rule rather than a second
+  one grown on the render path. Measured on the bundled cube (12 tris):
 
-  Recorded because I walked into this twice in one day. I shipped `qem.rs` with
-  no callers, "fixed" it by adding `build_lod_chain_with`, and wrote a commit
-  message saying QEM was no longer dead code — when in fact I had connected one
-  unreachable function to another. A function existing, and being tested, is
-  not the same as it running.
+  | camera distance | selected | indices |
+  |---|---|---|
+  | 3.0 | full detail | 36 |
+  | 12.0 | level 0 | 18 |
+  | 60.0 | level 1 | 6 |
+
+  **Off by default**, so every existing test keeps its meaning; with it off no
+  levels are built at all and the count stays 36 from 0.5 to 10000.
+
+  **Shadow casters deliberately stay at full detail.** Camera distance is the
+  wrong metric there — the cascade renders from the light, so a primitive far
+  from the camera can be the occluder filling a *near* cascade — and a popping
+  shadow silhouette is far more visible than a popping mesh, since the mesh
+  pops when it is a few pixels while its shadow can land beside the viewer at
+  full size. Shadow LOD would need its own per-cascade, light-relative metric.
+
+  Also pinned as an executable fact: `VertexClustering` at ratio 0.02 returns
+  the cube's 12 triangles **unchanged**, which is why the render path uses
+  Quadric.
 
 - [x] **meshoptimizer-grade decimation** (done 2026-07-20, but see the
   integration item above) — quadric-error simplification shipped in
@@ -273,16 +285,16 @@ size and a decision, or gets dropped.
 - [ ] **GPU occlusion culling** (L) — frustum culling shipped; depth-pyramid
   occlusion later.
 - [ ] **WebXR** (XL) — parked.
-- [ ] **Colosseum demo scene** (blocked on you AND on the LOD gap below) —
+- [ ] **Colosseum demo scene** (blocked on you) —
   pick a licensed photogrammetry scan, keep the asset out of git.
 
-  **Correcting "LOD + KTX2 machinery is ready", which was the most misleading
-  line in this file.** It is true of the code and false of the integration: the
-  LOD subsystem is library-and-tests-only. Nothing in `src/render` or
-  `examples/` builds a chain or calls `select_lod` — verified 2026-07-20, the
-  only references outside `lod.rs`, `qem.rs` and `tests/` are the `pub use`
-  re-exports in `lib.rs`. Dropping in a scan is not a switch to flip; it needs
-  the integration item below first.
+  This entry used to claim "LOD + KTX2 machinery is ready" while the LOD
+  subsystem was library-and-tests-only, called by no render pass at all. That
+  is now genuinely true for LOD (see the render-path item above) — set
+  `lod_enabled` before `upload_scene`. **KTX2 is still not ready**: Basis
+  ETC1S/UASTC transcoding is unimplemented (`asset/ktx2_loader.rs` rejects any
+  supercompression), so a scan shipping Basis-compressed textures will not
+  load.
 
 ## Cross-renderer
 
