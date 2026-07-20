@@ -774,6 +774,20 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
         deferredRasterizer.recordCommands(commandBuffer, image_index, scene, deferred_sets, camera_frustum);
     }
 
+    // Publish whichever path actually recorded this frame. Reading both and
+    // summing would double-count the shared scene; reading the inactive one
+    // would report last frame's numbers from before the mode switch.
+    const bool forward_active =
+      guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward;
+    // The local binding above is const; the stats are renderer output, so
+    // take the mutable reference the same way the GPU-timing code does.
+    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &mutable_gui_vars =
+      gui->getGuiRendererSharedVars();
+    mutable_gui_vars.visibility.meshes_drawn =
+      forward_active ? rasterizer.getMeshesDrawn() : deferredRasterizer.getMeshesDrawn();
+    mutable_gui_vars.visibility.meshes_total =
+      forward_active ? rasterizer.getMeshesConsidered() : deferredRasterizer.getMeshesConsidered();
+
     if (device->supportsHardwareAcceleratedRRT() && image_index < raytracingDescriptors.sets().size()) {
         std::vector<vk::DescriptorSet> raytracing_descriptor_sets = { sharedRenderDescriptors.sets()[image_index],
             raytracingDescriptors.sets()[image_index] };

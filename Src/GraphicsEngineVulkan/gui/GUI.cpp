@@ -224,6 +224,21 @@ void GUI::render()
 
     ImGui::Separator();
 
+    // Culling has no visual signature when it works and none when it is wrong
+    // either - geometry is simply absent. These counts are what turn
+    // "something is missing" into "culling dropped it".
+    if (ImGui::CollapsingHeader("Visibility")) {
+        ImGui::Checkbox("Frustum culling", &guiRendererSharedVars.frustum_culling_enabled);
+        const unsigned int drawn = guiRendererSharedVars.visibility.meshes_drawn;
+        const unsigned int total = guiRendererSharedVars.visibility.meshes_total;
+        ImGui::Text("Meshes drawn: %u / %u", drawn, total);
+        if (total > 0U) {
+            ImGui::Text("Culled: %u (%.1f%%)", total - drawn, 100.0 * double(total - drawn) / double(total));
+        }
+    }
+
+    ImGui::Separator();
+
     Kataglyphis::Frontend::renderGpuTimingsPanel(guiRendererSharedVars.gpuTimings.supported,
       guiRendererSharedVars.gpuTimings.pass_ms,
       VulkanRendererInternals::FrontendShared::GPU_TIMED_PASS_NAMES,

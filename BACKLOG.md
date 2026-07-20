@@ -69,10 +69,13 @@ size and a decision, or gets dropped.
   nothing measurable today. It pays off with the multi-object work below, and
   it was verified live rather than assumed - inverting the test (cull what is
   visible) fails `GoldenRender.ShadowsDarkenSomePixels`.
-- [ ] **Per-mesh visibility statistics** (S) — nothing reports how many meshes
-  a frame drew versus culled, so culling is invisible until something goes
-  missing. A drawn/total counter in `GUIRendererSharedVars`, shown next to the
-  GPU timings, would make both the win and any over-culling observable.
+- [x] **Per-mesh visibility statistics** (done 2026-07-20) — drawn/considered
+  counters written by whichever raster path recorded the frame, surfaced in a
+  GUI "Visibility" panel alongside the culling toggle. They also made the
+  first end-to-end culling test possible
+  (`GoldenRender.FrustumCullingDropsOffscreenMeshesOnly`): without a counter,
+  a test can only observe that the picture still looks right, which is equally
+  true when culling is a no-op.
 - [ ] **Async asset loading** (L) — model load/reload and AS builds block the
   main thread; move to a worker with fence-based handoff (staging ring
   already removed the per-upload queue stalls). **Quantified**: OBJ parsing

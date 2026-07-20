@@ -700,3 +700,56 @@ TEST(GoldenRender, DeferredMatchesForwardRoughly)
       << "Forward and deferred disagree far more than expected (forward " << mean_forward << ", deferred "
       << mean_deferred << "); one of the two lighting paths is likely broken.";
 }
+
+// Frustum culling, end to end through the real renderer.
+//
+// The unit tests in frustumSuite.cpp cover the maths; this covers the wiring,
+// which is where culling actually goes wrong - bounds computed in the wrong
+// space, planes built from different matrices than the vertex shader uses, or
+// a counter that never moves because the feature is not reached at all.
+//
+// The drawn/considered counters exist for exactly this reason: culling has no
+// visual signature when it works, so without them a test can only observe
+// that the picture still looks right, which is also true when culling is a
+// no-op.
+TEST(GoldenRender, FrustumCullingDropsOffscreenMeshesOnly)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    renderer_vars.frustum_culling_enabled = true;
+
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    // The default debug camera frames the scene, so everything is visible.
+    const unsigned int considered = renderer_vars.visibility.meshes_total;
+    ASSERT_GT(considered, 0U) << "the renderer reported considering no meshes at all; "
+                                 "the visibility counters are not being written";
+    EXPECT_EQ(renderer_vars.visibility.meshes_drawn, considered)
+      << "culling dropped geometry the camera is looking straight at";
+
+    // Move far away along +Z, well past the far plane, so the scene is behind
+    // and beyond the camera. Nothing should survive the frustum test.
+    harness.camera->set_camera_position(glm::vec3(0.0F, 0.0F, 5000.0F));
+    harness.render_frames(SETTLE_FRAMES);
+
+    EXPECT_EQ(renderer_vars.visibility.meshes_total, considered)
+      << "the number of meshes considered must not change when the camera moves";
+    EXPECT_EQ(renderer_vars.visibility.meshes_drawn, 0U)
+      << "a scene entirely outside the view should be culled completely, but "
+      << renderer_vars.visibility.meshes_drawn << " mesh(es) were still drawn";
+
+    // Turning culling off must draw everything again from the same viewpoint.
+    // This separates "culling works" from "the renderer stopped drawing".
+    renderer_vars.frustum_culling_enabled = false;
+    harness.render_frames(SETTLE_FRAMES);
+    EXPECT_EQ(renderer_vars.visibility.meshes_drawn, considered)
+      << "with culling disabled every mesh must be submitted regardless of the camera";
+
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+}

@@ -47,6 +47,12 @@ class Rasterizer
       const std::vector<vk::DescriptorSet> &descriptorSets,
       const std::optional<FrustumPlanes> &cameraFrustum = std::nullopt);
 
+    /// Meshes drawn / considered by the most recent recordCommands call.
+    /// Reset at the start of each call, so a frame that records nothing
+    /// reports zeros rather than stale counts from the previous frame.
+    unsigned int getMeshesDrawn() const { return meshesDrawn; }
+    unsigned int getMeshesConsidered() const { return meshesConsidered; }
+
     void recreateFrameResources(vk::CommandPool commandPool);
     void destroyFramebuffers();
 
@@ -55,6 +61,8 @@ class Rasterizer
     ~Rasterizer();
 
   private:
+    unsigned int meshesDrawn{ 0 };
+    unsigned int meshesConsidered{ 0 };
     std::shared_ptr<VulkanDevice>device{ nullptr };
     VulkanSwapChain *vulkanSwapChain{ nullptr };
 

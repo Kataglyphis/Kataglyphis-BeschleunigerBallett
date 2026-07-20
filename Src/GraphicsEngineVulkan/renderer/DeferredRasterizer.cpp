@@ -467,12 +467,17 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
     // Subpass 0: Geometry
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, geometryPipeline);
 
+    meshesDrawn = 0;
+    meshesConsidered = 0;
+
     for (uint32_t m = 0; m < scene->getModelCount(); m++) {
         pushConstant.model = scene->getModelMatrix(m);
         commandBuffer.pushConstants(
           geometryPipelineLayout, vk::ShaderStageFlagBits::eAll, 0, sizeof(PushConstantRasterizer), &pushConstant);
 
         for (unsigned int k = 0; k < scene->getMeshCount(m); k++) {
+            ++meshesConsidered;
+
             // Same conservative visibility test as the forward path; see
             // Rasterizer::recordCommands.
             if (cameraFrustum.has_value()
@@ -491,6 +496,7 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
               vk::PipelineBindPoint::eGraphics, geometryPipelineLayout, 0, 1, &descriptorSets[0], 0, nullptr);
 
             commandBuffer.drawIndexed(scene->getIndexCount(m, k), 1, 0, 0, 0);
+            ++meshesDrawn;
         }
     }
 

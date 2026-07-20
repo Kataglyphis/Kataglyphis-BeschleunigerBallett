@@ -28,6 +28,14 @@ struct GpuTimings
     float pass_ms[GPU_TIMED_PASS_COUNT] = { -1.0f, -1.0f, -1.0f, -1.0f, -1.0f };
 };
 
+struct VisibilityStats
+{
+    /// Meshes actually drawn by the raster path last frame.
+    unsigned int meshes_drawn = 0;
+    /// Meshes the raster path considered, culled or not.
+    unsigned int meshes_total = 0;
+};
+
 struct GUIRendererSharedVars
 {
     RasterizationMode rasterizationMode = RasterizationMode::Forward;
@@ -45,6 +53,16 @@ struct GUIRendererSharedVars
 
     // Per-pass GPU timings, written by the renderer, read by the GUI.
     GpuTimings gpuTimings;
+
+    /// Meshes submitted vs considered by the last recorded frame, written by
+    /// the renderer and read by the GUI.
+    ///
+    /// Culling is otherwise invisible: it has no visual signature when it is
+    /// working and none when it is wrong either - geometry simply is not
+    /// there. These two numbers are what turn "something is missing" into
+    /// "culling dropped it", and they are also the only way to see whether
+    /// culling is doing anything at all in a given scene.
+    VisibilityStats visibility;
 
     // path tracing vars
 };

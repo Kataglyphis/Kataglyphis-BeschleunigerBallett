@@ -107,12 +107,17 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
     // The set is identical for every mesh: bind once, not per draw.
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout, 0, descriptorSets, nullptr);
 
+    meshesDrawn = 0;
+    meshesConsidered = 0;
+
     for (uint32_t m = 0; m < scene->getModelCount(); m++) {
         pushConstant.model = scene->getModelMatrix(m);
         commandBuffer.pushConstants(
           pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(PushConstantRasterizer), &pushConstant);
 
         for (unsigned int k = 0; k < scene->getMeshCount(m); k++) {
+            ++meshesConsidered;
+
             // Skip meshes provably outside the view. isVisible() is
             // conservative and treats unknown bounds as visible, so this can
             // only ever drop geometry the camera cannot see.
@@ -128,6 +133,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
             commandBuffer.bindIndexBuffer(scene->getIndexBuffer(m, k), 0, vk::IndexType::eUint32);
 
             commandBuffer.drawIndexed(scene->getIndexCount(m, k), 1, 0, 0, 0);
+            ++meshesDrawn;
         }
     }
 
