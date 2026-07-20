@@ -95,67 +95,40 @@ size and a decision, or gets dropped.
   a comment saying the GUI can feed arbitrary files, while
   `loadTexturesAndMaterials` killed the process and ran first, so the graceful
   path was unreachable.
-- [ ] **Async asset loading** (L) — model load/reload and AS builds block the
-  main thread; move to a worker with fence-based handoff (staging ring
-  already removed the per-upload queue stalls). **Quantified**: OBJ parsing
-  alone is ~7 ms/MB (`BM_ObjParse_Suzanne`), so the bundled 27 MB model
-  implies ~200 ms of frozen main thread in an optimised build - measured at
-  2.98 s in debug/ASAN after the double-parse fix above, which is the number a
-  developer actually waits through on every run.
+- [x] **Async asset loading** (done 2026-07-20) — the window no longer freezes
+  for the whole model load. **Measured on the bundled 27 MB model: 2800 ms of
+  CPU parse moved off the render thread**, leaving the ~15 ms GPU upload, which
+  must stay on the thread owning the device.
 
-  **The split is done.** `ObjLoader::parseCpu` performs the whole CPU side and
-  touches no Vulkan; `ObjLoader{}` constructs without a device for exactly
-  this. Measured at the new boundary: **2802 ms threadable, 15 ms that must
-  stay on the thread owning the device.** Four tests in `objParseSuite.cpp`
-  run it with no device, including one that parses on a `std::thread` and
-  compares every index against a main-thread parse.
+  `ObjLoader::parseCpu` performs the whole CPU side and touches no Vulkan;
+  `ObjLoader{}` constructs without a device for exactly this.
+  `AsyncModelParse` (`scene/AsyncModelParse.ixx`) runs it on a `std::thread`
+  with start/poll/take, and its destructor JOINS rather than detaches - a
+  worker writing into a dead loader would corrupt geometry rather than crash.
+  `ObjLoader::uploadParsed` is the matching GPU half.
 
-  The worker exists too: `AsyncModelParse` (`scene/AsyncModelParse.ixx`) runs
-  `parseCpu` on a `std::thread` with start/poll/take, 5 tests covering the
-  handoff, failure reporting, supersede-in-flight, and that the destructor
-  JOINS rather than detaches. `ObjLoader::uploadParsed` is the matching GPU
-  half.
+  **Moving the parse was the small part.** The blocking load was immediately
+  followed by three things that read scene CONTENTS: the acceleration
+  structures, the object-description buffer, and the descriptor sets that point
+  at it. Those now run in `VulkanRenderer::finishModelLoad()` on the frame the
+  model lands. Descriptors are still written once during init, or the first
+  frames sample bindings that were never written at all.
 
-  **What remains is wiring it into the frame loop**, and the reason it is not
-  done yet is test fallout rather than difficulty: the golden and integration
-  suites construct the engine and render immediately, so a model that arrives
-  several frames later changes what those tests see. Doing it means teaching
-  the harness to wait for the load, which is worth doing deliberately rather
-  than at the end of a session.
+  Two things fell out of it:
 
-  Also worth knowing before touching this: **there is no race detector on this
-  platform** (see the TSan note further down - clang-cl does not support it).
-  The threading here is guarded by ASAN plus the logic tests, not by TSan, so
-  the design deliberately keeps shared state to two atomics and a moved
-  unique_ptr rather than anything that would need one.
+  - `ASManager::cleanUp()` dereferenced a null device whenever
+    `createASForScene` had not run. Unreachable before, because init always
+    built the AS; it is now simply what shutting down mid-load looks like.
+  - The three suites that drive the engine asserted on geometry that now
+    arrives several frames later.
+    `Test/commit/VulkanEngine/EngineLoadWait.hpp` pumps frames until the model
+    is installed, capped so a parse that never finishes fails the test rather
+    than hanging CI.
 
-  **Measured breakdown** (2026-07-20, debug/ASAN, 27 MB dinosaurs.obj,
-  166563 verts / 894174 indices) - `ObjLoader::loadModel` now logs this on
-  every load:
+  Still deliberately one parse at a time - a queue needs cancellation semantics
+  for "user picks a third model while the second loads", and nothing asks for
+  them yet.
 
-  | Phase | Time | Share |
-  | --- | --- | --- |
-  | tinyobj parse | 1897 ms | 64% |
-  | vertex build (dedup) | 1028 ms | 35% |
-  | textures | 4 ms | 0.1% |
-  | GPU upload | 14 ms | 0.5% |
-
-  That settles the design: **99% of the freeze is device-free CPU work**, so a
-  worker thread removes essentially all of it and leaves ~14 ms of GPU upload
-  on the owning thread. Absolute values are debug/ASAN and inflated roughly
-  10x against `BM_ObjParse_Suzanne`'s ~7 ms/MB, but the ratio is what picks
-  the approach.
-
-  The vertex build was 35% of that. Partly addressed 2026-07-20 - map
-  reserved, three hash lookups per vertex collapsed to one, and the Vertex
-  hash given real mixing: **1028 ms -> 867 ms (16%)**, total 2945 -> 2790 ms.
-  Less than hoped, and the remaining ~870 ms is dominated by hashing and
-  probing under ASAN rather than by anything structural.
-
-  Not attempted: hashing the raw float bytes instead of via
-  `std::hash<glm::vec3>`. It would be faster and is UNSOUND here - `+0.0` and
-  `-0.0` compare equal but have different bit patterns, so equal vertices
-  would hash differently and the dedup would silently emit duplicates.
 - [ ] **glTF loading** (L) — reuse the Rust renderer's test assets and enable
   the cross-renderer comparison harness below.
 - [x] **Fuzz the untrusted input surfaces** (done 2026-07-20) — SceneConfig,
