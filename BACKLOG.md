@@ -129,9 +129,24 @@ size and a decision, or gets dropped.
   (Linux/Wayland only, pinned via winit) and unmaintained `ttf-parser` (egui
   fonts); revisit on winit/egui releases. Deliberately not ignored in
   `deny.toml` so they stay visible.
-- [ ] **FUZZTEST checkout watcher** (S investigation) — an unidentified host
-  process occasionally re-checks-out `ExternalLib/FUZZTEST` to the latest
-  date tag; find and disarm it (pin is currently correct at `ad66c13`).
+- [x] **FUZZTEST checkout watcher — no watcher found** (investigated
+  2026-07-20) — the submodule's reflog holds 14 entries, all between
+  2026-07-15 and 2026-07-18, clustered into three working sessions, with
+  nothing in the two days since. No hook, no CMake `FetchContent`, no script
+  and no `.gitmodules` branch setting references those date tags, and
+  `submodule.<name>.branch` is unset, so `git submodule update --remote`
+  cannot be the cause either. VS Code does have the submodule registered as a
+  repository (`branch.main.vscode-merge-base` is set in its local config), so
+  its Git UI is the most plausible route — but that is a human action, not a
+  daemon. Best reading: hand or agent experimentation during those sessions,
+  misremembered as something recurring.
+
+  Rather than keep hunting, `Scripts/Windows/tests/Submodule.Pins.Tests.ps1`
+  now detects the symptom whatever the cause: any submodule checked out away
+  from its recorded commit (the easily-missed `+` in `git submodule status`),
+  plus a check that the FUZZTEST pin is reachable from its remote so local-only
+  drift cannot produce a build that works on one machine. Verified by
+  deliberately drifting the submodule and watching it fail.
 
 ---
 
