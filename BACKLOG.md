@@ -26,8 +26,20 @@ size and a decision, or gets dropped.
   is enabled again, runs against a purpose-built rig
   (`Resources/Models/ShadowTest/shadow_rig.obj`, a solid box over a plane) via
   the new `KATAGLYPHIS_MODEL_OVERRIDE` hook, and asserts >2% against a
-  measured 6.42%. Verified to fail (0.038%) when the culling bug is
-  reintroduced, so it guards rather than decorates.
+  measured 5.42%. Verified in BOTH directions: reintroducing the shadow-pass
+  culling bug drops it to 2.43% and the test fails.
+
+  Two corrections to what I first claimed here, both caught by re-running:
+  the rig's first version used a small centred box, and the ImGui panel
+  covers the middle of the viewport - so whether the box was visible depended
+  on the granted window size, and the same binary measured 6.45% once and
+  0.01% later. The occluder is now a broad slab whose shadow band survives any
+  framing (5.41-5.44% over four runs). And the first "verified to fail"
+  reading was that hidden-box artifact, not the culling bug: over a CLOSED
+  occluder, back-face culling still records the slab's far side, so the bug
+  halves the signal rather than erasing it. The threshold is 4% because that
+  is what separates a halved signal from a correct one - measured, not
+  chosen.
 
 > **The "two instruments disagree" entry that used to be here was my own
 > error, and the mistake is worth keeping.** The golden test appeared to
@@ -232,10 +244,13 @@ unconditional control capture before its output is believed.
   a deliberate moment (right after a merge point) plus a
   `.git-blame-ignore-revs` entry. Alternative: format-on-touch only, and let
   the drift shrink over time. **Owner decision, not an agent's.**
-- **Containerized builds never lint.** `Build-Windows-Container.ps1` passes
-  `-SkipFormat -SkipTidy` unconditionally; the fast loop therefore cannot
-  catch style or tidy regressions. Options: a separate periodic container
-  run without the skips, or a pre-push hook that formats touched files.
+- **Container builds now report formatting drift** (2026-07-20): every
+  container build runs a non-destructive `clang-format --dry-run -Werror`
+  pass and logs the count. Currently **77 of 136 files deviate**. It does not
+  fail the build on purpose - with a backlog that size a failing gate gets
+  switched off within a day. Make it fail once the count is near zero.
+  `-SkipTidy` is still passed unconditionally, so clang-tidy remains
+  uncovered (and cannot see module TUs anyway - see below).
 - **clang-tidy cannot see C++23 module TUs** (module BMIs reference the
   container layout). Either run tidy inside the container, or accept that
   coverage is limited to the non-module surface.

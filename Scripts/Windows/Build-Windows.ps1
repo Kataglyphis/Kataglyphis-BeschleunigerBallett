@@ -1,6 +1,9 @@
 param(
   [string[]]$Configurations = @('all'),
   [switch]$SkipFormat,
+  # Rewrite sources with clang-format/cmake-format instead of only reporting
+  # drift. Off by default: see the formatting block below for why.
+  [switch]$ApplyFormat,
   [switch]$SkipTidy,
   [switch]$SkipTests,
   [switch]$SkipPerfTests,
@@ -212,14 +215,28 @@ try {
     } -RequiredTools @('cmake', 'ninja') -FailOnMissingRequiredTools
   } | Out-Null
 
+  # Formatting REPORTS by default and only rewrites with -ApplyFormat.
+  #
+  # Until 2026-07-20 Get-ProjectCppFiles had an inverted _deps filter and
+  # returned zero project files, so this step formatted nothing at all. Fixing
+  # that armed a 77-file rewrite for anyone running the default build - a
+  # sweep that collides with everything in flight and wants a deliberate
+  # moment plus a .git-blame-ignore-revs entry. So the default is now the
+  # non-destructive check, and applying the sweep is an explicit act.
   if (-not $SkipFormat) {
-    Invoke-BuildStep -Context $context -StepName 'Python tooling + cmake-format' -Critical -Script {
-      Invoke-CmakeFormatStep -Context $context -WorkspacePath $workspacePath
-    } | Out-Null
+    if ($ApplyFormat) {
+      Invoke-BuildStep -Context $context -StepName 'Python tooling + cmake-format (REWRITING)' -Critical -Script {
+        Invoke-CmakeFormatStep -Context $context -WorkspacePath $workspacePath
+      } | Out-Null
 
-    Invoke-BuildStep -Context $context -StepName 'clang-format (C/C++)' -Critical -Script {
-      Invoke-ClangFormatStep -Context $context -WorkspacePath $workspacePath
-    } | Out-Null
+      Invoke-BuildStep -Context $context -StepName 'clang-format (C/C++) (REWRITING)' -Critical -Script {
+        Invoke-ClangFormatStep -Context $context -WorkspacePath $workspacePath
+      } | Out-Null
+    } else {
+      Invoke-BuildStep -Context $context -StepName 'clang-format check (report only)' -Critical -Script {
+        Invoke-ClangFormatCheck -Context $context -WorkspacePath $workspacePath
+      } | Out-Null
+    }
   }
 
   if (Test-ConfigurationSelected -Name 'msvc-debug') {

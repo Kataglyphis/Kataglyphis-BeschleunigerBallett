@@ -87,7 +87,7 @@ function Get-BuildCommandArgs {
     'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
     '-File', (Join-Path $WorkspacePath 'Scripts\Windows\Build-Windows.ps1'),
     '-Configurations', $Configurations,
-    '-SkipFormat', '-SkipTidy', '-SkipPerfTests', '-SkipMsix'
+    '-SkipTidy', '-SkipPerfTests', '-SkipMsix'
   )
   if (-not $RunTests) { $psArgs += '-SkipTests' }
   if ($ParallelJobs -gt 0) { $psArgs += @('-ParallelJobs', "$ParallelJobs") }

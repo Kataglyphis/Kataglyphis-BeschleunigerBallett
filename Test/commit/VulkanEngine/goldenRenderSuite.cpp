@@ -616,12 +616,19 @@ TEST(GoldenRender, ShadowsDarkenSomePixels)
     ASSERT_GT(darkened, 0U) << "Not a single pixel changed when the shadow intensity went from 0.0 to 1.0. "
                                "The cascaded shadow map is rendered but its result never reaches the lighting "
                                "shaders.";
-    // Measured 6.45% on the rig. The threshold sits well below that but far
-    // above the 0.13% the skeleton scene produced, so it cannot be satisfied
-    // by the noise-level occlusion that a broken shadow path still emits.
-    // Raise it if the rig or its framing changes; do NOT lower it to make a
-    // failing renderer pass.
-    EXPECT_GT(darkened_fraction, 0.02)
+    // Threshold set from measurement on this rig, not from taste:
+    //
+    //   correct renderer                 5.41 - 5.44%  (four consecutive runs)
+    //   shadow-pass culling reintroduced 2.43%
+    //   shadow map never sampled         ~0%
+    //
+    // 4% separates all three. Note the culling regression does NOT vanish
+    // over a closed occluder - back-face culling simply records the slab's far
+    // side instead of its near side, two units deeper - which is why the
+    // threshold has to sit above a HALVED signal rather than just above zero.
+    // Do not lower it to make a failing renderer pass; re-measure both
+    // directions if the rig or the camera changes.
+    EXPECT_GT(darkened_fraction, 0.04)
       << "Only " << (darkened_fraction * 100.0)
       << "% of pixels were meaningfully darkened by shadows; expected a visible shadowed region.";
 
