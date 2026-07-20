@@ -49,6 +49,24 @@ Mesh::Mesh(std::shared_ptr<VulkanDevice>device,
     }
 
 
+    // Object-space bounds for frustum culling, computed here because this is
+    // the only point where the vertex positions are on the CPU - they go
+    // straight into a device-local buffer below and are not readable
+    // afterwards without a staging copy.
+    //
+    // Deliberately left invalid (min > max) for an empty mesh: isVisible()
+    // treats unknown bounds as visible, so an empty mesh renders (drawing
+    // nothing) rather than an all-zero box culling at the origin.
+    if (!vertices.empty()) {
+        glm::vec3 minimum = vertices.front().get_position();
+        glm::vec3 maximum = minimum;
+        for (const Vertex &vertex : vertices) {
+            minimum = glm::min(minimum, vertex.get_position());
+            maximum = glm::max(maximum, vertex.get_position());
+        }
+        bounds = AABB{ minimum, maximum };
+    }
+
     object_description = ObjectDescription{};
     createVertexBuffer(transfer_queue, transfer_command_pool, vertices);
     createIndexBuffer(transfer_queue, transfer_command_pool, indices);

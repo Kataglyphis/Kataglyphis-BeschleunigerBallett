@@ -22,6 +22,7 @@ import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.image;
 import kataglyphis.vulkan.scene;
+import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.pipeline_builder;
 
@@ -69,7 +70,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::setPushConstant(PushConst
 void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
   uint32_t image_index,
   Scene *scene,
-  const std::vector<vk::DescriptorSet> &descriptorSets)
+  const std::vector<vk::DescriptorSet> &descriptorSets,
+  const std::optional<FrustumPlanes> &cameraFrustum)
 {
     vk::RenderPassBeginInfo render_pass_begin_info;
     render_pass_begin_info.renderPass = render_pass;
@@ -111,6 +113,14 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
           pipeline_layout, vk::ShaderStageFlagBits::eVertex, 0, sizeof(PushConstantRasterizer), &pushConstant);
 
         for (unsigned int k = 0; k < scene->getMeshCount(m); k++) {
+            // Skip meshes provably outside the view. isVisible() is
+            // conservative and treats unknown bounds as visible, so this can
+            // only ever drop geometry the camera cannot see.
+            if (cameraFrustum.has_value()
+                && !isVisible(*cameraFrustum, transformAABB(pushConstant.model, scene->getMeshBounds(m, k)))) {
+                continue;
+            }
+
             const vk::Buffer vertex_buffer = scene->getVertexBuffer(m, k);
             const vk::DeviceSize offset = 0;
             commandBuffer.bindVertexBuffers(0, 1, &vertex_buffer, &offset);

@@ -19,6 +19,7 @@ import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.image;
 import kataglyphis.vulkan.scene;
+import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.pipeline_builder;
 
@@ -428,7 +429,7 @@ void DeferredRasterizer::createFramebuffer()
 }
 
 
-void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Kataglyphis::Scene *scene, const std::vector<vk::DescriptorSet> &descriptorSets)
+void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Kataglyphis::Scene *scene, const std::vector<vk::DescriptorSet> &descriptorSets, const std::optional<FrustumPlanes> &cameraFrustum)
 {
     vk::RenderPassBeginInfo renderPassInfo{};
     renderPassInfo.renderPass = renderPass;
@@ -472,6 +473,13 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
           geometryPipelineLayout, vk::ShaderStageFlagBits::eAll, 0, sizeof(PushConstantRasterizer), &pushConstant);
 
         for (unsigned int k = 0; k < scene->getMeshCount(m); k++) {
+            // Same conservative visibility test as the forward path; see
+            // Rasterizer::recordCommands.
+            if (cameraFrustum.has_value()
+                && !isVisible(*cameraFrustum, transformAABB(pushConstant.model, scene->getMeshBounds(m, k)))) {
+                continue;
+            }
+
             std::vector<vk::Buffer> const vertex_buffers = { scene->getVertexBuffer(m, k) };
             vk::DeviceSize offsets[] = { 0 };
             commandBuffer.bindVertexBuffers(0, vertex_buffers, offsets);

@@ -12,6 +12,7 @@ import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.buffer;
 import kataglyphis.vulkan.buffer_manager;
+import kataglyphis.vulkan.frustum;
 
 export namespace Kataglyphis {
 // this a simple Mesh without mesh generation
@@ -42,11 +43,18 @@ class Mesh
     vk::Buffer &getMaterialIDBuffer() { return materialIdsBuffer.getBuffer(); };
     vk::Buffer &getIndexBuffer() { return indexBuffer.getBuffer(); };
 
+    /// Object-space bounds, computed from the vertex positions at
+    /// construction. Left invalid (min > max) for an empty mesh, which
+    /// Kataglyphis::isVisible deliberately treats as "always visible" rather
+    /// than culling something whose size is unknown.
+    const AABB &getBounds() const { return bounds; };
+
     void setModel(glm::mat4 new_model);
 
     ~Mesh();
 
   private:
+    AABB bounds{ glm::vec3(1.0F), glm::vec3(-1.0F) };
     VulkanBufferManager vulkanBufferManager;
 
     static constexpr uint64_t INVALID_ADDR = ~uint64_t(0);

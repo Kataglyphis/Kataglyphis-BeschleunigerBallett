@@ -54,6 +54,25 @@ size and a decision, or gets dropped.
 > just taken. Both instruments now agree. **After touching any shader,
 > recompile and re-run the integrity tests BEFORE trusting a rendered
 > measurement - including one taken moments earlier.**
+- [x] **CPU frustum culling** (done 2026-07-20) — plane extraction, a
+  conservative AABB test and object->world AABB transform as free functions
+  (`scene/Frustum.ixx`, 8 CPU-only tests), mesh bounds computed from vertex
+  positions at construction, and both raster paths skipping meshes that are
+  provably outside the view. Toggle:
+  `GUIRendererSharedVars::frustum_culling_enabled`.
+
+  Deliberately NOT applied to the shadow pass - geometry beside or behind the
+  camera still casts into view, so culling casters by the camera frustum
+  deletes shadows rather than saving work.
+
+  Honest scope: the debug scene is one model with one mesh, so this saves
+  nothing measurable today. It pays off with the multi-object work below, and
+  it was verified live rather than assumed - inverting the test (cull what is
+  visible) fails `GoldenRender.ShadowsDarkenSomePixels`.
+- [ ] **Per-mesh visibility statistics** (S) — nothing reports how many meshes
+  a frame drew versus culled, so culling is invisible until something goes
+  missing. A drawn/total counter in `GUIRendererSharedVars`, shown next to the
+  GPU timings, would make both the win and any over-culling observable.
 - [ ] **Async asset loading** (L) — model load/reload and AS builds block the
   main thread; move to a worker with fence-based handoff (staging ring
   already removed the per-upload queue stalls). **Quantified**: OBJ parsing

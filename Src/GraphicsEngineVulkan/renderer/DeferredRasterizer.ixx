@@ -1,4 +1,5 @@
 module;
+#include <optional>
 
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 #include <glm/glm.hpp>
@@ -13,6 +14,7 @@ import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.scene;
+import kataglyphis.vulkan.frustum;
 
 export namespace Kataglyphis::VulkanRendererInternals {
 class DeferredRasterizer
@@ -39,10 +41,16 @@ class DeferredRasterizer
 
     void setPushConstant(PushConstantRasterizer push_constant);
 
+    /// `cameraFrustum` culls meshes whose world-space bounds fall entirely
+    /// outside the view. Pass std::nullopt to draw everything - and note that
+    /// the SHADOW pass must do exactly that: geometry behind or beside the
+    /// camera still casts into view, so culling casters by the camera frustum
+    /// deletes shadows rather than saving work.
     void recordCommands(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
       Kataglyphis::Scene *scene,
-      const std::vector<vk::DescriptorSet> &descriptorSets);
+      const std::vector<vk::DescriptorSet> &descriptorSets,
+      const std::optional<FrustumPlanes> &cameraFrustum = std::nullopt);
 
     void recreateFrameResources(vk::CommandPool commandPool);
     void destroyFramebuffers();

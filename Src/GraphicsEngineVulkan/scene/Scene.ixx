@@ -14,6 +14,7 @@ import kataglyphis.vulkan.model;
 import kataglyphis.vulkan.obj_loader;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.mesh;
+import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.gui;
 import kataglyphis.vulkan.object_description;
@@ -90,6 +91,15 @@ class Scene
             return 0;
         }
         return model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index))->getIndexCount();
+    };
+    /// Object-space bounds of a mesh, for frustum culling. An invalid box is
+    /// returned for an out-of-range index, which isVisible() treats as
+    /// visible - a missing bound must never be a reason to skip a draw.
+    const AABB &getMeshBounds(uint32_t model_index, uint32_t mesh_index)
+    {
+        static const AABB unknown{ glm::vec3(1.0F), glm::vec3(-1.0F) };
+        if (model_index >= model_list.size()) { return unknown; }
+        return model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index))->getBounds();
     };
     uint32_t getNumberObjectDescriptions() { return static_cast<uint32_t>(object_descriptions.size()); };
     uint32_t getNumberMeshes();

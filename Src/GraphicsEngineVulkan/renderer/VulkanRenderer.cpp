@@ -1,4 +1,5 @@
 module;
+#include <optional>
 #include "common/Utilities.hpp"
 #include "hostDevice/host_device_shared_vars.hpp"
 #include "renderer/pushConstants/PushConstantPost.hpp"
@@ -51,6 +52,7 @@ import kataglyphis.vulkan.object_description;
 import kataglyphis.vulkan.queue_family_indices;
 import kataglyphis.vulkan.debug;
 import kataglyphis.vulkan.scene;
+import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.scene_config;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.as_manager;
@@ -751,13 +753,25 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
 
     write_pass_timestamp(GpuTimedPass::Main, true);
 
+    // One extraction per frame, shared by both raster paths. Built from the
+    // SAME matrices the vertex shaders use (globalUBO), so what is culled and
+    // what is drawn cannot disagree.
+    //
+    // Note this is deliberately computed AFTER the shadow pass above: shadow
+    // casters must not be culled by the camera frustum, because geometry
+    // beside or behind the camera still casts into view.
+    const std::optional<FrustumPlanes> camera_frustum =
+      guiRendererSharedVars.frustum_culling_enabled
+        ? std::optional<FrustumPlanes>(extractFrustumPlanes(globalUBO.projection * globalUBO.view))
+        : std::nullopt;
+
     if (guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward) {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "forward", { 0.20F, 0.60F, 1.00F, 1.0F });
-        rasterizer.recordCommands(commandBuffer, image_index, scene, rasterizer_descriptor_sets);
+        rasterizer.recordCommands(commandBuffer, image_index, scene, rasterizer_descriptor_sets, camera_frustum);
     } else {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "deferred", { 0.20F, 0.40F, 0.80F, 1.0F });
         std::vector<vk::DescriptorSet> deferred_sets = { sharedRenderDescriptors.sets()[image_index], gbufferDescriptors.sets()[image_index] };
-        deferredRasterizer.recordCommands(commandBuffer, image_index, scene, deferred_sets);
+        deferredRasterizer.recordCommands(commandBuffer, image_index, scene, deferred_sets, camera_frustum);
     }
 
     if (device->supportsHardwareAcceleratedRRT() && image_index < raytracingDescriptors.sets().size()) {
