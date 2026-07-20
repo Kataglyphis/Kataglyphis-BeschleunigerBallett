@@ -125,12 +125,18 @@ size and a decision, or gets dropped.
   tests pinning the shader's binning to the CPU function, the dispatch tail,
   and the per-frame clear.
 
-  What remains: a reduction pass turning the histogram into an adapted
-  exposure on the GPU, and the tonemap reading that instead of the manual
-  `exposure_ev` uniform. Keep the manual slider as an override - auto-exposure
-  hunting is much easier to diagnose when it can be switched off. The
-  histogram's `read_back` is diagnostic-only and must NOT end up on the frame
-  path; it stalls the queue.
+  The reduction landed too: `cs_reduce_exposure` produces an adapted EV in a
+  GPU buffer, with 5 tests pinning it to the CPU maths and covering direction,
+  smoothing, the all-black hold and manual passthrough.
+
+  **All that remains is the last hop:** the tonemap reading
+  `HistogramPass::exposure_buffer()` instead of its `params.z` uniform, and
+  ForwardRenderer calling `encode`/`encode_reduce` each frame with a real
+  delta time. Until that lands, auto-exposure computes correctly and affects
+  nothing.
+
+  Both `read_back` helpers are diagnostic-only and must NOT reach the frame
+  path; they stall the queue.
 - [ ] **Per-pixel alpha-tested shadows** (M, not S — attempted and reverted
   2026-07-20) — textured MASK materials cast by base-alpha only, so a foliage
   card (white base-color factor, cut-out entirely in the texture) casts the
