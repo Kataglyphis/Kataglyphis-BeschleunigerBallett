@@ -103,11 +103,17 @@ size and a decision, or gets dropped.
   2.98 s in debug/ASAN after the double-parse fix above, which is the number a
   developer actually waits through on every run.
 
-  The prerequisite refactor is done: `loadTexturesAndMaterials` and
-  `loadVertices` take a parsed `tinyobj::ObjReader` rather than a path, so the
-  CPU-side parse is already separable from the Vulkan upload. Moving it to a
-  worker means calling `ParseFromFile` off-thread and handing the reader
-  across; the GPU calls must stay on the owning thread.
+  **The split is done.** `ObjLoader::parseCpu` performs the whole CPU side and
+  touches no Vulkan; `ObjLoader{}` constructs without a device for exactly
+  this. Measured at the new boundary: **2802 ms threadable, 15 ms that must
+  stay on the thread owning the device.** Four tests in `objParseSuite.cpp`
+  run it with no device, including one that parses on a `std::thread` and
+  compares every index against a main-thread parse.
+
+  What remains is only the orchestration: spawn the parse, poll it from the
+  frame loop, and call the upload half when it completes. The interesting
+  design question left is what the renderer shows meanwhile - the current
+  code blocks, so there is no "loading" state anywhere in the app.
 
   **Measured breakdown** (2026-07-20, debug/ASAN, 27 MB dinosaurs.obj,
   166563 verts / 894174 indices) - `ObjLoader::loadModel` now logs this on

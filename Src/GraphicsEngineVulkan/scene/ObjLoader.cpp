@@ -36,19 +36,14 @@ ObjLoader::ObjLoader(std::shared_ptr<VulkanDevice>device, vk::Queue transfer_que
   : device(device), transfer_queue(transfer_queue), command_pool(command_pool)
 {}
 
-auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model>
+bool ObjLoader::parseCpu(const std::string &modelFile)
 {
-    // clear prior state if loadModel is called multiple times on the same instance
+    // clear prior state if called multiple times on the same instance
     textures.clear();
     materials.clear();
     vertices.clear();
     indices.clear();
     materialIndex.clear();
-
-    // ONE parse, shared by both extraction passes below. This used to happen
-    // inside each of them, so every model was read and tokenised twice.
-    using clock = std::chrono::steady_clock;
-    const auto load_started = clock::now();
 
     tinyobj::ObjReaderConfig const reader_config;
     tinyobj::ObjReader reader;
@@ -58,17 +53,28 @@ auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model
         // loadTexturesAndMaterials called exit(EXIT_FAILURE) and ran first,
         // so a malformed asset took the application down regardless.
         if (!reader.Error().empty()) { spdlog::error("TinyObjReader: {}", reader.Error()); }
-        return nullptr;
+        return false;
     }
     if (!reader.Warning().empty()) { spdlog::warn("TinyObjReader: {}", reader.Warning()); }
+
+    textureNamesFromLastParse = loadTexturesAndMaterials(reader, modelFile);
+    loadVertices(reader);
+    return true;
+}
+
+auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model>
+{
+    using clock = std::chrono::steady_clock;
+    const auto load_started = clock::now();
+
+    if (!parseCpu(modelFile)) { return nullptr; }
 
     const auto parse_done = clock::now();
 
     // the model we want to load
     std::shared_ptr<Model> new_model = std::make_shared<Model>(device);
 
-    // first load txtures from model
-    std::vector<std::string> textureNames = loadTexturesAndMaterials(reader, modelFile);
+    const std::vector<std::string> &textureNames = textureNamesFromLastParse;
 
     // now that we have the names lets create the vulkan side of textures
     for (size_t i = 0; i < textureNames.size(); i++) {
@@ -90,9 +96,6 @@ auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model
 
     const auto textures_done = clock::now();
 
-    loadVertices(reader);
-    const auto vertices_done = clock::now();
-
     new_model->add_new_mesh(device, transfer_queue, command_pool, vertices, indices, materialIndex, this->materials);
     const auto upload_done = clock::now();
 
@@ -102,12 +105,14 @@ auto ObjLoader::loadModel(const std::string &modelFile) -> std::shared_ptr<Model
     const auto ms = [](auto from, auto to) {
         return std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count();
     };
+    // Split at the boundary that matters now: everything before parse_done is
+    // device-free and can move to a worker; everything after must stay on the
+    // thread that owns the device.
     spdlog::info(
-      "Model load: parse {} ms, textures {} ms, vertex build {} ms, GPU upload {} ms, total {} ms ({} verts, {} indices)",
+      "Model load: CPU parse {} ms (threadable), GPU textures+upload {} ms (must stay on this thread), "
+      "total {} ms ({} verts, {} indices)",
       ms(load_started, parse_done),
-      ms(parse_done, textures_done),
-      ms(textures_done, vertices_done),
-      ms(vertices_done, upload_done),
+      ms(parse_done, upload_done),
       ms(load_started, upload_done),
       vertices.size(),
       indices.size());
