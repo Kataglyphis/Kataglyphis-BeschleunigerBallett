@@ -19,6 +19,18 @@ inline constexpr const char *GPU_TIMED_PASS_NAMES[GPU_TIMED_PASS_COUNT] = {
     "Post + GUI",
 };
 
+// Machine-readable identifiers for the same passes, used as JSON keys by the
+// KATAGLYPHIS_GPU_TIMING_JSON export. Separate from the display names above:
+// those may be reworded for the GUI at will, while these are diffed between
+// runs by tooling and must stay stable.
+inline constexpr const char *GPU_TIMED_PASS_EXPORT_NAMES[GPU_TIMED_PASS_COUNT] = {
+    "Clouds",
+    "ShadowCascades",
+    "Main",
+    "Sky",
+    "Post",
+};
+
 struct GpuTimings
 {
     // false when the graphics queue family reports timestampValidBits == 0.

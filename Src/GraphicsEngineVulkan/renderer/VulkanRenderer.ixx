@@ -220,6 +220,20 @@ class VulkanRenderer
     // publishes smoothed per-pass milliseconds to the GUI shared vars.
     void readGpuTimings(uint32_t image_index);
 
+    // -- headless GPU-timing export (KATAGLYPHIS_GPU_TIMING_JSON)
+    // Unsmoothed per-pass totals over the renderer's whole lifetime, fed by
+    // readGpuTimings. Kept separate from GpuPassAverage on purpose: the GUI
+    // wants a short smoothed window, the export wants the true mean over every
+    // measured frame. Deliberately not reset on swapchain recreation - the
+    // queries restart, the run's statistics do not.
+    std::array<double, VulkanRendererInternals::FrontendShared::GPU_TIMED_PASS_COUNT> gpu_timing_export_sum_ms{};
+    std::array<uint64_t, VulkanRendererInternals::FrontendShared::GPU_TIMED_PASS_COUNT> gpu_timing_export_samples{};
+    uint64_t gpu_timing_export_frames{ 0 };
+    // Writes the per-pass averages as JSON when KATAGLYPHIS_GPU_TIMING_JSON
+    // names a file. Called from cleanUp, while the accumulators and the
+    // supported flag still describe the finished run.
+    void writeGpuTimingJsonIfRequested();
+
     // -- frame capture state (see requestFrameCapture above)
     // capture_armed: a copy must be recorded into the next frame's command
     // buffer. capture_fence: the in-flight fence of the frame that recorded

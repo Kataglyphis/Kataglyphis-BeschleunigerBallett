@@ -32,8 +32,12 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -239,6 +243,32 @@ class ScopedModelOverride
 // A ground plane with a solid 6x6x6 box floating above it - nothing else.
 // Generated deliberately for shadow measurement; see the header of the file.
 constexpr const char *SHADOW_RIG_MODEL = "Models/ShadowTest/shadow_rig.obj";
+
+// Points KATAGLYPHIS_GPU_TIMING_JSON at a file for the lifetime of the object,
+// same shape as ScopedModelOverride above. The renderer reads the variable in
+// cleanUp, so it must stay set until the harness is destroyed.
+class ScopedGpuTimingJsonPath
+{
+  public:
+    explicit ScopedGpuTimingJsonPath(const std::string &path) { set(path.c_str()); }
+    ScopedGpuTimingJsonPath(const ScopedGpuTimingJsonPath &) = delete;
+    ScopedGpuTimingJsonPath &operator=(const ScopedGpuTimingJsonPath &) = delete;
+    ~ScopedGpuTimingJsonPath() { set(""); }
+
+  private:
+    static void set(const char *value)
+    {
+#ifdef _WIN32
+        std::ignore = _putenv_s("KATAGLYPHIS_GPU_TIMING_JSON", value);
+#else
+        if (*value == '\0') {
+            std::ignore = unsetenv("KATAGLYPHIS_GPU_TIMING_JSON");
+        } else {
+            std::ignore = setenv("KATAGLYPHIS_GPU_TIMING_JSON", value, 1);
+        }
+#endif
+    }
+};
 
 // Common preconditions: a Vulkan-capable GLFW plus a surface that lets us copy
 // out of a swapchain image at all.
@@ -833,4 +863,84 @@ TEST(GoldenRender, SecondModelLoadsAndRenders)
     }
     EXPECT_GT(changed, 500U) << "the second model loaded and was counted, but changed only " << changed
                              << " pixels - it is being drawn somewhere invisible, or not drawn at all";
+}
+
+// The per-pass GPU timings existed only as a number in the GUI header a human
+// squints at. KATAGLYPHIS_GPU_TIMING_JSON turns the same measurements into a
+// comparable artifact: render, tear down, diff the file between runs. This
+// exercises the whole loop - env var, accumulation over real frames, the write
+// in cleanUp - and then holds the artifact to its schema.
+TEST(GoldenRender, GpuTimingJsonDumpIsWrittenAndSane)
+{
+    SKIP_WITHOUT_GPU();
+
+    const std::filesystem::path json_path =
+      std::filesystem::temp_directory_path() / "kataglyphis-gpu-timing-dump-test.json";
+    std::error_code filesystem_error;
+    std::filesystem::remove(json_path, filesystem_error);
+    ASSERT_FALSE(std::filesystem::exists(json_path, filesystem_error))
+      << "Stale dump at " << json_path << " could not be removed; the test would read a lie.";
+
+    const ScopedGpuTimingJsonPath scoped_path(json_path.string());
+
+    {
+        EngineHarness harness;
+        auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+        renderer_vars.raytracing = false;
+        renderer_vars.pathTracing = false;
+        renderer_vars.rasterizationMode = RasterizationMode::Forward;
+        harness.gui->getGuiSceneSharedVars().shadows_enabled = true;
+
+        // Enough frames for the averages to mean something. The first
+        // swapchain-image-count readbacks measure nothing (fresh query pools
+        // are unreadable until their slice was recorded once), which is
+        // exactly what frames_measured is expected to reflect.
+        harness.render_frames(30);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while rendering.";
+    }// harness teardown calls renderer->cleanUp(), which writes the dump
+
+    ASSERT_TRUE(std::filesystem::exists(json_path, filesystem_error))
+      << "Renderer teardown did not write " << json_path;
+
+    std::ifstream file(json_path);
+    ASSERT_TRUE(file.is_open()) << "Cannot read back " << json_path;
+    std::stringstream content;
+    content << file.rdbuf();
+
+    // Non-throwing parse (exceptions are disabled project-wide); a failed
+    // parse yields the discarded sentinel instead.
+    const nlohmann::json dump = nlohmann::json::parse(content.str(), nullptr, false);
+    ASSERT_FALSE(dump.is_discarded()) << "GPU timing dump is not valid JSON: " << content.str();
+
+    ASSERT_TRUE(dump.contains("frames_measured")) << dump.dump(2);
+    ASSERT_TRUE(dump.contains("timestamps_supported")) << dump.dump(2);
+    ASSERT_TRUE(dump.contains("passes")) << dump.dump(2);
+    ASSERT_TRUE(dump["passes"].is_object()) << dump.dump(2);
+
+    if (!dump["timestamps_supported"].get<bool>()) {
+        // The file existing and parsing was the assertable part on such a
+        // device - it is what distinguishes "cannot measure" from "export
+        // broken". There are no averages to check.
+        EXPECT_EQ(dump["frames_measured"].get<std::uint64_t>(), 0U)
+          << "A device without timestamps cannot have measured frames.";
+        EXPECT_TRUE(dump["passes"].empty()) << dump.dump(2);
+        GTEST_SKIP() << "GPU timestamps unsupported on this device; average checks not possible.";
+    }
+
+    EXPECT_GT(dump["frames_measured"].get<std::uint64_t>(), 0U)
+      << "Timestamps are supported but no frame produced a valid sample: " << dump.dump(2);
+
+    // Main, Sky and Post are bracketed unconditionally every frame, so their
+    // absence means accumulation is broken, not that a feature was disabled.
+    for (const char *always_recorded : { "Main", "Sky", "Post" }) {
+        EXPECT_TRUE(dump["passes"].contains(always_recorded))
+          << "Pass '" << always_recorded << "' is recorded every frame but missing: " << dump.dump(2);
+    }
+
+    for (const auto &[pass_name, average_ms] : dump["passes"].items()) {
+        ASSERT_TRUE(average_ms.is_number()) << "Pass '" << pass_name << "' is not a number: " << dump.dump(2);
+        const double value = average_ms.get<double>();
+        EXPECT_TRUE(std::isfinite(value)) << "Pass '" << pass_name << "' average is not finite.";
+        EXPECT_GE(value, 0.0) << "Pass '" << pass_name << "' average is negative.";
+    }
 }

@@ -766,6 +766,38 @@ synthesis never sees. Full Windows container build: 3/3 steps, 66 tests pass.
 The module-TU bypass still caps sccache's payoff; that part of the sccache
 item stays open.
 
+### Incremental container builds can ship ODR-broken binaries (2026-07-20, SEVERE)
+
+Found while landing the GPU-timing JSON export, and it upgrades the recorded
+"touching a source file usually does NOT cause the container to recompile it"
+papercut from annoyance to correctness bug.
+
+Adding members to `VulkanRenderer` (a C++23 module interface, `.ixx`) and
+rebuilding incrementally produced a binary where `commitSuite.cpp` allocated
+the OLD sizeof while the constructor wrote the NEW layout - an instant ASan
+heap-buffer-overflow at construction. The "rebuild" ran **19 ninja edges**;
+consumers of the changed module were never recompiled. Ruled out sccache
+first: clearing the cache and rebuilding reproduced the crash (an 83% hit rate
+on the post-change build looked damning and was innocent). Only deleting the
+build tree on BOTH host and container and cold-building produced a sound
+binary - 67 tests pass.
+
+Consequence: **after any module-interface change, an incremental container
+build is not trustworthy until the module dependency tracking survives the tar
+transport.** Until the mtime/dyndep interaction is fixed, treat "ASan crash at
+object construction after touching an .ixx" as build skew, not as a code bug -
+and cold-build before debugging anything.
+
+### GPU timings are now a comparable artifact (2026-07-20)
+
+`KATAGLYPHIS_GPU_TIMING_JSON=<path>` makes the renderer accumulate raw (not
+GUI-smoothed) per-pass times and write averages on cleanUp. Measured on this
+machine over 94 frames: ShadowCascades 0.066 ms, Main 0.042 ms, Post 0.037 ms,
+Sky 0.024 ms. Unsupported timestamps still write the file with
+`"timestamps_supported": false`, so "cannot measure" and "never ran" are
+distinguishable. The Rust renderer exposes the same numbers via
+`gpu_timings_ms()`, so the side-by-side harness can now compare timings.
+
 ### #74 The Linux fuzzer lane — ROOT CAUSE FOUND AND FIXED (2026-07-20)
 
 Red since 2026-05-17. **The cause was an ODR violation, not FUZZTEST and not

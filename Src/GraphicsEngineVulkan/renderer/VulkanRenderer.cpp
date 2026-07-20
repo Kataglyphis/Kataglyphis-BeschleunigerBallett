@@ -25,9 +25,12 @@ module;
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <fstream>
 #include <memory>
 #include <tuple>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 #ifndef VMA_IMPLEMENTATION
 #define VMA_IMPLEMENTATION
@@ -1131,6 +1134,7 @@ void Kataglyphis::VulkanRenderer::readGpuTimings(uint32_t image_index)
 
     const uint32_t recorded_passes = gpu_timing_pass_mask[image_index];
     constexpr double NANOSECONDS_PER_MILLISECOND = 1.0e6;
+    bool frame_has_export_sample = false;
 
     for (int pass = 0; pass < FrontendShared::GPU_TIMED_PASS_COUNT; pass++) {
         if ((recorded_passes & (1U << static_cast<uint32_t>(pass))) == 0U) {
@@ -1154,10 +1158,69 @@ void Kataglyphis::VulkanRenderer::readGpuTimings(uint32_t image_index)
         // Modular subtraction masked to timestampValidBits handles counter
         // wraparound on queue families with fewer than 64 valid bits.
         const uint64_t delta_ticks = (end_value - start_value) & gpu_timestamp_mask;
-        const auto pass_ms = static_cast<float>(
-          static_cast<double>(delta_ticks) * static_cast<double>(gpu_timestamp_period) / NANOSECONDS_PER_MILLISECOND);
-        guiRendererSharedVars.gpuTimings.pass_ms[pass] = gpu_pass_averages[static_cast<size_t>(pass)].add(pass_ms);
+        const double pass_ms_raw =
+          static_cast<double>(delta_ticks) * static_cast<double>(gpu_timestamp_period) / NANOSECONDS_PER_MILLISECOND;
+        guiRendererSharedVars.gpuTimings.pass_ms[pass] =
+          gpu_pass_averages[static_cast<size_t>(pass)].add(static_cast<float>(pass_ms_raw));
+
+        // The JSON export accumulates the RAW sample, not the smoothed value
+        // the GUI shows - averaging averages would weight early frames by up
+        // to WINDOW times. Warmup needs no extra handling here: the early
+        // returns above already drop the frames without valid results
+        // (observed on this machine: one readback per swapchain image is
+        // skipped via gpu_timing_slice_recorded, i.e. the first 3 frames of a
+        // triple-buffered run measure nothing, and the availability bits catch
+        // any result the GPU has not finished).
+        gpu_timing_export_sum_ms[static_cast<size_t>(pass)] += pass_ms_raw;
+        gpu_timing_export_samples[static_cast<size_t>(pass)]++;
+        frame_has_export_sample = true;
     }
+
+    if (frame_has_export_sample) { gpu_timing_export_frames++; }
+}
+
+void Kataglyphis::VulkanRenderer::writeGpuTimingJsonIfRequested()
+{
+    const char *out_path = std::getenv("KATAGLYPHIS_GPU_TIMING_JSON");
+    if (out_path == nullptr || *out_path == '\0') { return; }
+
+    namespace FrontendShared = Kataglyphis::VulkanRendererInternals::FrontendShared;
+
+    // The file is written even when timestamps are unsupported: a consumer
+    // must be able to tell "this device cannot measure" (file present,
+    // supported == false) from "the export never ran" (file missing).
+    nlohmann::json dump;
+    dump["frames_measured"] = gpu_timing_export_frames;
+    dump["timestamps_supported"] = gpu_timings_supported;
+
+    for (size_t pass = 0; pass < static_cast<size_t>(FrontendShared::GPU_TIMED_PASS_COUNT); pass++) {
+        // A pass with no samples was never recorded (disabled feature or
+        // unsupported timestamps); omitting it keeps 0.0 meaning "measured as
+        // free" rather than "never measured".
+        if (gpu_timing_export_samples[pass] == 0U) { continue; }
+        dump["passes"][FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES[pass]] =
+          gpu_timing_export_sum_ms[pass] / static_cast<double>(gpu_timing_export_samples[pass]);
+    }
+    if (!dump.contains("passes")) { dump["passes"] = nlohmann::json::object(); }
+
+    // ofstream reports failure via the stream state, never throws by default -
+    // which is the only option anyway with exceptions disabled project-wide.
+    std::ofstream file(out_path, std::ios::out | std::ios::trunc);
+    if (!file.is_open()) {
+        spdlog::error("GPU timing export: cannot open '{}' for writing; no JSON dumped.", out_path);
+        return;
+    }
+    file << dump.dump(2) << '\n';
+    file.close();
+    if (file.fail()) {
+        spdlog::error("GPU timing export: writing '{}' failed; the dump may be truncated.", out_path);
+        return;
+    }
+    spdlog::info(
+      "GPU timing export: wrote {} ({} frames measured, timestamps supported: {}).",
+      out_path,
+      gpu_timing_export_frames,
+      gpu_timings_supported);
 }
 
 void Kataglyphis::VulkanRenderer::cleanUpUBOs()
@@ -1176,6 +1239,14 @@ void Kataglyphis::VulkanRenderer::cleanUp()
     if (!device) { return; }
 
     std::ignore = device->getLogicalDevice().waitIdle();
+
+    // Inside the !device guard so the export runs exactly once even though
+    // cleanUp is reached twice (explicitly, then again from the destructor).
+    // The final in-flight frames' queries are never read back - readGpuTimings
+    // only runs on the NEXT use of a swapchain image - so the average covers
+    // every frame except the last swapchain-image-count of them, which is fine
+    // for a mean over a whole run.
+    writeGpuTimingJsonIfRequested();
 
     if (device->supportsHardwareAcceleratedRRT()) {
         pathTracing.cleanUp();
