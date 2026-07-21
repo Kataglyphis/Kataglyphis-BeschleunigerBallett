@@ -41,3 +41,6 @@
 [submodule "ExternalLib/tomlplusplus"]
 	path = ExternalLib/tomlplusplus
 	url = https://github.com/marzer/tomlplusplus.git
+[submodule "ExternalLib/cgltf"]
+	path = ExternalLib/cgltf
+	url = https://github.com/jkuhlmann/cgltf.git
