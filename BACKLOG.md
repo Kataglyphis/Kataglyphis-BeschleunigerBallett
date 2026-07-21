@@ -158,9 +158,19 @@ size and a decision, or gets dropped.
       compile-verified. Only remaining, if ever wanted: eyeball the textured
       result on a GPU host (not headless-checkable) - the mapping is standard so
       this is low risk.
-  - **async glTF** — `AsyncModelParse` is ObjLoader-specific, so glTF currently
-    loads synchronously. Generalising the worker (or a shared loader interface)
-    would move the glTF parse off the render thread too.
+  - **async glTF** — glTF currently loads synchronously.
+    - **Foundation DONE** (verified compiling): `GltfLoader` split into
+      `parseCpu` + `uploadParsed` + `adoptParsed`, mirroring `ObjLoader`, so a
+      device-free worker can parse and a device-owning loader upload.
+    - **Remaining (increment 2, scoped)**: generalise `AsyncModelParse` (today it
+      holds `unique_ptr<ObjLoader>` and its worker calls `ObjLoader::parseCpu`) to
+      dispatch by extension. This CHANGES its `takeResult() -> unique_ptr<ObjLoader>`
+      contract, so `Test/commit/VulkanEngine/objParseSuite.cpp`'s
+      `AsyncModelParseUnit` tests (which inspect the returned ObjLoader) must be
+      rewritten, and `Scene::pollModelLoad` updated to build via whichever loader
+      parsed. Real, test-touching refactor for a perf-only gain (no large glTF
+      asset in the tree yet needs the off-thread parse) - do it with focus, not
+      as a rushed pass. The foundation makes it mechanical when taken up.
 
   Original scoping note kept below for the reasoning:
 
