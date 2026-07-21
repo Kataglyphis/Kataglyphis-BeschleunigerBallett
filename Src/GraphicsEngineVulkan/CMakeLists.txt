@@ -136,6 +136,7 @@ target_link_libraries(
          stb
          glm
          tinyobjloader
+         cgltf
          vma
          ktx
          # enable compiler warnings
