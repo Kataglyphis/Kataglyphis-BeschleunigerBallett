@@ -152,19 +152,40 @@ runs:
         }
 
         Write-Host "Removing Android, Windows SDKs, and other big known folders (if present)..."
+        # The engine build runs entirely INSIDE the winamd64 container, so every
+        # host-side toolchain is removable - only docker, git (for the D:\ws clone)
+        # and PowerShell are needed. The winamd64 image is ~54 GB and its layers
+        # import into Docker's data-root on C:; the default cleanup left C: with
+        # only ~59 GB free (measured 2026-07-21), a few GB short of the import's
+        # peak need, so free the biggest remaining consumers - above all the whole
+        # hostedtoolcache (~10-20 GB of cached language runtimes we never use).
         $maybeRemove = @(
+          "C:\hostedtoolcache",
+          "C:\Program Files\dotnet",
           "C:\Program Files (x86)\Android",
           "C:\Program Files (x86)\Android\android-sdk",
           "C:\Program Files (x86)\Android\android-ndk",
           "C:\Program Files\Android",
           "C:\Program Files (x86)\Windows Kits",
           "C:\Program Files (x86)\Microsoft SDKs",
-          "C:\Program Files\dotnet\sdk",
+          "C:\Program Files\Microsoft SDKs",
           "C:\tools\ghc",
           "C:\tools\julia",
+          "C:\Strawberry",
+          "C:\Miniconda",
+          "C:\Miniconda3",
+          "C:\Program Files\LLVM",
+          "C:\Program Files\PostgreSQL",
+          "C:\Program Files\MongoDB",
+          "C:\Program Files\Microsoft SQL Server",
+          "C:\Program Files (x86)\Microsoft SQL Server",
+          "C:\Program Files\Unity",
+          "C:\Program Files\R",
           "C:\Program Files (x86)\Microsoft\Edge\Application",
           "C:\Program Files\Google\Chrome",
-          "C:\Program Files (x86)\Google"
+          "C:\Program Files (x86)\Google",
+          "C:\npm\prefix",
+          "C:\Program Files\CMake"
         )
 
         foreach ($path in $maybeRemove) {

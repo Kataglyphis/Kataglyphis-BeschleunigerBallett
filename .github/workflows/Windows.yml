@@ -115,13 +115,16 @@ jobs:
             Write-Host "Docker data-root drive ${rootLetter}: has $rootDriveFreeGB GB free."
           }
           # Fail FAST with the numbers instead of grinding ~40 min on a doomed
-          # pull. Threshold is 75 GB, not 54: hcsshim::ImportLayer needs headroom
-          # well beyond the final image size - measured 2026-07-21, a data-root
-          # drive with 59.3 GB free still failed to import the 54 GB image. The
-          # relocation step above should already have moved the data-root to the
-          # largest drive, so this is the backstop for "no drive is big enough".
-          if ($rootDriveFreeGB -ne $null -and $rootDriveFreeGB -lt 75) {
-            Write-Host "::error::Docker data-root drive ${rootLetter}: has only $rootDriveFreeGB GB free (<75 GB headroom needed for the 54 GB import). Largest drive is ${maxDrive}: with $maxFreeGB GB. Fix: slim the winamd64 image (build.ps1 -Stages base,toolchain, no -Gpu)."
+          # pull. hcsshim::ImportLayer needs headroom beyond the final image size:
+          # measured 2026-07-21, a data-root drive with 59.3 GB free still failed
+          # to import the 54 GB image. The aggressive cleanup step should now free
+          # C: well past that (the whole hostedtoolcache + dotnet are gone); 70 GB
+          # gives the 54 GB import ~16 GB of headroom, which is the bet this run
+          # tests. If C: still cannot reach it, the image must be slimmed
+          # (build.ps1 -Stages base,toolchain, no -Gpu) - D: is not an option, it
+          # cannot host Windows-container compute.
+          if ($rootDriveFreeGB -ne $null -and $rootDriveFreeGB -lt 70) {
+            Write-Host "::error::Docker data-root drive ${rootLetter}: has only $rootDriveFreeGB GB free (<70 GB, the bet for the 54 GB import). Largest drive is ${maxDrive}: with $maxFreeGB GB. Fix: slim the winamd64 image (build.ps1 -Stages base,toolchain, no -Gpu)."
             exit 1
           }
 
