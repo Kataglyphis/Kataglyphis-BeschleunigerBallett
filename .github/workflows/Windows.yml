@@ -164,7 +164,14 @@ jobs:
             '-e', 'MSIX_CERT_PASSWORD=${{ secrets.MSIX_CERT_PASSWORD }}',
             $image,
             'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\ws\Scripts\Windows\Build-Windows.ps1',
-            '-Configurations', 'clangcl-debug,clangcl-profile,clangcl-release',
+            # clangcl-profile is deliberately NOT built here. Nothing in this
+            # workflow consumes it: the CPU tests and fuzz seeds run out of
+            # build-clangcl-debug, the artifacts come from build-clangcl-release,
+            # and the step already passes -SkipPerfTests, so the profiling
+            # build's only purpose is skipped. Building it cost roughly a third
+            # of the compile time for nothing. Re-add it the day CI actually
+            # runs the perf suite.
+            '-Configurations', 'clangcl-debug,clangcl-release',
             '-SkipFormat', '-SkipTidy', '-SkipTests', '-SkipPerfTests',
             '-WebDavHostname', '${{ secrets.WEBDAV_HOSTNAME }}',
             '-WebDavUsername', '${{ secrets.WEBDAV_USERNAME }}',
