@@ -912,6 +912,23 @@ unconditional control capture before its output is believed.
   coverage data, which skews what Codecov reports.
 - **Docs builds are unverified.** Sphinx/Doxygen output is deployed by
   `Linux.yml` but nothing checks for broken links or missing pages first.
+  (The build+deploy itself is now green - the `Build web page` uv/venv fix and
+  the FTP `Sync files to domain` both passed on 2026-07-21 - so a link/page
+  check is the remaining gap.)
+- [x] **Brand the WebGPU demo page** (done 2026-07-21) - the standalone
+  `crates/webgpu_renderer/web/index.html` (embedded as an iframe in
+  `docs/source/webgpu_demo.md`) now mirrors the site's Kataglyphis brand from
+  `docs/source/_static/css/custom.css`: the mint gradient header
+  (#6af0ad->#2ad488), accent palette, green radial background and a pill status
+  badge. Behaviour unchanged. Pushed to the RustProjectTemplate repo.
+- **Docs placement audited** (2026-07-21) - the split is intentional and clean:
+  `docs/source/` is the Sphinx site (every source page is in the `index.rst`
+  toctree, none orphaned); `docs/*.md` at the repo root are deep dev-reference
+  docs, linked FROM the site (e.g. `webgpu_demo.md` -> `webgpu-renderer-roadmap.md`)
+  but not built into it. Open CHOICE, not a defect: those root dev-docs
+  (roadmaps, cpp-renderer-improvements, shader-*, sRGB audit) are invisible on
+  the published site; decide per-doc whether any should move into `source/` +
+  the toctree to be surfaced.
 - **Golden-image CI** for the Rust renderer: the headless tests already
   render; storing reference images per GPU vendor would catch shader
   regressions that structural assertions miss (they were designed to be

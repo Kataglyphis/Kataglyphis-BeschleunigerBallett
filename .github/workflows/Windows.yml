@@ -41,7 +41,16 @@ jobs:
 
      # windows is so funny ... NOT
       - name: Enable Git long paths
-        run: git config --global core.longpaths true
+        # --global alone did NOT survive into the nested submodule clones that
+        # actions/checkout spawns, so the deep chain (RustProjectTemplate ->
+        # ContainerHub -> DocumANTation -> md2pdfLib/.../latex/smile) still hit
+        # "Filename too long" on its .git/modules/.../config path. --system
+        # applies during those child `git clone`s regardless of HOME/global, and
+        # protectNTFS=false avoids the related path-validation refusal.
+        run: |
+          git config --system core.longpaths true
+          git config --global core.longpaths true
+          git config --system core.protectNTFS false
         shell: pwsh
 
       - name: Checkout
