@@ -31,11 +31,21 @@ class GltfLoader
     GltfLoader(std::shared_ptr<VulkanDevice> device, vk::Queue transfer_queue, vk::CommandPool command_pool);
     GltfLoader() = default;
 
-    /// Parses `modelFile` then builds the Vulkan-side Model from it (parse +
-    /// upload). Returns nullptr on a device-free loader or a failed parse.
-    /// Every mesh uses the default texture for now - glTF texture import is
-    /// increment d.
+    /// Parses `modelFile` then builds the Vulkan-side Model from it - i.e.
+    /// parseCpu + uploadParsed. Returns nullptr on a device-free loader or a
+    /// failed parse.
     std::shared_ptr<Model> loadModel(const std::string &modelFile);
+
+    /// Builds the Vulkan-side Model from the LAST parseCpu result - the GPU half,
+    /// separated so a device-free worker can parse and a device-owning loader
+    /// upload (the async split). Must run on the thread owning the device;
+    /// returns nullptr on a device-free loader or before a successful parse.
+    /// Mirrors ObjLoader so AsyncModelParse can drive glTF the same way.
+    std::shared_ptr<Model> uploadParsed();
+
+    /// Moves another loader's parse results in, so a device-owning loader can
+    /// upload what a device-free worker produced without copying the arrays.
+    void adoptParsed(GltfLoader &&other);
 
     /// Parses the document into vertices/indices/materials/materialIndex.
     /// Returns false on a missing or malformed file, leaving the instance empty.

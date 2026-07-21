@@ -31,12 +31,30 @@ GltfLoader::GltfLoader(std::shared_ptr<VulkanDevice> device, vk::Queue transfer_
 
 std::shared_ptr<Model> GltfLoader::loadModel(const std::string &modelFile)
 {
-    if (!device) {
-        spdlog::error("GltfLoader::loadModel called on a device-free loader");
-        return nullptr;
-    }
     if (!parseCpu(modelFile)) {
         spdlog::error("Failed to parse glTF: {}", modelFile);
+        return nullptr;
+    }
+    return uploadParsed();
+}
+
+void GltfLoader::adoptParsed(GltfLoader &&other)
+{
+    vertices = std::move(other.vertices);
+    indices = std::move(other.indices);
+    materials = std::move(other.materials);
+    materialIndex = std::move(other.materialIndex);
+    textureImages = std::move(other.textureImages);
+}
+
+std::shared_ptr<Model> GltfLoader::uploadParsed()
+{
+    if (!device) {
+        spdlog::error("GltfLoader::uploadParsed called on a device-free loader");
+        return nullptr;
+    }
+    if (vertices.empty()) {
+        spdlog::error("GltfLoader::uploadParsed called before a successful parseCpu");
         return nullptr;
     }
 
