@@ -352,16 +352,25 @@ size and a decision, or gets dropped.
   "replace" is now only the graceful fallback when NO environment is bound - a
   deliberate default, not an approximation standing in for the real thing. The
   one piece the entry bundled that is genuinely NOT done is split out below.
-- [ ] **MikkTSpace tangents** (S/M) — glTF-baseline tangent generation. Current
-  `compute_tangents` (gltf_loader.rs) is the accumulate-average + Gram-Schmidt
-  (Lengyel) method, used only when a mesh ships no tangents; it is adequate but
-  does not match what DCC tools (Blender, the glTF reference) bake normal maps
-  against, so normal-mapped surfaces authored elsewhere can show subtle seams.
-  The `mikktspace` crate implements the standard; the real cost is that it
-  operates on per-face corners and may split vertices, so it rewrites the
-  vertex+index buffers rather than filling a per-vertex tangent in place. Do it
-  only if a real asset shows a tangent-basis artefact - the current method is
-  not broken, just not the reference.
+- [x] **MikkTSpace tangents** (done 2026-07-21 on `feature/mikktspace-tangents`,
+  opt-in) — `generate_tangents_mikktspace` (gltf_loader.rs) is the glTF-reference
+  basis DCC tools (Blender, the glTF exporter) bake normal maps against, alongside
+  the default Lengyel `compute_tangents`. It runs per face-corner and SPLITS
+  vertices where a shared vertex's corners disagree (hard UV seam / mirrored
+  island), so it returns fresh vertex+index buffers; corners MikkTSpace treats as
+  shared weld back. Opt-in via `KATAGLYPHIS_MIKKTSPACE_TANGENTS` (default off -
+  Lengyel stays the default), and only for meshes whose tangents we generated (a
+  file shipping its own tangents keeps them).
+
+  Uses **`bevy_mikktspace 1.0`** - the pure-Rust, ZERO-dependency port - NOT the
+  `mikktspace` crate, which pulls the stale `nalgebra 0.26` (future-incompat on
+  current rustc). 3 unit tests pass (+X unit tangent with +1 handedness on aligned
+  UVs, -1 on a mirrored chart, degenerate input rejected); `cargo check -D warnings`
+  clean. **Push `feature/mikktspace-tangents` + PR when convenient** (held so it
+  does not stack on the in-flight CI-recovery runs). The GPU-visual benefit
+  (matching a DCC-baked normal map) still wants eyes on a real normal-mapped asset,
+  which is why it is opt-in rather than the default - but the tangent maths is
+  unit-verified.
 - [ ] **Web drop-zone / model picker** (S) — native drag-and-drop shipped;
   browser File API pending.
 - [x] **Touch controls** (done 2026-07-20) — one finger orbits, two pinch to
