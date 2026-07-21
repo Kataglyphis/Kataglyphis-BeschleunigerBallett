@@ -1245,6 +1245,24 @@ Evidence is `file:line` at the time of writing.
 
 ### Rust WebGPU renderer
 
+**Status 2026-07-22 — 10 of these are DONE** (RustProjectTemplate develop, each
+with its own test unless noted): #2 scene bounds track instances, #3 one
+`world_center` metric, #5 instanced normals via cofactor, #9 all three
+degenerate-input paths, #11 `KHR_materials_unlit`, #12 anisotropic filtering,
+#15 both the 16-bit down-convert and strip/fan triangulation. Two shipped with
+an explicit "could not prove it" note rather than a test that cannot fail: #1
+(the occlusion guard - from inside a closed back-face-culled mesh nothing
+renders, so depth stays empty and the proxy box passes regardless; reaching the
+bad path needs interior/double-sided geometry no fixture has) and #14
+(bloom/SSAO skip - with the pass skipped its timestamp slots go unwritten, so
+the resolved average is a stale-slot delta, and the timing API cannot tell "did
+not run" from "ran briefly").
+
+Still open here: #4 texture dedup at upload (the VRAM ceiling for Colosseum),
+#6 `COLOR_0` vertex colours, #7 per-slot texcoord sets, #8 MSAA, #10 the
+oversized per-primitive uniform block, #13 render bundles for the cascades.
+
+
 1. **Occlusion culling deletes, then flickers, any primitive the camera is inside** (S) —
    when the eye is inside a primitive's AABB the proxy box's front faces are
    near-plane clipped and only back faces rasterise, which fail `LessEqual`
