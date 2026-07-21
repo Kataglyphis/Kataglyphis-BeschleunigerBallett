@@ -658,9 +658,22 @@ unconditional control capture before its output is believed.
   under TSan. Fix: gate that hardcoded ASan on
   `NOT myproject_ENABLE_SANITIZER_THREAD`, leaving the ASan and plain-debug
   lanes byte-for-byte unchanged and letting TSan stand alone. Reproduced and
-  fixed in the container. (The TSan *run* step is next; a non-instrumented Rust
-  static lib may still surface false races there - a separate concern from the
-  build.)
+  fixed in the container. TSan build now confirmed passing end-to-end (full
+  982-step build, exit 0).
+
+  The TSan *run* step is separate. Reproducing it locally under Rancher/nerdctl
+  hits `FATAL: ThreadSanitizer: encountered an incompatible memory layout but
+  was unable to disable ASLR (perhaps sandboxing is enabled?)` - TSan re-execs
+  with `personality(ADDR_NO_RANDOMIZE)` to lay out shadow memory, and nerdctl's
+  seccomp profile blocks that syscall. This is very likely LOCAL-only: GitHub
+  Actions' default docker seccomp allows `personality`, so CI's TSan run should
+  not hit it (and CI never reached this step before - the build failed first).
+  If CI *does* hit it, the fix is `--security-opt seccomp=unconfined` on that
+  step's `docker run`. Verifying locally with that option to confirm the actual
+  tests are race-clean - the run exercises real C++ concurrency (`AsyncModelParse`
+  parses OBJ off a worker thread and hands back to a frame-loop poller;
+  objParseSuite.cpp), which is TSan-instrumented, so any report there would be a
+  genuine race, not a Rust-lib false positive.
 
 - [x] **All gcc CI lanes broken by a bad ccache env** (fixed + verified
   end-to-end 2026-07-21). `benchmarks (gcc)` had been red since 2026-04-19 and
