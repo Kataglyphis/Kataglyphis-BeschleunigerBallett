@@ -282,9 +282,17 @@ size and a decision, or gets dropped.
   produce those arguments.
 - [ ] **Clustered/tiled lighting** (L) — 4-light cap is fine today; lift it
   when a real scene needs it.
-- [ ] **GPU occlusion culling** (L, IN PROGRESS — approach confirmed 2026-07-21,
-  chosen by the user as the next feature) — frustum culling shipped; this adds
-  occlusion of geometry hidden behind other geometry (the Colosseum case).
+- [x] **GPU occlusion culling** (done 2026-07-21, chosen by the user) — frustum
+  culling shipped; this adds occlusion of geometry hidden behind other geometry
+  (the Colosseum case). Shipped end-to-end: increment 1 (bbox pipeline +
+  QuerySet + resolve + async readback; verified an occluder reports 65536
+  samples and a hidden primitive 0), increment 2 (temporal skip in the opaque
+  loop; verified an occluded primitive's draw is skipped 1/2 while the visible
+  one and the shadow pass are unaffected), a `TimedPass::OcclusionCull` so the
+  cull pass cost is in the profile (0.0016 ms measured), and an
+  **overlay checkbox** so it is reachable in the app rather than tests-only
+  (`occlusion_queries_enabled`, off by default). 153 renderer tests pass.
+  Below is the original approach note, kept for the reasoning.
 
   **Approach: temporal hardware occlusion queries, NOT a Hi-Z depth pyramid.**
   Verified wgpu 27 exposes `RenderPass::begin_occlusion_query`/`end_occlusion_query`
@@ -871,9 +879,10 @@ unconditional control capture before its output is believed.
 - **Texture streaming / bindless**: the renderer binds per-primitive sets;
   a bindless array plus streaming would be needed for photogrammetry-scale
   scenes (the Colosseum case).
-- **wgpu timestamp queries** to mirror the C++ per-pass GPU timings, so
-  the side-by-side comparison harness can compare *timings*, not just
-  pixels.
+- ~~**wgpu timestamp queries** to mirror the C++ per-pass GPU timings~~ —
+  **done**: `render/gpu_timing.rs` (`TimedPass`, per-pass averaged ms) and the
+  `dump_gpu_timings` example + `Scripts/Compare-RendererTimings.ps1` already
+  compare timings across renderers, not just pixels.
 - **Wasm size budget**: the demo payload is ~3.7 MB uncompressed and
   nothing tracks it; `wasm-opt -Oz` plus a CI size gate would keep the
   Sphinx-hosted demo honest.
