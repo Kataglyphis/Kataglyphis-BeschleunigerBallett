@@ -3,6 +3,10 @@
 *.log
 
 .cache
+# ccache spill: the documented Rancher bind-mount build runs as a user whose
+# HOME is the mounted workspace, so ccache defaults CCACHE_DIR to ./.ccache and
+# leaves it in the repo root. Never track it.
+.ccache/
 
 docs/build/**/*
 
