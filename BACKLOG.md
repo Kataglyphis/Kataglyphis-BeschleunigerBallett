@@ -262,8 +262,27 @@ size and a decision, or gets dropped.
   primitives whose `base_color[3] < cutoff` was CORRECT — such a material is
   invisible in the forward pass too. The defect is the SHAPE of a visible
   cut-out's shadow, not its absence.
-- [ ] **HDR-cubemap IBL** (M) — replace the analytic hemisphere approximation
-  with a real prefiltered environment map; MikkTSpace tangents alongside.
+- [x] **HDR-cubemap IBL** (done, audited stale 2026-07-21) — the real prefiltered
+  environment map already exists and is the primary path: full split-sum IBL in
+  `render/ibl.rs` (irradiance-convolved cubemap + roughness-prefiltered specular
+  cubemap + a `BrdfLut` integration texture), fed by `asset/hdr.rs` decoding real
+  Radiance `.hdr`/RGBE files into an `EquirectImage`, and sampled in `forward.wgsl`
+  (`irradiance_map`/`prefiltered_map`/`brdf_lut`). `tests/ibl.rs` proves the
+  convolution and prefilter against a constant environment at every roughness.
+  The `hemisphere_irradiance`/`env_brdf_approx` analytic path the entry meant to
+  "replace" is now only the graceful fallback when NO environment is bound - a
+  deliberate default, not an approximation standing in for the real thing. The
+  one piece the entry bundled that is genuinely NOT done is split out below.
+- [ ] **MikkTSpace tangents** (S/M) — glTF-baseline tangent generation. Current
+  `compute_tangents` (gltf_loader.rs) is the accumulate-average + Gram-Schmidt
+  (Lengyel) method, used only when a mesh ships no tangents; it is adequate but
+  does not match what DCC tools (Blender, the glTF reference) bake normal maps
+  against, so normal-mapped surfaces authored elsewhere can show subtle seams.
+  The `mikktspace` crate implements the standard; the real cost is that it
+  operates on per-face corners and may split vertices, so it rewrites the
+  vertex+index buffers rather than filling a per-vertex tangent in place. Do it
+  only if a real asset shows a tangent-basis artefact - the current method is
+  not broken, just not the reference.
 - [ ] **Web drop-zone / model picker** (S) — native drag-and-drop shipped;
   browser File API pending.
 - [x] **Touch controls** (done 2026-07-20) — one finger orbits, two pinch to
