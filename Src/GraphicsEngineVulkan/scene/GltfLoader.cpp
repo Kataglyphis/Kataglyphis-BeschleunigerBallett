@@ -16,8 +16,8 @@ namespace Kataglyphis {
 
 namespace {
 
-/// Neutral Lambertian stand-in until per-material import (increment c) lands.
-/// The fields are ObjMaterial's; textureID -1 means untextured.
+/// Neutral Lambertian stand-in, used for primitives with no material. The
+/// fields are ObjMaterial's; textureID -1 means untextured.
 ObjMaterial neutralMaterial()
 {
     return ObjMaterial(glm::vec3(0.1F),// ambient
@@ -30,6 +30,36 @@ ObjMaterial neutralMaterial()
       1.0F,// dissolve
       2,// illum
       -1);// textureID
+}
+
+/// Maps a glTF material to the engine's ObjMaterial. Base-colour factor becomes
+/// diffuse (the dominant term this forward renderer reads); ambient tracks it at
+/// low strength. Metallic/roughness fold into a rough specular approximation -
+/// this engine has no metallic-roughness PBR slot, so the mapping is lossy on
+/// purpose. Textures are increment d; textureID stays -1 here.
+ObjMaterial fromGltfMaterial(const cgltf_material &material)
+{
+    glm::vec3 baseColor(0.8F);
+    float roughness = 1.0F;
+    if (material.has_pbr_metallic_roughness != 0) {
+        const cgltf_pbr_metallic_roughness &pbr = material.pbr_metallic_roughness;
+        baseColor = glm::vec3(pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2]);
+        roughness = pbr.roughness_factor;
+    }
+    const glm::vec3 emission(material.emissive_factor[0], material.emissive_factor[1], material.emissive_factor[2]);
+    // Smoother surfaces (low roughness) get a tighter, stronger highlight.
+    const float shininess = glm::mix(128.0F, 1.0F, glm::clamp(roughness, 0.0F, 1.0F));
+
+    return ObjMaterial(baseColor * 0.1F,// ambient
+      baseColor,// diffuse
+      glm::vec3(1.0F - roughness) * 0.5F,// specular
+      glm::vec3(0.0F),// transmittance
+      emission,// emission
+      shininess,// shininess
+      1.0F,// ior
+      1.0F,// dissolve
+      2,// illum
+      -1);// textureID (increment d)
 }
 
 /// Reads a float attribute (2 or 3 components) into `out`, one entry per accessor
@@ -60,6 +90,13 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
         return false;
     }
 
+    // One ObjMaterial per glTF material, plus a trailing neutral used by any
+    // primitive that references none. `materialIndex` (per triangle) points into
+    // this table.
+    for (cgltf_size m = 0; m < data->materials_count; ++m) {
+        materials.push_back(fromGltfMaterial(data->materials[m]));
+    }
+    const auto fallbackMaterial = static_cast<unsigned int>(materials.size());
     materials.push_back(neutralMaterial());
 
     // Walk the node hierarchy so each mesh instance carries its world transform
@@ -121,14 +158,21 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
                     indices.push_back(base + static_cast<unsigned int>(i));
                 }
             }
+
+            // One material id per triangle of this primitive (materialIndex is
+            // per-face, like the OBJ path). All of a primitive's triangles share
+            // its material.
+            const unsigned int primitiveMaterial =
+              primitive->material != nullptr
+                ? static_cast<unsigned int>(primitive->material - data->materials)
+                : fallbackMaterial;
+            const std::size_t primitiveIndexCount =
+              primitive->indices != nullptr ? primitive->indices->count : positions.size();
+            materialIndex.insert(materialIndex.end(), primitiveIndexCount / 3, primitiveMaterial);
         }
     }
 
     cgltf_free(data);
-
-    // One neutral material for every triangle for now; materialIndex is per-face
-    // exactly like the OBJ path (Mesh reads one id per triangle).
-    materialIndex.assign(indices.size() / 3, 0U);
 
     return !vertices.empty();
 }
