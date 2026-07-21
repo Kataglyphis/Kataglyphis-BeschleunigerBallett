@@ -134,6 +134,13 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
+          # Give the container every logical processor the runner has. This was
+          # pinned at 4, which throttled the 3-config clang-cl build on any
+          # runner with more cores. NUMBER_OF_PROCESSORS is what Windows reports
+          # to the host shell; the value is echoed so the log shows what we got.
+          $cores = [int]$env:NUMBER_OF_PROCESSORS
+          if ($cores -lt 1) { $cores = 2 }
+          Write-Host "Runner logical processors: $cores (container gets --cpus $cores)"
 
           docker pull $image
           # Bind-mount target is C:\ws (a FRESH path), NOT C:\workspace. The image
@@ -151,7 +158,7 @@ jobs:
           # ("Missing expression after unary operator '--'"). An @(...) array spans
           # newlines with no continuation char, so it is CRLF-safe.
           $runArgs = @(
-            'run', '--rm', '--memory', '16g', '--cpus', '4',
+            'run', '--rm', '--memory', '16g', '--cpus', "$cores",
             '--mount', 'type=bind,source=D:\ws,target=C:\ws',
             '-w', 'C:\ws',
             '-e', 'MSIX_CERT_PASSWORD=${{ secrets.MSIX_CERT_PASSWORD }}',
@@ -185,6 +192,13 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
+          # Give the container every logical processor the runner has. This was
+          # pinned at 4, which throttled the 3-config clang-cl build on any
+          # runner with more cores. NUMBER_OF_PROCESSORS is what Windows reports
+          # to the host shell; the value is echoed so the log shows what we got.
+          $cores = [int]$env:NUMBER_OF_PROCESSORS
+          if ($cores -lt 1) { $cores = 2 }
+          Write-Host "Runner logical processors: $cores (container gets --cpus $cores)"
           $cpuOnlySuites = @(
             'BuildIntegrity.*'
             'CameraUnit.*'
@@ -196,7 +210,7 @@ jobs:
 
           $cmd = "& 'C:\ws\build-clangcl-debug\commitTestSuite.exe' --gtest_filter='$cpuOnlySuites'; exit `$LASTEXITCODE"
           $runArgs = @(
-            'run', '--rm', '--memory', '16g', '--cpus', '4',
+            'run', '--rm', '--memory', '16g', '--cpus', "$cores",
             '--mount', 'type=bind,source=D:\ws,target=C:\ws',
             '-w', 'C:\ws',
             $image,
@@ -212,6 +226,13 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
+          # Give the container every logical processor the runner has. This was
+          # pinned at 4, which throttled the 3-config clang-cl build on any
+          # runner with more cores. NUMBER_OF_PROCESSORS is what Windows reports
+          # to the host shell; the value is echoed so the log shows what we got.
+          $cores = [int]$env:NUMBER_OF_PROCESSORS
+          if ($cores -lt 1) { $cores = 2 }
+          Write-Host "Runner logical processors: $cores (container gets --cpus $cores)"
 
           $cmd = "`$ErrorActionPreference='Stop';
                foreach (`$t in @('obj_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')) {
@@ -223,7 +244,7 @@ jobs:
                }
                exit 0"
           $runArgs = @(
-            'run', '--rm', '--memory', '16g', '--cpus', '4',
+            'run', '--rm', '--memory', '16g', '--cpus', "$cores",
             '--mount', 'type=bind,source=D:\ws,target=C:\ws',
             '-w', 'C:\ws',
             $image,
