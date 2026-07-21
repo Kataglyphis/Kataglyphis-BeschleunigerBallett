@@ -6,6 +6,14 @@ on:
   pull_request:
     branches: [main, develop]
 
+# Cancel superseded runs on develop and PRs so the tip's verdict arrives without
+# queueing behind stale runs - without this every push spawns a full parallel
+# 2-3h run and they serialise. main is exempt: its runs deploy/release and must
+# not be interrupted mid-flight.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 permissions:
   contents: read
 
