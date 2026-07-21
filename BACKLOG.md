@@ -144,16 +144,22 @@ size and a decision, or gets dropped.
   so it does not supersede the in-flight recovery-verification run).
 
   Two follow-ups, deliberately out of the MVP:
-  - **(d) textures** — glTF images. `cube.glb` has none. Checked the available
-    textured asset (`cube_textured.gltf`): its image is a **data URI**
-    (base64 PNG), and glb images are embedded in a buffer view - so every glTF
-    the tree can test has an in-memory image, not an external file. The engine's
-    `Texture` only has `createFromFile`, so there is NO external-URI "easy half"
-    to land first: (d) requires a new `Texture::createFromMemory` that
-    stb_image-decodes the bytes cgltf hands back and uploads a Vulkan texture,
-    then GltfLoader wiring baseColorTexture → that texture + materialIndex
-    textureID. A real 1-2 pass increment; the MVP renders these materials with
-    their base-colour factor (untextured) meanwhile.
+  - **(d) textures** — glTF images. `cube.glb` has none; `cube_textured.gltf`
+    uses a **data-URI** PNG and glb images are buffer-view embedded, so every
+    testable glTF has an in-memory image, not an external file.
+    - **Part 1 DONE** (`Texture::createFromMemory`, verified compiling): decodes
+      encoded bytes with `stbi_load_from_memory` and uploads via the shared
+      `uploadRgba` extracted from `createFromFile` (OBJ path behaviour-preserved).
+    - **Part 2 (next, wiring)**: in `GltfLoader`, for each material's
+      `baseColorTexture`, get the encoded bytes - glb: `image->buffer_view`
+      (`buffer->data + offset`, len `size`); data-URI: base64 after `base64,`
+      via `cgltf_load_buffer_base64`. `parseCpu` records them per unique texture
+      + sets `ObjMaterial.textureID`; `loadModel` builds them in the same order
+      via `createFromMemory` (matching the OBJ path's texture-0-is-default
+      convention). NOTE its runtime (GPU upload) is NOT headless-verifiable -
+      compile in-container, then eyeball/golden-test on a GPU host.
+    The MVP renders these materials with their base-colour factor (untextured)
+    meanwhile.
   - **async glTF** — `AsyncModelParse` is ObjLoader-specific, so glTF currently
     loads synchronously. Generalising the worker (or a shared loader interface)
     would move the glTF parse off the render thread too.
