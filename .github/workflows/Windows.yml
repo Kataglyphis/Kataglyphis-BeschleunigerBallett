@@ -40,41 +40,33 @@ jobs:
     steps:
 
      # windows is so funny ... NOT
-      - name: Enable Git long paths
-        run: |
-          git config --system core.longpaths true
-          git config --global core.longpaths true
-        shell: pwsh
-
-      # Submodules are initialised in the next step, NOT here: actions/checkout's
-      # recursive clone dies on Windows cloning RustProjectTemplate's transitive
-      # docs chain (ContainerHub -> DocumANTation -> md2pdfLib -> latex/{smile,
-      # awesome-beamer}). Its .git/modules/.../config path overflows MAX_PATH even
-      # with core.longpaths, because longpaths does not survive into the child
-      # `git clone`s the action spawns.
+      # Submodules are initialised in the bash step below, NOT via actions/checkout:
+      # the deep transitive docs chain (ContainerHub -> DocumANTation -> md2pdfLib ->
+      # latex/{smile,awesome-beamer}) overflows Windows MAX_PATH on its
+      # .git/modules/.../config path. core.longpaths fixes it, but ONLY when git
+      # runs in the same shell that set it - the earlier pwsh `git config --global`
+      # wrote a gitconfig that Git Bash (different $HOME) never read, so the child
+      # clones ran without longpaths. Setting it inside the bash step is what makes
+      # the recursive init survive (this mirrors the working local bash workflow).
       - name: Checkout
         uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 1
           submodules: false
 
-      - name: Init submodules (Windows-safe - skip RustProjectTemplate's deep docs chain)
+      - name: Init submodules (bash, long paths enabled in-shell)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Long paths must be configured HERE, in the bash shell that runs the
+          # clones, or the deep .git/modules chain overflows ("$GIT_DIR too big").
+          git config --global core.longpaths true
           # .gitmodules pins git@github.com: (SSH) URLs and the runner has no SSH
-          # key. actions/checkout - which we bypassed with submodules:false to dodge
-          # the deep-path clone - is what rewrites those to token-authenticated HTTPS.
-          # Do the same rewrite here so the submodule clones work over HTTPS.
+          # key; actions/checkout (bypassed via submodules:false) is what rewrites
+          # them to token HTTPS. Do the same so the clones authenticate over HTTPS.
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "git@github.com:"
-          # Recurse into every submodule EXCEPT RustProjectTemplate (FUZZTEST needs
-          # abseil/re2, etc.). RustProjectTemplate's own nested submodules are docs/CI
-          # infra the C++ build never uses - no Rust build.rs references ContainerHub -
-          # so take it one level deep for its Rust source only, keeping the overflowing
-          # deep chain out of .git/modules entirely. The top-level ContainerHub's same
-          # chain is one nesting level shorter and fits under MAX_PATH.
-          git -c "submodule.ExternalLib/Kataglyphis-RustProjectTemplate.update=none" submodule update --init --recursive
+          git submodule update --init --recursive
           git submodule update --init ExternalLib/Kataglyphis-RustProjectTemplate
       
       # my windows container is quite big ... so remove runner packages for enough
