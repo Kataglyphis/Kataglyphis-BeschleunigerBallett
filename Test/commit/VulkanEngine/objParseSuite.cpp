@@ -18,6 +18,7 @@
 #include <thread>
 
 import kataglyphis.vulkan.obj_loader;
+import kataglyphis.vulkan.gltf_loader;
 import kataglyphis.vulkan.async_model_parse;
 import kataglyphis.vulkan.scene_config;
 
@@ -117,6 +118,32 @@ TEST(AsyncModelParseUnit, ParsesOffThreadAndHandsBackTheResult)
     ASSERT_TRUE(parse.wasSuccessful());
 
     const std::unique_ptr<Kataglyphis::ObjLoader> result = parse.takeResult();
+    ASSERT_NE(result, nullptr);
+    EXPECT_EQ(result->getVertices().size(), reference.getVertices().size());
+    EXPECT_EQ(result->getIndices().size(), reference.getIndices().size());
+}
+
+TEST(AsyncModelParseUnit, RoutesGltfToTheGltfLoaderOffThread)
+{
+    // A .glb must dispatch to GltfLoader on the worker, not ObjLoader. Same
+    // off-thread contract as the OBJ case; parsedGltf() tells the caller which
+    // result to take.
+    const std::string gltf = sceneConfig::resolveModelPath("Models/GltfTest/cube.glb");
+    if (!std::filesystem::exists(gltf)) { GTEST_SKIP() << "test glb not present"; }
+
+    Kataglyphis::GltfLoader reference;
+    ASSERT_TRUE(reference.parseCpu(gltf));
+
+    Kataglyphis::AsyncModelParse parse;
+    parse.start(gltf);
+    for (int spin = 0; spin < 10000 && !parse.isFinished(); ++spin) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_TRUE(parse.isFinished()) << "the parse never completed";
+    ASSERT_TRUE(parse.wasSuccessful());
+    ASSERT_TRUE(parse.parsedGltf()) << "a .glb must route to the glTF loader, not ObjLoader";
+
+    const std::unique_ptr<Kataglyphis::GltfLoader> result = parse.takeGltfResult();
     ASSERT_NE(result, nullptr);
     EXPECT_EQ(result->getVertices().size(), reference.getVertices().size());
     EXPECT_EQ(result->getIndices().size(), reference.getIndices().size());

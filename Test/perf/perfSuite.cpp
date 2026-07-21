@@ -23,8 +23,17 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+// Both parsers are compiled straight into this TU (their own implementation
+// macros), exactly as the engine does in ObjLoader.cpp / cgltf_impl.cpp - NOT
+// pulled from VulkanEngineCore. That is deliberate: driving the engine loaders
+// would pull Device/Model/Texture (and their Vulkan-touching global ctors) into
+// this headless benchmark binary. The benchmarks below want the parse cost, not
+// the renderer, so they call the libraries directly like the OBJ path always has.
 #define TINYOBJLOADER_IMPLEMENTATION
 #include "tiny_obj_loader.h"
+
+#define CGLTF_IMPLEMENTATION
+#include <cgltf.h>
 
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.scene_config;
@@ -165,6 +174,69 @@ BENCHMARK(BM_ObjParse_Plane)->Unit(benchmark::kMicrosecond);
 
 void BM_ObjParse_Suzanne(benchmark::State &state) { parse_and_walk(find_model("suzanne.obj"), state); }
 BENCHMARK(BM_ObjParse_Suzanne)->Unit(benchmark::kMillisecond);
+
+// ------------------------------------------------------------- gltf load --
+// The glTF analogue of the OBJ benchmark: parse the document, load its buffers,
+// then walk every primitive's POSITION accessor - the same parse-then-walk shape
+// as parse_and_walk, over cgltf (the library GltfLoader::parseCpu is built on)
+// rather than the engine loader, for the linkage reason noted at the includes.
+//
+// Two assets on purpose: the .glb carries its buffer inline as binary, the
+// .gltf as a base64 data-URI, so cgltf_load_buffers exercises a different decode
+// path for each. Both are small - these guard against a gross regression (a
+// per-call allocation storm, an accidental O(n^2)), not scale, exactly like
+// BM_ObjParse_Plane.
+
+void parse_and_walk_gltf(const std::string &path, benchmark::State &state)
+{
+    if (path.empty()) {
+        state.SkipWithError("gltf model not found (run from the repo root)");
+        return;
+    }
+
+    for (auto _ : state) {
+        cgltf_options options{};
+        cgltf_data *data = nullptr;
+        if (cgltf_parse_file(&options, path.c_str(), &data) != cgltf_result_success) {
+            state.SkipWithError("failed to parse gltf model");
+            return;
+        }
+        if (cgltf_load_buffers(&options, data, path.c_str()) != cgltf_result_success) {
+            cgltf_free(data);
+            state.SkipWithError("failed to load gltf buffers");
+            return;
+        }
+
+        double checksum = 0.0;
+        for (cgltf_size m = 0; m < data->meshes_count; ++m) {
+            const cgltf_mesh &mesh = data->meshes[m];
+            for (cgltf_size p = 0; p < mesh.primitives_count; ++p) {
+                const cgltf_primitive &primitive = mesh.primitives[p];
+                for (cgltf_size a = 0; a < primitive.attributes_count; ++a) {
+                    const cgltf_attribute &attribute = primitive.attributes[a];
+                    if (attribute.type != cgltf_attribute_type_position) { continue; }
+                    const cgltf_accessor *accessor = attribute.data;
+                    for (cgltf_size i = 0; i < accessor->count; ++i) {
+                        float pos[3] = { 0.0F, 0.0F, 0.0F };
+                        cgltf_accessor_read_float(accessor, i, pos, 3);
+                        checksum += static_cast<double>(pos[0]);
+                    }
+                }
+            }
+        }
+        cgltf_free(data);
+        benchmark::DoNotOptimize(checksum);
+    }
+}
+
+void BM_GltfParse_CubeGlb(benchmark::State &state) { parse_and_walk_gltf(find_model("GltfTest/cube.glb"), state); }
+BENCHMARK(BM_GltfParse_CubeGlb)->Unit(benchmark::kMicrosecond);
+
+void BM_GltfParse_CubeTextured(benchmark::State &state)
+{
+    parse_and_walk_gltf(find_model("GltfTest/cube_textured.gltf"), state);
+}
+BENCHMARK(BM_GltfParse_CubeTextured)->Unit(benchmark::kMicrosecond);
 
 }// namespace
 
