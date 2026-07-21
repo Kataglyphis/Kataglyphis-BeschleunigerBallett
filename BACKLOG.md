@@ -1144,6 +1144,16 @@ Evidence is `file:line` at the time of writing.
 
 ### C++ Vulkan engine
 
+**These became CI-testable on 2026-07-22.** The Windows container lane now
+builds the engine and runs the CPU test suite in CI (it previously never got past
+`docker run`), so items below that were "needs a container build to verify" can
+now be proven by pushing with `[build-win]` instead of only on a dev box. That
+matters most for #1 (cascade near-plane clipping) and #9 (cascade texel
+snapping), which the survey flagged as provable with pure CPU gtests in
+`cascadedShadowMapSuite` - they can now go red-then-green in CI like any other
+test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
+
+
 1. **Shadow casters in front of a cascade's near plane are clipped away** (S/M) —
    `isVisibleAsShadowCaster` deliberately drops the near plane so tall geometry
    still casts (`Frustum.cpp:85-88`, with a test asserting it), but the cascade
