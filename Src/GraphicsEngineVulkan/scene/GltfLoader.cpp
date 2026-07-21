@@ -1,18 +1,55 @@
 module;
 
 #include <cstddef>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
+
+#include <vulkan/vulkan.hpp>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include "spdlog/spdlog.h"
+
 #include <cgltf.h>
 
 module kataglyphis.vulkan.gltf_loader;
 
+import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.model;
+import kataglyphis.vulkan.texture;
+
 namespace Kataglyphis {
+
+GltfLoader::GltfLoader(std::shared_ptr<VulkanDevice> device, vk::Queue transfer_queue, vk::CommandPool command_pool)
+  : device(std::move(device)), transfer_queue(transfer_queue), command_pool(command_pool)
+{}
+
+std::shared_ptr<Model> GltfLoader::loadModel(const std::string &modelFile)
+{
+    if (!device) {
+        spdlog::error("GltfLoader::loadModel called on a device-free loader");
+        return nullptr;
+    }
+    if (!parseCpu(modelFile)) {
+        spdlog::error("Failed to parse glTF: {}", modelFile);
+        return nullptr;
+    }
+
+    std::shared_ptr<Model> model = std::make_shared<Model>(device);
+
+    // No glTF texture import yet (increment d): reserve the default texture so
+    // materials that reference textureID 0 sample something valid.
+    Texture defaultTexture;
+    defaultTexture.createDefaultTexture(device, command_pool);
+    model->addTexture(std::move(defaultTexture));
+
+    model->add_new_mesh(device, transfer_queue, command_pool, vertices, indices, materialIndex, materials);
+    return model;
+}
 
 namespace {
 

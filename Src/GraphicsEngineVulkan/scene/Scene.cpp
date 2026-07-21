@@ -2,6 +2,7 @@ module;
 #include <optional>
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -16,6 +17,7 @@ module;
 module kataglyphis.vulkan.scene;
 
 import kataglyphis.vulkan.obj_loader;
+import kataglyphis.vulkan.gltf_loader;
 import kataglyphis.vulkan.model;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.gui;
@@ -24,18 +26,42 @@ import kataglyphis.vulkan.scene_config;
 
 namespace Kataglyphis {
 
+namespace {
+
+/// Picks the loader by file extension: glTF documents (`.gltf`/`.glb`) go to
+/// GltfLoader, everything else to ObjLoader. Both produce a device-side Model
+/// the same way, so callers do not care which ran. Case-insensitive on the
+/// extension so `.GLB` from a file picker still routes correctly.
+std::shared_ptr<Model> loadModelByExtension(std::shared_ptr<VulkanDevice> device,
+  vk::CommandPool commandPool,
+  const std::string &modelFile)
+{
+    std::string lower = modelFile;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+
+    if (lower.ends_with(".gltf") || lower.ends_with(".glb")) {
+        GltfLoader gltf_loader(device, device->getGraphicsQueue(), commandPool);
+        return gltf_loader.loadModel(modelFile);
+    }
+
+    ObjLoader obj_loader(device, device->getGraphicsQueue(), commandPool);
+    return obj_loader.loadModel(modelFile);
+}
+
+}// namespace
+
 Scene::Scene() = default;
 
 void Scene::update_user_input(Kataglyphis::Frontend::GUI *gui) { guiSceneSharedVars = gui->getGuiSceneSharedVars(); }
 
 void Scene::loadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool)
 {
-    ObjLoader obj_loader(device, device->getGraphicsQueue(), commandPool);
-
     std::string const modelFileName = sceneConfig::getModelFile();
     spdlog::info("Loading model: {}", modelFileName);
-    std::shared_ptr<Model> const new_model = obj_loader.loadModel(modelFileName);
-    
+    std::shared_ptr<Model> const new_model = loadModelByExtension(device, commandPool, modelFileName);
+
     if (new_model) {
         add_model(new_model);
         spdlog::info("Model added successfully.");
@@ -52,14 +78,12 @@ std::optional<uint32_t> Scene::loadAdditionalModel(std::shared_ptr<VulkanDevice>
   const std::string &modelPath,
   const glm::mat4 &modelMatrix)
 {
-    ObjLoader obj_loader(device, device->getGraphicsQueue(), commandPool);
-
     // Resolve like loadModel() does: callers pass a path relative to
     // Resources/, and the working directory differs between the app and the
     // test executables.
     const std::string resolved = sceneConfig::resolveModelPath(modelPath);
     spdlog::info("Loading additional model: {}", resolved);
-    std::shared_ptr<Model> const new_model = obj_loader.loadModel(resolved);
+    std::shared_ptr<Model> const new_model = loadModelByExtension(device, commandPool, resolved);
     if (!new_model) {
         spdlog::error("Failed to load additional model: {}", modelPath);
         return std::nullopt;
