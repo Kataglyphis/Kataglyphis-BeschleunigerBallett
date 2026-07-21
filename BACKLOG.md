@@ -130,7 +130,35 @@ size and a decision, or gets dropped.
   them yet.
 
 - [ ] **glTF loading** (L) — reuse the Rust renderer's test assets and enable
-  the cross-renderer comparison harness below.
+  the cross-renderer comparison harness below. Scoped 2026-07-21 against the
+  actual pipeline:
+
+  **Integration point.** `ObjLoader::parseCpu` produces exactly
+  `vector<Vertex> + vector<index> + vector<ObjMaterial> + materialIndex +
+  textures`, and `Model`/`Mesh` consume only those (`Mesh.ixx` ctor takes
+  vertices/indices/materialIndex/materials). So a `GltfLoader::parseCpu` that
+  emits the same five vectors plugs into the existing device-side Model/Mesh
+  build and the `AsyncModelParse` worker unchanged - no renderer changes needed.
+  The engine `Vertex`/`ObjMaterial` are the interchange format.
+
+  **Library.** Add `tinygltf` as an ExternalLib submodule (header-only C++,
+  the natural parallel to the existing header-only `tinyobjloader`; pin the
+  latest release tag - bleeding-edge). cgltf is the lighter-C alternative if
+  tinygltf's stb/json bundling clashes with the engine's own stb/nlohmann.
+
+  **Increments:** (a) submodule + `ExternalLib/CMakeLists.txt` wiring, guarded
+  so it does not double-define stb/json. (b) `GltfLoader::parseCpu`:
+  positions/normals/UVs/tangents → engine `Vertex`, indices flattened across
+  primitives (mirror the Rust `gltf_loader`, including tangent generation when
+  absent). (c) materials: pbrMetallicRoughness base colour + textures →
+  `ObjMaterial` + `textures` + per-primitive `materialIndex`. (d) node
+  hierarchy: bake glTF node transforms into vertex positions (the OBJ path has
+  no nodes, so flatten). (e) dispatch in `Scene::loadModel` by extension
+  (`.obj`→ObjLoader, `.gltf`/`.glb`→GltfLoader), reusing the async path. (f)
+  test: load the Rust renderer's `cube.gltf`/`cube.glb` and assert vertex +
+  material + primitive counts - the shared-asset goal, and the first half of
+  the comparison harness. Best started fresh, not mid-CI-verification: each step
+  needs a ~20-min container build and a main-repo push.
 - [x] **Fuzz the untrusted input surfaces** (done 2026-07-20) — SceneConfig,
   OBJ parsing, the shader-file reader and texture decoding all have targets,
   and all four run their seed corpora in Windows CI. KTX2 is deliberately not
