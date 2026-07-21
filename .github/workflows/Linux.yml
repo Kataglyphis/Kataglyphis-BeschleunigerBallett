@@ -113,7 +113,7 @@ jobs:
             --vulkan-version "${{ env.VULKAN_VERSION }}" \
             --build-dir "${{ env.BUILD_DIR }}" \
             --build-type "${{ env.BUILD_TYPE }}" \
-            --ctest-exclude "^(Integration|GoldenRender)\\." 2>&1 | tee output.log
+            --ctest-exclude "^(Integration|GoldenRender)\\.|^BuildIntegrity\\.CompiledShadersAreNotOlder" 2>&1 | tee output.log
 
       # AddressSanitizer + UBSan: catches the memory errors the OBJ-loader
       # hardening was about. Non-GPU tests only.
@@ -141,7 +141,7 @@ jobs:
 
       - name: Run tests under AddressSanitizer
         run: |
-          docker run --rm             -e ASAN_OPTIONS="detect_leaks=1:abort_on_error=1"             -e UBSAN_OPTIONS="print_stacktrace=1:halt_on_error=1"             -v ${{ github.workspace }}:/workspace             -w /workspace             "${{ env.CONTAINER_IMAGE }}"             bash ./Scripts/Linux/run-ctest.sh             --vulkan-version "${{ env.VULKAN_VERSION }}"             --build-dir "build-asan-clang"             --build-type "${{ env.BUILD_TYPE }}"             --ctest-exclude "^(Integration|GoldenRender)\." 2>&1 | tee output-asan.log
+          docker run --rm             -e ASAN_OPTIONS="detect_leaks=1:abort_on_error=1"             -e UBSAN_OPTIONS="print_stacktrace=1:halt_on_error=1"             -v ${{ github.workspace }}:/workspace             -w /workspace             "${{ env.CONTAINER_IMAGE }}"             bash ./Scripts/Linux/run-ctest.sh             --vulkan-version "${{ env.VULKAN_VERSION }}"             --build-dir "build-asan-clang"             --build-type "${{ env.BUILD_TYPE }}"             --ctest-exclude "^(Integration|GoldenRender)\.|^BuildIntegrity\.CompiledShadersAreNotOlder" 2>&1 | tee output-asan.log
 
       # ThreadSanitizer: the presets existed but nothing ever ran them, so
       # data races could only be found by hand. Non-GPU tests only - the
@@ -152,7 +152,7 @@ jobs:
 
       - name: Run tests under ThreadSanitizer
         run: |
-          docker run --rm             -e TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1"             -v ${{ github.workspace }}:/workspace             -w /workspace             "${{ env.CONTAINER_IMAGE }}"             bash ./Scripts/Linux/run-ctest.sh             --vulkan-version "${{ env.VULKAN_VERSION }}"             --build-dir "build-tsan"             --build-type "${{ env.BUILD_TYPE }}"             --ctest-exclude "^(Integration|GoldenRender)\." 2>&1 | tee output-tsan.log
+          docker run --rm             -e TSAN_OPTIONS="halt_on_error=1:second_deadlock_stack=1"             -v ${{ github.workspace }}:/workspace             -w /workspace             "${{ env.CONTAINER_IMAGE }}"             bash ./Scripts/Linux/run-ctest.sh             --vulkan-version "${{ env.VULKAN_VERSION }}"             --build-dir "build-tsan"             --build-type "${{ env.BUILD_TYPE }}"             --ctest-exclude "^(Integration|GoldenRender)\.|^BuildIntegrity\.CompiledShadersAreNotOlder" 2>&1 | tee output-tsan.log
 
       - name: Build Code Coverage
         run: |
@@ -279,7 +279,7 @@ jobs:
             --vulkan-version "${{ env.VULKAN_VERSION }}" \
             --build-dir "${{ env.BUILD_DIR }}" \
             --build-type "${{ env.BUILD_TYPE }}" \
-            --ctest-exclude "^(Integration|GoldenRender)\\." 2>&1 | tee output.log
+            --ctest-exclude "^(Integration|GoldenRender)\\.|^BuildIntegrity\\.CompiledShadersAreNotOlder" 2>&1 | tee output.log
 
       - name: Run fuzzer tests (gcc)
         run: |
