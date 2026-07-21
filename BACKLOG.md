@@ -129,9 +129,31 @@ size and a decision, or gets dropped.
   for "user picks a third model while the second loads", and nothing asks for
   them yet.
 
-- [ ] **glTF loading** (L) — reuse the Rust renderer's test assets and enable
-  the cross-renderer comparison harness below. Scoped 2026-07-21 against the
-  actual pipeline:
+- [x] **glTF loading** (MVP done 2026-07-21 on `feature/gltf-loading`; textures
+  deferred) — the C++ engine now loads `.gltf`/`.glb`. Shipped increments a/b/c/
+  e/f: cgltf v1.15 submodule; `GltfLoader::parseCpu` (positions/normals/UVs,
+  baked node transforms, indices) → the same `Vertex`/index/`ObjMaterial`/
+  materialIndex arrays `ObjLoader` produces; per-glTF-material mapping
+  (`baseColorFactor`→diffuse, roughness→lossy specular, emissive) with per-face
+  materialIndex; `GltfLoader::loadModel` + `Scene::loadModelByExtension` dispatch
+  (`.gltf`/`.glb`→GltfLoader, else ObjLoader, case-insensitive, OBJ path
+  untouched). Verified in-container: 3 `GltfParseUnit` tests pass on the Rust
+  renderer's `cube.glb` (copied to `Resources/Models/GltfTest/`, so both
+  renderers load the SAME asset - the comparison harness's shared-input half is
+  now unblocked). **Merge to develop once the develop CI verdict lands** (held
+  so it does not supersede the in-flight recovery-verification run).
+
+  Two follow-ups, deliberately out of the MVP:
+  - **(d) textures** — glTF images. `cube.glb` has none, and the engine's
+    `Texture` only has `createFromFile`; glTF's common embedded (glb) images
+    would need a new `Texture::createFromMemory` (or temp-file extraction).
+    External-URI textures are the easy first half. Do it when a textured glTF
+    asset is actually loaded.
+  - **async glTF** — `AsyncModelParse` is ObjLoader-specific, so glTF currently
+    loads synchronously. Generalising the worker (or a shared loader interface)
+    would move the glTF parse off the render thread too.
+
+  Original scoping note kept below for the reasoning:
 
   **Integration point.** `ObjLoader::parseCpu` produces exactly
   `vector<Vertex> + vector<index> + vector<ObjMaterial> + materialIndex +
