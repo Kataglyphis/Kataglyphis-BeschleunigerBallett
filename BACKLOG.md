@@ -547,7 +547,12 @@ size and a decision, or gets dropped.
     abseil's LTS already bit us once (the `fuzzing_bit_gen.h` force-include).
   - **Rust crates** — `cargo update` in both `Cargo.lock`s (main bridge +
     RustProjectTemplate workspace), plus considered major bumps of the pinned
-    ones (wgpu 27 → newer, winit, the glTF crate). Re-run `cargo deny`/`audit`
+    ones. **wgpu 27→29 + egui 0.33→0.35 + naga 26→29 DONE** (2026-07-21, on
+    RustProjectTemplate `develop` — now the repo's default+integration branch;
+    85 tests pass, `--workspace --all-targets` clean). Still open: winit, the
+    glTF crate. Note the `--all-features` clippy step needs the `:latest-cross`
+    image rebuilt so its rustc reaches 1.96 (`kstring 2.0.4` MSRV; the ContainerHub
+    source already pins RUST_VERSION=1.96.0). Re-run `cargo deny`/`audit`
     after — a bump may clear the quick-xml advisory ignored above.
   - **GitHub Actions** — pin-bump `actions/checkout`, `actions/upload-artifact`,
     `actions/cache`, `softprops/action-gh-release`, etc. across all workflows in
