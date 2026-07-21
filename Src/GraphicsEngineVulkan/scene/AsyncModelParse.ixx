@@ -1,16 +1,20 @@
 module;
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <memory>
 #include <string>
 #include <thread>
 
 export module kataglyphis.vulkan.async_model_parse;
 
+import kataglyphis.vulkan.gltf_loader;
 import kataglyphis.vulkan.obj_loader;
 
 export namespace Kataglyphis {
 
-/// Runs ObjLoader::parseCpu on a worker thread.
+/// Runs ObjLoader::parseCpu (or GltfLoader::parseCpu, by extension) on a worker
+/// thread.
 ///
 /// Model loading is ~2.8 s of device-free CPU work against ~15 ms of GPU
 /// upload (measured on the bundled 27 MB model), and today all of it happens
@@ -43,16 +47,29 @@ class AsyncModelParse
 
         finished.store(false, std::memory_order_release);
         succeeded.store(false, std::memory_order_release);
-        loader = std::make_unique<ObjLoader>();// device-free
+        loader.reset();
+        gltfLoader.reset();
         path = modelFile;
 
-        worker = std::thread([this] {
-            const bool ok = loader->parseCpu(path);
-            succeeded.store(ok, std::memory_order_release);
-            // Release LAST: a reader that sees finished == true must also see
-            // every write the parse made, including `succeeded`.
-            finished.store(true, std::memory_order_release);
-        });
+        // Dispatch by extension. The OBJ path is unchanged; glTF gets a parallel
+        // one so both load off the render thread.
+        if (isGltfPath(modelFile)) {
+            gltfLoader = std::make_unique<GltfLoader>();// device-free
+            worker = std::thread([this] {
+                const bool ok = gltfLoader->parseCpu(path);
+                succeeded.store(ok, std::memory_order_release);
+                finished.store(true, std::memory_order_release);
+            });
+        } else {
+            loader = std::make_unique<ObjLoader>();// device-free
+            worker = std::thread([this] {
+                const bool ok = loader->parseCpu(path);
+                succeeded.store(ok, std::memory_order_release);
+                // Release LAST: a reader that sees finished == true must also see
+                // every write the parse made, including `succeeded`.
+                finished.store(true, std::memory_order_release);
+            });
+        }
     }
 
     /// True between start() and the result being taken.
@@ -80,16 +97,45 @@ class AsyncModelParse
         return std::move(loader);
     }
 
+    /// True when the pending/just-finished parse was a glTF document, so the
+    /// caller knows to take the glTF result rather than the OBJ one. Valid until
+    /// a result is taken or a new parse starts.
+    [[nodiscard]] bool parsedGltf() const { return gltfLoader != nullptr; }
+
+    /// The glTF analogue of takeResult(): joins and hands over the parsed
+    /// GltfLoader (nullptr if the last parse was OBJ, failed, or nothing ran).
+    std::unique_ptr<GltfLoader> takeGltfResult()
+    {
+        waitForCompletion();
+        if (!succeeded.load(std::memory_order_acquire)) {
+            gltfLoader.reset();
+            return nullptr;
+        }
+        return std::move(gltfLoader);
+    }
+
     void waitForCompletion()
     {
         if (worker.joinable()) { worker.join(); }
     }
 
   private:
+    /// True for `.gltf`/`.glb` (case-insensitive), matching Scene's sync
+    /// dispatch.
+    static bool isGltfPath(const std::string &modelFile)
+    {
+        std::string lower = modelFile;
+        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        return lower.ends_with(".gltf") || lower.ends_with(".glb");
+    }
+
     std::thread worker;
     std::atomic<bool> finished{ false };
     std::atomic<bool> succeeded{ false };
     std::unique_ptr<ObjLoader> loader;
+    std::unique_ptr<GltfLoader> gltfLoader;
     std::string path;
 };
 

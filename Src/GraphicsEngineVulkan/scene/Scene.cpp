@@ -112,18 +112,30 @@ bool Scene::pollModelLoad(std::shared_ptr<VulkanDevice> device, vk::CommandPool 
 
     modelLoadPending = false;
 
-    std::unique_ptr<ObjLoader> parsed = pendingModelParse.takeResult();
-    if (!parsed) {
-        spdlog::error("Asynchronous model parse failed; the scene stays empty.");
-        return false;
-    }
-
     // The GPU half runs HERE, on the thread that owns the device. It is the
-    // ~15 ms the frame loop still pays; the 2800 ms parse already happened
-    // on the worker.
-    ObjLoader uploader(device, device->getGraphicsQueue(), commandPool);
-    uploader.adoptParsed(std::move(*parsed));
-    std::shared_ptr<Model> const new_model = uploader.uploadParsed();
+    // ~15 ms the frame loop still pays; the 2800 ms parse already happened on
+    // the worker. Dispatch by which loader the worker used (glTF vs OBJ); both
+    // now expose adoptParsed + uploadParsed, so the two arms are symmetric.
+    std::shared_ptr<Model> new_model;
+    if (pendingModelParse.parsedGltf()) {
+        std::unique_ptr<GltfLoader> parsed = pendingModelParse.takeGltfResult();
+        if (!parsed) {
+            spdlog::error("Asynchronous glTF parse failed; the scene stays empty.");
+            return false;
+        }
+        GltfLoader uploader(device, device->getGraphicsQueue(), commandPool);
+        uploader.adoptParsed(std::move(*parsed));
+        new_model = uploader.uploadParsed();
+    } else {
+        std::unique_ptr<ObjLoader> parsed = pendingModelParse.takeResult();
+        if (!parsed) {
+            spdlog::error("Asynchronous model parse failed; the scene stays empty.");
+            return false;
+        }
+        ObjLoader uploader(device, device->getGraphicsQueue(), commandPool);
+        uploader.adoptParsed(std::move(*parsed));
+        new_model = uploader.uploadParsed();
+    }
     if (!new_model) {
         spdlog::error("Uploading the parsed model failed.");
         return false;
