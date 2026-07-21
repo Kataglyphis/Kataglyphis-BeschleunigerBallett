@@ -158,19 +158,28 @@ size and a decision, or gets dropped.
       compile-verified. Only remaining, if ever wanted: eyeball the textured
       result on a GPU host (not headless-checkable) - the mapping is standard so
       this is low risk.
-  - **async glTF** — glTF currently loads synchronously.
-    - **Foundation DONE** (verified compiling): `GltfLoader` split into
+  - **async glTF DONE** (2026-07-21 on `feature/gltf-loading`; verified) — glTF
+    now loads off the render thread exactly like OBJ.
+    - **Foundation** (verified compiling): `GltfLoader` split into
       `parseCpu` + `uploadParsed` + `adoptParsed`, mirroring `ObjLoader`, so a
       device-free worker can parse and a device-owning loader upload.
-    - **Remaining (increment 2, scoped)**: generalise `AsyncModelParse` (today it
-      holds `unique_ptr<ObjLoader>` and its worker calls `ObjLoader::parseCpu`) to
-      dispatch by extension. This CHANGES its `takeResult() -> unique_ptr<ObjLoader>`
-      contract, so `Test/commit/VulkanEngine/objParseSuite.cpp`'s
-      `AsyncModelParseUnit` tests (which inspect the returned ObjLoader) must be
-      rewritten, and `Scene::pollModelLoad` updated to build via whichever loader
-      parsed. Real, test-touching refactor for a perf-only gain (no large glTF
-      asset in the tree yet needs the off-thread parse) - do it with focus, not
-      as a rushed pass. The foundation makes it mechanical when taken up.
+    - **Increment 2, done non-breakingly**: rather than CHANGE
+      `AsyncModelParse::takeResult() -> unique_ptr<ObjLoader>` (which would have
+      forced a rewrite of every `AsyncModelParseUnit` OBJ test), the OBJ arm is
+      kept byte-identical and a PARALLEL glTF arm added: `AsyncModelParse` now
+      dispatches by extension (`isGltfPath`), holds an optional
+      `unique_ptr<GltfLoader>` beside the OBJ one, and exposes `parsedGltf()` +
+      `takeGltfResult()`. `Scene::pollModelLoad` branches on `parsedGltf()`; the
+      two upload arms are symmetric via `adoptParsed`/`uploadParsed`. The five
+      existing OBJ async tests are untouched and still pass.
+    - **Verified** (container, `linux-debug-clang`, 2026-07-21): all 6
+      `AsyncModelParseUnit` tests pass, including the new
+      `RoutesGltfToTheGltfLoaderOffThread` (a `.glb` routes to GltfLoader on the
+      worker and matches a device-free reference parse). TSan already confirmed
+      the OBJ worker race-clean; the glTF arm uses the identical
+      release/acquire + join-not-detach structure.
+    - **Merge to develop with the rest of `feature/gltf-loading`** once the CI
+      recovery-verification run lands (held so it does not supersede it).
 
   Original scoping note kept below for the reasoning:
 
@@ -586,6 +595,20 @@ committed to.
     regression back to per-upload create/destroy).
   - Pure-CPU units are the ones worth gating in CI; anything touching the
     GPU is machine-dependent and belongs in the "run it locally" bucket.
+  - **glTF parse is now benchmarked** (2026-07-21): `BM_GltfParse_CubeGlb` and
+    `BM_GltfParse_CubeTextured` (`Test/perf/perfSuite.cpp`) mirror the OBJ pair -
+    parse the document, load buffers, walk every POSITION accessor. They drive
+    `cgltf` DIRECTLY with a local `CGLTF_IMPLEMENTATION`, exactly as the OBJ
+    benchmarks drive tinyobj, and deliberately NOT `GltfLoader::parseCpu`:
+    importing the engine loader would pull `Device`/`Model`/`Texture` (and their
+    Vulkan-touching global ctors) into this headless binary - the same
+    headless-global-ctor hazard that took the fuzzer down - and also re-collides
+    the duplicate `TINYOBJLOADER_IMPLEMENTATION` that only stays benign while
+    `ObjLoader.cpp.o` is never linked in. The `.glb` (inline binary buffer) and
+    `.gltf` (base64 data-URI) exercise different `cgltf_load_buffers` decode
+    paths. Verified building + running under `linux-profile-GNU` (the CI
+    benchmark config); host figures belong in the baseline table below, taken on
+    a clean host run rather than a container (wcifs I/O dominates the wall time).
 - **GPU-side numbers already exist**: per-pass timestamps land in
   `GUIRendererSharedVars::gpuTimings` (GUI "GPU timings" header). A headless
   mode that renders N frames and dumps the per-pass averages as JSON would

@@ -22,7 +22,8 @@ target_link_libraries(
   ${PERF_TEST_SUITE}
   PRIVATE VulkanEngineCore
           benchmark::benchmark
-          tinyobjloader)
+          tinyobjloader
+          cgltf)
 
 # Register with CTest so the benchmarks are at least RUN by `ctest`. Until now
 # they were built and then never executed by anything, so a benchmark that
