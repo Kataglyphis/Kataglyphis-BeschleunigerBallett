@@ -60,7 +60,14 @@ jobs:
 
       - name: Init submodules (Windows-safe - skip RustProjectTemplate's deep docs chain)
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          # .gitmodules pins git@github.com: (SSH) URLs and the runner has no SSH
+          # key. actions/checkout - which we bypassed with submodules:false to dodge
+          # the deep-path clone - is what rewrites those to token-authenticated HTTPS.
+          # Do the same rewrite here so the submodule clones work over HTTPS.
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "git@github.com:"
           # Recurse into every submodule EXCEPT RustProjectTemplate (FUZZTEST needs
           # abseil/re2, etc.). RustProjectTemplate's own nested submodules are docs/CI
           # infra the C++ build never uses - no Rust build.rs references ContainerHub -
