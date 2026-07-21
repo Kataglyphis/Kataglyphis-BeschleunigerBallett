@@ -408,6 +408,33 @@ size and a decision, or gets dropped.
 
 ## Dependencies / housekeeping
 
+- [ ] **Upgrade software versions across the whole tree** (unsized, recurring).
+  A deliberate sweep to pull dependencies forward, done as one reviewable batch
+  rather than piecemeal, so a bump that breaks a build is easy to bisect. Cover:
+  - **C++ `ExternalLib` git submodules** — GLFW, imgui, glm, spdlog,
+    nlohmann_json, KTX, VMA, tinyobjloader, tomlplusplus, STB, GSL, FUZZTEST,
+    etc. Bump each to its latest release tag (not a stray upstream `main`),
+    update the `.gitmodules`/pin, rebuild. NOTE the standing drift problem: a
+    host tool already nudges GLFW/NLOHMANN_JSON forward off-tag
+    (see the FUZZTEST-watcher item below and [[submodule-pin-drift]]) — a
+    version sweep should *land those on real tags*, not leave them mid-drift.
+  - **CMake `FetchContent` deps** — googletest, abseil, re2 (pulled by
+    FUZZTEST). These are version-pinned in the FUZZTEST tree / our CMake; bump
+    together since abseil↔re2↔googletest have coupled version expectations and
+    abseil's LTS already bit us once (the `fuzzing_bit_gen.h` force-include).
+  - **Rust crates** — `cargo update` in both `Cargo.lock`s (main bridge +
+    RustProjectTemplate workspace), plus considered major bumps of the pinned
+    ones (wgpu 27 → newer, winit, the glTF crate). Re-run `cargo deny`/`audit`
+    after — a bump may clear the quick-xml advisory ignored above.
+  - **GitHub Actions** — pin-bump `actions/checkout`, `actions/upload-artifact`,
+    `actions/cache`, `softprops/action-gh-release`, etc. across all workflows in
+    both repos and ContainerHub; prefer SHA pins over floating major tags.
+  - **Toolchain/base images** — Vulkan SDK (currently 1.4.341.1), the gcc/clang
+    in ContainerHub (see the 22.1.2-vs-22.1.8 split above), Ubuntu base, CMake.
+  Do it against the local Rancher container so a break is caught before a
+  ~40-min CI round-trip, and land it only once the Linux lanes are green so a
+  version regression is distinguishable from the pre-existing outage.
+
 - [x] **cargo-deny advisories** (resolved 2026-07-21, but revisit the call) —
   `quick-xml 0.39.4` RUSTSEC-2026-0194/0195 and unmaintained `ttf-parser`.
   These were **deliberately left unignored to stay visible** — which was free
