@@ -1,6 +1,7 @@
 module;
 
 #include <cstddef>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <utility>
@@ -41,11 +42,21 @@ std::shared_ptr<Model> GltfLoader::loadModel(const std::string &modelFile)
 
     std::shared_ptr<Model> model = std::make_shared<Model>(device);
 
-    // No glTF texture import yet (increment d): reserve the default texture so
-    // materials that reference textureID 0 sample something valid.
-    Texture defaultTexture;
-    defaultTexture.createDefaultTexture(device, command_pool);
-    model->addTexture(std::move(defaultTexture));
+    // Decode + upload each recorded base-colour image (increment d); textureID
+    // in each material indexes into these, added in the same order. If a
+    // document had no textures, reserve the default so textureID 0 is valid -
+    // matching the OBJ path.
+    for (const std::vector<unsigned char> &encoded : textureImages) {
+        Texture texture;
+        if (texture.createFromMemory(device, command_pool, encoded.data(), encoded.size())) {
+            model->addTexture(std::move(texture));
+        }
+    }
+    if (model->getTextureCount() == 0) {
+        Texture defaultTexture;
+        defaultTexture.createDefaultTexture(device, command_pool);
+        model->addTexture(std::move(defaultTexture));
+    }
 
     model->add_new_mesh(device, transfer_queue, command_pool, vertices, indices, materialIndex, materials);
     return model;
@@ -110,6 +121,46 @@ void readAttribute(const cgltf_accessor *accessor, std::vector<VecT> &out)
     }
 }
 
+/// Returns the ENCODED image bytes (PNG/JPG/...) for a glTF image, or empty if
+/// unavailable. Handles the two forms every testable asset uses: glb buffer-view
+/// embedded (bytes in a loaded buffer) and a base64 data-URI (cgltf decodes it).
+/// External file URIs are not handled - no asset in the tree uses one, and it
+/// would need the document path to resolve.
+std::vector<unsigned char> extractImageBytes(const cgltf_image *image, const cgltf_options &options)
+{
+    if (image == nullptr) { return {}; }
+
+    if (image->buffer_view != nullptr && image->buffer_view->buffer != nullptr
+        && image->buffer_view->buffer->data != nullptr) {
+        const auto *base = static_cast<const unsigned char *>(image->buffer_view->buffer->data);
+        const cgltf_size offset = image->buffer_view->offset;
+        const cgltf_size size = image->buffer_view->size;
+        return std::vector<unsigned char>(base + offset, base + offset + size);
+    }
+
+    if (image->uri != nullptr) {
+        const std::string uri = image->uri;
+        const std::string marker = "base64,";
+        const std::string::size_type pos = uri.find(marker);
+        if (pos != std::string::npos) {
+            const char *b64 = uri.c_str() + pos + marker.size();
+            const cgltf_size b64len = uri.size() - pos - marker.size();
+            cgltf_size padding = 0;
+            if (b64len >= 1 && b64[b64len - 1] == '=') { ++padding; }
+            if (b64len >= 2 && b64[b64len - 2] == '=') { ++padding; }
+            const cgltf_size decoded = (b64len / 4) * 3 - padding;
+            void *out = nullptr;
+            if (cgltf_load_buffer_base64(&options, decoded, b64, &out) == cgltf_result_success && out != nullptr) {
+                const auto *bytes = static_cast<const unsigned char *>(out);
+                std::vector<unsigned char> result(bytes, bytes + decoded);
+                free(out);// cgltf's default allocator is malloc/free
+                return result;
+            }
+        }
+    }
+    return {};
+}
+
 }// namespace
 
 bool GltfLoader::parseCpu(const std::string &modelFile)
@@ -118,6 +169,7 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
     indices.clear();
     materials.clear();
     materialIndex.clear();
+    textureImages.clear();
 
     cgltf_options options{};
     cgltf_data *data = nullptr;
@@ -131,7 +183,20 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
     // primitive that references none. `materialIndex` (per triangle) points into
     // this table.
     for (cgltf_size m = 0; m < data->materials_count; ++m) {
-        materials.push_back(fromGltfMaterial(data->materials[m]));
+        const cgltf_material &material = data->materials[m];
+        ObjMaterial objMaterial = fromGltfMaterial(material);
+        // A base-colour texture (per material, like the OBJ path): record its
+        // encoded bytes and point the material at the new texture slot.
+        if (material.has_pbr_metallic_roughness != 0
+            && material.pbr_metallic_roughness.base_color_texture.texture != nullptr) {
+            std::vector<unsigned char> bytes =
+              extractImageBytes(material.pbr_metallic_roughness.base_color_texture.texture->image, options);
+            if (!bytes.empty()) {
+                objMaterial.textureID = static_cast<int>(textureImages.size());
+                textureImages.push_back(std::move(bytes));
+            }
+        }
+        materials.push_back(objMaterial);
     }
     const auto fallbackMaterial = static_cast<unsigned int>(materials.size());
     materials.push_back(neutralMaterial());

@@ -45,6 +45,11 @@ class GltfLoader
     const std::vector<unsigned int> &getIndices() const { return indices; }
     const std::vector<ObjMaterial> &getMaterials() const { return materials; }
     const std::vector<unsigned int> &getMaterialIndices() const { return materialIndex; }
+    /// Encoded base-colour image bytes (PNG/JPG...), one entry per textured
+    /// material, indexed by that material's textureID. loadModel decodes and
+    /// uploads them via Texture::createFromMemory; a test can assert the CPU
+    /// extraction without a device.
+    const std::vector<std::vector<unsigned char>> &getTextureImages() const { return textureImages; }
 
   private:
     std::shared_ptr<VulkanDevice> device;
@@ -56,6 +61,8 @@ class GltfLoader
     std::vector<ObjMaterial> materials;
     // Per-face (per-triangle) material id, exactly like the OBJ path.
     std::vector<unsigned int> materialIndex;
+    // One encoded image per textured material (see getTextureImages).
+    std::vector<std::vector<unsigned char>> textureImages;
 };
 
 }// namespace Kataglyphis

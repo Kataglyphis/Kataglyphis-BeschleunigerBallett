@@ -11,6 +11,7 @@
 #include <string>
 
 import kataglyphis.vulkan.gltf_loader;
+import kataglyphis.vulkan.obj_material;
 import kataglyphis.vulkan.scene_config;
 
 namespace {
@@ -18,6 +19,11 @@ namespace {
 std::string test_gltf()
 {
     return sceneConfig::resolveModelPath("Models/GltfTest/cube.glb");
+}
+
+std::string test_textured_gltf()
+{
+    return sceneConfig::resolveModelPath("Models/GltfTest/cube_textured.gltf");
 }
 
 }// namespace
@@ -56,4 +62,35 @@ TEST(GltfParseUnit, AMissingFileFailsInsteadOfCrashing)
     EXPECT_FALSE(loader.parseCpu("this/path/does/not/exist.glb"));
     EXPECT_TRUE(loader.getVertices().empty());
     EXPECT_TRUE(loader.getIndices().empty());
+}
+
+TEST(GltfParseUnit, ExtractsAnEmbeddedBaseColorTexture)
+{
+    // cube_textured.gltf carries its base-colour image as a base64 data URI.
+    // This is the CPU half of increment d: parseCpu must pull the encoded bytes
+    // out (no device needed); the GPU upload is loadModel's job and untested
+    // here.
+    if (!std::filesystem::exists(test_textured_gltf())) { GTEST_SKIP() << "textured test gltf not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(test_textured_gltf()));
+
+    ASSERT_EQ(loader.getTextureImages().size(), 1U) << "the one material has one base-colour texture";
+    const std::vector<unsigned char> &encoded = loader.getTextureImages()[0];
+
+    // The decoded bytes must begin with the 8-byte PNG signature - proof the
+    // base64 data-URI decode landed on real image data, not garbage.
+    ASSERT_GE(encoded.size(), 8U);
+    const unsigned char png_magic[8] = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+    for (size_t i = 0; i < 8; ++i) { EXPECT_EQ(encoded[i], png_magic[i]) << "PNG signature byte " << i; }
+
+    // Some material points at the extracted texture, and every id is in range.
+    bool anyTextured = false;
+    for (const ObjMaterial &material : loader.getMaterials()) {
+        if (material.textureID >= 0) {
+            EXPECT_LT(static_cast<size_t>(material.textureID), loader.getTextureImages().size());
+            anyTextured = true;
+        }
+    }
+    EXPECT_TRUE(anyTextured) << "a textured material must reference the extracted texture";
 }
