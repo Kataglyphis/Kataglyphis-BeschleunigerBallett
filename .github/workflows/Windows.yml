@@ -75,7 +75,7 @@ jobs:
       # my windows container is quite big ... so remove runner packages for enough
       # dis space
       - name: Cleanup disk space
-        uses: ./.github/actions/cleanup-disk-space
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/cleanup-disk-space@main
 
       - name: Log in to GHCR (for container image)
         uses: docker/login-action@v4.4.0
