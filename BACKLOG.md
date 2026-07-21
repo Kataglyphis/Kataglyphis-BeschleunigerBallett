@@ -590,6 +590,23 @@ unconditional control capture before its output is believed.
 
 ## CI and release gaps
 
+- [ ] **Linux amd64 CI runs clang 22.1.2, not the pinned 22.1.8** (found
+  2026-07-21, decision needed). ContainerHub `LLVM_RELEASE=22.1.8` drives a
+  from-source `llvmorg-22.1.8` build, and arm64/riscv64 get it — but
+  `linux/Dockerfile.sdk` (~L69) copies the distro apt `clang-22`
+  (`1:22.1.2-1ubuntu1`, at `/usr/lib/llvm-22`) as `/opt/llvm-target` for amd64
+  "because it is native", so `:latest-cross` amd64 ships 22.1.2. Confirmed in
+  the container: `/usr/local/llvm-target/bin/clang` reports
+  `Ubuntu clang version 22.1.2 (1ubuntu1)`, `dpkg` shows `clang-22
+  1:22.1.2-1ubuntu1`, and no `llvmorg-22.1.8` binary exists in the image. Net:
+  a version split — amd64 on 22.1.2, cross arches on 22.1.8. Options: (1) build
+  22.1.8 from source for amd64 too (slower image, all arches match); (2) drop
+  the pin to `LLVM_RELEASE=22.1.2` to match reality (cross arches then also
+  22.1.2); (3) accept and document the split. Needs a multi-hour rebuild to
+  verify whichever is chosen. (Corrects the memory note that claimed the image
+  matched the host's 22.1.8 - that is true for the Windows :winamd64 image, not
+  the Linux cross image.)
+
 - [x] **Stay on the 8.7 GB `:latest-cross` image** (decided by the user 2026-07-20)
   (researched 2026-07-20). Repeatedly observed today: `Pull container image`
   stalling 40+ minutes, dwarfing the build. The lane pulls the full
