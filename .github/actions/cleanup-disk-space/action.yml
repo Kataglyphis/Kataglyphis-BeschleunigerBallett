@@ -205,6 +205,11 @@ runs:
           Remove-Item -Path $s.FullName -Recurse -Force -ErrorAction SilentlyContinue
         }
 
+        # This whole step is best-effort disk reclamation; a non-zero $LASTEXITCODE
+        # leaking from a native command (e.g. `docker system prune`) must not fail
+        # the job. Exit clean.
+        exit 0
+
     #- name: Check disk space after cleanup
     #  shell: powershell
     #  run: Get-Volume C | Format-Table -AutoSize
