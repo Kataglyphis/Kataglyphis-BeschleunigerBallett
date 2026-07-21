@@ -24,6 +24,14 @@ class Texture
     Texture &operator=(Texture &&other) noexcept;
 
     bool createFromFile(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, const std::string &fileName);
+    /// Decodes an encoded image (PNG/JPG/...) already in memory and uploads it,
+    /// for glTF's embedded / data-URI images which never touch the filesystem.
+    /// Shares the upload path with createFromFile; returns false if the bytes
+    /// do not decode.
+    bool createFromMemory(std::shared_ptr<VulkanDevice>device,
+      vk::CommandPool commandPool,
+      const unsigned char *encodedBytes,
+      size_t byteCount);
     void createDefaultTexture(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool);
 
     void setImage(vk::Image image);
@@ -69,6 +77,17 @@ class Texture
     ~Texture();
 
   private:
+    // Shared tail of createFromFile / createFromMemory: takes tightly packed
+    // RGBA8 and does the staging-buffer copy, image creation, layout
+    // transitions, mip generation and view creation. Returns false on an empty
+    // image.
+    bool uploadRgba(std::shared_ptr<VulkanDevice>device,
+      vk::CommandPool commandPool,
+      int width,
+      int height,
+      vk::DeviceSize size,
+      const unsigned char *rgba);
+
     uint32_t mip_levels = 0;
 
     void generateMipMaps(vk::PhysicalDevice physical_device,
