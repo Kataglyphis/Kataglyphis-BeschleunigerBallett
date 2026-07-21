@@ -81,6 +81,42 @@ auto Kataglyphis::Texture::createFromFile(std::shared_ptr<VulkanDevice>device,
         return false;
     }
 
+    return uploadRgba(device, commandPool, width, height, size, image_data);
+}
+
+auto Kataglyphis::Texture::createFromMemory(std::shared_ptr<VulkanDevice>device,
+  vk::CommandPool commandPool,
+  const unsigned char *encodedBytes,
+  size_t byteCount) -> bool
+{
+    if (encodedBytes == nullptr || byteCount == 0) { return false; }
+
+    int width = 0;
+    int height = 0;
+    int channels = 0;
+    unsigned char *image_data =
+      stbi_load_from_memory(encodedBytes, static_cast<int>(byteCount), &width, &height, &channels, STBI_rgb_alpha);
+    std::unique_ptr<unsigned char, decltype(&stbi_image_free)> image_data_ptr(image_data, stbi_image_free);
+
+    if (!image_data || width == 0 || height == 0) {
+        spdlog::warn("glTF embedded texture could not be decoded ({} bytes); skipping.", byteCount);
+        return false;
+    }
+
+    // STBI_rgb_alpha forced 4 channels, so the tight size is width*height*4.
+    const vk::DeviceSize size = static_cast<vk::DeviceSize>(width) * static_cast<vk::DeviceSize>(height) * 4U;
+    return uploadRgba(device, commandPool, width, height, size, image_data);
+}
+
+auto Kataglyphis::Texture::uploadRgba(std::shared_ptr<VulkanDevice>device,
+  vk::CommandPool commandPool,
+  int width,
+  int height,
+  vk::DeviceSize size,
+  const unsigned char *rgba) -> bool
+{
+    if (width == 0 || height == 0 || rgba == nullptr) { return false; }
+
     constexpr vk::Format texture_format = vk::Format::eR8G8B8A8Unorm;
     mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
     if (!supportsLinearBlit(device->getPhysicalDevice(), texture_format)) {
@@ -95,9 +131,7 @@ auto Kataglyphis::Texture::createFromFile(std::shared_ptr<VulkanDevice>device,
       vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
     // Host-visible buffers are persistently mapped by VMA.
-    memcpy(stagingBuffer.getMappedData(), image_data, static_cast<size_t>(size));
-
-    // Memory automatically freed by image_data_ptr
+    memcpy(stagingBuffer.getMappedData(), rgba, static_cast<size_t>(size));
 
     createImage(device,
       static_cast<uint32_t>(width),
