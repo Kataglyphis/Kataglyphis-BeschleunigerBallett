@@ -66,7 +66,14 @@ jobs:
           # key; actions/checkout (bypassed via submodules:false) is what rewrites
           # them to token HTTPS. Do the same so the clones authenticate over HTTPS.
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "git@github.com:"
-          git submodule update --init --recursive
+          # bash+longpaths handles the top-level ContainerHub docs chain (5 deep),
+          # but RustProjectTemplate carries the SAME chain one level deeper (6), whose
+          # .git/modules/.../smile/config path overflows MAX_PATH even with longpaths.
+          # That chain is docs/CI infra the C++ build never touches (no Rust build.rs
+          # references ContainerHub), so recurse everything else and take
+          # RustProjectTemplate one level deep - its Rust source only.
+          git -c "submodule.ExternalLib/Kataglyphis-RustProjectTemplate.update=none" submodule update --init --recursive
+          git submodule update --init ExternalLib/Kataglyphis-RustProjectTemplate
           git submodule update --init ExternalLib/Kataglyphis-RustProjectTemplate
       
       # my windows container is quite big ... so remove runner packages for enough
