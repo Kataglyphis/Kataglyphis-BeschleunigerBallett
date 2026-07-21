@@ -84,6 +84,56 @@ jobs:
           username: Kataglyphis
           password: ${{ secrets.GHCR_PAT }}
 
+      # The winamd64 image (~54 GB) does not fit in Docker's default data-root on
+      # C:. Measured 2026-07-21 after cleanup: C: had 59.3 GB free - only ~5 GB
+      # over the image - and hcsshim::ImportLayer needs headroom well beyond the
+      # final size, so the pull died with "not enough space (0x70)". D: had
+      # 142.6 GB free. So move Docker's data-root to the largest drive BEFORE the
+      # pull. Workflow-only fix; no image rebuild. Login lives in the user config,
+      # not the data-root, so restarting the service does not drop credentials.
+      - name: Move Docker data-root to the largest drive (winamd64 is ~54 GB)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vols = Get-Volume | Where-Object DriveLetter | Sort-Object SizeRemaining -Descending
+          $best = $vols | Select-Object -First 1
+          $bestLetter = $best.DriveLetter
+          $bestFreeGB = [math]::Round($best.SizeRemaining/1GB, 1)
+          $root = docker info --format '{{.DockerRootDir}}' 2>$null
+          $currentLetter = if ($root -and $root.Length -ge 1) { $root.Substring(0,1) } else { 'C' }
+          Write-Host "Docker data-root is on ${currentLetter}: ; largest free drive is ${bestLetter}: ($bestFreeGB GB free)."
+          if ($bestLetter -eq $currentLetter) {
+            Write-Host "Already on the largest drive; leaving data-root at $root."
+          }
+          elseif ($bestFreeGB -lt 75) {
+            Write-Host "::warning::Largest drive ${bestLetter}: has only $bestFreeGB GB free; a 54 GB import needs ~75 GB of headroom, so relocation may not be enough - the image likely needs slimming."
+          }
+          else {
+            $target = "${bestLetter}:\docker-data"
+            Write-Host "Relocating Docker data-root to $target"
+            New-Item -ItemType Directory -Force -Path $target | Out-Null
+            Stop-Service docker
+            $cfgDir = "$env:ProgramData\docker\config"
+            New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
+            $cfgPath = Join-Path $cfgDir 'daemon.json'
+            $cfg = @{}
+            if (Test-Path $cfgPath) {
+              try { $cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json -AsHashtable } catch { $cfg = @{} }
+            }
+            $cfg['data-root'] = $target
+            ($cfg | ConvertTo-Json -Depth 10) | Set-Content -Path $cfgPath -Encoding ascii
+            Start-Service docker
+            $ok = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              try { docker info *> $null; if ($LASTEXITCODE -eq 0) { $ok = $true; break } } catch {}
+              Start-Sleep -Seconds 2
+            }
+            if (-not $ok) { throw "Docker did not come back up after relocating data-root." }
+            $now = docker info --format '{{.DockerRootDir}}' 2>$null
+            Write-Host "Docker data-root is now: $now"
+            if ($now -notlike "$target*") { throw "data-root relocation did not take effect (still $now)." }
+          }
+
       # DIAGNOSTIC (2026-07-21): the winamd64 image is ~54.4 GB, and docker pull
       # has been dying with hcsshim::ImportLayer "not enough space on the disk
       # (0x70)" - it imports the layers into Docker's data-root and the runner
@@ -114,10 +164,14 @@ jobs:
             if ($rootVol) { $rootDriveFreeGB = [math]::Round($rootVol.SizeRemaining/1GB,1) }
             Write-Host "Docker data-root drive ${rootLetter}: has $rootDriveFreeGB GB free."
           }
-          # Fail FAST with the numbers instead of grinding ~58 min on a doomed
-          # pull: if the data-root drive cannot hold the ~54 GB import, stop now.
-          if ($rootDriveFreeGB -ne $null -and $rootDriveFreeGB -lt 56) {
-            Write-Host "::error::Docker data-root drive has only $rootDriveFreeGB GB free (<56); the 54 GB winamd64 import will fail. Largest drive is ${maxDrive}: with $maxFreeGB GB. Fix: slim the winamd64 image, or move Docker data-root to a bigger drive."
+          # Fail FAST with the numbers instead of grinding ~40 min on a doomed
+          # pull. Threshold is 75 GB, not 54: hcsshim::ImportLayer needs headroom
+          # well beyond the final image size - measured 2026-07-21, a data-root
+          # drive with 59.3 GB free still failed to import the 54 GB image. The
+          # relocation step above should already have moved the data-root to the
+          # largest drive, so this is the backstop for "no drive is big enough".
+          if ($rootDriveFreeGB -ne $null -and $rootDriveFreeGB -lt 75) {
+            Write-Host "::error::Docker data-root drive ${rootLetter}: has only $rootDriveFreeGB GB free (<75 GB headroom needed for the 54 GB import). Largest drive is ${maxDrive}: with $maxFreeGB GB. Fix: slim the winamd64 image (build.ps1 -Stages base,toolchain, no -Gpu)."
             exit 1
           }
 
