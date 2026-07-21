@@ -40,42 +40,37 @@ jobs:
     steps:
 
      # windows is so funny ... NOT
-      # Submodules are initialised in the bash step below, NOT via actions/checkout:
-      # the deep transitive docs chain (ContainerHub -> DocumANTation -> md2pdfLib ->
-      # latex/{smile,awesome-beamer}) overflows Windows MAX_PATH on its
-      # .git/modules/.../config path. core.longpaths fixes it, but ONLY when git
-      # runs in the same shell that set it - the earlier pwsh `git config --global`
-      # wrote a gitconfig that Git Bash (different $HOME) never read, so the child
-      # clones ran without longpaths. Setting it inside the bash step is what makes
-      # the recursive init survive (this mirrors the working local bash workflow).
+      # actions/checkout lays down only the superproject (no submodules) so the
+      # composite action below and the build scripts exist at the default
+      # workspace. The submodules are cloned in the next step, into a short path.
       - name: Checkout
         uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 1
           submodules: false
 
-      - name: Init submodules (bash, long paths enabled in-shell)
+      # Windows MAX_PATH is the whole problem: the runner's workspace path
+      # (D:\a\<repo>\<repo>, the repo name doubled, ~71 chars) plus the deep
+      # transitive submodule chain (RustProjectTemplate -> ContainerHub ->
+      # DocumANTation -> md2pdfLib -> latex/*) pushes the .git/modules/.../config
+      # path past 260 chars, and core.longpaths does not reliably bypass that for
+      # these child clones. So clone the WHOLE tree - every submodule, recursively,
+      # nothing skipped - into a SHORT path (D:\ws) where the same chain stays well
+      # under the limit, then build from there. This mirrors the working local bash
+      # workflow; the only fix it needs is a short checkout dir.
+      - name: Clone full tree with submodules into a short path (D:\ws)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Long paths must be configured HERE, in the bash shell that runs the
-          # clones, or the deep .git/modules chain overflows ("$GIT_DIR too big").
           git config --global core.longpaths true
           # .gitmodules pins git@github.com: (SSH) URLs and the runner has no SSH
-          # key; actions/checkout (bypassed via submodules:false) is what rewrites
-          # them to token HTTPS. Do the same so the clones authenticate over HTTPS.
+          # key; rewrite to token HTTPS as actions/checkout would.
           git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "git@github.com:"
-          # The real overflow source is the external/Kataglyphis-DocumANTation
-          # submodule (-> md2pdfLib -> latex/{smile,awesome-beamer}): a docs/LaTeX
-          # chain that lives under ContainerHub and appears in BOTH the top-level
-          # ContainerHub and RustProjectTemplate's copy, whose .git/modules/.../config
-          # path overflows MAX_PATH even with longpaths. No build uses it, but
-          # ContainerHub ITSELF is needed (Build-Windows.ps1 pulls its PowerShell
-          # modules), so skip only DocumANTation - as a global config so the recursive
-          # init honours it at every nesting level - and clone everything else.
-          git config --global submodule."external/Kataglyphis-DocumANTation".update none
-          git submodule update --init --recursive
+          rm -rf /d/ws
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" /d/ws
+          git -C /d/ws checkout --force "${{ github.sha }}"
+          git -C /d/ws submodule update --init --recursive
       
       # my windows container is quite big ... so remove runner packages for enough
       # dis space
@@ -98,7 +93,7 @@ jobs:
     
           docker pull $image
           docker run --rm --memory 16g --cpus 4`
-            --mount "type=bind,source=${{ github.workspace }},target=C:\workspace" `
+            --mount "type=bind,source=D:\ws,target=C:\workspace" `
             -w "C:\workspace" `
             -e MSIX_CERT_PASSWORD='${{ secrets.MSIX_CERT_PASSWORD }}' `
             $image `
@@ -139,7 +134,7 @@ jobs:
           ) -join ':'
 
           docker run --rm --memory 16g --cpus 4 `
-            --mount "type=bind,source=${{ github.workspace }},target=C:\workspace" `
+            --mount "type=bind,source=D:\ws,target=C:\workspace" `
             -w "C:\workspace" `
             $image `
             powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `
@@ -155,7 +150,7 @@ jobs:
           $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
 
           docker run --rm --memory 16g --cpus 4 `
-            --mount "type=bind,source=${{ github.workspace }},target=C:\workspace" `
+            --mount "type=bind,source=D:\ws,target=C:\workspace" `
             -w "C:\workspace" `
             $image `
             powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `
@@ -177,16 +172,16 @@ jobs:
           name: windows-installers-container
           path: |
             # legacy/expected CMake preset output
-            ${{ github.workspace }}/build_release/**/*.msi
-            ${{ github.workspace }}/build_release/**/*.exe
-            ${{ github.workspace }}/build_release/**/*.zip
-            ${{ github.workspace }}/build_release/**/*.msix
-            ${{ github.workspace }}/build_release/**/*.dll
-            ${{ github.workspace }}/build_release/**/*.lib
+            D:/ws/build_release/**/*.msi
+            D:/ws/build_release/**/*.exe
+            D:/ws/build_release/**/*.zip
+            D:/ws/build_release/**/*.msix
+            D:/ws/build_release/**/*.dll
+            D:/ws/build_release/**/*.lib
             # also include the build directory used by the PowerShell build script
-            ${{ github.workspace }}/build-clangcl-release/**/*.msi
-            ${{ github.workspace }}/build-clangcl-release/**/*.msix
-            ${{ github.workspace }}/build-clangcl-release/**/*.exe
-            ${{ github.workspace }}/build-clangcl-release/**/*.zip
-            ${{ github.workspace }}/build-clangcl-release/**/*.dll
-            ${{ github.workspace }}/build-clangcl-release/**/*.lib
+            D:/ws/build-clangcl-release/**/*.msi
+            D:/ws/build-clangcl-release/**/*.msix
+            D:/ws/build-clangcl-release/**/*.exe
+            D:/ws/build-clangcl-release/**/*.zip
+            D:/ws/build-clangcl-release/**/*.dll
+            D:/ws/build-clangcl-release/**/*.lib
