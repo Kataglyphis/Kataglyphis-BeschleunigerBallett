@@ -155,6 +155,36 @@ else()
     if(CPACK_ENABLE_APPIMAGE)
       find_program(_APPIMAGETOOL_EXECUTABLE NAMES appimagetool)
 
+      # A type-2 AppImage must READ its own appended squashfs (through
+      # /proc/self/exe) to run - even with APPIMAGE_EXTRACT_AND_RUN=1, which only
+      # skips the FUSE mount. The :latest-cross image ships
+      # /usr/local/bin/appimagetool as -rwx--x--x (execute-only for non-root), so
+      # the CI user (uid 1001) can exec but not read it and it dies with
+      # "Cannot open /proc/self/exe: Permission denied". Reject an unreadable tool
+      # so the download fallback below - which chmods the fetched AppImage
+      # world-readable - supplies a usable one, or AppImage is skipped cleanly
+      # (TGZ/DEB still build). compare_files against itself is a portable
+      # read-access probe: it opens the file for reading and returns non-zero if
+      # it cannot.
+      if(_APPIMAGETOOL_EXECUTABLE)
+        execute_process(
+          COMMAND "${CMAKE_COMMAND}" -E compare_files "${_APPIMAGETOOL_EXECUTABLE}"
+                  "${_APPIMAGETOOL_EXECUTABLE}"
+          RESULT_VARIABLE _APPIMAGETOOL_READABLE
+          OUTPUT_QUIET ERROR_QUIET)
+        if(NOT
+           _APPIMAGETOOL_READABLE
+           EQUAL
+           0)
+          message(
+            STATUS
+              "appimagetool at ${_APPIMAGETOOL_EXECUTABLE} is not readable (execute-only); ignoring it so a readable one can be fetched."
+          )
+          unset(_APPIMAGETOOL_EXECUTABLE CACHE)
+          set(_APPIMAGETOOL_EXECUTABLE "")
+        endif()
+      endif()
+
       if(NOT _APPIMAGETOOL_EXECUTABLE)
         set(_APPIMAGETOOL_DIR "${CMAKE_BINARY_DIR}/tools")
         file(MAKE_DIRECTORY "${_APPIMAGETOOL_DIR}")

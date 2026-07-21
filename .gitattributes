@@ -7,6 +7,13 @@
 *.sh    text eol=lf
 *.bash  text eol=lf
 
+# The AppImage .desktop file MUST be LF: appimagetool rejects a desktop entry
+# with any CR ("file contains at least one line ending with a carriage return")
+# and fails the whole Package step. Same reasoning as the shell scripts - the
+# blob is already LF, this stops a Windows checkout from committing a CRLF
+# variant that only breaks the Linux packaging lane.
+*.desktop text eol=lf
+
 # Windows-only scripts stay CRLF-friendly; they never run under bash.
 *.ps1   text eol=crlf
 *.psm1  text eol=crlf
