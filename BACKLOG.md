@@ -144,11 +144,16 @@ size and a decision, or gets dropped.
   so it does not supersede the in-flight recovery-verification run).
 
   Two follow-ups, deliberately out of the MVP:
-  - **(d) textures** — glTF images. `cube.glb` has none, and the engine's
-    `Texture` only has `createFromFile`; glTF's common embedded (glb) images
-    would need a new `Texture::createFromMemory` (or temp-file extraction).
-    External-URI textures are the easy first half. Do it when a textured glTF
-    asset is actually loaded.
+  - **(d) textures** — glTF images. `cube.glb` has none. Checked the available
+    textured asset (`cube_textured.gltf`): its image is a **data URI**
+    (base64 PNG), and glb images are embedded in a buffer view - so every glTF
+    the tree can test has an in-memory image, not an external file. The engine's
+    `Texture` only has `createFromFile`, so there is NO external-URI "easy half"
+    to land first: (d) requires a new `Texture::createFromMemory` that
+    stb_image-decodes the bytes cgltf hands back and uploads a Vulkan texture,
+    then GltfLoader wiring baseColorTexture → that texture + materialIndex
+    textureID. A real 1-2 pass increment; the MVP renders these materials with
+    their base-colour factor (untextured) meanwhile.
   - **async glTF** — `AsyncModelParse` is ObjLoader-specific, so glTF currently
     loads synchronously. Generalising the worker (or a shared loader interface)
     would move the glTF parse off the render thread too.
