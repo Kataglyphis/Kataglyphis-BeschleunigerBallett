@@ -39,6 +39,10 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | ✅ `KHR_texture_transform` | S | Done 2026-07-18: base color slot (other slots as needed) |
 | ✅ Double-sided materials | S | Done 2026-07-18: per-primitive pipeline variant |
 | ✅ sRGB/linear audit | S | Done 2026-07-18: full table in `docs/webgpu-srgb-audit.md`; one known deviation (web swapchain non-sRGB) |
+| ✅ `KHR_materials_unlit` | S | Done 2026-07-22: flag rides a new `material_flags` vec4; the shader returns base color BEFORE any lighting, per spec. Fixes every Sketchfab/mobile/AR flat-color export, which previously got a full GGX response with IBL and shadows |
+| ✅ Anisotropic filtering | S | Done 2026-07-22: 16x, but only when min/mag/mipmap are ALL linear - wgpu validates that, and nearest-filtered assets are the pixel-art ones whose look is deliberate. Grazing-angle floors were being over-blurred by several mip levels |
+| ✅ Loader robustness | S | Done 2026-07-22: 16-bit images down-convert instead of aborting the WHOLE file (one 16-bit PNG used to mean the model would not open); triangle strips/fans are triangulated instead of silently vanishing (with the odd-triangle winding swap, or half the faces come out back-facing) |
+| ✅ Degenerate-input hardening | S | Done 2026-07-22: a cyclic node parent was a stack-overflow ABORT; one non-finite vertex NaN'd all three cascade matrices (breaking shadows scene-wide, and `test_planes` treats NaN as visible); a zero-scale node NaN'd its normal matrix. All three are pure unit tests |
 
 ## Phase B — Scene, animation, input
 
@@ -73,7 +77,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | Feature | Effort | Notes |
 | --- | --- | --- |
 | ✅ Frustum culling | S | Done 2026-07-18: world AABBs + Gribb-Hartmann planes, camera passes only |
-| ✅ GPU instancing | M | Done 2026-07-20: per-instance transform buffer (one identity instance by default), reaches normals + shadow pass; `set_instances`/`instance_count` |
+| ✅ GPU instancing | M | Done 2026-07-20 (normals corrected 2026-07-22: instanced normals now use the COFACTOR of the instance matrix, not the matrix itself - the raw matrix is only right for uniform scale and shears normals under the non-uniform/mirrored scale instancing exists for; bounds and scene bounds also follow instances now): per-instance transform buffer (one identity instance by default), reaches normals + shadow pass; `set_instances`/`instance_count` |
 | 🟡 KTX2 compressed textures | L | Done 2026-07-18: KTX2 container + BC1/3/5/7 passthrough with graceful fallback where BC is unavailable. Basis ETC1S/UASTC transcoding (and the web path) still open |
 | ✅ LOD pipeline (v1) | L | Done 2026-07-18: vertex-clustering simplifier + distance-based selection (`scene::lod`); meshoptimizer-quality decimation is a drop-in upgrade |
 | Async asset loading | M | Background thread native / fetch + progress on web; loading UI |
