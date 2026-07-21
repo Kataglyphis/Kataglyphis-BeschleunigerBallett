@@ -241,11 +241,18 @@ jobs:
           if ($cores -lt 1) { $cores = 2 }
           Write-Host "Runner logical processors: $cores (container gets --cpus $cores)"
 
+          # Inner strings use single quotes and concatenation, NOT \" escapes:
+          # backslash is not an escape character in PowerShell (backtick is), so
+          # \" terminated the surrounding double-quoted string and the whole
+          # command died with "Unexpected token 'missing'". This step had never
+          # actually run before - every earlier attempt died at the docker run in
+          # the build step - so the bug sat latent until the container finally
+          # built successfully.
           $cmd = "`$ErrorActionPreference='Stop';
                foreach (`$t in @('obj_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')) {
                  `$exe = Join-Path 'C:\ws\build-clangcl-debug' (`$t + '.exe')
-                 if (-not (Test-Path `$exe)) { Write-Host \"missing `$exe - fuzz targets are Debug+clang-cl only\"; continue }
-                 Write-Host \"--- `$t\"
+                 if (-not (Test-Path `$exe)) { Write-Host ('missing ' + `$exe + ' - fuzz targets are Debug+clang-cl only'); continue }
+                 Write-Host ('--- ' + `$t)
                  & `$exe
                  if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }
                }
