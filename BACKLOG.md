@@ -282,8 +282,31 @@ size and a decision, or gets dropped.
   produce those arguments.
 - [ ] **Clustered/tiled lighting** (L) — 4-light cap is fine today; lift it
   when a real scene needs it.
-- [ ] **GPU occlusion culling** (L) — frustum culling shipped; depth-pyramid
-  occlusion later.
+- [ ] **GPU occlusion culling** (L, IN PROGRESS — approach confirmed 2026-07-21,
+  chosen by the user as the next feature) — frustum culling shipped; this adds
+  occlusion of geometry hidden behind other geometry (the Colosseum case).
+
+  **Approach: temporal hardware occlusion queries, NOT a Hi-Z depth pyramid.**
+  Verified wgpu 27 exposes `RenderPass::begin_occlusion_query`/`end_occlusion_query`
+  with a real WebGPU-backend impl (`backend/webgpu.rs`), so it works on the web
+  target. A depth pyramid would need max-reduction depth mips and depth
+  sampling that WebGPU core does not portably provide — the same portability
+  wall that makes single-pass shadows impossible here. Queries sidestep it.
+
+  Data flow: after the forward pass populates depth, run a lightweight pass
+  that, per primitive, draws its world AABB as a unit cube (depth-test ON,
+  depth-write OFF, no colour) wrapped in `begin/end_occlusion_query(i)`;
+  `resolve_query_set` into a buffer, map async, read sample counts one frame
+  later; next frame skip primitives whose last-frame count was 0. One-frame
+  latency is the accepted cost (standard for this technique; brief pop on fast
+  camera cuts).
+
+  Increments: (1) bbox pipeline + QuerySet + resolve + readback of per-primitive
+  visibility, tested by reading back that a hidden primitive reports 0 samples
+  and a visible one reports >0. (2) temporal skip in the draw loop, tested like
+  the shadow-caster cull: an occluded primitive's draw is skipped (stats) while
+  the visible one and the shadow pass are unaffected. Off by default
+  (`occlusion_culling_enabled`), like `lod_enabled`.
 - [ ] **WebXR** (XL) — parked.
 - [ ] **Colosseum demo scene** (blocked on you) —
   pick a licensed photogrammetry scan, keep the asset out of git.
