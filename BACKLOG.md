@@ -669,11 +669,14 @@ unconditional control capture before its output is believed.
   Actions' default docker seccomp allows `personality`, so CI's TSan run should
   not hit it (and CI never reached this step before - the build failed first).
   If CI *does* hit it, the fix is `--security-opt seccomp=unconfined` on that
-  step's `docker run`. Verifying locally with that option to confirm the actual
-  tests are race-clean - the run exercises real C++ concurrency (`AsyncModelParse`
-  parses OBJ off a worker thread and hands back to a frame-loop poller;
-  objParseSuite.cpp), which is TSan-instrumented, so any report there would be a
-  genuine race, not a Rust-lib false positive.
+  step's `docker run`. Confirmed locally with that option: **100% tests passed,
+  0 failed under TSan** (2.53 s), `AsyncModelParseUnit` included - the real C++
+  concurrency the run exercises (`AsyncModelParse` parses OBJ off a worker thread
+  and hands back to a frame-loop poller; objParseSuite.cpp) is race-clean, which
+  matches the code by inspection (loader/path written before the worker is
+  spawned = happens-before; result flags atomic release/acquire; destructor
+  joins, never detaches). So the TSan lane is good end to end - build fixed +
+  run race-clean; the only wrinkle is the local sandbox quirk CI does not share.
 
 - [x] **All gcc CI lanes broken by a bad ccache env** (fixed + verified
   end-to-end 2026-07-21). `benchmarks (gcc)` had been red since 2026-04-19 and
