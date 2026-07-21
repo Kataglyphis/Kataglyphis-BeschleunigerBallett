@@ -854,6 +854,33 @@ unconditional control capture before its output is believed.
   `info: command not found`. Added `*.sh text eol=lf` (+ `*.bash`); blob content
   unchanged (index was already LF). ContainerHub `14f1c38`, pin bumped here.
 
+- [ ] **Windows CI: the `:winamd64` image is 54 GB and exhausts the runner**
+  (root-caused 2026-07-21). `Build/Test/Package` failed after ~58 min: `docker
+  pull` of `:winamd64` died repeatedly with `hcsshim::ImportLayer ... not enough
+  space on the disk (0x70)` — it imports 54.4 GB of layers into Docker's data-root
+  and the runner runs out of room; it never compiled anything. `cleanup-disk-space`
+  runs but `docker system prune` reclaims 0B on a fresh runner. A **disk
+  diagnostic** now prints per-drive free space + the data-root before the pull and
+  fails fast if the data-root drive can't hold ~54 GB (owner chose "diagnostic
+  first").
+
+  **What's in the 54 GB** (ContainerHub `windows/build.ps1`): the chain is
+  `base → nvidia (CUDA+cuDNN+TensorRT ~50 GB) → toolchain (clang/cmake) → media
+  (ONNX/GenAI+OpenCV+FFmpeg+LiteRT+TVM+GStreamer) → final`. **The graphics engine
+  + wgpu renderer need NONE of it** — verified: `RUST_FEATURES=ON` builds the whole
+  RustProjectTemplate workspace, but `crates/media` and `crates/inference` both
+  have `default = []` (gstreamer/onnx/CUDA are optional, non-default), so the build
+  pulls zero media/ML system libs; it needs only clang-cl + cmake + Vulkan + the
+  Rust toolchain.
+
+  **Fix (owner builds the image):** `build.ps1 -Stages base,toolchain` WITHOUT
+  `-Gpu` (the non-`-Gpu` lane makes the CUDA/nvidia stage a no-op `docker tag`,
+  and stopping at `toolchain` skips the media stack) → a few-GB `:winamd64-toolchain`;
+  repoint `GHCR_IMAGE_WIN`/the `:winamd64` refs in `Windows.yml` at it. Mirrors the
+  Linux `:toolchain` split. Relocating Docker data-root to a bigger drive only helps
+  if a drive has >54 GB free — the diagnostic will say. Almost certainly the slim
+  image is the only reliable fix.
+
 - [x] **Stay on the 8.7 GB `:latest-cross` image** (decided by the user 2026-07-20)
   (researched 2026-07-20). Repeatedly observed today: `Pull container image`
   stalling 40+ minutes, dwarfing the build. The lane pulls the full
