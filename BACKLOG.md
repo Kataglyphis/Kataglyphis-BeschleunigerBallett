@@ -1245,6 +1245,10 @@ Evidence is `file:line` at the time of writing.
 
 ### Rust WebGPU renderer
 
+The recurring bug class behind many of these is written up in
+`docs/renderer-bounds-invariant.md` - read it before touching anything that
+moves geometry.
+
 **Status 2026-07-22 — 10 of these are DONE** (RustProjectTemplate develop, each
 with its own test unless noted): #2 scene bounds track instances, #3 one
 `world_center` metric, #5 instanced normals via cofactor, #9 all three
