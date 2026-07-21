@@ -617,8 +617,9 @@ unconditional control capture before its output is believed.
 
 ## CI and release gaps
 
-- [ ] **Linux amd64 CI runs clang 22.1.2, not the pinned 22.1.8** (found
-  2026-07-21, decision needed). ContainerHub `LLVM_RELEASE=22.1.8` drives a
+- [x] **Linux amd64 CI runs clang 22.1.2, not the pinned 22.1.8** (fixed by the
+  user elsewhere, 2026-07-21 — do not re-raise). Kept below for the root-cause
+  record. ContainerHub `LLVM_RELEASE=22.1.8` drives a
   from-source `llvmorg-22.1.8` build, and arm64/riscv64 get it — but
   `linux/Dockerfile.sdk` (~L69) copies the distro apt `clang-22`
   (`1:22.1.2-1ubuntu1`, at `/usr/lib/llvm-22`) as `/opt/llvm-target` for amd64
