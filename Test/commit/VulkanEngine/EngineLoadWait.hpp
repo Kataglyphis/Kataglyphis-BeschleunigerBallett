@@ -2,8 +2,6 @@
 
 #include <gtest/gtest.h>
 
-import kataglyphis.vulkan.renderer;
-
 namespace Kataglyphis::TestSupport {
 
 /// Renders frames until the startup model has been installed.
@@ -19,8 +17,17 @@ namespace Kataglyphis::TestSupport {
 ///
 /// The frame cap is a deadlock guard, not a timing assumption: a parse that
 /// never completes must fail the test rather than hang CI forever.
-template<typename RenderOneFrame>
-void waitForModelLoad(Kataglyphis::VulkanRenderer *renderer, RenderOneFrame renderOneFrame)
+///
+/// `Renderer` is a template parameter rather than a concrete
+/// `import kataglyphis.vulkan.renderer;` ON PURPOSE. A header that imports a
+/// module and is then included ahead of a textual `#include <vulkan/vulkan.hpp>`
+/// (as the GPU suites do) makes gcc's -fmodules-ts see VkBuffer_T declared both
+/// module-owned and textually and reject it as a "conflicting declaration" - the
+/// clang builds tolerate it, the gcc lane does not. Deducing the renderer type
+/// from the argument keeps this header import-free; every caller already imports
+/// the renderer module for its own use.
+template<typename Renderer, typename RenderOneFrame>
+void waitForModelLoad(Renderer *renderer, RenderOneFrame renderOneFrame)
 {
     constexpr int MAX_LOAD_FRAMES = 20000;
 
