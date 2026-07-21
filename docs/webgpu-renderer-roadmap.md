@@ -45,9 +45,9 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | Feature | Effort | Notes |
 | --- | --- | --- |
 | ✅ Interactive camera controls | M | Done 2026-07-18: drag-orbit + wheel-zoom, auto-orbit until first interaction, native + web (fly/WASD later) |
-| ✅ glTF node animations | M | Done 2026-07-18: TRS channels (linear/step; cubic→linear), looping, node hierarchy with animated AABBs |
+| ✅ glTF node animations | M | Done 2026-07-18: TRS channels, looping, node hierarchy with animated AABBs. **CUBICSPLINE + STEP interpolation proper as of 2026-07-21** (was collapsing cubic→linear and mis-indexing the 3×-length cubic output — a latent bug; now `scene::Interpolation` + Hermite eval) |
 | ✅ Skinning | L | Done 2026-07-18: JOINTS_0/WEIGHTS_0, per-primitive joint storage buffer, skinned forward + shadow passes |
-| Morph targets | M | After skinning; weights animated |
+| 🟡 Morph targets | M | Increment 1 done 2026-07-21 (`feature/morph-targets`): loader parses POSITION/NORMAL deltas into `CpuPrimitive.morph_targets`; `scene::blend_morph_targets` weighted-accumulates + renormalizes (4 tests); simplified LODs drop morphing. Remaining: mesh default weights + WEIGHTS animation channel (loader currently skips it) + GPU per-frame apply (re-blend + re-upload) |
 | ✅ Runtime scene graph | M | Done 2026-07-18: node table with parents + local TRS, world recompute per frame (dirty-flag optimization later) |
 | ✅ GLB verification | S | Done 2026-07-18: generated cube.glb + load test |
 | 🟡 Drag-and-drop model loading | M | Done 2026-07-18 for native (drop a .gltf/.glb on the viewer); web File API drop zone still open |
@@ -73,14 +73,14 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | Feature | Effort | Notes |
 | --- | --- | --- |
 | ✅ Frustum culling | S | Done 2026-07-18: world AABBs + Gribb-Hartmann planes, camera passes only |
-| GPU instancing | M | Instance buffer path for repeated meshes |
+| ✅ GPU instancing | M | Done 2026-07-20: per-instance transform buffer (one identity instance by default), reaches normals + shadow pass; `set_instances`/`instance_count` |
 | 🟡 KTX2 compressed textures | L | Done 2026-07-18: KTX2 container + BC1/3/5/7 passthrough with graceful fallback where BC is unavailable. Basis ETC1S/UASTC transcoding (and the web path) still open |
 | ✅ LOD pipeline (v1) | L | Done 2026-07-18: vertex-clustering simplifier + distance-based selection (`scene::lod`); meshoptimizer-quality decimation is a drop-in upgrade |
 | Async asset loading | M | Background thread native / fetch + progress on web; loading UI |
 | Indirect draws | M | `draw_indexed_indirect` batching once culling is GPU-side |
 | GPU frustum/occlusion culling | XL | Compute-based; far future |
 | wasm size budget | S | `twiggy`/`wasm-opt` in the web build; track regression in CI |
-| Timestamp-query profiling | M | wgpu timestamp queries + on-screen frame breakdown (pairs with the egui overlay) |
+| ✅ Timestamp-query profiling | M | Done 2026-07-20: per-pass wgpu timestamp queries, averaged ms via `gpu_timings_ms()` (`render/gpu_timing.rs`), + `dump_gpu_timings` example feeding the cross-renderer timing table |
 
 ## Phase E — Web platform & demo polish
 
@@ -88,7 +88,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | --- | --- | --- |
 | ✅ Web deploy (via Sphinx docs site) | S | Done 2026-07-18: demo ships inside the Sphinx site (`docs/source/_webgpu_demo` + `html_extra_path`, page `webgpu_demo.md`), deployed by the existing docs FTP pipeline. Rebuild + recopy when the demo changes |
 | ✅ Responsive canvas | S | Done 2026-07-18: CSS-driven layout, backing store follows clientSize × devicePixelRatio per frame |
-| Touch controls | M | Pinch-zoom orbit for mobile WebGPU (Chrome Android) |
+| ✅ Touch controls | M | Done 2026-07-20: one finger orbits, two-finger pinch-zoom; ratio-based (DPI-independent), pinch baseline resets on finger-count change |
 | Model picker UI | S | Query param + dropdown of bundled scenes |
 | ✅ WebGPU-unsupported fallback page | S | Done 2026-07-18: `navigator.gpu` check with requirements + native command |
 | `webgl` backend feature flag | M | wgpu's GL backend for older browsers, feature-gated with reduced effects |
@@ -106,6 +106,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | Error telemetry | S | Route `log` + panic reports through `kataglyphis_telemetry` |
 | ✅ cargo-deny verification | S | Run 2026-07-18: **licenses ok**. Advisories flag 3 pre-existing transitive issues (all predate the renderer, from commits `6daaac6`/`4969ab6`): `quick-xml 0.39.4` (2 CVEs, Linux/Wayland only, pinned by `wayland-scanner` ← `smithay-client-toolkit` ← `winit`) and unmaintained `ttf-parser` (via egui fonts). Not fixable locally — they need upstream winit/egui bumps. Left un-ignored deliberately so they stay visible |
 | ✅ API docs + examples | M | Done 2026-07-18: crate README, `headless_render` example, warning-free `cargo doc --no-deps` |
+| ✅ wgpu 29 / egui 0.35 major-version migration | L | Done 2026-07-21: wgpu 27→29, egui 0.33→0.35, naga 26→29 (`immediate_size`, `multiview_mask`, `bind_group_layouts: &[Option<&_>]`, `Option` depth fields, `MipmapFilterMode`, error-scope guards, egui `begin_pass`/`end_pass`, `CurrentSurfaceTexture` enum). Fully CI-green on `develop` (now the repo's default+integration branch) |
 
 ## Phase G — Ecosystem integration (BeschleunigerBallett ↔ template)
 
