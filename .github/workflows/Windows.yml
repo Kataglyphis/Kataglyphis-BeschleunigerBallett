@@ -92,19 +92,27 @@ jobs:
           $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
     
           docker pull $image
-          docker run --rm --memory 16g --cpus 4`
-            --mount "type=bind,source=D:\ws,target=C:\workspace" `
-            -w "C:\workspace" `
-            -e MSIX_CERT_PASSWORD='${{ secrets.MSIX_CERT_PASSWORD }}' `
-            $image `
-            powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\workspace\Scripts\Windows\Build-Windows.ps1" `
-            -Configurations "clangcl-debug,clangcl-profile,clangcl-release" `
-            -SkipFormat -SkipTidy -SkipTests -SkipPerfTests `
-            -WebDavHostname '${{ secrets.WEBDAV_HOSTNAME }}' `
-            -WebDavUsername '${{ secrets.WEBDAV_USERNAME }}' `
-            -WebDavPassword '${{ secrets.WEBDAV_PASSWORD }}' `
-            -RemoteBasePath '${{ secrets.REMOTE_BASE_PATH }}' `
-            -LocalAssetsFolder 'C:\workspace'
+          # Args as a splatted array, NOT backtick line-continuations: the runner
+          # checks out this YAML with autocrlf, and a PowerShell backtick before
+          # CRLF escapes the CR instead of the newline, breaking the continuation
+          # ("Missing expression after unary operator '--'"). An @(...) array spans
+          # newlines with no continuation char, so it is CRLF-safe.
+          $runArgs = @(
+            'run', '--rm', '--memory', '16g', '--cpus', '4',
+            '--mount', 'type=bind,source=D:\ws,target=C:\workspace',
+            '-w', 'C:\workspace',
+            '-e', 'MSIX_CERT_PASSWORD=${{ secrets.MSIX_CERT_PASSWORD }}',
+            $image,
+            'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\workspace\Scripts\Windows\Build-Windows.ps1',
+            '-Configurations', 'clangcl-debug,clangcl-profile,clangcl-release',
+            '-SkipFormat', '-SkipTidy', '-SkipTests', '-SkipPerfTests',
+            '-WebDavHostname', '${{ secrets.WEBDAV_HOSTNAME }}',
+            '-WebDavUsername', '${{ secrets.WEBDAV_USERNAME }}',
+            '-WebDavPassword', '${{ secrets.WEBDAV_PASSWORD }}',
+            '-RemoteBasePath', '${{ secrets.REMOTE_BASE_PATH }}',
+            '-LocalAssetsFolder', 'C:\workspace'
+          )
+          docker @runArgs
 
       # Until 2026-07-20 this workflow passed -SkipTests -SkipPerfTests and
       # nothing else ran, so Windows CI proved only that the code compiles -
@@ -133,12 +141,15 @@ jobs:
             'HelloTestCommit.*'
           ) -join ':'
 
-          docker run --rm --memory 16g --cpus 4 `
-            --mount "type=bind,source=D:\ws,target=C:\workspace" `
-            -w "C:\workspace" `
-            $image `
-            powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `
-              "& 'C:\workspace\build-clangcl-debug\commitTestSuite.exe' --gtest_filter='$cpuOnlySuites'; exit `$LASTEXITCODE"
+          $cmd = "& 'C:\workspace\build-clangcl-debug\commitTestSuite.exe' --gtest_filter='$cpuOnlySuites'; exit `$LASTEXITCODE"
+          $runArgs = @(
+            'run', '--rm', '--memory', '16g', '--cpus', '4',
+            '--mount', 'type=bind,source=D:\ws,target=C:\workspace',
+            '-w', 'C:\workspace',
+            $image,
+            'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd
+          )
+          docker @runArgs
 
       # Fuzz targets run their seed corpus in unit-test mode - fast, CPU-only,
       # and the shader-file reader target found a real terminate-on-throw bug
@@ -149,12 +160,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
 
-          docker run --rm --memory 16g --cpus 4 `
-            --mount "type=bind,source=D:\ws,target=C:\workspace" `
-            -w "C:\workspace" `
-            $image `
-            powershell.exe -NoProfile -ExecutionPolicy Bypass -Command `
-              "`$ErrorActionPreference='Stop';
+          $cmd = "`$ErrorActionPreference='Stop';
                foreach (`$t in @('obj_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')) {
                  `$exe = Join-Path 'C:\workspace\build-clangcl-debug' (`$t + '.exe')
                  if (-not (Test-Path `$exe)) { Write-Host \"missing `$exe - fuzz targets are Debug+clang-cl only\"; continue }
@@ -163,6 +169,14 @@ jobs:
                  if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }
                }
                exit 0"
+          $runArgs = @(
+            'run', '--rm', '--memory', '16g', '--cpus', '4',
+            '--mount', 'type=bind,source=D:\ws,target=C:\workspace',
+            '-w', 'C:\workspace',
+            $image,
+            'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd
+          )
+          docker @runArgs
 
       # I limited the size of the builded package for storage restriction reasons on a github runner
       # see also the install commands in the bottom of the CMakeLists.txt
