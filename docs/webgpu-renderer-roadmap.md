@@ -34,7 +34,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | ✅ Normal matrix | S | Done 2026-07-18: inverse-transpose per primitive |
 | ✅ Normal mapping | M | Done 2026-07-18: glTF tangents or Lengyel-style generation (MikkTSpace parity later if baked assets demand it) |
 | ✅ Full metallic-roughness BRDF | M | Done 2026-07-18: GGX + Smith + Fresnel-Schlick; metallic/roughness texture sampling |
-| ✅ Emissive + occlusion maps | S | Done 2026-07-18 (`KHR_materials_emissive_strength` still open) |
+| ✅ Emissive + occlusion maps | S | Done 2026-07-18; `KHR_materials_emissive_strength` done 2026-07-21 (folded into `emissive_factor` at load for HDR emitters, GPU-free loader test) |
 | ✅ Alpha modes | M | Done 2026-07-18: MASK cutoff discard + sorted BLEND pass with transparency-aware shadow casting (per-pixel alpha-tested shadows for textured masks still open) |
 | ✅ `KHR_texture_transform` | S | Done 2026-07-18: base color slot (other slots as needed) |
 | ✅ Double-sided materials | S | Done 2026-07-18: per-primitive pipeline variant |
