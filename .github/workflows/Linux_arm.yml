@@ -3,6 +3,12 @@ name: Linux build + test + coverage on Ubuntu 24.04 ARM
 on:
   push:
     branches: [main, develop]
+    # Docs-only commits must not spend a 2-3h build, and - with the
+    # cancel-in-progress concurrency below - must not supersede an in-flight
+    # code run either. A backlog edit is not a reason to retest the engine.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
   pull_request:
     branches: [main, develop]
 
