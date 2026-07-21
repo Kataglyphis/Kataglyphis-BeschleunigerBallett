@@ -26,16 +26,14 @@ validation-layer-clean runtime check where rendering changed.
 
 ## Queued (design notes)
 
-1. **Pipeline cache + prebuilt SPIR-V** — no `VkPipelineCache` anywhere; GLSL
-   recompiles from source on every pipeline build (startup + hot-reload
-   stalls). Persist a cache under `build-*/pipeline.cache`; optionally consume
-   `Resources/Shaders/**/spv` instead of runtime GLSL compilation.
+1. **Prebuilt SPIR-V consumption** — the `VkPipelineCache` half shipped
+   (`ad77cbdd`, persisted in `VulkanDevice`), but pipelines still recompile
+   GLSL from source on every build (startup + hot-reload stalls). Remaining:
+   consume `Resources/Shaders/**/spv` instead of runtime GLSL compilation.
 3. **`vk::raii` teardown migration** — ~30 manual `cleanUp()` methods with
    defaulted destructors; hand-ordered 48-line teardown; device-lost
    special-casing in App.cpp. Migrate leaf types first (`VulkanBuffer`,
    `VulkanImage`, samplers), then stages, then the renderer.
-4. **Deferred-path shadows** — `deferred/lighting.frag` still ignores the CSM
-   (forward is fixed); same binding is available in the shared set.
 5. **Redundant same-layout swapchain barrier** (`VulkanRenderer.cpp` post-sky) —
    remove only after a sync-validation (`VK_LAYER_KHRONOS_validation` with
    `VALIDATION_CHECK_ENABLE_SYNCHRONIZATION_VALIDATION`) run confirms the
