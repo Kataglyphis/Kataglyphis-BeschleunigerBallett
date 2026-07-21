@@ -136,6 +136,15 @@ jobs:
           $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
 
           docker pull $image
+          # Bind-mount target is C:\ws (a FRESH path), NOT C:\workspace. The image
+          # bakes `WORKDIR C:\workspace` + `VOLUME ["C:\workspace"]` (windows/
+          # Dockerfile:48-49); mounting a bind OVER that baked-in dir dies at
+          # `hcs::CreateComputeSystem: The request is not supported` whenever the
+          # host OS build differs from the image base build - and it does here: the
+          # image is validated on a build-26200 host (ContainerHub BUILD-OBSERVATIONS)
+          # while the github windows-2025 runner is 26100. ContainerHub's own
+          # Test-ContainerBindMount defaults to a fresh C:\ws-mnt for exactly this.
+          #
           # Args as a splatted array, NOT backtick line-continuations: the runner
           # checks out this YAML with autocrlf, and a PowerShell backtick before
           # CRLF escapes the CR instead of the newline, breaking the continuation
@@ -143,18 +152,18 @@ jobs:
           # newlines with no continuation char, so it is CRLF-safe.
           $runArgs = @(
             'run', '--rm', '--memory', '16g', '--cpus', '4',
-            '--mount', 'type=bind,source=D:\ws,target=C:\workspace',
-            '-w', 'C:\workspace',
+            '--mount', 'type=bind,source=D:\ws,target=C:\ws',
+            '-w', 'C:\ws',
             '-e', 'MSIX_CERT_PASSWORD=${{ secrets.MSIX_CERT_PASSWORD }}',
             $image,
-            'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\workspace\Scripts\Windows\Build-Windows.ps1',
+            'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\ws\Scripts\Windows\Build-Windows.ps1',
             '-Configurations', 'clangcl-debug,clangcl-profile,clangcl-release',
             '-SkipFormat', '-SkipTidy', '-SkipTests', '-SkipPerfTests',
             '-WebDavHostname', '${{ secrets.WEBDAV_HOSTNAME }}',
             '-WebDavUsername', '${{ secrets.WEBDAV_USERNAME }}',
             '-WebDavPassword', '${{ secrets.WEBDAV_PASSWORD }}',
             '-RemoteBasePath', '${{ secrets.REMOTE_BASE_PATH }}',
-            '-LocalAssetsFolder', 'C:\workspace'
+            '-LocalAssetsFolder', 'C:\ws'
           )
           docker @runArgs
 
@@ -185,11 +194,11 @@ jobs:
             'HelloTestCommit.*'
           ) -join ':'
 
-          $cmd = "& 'C:\workspace\build-clangcl-debug\commitTestSuite.exe' --gtest_filter='$cpuOnlySuites'; exit `$LASTEXITCODE"
+          $cmd = "& 'C:\ws\build-clangcl-debug\commitTestSuite.exe' --gtest_filter='$cpuOnlySuites'; exit `$LASTEXITCODE"
           $runArgs = @(
             'run', '--rm', '--memory', '16g', '--cpus', '4',
-            '--mount', 'type=bind,source=D:\ws,target=C:\workspace',
-            '-w', 'C:\workspace',
+            '--mount', 'type=bind,source=D:\ws,target=C:\ws',
+            '-w', 'C:\ws',
             $image,
             'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd
           )
@@ -206,7 +215,7 @@ jobs:
 
           $cmd = "`$ErrorActionPreference='Stop';
                foreach (`$t in @('obj_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')) {
-                 `$exe = Join-Path 'C:\workspace\build-clangcl-debug' (`$t + '.exe')
+                 `$exe = Join-Path 'C:\ws\build-clangcl-debug' (`$t + '.exe')
                  if (-not (Test-Path `$exe)) { Write-Host \"missing `$exe - fuzz targets are Debug+clang-cl only\"; continue }
                  Write-Host \"--- `$t\"
                  & `$exe
@@ -215,8 +224,8 @@ jobs:
                exit 0"
           $runArgs = @(
             'run', '--rm', '--memory', '16g', '--cpus', '4',
-            '--mount', 'type=bind,source=D:\ws,target=C:\workspace',
-            '-w', 'C:\workspace',
+            '--mount', 'type=bind,source=D:\ws,target=C:\ws',
+            '-w', 'C:\ws',
             $image,
             'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd
           )
