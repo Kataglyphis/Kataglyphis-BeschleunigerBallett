@@ -1136,6 +1136,200 @@ unconditional control capture before its output is believed.
 
 ---
 
+## 2026-07-22 deep-dive candidates
+
+Found by a full read of both renderers against the existing backlog (nothing here
+duplicates the sections above). Ordered by value-per-effort within each renderer.
+Evidence is `file:line` at the time of writing.
+
+### C++ Vulkan engine
+
+1. **Shadow casters in front of a cascade's near plane are clipped away** (S/M) —
+   `isVisibleAsShadowCaster` deliberately drops the near plane so tall geometry
+   still casts (`Frustum.cpp:85-88`, with a test asserting it), but the cascade
+   ortho near plane is fitted from camera-frustum corners with a fixed 10-unit pad
+   (`CascadedShadowMap.cpp:225-227`) and the shadow pipeline sets
+   `depthClampEnable = VK_FALSE` (`PipelineBuilder.cpp:115`). A ceiling/overhang
+   further than the pad casts NO shadow: the CPU keeps it, the rasterizer deletes
+   it. Fix: enable `depthClamp` (needs the feature, not requested at
+   `VulkanDevice.cpp:487-494`) or extend the near plane to scene bounds along the
+   light axis. Test: pure CPU in `cascadedShadowMapSuite` — a point 30 units toward
+   the light must transform to NDC `z >= 0`; fails today.
+2. **Lit target is `R8G8B8A8_UNORM`, so HDR clamps BEFORE the tonemapper** (S) —
+   `post.frag:32` applies Reinhard, but the offscreen target is UNORM
+   (`Rasterizer.cpp:206`, `:328`, `DeferredRasterizer.cpp:88`) while the G-buffer
+   correctly uses `R16G16B16A16Sfloat` (`:89-90`). The radiance slider does nothing
+   above the clip point and the whole tonemap/bloom stage is decorative. Test:
+   `GoldenRender` at radiance R vs 2R — mean luminance must rise; today it does not.
+3. **Only model 0's textures bind, and only the first 24** (M) —
+   `updateTexturesInSharedRenderDescriptorSet` hard-codes `getTextures(0)`
+   (`VulkanRenderer.cpp:1644`) and clamps to `MAX_TEXTURE_COUNT = 24` (`:1650`).
+   The release default scene is Sponza (`SceneConfig.cpp:121`), which has far more
+   materials — everything past 23 renders with the wrong texture, and a second
+   `addModel` is textured with the first model's array. `runtimeDescriptorArray`
+   is already enabled (`VulkanDevice.cpp:591-593`), so a per-scene flat table with
+   an offset in `ObjectDescription` is the natural fix.
+4. **Moving the model in the GUI never rebuilds the TLAS** (S) —
+   `model_transform_changed` updates the matrix and object descriptions
+   (`VulkanRenderer.cpp:297-326`) but never calls `createASForScene`, while the
+   reload path two blocks down does (`:341-343`). With RT/path-tracing on, traced
+   geometry stays in the old pose. A TLAS refit is cheap. Test: GPU integration —
+   translate, settle, assert frames differ.
+5. **`raytrace.rchit` lights in object space and transforms the normal with `w=1`** (S) —
+   `:88` uses `vec4(normal_hit, 1.0)` (picks up translation; a normal needs the
+   inverse-transpose), and `:103-104` mix object-space `N`/`hit_pos` with
+   world-space `L`/`cam_pos`. Also `:130-131` hard-codes light colour/intensity, so
+   the GUI light has no effect in RT at all. Test: extend
+   `DeferredMatchesForwardRoughly` to RT-vs-forward under a non-identity transform.
+6. **glTF is unreachable from the GUI, and `reloadModel` is OBJ-only + null-unsafe** (S) —
+   `scanAvailableModels` filters `== ".obj"` (`SceneConfig.cpp:96`, case-sensitive),
+   so the in-tree `cube.glb` can never be picked; `Scene::reloadModel` constructs
+   `ObjLoader` directly (`Scene.cpp:177`) instead of `loadModelByExtension`, and
+   passes the result to `add_model` with no null check (`:179` vs `:153`) — a
+   malformed asset is a null-deref. Test: CPU-only, all three behaviours.
+7. **Base-colour textures upload as UNORM, then post applies gamma again** (S) —
+   `Texture.cpp:120`, `:194` use `eR8G8B8A8Unorm` for sRGB-encoded PNG/JPG, then
+   `post.frag:34` does `pow(.,1/2.2)`. Albedo is systematically too bright and mips
+   average in the wrong space. Narrow fix: `eR8G8B8A8Srgb` for base colour only
+   (normal/ORM must stay UNORM).
+8. **Forward shading ignores material diffuse and roughness** (S) —
+   `shader.frag:86-91` builds ambient from the texture alone, leaves `diffuse`
+   commented at `:89` and hard-codes `roughness = 0.9` at `:91`, nullifying the
+   glTF material mapping in `GltfLoader.cpp:106-129`. The deferred path reads both
+   (`lighting.frag:48-49`), so the two raster paths disagree on materials.
+9. **Cascades refit per frame with no texel snapping — shadow edges crawl** (M) —
+   `computeCascadeData` derives the box from exact frustum corners each frame
+   (`CascadedShadowMap.cpp:201-216`) so it translates AND resizes; the
+   stabilisation ingredient (`radius`, `:187-190`) is already computed but only
+   used for eye placement. Fix: size from `radius`, snap origin to whole texels.
+   Test: two camera positions a fraction of a texel apart — origins must differ by
+   an exact texel multiple and box width must be identical. Both fail today.
+10. **A `Model` can hold exactly one `Mesh`** (L) — `getMeshCount()` returns literal
+    `1` and `getMesh()` ignores its index (`Model.ixx:38-39`); `add_new_mesh`
+    overwrites (`Model.cpp:47`). Culling is all-or-nothing on one scene-sized AABB
+    (`Rasterizer.cpp:122-141`), and there is nothing to attach LOD to. This is the
+    enabling change for several already-wanted features.
+11. **glTF loader gaps** (M) — skinned-node transforms are applied though the spec
+    says ignore them (`GltfLoader.cpp:231`); missing `NORMAL` becomes a constant
+    `(0,1,0)` instead of computed flat normals (`:265`); non-triangle primitives are
+    silently skipped (`:237`); `alphaMode`/`doubleSided`/`KHR_texture_transform`/
+    texcoord index all ignored, so transparent glTF renders opaque.
+12. **Point lights are wired on the GPU but never fed; `OmniDirShadowMap` renders
+    nothing** (M) — `lighting.frag:58-69` loops `numPointLights`, which
+    `updateUniforms` never writes (`VulkanRenderer.cpp:165-242`); the cube depth
+    target allocated at `:116` is never recorded into and never sampled. Same "dead
+    pass" class the CSM work already caught once. Either finish it or delete it.
+13. **Cascades cost 3 render passes + a pass-through geometry shader** (M) —
+    one pass per cascade (`CascadedShadowMap.cpp:586-664`) and
+    `directional_shadow_map.geom` now only re-multiplies by the cascade matrix (its
+    own comment says it lost its purpose). `features11.multiview` is ALREADY
+    requested (`VulkanDevice.cpp:485`), so one layered pass with `gl_ViewIndex`
+    removes two pass boundaries and the geometry stage. Measurable via the existing
+    `GpuTimedPass::ShadowCascades` JSON.
+14. **cgltf is an unfuzzed untrusted-input surface** (S) — the 2026-07-20 fuzz pass
+    predates glTF. `GltfLoader` slices `buffer_view->offset + size` without
+    validating against `buffer->size` (`:151-157`), hand-rolls base64 length maths
+    that underflows for short URIs (`:166-169`), and never calls `cgltf_validate()`.
+    The GUI feeds arbitrary user files here. Add `gltf_parsing_fuzz_test`.
+15. **Swapchain recreate destroys before creating; surface-lost unhandled** (S) —
+    `recreate` does `cleanUp()` then init (`VulkanSwapChain.cpp:138-142`) and always
+    passes `oldSwapchain = nullptr` (`:98`); `createSwapchainKHR`'s result is never
+    checked (`:101-103`), and `eErrorSurfaceLostKHR` is not distinguished from
+    out-of-date (`VulkanRenderer.cpp:427-439`).
+16. **Dynamic rendering + synchronization2 are hard-disabled** (L) —
+    `VulkanDevice.cpp:451`, `:454`. Already in use: RT pipelines, ray query, AS,
+    BDA, descriptor indexing, scalar block layout, multiview, pipeline cache, VMA,
+    timestamps. Dynamic rendering would delete the framebuffer rebuild in
+    `recreateSwapChain` (`VulkanRenderer.cpp:592-621`) where the image-count edge
+    cases live. Test: run the whole golden suite under both paths behind a toggle.
+
+### Rust WebGPU renderer
+
+1. **Occlusion culling deletes, then flickers, any primitive the camera is inside** (S) —
+   when the eye is inside a primitive's AABB the proxy box's front faces are
+   near-plane clipped and only back faces rasterise, which fail `LessEqual`
+   (`occlusion.rs:171-177`, `occlusion_bbox.wgsl:29-69`), so the query returns 0 →
+   skipped next frame → depth empty → passes → returns. A ~30 Hz strobe on the
+   object filling the screen. `cull_mode: None` and the 2% margin do not address
+   near-plane clipping. Fix: force-visible when the expanded AABB contains the eye.
+2. **`set_instances` never widens `scene_bounds`, so cascades stay fitted to the
+   un-instanced scene** (S) — the 8th case of the stale-bookkeeping pattern.
+   `set_instances` updates `aabb_min/max` and `world_center` but `scene_bounds` is
+   written only in `upload_scene` (`forward.rs:923`) and `set_animation_time`
+   (`:1913`), and it is the ONLY input to cascade fitting (`:1920-1924`). Instances
+   scattered over ±50 units fall outside every cascade, so they neither receive nor
+   cast shadows.
+3. **`world_center` silently changes metric on first animation** (S) — at upload it
+   is the vertex centroid (`forward.rs:1183`), afterwards the AABB centre (`:696`,
+   `:725`, `:1906`). So `set_animation_time(0.0)` with NO movement can flip the LOD
+   level across a switch distance and reorder the transparent draw list. Consumers
+   at `:145` (LOD) and `:1489-1491` (blend sort) are documented as needing one
+   agreed metric — they agree, but the value changes definition underneath them.
+4. **Every primitive uploads its own copy of every material texture** (M) —
+   `create_material_texture` is called inside the per-primitive loop
+   (`forward.rs:997-1013`), so 200 primitives sharing one atlas do 200 CPU mip
+   chains (`generate_mips` does a per-texel `powf`, `:2620-2657`) and 200 GPU
+   uploads. The CPU side is already `Arc<CpuTexture>`, so the cache key is free.
+   This is the VRAM ceiling blocking the Colosseum scene.
+5. **Instanced normals use the instance matrix, not its inverse-transpose** (S/M) —
+   `forward.wgsl:136-140` applies the raw instance matrix on top of a normal matrix
+   built from `prim.model` alone (`forward.rs:1296`). Wrong for any non-uniform or
+   mirrored instance scale — i.e. exactly the scattered/squashed instances that
+   instancing exists for. The tangent path is correct, which hides the asymmetry.
+6. **`COLOR_0` vertex colours are silently dropped** (M) — the loader never calls
+   `read_colors` (`gltf_loader.rs:330-392`) and `Vertex` has no colour field. This
+   is the most common way real assets carry colour without a texture
+   (photogrammetry, CAD, low-poly packs, baked AO); they render uniformly white.
+7. **Every texture slot is forced onto TEXCOORD_0** (M) — `textureInfo.texCoord` is
+   never read and only `read_tex_coords(0)` is loaded (`gltf_loader.rs:339-342`);
+   `texture_ref` deliberately discards the `Info` carrying the index (`:238-251`).
+   Assets with baked AO on UV1 — the standard Blender/Substance export — get it
+   sampled with albedo UVs. Rider: `KHR_texture_transform` is plumbed for base
+   colour only (`:444-459`).
+8. **No anti-aliasing anywhere** (M) — `MultisampleState::default()` on all four
+   forward pipelines (`forward.rs:2139`, `:2182`, `:2220`) and `sample_count: 1` on
+   the HDR target (`:2814-2831`). The most visible quality defect in the browser
+   demo. 4x MSAA resolved before bloom/SSAO/tonemap is portable WebGPU-core; SSAO's
+   `textureLoad` on depth is the one design constraint.
+9. **Degenerate/NaN input poisons the whole frame** (S/M) — a zero-scale node
+   (Blender's standard hide) makes `model.inverse()` NaN → NaN normal matrix
+   (`forward.rs:1296`); ONE non-finite POSITION makes `scene_radius` NaN → all three
+   cascade matrices NaN, breaking shadows for every object (`:2348-2362`,
+   `:2556-2574`), and `Frustum::test_planes` treats NaN as visible (`:2269-2281`);
+   a cyclic `parent` chain recurses forever in `compute_world_transforms`
+   (`scene/mod.rs:384-405`) — stack overflow, not an error. All three are pure unit
+   tests.
+10. **`KHR_materials_unlit` is ignored** (S) — the `gltf` crate exposes
+    `material.unlit()`; the loader never asks (`gltf_loader.rs:435-496`). Every
+    Sketchfab flat-colour export and most mobile/AR assets get a full GGX response
+    with IBL and shadows — exactly what the extension exists to prevent.
+11. **Anisotropic filtering is never requested** (S) — `create_sampler` leaves
+    `anisotropy_clamp` at 1 (`forward.rs:2589-2597`). The mip chain is already
+    correct, so this is the cheapest visible win: grazing-angle floors/walls are
+    over-blurred by several mip levels. Must fall back to 1 when the glTF sampler
+    asked for `Nearest` (wgpu validates this).
+12. **~784 bytes of identical uniform data + a bind group rewritten per primitive
+    per frame** (M) — `Uniforms` mixes per-frame data (view_proj, 3 cascade
+    matrices, 16 vec4 of lights ~700 B) with per-primitive data, and the whole
+    struct is rewritten for every primitive every frame (`forward.rs:1292-1323`);
+    at 1000 primitives that is ~780 KB/frame plus 1000 buffers and bind groups.
+    Same loop recomputes `model.inverse().transpose()` per frame though `model`
+    only changes in `set_animation_time`; and `VsOut.light_space_pos` is
+    interpolated but never read (`forward.wgsl:116`, `:146` vs `:364-473`).
+13. **Render bundles for the three shadow cascades** (M) — the identical draw list
+    is re-recorded three times per frame (`forward.rs:1349-1397`). `RenderBundle` is
+    WebGPU-core (works on the web, unlike the parked indirect-draw item). Per-cascade
+    culling changes the set, so invalidation is the real design question.
+14. **Bloom and SSAO run at full cost when their strength is 0** (S) — `encode` is
+    unconditional (`forward.rs:1539-1542`); the strengths are only consulted by the
+    tonemap composite, so a slider at 0 still pays for a half-res depth pass, a 3x3
+    blur, a brightpass and a separable Gaussian.
+15. Lower value, noted: orthographic glTF cameras are dropped
+    (`gltf_loader.rs:139`); `TriangleStrip`/`TriangleFan` primitives are skipped
+    entirely (`:290-297`); one 16-bit PNG aborts the whole file instead of
+    down-converting (`:197`).
+
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
