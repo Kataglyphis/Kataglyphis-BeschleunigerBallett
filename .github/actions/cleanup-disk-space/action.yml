@@ -4,9 +4,15 @@ description: 'Aggressively cleans up disk space on Windows runners'
 runs:
   using: 'composite'
   steps:
-    #- name: Check disk space before cleanup
-    #  shell: powershell
-    #  run: Get-Volume C | Format-Table -AutoSize
+    - name: Disk space BEFORE cleanup (all drives)
+      shell: pwsh
+      run: |
+        Write-Host '=== Volumes BEFORE cleanup ==='
+        Get-Volume | Where-Object DriveLetter | Sort-Object DriveLetter |
+          Format-Table DriveLetter,
+            @{n='FreeGB';e={[math]::Round($_.SizeRemaining/1GB,1)}},
+            @{n='SizeGB';e={[math]::Round($_.Size/1GB,1)}},
+            FileSystemLabel -AutoSize | Out-String | Write-Host
 
     - name: Aggressive cleanup
       shell: pwsh
@@ -210,6 +216,16 @@ runs:
         # the job. Exit clean.
         exit 0
 
-    #- name: Check disk space after cleanup
-    #  shell: powershell
-    #  run: Get-Volume C | Format-Table -AutoSize
+    - name: Disk space AFTER cleanup (all drives)
+      shell: pwsh
+      run: |
+        Write-Host '=== Volumes AFTER cleanup ==='
+        Get-Volume | Where-Object DriveLetter | Sort-Object DriveLetter |
+          Format-Table DriveLetter,
+            @{n='FreeGB';e={[math]::Round($_.SizeRemaining/1GB,1)}},
+            @{n='SizeGB';e={[math]::Round($_.Size/1GB,1)}},
+            FileSystemLabel -AutoSize | Out-String | Write-Host
+        # winamd64 is ~54 GB to import; the largest FreeGB above must exceed that,
+        # on whatever drive Docker's data-root lives, or `docker pull` fails with
+        # hcsshim::ImportLayer "not enough space on the disk (0x70)".
+        Write-Host ("Docker data-root: " + (docker info --format '{{.DockerRootDir}}' 2>$null))
