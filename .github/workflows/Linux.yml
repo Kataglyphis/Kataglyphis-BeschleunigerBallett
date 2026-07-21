@@ -61,7 +61,7 @@ jobs:
           docker-images: false
           swap-storage: true
 
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           submodules: recursive
@@ -167,7 +167,7 @@ jobs:
 
       - name: Codecov
         if: ${{ inputs.runner == 'ubuntu-24.04' }}
-        uses: codecov/codecov-action@v5.5.2
+        uses: codecov/codecov-action@v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ${{ env.COVERAGE_JSON }}
@@ -245,7 +245,7 @@ jobs:
             bash ./Scripts/Linux/docs-build-web.sh "${{ env.DOCS_OUT }}"
 
       - name: 📂 Sync files to domain
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.6
+        uses: SamKirkland/FTP-Deploy-Action@v4.4.0
         if: ${{ inputs.runner == 'ubuntu-24.04' }}
         with:
           server: ${{ secrets.SERVER }}
@@ -343,7 +343,7 @@ jobs:
             --build-target package 2>&1 | tee output.log
 
       - name: Upload Linux Packages (Clang only)
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: linux-packages
           path: |
