@@ -140,8 +140,9 @@ size and a decision, or gets dropped.
   untouched). Verified in-container: 3 `GltfParseUnit` tests pass on the Rust
   renderer's `cube.glb` (copied to `Resources/Models/GltfTest/`, so both
   renderers load the SAME asset - the comparison harness's shared-input half is
-  now unblocked). **Merge to develop once the develop CI verdict lands** (held
-  so it does not supersede the in-flight recovery-verification run).
+  now unblocked). **Merged to develop** (2026-07-21) — the MVP+textures arm in
+  `56688a09` and the async arm in `efce2090`; `feature/gltf-loading` is fully
+  contained in develop (`develop..feature/gltf-loading` is empty).
 
   Two follow-ups, deliberately out of the MVP:
   - **(d) textures DONE** (2026-07-21) — glTF base-colour images now load.
@@ -178,8 +179,8 @@ size and a decision, or gets dropped.
       worker and matches a device-free reference parse). TSan already confirmed
       the OBJ worker race-clean; the glTF arm uses the identical
       release/acquire + join-not-detach structure.
-    - **Merge to develop with the rest of `feature/gltf-loading`** once the CI
-      recovery-verification run lands (held so it does not supersede it).
+    - **Merged to develop** (2026-07-21, in `efce2090`) — landed with the rest of
+      `feature/gltf-loading`.
 
   Original scoping note kept below for the reasoning:
 
