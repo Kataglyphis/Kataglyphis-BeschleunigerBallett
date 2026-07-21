@@ -473,9 +473,14 @@ size and a decision, or gets dropped.
   + `.cargo/audit.toml` with a justification: quick-xml is a BUILD-TIME
   dependency of `wayland-scanner` (winit → Wayland), parsing the trusted
   protocol spec, never attacker-controlled runtime data, so the DoS advisories
-  are unreachable here. `ttf-parser` was already a non-failing warning.
+  are unreachable here. **Update 2026-07-21:** `ttf-parser` stopped being a mere
+  warning - it got its own hard advisory `RUSTSEC-2026-0192` (unmaintained) that
+  failed the Ubuntu security step, so it is now ignored by ID too (it is a
+  transitive font-parsing dep of the winit/egui text stack; unmaintained is
+  informational, no maintained drop-in). Verified locally with cargo-audit +
+  cargo-deny (`advisories ok`).
   **If you'd rather the lane fail-visibly on advisories than pass with a
-  documented ignore, revert the two ignore entries** — that is a
+  documented ignore, revert the ignore entries** — that is a
   green-vs-visible preference, not a correctness question.
 - [x] **FUZZTEST checkout watcher — no watcher found** (investigated
   2026-07-20) — the submodule's reflog holds 14 entries, all between
