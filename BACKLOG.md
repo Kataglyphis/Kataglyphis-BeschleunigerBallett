@@ -625,8 +625,8 @@ unconditional control capture before its output is believed.
 
 ## CI and release gaps
 
-- [x] **All gcc CI lanes broken by a bad ccache env** (fixed 2026-07-21,
-  verifying end-to-end). `benchmarks (gcc)` had been red since 2026-04-19 and
+- [x] **All gcc CI lanes broken by a bad ccache env** (fixed + verified
+  end-to-end 2026-07-21). `benchmarks (gcc)` had been red since 2026-04-19 and
   the gcc unit/integration lane was latently broken the same way. Root cause:
   the `:latest-cross` image (`ContainerHub linux/Dockerfile.package`) sets
   `CCACHE_SECONDARY_STORAGE=true`, but that variable is ccache's `remote_storage`
@@ -638,8 +638,14 @@ unconditional control capture before its output is believed.
   removed the env at source in `Dockerfile.package` (needs an image rebuild to
   land), and added a guard in `Scripts/Linux/cmake-configure-build.sh` that
   unsets any `CCACHE_SECONDARY_STORAGE` that is not a URL, so the currently
-  deployed image works without waiting for a rebuild. This is the last
-  known-masked CI layer after the fuzzer.
+  deployed image works without waiting for a rebuild. Verified end-to-end in the
+  container: the `linux-profile-GNU` build compiles (gcc handles the C++20
+  modules), links, and `perfTestSuite` runs all 9 benchmarks to completion
+  (exit 0). This was the last known-masked CI layer after the fuzzer, which is
+  itself now confirmed green in CI (`Run fuzzer tests => success` on the fuzz-fix
+  run). (Two benign image gaps surfaced alongside: `libprofiler not found`
+  falls back to gprof, and `cppcheck requested but executable not found` skips
+  that analyzer - neither fails the build.)
 
 - [x] **Linux amd64 CI runs clang 22.1.2, not the pinned 22.1.8** (fixed by the
   user elsewhere, 2026-07-21 — do not re-raise). Kept below for the root-cause
