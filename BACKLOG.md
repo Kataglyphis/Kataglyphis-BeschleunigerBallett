@@ -231,9 +231,17 @@ size and a decision, or gets dropped.
 
 ## Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-- [ ] **Basis ETC1S/UASTC transcoding** (M) — KTX2 BCn passthrough is done;
-  supercompressed files are rejected with a clear error until a transcoder
-  dependency lands (also unlocks compressed textures on the web path).
+- [ ] **Basis ETC1S/UASTC transcoding** (M, **blocked on a transcoder + a test
+  asset**) — KTX2 BCn passthrough is done; supercompressed files are already
+  rejected with a clear error (`ktx2_loader.rs`: "supercompression … not supported
+  yet"). Two concrete blockers surfaced 2026-07-21: (1) the viable transcoder is
+  the `basis-universal` crate, a **C++ binding** (build.rs compiles the upstream
+  basisu — a build-system dependency, not pure Rust; no mature pure-Rust
+  transcoder exists), and (2) there is **no Basis-compressed KTX2 test asset**
+  in-repo (only `tests/assets/red_bc1.ktx2`, plain BC1), so an implementation
+  can't be verified headlessly. Do it as a deliberate cycle: vendor `basis-universal`,
+  generate an ETC1S + a UASTC `.ktx2` via `toktx`/`basisu`, then transcode to a
+  BCn `CompressedFormat` on desktop and to ETC2/ASTC on the web path.
 - [x] **LOD is on the render path** (done 2026-07-20) — levels are built once
   in `upload_scene` with `Simplifier::Quadric` and pre-uploaded as their own
   vertex/index buffers; selection is per-primitive per-frame on camera distance
