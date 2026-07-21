@@ -110,8 +110,39 @@ kataglyphis_add_fuzz_test(obj_parsing_fuzz_test obj_parsing_fuzz_test.cpp)
 target_link_libraries(obj_parsing_fuzz_test PRIVATE tinyobjloader)
 
 # Real engine surface: scene-config path resolution (GUI model selection).
+#
+# It links ONLY the scene_config module, not VulkanEngineCore. The module is
+# self-contained (glm + std::filesystem, no other engine import), but linking
+# the whole engine dragged every renderer global constructor - the Vulkan
+# dynamic-dispatch loader, ImGui/GLFW statics - into a bare fuzztest main with
+# no window and no Vulkan instance. One of them dereferenced null during static
+# init, so the binary died with "SEGV on unknown address 0x000000000000"
+# AFTER "Sanitizer coverage enabled" but BEFORE the first test ran - identical
+# in shape to the abseil-ODR SEGV above, but a different cause. obj_parsing
+# above stays minimal for the same reason; a path-string fuzzer has no business
+# constructing the renderer. Compiling the two scene_config TUs straight into
+# the executable keeps the unit under test and nothing else.
 kataglyphis_add_fuzz_test(scene_config_fuzz_test scene_config_fuzz_test.cpp)
-target_link_libraries(scene_config_fuzz_test PRIVATE VulkanEngineCore)
+target_sources(
+  scene_config_fuzz_test
+  PRIVATE ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan/scene/SceneConfig.cpp
+  PUBLIC FILE_SET
+         scene_config_module
+         TYPE
+         CXX_MODULES
+         BASE_DIRS
+         ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan
+         FILES
+         ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan/scene/SceneConfig.ixx)
+target_link_libraries(scene_config_fuzz_test PRIVATE glm)
+# SceneConfig builds its candidate paths from RELATIVE_RESOURCE_PATH; the engine
+# feeds it the same value via kataglyphis_apply_runtime_compile_definitions.
+# GLM_FORCE_* keep the module's clip conventions identical to the engine build.
+target_compile_definitions(
+  scene_config_fuzz_test
+  PRIVATE GLM_FORCE_DEPTH_ZERO_TO_ONE
+          GLM_FORCE_RADIANS
+          RELATIVE_RESOURCE_PATH="/../Resources/")
 
 # Real engine surface: the file reader every shader load goes through
 # (ShaderHelper -> File::readCharSequence -> VkShaderModule, unvalidated).

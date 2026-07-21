@@ -607,6 +607,44 @@ unconditional control capture before its output is believed.
   matched the host's 22.1.8 - that is true for the Windows :winamd64 image, not
   the Linux cross image.)
 
+- [x] **Linux fuzzer step: `scene_config_fuzz_test` SEGV'd at startup** (fixed
+  2026-07-21, verifying in-container). With the mtime-exclude fix the
+  unit/integration step went green for the first time since the outage, which
+  finally let the `Run fuzzer tests` step run — and it died on the third binary
+  with a bare `SEGV on unknown address 0x000000000000` (null read) AFTER
+  "Sanitizer coverage enabled" but BEFORE the first `[ RUN ]`. Same *shape* as
+  the abseil-ODR SEGV but a different *cause*: `scene_config_fuzz_test` was the
+  first fuzz binary to `target_link_libraries(... VulkanEngineCore)`, so it was
+  the first to run the whole renderer's global constructors — Vulkan dynamic
+  dispatch, ImGui/GLFW statics — inside a windowless fuzztest `main` with no
+  Vulkan instance, and one of them dereferenced null during static init.
+  `first_fuzz`/`obj_parsing` never link the engine, so they passed. Fix: the
+  scene_config module is self-contained (glm + std::filesystem, no other engine
+  import), so `Test/fuzz/CMakeLists.txt` now compiles the two scene_config TUs
+  straight into the fuzz executable instead of linking VulkanEngineCore — the
+  path fuzzer gets its unit under test and nothing else, mirroring obj_parsing's
+  minimalism. (A path-string fuzzer has no business constructing the renderer.)
+
+- **Latent: a `VulkanEngineCore` global constructor faults in a headless
+  process** (found 2026-07-21, unsized). Surfaced by the fuzz SEGV above: some
+  engine global ctor null-derefs when it runs without the app's `main()` having
+  initialised GLFW/Vulkan first. The shipping app is fine (its init order holds),
+  and the fuzz fix above stops *linking* it into the fuzzer, so this is not
+  blocking — but a global that assumes app init is a real fragility (it would
+  bite any future headless/tool use of the engine). Worth symbolizing once (build
+  `scene_config_fuzz_test` the old way in the ASan container and run under
+  `llvm-symbolizer`) to name the exact ctor, then either make it lazy or guard it.
+
+- [x] **ContainerHub shell scripts checked out CRLF on Windows** (fixed
+  2026-07-21) — the 199 `*.sh` scripts are stored LF but ContainerHub's
+  `.gitattributes` had no `*.sh` rule, so `core.autocrlf=true` (Windows default)
+  flipped them to CRLF on checkout. Invisible until the repo is bind-mounted
+  into a Linux container (the documented Rancher Desktop workflow): bash chokes
+  on the trailing `\r` sourcing `logging.sh` (`$'\r': command not found`), the
+  `info/warn/err` helpers never define, and every script dies with
+  `info: command not found`. Added `*.sh text eol=lf` (+ `*.bash`); blob content
+  unchanged (index was already LF). ContainerHub `14f1c38`, pin bumped here.
+
 - [x] **Stay on the 8.7 GB `:latest-cross` image** (decided by the user 2026-07-20)
   (researched 2026-07-20). Repeatedly observed today: `Pull container image`
   stalling 40+ minutes, dwarfing the build. The lane pulls the full
