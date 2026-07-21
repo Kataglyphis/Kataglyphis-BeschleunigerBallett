@@ -644,6 +644,24 @@ unconditional control capture before its output is believed.
 
 ## CI and release gaps
 
+- [x] **TSan build failed on an ASan/TSan flag conflict** (fixed 2026-07-21,
+  verifying). The `Configure/build with ThreadSanitizer` step (added 2026-07-19)
+  runs right after the fuzzer and *before* the profiling and all gcc lanes, so
+  its failure silently skipped everything after it - including the ccache-fixed
+  gcc benchmarks. Only visible once the fuzzer went green and the run reached
+  this step. Root cause: `Src/GraphicsEngineVulkan/CMakeLists.txt` applied
+  `-fsanitize=address` to `VulkanEngineCore` for *every* Debug+Linux build
+  (added for the fuzz-ODR project-wide-ASan need), but the `linux-debug-tsan-clang`
+  preset also reaches the engine with `-fsanitize=thread` via `myproject_options`
+  - and clang rejects the pair (`invalid argument '-fsanitize=address' not
+  allowed with '-fsanitize=thread'`), so the engine would not compile at all
+  under TSan. Fix: gate that hardcoded ASan on
+  `NOT myproject_ENABLE_SANITIZER_THREAD`, leaving the ASan and plain-debug
+  lanes byte-for-byte unchanged and letting TSan stand alone. Reproduced and
+  fixed in the container. (The TSan *run* step is next; a non-instrumented Rust
+  static lib may still surface false races there - a separate concern from the
+  build.)
+
 - [x] **All gcc CI lanes broken by a bad ccache env** (fixed + verified
   end-to-end 2026-07-21). `benchmarks (gcc)` had been red since 2026-04-19 and
   the gcc unit/integration lane was latently broken the same way. Root cause:

@@ -154,10 +154,21 @@ if(RUST_FEATURES)
   target_link_libraries(VulkanEngineCore PUBLIC kataglyphis_rustprojecttemplate kataglyphis_rustprojecttemplate_bridge)
 endif()
 
-# Enable ASan and UBSan in Debug mode on Linux (applied to library so tests also benefit)
-target_compile_options(VulkanEngineCore PUBLIC $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>
-                                               $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fno-omit-frame-pointer>)
-target_link_options(VulkanEngineCore PUBLIC $<$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>:-fsanitize=address>)
+# Enable ASan in Debug mode on Linux (applied to the library so tests benefit).
+# Gated OFF when ThreadSanitizer is requested: -fsanitize=address and
+# -fsanitize=thread are mutually exclusive, and this otherwise-unconditional
+# ASan collided with the linux-debug-tsan-clang preset (TSan reaches the engine
+# via myproject_options), failing the whole TSan build with "invalid argument
+# '-fsanitize=address' not allowed with '-fsanitize=thread'" - which blocked
+# every pipeline step after it. The ASan and plain-debug lanes are unchanged;
+# only the TSan case drops this ASan so TSan stands alone. Frame pointers stay
+# on for all debug builds (both sanitizers want them).
+set(_kat_dbg_linux "$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>>")
+set(_kat_dbg_linux_asan
+    "$<AND:$<CONFIG:Debug>,$<PLATFORM_ID:Linux>,$<NOT:$<BOOL:${myproject_ENABLE_SANITIZER_THREAD}>>>")
+target_compile_options(VulkanEngineCore PUBLIC $<${_kat_dbg_linux_asan}:-fsanitize=address>
+                                               $<${_kat_dbg_linux}:-fno-omit-frame-pointer>)
+target_link_options(VulkanEngineCore PUBLIC $<${_kat_dbg_linux_asan}:-fsanitize=address>)
 
 # =============================================================================
 # GraphicsEngine - Main Executable (uses VulkanEngineCore static library)
