@@ -19,6 +19,19 @@ if [[ ! -w "${CARGO_HOME:-/usr/local/cargo}" ]]; then
   echo "CARGO_HOME not writable in this image; using ${CARGO_HOME}"
 fi
 
+# The :latest-cross image sets CCACHE_SECONDARY_STORAGE=true, but that variable
+# is ccache's remote_storage and must be a URL - ccache parses "true" as one and
+# dies with "URL scheme must not be empty: true" on EVERY compile. sccache
+# (clang presets) ignores it, so only the gcc presets are hit, which is why the
+# gcc lanes - benchmarks (gcc) included - were red for months. Neutralize any
+# CCACHE_SECONDARY_STORAGE that is not an actual URL so the deployed image works
+# without a rebuild (the env is also removed at source in ContainerHub's
+# Dockerfile.package). A real remote URL, if ever set, is left intact.
+if [[ -n "${CCACHE_SECONDARY_STORAGE:-}" && "${CCACHE_SECONDARY_STORAGE}" != *"://"* ]]; then
+  echo "Ignoring invalid CCACHE_SECONDARY_STORAGE='${CCACHE_SECONDARY_STORAGE}' (not a URL)"
+  unset CCACHE_SECONDARY_STORAGE
+fi
+
 DEFAULT_PRESET="linux-debug-clang"
 DEFAULT_BUILD_DIR="build"
 DEFAULT_CLEAN_BUILD_DIR="false"

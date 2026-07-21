@@ -625,6 +625,22 @@ unconditional control capture before its output is believed.
 
 ## CI and release gaps
 
+- [x] **All gcc CI lanes broken by a bad ccache env** (fixed 2026-07-21,
+  verifying end-to-end). `benchmarks (gcc)` had been red since 2026-04-19 and
+  the gcc unit/integration lane was latently broken the same way. Root cause:
+  the `:latest-cross` image (`ContainerHub linux/Dockerfile.package`) sets
+  `CCACHE_SECONDARY_STORAGE=true`, but that variable is ccache's `remote_storage`
+  and must be a URL — ccache parses `true` as one and aborts EVERY compile with
+  `URL scheme must not be empty: true`. Only the gcc presets use ccache; the
+  clang presets use sccache, which ignores `CCACHE_*`, so clang lanes were
+  unaffected and the breakage looked gcc-specific. Reproduced in the container
+  (`ccache gcc -c` fails as shipped, succeeds with the var unset). Two-part fix:
+  removed the env at source in `Dockerfile.package` (needs an image rebuild to
+  land), and added a guard in `Scripts/Linux/cmake-configure-build.sh` that
+  unsets any `CCACHE_SECONDARY_STORAGE` that is not a URL, so the currently
+  deployed image works without waiting for a rebuild. This is the last
+  known-masked CI layer after the fuzzer.
+
 - [x] **Linux amd64 CI runs clang 22.1.2, not the pinned 22.1.8** (fixed by the
   user elsewhere, 2026-07-21 — do not re-raise). Kept below for the root-cause
   record. ContainerHub `LLVM_RELEASE=22.1.8` drives a
