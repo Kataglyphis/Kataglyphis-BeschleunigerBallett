@@ -29,14 +29,24 @@ COVERAGE_JSON="${COVERAGE_JSON_ARG:-${COVERAGE_JSON:-${BUILD_DIR}/coverage.json}
 
 require_tools llvm-profdata llvm-cov
 
-PROFRAW="${BUILD_DIR}/Test/compile/default.profraw"
-if [[ ! -f "${PROFRAW}" ]]; then
-  err "Profile data not found at ${PROFRAW}. Run tests first to generate coverage data."
-fi
-
 TEST_SUITE="${BUILD_DIR}/compileTestSuite"
 if [[ ! -f "${TEST_SUITE}" ]]; then
   err "Test executable not found at ${TEST_SUITE}. Build the project first."
+fi
+
+# Generate the raw profile by RUNNING the instrumented suite. Nothing else in
+# the pipeline produced this file, which is why coverage silently never ran and
+# the merge below failed on a missing profraw. compileTestSuite is device-free
+# (it links VulkanEngineCore but touches no Vulkan), so it runs in headless CI.
+# LLVM_PROFILE_FILE both names and locates the output; detect_leaks=0 because a
+# coverage run only wants the profile, not a LeakSanitizer verdict.
+PROFRAW="${BUILD_DIR}/Test/compile/default.profraw"
+mkdir -p "$(dirname "${PROFRAW}")"
+info "Running ${TEST_SUITE} to generate coverage data"
+LLVM_PROFILE_FILE="${PROFRAW}" ASAN_OPTIONS="detect_leaks=0" "${TEST_SUITE}"
+
+if [[ ! -f "${PROFRAW}" ]]; then
+  err "Profile data still not found at ${PROFRAW} after running the suite."
 fi
 
 info "Merging profile data from ${PROFRAW}"
