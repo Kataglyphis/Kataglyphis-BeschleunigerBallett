@@ -1536,7 +1536,9 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
 {
     const bool raytracing_available = device->supportsHardwareAcceleratedRRT();
 
-    vk::ShaderStageFlags global_ubo_stages = vk::ShaderStageFlagBits::eVertex;
+    // eFragment: the deferred lighting pass reads inv_view/inv_projection to
+    // reconstruct world position from depth.
+    vk::ShaderStageFlags global_ubo_stages = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
     vk::ShaderStageFlags scene_ubo_stages = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
     vk::ShaderStageFlags object_description_stages =
       vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
@@ -1804,8 +1806,9 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
 
 void Kataglyphis::VulkanRenderer::create_gbuffer_descriptor_resources()
 {
-    // 5 input attachments: position, normal, albedo, material, depth.
-    for (uint32_t binding = 0; binding < 5; binding++) {
+    // 4 input attachments: normal, albedo, material, depth. World position
+    // is reconstructed from depth in the lighting pass.
+    for (uint32_t binding = 0; binding < 4; binding++) {
         gbufferDescriptors.addBinding(binding, vk::DescriptorType::eInputAttachment, 1, vk::ShaderStageFlagBits::eFragment);
     }
 
@@ -1817,10 +1820,9 @@ void Kataglyphis::VulkanRenderer::create_gbuffer_descriptor_resources()
 void Kataglyphis::VulkanRenderer::updateGBufferDescriptorSets()
 {
     for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
-        gbufferDescriptors.writeImage(i, 0, deferredRasterizer.getGBufferPosition(i), vk::ImageLayout::eShaderReadOnlyOptimal);
-        gbufferDescriptors.writeImage(i, 1, deferredRasterizer.getGBufferNormal(i), vk::ImageLayout::eShaderReadOnlyOptimal);
-        gbufferDescriptors.writeImage(i, 2, deferredRasterizer.getGBufferAlbedo(i), vk::ImageLayout::eShaderReadOnlyOptimal);
-        gbufferDescriptors.writeImage(i, 3, deferredRasterizer.getGBufferMaterial(i), vk::ImageLayout::eShaderReadOnlyOptimal);
-        gbufferDescriptors.writeImage(i, 4, deferredRasterizer.getDepthBufferImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+        gbufferDescriptors.writeImage(i, 0, deferredRasterizer.getGBufferNormal(i), vk::ImageLayout::eShaderReadOnlyOptimal);
+        gbufferDescriptors.writeImage(i, 1, deferredRasterizer.getGBufferAlbedo(i), vk::ImageLayout::eShaderReadOnlyOptimal);
+        gbufferDescriptors.writeImage(i, 2, deferredRasterizer.getGBufferMaterial(i), vk::ImageLayout::eShaderReadOnlyOptimal);
+        gbufferDescriptors.writeImage(i, 3, deferredRasterizer.getDepthBufferImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
     }
 }

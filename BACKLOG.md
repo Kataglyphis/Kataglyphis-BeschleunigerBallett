@@ -1446,10 +1446,16 @@ model loader is race-clean; GUI/renderer state is single-threaded.
    `main.cpp:40` throw only compiles because of that), kompute fetch commented
    out but `kompute::kompute` linked. Gate behind an OFF option or bring it
    under the shared options and drop the throw.
-8. **G-buffer stores full world position + an RGBA8 for a scalar id** (M) -
-   position is reconstructible from the depth input attachment + inverse
-   view-proj; two full-res attachments of bandwidth per frame. Subsumes #2's
-   format fix. Measure via the GpuTimedPass JSON.
+8. **G-buffer stores full world position + an RGBA8 for a scalar id** -
+   **DONE (2026-07-22, position half)**: the rgba16f world-position target is
+   gone; the lighting subpass reconstructs position from the DEPTH input
+   attachment it already bound (inv_view * inv_projection * (uv*2-1, depth),
+   background = depth >= 1.0). Correctness: deferred-vs-forward parity 0.200
+   (was 0.205 - the reconstruction agrees with the stored positions). Timing
+   on the parity run: Main 0.0647 -> 0.0639 ms - the test scene is too small
+   for bandwidth wins to register; the win is one full-res 8-byte/px
+   write+read removed per frame. The material-id RGBA8 packing remains open
+   (S) if a real scene ever measures it.
 9. **Acceleration structures are never compacted** (M) - BLAS/TLAS built with
    `ePreferFastTrace`, no `eAllowCompaction`, no size query/copy anywhere
    (`ASManager.cpp:207,:335`). Compaction typically reclaims a large fraction

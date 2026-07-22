@@ -36,10 +36,10 @@ layout(buffer_reference, scalar) buffer Materials { ObjMaterial m[]; };
 layout(set = 0, binding = SAMPLER_BINDING) uniform sampler texture_sampler[MAX_TEXTURE_COUNT];
 layout(set = 0, binding = TEXTURES_BINDING) uniform texture2D tex[MAX_TEXTURE_COUNT];
 
-layout(location = 0) out vec4 outPosition;
-layout(location = 1) out vec4 outNormal;
-layout(location = 2) out vec4 outAlbedo;
-layout(location = 3) out vec4 outMaterial;
+
+layout(location = 0) out vec4 outNormal;
+layout(location = 1) out vec4 outAlbedo;
+layout(location = 2) out vec4 outMaterial;
 
 void main() {
     // Indexed per draw; see shader.frag.
@@ -61,7 +61,6 @@ void main() {
         texColor = vec4(material.diffuse, 1.0);
     }
 
-    outPosition = vec4(worldPosition, 1.0);
     outNormal = vec4(normalize(shading_normal), 1.0);
     outAlbedo = texColor;
 

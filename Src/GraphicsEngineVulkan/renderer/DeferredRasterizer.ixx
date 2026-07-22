@@ -33,7 +33,6 @@ class DeferredRasterizer
     void shaderHotReload(const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts);
 
     Kataglyphis::Texture &getOffscreenTexture(uint32_t index);
-    vk::ImageView getGBufferPosition(uint32_t index) { return gBufferPositions[index]->getImageView(); }
     vk::ImageView getGBufferNormal(uint32_t index) { return gBufferNormals[index]->getImageView(); }
     vk::ImageView getGBufferAlbedo(uint32_t index) { return gBufferAlbedos[index]->getImageView(); }
     vk::ImageView getGBufferMaterial(uint32_t index) { return gBufferMaterials[index]->getImageView(); }
@@ -79,7 +78,6 @@ class DeferredRasterizer
     std::vector<std::unique_ptr<Kataglyphis::Texture>> offscreenTextures;
     
     // GBuffer attachments
-    std::vector<std::unique_ptr<Kataglyphis::Texture>> gBufferPositions;
     std::vector<std::unique_ptr<Kataglyphis::Texture>> gBufferNormals;
     std::vector<std::unique_ptr<Kataglyphis::Texture>> gBufferAlbedos;
     std::vector<std::unique_ptr<Kataglyphis::Texture>> gBufferMaterials; // Metallic, Roughness, AO

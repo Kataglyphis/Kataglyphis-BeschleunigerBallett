@@ -67,7 +67,6 @@ void DeferredRasterizer::createTextures(vk::CommandPool &commandPool)
 {
     uint32_t count = vulkanSwapChain->getNumberSwapChainImages();
     offscreenTextures.resize(count);
-    gBufferPositions.resize(count);
     gBufferNormals.resize(count);
     gBufferAlbedos.resize(count);
     gBufferMaterials.resize(count);
@@ -86,7 +85,10 @@ void DeferredRasterizer::createTextures(vk::CommandPool &commandPool)
 
     // Use specific formats for GBuffer
     createAttachment(offscreenTextures, vk::Format::eR16G16B16A16Sfloat, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferDst);
-    createAttachment(gBufferPositions, vk::Format::eR16G16B16A16Sfloat, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
+    // No position attachment: the lighting pass reconstructs world position
+    // from the DEPTH input attachment + the inverse view/projection - a full
+    // rgba16f render target of bandwidth per frame for data the depth buffer
+    // already encodes.
     createAttachment(gBufferNormals, vk::Format::eR16G16B16A16Sfloat, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
     createAttachment(gBufferAlbedos, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
     createAttachment(gBufferMaterials, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
@@ -148,8 +150,6 @@ void DeferredRasterizer::cleanUp()
 
     for (auto& tex : offscreenTextures) { if (tex) tex->cleanUp(); }
     offscreenTextures.clear();
-    for (auto& tex : gBufferPositions) { if (tex) tex->cleanUp(); }
-    gBufferPositions.clear();
     for (auto& tex : gBufferNormals) { if (tex) tex->cleanUp(); }
     gBufferNormals.clear();
     for (auto& tex : gBufferAlbedos) { if (tex) tex->cleanUp(); }
@@ -177,8 +177,6 @@ void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::recreateFrameReso
 {
     for (auto& tex : offscreenTextures) { if (tex) tex->cleanUp(); }
     offscreenTextures.clear();
-    for (auto& tex : gBufferPositions) { if (tex) tex->cleanUp(); }
-    gBufferPositions.clear();
     for (auto& tex : gBufferNormals) { if (tex) tex->cleanUp(); }
     gBufferNormals.clear();
     for (auto& tex : gBufferAlbedos) { if (tex) tex->cleanUp(); }
@@ -204,7 +202,6 @@ void DeferredRasterizer::createRenderPass()
 
     // HDR final target - matches the forward offscreen (see Rasterizer.cpp).
     vk::Format finalFormat = vk::Format::eR16G16B16A16Sfloat;
-    vk::Format positionFormat = vk::Format::eR16G16B16A16Sfloat;
     vk::Format normalFormat = vk::Format::eR16G16B16A16Sfloat;
     vk::Format albedoFormat = vk::Format::eR8G8B8A8Unorm;
     vk::Format materialFormat = vk::Format::eR8G8B8A8Unorm;
@@ -223,23 +220,21 @@ void DeferredRasterizer::createRenderPass()
         return desc;
     };
 
-    std::array<vk::AttachmentDescription, 6> attachments = {
+    std::array<vk::AttachmentDescription, 5> attachments = {
         createAttachmentDesc(finalFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 0: Final Output
-        createAttachmentDesc(positionFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 1: Position
-        createAttachmentDesc(normalFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 2: Normal
-        createAttachmentDesc(albedoFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 3: Albedo
-        createAttachmentDesc(materialFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 4: Material
-        createAttachmentDesc(depthFormat, vk::ImageLayout::eDepthStencilAttachmentOptimal, true) // 5: Depth
+        createAttachmentDesc(normalFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 1: Normal
+        createAttachmentDesc(albedoFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 2: Albedo
+        createAttachmentDesc(materialFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 3: Material
+        createAttachmentDesc(depthFormat, vk::ImageLayout::eDepthStencilAttachmentOptimal, true) // 4: Depth
     };
 
     // Subpass 0: Geometry Pass
-    std::array<vk::AttachmentReference, 4> geometryColorRefs = {
-        vk::AttachmentReference{1, vk::ImageLayout::eColorAttachmentOptimal}, // Position
-        vk::AttachmentReference{2, vk::ImageLayout::eColorAttachmentOptimal}, // Normal
-        vk::AttachmentReference{3, vk::ImageLayout::eColorAttachmentOptimal}, // Albedo
-        vk::AttachmentReference{4, vk::ImageLayout::eColorAttachmentOptimal}  // Material
+    std::array<vk::AttachmentReference, 3> geometryColorRefs = {
+        vk::AttachmentReference{1, vk::ImageLayout::eColorAttachmentOptimal}, // Normal
+        vk::AttachmentReference{2, vk::ImageLayout::eColorAttachmentOptimal}, // Albedo
+        vk::AttachmentReference{3, vk::ImageLayout::eColorAttachmentOptimal}  // Material
     };
-    vk::AttachmentReference geometryDepthRef{5, vk::ImageLayout::eDepthStencilAttachmentOptimal};
+    vk::AttachmentReference geometryDepthRef{4, vk::ImageLayout::eDepthStencilAttachmentOptimal};
 
     vk::SubpassDescription geometrySubpass;
     geometrySubpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
@@ -250,12 +245,11 @@ void DeferredRasterizer::createRenderPass()
     // Subpass 1: Lighting Pass
     vk::AttachmentReference lightingColorRef{0, vk::ImageLayout::eColorAttachmentOptimal};
     
-    std::array<vk::AttachmentReference, 5> lightingInputRefs = {
+    std::array<vk::AttachmentReference, 4> lightingInputRefs = {
         vk::AttachmentReference{1, vk::ImageLayout::eShaderReadOnlyOptimal},
         vk::AttachmentReference{2, vk::ImageLayout::eShaderReadOnlyOptimal},
         vk::AttachmentReference{3, vk::ImageLayout::eShaderReadOnlyOptimal},
-        vk::AttachmentReference{4, vk::ImageLayout::eShaderReadOnlyOptimal},
-        vk::AttachmentReference{5, vk::ImageLayout::eShaderReadOnlyOptimal}
+        vk::AttachmentReference{4, vk::ImageLayout::eShaderReadOnlyOptimal}
     };
 
     vk::SubpassDescription lightingSubpass;
@@ -352,7 +346,7 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
     geometryPipeline =
       geometryPipelineBuilder.setShaderStages({ geomStages.begin(), geomStages.end() })
         .setVertexInput({ bindingDescription }, { attributeDescriptions.begin(), attributeDescriptions.end() })
-        .setColorAttachmentCount(4)
+        .setColorAttachmentCount(3)
         .build(device->getLogicalDevice(), geometryPipelineLayout, renderPass, device->getPipelineCache(), 0);
     spdlog::info("DeferredRasterizer: Created geometryPipeline: 0x{:x}", (uint64_t)(VkPipeline)geometryPipeline);
 
@@ -402,7 +396,7 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
 
 void DeferredRasterizer::createFramebuffer()
 {
-    std::array<vk::ImageView, 6> attachments;
+    std::array<vk::ImageView, 5> attachments;
     const vk::Extent2D &extent = vulkanSwapChain->getSwapChainExtent();
 
     vk::FramebufferCreateInfo framebufferInfo;
@@ -416,11 +410,10 @@ void DeferredRasterizer::createFramebuffer()
     framebuffer.resize(vulkanSwapChain->getNumberSwapChainImages());
     for (uint32_t i = 0; i < vulkanSwapChain->getNumberSwapChainImages(); i++) {
         attachments[0] = offscreenTextures[i]->getImageView();
-        attachments[1] = gBufferPositions[i]->getImageView();
-        attachments[2] = gBufferNormals[i]->getImageView();
-        attachments[3] = gBufferAlbedos[i]->getImageView();
-        attachments[4] = gBufferMaterials[i]->getImageView();
-        attachments[5] = depthBufferImage->getImageView();
+        attachments[1] = gBufferNormals[i]->getImageView();
+        attachments[2] = gBufferAlbedos[i]->getImageView();
+        attachments[3] = gBufferMaterials[i]->getImageView();
+        attachments[4] = depthBufferImage->getImageView();
 
         auto result = device->getLogicalDevice().createFramebuffer(framebufferInfo);
         ASSERT_VULKAN(VkResult(result.result), "Failed to create deferred framebuffer!");
@@ -438,13 +431,12 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
     renderPassInfo.renderArea.offset = vk::Offset2D{0, 0};
     renderPassInfo.renderArea.extent = vulkanSwapChain->getSwapChainExtent();
 
-    std::array<vk::ClearValue, 6> clearValues{};
+    std::array<vk::ClearValue, 5> clearValues{};
     clearValues[0].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}};
     clearValues[1].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}};
     clearValues[2].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}};
     clearValues[3].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[4].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[5].depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
+    clearValues[4].depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
 
     renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
     renderPassInfo.pClearValues = clearValues.data();
