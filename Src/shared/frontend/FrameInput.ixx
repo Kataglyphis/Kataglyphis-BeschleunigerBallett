@@ -6,10 +6,27 @@ export module kataglyphis.shared.frontend.frame_input;
 
 export namespace Kataglyphis::Frontend {
 
+/// Clamp a raw frame delta to something a dt-scaled consumer can absorb.
+///
+/// Pure so it can be unit-tested without GLFW. Two real cases:
+/// - `last_time` starts at 0, so the FIRST delta is the entire startup wall
+///   clock - window + scene + renderer construction, seconds - and a key held
+///   during load lurched the camera by that much in one frame.
+/// - A hitch (debugger pause, driver stall) produces the same shape later.
+/// Capping at a 10 FPS step turns both into slow motion instead of a
+/// teleport. Negative deltas (clock adjustment) become zero.
+inline float clamp_frame_delta(float raw_delta)
+{
+    constexpr float kMaxDeltaSeconds = 0.1F;
+    if (raw_delta < 0.0F) { return 0.0F; }
+    if (raw_delta > kMaxDeltaSeconds) { return kMaxDeltaSeconds; }
+    return raw_delta;
+}
+
 inline void update_frame_timing(float &delta_time, float &last_time)
 {
     float const now = static_cast<float>(glfwGetTime());
-    delta_time = now - last_time;
+    delta_time = clamp_frame_delta(now - last_time);
     last_time = now;
 }
 

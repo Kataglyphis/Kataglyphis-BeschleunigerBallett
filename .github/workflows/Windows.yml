@@ -208,6 +208,8 @@ jobs:
           Write-Host "Runner logical processors: $cores (container gets --cpus $cores)"
           $cpuOnlySuites = @(
             'BuildIntegrity.*'
+            'FrameInputUnit.*'
+            'WindowInputUnit.*'
             'CameraUnit.*'
             'SceneConfigUnit.*'
             'CascadedShadowMapUnit.*'
