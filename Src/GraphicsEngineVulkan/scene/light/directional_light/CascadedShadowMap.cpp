@@ -361,7 +361,19 @@ void CascadedShadowMap::createRenderPass()
     dependencies[1].dstAccessMask = vk::AccessFlagBits::eShaderRead;
     dependencies[1].dependencyFlags = vk::DependencyFlagBits::eByRegion;
 
+    // Single-pass layered rendering: one render pass broadcasts every draw
+    // to all cascade views (gl_ViewIndex selects the light matrix in the
+    // vertex shader). Replaces one-pass-per-cascade plus a pass-through
+    // geometry shader; features11.multiview is requested at device creation.
+    const uint32_t view_mask = (1U << numCascades) - 1U;
+    vk::RenderPassMultiviewCreateInfo multiviewInfo{};
+    multiviewInfo.subpassCount = 1;
+    multiviewInfo.pViewMasks = &view_mask;
+    multiviewInfo.correlationMaskCount = 1;
+    multiviewInfo.pCorrelationMasks = &view_mask;
+
     vk::RenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.pNext = &multiviewInfo;
     renderPassInfo.attachmentCount = 1;
     renderPassInfo.pAttachments = &depthAttachment;
     renderPassInfo.subpassCount = 1;
@@ -376,40 +388,40 @@ void CascadedShadowMap::createRenderPass()
 
 void CascadedShadowMap::createFramebuffers()
 {
-    framebuffers.resize(numCascades);
-    
-    // Create layer views for rendering to individual layers
-    std::vector<vk::ImageView> layerViews(numCascades);
+    // One framebuffer over the FULL cascade array: multiview requires
+    // framebuffer layers == 1 with the attachment view spanning every
+    // rendered layer. The per-layer views and per-cascade framebuffers are
+    // gone.
+    framebuffers.resize(1);
+    std::vector<vk::ImageView> layerViews(1);
 
-    for (uint32_t i = 0; i < numCascades; i++) {
-        vk::ImageViewCreateInfo viewInfo{};
-        viewInfo.image = shadowMapArray->getImage();
-        viewInfo.viewType = vk::ImageViewType::e2DArray;
-        viewInfo.format = vk::Format::eD32Sfloat;
-        viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
-        viewInfo.subresourceRange.baseMipLevel = 0;
-        viewInfo.subresourceRange.levelCount = 1;
-        viewInfo.subresourceRange.baseArrayLayer = i; // Point to the specific layer
-        viewInfo.subresourceRange.layerCount = 1;
+    vk::ImageViewCreateInfo viewInfo{};
+    viewInfo.image = shadowMapArray->getImage();
+    viewInfo.viewType = vk::ImageViewType::e2DArray;
+    viewInfo.format = vk::Format::eD32Sfloat;
+    viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = numCascades;
 
-        auto viewResult = device->getLogicalDevice().createImageView(viewInfo);
-        ASSERT_VULKAN(VkResult(viewResult.result), "Failed to create shadow map layer view!");
-        layerViews[i] = viewResult.value;
+    auto viewResult = device->getLogicalDevice().createImageView(viewInfo);
+    ASSERT_VULKAN(VkResult(viewResult.result), "Failed to create shadow map array view!");
+    layerViews[0] = viewResult.value;
 
-        vk::FramebufferCreateInfo framebufferInfo{};
-        framebufferInfo.renderPass = renderPass;
-        framebufferInfo.attachmentCount = 1;
-        framebufferInfo.pAttachments = &layerViews[i];
-        framebufferInfo.width = shadowWidth;
-        framebufferInfo.height = shadowHeight;
-        framebufferInfo.layers = 1;
+    vk::FramebufferCreateInfo framebufferInfo{};
+    framebufferInfo.renderPass = renderPass;
+    framebufferInfo.attachmentCount = 1;
+    framebufferInfo.pAttachments = &layerViews[0];
+    framebufferInfo.width = shadowWidth;
+    framebufferInfo.height = shadowHeight;
+    framebufferInfo.layers = 1;
 
-        auto fbResult = device->getLogicalDevice().createFramebuffer(framebufferInfo);
-        ASSERT_VULKAN(VkResult(fbResult.result), "Failed to create shadow map framebuffer!");
-        framebuffers[i] = fbResult.value;
-    }
-    
-    // Store layer views to clean them up later
+    auto fbResult = device->getLogicalDevice().createFramebuffer(framebufferInfo);
+    ASSERT_VULKAN(VkResult(fbResult.result), "Failed to create shadow map framebuffer!");
+    framebuffers[0] = fbResult.value;
+
+    // Stored for cleanup, same mechanism as the old per-layer views.
     g_layerViewsMap[this] = std::move(layerViews);
 }
 
@@ -470,7 +482,7 @@ void CascadedShadowMap::createDescriptorSetAndPipeline()
     lightMatricesBinding.binding = 1;  // UNIFORM_LIGHT_MATRICES_BINDING = 1
     lightMatricesBinding.descriptorCount = 1;
     lightMatricesBinding.descriptorType = vk::DescriptorType::eUniformBuffer;
-    lightMatricesBinding.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eGeometry;
+    lightMatricesBinding.stageFlags = vk::ShaderStageFlagBits::eVertex;
 
     vk::DescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.bindingCount = 1;
@@ -551,15 +563,12 @@ void CascadedShadowMap::createGraphicsPipeline()
 
     ShaderHelper shaderHelper;
     shaderHelper.compileShader(shadow_shader_dir.str(), "directional_shadow_map.vert");
-    shaderHelper.compileShader(shadow_shader_dir.str(), "directional_shadow_map.geom");
     shaderHelper.compileShader(shadow_shader_dir.str(), "directional_shadow_map.frag");
 
     File vertFile(shaderHelper.getShaderSpvDir(shadow_shader_dir.str(), "directional_shadow_map.vert"));
-    File geomFile(shaderHelper.getShaderSpvDir(shadow_shader_dir.str(), "directional_shadow_map.geom"));
     File fragFile(shaderHelper.getShaderSpvDir(shadow_shader_dir.str(), "directional_shadow_map.frag"));
 
     vk::ShaderModule vertModule = shaderHelper.createShaderModule(device, vertFile.readCharSequence());
-    vk::ShaderModule geomModule = shaderHelper.createShaderModule(device, geomFile.readCharSequence());
     vk::ShaderModule fragModule = shaderHelper.createShaderModule(device, fragFile.readCharSequence());
 
     vk::PipelineShaderStageCreateInfo vertStageInfo{};
@@ -567,17 +576,16 @@ void CascadedShadowMap::createGraphicsPipeline()
     vertStageInfo.module = vertModule;
     vertStageInfo.pName = "main";
 
-    vk::PipelineShaderStageCreateInfo geomStageInfo{};
-    geomStageInfo.stage = vk::ShaderStageFlagBits::eGeometry;
-    geomStageInfo.module = geomModule;
-    geomStageInfo.pName = "main";
-
+    // No geometry stage: the vertex shader selects the cascade matrix by
+    // gl_ViewIndex under multiview. The old geometry stage only
+    // re-multiplied by the cascade matrix (its own comment said it had lost
+    // its purpose).
     vk::PipelineShaderStageCreateInfo fragStageInfo{};
     fragStageInfo.stage = vk::ShaderStageFlagBits::eFragment;
     fragStageInfo.module = fragModule;
     fragStageInfo.pName = "main";
 
-    std::array skyStages = {vertStageInfo, geomStageInfo, fragStageInfo};
+    std::array skyStages = {vertStageInfo, fragStageInfo};
 
     vk::VertexInputBindingDescription bindingDesc{};
     bindingDesc.binding = 0;
@@ -591,7 +599,7 @@ void CascadedShadowMap::createGraphicsPipeline()
     posAttr.offset = 0;
 
     vk::PushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eGeometry;
+    pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eVertex;
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(glm::mat4) + sizeof(uint32_t);
 
@@ -649,7 +657,6 @@ void CascadedShadowMap::createGraphicsPipeline()
     spdlog::info("CascadedShadowMap: Created pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphicsPipeline);
 
     device->getLogicalDevice().destroyShaderModule(vertModule);
-    device->getLogicalDevice().destroyShaderModule(geomModule);
     device->getLogicalDevice().destroyShaderModule(fragModule);
 }
 
@@ -658,84 +665,82 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
     castersDrawn = 0;
     castersConsidered = 0;
 
+    // Single multiview pass: every draw is broadcast to all cascade views and
+    // the vertex shader picks the light matrix by gl_ViewIndex. Culling
+    // becomes a UNION over the cascade frusta - a caster any cascade can see
+    // is drawn (it rasterizes into every view, slightly more conservative
+    // than the old per-cascade cull, but the depth results are identical and
+    // two pass boundaries plus the geometry stage are gone). The safety
+    // property of the old per-cascade test is preserved: geometry outside
+    // EVERY cascade's ortho box cannot affect any depth map.
+    std::vector<FrustumPlanes> cascadeFrusta(numCascades);
     for (uint32_t cascade = 0; cascade < numCascades; cascade++) {
-        vk::RenderPassBeginInfo renderPassInfo{};
-        renderPassInfo.renderPass = renderPass;
-        renderPassInfo.framebuffer = framebuffers[cascade];
-        renderPassInfo.renderArea.offset = vk::Offset2D{0, 0};
-        renderPassInfo.renderArea.extent = vk::Extent2D{shadowWidth, shadowHeight};
-
-        vk::ClearValue clearValue{};
-        clearValue.depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
-        renderPassInfo.clearValueCount = 1;
-        renderPassInfo.pClearValues = &clearValue;
-
-        commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
-        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
-
-        vk::Viewport viewport{};
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width = static_cast<float>(shadowWidth);
-        viewport.height = static_cast<float>(shadowHeight);
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        commandBuffer.setViewport(0, viewport);
-
-        vk::Rect2D scissor{};
-        scissor.offset = vk::Offset2D{0, 0};
-        scissor.extent = vk::Extent2D{shadowWidth, shadowHeight};
-        commandBuffer.setScissor(0, scissor);
-
-        std::vector<vk::DescriptorSet> shadowDescriptorSets = {descriptorSet};
-        commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, shadowDescriptorSets, nullptr);
-
-        // Cull against THIS CASCADE'S light frustum, not the camera's.
-        //
-        // The distinction matters and is easy to get backwards: geometry
-        // outside the camera view can still cast a shadow into it, so culling
-        // casters by the camera frustum deletes shadows. Geometry outside the
-        // cascade's own ortho box genuinely cannot affect that cascade's depth
-        // map - nothing samples it there - so this test is safe, and it is
-        // where the saving is: without it every mesh is drawn once per
-        // cascade regardless of which slice of the view it covers.
-        const FrustumPlanes cascadeFrustum = extractFrustumPlanes(cascadeData[cascade].viewProjMatrix);
-
-        for (uint32_t m = 0; m < scene->getModelCount(); m++) {
-            // The shadow caster must be transformed by the SAME model matrix
-            // the forward pass uses (Rasterizer::recordCommands). This pushed a
-            // hard-coded identity, so with the scene's uniform scale of 60 the
-            // caster was rendered at 1/60 the size of the visible model: the
-            // depth map stayed at its 1.0 clear value everywhere the camera
-            // could sample it, every fragment compared as unoccluded, and the
-            // shadow term was 0 for the entire frame. That is why cascaded
-            // shadows never darkened anything.
-            //
-            // It was also pushed once per cascade instead of once per model, so
-            // per-model transforms were ignored even had the matrix been right.
-            const ShadowPushConstants push = makeShadowPush(scene->getModelMatrix(m), cascade);
-            commandBuffer.pushConstants(pipelineLayout,
-              vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eGeometry,
-              0,
-              sizeof(ShadowPushConstants),
-              &push);
-
-            for (uint32_t k = 0; k < scene->getMeshCount(m); k++) {
-                ++castersConsidered;
-                if (!isVisibleAsShadowCaster(cascadeFrustum, transformAABB(scene->getModelMatrix(m), scene->getMeshBounds(m, k)))) {
-                    continue;
-                }
-                ++castersDrawn;
-
-                const vk::Buffer vertex_buffer = scene->getVertexBuffer(m, k);
-                const vk::DeviceSize offset = 0;
-                commandBuffer.bindVertexBuffers(0, 1, &vertex_buffer, &offset);
-                commandBuffer.bindIndexBuffer(scene->getIndexBuffer(m, k), 0, vk::IndexType::eUint32);
-                commandBuffer.drawIndexed(scene->getIndexCount(m, k), 1, 0, 0, 0);
-            }
-        }
-
-        commandBuffer.endRenderPass();
+        cascadeFrusta[cascade] = extractFrustumPlanes(cascadeData[cascade].viewProjMatrix);
     }
+
+    vk::RenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.renderPass = renderPass;
+    renderPassInfo.framebuffer = framebuffers[0];
+    renderPassInfo.renderArea.offset = vk::Offset2D{0, 0};
+    renderPassInfo.renderArea.extent = vk::Extent2D{shadowWidth, shadowHeight};
+
+    vk::ClearValue clearValue{};
+    clearValue.depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &clearValue;
+
+    commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+    commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
+
+    vk::Viewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(shadowWidth);
+    viewport.height = static_cast<float>(shadowHeight);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    commandBuffer.setViewport(0, viewport);
+
+    vk::Rect2D scissor{};
+    scissor.offset = vk::Offset2D{0, 0};
+    scissor.extent = vk::Extent2D{shadowWidth, shadowHeight};
+    commandBuffer.setScissor(0, scissor);
+
+    std::vector<vk::DescriptorSet> shadowDescriptorSets = {descriptorSet};
+    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, shadowDescriptorSets, nullptr);
+
+    for (uint32_t m = 0; m < scene->getModelCount(); m++) {
+        // Same model matrix as the forward pass; pushed once per model. The
+        // cascade index in the push-constant block is retained for layout
+        // stability but no longer consumed (gl_ViewIndex replaced it).
+        const ShadowPushConstants push = makeShadowPush(scene->getModelMatrix(m), 0);
+        commandBuffer.pushConstants(pipelineLayout,
+          vk::ShaderStageFlagBits::eVertex,
+          0,
+          sizeof(ShadowPushConstants),
+          &push);
+
+        for (uint32_t k = 0; k < scene->getMeshCount(m); k++) {
+            ++castersConsidered;
+            const AABB casterBounds = transformAABB(scene->getModelMatrix(m), scene->getMeshBounds(m, k));
+            bool visible_in_any_cascade = false;
+            for (uint32_t cascade = 0; cascade < numCascades; cascade++) {
+                if (isVisibleAsShadowCaster(cascadeFrusta[cascade], casterBounds)) {
+                    visible_in_any_cascade = true;
+                    break;
+                }
+            }
+            if (!visible_in_any_cascade) { continue; }
+            ++castersDrawn;
+
+            const vk::Buffer vertex_buffer = scene->getVertexBuffer(m, k);
+            const vk::DeviceSize offset = 0;
+            commandBuffer.bindVertexBuffers(0, 1, &vertex_buffer, &offset);
+            commandBuffer.bindIndexBuffer(scene->getIndexBuffer(m, k), 0, vk::IndexType::eUint32);
+            commandBuffer.drawIndexed(scene->getIndexCount(m, k), 1, 0, 0, 0);
+        }
+    }
+
+    commandBuffer.endRenderPass();
 }
 }

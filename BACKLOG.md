@@ -1323,13 +1323,13 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       6 faces x N lights of depth passes wants its own perf budget.
     - *Recommendation:* A or B; the half-alive state is the only wrong
       option - it costs VRAM, misleads readers, and arms the parity trap.
-13. **Cascades cost 3 render passes + a pass-through geometry shader** (M) —
-    one pass per cascade (`CascadedShadowMap.cpp:586-664`) and
-    `directional_shadow_map.geom` now only re-multiplies by the cascade matrix (its
-    own comment says it lost its purpose). `features11.multiview` is ALREADY
-    requested (`VulkanDevice.cpp:485`), so one layered pass with `gl_ViewIndex`
-    removes two pass boundaries and the geometry stage. Measurable via the existing
-    `GpuTimedPass::ShadowCascades` JSON.
+13. **Cascades cost 3 render passes + a pass-through geometry shader** —
+    **DONE (2026-07-22)**: single multiview pass (viewMask over all cascades,
+    one full-array framebuffer), gl_ViewIndex selects the light matrix in the
+    vertex shader, geometry stage deleted (file + spv). Union caster culling
+    preserves the old test's safety property. Measured: shadow coverage
+    identical (12.276% vs 12.267% darkened), ShadowCascades 0.0477 ->
+    0.0408 ms (-14%) on the rig run. 94/94, validation-clean.
 14. **cgltf is an unfuzzed untrusted-input surface** (S) — the 2026-07-20 fuzz pass
     predates glTF. `GltfLoader` slices `buffer_view->offset + size` without
     validating against `buffer->size` (`:151-157`), hand-rolls base64 length maths
