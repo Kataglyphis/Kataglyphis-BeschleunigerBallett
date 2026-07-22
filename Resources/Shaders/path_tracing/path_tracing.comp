@@ -12,12 +12,6 @@
 
 #include "hostDevice/host_device_shared_vars.hpp"
 
-#include "unreal4.glsl"
-#include "disney.glsl"
-#include "pbrBook.glsl"
-#include "phong.glsl"
-#include "frostbite.glsl"
-
 #include "SceneUBO.hpp"
 #include "GlobalUBO.hpp"
 #include "renderer/pushConstants/PushConstantPathTracing.hpp"
@@ -85,6 +79,7 @@ HitInfo getObjectHitInfo(rayQueryEXT rayQuery)
 {
     const int instanceCustomIndex = rayQueryGetIntersectionInstanceCustomIndexEXT(rayQuery, true);
     const mat4x3 objToWorld =  rayQueryGetIntersectionObjectToWorldEXT(rayQuery, true);
+    const mat4x3 worldToObject = rayQueryGetIntersectionWorldToObjectEXT(rayQuery, true);
 
     ObjectDescription obj_res   = object_description.i[instanceCustomIndex];        // array of all object descriptions
     Indices indices             = Indices(obj_res.index_address);                   // array of all indices
@@ -112,24 +107,30 @@ HitInfo getObjectHitInfo(rayQueryEXT rayQuery)
     const vec3 objectPos = v0.position * barycentrics.x + v1.position * barycentrics.y + v2.position * barycentrics.z;
     result.worldPosition = vec3(objToWorld * vec4(objectPos, 1.0f));
 
-    //compute normal at hit position 
+    //compute normal at hit position
     const vec3 normal_hit = v0.normal * barycentrics.x + v1.normal * barycentrics.y + v2.normal * barycentrics.z;
-    const vec3 world_normal_hit = normalize(vec3(objToWorld * vec4(normal_hit,1.0f)));
-    // For the main tutorial, object space is the same as world space:
-    result.worldNormal = world_normal_hit;
+    // Normals are DIRECTIONS: transforming with w=1 added the instance
+    // translation before the normalize, which for any meaningfully translated
+    // object collapses every normal toward the translation direction. The
+    // correct transform is the inverse-transpose, i.e. row-multiplying the
+    // world-to-object matrix (also handles non-uniform scale).
+    result.worldNormal = normalize(vec3(normal_hit * worldToObject));
 
     vec2 texture_coordinates =  v0.texture_coords * barycentrics.x +
                                 v1.texture_coords * barycentrics.y +
                                 v2.texture_coords * barycentrics.z;
     
     // material id is stored per primitive
-    vec3 ambient = vec3(0.f);
-    int texture_id = materials.m[materialIDs.i[primitiveID]].textureID;
-    texture_id = clamp(texture_id, 0, MAX_TEXTURE_COUNT - 1);
-    ambient += texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), texture_coordinates).xyz;
-    //ambient += materials.m[materialIDs.i[primitiveID]].diffuse;
-
-    result.color = ambient;
+    const ObjMaterial material = materials.m[materialIDs.i[primitiveID]];
+    if (material.textureID >= 0) {
+        const int texture_id = clamp(material.textureID, 0, MAX_TEXTURE_COUNT - 1);
+        result.color = texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), texture_coordinates).xyz;
+    } else {
+        // Untextured material: textureID is -1, and the old clamp-to-0 made it
+        // sample whichever texture happened to sit in slot 0. Use the material
+        // diffuse color instead.
+        result.color = material.diffuse;
+    }
 
     return result;
 }
@@ -180,7 +181,7 @@ void main() {
 
         vec3 accumulatedRayColor = vec3(1.0);  // The amount of light that made it to the end of the current ray.
 
-        // Limit the kernel to trace at most 32 segments.
+        // Limit the kernel to trace at most 8 segments.
         for(int tracedSegments = 0; tracedSegments < 8; tracedSegments++)
         {
             // Trace the ray and see if and where it intersects the scene!
@@ -191,7 +192,7 @@ void main() {
                                 gl_RayFlagsOpaqueEXT,  // Ray flags, here saying "treat all geometry as opaque"
                                 0xFF,                  // 8-bit instance mask, here saying "trace against all instances"
                                 rayOrigin.xyz,             // Ray origin
-                                0.0,                   // Minimum t-value
+                                0.001,                 // Minimum t-value (matches the RT path; the 1e-4 normal offset alone under-guards self-intersection in scaled scenes)
                                 rayDirection.xyz,          // Ray direction
                                 10000.0);              // Maximum t-value
 
@@ -224,6 +225,13 @@ void main() {
                 const float u       = 2.0 * stepAndOutputRNGFloat(rngState) - 1.0;  // Random in [-1, 1]
                 const float r       = sqrt(1.0 - u * u);
                 rayDirection.xyz    = hitInfo.worldNormal + vec3(r * cos(theta), r * sin(theta), u);
+
+                // RTIOW 9.4: if the random unit vector lands (numerically) on
+                // -normal, the sum degenerates to a near-zero direction and the
+                // next ray query gets a null direction. Fall back to the normal.
+                if (dot(rayDirection.xyz, rayDirection.xyz) < 1e-8) {
+                    rayDirection.xyz = hitInfo.worldNormal;
+                }
 
             } else {
 

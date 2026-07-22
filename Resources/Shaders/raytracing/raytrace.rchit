@@ -83,9 +83,12 @@ void main() {
     const vec3 hit_pos = v0.position * barycentrics.x + v1.position * barycentrics.y + v2.position * barycentrics.z;
     const vec3 world_hit_pos = vec3(gl_ObjectToWorldEXT * vec4(hit_pos, 1.0f));
 
-    //compute normal at hit position 
+    //compute normal at hit position
     const vec3 normal_hit = v0.normal * barycentrics.x + v1.normal * barycentrics.y + v2.normal * barycentrics.z;
-    const vec3 world_normal_hit = normalize(vec3(gl_ObjectToWorldEXT * vec4(normal_hit,1.0f)));
+    // Normals are directions: the old w=1 transform added the instance
+    // translation before normalize. Row-multiplying gl_WorldToObjectEXT is the
+    // inverse-transpose (also correct under non-uniform scale).
+    const vec3 world_normal_hit = normalize(vec3(normal_hit * gl_WorldToObjectEXT));
 
     vec2 texture_coordinates =  v0.texture_coords * barycentrics.x +
                                 v1.texture_coords * barycentrics.y +
@@ -93,15 +96,21 @@ void main() {
 
     // material id is stored per primitive
     vec3 ambient = vec3(0.f);
-    int texture_id = materials.m[materialIDs.i[gl_PrimitiveID]].textureID;
-    texture_id = clamp(texture_id, 0, MAX_TEXTURE_COUNT - 1);
-    ambient += texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), texture_coordinates).xyz;
-    //ambient += materials.m[materialIDs.i[gl_PrimitiveID]].diffuse;
+    const ObjMaterial material = materials.m[materialIDs.i[gl_PrimitiveID]];
+    if (material.textureID >= 0) {
+        const int texture_id = clamp(material.textureID, 0, MAX_TEXTURE_COUNT - 1);
+        ambient += texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), texture_coordinates).xyz;
+    } else {
+        // Untextured material: textureID is -1, and the old clamp-to-0 sampled
+        // whichever texture sat in slot 0. Use the material diffuse instead.
+        ambient += material.diffuse;
+    }
 
-    vec3 L = normalize(vec3(-sceneUBO.dirLight.direction)); 
-    // no need to normalize
-	vec3 N = normalize(normal_hit);
-	vec3 V = normalize(sceneUBO.cam_pos.xyz - hit_pos);
+    vec3 L = normalize(vec3(-sceneUBO.dirLight.direction));
+    // The BRDF runs in WORLD space (L and the camera position are world-space);
+    // the old code fed it the object-space normal and hit position.
+	vec3 N = world_normal_hit;
+	vec3 V = normalize(sceneUBO.cam_pos.xyz - world_hit_pos);
 
     isShadowed = true;
     if(dot(world_normal_hit, L) > 0) {

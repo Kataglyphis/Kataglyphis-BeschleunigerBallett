@@ -1200,11 +1200,13 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
    geometry stays in the old pose. A TLAS refit is cheap. Test: GPU integration —
    translate, settle, assert frames differ.
 5. **`raytrace.rchit` lights in object space and transforms the normal with `w=1`** (S) —
-   `:88` uses `vec4(normal_hit, 1.0)` (picks up translation; a normal needs the
+   ~~`:88` uses `vec4(normal_hit, 1.0)` (picks up translation; a normal needs the
    inverse-transpose), and `:103-104` mix object-space `N`/`hit_pos` with
-   world-space `L`/`cam_pos`. Also `:130-131` hard-codes light colour/intensity, so
-   the GUI light has no effect in RT at all. Test: extend
-   `DeferredMatchesForwardRoughly` to RT-vs-forward under a non-identity transform.
+   world-space `L`/`cam_pos`.~~ **DONE (PT correctness batch, 2026-07-22)** —
+   plus the untextured-material clamp-to-slot-0 fetch, same batch. STILL OPEN:
+   `:130-131` hard-codes light colour/intensity, so the GUI light has no effect
+   in RT at all. Test: extend `DeferredMatchesForwardRoughly` to RT-vs-forward
+   under a non-identity transform.
 6. **glTF is unreachable from the GUI, and `reloadModel` is OBJ-only + null-unsafe** (S) —
    `scanAvailableModels` filters `== ".obj"` (`SceneConfig.cpp:96`, case-sensitive),
    so the in-tree `cube.glb` can never be picked; `Scene::reloadModel` constructs
@@ -1292,18 +1294,20 @@ accidental constant-white furnace and the GUI light provably does nothing.
    then NEE toward the GUI directional light. Today PT is invariant to the
    scene lighting; a golden can assert mean luminance responds to
    sceneUBO.dirLight changes.
-4. **Degenerate scatter guard** (S) - RTIOW's "catch degenerate scatter" is
-   missing (`:217-220`) and the direction goes into the ray query
-   UN-normalized (`:189`) - black speckles/NaN contamination.
-5. **Hit normal transformed with w=1, no inverse-transpose** (S) - `:117`;
-   same defect class as the excluded rchit item but in the PT file. Wrong
-   bounce normals under any translated/scaled instance.
-6. **Material diffuse fallback commented out** (S) - `:127-132`; untextured
-   materials trace BLACK. The in-tree cube.glb makes the golden.
+4. **Degenerate scatter guard** (S) - **DONE (2026-07-22)** near-zero scatter
+   falls back to the normal, RTIOW 9.4 style.
+5. **Hit normal transformed with w=1, no inverse-transpose** (S) - **DONE
+   (2026-07-22)** row-multiply by `worldToObject` (inverse-transpose, handles
+   non-uniform scale); same fix applied to `raytrace.rchit` which shared the
+   defect verbatim, plus its object-space `N`/`V` BRDF inputs.
+6. **Material diffuse fallback commented out** (S) - **DONE (2026-07-22)**
+   `textureID < 0` now uses `material.diffuse` in BOTH kernels (the old
+   clamp sent -1 to texture slot 0, not black as first written here).
 7. **Russian roulette + GUI spp/depth** (S/M) - NUM_SAMPLES=8 and 8 bounces
    hardcoded with stale comments claiming 64/32 (`:155-157,:177-178`).
-8. **Self-intersection epsilon** (S) - fixed 1e-4 offset with t_min = 0
-   (`:211,:183-190`) vs rgen's 0.001; acne/leaks at Sponza scale.
+8. **Self-intersection epsilon** (S) - **DONE (2026-07-22)** t_min raised
+   0.0 -> 0.001 to match the rgen; the 1e-4 normal offset stays as the
+   secondary guard.
 9. **Estimator bias** (M) - no 1/pi, no PDF division (`:205,:217-220`);
    convert to proper cosine-weighted sampling. Verify by FURNACE TEST once
    item 2 lands: diffuse object in the white env must converge to its albedo.
@@ -1315,8 +1319,8 @@ accidental constant-white furnace and the GUI light provably does nothing.
     with one PCG step produce structured neighbor-correlated noise
     (`:150,:68-75`).
 
-Trivial rider: path_tracing.comp includes the BRDF headers (`:15-19`) and
-never calls them - delete the dead includes.
+Trivial rider: ~~path_tracing.comp includes the BRDF headers (`:15-19`) and
+never calls them - delete the dead includes.~~ **DONE (2026-07-22).**
 
 ### C++ Vulkan engine — second survey (2026-07-22, app/GUI/RT/deferred internals)
 
