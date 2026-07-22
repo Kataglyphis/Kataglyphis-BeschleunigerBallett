@@ -387,8 +387,10 @@ size and a decision, or gets dropped.
   (matching a DCC-baked normal map) still wants eyes on a real normal-mapped asset,
   which is why it is opt-in rather than the default - but the tangent maths is
   unit-verified.
-- [ ] **Web drop-zone / model picker** (S) — native drag-and-drop shipped;
-  browser File API pending.
+- [x] **Web drop-zone / model picker** (done 2026-07-22, RPT 62e215c) — browser
+  drag-and-drop via the DOM File API (winit-web never delivers DroppedFile);
+  first dropped .glb read async, uploaded with native-viewer semantics; page
+  header carries the hint. Native drag-and-drop was already shipped.
 - [x] **Touch controls** (done 2026-07-20) — one finger orbits, two pinch to
   zoom. Ratio-based so the gesture is DPI-independent and reversible; the
   pinch baseline resets on any finger-count change so adding or lifting a
