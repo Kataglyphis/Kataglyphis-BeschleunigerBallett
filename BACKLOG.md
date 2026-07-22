@@ -1376,8 +1376,10 @@ accidental constant-white furnace and the GUI light provably does nothing.
    same rig is 158.1, remaining gap = PT's indirect sky which forward
    lacks). The BOUNCE path needed nothing: cosine-weighted sampling of a
    Lambertian cancels pi and cosine exactly - the "no PDF division" reading
-   was wrong for that half. A true furnace golden still wants a uniform-env
-   toggle (the sky is a gradient now); folded into item 10's remainder.
+   was wrong for that half. The furnace golden is DONE (2026-07-22 later
+   the same day): KATAGLYPHIS_PT_FURNACE uniform-env + albedo-1 mode;
+   green mean 186.005 vs ideal 186 at uniformity 1.0; red (spurious
+   bounce 1/pi) crashes to 136.9/0.25.
 10. **PT goldens** (S now / M after item 2) - renderModesSuite only asserts
     device-not-lost; add non-black now, variance-decreases + furnace after
     accumulation. Blocked-note: convergence asserts are impossible while every
