@@ -1165,7 +1165,21 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
    `VulkanDevice.cpp:487-494`) or extend the near plane to scene bounds along the
    light axis. Test: pure CPU in `cascadedShadowMapSuite` — a point 30 units toward
    the light must transform to NDC `z >= 0`; fails today.
-2. **Lit target is `R8G8B8A8_UNORM`, so HDR clamps BEFORE the tonemapper** (S) —
+2. **Lit target is `R8G8B8A8_UNORM` — BLOCKED ON #8, measured 2026-07-22** (S
+   after #8) — implemented and REVERTED after three oracles showed the format
+   change is indistinguishable on this scene: whole-frame mean moves ~+0.76 for
+   a radiance 2->8 sweep on UNORM and FP16 alike; bright-pixel counts (>200,
+   the post-Reinhard UNORM ceiling is ~186) are flat on BOTH at radiance 8 AND
+   at radiance 25. Root cause found in the process: `pbrBook.glsl:85` - the
+   Lambertian diffuse term is `LambertDiffuse(ambient) * CosTheta(L,N)` and
+   NEVER multiplies light_color or light_intensity, so radiance only enters
+   via the small specular term and scene luminance never approaches 1.0.
+   Sequencing: fix #8 (lighting actually consuming intensity/diffuse/roughness)
+   FIRST, then the FP16 targets + rgen rgba16f (sites known: Rasterizer.cpp
+   x2, DeferredRasterizer offscreen+finalFormat, raytrace.rgen:26), proven by
+   a bright-pixel-delta golden across a radiance sweep that crosses the 186
+   ceiling - the whole-frame-mean oracle is measured useless for this.
+   Original item: —
    `post.frag:32` applies Reinhard, but the offscreen target is UNORM
    (`Rasterizer.cpp:206`, `:328`, `DeferredRasterizer.cpp:88`) while the G-buffer
    correctly uses `R16G16B16A16Sfloat` (`:89-90`). The radiance slider does nothing
