@@ -97,7 +97,11 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
 
     spdlog::info("SkyBox: All 6 textures loaded, width={}, height={}, totalImageSize={}", width, height, imageSize);
 
-    cubeMapTexture->createImage(device, static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1, vk::Format::eR8G8B8A8Unorm, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, 6, vk::ImageCreateFlagBits::eCubeCompatible);
+    // sRGB, not UNORM: the DOOM skybox faces are sRGB-encoded PNGs, so a UNORM
+    // view fed gamma-space values into the HDR target that post then gamma-
+    // encodes again - the same defect the material-texture sRGB fix caught,
+    // on a separate texture path. sRGB makes the hardware decode to linear.
+    cubeMapTexture->createImage(device, static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, 6, vk::ImageCreateFlagBits::eCubeCompatible);
 
     VulkanBuffer stagingBuffer;
     stagingBuffer.create(device, imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
@@ -154,7 +158,7 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
 
     stagingBuffer.cleanUp();
 
-    cubeMapTexture->createImageView(device, vk::Format::eR8G8B8A8Unorm, vk::ImageAspectFlagBits::eColor, 1, vk::ImageViewType::eCube, 6);
+    cubeMapTexture->createImageView(device, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, 1, vk::ImageViewType::eCube, 6);
     cubeMapTexture->createTextureSampler(device);
 
     createDescriptorSetForCubeMap();
