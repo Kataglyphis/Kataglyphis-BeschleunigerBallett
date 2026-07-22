@@ -165,6 +165,10 @@ class VulkanRenderer
     Texture pathTracingAccumulation;
     uint32_t pathTracingAccumulatedFrames{ 0 };
     glm::mat4 pathTracingLastView{ 1.0F };
+    // Last quality settings the history was accumulated with: a mean over two
+    // different estimators is biased, so a change resets the history.
+    int pathTracingLastSamples{ 0 };
+    int pathTracingLastBounces{ 0 };
     void createPathTracingAccumulationResources();
     Kataglyphis::VulkanRendererInternals::PostStage postStage;
 

@@ -76,6 +76,10 @@ struct GUIRendererSharedVars
     /// culling is doing anything at all in a given scene.
     VisibilityStats visibility;
 
-    // path tracing vars
+    // Path-tracing quality controls. Both were hardcoded in the kernel (8/8,
+    // with stale comments claiming 64/32); changing either mid-run resets the
+    // accumulation history - a mean over two different estimators is biased.
+    int pathTracingSamplesPerPixel = 8;
+    int pathTracingMaxBounces = 8;
 };
 }// namespace Kataglyphis::VulkanRendererInternals::FrontendShared

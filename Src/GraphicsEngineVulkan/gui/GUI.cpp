@@ -159,6 +159,12 @@ void GUI::render()
         guiRendererSharedVars.pathTracing = true;
         break;
     }
+
+    if (e == 2) {
+        ImGui::Separator();
+        ImGui::SliderInt("Samples / pixel", &guiRendererSharedVars.pathTracingSamplesPerPixel, 1, 64);
+        ImGui::SliderInt("Max bounces", &guiRendererSharedVars.pathTracingMaxBounces, 1, 16);
+    }
     // ImGui::Checkbox("Ray tracing", &guiRendererSharedVars.raytracing);
 
     ImGui::Separator();

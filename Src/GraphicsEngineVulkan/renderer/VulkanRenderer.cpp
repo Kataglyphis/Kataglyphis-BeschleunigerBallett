@@ -872,12 +872,16 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
             Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "pathtracing", { 0.60F, 0.25F, 0.85F, 1.0F });
             Texture &renderResult = guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward ? rasterizer.getOffscreenTexture(image_index) : deferredRasterizer.getOffscreenTexture(image_index);
 
-            // A camera move invalidates the accumulated history; restart the
-            // running mean from this frame.
+            // A camera move or a quality change invalidates the accumulated
+            // history; restart the running mean from this frame.
             glm::mat4 const current_view = camera->calculate_viewmatrix();
-            if (current_view != pathTracingLastView) {
+            if (current_view != pathTracingLastView
+                || guiRendererSharedVars.pathTracingSamplesPerPixel != pathTracingLastSamples
+                || guiRendererSharedVars.pathTracingMaxBounces != pathTracingLastBounces) {
                 pathTracingAccumulatedFrames = 0;
                 pathTracingLastView = current_view;
+                pathTracingLastSamples = guiRendererSharedVars.pathTracingSamplesPerPixel;
+                pathTracingLastBounces = guiRendererSharedVars.pathTracingMaxBounces;
             }
 
             pathTracing.recordCommands(commandBuffer,
@@ -886,7 +890,9 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
               pathTracingAccumulation.getVulkanImage(),
               &vulkanSwapChain,
               raytracing_descriptor_sets,
-              pathTracingAccumulatedFrames);
+              pathTracingAccumulatedFrames,
+              static_cast<uint32_t>(std::max(guiRendererSharedVars.pathTracingSamplesPerPixel, 1)),
+              static_cast<uint32_t>(std::max(guiRendererSharedVars.pathTracingMaxBounces, 1)));
             ++pathTracingAccumulatedFrames;
         }
     }

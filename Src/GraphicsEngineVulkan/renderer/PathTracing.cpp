@@ -60,7 +60,9 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
   VulkanImage &accumulationImage,
   VulkanSwapChain *vulkanSwapChain,
   const std::vector<vk::DescriptorSet> &descriptorSets,
-  uint32_t frame_index)
+  uint32_t frame_index,
+  uint32_t samples_per_pixel,
+  uint32_t max_bounces)
 {
     Kataglyphis::VulkanRendererInternals::QueueFamilyIndices const indices = device->getQueueFamilies();
 
@@ -115,6 +117,8 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
     push_constant.height = imageSize.height;
     push_constant.clearColor = { 0.0F, 0.0F, 0.0F, 0.0F };
     push_constant.frame_index = frame_index;
+    push_constant.samples_per_pixel = std::max(samples_per_pixel, 1U);
+    push_constant.max_bounces = std::max(max_bounces, 1U);
 
     commandBuffer.pushConstants(
       pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(PushConstantPathTracing), &push_constant);

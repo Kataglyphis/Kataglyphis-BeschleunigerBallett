@@ -1202,3 +1202,75 @@ TEST(GoldenRender, PathTracingRespondsToTheDirectionalLight)
     EXPECT_GT(response, 5.0e-3)
       << "Path-traced pixels did not respond to the directional light radiance.";
 }
+
+// The path-tracing quality controls must actually reach the kernel. The
+// discriminator is the bounce cap: at max_bounces = 1 there is no indirect
+// sky light on surfaces at all (a primary hit's bounce ray is never traced),
+// so large regions render differently than at 8 - and a quality change also
+// RESETS the accumulation history (a running mean over two different
+// estimators is biased), so the change is fully visible a few frames later.
+// Red state: a kernel with hardcoded loop bounds ignores both sliders and
+// the captures differ only by accumulation-depth drift.
+TEST(GoldenRender, PathTracingHonorsTheQualityControls)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = true;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES);
+
+    const auto swung_fraction =
+      [](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, uint32_t w, uint32_t h) {
+          const uint32_t x0 = (w * 18U) / 25U;
+          const uint32_t x1 = (w * 49U) / 50U;
+          const uint32_t y0 = h / 20U;
+          const uint32_t y1 = (h * 19U) / 20U;
+          size_t swung = 0;
+          size_t total = 0;
+          for (uint32_t y = y0; y < y1; ++y) {
+              for (uint32_t x = x0; x < x1; ++x) {
+                  const size_t base = (static_cast<size_t>(y) * w + x) * 4U;
+                  for (size_t c = 0; c < 3U; ++c) {
+                      if (std::abs(static_cast<int>(a[base + c]) - static_cast<int>(b[base + c])) > 5) {
+                          ++swung;
+                          break;
+                      }
+                  }
+                  ++total;
+              }
+          }
+          return static_cast<double>(swung) / static_cast<double>(total);
+      };
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> full_quality = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(full_quality.empty());
+
+    renderer_vars.pathTracingMaxBounces = 1;
+    harness.render_frames(10);
+    const std::vector<uint8_t> single_bounce = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_EQ(full_quality.size(), single_bounce.size());
+
+    const double response = swung_fraction(full_quality, single_bounce, width, height);
+    GTEST_LOG_(INFO) << "PT bounces 8-vs-1 swung-pixel fraction (panel-free crop): " << response;
+
+    // Threshold measured after the first run; the structural requirement is
+    // that removing all indirect light changes a real share of scene pixels.
+    EXPECT_GT(response, 5.0e-3)
+      << "The bounce-cap slider did not change the path-traced image - "
+         "quality push constants not reaching the kernel.";
+}

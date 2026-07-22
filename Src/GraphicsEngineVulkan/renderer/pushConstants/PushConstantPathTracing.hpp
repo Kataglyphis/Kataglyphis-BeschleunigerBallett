@@ -24,6 +24,9 @@ struct PushConstantPathTracing
     // 0 means "discard history"; also folded into the RNG seed so every frame
     // draws different samples.
     uint frame_index;
+    // GUI-driven quality: samples per pixel per frame and the bounce cap.
+    uint samples_per_pixel;
+    uint max_bounces;
 };
 
 #ifdef __cplusplus

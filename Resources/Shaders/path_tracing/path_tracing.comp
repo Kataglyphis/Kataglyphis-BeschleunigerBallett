@@ -167,7 +167,9 @@ void main() {
     // that never change within the dispatch.
     const vec4 cameraOrigin = globalUBO.inv_view * vec4(0, 0, 0, 1);
 
-    const int NUM_SAMPLES = 8;
+    // GUI-driven (the old kernel hardcoded 8 with a stale comment claiming
+    // 64). The C++ side clamps both to >= 1.
+    const int NUM_SAMPLES = int(pc_ray.samples_per_pixel);
     for(int sampleIdx = 0; sampleIdx < NUM_SAMPLES; sampleIdx++)
     {
         // Re-based at every bounce below, so this is per-sample mutable state
@@ -187,9 +189,22 @@ void main() {
 
         vec3 accumulatedRayColor = vec3(1.0);  // The amount of light that made it to the end of the current ray.
 
-        // Limit the kernel to trace at most 8 segments.
-        for(int tracedSegments = 0; tracedSegments < 8; tracedSegments++)
+        // Bounce cap from the GUI (the old kernel hardcoded 8 with a stale
+        // comment claiming 32).
+        for(int tracedSegments = 0; tracedSegments < int(pc_ray.max_bounces); tracedSegments++)
         {
+            // Russian roulette from the fourth segment on: terminate
+            // low-throughput paths with probability (1 - survival) and
+            // reweight the survivors by 1/survival, which keeps the estimator
+            // unbiased while skipping bounces that would contribute almost
+            // nothing.
+            if (tracedSegments >= 3) {
+                const float survival = clamp(
+                  max(accumulatedRayColor.r, max(accumulatedRayColor.g, accumulatedRayColor.b)), 0.05, 0.95);
+                if (stepAndOutputRNGFloat(rngState) > survival) { break; }
+                accumulatedRayColor /= survival;
+            }
+
             // Trace the ray and see if and where it intersects the scene!
             // First, initialize a ray query object:
             rayQueryEXT rayQuery;

@@ -1325,8 +1325,11 @@ accidental constant-white furnace and the GUI light provably does nothing.
 6. **Material diffuse fallback commented out** (S) - **DONE (2026-07-22)**
    `textureID < 0` now uses `material.diffuse` in BOTH kernels (the old
    clamp sent -1 to texture slot 0, not black as first written here).
-7. **Russian roulette + GUI spp/depth** (S/M) - NUM_SAMPLES=8 and 8 bounces
-   hardcoded with stale comments claiming 64/32 (`:155-157,:177-178`).
+7. **Russian roulette + GUI spp/depth** (S/M) - **DONE (2026-07-22)**: GUI
+   sliders (spp 1-64, bounces 1-16) through new push-constant fields; RR from
+   the 4th segment (survivors reweighted, unbiased); a quality change resets
+   the accumulation (mean over two estimators is biased). Golden: bounces
+   8-vs-1 swung fraction 0.132 green, hardcoded-bounds kernel 7.3e-5 (fails).
 8. **Self-intersection epsilon** (S) - **DONE (2026-07-22)** t_min raised
    0.0 -> 0.001 to match the rgen; the 1e-4 normal offset stays as the
    secondary guard.
