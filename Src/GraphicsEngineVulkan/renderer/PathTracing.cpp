@@ -1,10 +1,12 @@
 ﻿module;
 #include <memory>
+#include <optional>
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <sstream>
 #include <string>
@@ -115,7 +117,21 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
     vk::Extent2D const imageSize = vulkanSwapChain->getSwapChainExtent();
     push_constant.width = imageSize.width;
     push_constant.height = imageSize.height;
-    push_constant.clearColor = { 0.0F, 0.0F, 0.0F, 0.0F };
+    // Furnace debug mode via environment (KATAGLYPHIS_PT_FURNACE=<radiance>):
+    // clearColor carries the uniform environment radiance in rgb and the
+    // mode flag in w. The kernel then forces albedo to 1 and replaces the
+    // gradient sky with the uniform value - the classic white-furnace test:
+    // an unbiased estimator must converge every pixel to EXACTLY the
+    // environment radiance, for any geometry. Read per record (NOT a static:
+    // several tests share one process, and a frozen first read would pin the
+    // mode for all of them); one getenv per frame is noise.
+    const char *furnace_value = std::getenv("KATAGLYPHIS_PT_FURNACE");
+    if (furnace_value != nullptr && *furnace_value != '\0') {
+        const float furnace_radiance = std::strtof(furnace_value, nullptr);
+        push_constant.clearColor = { furnace_radiance, furnace_radiance, furnace_radiance, 1.0F };
+    } else {
+        push_constant.clearColor = { 0.0F, 0.0F, 0.0F, 0.0F };
+    }
     push_constant.frame_index = frame_index;
     push_constant.samples_per_pixel = std::max(samples_per_pixel, 1U);
     push_constant.max_bounces = std::max(max_bounces, 1U);

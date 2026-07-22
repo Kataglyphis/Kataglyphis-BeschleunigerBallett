@@ -1549,3 +1549,85 @@ TEST(GoldenRender, SecondModelShadesWithItsOwnTextures)
       << "The added model shows no texture detail - it is sampling the first "
          "model's (flat white) texture slots.";
 }
+
+// The white furnace: with a uniform environment and albedo forced to 1 (the
+// KATAGLYPHIS_PT_FURNACE debug mode), an unbiased estimator converges every
+// pixel to EXACTLY the environment radiance, whatever the geometry - the
+// geometry becomes invisible. This is the strongest single check on the
+// whole estimator chain: cosine-sampling cancellation, Russian-roulette
+// reweighting, the accumulation mean, and the tonemap all sit under one
+// number. tonemap(1.0) = Reinhard 0.5 -> gamma = 186.
+//
+// Measured: green mean 186.005, uniformity 1.0. Two red probes calibrate
+// the band: a spurious 1/pi on the bounce throughput crashes it to 136.9
+// with uniformity 0.25 (both asserts fire); removing the Russian-roulette
+// reweighting measures 185.54 - a real but sub-threshold energy loss on
+// this OPEN scene (few paths live past segment 3), documented rather than
+// chased with a razor-thin band that would flake.
+TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
+{
+    SKIP_WITHOUT_GPU();
+
+    // Same env-scoping pattern as ScopedModelOverride.
+    struct ScopedFurnace
+    {
+        ScopedFurnace() { std::ignore = _putenv_s("KATAGLYPHIS_PT_FURNACE", "1.0"); }
+        ~ScopedFurnace() { std::ignore = _putenv_s("KATAGLYPHIS_PT_FURNACE", ""); }
+    } furnace;
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = true;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    // The directional light must not contribute (NEE would add energy on top
+    // of the furnace); bounces high so truncation loss stays small.
+    scene_vars.direcional_light_radiance = 0.0F;
+    renderer_vars.pathTracingMaxBounces = 16;
+    harness.render_frames(WARMUP_FRAMES);
+
+    // Accumulate deep so per-frame noise is averaged well below the band.
+    harness.render_frames(80);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(frame.empty());
+
+    const uint32_t x0 = (width * 18U) / 25U;
+    const uint32_t x1 = (width * 49U) / 50U;
+    const uint32_t y0 = height / 20U;
+    const uint32_t y1 = (height * 19U) / 20U;
+    double sum = 0.0;
+    size_t within = 0;
+    size_t total = 0;
+    for (uint32_t y = y0; y < y1; ++y) {
+        for (uint32_t x = x0; x < x1; ++x) {
+            const double lum = luminance_of(frame, static_cast<size_t>(y) * width + x);
+            sum += lum;
+            if (std::abs(lum - 186.0) <= 6.0) { ++within; }
+            ++total;
+        }
+    }
+    const double mean = sum / static_cast<double>(total);
+    const double uniform_fraction = static_cast<double>(within) / static_cast<double>(total);
+    GTEST_LOG_(INFO) << "furnace crop mean luminance: " << mean
+                     << " (ideal 186), fraction within +-6: " << uniform_fraction;
+
+    EXPECT_GT(mean, 180.0) << "Furnace converges LOW - the estimator is losing energy "
+                              "(beyond the known bounce-cap truncation).";
+    EXPECT_LT(mean, 189.0) << "Furnace converges HIGH - the estimator is gaining energy.";
+    EXPECT_GT(uniform_fraction, 0.98)
+      << "The furnace image is not uniform - geometry is visible, so some path "
+         "class is biased.";
+}
