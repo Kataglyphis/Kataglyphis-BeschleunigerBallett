@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 import kataglyphis.vulkan.gltf_loader;
@@ -93,4 +94,61 @@ TEST(GltfParseUnit, ExtractsAnEmbeddedBaseColorTexture)
         }
     }
     EXPECT_TRUE(anyTextured) << "a textured material must reference the extracted texture";
+}
+
+// Untrusted-input hardening (2026-07-22): the GUI model picker feeds arbitrary
+// files to parseCpu. These prove the structural guards reject rather than
+// crash. The full coverage-guided sweep is gltf_parsing_fuzz_test; these pin
+// the specific defects the survey named.
+TEST(GltfParseUnit, MalformedTextIsRejectedNotCrashed)
+{
+    Kataglyphis::GltfLoader loader;
+
+    // Truncated/garbage JSON must fail parse, not walk a half-built document.
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_bad_gltf.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << "{ \"asset\": { \"version\": \"2.0\" ";// unterminated
+    }
+    EXPECT_FALSE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+}
+
+TEST(GltfParseUnit, ShortBase64ImageUriDoesNotUnderflow)
+{
+    // A base64 image data-URI shorter than one quad used to make the decoded-
+    // length maths (b64len/4*3 - padding) UNDERFLOW to ~SIZE_MAX, requesting a
+    // gigantic read from a one-character URI. The document is otherwise valid,
+    // so it parses and validates; extraction must simply yield no texture.
+    const char *doc = R"({
+      "asset": { "version": "2.0" },
+      "images": [ { "uri": "data:image/png;base64,QQ" } ],
+      "textures": [ { "source": 0 } ],
+      "materials": [ { "pbrMetallicRoughness": { "baseColorTexture": { "index": 0 } } } ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 },
+        "material": 0
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,1], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_short_b64.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+    Kataglyphis::GltfLoader loader;
+    // The point is no crash / no OOB (ASan-enforced in CI); whether the parse
+    // succeeds, it must extract zero textures from the malformed URI.
+    const bool parsed = loader.parseCpu(tmp.string());
+    if (parsed) {
+        EXPECT_TRUE(loader.getTextureImages().empty())
+          << "a sub-quad base64 URI must yield no texture, not an underflowed read";
+    }
+    std::filesystem::remove(tmp);
 }

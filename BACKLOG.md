@@ -1330,11 +1330,13 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
     preserves the old test's safety property. Measured: shadow coverage
     identical (12.276% vs 12.267% darkened), ShadowCascades 0.0477 ->
     0.0408 ms (-14%) on the rig run. 94/94, validation-clean.
-14. **cgltf is an unfuzzed untrusted-input surface** (S) — the 2026-07-20 fuzz pass
-    predates glTF. `GltfLoader` slices `buffer_view->offset + size` without
-    validating against `buffer->size` (`:151-157`), hand-rolls base64 length maths
-    that underflows for short URIs (`:166-169`), and never calls `cgltf_validate()`.
-    The GUI feeds arbitrary user files here. Add `gltf_parsing_fuzz_test`.
+14. **cgltf is an unfuzzed untrusted-input surface** — **DONE (2026-07-22)**:
+    all three hardened - buffer-view fit checked against buffer->size, base64
+    length rejected unless a positive multiple of 4 (the underflow source),
+    cgltf_validate() gates the walk. New gltf_parsing_fuzz_test (self-
+    contained cgltf, wired into both CI lanes) plus two CPU regression tests
+    (malformed JSON rejected; sub-quad base64 URI yields no texture instead of
+    an underflowed read). 96/96, validation-clean.
 15. **Swapchain recreate destroys before creating; surface-lost unhandled** (S) —
     `recreate` does `cleanUp()` then init (`VulkanSwapChain.cpp:138-142`) and always
     passes `oldSwapchain = nullptr` (`:98`); `createSwapchainKHR`'s result is never

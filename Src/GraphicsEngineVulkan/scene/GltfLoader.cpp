@@ -153,6 +153,11 @@ std::vector<unsigned char> extractImageBytes(const cgltf_image *image, const cgl
         const auto *base = static_cast<const unsigned char *>(image->buffer_view->buffer->data);
         const cgltf_size offset = image->buffer_view->offset;
         const cgltf_size size = image->buffer_view->size;
+        // A malformed file can declare a buffer view that runs past its
+        // buffer; slicing base+offset..base+offset+size then reads OOB. Reject
+        // any view that does not fit (offset+size guarded against overflow).
+        const cgltf_size buffer_size = image->buffer_view->buffer->size;
+        if (offset > buffer_size || size > buffer_size - offset) { return {}; }
         return std::vector<unsigned char>(base + offset, base + offset + size);
     }
 
@@ -163,9 +168,14 @@ std::vector<unsigned char> extractImageBytes(const cgltf_image *image, const cgl
         if (pos != std::string::npos) {
             const char *b64 = uri.c_str() + pos + marker.size();
             const cgltf_size b64len = uri.size() - pos - marker.size();
+            // A valid base64 payload is a positive multiple of 4. Anything
+            // shorter made (b64len/4)*3 - padding UNDERFLOW (cgltf_size is
+            // unsigned), producing a ~SIZE_MAX allocation/read request from a
+            // one-character URI. Reject non-conforming lengths outright.
+            if (b64len < 4 || (b64len % 4) != 0) { return {}; }
             cgltf_size padding = 0;
-            if (b64len >= 1 && b64[b64len - 1] == '=') { ++padding; }
-            if (b64len >= 2 && b64[b64len - 2] == '=') { ++padding; }
+            if (b64[b64len - 1] == '=') { ++padding; }
+            if (b64[b64len - 2] == '=') { ++padding; }
             const cgltf_size decoded = (b64len / 4) * 3 - padding;
             void *out = nullptr;
             if (cgltf_load_buffer_base64(&options, decoded, b64, &out) == cgltf_result_success && out != nullptr) {
@@ -192,6 +202,14 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
     cgltf_options options{};
     cgltf_data *data = nullptr;
     if (cgltf_parse_file(&options, modelFile.c_str(), &data) != cgltf_result_success) { return false; }
+    // Structural validation before we walk the document: cgltf_parse checks
+    // JSON well-formedness, cgltf_validate checks that counts, indices and
+    // references are internally consistent. The GUI feeds arbitrary user
+    // files here, and the walk below trusts these invariants.
+    if (cgltf_validate(data) != cgltf_result_success) {
+        cgltf_free(data);
+        return false;
+    }
     if (cgltf_load_buffers(&options, data, modelFile.c_str()) != cgltf_result_success) {
         cgltf_free(data);
         return false;

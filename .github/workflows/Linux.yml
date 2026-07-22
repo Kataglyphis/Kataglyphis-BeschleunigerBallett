@@ -142,6 +142,8 @@ jobs:
           build-asan-clang/obj_parsing_fuzz_test
           # Real engine surface: scene-config path resolution.
           build-asan-clang/scene_config_fuzz_test
+          # Real engine surface: glTF parsing (cgltf mirror).
+          build-asan-clang/gltf_parsing_fuzz_test
         working-directory: ${{ github.workspace }}
 
       - name: Run tests under AddressSanitizer

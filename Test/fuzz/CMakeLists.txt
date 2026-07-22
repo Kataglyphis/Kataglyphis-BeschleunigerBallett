@@ -109,6 +109,13 @@ kataglyphis_add_fuzz_test(example_fuzz_test example_fuzz_test.cpp)
 kataglyphis_add_fuzz_test(obj_parsing_fuzz_test obj_parsing_fuzz_test.cpp)
 target_link_libraries(obj_parsing_fuzz_test PRIVATE tinyobjloader)
 
+# The glTF sibling of obj_parsing: cgltf is the untrusted-input surface the
+# GUI model picker reaches. Self-contained (cgltf is header-only, CGLTF_
+# IMPLEMENTATION in the source); links only the cgltf interface library, no
+# VulkanEngineCore - same minimal-target rule as obj_parsing above.
+kataglyphis_add_fuzz_test(gltf_parsing_fuzz_test gltf_parsing_fuzz_test.cpp)
+target_link_libraries(gltf_parsing_fuzz_test PRIVATE cgltf)
+
 # Real engine surface: scene-config path resolution (GUI model selection).
 #
 # It links ONLY the scene_config module, not VulkanEngineCore. The module is
