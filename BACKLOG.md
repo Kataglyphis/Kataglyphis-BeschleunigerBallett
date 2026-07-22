@@ -1675,11 +1675,21 @@ oversized per-primitive uniform block, #13 render bundles for the cascades.
    interpolates uv1. texCoord >= 2 falls back to UV0 with a warning. Base-on-
    UV1 red/green test (flat red at mask 0, red/blue split at mask 1). Rider
    (KHR_texture_transform on non-base slots) still open.
-8. **No anti-aliasing anywhere** (M) — `MultisampleState::default()` on all four
-   forward pipelines (`forward.rs:2139`, `:2182`, `:2220`) and `sample_count: 1` on
-   the HDR target (`:2814-2831`). The most visible quality defect in the browser
-   demo. 4x MSAA resolved before bloom/SSAO/tonemap is portable WebGPU-core; SSAO's
-   `textureLoad` on depth is the one design constraint.
+8. **No anti-aliasing anywhere** (M — **bigger than it looks; DESIGN NOTE
+   2026-07-22**) — `MultisampleState::default()` on all four forward pipelines
+   and `sample_count: 1` on the HDR target. The most visible quality defect in
+   the browser demo. Color MSAA + resolve to the HDR view is easy; the BLOCKER
+   is DEPTH. A render pass requires its color and depth attachments to share
+   sample_count, so MSAA colour forces a MSAA depth buffer - but `self.depth`
+   is read as a plain single-sample texture by BOTH SSAO (position
+   reconstruction) AND the occlusion-cull bbox pass, and **wgpu has no native
+   depth resolve** (only color `resolve_target`). So the real work is one of:
+   (a) a manual depth-resolve pass (MSAA depth -> single-sample depth via a
+   fullscreen min/max blit) feeding SSAO + occlusion, or (b) make SSAO and the
+   occlusion pass MSAA-depth-aware (per-sample loads). Not a mechanical
+   sample_count bump - budget a dedicated session. A clean test exists: a
+   diagonal edge produces intermediate-colour "partial" pixels under MSAA and
+   only hard fg/bg pixels without.
 9. **Degenerate/NaN input poisons the whole frame** (S/M) — a zero-scale node
    (Blender's standard hide) makes `model.inverse()` NaN → NaN normal matrix
    (`forward.rs:1296`); ONE non-finite POSITION makes `scene_radius` NaN → all three
