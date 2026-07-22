@@ -38,10 +38,12 @@ void main() {
     // vec4(0,0,0,1) in homogenous coordinates hints that it is the position in the origin
     // assumption: origin is the standpoint from the viewer
     // the inverse gets us the actual world space position
-    vec4 origin = inverse(globalUBO.view) * vec4(0, 0, 0, 1);
+    // GlobalUBO carries inv_view/inv_projection precomputed on the CPU -
+    // three per-pixel inverse() calls replaced with plain fetches.
+    vec4 origin = globalUBO.inv_view * vec4(0, 0, 0, 1);
     // do not forget to invert the y-coord since we are in vulkan
-    vec4 target = inverse(globalUBO.projection) * vec4(pixel_center_cs.x, pixel_center_cs.y, 1, 1);
-    vec4 direction = inverse(globalUBO.view) * vec4(normalize(target.xyz), 0);
+    vec4 target = globalUBO.inv_projection * vec4(pixel_center_cs.x, pixel_center_cs.y, 1, 1);
+    vec4 direction = globalUBO.inv_view * vec4(normalize(target.xyz), 0);
 
     uint ray_flags = gl_RayFlagsOpaqueEXT;
     float t_min = 0.001;
