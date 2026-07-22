@@ -1438,12 +1438,12 @@ model loader is race-clean; GUI/renderer state is single-threaded.
 
 ### Rust WebGPU renderer
 
-**Bake wasm32-unknown-unknown into the :latest-cross image.** The CI lane added
-2026-07-22 cannot add the target itself - the image installs Rust WITHOUT rustup
-on PATH, so `rustup target add` fails with command-not-found and the step now
-SKIPS rather than gating. Adding the target to the image (ContainerHub
-`install-rust.sh`) turns it back into a real gate. Until then the web build is
-still unguarded.
+**Bake wasm32-unknown-unknown into the :latest-cross image.** ~~The CI lane added
+2026-07-22 cannot add the target itself~~ **FIX UPSTREAM (2026-07-22,
+ContainerHub `3cff632`)**: install-rust.sh now adds the wasm target on the
+STABLE toolchain (it only had it on the pinned nightly), not behind try_ so a
+regression fails the image build. REMAINING: once the rebuilt :latest-cross
+publishes, flip the RPT wasm step from skip-if-missing back into a hard gate.
 
 **Add a wasm32 CI lane (found the hard way 2026-07-22).** `wasm_demo.rs` is
 entirely behind `#[cfg(target_arch = "wasm32")]`, and nothing in the loop builds
