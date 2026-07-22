@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cmath>
+#include <algorithm>
 #include <filesystem>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -174,10 +175,18 @@ TEST(SceneConfigUnit, AvailableModelListingsAreConsistent)
     const std::vector<std::string> names = sceneConfig::getAvailableModelDisplayNames();
 
     ASSERT_EQ(paths.size(), names.size());
-    ASSERT_FALSE(paths.empty()) << "Model scan found no .obj files under Resources/Models";
+    ASSERT_FALSE(paths.empty()) << "Model scan found no loadable files under Resources/Models";
 
     for (const std::string &path : paths) {
-        EXPECT_TRUE(path.ends_with(".obj")) << "Non-obj entry in model list: " << path;
+        // The loadable set: OBJ plus glTF (the scan was == ".obj" until
+        // 2026-07-22, which made the bundled .glb unpickable; see
+        // ModelPickerUnit.GltfModelsAppearInTheAvailableList).
+        auto lower = path;
+        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        EXPECT_TRUE(lower.ends_with(".obj") || lower.ends_with(".gltf") || lower.ends_with(".glb"))
+          << "Non-loadable entry in model list: " << path;
         EXPECT_TRUE(std::filesystem::exists(sceneConfig::resolveModelPath(path)))
           << "Listed model cannot be resolved: " << path;
     }

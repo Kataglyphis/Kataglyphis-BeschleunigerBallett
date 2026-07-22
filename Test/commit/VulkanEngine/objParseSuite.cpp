@@ -21,6 +21,7 @@ import kataglyphis.vulkan.obj_loader;
 import kataglyphis.vulkan.gltf_loader;
 import kataglyphis.vulkan.async_model_parse;
 import kataglyphis.vulkan.scene_config;
+import kataglyphis.vulkan.scene;
 
 namespace {
 
@@ -84,6 +85,34 @@ TEST(ObjParseUnit, UntexturedMtlMaterialsRouteToTheDiffuseFallback)
         EXPECT_EQ(material.get_textureID(), -1)
           << "a material without map_Kd must route to the diffuse fallback";
     }
+}
+
+TEST(ModelPickerUnit, GltfModelsAppearInTheAvailableList)
+{
+    // The GUI picker's scan filtered on == ".obj" (case-sensitive), so the
+    // bundled GltfTest/cube.glb could never be selected even though the
+    // engine has a glTF loader wired into every other load path.
+    const auto paths = sceneConfig::getAvailableModelPaths();
+    if (paths.empty()) { GTEST_SKIP() << "no Resources/Models directory in this environment"; }
+
+    const bool has_gltf = std::any_of(paths.begin(), paths.end(), [](const std::string &path) {
+        auto lower = path;
+        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        return lower.ends_with(".glb") || lower.ends_with(".gltf");
+    });
+    EXPECT_TRUE(has_gltf) << "no glTF asset in the model picker list - the extension filter is OBJ-only again";
+}
+
+TEST(ModelPickerUnit, AddingANullModelIsSafeNotACrash)
+{
+    // Loaders return nullptr for malformed assets; Scene::add_model used to
+    // dereference it unconditionally (model->getObjectDescription()), so a
+    // bad file picked in the GUI crashed the app inside reloadModel.
+    Kataglyphis::Scene scene;
+    scene.add_model(nullptr);
+    EXPECT_EQ(scene.getModelCount(), 0U) << "a failed load must leave the scene unchanged";
 }
 
 TEST(ObjParseUnit, MalformedInputFailsInsteadOfKillingTheProcess)

@@ -1227,7 +1227,11 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
    plus the untextured-material clamp-to-slot-0 fetch, same batch. ~~STILL OPEN: `:130-131` hard-codes light colour/intensity~~ **DONE
    (2026-07-22, forward-lighting unit)** - rchit now reads sceneUBO.dirLight;
    the item is fully closed.
-6. **glTF is unreachable from the GUI, and `reloadModel` is OBJ-only + null-unsafe** (S) —
+6. **glTF is unreachable from the GUI, and `reloadModel` is OBJ-only + null-unsafe** —
+   **DONE (2026-07-22)**: the scan accepts .obj/.gltf/.glb case-insensitively
+   (red: the list test fails "OBJ-only again"); reloadModel dispatches by
+   extension; add_model null-guards (red: SEH 0xC0000005 access violation on
+   the shipped binary - the crash was real). Original text: —
    `scanAvailableModels` filters `== ".obj"` (`SceneConfig.cpp:96`, case-sensitive),
    so the in-tree `cube.glb` can never be picked; `Scene::reloadModel` constructs
    `ObjLoader` directly (`Scene.cpp:177`) instead of `loadModelByExtension`, and
