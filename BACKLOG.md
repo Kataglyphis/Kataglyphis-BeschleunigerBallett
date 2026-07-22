@@ -1351,6 +1351,35 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
     here); CPU test on a 4-vertex strip -> 2 triangles. STILL OPEN in this
     item: `alphaMode`/`doubleSided`/`KHR_texture_transform`/texcoord index all
     ignored, so transparent glTF renders opaque.
+
+    **SCOPING NOTE (2026-07-22, so this does not start cold — re-sized M -> the
+    MASK slice is S/M, the full item is L):** the four gaps split cleanly by cost.
+    - *Infrastructure already present:* `PipelineBuilder` has a working
+      src-alpha/one-minus-src-alpha blend state (`PipelineBuilder.cpp:144-149`,
+      gated by its blend flag), so a BLEND pipeline variant is a builder call, not
+      new Vulkan. What is missing is entirely material + shader + loader side.
+    - *`ObjMaterial` is a SHARED C++/GLSL struct* (`Src/shared/scene/ObjMaterial.hpp`,
+      `#ifdef __cplusplus`) read directly by the fragment shaders. It already carries
+      `dissolve` (OBJ `d`/opacity, default 1.0). Adding any field (an `alphaCutoff`
+      float + a mode int, or reuse `dissolve`+`illum`) crosses the module boundary =
+      **ABI skew: delete build-clangcl-debug + `-FreshContainer`** (see
+      [[cpp-renderer-fix-campaign]]).
+    - *Increment 1 — alphaMode MASK cutoff (S/M, do first):* the common cutout-foliage
+      case, and the cheapest — no blend, no sorting. Add `alphaCutoff` + a MASK flag
+      to `ObjMaterial`; `GltfLoader` reads `material.alpha_mode()`/`alpha_cutoff()`
+      (cgltf: `cgltf_alpha_mode_mask`, `alpha_cutoff`); the raster frag samples
+      base-colour alpha and `discard`s below cutoff (the shaders have NO alpha discard
+      today). The Rust renderer's MASK path (RPT `forward.wgsl`) is the reference.
+      Golden: a MASK card asset — shadowed/visible pixel delta vs a control, red-proven
+      by removing the discard (mirror the RPT alpha-shadow test's discriminating oracle).
+    - *Increment 2 — doubleSided (S):* per-material cull-mode; the pipeline variant
+      already exists conceptually (RPT ships it). Backface-culled single-sided cards
+      show the visible/back-face difference.
+    - *Increment 3 — BLEND + sorting (M/L):* sorted transparent pass through the
+      blend pipeline above; this is the genuinely L part (back-to-front ordering,
+      a second draw list). Defer until a real transparent asset needs it.
+    - *Increment 4 — KHR_texture_transform + texcoord index (S each):* uv scale/offset
+      uniform and a per-slot uv-set selector — exactly what RPT `uv_set_mask` does.
 12. **Point lights are wired on the GPU but never fed; `OmniDirShadowMap` renders
     nothing** (M) — `lighting.frag` loops `numPointLights`, which
     `updateUniforms` never writes; the cube depth target allocated at init is
