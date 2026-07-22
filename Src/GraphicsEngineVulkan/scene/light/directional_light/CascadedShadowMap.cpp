@@ -120,7 +120,8 @@ std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
   float farPlane,
   const glm::vec3 &lightDir,
   float shadowDistance,
-  float splitLambda)
+  float splitLambda,
+  uint32_t shadowMapResolution)
 {
     std::vector<CascadeData> cascadeData(numCascades);
     if (numCascades == 0U) { return cascadeData; }
@@ -195,6 +196,59 @@ std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
         const glm::vec3 up_axis =
           (std::abs(light_direction.y) > 0.99F) ? glm::vec3(0.0F, 0.0F, 1.0F) : glm::vec3(0.0F, 1.0F, 0.0F);
 
+        if (shadowMapResolution > 0) {
+            // STABILIZED path. Three ingredients, each necessary:
+            //
+            // 1. A WORLD-FIXED light basis (pure rotation about the origin).
+            //    The legacy lookAt is anchored at the slice center, so camera
+            //    translation is absorbed into the view matrix in continuous
+            //    amounts and no snap applied afterwards can help.
+            // 2. A box sized from `radius` - a function of the slice geometry
+            //    only (fov/aspect/splits), so its texel footprint never
+            //    changes as the camera moves or turns.
+            // 3. The box CENTER snapped to whole texels in that fixed basis,
+            //    so the box only ever moves in texel increments and a static
+            //    shadow edge always lands on the same texels.
+            //
+            // The box is padded by one texel because the snap can shift the
+            // center by up to a texel in each axis - without the pad, slice
+            // corners could fall just outside. Depth still fits the corners;
+            // near may come out NEGATIVE here (the basis is anchored at the
+            // origin, not behind the scene) - glm::ortho is a plain box and
+            // accepts that; the legacy 0.01 clamp assumed an eye placed
+            // behind everything.
+            glm::mat4 const light_basis = glm::lookAt(-light_direction, glm::vec3(0.0F), up_axis);
+
+            float const texel_world = (2.0F * radius) / static_cast<float>(shadowMapResolution);
+            glm::vec3 center_ls = glm::vec3(light_basis * glm::vec4(center, 1.0F));
+            center_ls.x = std::floor(center_ls.x / texel_world) * texel_world;
+            center_ls.y = std::floor(center_ls.y / texel_world) * texel_world;
+            float const half_extent = radius + texel_world;
+
+            float snapMinZ = std::numeric_limits<float>::max();
+            float snapMaxZ = std::numeric_limits<float>::lowest();
+            for (const auto &m : frustumCornerWorldSpace) {
+                glm::vec4 const v_light = light_basis * m;
+                snapMinZ = std::min(snapMinZ, v_light.z);
+                snapMaxZ = std::max(snapMaxZ, v_light.z);
+            }
+            constexpr float snapZPadding = 10.0F;
+            float const snap_near = -snapMaxZ - snapZPadding;
+            float snap_far = -snapMinZ + snapZPadding;
+            if (snap_far <= snap_near) { snap_far = snap_near + 1.0F; }
+
+            glm::mat4 const snap_projection = glm::ortho(center_ls.x - half_extent,
+              center_ls.x + half_extent,
+              center_ls.y - half_extent,
+              center_ls.y + half_extent,
+              snap_near,
+              snap_far);
+
+            cascadeData[i].viewProjMatrix = snap_projection * light_basis;
+            cascadeData[i].splitDepth = cascadeSplits[i + 1];
+            continue;
+        }
+
         glm::mat4 const light_view_matrix =
           glm::lookAt(center - (light_direction * (radius * 2.0F + 10.0F)), center, up_axis);
 
@@ -247,8 +301,16 @@ void CascadedShadowMap::updateCascades(const glm::mat4 &cameraView,
   float shadowDistance,
   float splitLambda)
 {
-    cascadeData = computeCascadeData(
-      numCascades, cameraView, cameraFov, aspect, nearPlane, farPlane, lightDir, shadowDistance, splitLambda);
+    cascadeData = computeCascadeData(numCascades,
+      cameraView,
+      cameraFov,
+      aspect,
+      nearPlane,
+      farPlane,
+      lightDir,
+      shadowDistance,
+      splitLambda,
+      shadowWidth);
 
     // Push the freshly computed matrices into the UBO the shadow geometry
     // shader renders with. Without this the buffer keeps whatever was in

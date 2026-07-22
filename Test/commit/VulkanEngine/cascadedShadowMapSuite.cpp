@@ -316,3 +316,116 @@ TEST(CascadedShadowMapUnit, ShadowPushCarriesTheSceneModelMatrix)
     EXPECT_NE(push.model, glm::mat4(1.0F)) << "a non-identity scene matrix must not collapse to identity";
     EXPECT_EQ(push.cascadeIndex, 2U);
 }
+
+namespace {
+// Texel-space coordinate of a world point under one cascade's matrix: NDC
+// scaled so one shadow-map texel is exactly 1.0. Whole-texel motion of the
+// box shows up here as integer deltas.
+glm::vec2 texel_space(const CascadeData &cascade, const glm::vec3 &world, uint32_t resolution)
+{
+    const glm::vec4 clip = cascade.viewProjMatrix * glm::vec4(world, 1.0F);
+    return { (clip.x / clip.w) * (static_cast<float>(resolution) / 2.0F),
+        (clip.y / clip.w) * (static_cast<float>(resolution) / 2.0F) };
+}
+
+glm::mat4 translated_view(const glm::vec3 &offset)
+{
+    return glm::lookAt(
+      glm::vec3(0.0F, 6.0F, 26.0F) + offset, glm::vec3(0.0F, 1.0F, 0.0F) + offset, glm::vec3(0.0F, 1.0F, 0.0F));
+}
+}// namespace
+
+TEST(CascadedShadowMapUnit, StabilizedCascadesShiftByWholeTexelsUnderCameraMotion)
+{
+    // The shimmer bug: refitting the ortho box to exact frustum corners every
+    // frame means sub-texel camera motion moves every shadow edge by a
+    // sub-texel amount, and edges crawl. Stabilized cascades may only move
+    // the box in WHOLE texel increments, so a static edge stays on the same
+    // texels. Assert exactly that: for a fixed world point, the texel-space
+    // delta between two sub-texel camera positions must be (near-)integer.
+    constexpr uint32_t kResolution = 2048;
+    const glm::vec3 tiny_offset(0.0137F, 0.0F, 0.0F);
+    const glm::vec3 probe(0.0F, 1.0F, 10.0F);
+
+    const auto stab_a = computeCascadeData(
+      kCascades, translated_view({}), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F, kResolution);
+    const auto stab_b = computeCascadeData(
+      kCascades, translated_view(tiny_offset), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F, kResolution);
+
+    const glm::vec2 delta = texel_space(stab_a[0], probe, kResolution) - texel_space(stab_b[0], probe, kResolution);
+    EXPECT_NEAR(delta.x, std::round(delta.x), 5e-2F) << "x moved by a fractional texel: " << delta.x;
+    EXPECT_NEAR(delta.y, std::round(delta.y), 5e-2F) << "y moved by a fractional texel: " << delta.y;
+
+    // Control - the LEGACY path (no resolution) must show the crawl this
+    // feature removes, or the assertions above prove nothing: the same camera
+    // pair must produce a fractional shift on at least one axis.
+    const auto legacy_a =
+      computeCascadeData(kCascades, translated_view({}), kFov, kAspect, kNear, kFar, default_light());
+    const auto legacy_b =
+      computeCascadeData(kCascades, translated_view(tiny_offset), kFov, kAspect, kNear, kFar, default_light());
+    const glm::vec2 legacy_delta =
+      texel_space(legacy_a[0], probe, kResolution) - texel_space(legacy_b[0], probe, kResolution);
+    const float frac_x = std::abs(legacy_delta.x - std::round(legacy_delta.x));
+    const float frac_y = std::abs(legacy_delta.y - std::round(legacy_delta.y));
+    EXPECT_GT(std::max(frac_x, frac_y), 5e-2F)
+      << "legacy path unexpectedly texel-aligned; the stabilized assertions are vacuous";
+}
+
+TEST(CascadedShadowMapUnit, StabilizedBoxSizeIsInvariantUnderCameraMotion)
+{
+    // The other half of the shimmer: the tight-fit box RESIZES as the camera
+    // turns, so the world-size of a texel breathes. The stabilized box is
+    // sized from the slice's bounding radius, which depends only on
+    // fov/aspect/splits - so the ortho scales must be bit-for-bit stable
+    // across translation AND rotation of the camera.
+    constexpr uint32_t kResolution = 2048;
+    const glm::mat4 view_a = translated_view({});
+    const glm::mat4 view_b =
+      glm::lookAt(glm::vec3(3.0F, 6.0F, 20.0F), glm::vec3(1.0F, 0.0F, -4.0F), glm::vec3(0.0F, 1.0F, 0.0F));
+
+    const auto cascades_a =
+      computeCascadeData(kCascades, view_a, kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F, kResolution);
+    const auto cascades_b =
+      computeCascadeData(kCascades, view_b, kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F, kResolution);
+
+    for (uint32_t i = 0; i < kCascades; ++i) {
+        // viewProj = ortho * rotation; row norms of the upper 3x3 recover the
+        // ortho scales (1/half_extent).
+        const auto row_norm = [](const glm::mat4 &m, int row) {
+            return glm::length(glm::vec3(m[0][row], m[1][row], m[2][row]));
+        };
+        EXPECT_NEAR(row_norm(cascades_a[i].viewProjMatrix, 0), row_norm(cascades_b[i].viewProjMatrix, 0), 1e-5F)
+          << "cascade " << i << " x scale breathes with camera motion";
+        EXPECT_NEAR(row_norm(cascades_a[i].viewProjMatrix, 1), row_norm(cascades_b[i].viewProjMatrix, 1), 1e-5F)
+          << "cascade " << i << " y scale breathes with camera motion";
+    }
+}
+
+TEST(CascadedShadowMapUnit, StabilizedCascadesStillCoverTheirSlice)
+{
+    // Stability must not cost coverage: every slice corner still lands inside
+    // its cascade's box (the one-texel pad exists precisely because snapping
+    // can shift the center by up to a texel).
+    constexpr uint32_t kResolution = 2048;
+    const std::vector<CascadeData> cascades = computeCascadeData(
+      kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F, kResolution);
+    ASSERT_EQ(cascades.size(), kCascades);
+
+    float slice_near = kNear;
+    for (size_t i = 0; i < cascades.size(); ++i) {
+        const float slice_far = cascades[i].splitDepth;
+        for (const glm::vec4 &corner : frustum_slice_corners(default_view(), slice_near, slice_far)) {
+            const glm::vec4 clip = cascades[i].viewProjMatrix * glm::vec4(glm::vec3(corner), 1.0F);
+            ASSERT_GT(std::abs(clip.w), 1e-6F);
+            const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+            constexpr float kEdge = 1e-4F;
+            EXPECT_GE(ndc.x, -1.0F - kEdge) << "cascade " << i;
+            EXPECT_LE(ndc.x, 1.0F + kEdge) << "cascade " << i;
+            EXPECT_GE(ndc.y, -1.0F - kEdge) << "cascade " << i;
+            EXPECT_LE(ndc.y, 1.0F + kEdge) << "cascade " << i;
+            EXPECT_GE(ndc.z, 0.0F - kEdge) << "cascade " << i;
+            EXPECT_LE(ndc.z, 1.0F + kEdge) << "cascade " << i;
+        }
+        slice_near = slice_far;
+    }
+}

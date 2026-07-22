@@ -41,6 +41,14 @@ struct ShadowPushConstants
 // splitLambda blends logarithmic (1.0) against uniform (0.0) splits. See the
 // measurements in the implementation before raising it: high lambda starves
 // subjects that are framed from a distance.
+// shadowMapResolution (optional): when > 0, cascades are STABILIZED - the
+// light basis is world-fixed (pure rotation), the ortho box is sized from the
+// slice's bounding radius (camera-motion invariant), and its center snaps to
+// whole shadow-map texels. Without it the box is refitted to the exact frustum
+// corners every frame, so it translates AND resizes continuously and every
+// shadow edge shimmers as the camera moves. 0 keeps the legacy tight-fit
+// behaviour. The stabilized box is a padded square (radius + one texel), which
+// trades a little texel density for edges that hold still.
 std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
   const glm::mat4 &cameraView,
   float cameraFov,
@@ -49,7 +57,8 @@ std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
   float farPlane,
   const glm::vec3 &lightDir,
   float shadowDistance = 0.0F,
-  float splitLambda = 0.5F);
+  float splitLambda = 0.5F,
+  uint32_t shadowMapResolution = 0);
 
 // The caster transform. This exists as a named function purely so a test can
 // pin the invariant that was once broken: the shadow pass must transform
@@ -77,6 +86,7 @@ class CascadedShadowMap
     uint32_t getHeight() const { return shadowHeight; }
     uint32_t getNumCascades() const { return numCascades; }
 
+    // Passes the map resolution through, so live cascades are stabilized.
     void updateCascades(const glm::mat4 &cameraView,
       float cameraFov,
       float aspect,
