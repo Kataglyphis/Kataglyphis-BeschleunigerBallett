@@ -55,6 +55,13 @@ class ASManager
     std::vector<BottomLevelAccelerationStructure> blas;
     TopLevelAccelerationStructure tlas;
 
+    // Replaces every freshly built BLAS with a compacted copy. Compaction
+    // typically reclaims a large fraction of BLAS memory at no trace-time
+    // cost; it is legal because the builds carry eAllowCompaction and the
+    // build submission is fully synchronous before this runs. TLAS is built
+    // AFTER, so it picks up the compacted device addresses naturally.
+    void compactBLAS(std::shared_ptr<VulkanDevice> device, vk::CommandPool commandPool);
+
     static void createSingleBlas(std::shared_ptr<VulkanDevice>device,
       vk::CommandBuffer command_buffer,
       BuildAccelerationStructure &build_as_structure,

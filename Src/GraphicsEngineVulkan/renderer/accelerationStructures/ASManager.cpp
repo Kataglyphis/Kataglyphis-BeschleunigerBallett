@@ -9,6 +9,8 @@ module;
 #include <utility>
 #include <vector>
 #include <vulkan/vulkan.hpp>
+#include <spdlog/spdlog.h>
+#include "renderer/accelerationStructures/BottomLevelAccelerationStructure.hpp"
 
 module kataglyphis.vulkan.as_manager;
 
@@ -124,6 +126,93 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(std::shared_ptr
     for (auto &b : build_as_structures) { blas.emplace_back(std::move(b.single_blas)); }
 
     scratchBuffer.cleanUp();
+
+    compactBLAS(device, commandPool);
+}
+
+void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(std::shared_ptr<VulkanDevice> device,
+  vk::CommandPool commandPool)
+{
+    if (blas.empty()) { return; }
+    vk::Device const logical = device->getLogicalDevice();
+    auto const count = static_cast<uint32_t>(blas.size());
+
+    // 1. Ask the driver how small each BLAS can get. Legal only after the
+    // build completed (endAndSubmitCommandBuffer is synchronous) and only for
+    // AS built with eAllowCompaction.
+    vk::QueryPoolCreateInfo query_pool_create_info{};
+    query_pool_create_info.queryType = vk::QueryType::eAccelerationStructureCompactedSizeKHR;
+    query_pool_create_info.queryCount = count;
+    vk::QueryPool const query_pool = logical.createQueryPool(query_pool_create_info).value;
+
+    std::vector<vk::AccelerationStructureKHR> handles;
+    handles.reserve(count);
+    for (auto const &entry : blas) { handles.push_back(entry.vulkanAS); }
+
+    vk::CommandBuffer query_cmd =
+      Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(logical, commandPool);
+    query_cmd.resetQueryPool(query_pool, 0, count);
+    query_cmd.writeAccelerationStructuresPropertiesKHR(
+      count, handles.data(), vk::QueryType::eAccelerationStructureCompactedSizeKHR, query_pool, 0);
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      logical, commandPool, device->getGraphicsQueue(), query_cmd);
+
+    std::vector<vk::DeviceSize> compacted_sizes(count);
+    vk::Result const query_result = logical.getQueryPoolResults(query_pool,
+      0,
+      count,
+      count * sizeof(vk::DeviceSize),
+      compacted_sizes.data(),
+      sizeof(vk::DeviceSize),
+      vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWait);
+    if (query_result != vk::Result::eSuccess) {
+        spdlog::warn("ASManager: compacted-size query failed ({}); keeping uncompacted BLAS.",
+          static_cast<int>(query_result));
+        logical.destroyQueryPool(query_pool);
+        return;
+    }
+
+    // 2. Copy each BLAS into a right-sized replacement.
+    std::vector<BottomLevelAccelerationStructure> compacted(count);
+    vk::CommandBuffer copy_cmd =
+      Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(logical, commandPool);
+    vk::DeviceSize total_compacted = 0;
+    for (uint32_t i = 0; i < count; ++i) {
+        total_compacted += compacted_sizes[i];
+
+        compacted[i].vulkanBuffer.create(device,
+          compacted_sizes[i],
+          vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress
+            | vk::BufferUsageFlagBits::eTransferDst,
+          vk::MemoryPropertyFlagBits::eDeviceLocal,
+          vk::MemoryAllocateFlagBits::eDeviceAddress);
+
+        vk::AccelerationStructureCreateInfoKHR create_info{};
+        create_info.type = vk::AccelerationStructureTypeKHR::eBottomLevel;
+        create_info.size = compacted_sizes[i];
+        create_info.buffer = compacted[i].vulkanBuffer.getBuffer();
+        compacted[i].vulkanAS = logical.createAccelerationStructureKHR(create_info).value;
+
+        vk::CopyAccelerationStructureInfoKHR copy_info{};
+        copy_info.src = blas[i].vulkanAS;
+        copy_info.dst = compacted[i].vulkanAS;
+        copy_info.mode = vk::CopyAccelerationStructureModeKHR::eCompact;
+        copy_cmd.copyAccelerationStructureKHR(copy_info);
+    }
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      logical, commandPool, device->getGraphicsQueue(), copy_cmd);
+
+    // 3. The copies are complete (synchronous submit), so the originals can
+    // go and the compacted set takes their place. TLAS is built after this
+    // returns and reads the NEW device addresses.
+    for (uint32_t i = 0; i < count; ++i) {
+        logical.destroyAccelerationStructureKHR(blas[i].vulkanAS);
+        blas[i].vulkanBuffer.cleanUp();
+    }
+    blas = std::move(compacted);
+    logical.destroyQueryPool(query_pool);
+
+    spdlog::info("ASManager: compacted {} BLAS, {} bytes total after compaction.", count, total_compacted);
 }
 
 void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(std::shared_ptr<VulkanDevice>device,
@@ -332,7 +421,11 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createAccelerationStructur
   vk::DeviceSize &current_size)
 {
     build_as_structure.build_info.type = vk::AccelerationStructureTypeKHR::eBottomLevel;
-    build_as_structure.build_info.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
+    // eAllowCompaction: required for the post-build compaction pass. It does
+    // not slow the trace; it only permits querying the compacted size and
+    // copying with eCompact.
+    build_as_structure.build_info.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace
+      | vk::BuildAccelerationStructureFlagBitsKHR::eAllowCompaction;
     build_as_structure.build_info.mode = vk::BuildAccelerationStructureModeKHR::eBuild;
     build_as_structure.build_info.geometryCount = static_cast<uint32_t>(blas_input.as_geometry.size());
     build_as_structure.build_info.pGeometries = blas_input.as_geometry.data();
