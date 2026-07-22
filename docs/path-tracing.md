@@ -102,10 +102,10 @@ every light response. Measure changed-pixel fractions in the panel-free
 right edge, and dump amplified diff-map PNGs before trusting any new pixel
 metric.
 
-**Editing the kernel requires running `Scripts/Windows/compile-shaders.ps1`
-by hand**: runtime shader compilation silently no-ops for container-built
-binaries (the baked `glslcExe` path only exists inside the container) - see
-BACKLOG.
+Editing the kernel no longer needs a manual compile step: glslc resolves at
+runtime (baked path -> `VULKAN_SDK` -> PATH, fixed 2026-07-22) and the
+engine recompiles an edited source at startup, loudly reporting any compiler
+failure. `Scripts/Windows/compile-shaders.ps1` remains the bulk/CI path.
 
 ## Open work (BACKLOG, "PT survey" section)
 
