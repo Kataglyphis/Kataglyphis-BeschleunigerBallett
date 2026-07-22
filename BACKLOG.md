@@ -1365,7 +1365,7 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       **ABI skew: delete build-clangcl-debug + `-FreshContainer`** (see
       [[cpp-renderer-fix-campaign]]).
     - *Increment 1 — alphaMode MASK cutoff (S/M)* — **SHADING DONE, verified
-      (4491122a)**: `ObjMaterial` got a trailing `float alphaCutoff` (-1 = not MASK);
+      (5d8523f8)**: `ObjMaterial` got a trailing `float alphaCutoff` (-1 = not MASK);
       `GltfLoader` sets it from `cgltf_alpha_mode_mask`/`alpha_cutoff`; the forward
       (`shader.frag`) and deferred (`geometry.frag`) shading passes `discard` when
       `alphaCutoff >= 0` and the sampled base-colour alpha is below it. Safe-by-default
