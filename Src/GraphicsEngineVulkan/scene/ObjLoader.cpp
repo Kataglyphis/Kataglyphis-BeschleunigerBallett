@@ -235,7 +235,11 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
                     normals = glm::vec3(nx, ny, nz);
                 }
 
-                glm::vec3 color(-1.F);
+                // White when the OBJ carries no per-vertex colour: the fragment
+                // shader multiplies this in (glTF COLOR_0 semantics, shared path),
+                // so the absent case must be the identity (1,1,1), not the old -1
+                // sentinel that would have darkened/inverted the surface.
+                glm::vec3 color(1.F);
                 if ((3 * vertex_index) + 2 < attrib.colors.size()) {
                     tinyobj::real_t const red = attrib.colors[(3 * vertex_index) + 0];
                     tinyobj::real_t const green = attrib.colors[(3 * vertex_index) + 1];

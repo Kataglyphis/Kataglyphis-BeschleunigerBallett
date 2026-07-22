@@ -273,6 +273,7 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
             std::vector<glm::vec3> positions;
             std::vector<glm::vec3> normals;
             std::vector<glm::vec2> uvs;
+            std::vector<glm::vec3> colors;
 
             for (cgltf_size a = 0; a < primitive->attributes_count; ++a) {
                 const cgltf_attribute *attribute = &primitive->attributes[a];
@@ -285,6 +286,13 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
                     break;
                 case cgltf_attribute_type_texcoord:
                     if (attribute->index == 0) { readAttribute<2>(attribute->data, uvs); }
+                    break;
+                case cgltf_attribute_type_color:
+                    // COLOR_0 multiplies the base colour (glTF spec). The file may
+                    // store it as vec3 or vec4; cgltf_accessor_read_float hands back
+                    // the rgb either way. Absent -> white below, so the shader
+                    // multiply is a no-op for the common uncoloured mesh.
+                    if (attribute->index == 0) { readAttribute<3>(attribute->data, colors); }
                     break;
                 default:
                     break;
@@ -302,7 +310,8 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
                 const glm::vec3 worldNormal =
                   i < normals.size() ? glm::normalize(normalMatrix * normals[i]) : glm::vec3(0.0F, 1.0F, 0.0F);
                 const glm::vec2 uv = i < uvs.size() ? uvs[i] : glm::vec2(0.0F);
-                vertices.emplace_back(worldPos, worldNormal, glm::vec3(1.0F), uv);
+                const glm::vec3 vcolor = i < colors.size() ? colors[i] : glm::vec3(1.0F);
+                vertices.emplace_back(worldPos, worldNormal, vcolor, uv);
             }
 
             // Gather the primitive's local index sequence (from the accessor,

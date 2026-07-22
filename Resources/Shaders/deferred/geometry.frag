@@ -65,6 +65,11 @@ void main() {
         texColor = vec4(material.diffuse, 1.0);
     }
 
+    // glTF COLOR_0 multiplies the base colour, matching the forward path
+    // (shader.frag). Loaders write (1,1,1) for uncoloured meshes, so this is an
+    // identity multiply there; fragment_color was forwarded but previously unused.
+    texColor.rgb *= fragment_color;
+
     outNormal = vec4(normalize(shading_normal), 1.0);
     outAlbedo = texColor;
 

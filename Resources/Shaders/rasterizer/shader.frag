@@ -104,6 +104,12 @@ void main() {
 		ambient = material.diffuse;
 	}
 
+	// glTF COLOR_0 vertex colour multiplies the base colour (spec). The vertex
+	// shader has always forwarded fragment_color; it was declared here but never
+	// read, so vertex-coloured glTF rendered white. Loaders now write (1,1,1)
+	// when the mesh carries no colour, making this an identity multiply there.
+	ambient *= fragment_color;
+
 	// Blinn-Phong exponent -> roughness (Beckmann mapping). Was a hard-coded
 	// 0.9 that nullified the material's shininess entirely; an unset OBJ
 	// shininess of 0 maps to fully rough, close to the old constant look.

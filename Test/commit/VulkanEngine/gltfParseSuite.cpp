@@ -319,3 +319,31 @@ TEST(GltfParseUnit, MaskCardFixtureLoadsWithCutoutTextureAndCutoff)
     const unsigned char png_magic[8] = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
     for (size_t i = 0; i < 8; ++i) { EXPECT_EQ(png[i], png_magic[i]) << "PNG signature byte " << i; }
 }
+
+TEST(GltfParseUnit, ReadsColor0VertexColours)
+{
+    // vertex_colored_quad.gltf tags its four corners red/green/blue/white via
+    // COLOR_0. The loader used to hardcode (1,1,1), so vertex-coloured glTF
+    // rendered white and the forwarded fragment_color was dead. Red without the
+    // loader change: every colour would come back (1,1,1).
+    const auto path = sceneConfig::resolveModelPath("Models/GltfTest/vertex_colored_quad.gltf");
+    if (!std::filesystem::exists(path)) { GTEST_SKIP() << "vertex-colour fixture not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(path));
+    ASSERT_EQ(loader.getVertices().size(), 4U);
+
+    const auto has_color = [&](float r, float g, float b) {
+        for (const Vertex &v : loader.getVertices()) {
+            if (std::abs(v.color.x - r) < 1e-4F && std::abs(v.color.y - g) < 1e-4F
+                && std::abs(v.color.z - b) < 1e-4F) {
+                return true;
+            }
+        }
+        return false;
+    };
+    EXPECT_TRUE(has_color(1.0F, 0.0F, 0.0F)) << "red corner colour missing";
+    EXPECT_TRUE(has_color(0.0F, 1.0F, 0.0F)) << "green corner colour missing";
+    EXPECT_TRUE(has_color(0.0F, 0.0F, 1.0F)) << "blue corner colour missing";
+    EXPECT_TRUE(has_color(1.0F, 1.0F, 1.0F)) << "white corner colour missing";
+}
