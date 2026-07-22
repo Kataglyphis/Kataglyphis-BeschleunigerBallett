@@ -1274,3 +1274,101 @@ TEST(GoldenRender, PathTracingHonorsTheQualityControls)
       << "The bounce-cap slider did not change the path-traced image - "
          "quality push constants not reaching the kernel.";
 }
+
+// The GUI directional light must drive FORWARD lighting - diffuse included.
+// Before 2026-07-22 every BRDF in Resources/Shaders/pbr/brdf multiplied the
+// light color/intensity into the SPECULAR term only, so diffuse surfaces were
+// lit by an implicit radiance-1 white light and the radiance slider barely
+// moved the image (the red state: only sparse highlights respond). With the
+// fix, radiance 10 vs 0 swings the whole lit scene. Rig + crop rationale as
+// in the PT sibling test.
+TEST(GoldenRender, ForwardLightingRespondsToTheDirectionalLight)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES);
+
+    const auto swung_fraction =
+      [](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, uint32_t w, uint32_t h) {
+          const uint32_t x0 = (w * 18U) / 25U;
+          const uint32_t x1 = (w * 49U) / 50U;
+          const uint32_t y0 = h / 20U;
+          const uint32_t y1 = (h * 19U) / 20U;
+          size_t swung = 0;
+          size_t total = 0;
+          for (uint32_t y = y0; y < y1; ++y) {
+              for (uint32_t x = x0; x < x1; ++x) {
+                  const size_t base = (static_cast<size_t>(y) * w + x) * 4U;
+                  for (size_t c = 0; c < 3U; ++c) {
+                      if (std::abs(static_cast<int>(a[base + c]) - static_cast<int>(b[base + c])) > 5) {
+                          ++swung;
+                          break;
+                      }
+                  }
+                  ++total;
+              }
+          }
+          return static_cast<double>(swung) / static_cast<double>(total);
+      };
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> lit = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(lit.empty());
+
+    scene_vars.direcional_light_radiance = 0.0F;
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> unlit = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_EQ(lit.size(), unlit.size());
+
+    const double response = swung_fraction(lit, unlit, width, height);
+
+    // Mean luminance of the crop with the light OFF. This is the assertion
+    // that actually separates the defect from the fix: a swung-pixel count
+    // does NOT - the specular layer alone (which always saw the light)
+    // swings 0.41 of the crop when the radiance drops, so that instrument
+    // passed on the light-blind diffuse too. But at radiance zero the whole
+    // BRDF must go dark: measured, the fixed shader leaves the crop at 18.9
+    // (skybox/ambient bleed), while the light-blind diffuse keeps rendering
+    // a fully lit scene at 97.6. The threshold sits between.
+    const auto crop_mean_luminance = [](const std::vector<uint8_t> &rgba, uint32_t w, uint32_t h) {
+        const uint32_t x0 = (w * 18U) / 25U;
+        const uint32_t x1 = (w * 49U) / 50U;
+        const uint32_t y0 = h / 20U;
+        const uint32_t y1 = (h * 19U) / 20U;
+        double sum = 0.0;
+        size_t count = 0;
+        for (uint32_t y = y0; y < y1; ++y) {
+            for (uint32_t x = x0; x < x1; ++x) {
+                sum += luminance_of(rgba, static_cast<size_t>(y) * w + x);
+                ++count;
+            }
+        }
+        return sum / static_cast<double>(count);
+    };
+    const double unlit_luma = crop_mean_luminance(unlit, width, height);
+    GTEST_LOG_(INFO) << "forward lit-vs-unlit swung-pixel fraction (panel-free crop): " << response
+                     << ", unlit crop mean luminance: " << unlit_luma;
+
+    EXPECT_LT(unlit_luma, 30.0)
+      << "The scene stays lit with the directional light at zero radiance - "
+         "the light factors are not reaching the diffuse term.";
+
+    // Secondary: the radiance change must move pixels at all (vacuous alone,
+    // see above - kept as a cheap sanity floor).
+    EXPECT_GT(response, 0.05)
+      << "Forward lighting did not respond to the directional light radiance.";
+}

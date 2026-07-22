@@ -1165,8 +1165,13 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
    `VulkanDevice.cpp:487-494`) or extend the near plane to scene bounds along the
    light axis. Test: pure CPU in `cascadedShadowMapSuite` — a point 30 units toward
    the light must transform to NDC `z >= 0`; fails today.
-2. **Lit target is `R8G8B8A8_UNORM` — BLOCKED ON #8, measured 2026-07-22** (S
-   after #8) — implemented and REVERTED after three oracles showed the format
+2. **Lit target is `R8G8B8A8_UNORM`** — **DONE (2026-07-22, with the #8
+   lighting fix in one unit)**: FP16 offscreen (Rasterizer x2, DeferredRasterizer
+   offscreen+finalFormat, rgen+PT storage qualifiers). With diffuse finally
+   scaling by the light, the whole scene exceeded 1.0 and the UNORM target
+   clamped flat - the two only work together, exactly as the null-result
+   sequencing predicted. Post's Reinhard now does real work; PT's 186 ceiling
+   is gone (its light golden jumped 0.027 -> 0.751). Historical note below. — implemented and REVERTED after three oracles showed the format
    change is indistinguishable on this scene: whole-frame mean moves ~+0.76 for
    a radiance 2->8 sweep on UNORM and FP16 alike; bright-pixel counts (>200,
    the post-Reinhard UNORM ceiling is ~186) are flat on BOTH at radiance 8 AND
@@ -1203,10 +1208,9 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
    ~~`:88` uses `vec4(normal_hit, 1.0)` (picks up translation; a normal needs the
    inverse-transpose), and `:103-104` mix object-space `N`/`hit_pos` with
    world-space `L`/`cam_pos`.~~ **DONE (PT correctness batch, 2026-07-22)** —
-   plus the untextured-material clamp-to-slot-0 fetch, same batch. STILL OPEN:
-   `:130-131` hard-codes light colour/intensity, so the GUI light has no effect
-   in RT at all. Test: extend `DeferredMatchesForwardRoughly` to RT-vs-forward
-   under a non-identity transform.
+   plus the untextured-material clamp-to-slot-0 fetch, same batch. ~~STILL OPEN: `:130-131` hard-codes light colour/intensity~~ **DONE
+   (2026-07-22, forward-lighting unit)** - rchit now reads sceneUBO.dirLight;
+   the item is fully closed.
 6. **glTF is unreachable from the GUI, and `reloadModel` is OBJ-only + null-unsafe** (S) —
    `scanAvailableModels` filters `== ".obj"` (`SceneConfig.cpp:96`, case-sensitive),
    so the in-tree `cube.glb` can never be picked; `Scene::reloadModel` constructs
@@ -1218,7 +1222,10 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
    `post.frag:34` does `pow(.,1/2.2)`. Albedo is systematically too bright and mips
    average in the wrong space. Narrow fix: `eR8G8B8A8Srgb` for base colour only
    (normal/ORM must stay UNORM).
-8. **Forward shading ignores material diffuse and roughness** (S) —
+8. **Forward shading ignores material diffuse and roughness** (S) — (the
+   RELATED light-blindness - every BRDF's diffuse term ignoring
+   light_color/light_intensity - was fixed 2026-07-22 in the lighting+HDR
+   unit; what remains here is the MATERIAL side:) —
    `shader.frag:86-91` builds ambient from the texture alone, leaves `diffuse`
    commented at `:89` and hard-codes `roughness = 0.9` at `:91`, nullifying the
    glTF material mapping in `GltfLoader.cpp:106-129`. The deferred path reads both

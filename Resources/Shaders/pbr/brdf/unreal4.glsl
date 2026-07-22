@@ -39,7 +39,8 @@ vec3 evaluteUnreal4PBR(vec3 ambient, vec3 N, vec3 L, vec3 V, float roughness, ve
     float cosTheta_v = CosTheta(V, N);
 
     // add lambertian diffuse term
-    vec3 color = LambertDiffuse(ambient) * CosTheta(L, N);
+    // Light factors were missing on the diffuse term (see pbrBook.glsl).
+    vec3 color = light_color * light_intensity * LambertDiffuse(ambient) * CosTheta(L, N);
 
     vec3 wo = normalize(L);
     vec3 wi = normalize(V);

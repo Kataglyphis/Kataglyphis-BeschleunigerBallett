@@ -85,7 +85,7 @@ void DeferredRasterizer::createTextures(vk::CommandPool &commandPool)
     };
 
     // Use specific formats for GBuffer
-    createAttachment(offscreenTextures, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferDst);
+    createAttachment(offscreenTextures, vk::Format::eR16G16B16A16Sfloat, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferDst);
     createAttachment(gBufferPositions, vk::Format::eR16G16B16A16Sfloat, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
     createAttachment(gBufferNormals, vk::Format::eR16G16B16A16Sfloat, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
     createAttachment(gBufferAlbedos, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
@@ -202,7 +202,8 @@ void DeferredRasterizer::createRenderPass()
     // 4: Material
     // 5: Depth
 
-    vk::Format finalFormat = vk::Format::eR8G8B8A8Unorm;
+    // HDR final target - matches the forward offscreen (see Rasterizer.cpp).
+    vk::Format finalFormat = vk::Format::eR16G16B16A16Sfloat;
     vk::Format positionFormat = vk::Format::eR16G16B16A16Sfloat;
     vk::Format normalFormat = vk::Format::eR16G16B16A16Sfloat;
     vk::Format albedoFormat = vk::Format::eR8G8B8A8Unorm;

@@ -130,7 +130,10 @@ vec3 evaluateDisneysPBR(vec3 ambient, vec3 N, vec3 L, vec3 V, float roughness, v
     // add diffuse term
     // add diffuse term before checking negativ cosinus!
     // we want some diffuse light for the sun even if cosinus negative
-    vec3 diffuse = DisneyDiffuse(linAmbient, L, V, N, roughness, subsurface) * (1.f - metallic) * CosTheta(L, N);
+    // Light factors were missing here (see pbrBook.glsl - only specular saw
+    // the light in every BRDF of this directory).
+    vec3 diffuse = light_color * light_intensity * DisneyDiffuse(linAmbient, L, V, N, roughness, subsurface)
+                   * (1.f - metallic) * CosTheta(L, N);
 
     // 1.) case: get lit by light from the backside
     // 2.) case: view it from the back

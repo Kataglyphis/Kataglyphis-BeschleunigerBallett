@@ -145,6 +145,10 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanSharedIncludes)
     for (fs::recursive_directory_iterator it(shader_root, error), end; it != end; it.increment(error)) {
         if (error) { break; }
         if (!it->is_regular_file(error) || it->path().extension() != ".spv") { continue; }
+        // Naga-exported artifacts are not built from these GLSL includes -
+        // without this skip, the first edit to any shared include flags all
+        // of Resources/Shaders/generated as stale forever.
+        if (is_generated_artifact(it->path())) { continue; }
         const auto spv_time = fs::last_write_time(it->path(), error);
         if (error) { continue; }
         if (spv_time < newest_include) { stale.push_back(fs::relative(it->path(), repo_root).string()); }

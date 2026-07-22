@@ -23,7 +23,7 @@ layout (set = 0, binding = sceneUBO_BINDING) uniform _SceneUBO {
 };
 
 layout(set = 1, binding = TLAS_BINDING) uniform accelerationStructureEXT TLAS;
-layout(set = 1, binding = OUT_IMAGE_BINDING, rgba8) uniform image2D image; 
+layout(set = 1, binding = OUT_IMAGE_BINDING, rgba16f) uniform image2D image; 
 
 layout(push_constant) uniform _PushConstantRay {
     PushConstantRaytracing pc_ray;

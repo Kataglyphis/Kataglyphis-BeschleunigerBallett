@@ -136,8 +136,11 @@ void main() {
     }
 
     float roughness = 0.9;
-    vec3 light_color = vec3(1.f);
-    float light_intensity = 1.f;
+    // The GUI light - was hard-coded to (1,1,1) x 1.0, which made the light
+    // controls dead in RT mode (the remaining half of the survey item that
+    // fixed this file's normal/space defects).
+    vec3 light_color = sceneUBO.dirLight.color.rgb;
+    float light_intensity = sceneUBO.dirLight.color.w;
 
 	payload.hit_value = ambient;
     payload.is_hit = 1.0;

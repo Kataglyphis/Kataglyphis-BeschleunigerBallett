@@ -59,8 +59,10 @@ vec3 evaluateFrostbitePBR(vec3 ambient,
     float NdotH = clamp(dot(N, H), 0.0f, 1.0f);
     float NdotL = clamp(dot(N, L), 0.0f, 1.0f);
 
-    // add lambertian diffuse term vec3(0.f);//
-    vec3 color = FrostbiteDiffuse(NdotV, NdotL, LdotH, roughness) * (ambient / PI) * NdotL;
+    // Diffuse term - the light factors were missing (same defect as every
+    // sibling BRDF in this directory: only specular saw the light).
+    vec3 color =
+      light_color * light_intensity * FrostbiteDiffuse(NdotV, NdotL, LdotH, roughness) * (ambient / PI) * NdotL;
     //
     if (LdotH > 0 && NdotH > 0 && NdotL > 0) {
 

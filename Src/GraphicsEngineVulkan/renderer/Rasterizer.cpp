@@ -203,7 +203,11 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recreateFrameResources(vk
 void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
 {
     vk::AttachmentDescription color_attachment;
-    constexpr vk::Format offscreen_format = vk::Format::eR8G8B8A8Unorm;
+    // HDR: lighting now scales with the GUI light radiance (default 10),
+    // so the lit scene exceeds 1.0 everywhere - a UNORM target clamps it
+    // flat before post's tonemap ever runs (measured: everything at the
+    // 186 ceiling). FP16 keeps the range for Reinhard.
+    constexpr vk::Format offscreen_format = vk::Format::eR16G16B16A16Sfloat;
     color_attachment.format = offscreen_format;
     color_attachment.samples = vk::SampleCountFlagBits::e1;
     color_attachment.loadOp = vk::AttachmentLoadOp::eClear;
@@ -325,7 +329,11 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
     for (uint32_t index = 0; index < vulkanSwapChain->getNumberSwapChainImages(); index++) {
         auto texture = std::make_unique<Texture>();
         const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-        constexpr vk::Format offscreen_format = vk::Format::eR8G8B8A8Unorm;
+        // HDR: lighting now scales with the GUI light radiance (default 10),
+    // so the lit scene exceeds 1.0 everywhere - a UNORM target clamps it
+    // flat before post's tonemap ever runs (measured: everything at the
+    // 186 ceiling). FP16 keeps the range for Reinhard.
+    constexpr vk::Format offscreen_format = vk::Format::eR16G16B16A16Sfloat;
 
         texture->createImage(device,
           swap_chain_extent.width,

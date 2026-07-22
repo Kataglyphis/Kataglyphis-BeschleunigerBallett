@@ -81,8 +81,11 @@ float G_GGX_PBRT(vec3 wi, vec3 wo, vec3 N, float roughness)
 vec3 evaluatePBRBooksPBR(vec3 ambient, vec3 N, vec3 L, vec3 V, float roughness, vec3 light_color, float light_intensity)
 {
 
-    // add lambertian diffuse term
-    vec3 color = LambertDiffuse(ambient) * CosTheta(L, N);
+    // Lambertian diffuse term. The light factors were MISSING here for the
+    // whole file's life: only the specular term below multiplied them, so
+    // diffuse surfaces were lit by an implicit radiance-1 white light and
+    // the GUI light slider only moved the highlights.
+    vec3 color = light_color * light_intensity * LambertDiffuse(ambient) * CosTheta(L, N);
 
     vec3 wo = normalize(L);
     vec3 wi = normalize(V);

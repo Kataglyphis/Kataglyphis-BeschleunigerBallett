@@ -19,8 +19,9 @@ vec3 evaluatePhong(vec3 ambient, vec3 N, vec3 L, vec3 V, vec3 light_color, float
     float maximumSpecular = 8192;
     float remappedN = pow(maximumSpecular, ks);
 
-    // add lambertian diffuse term
-    vec3 color = LambertDiffuse(ambient) * light_intensity;
+    // Lambertian diffuse term - had intensity but not the light COLOR
+    // (same defect family as the sibling BRDFs).
+    vec3 color = light_color * light_intensity * LambertDiffuse(ambient);
     vec3 wh = normalize(L + V);
 
     // add specular term
