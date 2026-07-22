@@ -1310,10 +1310,12 @@ accidental constant-white furnace and the GUI light provably does nothing.
      resolve glslc at runtime (baked path -> PATH -> VULKAN_SDK/Bin), check
      the system() return, and log loudly on failure. Until then: editing GLSL
      requires running Scripts/Windows/compile-shaders.ps1 by hand.
-3. **Wire actual light transport** (M) - re-enable env/sky radiance on miss,
-   then NEE toward the GUI directional light. Today PT is invariant to the
-   scene lighting; a golden can assert mean luminance responds to
-   sceneUBO.dirLight changes.
+3. **Wire actual light transport** (M) - **DONE (2026-07-22)**: NEE toward
+   the directional light (one shadow ray per bounce) + deliberate soft
+   gradient sky on miss (the accidental radiance-1 furnace is gone). Golden
+   `PathTracingRespondsToTheDirectionalLight` (shadow rig scene, swung-pixel
+   fraction in the panel-free crop): green 0.027, pre-NEE kernel exactly 0.
+   Estimator constants (1/pi, PDFs) still item 9.
 4. **Degenerate scatter guard** (S) - **DONE (2026-07-22)** near-zero scatter
    falls back to the normal, RTIOW 9.4 style.
 5. **Hit normal transformed with w=1, no inverse-transpose** (S) - **DONE

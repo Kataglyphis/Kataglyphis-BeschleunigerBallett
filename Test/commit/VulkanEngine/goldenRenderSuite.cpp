@@ -1107,3 +1107,98 @@ TEST(GoldenRender, PathTracingAccumulatesAndConverges)
     EXPECT_LT(late_delta, early_delta / 2.0)
       << "Per-frame movement did not shrink with accumulation depth - history not converging.";
 }
+
+// The GUI directional light must exist in path tracing. Before 2026-07-22 the
+// PT kernel's only light was an accidental radiance-1 white furnace (the env
+// term on miss was commented out), so this test's two captures were identical
+// no matter what the light slider did - that is the red state. Now: NEE toward
+// the directional light per bounce + a deliberate soft sky on miss, so scene
+// luminance in the GUI-free right-edge region must drop hard when the light
+// radiance goes to zero. Same crop rationale as the accumulation golden: the
+// ImGui panel covers the left ~70% of the frame.
+TEST(GoldenRender, PathTracingRespondsToTheDirectionalLight)
+{
+    SKIP_WITHOUT_GPU();
+
+    // The default skeleton scene is the wrong measurand here (measured:
+    // lit-unlit delta 0.057 - the right-edge crop is nearly all sky, which
+    // the light does not touch). The shadow rig's ground plane + box give the
+    // light a real surface area, same reasoning as ShadowsDarkenSomePixels.
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = true;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES);
+
+    // Fraction of pixels in the GUI-free region whose colour moves by more
+    // than 5 levels between the two captures. A mean-luminance instrument
+    // was tried first and measured 0.29 of a level: the lit ground plane
+    // CLAMPS at the UNORM ceiling (186 after tonemap) while the responding
+    // band hugs the ImGui panel's right edge, so a mean over a crop that
+    // missed half the band saw almost nothing. Counting swung pixels is
+    // robust to both. Panel edge measured at x = 0.714w; crop starts at
+    // 0.72w.
+    const auto swung_fraction =
+      [](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, uint32_t w, uint32_t h) {
+          const uint32_t x0 = (w * 18U) / 25U;
+          const uint32_t x1 = (w * 49U) / 50U;
+          const uint32_t y0 = h / 20U;
+          const uint32_t y1 = (h * 19U) / 20U;
+          size_t swung = 0;
+          size_t total = 0;
+          for (uint32_t y = y0; y < y1; ++y) {
+              for (uint32_t x = x0; x < x1; ++x) {
+                  const size_t base = (static_cast<size_t>(y) * w + x) * 4U;
+                  for (size_t c = 0; c < 3U; ++c) {
+                      if (std::abs(static_cast<int>(a[base + c]) - static_cast<int>(b[base + c])) > 5) {
+                          ++swung;
+                          break;
+                      }
+                  }
+                  ++total;
+              }
+          }
+          return static_cast<double>(swung) / static_cast<double>(total);
+      };
+
+    // Lit: the default radiance (10). Let the accumulation settle a few
+    // frames past the mode switch before capturing.
+    harness.render_frames(SETTLE_FRAMES);
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> lit = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(lit.empty());
+
+    // Unlit: radiance to zero. The accumulation history resets are keyed on
+    // camera/scene changes, not light changes, so render enough frames for
+    // the running mean to wash the lit history out (the mean moves by
+    // (new-old)/N per frame; 30 frames flips the majority of the weight).
+    scene_vars.direcional_light_radiance = 0.0F;
+    harness.render_frames(30);
+    const std::vector<uint8_t> unlit = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_EQ(lit.size(), unlit.size());
+
+    const double response = swung_fraction(lit, unlit, width, height);
+    GTEST_LOG_(INFO) << "PT lit-vs-unlit swung-pixel fraction (panel-free crop): " << response;
+
+    // Measured: the NEE kernel swings ~4.5k pixels frame-wide (ground plane
+    // going from clamped-bright to sky-only lit, deltas up to 244); the
+    // fraction below is the in-crop measurement with margin. The red state
+    // (pre-NEE kernel, where the only light was the accidental furnace and
+    // the radiance slider reached nothing) leaves only accumulation-depth
+    // drift, measured well below the threshold.
+    EXPECT_GT(response, 5.0e-3)
+      << "Path-traced pixels did not respond to the directional light radiance.";
+}
