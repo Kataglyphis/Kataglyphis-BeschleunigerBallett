@@ -3,7 +3,6 @@ module;
 #include <cmath>
 #include <cstring>
 #include <vector>
-#include <unordered_map>
 #include <memory>
 #include <filesystem>
 #include <sstream>
@@ -29,8 +28,6 @@ import kataglyphis.vulkan.pipeline_builder;
 
 namespace Kataglyphis {
 
-// Global map to store per-layer image views
-static std::unordered_map<CascadedShadowMap*, std::vector<vk::ImageView>> g_layerViewsMap;
 
 void CascadedShadowMap::init(std::shared_ptr<VulkanDevice>in_device, uint32_t width, uint32_t height, uint32_t num_cascades)
 {
@@ -393,7 +390,7 @@ void CascadedShadowMap::createFramebuffers()
     // rendered layer. The per-layer views and per-cascade framebuffers are
     // gone.
     framebuffers.resize(1);
-    std::vector<vk::ImageView> layerViews(1);
+    shadowMapLayerViews.resize(1);
 
     vk::ImageViewCreateInfo viewInfo{};
     viewInfo.image = shadowMapArray->getImage();
@@ -407,12 +404,12 @@ void CascadedShadowMap::createFramebuffers()
 
     auto viewResult = device->getLogicalDevice().createImageView(viewInfo);
     ASSERT_VULKAN(VkResult(viewResult.result), "Failed to create shadow map array view!");
-    layerViews[0] = viewResult.value;
+    shadowMapLayerViews[0] = viewResult.value;
 
     vk::FramebufferCreateInfo framebufferInfo{};
     framebufferInfo.renderPass = renderPass;
     framebufferInfo.attachmentCount = 1;
-    framebufferInfo.pAttachments = &layerViews[0];
+    framebufferInfo.pAttachments = &shadowMapLayerViews[0];
     framebufferInfo.width = shadowWidth;
     framebufferInfo.height = shadowHeight;
     framebufferInfo.layers = 1;
@@ -421,8 +418,6 @@ void CascadedShadowMap::createFramebuffers()
     ASSERT_VULKAN(VkResult(fbResult.result), "Failed to create shadow map framebuffer!");
     framebuffers[0] = fbResult.value;
 
-    // Stored for cleanup, same mechanism as the old per-layer views.
-    g_layerViewsMap[this] = std::move(layerViews);
 }
 
 void CascadedShadowMap::cleanUp()
@@ -433,13 +428,10 @@ void CascadedShadowMap::cleanUp()
     if (!device) { return; }
 
     spdlog::info("CascadedShadowMap: Destroying pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphicsPipeline);
-    auto it = g_layerViewsMap.find(this);
-    if (it != g_layerViewsMap.end()) {
-        for (auto view : it->second) {
-            device->getLogicalDevice().destroyImageView(view);
-        }
-        g_layerViewsMap.erase(it);
+    for (auto view : shadowMapLayerViews) {
+        device->getLogicalDevice().destroyImageView(view);
     }
+    shadowMapLayerViews.clear();
 
     for (auto fb : framebuffers) {
         device->getLogicalDevice().destroyFramebuffer(fb);

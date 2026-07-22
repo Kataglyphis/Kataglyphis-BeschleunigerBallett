@@ -117,6 +117,10 @@ class CascadedShadowMap
     std::unique_ptr<Kataglyphis::Texture> shadowMapArray;
     vk::RenderPass renderPass;
     std::vector<vk::Framebuffer> framebuffers;
+    // Depth image views the framebuffers attach to (one full-cascade-array
+    // view since the multiview conversion). Owned here and destroyed in
+    // cleanUp; was previously a file-static map keyed by `this`.
+    std::vector<vk::ImageView> shadowMapLayerViews;
 
     vk::Pipeline graphicsPipeline{};
     vk::PipelineLayout pipelineLayout{};
