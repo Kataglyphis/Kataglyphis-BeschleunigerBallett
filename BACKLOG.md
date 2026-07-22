@@ -1269,7 +1269,7 @@ forward image (NEW, FIXED with a rebind on mode change). Items #2/#8's
 G-buffer-format concerns apply to the LIVE pass's attachments only where they
 actually exist there.
 
-**NEW item - delete the dead shader set** (S): `rasterizer/g_buffer_*`,
+**DONE 2026-07-22 - dead shader set deleted** (20 files: g_buffer_* pair+spv, CloudsRectangle, noise_texture_{32,128}_res, loading_screen/ entire). `omni_shadow_map.*` deliberately RETAINED - equally dead, but entangled with item #12 (finish-or-delete the point-light system); decide once, for class and shaders together. `generated/` is NOT dead - those are the Rust renderer WGSL->GLSL exports. Original item text: `rasterizer/g_buffer_*`,
 `clouds/CloudsRectangle.frag` (+ audit for further unreferenced shaders by
 grepping each Resources/Shaders file against Src). They cost this survey its
 three headline findings and several verification cycles; BuildIntegrity also
