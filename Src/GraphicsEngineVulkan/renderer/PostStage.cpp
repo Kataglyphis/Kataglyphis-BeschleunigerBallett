@@ -295,14 +295,16 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
     std::string const post_vert_shader = "post.vert";
     std::string const post_frag_shader = "post.frag";
 
+    // Compile BEFORE reading the spv - the old order consumed the PREVIOUS
+    // run's bytes (same defect as PathTracing.cpp, see the note there).
     ShaderHelper shaderHelper;
+    shaderHelper.compileShader(post_shader_dir.str(), post_vert_shader);
+    shaderHelper.compileShader(post_shader_dir.str(), post_frag_shader);
+
     File vertexShaderFile(shaderHelper.getShaderSpvDir(post_shader_dir.str(), post_vert_shader));
     std::vector<char> const vertex_shader_code = vertexShaderFile.readCharSequence();
     File fragmentShaderFile(shaderHelper.getShaderSpvDir(post_shader_dir.str(), post_frag_shader));
     std::vector<char> const fragment_shader_code = fragmentShaderFile.readCharSequence();
-
-    shaderHelper.compileShader(post_shader_dir.str(), post_vert_shader);
-    shaderHelper.compileShader(post_shader_dir.str(), post_frag_shader);
 
     vk::ShaderModule vertex_shader_module = shaderHelper.createShaderModule(device, vertex_shader_code);
     vk::ShaderModule fragment_shader_module = shaderHelper.createShaderModule(device, fragment_shader_code);

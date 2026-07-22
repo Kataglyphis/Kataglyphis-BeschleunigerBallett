@@ -194,11 +194,15 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
 
     std::string const pathTracing_shader = "path_tracing.comp";
 
+    // Compile BEFORE reading the spv: the old order read the bytes first, so
+    // a GLSL edit reached the GPU one process-start late (and shader
+    // hot-reload lagged one trigger) - found when a red-probe shader edit
+    // provably changed nothing in the rendered output.
     ShaderHelper shaderHelper;
+    shaderHelper.compileShader(pathTracing_shader_dir.str(), pathTracing_shader);
+
     File pathTracingShaderFile(shaderHelper.getShaderSpvDir(pathTracing_shader_dir.str(), pathTracing_shader));
     std::vector<char> const pathTracingShadercode = pathTracingShaderFile.readCharSequence();
-
-    shaderHelper.compileShader(pathTracing_shader_dir.str(), pathTracing_shader);
 
     vk::ShaderModule pathTracingModule = shaderHelper.createShaderModule(device, pathTracingShadercode);
 

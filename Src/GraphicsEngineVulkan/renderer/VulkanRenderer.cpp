@@ -854,7 +854,12 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
     mutable_gui_vars.visibility.meshes_total =
       forward_active ? rasterizer.getMeshesConsidered() : deferredRasterizer.getMeshesConsidered();
 
-    if (device->supportsHardwareAcceleratedRRT() && image_index < raytracingDescriptors.sets().size()) {
+    // The TLAS guard covers the async model-load window: with RT/PT enabled
+    // before the scene arrives, the record path used to dispatch against
+    // descriptor sets that were never written (TLAS, output, accumulation) -
+    // 20 validation errors in the pre-load frames of the accumulation golden.
+    if (device->supportsHardwareAcceleratedRRT() && image_index < raytracingDescriptors.sets().size()
+        && asManager.getTLAS()) {
         std::vector<vk::DescriptorSet> raytracing_descriptor_sets = { sharedRenderDescriptors.sets()[image_index],
             raytracingDescriptors.sets()[image_index] };
 

@@ -1296,11 +1296,20 @@ accidental constant-white furnace and the GUI light provably does nothing.
      async model load, the kernel dispatches against never-written descriptor
      sets (20 validation errors in the pre-load window of the golden run).
      Guard the PT/RT record branch on a built TLAS.
-   - **Pipelines consume the PREVIOUS run's SPIR-V** (S/M): every stage's
-     createPipeline reads the .spv bytes BEFORE calling compileShader, so a
-     GLSL edit reaches the GPU one process-start late (and shader hot-reload
-     lags one trigger). Found when a red-probe shader edit provably did not
-     change the rendered output. Reorder to compile-then-read everywhere.
+   - ~~**Pipelines consume the PREVIOUS run's SPIR-V** (S/M)~~ **DONE
+     (2026-07-22)**: PathTracing/PostStage reordered to compile-then-read
+     (the other stages already had the right order; Clouds deliberately
+     consumes prebuilt spv only). BUT the reorder exposed a deeper layer,
+     still OPEN:
+   - **Runtime shader compilation is a silent no-op for container-built
+     binaries** (M): `RendererConfig::glslcExe` is baked at CMake time, so a
+     binary built in the CI container carries the container's scoop path,
+     which does not exist on the host - `system()` fails, nothing checks the
+     return code, and the stale spv is consumed without a word. This is why
+     the compile-then-read red/green could not be proven on the host. Fix:
+     resolve glslc at runtime (baked path -> PATH -> VULKAN_SDK/Bin), check
+     the system() return, and log loudly on failure. Until then: editing GLSL
+     requires running Scripts/Windows/compile-shaders.ps1 by hand.
 3. **Wire actual light transport** (M) - re-enable env/sky radiance on miss,
    then NEE toward the GUI directional light. Today PT is invariant to the
    scene lighting; a golden can assert mean luminance responds to
