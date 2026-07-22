@@ -1380,10 +1380,13 @@ accidental constant-white furnace and the GUI light provably does nothing.
    the same day): KATAGLYPHIS_PT_FURNACE uniform-env + albedo-1 mode;
    green mean 186.005 vs ideal 186 at uniformity 1.0; red (spurious
    bounce 1/pi) crashes to 136.9/0.25.
-10. **PT goldens** (S now / M after item 2) - renderModesSuite only asserts
-    device-not-lost; add non-black now, variance-decreases + furnace after
-    accumulation. Blocked-note: convergence asserts are impossible while every
-    frame is identical.
+10. **PT goldens** - **DONE by accumulation of shipped units (2026-07-22)**:
+    non-black + variance-decreases live in PathTracingAccumulatesAndConverges,
+    light response in PathTracingRespondsToTheDirectionalLight, quality
+    wiring in PathTracingHonorsTheQualityControls, transform-follow in
+    RaytracedWorldFollowsTheModelTransform, and the furnace in
+    PathTracingPassesTheWhiteFurnaceTest - five red-proven goldens where the
+    survey found only device-not-lost.
 11. **Decorrelate the RNG seed** - **CLOSED as a measured NULL RESULT
     (2026-07-22)**: lag-1 autocorrelation of the depth-2 noise field is
     -0.012 (lag-16: +0.015) - no neighbour correlation exists; the LCG

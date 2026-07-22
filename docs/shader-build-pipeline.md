@@ -14,7 +14,16 @@ Shaders live in `Resources/Shaders/**` and compile to
    passes every shader subdirectory as an include path.
 2. **Runtime fallback.** `ShaderHelper::compileShader` compiles on demand in
    Debug builds (disabled in Release unless
-   `KAT_ENABLE_RUNTIME_SHADER_COMPILATION` is set).
+   `KAT_ENABLE_RUNTIME_SHADER_COMPILATION` is set). Since 2026-07-22
+   (`c246ded3`) it works on the HOST for container-built binaries too: glslc
+   resolves at call time (baked build path → `VULKAN_SDK` → PATH) and a
+   nonzero compiler exit is a loud spdlog error naming the stale spv that
+   will be served. Before that, the baked container path made every host
+   runtime compile a silent no-op. Practical consequence: a shader probe
+   cycle on the host is edit → run one golden - no manual compile step.
+   Pipelines also compile-then-read since `91a73cd1` (they used to read the
+   spv BEFORE regenerating it, so an edit reached the GPU one process-start
+   late).
 
 ## The failure mode (fixed 2026-07-19)
 

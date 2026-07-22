@@ -156,7 +156,8 @@ Topic guides (each topic has exactly one home — `AGENTS.md` links to these rat
 | [`docs/container-build-caching.md`](docs/container-build-caching.md) | This repo's build caching: measurements, both transports, `KATAGLYPHIS_KEEP_BUILD_ROOT`, delivery verification |
 | [`docs/shader-build-pipeline.md`](docs/shader-build-pipeline.md) | GLSL → SPIR-V, the stale-binary and silent-`glslc`-failure traps, fast shader iteration |
 | [`docs/code-quality.md`](docs/code-quality.md) | clang-tidy / clang-format commands and when to run them |
-| [`docs/cpp-renderer-improvements.md`](docs/cpp-renderer-improvements.md) | Renderer architecture work: what changed and why |
+| [`docs/cpp-renderer-improvements.md`](docs/cpp-renderer-improvements.md) | Renderer architecture work: what changed and why, plus the instrument playbook for writing goldens |
+| [`docs/path-tracing.md`](docs/path-tracing.md) | The path-tracing mode: estimator, temporal accumulation, furnace/convergence goldens |
 | [`ExternalLib/Kataglyphis-ContainerHub/docs/`](ExternalLib/Kataglyphis-ContainerHub/docs/) | Everything reusable about Windows containers — image, transports and their setup, performance findings |
 
 Renderer-agnostic and Windows-container knowledge lives in the ContainerHub submodule so other projects can consume it; see the "Reusable Work Belongs in ContainerHub" rule in `AGENTS.md`.
