@@ -66,8 +66,12 @@ void Kataglyphis::VulkanImageView::create(std::shared_ptr<VulkanDevice>in_device
     view_create_info.subresourceRange.baseArrayLayer = 0;// start array level to view from
     view_create_info.subresourceRange.layerCount = array_layers;// number of array levels to view
 
-    // create image view
-    imageView = device->getLogicalDevice().createImageView(view_create_info).value;
+    // create image view. The result was unchecked - exceptions are disabled
+    // project-wide (VULKAN_HPP_NO_EXCEPTIONS), so a failure stored a null
+    // handle here and surfaced as opaque UB downstream. Fail fast.
+    auto imageViewResult = device->getLogicalDevice().createImageView(view_create_info);
+    ASSERT_VULKAN(VkResult(imageViewResult.result), "Failed to create image view!")
+    imageView = imageViewResult.value;
 }
 
 void Kataglyphis::VulkanImageView::cleanUp()

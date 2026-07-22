@@ -184,10 +184,20 @@ auto Kataglyphis::ShaderHelper::createShaderModule(std::shared_ptr<VulkanDevice>
     shader_module_create_info.codeSize = code.size();// size of code
     shader_module_create_info.pCode = reinterpret_cast<const uint32_t *>(code.data());// pointer to code
 
-    // C++ API throws on failure, no manual error check needed
-    vk::ShaderModule shader_module = device->getLogicalDevice().createShaderModule(shader_module_create_info).value;
+    // The old comment here claimed "the C++ API throws on failure" - it does
+    // NOT: exceptions are disabled project-wide (VULKAN_HPP_NO_EXCEPTIONS), so
+    // .value was taken regardless of .result and a failed createShaderModule
+    // (bad SPIR-V, OOM) returned a null module that failed pipeline creation
+    // opaquely later. Check and fail fast, matching ASSERT_VULKAN's semantics.
+    auto shader_module_result = device->getLogicalDevice().createShaderModule(shader_module_create_info);
+    if (shader_module_result.result != vk::Result::eSuccess) {
+        spdlog::default_logger_raw()->log(spdlog::level::critical,
+          std::string("Failed to create shader module (result ")
+            + std::to_string(static_cast<int>(shader_module_result.result)) + ")");
+        std::abort();
+    }
 
-    return shader_module;
+    return shader_module_result.value;
 }
 
 Kataglyphis::ShaderHelper::~ShaderHelper() = default;
