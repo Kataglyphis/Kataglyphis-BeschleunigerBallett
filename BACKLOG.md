@@ -1253,6 +1253,75 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
     `recreateSwapChain` (`VulkanRenderer.cpp:592-621`) where the image-count edge
     cases live. Test: run the whole golden suite under both paths behind a toggle.
 
+### C++ Vulkan engine — second survey (2026-07-22, app/GUI/RT/deferred internals)
+
+A second deep pass over the subsystems the first survey covered least. Verified
+against source; nothing duplicates the first list. Ruled out on inspection (so
+nobody re-chases them): the rgen "missing Y-flip" comment is stale, not a bug
+(the flip is baked into the projection at VulkanRenderer.cpp:179); the async
+model loader is race-clean; GUI/renderer state is single-threaded.
+
+**The deferred path is broken three independent ways** - do these together:
+
+1. **Deferred lighting tonemaps + gamma-corrects, then post.frag does BOTH again**
+   (S) - `g_buffer_lighting_pass.frag:215-216` ends with Reinhard + gamma, then
+   `post.frag:32-34` re-applies both. Forward writes raw color and is correct,
+   so deferred renders crushed/washed vs forward. Fix: delete the two lines.
+   Test: tighten `GoldenRender.DeferredMatchesForwardRoughly` to mean-luminance
+   tolerance; fails today.
+2. **G-buffer material-id is UNORM, every index collapses to 0/1** (S) - the
+   geometry pass writes `g_material_id = vec3(mat_ID)` into `eR8G8B8A8Unorm`
+   (`DeferredRasterizer.cpp:92,:209`), so `mat_ID >= 1` clamps to 1.0 and
+   `SKYBOX_MATERIAL_ID = 35` / `CLOUDS_MATERIAL_ID = 36` can never round-trip -
+   sky and cloud pixels get lit as geometry in deferred mode. Fix: `eR8Uint`/
+   `usampler2D` (or normalize by MAX_MATERIALS+2).
+3. **G-buffer never samples albedo textures** (S) - the texture fetch is
+   commented out on the assignment line in `g_buffer_geometry_pass.frag`
+   (`g_albedo = materials[mat_ID].diffuse;//texture(...)`), so Sponza renders
+   flat per-material color in deferred while forward shows textures.
+
+**CPU-testable robustness/coverage (the now-green Windows CI can gate these):**
+
+4. **First-frame delta_time is unbounded** (S) - `last_time` starts at 0.0
+   (`App.cpp:32-33`) so the first `update_frame_timing` returns the whole
+   startup wall-clock (seconds); a key held during load lurches the camera.
+   Seed or clamp; pure gtest.
+5. **Single-time command buffers are never freed** (S/M) -
+   `CommandBufferManager.cpp:30-38,:113-115` allocates per upload and
+   deliberately never frees ("Avoid explicit free"), and nothing resets the
+   pool - every texture/buffer upload and AS build leaks a command buffer for
+   the session, plus a fresh fence per submit (`:81-108`). GUI model reloads
+   multiply it.
+6. **Input handling + frame timing have ZERO tests** (S/M) -
+   `WindowInputCallbacks.ixx:24-83` and `FrameInput.ixx:9-21` are pure,
+   device-free, and route all input into the camera; no suite in Test/commit
+   references them. This is also where #4 gets its regression guard.
+
+**Build hygiene / perf / RT:**
+
+7. **KomputePlayground: unconditional, unreferenced, and the ONLY target with
+   exceptions enabled** (S) - added at `Src/CMakeLists.txt:99`, links neither
+   `myproject_options` nor `myproject_warnings` (so /EHs- does not apply; its
+   `main.cpp:40` throw only compiles because of that), kompute fetch commented
+   out but `kompute::kompute` linked. Gate behind an OFF option or bring it
+   under the shared options and drop the throw.
+8. **G-buffer stores full world position + an RGBA8 for a scalar id** (M) -
+   position is reconstructible from the depth input attachment + inverse
+   view-proj; two full-res attachments of bandwidth per frame. Subsumes #2's
+   format fix. Measure via the GpuTimedPass JSON.
+9. **Acceleration structures are never compacted** (M) - BLAS/TLAS built with
+   `ePreferFastTrace`, no `eAllowCompaction`, no size query/copy anywhere
+   (`ASManager.cpp:207,:335`). Compaction typically reclaims a large fraction
+   of BLAS memory - it is the VRAM headroom for multi-object scenes.
+10. **RT output image is `rgba8`** (S) - `raytrace.rgen:26` clamps the traced
+    result to 8-bit LDR before post ever sees it; the RT analogue of the
+    UNORM-lit-target item. `rgba16f` + `R16G16B16A16Sfloat` target.
+11. **GUI render-mode radios live in function-local statics** (S) -
+    `GUI.cpp:121,:132` hold the mode in `static int`, decoupled from
+    `GUIRendererSharedVars` - the display can desync from renderer state and
+    cannot be config-driven. Move into the shared vars; extend the round-trip
+    suite.
+
 ### Rust WebGPU renderer
 
 **Bake wasm32-unknown-unknown into the :latest-cross image.** The CI lane added
