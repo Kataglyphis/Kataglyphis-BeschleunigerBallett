@@ -1641,10 +1641,12 @@ oversized per-primitive uniform block, #13 render bundles for the cascades.
    built from `prim.model` alone (`forward.rs:1296`). Wrong for any non-uniform or
    mirrored instance scale — i.e. exactly the scattered/squashed instances that
    instancing exists for. The tangent path is correct, which hides the asymmetry.
-6. **`COLOR_0` vertex colours are silently dropped** (M) — the loader never calls
-   `read_colors` (`gltf_loader.rs:330-392`) and `Vertex` has no colour field. This
-   is the most common way real assets carry colour without a texture
-   (photogrammetry, CAD, low-poly packs, baked AO); they render uniformly white.
+6. **`COLOR_0` vertex colours are silently dropped** — **DONE (2026-07-22, RPT
+   abb46c1, push held for the Windows lane)**: Vertex gains a linear-RGBA
+   colour (white default), the loader reads COLOR_0, the shader multiplies it
+   into albedo per spec, QEM blend interpolates it. Attribute location 6 for
+   colour shifted the instance buffer to 7-10. Green-vertex-quad red/green
+   test (r=g=b=177 white in the red state).
 7. **Every texture slot is forced onto TEXCOORD_0** (M) — `textureInfo.texCoord` is
    never read and only `read_tex_coords(0)` is loaded (`gltf_loader.rs:339-342`);
    `texture_ref` deliberately discards the `Info` carrying the index (`:238-251`).
