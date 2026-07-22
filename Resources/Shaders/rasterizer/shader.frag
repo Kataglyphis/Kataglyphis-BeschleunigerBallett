@@ -88,7 +88,15 @@ void main() {
 		// textureID is model-LOCAL; texture_offset shifts it into the
 		// flattened global array (multi-model scenes).
 		int texture_id = clamp(int(obj_res.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
-		ambient = texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), texture_coordinates).xyz;
+		vec4 base_sample = texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), texture_coordinates);
+		// glTF alphaMode MASK: drop fully-cut-out texels so a foliage/decal card
+		// casts and shades its silhouette, not the solid quad it is modelled as.
+		// alphaCutoff < 0 (OPAQUE/BLEND, and every OBJ material) skips this
+		// entirely, so opaque rendering is bit-unchanged.
+		if (material.alphaCutoff >= 0.0 && base_sample.a < material.alphaCutoff) {
+			discard;
+		}
+		ambient = base_sample.xyz;
 	} else {
 		// Untextured material: textureID is -1, and the old clamp-to-0 made
 		// it sample whichever texture sat in slot 0 (same defect the PT/RT

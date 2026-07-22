@@ -230,3 +230,65 @@ TEST(GltfParseUnit, TriangleStripIsTriangulatedNotDropped)
     EXPECT_EQ(loader.getIndices().size(), 6U) << "a 4-vertex strip triangulates to 2 triangles";
     EXPECT_EQ(loader.getIndices().size() % 3U, 0U);
 }
+
+namespace {
+
+// A minimal one-triangle glTF whose single material carries the given
+// "alphaMode"/"alphaCutoff" snippet. The 36-byte POSITION buffer is the same
+// three-vertex block the tests above reuse.
+std::string material_gltf(const std::string &alphaSnippet)
+{
+    return std::string(R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [ { "pbrMetallicRoughness": { "baseColorFactor": [1,1,1,1] })GLTF")
+      + alphaSnippet + R"GLTF( } ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 },
+        "material": 0
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+}
+
+float first_material_cutoff(const std::string &doc, const char *tmpName)
+{
+    const auto tmp = std::filesystem::temp_directory_path() / tmpName;
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+    Kataglyphis::GltfLoader loader;
+    const bool parsed = loader.parseCpu(tmp.string());
+    std::filesystem::remove(tmp);
+    EXPECT_TRUE(parsed);
+    EXPECT_GT(loader.getMaterials().size(), 0U);
+    return loader.getMaterials().empty() ? 0.0F : loader.getMaterials()[0].alphaCutoff;
+}
+
+}// namespace
+
+TEST(GltfParseUnit, MaskAlphaModeSetsTheCutoff)
+{
+    // glTF alphaMode MASK carries the cutoff the raster shaders discard against.
+    // The loader used to drop it entirely, so a cut-out foliage material rendered
+    // as its solid quad. Red without the GltfLoader change: alphaCutoff would be
+    // the constructor default (-1), not the asset's 0.5.
+    const float cutoff = first_material_cutoff(material_gltf(R"(, "alphaMode": "MASK", "alphaCutoff": 0.5)"),
+      "kat_mask.gltf");
+    EXPECT_NEAR(cutoff, 0.5F, 1e-6F) << "MASK material must carry its alphaCutoff into ObjMaterial";
+}
+
+TEST(GltfParseUnit, OpaqueMaterialHasNoCutoff)
+{
+    // OPAQUE (the default when alphaMode is absent) and BLEND must map to a
+    // negative sentinel so the shaders never discard - otherwise every opaque
+    // glTF would punch holes wherever its base-colour alpha dipped.
+    const float cutoff = first_material_cutoff(material_gltf(""), "kat_opaque.gltf");
+    EXPECT_LT(cutoff, 0.0F) << "a non-MASK material must have alphaCutoff < 0 (never discards)";
+}

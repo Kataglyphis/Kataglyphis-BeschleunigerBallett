@@ -116,6 +116,12 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
     // Smoother surfaces (low roughness) get a tighter, stronger highlight.
     const float shininess = glm::mix(128.0F, 1.0F, glm::clamp(roughness, 0.0F, 1.0F));
 
+    // glTF alphaMode MASK -> the shader discards where base-colour alpha < cutoff
+    // (cut-out foliage/decals). OPAQUE and BLEND map to -1 (never discard); real
+    // BLEND compositing needs a sorted transparent pass that this engine does not
+    // have yet, so BLEND currently renders opaque - MASK is the common cut-out case.
+    const float alphaCutoff = (material.alpha_mode == cgltf_alpha_mode_mask) ? material.alpha_cutoff : -1.0F;
+
     return ObjMaterial(baseColor * 0.1F,// ambient
       baseColor,// diffuse
       glm::vec3(1.0F - roughness) * 0.5F,// specular
@@ -125,7 +131,8 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
       1.0F,// ior
       1.0F,// dissolve
       2,// illum
-      -1);// textureID (increment d)
+      -1,// textureID (increment d)
+      alphaCutoff);// glTF MASK cutoff (-1 = OPAQUE/BLEND)
 }
 
 /// Reads a float attribute (2 or 3 components) into `out`, one entry per accessor

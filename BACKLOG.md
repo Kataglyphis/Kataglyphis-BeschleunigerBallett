@@ -1364,14 +1364,18 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       float + a mode int, or reuse `dissolve`+`illum`) crosses the module boundary =
       **ABI skew: delete build-clangcl-debug + `-FreshContainer`** (see
       [[cpp-renderer-fix-campaign]]).
-    - *Increment 1 — alphaMode MASK cutoff (S/M, do first):* the common cutout-foliage
-      case, and the cheapest — no blend, no sorting. Add `alphaCutoff` + a MASK flag
-      to `ObjMaterial`; `GltfLoader` reads `material.alpha_mode()`/`alpha_cutoff()`
-      (cgltf: `cgltf_alpha_mode_mask`, `alpha_cutoff`); the raster frag samples
-      base-colour alpha and `discard`s below cutoff (the shaders have NO alpha discard
-      today). The Rust renderer's MASK path (RPT `forward.wgsl`) is the reference.
-      Golden: a MASK card asset — shadowed/visible pixel delta vs a control, red-proven
-      by removing the discard (mirror the RPT alpha-shadow test's discriminating oracle).
+    - *Increment 1 — alphaMode MASK cutoff (S/M)* — **SHADING DONE, verified
+      (4491122a)**: `ObjMaterial` got a trailing `float alphaCutoff` (-1 = not MASK);
+      `GltfLoader` sets it from `cgltf_alpha_mode_mask`/`alpha_cutoff`; the forward
+      (`shader.frag`) and deferred (`geometry.frag`) shading passes `discard` when
+      `alphaCutoff >= 0` and the sampled base-colour alpha is below it. Safe-by-default
+      (every OBJ/OPAQUE material is -1, so bit-unchanged). CPU-tested
+      (`GltfParseUnit.{MaskAlphaModeSetsTheCutoff,OpaqueMaterialHasNoCutoff}`, red
+      without the loader change) + that suite added to the Windows CI filter (it was
+      missing). REMAINING for increment 1: the SHADOW pass (1b) and RT/PT kernels (1c)
+      still cast/trace the solid quad — the shadow frag is depth-only with no UVs
+      today; and a GPU-host visual golden of the cut-out. The Rust renderer's MASK
+      path (RPT `forward.wgsl`) is the reference.
     - *Increment 2 — doubleSided (S):* per-material cull-mode; the pipeline variant
       already exists conceptually (RPT ships it). Backface-culled single-sided cards
       show the visible/back-face difference.
