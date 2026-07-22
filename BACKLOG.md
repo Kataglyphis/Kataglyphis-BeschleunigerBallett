@@ -1294,10 +1294,14 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
     invariants already. This is the
     enabling change for several already-wanted features.
 11. **glTF loader gaps** (M) — skinned-node transforms are applied though the spec
-    says ignore them (`GltfLoader.cpp:231`); missing `NORMAL` becomes a constant
-    `(0,1,0)` instead of computed flat normals (`:265`); non-triangle primitives are
-    silently skipped (`:237`); `alphaMode`/`doubleSided`/`KHR_texture_transform`/
-    texcoord index all ignored, so transparent glTF renders opaque.
+    says ignore them (`GltfLoader.cpp:231`); ~~missing `NORMAL` becomes a
+    constant `(0,1,0)`~~ **NORMAL fallback DONE (2026-07-22)**: absent normals
+    now get per-triangle flat normals from world-space positions (matching the
+    OBJ path), degenerate triangles skipped; CPU red/green with an XY-plane
+    triangle whose true normal is +/-Z. STILL OPEN in this item: non-triangle
+    primitives silently skipped (`:237`); `alphaMode`/`doubleSided`/
+    `KHR_texture_transform`/texcoord index all ignored, so transparent glTF
+    renders opaque.
 12. **Point lights are wired on the GPU but never fed; `OmniDirShadowMap` renders
     nothing** (M) — `lighting.frag` loops `numPointLights`, which
     `updateUniforms` never writes; the cube depth target allocated at init is

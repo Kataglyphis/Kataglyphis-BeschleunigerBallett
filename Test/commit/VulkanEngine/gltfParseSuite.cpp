@@ -7,11 +7,15 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
+#include <glm/vec3.hpp>
+#include <glm/geometric.hpp>
 #include <filesystem>
 #include <fstream>
 #include <string>
 
 import kataglyphis.vulkan.gltf_loader;
+import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.obj_material;
 import kataglyphis.vulkan.scene_config;
 
@@ -151,4 +155,44 @@ TEST(GltfParseUnit, ShortBase64ImageUriDoesNotUnderflow)
           << "a sub-quad base64 URI must yield no texture, not an underflowed read";
     }
     std::filesystem::remove(tmp);
+}
+
+TEST(GltfParseUnit, MissingNormalsAreComputedFlatNotDefaultedUp)
+{
+    // glTF spec: when NORMAL is absent, the implementation MUST compute flat
+    // normals. The loader used to default every such vertex to (0,1,0), so a
+    // normal-less mesh lit as if every face pointed straight up. This asset is
+    // one triangle in the XY plane - its true flat normal is (0,0,+/-1), which
+    // the old default (0,1,0) could never produce.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 }
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_no_normal.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_GE(loader.getVertices().size(), 3U);
+    // Every emitted normal must be the triangle's geometric normal, |Z| == 1,
+    // and must NOT be the old (0,1,0) default.
+    for (const Vertex &v : loader.getVertices()) {
+        const glm::vec3 n = v.normal;
+        EXPECT_GT(std::abs(n.z), 0.99F) << "computed flat normal should be +/-Z for an XY-plane triangle";
+        EXPECT_LT(std::abs(n.y), 0.01F) << "normal defaulted to up (0,1,0) - flat computation did not run";
+    }
 }

@@ -279,12 +279,17 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
             const auto base = static_cast<unsigned int>(vertices.size());
             for (std::size_t i = 0; i < positions.size(); ++i) {
                 const glm::vec3 worldPos = glm::vec3(world * glm::vec4(positions[i], 1.0F));
+                // A missing NORMAL used to become a constant (0,1,0), so a
+                // normal-less glTF lit as if every face pointed up. The spec
+                // requires computing flat normals; done below once this
+                // primitive's index list is known. Placeholder for now.
                 const glm::vec3 worldNormal =
                   i < normals.size() ? glm::normalize(normalMatrix * normals[i]) : glm::vec3(0.0F, 1.0F, 0.0F);
                 const glm::vec2 uv = i < uvs.size() ? uvs[i] : glm::vec2(0.0F);
                 vertices.emplace_back(worldPos, worldNormal, glm::vec3(1.0F), uv);
             }
 
+            const std::size_t primIndexStart = indices.size();
             if (primitive->indices != nullptr) {
                 const cgltf_accessor *idx = primitive->indices;
                 for (cgltf_size i = 0; i < idx->count; ++i) {
@@ -294,6 +299,29 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
                 // Non-indexed primitive: the vertices are the triangle sequence.
                 for (std::size_t i = 0; i < positions.size(); ++i) {
                     indices.push_back(base + static_cast<unsigned int>(i));
+                }
+            }
+
+            // Flat normals when NORMAL is absent (glTF spec: implementations
+            // MUST compute them). Per-triangle geometric normal from the
+            // already-world-space vertex positions, assigned to each of the
+            // triangle's vertices - the same flat approximation the OBJ path
+            // uses. Only runs for primitives that shipped no normals.
+            if (normals.empty()) {
+                for (std::size_t i = primIndexStart; i + 2 < indices.size(); i += 3) {
+                    Vertex &v0 = vertices[indices[i + 0]];
+                    Vertex &v1 = vertices[indices[i + 1]];
+                    Vertex &v2 = vertices[indices[i + 2]];
+                    const glm::vec3 edge1 = v1.position - v0.position;
+                    const glm::vec3 edge2 = v2.position - v0.position;
+                    const glm::vec3 faceNormal = glm::cross(edge1, edge2);
+                    // Degenerate triangle (zero area): leave the up default
+                    // rather than emit a NaN from normalizing a zero vector.
+                    if (glm::dot(faceNormal, faceNormal) <= 0.0F) { continue; }
+                    const glm::vec3 n = glm::normalize(faceNormal);
+                    v0.normal = n;
+                    v1.normal = n;
+                    v2.normal = n;
                 }
             }
 
