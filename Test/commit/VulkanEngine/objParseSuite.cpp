@@ -44,6 +44,28 @@ TEST(ObjParseUnit, ParsesWithoutAVulkanDevice)
     EXPECT_EQ(loader.getIndices().size() % 3U, 0U) << "indices must form whole triangles";
 }
 
+TEST(ObjParseUnit, FacesWithoutAMaterialIndexInsideTheMaterialsArray)
+{
+    if (!std::filesystem::exists(test_model())) { GTEST_SKIP() << "test model not present"; }
+
+    // shadow_rig.obj ships no mtllib, so tinyobj reports material_id -1 for
+    // every face. The old plain uint32_t cast sent 0xFFFFFFFF to the GPU and
+    // every shader material fetch (materials.m[materialIDs.i[prim]]) became
+    // an out-of-bounds buffer-device-address read - on EVERY untextured
+    // model, silently, for the whole life of the loader. The loader appends
+    // a default material for exactly this case; the faces must actually
+    // point at it.
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu(test_model()));
+
+    ASSERT_FALSE(loader.getMaterials().empty())
+      << "a file without materials must still yield the default material";
+    for (const unsigned int index : loader.getMaterialIndices()) {
+        ASSERT_LT(index, loader.getMaterials().size())
+          << "face material index escapes the materials array (GPU OOB read)";
+    }
+}
+
 TEST(ObjParseUnit, MalformedInputFailsInsteadOfKillingTheProcess)
 {
     // The GUI model picker can hand this arbitrary files. Until 2026-07-20

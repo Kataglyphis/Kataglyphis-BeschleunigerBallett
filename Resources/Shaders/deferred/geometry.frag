@@ -47,15 +47,27 @@ void main() {
     MaterialIDs materialIDs = MaterialIDs(obj_res.material_index_address);
     Materials materials = Materials(obj_res.material_address);
 
-    int texture_id = materials.m[materialIDs.i[gl_PrimitiveID]].textureID;
-    texture_id = clamp(texture_id, 0, MAX_TEXTURE_COUNT - 1);
-    vec4 texColor = texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), texture_coordinates);
-    if(texColor.a < 0.1) discard;
+    ObjMaterial material = materials.m[materialIDs.i[gl_PrimitiveID]];
+
+    vec4 texColor;
+    if (material.textureID >= 0) {
+        int texture_id = clamp(material.textureID, 0, MAX_TEXTURE_COUNT - 1);
+        texColor = texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), texture_coordinates);
+        if(texColor.a < 0.1) discard;
+    } else {
+        // Untextured material - same clamp-to-slot-0 defect and same fix as
+        // the forward path (shader.frag).
+        texColor = vec4(material.diffuse, 1.0);
+    }
 
     outPosition = vec4(worldPosition, 1.0);
     outNormal = vec4(normalize(shading_normal), 1.0);
     outAlbedo = texColor;
-    
-    // Material defaults for deferred (Roughness, Metallic, AO)
-    outMaterial = vec4(0.9, 0.0, 1.0, 1.0); 
+
+    // Roughness from the material's Blinn-Phong exponent - the SAME mapping
+    // as the forward path (shader.frag), which the parity golden guards. The
+    // lighting pass read material.r all along, but this pass wrote a
+    // hard-coded 0.9 into it, so "deferred reads the material" was an
+    // illusion. (Metallic, AO stay defaults.)
+    outMaterial = vec4(clamp(sqrt(2.0 / (material.shininess + 2.0)), 0.045, 1.0), 0.0, 1.0, 1.0);
 }

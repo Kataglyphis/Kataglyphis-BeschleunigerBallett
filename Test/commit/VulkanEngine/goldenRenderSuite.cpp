@@ -1360,7 +1360,9 @@ TEST(GoldenRender, ForwardLightingRespondsToTheDirectionalLight)
         return sum / static_cast<double>(count);
     };
     const double unlit_luma = crop_mean_luminance(unlit, width, height);
+    const double lit_luma = crop_mean_luminance(lit, width, height);
     GTEST_LOG_(INFO) << "forward lit-vs-unlit swung-pixel fraction (panel-free crop): " << response
+                     << ", lit crop mean luminance: " << lit_luma
                      << ", unlit crop mean luminance: " << unlit_luma;
 
     EXPECT_LT(unlit_luma, 30.0)

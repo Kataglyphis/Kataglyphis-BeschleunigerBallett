@@ -265,9 +265,16 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
 
             index_offset += fv;
 
-            // per-face material; face usually is triangle
-            // matToTex[shapes[s].mesh.material_ids[f]]
-            materialIndex.push_back(static_cast<uint32_t>(shape.mesh.material_ids[f]));
+            // Per-face material. tinyobj reports -1 for a face without a
+            // material (any OBJ shipping no mtllib); the plain cast sent
+            // 0xFFFFFFFF to the GPU, and every material fetch in the shaders
+            // (materials.m[materialIDs.i[prim]]) became an OUT-OF-BOUNDS
+            // buffer-device-address read. Route those faces to slot 0:
+            // loadTexturesAndMaterials appends a default material when the
+            // file ships none, and when it ships some, the first one is a
+            // strictly better fallback than reading unmapped memory.
+            const int face_material = shape.mesh.material_ids[f];
+            materialIndex.push_back(face_material >= 0 ? static_cast<uint32_t>(face_material) : 0U);
         }
     }
 

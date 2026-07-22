@@ -1222,10 +1222,16 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
    `post.frag:34` does `pow(.,1/2.2)`. Albedo is systematically too bright and mips
    average in the wrong space. Narrow fix: `eR8G8B8A8Srgb` for base colour only
    (normal/ORM must stay UNORM).
-8. **Forward shading ignores material diffuse and roughness** (S) — (the
-   RELATED light-blindness - every BRDF's diffuse term ignoring
-   light_color/light_intensity - was fixed 2026-07-22 in the lighting+HDR
-   unit; what remains here is the MATERIAL side:) —
+8. **Forward shading ignores material diffuse and roughness** — **DONE
+   (2026-07-22)**: both raster paths consume material.diffuse (untextured
+   fallback - the clamp-to-slot-0 defect PT/RT had) and map shininess ->
+   roughness (Beckmann), replacing the hard-coded 0.9 that DEFERRED also
+   wrote into its own G-buffer (lighting.frag "reading the material" was an
+   illusion). Found underneath: tinyobj's -1 no-material face id was cast to
+   0xFFFFFFFF, so every shader material fetch on every untextured model was
+   an OUT-OF-BOUNDS buffer-device-address read - fixed in ObjLoader with a
+   CPU red/green test. Rig lit luminance 166.9 -> 158.1 proves the whole
+   loader->slot0->diffuse chain live. Original text: —
    `shader.frag:86-91` builds ambient from the texture alone, leaves `diffuse`
    commented at `:89` and hard-codes `roughness = 0.9` at `:91`, nullifying the
    glTF material mapping in `GltfLoader.cpp:106-129`. The deferred path reads both

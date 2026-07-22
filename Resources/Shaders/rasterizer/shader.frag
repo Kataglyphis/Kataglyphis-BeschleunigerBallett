@@ -81,14 +81,23 @@ void main() {
 	vec3 N = normalize(shading_normal);
 	vec3 V = normalize(sceneUBO.cam_pos.xyz - worldPosition);
 	
-	vec3 ambient = vec3(0.f);
+	ObjMaterial material = materials.m[materialIDs.i[gl_PrimitiveID]];
 
-	int texture_id	= materials.m[materialIDs.i[gl_PrimitiveID]].textureID;
-	texture_id = clamp(texture_id, 0, MAX_TEXTURE_COUNT - 1);
-	ambient			+= texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), texture_coordinates).xyz;
-	//ambient			+= materials.m[materialIDs.i[gl_PrimitiveID]].diffuse;
+	vec3 ambient;
+	if (material.textureID >= 0) {
+		int texture_id = clamp(material.textureID, 0, MAX_TEXTURE_COUNT - 1);
+		ambient = texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), texture_coordinates).xyz;
+	} else {
+		// Untextured material: textureID is -1, and the old clamp-to-0 made
+		// it sample whichever texture sat in slot 0 (same defect the PT/RT
+		// kernels had). Use the material diffuse.
+		ambient = material.diffuse;
+	}
 
-	float roughness = 0.9;
+	// Blinn-Phong exponent -> roughness (Beckmann mapping). Was a hard-coded
+	// 0.9 that nullified the material's shininess entirely; an unset OBJ
+	// shininess of 0 maps to fully rough, close to the old constant look.
+	float roughness = clamp(sqrt(2.0 / (material.shininess + 2.0)), 0.045, 1.0);
 	vec3 light_color = sceneUBO.dirLight.color.rgb;
 	float light_intensity = sceneUBO.dirLight.color.w;
 
