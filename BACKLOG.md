@@ -310,8 +310,16 @@ size and a decision, or gets dropped.
   real frames should set it, or adaptation runs at the wrong rate on any other
   refresh.
 
-- [ ] **Per-pixel alpha-tested shadows** (M, not S — attempted and reverted
-  2026-07-20) — textured MASK materials cast by base-alpha only, so a foliage
+- [x] **Per-pixel alpha-tested shadows** — **DONE (2026-07-22, RPT d2aafae,
+  push held for the Windows-lane verdict)**: MASK casters with a real
+  base-color texture route through an alpha-testing shadow pipeline (same
+  dedup-cached view/sampler the forward pass binds; cull off for single-sided
+  cards; hot-reload covered). The card test the reverted attempt prescribed
+  discriminates: green 11016 -> 6608 shadowed pixels, red bit-identical.
+  Its oracle survived three measured failures (card body matched the colour
+  signature; SSAO tracked the already-alpha-tested forward depth and halved
+  the red state; lit card top is mid-grey vs near-black true shadow) - all
+  documented in the test. Historical note below. — textured MASK materials cast by base-alpha only, so a foliage
   card (white base-color factor, cut-out entirely in the texture) casts the
   shadow of the solid quad it is modelled as.
 
