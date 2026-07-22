@@ -35,7 +35,9 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | ✅ Normal mapping | M | Done 2026-07-18: glTF tangents or Lengyel-style generation (MikkTSpace parity later if baked assets demand it) |
 | ✅ Full metallic-roughness BRDF | M | Done 2026-07-18: GGX + Smith + Fresnel-Schlick; metallic/roughness texture sampling |
 | ✅ Emissive + occlusion maps | S | Done 2026-07-18; `KHR_materials_emissive_strength` done 2026-07-21 (folded into `emissive_factor` at load for HDR emitters, GPU-free loader test) |
-| ✅ Alpha modes | M | Done 2026-07-18: MASK cutoff discard + sorted BLEND pass with transparency-aware shadow casting (per-pixel alpha-tested shadows for textured masks still open) |
+| ✅ Alpha modes | M | Done 2026-07-18: MASK cutoff discard + sorted BLEND pass with transparency-aware shadow casting. Per-pixel alpha-tested shadows for textured MASK materials done 2026-07-22 (`d2aafae`): MASK casters with a real base-color texture route through an alpha-testing shadow pipeline, so a cut-out foliage card casts the shadow of its silhouette, not the solid quad |
+| ✅ Vertex colours (`COLOR_0`) | S | Done 2026-07-22 (`abb46c1`): read per-vertex `COLOR_0` (vec3/vec4, integer or float), multiplied into albedo per spec; white (no-op) when absent. `Vertex.color` at location 6 |
+| ✅ Second UV set (`TEXCOORD_1`) | S | Done 2026-07-22 (`0f715e1`): per-material-slot UV-set selection via a `uv_set_mask` bitmask (baked AO commonly lives on UV1); `Vertex.uv1` at location 7, falls back to UV0 when absent |
 | ✅ `KHR_texture_transform` | S | Done 2026-07-18: base color slot (other slots as needed) |
 | ✅ Double-sided materials | S | Done 2026-07-18: per-primitive pipeline variant |
 | ✅ sRGB/linear audit | S | Done 2026-07-18: full table in `docs/webgpu-srgb-audit.md`; one known deviation (web swapchain non-sRGB) |
@@ -54,7 +56,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | ✅ Morph targets | M | Done 2026-07-21: loader parses POSITION/NORMAL deltas into `CpuPrimitive.morph_targets` + mesh default weights; `scene::blend_morph_targets` weighted-accumulates + renormalizes; the WEIGHTS animation channel (`ChannelValues::MorphWeights`, Step/Linear/CubicSpline via `sample_morph_weights`) drives per-target weights; `forward::apply_morph_targets` re-blends + re-uploads dirty primitives each frame (COPY_DST vertex buffer, dirty-flag gated, neutral pose kept only for morphed prims). Simplified LODs drop morphing (v1). 7 tests |
 | ✅ Runtime scene graph | M | Done 2026-07-18: node table with parents + local TRS, world recompute per frame (dirty-flag optimization later) |
 | ✅ GLB verification | S | Done 2026-07-18: generated cube.glb + load test |
-| 🟡 Drag-and-drop model loading | M | Done 2026-07-18 for native (drop a .gltf/.glb on the viewer); web File API drop zone still open |
+| ✅ Drag-and-drop model loading | M | Done 2026-07-18 for native; web File API drop zone done 2026-07-22 (`62e215c`): browser drag-and-drop via the DOM File API (winit-web never delivers `DroppedFile`), first dropped `.glb` read async and uploaded with native-viewer semantics |
 | ✅ Multiple cameras from glTF | S | Done 2026-07-18: parsed into `CpuScene::cameras` (yfov/znear/zfar + node pose); viewer still uses its orbit camera by default |
 | `EXT_meshopt_compression` / Draco | L | Decompression on load; meshopt first (pure Rust decoder exists) |
 
@@ -63,13 +65,13 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | Feature | Effort | Notes |
 | --- | --- | --- |
 | ✅ Skybox pass | M | Done 2026-07-18: procedural gradient + analytic sun following the light sliders (HDR equirect/cubemap upgrade later with IBL) |
-| ✅ Image-based lighting (analytic v1) | L | Done 2026-07-18: hemisphere irradiance + roughness-blended sky reflection + Karis split-sum approx from the analytic sky; HDR-cubemap IBL for arbitrary env maps still open |
+| ✅ Image-based lighting | L | Analytic v1 done 2026-07-18 (hemisphere irradiance + roughness-blended sky reflection + Karis split-sum approx from the analytic sky). HDR-cubemap IBL for arbitrary env maps done (audited 2026-07-21): real split-sum in `render/ibl.rs` (irradiance-convolved cubemap + roughness-prefiltered specular cubemap + BRDF LUT), fed by `asset/hdr.rs` decoding Radiance `.hdr`/RGBE; the analytic path is now the fallback when no env is bound |
 | ✅ `KHR_lights_punctual` | M | Done 2026-07-18: point/spot/directional, KHR range window + spot cones, up to 4 lights (shadowless; punctual shadows are the next row) |
 | Point/spot shadows | L | Shadow atlas or cube shadows; after punctual lights |
 | ✅ Cascaded shadow maps | L | Done 2026-07-18: 3 cascades in a depth array, view-distance selection, per-cascade fitting |
 | ✅ Bloom | M | Done 2026-07-18: half-res brightpass + 9-tap separable Gaussian, strength slider in the overlay |
 | ✅ SSAO | M | Done 2026-07-18: depth-only reconstruction, half-res + 3x3 blur, tonemap composite, overlay slider |
-| ✅ Exposure control (manual EV) | S/M | Done 2026-07-18: exp2(EV) before ACES + overlay slider; histogram auto-exposure still open |
+| ✅ Exposure control | S/M | Manual EV done 2026-07-18 (exp2(EV) before ACES + overlay slider). Histogram auto-exposure done 2026-07-20: histogram compute pass → GPU reduction to an adapted EV → tonemap reads it from a buffer, no per-frame readback on the frame path; off by default (`ForwardRenderer::auto_exposure`), manual EV survives as an override through the same buffer |
 | Clustered / Forward+ lighting | XL | Only when light counts demand it |
 
 ## Phase D — Performance & scale (Colosseum-ready)
@@ -79,10 +81,10 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | ✅ Frustum culling | S | Done 2026-07-18: world AABBs + Gribb-Hartmann planes, camera passes only |
 | ✅ GPU instancing | M | Done 2026-07-20 (normals corrected 2026-07-22: instanced normals now use the COFACTOR of the instance matrix, not the matrix itself - the raw matrix is only right for uniform scale and shears normals under the non-uniform/mirrored scale instancing exists for; bounds and scene bounds also follow instances now): per-instance transform buffer (one identity instance by default), reaches normals + shadow pass; `set_instances`/`instance_count` |
 | 🟡 KTX2 compressed textures | L | Done 2026-07-18: KTX2 container + BC1/3/5/7 passthrough with graceful fallback where BC is unavailable. Basis ETC1S/UASTC transcoding (and the web path) still open |
-| ✅ LOD pipeline (v1) | L | Done 2026-07-18: vertex-clustering simplifier + distance-based selection (`scene::lod`); meshoptimizer-quality decimation is a drop-in upgrade |
+| ✅ LOD pipeline | L | v1 done 2026-07-18: vertex-clustering simplifier + distance-based selection (`scene::lod`). Quadric-error (meshoptimizer-grade) decimation done 2026-07-20 (`scene::qem`, selectable via `Simplifier::Quadric`) — preserves silhouettes/creases that clustering rounds off. On the render path since 2026-07-20 (per-primitive per-frame selection on camera distance; off by default; shadow casters stay full-detail) |
 | Async asset loading | M | Background thread native / fetch + progress on web; loading UI |
 | Indirect draws | M | `draw_indexed_indirect` batching once culling is GPU-side |
-| GPU frustum/occlusion culling | XL | Compute-based; far future |
+| ✅ GPU occlusion culling | XL | Done 2026-07-21: temporal hardware occlusion queries (NOT a Hi-Z pyramid — WebGPU core lacks portable depth-mip sampling). Per-primitive world-AABB query pass → `resolve_query_set` → async readback → next-frame skip of zero-sample primitives; one-frame latency accepted. `render/occlusion.rs`, `TimedPass::OcclusionCull`, overlay checkbox, off by default. GPU *frustum* culling (compute-based) still open |
 | wasm size budget | S | `twiggy`/`wasm-opt` in the web build; track regression in CI |
 | ✅ Timestamp-query profiling | M | Done 2026-07-20: per-pass wgpu timestamp queries, averaged ms via `gpu_timings_ms()` (`render/gpu_timing.rs`), + `dump_gpu_timings` example feeding the cross-renderer timing table |
 
