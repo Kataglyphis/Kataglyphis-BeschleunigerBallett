@@ -1164,7 +1164,12 @@ snapping), which the survey flagged as provable with pure CPU gtests in
 test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
 
 
-1. **Shadow casters in front of a cascade's near plane are clipped away** (S/M) —
+1. **Shadow casters in front of a cascade's near plane are clipped away** —
+   **DONE (7a1a4ade)**: fixed via DEPTH CLAMP (PipelineBuilder::setDepthClamp
+   + guarded depthClamp device feature on the CSM pipeline), not near-plane
+   extension - the latter was tried and REGRESSED ShadowsDarkenSomePixels
+   because the shader bias is constant in normalized depth, so widening the
+   range scaled it in world units and ate contact shadows. Original text: —
    `isVisibleAsShadowCaster` deliberately drops the near plane so tall geometry
    still casts (`Frustum.cpp:85-88`, with a test asserting it), but the cascade
    ortho near plane is fitted from camera-frustum corners with a fixed 10-unit pad
@@ -1264,7 +1269,12 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
    commented at `:89` and hard-codes `roughness = 0.9` at `:91`, nullifying the
    glTF material mapping in `GltfLoader.cpp:106-129`. The deferred path reads both
    (`lighting.frag:48-49`), so the two raster paths disagree on materials.
-9. **Cascades refit per frame with no texel snapping — shadow edges crawl** (M) —
+9. **Cascades refit per frame with no texel snapping — shadow edges crawl** —
+   **DONE (5aca1c2b)**: world-fixed light basis + box sized from the slice
+   bounding radius + centre snapped to whole texels + one-texel pad; opt-in
+   via a shadowMapResolution param that updateCascades passes. Three tests
+   incl. a legacy red control (the old path must crawl or the assertions are
+   vacuous). Shadow golden IMPROVED to 9.78% darkened. Original text: —
    `computeCascadeData` derives the box from exact frustum corners each frame
    (`CascadedShadowMap.cpp:201-216`) so it translates AND resizes; the
    stabilisation ingredient (`radius`, `:187-190`) is already computed but only
