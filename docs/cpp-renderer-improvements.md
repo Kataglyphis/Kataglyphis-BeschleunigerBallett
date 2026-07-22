@@ -51,14 +51,18 @@ validation-layer-clean runtime check where rendering changed.
 
 ## In progress
 
-(nothing — remaining queue: stage/renderer-level RAII, sync-validated barrier removal, GPU timestamps)
+(nothing — remaining queue: stage/renderer-level RAII, sync-validated barrier removal)
 
 ## Queued (design notes)
 
-1. **Prebuilt SPIR-V consumption** — the `VkPipelineCache` half shipped
-   (`ad77cbdd`, persisted in `VulkanDevice`), but pipelines still recompile
-   GLSL from source on every build (startup + hot-reload stalls). Remaining:
-   consume `Resources/Shaders/**/spv` instead of runtime GLSL compilation.
+1. **Prebuilt SPIR-V consumption** — *largely resolved.* The `VkPipelineCache`
+   half shipped (`ad77cbdd`), and since the mtime-gated compile skip
+   (2026-07-19) plus runtime glslc resolution (`c246ded3`) the loader no
+   longer recompiles GLSL when the committed `.spv` is current - startup logs
+   "SPV up to date, skipping runtime compile" for every shader. What remains
+   is only a micro-optimisation: pipelines still read the `.spv` and create
+   shader modules at startup rather than consuming a fully cached pipeline
+   binary, which the VkPipelineCache already covers on the second run.
 3. **`vk::raii` teardown migration** — ~30 manual `cleanUp()` methods with
    defaulted destructors; hand-ordered 48-line teardown; device-lost
    special-casing in App.cpp. Migrate leaf types first (`VulkanBuffer`,
@@ -67,8 +71,12 @@ validation-layer-clean runtime check where rendering changed.
    remove only after a sync-validation (`VK_LAYER_KHRONOS_validation` with
    `VALIDATION_CHECK_ENABLE_SYNCHRONIZATION_VALIDATION`) run confirms the
    post render pass's external dependency covers it.
-6. **Per-pass GPU timestamps + debug labels** — nothing is measured on-device
-   today; prerequisite for honest perf claims beyond the structural fixes.
+6. **Per-pass GPU timestamps + debug labels** — **DONE.** `GpuTimedPass`
+   brackets Clouds/ShadowCascades/Main/Sky/Post with timestamp-query pairs,
+   `ScopedCmdLabel` names every pass for RenderDoc, and the
+   `KATAGLYPHIS_GPU_TIMING_JSON` export produces per-pass averages - the
+   before/after evidence for every perf unit in the table above (the G-buffer
+   and multiview-cascade units cite its numbers directly).
 
 ## Verification pattern
 
