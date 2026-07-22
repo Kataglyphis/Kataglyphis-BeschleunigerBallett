@@ -1495,18 +1495,26 @@ model loader is race-clean; GUI/renderer state is single-threaded.
 **The deferred path is broken three independent ways** - do these together:
 
 1. **Deferred lighting tonemaps + gamma-corrects, then post.frag does BOTH again**
+   — **PHANTOM (see the CORRECTION above): `g_buffer_lighting_pass.frag` is a
+   DEAD file referenced by no code; the LIVE `deferred/lighting.frag` writes
+   raw linear and is healthy. No fix needed.** Original text:
    (S) - `g_buffer_lighting_pass.frag:215-216` ends with Reinhard + gamma, then
    `post.frag:32-34` re-applies both. Forward writes raw color and is correct,
    so deferred renders crushed/washed vs forward. Fix: delete the two lines.
    Test: tighten `GoldenRender.DeferredMatchesForwardRoughly` to mean-luminance
    tolerance; fails today.
-2. **G-buffer material-id is UNORM, every index collapses to 0/1** (S) - the
+2. **G-buffer material-id is UNORM, every index collapses to 0/1** — **PHANTOM
+   (dead `g_buffer_geometry_pass.frag`; the live geometry pass has no material-
+   id attachment). No fix needed.** Original text: (S) - the
    geometry pass writes `g_material_id = vec3(mat_ID)` into `eR8G8B8A8Unorm`
    (`DeferredRasterizer.cpp:92,:209`), so `mat_ID >= 1` clamps to 1.0 and
    `SKYBOX_MATERIAL_ID = 35` / `CLOUDS_MATERIAL_ID = 36` can never round-trip -
    sky and cloud pixels get lit as geometry in deferred mode. Fix: `eR8Uint`/
    `usampler2D` (or normalize by MAX_MATERIALS+2).
-3. **G-buffer never samples albedo textures** (S) - the texture fetch is
+3. **G-buffer never samples albedo textures** — **PHANTOM (dead
+   `g_buffer_geometry_pass.frag`; the live geometry pass samples the base
+   colour - see the materials unit 2840cc9a). No fix needed.** Original text:
+   (S) - the texture fetch is
    commented out on the assignment line in `g_buffer_geometry_pass.frag`
    (`g_albedo = materials[mat_ID].diffuse;//texture(...)`), so Sponza renders
    flat per-material color in deferred while forward shows textures.
