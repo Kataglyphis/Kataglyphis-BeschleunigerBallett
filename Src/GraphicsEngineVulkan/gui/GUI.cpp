@@ -118,7 +118,15 @@ void GUI::render()
 
     ImGui::Separator();
 
-    static int e = 0;
+    // Derived from the shared vars every frame - they are the single source
+    // of truth. These were function-local statics initialized once, and the
+    // assignment below wrote the STATIC back into the shared vars each frame:
+    // any programmatic write (a test, a config load, future scripting) was
+    // stomped on the next GUI frame. Deferred mode was unselectable from code,
+    // which turned GoldenRender.DeferredMatchesForwardRoughly into a vacuous
+    // forward-vs-forward comparison - and let three independent deferred-path
+    // breaks live undetected behind a passing golden.
+    int e = guiRendererSharedVars.pathTracing ? 2 : (guiRendererSharedVars.raytracing ? 1 : 0);
     ImGui::RadioButton("Rasterizer", &e, 0);
     ImGui::SameLine();
     if (renderUserSelectionForRRT) {
@@ -129,7 +137,8 @@ void GUI::render()
 
     if (e == 0) {
         ImGui::Separator();
-        static int raster_mode = 0;
+        int raster_mode = guiRendererSharedVars.rasterizationMode
+            == VulkanRendererInternals::FrontendShared::RasterizationMode::Forward ? 0 : 1;
         ImGui::RadioButton("Forward", &raster_mode, 0);
         ImGui::SameLine();
         ImGui::RadioButton("Deferred", &raster_mode, 1);

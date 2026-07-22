@@ -101,6 +101,16 @@ class VulkanRenderer
   private:
     void shaderHotReload();
 
+    // The rasterization mode whose offscreen texture the post (and RT) input
+    // descriptors currently point at. The mode branch in record_commands is
+    // consulted every frame, but the DESCRIPTORS were written once at init -
+    // so switching to Deferred recorded a deferred frame into a texture the
+    // post pass never sampled, and the presented image silently stayed
+    // forward. Tracked so updateStateDueToUserInput can rebind on change.
+    Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode lastBoundRasterizationMode{
+        Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward
+    };
+
     // helper class for managing our buffers
     VulkanBufferManager vulkanBufferManager;
 

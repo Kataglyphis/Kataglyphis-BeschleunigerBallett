@@ -273,6 +273,21 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Fronten
         guiRendererSharedVars.shader_hot_reload_triggered = false;
     }
 
+    // Rebind the mode-dependent input descriptors when the rasterization mode
+    // changes. record_commands branches on the mode per frame, but the post
+    // pass's input image was written once at init - so "Deferred" recorded
+    // into an offscreen texture nobody sampled and the screen kept showing
+    // the (stale) forward image. Found because the deferred parity golden
+    // measured IDENTICAL frames even with the deferred lighting shader forced
+    // to output pure red. waitIdle is the same trade the shadow-resolution
+    // change below already makes: mode switches are rare, driver-visible UI
+    // events, and the alternative is per-image rebind bookkeeping.
+    if (guiRendererSharedVars.rasterizationMode != lastBoundRasterizationMode) {
+        (void)device->getLogicalDevice().waitIdle();
+        updateAllDescriptorSets();
+        lastBoundRasterizationMode = guiRendererSharedVars.rasterizationMode;
+    }
+
     GUISceneSharedVars &guiSceneSharedVars = scene->getGuiSceneSharedVars();
     if (guiSceneSharedVars.shadow_resolution_changed) {
         guiSceneSharedVars.shadow_resolution_changed = false;

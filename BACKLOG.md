@@ -1255,6 +1255,29 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
 
 ### C++ Vulkan engine — second survey (2026-07-22, app/GUI/RT/deferred internals)
 
+**CORRECTION (2026-07-22, after implementation):** second-survey items 1-3 cited
+`rasterizer/g_buffer_{geometry,lighting}_pass.frag` - those files are DEAD: the
+DeferredRasterizer loads `Resources/Shaders/deferred/{geometry,lighting}.*`
+(cwd + RELATIVE_RESOURCE_PATH, DeferredRasterizer.cpp:315-323), and the live
+pair has none of the three defects (no tonemapping in lighting - raw linear
+out; bindless texture sampling in geometry; subpass-input albedo/material).
+`clouds/CloudsRectangle.frag` is likewise referenced by nothing. The real
+defects found instead while proving this: the GUI mode radios stomped
+programmatic mode changes every frame (item #11, FIXED), and the post-pass
+input descriptor was written once at init so a mode switch presented a stale
+forward image (NEW, FIXED with a rebind on mode change). Items #2/#8's
+G-buffer-format concerns apply to the LIVE pass's attachments only where they
+actually exist there.
+
+**NEW item - delete the dead shader set** (S): `rasterizer/g_buffer_*`,
+`clouds/CloudsRectangle.frag` (+ audit for further unreferenced shaders by
+grepping each Resources/Shaders file against Src). They cost this survey its
+three headline findings and several verification cycles; BuildIntegrity also
+recompiles them forever. Deleting is safe only after a liveness grep per file -
+the loader resolves paths at runtime, so a filename appearing in NO source
+file is the deletion criterion.
+
+
 A second deep pass over the subsystems the first survey covered least. Verified
 against source; nothing duplicates the first list. Ruled out on inspection (so
 nobody re-chases them): the rgen "missing Y-flip" comment is stale, not a bug

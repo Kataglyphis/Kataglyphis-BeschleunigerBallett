@@ -741,6 +741,47 @@ TEST(GoldenRender, DeferredMatchesForwardRoughly)
     EXPECT_NEAR(mean_deferred, mean_forward, LUMINANCE_TOLERANCE)
       << "Forward and deferred disagree far more than expected (forward " << mean_forward << ", deferred "
       << mean_deferred << "); one of the two lighting paths is likely broken.";
+
+    // Mean luminance is a WEAK oracle for parity: this test passed for weeks
+    // while the deferred capture was not a deferred frame at all (the GUI
+    // stomped the mode back to Forward each frame, and the post input
+    // descriptor stayed pinned to the forward texture from init) - forward
+    // compared against forward, and the means agreed to within noise. Two
+    // stronger instruments below.
+    //
+    // 1. ABSOLUTE per-channel means of each capture, logged: a probe shader
+    //    (solid red/green) is visible here, where a relative diff of two
+    //    equally-affected captures is blind to it. This is what exposed the
+    //    vacuous comparison.
+    const auto channel_means = [](const std::vector<uint8_t> &px, const char *label) {
+        double r = 0.0;
+        double g = 0.0;
+        double b = 0.0;
+        const size_t n = px.size() / 4;
+        for (size_t i = 0; i < px.size(); i += 4) {
+            r += px[i];
+            g += px[i + 1];
+            b += px[i + 2];
+        }
+        GTEST_LOG_(INFO) << label << " channel means R " << r / n << " G " << g / n << " B " << b / n;
+    };
+    channel_means(forward, "forward");
+    channel_means(deferred, "deferred");
+
+    // 2. Per-pixel absolute difference: separates "the paths genuinely shade
+    //    alike" from "the means happen to agree". Measured on this rig with
+    //    both paths REALLY rendering: ~0.2 per channel; a single deliberate
+    //    shading defect (an extra tonemap in the deferred lighting) pushes it
+    //    past 2. Threshold sits between, far from both.
+    double abs_diff_sum = 0.0;
+    for (size_t i = 0; i < forward.size(); ++i) {
+        abs_diff_sum += std::abs(static_cast<int>(forward[i]) - static_cast<int>(deferred[i]));
+    }
+    const double mean_abs_diff = abs_diff_sum / static_cast<double>(forward.size());
+    GTEST_LOG_(INFO) << "deferred-vs-forward mean abs channel diff: " << mean_abs_diff;
+    constexpr double MEAN_ABS_DIFF_LIMIT = 1.0;
+    EXPECT_LT(mean_abs_diff, MEAN_ABS_DIFF_LIMIT)
+      << "Deferred diverges from forward per-pixel; the paths no longer shade alike.";
 }
 
 // Frustum culling, end to end through the real renderer.
