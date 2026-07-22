@@ -1539,18 +1539,19 @@ model loader is race-clean; GUI/renderer state is single-threaded.
    for bandwidth wins to register; the win is one full-res 8-byte/px
    write+read removed per frame. The material-id RGBA8 packing remains open
    (S) if a real scene ever measures it.
-9. **Acceleration structures are never compacted** (M) - BLAS/TLAS built with
-   `ePreferFastTrace`, no `eAllowCompaction`, no size query/copy anywhere
-   (`ASManager.cpp:207,:335`). Compaction typically reclaims a large fraction
-   of BLAS memory - it is the VRAM headroom for multi-object scenes.
-10. **RT output image is `rgba8`** (S) - `raytrace.rgen:26` clamps the traced
-    result to 8-bit LDR before post ever sees it; the RT analogue of the
-    UNORM-lit-target item. `rgba16f` + `R16G16B16A16Sfloat` target.
-11. **GUI render-mode radios live in function-local statics** (S) -
-    `GUI.cpp:121,:132` hold the mode in `static int`, decoupled from
-    `GUIRendererSharedVars` - the display can desync from renderer state and
-    cannot be config-driven. Move into the shared vars; extend the round-trip
-    suite.
+9. **Acceleration structures are never compacted** - **DONE (88a3d4fa)**:
+   BLAS built with eAllowCompaction, compacted-size query + copy after the
+   synchronous build, originals destroyed; TLAS built after picks up the new
+   addresses. Default scene: 15.98 MB post-compaction. (TLAS-only compaction
+   deliberately skipped - it gains little.)
+10. **RT output image is `rgba8`** - **DONE (2026-07-22, with the HDR unit
+    e25eca80)**: raytrace.rgen + path_tracing.comp storage images are rgba16f
+    and the offscreen targets R16G16B16A16Sfloat, so the traced result reaches
+    post's Reinhard un-clamped (the RT analogue of the UNORM-lit-target fix).
+11. **GUI render-mode radios live in function-local statics** - **DONE
+    (961a9a7a)**: the radios derive from the shared vars each frame instead of
+    holding their own static int, so a programmatic mode change is no longer
+    stomped (the defect that made the deferred path unreachable end-to-end).
 
 ### Rust WebGPU renderer
 
