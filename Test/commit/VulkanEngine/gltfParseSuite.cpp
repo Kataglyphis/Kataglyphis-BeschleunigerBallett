@@ -292,3 +292,30 @@ TEST(GltfParseUnit, OpaqueMaterialHasNoCutoff)
     const float cutoff = first_material_cutoff(material_gltf(""), "kat_opaque.gltf");
     EXPECT_LT(cutoff, 0.0F) << "a non-MASK material must have alphaCutoff < 0 (never discards)";
 }
+
+TEST(GltfParseUnit, MaskCardFixtureLoadsWithCutoutTextureAndCutoff)
+{
+    // mask_card.gltf (a quad + a checkerboard-alpha cut-out PNG, alphaMode MASK /
+    // cutoff 0.5) is the shared asset the MASK visual + shadow goldens build on.
+    // Prove it is well-formed end to end - geometry, the extracted base-colour
+    // PNG, and the cutoff all survive parseCpu - so a golden that later fails is
+    // the renderer's fault, not a broken fixture.
+    const auto path = sceneConfig::resolveModelPath("Models/GltfTest/mask_card.gltf");
+    if (!std::filesystem::exists(path)) { GTEST_SKIP() << "mask_card fixture not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(path));
+
+    EXPECT_EQ(loader.getVertices().size(), 4U) << "a quad card has four corners";
+    EXPECT_EQ(loader.getIndices().size(), 6U) << "two triangles";
+
+    ASSERT_GT(loader.getMaterials().size(), 0U);
+    EXPECT_NEAR(loader.getMaterials()[0].alphaCutoff, 0.5F, 1e-6F)
+      << "the fixture's MASK cutoff must reach ObjMaterial";
+
+    ASSERT_EQ(loader.getTextureImages().size(), 1U) << "the one cut-out base-colour texture";
+    const std::vector<unsigned char> &png = loader.getTextureImages()[0];
+    ASSERT_GE(png.size(), 8U);
+    const unsigned char png_magic[8] = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+    for (size_t i = 0; i < 8; ++i) { EXPECT_EQ(png[i], png_magic[i]) << "PNG signature byte " << i; }
+}
