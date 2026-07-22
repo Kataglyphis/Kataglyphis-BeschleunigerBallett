@@ -1374,8 +1374,14 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       without the loader change) + that suite added to the Windows CI filter (it was
       missing). REMAINING for increment 1: the SHADOW pass (1b) and RT/PT kernels (1c)
       still cast/trace the solid quad — the shadow frag is depth-only with no UVs
-      today; and a GPU-host visual golden of the cut-out. The Rust renderer's MASK
-      path (RPT `forward.wgsl`) is the reference.
+      today; and a GPU-host visual golden of the cut-out. (Attempted the visual
+      check via `KATAGLYPHIS_MODEL_OVERRIDE=Models/GltfTest/mask_card.gltf` +
+      `DISABLED_DumpsFrameToPng`: the default camera frames the ImGui panel over a
+      tiny/edge-on 1x1 card, so it shows nothing useful — the visual golden needs a
+      controlled camera + a scaled card rig like `shadow_rig`, same lesson as the
+      shadow golden. The shading logic is already CPU- + regression-verified, so this
+      is confirmation-only.) The Rust renderer's MASK path (RPT `forward.wgsl`) is
+      the reference.
 
       *1b design note (M, so it starts warm — the shadow pass is a CORE system,
       give it a dedicated cycle):* the CSM shadow pass
