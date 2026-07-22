@@ -1255,6 +1255,13 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
 
 ### Rust WebGPU renderer
 
+**Bake wasm32-unknown-unknown into the :latest-cross image.** The CI lane added
+2026-07-22 cannot add the target itself - the image installs Rust WITHOUT rustup
+on PATH, so `rustup target add` fails with command-not-found and the step now
+SKIPS rather than gating. Adding the target to the image (ContainerHub
+`install-rust.sh`) turns it back into a real gate. Until then the web build is
+still unguarded.
+
 **Add a wasm32 CI lane (found the hard way 2026-07-22).** `wasm_demo.rs` is
 entirely behind `#[cfg(target_arch = "wasm32")]`, and nothing in the loop builds
 that target - cargo test, clippy and every CI lane are native - so it had not
