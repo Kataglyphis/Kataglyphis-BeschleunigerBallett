@@ -1082,6 +1082,34 @@ TEST(GoldenRender, PathTracingAccumulatesAndConverges)
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     ASSERT_EQ(late_a.size(), late_b.size());
 
+    // Noise-quality diagnostic (logged, not asserted): lag-1 vs lag-16
+    // autocorrelation of the depth-2 noise field. The PT survey claimed the
+    // linear pixel-index seed produces neighbour-correlated noise; MEASURED
+    // 2026-07-22: lag-1 = -0.012, lag-16 = +0.015 - both zero, the claim was
+    // false (the LCG pre-step + PCG output hash decorrelate adjacent seeds).
+    // The log line stays so a future seed change shows its noise character
+    // here.
+    {
+        const uint32_t cx0 = (width * 18U) / 25U, cx1 = (width * 49U) / 50U;
+        const uint32_t cy0 = height / 4U, cy1 = (height * 3U) / 4U;
+        auto corr = [&](uint32_t lag) {
+            double sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0; size_t n = 0;
+            for (uint32_t y = cy0; y < cy1; ++y)
+                for (uint32_t x = cx0; x + lag < cx1; ++x) {
+                    const double a = luminance_of(early_a, (size_t)y * width + x)
+                                   - luminance_of(early_b, (size_t)y * width + x);
+                    const double b = luminance_of(early_a, (size_t)y * width + x + lag)
+                                   - luminance_of(early_b, (size_t)y * width + x + lag);
+                    sx += a; sy += b; sxx += a * a; syy += b * b; sxy += a * b; ++n;
+                }
+            const double cov = sxy / n - (sx / n) * (sy / n);
+            const double va = sxx / n - (sx / n) * (sx / n);
+            const double vb = syy / n - (sy / n) * (sy / n);
+            return (va > 0 && vb > 0) ? cov / std::sqrt(va * vb) : 0.0;
+        };
+        GTEST_LOG_(INFO) << "noise autocorrelation lag-1: " << corr(1) << ", lag-16: " << corr(16);
+    }
+
     const double early_delta = changed_fraction(early_a, early_b, width, height);
     const double late_delta = changed_fraction(late_a, late_b, width, height);
     GTEST_LOG_(INFO) << "consecutive-frame changed fraction (right-edge crop): early = " << early_delta

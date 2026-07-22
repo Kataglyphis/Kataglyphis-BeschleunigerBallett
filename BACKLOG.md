@@ -1384,9 +1384,12 @@ accidental constant-white furnace and the GUI light provably does nothing.
     device-not-lost; add non-black now, variance-decreases + furnace after
     accumulation. Blocked-note: convergence asserts are impossible while every
     frame is identical.
-11. **Decorrelate the RNG seed** (S, fold into item 2) - linear-index seeds
-    with one PCG step produce structured neighbor-correlated noise
-    (`:150,:68-75`).
+11. **Decorrelate the RNG seed** - **CLOSED as a measured NULL RESULT
+    (2026-07-22)**: lag-1 autocorrelation of the depth-2 noise field is
+    -0.012 (lag-16: +0.015) - no neighbour correlation exists; the LCG
+    pre-step + PCG output hash already decorrelate adjacent linear seeds.
+    The survey's claim was an assumption. The instrument stays as a logged
+    diagnostic in the accumulation golden.
 
 Trivial rider: ~~path_tracing.comp includes the BRDF headers (`:15-19`) and
 never calls them - delete the dead includes.~~ **DONE (2026-07-22).**
