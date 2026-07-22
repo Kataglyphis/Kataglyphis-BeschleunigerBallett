@@ -1397,7 +1397,30 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       per-primitive routing (avoids that cost) is the optimisation after. Multiview
       is orthogonal (gl_ViewIndex stays in the VS). Golden: a MASK card caster over a
       plane — shadowed-pixel count drops vs a solid-quad control, red-proven by
-      removing the discard (mirror the RPT alpha-shadow test's oracle).
+      removing the discard (mirror the RPT alpha-shadow test's oracle). The
+      `mask_card.gltf` fixture (a cut-out card, `GltfParseUnit.MaskCardFixture…`) is
+      the caster.
+
+      *Tractability found while scoping (makes it cheaper than the "M, core surgery"
+      warning suggests, and NOT an ABI-skew change — `alphaCutoff` already exists):*
+      (a) the shared material/texture set is a REUSABLE layout object
+      `sharedRenderDescriptors.getLayout()` — the forward/deferred/clouds/skybox/RT
+      pipelines all consume it — so the shadow pipeline layout just adds it as a
+      second set; no new layout, and `recordCommands` ALREADY receives
+      `sharedRenderDescriptors.sets()` (as `rasterizer_descriptor_sets`), it simply
+      binds only its own today. (b) The shadow push constant's second field is
+      `cascadeIndex`, explicitly "retained for layout stability; unused" (the VS uses
+      `gl_ViewIndex`) — REPURPOSE it as `objectIndex` (same mat4+uint32 size, no
+      push-constant resize) to reach `ObjectDescription[objectIndex].material_address`
+      exactly as the forward FS does. So the real work is: shadow VS reads UV (Vertex
+      loc 3) + passes it; the empty shadow FS #includes the forward binding defs +
+      samples base colour + discards; set-index juggling (put the shared set at set 0
+      to match the forward binding decorations, move light matrices to set 1 —
+      currently set 0 binding 1); `recordCommands` binds the shared set + pushes the
+      object index. Not ABI-skew, so a normal incremental build verifies it. The one
+      genuinely delicate part is the set-index juggling — a wrong descriptor-set
+      layout on this CORE pass means validation storms, so do it with the
+      `ShadowsDarkenSomePixels` golden watching.
     - *Increment 2 — doubleSided (S):* per-material cull-mode; the pipeline variant
       already exists conceptually (RPT ships it). Backface-culled single-sided cards
       show the visible/back-face difference.
