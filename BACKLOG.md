@@ -1272,7 +1272,24 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
 10. **A `Model` can hold exactly one `Mesh`** (L) — `getMeshCount()` returns literal
     `1` and `getMesh()` ignores its index (`Model.ixx:38-39`); `add_new_mesh`
     overwrites (`Model.cpp:47`). Culling is all-or-nothing on one scene-sized AABB
-    (`Rasterizer.cpp:122-141`), and there is nothing to attach LOD to. This is the
+    (`Rasterizer.cpp:122-141`), and there is nothing to attach LOD to.
+
+    **DESIGN NOTE (2026-07-22, prepared so the L does not start cold):** the
+    2026-07-22 texture_offset work already established the pattern this needs -
+    per-DRAW identity flows through ObjectDescription + pc_raster.objectIndex,
+    and the flattened-resource binding (textures) generalizes to meshes. Plan:
+    (1) Model holds `std::vector<Mesh>`; add_new_mesh appends;
+    object descriptions become one PER MESH (objectIndex = flat mesh index,
+    offsets computed exactly like texture_offset in
+    create_object_description_buffer); (2) per-mesh AABB from the loader,
+    culling iterates meshes not models - the all-or-nothing cull falls out
+    immediately; (3) AS: one BLAS per mesh (ASManager already loops a blas
+    vector; feed it meshes), instances keep model transform; (4) LOD attaches
+    per mesh afterwards. Biggest ripple: everything indexing model_list[i]
+    1:1 with object_descriptions[i] (the texture_offset loop among them) -
+    grep `getObjectDescriptions` consumers first. Suite guards: parity +
+    multi-model + transform-follow goldens all exercise the flattening
+    invariants already. This is the
     enabling change for several already-wanted features.
 11. **glTF loader gaps** (M) — skinned-node transforms are applied though the spec
     says ignore them (`GltfLoader.cpp:231`); missing `NORMAL` becomes a constant
@@ -1280,10 +1297,32 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
     silently skipped (`:237`); `alphaMode`/`doubleSided`/`KHR_texture_transform`/
     texcoord index all ignored, so transparent glTF renders opaque.
 12. **Point lights are wired on the GPU but never fed; `OmniDirShadowMap` renders
-    nothing** (M) — `lighting.frag:58-69` loops `numPointLights`, which
-    `updateUniforms` never writes (`VulkanRenderer.cpp:165-242`); the cube depth
-    target allocated at `:116` is never recorded into and never sampled. Same "dead
-    pass" class the CSM work already caught once. Either finish it or delete it.
+    nothing** (M) — `lighting.frag` loops `numPointLights`, which
+    `updateUniforms` never writes; the cube depth target allocated at init is
+    never recorded into and never sampled. Same "dead pass" class the CSM work
+    already caught once. Either finish it or delete it.
+
+    **DECISION BRIEF (2026-07-22, prepared for the call - this is a user
+    decision):**
+    - *Measured state:* `numPointLights` is written NOWHERE (the deferred loop
+      is dead code at runtime); the FORWARD shader has no point-light code at
+      all, so enabling even one light today instantly breaks
+      `DeferredMatchesForwardRoughly` (threshold 1.0, current parity 0.20);
+      no GUI controls exist; `OmniDirShadowMap` (132 lines + 3 shaders) burns
+      a 1024x1024 cube depth allocation per run for zero output.
+    - *Option A - DELETE (S, ~1 session):* remove OmniDirShadowMap + the
+      `omni_shadow_map.*` shader trio (already flagged in the dead-shader
+      audit), `pointLights`/`numPointLights` from SceneUBO + the deferred
+      loop. Frees the allocation, shrinks SceneUBO, kills the parity trap.
+      Re-adding later costs the same M as finishing now - nothing rots.
+    - *Option B - FINISH MINIMAL (M, no shadows):* GUI list (add/remove,
+      position/color/radiance), upload count+array, ADD THE FORWARD PATH
+      (parity!), extend the parity golden to a point-lit scene. Omni shadow
+      map stays deleted (Option A for it) until someone wants point SHADOWS.
+    - *Option C - FINISH FULL (L):* B + render/sample the cube shadow map;
+      6 faces x N lights of depth passes wants its own perf budget.
+    - *Recommendation:* A or B; the half-alive state is the only wrong
+      option - it costs VRAM, misleads readers, and arms the parity trap.
 13. **Cascades cost 3 render passes + a pass-through geometry shader** (M) —
     one pass per cascade (`CascadedShadowMap.cpp:586-664`) and
     `directional_shadow_map.geom` now only re-multiplies by the cascade matrix (its
