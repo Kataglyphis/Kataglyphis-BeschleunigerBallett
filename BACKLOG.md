@@ -1667,12 +1667,14 @@ oversized per-primitive uniform block, #13 render bundles for the cascades.
    into albedo per spec, QEM blend interpolates it. Attribute location 6 for
    colour shifted the instance buffer to 7-10. Green-vertex-quad red/green
    test (r=g=b=177 white in the red state).
-7. **Every texture slot is forced onto TEXCOORD_0** (M) — `textureInfo.texCoord` is
-   never read and only `read_tex_coords(0)` is loaded (`gltf_loader.rs:339-342`);
-   `texture_ref` deliberately discards the `Info` carrying the index (`:238-251`).
-   Assets with baked AO on UV1 — the standard Blender/Substance export — get it
-   sampled with albedo UVs. Rider: `KHR_texture_transform` is plumbed for base
-   colour only (`:444-459`).
+7. **Every texture slot is forced onto TEXCOORD_0** — **DONE (2026-07-22, RPT
+   0f715e1, push held)**: Vertex carries uv1 (TEXCOORD_1); the loader builds a
+   per-material uv_set_mask (bit per slot) from each textureInfo.texCoord;
+   packed into material_flags.y, the shader selects uv0/uv1 per slot;
+   KHR_texture_transform applies to the base slot's chosen set; QEM blend
+   interpolates uv1. texCoord >= 2 falls back to UV0 with a warning. Base-on-
+   UV1 red/green test (flat red at mask 0, red/blue split at mask 1). Rider
+   (KHR_texture_transform on non-base slots) still open.
 8. **No anti-aliasing anywhere** (M) — `MultisampleState::default()` on all four
    forward pipelines (`forward.rs:2139`, `:2182`, `:2220`) and `sample_count: 1` on
    the HDR target (`:2814-2831`). The most visible quality defect in the browser
