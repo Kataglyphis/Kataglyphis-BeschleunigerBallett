@@ -117,7 +117,12 @@ auto Kataglyphis::Texture::uploadRgba(std::shared_ptr<VulkanDevice>device,
 {
     if (width == 0 || height == 0 || rgba == nullptr) { return false; }
 
-    constexpr vk::Format texture_format = vk::Format::eR8G8B8A8Unorm;
+    // sRGB, not UNORM: PNG/JPG pixel data is sRGB-encoded, and sampling it
+    // through a UNORM view fed gamma-space values into lighting math that
+    // assumes linear - then post's gamma encode applied on top, washing out
+    // every textured surface. The sRGB view makes the hardware decode to
+    // linear at sample time.
+    constexpr vk::Format texture_format = vk::Format::eR8G8B8A8Srgb;
     mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
     if (!supportsLinearBlit(device->getPhysicalDevice(), texture_format)) {
         spdlog::warn("Linear blit not supported for texture format; using single mip level.");
@@ -191,7 +196,9 @@ void Kataglyphis::Texture::createDefaultTexture(std::shared_ptr<VulkanDevice>in_
     constexpr uint32_t default_tex_width = 1;
     constexpr uint32_t default_tex_height = 1;
     constexpr vk::DeviceSize default_size = 4;
-    constexpr vk::Format texture_format = vk::Format::eR8G8B8A8Unorm;
+    // sRGB for consistency with real textures (a 255 white decodes to 1.0
+    // linear either way).
+    constexpr vk::Format texture_format = vk::Format::eR8G8B8A8Srgb;
     constexpr unsigned char white_pixel[4] = { 255, 255, 255, 255 };
 
     mip_levels = 1;

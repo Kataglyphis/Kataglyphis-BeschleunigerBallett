@@ -1237,7 +1237,13 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
    `ObjLoader` directly (`Scene.cpp:177`) instead of `loadModelByExtension`, and
    passes the result to `add_model` with no null check (`:179` vs `:153`) — a
    malformed asset is a null-deref. Test: CPU-only, all three behaviours.
-7. **Base-colour textures upload as UNORM, then post applies gamma again** (S) —
+7. **Base-colour textures upload as UNORM, then post applies gamma again** —
+   **DONE (2026-07-22)**: eR8G8B8A8Srgb for texture uploads (real + default);
+   the hardware decodes to linear at sample time. A/B census on the default
+   scene: 16.5k pixels shift (3.5%, exactly the textured skeleton), max delta
+   243; forward/deferred parity held at 0.20 through the change. Whole-frame
+   channel means were BLIND to it (skeleton too small) - the A/B frame dump
+   was the instrument. Original text: —
    `Texture.cpp:120`, `:194` use `eR8G8B8A8Unorm` for sRGB-encoded PNG/JPG, then
    `post.frag:34` does `pow(.,1/2.2)`. Albedo is systematically too bright and mips
    average in the wrong space. Narrow fix: `eR8G8B8A8Srgb` for base colour only
