@@ -1267,6 +1267,57 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
     `recreateSwapChain` (`VulkanRenderer.cpp:592-621`) where the image-count edge
     cases live. Test: run the whole golden suite under both paths behind a toggle.
 
+### Path tracing survey (2026-07-22)
+
+Full read of PathTracing.cpp/.ixx, all 241 lines of path_tracing.comp, the
+dispatch path and the RT pipeline. The kernel is an RTIOW/nvpro-style port.
+Two load-bearing facts drive most items: the RNG seed is `res.x*y + x` with NO
+frame dimension (`path_tracing.comp:150`) - every frame is bit-identical, so
+nothing ever converges; and the environment-radiance line is COMMENTED OUT
+(`:225`) with clearColor black (`PathTracing.cpp:92`) - the scene is lit by an
+accidental constant-white furnace and the GUI light provably does nothing.
+
+1. **Use the precomputed inverse matrices** (S, top value/effort) - the sample
+   loop calls `inverse(view)`/`inverse(projection)` 24x per pixel per frame
+   (`:162,:168,:173`) while GlobalUBO ALREADY carries inv_view/inv_projection
+   (`GlobalUBO.hpp:26-29` - added for the clouds pass with a comment calling
+   inverse() "ruinously expensive"). raytrace.rgen:41-44 has the same waste.
+   Verify: GpuTimedPass::Main JSON before/after.
+2. **Temporal accumulation + camera-move reset + per-frame RNG** (M, headline)
+   - accumulation image + frame counter in the push constant, seed folded with
+   the frame index, reset on the transform-change path the renderer already
+   has (`VulkanRenderer.cpp:297-326`). Turns the mode from noisy toy into a
+   converging renderer; prerequisite for any convergence golden.
+3. **Wire actual light transport** (M) - re-enable env/sky radiance on miss,
+   then NEE toward the GUI directional light. Today PT is invariant to the
+   scene lighting; a golden can assert mean luminance responds to
+   sceneUBO.dirLight changes.
+4. **Degenerate scatter guard** (S) - RTIOW's "catch degenerate scatter" is
+   missing (`:217-220`) and the direction goes into the ray query
+   UN-normalized (`:189`) - black speckles/NaN contamination.
+5. **Hit normal transformed with w=1, no inverse-transpose** (S) - `:117`;
+   same defect class as the excluded rchit item but in the PT file. Wrong
+   bounce normals under any translated/scaled instance.
+6. **Material diffuse fallback commented out** (S) - `:127-132`; untextured
+   materials trace BLACK. The in-tree cube.glb makes the golden.
+7. **Russian roulette + GUI spp/depth** (S/M) - NUM_SAMPLES=8 and 8 bounces
+   hardcoded with stale comments claiming 64/32 (`:155-157,:177-178`).
+8. **Self-intersection epsilon** (S) - fixed 1e-4 offset with t_min = 0
+   (`:211,:183-190`) vs rgen's 0.001; acne/leaks at Sponza scale.
+9. **Estimator bias** (M) - no 1/pi, no PDF division (`:205,:217-220`);
+   convert to proper cosine-weighted sampling. Verify by FURNACE TEST once
+   item 2 lands: diffuse object in the white env must converge to its albedo.
+10. **PT goldens** (S now / M after item 2) - renderModesSuite only asserts
+    device-not-lost; add non-black now, variance-decreases + furnace after
+    accumulation. Blocked-note: convergence asserts are impossible while every
+    frame is identical.
+11. **Decorrelate the RNG seed** (S, fold into item 2) - linear-index seeds
+    with one PCG step produce structured neighbor-correlated noise
+    (`:150,:68-75`).
+
+Trivial rider: path_tracing.comp includes the BRDF headers (`:15-19`) and
+never calls them - delete the dead includes.
+
 ### C++ Vulkan engine — second survey (2026-07-22, app/GUI/RT/deferred internals)
 
 **CORRECTION (2026-07-22, after implementation):** second-survey items 1-3 cited
