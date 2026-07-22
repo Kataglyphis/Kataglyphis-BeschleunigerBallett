@@ -125,6 +125,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
             raytracingDescriptors.getLayout() };
         raytracingStage.init(device, layouts, &vulkanSwapChain);
         pathTracing.init(device, layouts);
+        createPathTracingAccumulationResources();
     }
 
     updateUniforms(scene, camera, window);
@@ -625,6 +626,11 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
     deferredRasterizer.recreateFrameResources(graphics_command_pool);
     clouds.recreateFrameResources(graphics_command_pool, vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
 
+    // The accumulation history is swapchain-extent-sized; recreate it (which
+    // also resets the frame counter - the old history is meaningless at the
+    // new resolution). updateAllDescriptorSets() below rewrites its binding.
+    if (device->supportsHardwareAcceleratedRRT()) { createPathTracingAccumulationResources(); }
+
     std::vector<vk::ImageView> skyboxImageViews(vulkanSwapChain.getNumberSwapChainImages());
     std::vector<vk::ImageView> skyboxDepthViews(vulkanSwapChain.getNumberSwapChainImages());
     for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
@@ -751,6 +757,8 @@ void Kataglyphis::VulkanRenderer::update_raytracing_descriptor_set(uint32_t imag
 
     raytracingDescriptors.writeAccelerationStructure(image_index, TLAS_BINDING, vulkanTLAS);
     raytracingDescriptors.writeImage(image_index, OUT_IMAGE_BINDING, renderResult.getImageView(), vk::ImageLayout::eGeneral);
+    raytracingDescriptors.writeImage(
+      image_index, ACCUMULATION_IMAGE_BINDING, pathTracingAccumulation.getImageView(), vk::ImageLayout::eGeneral);
 }
 
 bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
@@ -858,8 +866,23 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
         } else if (guiRendererSharedVars.pathTracing) {
             Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "pathtracing", { 0.60F, 0.25F, 0.85F, 1.0F });
             Texture &renderResult = guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward ? rasterizer.getOffscreenTexture(image_index) : deferredRasterizer.getOffscreenTexture(image_index);
-            pathTracing.recordCommands(
-              commandBuffer, image_index, renderResult.getVulkanImage(), &vulkanSwapChain, raytracing_descriptor_sets);
+
+            // A camera move invalidates the accumulated history; restart the
+            // running mean from this frame.
+            glm::mat4 const current_view = camera->calculate_viewmatrix();
+            if (current_view != pathTracingLastView) {
+                pathTracingAccumulatedFrames = 0;
+                pathTracingLastView = current_view;
+            }
+
+            pathTracing.recordCommands(commandBuffer,
+              image_index,
+              renderResult.getVulkanImage(),
+              pathTracingAccumulation.getVulkanImage(),
+              &vulkanSwapChain,
+              raytracing_descriptor_sets,
+              pathTracingAccumulatedFrames);
+            ++pathTracingAccumulatedFrames;
         }
     }
 
@@ -1264,6 +1287,7 @@ void Kataglyphis::VulkanRenderer::cleanUp()
     writeGpuTimingJsonIfRequested();
 
     if (device->supportsHardwareAcceleratedRRT()) {
+        pathTracingAccumulation.cleanUp();
         pathTracing.cleanUp();
         raytracingStage.cleanUp();
         asManager.cleanUp();
@@ -1354,11 +1378,41 @@ void Kataglyphis::VulkanRenderer::createRaytracingDescriptorResources()
                                                    | vk::ShaderStageFlagBits::eCompute;
 
     raytracingDescriptors.addBinding(TLAS_BINDING, vk::DescriptorType::eAccelerationStructureKHR, 1, raytracing_stages)
-      .addBinding(OUT_IMAGE_BINDING, vk::DescriptorType::eStorageImage, 1, raytracing_stages);
+      .addBinding(OUT_IMAGE_BINDING, vk::DescriptorType::eStorageImage, 1, raytracing_stages)
+      .addBinding(ACCUMULATION_IMAGE_BINDING, vk::DescriptorType::eStorageImage, 1, raytracing_stages);
 
     if (!raytracingDescriptors.create(device, vulkanSwapChain.getNumberSwapChainImages())) {
         spdlog::error("Failed to create raytracing descriptor resources!");
     }
+}
+
+void Kataglyphis::VulkanRenderer::createPathTracingAccumulationResources()
+{
+    // Also the resize path: drop any previous image (and with it the history).
+    pathTracingAccumulation.cleanUp();
+
+    vk::Extent2D const extent = vulkanSwapChain.getSwapChainExtent();
+    pathTracingAccumulation.createImage(device,
+      extent.width,
+      extent.height,
+      1,
+      vk::Format::eR32G32B32A32Sfloat,
+      vk::ImageTiling::eOptimal,
+      vk::ImageUsageFlagBits::eStorage,
+      vk::MemoryPropertyFlagBits::eDeviceLocal);
+    pathTracingAccumulation.createImageView(
+      device, vk::Format::eR32G32B32A32Sfloat, vk::ImageAspectFlagBits::eColor, 1);
+
+    // Storage images live in eGeneral for their whole lifetime (same pattern
+    // as the clouds output texture).
+    vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
+      device->getLogicalDevice(), graphics_command_pool);
+    pathTracingAccumulation.getVulkanImage().transitionImageLayout(
+      commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, 1, vk::ImageAspectFlagBits::eColor);
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      device->getLogicalDevice(), graphics_command_pool, device->getGraphicsQueue(), commandBuffer);
+
+    pathTracingAccumulatedFrames = 0;
 }
 
 void Kataglyphis::VulkanRenderer::cleanUpSync()
@@ -1426,6 +1480,14 @@ void Kataglyphis::VulkanRenderer::updateRaytracingDescriptorSets()
         return;
     }
 
+    // This runs when the traced world changes (model load/reload rebuilt the
+    // AS, mode switch). Any accumulated history predates that world: without
+    // this reset, frames traced against the HALF-LOADED scene stay blended
+    // into the running mean until the camera happens to move (observed as the
+    // accumulation golden "converging" with per-frame sampling disabled - the
+    // mean was healing from startup frames, not averaging samples).
+    pathTracingAccumulatedFrames = 0;
+
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
       gui->getGuiRendererSharedVars();
 
@@ -1434,6 +1496,8 @@ void Kataglyphis::VulkanRenderer::updateRaytracingDescriptorSets()
 
         raytracingDescriptors.writeAccelerationStructure(i, TLAS_BINDING, vulkanTLAS);
         raytracingDescriptors.writeImage(i, OUT_IMAGE_BINDING, renderResult.getImageView(), vk::ImageLayout::eGeneral);
+        raytracingDescriptors.writeImage(
+          i, ACCUMULATION_IMAGE_BINDING, pathTracingAccumulation.getImageView(), vk::ImageLayout::eGeneral);
     }
 }
 

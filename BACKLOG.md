@@ -1286,10 +1286,21 @@ accidental constant-white furnace and the GUI light provably does nothing.
    inverse() "ruinously expensive"). raytrace.rgen:41-44 has the same waste.
    Verify: GpuTimedPass::Main JSON before/after.
 2. **Temporal accumulation + camera-move reset + per-frame RNG** (M, headline)
-   - accumulation image + frame counter in the push constant, seed folded with
-   the frame index, reset on the transform-change path the renderer already
-   has (`VulkanRenderer.cpp:297-326`). Turns the mode from noisy toy into a
-   converging renderer; prerequisite for any convergence golden.
+   - **DONE (2026-07-22)**: rgba32f history image (one, persistent), running
+   mean in the kernel, frame index folded into the seed, resets on camera
+   move / resize / AS rebuild (model load). Golden proves differ+converge
+   with an exact red (frame term removed -> changed fraction exactly 0).
+
+   NEW items found while proving it:
+   - **PT dispatches before the TLAS exists** (S): with PT enabled during the
+     async model load, the kernel dispatches against never-written descriptor
+     sets (20 validation errors in the pre-load window of the golden run).
+     Guard the PT/RT record branch on a built TLAS.
+   - **Pipelines consume the PREVIOUS run's SPIR-V** (S/M): every stage's
+     createPipeline reads the .spv bytes BEFORE calling compileShader, so a
+     GLSL edit reaches the GPU one process-start late (and shader hot-reload
+     lags one trigger). Found when a red-probe shader edit provably did not
+     change the rendered output. Reorder to compile-then-read everywhere.
 3. **Wire actual light transport** (M) - re-enable env/sky radiance on miss,
    then NEE toward the GUI directional light. Today PT is invariant to the
    scene lighting; a golden can assert mean luminance responds to

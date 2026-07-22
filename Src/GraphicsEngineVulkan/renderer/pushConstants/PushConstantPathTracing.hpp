@@ -20,6 +20,10 @@ struct PushConstantPathTracing
     vec4 clearColor;
     uint width;
     uint height;
+    // Frames accumulated since the last history reset (camera move / resize).
+    // 0 means "discard history"; also folded into the RNG seed so every frame
+    // draws different samples.
+    uint frame_index;
 };
 
 #ifdef __cplusplus

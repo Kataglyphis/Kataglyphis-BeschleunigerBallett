@@ -57,8 +57,10 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::shaderHotReload(
 void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::CommandBuffer &commandBuffer,
   uint32_t /*image_index*/,
   VulkanImage &vulkanImage,
+  VulkanImage &accumulationImage,
   VulkanSwapChain *vulkanSwapChain,
-  const std::vector<vk::DescriptorSet> &descriptorSets)
+  const std::vector<vk::DescriptorSet> &descriptorSets,
+  uint32_t frame_index)
 {
     Kataglyphis::VulkanRendererInternals::QueueFamilyIndices const indices = device->getQueueFamilies();
 
@@ -86,10 +88,33 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
       {},
       { presentToPathTracingImageBarrier });
 
+    // The accumulation history is read-modify-written by every dispatch, and
+    // the previous frame's dispatch may still be in flight: make its writes
+    // visible before this frame reads them. A pipeline barrier orders against
+    // ALL prior commands on the queue, so this also covers the cross-command-
+    // buffer frame-to-frame hazard.
+    vk::ImageMemoryBarrier accumulationBarrier{};
+    accumulationBarrier.srcQueueFamilyIndex = static_cast<uint32_t>(indices.compute_family);
+    accumulationBarrier.dstQueueFamilyIndex = static_cast<uint32_t>(indices.compute_family);
+    accumulationBarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
+    accumulationBarrier.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
+    accumulationBarrier.oldLayout = vk::ImageLayout::eGeneral;
+    accumulationBarrier.newLayout = vk::ImageLayout::eGeneral;
+    accumulationBarrier.subresourceRange = subresourceRange;
+    accumulationBarrier.image = accumulationImage.getImage();
+
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
+      vk::PipelineStageFlagBits::eComputeShader,
+      vk::DependencyFlags{},
+      {},
+      {},
+      { accumulationBarrier });
+
     vk::Extent2D const imageSize = vulkanSwapChain->getSwapChainExtent();
     push_constant.width = imageSize.width;
     push_constant.height = imageSize.height;
     push_constant.clearColor = { 0.0F, 0.0F, 0.0F, 0.0F };
+    push_constant.frame_index = frame_index;
 
     commandBuffer.pushConstants(
       pipeline_layout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(PushConstantPathTracing), &push_constant);

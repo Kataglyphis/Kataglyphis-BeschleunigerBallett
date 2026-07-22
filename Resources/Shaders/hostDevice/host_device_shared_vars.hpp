@@ -16,6 +16,9 @@ const int MAX_TEXTURE_COUNT = 24;
 // ---- RAYTRACING BINDING ---- START
 #define TLAS_BINDING 0
 #define OUT_IMAGE_BINDING 1
+// Path-tracing temporal accumulation history (rgba32f storage image, one per
+// renderer - NOT per swapchain image, it must persist across frames).
+#define ACCUMULATION_IMAGE_BINDING 2
 // ---- RAYTRACING BINDING ---- END
 
 #endif

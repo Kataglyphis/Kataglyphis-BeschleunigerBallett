@@ -157,6 +157,15 @@ class VulkanRenderer
     Kataglyphis::VulkanRendererInternals::Rasterizer rasterizer;
     Kataglyphis::VulkanRendererInternals::DeferredRasterizer deferredRasterizer;
     Kataglyphis::VulkanRendererInternals::PathTracing pathTracing;
+    // Path-tracing temporal accumulation: ONE persistent full-float history
+    // image (deliberately not per swapchain image - it must survive across
+    // frames), the number of frames accumulated since the last reset, and the
+    // view matrix that history was rendered from (a camera move invalidates
+    // the history).
+    Texture pathTracingAccumulation;
+    uint32_t pathTracingAccumulatedFrames{ 0 };
+    glm::mat4 pathTracingLastView{ 1.0F };
+    void createPathTracingAccumulationResources();
     Kataglyphis::VulkanRendererInternals::PostStage postStage;
 
     // Atmospheric & Lighting Additions

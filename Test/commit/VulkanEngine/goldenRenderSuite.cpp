@@ -985,3 +985,125 @@ TEST(GoldenRender, GpuTimingJsonDumpIsWrittenAndSane)
         EXPECT_GE(value, 0.0) << "Pass '" << pass_name << "' average is negative.";
     }
 }
+
+// Path tracing must ACCUMULATE. With a static camera, every frame draws NEW
+// random samples (frame index folded into the RNG seed) and folds them into a
+// running mean held in a full-float history image. Observable consequences,
+// asserted in order of strength:
+//   (1) consecutive early captures DIFFER by clearly more than the GUI-overlay
+//       baseline (per-frame sample noise moving the mean) - before 2026-07-22
+//       the seed had no frame term and every PT frame was bit-identical, so
+//       this assertion is the red/green for the whole feature;
+//   (2) the frame is not blank;
+//   (3) consecutive captures late in the run differ LESS than the early pair
+//       (1/N convergence of the running mean).
+//
+// The FIRST version of this test skipped the camera nudge below and stayed
+// green with per-frame sampling disabled: the history had been seeded during
+// the async model-load frames, and the running mean "converging" away from
+// those stale startup frames mimicked sample accumulation exactly (early 1.61
+// -> late 0.18 with a frame-invariant seed). The nudge forces a clean reset
+// AFTER the scene has settled so the deltas measure sampling, nothing else -
+// and the same probe found the real defect that a model load rebuilt the AS
+// without resetting the history (now reset in updateRaytracingDescriptorSets).
+TEST(GoldenRender, PathTracingAccumulatesAndConverges)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = true;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES);
+
+    // Force a history reset now that the scene is fully loaded and settled: a
+    // sub-millimetre camera move changes the view matrix, which restarts the
+    // running mean from the next frame. Without this the early pair measures
+    // the mean healing from pre-load frames, not per-frame sampling.
+    harness.camera->set_camera_position(harness.camera->get_camera_position()
+                                        + glm::vec3(0.001F, 0.0F, 0.0F));
+    harness.render_frame();
+
+    // Instrument choice (both alternatives were tried and MEASURED wrong):
+    // whole-frame mean abs diff cannot see PT noise (GUI text noise ~0.18
+    // vs ~0.16 - no separation), and a centre crop landed on the ImGui
+    // panel's FPS counter, whose changing digits contributed a constant
+    // ~0.29 that dwarfed the signal. Amplified per-pixel diff maps showed
+    // the panel covers the LEFT ~70% of the frame and the path-traced
+    // content with its sample noise lives at the right edge. So: fraction
+    // of CHANGED pixels (any channel moving > 2 levels) in the right-edge
+    // region, which contains no GUI at all - with a frame-invariant seed
+    // that region is bit-identical between frames and the fraction is
+    // exactly zero.
+    const auto changed_fraction =
+      [](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, uint32_t w, uint32_t h) {
+          const uint32_t x0 = (w * 3U) / 4U;
+          const uint32_t x1 = (w * 49U) / 50U;
+          const uint32_t y0 = h / 20U;
+          const uint32_t y1 = (h * 19U) / 20U;
+          size_t changed = 0;
+          size_t total = 0;
+          for (uint32_t y = y0; y < y1; ++y) {
+              for (uint32_t x = x0; x < x1; ++x) {
+                  const size_t base = (static_cast<size_t>(y) * w + x) * 4U;
+                  for (size_t c = 0; c < 3U; ++c) {
+                      if (std::abs(static_cast<int>(a[base + c]) - static_cast<int>(b[base + c])) > 2) {
+                          ++changed;
+                          break;
+                      }
+                  }
+                  ++total;
+              }
+          }
+          return static_cast<double>(changed) / static_cast<double>(total);
+      };
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> early_a = harness.capture_frame(width, height);
+    const std::vector<uint8_t> early_b = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(early_a.empty());
+    ASSERT_EQ(early_a.size(), early_b.size());
+
+    // Deepen the history, then measure the per-frame movement again.
+    harness.render_frames(40);
+    const std::vector<uint8_t> late_a = harness.capture_frame(width, height);
+    const std::vector<uint8_t> late_b = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_EQ(late_a.size(), late_b.size());
+
+    const double early_delta = changed_fraction(early_a, early_b, width, height);
+    const double late_delta = changed_fraction(late_a, late_b, width, height);
+    GTEST_LOG_(INFO) << "consecutive-frame changed fraction (right-edge crop): early = " << early_delta
+                     << ", late = " << late_delta;
+
+    // (2) Not blank: the accumulated image reaches the screen at all.
+    EXPECT_GT(fraction_above(late_b, 8.0), 0.01)
+      << "Path-traced frame is (nearly) black - accumulated image not reaching the screen.";
+
+    // (1) Early frames must move. Measured on the RX 9070 XT: sampling
+    // active gives early = 5.2e-4 (~118 changed pixels in the crop at
+    // history depth 2/3); the red probe (frame term removed from the seed,
+    // the pre-2026-07-22 behaviour) gives EXACTLY 0 - the crop is GUI-free,
+    // so frozen sampling means bit-identical pixels. 1e-4 (~23 pixels) sits
+    // between with 5x margin on the green side.
+    EXPECT_GT(early_delta, 1.0e-4)
+      << "Consecutive path-traced frames are (near) identical in the scene region - "
+         "per-frame seeding inactive.";
+
+    // (3) The running mean must settle: measured late fraction is exactly 0
+    // at depth ~45 (every per-pixel movement is under the 2-level metric
+    // threshold). Half the early fraction keeps room for driver variance
+    // while still requiring a real collapse of per-frame movement.
+    EXPECT_LT(late_delta, early_delta / 2.0)
+      << "Per-frame movement did not shrink with accumulation depth - history not converging.";
+}

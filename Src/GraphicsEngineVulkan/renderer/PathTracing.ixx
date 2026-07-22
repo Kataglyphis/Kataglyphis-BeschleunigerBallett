@@ -28,8 +28,10 @@ class PathTracing
     void recordCommands(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
       VulkanImage &vulkanImage,
+      VulkanImage &accumulationImage,
       VulkanSwapChain *vulkanSwapChain,
-      const std::vector<vk::DescriptorSet> &descriptorSets);
+      const std::vector<vk::DescriptorSet> &descriptorSets,
+      uint32_t frame_index);
 
     void cleanUp();
 
