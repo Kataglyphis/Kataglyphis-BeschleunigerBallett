@@ -330,11 +330,22 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Fronten
         
         if (guiSceneSharedVars.selected_model_index >= 0) {
             scene->update_model_matrix(modelMatrix, 0);
-            
+
             // Re-upload object descriptions as the transform changed
             (void)device->getLogicalDevice().waitIdle();
             objectDescriptionBuffer.cleanUp();
             create_object_description_buffer();
+
+            // The traced world must follow the raster world: without this,
+            // RT/PT kept tracing the OLD pose after a GUI transform change.
+            // BLAS geometry is untouched - only the instance transform moved
+            // - so rebuilding the TLAS alone is enough. Must run BEFORE the
+            // descriptor update below, which binds the new TLAS handle (and
+            // resets the PT accumulation history this change invalidates).
+            if (device->supportsHardwareAcceleratedRRT()) {
+                asManager.createTLAS(device, graphics_command_pool, scene);
+            }
+
             updateAllDescriptorSets();
         }
 

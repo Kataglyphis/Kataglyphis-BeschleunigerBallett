@@ -1198,12 +1198,11 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
    `addModel` is textured with the first model's array. `runtimeDescriptorArray`
    is already enabled (`VulkanDevice.cpp:591-593`), so a per-scene flat table with
    an offset in `ObjectDescription` is the natural fix.
-4. **Moving the model in the GUI never rebuilds the TLAS** (S) —
-   `model_transform_changed` updates the matrix and object descriptions
-   (`VulkanRenderer.cpp:297-326`) but never calls `createASForScene`, while the
-   reload path two blocks down does (`:341-343`). With RT/path-tracing on, traced
-   geometry stays in the old pose. A TLAS refit is cheap. Test: GPU integration —
-   translate, settle, assert frames differ.
+4. **Moving the model in the GUI never rebuilds the TLAS** — **DONE
+   (2026-07-22)**: the transform path rebuilds the TLAS only (BLAS geometry
+   untouched) before the descriptor update, which binds the new handle and
+   resets PT accumulation. Golden RaytracedWorldFollowsTheModelTransform:
+   green 0.397 swung fraction, stale-TLAS red EXACTLY 0 (deterministic RT).
 5. **`raytrace.rchit` lights in object space and transforms the normal with `w=1`** (S) —
    ~~`:88` uses `vec4(normal_hit, 1.0)` (picks up translation; a normal needs the
    inverse-transpose), and `:103-104` mix object-space `N`/`hit_pos` with

@@ -1374,3 +1374,78 @@ TEST(GoldenRender, ForwardLightingRespondsToTheDirectionalLight)
     EXPECT_GT(response, 0.05)
       << "Forward lighting did not respond to the directional light radiance.";
 }
+
+// Moving the model in the GUI must move the TRACED world too. The transform
+// path rebuilt object descriptions (shading data) but never touched the TLAS,
+// so with RT on, the traced image kept rendering the OLD pose no matter where
+// the model went - that is the red state, and since the RT mode is fully
+// deterministic, its captures are bit-identical there. Green: the TLAS is
+// rebuilt (instance transforms only; BLAS geometry is unchanged) and the
+// image follows the move.
+TEST(GoldenRender, RaytracedWorldFollowsTheModelTransform)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    renderer_vars.raytracing = true;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES);
+
+    const auto swung_fraction =
+      [](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, uint32_t w, uint32_t h) {
+          const uint32_t x0 = (w * 18U) / 25U;
+          const uint32_t x1 = (w * 49U) / 50U;
+          const uint32_t y0 = h / 20U;
+          const uint32_t y1 = (h * 19U) / 20U;
+          size_t swung = 0;
+          size_t total = 0;
+          for (uint32_t y = y0; y < y1; ++y) {
+              for (uint32_t x = x0; x < x1; ++x) {
+                  const size_t base = (static_cast<size_t>(y) * w + x) * 4U;
+                  for (size_t c = 0; c < 3U; ++c) {
+                      if (std::abs(static_cast<int>(a[base + c]) - static_cast<int>(b[base + c])) > 5) {
+                          ++swung;
+                          break;
+                      }
+                  }
+                  ++total;
+              }
+          }
+          return static_cast<double>(swung) / static_cast<double>(total);
+      };
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> before = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(before.empty());
+
+    // Raise the model the way the GUI does it.
+    scene_vars.selected_model_index = 0;
+    scene_vars.model_position[1] += 3.0F;
+    scene_vars.model_transform_changed = true;
+    harness.render_frames(SETTLE_FRAMES);
+
+    const std::vector<uint8_t> after = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_EQ(before.size(), after.size());
+
+    const double moved = swung_fraction(before, after, width, height);
+    GTEST_LOG_(INFO) << "RT transform-move swung-pixel fraction (panel-free crop): " << moved;
+
+    // Threshold measured after the first run; the red state is exactly zero
+    // (deterministic RT tracing a stale TLAS).
+    EXPECT_GT(moved, 5.0e-3)
+      << "The traced image did not follow the model transform - stale TLAS.";
+}
