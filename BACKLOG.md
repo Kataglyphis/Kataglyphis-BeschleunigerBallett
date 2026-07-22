@@ -18,6 +18,23 @@ size and a decision, or gets dropped.
 
 ## C++ Vulkan engine
 
+- [ ] **Vertex colour (`COLOR_0`) is plumbed but unused; glTF drops it** (S,
+  found 2026-07-22 by cross-renderer audit) — the C++ `Vertex` carries a
+  `color` field, both vertex shaders forward it (`fragment_color`), but NO
+  fragment shader ever reads `fragment_color` (grep: declared at
+  `shader.frag:29` / `geometry.frag:24`, used nowhere) - so vertex colour is
+  dead weight through the whole pipeline. Meanwhile the OBJ loader DOES read
+  `attrib.colors` (with a `-1` "absent" sentinel, `ObjLoader.cpp:238-243`)
+  while the glTF loader hardcodes `(1,1,1)` (`GltfLoader.cpp:298`), dropping
+  `COLOR_0` - the same gap the Rust renderer had before RPT abb46c1. To make
+  it real (parity with the Rust renderer): (1) fragment shaders multiply
+  `fragment_color` into ambient/albedo per glTF `COLOR_0` semantics; (2) the
+  OBJ `-1` sentinel becomes `(1,1,1)` so the multiply is a no-op when absent;
+  (3) the glTF loader reads `COLOR_0`. Low priority: no vertex-coloured asset
+  is in-tree, so it needs a constructed test (like the Rust one). Currently a
+  harmless no-op, not a visible bug.
+
+
 - [x] **Cascaded shadows work** (settled 2026-07-20) — the faintness was the
   test scene, not the renderer. Measured on the same build: 0.13% of pixels
   darkened with the dinosaur SKELETON as caster, **6.45% with a solid box**.
