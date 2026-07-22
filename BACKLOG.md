@@ -1322,15 +1322,14 @@ accidental constant-white furnace and the GUI light provably does nothing.
      (the other stages already had the right order; Clouds deliberately
      consumes prebuilt spv only). BUT the reorder exposed a deeper layer,
      still OPEN:
-   - **Runtime shader compilation is a silent no-op for container-built
-     binaries** (M): `RendererConfig::glslcExe` is baked at CMake time, so a
-     binary built in the CI container carries the container's scoop path,
-     which does not exist on the host - `system()` fails, nothing checks the
-     return code, and the stale spv is consumed without a word. This is why
-     the compile-then-read red/green could not be proven on the host. Fix:
-     resolve glslc at runtime (baked path -> PATH -> VULKAN_SDK/Bin), check
-     the system() return, and log loudly on failure. Until then: editing GLSL
-     requires running Scripts/Windows/compile-shaders.ps1 by hand.
+   - ~~**Runtime shader compilation is a silent no-op for container-built
+     binaries** (M)~~ **DONE (2026-07-22)**: glslc resolves at call time
+     (baked path when it exists -> VULKAN_SDK/Bin -> PATH), and the system()
+     return is checked with a loud error naming the stale spv that will be
+     served. Proven on the host: touching a kernel source and running a
+     golden regenerates the spv mid-run (mtime flip) - GLSL iteration no
+     longer needs manual compile-shaders.ps1 (the script remains the bulk /
+     CI path; ShaderIncludes already had its own runtime fallback).
 3. **Wire actual light transport** (M) - **DONE (2026-07-22)**: NEE toward
    the directional light (one shadow ray per bounce) + deliberate soft
    gradient sky on miss (the accidental radiance-1 furnace is gone). Golden

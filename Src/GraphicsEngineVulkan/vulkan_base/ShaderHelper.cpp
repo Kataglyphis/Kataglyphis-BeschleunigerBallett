@@ -51,6 +51,32 @@ auto resolve_shader_source_path(const std::string &raw_shader_src_path) -> std::
 
     return raw_shader_src_path;
 }
+
+// The baked glslc path is CMake-time truth: a binary built in the CI
+// container carries the CONTAINER's scoop path, which does not exist on the
+// host - system() then failed without anyone checking, and every runtime
+// compile was a silent no-op that served the previous run's spv (found when
+// a red-probe shader edit provably changed nothing on screen). Resolve at
+// call time: the baked path when it exists, then VULKAN_SDK, then PATH.
+auto resolve_glslc_executable() -> std::string
+{
+    std::error_code fs_error;
+    const std::string baked{ Kataglyphis::RendererConfig::glslcExe };
+    if (!baked.empty() && std::filesystem::exists(baked, fs_error) && !fs_error) { return baked; }
+
+    if (const char *sdk = std::getenv("VULKAN_SDK"); sdk != nullptr) {
+#ifdef _WIN32
+        const std::filesystem::path candidate = std::filesystem::path(sdk) / "Bin" / "glslc.exe";
+#else
+        const std::filesystem::path candidate = std::filesystem::path(sdk) / "bin" / "glslc";
+#endif
+        if (std::filesystem::exists(candidate, fs_error) && !fs_error) { return candidate.string(); }
+    }
+
+    // Last resort: let the shell search PATH. If glslc is nowhere, the
+    // system() return check at the call site reports it instead of silence.
+    return "glslc";
+}
 }// namespace
 
 Kataglyphis::ShaderHelper::ShaderHelper() = default;
@@ -111,13 +137,23 @@ void Kataglyphis::ShaderHelper::compileShader(const std::string &shader_src_dir,
     log_stdout_and_stderr << " > " << shader_log_file.str() << " 2> " << shader_log_file.str();
 
     cmdShaderCompile//<< adminPriviliges.str()
-      << Kataglyphis::RendererConfig::glslcExe << target << std::quoted(resolved_shader_src_path) << " -o "
+      << resolve_glslc_executable() << target << std::quoted(resolved_shader_src_path) << " -o "
       << std::quoted(shader_spv_path) << " " << ShaderIncludes::getShaderIncludes();
 
     spdlog::default_logger_raw()->log(
       spdlog::level::info, std::string("The shader compile command is the following: ") + cmdShaderCompile.str());
 
-    system(cmdShaderCompile.str().c_str());
+    const int compile_result = system(cmdShaderCompile.str().c_str());
+    if (compile_result != 0) {
+        // Loud, because the silent version of this cost a full debugging
+        // cycle: the pipeline will consume whatever spv is already on disk.
+        spdlog::error("Runtime shader compilation failed (exit {}) for '{}' - the existing spv at '{}' "
+                      "will be used. Compiler output: '{}'.",
+          compile_result,
+          resolved_shader_src_path,
+          shader_spv_path,
+          shader_log_file.str());
+    }
 #else
     spdlog::default_logger_raw()->log(
       spdlog::level::warn,
