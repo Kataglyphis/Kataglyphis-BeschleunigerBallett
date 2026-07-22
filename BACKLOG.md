@@ -1337,11 +1337,16 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
     contained cgltf, wired into both CI lanes) plus two CPU regression tests
     (malformed JSON rejected; sub-quad base64 URI yields no texture instead of
     an underflowed read). 96/96, validation-clean.
-15. **Swapchain recreate destroys before creating; surface-lost unhandled** (S) —
-    `recreate` does `cleanUp()` then init (`VulkanSwapChain.cpp:138-142`) and always
-    passes `oldSwapchain = nullptr` (`:98`); `createSwapchainKHR`'s result is never
-    checked (`:101-103`), and `eErrorSurfaceLostKHR` is not distinguished from
-    out-of-date (`VulkanRenderer.cpp:427-439`).
+15. **Swapchain recreate destroys before creating; surface-lost unhandled** —
+    **DONE (2026-07-22, the two live defects)**: recreate now keeps the old
+    swapchain alive as the oldSwapchain handoff (destroyImageViews split out
+    of cleanUp; old handle destroyed AFTER the new one is created), and
+    createSwapchainKHR's result is checked (ASSERT_VULKAN - it silently stored
+    null before). Surface-lost was already distinct in the current code: acquire/
+    present route eErrorOutOfDate -> recreate and everything else (incl.
+    eErrorSurfaceLost) -> abort_frame_with_fatal_error, so no change needed
+    there. The resize path is not headless-testable; the always-run half (init
+    + the result check) is validation-clean every launch.
 16. **Dynamic rendering + synchronization2 are hard-disabled** (L) —
     `VulkanDevice.cpp:451`, `:454`. Already in use: RT pipelines, ray query, AS,
     BDA, descriptor indexing, scalar block layout, multiview, pipeline cache, VMA,

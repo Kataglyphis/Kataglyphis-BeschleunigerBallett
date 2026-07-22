@@ -16,7 +16,10 @@ class VulkanSwapChain
   public:
     VulkanSwapChain();
 
-    void initVulkanContext(std::shared_ptr<VulkanDevice>in_device, Kataglyphis::Frontend::Window *window, const vk::SurfaceKHR &surface);
+    void initVulkanContext(std::shared_ptr<VulkanDevice>in_device,
+      Kataglyphis::Frontend::Window *window,
+      const vk::SurfaceKHR &surface,
+      const vk::SwapchainKHR &oldSwapchain = nullptr);
 
     void recreate(std::shared_ptr<VulkanDevice>in_device, const vk::SurfaceKHR &surface);
 
@@ -44,6 +47,10 @@ class VulkanSwapChain
     vk::Format swap_chain_image_format{ vk::Format::eB8G8R8A8Unorm };
     vk::Extent2D swap_chain_extent{ 0, 0 };
     bool transfer_src_supported{ false };
+
+    // Destroys the per-image views without touching the swapchain handle, so
+    // recreate() can keep the old swapchain as the oldSwapchain handoff.
+    void destroyImageViews();
 
     static vk::SurfaceFormatKHR choose_best_surface_format(const std::vector<vk::SurfaceFormatKHR> &formats);
     static vk::PresentModeKHR choose_best_presentation_mode(const std::vector<vk::PresentModeKHR> &presentation_modes);

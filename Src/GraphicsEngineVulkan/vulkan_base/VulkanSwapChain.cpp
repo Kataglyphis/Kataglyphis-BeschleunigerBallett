@@ -22,7 +22,8 @@ Kataglyphis::VulkanSwapChain::VulkanSwapChain() = default;
 
 void Kataglyphis::VulkanSwapChain::initVulkanContext(std::shared_ptr<VulkanDevice>in_device,
   Kataglyphis::Frontend::Window *frontend_window,
-  const vk::SurfaceKHR &surface)
+  const vk::SurfaceKHR &surface,
+  const vk::SwapchainKHR &oldSwapchain)
 {
     this->device = in_device;
     this->window = frontend_window;
@@ -93,13 +94,20 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(std::shared_ptr<VulkanDevic
         swap_chain_create_info.pQueueFamilyIndices = nullptr;
     }
 
-    // if old swap chain been destroyed and this one replaces it then link old one
-    // to quickly hand over responsibilities
-    swap_chain_create_info.oldSwapchain = nullptr;
+    // Hand the driver the outgoing swapchain so it can recycle its images
+    // during recreation. Passing nullptr (the old behaviour) forced the
+    // driver to allocate an entirely fresh swapchain while the previous one
+    // had already been destroyed - a resize hitch and, on some drivers, a
+    // transient allocation spike.
+    swap_chain_create_info.oldSwapchain = oldSwapchain;
 
     // create swap chain
     vk::ResultValue<vk::SwapchainKHR> swapchain_result =
       device->getLogicalDevice().createSwapchainKHR(swap_chain_create_info);
+    // The result was never checked: on eErrorOutOfDateKHR / eErrorSurfaceLostKHR
+    // (both possible when a resize races the recreate) this stored a null
+    // handle and every later use was UB. Fail fast instead.
+    ASSERT_VULKAN(VkResult(swapchain_result.result), "Failed to (re)create swapchain!")
     swapchain = swapchain_result.value;
 
     // store for later reference
@@ -121,7 +129,7 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(std::shared_ptr<VulkanDevic
     }
 }
 
-void Kataglyphis::VulkanSwapChain::cleanUp()
+void Kataglyphis::VulkanSwapChain::destroyImageViews()
 {
     for (Texture &image : swap_chain_images) {
         device->getLogicalDevice().destroyImageView(image.getImageView());
@@ -129,16 +137,28 @@ void Kataglyphis::VulkanSwapChain::cleanUp()
         image.setImage(vk::Image{});
     }
     swap_chain_images.clear();
+}
 
+void Kataglyphis::VulkanSwapChain::cleanUp()
+{
+    destroyImageViews();
     device->getLogicalDevice().destroySwapchainKHR(swapchain);
+    swapchain = nullptr;
 }
 
 Kataglyphis::VulkanSwapChain::~VulkanSwapChain() = default;
 
 void Kataglyphis::VulkanSwapChain::recreate(std::shared_ptr<VulkanDevice>in_device, const vk::SurfaceKHR &surface)
 {
-    cleanUp();
-    initVulkanContext(in_device, window, surface);
+    // Keep the old swapchain alive across the create so it can be the
+    // oldSwapchain handoff source (the previous code destroyed everything
+    // first and passed nullptr). The image views reference the OLD images and
+    // must go before the new swapchain's are built; the swapchain HANDLE
+    // survives until the new one is created, then is destroyed.
+    const vk::SwapchainKHR previousSwapchain = swapchain;
+    destroyImageViews();
+    initVulkanContext(in_device, window, surface, previousSwapchain);
+    if (previousSwapchain) { in_device->getLogicalDevice().destroySwapchainKHR(previousSwapchain); }
 }
 
 auto Kataglyphis::VulkanSwapChain::choose_best_surface_format(const std::vector<vk::SurfaceFormatKHR> &formats)
