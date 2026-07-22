@@ -196,3 +196,37 @@ TEST(GltfParseUnit, MissingNormalsAreComputedFlatNotDefaultedUp)
         EXPECT_LT(std::abs(n.y), 0.01F) << "normal defaulted to up (0,1,0) - flat computation did not run";
     }
 }
+
+TEST(GltfParseUnit, TriangleStripIsTriangulatedNotDropped)
+{
+    // A TRIANGLE_STRIP primitive (mode 5) used to be skipped by the
+    // triangles-only check, silently dropping any mesh exported that way. A
+    // 4-vertex strip triangulates to 2 triangles (6 indices).
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 },
+        "mode": 5
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 4, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 48 } ],
+      "buffers": [ { "byteLength": 48,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAACAPwAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_strip.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()))
+      << "a triangle-strip mesh must load, not be dropped as non-triangle";
+    std::filesystem::remove(tmp);
+
+    EXPECT_EQ(loader.getVertices().size(), 4U) << "four strip vertices";
+    EXPECT_EQ(loader.getIndices().size(), 6U) << "a 4-vertex strip triangulates to 2 triangles";
+    EXPECT_EQ(loader.getIndices().size() % 3U, 0U);
+}

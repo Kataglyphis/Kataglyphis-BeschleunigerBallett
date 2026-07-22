@@ -252,7 +252,16 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
 
         for (cgltf_size p = 0; p < node->mesh->primitives_count; ++p) {
             const cgltf_primitive *primitive = &node->mesh->primitives[p];
-            if (primitive->type != cgltf_primitive_type_triangles) { continue; }
+            // Triangles, triangle strips and triangle fans are all supported
+            // (strips/fans are triangulated into a list below). Points and
+            // lines are not drawable in this triangle-only renderer, so they
+            // are skipped - but a strip/fan used to be skipped too, silently
+            // dropping whole meshes exported that way.
+            const cgltf_primitive_type primType = primitive->type;
+            if (primType != cgltf_primitive_type_triangles && primType != cgltf_primitive_type_triangle_strip
+                && primType != cgltf_primitive_type_triangle_fan) {
+                continue;
+            }
 
             std::vector<glm::vec3> positions;
             std::vector<glm::vec3> normals;
@@ -289,16 +298,48 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
                 vertices.emplace_back(worldPos, worldNormal, glm::vec3(1.0F), uv);
             }
 
-            const std::size_t primIndexStart = indices.size();
+            // Gather the primitive's local index sequence (from the accessor,
+            // or the implicit 0..N-1 for a non-indexed primitive), then emit a
+            // triangle LIST into the global buffer - triangulating strips and
+            // fans as we go.
+            std::vector<unsigned int> localSeq;
             if (primitive->indices != nullptr) {
                 const cgltf_accessor *idx = primitive->indices;
+                localSeq.reserve(idx->count);
                 for (cgltf_size i = 0; i < idx->count; ++i) {
-                    indices.push_back(base + static_cast<unsigned int>(cgltf_accessor_read_index(idx, i)));
+                    localSeq.push_back(static_cast<unsigned int>(cgltf_accessor_read_index(idx, i)));
                 }
             } else {
-                // Non-indexed primitive: the vertices are the triangle sequence.
+                localSeq.reserve(positions.size());
                 for (std::size_t i = 0; i < positions.size(); ++i) {
-                    indices.push_back(base + static_cast<unsigned int>(i));
+                    localSeq.push_back(static_cast<unsigned int>(i));
+                }
+            }
+
+            const std::size_t primIndexStart = indices.size();
+            const auto emitTri = [&](unsigned int a, unsigned int b, unsigned int c) {
+                indices.push_back(base + a);
+                indices.push_back(base + b);
+                indices.push_back(base + c);
+            };
+            if (primType == cgltf_primitive_type_triangle_strip) {
+                // Strip: alternate winding each step to keep a consistent
+                // front face (glTF/OpenGL convention).
+                for (std::size_t i = 0; i + 2 < localSeq.size(); ++i) {
+                    if ((i & 1U) == 0U) {
+                        emitTri(localSeq[i], localSeq[i + 1], localSeq[i + 2]);
+                    } else {
+                        emitTri(localSeq[i + 1], localSeq[i], localSeq[i + 2]);
+                    }
+                }
+            } else if (primType == cgltf_primitive_type_triangle_fan) {
+                // Fan: vertex 0 is shared by every triangle.
+                for (std::size_t i = 1; i + 1 < localSeq.size(); ++i) {
+                    emitTri(localSeq[0], localSeq[i], localSeq[i + 1]);
+                }
+            } else {
+                for (std::size_t i = 0; i + 2 < localSeq.size(); i += 3) {
+                    emitTri(localSeq[i], localSeq[i + 1], localSeq[i + 2]);
                 }
             }
 
@@ -332,9 +373,10 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
               primitive->material != nullptr
                 ? static_cast<unsigned int>(primitive->material - data->materials)
                 : fallbackMaterial;
-            const std::size_t primitiveIndexCount =
-              primitive->indices != nullptr ? primitive->indices->count : positions.size();
-            materialIndex.insert(materialIndex.end(), primitiveIndexCount / 3, primitiveMaterial);
+            // One id per EMITTED triangle - after triangulation, not from the
+            // raw index count (which for a strip/fan over-counts by ~3x).
+            const std::size_t emittedTriangles = (indices.size() - primIndexStart) / 3;
+            materialIndex.insert(materialIndex.end(), emittedTriangles, primitiveMaterial);
         }
     }
 
