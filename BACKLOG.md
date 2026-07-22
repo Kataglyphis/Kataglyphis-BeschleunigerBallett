@@ -1255,6 +1255,14 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
 
 ### Rust WebGPU renderer
 
+**Add a wasm32 CI lane (found the hard way 2026-07-22).** `wasm_demo.rs` is
+entirely behind `#[cfg(target_arch = "wasm32")]`, and nothing in the loop builds
+that target - cargo test, clippy and every CI lane are native - so it had not
+compiled since the wgpu 29 migration (it still used `wgpu::SurfaceError`, which
+no longer exists). The web demo was simply broken and no check could see it.
+A `cargo check --target wasm32-unknown-unknown` is seconds of compute and would
+have caught it at the migration commit.
+
 The recurring bug class behind many of these is written up in
 `docs/renderer-bounds-invariant.md` - read it before touching anything that
 moves geometry.
