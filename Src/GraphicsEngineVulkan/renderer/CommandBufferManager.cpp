@@ -58,8 +58,6 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
   vk::Queue queue,
   vk::CommandBuffer &command_buffer)
 {
-    static_cast<void>(command_pool);
-
     if (!command_buffer) {
         spdlog::default_logger_raw()->log(spdlog::level::err, "Cannot submit null command buffer.");
         return;
@@ -93,6 +91,9 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
         spdlog::default_logger_raw()->log(
           spdlog::level::err, "Failed to submit to queue! (vk::Result={})", static_cast<int>(submit_result));
         if (fence) { device.destroyFence(fence); }
+        // Submission FAILED, so the buffer is not pending either - free it
+        // rather than leak it on the error path.
+        device.freeCommandBuffers(command_pool, 1, &command_buffer);
         command_buffer = vk::CommandBuffer{};
         return;
     }
@@ -110,7 +111,16 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
         static_cast<void>(queue.waitIdle());// MSVC ICE workaround: explicit discard of [[nodiscard]] return
     }
 
-    // Temporary command buffers are released when the command pool is destroyed.
-    // Avoid explicit free to prevent freeing potentially pending buffers.
+    // The submission is fully synchronous by this point - fence-waited, or
+    // queue.waitIdle() in both fallback paths above - so the buffer is
+    // provably NOT pending and freeing it is legal (the validation layer
+    // enforces exactly that). It used to be leaked here with a comment about
+    // "potentially pending buffers", but nothing reaches this line before the
+    // wait completes; meanwhile every texture upload, buffer upload, layout
+    // transition and AS build allocated one of these into the pool for the
+    // lifetime of the process, and each GUI model reload leaked dozens more.
+    // (The per-submit fence create/destroy above is a separate, smaller
+    // inefficiency and is deliberately untouched here.)
+    device.freeCommandBuffers(command_pool, 1, &command_buffer);
     command_buffer = vk::CommandBuffer{};
 }
