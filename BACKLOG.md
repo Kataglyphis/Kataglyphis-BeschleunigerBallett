@@ -1345,9 +1345,13 @@ accidental constant-white furnace and the GUI light provably does nothing.
 8. **Self-intersection epsilon** (S) - **DONE (2026-07-22)** t_min raised
    0.0 -> 0.001 to match the rgen; the 1e-4 normal offset stays as the
    secondary guard.
-9. **Estimator bias** (M) - no 1/pi, no PDF division (`:205,:217-220`);
-   convert to proper cosine-weighted sampling. Verify by FURNACE TEST once
-   item 2 lands: diffuse object in the white env must converge to its albedo.
+9. **Estimator bias** - **DONE (2026-07-22)**: the NEE term now carries the
+   Lambertian 1/pi (measured: rig lit crop 208.5 -> 188.2; forward on the
+   same rig is 158.1, remaining gap = PT's indirect sky which forward
+   lacks). The BOUNCE path needed nothing: cosine-weighted sampling of a
+   Lambertian cancels pi and cosine exactly - the "no PDF division" reading
+   was wrong for that half. A true furnace golden still wants a uniform-env
+   toggle (the sky is a gradient now); folded into item 10's remainder.
 10. **PT goldens** (S now / M after item 2) - renderModesSuite only asserts
     device-not-lost; add non-black now, variance-decreases + furnace after
     accumulation. Blocked-note: convergence asserts are impossible while every

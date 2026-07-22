@@ -261,7 +261,16 @@ void main() {
                     }
                     if (rayQueryGetIntersectionTypeEXT(shadowQuery, true)
                         == gl_RayQueryCommittedIntersectionNoneEXT) {
-                        summedPixelColor += accumulatedRayColor * n_dot_l
+                        // The Lambertian BRDF is albedo/pi; the throughput
+                        // carries the albedo, so NEE must carry the 1/pi.
+                        // Without it, directly lit surfaces were pi-times too
+                        // bright relative to the sky transport - and to the
+                        // forward path, whose diffuse divides by pi. (The
+                        // BOUNCE path needs no such factor: cosine-weighted
+                        // sampling of a Lambertian cancels both the pi and
+                        // the cosine exactly.)
+                        const float INV_PI = 0.31830988;
+                        summedPixelColor += accumulatedRayColor * n_dot_l * INV_PI
                                             * sceneUBO.dirLight.color.xyz * sceneUBO.dirLight.color.w;
                     }
                 }

@@ -1191,7 +1191,27 @@ TEST(GoldenRender, PathTracingRespondsToTheDirectionalLight)
     ASSERT_EQ(lit.size(), unlit.size());
 
     const double response = swung_fraction(lit, unlit, width, height);
-    GTEST_LOG_(INFO) << "PT lit-vs-unlit swung-pixel fraction (panel-free crop): " << response;
+    // Lit crop luminance is logged for cross-mode comparison: with the NEE
+    // term carrying its 1/pi, PT's directly lit surfaces should sit in the
+    // same brightness regime as the forward path on the same rig (which
+    // divides its diffuse by pi) rather than pi-times above it.
+    const auto crop_mean_luminance = [](const std::vector<uint8_t> &rgba, uint32_t w, uint32_t h) {
+        const uint32_t x0 = (w * 18U) / 25U;
+        const uint32_t x1 = (w * 49U) / 50U;
+        const uint32_t y0 = h / 20U;
+        const uint32_t y1 = (h * 19U) / 20U;
+        double sum = 0.0;
+        size_t count = 0;
+        for (uint32_t y = y0; y < y1; ++y) {
+            for (uint32_t x = x0; x < x1; ++x) {
+                sum += luminance_of(rgba, static_cast<size_t>(y) * w + x);
+                ++count;
+            }
+        }
+        return sum / static_cast<double>(count);
+    };
+    GTEST_LOG_(INFO) << "PT lit-vs-unlit swung-pixel fraction (panel-free crop): " << response
+                     << ", lit crop mean luminance: " << crop_mean_luminance(lit, width, height);
 
     // Measured: the NEE kernel swings ~4.5k pixels frame-wide (ground plane
     // going from clamped-bright to sky-only lit, deltas up to 244); the
