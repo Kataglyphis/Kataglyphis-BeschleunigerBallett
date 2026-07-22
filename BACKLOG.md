@@ -905,13 +905,33 @@ unconditional control capture before its output is believed.
   pulls zero media/ML system libs; it needs only clang-cl + cmake + Vulkan + the
   Rust toolchain.
 
-  **Fix (owner builds the image):** `build.ps1 -Stages base,toolchain` WITHOUT
-  `-Gpu` (the non-`-Gpu` lane makes the CUDA/nvidia stage a no-op `docker tag`,
-  and stopping at `toolchain` skips the media stack) → a few-GB `:winamd64-toolchain`;
-  repoint `GHCR_IMAGE_WIN`/the `:winamd64` refs in `Windows.yml` at it. Mirrors the
-  Linux `:toolchain` split. Relocating Docker data-root to a bigger drive only helps
-  if a drive has >54 GB free — the diagnostic will say. Almost certainly the slim
-  image is the only reliable fix.
+  **Fix (owner builds the image) — command CORRECTED 2026-07-22 against
+  ContainerHub `windows/build.ps1`:** the stage chain is
+  `base → sdk → toolchain → media → final`, and `toolchain` builds
+  `FROM windows-sdk`, so `sdk` cannot be skipped - but on the CPU lane (no
+  `-Gpu`) the `sdk` stage is just `docker tag windows-base windows-sdk` (no
+  CUDA/nvidia). So the exact command is:
+
+  ```powershell
+  .\windowsuild.ps1 -Stages base,sdk,toolchain   # NO -Gpu
+  ```
+
+  That produces `local/kataglyphis:windows-toolchain` (build.ps1:632) - the
+  clang-cl + cmake + Vulkan + Rust image with NO media/ML stack. Tag and push
+  it as the slim consumer image:
+
+  ```powershell
+  docker tag local/kataglyphis:windows-toolchain ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64-toolchain
+  docker push ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64-toolchain
+  ```
+
+  Then repoint `WINDOWS_CONTAINER_IMAGE` in BOTH consumers - the superproject's
+  `Windows.yml` and RustProjectTemplate's `rust_windows2025.yml` (and the
+  superproject `Build-Windows-Container.ps1` default) - at `:winamd64-toolchain`.
+  Mirrors the Linux `:toolchain` split. Relocating Docker data-root only helps
+  if a drive has >54 GB free (the diagnostic says); the slim image is the
+  reliable fix. **The previously-written `-Stages base,toolchain` would throw
+  "requires existing image not found: windows-sdk" - do not use it.**
 
 - [x] **Stay on the 8.7 GB `:latest-cross` image** (decided by the user 2026-07-20)
   (researched 2026-07-20). Repeatedly observed today: `Pull container image`
