@@ -1599,8 +1599,22 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
     // Same env-scoping pattern as ScopedModelOverride.
     struct ScopedFurnace
     {
-        ScopedFurnace() { std::ignore = _putenv_s("KATAGLYPHIS_PT_FURNACE", "1.0"); }
-        ~ScopedFurnace() { std::ignore = _putenv_s("KATAGLYPHIS_PT_FURNACE", ""); }
+        ScopedFurnace() { set("1.0"); }
+        ~ScopedFurnace() { set(""); }
+        // _putenv_s is Windows-only; the Linux clang lane broke on the raw call.
+        // Match ScopedModelOverride's portable split.
+        static void set(const char *value)
+        {
+#ifdef _WIN32
+            std::ignore = _putenv_s("KATAGLYPHIS_PT_FURNACE", value);
+#else
+            if (*value == '\0') {
+                std::ignore = unsetenv("KATAGLYPHIS_PT_FURNACE");
+            } else {
+                std::ignore = setenv("KATAGLYPHIS_PT_FURNACE", value, 1);
+            }
+#endif
+        }
     } furnace;
 
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
