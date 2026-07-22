@@ -1427,6 +1427,26 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       genuinely delicate part is the set-index juggling — a wrong descriptor-set
       layout on this CORE pass means validation storms, so do it with the
       `ShadowsDarkenSomePixels` golden watching.
+
+      *Turnkey numbers (investigation done — implementation is now mechanical):* the
+      forward shared set is SET 0 with `OBJECT_DESCRIPTION_BINDING 2` /
+      `TEXTURES_BINDING 3` / `SAMPLER_BINDING 4` (`hostDevice/host_device_shared_vars.hpp`);
+      `objectIndex` in the forward path is just the mesh-loop index `m`
+      (`Rasterizer.cpp:115`, `DeferredRasterizer.cpp:468`), and the CSM draw loop
+      already iterates the same `m`. So: (VS) `directional_shadow_map.vert` — add
+      `layout(location=3) in vec2 tex_coords;` + `layout(location=0) out vec2 fragUV`,
+      change the light-matrices UBO to `set = 1, binding = UNIFORM_LIGHT_MATRICES_BINDING`,
+      rename the push field cascadeIndex→objectIndex (same slot); (FS)
+      `directional_shadow_map.frag` — `#include` host_device_shared_vars.hpp +
+      ObjectDescription.hpp + ObjMaterial.hpp + Vertex.hpp + PushConstantRasterizer.hpp,
+      declare the SET 0 bindings 2/3/4, do `obj_res = objDesc.i[objectIndex]` →
+      `materials.m[materialIDs.i[gl_PrimitiveID]]` → sample `tex[textureID]` at fragUV
+      → `if (alphaCutoff >= 0 && a < alphaCutoff) discard`; (C++) CSM pipeline layout
+      becomes `{ sharedRenderDescriptors.getLayout(), lightMatricesLayout }`, plumb the
+      shared layout through `CascadedShadowMap::init`, and in `recordCommands` bind the
+      shared set (already received as `rasterizer_descriptor_sets`) at set 0 + push
+      `objectIndex = m`. NOT ABI-skew, so a normal incremental build + the mask_card
+      shadow golden verify it.
     - *Increment 2 — doubleSided (S):* per-material cull-mode; the pipeline variant
       already exists conceptually (RPT ships it). Backface-culled single-sided cards
       show the visible/back-face difference.
