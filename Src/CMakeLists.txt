@@ -96,4 +96,11 @@ if(RUST_FEATURES)
 endif()
 
 add_subdirectory(GraphicsEngineVulkan)
-add_subdirectory(KomputePlayground)
+# The Kompute playground is a standalone compute-API demo, not part of the
+# engine: kompute's own headers throw, so it CANNOT link the project's
+# no-exceptions options (/EHs-, -fno-exceptions) - it deliberately builds
+# with its own flags. Default OFF so ordinary builds ship no
+# exceptions-enabled binary and skip the kompute dependency entirely.
+if(KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND)
+  add_subdirectory(KomputePlayground)
+endif()

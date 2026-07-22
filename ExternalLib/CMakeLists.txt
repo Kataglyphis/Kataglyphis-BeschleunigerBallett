@@ -406,9 +406,17 @@ if(RUST_FEATURES)
   _myproject_find_or_install_cxxbridge(CXXBRIDGE)
 endif()
 
-_myproject_configure_kompute_vulkan()
+option(KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND
+       "Build the Kompute playground and its kompute dependency (exceptions enabled; not part of the engine)" OFF)
 
 if(WIN32)
   add_definitions(-D_CRT_SECURE_NO_WARNINGS)
 endif()
-add_subdirectory(KOMPUTE)
+
+# Kompute exists solely for Src/KomputePlayground; configuring and building it
+# (plus its Vulkan-Headers resolution) in every engine build paid for a demo
+# nobody ran by default.
+if(KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND)
+  _myproject_configure_kompute_vulkan()
+  add_subdirectory(KOMPUTE)
+endif()

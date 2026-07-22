@@ -1458,12 +1458,15 @@ model loader is race-clean; GUI/renderer state is single-threaded.
 
 **Build hygiene / perf / RT:**
 
-7. **KomputePlayground: unconditional, unreferenced, and the ONLY target with
-   exceptions enabled** (S) - added at `Src/CMakeLists.txt:99`, links neither
-   `myproject_options` nor `myproject_warnings` (so /EHs- does not apply; its
-   `main.cpp:40` throw only compiles because of that), kompute fetch commented
-   out but `kompute::kompute` linked. Gate behind an OFF option or bring it
-   under the shared options and drop the throw.
+7. **Kompute sandbox target with exceptions enabled** — **DONE (2026-07-22,
+   the gate option)**: KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND (default OFF)
+   wraps both the playground target AND kompute's configure/subdirectory -
+   default builds ship no exceptions-enabled binary and skip the kompute
+   dependency entirely (its headers throw, so it can never link the
+   project's no-exceptions options; conforming it was measured impossible,
+   gating is the honest park). Verified: zero kompute lines in the gated
+   configure; 93/93 unchanged. The ON path re-enables exactly the previous
+   add_subdirectory wiring.
 8. **G-buffer stores full world position + an RGBA8 for a scalar id** -
    **DONE (2026-07-22, position half)**: the rgba16f world-position target is
    gone; the lighting subpass reconstructs position from the DEPTH input
