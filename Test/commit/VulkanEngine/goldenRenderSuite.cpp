@@ -51,6 +51,7 @@ import kataglyphis.vulkan.gui_renderer_shared_vars;
 import kataglyphis.vulkan.gui_scene_shared_vars;
 import kataglyphis.vulkan.renderer;
 import kataglyphis.vulkan.scene;
+import kataglyphis.vulkan.scene_config;
 import kataglyphis.vulkan.window;
 
 namespace {
@@ -1468,4 +1469,83 @@ TEST(GoldenRender, RaytracedWorldFollowsTheModelTransform)
     // (deterministic RT tracing a stale TLAS).
     EXPECT_GT(moved, 5.0e-3)
       << "The traced image did not follow the model transform - stale TLAS.";
+}
+
+// A SECOND model must shade with its OWN textures. Material textureIDs are
+// model-local, but the shared texture array used to hold model 0's textures
+// only - an added model's IDs collided with the first model's slots, so the
+// dinosaur added below rendered with the rig's 1x1 WHITE default texture:
+// bright, but colourless. With per-model texture offsets + the flattened
+// array it renders its real (coloured) textures. The oracle is therefore
+// COLOUR: the fraction of crop pixels with a real channel spread. Lighting
+// is white, the rig is neutral grey, so saturation can only come from the
+// second model's textures.
+TEST(GoldenRender, SecondModelShadesWithItsOwnTextures)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES);
+
+    // Sponza, because it is the one bundled model with actual texture FILES
+    // (23 map_Kd entries): the first attempt used the dinosaur, whose .mtl
+    // ships colours but zero textures, so both the broken and the fixed
+    // binding sampled the same white default and the oracle was blind.
+    const std::string sponza = sceneConfig::resolveModelPath("Models/crytek-sponza/sponza_triag.obj");
+    if (!std::filesystem::exists(sponza)) { GTEST_SKIP() << "textured second model not present"; }
+
+    // Native sponza units span roughly +-1800; 0.01 brings the atrium to
+    // ~36 units next to the 60-unit rig, inside the camera frame.
+    const auto added = harness.renderer->addModel(
+      sponza, glm::scale(glm::mat4(1.0F), glm::vec3(0.01F)));
+    ASSERT_TRUE(added.has_value()) << "adding the second model failed";
+    harness.render_frames(SETTLE_FRAMES);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(frame.empty());
+
+    // Oracle rework, from LOOKING at the capture (mm_frame diagnostic): the
+    // wall the second model puts in the crop renders its brick texture
+    // correctly - but the bricks are near-greyscale, so a colour-spread
+    // metric measured 2e-5 on a VISIBLY textured wall. What separates a real
+    // texture from the red state's flat 1x1 white is DETAIL: the fraction of
+    // crop pixels whose right-hand neighbour differs in luminance by more
+    // than 6 levels.
+    const auto detail_fraction = [](const std::vector<uint8_t> &rgba, uint32_t w, uint32_t h) {
+        const uint32_t x0 = (w * 37U) / 50U;
+        const uint32_t x1 = (w * 49U) / 50U;
+        const uint32_t y0 = h / 20U;
+        const uint32_t y1 = (h * 19U) / 20U;
+        size_t detailed = 0;
+        size_t total = 0;
+        for (uint32_t y = y0; y < y1; ++y) {
+            for (uint32_t x = x0; x < x1; ++x) {
+                const size_t base = static_cast<size_t>(y) * w + x;
+                const double here = luminance_of(rgba, base);
+                const double right = luminance_of(rgba, base + 1U);
+                if (std::abs(here - right) > 6.0) { ++detailed; }
+                ++total;
+            }
+        }
+        return static_cast<double>(detailed) / static_cast<double>(total);
+    };
+
+    const double detail = detail_fraction(frame, width, height);
+    GTEST_LOG_(INFO) << "second-model texture-detail fraction (panel-free crop): " << detail;
+
+    EXPECT_GT(detail, 0.02)
+      << "The added model shows no texture detail - it is sampling the first "
+         "model's (flat white) texture slots.";
 }

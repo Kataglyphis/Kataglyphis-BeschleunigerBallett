@@ -66,6 +66,26 @@ TEST(ObjParseUnit, FacesWithoutAMaterialIndexInsideTheMaterialsArray)
     }
 }
 
+TEST(ObjParseUnit, UntexturedMtlMaterialsRouteToTheDiffuseFallback)
+{
+    const std::string dino = sceneConfig::resolveModelPath("Models/Dinosaurs/dinosaurs.obj");
+    if (!std::filesystem::exists(dino)) { GTEST_SKIP() << "test model not present"; }
+
+    // dinosaurs.mtl carries Kd colours but not a single map_Kd. The loader
+    // used to give those materials textureID = 0, so they sampled texture
+    // slot 0 (the default white) and the model rendered its material colours
+    // as flat white for the engine's whole life. -1 is the contract the
+    // shaders' diffuse fallback keys on.
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu(dino));
+
+    ASSERT_FALSE(loader.getMaterials().empty());
+    for (const auto &material : loader.getMaterials()) {
+        EXPECT_EQ(material.get_textureID(), -1)
+          << "a material without map_Kd must route to the diffuse fallback";
+    }
+}
+
 TEST(ObjParseUnit, MalformedInputFailsInsteadOfKillingTheProcess)
 {
     // The GUI model picker can hand this arbitrary files. Until 2026-07-20

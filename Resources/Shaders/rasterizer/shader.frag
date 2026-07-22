@@ -85,7 +85,9 @@ void main() {
 
 	vec3 ambient;
 	if (material.textureID >= 0) {
-		int texture_id = clamp(material.textureID, 0, MAX_TEXTURE_COUNT - 1);
+		// textureID is model-LOCAL; texture_offset shifts it into the
+		// flattened global array (multi-model scenes).
+		int texture_id = clamp(int(obj_res.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
 		ambient = texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), texture_coordinates).xyz;
 	} else {
 		// Untextured material: textureID is -1, and the old clamp-to-0 made

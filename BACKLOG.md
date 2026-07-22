@@ -1190,7 +1190,16 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
    correctly uses `R16G16B16A16Sfloat` (`:89-90`). The radiance slider does nothing
    above the clip point and the whole tonemap/bloom stage is decorative. Test:
    `GoldenRender` at radiance R vs 2R — mean luminance must rise; today it does not.
-3. **Only model 0's textures bind, and only the first 24** (M) —
+3. **Only model 0's textures bind, and only the first 24** — **DONE
+   (2026-07-22)**: per-model texture_offset in ObjectDescription + all four
+   shader fetch sites + flattened binding across all models (warn on cap
+   overflow). Golden: sponza-as-second-model must show texture DETAIL in the
+   crop (0.045 green vs exactly 0 with the model-0-only binding) - a colour
+   oracle was measured blind twice: the dinosaur's mtl ships NO textures at
+   all, and sponza's bricks are near-greyscale. En route: untextured .mtl
+   materials got textureID 0 (not -1), so the bundled dinosaur rendered its
+   Kd colours as flat white for the engine's whole life - fixed in the
+   loader with a CPU red/green test. Original text: —
    `updateTexturesInSharedRenderDescriptorSet` hard-codes `getTextures(0)`
    (`VulkanRenderer.cpp:1644`) and clamps to `MAX_TEXTURE_COUNT = 24` (`:1650`).
    The release default scene is Sponza (`SceneConfig.cpp:121`), which has far more

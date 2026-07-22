@@ -51,7 +51,8 @@ void main() {
 
     vec4 texColor;
     if (material.textureID >= 0) {
-        int texture_id = clamp(material.textureID, 0, MAX_TEXTURE_COUNT - 1);
+        // Model-local id + the model's slot in the flattened global array.
+        int texture_id = clamp(int(obj_res.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
         texColor = texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), texture_coordinates);
         if(texColor.a < 0.1) discard;
     } else {

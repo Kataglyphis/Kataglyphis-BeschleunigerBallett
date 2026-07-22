@@ -162,7 +162,11 @@ auto ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
             texture_id++;
 
         } else {
-            material.textureID = 0;
+            // No diffuse texture: -1 routes the shaders to material.diffuse.
+            // This was 0, which sampled texture slot 0 instead - so a
+            // texture-less .mtl (the bundled dinosaurs) rendered its Kd
+            // colours as flat WHITE for as long as the engine existed.
+            material.textureID = -1;
             textures.emplace_back("");
         }
 

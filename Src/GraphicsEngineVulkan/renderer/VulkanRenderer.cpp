@@ -1463,6 +1463,15 @@ void Kataglyphis::VulkanRenderer::create_object_description_buffer()
 {
     std::vector<ObjectDescription> objectDescriptions = scene->getObjectDescriptions();
 
+    // Fill in each model's slot into the flattened global texture array
+    // (descriptions are pushed one per model, in model order). The shaders
+    // add this to the model-LOCAL material textureIDs.
+    uint64_t texture_offset = 0;
+    for (size_t i = 0; i < objectDescriptions.size() && i < scene->getModelCount(); ++i) {
+        objectDescriptions[i].texture_offset = texture_offset;
+        texture_offset += scene->getTextureCount(static_cast<uint32_t>(i));
+    }
+
     if (!objectDescriptions.empty()) {
         vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
           graphics_command_pool,
@@ -1742,26 +1751,49 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
         return;
     }
 
-    std::vector<Texture> &modelTextures = scene->getTextures(0);
-    const uint32_t scene_texture_count = scene->getTextureCount(0);
-    if (scene_texture_count == 0) {
-        return;
+    // Flatten EVERY model's textures into the global array, in model order -
+    // the same order create_object_description_buffer assigns each model's
+    // texture_offset. This function used to bind model 0's textures only, so
+    // any added model shaded with the FIRST model's images (its local
+    // textureIDs collided with model 0's slots).
+    std::vector<vk::DescriptorImageInfo> image_info_textures;
+    std::vector<vk::DescriptorImageInfo> image_info_texture_sampler;
+    image_info_textures.reserve(MAX_TEXTURE_COUNT);
+    image_info_texture_sampler.reserve(MAX_TEXTURE_COUNT);
+
+    for (uint32_t model = 0; model < scene->getModelCount(); ++model) {
+        std::vector<Texture> &modelTextures = scene->getTextures(model);
+        std::vector<vk::Sampler> &modelTextureSampler = scene->getTextureSampler(model);
+        const uint32_t model_texture_count = scene->getTextureCount(model);
+        for (uint32_t t = 0; t < model_texture_count; ++t) {
+            if (image_info_textures.size() >= MAX_TEXTURE_COUNT) {
+                spdlog::warn(
+                  "Texture slots exhausted: {} textures across {} models exceed MAX_TEXTURE_COUNT={} - "
+                  "models past the cap will sample the wrong slots.",
+                  image_info_textures.size() + (model_texture_count - t),
+                  scene->getModelCount(),
+                  MAX_TEXTURE_COUNT);
+                break;
+            }
+            vk::DescriptorImageInfo texture_info{};
+            texture_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+            texture_info.imageView = modelTextures[t].getImageView();
+            image_info_textures.push_back(texture_info);
+
+            vk::DescriptorImageInfo sampler_info{};
+            sampler_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+            sampler_info.sampler = modelTextureSampler[t];
+            image_info_texture_sampler.push_back(sampler_info);
+        }
     }
 
-    const uint32_t texture_count_for_descriptors = std::min<uint32_t>(scene_texture_count, MAX_TEXTURE_COUNT);
-    std::vector<vk::Sampler> &modelTextureSampler = scene->getTextureSampler(0);
+    if (image_info_textures.empty()) { return; }
 
-    std::vector<vk::DescriptorImageInfo> image_info_textures(MAX_TEXTURE_COUNT);
-    std::vector<vk::DescriptorImageInfo> image_info_texture_sampler(MAX_TEXTURE_COUNT);
-
-    for (uint32_t i = 0; i < MAX_TEXTURE_COUNT; i++) {
-        const uint32_t texture_index = (i < texture_count_for_descriptors) ? i : 0;
-        
-        image_info_textures[i].imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        image_info_textures[i].imageView = modelTextures[texture_index].getImageView();
-        
-        image_info_texture_sampler[i].imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-        image_info_texture_sampler[i].sampler = modelTextureSampler[texture_index];
+    // Pad the fixed-size binding arrays with slot 0 (every slot must hold a
+    // valid descriptor).
+    while (image_info_textures.size() < MAX_TEXTURE_COUNT) {
+        image_info_textures.push_back(image_info_textures.front());
+        image_info_texture_sampler.push_back(image_info_texture_sampler.front());
     }
 
     for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {

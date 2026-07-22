@@ -98,7 +98,8 @@ void main() {
     vec3 ambient = vec3(0.f);
     const ObjMaterial material = materials.m[materialIDs.i[gl_PrimitiveID]];
     if (material.textureID >= 0) {
-        const int texture_id = clamp(material.textureID, 0, MAX_TEXTURE_COUNT - 1);
+        // Model-local id + the model's slot in the flattened global array.
+        const int texture_id = clamp(int(obj_res.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
         ambient += texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), texture_coordinates).xyz;
     } else {
         // Untextured material: textureID is -1, and the old clamp-to-0 sampled
