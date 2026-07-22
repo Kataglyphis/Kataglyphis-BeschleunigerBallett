@@ -1376,6 +1376,28 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       still cast/trace the solid quad — the shadow frag is depth-only with no UVs
       today; and a GPU-host visual golden of the cut-out. The Rust renderer's MASK
       path (RPT `forward.wgsl`) is the reference.
+
+      *1b design note (M, so it starts warm — the shadow pass is a CORE system,
+      give it a dedicated cycle):* the CSM shadow pass
+      (`scene/light/directional_light/CascadedShadowMap.cpp`) is deliberately
+      minimal — its own descriptor set holds ONLY the light-space matrices uniform
+      (`recordCommands` binds `{descriptorSet}`, not the forward pass's material/
+      texture set), the push constant is just `{model, cascadeIndex}`, and the VS
+      (`directional_shadow_map.vert`) reads only `pos` (location 0). To alpha-test
+      MASK casters: (1) VS — add `layout(location=N) in vec2 uv` (N = the UV slot in
+      the engine `Vertex` layout) + pass it through; (2) push constant — add
+      `material_address`, `material_index_address`, `texture_offset` (the forward
+      pass already pushes these via ObjectDescription); (3) descriptor set — add the
+      texture array + sampler bindings the forward set has (or bind the shared
+      forward material/texture set as set 1); (4) the empty shadow FS
+      (`directional_shadow_map.frag`) — sample base-colour alpha, `discard` when
+      `alphaCutoff >= 0 && alpha < alphaCutoff`. Simplest first cut: ONE pipeline,
+      discard for all (OPAQUE = -1 skips), accepting a wasted texture sample per
+      opaque shadow fragment; the RPT-style SECOND alpha-testing pipeline with
+      per-primitive routing (avoids that cost) is the optimisation after. Multiview
+      is orthogonal (gl_ViewIndex stays in the VS). Golden: a MASK card caster over a
+      plane — shadowed-pixel count drops vs a solid-quad control, red-proven by
+      removing the discard (mirror the RPT alpha-shadow test's oracle).
     - *Increment 2 — doubleSided (S):* per-material cull-mode; the pipeline variant
       already exists conceptually (RPT ships it). Backface-culled single-sided cards
       show the visible/back-face difference.
