@@ -18,21 +18,18 @@ size and a decision, or gets dropped.
 
 ## C++ Vulkan engine
 
-- [ ] **Vertex colour (`COLOR_0`) is plumbed but unused; glTF drops it** (S,
-  found 2026-07-22 by cross-renderer audit) — the C++ `Vertex` carries a
-  `color` field, both vertex shaders forward it (`fragment_color`), but NO
-  fragment shader ever reads `fragment_color` (grep: declared at
-  `shader.frag:29` / `geometry.frag:24`, used nowhere) - so vertex colour is
-  dead weight through the whole pipeline. Meanwhile the OBJ loader DOES read
-  `attrib.colors` (with a `-1` "absent" sentinel, `ObjLoader.cpp:238-243`)
-  while the glTF loader hardcodes `(1,1,1)` (`GltfLoader.cpp:298`), dropping
-  `COLOR_0` - the same gap the Rust renderer had before RPT abb46c1. To make
-  it real (parity with the Rust renderer): (1) fragment shaders multiply
-  `fragment_color` into ambient/albedo per glTF `COLOR_0` semantics; (2) the
-  OBJ `-1` sentinel becomes `(1,1,1)` so the multiply is a no-op when absent;
-  (3) the glTF loader reads `COLOR_0`. Low priority: no vertex-coloured asset
-  is in-tree, so it needs a constructed test (like the Rust one). Currently a
-  harmless no-op, not a visible bug.
+- [x] **Vertex colour (`COLOR_0`) is plumbed but unused; glTF drops it** —
+  **DONE (8e5be173)**: all three steps shipped. `GltfLoader` reads the COLOR_0
+  attribute into `Vertex.color` (vec3/vec4 via `cgltf_accessor_read_float`),
+  `ObjLoader`'s `-1` absent sentinel became `(1,1,1)`, and `shader.frag` +
+  deferred `geometry.frag` multiply the (previously dead) `fragment_color` into
+  the base colour per spec — vertex-coloured glTF now renders its colours instead
+  of white, and the forwarded-but-unused `fragment_color` is live. Constructed
+  `vertex_colored_quad.gltf` (red/green/blue/white corners) +
+  `GltfParseUnit.ReadsColor0VertexColours` (red without the loader change: every
+  colour reads white). Not ABI-skew. Verified: 12/12 CPU tests, 15/15 GPU goldens
+  UNCHANGED (identity multiply on the white-vertex default scene), validation-clean.
+  Parity with RPT abb46c1.
 
 
 - [x] **Cascaded shadows work** (settled 2026-07-20) — the faintness was the
