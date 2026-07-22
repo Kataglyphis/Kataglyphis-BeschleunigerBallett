@@ -1432,10 +1432,13 @@ accidental constant-white furnace and the GUI light provably does nothing.
    with an exact red (frame term removed -> changed fraction exactly 0).
 
    NEW items found while proving it:
-   - **PT dispatches before the TLAS exists** (S): with PT enabled during the
-     async model load, the kernel dispatches against never-written descriptor
-     sets (20 validation errors in the pre-load window of the golden run).
-     Guard the PT/RT record branch on a built TLAS.
+   - ~~**PT dispatches before the TLAS exists** (S)~~ **DONE**: the RT/PT record
+     branch is now guarded on `asManager.getTLAS()` (plus the descriptor-set index
+     bound) in `VulkanRenderer.cpp:872-873`, so the async model-load window no
+     longer dispatches against never-written TLAS/output/accumulation descriptors.
+     Original text: with PT enabled during the async model load, the kernel
+     dispatches against never-written descriptor sets (20 validation errors in the
+     pre-load window of the golden run). Guard the PT/RT record branch on a built TLAS.
    - ~~**Pipelines consume the PREVIOUS run's SPIR-V** (S/M)~~ **DONE
      (2026-07-22)**: PathTracing/PostStage reordered to compile-then-read
      (the other stages already had the right order; Clouds deliberately
@@ -1558,20 +1561,32 @@ model loader is race-clean; GUI/renderer state is single-threaded.
 
 **CPU-testable robustness/coverage (the now-green Windows CI can gate these):**
 
-4. **First-frame delta_time is unbounded** (S) - `last_time` starts at 0.0
-   (`App.cpp:32-33`) so the first `update_frame_timing` returns the whole
-   startup wall-clock (seconds); a key held during load lurches the camera.
-   Seed or clamp; pure gtest.
-5. **Single-time command buffers are never freed** (S/M) -
-   `CommandBufferManager.cpp:30-38,:113-115` allocates per upload and
-   deliberately never frees ("Avoid explicit free"), and nothing resets the
-   pool - every texture/buffer upload and AS build leaks a command buffer for
-   the session, plus a fresh fence per submit (`:81-108`). GUI model reloads
-   multiply it.
-6. **Input handling + frame timing have ZERO tests** (S/M) -
-   `WindowInputCallbacks.ixx:24-83` and `FrameInput.ixx:9-21` are pure,
-   device-free, and route all input into the camera; no suite in Test/commit
-   references them. This is also where #4 gets its regression guard.
+4. **First-frame delta_time is unbounded** — **DONE (c8d3e26e)**: `FrameInput.ixx`
+   now has a pure `clamp_frame_delta` (caps at 0.1 s / 10 FPS, negatives → 0) that
+   `update_frame_timing` applies, so the first frame's whole-startup-wallclock
+   delta — and any later hitch — becomes slow motion instead of a camera teleport.
+   Guarded by `FrameInputUnit.{FirstFrameStartupSpikeIsClamped,OrdinaryFrameDeltasPassThroughUnchanged,NegativeDeltasBecomeZero}`
+   in `frontendInputSuite.cpp`, wired into the Windows CI filter (`Windows.yml:211`).
+   Original text: — `last_time` starts at 0.0 (`App.cpp:32-33`) so the first
+   `update_frame_timing` returns the whole startup wall-clock (seconds); a key held
+   during load lurches the camera. Seed or clamp; pure gtest.
+5. **Single-time command buffers are never freed** — **DONE**:
+   `endAndSubmitCommandBuffer` now calls `device.freeCommandBuffers` after the
+   submission is fence-waited (or `queue.waitIdle()` in the fallback paths), so the
+   buffer is provably not pending when freed (`CommandBufferManager.cpp:124`), plus
+   a matching free on the submit-failure error path (`:96`). This stops every
+   texture/buffer upload, layout transition and AS build from leaking a command
+   buffer for the process lifetime (GUI model reloads leaked dozens more). The
+   per-submit fence create/destroy is a separate, smaller inefficiency left as-is.
+6. **Input handling + frame timing have ZERO tests** — **DONE (c8d3e26e)**:
+   `frontendInputSuite.cpp` adds 8 device-free gtests — `FrameInputUnit.*` (the #4
+   clamp) and `WindowInputUnit.*` (key press/release tracking, out-of-range keys
+   ignored, first-mouse-move does not jump the camera, axis-delta consume+reset,
+   and the ImGui-capture gate swallowing input). All eight run in Windows CI
+   (`Windows.yml:211-212`). Original text: — `WindowInputCallbacks.ixx:24-83` and
+   `FrameInput.ixx:9-21` are pure, device-free, and route all input into the camera;
+   no suite in Test/commit references them. This is also where #4 gets its
+   regression guard.
 
 **Build hygiene / perf / RT:**
 
