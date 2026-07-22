@@ -491,6 +491,11 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     features2.features.geometryShader = available_features2.features.geometryShader;
     features2.features.fragmentStoresAndAtomics = available_features2.features.fragmentStoresAndAtomics;
     features2.features.logicOp = available_features2.features.logicOp;
+    // Depth clamp: the shadow pass uses it to PANCAKE casters that sit between
+    // the light and the cascade's near plane onto depth 0 instead of clipping
+    // them away. Core 1.0 feature, universally supported on desktop; guarded
+    // anyway so a device without it keeps the (clipping) old behaviour.
+    features2.features.depthClamp = available_features2.features.depthClamp;
     features2.features.robustBufferAccess = VK_FALSE;
 
     // -- PREPARE FOR HAVING MORE EXTENSION BECAUSE WE NEED RAYTRACING
@@ -511,6 +516,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
 
     const bool hasBufferDeviceAddressFeature = available_features12.bufferDeviceAddress == VK_TRUE;
     deviceSupportsBufferDeviceAddress = hasBufferDeviceAddressFeature;
+    deviceSupportsDepthClamp = available_features2.features.depthClamp == VK_TRUE;
     const bool hasRequiredDescriptorIndexingFeatures =
       available_features12.descriptorIndexing == VK_TRUE && available_features12.runtimeDescriptorArray == VK_TRUE
       && available_features12.shaderSampledImageArrayNonUniformIndexing == VK_TRUE;

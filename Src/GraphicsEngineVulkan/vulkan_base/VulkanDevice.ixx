@@ -27,6 +27,7 @@ class VulkanDevice
     Kataglyphis::VulkanRendererInternals::SwapChainDetails getSwapchainDetails();
     bool supportsHardwareAcceleratedRRT() { return deviceSupportsHardwareAcceleratedRRT; };
     bool supportsBufferDeviceAddress() const { return deviceSupportsBufferDeviceAddress; };
+    bool supportsDepthClamp() const { return deviceSupportsDepthClamp; };
     vk::DeviceAddress getBufferDeviceAddress(const vk::BufferDeviceAddressInfo &info) const;
     Allocator &getAllocator() { return allocator; };
     VmaAllocator getVmaAllocator() const { return allocator.getVmaAllocator(); };
@@ -60,6 +61,7 @@ class VulkanDevice
     vk::Queue compute_queue{};
     bool deviceSupportsHardwareAcceleratedRRT = true;
     bool deviceSupportsBufferDeviceAddress = false;
+    bool deviceSupportsDepthClamp = false;
     vk::DeviceSize deviceAddressAlignment{ 1 };
     uint32_t graphics_queue_timestamp_valid_bits{ 0 };
 

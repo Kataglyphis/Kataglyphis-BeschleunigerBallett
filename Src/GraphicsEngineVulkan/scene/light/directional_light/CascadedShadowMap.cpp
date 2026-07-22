@@ -564,6 +564,19 @@ void CascadedShadowMap::createGraphicsPipeline()
         // cast no shadow from half the sun angles. The cost is rasterising
         // both faces of closed meshes into a depth-only pass.
         .setCullMode(vk::CullModeFlagBits::eNone)
+        // Depth clamp = shadow "pancaking". The ortho near plane hugs the
+        // camera frustum plus a 10-unit pad, and isVisibleAsShadowCaster
+        // deliberately KEEPS casters nearer the light than that (its test pins
+        // it) - without clamping, the rasterizer then CLIPPED those casters
+        // and a ceiling or overhang cast no shadow at all. Clamping writes
+        // them at depth 0 (nearest), which is depth-correct for occlusion.
+        // Extending the near plane instead was tried and REGRESSED
+        // GoldenRender.ShadowsDarkenSomePixels: the shader bias is constant in
+        // NORMALIZED depth (cascaded_shadow.glsl), so widening the depth range
+        // scales the bias in world units and eats contact shadows. Clamp keeps
+        // the range tight. Guarded: without the device feature this stays off
+        // and such casters clip exactly as before.
+        .setDepthClamp(device->supportsDepthClamp())
         .setUseColorBlendState(false)
         .build(device->getLogicalDevice(),
           pipelineLayout,

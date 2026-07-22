@@ -76,6 +76,12 @@ Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setDepthCompareOp(vk
     return *this;
 }
 
+Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setDepthClamp(bool enable)
+{
+    depth_clamp = enable;
+    return *this;
+}
+
 Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setBasePipelineIndex(int32_t in_base_pipeline_index)
 {
     base_pipeline_index = in_base_pipeline_index;
@@ -112,7 +118,7 @@ vk::Pipeline Kataglyphis::PipelineBuilder::build(vk::Device device,
     dynamic_state_create_info.pDynamicStates = dynamic_states.data();
 
     vk::PipelineRasterizationStateCreateInfo rasterizer_create_info;
-    rasterizer_create_info.depthClampEnable = VK_FALSE;
+    rasterizer_create_info.depthClampEnable = depth_clamp ? VK_TRUE : VK_FALSE;
     rasterizer_create_info.rasterizerDiscardEnable = VK_FALSE;
     rasterizer_create_info.polygonMode = vk::PolygonMode::eFill;
     rasterizer_create_info.lineWidth = 1.0F;

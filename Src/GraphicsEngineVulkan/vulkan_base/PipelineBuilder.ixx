@@ -33,6 +33,10 @@ class PipelineBuilder
     PipelineBuilder &setDepthTest(bool enable);
     PipelineBuilder &setDepthWrite(bool enable);
     PipelineBuilder &setDepthCompareOp(vk::CompareOp compare_op);
+    // Depth clamp ("shadow pancaking"): fragments nearer than the near plane
+    // clamp to depth 0 instead of being CLIPPED. Only legal when the device
+    // feature is enabled - pass VulkanDevice::supportsDepthClamp().
+    PipelineBuilder &setDepthClamp(bool enable);
     PipelineBuilder &setBasePipelineIndex(int32_t base_pipeline_index);
 
     // Creates the pipeline via createGraphicsPipelines(pipeline_cache, ...);
@@ -57,6 +61,7 @@ class PipelineBuilder
     bool depth_test = true;
     bool depth_write = true;
     vk::CompareOp depth_compare_op = vk::CompareOp::eLess;
+    bool depth_clamp = false;
     int32_t base_pipeline_index = 0;
 };
 }// namespace Kataglyphis
