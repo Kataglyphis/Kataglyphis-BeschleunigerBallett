@@ -2,7 +2,8 @@
 
 Working log of the "fix all" pass over `Src/GraphicsEngineVulkan`, driven by
 a three-way analysis (architecture/complexity, testing, performance). Each
-unit ships only after: container debug build green, 14/14 tests, and a
+unit ships only after: container debug build green, the full commit suite
+(72 tests at campaign start, 93 as of 2026-07-22), and a
 validation-layer-clean runtime check where rendering changed.
 
 ## Shipped
@@ -72,5 +73,49 @@ Container build (`Scripts/Windows/Build-Windows-Container.ps1
 -Configurations 'clangcl-debug'`, tar-pipe fallback on Dev Drive) →
 `build-clangcl-debug/commitTestSuite.exe` directly (host ctest cannot read
 the container's CMake tree) → 8–10 s engine run with stderr captured,
-grepping validation output. GPU integration tests (`Integration.*`) run on
-the host RX 9070 XT.
+grepping validation output. GPU integration tests run on the host
+RX 9070 XT.
+
+Shader-only units are cheap since `c246ded3`: the engine resolves glslc at
+runtime and recompiles an edited GLSL source at process start on the host,
+so a probe cycle is edit → run one golden. `compile-shaders.ps1` remains the
+bulk path and refreshes the committed spv the BuildIntegrity goldens check.
+
+Fresh-container rule (`-FreshContainer` after deleting the local build
+tree): required after ANY module-interface change - `.ixx` member edits AND
+plain shared headers whose structs cross module boundaries
+(`ObjectDescription.hpp` taught this with an exit-3 crash). Body-only `.cpp`
+and shader edits build incrementally.
+
+## The instrument playbook (earned, not designed)
+
+Every unit above that says "measured" went through some of these; they are
+the difference between a golden and a vacuous golden.
+
+- **Red/green or it did not happen.** Every fix ships with a probe that
+  restores the defect and a test that fails on it. Three probes this
+  campaign found the TEST broken instead of proving the fix - which is the
+  point.
+- **Identical-to-the-digit metrics across a "change" mean the change never
+  reached the GPU.** The renderer is deterministic per frame index. This
+  signature found the stale-spv consumption, the Copy-Item mtime trap
+  (PowerShell preserves the source mtime; ninja skips the recompile - restore
+  with bash `cp` or touch after), and one shader probe that silently
+  no-oped.
+- **Look at the pixels before trusting a metric.** Dump amplified diff-map
+  PNGs to the scratchpad and read them. The ImGui panel covers the LEFT ~70%
+  of the 1200x768 test frame; whole-frame and centre-crop means have
+  measured, at various times: FPS-counter digits, SSAO, the caster's own
+  body, and nothing at all. The panel-free right edge (x >= 0.72w) is the
+  scene.
+- **Prefer counting to averaging for sparse signals**: changed-pixel /
+  swung-pixel / detail fractions discriminate where means drown (a UNORM
+  ceiling clamps, a texture is near-greyscale, a skeleton is 3% of the
+  frame).
+- **Differential oracles beat colour signatures**: render the
+  with/without-defect pair in-process and count what moved, with an explicit
+  exclusion for the object's own body.
+- **A test encodes the behaviour of the day it was written.** The listing
+  test asserted OBJ-only; the parity golden compared forward to forward;
+  survey findings pointed at dead files. Liveness-check before fixing,
+  re-derive contracts before trusting.
