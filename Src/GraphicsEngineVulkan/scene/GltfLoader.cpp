@@ -150,6 +150,18 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
     // have yet, so BLEND currently renders opaque - MASK is the common cut-out case.
     const float alphaCutoff = (material.alpha_mode == cgltf_alpha_mode_mask) ? material.alpha_cutoff : -1.0F;
 
+    // glTF KHR_texture_transform on the base-colour texture: scale + offset the
+    // UV (rotation is not yet applied - scale/offset is the common atlas/tiling
+    // case). Absent -> identity (1,1)/(0,0), so untransformed materials are
+    // bit-unchanged.
+    glm::vec2 uvScale(1.0F, 1.0F);
+    glm::vec2 uvOffset(0.0F, 0.0F);
+    if (material.has_pbr_metallic_roughness != 0 && material.pbr_metallic_roughness.base_color_texture.has_transform != 0) {
+        const cgltf_texture_transform &transform = material.pbr_metallic_roughness.base_color_texture.transform;
+        uvScale = glm::vec2(transform.scale[0], transform.scale[1]);
+        uvOffset = glm::vec2(transform.offset[0], transform.offset[1]);
+    }
+
     return ObjMaterial(baseColor * 0.1F,// ambient
       baseColor,// diffuse
       glm::vec3(1.0F - roughness) * 0.5F,// specular
@@ -160,7 +172,9 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
       1.0F,// dissolve
       2,// illum
       -1,// textureID (increment d)
-      alphaCutoff);// glTF MASK cutoff (-1 = OPAQUE/BLEND)
+      alphaCutoff,// glTF MASK cutoff (-1 = OPAQUE/BLEND)
+      uvScale,// KHR_texture_transform scale
+      uvOffset);// KHR_texture_transform offset
 }
 
 /// Reads a float attribute (2 or 3 components) into `out`, one entry per accessor

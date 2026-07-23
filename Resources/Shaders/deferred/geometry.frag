@@ -44,7 +44,7 @@ void main() {
     if (material.textureID >= 0) {
         // Model-local id + the model's slot in the flattened global array.
         int texture_id = clamp(int(obj_res.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
-        texColor = texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), texture_coordinates);
+        texColor = texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), transform_uv(texture_coordinates, material));
         // glTF alphaMode MASK uses the material's cutoff; everything else keeps the
         // pre-existing crude 0.1 near-transparent cull, so opaque/OBJ materials are
         // unchanged and the forward and deferred paths agree on MASK geometry.

@@ -35,4 +35,11 @@ ObjMaterial fetch_material(ObjectDescription obj_res) {
     return materials.m[materialIDs.i[gl_PrimitiveID]];
 }
 
+// glTF KHR_texture_transform: scale then offset the UV before sampling the
+// base-colour texture. Identity (uv_scale 1, uv_offset 0) returns uv unchanged,
+// so materials without the extension sample exactly as before.
+vec2 transform_uv(vec2 uv, ObjMaterial material) {
+    return uv * material.uv_scale + material.uv_offset;
+}
+
 #endif

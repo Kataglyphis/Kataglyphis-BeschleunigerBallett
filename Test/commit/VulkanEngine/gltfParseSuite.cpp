@@ -320,6 +320,45 @@ TEST(GltfParseUnit, MaskCardFixtureLoadsWithCutoutTextureAndCutoff)
     for (size_t i = 0; i < 8; ++i) { EXPECT_EQ(png[i], png_magic[i]) << "PNG signature byte " << i; }
 }
 
+TEST(GltfParseUnit, ReadsKhrTextureTransformScale)
+{
+    // glTF KHR_texture_transform scales/offsets the base-colour UV. The loader
+    // used to ignore it entirely, so an atlas/tiled material sampled at the raw
+    // UV. uv_transform_card.gltf carries scale [4,4] on its base-colour texture.
+    // Red without the GltfLoader change: uv_scale stays the constructor default
+    // (1,1) and the texture would not tile.
+    const auto path = sceneConfig::resolveModelPath("Models/GltfTest/uv_transform_card.gltf");
+    if (!std::filesystem::exists(path)) { GTEST_SKIP() << "uv_transform fixture not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(path));
+    ASSERT_GT(loader.getMaterials().size(), 0U);
+
+    const ObjMaterial &material = loader.getMaterials()[0];
+    EXPECT_NEAR(material.uv_scale.x, 4.0F, 1e-6F) << "KHR_texture_transform scale.x must reach ObjMaterial";
+    EXPECT_NEAR(material.uv_scale.y, 4.0F, 1e-6F) << "KHR_texture_transform scale.y must reach ObjMaterial";
+    EXPECT_NEAR(material.uv_offset.x, 0.0F, 1e-6F) << "absent offset defaults to 0";
+    EXPECT_NEAR(material.uv_offset.y, 0.0F, 1e-6F) << "absent offset defaults to 0";
+}
+
+TEST(GltfParseUnit, MaterialWithoutTextureTransformIsIdentity)
+{
+    // A material with no KHR_texture_transform must default to identity (scale
+    // 1, offset 0) so its texture samples exactly as before the extension existed.
+    const auto path = sceneConfig::resolveModelPath("Models/GltfTest/mask_card.gltf");
+    if (!std::filesystem::exists(path)) { GTEST_SKIP() << "mask_card fixture not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(path));
+    ASSERT_GT(loader.getMaterials().size(), 0U);
+
+    const ObjMaterial &material = loader.getMaterials()[0];
+    EXPECT_NEAR(material.uv_scale.x, 1.0F, 1e-6F);
+    EXPECT_NEAR(material.uv_scale.y, 1.0F, 1e-6F);
+    EXPECT_NEAR(material.uv_offset.x, 0.0F, 1e-6F);
+    EXPECT_NEAR(material.uv_offset.y, 0.0F, 1e-6F);
+}
+
 TEST(GltfParseUnit, MultiPrimitiveGltfRecordsPerPrimitiveMeshRanges)
 {
     // two_primitives.gltf is ONE mesh with TWO primitives (two materials). The

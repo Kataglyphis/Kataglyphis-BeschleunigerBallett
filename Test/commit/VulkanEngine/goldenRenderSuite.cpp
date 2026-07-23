@@ -248,6 +248,7 @@ constexpr const char *SHADOW_RIG_MODEL = "Models/ShadowTest/shadow_rig.obj";
 // multi-mesh loader split.
 constexpr const char *TWO_PRIMITIVE_MODEL = "Models/GltfTest/two_primitives.gltf";
 constexpr const char *MASK_CARD_MODEL = "Models/GltfTest/mask_card.gltf";
+constexpr const char *UV_TRANSFORM_MODEL = "Models/GltfTest/uv_transform_card.gltf";
 
 // Points KATAGLYPHIS_GPU_TIMING_JSON at a file for the lifetime of the object,
 // same shape as ScopedModelOverride above. The renderer reads the variable in
@@ -1914,6 +1915,105 @@ TEST(GoldenRender, MaskCardDoubleSidedRendersFromBehindDeferred)
     ASSERT_GT(changed_total, 1500U)
       << "the back-facing doubleSided card is not in the deferred G-buffer - the "
          "geometry pass back-face culled it despite doubleSided";
+}
+
+// glTF KHR_texture_transform: a scale on the base-colour UV must TILE the texture.
+// uv_transform_card.gltf carries scale [4,4] on the same 8x8 checkerboard as the
+// mask card, and the engine samples with REPEAT, so with the transform applied the
+// card shows a 32x32 checkerboard - far more edges per area than the raw 8x8. The
+// oracle is the DETAIL fraction (right-neighbour luminance change) inside the card,
+// located by the differential against the base scene (GUI-free upper-right, past
+// the panel). Removing transform_uv (the shaders sampling the raw UV) drops it back
+// to 8x8 -> a much lower detail fraction: the red proof.
+TEST(GoldenRender, KhrTextureTransformTilesTheTexture)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> before = harness.capture_frame(width, height);
+    ASSERT_FALSE(before.empty());
+
+    const auto env_f = [](const char *name, float fallback) {
+        const char *value = std::getenv(name);
+        return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
+    };
+    const glm::mat4 placement =
+      glm::translate(glm::mat4(1.0F),
+        glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
+      * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
+    const auto added = harness.renderer->addModel(UV_TRANSFORM_MODEL, placement);
+    ASSERT_TRUE(added.has_value()) << "adding the uv-transform card failed";
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    uint32_t w2 = 0;
+    uint32_t h2 = 0;
+    const std::vector<uint8_t> after = harness.capture_frame(w2, h2);
+    ASSERT_FALSE(after.empty());
+    ASSERT_EQ(width, w2);
+    ASSERT_EQ(height, h2);
+
+    // Locate the card: bounding box of changed pixels in the GUI-free upper-right.
+    const auto changed_at = [&](uint32_t x, uint32_t y) {
+        const size_t b = (static_cast<size_t>(y) * width + x) * 4U;
+        return std::abs(static_cast<int>(before[b]) - static_cast<int>(after[b])) > 12
+               || std::abs(static_cast<int>(before[b + 1U]) - static_cast<int>(after[b + 1U])) > 12
+               || std::abs(static_cast<int>(before[b + 2U]) - static_cast<int>(after[b + 2U])) > 12;
+    };
+    const uint32_t scan_x0 = (width * 68U) / 100U;
+    const uint32_t scan_y1 = (height * 62U) / 100U;
+    uint32_t minx = width;
+    uint32_t miny = height;
+    uint32_t maxx = 0;
+    uint32_t maxy = 0;
+    size_t changed_total = 0;
+    for (uint32_t y = 0; y < scan_y1; ++y) {
+        for (uint32_t x = scan_x0; x < width; ++x) {
+            if (changed_at(x, y)) {
+                ++changed_total;
+                minx = std::min(minx, x);
+                maxx = std::max(maxx, x);
+                miny = std::min(miny, y);
+                maxy = std::max(maxy, y);
+            }
+        }
+    }
+    ASSERT_GT(changed_total, 500U) << "the uv-transform card is not visible in the upper-right (framing)";
+
+    // DETAIL: fraction of card-box pixels whose right neighbour differs in
+    // luminance by more than 6 levels. A finely-tiled checkerboard is nearly all
+    // edges; a coarse (untransformed) one is not.
+    size_t detailed = 0;
+    size_t total = 0;
+    for (uint32_t y = miny; y <= maxy; ++y) {
+        for (uint32_t x = minx; x < maxx; ++x) {
+            const size_t base = static_cast<size_t>(y) * width + x;
+            if (std::abs(luminance_of(after, base) - luminance_of(after, base + 1U)) > 6.0) { ++detailed; }
+            ++total;
+        }
+    }
+    const double detail = total > 0 ? static_cast<double>(detailed) / static_cast<double>(total) : 0.0;
+    GTEST_LOG_(INFO) << "uv-transform card: box [" << minx << "," << miny << ".." << maxx << "," << maxy
+                     << "] detail-fraction " << detail;
+
+    // Tiled 4x (32x32 checkers) is a high-frequency pattern. The untransformed
+    // 8x8 card measures far lower - the red proof (remove transform_uv, recompile).
+    EXPECT_GT(detail, 0.15)
+      << "the card is not finely tiled - KHR_texture_transform scale is not reaching the sampled UV";
 }
 
 // The white furnace: with a uniform environment and albedo forced to 1 (the

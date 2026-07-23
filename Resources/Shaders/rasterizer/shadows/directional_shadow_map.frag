@@ -37,7 +37,7 @@ void main() {
     // Only textured MASK materials alpha-test; everything else casts unchanged.
     if (material.alphaCutoff >= 0.0 && material.textureID >= 0) {
         int texture_id = clamp(int(obj_res.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
-        float alpha = texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), fragUV).a;
+        float alpha = texture(sampler2D(tex[texture_id], texture_sampler[texture_id]), transform_uv(fragUV, material)).a;
         if (alpha < material.alphaCutoff) { discard; }
     }
 }
