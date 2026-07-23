@@ -769,14 +769,21 @@ void Kataglyphis::VulkanRenderer::update_raytracing_descriptor_set(uint32_t imag
         return;
     }
 
-    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
-      gui->getGuiRendererSharedVars();
-    Texture &renderResult = guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward ? rasterizer.getOffscreenTexture(image_index) : deferredRasterizer.getOffscreenTexture(image_index);
+    Texture &renderResult = activeOffscreenTexture(image_index);
 
     raytracingDescriptors.writeAccelerationStructure(image_index, TLAS_BINDING, vulkanTLAS);
     raytracingDescriptors.writeImage(image_index, OUT_IMAGE_BINDING, renderResult.getImageView(), vk::ImageLayout::eGeneral);
     raytracingDescriptors.writeImage(
       image_index, ACCUMULATION_IMAGE_BINDING, pathTracingAccumulation.getImageView(), vk::ImageLayout::eGeneral);
+}
+
+auto Kataglyphis::VulkanRenderer::activeOffscreenTexture(uint32_t index) -> Texture &
+{
+    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
+      gui->getGuiRendererSharedVars();
+    return guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward
+             ? rasterizer.getOffscreenTexture(index)
+             : deferredRasterizer.getOffscreenTexture(index);
 }
 
 bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
@@ -849,71 +856,9 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
         ? std::optional<FrustumPlanes>(extractFrustumPlanes(globalUBO.projection * globalUBO.view))
         : std::nullopt;
 
-    if (guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward) {
-        Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "forward", { 0.20F, 0.60F, 1.00F, 1.0F });
-        rasterizer.recordCommands(commandBuffer, image_index, scene, rasterizer_descriptor_sets, camera_frustum);
-    } else {
-        Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "deferred", { 0.20F, 0.40F, 0.80F, 1.0F });
-        std::vector<vk::DescriptorSet> deferred_sets = { sharedRenderDescriptors.sets()[image_index], gbufferDescriptors.sets()[image_index] };
-        deferredRasterizer.recordCommands(commandBuffer, image_index, scene, deferred_sets, camera_frustum);
-    }
+    recordRasterPass(commandBuffer, image_index, rasterizer_descriptor_sets, camera_frustum);
 
-    // Publish whichever path actually recorded this frame. Reading both and
-    // summing would double-count the shared scene; reading the inactive one
-    // would report last frame's numbers from before the mode switch.
-    const bool forward_active =
-      guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward;
-    // The local binding above is const; the stats are renderer output, so
-    // take the mutable reference the same way the GPU-timing code does.
-    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &mutable_gui_vars =
-      gui->getGuiRendererSharedVars();
-    mutable_gui_vars.visibility.meshes_drawn =
-      forward_active ? rasterizer.getMeshesDrawn() : deferredRasterizer.getMeshesDrawn();
-    mutable_gui_vars.visibility.meshes_total =
-      forward_active ? rasterizer.getMeshesConsidered() : deferredRasterizer.getMeshesConsidered();
-
-    // The TLAS guard covers the async model-load window: with RT/PT enabled
-    // before the scene arrives, the record path used to dispatch against
-    // descriptor sets that were never written (TLAS, output, accumulation) -
-    // 20 validation errors in the pre-load frames of the accumulation golden.
-    if (device->supportsHardwareAcceleratedRRT() && image_index < raytracingDescriptors.sets().size()
-        && asManager.getTLAS()) {
-        std::vector<vk::DescriptorSet> raytracing_descriptor_sets = { sharedRenderDescriptors.sets()[image_index],
-            raytracingDescriptors.sets()[image_index] };
-
-        if (guiRendererSharedVars.raytracing) {
-            Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "raytracing", { 0.85F, 0.25F, 0.55F, 1.0F });
-            Texture &renderResult = guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward ? rasterizer.getOffscreenTexture(image_index) : deferredRasterizer.getOffscreenTexture(image_index);
-            raytracingStage.recordCommands(
-              commandBuffer, renderResult.getVulkanImage(), &vulkanSwapChain, raytracing_descriptor_sets);
-        } else if (guiRendererSharedVars.pathTracing) {
-            Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "pathtracing", { 0.60F, 0.25F, 0.85F, 1.0F });
-            Texture &renderResult = guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward ? rasterizer.getOffscreenTexture(image_index) : deferredRasterizer.getOffscreenTexture(image_index);
-
-            // A camera move or a quality change invalidates the accumulated
-            // history; restart the running mean from this frame.
-            glm::mat4 const current_view = camera->calculate_viewmatrix();
-            if (current_view != pathTracingLastView
-                || guiRendererSharedVars.pathTracingSamplesPerPixel != pathTracingLastSamples
-                || guiRendererSharedVars.pathTracingMaxBounces != pathTracingLastBounces) {
-                pathTracingAccumulatedFrames = 0;
-                pathTracingLastView = current_view;
-                pathTracingLastSamples = guiRendererSharedVars.pathTracingSamplesPerPixel;
-                pathTracingLastBounces = guiRendererSharedVars.pathTracingMaxBounces;
-            }
-
-            pathTracing.recordCommands(commandBuffer,
-              image_index,
-              renderResult.getVulkanImage(),
-              pathTracingAccumulation.getVulkanImage(),
-              &vulkanSwapChain,
-              raytracing_descriptor_sets,
-              pathTracingAccumulatedFrames,
-              static_cast<uint32_t>(std::max(guiRendererSharedVars.pathTracingSamplesPerPixel, 1)),
-              static_cast<uint32_t>(std::max(guiRendererSharedVars.pathTracingMaxBounces, 1)));
-            ++pathTracingAccumulatedFrames;
-        }
-    }
+    recordRaytracingOrPathTracing(commandBuffer, image_index);
 
     write_pass_timestamp(GpuTimedPass::Main, false);
 
@@ -949,6 +894,87 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
     }
 
     return true;
+}
+
+void Kataglyphis::VulkanRenderer::recordRasterPass(vk::CommandBuffer &commandBuffer,
+  uint32_t image_index,
+  const std::vector<vk::DescriptorSet> &rasterizer_descriptor_sets,
+  const std::optional<FrustumPlanes> &camera_frustum)
+{
+    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
+      gui->getGuiRendererSharedVars();
+
+    if (guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward) {
+        Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "forward", { 0.20F, 0.60F, 1.00F, 1.0F });
+        rasterizer.recordCommands(commandBuffer, image_index, scene, rasterizer_descriptor_sets, camera_frustum);
+    } else {
+        Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "deferred", { 0.20F, 0.40F, 0.80F, 1.0F });
+        std::vector<vk::DescriptorSet> deferred_sets = { sharedRenderDescriptors.sets()[image_index], gbufferDescriptors.sets()[image_index] };
+        deferredRasterizer.recordCommands(commandBuffer, image_index, scene, deferred_sets, camera_frustum);
+    }
+
+    // Publish whichever path actually recorded this frame. Reading both and
+    // summing would double-count the shared scene; reading the inactive one
+    // would report last frame's numbers from before the mode switch.
+    const bool forward_active =
+      guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward;
+    // The local binding above is const; the stats are renderer output, so
+    // take the mutable reference the same way the GPU-timing code does.
+    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &mutable_gui_vars =
+      gui->getGuiRendererSharedVars();
+    mutable_gui_vars.visibility.meshes_drawn =
+      forward_active ? rasterizer.getMeshesDrawn() : deferredRasterizer.getMeshesDrawn();
+    mutable_gui_vars.visibility.meshes_total =
+      forward_active ? rasterizer.getMeshesConsidered() : deferredRasterizer.getMeshesConsidered();
+}
+
+void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffer &commandBuffer, uint32_t image_index)
+{
+    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
+      gui->getGuiRendererSharedVars();
+
+    // The TLAS guard covers the async model-load window: with RT/PT enabled
+    // before the scene arrives, the record path used to dispatch against
+    // descriptor sets that were never written (TLAS, output, accumulation) -
+    // 20 validation errors in the pre-load frames of the accumulation golden.
+    if (device->supportsHardwareAcceleratedRRT() && image_index < raytracingDescriptors.sets().size()
+        && asManager.getTLAS()) {
+        std::vector<vk::DescriptorSet> raytracing_descriptor_sets = { sharedRenderDescriptors.sets()[image_index],
+            raytracingDescriptors.sets()[image_index] };
+
+        if (guiRendererSharedVars.raytracing) {
+            Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "raytracing", { 0.85F, 0.25F, 0.55F, 1.0F });
+            Texture &renderResult = activeOffscreenTexture(image_index);
+            raytracingStage.recordCommands(
+              commandBuffer, renderResult.getVulkanImage(), &vulkanSwapChain, raytracing_descriptor_sets);
+        } else if (guiRendererSharedVars.pathTracing) {
+            Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "pathtracing", { 0.60F, 0.25F, 0.85F, 1.0F });
+            Texture &renderResult = activeOffscreenTexture(image_index);
+
+            // A camera move or a quality change invalidates the accumulated
+            // history; restart the running mean from this frame.
+            glm::mat4 const current_view = camera->calculate_viewmatrix();
+            if (current_view != pathTracingLastView
+                || guiRendererSharedVars.pathTracingSamplesPerPixel != pathTracingLastSamples
+                || guiRendererSharedVars.pathTracingMaxBounces != pathTracingLastBounces) {
+                pathTracingAccumulatedFrames = 0;
+                pathTracingLastView = current_view;
+                pathTracingLastSamples = guiRendererSharedVars.pathTracingSamplesPerPixel;
+                pathTracingLastBounces = guiRendererSharedVars.pathTracingMaxBounces;
+            }
+
+            pathTracing.recordCommands(commandBuffer,
+              image_index,
+              renderResult.getVulkanImage(),
+              pathTracingAccumulation.getVulkanImage(),
+              &vulkanSwapChain,
+              raytracing_descriptor_sets,
+              pathTracingAccumulatedFrames,
+              static_cast<uint32_t>(std::max(guiRendererSharedVars.pathTracingSamplesPerPixel, 1)),
+              static_cast<uint32_t>(std::max(guiRendererSharedVars.pathTracingMaxBounces, 1)));
+            ++pathTracingAccumulatedFrames;
+        }
+    }
 }
 
 auto Kataglyphis::VulkanRenderer::supportsFrameCapture() const -> bool
@@ -1384,11 +1410,8 @@ void Kataglyphis::VulkanRenderer::updatePostDescriptorSets()
         return;
     }
 
-    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
-      gui->getGuiRendererSharedVars();
-
     for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
-        Texture &renderResult = guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward ? rasterizer.getOffscreenTexture(i) : deferredRasterizer.getOffscreenTexture(i);
+        Texture &renderResult = activeOffscreenTexture(i);
         postDescriptors.writeImage(
           i, 0, renderResult.getImageView(), vk::ImageLayout::eShaderReadOnlyOptimal, postStage.getOffscreenSampler());
         postDescriptors.writeImage(i,
@@ -1525,11 +1548,8 @@ void Kataglyphis::VulkanRenderer::updateRaytracingDescriptorSets()
     // mean was healing from startup frames, not averaging samples).
     pathTracingAccumulatedFrames = 0;
 
-    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
-      gui->getGuiRendererSharedVars();
-
     for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
-        Texture &renderResult = guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward ? rasterizer.getOffscreenTexture(i) : deferredRasterizer.getOffscreenTexture(i);
+        Texture &renderResult = activeOffscreenTexture(i);
 
         raytracingDescriptors.writeAccelerationStructure(i, TLAS_BINDING, vulkanTLAS);
         raytracingDescriptors.writeImage(i, OUT_IMAGE_BINDING, renderResult.getImageView(), vk::ImageLayout::eGeneral);

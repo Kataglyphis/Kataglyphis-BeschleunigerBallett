@@ -19,6 +19,7 @@ import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.descriptor_set_group;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.global_ubo;
+import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.gui;
 import kataglyphis.vulkan.gui_renderer_shared_vars;
 import kataglyphis.vulkan.instance;
@@ -132,6 +133,26 @@ class VulkanRenderer
 
     // -- pools
     bool record_commands(uint32_t image_index);
+
+    // Returns the offscreen colour texture of whichever raster path is active
+    // this frame (forward vs deferred), reading the mode once. The RT/PT and
+    // post input descriptors, and the RT/PT passes, all target this texture.
+    Texture &activeOffscreenTexture(uint32_t index);
+
+    // Records the active raster path (forward Rasterizer or deferred
+    // DeferredRasterizer) for this frame and publishes its visibility stats.
+    // Extracted verbatim from record_commands; the frustum is passed in so its
+    // deliberate post-shadow-pass ordering stays visible at the call site.
+    void recordRasterPass(vk::CommandBuffer &commandBuffer,
+      uint32_t image_index,
+      const std::vector<vk::DescriptorSet> &rasterizer_descriptor_sets,
+      const std::optional<FrustumPlanes> &camera_frustum);
+
+    // Records the ray-tracing or path-tracing pass (whichever the GUI selected)
+    // when hardware RT is available and the TLAS is built, including the
+    // path-tracing accumulation-reset bookkeeping. Extracted verbatim from
+    // record_commands.
+    void recordRaytracingOrPathTracing(vk::CommandBuffer &commandBuffer, uint32_t image_index);
     void create_command_pool();
     void cleanUpCommandPools();
     vk::CommandPool graphics_command_pool{};
