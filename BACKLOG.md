@@ -1784,7 +1784,12 @@ re-builds EVERY model's BLAS - O(N) BLAS builds to add ONE model. Fine for the f
 scenes today, a hitch for many-model or interactive add. Incremental version: an ASManager
 `appendBlas(model)` that builds only the new model's BLAS and pushes it, then `createTLAS`
 (the TLAS rebuild is unavoidable and cheap, it just re-lists instances). Guard the RT
-goldens + `AddedModelAppearsInPathTracing`. Original report: a `mask_card.gltf` added with `renderer->addModel(path, placement)`
+goldens + `AddedModelAppearsInPathTracing`. NOTE (assessed 2026-07-23): `createBLAS` is a
+BATCHED full build - one shared scratch buffer sized across ALL models, compaction across
+all, and it clears+rebuilds the whole `blas` vector - so `appendBlas` means carefully
+extracting the single-model build path (its own scratch + compaction, append not clear);
+it is a real refactor of the AS build, not a 10-line change. Budget for it + verify RT
+carefully (AS bugs are the delicate kind). Original report: a `mask_card.gltf` added with `renderer->addModel(path, placement)`
     while in PATH-TRACING mode does not appear in the traced image at all: forcing
     `gl_RayFlagsOpaqueEXT` (a solid quad that MUST occlude if present) leaves the render
     bit-identical (RED == GREEN, detail 0.0353734), i.e. no rays hit it. The same
