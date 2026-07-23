@@ -1486,8 +1486,13 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       skew (a CascadedShadowMap.ixx member) - verified with a fresh rebuild after
       the incremental build tripped the documented stale-BMI ASan overflow; 15/15
       goldens unchanged + validation-clean (the material fetch runs for every caster,
-      proving the path end to end). REMAINING for increment 1: the RT/PT kernels (1c)
-      still trace the solid quad; and a GPU-host visual golden of the cut-out.
+      proving the path end to end). ~~and a GPU-host visual golden of the cut-out~~
+      **VISUAL GOLDEN DONE (MaskCardDiscardsCutoutTexelsVisually)**: differential
+      oracle (base scene A vs +card B, changed-fraction in the bbox of changed pixels,
+      scanned only in the GUI-free upper-right so the ImGui panel/FPS text/floor shadow
+      are excluded); discard ON measured 0.37 (checkerboard, holes leave background),
+      discard OFF 0.78 (red-proven by disabling the FS discard), 0.55 gate between.
+      REMAINING for increment 1: only the RT/PT kernels (1c) still trace the solid quad.
       (Attempted the visual
       check via `KATAGLYPHIS_MODEL_OVERRIDE=Models/GltfTest/mask_card.gltf` +
       `DISABLED_DumpsFrameToPng`: the default camera frames the ImGui panel over a
