@@ -110,16 +110,17 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
     meshesDrawn = 0;
     meshesConsidered = 0;
 
+    // object descriptions are flattened one-per-mesh across all models
+    // (Scene::add_model), so objectIndex is the running FLAT mesh index, not the
+    // model index. It advances for every mesh - culled ones included - to stay
+    // aligned with that buffer. Identical to the old per-model push while each
+    // Model holds one mesh.
+    uint32_t flat_mesh_index = 0;
     for (uint32_t m = 0; m < scene->getModelCount(); m++) {
         pushConstant.model = scene->getModelMatrix(m);
-        pushConstant.objectIndex = m;
-        commandBuffer.pushConstants(pipeline_layout,
-          vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-          0,
-          sizeof(PushConstantRasterizer),
-          &pushConstant);
 
         for (unsigned int k = 0; k < scene->getMeshCount(m); k++) {
+            const uint32_t object_index = flat_mesh_index++;
             ++meshesConsidered;
 
             // Skip meshes provably outside the view. isVisible() is
@@ -129,6 +130,13 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
                 && !isVisible(*cameraFrustum, transformAABB(pushConstant.model, scene->getMeshBounds(m, k)))) {
                 continue;
             }
+
+            pushConstant.objectIndex = object_index;
+            commandBuffer.pushConstants(pipeline_layout,
+              vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+              0,
+              sizeof(PushConstantRasterizer),
+              &pushConstant);
 
             const vk::Buffer vertex_buffer = scene->getVertexBuffer(m, k);
             const vk::DeviceSize offset = 0;

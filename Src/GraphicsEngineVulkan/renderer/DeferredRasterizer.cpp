@@ -463,13 +463,15 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
     meshesDrawn = 0;
     meshesConsidered = 0;
 
+    // objectIndex is the flat mesh index into the per-mesh object-description
+    // buffer; see Rasterizer::recordCommands. Advances for every mesh (culled
+    // included); no-op vs the old per-model push while a Model holds one mesh.
+    uint32_t flat_mesh_index = 0;
     for (uint32_t m = 0; m < scene->getModelCount(); m++) {
         pushConstant.model = scene->getModelMatrix(m);
-        pushConstant.objectIndex = m;
-        commandBuffer.pushConstants(
-          geometryPipelineLayout, vk::ShaderStageFlagBits::eAll, 0, sizeof(PushConstantRasterizer), &pushConstant);
 
         for (unsigned int k = 0; k < scene->getMeshCount(m); k++) {
+            const uint32_t object_index = flat_mesh_index++;
             ++meshesConsidered;
 
             // Same conservative visibility test as the forward path; see
@@ -478,6 +480,10 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
                 && !isVisible(*cameraFrustum, transformAABB(pushConstant.model, scene->getMeshBounds(m, k)))) {
                 continue;
             }
+
+            pushConstant.objectIndex = object_index;
+            commandBuffer.pushConstants(
+              geometryPipelineLayout, vk::ShaderStageFlagBits::eAll, 0, sizeof(PushConstantRasterizer), &pushConstant);
 
             std::vector<vk::Buffer> const vertex_buffers = { scene->getVertexBuffer(m, k) };
             vk::DeviceSize offsets[] = { 0 };

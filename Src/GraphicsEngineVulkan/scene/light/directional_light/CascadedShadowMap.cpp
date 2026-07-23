@@ -721,22 +721,20 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
     if (!descriptorSets.empty()) { shadowDescriptorSets = {descriptorSets[0], descriptorSet}; }
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, shadowDescriptorSets, nullptr);
 
+    // objectIndex is the running FLAT mesh index (matching the forward pass and
+    // the per-mesh object-description buffer), pushed per mesh in the old
+    // cascade-index slot so the fragment stage can fetch this draw's material for
+    // the MASK alpha test. Advances for every caster (culled included). The
+    // cascade itself comes from gl_ViewIndex. No-op vs the per-model push while a
+    // Model holds one Mesh (#10).
+    uint32_t flat_mesh_index = 0;
     for (uint32_t m = 0; m < scene->getModelCount(); m++) {
-        // Same model matrix as the forward pass; pushed once per model. The old
-        // cascade-index slot now carries the object index so the fragment stage
-        // can fetch this draw's material for the MASK alpha test - the forward
-        // pass pushes the same index (one object per model while a Model holds
-        // one Mesh, backlog #10). The cascade itself comes from gl_ViewIndex.
-        const ShadowPushConstants push = makeShadowPush(scene->getModelMatrix(m), m);
-        commandBuffer.pushConstants(pipelineLayout,
-          vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-          0,
-          sizeof(ShadowPushConstants),
-          &push);
+        const glm::mat4 modelMatrix = scene->getModelMatrix(m);
 
         for (uint32_t k = 0; k < scene->getMeshCount(m); k++) {
+            const uint32_t object_index = flat_mesh_index++;
             ++castersConsidered;
-            const AABB casterBounds = transformAABB(scene->getModelMatrix(m), scene->getMeshBounds(m, k));
+            const AABB casterBounds = transformAABB(modelMatrix, scene->getMeshBounds(m, k));
             bool visible_in_any_cascade = false;
             for (uint32_t cascade = 0; cascade < numCascades; cascade++) {
                 if (isVisibleAsShadowCaster(cascadeFrusta[cascade], casterBounds)) {
@@ -746,6 +744,13 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
             }
             if (!visible_in_any_cascade) { continue; }
             ++castersDrawn;
+
+            const ShadowPushConstants push = makeShadowPush(modelMatrix, object_index);
+            commandBuffer.pushConstants(pipelineLayout,
+              vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+              0,
+              sizeof(ShadowPushConstants),
+              &push);
 
             const vk::Buffer vertex_buffer = scene->getVertexBuffer(m, k);
             const vk::DeviceSize offset = 0;
