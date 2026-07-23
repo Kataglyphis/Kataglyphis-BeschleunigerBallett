@@ -347,6 +347,9 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
       geometryPipelineBuilder.setShaderStages({ geomStages.begin(), geomStages.end() })
         .setVertexInput({ bindingDescription }, { attributeDescriptions.begin(), attributeDescriptions.end() })
         .setColorAttachmentCount(3)
+        // Per-draw cull mode so doubleSided glTF meshes disable back-face culling
+        // in the G-buffer pass too (set in the record loop below).
+        .setDynamicCullMode(true)
         .build(device->getLogicalDevice(), geometryPipelineLayout, renderPass, device->getPipelineCache(), 0);
     spdlog::info("DeferredRasterizer: Created geometryPipeline: 0x{:x}", (uint64_t)(VkPipeline)geometryPipeline);
 
@@ -484,6 +487,11 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
             pushConstant.objectIndex = object_index;
             commandBuffer.pushConstants(
               geometryPipelineLayout, vk::ShaderStageFlagBits::eAll, 0, sizeof(PushConstantRasterizer), &pushConstant);
+
+            // glTF material.doubleSided: render both faces into the G-buffer, else
+            // back-face cull. Dynamic state, so every draw sets it (default eBack).
+            commandBuffer.setCullMode(scene->isMeshDoubleSided(m, k) ? vk::CullModeFlagBits::eNone
+                                                                     : vk::CullModeFlagBits::eBack);
 
             std::vector<vk::Buffer> const vertex_buffers = { scene->getVertexBuffer(m, k) };
             vk::DeviceSize offsets[] = { 0 };
