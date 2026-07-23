@@ -293,6 +293,11 @@ class VulkanRenderer
     Kataglyphis::VulkanRendererInternals::ASManager asManager;
     VulkanBuffer objectDescriptionBuffer;
     void create_object_description_buffer();
+    // Discards and re-uploads the object-description buffer. The scene-changed
+    // paths (finishModelLoad / addModel / updateStateDueToUserInput) all do this
+    // identical pair before rebuilding acceleration structures and descriptors;
+    // the surrounding AS/descriptor steps differ per path and stay inline.
+    void rebuildObjectDescriptions();
     void updateObjectDescriptionDescriptorSets();
 
     // -- descriptor set groups (each owns one layout + pool + per-swapchain-

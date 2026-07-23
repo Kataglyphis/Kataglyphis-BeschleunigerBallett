@@ -250,8 +250,7 @@ void Kataglyphis::VulkanRenderer::finishModelLoad()
     if (device->supportsHardwareAcceleratedRRT()) {
         asManager.createASForScene(device, graphics_command_pool, scene);
     }
-    objectDescriptionBuffer.cleanUp();
-    create_object_description_buffer();
+    rebuildObjectDescriptions();
     updateAllDescriptorSets();
 }
 
@@ -329,8 +328,7 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Fronten
 
             // Re-upload object descriptions as the transform changed
             (void)device->getLogicalDevice().waitIdle();
-            objectDescriptionBuffer.cleanUp();
-            create_object_description_buffer();
+            rebuildObjectDescriptions();
 
             // The traced world must follow the raster world: without this,
             // RT/PT kept tracing the OLD pose after a GUI transform change.
@@ -365,8 +363,7 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Fronten
                 asManager.createASForScene(device, graphics_command_pool, scene);
             }
 
-            objectDescriptionBuffer.cleanUp();
-            create_object_description_buffer();
+            rebuildObjectDescriptions();
 
             updateTexturesInSharedRenderDescriptorSet();
         }
@@ -715,8 +712,7 @@ std::optional<uint32_t> Kataglyphis::VulkanRenderer::addModel(const std::string 
     // leaks the previous allocation and trips VMA's
     // "some allocations were not freed" assertion when the block is
     // destroyed - which is how the two-model test first failed.
-    objectDescriptionBuffer.cleanUp();
-    create_object_description_buffer();
+    rebuildObjectDescriptions();
 
     // The added model is NEW geometry, so its BLAS must be built and the TLAS
     // rebuilt to reference it - otherwise it loads and renders in the raster
@@ -1486,6 +1482,12 @@ void Kataglyphis::VulkanRenderer::cleanUpSync()
     }
     in_flight_fences.clear();
     images_in_flight_fences.clear();
+}
+
+void Kataglyphis::VulkanRenderer::rebuildObjectDescriptions()
+{
+    objectDescriptionBuffer.cleanUp();
+    create_object_description_buffer();
 }
 
 void Kataglyphis::VulkanRenderer::create_object_description_buffer()
