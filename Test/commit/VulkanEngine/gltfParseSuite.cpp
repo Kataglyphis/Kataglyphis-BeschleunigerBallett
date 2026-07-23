@@ -320,6 +320,27 @@ TEST(GltfParseUnit, MaskCardFixtureLoadsWithCutoutTextureAndCutoff)
     for (size_t i = 0; i < 8; ++i) { EXPECT_EQ(png[i], png_magic[i]) << "PNG signature byte " << i; }
 }
 
+TEST(GltfParseUnit, HighContrastMaskCardExtractsItsTexture)
+{
+    // Bisecting the 1c-PT blocker (an addModel'd mask_card_hc rendered SOLID WHITE
+    // in path tracing, i.e. textureID -1 / diffuse fallback). The PNG is a verified
+    // valid RGBA (black + alpha checkerboard). This checks the CPU HALF: does the
+    // loader EXTRACT the texture and set textureID? If yes, the bug is engine
+    // upload/render side; if no, it is extraction. Device-free.
+    const auto path = sceneConfig::resolveModelPath("Models/GltfTest/mask_card_hc.gltf");
+    if (!std::filesystem::exists(path)) { GTEST_SKIP() << "mask_card_hc fixture not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(path));
+    ASSERT_GT(loader.getMaterials().size(), 0U);
+
+    EXPECT_NEAR(loader.getMaterials()[0].alphaCutoff, 0.5F, 1e-6F) << "MASK cutoff must survive";
+    EXPECT_GE(loader.getMaterials()[0].get_textureID(), 0)
+      << "the base-colour texture must extract and set a valid textureID (else the card "
+         "samples the diffuse fallback - the white-in-PT symptom)";
+    EXPECT_EQ(loader.getTextureImages().size(), 1U) << "exactly one extracted base-colour image";
+}
+
 TEST(GltfParseUnit, ReadsKhrTextureTransformScale)
 {
     // glTF KHR_texture_transform scales/offsets the base-colour UV. The loader
