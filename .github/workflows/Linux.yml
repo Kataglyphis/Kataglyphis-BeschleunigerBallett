@@ -278,6 +278,11 @@ jobs:
       - name: 📂 Sync files to domain
         uses: SamKirkland/FTP-Deploy-Action@v4.4.0
         if: ${{ inputs.runner == 'ubuntu-24.04' }}
+        # A flaky FTP upload of the docs must not red the whole build+test lane:
+        # the code already compiled and passed both the clang/ASan and gcc test
+        # runs before this deploy step. Mirrors the RPT fix (continue-on-error on
+        # its FTP deploy) - the docs push is best-effort, not a gate.
+        continue-on-error: true
         with:
           server: ${{ secrets.SERVER }}
           username: ${{ secrets.USERNAME }}
