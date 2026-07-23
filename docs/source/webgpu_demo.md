@@ -31,7 +31,11 @@ Open the demo full-page ↗
 - **Roadmap**: see `docs/webgpu-renderer-roadmap.md` in the repository —
   phases A–G from material correctness up to IBL, animation, and a
   Colosseum-scale showcase scene.
-- **Rebuild the demo**: `cargo build -p kataglyphis_webgpu_renderer
-  --target wasm32-unknown-unknown --release`, then `wasm-bindgen --target
-  web` into `crates/webgpu_renderer/web/pkg`, and copy `web/` into
+- **Rebuild the demo**: the docs deploy rebuilds it automatically —
+  `Scripts/Linux/docs-build-web.sh` compiles `kataglyphis_webgpu_renderer` to
+  wasm32, runs `wasm-bindgen`, and refreshes this folder before Sphinx runs, so
+  the deployed demo always tracks the current renderer. To rebuild locally:
+  `cargo build -p kataglyphis_webgpu_renderer --target wasm32-unknown-unknown
+  --release`, then `wasm-bindgen --target web` into
+  `crates/webgpu_renderer/web/pkg`, and copy `web/` into
   `docs/source/_webgpu_demo/webgpu-demo/`.
