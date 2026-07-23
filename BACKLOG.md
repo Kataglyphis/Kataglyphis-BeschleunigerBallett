@@ -1330,12 +1330,18 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
     `Scene::add_model` flattens one object description PER MESH. Deliberate no-op
     today (loaders make one mesh/model, so flat mesh index == model index);
     102/102 CPU + 15/15 goldens unchanged, validation-clean. Model is now
-    multi-mesh-CAPABLE. **REMAINING**: split a loader's primitives into separate
-    meshes (`GltfLoader::parseCpu` flattens all primitives, `loadModel:79` calls
-    add_new_mesh once → restructure to per-primitive geometry + loop add_new_mesh),
-    make `objectIndex` the FLAT mesh index in the forward/deferred/shadow record
-    loops (currently the model index, correct only while 1 mesh/model), one BLAS
-    per mesh, per-mesh culling. Original state: `getMeshCount()` returned literal
+    multi-mesh-CAPABLE. **objectIndex now the FLAT mesh index (84e4fd45)**: the
+    forward/deferred/shadow record loops push it per mesh (running count, advancing
+    for culled meshes too, push moved after the visibility test), so the RASTER
+    render path is fully multi-mesh-correct; 15/15 goldens unchanged, no-op today.
+    Per-mesh culling already falls out (the loops iterate getMeshCount + per-mesh
+    AABBs). **REMAINING**: split a loader's primitives into separate meshes - the
+    load-bearing step (`GltfLoader::parseCpu` flattens all primitives, `loadModel:79`
+    calls add_new_mesh once → restructure to per-primitive geometry + loop
+    add_new_mesh; ripples to the loader API + the GltfParseUnit tests asserting on
+    the flat getVertices/getIndices + the async loader) + one BLAS per mesh in the
+    AS (the RT/PT paths fetch via the instance custom index - the RT/PT half of #10).
+    Original state: `getMeshCount()` returned literal
     `1` and `getMesh()` ignored its index (`Model.ixx:38-39`); `add_new_mesh`
     overwrote (`Model.cpp:47`). Culling is all-or-nothing on one scene-sized AABB
     (`Rasterizer.cpp:122-141`), and there is nothing to attach LOD to.
