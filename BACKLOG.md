@@ -1324,9 +1324,20 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
    used for eye placement. Fix: size from `radius`, snap origin to whole texels.
    Test: two camera positions a fraction of a texel apart — origins must differ by
    an exact texel multiple and box width must be identical. Both fail today.
-10. **A `Model` can hold exactly one `Mesh`** (L) — `getMeshCount()` returns literal
-    `1` and `getMesh()` ignores its index (`Model.ixx:38-39`); `add_new_mesh`
-    overwrites (`Model.cpp:47`). Culling is all-or-nothing on one scene-sized AABB
+10. **A `Model` can hold exactly one `Mesh`** (L) — **FOUNDATION DONE (f20b1234)**:
+    `Model` now holds `std::vector<Mesh>` (getMeshCount → size, getMesh(i) →
+    meshes[i], add_new_mesh appends, cleanUp/getPrimitiveCount iterate), and
+    `Scene::add_model` flattens one object description PER MESH. Deliberate no-op
+    today (loaders make one mesh/model, so flat mesh index == model index);
+    102/102 CPU + 15/15 goldens unchanged, validation-clean. Model is now
+    multi-mesh-CAPABLE. **REMAINING**: split a loader's primitives into separate
+    meshes (`GltfLoader::parseCpu` flattens all primitives, `loadModel:79` calls
+    add_new_mesh once → restructure to per-primitive geometry + loop add_new_mesh),
+    make `objectIndex` the FLAT mesh index in the forward/deferred/shadow record
+    loops (currently the model index, correct only while 1 mesh/model), one BLAS
+    per mesh, per-mesh culling. Original state: `getMeshCount()` returned literal
+    `1` and `getMesh()` ignored its index (`Model.ixx:38-39`); `add_new_mesh`
+    overwrote (`Model.cpp:47`). Culling is all-or-nothing on one scene-sized AABB
     (`Rasterizer.cpp:122-141`), and there is nothing to attach LOD to.
 
     **DESIGN NOTE (2026-07-22, prepared so the L does not start cold):** the
