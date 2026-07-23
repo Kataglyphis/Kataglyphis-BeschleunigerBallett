@@ -229,6 +229,11 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(std::shared_ptr
     std::vector<vk::AccelerationStructureInstanceKHR> tlas_instances;
     tlas_instances.reserve(scene->getModelCount());
 
+    // instanceCustomIndex is the FLAT index of this model's first mesh; the
+    // closest-hit / ray-query kernels add gl_GeometryIndexEXT (the mesh within the
+    // model's BLAS) to reach the per-mesh object description. == model_index while a
+    // Model holds one mesh, so this is a no-op today.
+    uint32_t mesh_base_offset = 0;
     for (size_t model_index = 0; model_index < scene->getModelCount(); model_index++) {
         glm::mat4 transpose_transform = glm::transpose(scene->getModelMatrix(static_cast<uint32_t>(model_index)));
         vk::TransformMatrixKHR out_matrix;
@@ -242,7 +247,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(std::shared_ptr
 
         vk::AccelerationStructureInstanceKHR geometry_instance{};
         geometry_instance.transform = out_matrix;
-        geometry_instance.instanceCustomIndex = static_cast<uint32_t>(model_index);
+        geometry_instance.instanceCustomIndex = mesh_base_offset;
+        mesh_base_offset += scene->getMeshCount(static_cast<uint32_t>(model_index));
         geometry_instance.mask = 0xFF;
         geometry_instance.instanceShaderBindingTableRecordOffset = 0;
         geometry_instance.flags =

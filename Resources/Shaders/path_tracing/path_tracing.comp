@@ -81,10 +81,14 @@ struct HitInfo
 HitInfo getObjectHitInfo(rayQueryEXT rayQuery)
 {
     const int instanceCustomIndex = rayQueryGetIntersectionInstanceCustomIndexEXT(rayQuery, true);
+    // The mesh within the model's BLAS; instanceCustomIndex is the model's first-
+    // mesh flat index, so their sum is the per-mesh object index (== the custom
+    // index while a Model holds one mesh).
+    const int geometryIndex = rayQueryGetIntersectionGeometryIndexEXT(rayQuery, true);
     const mat4x3 objToWorld =  rayQueryGetIntersectionObjectToWorldEXT(rayQuery, true);
     const mat4x3 worldToObject = rayQueryGetIntersectionWorldToObjectEXT(rayQuery, true);
 
-    ObjectDescription obj_res   = object_description.i[instanceCustomIndex];        // array of all object descriptions
+    ObjectDescription obj_res   = object_description.i[instanceCustomIndex + geometryIndex];  // per-mesh object description
     Indices indices             = Indices(obj_res.index_address);                   // array of all indices
     Vertices vertices           = Vertices(obj_res.vertex_address);                 // array of all vertices
     MaterialIDs materialIDs     = MaterialIDs(obj_res.material_index_address);      // array of per face material indices

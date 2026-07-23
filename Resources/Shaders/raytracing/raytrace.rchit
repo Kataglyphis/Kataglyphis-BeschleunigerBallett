@@ -63,7 +63,10 @@ layout(push_constant) uniform _PushConstantRay {
 
 void main() {
     
-    ObjectDescription obj_res   = object_description.i[gl_InstanceCustomIndexEXT];  // array of all object descriptions
+    // instanceCustomIndex is this model's first-mesh flat index; gl_GeometryIndexEXT
+    // is the mesh within the model's BLAS. Their sum is the per-mesh object index
+    // (== gl_InstanceCustomIndexEXT while a Model holds one mesh).
+    ObjectDescription obj_res   = object_description.i[gl_InstanceCustomIndexEXT + gl_GeometryIndexEXT];  // per-mesh object description
     Indices indices             = Indices(obj_res.index_address);                   // array of all indices
     Vertices vertices           = Vertices(obj_res.vertex_address);                 // array of all vertices
     MaterialIDs materialIDs     = MaterialIDs(obj_res.material_index_address);      // array of per face material indices
