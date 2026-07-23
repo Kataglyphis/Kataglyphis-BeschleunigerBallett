@@ -1615,14 +1615,18 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       shadow queries drop `gl_RayFlagsOpaqueEXT` and confirm passing candidates) was
       IMPLEMENTED and is no-regression clean: all 4 PT goldens pass and the white FURNACE
       stays 186.005 (ideal 186) unbiased, proving the confirm logic is correct for opaque
-      hits. But the POSITIVE MASK-through-holes proof could not be built: a mask_card
-      `addModel`'d in PT mode is INVISIBLE even with the opaque flag forced (RED == GREEN
-      to the digit, 0.0353734), so the added card is not in the traced scene at all - the
-      test can't distinguish cut-out from solid. Reverted to stay at the "red/green proven"
-      bar. To finish 1c PT next: make a MASK card the DEFAULT model
-      (`ScopedModelOverride`) so it's in the AS at load (sidestepping the added-model AS
-      gap), frame it, and use the noise-robust detail-fraction oracle. The shader change
-      itself is written-and-correct (recoverable from this session's transcript).
+      hits. The POSITIVE MASK-through-holes proof could not be built at the time because a
+      mask_card `addModel`'d in PT was INVISIBLE even with the opaque flag forced (RED ==
+      GREEN to the digit, 0.0353734) - which turned out to be the SEPARATE addModel-AS
+      bug, NOW FIXED (see the ✅ item above). Reverted the 1c shader to stay at the
+      "red/green proven" bar. **NOW UNBLOCKED**: with the addModel AS rebuild landed, an
+      addModel'd card DOES trace in PT (`AddedModelAppearsInPathTracing` proves it). To
+      finish 1c PT next: re-apply the `candidatePasses` shader change (from this session's
+      transcript), addModel the mask_card in PT, and detail-fraction the card crop - with
+      1c a checkerboard of opaque texels vs scene through the holes (high detail), without
+      it a solid quad (low). ONE oracle caveat: mask_card's opaque RGB is uniform WHITE,
+      so for a crisp signal use a HIGH-CONTRAST fixture (dark opaque texels) or a dark
+      background - white-opaque vs grey-sky is weak. The shader change is written-and-correct.
 
       Two code paths, shared alpha-test logic:
       - *PT (ray_query, the easier half — NO new shader/SBT):* drop `gl_RayFlagsOpaqueEXT`
