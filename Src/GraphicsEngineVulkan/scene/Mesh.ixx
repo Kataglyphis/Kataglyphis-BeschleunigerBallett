@@ -72,7 +72,6 @@ class Mesh
 
     VulkanBuffer vertexBuffer;
     VulkanBuffer indexBuffer;
-    VulkanBuffer objectDescriptionBuffer;
     VulkanBuffer materialIdsBuffer;
     VulkanBuffer materialsBuffer;
 

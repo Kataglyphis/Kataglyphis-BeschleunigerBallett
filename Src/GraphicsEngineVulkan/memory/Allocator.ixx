@@ -16,6 +16,14 @@ class Allocator
       const vk::Instance &instance,
       bool enableBufferDeviceAddress = true);
 
+    // Owns a single VmaAllocator handle, so it is move-only with RAII cleanup -
+    // same ownership model as VulkanBuffer / VulkanImage. Copying would let two
+    // instances both vmaDestroyAllocator the same handle.
+    Allocator(const Allocator &) = delete;
+    Allocator &operator=(const Allocator &) = delete;
+    Allocator(Allocator &&other) noexcept;
+    Allocator &operator=(Allocator &&other) noexcept;
+
     VmaAllocator getVmaAllocator() const { return vmaAllocator; }
 
     void cleanUp();

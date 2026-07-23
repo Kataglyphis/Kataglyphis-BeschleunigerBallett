@@ -25,7 +25,6 @@ void Mesh::cleanUp()
     vulkanBufferManager.cleanUp();
     vertexBuffer.cleanUp();
     indexBuffer.cleanUp();
-    objectDescriptionBuffer.cleanUp();
     materialIdsBuffer.cleanUp();
     materialsBuffer.cleanUp();
 }
@@ -145,9 +144,10 @@ void Mesh::createMaterialIDBuffer(vk::Queue /*transfer_queue*/,
   vk::CommandPool transfer_command_pool,
   const std::vector<unsigned int> &materialIndex)
 {
+    // The material-ID buffer is read as a storage buffer (and via device
+    // address) in the shaders, never bound as an index buffer.
     vk::BufferUsageFlags usage_flags = {};
     usage_flags |= vk::BufferUsageFlagBits::eTransferDst;
-    usage_flags |= vk::BufferUsageFlagBits::eIndexBuffer;
     usage_flags |= vk::BufferUsageFlagBits::eStorageBuffer;
     vk::MemoryPropertyFlags const memory_property_flags = vk::MemoryPropertyFlagBits::eDeviceLocal;
     vk::MemoryAllocateFlags memory_allocate_flags = {};
@@ -173,9 +173,10 @@ void Mesh::createMaterialBuffer(vk::Queue /*transfer_queue*/,
   vk::CommandPool transfer_command_pool,
   const std::vector<ObjMaterial> &materials)
 {
+    // The materials buffer is read as a storage buffer (and via device
+    // address) in the shaders, never bound as an index buffer.
     vk::BufferUsageFlags usage_flags = {};
     usage_flags |= vk::BufferUsageFlagBits::eTransferDst;
-    usage_flags |= vk::BufferUsageFlagBits::eIndexBuffer;
     usage_flags |= vk::BufferUsageFlagBits::eStorageBuffer;
     vk::MemoryPropertyFlags const memory_property_flags = vk::MemoryPropertyFlagBits::eDeviceLocal;
     vk::MemoryAllocateFlags memory_allocate_flags = {};

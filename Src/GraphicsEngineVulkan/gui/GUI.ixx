@@ -46,7 +46,6 @@ class GUI
     std::shared_ptr<VulkanDevice>device{ nullptr };
     Window *window{ nullptr };
     vk::DescriptorPool gui_descriptor_pool{};
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
 
     GUISceneSharedVars guiSceneSharedVars;
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars guiRendererSharedVars;

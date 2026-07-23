@@ -16,6 +16,21 @@ using namespace Kataglyphis;
 
 Allocator::Allocator() = default;
 
+Allocator::Allocator(Allocator &&other) noexcept : vmaAllocator(other.vmaAllocator)
+{
+    other.vmaAllocator = VK_NULL_HANDLE;
+}
+
+Allocator &Allocator::operator=(Allocator &&other) noexcept
+{
+    if (this != &other) {
+        cleanUp();// release any allocator this instance already owns
+        vmaAllocator = other.vmaAllocator;
+        other.vmaAllocator = VK_NULL_HANDLE;
+    }
+    return *this;
+}
+
 Allocator::Allocator(const vk::Device &device,
   const vk::PhysicalDevice &physicalDevice,
   const vk::Instance &instance,
@@ -41,4 +56,4 @@ void Allocator::cleanUp()
     }
 }
 
-Allocator::~Allocator() = default;
+Allocator::~Allocator() { cleanUp(); }

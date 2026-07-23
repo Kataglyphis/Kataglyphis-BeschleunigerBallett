@@ -109,7 +109,6 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     clouds.init(device, graphics_command_pool, sharedRenderDescriptors.getLayout(), vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
     dirShadowMap.init(device, 2048, 2048, MAX_CASCADES, sharedRenderDescriptors.getLayout());
     dirShadowMap.createGraphicsPipeline();
-    pointShadowMap.init(device, 1024, 1024);
 
     std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_post = { postDescriptors.getLayout() };
     postStage.init(device, &vulkanSwapChain, descriptor_set_layouts_post);
@@ -1328,7 +1327,6 @@ void Kataglyphis::VulkanRenderer::cleanUp()
     skyBox.cleanUp();
     clouds.cleanUp();
     dirShadowMap.cleanUp();
-    pointShadowMap.cleanUp();
     postStage.cleanUp();
 
     objectDescriptionBuffer.cleanUp();
@@ -1601,19 +1599,6 @@ void Kataglyphis::VulkanRenderer::create_command_pool()
             std::abort();
         }
     }
-
-    {
-        vk::CommandPoolCreateInfo pool_info{};
-        pool_info.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
-        pool_info.queueFamilyIndex = static_cast<uint32_t>(queue_family_indices.compute_family);
-
-        vk::Result const result =
-          device->getLogicalDevice().createCommandPool(&pool_info, nullptr, &compute_command_pool);
-        if (result != vk::Result::eSuccess) {
-            spdlog::error("Failed to create compute command pool! Error: {}", static_cast<int>(result));
-            std::abort();
-        }
-    }
 }
 
 void Kataglyphis::VulkanRenderer::cleanUpCommandPools()
@@ -1621,10 +1606,6 @@ void Kataglyphis::VulkanRenderer::cleanUpCommandPools()
     if (graphics_command_pool) {
         device->getLogicalDevice().destroyCommandPool(graphics_command_pool);
         graphics_command_pool = nullptr;
-    }
-    if (compute_command_pool) {
-        device->getLogicalDevice().destroyCommandPool(compute_command_pool);
-        compute_command_pool = nullptr;
     }
 }
 

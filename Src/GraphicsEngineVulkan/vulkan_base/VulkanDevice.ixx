@@ -17,7 +17,7 @@ class VulkanDevice
   public:
     VulkanDevice(VulkanInstance *instance, vk::SurfaceKHR *surface);
 
-    vk::PhysicalDeviceProperties getPhysicalDeviceProperties() { return device_properties; };
+    const vk::PhysicalDeviceProperties &getPhysicalDeviceProperties() const { return device_properties; };
     vk::PhysicalDevice getPhysicalDevice() const { return physical_device; };
     vk::Device getLogicalDevice() const { return logical_device; };
     Kataglyphis::VulkanRendererInternals::QueueFamilyIndices getQueueFamilies();
@@ -25,7 +25,7 @@ class VulkanDevice
     vk::Queue getComputeQueue() const { return compute_queue; };
     vk::Queue getPresentationQueue() const { return presentation_queue; };
     Kataglyphis::VulkanRendererInternals::SwapChainDetails getSwapchainDetails();
-    bool supportsHardwareAcceleratedRRT() { return deviceSupportsHardwareAcceleratedRRT; };
+    bool supportsHardwareAcceleratedRRT() const { return deviceSupportsHardwareAcceleratedRRT; };
     bool supportsBufferDeviceAddress() const { return deviceSupportsBufferDeviceAddress; };
     bool supportsDepthClamp() const { return deviceSupportsDepthClamp; };
     vk::DeviceAddress getBufferDeviceAddress(const vk::BufferDeviceAddressInfo &info) const;

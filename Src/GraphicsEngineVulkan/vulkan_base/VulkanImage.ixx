@@ -54,7 +54,6 @@ class VulkanImage
 
   private:
     std::shared_ptr<VulkanDevice>device{ nullptr };
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
 
     vk::Image image{};
     // Backing memory owned by the device's VMA allocator; VK_NULL_HANDLE for

@@ -28,7 +28,6 @@ import kataglyphis.vulkan.rasterizer;
 import kataglyphis.vulkan.deferred_rasterizer;
 import kataglyphis.vulkan.raytracing;
 import kataglyphis.vulkan.cascaded_shadow_map;
-import kataglyphis.vulkan.omni_dir_shadow_map;
 import kataglyphis.vulkan.sky_box;
 import kataglyphis.vulkan.clouds;
 import kataglyphis.vulkan.scene_ubo;
@@ -136,7 +135,6 @@ class VulkanRenderer
     void create_command_pool();
     void cleanUpCommandPools();
     vk::CommandPool graphics_command_pool{};
-    vk::CommandPool compute_command_pool{};
 
     // uniform buffers
     VulkanRendererInternals::GlobalUBO globalUBO{};
@@ -176,7 +174,6 @@ class VulkanRenderer
     Kataglyphis::SkyBox skyBox;
     Kataglyphis::Clouds clouds;
     Kataglyphis::CascadedShadowMap dirShadowMap;
-    Kataglyphis::OmniDirShadowMap pointShadowMap;
 
     // -- synchronization
     uint32_t current_frame{ 0 };

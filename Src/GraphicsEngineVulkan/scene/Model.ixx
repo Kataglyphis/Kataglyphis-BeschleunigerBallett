@@ -35,7 +35,6 @@ class Model
     uint32_t getTextureCount() { return static_cast<uint32_t>(modelTextures.size()); };
     std::vector<Texture> &getTextures() { return modelTextures; }
     std::vector<vk::Sampler> &getTextureSamplers() { return modelTextureSamplers; }
-    std::vector<std::string> getTextureList() { return texture_list; };
     uint32_t getMeshCount() { return static_cast<uint32_t>(meshes.size()); };
     Mesh *getMesh(size_t index) { return &meshes[index]; };
     glm::mat4 getModel() { return model; };
@@ -67,7 +66,6 @@ class Model
     std::vector<Mesh> meshes;
     glm::mat4 model{};
 
-    std::vector<std::string> texture_list;
     std::vector<Texture> modelTextures;
     std::vector<vk::Sampler> modelTextureSamplers;
 };
