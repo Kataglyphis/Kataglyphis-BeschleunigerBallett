@@ -738,13 +738,29 @@ that are *not* exercised that way and should be run periodically:
 - ~~GUI-state round-trip test~~ — **done**;
   `Test/commit/VulkanEngine/guiSceneVarsRoundTripSuite.cpp`, and it is in the
   Windows CI filter.
-- Headless offscreen assertions in the C++ engine — **re-scoped, not done.**
-  "What is thin is the set of assertions" was written when
-  `goldenRenderSuite.cpp` had one or two tests; it now carries six, including
-  `DeferredMatchesForwardRoughly`, `FrustumCullingDropsOffscreenMeshesOnly` and
-  `SecondModelLoadsAndRenders`. What is still genuinely missing is coverage of
-  the *shadow* path beyond the single darkened-pixel ratio, and of the
-  post-processing chain.
+- Headless offscreen assertions in the C++ engine — **re-scoped, largely done.**
+  `goldenRenderSuite.cpp` now carries 22 GPU tests (forward/deferred raster,
+  shadows, frustum culling, RT, path tracing incl. white furnace, textures,
+  mask alpha, double-sided, KHR texture transform, second-model load). What is
+  still genuinely missing is coverage of the *shadow* path beyond the single
+  darkened-pixel ratio, and of the post-processing chain (both need careful
+  oracle design — see `docs/gpu-golden-testing.md` on why the tonemap is hard
+  to isolate).
+
+- **GUI-input coverage — DONE (2026-07-23).** The question "is every possible
+  user input tested?" was NO: the fuzz tests cover only the FILE inputs reached
+  via the GUI (models/paths/shaders/textures), and the golden/integration
+  suites set only a handful of GUI vars. `GoldenRender.GuiInputSweepNeverCrashes`
+  now drives EVERY user-touchable control across its allowed ImGui slider/combo
+  range - all ten cloud params, light dir/colour, shadow cascade count (1..8) /
+  resolution / distance, PT sample/bounce counts, mode (forward/deferred/RT/PT)
+  - in 16 random combinations plus the deterministic all-maximum worst case,
+  asserting no crash / device-lost / validation error (debug build runs
+  validation + ASan). It is a property test (no pixel oracle). Verified that
+  `num_shadow_cascades` 4..8 (slider max 8 > `MAX_CASCADES` 3) is SAFE -
+  `VulkanRenderer.cpp` clamps `active_cascades` before the SceneUBO write. Also
+  added `GltfParseUnit.TriangleFanIsTriangulated...` and the
+  `MeshRangeSlice.*` unit suite.
 
 **Always dump the picture, not just the number** (2026-07-20).
 `GoldenRender.DISABLED_DumpsFrameToPng` writes the captured frame, the same
