@@ -1642,13 +1642,27 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       material name + image bytes differ), so the FIXTURE is ruled out - this is very
       likely a real ENGINE bug in the added-textured-model path, NARROWER than the AS bug
       (only a second added TEXTURED model, seen in PT). Next bisect: a CPU parse test on
-      the HC fixture to check `getMaterials()[0].textureID >= 0` + `getTextureImages().size()`
-      (does EXTRACTION set it?); if extraction is fine, the bug is upload/texture_offset
-      for a second added textured model (trace `loadAdditionalModel` -> `uploadParsed` ->
-      the texture array append + `texture_offset` assignment in
-      `create_object_description_buffer`). The opaque `uv_transform_card` added the same
-      way DID sample its texture, so the variable is MASK-material or RGBA-texture or
-      second-texture-slot - the CPU test bisects the first two.
+      the HC fixture to check textureID extraction. BISECT STEP 2 DONE (2026-07-23):
+      `GltfParseUnit.HighContrastMaskCardExtractsItsTexture` PASSES - CPU extraction is
+      clean (textureID >= 0, one image, cutoff 0.5). So the blocker is GPU-side: the
+      texture extracts but is not sampled in the TRACED path for the added MASK card (it
+      renders diffuse-fallback white). The opaque `uv_transform_card` added the same way
+      DID sample its texture in PT, so the variable is MASK-material or RGBA-texture. NEXT
+      bisect: render mask_card_hc in FORWARD/raster via the harness - black checkerboard
+      there means upload is fine and the bug is PT-sample-specific; white there too means
+      the GPU upload/`createFromMemory` of this RGBA texture failed. Then compare
+      `uploadParsed`'s texture append / `texture_offset` for the added model against the PT
+      `texture_id = texture_offset + textureID` read.
+      BISECT STEP 3 DONE (2026-07-23, via KATAGLYPHIS_MODEL_OVERRIDE + DumpsFrameToPng): in
+      FORWARD/raster mask_card_hc renders BLACK (its texture samples), in PT it renders
+      WHITE (diffuse) - they DIFFER, so the upload is fine and the bug is in the PT kernel's
+      texture sample for this added MASK card (the raster framing on the default camera is
+      imperfect, but black-vs-white is the discriminator). LOCALIZED to: the added model's
+      `texture_offset` vs `textureID` as read in `path_tracing.comp` getObjectHitInfo/
+      candidatePasses (`texture_id = texture_offset + textureID`), likely off for the
+      added model in the traced path specifically. The opaque uv card working suggests the
+      offset is subtly material- or upload-order-dependent. This is a narrow PT-texture bug
+      for a focused cycle; the extraction + raster paths are proven clean.
 
       Two code paths, shared alpha-test logic:
       - *PT (ray_query, the easier half — NO new shader/SBT):* drop `gl_RayFlagsOpaqueEXT`
