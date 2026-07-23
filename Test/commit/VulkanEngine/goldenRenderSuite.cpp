@@ -2234,6 +2234,47 @@ TEST(GoldenRender, GuiInputSweepNeverCrashesOrLosesTheDevice)
     auto &s = harness.gui->getGuiSceneSharedVars();
     auto &r = harness.gui->getGuiRendererSharedVars();
 
+    // Heaviest deterministic state first: every control at its resource-hungriest
+    // extreme AT ONCE - 4096 shadow maps x 8 cascades + clouds at 128 march steps
+    // + path tracing at 64 spp. Uniform random sampling below almost never hits
+    // this all-maximum corner, yet it is the state most likely to exhaust GPU
+    // memory or time out, so it is worth pinning explicitly.
+    if (rt_supported) {
+        r.pathTracing = true;
+        r.raytracing = false;
+    }
+    r.rasterizationMode = RasterizationMode::Deferred;
+    r.pathTracingSamplesPerPixel = 64;
+    r.pathTracingMaxBounces = 16;
+    r.frustum_culling_enabled = false;
+    s.skybox_enabled = true;
+    s.direcional_light_radiance = 50.0F;
+    s.shadows_enabled = true;
+    s.num_shadow_cascades = 8;
+    s.shadow_map_res_index = 3;// 4096
+    s.pcf_radius = 20;
+    s.cascaded_shadow_intensity = 1.0F;
+    s.shadow_distance = 200.0F;
+    s.shadow_resolution_changed = true;
+    s.clouds_enabled = true;
+    s.cloud_speed = 30;
+    s.cloud_num_march_steps = 128;
+    s.cloud_num_march_steps_to_light = 128;
+    s.cloud_scale = 1.0F;
+    s.cloud_density = 1.0F;
+    s.cloud_pillowness = 1.0F;
+    s.cloud_cirrus_effect = 1.0F;
+    s.cloud_powder_effect = true;
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost on the all-maximum GUI state";
+    {
+        uint32_t bw = 0;
+        uint32_t bh = 0;
+        const std::vector<uint8_t> heavy_frame = harness.capture_frame(bw, bh);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost capturing the all-maximum GUI state";
+        ASSERT_FALSE(heavy_frame.empty()) << "Empty frame on the all-maximum GUI state";
+    }
+
     SweepRng rng{ 0x9E3779B97F4A7C15ULL };// fixed seed -> deterministic sweep
 
     constexpr int SWEEP_ITERATIONS = 16;
