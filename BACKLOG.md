@@ -1511,16 +1511,25 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       states - opaque-vs-background with discard ON, opaque-vs-cutoutRGB with discard
       OFF - and an edge/detail-fraction metric stays HIGH either way, so the red state
       PASSES (vacuous, exactly the "swung-pixel counts do not discriminate" lesson).
-      The CORRECT discriminator is the fraction of card-crop pixels matching a UNIFORM
-      background colour: discard ON -> ~50% of the crop is background showing through the
-      holes; discard OFF -> ~0% (holes show the texture's cut-out RGB). This REQUIRES a
-      uniform background behind the card (a solid plane, or clear-to-known-colour, NOT
-      the varying skybox), and knowing the card's opaque + cut-out RGB so "background"
-      is separable from both. Red proof: remove the `discard` in the forward FS (or
-      `shadows/directional_shadow_map.frag`), recompile spv, confirm background-fraction
-      collapses to ~0. Estimate: one golden + a uniform-background rig + 2-3
-      look-and-tune cycles (framing, then the background-match threshold). Shared with
-      1c, which reuses this exact rig in PT/RT mode.
+      **BEST ORACLE — DIFFERENTIAL, needs NO uniform background (2026-07-23, this is the
+      one to build):** render the scene WITHOUT the card (capture A), `addModel` the
+      card (capture B), and measure the fraction of CHANGED pixels *within the bounding
+      box of the changed pixels*. Discard ON -> only the ~32 opaque texels change (holes
+      leave the background = A, unchanged) -> ~50% inside the box. Discard OFF -> the
+      solid card covers everything -> ~100% inside the box. The bounding box
+      auto-locates the card, so this is FRAMING-INDEPENDENT (no exact crop to tune) and
+      needs no uniform background (it compares B against the SAME background in A), which
+      dissolves both the metric trap above and most of the framing risk. Assert e.g.
+      `0.25 < changed_fraction < 0.80`; red proof (remove the forward FS `discard`,
+      recompile spv) pushes it to ~1.0 and fails high. The only real setup is a
+      placement that makes the card VISIBLE and not edge-on: the default camera is at
+      `(0,6,26)` looking down -Z (Camera.cpp ctor), and the card's +Z normal faces it,
+      so `translate({0,~5,~8}) * scale(~12)` in the card's own XY plane is a good first
+      guess - LOOK at a DumpToPng once to confirm it fills a reasonable region and isn't
+      back-face-culled (doubleSided is not honoured yet, increment 2, so the +Z side
+      must face the camera). Estimate: one golden + ~1-2 look-and-tune cycles. 1c reuses
+      this exact rig in PT/RT mode (its differential is even cleaner: background geometry
+      visible through the holes vs occluded).
 
       *1b design note (M, so it starts warm — the shadow pass is a CORE system,
       give it a dedicated cycle):* the CSM shadow pass
