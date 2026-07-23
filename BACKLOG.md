@@ -834,20 +834,38 @@ pass** (all non-`.ixx`, one build+test cycle):
   the chosen depth format; `Rasterizer` single `OFFSCREEN_FORMAT`; deleted the
   dead pre-module `ObjLoader.hpp` + 3 stale IDE-filter refs.
 
-**REMAINING — GPU-path refactors (NOT container-verifiable — golden/device/image
-tests skip without a GPU, so these want a GPU-verified pass, not a blind commit):**
+**GPU verification is now available** (see `[[host-gpu-golden-verification]]`):
+the container-built `commitTestSuite.exe` runs the golden suite on the host
+RX 9070 XT from the repo root. The render-path refactors below are therefore
+verified, not blind — each was confirmed by all 19-21 GPU tests passing.
 
-- Decompose `VulkanRenderer::record_commands` (~170 lines) and
-  `VulkanDevice::create_logical_device` (~290). The latter is delicate: its
-  `pNext` feature chains point at locals, so a careless extraction dangles them
-  (UB at device creation, which the container never exercises).
-- Dedup the `MeshRange` slice loop across both loaders (lives in `uploadParsed`,
-  the GPU upload path) — also wants a shared-module decision for the two
-  `MeshRange` structs (glTF adds `doubleSided`).
-- `VulkanImage::transitionImageLayout` barrier-setup dedup; the repeated
-  active-offscreen-texture ternary + scene-rebuild sequence in `VulkanRenderer`;
-  `DeferredRasterizer` hoist the set-0 bind out of the per-mesh loop (a real
-  command-recording change) and drop its dead fullscreen-pass vertex input.
+**DONE — wave 4 (commit `c43af69b`, GPU-verified):** `VulkanRenderer::record_commands`
+decomposed into `recordRasterPass` + `recordRaytracingOrPathTracing` (verbatim,
+command order preserved); the 5-site offscreen-texture ternary collapsed to
+`activeOffscreenTexture()`.
+
+**DONE — wave 5 (commit `f1032540`, GPU-verified + new test):**
+`VulkanImage::transitionImageLayout` (device overload delegates to the
+command-buffer overload — barrier logic in one place); `DeferredRasterizer`
+hoists the set-0 bind out of the per-mesh loop and drops the lighting pass's
+dead dummy vertex input; new `TriangleFanIsTriangulatedAroundTheHubVertex`
+parse test pins the fan winding.
+
+**REMAINING (smaller / judgement-gated):**
+
+- `VulkanDevice::create_logical_device` (~290 lines): **not decomposing the
+  feature setup.** It is an interlinked `pNext` chain of stack locals feeding
+  `createDevice`; extracting it into returning helpers dangles those pointers,
+  and a dangling `pNext` can pass golden *by luck* (freed stack not yet
+  clobbered). Only the queue-create-info build is safely extractable — modest
+  gain, low priority.
+- Dedup the `MeshRange` slice loop across both loaders (in `uploadParsed`).
+  Wants a shared-module home for the two `MeshRange` structs (glTF adds
+  `doubleSided`) — a small new module, then both loaders import it.
+- The repeated scene-rebuild / AS-rebuild sequence in `VulkanRenderer`
+  (`finishModelLoad`/`addModel`/`updateStateDueToUserInput`) — the four copies
+  differ subtly (TLAS-only vs full AS, which descriptor-update variant), so
+  extraction must parameterise those differences carefully, then golden-verify.
 
 **Owner decision:** `pointShadowMap` allocation was removed as dead; re-add it
 (or the whole omni pass) when the point-light shadow feature is built.
