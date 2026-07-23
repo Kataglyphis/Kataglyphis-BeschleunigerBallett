@@ -92,7 +92,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 
 | Feature | Effort | Notes |
 | --- | --- | --- |
-| ✅ Web deploy (via Sphinx docs site) | S | Done 2026-07-18: demo ships inside the Sphinx site (`docs/source/_webgpu_demo` + `html_extra_path`, page `webgpu_demo.md`), deployed by the existing docs FTP pipeline. Rebuild + recopy when the demo changes |
+| ✅ Web deploy (via Sphinx docs site) | S | Done 2026-07-18: demo ships inside the Sphinx site (`docs/source/_webgpu_demo` + `html_extra_path`, page `webgpu_demo.md`), deployed by the existing docs FTP pipeline. **CI auto-rebuild done 2026-07-23** (`4088fe0a`): `Scripts/Linux/docs-build-web.sh` recompiles the crate to wasm32 + wasm-bindgen and refreshes `_webgpu_demo` before Sphinx on every deploy (pinned wasm-bindgen, best-effort with the committed snapshot as fallback), so the live demo always tracks the current renderer instead of a hand-built snapshot that goes stale |
 | ✅ Responsive canvas | S | Done 2026-07-18: CSS-driven layout, backing store follows clientSize × devicePixelRatio per frame |
 | ✅ Touch controls | M | Done 2026-07-20: one finger orbits, two-finger pinch-zoom; ratio-based (DPI-independent), pinch baseline resets on finger-count change |
 | Model picker UI | S | Query param + dropdown of bundled scenes |
