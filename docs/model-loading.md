@@ -44,6 +44,24 @@ So `adoptParsed` must move every field `uploadParsed` reads, including
 `meshRanges` — miss one and the async path silently loads different geometry
 than the synchronous one.
 
+```mermaid
+flowchart LR
+    subgraph worker["Worker thread (no device)"]
+        P["parseCpu(path)\nflat arrays + meshRanges"]
+    end
+    subgraph main["Render thread (owns device)"]
+        Poll["Scene::pollModelLoad\nwhen worker isFinished()"]
+        A["uploader.adoptParsed(move)\ntakes the arrays, no copy"]
+        U["uploader.uploadParsed()\nbuffers, textures, one Mesh per range"]
+        Add["Scene::add_model\none ObjectDescription per mesh"]
+    end
+    Start["AsyncModelParse.start(path)"] --> P
+    P -->|arrays moved| Poll --> A --> U --> Add
+```
+
+The synchronous `loadModel(path)` is the same minus the thread hop: `parseCpu`
+then `uploadParsed` back-to-back on the calling (device-owning) thread.
+
 ## One file, many meshes
 
 A `Model` holds `std::vector<Mesh>` (`scene/Model.ixx`). A single file becomes a
