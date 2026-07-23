@@ -45,6 +45,7 @@ void GltfLoader::adoptParsed(GltfLoader &&other)
     materials = std::move(other.materials);
     materialIndex = std::move(other.materialIndex);
     textureImages = std::move(other.textureImages);
+    meshRanges = std::move(other.meshRanges);
 }
 
 std::shared_ptr<Model> GltfLoader::uploadParsed()
@@ -76,7 +77,33 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
         model->addTexture(std::move(defaultTexture));
     }
 
-    model->add_new_mesh(device, transfer_queue, command_pool, vertices, indices, materialIndex, materials);
+    // One Mesh per glTF primitive (backlog #10). Each range is that primitive's
+    // slice of the flat arrays; a sub-mesh's indices are re-based to its own
+    // vertex subset. A single-primitive glTF has exactly one range spanning
+    // everything, so this builds one mesh - behaviour-identical to before. Each
+    // mesh shares the full materials array (its materialIndex holds the original
+    // indices); a per-mesh material subset is a later optimisation.
+    if (meshRanges.empty()) {
+        model->add_new_mesh(device, transfer_queue, command_pool, vertices, indices, materialIndex, materials);
+    } else {
+        for (const MeshRange &range : meshRanges) {
+            std::vector<Vertex> subVertices(
+              vertices.begin() + static_cast<std::ptrdiff_t>(range.vertexBase),
+              vertices.begin() + static_cast<std::ptrdiff_t>(range.vertexBase + range.vertexCount));
+
+            std::vector<unsigned int> subIndices;
+            subIndices.reserve(range.indexCount);
+            for (std::size_t i = 0; i < range.indexCount; ++i) {
+                subIndices.push_back(indices[range.indexStart + i] - static_cast<unsigned int>(range.vertexBase));
+            }
+
+            std::vector<unsigned int> subMaterialIndex(
+              materialIndex.begin() + static_cast<std::ptrdiff_t>(range.triStart),
+              materialIndex.begin() + static_cast<std::ptrdiff_t>(range.triStart + range.triCount));
+
+            model->add_new_mesh(device, transfer_queue, command_pool, subVertices, subIndices, subMaterialIndex, materials);
+        }
+    }
     return model;
 }
 
@@ -391,8 +418,20 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
                 : fallbackMaterial;
             // One id per EMITTED triangle - after triangulation, not from the
             // raw index count (which for a strip/fan over-counts by ~3x).
+            const std::size_t triStart = materialIndex.size();
             const std::size_t emittedTriangles = (indices.size() - primIndexStart) / 3;
             materialIndex.insert(materialIndex.end(), emittedTriangles, primitiveMaterial);
+
+            // This primitive's slice of the flat arrays, so uploadParsed can build
+            // it as its own Mesh (backlog #10). The union of all ranges is exactly
+            // the flat arrays, so a single-primitive glTF yields one range and is
+            // behaviour-identical.
+            meshRanges.push_back(GltfLoader::MeshRange{ static_cast<std::size_t>(base),
+              positions.size(),
+              primIndexStart,
+              indices.size() - primIndexStart,
+              triStart,
+              emittedTriangles });
         }
     }
 

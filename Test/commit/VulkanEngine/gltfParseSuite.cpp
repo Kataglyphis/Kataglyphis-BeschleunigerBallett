@@ -320,6 +320,39 @@ TEST(GltfParseUnit, MaskCardFixtureLoadsWithCutoutTextureAndCutoff)
     for (size_t i = 0; i < 8; ++i) { EXPECT_EQ(png[i], png_magic[i]) << "PNG signature byte " << i; }
 }
 
+TEST(GltfParseUnit, MultiPrimitiveGltfRecordsPerPrimitiveMeshRanges)
+{
+    // two_primitives.gltf is ONE mesh with TWO primitives (two materials). The
+    // multi-mesh loader split (backlog #10) builds one Mesh per primitive:
+    // parseCpu records one MeshRange per primitive slicing the flat arrays, and
+    // uploadParsed builds a Mesh from each. This proves the range recording (the
+    // render half - one BLAS geometry per mesh - is a GPU concern). Red without
+    // the split: getMeshRanges() is empty.
+    const auto path = sceneConfig::resolveModelPath("Models/GltfTest/two_primitives.gltf");
+    if (!std::filesystem::exists(path)) { GTEST_SKIP() << "two-primitive fixture not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(path));
+
+    ASSERT_EQ(loader.getMeshRanges().size(), 2U) << "one MeshRange per glTF primitive";
+    EXPECT_EQ(loader.getVertices().size(), 8U) << "two quads = eight vertices";
+    EXPECT_EQ(loader.getIndices().size(), 12U) << "two quads = four triangles";
+
+    const auto &r0 = loader.getMeshRanges()[0];
+    const auto &r1 = loader.getMeshRanges()[1];
+    EXPECT_EQ(r0.vertexBase, 0U);
+    EXPECT_EQ(r0.vertexCount, 4U);
+    EXPECT_EQ(r1.vertexBase, 4U) << "the second primitive's vertices follow the first";
+    EXPECT_EQ(r1.vertexCount, 4U);
+    // The ranges partition the flat arrays exactly.
+    EXPECT_EQ(r0.indexCount + r1.indexCount, loader.getIndices().size());
+    EXPECT_EQ(r0.triCount + r1.triCount, loader.getMaterialIndices().size());
+    // Each primitive keeps its own material (materials 0 and 1).
+    ASSERT_GT(loader.getMaterialIndices().size(), r1.triStart);
+    EXPECT_EQ(loader.getMaterialIndices()[r0.triStart], 0U);
+    EXPECT_EQ(loader.getMaterialIndices()[r1.triStart], 1U);
+}
+
 TEST(GltfParseUnit, ReadsColor0VertexColours)
 {
     // vertex_colored_quad.gltf tags its four corners red/green/blue/white via

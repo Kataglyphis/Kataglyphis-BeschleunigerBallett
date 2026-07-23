@@ -61,6 +61,22 @@ class GltfLoader
     /// extraction without a device.
     const std::vector<std::vector<unsigned char>> &getTextureImages() const { return textureImages; }
 
+    /// One entry per glTF primitive: its slice of the flat vertices/indices/
+    /// materialIndex arrays. `uploadParsed` builds one Mesh per range, so a
+    /// multi-primitive glTF becomes a multi-mesh Model (backlog #10) while parseCpu
+    /// still produces the flat arrays the tests assert on. A single-primitive glTF
+    /// yields one range spanning everything - behaviour-identical to before.
+    struct MeshRange
+    {
+        std::size_t vertexBase;
+        std::size_t vertexCount;
+        std::size_t indexStart;
+        std::size_t indexCount;
+        std::size_t triStart;
+        std::size_t triCount;
+    };
+    const std::vector<MeshRange> &getMeshRanges() const { return meshRanges; }
+
   private:
     std::shared_ptr<VulkanDevice> device;
     vk::Queue transfer_queue;
@@ -73,6 +89,8 @@ class GltfLoader
     std::vector<unsigned int> materialIndex;
     // One encoded image per textured material (see getTextureImages).
     std::vector<std::vector<unsigned char>> textureImages;
+    // One slice per glTF primitive; see MeshRange / getMeshRanges.
+    std::vector<MeshRange> meshRanges;
 };
 
 }// namespace Kataglyphis
