@@ -275,40 +275,7 @@ Kataglyphis::VulkanDevice::~VulkanDevice() = default;
 
 auto Kataglyphis::VulkanDevice::getQueueFamilies() -> Kataglyphis::VulkanRendererInternals::QueueFamilyIndices
 {
-    Kataglyphis::VulkanRendererInternals::QueueFamilyIndices indices{};
-
-    std::vector<vk::QueueFamilyProperties> queue_family_list = physical_device.getQueueFamilyProperties();
-
-    // Go through each queue family and check if it has at least 1 of required
-    // types we need to keep track th eindex by our own
-    uint32_t index = 0;
-    for (const auto &queue_family : queue_family_list) {
-        // first check if queue family has at least 1 queue in that family
-        // Queue can be multiple types defined through bitfield. Need to bitwise AND
-        // with vk::QueueFlagBits to check if has required  type
-        if (queue_family.queueCount > 0 && (queue_family.queueFlags & vk::QueueFlagBits::eGraphics)) {
-            indices.graphics_family = static_cast<int>(index);// if queue family valid, than get index
-        }
-
-        if (queue_family.queueCount > 0 && (queue_family.queueFlags & vk::QueueFlagBits::eCompute)) {
-            indices.compute_family = static_cast<int>(index);
-        }
-
-        // check if queue family suppports presentation
-        vk::Bool32 presentation_support = physical_device.getSurfaceSupportKHR(index, *surface).value;
-        // check if queue is presentation type (can be both graphics and
-        // presentation)
-        if (queue_family.queueCount > 0 && presentation_support) {
-            indices.presentation_family = static_cast<int>(index);
-        }
-
-        // check if queue family indices are in a valid state
-        if (indices.is_valid()) { break; }
-
-        index++;
-    }
-
-    return indices;
+    return getQueueFamilies(physical_device);
 }
 
 void Kataglyphis::VulkanDevice::get_physical_device()

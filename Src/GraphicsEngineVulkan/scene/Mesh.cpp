@@ -98,46 +98,20 @@ void Mesh::createVertexBuffer(vk::Queue /*transfer_queue*/,
   vk::CommandPool transfer_command_pool,
   const std::vector<Vertex> &vertices)
 {
-    vk::BufferUsageFlags usage_flags = {};
-    usage_flags |= vk::BufferUsageFlagBits::eTransferDst;
-    usage_flags |= vk::BufferUsageFlagBits::eVertexBuffer;
-    usage_flags |= vk::BufferUsageFlagBits::eStorageBuffer;
-    vk::MemoryPropertyFlags const memory_property_flags = vk::MemoryPropertyFlagBits::eDeviceLocal;
-    vk::MemoryAllocateFlags memory_allocate_flags = {};
-
-    if (device->supportsBufferDeviceAddress()) {
-        usage_flags |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
-        if (device->supportsHardwareAcceleratedRRT()) {
-            usage_flags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
-        }
-        memory_allocate_flags |= vk::MemoryAllocateFlagBits::eDeviceAddress;
-    }
-
-    vulkanBufferManager.createBufferAndUploadVectorOnDevice(
-      device, transfer_command_pool, vertexBuffer, usage_flags, memory_property_flags, vertices, memory_allocate_flags);
+    uploadDeviceLocalBuffer(transfer_command_pool,
+      vertexBuffer,
+      vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eStorageBuffer,
+      vertices);
 }
 
 void Mesh::createIndexBuffer(vk::Queue /*transfer_queue*/,
   vk::CommandPool transfer_command_pool,
   const std::vector<uint32_t> &indices)
 {
-    vk::BufferUsageFlags usage_flags = {};
-    usage_flags |= vk::BufferUsageFlagBits::eTransferDst;
-    usage_flags |= vk::BufferUsageFlagBits::eIndexBuffer;
-    usage_flags |= vk::BufferUsageFlagBits::eStorageBuffer;
-    vk::MemoryPropertyFlags const memory_property_flags = vk::MemoryPropertyFlagBits::eDeviceLocal;
-    vk::MemoryAllocateFlags memory_allocate_flags = {};
-
-    if (device->supportsBufferDeviceAddress()) {
-        usage_flags |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
-        if (device->supportsHardwareAcceleratedRRT()) {
-            usage_flags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
-        }
-        memory_allocate_flags |= vk::MemoryAllocateFlagBits::eDeviceAddress;
-    }
-
-    vulkanBufferManager.createBufferAndUploadVectorOnDevice(
-      device, transfer_command_pool, indexBuffer, usage_flags, memory_property_flags, indices, memory_allocate_flags);
+    uploadDeviceLocalBuffer(transfer_command_pool,
+      indexBuffer,
+      vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eStorageBuffer,
+      indices);
 }
 
 void Mesh::createMaterialIDBuffer(vk::Queue /*transfer_queue*/,
@@ -146,27 +120,8 @@ void Mesh::createMaterialIDBuffer(vk::Queue /*transfer_queue*/,
 {
     // The material-ID buffer is read as a storage buffer (and via device
     // address) in the shaders, never bound as an index buffer.
-    vk::BufferUsageFlags usage_flags = {};
-    usage_flags |= vk::BufferUsageFlagBits::eTransferDst;
-    usage_flags |= vk::BufferUsageFlagBits::eStorageBuffer;
-    vk::MemoryPropertyFlags const memory_property_flags = vk::MemoryPropertyFlagBits::eDeviceLocal;
-    vk::MemoryAllocateFlags memory_allocate_flags = {};
-
-    if (device->supportsBufferDeviceAddress()) {
-        usage_flags |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
-        if (device->supportsHardwareAcceleratedRRT()) {
-            usage_flags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
-        }
-        memory_allocate_flags |= vk::MemoryAllocateFlagBits::eDeviceAddress;
-    }
-
-    vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
-      transfer_command_pool,
-      materialIdsBuffer,
-      usage_flags,
-      memory_property_flags,
-      materialIndex,
-      memory_allocate_flags);
+    uploadDeviceLocalBuffer(
+      transfer_command_pool, materialIdsBuffer, vk::BufferUsageFlagBits::eStorageBuffer, materialIndex);
 }
 
 void Mesh::createMaterialBuffer(vk::Queue /*transfer_queue*/,
@@ -175,25 +130,5 @@ void Mesh::createMaterialBuffer(vk::Queue /*transfer_queue*/,
 {
     // The materials buffer is read as a storage buffer (and via device
     // address) in the shaders, never bound as an index buffer.
-    vk::BufferUsageFlags usage_flags = {};
-    usage_flags |= vk::BufferUsageFlagBits::eTransferDst;
-    usage_flags |= vk::BufferUsageFlagBits::eStorageBuffer;
-    vk::MemoryPropertyFlags const memory_property_flags = vk::MemoryPropertyFlagBits::eDeviceLocal;
-    vk::MemoryAllocateFlags memory_allocate_flags = {};
-
-    if (device->supportsBufferDeviceAddress()) {
-        usage_flags |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
-        if (device->supportsHardwareAcceleratedRRT()) {
-            usage_flags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
-        }
-        memory_allocate_flags |= vk::MemoryAllocateFlagBits::eDeviceAddress;
-    }
-
-    vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
-      transfer_command_pool,
-      materialsBuffer,
-      usage_flags,
-      memory_property_flags,
-      materials,
-      memory_allocate_flags);
+    uploadDeviceLocalBuffer(transfer_command_pool, materialsBuffer, vk::BufferUsageFlagBits::eStorageBuffer, materials);
 }

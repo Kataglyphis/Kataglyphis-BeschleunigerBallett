@@ -249,6 +249,162 @@ std::vector<unsigned char> extractImageBytes(const cgltf_image *image, const cgl
 
 }// namespace
 
+void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
+  const glm::mat4 &world,
+  const glm::mat3 &normalMatrix,
+  const cgltf_data *data,
+  unsigned int fallbackMaterial)
+{
+    // Triangles, triangle strips and triangle fans are all supported
+    // (strips/fans are triangulated into a list below). Points and
+    // lines are not drawable in this triangle-only renderer, so they
+    // are skipped - but a strip/fan used to be skipped too, silently
+    // dropping whole meshes exported that way.
+    const cgltf_primitive_type primType = primitive->type;
+    if (primType != cgltf_primitive_type_triangles && primType != cgltf_primitive_type_triangle_strip
+        && primType != cgltf_primitive_type_triangle_fan) {
+        return;
+    }
+
+    std::vector<glm::vec3> positions;
+    std::vector<glm::vec3> normals;
+    std::vector<glm::vec2> uvs;
+    std::vector<glm::vec3> colors;
+
+    for (cgltf_size a = 0; a < primitive->attributes_count; ++a) {
+        const cgltf_attribute *attribute = &primitive->attributes[a];
+        switch (attribute->type) {
+        case cgltf_attribute_type_position:
+            readAttribute<3>(attribute->data, positions);
+            break;
+        case cgltf_attribute_type_normal:
+            readAttribute<3>(attribute->data, normals);
+            break;
+        case cgltf_attribute_type_texcoord:
+            if (attribute->index == 0) { readAttribute<2>(attribute->data, uvs); }
+            break;
+        case cgltf_attribute_type_color:
+            // COLOR_0 multiplies the base colour (glTF spec). The file may
+            // store it as vec3 or vec4; cgltf_accessor_read_float hands back
+            // the rgb either way. Absent -> white below, so the shader
+            // multiply is a no-op for the common uncoloured mesh.
+            if (attribute->index == 0) { readAttribute<3>(attribute->data, colors); }
+            break;
+        default:
+            break;
+        }
+    }
+    if (positions.empty()) { return; }
+
+    const auto base = static_cast<unsigned int>(vertices.size());
+    for (std::size_t i = 0; i < positions.size(); ++i) {
+        const glm::vec3 worldPos = glm::vec3(world * glm::vec4(positions[i], 1.0F));
+        // A missing NORMAL used to become a constant (0,1,0), so a
+        // normal-less glTF lit as if every face pointed up. The spec
+        // requires computing flat normals; done below once this
+        // primitive's index list is known. Placeholder for now.
+        const glm::vec3 worldNormal =
+          i < normals.size() ? glm::normalize(normalMatrix * normals[i]) : glm::vec3(0.0F, 1.0F, 0.0F);
+        const glm::vec2 uv = i < uvs.size() ? uvs[i] : glm::vec2(0.0F);
+        const glm::vec3 vcolor = i < colors.size() ? colors[i] : glm::vec3(1.0F);
+        vertices.emplace_back(worldPos, worldNormal, vcolor, uv);
+    }
+
+    // Gather the primitive's local index sequence (from the accessor,
+    // or the implicit 0..N-1 for a non-indexed primitive), then emit a
+    // triangle LIST into the global buffer - triangulating strips and
+    // fans as we go.
+    std::vector<unsigned int> localSeq;
+    if (primitive->indices != nullptr) {
+        const cgltf_accessor *idx = primitive->indices;
+        localSeq.reserve(idx->count);
+        for (cgltf_size i = 0; i < idx->count; ++i) {
+            localSeq.push_back(static_cast<unsigned int>(cgltf_accessor_read_index(idx, i)));
+        }
+    } else {
+        localSeq.reserve(positions.size());
+        for (std::size_t i = 0; i < positions.size(); ++i) {
+            localSeq.push_back(static_cast<unsigned int>(i));
+        }
+    }
+
+    const std::size_t primIndexStart = indices.size();
+    const auto emitTri = [&](unsigned int a, unsigned int b, unsigned int c) {
+        indices.push_back(base + a);
+        indices.push_back(base + b);
+        indices.push_back(base + c);
+    };
+    if (primType == cgltf_primitive_type_triangle_strip) {
+        // Strip: alternate winding each step to keep a consistent
+        // front face (glTF/OpenGL convention).
+        for (std::size_t i = 0; i + 2 < localSeq.size(); ++i) {
+            if ((i & 1U) == 0U) {
+                emitTri(localSeq[i], localSeq[i + 1], localSeq[i + 2]);
+            } else {
+                emitTri(localSeq[i + 1], localSeq[i], localSeq[i + 2]);
+            }
+        }
+    } else if (primType == cgltf_primitive_type_triangle_fan) {
+        // Fan: vertex 0 is shared by every triangle.
+        for (std::size_t i = 1; i + 1 < localSeq.size(); ++i) {
+            emitTri(localSeq[0], localSeq[i], localSeq[i + 1]);
+        }
+    } else {
+        for (std::size_t i = 0; i + 2 < localSeq.size(); i += 3) {
+            emitTri(localSeq[i], localSeq[i + 1], localSeq[i + 2]);
+        }
+    }
+
+    // Flat normals when NORMAL is absent (glTF spec: implementations
+    // MUST compute them). Per-triangle geometric normal from the
+    // already-world-space vertex positions, assigned to each of the
+    // triangle's vertices - the same flat approximation the OBJ path
+    // uses. Only runs for primitives that shipped no normals.
+    if (normals.empty()) {
+        for (std::size_t i = primIndexStart; i + 2 < indices.size(); i += 3) {
+            Vertex &v0 = vertices[indices[i + 0]];
+            Vertex &v1 = vertices[indices[i + 1]];
+            Vertex &v2 = vertices[indices[i + 2]];
+            const glm::vec3 edge1 = v1.position - v0.position;
+            const glm::vec3 edge2 = v2.position - v0.position;
+            const glm::vec3 faceNormal = glm::cross(edge1, edge2);
+            // Degenerate triangle (zero area): leave the up default
+            // rather than emit a NaN from normalizing a zero vector.
+            if (glm::dot(faceNormal, faceNormal) <= 0.0F) { continue; }
+            const glm::vec3 n = glm::normalize(faceNormal);
+            v0.normal = n;
+            v1.normal = n;
+            v2.normal = n;
+        }
+    }
+
+    // One material id per triangle of this primitive (materialIndex is
+    // per-face, like the OBJ path). All of a primitive's triangles share
+    // its material.
+    const unsigned int primitiveMaterial =
+      primitive->material != nullptr
+        ? static_cast<unsigned int>(primitive->material - data->materials)
+        : fallbackMaterial;
+    // One id per EMITTED triangle - after triangulation, not from the
+    // raw index count (which for a strip/fan over-counts by ~3x).
+    const std::size_t triStart = materialIndex.size();
+    const std::size_t emittedTriangles = (indices.size() - primIndexStart) / 3;
+    materialIndex.insert(materialIndex.end(), emittedTriangles, primitiveMaterial);
+
+    // This primitive's slice of the flat arrays, so uploadParsed can build
+    // it as its own Mesh (backlog #10). The union of all ranges is exactly
+    // the flat arrays, so a single-primitive glTF yields one range and is
+    // behaviour-identical.
+    const bool doubleSided = primitive->material != nullptr && primitive->material->double_sided != 0;
+    meshRanges.push_back(GltfLoader::MeshRange{ static_cast<std::size_t>(base),
+      positions.size(),
+      primIndexStart,
+      indices.size() - primIndexStart,
+      triStart,
+      emittedTriangles,
+      doubleSided });
+}
+
 bool GltfLoader::parseCpu(const std::string &modelFile)
 {
     vertices.clear();
@@ -309,155 +465,7 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
         const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(world));
 
         for (cgltf_size p = 0; p < node->mesh->primitives_count; ++p) {
-            const cgltf_primitive *primitive = &node->mesh->primitives[p];
-            // Triangles, triangle strips and triangle fans are all supported
-            // (strips/fans are triangulated into a list below). Points and
-            // lines are not drawable in this triangle-only renderer, so they
-            // are skipped - but a strip/fan used to be skipped too, silently
-            // dropping whole meshes exported that way.
-            const cgltf_primitive_type primType = primitive->type;
-            if (primType != cgltf_primitive_type_triangles && primType != cgltf_primitive_type_triangle_strip
-                && primType != cgltf_primitive_type_triangle_fan) {
-                continue;
-            }
-
-            std::vector<glm::vec3> positions;
-            std::vector<glm::vec3> normals;
-            std::vector<glm::vec2> uvs;
-            std::vector<glm::vec3> colors;
-
-            for (cgltf_size a = 0; a < primitive->attributes_count; ++a) {
-                const cgltf_attribute *attribute = &primitive->attributes[a];
-                switch (attribute->type) {
-                case cgltf_attribute_type_position:
-                    readAttribute<3>(attribute->data, positions);
-                    break;
-                case cgltf_attribute_type_normal:
-                    readAttribute<3>(attribute->data, normals);
-                    break;
-                case cgltf_attribute_type_texcoord:
-                    if (attribute->index == 0) { readAttribute<2>(attribute->data, uvs); }
-                    break;
-                case cgltf_attribute_type_color:
-                    // COLOR_0 multiplies the base colour (glTF spec). The file may
-                    // store it as vec3 or vec4; cgltf_accessor_read_float hands back
-                    // the rgb either way. Absent -> white below, so the shader
-                    // multiply is a no-op for the common uncoloured mesh.
-                    if (attribute->index == 0) { readAttribute<3>(attribute->data, colors); }
-                    break;
-                default:
-                    break;
-                }
-            }
-            if (positions.empty()) { continue; }
-
-            const auto base = static_cast<unsigned int>(vertices.size());
-            for (std::size_t i = 0; i < positions.size(); ++i) {
-                const glm::vec3 worldPos = glm::vec3(world * glm::vec4(positions[i], 1.0F));
-                // A missing NORMAL used to become a constant (0,1,0), so a
-                // normal-less glTF lit as if every face pointed up. The spec
-                // requires computing flat normals; done below once this
-                // primitive's index list is known. Placeholder for now.
-                const glm::vec3 worldNormal =
-                  i < normals.size() ? glm::normalize(normalMatrix * normals[i]) : glm::vec3(0.0F, 1.0F, 0.0F);
-                const glm::vec2 uv = i < uvs.size() ? uvs[i] : glm::vec2(0.0F);
-                const glm::vec3 vcolor = i < colors.size() ? colors[i] : glm::vec3(1.0F);
-                vertices.emplace_back(worldPos, worldNormal, vcolor, uv);
-            }
-
-            // Gather the primitive's local index sequence (from the accessor,
-            // or the implicit 0..N-1 for a non-indexed primitive), then emit a
-            // triangle LIST into the global buffer - triangulating strips and
-            // fans as we go.
-            std::vector<unsigned int> localSeq;
-            if (primitive->indices != nullptr) {
-                const cgltf_accessor *idx = primitive->indices;
-                localSeq.reserve(idx->count);
-                for (cgltf_size i = 0; i < idx->count; ++i) {
-                    localSeq.push_back(static_cast<unsigned int>(cgltf_accessor_read_index(idx, i)));
-                }
-            } else {
-                localSeq.reserve(positions.size());
-                for (std::size_t i = 0; i < positions.size(); ++i) {
-                    localSeq.push_back(static_cast<unsigned int>(i));
-                }
-            }
-
-            const std::size_t primIndexStart = indices.size();
-            const auto emitTri = [&](unsigned int a, unsigned int b, unsigned int c) {
-                indices.push_back(base + a);
-                indices.push_back(base + b);
-                indices.push_back(base + c);
-            };
-            if (primType == cgltf_primitive_type_triangle_strip) {
-                // Strip: alternate winding each step to keep a consistent
-                // front face (glTF/OpenGL convention).
-                for (std::size_t i = 0; i + 2 < localSeq.size(); ++i) {
-                    if ((i & 1U) == 0U) {
-                        emitTri(localSeq[i], localSeq[i + 1], localSeq[i + 2]);
-                    } else {
-                        emitTri(localSeq[i + 1], localSeq[i], localSeq[i + 2]);
-                    }
-                }
-            } else if (primType == cgltf_primitive_type_triangle_fan) {
-                // Fan: vertex 0 is shared by every triangle.
-                for (std::size_t i = 1; i + 1 < localSeq.size(); ++i) {
-                    emitTri(localSeq[0], localSeq[i], localSeq[i + 1]);
-                }
-            } else {
-                for (std::size_t i = 0; i + 2 < localSeq.size(); i += 3) {
-                    emitTri(localSeq[i], localSeq[i + 1], localSeq[i + 2]);
-                }
-            }
-
-            // Flat normals when NORMAL is absent (glTF spec: implementations
-            // MUST compute them). Per-triangle geometric normal from the
-            // already-world-space vertex positions, assigned to each of the
-            // triangle's vertices - the same flat approximation the OBJ path
-            // uses. Only runs for primitives that shipped no normals.
-            if (normals.empty()) {
-                for (std::size_t i = primIndexStart; i + 2 < indices.size(); i += 3) {
-                    Vertex &v0 = vertices[indices[i + 0]];
-                    Vertex &v1 = vertices[indices[i + 1]];
-                    Vertex &v2 = vertices[indices[i + 2]];
-                    const glm::vec3 edge1 = v1.position - v0.position;
-                    const glm::vec3 edge2 = v2.position - v0.position;
-                    const glm::vec3 faceNormal = glm::cross(edge1, edge2);
-                    // Degenerate triangle (zero area): leave the up default
-                    // rather than emit a NaN from normalizing a zero vector.
-                    if (glm::dot(faceNormal, faceNormal) <= 0.0F) { continue; }
-                    const glm::vec3 n = glm::normalize(faceNormal);
-                    v0.normal = n;
-                    v1.normal = n;
-                    v2.normal = n;
-                }
-            }
-
-            // One material id per triangle of this primitive (materialIndex is
-            // per-face, like the OBJ path). All of a primitive's triangles share
-            // its material.
-            const unsigned int primitiveMaterial =
-              primitive->material != nullptr
-                ? static_cast<unsigned int>(primitive->material - data->materials)
-                : fallbackMaterial;
-            // One id per EMITTED triangle - after triangulation, not from the
-            // raw index count (which for a strip/fan over-counts by ~3x).
-            const std::size_t triStart = materialIndex.size();
-            const std::size_t emittedTriangles = (indices.size() - primIndexStart) / 3;
-            materialIndex.insert(materialIndex.end(), emittedTriangles, primitiveMaterial);
-
-            // This primitive's slice of the flat arrays, so uploadParsed can build
-            // it as its own Mesh (backlog #10). The union of all ranges is exactly
-            // the flat arrays, so a single-primitive glTF yields one range and is
-            // behaviour-identical.
-            const bool doubleSided = primitive->material != nullptr && primitive->material->double_sided != 0;
-            meshRanges.push_back(GltfLoader::MeshRange{ static_cast<std::size_t>(base),
-              positions.size(),
-              primIndexStart,
-              indices.size() - primIndexStart,
-              triStart,
-              emittedTriangles,
-              doubleSided });
+            processPrimitive(&node->mesh->primitives[p], world, normalMatrix, data, fallbackMaterial);
         }
     }
 

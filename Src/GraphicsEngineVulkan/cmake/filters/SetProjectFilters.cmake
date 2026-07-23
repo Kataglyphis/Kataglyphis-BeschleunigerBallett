@@ -96,10 +96,7 @@ kataglyphis_append_prefixed_files(
 kataglyphis_append_prefixed_files(
   SCENE_FILTER
   "${PROJECT_INCLUDE_DIR}scene/"
-  ObjMaterial.hpp
-  Model.hpp
-  ObjLoader.hpp
-  Mesh.hpp)
+  ObjMaterial.hpp)
 kataglyphis_append_prefixed_files(
   SCENE_FILTER
   "${PROJECT_SRC_DIR}scene/"

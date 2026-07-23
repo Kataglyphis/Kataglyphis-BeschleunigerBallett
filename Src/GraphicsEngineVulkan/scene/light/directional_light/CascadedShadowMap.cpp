@@ -41,6 +41,10 @@ void CascadedShadowMap::init(std::shared_ptr<VulkanDevice>in_device, uint32_t wi
     cascadeData.resize(numCascades);
 
     vk::Format depthFormat = Kataglyphis::choose_supported_format(device->getPhysicalDevice(), { vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint }, vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+    // Remember it: createRenderPass() and createFramebuffers() must attach the
+    // very same format, and hard-coding eD32Sfloat there silently coupled them
+    // to the head of the preference list above.
+    depth_format = depthFormat;
 
     // Create 2D Texture Array for Cascades
     shadowMapArray = std::make_unique<Texture>();
@@ -78,29 +82,6 @@ std::vector<glm::vec4> frustumCornersWorldSpace(const glm::mat4 &proj, const glm
     return frustumCorners;
 }
 }// namespace
-
-std::vector<glm::vec4> CascadedShadowMap::getFrustumCornersWorldSpace(const glm::mat4& proj, const glm::mat4& view)
-{
-    const auto inv = glm::inverse(proj * view);
-
-    std::vector<glm::vec4> frustumCorners;
-    for (unsigned int x = 0; x < 2; ++x) {
-        for (unsigned int y = 0; y < 2; ++y) {
-            for (unsigned int z = 0; z < 2; ++z) {
-                // X/Y span the NDC cube [-1, 1], but depth does NOT: the engine
-                // is built with GLM_FORCE_DEPTH_ZERO_TO_ONE (Vulkan convention),
-                // so NDC z runs 0..1. Unprojecting from -1 put the near-plane
-                // corners far behind the camera and blew up every cascade's
-                // extent, which is why the sampled shadow term was always 0.
-                const glm::vec4 pt =
-                  inv * glm::vec4((2.0F * x) - 1.0F, (2.0F * y) - 1.0F, static_cast<float>(z), 1.0F);
-                frustumCorners.push_back(pt / pt.w);
-            }
-        }
-    }
-
-    return frustumCorners;
-}
 
 ShadowPushConstants makeShadowPush(const glm::mat4 &modelMatrix, uint32_t cascadeIndex)
 {
@@ -326,7 +307,7 @@ void CascadedShadowMap::updateCascades(const glm::mat4 &cameraView,
 void CascadedShadowMap::createRenderPass()
 {
     vk::AttachmentDescription depthAttachment{};
-    depthAttachment.format = vk::Format::eD32Sfloat;
+    depthAttachment.format = depth_format;
     depthAttachment.samples = vk::SampleCountFlagBits::e1;
     depthAttachment.loadOp = vk::AttachmentLoadOp::eClear;
     depthAttachment.storeOp = vk::AttachmentStoreOp::eStore;
@@ -397,7 +378,7 @@ void CascadedShadowMap::createFramebuffers()
     vk::ImageViewCreateInfo viewInfo{};
     viewInfo.image = shadowMapArray->getImage();
     viewInfo.viewType = vk::ImageViewType::e2DArray;
-    viewInfo.format = vk::Format::eD32Sfloat;
+    viewInfo.format = depth_format;
     viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = 1;

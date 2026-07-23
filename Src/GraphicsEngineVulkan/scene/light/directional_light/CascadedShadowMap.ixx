@@ -116,6 +116,10 @@ class CascadedShadowMap
     uint32_t numCascades{ 0 };
 
     std::unique_ptr<Kataglyphis::Texture> shadowMapArray;
+    // Depth format chosen in init() via choose_supported_format. The render pass
+    // and framebuffers must use exactly this format; defaulted to eD32Sfloat so
+    // nothing changes on current hardware (it is first in the preference list).
+    vk::Format depth_format{ vk::Format::eD32Sfloat };
     vk::RenderPass renderPass;
     std::vector<vk::Framebuffer> framebuffers;
     // Depth image views the framebuffers attach to (one full-cascade-array
@@ -139,6 +143,5 @@ class CascadedShadowMap
     void createRenderPass();
     void createFramebuffers();
     void createDescriptorSetAndPipeline();
-    std::vector<glm::vec4> getFrustumCornersWorldSpace(const glm::mat4& proj, const glm::mat4& view);
 };
 }

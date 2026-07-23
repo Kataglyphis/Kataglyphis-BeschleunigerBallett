@@ -6,6 +6,15 @@ module;
 
 #include <vulkan/vulkan.hpp>
 
+#include <glm/glm.hpp>
+
+// Forward-declared cgltf types used only in the private processPrimitive
+// signature. A private member must be declared in the class here, but the full
+// cgltf definitions belong to the implementation unit (which includes
+// <cgltf.h>); forward declarations keep them out of this module's interface.
+struct cgltf_primitive;
+struct cgltf_data;
+
 export module kataglyphis.vulkan.gltf_loader;
 
 import kataglyphis.vulkan.device;
@@ -82,6 +91,20 @@ class GltfLoader
     const std::vector<MeshRange> &getMeshRanges() const { return meshRanges; }
 
   private:
+    /// Processes a single glTF primitive into the flat arrays: reads its
+    /// attributes, bakes positions/normals into world space, gathers and
+    /// triangulates its index sequence (strip/fan/list), synthesises flat
+    /// normals when NORMAL is absent, fills one material id per emitted
+    /// triangle, and records the primitive's MeshRange. Points/lines and
+    /// position-less primitives are skipped (early return). `world` and
+    /// `normalMatrix` are the owning node's baked transforms; `fallbackMaterial`
+    /// is the neutral-material index used when the primitive references none.
+    void processPrimitive(const cgltf_primitive *primitive,
+      const glm::mat4 &world,
+      const glm::mat3 &normalMatrix,
+      const cgltf_data *data,
+      unsigned int fallbackMaterial);
+
     std::shared_ptr<VulkanDevice> device;
     vk::Queue transfer_queue;
     vk::CommandPool command_pool;

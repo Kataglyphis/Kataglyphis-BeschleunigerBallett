@@ -217,12 +217,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recreateFrameResources(vk
 void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
 {
     vk::AttachmentDescription color_attachment;
-    // HDR: lighting now scales with the GUI light radiance (default 10),
-    // so the lit scene exceeds 1.0 everywhere - a UNORM target clamps it
-    // flat before post's tonemap ever runs (measured: everything at the
-    // 186 ceiling). FP16 keeps the range for Reinhard.
-    constexpr vk::Format offscreen_format = vk::Format::eR16G16B16A16Sfloat;
-    color_attachment.format = offscreen_format;
+    color_attachment.format = OFFSCREEN_FORMAT;
     color_attachment.samples = vk::SampleCountFlagBits::e1;
     color_attachment.loadOp = vk::AttachmentLoadOp::eClear;
     color_attachment.storeOp = vk::AttachmentStoreOp::eStore;
@@ -343,23 +338,18 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
     for (uint32_t index = 0; index < vulkanSwapChain->getNumberSwapChainImages(); index++) {
         auto texture = std::make_unique<Texture>();
         const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-        // HDR: lighting now scales with the GUI light radiance (default 10),
-    // so the lit scene exceeds 1.0 everywhere - a UNORM target clamps it
-    // flat before post's tonemap ever runs (measured: everything at the
-    // 186 ceiling). FP16 keeps the range for Reinhard.
-    constexpr vk::Format offscreen_format = vk::Format::eR16G16B16A16Sfloat;
 
         texture->createImage(device,
           swap_chain_extent.width,
           swap_chain_extent.height,
           1,
-          offscreen_format,
+          OFFSCREEN_FORMAT,
           vk::ImageTiling::eOptimal,
           vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
             | vk::ImageUsageFlagBits::eTransferDst,
           vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-        texture->createImageView(device, offscreen_format, vk::ImageAspectFlagBits::eColor, 1);
+        texture->createImageView(device, OFFSCREEN_FORMAT, vk::ImageAspectFlagBits::eColor, 1);
 
         offscreenTextures[index] = std::move(texture);
     }

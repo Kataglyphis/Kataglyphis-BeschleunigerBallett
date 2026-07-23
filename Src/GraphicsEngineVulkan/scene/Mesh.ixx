@@ -97,5 +97,41 @@ class Mesh
     void createMaterialBuffer(vk::Queue transfer_queue,
       vk::CommandPool transfer_command_pool,
       const std::vector<ObjMaterial> &materials);
+
+    // Shared body of the four create*Buffer uploads: a device-local buffer,
+    // eTransferDst plus the caller's `baseUsage` bit(s), and - when the device
+    // supports it - the buffer-device-address / ray-tracing-input usage and the
+    // matching allocate flag, so the buffer's address can be fetched afterwards.
+    // Each create*Buffer differs only in its target buffer and base usage bit,
+    // so they all funnel through here.
+    template<typename T>
+    void uploadDeviceLocalBuffer(vk::CommandPool transfer_command_pool,
+      VulkanBuffer &targetBuffer,
+      vk::BufferUsageFlags baseUsage,
+      const std::vector<T> &data);
 };
+
+template<typename T>
+inline void Mesh::uploadDeviceLocalBuffer(vk::CommandPool transfer_command_pool,
+  VulkanBuffer &targetBuffer,
+  vk::BufferUsageFlags baseUsage,
+  const std::vector<T> &data)
+{
+    vk::BufferUsageFlags usage_flags = {};
+    usage_flags |= vk::BufferUsageFlagBits::eTransferDst;
+    usage_flags |= baseUsage;
+    vk::MemoryPropertyFlags const memory_property_flags = vk::MemoryPropertyFlagBits::eDeviceLocal;
+    vk::MemoryAllocateFlags memory_allocate_flags = {};
+
+    if (device->supportsBufferDeviceAddress()) {
+        usage_flags |= vk::BufferUsageFlagBits::eShaderDeviceAddress;
+        if (device->supportsHardwareAcceleratedRRT()) {
+            usage_flags |= vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
+        }
+        memory_allocate_flags |= vk::MemoryAllocateFlagBits::eDeviceAddress;
+    }
+
+    vulkanBufferManager.createBufferAndUploadVectorOnDevice(
+      device, transfer_command_pool, targetBuffer, usage_flags, memory_property_flags, data, memory_allocate_flags);
+}
 }// namespace Kataglyphis
