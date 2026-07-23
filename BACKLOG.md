@@ -813,36 +813,44 @@ pass** (all non-`.ixx`, one build+test cycle):
   `[[maybe_unused]] toVkResult`; `Mesh` dead identity-matrix `transpose_transform`
   block; `Mesh` reserved-identifier `__vbm` alias.
 
-**Pending — real, but touch a `.ixx` (need FreshContainer, own cycle):**
+**DONE — wave 2 (commit `76d05179`, `.ixx`-touching, FreshContainer + 119 tests green):**
 
-- `memory/Allocator` is copyable and `~Allocator` does not release — risk of
-  double `vmaDestroyAllocator` / leak; make it move-only + RAII like
-  `VulkanBuffer`/`VulkanImage`. (MED, real safety issue.)
-- Dead members: `Mesh::objectDescriptionBuffer`, `Model::texture_list` (+ its
-  getter), `VulkanImage::commandBufferManager`, `GUI::commandBufferManager`.
-- `VulkanDevice`/`VulkanImage` const-correctness (const getters, return props
-  by const-ref).
-- `Mesh` material-ID + materials buffers carry a stray `eIndexBuffer` usage bit
-  (copy-paste; harmless superset but misleading).
+- `memory/Allocator` is now move-only + RAII (was copyable with a
+  non-releasing destructor — double-`vmaDestroyAllocator` risk). New
+  `allocatorOwnershipSuite` pins the move-only contract at compile time.
+- Removed dead members/resources: `Mesh::objectDescriptionBuffer`,
+  `Model::texture_list` (+ getter), `VulkanImage`/`GUI` `commandBufferManager`,
+  `compute_command_pool`, and the `pointShadowMap` allocation (kept the
+  `OmniDirShadowMap` class as point-light-shadow scaffolding).
+- `VulkanDevice` const getters; stray `eIndexBuffer` bit dropped from the two
+  material storage buffers.
 
-**Pending — owner decision (a feature, not dead code):**
+**DONE — wave 3 (commit `519c2329`, container-verifiable refactors, FreshContainer green):**
 
-- `pointShadowMap`/`OmniDirShadowMap` is `init()`/`cleanUp()`-ed but never
-  recorded or sampled — remove, or finish the omni shadow pass (see the point-
-  light shadow item). `compute_command_pool` is created/destroyed but unused
-  (all compute rides `graphics_command_pool`).
+- `GltfLoader::parseCpu` → private `processPrimitive()` (the parse suites cover
+  the decomposed path); `Mesh::create*Buffer` → one `uploadDeviceLocalBuffer<T>`;
+  `VulkanDevice::getQueueFamilies()` delegates to the physical-device overload;
+  `CascadedShadowMap` drops dead `getFrustumCornersWorldSpace` and stores/reuses
+  the chosen depth format; `Rasterizer` single `OFFSCREEN_FORMAT`; deleted the
+  dead pre-module `ObjLoader.hpp` + 3 stale IDE-filter refs.
 
-**Pending — larger refactors (behaviour-preserving, size them first):**
+**REMAINING — GPU-path refactors (NOT container-verifiable — golden/device/image
+tests skip without a GPU, so these want a GPU-verified pass, not a blind commit):**
 
-- Decompose `VulkanRenderer::record_commands` (~170 lines),
-  `VulkanDevice::create_logical_device` (~290), `GltfLoader::parseCpu` (~215).
-- Dedup: the `MeshRange` slice loop across both loaders; `Mesh::create*Buffer`
-  (four near-identical bodies → one templated `uploadBuffer<T>`);
-  `VulkanDevice::getQueueFamilies` (two ~35-line copies);
-  `VulkanImage::transitionImageLayout` barrier setup; the repeated active-
-  offscreen-texture ternary and scene-rebuild sequence in `VulkanRenderer`.
-- Fragile: `CascadedShadowMap` hardcodes `eD32Sfloat` in three places while
-  `init()` queries it — store and reuse the chosen format.
+- Decompose `VulkanRenderer::record_commands` (~170 lines) and
+  `VulkanDevice::create_logical_device` (~290). The latter is delicate: its
+  `pNext` feature chains point at locals, so a careless extraction dangles them
+  (UB at device creation, which the container never exercises).
+- Dedup the `MeshRange` slice loop across both loaders (lives in `uploadParsed`,
+  the GPU upload path) — also wants a shared-module decision for the two
+  `MeshRange` structs (glTF adds `doubleSided`).
+- `VulkanImage::transitionImageLayout` barrier-setup dedup; the repeated
+  active-offscreen-texture ternary + scene-rebuild sequence in `VulkanRenderer`;
+  `DeferredRasterizer` hoist the set-0 bind out of the per-mesh loop (a real
+  command-recording change) and drop its dead fullscreen-pass vertex input.
+
+**Owner decision:** `pointShadowMap` allocation was removed as dead; re-add it
+(or the whole omni pass) when the point-light shadow feature is built.
 
 ## CI and release gaps
 
