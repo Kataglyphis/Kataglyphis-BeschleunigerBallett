@@ -29,6 +29,7 @@ import kataglyphis.vulkan.obj_material;
 import kataglyphis.vulkan.model;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.file;
+import kataglyphis.vulkan.mesh_range;
 
 using namespace Kataglyphis;
 
@@ -146,22 +147,10 @@ auto ObjLoader::uploadParsed() -> std::shared_ptr<Model>
           device, transfer_queue, command_pool, vertices, indices, materialIndex, this->materials);
     } else {
         for (const MeshRange &range : meshRanges) {
-            std::vector<Vertex> subVertices(
-              vertices.begin() + static_cast<std::ptrdiff_t>(range.vertexBase),
-              vertices.begin() + static_cast<std::ptrdiff_t>(range.vertexBase + range.vertexCount));
-
-            std::vector<unsigned int> subIndices;
-            subIndices.reserve(range.indexCount);
-            for (std::size_t i = 0; i < range.indexCount; ++i) {
-                subIndices.push_back(indices[range.indexStart + i] - static_cast<unsigned int>(range.vertexBase));
-            }
-
-            std::vector<unsigned int> subMaterialIndex(
-              materialIndex.begin() + static_cast<std::ptrdiff_t>(range.triStart),
-              materialIndex.begin() + static_cast<std::ptrdiff_t>(range.triStart + range.triCount));
-
+            // Non-const: Model::add_new_mesh takes the arrays by non-const ref.
+            MeshSlice slice = sliceMeshRange(range, vertices, indices, materialIndex);
             new_model->add_new_mesh(
-              device, transfer_queue, command_pool, subVertices, subIndices, subMaterialIndex, this->materials);
+              device, transfer_queue, command_pool, slice.vertices, slice.indices, slice.materialIndex, this->materials);
         }
     }
     return new_model;
@@ -331,7 +320,7 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
         // its own Mesh. Skip a shape that emitted no geometry (every face fell to
         // the malformed-index guard) so uploadParsed never builds an empty mesh.
         if (vertices.size() > shape_vertex_base) {
-            meshRanges.push_back(ObjLoader::MeshRange{ shape_vertex_base,
+            meshRanges.push_back(MeshRange{ shape_vertex_base,
                                                        vertices.size() - shape_vertex_base,
                                                        shape_index_start,
                                                        indices.size() - shape_index_start,

@@ -22,6 +22,7 @@ module kataglyphis.vulkan.gltf_loader;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.model;
 import kataglyphis.vulkan.texture;
+import kataglyphis.vulkan.mesh_range;
 
 namespace Kataglyphis {
 
@@ -96,22 +97,16 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
         model->add_new_mesh(device, transfer_queue, command_pool, vertices, indices, materialIndex, materials);
     } else {
         for (const MeshRange &range : meshRanges) {
-            std::vector<Vertex> subVertices(
-              vertices.begin() + static_cast<std::ptrdiff_t>(range.vertexBase),
-              vertices.begin() + static_cast<std::ptrdiff_t>(range.vertexBase + range.vertexCount));
-
-            std::vector<unsigned int> subIndices;
-            subIndices.reserve(range.indexCount);
-            for (std::size_t i = 0; i < range.indexCount; ++i) {
-                subIndices.push_back(indices[range.indexStart + i] - static_cast<unsigned int>(range.vertexBase));
-            }
-
-            std::vector<unsigned int> subMaterialIndex(
-              materialIndex.begin() + static_cast<std::ptrdiff_t>(range.triStart),
-              materialIndex.begin() + static_cast<std::ptrdiff_t>(range.triStart + range.triCount));
-
-            model->add_new_mesh(
-              device, transfer_queue, command_pool, subVertices, subIndices, subMaterialIndex, materials, range.doubleSided);
+            // Non-const: Model::add_new_mesh takes the arrays by non-const ref.
+            MeshSlice slice = sliceMeshRange(range, vertices, indices, materialIndex);
+            model->add_new_mesh(device,
+              transfer_queue,
+              command_pool,
+              slice.vertices,
+              slice.indices,
+              slice.materialIndex,
+              materials,
+              range.doubleSided);
         }
     }
     return model;
@@ -396,7 +391,7 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
     // the flat arrays, so a single-primitive glTF yields one range and is
     // behaviour-identical.
     const bool doubleSided = primitive->material != nullptr && primitive->material->double_sided != 0;
-    meshRanges.push_back(GltfLoader::MeshRange{ static_cast<std::size_t>(base),
+    meshRanges.push_back(MeshRange{ static_cast<std::size_t>(base),
       positions.size(),
       primIndexStart,
       indices.size() - primIndexStart,

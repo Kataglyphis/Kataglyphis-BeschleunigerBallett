@@ -11,6 +11,9 @@ import kataglyphis.vulkan.obj_material;
 import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.model;
 import kataglyphis.vulkan.device;
+// Re-exported: MeshRange appears in getMeshRanges()'s return type, so consumers
+// (and the parse tests) that import this module see it without a second import.
+export import kataglyphis.vulkan.mesh_range;
 
 export namespace Kataglyphis {
 class ObjLoader
@@ -73,16 +76,7 @@ class ObjLoader
     /// because loadVertices resets the vertex-dedup map per shape (a vertex shared
     /// across shapes is stored once per shape - pixel-identical geometry). A
     /// single-shape OBJ yields one range spanning everything - behaviour-identical
-    /// to before.
-    struct MeshRange
-    {
-        std::size_t vertexBase;
-        std::size_t vertexCount;
-        std::size_t indexStart;
-        std::size_t indexCount;
-        std::size_t triStart;
-        std::size_t triCount;
-    };
+    /// to before. MeshRange itself is the shared kataglyphis.vulkan.mesh_range type.
     const std::vector<MeshRange> &getMeshRanges() const { return meshRanges; }
 
   private:

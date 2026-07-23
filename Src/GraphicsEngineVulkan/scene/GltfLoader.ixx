@@ -21,6 +21,9 @@ import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.model;
 import kataglyphis.vulkan.obj_material;
 import kataglyphis.vulkan.vertex;
+// Re-exported: MeshRange appears in getMeshRanges()'s return type, so consumers
+// (and the parse tests) that import this module see it without a second import.
+export import kataglyphis.vulkan.mesh_range;
 
 export namespace Kataglyphis {
 
@@ -70,24 +73,11 @@ class GltfLoader
     /// extraction without a device.
     const std::vector<std::vector<unsigned char>> &getTextureImages() const { return textureImages; }
 
-    /// One entry per glTF primitive: its slice of the flat vertices/indices/
-    /// materialIndex arrays. `uploadParsed` builds one Mesh per range, so a
-    /// multi-primitive glTF becomes a multi-mesh Model (backlog #10) while parseCpu
-    /// still produces the flat arrays the tests assert on. A single-primitive glTF
-    /// yields one range spanning everything - behaviour-identical to before.
-    struct MeshRange
-    {
-        std::size_t vertexBase;
-        std::size_t vertexCount;
-        std::size_t indexStart;
-        std::size_t indexCount;
-        std::size_t triStart;
-        std::size_t triCount;
-        // glTF material.doubleSided for this primitive's material; uploadParsed
-        // forwards it to add_new_mesh so the raster pass can disable back-face
-        // culling for this mesh only. false for single-sided / absent material.
-        bool doubleSided;
-    };
+    // One entry per glTF primitive (see the shared kataglyphis.vulkan.mesh_range
+    // module): its slice of the flat vertices/indices/materialIndex arrays.
+    // uploadParsed builds one Mesh per range, so a multi-primitive glTF becomes a
+    // multi-mesh Model (backlog #10) while parseCpu still produces the flat arrays
+    // the tests assert on.
     const std::vector<MeshRange> &getMeshRanges() const { return meshRanges; }
 
   private:
