@@ -308,6 +308,7 @@ ContainerHub (see the rule above), project-specific ones here.
 | `BACKLOG.md` | **All** open work: sized commitments, then unsized ideas and recurring chores |
 | `AGENTS.md` (this file) | How to build/test/run here, invariants, code conventions |
 | `docs/cpp-renderer-improvements.md` | C++ engine change log + verification pattern |
+| `docs/model-loading.md` | Model-loading architecture: the two loaders, async parse/upload split, multi-mesh MeshRange flow |
 | `docs/webgpu-renderer-roadmap.md` | Rust WebGPU renderer status per feature |
 | `docs/shader-sharing.md` | WGSL -> SPIR-V/GLSL pipeline between both renderers |
 | `docs/webgpu-srgb-audit.md` | Colour-space decisions and the one known deviation |
