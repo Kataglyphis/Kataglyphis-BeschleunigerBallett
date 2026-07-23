@@ -1644,9 +1644,12 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       **DEFERRED ALSO DONE**: the G-buffer geometry pass got the same opt-in dynamic
       cull + per-draw setCullMode (`.cpp`-only, no ABI-skew);
       `MaskCardDoubleSidedRendersFromBehindDeferred` confirms the back-facing card
-      reaches the G-buffer (12779px), 17/17 goldens, validation-clean. REMAINING: only
-      the SHADOW pass (a doubleSided caster's shadow - edge case, same per-draw pattern
-      on the CSM pipeline); the design below is the reference. *Original plan:* per-material cull-mode. *Concrete plan
+      reaches the G-buffer (12779px), 17/17 goldens, validation-clean. **SHADOW PASS
+      NEEDS NOTHING**: the CSM pipeline already builds with `setCullMode(eNone)`
+      (`CascadedShadowMap.cpp:644`), so it renders both faces and a doubleSided caster
+      already casts correctly - no back-face culling to disable. So doubleSided is now
+      COMPLETE across every pass (forward + deferred honour it, shadow never culled).
+      The design below is retained as reference. *Original plan:* per-material cull-mode. *Concrete plan
       (2026-07-23): use DYNAMIC cull state, not a second pipeline.* `vkCmdSetCullMode`
       is core Vulkan 1.3 (the engine targets 1.4), so add `VK_DYNAMIC_STATE_CULL_MODE`
       to the raster PipelineBuilder and, per mesh in the draw loop,
