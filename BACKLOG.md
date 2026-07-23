@@ -1633,9 +1633,22 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
         background-fraction metric + the controlled-camera rig that item still needs.
       - ABI: shader-only for PT; the RT half adds a shader file + SBT wiring (no C++
         struct change, so not ABI-skew) but DOES touch `ASManager` geometry flags.
-    - *Increment 2 — doubleSided (S):* per-material cull-mode; the pipeline variant
-      already exists conceptually (RPT ships it). Backface-culled single-sided cards
-      show the visible/back-face difference.
+    - *Increment 2 — doubleSided (S/M):* per-material cull-mode. *Concrete plan
+      (2026-07-23): use DYNAMIC cull state, not a second pipeline.* `vkCmdSetCullMode`
+      is core Vulkan 1.3 (the engine targets 1.4), so add `VK_DYNAMIC_STATE_CULL_MODE`
+      to the raster PipelineBuilder and, per mesh in the draw loop,
+      `vkCmdSetCullMode(cmd, mesh.double_sided ? eNone : eBack)` - no pipeline variant,
+      no per-draw pipeline switch. Per-MESH cull works exactly post-#10 because each
+      glTF mesh is now one primitive = one material (OBJ has no doubleSided concept, so
+      always cull). Plumbing: add `bool doubleSided` to `GltfLoader::MeshRange` (parseCpu
+      reads `cgltf primitive->material->double_sided`), carry it to a new `bool
+      double_sided` on `Mesh` via an `add_new_mesh` param (ABI-skew: Model.ixx +
+      GltfLoader.ixx -> fresh container), draw loop reads `getMesh(k)->double_sided`.
+      Keeps doubleSided OUT of the GPU ObjMaterial struct. Oracle is DETERMINISTIC (raster,
+      not the noisy PT of 1c): reuse the mask_card rig but rotate the card 180deg (back to
+      camera) - INVISIBLE today (culled), VISIBLE once doubleSided is honoured; the
+      differential-in-bbox metric from `MaskCardDiscardsCutoutTexelsVisually` transfers
+      directly, red-proven by forcing single-sided. ~8 files, one fresh build.
     - *Increment 3 — BLEND + sorting (M/L):* sorted transparent pass through the
       blend pipeline above; this is the genuinely L part (back-to-front ordering,
       a second draw list). Defer until a real transparent asset needs it.
