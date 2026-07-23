@@ -2334,3 +2334,60 @@ TEST(GoldenRender, GuiInputSweepNeverCrashesOrLosesTheDevice)
         ASSERT_FALSE(frame.empty()) << "Empty frame for " << desc;
     }
 }
+
+// Swapchain recreation (a resize, or a lost surface) tears down and rebuilds the
+// swapchain, its framebuffers, and every sync object (FrameSync), then must keep
+// rendering the same scene. Nothing else in the suite exercises this path - the
+// tests otherwise render at a fixed size and never recreate - so a recreation
+// bug (dangling fence, stale framebuffer, mis-sized sync arrays) would pass every
+// other test. This drives recreateSwapChain() directly and asserts the frame
+// after recreation still shows the scene (not a black/garbage frame or a lost
+// device). It also covers the FrameSync create-after-cleanUp path.
+TEST(GoldenRender, SwapchainRecreationKeepsRendering)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> before = harness.capture_frame(width, height);
+    ASSERT_FALSE(before.empty());
+    const double before_luma = mean_luminance(before);
+
+    // Rebuild every swapchain / framebuffer / sync resource. The harness window
+    // does not resize, so recreation happens at the same size and must yield an
+    // equivalent frame.
+    harness.renderer->recreateSwapChain();
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost during swapchain recreation.";
+
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost after swapchain recreation.";
+
+    uint32_t width2 = 0;
+    uint32_t height2 = 0;
+    const std::vector<uint8_t> after = harness.capture_frame(width2, height2);
+    ASSERT_FALSE(after.empty());
+    EXPECT_EQ(width, width2);
+    EXPECT_EQ(height, height2);
+
+    // Same scene, same camera, same size: the recreated frame must match the
+    // pre-recreation frame in overall brightness. A black/garbage frame or a
+    // half-torn swapchain would swing the mean luminance far beyond this
+    // (generous) tolerance, which absorbs only the overlay/frame jitter.
+    const double after_luma = mean_luminance(after);
+    EXPECT_NEAR(after_luma, before_luma, 20.0)
+      << "Mean luminance changed too much across swapchain recreation (before=" << before_luma
+      << ", after=" << after_luma << ") - the recreated swapchain is not rendering the same scene.";
+}
