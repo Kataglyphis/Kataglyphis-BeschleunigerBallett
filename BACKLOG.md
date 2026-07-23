@@ -1423,6 +1423,28 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
     + per-mesh OD first (goldens must stay green - still 1 mesh/model so it is a
     no-op), THEN split a loader's primitives into multiple meshes to actually
     exercise it.
+
+    **OBJ PARALLEL — same bug class, NOT turnkey (found 2026-07-23 auditing #10):**
+    the glTF loader now splits primitives into meshes (DONE), but `ObjLoader`
+    still flattens every OBJ shape (`o`/`g` group) into ONE mesh - `loadVertices`
+    loops all `shapes` into a single flat `vertices`/`indices` and `loadModel`
+    calls `add_new_mesh` once (`ObjLoader.cpp:202,129`), exactly the pre-#10 glTF
+    limitation. But the glTF turnkey `MeshRange {vertexBase, vertexCount}` slice
+    does NOT transfer: glTF primitives parse into disjoint contiguous vertex
+    ranges, whereas ObjLoader's `vertices_map` dedup is declared ONCE OUTSIDE the
+    shape loop (`ObjLoader.cpp:186`), so vertices are deduped GLOBALLY - a shape's
+    indices can reference a vertex first emitted by an earlier shape, so shape
+    boundaries are not contiguous ranges. Two clean paths: (a) reset the
+    `vertices_map` per shape → each shape gets its own contiguous block, at the
+    cost of duplicating any vertex shared across distinct shapes (rare between
+    separate objects); (b) per-shape remap table gathering the referenced global
+    vertices into a compact local set. Both are M-effort with real
+    golden-regression risk: (a) changes vertex counts/index values for any
+    multi-shape bundled OBJ, so the GPU goldens rendering those assets shift and
+    must be re-baselined (verify whether the bundled models are single- or
+    multi-shape FIRST). Payoff is lower than glTF's (multi-object OBJ is less
+    common than multi-primitive glTF), so this is queued, not urgent. When done it
+    reuses ALL of #10's downstream (objectIndex/AS/RT-PT already multi-mesh).
 11. **glTF loader gaps** (M) — skinned-node transforms are applied though the spec
     says ignore them (`GltfLoader.cpp:231`); ~~missing `NORMAL` becomes a
     constant `(0,1,0)`~~ **NORMAL fallback DONE (2026-07-22)**: absent normals
