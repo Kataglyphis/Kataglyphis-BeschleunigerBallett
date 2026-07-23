@@ -1636,10 +1636,19 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       sampled in PT even though the same-shaped `uv_transform_card` (opaque, added) DID
       sample its texture. Debug that first (why does an added MASK card get textureID -1 /
       wrong texture_offset in the traced path, when an added opaque card does not?) before
-      the oracle - it may be a real added-model texture-offset bug specific to a second
-      textured model, or the HC fixture's texture failing to extract. The plain
-      `MaskCardFixtureLoads` CPU test covers the ORIGINAL mask_card; add one for the HC
-      fixture to bisect fixture-vs-engine.
+      the oracle. BISECT STEP 1 DONE (2026-07-23): the HC PNG is STRUCTURALLY VALID
+      (decoded: colortype 6 RGBA, alpha checkerboard 32/64 opaque, RGB all-black) and the
+      HC gltf is structurally identical to the golden-tested mask_card.gltf (only the
+      material name + image bytes differ), so the FIXTURE is ruled out - this is very
+      likely a real ENGINE bug in the added-textured-model path, NARROWER than the AS bug
+      (only a second added TEXTURED model, seen in PT). Next bisect: a CPU parse test on
+      the HC fixture to check `getMaterials()[0].textureID >= 0` + `getTextureImages().size()`
+      (does EXTRACTION set it?); if extraction is fine, the bug is upload/texture_offset
+      for a second added textured model (trace `loadAdditionalModel` -> `uploadParsed` ->
+      the texture array append + `texture_offset` assignment in
+      `create_object_description_buffer`). The opaque `uv_transform_card` added the same
+      way DID sample its texture, so the variable is MASK-material or RGBA-texture or
+      second-texture-slot - the CPU test bisects the first two.
 
       Two code paths, shared alpha-test logic:
       - *PT (ray_query, the easier half — NO new shader/SBT):* drop `gl_RayFlagsOpaqueEXT`
