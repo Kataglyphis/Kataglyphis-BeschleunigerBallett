@@ -1654,15 +1654,19 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       `uploadParsed`'s texture append / `texture_offset` for the added model against the PT
       `texture_id = texture_offset + textureID` read.
       BISECT STEP 3 DONE (2026-07-23, via KATAGLYPHIS_MODEL_OVERRIDE + DumpsFrameToPng): in
-      FORWARD/raster mask_card_hc renders BLACK (its texture samples), in PT it renders
-      WHITE (diffuse) - they DIFFER, so the upload is fine and the bug is in the PT kernel's
-      texture sample for this added MASK card (the raster framing on the default camera is
-      imperfect, but black-vs-white is the discriminator). LOCALIZED to: the added model's
-      `texture_offset` vs `textureID` as read in `path_tracing.comp` getObjectHitInfo/
-      candidatePasses (`texture_id = texture_offset + textureID`), likely off for the
-      added model in the traced path specifically. The opaque uv card working suggests the
-      offset is subtly material- or upload-order-dependent. This is a narrow PT-texture bug
-      for a focused cycle; the extraction + raster paths are proven clean.
+      FORWARD/raster mask_card_hc renders BLACK (texture samples), in PT (with the 1c shader)
+      it rendered WHITE. IMPORTANT CORRECTION: the PT white was measured WITH my 1c
+      `candidatePasses` shader, which samples the texture on the CANDIDATE hit
+      (`...EXT(rayQuery, false)`), whereas the opaque uv card that DID sample in PT used the
+      COMMITTED path (`getObjectHitInfo`, `rayQuery, true`). So this is most likely a bug in
+      MY candidate-path sample (all texels' alpha reading as 0 -> every candidate rejected ->
+      card fully transparent -> sky shows through -> "white"), NOT a proven pre-existing
+      engine bug. Extraction + raster + the committed PT texture path (uv card) are all
+      proven clean. TO FINISH 1c: first isolate candidate-vs-committed - add a BLACK-opaque
+      RGBA card via the AddedModel pattern (committed path) and confirm it renders black in
+      PT; if so, the bug is purely in `candidatePasses` (the candidate intersection getters
+      / barycentric UV, e.g. instanceCustomIndex+geometryIndex or the barycentrics may need
+      different handling on a candidate than a committed hit). Then fix candidatePasses.
 
       Two code paths, shared alpha-test logic:
       - *PT (ray_query, the easier half — NO new shader/SBT):* drop `gl_RayFlagsOpaqueEXT`
