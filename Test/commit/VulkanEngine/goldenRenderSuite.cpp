@@ -244,6 +244,9 @@ class ScopedModelOverride
 // A ground plane with a solid 6x6x6 box floating above it - nothing else.
 // Generated deliberately for shadow measurement; see the header of the file.
 constexpr const char *SHADOW_RIG_MODEL = "Models/ShadowTest/shadow_rig.obj";
+// One mesh, two primitives (two materials) - loads as two meshes via the #10
+// multi-mesh loader split.
+constexpr const char *TWO_PRIMITIVE_MODEL = "Models/GltfTest/two_primitives.gltf";
 
 // Points KATAGLYPHIS_GPU_TIMING_JSON at a file for the lifetime of the object,
 // same shape as ScopedModelOverride above. The renderer reads the variable in
@@ -905,6 +908,42 @@ TEST(GoldenRender, SecondModelLoadsAndRenders)
     }
     EXPECT_GT(changed, 500U) << "the second model loaded and was counted, but changed only " << changed
                              << " pixels - it is being drawn somewhere invisible, or not drawn at all";
+}
+
+// The multi-mesh loader split (backlog #10): a two-PRIMITIVE glTF must load as
+// two MESHES, not one flattened mesh. This drives the render half end to end -
+// uploadParsed slicing the flat arrays into two Mesh, the record loops iterating
+// getMeshCount, and the per-mesh object descriptions. The mesh COUNT is the
+// framing-independent proof (pixels depend on the camera); red without the
+// split: two_primitives flattens to one mesh and meshes_total is 1.
+TEST(GoldenRender, MultiPrimitiveGltfLoadsAsMultipleMeshes)
+{
+    SKIP_WITHOUT_GPU();
+
+    const ScopedModelOverride model_override(TWO_PRIMITIVE_MODEL);
+
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    renderer_vars.frustum_culling_enabled = false;// count every mesh, framing aside
+
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost())
+      << "Device lost rendering the two-primitive glTF - the split produced an invalid mesh.";
+
+    EXPECT_EQ(renderer_vars.visibility.meshes_total, 2U)
+      << "the two-primitive glTF must build two meshes (one per primitive), not one flattened mesh";
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+    ASSERT_FALSE(frame.empty()) << "the two-primitive glTF captured no frame";
 }
 
 // The per-pass GPU timings existed only as a number in the GUI header a human
