@@ -1627,6 +1627,19 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       it a solid quad (low). ONE oracle caveat: mask_card's opaque RGB is uniform WHITE,
       so for a crisp signal use a HIGH-CONTRAST fixture (dark opaque texels) or a dark
       background - white-opaque vs grey-sky is weak. The shader change is written-and-correct.
+      **2ND ATTEMPT (2026-07-23) hit a NEW blocker, also reverted:** re-applied the shader +
+      built a high-contrast `mask_card_hc.gltf` (BLACK opaque texels + alpha checkerboard,
+      valid 8x8 RGBA PNG). With the AS fix the added card now traces, BUT it renders SOLID
+      WHITE, not a black checkerboard - i.e. `textureID == -1` (the color path falls back to
+      diffuse/baseColorFactor white) AND `candidatePasses` returns true for everything
+      (untextured MASK passes). So the ADDED MASK card's base-colour texture is not being
+      sampled in PT even though the same-shaped `uv_transform_card` (opaque, added) DID
+      sample its texture. Debug that first (why does an added MASK card get textureID -1 /
+      wrong texture_offset in the traced path, when an added opaque card does not?) before
+      the oracle - it may be a real added-model texture-offset bug specific to a second
+      textured model, or the HC fixture's texture failing to extract. The plain
+      `MaskCardFixtureLoads` CPU test covers the ORIGINAL mask_card; add one for the HC
+      fixture to bisect fixture-vs-engine.
 
       Two code paths, shared alpha-test logic:
       - *PT (ray_query, the easier half — NO new shader/SBT):* drop `gl_RayFlagsOpaqueEXT`
