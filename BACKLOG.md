@@ -1339,9 +1339,13 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
     load-bearing step (`GltfLoader::parseCpu` flattens all primitives, `loadModel:79`
     calls add_new_mesh once → restructure to per-primitive geometry + loop
     add_new_mesh; ripples to the loader API + the GltfParseUnit tests asserting on
-    the flat getVertices/getIndices + the async loader) + one BLAS per mesh in the
-    AS (the RT/PT paths fetch via the instance custom index - the RT/PT half of #10).
-    Original state: `getMeshCount()` returned literal
+    the flat getVertices/getIndices + the async loader). The AS needs NO change -
+    `ASManager::createBLAS` (`:53-70`) already builds one BLAS per MODEL with one
+    GEOMETRY per mesh (it iterates getMeshCount), so it is already multi-mesh-aware;
+    the only RT/PT-half work is the kernel material fetch, which currently uses the
+    instance custom index (= model index = flat mesh index while 1 mesh/model) and
+    would need `sum(prior models' mesh counts) + gl_GeometryIndexEXT` for a
+    multi-mesh model. Original state: `getMeshCount()` returned literal
     `1` and `getMesh()` ignored its index (`Model.ixx:38-39`); `add_new_mesh`
     overwrote (`Model.cpp:47`). Culling is all-or-nothing on one scene-sized AABB
     (`Rasterizer.cpp:122-141`), and there is nothing to attach LOD to.
