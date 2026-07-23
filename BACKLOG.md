@@ -1678,11 +1678,18 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       since deferred cannot blend and would silently cull instead. Confirm intent
       before touching: the deferred 0.1 default may be a deliberate "kill fully
       transparent texels the G-buffer can't blend" guard.)*
-    - *Increment 4 — KHR_texture_transform (S) + texcoord index (M/L, NOT S — corrected
-      2026-07-23):* uv scale/offset uniform and a per-slot uv-set selector — RPT does both
-      via `uv_set_mask`. Cost split re-checked in the C++ engine: *KHR_texture_transform*
-      is the genuinely small half — a per-texture scale/offset (a material-struct field,
-      ABI-skew) applied to the UV in the fragment shaders, no vertex change. *texcoord index*
+    - *Increment 4 — KHR_texture_transform ✅ DONE (2026-07-23) + texcoord index (M/L, NOT S
+      — corrected 2026-07-23):* **KHR_texture_transform DONE**: ObjMaterial gained trailing
+      uv_scale/uv_offset (identity default, scalar-layout-safe), the shared
+      `transform_uv` helper applies `uv*scale+offset` in the forward/deferred/shadow FS,
+      and GltfLoader reads the extension's scale/offset from the base-colour texture
+      (rotation not yet applied). Verified: `ReadsKhrTextureTransformScale` +
+      `MaterialWithoutTextureTransformIsIdentity` CPU tests + `KhrTextureTransformTilesTheTexture`
+      golden (8x8 RGB checkerboard scaled 4x tiles to 32x32, detail 0.552 vs 0.079
+      red-proven), 18/18 goldens, validation-clean. uv scale/offset uniform and a per-slot
+      uv-set selector — RPT does both via `uv_set_mask`. Cost split re-checked in the C++
+      engine: *KHR_texture_transform* is the genuinely small half — a per-texture scale/offset
+      (a material-struct field, ABI-skew) applied to the UV in the fragment shaders, no vertex change. *texcoord index*
       is NOT small: the engine `Vertex` (`scene/Vertex.hpp`, `getVertexInputAttributeDesc`
       returns 4 attributes) carries a SINGLE `texture_coords`, so a second UV set means
       adding `TEXCOORD_1` to the Vertex layout (5th attribute) + every mesh vertex buffer +
