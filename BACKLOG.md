@@ -1247,6 +1247,22 @@ cleanUp+recreate pair at the four scene-changed sites.
   `FrameSync` (fences/semaphores/frame index), `SwapchainTarget`
   (swapchain + framebuffers + recreation), a stage registry so adding a
   pass does not mean editing the renderer.
+  - **FrameSync — concrete extraction plan (scoped 2026-07-23):** the state is
+    `current_frame`, `image_available` + `in_flight_fences` (sized per
+    frame-in-flight / `MAX_FRAME_DRAWS`), and `render_finished_by_image` +
+    `images_in_flight_fences` (sized per SWAPCHAIN IMAGE). **The per-image vs
+    per-frame split is load-bearing and the whole reason to be careful:**
+    render-finished is per-image (a per-frame render-finished semaphore can be
+    waited on before it is signalled across a swapchain recreate). A `FrameSync`
+    class owns these five members + `MAX_FRAME_DRAWS`, with
+    `create(device, image_count)` / `cleanUp()` mirroring today's exact sizing,
+    `waitForCurrentFrame()`, `advance()`, and handle accessors for the
+    acquire/submit/present path; `drawFrame` keeps its acquire→submit→present
+    flow verbatim but reads handles from the instance. Do NOT collapse
+    `render_finished_by_image` to per-frame. GPU-verifiable: sync mistakes
+    surface as validation errors / device hangs — run all 22 golden tests on the
+    RX 9070 XT (`docs/gpu-golden-testing.md`). Touches `VulkanRenderer.ixx` →
+    FreshContainer.
 - **Device-lost teardown is special-cased in `App.cpp`** (scene/GUI
   cleanup is skipped) — a symptom of ownership living in the wrong place.
   Full RAII up the stack would remove the special case entirely.
