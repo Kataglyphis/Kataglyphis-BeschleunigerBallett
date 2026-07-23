@@ -1653,20 +1653,24 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       the GPU upload/`createFromMemory` of this RGBA texture failed. Then compare
       `uploadParsed`'s texture append / `texture_offset` for the added model against the PT
       `texture_id = texture_offset + textureID` read.
-      BISECT STEP 3 DONE (2026-07-23, via KATAGLYPHIS_MODEL_OVERRIDE + DumpsFrameToPng): in
-      FORWARD/raster mask_card_hc renders BLACK (texture samples), in PT (with the 1c shader)
-      it rendered WHITE. IMPORTANT CORRECTION: the PT white was measured WITH my 1c
-      `candidatePasses` shader, which samples the texture on the CANDIDATE hit
-      (`...EXT(rayQuery, false)`), whereas the opaque uv card that DID sample in PT used the
-      COMMITTED path (`getObjectHitInfo`, `rayQuery, true`). So this is most likely a bug in
-      MY candidate-path sample (all texels' alpha reading as 0 -> every candidate rejected ->
-      card fully transparent -> sky shows through -> "white"), NOT a proven pre-existing
-      engine bug. Extraction + raster + the committed PT texture path (uv card) are all
-      proven clean. TO FINISH 1c: first isolate candidate-vs-committed - add a BLACK-opaque
-      RGBA card via the AddedModel pattern (committed path) and confirm it renders black in
-      PT; if so, the bug is purely in `candidatePasses` (the candidate intersection getters
-      / barycentric UV, e.g. instanceCustomIndex+geometryIndex or the barycentrics may need
-      different handling on a candidate than a committed hit). Then fix candidatePasses.
+      CLEAN SUMMARY (2026-07-23, superseding my earlier flip-flopping notes above - the
+      raster bisect was INCONCLUSIVE, default-camera framing on the 1x1 card; disregard the
+      "raster renders black" and "likely candidatePasses" claims):
+      - PROVEN: the CPU parse sets `textureID >= 0` for mask_card_hc
+        (`GltfParseUnit.HighContrastMaskCardExtractsItsTexture` passes), and the added
+        OPAQUE uv_transform_card samples its texture correctly in PT
+        (`AddedModelAppearsInPathTracing`, committed path).
+      - SYMPTOM: with the mask card added in PT the card renders SOLID WHITE (not
+        transparent) = the diffuse fallback, i.e. the PT shader reads `textureID` as -1 for
+        the added card even though the CPU material has it >= 0. A CPU<->GPU mismatch for the
+        ADDED textured model in the traced path (upload or the traced material/texture-offset
+        read), NOT a shader-logic bug I can pin by inspection.
+      - NEEDS GPU DEBUG (RenderDoc / shader printf): dump the actual GPU ObjMaterial
+        `textureID` + `texture_offset` for the added card as the PT kernel reads them, vs
+        what the raster path reads. Extraction is clean; the mismatch is upload- or
+        descriptor-side for a runtime-added textured model under RT/PT. Possibly related to
+        the addModel path (which the AS fix just touched) not fully re-flattening the
+        material/texture arrays the RT descriptors read.
 
       Two code paths, shared alpha-test logic:
       - *PT (ray_query, the easier half — NO new shader/SBT):* drop `gl_RayFlagsOpaqueEXT`
