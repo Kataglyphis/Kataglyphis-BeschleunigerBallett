@@ -18,6 +18,7 @@ import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.descriptor_set_group;
 import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.frame_sync;
 import kataglyphis.vulkan.global_ubo;
 import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.gui;
@@ -197,12 +198,11 @@ class VulkanRenderer
     Kataglyphis::CascadedShadowMap dirShadowMap;
 
     // -- synchronization
-    uint32_t current_frame{ 0 };
-    uint32_t frame_sync_count{ 1 };
-    std::vector<vk::Semaphore> image_available;
-    std::vector<vk::Semaphore> render_finished_by_image;
-    std::vector<vk::Fence> in_flight_fences;
-    std::vector<vk::Fence> images_in_flight_fences;
+    // All frame-sync primitives (current_frame, frame_sync_count, the per-frame
+    // image_available/in_flight_fences and the per-swapchain-image
+    // render_finished_by_image/images_in_flight_fences) live in FrameSync; see
+    // kataglyphis.vulkan.frame_sync for why the sizing split is load-bearing.
+    FrameSync frameSync;
     void createSynchronization();
     void cleanUpSync();
 

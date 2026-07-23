@@ -406,26 +406,27 @@ void Kataglyphis::VulkanRenderer::drawFrame()
         end_imgui_frame_if_needed();
     };
 
-    if (frame_sync_count == 0) {
+    if (frameSync.frameSyncCount() == 0) {
         spdlog::error("No synchronization frames available; skipping draw frame.");
         end_imgui_frame_if_needed();
         return;
     }
 
     if (checkChangedFramebufferSize()) {
-        if (frame_sync_count > 0 && !in_flight_fences.empty()) {
+        if (frameSync.frameSyncCount() > 0 && !frameSync.inFlightFencesEmpty()) {
             recreateSwapChain();
         }
     }
 
-    if (current_frame >= in_flight_fences.size() || current_frame >= image_available.size()) {
-        spdlog::error(fmt::format("Frame synchronization index out of range: {}", current_frame));
+    if (frameSync.currentFrame() >= frameSync.inFlightFenceCount()
+        || frameSync.currentFrame() >= frameSync.imageAvailableCount()) {
+        spdlog::error(fmt::format("Frame synchronization index out of range: {}", frameSync.currentFrame()));
         end_imgui_frame_if_needed();
         return;
     }
 
-    if (!in_flight_fences[current_frame] || !image_available[current_frame]) {
-        spdlog::error(fmt::format("Synchronization handles are invalid for frame {}.", current_frame));
+    if (!frameSync.inFlightFence() || !frameSync.imageAvailableSemaphore()) {
+        spdlog::error(fmt::format("Synchronization handles are invalid for frame {}.", frameSync.currentFrame()));
         if (window != nullptr && window->get_window() != nullptr) {
             glfwSetWindowShouldClose(window->get_window(), GLFW_TRUE);
         }
@@ -434,7 +435,7 @@ void Kataglyphis::VulkanRenderer::drawFrame()
     }
 
     vk::Result result = device->getLogicalDevice().waitForFences(
-      1, &in_flight_fences[current_frame], VK_TRUE, std::numeric_limits<uint64_t>::max());
+      1, &frameSync.inFlightFence(), VK_TRUE, std::numeric_limits<uint64_t>::max());
     if (result != vk::Result::eSuccess) {
         abort_frame_with_fatal_error("Failed to wait for fences!", result);
         return;
@@ -442,7 +443,8 @@ void Kataglyphis::VulkanRenderer::drawFrame()
 
     uint32_t image_index = 0;
     std::tie(result, image_index) = device->getLogicalDevice().acquireNextImageKHR(
-      vulkanSwapChain.getSwapChain(), std::numeric_limits<uint64_t>::max(), image_available[current_frame], nullptr);
+      vulkanSwapChain.getSwapChain(), std::numeric_limits<uint64_t>::max(), frameSync.imageAvailableSemaphore(),
+      nullptr);
 
     if (result == vk::Result::eErrorOutOfDateKHR) {
         end_imgui_frame_if_needed();
@@ -458,21 +460,21 @@ void Kataglyphis::VulkanRenderer::drawFrame()
         return;
     }
 
-    if (image_index >= images_in_flight_fences.size() || image_index >= command_buffers.size()) {
+    if (image_index >= frameSync.imagesInFlightFenceCount() || image_index >= command_buffers.size()) {
         spdlog::error(fmt::format("Swapchain image index out of range: {}", image_index));
         end_imgui_frame_if_needed();
         return;
     }
 
-    if (image_index >= render_finished_by_image.size() || !render_finished_by_image[image_index]) {
+    if (image_index >= frameSync.renderFinishedCount() || !frameSync.renderFinishedSemaphore(image_index)) {
         spdlog::error(fmt::format("Render-finished semaphore missing for swapchain image {}.", image_index));
         end_imgui_frame_if_needed();
         return;
     }
 
-    if (images_in_flight_fences[image_index]) {
-        result =
-          device->getLogicalDevice().waitForFences(1, &images_in_flight_fences[image_index], VK_TRUE, UINT64_MAX);
+    if (frameSync.imageInFlightFence(image_index)) {
+        result = device->getLogicalDevice().waitForFences(
+          1, &frameSync.imageInFlightFence(image_index), VK_TRUE, UINT64_MAX);
         if (result != vk::Result::eSuccess) {
             abort_frame_with_fatal_error("Failed to wait for image in-flight fence!", result);
             return;
@@ -484,7 +486,7 @@ void Kataglyphis::VulkanRenderer::drawFrame()
     // never has to wait on the GPU.
     readGpuTimings(image_index);
 
-    images_in_flight_fences[image_index] = in_flight_fences[current_frame];
+    frameSync.imageInFlightFence(image_index) = frameSync.inFlightFence();
 
     result = command_buffers[image_index].reset(vk::CommandBufferResetFlags{});
     if (result != vk::Result::eSuccess) {
@@ -524,7 +526,7 @@ void Kataglyphis::VulkanRenderer::drawFrame()
 
     vk::SubmitInfo submit_info{};
     submit_info.waitSemaphoreCount = 1;
-    submit_info.pWaitSemaphores = &image_available[current_frame];
+    submit_info.pWaitSemaphores = &frameSync.imageAvailableSemaphore();
 
     vk::PipelineStageFlags const wait_stages = { vk::PipelineStageFlagBits::eColorAttachmentOutput };
 
@@ -533,19 +535,19 @@ void Kataglyphis::VulkanRenderer::drawFrame()
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &command_buffers[image_index];
     submit_info.signalSemaphoreCount = 1;
-    submit_info.pSignalSemaphores = &render_finished_by_image[image_index];
+    submit_info.pSignalSemaphores = &frameSync.renderFinishedSemaphore(image_index);
 
-    result = device->getLogicalDevice().resetFences(1, &in_flight_fences[current_frame]);
+    result = device->getLogicalDevice().resetFences(1, &frameSync.inFlightFence());
     if (result != vk::Result::eSuccess) {
         abort_frame_with_fatal_error("Failed to reset fences!", result);
         return;
     }
 
-    result = device->getGraphicsQueue().submit(1, &submit_info, in_flight_fences[current_frame]);
+    result = device->getGraphicsQueue().submit(1, &submit_info, frameSync.inFlightFence());
     if (result != vk::Result::eSuccess) {
         spdlog::error(
           fmt::format("Queue submit context: frame={}, imageIndex={}, renderMode={}, supportsRRT={}, cmdBufferIndex={}",
-            current_frame,
+            frameSync.currentFrame(),
             image_index,
             render_mode,
             raytracing_available,
@@ -556,11 +558,11 @@ void Kataglyphis::VulkanRenderer::drawFrame()
 
     // A capture recorded into this command buffer completes when this frame's
     // in-flight fence signals; takeCapturedFrame() waits on exactly that.
-    if (capture_pending) { capture_fence = in_flight_fences[current_frame]; }
+    if (capture_pending) { capture_fence = frameSync.inFlightFence(); }
 
     vk::PresentInfoKHR present_info{};
     present_info.waitSemaphoreCount = 1;
-    present_info.pWaitSemaphores = &render_finished_by_image[image_index];
+    present_info.pWaitSemaphores = &frameSync.renderFinishedSemaphore(image_index);
     present_info.swapchainCount = 1;
     const vk::SwapchainKHR swapchain = vulkanSwapChain.getSwapChain();
     present_info.pSwapchains = &swapchain;
@@ -575,7 +577,7 @@ void Kataglyphis::VulkanRenderer::drawFrame()
         return;
     }
 
-    current_frame = (current_frame + 1) % frame_sync_count;
+    frameSync.advanceFrame();
 }
 
 bool Kataglyphis::VulkanRenderer::checkChangedFramebufferSize()
@@ -1462,27 +1464,7 @@ void Kataglyphis::VulkanRenderer::createPathTracingAccumulationResources()
     pathTracingAccumulatedFrames = 0;
 }
 
-void Kataglyphis::VulkanRenderer::cleanUpSync()
-{
-    // Iterate each vector on its own: after a partial createSynchronization
-    // failure their lengths can differ, and a shared loop bound would leak
-    // whatever the longer vector still holds.
-    for (vk::Semaphore semaphore : render_finished_by_image) {
-        if (semaphore) { device->getLogicalDevice().destroySemaphore(semaphore); }
-    }
-    render_finished_by_image.clear();
-
-    for (vk::Semaphore semaphore : image_available) {
-        if (semaphore) { device->getLogicalDevice().destroySemaphore(semaphore); }
-    }
-    image_available.clear();
-
-    for (vk::Fence fence : in_flight_fences) {
-        if (fence) { device->getLogicalDevice().destroyFence(fence); }
-    }
-    in_flight_fences.clear();
-    images_in_flight_fences.clear();
-}
+void Kataglyphis::VulkanRenderer::cleanUpSync() { frameSync.cleanUp(device->getLogicalDevice()); }
 
 void Kataglyphis::VulkanRenderer::rebuildObjectDescriptions()
 {
@@ -1651,65 +1633,7 @@ void Kataglyphis::VulkanRenderer::create_command_buffers()
 
 void Kataglyphis::VulkanRenderer::createSynchronization()
 {
-    frame_sync_count = std::min<uint32_t>(
-      static_cast<uint32_t>(Kataglyphis::MAX_FRAME_DRAWS), vulkanSwapChain.getNumberSwapChainImages());
-
-    cleanUpSync();
-
-    image_available.resize(frame_sync_count);
-    render_finished_by_image.resize(vulkanSwapChain.getNumberSwapChainImages());
-    in_flight_fences.resize(frame_sync_count);
-    images_in_flight_fences.resize(vulkanSwapChain.getNumberSwapChainImages());
-
-    vk::SemaphoreCreateInfo semaphore_create_info{};
-
-    vk::FenceCreateInfo fence_create_info{};
-    fence_create_info.flags = vk::FenceCreateFlagBits::eSignaled;
-
-    for (uint32_t i = 0; i < frame_sync_count; i++) {
-        auto image_available_result_value = device->getLogicalDevice().createSemaphore(semaphore_create_info);
-        auto image_available_result = image_available_result_value.result;
-        auto image_available_handle = image_available_result_value.value;
-        auto in_flight_fence_result_value = device->getLogicalDevice().createFence(fence_create_info);
-        auto in_flight_fence_result = in_flight_fence_result_value.result;
-        auto in_flight_fence_handle = in_flight_fence_result_value.value;
-
-        if (image_available_result != vk::Result::eSuccess || in_flight_fence_result != vk::Result::eSuccess
-            || !image_available_handle || !in_flight_fence_handle) {
-            spdlog::error(
-              fmt::format("Failed to create synchronization objects for frame {} (imageAvailable={}, fence={}).",
-                i,
-                static_cast<int>(image_available_result),
-                static_cast<int>(in_flight_fence_result)));
-            frame_sync_count = 0;
-            return;
-        }
-
-        image_available[i] = image_available_handle;
-        in_flight_fences[i] = in_flight_fence_handle;
-    }
-
-    for (uint32_t image = 0; image < vulkanSwapChain.getNumberSwapChainImages(); ++image) {
-        auto render_finished_result_value = device->getLogicalDevice().createSemaphore(semaphore_create_info);
-        auto render_finished_result = render_finished_result_value.result;
-        auto render_finished_handle = render_finished_result_value.value;
-
-        if (render_finished_result != vk::Result::eSuccess || !render_finished_handle) {
-            spdlog::error(fmt::format("Failed to create render-finished semaphore for swapchain image {} ({}).",
-              image,
-              static_cast<int>(render_finished_result)));
-            frame_sync_count = 0;
-            return;
-        }
-
-        render_finished_by_image[image] = render_finished_handle;
-    }
-
-    for (uint32_t image = 0; image < vulkanSwapChain.getNumberSwapChainImages(); ++image) {
-        images_in_flight_fences[image] = nullptr;
-    }
-
-    current_frame = 0;
+    frameSync.create(device->getLogicalDevice(), vulkanSwapChain.getNumberSwapChainImages());
 }
 
 void Kataglyphis::VulkanRenderer::create_uniform_buffers()
