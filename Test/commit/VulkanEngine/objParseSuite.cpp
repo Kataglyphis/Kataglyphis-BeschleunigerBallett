@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <filesystem>
 #include <string>
 #include <chrono>
@@ -85,6 +86,70 @@ TEST(ObjParseUnit, UntexturedMtlMaterialsRouteToTheDiffuseFallback)
         EXPECT_EQ(material.get_textureID(), -1)
           << "a material without map_Kd must route to the diffuse fallback";
     }
+}
+
+TEST(ObjParseUnit, MultiShapeObjRecordsPerShapeMeshRanges)
+{
+    // The OBJ analog of the glTF primitive split (#10): each OBJ shape (`o`/`g`
+    // group) becomes its own MeshRange so uploadParsed builds one Mesh per shape.
+    // dinosaurs.obj carries three `o` groups. The flat getters are unchanged (the
+    // tests above still hold) - the ranges just partition them. Red proof is
+    // structural: without the per-shape recording in loadVertices, getMeshRanges()
+    // is empty and the > 1 assertion fails.
+    const std::string dino = sceneConfig::resolveModelPath("Models/Dinosaurs/dinosaurs.obj");
+    if (!std::filesystem::exists(dino)) { GTEST_SKIP() << "test model not present"; }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu(dino));
+
+    const auto &ranges = loader.getMeshRanges();
+    EXPECT_GT(ranges.size(), 1U) << "a multi-shape OBJ must split into more than one mesh";
+
+    // The ranges must tile the flat arrays contiguously with no gap or overlap:
+    // uploadParsed slices [vertexBase, vertexBase+vertexCount) out of the flat
+    // vertices and re-bases each shape's indices by -vertexBase, which is only
+    // valid if a shape's indices never reach outside its own vertex block (the
+    // per-shape dedup is what guarantees that).
+    std::size_t vsum = 0;
+    std::size_t isum = 0;
+    std::size_t tsum = 0;
+    for (const auto &r : ranges) {
+        EXPECT_EQ(r.vertexBase, vsum) << "vertex blocks must be contiguous";
+        EXPECT_EQ(r.indexStart, isum) << "index blocks must be contiguous";
+        EXPECT_EQ(r.triStart, tsum) << "material-index blocks must be contiguous";
+        EXPECT_GT(r.vertexCount, 0U);
+        EXPECT_EQ(r.indexCount % 3U, 0U) << "each shape's indices form whole triangles";
+        for (std::size_t i = 0; i < r.indexCount; ++i) {
+            const unsigned int idx = loader.getIndices()[r.indexStart + i];
+            EXPECT_GE(static_cast<std::size_t>(idx), r.vertexBase);
+            EXPECT_LT(static_cast<std::size_t>(idx), r.vertexBase + r.vertexCount)
+              << "a shape index escapes its own vertex block - the slice re-base would corrupt it";
+        }
+        vsum += r.vertexCount;
+        isum += r.indexCount;
+        tsum += r.triCount;
+    }
+    EXPECT_EQ(vsum, loader.getVertices().size()) << "ranges must cover every vertex";
+    EXPECT_EQ(isum, loader.getIndices().size()) << "ranges must cover every index";
+    EXPECT_EQ(tsum, loader.getMaterialIndices().size()) << "ranges must cover every face material";
+}
+
+TEST(ObjParseUnit, SingleShapeObjIsOneMeshRangeSpanningEverything)
+{
+    // The safe-by-default half: a single-object OBJ yields exactly one range over
+    // the whole model, so uploadParsed builds the same single mesh it always did.
+    if (!std::filesystem::exists(test_model())) { GTEST_SKIP() << "test model not present"; }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu(test_model()));
+
+    const auto &ranges = loader.getMeshRanges();
+    ASSERT_EQ(ranges.size(), 1U) << "shadow_rig.obj is a single shape -> one mesh, as before";
+    EXPECT_EQ(ranges[0].vertexBase, 0U);
+    EXPECT_EQ(ranges[0].vertexCount, loader.getVertices().size());
+    EXPECT_EQ(ranges[0].indexStart, 0U);
+    EXPECT_EQ(ranges[0].indexCount, loader.getIndices().size());
+    EXPECT_EQ(ranges[0].triCount, loader.getMaterialIndices().size());
 }
 
 TEST(ModelPickerUnit, GltfModelsAppearInTheAvailableList)

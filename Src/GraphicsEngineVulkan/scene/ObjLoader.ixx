@@ -53,6 +53,7 @@ class ObjLoader
         materialIndex = std::move(other.materialIndex);
         textures = std::move(other.textures);
         textureNamesFromLastParse = std::move(other.textureNamesFromLastParse);
+        meshRanges = std::move(other.meshRanges);
     }
 
     /// Results of the last parseCpu / loadModel. Exposed so a worker can hand
@@ -62,6 +63,27 @@ class ObjLoader
     const std::vector<ObjMaterial> &getMaterials() const { return materials; }
     const std::vector<unsigned int> &getMaterialIndices() const { return materialIndex; }
     const std::vector<std::string> &getTextureNames() const { return textures; }
+
+    /// One entry per OBJ shape (`o`/`g` group): its slice of the flat vertices/
+    /// indices/materialIndex arrays. `uploadParsed` builds one Mesh per range, so
+    /// a multi-shape OBJ becomes a multi-mesh Model (backlog #10, the OBJ parallel
+    /// of the glTF primitive split) while the flat getters stay exactly as they
+    /// were - the ObjParseUnit tests assert only on those. Unlike glTF primitives,
+    /// OBJ shapes share the attribute pool, so a per-shape range is only contiguous
+    /// because loadVertices resets the vertex-dedup map per shape (a vertex shared
+    /// across shapes is stored once per shape - pixel-identical geometry). A
+    /// single-shape OBJ yields one range spanning everything - behaviour-identical
+    /// to before.
+    struct MeshRange
+    {
+        std::size_t vertexBase;
+        std::size_t vertexCount;
+        std::size_t indexStart;
+        std::size_t indexCount;
+        std::size_t triStart;
+        std::size_t triCount;
+    };
+    const std::vector<MeshRange> &getMeshRanges() const { return meshRanges; }
 
   private:
     std::shared_ptr<VulkanDevice> device;
@@ -74,6 +96,8 @@ class ObjLoader
     std::vector<unsigned int> materialIndex;
     std::vector<std::string> textures;
     std::vector<std::string> textureNamesFromLastParse;
+    // One slice per OBJ shape; see MeshRange / getMeshRanges.
+    std::vector<MeshRange> meshRanges;
 
     // Both take an ALREADY PARSED reader. The file used to be parsed once per
     // function - twice per model - which for the bundled 27 MB OBJ is around

@@ -44,6 +44,7 @@ bool ObjLoader::parseCpu(const std::string &modelFile)
     vertices.clear();
     indices.clear();
     materialIndex.clear();
+    meshRanges.clear();
 
     tinyobj::ObjReaderConfig const reader_config;
     tinyobj::ObjReader reader;
@@ -126,7 +127,34 @@ auto ObjLoader::uploadParsed() -> std::shared_ptr<Model>
         new_model->addTexture(std::move(defaultTexture));
     }
 
-    new_model->add_new_mesh(device, transfer_queue, command_pool, vertices, indices, materialIndex, this->materials);
+    // One Mesh per OBJ shape (see MeshRange). Each mesh shares the full materials
+    // array - its materialIndex still holds the original indices - matching the
+    // glTF split; a per-mesh material subset is a later optimisation. A
+    // single-shape OBJ (or the empty-range fallback) builds exactly one mesh, so
+    // existing single-object models are behaviour-identical.
+    if (meshRanges.empty()) {
+        new_model->add_new_mesh(
+          device, transfer_queue, command_pool, vertices, indices, materialIndex, this->materials);
+    } else {
+        for (const MeshRange &range : meshRanges) {
+            std::vector<Vertex> subVertices(
+              vertices.begin() + static_cast<std::ptrdiff_t>(range.vertexBase),
+              vertices.begin() + static_cast<std::ptrdiff_t>(range.vertexBase + range.vertexCount));
+
+            std::vector<unsigned int> subIndices;
+            subIndices.reserve(range.indexCount);
+            for (std::size_t i = 0; i < range.indexCount; ++i) {
+                subIndices.push_back(indices[range.indexStart + i] - static_cast<unsigned int>(range.vertexBase));
+            }
+
+            std::vector<unsigned int> subMaterialIndex(
+              materialIndex.begin() + static_cast<std::ptrdiff_t>(range.triStart),
+              materialIndex.begin() + static_cast<std::ptrdiff_t>(range.triStart + range.triCount));
+
+            new_model->add_new_mesh(
+              device, transfer_queue, command_pool, subVertices, subIndices, subMaterialIndex, this->materials);
+        }
+    }
     return new_model;
 }
 
@@ -183,23 +211,28 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
 {
     const auto &attrib = reader.GetAttrib();
     const auto &shapes = reader.GetShapes();
-    std::unordered_map<Vertex, uint32_t> vertices_map{};
 
-    // Reserve up front. Without this the map rehashes its way up from nothing
-    // while inserting hundreds of thousands of entries, and every rehash
-    // re-buckets everything already inserted. Face vertices is an upper bound
-    // on unique vertices, so this over-reserves for well-shared meshes - a
-    // few MB of buckets against a second of rehashing.
-    size_t total_face_vertices = 0;
-    for (const auto &shape : shapes) { total_face_vertices += shape.mesh.indices.size(); }
-    vertices_map.reserve(total_face_vertices);
     // indices ends up exactly this long. vertices is left to the per-shape
     // reserve below: reserving face-vertex count for it would hold ~39 MB for
     // a mesh that needs ~7 MB, since sharing is the normal case.
+    size_t total_face_vertices = 0;
+    for (const auto &shape : shapes) { total_face_vertices += shape.mesh.indices.size(); }
     indices.reserve(total_face_vertices);
 
-    // Loop over shapes
+    // Loop over shapes. Each shape (an OBJ `o`/`g` group) becomes its own Mesh
+    // via the MeshRange recorded below, so the vertex-dedup map is per-shape:
+    // that keeps every shape's vertices in a contiguous block uploadParsed can
+    // slice, at the cost of duplicating any vertex shared across shapes (rare
+    // between separate objects, and pixel-identical either way). The map is still
+    // reserved to the shape's face-vertex upper bound to avoid rehash churn.
     for (const auto &shape : shapes) {
+        std::unordered_map<Vertex, uint32_t> vertices_map{};
+        vertices_map.reserve(shape.mesh.indices.size());
+
+        const size_t shape_vertex_base = vertices.size();
+        const size_t shape_index_start = indices.size();
+        const size_t shape_tri_start = materialIndex.size();
+
         // prepare for enlargement
         vertices.reserve(shape.mesh.indices.size() + vertices.size());
         indices.reserve(shape.mesh.indices.size() + indices.size());
@@ -283,6 +316,18 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
             // strictly better fallback than reading unmapped memory.
             const int face_material = shape.mesh.material_ids[f];
             materialIndex.push_back(face_material >= 0 ? static_cast<uint32_t>(face_material) : 0U);
+        }
+
+        // Record this shape's contiguous slice so uploadParsed can build it as
+        // its own Mesh. Skip a shape that emitted no geometry (every face fell to
+        // the malformed-index guard) so uploadParsed never builds an empty mesh.
+        if (vertices.size() > shape_vertex_base) {
+            meshRanges.push_back(ObjLoader::MeshRange{ shape_vertex_base,
+                                                       vertices.size() - shape_vertex_base,
+                                                       shape_index_start,
+                                                       indices.size() - shape_index_start,
+                                                       shape_tri_start,
+                                                       materialIndex.size() - shape_tri_start });
         }
     }
 
