@@ -73,7 +73,8 @@ class CascadedShadowMap
     CascadedShadowMap(const CascadedShadowMap &) = delete;
     CascadedShadowMap &operator=(const CascadedShadowMap &) = delete;
 
-    void init(std::shared_ptr<VulkanDevice>device, uint32_t width, uint32_t height, uint32_t num_cascades);
+    void init(std::shared_ptr<VulkanDevice>device, uint32_t width, uint32_t height, uint32_t num_cascades,
+      vk::DescriptorSetLayout sharedRenderDescriptorSetLayout);
 
     void createGraphicsPipeline();
     void recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, const std::vector<vk::DescriptorSet> &descriptorSets);
@@ -125,6 +126,10 @@ class CascadedShadowMap
     vk::Pipeline graphicsPipeline{};
     vk::PipelineLayout pipelineLayout{};
     vk::DescriptorSetLayout descriptorSetLayout{};
+    // Owned by VulkanRenderer's sharedRenderDescriptors, NOT this class - bound as
+    // set 0 so the alpha-test fragment stage reaches materials + textures. Never
+    // destroyed here.
+    vk::DescriptorSetLayout sharedRenderDescriptorSetLayout{};
     vk::DescriptorPool descriptorPool{};
     vk::DescriptorSet descriptorSet{};
     VulkanBuffer lightMatricesBuffer;

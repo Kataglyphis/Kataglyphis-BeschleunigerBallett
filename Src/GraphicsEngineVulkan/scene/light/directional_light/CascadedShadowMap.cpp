@@ -29,12 +29,14 @@ import kataglyphis.vulkan.pipeline_builder;
 namespace Kataglyphis {
 
 
-void CascadedShadowMap::init(std::shared_ptr<VulkanDevice>in_device, uint32_t width, uint32_t height, uint32_t num_cascades)
+void CascadedShadowMap::init(std::shared_ptr<VulkanDevice>in_device, uint32_t width, uint32_t height, uint32_t num_cascades,
+  vk::DescriptorSetLayout sharedRenderDescriptorSetLayout)
 {
     this->device = in_device;
     this->shadowWidth = width;
     this->shadowHeight = height;
     this->numCascades = num_cascades;
+    this->sharedRenderDescriptorSetLayout = sharedRenderDescriptorSetLayout;
     
     cascadeData.resize(numCascades);
 
@@ -590,14 +592,28 @@ void CascadedShadowMap::createGraphicsPipeline()
     posAttr.format = vk::Format::eR32G32B32Sfloat;
     posAttr.offset = 0;
 
+    // UV for the MASK alpha test in the fragment stage. Location 3 = the Vertex
+    // texture_coords slot, matching both the shadow and forward vertex shaders.
+    vk::VertexInputAttributeDescription uvAttr{};
+    uvAttr.location = 3;
+    uvAttr.binding = 0;
+    uvAttr.format = vk::Format::eR32G32Sfloat;
+    uvAttr.offset = offsetof(Vertex, texture_coords);
+
     vk::PushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eVertex;
+    // The fragment stage now reads objectIndex from the push block too.
+    pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(glm::mat4) + sizeof(uint32_t);
 
+    // set 0 = the shared render descriptor set (materials/textures/object
+    // descriptions) the fragment alpha test samples; set 1 = the light matrices
+    // this pass owns. The shared layout is owned by VulkanRenderer.
+    std::array<vk::DescriptorSetLayout, 2> setLayouts = { sharedRenderDescriptorSetLayout, descriptorSetLayout };
+
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
+    pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
+    pipelineLayoutInfo.pSetLayouts = setLayouts.data();
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
@@ -608,7 +624,7 @@ void CascadedShadowMap::createGraphicsPipeline()
     PipelineBuilder pipelineBuilder;
     graphicsPipeline =
       pipelineBuilder.setShaderStages({ skyStages.begin(), skyStages.end() })
-        .setVertexInput({ bindingDesc }, { posAttr })
+        .setVertexInput({ bindingDesc }, { posAttr, uvAttr })
         // Culling MUST be off here, and it is not an optimisation question.
         //
         // VulkanRenderer flips the camera projection's Y (globalUBO.projection
@@ -698,16 +714,22 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
     scissor.extent = vk::Extent2D{shadowWidth, shadowHeight};
     commandBuffer.setScissor(0, scissor);
 
+    // set 0 = the shared render set passed in (materials/textures/object
+    // descriptions, for the fragment alpha test); set 1 = this pass's light
+    // matrices. descriptorSets is the same vector the forward rasterizer receives.
     std::vector<vk::DescriptorSet> shadowDescriptorSets = {descriptorSet};
+    if (!descriptorSets.empty()) { shadowDescriptorSets = {descriptorSets[0], descriptorSet}; }
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, shadowDescriptorSets, nullptr);
 
     for (uint32_t m = 0; m < scene->getModelCount(); m++) {
-        // Same model matrix as the forward pass; pushed once per model. The
-        // cascade index in the push-constant block is retained for layout
-        // stability but no longer consumed (gl_ViewIndex replaced it).
-        const ShadowPushConstants push = makeShadowPush(scene->getModelMatrix(m), 0);
+        // Same model matrix as the forward pass; pushed once per model. The old
+        // cascade-index slot now carries the object index so the fragment stage
+        // can fetch this draw's material for the MASK alpha test - the forward
+        // pass pushes the same index (one object per model while a Model holds
+        // one Mesh, backlog #10). The cascade itself comes from gl_ViewIndex.
+        const ShadowPushConstants push = makeShadowPush(scene->getModelMatrix(m), m);
         commandBuffer.pushConstants(pipelineLayout,
-          vk::ShaderStageFlagBits::eVertex,
+          vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
           0,
           sizeof(ShadowPushConstants),
           &push);

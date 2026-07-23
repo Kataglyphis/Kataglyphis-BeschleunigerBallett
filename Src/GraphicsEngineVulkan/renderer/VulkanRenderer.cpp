@@ -111,7 +111,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     deferredRasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_deferred, graphics_command_pool);
 
     clouds.init(device, graphics_command_pool, sharedRenderDescriptors.getLayout(), vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
-    dirShadowMap.init(device, 2048, 2048, MAX_CASCADES);
+    dirShadowMap.init(device, 2048, 2048, MAX_CASCADES, sharedRenderDescriptors.getLayout());
     dirShadowMap.createGraphicsPipeline();
     pointShadowMap.init(device, 1024, 1024);
 
@@ -301,7 +301,8 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Fronten
         else if (guiSceneSharedVars.shadow_map_res_index == 2) shadow_res = 2048;
         else if (guiSceneSharedVars.shadow_map_res_index == 3) shadow_res = 4096;
 
-        dirShadowMap.init(device, shadow_res, shadow_res, static_cast<uint32_t>(guiSceneSharedVars.num_shadow_cascades));
+        dirShadowMap.init(device, shadow_res, shadow_res, static_cast<uint32_t>(guiSceneSharedVars.num_shadow_cascades),
+          sharedRenderDescriptors.getLayout());
         // cleanUp() destroyed the pipeline, descriptor resources and the light
         // matrices buffer; recreate them (same sequence as at startup).
         dirShadowMap.createGraphicsPipeline();
