@@ -1778,7 +1778,13 @@ from the RT/PT acceleration structure** — CONFIRMED by code (addModel rebuilt 
 object-description buffer + RT descriptor sets but never the AS) and FIXED (addModel now
 calls `createASForScene` when hardware RT is supported). Red/green-proven by
 `GoldenRender.AddedModelAppearsInPathTracing` (added card visible in PT: detail 0.108 with
-the rebuild vs 0.035 without). Original report: a `mask_card.gltf` added with `renderer->addModel(path, placement)`
+the rebuild vs 0.035 without). *Follow-up optimisation (not a bug, correct as-is):* the fix
+(and the existing `reloadModel` path) call `createASForScene`, a FULL rebuild that clears and
+re-builds EVERY model's BLAS - O(N) BLAS builds to add ONE model. Fine for the few-model
+scenes today, a hitch for many-model or interactive add. Incremental version: an ASManager
+`appendBlas(model)` that builds only the new model's BLAS and pushes it, then `createTLAS`
+(the TLAS rebuild is unavoidable and cheap, it just re-lists instances). Guard the RT
+goldens + `AddedModelAppearsInPathTracing`. Original report: a `mask_card.gltf` added with `renderer->addModel(path, placement)`
     while in PATH-TRACING mode does not appear in the traced image at all: forcing
     `gl_RayFlagsOpaqueEXT` (a solid quad that MUST occlude if present) leaves the render
     bit-identical (RED == GREEN, detail 0.0353734), i.e. no rays hit it. The same
