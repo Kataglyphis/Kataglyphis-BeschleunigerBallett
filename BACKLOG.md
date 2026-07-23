@@ -1633,7 +1633,16 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
         background-fraction metric + the controlled-camera rig that item still needs.
       - ABI: shader-only for PT; the RT half adds a shader file + SBT wiring (no C++
         struct change, so not ABI-skew) but DOES touch `ASManager` geometry flags.
-    - *Increment 2 — doubleSided (S/M):* per-material cull-mode. *Concrete plan
+    - *Increment 2 — doubleSided — ✅ FORWARD DONE (2026-07-23):* forward pass now
+      honours `material.doubleSided` via dynamic cull state exactly as the plan below
+      described - `PipelineBuilder::setDynamicCullMode` (opt-in `VK_DYNAMIC_STATE_CULL_MODE`,
+      only the forward Rasterizer enables it) + per-draw `setCullMode(eNone/eBack)`;
+      the flag rides glTF material.double_sided -> MeshRange -> Mesh via add_new_mesh,
+      exposed by `Scene::isMeshDoubleSided`. Verified: `MaskCardDoubleSidedRendersFromBehind`
+      (card rotated 180deg, back to camera - visible 12779px ONLY with doubleSided,
+      RED-proven 0px forced single-sided), 16/16 goldens unchanged, validation-clean.
+      REMAINING: deferred + shadow passes (same per-draw pattern, other pipelines);
+      the design below is the reference. *Original plan:* per-material cull-mode. *Concrete plan
       (2026-07-23): use DYNAMIC cull state, not a second pipeline.* `vkCmdSetCullMode`
       is core Vulkan 1.3 (the engine targets 1.4), so add `VK_DYNAMIC_STATE_CULL_MODE`
       to the raster PipelineBuilder and, per mesh in the draw loop,
