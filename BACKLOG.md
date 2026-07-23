@@ -1256,7 +1256,7 @@ cleanUp+recreate pair at the four scene-changed sites.
   `FrameSync` (fences/semaphores/frame index), `SwapchainTarget`
   (swapchain + framebuffers + recreation), a stage registry so adding a
   pass does not mean editing the renderer.
-  - **FrameSync — concrete extraction plan (scoped 2026-07-23):** the state is
+  - **FrameSync — DONE 2026-07-23 (`e7e7579d`, module `kataglyphis.vulkan.frame_sync`; 22 golden green).** For reference, the state was
     `current_frame`, `image_available` + `in_flight_fences` (sized per
     frame-in-flight / `MAX_FRAME_DRAWS`), and `render_finished_by_image` +
     `images_in_flight_fences` (sized per SWAPCHAIN IMAGE). **The per-image vs
@@ -1272,6 +1272,17 @@ cleanUp+recreate pair at the four scene-changed sites.
     surface as validation errors / device hangs — run all 22 golden tests on the
     RX 9070 XT (`docs/gpu-golden-testing.md`). Touches `VulkanRenderer.ixx` →
     FreshContainer.
+  - **SwapchainTarget — caveat before extracting (found 2026-07-23):** unlike
+    FrameSync, the swapchain-*recreation* logic is NOT covered by the golden
+    suite (the tests render at a fixed size and never resize/recreate). So
+    extracting swapchain + framebuffers + recreation blind is riskier than
+    FrameSync was — a recreation bug would pass all 22 golden tests. Write a
+    resize/recreate integration test (drive `recreateSwapChain`, then render and
+    assert) FIRST, then extract. Also: the cascade `# cascades` GUI slider still
+    advertises 1..8 though the engine clamps to `MAX_CASCADES`(3) (`c49fd8b4`);
+    making the slider honest was left out because GUI has no clean access to
+    `MAX_CASCADES` (would couple GUI→SceneUBO or hard-code 3) and the clamp
+    already fixes the actual bug.
 - **Device-lost teardown is special-cased in `App.cpp`** (scene/GUI
   cleanup is skipped) — a symptom of ownership living in the wrong place.
   Full RAII up the stack would remove the special case entirely.
