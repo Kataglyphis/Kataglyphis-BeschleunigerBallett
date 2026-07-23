@@ -247,6 +247,7 @@ constexpr const char *SHADOW_RIG_MODEL = "Models/ShadowTest/shadow_rig.obj";
 // One mesh, two primitives (two materials) - loads as two meshes via the #10
 // multi-mesh loader split.
 constexpr const char *TWO_PRIMITIVE_MODEL = "Models/GltfTest/two_primitives.gltf";
+constexpr const char *MASK_CARD_MODEL = "Models/GltfTest/mask_card.gltf";
 
 // Points KATAGLYPHIS_GPU_TIMING_JSON at a file for the lifetime of the object,
 // same shape as ScopedModelOverride above. The renderer reads the variable in
@@ -1615,6 +1616,141 @@ TEST(GoldenRender, SecondModelShadesWithItsOwnTextures)
     EXPECT_GT(detail, 0.02)
       << "The added model shows no texture detail - it is sampling the first "
          "model's (flat white) texture slots.";
+}
+
+// glTF alphaMode MASK visually: a cut-out card must DISCARD its below-cutoff
+// texels so the scene behind shows through the holes. The forward discard is
+// CPU-verified (GltfParseUnit cutoff) and shadow-golden verified, but never
+// confirmed in the forward COLOUR image. Differential oracle (needs NO uniform
+// background): render the base scene (A), add the card (B), and measure the
+// fraction of CHANGED pixels WITHIN the bounding box of the changed pixels.
+// mask_card.gltf's texture is a verified 50/50 8x8 checkerboard, so with the
+// discard working only the ~half opaque texels change the frame (the holes
+// leave the background = A) -> fraction ~0.5 in the box. Remove the discard and
+// the solid card covers its whole footprint -> fraction near 1.0. The bounding
+// box auto-locates the card, so this needs no hand-tuned crop. Set
+// KATAGLYPHIS_MASK_DUMP to a path prefix to dump before/after/diff PNGs.
+TEST(GoldenRender, MaskCardDiscardsCutoutTexelsVisually)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    // A: the base scene, before the card is added.
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> before = harness.capture_frame(width, height);
+    ASSERT_FALSE(before.empty());
+
+    // Scale the 1x1 card up and place it in the GUI-free RIGHT third of the
+    // frame, in front of the default camera (0,6,26 looking down -Z); its +Z
+    // face points at the camera (doubleSided is not honoured yet, so the front
+    // must face us). The opaque ImGui panel covers the left ~68% and the card
+    // casts a floor shadow at the bottom, so the card must sit clear of both -
+    // the measurement below only scans the upper-right region. Placement is
+    // env-tunable (MASK_X/Y/Z/SCALE) so framing can be dialled in without a
+    // rebuild.
+    const auto env_f = [](const char *name, float fallback) {
+        const char *value = std::getenv(name);
+        return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
+    };
+    const glm::mat4 placement =
+      glm::translate(glm::mat4(1.0F),
+        glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
+      * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
+    const auto added = harness.renderer->addModel(MASK_CARD_MODEL, placement);
+    ASSERT_TRUE(added.has_value()) << "adding the mask card failed";
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    // B: with the card.
+    uint32_t w2 = 0;
+    uint32_t h2 = 0;
+    const std::vector<uint8_t> after = harness.capture_frame(w2, h2);
+    ASSERT_FALSE(after.empty());
+    ASSERT_EQ(width, w2);
+    ASSERT_EQ(height, h2);
+
+    const auto changed_at = [&](uint32_t x, uint32_t y) {
+        const size_t b = (static_cast<size_t>(y) * width + x) * 4U;
+        return std::abs(static_cast<int>(before[b]) - static_cast<int>(after[b])) > 12
+               || std::abs(static_cast<int>(before[b + 1U]) - static_cast<int>(after[b + 1U])) > 12
+               || std::abs(static_cast<int>(before[b + 2U]) - static_cast<int>(after[b + 2U])) > 12;
+    };
+
+    // Only scan the GUI-free upper-right region: x past the ImGui panel's right
+    // edge, y above the card's floor shadow. The FPS text (centre) and the
+    // shadow (bottom) would otherwise pollute the bounding box.
+    const uint32_t scan_x0 = (width * 68U) / 100U;
+    const uint32_t scan_y1 = (height * 62U) / 100U;
+
+    uint32_t minx = width;
+    uint32_t miny = height;
+    uint32_t maxx = 0;
+    uint32_t maxy = 0;
+    size_t changed_total = 0;
+    for (uint32_t y = 0; y < scan_y1; ++y) {
+        for (uint32_t x = scan_x0; x < width; ++x) {
+            if (changed_at(x, y)) {
+                ++changed_total;
+                minx = std::min(minx, x);
+                maxx = std::max(maxx, x);
+                miny = std::min(miny, y);
+                maxy = std::max(maxy, y);
+            }
+        }
+    }
+
+    if (const char *dump = std::getenv("KATAGLYPHIS_MASK_DUMP")) {
+        const std::string base = dump;
+        std::vector<uint8_t> diff(before.size(), 0U);
+        for (uint32_t y = 0; y < height; ++y) {
+            for (uint32_t x = 0; x < width; ++x) {
+                const size_t b = (static_cast<size_t>(y) * width + x) * 4U;
+                const bool in_scan = (x >= scan_x0 && y < scan_y1);
+                const uint8_t v = changed_at(x, y) ? 255U : 0U;
+                diff[b] = v;
+                diff[b + 1U] = in_scan ? v : static_cast<uint8_t>(v / 3U);// dim outside the scan box
+                diff[b + 2U] = in_scan ? v : static_cast<uint8_t>(v / 3U);
+                diff[b + 3U] = 255U;
+            }
+        }
+        const auto stride = static_cast<int>(width) * 4;
+        stbi_write_png((base + "-before.png").c_str(), int(width), int(height), 4, before.data(), stride);
+        stbi_write_png((base + "-after.png").c_str(), int(width), int(height), 4, after.data(), stride);
+        stbi_write_png((base + "-diff.png").c_str(), int(width), int(height), 4, diff.data(), stride);
+    }
+
+    ASSERT_GT(changed_total, 200U)
+      << "the card barely changed the upper-right region - not visible there (framing/culling)";
+
+    const double box_area =
+      static_cast<double>(maxx - minx + 1U) * static_cast<double>(maxy - miny + 1U);
+    const double changed_fraction = static_cast<double>(changed_total) / box_area;
+    GTEST_LOG_(INFO) << "mask card: changed " << changed_total << " px in upper-right, bbox [" << minx << ","
+                     << miny << ".." << maxx << "," << maxy << "] fraction-in-box " << changed_fraction;
+
+    // Discard ON: the visible card is a checkerboard, so only its opaque squares
+    // change the frame (the holes leave the background) - MEASURED 0.37 of the
+    // bounding box on the RX 9070 XT. Removing the forward FS `discard` makes the
+    // solid card fill its box - MEASURED 0.78 (not 1.0 because some cut-out texels
+    // are grey and blend into the grey ground). The 0.55 gate sits cleanly between
+    // the two, red-proven by disabling the discard + recompiling the spv.
+    EXPECT_LT(changed_fraction, 0.55)
+      << "the card footprint changed too fully - cut-out texels are NOT being discarded";
+    EXPECT_GT(changed_fraction, 0.20)
+      << "the changed pixels are too sparse to be the checkerboard - check framing";
 }
 
 // The white furnace: with a uniform environment and albedo forced to 1 (the
