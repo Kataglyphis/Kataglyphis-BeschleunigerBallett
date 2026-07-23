@@ -2189,3 +2189,107 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
       << "The furnace image is not uniform - geometry is visible, so some path "
          "class is biased.";
 }
+
+namespace {
+// Small deterministic PRNG (SplitMix-style) so the sweep is reproducible across
+// runs without pulling in <random>. A fixed seed means a failing iteration can
+// be re-hit exactly.
+struct SweepRng
+{
+    uint64_t state;
+    uint32_t next()
+    {
+        state = state * 6364136223846793005ULL + 1442695040888963407ULL;
+        return static_cast<uint32_t>(state >> 32U);
+    }
+    float uf(float lo, float hi) { return lo + (hi - lo) * (static_cast<float>(next()) / 4294967296.0F); }
+    int ui(int lo, int hi) { return lo + static_cast<int>(next() % static_cast<uint32_t>(hi - lo + 1)); }
+    bool ub() { return (next() & 1U) != 0U; }
+};
+}// namespace
+
+// Fuzz the GUI itself: every control the user can touch, driven across its
+// ALLOWED range (the ImGui slider/combo limits in GUI.cpp) and in random
+// combinations, must render without losing the device or yielding an empty
+// frame. This is the guard for the controls no other golden test sets - all ten
+// cloud parameters, the light direction/colour, the shadow cascade count /
+// resolution, the path-tracing sample/bounce counts - and, crucially, for their
+// COMBINATIONS (clouds + 8 cascades + path tracing at once, etc.). It does not
+// assert on pixels (every state renders something different); it asserts that no
+// possible GUI selection can crash, lose the device, or trip a validation error
+// (the debug build runs with validation/ASan, so those surface as failures here).
+TEST(GoldenRender, GuiInputSweepNeverCrashesOrLosesTheDevice)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+    const bool rt_supported = harness.renderer->supportsHardwareRaytracing();
+
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    auto &s = harness.gui->getGuiSceneSharedVars();
+    auto &r = harness.gui->getGuiRendererSharedVars();
+
+    SweepRng rng{ 0x9E3779B97F4A7C15ULL };// fixed seed -> deterministic sweep
+
+    constexpr int SWEEP_ITERATIONS = 16;
+    for (int iter = 0; iter < SWEEP_ITERATIONS; ++iter) {
+        // Render mode: one of forward / deferred / ray tracing / path tracing,
+        // mutually exclusive, as the engine actually drives them. RT/PT only when
+        // the device supports hardware ray tracing.
+        const int mode = rng.ui(0, rt_supported ? 3 : 1);
+        r.raytracing = (mode == 2);
+        r.pathTracing = (mode == 3);
+        r.rasterizationMode = (mode == 1) ? RasterizationMode::Deferred : RasterizationMode::Forward;
+        r.frustum_culling_enabled = rng.ub();
+        r.pathTracingSamplesPerPixel = rng.ui(1, 64);
+        r.pathTracingMaxBounces = rng.ui(1, 16);
+
+        s.skybox_enabled = rng.ub();
+        s.direcional_light_radiance = rng.uf(0.0F, 50.0F);
+        for (float &c : s.directional_light_color) { c = rng.uf(0.0F, 1.0F); }
+        for (float &d : s.directional_light_direction) { d = rng.uf(-1.0F, 1.0F); }
+
+        s.shadows_enabled = rng.ub();
+        s.num_shadow_cascades = rng.ui(1, 8);// slider allows 1..8 (clamped to MAX_CASCADES in use)
+        s.shadow_map_res_index = rng.ui(0, 3);// combo: 512 / 1024 / 2048 / 4096
+        s.pcf_radius = rng.ui(1, 20);
+        s.cascaded_shadow_intensity = rng.uf(0.0F, 1.0F);
+        s.shadow_distance = rng.uf(1.0F, 200.0F);
+        // Force the shadow map to honour the new cascade count / resolution.
+        s.shadow_resolution_changed = true;
+
+        s.clouds_enabled = rng.ub();
+        s.cloud_speed = rng.ui(0, 30);
+        s.cloud_num_march_steps = rng.ui(1, 128);
+        s.cloud_num_march_steps_to_light = rng.ui(1, 128);
+        for (float &d : s.cloud_movement_direction) { d = rng.uf(-10.0F, 10.0F); }
+        s.cloud_scale = rng.uf(0.0F, 1.0F);
+        s.cloud_density = rng.uf(0.0F, 1.0F);
+        s.cloud_pillowness = rng.uf(0.0F, 1.0F);
+        s.cloud_cirrus_effect = rng.uf(0.0F, 1.0F);
+        s.cloud_powder_effect = rng.ub();
+
+        const std::string desc = "iter " + std::to_string(iter) + ": mode=" + std::to_string(mode)
+                                 + " shadows=" + std::to_string(static_cast<int>(s.shadows_enabled))
+                                 + " cascades=" + std::to_string(s.num_shadow_cascades)
+                                 + " res=" + std::to_string(s.shadow_map_res_index)
+                                 + " clouds=" + std::to_string(static_cast<int>(s.clouds_enabled))
+                                 + " radiance=" + std::to_string(s.direcional_light_radiance);
+
+        // render_frame() applies the GUI state (updateStateDueToUserInput) each
+        // frame; a few frames let a shadow-map re-init settle.
+        harness.render_frames(SETTLE_FRAMES);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while rendering " << desc;
+
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+        ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while capturing " << desc;
+        ASSERT_FALSE(frame.empty()) << "Empty frame for " << desc;
+    }
+}
