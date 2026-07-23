@@ -2016,6 +2016,84 @@ TEST(GoldenRender, KhrTextureTransformTilesTheTexture)
       << "the card is not finely tiled - KHR_texture_transform scale is not reaching the sampled UV";
 }
 
+// A model added at runtime via addModel must appear in PATH TRACING, not only in
+// the raster paths. addModel loads the geometry and rebuilds the object-description
+// buffer, but RT/PT only see the acceleration structure - so without rebuilding the
+// AS the added model is invisible to the tracer (found 2026-07-23: an addModel'd
+// card was bit-identical whether traced as solid or cut-out). This renders the base
+// scene in PT, adds the opaque uv-transform card in front of the camera, and checks
+// its finely-tiled checkerboard actually appears in the card's screen box. Red
+// without the addModel AS rebuild: the crop stays background, detail near zero.
+TEST(GoldenRender, AddedModelAppearsInPathTracing)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = true;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES);
+
+    const auto env_f = [](const char *name, float fallback) {
+        const char *value = std::getenv(name);
+        return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
+    };
+    const glm::mat4 placement =
+      glm::translate(glm::mat4(1.0F),
+        glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
+      * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
+    const auto added = harness.renderer->addModel(UV_TRANSFORM_MODEL, placement);
+    ASSERT_TRUE(added.has_value()) << "adding the card failed";
+    // Deepen the PT history after the AS-rebuild reset so noise does not swamp the
+    // checkerboard detail.
+    harness.render_frames(SETTLE_FRAMES);
+    harness.render_frames(60);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+    ASSERT_FALSE(frame.empty());
+
+    if (const char *dump = std::getenv("KATAGLYPHIS_MASK_DUMP")) {
+        const std::string base = dump;
+        stbi_write_png(
+          (base + "-ptadd.png").c_str(), int(width), int(height), 4, frame.data(), static_cast<int>(width) * 4);
+    }
+
+    // The card's known screen box for the shared placement (GUI-free upper-right).
+    const uint32_t x0 = (width * 71U) / 100U;
+    const uint32_t x1 = (width * 98U) / 100U;
+    const uint32_t y0 = (height * 40U) / 100U;
+    const uint32_t y1 = (height * 61U) / 100U;
+    size_t detailed = 0;
+    size_t total = 0;
+    for (uint32_t y = y0; y < y1; ++y) {
+        for (uint32_t x = x0; x < x1; ++x) {
+            const size_t b = static_cast<size_t>(y) * width + x;
+            if (std::abs(luminance_of(frame, b) - luminance_of(frame, b + 1U)) > 6.0) { ++detailed; }
+            ++total;
+        }
+    }
+    const double detail = total > 0 ? static_cast<double>(detailed) / static_cast<double>(total) : 0.0;
+    GTEST_LOG_(INFO) << "added-model PT crop-detail-fraction " << detail;
+
+    // MEASURED: 0.108 with the AS rebuilt (the tiled card's checkerboard fills the
+    // crop) vs 0.035 without it (the crop stays background). The 0.07 gate sits
+    // cleanly between - red-proven by removing the addModel AS rebuild.
+    EXPECT_GT(detail, 0.07)
+      << "the runtime-added card is not visible in path tracing - the AS was not rebuilt to include it";
+}
+
 // The white furnace: with a uniform environment and albedo forced to 1 (the
 // KATAGLYPHIS_PT_FURNACE debug mode), an unbiased estimator converges every
 // pixel to EXACTLY the environment radiance, whatever the geometry - the

@@ -722,6 +722,17 @@ std::optional<uint32_t> Kataglyphis::VulkanRenderer::addModel(const std::string 
     // destroyed - which is how the two-model test first failed.
     objectDescriptionBuffer.cleanUp();
     create_object_description_buffer();
+
+    // The added model is NEW geometry, so its BLAS must be built and the TLAS
+    // rebuilt to reference it - otherwise it loads and renders in the raster
+    // paths (which iterate the scene directly) but is INVISIBLE to RT/PT, which
+    // only see the acceleration structure. Unlike a transform change (TLAS-only,
+    // see updateStateDueToUserInput), new geometry needs the BLAS too, so this is
+    // the full createASForScene (it clears the old BLAS/TLAS first, so a rebuild
+    // is safe). Must run BEFORE updateAllDescriptorSets, which binds the new TLAS.
+    if (device->supportsHardwareAcceleratedRRT()) {
+        asManager.createASForScene(device, graphics_command_pool, scene);
+    }
     updateAllDescriptorSets();
     return index;
 }
