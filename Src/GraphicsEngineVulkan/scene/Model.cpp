@@ -33,7 +33,7 @@ void Model::cleanUp()
     }
     modelTextureSamplers.clear();
 
-    mesh.cleanUp();
+    for (Mesh &m : meshes) { m.cleanUp(); }
 }
 
 void Model::add_new_mesh(std::shared_ptr<VulkanDevice>vulkan_device,
@@ -44,7 +44,9 @@ void Model::add_new_mesh(std::shared_ptr<VulkanDevice>vulkan_device,
   std::vector<unsigned int> &materialIndex,
   std::vector<ObjMaterial> &materials)
 {
-    this->mesh = Mesh(vulkan_device, transfer_queue, command_pool, vertices, indices, materialIndex, materials);
+    // Append, not overwrite: the loaders call this once per Model today, so this
+    // is behaviour-identical, but it is what lets a Model hold several meshes.
+    meshes.emplace_back(vulkan_device, transfer_queue, command_pool, vertices, indices, materialIndex, materials);
 }
 
 void Model::set_model(glm::mat4 new_model) { this->model = new_model; }
@@ -57,16 +59,9 @@ void Model::addTexture(Texture &&newTexture)
 
 auto Model::getPrimitiveCount() -> uint32_t
 {
-    /*uint32_t number_of_indices = 0;
-
-      for (Mesh mesh : meshes) {
-
-          number_of_indices += mesh.get_index_count();
-
-      }
-
-      return number_of_indices / 3;*/
-    return mesh.getIndexCount() / 3;
+    uint32_t number_of_indices = 0;
+    for (Mesh &m : meshes) { number_of_indices += m.getIndexCount(); }
+    return number_of_indices / 3;
 }
 
 Model::~Model() { cleanUp(); }

@@ -156,7 +156,14 @@ void Scene::add_model(const std::shared_ptr<Model> &model)
         return;
     }
     model_list.push_back(model);
-    object_descriptions.push_back(model->getObjectDescription());
+    // One object description per MESH, flattened across models: objectIndex (the
+    // per-draw push constant) indexes this list. A Model holds one mesh today, so
+    // the flat mesh index still equals the model index and this is a no-op - but
+    // it is what a multi-mesh Model needs, and the record loops already iterate
+    // getMeshCount per model.
+    for (uint32_t k = 0; k < model->getMeshCount(); ++k) {
+        object_descriptions.push_back(model->getMesh(k)->getObjectDescription());
+    }
 }
 
 void Scene::add_object_description(ObjectDescription object_description)
