@@ -1639,6 +1639,16 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
     - *Increment 3 — BLEND + sorting (M/L):* sorted transparent pass through the
       blend pipeline above; this is the genuinely L part (back-to-front ordering,
       a second draw list). Defer until a real transparent asset needs it.
+      *(Parity note found 2026-07-23:* the DEFERRED geometry pass discards any
+      textured texel with `alpha < 0.1` for NON-MASK materials too
+      (`deferred/geometry.frag:51`, `alpha_cull = alphaCutoff>=0 ? alphaCutoff : 0.1`),
+      whereas the FORWARD pass only discards for MASK (`rasterizer/shader.frag:78`).
+      So an OPAQUE material whose texture carries a real low-alpha channel would drop
+      those texels in deferred but keep them in forward - a low-impact but real
+      forward/deferred inconsistency, and a landmine to reconcile when BLEND lands
+      since deferred cannot blend and would silently cull instead. Confirm intent
+      before touching: the deferred 0.1 default may be a deliberate "kill fully
+      transparent texels the G-buffer can't blend" guard.)*
     - *Increment 4 — KHR_texture_transform + texcoord index (S each):* uv scale/offset
       uniform and a per-slot uv-set selector — exactly what RPT `uv_set_mask` does.
 12. **Point lights are wired on the GPU but never fed; `OmniDirShadowMap` renders
