@@ -1346,7 +1346,25 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
     createTLAS) + gl_GeometryIndexEXT` (1e5d0a35), so the WHOLE render path (raster
     + AS + RT/PT) is multi-mesh-correct; 15/15 goldens unchanged. **So the ONLY
     remaining #10 work is the loader split** - once a loader emits >1 mesh per
-    Model, everything downstream already handles it. Original state: `getMeshCount()` returned literal
+    Model, everything downstream already handles it (and it is what finally
+    EXERCISES the multi-mesh path - today it is verified no-op + correct-by-
+    inspection, since two separate models drive the flat objectIndex but never the
+    RT/PT gl_GeometryIndexEXT != 0 case).
+
+    **TURNKEY loader-split approach (2026-07-23, cleaner than the "API/test ripple"
+    fear - it does NOT touch the flat getters, so GltfParseUnit is unaffected):**
+    `parseCpu`'s primitive loop already has `base` (the primitive's vertex-base
+    offset) and `primIndexStart` (`GltfLoader.cpp:314,335`). Record a per-primitive
+    range `{vertex_base=base, vertex_count, index_start=primIndexStart, index_count,
+    tri_start}` in a new member vector; keep the flat vertices/indices/materialIndex/
+    materials exactly as they are (getters + tests unchanged). Then in `loadModel`
+    (and the async `uploadParsed`/`adoptParsed`) loop the ranges: per primitive,
+    slice `vertices[vb:vb+vc]`, `indices[is:is+ic]` re-based by `-vb`,
+    `materialIndex[ts:ts+tc]`, share the full `materials`, and call `add_new_mesh`
+    per primitive. Add a 2-primitive test glTF (two quads, two materials) + a golden
+    asserting getMeshCount()==2 and both render (distinct materials, and one in
+    RT/PT mode to hit gl_GeometryIndexEXT=1). ABI-skew only if the range vector goes
+    in a .ixx-exposed type. Original state: `getMeshCount()` returned literal
     `1` and `getMesh()` ignored its index (`Model.ixx:38-39`); `add_new_mesh`
     overwrote (`Model.cpp:47`). Culling is all-or-nothing on one scene-sized AABB
     (`Rasterizer.cpp:122-141`), and there is nothing to attach LOD to.
