@@ -69,6 +69,15 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
         Texture texture;
         if (texture.createFromMemory(device, command_pool, encoded.data(), encoded.size())) {
             model->addTexture(std::move(texture));
+        } else {
+            // Decode failed (e.g. a corrupt embedded image). Occupy this slot
+            // with the default texture instead of skipping it: each material's
+            // textureID is a dense index into textureImages, so a skipped slot
+            // would shift every later texture down one and make the final
+            // textureID index past the descriptor array.
+            Texture defaultTexture;
+            defaultTexture.createDefaultTexture(device, command_pool);
+            model->addTexture(std::move(defaultTexture));
         }
     }
     if (model->getTextureCount() == 0) {

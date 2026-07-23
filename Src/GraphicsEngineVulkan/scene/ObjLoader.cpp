@@ -117,6 +117,15 @@ auto ObjLoader::uploadParsed() -> std::shared_ptr<Model>
             Texture texture;
             if (texture.createFromFile(device, command_pool, textureNames[i])) {
                 new_model->addTexture(std::move(texture));
+            } else {
+                // Load failed (e.g. a missing .mtl texture file). Occupy this
+                // slot with the default texture instead of skipping it:
+                // textureID is a dense counter over non-empty names, so a
+                // skipped slot would shift every later texture down one and
+                // make the final textureID index past the descriptor array.
+                Texture defaultTexture;
+                defaultTexture.createDefaultTexture(device, command_pool);
+                new_model->addTexture(std::move(defaultTexture));
             }
         }
     }

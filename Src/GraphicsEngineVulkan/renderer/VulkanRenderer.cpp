@@ -71,10 +71,6 @@ import kataglyphis.vulkan.global_ubo;
 import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.window;
 
-namespace {
-[[maybe_unused]] vk::Result toVkResult(VkResult result) { return static_cast<vk::Result>(result); }
-}// namespace
-
 Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *window,
   Scene *scene,
   Kataglyphis::Frontend::GUI *gui,

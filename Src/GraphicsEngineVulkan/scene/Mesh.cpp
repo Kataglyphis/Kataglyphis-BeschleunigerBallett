@@ -40,15 +40,6 @@ Mesh::Mesh(std::shared_ptr<VulkanDevice>device,
   : vertex_count(static_cast<uint32_t>(vertices.size())), index_count(static_cast<uint32_t>(indices.size())),
     device(device)
 {
-    glm::mat4 transpose_transform = glm::transpose(glm::mat4(1.0F));
-    vk::TransformMatrixKHR out_matrix;
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 4; ++j) {
-            out_matrix.matrix[i][j] = transpose_transform[i][j];
-        }
-    }
-
-
     // Object-space bounds for frustum culling, computed here because this is
     // the only point where the vertex positions are on the CPU - they go
     // straight into a device-local buffer below and are not readable
@@ -197,8 +188,7 @@ void Mesh::createMaterialBuffer(vk::Queue /*transfer_queue*/,
         memory_allocate_flags |= vk::MemoryAllocateFlagBits::eDeviceAddress;
     }
 
-    auto &__vbm = vulkanBufferManager;
-    __vbm.createBufferAndUploadVectorOnDevice(device,
+    vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
       transfer_command_pool,
       materialsBuffer,
       usage_flags,

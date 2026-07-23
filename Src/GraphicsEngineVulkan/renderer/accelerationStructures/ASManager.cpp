@@ -254,7 +254,6 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(std::shared_ptr
         geometry_instance.flags =
           static_cast<VkGeometryInstanceFlagsKHR>(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable);
         geometry_instance.accelerationStructureReference = acceleration_structure_device_address;
-        geometry_instance.instanceShaderBindingTableRecordOffset = 0;
 
         tlas_instances.emplace_back(geometry_instance);
     }

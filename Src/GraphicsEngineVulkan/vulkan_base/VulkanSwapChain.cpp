@@ -60,15 +60,26 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(std::shared_ptr<VulkanDevic
     swap_chain_create_info.imageExtent = extent;// swapchain image extents
     swap_chain_create_info.minImageCount = image_count;// minimum images in swapchain
     swap_chain_create_info.imageArrayLayers = 1;// number of layers for each image in chain
-    vk::ImageUsageFlags image_usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
-                                      | vk::ImageUsageFlagBits::eStorage
-                                      | vk::ImageUsageFlagBits::eTransferDst;// what attachment images will be used as
+    // eColorAttachment (render target) and eTransferDst (blit destination) are
+    // core to how the swapchain is used and are effectively universally
+    // supported for present-capable surfaces, so they are requested
+    // unconditionally.
+    vk::ImageUsageFlags image_usage =
+      vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst;
+
+    // eSampled and eStorage are OPTIONAL swapchain usages: many present-capable
+    // surfaces/drivers do not advertise them in supportedUsageFlags. Requesting
+    // an unsupported usage makes createSwapchainKHR fail (-> ASSERT_VULKAN abort
+    // below). Mask each against the reported capabilities, like eTransferSrc, so
+    // the swapchain still creates on drivers that lack them.
+    const vk::ImageUsageFlags supported_usage = swap_chain_details.surface_capabilities.supportedUsageFlags;
+    if (supported_usage & vk::ImageUsageFlagBits::eSampled) { image_usage |= vk::ImageUsageFlagBits::eSampled; }
+    if (supported_usage & vk::ImageUsageFlagBits::eStorage) { image_usage |= vk::ImageUsageFlagBits::eStorage; }
 
     // eTransferSrc is optional: it is only requested when the surface reports
     // support for it, so a surface without it still yields a valid swapchain -
     // frame capture then degrades to "unsupported" instead of failing creation.
-    transfer_src_supported = static_cast<bool>(
-      swap_chain_details.surface_capabilities.supportedUsageFlags & vk::ImageUsageFlagBits::eTransferSrc);
+    transfer_src_supported = static_cast<bool>(supported_usage & vk::ImageUsageFlagBits::eTransferSrc);
     if (transfer_src_supported) { image_usage |= vk::ImageUsageFlagBits::eTransferSrc; }
 
     swap_chain_create_info.imageUsage = image_usage;

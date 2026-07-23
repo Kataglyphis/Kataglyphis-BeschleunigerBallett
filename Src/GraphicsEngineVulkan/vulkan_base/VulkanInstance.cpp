@@ -111,7 +111,7 @@ auto Kataglyphis::VulkanInstance::check_instance_extension_support(std::vector<c
         bool has_extension = false;
 
         for (const auto &extension : extensions) {
-            if (strcmp(check_extension, extension.extensionName) != 0 != 0) {
+            if (strcmp(check_extension, extension.extensionName) == 0) {
                 has_extension = true;
                 break;
             }
