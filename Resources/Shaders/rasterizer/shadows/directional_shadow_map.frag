@@ -15,21 +15,10 @@
 
 #include "hostDevice/host_device_shared_vars.hpp"
 #include "scene/ObjMaterial.hpp"
-#include "scene/Vertex.hpp"
 #include "ObjectDescription.hpp"
+#include "material_fetch.glsl"
 
 layout (location = 0) in vec2 fragUV;
-
-layout(set = 0, binding = OBJECT_DESCRIPTION_BINDING, scalar) buffer ObjectDescription_ {
-    ObjectDescription i[];
-} object_description;
-
-layout(buffer_reference, scalar) buffer MaterialIDs {
-    int i[];
-}; // per triangle material id
-layout(buffer_reference, scalar) buffer Materials {
-    ObjMaterial m[];
-}; // all materials
 
 layout(set = 0, binding = SAMPLER_BINDING) uniform sampler texture_sampler[MAX_TEXTURE_COUNT];
 layout(set = 0, binding = TEXTURES_BINDING) uniform texture2D tex[MAX_TEXTURE_COUNT];
@@ -42,10 +31,8 @@ layout(push_constant) uniform PushConstants {
 };
 
 void main() {
-    ObjectDescription obj_res = object_description.i[objectIndex];
-    MaterialIDs materialIDs   = MaterialIDs(obj_res.material_index_address);
-    Materials materials       = Materials(obj_res.material_address);
-    ObjMaterial material      = materials.m[materialIDs.i[gl_PrimitiveID]];
+    ObjectDescription obj_res = fetch_object_description(objectIndex);
+    ObjMaterial material      = fetch_material(obj_res);
 
     // Only textured MASK materials alpha-test; everything else casts unchanged.
     if (material.alphaCutoff >= 0.0 && material.textureID >= 0) {

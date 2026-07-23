@@ -33,25 +33,9 @@ layout (set = 0, binding = sceneUBO_BINDING) uniform _SceneUBO {
 	SceneUBO sceneUBO;
 };
 
-layout(set = 0, binding = OBJECT_DESCRIPTION_BINDING, scalar) buffer ObjectDescription_ {
-    ObjectDescription i[];
-} object_description;
-
-layout(buffer_reference, scalar) buffer Vertices {
-    Vertex v[]; 
-}; // Positions of an object
-
-layout(buffer_reference, scalar) buffer Indices {
-    ivec3 i[]; 
-}; // Triangle indices
-
-layout(buffer_reference, scalar) buffer MaterialIDs {
-    int i[]; 
-}; // per triangle material id
-
-layout(buffer_reference, scalar) buffer Materials {
-	ObjMaterial m[]; 
-}; // all materials of .obj
+// object_description + the MaterialIDs/Materials buffer-reference walk (the
+// Vertices/Indices refs here were dead) now live in the shared include.
+#include "material_fetch.glsl"
 
 layout(set = 0, binding = SAMPLER_BINDING) uniform sampler texture_sampler[MAX_TEXTURE_COUNT];
 layout(set = 0, binding = TEXTURES_BINDING) uniform texture2D tex[MAX_TEXTURE_COUNT];
@@ -73,15 +57,13 @@ void main() {
 	// Indexed per draw. This read object_description.i[0] unconditionally
 	// until 2026-07-20, so every model was shaded with the FIRST model's
 	// material and geometry buffer addresses.
-	ObjectDescription obj_res	= object_description.i[pc_raster.objectIndex];
-    MaterialIDs materialIDs		= MaterialIDs(obj_res.material_index_address);	// material id per triangle (face)
-	Materials materials			= Materials(obj_res.material_address);			// array of all materials
+	ObjectDescription obj_res = fetch_object_description(pc_raster.objectIndex);
 
 	vec3 L = normalize(vec3(-sceneUBO.dirLight.direction));
 	vec3 N = normalize(shading_normal);
 	vec3 V = normalize(sceneUBO.cam_pos.xyz - worldPosition);
-	
-	ObjMaterial material = materials.m[materialIDs.i[gl_PrimitiveID]];
+
+	ObjMaterial material = fetch_material(obj_res);
 
 	vec3 ambient;
 	if (material.textureID >= 0) {

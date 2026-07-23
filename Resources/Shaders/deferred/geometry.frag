@@ -24,14 +24,8 @@ layout (location = 1) in vec3 shading_normal;
 layout (location = 2) in vec3 fragment_color;
 layout (location = 3) in vec3 worldPosition;
 
-layout(set = 0, binding = OBJECT_DESCRIPTION_BINDING, scalar) buffer ObjectDescription_ {
-    ObjectDescription i[];
-} object_description;
-
-layout(buffer_reference, scalar) buffer Vertices { Vertex v[]; };
-layout(buffer_reference, scalar) buffer Indices { ivec3 i[]; };
-layout(buffer_reference, scalar) buffer MaterialIDs { int i[]; };
-layout(buffer_reference, scalar) buffer Materials { ObjMaterial m[]; };
+// object_description + the material walk now live in the shared include.
+#include "material_fetch.glsl"
 
 layout(set = 0, binding = SAMPLER_BINDING) uniform sampler texture_sampler[MAX_TEXTURE_COUNT];
 layout(set = 0, binding = TEXTURES_BINDING) uniform texture2D tex[MAX_TEXTURE_COUNT];
@@ -43,11 +37,8 @@ layout(location = 2) out vec4 outMaterial;
 
 void main() {
     // Indexed per draw; see shader.frag.
-    ObjectDescription obj_res = object_description.i[pc_raster.objectIndex];
-    MaterialIDs materialIDs = MaterialIDs(obj_res.material_index_address);
-    Materials materials = Materials(obj_res.material_address);
-
-    ObjMaterial material = materials.m[materialIDs.i[gl_PrimitiveID]];
+    ObjectDescription obj_res = fetch_object_description(pc_raster.objectIndex);
+    ObjMaterial material = fetch_material(obj_res);
 
     vec4 texColor;
     if (material.textureID >= 0) {
