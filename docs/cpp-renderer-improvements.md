@@ -82,6 +82,24 @@ validation-layer-clean runtime check where rendering changed.
    `KATAGLYPHIS_GPU_TIMING_JSON` export produces per-pass averages - the
    before/after evidence for every perf unit in the table above (the G-buffer
    and multiview-cascade units cite its numbers directly).
+7. **Dedup the loaders' `MeshRange` slice logic** (small refactor; do it when
+   next touching a loader, not standalone). After the glTF (`1d40e176`) and OBJ
+   (`09dadaa5`) mesh splits, `GltfLoader.ixx` and `ObjLoader.ixx` each carry an
+   IDENTICAL `struct MeshRange {vertexBase,vertexCount,indexStart,indexCount,
+   triStart,triCount}` and their `uploadParsed`s run a near-identical per-range
+   slice loop (subVertices copy, subIndices re-based by `-vertexBase`,
+   subMaterialIndex slice, full-materials `add_new_mesh`, empty-range fallback).
+   Clean extraction: move `MeshRange` to the model module as `Kataglyphis::MeshRange`
+   (it already imports Vertex/ObjMaterial/device and owns `add_new_mesh`), add a
+   free `build_meshes_from_ranges(Model&, device, queue, pool, vertices, indices,
+   materialIndex, materials, ranges)` there, and have both loaders' `getMeshRanges()`
+   return the shared type + `uploadParsed` call the helper. Transparent to the
+   ObjParseUnit/GltfParseUnit tests (same field names). WHY it is queued not done:
+   `model.ixx` is embedded in `Scene`, so this is an ABI-skew change needing the
+   full delete-build + `-FreshContainer` sequence - not worth a central-module
+   rebuild for ~30 lines of stable, tested duplication as a standalone. The payoff
+   lands naturally with the per-mesh-material-subset optimisation (the shared
+   follow-up both splits list), which edits exactly this slice loop.
 
 ## Verification pattern
 
