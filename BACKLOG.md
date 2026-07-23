@@ -1497,6 +1497,23 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       is confirmation-only.) The Rust renderer's MASK path (RPT `forward.wgsl`) is
       the reference.
 
+      *ORACLE DE-RISKED (2026-07-23): the fixture texture is ready, only the rig +
+      camera is missing.* Decoded `mask_card.gltf`'s embedded 8x8 PNG: it is a PERFECT
+      50/50 CHECKERBOARD (32/64 texels opaque, 32 alpha=0 cut-out, nearest-filtered),
+      the ideal MASK test pattern. So the oracle needs no new fixture and can reuse the
+      PROVEN detail-fraction metric (the sponza-golden family, `goldenRenderSuite.cpp`
+      ~1593): with discard ON the card is a card-colour/background checkerboard = HIGH
+      right-neighbour-luminance-change fraction in the card's screen crop; with discard
+      OFF (the red proof — remove the `discard` in `shadows/directional_shadow_map.frag`
+      or the forward FS, recompile spv) the card is solid = LOW. The ONE remaining
+      unknown is framing: the default camera renders the 1x1 card tiny/edge-on (see the
+      attempt above), so this needs a controlled camera + a scaled card-over-plane rig
+      (like `shadow_rig`) whose card fills a known crop, then LOOK at the dumped capture
+      before trusting the crop bounds. Background must be distinct from the card's
+      opaque colour (skybox works if the opaque texel RGB differs from the sky) or use a
+      solid plane behind it. Estimate: one rig fixture + one golden + 1-2 look-and-tune
+      build cycles for the crop.
+
       *1b design note (M, so it starts warm — the shadow pass is a CORE system,
       give it a dedicated cycle):* the CSM shadow pass
       (`scene/light/directional_light/CascadedShadowMap.cpp`) is deliberately
