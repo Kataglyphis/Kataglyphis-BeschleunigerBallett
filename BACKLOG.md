@@ -1604,8 +1604,27 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       *1c — RT/PT MASK any-hit (M/L, dedicated cycle; design done 2026-07-23 by reading
       the kernels).* Today both trace the SOLID quad for MASK: `path_tracing.comp` opens
       the ray query with `gl_RayFlagsOpaqueEXT` (line ~218) and an EMPTY
-      `while(rayQueryProceedEXT)` loop, and the RT pipeline has no any-hit shader. Two
-      code paths, shared alpha-test logic:
+      `while(rayQueryProceedEXT)` loop, and the RT pipeline has no any-hit shader.
+
+      **ATTEMPTED 2026-07-23 — PT shader half written + STRUCTURALLY verified, then
+      REVERTED because the positive proof is BLOCKED by a separate limitation (see the
+      new "added models absent from the RT/PT AS" item below).** The PT candidate
+      alpha-test (a `candidatePasses(rayQuery)` helper: fetch the candidate material via
+      the committed=false buffer-reference walk, OPAQUE/untextured pass immediately, MASK
+      samples base-colour alpha at the barycentric UV vs the cutoff; the primary + NEE
+      shadow queries drop `gl_RayFlagsOpaqueEXT` and confirm passing candidates) was
+      IMPLEMENTED and is no-regression clean: all 4 PT goldens pass and the white FURNACE
+      stays 186.005 (ideal 186) unbiased, proving the confirm logic is correct for opaque
+      hits. But the POSITIVE MASK-through-holes proof could not be built: a mask_card
+      `addModel`'d in PT mode is INVISIBLE even with the opaque flag forced (RED == GREEN
+      to the digit, 0.0353734), so the added card is not in the traced scene at all - the
+      test can't distinguish cut-out from solid. Reverted to stay at the "red/green proven"
+      bar. To finish 1c PT next: make a MASK card the DEFAULT model
+      (`ScopedModelOverride`) so it's in the AS at load (sidestepping the added-model AS
+      gap), frame it, and use the noise-robust detail-fraction oracle. The shader change
+      itself is written-and-correct (recoverable from this session's transcript).
+
+      Two code paths, shared alpha-test logic:
       - *PT (ray_query, the easier half — NO new shader/SBT):* drop `gl_RayFlagsOpaqueEXT`
         from BOTH the primary query (~line 218) and the NEE shadow query (~line 263).
         In each `rayQueryProceedEXT` loop body, when
@@ -1706,6 +1725,22 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       every shader that reads UV + the loaders — a Vertex-layout ABI change touching the
       whole pipeline, M/L not S. Do KHR_texture_transform first; defer texcoord index until
       a real dual-UV asset needs it.
+**POTENTIAL BUG (HYPOTHESIS, found 2026-07-23 while attempting 1c PT — needs confirmation):
+a model added via `addModel` after the initial load may be ABSENT from the RT/PT
+acceleration structure** (M) — a `mask_card.gltf` added with `renderer->addModel(path, placement)`
+    while in PATH-TRACING mode does not appear in the traced image at all: forcing
+    `gl_RayFlagsOpaqueEXT` (a solid quad that MUST occlude if present) leaves the render
+    bit-identical (RED == GREEN, detail 0.0353734), i.e. no rays hit it. The same
+    `addModel` renders fine in the FORWARD raster goldens (`SecondModelShadesWithItsOwnTextures`),
+    so the geometry loads - it just isn't traced. Likely the same class as the
+    TLAS-follows-transforms fix (`99c62471`) which was TLAS-only "BLAS untouched": adding
+    a NEW model needs a new BLAS built AND the TLAS rebuilt to reference it, and the
+    add-model path may only update object descriptions / the TLAS instance list without
+    the new BLAS. Confirm by tracing a scene where a second model is added post-load (RT
+    and PT) and checking it appears; if real, the fix is to build the added model's BLAS
+    and rebuild the TLAS in `ASManager` on add. This BLOCKS positively testing 1c PT via
+    addModel (use a default-model MASK fixture meanwhile). If confirmed it is a real
+    correctness bug for any runtime-added geometry under RT/PT, not just MASK.
 12. **Point lights are wired on the GPU but never fed; `OmniDirShadowMap` renders
     nothing** (M) — `lighting.frag` loops `numPointLights`, which
     `updateUniforms` never writes; the cube depth target allocated at init is
