@@ -295,8 +295,16 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Fronten
         else if (guiSceneSharedVars.shadow_map_res_index == 2) shadow_res = 2048;
         else if (guiSceneSharedVars.shadow_map_res_index == 3) shadow_res = 4096;
 
-        dirShadowMap.init(device, shadow_res, shadow_res, static_cast<uint32_t>(guiSceneSharedVars.num_shadow_cascades),
-          sharedRenderDescriptors.getLayout());
+        // Clamp to MAX_CASCADES, matching the startup init: the SceneUBO only
+        // has MAX_CASCADES cascade matrices and the shader samples that many, so
+        // a GUI value above it (the slider allows up to 8) renders extra cascades
+        // that are never sampled AND makes the shadow multiview render pass use a
+        // viewMask whose top bit can exceed the device's maxMultiviewViewCount
+        // (a validation error). Clamping keeps the visible result identical.
+        const auto cascade_count =
+          std::min<uint32_t>(static_cast<uint32_t>(guiSceneSharedVars.num_shadow_cascades),
+            static_cast<uint32_t>(MAX_CASCADES));
+        dirShadowMap.init(device, shadow_res, shadow_res, cascade_count, sharedRenderDescriptors.getLayout());
         // cleanUp() destroyed the pipeline, descriptor resources and the light
         // matrices buffer; recreate them (same sequence as at startup).
         dirShadowMap.createGraphicsPipeline();
