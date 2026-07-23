@@ -1626,11 +1626,21 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
         flag in `ASManager` (currently set so any-hit is skipped) and wire the rahit into
         the SBT/hit-group in the RT pipeline builder. rchit is unchanged (only committed
         hits reach it).
-      - *Oracle:* the SAME ideal `mask_card.gltf` (its PNG is a verified 50/50 8x8
-        checkerboard) over a distinct background, traced in PT (and RT) mode — background
-        shows through the holes; red-proven by restoring `gl_RayFlagsOpaqueEXT` / removing
-        the alpha test (the card occludes fully). Reuses the 1b-de-risked detail/
-        background-fraction metric + the controlled-camera rig that item still needs.
+      - *Oracle (NOISE-ROBUST refinement 2026-07-23 — the rig now EXISTS):* the
+        `addModel(mask_card, placement)` rig that `MaskCardDiscardsCutoutTexelsVisually`
+        and the doubleSided goldens already use is directly reusable in PT mode
+        (`renderer_vars.pathTracing = true`). Prefer a DETAIL-fraction over a differential
+        here — PT is noisy and a base-vs-card differential is polluted by per-frame noise
+        in the holes (separate accumulation after the AS-rebuild reset). Instead render the
+        card over the SKY and measure the detail-fraction in the card's screen box after
+        enough accumulation frames (the accumulation golden converges ~45): with 1c the
+        card is a high-contrast checkerboard of white opaque texels vs sky through the
+        holes → HIGH detail; without 1c the card is a SOLID uniform white quad (mask_card's
+        RGB is uniform white — verified while building the KHR fixture) → LOW detail.
+        Red-proven by restoring `gl_RayFlagsOpaqueEXT`. Same detail-fraction metric as the
+        forward MASK + KHR goldens (`goldenRenderSuite.cpp`), so no new oracle machinery -
+        just point it at the PT capture and pick the accumulation depth. The card-over-sky
+        framing (env-tunable MASK_X/Y/Z/SCALE) is already dialled in from the forward golden.
       - ABI: shader-only for PT; the RT half adds a shader file + SBT wiring (no C++
         struct change, so not ABI-skew) but DOES touch `ASManager` geometry flags.
     - *Increment 2 — doubleSided — ✅ FORWARD DONE (2026-07-23):* forward pass now
