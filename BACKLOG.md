@@ -693,6 +693,15 @@ Two things this baseline already tells us:
 Debug-only builds are the default working loop (fast, sanitized). Things
 that are *not* exercised that way and should be run periodically:
 
+- **Multiview `viewMask` validation warning (observed 2026-07-23)** — the golden
+  suite logs `VUID-VkSubpassDescription2-viewMask-06706` /
+  `VUID-VkRenderPassMultiviewCreateInfo-pViewMasks-06697` ("the most significant
+  bit in viewMask must be < maxMultiviewViewCount") from the CascadedShadowMap
+  multiview render pass. Non-fatal on the RX 9070 XT (shadows render, 22/22
+  golden pass) but non-conformant: the CSM viewMask likely sets a bit index the
+  device's `maxMultiviewViewCount` does not cover. Unrelated to sync/FrameSync
+  (surfaced incidentally while validating that extraction). Fix: check the CSM
+  multiview `viewMask`/`correlationMask` against the queried limit.
 - **`clangcl-profile` (RelWithDebInfo) once in a while** — optimized code
   paths differ from debug: different inlining, different UB exposure,
   and it is the only configuration where the benchmarks are meaningful
