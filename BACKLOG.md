@@ -1497,22 +1497,30 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       is confirmation-only.) The Rust renderer's MASK path (RPT `forward.wgsl`) is
       the reference.
 
-      *ORACLE DE-RISKED (2026-07-23): the fixture texture is ready, only the rig +
-      camera is missing.* Decoded `mask_card.gltf`'s embedded 8x8 PNG: it is a PERFECT
-      50/50 CHECKERBOARD (32/64 texels opaque, 32 alpha=0 cut-out, nearest-filtered),
-      the ideal MASK test pattern. So the oracle needs no new fixture and can reuse the
-      PROVEN detail-fraction metric (the sponza-golden family, `goldenRenderSuite.cpp`
-      ~1593): with discard ON the card is a card-colour/background checkerboard = HIGH
-      right-neighbour-luminance-change fraction in the card's screen crop; with discard
-      OFF (the red proof — remove the `discard` in `shadows/directional_shadow_map.frag`
-      or the forward FS, recompile spv) the card is solid = LOW. The ONE remaining
-      unknown is framing: the default camera renders the 1x1 card tiny/edge-on (see the
-      attempt above), so this needs a controlled camera + a scaled card-over-plane rig
-      (like `shadow_rig`) whose card fills a known crop, then LOOK at the dumped capture
-      before trusting the crop bounds. Background must be distinct from the card's
-      opaque colour (skybox works if the opaque texel RGB differs from the sky) or use a
-      solid plane behind it. Estimate: one rig fixture + one golden + 1-2 look-and-tune
-      build cycles for the crop.
+      *ORACLE PARTLY DE-RISKED (2026-07-23): fixture ready + rig mechanism found, but
+      the OBVIOUS metric is a trap.* Decoded `mask_card.gltf`'s embedded 8x8 PNG: a
+      PERFECT 50/50 CHECKERBOARD (32/64 texels opaque, 32 alpha=0 cut-out,
+      nearest-filtered). Rig mechanism: no new fixture needed - reuse
+      `EngineHarness::renderer->addModel(path, placement)` (as the sponza golden does)
+      to add the card over the default scene with a scale+translate placement that
+      faces it to the camera and fills a known crop (the earlier tiny/edge-on failure
+      was the DEFAULT placement; an explicit matrix fixes it), then LOOK at a
+      DumpToPng before trusting the crop bounds.
+      **METRIC TRAP (do NOT use detail/edge-fraction here):** with discard OFF the
+      cut-out texels still carry RGB and render, so the card is a checkerboard in BOTH
+      states - opaque-vs-background with discard ON, opaque-vs-cutoutRGB with discard
+      OFF - and an edge/detail-fraction metric stays HIGH either way, so the red state
+      PASSES (vacuous, exactly the "swung-pixel counts do not discriminate" lesson).
+      The CORRECT discriminator is the fraction of card-crop pixels matching a UNIFORM
+      background colour: discard ON -> ~50% of the crop is background showing through the
+      holes; discard OFF -> ~0% (holes show the texture's cut-out RGB). This REQUIRES a
+      uniform background behind the card (a solid plane, or clear-to-known-colour, NOT
+      the varying skybox), and knowing the card's opaque + cut-out RGB so "background"
+      is separable from both. Red proof: remove the `discard` in the forward FS (or
+      `shadows/directional_shadow_map.frag`), recompile spv, confirm background-fraction
+      collapses to ~0. Estimate: one golden + a uniform-background rig + 2-3
+      look-and-tune cycles (framing, then the background-match threshold). Shared with
+      1c, which reuses this exact rig in PT/RT mode.
 
       *1b design note (M, so it starts warm — the shadow pass is a CORE system,
       give it a dedicated cycle):* the CSM shadow pass
