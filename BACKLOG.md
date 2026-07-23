@@ -1272,17 +1272,24 @@ cleanUp+recreate pair at the four scene-changed sites.
     surface as validation errors / device hangs — run all 22 golden tests on the
     RX 9070 XT (`docs/gpu-golden-testing.md`). Touches `VulkanRenderer.ixx` →
     FreshContainer.
-  - **SwapchainTarget — caveat before extracting (found 2026-07-23):** unlike
-    FrameSync, the swapchain-*recreation* logic is NOT covered by the golden
-    suite (the tests render at a fixed size and never resize/recreate). So
-    extracting swapchain + framebuffers + recreation blind is riskier than
-    FrameSync was — a recreation bug would pass all 22 golden tests. Write a
-    resize/recreate integration test (drive `recreateSwapChain`, then render and
-    assert) FIRST, then extract. Also: the cascade `# cascades` GUI slider still
+  - **SwapchainTarget — investigated 2026-07-23, NOT a clean extraction (skip it).**
+    First added the missing recreation coverage (`SwapchainRecreationKeepsRendering`,
+    `9b202b68`). Then reading `recreateSwapChain` end to end showed the suggestion
+    doesn't hold: the swapchain is *already* a `VulkanSwapChain` class, the
+    framebuffers belong to the **stages** (postStage/rasterizer/deferred/skybox
+    each own theirs), and `recreateSwapChain` is inherently cross-cutting
+    orchestration — it destroys+recreates the stage framebuffers, the GPU-timing
+    query pool, the path-tracing accumulation target, and, on an image-count
+    change, the UBO vectors + descriptor pools/sets + RT descriptors. A
+    "SwapchainTarget" owning "swapchain + framebuffers + recreation" would have
+    almost nothing to own and would still need every stage handle, so it does not
+    decouple anything. Coordinating recreation IS the hub's job. Better hub-shrink
+    targets: the descriptor/UBO re-provisioning could move behind a
+    `reprovisionPerImageResources()` helper, but that is a small readability win,
+    not a class extraction. Aside: the cascade `# cascades` GUI slider still
     advertises 1..8 though the engine clamps to `MAX_CASCADES`(3) (`c49fd8b4`);
-    making the slider honest was left out because GUI has no clean access to
-    `MAX_CASCADES` (would couple GUI→SceneUBO or hard-code 3) and the clamp
-    already fixes the actual bug.
+    left as-is because GUI has no clean access to `MAX_CASCADES` and the clamp
+    already fixes the bug.
 - **Device-lost teardown is special-cased in `App.cpp`** (scene/GUI
   cleanup is skipped) — a symptom of ownership living in the wrong place.
   Full RAII up the stack would remove the special case entirely.
