@@ -1369,9 +1369,16 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       (every OBJ/OPAQUE material is -1, so bit-unchanged). CPU-tested
       (`GltfParseUnit.{MaskAlphaModeSetsTheCutoff,OpaqueMaterialHasNoCutoff}`, red
       without the loader change) + that suite added to the Windows CI filter (it was
-      missing). REMAINING for increment 1: the SHADOW pass (1b) and RT/PT kernels (1c)
-      still cast/trace the solid quad — the shadow frag is depth-only with no UVs
-      today; and a GPU-host visual golden of the cut-out. (Attempted the visual
+      missing). **1b (shadow-pass MASK) DONE (6b7350b4)**: the directional cascade
+      pass now alpha-tests MASK casters (VS forwards UV + moves light matrices to
+      set 1 + repurposes the push slot as objectIndex; the empty FS replicates the
+      forward material walk and discards; CSM binds the shared set at set 0). ABI
+      skew (a CascadedShadowMap.ixx member) - verified with a fresh rebuild after
+      the incremental build tripped the documented stale-BMI ASan overflow; 15/15
+      goldens unchanged + validation-clean (the material fetch runs for every caster,
+      proving the path end to end). REMAINING for increment 1: the RT/PT kernels (1c)
+      still trace the solid quad; and a GPU-host visual golden of the cut-out.
+      (Attempted the visual
       check via `KATAGLYPHIS_MODEL_OVERRIDE=Models/GltfTest/mask_card.gltf` +
       `DISABLED_DumpsFrameToPng`: the default camera frames the ImGui panel over a
       tiny/edge-on 1x1 card, so it shows nothing useful — the visual golden needs a
