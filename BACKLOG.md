@@ -1346,6 +1346,27 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
     multi-model + transform-follow goldens all exercise the flattening
     invariants already. This is the
     enabling change for several already-wanted features.
+
+    **CALLER/CONSUMER MAP (2026-07-23, makes it mechanical):** (1) `Model` holds
+    a single `Mesh mesh` (`Model.ixx`); `getMeshCount()` hardcodes 1, `getMesh()`
+    ignores its index, `getObjectDescription()` returns `mesh.getObjectDescription()`.
+    ABI skew (Model is a module-interface class embedded in Scene) -> delete-build +
+    -FreshContainer. (2) `add_new_mesh` is called EXACTLY ONCE per Model - only from
+    `GltfLoader.cpp:79` and `ObjLoader.cpp:129` - so switching it from overwrite to
+    append is safe (no existing double-call to break). (3) The object-description
+    flattening lives in `Scene::add_model` (`Scene.cpp:159`):
+    `object_descriptions.push_back(model->getObjectDescription())` - change to loop
+    the model's meshes and push each mesh's OD, so `Scene::object_descriptions`
+    becomes one-per-MESH. (4) `VulkanRenderer::create_object_description_buffer`
+    (`:1463`) consumes `scene->getObjectDescriptions()` unchanged; what changes is
+    the meaning of `objectIndex` - it must become the FLAT mesh index (sum of prior
+    models' mesh counts + local k), pushed per draw in the forward/deferred/shadow
+    record loops (`Rasterizer.cpp:115` `pushConstant.objectIndex = m`,
+    `DeferredRasterizer.cpp:468`, and CSM's `makeShadowPush(..., m)`). (5) AS: one
+    BLAS per mesh (ASManager already loops a blas vector). Do it as: data structure
+    + per-mesh OD first (goldens must stay green - still 1 mesh/model so it is a
+    no-op), THEN split a loader's primitives into multiple meshes to actually
+    exercise it.
 11. **glTF loader gaps** (M) — skinned-node transforms are applied though the spec
     says ignore them (`GltfLoader.cpp:231`); ~~missing `NORMAL` becomes a
     constant `(0,1,0)`~~ **NORMAL fallback DONE (2026-07-22)**: absent normals
