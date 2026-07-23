@@ -786,6 +786,64 @@ unconditional control capture before its output is believed.
   container layout). Either run tidy inside the container, or accept that
   coverage is limited to the non-module surface.
 
+### Deep code-review pass (2026-07-23)
+
+Three subsystem reviews (renderer, scene/loaders, vulkan_base+memory+app),
+each finding verified against the source before any change. **Applied this
+pass** (all non-`.ixx`, one build+test cycle):
+
+- **BUG `VulkanInstance.cpp` extension check** — `strcmp(...) != 0 != 0`
+  parsed as `(strcmp != 0) != 0`, so `check_instance_extension_support` set
+  `has_extension = true` on the first *non-matching* extension and effectively
+  always returned true. Fixed to `== 0`.
+- **BUG `VulkanSwapChain.cpp` swapchain usage** — `eSampled | eStorage` were
+  requested unconditionally while only `eTransferSrc` was capability-guarded.
+  `eStorage` is an optional swapchain usage; on a surface that lacks it
+  `createSwapchainKHR` fails and `ASSERT_VULKAN` aborts. Now masks the optional
+  bits against `supportedUsageFlags` (like `eTransferSrc`). No behaviour change
+  on hardware that supports them; portability fix elsewhere.
+- **BUG texture-index misalignment (both loaders)** — `GltfLoader`/`ObjLoader`
+  `uploadParsed()` skipped `addTexture` on a decode/load failure, but each
+  material's `textureID` is a dense index; a skipped slot shifted every later
+  texture down one and could index past the descriptor array (malformed embedded
+  image / missing `.mtl` file). Now fills the failed slot with the default
+  texture to keep alignment. Valid-texture path (golden suite) unchanged.
+- Dead/duplicate removals: `ASManager` double-assigned
+  `instanceShaderBindingTableRecordOffset`; `VulkanRenderer` unused
+  `[[maybe_unused]] toVkResult`; `Mesh` dead identity-matrix `transpose_transform`
+  block; `Mesh` reserved-identifier `__vbm` alias.
+
+**Pending — real, but touch a `.ixx` (need FreshContainer, own cycle):**
+
+- `memory/Allocator` is copyable and `~Allocator` does not release — risk of
+  double `vmaDestroyAllocator` / leak; make it move-only + RAII like
+  `VulkanBuffer`/`VulkanImage`. (MED, real safety issue.)
+- Dead members: `Mesh::objectDescriptionBuffer`, `Model::texture_list` (+ its
+  getter), `VulkanImage::commandBufferManager`, `GUI::commandBufferManager`.
+- `VulkanDevice`/`VulkanImage` const-correctness (const getters, return props
+  by const-ref).
+- `Mesh` material-ID + materials buffers carry a stray `eIndexBuffer` usage bit
+  (copy-paste; harmless superset but misleading).
+
+**Pending — owner decision (a feature, not dead code):**
+
+- `pointShadowMap`/`OmniDirShadowMap` is `init()`/`cleanUp()`-ed but never
+  recorded or sampled — remove, or finish the omni shadow pass (see the point-
+  light shadow item). `compute_command_pool` is created/destroyed but unused
+  (all compute rides `graphics_command_pool`).
+
+**Pending — larger refactors (behaviour-preserving, size them first):**
+
+- Decompose `VulkanRenderer::record_commands` (~170 lines),
+  `VulkanDevice::create_logical_device` (~290), `GltfLoader::parseCpu` (~215).
+- Dedup: the `MeshRange` slice loop across both loaders; `Mesh::create*Buffer`
+  (four near-identical bodies → one templated `uploadBuffer<T>`);
+  `VulkanDevice::getQueueFamilies` (two ~35-line copies);
+  `VulkanImage::transitionImageLayout` barrier setup; the repeated active-
+  offscreen-texture ternary and scene-rebuild sequence in `VulkanRenderer`.
+- Fragile: `CascadedShadowMap` hardcodes `eD32Sfloat` in three places while
+  `init()` queries it — store and reuse the chosen format.
+
 ## CI and release gaps
 
 - [x] **TSan build failed on an ASan/TSan flag conflict** (fixed 2026-07-21,
