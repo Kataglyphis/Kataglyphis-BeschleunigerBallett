@@ -1578,6 +1578,39 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       shared set (already received as `rasterizer_descriptor_sets`) at set 0 + push
       `objectIndex = m`. NOT ABI-skew, so a normal incremental build + the mask_card
       shadow golden verify it.
+
+      *1c — RT/PT MASK any-hit (M/L, dedicated cycle; design done 2026-07-23 by reading
+      the kernels).* Today both trace the SOLID quad for MASK: `path_tracing.comp` opens
+      the ray query with `gl_RayFlagsOpaqueEXT` (line ~218) and an EMPTY
+      `while(rayQueryProceedEXT)` loop, and the RT pipeline has no any-hit shader. Two
+      code paths, shared alpha-test logic:
+      - *PT (ray_query, the easier half — NO new shader/SBT):* drop `gl_RayFlagsOpaqueEXT`
+        from BOTH the primary query (~line 218) and the NEE shadow query (~line 263).
+        In each `rayQueryProceedEXT` loop body, when
+        `rayQueryGetIntersectionTypeEXT(rayQuery,false)==gl_RayQueryCandidateIntersectionTriangleEXT`,
+        fetch the CANDIDATE's material+UV — same buffer-reference walk `getObjectHitInfo`
+        already does but with the `committed=false` variants
+        (`...InstanceCustomIndexEXT/GeometryIndexEXT/PrimitiveIndexEXT/BarycentricsEXT(rayQuery,false)`),
+        interpolate `tex_coords` via barycentrics (copy lines ~96-98 of `raytrace.rchit`),
+        sample base-colour alpha; call `rayQueryConfirmIntersectionEXT(rayQuery)` when
+        `alphaCutoff < 0` (OPAQUE) OR `alpha >= alphaCutoff`, else skip (leave it a
+        candidate). The primary query keeps the closest CONFIRMED hit; the shadow query
+        (terminate-on-first-hit) then correctly passes through holes.
+      - *RT pipeline (rgen/rchit — needs a new any-hit shader):* add `raytrace.rahit`
+        bound to the hit group, replicating rchit's ObjectDescription/Vertices/Indices/
+        MaterialIDs/Materials setup + the UV interpolation it ALREADY computes (rchit
+        lines 69-98 are copy-ready), sample alpha, `ignoreIntersectionEXT()` on MASK
+        fail (OPAQUE returns immediately = accept). Drop the per-geometry/instance opaque
+        flag in `ASManager` (currently set so any-hit is skipped) and wire the rahit into
+        the SBT/hit-group in the RT pipeline builder. rchit is unchanged (only committed
+        hits reach it).
+      - *Oracle:* the SAME ideal `mask_card.gltf` (its PNG is a verified 50/50 8x8
+        checkerboard) over a distinct background, traced in PT (and RT) mode — background
+        shows through the holes; red-proven by restoring `gl_RayFlagsOpaqueEXT` / removing
+        the alpha test (the card occludes fully). Reuses the 1b-de-risked detail/
+        background-fraction metric + the controlled-camera rig that item still needs.
+      - ABI: shader-only for PT; the RT half adds a shader file + SBT wiring (no C++
+        struct change, so not ABI-skew) but DOES touch `ASManager` geometry flags.
     - *Increment 2 — doubleSided (S):* per-material cull-mode; the pipeline variant
       already exists conceptually (RPT ships it). Backface-culled single-sided cards
       show the visible/back-face difference.
