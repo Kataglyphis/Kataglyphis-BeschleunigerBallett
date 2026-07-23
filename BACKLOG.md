@@ -1125,18 +1125,14 @@ unconditional control capture before its output is believed.
 
 ## Architecture debt not yet sized
 
-- **The glTF material fetch is duplicated across three fragment shaders** (S,
-  found 2026-07-23 while shipping MASK shadows 1b). `shader.frag` (forward),
-  `deferred/geometry.frag`, and now `rasterizer/shadows/directional_shadow_map.frag`
-  each declare the same `ObjectDescription_` buffer (set 0 binding 2), the
-  `MaterialIDs`/`Materials` buffer_reference blocks, and the same walk
-  `obj_res = object_description.i[objectIndex]` → `materials.m[materialIDs.i[gl_PrimitiveID]]`.
-  Extract into a shared `hostDevice/material_fetch.glsl` include exposing e.g.
-  `ObjMaterial fetch_material(uint objectIndex)` (the forward pass also needs the
-  Vertices/Indices refs, so the include declares those too or a second helper).
-  Behaviour-preserving, so the existing goldens verify it; not ABI-skew (GLSL
-  only). The shadow FS was written to match the forward decls byte-for-byte
-  precisely so this extraction is mechanical.
+- **The glTF material fetch is duplicated across three fragment shaders** —
+  **DONE (ee05b636)**: extracted into `common/material_fetch.glsl`
+  (`fetch_object_description(objectIndex)` + `fetch_material(obj_res)`), replacing
+  the identical `object_description`/`MaterialIDs`/`Materials` walk in the forward,
+  deferred, and shadow fragment shaders. Also dropped the dead Vertices/Indices
+  buffer_reference decls the forward + deferred shaders carried but never used.
+  GLSL only, behaviour-preserving: all three recompile, 15/15 goldens unchanged,
+  validation-clean (no C++ rebuild needed).
 
 - **`VulkanRenderer` is still the hub.** PipelineBuilder (-416 lines) and
   DescriptorSetGroup (-617) shrank it a lot, but it still owns the
