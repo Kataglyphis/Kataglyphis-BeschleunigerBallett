@@ -107,33 +107,9 @@ void Kataglyphis::VulkanImage::transitionImageLayout(vk::Device in_logical_devic
     vk::CommandBuffer command_buffer =
       Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(in_logical_device, command_pool);
 
-    // vk::ImageAspectFlagBits::eColor
-    vk::ImageMemoryBarrier memory_barrier{};
-    memory_barrier.oldLayout = old_layout;
-    memory_barrier.newLayout = new_layout;
-    memory_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;// Queue family to transition from
-    memory_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;// Queue family to transition to
-    memory_barrier.image = image;// image being accessed and modified as part of barrier
-    memory_barrier.subresourceRange.aspectMask = aspectMask;// aspect of image being altered
-    memory_barrier.subresourceRange.baseMipLevel = 0;// first mip level to start alterations on
-    memory_barrier.subresourceRange.levelCount = mip_levels;// number of mip levels to alter starting from baseMipLevel
-    memory_barrier.subresourceRange.baseArrayLayer = 0;// first layer to start alterations on
-    memory_barrier.subresourceRange.layerCount = 1;// number of layers to alter starting from baseArrayLayer
-
-    // if transitioning from new image to image ready to receive data
-    memory_barrier.srcAccessMask = accessFlagsForImageLayout(old_layout);
-    memory_barrier.dstAccessMask = accessFlagsForImageLayout(new_layout);
-
-    vk::PipelineStageFlags const src_stage = pipelineStageForLayout(old_layout);
-    vk::PipelineStageFlags const dst_stage = pipelineStageForLayout(new_layout);
-
-    command_buffer.pipelineBarrier(src_stage,
-      dst_stage,// pipeline stages (match to src and dst accessmask)
-      {},// no dependency flags
-      nullptr,// memory barriers
-      nullptr,// buffer memory barriers
-      memory_barrier// image memory barriers
-    );
+    // Record the barrier through the command-buffer overload so the access-mask /
+    // pipeline-stage / layout-case logic lives in exactly one place.
+    transitionImageLayout(command_buffer, old_layout, new_layout, mip_levels, aspectMask);
 
     Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
       in_logical_device, command_pool, queue, command_buffer);

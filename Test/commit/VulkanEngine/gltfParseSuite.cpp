@@ -231,6 +231,45 @@ TEST(GltfParseUnit, TriangleStripIsTriangulatedNotDropped)
     EXPECT_EQ(loader.getIndices().size() % 3U, 0U);
 }
 
+TEST(GltfParseUnit, TriangleFanIsTriangulatedAroundTheHubVertex)
+{
+    // A TRIANGLE_FAN primitive (mode 6) triangulates with vertex 0 shared by
+    // every triangle: a 4-vertex fan -> triangles (0,1,2) and (0,2,3), i.e.
+    // 6 indices. Fans, like strips, used to be dropped by the triangles-only
+    // gate. This pins the fan WINDING too, so the parseCpu -> processPrimitive
+    // split cannot silently regress a fan to the strip pattern (whose second
+    // triangle is (2,1,3), not (0,2,3)).
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 },
+        "mode": 6
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 4, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 48 } ],
+      "buffers": [ { "byteLength": 48,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAACAPwAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_fan.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()))
+      << "a triangle-fan mesh must load, not be dropped as non-triangle";
+    std::filesystem::remove(tmp);
+
+    EXPECT_EQ(loader.getVertices().size(), 4U) << "four fan vertices";
+    ASSERT_EQ(loader.getIndices().size(), 6U) << "a 4-vertex fan triangulates to 2 triangles";
+    const std::vector<unsigned int> expected = { 0U, 1U, 2U, 0U, 2U, 3U };
+    EXPECT_EQ(loader.getIndices(), expected)
+      << "a fan must triangulate around the shared hub vertex 0, not with the strip winding";
+}
+
 namespace {
 
 // A minimal one-triangle glTF whose single material carries the given

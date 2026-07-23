@@ -366,17 +366,6 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
     vk::PipelineShaderStageCreateInfo lightFragStage{ {}, vk::ShaderStageFlagBits::eFragment, lightFragModule, "main" };
     std::array<vk::PipelineShaderStageCreateInfo, 2> lightStages = { lightVertStage, lightFragStage };
 
-    vk::VertexInputBindingDescription dummyBinding{};
-    dummyBinding.binding = 0;
-    dummyBinding.stride = 16;
-    dummyBinding.inputRate = vk::VertexInputRate::eVertex;
-
-    vk::VertexInputAttributeDescription dummyAttribute{};
-    dummyAttribute.binding = 0;
-    dummyAttribute.location = 0;
-    dummyAttribute.format = vk::Format::eR32G32B32A32Sfloat;
-    dummyAttribute.offset = 0;
-
     vk::PipelineLayoutCreateInfo lightPipelineLayoutInfo{};
     lightPipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
     lightPipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
@@ -386,7 +375,9 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
 
     PipelineBuilder lightingPipelineBuilder;
     lightingPipeline = lightingPipelineBuilder.setShaderStages({ lightStages.begin(), lightStages.end() })
-                         .setVertexInput({ dummyBinding }, { dummyAttribute })
+                         // Vertex-less fullscreen triangle (gl_VertexIndex in lighting.vert):
+                         // no vertex buffer is ever bound, so declare an empty vertex input.
+                         .setVertexInput({}, {})
                          .setCullMode(vk::CullModeFlagBits::eNone)
                          .setDepthTest(false)
                          .setDepthWrite(false)
@@ -463,6 +454,11 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
     // Subpass 0: Geometry
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, geometryPipeline);
 
+    // Bind global descriptor set (set 0). It is identical for every mesh: bind
+    // once, not per draw (matches Rasterizer::recordCommands).
+    commandBuffer.bindDescriptorSets(
+      vk::PipelineBindPoint::eGraphics, geometryPipelineLayout, 0, 1, &descriptorSets[0], 0, nullptr);
+
     meshesDrawn = 0;
     meshesConsidered = 0;
 
@@ -498,10 +494,6 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
             commandBuffer.bindVertexBuffers(0, vertex_buffers, offsets);
 
             commandBuffer.bindIndexBuffer(scene->getIndexBuffer(m, k), 0, vk::IndexType::eUint32);
-
-            // Bind global descriptor set (set 0)
-            commandBuffer.bindDescriptorSets(
-              vk::PipelineBindPoint::eGraphics, geometryPipelineLayout, 0, 1, &descriptorSets[0], 0, nullptr);
 
             commandBuffer.drawIndexed(scene->getIndexCount(m, k), 1, 0, 0, 0);
             ++meshesDrawn;
