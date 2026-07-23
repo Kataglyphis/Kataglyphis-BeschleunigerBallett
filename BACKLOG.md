@@ -851,7 +851,14 @@ hoists the set-0 bind out of the per-mesh loop and drops the lighting pass's
 dead dummy vertex input; new `TriangleFanIsTriangulatedAroundTheHubVertex`
 parse test pins the fan winding.
 
-**REMAINING (smaller / judgement-gated):**
+**DONE — wave 6 (commit `fba308d7`, GPU-verified):** the `MeshRange` slice loop
++ the two near-identical structs are unified into a shared
+`kataglyphis.vulkan.mesh_range` module (`sliceMeshRange` helper), `export
+import`ed by both loaders. **Wave 7 (commit `780bc6bd`, GPU-verified):**
+extracted `VulkanRenderer::rebuildObjectDescriptions()` for the identical
+cleanUp+recreate pair at the four scene-changed sites.
+
+**REMAINING (deliberately left, with reasons):**
 
 - `VulkanDevice::create_logical_device` (~290 lines): **not decomposing the
   feature setup.** It is an interlinked `pNext` chain of stack locals feeding
@@ -859,13 +866,12 @@ parse test pins the fan winding.
   and a dangling `pNext` can pass golden *by luck* (freed stack not yet
   clobbered). Only the queue-create-info build is safely extractable — modest
   gain, low priority.
-- Dedup the `MeshRange` slice loop across both loaders (in `uploadParsed`).
-  Wants a shared-module home for the two `MeshRange` structs (glTF adds
-  `doubleSided`) — a small new module, then both loaders import it.
-- The repeated scene-rebuild / AS-rebuild sequence in `VulkanRenderer`
-  (`finishModelLoad`/`addModel`/`updateStateDueToUserInput`) — the four copies
-  differ subtly (TLAS-only vs full AS, which descriptor-update variant), so
-  extraction must parameterise those differences carefully, then golden-verify.
+- The AS-rebuild + descriptor-refresh steps around `rebuildObjectDescriptions()`
+  are **intentionally inline, not duplication**: the four scene-changed paths
+  genuinely differ (createASForScene vs createTLAS vs none; runs before or after
+  the object descriptions; updateAllDescriptorSets vs
+  updateTexturesInSharedRenderDescriptorSet). A unified helper would
+  misrepresent four sequences as one.
 
 **Owner decision:** `pointShadowMap` allocation was removed as dead; re-add it
 (or the whole omni pass) when the point-light shadow feature is built.
