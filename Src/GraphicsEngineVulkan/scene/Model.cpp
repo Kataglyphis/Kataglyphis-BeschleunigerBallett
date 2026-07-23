@@ -42,11 +42,15 @@ void Model::add_new_mesh(std::shared_ptr<VulkanDevice>vulkan_device,
   std::vector<Vertex> &vertices,
   std::vector<unsigned int> &indices,
   std::vector<unsigned int> &materialIndex,
-  std::vector<ObjMaterial> &materials)
+  std::vector<ObjMaterial> &materials,
+  bool double_sided)
 {
     // Append, not overwrite: the loaders call this once per Model today, so this
     // is behaviour-identical, but it is what lets a Model hold several meshes.
     meshes.emplace_back(vulkan_device, transfer_queue, command_pool, vertices, indices, materialIndex, materials);
+    // The Mesh constructor is deliberately unchanged; the per-material doubleSided
+    // flag rides in separately (default false = back-face culled).
+    meshes.back().setDoubleSided(double_sided);
 }
 
 void Model::set_model(glm::mat4 new_model) { this->model = new_model; }

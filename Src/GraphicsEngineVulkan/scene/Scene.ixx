@@ -94,6 +94,15 @@ class Scene
         }
         return model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index))->getIndexCount();
     };
+    /// glTF material.doubleSided for a mesh, so the raster pass can disable
+    /// back-face culling for it. Out-of-range defaults to single-sided.
+    bool isMeshDoubleSided(uint32_t model_index, uint32_t mesh_index)
+    {
+        if (model_index >= model_list.size()) { return false; }
+        return model_list[static_cast<size_t>(model_index)]
+          ->getMesh(static_cast<size_t>(mesh_index))
+          ->isDoubleSided();
+    };
     /// Object-space bounds of a mesh, for frustum culling. An invalid box is
     /// returned for an out-of-range index, which isVisible() treats as
     /// visible - a missing bound must never be a reason to skip a draw.

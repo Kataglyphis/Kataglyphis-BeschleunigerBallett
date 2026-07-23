@@ -82,6 +82,12 @@ Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setDepthClamp(bool e
     return *this;
 }
 
+Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setDynamicCullMode(bool enable)
+{
+    dynamic_cull_mode = enable;
+    return *this;
+}
+
 Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setBasePipelineIndex(int32_t in_base_pipeline_index)
 {
     base_pipeline_index = in_base_pipeline_index;
@@ -112,7 +118,10 @@ vk::Pipeline Kataglyphis::PipelineBuilder::build(vk::Device device,
     viewport_state_create_info.scissorCount = 1;
     viewport_state_create_info.pScissors = nullptr;
 
-    std::array<vk::DynamicState, 2> dynamic_states = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+    // Viewport/scissor are always dynamic; cull mode is opt-in (setDynamicCullMode)
+    // so only the pass that needs per-draw culling pays the per-draw vkCmdSetCullMode.
+    std::vector<vk::DynamicState> dynamic_states = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+    if (dynamic_cull_mode) { dynamic_states.push_back(vk::DynamicState::eCullMode); }
     vk::PipelineDynamicStateCreateInfo dynamic_state_create_info;
     dynamic_state_create_info.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
     dynamic_state_create_info.pDynamicStates = dynamic_states.data();

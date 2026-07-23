@@ -74,6 +74,10 @@ class GltfLoader
         std::size_t indexCount;
         std::size_t triStart;
         std::size_t triCount;
+        // glTF material.doubleSided for this primitive's material; uploadParsed
+        // forwards it to add_new_mesh so the raster pass can disable back-face
+        // culling for this mesh only. false for single-sided / absent material.
+        bool doubleSided;
     };
     const std::vector<MeshRange> &getMeshRanges() const { return meshRanges; }
 

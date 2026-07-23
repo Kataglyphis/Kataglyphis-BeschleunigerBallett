@@ -37,6 +37,12 @@ class PipelineBuilder
     // clamp to depth 0 instead of being CLIPPED. Only legal when the device
     // feature is enabled - pass VulkanDevice::supportsDepthClamp().
     PipelineBuilder &setDepthClamp(bool enable);
+    // Adds VK_DYNAMIC_STATE_CULL_MODE so the cull mode set by setCullMode becomes
+    // a per-draw dynamic state (vkCmdSetCullMode). Core in Vulkan 1.3, which the
+    // engine targets. Opt-in: off by default, so every other pipeline keeps its
+    // static cull mode and needs no per-draw setCullMode. Used by the forward
+    // raster pass to disable back-face culling for doubleSided glTF meshes only.
+    PipelineBuilder &setDynamicCullMode(bool enable);
     PipelineBuilder &setBasePipelineIndex(int32_t base_pipeline_index);
 
     // Creates the pipeline via createGraphicsPipelines(pipeline_cache, ...);
@@ -62,6 +68,7 @@ class PipelineBuilder
     bool depth_write = true;
     vk::CompareOp depth_compare_op = vk::CompareOp::eLess;
     bool depth_clamp = false;
+    bool dynamic_cull_mode = false;
     int32_t base_pipeline_index = 0;
 };
 }// namespace Kataglyphis

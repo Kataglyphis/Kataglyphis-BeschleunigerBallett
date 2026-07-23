@@ -49,6 +49,13 @@ class Mesh
     /// than culling something whose size is unknown.
     const AABB &getBounds() const { return bounds; };
 
+    /// glTF `material.doubleSided`: when true this mesh must render both faces
+    /// (the raster pass sets a dynamic cull mode of NONE per draw). Default
+    /// false = back-face culled, matching every OBJ mesh and single-sided glTF.
+    /// Set after construction by the loader, so the Mesh constructor is unchanged.
+    void setDoubleSided(bool value) { double_sided = value; };
+    bool isDoubleSided() const { return double_sided; };
+
     void setModel(glm::mat4 new_model);
 
     ~Mesh();
@@ -74,6 +81,9 @@ class Mesh
     static constexpr uint32_t INVALID_COUNT = ~uint32_t(0);
     uint32_t vertex_count{ INVALID_COUNT };
     uint32_t index_count{ INVALID_COUNT };
+
+    // glTF material.doubleSided; see setDoubleSided.
+    bool double_sided{ false };
 
     std::shared_ptr<VulkanDevice>device{ nullptr };
 

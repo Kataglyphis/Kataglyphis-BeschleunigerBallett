@@ -101,7 +101,8 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
               materialIndex.begin() + static_cast<std::ptrdiff_t>(range.triStart),
               materialIndex.begin() + static_cast<std::ptrdiff_t>(range.triStart + range.triCount));
 
-            model->add_new_mesh(device, transfer_queue, command_pool, subVertices, subIndices, subMaterialIndex, materials);
+            model->add_new_mesh(
+              device, transfer_queue, command_pool, subVertices, subIndices, subMaterialIndex, materials, range.doubleSided);
         }
     }
     return model;
@@ -426,12 +427,14 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
             // it as its own Mesh (backlog #10). The union of all ranges is exactly
             // the flat arrays, so a single-primitive glTF yields one range and is
             // behaviour-identical.
+            const bool doubleSided = primitive->material != nullptr && primitive->material->double_sided != 0;
             meshRanges.push_back(GltfLoader::MeshRange{ static_cast<std::size_t>(base),
               positions.size(),
               primIndexStart,
               indices.size() - primIndexStart,
               triStart,
-              emittedTriangles });
+              emittedTriangles,
+              doubleSided });
         }
     }
 

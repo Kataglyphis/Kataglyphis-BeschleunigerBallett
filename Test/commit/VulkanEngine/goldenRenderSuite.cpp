@@ -1753,6 +1753,100 @@ TEST(GoldenRender, MaskCardDiscardsCutoutTexelsVisually)
       << "the changed pixels are too sparse to be the checkerboard - check framing";
 }
 
+// glTF material.doubleSided: a doubleSided mesh must render BOTH faces. Same rig
+// as the discard golden but the card is rotated 180 deg about Y so its BACK face
+// points at the camera. Single-sided (the pre-doubleSided behaviour) back-face
+// culls it -> invisible; doubleSided renders it -> the checkerboard appears. So a
+// visible card here proves the doubleSided flag flows glTF -> Mesh -> the raster
+// pass's per-draw eNone cull mode. mask_card.gltf is doubleSided in the fixture.
+// Red-proven by forcing single-sided (the card vanishes). Env-tunable placement.
+TEST(GoldenRender, MaskCardDoubleSidedRendersFromBehind)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> before = harness.capture_frame(width, height);
+    ASSERT_FALSE(before.empty());
+
+    const auto env_f = [](const char *name, float fallback) {
+        const char *value = std::getenv(name);
+        return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
+    };
+    // Same placement as the discard golden, but rotated 180 deg about Y so the
+    // card's +Z face points AWAY from the camera (the back face is what we see).
+    const glm::mat4 placement =
+      glm::translate(glm::mat4(1.0F),
+        glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
+      * glm::rotate(glm::mat4(1.0F), glm::radians(180.0F), glm::vec3(0.0F, 1.0F, 0.0F))
+      * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
+    const auto added = harness.renderer->addModel(MASK_CARD_MODEL, placement);
+    ASSERT_TRUE(added.has_value()) << "adding the mask card failed";
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    uint32_t w2 = 0;
+    uint32_t h2 = 0;
+    const std::vector<uint8_t> after = harness.capture_frame(w2, h2);
+    ASSERT_FALSE(after.empty());
+    ASSERT_EQ(width, w2);
+    ASSERT_EQ(height, h2);
+
+    const auto changed_at = [&](uint32_t x, uint32_t y) {
+        const size_t b = (static_cast<size_t>(y) * width + x) * 4U;
+        return std::abs(static_cast<int>(before[b]) - static_cast<int>(after[b])) > 12
+               || std::abs(static_cast<int>(before[b + 1U]) - static_cast<int>(after[b + 1U])) > 12
+               || std::abs(static_cast<int>(before[b + 2U]) - static_cast<int>(after[b + 2U])) > 12;
+    };
+
+    const uint32_t scan_x0 = (width * 68U) / 100U;
+    const uint32_t scan_y1 = (height * 62U) / 100U;
+    uint32_t minx = width;
+    uint32_t miny = height;
+    uint32_t maxx = 0;
+    uint32_t maxy = 0;
+    size_t changed_total = 0;
+    for (uint32_t y = 0; y < scan_y1; ++y) {
+        for (uint32_t x = scan_x0; x < width; ++x) {
+            if (changed_at(x, y)) {
+                ++changed_total;
+                minx = std::min(minx, x);
+                maxx = std::max(maxx, x);
+                miny = std::min(miny, y);
+                maxy = std::max(maxy, y);
+            }
+        }
+    }
+
+    // The load-bearing assertion: the back-facing card is VISIBLE. Single-sided
+    // culling would leave changed_total ~0 here (nothing new drawn in the region).
+    ASSERT_GT(changed_total, 1500U)
+      << "the back-facing doubleSided card is not visible - back-face culled, so "
+         "the doubleSided flag is not reaching the per-draw cull mode";
+
+    const double box_area =
+      static_cast<double>(maxx - minx + 1U) * static_cast<double>(maxy - miny + 1U);
+    const double changed_fraction = static_cast<double>(changed_total) / box_area;
+    GTEST_LOG_(INFO) << "doubleSided card (from behind): changed " << changed_total << " px, fraction-in-box "
+                     << changed_fraction;
+    // And it is the cut-out checkerboard, not a solid blob or artifact.
+    EXPECT_GT(changed_fraction, 0.20);
+    EXPECT_LT(changed_fraction, 0.80);
+}
+
 // The white furnace: with a uniform environment and albedo forced to 1 (the
 // KATAGLYPHIS_PT_FURNACE debug mode), an unbiased estimator converges every
 // pixel to EXACTLY the environment radiance, whatever the geometry - the

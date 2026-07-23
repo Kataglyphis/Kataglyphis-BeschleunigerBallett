@@ -29,7 +29,8 @@ class Model
       std::vector<Vertex> &vertices,
       std::vector<unsigned int> &indices,
       std::vector<unsigned int> &materialIndex,
-      std::vector<ObjMaterial> &materials);
+      std::vector<ObjMaterial> &materials,
+      bool double_sided = false);
 
     uint32_t getTextureCount() { return static_cast<uint32_t>(modelTextures.size()); };
     std::vector<Texture> &getTextures() { return modelTextures; }

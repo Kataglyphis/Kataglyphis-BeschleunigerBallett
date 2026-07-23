@@ -138,6 +138,12 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
               sizeof(PushConstantRasterizer),
               &pushConstant);
 
+            // glTF material.doubleSided: render both faces for this mesh, else
+            // back-face cull. The pipeline declares eCullMode dynamic, so this
+            // must be set for every draw (default eBack for OBJ / single-sided).
+            commandBuffer.setCullMode(scene->isMeshDoubleSided(m, k) ? vk::CullModeFlagBits::eNone
+                                                                     : vk::CullModeFlagBits::eBack);
+
             const vk::Buffer vertex_buffer = scene->getVertexBuffer(m, k);
             const vk::DeviceSize offset = 0;
             commandBuffer.bindVertexBuffers(0, 1, &vertex_buffer, &offset);
@@ -451,6 +457,9 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
       pipeline_builder.setShaderStages(shader_stages)
         .setVertexInput({ binding_description }, { attribute_describtions.begin(), attribute_describtions.end() })
         .setAlphaBlending(true)
+        // Per-draw cull mode: doubleSided glTF meshes disable back-face culling
+        // (set in the record loop). Every draw sets it explicitly below.
+        .setDynamicCullMode(true)
         .setBasePipelineIndex(-1)
         .build(device->getLogicalDevice(), pipeline_layout, render_pass, device->getPipelineCache());
     spdlog::info("Rasterizer: Created pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphics_pipeline);
