@@ -1725,9 +1725,12 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       every shader that reads UV + the loaders — a Vertex-layout ABI change touching the
       whole pipeline, M/L not S. Do KHR_texture_transform first; defer texcoord index until
       a real dual-UV asset needs it.
-**POTENTIAL BUG (HYPOTHESIS, found 2026-07-23 while attempting 1c PT — needs confirmation):
-a model added via `addModel` after the initial load may be ABSENT from the RT/PT
-acceleration structure** (M) — a `mask_card.gltf` added with `renderer->addModel(path, placement)`
+**✅ FIXED (2026-07-23): a model added via `addModel` after the initial load was ABSENT
+from the RT/PT acceleration structure** — CONFIRMED by code (addModel rebuilt the
+object-description buffer + RT descriptor sets but never the AS) and FIXED (addModel now
+calls `createASForScene` when hardware RT is supported). Red/green-proven by
+`GoldenRender.AddedModelAppearsInPathTracing` (added card visible in PT: detail 0.108 with
+the rebuild vs 0.035 without). Original report: a `mask_card.gltf` added with `renderer->addModel(path, placement)`
     while in PATH-TRACING mode does not appear in the traced image at all: forcing
     `gl_RayFlagsOpaqueEXT` (a solid quad that MUST occlude if present) leaves the render
     bit-identical (RED == GREEN, detail 0.0353734), i.e. no rays hit it. The same
