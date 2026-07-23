@@ -1324,7 +1324,23 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
    used for eye placement. Fix: size from `radius`, snap origin to whole texels.
    Test: two camera positions a fraction of a texel apart — origins must differ by
    an exact texel multiple and box width must be identical. Both fail today.
-10. **A `Model` can hold exactly one `Mesh`** (L) — **FOUNDATION DONE (f20b1234)**:
+10. **A `Model` can hold exactly one `Mesh`** (L) — **✅ DONE (loader split 1d40e176,
+    render golden f008b501)**: a multi-primitive glTF now loads as one Model with
+    one Mesh per primitive, end-to-end. `GltfLoader::parseCpu` records a per-primitive
+    `MeshRange` (turnkey approach below — flat getters + GltfParseUnit untouched);
+    `uploadParsed` slices each range into its own `add_new_mesh`, and `adoptParsed`
+    moves the ranges so the async path builds the meshes too. Verified: the
+    `MultiPrimitiveGltfLoadsAsMultipleMeshes` render golden loads two_primitives.gltf
+    and asserts `visibility.meshes_total == 2` through the real render loop, plus
+    `MultiPrimitiveGltfRecordsPerPrimitiveMeshRanges` covers the CPU parse; 14/14
+    goldens + 13/13 GltfParseUnit green, validation-clean. The RT/PT
+    gl_GeometryIndexEXT>0 case is correct-by-inspection (raster golden exercises the
+    flat objectIndex; an RT-mode colour oracle is a possible future hardening). The
+    remaining optional refinement is per-mesh material subsets (each mesh currently
+    shares the full materials array — correct, just not minimal). Historical detail
+    below.
+
+    **FOUNDATION DONE (f20b1234)**:
     `Model` now holds `std::vector<Mesh>` (getMeshCount → size, getMesh(i) →
     meshes[i], add_new_mesh appends, cleanUp/getPrimitiveCount iterate), and
     `Scene::add_model` flattens one object description PER MESH. Deliberate no-op
