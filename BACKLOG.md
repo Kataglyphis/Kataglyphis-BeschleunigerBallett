@@ -1678,8 +1678,17 @@ test. Note the fuzz step runs there too, so #14 (cgltf fuzzing) has a home.
       since deferred cannot blend and would silently cull instead. Confirm intent
       before touching: the deferred 0.1 default may be a deliberate "kill fully
       transparent texels the G-buffer can't blend" guard.)*
-    - *Increment 4 — KHR_texture_transform + texcoord index (S each):* uv scale/offset
-      uniform and a per-slot uv-set selector — exactly what RPT `uv_set_mask` does.
+    - *Increment 4 — KHR_texture_transform (S) + texcoord index (M/L, NOT S — corrected
+      2026-07-23):* uv scale/offset uniform and a per-slot uv-set selector — RPT does both
+      via `uv_set_mask`. Cost split re-checked in the C++ engine: *KHR_texture_transform*
+      is the genuinely small half — a per-texture scale/offset (a material-struct field,
+      ABI-skew) applied to the UV in the fragment shaders, no vertex change. *texcoord index*
+      is NOT small: the engine `Vertex` (`scene/Vertex.hpp`, `getVertexInputAttributeDesc`
+      returns 4 attributes) carries a SINGLE `texture_coords`, so a second UV set means
+      adding `TEXCOORD_1` to the Vertex layout (5th attribute) + every mesh vertex buffer +
+      every shader that reads UV + the loaders — a Vertex-layout ABI change touching the
+      whole pipeline, M/L not S. Do KHR_texture_transform first; defer texcoord index until
+      a real dual-UV asset needs it.
 12. **Point lights are wired on the GPU but never fed; `OmniDirShadowMap` renders
     nothing** (M) — `lighting.frag` loops `numPointLights`, which
     `updateUniforms` never writes; the cube depth target allocated at init is
