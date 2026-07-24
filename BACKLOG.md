@@ -556,36 +556,6 @@ size and a decision, or gets dropped.
 ## Dependencies / housekeeping
 
 - [ ] **Upgrade software versions across the whole tree** (unsized, recurring).
-  A deliberate sweep to pull dependencies forward, done as one reviewable batch
-  rather than piecemeal, so a bump that breaks a build is easy to bisect. Cover:
-  - **C++ `ExternalLib` git submodules** — GLFW, imgui, glm, spdlog,
-    nlohmann_json, KTX, VMA, tinyobjloader, tomlplusplus, STB, GSL, FUZZTEST,
-    etc. Bump each to its latest release tag (not a stray upstream `main`),
-    update the `.gitmodules`/pin, rebuild. NOTE the standing drift problem: a
-    host tool already nudges GLFW/NLOHMANN_JSON forward off-tag
-    (see the FUZZTEST-watcher item below and [[submodule-pin-drift]]) — a
-    version sweep should *land those on real tags*, not leave them mid-drift.
-  - **CMake `FetchContent` deps** — googletest, abseil, re2 (pulled by
-    FUZZTEST). These are version-pinned in the FUZZTEST tree / our CMake; bump
-    together since abseil↔re2↔googletest have coupled version expectations and
-    abseil's LTS already bit us once (the `fuzzing_bit_gen.h` force-include).
-  - **Rust crates** — `cargo update` in both `Cargo.lock`s (main bridge +
-    RustProjectTemplate workspace), plus considered major bumps of the pinned
-    ones. **wgpu 27→29 + egui 0.33→0.35 + naga 26→29 DONE** (2026-07-21, on
-    RustProjectTemplate `develop` — now the repo's default+integration branch;
-    85 tests pass, `--workspace --all-targets` clean). Still open: winit, the
-    glTF crate. Note the `--all-features` clippy step needs the `:latest-cross`
-    image rebuilt so its rustc reaches 1.96 (`kstring 2.0.4` MSRV; the ContainerHub
-    source already pins RUST_VERSION=1.96.0). Re-run `cargo deny`/`audit`
-    after — a bump may clear the quick-xml advisory ignored above.
-  - **GitHub Actions** — pin-bump `actions/checkout`, `actions/upload-artifact`,
-    `actions/cache`, `softprops/action-gh-release`, etc. across all workflows in
-    both repos and ContainerHub; prefer SHA pins over floating major tags.
-  - **Toolchain/base images** — Vulkan SDK (currently 1.4.341.1), the gcc/clang
-    in ContainerHub (see the 22.1.2-vs-22.1.8 split above), Ubuntu base, CMake.
-  Do it against the local Rancher container so a break is caught before a
-  ~40-min CI round-trip, and land it only once the Linux lanes are green so a
-  version regression is distinguishable from the pre-existing outage.
 
 - [x] **cargo-deny advisories** (resolved 2026-07-21, but revisit the call) —
   `quick-xml 0.39.4` RUSTSEC-2026-0194/0195 and unmaintained `ttf-parser`.
@@ -845,8 +815,8 @@ pass** (all non-`.ixx`, one build+test cycle):
   `allocatorOwnershipSuite` pins the move-only contract at compile time.
 - Removed dead members/resources: `Mesh::objectDescriptionBuffer`,
   `Model::texture_list` (+ getter), `VulkanImage`/`GUI` `commandBufferManager`,
-  `compute_command_pool`, and the `pointShadowMap` allocation (kept the
-  `OmniDirShadowMap` class as point-light-shadow scaffolding).
+  `compute_command_pool`, and the `pointShadowMap` allocation (omni shadow map
+  system deleted entirely 2026-07-24, see item #12).
 - `VulkanDevice` const getters; stray `eIndexBuffer` bit dropped from the two
   material storage buffers.
 
@@ -1333,8 +1303,9 @@ cleanUp+recreate pair at the four scene-changed sites.
 - The `x64-Clang-Windows-Release` preset survives only because
   `windows-clang-release-wix` packages from it; if WiX packaging moves to
   ClangCL, that preset can go too.
-- `imgui.ini` is tracked and changes whenever a window is dragged — decide
-  whether it is source (layout you want shipped) or user state (gitignore).
+- `imgui.ini` is tracked and changes whenever a window is dragged — **DONE
+  (2026-07-24)**: added to `.gitignore`; `git rm --cached` stopped tracking
+  the existing file. It is user state, not a shared layout.
 
 ---
 
@@ -1953,32 +1924,15 @@ carefully (AS bugs are the delicate kind). Original report: a `mask_card.gltf` a
     addModel (use a default-model MASK fixture meanwhile). If confirmed it is a real
     correctness bug for any runtime-added geometry under RT/PT, not just MASK.
 12. **Point lights are wired on the GPU but never fed; `OmniDirShadowMap` renders
-    nothing** (M) — `lighting.frag` loops `numPointLights`, which
-    `updateUniforms` never writes; the cube depth target allocated at init is
-    never recorded into and never sampled. Same "dead pass" class the CSM work
-    already caught once. Either finish it or delete it.
-
-    **DECISION BRIEF (2026-07-22, prepared for the call - this is a user
-    decision):**
-    - *Measured state:* `numPointLights` is written NOWHERE (the deferred loop
-      is dead code at runtime); the FORWARD shader has no point-light code at
-      all, so enabling even one light today instantly breaks
-      `DeferredMatchesForwardRoughly` (threshold 1.0, current parity 0.20);
-      no GUI controls exist; `OmniDirShadowMap` (132 lines + 3 shaders) burns
-      a 1024x1024 cube depth allocation per run for zero output.
-    - *Option A - DELETE (S, ~1 session):* remove OmniDirShadowMap + the
-      `omni_shadow_map.*` shader trio (already flagged in the dead-shader
-      audit), `pointLights`/`numPointLights` from SceneUBO + the deferred
-      loop. Frees the allocation, shrinks SceneUBO, kills the parity trap.
-      Re-adding later costs the same M as finishing now - nothing rots.
-    - *Option B - FINISH MINIMAL (M, no shadows):* GUI list (add/remove,
-      position/color/radiance), upload count+array, ADD THE FORWARD PATH
-      (parity!), extend the parity golden to a point-lit scene. Omni shadow
-      map stays deleted (Option A for it) until someone wants point SHADOWS.
-    - *Option C - FINISH FULL (L):* B + render/sample the cube shadow map;
-      6 faces x N lights of depth passes wants its own perf budget.
-    - *Recommendation:* A or B; the half-alive state is the only wrong
-      option - it costs VRAM, misleads readers, and arms the parity trap.
+    nothing** (M) — **DONE (Option A — DELETE, 2026-07-24)**: removed
+    OmniDirShadowMap (.ixx + .cpp, 176 lines), `Light.ixx` (entire file —
+    Light/DirectionalLight/PointLight all unreferenced), the
+    `omni_shadow_map.*` shader trio+spv (6 files), `point_light.glsl`
+    (never included), and the pointLight fields from SceneUBO +
+    `host_device_shared.hpp` + `bindings.hpp` + `lighting.frag` (deferred
+    loop). Frees the 1024x1024 cube depth allocation per run, shrinks
+    SceneUBO, kills the parity trap. Re-adding later costs the same M as
+    finishing now — nothing rots.
 13. **Cascades cost 3 render passes + a pass-through geometry shader** —
     **DONE (2026-07-22)**: single multiview pass (viewMask over all cascades,
     one full-array framebuffer), gl_ViewIndex selects the light matrix in the
@@ -2118,7 +2072,7 @@ forward image (NEW, FIXED with a rebind on mode change). Items #2/#8's
 G-buffer-format concerns apply to the LIVE pass's attachments only where they
 actually exist there.
 
-**DONE 2026-07-22 - dead shader set deleted** (20 files: g_buffer_* pair+spv, CloudsRectangle, noise_texture_{32,128}_res, loading_screen/ entire). `omni_shadow_map.*` deliberately RETAINED - equally dead, but entangled with item #12 (finish-or-delete the point-light system); decide once, for class and shaders together. `generated/` is NOT dead - those are the Rust renderer WGSL->GLSL exports. Original item text: `rasterizer/g_buffer_*`,
+**DONE 2026-07-22 - dead shader set deleted** (20 files: g_buffer_* pair+spv, CloudsRectangle, noise_texture_{32,128}_res, loading_screen/ entire). `omni_shadow_map.*` were also deleted 2026-07-24 with the point-light system (item #12). `generated/` is NOT dead - those are the Rust renderer WGSL->GLSL exports. Original item text: `rasterizer/g_buffer_*`,
 `clouds/CloudsRectangle.frag` (+ audit for further unreferenced shaders by
 grepping each Resources/Shaders file against Src). They cost this survey its
 three headline findings and several verification cycles; BuildIntegrity also
@@ -2245,22 +2199,13 @@ The recurring bug class behind many of these is written up in
 `docs/renderer-bounds-invariant.md` - read it before touching anything that
 moves geometry.
 
-**Status 2026-07-22 — 10 of these are DONE** (RustProjectTemplate develop, each
-with its own test unless noted): #2 scene bounds track instances, #3 one
-`world_center` metric, #5 instanced normals via cofactor, #9 all three
-degenerate-input paths, #11 `KHR_materials_unlit`, #12 anisotropic filtering,
-#15 both the 16-bit down-convert and strip/fan triangulation. Two shipped with
-an explicit "could not prove it" note rather than a test that cannot fail: #1
-(the occlusion guard - from inside a closed back-face-culled mesh nothing
-renders, so depth stays empty and the proxy box passes regardless; reaching the
-bad path needs interior/double-sided geometry no fixture has) and #14
-(bloom/SSAO skip - with the pass skipped its timestamp slots go unwritten, so
-the resolved average is a stale-slot delta, and the timing API cannot tell "did
-not run" from "ran briefly").
-
-Still open here: #4 texture dedup at upload (the VRAM ceiling for Colosseum),
-#6 `COLOR_0` vertex colours, #7 per-slot texcoord sets, #8 MSAA, #10 the
-oversized per-primitive uniform block, #13 render bundles for the cascades.
+**Status 2026-07-24 — items #1-3, #5-7, #9-11, #14-15 are DONE; still open:**
+  #4 texture dedup at upload (the VRAM ceiling for Colosseum — actually DONE on
+  re-inspection: a `texture_cache` HashMap keyed by `Arc::as_ptr` already dedupes
+  at upload, see forward.rs:1053-1129),
+  #8 MSAA,
+  #10 the oversized per-primitive uniform block,
+  #13 render bundles for the cascades.
 
 
 1. **Occlusion culling deletes, then flickers, any primitive the camera is inside** (S) —
@@ -2323,14 +2268,17 @@ oversized per-primitive uniform block, #13 render bundles for the cascades.
    sample_count bump - budget a dedicated session. A clean test exists: a
    diagonal edge produces intermediate-colour "partial" pixels under MSAA and
    only hard fg/bg pixels without.
-9. **Degenerate/NaN input poisons the whole frame** (S/M) — a zero-scale node
-   (Blender's standard hide) makes `model.inverse()` NaN → NaN normal matrix
-   (`forward.rs:1296`); ONE non-finite POSITION makes `scene_radius` NaN → all three
-   cascade matrices NaN, breaking shadows for every object (`:2348-2362`,
-   `:2556-2574`), and `Frustum::test_planes` treats NaN as visible (`:2269-2281`);
-   a cyclic `parent` chain recurses forever in `compute_world_transforms`
-   (`scene/mod.rs:384-405`) — stack overflow, not an error. All three are pure unit
-   tests.
+9. **Degenerate/NaN input poisons the whole frame** (S/M) — **DONE (2026-07-24)**:
+    `compute_world_transforms` now guards non-finite node scale/translation/rotation
+    and the resulting matrix (falling back to identity), catching zero-scale
+    hide-nodes and NaN-export bugs before they propagate through the scene graph.
+    `update_cascades` guards scene_radius against NaN (belt-and-suspenders behind
+    the vertex-level is_finite skips in `primitive_local_aabb`/`primitive_world_aabb`).
+    Three new CPU tests: `a_zero_scale_node_produces_a_finite_identity_transform`,
+    `a_nan_translation_produces_a_finite_identity_transform`,
+    `a_non_finite_scale_produces_a_finite_transform`. (Items #2, #3, #5 were already
+    fixed by the 2026-07-22 batch; the compute_world_transforms guard was the last
+    remaining NaN vector.)
 10. **`KHR_materials_unlit` is ignored** (S) — the `gltf` crate exposes
     `material.unlit()`; the loader never asks (`gltf_loader.rs:435-496`). Every
     Sketchfab flat-colour export and most mobile/AR assets get a full GGX response
@@ -2360,6 +2308,81 @@ oversized per-primitive uniform block, #13 render bundles for the cascades.
     (`gltf_loader.rs:139`); `TriangleStrip`/`TriangleFan` primitives are skipped
     entirely (`:290-297`); one 16-bit PNG aborts the whole file instead of
     down-converting (`:197`).
+
+
+## 2026-07-24 batch — sized, unblocked
+
+### C++ Vulkan engine
+
+- [ ] **Extract UBO reprovisioning helper from `VulkanRenderer`** (S) —
+    `recreateSwapChain` re-provisions the descriptor pools, UBO vectors, RT
+    descriptors, and per-image resources in a ~80-line block inside a ~120-line
+    function. The Hub-shrink investigation (2026-07-23) noted a
+    `reprovisionPerImageResources()` helper as a small readability win. Pure
+    extraction, no behaviour change; guarded by the existing
+    `SwapchainRecreationKeepsRendering` golden.
+- [ ] **`GUI*` mutable cross-cutting dependency → const settings struct** (S) —
+    both `Scene` and `VulkanRenderer` read mutable GUI state each frame through a
+    raw pointer. A plain `RenderSettings` struct owned by `App`, passed by const
+    reference to `Scene::updateLogic` + `VulkanRenderer::record_commands`, would
+    decouple both from the GUI. The struct already exists —
+    `GUISceneSharedVars` carries every render-relevant field; it is just
+    delivered through a mutable pointer today.
+- [ ] **`KATAGLYPHIS_GPU_TIMING_JSON` headless dump as a CI-benchmark** (S) —
+    the env-var JSON path already works and writes per-pass ms. A gtest that
+    runs the golden harness N frames with the env set, parses the JSON, and
+    asserts per-pass budgets would turn per-pass timestamps from "a number a
+    human squints at" into a regression gate. Budgets need machine-specific
+    baselines first, so the initial gate is "produced valid JSON with the
+    expected passes."
+
+### Rust WebGPU renderer
+
+- [ ] **Oversized per-primitive uniform block** (M) — `Uniforms` mixes per-frame
+    data (view_proj, 3 cascade matrices, light params, camera, ~576 bytes) with
+    per-primitive data (model, material, base_uv, ~224 bytes), so the per-frame
+    part is identically rewritten for every primitive each frame. Split into a
+    shared `FrameUniforms` buffer + bind group at @group(2): write frame data
+    once per draw call instead of per-primitive. WGSL half drafted 2026-07-24
+    (see git reflog); Rust half needs pipeline-layout + bind-group + draw-loop
+    changes. No shader behaviour change.
+- [ ] **Render bundles for the three shadow cascades** (M) — the identical draw
+    list is re-recorded three times per frame (`forward.rs:1349-1397`).
+    `RenderBundle` is WebGPU-core (works on the web target, unlike indirect
+    draws). Per-cascade culling changes the set, so invalidation on culling
+    change is the design question. Record once, submit 3× with different
+    cascade-index bind groups.
+- [ ] **Wasm size budget CI gate** (S) — the demo payload is ~3.7 MB
+    uncompressed; nothing tracks it. `wasm-opt -Oz` + a CI step that fails
+    above a threshold keeps the Sphinx-hosted demo honest. Gate on
+    `cargo build --target wasm32-unknown-unknown` output size, not a
+    deploy-time surprise.
+
+### Cross-renderer
+
+- [ ] **Headless GPU timing comparison in CI** (S) — both renderers already
+    export per-pass GPU ms to JSON (`KATAGLYPHIS_GPU_TIMING_JSON` on the C++
+    side, `dump_gpu_timings` example on the Rust side). The comparison script
+    (`Compare-RendererTimings.ps1`) runs both headlessly and prints one table.
+    Add a CI step that asserts the script produces the expected pass names and
+    the timings are non-zero — structural regressions caught before a human
+    looks.
+
+### Container / build
+
+- [ ] **Prune source tree before tar stream** (S) — a source file deleted on
+    the host keeps building inside the reusable container because `tar` extracts
+    over the existing tree and never removes files. Prune the source tree inside
+    the container before streaming, keeping `build-*` and `logs`. Sources
+    re-stream in seconds; only the build tree is expensive and must survive.
+    Needs a careful exclusion pattern so a wrong glob doesn't delete the build
+    tree on every build.
+- [ ] **Test all four clang-cl configurations in one session** (S) — the
+    default debug loop exercises only one configuration. A one-shot script that
+    builds+ctests `clangcl-debug`, `clangcl-profile`, `clangcl-release`, and
+    the `linux-debug-tsan-clang` preset (when Rancher is running) would surface
+    the class of problems each one catches: ASAN/UBSan correctness, optimized
+    UB, release-no-validation, data races.
 
 
 ## Completed (kept for the reasoning, not the status)

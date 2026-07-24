@@ -29,7 +29,7 @@ class Scene
   public:
     Scene();
 
-    void update_user_input(Kataglyphis::Frontend::GUI *gui);
+    void update_user_input(const GUISceneSharedVars &vars);
     void update_model_matrix(glm::mat4 model_matrix, uint32_t model_id);
 
     GUISceneSharedVars &getGuiSceneSharedVars() { return guiSceneSharedVars; };

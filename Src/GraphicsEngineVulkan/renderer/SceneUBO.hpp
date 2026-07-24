@@ -19,7 +19,6 @@ using uint = unsigned int;
 namespace Kataglyphis::VulkanRendererInternals {
 #endif
 
-#define MAX_POINT_LIGHTS 4
 #define MAX_CASCADES 3
 
 struct DirectionalLightData {
@@ -27,22 +26,11 @@ struct DirectionalLightData {
     vec4 color; // w = radiance
 };
 
-struct PointLightData {
-    vec4 position;
-    vec4 color; // w = radiance
-    vec4 attenuation; // x: constant, y: linear, z: exponent, w: far_plane
-};
-
 struct SceneUBO
 {
     // Directional light
     DirectionalLightData dirLight;
 
-    // Point lights
-    PointLightData pointLights[MAX_POINT_LIGHTS];
-    uint numPointLights;
-    
-    // padding for alignment (std140)
     uint pcfRadius;
     float cascadedShadowIntensity;
     uint numCascades;

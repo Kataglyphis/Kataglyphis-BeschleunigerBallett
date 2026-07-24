@@ -101,7 +101,7 @@ struct EngineHarness
     {
         glfwPollEvents();
         gui->render();
-        scene->update_user_input(gui.get());
+        scene->update_user_input(gui->getGuiSceneSharedVars());
         renderer->updateStateDueToUserInput(gui.get());
         renderer->updateUniforms(scene.get(), camera.get(), window.get());
         renderer->drawFrame();

@@ -197,6 +197,35 @@ function Invoke-TarPipeBuild {
     & $docker exec $container cmd /c "mkdir $ws" | Out-Null
 
     Write-Host 'Streaming sources into the container (excluding .git and build trees)...'
+    # Prune stale sources first: tar extracts over the existing tree but never
+    # removes files, so a source deleted on the host keeps building inside the
+    # reusable container (observed and repo'd 2026-07-19). We keep only the build
+    # trees (build, build-*, build_*) and logs; sources re-stream in seconds.
+    #
+    # The exclusion test is designed so a wrong pattern CANNOT delete the build
+    # tree: we match on directory names that start with "build" (with optional
+    # suffix patterns) and "logs", and remove everything else. A future
+    # build-directory naming convention must start with "build" to be kept.
+    if ($reusedContainer) {
+        Write-Host 'Pruning stale sources from the reusable container...'
+        $prune = @(
+            '$dirs = Get-ChildItem -Path C:\ws -Directory -ErrorAction SilentlyContinue',
+            'if ($dirs) {',
+            '  $keep = @("logs", "sccache-local")',
+            '  foreach ($d in $dirs) {',
+            '    $n = $d.Name',
+            '    if ($n -eq "build" -or $n -like "build-*" -or $n -like "build_*" -or $n -in $keep) { continue }',
+            '    Remove-Item -Path $d.FullName -Recurse -Force -ErrorAction SilentlyContinue',
+            '  }',
+            '}'
+        ) -join '; '
+        $pruneCmd = "`"$docker`" exec $container powershell -NoProfile -Command `"$prune`""
+        cmd /c $pruneCmd
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Source pruning reported errors (exit $LASTEXITCODE) - continuing anyway."
+        }
+    }
+
     # cmd /c keeps the pipe a raw byte stream regardless of PowerShell version.
     # Anchor the build-tree excludes to the repo root (./...): unanchored
     # patterns match at every path depth in bsdtar and would strip nested

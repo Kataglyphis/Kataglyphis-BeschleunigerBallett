@@ -45,7 +45,7 @@ void run_frames(Kataglyphis::Frontend::Window *window,
     Kataglyphis::TestSupport::waitForModelLoad(renderer, [&] {
         glfwPollEvents();
         gui->render();
-        scene->update_user_input(gui);
+        scene->update_user_input(gui->getGuiSceneSharedVars());
         renderer->updateStateDueToUserInput(gui);
         renderer->updateUniforms(scene, camera, window);
         renderer->drawFrame();
@@ -54,7 +54,7 @@ void run_frames(Kataglyphis::Frontend::Window *window,
     for (int frame = 0; frame < frame_count; ++frame) {
         glfwPollEvents();
         gui->render();
-        scene->update_user_input(gui);
+        scene->update_user_input(gui->getGuiSceneSharedVars());
         renderer->updateStateDueToUserInput(gui);
         renderer->updateUniforms(scene, camera, window);
         renderer->drawFrame();

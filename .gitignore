@@ -109,3 +109,7 @@ Resources/Shaders/generated/
 # gtest test-discovery JSON the container build drops in the repo root
 # (cmake_test_discovery_<hash>.json) - a regenerable build artifact, not source.
 cmake_test_discovery_*.json
+
+# Dear ImGui layout file - changes whenever a window is dragged. It is user
+# state, not a layout the repo intends to ship; every developer gets their own.
+imgui.ini

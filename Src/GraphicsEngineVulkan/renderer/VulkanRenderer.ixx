@@ -96,6 +96,7 @@ class VulkanRenderer
     void cleanUp();
 
     void recreateSwapChain();
+    void reprovisionPerImageResources();
 
     ~VulkanRenderer();
 

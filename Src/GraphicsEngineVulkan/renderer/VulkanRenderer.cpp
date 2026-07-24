@@ -600,6 +600,20 @@ bool Kataglyphis::VulkanRenderer::checkChangedFramebufferSize()
     return false;
 }
 
+void Kataglyphis::VulkanRenderer::reprovisionPerImageResources()
+{
+    cleanUpUBOs();
+    create_uniform_buffers();
+
+    cleanUpDescriptorResources();
+    initDescriptorResources();
+
+    if (device->supportsHardwareAcceleratedRRT()) {
+        raytracingDescriptors.cleanUp();
+        createRaytracingDescriptorResources();
+    }
+}
+
 void Kataglyphis::VulkanRenderer::recreateSwapChain()
 {
     int width = 0, height = 0;
@@ -660,21 +674,7 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
     // shared descriptor pool and are indexed per image by the descriptor
     // updates below, and the raytracing pool/sets are allocated per image.
     if (newImageCount != oldImageCount) {
-        cleanUpUBOs();
-        create_uniform_buffers();
-
-        cleanUpDescriptorResources();
-        initDescriptorResources();
-
-        if (device->supportsHardwareAcceleratedRRT()) {
-            // Rebuilds layout + pool + sets. The recreated layout is
-            // structurally identical, so the pipeline layouts created from
-            // the old handle at init stay bind-compatible (same pattern the
-            // shared/post/gbuffer groups already rely on).
-            raytracingDescriptors.cleanUp();
-            createRaytracingDescriptorResources();
-        }
-
+        reprovisionPerImageResources();
         // The freshly allocated shared sets lost the object-description
         // binding, which updateAllDescriptorSets() does not rewrite.
         updateObjectDescriptionDescriptorSets();

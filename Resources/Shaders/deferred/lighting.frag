@@ -67,19 +67,5 @@ void main() {
     float shadow = calc_cascaded_shadow(position.xyz, N, L);
     color *= 1.0 - shadow * sceneUBO.cascadedShadowIntensity;
 
-    // Apply point lights
-    for(uint i = 0; i < sceneUBO.numPointLights; i++) {
-        vec3 pL = sceneUBO.pointLights[i].position.xyz - position.xyz;
-        float dist = length(pL);
-        pL = normalize(pL);
-        
-        float constant = sceneUBO.pointLights[i].attenuation.x;
-        float linear = sceneUBO.pointLights[i].attenuation.y;
-        float exp = sceneUBO.pointLights[i].attenuation.z;
-        float att = 1.0 / (constant + linear * dist + exp * dist * dist);
-        
-        color += evaluatePBRBooksPBR(ambient, N, pL, V, roughness, sceneUBO.pointLights[i].color.rgb, sceneUBO.pointLights[i].color.w) * att;
-    }
-
     outColor = vec4(color, 1.0);
 }

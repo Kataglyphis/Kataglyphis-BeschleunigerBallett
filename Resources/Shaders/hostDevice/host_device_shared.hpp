@@ -3,7 +3,6 @@
 
 // lights
 const int NUM_CASCADES = 3;
-const int MAX_POINT_LIGHTS = 1;
 
 // materials
 const int MAX_MATERIALS = 35;

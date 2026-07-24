@@ -72,9 +72,8 @@ include handling; the build script uses `glslc`.
 
 ## The second failure mode: silent glslc failures (fixed 2026-07-19)
 
-An earlier version of this document claimed that ten "legacy OpenGL-era"
-shaders (`clouds/CloudsRectangle.*`, `rasterizer/g_buffer_*`,
-`rasterizer/shadows/omni_shadow_map.*`) could not compile under the Vulkan
+An earlier version of this document claimed that eight "legacy OpenGL-era"
+shaders (`clouds/CloudsRectangle.*`, `rasterizer/g_buffer_*`) could not compile under the Vulkan
 include convention, and that this was acceptable because no pipeline used
 them. **Both halves were wrong.**
 

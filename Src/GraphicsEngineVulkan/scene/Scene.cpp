@@ -54,7 +54,7 @@ std::shared_ptr<Model> loadModelByExtension(std::shared_ptr<VulkanDevice> device
 
 Scene::Scene() = default;
 
-void Scene::update_user_input(Kataglyphis::Frontend::GUI *gui) { guiSceneSharedVars = gui->getGuiSceneSharedVars(); }
+void Scene::update_user_input(const GUISceneSharedVars &vars) { guiSceneSharedVars = vars; }
 
 void Scene::loadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool)
 {
