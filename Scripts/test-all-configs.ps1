@@ -6,7 +6,7 @@
 # Linux container support, the Linux ThreadSanitizer build.
 #
 # Usage:
-#   powershell -ExecutionPolicy Bypass -File .\Scripts\test-all-configs.ps1
+#   pwsh -ExecutionPolicy Bypass -File .\Scripts\test-all-configs.ps1
 #
 # Returns the aggregate exit code (non-zero if ANY build failed).
 

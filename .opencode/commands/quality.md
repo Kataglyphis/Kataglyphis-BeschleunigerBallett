@@ -6,7 +6,7 @@ Run code quality checks and fix any issues found.
 
 **Windows:**
 ```
-powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 -Configurations clangcl-debug -SkipBuild -SkipTests -SkipPerfTests -SkipMsix
+pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 -Configurations clangcl-debug -SkipBuild -SkipTests -SkipPerfTests -SkipMsix
 ```
 This runs clang-format (check mode) and clang-tidy. To apply formatting fixes,
 add `-ApplyFormat`.

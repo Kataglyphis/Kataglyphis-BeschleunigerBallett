@@ -11,7 +11,7 @@
 # survive driver, GPU and rendering differences.
 #
 # Usage:
-#   powershell -ExecutionPolicy Bypass -File .\Scripts\Compare-RendererPixels.ps1
+#   pwsh -ExecutionPolicy Bypass -File .\Scripts\Compare-RendererPixels.ps1
 #
 # CI mode (-ValidationOnly): checks that expected PNG frames exist and have
 # structural integrity (luminance variety, lit fraction). Useful on GPU-less

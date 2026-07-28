@@ -60,7 +60,7 @@ Regenerating SPIR-V does **not** require a rebuild — the engine loads `.spv`
 at pipeline creation, so recompiling the shader and re-running the binary is
 enough. During diagnosis this cut the loop from minutes to seconds:
 
-```powershell
+```pwsh
 $GV = 'C:\VulkanSDK\1.4.350.0\Bin\glslangValidator.exe'
 $incs = Get-ChildItem Resources/Shaders -Recurse -Directory | ForEach-Object { "-I$($_.FullName)" }
 & $GV --target-env vulkan1.3 @incs -ISrc/GraphicsEngineVulkan/renderer `

@@ -7,14 +7,14 @@ C++ engine offline.
 
 ## The pipeline (working today)
 
-```powershell
+```pwsh
 # Wired into the build (2026-07-20). Opt-in, and non-critical: a missing cargo
 # toolchain warns and skips rather than failing a C++ build.
-powershell -File .\Scripts\Windows\Build-Windows.ps1 -ExportWgslShaders ...
-powershell -File .\Scripts\Windows\Build-Windows-Container.ps1 -ExportWgslShaders ...
+pwsh -File .\Scripts\Windows\Build-Windows.ps1 -ExportWgslShaders ...
+pwsh -File .\Scripts\Windows\Build-Windows-Container.ps1 -ExportWgslShaders ...
 
 # Export only, no C++ build (the host cmake cannot read this repo's presets):
-powershell -File .\Scripts\Windows\Build-Windows.ps1 `
+pwsh -File .\Scripts\Windows\Build-Windows.ps1 `
   -SkipBuild -SkipFormat -SkipTests -SkipPerfTests -SkipMsix -ExportWgslShaders
 
 # Or drive the example directly:

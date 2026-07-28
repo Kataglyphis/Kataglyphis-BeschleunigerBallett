@@ -96,12 +96,12 @@ bash ./Scripts/Linux/cmake-configure-build.sh \
 
 Use the build orchestration script when you want one entry point for formatting, configuration, build, and tests. Available configurations: `msvc-debug`, `msvc-release`, `clangcl-debug` (Debug with ASAN/UBSan), `clangcl-tsan`, `clangcl-profile` (RelWithDebInfo with benchmarks), `clangcl-release`.
 
-```powershell
+```pwsh
 # single configuration
-powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 -Configurations clangcl-debug
+pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 -Configurations clangcl-debug
 
 # full sanitizer/profile/release sweep
-powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
+pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
   -Configurations "clangcl-debug,clangcl-tsan,clangcl-profile,clangcl-release"
 ```
 
@@ -111,9 +111,9 @@ Note: sanitizers are Debug-only. `clangcl-debug` enables AddressSanitizer and UB
 
 The same builds run fully containerized in the ContainerHub developer image `ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64` — this is what CI does. Install [Stevedore](https://github.com/slonopotamus/stevedore) (`winget install stevedore`, then reboot) and run:
 
-```powershell
+```pwsh
 # defaults to clangcl-debug,clangcl-tsan,clangcl-profile,clangcl-release
-powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1
+pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1
 ```
 
 The script uses Stevedore's `docker.exe` (never `nerdctl` — broken DNS/CNI on Windows) and prefers process isolation for full CPU count.
@@ -125,7 +125,7 @@ Two transports move the sources in and the artifacts out, and **both are support
 - **tar-pipe (default)** — no host setup, works on a Dev Drive as-is.
 - **bind mount (`-UseBindMount`)** — no copying, but on a Dev Drive it needs the container filters allow-listed once (elevated, then reboot):
 
-  ```powershell
+  ```pwsh
   fsutil devdrv setFiltersAllowed /volume D: "bindFlt,wcifs"
   ```
 
@@ -137,7 +137,7 @@ Builds are supported against the recorded submodule pins (`git submodule update 
 
 Run helpers after building:
 
-```powershell
+```pwsh
 & ./Scripts/Windows/run_clangcl_debug.ps1 2>&1 | Tee-Object -FilePath logs/debug/run.log
 & ./Scripts/Windows/run_clangcl_release.ps1 2>&1 | Tee-Object -FilePath logs/release/run.log
 ```
@@ -164,7 +164,7 @@ Renderer-agnostic and Windows-container knowledge lives in the ContainerHub subm
 
 Build the Sphinx HTML docs locally:
 
-```powershell
+```pwsh
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m sphinx -M html docs/source docs/build -E
 ```

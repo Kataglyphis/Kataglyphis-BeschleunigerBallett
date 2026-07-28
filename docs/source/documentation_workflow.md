@@ -14,7 +14,7 @@ The hand-written pages should always build, even if generated artifacts are miss
 
 ### Windows
 
-```powershell
+```pwsh
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe -m sphinx -M html docs/source docs/build -E
 ```

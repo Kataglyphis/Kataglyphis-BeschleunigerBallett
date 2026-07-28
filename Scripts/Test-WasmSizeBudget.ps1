@@ -4,7 +4,7 @@
 # wasm-opt -Oz, and fails if the resulting .wasm exceeds the budget.
 #
 # Run from the repo root:
-#   powershell -ExecutionPolicy Bypass -File .\Scripts\Test-WasmSizeBudget.ps1
+#   pwsh -ExecutionPolicy Bypass -File .\Scripts\Test-WasmSizeBudget.ps1
 #
 # Prerequisites:
 #   - Rust toolchain with wasm32-unknown-unknown target

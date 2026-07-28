@@ -72,7 +72,7 @@ Model::~Model() { cleanUp(); }
 
 void Model::addSampler(const Texture &newTexture)
 {
-    vk::PhysicalDeviceFeatures physical_device_features = device->getPhysicalDevice().getFeatures();
+    const bool aniso = device->supportsSamplerAnisotropy();
 
     vk::SamplerCreateInfo sampler_create_info{};
     sampler_create_info.magFilter = vk::Filter::eLinear;
@@ -86,8 +86,8 @@ void Model::addSampler(const Texture &newTexture)
     sampler_create_info.mipLodBias = 0.0F;
     sampler_create_info.minLod = 0.0F;
     sampler_create_info.maxLod = static_cast<float>(newTexture.getMipLevel());
-    sampler_create_info.anisotropyEnable = physical_device_features.samplerAnisotropy;
-    sampler_create_info.maxAnisotropy = (physical_device_features.samplerAnisotropy != 0u) ? 16.0F : 1.0F;
+    sampler_create_info.anisotropyEnable = aniso;
+    sampler_create_info.maxAnisotropy = aniso ? 16.0F : 1.0F;
 
     vk::ResultValue<vk::Sampler> sampler_result = device->getLogicalDevice().createSampler(sampler_create_info);
     vk::Sampler newSampler = sampler_result.value;

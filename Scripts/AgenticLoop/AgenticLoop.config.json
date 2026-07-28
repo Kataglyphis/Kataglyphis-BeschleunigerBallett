@@ -28,7 +28,7 @@
     "linuxScript": "Scripts/Linux/cmake-configure-build.sh",
     "windowsTestCommand": "ctest --test-dir build-clangcl-debug --output-on-failure -C Debug",
     "linuxTestCommand": "Scripts/Linux/run-ctest.sh --build-dir build",
-    "windowsQualityCommand": "powershell -ExecutionPolicy Bypass -File Scripts/Windows/Build-Windows.ps1 -Configurations clangcl-debug -SkipBuild -SkipTests -SkipPerfTests -SkipMsix",
+    "windowsQualityCommand": "pwsh -ExecutionPolicy Bypass -File Scripts/Windows/Build-Windows.ps1 -Configurations clangcl-debug -SkipBuild -SkipTests -SkipPerfTests -SkipMsix",
     "linuxQualityCommand": "Scripts/Linux/run_static_analysis_format.sh"
   },
 

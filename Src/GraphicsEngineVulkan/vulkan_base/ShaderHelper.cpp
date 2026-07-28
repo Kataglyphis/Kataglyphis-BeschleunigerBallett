@@ -87,10 +87,7 @@ void Kataglyphis::ShaderHelper::compileShader(const std::string &shader_src_dir,
     std::stringstream shader_src_path;
     std::stringstream shader_log_file;
     std::stringstream cmdShaderCompile;
-    std::stringstream adminPriviliges;
-    adminPriviliges << "runas /user:<admin-user> \"";
 
-    // with wrapping your path with quotation marks one can use paths with blanks ...
     shader_src_path << shader_src_dir << shader_name;
     const auto resolved_shader_src_path = resolve_shader_source_path(shader_src_path.str());
 
@@ -136,7 +133,7 @@ void Kataglyphis::ShaderHelper::compileShader(const std::string &shader_src_dir,
     std::stringstream log_stdout_and_stderr;
     log_stdout_and_stderr << " > " << shader_log_file.str() << " 2> " << shader_log_file.str();
 
-    cmdShaderCompile//<< adminPriviliges.str()
+    cmdShaderCompile
       << resolve_glslc_executable() << target << std::quoted(resolved_shader_src_path) << " -o "
       << std::quoted(shader_spv_path) << " " << ShaderIncludes::getShaderIncludes();
 

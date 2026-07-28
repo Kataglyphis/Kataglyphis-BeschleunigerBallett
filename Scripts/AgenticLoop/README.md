@@ -71,7 +71,7 @@ flowchart TD
 
 Install OpenCode:
 
-```powershell
+```pwsh
 # Windows
 scoop install opencode
 # or
@@ -143,7 +143,7 @@ available. Common options:
 
 You can also use environment variables to override at runtime:
 
-```powershell
+```pwsh
 $env:OPENCODE_PLANNER_MODEL = "zai/glm-5.2"
 $env:OPENCODE_EXECUTOR_MODEL = "deepseek/deepseek-chat"
 ```
@@ -152,8 +152,8 @@ $env:OPENCODE_EXECUTOR_MODEL = "deepseek/deepseek-chat"
 
 ### Full loop (Windows)
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1
+```pwsh
+pwsh -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1
 ```
 
 ### Full loop (Linux)
@@ -164,32 +164,32 @@ powershell -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.p
 
 ### Dry run (see what would happen)
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -DryRun
+```pwsh
+pwsh -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -DryRun
 ```
 
 ### Planner only (add tasks without executing)
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -PlannerOnly
+```pwsh
+pwsh -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -PlannerOnly
 ```
 
 ### Executor only (drain current queue)
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -ExecutorOnly
+```pwsh
+pwsh -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -ExecutorOnly
 ```
 
 ### Limited iterations
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -MaxIterations 5
+```pwsh
+pwsh -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -MaxIterations 5
 ```
 
 ### Skip builds/tests/quality (fast planning cycle)
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -SkipBuild -SkipTests -SkipQuality
+```pwsh
+pwsh -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -SkipBuild -SkipTests -SkipQuality
 ```
 
 ### Interactive OpenCode commands

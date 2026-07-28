@@ -23,7 +23,7 @@ them complete. You are the hands that turn plans into shipped code.
    present.
 6. **Build.** Use the container build script on Windows:
    ```
-   powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests
+   pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests
    ```
    On Linux:
    ```

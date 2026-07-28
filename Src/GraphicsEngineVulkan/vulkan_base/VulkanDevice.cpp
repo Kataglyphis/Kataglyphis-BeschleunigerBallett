@@ -484,6 +484,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     const bool hasBufferDeviceAddressFeature = available_features12.bufferDeviceAddress == VK_TRUE;
     deviceSupportsBufferDeviceAddress = hasBufferDeviceAddressFeature;
     deviceSupportsDepthClamp = available_features2.features.depthClamp == VK_TRUE;
+    deviceSupportsSamplerAnisotropy = available_features2.features.samplerAnisotropy == VK_TRUE;
     const bool hasRequiredDescriptorIndexingFeatures =
       available_features12.descriptorIndexing == VK_TRUE && available_features12.runtimeDescriptorArray == VK_TRUE
       && available_features12.shaderSampledImageArrayNonUniformIndexing == VK_TRUE;

@@ -54,12 +54,12 @@ Useful adjacent scripts:
 
 For Windows, use the orchestration script if you want configuration, build, formatting, and tests from one entry point. The available configurations are `msvc-debug`, `msvc-release`, `clangcl-debug` (Debug with ASAN/UBSan), `clangcl-tsan`, `clangcl-profile` (RelWithDebInfo with benchmarks), and `clangcl-release`:
 
-```powershell
+```pwsh
 # single configuration
-powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 -Configurations clangcl-debug
+pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 -Configurations clangcl-debug
 
 # full sanitizer/profile/release sweep
-powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
+pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
   -Configurations "clangcl-debug,clangcl-tsan,clangcl-profile,clangcl-release"
 ```
 
@@ -67,7 +67,7 @@ Sanitizers apply to Debug builds only. `clangcl-debug` enables AddressSanitizer 
 
 After building, these run helpers are available:
 
-```powershell
+```pwsh
 & ./Scripts/Windows/run_clangcl_debug.ps1 2>&1 | Tee-Object -FilePath logs/debug/run.log
 & ./Scripts/Windows/run_clangcl_release.ps1 2>&1 | Tee-Object -FilePath logs/release/run.log
 ```
@@ -78,9 +78,9 @@ If build dependencies are missing on the host, prefer the containerized workflow
 
 The Windows builds also run fully containerized in the ContainerHub developer image `ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64`, exactly like CI (`.github/workflows/Windows.yml`). Install [Stevedore](https://github.com/slonopotamus/stevedore) with `winget install stevedore` and reboot, then:
 
-```powershell
+```pwsh
 # defaults to clangcl-debug,clangcl-tsan,clangcl-profile,clangcl-release
-powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1
+pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1
 ```
 
 Details worth knowing:

@@ -1,5 +1,5 @@
+#requires -Version 5.1
 param(
-#requires -Version 7.0
 
   [string[]]$Configurations = @('all'),
   [switch]$SkipFormat,

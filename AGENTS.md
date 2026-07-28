@@ -13,20 +13,20 @@ the container onto the host first.
 Concrete workflow for the `clangcl-debug` configuration:
 
 1. **Build:**
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 `
+   ```pwsh
+   pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 `
      -Configurations "clangcl-debug" -SkipTests -SkipPerfTests -SkipMsix
    ```
    This produces `build-clangcl-debug/GraphicsEngine.exe` (and other artifacts)
    inside the reusable container `bb-build-persistent`.
 
 2. **Copy the binary to the host:**
-   ```powershell
+   ```pwsh
    docker cp bb-build-persistent:C:\ws\build-clangcl-debug\bin\GraphicsEngine.exe .\
    ```
 
 3. **Run on the host** (containers have no swapchain):
-   ```powershell
+   ```pwsh
    .\GraphicsEngine.exe
    ```
    Debug builds need the Vulkan validation layers on the host (see "Running on
@@ -64,8 +64,8 @@ stays: the `windows-clang-release-wix` package preset builds on it.
 
 Typical full sweep (ASAN debug, profile, release):
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
+```pwsh
+pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
   -Configurations "clangcl-debug,clangcl-profile,clangcl-release" `
   -SkipFormat -SkipTidy -SkipTests -SkipPerfTests -SkipMsix
 ```
@@ -109,9 +109,9 @@ Windows builds run inside the ContainerHub developer image
 Vulkan SDK, Rust, sccache — everything preinstalled). CI does exactly this
 (`.github/workflows/Windows.yml`); locally use:
 
-```powershell
+```pwsh
 # Builds clangcl-debug,clangcl-profile,clangcl-release by default
-powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1
+pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1
 ```
 
 **All Windows-container knowledge lives in ContainerHub** — do not restate it
@@ -359,7 +359,7 @@ The project script is a thin consumer. See the ContainerHub module docs and
 
 ### Usage
 
-```powershell
+```pwsh
 # Windows — full loop (requires PowerShell 7+)
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1
 

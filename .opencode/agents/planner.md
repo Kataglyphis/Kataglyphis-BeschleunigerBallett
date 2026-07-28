@@ -74,7 +74,7 @@ from feature work.
   Use the existing `Test/commit/` harness pattern.
 
   **Build:** `clangcl-debug` (fast iteration). Run:
-  `powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
 
   **Context:** Why this matters and what pattern to follow. Reference
   `docs/cpp-renderer-improvements.md` or the relevant doc if applicable.

@@ -1,5 +1,5 @@
 Set-StrictMode -Version Latest
-#requires -Version 7.0
+#requires -Version 5.1
 
 
 # Common helper functions for Windows build scripts

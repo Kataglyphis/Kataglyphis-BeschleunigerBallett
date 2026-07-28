@@ -10,7 +10,7 @@ Config lives at the repo root: `.clang-format`, `.clang-tidy`,
 
 On this Windows host LLVM is installed but **not on `PATH`**:
 
-```powershell
+```pwsh
 $CF = 'C:\Program Files\LLVM\bin\clang-format.exe'   # 22.1.8
 $CT = 'C:\Program Files\LLVM\bin\clang-tidy.exe'
 ```
@@ -24,13 +24,13 @@ Works on the host with no build directory — it needs only the source and
 vendored third-party code under `ExternalLib/` (198 files, of which ~141
 have drift that is not ours to fix). Always scope to our own sources:
 
-```powershell
+```pwsh
 $own = git ls-files 'Src/*.cpp' 'Src/*.hpp' 'Src/*.ixx' 'Test/*.cpp' 'Test/*.hpp'
 ```
 
 **Check only (CI-style, writes nothing, non-zero exit on drift):**
 
-```powershell
+```pwsh
 $dirty = @()
 foreach ($f in $own) {
   & $CF --dry-run --Werror $f 2>&1 | Out-Null
@@ -41,14 +41,14 @@ foreach ($f in $own) {
 
 **Apply in place:**
 
-```powershell
+```pwsh
 foreach ($f in $own) { & $CF -i $f }
 ```
 
 **Only what you touched** (the low-risk everyday version — reformatting the
 whole tree at once buries real changes in noise):
 
-```powershell
+```pwsh
 git diff --name-only HEAD -- 'Src/*' 'Test/*' |
   Where-Object { $_ -match '\.(cpp|hpp|ixx|h)$' } |
   ForEach-Object { & $CF -i $_ }
@@ -67,7 +67,7 @@ Needs `compile_commands.json`. Two host-specific traps:
    `LLVM ERROR: Cannot chdir into "C:/ws/build-clangcl-debug"`. Rewriting
    the paths into a scratch copy gets it running:
 
-   ```powershell
+   ```pwsh
    $db = "$env:TEMP\tidydb"; New-Item -ItemType Directory -Force $db | Out-Null
    (Get-Content build-clangcl-debug\compile_commands.json -Raw) `
      -replace 'C:/ws', 'D:/GitHub/Kataglyphis-BeschleunigerBallett' |
@@ -90,7 +90,7 @@ consistent by construction (see below).
 
 `Build-Windows.ps1` runs both unless told otherwise:
 
-```powershell
+```pwsh
 # format + tidy included (slower)
 .\Scripts\Windows\Build-Windows.ps1 -Configurations 'clangcl-debug'
 

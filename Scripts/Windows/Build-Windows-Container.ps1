@@ -88,7 +88,7 @@ function Get-BuildCommandArgs {
   param([Parameter(Mandatory)][string]$WorkspacePath)
 
   $psArgs = @(
-    'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+    '-NoProfile', '-NoProfile', '-ExecutionPolicy', 'Bypass',
     '-File', (Join-Path $WorkspacePath 'Scripts\Windows\Build-Windows.ps1'),
     '-Configurations', $Configurations,
     '-SkipTidy', '-SkipPerfTests', '-SkipMsix'
@@ -221,7 +221,7 @@ function Invoke-TarPipeBuild {
             '  }',
             '}'
         ) -join '; '
-        $pruneCmd = "`"$docker`" exec $container powershell -NoProfile -Command `"$prune`""
+        $pruneCmd = "`"$docker`" exec $container pwsh -NoProfile -Command `"$prune`""
         cmd /c $pruneCmd
         if ($LASTEXITCODE -ne 0) {
             Write-Warning "Source pruning reported errors (exit $LASTEXITCODE) - continuing anyway."

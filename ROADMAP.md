@@ -48,7 +48,7 @@ Created `Scripts/Compare-RendererPixels.ps1`:
 
 **Remaining differences:** Color space (C++ linear, Rust sRGB), pipeline structure (Clouds/Sky vs Ssao/Bloom), camera framing.
 
-**Verify:** `powershell -ExecutionPolicy Bypass -File .\Scripts\Compare-RendererPixels.ps1` exits 0
+**Verify:** `pwsh -ExecutionPolicy Bypass -File .\Scripts\Compare-RendererPixels.ps1` exits 0
 
 ---
 

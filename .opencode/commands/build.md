@@ -6,7 +6,7 @@ Build the project with the specified configuration.
 
 **Windows (container build via Stevedore):**
 ```
-powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations $ARGUMENTS -SkipTests
+pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations $ARGUMENTS -SkipTests
 ```
 
 **Linux (via Rancher Desktop container runtime):**

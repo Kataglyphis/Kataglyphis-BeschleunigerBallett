@@ -28,6 +28,7 @@ class VulkanDevice
     bool supportsHardwareAcceleratedRRT() const { return deviceSupportsHardwareAcceleratedRRT; };
     bool supportsBufferDeviceAddress() const { return deviceSupportsBufferDeviceAddress; };
     bool supportsDepthClamp() const { return deviceSupportsDepthClamp; };
+    bool supportsSamplerAnisotropy() const { return deviceSupportsSamplerAnisotropy; };
     vk::DeviceAddress getBufferDeviceAddress(const vk::BufferDeviceAddressInfo &info) const;
     Allocator &getAllocator() { return allocator; };
     VmaAllocator getVmaAllocator() const { return allocator.getVmaAllocator(); };
@@ -62,6 +63,7 @@ class VulkanDevice
     bool deviceSupportsHardwareAcceleratedRRT = true;
     bool deviceSupportsBufferDeviceAddress = false;
     bool deviceSupportsDepthClamp = false;
+    bool deviceSupportsSamplerAnisotropy = false;
     vk::DeviceSize deviceAddressAlignment{ 1 };
     uint32_t graphics_queue_timestamp_valid_bits{ 0 };
 
