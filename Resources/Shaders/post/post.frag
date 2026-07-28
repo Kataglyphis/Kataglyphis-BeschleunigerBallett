@@ -3,6 +3,7 @@
 #extension GL_GOOGLE_include_directive : enable
 
 #include "renderer/pushConstants/PushConstantPost.hpp"
+#include "generated/aces.glsl"
 
 layout(location = 0) in vec2 outUV;
 layout(location = 0) out vec4 fragColor;
@@ -28,8 +29,8 @@ void main()
       alpha = cloud.a + alpha * (1.0 - cloud.a);
   }
 
-  //reinhardts tonemapping
-  vec3 tonemapped_color = color / (color + vec3(1.f));
+  // ACES filmic tonemap (shared with Rust WebGPU renderer)
+  vec3 tonemapped_color = aces_tonemap(color);
 
   fragColor   = vec4(pow(tonemapped_color, vec3(gamma)), alpha);
 

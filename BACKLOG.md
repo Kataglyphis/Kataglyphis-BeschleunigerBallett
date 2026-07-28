@@ -2314,13 +2314,13 @@ moves geometry.
 
 ### C++ Vulkan engine
 
-- [ ] **Extract UBO reprovisioning helper from `VulkanRenderer`** (S) —
-    `recreateSwapChain` re-provisions the descriptor pools, UBO vectors, RT
-    descriptors, and per-image resources in a ~80-line block inside a ~120-line
-    function. The Hub-shrink investigation (2026-07-23) noted a
-    `reprovisionPerImageResources()` helper as a small readability win. Pure
-    extraction, no behaviour change; guarded by the existing
-    `SwapchainRecreationKeepsRendering` golden.
+- [x] **Extract UBO reprovisioning helper from `VulkanRenderer`** (S) —
+    **DONE**: `reprovisionPerImageResources()` exists at
+    `VulkanRenderer.cpp:603` (declared `VulkanRenderer.ixx:99`) and is called
+    from `recreateSwapChain()` at `:677` on the image-count-change branch. It
+    wraps `cleanUpUBOs`/`create_uniform_buffers` + `cleanUpDescriptorResources`/
+    `initDescriptorResources` + the RT-descriptor recreate. Pure extraction, no
+    behaviour change; guarded by `SwapchainRecreationKeepsRendering`.
 - [ ] **`GUI*` mutable cross-cutting dependency → const settings struct** (S) —
     both `Scene` and `VulkanRenderer` read mutable GUI state each frame through a
     raw pointer. A plain `RenderSettings` struct owned by `App`, passed by const
@@ -2384,6 +2384,223 @@ moves geometry.
     the class of problems each one catches: ASAN/UBSan correctness, optimized
     UB, release-no-validation, data races.
 
+
+## 2026-07-28 batch — refactor (dead code, duplication, test gap)
+
+Found by a full read of the largest `Src/GraphicsEngineVulkan/` files against the
+current source (nothing here duplicates the surveys above; all verified against
+the code at the time of writing). Ordered non-ABI-skew first so the executor can
+drain the cheap wins on an incremental build before the ABI-skew one needs a
+`-FreshContainer`.
+
+- [ ] **(refactor, S) Strip dead `SULO_MODE` and commented model-path blocks in `SceneConfig.cpp`** —
+  `SULO_MODE` is `#define`-commented out (`SceneConfig.cpp:13`) and never
+  defined anywhere, so the `#ifdef SULO_MODE` / `#if SULO_MODE` branches at
+  `:134-142` and `:178-186` are unreachable dead code that misleads readers into
+  thinking the build mode is toggleable. A 13-line commented-out model-path
+  enumeration (`:146-158`) and commented `glm::translate`/`rotate` blocks
+  (`:167-172`, `:176-177`) are stale references to removed scenes.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:13,130-159,161-191` — the dead blocks
+  - `cmake/ProjectOptions.cmake` — confirm no `SULO_MODE` CMake option exists (grep `SULO`)
+
+  **Steps:**
+  1. Delete the `// #define SULO_MODE 1` line at `:13`.
+  2. In `getDefaultModelPath` (the `:128-145` block): collapse the
+     `#if NDEBUG ... #else #ifdef SULO_MODE ... #else ... #endif #endif` ladder
+     to `#if NDEBUG / sponza / #else / dinosaurs / #endif`. Delete the
+     commented model-path enumeration at `:146-158`.
+  3. In `getModelMatrix` (`:161-191`): collapse the same `#if SULO_MODE` ladder
+     to `#if NDEBUG / scale(1,1,1) / #else / scale(1,1,1) / #endif` and delete
+     the commented `glm::translate`/`rotate` blocks. (Both branches already
+     produce `scale(1,1,1)` today, so this is behaviour-identical.)
+  4. Grep `Src/` and `Test/` for `SULO` to confirm zero remaining references.
+
+  **Test:** No new test — this is dead-code removal. Verify
+  `SceneConfigUnit` (in the Windows CI filter) still passes; the default-model
+  path resolution is already covered there.
+
+  **Build:** `clangcl-debug` (non-ABI-skew, `.cpp`-only). Run:
+  `powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  then `docker cp bb-build-persistent:C:\ws\build-clangcl-debug\bin\commitTestSuite.exe .\` and run the SceneConfigUnit filter.
+
+  **Context:** Classic dead code + documentation drift. `SULO_MODE` reads as a
+  build toggle but is wired to nothing, so a reader cannot tell whether the
+  Sulo scene is the intended debug default. Removing it makes the
+  dinosaurs/sponza split the single visible truth. Follow the existing
+  `#if NDEBUG` convention already used for the release default.
+
+- [ ] **(refactor, S) Remove dead `adminPriviliges` stringstream in `ShaderHelper::compileShader`** —
+  `compileShader` builds a `std::stringstream adminPriviliges` initialised to
+  `"runas /user:<admin-user> \""` (`ShaderHelper.cpp:90-91`) that is never
+  assembled into the command — its only reference is the commented-out
+  `cmdShaderCompile//<< adminPriviliges.str()` at `:139`. Stale scaffolding
+  from a never-finished elevated-compile idea, plus a narrative comment at
+  `:93` that no longer matches anything.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/ShaderHelper.cpp:84-145` — `compileShader` body
+
+  **Steps:**
+  1. Delete the `std::stringstream adminPriviliges;` declaration (`:90`) and
+     the `adminPriviliges << "runas ..."` line (`:91`).
+  2. Delete the commented `//<< adminPriviliges.str()` fragment at the start of
+     the `cmdShaderCompile << ...` chain (`:139`), leaving the chain starting at
+     `<< resolve_glslc_executable()`.
+  3. Remove the now-orphaned `// with wrapping your path with quotation
+     marks ...` comment at `:93` if it no longer applies (it described the
+     `runas` wrapping that is gone).
+
+  **Test:** No new test. The runtime-compile path is already exercised by
+  `BuildIntegrity.CompiledShadersAreNotOlderThanTheirSources` and the
+  mtime-recompile golden behaviour; a syntax-only change here cannot alter
+  shader output. Verify the build compiles.
+
+  **Build:** `clangcl-debug` (non-ABI-skew, `.cpp`-only, no `.ixx` touch).
+
+  **Context:** Trivial dead-code elimination. The `runas` string was never
+  reachable; keeping it invites a reader to believe elevated compilation is a
+  supported workflow. `system()` still needs `<cstdlib>` (already included).
+
+- [ ] **(refactor, S) Cache `samplerAnisotropy` on `VulkanDevice`; drop per-texture `getFeatures()` in `Model::addSampler`** —
+  `Model::addSampler` calls `device->getPhysicalDevice().getFeatures()` once
+  per texture (`Model.cpp:75`), a host Vulkan query returning a constant for
+  the device's lifetime. The bundled scenes have dozens of textures, so this
+  re-queries the same feature struct dozens of times at load. `VulkanDevice`
+  already queries `available_features2.features.samplerAnisotropy` at
+  construction (`VulkanDevice.cpp:389-391,456`) and exposes a family of
+  `supports*()` bool accessors (`VulkanDevice.ixx:28-30`) — but not this one.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/Model.cpp:73-95` — `addSampler` (the per-texture query)
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.ixx:21-30` — existing `getPhysicalDevice()` + `supports*()` accessors (the pattern to follow)
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp:389-391,454-456` — where `samplerAnisotropy` is already read at construction
+
+  **Steps:**
+  1. Add a `bool supportsSamplerAnisotropy() const { return deviceSupportsSamplerAnisotropy; }`
+     accessor to `VulkanDevice.ixx` next to the existing `supportsDepthClamp()`.
+  2. Add the `bool deviceSupportsSamplerAnisotropy` member to `VulkanDevice.ixx`
+     and set it from `available_features2.features.samplerAnisotropy` in
+     `VulkanDevice.cpp` where the other `deviceSupports*` flags are set.
+  3. In `Model::addSampler`, replace the
+     `vk::PhysicalDeviceFeatures physical_device_features = device->getPhysicalDevice().getFeatures();`
+     line with `const bool aniso = device->supportsSamplerAnisotropy();` and
+     use `aniso` for `anisotropyEnable` / `maxAnisotropy` (currently
+     `physical_device_features.samplerAnisotropy`).
+
+  **Test:** No new test — behaviour-identical (same feature bit, same 16.0/1.0
+  choice). The textured goldens (`GoldenRender.*Texture*`,
+  `SecondModelShadesWithItsOwnTextures`) exercise the sampler path; verify they
+  pass unchanged. This is a perf cleanup, not a correctness change.
+
+  **Build:** `clangcl-debug` (non-ABI-skew: `VulkanDevice.ixx` is a module
+  interface, but adding a member + accessor is additive and `Model.cpp` is a
+  consumer that recompiles incrementally — verify with a normal incremental
+  build; if the stale-BMI ASan hazard bites, `-FreshContainer`).
+
+  **Context:** Follows the established `supports*()` accessor pattern. The
+  per-texture host call is wasted work and the kind of "unnecessary" the
+  modernization bucket targets. `samplerAnisotropy` is a device-lifetime
+  constant, so caching it at construction (where it is already read) is the
+  natural home.
+
+- [ ] **(refactor, M) Drop dead `transfer_queue` plumbing through `Mesh`/`Model`/loaders** —
+  `vk::Queue transfer_queue` is threaded through the `Mesh` ctor, four private
+  `create*Buffer` methods, `Model::add_new_mesh`, and both loader `uploadParsed`
+  call sites — and commented out as unused in every one of the four
+  `create*Buffer` definitions (`Mesh.cpp:97,107,117,127` all mark the param
+  `/*transfer_queue*/`). `uploadDeviceLocalBuffer` (the single shared upload
+  helper) takes only `transfer_command_pool`; the buffer manager allocates its
+  own one-time-submit command buffer internally. The queue was only used by the
+  old per-call submission path, which is gone.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/Mesh.cpp:32-64,97-134` — ctor forwards it; all four `create*Buffer` ignore it
+  - `Src/GraphicsEngineVulkan/scene/Mesh.ixx:32,42,89,91,93,97` — ctor + private method signatures
+  - `Src/GraphicsEngineVulkan/scene/Model.cpp:39-54` — `add_new_mesh` forwards it
+  - `Src/GraphicsEngineVulkan/scene/Model.ixx:26-33` — `add_new_mesh` signature
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:146-153` and `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:97-110` — both `uploadParsed` call sites pass it
+
+  **Steps:**
+  1. Remove `vk::Queue transfer_queue` from the four `Mesh::create*Buffer`
+     signatures (`Mesh.ixx` declarations + `Mesh.cpp` definitions) and from the
+     four call sites in the `Mesh` ctor (`Mesh.cpp:61-64`).
+  2. Remove `vk::Queue transfer_queue` from the `Mesh` ctor (`Mesh.ixx:32`,
+     `Mesh.cpp:32`) and from `Model::add_new_mesh` (`Model.ixx`, `Model.cpp:39,50`).
+  3. Drop the `transfer_queue` argument from the `add_new_mesh` calls in
+     `ObjLoader::uploadParsed` and `GltfLoader::uploadParsed`. Keep the queue
+     on the loaders themselves only if still used for texture uploads (Texture
+     has its own queue — verify with a grep of `transfer_queue` in
+     `Texture.cpp`/`ObjLoader.cpp` before removing the loader member).
+  4. Grep `Src/` for `transfer_queue` to confirm no remaining references in the
+     Mesh/Model path.
+
+  **Test:** No new test — pure parameter removal, behaviour-identical. The
+  multi-mesh goldens (`MultiPrimitiveGltfLoadsAsMultipleMeshes`,
+  `SecondModelLoadsAndRenders`) and `ObjParseUnit` exercise the path; verify
+  they pass unchanged.
+
+  **Build:** `clangcl-debug` **with `-FreshContainer`** — this is ABI-skew
+  (`Mesh.ixx` + `Model.ixx` module interfaces change, so consumers recompile
+  against new layouts; an incremental container build can ship a stale-BMI
+  ODR-broken binary per the documented hazard). Run:
+  `powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
+
+  **Context:** Dead parameter across a ctor + four private methods + a public
+  Model method + two loader call sites. Removing it shrinks the import surface
+  and stops a reader from assuming the queue is used for submission. This is
+  the cleanest ABI-skew refactor: well-scoped, behaviour-preserving, and the
+  `uploadDeviceLocalBuffer` helper already proves the queue is unused. Bundle
+  with the `textureNamesFromLastParse` redundancy removal
+  (`ObjLoader.ixx:91,92`) if convenient — both are ABI-skew ObjLoader touches.
+
+- [ ] **(test, S) Add glTF primitive-with-no-material neutral-fallback parse test** —
+  `GltfLoader::processPrimitive` routes a primitive whose `"material"` key is
+  absent (`primitive->material == nullptr`) to a `fallbackMaterial`/neutral
+  branch (`GltfLoader.cpp:379-387,446-447`) so every face id stays in range.
+  `gltfParseSuite.cpp` covers cube parse, materials, missing file, embedded
+  texture, malformed text, short base64, missing-normals, strip, fan, MASK
+  cutoff, OPAQUE cutoff, mask-card, KHR_texture_transform, colour_0,
+  multi-primitive, `mask_card_hc` — but NOT the no-material primitive. The OBJ
+  twin (`FacesWithoutAMaterialIndexInsideTheMaterialsArray`,
+  `objParseSuite.cpp:49-69`) exists precisely because the symmetric OBJ path
+  once had an OOB there; the glTF edge is the untested mirror.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:379-387,446-447` — the `fallbackMaterial`/`neutralMaterial` branch
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp:278-296` — the dynamic-doc `gltf` pattern to follow (a `material_gltf`-style doc built in-memory)
+  - `Test/commit/VulkanEngine/objParseSuite.cpp:49-69` — the OBJ twin for the assertion shape
+
+  **Steps:**
+  1. Add a `GltfParseUnit.PrimitiveWithoutMaterialRoutesToNeutralFallback` test
+     that builds a minimal glTF document in memory (mirror the
+     `material_gltf` helper at `gltfParseSuite.cpp:278-296`) with one mesh /
+     one primitive whose `"material"` key is OMITTED, then runs
+     `GltfLoader::parseCpu`.
+  2. Assert `getMaterialIndices().size() == getIndices().size() / 3` (one id
+     per triangle) and that every id is `< getMaterials().size()` and equals
+     the trailing neutral material's index — the invariant the fallback exists
+     to guarantee.
+  3. Red-verify: temporarily making `processPrimitive` skip the
+     `primitive->material == nullptr` branch (use the raw `material` index)
+     must make the test fail with an out-of-range id, proving the assertion is
+     not vacuous.
+
+  **Test:** This IS the test. Add it to `gltfParseSuite.cpp` and confirm it is
+  picked up by the Windows CI filter (`Windows.yml` — the `GltfParseUnit`
+  suite is already in the filter, so no workflow edit needed).
+
+  **Build:** `clangcl-debug` (test-only, non-ABI-skew). Run the
+  `GltfParseUnit.PrimitiveWithoutMaterialRoutesToNeutralFallback` filter
+  directly on the extracted `commitTestSuite.exe`.
+
+  **Context:** "Adding tests is always in scope." This is the exact
+  error/edge-path-in-the-loaders gap the survey flagged: a code path with no
+  test, where a regression (dropping the null-material guard) would silently
+  produce an out-of-bounds buffer-device-address read in the shaders — the
+  same class of bug the OBJ `-1` cast to `0xFFFFFFFF` was. The dynamic-doc
+  pattern avoids needing a new asset file.
 
 ## Completed (kept for the reasoning, not the status)
 

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "_comment": "Configuration for the agentic loop. Edit model IDs and intervals here.",
+
+  "models": {
+    "planner": "opencode-go/glm-5.2",
+    "executor": "opencode-go/deepseek-v4-flash"
+  },
+
+  "intervals": {
+    "buildEveryNTasks": 3,
+    "qualityEveryNTasks": 5,
+    "refactorEveryNIterations": 3,
+    "testAfterBuild": true,
+    "maxExecutorRetries": 3,
+    "loopDelaySeconds": 10,
+    "maxIterations": 0
+  },
+
+  "buildConfigurations": {
+    "_comment": "Cycled through after each build trigger. Windows uses container presets; Linux uses native presets.",
+    "windows": ["clangcl-debug", "clangcl-profile", "clangcl-release"],
+    "linux": ["linux-debug-clang", "linux-debug-tsan-clang", "linux-release-clang"]
+  },
+
+  "build": {
+    "windowsScript": "Scripts/Windows/Build-Windows-Container.ps1",
+    "linuxScript": "Scripts/Linux/cmake-configure-build.sh",
+    "windowsTestCommand": "ctest --test-dir build-clangcl-debug --output-on-failure -C Debug",
+    "linuxTestCommand": "Scripts/Linux/run-ctest.sh --build-dir build",
+    "windowsQualityCommand": "powershell -ExecutionPolicy Bypass -File Scripts/Windows/Build-Windows.ps1 -Configurations clangcl-debug -SkipBuild -SkipTests -SkipPerfTests -SkipMsix",
+    "linuxQualityCommand": "Scripts/Linux/run_static_analysis_format.sh"
+  },
+
+  "git": {
+    "autoCommit": true,
+    "commitPrefix": "agentic-loop"
+  },
+
+  "logging": {
+    "logDir": "logs/agentic-loop",
+    "logToConsole": true
+  }
+}

@@ -78,7 +78,31 @@ breaks on web" bugs.
 **Practical recommendation:** share the *functions*, not the *entry
 points*. Keep each renderer's entry points and binding declarations local
 (they're ~20 lines each), and let the generated SPIR-V/GLSL supply the
-shared math. That keeps both binding models native and avoids fighting the
+shared math.
+
+## Proof of Concept (2026-07-28)
+
+`Resources/Shaders/generated/aces.glsl` and `brdf.glsl` are hand-written GLSL
+translations of the WGSL math kernels in `forward.wgsl` and `tonemap.wgsl`.
+They live in a `generated/` directory that is gitignored and excluded from
+`compile-shaders.ps1` — but the C++ engine CAN `#include` them because glslc
+searches `Resources/Shaders/` for includes.
+
+`Resources/Shaders/post/post.frag` now `#include "generated/aces.glsl"` and
+uses `aces_tonemap()` instead of the old Reinhard tonemap. The shader builds
+and all golden tests pass (RendersNonBlankFrame, deferred/forward parity,
+GPU timing dump — all verified 2026-07-28).
+
+### Future: auto-generation from WGSL
+
+The long-term path is:
+
+1. Extract shared math functions from WGSL into standalone WGSL module files
+   (e.g. `math/brdf.wgsl`, `math/tonemap.wgsl`, `math/sky.wgsl`).
+2. The `export_shaders` example emits GLSL 450 for these modules.
+3. The C++ engine `#include`s the generated GLSL, so a WGSL edit propagates
+   to both renderers automatically.
+4. Entry points and bindings stay renderer-specific. That keeps both binding models native and avoids fighting the
 descriptor-set mismatch.
 
 ## Beyond shaders

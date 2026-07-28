@@ -3,6 +3,40 @@
 Guidance for AI agents and new contributors working in Kataglyphis-BeschleunigerBallett
 (a Vulkan/OpenGL graphics-engine playground: C++23/C17, CMake presets, optional Rust).
 
+## AI Agent Workflow (Windows)
+
+**When building on Windows, always use Stevedore (Docker) via the container build
+script.** Never invoke CMake, Ninja or MSBuild directly on the host. The build
+produces binaries inside the container; to run them you must extract them from
+the container onto the host first.
+
+Concrete workflow for the `clangcl-debug` configuration:
+
+1. **Build:**
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 `
+     -Configurations "clangcl-debug" -SkipTests -SkipPerfTests -SkipMsix
+   ```
+   This produces `build-clangcl-debug/GraphicsEngine.exe` (and other artifacts)
+   inside the reusable container `bb-build-persistent`.
+
+2. **Copy the binary to the host:**
+   ```powershell
+   docker cp bb-build-persistent:C:\ws\build-clangcl-debug\bin\GraphicsEngine.exe .\
+   ```
+
+3. **Run on the host** (containers have no swapchain):
+   ```powershell
+   .\GraphicsEngine.exe
+   ```
+   Debug builds need the Vulkan validation layers on the host (see "Running on
+   the Host" below). Profile/Release builds run without them.
+
+For other configurations, adjust `-Configurations` and the binary path
+accordingly (`build-clangcl-profile\bin\`, `build-clangcl-release\bin\`).
+
+---
+
 ## Build System Overview
 
 Everything is driven by `CMakePresets.json`. Do not invent ad-hoc CMake command lines;
@@ -297,6 +331,43 @@ full build to produce a duplicate of `clangcl-debug`. Use the Linux
   [`docs/cpp-renderer-improvements.md`](docs/cpp-renderer-improvements.md).
   Do not restate it here — that document is the source of truth.
 
+## Agentic Loop (OpenCode)
+
+An autonomous planner/executor loop built on [OpenCode](https://opencode.ai)
+continuously improves the engine. The **planner** (GLM 5.2 — expensive,
+powerful) analyzes the codebase and writes detailed task entries to
+`BACKLOG.md`. The **executor** (DeepSeek v4 Flash — cheap, fast) drains the
+queue one task at a time, building and testing as it goes. The queue must be
+fully drained before the planner adds new tasks.
+
+- **Config**: `Scripts/AgenticLoop/AgenticLoop.config.json` (model IDs,
+  build/test/quality intervals, build configuration cycle).
+- **Agents**: `.opencode/agents/planner.md` (read-only + BACKLOG.md write),
+  `.opencode/agents/executor.md` (full access).
+- **Commands**: `.opencode/commands/{plan,execute,build,test,quality}.md`
+  (slash commands for interactive use in the OpenCode TUI).
+- **Orchestration**: `Scripts/AgenticLoop/Run-AgenticLoop.ps1` (Windows /
+  Stevedore), `Scripts/AgenticLoop/Run-AgenticLoop.sh` (Linux / Rancher
+  Desktop).
+- **Full docs**: [`Scripts/AgenticLoop/README.md`](Scripts/AgenticLoop/README.md)
+
+```powershell
+# Windows — full loop
+powershell -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1
+
+# Dry run (no opencode / no builds)
+powershell -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -DryRun
+
+# Planner only (add tasks, don't execute)
+powershell -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -PlannerOnly
+```
+
+Builds cycle through `clangcl-debug`, `clangcl-profile`, `clangcl-release`
+(Windows) or the Linux equivalents after every N completed tasks. Tests run
+after each build. clang-tidy + cmake-format run every M tasks. The planner
+adds refactor-focused tasks every R iterations. Logs go to
+`logs/agentic-loop/`.
+
 ## Docs
 
 Each topic has exactly one home; link, do not copy. Reusable topics live in
@@ -315,6 +386,7 @@ ContainerHub (see the rule above), project-specific ones here.
 | `docs/code-quality.md` | clang-format / clang-tidy / cmake-format commands + cadence |
 | `docs/shader-build-pipeline.md` | GLSL→SPIR-V build step, staleness rules, fast shader iteration |
 | `docs/container-build-caching.md` | Container transport, sccache volume, incremental-build options |
+| `Scripts/AgenticLoop/README.md` | Agentic loop (OpenCode planner/executor) architecture, config, usage |
 | `docs/source/` | Sphinx pages (`getting_started.md`, `documentation_workflow.md`) |
 
 - Keep docs, scripts, and presets aligned: when you change build behavior, update

@@ -32,6 +32,7 @@ dist
 build*/
 *.profraw
 
+opencode.json
 
 # Prerequisites
 *.d
