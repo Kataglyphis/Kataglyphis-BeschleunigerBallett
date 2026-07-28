@@ -1,4 +1,6 @@
 param(
+#requires -Version 7.0
+
   [string[]]$Configurations = @('all'),
   [switch]$SkipFormat,
   # Rewrite sources with clang-format/cmake-format instead of only reporting
@@ -459,3 +461,4 @@ try {
 if ($context.Results.Failed.Count -gt 0) {
   throw "Windows build completed with failures ($($context.Results.Failed.Count) steps failed)."
 }
+

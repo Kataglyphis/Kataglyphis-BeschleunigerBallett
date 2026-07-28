@@ -1,4 +1,6 @@
 Set-StrictMode -Version Latest
+#requires -Version 7.0
+
 
 function Get-ProjectCmakeFiles {
   param(

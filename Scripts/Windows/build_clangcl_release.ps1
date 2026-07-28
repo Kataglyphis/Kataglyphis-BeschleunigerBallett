@@ -3,6 +3,8 @@
 Starts the Clang-CL Release build and sets all necessary environment variables.
 #>
 
+#requires -Version 7.0
+
 $ErrorActionPreference = "Stop"
 
 $VulkanVersion = "1.4.341.1" # Customize based on your installation
@@ -73,3 +75,4 @@ cmake --build build_release --config Release
 if ($LASTEXITCODE -ne 0) { throw "CMake build failed." }
 
 Write-Host "`nBuild completed successfully!"
+

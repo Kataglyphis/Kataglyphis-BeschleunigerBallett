@@ -1,4 +1,6 @@
 Set-StrictMode -Version Latest
+#requires -Version 7.0
+
 
 # Common helper functions for Windows build scripts
 # These functions are shared across all WindowsXxx.Common.psm1 modules
@@ -306,4 +308,5 @@ Export-ModuleMember -Function @(
     'Resolve-WindowsBuildRootCandidates',
     'Invoke-WindowsExecutableWithPlugins'
 )
+
 

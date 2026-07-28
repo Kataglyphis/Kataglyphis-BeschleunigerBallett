@@ -2602,6 +2602,331 @@ drain the cheap wins on an incremental build before the ABI-skew one needs a
   same class of bug the OBJ `-1` cast to `0xFFFFFFFF` was. The dynamic-doc
   pattern avoids needing a new asset file.
 
+## 2026-07-28 batch II — subsystem extraction & CI coverage
+
+Found by a structural read of `VulkanRenderer.cpp` (still the 78 KB / 1771-line
+hub) and the test/CI wiring. None duplicate the dead-code batch above or the
+sized items in the 2026-07-24 batch. Ordered non-ABI-skew first.
+
+### C++ Vulkan engine
+
+- [ ] **(refactor, S) Extract `GpuTimingSubsystem` from `VulkanRenderer`** —
+    the per-pass GPU-timing subsystem is a self-contained ~170-line block with
+    its own state and four methods, the same shape as the `FrameSync`
+    extraction that already landed (`e7e7579d`). Pulling it out shrinks the
+    hub and makes the `GpuPassAverage` rolling-mean struct unit-testable (it
+    has zero coverage today).
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1155-1323` — the
+    four methods to move (`createGpuTimingResources`,
+    `destroyGpuTimingResources`, `readGpuTimings`, `writeGpuTimingJsonIfRequested`).
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.ixx:210-277` — the
+    state to move (`gpu_timings_supported`, `gpu_timestamp_period`,
+    `gpu_timestamp_mask`, `gpu_timing_query_pool`, `gpu_timing_pass_mask`,
+    `gpu_timing_slice_recorded`, `GpuPassAverage` struct +
+    `gpu_pass_averages`, the `gpu_timing_export_*` accumulators, the
+    `GPU_TIMING_QUERIES_*` constants).
+  - `Src/GraphicsEngineVulkan/renderer/FrameSync.ixx` — the extraction
+    pattern to mirror (module-interface class, `create`/`cleanUp` lifecycle,
+    handle accessors, comment explaining the load-bearing invariants).
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:813-833` — the
+    `write_pass_timestamp` lambda inside `record_commands` that writes to
+    the query pool; it stays in the renderer (it records into a command
+    buffer) but will need the new class's `queryPool()`/`queriesPerImage()`/
+    `isSupported()` accessors.
+  - `Src/GraphicsEngineVulkan/renderer/GUIRendererSharedVars.ixx` — the
+    `GpuTimings`/`GPU_TIMED_PASS_COUNT`/`GPU_TIMED_PASS_EXPORT_NAMES`
+    definitions the new class reads and writes.
+
+  **Steps:**
+  1. Create `Src/GraphicsEngineVulkan/renderer/GpuTimingSubsystem.ixx`
+     exporting `class GpuTimingSubsystem` with the state above and methods
+     `create(device, imageCount, guiRendererSharedVars)`,
+     `destroy(device)`, `readTimings(device, imageIndex,
+     guiRendererSharedVars)`, `writeJsonIfRequested()`, plus const accessors
+     `queryPool()`, `queriesPerImage()`, `isSupported()`,
+     `timestampMask()`, `passRecordedMask(imageIndex)`,
+     `setPassRecordedMask(imageIndex, mask)`, `sliceWasRecorded(imageIndex)`.
+     Mirror `FrameSync`'s module structure (header-only,
+     `export module kataglyphis.vulkan.gpu_timing`).
+  2. Replace the members + four methods in `VulkanRenderer` with a single
+     `GpuTimingSubsystem gpuTiming;` member and forwarding calls. The
+     `write_pass_timestamp` lambda in `record_commands` reads
+     `gpuTiming.queryPool()` / `gpuTiming.queriesPerImage()` /
+     `gpuTiming.isSupported()` and writes back the recorded mask via
+     `gpuTiming.setPassRecordedMask()`. `recreateSwapChain` calls
+     `gpuTiming.create(...)` (it already destroys+ recreates the pool);
+     `cleanUp` calls `gpuTiming.writeJsonIfRequested()` then
+     `gpuTiming.destroy(device)`.
+  3. Add a CPU-only unit test `GpuTimingUnit.AverageConvergesToMean` (and
+     `.ResetClearsHistory`, `.WindowRollsOldestSample`) in a new
+     `Test/commit/VulkanEngine/gpuTimingSuite.cpp` driving `GpuPassAverage`
+     directly (it is a pure struct — no device needed). Add the suite to
+     `Test/commit/VulkanEngine/CMakeLists.txt` and to the Windows CI filter
+     (see the CI-filter task below).
+
+  **Test:** `GpuTimingUnit.*` asserts the rolling-window mean: feeding 30
+    samples of value 10.0 yields exactly 10.0; a 31st sample of 20.0 evicts
+    the oldest (10.0) and the mean becomes (290+20)/30 = 10.333; `reset()`
+    returns `count` to 0. Red: a `GpuPassAverage` that never evicts would
+    report 10.0 forever.
+
+  **Build:** `clangcl-debug` (fast iteration). Run:
+  `powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  then copy `commitTestSuite.exe` out and run the `GpuTimingUnit.*` filter.
+  ABI-skew: `VulkanRenderer.ixx` changes (a member is replaced), so a
+  `-FreshContainer` build is required the first time — an incremental build
+  will trip the documented stale-BMI ASan overflow (see the ODR-broken
+  binaries note in `BACKLOG.md`).
+
+  **Context:** `VulkanRenderer` is still the hub (78 KB, 1771 lines). The
+  GPU-timing code is the cleanest remaining extraction: it owns its own
+  resources (query pool, accumulators), has a single caller
+  (`record_commands` + `recreateSwapChain` + `cleanUp`), and its only
+  external dependency is the GUI shared vars for output. The
+  `GpuPassAverage` struct has never been tested — this extraction is the
+  natural place to add that coverage. Follow the `FrameSync` pattern
+  exactly; do not collapse the per-image slice tracking (the
+  `gpu_timing_slice_recorded` "freshly created pools hold queries in an
+  undefined state" guard is load-bearing).
+
+- [ ] **(refactor, S) Extract `FrameCapture` from `VulkanRenderer`** — the
+    headless frame-capture subsystem is a self-contained ~165-line block
+    with its own state and five methods, the same shape as `FrameSync` and
+    the `GpuTimingSubsystem` extraction above. Pulling it out shrinks the
+    hub and co-locates the capture lifecycle (arm → record → take →
+    cleanUp) in one type.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:986-1153` — the
+    five methods to move (`supportsFrameCapture`, `requestFrameCapture`,
+    `recordFrameCapture`, `takeCapturedFrame`, `cleanUpFrameCapture`).
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.ixx:279-292` — the
+    state to move (`capture_armed`, `capture_pending`, `capture_fence`,
+    `captureBuffer`, `capture_buffer_size`, `capture_width`,
+    `capture_height`, `capture_format`).
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:567-569` — the
+    `if (capture_pending) { capture_fence = frameSync.inFlightFence(); }`
+    line in `drawFrame` that ties the capture to the submit fence; this
+    becomes `frameCapture.bindSubmitFence(frameSync.inFlightFence())`.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:892-895` — the
+    `if (capture_armed) { recordFrameCapture(...); }` call site in
+    `record_commands`.
+  - `Src/GraphicsEngineVulkan/renderer/FrameSync.ixx` — the extraction
+    pattern to mirror.
+
+  **Steps:**
+  1. Create `Src/GraphicsEngineVulkan/renderer/FrameCapture.ixx` exporting
+     `class FrameCapture` with the state above and methods
+     `supportsCapture(swapChain)`, `request()`, `record(commandBuffer,
+     swapChain, imageIndex)`, `bindSubmitFence(fence)`,
+     `take(device, outWidth, outHeight)`, `cleanUp(device)`. The BGRA→RGBA8
+     normalization stays inside `take`.
+  2. Replace the eight members + five methods in `VulkanRenderer` with a
+     single `FrameCapture frameCapture;` member. `drawFrame` calls
+     `frameCapture.bindSubmitFence(frameSync.inFlightFence())` after submit;
+     `record_commands` calls `frameCapture.record(...)` when
+     `frameCapture.isArmed()`; `recreateSwapChain` resets
+     `frameCapture` (the `capture_fence = vk::Fence{}` line at
+     `VulkanRenderer.cpp:632`); `cleanUp` calls
+     `frameCapture.cleanUp(device)`.
+  3. No new test required — the existing 22 golden tests exercise the
+     capture path end-to-end (`takeCapturedFrame` is the harness's
+     `capture_frame`). Verify all goldens still pass on a GPU host.
+
+  **Test:** Run `commitTestSuite.exe --gtest_filter='GoldenRender.*'` on the
+    host (needs the RX 9070 XT + Vulkan validation layers for debug builds;
+    see `docs/gpu-golden-testing.md`). All 22 goldens must pass unchanged —
+    the extraction is verbatim, no behaviour change.
+
+  **Build:** `clangcl-debug` (fast iteration). Run:
+  `powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  ABI-skew: `VulkanRenderer.ixx` changes, so `-FreshContainer` on the first
+  build.
+
+  **Context:** The capture code is deliberately separate from the render
+  path (it runs after the post pass, inside the same command buffer,
+  copying the swapchain image to a host-visible staging buffer). Its only
+  external touch is the submit fence, which `drawFrame` hands it. The
+  `recreateSwapChain` reset (`capture_fence = vk::Fence{}`) is the one
+  cross-cutting concern — keep it as an explicit call from the renderer,
+  not hidden inside the capture class (the swapchain owns the recreation
+  orchestration). Do NOT move the `capture_armed`/`capture_pending` flags
+  into the renderer — they are the capture's own state machine.
+
+- [ ] **(refactor, S) Decompose `updateStateDueToUserInput` into named
+    handlers** — the 124-line function
+    (`VulkanRenderer.cpp:257-379`) is a sequence of five flag-driven
+    blocks (shader hot-reload, rasterization-mode rebind, shadow-resolution
+    change, model-transform change, model reload). Each is self-contained,
+    reads a `*_changed`/`*_requested` flag, does its work, and clears the
+    flag. Extracting each into a named private method turns the function
+    into a readable dispatcher and makes each handler individually
+    greppable.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:257-379` — the
+    function to decompose.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.ixx` — add the five
+    private method declarations.
+
+  **Steps:**
+  1. Extract five private methods, each taking the GUI shared vars it
+     needs by reference (the function already holds `guiRendererSharedVars`
+     and `guiSceneSharedVars` locals):
+     - `handleShaderHotReloadRequest(guiRendererSharedVars)` — lines 266-269.
+     - `handleRasterizationModeChange(guiRendererSharedVars)` — lines 280-284.
+     - `handleShadowResolutionChange(guiSceneSharedVars)` — lines 287-314.
+     - `handleModelTransformChange(guiSceneSharedVars, frontend_gui)` —
+       lines 316-355.
+     - `handleModelReloadRequest(guiSceneSharedVars)` — lines 357-378.
+  2. `updateStateDueToUserInput` becomes the `pollModelLoad` call + the
+     five `if (flag) { handleX(...); }` calls, in the same order. Each
+     handler clears its own flag as the first statement (so a partial
+     failure does not re-trigger on the next frame).
+  3. No behaviour change — verbatim extraction. The existing
+     `GoldenRender.GuiInputSweepNeverCrashes` golden drives every control
+     and asserts no crash / device-lost / validation error; it guards the
+     refactor.
+
+  **Test:** `GoldenRender.GuiInputSweepNeverCrashes` (already in the
+    suite) must still pass. No new test needed — the decomposition is
+    behaviour-preserving and the sweep already covers every flag path.
+
+  **Build:** `clangcl-debug`. Run:
+  `powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  Not ABI-skew in the struct-layout sense (no data member change), but
+  private method declarations are added to the class — a `-FreshContainer`
+  is safest given the stale-BMI hazard.
+
+  **Context:** Each block has its own "why" comment that explains a
+  non-obvious invariant (the mode-switch rebind, the
+  TLAS-follows-transform ordering, the shadow-resolution clamp). Keep
+  those comments with their handler — they are the only documentation of
+  those invariants. Do NOT consolidate the three "rebuild AS +
+  rebuildObjectDescriptions + updateAllDescriptorSets" sequences
+  (finishModelLoad / addModel / handleModelReloadRequest) into a helper —
+  the 2026-07-23 hub-shrink investigation (BACKLOG.md line 856-869)
+  established they genuinely differ in order and in which AS/descriptor
+  step runs.
+
+- [ ] **(refactor, S) Extract `swung_fraction`/`detail_fraction` into a
+    shared test helper** — the two pixel-metric lambdas are duplicated as
+    function-local lambdas across multiple golden tests (`swung_fraction`
+    3×, `detail_fraction` 2× in `goldenRenderSuite.cpp`). They are pure CPU
+    functions over RGBA buffers but are not unit-tested, and each copy has
+    slightly different crop bounds tuned per test. Extract them into a
+    shared header so they are defined once, reusable, and unit-testable.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp:1221-1242` — the first
+    `swung_fraction` definition (the canonical one; the crop bounds
+    `x0 = 18w/25, x1 = 49w/50, y0 = h/20, y1 = 19h/20` exclude the ImGui
+    panel).
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp:1392,1495` — the other
+    two `swung_fraction` copies (verify they match before consolidating).
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp:1595-1612,2005,2083` —
+    the `detail_fraction` copies (these differ in crop bounds per test;
+    parameterize the crop).
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp:154` — `luminance_of`,
+    already a free function at file scope; move it into the header too.
+
+  **Steps:**
+  1. Create `Test/commit/VulkanEngine/GoldenMetrics.hpp` with:
+     - `double luminance_of(const std::vector<uint8_t>& rgba, size_t pixel);`
+     - `double swung_fraction(const std::vector<uint8_t>& a, const
+       std::vector<uint8_t>& b, uint32_t w, uint32_t h, Crop crop);`
+     - `double detail_fraction(const std::vector<uint8_t>& rgba, uint32_t w,
+       uint32_t h, Crop crop);`
+     where `struct Crop { uint32_t x0,x1,y0,y1; }` and a couple of named
+     factories (`panel_free_crop()`, `card_crop()`) for the bounds the
+     tests share. Header-only, no Vulkan dependency.
+  2. Replace the three `swung_fraction` lambdas and two `detail_fraction`
+     lambdas in `goldenRenderSuite.cpp` with calls to the header functions,
+     passing the appropriate `Crop`. Verify each test's crop bounds are
+     preserved exactly (diff the old lambda bounds against the new call).
+  3. Add `Test/commit/VulkanEngine/goldenMetricsSuite.cpp` with CPU-only
+     tests: `GoldenMetrics.SwungFractionIsZeroForIdenticalFrames`,
+     `.SwungFractionIsOneForFullyDifferentFrames`,
+     `.DetailFractionIsZeroForFlatImage`,
+     `.DetailFractionIsHighForCheckerboard`. Add the suite to
+     `CMakeLists.txt` and the Windows CI filter (see the CI-filter task).
+
+  **Test:** `GoldenMetrics.*` — identical frames → 0.0; frames where
+    every pixel differs by >5 levels → 1.0; a flat 128-grey image → detail
+    0.0; an 8×8 checkerboard → detail > 0.4. Red: a `swung_fraction` that
+    ignores the crop would report >0 on identical frames (the panel
+    differs from the scene).
+
+  **Build:** `clangcl-debug`. Run:
+  `powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  then run
+  `commitTestSuite.exe --gtest_filter='GoldenMetrics.*:GoldenRender.*'` —
+  the new CPU tests plus the existing goldens must both pass (the goldens
+  verify the extraction did not shift any crop bounds).
+
+  **Context:** The metrics are the oracles every golden relies on, and
+  they have been the source of two confident wrong calls (BACKLOG.md
+  "Caution learned the hard way" note at line 757). Having them
+  unit-tested means a future metric change is caught by a CPU test, not by
+  a golden that silently passes or fails for the wrong reason. Do NOT
+  change any crop bounds — the per-test bounds were tuned against measured
+  framing; the header's `Crop` parameter preserves them verbatim.
+
+### CI / test coverage
+
+- [ ] **(test, S) Add the missing CPU-only test suites to the Windows CI
+    filter** — seven CPU-only suites exist in
+    `Test/commit/VulkanEngine/` but are NOT in the `Windows.yml` gtest
+    filter, so they never run in CI. AGENTS.md explicitly warns: "A suite
+    added to the repo does not run in CI unless it is added to the filter
+    in `Windows.yml`." Adding them is a zero-code-change coverage win —
+    every suite already passes locally.
+
+  **Files to read:**
+  - `.github/workflows/Windows.yml:209-219` — the `$cpuOnlySuites` array
+    that filters `commitTestSuite.exe` inside the container.
+  - `Test/commit/VulkanEngine/*.cpp` — grep `TEST(` for the suite names
+    (the first argument to `TEST`/`TEST_F`).
+
+  **Steps:**
+  1. Add these seven filters to the `$cpuOnlySuites` array in
+     `Windows.yml`, in alphabetical order to match the existing style:
+     `'AllocatorOwnership.*'`, `'AsyncModelParseUnit.*'`,
+     `'FrustumUnit.*'`, `'MeshRangeSlice.*'`, `'ModelPickerUnit.*'`,
+     `'ObjParseUnit.*'`, `'PushConstantRasterizerUnit.*'`.
+  2. Verify each is truly CPU-only: none of these suites call
+     `SKIP_WITHOUT_GPU`, `glfwInit`, or construct a `VulkanRenderer` /
+     `EngineHarness` (already verified by grepping —
+     `renderModesSuite.cpp`'s `Integration.*` is the one that needs a GPU
+     and is deliberately excluded).
+  3. Push with `[build-win]` in the commit message so the Windows lane
+     runs, and confirm the "Run CPU-only tests inside the container" step
+     reports the expanded filter passing.
+
+  **Test:** The CI step itself is the test — it runs the suites. Locally,
+    run
+    `commitTestSuite.exe --gtest_filter='AllocatorOwnership.*:FrustumUnit.*:MeshRangeSlice.*:ObjParseUnit.*:AsyncModelParseUnit.*:ModelPickerUnit.*:PushConstantRasterizerUnit.*'`
+    and confirm all pass (they should — they pass on the host already).
+
+  **Build:** No build needed — the suites are already compiled into
+    `commitTestSuite.exe`. The change is CI-filter-only.
+
+  **Context:** The seven missing suites cover: the move-only allocator
+    contract (`AllocatorOwnership`), frustum culling maths
+    (`FrustumUnit`), the multi-mesh slice loop (`MeshRangeSlice`), OBJ
+    parsing (`ObjParseUnit`), the async model-load worker
+    (`AsyncModelParseUnit`), the GUI model picker (`ModelPickerUnit`),
+    and the push-constant layout (`PushConstantRasterizerUnit`). All are
+    CPU-only, all have been verified green locally, and all guard code
+    paths that have been actively worked on in July 2026. Running them in
+    CI catches regressions in the next refactor (including the
+    GpuTiming + FrameCapture extractions above, which touch the same
+    `commitTestSuite.exe` binary). Do NOT add `Integration.*` or
+    `GoldenRender.*` — those need a GPU and the container has no
+    swapchain.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

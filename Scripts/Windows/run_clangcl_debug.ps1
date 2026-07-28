@@ -15,6 +15,8 @@ param (
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+#requires -Version 7.0
+
 
 $ProjectRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
 $DebugDir = Join-Path $ProjectRoot 'build-clangcl-debug'
@@ -299,3 +301,4 @@ try {
 
     Close-BuildLog -Context $context
 }
+

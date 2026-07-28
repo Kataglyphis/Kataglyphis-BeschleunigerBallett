@@ -1,4 +1,6 @@
 Set-StrictMode -Version Latest
+#requires -Version 7.0
+
 
 function Get-SanitizerRuntimeDlls {
   $clangRootPaths = [System.Collections.Generic.List[string]]::new()
@@ -410,3 +412,4 @@ function Test-ClangClThreadSanitizerSupport {
 }
 
 Export-ModuleMember -Function Remove-BuildRootSafe, Invoke-CmakeConfigureAndBuild, Test-ClangClThreadSanitizerSupport
+

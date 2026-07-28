@@ -1,4 +1,6 @@
 param(
+#requires -Version 7.0
+
   [string]$TargetEnv = ''
 )
 
@@ -133,3 +135,4 @@ if ($failed.Count -gt 0) {
 }
 
 Write-Host "[INFO] Shader precompilation finished"
+

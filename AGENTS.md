@@ -340,26 +340,37 @@ powerful) analyzes the codebase and writes detailed task entries to
 queue one task at a time, building and testing as it goes. The queue must be
 fully drained before the planner adds new tasks.
 
-- **Config**: `Scripts/AgenticLoop/AgenticLoop.config.json` (model IDs,
-  build/test/quality intervals, build configuration cycle).
-- **Agents**: `.opencode/agents/planner.md` (read-only + BACKLOG.md write),
-  `.opencode/agents/executor.md` (full access).
-- **Commands**: `.opencode/commands/{plan,execute,build,test,quality}.md`
-  (slash commands for interactive use in the OpenCode TUI).
-- **Orchestration**: `Scripts/AgenticLoop/Run-AgenticLoop.ps1` (Windows /
-  Stevedore), `Scripts/AgenticLoop/Run-AgenticLoop.sh` (Linux / Rancher
-  Desktop).
-- **Full docs**: [`Scripts/AgenticLoop/README.md`](Scripts/AgenticLoop/README.md)
+**Reusable logic lives in ContainerHub's `WindowsAgenticLoop.Common` module.**
+The project script is a thin consumer. See the ContainerHub module docs and
+[`Scripts/AgenticLoop/README.md`](Scripts/AgenticLoop/README.md) for details.
+
+### Files
+
+| What | Where | Purpose |
+|------|-------|---------|
+| **Module** (reusable) | `ExternalLib/Kataglyphis-ContainerHub/windows/scripts/modules/WindowsAgenticLoop.Common.psm1` | Building blocks: `Invoke-OpenCode`, logging, platform detection, git helpers, loop orchestration |
+| **Module docs** | `ExternalLib/Kataglyphis-ContainerHub/docs/windows-agentic-loop.md` | API reference, usage examples, PS 5.1 notes |
+| **Project script** | `Scripts/AgenticLoop/Run-AgenticLoop.ps1` | Thin wrapper — imports module, loads config, calls `Invoke-AgenticLoop` |
+| **Config** | `Scripts/AgenticLoop/AgenticLoop.config.json` | Model IDs, intervals, build config cycles |
+| **Planner agent** | `.opencode/agents/planner.md` | Planner system prompt (GLM 5.2) |
+| **Executor agent** | `.opencode/agents/executor.md` | Executor system prompt (DeepSeek v4 Flash) |
+| **Slash commands** | `.opencode/commands/{plan,execute,build,test,quality}.md` | Interactive commands for OpenCode TUI |
+| **Linux script** | `Scripts/AgenticLoop/Run-AgenticLoop.sh` | Bash equivalent for Linux / Rancher Desktop |
+
+### Usage
 
 ```powershell
-# Windows — full loop
-powershell -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1
+# Windows — full loop (requires PowerShell 7+)
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1
 
-# Dry run (no opencode / no builds)
-powershell -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -DryRun
+# Dry run (test config, no opencode calls)
+pwsh .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -DryRun
 
-# Planner only (add tasks, don't execute)
-powershell -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -PlannerOnly
+# Planner only (add tasks to BACKLOG.md)
+pwsh .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -PlannerOnly
+
+# Executor only (drain existing queue)
+pwsh .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -ExecutorOnly
 ```
 
 Builds cycle through `clangcl-debug`, `clangcl-profile`, `clangcl-release`

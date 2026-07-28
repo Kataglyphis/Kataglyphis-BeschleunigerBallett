@@ -3,6 +3,8 @@
 Starts the compiled executable inside the release directory and sets necessary environment variables.
 #>
 
+#requires -Version 7.0
+
 param (
     [string]$ExeName = "GraphicsEngine.exe",
     [Parameter(ValueFromRemainingArguments=$true)]
@@ -60,3 +62,4 @@ try {
     Write-Warning "Failed to start $ExePath : $_"
     exit 1
 }
+

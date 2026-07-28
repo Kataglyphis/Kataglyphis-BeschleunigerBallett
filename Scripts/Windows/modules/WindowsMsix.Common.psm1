@@ -1,4 +1,6 @@
 Set-StrictMode -Version Latest
+#requires -Version 7.0
+
 
 # Import shared helpers (Resolve-DirectoryPath, New-Timestamp, etc.)
 # Prefer the ContainerHub copy of the shared helpers so the whole session
@@ -142,3 +144,4 @@ function ConvertTo-XmlSafeText { param($Text) return ConvertTo-XmlEscapedText -V
 function New-TransparentImage { param($Path,$Width,$Height) return New-TransparentPng -Path $Path -Width $Width -Height $Height }
 
 Export-ModuleMember -Function Resolve-WindowsSdkToolPath, Expand-XmlTemplateTokens, New-TransparentPng, Get-WindowsSdkToolPath, ConvertTo-XmlSafeText, New-TransparentImage
+

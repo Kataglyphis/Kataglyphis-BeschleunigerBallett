@@ -28,6 +28,8 @@
 # the image (verified) and is created by the mount.
 
 param(
+#requires -Version 7.0
+
   # Comma-separated Build-Windows.ps1 configurations to build.
   [string]$Configurations = 'clangcl-debug,clangcl-profile,clangcl-release',
   [string]$Image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64',
@@ -369,3 +371,4 @@ if (Test-BindMountUsable) {
 }
 
 Write-Host 'Container build finished successfully.'
+

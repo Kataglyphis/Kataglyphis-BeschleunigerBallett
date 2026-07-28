@@ -23,6 +23,8 @@
 
 [CmdletBinding()]
 param(
+#requires -Version 7.0
+
     [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$OutDir = (Join-Path ([IO.Path]::GetTempPath()) 'kataglyphis-pixels'),
     [int]$Width = 1200,
@@ -323,3 +325,4 @@ if ($exitCode -eq 0) {
     Write-Host "=== PIXEL COMPARISON FAILED (exit code $exitCode) ===" -ForegroundColor Red
 }
 exit $exitCode
+

@@ -26,6 +26,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
+# ── Source reusable library from ContainerHub ───────────────────────────
+AGENTIC_LIB="${REPO_ROOT}/ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/agentic-loop.sh"
+if [[ -f "$AGENTIC_LIB" ]]; then
+    source "$AGENTIC_LIB"
+else
+    echo "FATAL: Agentic loop library not found: $AGENTIC_LIB" >&2
+    exit 1
+fi
+
 # ── Early log file (must exist before any error output) ──────────────────
 LOG_DIR="${REPO_ROOT}/logs/agentic-loop"
 mkdir -p "$LOG_DIR"

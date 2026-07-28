@@ -3,6 +3,8 @@
 Resolves the source path of a Windows build PowerShell module.
 
 .DESCRIPTION
+#requires -Version 7.0
+
 Reusable modules live upstream in the ContainerHub submodule
 (ExternalLib/Kataglyphis-ContainerHub/windows/scripts/modules) and are preferred
 whenever present, so improvements land upstream and are shared across projects.
@@ -52,3 +54,4 @@ function Import-BuildModule {
     if ($Name -notcontains 'WindowsScripts.Shared') { return }
     Import-Module (Resolve-BuildModulePath -Name 'WindowsScripts.Shared') -Force -Global
 }
+

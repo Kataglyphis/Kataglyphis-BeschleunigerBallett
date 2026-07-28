@@ -1,4 +1,6 @@
 Set-StrictMode -Version Latest
+#requires -Version 7.0
+
 
 $script:MsvcAsanRuntimeDir = $null
 
@@ -251,3 +253,4 @@ function Invoke-CtestDiscoveredTests {
 }
 
 Export-ModuleMember -Function Resolve-TestExecutable, Invoke-ManualTestExecutable, Invoke-CtestDiscoveredTests
+

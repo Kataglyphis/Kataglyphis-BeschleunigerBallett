@@ -24,6 +24,8 @@
 
 [CmdletBinding()]
 param(
+#requires -Version 7.0
+
     [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$OutDir = (Join-Path ([IO.Path]::GetTempPath()) 'kataglyphis-timings'),
     # Expected C++/Vulkan pass names (GPU_TIMED_PASS_EXPORT_NAMES).
@@ -186,3 +188,4 @@ if ($exitCode -eq 0) {
     Write-Host "=== GPU TIMING COMPARISON FAILED (exit code $exitCode) ===" -ForegroundColor Red
 }
 exit $exitCode
+

@@ -1,4 +1,6 @@
 Set-StrictMode -Version Latest
+#requires -Version 7.0
+
 
 # Import shared helpers (Resolve-DirectoryPath, New-Timestamp, etc.)
 # Prefer the ContainerHub copy of the shared helpers so the whole session
@@ -134,3 +136,4 @@ Export-ModuleMember -Function @(
     'Close-LogWriter',
     'Write-ContextLog'
 )
+

@@ -20,6 +20,8 @@
 
 [CmdletBinding()]
 param(
+#requires -Version 7.0
+
     # Wasm size budget in bytes (default 4.0 MiB).
     [int]$BudgetBytes = 4194304,
     # Path to the Rust project template (kataglyphis_webgpu_renderer lives here).
@@ -148,3 +150,4 @@ if ($exitCode -eq 0) {
     Write-Host '=== WASM SIZE BUDGET TEST FAILED ===' -ForegroundColor Red
 }
 exit $exitCode
+

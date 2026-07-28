@@ -1,4 +1,6 @@
 Set-StrictMode -Version Latest
+#requires -Version 7.0
+
 
 function Get-OrDefault([string]$Value, [string]$DefaultValue) {
   if ([string]::IsNullOrWhiteSpace($Value)) { return $DefaultValue }
@@ -65,3 +67,4 @@ Export-ModuleMember -Function @(
   'Get-SelectedConfigurations',
   'Test-ConfigurationSelected'
 )
+

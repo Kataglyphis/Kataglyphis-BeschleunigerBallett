@@ -12,6 +12,8 @@
 
 [CmdletBinding()]
 param(
+#requires -Version 7.0
+
     # Comma-separated list of Windows configurations to build.
     [string]$WindowsConfigurations = 'clangcl-debug,clangcl-profile,clangcl-release',
     # Linux CMake preset.
@@ -121,3 +123,4 @@ if ($exitCode -eq 0) {
 }
 
 exit $exitCode
+
