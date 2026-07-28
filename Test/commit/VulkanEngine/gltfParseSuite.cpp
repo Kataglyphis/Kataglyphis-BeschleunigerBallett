@@ -479,3 +479,54 @@ TEST(GltfParseUnit, ReadsColor0VertexColours)
     EXPECT_TRUE(has_color(0.0F, 0.0F, 1.0F)) << "blue corner colour missing";
     EXPECT_TRUE(has_color(1.0F, 1.0F, 1.0F)) << "white corner colour missing";
 }
+
+TEST(GltfParseUnit, PrimitiveWithoutMaterialRoutesToNeutralFallback)
+{
+    // A primitive whose "material" key is absent (primitive->material == nullptr)
+    // must route to a trailing neutral material so every face id is in range. The
+    // OBJ twin (FacesWithoutAMaterialIndexInsideTheMaterialsArray) once caught a
+    // real OOB there; this is the symmetric glTF guard, previously uncovered.
+    //
+    // The document has NO materials array and the primitive has NO material key,
+    // so the loader's fallback must supply the only entry.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 }
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_no_material.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()))
+      << "a valid glTF with no material on the primitive must parse successfully";
+    std::filesystem::remove(tmp);
+
+    // The loader appends one neutral fallback material for exactly this case.
+    ASSERT_EQ(loader.getMaterials().size(), 1U)
+      << "no declared materials + one material-less primitive = exactly the fallback";
+    ASSERT_EQ(loader.getIndices().size() % 3U, 0U)
+      << "indices must form whole triangles";
+    ASSERT_EQ(loader.getMaterialIndices().size(), loader.getIndices().size() / 3U)
+      << "materialIndex is one id per triangle";
+
+    // Every face must point at the single fallback material (index 0).
+    for (size_t i = 0; i < loader.getMaterialIndices().size(); ++i) {
+        const unsigned int id = loader.getMaterialIndices()[i];
+        EXPECT_LT(id, loader.getMaterials().size())
+          << "face material index escapes the materials array (GPU OOB read) at triangle " << i;
+        EXPECT_EQ(id, 0U)
+          << "a material-less primitive must use the neutral fallback (index 0), not an arbitrary material";
+    }
+}

@@ -163,7 +163,7 @@ jobs:
             '-w', 'C:\ws',
             '-e', 'MSIX_CERT_PASSWORD=${{ secrets.MSIX_CERT_PASSWORD }}',
             $image,
-            '-NoProfile', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\ws\Scripts\Windows\Build-Windows.ps1',
+            'pwsh', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'C:\ws\Scripts\Windows\Build-Windows.ps1',
             # clangcl-profile is deliberately NOT built here. Nothing in this
             # workflow consumes it: the CPU tests and fuzz seeds run out of
             # build-clangcl-debug, the artifacts come from build-clangcl-release,
@@ -224,7 +224,7 @@ jobs:
             '--mount', 'type=bind,source=D:\ws,target=C:\ws',
             '-w', 'C:\ws',
             $image,
-            '-NoProfile', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd
+            'pwsh', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd
           )
           docker @runArgs
 
@@ -265,7 +265,7 @@ jobs:
             '--mount', 'type=bind,source=D:\ws,target=C:\ws',
             '-w', 'C:\ws',
             $image,
-            '-NoProfile', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd
+            'pwsh', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd
           )
           docker @runArgs
 
@@ -308,7 +308,7 @@ jobs:
             '--mount', 'type=bind,source=D:\ws,target=C:\ws',
             '-w', 'C:\ws',
             $image,
-            '-NoProfile', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd
+            'pwsh', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd
           )
           docker @runArgs
 
@@ -327,7 +327,7 @@ jobs:
             '--mount', 'type=bind,source=D:\ws,target=C:\ws',
             '-w', 'C:\ws',
             $image,
-            '-NoProfile', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd
+            'pwsh', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd
           )
           docker @runArgs
 
@@ -352,3 +352,4 @@ jobs:
             D:/ws/build-clangcl-release/**/*.zip
             D:/ws/build-clangcl-release/**/*.dll
             D:/ws/build-clangcl-release/**/*.lib
+
