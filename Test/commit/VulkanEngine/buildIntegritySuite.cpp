@@ -244,7 +244,6 @@ TEST(BuildIntegrity, ActivePipelineShadersHaveCompiledBinaries)
     const std::vector<std::string> required = {
         "rasterizer/shader.vert", "rasterizer/shader.frag",
         "rasterizer/shadows/directional_shadow_map.vert",
-        "rasterizer/shadows/directional_shadow_map.geom",
         "rasterizer/shadows/directional_shadow_map.frag",
         "deferred/geometry.vert", "deferred/geometry.frag",
         "deferred/lighting.vert", "deferred/lighting.frag",

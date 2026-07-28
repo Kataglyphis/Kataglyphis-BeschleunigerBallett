@@ -1011,7 +1011,7 @@ cleanUp+recreate pair at the four scene-changed sites.
   `-Gpu`) the `sdk` stage is just `docker tag windows-base windows-sdk` (no
   CUDA/nvidia). So the exact command is:
 
-  ```powershell
+  ```pwsh
   .\windowsuild.ps1 -Stages base,sdk,toolchain   # NO -Gpu
   ```
 
@@ -1019,7 +1019,7 @@ cleanUp+recreate pair at the four scene-changed sites.
   clang-cl + cmake + Vulkan + Rust image with NO media/ML stack. Tag and push
   it as the slim consumer image:
 
-  ```powershell
+  ```pwsh
   docker tag local/kataglyphis:windows-toolchain ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64-toolchain
   docker push ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64-toolchain
   ```
@@ -2393,7 +2393,8 @@ the code at the time of writing). Ordered non-ABI-skew first so the executor can
 drain the cheap wins on an incremental build before the ABI-skew one needs a
 `-FreshContainer`.
 
-- [ ] **(refactor, S) Strip dead `SULO_MODE` and commented model-path blocks in `SceneConfig.cpp`** —
+- [x] **(refactor, S) Strip dead `SULO_MODE` and commented model-path blocks in `SceneConfig.cpp`** — already cleaned up by earlier changes (verified: no SULO references in any source file). No source edit needed.
+
   `SULO_MODE` is `#define`-commented out (`SceneConfig.cpp:13`) and never
   defined anywhere, so the `#ifdef SULO_MODE` / `#if SULO_MODE` branches at
   `:134-142` and `:178-186` are unreachable dead code that misleads readers into
@@ -2422,7 +2423,7 @@ drain the cheap wins on an incremental build before the ABI-skew one needs a
   path resolution is already covered there.
 
   **Build:** `clangcl-debug` (non-ABI-skew, `.cpp`-only). Run:
-  `powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
   then `docker cp bb-build-persistent:C:\ws\build-clangcl-debug\bin\commitTestSuite.exe .\` and run the SceneConfigUnit filter.
 
   **Context:** Classic dead code + documentation drift. `SULO_MODE` reads as a
@@ -2431,79 +2432,18 @@ drain the cheap wins on an incremental build before the ABI-skew one needs a
   dinosaurs/sponza split the single visible truth. Follow the existing
   `#if NDEBUG` convention already used for the release default.
 
-- [ ] **(refactor, S) Remove dead `adminPriviliges` stringstream in `ShaderHelper::compileShader`** —
-  `compileShader` builds a `std::stringstream adminPriviliges` initialised to
-  `"runas /user:<admin-user> \""` (`ShaderHelper.cpp:90-91`) that is never
-  assembled into the command — its only reference is the commented-out
-  `cmdShaderCompile//<< adminPriviliges.str()` at `:139`. Stale scaffolding
-  from a never-finished elevated-compile idea, plus a narrative comment at
-  `:93` that no longer matches anything.
+- [x] **(refactor, S) Remove dead `adminPriviliges` stringstream in `ShaderHelper::compileShader`** —
+  **DONE — already removed by a previous refactor** (the `resolve_glslc_executable()`/
+  runtime-compile rework in commit `c246ded3` deleted the dead `runas` stringstream
+  and its commented-out reference). Verified: no `adminPriviliges` references exist
+  in any source file.
 
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/vulkan_base/ShaderHelper.cpp:84-145` — `compileShader` body
-
-  **Steps:**
-  1. Delete the `std::stringstream adminPriviliges;` declaration (`:90`) and
-     the `adminPriviliges << "runas ..."` line (`:91`).
-  2. Delete the commented `//<< adminPriviliges.str()` fragment at the start of
-     the `cmdShaderCompile << ...` chain (`:139`), leaving the chain starting at
-     `<< resolve_glslc_executable()`.
-  3. Remove the now-orphaned `// with wrapping your path with quotation
-     marks ...` comment at `:93` if it no longer applies (it described the
-     `runas` wrapping that is gone).
-
-  **Test:** No new test. The runtime-compile path is already exercised by
-  `BuildIntegrity.CompiledShadersAreNotOlderThanTheirSources` and the
-  mtime-recompile golden behaviour; a syntax-only change here cannot alter
-  shader output. Verify the build compiles.
-
-  **Build:** `clangcl-debug` (non-ABI-skew, `.cpp`-only, no `.ixx` touch).
-
-  **Context:** Trivial dead-code elimination. The `runas` string was never
-  reachable; keeping it invites a reader to believe elevated compilation is a
-  supported workflow. `system()` still needs `<cstdlib>` (already included).
-
-- [ ] **(refactor, S) Cache `samplerAnisotropy` on `VulkanDevice`; drop per-texture `getFeatures()` in `Model::addSampler`** —
-  `Model::addSampler` calls `device->getPhysicalDevice().getFeatures()` once
-  per texture (`Model.cpp:75`), a host Vulkan query returning a constant for
-  the device's lifetime. The bundled scenes have dozens of textures, so this
-  re-queries the same feature struct dozens of times at load. `VulkanDevice`
-  already queries `available_features2.features.samplerAnisotropy` at
-  construction (`VulkanDevice.cpp:389-391,456`) and exposes a family of
-  `supports*()` bool accessors (`VulkanDevice.ixx:28-30`) — but not this one.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/Model.cpp:73-95` — `addSampler` (the per-texture query)
-  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.ixx:21-30` — existing `getPhysicalDevice()` + `supports*()` accessors (the pattern to follow)
-  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp:389-391,454-456` — where `samplerAnisotropy` is already read at construction
-
-  **Steps:**
-  1. Add a `bool supportsSamplerAnisotropy() const { return deviceSupportsSamplerAnisotropy; }`
-     accessor to `VulkanDevice.ixx` next to the existing `supportsDepthClamp()`.
-  2. Add the `bool deviceSupportsSamplerAnisotropy` member to `VulkanDevice.ixx`
-     and set it from `available_features2.features.samplerAnisotropy` in
-     `VulkanDevice.cpp` where the other `deviceSupports*` flags are set.
-  3. In `Model::addSampler`, replace the
-     `vk::PhysicalDeviceFeatures physical_device_features = device->getPhysicalDevice().getFeatures();`
-     line with `const bool aniso = device->supportsSamplerAnisotropy();` and
-     use `aniso` for `anisotropyEnable` / `maxAnisotropy` (currently
-     `physical_device_features.samplerAnisotropy`).
-
-  **Test:** No new test — behaviour-identical (same feature bit, same 16.0/1.0
-  choice). The textured goldens (`GoldenRender.*Texture*`,
-  `SecondModelShadesWithItsOwnTextures`) exercise the sampler path; verify they
-  pass unchanged. This is a perf cleanup, not a correctness change.
-
-  **Build:** `clangcl-debug` (non-ABI-skew: `VulkanDevice.ixx` is a module
-  interface, but adding a member + accessor is additive and `Model.cpp` is a
-  consumer that recompiles incrementally — verify with a normal incremental
-  build; if the stale-BMI ASan hazard bites, `-FreshContainer`).
-
-  **Context:** Follows the established `supports*()` accessor pattern. The
-  per-texture host call is wasted work and the kind of "unnecessary" the
-  modernization bucket targets. `samplerAnisotropy` is a device-lifetime
-  constant, so caching it at construction (where it is already read) is the
-  natural home.
+- [x] **(refactor, S) Cache `samplerAnisotropy` on `VulkanDevice`; drop per-texture `getFeatures()` in `Model::addSampler`** —
+  **DONE — already implemented by a previous refactor** (commit `519c2329`).
+  Verified: `VulkanDevice.ixx` has `deviceSupportsSamplerAnisotropy` member +
+  `supportsSamplerAnisotropy()` accessor, `VulkanDevice.cpp` line 487 sets it,
+  and `Model::addSampler` line 75 calls `device->supportsSamplerAnisotropy()`
+  directly (no per-texture `getFeatures()` query).
 
 - [ ] **(refactor, M) Drop dead `transfer_queue` plumbing through `Mesh`/`Model`/loaders** —
   `vk::Queue transfer_queue` is threaded through the `Mesh` ctor, four private
@@ -2545,7 +2485,7 @@ drain the cheap wins on an incremental build before the ABI-skew one needs a
   (`Mesh.ixx` + `Model.ixx` module interfaces change, so consumers recompile
   against new layouts; an incremental container build can ship a stale-BMI
   ODR-broken binary per the documented hazard). Run:
-  `powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
 
   **Context:** Dead parameter across a ctor + four private methods + a public
   Model method + two loader call sites. Removing it shrinks the import surface
@@ -2673,7 +2613,7 @@ sized items in the 2026-07-24 batch. Ordered non-ABI-skew first.
     report 10.0 forever.
 
   **Build:** `clangcl-debug` (fast iteration). Run:
-  `powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
   then copy `commitTestSuite.exe` out and run the `GpuTimingUnit.*` filter.
   ABI-skew: `VulkanRenderer.ixx` changes (a member is replaced), so a
   `-FreshContainer` build is required the first time — an incremental build
@@ -2741,7 +2681,7 @@ sized items in the 2026-07-24 batch. Ordered non-ABI-skew first.
     the extraction is verbatim, no behaviour change.
 
   **Build:** `clangcl-debug` (fast iteration). Run:
-  `powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
   ABI-skew: `VulkanRenderer.ixx` changes, so `-FreshContainer` on the first
   build.
 
@@ -2795,7 +2735,7 @@ sized items in the 2026-07-24 batch. Ordered non-ABI-skew first.
     behaviour-preserving and the sweep already covers every flag path.
 
   **Build:** `clangcl-debug`. Run:
-  `powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
   Not ABI-skew in the struct-layout sense (no data member change), but
   private method declarations are added to the class — a `-FreshContainer`
   is safest given the stale-BMI hazard.
@@ -2860,7 +2800,7 @@ sized items in the 2026-07-24 batch. Ordered non-ABI-skew first.
     differs from the scene).
 
   **Build:** `clangcl-debug`. Run:
-  `powershell -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
   then run
   `commitTestSuite.exe --gtest_filter='GoldenMetrics.*:GoldenRender.*'` —
   the new CPU tests plus the existing goldens must both pass (the goldens
@@ -2926,6 +2866,502 @@ sized items in the 2026-07-24 batch. Ordered non-ABI-skew first.
     `commitTestSuite.exe` binary). Do NOT add `Integration.*` or
     `GoldenRender.*` — those need a GPU and the container has no
     swapchain.
+
+## 2026-07-28 batch III — dead code & test drift
+
+Found by reading `Texture.cpp`, `ObjLoader`, `GUI.cpp` and
+`buildIntegritySuite.cpp` against the current source. None duplicate the
+dead-code batch I or the extraction batch II above; all verified against the
+code at the time of writing. Ordered non-ABI-skew first so the executor drains
+the cheap wins on an incremental build before the one ABI-skew task needs a
+`-FreshContainer`.
+
+- [x] **(refactor, S) Remove stale `directional_shadow_map.geom` entry from
+  `buildIntegritySuite.cpp`** — **DONE**. Deleted the stale
+  `"rasterizer/shadows/directional_shadow_map.geom"` entry from the `required`
+  vector in `ActivePipelineShadersHaveCompiledBinaries`. Verified no other
+  reference to this file exists in `Src/` or `Resources/`.
+
+- [ ] **(refactor, S) Consolidate `Texture::createDefaultTexture` onto
+  `uploadRgba`** — `createDefaultTexture` (`Texture.cpp:193-251`) is a
+  near-verbatim copy of `uploadRgba` (`:111-191`): staging buffer, `createImage`
+  with `eR8G8B8A8Srgb`, Undefined→TransferDst transition, `copyImageBuffer`,
+  TransferDst→ShaderReadOnly transition, `cleanUp`, `createImageView`. The only
+  differences are the 1×1 white pixel and `mip_levels = 1` hardcoded vs
+  computed — but for a 1×1 image `uploadRgba` computes
+  `floor(log2(max(1,1)))+1 = 1` and takes the same `else` branch
+  (`mip_levels > 1` is false), so the two are behaviour-identical. The shared
+  `uploadRgba` tail was extracted for `createFromFile`/`createFromMemory`
+  (BACKLOG "glTF textures DONE"); `createDefaultTexture` predates it and was
+  never folded in.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:111-191` — `uploadRgba` (the
+    single shared tail).
+  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:193-251` — `createDefaultTexture`
+    (the duplicate).
+  - `Src/GraphicsEngineVulkan/scene/Texture.ixx:35,84-89` — both signatures
+    (`createDefaultTexture` public, `uploadRgba` private; same class, so the
+    delegation is in-scope).
+
+  **Steps:**
+  1. Replace the body of `createDefaultTexture` with a single call:
+     ```cpp
+     constexpr unsigned char white_pixel[4] = { 255, 255, 255, 255 };
+     uploadRgba(device, commandPool, 1, 1, 4, white_pixel);
+     ```
+     (Drop the local `constexpr` width/height/size/format locals and the
+     `mip_levels = 1` assignment — `uploadRgba` sets `mip_levels` itself.)
+  2. Confirm `uploadRgba`'s `supportsLinearBlit` early-out is harmless for the
+     1×1 case: `mip_levels` is already 1, so the "single mip level" warning
+     branch is a no-op (it sets `mip_levels = 1` when it is already 1). If the
+     warning text reads oddly for a deliberate 1-mip default, gate the warn
+     on `mip_levels > 1` before the override — but measure first; the current
+     code does not warn when the format supports linear blit (the RX 9070 XT
+     does), so the path is silent in practice.
+  3. Grep `Src/` and `Test/` for `createDefaultTexture` callers (both loaders
+     + the `textureCount == 0` fallback) to confirm the signature is unchanged.
+
+  **Test:** No new test — behaviour-identical (same format, same mip count,
+  same layout transitions, same view). The textured goldens
+  (`GoldenRender.*Texture*`, `SecondModelShadesWithItsOwnTextures`) and the
+  mask-card goldens exercise the default-texture fallback path (a missing
+  texture slot is filled by `createDefaultTexture`); verify they pass
+  unchanged on a GPU host. The CPU suites are unaffected.
+
+  **Build:** `clangcl-debug` (non-ABI-skew: `Texture.cpp` is a module unit
+  implementation, not an interface; `Texture.ixx` is unchanged). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+
+  **Context:** Classic API-consolidation duplication. `uploadRgba` exists
+  precisely so the staging→image→mip→view sequence lives in one place;
+  `createDefaultTexture` is the one caller that was not migrated. Removing
+  the copy shrinks the file by ~55 lines and stops a reader from wondering
+  whether the two paths diverge (they do not). Do NOT touch
+  `createTextureSampler` — it is a separate concern (sampler, not image).
+
+- [ ] **(refactor, S) Fix GUI magic string + stale "No .obj models" message
+  (documentation drift)** — `GUI.cpp:70` hardcodes
+  `"Models/VikingRoom/viking_room.obj"` as the "standard model" the combo
+  auto-selects on first frame, with no named constant and no comment explaining
+  the choice. Worse, `GUI.cpp:107` reads
+  `"No .obj models found in Resources/Models/"` — but `scanAvailableModels`
+  was extended to accept `.gltf`/`.glb` (BACKLOG item #6, "DONE 2026-07-22"),
+  so the message is wrong for every glTF-only scan and misleads a user whose
+  `Resources/Models/` contains only `cube.glb`.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/gui/GUI.cpp:63-108` — the Model Selection header
+    (the magic string at `:70`, the stale message at `:107`).
+  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:104-105` — the
+    `extension == ".obj" || ".gltf" || ".glb"` filter the message should match.
+
+  **Steps:**
+  1. Replace the `"No .obj models found in Resources/Models/"` text at
+     `:107` with `"No loadable models found in Resources/Models/"` (or
+     `"No .obj/.gltf/.glb models found in Resources/Models/"`) so it matches
+     the actual filter.
+  2. Lift the `"Models/VikingRoom/viking_room.obj"` literal at `:70` into a
+     named `constexpr` at the top of the `Model Selection` block (e.g.
+     `constexpr const char *kDefaultSelectedModelPath = ...;`) with a one-line
+     comment noting it is the combo's initial display selection, NOT the
+     loaded scene (the loaded default is `SceneConfig::getModelFile()` —
+     Dinosaurs in debug, Sponza in release). This documents the deliberate
+     display-vs-loaded split a reader currently has to reverse-engineer.
+  3. Do NOT change the auto-select behaviour — it only sets
+     `selected_model_index` for display and does not set
+     `model_reload_requested`, so it is not a hidden reload. This is a
+     readability/message fix only.
+
+  **Test:** No new test — pure string/constant change, no behaviour change.
+  The `ModelPickerUnit` suite (in `objParseSuite.cpp`, proposed for the CI
+  filter in batch II) covers the picker; verify it still passes. The
+  `GoldenRender.GuiInputSweepNeverCrashes` golden drives the combo and guards
+  against a crash regression.
+
+  **Build:** `clangcl-debug` (non-ABI-skew, `.cpp`-only, no `.ixx` touch).
+  Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+
+  **Context:** The "No .obj models" message is the exact "documentation drift
+  that no longer matches the code" the refactor mandate targets: the scan was
+  widened four days before this read, the message was not updated, and a user
+  staring at an empty combo with a glTF-only `Resources/Models/` would be told
+  no `.obj` files exist — true but not the point. The magic string is the
+  smaller readability win; the message is the user-facing defect.
+
+- [ ] **(refactor, S) Drop redundant `textureNamesFromLastParse` member from
+  `ObjLoader`** — `ObjLoader` carries TWO `std::vector<std::string>` members
+  holding identical texture-name data: `textures` (`ObjLoader.ixx:91`, exposed
+  by `getTextureNames()`) and `textureNamesFromLastParse` (`:92`).
+  `loadTexturesAndMaterials` fills `textures` AND returns it; `parseCpu`
+  assigns the return to `textureNamesFromLastParse` (`ObjLoader.cpp:62`).
+  `uploadParsed` reads `textureNamesFromLastParse` (`:111`) but could read
+  `textures` directly — they are the same vector by construction. The member
+  exists only because the old two-parse design needed a second copy; the
+  single-parse refactor (BACKLOG "Model loading parsed the OBJ twice", DONE
+  2026-07-20) made it redundant but it was never deleted.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.ixx:58,68,91,92` — the member,
+    its `adoptParsed` move, `getTextureNames()` (returns `textures`), and the
+    duplicate declaration.
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:62,111` — the assign site
+    and the read site.
+
+  **Steps:**
+  1. In `ObjLoader.cpp:62`, drop the assignment — `loadTexturesAndMaterials`
+     already fills the `textures` member in-place; the return value is no
+     longer needed. (Either ignore the return or change
+     `loadTexturesAndMaterials` to return `void` and have callers read
+     `textures` — the latter is cleaner but touches the signature in `.ixx`;
+     prefer ignoring the return to keep the change minimal, then a follow-up
+     can void it.)
+  2. In `ObjLoader.cpp:111`, replace
+     `const std::vector<std::string> &textureNames = textureNamesFromLastParse;`
+     with `const std::vector<std::string> &textureNames = textures;`.
+  3. In `ObjLoader.ixx`, delete the `textureNamesFromLastParse` declaration
+     (`:92`) and its move in `adoptParsed` (`:58`).
+  4. Grep `Src/` and `Test/` for `textureNamesFromLastParse` to confirm zero
+     remaining references (the parse tests use `getTextureNames()`, which
+     returns `textures` — unaffected).
+
+  **Test:** No new test — pure dead-member removal, behaviour-identical. The
+  `ObjParseUnit` suite (proposed for the CI filter in batch II) asserts on
+  `getTextureNames()` (which returns `textures`, unchanged); verify it still
+  passes. The multi-mesh goldens exercise `uploadParsed` end-to-end.
+
+  **Build:** `clangcl-debug` **with `-FreshContainer`** — ABI-skew
+  (`ObjLoader.ixx` module interface changes a member, so consumers recompile
+  against a new layout; an incremental container build can ship a stale-BMI
+  ODR-broken binary per the documented hazard). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
+
+  **Context:** This is the standalone form of the redundancy the
+  `transfer_queue` task (batch I) notes as a bundle candidate ("Bundle with
+  the `textureNamesFromLastParse` redundancy removal"). Making it a standalone
+  S lets the executor drain it independently of the larger M
+  `transfer_queue` removal — both are ABI-skew ObjLoader touches, so if both
+  land in the same session they can share one `-FreshContainer` build. The
+  member is a pure duplicate with no independent reader; deleting it shrinks
+  the import surface and removes a "why are there two?" question for every
+  future reader of the loader.
+
+## 2026-07-28 batch IV — dead code, dead params, naming, test gap
+
+Found by reading `SkyBox.cpp`, `Scene.ixx`/`Scene.cpp`, `Clouds.cpp`/`.ixx`,
+and `ASManager.cpp`/`.ixx` against the current source. None duplicate the
+batches above; all verified against the code at the time of writing (every
+"dead" claim is backed by a repo-wide grep returning only the declaration
+and/or definition). Ordered non-ABI-skew first so the executor drains the
+cheap wins on an incremental build before the three ABI-skew tasks share one
+`-FreshContainer`.
+
+- [ ] **(refactor, S) Remove dead `make_unique<Mesh>()` and per-frame
+  `std::vector` descriptor-set alloc in `SkyBox`** — `SkyBox::createMesh`
+  constructs `skyMesh = std::make_unique<Kataglyphis::Mesh>();`
+  (`SkyBox.cpp:406`) and IMMEDIATELY overwrites it with the real
+  device-owning Mesh on the next line (`:409`). The first allocation is
+  dead: it constructs a default Mesh, destroys it, then constructs the real
+  one — wasted work every init, and a reader is left wondering whether the
+  default-constructed Mesh is meant to be a fallback. Separately,
+  `SkyBox::recordCommands` builds
+  `std::vector<vk::DescriptorSet> skyboxDescriptorSets = {descriptorSets[0], descriptorSet};`
+  (`:452`) on EVERY frame — a heap allocation for a fixed 2-element set in
+  the hot path. A `std::array<vk::DescriptorSet, 2>` is the same call with
+  no allocation.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:390-410` — `createMesh`
+    (the dead `make_unique` at `:406`, the real one at `:409`).
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:412-465` —
+    `recordCommands` (the per-frame `std::vector` at `:452`, the
+    `bindDescriptorSets` call at `:453`).
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.ixx:30,61` — confirm
+    neither signature changes (both fixes are body-only).
+
+  **Steps:**
+  1. In `createMesh`, delete line `:406`
+     (`skyMesh = std::make_unique<Kataglyphis::Mesh>();`). The real
+     construction at `:409` is the only one that should remain. Drop the
+     now-unused `Kataglyphis::` qualifier on the surviving line if the
+     surrounding code uses unqualified `Mesh` (it does — `:409` already
+     writes `std::make_unique<Mesh>(...)`).
+  2. In `recordCommands`, replace
+     `std::vector<vk::DescriptorSet> skyboxDescriptorSets = {descriptorSets[0], descriptorSet};`
+     with
+     `std::array<vk::DescriptorSet, 2> skyboxDescriptorSets = { descriptorSets[0], descriptorSet };`.
+     The `bindDescriptorSets(..., skyboxDescriptorSets, nullptr)` call at
+     `:453` takes the container by `const vk::DescriptorSet*` + count via
+     the initializer-list overload — pass `skyboxDescriptorSets.data()` (or
+     rely on the array decaying; match the existing call style). Add
+     `#include <array>` to the module global-module-fragment if not already
+     present (it is — `:3`).
+  3. Grep `Src/` for `make_unique<Kataglyphis::Mesh>()` to confirm no other
+     dead default-construction site mirrors this one.
+
+  **Test:** No new test — both fixes are behaviour-identical (same Mesh
+    ends up in `skyMesh`; same two descriptor sets reach
+    `bindDescriptorSets`). The skybox golden path is exercised by every
+    `GoldenRender.*` that runs with `skybox_enabled` (the GUI sweep golden
+    toggles it); verify a GPU-host golden run stays green. The CPU suites
+    are unaffected (SkyBox is GPU-only).
+
+  **Build:** `clangcl-debug` (non-ABI-skew: `SkyBox.ixx` is unchanged;
+    both edits are inside `.cpp` function bodies). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+
+  **Context:** The dead `make_unique` is a real defect, not just style: a
+  default-constructed `Mesh` is a valid state the class supports (the ctor
+  exists), so the wasted construct/destroy is silent. The per-frame vector
+  is the same "unnecessary hotpath heap allocation" pattern the
+  `rasterizer_descriptor_sets` construction in `VulkanRenderer.cpp:835`
+  has — but that one ripples across many function signatures, while the
+  SkyBox one is local to one call. Do NOT chase the
+  `rasterizer_descriptor_sets` vector in this task — it is a larger
+  signature change across four stages.
+
+- [ ] **(test, S) Extract the SkyBox cubemap face-dimension guard into a
+  pure helper and unit-test it** — `SkyBox::loadCubeMap` has a real
+  memory-safety guard (`SkyBox.cpp:78-92`): it checks every cubemap face
+  matches the first face's dimensions and rejects degenerate faces, with
+  a comment explaining the OOB read/write it prevents (a cubemap whose last
+  face was larger than the first read off the end of earlier allocations).
+  The guard has ZERO coverage today — it lives inside a GPU/file-system
+  path that loads six PNGs, so it is unreachable by any CPU test. Extract
+  the dimension logic into a pure helper and test it headlessly.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:58-93` — the
+    face-load loop with the inline dimension/degenerate checks.
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.ixx` — the helper goes
+    in the module global-module-fragment or a free function in the
+    `Kataglyphis` namespace (decide: a free function in an anonymous
+    namespace inside `SkyBox.cpp` is simplest and keeps it out of the
+    module interface, so NO ABI skew).
+  - `Test/commit/VulkanEngine/frustumSuite.cpp` — the CPU-only suite
+    pattern to mirror (pure functions over plain structs, no Vulkan).
+
+  **Steps:**
+  1. In `SkyBox.cpp`, add a free function in the file's anonymous namespace
+     (or `namespace Kataglyphis { namespace { ... } }`):
+     ```cpp
+     // Returns true iff every face matches the first face's dimensions
+     // and none are degenerate. The cubemap upload copies `layerSize`
+     // bytes out of every face, so a face larger than the first reads
+     // off the end of an earlier allocation and a smaller one writes
+     // overlapping layers.
+     bool cubemapFacesConsistent(const int widths[6], const int heights[6]) {
+         for (size_t i = 0; i < 6; ++i) {
+             if (widths[i] <= 0 || heights[i] <= 0) { return false; }
+             if (widths[i] != widths[0] || heights[i] != heights[0]) { return false; }
+         }
+         return true;
+     }
+     ```
+  2. Replace the `if (i == 0) { width = ... } else if (...) { error; return; }`
+     + degenerate check at `:78-92` with a loop that fills two `int[6]`
+     arrays and a single `if (!cubemapFacesConsistent(widths, heights)) {
+     spdlog::error(...); free all; return; }`. Behaviour-identical: same
+     error path, same early-return, same free loop. Keep the existing
+     comment explaining the OOB bug (it is the only documentation of why
+     the guard exists).
+  3. Add `Test/commit/VulkanEngine/skyBoxSuite.cpp` with
+     `SkyBoxUnit.CubemapFacesConsistent*` tests driving the helper
+     directly (it is a pure function over six ints — no device, no files):
+     all-equal 64x64 → true; one face 32x64 → false; one face 0x64
+     (degenerate) → false; all 128x128 → true. Add the suite to
+     `Test/commit/VulkanEngine/CMakeLists.txt` and to the Windows CI
+     filter (see the CI-filter task in batch II — add `'SkyBoxUnit.*'`).
+
+  **Test:** `SkyBoxUnit.CubemapFacesConsistentAcceptsSixEqualFaces`,
+    `.RejectsAMismatchedFace`, `.RejectsADegenerateFace`,
+    `.AcceptsAllLargeEqualFaces`. Red: a helper that only checks the first
+    face passes the mismatch test (the bug the guard exists to catch).
+
+  **Build:** `clangcl-debug` (non-ABI-skew: helper is file-local in
+    `SkyBox.cpp`; the `.ixx` is unchanged). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  then run `commitTestSuite.exe --gtest_filter='SkyBoxUnit.*'`.
+
+  **Context:** "Adding tests is always in scope." This guard is a
+  memory-safety check that silently prevents an OOB read/write; the
+  comment says it "never fired only because the six shipped PNGs happen
+  to be identical in size." A future asset with mismatched faces would
+  exercise the guard for the first time — and today there is no proof it
+  works. Extracting the logic into a pure helper is the cheapest way to
+  get coverage without a GPU, and it shrinks `loadCubeMap` slightly. Do
+  NOT move the helper into `SkyBox.ixx` — file-local keeps it non-ABI-skew
+  and out of the module interface.
+
+- [ ] **(refactor, S) Remove three dead `Scene` accessors:
+  `getNumberMeshes`, `getNumberObjectDescriptions`,
+  `add_object_description`** — all three are declared in `Scene.ixx`
+  (`:115`, `:116`, `:154`) and defined in `Scene.cpp` (`:209`, `:169`,
+  `:169`) but called NOWHERE in the repo (verified: `rg
+  getNumberMeshes|getNumberObjectDescriptions|add_object_description`
+  returns only the declaration and definition of each). `getNumberMeshes`
+  and `getNumberObjectDescriptions` are count accessors superseded by
+  `getModelCount`/`getMeshCount`/`getObjectDescriptions` (which return the
+  actual data, not just a count); `add_object_description` is a mutator
+  bypass that nothing uses — every OD flows through `add_model`'s
+  per-mesh flatten loop (`Scene.cpp:164-166`).
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/Scene.ixx:115-117,154` — the three
+    declarations to delete.
+  - `Src/GraphicsEngineVulkan/scene/Scene.cpp:169-172,209-216` — the two
+    definitions to delete.
+  - Grep `Src/` and `Test/` for each name to re-confirm zero callers
+    before deleting (the batch III `textureNamesFromLastParse` task
+    claims "parse tests use `getTextureNames()`" — that is a DIFFERENT
+    accessor on `ObjLoader`, not these `Scene` ones; verify these three
+    have no test caller either).
+
+  **Steps:**
+  1. Delete `uint32_t getNumberObjectDescriptions() { ... };` from
+    `Scene.ixx:115`.
+  2. Delete `uint32_t getNumberMeshes();` from `Scene.ixx:116` AND its
+    definition `auto Scene::getNumberMeshes() -> uint32_t { ... }` from
+    `Scene.cpp:209-216`.
+  3. Delete `void add_object_description(ObjectDescription
+    object_description);` from `Scene.ixx:154` AND its definition
+    `void Scene::add_object_description(...) { ... }` from
+    `Scene.cpp:169-172`.
+  4. Grep `Src/` and `Test/` for all three names to confirm zero remaining
+    references. If `add_object_description`'s removal makes the
+    `ObjectDescription` include in `Scene.ixx` unused, leave the include
+    (it is still needed by `object_descriptions` member + `getObjectDescriptions`).
+
+  **Test:** No new test — pure dead-code removal, behaviour-identical.
+    The `ModelPickerUnit.AddingANullModelIsSafeNotACrash` test
+    (`objParseSuite.cpp:173`) exercises `add_model` (the surviving
+    mutator); verify it still passes. The CPU suites that touch `Scene`
+    (`SceneConfigUnit`, `ModelPickerUnit`) are unaffected.
+
+  **Build:** `clangcl-debug` **with `-FreshContainer`** — ABI-skew
+    (`Scene.ixx` module interface changes; consumers recompile against a
+    new class layout. An incremental container build can ship a stale-BMI
+    ODR-broken binary per the documented hazard — see the "Incremental
+    container builds can ship ODR-broken binaries" note in `BACKLOG.md`).
+    Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
+
+  **Context:** Three dead methods on the central `Scene` class. Each is a
+  question a reader has to answer ("is this called?") and the answer is
+  no. `getNumberMeshes` is the worst: it loops every model's
+  `getMeshCount` to sum a total that nothing reads, and it is the only
+  one of the three with a non-trivial body. Bundle all three into one
+  ABI-skew task so they share one `-FreshContainer` build. Do NOT remove
+  `getObjectDescriptions` / `getModelCount` / `getMeshCount` — those ARE
+  called (`VulkanRenderer.cpp:1485`, `ASManager.cpp`, the record loops).
+
+- [ ] **(refactor, S) Drop the unused `image_index` parameter from
+  `Clouds::recordComputeCommands`** — the parameter is declared in
+  `Clouds.ixx:24`, passed at the call site
+  (`VulkanRenderer.cpp:840`), and never read inside the body
+  (`Clouds.cpp:263-274` — only `commandBuffer`, `descriptorSet`, and
+  `descriptorSets[0]` are used). A dead parameter on a per-frame hotpath
+  function is the kind of "why is this here?" surface the refactor mandate
+  targets, and it misleads a reader into thinking the clouds dispatch is
+  per-image (it is not — the cloud output texture is a single shared
+  image, not per-swapchain-image).
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.ixx:24` —
+    the declaration.
+  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp:263` —
+    the definition (confirm `image_index` is unused in the body).
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:840` — the only
+    call site.
+
+  **Steps:**
+  1. In `Clouds.ixx:24`, change the signature to
+    `void recordComputeCommands(vk::CommandBuffer &commandBuffer, const
+    std::vector<vk::DescriptorSet> &descriptorSets);`.
+  2. In `Clouds.cpp:263`, drop the `uint32_t image_index` parameter from
+    the definition to match.
+  3. In `VulkanRenderer.cpp:840`, drop the `image_index` argument from the
+    call: `clouds.recordComputeCommands(commandBuffer,
+    rasterizer_descriptor_sets);`.
+  4. Grep `Src/` for `recordComputeCommands` to confirm the one call site
+    is the only caller (it is).
+
+  **Test:** No new test — pure parameter removal, behaviour-identical.
+    The clouds path is exercised by `GoldenRender.GuiInputSweepNeverCrashes`
+    (it toggles `clouds_enabled`) and the clouds GPU-timing pass; verify a
+    GPU-host golden run stays green. The CPU suites are unaffected
+    (Clouds is GPU-only).
+
+  **Build:** `clangcl-debug` **with `-FreshContainer`** — ABI-skew
+    (`Clouds.ixx` module interface changes; `VulkanRenderer.cpp` is a
+    consumer that recompiles, but the stale-BMI hazard makes a fresh
+    container the safe choice). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
+    If the executor is already running a `-FreshContainer` for the `Scene`
+    task above, this can share that build (both are ABI-skew module
+    interface edits; a single fresh build picks up both).
+
+  **Context:** The clouds dispatch is deliberately NOT per-image — the
+  cloud output is one shared 2D texture, so `image_index` could never be
+  relevant. The parameter likely predates the shared-texture design.
+  Removing it makes the contract visible in the signature. Do NOT also
+  change `rasterizer_descriptor_sets` from `std::vector` to a single
+  `vk::DescriptorSet` here — that ripples into the shadow/raster/skybox
+  record signatures and is out of scope for this S.
+
+- [ ] **(refactor, S) Fix the `current_scretch_size` typo →
+  `current_scratch_size` in `ASManager`** — the misspelling "scretch"
+  (should be "scratch") is propagated from the `ASManager.ixx` declaration
+  (`:73`) through the `ASManager.cpp` definition (`:425`) and both call
+  sites (`:80`, `:84`, `:86`). It is a parameter name in a private static
+  method, so it does not affect any caller's ABI in the C++ sense, but it
+  IS a module-interface edit (`ASManager.ixx`) so the build-system
+  ABI-skew rule applies (a stale BMI can ship an ODR-broken binary). A
+  reader grepping for "scratch" misses this variable entirely, and the
+  neighbouring `max_scratch_size` (`:77`) and `scratchBuffer` (`:89`) use
+  the correct spelling, so the file is internally inconsistent.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.ixx:73` —
+    the declaration (`vk::DeviceSize &current_scretch_size`).
+  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp:425,452` —
+    the definition signature and the one write site.
+  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp:80,84,86` —
+    the local variable + two uses in `createBLAS`.
+
+  **Steps:**
+  1. In `ASManager.ixx:73`, rename `current_scretch_size` →
+    `current_scratch_size`.
+  2. In `ASManager.cpp:425` (the `createAccelerationStructureInfosBLAS`
+    definition signature) and `:452` (the assignment
+    `current_scretch_size = build_as_structure.size_info.buildScratchSize;`),
+    apply the same rename.
+  3. In `ASManager.cpp:80,84,86` (the local variable
+    `vk::DeviceSize current_scretch_size = 0;` and its two uses in
+    `createBLAS`), apply the same rename.
+  4. Grep `Src/` for `scretch` to confirm zero remaining misspellings.
+
+  **Test:** No new test — pure rename, behaviour-identical (parameter
+    name only). The RT/PT goldens (`GoldenRender.*` in RT/PT mode,
+    `AddedModelAppearsInPathTracing`) exercise the BLAS build path; verify
+    a GPU-host golden run stays green. The CPU suites are unaffected.
+
+  **Build:** `clangcl-debug` **with `-FreshContainer`** — ABI-skew in the
+    build-system sense (`ASManager.ixx` is a module interface; even a
+    parameter-name change triggers a BMI rebuild and the stale-BMI hazard
+    applies). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
+    Share the fresh build with the `Scene` and `Clouds` tasks above if
+    they land in the same session.
+
+  **Context:** Naming consistency. "scretch" is not a word and the file
+  already uses "scratch" everywhere else (`max_scratch_size`,
+  `scratchBuffer`, `scratch_buffer_address`, `buildScratchSize`). The
+  typo is small but it is the kind of inconsistency that makes a future
+  reader pause and grep, and a grep for "scratch" silently misses it.
+  Bundle with the other two ABI-skew tasks in this batch to share one
+  `-FreshContainer` build.
 
 ## Completed (kept for the reasoning, not the status)
 
