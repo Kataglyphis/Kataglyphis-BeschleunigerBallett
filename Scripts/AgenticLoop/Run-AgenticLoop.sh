@@ -123,6 +123,7 @@ EXECUTOR_MODEL=$(jq -r '.models.executor' "$CONFIG_PATH")
 BUILD_EVERY_N=$(jq -r '.intervals.buildEveryNTasks' "$CONFIG_PATH")
 QUALITY_EVERY_N=$(jq -r '.intervals.qualityEveryNTasks' "$CONFIG_PATH")
 REFACTOR_EVERY_N=$(jq -r '.intervals.refactorEveryNIterations' "$CONFIG_PATH")
+FULL_MATRIX_EVERY_N=$(jq -r '.intervals.fullMatrixEveryNIterations // 0' "$CONFIG_PATH")
 TEST_AFTER_BUILD=$(jq -r '.intervals.testAfterBuild' "$CONFIG_PATH")
 MAX_EXECUTOR_RETRIES=$(jq -r '.intervals.maxExecutorRetries' "$CONFIG_PATH")
 LOOP_DELAY=$(jq -r '.intervals.loopDelaySeconds' "$CONFIG_PATH")
@@ -134,8 +135,12 @@ AUTO_COMMIT=$(jq -r '.git.autoCommit' "$CONFIG_PATH")
 COMMIT_PREFIX=$(jq -r '.git.commitPrefix' "$CONFIG_PATH")
 LOG_DIR_REL=$(jq -r '.logging.logDir' "$CONFIG_PATH")
 
-# Read build configurations array
-mapfile -t BUILD_CONFIGS < <(jq -r '.buildConfigurations.linux[]' "$CONFIG_PATH")
+# Read build matrix (prefer buildMatrix; fall back to legacy buildConfigurations)
+MATRIX_COUNT=$(count_build_matrix "$CONFIG_PATH" "linux")
+if [[ "$MATRIX_COUNT" -eq 0 ]]; then
+  echo "ERROR: No build configs found (need buildMatrix or buildConfigurations in config)"
+  exit 1
+fi
 
 if [[ -n "$MAX_ITERATIONS_OVERRIDE" ]]; then
   MAX_ITERATIONS="$MAX_ITERATIONS_OVERRIDE"
@@ -218,10 +223,10 @@ invoke_opencode() {
 }
 
 invoke_build() {
-  local config_name="$1"
-  section "BUILD: $config_name"
+  local config_name="$1" build_dir="${2:-build}"
+  section "BUILD: $config_name (build-dir: $build_dir)"
   local script="${REPO_ROOT}/${LINUX_BUILD_SCRIPT}"
-  local cmd="bash \"${script}\" --preset \"${config_name}\" --build-dir build"
+  local cmd="bash \"${script}\" --preset \"${config_name}\" --build-dir \"${build_dir}\""
   log "Build command: $cmd"
   if $DRY_RUN; then
     log "[DRY RUN] skipped build"
@@ -238,8 +243,8 @@ invoke_build() {
 }
 
 invoke_tests() {
+  local cmd="${1:-$LINUX_TEST_CMD}"
   section "TESTS"
-  local cmd="$LINUX_TEST_CMD"
   log "Test command: $cmd"
   if $DRY_RUN; then
     log "[DRY RUN] skipped tests"
@@ -252,6 +257,37 @@ invoke_tests() {
   else
     log "TESTS FAILED" "ERROR"
     return 1
+  fi
+}
+
+# Build + test for a matrix entry by index. Uses the library's
+# resolve_build_matrix_entry to parse the entry, then invokes the build
+# with the correct build directory and runs sanitizer-aware tests.
+invoke_build_and_test_for_entry() {
+  local idx="$1"
+  resolve_build_matrix_entry "$CONFIG_PATH" "$idx" "linux"
+  local cfg="$MATRIX_NAME" build_dir="$MATRIX_BUILD_DIR" sanitizer="$MATRIX_SANITIZER"
+  local entry_test_cmd="$MATRIX_TEST_CMD"
+  if invoke_build "$cfg" "$build_dir"; then
+    if ! $SKIP_TESTS && [[ "$TEST_AFTER_BUILD" == "true" ]]; then
+      local effective_test_cmd="${entry_test_cmd:-$LINUX_TEST_CMD}"
+      if [[ -n "$effective_test_cmd" ]]; then
+        invoke_sanitizer_tests "$effective_test_cmd" "$sanitizer" || true
+      fi
+    fi
+  fi
+}
+
+# Run the build phase: single config (cycling) or full matrix sweep.
+invoke_build_phase() {
+  if [[ "$FULL_MATRIX_EVERY_N" -gt 0 && $((iteration % FULL_MATRIX_EVERY_N)) -eq 0 && $iteration -gt 0 ]]; then
+    section "FULL MATRIX SWEEP (iteration $iteration)"
+    for ((i=0; i<MATRIX_COUNT; i++)); do
+      invoke_build_and_test_for_entry "$i"
+    done
+  else
+    invoke_build_and_test_for_entry "$((build_cycle_index % MATRIX_COUNT))"
+    build_cycle_index=$((build_cycle_index + 1))
   fi
 }
 
@@ -307,7 +343,10 @@ invoke_executor() {
 section "Agentic Loop Starting (Linux / Rancher Desktop)"
 log "Planner model: $PLANNER_MODEL"
 log "Executor model: $EXECUTOR_MODEL"
-log "Build configs cycle: ${BUILD_CONFIGS[*]}"
+log "Build matrix: $MATRIX_COUNT entries"
+if [[ "$FULL_MATRIX_EVERY_N" -gt 0 ]]; then
+  log "Full matrix sweep every $FULL_MATRIX_EVERY_N iterations"
+fi
 log "Build every N tasks: $BUILD_EVERY_N"
 log "Quality every N tasks: $QUALITY_EVERY_N"
 log "Refactor every N iterations: $REFACTOR_EVERY_N"
@@ -339,13 +378,7 @@ if $EXECUTOR_ONLY; then
     unchecked=$(unchecked_task_count)
     log "Tasks completed: $tasks_completed | Remaining: $unchecked"
     if ! $SKIP_BUILD && (( tasks_completed % BUILD_EVERY_N == 0 )); then
-      config_name="${BUILD_CONFIGS[$((build_cycle_index % ${#BUILD_CONFIGS[@]}))]}"
-      if invoke_build "$config_name"; then
-        if ! $SKIP_TESTS && [[ "$TEST_AFTER_BUILD" == "true" ]]; then
-          invoke_tests || true
-        fi
-      fi
-      build_cycle_index=$((build_cycle_index + 1))
+      invoke_build_phase
     fi
     if ! $SKIP_QUALITY && (( tasks_completed % QUALITY_EVERY_N == 0 )); then
       invoke_quality
@@ -396,13 +429,7 @@ while true; do
 
       # Build phase
       if ! $SKIP_BUILD && (( tasks_completed % BUILD_EVERY_N == 0 )); then
-        config_name="${BUILD_CONFIGS[$((build_cycle_index % ${#BUILD_CONFIGS[@]}))]}"
-        if invoke_build "$config_name"; then
-          if ! $SKIP_TESTS && [[ "$TEST_AFTER_BUILD" == "true" ]]; then
-            invoke_tests || true
-          fi
-        fi
-        build_cycle_index=$((build_cycle_index + 1))
+        invoke_build_phase
       fi
 
       # Quality phase

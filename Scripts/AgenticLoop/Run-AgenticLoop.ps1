@@ -34,8 +34,14 @@ $timeoutSeconds = if ($config.intervals.timeoutSeconds) { [int]$config.intervals
 Initialize-AgenticLoop -ConfigPath $configPath -RepoRoot $repoRoot -DryRun:$DryRun -TimeoutSeconds $timeoutSeconds
 
 $onWindows = Test-IsWindows
-$buildConfigs = if ($onWindows) { $config.buildConfigurations.windows } else { $config.buildConfigurations.linux }
-if (-not $buildConfigs) { Write-AgenticLog 'No build configs' 'FATAL'; exit 1 }
+# Prefer buildMatrix (richer: per-config sanitizer, testCommand, buildDir);
+# fall back to legacy buildConfigurations (string arrays) for backward compat.
+$buildConfigs = if ($config.buildMatrix) {
+    if ($onWindows) { $config.buildMatrix.windows } else { $config.buildMatrix.linux }
+} elseif ($config.buildConfigurations) {
+    if ($onWindows) { $config.buildConfigurations.windows } else { $config.buildConfigurations.linux }
+} else { $null }
+if (-not $buildConfigs) { Write-AgenticLog 'No build configs (need buildMatrix or buildConfigurations in config)' 'FATAL'; exit 1 }
 
 try {
     Invoke-AgenticLoop -Config $config -PlannerPrompt 'plan' -ExecutorPrompt 'execute' `

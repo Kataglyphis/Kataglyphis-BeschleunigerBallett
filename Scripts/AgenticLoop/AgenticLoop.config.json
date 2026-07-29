@@ -11,6 +11,7 @@
     "buildEveryNTasks": 3,
     "qualityEveryNTasks": 5,
     "refactorEveryNIterations": 3,
+    "fullMatrixEveryNIterations": 5,
     "testAfterBuild": true,
     "maxExecutorRetries": 3,
     "loopDelaySeconds": 10,
@@ -18,17 +19,68 @@
     "timeoutSeconds": 600
   },
 
-  "buildConfigurations": {
-    "_comment": "Cycled through after each build trigger. Windows uses container presets; Linux uses native presets.",
-    "windows": ["clangcl-debug", "clangcl-profile", "clangcl-release"],
-    "linux": ["linux-debug-clang", "linux-debug-tsan-clang", "linux-release-clang"]
+  "buildMatrix": {
+    "_comment": "Build configurations cycled through by the agentic loop. Each entry has: name, sanitizer (asan|tsan|none), buildDir, buildType, testCommand (or null). Windows builds via Stevedore container; Linux builds via Rancher Desktop.",
+    "windows": [
+      {
+        "name": "clangcl-debug",
+        "sanitizer": "asan",
+        "buildDir": "build-clangcl-debug",
+        "buildType": "Debug",
+        "testCommand": "ctest --test-dir build-clangcl-debug --output-on-failure -C Debug"
+      },
+      {
+        "name": "clangcl-profile",
+        "sanitizer": "none",
+        "buildDir": "build-clangcl-profile",
+        "buildType": "RelWithDebInfo",
+        "testCommand": "ctest --test-dir build-clangcl-profile --output-on-failure -C RelWithDebInfo"
+      },
+      {
+        "name": "clangcl-release",
+        "sanitizer": "none",
+        "buildDir": "build-clangcl-release",
+        "buildType": "Release",
+        "testCommand": null
+      }
+    ],
+    "linux": [
+      {
+        "name": "linux-debug-asan-clang",
+        "sanitizer": "asan",
+        "buildDir": "build-asan-clang",
+        "buildType": "Debug",
+        "testCommand": "ctest --test-dir build-asan-clang --output-on-failure -C Debug"
+      },
+      {
+        "name": "linux-debug-tsan-clang",
+        "sanitizer": "tsan",
+        "buildDir": "build-tsan-clang",
+        "buildType": "Debug",
+        "testCommand": "ctest --test-dir build-tsan-clang --output-on-failure -C Debug"
+      },
+      {
+        "name": "linux-profile-clang",
+        "sanitizer": "none",
+        "buildDir": "build-profile-clang",
+        "buildType": "RelWithDebInfo",
+        "testCommand": "ctest --test-dir build-profile-clang --output-on-failure -C RelWithDebInfo"
+      },
+      {
+        "name": "linux-release-clang",
+        "sanitizer": "none",
+        "buildDir": "build-release-clang",
+        "buildType": "Release",
+        "testCommand": null
+      }
+    ]
   },
 
   "build": {
     "windowsScript": "Scripts/Windows/Build-Windows-Container.ps1",
     "linuxScript": "Scripts/Linux/cmake-configure-build.sh",
     "windowsTestCommand": "ctest --test-dir build-clangcl-debug --output-on-failure -C Debug",
-    "linuxTestCommand": "Scripts/Linux/run-ctest.sh --build-dir build",
+    "linuxTestCommand": "ctest --test-dir build --output-on-failure -C Debug",
     "windowsQualityCommand": "pwsh -ExecutionPolicy Bypass -File Scripts/Windows/Build-Windows.ps1 -Configurations clangcl-debug -SkipBuild -SkipTests -SkipPerfTests -SkipMsix",
     "linuxQualityCommand": "Scripts/Linux/run_static_analysis_format.sh"
   },

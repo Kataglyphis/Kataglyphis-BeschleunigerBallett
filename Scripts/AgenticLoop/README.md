@@ -37,15 +37,27 @@ flowchart TD
    cheaper, faster model (DeepSeek v4 Flash) for implementation — it relies
    on the planner's detailed task descriptions to work efficiently.
 
-3. **Build cycling**: After every N completed tasks, a build is triggered.
-   The build configuration cycles through `clangcl-debug`,
-   `clangcl-profile`, and `clangcl-release` (Windows) or the Linux
-   equivalents — so the loop doesn't only test debug builds.
+3. **Build matrix cycling**: After every N completed tasks, a build is
+   triggered. The build configuration cycles through a **build matrix** —
+   a set of entries each defining a preset, sanitizer, build directory, and
+   test command. This ensures the loop exercises ASAN, profile, and release
+   builds regularly, not just one build type.
 
-4. **Periodic quality gates**: clang-tidy and cmake-format run every M
+4. **Sanitizer-aware test execution**: When a matrix entry has
+   `sanitizer: "asan"` or `sanitizer: "tsan"`, the loop automatically sets
+   `ASAN_OPTIONS` or `TSAN_OPTIONS` before running tests, then restores the
+   original environment. This ensures sanitizer-instrumented tests actually
+   catch memory errors and data races.
+
+5. **Full matrix sweep**: Every N iterations (configurable via
+   `fullMatrixEveryNIterations`), the loop runs ALL build configs in
+   sequence instead of just one. This ensures every config is exercised
+   regularly, not just the one that happens to be next in the cycle.
+
+6. **Periodic quality gates**: clang-tidy and cmake-format run every M
    tasks to catch drift early.
 
-5. **Periodic refactor focus**: Every R iterations, the planner focuses
+7. **Periodic refactor focus**: Every R iterations, the planner focuses
    exclusively on refactoring tasks (dead code, API consolidation, test
    gaps, documentation drift, C++23 modernization).
 
@@ -111,24 +123,37 @@ Edit `Scripts/AgenticLoop/AgenticLoop.config.json`:
 ```json
 {
   "models": {
-    "planner": "zai/glm-5.2",
-    "executor": "deepseek/deepseek-chat"
+    "planner": "opencode-go/glm-5.2",
+    "executor": "opencode-go/deepseek-v4-flash"
   },
   "intervals": {
     "buildEveryNTasks": 3,
     "qualityEveryNTasks": 5,
     "refactorEveryNIterations": 3,
+    "fullMatrixEveryNIterations": 5,
     "testAfterBuild": true,
     "maxExecutorRetries": 3,
     "loopDelaySeconds": 10,
     "maxIterations": 0
   },
-  "buildConfigurations": {
-    "windows": ["clangcl-debug", "clangcl-profile", "clangcl-release"],
-    "linux": ["linux-debug-clang", "linux-debug-tsan-clang", "linux-release-clang"]
+  "buildMatrix": {
+    "windows": [
+      {"name": "clangcl-debug", "sanitizer": "asan", "buildDir": "build-clangcl-debug", "buildType": "Debug", "testCommand": "ctest --test-dir build-clangcl-debug --output-on-failure -C Debug"},
+      {"name": "clangcl-profile", "sanitizer": "none", "buildDir": "build-clangcl-profile", "buildType": "RelWithDebInfo", "testCommand": "ctest --test-dir build-clangcl-profile --output-on-failure -C RelWithDebInfo"},
+      {"name": "clangcl-release", "sanitizer": "none", "buildDir": "build-clangcl-release", "buildType": "Release", "testCommand": null}
+    ],
+    "linux": [
+      {"name": "linux-debug-asan-clang", "sanitizer": "asan", "buildDir": "build-asan-clang", "buildType": "Debug", "testCommand": "ctest --test-dir build-asan-clang --output-on-failure -C Debug"},
+      {"name": "linux-debug-tsan-clang", "sanitizer": "tsan", "buildDir": "build-tsan-clang", "buildType": "Debug", "testCommand": "ctest --test-dir build-tsan-clang --output-on-failure -C Debug"},
+      {"name": "linux-profile-clang", "sanitizer": "none", "buildDir": "build-profile-clang", "buildType": "RelWithDebInfo", "testCommand": "ctest --test-dir build-profile-clang --output-on-failure -C RelWithDebInfo"},
+      {"name": "linux-release-clang", "sanitizer": "none", "buildDir": "build-release-clang", "buildType": "Release", "testCommand": null}
+    ]
   }
 }
 ```
+
+See [`ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md`](../../ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md)
+for the full build matrix documentation.
 
 ### Model IDs
 
@@ -251,23 +276,37 @@ The loop continues until all tasks are drained or max retries are hit.
 ### 3. Build Phase
 
 After every N completed tasks, a build is triggered. The configuration
-cycles through the `buildConfigurations` array, so consecutive builds use
+cycles through the `buildMatrix` array, so consecutive builds use
 different presets:
 
-| Build # | Configuration (Windows) |
-| --- | --- |
-| 1 | `clangcl-debug` |
-| 2 | `clangcl-profile` |
-| 3 | `clangcl-release` |
-| 4 | `clangcl-debug` (cycles back) |
+| Build # | Windows | Linux |
+| --- | --- | --- |
+| 1 | `clangcl-debug` (ASAN) | `linux-debug-asan-clang` (ASAN) |
+| 2 | `clangcl-profile` | `linux-debug-tsan-clang` (TSan) |
+| 3 | `clangcl-release` | `linux-profile-clang` |
+| 4 | `clangcl-debug` (cycles back) | `linux-release-clang` |
+| 5 | `clangcl-profile` | `linux-debug-asan-clang` (cycles back) |
 
 On Windows, builds go through the Stevedore container script
 (`Build-Windows-Container.ps1`). On Linux, through the native build script
-(`cmake-configure-build.sh`).
+(`cmake-configure-build.sh`) via Rancher Desktop.
+
+Every N iterations (configurable via `fullMatrixEveryNIterations`), a
+**full matrix sweep** runs ALL configs in sequence instead of just one.
 
 ### 4. Test Phase
 
-After each successful build, tests run via `ctest`.
+After each successful build, tests run via `ctest`. When the build matrix
+entry has `sanitizer: "asan"` or `sanitizer: "tsan"`, the loop
+automatically sets `ASAN_OPTIONS` or `TSAN_OPTIONS` before running tests,
+then restores the original environment. This ensures sanitizer-instrumented
+tests actually catch memory errors and data races.
+
+| Sanitizer | Env Var | Value |
+| --- | --- | --- |
+| `asan` | `ASAN_OPTIONS` | `detect_leaks=1:halt_on_error=1:abort_on_error=1:allocator_may_return_null=1` |
+| `tsan` | `TSAN_OPTIONS` | `halt_on_error=1:abort_on_error=1:second_deadlock_stack=1` |
+| `none` | — | No env vars set |
 
 ### 5. Quality Phase
 

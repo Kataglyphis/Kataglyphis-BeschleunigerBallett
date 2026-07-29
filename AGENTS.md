@@ -386,18 +386,50 @@ powerful) analyzes the codebase and writes detailed task entries to
 queue one task at a time, building and testing as it goes. The queue must be
 fully drained before the planner adds new tasks.
 
-**Reusable logic lives in ContainerHub's `WindowsAgenticLoop.Common` module.**
-The project script is a thin consumer. See the ContainerHub module docs and
-[`Scripts/AgenticLoop/README.md`](Scripts/AgenticLoop/README.md) for details.
+**Reusable logic lives in ContainerHub's `WindowsAgenticLoop.Common` module
+(PowerShell) and `agentic-loop.sh` library (Bash).** The project scripts are
+thin consumers. See the ContainerHub module docs, the
+[build matrix doc](ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md),
+and [`Scripts/AgenticLoop/README.md`](Scripts/AgenticLoop/README.md) for details.
+
+### Build Matrix
+
+The loop cycles through a **build matrix** — a set of build configurations
+that each define a preset, sanitizer, build directory, and test command.
+This ensures the loop regularly exercises ASAN, TSan, profile, and release
+builds across both platforms:
+
+| Platform | Configs | Sanitizer |
+|----------|---------|-----------|
+| Windows (Stevedore) | `clangcl-debug` | ASAN + UBSan |
+| Windows (Stevedore) | `clangcl-profile` | none |
+| Windows (Stevedore) | `clangcl-release` | none |
+| Linux (Rancher Desktop) | `linux-debug-asan-clang` | ASAN + UBSan |
+| Linux (Rancher Desktop) | `linux-debug-tsan-clang` | TSan |
+| Linux (Rancher Desktop) | `linux-profile-clang` | none |
+| Linux (Rancher Desktop) | `linux-release-clang` | none |
+
+**Sanitizer-aware test execution**: When a matrix entry has
+`sanitizer: "asan"` or `sanitizer: "tsan"`, the loop automatically sets
+`ASAN_OPTIONS` or `TSAN_OPTIONS` before running tests, then restores the
+original environment.
+
+**Full matrix sweep**: Every `fullMatrixEveryNIterations` iterations
+(default 5), the loop runs ALL configs in sequence instead of just one.
+
+See [`ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md`](ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md)
+for the full documentation.
 
 ### Files
 
 | What | Where | Purpose |
 |------|-------|---------|
-| **Module** (reusable) | `ExternalLib/Kataglyphis-ContainerHub/windows/scripts/modules/WindowsAgenticLoop.Common.psm1` | Building blocks: `Invoke-OpenCode`, logging, platform detection, git helpers, loop orchestration |
+| **PS module** (reusable) | `ExternalLib/Kataglyphis-ContainerHub/windows/scripts/modules/WindowsAgenticLoop.Common.psm1` | Building blocks: `Invoke-OpenCode`, logging, platform detection, git helpers, build matrix, sanitizer-aware tests, loop orchestration |
+| **Bash library** (reusable) | `ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/agentic-loop.sh` | Bash equivalents: `invoke_opencode`, `invoke_sanitizer_tests`, `resolve_build_matrix_entry`, `run_agentic_loop` |
 | **Module docs** | `ExternalLib/Kataglyphis-ContainerHub/docs/windows-agentic-loop.md` | API reference, usage examples, PS 5.1 notes |
+| **Build matrix docs** | `ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md` | Build matrix config, sanitizer env vars, full matrix sweep |
 | **Project script** | `Scripts/AgenticLoop/Run-AgenticLoop.ps1` | Thin wrapper — imports module, loads config, calls `Invoke-AgenticLoop` |
-| **Config** | `Scripts/AgenticLoop/AgenticLoop.config.json` | Model IDs, intervals, build config cycles |
+| **Config** | `Scripts/AgenticLoop/AgenticLoop.config.json` | Model IDs, intervals, build matrix (per-platform entries with sanitizer + testCommand) |
 | **Planner agent** | `.opencode/agents/planner.md` | Planner system prompt (GLM 5.2) |
 | **Executor agent** | `.opencode/agents/executor.md` | Executor system prompt (DeepSeek v4 Flash) |
 | **Slash commands** | `.opencode/commands/{plan,execute,build,test,quality}.md` | Interactive commands for OpenCode TUI |
@@ -419,10 +451,25 @@ pwsh .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -PlannerOnly
 pwsh .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -ExecutorOnly
 ```
 
-Builds cycle through `clangcl-debug`, `clangcl-profile`, `clangcl-release`
-(Windows) or the Linux equivalents after every N completed tasks. Tests run
-after each build. clang-tidy + cmake-format run every M tasks. The planner
-adds refactor-focused tasks every R iterations. Logs go to
+```bash
+# Linux — full loop (requires jq)
+./Scripts/AgenticLoop/Run-AgenticLoop.sh
+
+# Dry run
+./Scripts/AgenticLoop/Run-AgenticLoop.sh --dry-run
+
+# Planner only
+./Scripts/AgenticLoop/Run-AgenticLoop.sh --planner-only
+
+# Executor only
+./Scripts/AgenticLoop/Run-AgenticLoop.sh --executor-only
+```
+
+Builds cycle through the build matrix (ASAN → profile → release on Windows;
+ASAN → TSan → profile → release on Linux) after every N completed tasks.
+Tests run after each build with sanitizer-aware env vars. Every 5 iterations,
+a full matrix sweep runs ALL configs. clang-tidy + cmake-format run every M
+tasks. The planner adds refactor-focused tasks every R iterations. Logs go to
 `logs/agentic-loop/`.
 
 ## Docs
@@ -449,6 +496,7 @@ ContainerHub (see the rule above), project-specific ones here.
 | `docs/renderer-bounds-invariant.md` | WebGPU renderer bounds invariant |
 | `docs/LICENSES-README.md` | Third-party license documentation |
 | `Scripts/AgenticLoop/README.md` | Agentic loop (OpenCode planner/executor) architecture, config, usage |
+| `ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md` | Build matrix config, sanitizer env vars, full matrix sweep |
 | `docs/source/` | Sphinx pages (`getting_started.md`, `documentation_workflow.md`, `webgpu_demo.md`, `wsl2_vulkan.rst`) |
 
 - Keep docs, scripts, and presets aligned: when you change build behavior, update
