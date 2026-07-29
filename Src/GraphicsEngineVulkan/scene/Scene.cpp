@@ -20,7 +20,6 @@ import kataglyphis.vulkan.obj_loader;
 import kataglyphis.vulkan.gltf_loader;
 import kataglyphis.vulkan.model;
 import kataglyphis.vulkan.device;
-import kataglyphis.vulkan.gui;
 import kataglyphis.vulkan.object_description;
 import kataglyphis.vulkan.scene_config;
 
@@ -42,19 +41,17 @@ std::shared_ptr<Model> loadModelByExtension(std::shared_ptr<VulkanDevice> device
     });
 
     if (lower.ends_with(".gltf") || lower.ends_with(".glb")) {
-        GltfLoader gltf_loader(device, device->getGraphicsQueue(), commandPool);
+        GltfLoader gltf_loader(device, commandPool);
         return gltf_loader.loadModel(modelFile);
     }
 
-    ObjLoader obj_loader(device, device->getGraphicsQueue(), commandPool);
+    ObjLoader obj_loader(device, commandPool);
     return obj_loader.loadModel(modelFile);
 }
 
 }// namespace
 
 Scene::Scene() = default;
-
-void Scene::update_user_input(const GUISceneSharedVars &vars) { guiSceneSharedVars = vars; }
 
 void Scene::loadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool)
 {
@@ -123,7 +120,7 @@ bool Scene::pollModelLoad(std::shared_ptr<VulkanDevice> device, vk::CommandPool 
             spdlog::error("Asynchronous glTF parse failed; the scene stays empty.");
             return false;
         }
-        GltfLoader uploader(device, device->getGraphicsQueue(), commandPool);
+        GltfLoader uploader(device, commandPool);
         uploader.adoptParsed(std::move(*parsed));
         new_model = uploader.uploadParsed();
     } else {
@@ -132,7 +129,7 @@ bool Scene::pollModelLoad(std::shared_ptr<VulkanDevice> device, vk::CommandPool 
             spdlog::error("Asynchronous model parse failed; the scene stays empty.");
             return false;
         }
-        ObjLoader uploader(device, device->getGraphicsQueue(), commandPool);
+        ObjLoader uploader(device, commandPool);
         uploader.adoptParsed(std::move(*parsed));
         new_model = uploader.uploadParsed();
     }

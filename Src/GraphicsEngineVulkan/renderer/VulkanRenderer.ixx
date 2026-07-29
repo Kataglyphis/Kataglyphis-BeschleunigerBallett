@@ -23,6 +23,7 @@ import kataglyphis.vulkan.global_ubo;
 import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.gui;
 import kataglyphis.vulkan.gui_renderer_shared_vars;
+import kataglyphis.vulkan.gui_scene_shared_vars;
 import kataglyphis.vulkan.instance;
 import kataglyphis.vulkan.path_tracing;
 import kataglyphis.vulkan.post_stage;
@@ -102,6 +103,19 @@ class VulkanRenderer
 
   private:
     void shaderHotReload();
+
+    // -- decomposed updateStateDueToUserInput handlers
+    void handleShaderHotReloadRequest(
+        Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars);
+    void handleRasterizationModeChange(
+        Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars);
+    void handleShadowResolutionChange(
+        GUISceneSharedVars &guiSceneSharedVars);
+    void handleModelTransformChange(
+        GUISceneSharedVars &guiSceneSharedVars,
+        Kataglyphis::Frontend::GUI *frontend_gui);
+    void handleModelReloadRequest(
+        GUISceneSharedVars &guiSceneSharedVars);
 
     // The rasterization mode whose offscreen texture the post (and RT) input
     // descriptors currently point at. The mode branch in record_commands is

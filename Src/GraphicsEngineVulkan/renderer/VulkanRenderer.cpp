@@ -162,7 +162,7 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
   Camera *camera_data,
   [[maybe_unused]] Kataglyphis::Frontend::Window *window_data)
 {
-    const GUISceneSharedVars guiSceneSharedVars = scene_data->getGuiSceneSharedVars();
+    const GUISceneSharedVars guiSceneSharedVars = gui->getGuiSceneSharedVars();
 
     const vk::Extent2D extent = vulkanSwapChain.getSwapChainExtent();
     float const aspect_ratio = (extent.height > 0) ? static_cast<float>(extent.width) / static_cast<float>(extent.height) : 1.0f;
@@ -263,11 +263,27 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Fronten
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars =
       frontend_gui->getGuiRendererSharedVars();
 
+    handleShaderHotReloadRequest(guiRendererSharedVars);
+    handleRasterizationModeChange(guiRendererSharedVars);
+
+    GUISceneSharedVars &guiSceneSharedVars = gui->getGuiSceneSharedVars();
+    handleShadowResolutionChange(guiSceneSharedVars);
+    handleModelTransformChange(guiSceneSharedVars, frontend_gui);
+    handleModelReloadRequest(guiSceneSharedVars);
+}
+
+void Kataglyphis::VulkanRenderer::handleShaderHotReloadRequest(
+    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars)
+{
     if (guiRendererSharedVars.shader_hot_reload_triggered) {
         shaderHotReload();
         guiRendererSharedVars.shader_hot_reload_triggered = false;
     }
+}
 
+void Kataglyphis::VulkanRenderer::handleRasterizationModeChange(
+    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars)
+{
     // Rebind the mode-dependent input descriptors when the rasterization mode
     // changes. record_commands branches on the mode per frame, but the post
     // pass's input image was written once at init - so "Deferred" recorded
@@ -282,8 +298,11 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Fronten
         updateAllDescriptorSets();
         lastBoundRasterizationMode = guiRendererSharedVars.rasterizationMode;
     }
+}
 
-    GUISceneSharedVars &guiSceneSharedVars = scene->getGuiSceneSharedVars();
+void Kataglyphis::VulkanRenderer::handleShadowResolutionChange(
+    GUISceneSharedVars &guiSceneSharedVars)
+{
     if (guiSceneSharedVars.shadow_resolution_changed) {
         guiSceneSharedVars.shadow_resolution_changed = false;
 
@@ -312,7 +331,12 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Fronten
         // We must recreate descriptor sets that depend on the shadow map
         updateTexturesInSharedRenderDescriptorSet();
     }
+}
 
+void Kataglyphis::VulkanRenderer::handleModelTransformChange(
+    GUISceneSharedVars &guiSceneSharedVars,
+    Kataglyphis::Frontend::GUI *frontend_gui)
+{
     if (guiSceneSharedVars.model_transform_changed) {
         guiSceneSharedVars.model_transform_changed = false;
         frontend_gui->getGuiSceneSharedVars().model_transform_changed = false;
@@ -353,7 +377,11 @@ void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Fronten
 
 
     }
+}
 
+void Kataglyphis::VulkanRenderer::handleModelReloadRequest(
+    GUISceneSharedVars &guiSceneSharedVars)
+{
     if (guiSceneSharedVars.model_reload_requested) {
         guiSceneSharedVars.model_reload_requested = false;
 
@@ -803,7 +831,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
       gui->getGuiRendererSharedVars();
 
-    GUISceneSharedVars &guiSceneSharedVars = scene->getGuiSceneSharedVars();
+    GUISceneSharedVars &guiSceneSharedVars = gui->getGuiSceneSharedVars();
 
     vk::CommandBuffer &commandBuffer = command_buffers[image_index];
 

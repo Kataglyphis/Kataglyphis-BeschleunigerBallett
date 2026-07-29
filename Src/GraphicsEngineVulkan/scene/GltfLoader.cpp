@@ -26,8 +26,8 @@ import kataglyphis.vulkan.mesh_range;
 
 namespace Kataglyphis {
 
-GltfLoader::GltfLoader(std::shared_ptr<VulkanDevice> device, vk::Queue transfer_queue, vk::CommandPool command_pool)
-  : device(std::move(device)), transfer_queue(transfer_queue), command_pool(command_pool)
+GltfLoader::GltfLoader(std::shared_ptr<VulkanDevice> device, vk::CommandPool command_pool)
+  : device(std::move(device)), command_pool(command_pool)
 {}
 
 std::shared_ptr<Model> GltfLoader::loadModel(const std::string &modelFile)
@@ -94,13 +94,12 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
     // mesh shares the full materials array (its materialIndex holds the original
     // indices); a per-mesh material subset is a later optimisation.
     if (meshRanges.empty()) {
-        model->add_new_mesh(device, transfer_queue, command_pool, vertices, indices, materialIndex, materials);
+        model->add_new_mesh(device, command_pool, vertices, indices, materialIndex, materials);
     } else {
         for (const MeshRange &range : meshRanges) {
             // Non-const: Model::add_new_mesh takes the arrays by non-const ref.
             MeshSlice slice = sliceMeshRange(range, vertices, indices, materialIndex);
             model->add_new_mesh(device,
-              transfer_queue,
               command_pool,
               slice.vertices,
               slice.indices,

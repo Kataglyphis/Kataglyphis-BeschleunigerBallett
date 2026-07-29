@@ -14,7 +14,8 @@
     "testAfterBuild": true,
     "maxExecutorRetries": 3,
     "loopDelaySeconds": 10,
-    "maxIterations": 0
+    "maxIterations": 0,
+    "timeoutSeconds": 600
   },
 
   "buildConfigurations": {

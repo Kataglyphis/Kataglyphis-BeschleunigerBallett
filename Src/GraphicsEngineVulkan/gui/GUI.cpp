@@ -66,8 +66,11 @@ void GUI::render()
         const int model_count = static_cast<int>(model_paths.size());
         
         // Find index of standard model if needed or keep existing index
+        // kDefaultSelectedModelPath controls the combo's initial display selection
+        // only — NOT the loaded scene (SceneConfig::getModelFile() picks that).
+        constexpr const char *kDefaultSelectedModelPath = "Models/VikingRoom/viking_room.obj";
         if (guiSceneSharedVars.selected_model_index == -1 && model_count > 0) {
-            std::string standardModelPath = "Models/VikingRoom/viking_room.obj";
+            std::string standardModelPath = kDefaultSelectedModelPath;
             for(int i=0; i<model_count; ++i) {
                 if(model_paths[i] == standardModelPath) {
                     guiSceneSharedVars.selected_model_index = i;
@@ -104,7 +107,7 @@ void GUI::render()
                 guiSceneSharedVars.model_transform_changed = true;
             }
         } else {
-            ImGui::TextDisabled("No .obj models found in Resources/Models/");
+            ImGui::TextDisabled("No loadable models (.obj/.gltf/.glb) found in Resources/Models/");
         }
     }
 

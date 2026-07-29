@@ -19,7 +19,7 @@ export namespace Kataglyphis {
 class ObjLoader
 {
   public:
-    ObjLoader(std::shared_ptr<VulkanDevice>device, vk::Queue transfer_queue, vk::CommandPool command_pool);
+    ObjLoader(std::shared_ptr<VulkanDevice>device, vk::CommandPool command_pool);
 
     /// CPU-only construction, for parsing off the render thread (or in a test).
     /// loadModel() is unavailable on such an instance - it has no device to
@@ -81,7 +81,6 @@ class ObjLoader
 
   private:
     std::shared_ptr<VulkanDevice> device;
-    vk::Queue transfer_queue;
     vk::CommandPool command_pool;
 
     std::vector<Vertex> vertices;

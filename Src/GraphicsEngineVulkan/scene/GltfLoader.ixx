@@ -40,7 +40,7 @@ class GltfLoader
   public:
     /// Device-owning: `loadModel` can upload. `parseCpu` alone needs no device,
     /// so the default constructor stays available for the CPU-only path.
-    GltfLoader(std::shared_ptr<VulkanDevice> device, vk::Queue transfer_queue, vk::CommandPool command_pool);
+    GltfLoader(std::shared_ptr<VulkanDevice> device, vk::CommandPool command_pool);
     GltfLoader() = default;
 
     /// Parses `modelFile` then builds the Vulkan-side Model from it - i.e.
@@ -96,7 +96,6 @@ class GltfLoader
       unsigned int fallbackMaterial);
 
     std::shared_ptr<VulkanDevice> device;
-    vk::Queue transfer_queue;
     vk::CommandPool command_pool;
 
     std::vector<Vertex> vertices;

@@ -20,7 +20,6 @@ class Mesh
 {
   public:
     Mesh(std::shared_ptr<VulkanDevice>device,
-      vk::Queue transfer_queue,
       vk::CommandPool transfer_command_pool,
       const std::vector<Vertex> &vertices,
       const std::vector<uint32_t> &indices,
@@ -86,16 +85,14 @@ class Mesh
 
     std::shared_ptr<VulkanDevice>device{ nullptr };
 
-    void createVertexBuffer(vk::Queue transfer_queue, vk::CommandPool transfer_command_pool, const std::vector<Vertex> &vertices);
+    void createVertexBuffer(vk::CommandPool transfer_command_pool, const std::vector<Vertex> &vertices);
 
-    void createIndexBuffer(vk::Queue transfer_queue, vk::CommandPool transfer_command_pool, const std::vector<uint32_t> &indices);
+    void createIndexBuffer(vk::CommandPool transfer_command_pool, const std::vector<uint32_t> &indices);
 
-    void createMaterialIDBuffer(vk::Queue transfer_queue,
-      vk::CommandPool transfer_command_pool,
+    void createMaterialIDBuffer(vk::CommandPool transfer_command_pool,
       const std::vector<unsigned int> &materialIndex);
 
-    void createMaterialBuffer(vk::Queue transfer_queue,
-      vk::CommandPool transfer_command_pool,
+    void createMaterialBuffer(vk::CommandPool transfer_command_pool,
       const std::vector<ObjMaterial> &materials);
 
     // Shared body of the four create*Buffer uploads: a device-local buffer,

@@ -26,12 +26,19 @@ function Resolve-BuildModulePath {
 
     $repoRoot = (Resolve-Path (Join-Path $scriptsWindowsRoot '..\..')).Path
     $candidates = @(
-        (Join-Path $repoRoot "ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules\$Name.psm1"),
-        (Join-Path $scriptsWindowsRoot "modules\$Name.psm1")
+        @{ Path = Join-Path $repoRoot "ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules\$Name.psm1"; PS7 = $true },
+        @{ Path = Join-Path $scriptsWindowsRoot "modules\$Name.psm1"; PS7 = $false }
     )
 
-    foreach ($candidate in $candidates) {
-        if (Test-Path $candidate) { return (Resolve-Path $candidate).Path }
+    # Under PowerShell 5.1 prefer vendored fallbacks (ContainerHub modules
+    # require PS 7.0; importing them would fail). Under PS 7+ prefer the
+    # upstream ContainerHub copy.
+    $isPs5 = ($PSVersionTable.PSVersion.Major -eq 5)
+    $preferred = if ($isPs5) { $false } else { $true }
+    $ordered = @($candidates | Where-Object { $_.PS7 -eq $preferred }) +
+               @($candidates | Where-Object { $_.PS7 -ne $preferred })
+    foreach ($candidate in $ordered) {
+        if (Test-Path $candidate.Path) { return (Resolve-Path $candidate.Path).Path }
     }
 
     throw ("Build module '$Name' found neither in the ContainerHub submodule nor in the vendored " +

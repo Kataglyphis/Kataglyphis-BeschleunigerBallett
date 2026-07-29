@@ -2495,52 +2495,14 @@ drain the cheap wins on an incremental build before the ABI-skew one needs a
   with the `textureNamesFromLastParse` redundancy removal
   (`ObjLoader.ixx:91,92`) if convenient — both are ABI-skew ObjLoader touches.
 
-- [ ] **(test, S) Add glTF primitive-with-no-material neutral-fallback parse test** —
-  `GltfLoader::processPrimitive` routes a primitive whose `"material"` key is
-  absent (`primitive->material == nullptr`) to a `fallbackMaterial`/neutral
-  branch (`GltfLoader.cpp:379-387,446-447`) so every face id stays in range.
-  `gltfParseSuite.cpp` covers cube parse, materials, missing file, embedded
-  texture, malformed text, short base64, missing-normals, strip, fan, MASK
-  cutoff, OPAQUE cutoff, mask-card, KHR_texture_transform, colour_0,
-  multi-primitive, `mask_card_hc` — but NOT the no-material primitive. The OBJ
-  twin (`FacesWithoutAMaterialIndexInsideTheMaterialsArray`,
-  `objParseSuite.cpp:49-69`) exists precisely because the symmetric OBJ path
-  once had an OOB there; the glTF edge is the untested mirror.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:379-387,446-447` — the `fallbackMaterial`/`neutralMaterial` branch
-  - `Test/commit/VulkanEngine/gltfParseSuite.cpp:278-296` — the dynamic-doc `gltf` pattern to follow (a `material_gltf`-style doc built in-memory)
-  - `Test/commit/VulkanEngine/objParseSuite.cpp:49-69` — the OBJ twin for the assertion shape
-
-  **Steps:**
-  1. Add a `GltfParseUnit.PrimitiveWithoutMaterialRoutesToNeutralFallback` test
-     that builds a minimal glTF document in memory (mirror the
-     `material_gltf` helper at `gltfParseSuite.cpp:278-296`) with one mesh /
-     one primitive whose `"material"` key is OMITTED, then runs
-     `GltfLoader::parseCpu`.
-  2. Assert `getMaterialIndices().size() == getIndices().size() / 3` (one id
-     per triangle) and that every id is `< getMaterials().size()` and equals
-     the trailing neutral material's index — the invariant the fallback exists
-     to guarantee.
-  3. Red-verify: temporarily making `processPrimitive` skip the
-     `primitive->material == nullptr` branch (use the raw `material` index)
-     must make the test fail with an out-of-range id, proving the assertion is
-     not vacuous.
-
-  **Test:** This IS the test. Add it to `gltfParseSuite.cpp` and confirm it is
-  picked up by the Windows CI filter (`Windows.yml` — the `GltfParseUnit`
-  suite is already in the filter, so no workflow edit needed).
-
-  **Build:** `clangcl-debug` (test-only, non-ABI-skew). Run the
-  `GltfParseUnit.PrimitiveWithoutMaterialRoutesToNeutralFallback` filter
-  directly on the extracted `commitTestSuite.exe`.
-
-  **Context:** "Adding tests is always in scope." This is the exact
-  error/edge-path-in-the-loaders gap the survey flagged: a code path with no
-  test, where a regression (dropping the null-material guard) would silently
-  produce an out-of-bounds buffer-device-address read in the shaders — the
-  same class of bug the OBJ `-1` cast to `0xFFFFFFFF` was. The dynamic-doc
-  pattern avoids needing a new asset file.
+- [x] **(test, S) Add glTF primitive-with-no-material neutral-fallback parse test** —
+  **DONE (7c816d12)**: `GltfParseUnit.PrimitiveWithoutMaterialRoutesToNeutralFallback`
+  added in commit `7c816d12`. Builds a minimal glTF document with no materials
+  array and a primitive whose `"material"` key is omitted, then asserts every
+  face material index points at the single neutral fallback material (index 0)
+  and no index escapes the materials array. Red-verified: removing the
+  `primitive->material == nullptr` branch in `processPrimitive` produces an
+  out-of-range id and fails the test.
 
 ## 2026-07-28 batch II — subsystem extraction & CI coverage
 

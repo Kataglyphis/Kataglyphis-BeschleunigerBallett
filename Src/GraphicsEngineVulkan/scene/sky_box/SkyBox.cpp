@@ -406,7 +406,7 @@ void SkyBox::createMesh(vk::CommandPool commandPool)
     skyMesh = std::make_unique<Kataglyphis::Mesh>();
     std::vector<unsigned int> materialIndex = {0};
     std::vector<ObjMaterial> materials = {ObjMaterial{}};
-    skyMesh = std::make_unique<Mesh>(device, device->getGraphicsQueue(), commandPool, vertices, indices, materialIndex, materials);
+    skyMesh = std::make_unique<Mesh>(device, commandPool, vertices, indices, materialIndex, materials);
 }
 
 void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, const std::vector<vk::DescriptorSet> &descriptorSets, bool skyboxEnabled)

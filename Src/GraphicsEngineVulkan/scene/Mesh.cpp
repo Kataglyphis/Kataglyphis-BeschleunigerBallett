@@ -30,7 +30,6 @@ void Mesh::cleanUp()
 }
 
 Mesh::Mesh(std::shared_ptr<VulkanDevice>device,
-  vk::Queue transfer_queue,
   vk::CommandPool transfer_command_pool,
   const std::vector<Vertex> &vertices,
   const std::vector<uint32_t> &indices,
@@ -58,10 +57,10 @@ Mesh::Mesh(std::shared_ptr<VulkanDevice>device,
     }
 
     object_description = ObjectDescription{};
-    createVertexBuffer(transfer_queue, transfer_command_pool, vertices);
-    createIndexBuffer(transfer_queue, transfer_command_pool, indices);
-    createMaterialIDBuffer(transfer_queue, transfer_command_pool, materialIndex);
-    createMaterialBuffer(transfer_queue, transfer_command_pool, materials);
+    createVertexBuffer(transfer_command_pool, vertices);
+    createIndexBuffer(transfer_command_pool, indices);
+    createMaterialIDBuffer(transfer_command_pool, materialIndex);
+    createMaterialBuffer(transfer_command_pool, materials);
 
     // All uploads for this mesh are done; release the shared staging buffer
     // now (it was reused across the four uploads above) so each mesh does not
@@ -94,8 +93,7 @@ void Mesh::setModel(glm::mat4 new_model) { model = new_model; }
 
 Mesh::~Mesh() = default;
 
-void Mesh::createVertexBuffer(vk::Queue /*transfer_queue*/,
-  vk::CommandPool transfer_command_pool,
+void Mesh::createVertexBuffer(vk::CommandPool transfer_command_pool,
   const std::vector<Vertex> &vertices)
 {
     uploadDeviceLocalBuffer(transfer_command_pool,
@@ -104,8 +102,7 @@ void Mesh::createVertexBuffer(vk::Queue /*transfer_queue*/,
       vertices);
 }
 
-void Mesh::createIndexBuffer(vk::Queue /*transfer_queue*/,
-  vk::CommandPool transfer_command_pool,
+void Mesh::createIndexBuffer(vk::CommandPool transfer_command_pool,
   const std::vector<uint32_t> &indices)
 {
     uploadDeviceLocalBuffer(transfer_command_pool,
@@ -114,8 +111,7 @@ void Mesh::createIndexBuffer(vk::Queue /*transfer_queue*/,
       indices);
 }
 
-void Mesh::createMaterialIDBuffer(vk::Queue /*transfer_queue*/,
-  vk::CommandPool transfer_command_pool,
+void Mesh::createMaterialIDBuffer(vk::CommandPool transfer_command_pool,
   const std::vector<unsigned int> &materialIndex)
 {
     // The material-ID buffer is read as a storage buffer (and via device
@@ -124,8 +120,7 @@ void Mesh::createMaterialIDBuffer(vk::Queue /*transfer_queue*/,
       transfer_command_pool, materialIdsBuffer, vk::BufferUsageFlagBits::eStorageBuffer, materialIndex);
 }
 
-void Mesh::createMaterialBuffer(vk::Queue /*transfer_queue*/,
-  vk::CommandPool transfer_command_pool,
+void Mesh::createMaterialBuffer(vk::CommandPool transfer_command_pool,
   const std::vector<ObjMaterial> &materials)
 {
     // The materials buffer is read as a storage buffer (and via device

@@ -33,8 +33,8 @@ import kataglyphis.vulkan.mesh_range;
 
 using namespace Kataglyphis;
 
-ObjLoader::ObjLoader(std::shared_ptr<VulkanDevice>device, vk::Queue transfer_queue, vk::CommandPool command_pool)
-  : device(device), transfer_queue(transfer_queue), command_pool(command_pool)
+ObjLoader::ObjLoader(std::shared_ptr<VulkanDevice>device, vk::CommandPool command_pool)
+  : device(device), command_pool(command_pool)
 {}
 
 bool ObjLoader::parseCpu(const std::string &modelFile)
@@ -144,13 +144,13 @@ auto ObjLoader::uploadParsed() -> std::shared_ptr<Model>
     // existing single-object models are behaviour-identical.
     if (meshRanges.empty()) {
         new_model->add_new_mesh(
-          device, transfer_queue, command_pool, vertices, indices, materialIndex, this->materials);
+          device, command_pool, vertices, indices, materialIndex, this->materials);
     } else {
         for (const MeshRange &range : meshRanges) {
             // Non-const: Model::add_new_mesh takes the arrays by non-const ref.
             MeshSlice slice = sliceMeshRange(range, vertices, indices, materialIndex);
             new_model->add_new_mesh(
-              device, transfer_queue, command_pool, slice.vertices, slice.indices, slice.materialIndex, this->materials);
+              device, command_pool, slice.vertices, slice.indices, slice.materialIndex, this->materials);
         }
     }
     return new_model;

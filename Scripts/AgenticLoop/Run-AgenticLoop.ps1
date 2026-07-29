@@ -31,7 +31,8 @@ if (-not (Test-Path $configPath)) { Write-Host "FATAL: Config not found: $config
 $config = Get-Content $configPath -Raw | ConvertFrom-Json
 if (-not $config) { Write-Host "FATAL: Invalid JSON" -ForegroundColor Red; exit 1 }
 
-Initialize-AgenticLoop -ConfigPath $configPath -RepoRoot $repoRoot -DryRun:$DryRun
+$timeoutSeconds = if ($config.intervals.timeoutSeconds) { [int]$config.intervals.timeoutSeconds } else { 0 }
+Initialize-AgenticLoop -ConfigPath $configPath -RepoRoot $repoRoot -DryRun:$DryRun -TimeoutSeconds $timeoutSeconds
 
 $onWindows = Test-IsWindows
 $buildConfigs = if ($onWindows) { $config.buildConfigurations.windows } else { $config.buildConfigurations.linux }

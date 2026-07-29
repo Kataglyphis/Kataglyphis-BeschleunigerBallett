@@ -18,10 +18,8 @@ import kataglyphis.vulkan.mesh;
 import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.async_model_parse;
 import kataglyphis.vulkan.device;
-import kataglyphis.vulkan.gui;
 import kataglyphis.vulkan.object_description;
 import kataglyphis.vulkan.scene_config;
-import kataglyphis.vulkan.gui_scene_shared_vars;
 
 export namespace Kataglyphis {
 class Scene
@@ -29,10 +27,7 @@ class Scene
   public:
     Scene();
 
-    void update_user_input(const GUISceneSharedVars &vars);
     void update_model_matrix(glm::mat4 model_matrix, uint32_t model_id);
-
-    GUISceneSharedVars &getGuiSceneSharedVars() { return guiSceneSharedVars; };
 
     std::vector<Texture> &getTextures(uint32_t model_index)
     {
@@ -162,6 +157,5 @@ class Scene
     std::vector<ObjectDescription> object_descriptions;
     std::vector<std::shared_ptr<Model>> model_list;
 
-    GUISceneSharedVars guiSceneSharedVars;
 };
 }// namespace Kataglyphis

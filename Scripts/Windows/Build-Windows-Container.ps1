@@ -88,7 +88,7 @@ function Get-BuildCommandArgs {
   param([Parameter(Mandatory)][string]$WorkspacePath)
 
   $psArgs = @(
-    '-NoProfile', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+    'pwsh', '-NoProfile', '-ExecutionPolicy', 'Bypass',
     '-File', (Join-Path $WorkspacePath 'Scripts\Windows\Build-Windows.ps1'),
     '-Configurations', $Configurations,
     '-SkipTidy', '-SkipPerfTests', '-SkipMsix'
@@ -198,6 +198,23 @@ function Invoke-TarPipeBuild {
   try {
     & $docker exec $container cmd /c "mkdir $ws" | Out-Null
 
+    # Ensure PowerShell Core (pwsh) is available inside the container. The
+    # container image has Windows PowerShell 5.1 (powershell.exe) but the
+    # build scripts now require PS 7.0. If pwsh is missing, install it via
+    # scoop (which is pre-installed in the image). Measured 2026-07-29:
+    # ~10 s on first install (scoop update may run); subsequent builds are
+    # a no-op ~1 s check.
+    & $docker exec $container cmd /c "where pwsh >nul 2>nul" | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host 'pwsh not found in container — installing via scoop...'
+      & $docker exec $container powershell -NoProfile -Command "scoop install pwsh" 2>&1 | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        Write-Warning "pwsh installation failed (exit $LASTEXITCODE) — build may fail if modules require PS 7."
+      } else {
+        Write-Host 'pwsh installed successfully.'
+      }
+    }
+
     Write-Host 'Streaming sources into the container (excluding .git and build trees)...'
     # Prune stale sources first: tar extracts over the existing tree but never
     # removes files, so a source deleted on the host keeps building inside the
@@ -210,19 +227,27 @@ function Invoke-TarPipeBuild {
     # build-directory naming convention must start with "build" to be kept.
     if ($reusedContainer) {
         Write-Host 'Pruning stale sources from the reusable container...'
-        $prune = @(
-            '$dirs = Get-ChildItem -Path C:\ws -Directory -ErrorAction SilentlyContinue',
-            'if ($dirs) {',
-            '  $keep = @("logs", "sccache-local")',
-            '  foreach ($d in $dirs) {',
-            '    $n = $d.Name',
-            '    if ($n -eq "build" -or $n -like "build-*" -or $n -like "build_*" -or $n -in $keep) { continue }',
-            '    Remove-Item -Path $d.FullName -Recurse -Force -ErrorAction SilentlyContinue',
-            '  }',
+        # Pipe the pruning script via stdin to avoid nested-quote hell with
+        # -Command when the script itself contains double-quoted strings.
+        $pruneLines = @(
+            '$d = Get-ChildItem C:\ws -Directory -ErrorAction SilentlyContinue',
+            'if ($d) {',
+            '  $k = @("logs","sccache-local")',
+            '  $d | Where-Object { $_.Name -notin $k -and $_.Name -ne "build" -and $_.Name -notlike "build-*" -and $_.Name -notlike "build_*" } |',
+            '    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue',
             '}'
-        ) -join '; '
-        $pruneCmd = "`"$docker`" exec $container pwsh -NoProfile -Command `"$prune`""
-        cmd /c $pruneCmd
+        ) -join "`n"
+        $pruneTmp = [System.IO.Path]::GetTempFileName()
+        try {
+            Set-Content -Path $pruneTmp -Value $pruneLines -Encoding UTF8 -NoNewline
+            Get-Content $pruneTmp -Raw | & $docker exec -i $container powershell -NoProfile -Command -
+            $pruneExit = $LASTEXITCODE
+        } finally {
+            if (Test-Path $pruneTmp) { Remove-Item $pruneTmp -Force }
+        }
+        if ($pruneExit -ne 0) {
+            Write-Warning "Source pruning reported errors (exit $pruneExit) - continuing anyway."
+        }
         if ($LASTEXITCODE -ne 0) {
             Write-Warning "Source pruning reported errors (exit $LASTEXITCODE) - continuing anyway."
         }
@@ -260,6 +285,16 @@ function Invoke-TarPipeBuild {
         }
       }
     }
+
+    # The build tree streamed from the host carries a CMakeCache.txt with HOST
+    # source-directory paths (D:/...). Inside the container the source is at
+    # C:/ws/..., so CMake rejects the cache. Delete it so CMake reconfigures
+    # from scratch with container-local paths. Object files survive (ninja
+    # incremental), so this is fast after the first reconfigure.
+    Write-Host 'Deleting stale CMakeCache.txt (container paths differ from host)...'
+    & $docker exec $container cmd /c "if exist $ws\build-clangcl-debug\CMakeCache.txt del /q $ws\build-clangcl-debug\CMakeCache.txt 2>nul"
+    # Also remove any stale CMakeFiles directory that could interfere
+    & $docker exec $container cmd /c "if exist $ws\build-clangcl-debug\CMakeFiles rmdir /s /q $ws\build-clangcl-debug\CMakeFiles 2>nul"
 
     $buildArgs = Get-BuildCommandArgs -WorkspacePath $ws
     # docker exec bypasses the image entrypoint, so invoke it explicitly to get
