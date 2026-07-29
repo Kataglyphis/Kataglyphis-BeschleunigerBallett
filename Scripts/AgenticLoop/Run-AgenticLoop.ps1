@@ -1,3 +1,4 @@
+#requires -Version 7.0
 <#
 .SYNOPSIS
   Agentic loop: planner adds tasks to BACKLOG.md, executor drains the queue.
@@ -8,8 +9,6 @@
 .PARAMETER ExecutorOnly  Drain the queue and exit.
 #>
 param([switch]$DryRun, [int]$MaxIterations = -1, [switch]$SkipBuild, [switch]$SkipTests,
-#requires -Version 7.0
-
       [switch]$SkipQuality, [switch]$PlannerOnly, [switch]$ExecutorOnly)
 
 $ErrorActionPreference = 'Stop'; Set-StrictMode -Version Latest

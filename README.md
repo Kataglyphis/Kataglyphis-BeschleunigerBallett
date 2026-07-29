@@ -94,7 +94,7 @@ bash ./Scripts/Linux/cmake-configure-build.sh \
 
 ### Windows helper scripts
 
-Use the build orchestration script when you want one entry point for formatting, configuration, build, and tests. Available configurations: `msvc-debug`, `msvc-release`, `clangcl-debug` (Debug with ASAN/UBSan), `clangcl-tsan`, `clangcl-profile` (RelWithDebInfo with benchmarks), `clangcl-release`.
+Use the build orchestration script when you want one entry point for formatting, configuration, build, and tests. Available configurations: `msvc-debug`, `msvc-release`, `clangcl-debug` (Debug with ASAN/UBSan), `clangcl-profile` (RelWithDebInfo with benchmarks), `clangcl-release`.
 
 ```pwsh
 # single configuration
@@ -102,17 +102,17 @@ pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 -Configur
 
 # full sanitizer/profile/release sweep
 pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
-  -Configurations "clangcl-debug,clangcl-tsan,clangcl-profile,clangcl-release"
+  -Configurations "clangcl-debug,clangcl-profile,clangcl-release"
 ```
 
-Note: sanitizers are Debug-only. `clangcl-debug` enables AddressSanitizer and UBSan by default; `clangcl-tsan` requests ThreadSanitizer, but clang-cl does not support TSan on Windows, so that preset builds a plain Debug binary without sanitizers — use the `linux-debug-tsan-*` presets for real TSan runs.
+Note: sanitizers are Debug-only. `clangcl-debug` enables AddressSanitizer and UBSan by default. There is no Windows TSan preset (clang-cl does not support `-fsanitize=thread` on this target) — use the `linux-debug-tsan-clang` or `linux-debug-tsan-GNU` presets for real TSan runs.
 
 ### Windows container build (Stevedore)
 
 The same builds run fully containerized in the ContainerHub developer image `ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64` — this is what CI does. Install [Stevedore](https://github.com/slonopotamus/stevedore) (`winget install stevedore`, then reboot) and run:
 
 ```pwsh
-# defaults to clangcl-debug,clangcl-tsan,clangcl-profile,clangcl-release
+# defaults to clangcl-debug,clangcl-profile,clangcl-release
 pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1
 ```
 

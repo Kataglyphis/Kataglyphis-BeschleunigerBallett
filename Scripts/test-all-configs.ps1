@@ -1,3 +1,4 @@
+#requires -Version 7.0
 # Test all four clang-cl configurations in one session, plus (when available)
 # the Linux TSan build.
 #
@@ -12,7 +13,6 @@
 
 [CmdletBinding()]
 param(
-#requires -Version 7.0
 
     # Comma-separated list of Windows configurations to build.
     [string]$WindowsConfigurations = 'clangcl-debug,clangcl-profile,clangcl-release',

@@ -55,12 +55,14 @@ pick a preset. `cmake --list-presets` shows what is available per platform.
 | `clangcl-release` | `x64-ClangCL-Windows-Release` | `build-clangcl-release` | Release + CPack packaging |
 | `msvc-debug` / `msvc-release` | `x64-MSVC-Windows-*` | `build-msvc-debug` | MSVC (cl) builds, optional steps |
 
-There is also a configure-only `x64-ClangCL-Windows-Debug-ASan` preset
-(AddressSanitizer without the fuzzing-mode extras). Test presets exist per
-main configuration (`test-<configure-preset>`); the plain-Clang
-`x64-Clang-Windows-{Debug,Profile,RelWithDebInfo}` presets were removed in
-2026-07 as unused duplicates of the ClangCL set. `x64-Clang-Windows-Release`
-stays: the `windows-clang-release-wix` package preset builds on it.
+There is also an `x64-ClangCL-Windows-Debug-ASan` preset
+(AddressSanitizer without the fuzzing-mode extras; not wired into
+`Build-Windows.config.psd1`). It has build and test presets. Test presets
+exist for the Debug and Profile configurations (`test-<configure-preset>`);
+the plain-Clang `x64-Clang-Windows-{Debug,Profile,RelWithDebInfo}` presets
+were removed in 2026-07 as unused duplicates of the ClangCL set.
+`x64-Clang-Windows-Release` stays: the `windows-clang-release-wix` package
+preset builds on it.
 
 Typical full sweep (ASAN debug, profile, release):
 
@@ -240,13 +242,15 @@ there (preferred — reusable scripts live upstream and are shared across
 projects), otherwise from the vendored fallback **`Scripts/Windows/modules/`**.
 
 The vendored directory holds only what ContainerHub's module refactor (commit
-`b391a1d`) deleted upstream: `WindowsLogging`, `WindowsCMake`, `WindowsConfig`,
+`b391a1d`) deleted upstream: `WindowsCMake`, `WindowsConfig`,
 `WindowsClang`, `WindowsFormatting`, `WindowsTesting`, `WindowsWebDav`,
 `WindowsMsix.Common`, `WindowsMsix.Signing` — plus `WindowsScripts.Shared`,
 which the vendored modules import internally by sibling path (direct imports of
-it still prefer the ContainerHub copy). If a module reappears upstream it wins
-automatically; if you improve a fallback module, consider upstreaming it to
-ContainerHub and deleting the vendored copy in the same change.
+it still prefer the ContainerHub copy). `WindowsLogging.Common` was deleted:
+its functions were folded into ContainerHub's `WindowsBuild.Common.psm1`.
+If a module reappears upstream it wins automatically; if you improve a fallback
+module, consider upstreaming it to ContainerHub and deleting the vendored copy
+in the same change.
 
 ## Running on the Host (Windows)
 
@@ -272,14 +276,19 @@ render (~32 FPS ImGui overlay).
 
 `Scripts/Linux/cmake-configure-build.sh` wraps configure+build
 (`--preset linux-debug-clang`, `--build-dir build`, …). TSan presets:
-`linux-debug-tsan-clang`, `linux-debug-tsan-GNU`. Coverage, ctest, and perf wrappers
+`linux-debug-tsan-clang`, `linux-debug-tsan-GNU`. There is also an
+`linux-debug-asan-clang` preset (AddressSanitizer + UBSan, used in CI and
+fuzz-test integration). Coverage, ctest, and perf wrappers
 live next to it. Vulkan SDK env can be injected with `--vulkan-setup-script`.
+Run helpers (`run-debug.sh`, `run-profile.sh`, `run-release.sh`) and
+`compile-shaders.sh` parallel the Windows equivalents.
 
 ## Testing
 
 - C++ tests: `ctest --test-dir <build-dir> --output-on-failure` (add `-C Debug` for
   multi-config generators). `Build-Windows.ps1` runs them unless `-SkipTests`.
-  Test presets exist per main configuration (`test-<configure-preset>`).
+  Test presets exist for the Debug and Profile configurations
+  (`test-<configure-preset>`).
 - Benchmarks: `clangcl-profile` builds `perfTestSuite.exe`; run via
   `Build-Windows.ps1` without `-SkipPerfTests`.
 - PowerShell module tests: Pester suites under `Scripts/Windows/tests/`.
@@ -297,8 +306,9 @@ commands, the host gotchas (LLVM is not on `PATH`; the container-generated
 `compile_commands.json` points at `C:/ws`; C++23 module TUs are skipped by
 clang-tidy), and the suggested cadence live in
 [`docs/code-quality.md`](docs/code-quality.md). Note that
-`Build-Windows-Container.ps1` hard-codes `-SkipFormat -SkipTidy`, so
-containerized builds never run them.
+`Build-Windows-Container.ps1` hard-codes `-SkipTidy`, so
+containerized builds never run clang-tidy (clang-format is still
+attempted unless `-SkipFormat` is also passed).
 
 **Run more than the debug loop periodically.** `clangcl-debug` is the fast
 default, but `clangcl-profile` (optimized, and the only configuration where
@@ -392,13 +402,18 @@ ContainerHub (see the rule above), project-specific ones here.
 | `docs/cpp-renderer-improvements.md` | C++ engine change log + verification pattern |
 | `docs/model-loading.md` | Model-loading architecture: the two loaders, async parse/upload split, multi-mesh MeshRange flow |
 | `docs/webgpu-renderer-roadmap.md` | Rust WebGPU renderer status per feature |
+| `docs/webgpu-gltf-rust-plan.md` | Original WebGPU + glTF Rust renderer plan (milestones 1–5) |
 | `docs/shader-sharing.md` | WGSL -> SPIR-V/GLSL pipeline between both renderers |
-| `docs/webgpu-srgb-audit.md` | Colour-space decisions and the one known deviation |
+| `docs/webgpu-srgb-audit.md` | Colour-space decisions (no known deviations) |
 | `docs/code-quality.md` | clang-format / clang-tidy / cmake-format commands + cadence |
 | `docs/shader-build-pipeline.md` | GLSL→SPIR-V build step, staleness rules, fast shader iteration |
 | `docs/container-build-caching.md` | Container transport, sccache volume, incremental-build options |
+| `docs/gpu-golden-testing.md` | GPU golden test suites, skip-without-GPU behavior, host verification loop |
+| `docs/path-tracing.md` | Path-tracing mode: pipeline shape, estimator, NEE, accumulation |
+| `docs/renderer-bounds-invariant.md` | WebGPU renderer bounds invariant |
+| `docs/LICENSES-README.md` | Third-party license documentation |
 | `Scripts/AgenticLoop/README.md` | Agentic loop (OpenCode planner/executor) architecture, config, usage |
-| `docs/source/` | Sphinx pages (`getting_started.md`, `documentation_workflow.md`) |
+| `docs/source/` | Sphinx pages (`getting_started.md`, `documentation_workflow.md`, `webgpu_demo.md`, `wsl2_vulkan.rst`) |
 
 - Keep docs, scripts, and presets aligned: when you change build behavior, update
   `README.md`, `docs/source/getting_started.md`, and this file in the same change.

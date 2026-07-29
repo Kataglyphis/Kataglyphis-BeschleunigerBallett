@@ -1,7 +1,7 @@
 Describe 'WindowsWebDav.Common' {
   BeforeAll {
     . (Join-Path $PSScriptRoot '..\Resolve-BuildModule.ps1')
-    Import-BuildModule @('WindowsScripts.Shared', 'WindowsLogging.Common', 'WindowsBuild.Common', 'WindowsWebDav.Common')
+    Import-BuildModule @('WindowsScripts.Shared', 'WindowsBuild.Common', 'WindowsWebDav.Common')
     $script:workspace = New-Item -ItemType Directory -Path (Join-Path $env:TEMP ('webdav-test-' + (Get-Random))) -Force
   }
 

@@ -1,3 +1,4 @@
+#requires -Version 7.0
 # Runs both renderers headlessly and prints their per-pass GPU timings side by
 # side - the first piece of the cross-renderer comparison harness.
 #
@@ -24,7 +25,6 @@
 
 [CmdletBinding()]
 param(
-#requires -Version 7.0
 
     [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$OutDir = (Join-Path ([IO.Path]::GetTempPath()) 'kataglyphis-timings'),

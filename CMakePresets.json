@@ -163,7 +163,7 @@
 		},
 		{
 			"name": "linux-debug-asan-clang",
-			"displayName": "Linux Debug Clang (ThreadSanitizer)",
+			"displayName": "Linux Debug Clang (AddressSanitizer)",
 			"description": "Linux Clang debug with AddressSanitizer + UBSan",
 			"generator": "Ninja",
 			"binaryDir": "${sourceDir}/build-asan-clang/",

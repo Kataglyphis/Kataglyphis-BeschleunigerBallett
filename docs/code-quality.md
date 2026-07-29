@@ -99,8 +99,9 @@ consistent by construction (see below).
 ```
 
 **Caveat worth knowing:** `Scripts/Windows/Build-Windows-Container.ps1`
-hard-codes `-SkipFormat -SkipTidy` when it invokes `Build-Windows.ps1`, so
-containerized builds never format or lint. That is why drift accumulates
+hard-codes `-SkipTidy` when it invokes `Build-Windows.ps1`, so
+containerized builds never run clang-tidy. clang-format is still attempted
+unless `-SkipFormat` is also passed. That is why tidy drift accumulates
 even when every build is green.
 
 ## Suggested cadence

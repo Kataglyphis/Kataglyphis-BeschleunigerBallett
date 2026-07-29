@@ -1,3 +1,4 @@
+#requires -Version 7.0
 # Compare-RendererPixels.ps1
 #
 # Side-by-side pixel comparison between the C++ Vulkan engine and the Rust
@@ -23,7 +24,6 @@
 
 [CmdletBinding()]
 param(
-#requires -Version 7.0
 
     [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$OutDir = (Join-Path ([IO.Path]::GetTempPath()) 'kataglyphis-pixels'),

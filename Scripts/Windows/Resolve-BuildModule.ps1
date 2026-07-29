@@ -1,10 +1,9 @@
+#requires -Version 7.0
 <#
 .SYNOPSIS
 Resolves the source path of a Windows build PowerShell module.
 
 .DESCRIPTION
-#requires -Version 7.0
-
 Reusable modules live upstream in the ContainerHub submodule
 (ExternalLib/Kataglyphis-ContainerHub/windows/scripts/modules) and are preferred
 whenever present, so improvements land upstream and are shared across projects.
@@ -25,20 +24,16 @@ function Resolve-BuildModulePath {
     }
 
     $repoRoot = (Resolve-Path (Join-Path $scriptsWindowsRoot '..\..')).Path
+    # ContainerHub copy is always preferred (all modules now require PS 7.0).
+    # Vendored fallback in Scripts/Windows/modules is used only when the
+    # upstream copy does not exist.
     $candidates = @(
-        @{ Path = Join-Path $repoRoot "ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules\$Name.psm1"; PS7 = $true },
-        @{ Path = Join-Path $scriptsWindowsRoot "modules\$Name.psm1"; PS7 = $false }
+        (Join-Path $repoRoot "ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules\$Name.psm1"),
+        (Join-Path $scriptsWindowsRoot "modules\$Name.psm1")
     )
 
-    # Under PowerShell 5.1 prefer vendored fallbacks (ContainerHub modules
-    # require PS 7.0; importing them would fail). Under PS 7+ prefer the
-    # upstream ContainerHub copy.
-    $isPs5 = ($PSVersionTable.PSVersion.Major -eq 5)
-    $preferred = if ($isPs5) { $false } else { $true }
-    $ordered = @($candidates | Where-Object { $_.PS7 -eq $preferred }) +
-               @($candidates | Where-Object { $_.PS7 -ne $preferred })
-    foreach ($candidate in $ordered) {
-        if (Test-Path $candidate.Path) { return (Resolve-Path $candidate.Path).Path }
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) { return (Resolve-Path $candidate).Path }
     }
 
     throw ("Build module '$Name' found neither in the ContainerHub submodule nor in the vendored " +
@@ -55,9 +50,11 @@ function Import-BuildModule {
         Import-Module (Resolve-BuildModulePath -Name $moduleName) -Force -Global
     }
 
-    # Windows PowerShell 5.1: a module's own nested 'Import-Module ... -Force'
-    # of WindowsScripts.Shared pulls its exports out of the global session
-    # state. Re-expose it after the batch so script-level callers keep access.
+    # Re-expose WindowsScripts.Shared after the batch: ContainerHub's
+    # WindowsBuild.Common internally imports it with -Force, which can
+    # shadow the global session's copy. Re-importing it last ensures
+    # its exports (Resolve-WorkspacePath, Resolve-NormalizedPath, etc.)
+    # are visible to the calling script.
     if ($Name -notcontains 'WindowsScripts.Shared') { return }
     Import-Module (Resolve-BuildModulePath -Name 'WindowsScripts.Shared') -Force -Global
 }

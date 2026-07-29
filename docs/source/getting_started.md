@@ -52,7 +52,7 @@ Useful adjacent scripts:
 
 ## Windows Workflow
 
-For Windows, use the orchestration script if you want configuration, build, formatting, and tests from one entry point. The available configurations are `msvc-debug`, `msvc-release`, `clangcl-debug` (Debug with ASAN/UBSan), `clangcl-tsan`, `clangcl-profile` (RelWithDebInfo with benchmarks), and `clangcl-release`:
+For Windows, use the orchestration script if you want configuration, build, formatting, and tests from one entry point. The available configurations are `msvc-debug`, `msvc-release`, `clangcl-debug` (Debug with ASAN/UBSan), `clangcl-profile` (RelWithDebInfo with benchmarks), and `clangcl-release`:
 
 ```pwsh
 # single configuration
@@ -60,10 +60,10 @@ pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 -Configur
 
 # full sanitizer/profile/release sweep
 pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
-  -Configurations "clangcl-debug,clangcl-tsan,clangcl-profile,clangcl-release"
+  -Configurations "clangcl-debug,clangcl-profile,clangcl-release"
 ```
 
-Sanitizers apply to Debug builds only. `clangcl-debug` enables AddressSanitizer and UBSan by default. `clangcl-tsan` requests ThreadSanitizer, but clang-cl does not support TSan on Windows targets, so it builds a plain Debug binary without sanitizers; use `linux-debug-tsan-clang` or `linux-debug-tsan-GNU` for real TSan runs.
+Sanitizers apply to Debug builds only. `clangcl-debug` enables AddressSanitizer and UBSan by default. There is no Windows TSan preset (clang-cl does not support `-fsanitize=thread` on this target); use `linux-debug-tsan-clang` or `linux-debug-tsan-GNU` for real TSan runs.
 
 After building, these run helpers are available:
 
@@ -79,7 +79,7 @@ If build dependencies are missing on the host, prefer the containerized workflow
 The Windows builds also run fully containerized in the ContainerHub developer image `ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64`, exactly like CI (`.github/workflows/Windows.yml`). Install [Stevedore](https://github.com/slonopotamus/stevedore) with `winget install stevedore` and reboot, then:
 
 ```pwsh
-# defaults to clangcl-debug,clangcl-tsan,clangcl-profile,clangcl-release
+# defaults to clangcl-debug,clangcl-profile,clangcl-release
 pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1
 ```
 

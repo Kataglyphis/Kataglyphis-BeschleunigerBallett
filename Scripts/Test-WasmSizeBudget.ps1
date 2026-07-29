@@ -1,3 +1,4 @@
+#requires -Version 7.0
 # Test-WasmSizeBudget.ps1
 #
 # Builds kataglyphis_webgpu_renderer for wasm32-unknown-unknown, optimises with
@@ -20,7 +21,6 @@
 
 [CmdletBinding()]
 param(
-#requires -Version 7.0
 
     # Wasm size budget in bytes (default 4.0 MiB).
     [int]$BudgetBytes = 4194304,

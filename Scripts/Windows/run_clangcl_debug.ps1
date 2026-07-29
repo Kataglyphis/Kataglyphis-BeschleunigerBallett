@@ -1,3 +1,4 @@
+#requires -Version 7.0
 <#
 .SYNOPSIS
 Runs the local clang-cl debug test flow, optional fuzz tests, and then launches the app.
@@ -15,7 +16,6 @@ param (
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
-#requires -Version 7.0
 
 
 $ProjectRoot = (Resolve-Path "$PSScriptRoot\..\..").Path

@@ -64,7 +64,6 @@ def _find_doxygen_xml_dir() -> Path | None:
         REPO_ROOT / "build-clangcl-debug" / "xml",
         REPO_ROOT / "build-clangcl-release" / "xml",
         REPO_ROOT / "build-clangcl-profile" / "xml",
-        REPO_ROOT / "build-clangcl-tsan" / "xml",
     ]
     for candidate in candidates:
         if (candidate / "index.xml").exists():

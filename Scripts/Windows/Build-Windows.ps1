@@ -1,4 +1,4 @@
-#requires -Version 5.1
+#requires -Version 7.0
 param(
 
   [string[]]$Configurations = @('all'),
@@ -37,11 +37,10 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 # in Scripts/Windows/modules. See Resolve-BuildModule.ps1.
 . (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
 
-# Import order matters: WindowsBuild.Common is imported after the vendored
-# logging module so its (upstream, self-contained) logging wins when present.
+# WindowsBuild.Common contains the logging primitives (formerly a separate
+# WindowsLogging.Common module — now folded in upstream).
 Import-BuildModule @(
   'WindowsScripts.Shared',
-  'WindowsLogging.Common',
   'WindowsBuild.Common',
   'WindowsToolchain.Common',
   'WindowsUv.Common',

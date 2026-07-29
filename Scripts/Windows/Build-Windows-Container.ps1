@@ -1,3 +1,4 @@
+#requires -Version 7.0
 # Build the project inside the ContainerHub Windows developer image using
 # Stevedore's docker.exe (see ExternalLib/Kataglyphis-ContainerHub/docs/windows-builds.md
 # for why nerdctl is not an option on Windows).
@@ -28,7 +29,6 @@
 # the image (verified) and is created by the mount.
 
 param(
-#requires -Version 7.0
 
   # Comma-separated Build-Windows.ps1 configurations to build.
   [string]$Configurations = 'clangcl-debug,clangcl-profile,clangcl-release',
@@ -67,7 +67,7 @@ $mountTarget = 'C:\ws'
 # the vendored fallback (Scripts/Windows/modules). Fail fast if a module that
 # only exists vendored (deleted upstream in ContainerHub b391a1d) is missing.
 . (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
-$null = Resolve-BuildModulePath -Name 'WindowsLogging.Common'
+$null = Resolve-BuildModulePath -Name 'WindowsBuild.Common'
 
 # Reusable build-container helpers live upstream in ContainerHub - they apply to
 # any project built in that image, not just this engine. Must load before first

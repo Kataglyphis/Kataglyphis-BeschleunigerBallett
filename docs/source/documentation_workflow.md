@@ -40,7 +40,6 @@ The Sphinx configuration auto-enables the API reference when it finds a Doxygen 
 - `build-clangcl-debug/xml`
 - `build-clangcl-release/xml`
 - `build-clangcl-profile/xml`
-- `build-clangcl-tsan/xml`
 
 If none of these locations exists, the API section stays hidden and the rest of the docs still builds.
 
