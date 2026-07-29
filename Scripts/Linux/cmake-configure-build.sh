@@ -7,18 +7,6 @@ source "${SCRIPT_DIR}/lib/common.sh"
 
 git config --global --add safe.directory /workspace || true
 
-# The :latest-cross image runs as uid 1001 with CARGO_HOME=/usr/local/cargo
-# owned by root, so the Corrosion/cargo half of the configure dies with
-# "failed to create directory /usr/local/cargo/registry" - which took the
-# whole Linux lane down when combined with the tee exit-code masking in
-# Linux.yml (fixed there with shell: bash / pipefail). Redirect cargo to a
-# writable home rather than requiring the image to hand us its own.
-if [[ ! -w "${CARGO_HOME:-/usr/local/cargo}" ]]; then
-  export CARGO_HOME="${TMPDIR:-/tmp}/cargo-home"
-  mkdir -p "${CARGO_HOME}"
-  echo "CARGO_HOME not writable in this image; using ${CARGO_HOME}"
-fi
-
 # The :latest-cross image sets CCACHE_SECONDARY_STORAGE=true, but that variable
 # is ccache's remote_storage and must be a URL - ccache parses "true" as one and
 # dies with "URL scheme must not be empty: true" on EVERY compile. sccache
@@ -74,6 +62,10 @@ while [[ $# -gt 0 ]]; do
         shift
       fi
       ;;
+    --cargo-cache-dir)
+      CARGO_CACHE_DIR="${2:-}"
+      shift 2
+      ;;
     --parallel)
       PARALLEL_JOBS="${2:-}"
       shift 2
@@ -126,6 +118,35 @@ if [[ -z "${VULKAN_SETUP_SCRIPT_ARG:-}" && -z "${VULKAN_SETUP_SCRIPT:-}" && -f "
 fi
 
 source_vulkan_env
+
+# The :latest-cross image runs as uid 1001 with CARGO_HOME=/usr/local/cargo
+# owned by root, so the Corrosion/cargo half of the configure dies with
+# "failed to create directory /usr/local/cargo/registry" - which took the
+# whole Linux lane down when combined with the tee exit-code masking in
+# Linux.yml (fixed there with shell: bash / pipefail). Redirect cargo to a
+# writable home rather than requiring the image to hand us its own.
+#
+# Checked in order:
+#   1. --cargo-cache-dir  (CLI arg, survives container restarts when backed
+#      by a docker named volume or host bind mount)
+#   2. $CARGO_CACHE_DIR   (environment variable override)
+#   3. $CARGO_HOME        (image default; /usr/local/cargo, usually read-only)
+#   4. $TMPDIR/cargo-home (fallback, lost when container exits)
+if [[ ! -w "${CARGO_HOME:-/usr/local/cargo}" ]]; then
+  if [[ -n "${CARGO_CACHE_DIR:-}" ]]; then
+    export CARGO_HOME="${CARGO_CACHE_DIR}"
+    # Also redirect the cargo target directory to the same volume (under
+    # a subdirectory) so compiled artifacts bypass the 9p host mount which
+    # has known permission issues with cargo's temp-file rename operations.
+    export CARGO_TARGET_DIR="${CARGO_CACHE_DIR}/target"
+    mkdir -p "${CARGO_TARGET_DIR}"
+  else
+    export CARGO_HOME="${TMPDIR:-/tmp}/cargo-home"
+    export CARGO_TARGET_DIR="${CARGO_HOME}/target"
+  fi
+  mkdir -p "${CARGO_HOME}"
+  echo "CARGO_HOME not writable in this image; using ${CARGO_HOME}"
+fi
 
 PRESET="${PRESET_ARG:-${PRESET:-${1:-${DEFAULT_PRESET}}}}"
 BUILD_DIR="${BUILD_DIR_ARG:-${BUILD_DIR:-${DEFAULT_BUILD_DIR}}}"

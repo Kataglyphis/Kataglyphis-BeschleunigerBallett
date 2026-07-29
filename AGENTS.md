@@ -283,6 +283,42 @@ live next to it. Vulkan SDK env can be injected with `--vulkan-setup-script`.
 Run helpers (`run-debug.sh`, `run-profile.sh`, `run-release.sh`) and
 `compile-shaders.sh` parallel the Windows equivalents.
 
+### Cargo cache volume (persist Rust dependencies)
+
+The `:latest-cross` image runs as uid 1001 with `/usr/local/cargo` owned by
+root, so cargo redirects to `/tmp/cargo-home` by default — every fresh
+container rebuilds all Rust dependencies from scratch. Use
+`--cargo-cache-dir` to point at a named docker volume or host bind mount:
+
+```bash
+# Create a named volume once
+nerdctl volume create cargo-cache
+
+# Mount it when running the build (as root, to sidestep volume ownership)
+rdctl shell nerdctl run --rm --user root \
+  -v cargo-cache:/cargo-cache \
+  -v /mnt/d/...:/workspace \
+  ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest-cross \
+  bash -c "cd /workspace && bash Scripts/Linux/cmake-configure-build.sh \
+    --preset linux-debug-clang --build-dir build \
+    --cargo-cache-dir /cargo-cache"
+```
+
+The script also redirects `CARGO_TARGET_DIR` to a `target/` subdirectory on
+the same volume, keeping compiled artifacts off the 9p host mount (which has
+known permission issues with cargo's temp-file rename operations).
+
+After the first long build, subsequent builds reuse the cached registry and
+compiled dependencies. On a second run the build completes much faster.
+
+Alternatively, to avoid `--user root`, chown the volume to uid 1001 once:
+```bash
+rdctl shell nerdctl run --rm --user root \
+  -v cargo-cache:/cargo-cache alpine:3.20 \
+  chown -R 1001:1001 /cargo-cache
+```
+Then omit `--user root` from subsequent build commands.
+
 ## Testing
 
 - C++ tests: `ctest --test-dir <build-dir> --output-on-failure` (add `-C Debug` for
