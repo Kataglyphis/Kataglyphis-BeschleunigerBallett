@@ -12,7 +12,7 @@
       "executorModel": "claude-sonnet-5",
       "plannerPromptFile": "Scripts/AgenticLoop/prompts/planner.md",
       "executorPromptFile": "Scripts/AgenticLoop/prompts/executor.md",
-      "plannerAllowedTools": "Read Glob Grep Edit(BACKLOG.md)",
+      "plannerAllowedTools": "Read Glob Grep Edit(BACKLOG.md) Bash(git:*) PowerShell(git:*)",
       "permissionMode": "bypassPermissions",
       "streamOutput": true,
       "extraArgs": ""
@@ -111,6 +111,12 @@
     "linuxTestCommand": "ctest --test-dir build --output-on-failure -C Debug",
     "windowsQualityCommand": "pwsh -ExecutionPolicy Bypass -File Scripts/Windows/Build-Windows.ps1 -Configurations clangcl-debug -SkipBuild -SkipTests -SkipPerfTests -SkipMsix",
     "linuxQualityCommand": "Scripts/Linux/run_static_analysis_format.sh"
+  },
+
+  "backlog": {
+    "_comment": "skipPlannerWhenTasksPending: go straight to the executor while BACKLOG.md still has unchecked tasks. deleteCompletedTasks: prune completed (- [x]) entries from BACKLOG.md after each task — history lives in git.",
+    "skipPlannerWhenTasksPending": true,
+    "deleteCompletedTasks": true
   },
 
   "git": {

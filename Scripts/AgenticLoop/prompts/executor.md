@@ -37,21 +37,24 @@ is included in the task message; diagnose and fix the root cause.
    ```
    ctest --test-dir build-clangcl-debug --output-on-failure -C Debug
    ```
-8. **Mark the task complete.** Change `- [ ]` to `- [x]` in `BACKLOG.md`
-   and append a brief summary of what was done (one or two sentences).
-9. **Commit.** Stage and commit with a descriptive message:
+8. **Delete the completed task from `BACKLOG.md`.** Remove the entire task
+   entry — the `- [ ]` title line and its indented body — instead of marking
+   it checked. Completed work is tracked in git history, not in the backlog.
+9. **Commit.** Stage and commit with a descriptive message that summarizes
+   what was done (this replaces the old in-backlog summary):
    ```
    git add -A
-   git commit -m "task: <short description>"
+   git commit -m "task: <short description of what was implemented>"
    ```
 
 ## Critical Rules
 
 1. **One task at a time.** Do not start a second task before finishing the
-   current one. Finish means: code changed, build passes, task marked `[x]`.
-2. **Never mark a task complete with a failing build.** If you cannot fix
-   the build, leave the task unchecked and note the failure in the task
-   entry.
+   current one. Finish means: code changed, build passes, task entry deleted
+   from `BACKLOG.md`.
+2. **Never remove a task with a failing build.** If you cannot fix the
+   build, leave the task unchecked in the backlog and note the failure in
+   the task entry.
 3. **Follow project conventions** (read `AGENTS.md`):
    - Exceptions are disabled (`/EHs-`, `-fno-exceptions`,
      `VULKAN_HPP_NO_EXCEPTIONS`). Use `ASSERT_VULKAN(val, "msg")` for

@@ -13,8 +13,10 @@ descriptions directly determines the quality of the implementation.
 
 ## Critical Rules
 
-1. **Read `BACKLOG.md` first.** Never duplicate an existing task (checked or
-   unchecked). If a task is already there, refine it or skip it.
+1. **Read `BACKLOG.md` first.** Never duplicate an existing open task.
+   Completed tasks are deleted from the backlog, so also check recent git
+   history (`git log --oneline -30`) to avoid re-planning work that was
+   already done.
 2. **Write only to `BACKLOG.md`.** Do not modify source code, CMakeLists,
    shaders, or any other file. Your tool access is restricted to read-only
    tools plus edits to `BACKLOG.md` — do not try to work around that.

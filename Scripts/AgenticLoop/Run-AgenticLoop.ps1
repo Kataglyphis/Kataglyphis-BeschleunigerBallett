@@ -49,7 +49,7 @@ if (-not $buildConfigs) { Write-AgenticLog 'No build configs (need buildMatrix o
 
 $plannerPrompt = 'Analyze the current state of the codebase. Review BACKLOG.md for existing open tasks. Identify new work opportunities: bugs, improvements, missing tests, technical debt, performance issues. Write detailed, actionable task entries to BACKLOG.md following the existing format. Do NOT duplicate existing tasks. Add at most 5 new tasks. Each task must include: size (S/M/L/XL), title, files to read, numbered implementation steps, test guidance, and build preset.'
 $refactorPlannerPrompt = 'Analyze the codebase for refactoring opportunities. Focus on dead code, API consolidation, test coverage gaps, documentation drift, performance issues, and C++23 modernization. Read BACKLOG.md first to avoid duplicates. Add at most 3 refactor tasks marked with (refactor) in the title. Each task must include file paths, numbered steps, test guidance, and build instructions.'
-$executorPrompt = 'Read BACKLOG.md and find the first unchecked task (- [ ]). Implement it fully: make the code changes, add or update tests, and build with the appropriate preset. Once the task is complete and the build passes, mark it as checked (- [x]) in BACKLOG.md with a brief summary. Then commit the changes.'
+$executorPrompt = 'Read BACKLOG.md and find the first unchecked task (- [ ]). Implement it fully: make the code changes, add or update tests, and build with the appropriate preset. Once the task is complete and the build passes, DELETE the completed task entry (the "- [ ]" title line and its indented body) from BACKLOG.md — do not just mark it checked. Then commit the changes with a message that summarizes what was done.'
 
 try {
     Invoke-AgenticLoop -Config $config -Engine $Engine `

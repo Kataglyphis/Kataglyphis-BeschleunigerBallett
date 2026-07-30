@@ -42,8 +42,12 @@ flowchart TD
 ### Key Design Principles
 
 1. **Queue discipline**: The executor must drain ALL unchecked tasks in
-   `BACKLOG.md` before the planner adds new ones. This prevents task
-   accumulation and ensures each task gets full attention.
+   `BACKLOG.md` before the planner adds new ones. While tasks are pending,
+   the planner phase is skipped entirely
+   (`backlog.skipPlannerWhenTasksPending`) — iterations go straight to the
+   executor. Completed tasks are deleted from the backlog
+   (`backlog.deleteCompletedTasks`); their summaries live in the git
+   commit messages, so `BACKLOG.md` only ever contains open work.
 
 2. **Model tiering**: The planner uses an expensive, powerful model (Fable 5
    or GLM 5.2) for high-quality analysis and task descriptions. The executor
@@ -87,7 +91,7 @@ flowchart TD
    (`plannerTimeoutSeconds` / `executorTimeoutSeconds`).
 
 10. **Planner sandbox (claude engine)**: The planner runs with
-    `--allowed-tools "Read Glob Grep Edit(BACKLOG.md)"`,
+    `--allowed-tools "Read Glob Grep Edit(BACKLOG.md) Bash(git:*) PowerShell(git:*)"`,
     so it can analyze everything but only write the backlog. The executor
     runs with `bypassPermissions` (trusted repo). Role system prompts come
     from `prompts/planner.md` / `prompts/executor.md` via
@@ -170,7 +174,7 @@ Edit `Scripts/AgenticLoop/AgenticLoop.config.json`:
       "executorModel": "claude-sonnet-5",
       "plannerPromptFile": "Scripts/AgenticLoop/prompts/planner.md",
       "executorPromptFile": "Scripts/AgenticLoop/prompts/executor.md",
-      "plannerAllowedTools": "Read Glob Grep Edit(BACKLOG.md)",
+      "plannerAllowedTools": "Read Glob Grep Edit(BACKLOG.md) Bash(git:*) PowerShell(git:*)",
       "permissionMode": "bypassPermissions"
     },
     "opencode": {
@@ -316,7 +320,7 @@ The orchestration script invokes (depending on the engine):
 ```
 claude -p --model claude-fable-5 --fallback-model claude-opus-4-8 \
   --append-system-prompt-file Scripts/AgenticLoop/prompts/planner.md \
-  --allowed-tools Read Glob Grep "Edit(BACKLOG.md)"
+  --allowed-tools Read Glob Grep "Edit(BACKLOG.md)" "Bash(git:*)" "PowerShell(git:*)"
 # or
 opencode run --agent planner --model opencode-go/glm-5.2
 ```
