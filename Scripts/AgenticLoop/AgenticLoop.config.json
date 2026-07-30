@@ -14,6 +14,7 @@
       "executorPromptFile": "Scripts/AgenticLoop/prompts/executor.md",
       "plannerAllowedTools": "Read Glob Grep Edit(BACKLOG.md)",
       "permissionMode": "bypassPermissions",
+      "streamOutput": true,
       "extraArgs": ""
     },
     "opencode": {
