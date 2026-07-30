@@ -87,7 +87,7 @@ flowchart TD
    (`plannerTimeoutSeconds` / `executorTimeoutSeconds`).
 
 10. **Planner sandbox (claude engine)**: The planner runs with
-    `--allowed-tools "Read Glob Grep Edit(BACKLOG.md) Write(BACKLOG.md)"`,
+    `--allowed-tools "Read Glob Grep Edit(BACKLOG.md)"`,
     so it can analyze everything but only write the backlog. The executor
     runs with `bypassPermissions` (trusted repo). Role system prompts come
     from `prompts/planner.md` / `prompts/executor.md` via
@@ -170,7 +170,7 @@ Edit `Scripts/AgenticLoop/AgenticLoop.config.json`:
       "executorModel": "claude-sonnet-5",
       "plannerPromptFile": "Scripts/AgenticLoop/prompts/planner.md",
       "executorPromptFile": "Scripts/AgenticLoop/prompts/executor.md",
-      "plannerAllowedTools": "Read Glob Grep Edit(BACKLOG.md) Write(BACKLOG.md)",
+      "plannerAllowedTools": "Read Glob Grep Edit(BACKLOG.md)",
       "permissionMode": "bypassPermissions"
     },
     "opencode": {
@@ -316,7 +316,7 @@ The orchestration script invokes (depending on the engine):
 ```
 claude -p --model claude-fable-5 --fallback-model claude-opus-4-8 \
   --append-system-prompt-file Scripts/AgenticLoop/prompts/planner.md \
-  --allowed-tools Read Glob Grep "Edit(BACKLOG.md)" "Write(BACKLOG.md)"
+  --allowed-tools Read Glob Grep "Edit(BACKLOG.md)"
 # or
 opencode run --agent planner --model opencode-go/glm-5.2
 ```

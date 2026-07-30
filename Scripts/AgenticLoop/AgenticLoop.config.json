@@ -12,7 +12,7 @@
       "executorModel": "claude-sonnet-5",
       "plannerPromptFile": "Scripts/AgenticLoop/prompts/planner.md",
       "executorPromptFile": "Scripts/AgenticLoop/prompts/executor.md",
-      "plannerAllowedTools": "Read Glob Grep Edit(BACKLOG.md) Write(BACKLOG.md)",
+      "plannerAllowedTools": "Read Glob Grep Edit(BACKLOG.md)",
       "permissionMode": "bypassPermissions",
       "extraArgs": ""
     },
