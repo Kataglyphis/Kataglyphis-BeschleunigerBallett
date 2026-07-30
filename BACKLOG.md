@@ -522,16 +522,25 @@ size and a decision, or gets dropped.
   index buffers bound at group(1), correct by construction. Shadowed-pixel
   count on cube_on_plane went 5015 -> 11792.
 
-- [x] **Shader export wired into the build** (done 2026-07-20) — opt-in
-  `-ExportWgslShaders` on both `Build-Windows.ps1` and
-  `Build-Windows-Container.ps1`, non-critical so a missing cargo toolchain
-  warns rather than failing a C++ build. Output is gitignored.
-- [ ] **Consume the generated SPIR-V in `VulkanRenderer`** (M) — the export
-  pipeline is wired and guarded but nothing reads its output yet, so a WGSL
-  change still does not reach the Vulkan engine. The blocker is real and
-  documented in `docs/shader-sharing.md`: WebGPU bind groups are not Vulkan
-  descriptor sets, so the generated modules' binding decorations have to be
-  reconciled with this engine's layout before they can be loaded.
+- [x] **Shader export wired into the build** — **RETIRED 2026-07-30**: the
+  opt-in `-ExportWgslShaders` naga export (`Build-Windows.ps1` /
+  `Build-Windows-Container.ps1`) had zero consumers — every C++ `.spv` load
+  comes from `Resources/ShadersSlang/build/spirv/` — and is superseded by the
+  Slang migration below, which shares entry points as well as math. Flag,
+  build-script plumbing and its `Resources/Shaders/generated/` gitignore
+  entry removed; see `docs/shader-sharing.md`'s historical note. Originally
+  done 2026-07-20.
+- [x] **Consume the generated SPIR-V in `VulkanRenderer`** — **superseded by
+  the Slang migration** (`6fc5553b` / `40b1cbe3`), closed 2026-07-30. The
+  C++ engine now loads Slang-emitted SPIR-V directly (e.g.
+  `DeferredRasterizer.cpp:314` reads
+  `slang_spv_dir + "deferred.geometry_vs_main.spv"`), so a shader change
+  reaches BOTH renderers from the shared `.slang` source, which is what this
+  task existed to achieve — via `Resources/ShadersSlang/*.slang` +
+  `compile-slang-shaders.ps1`, not the WGSL→SPIR-V reconciliation this entry
+  originally scoped. See the retirement/verification task in the 2026-07-30
+  batch
+  below.
 - [ ] **Side-by-side comparison harness** (M) — same scene, same camera,
   Vulkan vs WebGPU screenshot diff; with shared BRDF math this becomes a
   regression net for both renderers (needs C++ glTF + offscreen path above).
@@ -3324,6 +3333,273 @@ cheap wins on an incremental build before the three ABI-skew tasks share one
   reader pause and grep, and a grep for "scratch" silently misses it.
   Bundle with the other two ABI-skew tasks in this batch to share one
   `-FreshContainer` build.
+
+## 2026-07-30 batch — planner (validation conformance, dead plumbing, Slang follow-ups)
+
+All five verified against the tree on 2026-07-30 (post-Slang-migration state,
+`86ee9532`). The Rust deep-dive candidates were re-checked first: occlusion
+eye-inside guard, bloom/SSAO zero-strength skip, MSAA, `KHR_materials_unlit`
+and anisotropic filtering are ALL already implemented in the crate — do not
+pick them up from the older prose above.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Clamp the CSM multiview `viewMask` against the device's
+  `maxMultiviewViewCount`** — closes the observed
+  `VUID-VkSubpassDescription2-viewMask-06706` /
+  `VUID-VkRenderPassMultiviewCreateInfo-pViewMasks-06697` warnings at the
+  root instead of relying on `MAX_CASCADES` happening to be small enough.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:347-356`
+    — `view_mask = (1U << numCascades) - 1U` feeds
+    `RenderPassMultiviewCreateInfo` (`pViewMasks` AND `pCorrelationMasks`)
+    with no device-limit check.
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp` (~`:452`, the
+    features11 chain) — where device features are queried; the properties
+    query for the limit belongs alongside.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:317-326` — the
+    existing GUI-path clamp to `MAX_CASCADES` and its comment; this task adds
+    the device-limit half that comment alludes to.
+  - `BACKLOG.md` → "Recurring validation runs", first bullet — the
+    2026-07-23 observation this fixes; update it when done.
+
+  **Steps:**
+  1. In `VulkanDevice`, query `vk::PhysicalDeviceVulkan11Properties::maxMultiviewViewCount`
+     (chain it into a `vk::PhysicalDeviceProperties2` query), store it, and
+     expose an accessor (e.g. `getMaxMultiviewViewCount()`). Adding to the
+     module interface (`.ixx`) means the ABI-skew rule applies — see Build.
+  2. Add a pure free function
+     `clampCascadeCount(uint32_t requested, uint32_t maxCascades, uint32_t deviceViewLimit)`
+     in a CPU-testable spot (follow the `scene/Frustum.ixx` free-function
+     pattern; a small module next to `CascadedShadowMap` is fine). Result:
+     `max(1, min(requested, maxCascades, deviceViewLimit))`.
+  3. Route BOTH cascade-count decisions through it: the startup init and
+     `VulkanRenderer::handleShadowResolutionChange` (replace the bare
+     `std::min` at `:323-325`). Log via spdlog when the DEVICE limit (not
+     `MAX_CASCADES`) is the binding constraint — that case is silent today
+     and would previously have aborted in `createSwapchainKHR`-style fashion.
+  4. On the GPU host, run the golden suite from the repo root and confirm the
+     two VUIDs no longer appear in the log; then strike the
+     recurring-validation bullet.
+
+  **Test:** New CPU unit suite (add to the Windows CI filter alongside the
+  other CPU-only suites): requested 3 with limits {3, 8} → 3; device limit 2
+  clamps 3 → 2; slider value 8 → `MAX_CASCADES`; floor of 1 when a limit is
+  0. Use the existing `Test/commit/` harness pattern (the `Frustum` unit
+  tests are the model).
+
+  **Build:** `clangcl-debug` **with `-FreshContainer`** (the `VulkanDevice`
+  module interface changes — stale-BMI hazard). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
+
+  **Context:** The GUI-path clamp (`VulkanRenderer.cpp:317`) may already have
+  silenced the warning on the RX 9070 XT, but nothing anywhere reads the
+  actual device limit, so a device with `maxMultiviewViewCount < MAX_CASCADES`
+  would still create a non-conformant render pass and abort via
+  `ASSERT_VULKAN`. Conformance should come from the queried limit, not from a
+  compile-time constant that happens to fit today's GPU.
+
+- [ ] **(refactor, S) Delete the stale `renderer/VulkanRendererConfig.hpp`
+  (dead configure output carrying another user's hardcoded `glslc.exe`
+  path)** — dead code with a foreign absolute path baked in.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRendererConfig.hpp` — the dead
+    file: defines `GLSLC_EXE "C:/Users/jsh/scoop/apps/vulkan/current/Bin/glslc.exe"`
+    (user `jsh` is not this machine) plus version macros.
+  - `Src/GraphicsEngineVulkan/VulkanRendererConfig.ixx.in` and
+    `Src/GraphicsEngineVulkan/CMakeLists.txt:35-37` — the LIVE replacement:
+    the config module is generated from the `.ixx.in` via `configure_file`;
+    the generated module has no `GLSLC_EXE` at all.
+  - `.gitignore:80` — already ignores the OpenGL twin
+    (`Src/GraphicsEngineOpenGL/renderer/VulkanRendererConfig.hpp`), evidence
+    these headers were configure outputs that should never have been tracked.
+
+  **Steps:**
+  1. Grep the WHOLE tree (`Src/`, `Test/`, `Scripts/`, `cmake/`, docs) for
+     `VulkanRendererConfig.hpp` and `GLSLC_EXE`. Verified 2026-07-30 for
+     `Src/`: zero consumers, no `#include` anywhere; re-confirm tree-wide
+     before deleting.
+  2. `git rm Src/GraphicsEngineVulkan/renderer/VulkanRendererConfig.hpp`.
+  3. There is no `.hpp.in` in the tree, so nothing regenerates it; do NOT add
+     a gitignore entry unless step 1 finds a configure rule that writes it.
+  4. Full container build to prove nothing included it (a deleted-but-included
+     header fails compile immediately).
+
+  **Test:** No new test — the build IS the test. Beware the reusable-container
+  trap: a file deleted on the host keeps existing inside the reused container
+  (see the "Prune source tree" task), so the proof build must use
+  `-FreshContainer`.
+
+  **Build:** `clangcl-debug` with `-FreshContainer`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
+  Bundle with the CSM-clamp task above to share the fresh build.
+
+  **Context:** Runtime shader compilation no longer exists (Slang
+  pre-compiles; the engine loads `.spv` via `File` I/O — AGENTS.md), so a
+  `glslc` path define is dead by design, and this one could never have worked
+  on any current machine anyway. Dead-code elimination per the refactor
+  focus; the live version/config macros all come from the configured module.
+
+### Build / scripts
+
+- [ ] **(refactor, S) Remove the dead `USE_THREAD_SANITIZER` plumbing — the
+  Linux script's `--use-thread-sanitizer` flag silently does nothing** — same
+  false-assurance class as the removed `clangcl-tsan` preset.
+
+  **Files to read:**
+  - `Scripts/Linux/cmake-configure-build.sh:27,58-61,155` — the flag is
+    parsed, defaulted and computed into `USE_THREAD_SANITIZER`… which is then
+    never used: the configure step (`:168-177`) is `cmake --preset` only, and
+    the variable is never exported nor passed as `-D`.
+  - `CMakePresets.json` — `linux-debug-tsan-clang`, `linux-debug-asan-clang`,
+    `linux-debug-tsan-GNU` set the `USE_THREAD_SANITIZER` cache variable.
+    Verified 2026-07-30: each of those presets ALSO sets the real switch
+    `myproject_ENABLE_SANITIZER_THREAD` to the same value, so removing the
+    dead one changes no build.
+  - `AGENTS.md:92-93` — the "legacy plumbing consumed by nothing" bullet to
+    update once the plumbing is gone.
+
+  **Steps:**
+  1. `grep -rn USE_THREAD_SANITIZER` over the tree (excluding `ExternalLib/`)
+     — expected consumers: the three presets, the script, AGENTS.md. Confirm
+     no `cmake/*.cmake` reads it (AGENTS asserts none; verify).
+  2. Remove the three `USE_THREAD_SANITIZER` cacheVariables entries from
+     `CMakePresets.json`.
+  3. In `cmake-configure-build.sh`, remove `DEFAULT_USE_THREAD_SANITIZER`,
+     the `--use-thread-sanitizer` argument parsing, and the `:155`
+     computation. Have the removed flag FAIL LOUDLY: leave a case arm that
+     errors with "use --preset linux-debug-tsan-clang instead" rather than
+     letting an unknown flag fall through — a user passing it today believes
+     they are running TSan and is not.
+  4. Update AGENTS.md: drop the legacy-plumbing bullet, and note in the Linux
+     Builds section that TSan is selected by preset only.
+  5. Verify: `bash -n Scripts/Linux/cmake-configure-build.sh`; then configure
+     `linux-debug-tsan-clang` in the Linux container (Rancher, `:latest-cross`)
+     and confirm `-fsanitize=thread` still appears in `build.ninja`.
+
+  **Test:** The container configure check in step 5 is the real test. If no
+  Linux container is available in the session, minimum bar: `bash -n`, plus
+  grep showing zero remaining `USE_THREAD_SANITIZER` references, plus the
+  Pester suites under `Scripts/Windows/tests/` staying green (proves no
+  Windows module referenced it).
+
+  **Build:** No Windows C++ rebuild needed — presets/script/docs only. Run
+  the Pester suites: `Invoke-Pester Scripts/Windows/tests/`.
+
+  **Context:** The project removed the Windows `clangcl-tsan` preset
+  precisely because a green run that promises race coverage and delivers
+  none is worse than no run. The Linux script flag is the same trap one layer
+  down: `--use-thread-sanitizer` produces a plain build with no warning.
+  The real switch is `myproject_ENABLE_SANITIZER_THREAD`, set by the TSan
+  presets.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(S) Feed real frame deltas to `frame_delta_seconds` — auto-exposure
+  currently adapts at a hard-coded nominal 60 Hz in BOTH real frontends.**
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/render/forward.rs:426,1034,1745` — the public
+    field, its `1.0 / 60.0` default, and its use as the adaptation delta.
+  - `crates/webgpu_renderer/examples/viewer.rs` — native loop; already keeps
+    a `started: Instant` (`:63`) but never writes `frame_delta_seconds`.
+  - `crates/webgpu_renderer/src/wasm_demo.rs` — web loop; never writes it
+    either. The rAF rate there is the display rate (often 120/144 Hz), so
+    adaptation would run 2x+ too fast once auto-exposure is enabled.
+  - `crates/webgpu_renderer/tests/headless.rs:795` — today's ONLY writer (a
+    test), which is the tell that the wiring was never done.
+
+  **Steps:**
+  1. Add a small `FrameClock` helper in the library (next to the renderer):
+     `tick() -> f32` returning seconds since the previous tick, clamped to
+     `[0.0, 0.25]` (a suspended tab or a debugger pause must not slam the
+     exposure), first tick returning the nominal `1.0 / 60.0`. Structure it
+     as a pure `tick_at(now)` inner function over an injected timestamp so
+     tests need no sleeping.
+  2. Time source: `std::time::Instant` on native. For wasm, use whatever
+     clock dependency the crate ALREADY has (check `Cargo.toml` for
+     `web_time`/`instant`/`web_sys` with `Performance`) — do not add a new
+     dependency without checking; `Instant::now()` panics on
+     wasm32-unknown-unknown.
+  3. In `viewer.rs` and `wasm_demo.rs`, per frame before rendering:
+     `renderer.frame_delta_seconds = clock.tick();`.
+  4. `cargo check --target wasm32-unknown-unknown` for the wasm arm, and
+     `cargo check` with `-D warnings` as usual.
+
+  **Test:** Unit tests on `FrameClock` in an in-file `mod tests` (the
+  `forward.rs` bottom-of-file pattern): first tick is nominal; consecutive
+  ticks are positive and match the injected timestamps; a 5-second injected
+  gap clamps to 0.25. Existing auto-exposure tests must stay green (they set
+  the field directly and are unaffected).
+
+  **Build:** `cargo test` from
+  `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer` on the
+  host (GPU tests self-skip without an adapter). This is a SUBMODULE: commit
+  in the RPT repo and bump the gitlink here in the same change (submodule-pin
+  invariant in AGENTS.md).
+
+  **Context:** The auto-exposure entry above warned "callers driving real
+  frames should set it, or adaptation runs at the wrong rate on any other
+  refresh" — and neither real caller ever did. Auto-exposure is off by
+  default so nothing is visibly broken today, which is exactly why this will
+  bite silently the day it is switched on.
+
+### Cross-renderer / docs
+
+- [ ] **(refactor, S) Verify and retire the WGSL-export shader-sharing route
+  superseded by the Slang migration** — documentation drift plus
+  likely-dead build plumbing.
+
+  **Files to read:**
+  - `docs/shader-sharing.md` — still documents `-ExportWgslShaders` →
+    `Resources/Shaders/generated` as the sharing mechanism.
+  - `Scripts/Windows/Build-Windows.ps1:10,224-241` and
+    `Scripts/Windows/Build-Windows-Container.ps1:47,97` — the opt-in flag.
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:314-315` —
+    evidence of the new route: the engine loads Slang-emitted SPIR-V from
+    `slang_spv_dir`.
+  - The two related BACKLOG entries: "Shader export wired into the build"
+    (`[x]`, Cross-renderer) and "Consume the generated SPIR-V in
+    `VulkanRenderer`" (`[ ]` M, annotated 2026-07-30 as likely superseded).
+
+  **Steps:**
+  1. VERIFY before deleting: grep the tree for consumers of
+     `Resources/Shaders/generated` and for any C++ `.spv` load that does NOT
+     come from `ShadersSlang/build/spirv` (`grep -rn "generated" Src/ Scripts/
+     CMakeLists.txt cmake/`; `grep -rn "\.spv" Src/`). **If a real consumer
+     turns up, STOP and write what was found into this entry instead of
+     deleting anything.**
+  2. If confirmed dead: remove the `-ExportWgslShaders` switch and its export
+     step from both build scripts. Leave the Rust `export_shaders.rs` example
+     in the crate — it is harmless upstream and useful for inspecting naga
+     output; this repo just stops advertising it as the sharing route.
+  3. Rewrite `docs/shader-sharing.md` around the actual pipeline:
+     `Resources/ShadersSlang/*.slang` → `compile-slang-shaders.{ps1,sh}` →
+     SPIR-V for C++ / WGSL for Rust, including the hand-written
+     `histogram.wgsl` exception. Keep a short history note naming the retired
+     export route so the git archaeology stays findable.
+  4. Update the two BACKLOG entries: mark the export `[x]` entry retired, and
+     close "Consume the generated SPIR-V" as superseded-by-Slang.
+
+  **Test:** No behaviour change to prove — (a) the step-1 greps showing zero
+  consumers are the safety case, (b) one `clangcl-debug` container build
+  green after the script edits, (c) `Invoke-Pester Scripts/Windows/tests/`
+  green (the build scripts are under Pester coverage; remove/adjust any test
+  that asserted the flag exists).
+
+  **Build:** `clangcl-debug`, reused container is fine (script + docs only):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+
+  **Context:** The Slang migration (`6fc5553b`, `40b1cbe3`) achieved the
+  shader-sharing goal by a different route than the docs describe: one
+  `.slang` source emits both SPIR-V and WGSL, so the old plan (export the
+  Rust renderer's WGSL, reconcile bind-group decorations, load into Vulkan)
+  is now a dead branch. Docs that present a superseded mechanism as current
+  actively mislead the next contributor — the doc-ownership table in
+  AGENTS.md names `docs/shader-sharing.md` as the single home for this topic,
+  so it must tell the truth.
 
 ## Completed (kept for the reasoning, not the status)
 

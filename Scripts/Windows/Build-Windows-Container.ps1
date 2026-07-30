@@ -43,8 +43,6 @@ param(
   [int]$CpuCount = 0,
   [int]$MemoryGb = 16,
   [switch]$RunTests,
-  # Re-export the Rust renderer WGSL before building (docs/shader-sharing.md).
-  [switch]$ExportWgslShaders,
   [int]$ParallelJobs = 0,
   # Opt into the bind-mount transport. Off by default because it is MEASURED
   # SLOWER on this Dev Drive host - see Test-BindMountUsable below.
@@ -94,7 +92,6 @@ function Get-BuildCommandArgs {
     '-SkipTidy', '-SkipPerfTests', '-SkipMsix'
   )
   if (-not $RunTests) { $psArgs += '-SkipTests' }
-  if ($ExportWgslShaders) { $psArgs += '-ExportWgslShaders' }
   if ($ParallelJobs -gt 0) { $psArgs += @('-ParallelJobs', "$ParallelJobs") }
   return $psArgs
 }

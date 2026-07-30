@@ -102,11 +102,6 @@ asan.log*
 .venv-docs/
 pipeline_cache/
 
-# naga output exported from the Rust renderer WGSL (Build-Windows.ps1
-# -ExportWgslShaders). Derived artifacts, regenerable, and they would churn
-# on every export - see docs/shader-sharing.md.
-Resources/Shaders/generated/
-
 # slangc output (SPIR-V + WGSL) from compile-slang-shaders.ps1. Derived
 # artifacts, regenerable, churn on every Slang edit - see docs/shader-sharing.md.
 Resources/ShadersSlang/build/
