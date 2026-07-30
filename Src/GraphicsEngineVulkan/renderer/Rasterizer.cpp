@@ -118,6 +118,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
     uint32_t flat_mesh_index = 0;
     for (uint32_t m = 0; m < scene->getModelCount(); m++) {
         pushConstant.model = scene->getModelMatrix(m);
+        // Precompute the inverse-transpose for the Slang shaders (no inverse() in SPIR-V).
+        pushConstant.invModel = glm::inverse(glm::transpose(scene->getModelMatrix(m)));
 
         for (unsigned int k = 0; k < scene->getMeshCount(m); k++) {
             const uint32_t object_index = flat_mesh_index++;
@@ -391,18 +393,13 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
 void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
   const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
 {
-    std::stringstream rasterizer_shader_dir;
-    std::filesystem::path const cwd = std::filesystem::current_path();
-    rasterizer_shader_dir << cwd.string();
-    rasterizer_shader_dir << RELATIVE_RESOURCE_PATH;
-    rasterizer_shader_dir << "Shaders/rasterizer/";
+    // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
+    // Run from the repo root (per AGENTS.md) — a relative path works from there.
+    std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/";
 
     ShaderHelper shaderHelper;
-    shaderHelper.compileShader(rasterizer_shader_dir.str(), "shader.vert");
-    shaderHelper.compileShader(rasterizer_shader_dir.str(), "shader.frag");
-
-    File vertexFile(shaderHelper.getShaderSpvDir(rasterizer_shader_dir.str(), "shader.vert"));
-    File fragmentFile(shaderHelper.getShaderSpvDir(rasterizer_shader_dir.str(), "shader.frag"));
+    File vertexFile(slang_spv_dir + "rasterizer.vs_main.spv");
+    File fragmentFile(slang_spv_dir + "rasterizer.fs_main.spv");
     std::vector<char> const vertex_shader_code = vertexFile.readCharSequence();
     std::vector<char> const fragment_shader_code = fragmentFile.readCharSequence();
 

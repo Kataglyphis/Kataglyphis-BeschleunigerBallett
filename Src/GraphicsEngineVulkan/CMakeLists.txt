@@ -1,21 +1,16 @@
 # update current positions
 set(PROJECT_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/)
 set(PROJECT_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/)
-set(SHADER_SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../Resources/Shaders/)
 
 set(_KATAGLYPHIS_SOURCE_INCLUDE_DIRS
-    ${SHADER_SRC_DIR}
-    ${SHADER_SRC_DIR}common/
-    ${SHADER_SRC_DIR}pbr/
-    ${SHADER_SRC_DIR}pbr/brdf/
-    ${SHADER_SRC_DIR}hostDevice/
     ${CMAKE_CURRENT_SOURCE_DIR}/
+    ${CMAKE_CURRENT_SOURCE_DIR}/../shared/
+    ${CMAKE_CURRENT_SOURCE_DIR}/common/
     ${CMAKE_CURRENT_SOURCE_DIR}/renderer/
     ${CMAKE_CURRENT_SOURCE_DIR}/renderer/pushConstants/
     ${CMAKE_CURRENT_SOURCE_DIR}/scene/)
 
 include(${CMAKE_SOURCE_DIR}/cmake/KataglyphisCMakeHelpers.cmake)
-include(cmake/filters/SetShaderFilters.cmake)
 include(cmake/filters/SetProjectFilters.cmake)
 include(cmake/SetSourceGroups.cmake)
 
@@ -30,21 +25,10 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_G
                                                                                                  "-fno-lto")
 endif()
 
-file(GLOB_RECURSE SHADER_HEADERS "${SHADER_SRC_DIR}*.hpp")
-
 file(GLOB_RECURSE VULKANRENDERER_HEADERS "*.hpp")
 
 kataglyphis_collect_module_interfaces(VULKAN_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}")
 kataglyphis_collect_module_interfaces(SHARED_MODULE_INTERFACE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../shared")
-
-set(ShaderIncludes)
-foreach(_kataglyphis_include_dir IN LISTS _KATAGLYPHIS_SOURCE_INCLUDE_DIRS)
-  list(APPEND ShaderIncludes -I ${_kataglyphis_include_dir})
-endforeach()
-
-kataglyphis_join_list(ShaderIncludesString " " ${ShaderIncludes})
-
-message("The shader include string is the following: ${ShaderIncludesString}")
 
 # Generate config module file (shared between library and executable)
 set(VULKAN_RENDERER_CONFIG_MODULE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -85,29 +69,17 @@ kataglyphis_apply_runtime_compile_definitions(
   IMGUI_FONTS_PATH_NON_MSVC
   "/../ExternalLib/IMGUI/misc/fonts/"
   IMGUI_FONTS_PATH_MSVC
-  "/../../ExternalLib/IMGUI/misc/fonts/"
-  SHADER_INCLUDES_STRING
-  "${ShaderIncludesString}")
+  "/../../ExternalLib/IMGUI/misc/fonts/")
 
 target_sources(
   VulkanEngineCore
-  PRIVATE ${RASTER_SHADER_FILTER}
-          ${RAYTRACING_SHADER_FILTER}
-          ${COMMON_SHADER_FILTER}
-          ${POST_SHADER_FILTER}
-          ${BRDF_SHADER_FILTER}
-          ${PBR_SHADER_FILTER}
-          ${PATH_TRACING_SHADER_FILTER}
-          ${COMPUTE_SHADER_FILTER}
-          ${VULKANRENDERER_SOURCES}
+  PRIVATE ${VULKANRENDERER_SOURCES}
   PUBLIC FILE_SET
          HEADERS
          BASE_DIRS
          ${PROJECT_INCLUDE_DIR}
-         ${SHADER_SRC_DIR}
          FILES
-         ${VULKANRENDERER_HEADERS}
-         ${SHADER_HEADERS})
+         ${VULKANRENDERER_HEADERS})
 
 target_sources(
   VulkanEngineCore
@@ -188,16 +160,4 @@ target_sources(
 # In CMake 3.28+, linking against a library with PUBLIC CXX_MODULES should make those modules importable
 target_link_libraries(${PROJECT_NAME} PRIVATE VulkanEngineCore absl::flags_parse)
 
-# compile shaders as part of my cmake routine right away :)
-include(cmake/CompileShadersToSPV.cmake)
 
-set(ALL_VULKAN_SHADER_FILTERS
-    ${POST_SHADER_FILTER}
-    ${RAYTRACING_SHADER_FILTER}
-    ${RASTER_SHADER_FILTER}
-    ${PATH_TRACING_SHADER_FILTER}
-    ${COMPUTE_SHADER_FILTER})
-
-foreach(Shader ${ALL_VULKAN_SHADER_FILTERS})
-  add_shader(${PROJECT_NAME} ${Shader})
-endforeach()

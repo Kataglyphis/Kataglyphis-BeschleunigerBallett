@@ -21,6 +21,4 @@ inline constexpr std::uint32_t vulkanApiVersionMajor = @VULKAN_VERSION_MAJOR@u;
 inline constexpr std::uint32_t vulkanApiVersionMinor = @VULKAN_VERSION_MINOR@u;
 inline constexpr std::uint32_t vulkanApiVersionPatch = @VULKAN_VERSION_PATCH@u;
 inline constexpr std::uint32_t vulkanApiVersion = @VULKAN_API_VERSION@u;
-
-inline constexpr std::string_view glslcExe = "@Vulkan_GLSLC_EXECUTABLE@";
 }

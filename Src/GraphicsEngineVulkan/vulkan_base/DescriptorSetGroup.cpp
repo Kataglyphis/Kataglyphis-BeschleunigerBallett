@@ -13,18 +13,27 @@ module kataglyphis.vulkan.descriptor_set_group;
 
 import kataglyphis.vulkan.device;
 
-Kataglyphis::DescriptorSetGroup::DescriptorSetGroup() = default;
+// Explicitly defined (not = default) to avoid a C++23 module ABI mismatch
+// where the defaulted constructor in the implementation unit may not pick up
+// the member initializers from the interface unit, leaving vectors with
+// garbage internal state. ASAN caught this as a heap-buffer-overflow in
+// the move constructor (which reads the corrupted vector pointers).
+Kataglyphis::DescriptorSetGroup::DescriptorSetGroup()
+  : device(nullptr), bindings(), pool_size_overrides(), layout(nullptr), pool(nullptr), descriptor_sets()
+{
+}
 
 Kataglyphis::DescriptorSetGroup::DescriptorSetGroup(DescriptorSetGroup &&other) noexcept
   : device(std::move(other.device)), bindings(std::move(other.bindings)),
     pool_size_overrides(std::move(other.pool_size_overrides)), layout(other.layout), pool(other.pool),
     descriptor_sets(std::move(other.descriptor_sets))
 {
+    // std::move on vectors leaves them in a valid but unspecified state
+    // (typically empty). Do NOT call clear() on the moved-from vectors —
+    // that is redundant and, if the moved-from vector's internal state was
+    // corrupted by a module ABI mismatch, triggers a heap-buffer-overflow.
     other.layout = nullptr;
     other.pool = nullptr;
-    other.bindings.clear();
-    other.pool_size_overrides.clear();
-    other.descriptor_sets.clear();
 }
 
 auto Kataglyphis::DescriptorSetGroup::operator=(DescriptorSetGroup &&other) noexcept -> DescriptorSetGroup &

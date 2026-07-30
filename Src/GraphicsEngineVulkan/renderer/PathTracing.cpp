@@ -206,22 +206,15 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
 
     pipeline_layout = device->getLogicalDevice().createPipelineLayout(compute_pipeline_layout_create_info).value;
 
-    std::stringstream pathTracing_shader_dir;
-    std::filesystem::path const cwd = std::filesystem::current_path();
-    pathTracing_shader_dir << cwd.string();
-    pathTracing_shader_dir << RELATIVE_RESOURCE_PATH;
-    pathTracing_shader_dir << "Shaders/path_tracing/";
+    // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
+    // Run from the repo root (per AGENTS.md).
+    std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/path_tracing/";
 
-    std::string const pathTracing_shader = "path_tracing.comp";
+    std::string const pathTracing_spv = "path_tracing.path_tracing_main.spv";
 
-    // Compile BEFORE reading the spv: the old order read the bytes first, so
-    // a GLSL edit reached the GPU one process-start late (and shader
-    // hot-reload lagged one trigger) - found when a red-probe shader edit
-    // provably changed nothing in the rendered output.
     ShaderHelper shaderHelper;
-    shaderHelper.compileShader(pathTracing_shader_dir.str(), pathTracing_shader);
 
-    File pathTracingShaderFile(shaderHelper.getShaderSpvDir(pathTracing_shader_dir.str(), pathTracing_shader));
+    File pathTracingShaderFile(slang_spv_dir + pathTracing_spv);
     std::vector<char> const pathTracingShadercode = pathTracingShaderFile.readCharSequence();
 
     vk::ShaderModule pathTracingModule = shaderHelper.createShaderModule(device, pathTracingShadercode);

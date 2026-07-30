@@ -306,20 +306,13 @@ void DeferredRasterizer::createRenderPass()
 
 void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
 {
-    // Basic setup for geometry pipeline
-    std::filesystem::path cwd = std::filesystem::current_path();
-    std::stringstream shader_dir;
-    shader_dir << cwd.string() << RELATIVE_RESOURCE_PATH << "Shaders/deferred/";
+    // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
+    // Run from the repo root (per AGENTS.md).
+    std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/deferred/";
 
     ShaderHelper shaderHelper;
-    shaderHelper.compileShader(shader_dir.str(), "geometry.vert");
-    shaderHelper.compileShader(shader_dir.str(), "geometry.frag");
-    shaderHelper.compileShader(shader_dir.str(), "lighting.vert");
-    shaderHelper.compileShader(shader_dir.str(), "lighting.frag");
-
-    // Implement actual pipeline creation here...
-    File geomVertFile(shaderHelper.getShaderSpvDir(shader_dir.str(), "geometry.vert"));
-    File geomFragFile(shaderHelper.getShaderSpvDir(shader_dir.str(), "geometry.frag"));
+    File geomVertFile(slang_spv_dir + "deferred.geometry_vs_main.spv");
+    File geomFragFile(slang_spv_dir + "deferred.geometry_fs_main.spv");
     vk::ShaderModule geomVertModule = shaderHelper.createShaderModule(device, geomVertFile.readCharSequence());
     vk::ShaderModule geomFragModule = shaderHelper.createShaderModule(device, geomFragFile.readCharSequence());
 
@@ -356,9 +349,9 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
     device->getLogicalDevice().destroyShaderModule(geomVertModule);
     device->getLogicalDevice().destroyShaderModule(geomFragModule);
 
-    // Lighting Pipeline
-    File lightVertFile(shaderHelper.getShaderSpvDir(shader_dir.str(), "lighting.vert"));
-    File lightFragFile(shaderHelper.getShaderSpvDir(shader_dir.str(), "lighting.frag"));
+    // Lighting Pipeline (Slang-emitted SPIR-V)
+    File lightVertFile(slang_spv_dir + "deferred.lighting_vs_main.spv");
+    File lightFragFile(slang_spv_dir + "deferred.lighting_fs_main.spv");
     vk::ShaderModule lightVertModule = shaderHelper.createShaderModule(device, lightVertFile.readCharSequence());
     vk::ShaderModule lightFragModule = shaderHelper.createShaderModule(device, lightFragFile.readCharSequence());
 
@@ -468,6 +461,8 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
     uint32_t flat_mesh_index = 0;
     for (uint32_t m = 0; m < scene->getModelCount(); m++) {
         pushConstant.model = scene->getModelMatrix(m);
+        // Precompute the inverse-transpose for the Slang shaders (no inverse() in SPIR-V).
+        pushConstant.invModel = glm::inverse(glm::transpose(scene->getModelMatrix(m)));
 
         for (unsigned int k = 0; k < scene->getMeshCount(m); k++) {
             const uint32_t object_index = flat_mesh_index++;

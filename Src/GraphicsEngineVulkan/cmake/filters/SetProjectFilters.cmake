@@ -71,10 +71,6 @@ kataglyphis_append_prefixed_files(
   VulkanSwapChain.cpp)
 kataglyphis_append_prefixed_files(
   VULKAN_BASE_FILTER
-  "${PROJECT_INCLUDE_DIR}vulkan_base/"
-  ShaderIncludes.hpp)
-kataglyphis_append_prefixed_files(
-  VULKAN_BASE_FILTER
   "${PROJECT_SRC_DIR}vulkan_base/"
   DescriptorSetGroup.ixx
   PipelineBuilder.ixx

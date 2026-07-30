@@ -1,0 +1,185 @@
+import scene_types;
+
+// Volumetric clouds compute kernel. Mirrors
+// Resources/Shaders/compute/clouds.comp. Emits SPIR-V only.
+//
+// Ray-marches a cloud volume, sampling a 3D noise texture for density,
+// with Henyey-Greenstein phase function and Beer-Lambert transmittance.
+// The box intersection (from Matlib.glsl) is inlined here; the inverse
+// model matrix is precomputed on the CPU (Slang has no inverse() for SPIR-V).
+
+static const float PI = 3.14159265358979323846;
+
+[vk::binding(0, 0)] RWTexture2D<float4> outputImage;
+[vk::binding(1, 0)] Sampler3D noiseTexture;
+
+[vk::binding(0, 1)] ConstantBuffer<GlobalUBO> globalUBO;
+[vk::binding(1, 1)] ConstantBuffer<SceneUBO> scene;
+
+struct Clouds
+{
+    int num_march_steps;
+    int num_march_steps_to_light;
+    float3 radius;
+    float3 offset;
+    float4x4 model_to_world;
+    float4x4 inv_model_to_world; // precomputed on CPU
+    float threshold;
+    float scale;
+    float pillowness;
+    float cirrus_effect;
+    bool powder_effect;
+};
+
+float sample_density(float3 position, Clouds cloud)
+{
+    float3 uvw128 = abs(fmod(position + cloud.offset, 256.0)) / 256.0;
+    float4 noise128 = noiseTexture.Sample(uvw128);
+
+    float baseDensity = ((cloud.pillowness * 0.25)) * max(0.0, noise128.r - cloud.threshold) * cloud.scale
+                      + ((1.0 - cloud.pillowness) * 0.125) * max(0.0, noise128.g - cloud.threshold) * cloud.scale
+                      + ((1.0 - cloud.pillowness) * 0.125) * max(0.0, noise128.b - cloud.threshold) * cloud.scale;
+
+    baseDensity = baseDensity * (1.0 - cloud.cirrus_effect)
+                + max(0.0, noise128.a - cloud.threshold) * cloud.scale * cloud.cirrus_effect;
+
+    float3 uvw32 = abs(fmod(position + cloud.offset, 64.0)) / 64.0;
+    float4 noise32 = noiseTexture.Sample(uvw32);
+
+    float fineDensity = 0.6 * max(0.0, noise32.r - cloud.threshold) * cloud.scale
+                      + 0.15 * max(0.0, noise32.g - cloud.threshold) * cloud.scale
+                      + 0.15 * max(0.0, noise32.b - cloud.threshold) * cloud.scale;
+
+    return baseDensity + fineDensity * 0.3;
+}
+
+float phase_HG(float cosTheta, float g)
+{
+    float denom = 1.0 + g * g + 2.0 * g * cosTheta;
+    return (1.0 / (4.0 * PI)) * ((1.0 - g * g) / (denom * sqrt(denom)));
+}
+
+// Ray-box intersection (iquilezles). Returns entry/exit in oT.
+bool box_intersect(float3 ro, float3 rd, float4x4 txx, float4x4 txi, float3 rad, out float2 oT)
+{
+    float3 rdd = (mul(txx, float4(rd, 0.0))).xyz;
+    float3 roo = (mul(txx, float4(ro, 1.0))).xyz;
+
+    float3 m = 1.0 / rdd;
+    float3 s = float3(rdd.x < 0.0 ? 1.0 : -1.0, rdd.y < 0.0 ? 1.0 : -1.0, rdd.z < 0.0 ? 1.0 : -1.0);
+    float3 t1 = m * (-roo + s * rad);
+    float3 t2 = m * (-roo - s * rad);
+
+    float tN = max(max(t1.x, t1.y), t1.z);
+    float tF = min(min(t2.x, t2.y), t2.z);
+
+    if (tN > tF || tF < 0.0) return false;
+
+    oT = float2(tN, tF);
+    return true;
+}
+
+float light_march(float3 samplePos, float3 eyePosition, Clouds cloud)
+{
+    float totalDensity = 0.0;
+    float3 directionToLight = normalize(scene.dirLight.direction.xyz);
+    float2 oT;
+    bool intersection = box_intersect(eyePosition, directionToLight, cloud.inv_model_to_world, cloud.model_to_world, cloud.radius, oT);
+
+    if (!intersection) return 1.0;
+
+    for (int i = 0; i < cloud.num_march_steps_to_light; i++)
+    {
+        float stepSize = (float(i) / float(cloud.num_march_steps_to_light)) * (oT.y - oT.x);
+        float3 p = samplePos + directionToLight * stepSize;
+        totalDensity += sample_density(p, cloud);
+    }
+    totalDensity /= float(cloud.num_march_steps_to_light);
+    return exp(-totalDensity);
+}
+
+[shader("compute")]
+[numthreads(16, 16, 1)]
+void clouds_main(uint3 tid : SV_DispatchThreadID)
+{
+    int2 texelCoord = int2(tid.xy);
+    uint width, height, layers;
+    outputImage.GetDimensions(width, height);
+    int2 size = int2(int(width), int(height));
+
+    if (texelCoord.x >= size.x || texelCoord.y >= size.y)
+        return;
+
+    float2 uv = float2(texelCoord) / float2(size);
+    float2 ndc = uv * 2.0 - 1.0;
+
+    float4 clip = float4(ndc, 1.0, 1.0);
+    float4 eyeCoords = mul(globalUBO.inv_projection, clip);
+    eyeCoords = float4(eyeCoords.xy, -1.0, 0.0);
+    float3 rayDirection = normalize(mul(globalUBO.inv_view, eyeCoords).xyz);
+    float3 eyePosition = scene.cam_pos.xyz;
+
+    Clouds cloud;
+    cloud.num_march_steps = int(max(scene.cloudParameters.w, 4.0));
+    cloud.num_march_steps_to_light = 4;
+    cloud.scale = scene.cloudMeshScale.w;
+    cloud.threshold = scene.cloudMeshOffset.w;
+    cloud.pillowness = scene.cloudParameters.x;
+    cloud.cirrus_effect = scene.cloudParameters.y;
+    cloud.powder_effect = scene.cloudParameters.z > 0.5;
+
+    cloud.radius = scene.cloudMeshScale.xyz * cloud.scale * 10.0;
+    cloud.offset = scene.cloudMeshOffset.xyz;
+
+    cloud.model_to_world = float4x4(1.0);
+    cloud.model_to_world[0][0] = cloud.radius.x;
+    cloud.model_to_world[1][1] = cloud.radius.y;
+    cloud.model_to_world[2][2] = cloud.radius.z;
+    cloud.model_to_world[3][0] = cloud.offset.x;
+    cloud.model_to_world[3][1] = cloud.offset.y;
+    cloud.model_to_world[3][2] = cloud.offset.z;
+    // inv_model_to_world must be set on the CPU side (Slang has no inverse()).
+    // For a diagonal scale + translate, the inverse is trivial; compute it here.
+    cloud.inv_model_to_world = float4x4(1.0);
+    cloud.inv_model_to_world[0][0] = 1.0 / cloud.radius.x;
+    cloud.inv_model_to_world[1][1] = 1.0 / cloud.radius.y;
+    cloud.inv_model_to_world[2][2] = 1.0 / cloud.radius.z;
+    cloud.inv_model_to_world[3][0] = -cloud.offset.x / cloud.radius.x;
+    cloud.inv_model_to_world[3][1] = -cloud.offset.y / cloud.radius.y;
+    cloud.inv_model_to_world[3][2] = -cloud.offset.z / cloud.radius.z;
+
+    float2 oT;
+    bool intersection = box_intersect(eyePosition, rayDirection, cloud.inv_model_to_world, cloud.model_to_world, cloud.radius, oT);
+
+    float lightEnergy = 0.0;
+    float transmittance = 1.0;
+
+    if (intersection && oT.y > 0.0)
+    {
+        oT.x = max(0.0, oT.x);
+        for (int i = 0; i < cloud.num_march_steps; i++)
+        {
+            float stepSize = (float(i) / float(cloud.num_march_steps)) * (oT.y - oT.x);
+            float3 samplePos = eyePosition + rayDirection * (oT.x + stepSize);
+
+            float densityOfSample = sample_density(samplePos, cloud);
+            float lightTransmittance = light_march(samplePos, eyePosition, cloud);
+
+            lightEnergy += densityOfSample * stepSize * transmittance * lightTransmittance
+                         * phase_HG(dot(normalize(rayDirection), normalize(scene.dirLight.direction.xyz)), 0.5);
+
+            transmittance *= exp(-densityOfSample * stepSize);
+
+            if (transmittance < 0.01) break;
+
+            if (cloud.powder_effect)
+            {
+                float powderness = 1.0 - exp(-(densityOfSample * stepSize) / 2.0);
+                transmittance += powderness;
+            }
+        }
+    }
+
+    float3 cloudColor = lightEnergy * scene.dirLight.color.xyz * scene.dirLight.color.w;
+    outputImage[tid.xy] = float4(cloudColor, 1.0 - transmittance);
+}

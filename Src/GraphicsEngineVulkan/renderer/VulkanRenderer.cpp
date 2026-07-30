@@ -1,7 +1,7 @@
 module;
 #include <optional>
 #include "common/Utilities.hpp"
-#include "hostDevice/host_device_shared_vars.hpp"
+#include "common/host_device_shared_vars.hpp"
 #include "renderer/pushConstants/PushConstantPost.hpp"
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 #include "renderer/pushConstants/PushConstantRayTracing.hpp"

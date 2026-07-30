@@ -107,6 +107,10 @@ pipeline_cache/
 # on every export - see docs/shader-sharing.md.
 Resources/Shaders/generated/
 
+# slangc output (SPIR-V + WGSL) from compile-slang-shaders.ps1. Derived
+# artifacts, regenerable, churn on every Slang edit - see docs/shader-sharing.md.
+Resources/ShadersSlang/build/
+
 # gtest test-discovery JSON the container build drops in the repo root
 # (cmake_test_discovery_<hash>.json) - a regenerable build artifact, not source.
 cmake_test_discovery_*.json

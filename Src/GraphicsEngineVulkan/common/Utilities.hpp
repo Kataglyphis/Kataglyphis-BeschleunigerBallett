@@ -2,7 +2,7 @@
 
 #include <cstdlib>
 
-#include "hostDevice/host_device_shared_vars.hpp"
+#include "host_device_shared_vars.hpp"
 #include <spdlog/spdlog.h>
 
 namespace Kataglyphis {

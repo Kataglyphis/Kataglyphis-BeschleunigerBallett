@@ -317,16 +317,13 @@ void SkyBox::createFramebuffers(size_t count, const std::vector<vk::ImageView>& 
 
 void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
 {
-    std::stringstream skybox_shader_dir;
-    std::filesystem::path const cwd = std::filesystem::current_path();
-    skybox_shader_dir << cwd.string() << RELATIVE_RESOURCE_PATH << "Shaders/skybox/";
+    // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
+    // Run from the repo root (per AGENTS.md).
+    std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/skybox/";
 
     ShaderHelper shaderHelper;
-    shaderHelper.compileShader(skybox_shader_dir.str(), "SkyBox.vert");
-    shaderHelper.compileShader(skybox_shader_dir.str(), "SkyBox.frag");
-
-    File vertexFile(shaderHelper.getShaderSpvDir(skybox_shader_dir.str(), "SkyBox.vert"));
-    File fragmentFile(shaderHelper.getShaderSpvDir(skybox_shader_dir.str(), "SkyBox.frag"));
+    File vertexFile(slang_spv_dir + "skybox.vs_main.spv");
+    File fragmentFile(slang_spv_dir + "skybox.fs_main.spv");
     std::vector<char> const vertexShaderCode = vertexFile.readCharSequence();
     std::vector<char> const fragmentShaderCode = fragmentFile.readCharSequence();
 

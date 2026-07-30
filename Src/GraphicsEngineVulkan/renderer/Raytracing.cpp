@@ -171,27 +171,21 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createPCRange()
 void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
   const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
 {
-    std::stringstream raytracing_shader_dir;
-    std::filesystem::path const cwd = std::filesystem::current_path();
-    raytracing_shader_dir << cwd.string();
-    raytracing_shader_dir << RELATIVE_RESOURCE_PATH;
-    raytracing_shader_dir << "Shaders/raytracing/";
+    // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
+    // Run from the repo root (per AGENTS.md).
+    std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/raytracing/";
 
-    std::string const raygen_shader = "raytrace.rgen";
-    std::string const chit_shader = "raytrace.rchit";
-    std::string const miss_shader = "raytrace.rmiss";
-    std::string const shadow_shader = "shadow.rmiss";
+    std::string const raygen_spv = "raytrace.rgen.rgen_main.spv";
+    std::string const chit_spv = "raytrace.rchit.rchit_main.spv";
+    std::string const miss_spv = "raytrace.rmiss.rmiss_main.spv";
+    std::string const shadow_spv = "shadow.rmiss.shadow_rmiss_main.spv";
 
     ShaderHelper shaderHelper;
-    shaderHelper.compileShader(raytracing_shader_dir.str(), raygen_shader);
-    shaderHelper.compileShader(raytracing_shader_dir.str(), chit_shader);
-    shaderHelper.compileShader(raytracing_shader_dir.str(), miss_shader);
-    shaderHelper.compileShader(raytracing_shader_dir.str(), shadow_shader);
 
-    File raygenFile(shaderHelper.getShaderSpvDir(raytracing_shader_dir.str(), raygen_shader));
-    File raychitFile(shaderHelper.getShaderSpvDir(raytracing_shader_dir.str(), chit_shader));
-    File raymissFile(shaderHelper.getShaderSpvDir(raytracing_shader_dir.str(), miss_shader));
-    File shadowFile(shaderHelper.getShaderSpvDir(raytracing_shader_dir.str(), shadow_shader));
+    File raygenFile(slang_spv_dir + raygen_spv);
+    File raychitFile(slang_spv_dir + chit_spv);
+    File raymissFile(slang_spv_dir + miss_spv);
+    File shadowFile(slang_spv_dir + shadow_spv);
 
     std::vector<char> const raygen_shader_code = raygenFile.readCharSequence();
     std::vector<char> const raychit_shader_code = raychitFile.readCharSequence();

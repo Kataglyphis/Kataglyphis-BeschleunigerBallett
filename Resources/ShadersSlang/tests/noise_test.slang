@@ -1,0 +1,16 @@
+import noise;
+
+// CI guard: forces emit of the simplex noise + fbm math to both SPIR-V and
+// WGSL. Not loaded by any renderer — guards the shared noise module.
+
+RWStructuredBuffer<float> outBuf;
+
+[shader("compute")]
+[numthreads(1, 1, 1)]
+void noise_test_main(uint3 tid : SV_DispatchThreadID)
+{
+    float3 p = float3(float(tid.x) * 0.1, 0.0, 0.0);
+    float n = snoise(p);
+    float f = fbm(p, 1.0, 4);
+    outBuf[tid.x] = n + f;
+}

@@ -63,7 +63,7 @@ void ReadingArbitraryPathsNeverCrashes(const std::string &path)
 
 FUZZ_TEST(ShaderFileReaderFuzz, ReadingArbitraryPathsNeverCrashes)
   .WithSeeds({ std::string(""),
-    std::string("Resources/Shaders/rasterizer/spv/shader.frag.spv"),
+    std::string("Resources/ShadersSlang/build/spirv/rasterizer/rasterizer.fs_main.spv"),
     std::string("does/not/exist.spv"),
     std::string("../../../etc/passwd"),
     std::string("C:\\Windows\\System32\\config\\SAM"),

@@ -169,8 +169,10 @@ void Clouds::createDescriptorSets()
 
 void Clouds::createComputePipelines(vk::DescriptorSetLayout sharedLayout)
 {
+    // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
+    // Run from the repo root (per AGENTS.md).
     ShaderHelper shaderHelper;
-    std::vector<char> cloudShaderCode = File("Resources/Shaders/compute/spv/clouds.comp.spv").readCharSequence();
+    std::vector<char> cloudShaderCode = File("Resources/ShadersSlang/build/spirv/compute/clouds.clouds_main.spv").readCharSequence();
     vk::ShaderModule cloudShaderModule = shaderHelper.createShaderModule(device, cloudShaderCode);
 
     vk::PipelineShaderStageCreateInfo computeStageInfo{};
@@ -198,8 +200,8 @@ void Clouds::createComputePipelines(vk::DescriptorSetLayout sharedLayout)
 
     device->getLogicalDevice().destroyShaderModule(cloudShaderModule);
 
-    // Noise pipeline
-    std::vector<char> noiseShaderCode = File("Resources/Shaders/compute/spv/noise.comp.spv").readCharSequence();
+    // Noise pipeline (Slang-emitted SPIR-V)
+    std::vector<char> noiseShaderCode = File("Resources/ShadersSlang/build/spirv/compute/noise.noise_main.spv").readCharSequence();
     vk::ShaderModule noiseShaderModule = shaderHelper.createShaderModule(device, noiseShaderCode);
 
     vk::PipelineShaderStageCreateInfo noiseStageInfo{};

@@ -158,16 +158,23 @@ imports it through `Scripts/Windows/Resolve-BuildModule.ps1` and keeps only
 project-specific orchestration (build-directory names, `Build-Windows.ps1`
 arguments, the cargo exclusions).
 
-## Shaders: always compiled, never stale
+## Shaders: Slang (unified SPIR-V + WGSL)
 
-GLSL under `Resources/Shaders/**` is compiled to `spv/*.spv` by
-`Scripts/Windows/compile-shaders.ps1` (run by `Build-Windows.ps1` for **every**
-configuration) with a runtime fallback in `ShaderHelper`. Both layers now
-compare timestamps: a `.spv` is reused only when it is newer than its source
-**and** every shared include. Until 2026-07-19 both merely checked whether the
-file existed, so every shader edit after the first build was silently ignored
-and the GPU ran stale SPIR-V. Full account, plus the fast
-regenerate-without-rebuilding loop: [`docs/shader-build-pipeline.md`](docs/shader-build-pipeline.md).
+All shaders are written in [Slang](https://shader-slang.com/) under
+`Resources/ShadersSlang/`. The build scripts
+(`Scripts/Windows/compile-slang-shaders.ps1`,
+`Scripts/Linux/compile-slang-shaders.sh`) compile each `.slang` file to:
+- **SPIR-V** (`.spv`) for the C++ Vulkan renderer → `Resources/ShadersSlang/build/spirv/`
+- **WGSL** (`.wgsl`) for the Rust WebGPU renderer → `Resources/ShadersSlang/build/wgsl/`
+  (combined WGSL files are also copied to the Rust crate's `src/shaders/` directory)
+
+The C++ renderer loads pre-compiled SPIR-V via `File` I/O — there is no
+runtime shader compilation. Slang emits `"main"` as the SPIR-V entry point
+name (not the Slang function name), so all `pName` values in pipeline
+creation use `"main"`.
+
+`histogram.wgsl` in the Rust crate remains hand-written: Slang does not
+support `InterlockedAdd` on `RWStructuredBuffer` for the WGSL target.
 
 
 Builds are **incremental** via a reusable container (`bb-build-persistent`):
@@ -281,7 +288,7 @@ render (~32 FPS ImGui overlay).
 fuzz-test integration). Coverage, ctest, and perf wrappers
 live next to it. Vulkan SDK env can be injected with `--vulkan-setup-script`.
 Run helpers (`run-debug.sh`, `run-profile.sh`, `run-release.sh`) and
-`compile-shaders.sh` parallel the Windows equivalents.
+`compile-slang-shaders.sh` parallel the Windows equivalents.
 
 ### Cargo cache volume (persist Rust dependencies)
 
@@ -486,10 +493,10 @@ ContainerHub (see the rule above), project-specific ones here.
 | `docs/model-loading.md` | Model-loading architecture: the two loaders, async parse/upload split, multi-mesh MeshRange flow |
 | `docs/webgpu-renderer-roadmap.md` | Rust WebGPU renderer status per feature |
 | `docs/webgpu-gltf-rust-plan.md` | Original WebGPU + glTF Rust renderer plan (milestones 1–5) |
-| `docs/shader-sharing.md` | WGSL -> SPIR-V/GLSL pipeline between both renderers |
+| `docs/shader-sharing.md` | Slang → SPIR-V/WGSL pipeline between both renderers |
 | `docs/webgpu-srgb-audit.md` | Colour-space decisions (no known deviations) |
 | `docs/code-quality.md` | clang-format / clang-tidy / cmake-format commands + cadence |
-| `docs/shader-build-pipeline.md` | GLSL→SPIR-V build step, staleness rules, fast shader iteration |
+| `docs/shader-build-pipeline.md` | Slang→SPIR-V/WGSL build step, staleness rules, fast shader iteration |
 | `docs/container-build-caching.md` | Container transport, sccache volume, incremental-build options |
 | `docs/gpu-golden-testing.md` | GPU golden test suites, skip-without-GPU behavior, host verification loop |
 | `docs/path-tracing.md` | Path-tracing mode: pipeline shape, estimator, NEE, accumulation |

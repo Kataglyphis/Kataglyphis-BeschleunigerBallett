@@ -79,11 +79,16 @@ class DescriptorSetGroup
 
     std::shared_ptr<VulkanDevice> device{ nullptr };
 
-    std::vector<vk::DescriptorSetLayoutBinding> bindings;
-    std::vector<vk::DescriptorPoolSize> pool_size_overrides;
+    // Value-initialize ({}) so the vectors are empty regardless of which
+    // translation unit constructs this class. Without the braces, a C++23
+    // module ABI mismatch can leave the vectors with garbage internal state
+    // (the module interface unit's default init and the implementation
+    // unit's constructor definition disagree on whether to zero-init).
+    std::vector<vk::DescriptorSetLayoutBinding> bindings{};
+    std::vector<vk::DescriptorPoolSize> pool_size_overrides{};
 
     vk::DescriptorSetLayout layout{};
     vk::DescriptorPool pool{};
-    std::vector<vk::DescriptorSet> descriptor_sets;
+    std::vector<vk::DescriptorSet> descriptor_sets{};
 };
 }// namespace Kataglyphis

@@ -145,17 +145,18 @@ function Invoke-ConfiguredBuild {
   Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $BuildPath -Preset $Preset -Configuration $Configuration -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
 }
 
-function Invoke-ShaderPrecompile {
+
+function Invoke-SlangShaderPrecompile {
   param([Parameter(Mandatory)][string]$BuildLabel)
 
-  $compileShadersScript = Join-Path $PSScriptRoot 'compile-shaders.ps1'
-  if (-not (Test-Path $compileShadersScript)) {
-    Write-BuildLogWarning -Context $context -Message "Shader compile script not found: $compileShadersScript"
+  $compileSlangScript = Join-Path $PSScriptRoot 'compile-slang-shaders.ps1'
+  if (-not (Test-Path $compileSlangScript)) {
+    Write-BuildLogWarning -Context $context -Message "Slang shader compile script not found: $compileSlangScript"
     return
   }
 
-  Write-BuildLog -Context $context -Message "Precompiling shaders ($BuildLabel)"
-  & $compileShadersScript
+  Write-BuildLog -Context $context -Message "Precompiling Slang shaders ($BuildLabel)"
+  & $compileSlangScript
 }
 
 function Assert-ClangClAvailable {
@@ -300,14 +301,14 @@ try {
   if (Test-ConfigurationSelected -Name 'msvc-release') {
     # Make MSVC release configure/build optional so failures here don't fail the whole orchestration
     Invoke-BuildOptional -Context $context -Name "Configure/Build: $presetMsvcRelease (MSVC Release - optional)" -Script {
-      Invoke-ShaderPrecompile -BuildLabel 'MSVC Release'
+      Invoke-SlangShaderPrecompile -BuildLabel 'MSVC Release'
       Invoke-ConfiguredBuild -BuildPath $buildPathMsvcRelease -Preset $presetMsvcRelease -Configuration 'Release'
     }
   }
 
   if (Test-ConfigurationSelected -Name 'clangcl-debug') {
     Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangDebug" -Critical -Script {
-      Invoke-ShaderPrecompile -BuildLabel 'ClangCL Debug'
+      Invoke-SlangShaderPrecompile -BuildLabel 'ClangCL Debug'
       Invoke-ConfiguredBuild -BuildPath $buildPathClangDebug -Preset $presetClangDebug -Configuration 'Debug'
     } | Out-Null
 
@@ -357,7 +358,7 @@ try {
         # the packaging step (assumes a previous Release build exists).
         Write-BuildLog -Context $context -Message 'Skipping Clang Release build due to -SkipBuild.'
       } else {
-        Invoke-ShaderPrecompile -BuildLabel 'ClangCL Release'
+        Invoke-SlangShaderPrecompile -BuildLabel 'ClangCL Release'
         Invoke-ConfiguredBuild -BuildPath $buildPathClangRelease -Preset $presetClangRelease -Configuration 'Release'
       }
 

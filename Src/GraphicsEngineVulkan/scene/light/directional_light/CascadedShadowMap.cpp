@@ -532,16 +532,13 @@ void CascadedShadowMap::createGraphicsPipeline()
 {
     createDescriptorSetAndPipeline();
 
-    std::stringstream shadow_shader_dir;
-    std::filesystem::path const cwd = std::filesystem::current_path();
-    shadow_shader_dir << cwd.string() << RELATIVE_RESOURCE_PATH << "Shaders/rasterizer/shadows/";
+    // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
+    // Run from the repo root (per AGENTS.md).
+    std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/shadows/";
 
     ShaderHelper shaderHelper;
-    shaderHelper.compileShader(shadow_shader_dir.str(), "directional_shadow_map.vert");
-    shaderHelper.compileShader(shadow_shader_dir.str(), "directional_shadow_map.frag");
-
-    File vertFile(shaderHelper.getShaderSpvDir(shadow_shader_dir.str(), "directional_shadow_map.vert"));
-    File fragFile(shaderHelper.getShaderSpvDir(shadow_shader_dir.str(), "directional_shadow_map.frag"));
+    File vertFile(slang_spv_dir + "shadow_map.shadow_vs_main.spv");
+    File fragFile(slang_spv_dir + "shadow_map.shadow_fs_main.spv");
 
     vk::ShaderModule vertModule = shaderHelper.createShaderModule(device, vertFile.readCharSequence());
     vk::ShaderModule fragModule = shaderHelper.createShaderModule(device, fragFile.readCharSequence());
@@ -552,9 +549,7 @@ void CascadedShadowMap::createGraphicsPipeline()
     vertStageInfo.pName = "main";
 
     // No geometry stage: the vertex shader selects the cascade matrix by
-    // gl_ViewIndex under multiview. The old geometry stage only
-    // re-multiplied by the cascade matrix (its own comment said it had lost
-    // its purpose).
+    // SV_ViewID under multiview (Slang equivalent of gl_ViewIndex).
     vk::PipelineShaderStageCreateInfo fragStageInfo{};
     fragStageInfo.stage = vk::ShaderStageFlagBits::eFragment;
     fragStageInfo.module = fragModule;

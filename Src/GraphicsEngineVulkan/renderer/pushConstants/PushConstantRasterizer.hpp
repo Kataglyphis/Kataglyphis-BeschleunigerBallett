@@ -19,6 +19,10 @@ namespace Kataglyphis::VulkanRendererInternals {
 struct PushConstantRasterizer
 {
     mat4 model;// matrix of the instance
+    // Inverse-transpose of model, precomputed on the CPU. The Slang shaders
+    // need the normal matrix but Slang has no inverse() for the SPIR-V target,
+    // so it is computed here and passed alongside the model matrix.
+    mat4 invModel;
     // Which entry of the object_description array this draw belongs to.
     //
     // The fragment shaders used to hard-code index 0 ("for now only one

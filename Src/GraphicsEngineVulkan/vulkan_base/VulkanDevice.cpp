@@ -450,6 +450,9 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     vk::PhysicalDeviceVulkan11Features features11{};
     features11.pNext = &features12;
     features11.multiview = available_features11.multiview;
+    // shaderDrawParameters: required by SPIR-V Capability DrawParameters,
+    // emitted by Slang for SV_PrimitiveID in fragment shaders (material fetch).
+    features11.shaderDrawParameters = available_features11.shaderDrawParameters;
 
     vk::PhysicalDeviceFeatures2 features2{};
     features2.pNext = nullptr;
@@ -584,7 +587,15 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         spdlog::info("robustBufferAccess is not supported on this device.");
     }
 
-    features2.pNext = &features11;
+    // Compute shader derivatives: Slang emits ComputeDerivativeGroupQuadsKHR
+    // for compute shaders (clouds, noise). Enable the extension if supported.
+    vk::PhysicalDeviceComputeShaderDerivativesFeaturesKHR computeDerivativeFeatures{};
+    computeDerivativeFeatures.computeDerivativeGroupQuads = VK_TRUE;
+    if (isExtensionSupported(VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME)) {
+        extensions.push_back(VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME);
+        computeDerivativeFeatures.pNext = features2.pNext;
+        features2.pNext = &computeDerivativeFeatures;
+    }
 
     // information to create logical device (sometimes called "device")
     vk::DeviceCreateInfo device_create_info{};

@@ -286,24 +286,18 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
 void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
   const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
 {
-    std::stringstream post_shader_dir;
-    std::filesystem::path const cwd = std::filesystem::current_path();
-    post_shader_dir << cwd.string();
-    post_shader_dir << RELATIVE_RESOURCE_PATH;
-    post_shader_dir << "Shaders/post/";
+    // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build
+    // time. Run from the repo root (per AGENTS.md).
+    std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/post/";
 
-    std::string const post_vert_shader = "post.vert";
-    std::string const post_frag_shader = "post.frag";
+    std::string const post_vert_spv = "post.vs_main.spv";
+    std::string const post_frag_spv = "post.fs_main.spv";
 
-    // Compile BEFORE reading the spv - the old order consumed the PREVIOUS
-    // run's bytes (same defect as PathTracing.cpp, see the note there).
     ShaderHelper shaderHelper;
-    shaderHelper.compileShader(post_shader_dir.str(), post_vert_shader);
-    shaderHelper.compileShader(post_shader_dir.str(), post_frag_shader);
 
-    File vertexShaderFile(shaderHelper.getShaderSpvDir(post_shader_dir.str(), post_vert_shader));
+    File vertexShaderFile(slang_spv_dir + post_vert_spv);
     std::vector<char> const vertex_shader_code = vertexShaderFile.readCharSequence();
-    File fragmentShaderFile(shaderHelper.getShaderSpvDir(post_shader_dir.str(), post_frag_shader));
+    File fragmentShaderFile(slang_spv_dir + post_frag_spv);
     std::vector<char> const fragment_shader_code = fragmentShaderFile.readCharSequence();
 
     vk::ShaderModule vertex_shader_module = shaderHelper.createShaderModule(device, vertex_shader_code);
