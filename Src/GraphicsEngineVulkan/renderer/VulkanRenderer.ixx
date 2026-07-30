@@ -3,7 +3,6 @@ module;
 #include <string>
 #include <glm/glm.hpp>
 #include <algorithm>
-#include <array>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -19,6 +18,7 @@ import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.descriptor_set_group;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.frame_sync;
+import kataglyphis.vulkan.gpu_timing;
 import kataglyphis.vulkan.global_ubo;
 import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.gui;
@@ -228,74 +228,11 @@ class VulkanRenderer
     void createSynchronization();
     void cleanUpSync();
 
-    // -- per-pass GPU timing (timestamp query pool)
-    // Layout: one slice of GPU_TIMING_QUERIES_PER_IMAGE queries per swapchain
-    // image, two queries (start/end) per timed pass. A frame resets only its
-    // own image's slice inside its command buffer, and results are read back
-    // for that slice on the NEXT use of the image (after its fence signaled),
-    // so queries are never reset while still in flight.
-    static constexpr uint32_t GPU_TIMING_QUERIES_PER_PASS = 2;
-    static constexpr uint32_t GPU_TIMING_QUERIES_PER_IMAGE =
-      GPU_TIMING_QUERIES_PER_PASS
-      * static_cast<uint32_t>(VulkanRendererInternals::FrontendShared::GPU_TIMED_PASS_COUNT);
-    bool gpu_timings_supported{ false };
-    float gpu_timestamp_period{ 0.0f };
-    uint64_t gpu_timestamp_mask{ ~0ULL };
-    vk::QueryPool gpu_timing_query_pool{};
-    // Per swapchain image: bitmask of passes actually recorded last time.
-    std::vector<uint32_t> gpu_timing_pass_mask;
-    // Per swapchain image: whether the slice was ever reset+written (freshly
-    // created pools contain queries in an undefined state that must not be
-    // read).
-    std::vector<bool> gpu_timing_slice_recorded;
-
-    struct GpuPassAverage
-    {
-        static constexpr uint32_t WINDOW = 30;
-        std::array<float, WINDOW> samples{};
-        uint32_t count{ 0 };
-        uint32_t next{ 0 };
-        float sum{ 0.0f };
-        float add(float value)
-        {
-            if (count == WINDOW) {
-                sum -= samples[next];
-            } else {
-                count++;
-            }
-            samples[next] = value;
-            sum += value;
-            next = (next + 1) % WINDOW;
-            return sum / static_cast<float>(count);
-        }
-        void reset()
-        {
-            count = 0;
-            next = 0;
-            sum = 0.0f;
-        }
-    };
-    std::array<GpuPassAverage, VulkanRendererInternals::FrontendShared::GPU_TIMED_PASS_COUNT> gpu_pass_averages{};
-
-    void createGpuTimingResources();
-    void destroyGpuTimingResources();
-    // Reads back the previous results of image_index's slice (never waits) and
-    // publishes smoothed per-pass milliseconds to the GUI shared vars.
-    void readGpuTimings(uint32_t image_index);
-
-    // -- headless GPU-timing export (KATAGLYPHIS_GPU_TIMING_JSON)
-    // Unsmoothed per-pass totals over the renderer's whole lifetime, fed by
-    // readGpuTimings. Kept separate from GpuPassAverage on purpose: the GUI
-    // wants a short smoothed window, the export wants the true mean over every
-    // measured frame. Deliberately not reset on swapchain recreation - the
-    // queries restart, the run's statistics do not.
-    std::array<double, VulkanRendererInternals::FrontendShared::GPU_TIMED_PASS_COUNT> gpu_timing_export_sum_ms{};
-    std::array<uint64_t, VulkanRendererInternals::FrontendShared::GPU_TIMED_PASS_COUNT> gpu_timing_export_samples{};
-    uint64_t gpu_timing_export_frames{ 0 };
-    // Writes the per-pass averages as JSON when KATAGLYPHIS_GPU_TIMING_JSON
-    // names a file. Called from cleanUp, while the accumulators and the
-    // supported flag still describe the finished run.
-    void writeGpuTimingJsonIfRequested();
+    // -- per-pass GPU timing (timestamp query pool); see
+    // kataglyphis.vulkan.gpu_timing for the layout invariants (the per-image
+    // slice sizing and the "never read an unrecorded slice" guard are
+    // load-bearing).
+    GpuTimingSubsystem gpuTiming;
 
     // -- frame capture state (see requestFrameCapture above)
     // capture_armed: a copy must be recorded into the next frame's command

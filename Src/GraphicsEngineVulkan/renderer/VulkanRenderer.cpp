@@ -23,14 +23,10 @@ module;
 #include <cstdlib>
 
 #include <algorithm>
-#include <array>
 #include <cstring>
-#include <fstream>
 #include <memory>
 #include <tuple>
 #include <vector>
-
-#include <nlohmann/json.hpp>
 
 #ifndef VMA_IMPLEMENTATION
 #define VMA_IMPLEMENTATION
@@ -92,7 +88,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     create_command_pool();
 
     vulkanSwapChain.initVulkanContext(device, window, surface);
-    createGpuTimingResources();
+    gpuTiming.create(*device, vulkanSwapChain.getNumberSwapChainImages(), gui->getGuiRendererSharedVars());
     create_uniform_buffers();
     create_command_buffers();
 
@@ -516,7 +512,7 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
     // The fence wait above guarantees the previous commands that used this
     // swapchain image (and its query slice) completed, so the readback below
     // never has to wait on the GPU.
-    readGpuTimings(image_index);
+    gpuTiming.readTimings(*device, image_index, gui->getGuiRendererSharedVars());
 
     frameSync.imageInFlightFence(image_index) = frameSync.inFlightFence();
 
@@ -668,7 +664,7 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
 
     // The query pool is sized per swapchain image; the waitIdle above makes
     // destroying and recreating it safe here.
-    createGpuTimingResources();
+    gpuTiming.create(*device, vulkanSwapChain.getNumberSwapChainImages(), gui->getGuiRendererSharedVars());
 
     uint32_t newImageCount = vulkanSwapChain.getNumberSwapChainImages();
 
@@ -834,22 +830,22 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
 
     // -- per-pass GPU timing: reset this image's query slice (outside any
     // render pass) and bracket every recorded pass with a timestamp pair.
-    const bool record_gpu_timings =
-      gpu_timings_supported && gpu_timing_query_pool && image_index < gpu_timing_pass_mask.size();
-    const uint32_t gpu_timing_base = image_index * GPU_TIMING_QUERIES_PER_IMAGE;
+    const bool record_gpu_timings = gpuTiming.isSupported() && gpuTiming.queryPool();
+    const uint32_t gpu_timing_base = image_index * gpuTiming.queriesPerImage();
     uint32_t recorded_pass_mask = 0U;
 
     if (record_gpu_timings) {
-        commandBuffer.resetQueryPool(gpu_timing_query_pool, gpu_timing_base, GPU_TIMING_QUERIES_PER_IMAGE);
+        commandBuffer.resetQueryPool(gpuTiming.queryPool(), gpu_timing_base, gpuTiming.queriesPerImage());
     }
 
     const auto write_pass_timestamp = [&](GpuTimedPass pass, bool start) -> void {
         if (!record_gpu_timings) { return; }
         const uint32_t pass_index = static_cast<uint32_t>(pass);
-        const uint32_t query = gpu_timing_base + pass_index * GPU_TIMING_QUERIES_PER_PASS + (start ? 0U : 1U);
+        const uint32_t query =
+          gpu_timing_base + pass_index * Kataglyphis::GpuTimingSubsystem::QUERIES_PER_PASS + (start ? 0U : 1U);
         commandBuffer.writeTimestamp(
           start ? vk::PipelineStageFlagBits::eTopOfPipe : vk::PipelineStageFlagBits::eBottomOfPipe,
-          gpu_timing_query_pool,
+          gpuTiming.queryPool(),
           query);
         if (!start) { recorded_pass_mask |= (1U << pass_index); }
     };
@@ -916,10 +912,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
     // restores the layout before the present below.
     if (capture_armed) { recordFrameCapture(commandBuffer, image_index); }
 
-    if (record_gpu_timings) {
-        gpu_timing_pass_mask[image_index] = recorded_pass_mask;
-        gpu_timing_slice_recorded[image_index] = true;
-    }
+    if (record_gpu_timings) { gpuTiming.setPassRecordedMask(image_index, recorded_pass_mask); }
 
     return true;
 }
@@ -1174,176 +1167,6 @@ void Kataglyphis::VulkanRenderer::cleanUpFrameCapture()
     capture_height = 0;
 }
 
-void Kataglyphis::VulkanRenderer::createGpuTimingResources()
-{
-    destroyGpuTimingResources();
-
-    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars =
-      gui->getGuiRendererSharedVars();
-
-    const uint32_t valid_bits = device->getGraphicsQueueTimestampValidBits();
-    gpu_timestamp_period = device->getTimestampPeriod();
-    gpu_timings_supported = (valid_bits != 0U) && (gpu_timestamp_period > 0.0F);
-
-    guiRendererSharedVars.gpuTimings.supported = gpu_timings_supported;
-    for (float &pass_ms : guiRendererSharedVars.gpuTimings.pass_ms) { pass_ms = -1.0F; }
-    for (auto &average : gpu_pass_averages) { average.reset(); }
-
-    if (!gpu_timings_supported) {
-        spdlog::info(
-          "GPU timestamps are not supported on the graphics queue family (timestampValidBits == 0); "
-          "per-pass GPU timings disabled.");
-        return;
-    }
-
-    gpu_timestamp_mask = (valid_bits >= 64U) ? ~0ULL : ((1ULL << valid_bits) - 1ULL);
-
-    const uint32_t image_count = vulkanSwapChain.getNumberSwapChainImages();
-
-    vk::QueryPoolCreateInfo query_pool_info{};
-    query_pool_info.queryType = vk::QueryType::eTimestamp;
-    query_pool_info.queryCount = GPU_TIMING_QUERIES_PER_IMAGE * image_count;
-
-    auto pool_result = device->getLogicalDevice().createQueryPool(query_pool_info);
-    if (pool_result.result != vk::Result::eSuccess) {
-        spdlog::warn("Failed to create the GPU timing query pool (result {}); per-pass GPU timings disabled.",
-          static_cast<int>(pool_result.result));
-        gpu_timings_supported = false;
-        guiRendererSharedVars.gpuTimings.supported = false;
-        return;
-    }
-    gpu_timing_query_pool = pool_result.value;
-    gpu_timing_pass_mask.assign(image_count, 0U);
-    gpu_timing_slice_recorded.assign(image_count, false);
-}
-
-void Kataglyphis::VulkanRenderer::destroyGpuTimingResources()
-{
-    if (gpu_timing_query_pool) {
-        device->getLogicalDevice().destroyQueryPool(gpu_timing_query_pool);
-        gpu_timing_query_pool = nullptr;
-    }
-    gpu_timing_pass_mask.clear();
-    gpu_timing_slice_recorded.clear();
-}
-
-void Kataglyphis::VulkanRenderer::readGpuTimings(uint32_t image_index)
-{
-    namespace FrontendShared = Kataglyphis::VulkanRendererInternals::FrontendShared;
-
-    FrontendShared::GUIRendererSharedVars &guiRendererSharedVars = gui->getGuiRendererSharedVars();
-    guiRendererSharedVars.gpuTimings.supported = gpu_timings_supported;
-
-    if (!gpu_timings_supported || !gpu_timing_query_pool) { return; }
-    // Freshly created pools hold queries in an undefined state; only read a
-    // slice after it was reset and written at least once.
-    if (image_index >= gpu_timing_slice_recorded.size() || !gpu_timing_slice_recorded[image_index]) { return; }
-
-    // Two uint64 per query: [value, availability].
-    std::array<uint64_t, static_cast<size_t>(GPU_TIMING_QUERIES_PER_IMAGE) * 2U> query_data{};
-
-    // Deliberately WITHOUT eWait: an unavailable result must be skipped, never
-    // stalled on. eWithAvailability reports per-query availability.
-    const vk::Result result = device->getLogicalDevice().getQueryPoolResults(gpu_timing_query_pool,
-      image_index * GPU_TIMING_QUERIES_PER_IMAGE,
-      GPU_TIMING_QUERIES_PER_IMAGE,
-      sizeof(query_data),
-      query_data.data(),
-      2U * sizeof(uint64_t),
-      vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWithAvailability);
-    if (result != vk::Result::eSuccess && result != vk::Result::eNotReady) { return; }
-
-    const uint32_t recorded_passes = gpu_timing_pass_mask[image_index];
-    constexpr double NANOSECONDS_PER_MILLISECOND = 1.0e6;
-    bool frame_has_export_sample = false;
-
-    for (int pass = 0; pass < FrontendShared::GPU_TIMED_PASS_COUNT; pass++) {
-        if ((recorded_passes & (1U << static_cast<uint32_t>(pass))) == 0U) {
-            // Pass not recorded in that frame (e.g. clouds/shadows disabled):
-            // show it as inactive and drop stale history so a re-enabled pass
-            // starts a fresh average.
-            guiRendererSharedVars.gpuTimings.pass_ms[pass] = -1.0F;
-            gpu_pass_averages[static_cast<size_t>(pass)].reset();
-            continue;
-        }
-
-        const size_t start_query = static_cast<size_t>(pass) * GPU_TIMING_QUERIES_PER_PASS;
-        const uint64_t start_value = query_data[start_query * 2U];
-        const uint64_t start_available = query_data[(start_query * 2U) + 1U];
-        const uint64_t end_value = query_data[(start_query + 1U) * 2U];
-        const uint64_t end_available = query_data[((start_query + 1U) * 2U) + 1U];
-
-        // Unavailable results are skipped (last smoothed value stays visible).
-        if (start_available == 0U || end_available == 0U) { continue; }
-
-        // Modular subtraction masked to timestampValidBits handles counter
-        // wraparound on queue families with fewer than 64 valid bits.
-        const uint64_t delta_ticks = (end_value - start_value) & gpu_timestamp_mask;
-        const double pass_ms_raw =
-          static_cast<double>(delta_ticks) * static_cast<double>(gpu_timestamp_period) / NANOSECONDS_PER_MILLISECOND;
-        guiRendererSharedVars.gpuTimings.pass_ms[pass] =
-          gpu_pass_averages[static_cast<size_t>(pass)].add(static_cast<float>(pass_ms_raw));
-
-        // The JSON export accumulates the RAW sample, not the smoothed value
-        // the GUI shows - averaging averages would weight early frames by up
-        // to WINDOW times. Warmup needs no extra handling here: the early
-        // returns above already drop the frames without valid results
-        // (observed on this machine: one readback per swapchain image is
-        // skipped via gpu_timing_slice_recorded, i.e. the first 3 frames of a
-        // triple-buffered run measure nothing, and the availability bits catch
-        // any result the GPU has not finished).
-        gpu_timing_export_sum_ms[static_cast<size_t>(pass)] += pass_ms_raw;
-        gpu_timing_export_samples[static_cast<size_t>(pass)]++;
-        frame_has_export_sample = true;
-    }
-
-    if (frame_has_export_sample) { gpu_timing_export_frames++; }
-}
-
-void Kataglyphis::VulkanRenderer::writeGpuTimingJsonIfRequested()
-{
-    const char *out_path = std::getenv("KATAGLYPHIS_GPU_TIMING_JSON");
-    if (out_path == nullptr || *out_path == '\0') { return; }
-
-    namespace FrontendShared = Kataglyphis::VulkanRendererInternals::FrontendShared;
-
-    // The file is written even when timestamps are unsupported: a consumer
-    // must be able to tell "this device cannot measure" (file present,
-    // supported == false) from "the export never ran" (file missing).
-    nlohmann::json dump;
-    dump["frames_measured"] = gpu_timing_export_frames;
-    dump["timestamps_supported"] = gpu_timings_supported;
-
-    for (size_t pass = 0; pass < static_cast<size_t>(FrontendShared::GPU_TIMED_PASS_COUNT); pass++) {
-        // A pass with no samples was never recorded (disabled feature or
-        // unsupported timestamps); omitting it keeps 0.0 meaning "measured as
-        // free" rather than "never measured".
-        if (gpu_timing_export_samples[pass] == 0U) { continue; }
-        dump["passes"][FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES[pass]] =
-          gpu_timing_export_sum_ms[pass] / static_cast<double>(gpu_timing_export_samples[pass]);
-    }
-    if (!dump.contains("passes")) { dump["passes"] = nlohmann::json::object(); }
-
-    // ofstream reports failure via the stream state, never throws by default -
-    // which is the only option anyway with exceptions disabled project-wide.
-    std::ofstream file(out_path, std::ios::out | std::ios::trunc);
-    if (!file.is_open()) {
-        spdlog::error("GPU timing export: cannot open '{}' for writing; no JSON dumped.", out_path);
-        return;
-    }
-    file << dump.dump(2) << '\n';
-    file.close();
-    if (file.fail()) {
-        spdlog::error("GPU timing export: writing '{}' failed; the dump may be truncated.", out_path);
-        return;
-    }
-    spdlog::info(
-      "GPU timing export: wrote {} ({} frames measured, timestamps supported: {}).",
-      out_path,
-      gpu_timing_export_frames,
-      gpu_timings_supported);
-}
-
 void Kataglyphis::VulkanRenderer::cleanUpUBOs()
 {
     // Buffers are persistently mapped by VMA; unmapping happens on destruction.
@@ -1363,11 +1186,11 @@ void Kataglyphis::VulkanRenderer::cleanUp()
 
     // Inside the !device guard so the export runs exactly once even though
     // cleanUp is reached twice (explicitly, then again from the destructor).
-    // The final in-flight frames' queries are never read back - readGpuTimings
+    // The final in-flight frames' queries are never read back - readTimings
     // only runs on the NEXT use of a swapchain image - so the average covers
     // every frame except the last swapchain-image-count of them, which is fine
     // for a mean over a whole run.
-    writeGpuTimingJsonIfRequested();
+    gpuTiming.writeJsonIfRequested();
 
     if (device->supportsHardwareAcceleratedRRT()) {
         pathTracingAccumulation.cleanUp();
@@ -1389,7 +1212,7 @@ void Kataglyphis::VulkanRenderer::cleanUp()
     // allocator (torn down in device->cleanUp() below) is still alive.
     vulkanBufferManager.cleanUp();
 
-    destroyGpuTimingResources();
+    gpuTiming.destroy(*device);
     cleanUpSync();
     cleanUpUBOs();
     cleanUpCommandPools();

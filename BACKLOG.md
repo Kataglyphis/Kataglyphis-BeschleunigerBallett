@@ -3649,6 +3649,413 @@ pick them up from the older prose above.
   AGENTS.md names `docs/shader-sharing.md` as the single home for this topic,
   so it must tell the truth.
 
+## 2026-07-30 batch II — planner (Slang-migration test fallout, push-constant budget, GPU-verification blocker)
+
+All three verified against the tree on 2026-07-30. They come from the
+verification notes of the "`GUI*` mutable cross-cutting dependency" task above,
+which measured 6 failing tests on unmodified `develop` HEAD and one blocked
+verification path — documented there as findings, but no fix task existed for
+any of them until now. Suggested order: task 1 and task 3 are independent;
+task 2 should land BEFORE the open "(test, S) Add the missing CPU-only test
+suites to the Windows CI filter" task (2026-07-28 batch II), because that task
+would add the currently-FAILING `PushConstantRasterizerUnit.*` to CI.
+
+### C++ Vulkan engine
+
+- [ ] **(test, S) Rewrite the `BuildIntegrity` suite for the Slang shader
+  pipeline — 4 tests red on `develop` AND in the Windows CI filter** — the
+  suite still guards a shader pipeline that was deleted.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — the whole file.
+    `find_repo_root()` (`:21-30`) probes for `Resources/Shaders`, which no
+    longer exists post-Slang-migration, so it returns empty and 4 of the 5
+    tests `ASSERT`-fail immediately (`GlmProducesVulkanDepthRange` is
+    path-free and still passes — keep it untouched).
+  - `.github/workflows/Windows.yml:209-220` — `BuildIntegrity.*` is first in
+    the CPU-only CI filter, so the next `[build-win]` run is red until this
+    lands.
+  - `.github/workflows/Linux.yml:115,160,185,316` — Linux lanes exclude
+    `^BuildIntegrity\.CompiledShadersAreNotOlder` by name; keep the new
+    staleness tests under names that regex still matches, or update all four
+    exclusions in the same change.
+  - `Scripts/Windows/compile-slang-shaders.ps1` — the naming contract:
+    `Resources/ShadersSlang/<dir>/<stem>.slang` emits
+    `Resources/ShadersSlang/build/spirv/<dir>/<stem>.<entry>.spv` (verified
+    in-tree, e.g. `rasterizer/shadows/shadow_map.slang` →
+    `build/spirv/rasterizer/shadows/shadow_map.shadow_vs_main.spv`).
+  - `docs/shader-build-pipeline.md` — the staleness rules the suite should
+    encode.
+
+  **Steps:**
+  1. Point `find_repo_root()` at `Resources/ShadersSlang`.
+  2. Staleness (the two `CompiledShadersAreNotOlder*` tests): for every
+     `.spv` under `build/spirv/`, the source is `<same-rel-dir>/<first
+     dotted component>.slang` relative to `Resources/ShadersSlang/`; assert
+     the `.spv` is not older than that source. Replace the `.glsl`
+     shared-include scan with the newest `common/*.slang` mtime (Slang
+     imports live there — see `common/scene_types.slang`).
+  3. Every-source-has-binary: only for the subdirectories the C++ engine
+     consumes — `compute`, `deferred`, `path_tracing`, `post`, `rasterizer`
+     (incl. `shadows`), `raytracing`, `skybox` — assert each `.slang` has at
+     least one `<stem>.*.spv`. Do NOT scan the whole tree: `bloom`, `ssao`,
+     `forward`, `tonemap` etc. are Rust-renderer shaders that emit WGSL only.
+  4. Active-pipeline list: replace the old GLSL `required` vector with the
+     exact paths the code loads — grep `slang_spv_dir` under `Src/`; today
+     that is `Rasterizer.cpp:398`, `DeferredRasterizer.cpp:311`,
+     `PostStage.cpp:291`, `SkyBox.cpp:322`, `CascadedShadowMap.cpp:537`,
+     `Clouds.cpp:175,204`, `Raytracing.cpp:176`, `PathTracing.cpp:211`.
+  5. Delete `is_generated_artifact` and its comments — the
+     `Resources/Shaders/generated` naga-export tree it special-cased is gone
+     (see the retired WGSL-export entry in Cross-renderer).
+  6. Verify: `commitTestSuite.exe --gtest_filter='BuildIntegrity.*'` from the
+     repo root goes 5/5 green; then deliberately `touch` one `.slang` and
+     confirm the staleness test fails, recompile via
+     `compile-slang-shaders.ps1`, confirm green again.
+
+  **Test:** This task IS the test change. CPU-only, no GPU needed — runs in
+  the container and on the host.
+
+  **Build:** `clangcl-debug` (test-file-only change, reused container fine):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+
+  **Context:** These tests exist because stale SPIR-V twice produced
+  confidently-wrong debugging sessions (see the "two instruments disagree"
+  note near the top of this file). The Slang migration silently disarmed
+  them — the engine's actual shader outputs have had NO staleness guard
+  since `6fc5553b`, which is precisely the state the suite was written to
+  prevent. Same-day regression noted in the GUI-decoupling verification
+  above; update that note and the Windows CI comment when done.
+
+- [ ] **(M) Shrink `PushConstantRasterizer` back under the 128-byte
+  guaranteed push-constant budget (currently 132)** — a real portability
+  bug, not just test drift: two `mat4` + `uint` = 132 bytes, and Vulkan
+  guarantees only `maxPushConstantsSize >= 128`. Works on the RX 9070 XT,
+  fails pipeline-layout creation on a conformant-minimal implementation.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/pushConstants/PushConstantRasterizer.hpp`
+    — `model` (64) + `invModel` (64) + `objectIndex` (4). `invModel` exists
+    only to transform normals (`mul(pc_raster.invModel, float4(normal, 0.0))`),
+    so only its upper 3×3 is ever read — a full `mat4` wastes 16+ bytes.
+  - `Resources/ShadersSlang/rasterizer/rasterizer.slang:14-20,46` and
+    `Resources/ShadersSlang/deferred/deferred.slang:12-17,49` — the struct is
+    hand-DUPLICATED in both shaders (they do not include the C++ header);
+    all three copies must change in lockstep.
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:122` and
+    `DeferredRasterizer.cpp:465` — the CPU fill:
+    `glm::inverse(glm::transpose(model))`.
+  - `Test/commit/VulkanEngine/pushConstantSuite.cpp` — the two failing
+    tests: `ObjectIndexFollowsTheMatrixAndIsCovered` (expects offset 64,
+    actual 128) and `FitsTheGuaranteedPushConstantBudget` (132 > 128). Its
+    header comment also still claims the struct is "compiled twice … from
+    the same header", stale since the Slang migration.
+
+  **Steps:**
+  1. In the C++ struct, replace `mat4 invModel` with `vec4 invModelRows[3]`
+     (three rows of the inverse-transpose; row-vector form keeps each row a
+     contiguous vec4). New layout: model 0–63, rows 64–111, objectIndex 112,
+     sizeof 116 ≤ 128.
+  2. Fill it in both rasterizers: compute
+     `glm::mat4 it = glm::inverse(glm::transpose(scene->getModelMatrix(m)))`
+     once, then `invModelRows[i] = glm::vec4(it[0][i], it[1][i], it[2][i], 0)`
+     (GLM is column-major — extract ROWS, and add a unit test pinning that,
+     because this is exactly the transposition mistake that renders fine on a
+     cube and breaks on rotated models).
+  3. Mirror in BOTH `.slang` files: `float4 invModelRows[3];` and
+     `shadingNormal = float3(dot(pc_raster.invModelRows[0].xyz, normal), …)`
+     — or reconstruct a `float3x3`. While touching both, hoist the duplicated
+     struct into a shared module under `Resources/ShadersSlang/common/`
+     (imported by both, the `scene_types.slang` pattern) so the next layout
+     change has two copies to keep in sync (C++/Slang), not three. Also fix
+     the stale comment at `rasterizer.slang:11-12` ("requires the C++ struct
+     to be extended" — it was).
+  4. Recompile shaders (`Scripts/Windows/compile-slang-shaders.ps1`) BEFORE
+     any rendered verification — the staleness lesson at the top of this
+     file; the rewritten BuildIntegrity suite (task above) enforces it.
+  5. Update `pushConstantSuite.cpp`: objectIndex at 112, size ≤ 128
+     re-armed, header comment rewritten to say the Slang copies are
+     hand-mirrored and this suite plus the shared module are the only guards.
+  6. Verify on the GPU host (repo root, RX 9070 XT): forward AND deferred
+     golden tests (`--gtest_filter=GoldenRender.*` or at minimum the
+     forward/deferred subset if the RT blocker below is still open) — a
+     wrong row extraction shows up as changed lighting, so goldens must be
+     UNCHANGED. If host GPU runs are still blocked, say so in the commit and
+     leave this box unchecked with a note rather than claiming verification.
+
+  **Test:** `PushConstantRasterizerUnit.*` green (updated offsets), plus a
+  new case asserting the rows round-trip a known non-uniform-scale matrix
+  (e.g. scale(1,2,3): inverse-transpose diagonal 1, 1/2, 1/3 lands in rows
+  0/1/2). Then hand `PushConstantRasterizerUnit.*` to the open CI-filter
+  task.
+
+  **Build:** `clangcl-debug` **with `-FreshContainer`** — the header is
+  consumed by multiple module TUs and layout skew between stale BMIs and
+  recompiled TUs is exactly the incremental-ODR hazard documented in
+  Completed:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
+
+  **Context:** `invModel` was added for the Slang migration (Slang has no
+  `inverse()` for SPIR-V) without noticing it blew the budget the test
+  documents: "Exceeding it fails pipeline creation on
+  conformant-but-minimal implementations while working fine on a desktop
+  GPU — a bug that only appears on someone else's hardware." The
+  alternative (moving `invModel` into the object-description buffer) is
+  more invasive and adds an indirection on the hot path; three vec4 rows
+  keep the push-constant speed and fit with 12 bytes to spare.
+
+### GPU host verification
+
+- [ ] **(M) Diagnose the blocked GPU-golden host run — RT/PT feature-enable
+  abort + SEH crash on `develop` HEAD** — currently NOTHING GPU-side can be
+  verified on the host, which silently degrades every rendering task to
+  "compiles and CPU tests pass".
+
+  **Files to read:**
+  - The verification note under the "`GUI*` mutable cross-cutting
+    dependency" `[x]` entry (2026-07-24 batch) — the symptom record: the
+    host process hard-aborts (`vulkan.hpp` `Assertion failed: result ==
+    Result::eSuccess`) partway through the RT/PT golden tests with
+    `accelerationStructure` / `rayTracing` / `bufferDeviceAddress` /
+    `multiview` all reported unenabled on the selected RX 9070 XT, and one
+    GUI-sweep test SEH-crashes on an invalid `VkDeviceMemory` handle.
+    Reproduced identically on unmodified `develop`, so it is not any one
+    task's diff.
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp:282-330` —
+    device enumeration, `parseGpuSelectionMode()` (env-driven selection
+    mode), scoring/fallback; `:699` `check_device_suitable`; ~`:452` the
+    features2/features11 enable chain where those four features are
+    requested.
+  - `docs/gpu-golden-testing.md` — the host verification loop this restores.
+
+  **Steps:**
+  1. Reproduce from the repo root:
+     `.\commitTestSuite.exe --gtest_filter=GoldenRender.*` (container-built
+     `clangcl-debug` binary copied to the host per AGENTS.md). Record which
+     tests pass before the first abort — if forward/deferred/shadow goldens
+     still pass and only RT/PT abort, the blast radius is "RT feature
+     enable", not "device broken".
+  2. Establish WHEN it broke: the 19-green host baseline is from ~2026-07-23
+     (`docs/gpu-golden-testing.md` / memory). Re-run the SAME binary that
+     was green then, if still present on disk; if that old binary now also
+     fails, the cause is environmental (AMD driver update — check
+     `vulkaninfo --summary` for driver version and that the RX 9070 XT still
+     reports `accelerationStructure` etc.); if the old binary passes and a
+     fresh `develop` build fails, `git bisect` the window 2026-07-23 →
+     2026-07-30 (few commits, mostly the Slang migration + GUI decoupling).
+  3. Add (or confirm) spdlog output at selection time: chosen device name,
+     selection mode, and WHICH features the enable chain actually requested
+     vs what the device offered — the current abort happens far from the
+     cause. This logging is worth landing regardless of the root cause.
+  4. Fix what is in-repo (selection/feature-enable regression) or document
+     the environmental cause + workaround in `docs/gpu-golden-testing.md`
+     (driver version pin, `KATAGLYPHIS` GPU-selection env var, etc.).
+  5. Separately capture the GUI-sweep SEH crash (invalid `VkDeviceMemory`)
+     — if it survives the feature-enable fix, split it into its own BACKLOG
+     entry with the gtest name and stack rather than leaving it folded in
+     here.
+  6. Done means: the full golden suite result on the host is recorded (N
+     green / M skipped), and the verification note in the 2026-07-24 batch
+     is updated to point here.
+
+  **Test:** No new test — the deliverable is the restored host loop plus
+  the root cause written down. The golden suite itself is the instrument.
+
+  **Build:** None required if an existing `clangcl-debug` binary is at
+  hand; otherwise
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  and `docker cp` per AGENTS.md. Runs happen ON THE HOST (containers have
+  no GPU/swapchain).
+
+  **Context:** Every rendering change since 2026-07-24 has shipped with the
+  caveat "GPU goldens could not be run". The longer that holds, the bigger
+  the unverified pile gets (the push-constant task above already depends on
+  it). This is an investigation task — if the root cause turns out to be a
+  driver update, the correct outcome is a documented workaround, not a code
+  change; do not force a fix into the repo to close the box.
+
+## 2026-07-30 batch III — planner (shader-load consolidation, per-frame copies, docs drift)
+
+Found by a refactor-focused read of the shader-loading call sites, the GUI
+frame path, and the agentic-loop docs. Deliberately only three tasks: the
+open queue is already deep, and GPU-golden host verification is blocked (see
+the diagnosis task above), so nothing here needs a golden run to verify.
+None duplicate the 2026-07-24/28/30 batches.
+
+### C++ Vulkan engine
+
+- [ ] **(refactor, S) Consolidate SPIR-V shader-module loading into one
+  helper that fails fast on a missing or invalid blob** — eight stages repeat
+  the same `File(...).readCharSequence()` → `ShaderHelper` 3-line pattern,
+  and a missing `.spv` currently produces an **empty vector** that goes
+  straight into `createShaderModule` as `codeSize = 0`: a validation error at
+  best in debug, undefined driver behaviour in release (no validation
+  layers). Forgetting `compile-slang-shaders` is the easiest way to hit this
+  since the Slang migration (`6fc5553b`/`40b1cbe3`).
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/ShaderHelper.ixx` / `.cpp` — the
+    stateless class (defaulted ctor/dtor, one method) this folds into.
+  - `Src/GraphicsEngineVulkan/util/File.cpp:30-41` — `readCharSequence`
+    returns `{}` on a missing file after only an `err`-level log; nothing
+    downstream checks.
+  - The eight call sites:
+    `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:398-406`,
+    `renderer/DeferredRasterizer.cpp:311-317` + `:353-357`,
+    `renderer/PathTracing.cpp:211-219`, `renderer/PostStage.cpp:291-302`,
+    `renderer/Raytracing.cpp:176-194`,
+    `scene/light/directional_light/CascadedShadowMap.cpp:537-544`,
+    `scene/sky_box/SkyBox.cpp:322-329`,
+    `scene/atmospheric_effects/clouds/Clouds.cpp:174-176` + `:204-205`.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — precedent for a
+    CPU-only test that reads compiled `.spv` files from the repo root.
+
+  **Steps:**
+  1. In the `kataglyphis.vulkan.shader_helper` module, add a **pure** free
+     function `auto validateSpirvBlob(std::span<const char> code) -> bool`:
+     non-empty, `size % 4 == 0`, first 32-bit word equals the SPIR-V magic
+     `0x07230203`. No Vulkan calls — this is the CPU-testable core.
+  2. Add `auto loadSpirvShaderModule(std::shared_ptr<VulkanDevice> device,
+     const std::string &spvPath) -> vk::ShaderModule`: read via
+     `File(spvPath).readCharSequence()`, run `validateSpirvBlob`; on failure
+     log **critical** with the path plus the hint "run
+     Scripts/Windows/compile-slang-shaders.ps1 (or the Linux .sh)" and
+     `std::abort()` (exceptions are disabled; this matches `ASSERT_VULKAN`
+     semantics for unrecoverable init failures). On success create and
+     return the module.
+  3. Replace all eight call sites; delete the local
+     `ShaderHelper shaderHelper;` instances and `File` boilerplate. Keep the
+     per-stage `slang_spv_dir` constants — the directories genuinely differ
+     per stage.
+  4. If nothing else uses the `ShaderHelper` class afterwards, retire the
+     class (keep the module; `createShaderModule` can become an internal
+     detail of `loadSpirvShaderModule`).
+
+  **Test:** New CPU-only suite `Test/commit/VulkanEngine/shaderBlobSuite.cpp`
+  (register in `Test/commit/VulkanEngine/CMakeLists.txt` and add to the
+  Windows CI filter alongside the other CPU-only suites): empty blob
+  rejected; 6-byte blob rejected (not a multiple of 4); correct-size blob
+  with wrong magic rejected; a real compiled shader accepted — read
+  `Resources/ShadersSlang/build/spirv/rasterizer/rasterizer.vs_main.spv`
+  from the repo-root cwd exactly as `buildIntegritySuite` does.
+
+  **Build:** `clangcl-debug` **with `-FreshContainer`** (the
+  `ShaderHelper.ixx` module interface changes — stale-BMI/ABI-skew hazard).
+  Run: `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
+
+  **Context:** This is dedup plus a real robustness fix in one audited path;
+  it does NOT touch pipeline creation (the `PipelineBuilder` convention
+  stays). The fail-fast is correct here because every call site runs during
+  stage init, where the codebase already aborts on unrecoverable Vulkan
+  failures. Do not soften `File::readCharSequence` itself — the GUI feeds it
+  user-picked model paths where returning empty is the right graceful
+  behaviour (see the `ObjLoader.cpp:55` comment).
+
+- [ ] **(refactor, S) Return `std::span<const std::string>` from
+  `getAvailableModelPaths`/`getAvailableModelDisplayNames` — the GUI copies
+  both cached vectors every frame** — `GUI::render()` calls both getters
+  each frame while the "Model Selection" header is open, and each returns a
+  full `vector<string>` copy of a write-once cache (per-frame heap
+  allocations for data that never changes after the first scan).
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/SceneConfig.ixx:12-13` — the two
+    declarations (module interface — ABI-skew rule applies).
+  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:79-81` + `:159-170` —
+    the `s_cached_model_paths`/`s_cached_model_display_names` statics
+    (stable for program lifetime after `scanAvailableModels`) and the
+    by-value returns.
+  - Callers: `Src/GraphicsEngineVulkan/gui/GUI.cpp:63-66` (the per-frame
+    site), `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:380-384`.
+  - Tests/benchmarks touching the getters:
+    `Test/perf/perfSuite.cpp:117` (`BM_AvailableModelPaths`),
+    `Test/fuzz/scene_config_fuzz_test.cpp:56-58`,
+    `Test/commit/VulkanEngine/cameraSceneConfigSuite.cpp:174-175`,
+    `Test/commit/VulkanEngine/objParseSuite.cpp:160`.
+
+  **Steps:**
+  1. Change both getters to return `std::span<const std::string>` over the
+     static cached vectors — safe because the cache is filled once and never
+     mutated afterwards (`s_models_scanned` guard).
+  2. Update the two engine callers: indexing code is unchanged; just replace
+     the `const std::vector<std::string>` locals with `const auto`.
+  3. Update the tests: in `cameraSceneConfigSuite` and `objParseSuite` the
+     locals become spans (indexing unchanged); in the fuzz test replace the
+     vector `!=` comparison with `!std::ranges::equal(first, again)` — keep
+     the assertion, it guards against a future rescan producing an
+     inconsistent snapshot.
+  4. Verify the win: re-run `BM_AvailableModelPaths` under `clangcl-profile`
+     — the 2026-07-19 baseline is 859 ns (the copy); a span return should
+     collapse it to single-digit ns. Record the new number in the baseline
+     table if you update it.
+
+  **Test:** No new test — this is a type-level change with identical
+  behaviour; the existing `cameraSceneConfigSuite`, `objParseSuite` and the
+  SceneConfig fuzz seed corpus are the regression net, plus the benchmark
+  delta as the measured proof.
+
+  **Build:** `clangcl-debug` **with `-FreshContainer`** (`SceneConfig.ixx`
+  module interface changes). Benchmarks need `clangcl-profile`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug,clangcl-profile -SkipTests -FreshContainer`
+
+  **Context:** Straight from the C++23-modernization mandate (spans at
+  boundaries, unnecessary copies). Scope discipline: do NOT redesign the
+  scan/caching itself (e.g. adding a rescan/refresh) — that is a feature
+  decision, not this cleanup.
+
+### Docs
+
+- [ ] **(refactor, S) Fix AGENTS.md agentic-loop drift — it still describes
+  the loop as OpenCode-only (GLM 5.2 / DeepSeek)** — `AGENTS.md:387-441`
+  says the planner IS GLM 5.2 and the executor IS DeepSeek v4 Flash, and its
+  Files table points at `.opencode/agents/*.md` as THE prompts. Since
+  `86ee9532`, `AgenticLoop.config.json` has an `engines` block whose
+  **default is `"engine": "claude"`** (planner `claude-fable-5` with
+  `claude-opus-4-8` fallback, executor `claude-sonnet-5`, prompts under
+  `Scripts/AgenticLoop/prompts/`). An agent following AGENTS.md today edits
+  the wrong prompt files.
+
+  **Files to read:**
+  - `AGENTS.md:387-480` — the "Agentic Loop (OpenCode)" section: intro
+    paragraph, Files table, Usage.
+  - `Scripts/AgenticLoop/AgenticLoop.config.json` — the `engines` block
+    (read the CURRENT state: this file has in-flight uncommitted edits;
+    describe what is there when you run, do not restate this task's
+    snapshot).
+  - `Scripts/AgenticLoop/README.md` — the single home for loop details per
+    the docs rule at the bottom of AGENTS.md ("each topic has exactly one
+    home; link, do not copy"). Also currently has in-flight edits.
+
+  **Steps:**
+  1. Retitle the section "Agentic Loop" (engine-neutral) and rewrite the
+     intro: two engines selectable via `AgenticLoop.config.json` /
+     `AGENTIC_ENGINE` — `claude` (default; Claude Code CLI, Fable 5 planner
+     with Opus 4.8 fallback, Sonnet executor, prompts in
+     `Scripts/AgenticLoop/prompts/`) and `opencode` (GLM 5.2 planner /
+     DeepSeek v4 Flash executor, agents in `.opencode/agents/`).
+  2. Slim rather than extend: keep the build-matrix summary and Usage
+     commands, replace detail that duplicates `Scripts/AgenticLoop/README.md`
+     with a link. Fix the Files table rows for the planner/executor prompts
+     to list both engines' prompt locations (or drop those rows in favour of
+     the README link).
+  3. Update the docs table near the end of AGENTS.md: the
+     `Scripts/AgenticLoop/README.md` row still says "(OpenCode
+     planner/executor)".
+  4. Sweep for leftovers: `grep -n "GLM 5.2\|DeepSeek" AGENTS.md docs/ -r`
+     — remaining hits must all be inside the explicit opencode-engine
+     description, nowhere stated as "the" planner/executor.
+
+  **Test:** None (docs-only). Verification is the grep in step 4 plus
+  checking every path named in the rewritten section exists in the tree.
+
+  **Build:** None (docs-only change; no source touched).
+
+  **Context:** Documentation-drift item from the refactor mandate. AGENTS.md
+  is the file every agent session loads, so a wrong prompt-file path there
+  multiplies into wrong edits. Coordinate with the in-flight working-tree
+  changes to `Scripts/AgenticLoop/*` — base the wording on the files as they
+  are at execution time, and keep AGENTS.md the summary, README the detail.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
