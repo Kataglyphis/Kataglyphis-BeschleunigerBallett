@@ -1,8 +1,29 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "_comment": "Configuration for the agentic loop. Edit model IDs and intervals here.",
+  "_comment": "Configuration for the agentic loop. Select the engine and edit model IDs / intervals here. Env overrides: AGENTIC_ENGINE, AGENTIC_PLANNER_MODEL, AGENTIC_EXECUTOR_MODEL.",
+
+  "engine": "claude",
+
+  "engines": {
+    "claude": {
+      "_comment": "Claude Code CLI (claude -p). Planner: Fable 5 with Opus 4.8 fallback when overloaded. Executor: Sonnet. Planner is sandboxed to read-only tools + BACKLOG.md edits; executor runs with bypassPermissions (trusted repo).",
+      "plannerModel": "claude-fable-5",
+      "plannerFallbackModel": "claude-opus-4-8",
+      "executorModel": "claude-sonnet-5",
+      "plannerPromptFile": "Scripts/AgenticLoop/prompts/planner.md",
+      "executorPromptFile": "Scripts/AgenticLoop/prompts/executor.md",
+      "plannerAllowedTools": "Read Glob Grep Edit(BACKLOG.md) Write(BACKLOG.md)",
+      "permissionMode": "bypassPermissions",
+      "extraArgs": ""
+    },
+    "opencode": {
+      "plannerModel": "opencode-go/glm-5.2",
+      "executorModel": "opencode-go/deepseek-v4-flash"
+    }
+  },
 
   "models": {
+    "_comment": "Legacy fallback used when the engines block has no entry for the selected engine.",
     "planner": "opencode-go/glm-5.2",
     "executor": "opencode-go/deepseek-v4-flash"
   },
@@ -16,7 +37,13 @@
     "maxExecutorRetries": 3,
     "loopDelaySeconds": 10,
     "maxIterations": 0,
-    "timeoutSeconds": 600
+    "timeoutSeconds": 1200,
+    "plannerTimeoutSeconds": 1800,
+    "executorTimeoutSeconds": 3600,
+    "agentRetries": 2,
+    "agentRetryDelaySeconds": 30,
+    "fixBuildFailures": true,
+    "maxConsecutiveBuildFailures": 3
   },
 
   "buildMatrix": {

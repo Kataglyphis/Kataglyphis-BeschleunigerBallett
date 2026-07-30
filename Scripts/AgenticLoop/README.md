@@ -1,9 +1,22 @@
 # Agentic Loop — Planner / Executor Architecture
 
-An autonomous coding loop built on [OpenCode](https://opencode.ai) that
-alternates between a **planner** (expensive, powerful model) and an
-**executor** (cheap, fast model) to continuously improve the
-Kataglyphis-BeschleunigerBallett graphics engine.
+An autonomous coding loop that alternates between a **planner** (expensive,
+powerful model) and an **executor** (cheap, fast model) to continuously
+improve the Kataglyphis-BeschleunigerBallett graphics engine.
+
+Two engines are supported (select via `engine` in the config, `--engine` /
+`-Engine` on the runner scripts, or `AGENTIC_ENGINE` in the environment):
+
+| Engine | Planner | Executor | CLI |
+| --- | --- | --- | --- |
+| `claude` (default) | Claude Fable 5 (`claude-fable-5`), falls back to Opus 4.8 (`claude-opus-4-8`) when overloaded | Claude Sonnet (`claude-sonnet-5`) | [Claude Code](https://claude.com/claude-code) `claude -p` |
+| `opencode` | GLM 5.2 | DeepSeek v4 Flash | [OpenCode](https://opencode.ai) `opencode run` |
+
+The reusable loop logic lives in the
+[Kataglyphis-ContainerHub](../../ExternalLib/Kataglyphis-ContainerHub)
+submodule (`linux/scripts/lib/agentic-loop.sh` and
+`windows/scripts/modules/WindowsAgenticLoop.Common.psm1`); the scripts here
+are thin project-specific wrappers.
 
 ## Architecture
 
@@ -32,10 +45,11 @@ flowchart TD
    `BACKLOG.md` before the planner adds new ones. This prevents task
    accumulation and ensures each task gets full attention.
 
-2. **Model tiering**: The planner uses an expensive, powerful model (GLM 5.2)
-   for high-quality analysis and task descriptions. The executor uses a
-   cheaper, faster model (DeepSeek v4 Flash) for implementation — it relies
-   on the planner's detailed task descriptions to work efficiently.
+2. **Model tiering**: The planner uses an expensive, powerful model (Fable 5
+   or GLM 5.2) for high-quality analysis and task descriptions. The executor
+   uses a cheaper, faster model (Sonnet or DeepSeek v4 Flash) for
+   implementation — it relies on the planner's detailed task descriptions to
+   work efficiently.
 
 3. **Build matrix cycling**: After every N completed tasks, a build is
    triggered. The build configuration cycles through a **build matrix** —
@@ -61,13 +75,33 @@ flowchart TD
    exclusively on refactoring tasks (dead code, API consolidation, test
    gaps, documentation drift, C++23 modernization).
 
+8. **Build-failure fixing**: When a periodic build fails, the executor-tier
+   model is dispatched with the tail of the build log and a focused
+   "fix the build" prompt, then the build is retried once. After
+   `maxConsecutiveBuildFailures` consecutive failed build phases the loop
+   stops instead of churning.
+
+9. **Retry with backoff + per-role timeouts**: Every agent invocation
+   retries up to `agentRetries` times with linear backoff, and the planner /
+   executor have independent wall-clock timeouts
+   (`plannerTimeoutSeconds` / `executorTimeoutSeconds`).
+
+10. **Planner sandbox (claude engine)**: The planner runs with
+    `--allowed-tools "Read Glob Grep Edit(BACKLOG.md) Write(BACKLOG.md)"`,
+    so it can analyze everything but only write the backlog. The executor
+    runs with `bypassPermissions` (trusted repo). Role system prompts come
+    from `prompts/planner.md` / `prompts/executor.md` via
+    `--append-system-prompt-file`.
+
 ## Files
 
 | File | Purpose |
 | --- | --- |
+| `Scripts/AgenticLoop/prompts/planner.md` | Engine-neutral planner system prompt (used by the claude engine) |
+| `Scripts/AgenticLoop/prompts/executor.md` | Engine-neutral executor system prompt (used by the claude engine) |
 | `opencode.json` | OpenCode project config: agent definitions, model bindings, commands |
-| `.opencode/agents/planner.md` | Planner agent system prompt (GLM 5.2) |
-| `.opencode/agents/executor.md` | Executor agent system prompt (DeepSeek v4 Flash) |
+| `.opencode/agents/planner.md` | Planner agent system prompt (opencode engine) |
+| `.opencode/agents/executor.md` | Executor agent system prompt (opencode engine) |
 | `.opencode/commands/plan.md` | `/plan` slash command |
 | `.opencode/commands/execute.md` | `/execute` slash command |
 | `.opencode/commands/build.md` | `/build` slash command |
@@ -79,7 +113,13 @@ flowchart TD
 
 ## Prerequisites
 
-### OpenCode
+### Claude Code (claude engine, default)
+
+Install [Claude Code](https://claude.com/claude-code) and log in once
+interactively (`claude`). The loop then invokes it headlessly via
+`claude -p`.
+
+### OpenCode (opencode engine)
 
 Install OpenCode:
 
@@ -122,9 +162,21 @@ Edit `Scripts/AgenticLoop/AgenticLoop.config.json`:
 
 ```json
 {
-  "models": {
-    "planner": "opencode-go/glm-5.2",
-    "executor": "opencode-go/deepseek-v4-flash"
+  "engine": "claude",
+  "engines": {
+    "claude": {
+      "plannerModel": "claude-fable-5",
+      "plannerFallbackModel": "claude-opus-4-8",
+      "executorModel": "claude-sonnet-5",
+      "plannerPromptFile": "Scripts/AgenticLoop/prompts/planner.md",
+      "executorPromptFile": "Scripts/AgenticLoop/prompts/executor.md",
+      "plannerAllowedTools": "Read Glob Grep Edit(BACKLOG.md) Write(BACKLOG.md)",
+      "permissionMode": "bypassPermissions"
+    },
+    "opencode": {
+      "plannerModel": "opencode-go/glm-5.2",
+      "executorModel": "opencode-go/deepseek-v4-flash"
+    }
   },
   "intervals": {
     "buildEveryNTasks": 3,
@@ -134,7 +186,13 @@ Edit `Scripts/AgenticLoop/AgenticLoop.config.json`:
     "testAfterBuild": true,
     "maxExecutorRetries": 3,
     "loopDelaySeconds": 10,
-    "maxIterations": 0
+    "maxIterations": 0,
+    "plannerTimeoutSeconds": 1800,
+    "executorTimeoutSeconds": 3600,
+    "agentRetries": 2,
+    "agentRetryDelaySeconds": 30,
+    "fixBuildFailures": true,
+    "maxConsecutiveBuildFailures": 3
   },
   "buildMatrix": {
     "windows": [
@@ -157,20 +215,22 @@ for the full build matrix documentation.
 
 ### Model IDs
 
-The model IDs use the OpenCode `provider/model-id` format. Adjust them to
-match your configured providers. Run `opencode models` to see what is
-available. Common options:
+| Engine | Role | Model ID | Notes |
+| --- | --- | --- | --- |
+| claude | Planner | `claude-fable-5` | Fable 5 — most capable; `claude-opus-4-8` configured as fallback |
+| claude | Executor | `claude-sonnet-5` | Sonnet — fast, cheap, strong at implementation |
+| opencode | Planner | `opencode-go/glm-5.2` | GLM 5.2 — powerful, expensive |
+| opencode | Executor | `opencode-go/deepseek-v4-flash` | DeepSeek v4 Flash — cheap, fast |
 
-| Role | Model ID | Notes |
-| --- | --- | --- |
-| Planner | `opencode-go/glm-5.2` | GLM 5.2 — powerful, expensive |
-| Executor | `opencode-go/deepseek-v4-flash` | DeepSeek v4 Flash — cheap, fast |
+OpenCode model IDs use the `provider/model-id` format — run
+`opencode models` to see what is available.
 
-You can also use environment variables to override at runtime:
+Environment overrides (both engines, both platforms):
 
 ```pwsh
-$env:OPENCODE_PLANNER_MODEL = "zai/glm-5.2"
-$env:OPENCODE_EXECUTOR_MODEL = "deepseek/deepseek-chat"
+$env:AGENTIC_ENGINE = "claude"           # or "opencode"
+$env:AGENTIC_PLANNER_MODEL = "claude-opus-4-8"
+$env:AGENTIC_EXECUTOR_MODEL = "claude-sonnet-5"
 ```
 
 ## Usage
@@ -185,6 +245,18 @@ pwsh -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1
 
 ```bash
 ./Scripts/AgenticLoop/Run-AgenticLoop.sh
+```
+
+### Switch engines
+
+```pwsh
+# Windows — run with OpenCode instead of the default (claude)
+pwsh -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -Engine opencode
+```
+
+```bash
+# Linux
+./Scripts/AgenticLoop/Run-AgenticLoop.sh --engine opencode
 ```
 
 ### Dry run (see what would happen)
@@ -239,13 +311,17 @@ test output, and quality output are all captured in the log file.
 
 ### 1. Planner Phase
 
-The orchestration script invokes:
+The orchestration script invokes (depending on the engine):
 
 ```
-opencode run --agent planner --model zai/glm-5.2 "<planning prompt>"
+claude -p --model claude-fable-5 --fallback-model claude-opus-4-8 \
+  --append-system-prompt-file Scripts/AgenticLoop/prompts/planner.md \
+  --allowed-tools Read Glob Grep "Edit(BACKLOG.md)" "Write(BACKLOG.md)"
+# or
+opencode run --agent planner --model opencode-go/glm-5.2
 ```
 
-The planner agent (configured in `opencode.json` and
+The planner agent (role prompt in `prompts/planner.md` /
 `.opencode/agents/planner.md`):
 - Has read access to the entire codebase
 - Has write access only to `BACKLOG.md`
@@ -259,10 +335,13 @@ The planner agent (configured in `opencode.json` and
 The script counts unchecked tasks (`- [ ]`) in `BACKLOG.md` and loops:
 
 ```
-opencode run --agent executor --model deepseek/deepseek-chat "<execution prompt>"
+claude -p --model claude-sonnet-5 --dangerously-skip-permissions \
+  --append-system-prompt-file Scripts/AgenticLoop/prompts/executor.md
+# or
+opencode run --agent executor --model opencode-go/deepseek-v4-flash
 ```
 
-The executor agent (configured in `opencode.json` and
+The executor agent (role prompt in `prompts/executor.md` /
 `.opencode/agents/executor.md`):
 - Has full tool access (read, write, bash)
 - Picks up the first unchecked task
@@ -352,6 +431,8 @@ and static analysis issues.
 
 | Problem | Solution |
 | --- | --- |
+| `claude: command not found` | Install Claude Code (native installer or `npm install -g @anthropic-ai/claude-code`) |
+| claude authentication error | Run `claude` once interactively to log in |
 | `opencode: command not found` | Install OpenCode: `scoop install opencode` (Windows) or `curl -fsSL https://opencode.ai/install \| bash` (Linux) |
 | `jq: command not found` (Linux) | `sudo apt install jq` |
 | Model not found | Run `opencode models` to list available models; adjust IDs in config |
