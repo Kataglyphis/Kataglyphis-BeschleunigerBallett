@@ -2454,7 +2454,18 @@ drain the cheap wins on an incremental build before the ABI-skew one needs a
   and `Model::addSampler` line 75 calls `device->supportsSamplerAnisotropy()`
   directly (no per-texture `getFeatures()` query).
 
-- [ ] **(refactor, M) Drop dead `transfer_queue` plumbing through `Mesh`/`Model`/loaders** —
+- [x] **(refactor, M) Drop dead `transfer_queue` plumbing through `Mesh`/`Model`/loaders** —
+  **DONE — already implemented by a previous refactor** (commit `519c2329`, the
+  same commit that did the `samplerAnisotropy` caching task above). Verified
+  2026-07-30: `vk::Queue transfer_queue` is gone from the `Mesh` ctor, all four
+  `create*Buffer` methods (`Mesh.ixx`/`Mesh.cpp`), `Model::add_new_mesh`
+  (`Model.ixx`/`Model.cpp`), and both loader call sites
+  (`ObjLoader.cpp:146-153`, `GltfLoader.cpp:97-102`). A repo-wide grep for
+  `transfer_queue` across `*.{cpp,ixx,hpp,h}` finds it only in
+  `VulkanBufferManager.cpp`/`.ixx`, where it is genuinely used for the
+  one-time-submit copy command — not dead. No source edit needed; original
+  scoping note kept below for the reasoning.
+
   `vk::Queue transfer_queue` is threaded through the `Mesh` ctor, four private
   `create*Buffer` methods, `Model::add_new_mesh`, and both loader `uploadParsed`
   call sites — and commented out as unused in every one of the four
