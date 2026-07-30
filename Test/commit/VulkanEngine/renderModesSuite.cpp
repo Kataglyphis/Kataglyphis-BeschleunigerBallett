@@ -45,17 +45,19 @@ void run_frames(Kataglyphis::Frontend::Window *window,
     Kataglyphis::TestSupport::waitForModelLoad(renderer, [&] {
         glfwPollEvents();
         gui->render();
-        renderer->updateStateDueToUserInput(gui);
-        renderer->updateUniforms(scene, camera, window);
-        renderer->drawFrame();
+        auto &guiSceneSharedVars = gui->getGuiSceneSharedVars();
+        renderer->updateStateDueToUserInput(guiSceneSharedVars);
+        renderer->updateUniforms(scene, camera, window, guiSceneSharedVars);
+        renderer->drawFrame(guiSceneSharedVars);
     });
 
     for (int frame = 0; frame < frame_count; ++frame) {
         glfwPollEvents();
         gui->render();
-        renderer->updateStateDueToUserInput(gui);
-        renderer->updateUniforms(scene, camera, window);
-        renderer->drawFrame();
+        auto &guiSceneSharedVars = gui->getGuiSceneSharedVars();
+        renderer->updateStateDueToUserInput(guiSceneSharedVars);
+        renderer->updateUniforms(scene, camera, window, guiSceneSharedVars);
+        renderer->drawFrame(guiSceneSharedVars);
 
         ASSERT_FALSE(renderer->hasDeviceLost()) << "Device lost in mode '" << mode_label << "' at frame " << frame;
     }

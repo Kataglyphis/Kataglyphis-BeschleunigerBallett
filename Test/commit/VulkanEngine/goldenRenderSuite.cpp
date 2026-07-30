@@ -101,9 +101,10 @@ struct EngineHarness
     {
         glfwPollEvents();
         gui->render();
-        renderer->updateStateDueToUserInput(gui.get());
-        renderer->updateUniforms(scene.get(), camera.get(), window.get());
-        renderer->drawFrame();
+        auto &guiSceneSharedVars = gui->getGuiSceneSharedVars();
+        renderer->updateStateDueToUserInput(guiSceneSharedVars);
+        renderer->updateUniforms(scene.get(), camera.get(), window.get(), guiSceneSharedVars);
+        renderer->drawFrame(guiSceneSharedVars);
     }
 
     /// Pumps frames until the asynchronously parsed model is in the scene.

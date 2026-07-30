@@ -48,9 +48,12 @@ class VulkanRenderer
       Kataglyphis::Frontend::GUI *gui,
       Camera *camera);
 
-    void drawFrame();
+    void drawFrame(const GUISceneSharedVars &guiSceneSharedVars);
 
-    void updateUniforms(Scene *scene_data, Camera *camera_data, Kataglyphis::Frontend::Window *window_data);
+    void updateUniforms(Scene *scene_data,
+      Camera *camera_data,
+      Kataglyphis::Frontend::Window *window_data,
+      const GUISceneSharedVars &guiSceneSharedVars);
 
     /// Adds a model to the current scene without replacing what is already
     /// there, and refreshes the descriptor sets that reference scene
@@ -68,7 +71,12 @@ class VulkanRenderer
     /// clears - the renderer draws the sky meanwhile rather than blocking.
     [[nodiscard]] bool isModelLoadPending() const { return scene != nullptr && scene->isModelLoadPending(); }
 
-    void updateStateDueToUserInput(Kataglyphis::Frontend::GUI *frontend_gui);
+    // Reads/mutates the caller-owned scene settings directly (no GUI pointer)
+    // so this can be driven by anything that produces a GUISceneSharedVars,
+    // not only a live GUI object. GUIRendererSharedVars (renderer-only state:
+    // rasterization mode, hot-reload trigger, ...) is unrelated to scene
+    // settings and still comes from the `gui` member.
+    void updateStateDueToUserInput(GUISceneSharedVars &guiSceneSharedVars);
     void finishAllRenderCommands();
     void update_raytracing_descriptor_set(uint32_t image_index);
     bool hasDeviceLost() const { return device_lost_detected; }
@@ -112,8 +120,7 @@ class VulkanRenderer
     void handleShadowResolutionChange(
         GUISceneSharedVars &guiSceneSharedVars);
     void handleModelTransformChange(
-        GUISceneSharedVars &guiSceneSharedVars,
-        Kataglyphis::Frontend::GUI *frontend_gui);
+        GUISceneSharedVars &guiSceneSharedVars);
     void handleModelReloadRequest(
         GUISceneSharedVars &guiSceneSharedVars);
 
@@ -148,7 +155,7 @@ class VulkanRenderer
     Camera *camera;
 
     // -- pools
-    bool record_commands(uint32_t image_index);
+    bool record_commands(uint32_t image_index, const GUISceneSharedVars &guiSceneSharedVars);
 
     // Returns the offscreen colour texture of whichever raster path is active
     // this frame (forward vs deferred), reading the mode once. The RT/PT and

@@ -2330,13 +2330,50 @@ moves geometry.
     wraps `cleanUpUBOs`/`create_uniform_buffers` + `cleanUpDescriptorResources`/
     `initDescriptorResources` + the RT-descriptor recreate. Pure extraction, no
     behaviour change; guarded by `SwapchainRecreationKeepsRendering`.
-- [ ] **`GUI*` mutable cross-cutting dependency → const settings struct** (S) —
-    both `Scene` and `VulkanRenderer` read mutable GUI state each frame through a
-    raw pointer. A plain `RenderSettings` struct owned by `App`, passed by const
-    reference to `Scene::updateLogic` + `VulkanRenderer::record_commands`, would
-    decouple both from the GUI. The struct already exists —
-    `GUISceneSharedVars` carries every render-relevant field; it is just
-    delivered through a mutable pointer today.
+- [x] **`GUI*` mutable cross-cutting dependency → const settings struct** (S,
+    done 2026-07-30) — `App::run()` now reads `gui->getGuiSceneSharedVars()`
+    once per frame and threads that `GUISceneSharedVars` through
+    `VulkanRenderer::updateStateDueToUserInput` / `updateUniforms` /
+    `drawFrame` / `record_commands` by reference instead of each of those
+    functions independently pulling it back out of a raw `GUI*`.
+    `handleModelTransformChange` no longer takes a `GUI*` at all — its caller
+    already holds the reference it needs, so the double-write of
+    `model_transform_changed` (once via the passed reference, once via
+    `frontend_gui->getGuiSceneSharedVars()`) is gone along with the pointer.
+    `GUIRendererSharedVars` (rasterization mode, hot-reload trigger — renderer
+    state, not scene settings) deliberately still comes from the `gui` member;
+    only the scene-settings half of the coupling was in scope. All five call
+    sites (`App.cpp`, `goldenRenderSuite.cpp`, `renderModesSuite.cpp` x2, the
+    `VulkanRenderer` constructor) updated to match; `Scene` was never actually
+    GUI-coupled (grepped — no match), so the "`Scene::updateLogic`" half of
+    the original scoping note did not apply.
+
+    Verified: `clangcl-debug` container build green (exit 0, 11 executables
+    delivered). `commitTestSuite.exe` on the RX 9070 XT: 93/99 non-GPU tests
+    pass; the 6 failures are pre-existing and untouched by this change —
+    confirmed by stashing this diff, rebuilding, and reproducing the same 6
+    on unmodified `develop` HEAD. Two are unrelated: `BuildIntegrity.*` (4
+    tests) hardcodes `Resources/Shaders` in `find_repo_root()`
+    (`buildIntegritySuite.cpp:25`), which no longer exists post-Slang-migration
+    (`Resources/ShadersSlang` today) — a same-day regression from the shader
+    migration retirement above, not from this task. `PushConstantRasterizerUnit`
+    (2 tests) hardcodes `offsetof(objectIndex) == 64U` / `sizeof <= 128U`,
+    stale since `invModel` (a second `mat4`) was added to
+    `PushConstantRasterizer` in an earlier commit — objectIndex is now at 128,
+    and the struct is 132 bytes, over the 128-byte guaranteed push-constant
+    budget. Neither touched by this diff (`git diff HEAD` on both files is
+    empty). Full-suite GPU golden/RT/PT tests could not be run to completion
+    in this session — the host process hard-aborts
+    (`vulkan.hpp` `Assertion failed: result == Result::eSuccess`) partway
+    through the RT/PT tests with `accelerationStructure`/`rayTracing`/
+    `bufferDeviceAddress`/`multiview` all reported unenabled on the selected
+    RX 9070 XT despite `vulkaninfo` showing it as the discrete device, and one
+    GUI-sweep GPU test SEH-crashed on an invalid `VkDeviceMemory` handle — same
+    crash reproduced identically on unmodified `develop` HEAD, so it predates
+    and is unrelated to this task. Worth a dedicated investigation (Vulkan
+    driver update, or a device-selection/feature-enable regression) since it
+    currently blocks GPU-golden verification entirely, not just for this
+    change.
 - [ ] **`KATAGLYPHIS_GPU_TIMING_JSON` headless dump as a CI-benchmark** (S) —
     the env-var JSON path already works and writes per-pass ms. A gtest that
     runs the golden harness N frames with the env set, parses the JSON, and

@@ -123,7 +123,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
         createPathTracingAccumulationResources();
     }
 
-    updateUniforms(scene, camera, window);
+    updateUniforms(scene, camera, window, gui->getGuiSceneSharedVars());
     updateAllDescriptorSets();
 
     std::vector<vk::ImageView> skyboxImageViews(vulkanSwapChain.getNumberSwapChainImages());
@@ -160,10 +160,9 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
 
 void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
   Camera *camera_data,
-  [[maybe_unused]] Kataglyphis::Frontend::Window *window_data)
+  [[maybe_unused]] Kataglyphis::Frontend::Window *window_data,
+  const GUISceneSharedVars &guiSceneSharedVars)
 {
-    const GUISceneSharedVars guiSceneSharedVars = gui->getGuiSceneSharedVars();
-
     const vk::Extent2D extent = vulkanSwapChain.getSwapChainExtent();
     float const aspect_ratio = (extent.height > 0) ? static_cast<float>(extent.width) / static_cast<float>(extent.height) : 1.0f;
 
@@ -254,21 +253,20 @@ void Kataglyphis::VulkanRenderer::finishModelLoad()
     updateAllDescriptorSets();
 }
 
-void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(Kataglyphis::Frontend::GUI *frontend_gui)
+void Kataglyphis::VulkanRenderer::updateStateDueToUserInput(GUISceneSharedVars &guiSceneSharedVars)
 {
     // Poll the background parse before anything else this frame: the rest of
     // the frame should see the model on the same frame it becomes available.
     if (scene->pollModelLoad(device, graphics_command_pool)) { finishModelLoad(); }
 
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars =
-      frontend_gui->getGuiRendererSharedVars();
+      gui->getGuiRendererSharedVars();
 
     handleShaderHotReloadRequest(guiRendererSharedVars);
     handleRasterizationModeChange(guiRendererSharedVars);
 
-    GUISceneSharedVars &guiSceneSharedVars = gui->getGuiSceneSharedVars();
     handleShadowResolutionChange(guiSceneSharedVars);
-    handleModelTransformChange(guiSceneSharedVars, frontend_gui);
+    handleModelTransformChange(guiSceneSharedVars);
     handleModelReloadRequest(guiSceneSharedVars);
 }
 
@@ -334,12 +332,10 @@ void Kataglyphis::VulkanRenderer::handleShadowResolutionChange(
 }
 
 void Kataglyphis::VulkanRenderer::handleModelTransformChange(
-    GUISceneSharedVars &guiSceneSharedVars,
-    Kataglyphis::Frontend::GUI *frontend_gui)
+    GUISceneSharedVars &guiSceneSharedVars)
 {
     if (guiSceneSharedVars.model_transform_changed) {
         guiSceneSharedVars.model_transform_changed = false;
-        frontend_gui->getGuiSceneSharedVars().model_transform_changed = false;
 
         glm::mat4 modelMatrix = glm::mat4(1.0f);
         modelMatrix = glm::scale(modelMatrix, glm::vec3(60.0f, 60.0f, 60.0f)); // Apply original scale
@@ -426,7 +422,7 @@ void Kataglyphis::VulkanRenderer::shaderHotReload()
     }
 }
 
-void Kataglyphis::VulkanRenderer::drawFrame()
+void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSharedVars)
 {
     const auto end_imgui_frame_if_needed = []() -> void {
         ImGuiContext const *imgui_context = ImGui::GetCurrentContext();
@@ -549,7 +545,7 @@ void Kataglyphis::VulkanRenderer::drawFrame()
         : (guiRendererSharedVars.raytracing ? "raytracing" : "path_tracing");
     if (raytracing_available && guiRendererSharedVars.raytracing) { update_raytracing_descriptor_set(image_index); }
 
-    if (!record_commands(image_index)) {
+    if (!record_commands(image_index, guiSceneSharedVars)) {
         end_imgui_frame_if_needed();
         return;
     }
@@ -820,7 +816,7 @@ auto Kataglyphis::VulkanRenderer::activeOffscreenTexture(uint32_t index) -> Text
              : deferredRasterizer.getOffscreenTexture(index);
 }
 
-bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
+bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GUISceneSharedVars &guiSceneSharedVars)
 {
     if (image_index >= command_buffers.size() || image_index >= sharedRenderDescriptors.sets().size()
         || image_index >= postDescriptors.sets().size()) {
@@ -830,8 +826,6 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index)
 
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
       gui->getGuiRendererSharedVars();
-
-    GUISceneSharedVars &guiSceneSharedVars = gui->getGuiSceneSharedVars();
 
     vk::CommandBuffer &commandBuffer = command_buffers[image_index];
 
