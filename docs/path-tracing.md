@@ -6,7 +6,7 @@ open work is listed at the end with its BACKLOG anchors.
 
 ## Pipeline shape
 
-One compute kernel, `Resources/Shaders/path_tracing/path_tracing.comp`,
+One compute kernel, `Resources/ShadersSlang/path_tracing/path_tracing.slang`,
 dispatched by `PathTracing::recordCommands` between two image barriers that
 hand the rasterizer's offscreen target (`rgba16f` since the HDR unit,
 `OUT_IMAGE_BINDING`) from the graphics to the compute queue family and back. The post pass then samples
@@ -102,10 +102,9 @@ every light response. Measure changed-pixel fractions in the panel-free
 right edge, and dump amplified diff-map PNGs before trusting any new pixel
 metric.
 
-Editing the kernel no longer needs a manual compile step: glslc resolves at
-runtime (baked path -> `VULKAN_SDK` -> PATH, fixed 2026-07-22) and the
-engine recompiles an edited source at startup, loudly reporting any compiler
-failure. `Scripts/Windows/compile-shaders.ps1` remains the bulk/CI path.
+Editing the kernel no longer needs a C++ rebuild: the Slang compile script
+regenerates the `.spv` and the engine loads it at startup.
+`Scripts/Windows/compile-slang-shaders.ps1` is the build/CI path.
 
 ## Open work (BACKLOG, "PT survey" section)
 
@@ -113,5 +112,3 @@ failure. `Scripts/Windows/compile-shaders.ps1` remains the bulk/CI path.
   gradient), folded into the PT-goldens remainder of item 10.
 - RNG decorrelation (item 11, partially done via the frame fold): linear
   seeds still correlate neighbours within a frame.
-- Runtime glslc resolution (new, 2026-07-22): resolve at runtime instead of
-  the baked container path, and check the `system()` return.

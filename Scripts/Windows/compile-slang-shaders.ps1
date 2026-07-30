@@ -14,7 +14,7 @@
   never emitted directly: they are `import`ed by entry-point shaders and
   linked by slangc. See docs/shader-sharing.md.
 
-  Staleness mirrors compile-shaders.ps1: an output is reused only when it
+  Staleness: an output is reused only when it
   is newer than its source AND every .slang file under the Slang tree
   (conservative — an import edit rebuilds every dependent).
 
@@ -156,8 +156,7 @@ foreach ($entry in $Manifest) {
 
     # slangc resolves `import <name>` to <name>.slang on the -I paths. Add
     # the Slang root and every subdirectory so `import aces` finds
-    # common/aces.slang regardless of where the importing shader lives (this
-    # mirrors compile-shaders.ps1's per-subdirectory include logic).
+    # common/aces.slang regardless of where the importing shader lives.
     $includeArgs = @('-I', $slangRoot, '-I', (Split-Path $srcPath -Parent))
     foreach ($d in (Get-ChildItem -Path $slangRoot -Directory -Recurse -ErrorAction SilentlyContinue)) {
         $includeArgs += '-I'; $includeArgs += $d.FullName

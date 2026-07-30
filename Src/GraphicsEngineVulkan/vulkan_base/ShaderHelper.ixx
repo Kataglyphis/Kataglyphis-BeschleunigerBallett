@@ -16,8 +16,6 @@ class ShaderHelper
   public:
     ShaderHelper();
 
-    static std::string getShaderSpvDir(const std::string &shader_src_dir, const std::string &shader_name);
-
     static vk::ShaderModule createShaderModule(std::shared_ptr<VulkanDevice>device, const std::vector<char> &code);
 
     ~ShaderHelper();

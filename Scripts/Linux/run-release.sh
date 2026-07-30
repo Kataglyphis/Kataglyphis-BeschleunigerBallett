@@ -108,12 +108,12 @@ export VK_LAYER_PATH=""
 export VK_INSTANCE_LAYERS=""
 
 if [[ "${CLEAN_AND_REBUILD_SHADERS}" = true ]]; then
-  info "Cleaning and rebuilding shaders..."
-  find "${PROJECT_ROOT}/Resources/Shaders" -name "*.spv" -delete
-  if [[ -f "${SCRIPT_DIR}/compile-shaders.sh" ]]; then
-    bash "${SCRIPT_DIR}/compile-shaders.sh"
+  info "Cleaning and rebuilding Slang shaders..."
+  find "${PROJECT_ROOT}/Resources/ShadersSlang/build" -name "*.spv" -delete 2>/dev/null || true
+  if [[ -f "${SCRIPT_DIR}/compile-slang-shaders.sh" ]]; then
+    bash "${SCRIPT_DIR}/compile-slang-shaders.sh"
   else
-    warn "compile-shaders.sh not found, skipping rebuild step"
+    warn "compile-slang-shaders.sh not found, skipping rebuild step"
   fi
 fi
 

@@ -1,29 +1,51 @@
-# Shader Build Pipeline (SPIR-V)
+# Shader Build Pipeline (Slang → SPIR-V/WGSL)
 
-How GLSL becomes SPIR-V here, and a failure mode that cost hours in July 2026.
-`AGENTS.md` links here rather than restating it.
+How Slang becomes SPIR-V and WGSL here. `AGENTS.md` links here rather than
+restating it.
 
 ## How it works
 
-Shaders live in `Resources/Shaders/**` and compile to
-`Resources/Shaders/<dir>/spv/<name>.spv`. Two paths produce them:
+Shaders are written in [Slang](https://shader-slang.com/) under
+`Resources/ShadersSlang/`. The build scripts
+(`Scripts/Windows/compile-slang-shaders.ps1`,
+`Scripts/Linux/compile-slang-shaders.sh`) compile each `.slang` file to:
 
-1. **Build time (preferred).** `Scripts/Windows/compile-shaders.ps1`, invoked
-   by `Build-Windows.ps1` through `Invoke-ShaderPrecompile` for **every**
-   configuration. Uses `glslc` from `VULKAN_SDK`, defines `KAT_VULKAN`, and
-   passes every shader subdirectory as an include path.
-2. **Runtime fallback.** `ShaderHelper::compileShader` compiles on demand in
-   Debug builds (disabled in Release unless
-   `KAT_ENABLE_RUNTIME_SHADER_COMPILATION` is set). Since 2026-07-22
-   (`c246ded3`) it works on the HOST for container-built binaries too: glslc
-   resolves at call time (baked build path → `VULKAN_SDK` → PATH) and a
-   nonzero compiler exit is a loud spdlog error naming the stale spv that
-   will be served. Before that, the baked container path made every host
-   runtime compile a silent no-op. Practical consequence: a shader probe
-   cycle on the host is edit → run one golden - no manual compile step.
-   Pipelines also compile-then-read since `91a73cd1` (they used to read the
-   spv BEFORE regenerating it, so an edit reached the GPU one process-start
-   late).
+- **SPIR-V** (`.spv`) for the C++ Vulkan renderer → `Resources/ShadersSlang/build/spirv/`
+- **WGSL** (`.wgsl`) for the Rust WebGPU renderer → `Resources/ShadersSlang/build/wgsl/`
+  (combined WGSL files are also copied to the Rust crate's `src/shaders/` directory)
+
+The C++ renderer loads pre-compiled SPIR-V via `File` I/O — there is no
+runtime shader compilation. Slang emits `"main"` as the SPIR-V entry point
+name (not the Slang function name), so all `pName` values in pipeline
+creation use `"main"`.
+
+`histogram.wgsl` in the Rust crate remains hand-written: Slang does not
+support `InterlockedAdd` on `RWStructuredBuffer` for the WGSL target.
+
+## Staleness rules
+
+An output is reused only when it is newer than its source **and** every
+`.slang` file under the Slang tree (conservative — an import edit rebuilds
+every dependent). The compile scripts walk the manifest and recompile only
+stale entries.
+
+## Fast shader iteration
+
+Edit a `.slang` file, then recompile locally:
+
+```pwsh
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1
+```
+
+Or on Linux:
+
+```bash
+bash Scripts/Linux/compile-slang-shaders.sh
+```
+
+The C++ engine loads the `.spv` files at startup via `File::readCharSequence`,
+so no rebuild of the C++ binary is needed for a shader-only change — just
+recompile the shaders and run.
 
 ## The failure mode (fixed 2026-07-19)
 

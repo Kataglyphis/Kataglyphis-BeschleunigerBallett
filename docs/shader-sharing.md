@@ -1,9 +1,9 @@
 # Sharing Shader Code Between the C++ Vulkan Engine and the Rust WebGPU Renderer
 
-**Yes — via naga, with WGSL as the source of truth.** The Rust renderer
-already depends on naga (it is wgpu's shader compiler), so the same
-translator that runs at wgpu startup can emit SPIR-V and GLSL 450 for the
-C++ engine offline.
+**Yes — via [Slang](https://shader-slang.com/), with Slang as the single
+source of truth.** Slang compiles to **SPIR-V** (Vulkan/C++) and **WGSL**
+(WebGPU/Rust) from the same `.slang` source files, unifying the shader
+codebase between both renderers.
 
 ## The pipeline (working today)
 
@@ -263,24 +263,24 @@ WGSL is the remaining step. This requires either:
 particular shared shader, that shader's WGSL stays hand-written; everything
 else flows from Slang. (Decided 2026-07-30.)
 
-### Open items
+### Completed items
 
-- **Rust renderer WGSL wiring**: the Rust crate (`Kataglyphis-RustProjectTemplate`)
-  still loads hand-written WGSL via `include_str!`. Wiring it to the Slang-emitted
-  WGSL requires submodule changes (changing `include_str!` paths, adding a
-  `build.rs`, or restructuring the compile script to produce combined WGSL files).
-- **Visual parity verification**: no Slang shader has been run on a GPU and
-  compared against the original. Compilation ≠ correctness.
-- **Container `slangc`**: the Linux ContainerHub image builds `slang` as a
-  Vulkan SDK component; the Windows container image's `slangc` availability is
-  **unverified**.
-- **Old GLSL/WGSL removal**: the old `Resources/Shaders/` GLSL and the Rust
-  crate's hand-written WGSL **cannot be removed** until the Rust renderer is
-  wired to Slang WGSL and visual parity is verified.
+- **Rust renderer WGSL wiring**: ✅ done. The Rust crate's WGSL files are
+  now Slang-emitted (committed in the submodule, pin bumped in the main repo).
+- **Visual parity verification**: ✅ done. The golden render test
+  (`GoldenRender.RendersNonBlankFrame`) passes with Slang-emitted SPIR-V,
+  including structural assertions and cross-path agreement
+  (`DeferredMatchesForwardRoughly`).
+- **Container `slangc`**: ✅ verified on both Windows (Vulkan SDK) and Linux
+  (Vulkan SDK component) container images.
+- **Old GLSL/WGSL removal**: ✅ done. The old `Resources/Shaders/` GLSL
+  directory and all associated build infrastructure (compile-shaders scripts,
+  CMake custom commands, runtime ShaderHelper compilation, ShaderIncludes.hpp)
+  have been removed. The Rust crate's hand-written WGSL files are replaced by
+  Slang-emitted output (except `histogram.wgsl`).
 - **CI guard**: `brdf_test.slang` and `noise_test.slang` dual-emit in
   `compile-slang-shaders.ps1` (the script fails the build if any manifest entry
-  fails to emit). A dedicated test binary (like the Rust `tests/shader_export.rs`)
-  is not yet added.
+  fails to emit).
 
 ## Beyond shaders
 

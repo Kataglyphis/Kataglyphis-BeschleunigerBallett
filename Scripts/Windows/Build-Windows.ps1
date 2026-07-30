@@ -6,7 +6,7 @@ param(
   # Rewrite sources with clang-format/cmake-format instead of only reporting
   # drift. Off by default: see the formatting block below for why.
   [switch]$ApplyFormat,
-  # Re-export the Rust renderer WGSL to Resources/Shaders/generated.
+  # Re-export the Rust renderer WGSL to Resources/ShadersSlang/build/wgsl/.
   [switch]$ExportWgslShaders,
   [switch]$SkipTidy,
   [switch]$SkipTests,
@@ -223,14 +223,12 @@ try {
   #
   # Opt-in via -ExportWgslShaders, and non-critical: the export needs a cargo
   # toolchain and takes a first-build compile of the renderer crate, neither of
-  # which should be able to fail a C++ build. WGSL is the source of truth for
-  # the shared BRDF/tonemap math, so this is how a WGSL change reaches the
+  # which should be able to fail a C++ build. Slang is the source of truth for
+  # the shared BRDF/tonemap math, so this is how a Slang change reaches the
   # Vulkan engine.
   #
-  # Output lands in Resources/Shaders/generated, which compile-shaders.ps1 and
-  # buildIntegritySuite.cpp both skip on purpose - those artifacts carry WebGPU
-  # binding decorations, so glslc must not compile them and their timestamps
-  # must not mark real shaders stale.
+  # Output lands in Resources/ShadersSlang/build/wgsl/, which the Slang
+  # compile script copies to the Rust crate's shader directory.
   if ($ExportWgslShaders) {
     Invoke-BuildStep -Context $context -StepName "Export WGSL shaders (naga)" -Script {
       $cargo = Get-Command "cargo" -ErrorAction SilentlyContinue
@@ -243,7 +241,7 @@ try {
         Write-BuildLogWarning -Context $context -Message "Rust renderer submodule not present; skipping WGSL shader export."
         return
       }
-      $outDir = Join-Path $workspacePath "Resources\Shaders\generated"
+      $outDir = Join-Path $workspacePath "Resources\ShadersSlang\build\wgsl"
       Push-Location $rustRoot
       try {
         Invoke-BuildExternal -Context $context -File $cargo.Source -Parameters @(

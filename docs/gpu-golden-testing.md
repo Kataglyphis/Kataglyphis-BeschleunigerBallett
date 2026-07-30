@@ -25,10 +25,9 @@ cd <repo root>
 ./build-clangcl-debug/commitTestSuite.exe --gtest_filter='GoldenRender.*:Integration.*'
 ```
 
-**The working directory matters.** The rasterizer/RT shaders are loaded via a
-baked absolute `RELATIVE_RESOURCE_PATH`, but a few shaders (e.g.
-`Resources/Shaders/compute/spv/clouds.comp.spv`) are loaded via a *cwd-relative*
-path. Running from `build-clangcl-debug/` fails with an access violation /
+**The working directory matters.** The Slang-emitted SPIR-V shaders are loaded
+via *cwd-relative* paths (e.g. `Resources/ShadersSlang/build/spirv/...`). Running
+from `build-clangcl-debug/` fails with an access violation /
 empty-`codeSize` `vkCreateShaderModule` — that is a wrong cwd, **not** a code
 bug. Run from the repo root, where `Resources/` resolves.
 

@@ -116,10 +116,9 @@ The Windows release workflow can produce an MSIX package. If signing is enabled,
 
 ## Shader Include Workflow
 
-If you introduce new shader include files, keep these paths aligned:
-
-- `Src/GraphicsEngineVulkan/vulkan_base/ShaderIncludes.hpp`
-- `Src/GraphicsEngineVulkan/cmake/CompileShadersToSPV.cmake`
+Shaders are written in [Slang](https://shader-slang.com/) under
+`Resources/ShadersSlang/`. The build scripts compile them to SPIR-V (C++) and
+WGSL (Rust). See `docs/shader-build-pipeline.md` for details.
 
 ## Troubleshooting
 

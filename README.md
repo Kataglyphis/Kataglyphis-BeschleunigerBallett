@@ -36,7 +36,7 @@ Kataglyphis-BeschleunigerBallett is a renderer and graphics-engine playground us
 
 - Vulkan renderer (C++23 modules) with forward + deferred rasterization, ray tracing, path tracing, PBR, cascaded shadow maps (consumed by both lighting paths), skybox, volumetric clouds, OBJ loading, and mip mapping
 - VMA-backed memory, fence-synced uploads with a persistent staging buffer, a persisted `VkPipelineCache`, and fail-fast Vulkan error handling (exceptions are disabled project-wide)
-- Companion Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer`): glTF 2.0/GLB, PBR + IBL, CSM, SSAO, bloom, skinning, animations, LOD — runs natively and in the browser; shaders exportable to SPIR-V/GLSL for this engine (see `docs/shader-sharing.md`)
+- Companion Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer`): glTF 2.0/GLB, PBR + IBL, CSM, SSAO, bloom, skinning, animations, LOD — runs natively and in the browser; shares Slang shader sources with the C++ Vulkan renderer (see `docs/shader-sharing.md`)
 - Tooling around CMake presets, CI, code coverage, benchmarking, fuzzing (including a real OBJ-parsing fuzz target), packaging, Sphinx, Doxygen, and Graphviz
 - Linux and Windows as the primary development targets
 
@@ -154,7 +154,7 @@ Topic guides (each topic has exactly one home — `AGENTS.md` links to these rat
 | Doc | Covers |
 | --- | --- |
 | [`docs/container-build-caching.md`](docs/container-build-caching.md) | This repo's build caching: measurements, both transports, `KATAGLYPHIS_KEEP_BUILD_ROOT`, delivery verification |
-| [`docs/shader-build-pipeline.md`](docs/shader-build-pipeline.md) | GLSL → SPIR-V, the stale-binary and silent-`glslc`-failure traps, fast shader iteration |
+| [`docs/shader-build-pipeline.md`](docs/shader-build-pipeline.md) | Slang → SPIR-V/WGSL build step, staleness rules, fast shader iteration |
 | [`docs/code-quality.md`](docs/code-quality.md) | clang-tidy / clang-format commands and when to run them |
 | [`docs/cpp-renderer-improvements.md`](docs/cpp-renderer-improvements.md) | Renderer architecture work: what changed and why, plus the instrument playbook for writing goldens |
 | [`docs/path-tracing.md`](docs/path-tracing.md) | The path-tracing mode: estimator, temporal accumulation, furnace/convergence goldens |

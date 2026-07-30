@@ -2,8 +2,6 @@
 #include <memory>
 
 #include <cstdint>
-#include <filesystem>
-#include <sstream>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -15,18 +13,6 @@ module kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.device;
 
 Kataglyphis::ShaderHelper::ShaderHelper() = default;
-
-auto Kataglyphis::ShaderHelper::getShaderSpvDir(const std::string &shader_src_dir, const std::string &shader_name)
-  -> std::string
-{
-    std::stringstream shader_src_path;
-    shader_src_path << shader_src_dir << shader_name;
-    std::filesystem::path const resolved_shader_path_object(shader_src_path.str());
-    std::filesystem::path const shader_spv_path_object =
-      resolved_shader_path_object.parent_path() / "spv" / (resolved_shader_path_object.filename().string() + ".spv");
-
-    return shader_spv_path_object.string();
-}
 
 auto Kataglyphis::ShaderHelper::createShaderModule(std::shared_ptr<VulkanDevice>device, const std::vector<char> &code)
   -> vk::ShaderModule
