@@ -1854,57 +1854,6 @@ Submodule Pins).
   scope for the bundle-caching task below, which could only be verified via
   `cargo build` + the unaffected lib tests as a result.
 
-- [ ] **(M) Load orthographic glTF cameras instead of dropping them** — the
-  loader warns and skips `Projection::Orthographic`
-  (`crates/webgpu_renderer/src/asset/gltf_loader.rs:155-160`) because
-  `CpuCamera` (`src/scene/mod.rs:281-289`) can only express a perspective
-  frustum (`yfov_rad`/`znear`/`zfar`). CAD-style and 2.5D assets export ortho
-  cameras; today they silently lose their camera and fall back to the default.
-
-  **Files to read:**
-  - `crates/webgpu_renderer/src/asset/gltf_loader.rs:139-160` — the camera
-    extraction and the warn-and-skip branch
-  - `crates/webgpu_renderer/src/scene/mod.rs:281-289` — `CpuCamera`
-  - grep the crate for `yfov_rad` — every consumer that builds a projection
-    matrix from it must handle the new variant (expect the render path and
-    `src/scene/camera.rs`)
-  - `crates/webgpu_renderer/tests/headless.rs:667` — `reads_gltf_cameras`,
-    the test pattern to extend
-  - `crates/webgpu_renderer/tests/assets/cube_animated.gltf` — the fixture
-    with a camera node to copy from
-
-  **Steps:**
-  1. Make the projection explicit in `CpuCamera`: an enum
-     (`Perspective { yfov_rad, .. }` / `Orthographic { xmag, ymag, .. }`) or a
-     kind field — pick whichever needs the least churn at the consumers found
-     by the grep, but do NOT leave ortho representable as a fake perspective.
-  2. In the loader, populate it from `Projection::Orthographic` (xmag, ymag,
-     znear, zfar per glTF 2.0 §5.16) and delete the warn-and-skip.
-  3. At each projection-matrix consumer, build
-     `glam::Mat4::orthographic_rh(-xmag, xmag, -ymag, ymag, znear, zfar)` for
-     the ortho variant (match the crate's existing handedness/depth-range
-     convention — copy whatever the perspective path uses, e.g. `_rh` vs
-     `_rh_gl`, do not guess).
-  4. Add `tests/assets/cube_ortho_camera.gltf`: copy the camera node setup
-     from `cube_animated.gltf`, switch the camera to
-     `"type": "orthographic"` with an `orthographic` block (hand-edit, it is
-     JSON).
-  5. Add `reads_orthographic_gltf_cameras` next to :667 asserting the camera
-     is loaded with the right xmag/ymag (red today: the camera list is empty
-     for this fixture); plus a unit test on the projection-matrix helper
-     (finite, maps znear/zfar to the expected NDC depths).
-
-  **Test:** As in step 5 — `cargo test -p kataglyphis_webgpu_renderer`; the
-  loader test must be red before the fix, green after.
-
-  **Build:** Host cargo (native), from
-  `ExternalLib/Kataglyphis-RustProjectTemplate/`.
-
-  **Context:** Last surviving member of deep-dive item #15 (the other two —
-  strip/fan and 16-bit PNG — were verified done 2026-07-31). Keep the change
-  data-model-first: the enum in step 1 is what prevents the "ortho stored as
-  yfov=0 perspective" landmine a lazy mapping would create.
-
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
