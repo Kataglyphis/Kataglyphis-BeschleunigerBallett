@@ -70,7 +70,10 @@ void rchit_main(
     if (material.textureID >= 0)
     {
         int textureId = clamp(int(obj.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
-        ambient += textures[textureId].Sample(textureSamplers[textureId], texCoords).xyz;
+        // Explicit LOD: closesthit runs under RayClosestHitKHR, which has no
+        // fragment derivatives, so an implicit-LOD .Sample() fails SPIR-V
+        // validation (ImplicitLod requires Fragment/GLCompute/MeshEXT/TaskEXT).
+        ambient += textures[textureId].SampleLevel(textureSamplers[textureId], texCoords, 0.0).xyz;
     }
     else
     {

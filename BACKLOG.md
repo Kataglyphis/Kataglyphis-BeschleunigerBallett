@@ -1713,83 +1713,67 @@ green) are both done; the GPU-verification blocker below is what remains.
 
 ### GPU host verification
 
-- [ ] **(M) Diagnose the blocked GPU-golden host run — RT/PT feature-enable
-  abort + SEH crash on `develop` HEAD** — currently NOTHING GPU-side can be
-  verified on the host, which silently degrades every rendering task to
-  "compiles and CPU tests pass".
+**ROOT CAUSE FOUND AND FIXED (2026-07-31).** The GPU-golden host run is
+restored. Two independent in-repo bugs were causing the reported abort, not
+an environmental/driver regression:
 
-  **Files to read:**
-  - The verification note under the "`GUI*` mutable cross-cutting
-    dependency" `[x]` entry (2026-07-24 batch) — the symptom record: the
-    host process hard-aborts (`vulkan.hpp` `Assertion failed: result ==
-    Result::eSuccess`) partway through the RT/PT golden tests with
-    `accelerationStructure` / `rayTracing` / `bufferDeviceAddress` /
-    `multiview` all reported unenabled on the selected RX 9070 XT, and one
-    GUI-sweep test SEH-crashes on an invalid `VkDeviceMemory` handle.
-    Reproduced identically on unmodified `develop`, so it is not any one
-    task's diff. Reproduced again 2026-07-31 (post CSM-viewMask-clamp task,
-    see "Recurring validation runs" above): forward/deferred/shadow/frustum/
-    multi-model/gpu-timing-dump goldens (`GoldenRender.RendersNonBlankFrame`
-    through `GpuTimingJsonDumpIsWrittenAndSane`) all still log
-    `VUID-VkSubpassDescription2-multiview-06558` ("pSubpasses[0].viewMask is
-    0x7, but multiview feature is not enabled") yet report `[ OK ]` anyway
-    (non-fatal), then `PathTracingAccumulatesAndConverges` hard-aborts with
-    `hasDeviceLost() == true` after a wall of `accelerationStructure`-feature
-    VUIDs. `maxMultiviewViewCount` queries fine (6, logged at device
-    selection) - the break is specifically in the features11/12 enable chain
-    not reaching the device, not in querying its limits.
-  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp:282-330` —
-    device enumeration, `parseGpuSelectionMode()` (env-driven selection
-    mode), scoring/fallback; `:699` `check_device_suitable`; ~`:452` the
-    features2/features11 enable chain where those four features are
-    requested.
-  - `docs/gpu-golden-testing.md` — the host verification loop this restores.
+1. `VulkanDevice.cpp:465-466` set `features2.pNext = nullptr;` instead of
+   `&features11`, silently severing the entire Vulkan11/12/13 + ray-tracing
+   feature chain (`features11 -> features12 -> features13 ->
+   acceleration_structure_features -> ray_tracing_pipeline_features`) from
+   ever reaching `vkCreateDevice` (`device_create_info.pNext = &features2` at
+   `:619`). Every feature the code carefully queried and conditionally
+   enabled on those structs - `multiview`, `bufferDeviceAddress`,
+   `scalarBlockLayout`, `shaderDrawParameters`, `accelerationStructure`,
+   `rayTracingPipeline`, `rayQuery` - was never actually requested from the
+   driver, despite the startup log claiming otherwise. `git blame` traces
+   this to commit `f9bdeb15` (2026-02-18), five months before the Slang
+   migration that was originally suspected. Forward/deferred/shadow goldens
+   still reported `[ OK ]` before the fix only because the AMD driver renders
+   anyway despite the VUID spam; RT/PT hard-aborted because losing
+   `bufferDeviceAddress` is fatal there. Fixed: `features2.pNext =
+   &features11;`.
+2. `Resources/ShadersSlang/raytracing/raytrace.rchit.slang:73` used
+   `.Sample(...)` (implicit LOD) in the closest-hit shader. `closesthit` maps
+   to the `RayClosestHitKHR` execution model, which has no fragment
+   derivatives, so `spirv-val` rejects `OpImageSampleImplicitLod` there
+   (`VUID-VkShaderModuleCreateInfo-pCode-08737`, "ImplicitLod instructions
+   require Fragment, GLCompute, MeshEXT or TaskEXT"). Only surfaced once (1)
+   was fixed and the device stopped rejecting `rayTracingPipeline` outright.
+   The old pre-Slang GLSL shader used the same implicit `texture()` call and
+   never hit this because glslang auto-lowers `texture()` to explicit-LOD
+   outside fragment/compute stages; Slang does not. Fixed:
+   `.SampleLevel(textureSamplers[textureId], texCoords, 0.0)`. Shaders
+   recompiled via `Scripts/Windows/compile-slang-shaders.ps1`.
+   `path_tracing.slang`'s identical-looking `.Sample()` calls are unaffected -
+   that shader is `[shader("compute")]`, which IS in the allowed list.
 
-  **Steps:**
-  1. Reproduce from the repo root:
-     `.\commitTestSuite.exe --gtest_filter=GoldenRender.*` (container-built
-     `clangcl-debug` binary copied to the host per AGENTS.md). Record which
-     tests pass before the first abort — if forward/deferred/shadow goldens
-     still pass and only RT/PT abort, the blast radius is "RT feature
-     enable", not "device broken".
-  2. Establish WHEN it broke: the 19-green host baseline is from ~2026-07-23
-     (`docs/gpu-golden-testing.md` / memory). Re-run the SAME binary that
-     was green then, if still present on disk; if that old binary now also
-     fails, the cause is environmental (AMD driver update — check
-     `vulkaninfo --summary` for driver version and that the RX 9070 XT still
-     reports `accelerationStructure` etc.); if the old binary passes and a
-     fresh `develop` build fails, `git bisect` the window 2026-07-23 →
-     2026-07-30 (few commits, mostly the Slang migration + GUI decoupling).
-  3. Add (or confirm) spdlog output at selection time: chosen device name,
-     selection mode, and WHICH features the enable chain actually requested
-     vs what the device offered — the current abort happens far from the
-     cause. This logging is worth landing regardless of the root cause.
-  4. Fix what is in-repo (selection/feature-enable regression) or document
-     the environmental cause + workaround in `docs/gpu-golden-testing.md`
-     (driver version pin, `KATAGLYPHIS` GPU-selection env var, etc.).
-  5. Separately capture the GUI-sweep SEH crash (invalid `VkDeviceMemory`)
-     — if it survives the feature-enable fix, split it into its own BACKLOG
-     entry with the gtest name and stack rather than leaving it folded in
-     here.
-  6. Done means: the full golden suite result on the host is recorded (N
-     green / M skipped), and the verification note in the 2026-07-24 batch
-     is updated to point here.
+   **Verified on the RX 9070 XT** (container-built `clangcl-debug`,
+   `commitTestSuite.exe --gtest_filter=GoldenRender.*`): the
+   `multiview`/`bufferDeviceAddress`/`ImplicitLod` VUIDs are completely gone
+   from the log (previously every frame logged them). 15 of 17 non-PT-
+   accumulation goldens pass clean, including real ray-tracing ones that
+   previously never got the chance to run:
+   `RaytracedWorldFollowsTheModelTransform`, `AddedModelAppearsInPathTracing`,
+   `ForwardLightingRespondsToTheDirectionalLight`, both mask-card and
+   KHR-texture-transform tests, both multi-model tests.
 
-  **Test:** No new test — the deliverable is the restored host loop plus
-  the root cause written down. The golden suite itself is the instrument.
-
-  **Build:** None required if an existing `clangcl-debug` binary is at
-  hand; otherwise
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
-  and `docker cp` per AGENTS.md. Runs happen ON THE HOST (containers have
-  no GPU/swapchain).
-
-  **Context:** Every rendering change since 2026-07-24 has shipped with the
-  caveat "GPU goldens could not be run". The longer that holds, the bigger
-  the unverified pile gets (the push-constant task above already depends on
-  it). This is an investigation task — if the root cause turns out to be a
-  driver update, the correct outcome is a documented workaround, not a code
-  change; do not force a fix into the repo to close the box.
+**NEW, narrower blocker isolated: path-tracing compute dispatch hits
+`VK_ERROR_DEVICE_LOST` with zero preceding validation errors.**
+`GoldenRender.PathTracingAccumulatesAndConverges` still hard-aborts
+(`ASSERT_VULKAN`) on `vkQueueSubmit` returning `-4` (`ErrorDeviceLost`) at
+`frame=2`; `GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice` hits the
+identical failure (`renderMode=path_tracing`, `vk::Result=-4`) at `frame=0` -
+so it is not timing-dependent, it is the `path_tracing.slang` compute kernel
+itself (RayQuery-based inline ray tracing, `Src/.../renderer/PathTracing.cpp`)
+faulting on the GPU. Because the process aborts on the first hit, every test
+ordered after the first PT-exercising one in `goldenRenderSuite.cpp` never
+runs - this still includes the GUI-sweep SEH-crash concern from the original
+report, which remains unevaluated. Not attempted here: this needs a GPU
+capture (RenderDoc/PIX or AMD's crash-dump tooling) or a bisection of
+`path_tracing.slang` (RayQuery flags, SBT/accumulation-image binding,
+buffer-device-address indexing) to localize - out of scope for this pass.
+`docs/gpu-golden-testing.md` should be updated once that lands.
 
 ## 2026-07-30 batch III — planner (shader-load consolidation, per-frame copies, docs drift)
 

@@ -463,7 +463,14 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     features11.shaderDrawParameters = available_features11.shaderDrawParameters;
 
     vk::PhysicalDeviceFeatures2 features2{};
-    features2.pNext = nullptr;
+    // Link the Vulkan11/12/13 (+ ray tracing) feature chain built above into
+    // the struct that actually reaches vkCreateDevice via device_create_info.pNext
+    // below. Losing this link (it was `nullptr` from 2026-02-18 to 2026-07-31)
+    // silently disables every feature configured on features11/12/13 and the
+    // ray-tracing structs - multiview, bufferDeviceAddress, scalarBlockLayout,
+    // shaderDrawParameters, accelerationStructure, rayTracingPipeline, rayQuery -
+    // while the availability checks above still log them as supported.
+    features2.pNext = &features11;
     features2.features.samplerAnisotropy = available_features2.features.samplerAnisotropy;
     features2.features.shaderInt64 = available_features2.features.shaderInt64;
     features2.features.geometryShader = available_features2.features.geometryShader;
