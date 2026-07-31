@@ -1835,61 +1835,24 @@ Submodule Pins).
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-- [ ] **(M) Cache the shadow-caster render bundle across frames and make the
-  caster stats honest** — the cascade pass records the caster draw list into a
-  `wgpu::RenderBundle` (forward.rs:1891-1944) but the bundle is a LOCAL,
-  rebuilt from scratch every frame, so the encoding win over the old 3×
-  re-record is only partly realized. Worse, the bundle change disabled
-  per-cascade caster culling and papered over it: `_light_frustum` is computed
-  and discarded (:1952), `casters_considered /= CASCADE_COUNT` (:1939) and
-  `shadow_casters_drawn == shadow_casters_considered` (:1972-1976) fudge the
-  stats so the counters now lie — the project's documented worst bug class
-  ("a green number that means nothing").
-
-  **Files to read:**
-  - `crates/webgpu_renderer/src/render/forward.rs:1891-1976` — the bundle
-    build, the per-cascade execute loop, the two stat fudges and the comment
-    admitting culling "won't engage until culling is re-added"
-  - `crates/webgpu_renderer/tests/headless.rs` — the shadow goldens that must
-    stay green, and any test reading the caster counters (update it with the
-    honest semantics)
-
-  **Steps:**
-  1. Move the bundle to a `shadow_caster_bundle: Option<wgpu::RenderBundle>`
-     field on the renderer; build it lazily in the frame path when `None`.
-  2. Invalidate (`= None`) at every site that changes the DRAW SET or buffer
-     identity: `upload_scene`, `set_instances`, LOD switches that swap index
-     buffers, any buffer reallocation. NOTE what does NOT invalidate: per-frame
-     `write_buffer` into existing buffers (animation, the PrimUniforms task
-     above) — bundles capture buffer references, contents flow through. State
-     each decision in a comment at the field.
-  3. Remove both stat fudges: report `shadow_casters_considered` as the total
-     caster count and `shadow_casters_drawn` as what the bundle actually
-     draws (currently equal by construction — that is now a true statement,
-     not a fudge). Delete the dead `_light_frustum` or leave a one-line
-     comment stating per-cascade culling is deliberately off because a culled
-     draw set differs per cascade and per camera move, which is incompatible
-     with one cached bundle — re-adding it (per-cascade bundles or union-frustum
-     culling with camera-move invalidation) is a follow-up decision, not this
-     task.
-  4. `cargo test -p kataglyphis_webgpu_renderer` — every shadow golden must be
-     unchanged; fix any counter-asserting test to the honest semantics.
-  5. Sanity-check invalidation with the animated fixtures: `set_animation_time`
-     must NOT rebuild the bundle (contents flow through), but a fresh
-     `upload_scene` must.
-
-  **Test:** Existing headless shadow goldens (unchanged output proves the
-  cached bundle draws the same list); one new CPU-level test if the bundle
-  field is observable: after `upload_scene` the cache is `None`, after one
-  frame it is `Some`, after `set_animation_time` it is still `Some`.
-
-  **Build:** Host cargo (native), from
-  `ExternalLib/Kataglyphis-RustProjectTemplate/`.
-
-  **Context:** Step 3 is not cosmetic: this codebase has repeatedly paid for
-  instruments that lie (see the golden-shadow story at the top of this file
-  and the `clangcl-tsan` entry). A cached bundle whose invalidation is wrong
-  shows up as stale shadows — which is why step 5 exercises both directions.
+- **Pre-existing (found 2026-07-31, unrelated to the work below): every GPU-touching
+  test in `kataglyphis_webgpu_renderer` fails headless on this host.**
+  `Device::create_shader_module` for `forward_shader` rejects `forward.wgsl` at
+  line 435: `textureSampleCompareLevel(shadowMap_0, shadowSampler_0, ...)` types
+  as `vec4<f32>`, not the `f32` a compare-sample returns, because `shadowMap_0`
+  is declared `texture_2d_array<f32>` (`forward.wgsl:60`) instead of
+  `texture_depth_2d_array` — WGSL's compare-sample builtins require a depth
+  texture type. Reproduced on a clean `git stash` (pre-dates this session's
+  changes): 22/30 `tests/headless.rs` cases fail identically, plus the crate's
+  own `render::forward::tests::set_animation_time_recomputes_and_dirties_the_cached_normal_matrix`
+  lib test. `forward.wgsl` reads as Slang-generated (obfuscated `_S37`/`sum_1`
+  names) — likely a naga/wgpu version bump started enforcing a rule the shader
+  was already violating, rather than a new regression in the WGSL itself. Not
+  attempted here: fixing the texture declaration (and whatever depends on
+  `texture_2d_array<f32>` sampling of the same view elsewhere in the file)
+  needs its own careful pass and re-verification of every shadow golden, out of
+  scope for the bundle-caching task below, which could only be verified via
+  `cargo build` + the unaffected lib tests as a result.
 
 - [ ] **(M) Load orthographic glTF cameras instead of dropping them** — the
   loader warns and skips `Projection::Orthographic`
