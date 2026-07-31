@@ -132,7 +132,7 @@ committed to.
 | `BM_CameraViewMatrix` | 10.1 ns |
 | `BM_ProjectionAndInverses` | 30.3 ns |
 | `BM_CameraKeyControl` / `MouseControl` | ~34 ns |
-| `BM_AvailableModelPaths` | 859 ns |
+| `BM_AvailableModelPaths` | 2.72 ns (was 859 ns before the `std::span` return, 2026-07-31) |
 | `BM_ResolveModelPath_Hit` | 4.1 us |
 | `BM_ResolveModelPath_Miss` | 15.7 us |
 | `BM_ObjParse_Plane` (1 KB) | 23 us |
@@ -1784,58 +1784,6 @@ the diagnosis task above), so nothing here needs a golden run to verify.
 None duplicate the 2026-07-24/28/30 batches.
 
 ### C++ Vulkan engine
-
-- [ ] **(refactor, S) Return `std::span<const std::string>` from
-  `getAvailableModelPaths`/`getAvailableModelDisplayNames` — the GUI copies
-  both cached vectors every frame** — `GUI::render()` calls both getters
-  each frame while the "Model Selection" header is open, and each returns a
-  full `vector<string>` copy of a write-once cache (per-frame heap
-  allocations for data that never changes after the first scan).
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/SceneConfig.ixx:12-13` — the two
-    declarations (module interface — ABI-skew rule applies).
-  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:79-81` + `:159-170` —
-    the `s_cached_model_paths`/`s_cached_model_display_names` statics
-    (stable for program lifetime after `scanAvailableModels`) and the
-    by-value returns.
-  - Callers: `Src/GraphicsEngineVulkan/gui/GUI.cpp:63-66` (the per-frame
-    site), `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:380-384`.
-  - Tests/benchmarks touching the getters:
-    `Test/perf/perfSuite.cpp:117` (`BM_AvailableModelPaths`),
-    `Test/fuzz/scene_config_fuzz_test.cpp:56-58`,
-    `Test/commit/VulkanEngine/cameraSceneConfigSuite.cpp:174-175`,
-    `Test/commit/VulkanEngine/objParseSuite.cpp:160`.
-
-  **Steps:**
-  1. Change both getters to return `std::span<const std::string>` over the
-     static cached vectors — safe because the cache is filled once and never
-     mutated afterwards (`s_models_scanned` guard).
-  2. Update the two engine callers: indexing code is unchanged; just replace
-     the `const std::vector<std::string>` locals with `const auto`.
-  3. Update the tests: in `cameraSceneConfigSuite` and `objParseSuite` the
-     locals become spans (indexing unchanged); in the fuzz test replace the
-     vector `!=` comparison with `!std::ranges::equal(first, again)` — keep
-     the assertion, it guards against a future rescan producing an
-     inconsistent snapshot.
-  4. Verify the win: re-run `BM_AvailableModelPaths` under `clangcl-profile`
-     — the 2026-07-19 baseline is 859 ns (the copy); a span return should
-     collapse it to single-digit ns. Record the new number in the baseline
-     table if you update it.
-
-  **Test:** No new test — this is a type-level change with identical
-  behaviour; the existing `cameraSceneConfigSuite`, `objParseSuite` and the
-  SceneConfig fuzz seed corpus are the regression net, plus the benchmark
-  delta as the measured proof.
-
-  **Build:** `clangcl-debug` **with `-FreshContainer`** (`SceneConfig.ixx`
-  module interface changes). Benchmarks need `clangcl-profile`:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug,clangcl-profile -SkipTests -FreshContainer`
-
-  **Context:** Straight from the C++23-modernization mandate (spans at
-  boundaries, unnecessary copies). Scope discipline: do NOT redesign the
-  scan/caching itself (e.g. adding a rescan/refresh) — that is a feature
-  decision, not this cleanup.
 
 ### Docs
 

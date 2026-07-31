@@ -16,6 +16,7 @@
 #include "absl/random/internal/distribution_caller.h"// IWYU pragma: keep
 #include "absl/random/internal/mock_helpers.h"// IWYU pragma: keep
 
+#include <algorithm>
 #include <filesystem>
 #include <string>
 
@@ -56,7 +57,7 @@ void ListingModelsIsStable(int repetitions)
     const auto first = sceneConfig::getAvailableModelPaths();
     for (int i = 1; i < bounded; ++i) {
         const auto again = sceneConfig::getAvailableModelPaths();
-        if (again.size() != first.size()) { std::abort(); }
+        if (!std::ranges::equal(first, again)) { std::abort(); }
     }
 }
 

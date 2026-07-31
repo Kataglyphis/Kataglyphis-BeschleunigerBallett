@@ -61,8 +61,8 @@ void GUI::render()
     ImGui::Begin("GUI v" PROJECT_VERSION);
 
     if (ImGui::CollapsingHeader("Model Selection")) {
-        const std::vector<std::string> model_paths = sceneConfig::getAvailableModelPaths();
-        const std::vector<std::string> model_names = sceneConfig::getAvailableModelDisplayNames();
+        const auto model_paths = sceneConfig::getAvailableModelPaths();
+        const auto model_names = sceneConfig::getAvailableModelDisplayNames();
         const int model_count = static_cast<int>(model_paths.size());
         
         // Find index of standard model if needed or keep existing index

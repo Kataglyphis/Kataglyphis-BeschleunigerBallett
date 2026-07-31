@@ -171,8 +171,8 @@ TEST(SceneConfigUnit, ResolveModelPathFindsBundledModel)
 
 TEST(SceneConfigUnit, AvailableModelListingsAreConsistent)
 {
-    const std::vector<std::string> paths = sceneConfig::getAvailableModelPaths();
-    const std::vector<std::string> names = sceneConfig::getAvailableModelDisplayNames();
+    const auto paths = sceneConfig::getAvailableModelPaths();
+    const auto names = sceneConfig::getAvailableModelDisplayNames();
 
     ASSERT_EQ(paths.size(), names.size());
     ASSERT_FALSE(paths.empty()) << "Model scan found no loadable files under Resources/Models";
