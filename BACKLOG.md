@@ -1833,54 +1833,6 @@ Submodule Pins).
 
 ### Docs / repo hygiene
 
-- [ ] **(S) Delete the resurrected ROADMAP.md and purge the remaining GLSL-era
-  doc references** — this file's header says "There is no longer a separate
-  roadmap file" (merged 2026-07-20, deleted precisely because a stale roadmap
-  contradicted a fresh backlog), but commit `8fe6105c` ("added agentic loop")
-  resurrected `ROADMAP.md`, and its content is now stale in the documented
-  dangerous way: it describes the C++ engine `#include`-ing
-  `Resources/Shaders/generated/aces.glsl` — a POC that `docs/shader-sharing.md:140-148`
-  records as REVERTED, referencing a directory (`Resources/Shaders/`) that no
-  longer exists since the Slang migration (`40b1cbe3`).
-
-  **Files to read:**
-  - `ROADMAP.md` — skim every entry; anything not `[x]`/SKIP and not already
-    in BACKLOG.md must be moved here before deletion (expectation: nothing —
-    it is all done/reverted work)
-  - `docs/shader-sharing.md:140-148` — the record that the GLSL-include POC
-    was reverted (do not contradict it)
-  - `Doxyfile.in:941` — `INPUT` still lists `../Resources/Shaders \`, a
-    nonexistent directory (leave `archive/Doxyfile.in` alone, it is archived)
-  - `docs/shader-build-pipeline.md:70-121` — documents `compile-shaders.ps1`
-    and `glslc -I` invocations against `Resources/Shaders` as if current; that
-    script is gone, the pipeline is `Scripts/Windows/compile-slang-shaders.ps1`
-    / `Scripts/Linux/compile-slang-shaders.sh` → `Resources/ShadersSlang/build/{spirv,wgsl}`
-
-  **Steps:**
-  1. `git log --oneline -- ROADMAP.md` to confirm the resurrection history,
-     then grep the whole repo for `ROADMAP` and repoint or remove every link
-     (README, docs, scripts, agent prompts) at `BACKLOG.md`.
-  2. Diff ROADMAP.md's entries against this file; move anything genuinely open
-     and unique (expected: none), then `git rm ROADMAP.md`.
-  3. Remove the `../Resources/Shaders \` INPUT line from `Doxyfile.in`.
-  4. Rewrite the GLSL/glslc sections of `docs/shader-build-pipeline.md` to
-     describe the Slang pipeline, cross-checking against AGENTS.md § "Shaders:
-     Slang (unified SPIR-V + WGSL)" — link, don't restate.
-  5. Verify: `grep -r "Resources/Shaders" --include="*.md" --include="*.in"`
-     over the repo (excluding `ShadersSlang` and `archive/`) returns nothing;
-     hits remaining in `Test/*.cpp` comments and `.slang` provenance headers
-     are fine — do NOT touch `.slang` files (any `.slang` mtime bump forces a
-     shader recompile and can trip `BuildIntegrity` staleness checks).
-
-  **Test:** None (docs-only). Verification is the greps in step 5 plus
-  confirming every path named in the rewritten doc exists in the tree.
-
-  **Build:** None (no source touched).
-
-  **Context:** This is the exact rot mechanism the 2026-07-20 merge note at
-  the top of this file warns about — two lists, one stale, contradicting each
-  other. Deleting is the fix, not updating: BACKLOG.md is the single list.
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 - [ ] **(M) Stop rewriting every primitive's uniforms every frame; cache the

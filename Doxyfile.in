@@ -938,7 +938,6 @@ WARN_LOGFILE           =
 
 INPUT                  = ../Src/GraphicsEngineVulkan \
                          ../Src/GraphicsEngineOpenGL \
-                         ../Resources/Shaders \
                          # ../cmake \
                          ../Test
 

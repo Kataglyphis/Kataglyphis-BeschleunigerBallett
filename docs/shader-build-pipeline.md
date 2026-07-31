@@ -47,88 +47,36 @@ The C++ engine loads the `.spv` files at startup via `File::readCharSequence`,
 so no rebuild of the C++ binary is needed for a shader-only change — just
 recompile the shaders and run.
 
-## The failure mode (fixed 2026-07-19)
+## Historical note: the retired GLSL/glslc pipeline (until the Slang migration)
 
-**Both layers reused a `.spv` whenever the file merely EXISTED.** Neither
-compared timestamps. Consequences, all observed:
+Before the Slang migration, shaders were hand-written GLSL under a
+`Resources/Shaders/` tree, compiled per-file by `compile-shaders.ps1` via
+`glslc`, with staleness checked independently by `ShaderHelper::compileShader`
+at runtime. That tree and script no longer exist — `Resources/` now holds only
+`ShadersSlang/`, `Models/`, and `Textures/`, and the two build scripts named
+under "How it works" above are the only compile path. The staleness and
+failure-visibility lessons from that era are still worth keeping, because the
+Slang scripts were written to avoid repeating them:
 
-- Every shader edit after the first successful build was silently ignored.
-  The GPU kept executing stale SPIR-V; the source on disk and the binary being
-  run had nothing to do with each other.
-- A `shader.frag` modified at 14:00 was still rendered from a `.spv` produced
-  at 18:46 the previous day.
-- Debugging was actively misleading: a debug visualisation compiled into the
-  fragment shader produced byte-identical statistics run after run, because
-  the edits never reached the GPU. Several hours of shadow-bug diagnosis were
-  performed against a binary that did not match the source.
-- `Invoke-ShaderPrecompile` was additionally only called for **Release**
-  builds, so Debug — the normal working configuration — depended entirely on
-  the broken runtime path.
-
-**Fixes:**
-
-- `compile-shaders.ps1` recompiles when the `.spv` is missing **or older than
-  its source or any shared include** (`*.glsl`, `*.hpp`, `*.h` under
-  `Resources/Shaders`). Conservative: editing a shared include rebuilds every
-  dependent.
-- `ShaderHelper::compileShader` compares `last_write_time` of source vs `.spv`
-  and recompiles stale ones (logs `SPV is older than its source,
-  recompiling`).
-- `Invoke-ShaderPrecompile` now runs for Debug as well as Release.
-
-## Iterating on shaders quickly
-
-Regenerating SPIR-V does **not** require a rebuild — the engine loads `.spv`
-at pipeline creation, so recompiling the shader and re-running the binary is
-enough. During diagnosis this cut the loop from minutes to seconds:
-
-```pwsh
-$GV = 'C:\VulkanSDK\1.4.350.0\Bin\glslangValidator.exe'
-$incs = Get-ChildItem Resources/Shaders -Recurse -Directory | ForEach-Object { "-I$($_.FullName)" }
-& $GV --target-env vulkan1.3 @incs -ISrc/GraphicsEngineVulkan/renderer `
-  -o Resources/Shaders/rasterizer/spv/shader.frag.spv Resources/Shaders/rasterizer/shader.frag
-```
-
-Note that `glslangValidator` (Vulkan SDK) and `glslc` differ slightly in
-include handling; the build script uses `glslc`.
-
-## The second failure mode: silent glslc failures (fixed 2026-07-19)
-
-An earlier version of this document claimed that eight "legacy OpenGL-era"
-shaders (`clouds/CloudsRectangle.*`, `rasterizer/g_buffer_*`) could not compile under the Vulkan
-include convention, and that this was acceptable because no pipeline used
-them. **Both halves were wrong.**
-
-The real cause was that `compile-shaders.ps1` passed every shader
-*subdirectory* to `glslc` as an include path, but never the shader **root**.
-Any include written with a directory prefix — `#include
-"hostDevice/host_device_shared_vars.hpp"` — therefore could not resolve. All
-ten compile once the root is on the path.
-
-This stayed invisible because a `glslc` failure was only a `Write-Warning`.
-The previous `.spv` remained on disk and the build reported success, so:
-
-- `rasterizer/shader.frag` — loaded by the **main pipeline every frame**, not
-  a legacy file at all — was among the failures. Edits to it silently did
-  nothing, which compounds the stale-SPIR-V problem above and may account for
-  shadow behaviour that resisted diagnosis.
-- The failures were durable enough to be mistaken for a property of the
-  shaders and written into this document as a known limitation.
-
-**Fixes:**
-
-- `$shadersRoot` is now passed to `glslc` ahead of the subdirectories.
-- A failed `glslc` invocation now **fails the script** (non-zero exit) and
-  lists every shader that failed, instead of warning and continuing.
-- `BuildIntegrity.EveryShaderSourceHasCompiledBinary` asserts that every
-  shader source has a `.spv`, so a silently-skipped shader fails a test.
-
-Lesson worth keeping: a warning that nothing acts on is indistinguishable from
-success, and "these files just don't compile" is a claim to verify, not to
-document.
+- **Silent reuse of a stale output is the worst failure mode.** The GLSL
+  pipeline once reused a `.spv` whenever the file merely existed, without
+  comparing timestamps — a shader edit could go unexecuted indefinitely while
+  the GPU kept running the old binary, which cost real debugging time on a
+  shadow-rendering issue that turned out to be stale SPIR-V, not a logic bug.
+  The Slang staleness rule above (reuse only when newer than source **and**
+  every `.slang` file) exists because of that incident.
+- **A compiler warning nobody acts on is indistinguishable from success.** A
+  `glslc` include-path bug once silently failed to compile the main rasterizer
+  fragment shader on every build (only a `Write-Warning`, previous `.spv` left
+  on disk, build reported success) and was misdiagnosed as an intentional
+  legacy limitation. `BuildIntegrity.EveryShaderSourceHasCompiledBinary`
+  exists so a silently-skipped shader source fails a test instead of aging
+  invisibly.
 
 ## Known gaps
 
-- `.spv` files are committed to the repo. That makes stale binaries possible
-  in a fresh clone; the timestamp checks now handle it, but treating them as
-  build artifacts would be cleaner.
+- `Resources/ShadersSlang/build/` (compiled `.spv`/`.wgsl` output) is
+  gitignored, not committed — a fresh clone must run the compile script
+  before the engine has anything to load. The staleness checks under
+  "Staleness rules" above only protect an existing checkout with stale
+  outputs; they do not substitute for the initial compile.
