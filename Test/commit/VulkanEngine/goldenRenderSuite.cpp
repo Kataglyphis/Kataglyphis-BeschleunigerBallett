@@ -17,6 +17,7 @@
 
 #include <gtest/gtest.h>
 #include "EngineLoadWait.hpp"
+#include "GoldenMetrics.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
@@ -57,6 +58,12 @@ import kataglyphis.vulkan.window;
 namespace {
 
 using Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode;
+using Kataglyphis::Test::GoldenMetrics::Crop;
+using Kataglyphis::Test::GoldenMetrics::card_crop;
+using Kataglyphis::Test::GoldenMetrics::detail_fraction;
+using Kataglyphis::Test::GoldenMetrics::luminance_of;
+using Kataglyphis::Test::GoldenMetrics::panel_free_crop;
+using Kataglyphis::Test::GoldenMetrics::swung_fraction;
 
 constexpr int WINDOW_WIDTH = 1200;
 constexpr int WINDOW_HEIGHT = 768;
@@ -150,13 +157,6 @@ struct EngineHarness
         }
     }
 };
-
-double luminance_of(const std::vector<uint8_t> &rgba, size_t pixel)
-{
-    const size_t base = pixel * 4U;
-    return 0.2126 * static_cast<double>(rgba[base]) + 0.7152 * static_cast<double>(rgba[base + 1U])
-           + 0.0722 * static_cast<double>(rgba[base + 2U]);
-}
 
 // Mean luminance over the whole frame, on a 0..255 scale.
 double mean_luminance(const std::vector<uint8_t> &rgba)
@@ -1218,29 +1218,6 @@ TEST(GoldenRender, PathTracingRespondsToTheDirectionalLight)
     // missed half the band saw almost nothing. Counting swung pixels is
     // robust to both. Panel edge measured at x = 0.714w; crop starts at
     // 0.72w.
-    const auto swung_fraction =
-      [](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, uint32_t w, uint32_t h) {
-          const uint32_t x0 = (w * 18U) / 25U;
-          const uint32_t x1 = (w * 49U) / 50U;
-          const uint32_t y0 = h / 20U;
-          const uint32_t y1 = (h * 19U) / 20U;
-          size_t swung = 0;
-          size_t total = 0;
-          for (uint32_t y = y0; y < y1; ++y) {
-              for (uint32_t x = x0; x < x1; ++x) {
-                  const size_t base = (static_cast<size_t>(y) * w + x) * 4U;
-                  for (size_t c = 0; c < 3U; ++c) {
-                      if (std::abs(static_cast<int>(a[base + c]) - static_cast<int>(b[base + c])) > 5) {
-                          ++swung;
-                          break;
-                      }
-                  }
-                  ++total;
-              }
-          }
-          return static_cast<double>(swung) / static_cast<double>(total);
-      };
-
     // Lit: the default radiance (10). Let the accumulation settle a few
     // frames past the mode switch before capturing.
     harness.render_frames(SETTLE_FRAMES);
@@ -1260,7 +1237,7 @@ TEST(GoldenRender, PathTracingRespondsToTheDirectionalLight)
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     ASSERT_EQ(lit.size(), unlit.size());
 
-    const double response = swung_fraction(lit, unlit, width, height);
+    const double response = swung_fraction(lit, unlit, width, height, panel_free_crop(width, height));
     // Lit crop luminance is logged for cross-mode comparison: with the NEE
     // term carrying its 1/pi, PT's directly lit surfaces should sit in the
     // same brightness regime as the forward path on the same rig (which
@@ -1320,29 +1297,6 @@ TEST(GoldenRender, PathTracingHonorsTheQualityControls)
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
     harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES);
 
-    const auto swung_fraction =
-      [](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, uint32_t w, uint32_t h) {
-          const uint32_t x0 = (w * 18U) / 25U;
-          const uint32_t x1 = (w * 49U) / 50U;
-          const uint32_t y0 = h / 20U;
-          const uint32_t y1 = (h * 19U) / 20U;
-          size_t swung = 0;
-          size_t total = 0;
-          for (uint32_t y = y0; y < y1; ++y) {
-              for (uint32_t x = x0; x < x1; ++x) {
-                  const size_t base = (static_cast<size_t>(y) * w + x) * 4U;
-                  for (size_t c = 0; c < 3U; ++c) {
-                      if (std::abs(static_cast<int>(a[base + c]) - static_cast<int>(b[base + c])) > 5) {
-                          ++swung;
-                          break;
-                      }
-                  }
-                  ++total;
-              }
-          }
-          return static_cast<double>(swung) / static_cast<double>(total);
-      };
-
     uint32_t width = 0;
     uint32_t height = 0;
     const std::vector<uint8_t> full_quality = harness.capture_frame(width, height);
@@ -1355,7 +1309,8 @@ TEST(GoldenRender, PathTracingHonorsTheQualityControls)
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     ASSERT_EQ(full_quality.size(), single_bounce.size());
 
-    const double response = swung_fraction(full_quality, single_bounce, width, height);
+    const double response =
+      swung_fraction(full_quality, single_bounce, width, height, panel_free_crop(width, height));
     GTEST_LOG_(INFO) << "PT bounces 8-vs-1 swung-pixel fraction (panel-free crop): " << response;
 
     // Threshold measured after the first run; the structural requirement is
@@ -1389,29 +1344,6 @@ TEST(GoldenRender, ForwardLightingRespondsToTheDirectionalLight)
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
     harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES);
 
-    const auto swung_fraction =
-      [](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, uint32_t w, uint32_t h) {
-          const uint32_t x0 = (w * 18U) / 25U;
-          const uint32_t x1 = (w * 49U) / 50U;
-          const uint32_t y0 = h / 20U;
-          const uint32_t y1 = (h * 19U) / 20U;
-          size_t swung = 0;
-          size_t total = 0;
-          for (uint32_t y = y0; y < y1; ++y) {
-              for (uint32_t x = x0; x < x1; ++x) {
-                  const size_t base = (static_cast<size_t>(y) * w + x) * 4U;
-                  for (size_t c = 0; c < 3U; ++c) {
-                      if (std::abs(static_cast<int>(a[base + c]) - static_cast<int>(b[base + c])) > 5) {
-                          ++swung;
-                          break;
-                      }
-                  }
-                  ++total;
-              }
-          }
-          return static_cast<double>(swung) / static_cast<double>(total);
-      };
-
     uint32_t width = 0;
     uint32_t height = 0;
     const std::vector<uint8_t> lit = harness.capture_frame(width, height);
@@ -1424,7 +1356,7 @@ TEST(GoldenRender, ForwardLightingRespondsToTheDirectionalLight)
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     ASSERT_EQ(lit.size(), unlit.size());
 
-    const double response = swung_fraction(lit, unlit, width, height);
+    const double response = swung_fraction(lit, unlit, width, height, panel_free_crop(width, height));
 
     // Mean luminance of the crop with the light OFF. This is the assertion
     // that actually separates the defect from the fix: a swung-pixel count
@@ -1492,29 +1424,6 @@ TEST(GoldenRender, RaytracedWorldFollowsTheModelTransform)
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
     harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES);
 
-    const auto swung_fraction =
-      [](const std::vector<uint8_t> &a, const std::vector<uint8_t> &b, uint32_t w, uint32_t h) {
-          const uint32_t x0 = (w * 18U) / 25U;
-          const uint32_t x1 = (w * 49U) / 50U;
-          const uint32_t y0 = h / 20U;
-          const uint32_t y1 = (h * 19U) / 20U;
-          size_t swung = 0;
-          size_t total = 0;
-          for (uint32_t y = y0; y < y1; ++y) {
-              for (uint32_t x = x0; x < x1; ++x) {
-                  const size_t base = (static_cast<size_t>(y) * w + x) * 4U;
-                  for (size_t c = 0; c < 3U; ++c) {
-                      if (std::abs(static_cast<int>(a[base + c]) - static_cast<int>(b[base + c])) > 5) {
-                          ++swung;
-                          break;
-                      }
-                  }
-                  ++total;
-              }
-          }
-          return static_cast<double>(swung) / static_cast<double>(total);
-      };
-
     uint32_t width = 0;
     uint32_t height = 0;
     const std::vector<uint8_t> before = harness.capture_frame(width, height);
@@ -1531,7 +1440,7 @@ TEST(GoldenRender, RaytracedWorldFollowsTheModelTransform)
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     ASSERT_EQ(before.size(), after.size());
 
-    const double moved = swung_fraction(before, after, width, height);
+    const double moved = swung_fraction(before, after, width, height, panel_free_crop(width, height));
     GTEST_LOG_(INFO) << "RT transform-move swung-pixel fraction (panel-free crop): " << moved;
 
     // Threshold measured after the first run; the red state is exactly zero
@@ -1592,26 +1501,7 @@ TEST(GoldenRender, SecondModelShadesWithItsOwnTextures)
     // texture from the red state's flat 1x1 white is DETAIL: the fraction of
     // crop pixels whose right-hand neighbour differs in luminance by more
     // than 6 levels.
-    const auto detail_fraction = [](const std::vector<uint8_t> &rgba, uint32_t w, uint32_t h) {
-        const uint32_t x0 = (w * 37U) / 50U;
-        const uint32_t x1 = (w * 49U) / 50U;
-        const uint32_t y0 = h / 20U;
-        const uint32_t y1 = (h * 19U) / 20U;
-        size_t detailed = 0;
-        size_t total = 0;
-        for (uint32_t y = y0; y < y1; ++y) {
-            for (uint32_t x = x0; x < x1; ++x) {
-                const size_t base = static_cast<size_t>(y) * w + x;
-                const double here = luminance_of(rgba, base);
-                const double right = luminance_of(rgba, base + 1U);
-                if (std::abs(here - right) > 6.0) { ++detailed; }
-                ++total;
-            }
-        }
-        return static_cast<double>(detailed) / static_cast<double>(total);
-    };
-
-    const double detail = detail_fraction(frame, width, height);
+    const double detail = detail_fraction(frame, width, height, card_crop(width, height));
     GTEST_LOG_(INFO) << "second-model texture-detail fraction (panel-free crop): " << detail;
 
     EXPECT_GT(detail, 0.02)
@@ -1997,16 +1887,7 @@ TEST(GoldenRender, KhrTextureTransformTilesTheTexture)
     // DETAIL: fraction of card-box pixels whose right neighbour differs in
     // luminance by more than 6 levels. A finely-tiled checkerboard is nearly all
     // edges; a coarse (untransformed) one is not.
-    size_t detailed = 0;
-    size_t total = 0;
-    for (uint32_t y = miny; y <= maxy; ++y) {
-        for (uint32_t x = minx; x < maxx; ++x) {
-            const size_t base = static_cast<size_t>(y) * width + x;
-            if (std::abs(luminance_of(after, base) - luminance_of(after, base + 1U)) > 6.0) { ++detailed; }
-            ++total;
-        }
-    }
-    const double detail = total > 0 ? static_cast<double>(detailed) / static_cast<double>(total) : 0.0;
+    const double detail = detail_fraction(after, width, height, Crop{minx, maxx, miny, maxy + 1U});
     GTEST_LOG_(INFO) << "uv-transform card: box [" << minx << "," << miny << ".." << maxx << "," << maxy
                      << "] detail-fraction " << detail;
 
@@ -2071,20 +1952,8 @@ TEST(GoldenRender, AddedModelAppearsInPathTracing)
     }
 
     // The card's known screen box for the shared placement (GUI-free upper-right).
-    const uint32_t x0 = (width * 71U) / 100U;
-    const uint32_t x1 = (width * 98U) / 100U;
-    const uint32_t y0 = (height * 40U) / 100U;
-    const uint32_t y1 = (height * 61U) / 100U;
-    size_t detailed = 0;
-    size_t total = 0;
-    for (uint32_t y = y0; y < y1; ++y) {
-        for (uint32_t x = x0; x < x1; ++x) {
-            const size_t b = static_cast<size_t>(y) * width + x;
-            if (std::abs(luminance_of(frame, b) - luminance_of(frame, b + 1U)) > 6.0) { ++detailed; }
-            ++total;
-        }
-    }
-    const double detail = total > 0 ? static_cast<double>(detailed) / static_cast<double>(total) : 0.0;
+    const Crop box{(width * 71U) / 100U, (width * 98U) / 100U, (height * 40U) / 100U, (height * 61U) / 100U};
+    const double detail = detail_fraction(frame, width, height, box);
     GTEST_LOG_(INFO) << "added-model PT crop-detail-fraction " << detail;
 
     // MEASURED: 0.108 with the AS rebuilt (the tiled card's checkerboard fills the
