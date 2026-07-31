@@ -2079,6 +2079,234 @@ and unchecked rather than guessed at.
   of the suite runs than before (previously the abort shadowed everything
   after the first PT test in file order).
 
+## 2026-07-31 batch III — planner (submodule hygiene, PT bounce loop, RT diagnosis, CI filter, frustum perf)
+
+All five verified against the tree on 2026-07-31 before writing. Findings behind
+them: the RPT submodule working tree currently REVERTS the committed
+shadow-factor fix (see the first task — do it before any other Rust work);
+`path_tracing.slang` confirms the batch-II suspicion (no bounce loop at all,
+`max_bounces` declared at line 21 and never referenced again); the old GLSL
+`Resources/Shaders/` tree is fully deleted (Slang-only now), so the reference
+kernel must come from git history; `PushConstantRasterizerUnit` is the ONLY
+CPU suite missing from the Windows CI filter (checked every `TEST(` suite name
+against `Windows.yml:209-229`); the ContainerHub commit the RPT working tree
+points at (`1de9aff`) is already on ContainerHub `origin/main`, so committing
+that bump is safe.
+
+### C++ Vulkan engine
+
+- [ ] **(M) Implement the missing bounce loop in `path_tracing.slang`
+  (restore GI lost in the Slang port)** — the kernel evaluates exactly ONE
+  RayQuery hit per sample: `pc_ray.max_bounces` is declared
+  (`path_tracing.slang:21`) and never read again, there is no throughput
+  accumulation, no NEE shadow ray, no Russian roulette. The pre-Slang GLSL
+  kernel had all of these (`for (tracedSegments < 8)` loop, one shadow ray
+  per bounce, RR from the 4th segment, cosine-weighted hemisphere sampling
+  with the Lambertian 1/pi on the NEE term). Two goldens currently FAIL on
+  value assertions because of this gap:
+  `GoldenRender.PathTracingHonorsTheQualityControls` ("the bounce-cap slider
+  did not change the path-traced image") and
+  `GoldenRender.PathTracingPassesTheWhiteFurnaceTest` ("furnace converges
+  LOW ... not uniform").
+
+  **Files to read:**
+  - `Resources/ShadersSlang/path_tracing/path_tracing.slang` — the current
+    single-bounce kernel (192 lines). KEEP: the `while (rayQuery.Proceed())`
+    loop (apply it to EVERY query you add, including shadow rays), the
+    `RAY_FLAG_FORCE_OPAQUE` flag (MASK any-hit is the separate 1c item), the
+    temporal-accumulation tail, and the KNOWN-ISSUE comment block at ~:91
+    (the dinosaur device-lost is unrelated and stays).
+  - The deleted GLSL reference kernel, from git history:
+    `git log --oneline --all -- Resources/Shaders/path_tracing/path_tracing.comp`
+    then `git show <sha>:Resources/Shaders/path_tracing/path_tracing.comp`.
+    Mirror its loop structure, NEE, RR reweighting, degenerate-scatter guard
+    (fall back to the normal), and self-intersection epsilon (t_min 0.001).
+  - `Src/GraphicsEngineVulkan/renderer/PathTracing.cpp` — how
+    `max_bounces`/`samples_per_pixel` reach the push constant, and how the
+    furnace mode (`KATAGLYPHIS_PT_FURNACE`: uniform environment + albedo 1)
+    is plumbed — the kernel must reproduce whatever contract the furnace
+    golden relies on.
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` — the two failing tests
+    plus the currently-green PT goldens that must stay green
+    (`PathTracingRespondsToTheDirectionalLight`,
+    `AddedModelAppearsInPathTracing`, `RaytracedWorldFollowsTheModelTransform`).
+
+  **Steps:**
+  1. Rework the per-sample body into an iterative bounce loop: carry
+     `throughput` (init 1.0) and `radiance` (init 0.0); per bounce, trace,
+     on hit add the NEE direct-light contribution (shadow ray toward the
+     directional light, terminate-on-first-hit semantics, Lambertian 1/pi)
+     scaled by throughput, multiply throughput by albedo, scatter
+     cosine-weighted around the hit normal (pi cancels — see the estimator
+     notes in the 2026-07-22 PT survey, item 9), offset the new origin by
+     the epsilon guard, continue up to `pc_ray.max_bounces`.
+  2. Russian roulette from the 4th segment, survivors reweighted (unbiased).
+  3. On miss, add `throughput * sky` (the existing
+     `pc_ray.clearColor.xyz * 0.4` gradient / furnace uniform env) and break.
+  4. Recompile: `pwsh Scripts/Windows/compile-slang-shaders.ps1` (shader-only
+     change — no C++ rebuild needed; the existing container-built
+     `build-clangcl-debug/commitTestSuite.exe` picks up the new spv).
+  5. Host GPU run (per `docs/gpu-golden-testing.md`), filter
+     `GoldenRender.*` MINUS the three known dinosaur device-lost tests
+     (`PathTracingAccumulatesAndConverges`,
+     `GuiInputSweepNeverCrashesOrLosesTheDevice`, and
+     `Integration.RenderModesSelectableInGui`): the two failing goldens must
+     go green and every previously-green golden must stay green (expected
+     20/20 in that filter).
+
+  **Test:** the two existing red goldens ARE the red/green proof — no new
+  test needed. The furnace golden is the unbiasedness gate (mean ~186 vs
+  ideal 186; a spurious extra 1/pi crashes it to ~137, see survey item 9).
+
+  **Build:** shader-only. `pwsh Scripts/Windows/compile-slang-shaders.ps1`,
+  then host GPU runs. Only if you also touch `PathTracing.ixx`/`.cpp`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`.
+
+  **Context:** this is the feature gap called out at the end of the `- [b]`
+  device-lost entry above ("worth its own sized entry if picked up"). It does
+  NOT touch the device-lost bug: the two verifying goldens run on the tiny
+  `shadow_rig` scene, below the large-mesh crash frontier. Do not attempt to
+  fix the dinosaur reproducer here; leave the KNOWN-ISSUE comment in place.
+
+- [ ] **(S) RT-pipeline large-mesh diagnostic golden — the stated next step
+  of the blocked device-lost entry** — every existing RT/PT golden that reads
+  `v0.position`/`v0.normal` through the vertex buffer-device-address path
+  without crashing uses the tiny `shadow_rig` mesh; nothing has ever
+  exercised `raytrace.rchit.slang` against the ~hundreds-of-thousands-vertex
+  dinosaur mesh. One test result decides whether the device-lost bug lives in
+  `path_tracing.slang`/RayQuery specifically or in the shared vertex-upload/
+  BDA path.
+
+  **Files to read:**
+  - the `- [b]` "Localize (and fix if cheap) the path-tracing compute
+    `VK_ERROR_DEVICE_LOST`" entry above — full bisection state; this task is
+    its "Next step" paragraph.
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` —
+    `RaytracedWorldFollowsTheModelTransform` is the pattern to follow (RT
+    *pipeline* mode, i.e. `raytracing = true`, NOT `pathTracing`); the
+    device-lost reproducer `PathTracingAccumulatesAndConverges` shows how the
+    dinosaur scene is selected (`Models/Dinosaurs/dinosaurs.obj`).
+  - `docs/gpu-golden-testing.md` — host-GPU run procedure; this doc also has
+    a pending update noted in the 2026-07-30 batch II section.
+
+  **Steps:**
+  1. Add `GoldenRender.RaytracedLargeMeshDoesNotLoseTheDevice`: load the
+     dinosaur scene, switch to RT pipeline mode, render ~10 frames, assert
+     no device-lost / no validation error and a non-black capture. Property
+     test — no pixel oracle.
+  2. Build `clangcl-debug` in the container (test-`.cpp`-only change, normal
+     incremental build, no ABI skew) and run the new test on the host GPU.
+  3. Record the result either way: if it PASSES, commit it enabled and edit
+     the `- [b]` entry's "Next step" paragraph to say the bug is scoped to
+     the RayQuery/compute kernel; if it DEVICE-LOSES, rename it
+     `DISABLED_RaytracedLargeMeshDoesNotLoseTheDevice`, commit it as the
+     recorded reproducer, and edit the entry to say the bug is in the shared
+     large-mesh vertex-BDA path (`ASManager` / loader upload / stride
+     mismatch candidates listed there).
+  4. Fold the outcome into `docs/gpu-golden-testing.md`'s known-issues note
+     (the doc update the 2026-07-30 batch II section says is pending).
+
+  **Test:** the new golden is the deliverable; both outcomes are a success
+  for this task (it is a diagnostic).
+
+  **Build:** `clangcl-debug`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`,
+  then the host GPU run per `docs/gpu-golden-testing.md`.
+
+  **Context:** do NOT try to fix the device-lost here — this task only
+  produces the single bit of information the blocked entry says is needed to
+  aim further work. Keep the process-abort ordering hazard in mind: put the
+  new test LAST in file order or run it with an exclusive `--gtest_filter`,
+  because a hard abort kills every test after it in the same process.
+
+### Performance testing
+
+- [ ] **(S) Frustum-culling CPU benchmarks in the perf suite** — `isVisible`
+  and `isVisibleAsShadowCaster` (`Src/GraphicsEngineVulkan/scene/Frustum.ixx:43,:57`)
+  run per mesh per frame in the forward, deferred and shadow record loops —
+  since the multi-mesh split (sponza = 373 meshes) they are a real per-frame
+  CPU cost with zero perf coverage. Pure CPU, so per the perf section's own
+  triage these are exactly the benchmarks worth having.
+
+  **Files to read:**
+  - `Test/perf/perfSuite.cpp` — follow the `BM_ComputeCascadeData` pattern
+    (`:107-125`): fixed camera, `Arg()` for the sweep parameter.
+  - `Src/GraphicsEngineVulkan/scene/Frustum.ixx` — the API (`FrustumPlanes`,
+    `AABB`, the two free functions).
+  - `Test/commit/VulkanEngine/frustumSuite.cpp` — how existing tests build
+    `FrustumPlanes` from a view-projection matrix; reuse that construction.
+
+  **Steps:**
+  1. Add `BM_FrustumCull(state)`: build one `FrustumPlanes` from a
+     representative view-proj (the `BM_ComputeCascadeData` camera constants),
+     deterministically generate `state.range(0)` AABBs (mix of inside,
+     outside and straddling — seed a fixed `std::mt19937`, no `Date.now`
+     nondeterminism), loop calling `isVisible` over all boxes with
+     `benchmark::DoNotOptimize`; register with `->Arg(64)->Arg(512)`.
+  2. Add `BM_FrustumCullShadowCaster` identically over
+     `isVisibleAsShadowCaster` (it drops the near plane — the point is
+     seeing whether the two diverge in cost).
+  3. Verify it builds and runs in the container (`clangcl-debug` is enough to
+     prove registration); take real numbers from a clean HOST run of the
+     `clangcl-profile` `perfTestSuite.exe` (container wcifs I/O pollutes
+     timings — see the glTF-parse benchmark notes above).
+  4. Append the host numbers to the measured-baseline table in this file and
+     regenerate/extend the checked-in
+     `Test/perf/baselines/win-9070xt-32core.json` so
+     `Scripts/Compare-PerfBaseline.ps1` covers the new benchmarks.
+
+  **Test:** the perf suite is CTest-gated on "benchmarks execute"; a
+  successful `perfTestSuite.exe --benchmark_filter=BM_FrustumCull.*` run is
+  the verification.
+
+  **Build:** `clangcl-profile` for the numbers:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-profile -SkipTests`
+  (use `clangcl-debug` only for the does-it-compile loop).
+
+  **Context:** fills the top of the "Benchmarks still missing" list with the
+  only entry there that is pure-CPU and therefore CI-gateable. Headless
+  binary: do NOT import engine modules that drag `Device`/Vulkan globals into
+  the perf binary — `Frustum` is a leaf module with no device dependency
+  (verify by its imports before including; if it pulls Vulkan headers
+  transitively, benchmark via the same include path `frustumSuite.cpp` uses).
+
+### CI and release gaps
+
+- [ ] **(S) Add `PushConstantRasterizerUnit.*` to the Windows CI test
+  filter** — it is the only CPU suite missing from `$cpuOnlySuites` in
+  `Windows.yml` (audited every `TEST(` suite name in
+  `Test/commit/VulkanEngine/` against the filter on 2026-07-31; GoldenRender
+  and Integration are excluded deliberately as GPU suites). The suite pins
+  the 128-byte push-constant budget and the CPU/GPU layout contract
+  (`ea2de5a8`) — exactly the kind of regression CI should catch, and the
+  filter's own comment says "If you add a suite, add it to this filter or it
+  will not run in CI."
+
+  **Files to read:**
+  - `.github/workflows/Windows.yml:209-229` — the `$cpuOnlySuites` array.
+  - `Test/commit/VulkanEngine/pushConstantSuite.cpp` — confirm the suite
+    name is `PushConstantRasterizerUnit` and that it is device-free (it is:
+    pure struct/layout assertions).
+
+  **Steps:**
+  1. Add `'PushConstantRasterizerUnit.*'` to the `$cpuOnlySuites` array.
+  2. Sanity-check the name locally against the existing container-built
+     binary: `& .\build-clangcl-debug\commitTestSuite.exe
+     --gtest_filter='PushConstantRasterizerUnit.*'` from the repo root must
+     list and pass tests (device-free, runs anywhere).
+  3. Optional but preferred: include `[build-win]` in the commit message so
+     the gated workflow actually runs once with the new filter.
+
+  **Test:** step 2 is the local proof; the `[build-win]` run is the CI proof.
+
+  **Build:** none (YAML-only change; the local check reuses the existing
+  built binary).
+
+  **Context:** the Windows CI filter is exclusion-by-listing, so every new
+  suite silently doesn't run until someone notices — this is the "suite
+  added but not in the filter" failure mode the CI section above warns
+  about, caught by audit rather than incident this time.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
