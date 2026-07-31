@@ -17,6 +17,7 @@ import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.descriptor_set_group;
 import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.frame_capture;
 import kataglyphis.vulkan.frame_sync;
 import kataglyphis.vulkan.gpu_timing;
 import kataglyphis.vulkan.global_ubo;
@@ -234,20 +235,9 @@ class VulkanRenderer
     // load-bearing).
     GpuTimingSubsystem gpuTiming;
 
-    // -- frame capture state (see requestFrameCapture above)
-    // capture_armed: a copy must be recorded into the next frame's command
-    // buffer. capture_fence: the in-flight fence of the frame that recorded
-    // it; waiting on it makes the staging buffer safe to read.
-    bool capture_armed{ false };
-    bool capture_pending{ false };
-    vk::Fence capture_fence{};
-    VulkanBuffer captureBuffer;
-    vk::DeviceSize capture_buffer_size{ 0 };
-    uint32_t capture_width{ 0 };
-    uint32_t capture_height{ 0 };
-    vk::Format capture_format{ vk::Format::eUndefined };
-    void recordFrameCapture(vk::CommandBuffer &commandBuffer, uint32_t image_index);
-    void cleanUpFrameCapture();
+    // -- headless frame capture (see requestFrameCapture above); see
+    // kataglyphis.vulkan.frame_capture for the arm/record/bind/take lifecycle.
+    FrameCapture frameCapture;
 
     Kataglyphis::VulkanRendererInternals::ASManager asManager;
     VulkanBuffer objectDescriptionBuffer;
