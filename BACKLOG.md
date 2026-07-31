@@ -63,8 +63,6 @@ size and a decision, or gets dropped.
   submission); with CPU-side instance counts it adds a buffer round trip for
   nothing. Revisit alongside GPU occlusion culling below, which is what would
   produce those arguments.
-- [ ] **Clustered/tiled lighting** (L) — 4-light cap is fine today; lift it
-  when a real scene needs it.
 - [ ] **WebXR** (XL) — parked.
 - [ ] **Colosseum demo scene** (blocked on you) —
   pick a licensed photogrammetry scan, keep the asset out of git.
