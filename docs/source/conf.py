@@ -123,10 +123,40 @@ if doxygen_xml_dir is not None:
         "contentsDirectives": True,
         "exhaleExecutesDoxygen": False,
     }
+else:
+    # Exhale normally writes this page during the build. Without Doxygen XML,
+    # exhale never runs, so README.md / index.rst link to a page that does not
+    # exist and the html/linkcheck builds warn on it. Mirror graphviz_files.rst:
+    # write a placeholder so the "optional, hand-written pages always build"
+    # contract (documentation_workflow.md) holds for this page too.
+    api_stub_dir = DOCS_SOURCE_DIR / "api"
+    api_stub_dir.mkdir(exist_ok=True)
+    (api_stub_dir / "library_root.rst").write_text(
+        ":orphan:\n\n"
+        "Library API\n"
+        "============\n\n"
+        "No Doxygen XML was found for this build, so the generated C++ API "
+        "reference is unavailable. Generate Doxygen XML and set "
+        "``KATAGLYPHIS_DOXYGEN_XML_DIR`` (or build into one of the paths "
+        "listed in ``documentation_workflow.md``), then rebuild the docs to "
+        "replace this placeholder with the real reference.\n",
+        encoding="utf-8",
+    )
 
 # -- General configuration ---------------------------------------------------
 templates_path = ["_templates"]
-exclude_patterns = []
+# The html builder auto-excludes html_static_path from document discovery,
+# but other builders (linkcheck, latex, ...) do not - so a stray .md file
+# under _static (e.g. VULKAN.md) is read as an orphan page there and warns.
+# Exclude it explicitly so every builder agrees with the html builder.
+exclude_patterns = ["_static/**"]
+
+# -- linkcheck configuration ---------------------------------------------------
+# `make linkcheck` gates broken pages/anchors/refs on OUR site (see
+# documentation_workflow.md). External links flake (rate limits, transient
+# outages, sites requiring a browser) and are not what this gate is for, so
+# every external URL is excluded; only internal docs links/anchors are checked.
+linkcheck_ignore = [r"^https?://"]
 
 # -- Graphviz output format ---------------------------------------------------
 graphviz_output_format = "svg"

@@ -60,6 +60,9 @@ python graphviz_generator.py
 cd ..
 
 info "Building HTML documentation"
-make html
+SPHINXOPTS="-W --keep-going" make html
+
+info "Checking internal links and toctree references"
+SPHINXOPTS="-W --keep-going" make linkcheck
 
 info "Documentation build completed successfully"

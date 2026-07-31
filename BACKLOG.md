@@ -455,11 +455,22 @@ cleanUp+recreate pair at the four scene-changed sites.
   them in CI, so breakage surfaces at release time.
 - **Coverage is clang-only** (Linux). GCC and Windows contribute no
   coverage data, which skews what Codecov reports.
-- **Docs builds are unverified.** Sphinx/Doxygen output is deployed by
-  `Linux.yml` but nothing checks for broken links or missing pages first.
-  (The build+deploy itself is now green - the `Build web page` uv/venv fix and
-  the FTP `Sync files to domain` both passed on 2026-07-21 - so a link/page
-  check is the remaining gap.)
+- ~~**Docs builds are unverified.**~~ — **done** (2026-07-31): `docs-build-web.sh`
+  now runs `make html` with `SPHINXOPTS="-W --keep-going"` and a follow-up
+  `make linkcheck` (also `-W`), so a broken internal link, missing toctree
+  page, or malformed rST title fails the step and blocks the FTP deploy after
+  it. External URLs are excluded via `linkcheck_ignore` in `conf.py` (they
+  flake; this gate is for OUR pages). Local warning count was 6 before the
+  fix (below the "don't add `-W` if the count is large" threshold): a
+  toctree/xref gap for `graphviz_files` (generator wasn't run locally), the
+  same for `api/library_root` (only exists once Exhale runs, which needs
+  Doxygen XML nothing currently produces — `conf.py` now writes a placeholder
+  page when that XML is absent, mirroring the existing `graphviz_files.rst`
+  fallback), a docutils title-underline-too-short warning in
+  `wsl2_vulkan.rst`, and a stray `docs/source/_static/VULKAN.md` that the
+  `linkcheck`/`latex` builders read as an orphan page even though the `html`
+  builder silently excludes `html_static_path` (fixed by adding
+  `_static/**` to `exclude_patterns`, so every builder agrees).
 - **Docs placement audited** (2026-07-21) - the split is intentional and clean:
   `docs/source/` is the Sphinx site (every source page is in the `index.rst`
   toctree, none orphaned); `docs/*.md` at the repo root are deep dev-reference
@@ -2062,44 +2073,6 @@ and unchecked rather than guessed at.
   above, not crashes) — no regression from the two fixes, and strictly more
   of the suite runs than before (previously the abort shadowed everything
   after the first PT test in file order).
-
-### CI / docs
-
-- [ ] **(M) Gate the docs build: surface Sphinx warnings and fail on broken
-  internal links before deploy** — closes the "Docs builds are unverified" CI
-  gap.
-
-  **Files to read:**
-  - `Scripts/Linux/docs-build-web.sh` — the current CI build (`make html`, no
-    `-W`, no linkcheck), invoked from `.github/workflows/Linux.yml:269-276`.
-  - `docs/Makefile`, `docs/make.bat`, `docs/source/conf.py`.
-
-  **Steps:**
-  1. Measure first: run the html build locally (Windows: create the venv the
-     way `docs-build-web.sh` does via uv, then `docs/make.bat html`; if the
-     `graphviz_generator.py` step needs a missing graphviz binary locally, skip
-     that step and note it) and count the warnings.
-  2. Add a linkcheck pass to `docs-build-web.sh` after `make html`:
-     `make linkcheck`, with external domains excluded via `linkcheck_ignore`
-     in `conf.py` (external links flake; the gap being closed is broken
-     pages/anchors/refs on OUR site). A broken internal link or missing
-     toctree page must fail the step — and therefore the deploy that follows
-     it.
-  3. If the step-1 warning count is small (<10), fix them and add
-     `SPHINXOPTS="-W --keep-going"` to the html invocation in
-     `docs-build-web.sh`. If it is large, do NOT add `-W` (a gate that is red
-     on day one gets switched off); record the count in this entry instead.
-  4. Verify locally: deliberately break one internal reference, confirm
-     linkcheck fails, restore it, confirm it passes. No workflow structure
-     change — the new checks ride the existing "Build web page" step.
-
-  **Test:** the break-one-link exercise in step 4 is the red/green.
-
-  **Build:** none (docs + shell script only; local sphinx via uv).
-
-  **Context:** "Docs builds are unverified" under CI and release gaps — the
-  build+deploy went green 2026-07-21, so a link/page check is the stated
-  remaining gap. Keep external-link checking out of the fatal path.
 
 ### Performance tooling
 

@@ -16,7 +16,7 @@ Voraussetzungen
 - WSL‑Distribution: Zugriff auf `apt` (oder entsprechender Paketmanager) und Netzwerk/Root‑Rechte.
 
 Schritt‑für‑Schritt (Debian/Ubuntu‑basierte Distros)
---------------------------------------------------
+------------------------------------------------------
 
 1. Falls nötig: Vulkan‑Tools installieren (für `vulkaninfo`):
 
