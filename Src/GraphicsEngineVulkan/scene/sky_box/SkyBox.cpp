@@ -27,6 +27,23 @@ import kataglyphis.vulkan.pipeline_builder;
 
 namespace Kataglyphis {
 
+namespace {
+
+// Returns true iff every face matches the first face's dimensions and none
+// are degenerate. The cubemap upload copies `layerSize` bytes out of every
+// face, so a face larger than the first reads off the end of an earlier
+// allocation and a smaller one writes overlapping layers.
+bool cubemapFacesConsistent(const int widths[6], const int heights[6])
+{
+    for (size_t i = 0; i < 6; ++i) {
+        if (widths[i] <= 0 || heights[i] <= 0) { return false; }
+        if (widths[i] != widths[0] || heights[i] != heights[0]) { return false; }
+    }
+    return true;
+}
+
+}// namespace
+
 SkyBox::SkyBox() = default;
 
 void SkyBox::init(std::shared_ptr<VulkanDevice>in_device, vk::CommandPool commandPool)
@@ -52,45 +69,37 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
 
     int width = 0, height = 0, bit_depth = 0;
     std::vector<unsigned char*> face_data(6);
+    int face_widths[6] = {};
+    int face_heights[6] = {};
     vk::DeviceSize layerSize = 0;
     vk::DeviceSize imageSize = 0;
 
     for (size_t i = 0; i < 6; i++) {
         std::string path = skybox_base_dir.str() + skybox_textures[i];
-        int face_width = 0;
-        int face_height = 0;
-        face_data[i] = stbi_load(path.c_str(), &face_width, &face_height, &bit_depth, 4);
+        face_data[i] = stbi_load(path.c_str(), &face_widths[i], &face_heights[i], &bit_depth, 4);
         if (!face_data[i]) {
             spdlog::error("Failed to load skybox texture: {}", path);
             for (size_t j = 0; j < i; j++) { stbi_image_free(face_data[j]); }
             return;
         }
-
-        // Every face MUST match the first, and this is a memory-safety check,
-        // not a validation nicety. width/height/layerSize used to be single
-        // variables overwritten by each iteration, so only the LAST face's
-        // dimensions survived - while the memcpy loop below copies layerSize
-        // bytes out of EVERY face. A cubemap whose last face was larger than
-        // the first therefore read off the end of the earlier allocations, and
-        // one whose last face was smaller wrote its layers at overlapping
-        // offsets. It never fired only because the six shipped PNGs happen to
-        // be identical in size.
-        if (i == 0) {
-            width = face_width;
-            height = face_height;
-        } else if (face_width != width || face_height != height) {
-            spdlog::error("Skybox face '{}' is {}x{} but the first face is {}x{}; all six faces must match.",
-              path, face_width, face_height, width, height);
-            for (size_t j = 0; j <= i; j++) { stbi_image_free(face_data[j]); }
-            return;
-        }
-
-        if (face_width <= 0 || face_height <= 0) {
-            spdlog::error("Skybox face '{}' decoded to a degenerate {}x{}.", path, face_width, face_height);
-            for (size_t j = 0; j <= i; j++) { stbi_image_free(face_data[j]); }
-            return;
-        }
     }
+
+    // Every face MUST match the first, and this is a memory-safety check, not
+    // a validation nicety. width/height/layerSize used to be single variables
+    // overwritten by each iteration, so only the LAST face's dimensions
+    // survived - while the memcpy loop below copies layerSize bytes out of
+    // EVERY face. A cubemap whose last face was larger than the first
+    // therefore read off the end of the earlier allocations, and one whose
+    // last face was smaller wrote its layers at overlapping offsets. It never
+    // fired only because the six shipped PNGs happen to be identical in size.
+    if (!cubemapFacesConsistent(face_widths, face_heights)) {
+        spdlog::error("Skybox faces have inconsistent or degenerate dimensions; all six faces must match.");
+        for (size_t j = 0; j < 6; j++) { stbi_image_free(face_data[j]); }
+        return;
+    }
+
+    width = face_widths[0];
+    height = face_heights[0];
 
     layerSize = static_cast<vk::DeviceSize>(width) * static_cast<vk::DeviceSize>(height) * 4;
     imageSize = layerSize * 6;
