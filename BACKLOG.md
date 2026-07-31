@@ -2063,51 +2063,6 @@ and unchecked rather than guessed at.
   of the suite runs than before (previously the abort shadowed everything
   after the first PT test in file order).
 
-- [ ] **(S) glTF: ignore the node world transform for skinned meshes (spec
-  conformance)** — the last surviving bullet of survey item #11's loader gaps.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:448-462` — the node walk
-    bakes `cgltf_node_transform_world` into every mesh node's vertices with no
-    `node->skin` check.
-  - `Test/commit/VulkanEngine/gltfParseSuite.cpp` (the `GltfParseUnit` suite —
-    locate via `MaskAlphaModeSetsTheCutoff`) — the CPU red/green pattern to
-    follow.
-  - An existing minimal fixture under `Resources/Models/GltfTest/` (e.g.
-    `mask_card.gltf`) — the embedded-base64 structure to copy.
-
-  **Steps:**
-  1. In the node walk, when `node->skin != nullptr`, use an identity world
-     matrix and identity normal matrix for that node's primitives. glTF 2.0
-     spec (Skins): "the transform of the skinned mesh node MUST be ignored" —
-     only joint transforms position a skinned mesh. The engine has no joint
-     animation, so vertices stay in bind pose; applying the node transform on
-     top is wrong per spec.
-  2. Add a fixture `skinned_translated.gltf`: one triangle mesh on a node that
-     BOTH has a skin (one joint, identity inverseBindMatrices) AND a
-     translation (e.g. +10 on x). Keep buffers embedded base64 like the other
-     GltfTest fixtures. Run `cgltf_validate` mentally against required skin
-     fields (`joints`, `inverseBindMatrices` accessor) — a malformed skin would
-     be rejected by the validation gate added in survey item #14.
-  3. CPU red/green test `GltfParseUnit.SkinnedNodeTransformIsIgnored`: parse
-     the fixture, assert the position x-range is NOT shifted by the node
-     translation (it is shifted +10 today = red). Add a control assertion that
-     an UNSKINNED node with the same translation still moves (existing,
-     correct behaviour must not regress).
-  4. Confirm `GltfParseUnit` is in the Windows CI filter in
-     `.github/workflows/Windows.yml` (it was added 2026-07-22; just verify).
-
-  **Test:** as in step 3; pure CPU, no GPU needed.
-
-  **Build:** `clangcl-debug` (`.cpp`-only change, no ABI skew — incremental
-  build is fine):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`,
-  then run `commitTestSuite.exe --gtest_filter=GltfParseUnit.*` on the host.
-
-  **Context:** Survey item #11 (2026-07-22) called this out; everything else in
-  that item is done. Low blast radius: only assets that actually carry a skin
-  change behaviour, and for those the current rendering is wrong per spec.
-
 ### CI / docs
 
 - [ ] **(M) Gate the docs build: surface Sphinx warnings and fail on broken

@@ -453,9 +453,15 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
         const cgltf_node *node = &data->nodes[n];
         if (node->mesh == nullptr) { continue; }
 
-        cgltf_float worldRaw[16];
-        cgltf_node_transform_world(node, worldRaw);
-        const glm::mat4 world = glm::make_mat4(worldRaw);
+        // glTF 2.0 spec (Skins): the transform of a skinned mesh node MUST be
+        // ignored - only joint transforms position a skinned mesh. The engine
+        // has no joint animation, so skinned vertices stay in bind pose.
+        glm::mat4 world(1.0F);
+        if (node->skin == nullptr) {
+            cgltf_float worldRaw[16];
+            cgltf_node_transform_world(node, worldRaw);
+            world = glm::make_mat4(worldRaw);
+        }
         const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(world));
 
         for (cgltf_size p = 0; p < node->mesh->primitives_count; ++p) {

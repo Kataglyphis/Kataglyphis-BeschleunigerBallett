@@ -272,6 +272,31 @@ TEST(GltfParseUnit, TriangleFanIsTriangulatedAroundTheHubVertex)
 
 namespace {
 
+// A minimal one-triangle glTF (same POSITION buffer as the tests above: three
+// vertices spanning x in [0,1]) whose node either does or does not carry a
+// skin, so the fixture can pin whether the node's world transform is applied.
+std::string skin_node_gltf(bool skinned)
+{
+    const std::string skinBlock = skinned ? R"GLTF(, "skin": 0)GLTF" : "";
+    const std::string skinsArray = skinned ? R"GLTF("skins": [ { "joints": [ 1 ] } ],)GLTF" : "";
+    return std::string(R"GLTF({
+      "asset": { "version": "2.0" },
+      )GLTF")
+      + skinsArray + R"GLTF(
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 }
+      } ] } ],
+      "nodes": [ { "mesh": 0, "translation": [10, 0, 0])GLTF"
+      + skinBlock + R"GLTF( }, { } ],
+      "scenes": [ { "nodes": [ 0, 1 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+}
+
 // A minimal one-triangle glTF whose single material carries the given
 // "alphaMode"/"alphaCutoff" snippet. The 36-byte POSITION buffer is the same
 // three-vertex block the tests above reuse.
@@ -311,6 +336,50 @@ float first_material_cutoff(const std::string &doc, const char *tmpName)
 }
 
 }// namespace
+
+TEST(GltfParseUnit, SkinnedNodeTransformIsIgnored)
+{
+    // glTF 2.0 spec (Skins): "the transform of the skinned mesh node MUST be
+    // ignored" - only joint transforms position a skinned mesh, and this
+    // engine has no joint animation, so a skinned node's vertices must stay
+    // in bind pose. Red without the GltfLoader change: the +10 translation
+    // would still bake into the vertices, same as the unskinned control below.
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_skinned_translated.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << skin_node_gltf(/*skinned=*/true);
+    }
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_GE(loader.getVertices().size(), 3U);
+    for (const Vertex &v : loader.getVertices()) {
+        EXPECT_LT(v.position.x, 2.0F) << "a skinned node's translation must be ignored - vertex stayed in bind pose";
+    }
+}
+
+TEST(GltfParseUnit, UnskinnedNodeTransformStillApplies)
+{
+    // Control for the test above: an UNSKINNED node with the same translation
+    // must still move, so the skin check does not accidentally suppress every
+    // node transform.
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_unskinned_translated.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << skin_node_gltf(/*skinned=*/false);
+    }
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_GE(loader.getVertices().size(), 3U);
+    bool anyShifted = false;
+    for (const Vertex &v : loader.getVertices()) {
+        if (v.position.x > 9.0F) { anyShifted = true; }
+    }
+    EXPECT_TRUE(anyShifted) << "an unskinned node's translation must still apply to its vertices";
+}
 
 TEST(GltfParseUnit, MaskAlphaModeSetsTheCutoff)
 {
