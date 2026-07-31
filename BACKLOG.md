@@ -1701,55 +1701,6 @@ pick them up from the older prose above.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-- [ ] **(S) Feed real frame deltas to `frame_delta_seconds` — auto-exposure
-  currently adapts at a hard-coded nominal 60 Hz in BOTH real frontends.**
-
-  **Files to read:**
-  - `crates/webgpu_renderer/src/render/forward.rs:426,1034,1745` — the public
-    field, its `1.0 / 60.0` default, and its use as the adaptation delta.
-  - `crates/webgpu_renderer/examples/viewer.rs` — native loop; already keeps
-    a `started: Instant` (`:63`) but never writes `frame_delta_seconds`.
-  - `crates/webgpu_renderer/src/wasm_demo.rs` — web loop; never writes it
-    either. The rAF rate there is the display rate (often 120/144 Hz), so
-    adaptation would run 2x+ too fast once auto-exposure is enabled.
-  - `crates/webgpu_renderer/tests/headless.rs:795` — today's ONLY writer (a
-    test), which is the tell that the wiring was never done.
-
-  **Steps:**
-  1. Add a small `FrameClock` helper in the library (next to the renderer):
-     `tick() -> f32` returning seconds since the previous tick, clamped to
-     `[0.0, 0.25]` (a suspended tab or a debugger pause must not slam the
-     exposure), first tick returning the nominal `1.0 / 60.0`. Structure it
-     as a pure `tick_at(now)` inner function over an injected timestamp so
-     tests need no sleeping.
-  2. Time source: `std::time::Instant` on native. For wasm, use whatever
-     clock dependency the crate ALREADY has (check `Cargo.toml` for
-     `web_time`/`instant`/`web_sys` with `Performance`) — do not add a new
-     dependency without checking; `Instant::now()` panics on
-     wasm32-unknown-unknown.
-  3. In `viewer.rs` and `wasm_demo.rs`, per frame before rendering:
-     `renderer.frame_delta_seconds = clock.tick();`.
-  4. `cargo check --target wasm32-unknown-unknown` for the wasm arm, and
-     `cargo check` with `-D warnings` as usual.
-
-  **Test:** Unit tests on `FrameClock` in an in-file `mod tests` (the
-  `forward.rs` bottom-of-file pattern): first tick is nominal; consecutive
-  ticks are positive and match the injected timestamps; a 5-second injected
-  gap clamps to 0.25. Existing auto-exposure tests must stay green (they set
-  the field directly and are unaffected).
-
-  **Build:** `cargo test` from
-  `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer` on the
-  host (GPU tests self-skip without an adapter). This is a SUBMODULE: commit
-  in the RPT repo and bump the gitlink here in the same change (submodule-pin
-  invariant in AGENTS.md).
-
-  **Context:** The auto-exposure entry above warned "callers driving real
-  frames should set it, or adaptation runs at the wrong rate on any other
-  refresh" — and neither real caller ever did. Auto-exposure is off by
-  default so nothing is visibly broken today, which is exactly why this will
-  bite silently the day it is switched on.
-
 ### Cross-renderer / docs
 
 - [ ] **(refactor, S) Verify and retire the WGSL-export shader-sharing route
