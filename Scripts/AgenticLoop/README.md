@@ -41,56 +41,66 @@ flowchart TD
 
 ### Key Design Principles
 
-1. **Queue discipline**: The executor must drain ALL unchecked tasks in
-   `BACKLOG.md` before the planner adds new ones. While tasks are pending,
-   the planner phase is skipped entirely
+1. **Queue discipline**: The executor must drain ALL actionable tasks in
+   `BACKLOG.md` before the planner adds new ones. While actionable (`- [ ]`)
+   tasks are pending, the planner phase is skipped entirely
    (`backlog.skipPlannerWhenTasksPending`) — iterations go straight to the
    executor. Completed tasks are deleted from the backlog
    (`backlog.deleteCompletedTasks`); their summaries live in the git
    commit messages, so `BACKLOG.md` only ever contains open work.
+2. **Blocked tasks don't starve the planner**: tasks waiting on a
+   prerequisite or an owner decision are marked `- [b]` (by the executor when
+   it discovers the blocker, or by the planner when recording one). They are
+   excluded from the pending count, so a backlog containing only blocked
+   entries reads as an empty queue and the planner runs again. As a backstop,
+   an iteration that completes zero tasks forces the planner to run on the
+   next iteration, and if the planner ran and the executor still made no
+   progress the loop stops instead of burning sessions re-auditing the same
+   entries (this exact failure mode cost a 7.6 h zero-progress run on
+   2026-07-31).
 
-2. **Model tiering**: The planner uses an expensive, powerful model (Fable 5
+3. **Model tiering**: The planner uses an expensive, powerful model (Fable 5
    or GLM 5.2) for high-quality analysis and task descriptions. The executor
    uses a cheaper, faster model (Sonnet or DeepSeek v4 Flash) for
    implementation — it relies on the planner's detailed task descriptions to
    work efficiently.
 
-3. **Build matrix cycling**: After every N completed tasks, a build is
+4. **Build matrix cycling**: After every N completed tasks, a build is
    triggered. The build configuration cycles through a **build matrix** —
    a set of entries each defining a preset, sanitizer, build directory, and
    test command. This ensures the loop exercises ASAN, profile, and release
    builds regularly, not just one build type.
 
-4. **Sanitizer-aware test execution**: When a matrix entry has
+5. **Sanitizer-aware test execution**: When a matrix entry has
    `sanitizer: "asan"` or `sanitizer: "tsan"`, the loop automatically sets
    `ASAN_OPTIONS` or `TSAN_OPTIONS` before running tests, then restores the
    original environment. This ensures sanitizer-instrumented tests actually
    catch memory errors and data races.
 
-5. **Full matrix sweep**: Every N iterations (configurable via
+6. **Full matrix sweep**: Every N iterations (configurable via
    `fullMatrixEveryNIterations`), the loop runs ALL build configs in
    sequence instead of just one. This ensures every config is exercised
    regularly, not just the one that happens to be next in the cycle.
 
-6. **Periodic quality gates**: clang-tidy and cmake-format run every M
+7. **Periodic quality gates**: clang-tidy and cmake-format run every M
    tasks to catch drift early.
 
-7. **Periodic refactor focus**: Every R iterations, the planner focuses
+8. **Periodic refactor focus**: Every R iterations, the planner focuses
    exclusively on refactoring tasks (dead code, API consolidation, test
    gaps, documentation drift, C++23 modernization).
 
-8. **Build-failure fixing**: When a periodic build fails, the executor-tier
+9. **Build-failure fixing**: When a periodic build fails, the executor-tier
    model is dispatched with the tail of the build log and a focused
    "fix the build" prompt, then the build is retried once. After
    `maxConsecutiveBuildFailures` consecutive failed build phases the loop
    stops instead of churning.
 
-9. **Retry with backoff + per-role timeouts**: Every agent invocation
+10. **Retry with backoff + per-role timeouts**: Every agent invocation
    retries up to `agentRetries` times with linear backoff, and the planner /
    executor have independent wall-clock timeouts
    (`plannerTimeoutSeconds` / `executorTimeoutSeconds`).
 
-10. **Planner sandbox (claude engine)**: The planner runs with
+11. **Planner sandbox (claude engine)**: The planner runs with
     `--allowed-tools "Read Glob Grep Edit(BACKLOG.md) Bash(git:*) PowerShell(git:*)"`,
     so it can analyze everything but only write the backlog. The executor
     runs with `bypassPermissions` (trusted repo). Role system prompts come
@@ -336,7 +346,8 @@ The planner agent (role prompt in `prompts/planner.md` /
 
 ### 2. Executor Phase
 
-The script counts unchecked tasks (`- [ ]`) in `BACKLOG.md` and loops:
+The script counts actionable tasks (`- [ ]`, excluding blocked `- [b]`) in
+`BACKLOG.md` and loops:
 
 ```
 claude -p --model claude-sonnet-5 --dangerously-skip-permissions \
@@ -348,10 +359,11 @@ opencode run --agent executor --model opencode-go/deepseek-v4-flash
 The executor agent (role prompt in `prompts/executor.md` /
 `.opencode/agents/executor.md`):
 - Has full tool access (read, write, bash)
-- Picks up the first unchecked task
+- Picks up the first unchecked task, skipping `- [b]` (blocked) entries
 - Implements the changes following the task description
 - Builds with the appropriate preset
-- Marks the task as `[x]` with a summary
+- Deletes the completed task entry from `BACKLOG.md` (or re-marks it `- [b]`
+  with the blocker noted if it turns out not to be actionable)
 - Commits the changes
 
 The loop continues until all tasks are drained or max retries are hit.

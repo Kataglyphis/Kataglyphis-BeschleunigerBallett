@@ -10,6 +10,11 @@ Checkbox items are sized and agreed; the prose sections below the fold are
 candidates that have not been sized yet. A candidate graduates by acquiring a
 size and a decision, or gets dropped.
 
+Checkbox states: `- [ ]` actionable (the agentic loop's executor picks these
+up), `- [b]` blocked/parked (waiting on a prerequisite or an owner decision —
+the loop skips these and they do not count toward its pending-task queue),
+`- [x]` done (pruned automatically; history lives in git).
+
 > Merged from the former `ROADMAP.md` on 2026-07-20. There is no longer a
 > separate roadmap file — one list, so a stale entry in one place cannot
 > contradict a fresh one in the other. That had already happened: the roadmap
@@ -31,7 +36,7 @@ size and a decision, or gets dropped.
 > just taken. Both instruments now agree. **After touching any shader,
 > recompile and re-run the integrity tests BEFORE trusting a rendered
 > measurement - including one taken moments earlier.**
-- [ ] **Renderer-level RAII cleanup consolidation** (M, **blocked on being
+- [b] **Renderer-level RAII cleanup consolidation** (M, **blocked on being
   testable**) — the stage-level work landed 2026-07-19; `VulkanRenderer`'s
   hand-ordered `cleanUp()` and the device-lost special-casing in `App.cpp`
   are what is left.
@@ -47,7 +52,7 @@ size and a decision, or gets dropped.
 
 ## Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-- [ ] **Basis ETC1S/UASTC transcoding** (M, **blocked on a transcoder + a test
+- [b] **Basis ETC1S/UASTC transcoding** (M, **blocked on a transcoder + a test
   asset**) — KTX2 BCn passthrough is done; supercompressed files are already
   rejected with a clear error (`ktx2_loader.rs`: "supercompression … not supported
   yet"). Two concrete blockers surfaced 2026-07-21: (1) the viable transcoder is
@@ -58,13 +63,14 @@ size and a decision, or gets dropped.
   can't be verified headlessly. Do it as a deliberate cycle: vendor `basis-universal`,
   generate an ETC1S + a UASTC `.ktx2` via `toktx`/`basisu`, then transcode to a
   BCn `CompressedFormat` on desktop and to ETC2/ASTC on the web path.
-- [ ] **Indirect draws** (M) — instancing landed without them. Indirect only
+- [b] **Indirect draws** (M, blocked on GPU occlusion culling producing draw
+  arguments) — instancing landed without them. Indirect only
   pays once draw arguments come from the GPU (culling compute, batched
   submission); with CPU-side instance counts it adds a buffer round trip for
   nothing. Revisit alongside GPU occlusion culling below, which is what would
   produce those arguments.
-- [ ] **WebXR** (XL) — parked.
-- [ ] **Colosseum demo scene** (blocked on you) —
+- [b] **WebXR** (XL) — parked.
+- [b] **Colosseum demo scene** (blocked on you) —
   pick a licensed photogrammetry scan, keep the asset out of git.
 
   This entry used to claim "LOD + KTX2 machinery is ready" while the LOD
@@ -372,7 +378,8 @@ cleanUp+recreate pair at the four scene-changed sites.
   `scene_config_fuzz_test` the old way in the ASan container and run under
   `llvm-symbolizer`) to name the exact ctor, then either make it lazy or guard it.
 
-- [ ] **Windows CI: the `:winamd64` image is 54 GB and exhausts the runner**
+- [b] **Windows CI: the `:winamd64` image is 54 GB and exhausts the runner**
+  (blocked on the owner building/pushing a slim image)
   (root-caused 2026-07-21). `Build/Test/Package` failed after ~58 min: `docker
   pull` of `:winamd64` died repeatedly with `hcsshim::ImportLayer ... not enough
   space on the disk (0x70)` — it imports 54.4 GB of layers into Docker's data-root

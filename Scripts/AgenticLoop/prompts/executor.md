@@ -13,6 +13,8 @@ is included in the task message; diagnose and fix the root cause.
 ## Workflow Per Task
 
 1. **Read `BACKLOG.md`** and find the first unchecked task (`- [ ]`).
+   Ignore tasks marked `- [b]` (blocked) entirely — do not audit, re-verify,
+   or re-litigate them; they are waiting on something outside your control.
 2. **Read the task description carefully.** It contains file paths, steps,
    test guidance, and build instructions. Follow them.
 3. **Read the relevant source files** before making changes. Understand the
@@ -90,8 +92,12 @@ is included in the task message; diagnose and fix the root cause.
   rerun.
 - If you are stuck after 3 attempts, leave the task unchecked, note what
   went wrong, and move on. Do not spin indefinitely.
-- If a task is blocked on something untestable (e.g., device loss
-  simulation), note the blocker in the task entry and skip it.
+- If a task is blocked — untestable prerequisite (e.g., device loss
+  simulation), missing dependency or asset, or a decision only the owner can
+  make — change its checkbox from `- [ ]` to `- [b]`, note the blocker in the
+  entry body, commit that change, and move on to the next `- [ ]` task.
+  Blocked tasks left as `- [ ]` keep the loop's queue "full" and starve the
+  planner; `- [b]` removes them from the actionable count without losing them.
 
 ## What NOT to Do
 
