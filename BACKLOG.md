@@ -1659,14 +1659,6 @@ moves geometry.
 
 ### Cross-renderer
 
-- [ ] **Headless GPU timing comparison in CI** (S) — both renderers already
-    export per-pass GPU ms to JSON (`KATAGLYPHIS_GPU_TIMING_JSON` on the C++
-    side, `dump_gpu_timings` example on the Rust side). The comparison script
-    (`Compare-RendererTimings.ps1`) runs both headlessly and prints one table.
-    Add a CI step that asserts the script produces the expected pass names and
-    the timings are non-zero — structural regressions caught before a human
-    looks.
-
 ### Container / build
 
 - [ ] **Prune source tree before tar stream** (S) — a source file deleted on
