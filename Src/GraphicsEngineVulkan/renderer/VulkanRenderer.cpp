@@ -155,7 +155,6 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     gui->initializeVulkanContext(device,
       instance.getVulkanInstance(),
       postStage.getRenderPass(),
-      graphics_command_pool,
       vulkanSwapChain.getNumberSwapChainImages());
     gui->setUserSelectionForRRT(device->supportsHardwareAcceleratedRRT());
 }

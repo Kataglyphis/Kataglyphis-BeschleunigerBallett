@@ -596,12 +596,6 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         spdlog::info("bufferDeviceAddress feature is not supported; related shader capabilities may be unavailable.");
     }
 
-    if (features2.features.robustBufferAccess == VK_TRUE) {
-        spdlog::info("Enabling robustBufferAccess for additional GPU memory access safety.");
-    } else {
-        spdlog::info("robustBufferAccess is not supported on this device.");
-    }
-
     // Compute shader derivatives: Slang emits ComputeDerivativeGroupQuadsKHR
     // for compute shaders (clouds, noise). Enable the extension if supported.
     vk::PhysicalDeviceComputeShaderDerivativesFeaturesKHR computeDerivativeFeatures{};

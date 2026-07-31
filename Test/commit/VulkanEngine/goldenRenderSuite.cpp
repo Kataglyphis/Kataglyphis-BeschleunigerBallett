@@ -1321,7 +1321,7 @@ TEST(GoldenRender, PathTracingHonorsTheQualityControls)
 }
 
 // The GUI directional light must drive FORWARD lighting - diffuse included.
-// Before 2026-07-22 every BRDF in Resources/Shaders/pbr/brdf multiplied the
+// Before 2026-07-22 every BRDF in Resources/ShadersSlang/common/brdf.slang multiplied the
 // light color/intensity into the SPECULAR term only, so diffuse surfaces were
 // lit by an implicit radiance-1 white light and the radiance slider barely
 // moved the image (the red state: only sparse highlights respond). With the

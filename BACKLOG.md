@@ -2108,6 +2108,128 @@ that bump is safe.
 
 ### CI and release gaps
 
+## 2026-07-31 batch IV — planner (refactor: dead code, depth-format consolidation, host/device layout pins)
+
+All three verified against the tree on 2026-07-31 (every "dead" claim below was
+re-grepped across `Src/` + `Test/` this pass; the depth-format divergence and
+the missing layout pins were confirmed by reading the sites). Candidates found
+but deliberately NOT tasked this cycle (queue discipline — next planner cycle
+should re-verify and size them): README.md:213-220 names two files that do not
+exist (`ShaderIncludes.hpp`, `CompileShadersToSPV.cmake` — the single most
+actionable doc drift); `docs/cpp-renderer-improvements.md:66-72,119-121` still
+describes runtime-glslc recompilation that was deleted with the Slang
+migration; `docs/webgpu-renderer-roadmap.md:121` advertises the naga WGSL
+export that `docs/shader-sharing.md:133` documents as retired; per-frame heap
+allocations in `CascadedShadowMapMath.cpp` (measurable via
+`BM_ComputeCascadeData`); sampler creation triplicated with drifted values
+(`PostStage.cpp:187`, `Model.cpp:72`, `Texture.cpp:234`); the 4× duplicated
+`DescriptorSetGroup` write prologue; `FileReader.ixx`/`Texture::loadTextureData`
+error paths have fuzz-only coverage and no deterministic unit tests.
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Consolidate the 7 duplicated depth-format selections into one `chooseDepthFormat` helper** —
+  the identical 4-line `choose_supported_format(...)` call is pasted 7× with
+  TWO divergent priority orders, so forward/post and deferred/CSM can resolve
+  *different* depth formats on the same device.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/common/FormatHelper.hpp` — the existing generic helper
+  - The 7 sites: `Rasterizer.cpp:236,363`, `PostStage.cpp:168,233`,
+    `DeferredRasterizer.cpp:97,207`, `CascadedShadowMap.cpp:42`
+  - `docs/gpu-golden-testing.md` — host GPU verification loop
+
+  **Steps:**
+  1. Add `inline vk::Format chooseDepthFormat(vk::PhysicalDevice)` to
+     `FormatHelper.hpp`, wrapping `choose_supported_format` with the unified
+     preference `{eD32Sfloat, eD32SfloatS8Uint, eD24UnormS8Uint}`, tiling
+     `eOptimal`, feature `eDepthStencilAttachment`. The stencil-free-first
+     order is safe: stencil is never used anywhere (`stencilTestEnable =
+     VK_FALSE` for every pipeline, `PipelineBuilder.cpp:147`; every
+     `stencilLoadOp` is `eDontCare`), and `Rasterizer.cpp:380` already guards
+     the stencil aspect behind `hasStencilComponent`.
+  2. Replace all 7 call sites with the helper. In `PostStage`, the site at
+     `:233` re-queries what `:168` already stored in the `depth_format` member
+     (`PostStage.ixx:53`) — use the member there instead of calling again.
+  3. Note the deliberate behaviour change in the commit message: on hardware
+     supporting all three formats, forward/post switch from `eD32SfloatS8Uint`
+     to `eD32Sfloat` (same 32-bit float depth precision, drops an unused
+     stencil plane). Deferred/CSM are unchanged.
+
+  **Test:** No new unit test (needs a physical device). Verify on the GPU
+  host: run the container-built `commitTestSuite.exe` from the repo root on
+  the RX 9070 XT per `docs/gpu-golden-testing.md` with
+  `--gtest_filter='GoldenRender.*:Integration.*:-GoldenRender.PathTracingAccumulatesAndConverges:GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice:Integration.RenderModesSelectableInGui'`
+  (the 3 exclusions are the pre-existing PT device-lost reproducers — see the
+  `- [b]` entry in batch II). Expect the same pass count as that entry
+  recorded (18/20) and a validation-clean log; a depth-format mistake here
+  surfaces as render-pass/framebuffer VUID errors, which the goldens run
+  under validation layers will catch.
+
+  **Build:** `clangcl-debug`, incremental is fine (header + `.cpp` only, no
+  module interface touched):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+
+  **Context:** API-consolidation item from the refactor mandate. The
+  CascadedShadowMap comment at `.cpp:43-45` already records why format
+  choices silently coupling to a preference-list head is dangerous — this
+  makes the whole engine share ONE list so the coupling cannot recur. Copy
+  that comment's spirit onto the new helper.
+
+- [ ] **(S) (refactor) Pin the remaining host/device struct layouts: 3 push-constant structs + ObjMaterial** —
+  `pushConstantSuite.cpp` pins `PushConstantRasterizer` only; the other three
+  push-constant structs and the BDA-read `ObjMaterial` have no layout guard,
+  so a reordered or inserted field desyncs the Slang twin silently (exactly
+  how the Rust vertex-attribute mismatch and the PT spec-constant mismatch
+  hid).
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/pushConstantSuite.cpp` — the pattern to follow (offsetof/sizeof pins + the doc comment style)
+  - `Src/GraphicsEngineVulkan/renderer/pushConstants/PushConstantPathTracing.hpp` (`vec4 clearColor; uint width, height, frame_index, samples_per_pixel, max_bounces`)
+  - `Src/GraphicsEngineVulkan/renderer/pushConstants/PushConstantPost.hpp` (`float aspect_ratio; uint clouds_enabled, shadows_enabled, skybox_enabled`)
+  - `Src/GraphicsEngineVulkan/renderer/pushConstants/PushConstantRayTracing.hpp` — NOTE the struct is named `PushConstantRaytracing` (lowercase t)
+  - `Src/shared/scene/ObjMaterial.hpp` — the scalar-layout contract is documented at `:31-32` and `:38`
+  - The Slang twins: grep `Resources/ShadersSlang/` for the matching push-constant blocks (`path_tracing/path_tracing.slang`, the post shader, `raytracing/raytrace.rgen.slang`) and the shader-side material struct (`common/material_fetch.slang` or wherever `ObjMaterial` is mirrored)
+  - `.github/workflows/Windows.yml:209-224` — the CPU-only suite filter
+
+  **Steps:**
+  1. In `pushConstantSuite.cpp`, add three suites mirroring the existing
+     pins: `PushConstantPathTracingUnit` (expect `clearColor` at 0, `width`
+     16, `height` 20, `frame_index` 24, `samples_per_pixel` 28, `max_bounces`
+     32, `sizeof >= 36` — the std430 push-constant layout the Slang kernel
+     reads), `PushConstantPostUnit` (`aspect_ratio` 0, `clouds_enabled` 4,
+     `shadows_enabled` 8, `skybox_enabled` 12, sizeof 16),
+     `PushConstantRaytracingUnit` (`clear_color` 0, sizeof 16).
+  2. Add an `ObjMaterialLayoutUnit` suite pinning the scalar-block layout the
+     RT/PT kernels read via buffer device address: with glm's default
+     (non-aligned) vec3, expect `ambient` 0, `diffuse` 12, `specular` 24,
+     `transmittance` 36, `emission` 48, `shininess` 60, `ior` 64, `dissolve`
+     68, `illum` 72, `textureID` 76, `alphaCutoff` 80, `uv_scale` 84,
+     `uv_offset` 92, `sizeof(ObjMaterial)` 100. First confirm these against
+     the Slang-side struct; **if any expectation fails at runtime, that is a
+     REAL C++/Slang layout finding — investigate against the `.slang` twin
+     and report it, do not adjust the number to make the test pass.**
+  3. Add the four new suite names to the `$cpuOnlySuites` filter in
+     `Windows.yml` (follow commit `eb077041` — a suite not in the filter
+     never runs in CI).
+
+  **Test:** The new tests themselves. Red-proof one pin locally by
+  temporarily reordering two fields in a copy of the struct (do not commit
+  the reorder).
+
+  **Build:** `clangcl-debug`, incremental (test-only + workflow change, no
+  module interface touched):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  then run `commitTestSuite.exe --gtest_filter='PushConstant*:ObjMaterialLayoutUnit.*'`
+  in the container.
+
+  **Context:** Test-coverage-gap item from the refactor mandate. The header
+  comment of `pushConstantSuite.cpp:1-15` explains why this class of bug is
+  silent (the push range is self-consistent host-side, so validation cannot
+  see the drift); `ObjMaterial.hpp` carries an explicit scalar-layout
+  contract that nothing enforces. These four structs are every remaining
+  hand-mirrored host/device struct with no pin.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

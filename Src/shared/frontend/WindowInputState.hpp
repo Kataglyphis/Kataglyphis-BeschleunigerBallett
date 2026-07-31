@@ -4,7 +4,7 @@
 #include <array>
 
 namespace Kataglyphis::Frontend {
-constexpr std::size_t window_key_count = 1024;
+inline constexpr std::size_t window_key_count = 1024;
 
 struct WindowInputState
 {

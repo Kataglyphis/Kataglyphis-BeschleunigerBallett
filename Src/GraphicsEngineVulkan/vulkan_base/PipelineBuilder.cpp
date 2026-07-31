@@ -34,12 +34,6 @@ Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setCullMode(vk::Cull
     return *this;
 }
 
-Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setFrontFace(vk::FrontFace in_front_face)
-{
-    front_face = in_front_face;
-    return *this;
-}
-
 Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setAlphaBlending(bool enable)
 {
     alpha_blending = enable;
@@ -85,12 +79,6 @@ Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setDepthClamp(bool e
 Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setDynamicCullMode(bool enable)
 {
     dynamic_cull_mode = enable;
-    return *this;
-}
-
-Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setBasePipelineIndex(int32_t in_base_pipeline_index)
-{
-    base_pipeline_index = in_base_pipeline_index;
     return *this;
 }
 
@@ -184,7 +172,7 @@ vk::Pipeline Kataglyphis::PipelineBuilder::build(vk::Device device,
     graphics_pipeline_create_info.renderPass = render_pass;
     graphics_pipeline_create_info.subpass = subpass;
     graphics_pipeline_create_info.basePipelineHandle = nullptr;
-    graphics_pipeline_create_info.basePipelineIndex = base_pipeline_index;
+    graphics_pipeline_create_info.basePipelineIndex = -1;
 
     auto pipeline_result = device.createGraphicsPipelines(pipeline_cache, graphics_pipeline_create_info);
     if (pipeline_result.result != vk::Result::eSuccess) {

@@ -33,14 +33,11 @@ GUI::GUI(Window *window) : window(window) {}
 void GUI::initializeVulkanContext(std::shared_ptr<VulkanDevice>vulkan_device,
   const vk::Instance &instance,
   const vk::RenderPass &post_render_pass,
-  const vk::CommandPool &graphics_command_pool,
   uint32_t image_count)
 {
     this->device = vulkan_device;
-    (void)graphics_command_pool;
 
     create_gui_context(window, instance, post_render_pass, image_count);
-    // create_fonts_and_upload(graphics_command_pool);
 }
 
 void GUI::setUserSelectionForRRT(bool rrtCapabilitiesAvailable)

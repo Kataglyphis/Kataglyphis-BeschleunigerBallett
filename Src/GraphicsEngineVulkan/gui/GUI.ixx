@@ -20,7 +20,6 @@ class GUI
     void initializeVulkanContext(std::shared_ptr<VulkanDevice>device,
       const vk::Instance &instance,
       const vk::RenderPass &post_render_pass,
-      const vk::CommandPool &graphics_command_pool,
       uint32_t image_count);
 
     GUISceneSharedVars &getGuiSceneSharedVars() { return guiSceneSharedVars; };

@@ -73,9 +73,6 @@ auto Window::initialize() -> int
         return 1;
     }
 
-    // get buffer size information
-    glfwGetFramebufferSize(main_window, &window_buffer_width, &window_buffer_height);
-
     init_callbacks();
 
     return 0;
@@ -87,21 +84,9 @@ void Window::cleanUp()
     glfwTerminate();
 }
 
-void Window::update_viewport() { glfwGetFramebufferSize(main_window, &window_buffer_width, &window_buffer_height); }
-
-void Window::set_buffer_size(float width, float height)
-{
-    this->window_buffer_width = static_cast<int>(width);
-    this->window_buffer_height = static_cast<int>(height);
-}
-
 auto Window::get_x_change() -> float { return Kataglyphis::Frontend::consume_axis_delta(input_state.x_change); }
 
 auto Window::get_y_change() -> float { return Kataglyphis::Frontend::consume_axis_delta(input_state.y_change); }
-
-auto Window::get_height() const -> float { return static_cast<float>(window_height); }
-
-auto Window::get_width() const -> float { return static_cast<float>(window_width); }
 
 auto Window::framebuffer_size_has_changed() const -> bool { return framebuffer_resized; }
 

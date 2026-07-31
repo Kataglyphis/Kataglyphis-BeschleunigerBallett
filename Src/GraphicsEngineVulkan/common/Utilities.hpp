@@ -17,8 +17,6 @@ namespace Kataglyphis {
         std::abort(); \
     }
 
-#define NOT_YET_IMPLEMENTED spdlog::error("Not yet implemented!");
-
 #ifdef NDEBUG
 const bool ENABLE_VALIDATION_LAYERS = false;
 #else

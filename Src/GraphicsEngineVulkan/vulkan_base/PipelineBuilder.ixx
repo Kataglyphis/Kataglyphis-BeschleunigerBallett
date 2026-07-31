@@ -23,7 +23,6 @@ class PipelineBuilder
     PipelineBuilder &setVertexInput(std::vector<vk::VertexInputBindingDescription> bindings,
       std::vector<vk::VertexInputAttributeDescription> attributes);
     PipelineBuilder &setCullMode(vk::CullModeFlags cull_mode);
-    PipelineBuilder &setFrontFace(vk::FrontFace front_face);
     // When enabled uses the standard alpha blending factors
     // (srcAlpha/oneMinusSrcAlpha for color, one/zero for alpha, both eAdd).
     PipelineBuilder &setAlphaBlending(bool enable);
@@ -43,7 +42,6 @@ class PipelineBuilder
     // static cull mode and needs no per-draw setCullMode. Used by the forward
     // raster pass to disable back-face culling for doubleSided glTF meshes only.
     PipelineBuilder &setDynamicCullMode(bool enable);
-    PipelineBuilder &setBasePipelineIndex(int32_t base_pipeline_index);
 
     // Creates the pipeline via createGraphicsPipelines(pipeline_cache, ...);
     // aborts through ASSERT_VULKAN with error_message on failure.

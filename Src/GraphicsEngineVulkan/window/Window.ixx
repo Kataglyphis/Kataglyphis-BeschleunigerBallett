@@ -17,21 +17,13 @@ class Window
     void cleanUp();
 
     bool get_should_close() { return glfwWindowShouldClose(main_window); }
-    float get_buffer_width() const { return static_cast<float>(window_buffer_width); }
-    float get_buffer_height() const { return static_cast<float>(window_buffer_height); }
     float get_x_change();
     float get_y_change();
     GLFWwindow *get_window() { return main_window; }
 
-    float get_height() const;
-    float get_width() const;
-
     bool *get_keys() { return input_state.keys.data(); }
     bool framebuffer_size_has_changed() const;
     void reset_framebuffer_has_changed();
-
-    void update_viewport();
-    void set_buffer_size(float window_buffer_width, float window_buffer_height);
 
     ~Window();
 
@@ -40,8 +32,6 @@ class Window
     uint32_t window_width, window_height;
     Kataglyphis::Frontend::WindowInputState input_state;
     bool framebuffer_resized;
-
-    int window_buffer_width{}, window_buffer_height{};
 
     void init_callbacks();
     static void framebuffer_size_callback(GLFWwindow *window, int width, int height);

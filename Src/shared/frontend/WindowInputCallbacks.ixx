@@ -3,15 +3,17 @@ module;
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 
+#include "WindowInputState.hpp"
+
 export module kataglyphis.shared.frontend.window_input_callbacks;
 
 export namespace Kataglyphis::Frontend {
 
-constexpr int window_key_count = 1024;
+using Kataglyphis::Frontend::window_key_count;
 
 inline void reset_window_keys(bool *keys)
 {
-    for (int index = 0; index < window_key_count; ++index) { keys[index] = false; }
+    for (std::size_t index = 0; index < window_key_count; ++index) { keys[index] = false; }
 }
 
 inline float consume_axis_delta(float &axis_change)
@@ -27,7 +29,7 @@ inline void handle_key_callback(GLFWwindow *window, bool *keys, int key, int act
 
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) { glfwSetWindowShouldClose(window, GLFW_TRUE); }
 
-    if (key >= 0 && key < window_key_count) {
+    if (key >= 0 && static_cast<std::size_t>(key) < window_key_count) {
         if (action == GLFW_PRESS) {
             keys[key] = true;
         } else if (action == GLFW_RELEASE) {

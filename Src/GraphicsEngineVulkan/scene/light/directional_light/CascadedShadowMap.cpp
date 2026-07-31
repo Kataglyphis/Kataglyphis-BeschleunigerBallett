@@ -413,7 +413,7 @@ void CascadedShadowMap::createGraphicsPipeline()
         // them at depth 0 (nearest), which is depth-correct for occlusion.
         // Extending the near plane instead was tried and REGRESSED
         // GoldenRender.ShadowsDarkenSomePixels: the shader bias is constant in
-        // NORMALIZED depth (cascaded_shadow.glsl), so widening the depth range
+        // NORMALIZED depth (common/cascaded_shadow.slang), so widening the depth range
         // scales the bias in world units and eats contact shadows. Clamp keeps
         // the range tight. Guarded: without the device feature this stays off
         // and such casters clip exactly as before.

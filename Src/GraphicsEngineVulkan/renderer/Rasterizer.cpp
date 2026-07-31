@@ -446,7 +446,6 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
         // Per-draw cull mode: doubleSided glTF meshes disable back-face culling
         // (set in the record loop). Every draw sets it explicitly below.
         .setDynamicCullMode(true)
-        .setBasePipelineIndex(-1)
         .build(device->getLogicalDevice(), pipeline_layout, render_pass, device->getPipelineCache());
     spdlog::info("Rasterizer: Created pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphics_pipeline);
 

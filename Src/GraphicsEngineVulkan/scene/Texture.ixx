@@ -39,7 +39,6 @@ class Texture
 
     uint32_t getMipLevel() const { return mip_levels; };
     VulkanImage &getVulkanImage() { return vulkanImage; };
-    VulkanImageView &getVulkanImageView() { return vulkanImageView; };
     vk::Image &getImage() { return vulkanImage.getImage(); };
     vk::ImageView &getImageView() { return vulkanImageView.getImageView(); };
     vk::Sampler &getSampler() { return textureSampler; }

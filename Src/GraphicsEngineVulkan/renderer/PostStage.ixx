@@ -28,7 +28,6 @@ class PostStage
     vk::RenderPass &getRenderPass() { return render_pass; };
     vk::Sampler &getOffscreenSampler() { return offscreenTextureSampler; };
     vk::ImageView getDepthBufferImageView() { return depthBufferImage->getImageView(); };
-    vk::Image &getDepthBufferImage() { return depthBufferImage->getImage(); };
     vk::Format getDepthFormat() { return depth_format; };
 
     void recreateFrameResources();
