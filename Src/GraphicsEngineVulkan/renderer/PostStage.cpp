@@ -21,7 +21,6 @@
 module kataglyphis.vulkan.post_stage;
 
 import kataglyphis.vulkan.debug;
-import kataglyphis.vulkan.file;
 import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.device;
@@ -293,15 +292,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
     std::string const post_vert_spv = "post.vs_main.spv";
     std::string const post_frag_spv = "post.fs_main.spv";
 
-    ShaderHelper shaderHelper;
-
-    File vertexShaderFile(slang_spv_dir + post_vert_spv);
-    std::vector<char> const vertex_shader_code = vertexShaderFile.readCharSequence();
-    File fragmentShaderFile(slang_spv_dir + post_frag_spv);
-    std::vector<char> const fragment_shader_code = fragmentShaderFile.readCharSequence();
-
-    vk::ShaderModule vertex_shader_module = shaderHelper.createShaderModule(device, vertex_shader_code);
-    vk::ShaderModule fragment_shader_module = shaderHelper.createShaderModule(device, fragment_shader_code);
+    vk::ShaderModule vertex_shader_module = loadSpirvShaderModule(device, slang_spv_dir + post_vert_spv);
+    vk::ShaderModule fragment_shader_module = loadSpirvShaderModule(device, slang_spv_dir + post_frag_spv);
 
     vk::PipelineShaderStageCreateInfo vertex_shader_create_info;
     vertex_shader_create_info.stage = vk::ShaderStageFlagBits::eVertex;

@@ -17,7 +17,6 @@
 
 module kataglyphis.vulkan.raytracing;
 
-import kataglyphis.vulkan.file;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.swapchain;
 
@@ -180,22 +179,10 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
     std::string const miss_spv = "raytrace.rmiss.rmiss_main.spv";
     std::string const shadow_spv = "shadow.rmiss.shadow_rmiss_main.spv";
 
-    ShaderHelper shaderHelper;
-
-    File raygenFile(slang_spv_dir + raygen_spv);
-    File raychitFile(slang_spv_dir + chit_spv);
-    File raymissFile(slang_spv_dir + miss_spv);
-    File shadowFile(slang_spv_dir + shadow_spv);
-
-    std::vector<char> const raygen_shader_code = raygenFile.readCharSequence();
-    std::vector<char> const raychit_shader_code = raychitFile.readCharSequence();
-    std::vector<char> const raymiss_shader_code = raymissFile.readCharSequence();
-    std::vector<char> const shadow_shader_code = shadowFile.readCharSequence();
-
-    vk::ShaderModule raygen_shader_module = shaderHelper.createShaderModule(device, raygen_shader_code);
-    vk::ShaderModule raychit_shader_module = shaderHelper.createShaderModule(device, raychit_shader_code);
-    vk::ShaderModule raymiss_shader_module = shaderHelper.createShaderModule(device, raymiss_shader_code);
-    vk::ShaderModule shadow_shader_module = shaderHelper.createShaderModule(device, shadow_shader_code);
+    vk::ShaderModule raygen_shader_module = loadSpirvShaderModule(device, slang_spv_dir + raygen_spv);
+    vk::ShaderModule raychit_shader_module = loadSpirvShaderModule(device, slang_spv_dir + chit_spv);
+    vk::ShaderModule raymiss_shader_module = loadSpirvShaderModule(device, slang_spv_dir + miss_spv);
+    vk::ShaderModule shadow_shader_module = loadSpirvShaderModule(device, slang_spv_dir + shadow_spv);
 
     vk::PipelineShaderStageCreateInfo rgen_shader_stage_info{};
     rgen_shader_stage_info.stage = vk::ShaderStageFlagBits::eRaygenKHR;

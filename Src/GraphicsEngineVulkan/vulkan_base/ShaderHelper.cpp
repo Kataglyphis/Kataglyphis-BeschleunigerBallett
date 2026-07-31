@@ -1,7 +1,9 @@
-﻿module;
+module;
 #include <memory>
 
 #include <cstdint>
+#include <cstring>
+#include <span>
 #include <string>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -11,13 +13,15 @@
 module kataglyphis.vulkan.shader_helper;
 
 import kataglyphis.vulkan.device;
+import kataglyphis.vulkan.file;
 
-Kataglyphis::ShaderHelper::ShaderHelper() = default;
+namespace {
 
-auto Kataglyphis::ShaderHelper::createShaderModule(std::shared_ptr<VulkanDevice>device, const std::vector<char> &code)
+constexpr uint32_t kSpirvMagic = 0x07230203;
+
+auto createShaderModuleFromBytes(const std::shared_ptr<Kataglyphis::VulkanDevice> &device, std::span<const char> code)
   -> vk::ShaderModule
 {
-    // shader module create info
     vk::ShaderModuleCreateInfo shader_module_create_info{};
     shader_module_create_info.codeSize = code.size();// size of code
     shader_module_create_info.pCode = reinterpret_cast<const uint32_t *>(code.data());// pointer to code
@@ -33,4 +37,28 @@ auto Kataglyphis::ShaderHelper::createShaderModule(std::shared_ptr<VulkanDevice>
     return shader_module_result.value;
 }
 
-Kataglyphis::ShaderHelper::~ShaderHelper() = default;
+}// namespace
+
+auto Kataglyphis::validateSpirvBlob(std::span<const char> code) -> bool
+{
+    if (code.empty() || code.size() % sizeof(uint32_t) != 0) { return false; }
+
+    uint32_t magic = 0;
+    std::memcpy(&magic, code.data(), sizeof(magic));
+    return magic == kSpirvMagic;
+}
+
+auto Kataglyphis::loadSpirvShaderModule(std::shared_ptr<VulkanDevice> device, const std::string &spvPath)
+  -> vk::ShaderModule
+{
+    const std::vector<char> code = File(spvPath).readCharSequence();
+
+    if (!validateSpirvBlob(code)) {
+        spdlog::default_logger_raw()->log(spdlog::level::critical,
+          std::string("Invalid or missing SPIR-V shader blob at '") + spvPath
+            + "' - run Scripts/Windows/compile-slang-shaders.ps1 (or the Linux .sh) to (re)compile shaders.");
+        std::abort();
+    }
+
+    return createShaderModuleFromBytes(device, code);
+}

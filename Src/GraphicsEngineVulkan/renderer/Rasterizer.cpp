@@ -17,7 +17,6 @@
 
 module kataglyphis.vulkan.rasterizer;
 
-import kataglyphis.vulkan.file;
 import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.image;
@@ -402,14 +401,9 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
     // Run from the repo root (per AGENTS.md) — a relative path works from there.
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/";
 
-    ShaderHelper shaderHelper;
-    File vertexFile(slang_spv_dir + "rasterizer.vs_main.spv");
-    File fragmentFile(slang_spv_dir + "rasterizer.fs_main.spv");
-    std::vector<char> const vertex_shader_code = vertexFile.readCharSequence();
-    std::vector<char> const fragment_shader_code = fragmentFile.readCharSequence();
-
-    vk::ShaderModule vertex_shader_module = shaderHelper.createShaderModule(device, vertex_shader_code);
-    vk::ShaderModule fragment_shader_module = shaderHelper.createShaderModule(device, fragment_shader_code);
+    vk::ShaderModule vertex_shader_module = loadSpirvShaderModule(device, slang_spv_dir + "rasterizer.vs_main.spv");
+    vk::ShaderModule fragment_shader_module =
+      loadSpirvShaderModule(device, slang_spv_dir + "rasterizer.fs_main.spv");
 
     vk::PipelineShaderStageCreateInfo vertex_shader_create_info;
     vertex_shader_create_info.stage = vk::ShaderStageFlagBits::eVertex;

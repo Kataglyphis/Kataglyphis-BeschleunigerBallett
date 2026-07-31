@@ -14,7 +14,6 @@
 
 module kataglyphis.vulkan.deferred_rasterizer;
 
-import kataglyphis.vulkan.file;
 import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.image;
@@ -310,11 +309,8 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
     // Run from the repo root (per AGENTS.md).
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/deferred/";
 
-    ShaderHelper shaderHelper;
-    File geomVertFile(slang_spv_dir + "deferred.geometry_vs_main.spv");
-    File geomFragFile(slang_spv_dir + "deferred.geometry_fs_main.spv");
-    vk::ShaderModule geomVertModule = shaderHelper.createShaderModule(device, geomVertFile.readCharSequence());
-    vk::ShaderModule geomFragModule = shaderHelper.createShaderModule(device, geomFragFile.readCharSequence());
+    vk::ShaderModule geomVertModule = loadSpirvShaderModule(device, slang_spv_dir + "deferred.geometry_vs_main.spv");
+    vk::ShaderModule geomFragModule = loadSpirvShaderModule(device, slang_spv_dir + "deferred.geometry_fs_main.spv");
 
     vk::PipelineShaderStageCreateInfo geomVertStage{ {}, vk::ShaderStageFlagBits::eVertex, geomVertModule, "main" };
     vk::PipelineShaderStageCreateInfo geomFragStage{ {}, vk::ShaderStageFlagBits::eFragment, geomFragModule, "main" };
@@ -350,10 +346,8 @@ void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayo
     device->getLogicalDevice().destroyShaderModule(geomFragModule);
 
     // Lighting Pipeline (Slang-emitted SPIR-V)
-    File lightVertFile(slang_spv_dir + "deferred.lighting_vs_main.spv");
-    File lightFragFile(slang_spv_dir + "deferred.lighting_fs_main.spv");
-    vk::ShaderModule lightVertModule = shaderHelper.createShaderModule(device, lightVertFile.readCharSequence());
-    vk::ShaderModule lightFragModule = shaderHelper.createShaderModule(device, lightFragFile.readCharSequence());
+    vk::ShaderModule lightVertModule = loadSpirvShaderModule(device, slang_spv_dir + "deferred.lighting_vs_main.spv");
+    vk::ShaderModule lightFragModule = loadSpirvShaderModule(device, slang_spv_dir + "deferred.lighting_fs_main.spv");
 
     vk::PipelineShaderStageCreateInfo lightVertStage{ {}, vk::ShaderStageFlagBits::eVertex, lightVertModule, "main" };
     vk::PipelineShaderStageCreateInfo lightFragStage{ {}, vk::ShaderStageFlagBits::eFragment, lightFragModule, "main" };

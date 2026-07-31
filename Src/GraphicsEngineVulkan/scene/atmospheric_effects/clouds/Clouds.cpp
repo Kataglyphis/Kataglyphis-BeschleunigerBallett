@@ -12,7 +12,6 @@ import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.command_buffer_manager;
-import kataglyphis.vulkan.file;
 
 namespace Kataglyphis {
 
@@ -171,9 +170,8 @@ void Clouds::createComputePipelines(vk::DescriptorSetLayout sharedLayout)
 {
     // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
     // Run from the repo root (per AGENTS.md).
-    ShaderHelper shaderHelper;
-    std::vector<char> cloudShaderCode = File("Resources/ShadersSlang/build/spirv/compute/clouds.clouds_main.spv").readCharSequence();
-    vk::ShaderModule cloudShaderModule = shaderHelper.createShaderModule(device, cloudShaderCode);
+    vk::ShaderModule cloudShaderModule =
+      loadSpirvShaderModule(device, "Resources/ShadersSlang/build/spirv/compute/clouds.clouds_main.spv");
 
     vk::PipelineShaderStageCreateInfo computeStageInfo{};
     computeStageInfo.stage = vk::ShaderStageFlagBits::eCompute;
@@ -201,8 +199,8 @@ void Clouds::createComputePipelines(vk::DescriptorSetLayout sharedLayout)
     device->getLogicalDevice().destroyShaderModule(cloudShaderModule);
 
     // Noise pipeline (Slang-emitted SPIR-V)
-    std::vector<char> noiseShaderCode = File("Resources/ShadersSlang/build/spirv/compute/noise.noise_main.spv").readCharSequence();
-    vk::ShaderModule noiseShaderModule = shaderHelper.createShaderModule(device, noiseShaderCode);
+    vk::ShaderModule noiseShaderModule =
+      loadSpirvShaderModule(device, "Resources/ShadersSlang/build/spirv/compute/noise.noise_main.spv");
 
     vk::PipelineShaderStageCreateInfo noiseStageInfo{};
     noiseStageInfo.stage = vk::ShaderStageFlagBits::eCompute;

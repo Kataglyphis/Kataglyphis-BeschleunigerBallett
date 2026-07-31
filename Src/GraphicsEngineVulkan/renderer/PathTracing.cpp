@@ -20,7 +20,6 @@ module kataglyphis.vulkan.path_tracing;
 
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.queue_family_indices;
-import kataglyphis.vulkan.file;
 import kataglyphis.vulkan.image;
 import kataglyphis.vulkan.shader_helper;
 
@@ -212,12 +211,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
 
     std::string const pathTracing_spv = "path_tracing.path_tracing_main.spv";
 
-    ShaderHelper shaderHelper;
-
-    File pathTracingShaderFile(slang_spv_dir + pathTracing_spv);
-    std::vector<char> const pathTracingShadercode = pathTracingShaderFile.readCharSequence();
-
-    vk::ShaderModule pathTracingModule = shaderHelper.createShaderModule(device, pathTracingShadercode);
+    vk::ShaderModule pathTracingModule = loadSpirvShaderModule(device, slang_spv_dir + pathTracing_spv);
 
     std::array<vk::SpecializationMapEntry, 2> specEntries{};
 

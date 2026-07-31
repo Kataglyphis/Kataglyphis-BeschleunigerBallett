@@ -17,7 +17,6 @@ module kataglyphis.vulkan.cascaded_shadow_map;
 
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.texture;
-import kataglyphis.vulkan.file;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.frustum;
@@ -542,12 +541,8 @@ void CascadedShadowMap::createGraphicsPipeline()
     // Run from the repo root (per AGENTS.md).
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/shadows/";
 
-    ShaderHelper shaderHelper;
-    File vertFile(slang_spv_dir + "shadow_map.shadow_vs_main.spv");
-    File fragFile(slang_spv_dir + "shadow_map.shadow_fs_main.spv");
-
-    vk::ShaderModule vertModule = shaderHelper.createShaderModule(device, vertFile.readCharSequence());
-    vk::ShaderModule fragModule = shaderHelper.createShaderModule(device, fragFile.readCharSequence());
+    vk::ShaderModule vertModule = loadSpirvShaderModule(device, slang_spv_dir + "shadow_map.shadow_vs_main.spv");
+    vk::ShaderModule fragModule = loadSpirvShaderModule(device, slang_spv_dir + "shadow_map.shadow_fs_main.spv");
 
     vk::PipelineShaderStageCreateInfo vertStageInfo{};
     vertStageInfo.stage = vk::ShaderStageFlagBits::eVertex;

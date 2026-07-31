@@ -19,7 +19,6 @@ module kataglyphis.vulkan.sky_box;
 import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.mesh;
-import kataglyphis.vulkan.file;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.buffer;
 import kataglyphis.vulkan.command_buffer_manager;
@@ -330,14 +329,8 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
     // Run from the repo root (per AGENTS.md).
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/skybox/";
 
-    ShaderHelper shaderHelper;
-    File vertexFile(slang_spv_dir + "skybox.vs_main.spv");
-    File fragmentFile(slang_spv_dir + "skybox.fs_main.spv");
-    std::vector<char> const vertexShaderCode = vertexFile.readCharSequence();
-    std::vector<char> const fragmentShaderCode = fragmentFile.readCharSequence();
-
-    vk::ShaderModule vertexShaderModule = shaderHelper.createShaderModule(device, vertexShaderCode);
-    vk::ShaderModule fragmentShaderModule = shaderHelper.createShaderModule(device, fragmentShaderCode);
+    vk::ShaderModule vertexShaderModule = loadSpirvShaderModule(device, slang_spv_dir + "skybox.vs_main.spv");
+    vk::ShaderModule fragmentShaderModule = loadSpirvShaderModule(device, slang_spv_dir + "skybox.fs_main.spv");
 
     vk::PipelineShaderStageCreateInfo vertStageInfo{};
     vertStageInfo.stage = vk::ShaderStageFlagBits::eVertex;
