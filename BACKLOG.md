@@ -1716,59 +1716,6 @@ Found by a structural read of `VulkanRenderer.cpp` (still the 78 KB / 1771-line
 hub) and the test/CI wiring. None duplicate the dead-code batch above or the
 sized items in the 2026-07-24 batch. Ordered non-ABI-skew first.
 
-### CI / test coverage
-
-- [ ] **(test, S) Add the missing CPU-only test suites to the Windows CI
-    filter** — seven CPU-only suites exist in
-    `Test/commit/VulkanEngine/` but are NOT in the `Windows.yml` gtest
-    filter, so they never run in CI. AGENTS.md explicitly warns: "A suite
-    added to the repo does not run in CI unless it is added to the filter
-    in `Windows.yml`." Adding them is a zero-code-change coverage win —
-    every suite already passes locally.
-
-  **Files to read:**
-  - `.github/workflows/Windows.yml:209-219` — the `$cpuOnlySuites` array
-    that filters `commitTestSuite.exe` inside the container.
-  - `Test/commit/VulkanEngine/*.cpp` — grep `TEST(` for the suite names
-    (the first argument to `TEST`/`TEST_F`).
-
-  **Steps:**
-  1. Add these seven filters to the `$cpuOnlySuites` array in
-     `Windows.yml`, in alphabetical order to match the existing style:
-     `'AllocatorOwnership.*'`, `'AsyncModelParseUnit.*'`,
-     `'FrustumUnit.*'`, `'MeshRangeSlice.*'`, `'ModelPickerUnit.*'`,
-     `'ObjParseUnit.*'`, `'PushConstantRasterizerUnit.*'`.
-  2. Verify each is truly CPU-only: none of these suites call
-     `SKIP_WITHOUT_GPU`, `glfwInit`, or construct a `VulkanRenderer` /
-     `EngineHarness` (already verified by grepping —
-     `renderModesSuite.cpp`'s `Integration.*` is the one that needs a GPU
-     and is deliberately excluded).
-  3. Push with `[build-win]` in the commit message so the Windows lane
-     runs, and confirm the "Run CPU-only tests inside the container" step
-     reports the expanded filter passing.
-
-  **Test:** The CI step itself is the test — it runs the suites. Locally,
-    run
-    `commitTestSuite.exe --gtest_filter='AllocatorOwnership.*:FrustumUnit.*:MeshRangeSlice.*:ObjParseUnit.*:AsyncModelParseUnit.*:ModelPickerUnit.*:PushConstantRasterizerUnit.*'`
-    and confirm all pass (they should — they pass on the host already).
-
-  **Build:** No build needed — the suites are already compiled into
-    `commitTestSuite.exe`. The change is CI-filter-only.
-
-  **Context:** The seven missing suites cover: the move-only allocator
-    contract (`AllocatorOwnership`), frustum culling maths
-    (`FrustumUnit`), the multi-mesh slice loop (`MeshRangeSlice`), OBJ
-    parsing (`ObjParseUnit`), the async model-load worker
-    (`AsyncModelParseUnit`), the GUI model picker (`ModelPickerUnit`),
-    and the push-constant layout (`PushConstantRasterizerUnit`). All are
-    CPU-only, all have been verified green locally, and all guard code
-    paths that have been actively worked on in July 2026. Running them in
-    CI catches regressions in the next refactor (including the
-    GpuTiming + FrameCapture extractions above, which touch the same
-    `commitTestSuite.exe` binary). Do NOT add `Integration.*` or
-    `GoldenRender.*` — those need a GPU and the container has no
-    swapchain.
-
 ## 2026-07-28 batch III — dead code & test drift
 
 Found by reading `Texture.cpp`, `ObjLoader`, `GUI.cpp` and
