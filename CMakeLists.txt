@@ -129,7 +129,7 @@ install(
 
 set(_myproject_runtime_resource_dirs
     images
-    Resources/Shaders
+    Resources/ShadersSlang/build
     Resources/Textures
     Resources/Models/crytek-sponza)
 
