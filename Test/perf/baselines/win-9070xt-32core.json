@@ -1,0 +1,223 @@
+{
+  "context": {
+    "date": "2026-07-31T19:36:11+02:00",
+    "host_name": "FENSTER_FUNDER",
+    "executable": "D:\\GitHub\\Kataglyphis-BeschleunigerBallett\\build-clangcl-profile\\perfTestSuite.exe",
+    "num_cpus": 32,
+    "mhz_per_cpu": 4300,
+    "caches": [
+      {
+        "type": "Data",
+        "level": 1,
+        "size": 49152,
+        "num_sharing": 2
+      },
+      {
+        "type": "Instruction",
+        "level": 1,
+        "size": 32768,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 2,
+        "size": 1048576,
+        "num_sharing": 2
+      },
+      {
+        "type": "Unified",
+        "level": 3,
+        "size": 33554432,
+        "num_sharing": 16
+      }
+    ],
+    "load_avg": [],
+    "library_version": "v1.9.5",
+    "library_build_type": "release",
+    "json_schema_version": 1
+  },
+  "benchmarks": [
+    {
+      "name": "BM_CameraKeyControl",
+      "family_index": 0,
+      "per_family_instance_index": 0,
+      "run_name": "BM_CameraKeyControl",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 20363636,
+      "real_time": 3.5002123392639881e+01,
+      "cpu_time": 3.5295759558852851e+01,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_CameraMouseControl",
+      "family_index": 1,
+      "per_family_instance_index": 0,
+      "run_name": "BM_CameraMouseControl",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 20363636,
+      "real_time": 3.5346531434761381e+01,
+      "cpu_time": 3.5295759558852851e+01,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_CameraViewMatrix",
+      "family_index": 2,
+      "per_family_instance_index": 0,
+      "run_name": "BM_CameraViewMatrix",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 64000000,
+      "real_time": 1.0304685937512659e+01,
+      "cpu_time": 1.0253906250000000e+01,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_ProjectionAndInverses",
+      "family_index": 3,
+      "per_family_instance_index": 0,
+      "run_name": "BM_ProjectionAndInverses",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 23578947,
+      "real_time": 3.1415512321245938e+01,
+      "cpu_time": 3.1808036211286279e+01,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_ComputeCascadeData/1",
+      "family_index": 4,
+      "per_family_instance_index": 0,
+      "run_name": "BM_ComputeCascadeData/1",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 1866667,
+      "real_time": 3.7281914771240156e+02,
+      "cpu_time": 3.6830350566008826e+02,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_ComputeCascadeData/3",
+      "family_index": 4,
+      "per_family_instance_index": 1,
+      "run_name": "BM_ComputeCascadeData/3",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 640000,
+      "real_time": 1.0127885937436076e+03,
+      "cpu_time": 1.0009765625000000e+03,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_ResolveModelPath_Hit",
+      "family_index": 5,
+      "per_family_instance_index": 0,
+      "run_name": "BM_ResolveModelPath_Hit",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 165926,
+      "real_time": 4.6630401504383944e+03,
+      "cpu_time": 4.7084242373106081e+03,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_ResolveModelPath_Miss",
+      "family_index": 6,
+      "per_family_instance_index": 0,
+      "run_name": "BM_ResolveModelPath_Miss",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 40727,
+      "real_time": 1.6261187909824548e+04,
+      "cpu_time": 1.6113389152159501e+04,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_AvailableModelPaths",
+      "family_index": 7,
+      "per_family_instance_index": 0,
+      "run_name": "BM_AvailableModelPaths",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 263529412,
+      "real_time": 2.7329177207703435e+00,
+      "cpu_time": 2.7273995511362505e+00,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_ObjParse_Plane",
+      "family_index": 8,
+      "per_family_instance_index": 0,
+      "run_name": "BM_ObjParse_Plane",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 29867,
+      "real_time": 2.3456369906485033e+01,
+      "cpu_time": 2.3541868952355443e+01,
+      "time_unit": "us"
+    },
+    {
+      "name": "BM_ObjParse_Suzanne",
+      "family_index": 9,
+      "per_family_instance_index": 0,
+      "run_name": "BM_ObjParse_Suzanne",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 112,
+      "real_time": 7.1348348214347164e+00,
+      "cpu_time": 7.2544642857142856e+00,
+      "time_unit": "ms"
+    },
+    {
+      "name": "BM_GltfParse_CubeGlb",
+      "family_index": 10,
+      "per_family_instance_index": 0,
+      "run_name": "BM_GltfParse_CubeGlb",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 56000,
+      "real_time": 1.3153505357227655e+01,
+      "cpu_time": 1.3113839285714286e+01,
+      "time_unit": "us"
+    },
+    {
+      "name": "BM_GltfParse_CubeTextured",
+      "family_index": 11,
+      "per_family_instance_index": 0,
+      "run_name": "BM_GltfParse_CubeTextured",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 40727,
+      "real_time": 1.5737520563709001e+01,
+      "cpu_time": 1.5729737029489037e+01,
+      "time_unit": "us"
+    }
+  ]
+}

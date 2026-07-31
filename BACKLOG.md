@@ -120,7 +120,12 @@ committed to.
   at. Nothing asserts a budget for `GpuTimedPass::ShadowCascades` today.
 - **Regression tracking**: Google Benchmark can emit JSON
   (`--benchmark_out=... --benchmark_out_format=json`); storing one baseline
-  per machine and diffing beats eyeballing console output.
+  per machine and diffing beats eyeballing console output. **Done
+  (2026-07-31):** `Scripts/Compare-PerfBaseline.ps1` diffs a fresh JSON run
+  against the checked-in `Test/perf/baselines/win-9070xt-32core.json`, flags
+  any benchmark that regressed beyond a configurable tolerance (default
+  +25%), and is deliberately not wired into CI (see the "measured baseline"
+  table below for why: machine-dependent numbers).
 
 ### Measured baseline (2026-07-19, clangcl-profile, 32-core 4.3 GHz)
 
@@ -2073,51 +2078,6 @@ and unchecked rather than guessed at.
   above, not crashes) — no regression from the two fixes, and strictly more
   of the suite runs than before (previously the abort shadowed everything
   after the first PT test in file order).
-
-### Performance tooling
-
-- [ ] **(S/M) Benchmark regression diffing: checked-in baseline JSON + compare
-  script** — turns the baseline table in this file from prose into an
-  executable check.
-
-  **Files to read:**
-  - `Test/perf/perfSuite.cpp` (header comment already documents
-    `--benchmark_out=perf.json --benchmark_out_format=json`).
-  - `Test/perf/CMakeLists.txt:44-45` — the CTest run already writes
-    `perf-results.json`.
-  - `Scripts/Windows/Build-Windows.ps1:300-308` — the profile lane already
-    invokes `perfTestSuite.exe` with JSON output.
-  - The "Measured baseline (2026-07-19, clangcl-profile...)" table above.
-
-  **Steps:**
-  1. Add `Scripts/Compare-PerfBaseline.ps1`: read a baseline JSON and a fresh
-     Google-Benchmark JSON, match entries by benchmark name, print
-     per-benchmark real_time deltas, and exit non-zero when any benchmark
-     regresses beyond a tolerance (parameter, default +25% — generous on
-     purpose; wall-clock noise on a desktop is real). Benchmarks present in
-     only one file are reported but never fatal.
-  2. Capture a baseline on a clean HOST run of the container-built
-     `build-clangcl-profile\perfTestSuite.exe` (container wcifs I/O pollutes
-     wall time — the backlog's benchmark notes say host runs only) and check
-     it in as `Test/perf/baselines/win-9070xt-32core.json`.
-  3. Do NOT wire it into CI — benchmark timings are machine-dependent by
-     design (the backlog's own rule). Document usage in the script header and
-     add one line to the "Regression tracking" bullet in the Performance
-     testing section pointing at the script.
-  4. Verify: run the suite twice and self-diff (must pass); then temporarily
-     inflate one baseline entry ×10 and confirm the script fails on it.
-
-  **Test:** step 4 is the red/green; the script itself is the deliverable.
-
-  **Build:** `clangcl-profile`
-  (`pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-profile -SkipTests`),
-  then run `perfTestSuite.exe --benchmark_out=... --benchmark_out_format=json`
-  from the host.
-
-  **Context:** "Regression tracking" bullet under Performance testing —
-  "storing one baseline per machine and diffing beats eyeballing console
-  output". The CascadedShadowMap benchmarks added 2026-07-31 (`dc5fe29e`) grew
-  the suite again; without a diff tool each addition makes eyeballing worse.
 
 ## Completed (kept for the reasoning, not the status)
 
