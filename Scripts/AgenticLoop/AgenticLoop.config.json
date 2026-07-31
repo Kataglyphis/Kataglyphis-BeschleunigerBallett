@@ -6,9 +6,9 @@
 
   "engines": {
     "claude": {
-      "_comment": "Claude Code CLI (claude -p). Planner: Fable 5 with Opus 4.8 fallback when overloaded. Executor: Sonnet. Planner is sandboxed to read-only tools + BACKLOG.md edits; executor runs with bypassPermissions (trusted repo).",
-      "plannerModel": "claude-fable-5",
-      "plannerFallbackModel": "claude-opus-4-8",
+      "_comment": "Claude Code CLI (claude -p). Planner: Opus 5 with Fable 5 fallback when unavailable/overloaded (via claude --fallback-model). Executor: Sonnet. Planner is sandboxed to read-only tools + BACKLOG.md edits; executor runs with bypassPermissions (trusted repo).",
+      "plannerModel": "claude-opus-5",
+      "plannerFallbackModel": "claude-fable-5",
       "executorModel": "claude-sonnet-5",
       "plannerPromptFile": "Scripts/AgenticLoop/prompts/planner.md",
       "executorPromptFile": "Scripts/AgenticLoop/prompts/executor.md",
@@ -44,7 +44,8 @@
     "agentRetries": 2,
     "agentRetryDelaySeconds": 30,
     "fixBuildFailures": true,
-    "maxConsecutiveBuildFailures": 3
+    "maxConsecutiveBuildFailures": 3,
+    "waitForUsageLimitReset": true
   },
 
   "buildMatrix": {
