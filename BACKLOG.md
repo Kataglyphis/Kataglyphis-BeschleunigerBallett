@@ -79,10 +79,6 @@ size and a decision, or gets dropped.
 
 ## Cross-renderer
 
-- [ ] **Side-by-side comparison harness** (M) — same scene, same camera,
-  Vulkan vs WebGPU screenshot diff; with shared BRDF math this becomes a
-  regression net for both renderers (needs C++ glTF + offscreen path above).
-
 ---
 
 Everything below is **unsized**: ideas and recurring chores that have not been
