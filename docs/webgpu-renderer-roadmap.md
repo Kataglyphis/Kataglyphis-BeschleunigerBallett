@@ -118,7 +118,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 
 | Feature | Effort | Notes |
 | --- | --- | --- |
-| ✅ Shared shader pipeline | M | Done 2026-07-18: WGSL→SPIR-V/GLSL450 export via naga (`export_shaders` example, guarded by a test); see `docs/shader-sharing.md` |
+| ✅ Shared shader pipeline | M | Shipped via [Slang](https://shader-slang.com/): one `.slang` source compiles to SPIR-V (Vulkan/C++) and WGSL (WebGPU/Rust); see `docs/shader-sharing.md`. The earlier naga-based `export_shaders` WGSL→SPIR-V/GLSL450 route is retired (see that doc's Historical note) but the example still exists in the crate |
 | Shared asset pipeline | M | OBJ→glTF conversion for the C++ engine's `Resources/Models` so both renderers eat the same scenes |
 | Side-by-side comparison harness | M | Same scene, same camera: Vulkan C++ vs WebGPU Rust screenshots diffed — a regression net for BOTH renderers |
 | Compute playground | L | Particles / GPU skinning via compute passes; the Rust sibling of the Kompute experiments |

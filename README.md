@@ -212,12 +212,11 @@ The Windows release build can produce an MSIX package. For signing, place the PF
 
 ## Shaders
 
-Shader include handling is wired through these files:
-
-- `Src/GraphicsEngineVulkan/vulkan_base/ShaderIncludes.hpp`
-- `Src/GraphicsEngineVulkan/cmake/CompileShadersToSPV.cmake`
-
-Update both when you add new include-driven shader files.
+Shaders are written in [Slang](https://shader-slang.com/) under
+`Resources/ShadersSlang/` and compiled ahead of time by
+`Scripts/Windows/compile-slang-shaders.ps1` / `Scripts/Linux/compile-slang-shaders.sh`
+to SPIR-V and WGSL. See `docs/shader-build-pipeline.md` and AGENTS.md §
+Shaders for the full pipeline.
 
 ## Docker and Build Environments
 

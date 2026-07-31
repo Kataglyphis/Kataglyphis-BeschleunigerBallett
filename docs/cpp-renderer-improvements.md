@@ -63,14 +63,16 @@ validation-layer-clean runtime check where rendering changed.
 
 ## Queued (design notes)
 
-1. **Prebuilt SPIR-V consumption** — *largely resolved.* The `VkPipelineCache`
-   half shipped (`ad77cbdd`), and since the mtime-gated compile skip
-   (2026-07-19) plus runtime glslc resolution (`c246ded3`) the loader no
-   longer recompiles GLSL when the committed `.spv` is current - startup logs
-   "SPV up to date, skipping runtime compile" for every shader. What remains
-   is only a micro-optimisation: pipelines still read the `.spv` and create
-   shader modules at startup rather than consuming a fully cached pipeline
-   binary, which the VkPipelineCache already covers on the second run.
+1. **Prebuilt SPIR-V consumption** — **done.** The `VkPipelineCache` half
+   shipped (`ad77cbdd`); the mtime-gated compile skip and runtime glslc
+   resolution it superseded are gone entirely with the Slang migration (see
+   `docs/shader-sharing.md`) — there is no runtime compile path left to skip.
+   Shaders are Slang sources compiled ahead of time to SPIR-V/WGSL by
+   `compile-slang-shaders.ps1`/`.sh`, and the C++ engine loads the committed
+   `.spv` via plain `File` I/O. What remains is only a micro-optimisation:
+   pipelines still read the `.spv` and create shader modules at startup
+   rather than consuming a fully cached pipeline binary, which the
+   VkPipelineCache already covers on the second run.
 3. **`vk::raii` teardown migration** — ~30 manual `cleanUp()` methods with
    defaulted destructors; hand-ordered 48-line teardown; device-lost
    special-casing in App.cpp. Migrate leaf types first (`VulkanBuffer`,
@@ -116,10 +118,10 @@ the container's CMake tree) → 8–10 s engine run with stderr captured,
 grepping validation output. GPU integration tests run on the host
 RX 9070 XT.
 
-Shader-only units are cheap since `c246ded3`: the engine resolves glslc at
-runtime and recompiles an edited GLSL source at process start on the host,
-so a probe cycle is edit → run one golden. `compile-shaders.ps1` remains the
-bulk path and refreshes the committed spv the BuildIntegrity goldens check.
+Shader-only units are cheap: edit a `.slang` source, run
+`compile-slang-shaders.ps1` (Windows) / `compile-slang-shaders.sh` (Linux) to
+refresh the committed SPIR-V, then run one golden. The BuildIntegrity goldens
+check the committed `.spv` is not older than its `.slang` source.
 
 Fresh-container rule (`-FreshContainer` after deleting the local build
 tree): required after ANY module-interface change - `.ixx` member edits AND

@@ -2128,6 +2128,285 @@ error paths have fuzz-only coverage and no deterministic unit tests.
 
 ### C++ Vulkan engine
 
+## 2026-07-31 batch V — planner (docs drift, per-frame allocations, sampler drift, error-path tests)
+
+The actionable queue was empty when this batch was written (only `- [b]` entries
+remained). All five tasks below are the candidates batch IV deliberately deferred
+"for the next planner cycle to re-verify and size" — each one was re-checked
+against the tree this pass:
+
+- README.md:213-220 — **confirmed**: neither
+  `Src/GraphicsEngineVulkan/vulkan_base/ShaderIncludes.hpp` nor
+  `Src/GraphicsEngineVulkan/cmake/CompileShadersToSPV.cmake` exists anywhere in
+  the repo (`find` returns nothing).
+- `docs/cpp-renderer-improvements.md` — **confirmed**: :66-72 still describes
+  "runtime glslc resolution" and "the loader no longer recompiles GLSL", :119-121
+  still tells you to edit a GLSL source and rely on `compile-shaders.ps1`. Only
+  `Scripts/Windows/compile-slang-shaders.ps1` exists; there is no runtime shader
+  compilation at all (AGENTS.md § Shaders).
+- `docs/webgpu-renderer-roadmap.md:121` — **confirmed**: advertises the naga
+  WGSL→SPIR-V export as a shipped feature while `docs/shader-sharing.md:133`
+  documents the same route under "Historical note: the retired naga/WGSL-export
+  route".
+- `CascadedShadowMapMath.cpp:29-48` — **confirmed**: `frustumCornersWorldSpace`
+  returns a `std::vector<glm::vec4>` built by 8 `push_back`s from empty, once per
+  cascade.
+- Sampler triplication — **confirmed** at `PostStage.cpp:188`, `Model.cpp:76`,
+  `Texture.cpp:237`, with real drift between them (see the task).
+- `FileReader.ixx` / `Texture::loadTextureData` — **confirmed**: the only
+  coverage is `Test/fuzz/`; no deterministic suite exercises either.
+
+Candidates found but NOT tasked this cycle (queue discipline; re-verify next
+pass): the 4× duplicated `checkWritePreconditions`/`findBinding` prologue in
+`DescriptorSetGroup.cpp:191,217,241,267` — three lines each, and hoisting it
+needs an out-param, so the consolidation is likely worse than the duplication;
+`VulkanRenderer.cpp:1194` copies `scene->getObjectDescriptions()` by value
+(needs a check of whether that path is per-frame or scene-change-only before it
+is worth a task); `ExternalLib/NLOHMANN_JSON` gitlink is drifted in the working
+tree again (`eaedec85` → `2222d386`) — the recurring drift recorded in
+`[[submodule-pin-drift]]`, an owner call rather than an executor task.
+
+### Docs
+
+### C++ Vulkan engine
+
+- [ ] **(S) Drop the per-cascade heap allocations in `computeCascadeData` (refactor)** —
+  the frustum-corner helper heap-allocates and grows a vector once per cascade,
+  on a function that runs every frame and already has a benchmark to prove the
+  change.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMapMath.cpp:29-48`
+    — `frustumCornersWorldSpace`, the anonymous-namespace helper
+  - the same file `:126-241` — the two loops that consume it
+  - `Test/commit/VulkanEngine/cascadedShadowMapSuite.cpp` — the existing CPU
+    tests that must stay green with *identical* values
+  - `Test/perf/perfSuite.cpp:127` — `BENCHMARK(BM_ComputeCascadeData)->Arg(1)->Arg(3)`
+
+  **Steps:**
+  1. Change `frustumCornersWorldSpace` to return `std::array<glm::vec4, 8>`
+     (add `#include <array>` to the global-module fragment at the top). The
+     corner count is a compile-time 8 — the triple `for x/y/z` loop over `{0,1}`
+     — so index into the array with a running counter instead of `push_back`.
+     Today the vector starts empty and grows through ~4 reallocations per
+     cascade; with 3 cascades that is ~15 heap operations per frame for 128
+     bytes of data.
+  2. Update the three consumers in `computeCascadeData` (`center` accumulation,
+     `radius` loop, and both the stabilized `snapMinZ/snapMaxZ` loop and the
+     legacy min/max loop). They are all `for (const auto &v : ...)` and compile
+     unchanged against an array; `center /= frustumCornerWorldSpace.size()`
+     still works (`std::array::size()` is `constexpr`).
+  3. **Preserve evaluation order exactly.** The accumulations are
+     floating-point, so reordering changes the result in the last bits and the
+     existing tests are entitled to notice. Do not "improve" the loops.
+  4. Leave `cascadeSplits` and the returned `cascadeData` as vectors — they are
+     sized from the runtime `numCascades` and cost one allocation each; the
+     per-cascade churn is what this task removes.
+
+  **Test:** No new test needed — `CascadedShadowMapUnit.*` already pins the
+  maths and must stay green **with unchanged values**. Add the new
+  `BM_ComputeCascadeData` figures to the "Measured baseline" table in
+  `BACKLOG.md` (current: `/1` 372 ns, `/3` 1.03 µs).
+
+  **Build:** `clangcl-debug` first for correctness:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipPerfTests -SkipMsix`
+  Then `clangcl-profile` (the only configuration where timings mean anything)
+  **without** `-SkipPerfTests`, and diff with
+  `Scripts/Compare-PerfBaseline.ps1` against
+  `Test/perf/baselines/win-9070xt-32core.json`.
+
+  **Context:** No `.ixx` changes (the helper is in an anonymous namespace in a
+  `.cpp`), so no `-FreshContainer` is needed. The header comment at
+  `CascadedShadowMapMath.cpp:12-22` explains why this TU is deliberately split
+  from `CascadedShadowMap.cpp` — do not merge them back while you are in here.
+
+- [ ] **(M) Consolidate the three drifted sampler-creation sites (refactor)** —
+  the same 12-field `vk::SamplerCreateInfo` is written out three times and the
+  three copies have silently diverged.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:185-208` — linear/repeat,
+    anisotropy from the device, `maxLod = 0`, `eFloatOpaqueBlack`
+  - `Src/GraphicsEngineVulkan/scene/Model.cpp:72-95` — identical **except**
+    `maxLod = texture.getMipLevel()`
+  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:233-256` — parameterized
+    filter/addressMode, anisotropy **hard-disabled**, `eIntOpaqueBlack`,
+    explicit `compareEnable`/`compareOp`, `maxLod = mip_levels`
+  - `Src/GraphicsEngineVulkan/vulkan_base/MeshRange.ixx`-style precedent: the
+    `kataglyphis.vulkan.mesh_range` module extracted in `fba308d7` is the shape
+    to copy for a new small shared module
+
+  **Steps:**
+  1. Add a new module `kataglyphis.vulkan.sampler_builder`
+     (`Src/GraphicsEngineVulkan/vulkan_base/SamplerBuilder.ixx` + `.cpp`, wired
+     into the same target list as the other `vulkan_base` modules) exporting one
+     free function that returns a fully populated `vk::SamplerCreateInfo` from
+     explicit parameters: `filter`, `addressMode`, `maxLod`, `anisotropyEnable`,
+     `maxAnisotropy`, `borderColor`. Return the struct — do **not** create the
+     sampler in the helper; the three call sites use three different
+     `createSampler` overloads and error conventions, and unifying those is a
+     separate question.
+  2. **Behaviour-preserving is the hard requirement.** Each call site keeps its
+     current values exactly, including the ones that look like bugs
+     (Texture's disabled anisotropy and `eIntOpaqueBlack`). If you believe one
+     of those is wrong, that is a separate task with its own golden evidence —
+     do not fold a behaviour change into a consolidation.
+  3. Replace the three bodies with a call to the helper plus each site's
+     existing create/assert code.
+  4. Note the one genuine defect to preserve-and-record, not fix: `Model.cpp:91`
+     ignores the `vk::ResultValue` result and pushes `sampler_result.value`
+     unconditionally, where `PostStage.cpp:204` uses `ASSERT_VULKAN`. Leave the
+     behaviour; add a `// TODO` naming the inconsistency so the next pass can
+     decide.
+
+  **Test:** Add `Test/commit/VulkanEngine/samplerBuilderSuite.cpp` with
+  `SamplerBuilderUnit.*` tests. `vk::SamplerCreateInfo` is a plain struct, so
+  this is a CPU-only test needing no device: assert the three configurations
+  field by field (the offscreen one, the model one, the texture one), which pins
+  the current values against accidental drift. Follow
+  `Test/commit/VulkanEngine/meshRangeSliceSuite.cpp` for the `import` pattern in
+  a test TU. **Then add `'SamplerBuilderUnit.*'` to the `$cpuOnlySuites` array
+  in `.github/workflows/Windows.yml:209-229`** — a suite added to the repo does
+  not run in CI unless it is in that filter.
+
+  **Build:** New `.ixx` interface unit → `-FreshContainer` is mandatory:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer -SkipPerfTests -SkipMsix`
+  Samplers affect what is rendered, so verify on the GPU host afterwards — run
+  the container-built `commitTestSuite.exe` from the repo root and confirm the
+  golden suite is unchanged (`docs/gpu-golden-testing.md`).
+
+  **Context:** Sampler creation is exactly the kind of copy-paste that drifts
+  invisibly — this is already three copies with three different border colours.
+  Anisotropy must stay device-gated (`device->supportsSamplerAnisotropy()`);
+  enabling it unconditionally is a validation error on hardware that lacks it.
+
+- [ ] **(M) Take descriptor sets as `std::span`, not `std::vector`, across the
+  record path (refactor)** — `record_commands` heap-allocates two to four
+  one-or-two-element vectors *every frame* purely to satisfy stage signatures.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:864`, `:916`, `:946`,
+    `:976` — the four per-frame `std::vector<vk::DescriptorSet>` temporaries
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.ixx` — the
+    `recordRasterPass` declaration (takes the vector by const ref)
+  - The stage interfaces that take `const std::vector<vk::DescriptorSet> &`:
+    `renderer/Rasterizer.ixx:44`, `renderer/DeferredRasterizer.ixx:48`,
+    `renderer/PostStage.ixx:36`, `renderer/Raytracing.ixx:30`,
+    `renderer/PathTracing.ixx:28`, `scene/sky_box/SkyBox.ixx:30`,
+    `scene/light/directional_light/CascadedShadowMap.ixx:88`,
+    `scene/atmospheric_effects/clouds/Clouds.ixx:24`
+  - `Src/GraphicsEngineVulkan/vulkan_base/ShaderHelper.ixx` and
+    `scene/SceneConfig.ixx` — the two places that already use `std::span`, for
+    the house style
+
+  **Steps:**
+  1. Grep first: `grep -rn "std::vector<vk::DescriptorSet>" Src/` — work from
+     the actual list, not from the line numbers above (they are as of writing).
+  2. Change every `const std::vector<vk::DescriptorSet> &descriptorSets`
+     parameter to `std::span<const vk::DescriptorSet> descriptorSets` in both
+     the `.ixx` declaration and the `.cpp` definition. Add `#include <span>` to
+     each global-module fragment. Bodies need no change: `.size()` and
+     `.data()` are the only things used, and both exist on `span`.
+  3. Replace the four call-site temporaries with `std::array`:
+     `const std::array<vk::DescriptorSet, 1> rasterizer_descriptor_sets = { ... }`
+     and the two-element cases at `:946`/`:976`. A `std::array` converts to
+     `std::span<const T>` implicitly, so the calls stay as they are.
+  4. Do the same for `VulkanRenderer::recordRasterPass`'s own parameter, so the
+     span is threaded through rather than re-materialized.
+  5. Leave `Clouds::recordComputeCommands` and the shadow pass on the same
+     span type — they share `rasterizer_descriptor_sets` with the raster path
+     and must not get a private copy.
+  6. **Lifetime check before you commit:** every span must outlive the
+     `recordCommands` call it is passed to. All four arrays are locals in the
+     enclosing frame scope, which is fine — but if you find yourself passing a
+     span to something that stores it, stop; nothing here should store one.
+
+  **Test:** No new test — this is behaviour-preserving. The whole golden suite
+  is the oracle, and it is the right one: a dangling or mis-sized span shows up
+  as a validation error or a wrong bind, not a compile error.
+
+  **Build:** `.ixx` interface changes → `-FreshContainer` is mandatory:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer -SkipPerfTests -SkipMsix`
+  Then GPU-verify on the RX 9070 XT: run the container-built
+  `commitTestSuite.exe` from the repo root and require the full golden suite
+  green (`docs/gpu-golden-testing.md`). Do not report this done on a CPU-only
+  run.
+
+  **Context:** `std::span` is already the established pattern here (`ShaderHelper`,
+  `SceneConfig` — the latter's switch to a span return took
+  `BM_AvailableModelPaths` from 859 ns to 2.72 ns). This one is not about a
+  benchmark number: `record_commands` has no benchmark yet (that gap is in the
+  "Performance testing" section above), so the justification is removing
+  per-frame allocation and matching the codebase's own idiom, and the
+  verification is the golden suite.
+
+- [ ] **(S) Deterministic error-path tests for `FileReader`, and make
+  `loadTextureData` zero its outputs on failure** — both error paths have
+  fuzz-only coverage today, and one of them computes a size from values it
+  never wrote.
+
+  **Files to read:**
+  - `Src/shared/util/FileReader.ixx` — all four functions, 69 lines; the comment
+    at `:13-24` explains why `fileExists` takes the `error_code` overload
+  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:272-286` — `loadTextureData`
+  - `Test/fuzz/texture_loading_fuzz_test.cpp:67-87` — the existing fuzz test,
+    whose comment already documents that stb does not write width/height on
+    failure
+  - `Test/commit/VulkanEngine/meshRangeSliceSuite.cpp` — the module-importing
+    CPU test pattern to copy
+
+  **Steps:**
+  1. Add `Test/commit/VulkanEngine/fileReaderSuite.cpp` with a
+     `FileReaderUnit.*` suite (`import kataglyphis.shared.util.file_reader;`).
+     Use `std::filesystem::temp_directory_path()` + a unique name and clean up
+     with the `error_code` overload of `remove`, exactly as the fuzz test does.
+     Cover: `fileExists` false for a missing path and **false, not a crash**,
+     for a path the OS refuses to stat; `readTextFile`/`readBinaryFile` return
+     empty for a missing path and for a **directory** path; `readBinaryFile`
+     round-trips bytes including embedded `\0` and `\r\n` (it must not do text
+     translation — it opens `std::ios::binary`); `readTextFile` on a file with
+     no trailing newline still yields a trailing `\n` (the `getline` + append
+     loop normalizes, and callers depend on it); `readBinaryFile` on an empty
+     file returns an empty vector rather than reading from a null `data()`;
+     `getBaseDir` for `/`-only, `\`-only, mixed, and no-separator inputs.
+  2. Fix `Texture::loadTextureData`: on `stbi_load` returning `nullptr`, set
+     `*width = 0`, `*height = 0`, `*image_size = 0` and return early. Today it
+     falls through to
+     `*image_size = *width * *height * 4` using values stb never wrote — with
+     the fuzz test's `-1` sentinels that reports `image_size == 4` alongside a
+     null pointer, and a caller that initialized them to garbage would size a
+     staging buffer from garbage. Both current call sites happen to
+     zero-initialize (`Texture.cpp:73-75`), so this is a latent trap, not a live
+     bug — fix the contract, do not change the call sites.
+  3. Add `TextureLoadUnit.*` tests for that contract in the same new file or a
+     sibling suite: write a file of non-image bytes, call
+     `Texture::loadTextureData` with `width`/`height` pre-set to `-1`, and
+     assert the returned pointer is null **and** all three outputs are zero.
+     `loadTextureData` is `static` and touches no device, so this stays CPU-only.
+  4. Update the comment at `texture_loading_fuzz_test.cpp:67-71` — it currently
+     documents the old "callers may not trust these after a failure" contract,
+     which step 2 replaces with a stronger one.
+  5. **Add `'FileReaderUnit.*'` and `'TextureLoadUnit.*'` to the
+     `$cpuOnlySuites` array in `.github/workflows/Windows.yml:209-229`.**
+
+  **Test:** The suites above are the deliverable. Run the new tests red first
+  against the unfixed `loadTextureData` (step 3's assertion must fail before
+  step 2) — that is what makes the fix a fix rather than a claim.
+
+  **Build:** `clangcl-debug` (ASan + UBSan, which is what you want for a test
+  poking at buffer sizing):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipPerfTests -SkipMsix`
+  No `-FreshContainer` needed (no `.ixx` change; the commit-suite CMakeLists
+  globs `*.cpp` with `CONFIGURE_DEPENDS`, so a new test file is picked up).
+
+  **Context:** Fuzzing proves "no crash on arbitrary bytes"; it does not pin
+  *what* a function returns for a specific known-bad input, and it does not run
+  on the Windows CPU lane in a way that would catch a contract regression. These
+  are the deterministic counterpart. `fileExists`'s `error_code` overload exists
+  because the throwing one would terminate a project built with
+  `-fno-exceptions` — a test that pins that behaviour is guarding a fix that was
+  expensive to find.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
