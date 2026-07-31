@@ -77,13 +77,13 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(std::shared_ptr
     vk::DeviceSize max_scratch_size = 0;
 
     for (unsigned int i = 0; i < scene->getModelCount(); i++) {
-        vk::DeviceSize current_scretch_size = 0;
+        vk::DeviceSize current_scratch_size = 0;
         vk::DeviceSize current_size = 0;
 
         createAccelerationStructureInfosBLAS(
-          device, build_as_structures[i], blas_input[i], current_scretch_size, current_size);
+          device, build_as_structures[i], blas_input[i], current_scratch_size, current_size);
 
-        max_scratch_size = std::max(max_scratch_size, current_scretch_size);
+        max_scratch_size = std::max(max_scratch_size, current_scratch_size);
     }
 
     VulkanBuffer scratchBuffer;
@@ -422,7 +422,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createSingleBlas(std::shar
 void Kataglyphis::VulkanRendererInternals::ASManager::createAccelerationStructureInfosBLAS(std::shared_ptr<VulkanDevice>device,
   BuildAccelerationStructure &build_as_structure,
   BlasInput &blas_input,
-  vk::DeviceSize &current_scretch_size,
+  vk::DeviceSize &current_scratch_size,
   vk::DeviceSize &current_size)
 {
     build_as_structure.build_info.type = vk::AccelerationStructureTypeKHR::eBottomLevel;
@@ -449,7 +449,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createAccelerationStructur
       &build_as_structure.size_info);
 
     current_size = build_as_structure.size_info.accelerationStructureSize;
-    current_scretch_size = build_as_structure.size_info.buildScratchSize;
+    current_scratch_size = build_as_structure.size_info.buildScratchSize;
 }
 
 void Kataglyphis::VulkanRendererInternals::ASManager::objectToVkGeometryKHR(std::shared_ptr<VulkanDevice>device,

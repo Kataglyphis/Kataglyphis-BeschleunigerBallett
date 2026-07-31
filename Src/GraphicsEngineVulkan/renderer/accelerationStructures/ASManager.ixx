@@ -70,7 +70,7 @@ class ASManager
     static void createAccelerationStructureInfosBLAS(std::shared_ptr<VulkanDevice>device,
       BuildAccelerationStructure &build_as_structure,
       BlasInput &blas_input,
-      vk::DeviceSize &current_scretch_size,
+      vk::DeviceSize &current_scratch_size,
       vk::DeviceSize &current_size);
 
     static void objectToVkGeometryKHR(std::shared_ptr<VulkanDevice>device,

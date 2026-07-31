@@ -1679,59 +1679,6 @@ and/or definition). Ordered non-ABI-skew first so the executor drains the
 cheap wins on an incremental build before the three ABI-skew tasks share one
 `-FreshContainer`.
 
-- [ ] **(refactor, S) Fix the `current_scretch_size` typo →
-  `current_scratch_size` in `ASManager`** — the misspelling "scretch"
-  (should be "scratch") is propagated from the `ASManager.ixx` declaration
-  (`:73`) through the `ASManager.cpp` definition (`:425`) and both call
-  sites (`:80`, `:84`, `:86`). It is a parameter name in a private static
-  method, so it does not affect any caller's ABI in the C++ sense, but it
-  IS a module-interface edit (`ASManager.ixx`) so the build-system
-  ABI-skew rule applies (a stale BMI can ship an ODR-broken binary). A
-  reader grepping for "scratch" misses this variable entirely, and the
-  neighbouring `max_scratch_size` (`:77`) and `scratchBuffer` (`:89`) use
-  the correct spelling, so the file is internally inconsistent.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.ixx:73` —
-    the declaration (`vk::DeviceSize &current_scretch_size`).
-  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp:425,452` —
-    the definition signature and the one write site.
-  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp:80,84,86` —
-    the local variable + two uses in `createBLAS`.
-
-  **Steps:**
-  1. In `ASManager.ixx:73`, rename `current_scretch_size` →
-    `current_scratch_size`.
-  2. In `ASManager.cpp:425` (the `createAccelerationStructureInfosBLAS`
-    definition signature) and `:452` (the assignment
-    `current_scretch_size = build_as_structure.size_info.buildScratchSize;`),
-    apply the same rename.
-  3. In `ASManager.cpp:80,84,86` (the local variable
-    `vk::DeviceSize current_scretch_size = 0;` and its two uses in
-    `createBLAS`), apply the same rename.
-  4. Grep `Src/` for `scretch` to confirm zero remaining misspellings.
-
-  **Test:** No new test — pure rename, behaviour-identical (parameter
-    name only). The RT/PT goldens (`GoldenRender.*` in RT/PT mode,
-    `AddedModelAppearsInPathTracing`) exercise the BLAS build path; verify
-    a GPU-host golden run stays green. The CPU suites are unaffected.
-
-  **Build:** `clangcl-debug` **with `-FreshContainer`** — ABI-skew in the
-    build-system sense (`ASManager.ixx` is a module interface; even a
-    parameter-name change triggers a BMI rebuild and the stale-BMI hazard
-    applies). Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
-    Share the fresh build with the `Scene` and `Clouds` tasks above if
-    they land in the same session.
-
-  **Context:** Naming consistency. "scretch" is not a word and the file
-  already uses "scratch" everywhere else (`max_scratch_size`,
-  `scratchBuffer`, `scratch_buffer_address`, `buildScratchSize`). The
-  typo is small but it is the kind of inconsistency that makes a future
-  reader pause and grep, and a grep for "scratch" silently misses it.
-  Bundle with the other two ABI-skew tasks in this batch to share one
-  `-FreshContainer` build.
-
 ## 2026-07-30 batch — planner (validation conformance, dead plumbing, Slang follow-ups)
 
 All five verified against the tree on 2026-07-30 (post-Slang-migration state,
