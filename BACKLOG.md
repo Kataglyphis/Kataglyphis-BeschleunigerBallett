@@ -531,21 +531,14 @@ cleanUp+recreate pair at the four scene-changed sites.
 - `Scripts/Windows/Build-Windows-Container.ps1` takes `-Configurations`,
   not `-Preset`; passing the wrong one silently builds **all four**
   configurations.
-- **A source file deleted on the host keeps building inside the reusable
-  container.** Reproduced 2026-07-19: added a probe test, built (it ran),
-  deleted the file, rebuilt — the test still ran, and the `.cpp` was still
-  present at `C:\ws\...` inside the container. The inbound `tar` extracts
-  over the existing tree and never prunes, so tests can keep passing against
-  code that no longer exists, and a file whose deletion breaks the build
-  looks fine locally and fails in CI.
-
-  Workaround today: `-FreshContainer`, or delete the file inside the
-  container. Proper fix (**not yet implemented — do this deliberately, not
-  in a hurry**): prune the source tree inside the container before streaming,
-  keeping `build-*` and `logs`. Sources re-stream in seconds; only the build
-  tree is expensive, and that is what must survive. The risk is that a
-  wrong pattern deletes the build tree on every build, so it needs a careful
-  exclusion test before it goes in.
+- ~~A source file deleted on the host keeps building inside the reusable
+  container~~ — **done** (`37a7fdbf`, 2026-07-24). Reproduced 2026-07-19: added
+  a probe test, built (it ran), deleted the file, rebuilt — the test still
+  ran, and the `.cpp` was still present at `C:\ws\...` inside the container.
+  `Invoke-TarPipeBuild` in `Build-Windows-Container.ps1` now prunes the
+  reusable container's source tree before streaming in fresh sources on every
+  reused-container build, keeping only `build`/`build-*`/`build_*`, `logs` and
+  `sccache-local`.
 
 ## Architecture debt not yet sized
 
@@ -1661,13 +1654,6 @@ moves geometry.
 
 ### Container / build
 
-- [ ] **Prune source tree before tar stream** (S) — a source file deleted on
-    the host keeps building inside the reusable container because `tar` extracts
-    over the existing tree and never removes files. Prune the source tree inside
-    the container before streaming, keeping `build-*` and `logs`. Sources
-    re-stream in seconds; only the build tree is expensive and must survive.
-    Needs a careful exclusion pattern so a wrong glob doesn't delete the build
-    tree on every build.
 - [ ] **Test all four clang-cl configurations in one session** (S) — the
     default debug loop exercises only one configuration. A one-shot script that
     builds+ctests `clangcl-debug`, `clangcl-profile`, `clangcl-release`, and
