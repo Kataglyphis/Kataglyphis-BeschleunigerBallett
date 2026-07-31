@@ -15,6 +15,7 @@ import kataglyphis.vulkan.obj_material;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.mesh;
 import kataglyphis.vulkan.vertex;
+import kataglyphis.vulkan.sampler_builder;
 
 using namespace Kataglyphis;
 
@@ -73,21 +74,16 @@ void Model::addSampler(const Texture &newTexture)
 {
     const bool aniso = device->supportsSamplerAnisotropy();
 
-    vk::SamplerCreateInfo sampler_create_info{};
-    sampler_create_info.magFilter = vk::Filter::eLinear;
-    sampler_create_info.minFilter = vk::Filter::eLinear;
-    sampler_create_info.addressModeU = vk::SamplerAddressMode::eRepeat;
-    sampler_create_info.addressModeV = vk::SamplerAddressMode::eRepeat;
-    sampler_create_info.addressModeW = vk::SamplerAddressMode::eRepeat;
-    sampler_create_info.borderColor = vk::BorderColor::eFloatOpaqueBlack;
-    sampler_create_info.unnormalizedCoordinates = VK_FALSE;
-    sampler_create_info.mipmapMode = vk::SamplerMipmapMode::eLinear;
-    sampler_create_info.mipLodBias = 0.0F;
-    sampler_create_info.minLod = 0.0F;
-    sampler_create_info.maxLod = static_cast<float>(newTexture.getMipLevel());
-    sampler_create_info.anisotropyEnable = aniso;
-    sampler_create_info.maxAnisotropy = aniso ? 16.0F : 1.0F;
+    vk::SamplerCreateInfo sampler_create_info = buildSamplerCreateInfo(vk::Filter::eLinear,
+      vk::SamplerAddressMode::eRepeat,
+      static_cast<float>(newTexture.getMipLevel()),
+      aniso,
+      aniso ? 16.0F : 1.0F,
+      vk::BorderColor::eFloatOpaqueBlack);
 
+    // TODO: unlike PostStage/Texture, this ignores sampler_result.result instead
+    // of ASSERT_VULKAN-ing it before taking .value - a pre-existing inconsistency,
+    // preserved here rather than folded into this consolidation.
     vk::ResultValue<vk::Sampler> sampler_result = device->getLogicalDevice().createSampler(sampler_create_info);
     vk::Sampler newSampler = sampler_result.value;
 

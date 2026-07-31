@@ -19,6 +19,7 @@ import kataglyphis.vulkan.buffer_manager;
 import kataglyphis.vulkan.image;
 import kataglyphis.vulkan.image_view;
 import kataglyphis.vulkan.command_buffer_manager;
+import kataglyphis.vulkan.sampler_builder;
 
 using namespace Kataglyphis;
 
@@ -234,22 +235,16 @@ void Kataglyphis::Texture::createImageView(std::shared_ptr<VulkanDevice>in_devic
 void Kataglyphis::Texture::createTextureSampler(std::shared_ptr<VulkanDevice>in_device, vk::Filter filter, vk::SamplerAddressMode addressMode)
 {
     this->device = in_device;
-    vk::SamplerCreateInfo samplerInfo{};
-    samplerInfo.magFilter = filter;
-    samplerInfo.minFilter = filter;
-    samplerInfo.addressModeU = addressMode;
-    samplerInfo.addressModeV = addressMode;
-    samplerInfo.addressModeW = addressMode;
-    samplerInfo.anisotropyEnable = VK_FALSE;
-    samplerInfo.maxAnisotropy = 1.0f;
-    samplerInfo.borderColor = vk::BorderColor::eIntOpaqueBlack;
-    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    vk::SamplerCreateInfo samplerInfo = buildSamplerCreateInfo(filter,
+      addressMode,
+      static_cast<float>(mip_levels),
+      VK_FALSE,
+      1.0f,
+      vk::BorderColor::eIntOpaqueBlack);
+    // Unlike the shared defaults, this sampler compares explicitly (always-pass)
+    // rather than leaving compare disabled at its zero-initialized default.
     samplerInfo.compareEnable = VK_FALSE;
     samplerInfo.compareOp = vk::CompareOp::eAlways;
-    samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
-    samplerInfo.mipLodBias = 0.0f;
-    samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = static_cast<float>(mip_levels);
 
     textureSampler = device->getLogicalDevice().createSampler(samplerInfo).value;
 }

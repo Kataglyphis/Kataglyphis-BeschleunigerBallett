@@ -27,6 +27,7 @@ import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.pipeline_builder;
+import kataglyphis.vulkan.sampler_builder;
 
 Kataglyphis::VulkanRendererInternals::PostStage::PostStage() = default;
 
@@ -185,20 +186,12 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createOffscreenTextureSamp
 {
     vk::PhysicalDeviceFeatures physical_device_features = device->getPhysicalDevice().getFeatures();
 
-    vk::SamplerCreateInfo sampler_create_info;
-    sampler_create_info.magFilter = vk::Filter::eLinear;
-    sampler_create_info.minFilter = vk::Filter::eLinear;
-    sampler_create_info.addressModeU = vk::SamplerAddressMode::eRepeat;
-    sampler_create_info.addressModeV = vk::SamplerAddressMode::eRepeat;
-    sampler_create_info.addressModeW = vk::SamplerAddressMode::eRepeat;
-    sampler_create_info.borderColor = vk::BorderColor::eFloatOpaqueBlack;
-    sampler_create_info.unnormalizedCoordinates = VK_FALSE;
-    sampler_create_info.mipmapMode = vk::SamplerMipmapMode::eLinear;
-    sampler_create_info.mipLodBias = 0.0F;
-    sampler_create_info.minLod = 0.0F;
-    sampler_create_info.maxLod = 0.0F;
-    sampler_create_info.anisotropyEnable = physical_device_features.samplerAnisotropy;
-    sampler_create_info.maxAnisotropy = (physical_device_features.samplerAnisotropy != 0u) ? 16.0F : 1.0F;
+    vk::SamplerCreateInfo sampler_create_info = buildSamplerCreateInfo(vk::Filter::eLinear,
+      vk::SamplerAddressMode::eRepeat,
+      0.0F,
+      physical_device_features.samplerAnisotropy,
+      (physical_device_features.samplerAnisotropy != 0u) ? 16.0F : 1.0F,
+      vk::BorderColor::eFloatOpaqueBlack);
 
     vk::Result const result =
       device->getLogicalDevice().createSampler(&sampler_create_info, nullptr, &offscreenTextureSampler);
