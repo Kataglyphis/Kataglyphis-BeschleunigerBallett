@@ -55,7 +55,6 @@ class ObjLoader
         materials = std::move(other.materials);
         materialIndex = std::move(other.materialIndex);
         textures = std::move(other.textures);
-        textureNamesFromLastParse = std::move(other.textureNamesFromLastParse);
         meshRanges = std::move(other.meshRanges);
     }
 
@@ -88,7 +87,6 @@ class ObjLoader
     std::vector<ObjMaterial> materials;
     std::vector<unsigned int> materialIndex;
     std::vector<std::string> textures;
-    std::vector<std::string> textureNamesFromLastParse;
     // One slice per OBJ shape; see MeshRange / getMeshRanges.
     std::vector<MeshRange> meshRanges;
 

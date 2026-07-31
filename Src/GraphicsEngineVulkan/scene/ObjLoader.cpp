@@ -59,7 +59,7 @@ bool ObjLoader::parseCpu(const std::string &modelFile)
     }
     if (!reader.Warning().empty()) { spdlog::warn("TinyObjReader: {}", reader.Warning()); }
 
-    textureNamesFromLastParse = loadTexturesAndMaterials(reader, modelFile);
+    loadTexturesAndMaterials(reader, modelFile);
     loadVertices(reader);
     return true;
 }
@@ -108,7 +108,7 @@ auto ObjLoader::uploadParsed() -> std::shared_ptr<Model>
 
     std::shared_ptr<Model> new_model = std::make_shared<Model>(device);
 
-    const std::vector<std::string> &textureNames = textureNamesFromLastParse;
+    const std::vector<std::string> &textureNames = textures;
 
     // now that we have the names lets create the vulkan side of textures
     for (size_t i = 0; i < textureNames.size(); i++) {
