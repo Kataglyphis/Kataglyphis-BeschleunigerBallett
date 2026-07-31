@@ -272,7 +272,13 @@ auto Kataglyphis::Texture::loadTextureData(const std::string &file_name,
     int channels = 0;
     unsigned char *image = stbi_load(file_name.c_str(), width, height, &channels, STBI_rgb_alpha);
 
-    if (image == nullptr) { spdlog::error("Failed to load a texture file! (" + file_name + ")"); }
+    if (image == nullptr) {
+        spdlog::error("Failed to load a texture file! (" + file_name + ")");
+        *width = 0;
+        *height = 0;
+        *image_size = 0;
+        return nullptr;
+    }
 
     *image_size = static_cast<vk::DeviceSize>(*width) * static_cast<vk::DeviceSize>(*height) * 4;
 

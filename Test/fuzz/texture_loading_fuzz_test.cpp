@@ -64,11 +64,11 @@ void DecodingArbitraryImageBytesRespectsTheSizeContract(const std::vector<uint8_
         if (!out) { return; }
     }
 
-    // Deliberately pre-set to sentinels rather than 0. stb_image does not
-    // write these on failure, so a caller that trusted them after a failed
-    // load would use whatever was already on its stack; the assertions below
-    // only look at them on the success path, which is the contract callers
-    // are entitled to rely on.
+    // Deliberately pre-set to sentinels rather than 0. stb_image itself does
+    // not write these on failure, but Texture::loadTextureData now zeros
+    // width/height/image_size before returning null, overwriting whatever
+    // sentinel was here; the assertions below only look at them on the
+    // success path, which is the contract callers are entitled to rely on.
     int width = -1;
     int height = -1;
     vk::DeviceSize image_size = 0;
