@@ -134,6 +134,8 @@ committed to.
 | `BM_ResolveModelPath_Miss` | 15.7 us |
 | `BM_ObjParse_Plane` (1 KB) | 23 us |
 | `BM_ObjParse_Suzanne` (1 MB) | 7.1 ms |
+| `BM_ComputeCascadeData/1` (2026-07-31) | 372 ns |
+| `BM_ComputeCascadeData/3` (2026-07-31) | 1.03 us |
 
 Two things this baseline already tells us:
 
@@ -183,9 +185,12 @@ that are *not* exercised that way and should be run periodically:
   green run look like evidence.
 
   Race coverage on Windows is therefore unavailable today. `ThreadSanitizer`
-  works on Linux (`linux-debug-tsan-clang`), which CI runs. Decide whether to
-  rename the Windows preset to something that does not promise TSan, or drop
-  it; leaving it named `tsan` invites exactly the false assurance above.
+  works on Linux (`linux-debug-tsan-clang`), which CI runs. **Resolved
+  2026-07-20: the `clangcl-tsan` preset was removed entirely** (verified
+  2026-07-31 — no `tsan` preset remains in `CMakePresets.json` outside the two
+  Linux ones; AGENTS.md § "There is no Windows ThreadSanitizer" records it).
+  This bullet stays as the record of why a green Windows "TSan" run meant
+  nothing.
 - **Synchronization validation** — `khronos_validation.validate_sync = true`
   in `vk_layer_settings.txt` next to the executable. This found 10 real
   WRITE-AFTER-WRITE hazards in July 2026; it is not part of any automated
@@ -594,7 +599,9 @@ cleanUp+recreate pair at the four scene-changed sites.
     decouple anything. Coordinating recreation IS the hub's job. Better hub-shrink
     targets: the descriptor/UBO re-provisioning could move behind a
     `reprovisionPerImageResources()` helper, but that is a small readability win,
-    not a class extraction. Aside: the cascade `# cascades` GUI slider still
+    not a class extraction. (**Done** — verified 2026-07-31: the helper exists at
+    `VulkanRenderer.cpp:635-647` and the image-count branch of
+    `recreateSwapChain` calls it at `:708-713`; nothing left to extract here.) Aside: the cascade `# cascades` GUI slider still
     advertises 1..8 though the engine clamps to `MAX_CASCADES`(3) (`c49fd8b4`);
     left as-is because GUI has no clean access to `MAX_CASCADES` and the clamp
     already fixes the bug.
@@ -1539,13 +1546,27 @@ The recurring bug class behind many of these is written up in
 `docs/renderer-bounds-invariant.md` - read it before touching anything that
 moves geometry.
 
-**Status 2026-07-24 — items #1-3, #5-7, #9-11, #14-15 are DONE; still open:**
-  #4 texture dedup at upload (the VRAM ceiling for Colosseum — actually DONE on
-  re-inspection: a `texture_cache` HashMap keyed by `Arc::as_ptr` already dedupes
-  at upload, see forward.rs:1053-1129),
-  #8 MSAA,
-  #10 the oversized per-primitive uniform block,
-  #13 render bundles for the cascades.
+**Status 2026-07-31 (supersedes the 2026-07-24 status) — re-verified against the
+crate source:**
+  - #4 texture dedup: DONE (a `texture_cache` HashMap keyed by `Arc::as_ptr`
+    dedupes at upload, forward.rs:1053-1129).
+  - #12 uniform split: **the split itself is DONE** — `FrameUniforms`
+    (forward.rs:55-64, written once per frame at :1780-1799) vs `PrimUniforms`
+    (:68-78), punctual lights in a storage buffer (:1801-1805). STILL OPEN: the
+    per-primitive `write_buffer` of the full `PrimUniforms` every frame with no
+    dirty gate (:1844-1867) and the per-frame `model.inverse().transpose()`
+    recompute (`normal_matrix_of` at :3080-3087) — see the 2026-07-31 batch task.
+  - #13 render bundles: **DONE in shape** — the caster list records into a
+    `wgpu::RenderBundle` (:1891-1944) executed per cascade (:1968-1970). STILL
+    OPEN: the bundle is rebuilt every frame (a local, never cached) and
+    per-cascade caster culling was disabled to make the bundle possible
+    (`_light_frustum` discarded at :1952, stats fudged at :1939/:1972-1976) —
+    see the 2026-07-31 batch task.
+  - #15 lower-value trio: strip/fan triangulation DONE
+    (gltf_loader.rs:206-227, :387-397), 16-bit PNG down-conversion DONE
+    (:262-268). STILL OPEN: orthographic cameras are warn-and-dropped
+    (:155-160) — see the 2026-07-31 batch task.
+  - #8 MSAA remains open and design-heavy (the depth-resolve blocker above).
 
 
 1. **Occlusion culling deletes, then flickers, any primitive the camera is inside** (S) —
@@ -1795,6 +1816,235 @@ None duplicate the 2026-07-24/28/30 batches.
   multiplies into wrong edits. Coordinate with the in-flight working-tree
   changes to `Scripts/AgenticLoop/*` — base the wording on the files as they
   are at execution time, and keep AGENTS.md the summary, README the detail.
+
+## 2026-07-31 batch — planner (perf coverage, resurrected-docs cleanup, Rust frame path)
+
+All five verified against the tree on 2026-07-31. Re-checks done first so
+nobody chases stale prose: `reprovisionPerImageResources()` is already
+extracted, the `clangcl-tsan` preset is already gone, strip/fan triangulation
+and 16-bit PNG down-conversion are already in the Rust loader, and the shadow
+cascades already use a render bundle — none of those are tasks (the prose
+above was corrected in this pass). The three Rust tasks live in the
+`ExternalLib/Kataglyphis-RustProjectTemplate` submodule: commit there AND bump
+the superproject gitlink in the same change (AGENTS.md § Critical Invariant:
+Submodule Pins).
+
+### C++ Vulkan engine
+
+### Docs / repo hygiene
+
+- [ ] **(S) Delete the resurrected ROADMAP.md and purge the remaining GLSL-era
+  doc references** — this file's header says "There is no longer a separate
+  roadmap file" (merged 2026-07-20, deleted precisely because a stale roadmap
+  contradicted a fresh backlog), but commit `8fe6105c` ("added agentic loop")
+  resurrected `ROADMAP.md`, and its content is now stale in the documented
+  dangerous way: it describes the C++ engine `#include`-ing
+  `Resources/Shaders/generated/aces.glsl` — a POC that `docs/shader-sharing.md:140-148`
+  records as REVERTED, referencing a directory (`Resources/Shaders/`) that no
+  longer exists since the Slang migration (`40b1cbe3`).
+
+  **Files to read:**
+  - `ROADMAP.md` — skim every entry; anything not `[x]`/SKIP and not already
+    in BACKLOG.md must be moved here before deletion (expectation: nothing —
+    it is all done/reverted work)
+  - `docs/shader-sharing.md:140-148` — the record that the GLSL-include POC
+    was reverted (do not contradict it)
+  - `Doxyfile.in:941` — `INPUT` still lists `../Resources/Shaders \`, a
+    nonexistent directory (leave `archive/Doxyfile.in` alone, it is archived)
+  - `docs/shader-build-pipeline.md:70-121` — documents `compile-shaders.ps1`
+    and `glslc -I` invocations against `Resources/Shaders` as if current; that
+    script is gone, the pipeline is `Scripts/Windows/compile-slang-shaders.ps1`
+    / `Scripts/Linux/compile-slang-shaders.sh` → `Resources/ShadersSlang/build/{spirv,wgsl}`
+
+  **Steps:**
+  1. `git log --oneline -- ROADMAP.md` to confirm the resurrection history,
+     then grep the whole repo for `ROADMAP` and repoint or remove every link
+     (README, docs, scripts, agent prompts) at `BACKLOG.md`.
+  2. Diff ROADMAP.md's entries against this file; move anything genuinely open
+     and unique (expected: none), then `git rm ROADMAP.md`.
+  3. Remove the `../Resources/Shaders \` INPUT line from `Doxyfile.in`.
+  4. Rewrite the GLSL/glslc sections of `docs/shader-build-pipeline.md` to
+     describe the Slang pipeline, cross-checking against AGENTS.md § "Shaders:
+     Slang (unified SPIR-V + WGSL)" — link, don't restate.
+  5. Verify: `grep -r "Resources/Shaders" --include="*.md" --include="*.in"`
+     over the repo (excluding `ShadersSlang` and `archive/`) returns nothing;
+     hits remaining in `Test/*.cpp` comments and `.slang` provenance headers
+     are fine — do NOT touch `.slang` files (any `.slang` mtime bump forces a
+     shader recompile and can trip `BuildIntegrity` staleness checks).
+
+  **Test:** None (docs-only). Verification is the greps in step 5 plus
+  confirming every path named in the rewritten doc exists in the tree.
+
+  **Build:** None (no source touched).
+
+  **Context:** This is the exact rot mechanism the 2026-07-20 merge note at
+  the top of this file warns about — two lists, one stale, contradicting each
+  other. Deleting is the fix, not updating: BACKLOG.md is the single list.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) Stop rewriting every primitive's uniforms every frame; cache the
+  normal matrix** — the per-frame/per-primitive uniform split is done
+  (`FrameUniforms` written once per frame), but the loop at
+  `crates/webgpu_renderer/src/render/forward.rs:1844-1867` still
+  `write_buffer`s the full ~208-byte `PrimUniforms` for EVERY primitive EVERY
+  frame with no dirty gate, and calls `normal_matrix_of(prim.model)`
+  (`model.inverse().transpose()`, forward.rs:3080-3087) per primitive per
+  frame even though `model` only changes in `set_animation_time` /
+  `set_instances`. At 1000 primitives that is ~200 KB of redundant uploads
+  plus 1000 matrix inversions per frame.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/render/forward.rs` — `PrimUniforms` (:68-78),
+    `GpuPrimitive` (:119, stores `model` but no normal matrix), `morph_dirty`
+    (:158, the existing dirty-flag precedent to mirror), the write loop
+    (:1844-1867), `normal_matrix_of` (:3080-3087)
+  - `docs/renderer-bounds-invariant.md` (superproject) — the stale-bookkeeping
+    bug class this change is one missed-invalidation away from joining
+  - forward.rs inline tests at :3676+ —
+    `a_singular_model_matrix_yields_a_finite_normal_matrix` (:3770) is the
+    pattern for the new test
+
+  **Steps:**
+  1. Grep forward.rs for EVERY write to `prim.model` / construction of
+     `GpuPrimitive` (upload_scene, `set_animation_time`, `set_instances`,
+     skinning/morph paths) and list them before coding — a missed site is a
+     silent stale-normal bug.
+  2. Add a cached `normal_matrix: Mat4` to `GpuPrimitive`, computed via
+     `normal_matrix_of` at each site from step 1; the frame loop reads the
+     cache.
+  3. Add a per-primitive `uniforms_dirty: bool` (set `true` at creation and at
+     every step-1 mutation site, plus wherever material factors could change);
+     the :1844 loop writes `PrimUniforms` only when dirty, then clears it.
+     `FrameUniforms` stays written every frame — only the per-primitive write
+     is gated.
+  4. Run the full crate test suite (see Test) — the headless golden-image
+     tests are the real guard: an animated scene (`cube_animated.gltf` /
+     `cube_morph.gltf` fixtures) must still move, which proves the dirty flag
+     is set on animation.
+  5. Add a CPU test: after `set_animation_time`, the cached `normal_matrix`
+     equals `normal_matrix_of(prim.model)` recomputed fresh (and stays finite
+     for a singular model, mirroring :3770).
+
+  **Test:** `cargo test -p kataglyphis_webgpu_renderer` from the submodule
+  root on the host (GPU tests self-skip without an adapter; this host has
+  one). New test as in step 5, plus the existing headless animation goldens.
+
+  **Build:** Host cargo (native), run from
+  `ExternalLib/Kataglyphis-RustProjectTemplate/`. No container needed.
+
+  **Context:** The renderer's recurring bug class is exactly "bookkeeping
+  updated in one path, not another" (8 prior instances — see
+  `docs/renderer-bounds-invariant.md`). That is why step 1 (enumerate all
+  mutation sites first) is a step and not advice. Buffer identity does not
+  change here, so no bind-group rebuilds are involved.
+
+- [ ] **(M) Cache the shadow-caster render bundle across frames and make the
+  caster stats honest** — the cascade pass records the caster draw list into a
+  `wgpu::RenderBundle` (forward.rs:1891-1944) but the bundle is a LOCAL,
+  rebuilt from scratch every frame, so the encoding win over the old 3×
+  re-record is only partly realized. Worse, the bundle change disabled
+  per-cascade caster culling and papered over it: `_light_frustum` is computed
+  and discarded (:1952), `casters_considered /= CASCADE_COUNT` (:1939) and
+  `shadow_casters_drawn == shadow_casters_considered` (:1972-1976) fudge the
+  stats so the counters now lie — the project's documented worst bug class
+  ("a green number that means nothing").
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/render/forward.rs:1891-1976` — the bundle
+    build, the per-cascade execute loop, the two stat fudges and the comment
+    admitting culling "won't engage until culling is re-added"
+  - `crates/webgpu_renderer/tests/headless.rs` — the shadow goldens that must
+    stay green, and any test reading the caster counters (update it with the
+    honest semantics)
+
+  **Steps:**
+  1. Move the bundle to a `shadow_caster_bundle: Option<wgpu::RenderBundle>`
+     field on the renderer; build it lazily in the frame path when `None`.
+  2. Invalidate (`= None`) at every site that changes the DRAW SET or buffer
+     identity: `upload_scene`, `set_instances`, LOD switches that swap index
+     buffers, any buffer reallocation. NOTE what does NOT invalidate: per-frame
+     `write_buffer` into existing buffers (animation, the PrimUniforms task
+     above) — bundles capture buffer references, contents flow through. State
+     each decision in a comment at the field.
+  3. Remove both stat fudges: report `shadow_casters_considered` as the total
+     caster count and `shadow_casters_drawn` as what the bundle actually
+     draws (currently equal by construction — that is now a true statement,
+     not a fudge). Delete the dead `_light_frustum` or leave a one-line
+     comment stating per-cascade culling is deliberately off because a culled
+     draw set differs per cascade and per camera move, which is incompatible
+     with one cached bundle — re-adding it (per-cascade bundles or union-frustum
+     culling with camera-move invalidation) is a follow-up decision, not this
+     task.
+  4. `cargo test -p kataglyphis_webgpu_renderer` — every shadow golden must be
+     unchanged; fix any counter-asserting test to the honest semantics.
+  5. Sanity-check invalidation with the animated fixtures: `set_animation_time`
+     must NOT rebuild the bundle (contents flow through), but a fresh
+     `upload_scene` must.
+
+  **Test:** Existing headless shadow goldens (unchanged output proves the
+  cached bundle draws the same list); one new CPU-level test if the bundle
+  field is observable: after `upload_scene` the cache is `None`, after one
+  frame it is `Some`, after `set_animation_time` it is still `Some`.
+
+  **Build:** Host cargo (native), from
+  `ExternalLib/Kataglyphis-RustProjectTemplate/`.
+
+  **Context:** Step 3 is not cosmetic: this codebase has repeatedly paid for
+  instruments that lie (see the golden-shadow story at the top of this file
+  and the `clangcl-tsan` entry). A cached bundle whose invalidation is wrong
+  shows up as stale shadows — which is why step 5 exercises both directions.
+
+- [ ] **(M) Load orthographic glTF cameras instead of dropping them** — the
+  loader warns and skips `Projection::Orthographic`
+  (`crates/webgpu_renderer/src/asset/gltf_loader.rs:155-160`) because
+  `CpuCamera` (`src/scene/mod.rs:281-289`) can only express a perspective
+  frustum (`yfov_rad`/`znear`/`zfar`). CAD-style and 2.5D assets export ortho
+  cameras; today they silently lose their camera and fall back to the default.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/asset/gltf_loader.rs:139-160` — the camera
+    extraction and the warn-and-skip branch
+  - `crates/webgpu_renderer/src/scene/mod.rs:281-289` — `CpuCamera`
+  - grep the crate for `yfov_rad` — every consumer that builds a projection
+    matrix from it must handle the new variant (expect the render path and
+    `src/scene/camera.rs`)
+  - `crates/webgpu_renderer/tests/headless.rs:667` — `reads_gltf_cameras`,
+    the test pattern to extend
+  - `crates/webgpu_renderer/tests/assets/cube_animated.gltf` — the fixture
+    with a camera node to copy from
+
+  **Steps:**
+  1. Make the projection explicit in `CpuCamera`: an enum
+     (`Perspective { yfov_rad, .. }` / `Orthographic { xmag, ymag, .. }`) or a
+     kind field — pick whichever needs the least churn at the consumers found
+     by the grep, but do NOT leave ortho representable as a fake perspective.
+  2. In the loader, populate it from `Projection::Orthographic` (xmag, ymag,
+     znear, zfar per glTF 2.0 §5.16) and delete the warn-and-skip.
+  3. At each projection-matrix consumer, build
+     `glam::Mat4::orthographic_rh(-xmag, xmag, -ymag, ymag, znear, zfar)` for
+     the ortho variant (match the crate's existing handedness/depth-range
+     convention — copy whatever the perspective path uses, e.g. `_rh` vs
+     `_rh_gl`, do not guess).
+  4. Add `tests/assets/cube_ortho_camera.gltf`: copy the camera node setup
+     from `cube_animated.gltf`, switch the camera to
+     `"type": "orthographic"` with an `orthographic` block (hand-edit, it is
+     JSON).
+  5. Add `reads_orthographic_gltf_cameras` next to :667 asserting the camera
+     is loaded with the right xmag/ymag (red today: the camera list is empty
+     for this fixture); plus a unit test on the projection-matrix helper
+     (finite, maps znear/zfar to the expected NDC depths).
+
+  **Test:** As in step 5 — `cargo test -p kataglyphis_webgpu_renderer`; the
+  loader test must be red before the fix, green after.
+
+  **Build:** Host cargo (native), from
+  `ExternalLib/Kataglyphis-RustProjectTemplate/`.
+
+  **Context:** Last surviving member of deep-dive item #15 (the other two —
+  strip/fan and 16-bit PNG — were verified done 2026-07-31). Keep the change
+  data-model-first: the enum in step 1 is what prevents the "ortho stored as
+  yfov=0 perspective" landmine a lazy mapping would create.
 
 ## Completed (kept for the reasoning, not the status)
 

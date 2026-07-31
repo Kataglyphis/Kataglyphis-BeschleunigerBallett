@@ -37,6 +37,7 @@
 
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.scene_config;
+import kataglyphis.vulkan.cascaded_shadow_map;
 
 namespace {
 
@@ -93,6 +94,35 @@ void BM_ProjectionAndInverses(benchmark::State &state)
     }
 }
 BENCHMARK(BM_ProjectionAndInverses);
+
+// ------------------------------------------------------- cascaded shadows --
+// computeCascadeData is per-frame CPU math (VulkanRenderer::updateCascades ->
+// CascadedShadowMap::updateCascades), not GPU work, and had zero perf
+// coverage despite 19 correctness tests; the 2026-07-31 texel-snapping /
+// clamping work touched exactly this function with no way to see a
+// regression. Arguments mirror cascadedShadowMapSuite.cpp's default_view() /
+// default_light(), and GUISceneSharedVars' default shadow_distance (60) and
+// shadow map resolution (2048) - the stabilized (texel-snapped) path.
+
+void BM_ComputeCascadeData(benchmark::State &state)
+{
+    const auto numCascades = static_cast<uint32_t>(state.range(0));
+    const glm::mat4 view =
+      glm::lookAt(glm::vec3(0.0F, 6.0F, 26.0F), glm::vec3(0.0F, 1.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F));
+    const glm::vec3 lightDir(-0.55F, -1.0F, -0.35F);
+    constexpr float kFov = 45.0F;
+    constexpr float kAspect = 16.0F / 9.0F;
+    constexpr float kNear = 0.1F;
+    constexpr float kFar = 150.0F;
+    constexpr float kShadowDistance = 60.0F;
+    constexpr uint32_t kShadowMapResolution = 2048;
+
+    for (auto _ : state) {
+        benchmark::DoNotOptimize(Kataglyphis::computeCascadeData(
+          numCascades, view, kFov, kAspect, kNear, kFar, lightDir, kShadowDistance, 0.5F, kShadowMapResolution));
+    }
+}
+BENCHMARK(BM_ComputeCascadeData)->Arg(1)->Arg(3);
 
 // ----------------------------------------------------------- scene config --
 
