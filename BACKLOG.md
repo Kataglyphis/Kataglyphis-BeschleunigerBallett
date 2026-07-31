@@ -1868,58 +1868,76 @@ renderer task.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-- [ ] **(M/L) headless.rs renders wrong pixels almost everywhere — 17/33 GPU
-  tests fail on real image-content assertions now that shader compilation is
-  fixed** — likely one or a small number of systemic root causes, not 17
-  independent bugs; needs a fresh investigation rather than a per-test fix.
+**`headless.rs` wrong-pixels investigation — DONE (2026-07-31), 16/33 → 32/33.**
+Two systemic root causes, not 17 independent bugs:
 
-  **Context:** the previous task (Slang WGSL-backend depth-texture types)
-  blocked EVERY GPU-touching Rust test behind a shader-module compile crash;
-  fixing it (plus three siblings of the identical bug hit immediately behind
-  it — see below) got every pipeline to actually build for the first time
-  since the Slang migration (`40b1cbe3`). That unblocked real execution, and
-  most of what runs now produces wrong pixels rather than a crash:
-  `renders_cube_headless` — the single most basic test, a plain lit red cube
-  with no textures/animation/shadows — fails too (`center pixel should be the
-  red cube, got [137, 128, 124, 255]`, a near-neutral grey nowhere close to
-  either "red cube" or the "blue-dominant sky" the corner pixel check also
-  wants). Several other failures show the exact same `[137, 128, 124, ...]`-
-  family value, which smells like one shared root cause (camera/view-proj
-  setup, a lighting term always evaluating near-zero, or a tonemap/exposure
-  stage crushing everything toward grey) rather than 17 unrelated defects.
-  None of this is a regression from the compile fixes — this renderer's
-  pixel output has never been verified on this host; the tests simply could
-  not run before.
+1. **Vertex attribute `@location` mismatch.** `Vertex::LAYOUT` /
+   `InstanceRaw::LAYOUT` in `scene/mod.rs` numbered attributes sequentially
+   (0-7, instances 8-11), but the Slang WGSL backend assigns its OWN
+   `@location`s to `forward.wgsl`'s `vertexInput_0/1/2` structs
+   (position=0, uv1=1, instance columns=2/3, normal=4, uv=5, tangent=6,
+   joints=7, weights=8, color=9, instance columns cont'd=10/11) — a
+   completely different numbering the Rust side never matched post-migration.
+   Every primitive was reading position/normal/uv/color from the wrong slots.
+   Fixed by renumbering both `vertex_attr_array!` calls to Slang's actual
+   assignment (entries stay in FIELD order; only the `@location` numbers
+   attached to each changed). This alone fixed 13 of the 17: everything except
+   `alpha_modes_blend_and_mask`, `auto_exposure_brightens_a_dark_scene_over_successive_frames`,
+   `caster_culling_engages_and_shadows_survive`, and `ssao_darkens_geometry`
+   (`renders_cube_headless`'s `[137, 128, 124, ...]` grey was garbage vertex
+   data landing in the wrong per-vertex slots, not a camera/lighting bug).
+2. **Inverted shadow factor.** `forward.wgsl`'s `shadow_factor_0()` returns
+   *visibility* (1.0 = lit/unoccluded, via `CompareFunction::LessEqual` PCF —
+   confirmed by its own out-of-cascade early return of `1.0`, which only
+   makes sense as "fully visible outside the map"). The lighting call site
+   nonetheless computed `directLight * (1.0 - shadow_factor_0(...))`, i.e.
+   multiplied direct light by *occlusion* instead of visibility: fully lit
+   ground got zeroed direct light (ambient-only, dim) and the actual shadow
+   footprint got full direct light on top of ambient (brighter than its
+   surroundings) — a shadow that visibly glows instead of darkens. Fixed by
+   dropping the `1.0 -` inversion. This fixed `alpha_modes_blend_and_mask`
+   (the scene was reading uniformly dark because direct light was zeroed
+   almost everywhere) and `ssao_darkens_geometry` (SSAO's per-pixel multiply
+   can only ever darken; the "SSAO increased total energy" symptom was the
+   inverted shadow glow being brighter than the correctly-shadowed baseline
+   it was compared against, not an SSAO bug).
+   `caster_culling_engages_and_shadows_survive`'s pixel classifier also
+   needed a fix alongside: it required *neutral* grey for "shadowed", but
+   with analytic IBL a correctly-shadowed patch is blue-tinted (sky-lit
+   ambient only), not neutral-dark — `shadow_darkens_plane_under_cube`
+   already knew this and used a blue-tint-aware classifier;
+   `caster_culling`'s comment claimed to be "the same structural check" but
+   wasn't. Brought in line with the proven-correct classifier.
 
-  **Repro:** `cargo test -p kataglyphis_webgpu_renderer --test headless` in
-  the submodule. 16/33 pass, these 17 fail on content assertions (not
-  panics/validation errors): `alpha_modes_blend_and_mask`,
-  `animation_moves_the_cube`, `auto_exposure_brightens_a_dark_scene_over_successive_frames`,
-  `bloom_adds_energy_around_bright_sources`, `caster_culling_engages_and_shadows_survive`,
-  `clearing_instances_restores_a_single_copy_rather_than_none`,
-  `instances_appear_at_their_own_transforms`,
-  `masked_card_casts_half_the_shadow_of_an_opaque_one`,
-  `morph_weight_lifts_the_silhouette`, `punctual_lights_pool_on_plane`,
-  `renders_cube_headless`, `renders_textured_cube_headless`,
-  `shadow_darkens_plane_under_cube`, `skinning_bends_the_bar`,
-  `texture_slot_samples_its_declared_uv_set`, `unlit_material_ignores_the_light`,
-  `vertex_colors_tint_the_surface`. `cargo test -p kataglyphis_webgpu_renderer
-  --lib` (113 tests, includes `set_animation_time_recomputes_and_dirties_the_cached_normal_matrix`)
-  is fully green — the failures are specific to actually rendering a frame.
+Verified: `cargo test -p kataglyphis_webgpu_renderer --test headless` 32/33,
+`--lib` 113/113. Diagnosed via a scratch frame-dump/pixel-diff example
+(removed after use, per "always dump the picture, not just the number").
 
-  **Suggested approach:** start from `renders_cube_headless` (simplest scene,
-  no animation/skinning/textures) with `KATAGLYPHIS_FRAME_DUMP`-style frame
-  dumping (or an equivalent PNG dump for this renderer, if one exists) to see
-  the SHAPE of what's wrong, not just the failing assertion — the C++ engine's
-  backlog history (see "Always dump the picture, not just the number" above)
-  shows pixel-count/mean assertions alone have twice produced confident wrong
-  root-cause guesses here. Check the view-projection matrix plumbing through
-  `_MatrixStorage_..._std140_0` (Slang's std140 column-major marshaling) first,
-  since a transposed or misordered matrix would explain "nothing where it
-  should be" across nearly every test uniformly.
-
-  **Build:** No C++ build. Rust only, run on the host (headless wgpu works
-  there).
+**Remaining: `auto_exposure_brightens_a_dark_scene_over_successive_frames`
+still fails — likely a stale test assumption, not a renderer bug (S,
+needs an owner decision on the fix shape).** Reproduces stably: manual
+mean 171.07, auto converges (within 2 frames, as expected for
+`speed=3.0, dt=0.5`) to mean 166.48 — auto exposes *down* ~2.7% instead of
+up 8%+. The CPU auto-exposure math (`render::auto_exposure`, 113 unit
+tests) and the GPU `cs_reduce_exposure` mirror of it both look correct and
+match the working `manual_exposure_still_controls_brightness` test. The
+scene (`cube.gltf`, default `OrbitCamera`, dim sun + near-zero ambient) is a
+small cube against a procedural sky that fills most of a 128×128 frame and
+is *not* attenuated by the test's dim light settings (only the cube's direct
++ ambient terms are) — confirmed visually via a frame dump: the cube is a
+small fraction of the image. The geometric-mean-luminance auto-exposure
+metric is dominated by that already-well-exposed sky, so it correctly holds
+near EXPOSURE_KEY rather than brightening for the small dim subject. The
+docstring's historical baseline ("182.7 vs 163.1 auto, a 12% lift") was almost
+certainly measured before the vertex-attribute fix above, i.e. on a broken
+frame where the cube's real shape/shading didn't dominate either — not a
+result that exposure fix #1 preserves. Two honest fixes, either needs a call
+the executor loop shouldn't make alone: (a) reframe the test scene so the
+dim subject actually dominates the frame (tighter FOV / closer camera /
+darker sky), which is what "auto-exposure brightens an underlit scene" is
+actually meant to exercise; or (b) accept that a sky-dominated frame
+legitimately shouldn't brighten much and lower the threshold. Left failing
+and unchecked rather than guessed at.
 
 ### C++ Vulkan engine
 
