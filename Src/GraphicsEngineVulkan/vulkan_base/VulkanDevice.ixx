@@ -33,6 +33,12 @@ class VulkanDevice
     // render pass broadcasts to one view per cascade via multiview, so a
     // cascade count above this would create a non-conformant render pass.
     uint32_t getMaxMultiviewViewCount() const { return maxMultiviewViewCount; };
+    // VkPhysicalDeviceLimits::maxPerStageDescriptorSampledImages/Samplers -
+    // the shared render descriptor set binds MAX_TEXTURE_COUNT sampled
+    // images and samplers in one stage, so a device below that limit could
+    // not actually satisfy the fixed-size shader array.
+    uint32_t getMaxPerStageDescriptorSampledImages() const { return device_properties.limits.maxPerStageDescriptorSampledImages; };
+    uint32_t getMaxPerStageDescriptorSamplers() const { return device_properties.limits.maxPerStageDescriptorSamplers; };
     vk::DeviceAddress getBufferDeviceAddress(const vk::BufferDeviceAddressInfo &info) const;
     Allocator &getAllocator() { return allocator; };
     VmaAllocator getVmaAllocator() const { return allocator.getVmaAllocator(); };

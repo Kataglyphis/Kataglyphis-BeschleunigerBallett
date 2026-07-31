@@ -5,7 +5,7 @@
 // These mirror the [vk::binding(N, M)] annotations in
 // Resources/ShadersSlang/common/scene_types.slang.
 
-const int MAX_TEXTURE_COUNT = 24;
+const int MAX_TEXTURE_COUNT = 128;
 
 // ----- MAIN RENDER DESCRIPTOR SET ----- START (shared between rasterizer and
 // raytracer)

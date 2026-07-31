@@ -1263,6 +1263,26 @@ void Kataglyphis::VulkanRenderer::updateRaytracingDescriptorSets()
 
 void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
 {
+    // The shared render descriptor set binds MAX_TEXTURE_COUNT sampled images
+    // and samplers in a single stage; a device below either per-stage limit
+    // cannot honour that fixed-size array. The array size is a compile-time
+    // shader constant, so this is a warning, not a runtime shrink - shrinking
+    // the host-side array would desynchronise host and device.
+    if (const uint32_t max_sampled_images = device->getMaxPerStageDescriptorSampledImages();
+        max_sampled_images < static_cast<uint32_t>(MAX_TEXTURE_COUNT)) {
+        spdlog::critical(
+          "Device maxPerStageDescriptorSampledImages ({}) is below MAX_TEXTURE_COUNT ({}) - texture binding may fail.",
+          max_sampled_images,
+          MAX_TEXTURE_COUNT);
+    }
+    if (const uint32_t max_samplers = device->getMaxPerStageDescriptorSamplers();
+        max_samplers < static_cast<uint32_t>(MAX_TEXTURE_COUNT)) {
+        spdlog::critical(
+          "Device maxPerStageDescriptorSamplers ({}) is below MAX_TEXTURE_COUNT ({}) - texture binding may fail.",
+          max_samplers,
+          MAX_TEXTURE_COUNT);
+    }
+
     const bool raytracing_available = device->supportsHardwareAcceleratedRRT();
 
     // eFragment: the deferred lighting pass reads inv_view/inv_projection to
@@ -1417,7 +1437,8 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
     image_info_textures.reserve(MAX_TEXTURE_COUNT);
     image_info_texture_sampler.reserve(MAX_TEXTURE_COUNT);
 
-    for (uint32_t model = 0; model < scene->getModelCount(); ++model) {
+    bool texture_slots_exhausted = false;
+    for (uint32_t model = 0; model < scene->getModelCount() && !texture_slots_exhausted; ++model) {
         std::vector<Texture> &modelTextures = scene->getTextures(model);
         std::vector<vk::Sampler> &modelTextureSampler = scene->getTextureSampler(model);
         const uint32_t model_texture_count = scene->getTextureCount(model);
@@ -1429,6 +1450,7 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
                   image_info_textures.size() + (model_texture_count - t),
                   scene->getModelCount(),
                   MAX_TEXTURE_COUNT);
+                texture_slots_exhausted = true;
                 break;
             }
             vk::DescriptorImageInfo texture_info{};

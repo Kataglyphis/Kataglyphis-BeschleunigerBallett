@@ -5,7 +5,7 @@
 // prevents rasterization shaders from pulling in ray tracing capabilities
 // (which conflict with `discard` in fragment shaders).
 
-static const int MAX_TEXTURE_COUNT = 24;
+static const int MAX_TEXTURE_COUNT = 128;
 
 // ----- MAIN RENDER DESCRIPTOR SET (shared between rasterizer and raytracer)
 static const int globalUBO_BINDING = 0;

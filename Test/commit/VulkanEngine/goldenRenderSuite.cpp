@@ -18,6 +18,7 @@
 #include <gtest/gtest.h>
 #include "EngineLoadWait.hpp"
 #include "GoldenMetrics.hpp"
+#include "common/host_device_shared_vars.hpp"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
@@ -1507,6 +1508,42 @@ TEST(GoldenRender, SecondModelShadesWithItsOwnTextures)
     EXPECT_GT(detail, 0.02)
       << "The added model shows no texture detail - it is sampling the first "
          "model's (flat white) texture slots.";
+}
+
+// Sponza alone (33 textures) must fit inside MAX_TEXTURE_COUNT and bind
+// without a validation error. This is the direct regression guard for the
+// 2026-07-22 deep-dive item #3 fix: the release default scene overflowed the
+// old cap of 24, so 9 of Sponza's textures never reached a descriptor.
+// Structural, not a pixel oracle - a colour oracle on Sponza was measured
+// blind before (its bricks are near-greyscale); the useful assertion here is
+// that every texture slot the scene needs actually fits under the cap.
+TEST(GoldenRender, SponzaBindsEveryTextureSlot)
+{
+    SKIP_WITHOUT_GPU();
+
+    const std::string sponza = sceneConfig::resolveModelPath("Models/crytek-sponza/sponza_triag.obj");
+    if (!std::filesystem::exists(sponza)) { GTEST_SKIP() << "Sponza model not present"; }
+
+    ScopedModelOverride sponza_override(sponza.c_str());
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES);
+
+    EXPECT_LE(harness.scene->getTextureCount(0), static_cast<uint32_t>(MAX_TEXTURE_COUNT))
+      << "Sponza needs more texture slots than MAX_TEXTURE_COUNT provides.";
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while binding Sponza's textures.";
+    ASSERT_FALSE(frame.empty()) << "Frame capture returned no pixels.";
 }
 
 // glTF alphaMode MASK visually: a cut-out card must DISCARD its below-cutoff
