@@ -2,6 +2,7 @@ module;
 
 #include <glm/glm.hpp>
 #include <memory>
+#include <span>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -21,7 +22,7 @@ class Clouds
 
     void init(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, vk::DescriptorSetLayout sharedLayout, uint32_t width, uint32_t height);
 
-    void recordComputeCommands(vk::CommandBuffer &commandBuffer, const std::vector<vk::DescriptorSet> &descriptorSets);
+    void recordComputeCommands(vk::CommandBuffer &commandBuffer, std::span<const vk::DescriptorSet> descriptorSets);
 
     void recreateFrameResources(vk::CommandPool commandPool, uint32_t width, uint32_t height);
 

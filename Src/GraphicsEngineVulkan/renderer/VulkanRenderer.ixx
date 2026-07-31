@@ -5,6 +5,7 @@ module;
 #include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -169,7 +170,7 @@ class VulkanRenderer
     // deliberate post-shadow-pass ordering stays visible at the call site.
     void recordRasterPass(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
-      const std::vector<vk::DescriptorSet> &rasterizer_descriptor_sets,
+      std::span<const vk::DescriptorSet> rasterizer_descriptor_sets,
       const std::optional<FrustumPlanes> &camera_frustum);
 
     // Records the ray-tracing or path-tracing pass (whichever the GUI selected)

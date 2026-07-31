@@ -1,6 +1,7 @@
 module;
 #include <vector>
 #include <memory>
+#include <span>
 #include <vulkan/vulkan.hpp>
 #include <glm/glm.hpp>
 
@@ -85,7 +86,7 @@ class CascadedShadowMap
       vk::DescriptorSetLayout sharedRenderDescriptorSetLayout);
 
     void createGraphicsPipeline();
-    void recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, const std::vector<vk::DescriptorSet> &descriptorSets);
+    void recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, std::span<const vk::DescriptorSet> descriptorSets);
 
     Kataglyphis::Texture* getShadowMapArray() { return shadowMapArray.get(); }
     std::vector<vk::Framebuffer>& getFramebuffers() { return framebuffers; }

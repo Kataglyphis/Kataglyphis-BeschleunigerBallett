@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <span>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -60,7 +61,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
   VulkanImage &vulkanImage,
   VulkanImage &accumulationImage,
   VulkanSwapChain *vulkanSwapChain,
-  const std::vector<vk::DescriptorSet> &descriptorSets,
+  std::span<const vk::DescriptorSet> descriptorSets,
   uint32_t frame_index,
   uint32_t samples_per_pixel,
   uint32_t max_bounces)

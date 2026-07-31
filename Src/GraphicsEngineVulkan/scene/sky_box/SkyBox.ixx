@@ -2,6 +2,7 @@ module;
 
 #include <glm/glm.hpp>
 #include <memory>
+#include <span>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -27,7 +28,7 @@ class SkyBox
     void createRenderPass(vk::Format format, vk::Format depthFormat);
     void createFramebuffers(size_t count, const std::vector<vk::ImageView>& imageViews, const std::vector<vk::ImageView>& depthViews, uint32_t width, uint32_t height);
     void createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout);
-    void recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, const std::vector<vk::DescriptorSet> &descriptorSets, bool skyboxEnabled);
+    void recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, std::span<const vk::DescriptorSet> descriptorSets, bool skyboxEnabled);
 
     void recreateFrameResources(size_t count, const std::vector<vk::ImageView>& imageViews, const std::vector<vk::ImageView>& depthViews, uint32_t width, uint32_t height);
     void destroyFramebuffers();

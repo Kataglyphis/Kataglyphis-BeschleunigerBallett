@@ -1,6 +1,7 @@
 module;
 
 #include <memory>
+#include <span>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -35,7 +36,7 @@ class PostStage
 
     void recordCommands(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
-      const std::vector<vk::DescriptorSet> &descriptorSets,
+      std::span<const vk::DescriptorSet> descriptorSets,
       bool cloudsEnabled,
       bool shadowsEnabled,
       bool skyboxEnabled);

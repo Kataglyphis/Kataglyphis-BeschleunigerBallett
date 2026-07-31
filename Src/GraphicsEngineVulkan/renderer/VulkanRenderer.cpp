@@ -23,8 +23,10 @@ module;
 #include <cstdlib>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <memory>
+#include <span>
 #include <tuple>
 #include <vector>
 
@@ -861,7 +863,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
         if (!start) { recorded_pass_mask |= (1U << pass_index); }
     };
 
-    std::vector<vk::DescriptorSet> rasterizer_descriptor_sets = { sharedRenderDescriptors.sets()[image_index] };
+    const std::array<vk::DescriptorSet, 1> rasterizer_descriptor_sets = { sharedRenderDescriptors.sets()[image_index] };
 
     if (guiSceneSharedVars.clouds_enabled) {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "clouds", { 0.80F, 0.85F, 0.95F, 1.0F });
@@ -913,7 +915,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
     write_pass_timestamp(GpuTimedPass::Post, true);
     {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "post", { 0.35F, 0.80F, 0.40F, 1.0F });
-        std::vector<vk::DescriptorSet> post_descriptor_sets = { postDescriptors.sets()[image_index] };
+        const std::array<vk::DescriptorSet, 1> post_descriptor_sets = { postDescriptors.sets()[image_index] };
         postStage.recordCommands(commandBuffer, image_index, post_descriptor_sets, guiSceneSharedVars.clouds_enabled, guiSceneSharedVars.shadows_enabled, guiSceneSharedVars.skybox_enabled);
     }
     write_pass_timestamp(GpuTimedPass::Post, false);
@@ -932,7 +934,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
 
 void Kataglyphis::VulkanRenderer::recordRasterPass(vk::CommandBuffer &commandBuffer,
   uint32_t image_index,
-  const std::vector<vk::DescriptorSet> &rasterizer_descriptor_sets,
+  std::span<const vk::DescriptorSet> rasterizer_descriptor_sets,
   const std::optional<FrustumPlanes> &camera_frustum)
 {
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
@@ -943,7 +945,7 @@ void Kataglyphis::VulkanRenderer::recordRasterPass(vk::CommandBuffer &commandBuf
         rasterizer.recordCommands(commandBuffer, image_index, scene, rasterizer_descriptor_sets, camera_frustum);
     } else {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "deferred", { 0.20F, 0.40F, 0.80F, 1.0F });
-        std::vector<vk::DescriptorSet> deferred_sets = { sharedRenderDescriptors.sets()[image_index], gbufferDescriptors.sets()[image_index] };
+        const std::array<vk::DescriptorSet, 2> deferred_sets = { sharedRenderDescriptors.sets()[image_index], gbufferDescriptors.sets()[image_index] };
         deferredRasterizer.recordCommands(commandBuffer, image_index, scene, deferred_sets, camera_frustum);
     }
 
@@ -973,7 +975,7 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
     // 20 validation errors in the pre-load frames of the accumulation golden.
     if (device->supportsHardwareAcceleratedRRT() && image_index < raytracingDescriptors.sets().size()
         && asManager.getTLAS()) {
-        std::vector<vk::DescriptorSet> raytracing_descriptor_sets = { sharedRenderDescriptors.sets()[image_index],
+        const std::array<vk::DescriptorSet, 2> raytracing_descriptor_sets = { sharedRenderDescriptors.sets()[image_index],
             raytracingDescriptors.sets()[image_index] };
 
         if (guiRendererSharedVars.raytracing) {

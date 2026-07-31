@@ -2,6 +2,7 @@ module;
 #include <vector>
 #include <memory>
 #include <array>
+#include <span>
 #include <vulkan/vulkan.hpp>
 #include "common/FormatHelper.hpp"
 #include "common/Utilities.hpp"
@@ -260,7 +261,7 @@ void Clouds::dispatchNoiseGeneration()
     device->getLogicalDevice().destroyCommandPool(commandPool);
 }
 
-void Clouds::recordComputeCommands(vk::CommandBuffer &commandBuffer, const std::vector<vk::DescriptorSet> &descriptorSets)
+void Clouds::recordComputeCommands(vk::CommandBuffer &commandBuffer, std::span<const vk::DescriptorSet> descriptorSets)
 {
     // Bind cloud compute pipeline and dispatch thread groups based on screen extent
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, cloudComputePipeline);

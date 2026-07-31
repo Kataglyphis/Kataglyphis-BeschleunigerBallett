@@ -3,6 +3,7 @@
 
 #include "renderer/pushConstants/PushConstantPathTracing.hpp"
 #include <glm/glm.hpp>
+#include <span>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -30,7 +31,7 @@ class PathTracing
       VulkanImage &vulkanImage,
       VulkanImage &accumulationImage,
       VulkanSwapChain *vulkanSwapChain,
-      const std::vector<vk::DescriptorSet> &descriptorSets,
+      std::span<const vk::DescriptorSet> descriptorSets,
       uint32_t frame_index,
       uint32_t samples_per_pixel,
       uint32_t max_bounces);

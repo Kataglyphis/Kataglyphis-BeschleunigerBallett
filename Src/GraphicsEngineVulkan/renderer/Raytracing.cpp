@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <span>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -44,7 +45,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::shaderHotReload(
 void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::CommandBuffer &commandBuffer,
   VulkanImage &renderImage,
   [[maybe_unused]] VulkanSwapChain *swapchain,
-  const std::vector<vk::DescriptorSet> &descriptorSets)
+  std::span<const vk::DescriptorSet> descriptorSets)
 {
     uint32_t const handle_size = raytracing_properties.shaderGroupHandleSize;
     uint32_t const handle_size_aligned = align_up(handle_size, raytracing_properties.shaderGroupHandleAlignment);

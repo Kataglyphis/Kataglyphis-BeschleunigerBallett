@@ -4,6 +4,7 @@ module;
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 #include <glm/glm.hpp>
 #include <memory>
+#include <span>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -44,7 +45,7 @@ class Rasterizer
     void recordCommands(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
       Kataglyphis::Scene *scene,
-      const std::vector<vk::DescriptorSet> &descriptorSets,
+      std::span<const vk::DescriptorSet> descriptorSets,
       const std::optional<FrustumPlanes> &cameraFrustum = std::nullopt);
 
     /// Meshes drawn / considered by the most recent recordCommands call.

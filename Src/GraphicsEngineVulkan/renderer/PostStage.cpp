@@ -7,6 +7,7 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <span>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -56,7 +57,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::shaderHotReload(
 
 void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::CommandBuffer &commandBuffer,
   uint32_t image_index,
-  const std::vector<vk::DescriptorSet> &descriptorSets,
+  std::span<const vk::DescriptorSet> descriptorSets,
   bool cloudsEnabled,
   bool shadowsEnabled,
   bool skyboxEnabled)

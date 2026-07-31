@@ -2,6 +2,7 @@ module;
 #include <memory>
 #include <array>
 #include <filesystem>
+#include <span>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -407,7 +408,7 @@ void SkyBox::createMesh(vk::CommandPool commandPool)
     skyMesh = std::make_unique<Mesh>(device, commandPool, vertices, indices, materialIndex, materials);
 }
 
-void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, const std::vector<vk::DescriptorSet> &descriptorSets, bool skyboxEnabled)
+void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, std::span<const vk::DescriptorSet> descriptorSets, bool skyboxEnabled)
 {
     if (image_index >= framebuffers.size() || framebuffers.empty()) {
         spdlog::error("SkyBox: framebuffer not created or index out of range!");

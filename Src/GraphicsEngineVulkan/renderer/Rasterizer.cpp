@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <span>
 #include <sstream>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -69,7 +70,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::setPushConstant(PushConst
 void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::CommandBuffer &commandBuffer,
   uint32_t image_index,
   Scene *scene,
-  const std::vector<vk::DescriptorSet> &descriptorSets,
+  std::span<const vk::DescriptorSet> descriptorSets,
   const std::optional<FrustumPlanes> &cameraFrustum)
 {
     vk::RenderPassBeginInfo render_pass_begin_info;

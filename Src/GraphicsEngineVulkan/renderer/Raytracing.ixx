@@ -3,6 +3,7 @@
 
 #include "renderer/pushConstants/PushConstantRayTracing.hpp"
 #include <glm/glm.hpp>
+#include <span>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -30,7 +31,7 @@ class Raytracing
     void recordCommands(vk::CommandBuffer &commandBuffer,
       VulkanImage &renderImage,
       VulkanSwapChain *vulkanSwapChain,
-      const std::vector<vk::DescriptorSet> &descriptorSets);
+      std::span<const vk::DescriptorSet> descriptorSets);
 
     void cleanUp();
 

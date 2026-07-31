@@ -5,6 +5,7 @@ module;
 #include <vector>
 #include <memory>
 #include <filesystem>
+#include <span>
 #include <sstream>
 #include <vulkan/vulkan.hpp>
 #include <glm/glm.hpp>
@@ -431,7 +432,7 @@ void CascadedShadowMap::createGraphicsPipeline()
     device->getLogicalDevice().destroyShaderModule(fragModule);
 }
 
-void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, const std::vector<vk::DescriptorSet> &descriptorSets)
+void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, std::span<const vk::DescriptorSet> descriptorSets)
 {
     castersDrawn = 0;
     castersConsidered = 0;
@@ -479,7 +480,7 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
 
     // set 0 = the shared render set passed in (materials/textures/object
     // descriptions, for the fragment alpha test); set 1 = this pass's light
-    // matrices. descriptorSets is the same vector the forward rasterizer receives.
+    // matrices. descriptorSets is the same span the forward rasterizer receives.
     std::vector<vk::DescriptorSet> shadowDescriptorSets = {descriptorSet};
     if (!descriptorSets.empty()) { shadowDescriptorSets = {descriptorSets[0], descriptorSet}; }
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, shadowDescriptorSets, nullptr);

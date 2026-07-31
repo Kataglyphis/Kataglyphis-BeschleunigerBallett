@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <span>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -404,7 +405,7 @@ void DeferredRasterizer::createFramebuffer()
 }
 
 
-void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Kataglyphis::Scene *scene, const std::vector<vk::DescriptorSet> &descriptorSets, const std::optional<FrustumPlanes> &cameraFrustum)
+void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Kataglyphis::Scene *scene, std::span<const vk::DescriptorSet> descriptorSets, const std::optional<FrustumPlanes> &cameraFrustum)
 {
     vk::RenderPassBeginInfo renderPassInfo{};
     renderPassInfo.renderPass = renderPass;
