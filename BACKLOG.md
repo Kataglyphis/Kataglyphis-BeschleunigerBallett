@@ -1703,59 +1703,6 @@ pick them up from the older prose above.
 
 ### Cross-renderer / docs
 
-- [ ] **(refactor, S) Verify and retire the WGSL-export shader-sharing route
-  superseded by the Slang migration** — documentation drift plus
-  likely-dead build plumbing.
-
-  **Files to read:**
-  - `docs/shader-sharing.md` — still documents `-ExportWgslShaders` →
-    `Resources/Shaders/generated` as the sharing mechanism.
-  - `Scripts/Windows/Build-Windows.ps1:10,224-241` and
-    `Scripts/Windows/Build-Windows-Container.ps1:47,97` — the opt-in flag.
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:314-315` —
-    evidence of the new route: the engine loads Slang-emitted SPIR-V from
-    `slang_spv_dir`.
-  - The two related BACKLOG entries: "Shader export wired into the build"
-    (`[x]`, Cross-renderer) and "Consume the generated SPIR-V in
-    `VulkanRenderer`" (`[ ]` M, annotated 2026-07-30 as likely superseded).
-
-  **Steps:**
-  1. VERIFY before deleting: grep the tree for consumers of
-     `Resources/Shaders/generated` and for any C++ `.spv` load that does NOT
-     come from `ShadersSlang/build/spirv` (`grep -rn "generated" Src/ Scripts/
-     CMakeLists.txt cmake/`; `grep -rn "\.spv" Src/`). **If a real consumer
-     turns up, STOP and write what was found into this entry instead of
-     deleting anything.**
-  2. If confirmed dead: remove the `-ExportWgslShaders` switch and its export
-     step from both build scripts. Leave the Rust `export_shaders.rs` example
-     in the crate — it is harmless upstream and useful for inspecting naga
-     output; this repo just stops advertising it as the sharing route.
-  3. Rewrite `docs/shader-sharing.md` around the actual pipeline:
-     `Resources/ShadersSlang/*.slang` → `compile-slang-shaders.{ps1,sh}` →
-     SPIR-V for C++ / WGSL for Rust, including the hand-written
-     `histogram.wgsl` exception. Keep a short history note naming the retired
-     export route so the git archaeology stays findable.
-  4. Update the two BACKLOG entries: mark the export `[x]` entry retired, and
-     close "Consume the generated SPIR-V" as superseded-by-Slang.
-
-  **Test:** No behaviour change to prove — (a) the step-1 greps showing zero
-  consumers are the safety case, (b) one `clangcl-debug` container build
-  green after the script edits, (c) `Invoke-Pester Scripts/Windows/tests/`
-  green (the build scripts are under Pester coverage; remove/adjust any test
-  that asserted the flag exists).
-
-  **Build:** `clangcl-debug`, reused container is fine (script + docs only):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
-
-  **Context:** The Slang migration (`6fc5553b`, `40b1cbe3`) achieved the
-  shader-sharing goal by a different route than the docs describe: one
-  `.slang` source emits both SPIR-V and WGSL, so the old plan (export the
-  Rust renderer's WGSL, reconcile bind-group decorations, load into Vulkan)
-  is now a dead branch. Docs that present a superseded mechanism as current
-  actively mislead the next contributor — the doc-ownership table in
-  AGENTS.md names `docs/shader-sharing.md` as the single home for this topic,
-  so it must tell the truth.
-
 ## 2026-07-30 batch II — planner (Slang-migration test fallout, push-constant budget, GPU-verification blocker)
 
 All three verified against the tree on 2026-07-30. They come from the
