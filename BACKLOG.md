@@ -2023,14 +2023,23 @@ and unchecked rather than guessed at.
     against the large dinosaur mesh — so it is UNKNOWN whether this is scoped
     to RayQuery/compute (as the entry originally assumed) or is a more
     general large-mesh vertex-buffer-device-address bug that the RT pipeline
-    has simply never been tested against. **Next step for whoever picks this
-    back up:** write an `RT` (not PT) golden test that raytraces the dinosaur
-    model and see if `raytrace.rchit.slang` also device-loses — that single
-    result would tell whether to keep hunting in `path_tracing.slang`
-    specifically or in the shared vertex-buffer upload/addressing path
-    (`ASManager`, `GltfLoader`/`ObjLoader` upload, or a stride/alignment
-    mismatch between the CPU `Vertex` struct and Slang's buffer_reference
-    codegen that only overflows the buffer at high vertex indices).
+    has simply never been tested against.
+
+  **RESOLVED 2026-07-31 by `GoldenRender.RaytracedLargeMeshDoesNotLoseTheDevice`
+  (container-built `clangcl-debug`, verified on the RX 9070 XT):** the RT
+  *pipeline* (`raytrace.rchit.slang`) raytraces the same dinosaur mesh over 10
+  frames, with a real (non-blank) capture, and does NOT lose the device. It
+  reads `v0.position`/`v0.normal` through the identical buffer-device-address
+  `Vertices*` path as the faulting PT compute kernel. That rules out the
+  shared vertex-upload/BDA path (`ASManager`, `GltfLoader`/`ObjLoader` upload,
+  CPU/Slang `Vertex` stride/alignment) as the cause — the bug is confirmed
+  scoped to `path_tracing.slang`/RayQuery compute specifically. Full 21-test
+  `GoldenRender.*:Integration.*` run (minus the two still-known PT
+  device-lose reproducers) stayed green, so this is not a false negative from
+  some other suite-wide breakage. Whoever picks this back up next should look
+  inside `path_tracing.slang` itself (RayQuery flags, SBT/accumulation-image
+  binding, or a compute-specific buffer-device-address indexing bug) rather
+  than the shared upload path.
 
   **Side effect of the two fixes above — previously-invisible bugs newly
   exposed, both unrelated to device-lost, NOT attempted here (out of scope
@@ -2092,59 +2101,6 @@ CPU suite missing from the Windows CI filter (checked every `TEST(` suite name
 against `Windows.yml:209-229`); the ContainerHub commit the RPT working tree
 points at (`1de9aff`) is already on ContainerHub `origin/main`, so committing
 that bump is safe.
-
-### C++ Vulkan engine
-
-- [ ] **(S) RT-pipeline large-mesh diagnostic golden — the stated next step
-  of the blocked device-lost entry** — every existing RT/PT golden that reads
-  `v0.position`/`v0.normal` through the vertex buffer-device-address path
-  without crashing uses the tiny `shadow_rig` mesh; nothing has ever
-  exercised `raytrace.rchit.slang` against the ~hundreds-of-thousands-vertex
-  dinosaur mesh. One test result decides whether the device-lost bug lives in
-  `path_tracing.slang`/RayQuery specifically or in the shared vertex-upload/
-  BDA path.
-
-  **Files to read:**
-  - the `- [b]` "Localize (and fix if cheap) the path-tracing compute
-    `VK_ERROR_DEVICE_LOST`" entry above — full bisection state; this task is
-    its "Next step" paragraph.
-  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` —
-    `RaytracedWorldFollowsTheModelTransform` is the pattern to follow (RT
-    *pipeline* mode, i.e. `raytracing = true`, NOT `pathTracing`); the
-    device-lost reproducer `PathTracingAccumulatesAndConverges` shows how the
-    dinosaur scene is selected (`Models/Dinosaurs/dinosaurs.obj`).
-  - `docs/gpu-golden-testing.md` — host-GPU run procedure; this doc also has
-    a pending update noted in the 2026-07-30 batch II section.
-
-  **Steps:**
-  1. Add `GoldenRender.RaytracedLargeMeshDoesNotLoseTheDevice`: load the
-     dinosaur scene, switch to RT pipeline mode, render ~10 frames, assert
-     no device-lost / no validation error and a non-black capture. Property
-     test — no pixel oracle.
-  2. Build `clangcl-debug` in the container (test-`.cpp`-only change, normal
-     incremental build, no ABI skew) and run the new test on the host GPU.
-  3. Record the result either way: if it PASSES, commit it enabled and edit
-     the `- [b]` entry's "Next step" paragraph to say the bug is scoped to
-     the RayQuery/compute kernel; if it DEVICE-LOSES, rename it
-     `DISABLED_RaytracedLargeMeshDoesNotLoseTheDevice`, commit it as the
-     recorded reproducer, and edit the entry to say the bug is in the shared
-     large-mesh vertex-BDA path (`ASManager` / loader upload / stride
-     mismatch candidates listed there).
-  4. Fold the outcome into `docs/gpu-golden-testing.md`'s known-issues note
-     (the doc update the 2026-07-30 batch II section says is pending).
-
-  **Test:** the new golden is the deliverable; both outcomes are a success
-  for this task (it is a diagnostic).
-
-  **Build:** `clangcl-debug`:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`,
-  then the host GPU run per `docs/gpu-golden-testing.md`.
-
-  **Context:** do NOT try to fix the device-lost here — this task only
-  produces the single bit of information the blocked entry says is needed to
-  aim further work. Keep the process-abort ordering hazard in mind: put the
-  new test LAST in file order or run it with an exclusive `--gtest_filter`,
-  because a hard abort kills every test after it in the same process.
 
 ### Performance testing
 

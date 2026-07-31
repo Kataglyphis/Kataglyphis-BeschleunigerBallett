@@ -2266,3 +2266,57 @@ TEST(GoldenRender, SwapchainRecreationKeepsRendering)
       << "Mean luminance changed too much across swapchain recreation (before=" << before_luma
       << ", after=" << after_luma << ") - the recreated swapchain is not rendering the same scene.";
 }
+
+// RT-pipeline large-mesh diagnostic for the "Localize (and fix if cheap) the
+// path-tracing compute VK_ERROR_DEVICE_LOST" backlog entry. Every existing
+// RT/PT golden that reads v0.position/v0.normal via the vertex
+// buffer-device-address path (RaytracedWorldFollowsTheModelTransform above,
+// and the PT tests) uses the tiny shadow_rig mesh; none has ever run
+// raytrace.rchit.slang's identical read pattern against the
+// ~hundreds-of-thousands-vertex dinosaur mesh that
+// GoldenRender.PathTracingAccumulatesAndConverges device-loses on. This is a
+// diagnostic, not a fix: whichever way it goes narrows where the bug lives -
+// a PASS here scopes it to path_tracing.slang/RayQuery specifically, a
+// device-lost here scopes it to the shared vertex-upload/BDA path instead
+// (ASManager / loader upload / a stride mismatch). Kept LAST in file order on
+// purpose: a hard device-lost abort here would otherwise kill every test
+// after it in the same process.
+TEST(GoldenRender, RaytracedLargeMeshDoesNotLoseTheDevice)
+{
+    SKIP_WITHOUT_GPU();
+
+    // Deliberately no ScopedModelOverride: the shipped debug scene IS the
+    // large dinosaur mesh (Models/Dinosaurs/dinosaurs.obj), the same one
+    // PathTracingAccumulatesAndConverges device-loses on.
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = true;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    // The PT reproducer device-loses within 0-2 frames; render well past that
+    // window before trusting a pass.
+    constexpr int DIAGNOSTIC_FRAMES = 10;
+    harness.render_frames(DIAGNOSTIC_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost())
+      << "RT pipeline device-lost on the large dinosaur mesh - the bug is in the shared "
+         "vertex-upload/BDA path, not path_tracing.slang/RayQuery specifically.";
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost during capture.";
+    ASSERT_FALSE(frame.empty()) << "Frame capture returned no pixels.";
+    EXPECT_GT(fraction_above(frame, 8.0), 0.05)
+      << "Captured frame looks blank - the large-mesh RT diagnostic needs a real image to "
+         "trust the no-device-lost result.";
+}

@@ -71,3 +71,25 @@ Effects with no runtime toggle (the tonemap is always on) are hard to isolate
 this way: "compressed vs clipped" is ambiguous without a control, so a robust
 oracle must key on a property the effect uniquely produces (e.g. retained
 variation), not just "brighter" or "darker".
+
+## Known issue: path-tracing compute device-lost on the large dinosaur mesh
+
+`GoldenRender.PathTracingAccumulatesAndConverges`,
+`GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice` and
+`Integration.RenderModesSelectableInGui` currently hard-abort
+(`VK_ERROR_DEVICE_LOST`, zero preceding validation errors) on the RX 9070 XT
+when path tracing runs against the shipped debug scene
+(`Models/Dinosaurs/dinosaurs.obj`, hundreds of thousands of vertices). Root
+cause is not yet found (needs GPU capture tooling — RenderDoc/PIX/AMD crash
+dumps — not available here); see the "Localize (and fix if cheap) the
+path-tracing compute `VK_ERROR_DEVICE_LOST`" entry in `BACKLOG.md` for the
+full bisection.
+
+As of 2026-07-31 the bug is confirmed scoped to `path_tracing.slang`/RayQuery
+compute specifically, not the shared vertex-upload/buffer-device-address
+path: `GoldenRender.RaytracedLargeMeshDoesNotLoseTheDevice` raytraces the
+identical dinosaur mesh through the RT *pipeline* (`raytrace.rchit.slang`,
+same `Vertices*` BDA read pattern) and does not lose the device. Excluding
+the three tests above with
+`--gtest_filter='GoldenRender.*:Integration.*:-GoldenRender.PathTracingAccumulatesAndConverges:GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice:Integration.RenderModesSelectableInGui'`
+runs the rest of the suite (21 tests) clean.
