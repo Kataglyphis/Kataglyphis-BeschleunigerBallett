@@ -1654,13 +1654,6 @@ moves geometry.
 
 ### Container / build
 
-- [ ] **Test all four clang-cl configurations in one session** (S) — the
-    default debug loop exercises only one configuration. A one-shot script that
-    builds+ctests `clangcl-debug`, `clangcl-profile`, `clangcl-release`, and
-    the `linux-debug-tsan-clang` preset (when Rancher is running) would surface
-    the class of problems each one catches: ASAN/UBSan correctness, optimized
-    UB, release-no-validation, data races.
-
 
 ## 2026-07-28 batch — refactor (dead code, duplication, test gap)
 
