@@ -1,14 +1,14 @@
 import scene_types;
 import rt_types;
-import brdf;
 
 // Path tracing compute kernel using ray query (GL_EXT_ray_query).
 // Full port of Resources/Shaders/path_tracing/path_tracing.comp. Emits
 // SPIR-V only (Vulkan ray query — WebGPU has no ray query).
 //
 // Uses Slang T* pointers (PhysicalStorageBuffer) for buffer device
-// addresses, RayQuery for ray traversal, and the shared BRDF math
-// (import brdf) for direct lighting. Includes RNG (pcg) for stochastic
+// addresses, RayQuery for ray traversal, next-event estimation toward the
+// directional light (Lambertian 1/pi, terminate-on-first-hit shadow rays),
+// Russian roulette from the 4th bounce, and RNG (pcg) for stochastic
 // sampling and temporal accumulation (running-mean history image).
 
 struct PushConstantPathTracing
@@ -56,7 +56,13 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
     float4 cameraOrigin = mul(globalUBO.inv_view, float4(0, 0, 0, 1));
 
     int numSamples = int(pc_ray.samples_per_pixel);
+    int maxBounces = int(pc_ray.max_bounces);
     float3 summedColor = float3(0.0);
+    // Furnace debug mode (KATAGLYPHIS_PT_FURNACE): clearColor.w set forces
+    // every hit's albedo to 1 and the environment to a uniform clearColor.rgb
+    // radiance, so an unbiased estimator must converge every pixel to exactly
+    // that radiance regardless of geometry.
+    bool furnace = pc_ray.clearColor.w > 0.5;
 
     for (int sampleIdx = 0; sampleIdx < numSamples; sampleIdx++)
     {
@@ -65,29 +71,68 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
         float2 cs = uv * 2.0 - 1.0;
 
         float4 target = mul(globalUBO.inv_projection, float4(cs.x, cs.y, 1, 1));
-        float3 dir = normalize(mul(globalUBO.inv_view, float4(normalize(target.xyz), 0)).xyz);
+        float3 rayOrigin = cameraOrigin.xyz;
+        float3 rayDirection = normalize(mul(globalUBO.inv_view, float4(normalize(target.xyz), 0)).xyz);
 
-        RayQuery<RAY_FLAG_FORCE_OPAQUE> rayQuery;
-        RayDesc ray;
-        ray.Origin = cameraOrigin.xyz;
-        ray.Direction = dir;
-        ray.TMin = 0.001;
-        ray.TMax = 10000.0;
-        rayQuery.TraceRayInline(TLAS, RAY_FLAG_FORCE_OPAQUE, 0xFFu, ray);
-        // Proceed() performs one traversal step and must be looped until it
-        // returns false (GL_EXT_ray_query: rayQueryProceedEXT) — a single
-        // call can leave traversal incomplete, so CommittedStatus() and the
-        // committed-hit accessors below read undefined state. The pre-Slang
-        // GLSL kernel (path_tracing.comp) looped this correctly; the Slang
-        // port dropped the loop. Restoring it was necessary but NOT
-        // sufficient to fix the VK_ERROR_DEVICE_LOST bisected below.
-        while (rayQuery.Proceed())
-        {
-        }
+        // Throughput: the product of every bounce's albedo (and RR
+        // reweighting) applied so far. Radiance: the running estimate this
+        // sample contributes, accumulated at every NEE hit and sky miss.
+        float3 throughput = float3(1.0);
+        float3 radiance = float3(0.0);
 
-        float3 sampleColor;
-        if (rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+        for (int bounce = 0; bounce < maxBounces; bounce++)
         {
+            // Russian roulette from the fourth segment on: terminate
+            // low-throughput paths with probability (1 - survival) and
+            // reweight survivors by 1/survival, keeping the estimator
+            // unbiased while skipping bounces that would contribute almost
+            // nothing.
+            if (bounce >= 3)
+            {
+                float survival = clamp(max(throughput.r, max(throughput.g, throughput.b)), 0.05, 0.95);
+                if (stepAndOutputRNGFloat(rngState) > survival)
+                {
+                    break;
+                }
+                throughput /= survival;
+            }
+
+            RayQuery<RAY_FLAG_FORCE_OPAQUE> rayQuery;
+            RayDesc ray;
+            ray.Origin = rayOrigin;
+            ray.Direction = rayDirection;
+            ray.TMin = 0.001;
+            ray.TMax = 10000.0;
+            rayQuery.TraceRayInline(TLAS, RAY_FLAG_FORCE_OPAQUE, 0xFFu, ray);
+            // Proceed() performs one traversal step and must be looped until
+            // it returns false (GL_EXT_ray_query: rayQueryProceedEXT) — a
+            // single call can leave traversal incomplete, so
+            // CommittedStatus() and the committed-hit accessors below would
+            // read undefined state.
+            while (rayQuery.Proceed())
+            {
+            }
+
+            if (rayQuery.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
+            {
+                // Ray hit the sky. A deliberate soft gradient environment
+                // (RTIOW-style) scaled well below the directional light so
+                // the NEE term below dominates the look, or the uniform
+                // furnace radiance in furnace mode.
+                float3 skyRadiance;
+                if (furnace)
+                {
+                    skyRadiance = pc_ray.clearColor.rgb;
+                }
+                else
+                {
+                    float skyT = 0.5 * (rayDirection.y + 1.0);
+                    skyRadiance = 0.5 * lerp(float3(1.0), float3(0.5, 0.7, 1.0), skyT);
+                }
+                radiance += throughput * skyRadiance;
+                break;
+            }
+
             // KNOWN ISSUE, unresolved (see BACKLOG.md): on the large
             // Dinosaurs.obj scene this hit-info block still reproduces
             // VK_ERROR_DEVICE_LOST on the RX 9070 XT with zero preceding
@@ -95,8 +140,8 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             // (fetched via this RayQuery-derived Vertices* BDA pointer)
             // actually feed the output image - regardless of whether a
             // matrix transform is applied, whether the code is factored into
-            // a helper or inlined as here, whether sceneUBO or brdf_direct()
-            // are involved, and independent of
+            // a helper or inlined as here, whether sceneUBO is involved, and
+            // independent of
             // CommittedObjectToWorld3x4()/CommittedWorldToObject3x4()
             // specifically (removing those calls and using the raw
             // object-space position still faults). Consuming ONLY the
@@ -138,39 +183,98 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
 
             float3 normalHit = v0.normal * barycentrics.x + v1.normal * barycentrics.y + v2.normal * barycentrics.z;
             float3 hitWorldNormal = normalize(mul(worldToObject, float4(normalHit, 0.0)));
+            // Flip the normal so it points against the ray direction
+            // (GLSL faceforward(N, I, N)).
+            if (dot(hitWorldNormal, rayDirection) > 0.0)
+            {
+                hitWorldNormal = -hitWorldNormal;
+            }
 
             float2 texCoords = v0.texture_coords * barycentrics.x
                              + v1.texture_coords * barycentrics.y
                              + v2.texture_coords * barycentrics.z;
 
-            ObjMaterial material = materials->m[materialIDs->i[primitiveID]];
             float3 hitColor;
-            if (material.textureID >= 0)
+            if (furnace)
             {
-                int textureId = clamp(int(obj.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
-                hitColor = textures[textureId].Sample(textureSamplers[textureId], texCoords).xyz;
+                hitColor = float3(1.0);
             }
             else
             {
-                hitColor = material.diffuse;
+                ObjMaterial material = materials->m[materialIDs->i[primitiveID]];
+                if (material.textureID >= 0)
+                {
+                    int textureId = clamp(int(obj.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
+                    hitColor = textures[textureId].Sample(textureSamplers[textureId], texCoords).xyz;
+                }
+                else
+                {
+                    hitColor = material.diffuse;
+                }
             }
 
-            float3 L = normalize(-sceneUBO.dirLight.direction.xyz);
-            float3 V = normalize(sceneUBO.cam_pos.xyz - hitWorldPosition);
-            float3 f0 = lerp(float3(0.04), hitColor, 0.0);
-            float3 lightColor = sceneUBO.dirLight.color.rgb;
-            float lightIntensity = sceneUBO.dirLight.color.w;
+            // Apply color absorption.
+            throughput *= hitColor;
 
-            sampleColor = hitColor + brdf_direct(
-                hitWorldNormal, V, L, hitColor, 0.0, 0.5, f0,
-                lightColor * lightIntensity);
-        }
-        else
-        {
-            sampleColor = pc_ray.clearColor.xyz * 0.4;
+            // Start the next ray at the hit position, offset slightly along
+            // the normal to guard against self-intersection.
+            rayOrigin = hitWorldPosition + 0.0001 * hitWorldNormal;
+
+            // Next-event estimation toward the directional light: one
+            // shadow ray per bounce. The light is a delta direction,
+            // unreachable by the diffuse bounce ray, so this does not
+            // double-count with the sky term on miss.
+            float3 lightDir = normalize(-sceneUBO.dirLight.direction.xyz);
+            float nDotL = dot(hitWorldNormal, lightDir);
+            if (nDotL > 0.0)
+            {
+                RayQuery<RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> shadowQuery;
+                RayDesc shadowRay;
+                shadowRay.Origin = rayOrigin;
+                shadowRay.Direction = lightDir;
+                shadowRay.TMin = 0.001;
+                shadowRay.TMax = 10000.0;
+                shadowQuery.TraceRayInline(
+                    TLAS,
+                    RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
+                    0xFFu,
+                    shadowRay);
+                while (shadowQuery.Proceed())
+                {
+                }
+                if (shadowQuery.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
+                {
+                    // The Lambertian BRDF is albedo/pi; the throughput
+                    // already carries the albedo, so NEE must carry the
+                    // 1/pi. The bounce direction below needs no such factor:
+                    // cosine-weighted sampling of a Lambertian cancels both
+                    // the pi and the cosine exactly.
+                    const float INV_PI = 0.31830988;
+                    float3 lightColor = sceneUBO.dirLight.color.rgb;
+                    float lightIntensity = sceneUBO.dirLight.color.w;
+                    radiance += throughput * nDotL * INV_PI * lightColor * lightIntensity;
+                }
+            }
+
+            // Cosine-weighted-ish hemisphere bounce direction (Ray Tracing
+            // in One Weekend 8.5: a random point on the unit sphere centered
+            // at the normal tip).
+            float theta = 6.2831853 * stepAndOutputRNGFloat(rngState);
+            float u = 2.0 * stepAndOutputRNGFloat(rngState) - 1.0;
+            float r = sqrt(max(1.0 - u * u, 0.0));
+            float3 newDirection = hitWorldNormal + float3(r * cos(theta), r * sin(theta), u);
+
+            // RTIOW 9.4: if the random unit vector lands (numerically) on
+            // -normal, the sum degenerates to a near-zero direction. Fall
+            // back to the normal.
+            if (dot(newDirection, newDirection) < 1e-8)
+            {
+                newDirection = hitWorldNormal;
+            }
+            rayDirection = newDirection;
         }
 
-        summedColor += sampleColor;
+        summedColor += radiance;
     }
 
     float3 avgColor = summedColor / float(numSamples);

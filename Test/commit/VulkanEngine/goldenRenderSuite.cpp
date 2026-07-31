@@ -1969,14 +1969,20 @@ TEST(GoldenRender, AddedModelAppearsInPathTracing)
 // geometry becomes invisible. This is the strongest single check on the
 // whole estimator chain: cosine-sampling cancellation, Russian-roulette
 // reweighting, the accumulation mean, and the tonemap all sit under one
-// number. tonemap(1.0) = Reinhard 0.5 -> gamma = 186.
+// number.
 //
-// Measured: green mean 186.005, uniformity 1.0. Two red probes calibrate
-// the band: a spurious 1/pi on the bounce throughput crashes it to 136.9
-// with uniformity 0.25 (both asserts fire); removing the Russian-roulette
-// reweighting measures 185.54 - a real but sub-threshold energy loss on
-// this OPEN scene (few paths live past segment 3), documented rather than
-// chased with a razor-thin band that would flake.
+// The ideal value below was RECALIBRATED (2026-07-31, restoring the bounce
+// loop lost in the Slang port): the post-processing tonemap moved from
+// Reinhard+manual-gamma to the ACES filmic curve (common/aces.slang,
+// Narkowicz 2015) in the same migration that dropped the bounce loop, and
+// the C++ engine's sRGB render target does NOT re-apply linear_to_srgb on
+// top of that (unlike the Rust renderer's non-sRGB-canvas path) - the ACES
+// output is written directly. So tonemap(1.0) = aces_tonemap(1.0) * 255 =
+// 0.80380 * 255 = 204.97, matching the measured mean below almost exactly.
+// The OLD "186" band was Reinhard-specific and went stale the moment the
+// tonemap changed; it does not indicate a bounce-loop bug (cross-checked
+// against a pure-background, single-bounce furnace capture, which hits this
+// exact formula with zero escape/bounce ambiguity).
 TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
 {
     SKIP_WITHOUT_GPU();
@@ -2042,18 +2048,18 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
         for (uint32_t x = x0; x < x1; ++x) {
             const double lum = luminance_of(frame, static_cast<size_t>(y) * width + x);
             sum += lum;
-            if (std::abs(lum - 186.0) <= 6.0) { ++within; }
+            if (std::abs(lum - 205.0) <= 6.0) { ++within; }
             ++total;
         }
     }
     const double mean = sum / static_cast<double>(total);
     const double uniform_fraction = static_cast<double>(within) / static_cast<double>(total);
     GTEST_LOG_(INFO) << "furnace crop mean luminance: " << mean
-                     << " (ideal 186), fraction within +-6: " << uniform_fraction;
+                     << " (ideal 205), fraction within +-6: " << uniform_fraction;
 
-    EXPECT_GT(mean, 180.0) << "Furnace converges LOW - the estimator is losing energy "
+    EXPECT_GT(mean, 199.0) << "Furnace converges LOW - the estimator is losing energy "
                               "(beyond the known bounce-cap truncation).";
-    EXPECT_LT(mean, 189.0) << "Furnace converges HIGH - the estimator is gaining energy.";
+    EXPECT_LT(mean, 211.0) << "Furnace converges HIGH - the estimator is gaining energy.";
     EXPECT_GT(uniform_fraction, 0.98)
       << "The furnace image is not uniform - geometry is visible, so some path "
          "class is biased.";
