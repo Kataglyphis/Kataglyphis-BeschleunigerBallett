@@ -334,6 +334,14 @@ void Kataglyphis::VulkanDevice::get_physical_device()
         + deviceTypeToString(device_properties.deviceType) + ")");
     spdlog::default_logger_raw()->log(
       spdlog::level::info, std::string("Vulkan GPU selection mode: ") + gpuSelectionModeToString(selection_mode));
+
+    vk::PhysicalDeviceVulkan11Properties vulkan11_properties{};
+    vk::PhysicalDeviceProperties2 properties2{};
+    properties2.pNext = &vulkan11_properties;
+    physical_device.getProperties2(&properties2);
+    maxMultiviewViewCount = vulkan11_properties.maxMultiviewViewCount;
+    spdlog::default_logger_raw()->log(spdlog::level::info,
+      std::string("Device maxMultiviewViewCount: ") + std::to_string(maxMultiviewViewCount));
 }
 
 void Kataglyphis::VulkanDevice::create_logical_device()

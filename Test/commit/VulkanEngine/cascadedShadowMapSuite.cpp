@@ -20,6 +20,7 @@ import kataglyphis.vulkan.cascaded_shadow_map;
 namespace {
 
 using Kataglyphis::CascadeData;
+using Kataglyphis::clampCascadeCount;
 using Kataglyphis::computeCascadeData;
 using Kataglyphis::makeShadowPush;
 
@@ -399,6 +400,31 @@ TEST(CascadedShadowMapUnit, StabilizedBoxSizeIsInvariantUnderCameraMotion)
         EXPECT_NEAR(row_norm(cascades_a[i].viewProjMatrix, 1), row_norm(cascades_b[i].viewProjMatrix, 1), 1e-5F)
           << "cascade " << i << " y scale breathes with camera motion";
     }
+}
+
+// clampCascadeCount is the fix for VUID-VkSubpassDescription2-viewMask-06706 /
+// VUID-VkRenderPassMultiviewCreateInfo-pViewMasks-06697: the CSM multiview
+// render pass sets viewMask = (1 << numCascades) - 1, so a cascade count whose
+// top bit exceeds the device's maxMultiviewViewCount is a non-conformant
+// render pass. Both the startup init and handleShadowResolutionChange route
+// through this function so device conformance no longer relies on
+// MAX_CASCADES happening to be small enough for whatever GPU is present.
+TEST(CascadedShadowMapUnit, ClampCascadeCountRespectsBothLimits)
+{
+    EXPECT_EQ(clampCascadeCount(3U, 3U, 8U), 3U) << "neither limit is binding";
+    EXPECT_EQ(clampCascadeCount(3U, 8U, 3U), 3U) << "neither limit is binding, order swapped";
+    EXPECT_EQ(clampCascadeCount(3U, 3U, 2U), 2U) << "device limit below MAX_CASCADES must bind";
+    EXPECT_EQ(clampCascadeCount(8U, 3U, 8U), 3U) << "GUI slider value above MAX_CASCADES must clamp to it";
+}
+
+TEST(CascadedShadowMapUnit, ClampCascadeCountFloorsToOne)
+{
+    // A device reporting a limit of 0 is not a case any real device produces
+    // (the Vulkan spec floors maxMultiviewViewCount at 6), but the function
+    // must never return a count of 0 - that is not a renderable state - so
+    // pin the floor explicitly rather than relying on it never being hit.
+    EXPECT_EQ(clampCascadeCount(3U, 3U, 0U), 1U);
+    EXPECT_EQ(clampCascadeCount(0U, 3U, 8U), 1U) << "a requested count of 0 must still floor to 1";
 }
 
 TEST(CascadedShadowMapUnit, StabilizedCascadesStillCoverTheirSlice)

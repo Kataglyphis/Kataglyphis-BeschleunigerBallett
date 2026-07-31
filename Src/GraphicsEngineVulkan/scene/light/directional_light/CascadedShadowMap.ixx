@@ -65,6 +65,14 @@ std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
 // casters by the SAME model matrix as the forward pass, not by identity.
 ShadowPushConstants makeShadowPush(const glm::mat4 &modelMatrix, uint32_t cascadeIndex);
 
+// Cascade count actually usable: never above maxCascades (the SceneUBO array
+// size the shader samples), never above deviceViewLimit (the multiview render
+// pass broadcasts one view per cascade, so a viewMask bit past the device's
+// maxMultiviewViewCount is a validation error / non-conformant render pass),
+// and never below 1 - even if that floor pushes the result above one of the
+// limits, since 0 cascades is not a renderable state.
+uint32_t clampCascadeCount(uint32_t requested, uint32_t maxCascades, uint32_t deviceViewLimit);
+
 class CascadedShadowMap
 {
   public:

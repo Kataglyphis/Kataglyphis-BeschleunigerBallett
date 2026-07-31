@@ -103,7 +103,13 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     deferredRasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_deferred, graphics_command_pool);
 
     clouds.init(device, graphics_command_pool, sharedRenderDescriptors.getLayout(), vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
-    dirShadowMap.init(device, 2048, 2048, MAX_CASCADES, sharedRenderDescriptors.getLayout());
+    const auto initial_cascade_count = clampCascadeCount(
+      static_cast<uint32_t>(MAX_CASCADES), static_cast<uint32_t>(MAX_CASCADES), device->getMaxMultiviewViewCount());
+    if (initial_cascade_count < static_cast<uint32_t>(MAX_CASCADES)) {
+        spdlog::warn("Device maxMultiviewViewCount ({}) is below MAX_CASCADES ({}); clamping startup cascade count to {}.",
+          device->getMaxMultiviewViewCount(), MAX_CASCADES, initial_cascade_count);
+    }
+    dirShadowMap.init(device, 2048, 2048, initial_cascade_count, sharedRenderDescriptors.getLayout());
     dirShadowMap.createGraphicsPipeline();
 
     std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_post = { postDescriptors.getLayout() };
@@ -311,12 +317,18 @@ void Kataglyphis::VulkanRenderer::handleShadowResolutionChange(
         // Clamp to MAX_CASCADES, matching the startup init: the SceneUBO only
         // has MAX_CASCADES cascade matrices and the shader samples that many, so
         // a GUI value above it (the slider allows up to 8) renders extra cascades
-        // that are never sampled AND makes the shadow multiview render pass use a
-        // viewMask whose top bit can exceed the device's maxMultiviewViewCount
-        // (a validation error). Clamping keeps the visible result identical.
-        const auto cascade_count =
-          std::min<uint32_t>(static_cast<uint32_t>(guiSceneSharedVars.num_shadow_cascades),
-            static_cast<uint32_t>(MAX_CASCADES));
+        // that are never sampled. Also clamp to the device's queried
+        // maxMultiviewViewCount so the shadow multiview render pass never uses a
+        // viewMask whose top bit exceeds it (a validation error) - previously this
+        // relied on MAX_CASCADES happening to be small enough for every device.
+        const auto device_view_limit = device->getMaxMultiviewViewCount();
+        const auto cascade_count = clampCascadeCount(
+          static_cast<uint32_t>(guiSceneSharedVars.num_shadow_cascades), static_cast<uint32_t>(MAX_CASCADES), device_view_limit);
+        if (cascade_count == device_view_limit && device_view_limit < static_cast<uint32_t>(MAX_CASCADES)) {
+            spdlog::warn(
+              "Device maxMultiviewViewCount ({}) is the binding constraint on cascade count; clamping to {}.",
+              device_view_limit, cascade_count);
+        }
         dirShadowMap.init(device, shadow_res, shadow_res, cascade_count, sharedRenderDescriptors.getLayout());
         // cleanUp() destroyed the pipeline, descriptor resources and the light
         // matrices buffer; recreate them (same sequence as at startup).

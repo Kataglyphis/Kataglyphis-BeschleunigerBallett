@@ -153,15 +153,23 @@ Two things this baseline already tells us:
 Debug-only builds are the default working loop (fast, sanitized). Things
 that are *not* exercised that way and should be run periodically:
 
-- **Multiview `viewMask` validation warning (observed 2026-07-23)** — the golden
-  suite logs `VUID-VkSubpassDescription2-viewMask-06706` /
-  `VUID-VkRenderPassMultiviewCreateInfo-pViewMasks-06697` ("the most significant
-  bit in viewMask must be < maxMultiviewViewCount") from the CascadedShadowMap
-  multiview render pass. Non-fatal on the RX 9070 XT (shadows render, 22/22
-  golden pass) but non-conformant: the CSM viewMask likely sets a bit index the
-  device's `maxMultiviewViewCount` does not cover. Unrelated to sync/FrameSync
-  (surfaced incidentally while validating that extraction). Fix: check the CSM
-  multiview `viewMask`/`correlationMask` against the queried limit.
+- **Multiview `viewMask` validation warning (observed 2026-07-23) — fix landed
+  2026-07-31, GPU confirmation blocked by #2106.** `VulkanDevice` now queries
+  `VkPhysicalDeviceVulkan11Properties::maxMultiviewViewCount`
+  (`getMaxMultiviewViewCount()`) and both cascade-count decision points
+  (startup init, `handleShadowResolutionChange`) route through a new
+  `clampCascadeCount()` free function (`CascadedShadowMap.ixx/.cpp`, CPU-tested:
+  `ClampCascadeCountRespectsBothLimits` / `ClampCascadeCountFloorsToOne`), so a
+  device with `maxMultiviewViewCount < MAX_CASCADES` can no longer create a
+  non-conformant render pass. **Could not confirm on the GPU host that the
+  original two VUIDs are gone**: the RX 9070 XT run instead hit the
+  `multiview`-feature-not-enabled abort tracked in #2106 below (`viewMask is
+  0x7, but multiview feature is not enabled` —
+  `VUID-VkSubpassDescription2-multiview-06558`) before the render pass this fix
+  touches gets far enough to show the original VUIDs one way or the other.
+  `maxMultiviewViewCount` itself did read correctly (6, logged at device
+  selection). Re-run the golden suite once #2106 is fixed and strike this
+  bullet if the original VUIDs are confirmed gone.
 - **`clangcl-profile` (RelWithDebInfo) once in a while** — optimized code
   paths differ from debug: different inlining, different UB exposure,
   and it is the only configuration where the benchmarks are meaningful
@@ -1689,62 +1697,6 @@ pick them up from the older prose above.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Clamp the CSM multiview `viewMask` against the device's
-  `maxMultiviewViewCount`** — closes the observed
-  `VUID-VkSubpassDescription2-viewMask-06706` /
-  `VUID-VkRenderPassMultiviewCreateInfo-pViewMasks-06697` warnings at the
-  root instead of relying on `MAX_CASCADES` happening to be small enough.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:347-356`
-    — `view_mask = (1U << numCascades) - 1U` feeds
-    `RenderPassMultiviewCreateInfo` (`pViewMasks` AND `pCorrelationMasks`)
-    with no device-limit check.
-  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp` (~`:452`, the
-    features11 chain) — where device features are queried; the properties
-    query for the limit belongs alongside.
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:317-326` — the
-    existing GUI-path clamp to `MAX_CASCADES` and its comment; this task adds
-    the device-limit half that comment alludes to.
-  - `BACKLOG.md` → "Recurring validation runs", first bullet — the
-    2026-07-23 observation this fixes; update it when done.
-
-  **Steps:**
-  1. In `VulkanDevice`, query `vk::PhysicalDeviceVulkan11Properties::maxMultiviewViewCount`
-     (chain it into a `vk::PhysicalDeviceProperties2` query), store it, and
-     expose an accessor (e.g. `getMaxMultiviewViewCount()`). Adding to the
-     module interface (`.ixx`) means the ABI-skew rule applies — see Build.
-  2. Add a pure free function
-     `clampCascadeCount(uint32_t requested, uint32_t maxCascades, uint32_t deviceViewLimit)`
-     in a CPU-testable spot (follow the `scene/Frustum.ixx` free-function
-     pattern; a small module next to `CascadedShadowMap` is fine). Result:
-     `max(1, min(requested, maxCascades, deviceViewLimit))`.
-  3. Route BOTH cascade-count decisions through it: the startup init and
-     `VulkanRenderer::handleShadowResolutionChange` (replace the bare
-     `std::min` at `:323-325`). Log via spdlog when the DEVICE limit (not
-     `MAX_CASCADES`) is the binding constraint — that case is silent today
-     and would previously have aborted in `createSwapchainKHR`-style fashion.
-  4. On the GPU host, run the golden suite from the repo root and confirm the
-     two VUIDs no longer appear in the log; then strike the
-     recurring-validation bullet.
-
-  **Test:** New CPU unit suite (add to the Windows CI filter alongside the
-  other CPU-only suites): requested 3 with limits {3, 8} → 3; device limit 2
-  clamps 3 → 2; slider value 8 → `MAX_CASCADES`; floor of 1 when a limit is
-  0. Use the existing `Test/commit/` harness pattern (the `Frustum` unit
-  tests are the model).
-
-  **Build:** `clangcl-debug` **with `-FreshContainer`** (the `VulkanDevice`
-  module interface changes — stale-BMI hazard). Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
-
-  **Context:** The GUI-path clamp (`VulkanRenderer.cpp:317`) may already have
-  silenced the warning on the RX 9070 XT, but nothing anywhere reads the
-  actual device limit, so a device with `maxMultiviewViewCount < MAX_CASCADES`
-  would still create a non-conformant render pass and abort via
-  `ASSERT_VULKAN`. Conformance should come from the queried limit, not from a
-  compile-time constant that happens to fit today's GPU.
-
 - [ ] **(refactor, S) Delete the stale `renderer/VulkanRendererConfig.hpp`
   (dead configure output carrying another user's hardcoded `glslc.exe`
   path)** — dead code with a foreign absolute path baked in.
@@ -2117,7 +2069,17 @@ would add the currently-FAILING `PushConstantRasterizerUnit.*` to CI.
     `multiview` all reported unenabled on the selected RX 9070 XT, and one
     GUI-sweep test SEH-crashes on an invalid `VkDeviceMemory` handle.
     Reproduced identically on unmodified `develop`, so it is not any one
-    task's diff.
+    task's diff. Reproduced again 2026-07-31 (post CSM-viewMask-clamp task,
+    see "Recurring validation runs" above): forward/deferred/shadow/frustum/
+    multi-model/gpu-timing-dump goldens (`GoldenRender.RendersNonBlankFrame`
+    through `GpuTimingJsonDumpIsWrittenAndSane`) all still log
+    `VUID-VkSubpassDescription2-multiview-06558` ("pSubpasses[0].viewMask is
+    0x7, but multiview feature is not enabled") yet report `[ OK ]` anyway
+    (non-fatal), then `PathTracingAccumulatesAndConverges` hard-aborts with
+    `hasDeviceLost() == true` after a wall of `accelerationStructure`-feature
+    VUIDs. `maxMultiviewViewCount` queries fine (6, logged at device
+    selection) - the break is specifically in the features11/12 enable chain
+    not reaching the device, not in querying its limits.
   - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp:282-330` —
     device enumeration, `parseGpuSelectionMode()` (env-driven selection
     mode), scoring/fallback; `:699` `check_device_suitable`; ~`:452` the

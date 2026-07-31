@@ -29,6 +29,10 @@ class VulkanDevice
     bool supportsBufferDeviceAddress() const { return deviceSupportsBufferDeviceAddress; };
     bool supportsDepthClamp() const { return deviceSupportsDepthClamp; };
     bool supportsSamplerAnisotropy() const { return deviceSupportsSamplerAnisotropy; };
+    // VkPhysicalDeviceVulkan11Properties::maxMultiviewViewCount - the CSM
+    // render pass broadcasts to one view per cascade via multiview, so a
+    // cascade count above this would create a non-conformant render pass.
+    uint32_t getMaxMultiviewViewCount() const { return maxMultiviewViewCount; };
     vk::DeviceAddress getBufferDeviceAddress(const vk::BufferDeviceAddressInfo &info) const;
     Allocator &getAllocator() { return allocator; };
     VmaAllocator getVmaAllocator() const { return allocator.getVmaAllocator(); };
@@ -64,6 +68,7 @@ class VulkanDevice
     bool deviceSupportsBufferDeviceAddress = false;
     bool deviceSupportsDepthClamp = false;
     bool deviceSupportsSamplerAnisotropy = false;
+    uint32_t maxMultiviewViewCount = 0;
     vk::DeviceSize deviceAddressAlignment{ 1 };
     uint32_t graphics_queue_timestamp_valid_bits{ 0 };
 

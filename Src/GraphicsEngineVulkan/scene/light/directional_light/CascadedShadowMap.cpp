@@ -83,6 +83,12 @@ std::vector<glm::vec4> frustumCornersWorldSpace(const glm::mat4 &proj, const glm
 }
 }// namespace
 
+uint32_t clampCascadeCount(uint32_t requested, uint32_t maxCascades, uint32_t deviceViewLimit)
+{
+    uint32_t const clamped = std::min({ requested, maxCascades, deviceViewLimit });
+    return std::max<uint32_t>(1U, clamped);
+}
+
 ShadowPushConstants makeShadowPush(const glm::mat4 &modelMatrix, uint32_t cascadeIndex)
 {
     // Deliberately trivial, and deliberately a named function: this used to be
