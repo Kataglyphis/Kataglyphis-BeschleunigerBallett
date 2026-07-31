@@ -384,14 +384,21 @@ full build to produce a duplicate of `clangcl-debug`. Use the Linux
   [`docs/cpp-renderer-improvements.md`](docs/cpp-renderer-improvements.md).
   Do not restate it here — that document is the source of truth.
 
-## Agentic Loop (OpenCode)
+## Agentic Loop
 
-An autonomous planner/executor loop built on [OpenCode](https://opencode.ai)
-continuously improves the engine. The **planner** (GLM 5.2 — expensive,
-powerful) analyzes the codebase and writes detailed task entries to
-`BACKLOG.md`. The **executor** (DeepSeek v4 Flash — cheap, fast) drains the
-queue one task at a time, building and testing as it goes. The queue must be
-fully drained before the planner adds new tasks.
+An autonomous planner/executor loop continuously improves the engine. The
+**planner** (expensive, powerful model) analyzes the codebase and writes
+detailed task entries to `BACKLOG.md`. The **executor** (cheap, fast model)
+drains the queue one task at a time, building and testing as it goes. The
+queue must be fully drained before the planner adds new tasks.
+
+Two engines are selectable via `engine` in
+`Scripts/AgenticLoop/AgenticLoop.config.json` or the `AGENTIC_ENGINE` env
+var: **`claude`** (default — Claude Code CLI, Fable 5 planner with Opus 4.8
+fallback, Sonnet executor, prompts in `Scripts/AgenticLoop/prompts/`) and
+**`opencode`** (GLM 5.2 planner, DeepSeek v4 Flash executor, agents in
+`.opencode/agents/`). Full details, including per-engine setup and
+troubleshooting: [`Scripts/AgenticLoop/README.md`](Scripts/AgenticLoop/README.md).
 
 **Reusable logic lives in ContainerHub's `WindowsAgenticLoop.Common` module
 (PowerShell) and `agentic-loop.sh` library (Bash).** The project scripts are
@@ -436,9 +443,9 @@ for the full documentation.
 | **Module docs** | `ExternalLib/Kataglyphis-ContainerHub/docs/windows-agentic-loop.md` | API reference, usage examples, PS 5.1 notes |
 | **Build matrix docs** | `ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md` | Build matrix config, sanitizer env vars, full matrix sweep |
 | **Project script** | `Scripts/AgenticLoop/Run-AgenticLoop.ps1` | Thin wrapper — imports module, loads config, calls `Invoke-AgenticLoop` |
-| **Config** | `Scripts/AgenticLoop/AgenticLoop.config.json` | Model IDs, intervals, build matrix (per-platform entries with sanitizer + testCommand) |
-| **Planner agent** | `.opencode/agents/planner.md` | Planner system prompt (GLM 5.2) |
-| **Executor agent** | `.opencode/agents/executor.md` | Executor system prompt (DeepSeek v4 Flash) |
+| **Config** | `Scripts/AgenticLoop/AgenticLoop.config.json` | Engine selection, model IDs, intervals, build matrix (per-platform entries with sanitizer + testCommand) |
+| **Planner/executor prompts (claude engine)** | `Scripts/AgenticLoop/prompts/{planner,executor}.md` | Engine-neutral system prompts used via `--append-system-prompt-file` |
+| **Planner/executor agents (opencode engine)** | `.opencode/agents/{planner,executor}.md` | System prompts for the GLM 5.2 / DeepSeek v4 Flash agents |
 | **Slash commands** | `.opencode/commands/{plan,execute,build,test,quality}.md` | Interactive commands for OpenCode TUI |
 | **Linux script** | `Scripts/AgenticLoop/Run-AgenticLoop.sh` | Bash equivalent for Linux / Rancher Desktop |
 
@@ -502,7 +509,7 @@ ContainerHub (see the rule above), project-specific ones here.
 | `docs/path-tracing.md` | Path-tracing mode: pipeline shape, estimator, NEE, accumulation |
 | `docs/renderer-bounds-invariant.md` | WebGPU renderer bounds invariant |
 | `docs/LICENSES-README.md` | Third-party license documentation |
-| `Scripts/AgenticLoop/README.md` | Agentic loop (OpenCode planner/executor) architecture, config, usage |
+| `Scripts/AgenticLoop/README.md` | Agentic loop (claude/opencode engines) architecture, config, usage |
 | `ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md` | Build matrix config, sanitizer env vars, full matrix sweep |
 | `docs/source/` | Sphinx pages (`getting_started.md`, `documentation_workflow.md`, `webgpu_demo.md`, `wsl2_vulkan.rst`) |
 

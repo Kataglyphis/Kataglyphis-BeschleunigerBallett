@@ -1787,46 +1787,6 @@ None duplicate the 2026-07-24/28/30 batches.
 
 ### Docs
 
-- [ ] **(refactor, S) Fix AGENTS.md agentic-loop drift — it still describes
-  the loop as OpenCode-only (GLM 5.2 / DeepSeek)** — `AGENTS.md:387-441`
-  says the planner IS GLM 5.2 and the executor IS DeepSeek v4 Flash, and its
-  Files table points at `.opencode/agents/*.md` as THE prompts. Since
-  `86ee9532`, `AgenticLoop.config.json` has an `engines` block whose
-  **default is `"engine": "claude"`** (planner `claude-fable-5` with
-  `claude-opus-4-8` fallback, executor `claude-sonnet-5`, prompts under
-  `Scripts/AgenticLoop/prompts/`). An agent following AGENTS.md today edits
-  the wrong prompt files.
-
-  **Files to read:**
-  - `AGENTS.md:387-480` — the "Agentic Loop (OpenCode)" section: intro
-    paragraph, Files table, Usage.
-  - `Scripts/AgenticLoop/AgenticLoop.config.json` — the `engines` block
-    (read the CURRENT state: this file has in-flight uncommitted edits;
-    describe what is there when you run, do not restate this task's
-    snapshot).
-  - `Scripts/AgenticLoop/README.md` — the single home for loop details per
-    the docs rule at the bottom of AGENTS.md ("each topic has exactly one
-    home; link, do not copy"). Also currently has in-flight edits.
-
-  **Steps:**
-  1. Retitle the section "Agentic Loop" (engine-neutral) and rewrite the
-     intro: two engines selectable via `AgenticLoop.config.json` /
-     `AGENTIC_ENGINE` — `claude` (default; Claude Code CLI, Fable 5 planner
-     with Opus 4.8 fallback, Sonnet executor, prompts in
-     `Scripts/AgenticLoop/prompts/`) and `opencode` (GLM 5.2 planner /
-     DeepSeek v4 Flash executor, agents in `.opencode/agents/`).
-  2. Slim rather than extend: keep the build-matrix summary and Usage
-     commands, replace detail that duplicates `Scripts/AgenticLoop/README.md`
-     with a link. Fix the Files table rows for the planner/executor prompts
-     to list both engines' prompt locations (or drop those rows in favour of
-     the README link).
-  3. Update the docs table near the end of AGENTS.md: the
-     `Scripts/AgenticLoop/README.md` row still says "(OpenCode
-     planner/executor)".
-  4. Sweep for leftovers: `grep -n "GLM 5.2\|DeepSeek" AGENTS.md docs/ -r`
-     — remaining hits must all be inside the explicit opencode-engine
-     description, nowhere stated as "the" planner/executor.
-
   **Test:** None (docs-only). Verification is the grep in step 4 plus
   checking every path named in the rewritten section exists in the tree.
 
