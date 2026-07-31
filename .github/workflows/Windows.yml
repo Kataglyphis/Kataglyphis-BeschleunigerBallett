@@ -224,6 +224,7 @@ jobs:
             'MeshRangeSlice.*'
             'ModelPickerUnit.*'
             'ObjParseUnit.*'
+            'PushConstantRasterizerUnit.*'
             'SkyBoxUnit.*'
             'ShaderBlobUnit.*'
           ) -join ':'

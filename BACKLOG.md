@@ -2108,41 +2108,6 @@ that bump is safe.
 
 ### CI and release gaps
 
-- [ ] **(S) Add `PushConstantRasterizerUnit.*` to the Windows CI test
-  filter** — it is the only CPU suite missing from `$cpuOnlySuites` in
-  `Windows.yml` (audited every `TEST(` suite name in
-  `Test/commit/VulkanEngine/` against the filter on 2026-07-31; GoldenRender
-  and Integration are excluded deliberately as GPU suites). The suite pins
-  the 128-byte push-constant budget and the CPU/GPU layout contract
-  (`ea2de5a8`) — exactly the kind of regression CI should catch, and the
-  filter's own comment says "If you add a suite, add it to this filter or it
-  will not run in CI."
-
-  **Files to read:**
-  - `.github/workflows/Windows.yml:209-229` — the `$cpuOnlySuites` array.
-  - `Test/commit/VulkanEngine/pushConstantSuite.cpp` — confirm the suite
-    name is `PushConstantRasterizerUnit` and that it is device-free (it is:
-    pure struct/layout assertions).
-
-  **Steps:**
-  1. Add `'PushConstantRasterizerUnit.*'` to the `$cpuOnlySuites` array.
-  2. Sanity-check the name locally against the existing container-built
-     binary: `& .\build-clangcl-debug\commitTestSuite.exe
-     --gtest_filter='PushConstantRasterizerUnit.*'` from the repo root must
-     list and pass tests (device-free, runs anywhere).
-  3. Optional but preferred: include `[build-win]` in the commit message so
-     the gated workflow actually runs once with the new filter.
-
-  **Test:** step 2 is the local proof; the `[build-win]` run is the CI proof.
-
-  **Build:** none (YAML-only change; the local check reuses the existing
-  built binary).
-
-  **Context:** the Windows CI filter is exclusion-by-listing, so every new
-  suite silently doesn't run until someone notices — this is the "suite
-  added but not in the filter" failure mode the CI section above warns
-  about, caught by audit rather than incident this time.
-
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
