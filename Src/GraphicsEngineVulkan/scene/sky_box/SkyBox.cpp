@@ -400,7 +400,6 @@ void SkyBox::createMesh(vk::CommandPool commandPool)
         Vertex(glm::vec3( 1.0F,  1.0F, 0.0F), glm::vec3(0), glm::vec3(0), glm::vec2(1.0F, 1.0F))
     };
 
-    skyMesh = std::make_unique<Kataglyphis::Mesh>();
     std::vector<unsigned int> materialIndex = {0};
     std::vector<ObjMaterial> materials = {ObjMaterial{}};
     skyMesh = std::make_unique<Mesh>(device, commandPool, vertices, indices, materialIndex, materials);
@@ -446,7 +445,7 @@ void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_ind
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
 
-    std::vector<vk::DescriptorSet> skyboxDescriptorSets = {descriptorSets[0], descriptorSet};
+    std::array<vk::DescriptorSet, 2> skyboxDescriptorSets = {descriptorSets[0], descriptorSet};
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, skyboxDescriptorSets, nullptr);
 
     uint32_t skyboxEnabledVal = skyboxEnabled ? 1u : 0u;
