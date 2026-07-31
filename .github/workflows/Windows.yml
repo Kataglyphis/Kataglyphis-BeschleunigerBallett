@@ -78,7 +78,7 @@ jobs:
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/cleanup-disk-space@main
 
       - name: Log in to GHCR (for container image)
-        uses: docker/login-action@v4.4.0
+        uses: docker/login-action@v4.6.0
         with:
           registry: ghcr.io
           username: Kataglyphis

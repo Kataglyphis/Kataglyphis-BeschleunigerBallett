@@ -82,9 +82,6 @@ size and a decision, or gets dropped.
 - [ ] **Side-by-side comparison harness** (M) — same scene, same camera,
   Vulkan vs WebGPU screenshot diff; with shared BRDF math this becomes a
   regression net for both renderers (needs C++ glTF + offscreen path above).
-## Dependencies / housekeeping
-
-- [ ] **Upgrade software versions across the whole tree** (unsized, recurring).
 
 ---
 
