@@ -89,8 +89,6 @@ pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
   A Windows `clangcl-tsan` preset existed for "preset parity" until 2026-07-20
   and was removed — it silently built a duplicate of `clangcl-debug`, cost ~185 s
   per full build, and its green runs read as evidence of race-freedom.
-- The `USE_THREAD_SANITIZER` cache variable is **legacy plumbing consumed by
-  nothing in CMake** — the effective switch is `myproject_ENABLE_SANITIZER_THREAD`.
 - **On clang-cl, UBSan only works together with ASAN — never standalone.** With
   ASAN on, the UBSan handlers are folded into `clang_rt.asan_dynamic` (release
   CRT, `/MD`), and three places switch the whole Debug build to the release CRT,
@@ -282,8 +280,10 @@ render (~32 FPS ImGui overlay).
 ## Linux Builds
 
 `Scripts/Linux/cmake-configure-build.sh` wraps configure+build
-(`--preset linux-debug-clang`, `--build-dir build`, …). TSan presets:
-`linux-debug-tsan-clang`, `linux-debug-tsan-GNU`. There is also an
+(`--preset linux-debug-clang`, `--build-dir build`, …). TSan is selected by
+preset only (`linux-debug-tsan-clang`, `linux-debug-tsan-GNU`) — there is no
+script flag for it; `--use-thread-sanitizer` errors out on purpose rather than
+silently no-op'ing. There is also an
 `linux-debug-asan-clang` preset (AddressSanitizer + UBSan, used in CI and
 fuzz-test integration). Coverage, ctest, and perf wrappers
 live next to it. Vulkan SDK env can be injected with `--vulkan-setup-script`.

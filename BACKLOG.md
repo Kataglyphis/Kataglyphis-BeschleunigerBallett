@@ -1699,57 +1699,6 @@ pick them up from the older prose above.
 
 ### Build / scripts
 
-- [ ] **(refactor, S) Remove the dead `USE_THREAD_SANITIZER` plumbing — the
-  Linux script's `--use-thread-sanitizer` flag silently does nothing** — same
-  false-assurance class as the removed `clangcl-tsan` preset.
-
-  **Files to read:**
-  - `Scripts/Linux/cmake-configure-build.sh:27,58-61,155` — the flag is
-    parsed, defaulted and computed into `USE_THREAD_SANITIZER`… which is then
-    never used: the configure step (`:168-177`) is `cmake --preset` only, and
-    the variable is never exported nor passed as `-D`.
-  - `CMakePresets.json` — `linux-debug-tsan-clang`, `linux-debug-asan-clang`,
-    `linux-debug-tsan-GNU` set the `USE_THREAD_SANITIZER` cache variable.
-    Verified 2026-07-30: each of those presets ALSO sets the real switch
-    `myproject_ENABLE_SANITIZER_THREAD` to the same value, so removing the
-    dead one changes no build.
-  - `AGENTS.md:92-93` — the "legacy plumbing consumed by nothing" bullet to
-    update once the plumbing is gone.
-
-  **Steps:**
-  1. `grep -rn USE_THREAD_SANITIZER` over the tree (excluding `ExternalLib/`)
-     — expected consumers: the three presets, the script, AGENTS.md. Confirm
-     no `cmake/*.cmake` reads it (AGENTS asserts none; verify).
-  2. Remove the three `USE_THREAD_SANITIZER` cacheVariables entries from
-     `CMakePresets.json`.
-  3. In `cmake-configure-build.sh`, remove `DEFAULT_USE_THREAD_SANITIZER`,
-     the `--use-thread-sanitizer` argument parsing, and the `:155`
-     computation. Have the removed flag FAIL LOUDLY: leave a case arm that
-     errors with "use --preset linux-debug-tsan-clang instead" rather than
-     letting an unknown flag fall through — a user passing it today believes
-     they are running TSan and is not.
-  4. Update AGENTS.md: drop the legacy-plumbing bullet, and note in the Linux
-     Builds section that TSan is selected by preset only.
-  5. Verify: `bash -n Scripts/Linux/cmake-configure-build.sh`; then configure
-     `linux-debug-tsan-clang` in the Linux container (Rancher, `:latest-cross`)
-     and confirm `-fsanitize=thread` still appears in `build.ninja`.
-
-  **Test:** The container configure check in step 5 is the real test. If no
-  Linux container is available in the session, minimum bar: `bash -n`, plus
-  grep showing zero remaining `USE_THREAD_SANITIZER` references, plus the
-  Pester suites under `Scripts/Windows/tests/` staying green (proves no
-  Windows module referenced it).
-
-  **Build:** No Windows C++ rebuild needed — presets/script/docs only. Run
-  the Pester suites: `Invoke-Pester Scripts/Windows/tests/`.
-
-  **Context:** The project removed the Windows `clangcl-tsan` preset
-  precisely because a green run that promises race coverage and delivers
-  none is worse than no run. The Linux script flag is the same trap one layer
-  down: `--use-thread-sanitizer` produces a plain build with no warning.
-  The real switch is `myproject_ENABLE_SANITIZER_THREAD`, set by the TSan
-  presets.
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 - [ ] **(S) Feed real frame deltas to `frame_delta_seconds` — auto-exposure

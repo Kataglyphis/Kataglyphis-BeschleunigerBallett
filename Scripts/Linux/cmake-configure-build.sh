@@ -24,7 +24,6 @@ DEFAULT_PRESET="linux-debug-clang"
 DEFAULT_BUILD_DIR="build"
 DEFAULT_CLEAN_BUILD_DIR="false"
 DEFAULT_SKIP_CONFIGURE="false"
-DEFAULT_USE_THREAD_SANITIZER="false"
 DEFAULT_VULKAN_SETUP_SCRIPT="/opt/vulkan/1.4.341.1/setup-env.sh"
 DEFAULT_MB_PER_JOB="4000"  # 4GB RAM per parallel job
 
@@ -54,13 +53,7 @@ while [[ $# -gt 0 ]]; do
       fi
       ;;
     --use-thread-sanitizer)
-      if [[ $# -ge 2 && "${2}" != -* ]]; then
-        USE_THREAD_SANITIZER_ARG="${2}"
-        shift 2
-      else
-        USE_THREAD_SANITIZER_ARG="true"
-        shift
-      fi
+      err "--use-thread-sanitizer does nothing (legacy plumbing) — use --preset linux-debug-tsan-clang instead"
       ;;
     --cargo-cache-dir)
       CARGO_CACHE_DIR="${2:-}"
@@ -152,7 +145,6 @@ PRESET="${PRESET_ARG:-${PRESET:-${1:-${DEFAULT_PRESET}}}}"
 BUILD_DIR="${BUILD_DIR_ARG:-${BUILD_DIR:-${DEFAULT_BUILD_DIR}}}"
 CLEAN_BUILD_DIR="${CLEAN_BUILD_DIR_ARG:-${CLEAN_BUILD_DIR:-${DEFAULT_CLEAN_BUILD_DIR}}}"
 SKIP_CONFIGURE="${SKIP_CONFIGURE_ARG:-${SKIP_CONFIGURE:-${DEFAULT_SKIP_CONFIGURE}}}"
-USE_THREAD_SANITIZER="${USE_THREAD_SANITIZER_ARG:-${USE_THREAD_SANITIZER:-${DEFAULT_USE_THREAD_SANITIZER}}}"
 CMAKE_BUILD_CONFIG="${CMAKE_BUILD_CONFIG_ARG:-${CMAKE_BUILD_CONFIG:-}}"
 CMAKE_BUILD_TARGET="${CMAKE_BUILD_TARGET_ARG:-${CMAKE_BUILD_TARGET:-}}"
 

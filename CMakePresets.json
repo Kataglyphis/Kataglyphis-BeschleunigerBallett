@@ -151,7 +151,6 @@
 				"RUST_FEATURES": "ON",
 				"COMPILER_CACHE": "sccache",
 				"BUILD_TESTING": "TRUE",
-				"USE_THREAD_SANITIZER": "ON",
 				"myproject_ENABLE_SANITIZER_THREAD": "ON",
 				"myproject_ENABLE_SANITIZER_ADDRESS": "OFF"
 			},
@@ -180,7 +179,6 @@
 				"RUST_FEATURES": "ON",
 				"COMPILER_CACHE": "sccache",
 				"BUILD_TESTING": "TRUE",
-				"USE_THREAD_SANITIZER": "OFF",
 				"myproject_ENABLE_SANITIZER_THREAD": "OFF",
 				"myproject_ENABLE_SANITIZER_ADDRESS": "ON",
 				"myproject_ENABLE_SANITIZER_UNDEFINED": "ON"
@@ -206,7 +204,6 @@
 				"RUST_FEATURES": "ON",
 				"COMPILER_CACHE": "sccache",
 				"BUILD_TESTING": "TRUE",
-				"USE_THREAD_SANITIZER": "ON",
 				"myproject_ENABLE_SANITIZER_THREAD": "ON",
 				"myproject_ENABLE_SANITIZER_ADDRESS": "OFF"
 			},
