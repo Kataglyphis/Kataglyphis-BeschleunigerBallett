@@ -1655,20 +1655,6 @@ moves geometry.
 
 ### Rust WebGPU renderer
 
-- [ ] **Oversized per-primitive uniform block** (M) — `Uniforms` mixes per-frame
-    data (view_proj, 3 cascade matrices, light params, camera, ~576 bytes) with
-    per-primitive data (model, material, base_uv, ~224 bytes), so the per-frame
-    part is identically rewritten for every primitive each frame. Split into a
-    shared `FrameUniforms` buffer + bind group at @group(2): write frame data
-    once per draw call instead of per-primitive. WGSL half drafted 2026-07-24
-    (see git reflog); Rust half needs pipeline-layout + bind-group + draw-loop
-    changes. No shader behaviour change.
-- [ ] **Render bundles for the three shadow cascades** (M) — the identical draw
-    list is re-recorded three times per frame (`forward.rs:1349-1397`).
-    `RenderBundle` is WebGPU-core (works on the web target, unlike indirect
-    draws). Per-cascade culling changes the set, so invalidation on culling
-    change is the design question. Record once, submit 3× with different
-    cascade-index bind groups.
 - [ ] **Wasm size budget CI gate** (S) — the demo payload is ~3.7 MB
     uncompressed; nothing tracks it. `wasm-opt -Oz` + a CI step that fails
     above a threshold keeps the Sphinx-hosted demo honest. Gate on
