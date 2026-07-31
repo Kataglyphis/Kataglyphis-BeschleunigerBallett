@@ -173,6 +173,14 @@ class VulkanRenderer
       std::span<const vk::DescriptorSet> rasterizer_descriptor_sets,
       const std::optional<FrustumPlanes> &camera_frustum);
 
+    // The single predicate deciding whether recordRaytracingOrPathTracing will
+    // actually dispatch this frame. Shared with record_commands so the raster
+    // skip and the RT/PT dispatch can never disagree - if they do, a frame
+    // renders nothing. The TLAS-null term is load-bearing: during the async
+    // model-load window RT/PT is requested but cannot dispatch yet, so the
+    // raster pass must still run.
+    [[nodiscard]] bool raytracingOwnsFrame(uint32_t image_index);
+
     // Records the ray-tracing or path-tracing pass (whichever the GUI selected)
     // when hardware RT is available and the TLAS is built, including the
     // path-tracing accumulation-reset bookkeeping. Extracted verbatim from

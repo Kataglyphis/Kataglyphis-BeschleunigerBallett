@@ -893,7 +893,14 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
         ? std::optional<FrustumPlanes>(extractFrustumPlanes(globalUBO.projection * globalUBO.view))
         : std::nullopt;
 
-    recordRasterPass(commandBuffer, image_index, rasterizer_descriptor_sets, camera_frustum);
+    if (!raytracingOwnsFrame(image_index)) {
+        recordRasterPass(commandBuffer, image_index, rasterizer_descriptor_sets, camera_frustum);
+    } else {
+        Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &mutable_gui_vars =
+          gui->getGuiRendererSharedVars();
+        mutable_gui_vars.visibility.meshes_drawn = 0;
+        mutable_gui_vars.visibility.meshes_total = 0;
+    }
 
     recordRaytracingOrPathTracing(commandBuffer, image_index);
 
@@ -962,6 +969,20 @@ void Kataglyphis::VulkanRenderer::recordRasterPass(vk::CommandBuffer &commandBuf
       forward_active ? rasterizer.getMeshesDrawn() : deferredRasterizer.getMeshesDrawn();
     mutable_gui_vars.visibility.meshes_total =
       forward_active ? rasterizer.getMeshesConsidered() : deferredRasterizer.getMeshesConsidered();
+}
+
+bool Kataglyphis::VulkanRenderer::raytracingOwnsFrame(uint32_t image_index)
+{
+    Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
+      gui->getGuiRendererSharedVars();
+
+    // The TLAS-null term covers the async model-load window: with RT/PT
+    // enabled before the scene arrives, RT/PT cannot dispatch yet, so the
+    // raster pass must still run. Kept in lockstep with
+    // recordRaytracingOrPathTracing's own guard below - if they ever
+    // disagree, a frame renders nothing.
+    return device->supportsHardwareAcceleratedRRT() && image_index < raytracingDescriptors.sets().size()
+           && asManager.getTLAS() && (guiRendererSharedVars.raytracing || guiRendererSharedVars.pathTracing);
 }
 
 void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffer &commandBuffer, uint32_t image_index)

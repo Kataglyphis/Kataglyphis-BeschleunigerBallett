@@ -78,9 +78,13 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
     vk::ImageMemoryBarrier presentToPathTracingImageBarrier{};
     presentToPathTracingImageBarrier.srcQueueFamilyIndex = static_cast<uint32_t>(indices.graphics_family);
     presentToPathTracingImageBarrier.dstQueueFamilyIndex = static_cast<uint32_t>(indices.compute_family);
-    presentToPathTracingImageBarrier.srcAccessMask = vk::AccessFlagBits::eShaderRead;
+    // eUndefined: the PT compute shader writes every pixel of vulkanImage, so
+    // its previous contents (whether the raster pass ran this frame or was
+    // skipped because PT owns the frame) are discarded, not read. eUndefined
+    // is the only oldLayout valid in both cases.
+    presentToPathTracingImageBarrier.srcAccessMask = {};
     presentToPathTracingImageBarrier.dstAccessMask = vk::AccessFlagBits::eShaderWrite;
-    presentToPathTracingImageBarrier.oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    presentToPathTracingImageBarrier.oldLayout = vk::ImageLayout::eUndefined;
     presentToPathTracingImageBarrier.newLayout = vk::ImageLayout::eGeneral;
     presentToPathTracingImageBarrier.subresourceRange = subresourceRange;
     presentToPathTracingImageBarrier.image = vulkanImage.getImage();

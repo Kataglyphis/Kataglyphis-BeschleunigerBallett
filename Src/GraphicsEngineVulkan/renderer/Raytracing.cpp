@@ -89,9 +89,13 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
     subresourceRange.layerCount = 1;
 
     vk::ImageMemoryBarrier rasterizerToRaytracingImageBarrier{};
-    rasterizerToRaytracingImageBarrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    // eUndefined: the rgen shader writes every pixel of renderImage, so its
+    // previous contents (whether the raster pass ran this frame or was
+    // skipped because RT owns the frame) are discarded, not read. eUndefined
+    // is the only oldLayout valid in both cases.
+    rasterizerToRaytracingImageBarrier.srcAccessMask = {};
     rasterizerToRaytracingImageBarrier.dstAccessMask = vk::AccessFlagBits::eShaderWrite;
-    rasterizerToRaytracingImageBarrier.oldLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    rasterizerToRaytracingImageBarrier.oldLayout = vk::ImageLayout::eUndefined;
     rasterizerToRaytracingImageBarrier.newLayout = vk::ImageLayout::eGeneral;
     rasterizerToRaytracingImageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     rasterizerToRaytracingImageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;

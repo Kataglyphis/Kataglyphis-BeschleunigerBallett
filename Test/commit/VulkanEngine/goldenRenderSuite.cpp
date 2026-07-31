@@ -1450,6 +1450,68 @@ TEST(GoldenRender, RaytracedWorldFollowsTheModelTransform)
       << "The traced image did not follow the model transform - stale TLAS.";
 }
 
+// The full forward/deferred scene used to be rasterized every RT/PT frame
+// into an image the RT dispatch then overwrote completely - dead GPU work.
+// record_commands now skips recordRasterPass whenever raytracingOwnsFrame()
+// is true. The deterministic proof is the visibility counters, which the
+// render loop now zeroes rather than leaving stale: they must read 0 while
+// RT owns the frame (a picture that still looks right proves nothing - the
+// RT output would look identical whether or not the dead raster work ran
+// underneath it).
+//
+// The smoothed "Main" GPU-timing bucket (raster and RT/PT share it) is
+// measured too, but only logged, not asserted as "must drop": measured on
+// the RX 9070 XT with the shipped dinosaur mesh, hardware-RT primary-ray
+// dispatch over the full framebuffer costs *slightly more* than forward
+// rasterizing the same scene (~0.74ms vs ~0.63ms), so "RT must be cheaper
+// than raster" is not a safe assumption on this hardware/scene - the timing
+// number is a diagnostic, the counters are the oracle.
+TEST(GoldenRender, RaytracingFrameSkipsTheRasterPass)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    renderer_vars.frustum_culling_enabled = true;
+
+    // Render enough frames to flush the rolling GPU-timing window
+    // (GpuTimingSubsystem::GpuPassAverage::WINDOW == 30) with forward-only
+    // samples before reading a baseline.
+    harness.render_frames(WARMUP_FRAMES + 30);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    const unsigned int forward_meshes_drawn = renderer_vars.visibility.meshes_drawn;
+    ASSERT_GT(forward_meshes_drawn, 0U) << "the renderer reported drawing no meshes at all in forward mode";
+    const float forward_main_ms =
+      renderer_vars.gpuTimings.pass_ms[static_cast<int>(Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass::Main)];
+
+    renderer_vars.raytracing = true;
+    // Flush the rolling window again so the average is dominated by RT-only
+    // samples rather than a mix carried over from forward mode.
+    harness.render_frames(30);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    EXPECT_EQ(renderer_vars.visibility.meshes_drawn, 0U)
+      << "the raster pass must not run - and must not report stale mesh counts - while RT owns the frame";
+    EXPECT_EQ(renderer_vars.visibility.meshes_total, 0U)
+      << "the raster pass must not run - and must not report stale mesh counts - while RT owns the frame";
+
+    if (renderer_vars.gpuTimings.supported) {
+        const float rt_main_ms =
+          renderer_vars.gpuTimings
+            .pass_ms[static_cast<int>(Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass::Main)];
+        GTEST_LOG_(INFO) << "Main-pass GPU time: forward(raster only)=" << forward_main_ms
+                          << "ms, RT(dispatch only)=" << rt_main_ms << "ms";
+    }
+}
+
 // A SECOND model must shade with its OWN textures. Material textureIDs are
 // model-local, but the shared texture array used to hold model 0's textures
 // only - an added model's IDs collided with the first model's slots, so the
