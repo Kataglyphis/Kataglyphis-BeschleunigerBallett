@@ -31,4 +31,20 @@ static vk::Format choose_supported_format(vk::PhysicalDevice physical_device,
     spdlog::error("Failed to find supported format!");
     return vk::Format::eUndefined;
 }
+
+// Single shared preference order for every depth attachment/image in the
+// engine. Stencil-free formats come first: stencil is never used anywhere
+// (stencilTestEnable = VK_FALSE for every pipeline, every stencilLoadOp is
+// eDontCare), so there is no reason to prefer a combined depth/stencil
+// format over a plain depth one. Whatever this returns MUST be the format
+// used for both the render pass attachment and the depth image/view that
+// backs it - hard-coding a different format at either end silently
+// decouples them.
+inline vk::Format chooseDepthFormat(vk::PhysicalDevice physical_device)
+{
+    return choose_supported_format(physical_device,
+      { vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint },
+      vk::ImageTiling::eOptimal,
+      vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+}
 }// namespace Kataglyphis

@@ -94,7 +94,7 @@ void DeferredRasterizer::createTextures(vk::CommandPool &commandPool)
 
     // Depth buffer
     depthBufferImage = std::make_unique<Texture>();
-    vk::Format depthFormat = Kataglyphis::choose_supported_format(device->getPhysicalDevice(), { vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint }, vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+    vk::Format depthFormat = Kataglyphis::chooseDepthFormat(device->getPhysicalDevice());
     depthBufferImage->createImage(device, extent.width, extent.height, 1, depthFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eInputAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal);
     depthBufferImage->createImageView(device, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
 
@@ -204,7 +204,7 @@ void DeferredRasterizer::createRenderPass()
     vk::Format normalFormat = vk::Format::eR16G16B16A16Sfloat;
     vk::Format albedoFormat = vk::Format::eR8G8B8A8Unorm;
     vk::Format materialFormat = vk::Format::eR8G8B8A8Unorm;
-    vk::Format depthFormat = Kataglyphis::choose_supported_format(device->getPhysicalDevice(), { vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint }, vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+    vk::Format depthFormat = Kataglyphis::chooseDepthFormat(device->getPhysicalDevice());
 
     auto createAttachmentDesc = [](vk::Format format, vk::ImageLayout finalLayout, [[maybe_unused]] bool isDepth = false) {
         vk::AttachmentDescription desc;

@@ -39,7 +39,7 @@ void CascadedShadowMap::init(std::shared_ptr<VulkanDevice>in_device, uint32_t wi
     
     cascadeData.resize(numCascades);
 
-    vk::Format depthFormat = Kataglyphis::choose_supported_format(device->getPhysicalDevice(), { vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint }, vk::ImageTiling::eOptimal, vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+    vk::Format depthFormat = Kataglyphis::chooseDepthFormat(device->getPhysicalDevice());
     // Remember it: createRenderPass() and createFramebuffers() must attach the
     // very same format, and hard-coding eD32Sfloat there silently coupled them
     // to the head of the preference list above.

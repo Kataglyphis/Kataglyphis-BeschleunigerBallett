@@ -124,7 +124,7 @@ class CascadedShadowMap
     uint32_t numCascades{ 0 };
 
     std::unique_ptr<Kataglyphis::Texture> shadowMapArray;
-    // Depth format chosen in init() via choose_supported_format. The render pass
+    // Depth format chosen in init() via chooseDepthFormat(). The render pass
     // and framebuffers must use exactly this format; defaulted to eD32Sfloat so
     // nothing changes on current hardware (it is first in the preference list).
     vk::Format depth_format{ vk::Format::eD32Sfloat };

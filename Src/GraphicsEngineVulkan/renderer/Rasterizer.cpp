@@ -233,10 +233,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
     color_attachment.finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 
     vk::AttachmentDescription depth_attachment;
-    depth_attachment.format = choose_supported_format(device->getPhysicalDevice(),
-      { vk::Format::eD32SfloatS8Uint, vk::Format::eD32Sfloat, vk::Format::eD24UnormS8Uint },
-      vk::ImageTiling::eOptimal,
-      vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+    depth_attachment.format = chooseDepthFormat(device->getPhysicalDevice());
 
     depth_attachment.samples = vk::SampleCountFlagBits::e1;
     depth_attachment.loadOp = vk::AttachmentLoadOp::eClear;
@@ -360,10 +357,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
         offscreenTextures[index] = std::move(texture);
     }
 
-    vk::Format const depth_format = choose_supported_format(device->getPhysicalDevice(),
-      { vk::Format::eD32SfloatS8Uint, vk::Format::eD32Sfloat, vk::Format::eD24UnormS8Uint },
-      vk::ImageTiling::eOptimal,
-      vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+    vk::Format const depth_format = chooseDepthFormat(device->getPhysicalDevice());
 
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
     depthBufferImage = std::make_unique<Texture>();

@@ -165,10 +165,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recreateFrameResources()
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createDepthbufferImage()
 {
-    depth_format = Kataglyphis::choose_supported_format(device->getPhysicalDevice(),
-      { vk::Format::eD32SfloatS8Uint, vk::Format::eD32Sfloat, vk::Format::eD24UnormS8Uint },
-      vk::ImageTiling::eOptimal,
-      vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+    depth_format = Kataglyphis::chooseDepthFormat(device->getPhysicalDevice());
 
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
     depthBufferImage = std::make_unique<Texture>();
@@ -230,10 +227,10 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
     color_attachment.finalLayout = vk::ImageLayout::ePresentSrcKHR;
 
     vk::AttachmentDescription depth_attachment;
-    depth_attachment.format = Kataglyphis::choose_supported_format(device->getPhysicalDevice(),
-      { vk::Format::eD32SfloatS8Uint, vk::Format::eD32Sfloat, vk::Format::eD24UnormS8Uint },
-      vk::ImageTiling::eOptimal,
-      vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+    // depth_format was already resolved by createDepthbufferImage(), which
+    // init() always runs first - reuse it rather than querying again, so the
+    // attachment and the image it is paired with cannot diverge.
+    depth_attachment.format = depth_format;
     depth_attachment.samples = vk::SampleCountFlagBits::e1;
     depth_attachment.loadOp = vk::AttachmentLoadOp::eClear;
     depth_attachment.storeOp = vk::AttachmentStoreOp::eDontCare;

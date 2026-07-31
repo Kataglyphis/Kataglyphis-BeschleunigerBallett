@@ -2128,54 +2128,6 @@ error paths have fuzz-only coverage and no deterministic unit tests.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Consolidate the 7 duplicated depth-format selections into one `chooseDepthFormat` helper** —
-  the identical 4-line `choose_supported_format(...)` call is pasted 7× with
-  TWO divergent priority orders, so forward/post and deferred/CSM can resolve
-  *different* depth formats on the same device.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/common/FormatHelper.hpp` — the existing generic helper
-  - The 7 sites: `Rasterizer.cpp:236,363`, `PostStage.cpp:168,233`,
-    `DeferredRasterizer.cpp:97,207`, `CascadedShadowMap.cpp:42`
-  - `docs/gpu-golden-testing.md` — host GPU verification loop
-
-  **Steps:**
-  1. Add `inline vk::Format chooseDepthFormat(vk::PhysicalDevice)` to
-     `FormatHelper.hpp`, wrapping `choose_supported_format` with the unified
-     preference `{eD32Sfloat, eD32SfloatS8Uint, eD24UnormS8Uint}`, tiling
-     `eOptimal`, feature `eDepthStencilAttachment`. The stencil-free-first
-     order is safe: stencil is never used anywhere (`stencilTestEnable =
-     VK_FALSE` for every pipeline, `PipelineBuilder.cpp:147`; every
-     `stencilLoadOp` is `eDontCare`), and `Rasterizer.cpp:380` already guards
-     the stencil aspect behind `hasStencilComponent`.
-  2. Replace all 7 call sites with the helper. In `PostStage`, the site at
-     `:233` re-queries what `:168` already stored in the `depth_format` member
-     (`PostStage.ixx:53`) — use the member there instead of calling again.
-  3. Note the deliberate behaviour change in the commit message: on hardware
-     supporting all three formats, forward/post switch from `eD32SfloatS8Uint`
-     to `eD32Sfloat` (same 32-bit float depth precision, drops an unused
-     stencil plane). Deferred/CSM are unchanged.
-
-  **Test:** No new unit test (needs a physical device). Verify on the GPU
-  host: run the container-built `commitTestSuite.exe` from the repo root on
-  the RX 9070 XT per `docs/gpu-golden-testing.md` with
-  `--gtest_filter='GoldenRender.*:Integration.*:-GoldenRender.PathTracingAccumulatesAndConverges:GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice:Integration.RenderModesSelectableInGui'`
-  (the 3 exclusions are the pre-existing PT device-lost reproducers — see the
-  `- [b]` entry in batch II). Expect the same pass count as that entry
-  recorded (18/20) and a validation-clean log; a depth-format mistake here
-  surfaces as render-pass/framebuffer VUID errors, which the goldens run
-  under validation layers will catch.
-
-  **Build:** `clangcl-debug`, incremental is fine (header + `.cpp` only, no
-  module interface touched):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
-
-  **Context:** API-consolidation item from the refactor mandate. The
-  CascadedShadowMap comment at `.cpp:43-45` already records why format
-  choices silently coupling to a preference-list head is dangerous — this
-  makes the whole engine share ONE list so the coupling cannot recur. Copy
-  that comment's spirit onto the new helper.
-
 - [ ] **(S) (refactor) Pin the remaining host/device struct layouts: 3 push-constant structs + ObjMaterial** —
   `pushConstantSuite.cpp` pins `PushConstantRasterizer` only; the other three
   push-constant structs and the BDA-read `ObjMaterial` have no layout guard,
