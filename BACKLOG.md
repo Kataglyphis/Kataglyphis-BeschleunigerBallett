@@ -1697,48 +1697,6 @@ pick them up from the older prose above.
 
 ### C++ Vulkan engine
 
-- [ ] **(refactor, S) Delete the stale `renderer/VulkanRendererConfig.hpp`
-  (dead configure output carrying another user's hardcoded `glslc.exe`
-  path)** — dead code with a foreign absolute path baked in.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRendererConfig.hpp` — the dead
-    file: defines `GLSLC_EXE "C:/Users/jsh/scoop/apps/vulkan/current/Bin/glslc.exe"`
-    (user `jsh` is not this machine) plus version macros.
-  - `Src/GraphicsEngineVulkan/VulkanRendererConfig.ixx.in` and
-    `Src/GraphicsEngineVulkan/CMakeLists.txt:35-37` — the LIVE replacement:
-    the config module is generated from the `.ixx.in` via `configure_file`;
-    the generated module has no `GLSLC_EXE` at all.
-  - `.gitignore:80` — already ignores the OpenGL twin
-    (`Src/GraphicsEngineOpenGL/renderer/VulkanRendererConfig.hpp`), evidence
-    these headers were configure outputs that should never have been tracked.
-
-  **Steps:**
-  1. Grep the WHOLE tree (`Src/`, `Test/`, `Scripts/`, `cmake/`, docs) for
-     `VulkanRendererConfig.hpp` and `GLSLC_EXE`. Verified 2026-07-30 for
-     `Src/`: zero consumers, no `#include` anywhere; re-confirm tree-wide
-     before deleting.
-  2. `git rm Src/GraphicsEngineVulkan/renderer/VulkanRendererConfig.hpp`.
-  3. There is no `.hpp.in` in the tree, so nothing regenerates it; do NOT add
-     a gitignore entry unless step 1 finds a configure rule that writes it.
-  4. Full container build to prove nothing included it (a deleted-but-included
-     header fails compile immediately).
-
-  **Test:** No new test — the build IS the test. Beware the reusable-container
-  trap: a file deleted on the host keeps existing inside the reused container
-  (see the "Prune source tree" task), so the proof build must use
-  `-FreshContainer`.
-
-  **Build:** `clangcl-debug` with `-FreshContainer`:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
-  Bundle with the CSM-clamp task above to share the fresh build.
-
-  **Context:** Runtime shader compilation no longer exists (Slang
-  pre-compiles; the engine loads `.spv` via `File` I/O — AGENTS.md), so a
-  `glslc` path define is dead by design, and this one could never have worked
-  on any current machine anyway. Dead-code elimination per the refactor
-  focus; the live version/config macros all come from the configured module.
-
 ### Build / scripts
 
 - [ ] **(refactor, S) Remove the dead `USE_THREAD_SANITIZER` plumbing — the
