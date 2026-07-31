@@ -484,9 +484,9 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
             commandBuffer.setCullMode(scene->isMeshDoubleSided(m, k) ? vk::CullModeFlagBits::eNone
                                                                      : vk::CullModeFlagBits::eBack);
 
-            std::vector<vk::Buffer> const vertex_buffers = { scene->getVertexBuffer(m, k) };
-            vk::DeviceSize offsets[] = { 0 };
-            commandBuffer.bindVertexBuffers(0, vertex_buffers, offsets);
+            const vk::Buffer vertex_buffer = scene->getVertexBuffer(m, k);
+            const vk::DeviceSize offset = 0;
+            commandBuffer.bindVertexBuffers(0, 1, &vertex_buffer, &offset);
 
             commandBuffer.bindIndexBuffer(scene->getIndexBuffer(m, k), 0, vk::IndexType::eUint32);
 

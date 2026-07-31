@@ -454,9 +454,9 @@ void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_ind
     uint32_t skyboxEnabledVal = skyboxEnabled ? 1u : 0u;
     commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(uint32_t), &skyboxEnabledVal);
 
-    std::vector<vk::Buffer> const vertex_buffers = { skyMesh->getVertexBuffer() };
-    vk::DeviceSize offsets[] = { 0 };
-    commandBuffer.bindVertexBuffers(0, vertex_buffers, offsets);
+    const vk::Buffer vertex_buffer = skyMesh->getVertexBuffer();
+    const vk::DeviceSize offset = 0;
+    commandBuffer.bindVertexBuffers(0, 1, &vertex_buffer, &offset);
     commandBuffer.bindIndexBuffer(skyMesh->getIndexBuffer(), 0, vk::IndexType::eUint32);
 
     commandBuffer.drawIndexed(skyMesh->getIndexCount(), 1, 0, 0, 0);

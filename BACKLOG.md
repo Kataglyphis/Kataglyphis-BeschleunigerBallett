@@ -2227,54 +2227,6 @@ of the `VulkanRenderer` hub, but no clean extraction was identified this pass.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Remove the four remaining per-frame heap allocations in the record paths (refactor)** —
-  one of them allocates once per mesh per frame.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:485-490` — the
-    per-mesh `std::vector<vk::Buffer>`
-  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:154-156` — **the target
-    shape**; the identical bind already written allocation-free
-  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:455-460`
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:448-451`
-    (`cascadeFrusta`) and `:483-486` (`shadowDescriptorSets`)
-  - `Src/GraphicsEngineVulkan/renderer/SceneUBO.hpp:22` — `MAX_CASCADES` is `3`
-
-  **Steps:**
-  1. `DeferredRasterizer.cpp:487-489`: replace with the `Rasterizer.cpp:154-156`
-     form — `const vk::Buffer vertex_buffer = scene->getVertexBuffer(m, k);
-     const vk::DeviceSize offset = 0; commandBuffer.bindVertexBuffers(0, 1,
-     &vertex_buffer, &offset);`. Verbatim shape, so the two raster paths read
-     the same.
-  2. `SkyBox.cpp:457`: same substitution for `skyMesh->getVertexBuffer()`.
-  3. `CascadedShadowMap.cpp:448`: `std::array<FrustumPlanes, MAX_CASCADES>` plus
-     the existing `numCascades` loop bound. `numCascades` is already clamped to
-     `MAX_CASCADES` upstream (`clampCascadeCount`), but **assert it here**
-     (`if (numCascades > MAX_CASCADES) { return; }` with an error log) rather
-     than trusting the caller — a stack array turns a silent overrun into memory
-     corruption where the vector was safe.
-  4. `CascadedShadowMap.cpp:484-486`: replace the `std::vector<vk::DescriptorSet>`
-     with a `std::array<vk::DescriptorSet, 2>` plus a count, and pass
-     `std::span(sets.data(), count)` to `bindDescriptorSets` — preserving today's
-     branch exactly (1 set when `descriptorSets` is empty, 2 otherwise).
-  5. Re-grep the record paths afterwards to confirm nothing was missed:
-     `grep -n "std::vector" ` over the five files' `recordCommands` bodies.
-
-  **Test:** no new test — this is behaviour-preserving by construction, and the
-  oracle is that **all 23 `GoldenRender.*` tests are unchanged**, plus
-  `CascadedShadowMapUnit.*` and the ASan/UBSan debug build staying clean (step 3
-  moves a heap array to the stack, which is precisely what ASan would catch).
-
-  **Build:** `clangcl-debug` (ASAN + UBSan — required for this task, the stack
-  array is the risk), then GPU-verify `GoldenRender.*` on the host.
-
-  **Context:** Follows `aae4aa2f` ("drop per-cascade heap allocations in
-  `computeCascadeData`") exactly. `Rasterizer.cpp` and `CascadedShadowMap.cpp:519`
-  already use the pointer overload, so this is finishing a conversion the codebase
-  started rather than introducing a new idiom. None of these touch a `.ixx`, so
-  an incremental container build is trustworthy here (see the module-skew note
-  in Completed).
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 - [ ] **(M) Tiled lighting bins each light into exactly one tile, ignoring its range** —

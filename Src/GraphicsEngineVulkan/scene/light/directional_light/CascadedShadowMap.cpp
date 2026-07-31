@@ -1,5 +1,6 @@
 module;
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <vector>
@@ -13,6 +14,7 @@ module;
 #include <glm/ext/matrix_clip_space.hpp>
 #include "common/FormatHelper.hpp"
 #include "common/Utilities.hpp"
+#include "renderer/SceneUBO.hpp"
 
 module kataglyphis.vulkan.cascaded_shadow_map;
 
@@ -445,7 +447,11 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
     // two pass boundaries plus the geometry stage are gone). The safety
     // property of the old per-cascade test is preserved: geometry outside
     // EVERY cascade's ortho box cannot affect any depth map.
-    std::vector<FrustumPlanes> cascadeFrusta(numCascades);
+    if (numCascades > MAX_CASCADES) {
+        spdlog::error("CascadedShadowMap::recordCommands: numCascades ({}) exceeds MAX_CASCADES ({})", numCascades, MAX_CASCADES);
+        return;
+    }
+    std::array<FrustumPlanes, MAX_CASCADES> cascadeFrusta{};
     for (uint32_t cascade = 0; cascade < numCascades; cascade++) {
         cascadeFrusta[cascade] = extractFrustumPlanes(cascadeData[cascade].viewProjMatrix);
     }
@@ -481,9 +487,14 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
     // set 0 = the shared render set passed in (materials/textures/object
     // descriptions, for the fragment alpha test); set 1 = this pass's light
     // matrices. descriptorSets is the same span the forward rasterizer receives.
-    std::vector<vk::DescriptorSet> shadowDescriptorSets = {descriptorSet};
+    std::array<vk::DescriptorSet, 2> shadowDescriptorSets = {descriptorSet, descriptorSet};
+    const uint32_t shadowDescriptorSetCount = descriptorSets.empty() ? 1 : 2;
     if (!descriptorSets.empty()) { shadowDescriptorSets = {descriptorSets[0], descriptorSet}; }
-    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, shadowDescriptorSets, nullptr);
+    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+      pipelineLayout,
+      0,
+      std::span(shadowDescriptorSets.data(), shadowDescriptorSetCount),
+      nullptr);
 
     // objectIndex is the running FLAT mesh index (matching the forward pass and
     // the per-mesh object-description buffer), pushed per mesh in the old
