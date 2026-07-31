@@ -17,6 +17,7 @@
 
 #include <array>
 #include <filesystem>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,7 @@
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.scene_config;
 import kataglyphis.vulkan.cascaded_shadow_map;
+import kataglyphis.vulkan.frustum;
 
 namespace {
 
@@ -123,6 +125,66 @@ void BM_ComputeCascadeData(benchmark::State &state)
     }
 }
 BENCHMARK(BM_ComputeCascadeData)->Arg(1)->Arg(3);
+
+// ------------------------------------------------------- frustum culling --
+// isVisible / isVisibleAsShadowCaster (Frustum.ixx) run per mesh per frame in
+// the forward, deferred and shadow record loops - since the multi-mesh split
+// (sponza = 373 meshes) they are a real per-frame CPU cost with zero perf
+// coverage until now. Camera constants mirror BM_ComputeCascadeData's.
+
+std::vector<Kataglyphis::AABB> makeRandomAABBs(std::size_t count)
+{
+    // Fixed seed: deterministic across runs, no Date.now-style nondeterminism.
+    std::mt19937 rng(1234);
+    std::uniform_real_distribution<float> centreXY(-100.0F, 100.0F);
+    std::uniform_real_distribution<float> centreZ(-160.0F, 40.0F);
+    std::uniform_real_distribution<float> halfExtentDist(0.25F, 5.0F);
+
+    std::vector<Kataglyphis::AABB> boxes;
+    boxes.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        const glm::vec3 centre{ centreXY(rng), centreXY(rng), centreZ(rng) };
+        const float halfExtent = halfExtentDist(rng);
+        boxes.push_back(Kataglyphis::AABB{ centre - glm::vec3(halfExtent), centre + glm::vec3(halfExtent) });
+    }
+    return boxes;
+}
+
+Kataglyphis::FrustumPlanes representativeFrustumPlanes()
+{
+    const glm::mat4 view =
+      glm::lookAt(glm::vec3(0.0F, 6.0F, 26.0F), glm::vec3(0.0F, 1.0F, 0.0F), glm::vec3(0.0F, 1.0F, 0.0F));
+    constexpr float kFov = 45.0F;
+    constexpr float kAspect = 16.0F / 9.0F;
+    constexpr float kNear = 0.1F;
+    constexpr float kFar = 150.0F;
+    const glm::mat4 projection = glm::perspective(glm::radians(kFov), kAspect, kNear, kFar);
+    return Kataglyphis::extractFrustumPlanes(projection * view);
+}
+
+void BM_FrustumCull(benchmark::State &state)
+{
+    const Kataglyphis::FrustumPlanes planes = representativeFrustumPlanes();
+    const auto boxes = makeRandomAABBs(static_cast<std::size_t>(state.range(0)));
+
+    for (auto _ : state) {
+        for (const auto &box : boxes) { benchmark::DoNotOptimize(Kataglyphis::isVisible(planes, box)); }
+    }
+}
+BENCHMARK(BM_FrustumCull)->Arg(64)->Arg(512);
+
+// Identical to BM_FrustumCull except for the near-plane-dropping variant used
+// for shadow casters - the point is seeing whether the two diverge in cost.
+void BM_FrustumCullShadowCaster(benchmark::State &state)
+{
+    const Kataglyphis::FrustumPlanes planes = representativeFrustumPlanes();
+    const auto boxes = makeRandomAABBs(static_cast<std::size_t>(state.range(0)));
+
+    for (auto _ : state) {
+        for (const auto &box : boxes) { benchmark::DoNotOptimize(Kataglyphis::isVisibleAsShadowCaster(planes, box)); }
+    }
+}
+BENCHMARK(BM_FrustumCullShadowCaster)->Arg(64)->Arg(512);
 
 // ----------------------------------------------------------- scene config --
 

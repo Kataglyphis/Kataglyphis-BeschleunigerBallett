@@ -141,6 +141,10 @@ committed to.
 | `BM_ObjParse_Suzanne` (1 MB) | 7.1 ms |
 | `BM_ComputeCascadeData/1` (2026-07-31) | 372 ns |
 | `BM_ComputeCascadeData/3` (2026-07-31) | 1.03 us |
+| `BM_FrustumCull/64` (2026-07-31) | 339 ns |
+| `BM_FrustumCull/512` (2026-07-31) | 2.93 us |
+| `BM_FrustumCullShadowCaster/64` (2026-07-31) | 326 ns |
+| `BM_FrustumCullShadowCaster/512` (2026-07-31) | 2.77 us |
 
 Two things this baseline already tells us:
 
@@ -2101,57 +2105,6 @@ CPU suite missing from the Windows CI filter (checked every `TEST(` suite name
 against `Windows.yml:209-229`); the ContainerHub commit the RPT working tree
 points at (`1de9aff`) is already on ContainerHub `origin/main`, so committing
 that bump is safe.
-
-### Performance testing
-
-- [ ] **(S) Frustum-culling CPU benchmarks in the perf suite** — `isVisible`
-  and `isVisibleAsShadowCaster` (`Src/GraphicsEngineVulkan/scene/Frustum.ixx:43,:57`)
-  run per mesh per frame in the forward, deferred and shadow record loops —
-  since the multi-mesh split (sponza = 373 meshes) they are a real per-frame
-  CPU cost with zero perf coverage. Pure CPU, so per the perf section's own
-  triage these are exactly the benchmarks worth having.
-
-  **Files to read:**
-  - `Test/perf/perfSuite.cpp` — follow the `BM_ComputeCascadeData` pattern
-    (`:107-125`): fixed camera, `Arg()` for the sweep parameter.
-  - `Src/GraphicsEngineVulkan/scene/Frustum.ixx` — the API (`FrustumPlanes`,
-    `AABB`, the two free functions).
-  - `Test/commit/VulkanEngine/frustumSuite.cpp` — how existing tests build
-    `FrustumPlanes` from a view-projection matrix; reuse that construction.
-
-  **Steps:**
-  1. Add `BM_FrustumCull(state)`: build one `FrustumPlanes` from a
-     representative view-proj (the `BM_ComputeCascadeData` camera constants),
-     deterministically generate `state.range(0)` AABBs (mix of inside,
-     outside and straddling — seed a fixed `std::mt19937`, no `Date.now`
-     nondeterminism), loop calling `isVisible` over all boxes with
-     `benchmark::DoNotOptimize`; register with `->Arg(64)->Arg(512)`.
-  2. Add `BM_FrustumCullShadowCaster` identically over
-     `isVisibleAsShadowCaster` (it drops the near plane — the point is
-     seeing whether the two diverge in cost).
-  3. Verify it builds and runs in the container (`clangcl-debug` is enough to
-     prove registration); take real numbers from a clean HOST run of the
-     `clangcl-profile` `perfTestSuite.exe` (container wcifs I/O pollutes
-     timings — see the glTF-parse benchmark notes above).
-  4. Append the host numbers to the measured-baseline table in this file and
-     regenerate/extend the checked-in
-     `Test/perf/baselines/win-9070xt-32core.json` so
-     `Scripts/Compare-PerfBaseline.ps1` covers the new benchmarks.
-
-  **Test:** the perf suite is CTest-gated on "benchmarks execute"; a
-  successful `perfTestSuite.exe --benchmark_filter=BM_FrustumCull.*` run is
-  the verification.
-
-  **Build:** `clangcl-profile` for the numbers:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-profile -SkipTests`
-  (use `clangcl-debug` only for the does-it-compile loop).
-
-  **Context:** fills the top of the "Benchmarks still missing" list with the
-  only entry there that is pure-CPU and therefore CI-gateable. Headless
-  binary: do NOT import engine modules that drag `Device`/Vulkan globals into
-  the perf binary — `Frustum` is a leaf module with no device dependency
-  (verify by its imports before including; if it pulls Vulkan headers
-  transitively, benchmark via the same include path `frustumSuite.cpp` uses).
 
 ### CI and release gaps
 
