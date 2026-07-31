@@ -193,61 +193,10 @@ auto Kataglyphis::Texture::uploadRgba(std::shared_ptr<VulkanDevice>device,
 void Kataglyphis::Texture::createDefaultTexture(std::shared_ptr<VulkanDevice>in_device,
   vk::CommandPool commandPool)
 {
-    constexpr uint32_t default_tex_width = 1;
-    constexpr uint32_t default_tex_height = 1;
     constexpr vk::DeviceSize default_size = 4;
-    // sRGB for consistency with real textures (a 255 white decodes to 1.0
-    // linear either way).
-    constexpr vk::Format texture_format = vk::Format::eR8G8B8A8Srgb;
     constexpr unsigned char white_pixel[4] = { 255, 255, 255, 255 };
 
-    mip_levels = 1;
-
-    VulkanBuffer stagingBuffer;
-    stagingBuffer.create(in_device,
-      default_size,
-      vk::BufferUsageFlagBits::eTransferSrc,
-      vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-    // Host-visible buffers are persistently mapped by VMA.
-    memcpy(stagingBuffer.getMappedData(), white_pixel, default_size);
-
-    createImage(in_device,
-      default_tex_width,
-      default_tex_height,
-      mip_levels,
-      texture_format,
-      vk::ImageTiling::eOptimal,
-      vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-      vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-    vulkanImage.transitionImageLayout(in_device->getLogicalDevice(),
-      in_device->getGraphicsQueue(),
-      commandPool,
-      vk::ImageLayout::eUndefined,
-      vk::ImageLayout::eTransferDstOptimal,
-      vk::ImageAspectFlagBits::eColor,
-      mip_levels);
-
-    vulkanBufferManager.copyImageBuffer(in_device->getLogicalDevice(),
-      in_device->getGraphicsQueue(),
-      commandPool,
-      stagingBuffer.getBuffer(),
-      vulkanImage.getImage(),
-      default_tex_width,
-      default_tex_height);
-
-    vulkanImage.transitionImageLayout(in_device->getLogicalDevice(),
-      in_device->getGraphicsQueue(),
-      commandPool,
-      vk::ImageLayout::eTransferDstOptimal,
-      vk::ImageLayout::eShaderReadOnlyOptimal,
-      vk::ImageAspectFlagBits::eColor,
-      1);
-
-    stagingBuffer.cleanUp();
-
-    createImageView(in_device, texture_format, vk::ImageAspectFlagBits::eColor, mip_levels, vk::ImageViewType::e2D, 1);
+    uploadRgba(in_device, commandPool, 1, 1, default_size, white_pixel);
 }
 
 void Kataglyphis::Texture::setImage(vk::Image image) { vulkanImage.setImage(image); }
