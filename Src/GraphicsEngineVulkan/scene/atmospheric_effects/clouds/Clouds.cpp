@@ -262,7 +262,7 @@ void Clouds::dispatchNoiseGeneration()
     device->getLogicalDevice().destroyCommandPool(commandPool);
 }
 
-void Clouds::recordComputeCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, const std::vector<vk::DescriptorSet> &descriptorSets)
+void Clouds::recordComputeCommands(vk::CommandBuffer &commandBuffer, const std::vector<vk::DescriptorSet> &descriptorSets)
 {
     // Bind cloud compute pipeline and dispatch thread groups based on screen extent
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, cloudComputePipeline);

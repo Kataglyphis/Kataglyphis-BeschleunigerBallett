@@ -855,7 +855,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
     if (guiSceneSharedVars.clouds_enabled) {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "clouds", { 0.80F, 0.85F, 0.95F, 1.0F });
         write_pass_timestamp(GpuTimedPass::Clouds, true);
-        clouds.recordComputeCommands(commandBuffer, image_index, rasterizer_descriptor_sets);
+        clouds.recordComputeCommands(commandBuffer, rasterizer_descriptor_sets);
         write_pass_timestamp(GpuTimedPass::Clouds, false);
     }
 
