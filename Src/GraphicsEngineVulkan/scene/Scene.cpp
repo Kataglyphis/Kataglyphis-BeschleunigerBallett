@@ -163,11 +163,6 @@ void Scene::add_model(const std::shared_ptr<Model> &model)
     }
 }
 
-void Scene::add_object_description(ObjectDescription object_description)
-{
-    object_descriptions.push_back(object_description);
-}
-
 void Scene::update_model_matrix(glm::mat4 model_matrix, uint32_t model_id)
 {
     if (model_id >= getModelCount()) {
@@ -201,15 +196,6 @@ void Scene::reloadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool com
 void Scene::cleanUp()
 {
     for (std::shared_ptr<Model> const &model : model_list) { model->cleanUp(); }
-}
-
-auto Scene::getNumberMeshes() -> uint32_t
-{
-    uint32_t number_of_meshes = 0;
-
-    for (std::shared_ptr<Model> const &mesh_model : model_list) { number_of_meshes += mesh_model->getMeshCount(); }
-
-    return number_of_meshes;
 }
 
 Scene::~Scene() { cleanUp(); }

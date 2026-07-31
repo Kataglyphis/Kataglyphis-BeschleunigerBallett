@@ -107,8 +107,6 @@ class Scene
         if (model_index >= model_list.size()) { return unknown; }
         return model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index))->getBounds();
     };
-    uint32_t getNumberObjectDescriptions() { return static_cast<uint32_t>(object_descriptions.size()); };
-    uint32_t getNumberMeshes();
     std::vector<ObjectDescription> getObjectDescriptions() { return object_descriptions; };
     std::vector<std::shared_ptr<Model>> const &get_model_list() { return model_list; };
 
@@ -146,7 +144,6 @@ class Scene
       const glm::mat4 &modelMatrix);
 
     void add_model(const std::shared_ptr<Model> &model);
-    void add_object_description(ObjectDescription object_description);
 
     void cleanUp();
     ~Scene();
