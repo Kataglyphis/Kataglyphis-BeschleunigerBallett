@@ -1941,61 +1941,127 @@ and unchecked rather than guessed at.
 
 ### C++ Vulkan engine
 
-- [ ] **(M) Localize (and fix if cheap) the path-tracing compute
-  `VK_ERROR_DEVICE_LOST` on the RX 9070 XT** — the last blocker on full GPU
-  golden verification; every test ordered after the first PT-exercising one
-  never runs.
+- [b] **(M) Localize (and fix if cheap) the path-tracing compute
+  `VK_ERROR_DEVICE_LOST` on the RX 9070 XT** — **two real bugs fixed
+  2026-07-31, the crash on the large-mesh reproducer is NOT; root-causing it
+  further needs GPU capture tooling (RenderDoc/PIX/AMD crash dumps), which is
+  not available here.**
 
-  **Files to read:**
-  - The "GPU host verification" section of the 2026-07-30 batch II above — the
-    full symptom record (`vkQueueSubmit` returns -4 at PT dispatch, zero
-    preceding validation errors, `frame=2` in the accumulation golden and
-    `frame=0` in the GUI sweep, so not timing-dependent).
-  - `Resources/ShadersSlang/compute/path_tracing.slang` — the RayQuery kernel
-    to bisect.
-  - `Src/GraphicsEngineVulkan/renderer/PathTracing.cpp` — dispatch, descriptor
-    and accumulation-image bindings.
+  **Fixed this pass, both verified on the RX 9070 XT (container-built
+  `clangcl-debug`, host GPU run):**
+  1. `rayQuery.Proceed()` was called exactly once
+     (`Resources/ShadersSlang/path_tracing/path_tracing.slang`). Per
+     `GL_EXT_ray_query`/DXR RayQuery semantics it must be looped
+     (`while (rayQuery.Proceed()) {}`) until it returns false — a single call
+     can leave BVH traversal incomplete, so `CommittedStatus()` and the
+     committed-hit accessors read undefined state. The pre-Slang GLSL kernel
+     (`path_tracing.comp`, still present in packaged release output) looped
+     this correctly; the Slang port dropped the loop. Fixed and kept.
+  2. `PathTracing.ixx`'s `SpecializationData` defaulted to
+     `(specWorkGroupSizeX=16, specWorkGroupSizeY=8)`, feeding
+     `PathTracing.cpp`'s dispatch work-group-count math — but the Slang kernel
+     hardcodes `[numthreads(8, 8, 1)]` rather than consuming these as SPIR-V
+     specialization constants (Slang does not wire them up), so the dispatch
+     under-covered the image width by ~2x every frame. Fixed the default to
+     `(8, 8)` to match.
+
+  Neither fix alone, nor both together, resolves the device-lost on the
+  original reproducer (below) — they were necessary correctness fixes found
+  along the way, not the root cause.
+
+  **NOT fixed — remaining device-lost, narrowed far past the original
+  report:** `GoldenRender.PathTracingAccumulatesAndConverges` (scene:
+  `Models/Dinosaurs/dinosaurs.obj`, hundreds of thousands of vertices) still
+  hard-aborts on `vkQueueSubmit` returning `-4`, zero preceding validation
+  errors, within 0-2 frames. Bisection (12+ shader-recompile/host-GPU-run
+  rounds, no GPU capture tooling used) found:
+
+  - Consuming ONLY the material-fetched `hitColor` (texture sample or
+    `material.diffuse` — never touches the vertex buffer's `.position`/
+    `.normal` fields, only `.texture_coords` on the dead branch, see below)
+    from the RayQuery-committed hit is safe: proven across 40+ frames and an
+    8x-per-invocation RayQuery loop.
+  - The instant the caller also consumes a value derived from
+    `v0.position`/`v0.normal` (fetched via the `Vertices*` buffer-device-
+    address pointer indexed by `rayQuery.CommittedPrimitiveIndex()`-derived
+    indices) — **either field alone, in any combination, with or without the
+    `CommittedObjectToWorld3x4()`/`CommittedWorldToObject3x4()` transform,
+    with or without `sceneUBO` access, with or without `brdf_direct()`,
+    whether factored into a separate function taking `RayQuery` by value and
+    returning a struct or fully inlined into `path_tracing_main`** — the
+    device is lost within 0-2 frames.
+  - `dinosaurs.obj`'s materials are untextured (`material.textureID < 0` for
+    every primitive — confirmed elsewhere in this file), so the
+    `.texture_coords`-consuming branch (texture `.Sample()`) is dynamically
+    never taken for this scene; whether reading `.texture_coords` at scale
+    would ALSO fault could not be confirmed or ruled out.
+  - **Mesh-size correlation, not yet exploited:** every PT/RT golden test that
+    reads `v0.position`/`v0.normal` via the identical `Vertices`/`Vertex`
+    buffer-device-address struct and does NOT crash
+    (`GoldenRender.RaytracedWorldFollowsTheModelTransform` via the RT
+    *pipeline* rchit shader, `GoldenRender.AddedModelAppearsInPathTracing`,
+    `GoldenRender.PathTracingPassesTheWhiteFurnaceTest`,
+    `GoldenRender.PathTracingHonorsTheQualityControls`) uses the tiny
+    `Models/ShadowTest/shadow_rig.obj` rig. No existing golden test exercises
+    `raytrace.rchit.slang`'s identical `v0.position`/`.normal` read pattern
+    against the large dinosaur mesh — so it is UNKNOWN whether this is scoped
+    to RayQuery/compute (as the entry originally assumed) or is a more
+    general large-mesh vertex-buffer-device-address bug that the RT pipeline
+    has simply never been tested against. **Next step for whoever picks this
+    back up:** write an `RT` (not PT) golden test that raytraces the dinosaur
+    model and see if `raytrace.rchit.slang` also device-loses — that single
+    result would tell whether to keep hunting in `path_tracing.slang`
+    specifically or in the shared vertex-buffer upload/addressing path
+    (`ASManager`, `GltfLoader`/`ObjLoader` upload, or a stride/alignment
+    mismatch between the CPU `Vertex` struct and Slang's buffer_reference
+    codegen that only overflows the buffer at high vertex indices).
+
+  **Side effect of the two fixes above — previously-invisible bugs newly
+  exposed, both unrelated to device-lost, NOT attempted here (out of scope
+  for this entry):** with the crash no longer shadowing every test after the
+  first PT one, two more PT goldens now run to completion and fail on VALUE
+  assertions, not aborts: `GoldenRender.PathTracingHonorsTheQualityControls`
+  ("the bounce-cap slider did not change the path-traced image") and
+  `GoldenRender.PathTracingPassesTheWhiteFurnaceTest` ("furnace converges LOW
+  ... not uniform"). Root cause for both is almost certainly the same thing:
+  `path_tracing.slang` never implements a bounce loop at all — `pc_ray.
+  max_bounces` is read into the push constant on the C++ side
+  (`PathTracing.cpp`) but never referenced in the kernel, which only ever
+  evaluates ONE ray-query hit per sample (no recursive/iterative bounce),
+  unlike the pre-Slang GLSL kernel's `for (tracedSegments < 8)` loop. That is
+  a real feature gap (single-bounce direct lighting only, no GI), separate
+  from the device-lost above and worth its own sized entry if picked up.
+
+  **Still true, unevaluated:** `GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice`
+  and `Integration.RenderModesSelectableInGui` both still device-lose (they
+  sweep render modes over the default dinosaur scene) — same reproducer as
+  above, not a new failure.
+
+  **Files:**
+  - `Resources/ShadersSlang/path_tracing/path_tracing.slang` — the RayQuery
+    kernel; the crash-frontier comment block above the hit-info extraction
+    records the bisection result in place.
+  - `Src/GraphicsEngineVulkan/renderer/PathTracing.ixx`/`.cpp` — dispatch,
+    descriptor bindings, the now-fixed specialization-constant defaults.
   - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` —
-    `PathTracingAccumulatesAndConverges` (the reproducer).
+    `PathTracingAccumulatesAndConverges` (the reproducer),
+    `RaytracedWorldFollowsTheModelTransform` (the small-mesh RT counterpart
+    that would need a large-mesh variant per "Next step" above).
   - `docs/gpu-golden-testing.md` — how to run container-built binaries on the
     host GPU.
 
-  **Steps:**
-  1. Build `clangcl-debug` in the container, then from the repo root on the
-     host run `commitTestSuite.exe
-     --gtest_filter=GoldenRender.PathTracingAccumulatesAndConverges` and
-     confirm the abort still reproduces.
-  2. Bisect the kernel coarsest-first, recompiling between steps with
-     `pwsh Scripts/Windows/compile-slang-shaders.ps1` (shader-only iterations,
-     no C++ rebuild): (a) early-return a solid colour before any RayQuery — if
-     device-lost persists, the fault is dispatch/descriptor-side in
-     `PathTracing.cpp`, not kernel logic; (b) otherwise re-enable pieces
-     stepwise: primary RayQuery, bounce loop, NEE shadow query,
-     accumulation-image read/write, the BDA vertex/index/material walk.
-     Device-lost with clean validation usually means an out-of-bounds
-     buffer-device-address read or a non-terminating loop — the axes cover
-     both.
-  3. If a specific construct is the trigger and the fix is evident, fix it and
-     run the FULL golden suite on the host. If root-causing needs RenderDoc /
-     GPU crash-dump tooling, stop, record the exact bisection frontier in this
-     entry, and flip it to `- [b]` naming that blocker.
-  4. If PT goes green: also run
-     `GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice` (unevaluated
-     since the abort shadows it), and check whether the multiview VUID bullet
-     under "Recurring validation runs" can now be struck.
-
-  **Test:** `PathTracingAccumulatesAndConverges`, the furnace and quality
-  goldens green on the host = done. A precise localization without a fix is
-  also a valid, recordable outcome — do not force a speculative fix.
-
   **Build:** `clangcl-debug` via
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`,
-  then host GPU runs per `docs/gpu-golden-testing.md`.
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
+  (`-FreshContainer` needed here because `PathTracing.ixx` changed), then host
+  GPU runs per `docs/gpu-golden-testing.md`. Shader-only iterations:
+  `pwsh Scripts/Windows/compile-slang-shaders.ps1`, no C++ rebuild needed.
 
-  **Context:** Isolated 2026-07-31 after the feature-chain fix restored the
-  rest of the suite (15/17 non-PT goldens pass). The kernel is inline ray
-  tracing (RayQuery) in a `[shader("compute")]` — the rchit implicit-LOD class
-  of bug does not apply here, so this is a genuinely separate defect.
+  **Verified 2026-07-31:** 18/20 in
+  `--gtest_filter='GoldenRender.*:Integration.*:-GoldenRender.PathTracingAccumulatesAndConverges:GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice:Integration.RenderModesSelectableInGui'`
+  pass on the RX 9070 XT (the 2 failures are the pre-existing bounce-loop gap
+  above, not crashes) — no regression from the two fixes, and strictly more
+  of the suite runs than before (previously the abort shadowed everything
+  after the first PT test in file order).
 
 - [ ] **(S) glTF: ignore the node world transform for skinned meshes (spec
   conformance)** — the last surviving bullet of survey item #11's loader gaps.

@@ -42,62 +42,6 @@ float stepAndOutputRNGFloat(inout uint rngState)
     return float(word) / 4294967295.0;
 }
 
-struct HitInfo
-{
-    float3 color;
-    float3 worldPosition;
-    float3 worldNormal;
-};
-
-HitInfo getObjectHitInfo(RayQuery<RAY_FLAG_FORCE_OPAQUE> rayQuery)
-{
-    uint instanceIndex = rayQuery.CommittedInstanceIndex();
-    float3x4 objToWorld = rayQuery.CommittedObjectToWorld3x4();
-    float3x4 worldToObject = rayQuery.CommittedWorldToObject3x4();
-
-    ObjectDescription obj = objectDescription[instanceIndex];
-    Vertices* vertices = (Vertices*)obj.vertex_address;
-    Indices* indices = (Indices*)obj.index_address;
-    MaterialIDs* materialIDs = (MaterialIDs*)obj.material_index_address;
-    Materials* materials = (Materials*)obj.material_address;
-
-    HitInfo result;
-    uint primitiveID = rayQuery.CommittedPrimitiveIndex();
-
-    int3 i = indices->i[primitiveID];
-    Vertex v0 = vertices->v[i.x];
-    Vertex v1 = vertices->v[i.y];
-    Vertex v2 = vertices->v[i.z];
-
-    float2 bary = rayQuery.CommittedTriangleBarycentrics();
-    float3 barycentrics = float3(1.0 - bary.x - bary.y, bary.x, bary.y);
-
-    float3 objectPos = v0.position * barycentrics.x + v1.position * barycentrics.y + v2.position * barycentrics.z;
-    // float3x4 is 3 rows × 4 cols; mul(float3x4, float4) = float3.
-    result.worldPosition = mul(objToWorld, float4(objectPos, 1.0));
-
-    float3 normalHit = v0.normal * barycentrics.x + v1.normal * barycentrics.y + v2.normal * barycentrics.z;
-    result.worldNormal = normalize(mul(worldToObject, float4(normalHit, 0.0)));
-
-    float2 texCoords = v0.texture_coords * barycentrics.x
-                     + v1.texture_coords * barycentrics.y
-                     + v2.texture_coords * barycentrics.z;
-
-    ObjMaterial material = materials->m[materialIDs->i[primitiveID]];
-    // primitiveID comes from rayQuery.CommittedPrimitiveIndex() (passed by caller).
-    if (material.textureID >= 0)
-    {
-        int textureId = clamp(int(obj.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
-        result.color = textures[textureId].Sample(textureSamplers[textureId], texCoords).xyz;
-    }
-    else
-    {
-        result.color = material.diffuse;
-    }
-
-    return result;
-}
-
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void path_tracing_main(uint3 tid : SV_DispatchThreadID)
@@ -130,20 +74,95 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
         ray.TMin = 0.001;
         ray.TMax = 10000.0;
         rayQuery.TraceRayInline(TLAS, RAY_FLAG_FORCE_OPAQUE, 0xFFu, ray);
-        rayQuery.Proceed();
+        // Proceed() performs one traversal step and must be looped until it
+        // returns false (GL_EXT_ray_query: rayQueryProceedEXT) — a single
+        // call can leave traversal incomplete, so CommittedStatus() and the
+        // committed-hit accessors below read undefined state. The pre-Slang
+        // GLSL kernel (path_tracing.comp) looped this correctly; the Slang
+        // port dropped the loop. Restoring it was necessary but NOT
+        // sufficient to fix the VK_ERROR_DEVICE_LOST bisected below.
+        while (rayQuery.Proceed())
+        {
+        }
 
         float3 sampleColor;
         if (rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
         {
-            HitInfo hit = getObjectHitInfo(rayQuery);
+            // KNOWN ISSUE, unresolved (see BACKLOG.md): on the large
+            // Dinosaurs.obj scene this hit-info block still reproduces
+            // VK_ERROR_DEVICE_LOST on the RX 9070 XT with zero preceding
+            // validation errors, whenever v0/v1/v2.position or .normal
+            // (fetched via this RayQuery-derived Vertices* BDA pointer)
+            // actually feed the output image - regardless of whether a
+            // matrix transform is applied, whether the code is factored into
+            // a helper or inlined as here, whether sceneUBO or brdf_direct()
+            // are involved, and independent of
+            // CommittedObjectToWorld3x4()/CommittedWorldToObject3x4()
+            // specifically (removing those calls and using the raw
+            // object-space position still faults). Consuming ONLY the
+            // material-fetched .color (no vertex-buffer position/normal
+            // read) never faults, across 40+ frames and an 8x-per-invocation
+            // RayQuery loop, on this same large mesh. raytracing/raytrace.
+            // rchit.slang reads the identical fields via the identical
+            // Vertex/Vertices BDA types successfully, but has only ever been
+            // exercised against the tiny shadow_rig.obj rig - it is NOT yet
+            // known whether this is scoped to RayQuery/compute specifically
+            // or is a more general large-mesh vertex-buffer-device-address
+            // bug the RT pipeline has simply never hit. Root-causing further
+            // needs a GPU capture (RenderDoc/PIX) or AMD crash-dump tooling,
+            // or an RT-pipeline golden test against the dinosaur mesh - out
+            // of reach here.
+            uint instanceIndex = rayQuery.CommittedInstanceIndex();
+            float3x4 objToWorld = rayQuery.CommittedObjectToWorld3x4();
+            float3x4 worldToObject = rayQuery.CommittedWorldToObject3x4();
+
+            ObjectDescription obj = objectDescription[instanceIndex];
+            Vertices* vertices = (Vertices*)obj.vertex_address;
+            Indices* indices = (Indices*)obj.index_address;
+            MaterialIDs* materialIDs = (MaterialIDs*)obj.material_index_address;
+            Materials* materials = (Materials*)obj.material_address;
+
+            uint primitiveID = rayQuery.CommittedPrimitiveIndex();
+
+            int3 tri = indices->i[primitiveID];
+            Vertex v0 = vertices->v[tri.x];
+            Vertex v1 = vertices->v[tri.y];
+            Vertex v2 = vertices->v[tri.z];
+
+            float2 bary = rayQuery.CommittedTriangleBarycentrics();
+            float3 barycentrics = float3(1.0 - bary.x - bary.y, bary.x, bary.y);
+
+            float3 objectPos = v0.position * barycentrics.x + v1.position * barycentrics.y + v2.position * barycentrics.z;
+            // float3x4 is 3 rows × 4 cols; mul(float3x4, float4) = float3.
+            float3 hitWorldPosition = mul(objToWorld, float4(objectPos, 1.0));
+
+            float3 normalHit = v0.normal * barycentrics.x + v1.normal * barycentrics.y + v2.normal * barycentrics.z;
+            float3 hitWorldNormal = normalize(mul(worldToObject, float4(normalHit, 0.0)));
+
+            float2 texCoords = v0.texture_coords * barycentrics.x
+                             + v1.texture_coords * barycentrics.y
+                             + v2.texture_coords * barycentrics.z;
+
+            ObjMaterial material = materials->m[materialIDs->i[primitiveID]];
+            float3 hitColor;
+            if (material.textureID >= 0)
+            {
+                int textureId = clamp(int(obj.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
+                hitColor = textures[textureId].Sample(textureSamplers[textureId], texCoords).xyz;
+            }
+            else
+            {
+                hitColor = material.diffuse;
+            }
+
             float3 L = normalize(-sceneUBO.dirLight.direction.xyz);
-            float3 V = normalize(sceneUBO.cam_pos.xyz - hit.worldPosition);
-            float3 f0 = lerp(float3(0.04), hit.color, 0.0);
+            float3 V = normalize(sceneUBO.cam_pos.xyz - hitWorldPosition);
+            float3 f0 = lerp(float3(0.04), hitColor, 0.0);
             float3 lightColor = sceneUBO.dirLight.color.rgb;
             float lightIntensity = sceneUBO.dirLight.color.w;
 
-            sampleColor = hit.color + brdf_direct(
-                hit.worldNormal, V, L, hit.color, 0.0, 0.5, f0,
+            sampleColor = hitColor + brdf_direct(
+                hitWorldNormal, V, L, hitColor, 0.0, 0.5, f0,
                 lightColor * lightIntensity);
         }
         else

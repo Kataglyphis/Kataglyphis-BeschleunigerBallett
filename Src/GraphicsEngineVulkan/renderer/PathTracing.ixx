@@ -63,7 +63,13 @@ class PathTracing
 
     struct SpecializationData
     {
-        uint32_t specWorkGroupSizeX = 16;
+        // Must match path_tracing.slang's [numthreads(8, 8, 1)] — Slang
+        // hardcodes the local size rather than consuming these as SPIR-V
+        // specialization constants, so this struct only feeds the dispatch
+        // work-group-count math below. A mismatch under-dispatches: found
+        // 2026-07-31 at (16, 8), which covered only the left half of the
+        // image width every frame.
+        uint32_t specWorkGroupSizeX = 8;
         uint32_t specWorkGroupSizeY = 8;
         uint32_t specWorkGroupSizeZ = 0;
     };
