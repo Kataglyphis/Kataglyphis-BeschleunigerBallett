@@ -9,6 +9,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -22,36 +24,44 @@ fs::path find_repo_root()
 {
     fs::path candidate = fs::current_path();
     for (int depth = 0; depth < 6; ++depth) {
-        if (fs::exists(candidate / "Resources" / "Shaders")) { return candidate; }
+        if (fs::exists(candidate / "Resources" / "ShadersSlang")) { return candidate; }
         if (!candidate.has_parent_path()) { break; }
         candidate = candidate.parent_path();
     }
     return {};
 }
 
-// Artifacts under Resources/Shaders/generated are naga output exported from
-// the Rust renderer's WGSL (docs/shader-sharing.md). They carry WebGPU binding
-// decorations rather than this engine's descriptor layout, so they are not
-// engine shaders: nothing includes them, glslc does not compile them, and
-// re-exporting them must not mark every real shader stale. Regenerating them
-// would otherwise fail every staleness test in this file at once.
-bool is_generated_artifact(const fs::path &path)
+// compile-slang-shaders.ps1 names each compiled artifact
+// "<source-stem>.<entry-point>.<ext>", where <source-stem> is the .slang
+// filename with only the ".slang" extension removed - it may itself contain
+// a dot, e.g. "raytrace.rchit" for raytracing/raytrace.rchit.slang - and
+// <entry-point> is a manifest entry-point name, which never contains a dot.
+// So the source stem is recovered by dropping the LAST dot-separated
+// component of the .spv's own stem (the entry point), not the first.
+fs::path source_for_spirv(const fs::path &spv_path, const fs::path &spirv_root, const fs::path &slang_root)
 {
-    for (const auto &part : path) {
-        if (part == "generated") { return true; }
-    }
-    return false;
+    const fs::path relative_dir = fs::relative(spv_path.parent_path(), spirv_root);
+    const std::string stem_and_entry = spv_path.stem().string();// strips only ".spv"
+
+    const auto last_dot = stem_and_entry.find_last_of('.');
+    if (last_dot == std::string::npos) { return {}; }// no entry-point separator: not a manifest artifact
+
+    const std::string source_stem = stem_and_entry.substr(0, last_dot);
+    return slang_root / relative_dir / (source_stem + ".slang");
 }
 
-// mtime of the most recently edited shared include, or false if there are none.
-bool newest_shared_include(const fs::path &shader_root, fs::file_time_type &out)
+// mtime of the most recently edited shared Slang module under common/, or
+// false if there are none. Slang has no preprocessor #include; modules under
+// common/ are pulled in via `import` and play the role .glsl includes used
+// to - editing one must be treated as editing every dependent shader.
+bool newest_shared_import(const fs::path &slang_root, fs::file_time_type &out)
 {
+    const fs::path common_dir = slang_root / "common";
     std::error_code error;
     bool found = false;
-    for (fs::recursive_directory_iterator it(shader_root, error), end; it != end; it.increment(error)) {
+    for (fs::recursive_directory_iterator it(common_dir, error), end; it != end; it.increment(error)) {
         if (error) { break; }
-        if (!it->is_regular_file(error) || it->path().extension() != ".glsl") { continue; }
-        if (is_generated_artifact(it->path())) { continue; }
+        if (!it->is_regular_file(error) || it->path().extension() != ".slang") { continue; }
         const auto stamp = fs::last_write_time(it->path(), error);
         if (error) { continue; }
         if (!found || stamp > out) {
@@ -62,60 +72,95 @@ bool newest_shared_include(const fs::path &shader_root, fs::file_time_type &out)
     return found;
 }
 
-bool is_shader_source(const fs::path &path)
-{
-    // Exported naga artifacts are not sources this engine compiles - see
-    // is_generated_artifact above.
-    if (is_generated_artifact(path)) { return false; }
+// Subdirectories of Resources/ShadersSlang/ that the C++ Vulkan engine
+// actually loads compiled SPIR-V from - see every `slang_spv_dir` constant
+// under Src/. Everything else (bloom, ssao, forward, sky, ibl, gpu_cull,
+// tonemap, tex_quad, depth_resolve, occlusion_bbox, histogram, ...) is a
+// Rust/WebGPU shader that only ever emits WGSL and must not be scanned here.
+const std::vector<std::string> kEngineSpirvSubdirs = {
+    "compute", "deferred", "path_tracing", "post", "rasterizer", "raytracing", "skybox"
+};
 
-    static const std::vector<std::string> kStageExtensions = {
-        ".vert", ".frag", ".comp", ".geom", ".rgen", ".rchit", ".rmiss", ".tesc", ".tese"
-    };
-    const std::string extension = path.extension().string();
-    for (const auto &candidate : kStageExtensions) {
-        if (extension == candidate) { return true; }
+// A .slang file is only ever compiled on its own if slangc can find an entry
+// point in it. Files that exist purely to be `import`ed (e.g.
+// raytracing/rt_types.slang) never appear in compile-slang-shaders.ps1's
+// manifest and must not be expected to have a matching .spv.
+bool has_entry_point(const fs::path &slang_source)
+{
+    std::ifstream file(slang_source);
+    if (!file) { return false; }
+    const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    return content.find("[shader(") != std::string::npos;
+}
+
+// True if some .spv directly under spirv_root's mirror of source's directory
+// maps back (via source_for_spirv) to exactly this source file.
+bool has_compiled_binary_for_source(const fs::path &source, const fs::path &spirv_root, const fs::path &slang_root)
+{
+    const fs::path relative_source_dir = fs::relative(source.parent_path(), slang_root);
+    const fs::path binary_dir = spirv_root / relative_source_dir;
+
+    std::error_code error;
+    if (!fs::exists(binary_dir, error)) { return false; }
+    for (fs::directory_iterator it(binary_dir, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        if (!it->is_regular_file(error) || it->path().extension() != ".spv") { continue; }
+        if (source_for_spirv(it->path(), spirv_root, slang_root) == source) { return true; }
     }
     return false;
 }
 
 }// namespace
 
-// Both the build-time compiler (Scripts/Windows/compile-shaders.ps1) and the
-// runtime fallback (ShaderHelper::compileShader) used to reuse a .spv whenever
-// it merely EXISTED, with no timestamp check. Every shader edit after the first
-// build was then silently ignored and the GPU executed stale SPIR-V - a
-// fragment shader edited at 14:00 was still being rendered from a .spv produced
-// at 18:46 the previous day, which invalidated hours of debugging.
+// Both the build-time compiler (Scripts/Windows/compile-slang-shaders.ps1) and
+// the runtime fallback used to reuse a .spv whenever it merely EXISTED, with
+// no timestamp check. Every shader edit after the first build was then
+// silently ignored and the GPU executed stale SPIR-V - a fragment shader
+// edited at 14:00 was still being rendered from a .spv produced at 18:46 the
+// previous day, which invalidated hours of debugging.
 //
 // This test fails if that regresses: after a build, no committed .spv may be
-// older than the shader it came from.
+// older than the .slang source it was compiled from.
 TEST(BuildIntegrity, CompiledShadersAreNotOlderThanTheirSources)
 {
     const fs::path repo_root = find_repo_root();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path shader_root = repo_root / "Resources" / "Shaders";
-    ASSERT_TRUE(fs::exists(shader_root)) << "missing " << shader_root.string();
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path spirv_root = slang_root / "build" / "spirv";
+    ASSERT_TRUE(fs::exists(spirv_root)) << "missing " << spirv_root.string();
 
     std::vector<std::string> stale;
+    std::vector<std::string> unmapped;
     std::error_code error;
-    for (fs::recursive_directory_iterator it(shader_root, error), end; it != end; it.increment(error)) {
+    for (fs::recursive_directory_iterator it(spirv_root, error), end; it != end; it.increment(error)) {
         if (error) { break; }
-        const fs::path &source = it->path();
-        if (!it->is_regular_file(error) || !is_shader_source(source)) { continue; }
+        const fs::path &spv = it->path();
+        if (!it->is_regular_file(error) || spv.extension() != ".spv") { continue; }
 
-        const fs::path spv = source.parent_path() / "spv" / (source.filename().string() + ".spv");
-        if (!fs::exists(spv, error)) { continue; }// never compiled: not this test's concern
+        const fs::path source = source_for_spirv(spv, spirv_root, slang_root);
+        if (source.empty() || !fs::exists(source, error)) {
+            unmapped.push_back(fs::relative(spv, repo_root).string());
+            continue;
+        }
 
         const auto source_time = fs::last_write_time(source, error);
         if (error) { continue; }
         const auto spv_time = fs::last_write_time(spv, error);
         if (error) { continue; }
 
-        if (spv_time < source_time) {
-            stale.push_back(fs::relative(spv, repo_root).string());
-        }
+        if (spv_time < source_time) { stale.push_back(fs::relative(spv, repo_root).string()); }
     }
+
+    EXPECT_TRUE(unmapped.empty())
+      << unmapped.size()
+      << " compiled .spv could not be mapped back to a .slang source under Resources/ShadersSlang "
+         "(naming contract in compile-slang-shaders.ps1 broken, or a source was deleted after compiling): "
+      << [&unmapped] {
+             std::string joined;
+             for (const auto &entry : unmapped) { joined += "\n  " + entry; }
+             return joined;
+         }();
 
     EXPECT_TRUE(stale.empty()) << "SPIR-V older than its source - the GPU would run stale shaders. "
                               << "Stale binaries (" << stale.size() << "): "
@@ -126,37 +171,35 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanTheirSources)
                                  }();
 }
 
-// A shader include (*.glsl) that is newer than a .spv means the dependent
-// shader was not recompiled. compile-shaders.ps1 accounts for includes; this
-// guards that behaviour.
+// A shared Slang module under common/ (imported by entry-point shaders) that
+// is newer than a .spv means the dependent shader was not recompiled.
+// compile-slang-shaders.ps1 is conservative about this (any .slang edit
+// invalidates every output); this guards that behaviour.
 TEST(BuildIntegrity, CompiledShadersAreNotOlderThanSharedIncludes)
 {
     const fs::path repo_root = find_repo_root();
     ASSERT_FALSE(repo_root.empty());
 
-    const fs::path shader_root = repo_root / "Resources" / "Shaders";
-    ASSERT_TRUE(fs::exists(shader_root));
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path spirv_root = slang_root / "build" / "spirv";
+    ASSERT_TRUE(fs::exists(spirv_root));
 
-    fs::file_time_type newest_include{};
-    if (!newest_shared_include(shader_root, newest_include)) { GTEST_SKIP() << "no shared shader includes"; }
+    fs::file_time_type newest_import{};
+    if (!newest_shared_import(slang_root, newest_import)) { GTEST_SKIP() << "no shared Slang imports under common/"; }
 
     std::error_code error;
     std::vector<std::string> stale;
-    for (fs::recursive_directory_iterator it(shader_root, error), end; it != end; it.increment(error)) {
+    for (fs::recursive_directory_iterator it(spirv_root, error), end; it != end; it.increment(error)) {
         if (error) { break; }
         if (!it->is_regular_file(error) || it->path().extension() != ".spv") { continue; }
-        // Naga-exported artifacts are not built from these GLSL includes -
-        // without this skip, the first edit to any shared include flags all
-        // of Resources/Shaders/generated as stale forever.
-        if (is_generated_artifact(it->path())) { continue; }
         const auto spv_time = fs::last_write_time(it->path(), error);
         if (error) { continue; }
-        if (spv_time < newest_include) { stale.push_back(fs::relative(it->path(), repo_root).string()); }
+        if (spv_time < newest_import) { stale.push_back(fs::relative(it->path(), repo_root).string()); }
     }
 
     EXPECT_TRUE(stale.empty()) << stale.size()
-                               << " SPIR-V binaries are older than the newest shared include; "
-                                  "editing a shared .glsl must rebuild its dependents.";
+                               << " SPIR-V binaries are older than the newest shared Slang import under "
+                                  "common/; editing a shared module must rebuild its dependents.";
 }
 
 // GLM_FORCE_DEPTH_ZERO_TO_ONE used to be defined ONLY in App.cpp - a
@@ -194,38 +237,41 @@ TEST(BuildIntegrity, GlmProducesVulkanDepthRange)
     EXPECT_NEAR(ortho_near, 0.0F, 1e-3F) << "glm::ortho near plane should map to 0, got " << ortho_near;
 }
 
-// EVERY shader source must produce SPIR-V - not just the ones a pipeline
-// currently loads.
-//
-// compile-shaders.ps1 only warns when glslc fails, so a shader that stopped
-// compiling left its previous .spv in place and the build stayed green. That
-// hid a missing include path (the shader ROOT was never passed to glslc, so
-// every `#include "hostDevice/..."` failed) for long enough that the ten
-// affected shaders were written off as un-portable "legacy OpenGL-era" files
-// in the docs. They compile fine. Worse, rasterizer/shader.frag - a shader the
-// main pipeline loads every frame - was among them, so edits to it silently
-// did nothing.
+// EVERY Slang source with an entry point, in a subdirectory the C++ engine
+// consumes, must produce SPIR-V - not just the ones a pipeline currently
+// loads. compile-slang-shaders.ps1 fails the whole script on a slangc error
+// (unlike the old glslc-based compile-shaders.ps1, which only warned), but a
+// source that was never added to the manifest at all would otherwise go
+// unnoticed until pipeline creation.
 TEST(BuildIntegrity, EveryShaderSourceHasCompiledBinary)
 {
     const fs::path repo_root = find_repo_root();
     ASSERT_FALSE(repo_root.empty());
 
-    const fs::path shader_root = repo_root / "Resources" / "Shaders";
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path spirv_root = slang_root / "build" / "spirv";
+
     std::vector<std::string> missing;
-
     std::error_code error;
-    for (fs::recursive_directory_iterator it(shader_root, error), end; it != end; it.increment(error)) {
-        if (error) { break; }
-        const fs::path &source = it->path();
-        if (!it->is_regular_file(error) || !is_shader_source(source)) { continue; }
+    for (const auto &subdir : kEngineSpirvSubdirs) {
+        const fs::path source_dir = slang_root / subdir;
+        if (!fs::exists(source_dir, error)) { continue; }
 
-        const fs::path spv = source.parent_path() / "spv" / (source.filename().string() + ".spv");
-        if (!fs::exists(spv, error)) { missing.push_back(fs::relative(source, repo_root).string()); }
+        for (fs::recursive_directory_iterator it(source_dir, error), end; it != end; it.increment(error)) {
+            if (error) { break; }
+            const fs::path &source = it->path();
+            if (!it->is_regular_file(error) || source.extension() != ".slang") { continue; }
+            if (!has_entry_point(source)) { continue; }// import-only module, e.g. raytracing/rt_types.slang
+
+            if (!has_compiled_binary_for_source(source, spirv_root, slang_root)) {
+                missing.push_back(fs::relative(source, repo_root).string());
+            }
+        }
     }
 
     EXPECT_TRUE(missing.empty()) << missing.size()
-                                 << " shader source(s) have no SPIR-V, which means glslc failed and the "
-                                    "build only warned: "
+                                 << " shader source(s) have no SPIR-V, which means slangc was never run for "
+                                    "them (missing from compile-slang-shaders.ps1's manifest?) or failed: "
                                  << [&missing] {
                                         std::string joined;
                                         for (const auto &entry : missing) { joined += "\n  " + entry; }
@@ -241,21 +287,39 @@ TEST(BuildIntegrity, ActivePipelineShadersHaveCompiledBinaries)
     const fs::path repo_root = find_repo_root();
     ASSERT_FALSE(repo_root.empty());
 
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path spirv_root = slang_root / "build" / "spirv";
+
+    // Exactly the paths built from the `slang_spv_dir` constants under Src/
+    // (Rasterizer.cpp, DeferredRasterizer.cpp, PostStage.cpp, SkyBox.cpp,
+    // CascadedShadowMap.cpp, Clouds.cpp, Raytracing.cpp, PathTracing.cpp).
     const std::vector<std::string> required = {
-        "rasterizer/shader.vert", "rasterizer/shader.frag",
-        "rasterizer/shadows/directional_shadow_map.vert",
-        "rasterizer/shadows/directional_shadow_map.frag",
-        "deferred/geometry.vert", "deferred/geometry.frag",
-        "deferred/lighting.vert", "deferred/lighting.frag",
-        "post/post.vert", "post/post.frag",
-        "skybox/SkyBox.vert", "skybox/SkyBox.frag",
+        "rasterizer/rasterizer.vs_main.spv",
+        "rasterizer/rasterizer.fs_main.spv",
+        "rasterizer/shadows/shadow_map.shadow_vs_main.spv",
+        "rasterizer/shadows/shadow_map.shadow_fs_main.spv",
+        "deferred/deferred.geometry_vs_main.spv",
+        "deferred/deferred.geometry_fs_main.spv",
+        "deferred/deferred.lighting_vs_main.spv",
+        "deferred/deferred.lighting_fs_main.spv",
+        "post/post.vs_main.spv",
+        "post/post.fs_main.spv",
+        "skybox/skybox.vs_main.spv",
+        "skybox/skybox.fs_main.spv",
+        "path_tracing/path_tracing.path_tracing_main.spv",
+        "raytracing/raytrace.rgen.rgen_main.spv",
+        "raytracing/raytrace.rchit.rchit_main.spv",
+        "raytracing/raytrace.rmiss.rmiss_main.spv",
+        "raytracing/shadow.rmiss.shadow_rmiss_main.spv",
+        "compute/clouds.clouds_main.spv",
+        "compute/noise.noise_main.spv",
     };
 
     std::vector<std::string> missing;
     for (const auto &relative : required) {
-        const fs::path source = repo_root / "Resources" / "Shaders" / relative;
-        if (!fs::exists(source)) { continue; }// shader itself moved - not this test's job
-        const fs::path spv = source.parent_path() / "spv" / (source.filename().string() + ".spv");
+        const fs::path spv = spirv_root / relative;
+        const fs::path source = source_for_spirv(spv, spirv_root, slang_root);
+        if (!source.empty() && !fs::exists(source)) { continue; }// shader itself moved - not this test's job
         if (!fs::exists(spv)) { missing.push_back(relative); }
     }
 
