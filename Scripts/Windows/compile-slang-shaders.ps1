@@ -109,6 +109,7 @@ $Manifest = @(
     # @{ File = 'histogram\histogram.slang'; Entry = 'histogram_main'; Stage = 'compute'; Targets = @('wgsl') },
     # Rust/WebGPU occlusion bbox detection (WGSL emit).
     @{ File = 'occlusion_bbox\occlusion_bbox.slang'; Entry = 'vs_main'; Stage = 'vertex'; Targets = @('wgsl') },
+    @{ File = 'occlusion_bbox\occlusion_bbox.slang'; Entry = 'fs_main'; Stage = 'fragment'; Targets = @('wgsl') },
     # Rust/WebGPU depth resolve (WGSL emit).
     @{ File = 'depth_resolve\depth_resolve.slang'; Entry = 'vs_main'; Stage = 'vertex'; Targets = @('wgsl') },
     @{ File = 'depth_resolve\depth_resolve.slang'; Entry = 'fs_main'; Stage = 'fragment'; Targets = @('wgsl') },
@@ -225,6 +226,33 @@ $WgslMap = @(
     @{ Src = 'tex_quad\tex_quad.slang';     Dst = $RustGuiShaderDir;    Out = 'tex_quad.wgsl' }
 )
 
+# Per-output-file regex patches for the depth-texture backend limitation
+# described above (Src -> WgslMap; see the patch loop for how these apply).
+$DepthTexturePatches = @{
+    'forward.wgsl'       = @(
+        @{ Pattern = '(var shadowMap_\w+\s*:\s*)texture_2d_array<f32>'; Replacement = '${1}texture_depth_2d_array' }
+    )
+    'depth_resolve.wgsl' = @(
+        @{ Pattern = '(var msaaDepth_\w+\s*:\s*)texture_multisampled_2d<f32>'; Replacement = '${1}texture_depth_multisampled_2d' }
+        # textureLoad on texture_multisampled_2d<f32> returns vec4<f32> (hence
+        # Slang's trailing .x); textureLoad on texture_depth_multisampled_2d
+        # returns f32 directly, so the accessor becomes invalid once the type
+        # above is patched. Drop it from this specific call.
+        @{ Pattern = '(textureLoad\(\(msaaDepth_\w+\), \(\w+\), \(i32\(\w+\)\)\))\.x'; Replacement = '$1' }
+    )
+    'ssao.wgsl'          = @(
+        @{ Pattern = '(var depthTex_\w+\s*:\s*)texture_2d<f32>'; Replacement = '${1}texture_depth_2d' }
+        # See the depth_resolve.wgsl comment above: textureLoad on
+        # texture_depth_2d returns f32 directly, so the trailing .x Slang
+        # emitted for the texture_2d<f32> case becomes invalid.
+        @{ Pattern = '(textureLoad\(\(depthTex_\w+\), \(\(\w+\)\)\.xy, \(\(\w+\)\)\.z\))\.x'; Replacement = '$1' }
+    )
+    'gpu_cull.wgsl'      = @(
+        @{ Pattern = '(var depthTex_\w+\s*:\s*)texture_2d<f32>'; Replacement = '${1}texture_depth_2d' }
+        @{ Pattern = '(textureLoad\(\(depthTex_\w+\), \(\(\w+\)\)\.xy, \(\(\w+\)\)\.z\))\.x'; Replacement = '$1' }
+    )
+}
+
 $wgslFailed = @()
 $wgslEmitted = 0
 
@@ -244,6 +272,24 @@ foreach ($entry in $WgslMap) {
         Write-Warning "Combined WGSL emit failed: $($entry.Src)"
         $wgslFailed += $entry.Src
         continue
+    }
+
+    # Slang's WGSL backend has no depth-texture resource type in HLSL syntax
+    # (a Texture2DArray/Texture2DMS<float> sampled via SampleCmp/Load from a
+    # depth-format image), so it always emits the sampled-float WGSL type even
+    # where the Rust bind group layout declares TextureSampleType::Depth.
+    # Patch the emitted declaration(s) until slangc gains a depth-texture
+    # control (checked 2026-07-31: no such control exists yet).
+    if ($DepthTexturePatches.ContainsKey($entry.Out)) {
+        $wgslText = Get-Content -Path $tmpOut -Raw
+        foreach ($p in $DepthTexturePatches[$entry.Out]) {
+            $patched = $wgslText -replace $p.Pattern, $p.Replacement
+            if ($patched -eq $wgslText) {
+                Write-Warning "$($entry.Out) depth-texture patch '$($p.Pattern)' matched nothing - slangc output may have changed"
+            }
+            $wgslText = $patched
+        }
+        Set-Content -Path $tmpOut -Value $wgslText -NoNewline -Encoding utf8
     }
 
     # Copy to the Rust crate's shader directory (replaces hand-written WGSL).

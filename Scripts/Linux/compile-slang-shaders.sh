@@ -94,6 +94,7 @@ MANIFEST=(
   "gpu_cull/gpu_cull.slang|cs_main|compute|wgsl"
   # Rust/WebGPU occlusion bbox (WGSL only)
   "occlusion_bbox/occlusion_bbox.slang|vs_main|vertex|wgsl"
+  "occlusion_bbox/occlusion_bbox.slang|fs_main|fragment|wgsl"
   # Rust/WebGPU depth resolve (WGSL only)
   "depth_resolve/depth_resolve.slang|vs_main|vertex|wgsl"
   "depth_resolve/depth_resolve.slang|fs_main|fragment|wgsl"
@@ -168,6 +169,34 @@ for entry in "${WGSL_MAP[@]}"; do
     echo "[WARN] Combined WGSL emit failed: ${src_file}"
     continue
   fi
+
+  # Slang's WGSL backend has no depth-texture resource type in HLSL syntax (a
+  # Texture2DArray/Texture2DMS<float> sampled via SampleCmp/Load from a
+  # depth-format image), so it always emits the sampled-float WGSL type even
+  # where the Rust bind group layout declares TextureSampleType::Depth. Patch
+  # the emitted declaration(s) until slangc gains a depth-texture control
+  # (checked 2026-07-31: no such control exists yet).
+  case "$out_name" in
+    forward.wgsl)
+      sed -i -E 's/(var shadowMap_[A-Za-z0-9_]+[[:space:]]*:[[:space:]]*)texture_2d_array<f32>/\1texture_depth_2d_array/' "$tmp_out"
+      ;;
+    depth_resolve.wgsl)
+      sed -i -E 's/(var msaaDepth_[A-Za-z0-9_]+[[:space:]]*:[[:space:]]*)texture_multisampled_2d<f32>/\1texture_depth_multisampled_2d/' "$tmp_out"
+      # textureLoad on texture_multisampled_2d<f32> returns vec4<f32> (hence
+      # Slang's trailing .x); textureLoad on texture_depth_multisampled_2d
+      # returns f32 directly, so the accessor becomes invalid once the type
+      # above is patched. Drop it from this specific call.
+      sed -i -E 's/(textureLoad\(\(msaaDepth_[A-Za-z0-9_]+\), \([A-Za-z0-9_]+\), \(i32\([A-Za-z0-9_]+\)\)\))\.x/\1/' "$tmp_out"
+      ;;
+    ssao.wgsl|gpu_cull.wgsl)
+      sed -i -E 's/(var depthTex_[A-Za-z0-9_]+[[:space:]]*:[[:space:]]*)texture_2d<f32>/\1texture_depth_2d/' "$tmp_out"
+      # See the depth_resolve.wgsl comment above: textureLoad on
+      # texture_depth_2d returns f32 directly, so the trailing .x Slang
+      # emitted for the texture_2d<f32> case becomes invalid.
+      sed -i -E 's/(textureLoad\(\(depthTex_[A-Za-z0-9_]+\), \(\([A-Za-z0-9_]+\)\)\.xy, \(\([A-Za-z0-9_]+\)\)\.z\))\.x/\1/' "$tmp_out"
+      ;;
+  esac
+
   mkdir -p "$dst_dir"
   cp "$tmp_out" "${dst_dir}/${out_name}"
   WGSL_EMITTED=$((WGSL_EMITTED + 1))

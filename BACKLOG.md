@@ -1854,6 +1854,259 @@ Submodule Pins).
   scope for the bundle-caching task below, which could only be verified via
   `cargo build` + the unaffected lib tests as a result.
 
+## 2026-07-31 batch II — planner (WGSL depth-texture fix, PT device-lost, glTF skinning, docs gate, perf diffing)
+
+All five verified against the tree on 2026-07-31 before writing. Re-checks done
+first so nobody chases stale prose: the Rust `PrimUniforms` dirty gate is DONE
+(`uniforms_dirty` at `forward.rs:1890`), the shadow-caster bundle cache is DONE
+(`c2c2fe4` in the submodule), the wasm size-budget CI step is already a hard
+gate (`wasm-size-budget.sh` does its own `rustup target add` and is fatal), and
+the Slang shaders already use CPU-precomputed inverses (the PT "use the
+precomputed inverse matrices" survey item is moot post-Slang). Suggested order:
+the WGSL fix first — it unblocks headless verification for every future Rust
+renderer task.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M/L) headless.rs renders wrong pixels almost everywhere — 17/33 GPU
+  tests fail on real image-content assertions now that shader compilation is
+  fixed** — likely one or a small number of systemic root causes, not 17
+  independent bugs; needs a fresh investigation rather than a per-test fix.
+
+  **Context:** the previous task (Slang WGSL-backend depth-texture types)
+  blocked EVERY GPU-touching Rust test behind a shader-module compile crash;
+  fixing it (plus three siblings of the identical bug hit immediately behind
+  it — see below) got every pipeline to actually build for the first time
+  since the Slang migration (`40b1cbe3`). That unblocked real execution, and
+  most of what runs now produces wrong pixels rather than a crash:
+  `renders_cube_headless` — the single most basic test, a plain lit red cube
+  with no textures/animation/shadows — fails too (`center pixel should be the
+  red cube, got [137, 128, 124, 255]`, a near-neutral grey nowhere close to
+  either "red cube" or the "blue-dominant sky" the corner pixel check also
+  wants). Several other failures show the exact same `[137, 128, 124, ...]`-
+  family value, which smells like one shared root cause (camera/view-proj
+  setup, a lighting term always evaluating near-zero, or a tonemap/exposure
+  stage crushing everything toward grey) rather than 17 unrelated defects.
+  None of this is a regression from the compile fixes — this renderer's
+  pixel output has never been verified on this host; the tests simply could
+  not run before.
+
+  **Repro:** `cargo test -p kataglyphis_webgpu_renderer --test headless` in
+  the submodule. 16/33 pass, these 17 fail on content assertions (not
+  panics/validation errors): `alpha_modes_blend_and_mask`,
+  `animation_moves_the_cube`, `auto_exposure_brightens_a_dark_scene_over_successive_frames`,
+  `bloom_adds_energy_around_bright_sources`, `caster_culling_engages_and_shadows_survive`,
+  `clearing_instances_restores_a_single_copy_rather_than_none`,
+  `instances_appear_at_their_own_transforms`,
+  `masked_card_casts_half_the_shadow_of_an_opaque_one`,
+  `morph_weight_lifts_the_silhouette`, `punctual_lights_pool_on_plane`,
+  `renders_cube_headless`, `renders_textured_cube_headless`,
+  `shadow_darkens_plane_under_cube`, `skinning_bends_the_bar`,
+  `texture_slot_samples_its_declared_uv_set`, `unlit_material_ignores_the_light`,
+  `vertex_colors_tint_the_surface`. `cargo test -p kataglyphis_webgpu_renderer
+  --lib` (113 tests, includes `set_animation_time_recomputes_and_dirties_the_cached_normal_matrix`)
+  is fully green — the failures are specific to actually rendering a frame.
+
+  **Suggested approach:** start from `renders_cube_headless` (simplest scene,
+  no animation/skinning/textures) with `KATAGLYPHIS_FRAME_DUMP`-style frame
+  dumping (or an equivalent PNG dump for this renderer, if one exists) to see
+  the SHAPE of what's wrong, not just the failing assertion — the C++ engine's
+  backlog history (see "Always dump the picture, not just the number" above)
+  shows pixel-count/mean assertions alone have twice produced confident wrong
+  root-cause guesses here. Check the view-projection matrix plumbing through
+  `_MatrixStorage_..._std140_0` (Slang's std140 column-major marshaling) first,
+  since a transposed or misordered matrix would explain "nothing where it
+  should be" across nearly every test uniformly.
+
+  **Build:** No C++ build. Rust only, run on the host (headless wgpu works
+  there).
+
+### C++ Vulkan engine
+
+- [ ] **(M) Localize (and fix if cheap) the path-tracing compute
+  `VK_ERROR_DEVICE_LOST` on the RX 9070 XT** — the last blocker on full GPU
+  golden verification; every test ordered after the first PT-exercising one
+  never runs.
+
+  **Files to read:**
+  - The "GPU host verification" section of the 2026-07-30 batch II above — the
+    full symptom record (`vkQueueSubmit` returns -4 at PT dispatch, zero
+    preceding validation errors, `frame=2` in the accumulation golden and
+    `frame=0` in the GUI sweep, so not timing-dependent).
+  - `Resources/ShadersSlang/compute/path_tracing.slang` — the RayQuery kernel
+    to bisect.
+  - `Src/GraphicsEngineVulkan/renderer/PathTracing.cpp` — dispatch, descriptor
+    and accumulation-image bindings.
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` —
+    `PathTracingAccumulatesAndConverges` (the reproducer).
+  - `docs/gpu-golden-testing.md` — how to run container-built binaries on the
+    host GPU.
+
+  **Steps:**
+  1. Build `clangcl-debug` in the container, then from the repo root on the
+     host run `commitTestSuite.exe
+     --gtest_filter=GoldenRender.PathTracingAccumulatesAndConverges` and
+     confirm the abort still reproduces.
+  2. Bisect the kernel coarsest-first, recompiling between steps with
+     `pwsh Scripts/Windows/compile-slang-shaders.ps1` (shader-only iterations,
+     no C++ rebuild): (a) early-return a solid colour before any RayQuery — if
+     device-lost persists, the fault is dispatch/descriptor-side in
+     `PathTracing.cpp`, not kernel logic; (b) otherwise re-enable pieces
+     stepwise: primary RayQuery, bounce loop, NEE shadow query,
+     accumulation-image read/write, the BDA vertex/index/material walk.
+     Device-lost with clean validation usually means an out-of-bounds
+     buffer-device-address read or a non-terminating loop — the axes cover
+     both.
+  3. If a specific construct is the trigger and the fix is evident, fix it and
+     run the FULL golden suite on the host. If root-causing needs RenderDoc /
+     GPU crash-dump tooling, stop, record the exact bisection frontier in this
+     entry, and flip it to `- [b]` naming that blocker.
+  4. If PT goes green: also run
+     `GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice` (unevaluated
+     since the abort shadows it), and check whether the multiview VUID bullet
+     under "Recurring validation runs" can now be struck.
+
+  **Test:** `PathTracingAccumulatesAndConverges`, the furnace and quality
+  goldens green on the host = done. A precise localization without a fix is
+  also a valid, recordable outcome — do not force a speculative fix.
+
+  **Build:** `clangcl-debug` via
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`,
+  then host GPU runs per `docs/gpu-golden-testing.md`.
+
+  **Context:** Isolated 2026-07-31 after the feature-chain fix restored the
+  rest of the suite (15/17 non-PT goldens pass). The kernel is inline ray
+  tracing (RayQuery) in a `[shader("compute")]` — the rchit implicit-LOD class
+  of bug does not apply here, so this is a genuinely separate defect.
+
+- [ ] **(S) glTF: ignore the node world transform for skinned meshes (spec
+  conformance)** — the last surviving bullet of survey item #11's loader gaps.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:448-462` — the node walk
+    bakes `cgltf_node_transform_world` into every mesh node's vertices with no
+    `node->skin` check.
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp` (the `GltfParseUnit` suite —
+    locate via `MaskAlphaModeSetsTheCutoff`) — the CPU red/green pattern to
+    follow.
+  - An existing minimal fixture under `Resources/Models/GltfTest/` (e.g.
+    `mask_card.gltf`) — the embedded-base64 structure to copy.
+
+  **Steps:**
+  1. In the node walk, when `node->skin != nullptr`, use an identity world
+     matrix and identity normal matrix for that node's primitives. glTF 2.0
+     spec (Skins): "the transform of the skinned mesh node MUST be ignored" —
+     only joint transforms position a skinned mesh. The engine has no joint
+     animation, so vertices stay in bind pose; applying the node transform on
+     top is wrong per spec.
+  2. Add a fixture `skinned_translated.gltf`: one triangle mesh on a node that
+     BOTH has a skin (one joint, identity inverseBindMatrices) AND a
+     translation (e.g. +10 on x). Keep buffers embedded base64 like the other
+     GltfTest fixtures. Run `cgltf_validate` mentally against required skin
+     fields (`joints`, `inverseBindMatrices` accessor) — a malformed skin would
+     be rejected by the validation gate added in survey item #14.
+  3. CPU red/green test `GltfParseUnit.SkinnedNodeTransformIsIgnored`: parse
+     the fixture, assert the position x-range is NOT shifted by the node
+     translation (it is shifted +10 today = red). Add a control assertion that
+     an UNSKINNED node with the same translation still moves (existing,
+     correct behaviour must not regress).
+  4. Confirm `GltfParseUnit` is in the Windows CI filter in
+     `.github/workflows/Windows.yml` (it was added 2026-07-22; just verify).
+
+  **Test:** as in step 3; pure CPU, no GPU needed.
+
+  **Build:** `clangcl-debug` (`.cpp`-only change, no ABI skew — incremental
+  build is fine):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`,
+  then run `commitTestSuite.exe --gtest_filter=GltfParseUnit.*` on the host.
+
+  **Context:** Survey item #11 (2026-07-22) called this out; everything else in
+  that item is done. Low blast radius: only assets that actually carry a skin
+  change behaviour, and for those the current rendering is wrong per spec.
+
+### CI / docs
+
+- [ ] **(M) Gate the docs build: surface Sphinx warnings and fail on broken
+  internal links before deploy** — closes the "Docs builds are unverified" CI
+  gap.
+
+  **Files to read:**
+  - `Scripts/Linux/docs-build-web.sh` — the current CI build (`make html`, no
+    `-W`, no linkcheck), invoked from `.github/workflows/Linux.yml:269-276`.
+  - `docs/Makefile`, `docs/make.bat`, `docs/source/conf.py`.
+
+  **Steps:**
+  1. Measure first: run the html build locally (Windows: create the venv the
+     way `docs-build-web.sh` does via uv, then `docs/make.bat html`; if the
+     `graphviz_generator.py` step needs a missing graphviz binary locally, skip
+     that step and note it) and count the warnings.
+  2. Add a linkcheck pass to `docs-build-web.sh` after `make html`:
+     `make linkcheck`, with external domains excluded via `linkcheck_ignore`
+     in `conf.py` (external links flake; the gap being closed is broken
+     pages/anchors/refs on OUR site). A broken internal link or missing
+     toctree page must fail the step — and therefore the deploy that follows
+     it.
+  3. If the step-1 warning count is small (<10), fix them and add
+     `SPHINXOPTS="-W --keep-going"` to the html invocation in
+     `docs-build-web.sh`. If it is large, do NOT add `-W` (a gate that is red
+     on day one gets switched off); record the count in this entry instead.
+  4. Verify locally: deliberately break one internal reference, confirm
+     linkcheck fails, restore it, confirm it passes. No workflow structure
+     change — the new checks ride the existing "Build web page" step.
+
+  **Test:** the break-one-link exercise in step 4 is the red/green.
+
+  **Build:** none (docs + shell script only; local sphinx via uv).
+
+  **Context:** "Docs builds are unverified" under CI and release gaps — the
+  build+deploy went green 2026-07-21, so a link/page check is the stated
+  remaining gap. Keep external-link checking out of the fatal path.
+
+### Performance tooling
+
+- [ ] **(S/M) Benchmark regression diffing: checked-in baseline JSON + compare
+  script** — turns the baseline table in this file from prose into an
+  executable check.
+
+  **Files to read:**
+  - `Test/perf/perfSuite.cpp` (header comment already documents
+    `--benchmark_out=perf.json --benchmark_out_format=json`).
+  - `Test/perf/CMakeLists.txt:44-45` — the CTest run already writes
+    `perf-results.json`.
+  - `Scripts/Windows/Build-Windows.ps1:300-308` — the profile lane already
+    invokes `perfTestSuite.exe` with JSON output.
+  - The "Measured baseline (2026-07-19, clangcl-profile...)" table above.
+
+  **Steps:**
+  1. Add `Scripts/Compare-PerfBaseline.ps1`: read a baseline JSON and a fresh
+     Google-Benchmark JSON, match entries by benchmark name, print
+     per-benchmark real_time deltas, and exit non-zero when any benchmark
+     regresses beyond a tolerance (parameter, default +25% — generous on
+     purpose; wall-clock noise on a desktop is real). Benchmarks present in
+     only one file are reported but never fatal.
+  2. Capture a baseline on a clean HOST run of the container-built
+     `build-clangcl-profile\perfTestSuite.exe` (container wcifs I/O pollutes
+     wall time — the backlog's benchmark notes say host runs only) and check
+     it in as `Test/perf/baselines/win-9070xt-32core.json`.
+  3. Do NOT wire it into CI — benchmark timings are machine-dependent by
+     design (the backlog's own rule). Document usage in the script header and
+     add one line to the "Regression tracking" bullet in the Performance
+     testing section pointing at the script.
+  4. Verify: run the suite twice and self-diff (must pass); then temporarily
+     inflate one baseline entry ×10 and confirm the script fails on it.
+
+  **Test:** step 4 is the red/green; the script itself is the deliverable.
+
+  **Build:** `clangcl-profile`
+  (`pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-profile -SkipTests`),
+  then run `perfTestSuite.exe --benchmark_out=... --benchmark_out_format=json`
+  from the host.
+
+  **Context:** "Regression tracking" bullet under Performance testing —
+  "storing one baseline per machine and diffing beats eyeballing console
+  output". The CascadedShadowMap benchmarks added 2026-07-31 (`dc5fe29e`) grew
+  the suite again; without a diff tool each addition makes eyeballing worse.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

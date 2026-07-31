@@ -318,7 +318,7 @@ float3 punctual_lighting(float3 worldPos, float3 n, float3 v, float3 albedo,
 }
 
 [shader("fragment")]
-float4 fs_main(VsOut In, float4 fragCoord : SV_Position) : SV_Target
+float4 fs_main(VsOut In) : SV_Target
 {
     uint uvMask = uint(prim.material_flags.y);
     float2 baseIn = (uvMask & 1u) != 0u ? In.uv1 : In.uv;
@@ -364,7 +364,7 @@ float4 fs_main(VsOut In, float4 fragCoord : SV_Position) : SV_Target
     float shadow = shadow_factor(In.viewDepth, In.worldPosition, nDotL);
     directLight *= 1.0 - shadow;
 
-    float3 punctual = punctual_lighting(In.worldPosition, n, v, albedo.rgb, metallic, roughness, f0, fragCoord);
+    float3 punctual = punctual_lighting(In.worldPosition, n, v, albedo.rgb, metallic, roughness, f0, In.svPosition);
 
     // IBL ambient
     float3 ambient = float3(0.0);
