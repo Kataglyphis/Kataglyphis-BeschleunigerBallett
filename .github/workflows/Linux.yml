@@ -275,6 +275,18 @@ jobs:
             "${{ env.CONTAINER_IMAGE }}" \
             bash ./Scripts/Linux/docs-build-web.sh "${{ env.DOCS_OUT }}"
 
+      - name: Enforce wasm demo size budget
+        if: ${{ inputs.runner == 'ubuntu-24.04' }}
+        # Deliberately fatal, unlike the best-effort rebuild in "Build web
+        # page" above: a wasm bloat regression must block the deploy step
+        # below, not surface as a slow page load after it is already live.
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            "${{ env.CONTAINER_IMAGE }}" \
+            bash ./Scripts/Linux/wasm-size-budget.sh
+
       - name: 📂 Sync files to domain
         uses: SamKirkland/FTP-Deploy-Action@v4.4.0
         if: ${{ inputs.runner == 'ubuntu-24.04' }}

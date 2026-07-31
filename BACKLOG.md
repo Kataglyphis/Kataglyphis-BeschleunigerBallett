@@ -633,9 +633,11 @@ cleanUp+recreate pair at the four scene-changed sites.
   **done**: `render/gpu_timing.rs` (`TimedPass`, per-pass averaged ms) and the
   `dump_gpu_timings` example + `Scripts/Compare-RendererTimings.ps1` already
   compare timings across renderers, not just pixels.
-- **Wasm size budget**: the demo payload is ~3.7 MB uncompressed and
-  nothing tracks it; `wasm-opt -Oz` plus a CI size gate would keep the
-  Sphinx-hosted demo honest.
+- ~~**Wasm size budget**~~ — **done**: `Scripts/Linux/wasm-size-budget.sh`
+  (CI) / `Scripts/Test-WasmSizeBudget.ps1` (local) build wasm32-unknown-unknown
+  release, run `wasm-opt -Oz`, and fail above a 12 MiB budget; wired into
+  `Linux.yml` ahead of the docs deploy. The ~3.7 MB figure was stale — measured
+  post-opt size is ~8.3 MiB, never previously enforced.
 
 ## Housekeeping candidates
 
@@ -1654,12 +1656,6 @@ moves geometry.
 ### C++ Vulkan engine
 
 ### Rust WebGPU renderer
-
-- [ ] **Wasm size budget CI gate** (S) — the demo payload is ~3.7 MB
-    uncompressed; nothing tracks it. `wasm-opt -Oz` + a CI step that fails
-    above a threshold keeps the Sphinx-hosted demo honest. Gate on
-    `cargo build --target wasm32-unknown-unknown` output size, not a
-    deploy-time surprise.
 
 ### Cross-renderer
 

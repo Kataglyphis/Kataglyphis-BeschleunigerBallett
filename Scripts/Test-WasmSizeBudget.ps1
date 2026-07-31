@@ -22,8 +22,11 @@
 [CmdletBinding()]
 param(
 
-    # Wasm size budget in bytes (default 4.0 MiB).
-    [int]$BudgetBytes = 4194304,
+    # Wasm size budget in bytes (default 12.0 MiB - matches
+    # Scripts/Linux/wasm-size-budget.sh, the CI-enforced equivalent. Measured
+    # 2026-07-31 post -Oz: ~8.3 MiB; the previous 4 MiB default predated any
+    # real measurement and would have failed immediately).
+    [int]$BudgetBytes = 12582912,
     # Path to the Rust project template (kataglyphis_webgpu_renderer lives here).
     [string]$RustProjectDir = (Join-Path $PSScriptRoot '..\ExternalLib\Kataglyphis-RustProjectTemplate'),
     # Skip the cargo build step (useful for re-checking an existing build).

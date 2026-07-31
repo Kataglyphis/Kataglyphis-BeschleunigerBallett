@@ -85,7 +85,7 @@ Small, high-value items that make arbitrary glTF files from the wild look right.
 | Async asset loading | M | Background thread native / fetch + progress on web; loading UI |
 | Indirect draws | M | `draw_indexed_indirect` batching once culling is GPU-side |
 | ✅ GPU occlusion culling | XL | Done 2026-07-21: temporal hardware occlusion queries (NOT a Hi-Z pyramid — WebGPU core lacks portable depth-mip sampling). Per-primitive world-AABB query pass → `resolve_query_set` → async readback → next-frame skip of zero-sample primitives; one-frame latency accepted. `render/occlusion.rs`, `TimedPass::OcclusionCull`, overlay checkbox, off by default. GPU *frustum* culling (compute-based) still open |
-| wasm size budget | S | `twiggy`/`wasm-opt` in the web build; track regression in CI |
+| ✅ wasm size budget | S | Done 2026-07-31: `Scripts/Linux/wasm-size-budget.sh` builds wasm32-unknown-unknown release, runs `wasm-opt -Oz`, fails above a 12 MiB budget; wired into `Linux.yml`'s "Enforce wasm demo size budget" step ahead of the docs deploy. Measured post-opt size at the time: ~8.3 MiB — the previously-quoted ~3.7 MB figure was stale/never enforced |
 | ✅ Timestamp-query profiling | M | Done 2026-07-20: per-pass wgpu timestamp queries, averaged ms via `gpu_timings_ms()` (`render/gpu_timing.rs`), + `dump_gpu_timings` example feeding the cross-renderer timing table |
 
 ## Phase E — Web platform & demo polish
