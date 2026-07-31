@@ -1,5 +1,6 @@
 module;
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <vector>
@@ -26,11 +27,12 @@ namespace Kataglyphis {
 namespace {
 // Free so computeCascadeData() can be called without a CascadedShadowMap (and
 // therefore without a Vulkan device) in tests.
-std::vector<glm::vec4> frustumCornersWorldSpace(const glm::mat4 &proj, const glm::mat4 &view)
+std::array<glm::vec4, 8> frustumCornersWorldSpace(const glm::mat4 &proj, const glm::mat4 &view)
 {
     const auto inv = glm::inverse(proj * view);
 
-    std::vector<glm::vec4> frustumCorners;
+    std::array<glm::vec4, 8> frustumCorners{};
+    std::size_t index = 0;
     for (unsigned int x = 0; x < 2; ++x) {
         for (unsigned int y = 0; y < 2; ++y) {
             for (unsigned int z = 0; z < 2; ++z) {
@@ -39,7 +41,8 @@ std::vector<glm::vec4> frustumCornersWorldSpace(const glm::mat4 &proj, const glm
                 // so NDC z runs 0..1.
                 const glm::vec4 pt =
                   inv * glm::vec4((2.0F * x) - 1.0F, (2.0F * y) - 1.0F, static_cast<float>(z), 1.0F);
-                frustumCorners.push_back(pt / pt.w);
+                frustumCorners[index] = pt / pt.w;
+                ++index;
             }
         }
     }
@@ -126,7 +129,7 @@ std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
     for (uint32_t i = 0; i < numCascades; i++) {
         glm::mat4 const curr_cascade_proj = glm::perspective(glm::radians(cameraFov), aspect, cascadeSplits[i], cascadeSplits[i + 1]);
 
-        std::vector<glm::vec4> frustumCornerWorldSpace = frustumCornersWorldSpace(curr_cascade_proj, cameraView);
+        std::array<glm::vec4, 8> frustumCornerWorldSpace = frustumCornersWorldSpace(curr_cascade_proj, cameraView);
 
         glm::vec3 center = glm::vec3(0, 0, 0);
         for (const auto &v : frustumCornerWorldSpace) { center += glm::vec3(v); }

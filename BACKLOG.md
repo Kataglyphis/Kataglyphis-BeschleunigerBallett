@@ -139,8 +139,8 @@ committed to.
 | `BM_ResolveModelPath_Miss` | 15.7 us |
 | `BM_ObjParse_Plane` (1 KB) | 23 us |
 | `BM_ObjParse_Suzanne` (1 MB) | 7.1 ms |
-| `BM_ComputeCascadeData/1` (2026-07-31) | 372 ns |
-| `BM_ComputeCascadeData/3` (2026-07-31) | 1.03 us |
+| `BM_ComputeCascadeData/1` (2026-07-31, `std::array` corners) | 142 ns |
+| `BM_ComputeCascadeData/3` (2026-07-31, `std::array` corners) | 324 ns |
 | `BM_FrustumCull/64` (2026-07-31) | 339 ns |
 | `BM_FrustumCull/512` (2026-07-31) | 2.93 us |
 | `BM_FrustumCullShadowCaster/64` (2026-07-31) | 326 ns |
@@ -2169,56 +2169,6 @@ tree again (`eaedec85` → `2222d386`) — the recurring drift recorded in
 ### Docs
 
 ### C++ Vulkan engine
-
-- [ ] **(S) Drop the per-cascade heap allocations in `computeCascadeData` (refactor)** —
-  the frustum-corner helper heap-allocates and grows a vector once per cascade,
-  on a function that runs every frame and already has a benchmark to prove the
-  change.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMapMath.cpp:29-48`
-    — `frustumCornersWorldSpace`, the anonymous-namespace helper
-  - the same file `:126-241` — the two loops that consume it
-  - `Test/commit/VulkanEngine/cascadedShadowMapSuite.cpp` — the existing CPU
-    tests that must stay green with *identical* values
-  - `Test/perf/perfSuite.cpp:127` — `BENCHMARK(BM_ComputeCascadeData)->Arg(1)->Arg(3)`
-
-  **Steps:**
-  1. Change `frustumCornersWorldSpace` to return `std::array<glm::vec4, 8>`
-     (add `#include <array>` to the global-module fragment at the top). The
-     corner count is a compile-time 8 — the triple `for x/y/z` loop over `{0,1}`
-     — so index into the array with a running counter instead of `push_back`.
-     Today the vector starts empty and grows through ~4 reallocations per
-     cascade; with 3 cascades that is ~15 heap operations per frame for 128
-     bytes of data.
-  2. Update the three consumers in `computeCascadeData` (`center` accumulation,
-     `radius` loop, and both the stabilized `snapMinZ/snapMaxZ` loop and the
-     legacy min/max loop). They are all `for (const auto &v : ...)` and compile
-     unchanged against an array; `center /= frustumCornerWorldSpace.size()`
-     still works (`std::array::size()` is `constexpr`).
-  3. **Preserve evaluation order exactly.** The accumulations are
-     floating-point, so reordering changes the result in the last bits and the
-     existing tests are entitled to notice. Do not "improve" the loops.
-  4. Leave `cascadeSplits` and the returned `cascadeData` as vectors — they are
-     sized from the runtime `numCascades` and cost one allocation each; the
-     per-cascade churn is what this task removes.
-
-  **Test:** No new test needed — `CascadedShadowMapUnit.*` already pins the
-  maths and must stay green **with unchanged values**. Add the new
-  `BM_ComputeCascadeData` figures to the "Measured baseline" table in
-  `BACKLOG.md` (current: `/1` 372 ns, `/3` 1.03 µs).
-
-  **Build:** `clangcl-debug` first for correctness:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipPerfTests -SkipMsix`
-  Then `clangcl-profile` (the only configuration where timings mean anything)
-  **without** `-SkipPerfTests`, and diff with
-  `Scripts/Compare-PerfBaseline.ps1` against
-  `Test/perf/baselines/win-9070xt-32core.json`.
-
-  **Context:** No `.ixx` changes (the helper is in an anonymous namespace in a
-  `.cpp`), so no `-FreshContainer` is needed. The header comment at
-  `CascadedShadowMapMath.cpp:12-22` explains why this TU is deliberately split
-  from `CascadedShadowMap.cpp` — do not merge them back while you are in here.
 
 - [ ] **(M) Consolidate the three drifted sampler-creation sites (refactor)** —
   the same 12-field `vk::SamplerCreateInfo` is written out three times and the
