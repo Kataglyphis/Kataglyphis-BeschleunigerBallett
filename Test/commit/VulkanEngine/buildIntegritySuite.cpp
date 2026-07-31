@@ -8,11 +8,16 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <map>
+#include <optional>
 #include <string>
 #include <vector>
+
+#include "common/host_device_shared_vars.hpp"
 
 namespace {
 
@@ -108,6 +113,74 @@ bool has_compiled_binary_for_source(const fs::path &source, const fs::path &spir
         if (source_for_spirv(it->path(), spirv_root, slang_root) == source) { return true; }
     }
     return false;
+}
+
+// Every binding constant shared between host_device_shared_vars.hpp (C++) and
+// scene_types.slang (Slang). Both are hand-mirrored today - see
+// HostAndShaderSharedConstantsAgree below for why that is dangerous.
+const std::vector<std::string> kSharedConstantNames = {
+    "MAX_TEXTURE_COUNT", "globalUBO_BINDING", "sceneUBO_BINDING", "OBJECT_DESCRIPTION_BINDING", "TEXTURES_BINDING",
+    "SAMPLER_BINDING", "SHADOW_MAP_BINDING", "TLAS_BINDING", "OUT_IMAGE_BINDING", "ACCUMULATION_IMAGE_BINDING"
+};
+
+bool is_identifier_char(char ch) { return std::isalnum(static_cast<unsigned char>(ch)) != 0 || ch == '_'; }
+
+// Strips a trailing "// ..." comment so prose mentioning a constant's name
+// cannot be mistaken for its definition.
+std::string strip_line_comment(const std::string &line)
+{
+    const auto comment_pos = line.find("//");
+    return comment_pos == std::string::npos ? line : line.substr(0, comment_pos);
+}
+
+// Parses the integer that follows a constant name at `name_end`, accepting
+// both "#define NAME 3" (no '=') and "[static] const int NAME = 3;" (with
+// '=' before the digits).
+std::optional<int> parse_int_after(const std::string &line, std::size_t name_end)
+{
+    std::size_t pos = name_end;
+    while (pos < line.size() && std::isspace(static_cast<unsigned char>(line[pos])) != 0) { ++pos; }
+    if (pos < line.size() && line[pos] == '=') {
+        ++pos;
+        while (pos < line.size() && std::isspace(static_cast<unsigned char>(line[pos])) != 0) { ++pos; }
+    }
+
+    const std::size_t start = pos;
+    if (pos < line.size() && (line[pos] == '-' || line[pos] == '+')) { ++pos; }
+    const std::size_t digits_start = pos;
+    while (pos < line.size() && std::isdigit(static_cast<unsigned char>(line[pos])) != 0) { ++pos; }
+    if (pos == digits_start) { return std::nullopt; }// no digits after an optional sign
+
+    return std::stoi(line.substr(start, pos - start));
+}
+
+// Scans `path` line by line for every name in kSharedConstantNames, matching
+// it as a whole word so e.g. TEXTURES_BINDING does not also match a longer
+// identifier that merely contains it as a substring.
+std::map<std::string, int> parse_int_constants(const fs::path &path)
+{
+    std::map<std::string, int> result;
+    std::ifstream file(path);
+    if (!file) { return result; }
+
+    std::string raw_line;
+    while (std::getline(file, raw_line)) {
+        const std::string line = strip_line_comment(raw_line);
+        for (const auto &name : kSharedConstantNames) {
+            if (result.contains(name)) { continue; }
+
+            const std::size_t pos = line.find(name);
+            if (pos == std::string::npos) { continue; }
+
+            const bool left_ok = pos == 0 || !is_identifier_char(line[pos - 1]);
+            const std::size_t name_end = pos + name.size();
+            const bool right_ok = name_end >= line.size() || !is_identifier_char(line[name_end]);
+            if (!left_ok || !right_ok) { continue; }
+
+            if (const auto value = parse_int_after(line, name_end)) { result[name] = *value; }
+        }
+    }
+    return result;
 }
 
 }// namespace
@@ -326,4 +399,56 @@ TEST(BuildIntegrity, ActivePipelineShadersHaveCompiledBinaries)
     EXPECT_TRUE(missing.empty()) << missing.size()
                                  << " active pipeline shaders have no compiled SPIR-V; pipeline "
                                     "creation would fail at runtime.";
+}
+
+// host_device_shared_vars.hpp (C++) and scene_types.slang (Slang) hand-mirror
+// the same ten binding constants with no shared source of truth. A silent
+// divergence would corrupt every descriptor binding without a validation
+// error, because each side is internally self-consistent. Asserting every
+// name is present in BOTH files (not just equal where both happen to match)
+// means a renamed constant fails loudly instead of the pair silently going
+// unchecked.
+TEST(BuildIntegrity, HostAndShaderSharedConstantsAgree)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const auto host = parse_int_constants(repo_root / "Src" / "GraphicsEngineVulkan" / "common"
+                                           / "host_device_shared_vars.hpp");
+    const auto shader = parse_int_constants(repo_root / "Resources" / "ShadersSlang" / "common" / "scene_types.slang");
+
+    for (const auto &name : kSharedConstantNames) {
+        ASSERT_TRUE(host.contains(name)) << name << " not found (or not parseable) in host_device_shared_vars.hpp";
+        ASSERT_TRUE(shader.contains(name)) << name << " not found (or not parseable) in scene_types.slang";
+        EXPECT_EQ(host.at(name), shader.at(name))
+          << name << " differs between host_device_shared_vars.hpp (" << host.at(name) << ") and scene_types.slang ("
+          << shader.at(name) << ')';
+    }
+}
+
+// The test above parses host_device_shared_vars.hpp as text, so it would
+// happily agree with a header edit that the actual build never sees (e.g. a
+// stray duplicate definition later in the file, or a macro guarded out by an
+// #ifdef). This test instead includes the real header and compares the
+// Slang-side values against the constants the compiler actually produced.
+TEST(BuildIntegrity, SharedConstantsMatchTheCompiledHostValues)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const auto shader = parse_int_constants(repo_root / "Resources" / "ShadersSlang" / "common" / "scene_types.slang");
+    for (const auto &name : kSharedConstantNames) {
+        ASSERT_TRUE(shader.contains(name)) << name << " not found (or not parseable) in scene_types.slang";
+    }
+
+    EXPECT_EQ(shader.at("MAX_TEXTURE_COUNT"), MAX_TEXTURE_COUNT);
+    EXPECT_EQ(shader.at("globalUBO_BINDING"), globalUBO_BINDING);
+    EXPECT_EQ(shader.at("sceneUBO_BINDING"), sceneUBO_BINDING);
+    EXPECT_EQ(shader.at("OBJECT_DESCRIPTION_BINDING"), OBJECT_DESCRIPTION_BINDING);
+    EXPECT_EQ(shader.at("TEXTURES_BINDING"), TEXTURES_BINDING);
+    EXPECT_EQ(shader.at("SAMPLER_BINDING"), SAMPLER_BINDING);
+    EXPECT_EQ(shader.at("SHADOW_MAP_BINDING"), SHADOW_MAP_BINDING);
+    EXPECT_EQ(shader.at("TLAS_BINDING"), TLAS_BINDING);
+    EXPECT_EQ(shader.at("OUT_IMAGE_BINDING"), OUT_IMAGE_BINDING);
+    EXPECT_EQ(shader.at("ACCUMULATION_IMAGE_BINDING"), ACCUMULATION_IMAGE_BINDING);
 }

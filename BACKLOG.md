@@ -2170,6 +2170,316 @@ tree again (`eaedec85` → `2222d386`) — the recurring drift recorded in
 
 ### C++ Vulkan engine
 
+## 2026-08-01 batch — planner (texture-slot cap, redundant raster in RT/PT, per-frame allocs, Rust tile binning)
+
+The actionable queue was empty when this batch was written (only `- [b]` entries
+remained across the whole file). Every claim below was read out of the tree this
+pass, with the numbers measured rather than asserted:
+
+- **`MAX_TEXTURE_COUNT` is 24 and the release default scene needs 33.**
+  `Src/GraphicsEngineVulkan/common/host_device_shared_vars.hpp:8` and
+  `Resources/ShadersSlang/common/scene_types.slang:8` both say `24`.
+  `SceneConfig.cpp:131` selects `Models/crytek-sponza/sponza_triag.obj` under
+  `NDEBUG`; its `.mtl` declares **24 materials referencing 33 distinct texture
+  files** (counted: `grep -c '^newmtl'` = 24, unique `map_*` targets = 33). So
+  the shipping release build overflows the cap on its own default scene — the
+  warning at `VulkanRenderer.cpp:1427` fires and 9 textures never get bound.
+  This is the part of the 2026-07-22 item #3 that was deliberately left: the
+  flattening + `texture_offset` landed, the cap did not.
+- **The whole binding block is duplicated host↔shader with nothing pinning it.**
+  `host_device_shared_vars.hpp` and `common/scene_types.slang` carry the same
+  seven constants (`MAX_TEXTURE_COUNT`, `globalUBO_BINDING` … `SHADOW_MAP_BINDING`,
+  `TLAS_BINDING`, `OUT_IMAGE_BINDING`, `ACCUMULATION_IMAGE_BINDING`) as two
+  independent literals. `pushConstantSuite` pins push-constant *layouts*; nothing
+  pins these.
+- **The raster pass runs and is thrown away every RT/PT frame.**
+  `record_commands` calls `recordRasterPass` unconditionally
+  (`VulkanRenderer.cpp:897`) and then `recordRaytracingOrPathTracing`
+  (`:899`). `activeOffscreenTexture()` (`:819`) returns *the same* texture the
+  rasterizer just rendered into, and the rgen/PT dispatch writes every pixel of
+  it. Confirmed by the barrier at `Raytracing.cpp:94`, whose `oldLayout` is
+  hard-coded to `eShaderReadOnlyOptimal` precisely *because* the raster render
+  pass ran first (`PathTracing.cpp:83` is identical).
+- **Per-frame heap allocations survive in three record paths.**
+  `DeferredRasterizer.cpp:487` allocates a `std::vector<vk::Buffer>` **per mesh
+  per frame**; `SkyBox.cpp:457` one per frame; `CascadedShadowMap.cpp:448`
+  (`cascadeFrusta`) and `:484` (`shadowDescriptorSets`) one each per frame.
+  `Rasterizer.cpp:154-156` and `CascadedShadowMap.cpp:519-521` already use the
+  pointer form, so the fix is the pattern the file itself establishes.
+- **The Rust tiled-lighting binning ignores light range.**
+  `forward.rs:228-327` projects each light's *position* to one pixel and bins it
+  into exactly ONE `16×16` tile; `light.range` is packed at
+  `packed[base+1][3]` (`forward.rs:212`) and never read by the binner. The
+  shader honours the grid (`src/shaders/forward.wgsl:448,468,484`) and only
+  falls back to all-lights when `tileW == 0`. Lights whose centre is off-screen
+  or behind the camera are dropped entirely (`:308-312`), and a
+  `CpuLightKind::Directional` entry (kind `3.0`, no meaningful position) is
+  binned by its position like a point light.
+
+Candidates found but NOT tasked this cycle (queue discipline; re-verify next
+pass): `VulkanRenderer.cpp:1196` copying `getObjectDescriptions()` by value is
+**not** a per-frame cost — it sits in `create_object_description_buffer()`,
+which only runs on scene change, so the batch-V deferral resolves to "leave it";
+`kind` is bound and never used in both loops of `build_tile_light_grid`
+(`forward.rs:250,306`) — a warning-level nit that the range-aware rewrite below
+will consume anyway; `forward.rs` is 4084 lines and is the Rust-side equivalent
+of the `VulkanRenderer` hub, but no clean extraction was identified this pass.
+
+### C++ Vulkan engine
+
+- [ ] **(M) Raise `MAX_TEXTURE_COUNT` above the release scene's 33 textures** —
+  the shipping default scene overflows the cap today and 9 of Sponza's textures
+  never reach a descriptor.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/common/host_device_shared_vars.hpp:8`
+  - `Resources/ShadersSlang/common/scene_types.slang:8`
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1387-1460`
+    (`updateTexturesInSharedRenderDescriptorSet` — the cap check, the warning,
+    the pad-with-slot-0 loop) and `:1264-1308`
+    (`createSharedRenderDescriptorResources`, where the array sizes are declared)
+  - `Resources/ShadersSlang/{rasterizer/rasterizer.slang,deferred/deferred.slang,path_tracing/path_tracing.slang,rasterizer/shadows/shadow_map.slang}`
+    — the four `textures[MAX_TEXTURE_COUNT]` / `textureSamplers[MAX_TEXTURE_COUNT]`
+    declarations and the `clamp(..., 0, MAX_TEXTURE_COUNT - 1)` fetches
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp` — where device
+    limits are already read (`getMaxMultiviewViewCount()` is the pattern)
+
+  **Steps:**
+  1. Change `MAX_TEXTURE_COUNT` to `128` in **both** `host_device_shared_vars.hpp`
+     and `scene_types.slang`. 128 covers Sponza's 33 with headroom for a second
+     loaded model and stays far under any desktop limit.
+  2. Recompile the shaders — `pwsh -File .\Scripts\Windows\compile-slang-shaders.ps1`
+     — and re-run `BuildIntegrity.CompiledShadersAreNotOlderThanTheirSources`
+     BEFORE measuring anything rendered. (See the warning at the top of the
+     "C++ Vulkan engine" section: a stale-SPIR-V measurement has produced a
+     confident wrong call here before.)
+  3. Add a startup guard in `VulkanDevice` mirroring `getMaxMultiviewViewCount()`:
+     expose `getMaxPerStageDescriptorSampledImages()` and
+     `getMaxPerStageDescriptorSamplers()` from `VkPhysicalDeviceLimits`, and in
+     `createSharedRenderDescriptorResources` log a critical warning if either is
+     below `MAX_TEXTURE_COUNT`. Do NOT silently shrink the array — the shader
+     array size is a compile-time constant, so a runtime shrink would desynchronise
+     host and device. A warning plus the existing cap check is the honest handling.
+  4. Leave `updateTexturesInSharedRenderDescriptorSet`'s cap check and pad loop
+     exactly as they are — they are still the correct behaviour past 128; only
+     move the `break` so the warning is logged once per update rather than once
+     per remaining model (today the outer model loop re-enters and re-warns).
+
+  **Test:** add `TEST(GoldenRender, SponzaBindsEveryTextureSlot)` — load
+  `Models/crytek-sponza/sponza_triag.obj` via `KATAGLYPHIS_MODEL_OVERRIDE`, then
+  assert `scene->getTextureCount(0) <= MAX_TEXTURE_COUNT` **and** that a render
+  produces no validation errors. Structural, not a pixel oracle: a colour oracle
+  on Sponza was measured blind before (2026-07-22 item #3 — its bricks are near
+  greyscale). Also keep the two `BuildIntegrity` constant tests from the task
+  above green, which is the point of landing them first.
+
+  **Build:** `clangcl-debug` for the change; then GPU-verify on the host per
+  `[[host-gpu-golden-verification]]` — run the container-built
+  `commitTestSuite.exe` from the repo root and require **all** `GoldenRender.*`
+  tests still green (the descriptor array is bound by every raster, RT and PT
+  path, so a mistake here breaks all of them at once).
+
+  **Context:** This is the explicitly-deferred half of the 2026-07-22 deep-dive
+  item #3 above; read that entry before starting. Do not attempt a
+  variable-descriptor-count binding — `runtimeDescriptorArray` is enabled
+  (`VulkanDevice.cpp:591-593`) but the shaders declare fixed-size arrays, and
+  converting them is a much larger change with no additional payoff at this
+  scene scale.
+
+- [ ] **(M) Skip the raster pass when ray tracing or path tracing owns the frame** —
+  the full forward/deferred scene is rasterized every RT/PT frame into an image
+  the RT dispatch then overwrites completely.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:828-935`
+    (`record_commands`), `:935-967` (`recordRasterPass`), `:967-1015`
+    (`recordRaytracingOrPathTracing`), `:819-827` (`activeOffscreenTexture`)
+  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp:84-105` — the
+    `rasterizerToRaytracingImageBarrier` with the hard-coded
+    `oldLayout = eShaderReadOnlyOptimal`
+  - `Src/GraphicsEngineVulkan/renderer/PathTracing.cpp:83-84` — the identical
+    `presentToPathTracingImageBarrier`
+
+  **Steps:**
+  1. In `record_commands`, hoist the *exact* predicate that
+     `recordRaytracingOrPathTracing` uses to decide it will dispatch, into a
+     single local computed once:
+     `device->supportsHardwareAcceleratedRRT() && image_index < raytracingDescriptors.sets().size() && asManager.getTLAS() != nullptr && (guiRendererSharedVars.raytracing || guiRendererSharedVars.pathTracing)`.
+     Pass it into `recordRaytracingOrPathTracing` (or factor it into a private
+     `bool raytracingOwnsFrame(uint32_t image_index) const`) so the two call
+     sites cannot drift — **if they ever disagree, a frame renders nothing.**
+     The TLAS-null term is load-bearing: during the async model-load window RT
+     is requested but cannot dispatch, and the raster pass must still run.
+  2. Guard the `recordRasterPass(...)` call on `!raytracingOwnsFrame(...)`.
+  3. Change `oldLayout` to `vk::ImageLayout::eUndefined` in **both**
+     `Raytracing.cpp:94` and `PathTracing.cpp:83`, and set `srcAccessMask` to
+     `{}`. This is correct — the rgen/PT shader writes every pixel, so discarding
+     the previous contents is exactly the intent, and `eUndefined` is the only
+     `oldLayout` valid both when the raster pass ran (mode just switched) and
+     when it did not. Leave the *outgoing* barriers
+     (`eGeneral -> eShaderReadOnlyOptimal`) untouched: post still samples the
+     image, and that transition is what leaves it in a defined layout for the
+     next frame.
+  4. In `recordRasterPass`'s stats publication, when the raster pass is skipped
+     set `visibility.meshes_drawn`/`meshes_total` to `0` rather than leaving last
+     frame's numbers — the GUI counter must not claim raster work that did not
+     happen. (Same honesty rule as the shadow-caster stats in `73da03ae`.)
+
+  **Test:** the existing RT and PT `GoldenRender` tests are the oracle and must
+  produce **unchanged** images — this change is required to be pixel-identical.
+  Add `TEST(GoldenRender, RaytracingFrameSkipsTheRasterPass)` asserting via
+  `GUIRendererSharedVars::gpuTimings` that the `GpuTimedPass::Main` average drops
+  materially with RT enabled versus forward at the same scene, and that
+  `visibility.meshes_drawn` reads 0 in RT mode. Also exercise the async window:
+  `GoldenRender.GuiInputSweepNeverCrashes` already flips modes across
+  forward/deferred/RT/PT and must stay green.
+
+  **Build:** `clangcl-debug` to land it, then **run a synchronization-validation
+  pass** (`khronos_validation.validate_sync = true` in `vk_layer_settings.txt`
+  next to the executable) — this task removes a render pass that was providing
+  an implicit layout transition, which is exactly the class of change sync
+  validation exists to check. Then GPU-verify all `GoldenRender.*` on the host.
+
+  **Context:** `activeOffscreenTexture()` returning the rasterizer's own
+  offscreen image is what makes the raster work provably dead in RT/PT mode.
+  Note the sky and post passes are unaffected: the sky pass targets the
+  **swapchain** image with its own cleared depth (`VulkanRenderer.cpp:133-137`,
+  `SkyBox.cpp:230-250`), not the raster depth buffer, so it has no dependency on
+  the pass being removed. Do not also try to skip the shadow-cascade or clouds
+  passes — their outputs are sampled by the RT closest-hit shader.
+
+- [ ] **(S) Remove the four remaining per-frame heap allocations in the record paths (refactor)** —
+  one of them allocates once per mesh per frame.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:485-490` — the
+    per-mesh `std::vector<vk::Buffer>`
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:154-156` — **the target
+    shape**; the identical bind already written allocation-free
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:455-460`
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:448-451`
+    (`cascadeFrusta`) and `:483-486` (`shadowDescriptorSets`)
+  - `Src/GraphicsEngineVulkan/renderer/SceneUBO.hpp:22` — `MAX_CASCADES` is `3`
+
+  **Steps:**
+  1. `DeferredRasterizer.cpp:487-489`: replace with the `Rasterizer.cpp:154-156`
+     form — `const vk::Buffer vertex_buffer = scene->getVertexBuffer(m, k);
+     const vk::DeviceSize offset = 0; commandBuffer.bindVertexBuffers(0, 1,
+     &vertex_buffer, &offset);`. Verbatim shape, so the two raster paths read
+     the same.
+  2. `SkyBox.cpp:457`: same substitution for `skyMesh->getVertexBuffer()`.
+  3. `CascadedShadowMap.cpp:448`: `std::array<FrustumPlanes, MAX_CASCADES>` plus
+     the existing `numCascades` loop bound. `numCascades` is already clamped to
+     `MAX_CASCADES` upstream (`clampCascadeCount`), but **assert it here**
+     (`if (numCascades > MAX_CASCADES) { return; }` with an error log) rather
+     than trusting the caller — a stack array turns a silent overrun into memory
+     corruption where the vector was safe.
+  4. `CascadedShadowMap.cpp:484-486`: replace the `std::vector<vk::DescriptorSet>`
+     with a `std::array<vk::DescriptorSet, 2>` plus a count, and pass
+     `std::span(sets.data(), count)` to `bindDescriptorSets` — preserving today's
+     branch exactly (1 set when `descriptorSets` is empty, 2 otherwise).
+  5. Re-grep the record paths afterwards to confirm nothing was missed:
+     `grep -n "std::vector" ` over the five files' `recordCommands` bodies.
+
+  **Test:** no new test — this is behaviour-preserving by construction, and the
+  oracle is that **all 23 `GoldenRender.*` tests are unchanged**, plus
+  `CascadedShadowMapUnit.*` and the ASan/UBSan debug build staying clean (step 3
+  moves a heap array to the stack, which is precisely what ASan would catch).
+
+  **Build:** `clangcl-debug` (ASAN + UBSan — required for this task, the stack
+  array is the risk), then GPU-verify `GoldenRender.*` on the host.
+
+  **Context:** Follows `aae4aa2f` ("drop per-cascade heap allocations in
+  `computeCascadeData`") exactly. `Rasterizer.cpp` and `CascadedShadowMap.cpp:519`
+  already use the pointer overload, so this is finishing a conversion the codebase
+  started rather than introducing a new idiom. None of these touch a `.ixx`, so
+  an incremental container build is trustworthy here (see the module-skew note
+  in Completed).
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) Tiled lighting bins each light into exactly one tile, ignoring its range** —
+  a point light illuminates at most a 16×16 pixel square, and a light whose
+  centre leaves the screen goes dark entirely.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/render/forward.rs:225-327` — `build_tile_light_grid`,
+    the whole function
+  - `crates/webgpu_renderer/src/render/forward.rs:188-222` — the packing, which
+    shows `light.range` lands at `packed[base + 1][3]` and `kind` at
+    `packed[base][3]` (`1.0` point, `2.0` spot, `3.0` directional)
+  - `crates/webgpu_renderer/src/render/forward.rs:1851-1886` — the per-frame call
+    site and the two storage-buffer uploads
+  - `crates/webgpu_renderer/src/shaders/forward.wgsl:64-66,447-486` — the
+    consumer; note `tileW == 0` is the only all-lights fallback
+  - `crates/webgpu_renderer/src/render/forward.rs:4034-4080` — the three existing
+    `build_tile_light_grid_*` unit tests, which must keep passing
+
+  **Steps:**
+  1. Give the binner a screen-space **extent**, not a point. For each light read
+     `range = packed[base + 1][3]` and `kind = packed[base][3]`.
+  2. `kind == 3.0` (directional): a directional light has no position and affects
+     every pixel — add it to **every** tile, skipping the projection entirely.
+     This is the most severe of the three defects: today a directional light in
+     the punctual list is deleted from all tiles but one.
+  3. Point/spot: project the light centre AND the six world-space points
+     `pos ± range * axis` for each of the three axes. Take the min/max of the
+     projected screen coordinates of whichever of those seven points are in front
+     of the camera (`clip.w > 0.0`), clamp that rectangle to the screen, and mark
+     every tile it covers. If **no** point is in front of the camera, skip the
+     light (that case is genuinely invisible). A conservative screen-space AABB
+     is the right cost/benefit here — a proper cone/sphere-vs-frustum test is not
+     worth it at this light count.
+  4. Delete the `uv` in-`[0,1]` early-`continue` (`:311`): a light centred just
+     off-screen still lights on-screen geometry, and step 3's clamp handles it.
+     Keep the `clip.w <= 0.0` rejection only as part of the seven-point test.
+  5. Preserve the existing `MAX_LIGHTS_PER_TILE` clamp and the two-pass
+     count-then-fill structure — the second pass must recompute tile coverage the
+     same way the first did, so factor the coverage computation into one
+     `fn tile_rect_for_light(...) -> Option<(u32, u32, u32, u32)>` that both
+     passes call. Two hand-copied coverage loops is exactly how this drifts.
+  6. While rewriting: hoist the four `vec![...]` scratch buffers
+     (`per_tile_counts`, `grid`, `indices`, `write_positions`) onto
+     `ForwardRenderer` as reusable `Vec`s that are `clear()`ed and `resize()`d,
+     so a 1920×1080 frame stops making four heap allocations over ~8100 tiles
+     every frame. Change the signature to `&mut self` or take the scratch as
+     parameters — whichever keeps the three existing unit tests callable.
+  7. `kind` is currently bound and never read in both loops (`:250`, `:306`);
+     after this change it is read, which also clears the unused-variable warning.
+
+  **Test:** add to the existing `mod tests` in `forward.rs`:
+  - `build_tile_light_grid_covers_tiles_within_range` — a point light with
+    `range = 10.0` at the origin, camera at `(0,0,5)`, 256×256: assert the light
+    appears in **strictly more than one** tile and that the covered tile set is a
+    contiguous rectangle around the centre tile. This test **fails on today's
+    code**, which is the point — write it red first.
+  - `build_tile_light_grid_includes_directional_lights_in_every_tile` — one
+    `kind = 3.0` light: assert every tile's count is `>= 1`.
+  - `build_tile_light_grid_keeps_offscreen_but_overlapping_lights` — a light
+    positioned so its centre projects outside `[0,1]` but its range reaches the
+    screen: assert at least one edge tile has it.
+  Keep `build_tile_light_grid_bins_lights_into_correct_tiles`,
+  `_handles_zero_lights` and `_skips_lights_behind_camera` green — the first
+  asserts the centre tile has the light, which stays true; if it asserts an
+  exact count of 1, relax it to "contains the light" and say so in the commit.
+
+  **Build:** `cargo test -p webgpu_renderer` in
+  `ExternalLib/Kataglyphis-RustProjectTemplate` — the new tests are pure CPU and
+  need no adapter. Then run the headless GPU tests
+  (`cargo test -p webgpu_renderer --test headless`) to confirm the buffer-sizing
+  and bind-group paths still hold with a larger index list; note the
+  `tile_light_indices_buffer` grow-check at `:1873` does **not** rebuild the bind
+  group (the comment at `:1881` admits this), so a light set that now needs more
+  indices could exceed the initial buffer — verify that path or fix it in the
+  same change and say which you did.
+
+  **Context:** The shader has honoured this grid since the tiled-lighting work
+  landed, so the defect is invisible in the current demo scenes only because
+  they are directional/IBL-lit. This is a correctness fix, not an optimization —
+  do not "optimize" it into a compute-shader binning pass; that is the
+  render-graph-v2 conversation in the unsized section, and it needs the CPU
+  version to be correct first to have anything to compare against.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
