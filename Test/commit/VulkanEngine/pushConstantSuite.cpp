@@ -20,10 +20,17 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "renderer/pushConstants/PushConstantPathTracing.hpp"
+#include "renderer/pushConstants/PushConstantPost.hpp"
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
+#include "renderer/pushConstants/PushConstantRayTracing.hpp"
+#include "shared/scene/ObjMaterial.hpp"
 
 namespace {
+using Kataglyphis::VulkanRendererInternals::PushConstantPathTracing;
+using Kataglyphis::VulkanRendererInternals::PushConstantPost;
 using Kataglyphis::VulkanRendererInternals::PushConstantRasterizer;
+using Kataglyphis::VulkanRendererInternals::PushConstantRaytracing;
 }// namespace
 
 TEST(PushConstantRasterizerUnit, ModelMatrixComesFirstAtOffsetZero)
@@ -94,4 +101,67 @@ TEST(PushConstantRasterizerUnit, InvModelRowsRoundTripANonUniformScale)
     EXPECT_FLOAT_EQ(push.invModelRows[0][3], 0.0F);
     EXPECT_FLOAT_EQ(push.invModelRows[1][3], 0.0F);
     EXPECT_FLOAT_EQ(push.invModelRows[2][3], 0.0F);
+}
+
+// PushConstantPathTracing's layout contract: hand-mirrored in
+// Resources/ShadersSlang/path_tracing/path_tracing.slang (struct
+// PushConstantPathTracing, read as pc_ray). A reordered or inserted field
+// desyncs the two silently, exactly like the rasterizer struct above.
+TEST(PushConstantPathTracingUnit, MatchesTheSlangTwinLayout)
+{
+    EXPECT_EQ(offsetof(PushConstantPathTracing, clearColor), 0U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, width), 16U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, height), 20U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, frame_index), 24U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, samples_per_pixel), 28U);
+    EXPECT_EQ(offsetof(PushConstantPathTracing, max_bounces), 32U);
+    EXPECT_GE(sizeof(PushConstantPathTracing), 36U);
+    EXPECT_LE(sizeof(PushConstantPathTracing), 128U);
+}
+
+// PushConstantPost's layout contract: hand-mirrored in
+// Resources/ShadersSlang/post/post.slang (struct PushConstantPost, read as
+// pc_post).
+TEST(PushConstantPostUnit, MatchesTheSlangTwinLayout)
+{
+    EXPECT_EQ(offsetof(PushConstantPost, aspect_ratio), 0U);
+    EXPECT_EQ(offsetof(PushConstantPost, clouds_enabled), 4U);
+    EXPECT_EQ(offsetof(PushConstantPost, shadows_enabled), 8U);
+    EXPECT_EQ(offsetof(PushConstantPost, skybox_enabled), 12U);
+    EXPECT_EQ(sizeof(PushConstantPost), 16U);
+}
+
+// PushConstantRaytracing's layout contract: hand-mirrored in
+// Resources/ShadersSlang/raytracing/rt_types.slang (struct
+// PushConstantRaytracing, read as pc_ray in raytrace.rgen.slang).
+TEST(PushConstantRaytracingUnit, MatchesTheSlangTwinLayout)
+{
+    EXPECT_EQ(offsetof(PushConstantRaytracing, clear_color), 0U);
+    EXPECT_EQ(sizeof(PushConstantRaytracing), 16U);
+}
+
+// ObjMaterial's scalar-block layout contract: the RT/PT kernels read this
+// struct through a buffer_reference/ByteAddressBuffer, so the C++ and Slang
+// (Resources/ShadersSlang/common/scene_types.slang) copies must agree on
+// every field's offset, not just the aggregate size. glm's plain (non-SIMD,
+// non-std140) vec3 packs its three floats with no trailing padding, so the
+// block is scalar-tight end to end - if any expectation below fails at
+// runtime, that is a REAL C++/Slang layout finding: investigate against the
+// .slang twin and report it, do not adjust the number to make the test pass.
+TEST(ObjMaterialLayoutUnit, MatchesTheSlangTwinScalarLayout)
+{
+    EXPECT_EQ(offsetof(ObjMaterial, ambient), 0U);
+    EXPECT_EQ(offsetof(ObjMaterial, diffuse), 12U);
+    EXPECT_EQ(offsetof(ObjMaterial, specular), 24U);
+    EXPECT_EQ(offsetof(ObjMaterial, transmittance), 36U);
+    EXPECT_EQ(offsetof(ObjMaterial, emission), 48U);
+    EXPECT_EQ(offsetof(ObjMaterial, shininess), 60U);
+    EXPECT_EQ(offsetof(ObjMaterial, ior), 64U);
+    EXPECT_EQ(offsetof(ObjMaterial, dissolve), 68U);
+    EXPECT_EQ(offsetof(ObjMaterial, illum), 72U);
+    EXPECT_EQ(offsetof(ObjMaterial, textureID), 76U);
+    EXPECT_EQ(offsetof(ObjMaterial, alphaCutoff), 80U);
+    EXPECT_EQ(offsetof(ObjMaterial, uv_scale), 84U);
+    EXPECT_EQ(offsetof(ObjMaterial, uv_offset), 92U);
+    EXPECT_EQ(sizeof(ObjMaterial), 100U);
 }
