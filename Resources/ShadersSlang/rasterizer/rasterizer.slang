@@ -2,21 +2,16 @@ import scene_types;
 import brdf;
 import material_fetch;
 import cascaded_shadow;
+import push_constants;
 
 // Forward rasterizer shaders. Mirrors Resources/Shaders/rasterizer/shader.vert
 // and shader.frag. Emits SPIR-V only.
 //
 // NOTE: The GLSL vertex shader uses inverse(model) for the normal matrix.
 // Slang has no inverse() for SPIR-V, so the normal matrix is precomputed on
-// the CPU and passed as invModel in the push constants. This requires the
-// C++ PushConstantRasterizer to be extended with a float4x4 invModel field.
+// the CPU and passed as row-packed invModelRows in the push constants (see
+// common/push_constants.slang for why it is rows, not a full float4x4).
 
-struct PushConstantRasterizer
-{
-    float4x4 model;
-    float4x4 invModel; // inverse-transpose of model, precomputed on CPU
-    uint objectIndex;
-};
 [[vk::push_constant]] PushConstantRasterizer pc_raster;
 
 [vk::binding(0, 0)] ConstantBuffer<GlobalUBO> globalUBO;
@@ -43,7 +38,7 @@ VsOut vs_main(
     VsOut o;
     o.svPosition = mul(mul(mul(globalUBO.projection, globalUBO.view), pc_raster.model), float4(positions, 1.0));
     o.worldPosition = mul(pc_raster.model, float4(positions, 1.0)).xyz;
-    o.shadingNormal = mul(pc_raster.invModel, float4(normal, 0.0)).xyz;
+    o.shadingNormal = transform_normal(pc_raster, normal);
     o.texCoords = tex_coords;
     o.fragmentColor = color;
     return o;

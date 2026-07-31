@@ -1705,93 +1705,11 @@ pick them up from the older prose above.
 
 ## 2026-07-30 batch II — planner (Slang-migration test fallout, push-constant budget, GPU-verification blocker)
 
-All three verified against the tree on 2026-07-30. They come from the
-verification notes of the "`GUI*` mutable cross-cutting dependency" task above,
-which measured 6 failing tests on unmodified `develop` HEAD and one blocked
-verification path — documented there as findings, but no fix task existed for
-any of them until now. Suggested order: task 1 and task 3 are independent;
-task 2 should land BEFORE the open "(test, S) Add the missing CPU-only test
-suites to the Windows CI filter" task (2026-07-28 batch II), because that task
-would add the currently-FAILING `PushConstantRasterizerUnit.*` to CI.
-
-### C++ Vulkan engine
-
-- [ ] **(M) Shrink `PushConstantRasterizer` back under the 128-byte
-  guaranteed push-constant budget (currently 132)** — a real portability
-  bug, not just test drift: two `mat4` + `uint` = 132 bytes, and Vulkan
-  guarantees only `maxPushConstantsSize >= 128`. Works on the RX 9070 XT,
-  fails pipeline-layout creation on a conformant-minimal implementation.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/pushConstants/PushConstantRasterizer.hpp`
-    — `model` (64) + `invModel` (64) + `objectIndex` (4). `invModel` exists
-    only to transform normals (`mul(pc_raster.invModel, float4(normal, 0.0))`),
-    so only its upper 3×3 is ever read — a full `mat4` wastes 16+ bytes.
-  - `Resources/ShadersSlang/rasterizer/rasterizer.slang:14-20,46` and
-    `Resources/ShadersSlang/deferred/deferred.slang:12-17,49` — the struct is
-    hand-DUPLICATED in both shaders (they do not include the C++ header);
-    all three copies must change in lockstep.
-  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:122` and
-    `DeferredRasterizer.cpp:465` — the CPU fill:
-    `glm::inverse(glm::transpose(model))`.
-  - `Test/commit/VulkanEngine/pushConstantSuite.cpp` — the two failing
-    tests: `ObjectIndexFollowsTheMatrixAndIsCovered` (expects offset 64,
-    actual 128) and `FitsTheGuaranteedPushConstantBudget` (132 > 128). Its
-    header comment also still claims the struct is "compiled twice … from
-    the same header", stale since the Slang migration.
-
-  **Steps:**
-  1. In the C++ struct, replace `mat4 invModel` with `vec4 invModelRows[3]`
-     (three rows of the inverse-transpose; row-vector form keeps each row a
-     contiguous vec4). New layout: model 0–63, rows 64–111, objectIndex 112,
-     sizeof 116 ≤ 128.
-  2. Fill it in both rasterizers: compute
-     `glm::mat4 it = glm::inverse(glm::transpose(scene->getModelMatrix(m)))`
-     once, then `invModelRows[i] = glm::vec4(it[0][i], it[1][i], it[2][i], 0)`
-     (GLM is column-major — extract ROWS, and add a unit test pinning that,
-     because this is exactly the transposition mistake that renders fine on a
-     cube and breaks on rotated models).
-  3. Mirror in BOTH `.slang` files: `float4 invModelRows[3];` and
-     `shadingNormal = float3(dot(pc_raster.invModelRows[0].xyz, normal), …)`
-     — or reconstruct a `float3x3`. While touching both, hoist the duplicated
-     struct into a shared module under `Resources/ShadersSlang/common/`
-     (imported by both, the `scene_types.slang` pattern) so the next layout
-     change has two copies to keep in sync (C++/Slang), not three. Also fix
-     the stale comment at `rasterizer.slang:11-12` ("requires the C++ struct
-     to be extended" — it was).
-  4. Recompile shaders (`Scripts/Windows/compile-slang-shaders.ps1`) BEFORE
-     any rendered verification — the staleness lesson at the top of this
-     file; the rewritten BuildIntegrity suite (task above) enforces it.
-  5. Update `pushConstantSuite.cpp`: objectIndex at 112, size ≤ 128
-     re-armed, header comment rewritten to say the Slang copies are
-     hand-mirrored and this suite plus the shared module are the only guards.
-  6. Verify on the GPU host (repo root, RX 9070 XT): forward AND deferred
-     golden tests (`--gtest_filter=GoldenRender.*` or at minimum the
-     forward/deferred subset if the RT blocker below is still open) — a
-     wrong row extraction shows up as changed lighting, so goldens must be
-     UNCHANGED. If host GPU runs are still blocked, say so in the commit and
-     leave this box unchecked with a note rather than claiming verification.
-
-  **Test:** `PushConstantRasterizerUnit.*` green (updated offsets), plus a
-  new case asserting the rows round-trip a known non-uniform-scale matrix
-  (e.g. scale(1,2,3): inverse-transpose diagonal 1, 1/2, 1/3 lands in rows
-  0/1/2). Then hand `PushConstantRasterizerUnit.*` to the open CI-filter
-  task.
-
-  **Build:** `clangcl-debug` **with `-FreshContainer`** — the header is
-  consumed by multiple module TUs and layout skew between stale BMIs and
-  recompiled TUs is exactly the incremental-ODR hazard documented in
-  Completed:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
-
-  **Context:** `invModel` was added for the Slang migration (Slang has no
-  `inverse()` for SPIR-V) without noticing it blew the budget the test
-  documents: "Exceeding it fails pipeline creation on
-  conformant-but-minimal implementations while working fine on a desktop
-  GPU — a bug that only appears on someone else's hardware." The
-  alternative (moving `invModel` into the object-description buffer) is
-  more invasive and adds an indirection on the hot path; three vec4 rows
-  keep the push-constant speed and fit with 12 bytes to spare.
+Originally three tasks, verified against the tree on 2026-07-30, from the
+verification notes of the "`GUI*` mutable cross-cutting dependency" task
+above. The BuildIntegrity rewrite and the push-constant budget shrink
+(`PushConstantRasterizer` now 116 bytes, `PushConstantRasterizerUnit.*` all
+green) are both done; the GPU-verification blocker below is what remains.
 
 ### GPU host verification
 

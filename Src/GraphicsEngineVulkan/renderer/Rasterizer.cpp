@@ -119,7 +119,12 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
     for (uint32_t m = 0; m < scene->getModelCount(); m++) {
         pushConstant.model = scene->getModelMatrix(m);
         // Precompute the inverse-transpose for the Slang shaders (no inverse() in SPIR-V).
-        pushConstant.invModel = glm::inverse(glm::transpose(scene->getModelMatrix(m)));
+        // Only the rows survive the push constant (see PushConstantRasterizer.hpp).
+        const glm::mat4 inv_transpose_model = glm::inverse(glm::transpose(scene->getModelMatrix(m)));
+        for (int row = 0; row < 3; ++row) {
+            pushConstant.invModelRows[row] =
+              glm::vec4(inv_transpose_model[0][row], inv_transpose_model[1][row], inv_transpose_model[2][row], 0.0F);
+        }
 
         for (unsigned int k = 0; k < scene->getMeshCount(m); k++) {
             const uint32_t object_index = flat_mesh_index++;

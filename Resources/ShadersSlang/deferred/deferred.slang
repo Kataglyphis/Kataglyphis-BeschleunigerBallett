@@ -2,18 +2,13 @@ import scene_types;
 import material_fetch;
 import brdf;
 import cascaded_shadow;
+import push_constants;
 
 // Deferred geometry pass + lighting pass. Mirrors
 // Resources/Shaders/deferred/geometry.vert, geometry.frag, lighting.vert,
 // lighting.frag. Emits SPIR-V only. Writes G-buffer (normal, albedo,
 // material) for the deferred lighting pass.
 
-struct PushConstantRasterizer
-{
-    float4x4 model;
-    float4x4 invModel;
-    uint objectIndex;
-};
 [[vk::push_constant]] PushConstantRasterizer pc_raster;
 
 [vk::binding(0, 0)] ConstantBuffer<GlobalUBO> globalUBO;
@@ -46,7 +41,7 @@ GVsOut geometry_vs_main(
     GVsOut o;
     o.svPosition = mul(mul(mul(globalUBO.projection, globalUBO.view), pc_raster.model), float4(positions, 1.0));
     o.worldPosition = mul(pc_raster.model, float4(positions, 1.0)).xyz;
-    o.shadingNormal = mul(pc_raster.invModel, float4(normal, 0.0)).xyz;
+    o.shadingNormal = transform_normal(pc_raster, normal);
     o.texCoords = tex_coords;
     o.fragmentColor = color;
     return o;
