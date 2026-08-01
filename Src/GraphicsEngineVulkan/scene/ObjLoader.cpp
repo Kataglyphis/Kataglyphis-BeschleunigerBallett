@@ -13,7 +13,6 @@ module;
 #define TINYOBJLOADER_IMPLEMENTATION
 #define TINYOBJLOADER_DISABLE_FAST_FLOAT
 #include <glm/ext/vector_float2.hpp>
-#include <glm/geometric.hpp>
 #include <glm/vec3.hpp>
 #include <algorithm>
 #include <iterator>
@@ -156,8 +155,7 @@ auto ObjLoader::uploadParsed() -> std::shared_ptr<Model>
     return new_model;
 }
 
-auto ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const std::string &modelFile)
-  -> std::vector<std::string>
+void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const std::string &modelFile)
 {
     const auto &tol_materials = reader.GetMaterials();
     textures.reserve(tol_materials.size());
@@ -201,8 +199,6 @@ auto ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
 
     // for the case no .mtl file is given place some random standard material ...
     if (tol_materials.empty()) { materials.emplace_back(); }
-
-    return textures;
 }
 
 void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
@@ -344,21 +340,7 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
         }
     }
 
-    // precompute normals if no provided
-    if (attrib.normals.empty()) {
-        for (size_t i = 0; i + 2 < indices.size(); i += 3) {
-            Vertex &v0 = vertices[indices[i + 0]];
-            Vertex &v1 = vertices[indices[i + 1]];
-            Vertex &v2 = vertices[indices[i + 2]];
-
-            const glm::vec3 faceNormal = glm::cross((v1.position - v0.position), (v2.position - v0.position));
-            // Degenerate triangle (zero area): leave the default normal
-            // rather than emit a NaN from normalizing a zero vector.
-            if (glm::dot(faceNormal, faceNormal) <= 0.0F) { continue; }
-            const glm::vec3 n = glm::normalize(faceNormal);
-            v0.normal = n;
-            v1.normal = n;
-            v2.normal = n;
-        }
-    }
+    // precompute normals if no provided - kataglyphis.vulkan.vertex's
+    // computeFlatNormals, the shared copy of this loop (also used by GltfLoader).
+    if (attrib.normals.empty()) { vertex::computeFlatNormals(vertices, indices); }
 }

@@ -353,24 +353,9 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
     // MUST compute them). Per-triangle geometric normal from the
     // already-world-space vertex positions, assigned to each of the
     // triangle's vertices - the same flat approximation the OBJ path
-    // uses. Only runs for primitives that shipped no normals.
-    if (normals.empty()) {
-        for (std::size_t i = primIndexStart; i + 2 < indices.size(); i += 3) {
-            Vertex &v0 = vertices[indices[i + 0]];
-            Vertex &v1 = vertices[indices[i + 1]];
-            Vertex &v2 = vertices[indices[i + 2]];
-            const glm::vec3 edge1 = v1.position - v0.position;
-            const glm::vec3 edge2 = v2.position - v0.position;
-            const glm::vec3 faceNormal = glm::cross(edge1, edge2);
-            // Degenerate triangle (zero area): leave the up default
-            // rather than emit a NaN from normalizing a zero vector.
-            if (glm::dot(faceNormal, faceNormal) <= 0.0F) { continue; }
-            const glm::vec3 n = glm::normalize(faceNormal);
-            v0.normal = n;
-            v1.normal = n;
-            v2.normal = n;
-        }
-    }
+    // uses (kataglyphis.vulkan.vertex's computeFlatNormals, the shared
+    // copy of this loop). Only runs for primitives that shipped no normals.
+    if (normals.empty()) { vertex::computeFlatNormals(vertices, indices, primIndexStart); }
 
     // One material id per triangle of this primitive (materialIndex is
     // per-face, like the OBJ path). All of a primitive's triangles share

@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -270,6 +271,32 @@ TEST(ObjParseUnit, AFileWithOnlyMalformedFacesYieldsNoGeometry)
     EXPECT_TRUE(loader.getIndices().empty()) << "a file with only malformed faces yields no geometry";
     EXPECT_TRUE(loader.getVertices().empty());
     EXPECT_TRUE(loader.getMaterialIndices().empty());
+
+    std::filesystem::remove(tmp);
+}
+
+TEST(ObjParseUnit, DegenerateTrianglesDoNotProduceNaNNormals)
+{
+    // No `vn` lines, so the loader falls back to flat-normal generation
+    // (kataglyphis.vulkan.vertex::computeFlatNormals - the copy shared with
+    // GltfLoader since this task consolidated the two hand-rolled loops).
+    // The triangle is zero-area (two coincident vertices): normalizing its
+    // cross product would divide by zero and hand the GPU a NaN normal.
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_degenerate_face.obj";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << "v 0 0 0\nv 0 0 0\nv 1 0 0\nf 1 2 3\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+
+    ASSERT_FALSE(loader.getVertices().empty());
+    for (const auto &vertex : loader.getVertices()) {
+        EXPECT_TRUE(std::isfinite(vertex.normal.x));
+        EXPECT_TRUE(std::isfinite(vertex.normal.y));
+        EXPECT_TRUE(std::isfinite(vertex.normal.z));
+    }
 
     std::filesystem::remove(tmp);
 }

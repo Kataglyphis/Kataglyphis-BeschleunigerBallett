@@ -4142,58 +4142,6 @@ and re-rejected for the reason the batch above gave.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Give flat-normal generation one definition shared by the OBJ and glTF loaders** — the same "compute a geometric normal per triangle when the file shipped none" loop exists twice, and only the glTF copy handles degenerate triangles and its own array bound.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:352-372` — the correct copy
-    (bounded, degenerate-guarded, operates on a sub-range via `primIndexStart`).
-  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:332-344` — the other copy,
-    whole-array, after task 1 has fixed it.
-  - `Src/GraphicsEngineVulkan/scene/Vertex.ixx` /
-    `Src/shared/scene/Vertex.hpp` — where the shared `Vertex` type lives, so
-    the helper has somewhere to go that both loaders already import.
-  - `Src/GraphicsEngineVulkan/scene/ObjLoader.ixx:97` — the
-    `loadTexturesAndMaterials` declaration for step 4.
-  - `Test/commit/VulkanEngine/objParseSuite.cpp` — where the new unit test goes.
-
-  **Steps:**
-  1. Add one function — `computeFlatNormals(std::span<Vertex> vertices,
-     std::span<const unsigned int> indices, std::size_t firstIndex = 0)` —
-     next to the shared `Vertex` type, taking `std::span` rather than
-     `std::vector&` (the project is C++23; the glTF caller needs a sub-range
-     and the OBJ caller the whole array, which one span-taking signature covers
-     without an overload). Body is `GltfLoader.cpp:358-371` verbatim: bound
-     `i + 2 < indices.size()`, skip zero-area triangles, assign the normal to
-     all three vertices.
-  2. Replace both loops with calls to it. `GltfLoader.cpp` passes
-     `primIndexStart`; `ObjLoader.cpp` passes 0.
-  3. State on the helper that it is the only copy and that a caller adding a
-     third is the bug this consolidates away.
-  4. While in `ObjLoader`: `loadTexturesAndMaterials` returns
-     `std::vector<std::string>` (`ObjLoader.cpp:159-160`, declared at
-     `ObjLoader.ixx:97`) — a full copy of the `textures` member that its only
-     caller discards (`ObjLoader.cpp:62`). Change the return type to `void`.
-     `getTextureNames()` already exposes the member.
-
-  **Test:** Add `ObjParseUnit.DegenerateTrianglesDoNotProduceNaNNormals`:
-  write a temp OBJ with no `vn` and a zero-area triangle (three identical
-  vertices, or two coincident), `parseCpu` it, and assert every
-  `getVertices()[i].normal` component satisfies `std::isfinite`. This fails
-  against the pre-refactor OBJ path and passes against the glTF one, which is
-  the point of sharing the code. Keep the existing `ObjParseUnit` and
-  `GltfParseUnit` suites green — the refactor must be behaviour-neutral apart
-  from the degenerate case.
-
-  **Build:** `clangcl-debug`, same invocation and same
-  `--gtest_filter='ObjParseUnit.*:GltfParseUnit.*'` run as task 1. No GPU.
-
-  **Context:** Land this **after** task 1 — both edit the same loop, and
-  fixing then consolidating keeps the behaviour change reviewable separately
-  from the code motion. Straight continuation of `a3b42dfc` (one depth-aspect
-  definition in `FormatHelper.hpp`) and `f97712f4` (one `ShaderStagePair`
-  instead of six copies): the payoff is that the next loader cannot get the
-  degenerate case wrong, not the lines removed.
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 - [ ] **(S) Escape the strings `obj_to_gltf::to_gltf` interpolates into its glTF JSON** — material names and texture URIs go into the document verbatim, so a Windows-authored `map_Kd textures\wood.png` emits `"uri": "textures\wood.png"` and the whole `.gltf` stops being parseable JSON.

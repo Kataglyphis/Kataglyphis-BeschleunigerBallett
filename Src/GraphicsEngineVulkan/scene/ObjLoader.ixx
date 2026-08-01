@@ -94,7 +94,7 @@ class ObjLoader
     // function - twice per model - which for the bundled 27 MB OBJ is around
     // 190 ms of duplicated work at the measured ~7 ms/MB (BM_ObjParse_Suzanne).
     // modelFile is still needed: texture paths resolve relative to it.
-    std::vector<std::string> loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const std::string &modelFile);
+    void loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const std::string &modelFile);
     void loadVertices(const tinyobj::ObjReader &reader);
 };
 }// namespace Kataglyphis
