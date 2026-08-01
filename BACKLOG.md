@@ -3274,6 +3274,336 @@ natural moment" — that IS `fba308d7`. `:36-37` also predates
 `AsyncModelParse.ixx:55` and `Scene.cpp:36` call through
 (`isGltfModelPath`).
 
+## 2026-08-01 batch XV — planner (tiled-lighting binning is upside down, an "empty tile" fallback that defeats tiling, an unpinned light-packing layout, a CI fuzz list that cannot say no, stale golden-suite counts)
+
+Batch XIV is fully drained (`3fd2f217`, `f97712f4`, `e76a860f`, `7b38ac3e`);
+every checkbox left in the file was `- [b]`. Every `file:line` below was read
+out of the tree this pass.
+
+**Tasks 1 and 2 are both in the tiled punctual-lighting path and task 2 is
+unsafe before task 1 lands. Do them in order.** Task 1 is a correctness bug
+(tiles are indexed upside down); task 2 is the fallback that has been hiding
+it, and removing that fallback while the binning is still mirrored would turn
+a hidden bug into a visible one.
+
+**Task 1: the CPU tile binning and the shader disagree about which way is
+up.** `tile_rect_for_light` projects a light's candidate points and converts
+clip space to a screen fraction with `let uv = ndc * 0.5 + 0.5;`
+(`tile_grid.rs:79`), then derives tile rows from `uv.y`
+(`tile_grid.rs:94`/`:96`). NDC y is **up** (`+1` = top of the viewport), so
+`uv.y == 1.0` lands in the LAST tile row. The consumer indexes the same grid
+from the fragment's framebuffer position: `uint tileY = uint(fragCoord.y) /
+16u` (`forward.slang:293`, `In.svPosition` = `SV_Position` at `:393`/`:120`,
+which is `@builtin(position)` in the emitted WGSL — y **down**, `0` = top),
+and `uint tileIndex = ty * tileW + tx` (`:300`). So the row a light is written
+to is the mirror of the row that reads it; x is fine (NDC `-1` and
+`fragCoord.x == 0` are both the left edge). The observable defect needs two
+lights at different screen heights: a top-half tile that receives some
+*other* light's mirrored entry gets `count > 0`, takes the per-tile list, and
+therefore **misses the light actually over it**. None of the six existing
+tests in `tile_grid.rs:200-357` can catch this — every one of them puts its
+light at the origin dead-centre, uses a directional light, or asserts only
+"at least one tile is lit", all of which are symmetric under a vertical flip.
+
+**Task 2: an empty tile iterates every light in the scene, which is the exact
+opposite of what tiling is for.** `forward.slang:305` reads
+`if (count <= 0 || tileW == 0u) tileCount = totalLights;`. `tileW == 0` is the
+documented "the grid was never built" fallback (`tile_grid.rs:8-9` says so),
+but `count <= 0` is a *different* fact — "the CPU binned no light into this
+tile" — and the shader conflates the two. With `MAX_PUNCTUAL_LIGHTS = 256`
+(`forward.rs:32`), every tile the lights do not reach pays a 256-iteration
+loop instead of zero, so a scene gets *slower* the more empty screen it has.
+It is not a correctness bug today (iterating all lights is the physically
+correct answer; binning is the optimisation), which is why nothing has caught
+it — and it is also why it silently absorbs task 1's mirroring. Before the
+`count <= 0` branch can go, the binning has to actually be conservative, and
+today it is not in one case: `tile_rect_for_light` builds its screen AABB from
+only those of the seven candidate points with `clip.w > 0.0`
+(`tile_grid.rs:74-84`), so a light sphere **straddling the near plane** — centre
+in front, part of the sphere behind, or vice versa — gets a footprint computed
+from a subset of its extent and can under-cover. That must be fixed in the
+same change or task 2 will delete light.
+
+**Task 3: `pack_punctual_lights` is a 4×`vec4`-per-light host/device contract
+with zero tests.** `forward.rs:188-222` writes `[pos.xyz, kind]`,
+`[colour*intensity, range]`, `[dir.xyz, cos_inner]`, `[cos_outer, 0, 0, 0]`;
+`forward.slang:311-314` reads exactly those four rows back and decodes `kind`
+with float thresholds (`kind > 2.5` → directional, `kind > 1.5` → spot,
+`forward.slang:317`/`:334`). Nothing pins the two together, and the packer is
+pure CPU — no wgpu types, no adapter — so there is no reason for it to be
+untested. It also feeds task 1's binner, which reads `packed[base][3]` as
+`kind` and `packed[base + 1][3]` as `range` (`tile_grid.rs:130-135`), a third
+consumer of the same unwritten contract. The extraction precedents are
+`c85ef931` (`render/animation.rs`), `0378178e` (`render/bounds.rs`) and
+`e76a860f` (`render/texture.rs`); `render/mod.rs` is the one-line registry.
+
+**Task 4: the Windows CI fuzz step re-hand-maintains the list that
+`EveryCpuSuiteIsInTheWindowsCiFilter` already exists to stop being
+hand-maintained.** `Windows.yml:277` hard-codes
+`@('obj_parsing_fuzz_test','gltf_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')`
+while the targets themselves are declared by seven
+`kataglyphis_add_fuzz_test(...)` calls in `Test/fuzz/CMakeLists.txt:106-164` —
+a new fuzz target is silently not run in CI, which is the same drift class
+`BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter`
+(`buildIntegritySuite.cpp:682`) was written for. Worse, `Windows.yml:279`
+reads `if (-not (Test-Path $exe)) { Write-Host ('missing ' + ...); continue }`
+— a fuzz target that stops being built makes the step print one line and pass.
+The step only runs after a successful `clangcl-debug` build in which fuzzing
+mode is on, so a missing executable is a build regression, not an
+environment difference: this is another instance of the probe-that-cannot-say-no
+that `ea464598` just removed from the GPU check three steps below it.
+
+**Task 5: the golden-suite counts are stale in four places and one of them
+contradicts a line 75 lines further down the same file.**
+`docs/gpu-golden-testing.md:46-47` says "As of 2026-07-23 the baseline is 19
+`GoldenRender` + 2 `Integration` tests, ~44 s", while `:121-122` of the same
+document records a 2026-08-01 run of "28 tests from 2 test suites" with three
+excluded by name. The tree says 30 `TEST(GoldenRender...)` in
+`goldenRenderSuite.cpp` (one of them `DISABLED_DumpsFrameToPng`) plus
+`Integration.RenderModesSelectableInGui` and `Integration.VulkanEngine`, i.e.
+**29 runnable `GoldenRender` + 2 `Integration` = 31**, and 31 − 3 excluded = the
+28 the later line reports. So the later line is right and the earlier one is
+stale by ten tests. BACKLOG repeats the old figure three more times
+(`:258` "22 GPU tests", `:372` "all 19-21 GPU tests passing", `:626`/`:639`
+"22 golden"). Separately, BACKLOG `:709-714` still calls
+`an_occluded_primitive_is_skipped_with_gpu_culling` and
+`two_visible_cubes_are_both_drawn_with_gpu_culling` "Still red" while
+`:3001-3007` in the same file records both as passing under `1594a4a0` and
+prunes the entry that owned them.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`CascadedShadowMap::recordCommands` binds the wrong
+set on an unreachable path** (`CascadedShadowMap.cpp:483-491`) — when
+`descriptorSets` is empty it binds `descriptorSet` (built from the *light*
+layout) at set 0, which is layout-incompatible with the pipeline layout's set
+0; the only caller (`VulkanRenderer.cpp:956`) always passes a non-empty span,
+so this is dead defensive code, not a live defect. **`generate_mips` underflows
+on a zero-dimension texture** (`texture.rs:86-88`, `pw - 1` on `pw == 0`) —
+unreachable, every `CpuTexture` comes from a successful decode. **`Texture::
+createImage` never assigns `this->mip_levels`** — batch XIII already rejected
+this with reasons that still hold; fold the one-liner into the next change
+that touches `Texture`.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) Stop an empty tile from iterating every light in the scene** —
+  depends on the mirror fix above; do not start until it has landed.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/forward/forward.slang:288-345` — `punctual_lighting`;
+    `:305` is the conflated fallback, `:309` is `lightIdx = (count > 0) ? ... : j`
+  - `crates/webgpu_renderer/src/render/tile_grid.rs:44-104` — `tile_rect_for_light`,
+    specifically the `clip.w <= 0.0 { continue; }` skip at `:75-77` and the
+    `any_in_front` early-out at `:85-87`
+  - `docs/shader-build-pipeline.md` — how to recompile Slang and what the
+    checked-in WGSL gates expect
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:807`
+    (`CheckedInWgslIsNotOlderThanItsSlangSource`) and `:858`
+    (`CheckedInWgslHasNoHandEdits`) — these WILL fail if the `.wgsl` is edited by
+    hand or left unregenerated
+
+  **Steps:**
+  1. **First make the binning genuinely conservative.** In `tile_rect_for_light`,
+     handle the near-plane straddle: if any of the seven candidate points has
+     `clip.w <= 0.0` while at least one other has `clip.w > 0.0`, the light's
+     footprint is not bounded by the projected subset — return the whole grid
+     (`Some((0, 0, tile_x.saturating_sub(1), tile_y.saturating_sub(1)))`), the
+     same conservative answer the directional branch already gives. Keep the
+     existing `None` (every candidate behind the camera) as-is.
+  2. Only then change `forward.slang:305` to
+     `if (tileW == 0u) tileCount = totalLights;` so `count == 0` means "iterate
+     nothing", and make the `j` loop skip entirely when `count == 0 && tileW != 0`.
+     Keep `lightIdx = (count > 0) ? tileLightIndices[tileOffset + j] : j;` working
+     for the surviving `tileW == 0` fallback.
+  3. While in that function: `tileLightGrid[tileIndex]` is read at `:301` BEFORE
+     the `tileW == 0u` guard at `:305`, so the grid-not-built path indexes a
+     buffer it has already decided is meaningless. Move the read after the guard.
+  4. Recompile the shaders
+     (`pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`)
+     and commit the regenerated
+     `crates/webgpu_renderer/src/shaders/forward.wgsl` — never hand-edit it.
+
+  **Test:** in `tile_grid.rs`, add
+  `a_light_straddling_the_near_plane_covers_the_whole_grid`: camera at
+  `(0,0,5)` looking at the origin with `znear = 0.1`, a point light at
+  `(0.0, 0.0, 4.9)` with range `2.0` (so its sphere spans both sides of the
+  camera plane), asserting every tile lists it. Add
+  `build_tile_light_grid_is_complete_for_random_lights`: for ~50 deterministically
+  generated lights (fixed seed, no `rand` dependency — an LCG in the test is
+  fine), brute-force which tiles each light's projected sphere overlaps and assert
+  the grid's list for each tile is a **superset** of the brute-force answer,
+  except where `MAX_LIGHTS_PER_TILE` truncated it. That completeness property is
+  what makes deleting the fallback safe, and it is the assertion the subsystem has
+  never had. Then re-run `cargo test --workspace --locked` and the headless render
+  tests (`cargo test -p webgpu_renderer --test headless`) — no pixel output should
+  change, because the fallback was only ever a slower route to the same answer.
+
+  **Build:** `cargo test --workspace --locked` from
+  `ExternalLib/Kataglyphis-RustProjectTemplate`. The Slang change also affects the
+  C++ engine's SPIR-V, so follow with
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  and run `commitTestSuite.exe --gtest_filter='BuildIntegrity.*'` to confirm the
+  shader-staleness and no-hand-edit gates are green.
+
+  **Context:** the "run it and it's green" trap this repo keeps rediscovering
+  applies directly here — the current code is green *because* the fallback makes
+  every mistake in the binner invisible. Removing it converts binning bugs from
+  silent to visible, which is the point, and is exactly why step 1 must come
+  first. If the completeness test cannot be made to pass, stop and record why
+  rather than shipping a partial removal.
+
+- [ ] **(S) Extract `pack_punctual_lights` into `render/lights.rs` and pin its
+  layout against the shader** — a 4×`vec4` host/device contract with three
+  consumers and no test.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/render/forward.rs:188-222` — the packer;
+    `:32` is `MAX_PUNCTUAL_LIGHTS`, `:1267-1275` the only call site
+  - `Resources/ShadersSlang/forward/forward.slang:308-340` — the decoder;
+    `kind > 2.5` directional, `kind > 1.5` spot, `smoothstep(dvec.x, cvec.w, ...)`
+  - `crates/webgpu_renderer/src/render/texture.rs` — the shape to copy: a
+    module doc, `pub(crate)` items, `#[cfg(test)] mod tests` at the bottom
+  - `crates/webgpu_renderer/src/render/mod.rs` — the registry to add one line to
+
+  **Steps:**
+  1. Create `crates/webgpu_renderer/src/render/lights.rs`; move
+     `MAX_PUNCTUAL_LIGHTS` and `pack_punctual_lights` there as `pub(crate)`,
+     with a module doc that states the four-row layout and names
+     `forward.slang:311-314` as the decoder it must match.
+  2. Add `pub mod lights;` (matching the existing style) to `render/mod.rs` and a
+     `use crate::render::lights::{pack_punctual_lights, MAX_PUNCTUAL_LIGHTS};` in
+     `forward.rs`. `MAX_PUNCTUAL_LIGHTS` is currently `pub` and re-exported —
+     check `grep -rn "MAX_PUNCTUAL_LIGHTS" crates/ tests/` and keep every existing
+     path working (`tile_grid.rs:13` imports it from `render::forward`).
+  3. Do not change a single byte of the packing logic — this is an extraction plus
+     tests, and the goldens depend on the bytes.
+
+  **Test:** in `lights.rs`'s `mod tests`, add three:
+  `point_spot_and_directional_pack_their_kind_discriminant` (assert the `kind`
+  values land in `packed[base][3]` as `1.0`/`2.0`/`3.0` and, more importantly,
+  that they fall on the correct side of the shader's `> 1.5` / `> 2.5`
+  thresholds — write those thresholds into the assertion so a renumbering breaks
+  the test); `intensity_is_premultiplied_into_the_colour_row` (colour × intensity
+  in `packed[base+1].rgb`, range in `.w`); and
+  `lights_beyond_the_cap_are_dropped_not_wrapped` (pass `MAX_PUNCTUAL_LIGHTS + 5`
+  lights, assert the returned count is exactly `MAX_PUNCTUAL_LIGHTS` and that the
+  array's last packed record is light index `MAX_PUNCTUAL_LIGHTS - 1`, i.e. no
+  wraparound over the front). Add one for the spot cone too:
+  `spot_cone_angles_land_in_the_slots_smoothstep_reads` — `cos_inner` in
+  `packed[base+2][3]`, `cos_outer` in `packed[base+3][0]`, matching
+  `smoothstep(dvec.x, cvec.w, cosAngle)`.
+
+  **Build:** `cargo test -p webgpu_renderer --lib lights` then
+  `cargo test --workspace --locked` from
+  `ExternalLib/Kataglyphis-RustProjectTemplate`.
+
+  **Context:** the C++ side already treats this class of thing as worth pinning —
+  `Test/commit/VulkanEngine/pushConstantSuite.cpp` and
+  `BuildIntegrity.HostAndShaderSharedConstantsAgree` exist for exactly this
+  failure mode. The Rust renderer has no equivalent for its light buffer.
+
+### C++ Vulkan engine / CI
+
+- [ ] **(S) Pin the Windows CI fuzz list to the declared fuzz targets, and make a
+  missing fuzz executable fail** — the list is hand-maintained and the step
+  cannot report absence.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:682-738`
+    (`EveryCpuSuiteIsInTheWindowsCiFilter`) — the exact pattern to mirror,
+    including `find_repo_root()`, the `GTEST_SKIP()` when the file cannot be
+    opened, and the two-directional check (missing-from-filter AND dead entries)
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:218-250` — the existing
+    text-scanning helper, for style
+  - `.github/workflows/Windows.yml:256-292` — the fuzz step; `:277` is the
+    hard-coded target array, `:279` the silent `continue`
+  - `Test/fuzz/CMakeLists.txt:106-164` — the seven
+    `kataglyphis_add_fuzz_test(<target> <source>)` declarations
+
+  **Steps:**
+  1. Add a helper that parses `kataglyphis_add_fuzz_test(` calls out of
+     `Test/fuzz/CMakeLists.txt` and returns the first argument of each.
+  2. Add a helper that parses the fuzz step's `foreach ($t in @( ... ))` array out
+     of `Windows.yml`. Anchor on `foreach (`$t in @(` and stop at the closing
+     `))`, and make the test FAIL (not silently pass) if the anchor no longer
+     matches — the sibling test's message about the anchor text having changed is
+     the wording to copy.
+  3. Add `TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)`
+     asserting both directions, with an explicit documented exclusion set
+     `{ "first_fuzz_test", "example_fuzz_test" }` — those two are FuzzTest
+     smoke targets (`dummy.cpp`, `example_fuzz_test.cpp`), not engine coverage,
+     and the comment should say so rather than leaving the exclusion unexplained.
+  4. Change `Windows.yml:279` from `Write-Host ... ; continue` to writing the
+     message and `exit 1`. The step runs only after a successful `clangcl-debug`
+     build with `KATAGLYPHIS_ENABLE_FUZZTEST_FUZZING_MODE` on, so every declared
+     target must exist by then; a missing one is a build regression the step is
+     currently swallowing.
+
+  **Test:** the new `BuildIntegrity.EveryFuzzTargetIsInTheWindowsCiFuzzList` is
+  itself the test. Verify it is real by deleting one name from the `Windows.yml`
+  array locally, watching it go red, and restoring it — a gate that has never
+  been seen failing is not a gate. Add the suite to no filter: `BuildIntegrity.*`
+  is already in `Windows.yml`'s `$cpuOnlySuites`.
+
+  **Build:**
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -SkipPerfTests -SkipMsix`
+  then, from the repo root,
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='BuildIntegrity.*'`.
+  No `.ixx` is touched, so `-FreshContainer` is not needed.
+
+  **Context:** `ea464598` removed a GPU probe that always answered yes; this is
+  the same defect one step away in the same file. The repo's own rule — "a suite
+  added to the repo does not run in CI unless it is added to the filter in
+  `Windows.yml`" — already has a guard for gtest suites and none for fuzz targets.
+
+### Docs
+
+- [ ] **(S) Correct the golden-suite counts and the stale "still red" GPU-culling
+  claim** (refactor) — one document contradicts itself 75 lines apart, and
+  BACKLOG repeats the old number four times.
+
+  **Files to read:**
+  - `docs/gpu-golden-testing.md:37-51` (the stale "19 + 2, ~44 s" baseline) and
+    `:114-123` (the 2026-08-01 run that says 28 of 31)
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` and `renderModesSuite.cpp` —
+    count them yourself, do not trust either number
+  - `BACKLOG.md:258`, `:372`, `:626`, `:639` — the four repeats
+  - `BACKLOG.md:700-714` (the "Still red" claim) and `:3001-3007` (the same file
+    recording those two tests as passing under `1594a4a0`)
+
+  **Steps:**
+  1. Count the GPU tests from the source:
+     `grep -c "^TEST(GoldenRender" Test/commit/VulkanEngine/goldenRenderSuite.cpp`
+     and the `Integration` suites, subtracting `DISABLED_DumpsFrameToPng`, which
+     does not run by default. At the time of writing that is 29 runnable
+     `GoldenRender` + 2 `Integration` = 31, and 31 − 3 currently-excluded = the 28
+     the document's later section already reports. Re-derive rather than copying
+     these figures — if they have moved again, the doc should say what is true
+     now.
+  2. Fix `docs/gpu-golden-testing.md:46-47` to the derived numbers, drop the "~44 s"
+     wall time (it is a single machine's figure with no machine named), and date
+     the line.
+  3. Fix the four BACKLOG repeats to the same number. Where a repeat is inside a
+     historical DONE note (`:372`, `:626`), do not rewrite history — say "the
+     N golden tests as of that date" or drop the count, since the point of those
+     lines is the verification method, not the tally.
+  4. Rewrite `BACKLOG.md:709-714`: the two GPU-culling tests are recorded as
+     passing under `1594a4a0` at `:3001-3007`, and
+     `crates/webgpu_renderer/tests/occlusion.rs:304-360` contains both. State that
+     they are green and remove the "Still red" sentence.
+
+  **Test:** no code test. Verify by re-running the count command in step 1 and by
+  `grep -rn "19 \`GoldenRender\`\|22 GPU tests\|19-21 GPU\|22 golden" docs/ BACKLOG.md`
+  returning nothing.
+
+  **Build:** none — documentation only. Do not run a container build for this.
+
+  **Context:** exactly the failure the `ROADMAP.md` merge note at the top of this
+  file describes ("a stale entry in one place cannot contradict a fresh one in the
+  other") happening *within* a single file. Same shape as batch XIV task 3
+  (`7b38ac3e`), which fixed `docs/model-loading.md` describing a struct that had
+  gained a field.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
