@@ -2429,54 +2429,6 @@ engine-side clamp already makes it a cosmetic lie rather than a bug.
   new `gpu_culling` tests do not, the bug is actually in this change, not the
   shared prerequisite, and needs a fresh look.
 
-- [ ] **(S) (refactor) Move the tile-light-grid binning out of the 4.3k-line
-  `forward.rs` hub into `render/tile_grid.rs`** — self-contained CPU math with
-  its own unit tests, currently buried in the file the backlog calls the Rust
-  equivalent of `VulkanRenderer`.
-
-  **Files to read:**
-  - `crates/webgpu_renderer/src/render/forward.rs` — `TILE_SIZE` (:28-31), the
-    screen-rect helper (:290-312), `TileLightGridScratch` (:225-...),
-    `build_tile_light_grid` (:314-...), the single call site (:1932-1937), and
-    the in-module tests `build_tile_light_grid_bins_lights_into_correct_tiles`
-    (:4134), `build_tile_light_grid_covers_tiles_within_range`,
-    `build_tile_light_grid_handles_zero_lights` (:4167).
-  - `crates/webgpu_renderer/src/render/mod.rs` — the module list to extend.
-  - `crates/webgpu_renderer/src/render/gpu_timing.rs` — an existing sibling
-    module for the file-header doc-comment style to match.
-
-  **Steps:**
-  1. Create `src/render/tile_grid.rs` and register it in `render/mod.rs`.
-  2. Move `TILE_SIZE`, `TileLightGridScratch`, the screen-rect helper and
-     `build_tile_light_grid` across **verbatim** — no logic edits in this
-     commit. Export exactly what `forward.rs` needs (`TILE_SIZE` stays `pub`;
-     the rest can be `pub(crate)`).
-  3. Move the three `build_tile_light_grid_*` unit tests into the new module's
-     `#[cfg(test)] mod tests`. They must keep their names so `cargo test`
-     output is comparable before and after.
-  4. `use crate::render::tile_grid::{...}` in `forward.rs`; the call site at
-     :1932 and the `tile_light_grid_scratch` field are the only touch points.
-  5. Add a file-header doc comment stating the invariant the recent fix
-     established: binning is **range-aware** (a light covers the screen-space
-     rectangle its `range` subtends, not the single tile its centre projects
-     to), and `tileW == 0` is the shader's documented all-lights fallback.
-
-  **Test:** No new behaviour, so no new assertions — the moved tests are the
-  test. Verify by diffing test names and counts:
-  `cargo test -p kataglyphis_webgpu_renderer` before and after must list the
-  same set. If any moved test needs an edit beyond its `use` lines, the move
-  was not verbatim — stop and re-do it.
-
-  **Build:** `cargo test -p kataglyphis_webgpu_renderer --locked` from
-  `ExternalLib/Kataglyphis-RustProjectTemplate`, then
-  `cargo clippy --workspace --all-targets`.
-
-  **Context:** `forward.rs` is 4284 lines and the last planner pass explicitly
-  looked for a clean extraction and found none — this is one: pure CPU math,
-  one call site, tests that travel with it, zero GPU coupling. Keep the scope
-  to exactly this; do not opportunistically move the light packing or the
-  bind-group plumbing, which do touch `wgpu` state.
-
 ### C++ Vulkan engine
 
 - [ ] **(M) `ASSERT_VULKAN` the ~20 unchecked Vulkan creation results, starting
