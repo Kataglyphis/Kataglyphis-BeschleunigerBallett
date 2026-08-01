@@ -194,11 +194,11 @@ void DeferredRasterizer::createRenderPass()
 {
     // Attachments
     // 0: Final Color (Offscreen)
-    // 1: Position
-    // 2: Normal
-    // 3: Albedo
-    // 4: Material
-    // 5: Depth
+    // 1: Normal
+    // 2: Albedo
+    // 3: Material
+    // 4: Depth
+    // No position attachment - see the comment at createTextures's :87-90.
 
     // HDR final target - matches the forward offscreen (see Rasterizer.cpp).
     vk::Format finalFormat = vk::Format::eR16G16B16A16Sfloat;

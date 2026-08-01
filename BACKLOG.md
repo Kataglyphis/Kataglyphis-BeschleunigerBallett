@@ -4074,39 +4074,6 @@ is gitignored.
   compute-pipeline setup) is the pattern; the risk here is deleting the wrong
   half of the comment, so re-read `:942-951` before cutting.
 
-- [ ] **(S) (refactor) Fix `DeferredRasterizer::createRenderPass`'s attachment list, which describes six attachments for a five-attachment render pass** — deferred from batch XVIII; every index in the comment after 0 is off by one against the code below it.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:193-229` — the
-    comment at `:195-201` lists `0: Final Color, 1: Position, 2: Normal,
-    3: Albedo, 4: Material, 5: Depth`; the array at `:223-229` is
-    `0: Final, 1: Normal, 2: Albedo, 3: Material, 4: Depth`.
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:87-90` — the
-    explanation of why there is no position attachment (the lighting pass
-    reconstructs world position from the depth input attachment).
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:232-260` — the
-    subpass attachment references, which already use the correct indices.
-
-  **Steps:**
-  1. Rewrite the comment at `:195-201` to the five attachments the code actually
-     creates, with the right indices.
-  2. Add one sentence saying position was deliberately removed, pointing at
-     `:87-90` rather than restating it.
-  3. Grep the rest of the file for any other index comment that assumed six
-     attachments and fix it in the same pass.
-
-  **Test:** No new test — this is comment-only and cannot change behaviour.
-  Verify by building `clangcl-debug` and re-running the deferred golden
-  (`GoldenRender.DeferredMatchesForwardRoughly`) unchanged.
-
-  **Build:** `clangcl-debug`, same invocation as task 2.
-
-  **Context:** Batch XVIII found and deferred this. The reason it is worth
-  fixing rather than ignoring: task 2 sends the next reader straight into this
-  render pass to reason about which attachment the depth input is, and the
-  comment is the first thing they will read. Same class as `7b38ac3e`
-  (`model-loading.md` brought back in line with the code).
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 - [ ] **(M) Fix the vertical mirror in `gpu_cull.slang`'s NDC→uv mapping** — the GPU occlusion-culling compute shader uses the Vulkan y convention in a WGSL-only shader, so every AABB is depth-tested against the mirrored half of the depth buffer.
