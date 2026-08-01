@@ -2663,53 +2663,6 @@ is wrong; **`CheckedInWgslIsNotOlderThanItsSlangSource`'s missing mtime toleranc
 — a real sharp edge, but task 3's content gate makes the mtime test's vacuousness
 moot rather than needing its own fix.
 
-### Cross-renderer
-
-- [ ] **(S) Gate the checked-in generated WGSL against hand-edits** — a `//` in a
-  Slang-generated file is always a hand-edit with a regenerate's expiry date on it.
-
-  **Files to read:**
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:91-118` — `kWgslMap`, the
-    deliberately independent copy of `$WgslMap`, already lists all ten
-    source→destination pairs and already documents why `histogram.wgsl` is excluded
-  - `:799-846` — `CheckedInWgslIsNotOlderThanItsSlangSource`, the mtime-only
-    neighbour whose skip/`find_repo_root` structure this test should copy verbatim
-  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/tests/shader_export.rs:48-78`
-    — the Rust-side self-enforcing sweep over `src/shaders/`, and its existing
-    `histogram` carve-out
-
-  **Steps:**
-  1. Add `TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)` next to the mtime
-     test. Walk `kWgslMap`, skip any destination that does not exist (submodule not
-     checked out) exactly as the neighbour does, `GTEST_SKIP()` if nothing was
-     checked, and fail naming every destination containing a line with `//`, with
-     the offending line numbers and text in the message.
-  2. Word the failure message so it says what to do: *"generated WGSL must not be
-     hand-edited — put the change in the .slang source, or in the post-emit patch
-     table in compile-slang-shaders.ps1/.sh"*.
-  3. Mirror it on the Rust side in `tests/shader_export.rs` so RPT's own CI (which
-     runs on every push, unlike the `[build-win]`-gated Windows lane) catches it
-     too: assert every `src/shaders/*.wgsl` except `histogram.wgsl` contains no
-     `//`.
-  4. Verify red-then-green: on today's tree the C++ test must fail naming
-     `forward.wgsl` (3 comment lines); after task 1 regenerates it, both must pass.
-     All nine other mapped destinations plus `crates/gui/src/shaders/tex_quad.wgsl`
-     are already at zero, measured this pass.
-
-  **Test:** the two tests above are the deliverable. `GoldenRender`/`Integration`
-  are untouched.
-
-  **Build:** `clangcl-debug`:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipPerfTests -SkipMsix`
-  `BuildIntegrity` is already in `Windows.yml`'s CPU-only filter, so no filter edit
-  is needed (and `a63edf10` made that filter self-enforcing).
-
-  **Context:** `//` is safe as the sole signal: WGSL has no string literals, so it
-  cannot appear outside a comment, and the Slang WGSL backend emits none — all ten
-  mapped files were measured at zero this pass except the one carrying the
-  hand-edit. If a future post-emit patch ever needs to inject a comment, that is a
-  deliberate decision and belongs in an explicit allowlist, not a weakened gate.
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 - [ ] **(M) Fix `gpu_cull.slang`: the AABB-centre depth test culls every visible

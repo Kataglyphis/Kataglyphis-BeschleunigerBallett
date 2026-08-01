@@ -850,6 +850,56 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
                                   }();
 }
 
+// WGSL has no string literals, so a "//" can only ever appear as the start of
+// a comment - the Slang WGSL backend itself emits none. A "//" in a checked-in
+// destination from kWgslMap is therefore always a hand-edit made directly on
+// the generated file, with a regenerate's expiry date on it: the next
+// compile-slang-shaders run silently drops it. Catch it here instead.
+TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path crates_root = repo_root / "ExternalLib" / "Kataglyphis-RustProjectTemplate" / "crates";
+
+    std::vector<std::string> hand_edits;
+    int checked = 0;
+    for (const auto &mapping : kWgslMap) {
+        const fs::path dest = crates_root / mapping.crate_dir / mapping.wgsl_file;
+        if (!fs::exists(dest)) { continue; }// RustProjectTemplate submodule not checked out here
+        ++checked;
+
+        std::ifstream file(dest);
+        if (!file) { continue; }
+
+        std::string line;
+        int line_number = 0;
+        while (std::getline(file, line)) {
+            ++line_number;
+            if (line.find("//") != std::string::npos) {
+                hand_edits.push_back(fs::relative(dest, repo_root).string() + ':' + std::to_string(line_number)
+                                      + ": " + line);
+            }
+        }
+    }
+
+    if (checked == 0) {
+        GTEST_SKIP() << "none of the checked-in Rust-crate WGSL destinations exist - the "
+                        "RustProjectTemplate submodule is likely not checked out here";
+    }
+
+    EXPECT_TRUE(hand_edits.empty())
+      << hand_edits.size()
+      << " line(s) with '//' found in checked-in generated WGSL - generated WGSL must not be hand-edited - put "
+         "the change in the .slang source, or in the post-emit patch table in "
+         "compile-slang-shaders.ps1/.sh: "
+      << [&hand_edits] {
+             std::string joined;
+             for (const auto &entry : hand_edits) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 namespace {
 
 // One `export module <name>;` declaration found in an .ixx file.
