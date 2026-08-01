@@ -701,6 +701,40 @@ TEST(GoldenRender, ShadowsDarkenSomePixels)
       << " brightened - raising the shadow intensity must not brighten the image.";
 }
 
+// The shadow-pass counterpart of FrustumCullingDropsOffscreenMeshesOnly: the
+// cascade pass computes drawn/considered caster counts every frame and, until
+// now, discarded them. This is a counter assertion, not a pixel oracle - no
+// classifier, no tonemap hazard.
+TEST(GoldenRender, ShadowCasterStatsAreReportedAndZeroWhenShadowsAreOff)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+
+    scene_vars.shadows_enabled = true;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    ASSERT_GT(renderer_vars.visibility.shadow_casters_total, 0U)
+      << "the renderer reported considering no shadow casters at all; "
+         "the shadow visibility counters are not being written";
+    EXPECT_LE(renderer_vars.visibility.shadow_casters_drawn, renderer_vars.visibility.shadow_casters_total);
+
+    scene_vars.shadows_enabled = false;
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    EXPECT_EQ(renderer_vars.visibility.shadow_casters_total, 0U)
+      << "shadow caster counters must be zeroed when the shadow pass does not run";
+    EXPECT_EQ(renderer_vars.visibility.shadow_casters_drawn, 0U)
+      << "shadow caster counters must be zeroed when the shadow pass does not run";
+}
+
 // The GPU counterpart of CascadedShadowMapUnit.CascadesRespondToLightDirection
 // (cascadedShadowMapSuite.cpp:288): that test proves the light direction
 // reaches the cascade matrices, this one proves it reaches the pixels.

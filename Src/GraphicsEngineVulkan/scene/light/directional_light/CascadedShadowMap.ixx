@@ -91,10 +91,6 @@ class CascadedShadowMap
     Kataglyphis::Texture* getShadowMapArray() { return shadowMapArray.get(); }
     vk::RenderPass getRenderPass() const { return renderPass; }
 
-    uint32_t getWidth() const { return shadowWidth; }
-    uint32_t getHeight() const { return shadowHeight; }
-    uint32_t getNumCascades() const { return numCascades; }
-
     // Passes the map resolution through, so live cascades are stabilized.
     void updateCascades(const glm::mat4 &cameraView,
       float cameraFov,

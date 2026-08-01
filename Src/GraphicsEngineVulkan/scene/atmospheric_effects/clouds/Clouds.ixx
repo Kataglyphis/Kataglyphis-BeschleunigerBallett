@@ -28,7 +28,6 @@ class Clouds
 
     void cleanUp();
 
-    Kataglyphis::Texture* getCloudNoiseTexture() { return cloudNoiseTexture.get(); }
     Kataglyphis::Texture* getCloudOutputTexture() { return cloudOutputTexture.get(); }
 
     ~Clouds() { cleanUp(); }

@@ -46,6 +46,12 @@ struct VisibilityStats
     unsigned int meshes_drawn = 0;
     /// Meshes the raster path considered, culled or not.
     unsigned int meshes_total = 0;
+    /// Shadow casters actually drawn by the cascade pass last frame. Culled
+    /// against the UNION of the cascade frusta, not the camera frustum - a
+    /// caster visible to any cascade counts as drawn.
+    unsigned int shadow_casters_drawn = 0;
+    /// Shadow casters the cascade pass considered, culled or not.
+    unsigned int shadow_casters_total = 0;
 };
 
 struct GUIRendererSharedVars
@@ -60,7 +66,11 @@ struct GUIRendererSharedVars
     /// constant because culling is the one optimisation that can silently
     /// delete visible geometry - when something goes missing, being able to
     /// turn it off tells you in one click whether culling is the cause.
-    /// Never applied to the shadow pass; see Rasterizer::recordCommands.
+    /// Gates ONLY the camera-frustum cull used by the two raster paths
+    /// (VulkanRenderer::record_commands). The cascade pass culls
+    /// unconditionally against the cascade frusta
+    /// (CascadedShadowMap::recordCommands) and this switch does not turn
+    /// that off.
     bool frustum_culling_enabled = true;
 
     // Per-pass GPU timings, written by the renderer, read by the GUI.

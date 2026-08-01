@@ -251,6 +251,14 @@ void GUI::render()
         if (total > 0U) {
             ImGui::Text("Culled: %u (%.1f%%)", total - drawn, 100.0 * double(total - drawn) / double(total));
         }
+        const unsigned int shadow_drawn = guiRendererSharedVars.visibility.shadow_casters_drawn;
+        const unsigned int shadow_total = guiRendererSharedVars.visibility.shadow_casters_total;
+        ImGui::Text("Shadow casters drawn: %u / %u", shadow_drawn, shadow_total);
+        if (shadow_total > 0U) {
+            ImGui::Text("Shadow culled: %u (%.1f%%)",
+              shadow_total - shadow_drawn,
+              100.0 * double(shadow_total - shadow_drawn) / double(shadow_total));
+        }
     }
 
     ImGui::Separator();

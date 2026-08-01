@@ -2722,6 +2722,138 @@ hand-edit surface to guard.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
+## 2026-08-01 batch VIII — planner (refactor: unread shadow stats + dead accessors, skybox view plumbing, descriptor-write duplication)
+
+The actionable queue was empty again when this batch was written (the eight `- [b]`
+entries are the only checkboxes left in the file; batches IV–VII are drained).
+Every claim below was read out of the tree this pass, with the `file:line` given.
+
+**The headline finding: the shadow pass computes cull statistics every frame and
+throws them away, while the GUI already has the panel that would show them.**
+`CascadedShadowMap::recordCommands` resets `castersDrawn`/`castersConsidered`
+(`CascadedShadowMap.cpp:433-434`) and increments them per mesh (`:505`, `:515`).
+Their only readers are `getCastersDrawn()`/`getCastersConsidered()`
+(`CascadedShadowMap.ixx:112-113`), and a grep of `Src/` + `Test/` for both names
+returns **only those six lines** — nothing calls the getters. Meanwhile
+`GUI.cpp:247-252` already renders a "Frustum culling" checkbox plus
+`Culled: %u (%.1f%%)` from `guiRendererSharedVars.visibility.meshes_drawn` /
+`meshes_total`, which `VulkanRenderer.cpp:1008-1011` publishes from the *raster*
+path. So the identical diagnostic exists for one pass and is computed-then-discarded
+for the other. The Rust renderer already resolved this the same way
+(`c2c2fe4` "cache the shadow-caster render bundle across frames, make caster stats
+honest").
+
+**Same finding, second half: the comment describing the culling toggle is wrong.**
+`GUIRendererSharedVars.ixx:59-64` documents `frustum_culling_enabled` as the switch
+you flip "when something goes missing" to learn "whether culling is the cause", and
+signs off with "Never applied to the shadow pass; see Rasterizer::recordCommands."
+The flag is read at exactly one site (`VulkanRenderer.cpp:931-934`, building the
+optional camera frustum) — but `CascadedShadowMap::recordCommands` culls
+*unconditionally* against the cascade frusta (`:507-514`), gated by nothing. The
+sentence is therefore true about the flag and false about the pass, and it reads as
+the latter. A missing *shadow* cannot be diagnosed with that checkbox today, which is
+precisely the failure mode the comment claims the checkbox exists to rule out.
+
+**Second finding: the skybox framebuffer views are built twice, and half of each
+build is a vector of N copies of one value.** `VulkanRenderer.cpp:133-138` and
+`:695-700` are the same six lines verbatim (init and `recreateSwapChain`). Both fill
+`skyboxDepthViews[i] = postStage.getDepthBufferImageView()` in a loop — the same
+handle for every element, because `PostStage` owns a single depth buffer
+(`PostStage.ixx:31`, one `depthBufferImage`). `SkyBox::createFramebuffers` /
+`recreateFrameResources` (`SkyBox.ixx:29,33`) take both as
+`const std::vector<vk::ImageView>&` plus a redundant `size_t count` that is always
+`imageViews.size()`. This is the same shape commit `39486995` already collapsed for
+`CascadedShadowMap` ("per-cascade framebuffer vectors to scalars"), and the same
+`std::span` conversion `7cff9cc0`/`6e4d0204` applied to the record path.
+
+**Third finding: `DescriptorSetGroup`'s four write helpers share a copy-pasted
+prologue and epilogue.** `writeBuffer`, `writeImage`, `writeImageArray` and
+`writeAccelerationStructure` (`DescriptorSetGroup.cpp:171,197,223,249`) each open
+with the identical `checkWritePreconditions` + `findBinding` + null-check pair, then
+each fill the identical five `vk::WriteDescriptorSet` fields
+(`dstSet`/`dstBinding`/`dstArrayElement`/`descriptorType`/`descriptorCount`) and
+close with the identical `updateDescriptorSets(1, &descriptor_write, 0, nullptr)`.
+Only the payload pointer differs (`pBufferInfo` / `pImageInfo` / `pNext`), plus one
+`descriptorCount` that comes from the binding rather than being 1. This was recorded
+as a deferred candidate in batch IV ("the 4× duplicated `DescriptorSetGroup` write
+prologue") and never tasked.
+
+**Build-system fact all three tasks depend on** (re-checked this pass, unchanged
+since batch V): `kataglyphis_collect_module_interfaces`
+(`cmake/KataglyphisCMakeHelpers.cmake:10-13`) globs `*.ixx` **without**
+`CONFIGURE_DEPENDS`, and the recorded module-BMI skew hazard ("Incremental container
+builds can ship ODR-broken binaries") applies to any edited module interface. All
+three tasks below edit a `.ixx`, so all three want `-FreshContainer`.
+
+Candidates found but NOT tasked this cycle (checked, then rejected or deferred with a
+reason — do not re-propose without new evidence): **`Raytracing`'s duplicated
+swapchain pointer** — `init` stores the parameter in `this->vulkanSwapChain`
+(`Raytracing.cpp:31`), `recordCommands` takes a *second* `VulkanSwapChain*`
+(`:47`) and picks between them with `swapchain ? swapchain : this->vulkanSwapChain`
+(`:114`), while the sole call site passes `&vulkanSwapChain`
+(`VulkanRenderer.cpp:1046`) — the same object `init` was given, never null. Both the
+member (`Raytracing.ixx:42`) and the parameter carry a stale `[[maybe_unused]]`
+though line 114 uses them. Real dead generality worth a task, deferred purely for
+queue discipline (three-task cap) — **pick this up next cycle**;
+**`PathTracing.ixx:48`'s `[[maybe_unused]] vk::PushConstantRange pc_range{..., 0, 0}`**
+— zero-sized, grep-confirmed unreferenced (the `pc_ranges` hits are `Raytracing`'s
+separate, live member), but it is a single line with no behaviour attached, so it
+rides along with the Raytracing task rather than earning its own; **the `vkCheck()`
+sweep over the 52 `createX` + `ASSERT_VULKAN` + `.value` sites** — still the same
+whole-codebase, ~20-file commit batch II deferred, still wanting a deliberate moment
+rather than an executor session; **`Scene::getObjectDescriptions()` returning
+`std::vector` by value** — re-verified this pass, still one caller on the
+scene-change path, still not worth a `std::span`, exactly as batch V concluded.
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Collapse the duplicated skybox framebuffer-view plumbing onto a span plus a scalar depth view** — the same six lines appear at two call sites and half of what they build is N copies of one handle.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:133-144` (init) and `:695-703` (`recreateSwapChain`) — the two identical blocks
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.ixx:29,33` — the two signatures
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:306-324` (`createFramebuffers`) and `:510-519` (`destroyFramebuffers`/`recreateFrameResources`)
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.ixx:31` — `getDepthBufferImageView()`, the single handle being replicated
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp` as it stands after `39486995` — the precedent for collapsing a per-index container whose entries are all equal
+
+  **Steps:**
+  1. Change `SkyBox::createFramebuffers` and `SkyBox::recreateFrameResources` (declaration in `SkyBox.ixx`, definitions in `SkyBox.cpp`) to take `(std::span<const vk::ImageView> imageViews, vk::ImageView depthView, uint32_t width, uint32_t height)`. Drop the `size_t count` parameter — both call sites already pass `vulkanSwapChain.getNumberSwapChainImages()`, which is exactly `imageViews.size()`. Add `#include <span>` to the `module;` preamble of `SkyBox.ixx` if it is not already there.
+  2. In `createFramebuffers`, loop over `imageViews.size()` and build `std::array attachments = { imageViews[i], depthView }` — the second attachment is now loop-invariant. Everything else in the body (`framebufferWidth`/`framebufferHeight`, the `vk::FramebufferCreateInfo`, the `ASSERT_VULKAN`) stays byte-for-byte as it is.
+  3. Add a small private helper to `VulkanRenderer` — e.g. `std::vector<vk::ImageView> swapchainImageViews() const` — that returns one entry per swapchain image from `vulkanSwapChain.getSwapChainImage(i).getImageView()`. Declare it in `VulkanRenderer.ixx` next to the other private helpers.
+  4. Replace both blocks (`:133-138` and `:695-700`) with a call to that helper, and pass `postStage.getDepthBufferImageView()` directly as the scalar `depthView`. The two `skyboxDepthViews` vectors disappear entirely; `skyboxImageViews` becomes the helper's return value.
+  5. Confirm nothing else calls the old signatures: grep `createFramebuffers` and `recreateFrameResources` across `Src/` and `Test/` — `SkyBox`'s are distinct from the identically named members on `Rasterizer`/`DeferredRasterizer`/`PostStage`, so read the receiver, not just the name.
+
+  **Test:** No new test. This is behaviour-preserving and the existing coverage is already the right shape: `GoldenRender.SwapchainRecreationKeepsRendering` (added in `9b202b68`) drives the `recreateSwapChain` path this touches, and every golden frame composites the skybox. Verification is "the full golden set is unchanged", not a new assertion. Leave `Test/commit/VulkanEngine/skyBoxSuite.cpp` alone — it covers the CPU-only cubemap face-dimension guard and has nothing to do with framebuffers.
+
+  **Build:** `.ixx` files change (`SkyBox.ixx`, `VulkanRenderer.ixx`), so:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
+  Then run the extracted `commitTestSuite.exe` from the repo root on the GPU host and confirm the golden suite is green — a framebuffer regression shows up as a validation error or a black sky, both of which the suite catches.
+
+  **Context:** Two things are wrong here and only one is duplication. `skyboxDepthViews` is a vector of N identical handles because `PostStage` owns exactly one depth buffer, so the per-image container encodes a per-image-ness that does not exist — the same mistake `39486995` removed from `CascadedShadowMap`. The `const std::vector<...>&` parameters are the last two in the engine that the `std::span` convention from `6e4d0204`/`7cff9cc0` has not reached (`Mesh::create*Buffer` and the two `VulkanSwapChain` static choosers are the others, and they are genuinely vector-shaped). Do **not** turn the SkyBox framebuffer creation into a shared cross-stage helper — batch V already rejected that, because the five `vk::FramebufferCreateInfo` sites differ in attachment count, layer count and multiview.
+
+- [ ] **(S) (refactor) Fold `DescriptorSetGroup`'s four copy-pasted write prologues into one helper** — every write helper repeats the same precondition pair and the same five `vk::WriteDescriptorSet` field assignments.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.cpp:171-270` — the four writers, in full; they are only ~25 lines each and the differences are what matter
+  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.ixx:48-78` — the public signatures and the two existing private helpers (`findBinding`, `checkWritePreconditions`)
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1544-1545` — the only `writeImageArray` call sites, both passing a `std::vector`
+
+  **Steps:**
+  1. Add a private helper to `DescriptorSetGroup` — e.g. `bool beginWrite(uint32_t set_index, uint32_t binding, vk::WriteDescriptorSet &out) const` — that runs `checkWritePreconditions`, then `findBinding`, returns `false` (having already logged, exactly as today) if either fails, and otherwise fills `out.dstSet`, `out.dstBinding`, `out.dstArrayElement = 0`, `out.descriptorType` and `out.descriptorCount = 1`.
+  2. Rewrite `writeBuffer` and `writeImage` as: build the payload info struct, `vk::WriteDescriptorSet w{}; if (!beginWrite(set_index, binding, w)) { return; }`, set the one payload pointer, call `updateDescriptorSets`. Behaviour must be identical, including the early returns.
+  3. `writeImageArray` additionally needs the declared count, so after `beginWrite` succeeds it overrides `w.descriptorCount = infos.size()` — but keep its existing size-mismatch check and its `spdlog::error` message verbatim, and keep that check *before* the write. It is the only writer that validates the caller's payload and that guard must not be lost in the shuffle.
+  4. `writeAccelerationStructure` sets `w.pNext = &acceleration_structure_info` after `beginWrite` and leaves `descriptorCount` at 1. Watch the lifetime: `acceleration_structure_info` must outlive the `updateDescriptorSets` call, so declare it before `w` in the same scope, as the current code already does.
+  5. While in the header, change `writeImageArray`'s third parameter from `const std::vector<vk::DescriptorImageInfo> &` to `std::span<const vk::DescriptorImageInfo>` (add `#include <span>` to the `module;` preamble). Both call sites pass a `std::vector` and convert implicitly, so neither changes. Use `infos.size()` and `infos.data()` exactly as today.
+  6. Re-read the four rewritten functions side by side against the originals before building. The failure mode here is silent: a dropped field produces a descriptor write that the validation layers may or may not flag, and the wrong `descriptorType` reads as garbage in a shader rather than as an error.
+
+  **Test:** No new test. Every descriptor in the engine is written through these four functions, so the existing golden suite is the regression net — a dropped or mis-set field surfaces as a validation error or a visibly wrong frame across many tests at once. Run the **whole** suite, including the RT/PT tests: `writeAccelerationStructure` is exercised only by those, and it is the writer with the `pNext` lifetime subtlety.
+
+  **Build:** `DescriptorSetGroup.ixx` changes, so:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
+  Then run the extracted `commitTestSuite.exe` from the repo root on the GPU host. Debug builds run the validation layers, which is the point — this change is exactly the kind that a green pixel test can pass while the layers complain.
+
+  **Context:** Recorded as a deferred candidate in batch IV ("the 4× duplicated `DescriptorSetGroup` write prologue") and not tasked since. The class already exists to make descriptor writes declarative (its own header comment at `DescriptorSetGroup.ixx:13-26` says so), and the prologue duplication is the part that did not get the treatment. Keep it to one helper: a fully generic `write(set, binding, payload_variant)` would be worse than the duplication, because the four payloads attach to three different `vk::WriteDescriptorSet` members. Note the deliberate `{}` value-initialization on the members at `:87-92` and the comment above it about C++23 module ABI skew — do not "tidy" those braces away while editing this file.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

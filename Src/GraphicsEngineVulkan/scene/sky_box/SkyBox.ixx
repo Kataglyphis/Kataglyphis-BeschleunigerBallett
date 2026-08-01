@@ -35,10 +35,7 @@ class SkyBox
 
     void cleanUp();
 
-    Kataglyphis::Texture* getCubeMapTexture() { return cubeMapTexture.get(); }
     Kataglyphis::Mesh* getMesh() { return skyMesh.get(); }
-    vk::PipelineLayout getPipelineLayout() { return pipelineLayout; }
-    vk::Pipeline getGraphicsPipeline() { return graphicsPipeline; }
 
     ~SkyBox();
 

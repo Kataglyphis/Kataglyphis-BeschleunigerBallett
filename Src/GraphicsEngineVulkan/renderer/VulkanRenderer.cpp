@@ -912,11 +912,20 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
         write_pass_timestamp(GpuTimedPass::Clouds, false);
     }
 
-    if (guiSceneSharedVars.shadows_enabled) {
-        Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "shadow_cascades", { 0.55F, 0.35F, 0.10F, 1.0F });
-        write_pass_timestamp(GpuTimedPass::ShadowCascades, true);
-        dirShadowMap.recordCommands(commandBuffer, image_index, scene, rasterizer_descriptor_sets);
-        write_pass_timestamp(GpuTimedPass::ShadowCascades, false);
+    {
+        Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &mutable_gui_vars =
+          gui->getGuiRendererSharedVars();
+        if (guiSceneSharedVars.shadows_enabled) {
+            Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "shadow_cascades", { 0.55F, 0.35F, 0.10F, 1.0F });
+            write_pass_timestamp(GpuTimedPass::ShadowCascades, true);
+            dirShadowMap.recordCommands(commandBuffer, image_index, scene, rasterizer_descriptor_sets);
+            write_pass_timestamp(GpuTimedPass::ShadowCascades, false);
+            mutable_gui_vars.visibility.shadow_casters_drawn = dirShadowMap.getCastersDrawn();
+            mutable_gui_vars.visibility.shadow_casters_total = dirShadowMap.getCastersConsidered();
+        } else {
+            mutable_gui_vars.visibility.shadow_casters_drawn = 0;
+            mutable_gui_vars.visibility.shadow_casters_total = 0;
+        }
     }
 
     write_pass_timestamp(GpuTimedPass::Main, true);
