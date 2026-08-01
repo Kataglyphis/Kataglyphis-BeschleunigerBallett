@@ -2665,51 +2665,6 @@ moot rather than needing its own fix.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Pin the glTF/OBJ texture-slot alignment fix with a test** — the
-  failure path that caused the bug has no coverage, only the success path does.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:63-88` — `uploadParsed()`; the
-    `else` branch at `:73-82` fills a failed decode with the default texture
-    specifically to keep `textureID` dense
-  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:114-138` — the same fix in the
-    OBJ path
-  - `Test/commit/VulkanEngine/gltfParseSuite.cpp:121-158` —
-    `ShortBase64ImageUriDoesNotUnderflow`, the inline-glTF-fixture pattern to copy
-    (write the document to `temp_directory_path()`, parse, assert, remove)
-  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` — the device harness and
-    `SKIP_WITHOUT_GPU`, since `uploadParsed` needs a real `Device`/command pool
-
-  **Steps:**
-  1. Build an inline two-material glTF fixture: image 0 is a base64 blob long
-     enough to survive extraction but not a decodable PNG (so `extractImageBytes`
-     yields non-empty bytes and `Texture::createFromMemory` returns false), image 1
-     is a small valid PNG. Material 0 references texture 0, material 1 references
-     texture 1.
-  2. Assert the CPU half first, in `gltfParseSuite` (no device needed):
-     `getTextureImages().size() == 2`, `materials[0].textureID == 0`,
-     `materials[1].textureID == 1`.
-  3. Add the device half as `GoldenRender.CorruptEmbeddedImageKeepsTextureSlotsAligned`
-     using the existing harness: after `uploadParsed`, `getTextureCount(0)` must be
-     **2**, not 1. That single count is the whole regression — a skipped slot
-     shifts every later texture down one and the last `textureID` indexes past the
-     descriptor array.
-  4. Do not add a pixel oracle. The count assertion is driver-independent; a
-     colour assertion on a deliberately-corrupt texture is not.
-
-  **Test:** the two tests above. `GltfParseUnit` runs in the Windows CPU CI filter
-  already; `GoldenRender` is GPU-only and runs locally.
-
-  **Build:** `clangcl-debug`, then GPU-verify by running the container-built
-  `commitTestSuite.exe` from the repo root on the RX 9070 XT (see
-  `docs/gpu-golden-testing.md` and `[[host-gpu-golden-verification]]`):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipPerfTests -SkipMsix`
-
-  **Context:** The misalignment was a real bug found and fixed in the 2026-07-23
-  deep review ("BUG texture-index misalignment (both loaders)"), and the review
-  itself noted the valid-texture path was unchanged — i.e. the golden suite proves
-  nothing about the fix. This is the missing half.
-
 - [ ] **(S) (refactor) Retire the "Mirrors `Resources/Shaders/…`" headers that
   point at a deleted tree, and assert they cannot come back** — ten `.slang` files
   cite an authoritative original that no longer exists.

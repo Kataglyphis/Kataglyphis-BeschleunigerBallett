@@ -549,6 +549,35 @@ TEST(GltfParseUnit, ReadsColor0VertexColours)
     EXPECT_TRUE(has_color(1.0F, 1.0F, 1.0F)) << "white corner colour missing";
 }
 
+TEST(GltfParseUnit, CorruptEmbeddedImageStillAssignsDenseTextureSlots)
+{
+    // corrupt_embedded_image.gltf has two materials, each with its own
+    // base-colour texture: image 0 is a base64 blob that decodes to bytes (so
+    // extractImageBytes succeeds) but is not a valid PNG/JPG, so
+    // Texture::createFromMemory will fail to DECODE it later in uploadParsed
+    // (device-side, not covered here); image 1 is a small valid PNG. This is
+    // the CPU half of the 2026-07-23 texture-index-misalignment fix
+    // (uploadParsed fills a failed decode with the default texture instead of
+    // skipping the slot): parseCpu itself must still record BOTH images and
+    // point each material at its OWN dense textureID, regardless of whether
+    // either image will later decode. Red without the fix path mattering here
+    // would be a parseCpu that skips extraction on decode failure - it does
+    // not, since decoding only happens in uploadParsed - but this pins the
+    // input the device-side fix depends on: two extracted images, materials
+    // 0 and 1 pointing at slots 0 and 1 respectively.
+    const auto path = sceneConfig::resolveModelPath("Models/GltfTest/corrupt_embedded_image.gltf");
+    if (!std::filesystem::exists(path)) { GTEST_SKIP() << "corrupt-embedded-image fixture not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(path));
+
+    ASSERT_EQ(loader.getTextureImages().size(), 2U) << "both images must be extracted, corrupt or not";
+    ASSERT_GE(loader.getMaterials().size(), 2U) << "the two declared materials, plus the neutral fallback";
+    EXPECT_EQ(loader.getMaterials()[0].textureID, 0) << "material 0 must reference its own texture slot";
+    EXPECT_EQ(loader.getMaterials()[1].textureID, 1)
+      << "material 1 must reference slot 1, not be shifted down by material 0's eventual decode failure";
+}
+
 TEST(GltfParseUnit, PrimitiveWithoutMaterialRoutesToNeutralFallback)
 {
     // A primitive whose "material" key is absent (primitive->material == nullptr)

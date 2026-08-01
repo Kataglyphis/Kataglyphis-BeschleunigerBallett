@@ -249,6 +249,10 @@ constexpr const char *SHADOW_RIG_MODEL = "Models/ShadowTest/shadow_rig.obj";
 // multi-mesh loader split.
 constexpr const char *TWO_PRIMITIVE_MODEL = "Models/GltfTest/two_primitives.gltf";
 constexpr const char *MASK_CARD_MODEL = "Models/GltfTest/mask_card.gltf";
+// Two materials, each with its own base-colour texture: image 0 is a valid
+// base64 payload that is not a decodable PNG/JPG, image 1 is a small valid
+// PNG - the device-side half of the 2026-07-23 texture-index-misalignment fix.
+constexpr const char *CORRUPT_EMBEDDED_IMAGE_MODEL = "Models/GltfTest/corrupt_embedded_image.gltf";
 constexpr const char *UV_TRANSFORM_MODEL = "Models/GltfTest/uv_transform_card.gltf";
 
 // Points KATAGLYPHIS_GPU_TIMING_JSON at a file for the lifetime of the object,
@@ -1770,6 +1774,40 @@ TEST(GoldenRender, SponzaBindsEveryTextureSlot)
     const std::vector<uint8_t> frame = harness.capture_frame(width, height);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while binding Sponza's textures.";
     ASSERT_FALSE(frame.empty()) << "Frame capture returned no pixels.";
+}
+
+// The device-side half of the 2026-07-23 texture-index-misalignment fix
+// (uploadParsed fills a failed decode with the default texture instead of
+// skipping the slot). corrupt_embedded_image.gltf has two materials: material
+// 0's base-colour image decodes to bytes but is not a valid PNG/JPG (so
+// Texture::createFromMemory fails), material 1's is a small valid PNG. Before
+// the fix, the failed decode skipped `addTexture` entirely, so this model
+// would upload only ONE texture and material 1's textureID (1) would index
+// past the descriptor array. GltfParseUnit.CorruptEmbeddedImageStillAssigns...
+// already pins the CPU half (parseCpu records both images and the dense
+// textureIDs); this is the GPU half - the actual model that reaches the
+// device must still end up with two texture slots, one per material,
+// regardless of the first one's decode failure.
+TEST(GoldenRender, CorruptEmbeddedImageKeepsTextureSlotsAligned)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride corrupt_override(CORRUPT_EMBEDDED_IMAGE_MODEL);
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost())
+      << "Device lost loading a model with a corrupt embedded image - the failed decode was not handled.";
+
+    EXPECT_EQ(harness.scene->getTextureCount(0), 2U)
+      << "a skipped slot would shift material 1's textureID down and index past the descriptor array";
 }
 
 // glTF alphaMode MASK visually: a cut-out card must DISCARD its below-cutoff
