@@ -4026,7 +4026,16 @@ is gitignored.
   of six copies): the payoff is that the next fullscreen pass cannot get the
   convention wrong, not the lines removed.
 
-- [ ] **(S) (refactor) Collapse the two cloud-output image barriers and the rationale comment that is written twice** — deferred from batch XVIII with the finding already verified; ~20 lines of identical field setup and a ~10-line comment repeated almost verbatim.
+- [b] **(S) (refactor) Collapse the two cloud-output image barriers and the rationale comment that is written twice** — deferred from batch XVIII with the finding already verified; ~20 lines of identical field setup and a ~10-line comment repeated almost verbatim.
+
+  **BLOCKED 2026-08-02:** This task's acceptance test is
+  `GoldenRender.CloudsAcrossManyFramesDoesNotLoseTheDevice` staying green on
+  the host GPU, plus an optional sync-validation rerun. Host GPU golden
+  verification is currently unavailable in this RDP session (see the blocked
+  deferred-mirror task above for the reproduced failure). This refactor
+  touches cross-frame WAR barrier synchronization, so shipping it unverified
+  risks a real device-lost/sync-hazard regression rather than a cosmetic one
+  — not worth doing blind. Re-attempt once host GPU verification is restored.
 
   **Files to read:**
   - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:871-951` — the whole
