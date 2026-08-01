@@ -88,6 +88,35 @@ const std::vector<std::string> kEngineSpirvSubdirs = {
     "compute", "deferred", "path_tracing", "post", "rasterizer", "raytracing", "skybox"
 };
 
+// Slang source (relative to Resources/ShadersSlang/) -> checked-in Rust-crate
+// WGSL destination (relative to
+// ExternalLib/Kataglyphis-RustProjectTemplate/crates/), mirroring $WgslMap in
+// Scripts/Windows/compile-slang-shaders.ps1 (and its bash equivalent). Kept as
+// a second hand-written copy, same as kSharedConstantNames below, rather than
+// parsed out of the PowerShell array - a divergence here is exactly the drift
+// this test exists to catch, so the pairs are deliberately independent of the
+// script's own list. histogram.wgsl is deliberately excluded: it is
+// hand-written, with no generating Slang source.
+struct WgslMapping
+{
+    std::string slang_source;// relative to Resources/ShadersSlang/
+    std::string crate_dir;   // relative to ExternalLib/Kataglyphis-RustProjectTemplate/crates/
+    std::string wgsl_file;
+};
+
+const std::vector<WgslMapping> kWgslMap = {
+    { "forward/forward.slang", "webgpu_renderer/src/shaders", "forward.wgsl" },
+    { "sky/sky.slang", "webgpu_renderer/src/shaders", "sky.wgsl" },
+    { "bloom/bloom.slang", "webgpu_renderer/src/shaders", "bloom.wgsl" },
+    { "ssao/ssao.slang", "webgpu_renderer/src/shaders", "ssao.wgsl" },
+    { "ibl/ibl.slang", "webgpu_renderer/src/shaders", "ibl.wgsl" },
+    { "gpu_cull/gpu_cull.slang", "webgpu_renderer/src/shaders", "gpu_cull.wgsl" },
+    { "tonemap/tonemap.slang", "webgpu_renderer/src/shaders", "tonemap.wgsl" },
+    { "depth_resolve/depth_resolve.slang", "webgpu_renderer/src/shaders", "depth_resolve.wgsl" },
+    { "occlusion_bbox/occlusion_bbox.slang", "webgpu_renderer/src/shaders", "occlusion_bbox.wgsl" },
+    { "tex_quad/tex_quad.slang", "gui/src/shaders", "tex_quad.wgsl" },
+};
+
 // A .slang file is only ever compiled on its own if slangc can find an entry
 // point in it. Files that exist purely to be `import`ed (e.g.
 // raytracing/rt_types.slang) never appear in compile-slang-shaders.ps1's
@@ -763,6 +792,60 @@ TEST(BuildIntegrity, SlangWgslPatchTablesAgree)
              for (const auto &entry : linux_only) { joined += "\n  " + entry; }
              return joined;
          }();
+}
+
+// CompiledShadersAreNotOlderThanTheirSources guards the SPIR-V artifacts; the
+// checked-in Rust-crate WGSL artifacts (kWgslMap above) have no equivalent
+// guard, and they live two directories away
+// (ExternalLib/Kataglyphis-RustProjectTemplate/crates/.../shaders) from the
+// Slang source that generates them. A regenerate that drops one of the
+// hand-applied depth-texture patches (see SlangWgslPatchTablesAgree above),
+// or a .slang edit that never gets propagated, is silent today. This walks
+// kWgslMap and asserts each checked-in .wgsl is not older than its source.
+TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path crates_root = repo_root / "ExternalLib" / "Kataglyphis-RustProjectTemplate" / "crates";
+
+    std::vector<std::string> stale;
+    int checked = 0;
+    for (const auto &mapping : kWgslMap) {
+        const fs::path source = slang_root / mapping.slang_source;
+        ASSERT_TRUE(fs::exists(source)) << "Slang source mapped by kWgslMap is missing: " << source.string();
+
+        const fs::path dest = crates_root / mapping.crate_dir / mapping.wgsl_file;
+        if (!fs::exists(dest)) { continue; }// RustProjectTemplate submodule not checked out here
+
+        std::error_code error;
+        const auto source_time = fs::last_write_time(source, error);
+        if (error) { continue; }
+        const auto dest_time = fs::last_write_time(dest, error);
+        if (error) { continue; }
+
+        ++checked;
+        if (dest_time < source_time) {
+            stale.push_back(fs::relative(dest, repo_root).string() + " (mtime ticks=" + std::to_string(dest_time.time_since_epoch().count())
+                             + ") is older than " + fs::relative(source, repo_root).string()
+                             + " (mtime ticks=" + std::to_string(source_time.time_since_epoch().count()) + ')');
+        }
+    }
+
+    if (checked == 0) {
+        GTEST_SKIP() << "none of the checked-in Rust-crate WGSL destinations exist - the "
+                        "RustProjectTemplate submodule is likely not checked out here";
+    }
+
+    EXPECT_TRUE(stale.empty()) << stale.size()
+                               << " checked-in Rust-crate WGSL file(s) are older than the Slang source that "
+                                  "generates them (regenerate via compile-slang-shaders.ps1/.sh): "
+                               << [&stale] {
+                                      std::string joined;
+                                      for (const auto &entry : stale) { joined += "\n  " + entry; }
+                                      return joined;
+                                  }();
 }
 
 namespace {

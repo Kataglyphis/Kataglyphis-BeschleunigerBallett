@@ -2538,52 +2538,6 @@ consumed by `Scripts/Compare-RendererTimings.ps1`).
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Gate the checked-in Rust-crate WGSL against its Slang source** —
-  the SPIR-V artifacts have a staleness test; the WGSL artifacts have none, and
-  they live two directories away from the source that generates them.
-
-  **Files to read:**
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:273-330` —
-    `CompiledShadersAreNotOlderThanTheirSources` and
-    `CompiledShadersAreNotOlderThanSharedIncludes`; both walk
-    `Resources/ShadersSlang/build/spirv` only, and the mtime-comparison plus
-    `source_for_spirv` mapping helper is the pattern to mirror
-  - `Scripts/Windows/compile-slang-shaders.ps1:216-227` — `$WgslMap`, the
-    authoritative Slang-source → crate-`.wgsl` mapping (8 entries; note
-    `tex_quad.wgsl` lands in the **gui** crate, not `webgpu_renderer`)
-  - `Src/GraphicsEngineVulkan/common/Utilities.hpp` and the repo-root helper at
-    the top of `buildIntegritySuite.cpp`
-
-  **Steps:**
-  1. Add `TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)`.
-     Hard-code the same source→destination pairs `$WgslMap` lists (a text parse
-     of the PowerShell array is also fine and drifts less — prefer it if it is
-     not much more code).
-  2. For each pair, `SKIP` (do not fail) when the destination does not exist —
-     the `RustProjectTemplate` submodule may be unchecked-out in some
-     configurations, and a missing submodule must not turn this suite red.
-  3. For each pair that does exist, assert
-     `last_write_time(dest) >= last_write_time(src)`, reporting both paths and
-     both timestamps on failure.
-  4. Exclude `histogram.wgsl` explicitly with a comment: it is hand-written and
-     has no generating Slang source in `$WgslMap`.
-
-  **Test:** the new test is the test. Verify by touching
-  `Resources/ShadersSlang/depth_resolve/depth_resolve.slang` and confirming a
-  red run that names it, then rebuilding the shader (or touching the `.wgsl`)
-  to go green.
-
-  **Build:** `clangcl-debug`, same command as the task above; run
-  `commitTestSuite.exe --gtest_filter=BuildIntegrity.*` from the repo root.
-
-  **Context:** This is the gate that would have flagged the depth-resolve fix
-  going stale, and more importantly it protects the *next* patch-table change:
-  the crate `.wgsl` files are generated artifacts that are also hand-patched, so
-  a regenerate that drops a patch, or a `.slang` edit that never reaches the
-  crate, are both silent today. Mtime is a weak oracle (see the "restoring a
-  file from a backup defeats ninja" papercut) but it is the oracle the existing
-  SPIR-V tests already use, and consistency beats inventing a second scheme.
-
 - [ ] **(S) Move `MAX_CASCADES` into the pinned shared-constant block and stop
   the GUI advertising 1..8** — one constant, three unpinned homes, and a slider
   that offers values the engine silently clamps away.
