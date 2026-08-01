@@ -294,9 +294,15 @@ jobs:
       # GPU timing comparison — runs the Compare-RendererTimings.ps1 script
       # which drives both renderers headlessly and prints per-pass GPU ms side
       # by side.  GitHub-hosted runners have no GPU (Vulkan loader present but
-      # no device), so the step uses -ValidationOnly to check the JSON schema
-      # and pass names without actually rendering.  On a GPU-capable runner,
-      # omit -ValidationOnly for a full timing comparison.
+      # no device), so this step is validation-only by default: it checks the
+      # JSON schema and pass names without actually rendering.  There is no
+      # reliable in-container GPU probe — `glfwVulkanSupported()` can answer
+      # yes with no device present and then abort during device creation, and
+      # `--gtest_list_tests` only enumerates registered names, never touching
+      # a device, so it always "succeeds". A self-hosted runner with a real
+      # adapter opts in explicitly by setting the KATAGLYPHIS_CI_HAS_GPU
+      # repository/environment variable to '1', which drops -ValidationOnly
+      # for a full timing comparison.
       - name: GPU timing comparison (validation-only on GPU-less runners)
         shell: pwsh
         run: |
@@ -305,22 +311,7 @@ jobs:
           $cores = [int]$env:NUMBER_OF_PROCESSORS
           if ($cores -lt 1) { $cores = 2 }
 
-          # Ask GLFW whether a Vulkan-capable GPU is available (inside the
-          # container).  The loader is present but no device on hosted runners.
-          $hasGpu = & {
-            $test = docker run --rm --memory '2g' --cpus 1 `
-              --mount 'type=bind,source=D:\ws,target=C:\ws' `
-              -w 'C:\ws' $image `
-              -NoProfile -NoProfile -Command '
-                try {
-                  $info = & "C:\ws\build-clangcl-debug\commitTestSuite.exe" --gtest_list_tests 2>&1 | Select-String "GoldenRender"
-                  if ($info) { Write-Host "GPU_AVAILABLE" }
-                } catch { }
-                Write-Host "GPU_NOT_AVAILABLE"
-              ' 2>$null
-            $test -match 'GPU_AVAILABLE'
-          }
-
+          $hasGpu = $env:KATAGLYPHIS_CI_HAS_GPU -eq '1'
           $validationFlag = if (-not $hasGpu) { '-ValidationOnly' } else { '' }
           Write-Host "GPU available: $hasGpu (validation flag: $($validationFlag -replace '-',''))"
 

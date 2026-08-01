@@ -3217,26 +3217,6 @@ decision, not an agent's. **`Frustum::from_view_proj` plane normalization**
 and **`intersects_aabb_as_caster` having no production caller** — batch XII
 already rejected both with reasons; they still hold.
 
-- [ ] **(S) Fix the Windows CI GPU probe, which lists gtest names and therefore always answers "GPU available"** — the timing-comparison step runs without `-ValidationOnly` on GPU-less hosted runners, the opposite of its own comment.
-
-  **Files to read:**
-  - `.github/workflows/Windows.yml:288-335` — the "GPU timing comparison" step: the comment at `:296-301`, the probe at `:309-321`, the flag at `:323-326`
-  - `Scripts/Compare-RendererTimings.ps1:46-52` — what `-ValidationOnly` and `-PrintExpectedPasses` actually do
-  - `docs/gpu-golden-testing.md` — why `SKIP_WITHOUT_GPU` / `glfwVulkanSupported()` is not a trustworthy adapter probe either (it can answer yes with no device present, then abort during device creation)
-
-  **Steps:**
-  1. Delete the `$hasGpu` sub-expression entirely (`:309-321`). It cannot fail: `--gtest_list_tests` enumerates registered names without creating a device, `Select-String "GoldenRender"` therefore always matches, and the unconditional `GPU_NOT_AVAILABLE` at `:318` is never consulted because `-match` on the array returns the one matching line.
-  2. Replace it with an explicit opt-in: `$hasGpu = $env:KATAGLYPHIS_CI_HAS_GPU -eq '1'`, defaulting to `-ValidationOnly`. GitHub-hosted Windows runners have no adapter, and a self-hosted GPU runner can set the variable deliberately. Keep the `Write-Host "GPU available: ..."` line so the log still says which mode ran.
-  3. Update the step's comment block (`:296-301`) to describe the opt-in rather than the removed auto-detection, and say plainly that the default is validation-only.
-  4. While in this step, drop the duplicated `-NoProfile -NoProfile` and note that this probe was the only `docker run` in the file that omitted the explicit `pwsh` entrypoint the other three steps pass — if any container invocation survives step 2, give it the same `'pwsh', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command'` shape as `:243-250`.
-  5. Do not change the `[build-win]` gating on the workflow — that is a separate open decision recorded under "CI and release gaps".
-
-  **Test:** No new automated test (this is workflow YAML; the repo has no workflow-lint harness). Verify two ways: (a) `pwsh -NoProfile -Command "[scriptblock]::Create((Get-Content .github/workflows/Windows.yml -Raw))"` is *not* a valid check — instead extract the edited `run:` body to a scratch `.ps1` and confirm `pwsh -NoProfile -File` parses it and that with `KATAGLYPHIS_CI_HAS_GPU` unset it builds a command string containing `-ValidationOnly`; (b) demonstrate the old probe's defect for the commit message by running `.\build-clangcl-debug\commitTestSuite.exe --gtest_list_tests | Select-String GoldenRender` and showing it matches with no adapter in play.
-
-  **Build:** None. If you want the resulting command exercised end to end, run `pwsh -ExecutionPolicy Bypass -File .\Scripts\Compare-RendererTimings.ps1 -ValidationOnly` locally.
-
-  **Context:** Same failure class the repo has now hit three times — the swapchain screenshot that reads black while the session is locked, the `clangcl-tsan` preset whose green runs proved nothing, and `Compare-RendererTimings.ps1`'s phantom `Post` pass. An instrument that structurally cannot report the negative case is worse than no instrument.
-
 - [ ] **(S) (refactor) Delete the six dead `CommandBufferManager` members and make the class explicitly stateless** — it has only static methods and an empty `private:` section, yet six types carry an instance of it.
 
   **Files to read:**
