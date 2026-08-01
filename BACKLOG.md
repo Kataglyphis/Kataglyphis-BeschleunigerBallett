@@ -2536,56 +2536,6 @@ consumed by `Scripts/Compare-RendererTimings.ps1`).
 
 ### Build / scripts
 
-- [ ] **(S) Pin the two Slang→WGSL post-emit patch tables against drift** — the
-  Windows and Linux compile scripts each hand-maintain the same table, and the
-  task above adds a patch that must land in both.
-
-  **Files to read:**
-  - `Scripts/Windows/compile-slang-shaders.ps1:229-260` — `$DepthTexturePatches`,
-    a hashtable keyed by output `.wgsl` filename, each value an array of
-    `@{ Pattern = ...; Replacement = ... }`
-  - `Scripts/Linux/compile-slang-shaders.sh:180-200` — the same table expressed
-    as a `case` over the output filename with `sed -i -E` lines
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:487-540` — two existing
-    tests that parse repo files as **text** and compare
-    (`HostAndShaderSharedConstantsAgree`, `EveryCpuSuiteIsInTheWindowsCiFilter`);
-    follow their helper style
-
-  **Steps:**
-  1. Add `TEST(BuildIntegrity, SlangWgslPatchTablesAgree)` to
-     `buildIntegritySuite.cpp`. It locates the repo root with the existing
-     helper, reads both script files as text, and extracts a
-     `map<filename, patch_count>` from each: from the PowerShell script by
-     scanning `$DepthTexturePatches` for `'<name>.wgsl' = @(` blocks and
-     counting `Pattern =` occurrences inside; from the bash script by scanning
-     the `case` for `<name>.wgsl)` labels and counting `sed -i -E` lines up to
-     the `;;`.
-  2. Assert the two maps have the same key set, and the same count per key.
-     On failure, print both maps — the message must make it obvious which
-     platform is behind.
-  3. Add the suite name to the Windows CI filter if the self-enforcing check
-     from `a63edf10` does not already do that automatically (it should —
-     `BuildIntegrity` is already listed; confirm rather than assume).
-
-  **Test:** the new `BuildIntegrity.SlangWgslPatchTablesAgree` is the test.
-  Verify it works by temporarily deleting one `sed` line from the bash script,
-  confirming a red run that names `depth_resolve.wgsl`, then restoring it.
-  **Restore with an edit, not a file copy** — see the "restoring from a backup
-  defeats ninja" papercut above.
-
-  **Build:** `clangcl-debug`:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipPerfTests -SkipMsix`,
-  then run `commitTestSuite.exe --gtest_filter=BuildIntegrity.*` from the repo
-  root.
-
-  **Context:** A parsing test over two shell scripts is unglamorous, but this
-  repo has been bitten by exactly this shape three times already (the model-file
-  extension dispatch in three copies, the Windows CI filter, the host↔shader
-  constant block) and the fix each time was a text-parsing gate. Unifying the
-  tables into one data file is **not** the right move here: the two dialects
-  differ (`\w` / `${1}` .NET vs POSIX ERE `\1`), so a shared file would need a
-  translation layer that is more code than the drift it prevents.
-
 ### C++ Vulkan engine
 
 - [ ] **(S) Gate the checked-in Rust-crate WGSL against its Slang source** —

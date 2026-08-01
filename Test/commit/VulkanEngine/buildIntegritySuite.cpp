@@ -259,6 +259,115 @@ std::optional<std::vector<std::string>> parse_ci_filter_suites(const fs::path &w
     return suites;
 }
 
+// Parses $DepthTexturePatches from compile-slang-shaders.ps1: a hashtable
+// keyed by output .wgsl filename, each value an array of `@{ Pattern = ...;
+// Replacement = ... }` entries. Returns filename -> number of Pattern
+// entries. Anchored on the "$DepthTexturePatches = @{" opener and the "}"
+// that closes it, so an unrelated hashtable elsewhere in the script cannot
+// be picked up; within that, each key is anchored on "'<name>' = @(" and its
+// matching ")" line.
+std::map<std::string, int> parse_powershell_wgsl_patch_counts(const fs::path &script_path)
+{
+    std::map<std::string, int> result;
+    std::ifstream file(script_path);
+    if (!file) { return result; }
+
+    bool inside_table = false;
+    std::string current_key;
+    bool in_block = false;
+    int count = 0;
+    std::string line;
+    while (std::getline(file, line)) {
+        if (!inside_table) {
+            if (line.find("$DepthTexturePatches = @{") != std::string::npos) { inside_table = true; }
+            continue;
+        }
+
+        const std::size_t first_non_space = line.find_first_not_of(" \t");
+        const std::string trimmed = first_non_space == std::string::npos ? std::string{} : line.substr(first_non_space);
+
+        if (!in_block) {
+            if (trimmed == "}") { break; }// end of $DepthTexturePatches
+
+            const std::size_t open_quote = line.find('\'');
+            if (open_quote == std::string::npos) { continue; }
+            const std::size_t close_quote = line.find('\'', open_quote + 1);
+            if (close_quote == std::string::npos) { continue; }
+            if (line.find("= @(", close_quote) == std::string::npos) { continue; }
+
+            current_key = line.substr(open_quote + 1, close_quote - open_quote - 1);
+            in_block = true;
+            count = 0;
+            continue;
+        }
+
+        if (trimmed == ")") {
+            result[current_key] = count;
+            in_block = false;
+            continue;
+        }
+
+        if (line.find("Pattern =") != std::string::npos) { ++count; }
+    }
+    return result;
+}
+
+// Parses the `case "$out_name" in ... esac` patch table from
+// compile-slang-shaders.sh. A label may list multiple filenames separated by
+// '|' (bash case syntax), sharing the sed lines up to the next ";;" -
+// counted once per filename so a shared case arm compares fairly against the
+// PowerShell side, where each filename owns its own array. Anchored on the
+// "case \"$out_name\" in" opener and "esac", so an unrelated case statement
+// elsewhere in the script cannot be picked up.
+std::map<std::string, int> parse_bash_wgsl_patch_counts(const fs::path &script_path)
+{
+    std::map<std::string, int> result;
+    std::ifstream file(script_path);
+    if (!file) { return result; }
+
+    bool inside_case = false;
+    std::vector<std::string> active_keys;
+    int count = 0;
+    std::string line;
+    while (std::getline(file, line)) {
+        if (!inside_case) {
+            if (line.find("case \"$out_name\" in") != std::string::npos) { inside_case = true; }
+            continue;
+        }
+
+        const std::size_t start = line.find_first_not_of(" \t");
+        const std::string trimmed = start == std::string::npos ? std::string{} : line.substr(start);
+
+        if (trimmed == "esac") { break; }
+
+        if (active_keys.empty()) {
+            if (trimmed.size() > 1 && trimmed.back() == ')' && trimmed.find(".wgsl") != std::string::npos) {
+                const std::string labels = trimmed.substr(0, trimmed.size() - 1);
+                std::size_t pos = 0;
+                while (pos <= labels.size()) {
+                    const std::size_t bar = labels.find('|', pos);
+                    const std::string label =
+                      labels.substr(pos, bar == std::string::npos ? std::string::npos : bar - pos);
+                    if (!label.empty()) { active_keys.push_back(label); }
+                    if (bar == std::string::npos) { break; }
+                    pos = bar + 1;
+                }
+                count = 0;
+            }
+            continue;
+        }
+
+        if (trimmed == ";;") {
+            for (const auto &key : active_keys) { result[key] = count; }
+            active_keys.clear();
+            continue;
+        }
+
+        if (line.find("sed -i -E") != std::string::npos) { ++count; }
+    }
+    return result;
+}
+
 }// namespace
 
 // Both the build-time compiler (Scripts/Windows/compile-slang-shaders.ps1) and
@@ -593,6 +702,65 @@ TEST(BuildIntegrity, EveryCpuSuiteIsInTheWindowsCiFilter)
       << [&dead_filter_entries] {
              std::string joined;
              for (const auto &entry : dead_filter_entries) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+// compile-slang-shaders.ps1 and compile-slang-shaders.sh each hand-maintain
+// their own copy of the depth-texture WGSL patch table (one PowerShell
+// hashtable, one bash `case`), because Slang's WGSL backend has no
+// depth-texture resource type and every emitted depth/shadow texture
+// declaration needs a post-emit regex fix. Nothing pins the two copies
+// together: a patch added to fix one platform and forgotten on the other
+// ships broken WGSL on whichever platform builds it last. This test parses
+// both as text and asserts they agree on which output files are patched and
+// how many regex substitutions apply to each.
+TEST(BuildIntegrity, SlangWgslPatchTablesAgree)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path windows_script = repo_root / "Scripts" / "Windows" / "compile-slang-shaders.ps1";
+    const fs::path linux_script = repo_root / "Scripts" / "Linux" / "compile-slang-shaders.sh";
+
+    const auto windows_counts = parse_powershell_wgsl_patch_counts(windows_script);
+    const auto linux_counts = parse_bash_wgsl_patch_counts(linux_script);
+
+    ASSERT_FALSE(windows_counts.empty())
+      << "parsed zero entries out of $DepthTexturePatches in " << windows_script.string()
+      << " - the anchor text ('$DepthTexturePatches = @{') may have changed";
+    ASSERT_FALSE(linux_counts.empty()) << "parsed zero entries out of the case over $out_name in "
+                                       << linux_script.string()
+                                       << R"( - the anchor text ('case "$out_name" in') may have changed)";
+
+    std::vector<std::string> windows_only;
+    for (const auto &[name, windows_count] : windows_counts) {
+        const auto it = linux_counts.find(name);
+        if (it == linux_counts.end()) {
+            windows_only.push_back(name);
+            continue;
+        }
+        EXPECT_EQ(windows_count, it->second)
+          << name << " has " << windows_count << " patch(es) in " << windows_script.string() << " but "
+          << it->second << " in " << linux_script.string();
+    }
+    EXPECT_TRUE(windows_only.empty())
+      << windows_only.size() << " file(s) patched in " << windows_script.string() << " but not in "
+      << linux_script.string() << ':' << [&windows_only] {
+             std::string joined;
+             for (const auto &entry : windows_only) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    std::vector<std::string> linux_only;
+    for (const auto &entry : linux_counts) {
+        if (!windows_counts.contains(entry.first)) { linux_only.push_back(entry.first); }
+    }
+    EXPECT_TRUE(linux_only.empty())
+      << linux_only.size() << " file(s) patched in " << linux_script.string() << " but not in "
+      << windows_script.string() << ':' << [&linux_only] {
+             std::string joined;
+             for (const auto &entry : linux_only) { joined += "\n  " + entry; }
              return joined;
          }();
 }
