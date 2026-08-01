@@ -3464,56 +3464,6 @@ that touches `Texture`.
   task's own build instructions only called for the `BuildIntegrity.*` filter,
   which is green.
 
-- [ ] **(S) Extract `pack_punctual_lights` into `render/lights.rs` and pin its
-  layout against the shader** — a 4×`vec4` host/device contract with three
-  consumers and no test.
-
-  **Files to read:**
-  - `crates/webgpu_renderer/src/render/forward.rs:188-222` — the packer;
-    `:32` is `MAX_PUNCTUAL_LIGHTS`, `:1267-1275` the only call site
-  - `Resources/ShadersSlang/forward/forward.slang:308-340` — the decoder;
-    `kind > 2.5` directional, `kind > 1.5` spot, `smoothstep(dvec.x, cvec.w, ...)`
-  - `crates/webgpu_renderer/src/render/texture.rs` — the shape to copy: a
-    module doc, `pub(crate)` items, `#[cfg(test)] mod tests` at the bottom
-  - `crates/webgpu_renderer/src/render/mod.rs` — the registry to add one line to
-
-  **Steps:**
-  1. Create `crates/webgpu_renderer/src/render/lights.rs`; move
-     `MAX_PUNCTUAL_LIGHTS` and `pack_punctual_lights` there as `pub(crate)`,
-     with a module doc that states the four-row layout and names
-     `forward.slang:311-314` as the decoder it must match.
-  2. Add `pub mod lights;` (matching the existing style) to `render/mod.rs` and a
-     `use crate::render::lights::{pack_punctual_lights, MAX_PUNCTUAL_LIGHTS};` in
-     `forward.rs`. `MAX_PUNCTUAL_LIGHTS` is currently `pub` and re-exported —
-     check `grep -rn "MAX_PUNCTUAL_LIGHTS" crates/ tests/` and keep every existing
-     path working (`tile_grid.rs:13` imports it from `render::forward`).
-  3. Do not change a single byte of the packing logic — this is an extraction plus
-     tests, and the goldens depend on the bytes.
-
-  **Test:** in `lights.rs`'s `mod tests`, add three:
-  `point_spot_and_directional_pack_their_kind_discriminant` (assert the `kind`
-  values land in `packed[base][3]` as `1.0`/`2.0`/`3.0` and, more importantly,
-  that they fall on the correct side of the shader's `> 1.5` / `> 2.5`
-  thresholds — write those thresholds into the assertion so a renumbering breaks
-  the test); `intensity_is_premultiplied_into_the_colour_row` (colour × intensity
-  in `packed[base+1].rgb`, range in `.w`); and
-  `lights_beyond_the_cap_are_dropped_not_wrapped` (pass `MAX_PUNCTUAL_LIGHTS + 5`
-  lights, assert the returned count is exactly `MAX_PUNCTUAL_LIGHTS` and that the
-  array's last packed record is light index `MAX_PUNCTUAL_LIGHTS - 1`, i.e. no
-  wraparound over the front). Add one for the spot cone too:
-  `spot_cone_angles_land_in_the_slots_smoothstep_reads` — `cos_inner` in
-  `packed[base+2][3]`, `cos_outer` in `packed[base+3][0]`, matching
-  `smoothstep(dvec.x, cvec.w, cosAngle)`.
-
-  **Build:** `cargo test -p webgpu_renderer --lib lights` then
-  `cargo test --workspace --locked` from
-  `ExternalLib/Kataglyphis-RustProjectTemplate`.
-
-  **Context:** the C++ side already treats this class of thing as worth pinning —
-  `Test/commit/VulkanEngine/pushConstantSuite.cpp` and
-  `BuildIntegrity.HostAndShaderSharedConstantsAgree` exist for exactly this
-  failure mode. The Rust renderer has no equivalent for its light buffer.
-
 ### C++ Vulkan engine / CI
 
 - [ ] **(S) Pin the Windows CI fuzz list to the declared fuzz targets, and make a
