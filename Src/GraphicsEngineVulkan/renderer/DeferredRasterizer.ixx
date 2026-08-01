@@ -71,8 +71,6 @@ class DeferredRasterizer
     std::shared_ptr<VulkanDevice>device{ nullptr };
     VulkanSwapChain *vulkanSwapChain{ nullptr };
 
-    CommandBufferManager commandBufferManager;
-
     std::vector<vk::Framebuffer> framebuffer;
     
     // The final color output (offscreen texture, consumed by PostStage)

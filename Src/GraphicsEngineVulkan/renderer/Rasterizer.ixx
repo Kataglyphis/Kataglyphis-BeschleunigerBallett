@@ -75,8 +75,6 @@ class Rasterizer
     std::shared_ptr<VulkanDevice>device{ nullptr };
     VulkanSwapChain *vulkanSwapChain{ nullptr };
 
-    CommandBufferManager commandBufferManager;
-
     std::vector<vk::Framebuffer> framebuffer;
     std::vector<std::unique_ptr<Kataglyphis::Texture>> offscreenTextures;
     std::unique_ptr<Kataglyphis::Texture> depthBufferImage;

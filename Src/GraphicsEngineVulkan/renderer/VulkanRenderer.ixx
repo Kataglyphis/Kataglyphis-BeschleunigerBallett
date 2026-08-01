@@ -15,7 +15,6 @@ import kataglyphis.vulkan.as_manager;
 import kataglyphis.vulkan.buffer_manager;
 import kataglyphis.vulkan.buffer;
 import kataglyphis.vulkan.camera;
-import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.descriptor_set_group;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.frame_capture;
@@ -201,7 +200,6 @@ class VulkanRenderer
     void cleanUpUBOs();
 
     std::vector<vk::CommandBuffer> command_buffers;
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
     void create_command_buffers();
 
     Kataglyphis::VulkanRendererInternals::Raytracing raytracingStage;

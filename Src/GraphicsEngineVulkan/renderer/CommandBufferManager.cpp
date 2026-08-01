@@ -8,8 +8,6 @@ module;
 
 module kataglyphis.vulkan.command_buffer_manager;
 
-Kataglyphis::VulkanRendererInternals::CommandBufferManager::CommandBufferManager() = default;
-
 auto Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(vk::Device device,
   vk::CommandPool command_pool) -> vk::CommandBuffer
 {

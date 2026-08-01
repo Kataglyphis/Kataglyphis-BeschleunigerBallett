@@ -8,7 +8,6 @@
 
 export module kataglyphis.vulkan.as_manager;
 
-import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.buffer_manager;
 import kataglyphis.vulkan.scene;
@@ -49,7 +48,6 @@ class ASManager
 
   private:
     std::shared_ptr<VulkanDevice>vulkanDevice{ nullptr };
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
     Kataglyphis::VulkanBufferManager vulkanBufferManager;
 
     std::vector<BottomLevelAccelerationStructure> blas;

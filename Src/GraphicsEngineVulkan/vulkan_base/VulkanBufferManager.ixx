@@ -6,7 +6,6 @@
 
 export module kataglyphis.vulkan.buffer_manager;
 
-import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.buffer;
 import kataglyphis.vulkan.device;
 
@@ -66,8 +65,6 @@ class VulkanBufferManager
     ~VulkanBufferManager();
 
   private:
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
-
     // Persistently mapped (VMA_ALLOCATION_CREATE_MAPPED_BIT) staging buffer
     // reused across uploads instead of being created/destroyed per upload.
     // Grown geometrically whenever an upload exceeds its capacity. Reuse is

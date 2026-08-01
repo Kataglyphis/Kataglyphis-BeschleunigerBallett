@@ -36,8 +36,6 @@ void DeferredRasterizer::init(std::shared_ptr<VulkanDevice>in_device,
     device = in_device;
     vulkanSwapChain = swap_chain;
 
-    commandBufferManager = CommandBufferManager();
-
     createTextures(commandPool);
     createRenderPass();
     createPushConstantRange();

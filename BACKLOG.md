@@ -3217,29 +3217,6 @@ decision, not an agent's. **`Frustum::from_view_proj` plane normalization**
 and **`intersects_aabb_as_caster` having no production caller** — batch XII
 already rejected both with reasons; they still hold.
 
-- [ ] **(S) (refactor) Delete the six dead `CommandBufferManager` members and make the class explicitly stateless** — it has only static methods and an empty `private:` section, yet six types carry an instance of it.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/CommandBufferManager.ixx` — the whole file (`:8-22`): two static methods, a declared constructor, nothing else
-  - The six dead members: `renderer/accelerationStructures/ASManager.ixx:52`, `scene/Texture.ixx:97`, `renderer/DeferredRasterizer.ixx:74`, `renderer/VulkanRenderer.ixx:204`, `vulkan_base/VulkanBufferManager.ixx:69`, `renderer/Rasterizer.ixx:78`
-  - `renderer/DeferredRasterizer.cpp:39` — `commandBufferManager = CommandBufferManager();`, a no-op self-assignment
-  - `scene/Texture.cpp:31` and `:47` — the member being moved through `Texture`'s move constructor and move assignment
-  - Call sites that already use the static form and must be untouched: `scene/Texture.cpp:152`, `vulkan_base/VulkanBufferManager.cpp:21`, `:34`, `:62`, `:72`
-
-  **Steps:**
-  1. Delete all six member declarations, the assignment at `DeferredRasterizer.cpp:39`, and the two moves in `Texture.cpp` (`:31`, `:47`). `Texture`'s move constructor/assignment keep their remaining members in the same order.
-  2. Drop `import kataglyphis.vulkan.command_buffer_manager;` from any `.ixx` whose only reason to import it was the deleted member — check `Texture.ixx:13`, `VulkanBufferManager.ixx:9`, and the others. The implementation `.cpp` files that call the static methods keep their imports.
-  3. Make the class unable to regrow an instance: delete the declared constructor and add `CommandBufferManager() = delete;` (plus the existing destructor can go), or — cleaner and preferred if it compiles without churn — turn it into a plain namespace of two free functions and update the five call sites. Pick one and say which in the commit message; do not leave it half-converted.
-  4. Delete `CommandBufferManager::CommandBufferManager()`'s definition from `CommandBufferManager.cpp` if it exists.
-
-  **Test:** No new runtime test — this removes members that nothing reads. If you take the `= delete` route, add a `static_assert(!std::is_default_constructible_v<...>)` to an existing suite (`Test/commit/VulkanEngine/allocatorOwnershipSuite.cpp` is the precedent: it pins a move-only contract at compile time). The regression guard is the build itself plus the full CPU suite staying green.
-
-  **Build:** `clangcl-debug`, **`-FreshContainer`** (six `.ixx` files change, so every dependent BMI must be rebuilt). Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer -SkipPerfTests -SkipMsix`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='-GoldenRender.*:Integration.*'` for the CPU suites. GPU-verify on the RX 9070 XT with the full golden run (`docs/gpu-golden-testing.md`) — this touches `VulkanRenderer.ixx` and both rasterizers, so a build error is the likely failure mode but a golden run is cheap insurance.
-
-  **Context:** Direct follow-on from `d277fa99`, which deleted the per-`Texture` `VulkanBufferManager` for exactly this reason and did not notice the sibling member next to it. `4cea780f` (last `[[maybe_unused]]` markers) and `2f2b1fdf` (dead module wrappers) are the same sweep; keep the habit of deleting the *ability* to reintroduce the dead thing, not just the instance.
-
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

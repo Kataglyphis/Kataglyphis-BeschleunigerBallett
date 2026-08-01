@@ -28,7 +28,6 @@ Kataglyphis::Texture::Texture() = default;
 
 Kataglyphis::Texture::Texture(Texture &&other) noexcept
   : mip_levels(other.mip_levels),
-    commandBufferManager(std::move(other.commandBufferManager)),
     vulkanImage(std::move(other.vulkanImage)),
     vulkanImageView(std::move(other.vulkanImageView)),
     textureSampler(other.textureSampler),
@@ -44,7 +43,6 @@ Kataglyphis::Texture &Kataglyphis::Texture::operator=(Texture &&other) noexcept
     if (this != &other) {
         cleanUp();
         mip_levels = other.mip_levels;
-        commandBufferManager = std::move(other.commandBufferManager);
         vulkanImage = std::move(other.vulkanImage);
         vulkanImageView = std::move(other.vulkanImageView);
         textureSampler = other.textureSampler;

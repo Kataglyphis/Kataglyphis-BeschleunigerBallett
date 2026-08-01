@@ -4,20 +4,10 @@ module;
 
 export module kataglyphis.vulkan.command_buffer_manager;
 
-export namespace Kataglyphis::VulkanRendererInternals {
-class CommandBufferManager
-{
-  public:
-    CommandBufferManager();
-
-    static vk::CommandBuffer beginCommandBuffer(vk::Device device, vk::CommandPool command_pool);
-    static void endAndSubmitCommandBuffer(vk::Device device,
-      vk::CommandPool command_pool,
-      vk::Queue queue,
-      vk::CommandBuffer &command_buffer);
-
-    ~CommandBufferManager() = default;
-
-  private:
-};
-}// namespace Kataglyphis::VulkanRendererInternals
+export namespace Kataglyphis::VulkanRendererInternals::CommandBufferManager {
+vk::CommandBuffer beginCommandBuffer(vk::Device device, vk::CommandPool command_pool);
+void endAndSubmitCommandBuffer(vk::Device device,
+  vk::CommandPool command_pool,
+  vk::Queue queue,
+  vk::CommandBuffer &command_buffer);
+}// namespace Kataglyphis::VulkanRendererInternals::CommandBufferManager
