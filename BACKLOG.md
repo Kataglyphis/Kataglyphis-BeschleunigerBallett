@@ -681,11 +681,13 @@ cleanUp+recreate pair at the four scene-changed sites.
   another_reads_back_zero_samples`, `two_side_by_side_cubes_are_both_visible`,
   `an_occluded_primitive_is_actually_skipped_in_the_opaque_pass`,
   `loading_a_new_scene_does_not_inherit_the_old_scene_visibility` and
-  `ssao_darkens_geometry` are now green. **Still red, and NOT explained by
-  this bug** (isolated, separate issues): `alpha_modes_blend_and_mask` (0
-  composited pixels — blend pass shares the encoder with the now-fixed forward
-  pass but doesn't touch `self.depth` at all, so this needs its own
-  investigation) and the two GPU-culling-specific tests
+  `ssao_darkens_geometry` are now green. `alpha_modes_blend_and_mask`, also
+  flagged here as unexplained by this bug, is green too as of 2026-08-01 (came
+  back passing on its own after the `cascade_splits` double-duty fix, before
+  any targeted investigation into this specific test) — the "blend pass
+  doesn't touch `self.depth`" note above was never confirmed as its actual
+  cause. **Still red** (isolated, separate issue): the two GPU-culling-specific
+  tests
   (`an_occluded_primitive_is_skipped_with_gpu_culling`,
   `two_visible_cubes_are_both_drawn_with_gpu_culling` — see the
   `gpu_culling_enabled` entry below, whose own "To resume" condition is now
@@ -2963,66 +2965,6 @@ parity gap and the C++ code is a ready-made template, but it needs its own cycle
 and its own CPU oracle, so it is recorded here rather than half-specified;
 **`Model::addSampler` burning one `vk::Sampler` per texture** (`Model.cpp:66-82`)
 — re-checked, still headroom rather than a leak, still not worth a task.
-
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
-
-- [ ] **(M) Diagnose and fix `alpha_modes_blend_and_mask` — 0 composited blend
-  pixels** — the last red headless test whose cause the 2026-08-01 depth-resolve
-  root-cause did not explain. **Do this after the `cascade_splits` task above.**
-
-  **Files to read:**
-  - `ExternalLib/.../crates/webgpu_renderer/tests/headless.rs:340-400` — the
-    test; the failing assertion is `blended_over_cube > 200` against the
-    classifier `g > 140 && g > r + 25 && g > b + 25 && r > 70 && b > 60`
-  - `ExternalLib/.../crates/webgpu_renderer/tests/assets/cube_alpha.gltf` —
-    material 2 is the BLEND quad (`baseColorFactor [0.1, 0.8, 0.2, 0.45]`,
-    `doubleSided: true`), material 3 the MASK quad (alpha 0.3, cutoff 0.5)
-  - `ExternalLib/.../crates/webgpu_renderer/src/render/forward.rs` —
-    `:2081-2111` (the transparent draw loop, after the sky, sorted back-to-front),
-    `:2787-2842` (`create_forward_pipeline_set`: blend variants get
-    `ALPHA_BLENDING`, `depth_write_enabled: Some(false)`, `depth_compare: Less`),
-    `:1588` and `:1594` (where `alpha_blend` is set from `AlphaMode`)
-  - `docs/gpu-golden-testing.md` — "Always dump the picture, not just the number"
-
-  **Steps:**
-  1. Re-run the test first and record whether it is still red after the
-     `cascade_splits` fix. A blend quad shadowed by the wrong cascade would come
-     out too dark to clear `g > 140`, so this may already be resolved — if it is,
-     the task is to say so in the backlog and delete the stale "needs its own
-     investigation" note under "Rust renderer ideas", not to change code.
-  2. If still red, separate *not drawn* from *drawn but off-threshold* before
-     changing anything. Add a temporary counter for the `blended` vector at
-     `:2082-2091` and print it; if it is 0 the cause is upstream
-     (`prim.alpha_blend` never set, or `frustum.intersects_aabb` rejecting the
-     quad), if it is 1 the quad is drawn and the classifier is measuring the
-     wrong thing.
-  3. Dump the frame to PNG and look at it. A count says how much changed; only
-     the picture says whether what changed is the effect — this repo has twice
-     produced confident wrong calls from a pixel classifier alone (see "Caution
-     learned the hard way").
-  4. Fix the cause you actually found. If it is the oracle (the quad composites
-     but the tonemapped green lands below 140), widen the classifier and say in
-     the test comment which measured values it now brackets — do not tune the
-     threshold until it passes without recording why.
-  5. Leave the `yellowish == 0` MASK assertion alone unless it also fails; it
-     tests a different path (opaque loop + shader discard).
-
-  **Test:** the test already exists — the deliverable is that it goes green for
-  a stated reason, plus a comment in it naming the root cause. If the fix is in
-  renderer code rather than the oracle, add the narrowest assertion that would
-  have caught it.
-
-  **Build:** from `ExternalLib/Kataglyphis-RustProjectTemplate`:
-  `cargo test -p kataglyphis_webgpu_renderer --test headless alpha_modes_blend_and_mask -- --nocapture`.
-  Needs a GPU (the test self-skips without an adapter — a SKIP is not a pass).
-
-  **Context:** Recorded as unexplained in the depth-resolve entry under "Rust
-  renderer ideas": "blend pass shares the encoder with the now-fixed forward
-  pass but doesn't touch `self.depth` at all, so this needs its own
-  investigation". One thing already ruled out: `StoreOp::Discard` on the
-  `hdr_msaa` colour attachment (`:1980`) is correct — a resolve to
-  `resolve_target` happens regardless of the store op, and that is the intended
-  wgpu pattern. Do not re-derive that.
 
 ### C++ Vulkan engine
 
