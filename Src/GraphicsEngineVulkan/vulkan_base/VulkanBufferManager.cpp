@@ -65,6 +65,20 @@ void Kataglyphis::VulkanBufferManager::copyImageBuffer(vk::Device device,
         return;
     }
 
+    // Record the copy through the command-buffer overload so the region setup
+    // lives in exactly one place.
+    copyImageBuffer(transfer_command_buffer, src_buffer, image, width, height);
+
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      device, transfer_command_pool, transfer_queue, transfer_command_buffer);
+}
+
+void Kataglyphis::VulkanBufferManager::copyImageBuffer(vk::CommandBuffer command_buffer,
+  vk::Buffer src_buffer,
+  vk::Image image,
+  uint32_t width,
+  uint32_t height)
+{
     vk::BufferImageCopy image_region{};
     image_region.bufferOffset = 0;
     image_region.bufferRowLength = 0;
@@ -76,10 +90,7 @@ void Kataglyphis::VulkanBufferManager::copyImageBuffer(vk::Device device,
     image_region.imageOffset = vk::Offset3D{ 0, 0, 0 };
     image_region.imageExtent = vk::Extent3D{ width, height, 1 };
 
-    transfer_command_buffer.copyBufferToImage(src_buffer, image, vk::ImageLayout::eTransferDstOptimal, image_region);
-
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      device, transfer_command_pool, transfer_queue, transfer_command_buffer);
+    command_buffer.copyBufferToImage(src_buffer, image, vk::ImageLayout::eTransferDstOptimal, image_region);
 }
 
 void Kataglyphis::VulkanBufferManager::ensureStagingBufferCapacity(const std::shared_ptr<VulkanDevice> &device,

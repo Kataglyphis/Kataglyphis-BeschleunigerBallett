@@ -8,7 +8,6 @@ module;
 export module kataglyphis.vulkan.texture;
 
 import kataglyphis.vulkan.device;
-import kataglyphis.vulkan.buffer_manager;
 import kataglyphis.vulkan.image;
 import kataglyphis.vulkan.image_view;
 import kataglyphis.vulkan.command_buffer_manager;
@@ -89,15 +88,9 @@ class Texture
 
     uint32_t mip_levels = 0;
 
-    void generateMipMaps(vk::Device device,
-      vk::CommandPool command_pool,
-      vk::Queue queue,
-      vk::Image image,
-      int32_t width,
-      int32_t height);
+    void generateMipMaps(vk::CommandBuffer command_buffer, vk::Image image, int32_t width, int32_t height);
 
     Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
-    VulkanBufferManager vulkanBufferManager;
 
     VulkanImage vulkanImage;
     VulkanImageView vulkanImageView;

@@ -29,7 +29,6 @@ Kataglyphis::Texture::Texture() = default;
 Kataglyphis::Texture::Texture(Texture &&other) noexcept
   : mip_levels(other.mip_levels),
     commandBufferManager(std::move(other.commandBufferManager)),
-    vulkanBufferManager(std::move(other.vulkanBufferManager)),
     vulkanImage(std::move(other.vulkanImage)),
     vulkanImageView(std::move(other.vulkanImageView)),
     textureSampler(other.textureSampler),
@@ -46,7 +45,6 @@ Kataglyphis::Texture &Kataglyphis::Texture::operator=(Texture &&other) noexcept
         cleanUp();
         mip_levels = other.mip_levels;
         commandBufferManager = std::move(other.commandBufferManager);
-        vulkanBufferManager = std::move(other.vulkanBufferManager);
         vulkanImage = std::move(other.vulkanImage);
         vulkanImageView = std::move(other.vulkanImageView);
         textureSampler = other.textureSampler;
@@ -149,38 +147,38 @@ auto Kataglyphis::Texture::uploadRgba(std::shared_ptr<VulkanDevice>device,
       vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
       vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-    vulkanImage.transitionImageLayout(device->getLogicalDevice(),
-      device->getGraphicsQueue(),
-      commandPool,
-      vk::ImageLayout::eUndefined,
-      vk::ImageLayout::eTransferDstOptimal,
-      vk::ImageAspectFlagBits::eColor,
-      mip_levels);
+    // One command buffer for transition -> copy -> (mipmaps | final transition)
+    // instead of three separately fence-waited submits.
+    vk::CommandBuffer command_buffer =
+      Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
+        device->getLogicalDevice(), commandPool);
+    if (!command_buffer) {
+        spdlog::error("Skipping texture upload due to invalid command buffer.");
+        stagingBuffer.cleanUp();
+        return false;
+    }
 
-    vulkanBufferManager.copyImageBuffer(device->getLogicalDevice(),
-      device->getGraphicsQueue(),
-      commandPool,
+    vulkanImage.transitionImageLayout(
+      command_buffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, mip_levels, vk::ImageAspectFlagBits::eColor);
+
+    VulkanBufferManager::copyImageBuffer(command_buffer,
       stagingBuffer.getBuffer(),
       vulkanImage.getImage(),
       static_cast<uint32_t>(width),
       static_cast<uint32_t>(height));
 
     if (mip_levels > 1) {
-        generateMipMaps(device->getLogicalDevice(),
-          commandPool,
-          device->getGraphicsQueue(),
-          vulkanImage.getImage(),
-          width,
-          height);
+        generateMipMaps(command_buffer, vulkanImage.getImage(), width, height);
     } else {
-        vulkanImage.transitionImageLayout(device->getLogicalDevice(),
-          device->getGraphicsQueue(),
-          commandPool,
+        vulkanImage.transitionImageLayout(command_buffer,
           vk::ImageLayout::eTransferDstOptimal,
           vk::ImageLayout::eShaderReadOnlyOptimal,
-          vk::ImageAspectFlagBits::eColor,
-          1);
+          1,
+          vk::ImageAspectFlagBits::eColor);
     }
+
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer);
 
     stagingBuffer.cleanUp();
 
@@ -251,9 +249,6 @@ void Kataglyphis::Texture::createTextureSampler(std::shared_ptr<VulkanDevice>in_
 
 void Kataglyphis::Texture::cleanUp()
 {
-    // Release any staging memory held by the buffer manager while the VMA
-    // allocator is still alive.
-    vulkanBufferManager.cleanUp();
     if (textureSampler && device) {
         device->getLogicalDevice().destroySampler(textureSampler);
         textureSampler = nullptr;
@@ -285,16 +280,8 @@ auto Kataglyphis::Texture::loadTextureData(const std::string &file_name,
     return image;
 }
 
-void Kataglyphis::Texture::generateMipMaps(vk::Device device,
-  vk::CommandPool command_pool,
-  vk::Queue queue,
-  vk::Image image,
-  int32_t width,
-  int32_t height)
+void Kataglyphis::Texture::generateMipMaps(vk::CommandBuffer command_buffer, vk::Image image, int32_t width, int32_t height)
 {
-    vk::CommandBuffer command_buffer =
-      Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device, command_pool);
-
     vk::ImageMemoryBarrier barrier{};
     barrier.image = image;
     barrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
@@ -372,7 +359,4 @@ void Kataglyphis::Texture::generateMipMaps(vk::Device device,
       {},
       {},
       barrier);
-
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      device, command_pool, queue, command_buffer);
 }

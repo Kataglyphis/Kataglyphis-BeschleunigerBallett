@@ -36,6 +36,8 @@ class VulkanBufferManager
       uint32_t width,
       uint32_t height);
 
+    static void copyImageBuffer(vk::CommandBuffer command_buffer, vk::Buffer src_buffer, vk::Image image, uint32_t width, uint32_t height);
+
     template<typename T>
     void createBufferAndUploadVectorOnDevice(std::shared_ptr<VulkanDevice>device,
       vk::CommandPool commandPool,
