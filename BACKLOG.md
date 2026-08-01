@@ -2534,45 +2534,6 @@ consumed by `Scripts/Compare-RendererTimings.ps1`).
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-- [ ] **(S) Make `tests/shader_export.rs` self-enforcing over
-  `src/shaders/`** — the export gate covers 7 of 10 shaders, and the one that
-  was broken was among the 3 it missed.
-
-  **Files to read:**
-  - `ExternalLib/.../crates/webgpu_renderer/tests/shader_export.rs` — the whole
-    file; `SHADERS` is a hard-coded 7-entry list of `include_str!` pairs
-  - `ExternalLib/.../crates/webgpu_renderer/src/shaders/` — 10 `.wgsl` files;
-    `depth_resolve`, `gpu_cull` and `histogram` are absent from the list
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:542`
-    (`EveryCpuSuiteIsInTheWindowsCiFilter`) — the precedent for this shape: a
-    test that walks the directory and fails when the hand-maintained list falls
-    behind
-
-  **Steps:**
-  1. Add `gpu_cull` and `histogram` to `SHADERS` (`depth_resolve` is added by
-     the task above; if that task has not landed yet, add it here too and expect
-     this test to be the one that goes red until it does).
-  2. Add `every_shader_file_is_covered`: read
-     `concat!(env!("CARGO_MANIFEST_DIR"), "/src/shaders")` with
-     `std::fs::read_dir`, collect every `.wgsl` file stem, and assert each one
-     appears as a name in `SHADERS`. Fail with the missing stem(s) named, so the
-     message tells the next person exactly what to add.
-  3. Note in a comment that `histogram.wgsl` is deliberately hand-written (it is
-     not Slang-generated — `compile-slang-shaders.ps1:105-109` explains why), so
-     it is covered by the export gate but exempt from any staleness gate.
-
-  **Test:** the two additions above are the test. Verify by temporarily renaming
-  a shader stem in `SHADERS` and confirming `every_shader_file_is_covered` fails
-  with that stem named, then revert.
-
-  **Build:** `cargo test -p kataglyphis_webgpu_renderer --test shader_export`
-  from `ExternalLib/Kataglyphis-RustProjectTemplate`. No GPU needed.
-
-  **Context:** Same self-enforcing pattern as commit `a63edf10` ("make the
-  Windows CI test filter self-enforcing") and `eb077041` before it (a suite
-  missed by hand). A hand-maintained list that gates correctness will drift; the
-  fix is always to derive it, not to be more careful.
-
 ### Build / scripts
 
 - [ ] **(S) Pin the two Slang→WGSL post-emit patch tables against drift** — the
