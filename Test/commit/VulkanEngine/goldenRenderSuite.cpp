@@ -697,6 +697,170 @@ TEST(GoldenRender, ShadowsDarkenSomePixels)
       << " brightened - raising the shadow intensity must not brighten the image.";
 }
 
+// The GPU counterpart of CascadedShadowMapUnit.CascadesRespondToLightDirection
+// (cascadedShadowMapSuite.cpp:288): that test proves the light direction
+// reaches the cascade matrices, this one proves it reaches the pixels.
+//
+// Reuses ShadowsDarkenSomePixels's oracle - intensity 0 vs 1 at a fixed
+// direction, filtered by a same-state noise reference - under two different
+// light directions, then compares the two resulting shadow masks. A shadow
+// that darkens but never MOVES (baked into a fixed depth map, or a direction
+// that never reaches the shadow pass) produces two near-identical masks and
+// fails here while still passing ShadowsDarkenSomePixels.
+TEST(GoldenRender, ShadowsMoveWhenTheLightRotates)
+{
+    SKIP_WITHOUT_GPU();
+
+    const ScopedModelOverride use_shadow_rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    scene_vars.shadows_enabled = true;
+
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    // Direction B is A rotated 51 degrees about the world Y axis, which
+    // leaves the Y (downward) component untouched - both directions keep
+    // casting onto the ground plane, only where the shadow falls changes.
+    //
+    // The angle is not arbitrary within the 50-70 degree range the task asked
+    // for: on this rig (a wide, thin slab floating over a 60x60 plane, see
+    // shadow_rig.obj) the shadow sweeps out of the camera's crop quickly as
+    // the direction rotates - a sweep measured on the host RX 9070 XT found
+    // the shadowed-pixel area collapses to near-zero (<0.05%) for rotations
+    // of +50..+70 degrees and for -55..-60 degrees, while -49..-52 stays
+    // comfortably visible (4.1%-13.9% of pixels, against ShadowsDarkenSomePixels's
+    // own ~11.2% at 0 degrees) with the two masks still ~99.98% disjoint. -51
+    // sits in the middle of that safe band, not on its edge. Do not change
+    // this angle without re-running that sweep - see the DumpsFrameToPng
+    // caution below for why a plausible-looking angle can silently measure
+    // nothing.
+    const glm::vec3 direction_a(scene_vars.directional_light_direction[0],
+      scene_vars.directional_light_direction[1],
+      scene_vars.directional_light_direction[2]);
+    const float rotation_radians = glm::radians(-51.0F);
+    const glm::vec3 direction_b(glm::rotate(glm::mat4(1.0F), rotation_radians, glm::vec3(0.0F, 1.0F, 0.0F))
+                                 * glm::vec4(direction_a, 0.0F));
+
+    const auto set_direction = [&scene_vars](const glm::vec3 &direction) {
+        scene_vars.directional_light_direction[0] = direction.x;
+        scene_vars.directional_light_direction[1] = direction.y;
+        scene_vars.directional_light_direction[2] = direction.z;
+    };
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+
+    // Direction A: unshadowed, a same-state noise reference, then shadowed.
+    set_direction(direction_a);
+    scene_vars.cascaded_shadow_intensity = 0.0F;
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> a_unshadowed = harness.capture_frame(width, height);
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> a_noise_reference = harness.capture_frame(width, height);
+    scene_vars.cascaded_shadow_intensity = 1.0F;
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> a_shadowed = harness.capture_frame(width, height);
+
+    // Direction B: same three-capture pattern.
+    set_direction(direction_b);
+    scene_vars.cascaded_shadow_intensity = 0.0F;
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> b_unshadowed = harness.capture_frame(width, height);
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> b_noise_reference = harness.capture_frame(width, height);
+    scene_vars.cascaded_shadow_intensity = 1.0F;
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> b_shadowed = harness.capture_frame(width, height);
+
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost during capture.";
+    ASSERT_FALSE(a_unshadowed.empty()) << "Capture under direction A returned no pixels.";
+    ASSERT_EQ(a_unshadowed.size(), a_shadowed.size());
+    ASSERT_EQ(a_unshadowed.size(), b_unshadowed.size());
+    ASSERT_EQ(a_unshadowed.size(), b_shadowed.size());
+
+    constexpr double CHANGE_THRESHOLD = 4.0;
+    const size_t pixel_count = a_unshadowed.size() / 4U;
+
+    // Same per-pixel mask ShadowsDarkenSomePixels builds (stable against the
+    // noise reference, and darkened by raising the intensity), restricted to
+    // one light direction.
+    const auto build_mask = [pixel_count](const std::vector<uint8_t> &unshadowed,
+                               const std::vector<uint8_t> &noise_reference,
+                               const std::vector<uint8_t> &shadowed) {
+        std::vector<bool> mask(pixel_count, false);
+        size_t darkened = 0;
+        for (size_t pixel = 0; pixel < pixel_count; ++pixel) {
+            if (std::abs(luminance_of(unshadowed, pixel) - luminance_of(noise_reference, pixel))
+                > CHANGE_THRESHOLD) {
+                continue;
+            }
+            if (luminance_of(unshadowed, pixel) - luminance_of(shadowed, pixel) > CHANGE_THRESHOLD) {
+                mask[pixel] = true;
+                ++darkened;
+            }
+        }
+        return std::make_pair(mask, darkened);
+    };
+
+    const auto [mask_a, darkened_a] = build_mask(a_unshadowed, a_noise_reference, a_shadowed);
+    const auto [mask_b, darkened_b] = build_mask(b_unshadowed, b_noise_reference, b_shadowed);
+
+    const double area_a = static_cast<double>(darkened_a) / static_cast<double>(pixel_count);
+    const double area_b = static_cast<double>(darkened_b) / static_cast<double>(pixel_count);
+
+    // Same area floor ShadowsDarkenSomePixels uses (:680) - a direction that
+    // casts nothing must not be able to pass by trivially agreeing with
+    // another empty mask.
+    constexpr double AREA_FLOOR = 0.04;
+    EXPECT_GT(area_a, AREA_FLOOR) << "Direction A cast a shadow over only " << (area_a * 100.0)
+                                  << "% of pixels; expected a visible shadowed region.";
+    EXPECT_GT(area_b, AREA_FLOOR) << "Direction B cast a shadow over only " << (area_b * 100.0)
+                                  << "% of pixels; expected a visible shadowed region.";
+
+    size_t intersection = 0;
+    size_t mask_union = 0;
+    for (size_t pixel = 0; pixel < pixel_count; ++pixel) {
+        if (mask_a[pixel] || mask_b[pixel]) {
+            ++mask_union;
+            if (mask_a[pixel] && mask_b[pixel]) { ++intersection; }
+        }
+    }
+    const size_t symmetric_difference = mask_union - intersection;
+    const double moved_fraction =
+      mask_union == 0U ? 0.0 : static_cast<double>(symmetric_difference) / static_cast<double>(mask_union);
+
+    GTEST_LOG_(INFO) << "direction A shadowed " << darkened_a << " px (" << (area_a * 100.0)
+                     << "%), direction B shadowed " << darkened_b << " px (" << (area_b * 100.0) << "%); mask union "
+                     << mask_union << ", symmetric difference " << symmetric_difference << " ("
+                     << (moved_fraction * 100.0) << "% of union)";
+
+    // Threshold set from measurement on this rig, not from taste (RX 9070 XT):
+    //
+    //   correct renderer (-51 degree rotation)                   99.999%
+    //   direction pinned in the shadow pass (updateCascades fed a
+    //   constant vec3 instead of guiSceneSharedVars, simulating the
+    //   direction never reaching the shadow pass)                 0.77%
+    //
+    // 50% sits far below the correct-renderer figure and far above the
+    // direction-insensitive one. Do not lower it to make a failing renderer
+    // pass; re-measure both numbers if the rig, rotation angle or camera
+    // changes.
+    constexpr double MOVED_FRACTION_THRESHOLD = 0.5;
+    EXPECT_GT(moved_fraction, MOVED_FRACTION_THRESHOLD)
+      << "Only " << (moved_fraction * 100.0)
+      << "% of the shadowed-pixel union differs between the two light directions; the shadow does not appear to "
+         "move.";
+}
+
 // Forward and deferred are two code paths computing the same lighting for the
 // same scene. They will never be pixel-identical, but their overall brightness
 // must stay in the same ballpark - if one path breaks entirely (black frame,
