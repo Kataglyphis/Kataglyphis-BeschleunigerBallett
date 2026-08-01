@@ -3711,59 +3711,6 @@ drift fix.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Complete the mipmap blit-capability check: `vkCmdBlitImage` needs BLIT_SRC and BLIT_DST, not just SAMPLED_IMAGE_FILTER_LINEAR** — since `c80e7503` removed the in-loop fallback, this predicate is the only thing standing between an incapable device and an invalid blit.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:58-65` — `supportsLinearBlit`,
-    which tests one bit; `:124-128` — its only caller, which forces
-    `mip_levels = 1` on failure; `:279-358` — `generateMipMaps`, which issues
-    `blitImage(... vk::Filter::eLinear)` with the same image as source and
-    destination.
-  - `Src/GraphicsEngineVulkan/common/FormatHelper.hpp` — where the new pure
-    predicate goes (it already owns `choose_supported_format` /
-    `chooseDepthFormat` and is a plain header, so a headless test can include
-    it).
-  - `Test/commit/VulkanEngine/memoryHelperSuite.cpp` — the pure-CPU test pattern.
-
-  **Steps:**
-  1. Add to `common/FormatHelper.hpp`:
-     `constexpr bool supportsMipmapGeneration(vk::FormatFeatureFlags optimalTilingFeatures)`
-     returning true only when all three of `eSampledImageFilterLinear`,
-     `eBlitSrc` and `eBlitDst` are present. Take the flags, not a
-     `vk::PhysicalDevice`, so it is testable without a device.
-  2. Rewrite `Texture.cpp`'s `supportsLinearBlit` to query
-     `getFormatProperties(image_format).optimalTilingFeatures` and delegate to
-     the new predicate. Rename it `supportsMipmapGeneration` at the call site so
-     the name stops promising less than it checks.
-  3. Widen the warning at `:126` to say which capability is missing, so a real
-     device that trips it is diagnosable from the log alone.
-  4. Do **not** re-add a per-blit fallback inside `generateMipMaps` — `c80e7503`
-     deleted exactly that as unreachable, and it is unreachable precisely
-     because this predicate gates entry. Keep the single gate; make it correct.
-
-  **Test:** New `Test/commit/VulkanEngine/formatHelperSuite.cpp`, suite
-  **`FormatHelperUnit`**: `AllThreeBlitCapabilitiesAreRequired` (all three set →
-  true), plus one case per bit dropped (`eSampledImageFilterLinear` missing,
-  `eBlitSrc` missing, `eBlitDst` missing → all false), plus empty flags → false.
-  Register `FormatHelperUnit` in `$cpuOnlySuites` in
-  `.github/workflows/Windows.yml`.
-
-  **Build:** `clangcl-debug`. No `.ixx` changes (a plain header plus a module
-  implementation unit), so a normal incremental container build is fine:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-
-  **Context:** Spec references: `vkCmdBlitImage` requires
-  `VK_FORMAT_FEATURE_BLIT_SRC_BIT` on the source format,
-  `VK_FORMAT_FEATURE_BLIT_DST_BIT` on the destination, and — for
-  `VK_FILTER_LINEAR` — `VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT` on
-  the source. Source and destination here are the same
-  `eR8G8B8A8Srgb` image, so all three must hold on one format. Every desktop
-  driver advertises all three for that format, so **expect zero visible change on
-  the RX 9070 XT** — the value is that the fallback path (`mip_levels = 1`) now
-  actually engages where it is needed instead of proceeding into an invalid
-  blit. Same class of latent portability defect as the SBT stride fix
-  (`74aaee23`).
-
 - [ ] **(S) Give `AsyncModelParse` its first tests** — the engine's only threaded class sits in the GUI-driven model-load path and has no coverage at all, on the one platform with no ThreadSanitizer.
 
   **Files to read:**

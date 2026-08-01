@@ -47,4 +47,17 @@ inline vk::Format chooseDepthFormat(vk::PhysicalDevice physical_device)
       vk::ImageTiling::eOptimal,
       vk::FormatFeatureFlagBits::eDepthStencilAttachment);
 }
+
+// vkCmdBlitImage with VK_FILTER_LINEAR needs all three of these on the
+// format's optimalTilingFeatures: SAMPLED_IMAGE_FILTER_LINEAR for the linear
+// sample itself, BLIT_SRC on the mip level being read, and BLIT_DST on the
+// mip level being written. Checking only the filter bit lets an incapable
+// device pass the gate and proceed into an invalid blit.
+constexpr bool supportsMipmapGeneration(vk::FormatFeatureFlags optimalTilingFeatures)
+{
+    constexpr vk::FormatFeatureFlags required = vk::FormatFeatureFlagBits::eSampledImageFilterLinear
+                                                 | vk::FormatFeatureFlagBits::eBlitSrc
+                                                 | vk::FormatFeatureFlagBits::eBlitDst;
+    return (optimalTilingFeatures & required) == required;
+}
 }// namespace Kataglyphis

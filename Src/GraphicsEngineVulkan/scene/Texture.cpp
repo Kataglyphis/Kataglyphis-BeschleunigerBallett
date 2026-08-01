@@ -2,6 +2,7 @@ module;
 #include <memory>
 
 #include "spdlog/spdlog.h"
+#include "common/FormatHelper.hpp"
 #include "common/Utilities.hpp"
 #include <algorithm>
 #include <cmath>
@@ -56,11 +57,10 @@ Kataglyphis::Texture &Kataglyphis::Texture::operator=(Texture &&other) noexcept
 }
 
 namespace {
-auto supportsLinearBlit(vk::PhysicalDevice physical_device, vk::Format image_format) -> bool
+auto deviceSupportsMipmapGeneration(vk::PhysicalDevice physical_device, vk::Format image_format) -> bool
 {
     vk::FormatProperties format_properties = physical_device.getFormatProperties(image_format);
-    return (format_properties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear)
-           != vk::FormatFeatureFlags{};
+    return Kataglyphis::supportsMipmapGeneration(format_properties.optimalTilingFeatures);
 }
 }// namespace
 
@@ -122,8 +122,15 @@ auto Kataglyphis::Texture::uploadRgba(std::shared_ptr<VulkanDevice>device,
     // linear at sample time.
     constexpr vk::Format texture_format = vk::Format::eR8G8B8A8Srgb;
     mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
-    if (!supportsLinearBlit(device->getPhysicalDevice(), texture_format)) {
-        spdlog::warn("Linear blit not supported for texture format; using single mip level.");
+    if (!deviceSupportsMipmapGeneration(device->getPhysicalDevice(), texture_format)) {
+        vk::FormatFeatureFlags optimal_tiling_features =
+          device->getPhysicalDevice().getFormatProperties(texture_format).optimalTilingFeatures;
+        spdlog::warn(
+          "Mipmap generation not supported for texture format (missing: filterLinear={}, blitSrc={}, "
+          "blitDst={}); using single mip level.",
+          !static_cast<bool>(optimal_tiling_features & vk::FormatFeatureFlagBits::eSampledImageFilterLinear),
+          !static_cast<bool>(optimal_tiling_features & vk::FormatFeatureFlagBits::eBlitSrc),
+          !static_cast<bool>(optimal_tiling_features & vk::FormatFeatureFlagBits::eBlitDst));
         mip_levels = 1;
     }
 

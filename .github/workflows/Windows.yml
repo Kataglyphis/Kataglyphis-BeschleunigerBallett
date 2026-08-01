@@ -237,6 +237,7 @@ jobs:
             'FileReaderUnit.*'
             'TextureLoadUnit.*'
             'MemoryHelperUnit.*'
+            'FormatHelperUnit.*'
             'FrameSyncUnit.*'
             'SwapchainChoicesUnit.*'
           ) -join ':'
