@@ -15,6 +15,7 @@
 #include <iterator>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -182,6 +183,80 @@ std::map<std::string, int> parse_int_constants(const fs::path &path)
         }
     }
     return result;
+}
+
+// Every distinct GTest suite name (a TEST(...)/TEST_F(...) macro's first
+// argument) defined anywhere under Test/commit/VulkanEngine. Matches only
+// lines whose first non-whitespace characters are the macro name, so a suite
+// name appearing in a comment or a string literal is not picked up.
+std::set<std::string> collect_defined_suites(const fs::path &tests_dir)
+{
+    std::set<std::string> suites;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(tests_dir, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        if (!it->is_regular_file(error) || it->path().extension() != ".cpp") { continue; }
+
+        std::ifstream file(it->path());
+        if (!file) { continue; }
+        std::string line;
+        while (std::getline(file, line)) {
+            const std::size_t start = line.find_first_not_of(" \t");
+            if (start == std::string::npos) { continue; }
+
+            for (const std::string &macro : { std::string("TEST_F("), std::string("TEST(") }) {
+                if (line.compare(start, macro.size(), macro) != 0) { continue; }
+
+                const std::size_t name_start = start + macro.size();
+                const std::size_t comma = line.find(',', name_start);
+                if (comma == std::string::npos) { break; }
+
+                const std::size_t name_begin = line.find_first_not_of(" \t", name_start);
+                const std::size_t name_end = line.find_last_not_of(" \t", comma - 1);
+                if (name_begin == std::string::npos || name_begin > name_end) { break; }
+
+                suites.insert(line.substr(name_begin, name_end - name_begin + 1));
+                break;
+            }
+        }
+    }
+    return suites;
+}
+
+// Parses the exact suite-name globs out of Windows.yml's hand-written
+// `$cpuOnlySuites` PowerShell array (the "Run CPU-only tests inside the
+// container" step). Anchored on the array opener and its `-join ':'` closer
+// so an unrelated array elsewhere in the file cannot be picked up. Returns
+// std::nullopt only if the file cannot be opened.
+std::optional<std::vector<std::string>> parse_ci_filter_suites(const fs::path &workflow_path)
+{
+    std::ifstream file(workflow_path);
+    if (!file) { return std::nullopt; }
+
+    std::vector<std::string> suites;
+    bool inside_array = false;
+    std::string line;
+    while (std::getline(file, line)) {
+        if (!inside_array) {
+            if (line.find("$cpuOnlySuites = @(") != std::string::npos) { inside_array = true; }
+            continue;
+        }
+        if (line.find("-join ':'") != std::string::npos) { break; }
+
+        const std::size_t open_quote = line.find('\'');
+        if (open_quote == std::string::npos) { continue; }
+        const std::size_t close_quote = line.find('\'', open_quote + 1);
+        if (close_quote == std::string::npos) { continue; }
+
+        std::string entry = line.substr(open_quote + 1, close_quote - open_quote - 1);
+        static const std::string kGlobSuffix = ".*";
+        if (entry.size() > kGlobSuffix.size()
+            && entry.compare(entry.size() - kGlobSuffix.size(), kGlobSuffix.size(), kGlobSuffix) == 0) {
+            entry.erase(entry.size() - kGlobSuffix.size());
+        }
+        suites.push_back(entry);
+    }
+    return suites;
 }
 
 }// namespace
@@ -452,6 +527,74 @@ TEST(BuildIntegrity, SharedConstantsMatchTheCompiledHostValues)
     EXPECT_EQ(shader.at("TLAS_BINDING"), TLAS_BINDING);
     EXPECT_EQ(shader.at("OUT_IMAGE_BINDING"), OUT_IMAGE_BINDING);
     EXPECT_EQ(shader.at("ACCUMULATION_IMAGE_BINDING"), ACCUMULATION_IMAGE_BINDING);
+}
+
+// A suite added to Test/commit/VulkanEngine that is never added to
+// Windows.yml's `$cpuOnlySuites` filter silently does not run in CI - that
+// happened once (`eb077041` added `PushConstantRasterizerUnit` to the filter
+// by hand only after a planner pass checked all 29 suite names against the
+// workflow one at a time). This test makes that check automatic instead of a
+// planning cycle: every CPU suite defined under Test/commit/VulkanEngine must
+// be either in the filter or in the explicit, justified GPU-exclusion list
+// below, and every filter entry must name a suite that still exists (so a
+// renamed or deleted suite cannot leave a dead glob silently matching
+// nothing).
+TEST(BuildIntegrity, EveryCpuSuiteIsInTheWindowsCiFilter)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path workflow_path = repo_root / ".github" / "workflows" / "Windows.yml";
+    const auto filter_suites_opt = parse_ci_filter_suites(workflow_path);
+    if (!filter_suites_opt.has_value()) {
+        GTEST_SKIP() << "could not open " << workflow_path.string() << " - not running from the repo root?";
+    }
+    const std::vector<std::string> &filter_suites = *filter_suites_opt;
+    ASSERT_FALSE(filter_suites.empty())
+      << "parsed zero suites out of the $cpuOnlySuites array in " << workflow_path.string()
+      << " - the anchor text ('$cpuOnlySuites = @(' / \"-join ':'\") may have changed";
+    const std::set<std::string> filter_set(filter_suites.begin(), filter_suites.end());
+
+    const std::set<std::string> defined_suites =
+      collect_defined_suites(repo_root / "Test" / "commit" / "VulkanEngine");
+    ASSERT_FALSE(defined_suites.empty()) << "found zero TEST()/TEST_F() suites under Test/commit/VulkanEngine - "
+                                            "the scan itself is broken";
+
+    // The container ships the Vulkan loader, so SKIP_WITHOUT_GPU's
+    // glfwVulkanSupported() check can answer "yes" with no physical device
+    // present, after which device creation aborts the process rather than
+    // skipping. These stay out of the CI filter until a GPU-capable
+    // self-hosted runner exists.
+    const std::set<std::string> gpu_excluded_suites = { "GoldenRender", "Integration" };
+
+    std::vector<std::string> missing_from_filter;
+    for (const auto &suite : defined_suites) {
+        if (filter_set.contains(suite) || gpu_excluded_suites.contains(suite)) { continue; }
+        missing_from_filter.push_back(suite);
+    }
+    EXPECT_TRUE(missing_from_filter.empty())
+      << missing_from_filter.size()
+      << " suite(s) under Test/commit/VulkanEngine are neither in Windows.yml's $cpuOnlySuites filter nor in "
+         "the GPU-exclusion list, so they silently do not run in CI: "
+      << [&missing_from_filter] {
+             std::string joined;
+             for (const auto &entry : missing_from_filter) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    std::vector<std::string> dead_filter_entries;
+    for (const auto &suite : filter_suites) {
+        if (!defined_suites.contains(suite)) { dead_filter_entries.push_back(suite); }
+    }
+    EXPECT_TRUE(dead_filter_entries.empty())
+      << dead_filter_entries.size()
+      << " entry/entries in Windows.yml's $cpuOnlySuites filter do not correspond to any suite under "
+         "Test/commit/VulkanEngine (renamed or deleted?): "
+      << [&dead_filter_entries] {
+             std::string joined;
+             for (const auto &entry : dead_filter_entries) { joined += "\n  " + entry; }
+             return joined;
+         }();
 }
 
 namespace {
