@@ -187,6 +187,15 @@ for entry in "${WGSL_MAP[@]}"; do
       # returns f32 directly, so the accessor becomes invalid once the type
       # above is patched. Drop it from this specific call.
       sed -i -E 's/(textureLoad\(\(msaaDepth_[A-Za-z0-9_]+\), \([A-Za-z0-9_]+\), \(i32\([A-Za-z0-9_]+\)\)\))\.x/\1/' "$tmp_out"
+      # `fs_main` writes the depth aspect itself (SV_Depth in the Slang
+      # source), not a colour target - the Rust pipeline declares zero
+      # colour attachments for this pass. Slang's WGSL backend still emits a
+      # plain `@location(0)` output struct member, so it is silently dropped
+      # and the rasterizer's own fragment z (0.0, since the fullscreen
+      # triangle's NDC z is hard-coded to 0.0) gets written instead. Retarget
+      # the output at the depth builtin. Safe for this file: the only other
+      # `@location(0)` is `uv_0 : vec2<f32>`, excluded by the `: f32,` anchor.
+      sed -i -E 's/@location\(0\) ([A-Za-z0-9_]+) : f32,/@builtin(frag_depth) \1 : f32,/' "$tmp_out"
       ;;
     ssao.wgsl|gpu_cull.wgsl)
       sed -i -E 's/(var depthTex_[A-Za-z0-9_]+[[:space:]]*:[[:space:]]*)texture_2d<f32>/\1texture_depth_2d/' "$tmp_out"

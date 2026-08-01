@@ -657,27 +657,34 @@ cleanUp+recreate pair at the four scene-changed sites.
 
 ## Rust renderer ideas (unsized)
 
-- **`self.depth` (the resolved single-sample depth buffer) appears to read as
-  wrong/empty on the RX 9070 XT, breaking every one of its consumers**
-  (found 2026-08-01, chasing the `gpu_culling_enabled` task above). Hardware
-  occlusion queries, SSAO, and alpha-blend compositing all fail their tests on
-  this host with symptoms consistent with a bad or empty depth read: occlusion
-  sample counts are 0 for every primitive regardless of actual occlusion
-  (`cargo test -p kataglyphis_webgpu_renderer --test occlusion`,
-  `two_side_by_side_cubes_are_both_visible` and 3 others), `ssao_darkens_geometry`
-  reports SSAO *adding* energy instead of removing it, and
-  `alpha_modes_blend_and_mask` finds 0 composited pixels
-  (`cargo test -p kataglyphis_webgpu_renderer --test headless`). **Confirmed
-  pre-existing**, not a new regression from this session: reproduces identically
-  on a clean `git worktree` checkout of `171c740` (two commits back). Prime
-  suspect is the MSAA depth resolve pass (`forward.rs`, the "Depth resolve"
-  render pass that downsamples `self.depth_msaa` into `self.depth` for SSAO/
-  occlusion/tonemap to read) — three independent consumers of that one buffer
-  all misbehave, which points at the producer rather than three unrelated
-  bugs. Not root-caused. Needs a dedicated session: start by dumping `self.depth`
-  to a PNG (`KATAGLYPHIS_FRAME_DUMP`-style capture, or a throwaway readback) right
-  after the resolve pass and comparing against a known scene's expected depth
-  gradient, rather than debugging through three second-order symptoms at once.
+- ~~**`self.depth` (the resolved single-sample depth buffer) appears to read as
+  wrong/empty on the RX 9070 XT, breaking every one of its consumers**~~ —
+  **root-caused and fixed (2026-08-01), two independent bugs, not one.** Batch
+  IV named the first correctly (Slang's WGSL backend not honouring `SV_Depth`,
+  emitting a colour `@location(0)` instead of `@builtin(frag_depth)`) and that
+  fix alone was applied first — it did **not** turn the tests green. An
+  isolated repro (a synthetic MSAA depth texture cleared to a known value, run
+  through the actual `depth_resolve` pipeline in complete isolation from the
+  rest of the renderer) showed the resolve pass itself was correct once
+  patched, yet the full renderer still resolved every pixel to 0.0. Second bug
+  found by that repro: the forward pass's `depth_msaa` attachment used
+  `store: wgpu::StoreOp::Discard` (`forward.rs`, comment read "Discard MSAA
+  depth; the resolve pass copies to `depth`") — but the resolve pass is a
+  **separate** render pass recorded *after* the forward pass ends, not a
+  subpass, so the store op already discarded the content before resolve ever
+  read it. Changed to `StoreOp::Store`. With both fixes: `a_cube_hidden_behind_
+  another_reads_back_zero_samples`, `two_side_by_side_cubes_are_both_visible`,
+  `an_occluded_primitive_is_actually_skipped_in_the_opaque_pass`,
+  `loading_a_new_scene_does_not_inherit_the_old_scene_visibility` and
+  `ssao_darkens_geometry` are now green. **Still red, and NOT explained by
+  this bug** (isolated, separate issues): `alpha_modes_blend_and_mask` (0
+  composited pixels — blend pass shares the encoder with the now-fixed forward
+  pass but doesn't touch `self.depth` at all, so this needs its own
+  investigation) and the two GPU-culling-specific tests
+  (`an_occluded_primitive_is_skipped_with_gpu_culling`,
+  `two_visible_cubes_are_both_drawn_with_gpu_culling` — see the
+  `gpu_culling_enabled` entry below, whose own "To resume" condition is now
+  met: the bug is in that change, not this shared prerequisite).
 - **Render-graph v2**: the current graph validates declared read/write
   wiring but does not schedule or alias resources. Automatic barrier
   placement and transient-resource aliasing are the natural next steps —
@@ -2378,9 +2385,9 @@ engine-side clamp already makes it a cosmetic lie rather than a bug.
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 - [b] **(M) Make `gpu_culling_enabled` actually cull, or the flag is a pure
-  cost** (**blocked on a pre-existing host/driver regression in every
-  depth-consuming pass, not on this task**) — implementation done
-  (2026-08-01), verification is not.
+  cost** (**blocked on a bug in this change's own compute-shader culling path
+  — the shared depth-resolve prerequisite that used to block this is fixed,
+  see below**) — implementation done (2026-08-01), verification is not.
 
   `GpuCulling` (`crates/webgpu_renderer/src/render/gpu_occlusion.rs`) now
   mirrors `OcclusionQueries` exactly: a `SLOT_COUNT`-deep readback ring with
@@ -2428,6 +2435,305 @@ engine-side clamp already makes it a cosmetic lie rather than a bug.
   --nocapture` — if the mirrored hardware-query tests go green and the three
   new `gpu_culling` tests do not, the bug is actually in this change, not the
   shared prerequisite, and needs a fresh look.
+
+  **Resumed and re-run (2026-08-01), condition met.** The shared depth-resolve
+  prerequisite is fixed (see the `self.depth` entry above). Re-ran `cargo test
+  -p kataglyphis_webgpu_renderer --test occlusion -- --nocapture`: all four
+  mirrored hardware-query tests are green
+  (`an_occluded_primitive_is_actually_skipped_in_the_opaque_pass`,
+  `two_side_by_side_cubes_are_both_visible`,
+  `a_cube_hidden_behind_another_reads_back_zero_samples`,
+  `loading_a_new_scene_does_not_inherit_the_old_scene_visibility`), and
+  `gpu_culling_is_off_by_default` was already green. The two tests that
+  exercise the compute-shader path itself are still red:
+  `an_occluded_primitive_is_skipped_with_gpu_culling` ("the hidden cube must
+  be culled by the compute-shader path, leaving 1 draw (got 0)") and
+  `two_visible_cubes_are_both_drawn_with_gpu_culling` ("both visible cubes
+  must draw", got `(0, 2)` not `(2, 2)` — the compute pass is culling
+  everything, visible or not). Per this entry's own condition: **the bug is in
+  `GpuCulling`/`gpu_cull.wgsl`, not the shared prerequisite.** Not
+  investigated further this pass (out of scope for the depth-resolve task
+  that unblocked this check) — stays `- [b]`, but the blocker is now "needs a
+  fresh look at the compute-shader culling path itself" rather than "waiting
+  on the shared depth read".
+
+## 2026-08-01 batch IV — planner (depth-resolve root cause, generated-shader gates)
+
+The actionable queue was empty when this batch was written (only `- [b]` entries
+remained across the whole file). Every claim below was read out of the tree this
+pass.
+
+**The depth-resolve regression from batch III is ROOT-CAUSED.** Batch III recorded
+it as "not root-caused … needs a dedicated session", with three second-order
+symptoms (occlusion counts always 0, SSAO adding energy, 0 composited alpha
+pixels) and the MSAA depth resolve named as prime suspect. It is the resolve, and
+the mechanism is exact:
+
+- `Resources/ShadersSlang/depth_resolve/depth_resolve.slang:20` declares
+  `float fs_main(FullscreenVsOut In) : SV_Depth` — correct.
+- The Slang **WGSL backend does not honour `SV_Depth`**. Both the generated
+  `Resources/ShadersSlang/build/combined_depth_resolve.wgsl:21` and the
+  checked-in crate copy
+  `crates/webgpu_renderer/src/shaders/depth_resolve.wgsl:19-22` emit
+  `struct pixelOutput_0 { @location(0) output_0 : f32 }` — a **colour** output,
+  not `@builtin(frag_depth)`. Confirmed globally: `grep -o '@builtin([a-z_]*)'`
+  across every `src/shaders/*.wgsl` yields `position`, `vertex_index`,
+  `global_invocation_id`, `local_invocation_index` — **zero** `frag_depth`.
+- `create_depth_resolve_pipeline` (`forward.rs:2860-2880`) declares
+  `targets: &[]` and the pass declares `color_attachments: &[]`, so that
+  `@location(0)` output is silently discarded. Depth is therefore written from
+  the *rasterized* `svPosition.z`, which `vs_main` hard-codes to `0.0`
+  (`depth_resolve.slang:14`), under `depth_compare: Always, depth_write_enabled:
+  true`. **`self.depth` ends up 0.0 at every texel, every frame.**
+- That single fact explains all three symptoms without needing three bugs. The
+  occlusion AABB pipeline is `depth_compare: LessEqual` with write off
+  (`occlusion.rs:173-174`) against `self.depth`: against a uniform 0.0 every
+  AABB fragment fails, so **every** primitive reads 0 samples whether occluded
+  or not — precisely the reported symptom. SSAO reconstructs position from the
+  same buffer; the tonemap/alpha composite reads it too.
+- Both compile scripts already carry a **post-emit patch table** for exactly
+  this class of Slang-WGSL-backend deficiency —
+  `$DepthTexturePatches` (`Scripts/Windows/compile-slang-shaders.ps1:231-249`)
+  and the `sed -i -E` block (`Scripts/Linux/compile-slang-shaders.sh:183-196`),
+  both of which already patch `depth_resolve.wgsl`. So the fix has an
+  established home, and this is the same failure mode as commit `64f5053e`
+  ("fix Slang WGSL-backend depth-texture emission blocking all Rust GPU tests").
+
+Two gate gaps let it through, both tasked below: the two patch tables are
+independent hand-written copies with nothing pinning them, and `depth_resolve`
+is one of three `src/shaders/*.wgsl` files absent from `tests/shader_export.rs`'s
+hard-coded `SHADERS` list — the checked-in generated WGSL has **no** staleness or
+validity gate on the Rust side at all (`BuildIntegrity`'s
+`CompiledShadersAreNotOlderThanTheirSources` /
+`EveryShaderSourceHasCompiledBinary` walk `build/spirv` only).
+
+Also verified this pass and folded into the tasks rather than tasked separately:
+`depth_resolve.slang:26` loops `i < 4u` while `GetDimensions` already wrote
+`samples` into an unused local (silent wrongness if `MSAA_SAMPLE_COUNT` ever
+moves off 4); `forward.rs:379-385`'s doc comment on `occlusion_queries_enabled`
+still claims "it does not yet skip any draw" — the twin at `:566` was corrected,
+this one was missed, and `:2218` does skip.
+
+Candidates found but NOT tasked this cycle (checked, then rejected with a
+reason — do not re-propose without new evidence): **the RT/PT barrier
+`oldLayout`** after commit `60729e06` skipped the raster pass is *correct* — that
+commit moved both `Raytracing.cpp` and `PathTracing.cpp` to `eUndefined` and ran
+a `validate_sync` pass; **`Model` sampler dedup** (Sponza allocates 33 samplers
+differing only in `maxLod`) is not worth it — `modelTextureSamplers[t]` is
+positionally indexed by the descriptor write (`VulkanRenderer.cpp:1484`) and the
+destroy loop (`Model.cpp:32-34`) would double-destroy shared handles, so dedup
+costs an index indirection plus a separate owned-unique list to buy headroom
+against a limit whose spec minimum is 4000; **`Texture::textureSampler` is not a
+duplicate** of the `Model` sampler — `createTextureSampler` has five callers
+(clouds/shadow map/skybox) and none of them are model textures; **extracting the
+animation samplers** (`keyframe_lerp_indices`/`cubic_spline_weights`/`sample_*`,
+`forward.rs:3188-3324`) out of the 3968-line hub would be pure code motion — they
+already have inline unit tests at `forward.rs:3711-3940`; **a C++ headless
+per-pass GPU-timing JSON dump** already exists (`KATAGLYPHIS_GPU_TIMING_JSON`,
+consumed by `Scripts/Compare-RendererTimings.ps1`).
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(S) Make `tests/shader_export.rs` self-enforcing over
+  `src/shaders/`** — the export gate covers 7 of 10 shaders, and the one that
+  was broken was among the 3 it missed.
+
+  **Files to read:**
+  - `ExternalLib/.../crates/webgpu_renderer/tests/shader_export.rs` — the whole
+    file; `SHADERS` is a hard-coded 7-entry list of `include_str!` pairs
+  - `ExternalLib/.../crates/webgpu_renderer/src/shaders/` — 10 `.wgsl` files;
+    `depth_resolve`, `gpu_cull` and `histogram` are absent from the list
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:542`
+    (`EveryCpuSuiteIsInTheWindowsCiFilter`) — the precedent for this shape: a
+    test that walks the directory and fails when the hand-maintained list falls
+    behind
+
+  **Steps:**
+  1. Add `gpu_cull` and `histogram` to `SHADERS` (`depth_resolve` is added by
+     the task above; if that task has not landed yet, add it here too and expect
+     this test to be the one that goes red until it does).
+  2. Add `every_shader_file_is_covered`: read
+     `concat!(env!("CARGO_MANIFEST_DIR"), "/src/shaders")` with
+     `std::fs::read_dir`, collect every `.wgsl` file stem, and assert each one
+     appears as a name in `SHADERS`. Fail with the missing stem(s) named, so the
+     message tells the next person exactly what to add.
+  3. Note in a comment that `histogram.wgsl` is deliberately hand-written (it is
+     not Slang-generated — `compile-slang-shaders.ps1:105-109` explains why), so
+     it is covered by the export gate but exempt from any staleness gate.
+
+  **Test:** the two additions above are the test. Verify by temporarily renaming
+  a shader stem in `SHADERS` and confirming `every_shader_file_is_covered` fails
+  with that stem named, then revert.
+
+  **Build:** `cargo test -p kataglyphis_webgpu_renderer --test shader_export`
+  from `ExternalLib/Kataglyphis-RustProjectTemplate`. No GPU needed.
+
+  **Context:** Same self-enforcing pattern as commit `a63edf10` ("make the
+  Windows CI test filter self-enforcing") and `eb077041` before it (a suite
+  missed by hand). A hand-maintained list that gates correctness will drift; the
+  fix is always to derive it, not to be more careful.
+
+### Build / scripts
+
+- [ ] **(S) Pin the two Slang→WGSL post-emit patch tables against drift** — the
+  Windows and Linux compile scripts each hand-maintain the same table, and the
+  task above adds a patch that must land in both.
+
+  **Files to read:**
+  - `Scripts/Windows/compile-slang-shaders.ps1:229-260` — `$DepthTexturePatches`,
+    a hashtable keyed by output `.wgsl` filename, each value an array of
+    `@{ Pattern = ...; Replacement = ... }`
+  - `Scripts/Linux/compile-slang-shaders.sh:180-200` — the same table expressed
+    as a `case` over the output filename with `sed -i -E` lines
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:487-540` — two existing
+    tests that parse repo files as **text** and compare
+    (`HostAndShaderSharedConstantsAgree`, `EveryCpuSuiteIsInTheWindowsCiFilter`);
+    follow their helper style
+
+  **Steps:**
+  1. Add `TEST(BuildIntegrity, SlangWgslPatchTablesAgree)` to
+     `buildIntegritySuite.cpp`. It locates the repo root with the existing
+     helper, reads both script files as text, and extracts a
+     `map<filename, patch_count>` from each: from the PowerShell script by
+     scanning `$DepthTexturePatches` for `'<name>.wgsl' = @(` blocks and
+     counting `Pattern =` occurrences inside; from the bash script by scanning
+     the `case` for `<name>.wgsl)` labels and counting `sed -i -E` lines up to
+     the `;;`.
+  2. Assert the two maps have the same key set, and the same count per key.
+     On failure, print both maps — the message must make it obvious which
+     platform is behind.
+  3. Add the suite name to the Windows CI filter if the self-enforcing check
+     from `a63edf10` does not already do that automatically (it should —
+     `BuildIntegrity` is already listed; confirm rather than assume).
+
+  **Test:** the new `BuildIntegrity.SlangWgslPatchTablesAgree` is the test.
+  Verify it works by temporarily deleting one `sed` line from the bash script,
+  confirming a red run that names `depth_resolve.wgsl`, then restoring it.
+  **Restore with an edit, not a file copy** — see the "restoring from a backup
+  defeats ninja" papercut above.
+
+  **Build:** `clangcl-debug`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipPerfTests -SkipMsix`,
+  then run `commitTestSuite.exe --gtest_filter=BuildIntegrity.*` from the repo
+  root.
+
+  **Context:** A parsing test over two shell scripts is unglamorous, but this
+  repo has been bitten by exactly this shape three times already (the model-file
+  extension dispatch in three copies, the Windows CI filter, the host↔shader
+  constant block) and the fix each time was a text-parsing gate. Unifying the
+  tables into one data file is **not** the right move here: the two dialects
+  differ (`\w` / `${1}` .NET vs POSIX ERE `\1`), so a shared file would need a
+  translation layer that is more code than the drift it prevents.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Gate the checked-in Rust-crate WGSL against its Slang source** —
+  the SPIR-V artifacts have a staleness test; the WGSL artifacts have none, and
+  they live two directories away from the source that generates them.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:273-330` —
+    `CompiledShadersAreNotOlderThanTheirSources` and
+    `CompiledShadersAreNotOlderThanSharedIncludes`; both walk
+    `Resources/ShadersSlang/build/spirv` only, and the mtime-comparison plus
+    `source_for_spirv` mapping helper is the pattern to mirror
+  - `Scripts/Windows/compile-slang-shaders.ps1:216-227` — `$WgslMap`, the
+    authoritative Slang-source → crate-`.wgsl` mapping (8 entries; note
+    `tex_quad.wgsl` lands in the **gui** crate, not `webgpu_renderer`)
+  - `Src/GraphicsEngineVulkan/common/Utilities.hpp` and the repo-root helper at
+    the top of `buildIntegritySuite.cpp`
+
+  **Steps:**
+  1. Add `TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)`.
+     Hard-code the same source→destination pairs `$WgslMap` lists (a text parse
+     of the PowerShell array is also fine and drifts less — prefer it if it is
+     not much more code).
+  2. For each pair, `SKIP` (do not fail) when the destination does not exist —
+     the `RustProjectTemplate` submodule may be unchecked-out in some
+     configurations, and a missing submodule must not turn this suite red.
+  3. For each pair that does exist, assert
+     `last_write_time(dest) >= last_write_time(src)`, reporting both paths and
+     both timestamps on failure.
+  4. Exclude `histogram.wgsl` explicitly with a comment: it is hand-written and
+     has no generating Slang source in `$WgslMap`.
+
+  **Test:** the new test is the test. Verify by touching
+  `Resources/ShadersSlang/depth_resolve/depth_resolve.slang` and confirming a
+  red run that names it, then rebuilding the shader (or touching the `.wgsl`)
+  to go green.
+
+  **Build:** `clangcl-debug`, same command as the task above; run
+  `commitTestSuite.exe --gtest_filter=BuildIntegrity.*` from the repo root.
+
+  **Context:** This is the gate that would have flagged the depth-resolve fix
+  going stale, and more importantly it protects the *next* patch-table change:
+  the crate `.wgsl` files are generated artifacts that are also hand-patched, so
+  a regenerate that drops a patch, or a `.slang` edit that never reaches the
+  crate, are both silent today. Mtime is a weak oracle (see the "restoring a
+  file from a backup defeats ninja" papercut) but it is the oracle the existing
+  SPIR-V tests already use, and consistency beats inventing a second scheme.
+
+- [ ] **(S) Move `MAX_CASCADES` into the pinned shared-constant block and stop
+  the GUI advertising 1..8** — one constant, three unpinned homes, and a slider
+  that offers values the engine silently clamps away.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/SceneUBO.hpp:22` — `#define MAX_CASCADES 3`
+    and the `cascadeLightSpaceMatrices[MAX_CASCADES]` array it sizes
+  - `Resources/ShadersSlang/common/scene_types.slang:68,91` —
+    `static const int MAX_CASCADES = 3;` and its own copy of the same array
+  - `Src/GraphicsEngineVulkan/common/host_device_shared_vars.hpp` — the shared
+    block that already carries `MAX_TEXTURE_COUNT` + six binding constants
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:120-130` —
+    `kSharedConstantNames`, the list the two drift tests iterate
+  - `Src/GraphicsEngineVulkan/gui/GUI.cpp:194-196` — the `# cascades` slider,
+    hard-coded `1, 8`
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:318-330` — the clamp
+    that makes the extra range a no-op today
+
+  **Steps:**
+  1. Add `const int MAX_CASCADES = 3;` to `host_device_shared_vars.hpp`
+     alongside `MAX_TEXTURE_COUNT`, and add `"MAX_CASCADES"` to
+     `kSharedConstantNames` so both existing drift tests
+     (`HostAndShaderSharedConstantsAgree`,
+     `SharedConstantsMatchTheCompiledHostValues`) start covering it. The Slang
+     side already declares it in the parsed form, so no shader edit is needed —
+     confirm the parser picks it up rather than assuming.
+  2. In `SceneUBO.hpp`, `#include` the shared header from the `__cplusplus`
+     branch and delete the local `#define MAX_CASCADES 3`. The array size
+     `cascadeLightSpaceMatrices[MAX_CASCADES]` is valid with a `const int` in
+     C++. Check no TU relied on the macro in a preprocessor conditional
+     (`grep -rn 'MAX_CASCADES' Src/ Test/` — today's hits are all plain value
+     uses, so this should be clean; verify rather than trust).
+  3. In `GUI.cpp`, include `common/host_device_shared_vars.hpp` from the global
+     module fragment (it is a plain, dependency-free header — do **not** include
+     `SceneUBO.hpp`, which would drag glm and a renderer dependency into the GUI
+     TU) and change the slider max to `MAX_CASCADES`.
+  4. Leave the engine-side clamp in `VulkanRenderer.cpp` alone: it also handles
+     the device `maxMultiviewViewCount` limit, which the GUI cannot see.
+
+  **Test:** extend `guiSceneVarsRoundTripSuite.cpp` (or
+  `cascadedShadowMapSuite.cpp`, whichever already has the GUI-vars fixture) with
+  `GuiSceneVarsRoundTrip.CascadeCountDefaultIsWithinTheSliderRange` asserting
+  `GUISceneSharedVars{}.num_shadow_cascades <= MAX_CASCADES`. The two
+  `BuildIntegrity` drift tests pick up `MAX_CASCADES` automatically once it is in
+  `kSharedConstantNames` — confirm they still pass and that they would fail if
+  the Slang value were changed to 4.
+
+  **Build:** `clangcl-debug`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipPerfTests -SkipMsix`.
+  `SceneUBO.hpp` is included by module interfaces, so expect a wide rebuild;
+  use `-FreshContainer` only if the incremental build misbehaves (it strands the
+  cache — see the papercut above).
+
+  **Context:** The slider lie is cosmetic (the clamp at `VulkanRenderer.cpp:327`
+  already makes 4..8 safe, and `GoldenRender.GuiInputSweepNeverCrashes` proves
+  it), so the value here is mostly the *first* step: `MAX_CASCADES` is currently
+  the only host↔shader constant duplicated in two files with nothing pinning it,
+  while its seven neighbours in `host_device_shared_vars.hpp` are all pinned by
+  commit `2fd6ef6d`. The GUI fix falls out for free once the constant is
+  reachable. Do not "fix" the slider by widening `MAX_CASCADES` — the multiview
+  view-count limit is a real device constraint.
 
 ## Completed (kept for the reasoning, not the status)
 

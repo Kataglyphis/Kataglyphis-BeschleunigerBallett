@@ -23,7 +23,7 @@ float fs_main(FullscreenVsOut In) : SV_Depth
     msaaDepth.GetDimensions(w, h, samples);
     int2 coords = int2(In.uv * float2(float(w), float(h)));
     float minDepth = 1.0;
-    for (uint i = 0u; i < 4u; i++)
+    for (uint i = 0u; i < samples; i++)
     {
         float d = msaaDepth.Load(int2(coords), i);
         minDepth = min(minDepth, d);

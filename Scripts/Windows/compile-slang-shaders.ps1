@@ -239,6 +239,16 @@ $DepthTexturePatches = @{
         # returns f32 directly, so the accessor becomes invalid once the type
         # above is patched. Drop it from this specific call.
         @{ Pattern = '(textureLoad\(\(msaaDepth_\w+\), \(\w+\), \(i32\(\w+\)\)\))\.x'; Replacement = '$1' }
+        # `fs_main` writes the depth aspect itself (SV_Depth in the Slang
+        # source), not a colour target - the Rust pipeline declares zero
+        # colour attachments for this pass. Slang's WGSL backend still emits
+        # a plain `@location(0)` output struct member, so it is silently
+        # dropped and the rasterizer's own fragment z (0.0, since the
+        # fullscreen triangle's NDC z is hard-coded to 0.0) gets written
+        # instead. Retarget the output at the depth builtin. Safe for this
+        # file: the only other `@location(0)` is `uv_0 : vec2<f32>`, excluded
+        # by the `: f32,` anchor.
+        @{ Pattern = '@location\(0\) (\w+) : f32,'; Replacement = '@builtin(frag_depth) ${1} : f32,' }
     )
     'ssao.wgsl'          = @(
         @{ Pattern = '(var depthTex_\w+\s*:\s*)texture_2d<f32>'; Replacement = '${1}texture_depth_2d' }
