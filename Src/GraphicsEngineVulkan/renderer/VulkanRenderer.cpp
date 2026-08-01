@@ -130,17 +130,10 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     updateUniforms(scene, camera, window, gui->getGuiSceneSharedVars());
     updateAllDescriptorSets();
 
-    std::vector<vk::ImageView> skyboxImageViews(vulkanSwapChain.getNumberSwapChainImages());
-    std::vector<vk::ImageView> skyboxDepthViews(vulkanSwapChain.getNumberSwapChainImages());
-    for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
-        skyboxImageViews[i] = vulkanSwapChain.getSwapChainImage(i).getImageView();
-        skyboxDepthViews[i] = postStage.getDepthBufferImageView();
-    }
-
     skyBox.init(device, graphics_command_pool);
     skyBox.createRenderPass(vulkanSwapChain.getSwapChainFormat(), postStage.getDepthFormat());
     skyBox.createGraphicsPipeline(sharedRenderDescriptors.getLayout());
-    skyBox.createFramebuffers(vulkanSwapChain.getNumberSwapChainImages(), skyboxImageViews, skyboxDepthViews,
+    skyBox.createFramebuffers(swapchainImageViews(), postStage.getDepthBufferImageView(),
         vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
 
     // Start the parse and carry on initialising. Everything that depends on
@@ -692,14 +685,7 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
     // new resolution). updateAllDescriptorSets() below rewrites its binding.
     if (device->supportsHardwareAcceleratedRRT()) { createPathTracingAccumulationResources(); }
 
-    std::vector<vk::ImageView> skyboxImageViews(vulkanSwapChain.getNumberSwapChainImages());
-    std::vector<vk::ImageView> skyboxDepthViews(vulkanSwapChain.getNumberSwapChainImages());
-    for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
-        skyboxImageViews[i] = vulkanSwapChain.getSwapChainImage(i).getImageView();
-        skyboxDepthViews[i] = postStage.getDepthBufferImageView();
-    }
-
-    skyBox.recreateFrameResources(vulkanSwapChain.getNumberSwapChainImages(), skyboxImageViews, skyboxDepthViews,
+    skyBox.recreateFrameResources(swapchainImageViews(), postStage.getDepthBufferImageView(),
         vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
 
     // If the image count changed, every per-swapchain-image resource must be
@@ -823,6 +809,15 @@ auto Kataglyphis::VulkanRenderer::activeOffscreenTexture(uint32_t index) -> Text
     return guiRendererSharedVars.rasterizationMode == Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode::Forward
              ? rasterizer.getOffscreenTexture(index)
              : deferredRasterizer.getOffscreenTexture(index);
+}
+
+std::vector<vk::ImageView> Kataglyphis::VulkanRenderer::swapchainImageViews()
+{
+    std::vector<vk::ImageView> views(vulkanSwapChain.getNumberSwapChainImages());
+    for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
+        views[i] = vulkanSwapChain.getSwapChainImage(i).getImageView();
+    }
+    return views;
 }
 
 bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GUISceneSharedVars &guiSceneSharedVars)

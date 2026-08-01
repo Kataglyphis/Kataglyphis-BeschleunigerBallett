@@ -2807,30 +2807,6 @@ scene-change path, still not worth a `std::span`, exactly as batch V concluded.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Collapse the duplicated skybox framebuffer-view plumbing onto a span plus a scalar depth view** — the same six lines appear at two call sites and half of what they build is N copies of one handle.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:133-144` (init) and `:695-703` (`recreateSwapChain`) — the two identical blocks
-  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.ixx:29,33` — the two signatures
-  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:306-324` (`createFramebuffers`) and `:510-519` (`destroyFramebuffers`/`recreateFrameResources`)
-  - `Src/GraphicsEngineVulkan/renderer/PostStage.ixx:31` — `getDepthBufferImageView()`, the single handle being replicated
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp` as it stands after `39486995` — the precedent for collapsing a per-index container whose entries are all equal
-
-  **Steps:**
-  1. Change `SkyBox::createFramebuffers` and `SkyBox::recreateFrameResources` (declaration in `SkyBox.ixx`, definitions in `SkyBox.cpp`) to take `(std::span<const vk::ImageView> imageViews, vk::ImageView depthView, uint32_t width, uint32_t height)`. Drop the `size_t count` parameter — both call sites already pass `vulkanSwapChain.getNumberSwapChainImages()`, which is exactly `imageViews.size()`. Add `#include <span>` to the `module;` preamble of `SkyBox.ixx` if it is not already there.
-  2. In `createFramebuffers`, loop over `imageViews.size()` and build `std::array attachments = { imageViews[i], depthView }` — the second attachment is now loop-invariant. Everything else in the body (`framebufferWidth`/`framebufferHeight`, the `vk::FramebufferCreateInfo`, the `ASSERT_VULKAN`) stays byte-for-byte as it is.
-  3. Add a small private helper to `VulkanRenderer` — e.g. `std::vector<vk::ImageView> swapchainImageViews() const` — that returns one entry per swapchain image from `vulkanSwapChain.getSwapChainImage(i).getImageView()`. Declare it in `VulkanRenderer.ixx` next to the other private helpers.
-  4. Replace both blocks (`:133-138` and `:695-700`) with a call to that helper, and pass `postStage.getDepthBufferImageView()` directly as the scalar `depthView`. The two `skyboxDepthViews` vectors disappear entirely; `skyboxImageViews` becomes the helper's return value.
-  5. Confirm nothing else calls the old signatures: grep `createFramebuffers` and `recreateFrameResources` across `Src/` and `Test/` — `SkyBox`'s are distinct from the identically named members on `Rasterizer`/`DeferredRasterizer`/`PostStage`, so read the receiver, not just the name.
-
-  **Test:** No new test. This is behaviour-preserving and the existing coverage is already the right shape: `GoldenRender.SwapchainRecreationKeepsRendering` (added in `9b202b68`) drives the `recreateSwapChain` path this touches, and every golden frame composites the skybox. Verification is "the full golden set is unchanged", not a new assertion. Leave `Test/commit/VulkanEngine/skyBoxSuite.cpp` alone — it covers the CPU-only cubemap face-dimension guard and has nothing to do with framebuffers.
-
-  **Build:** `.ixx` files change (`SkyBox.ixx`, `VulkanRenderer.ixx`), so:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
-  Then run the extracted `commitTestSuite.exe` from the repo root on the GPU host and confirm the golden suite is green — a framebuffer regression shows up as a validation error or a black sky, both of which the suite catches.
-
-  **Context:** Two things are wrong here and only one is duplication. `skyboxDepthViews` is a vector of N identical handles because `PostStage` owns exactly one depth buffer, so the per-image container encodes a per-image-ness that does not exist — the same mistake `39486995` removed from `CascadedShadowMap`. The `const std::vector<...>&` parameters are the last two in the engine that the `std::span` convention from `6e4d0204`/`7cff9cc0` has not reached (`Mesh::create*Buffer` and the two `VulkanSwapChain` static choosers are the others, and they are genuinely vector-shaped). Do **not** turn the SkyBox framebuffer creation into a shared cross-stage helper — batch V already rejected that, because the five `vk::FramebufferCreateInfo` sites differ in attachment count, layer count and multiview.
-
 - [ ] **(S) (refactor) Fold `DescriptorSetGroup`'s four copy-pasted write prologues into one helper** — every write helper repeats the same precondition pair and the same five `vk::WriteDescriptorSet` field assignments.
 
   **Files to read:**

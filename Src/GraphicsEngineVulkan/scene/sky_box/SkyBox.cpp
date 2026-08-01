@@ -303,13 +303,13 @@ void SkyBox::createRenderPass(vk::Format format, vk::Format depthFormat)
     renderPass = result.value;
 }
 
-void SkyBox::createFramebuffers(size_t count, const std::vector<vk::ImageView>& imageViews, const std::vector<vk::ImageView>& depthViews, uint32_t width, uint32_t height)
+void SkyBox::createFramebuffers(std::span<const vk::ImageView> imageViews, vk::ImageView depthView, uint32_t width, uint32_t height)
 {
     framebufferWidth = width;
     framebufferHeight = height;
-    framebuffers.resize(count);
-    for (size_t i = 0; i < count; i++) {
-        std::array attachments = {imageViews[i], depthViews[i]};
+    framebuffers.resize(imageViews.size());
+    for (size_t i = 0; i < imageViews.size(); i++) {
+        std::array attachments = {imageViews[i], depthView};
         vk::FramebufferCreateInfo fbInfo{};
         fbInfo.renderPass = renderPass;
         fbInfo.attachmentCount = 2;
@@ -513,9 +513,9 @@ void SkyBox::destroyFramebuffers()
     framebuffers.clear();
 }
 
-void SkyBox::recreateFrameResources(size_t count, const std::vector<vk::ImageView>& imageViews, const std::vector<vk::ImageView>& depthViews, uint32_t width, uint32_t height)
+void SkyBox::recreateFrameResources(std::span<const vk::ImageView> imageViews, vk::ImageView depthView, uint32_t width, uint32_t height)
 {
-    createFramebuffers(count, imageViews, depthViews, width, height);
+    createFramebuffers(imageViews, depthView, width, height);
 }
 
 }
