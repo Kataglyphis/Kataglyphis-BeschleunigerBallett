@@ -71,32 +71,32 @@ class Scene
         if (model_index >= model_list.size()) {
             return vk::Buffer{};
         }
-        return model_list[static_cast<size_t>(model_index)]
-          ->getMesh(static_cast<size_t>(mesh_index))
-          ->getVertexBuffer();
+        Mesh *mesh = model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index));
+        return mesh != nullptr ? mesh->getVertexBuffer() : vk::Buffer{};
     };
     vk::Buffer getIndexBuffer(uint32_t model_index, uint32_t mesh_index)
     {
         if (model_index >= model_list.size()) {
             return vk::Buffer{};
         }
-        return model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index))->getIndexBuffer();
+        Mesh *mesh = model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index));
+        return mesh != nullptr ? mesh->getIndexBuffer() : vk::Buffer{};
     };
     uint32_t getIndexCount(uint32_t model_index, uint32_t mesh_index)
     {
         if (model_index >= model_list.size()) {
             return 0;
         }
-        return model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index))->getIndexCount();
+        Mesh *mesh = model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index));
+        return mesh != nullptr ? mesh->getIndexCount() : 0;
     };
     /// glTF material.doubleSided for a mesh, so the raster pass can disable
     /// back-face culling for it. Out-of-range defaults to single-sided.
     bool isMeshDoubleSided(uint32_t model_index, uint32_t mesh_index)
     {
         if (model_index >= model_list.size()) { return false; }
-        return model_list[static_cast<size_t>(model_index)]
-          ->getMesh(static_cast<size_t>(mesh_index))
-          ->isDoubleSided();
+        Mesh *mesh = model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index));
+        return mesh != nullptr && mesh->isDoubleSided();
     };
     /// Object-space bounds of a mesh, for frustum culling. An invalid box is
     /// returned for an out-of-range index, which isVisible() treats as
@@ -105,7 +105,8 @@ class Scene
     {
         static const AABB unknown{ glm::vec3(1.0F), glm::vec3(-1.0F) };
         if (model_index >= model_list.size()) { return unknown; }
-        return model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index))->getBounds();
+        Mesh *mesh = model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index));
+        return mesh != nullptr ? mesh->getBounds() : unknown;
     };
     std::vector<ObjectDescription> getObjectDescriptions() { return object_descriptions; };
     std::vector<std::shared_ptr<Model>> const &get_model_list() { return model_list; };

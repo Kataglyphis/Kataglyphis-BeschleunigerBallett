@@ -2538,6 +2538,173 @@ consumed by `Scripts/Compare-RendererTimings.ps1`).
 
 ### C++ Vulkan engine
 
+## 2026-08-01 batch V — planner (refactor pass)
+
+The actionable queue was empty again when this batch was written (only `- [b]`
+entries across the whole file, and batch IV's three subsections above are drained).
+Every claim below was read out of the tree this pass; the three tasks are all
+C++ Vulkan engine, all found by a dead-code / API-consolidation / doc-drift sweep.
+
+Verified this pass and folded into the tasks rather than tasked separately:
+batch IV's two "folded" fixes **did land** — `depth_resolve.slang:26` now loops
+`i < samples` from `GetDimensions`, and `forward.rs`'s `occlusion_queries_enabled`
+doc comment no longer claims "it does not yet skip any draw". Nothing to re-do there.
+
+**One build-system fact that all three tasks depend on, checked this pass:**
+`kataglyphis_collect_module_interfaces` (`cmake/KataglyphisCMakeHelpers.cmake:10-13`)
+uses a plain `file(GLOB_RECURSE ... *.ixx)` with **no `CONFIGURE_DEPENDS`** — unlike
+the commit-test glob (`Test/commit/VulkanEngine/CMakeLists.txt:9`), which has it
+precisely because a new file was otherwise silently never compiled. So **adding or
+deleting any `.ixx` requires a CMake re-configure**, and combined with the recorded
+module-BMI skew hazard ("Incremental container builds can ship ODR-broken binaries")
+every task below wants `-FreshContainer`, not an incremental build.
+
+Candidates found but NOT tasked this cycle (checked, then rejected with a reason —
+do not re-propose without new evidence): **unifying the CSM shadow-pass draw loop**
+(`CascadedShadowMap.cpp:499-528`) into task 3's helper — it ORs visibility across
+`cascadeFrusta` via `isVisibleAsShadowCaster` and pushes a *different* push-constant
+type, so folding it in would need a predicate + a type parameter and would
+misrepresent two genuinely different loops as one; **`Scene::getObjectDescriptions()`
+returning `std::vector` by value** (`Scene.ixx:110`) — one caller
+(`VulkanRenderer.cpp:1217`, inside `rebuildObjectDescriptions`), which runs on scene
+change, not per frame, so the `std::span` treatment that paid off for
+`BM_AvailableModelPaths` buys nothing measurable here; **a shared framebuffer-creation
+helper** across the five `vk::FramebufferCreateInfo` sites (Rasterizer, DeferredRasterizer,
+PostStage, CascadedShadowMap, SkyBox) — they differ in attachment count, layer count
+and multiview, so the helper would be almost all parameters.
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Delete the two dead `Src/shared/scene/*.ixx` module wrappers
+  and add a BuildIntegrity guard so a module with no importer cannot come back** —
+  two BMIs are compiled into every build for zero consumers.
+
+  **Files to read:**
+  - `Src/shared/scene/Vertex.ixx` (7 lines) and `Src/shared/scene/ObjMaterial.ixx`
+    (7 lines) — each wraps its sibling `.hpp` and re-exports one type as
+    `kataglyphis.shared.scene.vertex` / `kataglyphis.shared.scene.obj_material`.
+  - `Src/GraphicsEngineVulkan/CMakeLists.txt:31,95` — `SHARED_MODULE_INTERFACE_FILES`
+    globs `Src/shared/**/*.ixx` into `VulkanEngineCore`'s `CXX_MODULES` file set, so
+    both **are** built.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:682-738`
+    (`EveryCpuSuiteIsInTheWindowsCiFilter`) — the source-scanning self-enforcing-test
+    pattern to copy, including `find_repo_root()` at `:31`.
+
+  **Steps:**
+  1. Verify the finding still holds, then delete both `.ixx` files. Measured this
+     pass over every `.ixx` under `Src/`: these two are the **only** module
+     interfaces with no `import` anywhere in `Src` or `Test`. Their `.hpp` siblings
+     are very much alive (`Src/GraphicsEngineVulkan/scene/{Vertex,ObjMaterial}.hpp`
+     forward to them, `SkyBox.cpp:13-14` and `pushConstantSuite.cpp:27` include them
+     directly) — **delete only the `.ixx` files, never the `.hpp` files.** The live
+     engine modules `kataglyphis.vulkan.vertex` / `kataglyphis.vulkan.obj_material`
+     (`Src/GraphicsEngineVulkan/scene/`) already export the same two types and are
+     what everything imports.
+  2. Drop the now-redundant `#include "shared/scene/Vertex.hpp"` and
+     `#include "shared/scene/ObjMaterial.hpp"` from `SkyBox.cpp:13-14`: the same TU
+     already does `import kataglyphis.vulkan.vertex;` (`:20`), which exports
+     `::Vertex`, and `kataglyphis.vulkan.mesh` pulls in `ObjMaterial`. Build to
+     confirm; if either type genuinely fails to resolve, keep that one include and
+     say so in the commit message rather than adding an import to work around it.
+  3. Add `TEST(BuildIntegrity, EveryModuleInterfaceIsImported)` to
+     `buildIntegritySuite.cpp`. Walk `Src/` recursively for `*.ixx`, extract each
+     module name from its `export module <name>;` line, then scan every `.cpp` and
+     `.ixx` under `Src/` and `Test/` for `import <name>;` or `export import <name>;`
+     (ignoring the declaring file itself). Assert the unimported set is empty, and
+     list the offenders in the failure message. `ASSERT` that the scan found a
+     non-trivial number of modules first (the `collect_defined_suites` test does
+     exactly this at `:700-702`) so a broken scan cannot pass silently.
+  4. Allow for legitimately-rootless modules with an explicit, justified exclusion
+     set — same shape as `gpu_excluded_suites` at `:709`. Nothing needs to be in it
+     today (the count goes to zero once step 1 lands), so seed it empty and document
+     that an entry requires a written reason.
+
+  **Test:** the new `BuildIntegrity.EveryModuleInterfaceIsImported` is itself the
+  test: it fails listing exactly those two modules before step 1 and passes after.
+  Confirm the red-then-green by running it once before deleting the files.
+
+  **Build:** `clangcl-debug` with **`-FreshContainer`** — deleting an `.ixx` needs a
+  CMake re-configure (the module glob has no `CONFIGURE_DEPENDS`, see the batch note
+  above):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+
+  **Context:** two dead module TUs cost a BMI compile per clean build and are scanned
+  by `clang-scan-deps` on every configure (the "Module dependency scanning runs over
+  all 53 `.ixx` files each configure" item above). The larger win is the guard: this
+  repo keeps converting one-off audits into self-enforcing tests
+  (`EveryCpuSuiteIsInTheWindowsCiFilter`, `SlangWgslPatchTablesAgree`,
+  `CheckedInWgslIsNotOlderThanItsSlangSource`), and "a module nobody imports" is the
+  same class of drift. Having two modules that both export `::Vertex` is also a
+  standing trap for the next person.
+
+- [ ] **(M) (refactor) Unify the identical forward/deferred per-mesh draw-record
+  loops into one helper** — ~45 lines duplicated verbatim across two render stages,
+  already drifting in their comments.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:110-163` — the forward loop.
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:455-503` — the
+    G-buffer loop. Line for line the same: `flat_mesh_index` walk, `pushConstant.model`,
+    the `glm::inverse(glm::transpose(...))` row extraction, `meshesConsidered`,
+    the `cameraFrustum`/`transformAABB`/`isVisible` skip, `setCullMode` from
+    `isMeshDoubleSided`, vertex/index bind, `drawIndexed`, `meshesDrawn`.
+  - `Src/GraphicsEngineVulkan/scene/MeshRange.ixx` + `Test/commit/VulkanEngine/meshRangeSliceSuite.cpp`
+    — the precedent for this exact move (wave 6, commit `fba308d7`: two near-identical
+    loops in the two loaders pulled into a shared `kataglyphis.vulkan.mesh_range`
+    module, `export import`ed by both).
+
+  **Steps:**
+  1. Add `Src/GraphicsEngineVulkan/renderer/MeshDrawRecorder.ixx` (+ `.cpp`)
+     exporting module `kataglyphis.vulkan.mesh_draw_recorder`, following
+     `MeshRange.ixx`'s shape. Export a `MeshDrawStats { unsigned int drawn;
+     unsigned int considered; }` and a free function
+     `recordSceneMeshDraws(vk::CommandBuffer, vk::PipelineLayout,
+     vk::ShaderStageFlags pushConstantStages, Scene *scene,
+     const std::optional<Frustum> &cameraFrustum, PushConstantRasterizer &pushConstant)`.
+  2. Move the loop body in **verbatim** — same order, same calls. Take
+     `pushConstant` by non-const reference so the caller's seeded fields (set via
+     `setPushConstant`) survive and `.model` / `.invModelRows` / `.objectIndex` are
+     written exactly as today.
+  3. **The two differences are the whole reason for the parameters and must not be
+     collapsed:** the pipeline layout (`pipeline_layout` vs `geometryPipelineLayout`)
+     and the push-constant stage flags — forward pushes
+     `eVertex | eFragment`, deferred pushes `eAll`. Pass both in; do not "unify" the
+     stage flags to one value.
+  4. Replace both loops with a call, assigning the returned stats to each stage's
+     own `meshesDrawn` / `meshesConsidered` members (they stay where they are —
+     `Rasterizer.ixx:54-55,73-74` and `DeferredRasterizer.ixx:58-59,69-70` expose
+     them, and `VulkanRenderer.cpp:969` reads whichever stage is active).
+  5. While moving: `scene->getModelMatrix(m)` is currently called twice per model
+     in both loops (once for `pushConstant.model`, once inside the
+     `inverse(transpose(...))`). Hoist it to one local. That is the only behaviour-
+     neutral change permitted in this task.
+  6. Do **not** fold in the cascade shadow loop (`CascadedShadowMap.cpp:499-528`) —
+     see the rejected-candidates note in this batch's header for why.
+
+  **Test:** no new CPU test is required — the shared helper is exercised by both
+  existing raster paths. Verify on the GPU host per
+  `[[host-gpu-golden-verification]]` / `docs/gpu-golden-testing.md`: run the full
+  `GoldenRender` suite from the repo root and require the same pass count as before
+  the change. The tests that specifically pin this code are the forward and deferred
+  raster goldens, the frustum-culling golden (it asserts on the
+  `meshesDrawn`/`meshesConsidered` counters this task moves), the double-sided
+  golden (the `setCullMode` branch) and `SecondModelLoadsAndRenders` (the
+  `flat_mesh_index` walk across two models). If no GPU is available in the session,
+  say so and leave the task open rather than reporting it verified — a
+  behaviour-preserving move that is only compiled is not verified.
+
+  **Build:** `clangcl-debug` with **`-FreshContainer`** (new `.ixx` ⇒ re-configure),
+  then extract and run the test executable on the host:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+
+  **Context:** this duplication is already drifting — the two copies carry different
+  comments describing the same invariant, and the `objectIndex`-is-a-flat-mesh-index
+  contract now has to be maintained in two places. That contract is exactly what
+  `pushConstantSuite.cpp` guards the layout of, and it is what a texture-index or
+  object-description change has to keep aligned; one copy makes the next such fix a
+  single edit instead of a "did I update both?" review. Wave 6 did the identical
+  move for the two loaders and it held.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

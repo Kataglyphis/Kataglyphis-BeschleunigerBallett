@@ -45,8 +45,8 @@ void Model::add_new_mesh(std::shared_ptr<VulkanDevice>vulkan_device,
   std::vector<ObjMaterial> &materials,
   bool double_sided)
 {
-    // Append, not overwrite: the loaders call this once per Model today, so this
-    // is behaviour-identical, but it is what lets a Model hold several meshes.
+    // Append, not overwrite: a Model holds several meshes (one per glTF
+    // primitive / OBJ group), each added via its own call.
     meshes.emplace_back(vulkan_device, command_pool, vertices, indices, materialIndex, materials);
     // The Mesh constructor is deliberately unchanged; the per-material doubleSided
     // flag rides in separately (default false = back-face culled).
@@ -59,13 +59,6 @@ void Model::addTexture(Texture &&newTexture)
 {
     modelTextures.emplace_back(std::move(newTexture));
     addSampler(modelTextures.back());
-}
-
-auto Model::getPrimitiveCount() -> uint32_t
-{
-    uint32_t number_of_indices = 0;
-    for (Mesh &m : meshes) { number_of_indices += m.getIndexCount(); }
-    return number_of_indices / 3;
 }
 
 Model::~Model() { cleanUp(); }
