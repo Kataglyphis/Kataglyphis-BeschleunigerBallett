@@ -14,13 +14,10 @@
 #include <cstddef>
 #include <filesystem>
 #include <string>
-#include <chrono>
 #include <memory>
 #include <thread>
 
 import kataglyphis.vulkan.obj_loader;
-import kataglyphis.vulkan.gltf_loader;
-import kataglyphis.vulkan.async_model_parse;
 import kataglyphis.vulkan.scene_config;
 import kataglyphis.vulkan.scene;
 
@@ -233,109 +230,5 @@ TEST(ObjParseUnit, ParsesOnAWorkerThreadWithTheSameResult)
     }
 }
 
-// The async wrapper. Still no device anywhere - the whole point is that the
-// parse half runs off the render thread.
-
-TEST(AsyncModelParseUnit, ParsesOffThreadAndHandsBackTheResult)
-{
-    if (!std::filesystem::exists(test_model())) { GTEST_SKIP() << "test model not present"; }
-
-    Kataglyphis::ObjLoader reference;
-    ASSERT_TRUE(reference.parseCpu(test_model()));
-
-    Kataglyphis::AsyncModelParse parse;
-    parse.start(test_model());
-
-    // Poll the way a frame loop would, rather than joining immediately.
-    for (int spin = 0; spin < 10000 && !parse.isFinished(); ++spin) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    ASSERT_TRUE(parse.isFinished()) << "the parse never completed";
-    ASSERT_TRUE(parse.wasSuccessful());
-
-    const std::unique_ptr<Kataglyphis::ObjLoader> result = parse.takeResult();
-    ASSERT_NE(result, nullptr);
-    EXPECT_EQ(result->getVertices().size(), reference.getVertices().size());
-    EXPECT_EQ(result->getIndices().size(), reference.getIndices().size());
-}
-
-TEST(AsyncModelParseUnit, RoutesGltfToTheGltfLoaderOffThread)
-{
-    // A .glb must dispatch to GltfLoader on the worker, not ObjLoader. Same
-    // off-thread contract as the OBJ case; parsedGltf() tells the caller which
-    // result to take.
-    const std::string gltf = sceneConfig::resolveModelPath("Models/GltfTest/cube.glb");
-    if (!std::filesystem::exists(gltf)) { GTEST_SKIP() << "test glb not present"; }
-
-    Kataglyphis::GltfLoader reference;
-    ASSERT_TRUE(reference.parseCpu(gltf));
-
-    Kataglyphis::AsyncModelParse parse;
-    parse.start(gltf);
-    for (int spin = 0; spin < 10000 && !parse.isFinished(); ++spin) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    ASSERT_TRUE(parse.isFinished()) << "the parse never completed";
-    ASSERT_TRUE(parse.wasSuccessful());
-    ASSERT_TRUE(parse.parsedGltf()) << "a .glb must route to the glTF loader, not ObjLoader";
-
-    const std::unique_ptr<Kataglyphis::GltfLoader> result = parse.takeGltfResult();
-    ASSERT_NE(result, nullptr);
-    EXPECT_EQ(result->getVertices().size(), reference.getVertices().size());
-    EXPECT_EQ(result->getIndices().size(), reference.getIndices().size());
-}
-
-TEST(AsyncModelParseUnit, AFailedParseReportsFailureRatherThanEmptyGeometry)
-{
-    Kataglyphis::AsyncModelParse parse;
-    parse.start("no/such/model.obj");
-    parse.waitForCompletion();
-
-    EXPECT_TRUE(parse.isFinished());
-    EXPECT_FALSE(parse.wasSuccessful());
-    // A caller must be able to tell "failed" from "loaded an empty model",
-    // or a bad path silently replaces the scene with nothing.
-    EXPECT_EQ(parse.takeResult(), nullptr);
-}
-
-TEST(AsyncModelParseUnit, StartingASecondParseSupersedesTheFirst)
-{
-    if (!std::filesystem::exists(test_model())) { GTEST_SKIP() << "test model not present"; }
-
-    // The GUI can pick a third model while the second is still loading.
-    // Newest-wins is the documented behaviour; what must NOT happen is the
-    // two workers writing into the same loader.
-    Kataglyphis::AsyncModelParse parse;
-    parse.start(test_model());
-    parse.start(test_model());
-    parse.waitForCompletion();
-
-    ASSERT_TRUE(parse.wasSuccessful());
-    const auto result = parse.takeResult();
-    ASSERT_NE(result, nullptr);
-    EXPECT_GT(result->getVertices().size(), 0U);
-}
-
-TEST(AsyncModelParseUnit, DestructionJoinsRatherThanDetaches)
-{
-    if (!std::filesystem::exists(test_model())) { GTEST_SKIP() << "test model not present"; }
-
-    // A detached worker writing into a destroyed loader is a use-after-free
-    // that surfaces as corrupted geometry, not a crash. Under ASAN - which
-    // this suite builds with - that would be caught here.
-    {
-        Kataglyphis::AsyncModelParse parse;
-        parse.start(test_model());
-        // Deliberately no wait: the destructor must handle it.
-    }
-    SUCCEED() << "destructor returned without a dangling worker";
-}
-
-TEST(AsyncModelParseUnit, IdleInstancesAreSafeToQueryAndTake)
-{
-    Kataglyphis::AsyncModelParse parse;
-    EXPECT_FALSE(parse.isRunning());
-    EXPECT_FALSE(parse.isFinished());
-    EXPECT_EQ(parse.takeResult(), nullptr);
-    parse.waitForCompletion();// must not deadlock on a never-started parse
-}
+// The async wrapper (AsyncModelParse) has its own dedicated coverage in
+// asyncModelParseSuite.cpp, suite AsyncModelParseUnit.
