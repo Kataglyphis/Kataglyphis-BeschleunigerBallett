@@ -22,9 +22,9 @@ class PathTracing
     PathTracing(const PathTracing &) = delete;
     PathTracing &operator=(const PathTracing &) = delete;
 
-    void init(std::shared_ptr<VulkanDevice>in_device, const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts);
+    void init(std::shared_ptr<VulkanDevice>in_device, std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
 
-    void shaderHotReload(const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts);
+    void shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts);
 
     void recordCommands(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
@@ -77,6 +77,6 @@ class PathTracing
 
     SpecializationData specializationData;
 
-    void createPipeline(const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts);
+    void createPipeline(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
 };
 }// namespace Kataglyphis::VulkanRendererInternals

@@ -30,7 +30,7 @@ import kataglyphis.vulkan.shader_helper;
 Kataglyphis::VulkanRendererInternals::PathTracing::PathTracing() = default;
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::init(std::shared_ptr<VulkanDevice>in_device,
-  const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
+  std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
     this->device = in_device;
 
@@ -50,7 +50,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::init(std::shared_ptr<Vul
 }
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::shaderHotReload(
-  const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts)
+  std::span<const vk::DescriptorSetLayout> descriptor_set_layouts)
 {
     device->getLogicalDevice().destroyPipeline(pipeline);
     createPipeline(descriptor_set_layouts);
@@ -195,7 +195,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::cleanUp()
 Kataglyphis::VulkanRendererInternals::PathTracing::~PathTracing() { cleanUp(); }
 
 void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
-  const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
+  std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
     vk::PushConstantRange push_constant_range{};
     push_constant_range.stageFlags = vk::ShaderStageFlagBits::eCompute;

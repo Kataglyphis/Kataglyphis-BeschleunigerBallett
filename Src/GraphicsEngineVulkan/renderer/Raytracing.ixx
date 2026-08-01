@@ -23,10 +23,10 @@ class Raytracing
     Raytracing(const Raytracing &) = delete;
     Raytracing &operator=(const Raytracing &) = delete;
 
-    void init(std::shared_ptr<VulkanDevice>in_device, const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts,
+    void init(std::shared_ptr<VulkanDevice>in_device, std::span<const vk::DescriptorSetLayout> descriptorSetLayouts,
       VulkanSwapChain *swapchain);
 
-    void shaderHotReload(const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts);
+    void shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts);
 
     void recordCommands(vk::CommandBuffer &commandBuffer,
       VulkanImage &renderImage,
@@ -60,7 +60,7 @@ class Raytracing
     vk::PhysicalDeviceRayTracingPipelinePropertiesKHR raytracing_properties{};
 
     void createPCRange();
-    void createGraphicsPipeline(const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts);
+    void createGraphicsPipeline(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
     void createSBT();
 };
 }// namespace Kataglyphis::VulkanRendererInternals

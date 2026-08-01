@@ -34,7 +34,7 @@ Kataglyphis::VulkanRendererInternals::PostStage::PostStage() = default;
 
 void Kataglyphis::VulkanRendererInternals::PostStage::init(std::shared_ptr<VulkanDevice>in_device,
   VulkanSwapChain *swapchain,
-  const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
+  std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
     this->device = in_device;
     this->vulkanSwapChain = swapchain;
@@ -49,7 +49,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::init(std::shared_ptr<Vulka
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::shaderHotReload(
-  const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts)
+  std::span<const vk::DescriptorSetLayout> descriptor_set_layouts)
 {
     device->getLogicalDevice().destroyPipeline(graphics_pipeline);
     createGraphicsPipeline(descriptor_set_layouts);
@@ -274,7 +274,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
-  const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
+  std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
     // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build
     // time. Run from the repo root (per AGENTS.md).

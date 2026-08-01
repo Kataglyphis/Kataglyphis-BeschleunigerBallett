@@ -29,7 +29,7 @@ DeferredRasterizer::DeferredRasterizer() = default;
 
 void DeferredRasterizer::init(std::shared_ptr<VulkanDevice>in_device,
   VulkanSwapChain *swap_chain,
-  const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts,
+  std::span<const vk::DescriptorSetLayout> descriptorSetLayouts,
   vk::CommandPool &commandPool)
 {
     device = in_device;
@@ -44,7 +44,7 @@ void DeferredRasterizer::init(std::shared_ptr<VulkanDevice>in_device,
     createFramebuffer();
 }
 
-void DeferredRasterizer::shaderHotReload(const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts)
+void DeferredRasterizer::shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts)
 {
     device->getLogicalDevice().destroyPipeline(geometryPipeline);
     device->getLogicalDevice().destroyPipelineLayout(geometryPipelineLayout);
@@ -304,7 +304,7 @@ void DeferredRasterizer::createRenderPass()
     renderPass = result.value;
 }
 
-void DeferredRasterizer::createPipelines(const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
+void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
     // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
     // Run from the repo root (per AGENTS.md).

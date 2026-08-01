@@ -37,7 +37,7 @@ Kataglyphis::VulkanRendererInternals::Rasterizer::Rasterizer() = default;
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::init(std::shared_ptr<VulkanDevice>in_device,
   VulkanSwapChain *swap_chain,
-  const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts,
+  std::span<const vk::DescriptorSetLayout> descriptorSetLayouts,
   vk::CommandPool &commandPool)
 {
     this->device = in_device;
@@ -51,7 +51,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::init(std::shared_ptr<Vulk
 }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::shaderHotReload(
-  const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts)
+  std::span<const vk::DescriptorSetLayout> descriptor_set_layouts)
 {
     device->getLogicalDevice().destroyPipeline(graphics_pipeline);
     createGraphicsPipeline(descriptor_set_layouts);
@@ -390,7 +390,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
 }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
-  const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
+  std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
     // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
     // Run from the repo root (per AGENTS.md) — a relative path works from there.

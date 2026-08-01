@@ -24,7 +24,7 @@ import kataglyphis.vulkan.swapchain;
 Kataglyphis::VulkanRendererInternals::Raytracing::Raytracing() = default;
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::init(std::shared_ptr<VulkanDevice>in_device,
-  const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts,
+  std::span<const vk::DescriptorSetLayout> descriptorSetLayouts,
   VulkanSwapChain *swapchain)
 {
     this->device = in_device;
@@ -36,7 +36,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::init(std::shared_ptr<Vulk
 }
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::shaderHotReload(
-  const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts)
+  std::span<const vk::DescriptorSetLayout> descriptor_set_layouts)
 {
     device->getLogicalDevice().destroyPipeline(graphicsPipeline);
     createGraphicsPipeline(descriptor_set_layouts);
@@ -173,7 +173,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createPCRange()
 }
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
-  const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts)
+  std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
     // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
     // Run from the repo root (per AGENTS.md).

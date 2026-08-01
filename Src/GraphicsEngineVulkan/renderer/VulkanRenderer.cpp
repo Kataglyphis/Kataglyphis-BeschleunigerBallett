@@ -98,8 +98,8 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
 
     initDescriptorResources();
 
-    std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_rasterizer = { sharedRenderDescriptors.getLayout() };
-    std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_deferred = { sharedRenderDescriptors.getLayout(), gbufferDescriptors.getLayout() };
+    std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts_rasterizer = { sharedRenderDescriptors.getLayout() };
+    std::array<vk::DescriptorSetLayout, 2> const descriptor_set_layouts_deferred = { sharedRenderDescriptors.getLayout(), gbufferDescriptors.getLayout() };
 
     rasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_rasterizer, graphics_command_pool);
     deferredRasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_deferred, graphics_command_pool);
@@ -114,13 +114,13 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     dirShadowMap.init(device, 2048, 2048, initial_cascade_count, sharedRenderDescriptors.getLayout());
     dirShadowMap.createGraphicsPipeline();
 
-    std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_post = { postDescriptors.getLayout() };
+    std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts_post = { postDescriptors.getLayout() };
     postStage.init(device, &vulkanSwapChain, descriptor_set_layouts_post);
 
     if (device->supportsHardwareAcceleratedRRT()) {
         createRaytracingDescriptorResources();
 
-        std::vector<vk::DescriptorSetLayout> const layouts = { sharedRenderDescriptors.getLayout(),
+        std::array<vk::DescriptorSetLayout, 2> const layouts = { sharedRenderDescriptors.getLayout(),
             raytracingDescriptors.getLayout() };
         raytracingStage.init(device, layouts, &vulkanSwapChain);
         pathTracing.init(device, layouts);
@@ -417,14 +417,14 @@ void Kataglyphis::VulkanRenderer::shaderHotReload()
 {
     std::ignore = device->getLogicalDevice().waitIdle();
 
-    std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts = { sharedRenderDescriptors.getLayout() };
+    std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts = { sharedRenderDescriptors.getLayout() };
     rasterizer.shaderHotReload(descriptor_set_layouts);
 
-    std::vector<vk::DescriptorSetLayout> const descriptor_set_layouts_post = { postDescriptors.getLayout() };
+    std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts_post = { postDescriptors.getLayout() };
     postStage.shaderHotReload(descriptor_set_layouts_post);
 
     if (device->supportsHardwareAcceleratedRRT()) {
-        std::vector<vk::DescriptorSetLayout> const layouts = { sharedRenderDescriptors.getLayout(),
+        std::array<vk::DescriptorSetLayout, 2> const layouts = { sharedRenderDescriptors.getLayout(),
             raytracingDescriptors.getLayout() };
         raytracingStage.shaderHotReload(layouts);
         pathTracing.shaderHotReload(layouts);

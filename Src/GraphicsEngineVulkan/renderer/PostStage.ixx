@@ -22,9 +22,9 @@ class PostStage
 
     void init(std::shared_ptr<VulkanDevice>in_device,
       VulkanSwapChain *vulkanSwapChain,
-      const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts);
+      std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
 
-    void shaderHotReload(const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts);
+    void shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts);
 
     vk::RenderPass &getRenderPass() { return render_pass; };
     vk::Sampler &getOffscreenSampler() { return offscreenTextureSampler; };
@@ -63,7 +63,7 @@ class PostStage
 
     void createPushConstantRange();
     void createRenderpass();
-    void createGraphicsPipeline(const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts);
+    void createGraphicsPipeline(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
     void createFramebuffer();
 };
 }// namespace Kataglyphis::VulkanRendererInternals

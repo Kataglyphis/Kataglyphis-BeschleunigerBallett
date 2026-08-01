@@ -28,10 +28,10 @@ class Rasterizer
 
     void init(std::shared_ptr<VulkanDevice>in_device,
       VulkanSwapChain *swap_chain,
-      const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts,
+      std::span<const vk::DescriptorSetLayout> descriptorSetLayouts,
       vk::CommandPool &commandPool);
 
-    void shaderHotReload(const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts);
+    void shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts);
 
     Kataglyphis::Texture &getOffscreenTexture(uint32_t index);
 
@@ -89,7 +89,7 @@ class Rasterizer
     vk::RenderPass render_pass{};
 
     void createTextures(vk::CommandPool &commandPool);
-    void createGraphicsPipeline(const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts);
+    void createGraphicsPipeline(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
     void createRenderPass();
     void createFramebuffer();
     void createPushConstantRange();

@@ -28,10 +28,10 @@ class DeferredRasterizer
 
     void init(std::shared_ptr<VulkanDevice>in_device,
       VulkanSwapChain *swap_chain,
-      const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts,
+      std::span<const vk::DescriptorSetLayout> descriptorSetLayouts,
       vk::CommandPool &commandPool);
 
-    void shaderHotReload(const std::vector<vk::DescriptorSetLayout> &descriptor_set_layouts);
+    void shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts);
 
     Kataglyphis::Texture &getOffscreenTexture(uint32_t index);
     vk::ImageView getGBufferNormal(uint32_t index) { return gBufferNormals[index]->getImageView(); }
@@ -100,7 +100,7 @@ class DeferredRasterizer
 
     void createTextures(vk::CommandPool &commandPool);
     void createRenderPass();
-    void createPipelines(const std::vector<vk::DescriptorSetLayout> &descriptorSetLayouts);
+    void createPipelines(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
     void createFramebuffer();
     void createPushConstantRange();
 };
