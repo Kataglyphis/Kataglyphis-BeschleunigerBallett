@@ -5,6 +5,8 @@
 
 #ifdef __cplusplus
 #pragma once
+#include "common/host_device_shared_vars.hpp"
+
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/vec2.hpp>
@@ -18,8 +20,6 @@ using mat4 = glm::mat4;
 using uint = unsigned int;
 namespace Kataglyphis::VulkanRendererInternals {
 #endif
-
-#define MAX_CASCADES 3
 
 struct DirectionalLightData {
     vec4 direction;

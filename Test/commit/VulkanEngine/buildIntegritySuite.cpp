@@ -150,8 +150,9 @@ bool has_compiled_binary_for_source(const fs::path &source, const fs::path &spir
 // scene_types.slang (Slang). Both are hand-mirrored today - see
 // HostAndShaderSharedConstantsAgree below for why that is dangerous.
 const std::vector<std::string> kSharedConstantNames = {
-    "MAX_TEXTURE_COUNT", "globalUBO_BINDING", "sceneUBO_BINDING", "OBJECT_DESCRIPTION_BINDING", "TEXTURES_BINDING",
-    "SAMPLER_BINDING", "SHADOW_MAP_BINDING", "TLAS_BINDING", "OUT_IMAGE_BINDING", "ACCUMULATION_IMAGE_BINDING"
+    "MAX_TEXTURE_COUNT", "MAX_CASCADES", "globalUBO_BINDING", "sceneUBO_BINDING", "OBJECT_DESCRIPTION_BINDING",
+    "TEXTURES_BINDING", "SAMPLER_BINDING", "SHADOW_MAP_BINDING", "TLAS_BINDING", "OUT_IMAGE_BINDING",
+    "ACCUMULATION_IMAGE_BINDING"
 };
 
 bool is_identifier_char(char ch) { return std::isalnum(static_cast<unsigned char>(ch)) != 0 || ch == '_'; }
@@ -656,6 +657,7 @@ TEST(BuildIntegrity, SharedConstantsMatchTheCompiledHostValues)
     }
 
     EXPECT_EQ(shader.at("MAX_TEXTURE_COUNT"), MAX_TEXTURE_COUNT);
+    EXPECT_EQ(shader.at("MAX_CASCADES"), MAX_CASCADES);
     EXPECT_EQ(shader.at("globalUBO_BINDING"), globalUBO_BINDING);
     EXPECT_EQ(shader.at("sceneUBO_BINDING"), sceneUBO_BINDING);
     EXPECT_EQ(shader.at("OBJECT_DESCRIPTION_BINDING"), OBJECT_DESCRIPTION_BINDING);

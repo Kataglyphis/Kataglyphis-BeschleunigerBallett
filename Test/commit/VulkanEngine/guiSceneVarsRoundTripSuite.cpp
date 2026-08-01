@@ -17,6 +17,8 @@
 
 #include <gtest/gtest.h>
 
+#include "common/host_device_shared_vars.hpp"
+
 #include <cstddef>
 #include <cstring>
 
@@ -168,4 +170,14 @@ TEST(GuiSceneVarsRoundTrip, ShippedDefaultsAreTheMeasuredOnes)
     EXPECT_GT(defaults.num_shadow_cascades, 0);
     EXPECT_LE(defaults.num_shadow_cascades, 4) << "must stay <= MAX_CASCADES (SceneUBO array size)";
     EXPECT_TRUE(defaults.shadows_enabled) << "the debug scene exists to show shadows";
+}
+
+// The GUI's "# cascades" slider now advertises 1..MAX_CASCADES directly
+// (GUI.cpp), so the default must sit inside that exact range, not just the
+// looser bound above.
+TEST(GuiSceneVarsRoundTrip, CascadeCountDefaultIsWithinTheSliderRange)
+{
+    const GUISceneSharedVars defaults;
+
+    EXPECT_LE(defaults.num_shadow_cascades, MAX_CASCADES);
 }

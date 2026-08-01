@@ -2,6 +2,7 @@
 #include <memory>
 
 #include "common/Utilities.hpp"
+#include "common/host_device_shared_vars.hpp"
 
 #include <array>
 #include <cstdint>
@@ -192,7 +193,7 @@ void GUI::render()
                     if (shadow_map_res_index_before != guiSceneSharedVars.shadow_map_res_index) { guiSceneSharedVars.shadow_resolution_changed = true; }
 
                     int const num_cascades_before = guiSceneSharedVars.num_shadow_cascades;
-                    ImGui::SliderInt("# cascades", &guiSceneSharedVars.num_shadow_cascades, 1, 8);
+                    ImGui::SliderInt("# cascades", &guiSceneSharedVars.num_shadow_cascades, 1, MAX_CASCADES);
                     if (num_cascades_before != guiSceneSharedVars.num_shadow_cascades) { guiSceneSharedVars.shadow_resolution_changed = true; }
 
                     ImGui::SliderInt("PCF radius", &guiSceneSharedVars.pcf_radius, 1, 20);
