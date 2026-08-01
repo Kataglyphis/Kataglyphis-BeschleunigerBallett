@@ -2907,6 +2907,266 @@ async-compute or transfer family can never be selected — deliberate given noth
 uses a second queue today, and task 2 removes the only code that pretended
 otherwise.
 
+## 2026-08-01 batch X — planner (an over-subscribed uniform slot in the Rust forward shader, dead mip branch, script + baseline coverage)
+
+The actionable queue was empty again (the eight `- [b]` entries are the only
+checkboxes left; batches IV–IX are drained). Every claim below was read out of
+the tree this pass with the `file:line` given.
+
+**The headline finding is task 1, and it is worse than a naming problem.**
+`Resources/ShadersSlang/forward/forward.slang:22` documents its uniform as
+`float4 cascade_splits; // x,y: splits, z: count, w: tile_h` — five values
+asked of a `vec4`. The shader then reads `.z` twice, for two different things:
+as the **cascade count** at `:199-200` (`int count = int(frame.cascade_splits.z);
+if (cascade > count - 1) cascade = count - 1;`) and as the **tile-grid width**
+at `:270` (`uint tileW = uint(frame.cascade_splits.z);`). The Rust host resolves
+the conflict in favour of tiles — `forward.rs:1736-1741` writes
+`[cascade_splits[0], cascade_splits[1], tile_counts.0 as f32, tile_counts.1 as f32]`
+— so the `CASCADE_COUNT as f32` that `update_cascades` puts in
+`self.cascade_splits[2]` (`:2619`, and the initializer at `:930`) is written and
+then thrown away, and the cascade clamp is fed a tile width.
+
+That alone is only latently wrong (a 256px target gives `tileW = 16`, and
+`min(cascade, 15)` never bites). The part that bites is the ordering:
+`tile_counts` starts `(0, 0)` (`:910`) and is assigned at `:1809`, **after** the
+frame-uniform write at `:1743-1747`. So the value the shader sees is always one
+frame stale, and on the first frame it is zero — making the clamp compute
+`count - 1 == -1` and force `cascade = -1` for every fragment in the frame.
+**Every headless test renders exactly one frame** (`render_to_pixels`), so the
+entire Rust GPU suite runs in that state; the shadow tests pass only because a
+negative array index degrades to cascade 0's matrix, which is the right cascade
+for a near-camera fixture. The same stale frame recurs after every resize.
+
+Task 2 (the still-red `alpha_modes_blend_and_mask`) is sequenced **after** task
+1 on purpose: a blend quad shadowed by the wrong cascade is a live hypothesis
+for why its green pixels miss the `g > 140` threshold, and re-diagnosing it
+before task 1 lands risks chasing a symptom of task 1.
+
+Task 3 is the item batch IX deferred with "pick this up next cycle", re-verified
+unchanged. Task 5 folds in the `docs/gpu-golden-testing.md` count drift batch IX
+asked to fold into "whichever task next touches that file", and adds a second
+instrument disagreement found this pass: the BACKLOG "Measured baseline" table
+says `BM_ComputeCascadeData/1` is 142 ns and `/3` is 324 ns, while
+`Test/perf/baselines/win-9070xt-32core.json` — captured the same day
+(`context.date` 2026-07-31T19:36, same host, same 32 cores) — records 372.82 ns
+and 1012.79 ns. 2.6x and 3.1x apart is not desktop noise.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`ForwardRenderer::light_space_matrix`**
+(`forward.rs:2655-2680`) is `#[allow(dead_code)]` and a near-duplicate of
+`light_matrix_for` — real dead code, but it is inside the file task 1 edits, so
+delete it there rather than spending a task on it; **the Rust cascade fit has no
+texel snapping** (`light_matrix_for:2634-2652` anchors `look_at_rh` at a
+continuously moving `center`, which is exactly the shimmer the C++ engine fixed
+on 2026-07-31 in `CascadedShadowMapMath.cpp:153-204`) — a genuine cross-renderer
+parity gap and the C++ code is a ready-made template, but it needs its own cycle
+and its own CPU oracle, so it is recorded here rather than half-specified;
+**`Model::addSampler` burning one `vk::Sampler` per texture** (`Model.cpp:66-82`)
+— re-checked, still headroom rather than a leak, still not worth a task.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) Diagnose and fix `alpha_modes_blend_and_mask` — 0 composited blend
+  pixels** — the last red headless test whose cause the 2026-08-01 depth-resolve
+  root-cause did not explain. **Do this after the `cascade_splits` task above.**
+
+  **Files to read:**
+  - `ExternalLib/.../crates/webgpu_renderer/tests/headless.rs:340-400` — the
+    test; the failing assertion is `blended_over_cube > 200` against the
+    classifier `g > 140 && g > r + 25 && g > b + 25 && r > 70 && b > 60`
+  - `ExternalLib/.../crates/webgpu_renderer/tests/assets/cube_alpha.gltf` —
+    material 2 is the BLEND quad (`baseColorFactor [0.1, 0.8, 0.2, 0.45]`,
+    `doubleSided: true`), material 3 the MASK quad (alpha 0.3, cutoff 0.5)
+  - `ExternalLib/.../crates/webgpu_renderer/src/render/forward.rs` —
+    `:2081-2111` (the transparent draw loop, after the sky, sorted back-to-front),
+    `:2787-2842` (`create_forward_pipeline_set`: blend variants get
+    `ALPHA_BLENDING`, `depth_write_enabled: Some(false)`, `depth_compare: Less`),
+    `:1588` and `:1594` (where `alpha_blend` is set from `AlphaMode`)
+  - `docs/gpu-golden-testing.md` — "Always dump the picture, not just the number"
+
+  **Steps:**
+  1. Re-run the test first and record whether it is still red after the
+     `cascade_splits` fix. A blend quad shadowed by the wrong cascade would come
+     out too dark to clear `g > 140`, so this may already be resolved — if it is,
+     the task is to say so in the backlog and delete the stale "needs its own
+     investigation" note under "Rust renderer ideas", not to change code.
+  2. If still red, separate *not drawn* from *drawn but off-threshold* before
+     changing anything. Add a temporary counter for the `blended` vector at
+     `:2082-2091` and print it; if it is 0 the cause is upstream
+     (`prim.alpha_blend` never set, or `frustum.intersects_aabb` rejecting the
+     quad), if it is 1 the quad is drawn and the classifier is measuring the
+     wrong thing.
+  3. Dump the frame to PNG and look at it. A count says how much changed; only
+     the picture says whether what changed is the effect — this repo has twice
+     produced confident wrong calls from a pixel classifier alone (see "Caution
+     learned the hard way").
+  4. Fix the cause you actually found. If it is the oracle (the quad composites
+     but the tonemapped green lands below 140), widen the classifier and say in
+     the test comment which measured values it now brackets — do not tune the
+     threshold until it passes without recording why.
+  5. Leave the `yellowish == 0` MASK assertion alone unless it also fails; it
+     tests a different path (opaque loop + shader discard).
+
+  **Test:** the test already exists — the deliverable is that it goes green for
+  a stated reason, plus a comment in it naming the root cause. If the fix is in
+  renderer code rather than the oracle, add the narrowest assertion that would
+  have caught it.
+
+  **Build:** from `ExternalLib/Kataglyphis-RustProjectTemplate`:
+  `cargo test -p kataglyphis_webgpu_renderer --test headless alpha_modes_blend_and_mask -- --nocapture`.
+  Needs a GPU (the test self-skips without an adapter — a SKIP is not a pass).
+
+  **Context:** Recorded as unexplained in the depth-resolve entry under "Rust
+  renderer ideas": "blend pass shares the encoder with the now-fixed forward
+  pass but doesn't touch `self.depth` at all, so this needs its own
+  investigation". One thing already ruled out: `StoreOp::Discard` on the
+  `hdr_msaa` colour attachment (`:1980`) is correct — a resolve to
+  `resolve_target` happens regardless of the store op, and that is the intended
+  wgpu pattern. Do not re-derive that.
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Delete `generateMipMaps`'s unreachable linear-blit branch
+  and its dead parameter** — the error it logs cannot fire, and the parameter it
+  takes is shadowed by the member the loop actually reads.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/Texture.cpp` — `:127-132` (the caller
+    consults `supportsLinearBlit` and forces `mip_levels = 1` on failure),
+    `:168-186` (the `mip_levels > 1` guard around the call), `:291-391`
+    (`generateMipMaps` itself)
+  - `Src/GraphicsEngineVulkan/scene/Texture.ixx:92-100` — the declaration
+
+  **Steps:**
+  1. Delete the `getFormatProperties` re-query and the
+     `spdlog::error("Texture image format does not support linear blitting!")`
+     branch at `Texture.cpp:301-306`. It is unreachable: `uploadRgba` already
+     asked `supportsLinearBlit` at `:129`, set `mip_levels = 1` when it said no,
+     and only calls `generateMipMaps` when `mip_levels > 1` (`:168`).
+  2. Drop the now-unused `vk::PhysicalDevice physical_device` parameter from both
+     the definition (`:291`) and the declaration (`Texture.ixx:92`), and the
+     argument at the call site (`:169`).
+  3. Drop the `[[maybe_unused]] uint32_t in_mip_levels` parameter (`:299`) the
+     same way. This one is a trap, not just noise: the loop at `:323` and the
+     final barrier at `:376` read the **member** `mip_levels`, so a future caller
+     passing a different value would be silently ignored. Removing the parameter
+     makes the member the only input, which is what the code already does.
+  4. Leave the barrier logic, the loop, and the final `mip_levels - 1`
+     transition exactly as they are — this is a subtraction, not a rewrite.
+
+  **Test:** no new GPU test. `GoldenRender.TexturedModelRenders` and the
+  textured-glTF goldens already cover the mip path end to end; assert the change
+  by running them and by `Test/commit/VulkanEngine/` staying at its current
+  count. Add nothing to `goldenRenderSuite.cpp`.
+
+  **Build:** `clangcl-debug`. `Texture.ixx` changes, so this needs a fresh
+  container:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipPerfTests -SkipMsix -FreshContainer`
+  then run the extracted `commitTestSuite.exe` from the repo root on the host GPU
+  (see `[[host-gpu-golden-verification]]` and `docs/gpu-golden-testing.md`).
+
+  **Context:** Batch IX found and verified this, then deferred it purely for the
+  five-task cap with "pick this up next cycle" — re-verified unchanged this pass.
+  Follow the wave-2/wave-3 dead-code removals recorded under "Deep code-review
+  pass (2026-07-23)": delete, rebuild, prove the goldens are unchanged.
+
+### Build / scripts
+
+- [ ] **(S) Pester coverage for `Compare-PerfBaseline.ps1`** — the one script in
+  `Scripts/` with a pass/fail contract and no test, on a machine where nothing
+  else can catch a regression in it.
+
+  **Files to read:**
+  - `Scripts/Compare-PerfBaseline.ps1` — `ConvertTo-Nanoseconds` (`:42-51`), the
+    tolerance comparison (`:95-105`), the only-in-one-file handling (`:106-112`),
+    the exit code (`:123-137`)
+  - `Scripts/Windows/tests/Run-SyncValidation.Tests.ps1` — **the pattern to
+    follow**: invoke the real script as a child process against canned fixtures
+    and assert `$LASTEXITCODE`, so no GPU and no built binary are needed
+  - `Test/perf/baselines/win-9070xt-32core.json` — the real baseline's shape
+    (17 entries, all `run_type: "iteration"`, units `ns`/`us`/`ms`)
+
+  **Steps:**
+  1. Add `Scripts/Windows/tests/Compare-PerfBaseline.Tests.ps1`. Write Pester
+     **3.4.0** syntax (dash-less assertions — the installed version; see the
+     NOTE at the top of `Run-SyncValidation.Tests.ps1` and
+     `Submodule.Pins.Tests.ps1`).
+  2. Generate small baseline/candidate JSON fixtures in a temp directory in
+     `BeforeAll`, each a `{ "benchmarks": [ { "name", "real_time", "time_unit" } ] }`
+     document — do not depend on the checked-in baseline, which will change.
+  3. Cover, one `It` each: (a) identical numbers exit 0; (b) a benchmark 50%
+     slower with the default tolerance exits non-zero; (c) the same 50%
+     regression with `-ToleranceFraction 1.0` exits 0; (d) a benchmark present
+     only in the candidate exits 0 (new benchmarks must never fail a comparison
+     — the script says so at `:22-25`); (e) a benchmark present only in the
+     baseline likewise exits 0; (f) **unit normalisation**: 1000 ns baseline vs
+     1 us candidate is a 0% delta and exits 0 — this is the one piece of real
+     arithmetic in the script; (g) a missing `-CandidatePath` exits non-zero.
+  4. Do not add a `-Capture`/`-UpdateBaseline` mode. The script refuses one on
+     purpose (`:17-20`) and a test must not create pressure to add it.
+
+  **Test:** the suite itself. Run
+  `pwsh -NoProfile -Command "Invoke-Pester -Path .\Scripts\Windows\tests\Compare-PerfBaseline.Tests.ps1"`
+  from the repo root and show it green.
+
+  **Build:** none — pure PowerShell, runs on the host in seconds, no container
+  and no GPU.
+
+  **Context:** `Compare-PerfBaseline.ps1` landed 2026-07-31 as the answer to
+  "Regression tracking" under "Performance testing". It is deliberately not in
+  CI (per-machine numbers), which means a bug in it surfaces as a *silently
+  passing* comparison — exactly the failure mode the Pester suite for
+  `Run-SyncValidation.ps1` was written to prevent for that script.
+
+### Docs
+
+- [ ] **(S) Reconcile the two perf instruments and the golden-suite count** — the
+  BACKLOG baseline table and the checked-in baseline JSON, taken on the same
+  machine the same day, disagree by 3x on one benchmark.
+
+  **Files to read:**
+  - `BACKLOG.md` — "### Measured baseline (2026-07-19, clangcl-profile, 32-core
+    4.3 GHz)", the table rows for `BM_ComputeCascadeData/1` and `/3`
+  - `Test/perf/baselines/win-9070xt-32core.json` — `context.date` is
+    `2026-07-31T19:36:11+02:00`, host `FENSTER_FUNDER`, 32 CPUs at 4300 MHz
+  - `docs/gpu-golden-testing.md:121` — "runs the rest of the suite (21 tests)"
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` — now 30 `GoldenRender.*`
+    tests, 2 of them `DISABLED_`
+
+  **Steps:**
+  1. Rebuild `clangcl-profile` and re-run the benchmarks to get a third reading:
+     `build-clangcl-profile\perfTestSuite.exe --benchmark_out=perf.json --benchmark_out_format=json`,
+     then `pwsh -File .\Scripts\Compare-PerfBaseline.ps1 -CandidatePath perf.json`.
+     Whichever of the two existing numbers the fresh run agrees with is the real
+     one; the other was recorded wrong.
+  2. Correct the BACKLOG table rows to match, and add the two `BM_GltfParse_*`
+     and `BM_AvailableModelPaths`/`BM_ResolveModelPath_*` rows so the table and
+     the JSON list the same 17 benchmarks. Update the table's heading date, which
+     still says 2026-07-19 while its newest rows are labelled 2026-07-31.
+  3. Add one line under the table naming
+     `Test/perf/baselines/win-9070xt-32core.json` as the machine-readable source
+     of truth and the table as a human-readable summary of it, so the next
+     divergence is a discrepancy someone can spot rather than two equal claims.
+  4. Fix `docs/gpu-golden-testing.md:121`. Do not guess the number — derive it:
+     run the documented `--gtest_filter` from that line with
+     `--gtest_list_tests` and count what it actually selects, then write that
+     number in.
+
+  **Test:** no code test. The verification is the fresh benchmark JSON: attach
+  the run output and show `Compare-PerfBaseline.ps1` exiting 0 against the
+  corrected baseline.
+
+  **Build:** `clangcl-profile` (the only configuration where benchmarks mean
+  anything — debug timings are noise):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-profile -SkipMsix`
+
+  **Context:** This repo's most expensive recorded mistake was two instruments
+  disagreeing and the discrepancy not being chased (see the note at the top of
+  "## C++ Vulkan engine"). A prose table that contradicts a checked-in JSON by
+  3x is that same setup, sitting in the file that documents the lesson. Batch IX
+  asked for the `gpu-golden-testing.md` count to be folded into "whichever task
+  next touches that file" — this is that task.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

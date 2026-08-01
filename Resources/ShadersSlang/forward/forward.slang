@@ -10,6 +10,10 @@ import fullscreen;
 // lighting, cascaded shadows, normal mapping, KHR_texture_transform,
 // alpha-mask, and unlit materials.
 
+// Must match CASCADE_COUNT in forward.rs — there are exactly this many
+// light_space* matrices below, so the cascade count is not variable.
+static const int CASCADE_COUNT = 3;
+
 struct FrameUniforms
 {
     float4x4 view_proj;
@@ -19,7 +23,7 @@ struct FrameUniforms
     float4 light_dir_ambient;  // xyz: dir towards light, w: ambient
     float4 light_color_intensity; // rgb: color, w: intensity
     float4 camera_position;    // xyz: pos, w: punctual light count
-    float4 cascade_splits;     // x,y: splits, z: count, w: tile_h
+    float4 cascade_splits;     // x,y: splits, z: tile_w, w: tile_h
 };
 
 struct PrimUniforms
@@ -196,8 +200,7 @@ float shadow_visibility(float viewDepth, float3 worldPos, float nDotL)
     int cascade = 0;
     if (viewDepth > frame.cascade_splits.x) cascade = 1;
     if (viewDepth > frame.cascade_splits.y) cascade = 2;
-    int count = int(frame.cascade_splits.z);
-    if (cascade > count - 1) cascade = count - 1;
+    if (cascade > CASCADE_COUNT - 1) cascade = CASCADE_COUNT - 1;
 
     float4 lightSpacePos;
     if (cascade == 1) lightSpacePos = mul(frame.light_space_1, float4(worldPos, 1.0));
