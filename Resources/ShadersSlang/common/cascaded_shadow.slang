@@ -1,9 +1,8 @@
 import scene_types;
 
 // Cascaded shadow sampling shared by the forward and deferred lighting
-// shaders. Mirrors Resources/Shaders/common/cascaded_shadow.glsl.
-// Uses scene_types (NOT rt_types) to avoid pulling ray tracing capabilities
-// into rasterization shaders.
+// shaders. Sole source for this shader. Uses scene_types (NOT rt_types) to
+// avoid pulling ray tracing capabilities into rasterization shaders.
 
 [vk::binding(5, 0)] Sampler2DArray directionalShadowMaps;
 

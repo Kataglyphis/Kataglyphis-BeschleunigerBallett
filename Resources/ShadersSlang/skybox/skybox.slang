@@ -1,7 +1,7 @@
 import fullscreen;
 
-// Skybox shaders. Mirrors Resources/Shaders/skybox/SkyBox.vert + .frag.
-// Emits SPIR-V only (C++/Vulkan cubemap-based skybox).
+// Skybox shaders. Sole source for this shader. Emits SPIR-V only
+// (C++/Vulkan cubemap-based skybox).
 
 struct CameraUBO
 {

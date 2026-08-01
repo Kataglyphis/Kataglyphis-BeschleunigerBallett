@@ -1,7 +1,7 @@
 import scene_types;
 
-// Volumetric clouds compute kernel. Mirrors
-// Resources/Shaders/compute/clouds.comp. Emits SPIR-V only.
+// Volumetric clouds compute kernel. Sole source for this shader. Emits
+// SPIR-V only.
 //
 // Ray-marches a cloud volume, sampling a 3D noise texture for density,
 // with Henyey-Greenstein phase function and Beer-Lambert transmittance.

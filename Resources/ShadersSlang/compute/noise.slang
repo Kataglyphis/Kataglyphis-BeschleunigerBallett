@@ -1,5 +1,5 @@
 // 3D noise volume generation compute kernel.
-// Mirrors Resources/Shaders/compute/noise.comp. Emits SPIR-V only.
+// Sole source for this shader. Emits SPIR-V only.
 
 [vk::binding(0, 0)] RWTexture3D<float4> noiseVolume;
 

@@ -4,10 +4,9 @@ import brdf;
 import cascaded_shadow;
 import push_constants;
 
-// Deferred geometry pass + lighting pass. Mirrors
-// Resources/Shaders/deferred/geometry.vert, geometry.frag, lighting.vert,
-// lighting.frag. Emits SPIR-V only. Writes G-buffer (normal, albedo,
-// material) for the deferred lighting pass.
+// Deferred geometry pass + lighting pass. Sole source for this shader.
+// Emits SPIR-V only. Writes G-buffer (normal, albedo, material) for the
+// deferred lighting pass.
 
 [[vk::push_constant]] PushConstantRasterizer pc_raster;
 

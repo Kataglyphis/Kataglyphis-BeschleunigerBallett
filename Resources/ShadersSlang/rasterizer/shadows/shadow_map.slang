@@ -1,10 +1,9 @@
 import scene_types;
 import material_fetch;
 
-// Cascaded shadow map shaders. Mirrors
-// Resources/Shaders/rasterizer/shadows/directional_shadow_map.vert and .frag.
-// Emits SPIR-V only. Single-pass layered cascade rendering: SV_ViewID IS
-// the cascade index.
+// Cascaded shadow map shaders. Sole source for this shader. Emits SPIR-V
+// only. Single-pass layered cascade rendering: SV_ViewID IS the cascade
+// index.
 
 static const int NUM_CASCADES = 3;
 

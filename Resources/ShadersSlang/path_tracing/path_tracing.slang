@@ -2,8 +2,8 @@ import scene_types;
 import rt_types;
 
 // Path tracing compute kernel using ray query (GL_EXT_ray_query).
-// Full port of Resources/Shaders/path_tracing/path_tracing.comp. Emits
-// SPIR-V only (Vulkan ray query — WebGPU has no ray query).
+// Sole source for this shader. Emits SPIR-V only (Vulkan ray query — WebGPU
+// has no ray query).
 //
 // Uses Slang T* pointers (PhysicalStorageBuffer) for buffer device
 // addresses, RayQuery for ray traversal, next-event estimation toward the

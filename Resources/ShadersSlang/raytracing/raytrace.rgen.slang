@@ -2,7 +2,7 @@ import scene_types;
 import rt_types;
 
 // Ray generation shader: camera ray setup + trace + image store.
-// Mirrors Resources/Shaders/raytracing/raytrace.rgen. Emits SPIR-V only.
+// Sole source for this shader. Emits SPIR-V only.
 
 [vk::binding(0, 0)] ConstantBuffer<GlobalUBO> globalUBO;
 

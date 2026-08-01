@@ -2,8 +2,8 @@ import scene_types;
 import rt_types;
 import brdf;
 
-// Ray tracing closest-hit shader. Full port of
-// Resources/Shaders/raytracing/raytrace.rchit. Emits SPIR-V only.
+// Ray tracing closest-hit shader. Sole source for this shader. Emits
+// SPIR-V only.
 //
 // Uses Slang T* pointers (PhysicalStorageBuffer / GL_EXT_buffer_reference2)
 // to fetch vertices, indices, and materials via Vulkan buffer device

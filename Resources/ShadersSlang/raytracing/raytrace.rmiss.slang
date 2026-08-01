@@ -2,8 +2,8 @@ import scene_types;
 import rt_types;
 
 // Ray tracing miss shader: background color when a ray hits nothing.
-// Mirrors Resources/Shaders/raytracing/raytrace.rmiss. Emits SPIR-V only
-// (Vulkan ray tracing — WebGPU has no RT pipeline).
+// Sole source for this shader. Emits SPIR-V only (Vulkan ray tracing —
+// WebGPU has no RT pipeline).
 
 [[vk::push_constant]] PushConstantRaytracing pc_ray;
 

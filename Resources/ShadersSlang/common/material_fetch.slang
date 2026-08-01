@@ -1,9 +1,9 @@
 import scene_types;
 
 // Shared glTF material fetch for the forward (rasterizer), deferred (geometry),
-// and shadow fragment shaders. Mirrors Resources/Shaders/common/material_fetch.glsl.
-// Uses scene_types (NOT rt_types) to avoid pulling ray tracing capabilities
-// into rasterization shaders (which conflict with `discard`).
+// and shadow fragment shaders. Sole source for this shader. Uses scene_types
+// (NOT rt_types) to avoid pulling ray tracing capabilities into
+// rasterization shaders (which conflict with `discard`).
 
 [vk::binding(2, 0)] StructuredBuffer<ObjectDescription> objectDescription;
 

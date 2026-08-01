@@ -4,8 +4,7 @@ import material_fetch;
 import cascaded_shadow;
 import push_constants;
 
-// Forward rasterizer shaders. Mirrors Resources/Shaders/rasterizer/shader.vert
-// and shader.frag. Emits SPIR-V only.
+// Forward rasterizer shaders. Sole source for this shader. Emits SPIR-V only.
 //
 // NOTE: The GLSL vertex shader uses inverse(model) for the normal matrix.
 // Slang has no inverse() for SPIR-V, so the normal matrix is precomputed on

@@ -2663,48 +2663,6 @@ is wrong; **`CheckedInWgslIsNotOlderThanItsSlangSource`'s missing mtime toleranc
 — a real sharp edge, but task 3's content gate makes the mtime test's vacuousness
 moot rather than needing its own fix.
 
-### C++ Vulkan engine
-
-- [ ] **(S) (refactor) Retire the "Mirrors `Resources/Shaders/…`" headers that
-  point at a deleted tree, and assert they cannot come back** — ten `.slang` files
-  cite an authoritative original that no longer exists.
-
-  **Files to read:**
-  - `Resources/ShadersSlang/common/cascaded_shadow.slang:4`,
-    `common/material_fetch.slang:4`, `common/brdf.slang:5`, `common/noise.slang:4`,
-    `common/aces.slang:5`, `compute/noise.slang:2`, `post/post.slang:5-6`,
-    `rasterizer/rasterizer.slang:7`, `raytracing/raytrace.rgen.slang:5`,
-    `raytracing/raytrace.rmiss.slang:5`, `skybox/skybox.slang:3` — every "Mirrors
-    Resources/Shaders/…" / "`*.glsl`" reference
-  - `docs/shader-build-pipeline.md:49-60` — the historical note that already
-    records the GLSL tree's deletion correctly; link to it rather than restating it
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — where the guard goes
-
-  **Steps:**
-  1. Confirm the tree is gone: `Resources/` holds only `ShadersSlang/`, `Models/`
-     and `Textures/` (verified this pass — `Resources/Shaders/` does not exist).
-  2. Rewrite each header to say what is true now: the `.slang` file is the sole
-     source for this shader, and it emits SPIR-V and/or WGSL. Where the comment
-     carries information worth keeping (e.g. `post.slang:5-6` explains it uses the
-     shared ACES import rather than a hand-written copy), keep the information and
-     drop only the dead path.
-  3. Add `TEST(BuildIntegrity, SlangSourcesDoNotReferenceTheDeletedGlslTree)`:
-     walk every `.slang` under `Resources/ShadersSlang/` (excluding `build/`) and
-     fail naming any file plus line containing `Resources/Shaders/`.
-  4. Verify red-then-green: the test must fail on today's tree naming several
-     files, and pass after step 2.
-
-  **Test:** the BuildIntegrity test above; no shader recompile and no behaviour
-  change, so the golden suite is untouched.
-
-  **Build:** `clangcl-debug`:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipPerfTests -SkipMsix`
-
-  **Context:** Low stakes on its own, but it is the same failure mode as this
-  batch's headline: a comment telling the reader the authoritative version lives
-  somewhere else is how a fix ends up in the wrong file. Comments-only, no `.ixx`
-  touched, so an incremental container build is fine here.
-
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

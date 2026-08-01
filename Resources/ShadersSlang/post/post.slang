@@ -2,10 +2,10 @@ import aces;
 import fullscreen;
 
 // C++/Vulkan fullscreen post pass: tonemap + optional cloud compositing.
-// Mirrors Resources/Shaders/post/post.frag but uses the shared ACES math
-// (imported) instead of the hand-written generated/aces.glsl, and the exact
-// sRGB encode instead of pow(x, 1/2.2). Push constants carry the feature
-// toggles — see Src/GraphicsEngineVulkan/renderer/pushConstants/PushConstantPost.hpp.
+// Sole source for this shader; uses the shared ACES math (imported) and the
+// exact sRGB encode instead of pow(x, 1/2.2). Push constants carry the
+// feature toggles — see
+// Src/GraphicsEngineVulkan/renderer/pushConstants/PushConstantPost.hpp.
 // The fullscreen-triangle vertex comes from fullscreen.slang (imported).
 //
 // Emits SPIR-V only (the C++ renderer loads .spv). The Rust renderer has its

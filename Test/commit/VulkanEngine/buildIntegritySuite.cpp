@@ -900,6 +900,56 @@ TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)
          }();
 }
 
+// `Resources/Shaders/` (the pre-Slang GLSL tree) was deleted once the Slang
+// migration finished; every .slang file is now the sole source for its
+// shader. A handful of header comments still said "Mirrors
+// Resources/Shaders/..." for months afterward, pointing a reader at a tree
+// that no longer exists instead of at the file they were already reading -
+// the same failure mode as trusting stale SPIR-V above: a comment claiming
+// the authoritative version lives elsewhere. This walks every .slang under
+// Resources/ShadersSlang/ (excluding the build/ output directory) and fails
+// naming any file plus line that still references the deleted path.
+TEST(BuildIntegrity, SlangSourcesDoNotReferenceTheDeletedGlslTree)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    static const std::string kDeadPath = "Resources/Shaders";
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
+        if (fs::relative(path, slang_root).generic_string().starts_with("build/")) { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string line;
+        int line_number = 0;
+        while (std::getline(file, line)) {
+            ++line_number;
+            if (line.find(kDeadPath) != std::string::npos) {
+                violations.push_back(fs::relative(path, repo_root).generic_string() + ':'
+                                      + std::to_string(line_number) + ": " + line);
+            }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size() << " line(s) under " << slang_root.string() << " still reference the deleted "
+      << kDeadPath << " tree - update the comment to describe the .slang file as the sole source: "
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 namespace {
 
 // One `export module <name>;` declaration found in an .ixx file.
