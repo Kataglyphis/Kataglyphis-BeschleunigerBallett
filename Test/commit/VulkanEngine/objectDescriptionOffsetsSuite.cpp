@@ -14,6 +14,8 @@
 import kataglyphis.vulkan.object_description;
 
 using Kataglyphis::assignTextureOffsets;
+using Kataglyphis::FlattenedTextureSlot;
+using Kataglyphis::planFlattenedTextureSlots;
 
 TEST(ObjectDescriptionOffsets, EveryMeshOfAModelSharesThatModelsOffset)
 {
@@ -41,6 +43,79 @@ TEST(ObjectDescriptionOffsets, ASingleModelLeavesEveryOffsetAtZero)
 
     EXPECT_EQ(descriptions[0].texture_offset, 0U);
     EXPECT_EQ(descriptions[1].texture_offset, 0U);
+}
+
+TEST(ObjectDescriptionOffsets, PlanVisitsEveryModelsTexturesInModelOrder)
+{
+    const std::vector<uint32_t> textureCountPerModel{ 3, 2 };
+
+    const auto plan = planFlattenedTextureSlots(textureCountPerModel, 5U);
+
+    const std::vector<FlattenedTextureSlot> expected{
+        { .model = 0, .indexInModel = 0 },
+        { .model = 0, .indexInModel = 1 },
+        { .model = 0, .indexInModel = 2 },
+        { .model = 1, .indexInModel = 0 },
+        { .model = 1, .indexInModel = 1 },
+    };
+    EXPECT_EQ(plan.slots, expected);
+    EXPECT_EQ(plan.requestedCount, 5U);
+    EXPECT_FALSE(plan.exhausted);
+}
+
+TEST(ObjectDescriptionOffsets, PlanAgreesWithAssignTextureOffsets)
+{
+    // Mirrors the invariant assignTextureOffsets relies on: the first slot
+    // belonging to model m in the flattened plan must sit at the same offset
+    // assignTextureOffsets stamps onto that model's meshes.
+    const std::vector<uint32_t> meshCountPerModel{ 1, 1, 1 };
+    const std::vector<uint32_t> textureCountPerModel{ 5, 2, 3 };
+
+    std::vector<ObjectDescription> descriptions(3);
+    assignTextureOffsets(descriptions, meshCountPerModel, textureCountPerModel);
+
+    const auto plan = planFlattenedTextureSlots(textureCountPerModel, 100U);
+
+    uint32_t slotIndex = 0;
+    for (std::size_t m = 0; m < meshCountPerModel.size(); ++m) {
+        EXPECT_EQ(plan.slots[slotIndex].model, static_cast<uint32_t>(m));
+        EXPECT_EQ(descriptions[m].texture_offset, slotIndex);
+        slotIndex += textureCountPerModel[m];
+    }
+}
+
+TEST(ObjectDescriptionOffsets, ExhaustionReportsTheTotalAcrossEveryModelNotJustTheOverflowingOne)
+{
+    const std::vector<uint32_t> textureCountPerModel{ 4, 4, 4 };
+
+    const auto plan = planFlattenedTextureSlots(textureCountPerModel, 5U);
+
+    EXPECT_TRUE(plan.exhausted);
+    EXPECT_EQ(plan.requestedCount, 12U);
+    EXPECT_EQ(plan.slots.size(), 5U);
+}
+
+TEST(ObjectDescriptionOffsets, PaddingRepeatsTheFirstSlot)
+{
+    const std::vector<uint32_t> textureCountPerModel{ 2 };
+
+    const auto plan = planFlattenedTextureSlots(textureCountPerModel, 5U);
+
+    ASSERT_EQ(plan.slots.size(), 5U);
+    for (std::size_t i = 2; i < plan.slots.size(); ++i) {
+        EXPECT_EQ(plan.slots[i], plan.slots[0]);
+    }
+    EXPECT_FALSE(plan.exhausted);
+}
+
+TEST(ObjectDescriptionOffsets, NoTexturesProducesAnEmptyPlan)
+{
+    const std::vector<uint32_t> textureCountPerModel{ 0, 0 };
+
+    const auto plan = planFlattenedTextureSlots(textureCountPerModel, 5U);
+
+    EXPECT_TRUE(plan.slots.empty());
+    EXPECT_FALSE(plan.exhausted);
 }
 
 TEST(ObjectDescriptionOffsets, MoreMeshesThanDescriptionsDoesNotOverrun)

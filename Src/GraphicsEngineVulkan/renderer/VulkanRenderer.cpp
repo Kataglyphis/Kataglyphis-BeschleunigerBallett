@@ -1535,49 +1535,45 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
 
     // Flatten EVERY model's textures into the global array, in model order -
     // the same order create_object_description_buffer assigns each model's
-    // texture_offset. This function used to bind model 0's textures only, so
-    // any added model shaded with the FIRST model's images (its local
-    // textureIDs collided with model 0's slots).
-    std::vector<vk::DescriptorImageInfo> image_info_textures;
-    std::vector<vk::DescriptorImageInfo> image_info_texture_sampler;
-    image_info_textures.reserve(MAX_TEXTURE_COUNT);
-    image_info_texture_sampler.reserve(MAX_TEXTURE_COUNT);
-
-    bool texture_slots_exhausted = false;
-    for (uint32_t model = 0; model < scene->getModelCount() && !texture_slots_exhausted; ++model) {
-        std::vector<Texture> &modelTextures = scene->getTextures(model);
-        std::vector<vk::Sampler> &modelTextureSampler = scene->getTextureSampler(model);
-        const uint32_t model_texture_count = scene->getTextureCount(model);
-        for (uint32_t t = 0; t < model_texture_count; ++t) {
-            if (image_info_textures.size() >= MAX_TEXTURE_COUNT) {
-                spdlog::warn(
-                  "Texture slots exhausted: {} textures across {} models exceed MAX_TEXTURE_COUNT={} - "
-                  "models past the cap will sample the wrong slots.",
-                  image_info_textures.size() + (model_texture_count - t),
-                  scene->getModelCount(),
-                  MAX_TEXTURE_COUNT);
-                texture_slots_exhausted = true;
-                break;
-            }
-            vk::DescriptorImageInfo texture_info{};
-            texture_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-            texture_info.imageView = modelTextures[t].getImageView();
-            image_info_textures.push_back(texture_info);
-
-            vk::DescriptorImageInfo sampler_info{};
-            sampler_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-            sampler_info.sampler = modelTextureSampler[t];
-            image_info_texture_sampler.push_back(sampler_info);
-        }
+    // texture_offset (see Kataglyphis::assignTextureOffsets, the other half
+    // of this invariant). This function used to bind model 0's textures
+    // only, so any added model shaded with the FIRST model's images (its
+    // local textureIDs collided with model 0's slots).
+    std::vector<uint32_t> texture_count_per_model;
+    texture_count_per_model.reserve(scene->getModelCount());
+    for (uint32_t model = 0; model < scene->getModelCount(); ++model) {
+        texture_count_per_model.push_back(scene->getTextureCount(model));
     }
 
-    if (image_info_textures.empty()) { return; }
+    const Kataglyphis::FlattenedTexturePlan plan =
+      Kataglyphis::planFlattenedTextureSlots(texture_count_per_model, static_cast<uint32_t>(MAX_TEXTURE_COUNT));
 
-    // Pad the fixed-size binding arrays with slot 0 (every slot must hold a
-    // valid descriptor).
-    while (image_info_textures.size() < MAX_TEXTURE_COUNT) {
-        image_info_textures.push_back(image_info_textures.front());
-        image_info_texture_sampler.push_back(image_info_texture_sampler.front());
+    if (plan.exhausted) {
+        spdlog::warn(
+          "Texture slots exhausted: {} textures across {} models exceed MAX_TEXTURE_COUNT={} - "
+          "models past the cap will sample the wrong slots.",
+          plan.requestedCount,
+          scene->getModelCount(),
+          MAX_TEXTURE_COUNT);
+    }
+
+    if (plan.slots.empty()) { return; }
+
+    std::vector<vk::DescriptorImageInfo> image_info_textures;
+    std::vector<vk::DescriptorImageInfo> image_info_texture_sampler;
+    image_info_textures.reserve(plan.slots.size());
+    image_info_texture_sampler.reserve(plan.slots.size());
+
+    for (const Kataglyphis::FlattenedTextureSlot &slot : plan.slots) {
+        vk::DescriptorImageInfo texture_info{};
+        texture_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        texture_info.imageView = scene->getTextures(slot.model)[slot.indexInModel].getImageView();
+        image_info_textures.push_back(texture_info);
+
+        vk::DescriptorImageInfo sampler_info{};
+        sampler_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+        sampler_info.sampler = scene->getTextureSampler(slot.model)[slot.indexInModel];
+        image_info_texture_sampler.push_back(sampler_info);
     }
 
     for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {

@@ -4,6 +4,7 @@ module;
 #include <algorithm>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 export module kataglyphis.vulkan.object_description;
 
@@ -33,6 +34,63 @@ inline void assignTextureOffsets(std::span<ObjectDescription> descriptions,
         }
         offset += textureCountPerModel[m];
     }
+}
+
+/// One slot in the flattened global texture array: which model the texture
+/// came from, and its index within that model's local texture list.
+struct FlattenedTextureSlot
+{
+    uint32_t model;
+    uint32_t indexInModel;
+
+    bool operator==(const FlattenedTextureSlot &) const = default;
+};
+
+/// Result of flattening every model's textures into the global array, in
+/// model order - the same order assignTextureOffsets advances `offset` in.
+/// `slots` is either empty (no textures at all) or padded to exactly
+/// `maxSlots` entries by repeating `slots.front()` (every fixed-size
+/// descriptor binding slot must hold a valid descriptor). `requestedCount`
+/// is the sum of textures across every model, even past the cap, so the
+/// caller can report the true overflow instead of just the collected count.
+struct FlattenedTexturePlan
+{
+    std::vector<FlattenedTextureSlot> slots;
+    uint32_t requestedCount;
+    bool exhausted;
+};
+
+/// Mirror image of assignTextureOffsets: that function stamps each mesh's
+/// offset into the flattened array, this one builds the array itself, model
+/// by model, capping at `maxSlots` and padding the tail with slot 0.
+inline FlattenedTexturePlan planFlattenedTextureSlots(std::span<const uint32_t> textureCountPerModel, uint32_t maxSlots)
+{
+    FlattenedTexturePlan plan{ .slots = {}, .requestedCount = 0, .exhausted = false };
+
+    for (uint32_t model = 0; model < textureCountPerModel.size(); ++model) {
+        plan.requestedCount += textureCountPerModel[model];
+    }
+
+    for (uint32_t model = 0; model < textureCountPerModel.size(); ++model) {
+        const uint32_t modelTextureCount = textureCountPerModel[model];
+        for (uint32_t t = 0; t < modelTextureCount; ++t) {
+            if (plan.slots.size() >= maxSlots) {
+                plan.exhausted = true;
+                break;
+            }
+            plan.slots.push_back(FlattenedTextureSlot{ .model = model, .indexInModel = t });
+        }
+        if (plan.exhausted) { break; }
+    }
+
+    if (plan.slots.empty()) { return plan; }
+
+    const FlattenedTextureSlot firstSlot = plan.slots.front();
+    while (plan.slots.size() < maxSlots) {
+        plan.slots.push_back(firstSlot);
+    }
+
+    return plan;
 }
 
 }// namespace Kataglyphis
