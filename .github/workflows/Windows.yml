@@ -224,6 +224,7 @@ jobs:
             'MeshRangeSlice.*'
             'ModelPickerUnit.*'
             'SceneAccessorUnit.*'
+            'ObjectDescriptionOffsets.*'
             'ObjParseUnit.*'
             'PushConstantRasterizerUnit.*'
             'PushConstantPathTracingUnit.*'

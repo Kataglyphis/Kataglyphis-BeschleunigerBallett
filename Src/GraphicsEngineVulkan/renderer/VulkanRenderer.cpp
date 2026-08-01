@@ -1216,14 +1216,19 @@ void Kataglyphis::VulkanRenderer::create_object_description_buffer()
 {
     std::vector<ObjectDescription> objectDescriptions = scene->getObjectDescriptions();
 
-    // Fill in each model's slot into the flattened global texture array
-    // (descriptions are pushed one per model, in model order). The shaders
-    // add this to the model-LOCAL material textureIDs.
-    uint64_t texture_offset = 0;
-    for (size_t i = 0; i < objectDescriptions.size() && i < scene->getModelCount(); ++i) {
-        objectDescriptions[i].texture_offset = texture_offset;
-        texture_offset += scene->getTextureCount(static_cast<uint32_t>(i));
+    // objectDescriptions holds one entry per MESH, flattened across models;
+    // every mesh of a model shares that model's offset into the flattened
+    // global texture array. The shaders add this to the model-LOCAL material
+    // textureIDs.
+    std::vector<uint32_t> meshCountPerModel;
+    std::vector<uint32_t> textureCountPerModel;
+    meshCountPerModel.reserve(scene->getModelCount());
+    textureCountPerModel.reserve(scene->getModelCount());
+    for (uint32_t i = 0; i < scene->getModelCount(); ++i) {
+        meshCountPerModel.push_back(scene->getMeshCount(i));
+        textureCountPerModel.push_back(scene->getTextureCount(i));
     }
+    Kataglyphis::assignTextureOffsets(objectDescriptions, meshCountPerModel, textureCountPerModel);
 
     if (!objectDescriptions.empty()) {
         vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,

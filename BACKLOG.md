@@ -2663,6 +2663,278 @@ is wrong; **`CheckedInWgslIsNotOlderThanItsSlangSource`'s missing mtime toleranc
 — a real sharp edge, but task 3's content gate makes the mtime test's vacuousness
 moot rather than needing its own fix.
 
+## 2026-08-01 batch VII — planner (multi-model texture offsets, unsynchronized clouds pass, cascade-count drift)
+
+The actionable queue was empty again when this batch was written (the eight `- [b]`
+entries are the only checkboxes left in the file; batches IV, V and VI are drained).
+Every claim below was read out of the tree this pass, with the `file:line` given.
+
+**The headline finding: `create_object_description_buffer` indexes a PER-MESH array
+with a PER-MODEL counter.** `Scene::add_model` (`Scene.cpp:150-153`) pushes *one
+object description per mesh*, flattened across models — its own comment says so
+("objectIndex (the per-draw push constant) indexes this list"). But
+`VulkanRenderer.cpp:1222-1226` walks that list with `i < scene->getModelCount()`
+and accumulates `scene->getTextureCount(i)`, i.e. it treats slot `i` as *model* `i`.
+Its comment ("descriptions are pushed one per model, in model order") is stale and
+is what makes the bug read as correct. Task 1 fixes it. It is latent with the
+default single-model scene (every offset is legitimately 0) and bites the moment a
+multi-mesh model is followed by a second model — exactly the case
+`GoldenRender.SecondModelLoadsAndRenders` exercises without asserting the index
+arithmetic (the "Multi-object rendering works" note above already flags that gap).
+
+**Second finding: the clouds compute pass has no synchronization with its consumer.**
+`VulkanRenderer.cpp:871` dispatches the cloud compute shader, which writes
+`cloudOutputTexture` as a storage image; `VulkanRenderer.cpp:926` runs the post pass,
+whose descriptor set samples that same image (`VulkanRenderer.cpp:1155-1159`).
+Between them there is nothing: `grep pipelineBarrier Src/.../VulkanRenderer.cpp`
+returns **zero hits**, and PostStage's only subpass dependency is
+`eColorAttachmentOutput -> eColorAttachmentOutput` from `VK_SUBPASS_EXTERNAL`
+(`PostStage.cpp:250-256`), which orders the swapchain colour attachment and says
+nothing about a compute write. The comment at `VulkanRenderer.cpp:917-920` is about
+that swapchain barrier specifically and does not cover this hazard. Tasks 2 and 3.
+
+**Third finding: `MAX_CASCADES` has a third, ungated copy.** The pin added by
+`766bd89c` compares `host_device_shared_vars.hpp` against `scene_types.slang` only
+(`buildIntegritySuite.cpp:626-667`), but
+`Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang` declares its own
+`static const int NUM_CASCADES = 3` (`:8`) *and* a literal `ConstantBuffer<float4x4[3]>`
+(`:10`), neither of which the gate can see. Task 4.
+
+Candidates found but NOT tasked this cycle (checked, then rejected with a reason —
+do not re-propose without new evidence): **`gpu_cull.slang:79`'s comment calling the
+maximum sampled depth "nearest-to-camera"** — the comment is backwards for a standard
+0-near depth buffer, but the *math* (`cull iff aabbNear > maxSampled`) is the correct
+conservative HZB test, so this is a one-word comment nit not worth a task on its own;
+**`Texture::generateMipMaps`'s `[[maybe_unused]] uint32_t in_mip_levels`**
+(`Texture.cpp:299`, loop reads the member `mip_levels` at `:323` instead) — real dead
+parameter, but the single call site passes exactly that member, so it is cosmetic;
+**the `# cascades` GUI slider advertising 1..8 against `MAX_CASCADES` 3** — already
+recorded as a deliberate cosmetic lie in batch III's prose above, with the engine-side
+clamp making it harmless; **checking in the generated SPIR-V under a content gate like
+the WGSL one** — unnecessary, `git ls-files Resources/ShadersSlang/build` returns
+nothing, so no SPIR-V or WGSL artifact is tracked in this repo and there is no
+hand-edit surface to guard.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Check in a synchronization-validation configuration and a runner script** —
+  the recurring sync-validation pass currently requires hand-writing a layer settings
+  file, so in practice it never runs.
+
+  **Files to read:**
+  - `BACKLOG.md` § *Recurring validation runs* — the "Synchronization validation"
+    bullet that describes the manual procedure (and records that it found 10 real
+    WRITE-AFTER-WRITE hazards in July 2026).
+  - `Scripts/Compare-PerfBaseline.ps1` — the precedent for a deliberately
+    not-in-CI, run-it-locally verification script (parameter style, output format).
+  - `Scripts/Windows/run_clangcl_debug.ps1` — how the run helpers set `VK_LAYER_PATH`;
+    note the papercut recorded above (it sets `VK_LAYER_PATH = ''`, which crashes the
+    app with `0xC0000409`) — the new script must set a real path.
+  - `docs/gpu-golden-testing.md` — where the host verification loop is documented.
+
+  **Steps:**
+  1. Add `Scripts/vk_layer_settings.txt` containing at minimum
+     `khronos_validation.validate_sync = true` alongside the normal core/error
+     validation settings. Comment the file: the Vulkan loader reads it from the
+     **current working directory or next to the executable**, which is why the script
+     copies it rather than pointing an env var at it.
+  2. Add `Scripts/Windows/Run-SyncValidation.ps1` that: copies that file next to a
+     given executable (default: the extracted `commitTestSuite.exe` at the repo root),
+     sets `VK_LAYER_PATH` to the host SDK (`C:\VulkanSDK\1.4.350.0\Bin`, overridable
+     by a parameter), runs the executable with a caller-supplied `--gtest_filter`
+     (default the GPU suites: `GoldenRender.*:Integration.*`), tees the output to
+     `logs/sync-validation/<timestamp>.log`, then greps the log for
+     `SYNC-HAZARD` and exits non-zero with a per-hazard summary if any are found.
+     Remove the copied settings file on exit so it cannot silently affect later runs.
+  3. Document it in `docs/gpu-golden-testing.md` (one short section: what it catches
+     that the golden suite does not, and when to run it — after touching render passes,
+     barriers, or frames-in-flight).
+  4. Update the "Synchronization validation" bullet in `BACKLOG.md` to point at the
+     script instead of describing the manual steps.
+
+  **Test:** this is tooling, so the verification is the script itself: run it against
+  the current build and record the hazard list in the commit message. It is expected to
+  report at least the clouds hazard that task 3 below fixes — if it reports **zero**
+  hazards, the harness is not actually enabling sync validation and the script is
+  wrong; check that the settings file landed in the working directory the loader
+  searches. Also add a Pester case under `Scripts/Windows/tests/` asserting the script
+  exits non-zero for a log fixture containing `SYNC-HAZARD` and zero for one without —
+  that part runs without a GPU.
+
+  **Build:** no C++ rebuild needed. Reuse an existing `clangcl-debug`
+  `commitTestSuite.exe`; if none is on the host, build with
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  and `docker cp` it out per `AGENTS.md`.
+
+  **Context:** deliberately NOT wired into CI — the GPU suites do not run anywhere but
+  locally (see *CI and release gaps*), so a CI gate here would be vacuous. The point is
+  to turn a procedure nobody performs into one command. Do not make it fail the build.
+
+- [ ] **(S) Synchronize the clouds compute pass with the post pass that samples its
+  output** — a compute storage-image write is read by a fragment shader with no barrier
+  between them.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:866-873` — the cloud dispatch.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1144-1161` — `updatePostDescriptorSets`,
+    which binds `cloudOutputTexture` at binding 1 in `eGeneral`.
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:250-256` — the only subpass
+    dependency, and why it does not cover this.
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanImage.cpp:118-151` — the
+    command-buffer `transitionImageLayout` overload and its layout-derived stage/access
+    masks (`eGeneral` maps to `eAllCommands`, `:218-219`).
+  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp:264-275` —
+    `recordComputeCommands`.
+
+  **Steps:**
+  1. Immediately after `clouds.recordComputeCommands(...)` (inside the same
+     `clouds_enabled` block, before the closing timestamp), record an explicit
+     `vk::ImageMemoryBarrier` on `clouds.getCloudOutputTexture()->getVulkanImage().getImage()`:
+     `oldLayout = newLayout = vk::ImageLayout::eGeneral`, aspect colour, 1 mip, 1 layer,
+     `srcAccessMask = eShaderWrite`, `dstAccessMask = eShaderRead`, submitted with
+     `srcStage = eComputeShader`, `dstStage = eFragmentShader`.
+  2. Write the barrier explicitly rather than calling
+     `VulkanImage::transitionImageLayout(cmd, eGeneral, eGeneral, 1, eColor)`. That
+     helper *would* be correct but derives both stages from the layout, giving
+     `eAllCommands -> eAllCommands` — a full pipeline stall every frame for what needs
+     one compute-to-fragment edge. Comment the barrier with what it orders and why the
+     post render pass's external dependency does not.
+  3. Consider the cross-frame WAR while you are here and record the finding either way:
+     `cloudOutputTexture` is a **single** image shared by all frames in flight, so
+     frame N+1's compute write races frame N's post read. If the frame fences already
+     serialize this on the host side, say so in the comment; if sync validation reports
+     it, note it as a follow-up rather than widening the scope of this task.
+
+  **Test:** run the script from the task above
+  (`Scripts/Windows/Run-SyncValidation.ps1`) with clouds enabled, before and after.
+  Before: expect a `SYNC-HAZARD_READ_AFTER_WRITE` naming the cloud output image and the
+  post fragment shader. After: that hazard must be gone and no new one introduced. Also
+  run the full golden suite on the host RX 9070 XT — the frame must be pixel-unchanged,
+  because this adds ordering, not output. `GoldenRender.GuiInputSweepNeverCrashes`
+  toggles `clouds_enabled`, so it exercises both branches.
+
+  **Build:** `.cpp`-only, no `.ixx` touched:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+
+  **Context:** the note at `VulkanRenderer.cpp:917-920` records that a *different*
+  barrier (same-layout swapchain, colour-attachment to colour-attachment) was removed
+  after sync validation showed the render pass's external dependency covered it. That
+  reasoning does not transfer: an `eColorAttachmentOutput` dependency cannot order a
+  compute-shader write. Do not remove or weaken that existing note while editing nearby.
+
+- [ ] **(S) (refactor) Retire `shadow_map.slang`'s local `NUM_CASCADES` in favour of the
+  gated `MAX_CASCADES`** — a third copy of the cascade count that the drift gate cannot
+  see.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang:1-39` — `import
+    scene_types` is already reachable (via `material_fetch`, and `scene_types` is
+    imported transitively; import it directly if it is not).
+  - `Resources/ShadersSlang/common/scene_types.slang:68` — the exported
+    `static const int MAX_CASCADES = 3`.
+  - `Src/GraphicsEngineVulkan/common/host_device_shared_vars.hpp` — the host copy.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:149-156` (`kSharedConstantNames`),
+    `:626-667` (the two pin tests and the `parse_int_constants` /
+    `strip_line_comment` helpers to reuse).
+
+  **Steps:**
+  1. In `shadow_map.slang`, delete `static const int NUM_CASCADES = 3;` (`:8`), add an
+     explicit `import scene_types;` if not already direct, and use `MAX_CASCADES` at the
+     `min(viewId, uint(NUM_CASCADES - 1))` site (`:35`).
+  2. Change `ConstantBuffer<float4x4[3]> lightSpaceMatrices` (`:10`) to
+     `ConstantBuffer<float4x4[MAX_CASCADES]>`. This is the half that actually matters:
+     the literal `3` is the UBO's declared size, so raising `MAX_CASCADES` on both
+     currently-gated sides would leave the shader reading a shorter array than the host
+     writes.
+  3. Recompile the shaders (`Scripts/Windows/compile-slang-shaders.ps1`) and confirm
+     `shadow_map.shadow_vs_main.spv` / `shadow_map.shadow_fs_main.spv` regenerate. Per
+     the warning at the top of this file: **recompile and re-run the integrity tests
+     BEFORE trusting any rendered measurement.**
+
+  **Test:** extend `buildIntegritySuite.cpp` with
+  `BuildIntegrity.NoShaderRedeclaresTheCascadeCount` — scan every `.slang` under
+  `Resources/ShadersSlang/` except `common/scene_types.slang`, strip line comments with
+  the existing `strip_line_comment`, and fail on any `static const` integer definition
+  whose value equals `MAX_CASCADES` and whose name matches `/CASCADE/i`. Assert it fails
+  today against the unmodified `shadow_map.slang` before removing the constant.
+  `BuildIntegrity` should already be in the Windows CI filter, so no `Windows.yml` edit
+  is expected — confirm that rather than assuming it.
+
+  **Build:** shader + test only, no `.ixx`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  then run `commitTestSuite.exe --gtest_filter=BuildIntegrity.*` and the golden shadow
+  tests on the host GPU (`GoldenRender.ShadowsDarkenSomePixels`,
+  `GoldenRender.ShadowsMoveWhenTheLightRotates`) — the shadow output must be identical.
+
+  **Context:** `766bd89c` pinned `MAX_CASCADES` across the host header and
+  `scene_types.slang`, which is exactly the kind of gate that makes a *third* ungated
+  copy dangerous: raising the count would pass both existing pin tests while the shadow
+  pass silently kept clamping to 3. Same failure shape as the generated-WGSL episode in
+  batch VI — the gate looked comprehensive and was not. Do NOT raise `MAX_CASCADES` in
+  this task; the engine's `clampCascadeCount` and multiview limits are a separate
+  decision.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) (refactor) Extract animation sampling out of `forward.rs` into
+  `render/animation.rs`** — ~350 lines of pure-CPU keyframe math live in a 3978-line
+  file that is also the render hub.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/render/forward.rs:3198-3334` — the free functions
+    `keyframe_lerp_indices`, `cubic_spline_weights`, `sample_vec3`, `sample_quat`,
+    `sample_morph_weights`.
+  - `crates/webgpu_renderer/src/render/forward.rs:2392-2465` — `update_joint_matrices`,
+    `apply_morph_targets`, `has_animations`, `animation_duration`, `set_animation_time`
+    (these stay on `ForwardRenderer`; they touch the GPU and its caches).
+  - `crates/webgpu_renderer/src/render/forward.rs:3721-3962` — the existing in-file unit
+    tests for exactly these functions (`cubic_spline_*`, `step_holds_and_linear_*`,
+    `morph_weights_*`); they move with the code.
+  - `crates/webgpu_renderer/src/render/tile_grid.rs` — the precedent extraction
+    (`a1398361`): module doc comment stating the invariant, `pub(crate)` visibility,
+    tests at the bottom of the new file.
+  - `crates/webgpu_renderer/src/render/mod.rs` — where to declare the new module.
+
+  **Steps:**
+  1. Create `crates/webgpu_renderer/src/render/animation.rs` with a module doc comment
+     stating what it owns: pure keyframe sampling (step / linear / cubic-spline) over
+     glTF animation tracks, no GPU types, no `ForwardRenderer`.
+  2. Move the five free functions verbatim. Keep them `pub(crate)`; do not change
+     signatures or behaviour in this task — a behaviour change here is invisible until
+     an animated asset is loaded, and the tests are the only oracle.
+  3. Declare `mod animation;` in `render/mod.rs` and add `use crate::render::animation::{...}`
+     in `forward.rs`. `MAX_JOINTS` stays in `forward.rs` (it is a GPU uniform bound, not
+     sampling math).
+  4. Move the corresponding `#[test]` functions into `animation.rs`'s own `mod tests`.
+     Leave the tests that assert `ForwardRenderer` behaviour
+     (`set_animation_time_recomputes_and_dirties_the_cached_normal_matrix`) in
+     `forward.rs` — that one exercises the renderer's cache, not the sampler.
+  5. Report the before/after line count of `forward.rs` in the commit message.
+
+  **Test:** no new assertions are required — the moved tests are the proof, and they
+  must pass unchanged. Run:
+  `cd ExternalLib/Kataglyphis-RustProjectTemplate && cargo test -p kataglyphis_webgpu_renderer --lib`
+  and `cargo clippy -p kataglyphis_webgpu_renderer --all-targets -- -D warnings`.
+  Also run `cargo test -p kataglyphis_webgpu_renderer --test headless` on the GPU host;
+  the animated-asset paths must be unaffected. If a test moved and then failed, the move
+  was not verbatim — revert and redo rather than adjusting the assertion.
+
+  **Build:** Rust only; no CMake preset involved. Commit in the submodule first, then
+  bump the gitlink in the superproject in the same change (`AGENTS.md` § *Critical
+  Invariant: Submodule Pins*). Note the submodule tree is already dirty
+  (its own `ExternalLib/Kataglyphis-ContainerHub` pin) — do not sweep that into this
+  commit.
+
+  **Context:** `forward.rs` is the Rust mirror of the C++ `VulkanRenderer` hub problem
+  recorded in *Architecture debt not yet sized*, and `tile_grid.rs` established that the
+  productive move is to lift out self-contained CPU math with its tests rather than to
+  attempt a class extraction (the `SwapchainTarget` investigation above is the record of
+  why the latter fails). Animation sampling is the largest remaining block that owns no
+  GPU state. Do NOT also move the bounds/AABB helpers (`transform_aabb`,
+  `primitive_local_aabb`, `compute_world_bounds`, `Frustum`) in this task — they are a
+  second, equally clean extraction and mixing them makes the verbatim-move claim
+  unverifiable.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
