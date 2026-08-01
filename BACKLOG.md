@@ -209,11 +209,16 @@ that are *not* exercised that way and should be run periodically:
   Linux ones; AGENTS.md § "There is no Windows ThreadSanitizer" records it).
   This bullet stays as the record of why a green Windows "TSan" run meant
   nothing.
-- **Synchronization validation** — `khronos_validation.validate_sync = true`
-  in `vk_layer_settings.txt` next to the executable. This found 10 real
-  WRITE-AFTER-WRITE hazards in July 2026; it is not part of any automated
-  run, so it needs a deliberate pass after touching render passes,
-  barriers, or frames-in-flight.
+- **Synchronization validation** — run
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1`
+  (documented in `docs/gpu-golden-testing.md`). It sets
+  `khronos_validation.validate_sync = true` via `Scripts/vk_layer_settings.txt`,
+  copied next to the executable for the run, and exits non-zero on any
+  `SYNC-HAZARD` in the log. This found 10 real WRITE-AFTER-WRITE hazards in
+  July 2026; it is still not part of any automated run (needs a GPU), so it
+  needs a deliberate pass after touching render passes, barriers, or
+  frames-in-flight — the script just makes that pass one command instead of
+  a hand-written layer settings file.
 - **Release build** — the only configuration with logging compiled out and
   validation layers absent; behavioral surprises hide there.
 
@@ -2716,59 +2721,6 @@ nothing, so no SPIR-V or WGSL artifact is tracked in this repo and there is no
 hand-edit surface to guard.
 
 ### C++ Vulkan engine
-
-- [ ] **(S) Check in a synchronization-validation configuration and a runner script** —
-  the recurring sync-validation pass currently requires hand-writing a layer settings
-  file, so in practice it never runs.
-
-  **Files to read:**
-  - `BACKLOG.md` § *Recurring validation runs* — the "Synchronization validation"
-    bullet that describes the manual procedure (and records that it found 10 real
-    WRITE-AFTER-WRITE hazards in July 2026).
-  - `Scripts/Compare-PerfBaseline.ps1` — the precedent for a deliberately
-    not-in-CI, run-it-locally verification script (parameter style, output format).
-  - `Scripts/Windows/run_clangcl_debug.ps1` — how the run helpers set `VK_LAYER_PATH`;
-    note the papercut recorded above (it sets `VK_LAYER_PATH = ''`, which crashes the
-    app with `0xC0000409`) — the new script must set a real path.
-  - `docs/gpu-golden-testing.md` — where the host verification loop is documented.
-
-  **Steps:**
-  1. Add `Scripts/vk_layer_settings.txt` containing at minimum
-     `khronos_validation.validate_sync = true` alongside the normal core/error
-     validation settings. Comment the file: the Vulkan loader reads it from the
-     **current working directory or next to the executable**, which is why the script
-     copies it rather than pointing an env var at it.
-  2. Add `Scripts/Windows/Run-SyncValidation.ps1` that: copies that file next to a
-     given executable (default: the extracted `commitTestSuite.exe` at the repo root),
-     sets `VK_LAYER_PATH` to the host SDK (`C:\VulkanSDK\1.4.350.0\Bin`, overridable
-     by a parameter), runs the executable with a caller-supplied `--gtest_filter`
-     (default the GPU suites: `GoldenRender.*:Integration.*`), tees the output to
-     `logs/sync-validation/<timestamp>.log`, then greps the log for
-     `SYNC-HAZARD` and exits non-zero with a per-hazard summary if any are found.
-     Remove the copied settings file on exit so it cannot silently affect later runs.
-  3. Document it in `docs/gpu-golden-testing.md` (one short section: what it catches
-     that the golden suite does not, and when to run it — after touching render passes,
-     barriers, or frames-in-flight).
-  4. Update the "Synchronization validation" bullet in `BACKLOG.md` to point at the
-     script instead of describing the manual steps.
-
-  **Test:** this is tooling, so the verification is the script itself: run it against
-  the current build and record the hazard list in the commit message. It is expected to
-  report at least the clouds hazard that task 3 below fixes — if it reports **zero**
-  hazards, the harness is not actually enabling sync validation and the script is
-  wrong; check that the settings file landed in the working directory the loader
-  searches. Also add a Pester case under `Scripts/Windows/tests/` asserting the script
-  exits non-zero for a log fixture containing `SYNC-HAZARD` and zero for one without —
-  that part runs without a GPU.
-
-  **Build:** no C++ rebuild needed. Reuse an existing `clangcl-debug`
-  `commitTestSuite.exe`; if none is on the host, build with
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
-  and `docker cp` it out per `AGENTS.md`.
-
-  **Context:** deliberately NOT wired into CI — the GPU suites do not run anywhere but
-  locally (see *CI and release gaps*), so a CI gate here would be vacuous. The point is
-  to turn a procedure nobody performs into one command. Do not make it fail the build.
 
 - [ ] **(S) Synchronize the clouds compute pass with the post pass that samples its
   output** — a compute storage-image write is read by a fragment shader with no barrier

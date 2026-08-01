@@ -72,6 +72,32 @@ this way: "compressed vs clipped" is ambiguous without a control, so a robust
 oracle must key on a property the effect uniquely produces (e.g. retained
 variation), not just "brighter" or "darker".
 
+## Synchronization validation
+
+The golden/integration suites above catch behaviour-visible regressions;
+Vulkan's `khronos_validation.validate_sync` layer setting catches a
+different class of bug that a pixel oracle cannot see: a missing or
+incorrect barrier between two GPU commands that read or write the same
+resource (WRITE-AFTER-WRITE, READ-AFTER-WRITE, WRITE-AFTER-READ). It found
+10 real WRITE-AFTER-WRITE hazards in July 2026. It is expensive (extra
+per-command tracking), which is why it is off by default and not part of
+the debug build's normal validation layers.
+
+Run it after touching render passes, barriers, or frames-in-flight:
+
+```
+pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1
+```
+
+This builds on the same `commitTestSuite.exe` as above (repo root or
+`build-clangcl-debug\`, same working-directory requirement), copies
+`Scripts/vk_layer_settings.txt` next to it for the duration of the run (the
+Vulkan loader reads `vk_layer_settings.txt` from the CWD or the executable's
+directory - there is no path env var for it), and exits non-zero with a
+per-hazard summary if the run's log contains `SYNC-HAZARD`. Deliberately not
+wired into CI, for the same reason as the golden suites: the GPU is required
+and unavailable there.
+
 ## Known issue: path-tracing compute device-lost on the large dinosaur mesh
 
 `GoldenRender.PathTracingAccumulatesAndConverges`,
