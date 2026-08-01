@@ -63,7 +63,9 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
     miss_region.deviceAddress = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetBufferDeviceAddress(
       static_cast<VkDevice>(logical_device), reinterpret_cast<VkBufferDeviceAddressInfo *>(&bufferDeviceAI));
     miss_region.stride = handle_size_aligned;
-    miss_region.size = handle_size_aligned;
+    // Two miss records live in this region: index 0 (primary miss) and index 1
+    // (shadow miss, see raytrace.rchit.slang's shadow TraceRay).
+    miss_region.size = 2 * handle_size_aligned;
 
     bufferDeviceAI.buffer = hitShaderBindingTableBuffer.getBuffer();
     hit_region.deviceAddress = VULKAN_HPP_DEFAULT_DISPATCHER.vkGetBufferDeviceAddress(
@@ -313,13 +315,19 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
       vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
     const vk::MemoryAllocateFlags memoryAllocateFlags = vk::MemoryAllocateFlagBits::eDeviceAddress;
 
+    // The blob returned by getRayTracingShaderGroupHandlesKHR is packed at
+    // handle_size; the SBT device records below must each start at a
+    // handle_size_aligned offset. These strides differ whenever the device's
+    // shaderGroupHandleAlignment is larger than shaderGroupHandleSize, so the
+    // two are kept as distinct constants rather than collapsed into one.
     raygenShaderBindingTableBuffer.create(
-      device, handle_size, bufferUsageFlags, memoryPropertyFlags, memoryAllocateFlags);
+      device, handle_size_aligned, bufferUsageFlags, memoryPropertyFlags, memoryAllocateFlags);
 
     missShaderBindingTableBuffer.create(
-      device, 2 * handle_size, bufferUsageFlags, memoryPropertyFlags, memoryAllocateFlags);
+      device, 2 * handle_size_aligned, bufferUsageFlags, memoryPropertyFlags, memoryAllocateFlags);
 
-    hitShaderBindingTableBuffer.create(device, handle_size, bufferUsageFlags, memoryPropertyFlags, memoryAllocateFlags);
+    hitShaderBindingTableBuffer.create(
+      device, handle_size_aligned, bufferUsageFlags, memoryPropertyFlags, memoryAllocateFlags);
 
     // SBT buffers are host-visible and therefore persistently mapped by VMA.
     void *mapped_raygen = raygenShaderBindingTableBuffer.getMappedData();
@@ -328,7 +336,17 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
 
     void *mapped_rchit = hitShaderBindingTableBuffer.getMappedData();
 
-    memcpy(mapped_raygen, handles.data(), handle_size);
-    memcpy(mapped_miss, handles.data() + handle_size_aligned, handle_size * 2);
-    memcpy(mapped_rchit, handles.data() + (handle_size_aligned * 3), handle_size);
+    // Group layout: 0 raygen, 1 miss, 2 shadow miss, 3 triangles-hit.
+    memcpy(mapped_raygen,
+      handles.data() + sbt_handle_source_offset(0, handle_size),
+      handle_size);
+    memcpy(static_cast<uint8_t *>(mapped_miss) + sbt_record_offset(0, handle_size_aligned),
+      handles.data() + sbt_handle_source_offset(1, handle_size),
+      handle_size);
+    memcpy(static_cast<uint8_t *>(mapped_miss) + sbt_record_offset(1, handle_size_aligned),
+      handles.data() + sbt_handle_source_offset(2, handle_size),
+      handle_size);
+    memcpy(mapped_rchit,
+      handles.data() + sbt_handle_source_offset(3, handle_size),
+      handle_size);
 }

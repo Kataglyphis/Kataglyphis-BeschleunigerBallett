@@ -3558,7 +3558,29 @@ span.
 
 ### C++ Vulkan engine
 
-- [ ] **(M) Fix the ray-tracing SBT: the miss region declares one record while the shadow ray reads record 1, and handle offsets assume the device stride** — a spec violation that is invisible only because `shaderGroupHandleAlignment == shaderGroupHandleSize` on this GPU.
+- [b] **(M) Fix the ray-tracing SBT: the miss region declares one record while the shadow ray reads record 1, and handle offsets assume the device stride** — a spec violation that is invisible only because `shaderGroupHandleAlignment == shaderGroupHandleSize` on this GPU.
+
+  **Status (2026-08-01): code fix implemented and committed, GPU verification blocked.**
+  All steps 1-5 below are done: `sbt_handle_source_offset`/`sbt_record_offset`
+  extracted into `MemoryHelper.hpp`, `createSBT` fixed to source at
+  packed `handle_size` and write records at aligned `handle_size_aligned`
+  offsets, `miss_region.size` widened to `2 * handle_size_aligned`, and the
+  two new `MemoryHelperUnit` CPU tests (plus a no-op-on-this-hardware
+  regression test) added and green in the `clangcl-debug` container build.
+  **GPU-verify could not be run**: the host RDP session (`jonas`, session 2)
+  is currently disconnected, and *every* `GoldenRender.*` test fails
+  identically — including `GoldenRender.RendersNonBlankFrame`, which has
+  nothing to do with ray tracing — with `No synchronization frames
+  available; skipping draw frame.` from frame 0 and `frame.empty() == true`.
+  This reproduces with or without this change (confirmed via baseline test)
+  and persists across repeated runs and a 20s wait, so it is not the known
+  `PathTracingAccumulatesAndConverges` device-lost issue recovering slowly —
+  it looks like swapchain presentation is unavailable to a disconnected
+  session on this box. `tscon 2 /dest:console` failed with access denied
+  (needs admin). Next executor with a live/attached GPU session: rerun
+  `.\commitTestSuite.exe --gtest_filter='GoldenRender.Raytrac*:GoldenRender.*Raytraced*:GoldenRender.PathTracing*:GoldenRender.AddedModelAppearsInPathTracing'`
+  and `Run-SyncValidation.ps1` from repo root to close this out, then delete
+  this entry.
 
   **Files to read:**
   - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp:289-334` (`createSBT`),
