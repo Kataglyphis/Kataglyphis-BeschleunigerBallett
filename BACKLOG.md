@@ -3963,7 +3963,15 @@ is gitignored.
   comparing forward against forward — treat a suspiciously small diff as
   evidence of that failure mode recurring, not as good news.
 
-- [ ] **(S) (refactor) Give the fullscreen uv↔NDC round trip one definition, and pin it** — `deferred.slang` re-declares `fullscreen.slang`'s vertex output and vertex shader verbatim, which is how its inverse drifted.
+- [b] **(S) (refactor) Give the fullscreen uv↔NDC round trip one definition, and pin it** — `deferred.slang` re-declares `fullscreen.slang`'s vertex output and vertex shader verbatim, which is how its inverse drifted.
+
+  **BLOCKED 2026-08-02:** This task's own **Context** says to do it "after task 2
+  [the deferred-mirror fix] and not concurrently — both edit `deferred.slang`",
+  and its **Test** section requires re-running `GoldenRender.*` on the host GPU
+  to confirm the refactor is pixel-neutral. The deferred-mirror fix is itself
+  blocked on the same host-GPU verification (see the entry above), so both its
+  prerequisite and its own acceptance test are unavailable right now. Re-attempt
+  after the deferred-mirror task unblocks.
 
   **Files to read:**
   - `Resources/ShadersSlang/common/fullscreen.slang:1-27` — `FullscreenVsOut`,
