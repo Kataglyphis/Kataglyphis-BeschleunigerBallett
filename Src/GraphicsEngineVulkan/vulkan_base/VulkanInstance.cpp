@@ -69,14 +69,17 @@ Kataglyphis::VulkanInstance::VulkanInstance()
 
     // check instance extensions supported
     if (!check_instance_extension_support(&instance_extensions)) {
-        spdlog::error("VkInstance does not support required extensions!");
+        spdlog::critical("VkInstance does not support required extensions!");
+        std::abort();
     }
 
     create_info.enabledExtensionCount = static_cast<uint32_t>(instance_extensions.size());
     create_info.ppEnabledExtensionNames = instance_extensions.data();
 
     // create instance
-    instance = vk::createInstance(create_info).value;
+    vk::ResultValue<vk::Instance> instance_result = vk::createInstance(create_info);
+    ASSERT_VULKAN(instance_result.result, "Failed to create vulkan instance!")
+    instance = instance_result.value;
 
     VULKAN_HPP_DEFAULT_DISPATCHER.init(instance);
 }
@@ -117,7 +120,10 @@ auto Kataglyphis::VulkanInstance::check_instance_extension_support(std::vector<c
             }
         }
 
-        if (!has_extension) { return false; }
+        if (!has_extension) {
+            spdlog::critical("Required instance extension not supported: {}", check_extension);
+            return false;
+        }
     }
 
     return true;

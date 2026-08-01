@@ -2,6 +2,7 @@ module;
 #include <memory>
 
 #include "spdlog/spdlog.h"
+#include "common/Utilities.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -246,7 +247,9 @@ void Kataglyphis::Texture::createTextureSampler(std::shared_ptr<VulkanDevice>in_
     samplerInfo.compareEnable = VK_FALSE;
     samplerInfo.compareOp = vk::CompareOp::eAlways;
 
-    textureSampler = device->getLogicalDevice().createSampler(samplerInfo).value;
+    vk::ResultValue<vk::Sampler> sampler_result = device->getLogicalDevice().createSampler(samplerInfo);
+    ASSERT_VULKAN(sampler_result.result, "Failed to create texture sampler!")
+    textureSampler = sampler_result.value;
 }
 
 void Kataglyphis::Texture::cleanUp()

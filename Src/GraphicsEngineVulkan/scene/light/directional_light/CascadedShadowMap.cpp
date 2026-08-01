@@ -290,10 +290,7 @@ void CascadedShadowMap::createDescriptorSetAndPipeline()
     poolCreateInfo.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
     poolCreateInfo.queueFamilyIndex = static_cast<uint32_t>(device->getQueueFamilies().graphics_family);
     auto poolResult = device->getLogicalDevice().createCommandPool(poolCreateInfo);
-    if (poolResult.result != vk::Result::eSuccess) {
-        spdlog::error("Failed to create transfer command pool for cascaded shadow map! Error: {}", static_cast<int>(poolResult.result));
-        std::abort();
-    }
+    ASSERT_VULKAN(VkResult(poolResult.result), "Failed to create transfer command pool for cascaded shadow map!");
     transferCommandPool = poolResult.value;
 
     VulkanBufferManager vbm;

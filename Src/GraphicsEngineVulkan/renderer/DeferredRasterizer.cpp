@@ -330,7 +330,10 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &push_constant_range;
 
-    geometryPipelineLayout = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo).value;
+    vk::ResultValue<vk::PipelineLayout> geometry_pipeline_layout_result =
+      device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
+    ASSERT_VULKAN(geometry_pipeline_layout_result.result, "Failed to create deferred geometry pipeline layout!")
+    geometryPipelineLayout = geometry_pipeline_layout_result.value;
 
     PipelineBuilder geometryPipelineBuilder;
     geometryPipeline =
@@ -359,7 +362,10 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
     lightPipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
     // No push constants for lighting pass usually, or same if needed
 
-    lightingPipelineLayout = device->getLogicalDevice().createPipelineLayout(lightPipelineLayoutInfo).value;
+    vk::ResultValue<vk::PipelineLayout> lighting_pipeline_layout_result =
+      device->getLogicalDevice().createPipelineLayout(lightPipelineLayoutInfo);
+    ASSERT_VULKAN(lighting_pipeline_layout_result.result, "Failed to create deferred lighting pipeline layout!")
+    lightingPipelineLayout = lighting_pipeline_layout_result.value;
 
     PipelineBuilder lightingPipelineBuilder;
     lightingPipeline = lightingPipelineBuilder.setShaderStages({ lightStages.begin(), lightStages.end() })

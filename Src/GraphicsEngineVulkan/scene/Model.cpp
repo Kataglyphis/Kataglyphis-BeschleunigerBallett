@@ -81,10 +81,8 @@ void Model::addSampler(const Texture &newTexture)
       aniso ? 16.0F : 1.0F,
       vk::BorderColor::eFloatOpaqueBlack);
 
-    // TODO: unlike PostStage/Texture, this ignores sampler_result.result instead
-    // of ASSERT_VULKAN-ing it before taking .value - a pre-existing inconsistency,
-    // preserved here rather than folded into this consolidation.
     vk::ResultValue<vk::Sampler> sampler_result = device->getLogicalDevice().createSampler(sampler_create_info);
+    ASSERT_VULKAN(sampler_result.result, "Failed to create texture sampler!")
     vk::Sampler newSampler = sampler_result.value;
 
     modelTextureSamplers.push_back(newSampler);

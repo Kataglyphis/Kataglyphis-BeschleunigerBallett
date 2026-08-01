@@ -208,7 +208,10 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
     compute_pipeline_layout_create_info.pPushConstantRanges = &push_constant_range;
     compute_pipeline_layout_create_info.pSetLayouts = descriptorSetLayouts.data();
 
-    pipeline_layout = device->getLogicalDevice().createPipelineLayout(compute_pipeline_layout_create_info).value;
+    vk::ResultValue<vk::PipelineLayout> pipeline_layout_result =
+      device->getLogicalDevice().createPipelineLayout(compute_pipeline_layout_create_info);
+    ASSERT_VULKAN(pipeline_layout_result.result, "Failed to create path tracing pipeline layout!")
+    pipeline_layout = pipeline_layout_result.value;
 
     // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
     // Run from the repo root (per AGENTS.md).

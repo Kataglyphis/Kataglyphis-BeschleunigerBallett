@@ -8,6 +8,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <algorithm>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -451,4 +452,146 @@ TEST(BuildIntegrity, SharedConstantsMatchTheCompiledHostValues)
     EXPECT_EQ(shader.at("TLAS_BINDING"), TLAS_BINDING);
     EXPECT_EQ(shader.at("OUT_IMAGE_BINDING"), OUT_IMAGE_BINDING);
     EXPECT_EQ(shader.at("ACCUMULATION_IMAGE_BINDING"), ACCUMULATION_IMAGE_BINDING);
+}
+
+namespace {
+
+// file (relative to Src/GraphicsEngineVulkan/, forward slashes) : line
+// (1-based, of the ".value" read) -> a deliberate exception to the rule
+// below, with the reason it does not need ASSERT_VULKAN. This is not a way
+// to silence a real gap - every entry must be justified.
+struct AllowlistEntry
+{
+    std::string file;
+    int line;
+};
+
+const std::vector<AllowlistEntry> kCheckedResultAllowlist = {
+    // Pipeline cache is a performance optimization, not a correctness
+    // requirement: a corrupt/stale on-disk cache (e.g. after a driver
+    // update) must not be fatal. Already checked a few lines above - falls
+    // back to a null cache and logs a warning instead of aborting.
+    { "vulkan_base/VulkanDevice.cpp", 231 },
+    // Already fatal: spdlog::critical + std::abort() a few lines above,
+    // just not spelled with the ASSERT_VULKAN macro (the message embeds the
+    // numeric vk::Result, which the macro's fixed string cannot).
+    { "vulkan_base/ShaderHelper.cpp", 37 },
+    // Deliberately non-fatal: cloud noise generation is a one-shot compute
+    // dispatch. If the transient command pool fails to create, the dispatch
+    // is skipped (logged) rather than aborting the whole renderer over an
+    // atmospheric effect.
+    { "scene/atmospheric_effects/clouds/Clouds.cpp", 249 },
+};
+
+bool is_allowlisted_result_check(const std::string &relative_file, int line)
+{
+    return std::any_of(kCheckedResultAllowlist.begin(), kCheckedResultAllowlist.end(), [&](const AllowlistEntry &entry) {
+        return entry.line == line && entry.file == relative_file;
+    });
+}
+
+// True if `line` calls something that looks like a Vulkan/VMA creation or
+// allocation function: the keyword immediately followed by an uppercase
+// letter (Vulkan's camelCase naming, e.g. "createDescriptorPool",
+// "vmaCreateAllocator") and, after any further identifier characters, an
+// opening paren. The uppercase requirement is what tells a real Vulkan call
+// apart from an unrelated identifier that merely contains the keyword, such
+// as std::filesystem::create_directories(...) or a "..._create_info"
+// struct-field reference - both continue with '_', not a capital letter.
+// The left-boundary check similarly rejects "recreateSwapChain(", where
+// "create" is not a word start. Reuses is_identifier_char from the
+// constant-parsing helpers above.
+bool looks_like_creation_call(const std::string &line)
+{
+    static const std::vector<std::string> keywords = { "create", "Create", "allocate", "Allocate" };
+    for (const auto &keyword : keywords) {
+        std::size_t pos = 0;
+        while ((pos = line.find(keyword, pos)) != std::string::npos) {
+            const bool left_ok = pos == 0 || !is_identifier_char(line[pos - 1]);
+            const std::size_t after_keyword = pos + keyword.size();
+            const bool camel_case_continuation =
+              after_keyword < line.size() && std::isupper(static_cast<unsigned char>(line[after_keyword])) != 0;
+            if (left_ok && camel_case_continuation) {
+                std::size_t scan = after_keyword;
+                while (scan < line.size() && is_identifier_char(line[scan])) { ++scan; }
+                while (scan < line.size() && std::isspace(static_cast<unsigned char>(line[scan])) != 0) { ++scan; }
+                if (scan < line.size() && line[scan] == '(') { return true; }
+            }
+            pos += keyword.size();
+        }
+    }
+    return false;
+}
+
+}// namespace
+
+// The instance-extension check used to detect a missing extension, log it,
+// and then build a vk::Instance from a createInstance() call whose
+// ResultValue was never checked one line later - a failure would silently
+// continue with a null-handle instance. Exceptions are disabled project-wide
+// (VULKAN_HPP_NO_EXCEPTIONS), so ASSERT_VULKAN's log-critical-and-abort is the
+// only fail-fast mechanism available; a missed check is a straight path to a
+// null-handle dereference downstream.
+//
+// This test scans every .cpp under Src/GraphicsEngineVulkan/ for a
+// vk::ResultValue::value read with no ASSERT_VULKAN nearby. It cannot
+// understand control flow, so it looks in a window around the ".value" read
+// on both sides - the check-then-assign idiom used throughout the codebase
+// puts ASSERT_VULKAN just above the read, but Rasterizer.cpp and
+// DeferredRasterizer.cpp instead assign inside an `if (result == eSuccess)`
+// with ASSERT_VULKAN in the `else`, which is a few lines *below* the read.
+TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path engine_root = repo_root / "Src" / "GraphicsEngineVulkan";
+    ASSERT_TRUE(fs::exists(engine_root)) << "missing " << engine_root.string();
+
+    constexpr int kWindow = 8;
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(engine_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".cpp") { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::vector<std::string> lines;
+        std::string raw_line;
+        while (std::getline(file, raw_line)) { lines.push_back(raw_line); }
+
+        for (std::size_t i = 0; i < lines.size(); ++i) {
+            if (lines[i].find(".value") == std::string::npos) { continue; }
+
+            const std::size_t window_begin = (i >= static_cast<std::size_t>(kWindow)) ? i - kWindow : 0;
+            const std::size_t window_end = std::min(lines.size() - 1, i + static_cast<std::size_t>(kWindow));
+
+            bool triggered = false;
+            bool asserted = false;
+            for (std::size_t w = window_begin; w <= window_end; ++w) {
+                if (w <= i && looks_like_creation_call(lines[w])) { triggered = true; }
+                if (lines[w].find("ASSERT_VULKAN") != std::string::npos) { asserted = true; }
+            }
+            if (!triggered || asserted) { continue; }
+
+            const std::string relative_file = fs::relative(path, engine_root).generic_string();
+            if (is_allowlisted_result_check(relative_file, static_cast<int>(i + 1))) { continue; }
+
+            violations.push_back(relative_file + ":" + std::to_string(i + 1) + ": " + lines[i]);
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " Vulkan creation/allocation result(s) read via .value with no ASSERT_VULKAN nearby "
+         "(exceptions are disabled project-wide, so a failed creation call must abort rather than "
+         "continue into a null-handle dereference; add ASSERT_VULKAN, or for a deliberate exception "
+         "add a justified entry to kCheckedResultAllowlist above):"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
 }
