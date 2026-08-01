@@ -76,8 +76,20 @@ macro(myproject_apply_compiler_build_flags)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -std=c++23 -DNDEBUG")
     set(CMAKE_CXX_FLAGS_PROFILE "${CMAKE_CXX_FLAGS_PROFILE} -O3 -std=c++23 -DNDEBUG")
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND MSVC)
+    # Pin the MSVC-compatibility version clang-cl embeds into every object file
+    # and C++20 module interface (.pcm). Left to auto-detection, this value has
+    # been observed to differ between clang-cl invocations within the SAME
+    # build (e.g. 19.51.36248 vs 19.51.36252) even though only one VC Tools
+    # version (14.51.36231) is installed, which makes clang-cl reject a
+    # module's .pcm as version-mismatched against whatever a sibling
+    # translation unit picked up moments later - "Microsoft Visual C/C++
+    # Version differs in precompiled file ... configuration mismatch"
+    # (observed 2026-08-01, reproduced across independent container builds).
+    # Pinning removes the ambiguity: every translation unit now requests the
+    # identical, explicit version instead of relying on per-invocation
+    # detection.
     set(_CLANG_CL_SAFE_WARNINGS
-        "-fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-error=character-conversion -Wno-unknown-warning-option -Wno-error=unknown-warning-option")
+        "-fms-compatibility-version=19.51.36231 -fcolor-diagnostics -Wno-error=unused-command-line-argument -Wno-error=character-conversion -Wno-unknown-warning-option -Wno-error=unknown-warning-option")
     myproject_strip_msvc_debug_runtime_flags()
     if(myproject_ENABLE_SANITIZER_ADDRESS)
       myproject_strip_clang_cl_asan_debug_runtime_flags()
