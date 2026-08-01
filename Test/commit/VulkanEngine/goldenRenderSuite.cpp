@@ -735,6 +735,51 @@ TEST(GoldenRender, ShadowCasterStatsAreReportedAndZeroWhenShadowsAreOff)
       << "shadow caster counters must be zeroed when the shadow pass does not run";
 }
 
+// frustum_culling_enabled used to gate only the two raster paths; the shadow
+// pass culled against the cascade frusta unconditionally, so the checkbox
+// could not explain a shadow caster that silently vanished. This proves the
+// switch now reaches the shadow pass too.
+//
+// The default scene's casters all already sit inside every cascade's fitted
+// ortho box, so drawn == considered there regardless of the flag - testing
+// against the default scene alone would pass vacuously even without the fix.
+// A caster placed far outside the camera's view (and therefore outside the
+// union of cascade frusta) is what makes "culling on" vs "culling off"
+// observable in the shadow pass at all.
+TEST(GoldenRender, DisablingFrustumCullingAlsoDisablesShadowCasterCulling)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+
+    scene_vars.shadows_enabled = true;
+
+    const glm::mat4 far_placement = glm::translate(glm::mat4(1.0F), glm::vec3(5000.0F, 0.0F, 0.0F));
+    const std::optional<uint32_t> far_model = harness.renderer->addModel(SHADOW_RIG_MODEL, far_placement);
+    ASSERT_TRUE(far_model.has_value()) << "the far-away caster model failed to load";
+
+    renderer_vars.frustum_culling_enabled = false;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    ASSERT_GT(renderer_vars.visibility.shadow_casters_total, 0U)
+      << "the renderer reported considering no shadow casters at all; "
+         "the shadow visibility counters are not being written";
+    EXPECT_EQ(renderer_vars.visibility.shadow_casters_drawn, renderer_vars.visibility.shadow_casters_total)
+      << "with frustum culling disabled, every shadow caster must be drawn regardless of the cascade frusta";
+
+    renderer_vars.frustum_culling_enabled = true;
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    EXPECT_LE(renderer_vars.visibility.shadow_casters_drawn, renderer_vars.visibility.shadow_casters_total);
+}
+
 // The GPU counterpart of CascadedShadowMapUnit.CascadesRespondToLightDirection
 // (cascadedShadowMapSuite.cpp:288): that test proves the light direction
 // reaches the cascade matrices, this one proves it reaches the pixels.

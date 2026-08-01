@@ -954,7 +954,8 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
         if (guiSceneSharedVars.shadows_enabled) {
             Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "shadow_cascades", { 0.55F, 0.35F, 0.10F, 1.0F });
             write_pass_timestamp(GpuTimedPass::ShadowCascades, true);
-            dirShadowMap.recordCommands(commandBuffer, image_index, scene, rasterizer_descriptor_sets);
+            dirShadowMap.recordCommands(
+              commandBuffer, image_index, scene, rasterizer_descriptor_sets, guiRendererSharedVars.frustum_culling_enabled);
             write_pass_timestamp(GpuTimedPass::ShadowCascades, false);
             mutable_gui_vars.visibility.shadow_casters_drawn = dirShadowMap.getCastersDrawn();
             mutable_gui_vars.visibility.shadow_casters_total = dirShadowMap.getCastersConsidered();

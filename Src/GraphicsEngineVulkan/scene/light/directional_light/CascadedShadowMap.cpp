@@ -428,7 +428,7 @@ void CascadedShadowMap::createGraphicsPipeline()
     device->getLogicalDevice().destroyShaderModule(fragModule);
 }
 
-void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, std::span<const vk::DescriptorSet> descriptorSets)
+void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, std::span<const vk::DescriptorSet> descriptorSets, bool cullingEnabled)
 {
     castersDrawn = 0;
     castersConsidered = 0;
@@ -446,8 +446,10 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
         return;
     }
     std::array<FrustumPlanes, MAX_CASCADES> cascadeFrusta{};
-    for (uint32_t cascade = 0; cascade < numCascades; cascade++) {
-        cascadeFrusta[cascade] = extractFrustumPlanes(cascadeData[cascade].viewProjMatrix);
+    if (cullingEnabled) {
+        for (uint32_t cascade = 0; cascade < numCascades; cascade++) {
+            cascadeFrusta[cascade] = extractFrustumPlanes(cascadeData[cascade].viewProjMatrix);
+        }
     }
 
     vk::RenderPassBeginInfo renderPassInfo{};
@@ -504,11 +506,13 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
             const uint32_t object_index = flat_mesh_index++;
             ++castersConsidered;
             const AABB casterBounds = transformAABB(modelMatrix, scene->getMeshBounds(m, k));
-            bool visible_in_any_cascade = false;
-            for (uint32_t cascade = 0; cascade < numCascades; cascade++) {
-                if (isVisibleAsShadowCaster(cascadeFrusta[cascade], casterBounds)) {
-                    visible_in_any_cascade = true;
-                    break;
+            bool visible_in_any_cascade = !cullingEnabled;
+            if (cullingEnabled) {
+                for (uint32_t cascade = 0; cascade < numCascades; cascade++) {
+                    if (isVisibleAsShadowCaster(cascadeFrusta[cascade], casterBounds)) {
+                        visible_in_any_cascade = true;
+                        break;
+                    }
                 }
             }
             if (!visible_in_any_cascade) { continue; }

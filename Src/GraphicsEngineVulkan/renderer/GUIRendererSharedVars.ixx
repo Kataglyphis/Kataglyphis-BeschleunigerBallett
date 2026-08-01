@@ -62,15 +62,14 @@ struct GUIRendererSharedVars
     bool pathTracing = false;
 
     bool shader_hot_reload_triggered = false;
-    /// CPU frustum culling for the raster paths. A switch rather than a
-    /// constant because culling is the one optimisation that can silently
-    /// delete visible geometry - when something goes missing, being able to
-    /// turn it off tells you in one click whether culling is the cause.
-    /// Gates ONLY the camera-frustum cull used by the two raster paths
-    /// (VulkanRenderer::record_commands). The cascade pass culls
-    /// unconditionally against the cascade frusta
-    /// (CascadedShadowMap::recordCommands) and this switch does not turn
-    /// that off.
+    /// CPU frustum culling. A switch rather than a constant because culling
+    /// is the one optimisation that can silently delete visible geometry -
+    /// when something goes missing, being able to turn it off tells you in
+    /// one click whether culling is the cause. Gates the camera-frustum cull
+    /// used by the two raster paths (VulkanRenderer::record_commands) AND
+    /// the cascade-frustum cull in the shadow pass
+    /// (CascadedShadowMap::recordCommands), so the checkbox answers "is
+    /// culling why this is missing" for shadows too.
     bool frustum_culling_enabled = true;
 
     // Per-pass GPU timings, written by the renderer, read by the GUI.
