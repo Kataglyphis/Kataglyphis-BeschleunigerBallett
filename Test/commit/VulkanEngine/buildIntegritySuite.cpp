@@ -852,6 +852,145 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
 
 namespace {
 
+// One `export module <name>;` declaration found in an .ixx file.
+struct ModuleInterface
+{
+    std::string name;
+    fs::path path;// absolute path of the declaring .ixx
+};
+
+// Extracts the module name from a line of the form "<prefix><name>;",
+// trimming surrounding whitespace. Returns an empty string if `line` does
+// not start with `prefix` or has no terminating ';'.
+std::string extract_module_name(const std::string &line, const std::string &prefix)
+{
+    if (line.compare(0, prefix.size(), prefix) != 0) { return {}; }
+    const std::string rest = line.substr(prefix.size());
+    const auto semicolon = rest.find(';');
+    if (semicolon == std::string::npos) { return {}; }
+
+    const std::string name = rest.substr(0, semicolon);
+    const auto first = name.find_first_not_of(" \t");
+    if (first == std::string::npos) { return {}; }
+    const auto last = name.find_last_not_of(" \t");
+    return name.substr(first, last - first + 1);
+}
+
+// Every `export module <name>;` interface under `src_root`. Primary module
+// interfaces only (the project has no module partitions today); a file is
+// assumed to declare at most one module.
+std::vector<ModuleInterface> collect_module_interfaces(const fs::path &src_root)
+{
+    std::vector<ModuleInterface> modules;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        if (!it->is_regular_file(error) || it->path().extension() != ".ixx") { continue; }
+
+        std::ifstream file(it->path());
+        if (!file) { continue; }
+        std::string line;
+        while (std::getline(file, line)) {
+            const std::string name = extract_module_name(line, "export module ");
+            if (!name.empty()) {
+                modules.push_back({ name, it->path() });
+                break;
+            }
+        }
+    }
+    return modules;
+}
+
+// name -> generic-string paths of every .cpp/.ixx file under `roots`
+// containing an `import <name>;` or `export import <name>;` line.
+std::map<std::string, std::set<std::string>> collect_module_importers(const std::vector<fs::path> &roots)
+{
+    std::map<std::string, std::set<std::string>> importers;
+    std::error_code error;
+    for (const auto &root : roots) {
+        for (fs::recursive_directory_iterator it(root, error), end; it != end; it.increment(error)) {
+            if (error) { break; }
+            const fs::path &path = it->path();
+            if (!it->is_regular_file(error)) { continue; }
+            const auto extension = path.extension();
+            if (extension != ".cpp" && extension != ".ixx") { continue; }
+
+            std::ifstream file(path);
+            if (!file) { continue; }
+            std::string line;
+            while (std::getline(file, line)) {
+                std::string name = extract_module_name(line, "export import ");
+                if (name.empty()) { name = extract_module_name(line, "import "); }
+                if (!name.empty()) { importers[name].insert(path.generic_string()); }
+            }
+        }
+    }
+    return importers;
+}
+
+}// namespace
+
+// A module interface (.ixx) that nothing imports is still compiled into
+// every build - Src/GraphicsEngineVulkan/CMakeLists.txt globs *.ixx into
+// VulkanEngineCore's CXX_MODULES file set unconditionally - and is rescanned
+// by clang-scan-deps on every configure. Two such modules
+// (kataglyphis.shared.scene.vertex / kataglyphis.shared.scene.obj_material)
+// existed for no reason but that nobody deleted their wrapper .ixx after the
+// equivalent kataglyphis.vulkan.vertex / kataglyphis.vulkan.obj_material
+// modules were introduced - a standing trap, since both pairs exported the
+// same `::Vertex` / `::ObjMaterial` type. This test asserts the set of
+// interfaces with zero importers stays empty, so a module that loses its
+// last importer is caught instead of silently becoming build-time-only
+// weight.
+TEST(BuildIntegrity, EveryModuleInterfaceIsImported)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    const std::vector<ModuleInterface> modules = collect_module_interfaces(src_root);
+    ASSERT_GT(modules.size(), 10U) << "found suspiciously few module interfaces under " << src_root.string()
+                                   << " - the scan itself is likely broken";
+
+    const std::vector<fs::path> search_roots = { src_root, repo_root / "Test" };
+    const std::map<std::string, std::set<std::string>> importers = collect_module_importers(search_roots);
+
+    // Modules with a justified reason to have no importer (e.g. a
+    // consciously-rootless entry point module). Empty today - an entry here
+    // requires a written reason, not just a failing test.
+    const std::set<std::string> allowed_rootless_modules = {};
+
+    std::vector<std::string> unimported;
+    for (const auto &iface : modules) {
+        if (allowed_rootless_modules.contains(iface.name)) { continue; }
+
+        const auto it = importers.find(iface.name);
+        const std::string declaring_path = iface.path.generic_string();
+        const bool imported_elsewhere = it != importers.end()
+          && std::any_of(it->second.begin(), it->second.end(), [&](const std::string &importer_path) {
+                 return importer_path != declaring_path;
+             });
+
+        if (!imported_elsewhere) {
+            unimported.push_back(iface.name + " (" + fs::relative(iface.path, repo_root).generic_string() + ")");
+        }
+    }
+
+    EXPECT_TRUE(unimported.empty())
+      << unimported.size()
+      << " module interface(s) have no importer anywhere under Src/ or Test/ - either delete the dead module, "
+         "or if it is deliberately rootless, add a justified entry to allowed_rootless_modules above: "
+      << [&unimported] {
+             std::string joined;
+             for (const auto &entry : unimported) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+namespace {
+
 // file (relative to Src/GraphicsEngineVulkan/, forward slashes) : line
 // (1-based, of the ".value" read) -> a deliberate exception to the rule
 // below, with the reason it does not need ASSERT_VULKAN. This is not a way

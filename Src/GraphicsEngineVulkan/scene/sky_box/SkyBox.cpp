@@ -10,7 +10,6 @@ module;
 #include <stb_image.h>
 #include <spdlog/spdlog.h>
 #include <glm/glm.hpp>
-#include "shared/scene/Vertex.hpp"
 #include "shared/scene/ObjMaterial.hpp"
 
 #include "common/Utilities.hpp"
