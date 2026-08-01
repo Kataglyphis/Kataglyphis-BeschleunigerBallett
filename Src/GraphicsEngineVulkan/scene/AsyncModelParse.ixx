@@ -1,7 +1,5 @@
 module;
-#include <algorithm>
 #include <atomic>
-#include <cctype>
 #include <memory>
 #include <string>
 #include <thread>
@@ -10,6 +8,7 @@ export module kataglyphis.vulkan.async_model_parse;
 
 import kataglyphis.vulkan.gltf_loader;
 import kataglyphis.vulkan.obj_loader;
+import kataglyphis.vulkan.model_file_kind;
 
 export namespace Kataglyphis {
 
@@ -53,7 +52,7 @@ class AsyncModelParse
 
         // Dispatch by extension. The OBJ path is unchanged; glTF gets a parallel
         // one so both load off the render thread.
-        if (isGltfPath(modelFile)) {
+        if (isGltfModelPath(modelFile)) {
             gltfLoader = std::make_unique<GltfLoader>();// device-free
             worker = std::thread([this] {
                 const bool ok = gltfLoader->parseCpu(path);
@@ -120,17 +119,6 @@ class AsyncModelParse
     }
 
   private:
-    /// True for `.gltf`/`.glb` (case-insensitive), matching Scene's sync
-    /// dispatch.
-    static bool isGltfPath(const std::string &modelFile)
-    {
-        std::string lower = modelFile;
-        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
-            return static_cast<char>(std::tolower(c));
-        });
-        return lower.ends_with(".gltf") || lower.ends_with(".glb");
-    }
-
     std::thread worker;
     std::atomic<bool> finished{ false };
     std::atomic<bool> succeeded{ false };

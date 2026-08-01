@@ -118,9 +118,10 @@ target_link_libraries(gltf_parsing_fuzz_test PRIVATE cgltf)
 
 # Real engine surface: scene-config path resolution (GUI model selection).
 #
-# It links ONLY the scene_config module, not VulkanEngineCore. The module is
-# self-contained (glm + std::filesystem, no other engine import), but linking
-# the whole engine dragged every renderer global constructor - the Vulkan
+# It links ONLY the scene_config module (plus its model_file_kind dependency),
+# not VulkanEngineCore. Both are self-contained (glm + std::filesystem, no
+# other engine import), but linking the whole engine dragged every renderer
+# global constructor - the Vulkan
 # dynamic-dispatch loader, ImGui/GLFW statics - into a bare fuzztest main with
 # no window and no Vulkan instance. One of them dereferenced null during static
 # init, so the binary died with "SEGV on unknown address 0x000000000000"
@@ -140,7 +141,8 @@ target_sources(
          BASE_DIRS
          ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan
          FILES
-         ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan/scene/SceneConfig.ixx)
+         ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan/scene/SceneConfig.ixx
+         ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan/scene/ModelFileKind.ixx)
 target_link_libraries(scene_config_fuzz_test PRIVATE glm)
 # SceneConfig builds its candidate paths from RELATIVE_RESOURCE_PATH; the engine
 # feeds it the same value via kataglyphis_apply_runtime_compile_definitions.

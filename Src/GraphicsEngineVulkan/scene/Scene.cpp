@@ -1,8 +1,6 @@
 module;
 #include <optional>
 
-#include <algorithm>
-#include <cctype>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -22,6 +20,7 @@ import kataglyphis.vulkan.model;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.object_description;
 import kataglyphis.vulkan.scene_config;
+import kataglyphis.vulkan.model_file_kind;
 
 namespace Kataglyphis {
 
@@ -29,18 +28,12 @@ namespace {
 
 /// Picks the loader by file extension: glTF documents (`.gltf`/`.glb`) go to
 /// GltfLoader, everything else to ObjLoader. Both produce a device-side Model
-/// the same way, so callers do not care which ran. Case-insensitive on the
-/// extension so `.GLB` from a file picker still routes correctly.
+/// the same way, so callers do not care which ran.
 std::shared_ptr<Model> loadModelByExtension(std::shared_ptr<VulkanDevice> device,
   vk::CommandPool commandPool,
   const std::string &modelFile)
 {
-    std::string lower = modelFile;
-    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-
-    if (lower.ends_with(".gltf") || lower.ends_with(".glb")) {
+    if (isGltfModelPath(modelFile)) {
         GltfLoader gltf_loader(device, commandPool);
         return gltf_loader.loadModel(modelFile);
     }

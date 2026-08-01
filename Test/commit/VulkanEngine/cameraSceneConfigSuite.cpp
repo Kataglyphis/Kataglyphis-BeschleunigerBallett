@@ -17,6 +17,7 @@
 
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.scene_config;
+import kataglyphis.vulkan.model_file_kind;
 
 namespace {
 
@@ -191,6 +192,27 @@ TEST(SceneConfigUnit, AvailableModelListingsAreConsistent)
           << "Listed model cannot be resolved: " << path;
     }
     for (const std::string &name : names) { EXPECT_FALSE(name.empty()); }
+}
+
+TEST(SceneConfigUnit, ModelExtensionDispatchIsCaseInsensitive)
+{
+    EXPECT_TRUE(Kataglyphis::isSupportedModelPath("a.OBJ"));
+    EXPECT_TRUE(Kataglyphis::isSupportedModelPath("a.GlTF"));
+    EXPECT_TRUE(Kataglyphis::isSupportedModelPath("a.GLB"));
+    EXPECT_FALSE(Kataglyphis::isSupportedModelPath("a.png"));
+    EXPECT_FALSE(Kataglyphis::isSupportedModelPath("a"));
+    EXPECT_FALSE(Kataglyphis::isSupportedModelPath(""));
+
+    EXPECT_TRUE(Kataglyphis::isGltfModelPath("a.gltf"));
+    EXPECT_TRUE(Kataglyphis::isGltfModelPath("a.GLTF"));
+    EXPECT_TRUE(Kataglyphis::isGltfModelPath("a.glb"));
+    EXPECT_TRUE(Kataglyphis::isGltfModelPath("a.GLB"));
+    EXPECT_FALSE(Kataglyphis::isGltfModelPath("a.obj"));
+}
+
+TEST(SceneConfigUnit, ModelExtensionDispatchUsesTheExtensionNotTheWholePath)
+{
+    EXPECT_FALSE(Kataglyphis::isGltfModelPath("C:/assets.glb/model.obj"));
 }
 
 TEST(SceneConfigUnit, ModelMatrixIsUniformPositiveScale)
