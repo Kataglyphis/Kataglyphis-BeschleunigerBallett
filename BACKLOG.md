@@ -3783,6 +3783,380 @@ duplication/drift.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
+## 2026-08-02 batch — planner (a second vertical mirror, this one in GPU culling; a mirrored world-position reconstruction in the deferred lighting pass; the two comment/duplication items batch XVIII deferred)
+
+Batch XVIII is fully drained (`a3b42dfc`, `21b263e0`, `a1cbbdfd`); every
+checkbox left in the file before this batch was `- [b]`. Every `file:line`
+below was read out of the tree this pass.
+
+**The headline is that the vertical-mirror bug class fixed in `8b28543c`
+(tile-light binning) has two more instances, in two different renderers, and
+both are invisible to the tests that cover them because the test scenes are
+vertically symmetric.** The two renderers use *opposite* NDC-y conventions and
+nothing in the tree writes that down:
+
+| | NDC y | texel/uv v from ndc.y | canonical site |
+| --- | --- | --- | --- |
+| Vulkan (C++) | +1 = **bottom** | `v = (ndc.y + 1) * 0.5` | `compute/clouds.slang:112-113` |
+| WebGPU (Rust) | +1 = **top** | `v = 0.5 - ndc.y * 0.5` | `render/tile_grid.rs:108`, `ssao/ssao.slang:42` |
+
+Task 1 is `gpu_cull/gpu_cull.slang:61` using the **Vulkan** formula
+(`float2 uv = ndc * 0.5 + 0.5`) in a shader that is compiled for **WGSL only**
+(`compile-slang-shaders.ps1:104`, `Targets = @('wgsl')`) and used only by the
+Rust renderer. Every AABB corner therefore lands in the vertically mirrored
+half of the depth buffer, so the 8×8 depth-tap rect at `:87` reads occluders
+from the wrong place: a primitive occluded at the top of the screen is tested
+against whatever is at the bottom. The rewrite in batch VI made the *test*
+conservative and correct (`aabbNear > maxSampled`, all eight corners) but
+carried this line over unchanged. `tile_grid.rs:108` is the same computation
+written the right way, three files away, and was fixed for exactly this reason
+in `8b28543c`.
+
+Task 2 is the same class in the C++ deferred lighting pass, and the same shape
+as batch XVIII's depth-aspect finding — one rule, several hand-rolled copies,
+one of them wrong. `common/fullscreen.slang:25` defines the engine's fullscreen
+uv as `float2((x + 1.0) * 0.5, 1.0 - (y + 1.0) * 0.5)`; `ssao/ssao.slang:42`
+inverts it correctly (`ndc.y = 1.0 - uv.y * 2.0`); `deferred/deferred.slang`
+**re-declares both** — its own `LightingVsOut` (`:87-91`) and
+`lighting_vs_main` (`:93-102`) are byte-for-byte `fullscreen.slang`'s, and then
+`:110` inverts with `In.uv * 2.0 - 1.0` applied to *both* components. For y that
+is not the inverse: substituting the vs mapping gives `clipPos.y = -ndc.y`, so
+every reconstructed `worldPos` is mirrored about the horizontal centreline. That
+feeds `V` (`:120`) and `calc_cascaded_shadow` (`:132`) — deferred shadows land in
+the wrong half of the frame, at `cascaded_shadow_intensity = 0.65`
+(`GUISceneSharedVars.ixx:20`).
+
+**Task 2 also has to resolve a contradiction that its own oracle exposes.**
+`goldenRenderSuite.cpp:1036` asserts forward-vs-deferred mean absolute channel
+difference `< 1.0`, with `:1027-1028` recording `~0.2` measured on this rig. That
+number cannot be right for these two shaders even *without* the mirror: forward
+(`forward/forward.slang:401-423`) adds IBL or hemisphere ambient, tiled punctual
+lights, emissive and occlusion on top of the directional BRDF, while deferred
+(`deferred/deferred.slang:126-133`) computes the directional BRDF and the cascade
+shadow and nothing else. Two images 0.2/255 apart are the same image. Either the
+capture is still not deferred (`:999-1004` records that exact failure happening
+once already, fixed by `handleRasterizationModeChange`,
+`VulkanRenderer.cpp:277-294`) or the recorded measurement is stale. Task 2 makes
+the test say which.
+
+Tasks 3-5 are the small refactors. Task 3 is the consolidation half of task 2 and
+must land **after** it (both edit `deferred.slang`). Tasks 4 and 5 are the two
+items batch XVIII found, verified and explicitly deferred — both re-confirmed
+present this pass, so pick them up rather than re-deriving them.
+
+Numbering used throughout this preamble and inside the entries (the checkboxes
+below are split across two sections, so they are not in this order):
+**1** = `gpu_cull.slang` mirror (Rust section);
+**2** = deferred lighting mirror + parity oracle;
+**3** = one fullscreen uv↔NDC definition;
+**4** = cloud-output barriers;
+**5** = `DeferredRasterizer` attachment comment.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **extracting the free pipeline/bind-group constructors at
+`forward.rs:2591-2943` into a `render/pipelines.rs`** — this is the third time
+this file has offered pure code motion and batches XIII and XVII both rejected it
+for the same reason; **`GpuCulling`'s readback ring**
+(`gpu_occlusion.rs:300-383`) — `free_slot()` scans from `current` and `end_frame`
+advances past the slot it just mapped, so the two agree, and the `generation`
+guard correctly discards cross-scene results; **`bloom.rs`/`tonemap.rs`/`ssao.rs`
+having zero tests** — real, but each is a thin wgpu-object wrapper whose only
+CPU logic is `(width / 2).max(1)` (`bloom.rs:112`), which is not worth a suite;
+**`DeferredRasterizer.cpp:352`'s missing push-constant range on the lighting
+pipeline layout** — `lighting_fs_main` never references the module-scope
+`pc_raster` (`deferred.slang:11`), so Slang does not emit it into that entry
+point and the layout is correct; verifying it needs the compiled SPIR-V, which
+is gitignored.
+
+### C++ Vulkan engine
+
+- [b] **(L) Fix the vertical mirror in the deferred lighting pass's world-position reconstruction, and make the forward/deferred parity oracle able to tell the two paths apart** — deferred shadows are sampled from the mirrored half of the frame, and the test that should have caught it currently claims the two paths agree to 0.2/255.
+
+  **BLOCKED 2026-08-02:** Step 1 requires measuring
+  `GoldenRender.DeferredMatchesForwardRoughly`'s current mean-abs-diff on the
+  host GPU before touching the shader, and step 5/6 require GPU pixel capture
+  to add and validate the new oracle. Host GPU golden verification is
+  currently broken in this RDP session (see memory
+  `host-gpu-golden-verification`, entries from 2026-08-01): every
+  `GoldenRender.*` test fails immediately with `No synchronization frames
+  available; skipping draw frame.` (`frameSync.frameSyncCount() == 0`, i.e.
+  the swapchain came back with zero images), reproduced here with `quser`
+  showing the RDP session as Active (`jonas`, session 2). This is
+  environmental, not a code regression — `GoldenRender.RendersNonBlankFrame`
+  (untouched) fails identically. Re-attempt once a console/physical session
+  restores swapchain image counts; do not chase this further from a headless
+  executor run per that memory's guidance ("don't burn more than one retry").
+
+  **Files to read:**
+  - `Resources/ShadersSlang/deferred/deferred.slang:87-134` — `LightingVsOut`,
+    `lighting_vs_main`, `lighting_fs_main`. `:100` writes the uv, `:110` inverts it.
+  - `Resources/ShadersSlang/ssao/ssao.slang:40-46` — `view_pos_at`, the correct
+    inverse of the same uv mapping. Copy its y term.
+  - `Resources/ShadersSlang/common/fullscreen.slang:11-27` — where the uv
+    convention is defined and documented ("UV origin is top-left (y flipped)").
+  - `Resources/ShadersSlang/forward/forward.slang:394-423` — the term list the
+    forward path actually computes, for the parity discussion below.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:169`,`:198-199` —
+    `projection[1][1] *= -1` then `inv_projection = inverse(projection)`, i.e.
+    `inv_projection` expects the fragment's **true** Vulkan NDC, whatever the
+    projection is. This is why feeding `-ndc.y` is wrong independently of the
+    projection convention.
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp:947-1039` —
+    `GoldenRender.DeferredMatchesForwardRoughly`, the test to strengthen.
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp:900-945` — the
+    shadow-direction test immediately above it; its "shadowed-pixel union" +
+    `moved_fraction` construction is the pattern to follow for the new oracle.
+
+  **Steps:**
+  1. **Measure before touching anything.** Build `clangcl-debug`, copy
+     `commitTestSuite.exe` to the host, and run
+     `--gtest_filter='GoldenRender.DeferredMatchesForwardRoughly'` from the repo
+     root on the GPU. Record the `deferred-vs-forward mean abs channel diff`
+     line it logs. This number decides step 2.
+  2. If the measured diff is still ≈0.2, the deferred capture is **not
+     deferred** — find out why before changing the shader (start at
+     `VulkanRenderer.cpp:277-294`: confirm `handleRasterizationModeChange` runs
+     on the headless harness's frame path at all, and that the post stage's
+     input descriptor follows the mode). Fix that first; the rest of this task
+     is meaningless until the test compares two different images.
+  3. Fix the mirror: replace `deferred.slang:110` with
+     `float4 clipPos = float4(In.uv.x * 2.0 - 1.0, 1.0 - In.uv.y * 2.0, depth, 1.0);`
+     Add a one-line comment pointing at `ssao.slang:42` as the shared inverse.
+     Do **not** touch `lighting_vs_main` in this task — that is task 3.
+  4. Recompile shaders (`Scripts/Windows/compile-slang-shaders.ps1`). `deferred`
+     is SPIR-V-only (`compile-slang-shaders.ps1:72-75`), so no WGSL is affected.
+  5. Add the oracle, `GoldenRender.DeferredShadowsLandWhereForwardShadowsLand`:
+     for each of `Forward` and `Deferred`, capture once with
+     `scene_vars.cascaded_shadow_intensity = 0.0F` and once with the default
+     `0.65F`, and build the shadowed-pixel mask (per-pixel luminance dropped by
+     more than a small threshold between the two captures). Then assert
+     `IoU(mask_deferred, mask_forward) > IoU(mask_deferred, vflip(mask_forward))`
+     by a clear margin, and that `mask_forward` is neither empty nor the whole
+     frame (otherwise the comparison is vacuous). This is direction-of-error
+     sensitive and survives driver differences, which a pixel threshold would
+     not. `SKIP_WITHOUT_GPU()` and the `supportsFrameCapture()` guard as in the
+     neighbouring tests.
+  6. Re-run the measurement from step 1 and **update the comment at
+     `goldenRenderSuite.cpp:1025-1029` with the new number**. If the honest diff
+     is now above `MEAN_ABS_DIFF_LIMIT = 1.0` because deferred genuinely lacks
+     forward's ambient/punctual/emissive terms, raise the limit to the measured
+     value plus headroom and replace the "the paths no longer shade alike"
+     wording with the actual term-by-term gap (list it). Do **not** add the
+     missing lighting terms to the deferred shader — that is a renderer-scope
+     decision, not this task; record it as a new backlog idea instead.
+
+  **Test:** `GoldenRender.DeferredShadowsLandWhereForwardShadowsLand` (new) plus
+  the corrected `GoldenRender.DeferredMatchesForwardRoughly`. Update the golden
+  counts in `docs/gpu-golden-testing.md` — `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite`
+  (`buildIntegritySuite.cpp:1841`) will fail otherwise.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  then `docker cp bb-build-persistent:C:\ws\build-clangcl-debug\bin\commitTestSuite.exe .\`
+  and run it from the repo root on the host GPU (containers have no swapchain —
+  AGENTS.md § Running on the Host).
+
+  **Context:** Same bug class as `8b28543c` (tile-light binning) and the same
+  shape as batch XVIII's depth-aspect finding: a rule with several hand-rolled
+  copies, one of which is wrong. The parity test's own comment
+  (`goldenRenderSuite.cpp:999-1004`) documents that it passed for weeks while
+  comparing forward against forward — treat a suspiciously small diff as
+  evidence of that failure mode recurring, not as good news.
+
+- [ ] **(S) (refactor) Give the fullscreen uv↔NDC round trip one definition, and pin it** — `deferred.slang` re-declares `fullscreen.slang`'s vertex output and vertex shader verbatim, which is how its inverse drifted.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/common/fullscreen.slang:1-27` — `FullscreenVsOut`,
+    `fullscreen_vs`, and the usage comment at `:7-9`.
+  - `Resources/ShadersSlang/deferred/deferred.slang:87-105` — the duplicate.
+  - `Resources/ShadersSlang/ssao/ssao.slang:40-52` — the correct consumer:
+    imports `fullscreen`, calls `fullscreen_vs`, and inverts in `view_pos_at`.
+  - `Resources/ShadersSlang/ibl/ibl.slang:20-22` — a deliberate exception
+    (different triangle winding), documented in place. Must stay allowlisted.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1445` —
+    `NoShaderRedeclaresTheCascadeCount`, the source-scanning gate to copy.
+
+  **Steps:**
+  1. Add to `common/fullscreen.slang`, next to `fullscreen_vs`, the inverse:
+     `float2 fullscreen_uv_to_ndc(float2 uv)` returning
+     `float2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0)`, with a comment stating that it
+     is the exact inverse of `fullscreen_vs`'s uv and that the two must be edited
+     together.
+  2. In `deferred.slang`: `import fullscreen;`, delete `LightingVsOut` (`:87-91`)
+     and the body of `lighting_vs_main` (`:96-101`) in favour of
+     `return fullscreen_vs(vid);` returning `FullscreenVsOut`, change
+     `lighting_fs_main`'s parameter type to `FullscreenVsOut`, and build
+     `clipPos` from `fullscreen_uv_to_ndc(In.uv)`. Entry-point **names** must not
+     change — `compile-slang-shaders.ps1:74-75` and
+     `buildIntegritySuite.cpp:944-947` both list them.
+  3. In `ssao.slang`, rewrite `view_pos_at`'s first line to use
+     `fullscreen_uv_to_ndc(uv)` so there is exactly one copy of the y term.
+  4. Recompile shaders; `ssao` emits WGSL, so re-run
+     `Scripts/Windows/compile-slang-shaders.ps1` and commit the regenerated
+     `crates/webgpu_renderer/src/shaders/ssao.wgsl` in the submodule
+     (`BuildIntegrity.CheckedInWgslIsNotOlderThanItsSlangSource` and
+     `CheckedInWgslHasNoHandEdits` enforce this).
+  5. Add `BuildIntegrity.NoShaderRedeclaresTheFullscreenUvMapping`: scan every
+     `Resources/ShadersSlang/**/*.slang` for the literal uv expression
+     (`1.0 - (y + 1.0) * 0.5`) and for a re-declared
+     `struct ...VsOut { float4 svPosition : SV_Position; float2 uv : TEXCOORD0; };`,
+     and fail on any hit outside `common/fullscreen.slang`, with `ibl/ibl.slang`
+     allowlisted by name plus its stated reason. Follow
+     `NoShaderRedeclaresTheCascadeCount`'s structure, including anchoring the
+     allowlist to a source marker rather than a line number (`e8b1db52`).
+
+  **Test:** `BuildIntegrity.NoShaderRedeclaresTheFullscreenUvMapping` (new, pure
+  CPU). Re-run `GoldenRender.*` on the host GPU to confirm deferred and SSAO are
+  unchanged — this task must be pixel-neutral, since task 2 already fixed the
+  behaviour.
+
+  **Build:** `clangcl-debug`, same invocation as task 2.
+
+  **Context:** Do this **after** task 2 and not concurrently — both edit
+  `deferred.slang`. Straight continuation of `a3b42dfc` (one depth-aspect
+  definition in `FormatHelper.hpp`) and `f97712f4` (one `ShaderStagePair` instead
+  of six copies): the payoff is that the next fullscreen pass cannot get the
+  convention wrong, not the lines removed.
+
+- [ ] **(S) (refactor) Collapse the two cloud-output image barriers and the rationale comment that is written twice** — deferred from batch XVIII with the finding already verified; ~20 lines of identical field setup and a ~10-line comment repeated almost verbatim.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:871-951` — the whole
+    clouds block. `:881-893` and `:913-925` are the two barriers; `:871-880` and
+    `:933-941` are the duplicated rationale; `:942-951` is the only part of the
+    second comment that is unique (the 2026-08-01 sync-validation measurement).
+
+  **Steps:**
+  1. Add a small file-local helper (anonymous namespace or a static lambda above
+     the clouds block) that takes the image plus src/dst stage and access masks
+     and records an `eGeneral -> eGeneral` colour-aspect
+     `vk::ImageMemoryBarrier` — every other field is identical between the two
+     call sites.
+  2. Replace both barriers with calls to it:
+     `eFragmentShader -> eComputeShader`, `{} -> eShaderWrite` before
+     `recordComputeCommands`, and `eComputeShader -> eFragmentShader`,
+     `eShaderWrite -> eShaderRead` after. Do not change any mask — this is a
+     pure de-duplication and the goldens must not move.
+  3. Keep the cross-frame-WAR rationale **once**, on the helper or on the first
+     call site. Delete the repeat at `:933-941` but **keep `:942-951` intact** —
+     the sync-validation measurement is unique and load-bearing evidence.
+  4. Preserve the second comment's distinct content too (`:903-912`: why this is
+     hand-written rather than `VulkanImage::transitionImageLayout`'s
+     `eGeneral->eGeneral` overload, which would cost `eAllCommands ->
+     eAllCommands`). That reasoning is not duplicated anywhere.
+
+  **Test:** No new test. Re-run `GoldenRender.CloudsAcrossManyFramesDoesNotLoseTheDevice`
+  on the host GPU; it must stay green. If `Scripts/Windows/Run-SyncValidation.ps1`
+  is runnable in this environment, re-run it and confirm no `SYNC-HAZARD`,
+  matching the measurement the comment records.
+
+  **Build:** `clangcl-debug`, same invocation as task 2.
+
+  **Context:** Batch XVIII found this, confirmed it, and deferred it explicitly
+  — do not re-derive it. `9aac4cb2` (Clouds' duplicated storage-texture and
+  compute-pipeline setup) is the pattern; the risk here is deleting the wrong
+  half of the comment, so re-read `:942-951` before cutting.
+
+- [ ] **(S) (refactor) Fix `DeferredRasterizer::createRenderPass`'s attachment list, which describes six attachments for a five-attachment render pass** — deferred from batch XVIII; every index in the comment after 0 is off by one against the code below it.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:193-229` — the
+    comment at `:195-201` lists `0: Final Color, 1: Position, 2: Normal,
+    3: Albedo, 4: Material, 5: Depth`; the array at `:223-229` is
+    `0: Final, 1: Normal, 2: Albedo, 3: Material, 4: Depth`.
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:87-90` — the
+    explanation of why there is no position attachment (the lighting pass
+    reconstructs world position from the depth input attachment).
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:232-260` — the
+    subpass attachment references, which already use the correct indices.
+
+  **Steps:**
+  1. Rewrite the comment at `:195-201` to the five attachments the code actually
+     creates, with the right indices.
+  2. Add one sentence saying position was deliberately removed, pointing at
+     `:87-90` rather than restating it.
+  3. Grep the rest of the file for any other index comment that assumed six
+     attachments and fix it in the same pass.
+
+  **Test:** No new test — this is comment-only and cannot change behaviour.
+  Verify by building `clangcl-debug` and re-running the deferred golden
+  (`GoldenRender.DeferredMatchesForwardRoughly`) unchanged.
+
+  **Build:** `clangcl-debug`, same invocation as task 2.
+
+  **Context:** Batch XVIII found and deferred this. The reason it is worth
+  fixing rather than ignoring: task 2 sends the next reader straight into this
+  render pass to reason about which attachment the depth input is, and the
+  comment is the first thing they will read. Same class as `7b38ac3e`
+  (`model-loading.md` brought back in line with the code).
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) Fix the vertical mirror in `gpu_cull.slang`'s NDC→uv mapping** — the GPU occlusion-culling compute shader uses the Vulkan y convention in a WGSL-only shader, so every AABB is depth-tested against the mirrored half of the depth buffer.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/gpu_cull/gpu_cull.slang:52-90` — `:61`
+    (`float2 uv = ndc * 0.5 + 0.5;`) is the defect; `:64-65` accumulate the
+    rect, `:71-73` clamp it, `:83-90` take the depth taps across it.
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/tile_grid.rs:105-108`
+    — the same computation written correctly
+    (`Vec2::new(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5)`), fixed in `8b28543c` for
+    exactly this reason. Also `:393-394` in its test module.
+  - `Resources/ShadersSlang/ssao/ssao.slang:42` — the same convention in another
+    WGSL-target shader.
+  - `Scripts/Windows/compile-slang-shaders.ps1:104` — confirms `gpu_cull` is
+    `Targets = @('wgsl')`, i.e. Rust-only, so the Vulkan convention never applies
+    to it.
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/tests/occlusion.rs`
+    — `an_occluded_primitive_is_skipped_with_gpu_culling` and
+    `two_visible_cubes_are_both_drawn_with_gpu_culling`, the two tests that pass
+    today and must be made able to fail.
+
+  **Steps:**
+  1. Change `gpu_cull.slang:61` to
+     `float2 uv = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);` and add a
+     comment naming the WebGPU convention (+1 = top of the framebuffer) and
+     pointing at `tile_grid.rs:108`. `uvMin`/`uvMax` still work unchanged: the
+     min/max are taken per corner **after** the mapping.
+  2. Recompile shaders with `Scripts/Windows/compile-slang-shaders.ps1` and
+     commit the regenerated
+     `crates/webgpu_renderer/src/shaders/gpu_cull.wgsl` inside the submodule.
+     Do not hand-edit the WGSL — `BuildIntegrity.CheckedInWgslHasNoHandEdits`
+     and `CheckedInWgslIsNotOlderThanItsSlangSource` will catch it.
+  3. Add a test to `tests/occlusion.rs` that the current shader would pass and
+     the fixed one must too, but that a mirror breaks: place the occluder and
+     the occludee **off the horizontal centreline** (e.g. a large near quad
+     covering only the top half of the frame, and two small cubes behind it, one
+     in the top half and one in the bottom half). Assert the top cube is culled
+     and the bottom one is not. On the unfixed shader this comes out exactly
+     backwards, which is the whole point. Follow the existing tests' headless
+     setup and their skip-without-adapter behaviour.
+  4. Note in the test's comment why the two pre-existing tests could not catch
+     this: both use vertically centred, symmetric geometry, so the mirrored rect
+     and the true rect overlap.
+
+  **Test:** the new asymmetric-occluder test in
+  `crates/webgpu_renderer/tests/occlusion.rs`, plus the two existing GPU-culling
+  tests staying green. Run from
+  `ExternalLib/Kataglyphis-RustProjectTemplate`:
+  `cargo test --workspace --locked`. Several `ibl` and `auto_exposure` tests fail
+  on this host for unrelated headless-adapter reasons — stash and re-run to
+  confirm any failure you see predates the change (batch XV's completion note
+  records the same baseline).
+
+  **Test (C++ side):** `commitTestSuite.exe --gtest_filter='BuildIntegrity.*'`
+  must show the shader-staleness and no-hand-edit gates green after the
+  regeneration.
+
+  **Build:** `clangcl-debug` for the `BuildIntegrity` gates:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+
+  **Context:** Batch VI rewrote this shader to fix over-culling (centre-only
+  projection) and carried `:61` over unchanged, so this is a survivor of that
+  rewrite, not a regression from it. Both the submodule and this repo's gitlink
+  must be committed and pushed together (AGENTS.md § Critical Invariant:
+  Submodule Pins), and per the loop's convention push the submodule first.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
