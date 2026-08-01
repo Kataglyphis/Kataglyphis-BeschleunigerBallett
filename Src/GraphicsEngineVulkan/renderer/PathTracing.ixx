@@ -45,7 +45,6 @@ class PathTracing
 
     vk::PipelineLayout pipeline_layout{};
     vk::Pipeline pipeline{};
-    [[maybe_unused]] vk::PushConstantRange pc_range{ vk::ShaderStageFlagBits::eAll, 0, 0 };
     PushConstantPathTracing push_constant{ glm::vec4(0.f), 0, 0 };
 
     // NOTE: this stage used to own a private 2-query timestamp pool that was

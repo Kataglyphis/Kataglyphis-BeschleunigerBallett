@@ -2807,6 +2807,339 @@ scene-change path, still not worth a `std::span`, exactly as batch V concluded.
 
 ### C++ Vulkan engine
 
+## 2026-08-01 batch IX — planner (dead RT/PT plumbing, a queue-family transfer that never happens, cross-frame clouds WAR, shadow-cull toggle, occlusion strobe)
+
+The actionable queue was empty again when this batch was written (the eight `- [b]`
+entries are the only checkboxes left in the file; batches IV–VIII are drained).
+Every claim below was read out of the tree this pass, with the `file:line` given.
+
+**Task 1 is the item batch VIII explicitly deferred with "pick this up next
+cycle"** — re-verified unchanged: `Raytracing::init` stores its swapchain
+parameter (`Raytracing.cpp:31`), `recordCommands` takes a *second* one
+(`:47`, still marked `[[maybe_unused]]`) and picks between them at `:114`, while
+the sole call site (`VulkanRenderer.cpp:1050`) passes `&vulkanSwapChain` — the
+same object `init` was handed. `PathTracing` is NOT the same shape: its
+`vulkanSwapChain` parameter is genuinely read (`PathTracing.cpp:121`); only the
+zero-sized `pc_range` member (`PathTracing.ixx:48`) is dead, and it rides along.
+
+**Second finding: PathTracing's two image barriers declare a queue-family
+ownership transfer that no second barrier ever completes.**
+`PathTracing.cpp:79-80` sets `srcQueueFamilyIndex = graphics_family`,
+`dstQueueFamilyIndex = compute_family`, and `:105-106` sets compute→compute —
+but this command buffer is recorded into the frame's graphics command buffer and
+submitted to the graphics queue, and the `dispatch` that consumes the image
+follows on that same queue. A release with no paired acquire leaves the contents
+undefined for the acquiring queue. It is invisible today only because
+`getQueueFamilies` breaks as soon as one family satisfies graphics + compute +
+present (`VulkanDevice.cpp:683`), which on every desktop AMD/NVIDIA part is
+family 0 for all three, so `src == dst` and Vulkan ignores both fields. Every
+other barrier in the engine already uses `VK_QUEUE_FAMILY_IGNORED`
+(`Raytracing.cpp:100-101`, `VulkanRenderer.cpp:881-882`); PathTracing is the
+outlier. Task 2.
+
+**Third finding: the cross-frame WAR on `cloudOutputTexture` is still open, and
+the code says so.** `VulkanRenderer.cpp:898-906` documents it precisely
+("Follow-up, not fixed here") and nothing has closed it since:
+`cloudOutputTexture` is a single image (`Clouds.cpp:286-289`, one texture, not
+per-frame-in-flight), `MAX_FRAME_DRAWS == 3`, so frame N's post-pass read and
+frame N+1's compute write are ordered by nothing. The barrier at `:878-896`
+closes only the same-frame RAW. Since `5ccaca80` there is now a one-command way
+to check it (`Scripts/Windows/Run-SyncValidation.ps1`), and the fix is cheap and
+deterministic either way — a barrier orders against *all* previously submitted
+commands on the queue, including earlier submissions, so a WAR barrier before
+the dispatch closes it without duplicating the image. Task 3. Note
+`clouds_enabled` defaults to **false** (`GUISceneSharedVars.ixx:45`), so any
+verification run must turn clouds on.
+
+**Fourth finding: batch VIII fixed the comment about the culling toggle but not
+the gap it described.** `GUIRendererSharedVars.ixx:69-73` now correctly states
+that `frustum_culling_enabled` gates only the raster paths and that "the cascade
+pass culls unconditionally … this switch does not turn that off". That is now an
+accurate description of a real diagnostic hole: the checkbox exists so that "when
+something goes missing, [you can tell] in one click whether culling is the cause"
+(`:66-68`), and a missing *shadow* is exactly the case it cannot answer.
+`CascadedShadowMap::recordCommands` culls against the cascade frusta at
+`CascadedShadowMap.cpp:507-514` gated by nothing. The caster counters the same
+batch published (`VulkanRenderer.cpp:918-919`) make the fix assertable. Task 4.
+
+**Fifth finding (Rust): the hardware-occlusion path still strobes any primitive
+the camera is inside.** This is item #1 of the 2026-07-22 Rust survey, re-checked
+and still open — `OcclusionQueries::record` takes only `view_proj`
+(`occlusion.rs:227-233`) and there is no eye position anywhere in the module, so
+nothing can force-visible a box containing the camera. `cull_mode: None`
+(`:163-165`) is present and its comment names the situation, but back faces still
+fail `LessEqual` against the geometry's own depth while front faces are
+near-plane clipped, so the query reads 0. The consumer is live:
+`forward.rs:2049-2050` skips the draw for `!self.occlusion.visible(i)`, which
+empties the depth there, which makes the next query pass — a ~30 Hz flicker on
+the object filling the screen. Task 5.
+
+Verified-and-closed while surveying (do NOT re-propose these; they are done, and
+the 2026-07-22 Rust survey text above is stale for them): #2 `set_instances`
+widening `scene_bounds` — `recompute_scene_bounds` now exists
+(`forward.rs:2581-2597`) and is called from all three mutation sites (`:1000`,
+`:1034`, `:2578`); #3 `world_center` metric drift — every site is the AABB centre
+now, including upload (`:1605`); #5 instanced normals — `instance_cofactor_0`
+is emitted and applied (`forward.wgsl:129-131`, `:181`); #10
+`KHR_materials_unlit` — loaded (`gltf_loader.rs:600`), plumbed
+(`forward.rs:1834`) and demoed (`wasm_demo.rs:48`); #11 anisotropy —
+`anisotropy_for` plus a unit test (`forward.rs:3319`, `:3676`); #14 zero-strength
+bloom/SSAO — gated at `forward.rs:2192`, `:2196`.
+
+Candidates found but NOT tasked this cycle (checked, then rejected or deferred
+with a reason — do not re-propose without new evidence): **`Texture::generateMipMaps`'s
+dead linear-blit branch** — `spdlog::error("...does not support linear blitting!")`
+at `Texture.cpp:303-306` can no longer fire, because the only caller already
+consulted `supportsLinearBlit` and forced `mip_levels = 1` on failure
+(`:129-132`), so the function is never entered in that case; it also re-queries
+`getFormatProperties` for nothing and carries the dead `[[maybe_unused]] uint32_t
+in_mip_levels` parameter (`:299`, the loop reads the member at `:323`). Real dead
+code, deferred purely for the five-task cap — **pick this up next cycle**;
+**`Model::addSampler` creating one `vk::Sampler` per texture** (`Model.cpp:66-82`)
+— identical except `maxLod`, so a Sponza-class model burns 33 sampler objects
+against a `maxSamplerAllocationCount` floor of 4000; they *are* destroyed
+(`:32-35`), so this is headroom, not a leak, and not worth a task yet;
+**`docs/gpu-golden-testing.md:121` claiming the suite is 21 tests** when
+`goldenRenderSuite.cpp` now holds 28 — one-number doc drift, fold it into
+whichever task next touches that file; **`VulkanDevice::getQueueFamilies`
+breaking as soon as all three indices are set** (`:683`), so a dedicated
+async-compute or transfer family can never be selected — deliberate given nothing
+uses a second queue today, and task 2 removes the only code that pretended
+otherwise.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Stop `PathTracing`'s barriers declaring a queue-family ownership transfer that never completes** — a release with no acquire, latent on any device where the graphics and compute families differ.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/PathTracing.cpp` — `:69` (the
+    `getQueueFamilies()` call that feeds this), `:78-97` (the first barrier),
+    `:104-119` (the accumulation barrier)
+  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp` — `:100-101`, the correct
+    idiom in the sibling stage
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` — `:881-882`, the same
+    idiom on the clouds barrier
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp` — `:652-689`, why
+    `graphics_family == compute_family` on the dev rig and why that is luck
+
+  **Steps:**
+  1. In `PathTracing.cpp`, set all four queue-family fields —
+     `presentToPathTracingImageBarrier.srcQueueFamilyIndex`/`dstQueueFamilyIndex`
+     (`:79-80`) and `accumulationBarrier.srcQueueFamilyIndex`/`dstQueueFamilyIndex`
+     (`:105-106`) — to `VK_QUEUE_FAMILY_IGNORED`.
+  2. Replace them with a short comment stating the reason: an ownership transfer
+     needs a *paired* release on the source queue and acquire on the destination
+     queue, and this stage is recorded into the frame's graphics command buffer
+     and consumed by a dispatch on that same queue, so there is no transfer to
+     express.
+  3. Delete `:69`'s `QueueFamilyIndices const indices = device->getQueueFamilies();`
+     — grep the rest of the function first to confirm `indices` has no other
+     reader after step 1; if it does, leave it.
+  4. Do **not** change the stage masks or access masks. The execution and memory
+     dependencies at `:92-97` and `:114-119` are correct and are what actually
+     orders the accumulation read-modify-write; only the ownership fields are wrong.
+
+  **Test:** No CPU oracle exists for a barrier. Verify two ways: (a) the
+  path-tracing `GoldenRender.*` tests (including the white-furnace one) stay
+  green and validation-clean on the host GPU; (b) run
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1`
+  with path tracing exercised — it exits non-zero on any `SYNC-HAZARD`.
+
+  **Build:** `clangcl-debug` — only a `.cpp` changes, so a reused container is
+  fine. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -SkipPerfTests -SkipMsix`
+
+  **Context:** This is a portability and honesty fix, not a bug you can reproduce
+  here — say so in the commit message rather than claiming a fixed defect. The
+  reason it matters is that the fields currently *document* a queue handoff that
+  does not exist, which is the kind of thing a future async-compute change would
+  read as prior art. Every other barrier in the engine already uses
+  `VK_QUEUE_FAMILY_IGNORED`.
+
+- [ ] **(M) Close the cross-frame WAR hazard on `cloudOutputTexture`** — the code already names it as an unfixed follow-up; a WAR barrier before the dispatch closes it without duplicating the image.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` — `:863-908`, the
+    whole clouds block; the comment at `:898-906` is the specification for this
+    task
+  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp` —
+    `:277-309` (`recreateFrameResources` allocates exactly one
+    `cloudOutputTexture`), `:264-275` (`recordComputeCommands`)
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` — `:1195`-area
+    (`updatePostDescriptorSets`, where the post pass binds that image)
+  - `docs/gpu-golden-testing.md` — the sync-validation section
+
+  **Steps:**
+  1. Record a WAR barrier on `clouds.getCloudOutputTexture()->getImage()`
+     **before** `clouds.recordComputeCommands(...)` at `:866`:
+     `oldLayout = newLayout = vk::ImageLayout::eGeneral`, both queue families
+     `VK_QUEUE_FAMILY_IGNORED`, `srcAccessMask = {}`,
+     `dstAccessMask = vk::AccessFlagBits::eShaderWrite`,
+     `srcStageMask = eFragmentShader`, `dstStageMask = eComputeShader`, same
+     single-mip/single-layer subresource range as the existing barrier at
+     `:884-888`. A write-after-read needs only an execution dependency, which is
+     why `srcAccessMask` is empty — do not add `eShaderRead` there.
+  2. Add a comment explaining why this is sufficient without duplicating the
+     image per frame-in-flight: a pipeline barrier orders against **all**
+     previously submitted commands on the same queue, not just those in the
+     current command buffer, so it covers the previous frame's post-pass read.
+  3. Replace the `:898-906` "Follow-up, not fixed here" comment with what was
+     actually done and the measured result of step 4. Do not leave both.
+  4. Verify with sync validation. `clouds_enabled` defaults to **false**
+     (`GUISceneSharedVars.ixx:45`), so the run must turn clouds on — either drive
+     the app with the "Enable Clouds" checkbox on, or run the golden GUI sweep
+     (`GoldenRender.GuiInputSweepNeverCrashes`, `goldenRenderSuite.cpp:2469`
+     sets `clouds_enabled = true` in its all-maximum case) under
+     `Scripts/Windows/Run-SyncValidation.ps1`.
+  5. Record the outcome honestly in the commit message: if validation reported
+     no hazard before the change, say the barrier is a spec-correctness fix with
+     no observed symptom rather than claiming a fixed bug.
+
+  **Test:** `Run-SyncValidation.ps1` must exit 0 with clouds enabled (it fails on
+  any `SYNC-HAZARD` line), and the golden suite must stay green — a wrongly
+  placed barrier shows up as a hang or a validation error, not as a wrong pixel.
+
+  **Build:** `clangcl-debug` — `.cpp` only, reused container is fine. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -SkipPerfTests -SkipMsix`
+
+  **Context:** Sync validation found 10 real WRITE-AFTER-WRITE hazards in July
+  2026 and is the only instrument that sees this class of bug; the golden tests
+  cannot. Follow the existing hand-written barrier at `:878-896` rather than
+  `VulkanImage::transitionImageLayout`'s `eGeneral`→`eGeneral` overload — the
+  comment at `:874-877` explains why (that helper derives
+  `eAllCommands`→`eAllCommands` from the layout alone, a full pipeline stall
+  every frame).
+
+- [ ] **(S) Make `frustum_culling_enabled` gate the shadow pass too** — the checkbox exists to diagnose "something went missing", and a missing shadow is the one case it cannot answer.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/GUIRendererSharedVars.ixx` — `:65-74`, the
+    flag and the comment that currently documents the gap
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.ixx`
+    — `:89`, the `recordCommands` declaration
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp`
+    — `:431-530`, especially `:503-516` (the per-mesh union cull and the two
+    counters)
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` — `:910-924` (the call
+    plus the counter publication), `:935-938` (how the raster path already
+    consumes the flag)
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` — `:708-737`
+    (`ShadowCasterStatsAreReportedAndZeroWhenShadowsAreOff`), the pattern to copy
+
+  **Steps:**
+  1. Add a `bool cullingEnabled` parameter to `CascadedShadowMap::recordCommands`
+     in `CascadedShadowMap.ixx:89` and its definition at
+     `CascadedShadowMap.cpp:431`. Make it explicit at the call site rather than
+     defaulted, so a future caller has to decide.
+  2. In the per-mesh loop, gate only the *test*, never the counters: keep
+     `++castersConsidered` unconditional, and compute
+     `const bool visible_in_any_cascade = !cullingEnabled || <the existing
+     cascade-frustum loop>`. With culling off, `castersDrawn` must equal
+     `castersConsidered`.
+  3. Skip building `cascadeFrusta` (`:447-450`) when `cullingEnabled` is false —
+     `extractFrustumPlanes` per cascade per frame is pure waste in that mode.
+  4. Pass `guiRendererSharedVars.frustum_culling_enabled` at
+     `VulkanRenderer.cpp:916`. Note the shadow call happens *before* the camera
+     frustum is extracted at `:935` and must stay there — the comment at
+     `:932-934` explains why (shadow casters must not be camera-culled).
+  5. Rewrite `GUIRendererSharedVars.ixx:69-73`: it currently states the cascade
+     pass culls unconditionally and the switch does not turn that off. After this
+     change that is false. Say instead that the flag gates the camera-frustum
+     cull in the raster paths **and** the cascade-frustum cull in the shadow
+     pass, so the checkbox answers "is culling why this is missing" for shadows
+     too.
+  6. Check `GUI.cpp:247-256` — if the "Frustum culling" checkbox or its
+     `Culled:` readout implies raster-only, update the wording to match.
+
+  **Test:** Add `GoldenRender.DisablingFrustumCullingAlsoDisablesShadowCasterCulling`
+  next to `ShadowCasterStatsAreReportedAndZeroWhenShadowsAreOff`
+  (`goldenRenderSuite.cpp:708`), using the same `EngineHarness` +
+  `render_frames(WARMUP_FRAMES)` shape and `SKIP_WITHOUT_GPU()`. With
+  `shadows_enabled = true` and `frustum_culling_enabled = false`, assert
+  `shadow_casters_drawn == shadow_casters_total` and both `> 0`; then set
+  `frustum_culling_enabled = true`, render `SETTLE_FRAMES`, and assert
+  `shadow_casters_drawn <= shadow_casters_total`. Write the disabled case FIRST
+  and confirm it fails against the current code — today `drawn` and `total` can
+  already coincide on the default scene, so if it passes before the fix the
+  assertion is vacuous and you need a camera framing (or a second model at a
+  distance) that culls at least one caster. `GoldenRender` is excluded from the
+  Windows CI filter by name, so `.github/workflows/Windows.yml` needs no edit.
+
+  **Build:** `clangcl-debug`, **`-FreshContainer`** (`CascadedShadowMap.ixx`
+  changes). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer -SkipTests -SkipPerfTests -SkipMsix`
+  then run `commitTestSuite.exe` from the repo root on the host GPU.
+
+  **Context:** Batch VIII published the caster counters to the GUI and corrected
+  this comment; that made the hole accurate but did not close it. The Rust
+  renderer took the same route (`c2c2fe4`, "make caster stats honest"). Do not
+  extend this to the *cascade fitting* — only the per-caster visibility test is
+  in scope.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) Force-visible any primitive whose AABB contains the camera, so occlusion queries stop strobing it** — the object filling the screen flickers at ~30 Hz today.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/render/occlusion.rs` — module doc `:1-31`,
+    `cull_mode: None` and its comment `:163-165`, `record` `:227-300`,
+    `end_frame` `:306`, `visibility`/`visible`/`reset` `:362-392`
+  - `crates/webgpu_renderer/src/render/forward.rs` — `:2049-2050`, the consumer
+    that turns `!visible(i)` into a skipped draw; `:1257-1260`, the scene-change
+    reset
+  - `crates/webgpu_renderer/src/shaders/occlusion_bbox.wgsl` — the proxy-box
+    vertex/fragment pair
+  - `crates/webgpu_renderer/tests/occlusion.rs` — existing test harness and its
+    headless self-skip
+
+  **Steps:**
+  1. Establish the failure first, on the CPU: the query returns 0 when the eye is
+     inside the box because the front faces are near-plane clipped and the back
+     faces fail `LessEqual` against the depth the primitive itself wrote.
+     `cull_mode: None` does not address near-plane clipping and neither would a
+     larger margin.
+  2. Extract the containment test as a free function so it is testable without a
+     GPU: `fn aabb_contains(min: Vec3, max: Vec3, p: Vec3, margin: f32) -> bool`,
+     with the margin expressed relative to the box extent (a fixed epsilon is
+     wrong for both a 0.01-unit and a 500-unit box).
+  3. Add an `eye: Vec3` parameter to `OcclusionQueries::record`. `forward.rs`
+     already has the camera position at the call site — pass it, do not
+     re-derive it by inverting `view_proj`.
+  4. Compute the force-visible mask **at record time**, into the same ring slot
+     as the queries, and OR it into the result in `end_frame`. Deciding at
+     readback time would use a newer eye than the frame the query measured — the
+     readback is deliberately one or more frames late (module doc `:16-22`), and
+     mixing the two is how the flicker gets re-introduced in a subtler form.
+  5. Make sure `reset()` (`:389`) clears the new per-slot mask too, or a scene
+     change will carry stale force-visible flags into a different primitive list
+     — the exact hazard the `scene generation` field at `:79-80` guards against.
+
+  **Test:** Two layers in `crates/webgpu_renderer/tests/occlusion.rs`.
+  (a) Pure-CPU unit tests for `aabb_contains`: point strictly inside, strictly
+  outside, exactly on a face, just outside but within the margin, and a
+  degenerate zero-extent box. These run everywhere, GPU or not.
+  (b) A GPU test that self-skips via the existing `GpuContext::new_headless()`
+  early-return pattern: place the camera inside a cube's AABB, render ~6 frames,
+  and assert the cube is reported visible on **every** frame — the current code
+  alternates, so this fails red before the fix. Assert the alternation
+  explicitly (collect the per-frame `visible(i)` values and require they are all
+  `true`) rather than sampling one frame, which can pass by luck.
+
+  **Build:** Rust workspace, not the CMake presets. From
+  `ExternalLib/Kataglyphis-RustProjectTemplate`:
+  `cargo test -p webgpu_renderer --test occlusion` and
+  `cargo clippy -p webgpu_renderer --all-targets -- -D warnings`.
+  The GPU half self-skips without an adapter; run it on the host to get real
+  coverage. No shader regeneration is needed — this task does not touch any
+  `.slang` source, so the checked-in WGSL gates (`shader_export.rs`) stay green.
+
+  **Context:** Item #1 of the 2026-07-22 Rust survey, re-verified open this pass.
+  Read `docs/renderer-bounds-invariant.md` first — this is the same
+  stale/incomplete-bounds-bookkeeping family as the bugs written up there. The
+  safe direction is always "assume visible": a wrongly-drawn primitive costs
+  frame time, a wrongly-culled one is a rendering bug, which is why `visible()`
+  already defaults to `true` (`:376-378`).
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

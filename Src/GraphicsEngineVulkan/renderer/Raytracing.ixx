@@ -30,7 +30,6 @@ class Raytracing
 
     void recordCommands(vk::CommandBuffer &commandBuffer,
       VulkanImage &renderImage,
-      VulkanSwapChain *vulkanSwapChain,
       std::span<const vk::DescriptorSet> descriptorSets);
 
     void cleanUp();
@@ -39,7 +38,7 @@ class Raytracing
 
   private:
     std::shared_ptr<VulkanDevice>device{ nullptr };
-    [[maybe_unused]] VulkanSwapChain *vulkanSwapChain{ nullptr };
+    VulkanSwapChain *vulkanSwapChain{ nullptr };
 
     vk::Pipeline graphicsPipeline{};
     vk::PipelineLayout pipeline_layout{};

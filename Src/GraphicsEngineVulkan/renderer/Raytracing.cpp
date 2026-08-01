@@ -44,7 +44,6 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::shaderHotReload(
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::CommandBuffer &commandBuffer,
   VulkanImage &renderImage,
-  [[maybe_unused]] VulkanSwapChain *swapchain,
   std::span<const vk::DescriptorSet> descriptorSets)
 {
     uint32_t const handle_size = raytracing_properties.shaderGroupHandleSize;
@@ -111,12 +110,11 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
 
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, pipeline_layout, 0, descriptorSets, {});
 
-    VulkanSwapChain *effectiveSwapChain = swapchain ? swapchain : this->vulkanSwapChain;
-    if (!effectiveSwapChain) {
+    if (!this->vulkanSwapChain) {
       spdlog::error("Raytracing::recordCommands: VulkanSwapChain is null");
       return;
     }
-    const vk::Extent2D &swap_chain_extent = effectiveSwapChain->getSwapChainExtent();
+    const vk::Extent2D &swap_chain_extent = this->vulkanSwapChain->getSwapChainExtent();
     commandBuffer.traceRaysKHR(
       rgen_region, miss_region, hit_region, call_region, swap_chain_extent.width, swap_chain_extent.height, 1);
 

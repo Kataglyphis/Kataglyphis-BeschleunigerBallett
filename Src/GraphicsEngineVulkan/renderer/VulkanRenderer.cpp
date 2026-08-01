@@ -1047,7 +1047,7 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
             Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "raytracing", { 0.85F, 0.25F, 0.55F, 1.0F });
             Texture &renderResult = activeOffscreenTexture(image_index);
             raytracingStage.recordCommands(
-              commandBuffer, renderResult.getVulkanImage(), &vulkanSwapChain, raytracing_descriptor_sets);
+              commandBuffer, renderResult.getVulkanImage(), raytracing_descriptor_sets);
         } else if (guiRendererSharedVars.pathTracing) {
             Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "pathtracing", { 0.60F, 0.25F, 0.85F, 1.0F });
             Texture &renderResult = activeOffscreenTexture(image_index);
