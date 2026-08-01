@@ -2602,6 +2602,54 @@ TEST(GoldenRender, SwapchainRecreationKeepsRendering)
       << ", after=" << after_luma << ") - the recreated swapchain is not rendering the same scene.";
 }
 
+// Cross-frame WAR guard for cloudOutputTexture (VulkanRenderer.cpp, the
+// clouds block): the image is a SINGLE allocation, not duplicated per
+// frame-in-flight (Clouds::recreateFrameResources allocates exactly one), so
+// this frame's compute write must be ordered against the previous frame's
+// post-pass read of the same image even though the frame-in-flight fence
+// does not guarantee that ordering on its own (MAX_FRAME_DRAWS == 3,
+// common/Globals.hpp). A stale ordering here would show up as a driver hang
+// or a validate_sync SYNC-HAZARD, not a wrong pixel - see
+// docs/gpu-golden-testing.md and run Run-SyncValidation.ps1 with clouds
+// enabled to check for hazards; this test exists to give that barrier a
+// frames-in-flight-crossing exercise in a mode
+// GuiInputSweepNeverCrashesOrLosesTheDevice cannot reach today, because its
+// own clouds_enabled=true case is paired with path tracing and hits the
+// unrelated PT device-lost bug tracked in BACKLOG.md before the sweep gets
+// this far.
+TEST(GoldenRender, CloudsAcrossManyFramesDoesNotLoseTheDevice)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    scene_vars.clouds_enabled = true;
+
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up with clouds enabled.";
+
+    // Render well past MAX_FRAME_DRAWS frame-in-flight cycles so a cross-frame
+    // WAR hazard on cloudOutputTexture has more than one chance to surface.
+    constexpr int CLOUD_FRAMES = 30;
+    harness.render_frames(CLOUD_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost())
+      << "Device lost rendering repeated frames with clouds enabled.";
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost during capture.";
+    ASSERT_FALSE(frame.empty()) << "Frame capture returned no pixels.";
+}
+
 // RT-pipeline large-mesh diagnostic for the "Localize (and fix if cheap) the
 // path-tracing compute VK_ERROR_DEVICE_LOST" backlog entry. Every existing
 // RT/PT golden that reads v0.position/v0.normal via the vertex

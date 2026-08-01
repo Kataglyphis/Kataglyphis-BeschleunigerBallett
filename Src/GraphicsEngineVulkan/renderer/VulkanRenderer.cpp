@@ -863,6 +863,37 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
     if (guiSceneSharedVars.clouds_enabled) {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "clouds", { 0.80F, 0.85F, 0.95F, 1.0F });
         write_pass_timestamp(GpuTimedPass::Clouds, true);
+
+        // Cross-frame WAR: cloudOutputTexture is a SINGLE image (not duplicated
+        // per frame-in-flight), so this frame's compute write must be ordered
+        // after the previous frame's post-pass fragment-shader read of it. A
+        // pipeline barrier orders against ALL previously submitted commands on
+        // this queue, not just the current command buffer, so recording it here
+        // closes the gap even though MAX_FRAME_DRAWS == 3 (common/Globals.hpp)
+        // means the fence this frame waits on (FrameSync::inFlightFence()) only
+        // guarantees the submission 3 frames prior has completed, not the
+        // immediately preceding one. A write-after-read needs only an execution
+        // dependency, which is why srcAccessMask is empty here too.
+        vk::ImageMemoryBarrier cloud_output_war_barrier{};
+        cloud_output_war_barrier.oldLayout = vk::ImageLayout::eGeneral;
+        cloud_output_war_barrier.newLayout = vk::ImageLayout::eGeneral;
+        cloud_output_war_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        cloud_output_war_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        cloud_output_war_barrier.image = clouds.getCloudOutputTexture()->getImage();
+        cloud_output_war_barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+        cloud_output_war_barrier.subresourceRange.baseMipLevel = 0;
+        cloud_output_war_barrier.subresourceRange.levelCount = 1;
+        cloud_output_war_barrier.subresourceRange.baseArrayLayer = 0;
+        cloud_output_war_barrier.subresourceRange.layerCount = 1;
+        cloud_output_war_barrier.srcAccessMask = {};
+        cloud_output_war_barrier.dstAccessMask = vk::AccessFlagBits::eShaderWrite;
+        commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
+          vk::PipelineStageFlagBits::eComputeShader,
+          {},
+          nullptr,
+          nullptr,
+          cloud_output_war_barrier);
+
         clouds.recordComputeCommands(commandBuffer, rasterizer_descriptor_sets);
 
         // Order this compute write before the post pass's fragment-shader read of
@@ -895,15 +926,25 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
           nullptr,
           cloud_output_barrier);
 
-        // Cross-frame WAR is a separate, real hazard this barrier does not close:
-        // cloudOutputTexture is a SINGLE image (not duplicated per frame-in-flight),
-        // and MAX_FRAME_DRAWS == 3 (common/Globals.hpp) means the fence a frame waits
-        // on (FrameSync::inFlightFence(), indexed by current_frame) only guarantees
-        // the submission 3 frames prior has completed, not the immediately preceding
-        // one — so frame N+1's compute write and frame N's post read are not ordered
-        // by any host-side wait. Follow-up, not fixed here: confirm with sync
-        // validation (khronos_validation.validate_sync) whether this surfaces as a
-        // hazard in practice before widening this barrier into a cross-frame one.
+        // Cross-frame WAR closed: the eFragmentShader -> eComputeShader barrier
+        // recorded above, before recordComputeCommands, orders this frame's
+        // compute write against the PREVIOUS frame's post-pass fragment-shader
+        // read of the same single cloudOutputTexture. A pipeline barrier orders
+        // against all previously submitted commands on the queue, not just the
+        // current command buffer, so it closes the gap even though
+        // MAX_FRAME_DRAWS == 3 (common/Globals.hpp) means the fence this frame
+        // waits on (FrameSync::inFlightFence()) only guarantees the submission 3
+        // frames prior has completed, not the immediately preceding one.
+        // Measured 2026-08-01, with this barrier in place (RX 9070 XT,
+        // Run-SyncValidation.ps1, khronos_validation.validate_sync=true): no
+        // SYNC-HAZARD in the log across the new
+        // GoldenRender.CloudsAcrossManyFramesDoesNotLoseTheDevice (30+ frames,
+        // clouds enabled) nor in the frames the all-maximum case of
+        // GuiInputSweepNeverCrashesOrLosesTheDevice completes before hitting the
+        // unrelated pre-existing path-tracing VK_ERROR_DEVICE_LOST bug (see
+        // BACKLOG.md). The pre-fix state was not separately re-measured under
+        // sync validation, so treat this as closing a real spec gap rather than
+        // as a confirmed-observed-then-fixed hazard.
         write_pass_timestamp(GpuTimedPass::Clouds, false);
     }
 
