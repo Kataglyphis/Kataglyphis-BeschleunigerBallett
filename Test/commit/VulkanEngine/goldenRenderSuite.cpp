@@ -111,7 +111,7 @@ struct EngineHarness
         gui->render();
         auto &guiSceneSharedVars = gui->getGuiSceneSharedVars();
         renderer->updateStateDueToUserInput(guiSceneSharedVars);
-        renderer->updateUniforms(scene.get(), camera.get(), window.get(), guiSceneSharedVars);
+        renderer->updateUniforms(scene.get(), camera.get(), guiSceneSharedVars);
         renderer->drawFrame(guiSceneSharedVars);
     }
 

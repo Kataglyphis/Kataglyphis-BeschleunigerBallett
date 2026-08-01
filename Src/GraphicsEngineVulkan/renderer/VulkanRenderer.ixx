@@ -54,7 +54,6 @@ class VulkanRenderer
 
     void updateUniforms(Scene *scene_data,
       Camera *camera_data,
-      Kataglyphis::Frontend::Window *window_data,
       const GUISceneSharedVars &guiSceneSharedVars);
 
     /// Adds a model to the current scene without replacing what is already

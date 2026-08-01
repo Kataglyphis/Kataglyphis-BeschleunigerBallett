@@ -170,7 +170,6 @@ auto Kataglyphis::Texture::uploadRgba(std::shared_ptr<VulkanDevice>device,
           commandPool,
           device->getGraphicsQueue(),
           vulkanImage.getImage(),
-          texture_format,
           width,
           height);
     } else {
@@ -290,7 +289,6 @@ void Kataglyphis::Texture::generateMipMaps(vk::Device device,
   vk::CommandPool command_pool,
   vk::Queue queue,
   vk::Image image,
-  [[maybe_unused]] vk::Format image_format,
   int32_t width,
   int32_t height)
 {

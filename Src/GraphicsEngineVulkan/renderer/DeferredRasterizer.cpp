@@ -208,7 +208,7 @@ void DeferredRasterizer::createRenderPass()
     vk::Format materialFormat = vk::Format::eR8G8B8A8Unorm;
     vk::Format depthFormat = Kataglyphis::chooseDepthFormat(device->getPhysicalDevice());
 
-    auto createAttachmentDesc = [](vk::Format format, vk::ImageLayout finalLayout, [[maybe_unused]] bool isDepth = false) {
+    auto createAttachmentDesc = [](vk::Format format, vk::ImageLayout finalLayout) {
         vk::AttachmentDescription desc;
         desc.format = format;
         desc.samples = vk::SampleCountFlagBits::e1;
@@ -226,7 +226,7 @@ void DeferredRasterizer::createRenderPass()
         createAttachmentDesc(normalFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 1: Normal
         createAttachmentDesc(albedoFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 2: Albedo
         createAttachmentDesc(materialFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 3: Material
-        createAttachmentDesc(depthFormat, vk::ImageLayout::eDepthStencilAttachmentOptimal, true) // 4: Depth
+        createAttachmentDesc(depthFormat, vk::ImageLayout::eDepthStencilAttachmentOptimal) // 4: Depth
     };
 
     // Subpass 0: Geometry Pass

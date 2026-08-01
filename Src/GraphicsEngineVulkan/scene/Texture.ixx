@@ -93,7 +93,6 @@ class Texture
       vk::CommandPool command_pool,
       vk::Queue queue,
       vk::Image image,
-      vk::Format image_format,
       int32_t width,
       int32_t height);
 

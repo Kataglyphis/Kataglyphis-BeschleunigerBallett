@@ -2980,6 +2980,216 @@ and its own CPU oracle, so it is recorded here rather than half-specified;
 
 ### Docs
 
+## 2026-08-01 batch XI — planner (refactor: dead parameters, Clouds setup triplication, forward.rs geometry extraction)
+
+The actionable queue was empty again (the eight `- [b]` entries are the only
+checkboxes left in the file; batches IV–X are drained). Every claim below was
+read out of the tree this pass with the `file:line` given.
+
+**Re-verified as genuinely closed while surveying — do NOT re-propose these.**
+`ForwardRenderer::light_space_matrix` is gone (batch X task 1 deleted it as
+instructed; the only `allow(dead_code)` left in the crate are four
+`cfg_attr(target_arch = "wasm32", ...)` on `forward.rs:233-244`, which are
+platform gating, not dead code). `update_cascades` no longer writes a cascade
+count into `cascade_splits[2]` — `forward.rs:2620-2622` now carries the comment
+"z, w (tile_w, tile_h) are supplied by the per-frame uniform write in `render`".
+Batch II's three items all landed: `Src/GraphicsEngineVulkan/scene/ModelFileKind.ixx`
+now owns the extension dispatch behind `isGltfModelPath`/`isSupportedModelPath`
+(with tests at `cameraSceneConfigSuite.cpp:206-215`), zero
+`const std::vector<vk::DescriptorSetLayout> &` parameters remain anywhere in
+`Src/`, and `CascadedShadowMap`'s dead `getFramebuffers()` is gone.
+`docs/gpu-golden-testing.md:121-122` is **not** drifted despite the suite now
+holding 30 `TEST(GoldenRender, ...)`: 30 − 1 `DISABLED_` − 3 excluded by the
+documented filter + 2 `Integration` tests = the 28 it claims. That arithmetic is
+non-obvious, so do not "fix" the number.
+
+**Task 1's four items are the last `[[maybe_unused]]` markers in `Src/`** —
+grepped this pass, there are exactly four and every one of them marks something
+that should simply be deleted rather than annotated. `Texture::generateMipMaps`
+kept `vk::Format image_format` when commit `c80e7503` removed its two *other*
+dead parameters (`physical_device`, `in_mip_levels`); the format is now
+`[[maybe_unused]]` in the definition (`Texture.cpp:293`) but plain in the
+declaration (`Texture.ixx:96`), which is the tell that it was overlooked rather
+than kept deliberately.
+
+**Task 2: `Clouds` writes the same two sequences three and two times.** The
+"create a storage `Texture` + view + sampler, then transition it to `eGeneral`
+through a one-shot command buffer" block appears at `Clouds.cpp:33-41`,
+`:44-53` and — byte-for-byte identical to the second — at `:286-293` inside
+`recreateFrameResources`. The "load SPIR-V, fill a `vk::PipelineShaderStageCreateInfo`,
+create a pipeline layout, create the compute pipeline, destroy the module"
+sequence appears at `:174-200` and `:203-228`. Together that is ~50 lines of
+duplication in a 355-line file, and the `recreateFrameResources` copy is exactly
+the shape that drifts: a format or usage flag changed in `createTextures` and not
+there produces a resize-only bug. **This is GPU-verifiable** — `clouds_enabled`
+defaults to `false` (`GUISceneSharedVars.ixx:45`), but two golden tests turn it
+on: `GoldenRender.CloudsAcrossManyFramesDoesNotLoseTheDevice`
+(`goldenRenderSuite.cpp:2665`, 30 frames past the frames-in-flight cycle) and
+the all-maximum case of `GuiInputSweepNeverCrashesOrLosesTheDevice` (`:2514`).
+
+**Task 3: `forward.rs` is 3740 lines and ~255 of them are pure-CPU geometry that
+touches no wgpu type at all.** `Frustum` (`:3007-3068`), `normal_matrix_of`
+(`:3070`), `aabb_contains_point` (`:3086`), `instanced_bounds` (`:3103`),
+`widen_bounds_for_skin` (`:3128`), `primitive_world_aabb` (`:3150`),
+`primitive_local_aabb` (`:3189`), `transform_aabb` (`:3220`) and
+`compute_world_bounds` (`:3241`) form one contiguous, self-contained block whose
+only imports are `glam`, `crate::scene::*` and two symbols from
+`crate::render::occlusion`. They are already documented as a group by
+`docs/renderer-bounds-invariant.md` ("Consumers — everything that reads
+bounds"), which names them by symbol and never by file, so the move costs no doc
+churn. The precedent is `c85ef931`, which pulled animation sampling out of the
+same file into `render/animation.rs`; `render/mod.rs` is the one-line registry.
+
+Candidates found but NOT tasked this cycle (checked, then rejected or deferred
+with a reason — do not re-propose without new evidence):
+**`Clouds::recordComputeCommands` taking `std::span<const vk::DescriptorSet>`
+and reading only `[0]`** (`Clouds.cpp:264-271`) — it looks like dead generality
+but is not: `VulkanRenderer.cpp:861` builds one `std::array<vk::DescriptorSet, 1>`
+and hands the same span to the rasterizer, deferred, skybox and post record
+paths, so Clouds is following the house convention, not deviating from it;
+**`Model::addSampler` burning one `vk::Sampler` per texture** (`Model.cpp:66-82`)
+— re-checked a third time, still headroom against a 4000 floor rather than a
+leak, still not worth a task (stop re-checking it);
+**the `vkCheck()` sweep over the 52 `auto r = createX(...); ASSERT_VULKAN(...);
+h = r.value;` sites** that batch II deferred — re-confirmed as still the right
+call to defer: it is a ~20-file single commit that wants a deliberate moment;
+**the Rust cascade fit still has no texel snapping** (`light_matrix_for:2637-2660`
+anchors `look_at_rh` at a continuously moving `center`, the shimmer the C++ side
+fixed in `CascadedShadowMapMath.cpp`) — a real cross-renderer parity gap, but it
+is a behaviour change needing its own CPU oracle, not a refactor, and task 3
+deliberately does **not** touch it (`light_matrix_for` stays in `forward.rs`
+because it reads `self.light_dir_ambient`).
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Collapse `Clouds`' triplicated storage-texture setup and duplicated compute-pipeline creation** — the `recreateFrameResources` copy is a resize-only drift waiting to happen.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp` — all 355 lines; the duplication is at `:33-41`, `:44-53`, `:286-293` (textures) and `:174-200`, `:203-228` (pipelines)
+  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.ixx` — where the two new private helpers get declared
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp:2665-2700` — `CloudsAcrossManyFramesDoesNotLoseTheDevice`, the test that verifies this
+
+  **Steps:**
+  1. Add a private helper to `Clouds`, e.g.
+     `std::unique_ptr<Texture> createStorageTexture(vk::CommandPool commandPool, uint32_t w, uint32_t h, uint32_t depth, vk::ImageType type, vk::ImageViewType viewType)`.
+     Its body is the existing sequence verbatim: `createImage(...)` with
+     `eR16G16B16A16Sfloat` / `eOptimal` / `eStorage | eSampled` /
+     `eDeviceLocal`, then `createImageView(...)`, then `createTextureSampler(device)`,
+     then `beginCommandBuffer` → `transitionImageLayout(eUndefined → eGeneral, 1, eColor)`
+     → `endAndSubmitCommandBuffer` on `device->getGraphicsQueue()`.
+  2. Rewrite the three sites to call it: the 3D noise texture
+     (`:33-41`, 128×128×128, `e3D`/`e3D`), the 2D output texture (`:44-53`,
+     `width`×`height`×1, `e2D`/`e2D`), and the identical rebuild inside
+     `recreateFrameResources` (`:286-293`). **Keep everything else in
+     `recreateFrameResources` as it is** — the `cloudOutputTexture->cleanUp()`
+     before it and the descriptor rewrite at `:296-308` are not part of the
+     duplicated block.
+  3. Add a second private helper, e.g.
+     `void createComputePipeline(const char *spirvPath, std::span<const vk::DescriptorSetLayout> setLayouts, vk::PipelineLayout &outLayout, vk::Pipeline &outPipeline)`,
+     containing `loadSpirvShaderModule` → `vk::PipelineShaderStageCreateInfo`
+     (`eCompute`, `pName = "main"`) → `createPipelineLayout` → `createComputePipeline`
+     with `device->getPipelineCache()` → `destroyShaderModule`. Keep each
+     `ASSERT_VULKAN` message distinct by passing the message text in, or leave
+     generic messages — do not drop the `ASSERT_VULKAN` calls.
+  4. Rewrite `createComputePipelines` (`:170-229`) as two calls: the cloud
+     pipeline with `{descriptorSetLayout, sharedLayout}`, the noise pipeline
+     with `{noiseDescriptorSetLayout}`. Note the current code sets
+     `setLayoutCount = 2` at `:183` before assigning `pSetLayouts` at `:186` —
+     the helper must set both from the span's `size()`/`data()`.
+  5. `cleanUp()` (`:311-353`) is unchanged — it already destroys both pipelines
+     and both layouts individually.
+
+  **Test:** No new test. `GoldenRender.CloudsAcrossManyFramesDoesNotLoseTheDevice`
+  and the all-maximum case of `GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice`
+  already exercise this code with `clouds_enabled = true`; both must stay green,
+  and so must the rest of the golden suite. Verify on the host RX 9070 XT per
+  `docs/gpu-golden-testing.md` (run `commitTestSuite.exe` from the repo root).
+  Optionally also run
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1`
+  with clouds on — the barrier work in `f42bf412`/`a2868c45` is nearby and this
+  refactor must not disturb it.
+
+  **Build:** `clangcl-debug` with `-FreshContainer` (`Clouds.ixx` gains two
+  private member declarations):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTidy -FreshContainer`
+
+  **Context:** Behaviour-preserving by construction — every helper body is the
+  existing code moved, not rewritten. Do **not** try to also unify the
+  descriptor-set creation in `createDescriptorSets` (`:56-168`): the cloud set
+  (2 bindings, storage image + combined sampler) and the noise set (1 binding)
+  genuinely differ, and folding them would repeat the mistake batch V called out
+  for framebuffer creation — "the helper would be almost all parameters". Same
+  reason not to touch `recordComputeCommands`' span parameter: see the rejected
+  candidates above.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) (refactor) Extract the pure-CPU bounds/frustum geometry out of `forward.rs` into `render/bounds.rs`** — ~255 lines of wgpu-free math in a 3740-line file, already documented as a group by `docs/renderer-bounds-invariant.md`.
+
+  **Files to read:**
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/forward.rs:3007-3260` — the block to move
+  - `.../src/render/forward.rs:3540-3740` — `mod tests`, which holds the tests that move with it
+  - `.../src/render/animation.rs` and `.../src/render/mod.rs` — the extraction precedent (`c85ef931`) and the module registry
+  - `.../src/render/occlusion.rs` — exports `aabb_contains` and `CONTAINMENT_MARGIN`, the only non-`glam`/non-`scene` dependency of the block
+  - `docs/renderer-bounds-invariant.md` — the rule these helpers uphold; quote its opening in the new module's `//!` doc comment
+
+  **Steps:**
+  1. Create `.../src/render/bounds.rs` and add `pub mod bounds;` to
+     `.../src/render/mod.rs` (keep the list alphabetical — it goes between
+     `auto_exposure` and `bloom`).
+  2. Move these nine items **verbatim**, doc comments included, from
+     `forward.rs` into it: `Frustum` (the struct, `from_view_proj`,
+     `intersects_aabb`, `intersects_aabb_as_caster`, `test_planes`),
+     `normal_matrix_of`, `aabb_contains_point`, `instanced_bounds`,
+     `widen_bounds_for_skin`, `primitive_world_aabb`, `primitive_local_aabb`,
+     `transform_aabb`, `compute_world_bounds`. Do not reword or "improve" a
+     single comment — several of them are the written record of shipped bugs.
+  3. Widen the visibility of the eight private `fn`s to `pub(crate)` (`Frustum`
+     is already `pub(crate)`), add the imports the block needs
+     (`glam::{Mat4, Vec3}`, `crate::scene::{CpuPrimitive, CpuScene, CpuSkin}`,
+     `crate::render::occlusion`, and `MAX_JOINTS` — check where `forward.rs`
+     currently gets `MAX_JOINTS` from and import it from the same place), and
+     add a `//!` module header pointing at `docs/renderer-bounds-invariant.md`.
+  4. In `forward.rs`, replace the moved block with a
+     `use crate::render::bounds::{...};` and delete any import that is now
+     unused (the compiler will name them). **Leave `light_matrix_for`,
+     `update_cascades` and `recompute_scene_bounds` in `forward.rs`** — they
+     read `self`, so they are methods, not free functions.
+  5. Move the tests that cover the moved code out of `forward.rs`'s `mod tests`
+     into a `#[cfg(test)] mod tests` inside `bounds.rs`:
+     `caster_test_ignores_the_near_plane_and_nothing_else` (`:3543`),
+     `a_singular_model_matrix_yields_a_finite_normal_matrix` (`:3575`),
+     `a_non_finite_vertex_cannot_poison_the_bounds` (`:3631`),
+     `aabb_contains_point_matches_the_occlusion_proxy_margin` (`:3675`),
+     `morph_targets_expand_the_culling_bounds` (`:3695`) and
+     `frustum_culls_out_of_view_aabbs` (`:3725`). Leave the rest where they are
+     — `set_animation_time_recomputes_...` (`:3589`) and
+     `anisotropy_is_requested_only_when_every_filter_is_linear` (`:3655`) test
+     code that stays in `forward.rs`.
+  6. Do **not** touch `ForwardRenderer::primitive_world_aabb`, the *method*
+     that `tests/skinned_bounds.rs:71,104,128,139,150` calls. It shares a name
+     with the free function being moved; only the free function moves.
+
+  **Test:** No new assertions — the six moved tests are the test. Run from
+  `ExternalLib/Kataglyphis-RustProjectTemplate`:
+  `cargo test -p kataglyphis_webgpu_renderer --lib`
+  (pure CPU, no GPU needed — this is the check that matters and it must show the
+  same test count passing as before the move). Then
+  `cargo test -p kataglyphis_webgpu_renderer` on the host GPU to confirm the
+  integration tests in `tests/` — especially `skinned_bounds.rs`, which reads
+  the method named in step 6 — are unaffected. Also run
+  `cargo fmt --check` and `cargo clippy -p kataglyphis_webgpu_renderer -- -D warnings`.
+
+  **Context:** Continues the hub-shrink the BACKLOG asks for on both renderers,
+  by the same recipe `c85ef931` used for `render/animation.rs`. Purely a move:
+  if any line of the nine items changes, the refactor has failed. The payoff is
+  that the bounds invariant now has a file, so the next person who adds a
+  geometry-moving feature (the failure mode `docs/renderer-bounds-invariant.md`
+  says has already happened eight times) has one place to look instead of a
+  3740-line file. Commit the submodule change and bump the gitlink in the
+  superproject in the same change, per AGENTS.md § "Critical Invariant: Submodule
+  Pins".
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

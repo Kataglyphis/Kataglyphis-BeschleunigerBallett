@@ -47,7 +47,7 @@ void run_frames(Kataglyphis::Frontend::Window *window,
         gui->render();
         auto &guiSceneSharedVars = gui->getGuiSceneSharedVars();
         renderer->updateStateDueToUserInput(guiSceneSharedVars);
-        renderer->updateUniforms(scene, camera, window, guiSceneSharedVars);
+        renderer->updateUniforms(scene, camera, guiSceneSharedVars);
         renderer->drawFrame(guiSceneSharedVars);
     });
 
@@ -56,7 +56,7 @@ void run_frames(Kataglyphis::Frontend::Window *window,
         gui->render();
         auto &guiSceneSharedVars = gui->getGuiSceneSharedVars();
         renderer->updateStateDueToUserInput(guiSceneSharedVars);
-        renderer->updateUniforms(scene, camera, window, guiSceneSharedVars);
+        renderer->updateUniforms(scene, camera, guiSceneSharedVars);
         renderer->drawFrame(guiSceneSharedVars);
 
         ASSERT_FALSE(renderer->hasDeviceLost()) << "Device lost in mode '" << mode_label << "' at frame " << frame;

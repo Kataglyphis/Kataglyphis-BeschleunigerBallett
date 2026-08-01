@@ -55,7 +55,7 @@ auto Kataglyphis::App::run() -> int
         // Then update Scene/Renderer state with the NEW GUI values
         auto &guiSceneSharedVars = gui->getGuiSceneSharedVars();
         vulkan_renderer.updateStateDueToUserInput(guiSceneSharedVars);
-        vulkan_renderer.updateUniforms(scene.get(), camera.get(), window.get(), guiSceneSharedVars);
+        vulkan_renderer.updateUniforms(scene.get(), camera.get(), guiSceneSharedVars);
 
         // Finally draw the frame with the updated state
         vulkan_renderer.drawFrame(guiSceneSharedVars);

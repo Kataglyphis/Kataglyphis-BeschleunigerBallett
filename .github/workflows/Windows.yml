@@ -236,6 +236,7 @@ jobs:
             'SamplerBuilderUnit.*'
             'FileReaderUnit.*'
             'TextureLoadUnit.*'
+            'MemoryHelperUnit.*'
           ) -join ':'
 
           $cmd = "& 'C:\ws\build-clangcl-debug\commitTestSuite.exe' --gtest_filter='$cpuOnlySuites'; exit `$LASTEXITCODE"

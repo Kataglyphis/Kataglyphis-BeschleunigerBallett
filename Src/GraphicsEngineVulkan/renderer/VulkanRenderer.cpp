@@ -127,7 +127,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
         createPathTracingAccumulationResources();
     }
 
-    updateUniforms(scene, camera, window, gui->getGuiSceneSharedVars());
+    updateUniforms(scene, camera, gui->getGuiSceneSharedVars());
     updateAllDescriptorSets();
 
     skyBox.init(device, graphics_command_pool);
@@ -156,7 +156,6 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
 
 void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
   Camera *camera_data,
-  [[maybe_unused]] Kataglyphis::Frontend::Window *window_data,
   const GUISceneSharedVars &guiSceneSharedVars)
 {
     const vk::Extent2D extent = vulkanSwapChain.getSwapChainExtent();
