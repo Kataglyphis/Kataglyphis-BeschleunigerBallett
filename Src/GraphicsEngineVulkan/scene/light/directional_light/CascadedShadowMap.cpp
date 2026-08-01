@@ -166,9 +166,6 @@ void CascadedShadowMap::createFramebuffers()
     // framebuffer layers == 1 with the attachment view spanning every
     // rendered layer. The per-layer views and per-cascade framebuffers are
     // gone.
-    framebuffers.resize(1);
-    shadowMapLayerViews.resize(1);
-
     vk::ImageViewCreateInfo viewInfo{};
     viewInfo.image = shadowMapArray->getImage();
     viewInfo.viewType = vk::ImageViewType::e2DArray;
@@ -181,19 +178,19 @@ void CascadedShadowMap::createFramebuffers()
 
     auto viewResult = device->getLogicalDevice().createImageView(viewInfo);
     ASSERT_VULKAN(VkResult(viewResult.result), "Failed to create shadow map array view!");
-    shadowMapLayerViews[0] = viewResult.value;
+    shadowMapArrayView = viewResult.value;
 
     vk::FramebufferCreateInfo framebufferInfo{};
     framebufferInfo.renderPass = renderPass;
     framebufferInfo.attachmentCount = 1;
-    framebufferInfo.pAttachments = &shadowMapLayerViews[0];
+    framebufferInfo.pAttachments = &shadowMapArrayView;
     framebufferInfo.width = shadowWidth;
     framebufferInfo.height = shadowHeight;
     framebufferInfo.layers = 1;
 
     auto fbResult = device->getLogicalDevice().createFramebuffer(framebufferInfo);
     ASSERT_VULKAN(VkResult(fbResult.result), "Failed to create shadow map framebuffer!");
-    framebuffers[0] = fbResult.value;
+    framebuffer = fbResult.value;
 
 }
 
@@ -205,15 +202,15 @@ void CascadedShadowMap::cleanUp()
     if (!device) { return; }
 
     spdlog::info("CascadedShadowMap: Destroying pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphicsPipeline);
-    for (auto view : shadowMapLayerViews) {
-        device->getLogicalDevice().destroyImageView(view);
+    if (shadowMapArrayView) {
+        device->getLogicalDevice().destroyImageView(shadowMapArrayView);
+        shadowMapArrayView = nullptr;
     }
-    shadowMapLayerViews.clear();
 
-    for (auto fb : framebuffers) {
-        device->getLogicalDevice().destroyFramebuffer(fb);
+    if (framebuffer) {
+        device->getLogicalDevice().destroyFramebuffer(framebuffer);
+        framebuffer = nullptr;
     }
-    framebuffers.clear();
 
     if (renderPass) {
         device->getLogicalDevice().destroyRenderPass(renderPass);
@@ -458,7 +455,7 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
 
     vk::RenderPassBeginInfo renderPassInfo{};
     renderPassInfo.renderPass = renderPass;
-    renderPassInfo.framebuffer = framebuffers[0];
+    renderPassInfo.framebuffer = framebuffer;
     renderPassInfo.renderArea.offset = vk::Offset2D{0, 0};
     renderPassInfo.renderArea.extent = vk::Extent2D{shadowWidth, shadowHeight};
 

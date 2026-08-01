@@ -89,7 +89,6 @@ class CascadedShadowMap
     void recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, std::span<const vk::DescriptorSet> descriptorSets);
 
     Kataglyphis::Texture* getShadowMapArray() { return shadowMapArray.get(); }
-    std::vector<vk::Framebuffer>& getFramebuffers() { return framebuffers; }
     vk::RenderPass getRenderPass() const { return renderPass; }
 
     uint32_t getWidth() const { return shadowWidth; }
@@ -130,11 +129,11 @@ class CascadedShadowMap
     // nothing changes on current hardware (it is first in the preference list).
     vk::Format depth_format{ vk::Format::eD32Sfloat };
     vk::RenderPass renderPass;
-    std::vector<vk::Framebuffer> framebuffers;
-    // Depth image views the framebuffers attach to (one full-cascade-array
+    vk::Framebuffer framebuffer{};
+    // Depth image view the framebuffer attaches to (one full-cascade-array
     // view since the multiview conversion). Owned here and destroyed in
     // cleanUp; was previously a file-static map keyed by `this`.
-    std::vector<vk::ImageView> shadowMapLayerViews;
+    vk::ImageView shadowMapArrayView{};
 
     vk::Pipeline graphicsPipeline{};
     vk::PipelineLayout pipelineLayout{};

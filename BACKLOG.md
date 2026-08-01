@@ -2229,6 +2229,205 @@ of the `VulkanRenderer` hub, but no clean extraction was identified this pass.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
+## 2026-08-01 batch II — planner (refactor: dead generality, extension-dispatch triplication, span-ify layout params)
+
+The actionable queue was empty when this batch was written (only `- [b]` entries
+remained across the whole file). Every claim below was read out of the tree this
+pass:
+
+- **`CascadedShadowMap` still carries the pre-multiview per-cascade
+  containers.** `framebuffers` and `shadowMapLayerViews`
+  (`CascadedShadowMap.ixx:133,137`) are `std::vector`s that `createFramebuffers`
+  `resize(1)`s (`.cpp:169-170`) and only ever indexes at `[0]` (`:184,189,196`,
+  and `:461` in `recordCommands`). The comment at `:165-168` says so outright:
+  "The per-layer views and per-cascade framebuffers are gone." The accessor
+  `getFramebuffers()` (`.ixx:92`) is **dead** — grepped across `Src/` and
+  `Test/`, zero callers.
+- **Model-file extension dispatch exists in three independent copies, and has
+  already drifted once.** `SceneConfig.cpp:100-105` lowercases
+  `path().extension()` and tests `== ".obj" || ".gltf" || ".glb"`;
+  `Scene.cpp:38-43` (`loadModelByExtension`) lowercases the **whole path** and
+  tests `ends_with(".gltf") || ends_with(".glb")`;
+  `AsyncModelParse.ixx:125-132` (`isGltfPath`) is a third, byte-identical copy
+  of the `Scene.cpp` logic. The comment at `SceneConfig.cpp:97-99` records the
+  drift that already shipped: that filter was `== ".obj"`, so `cube.glb` could
+  never be picked and `.OBJ` was invisible. Adding a format today means editing
+  three places, and the two `ends_with`-on-full-path copies also misclassify a
+  path whose *directory* ends in `.glb`.
+- **Five stages take pipeline-layout arrays as `const std::vector<...>&` while
+  the record path has already moved to `std::span`.** `Rasterizer`,
+  `DeferredRasterizer`, `PostStage`, `Raytracing` and `PathTracing` each declare
+  three functions (`init`, `shaderHotReload`, `create*Pipeline*`) taking
+  `const std::vector<vk::DescriptorSetLayout> &`. Inside, the parameter is used
+  **only** via `.size()` / `.data()` into `vk::PipelineLayoutCreateInfo`
+  (verified at `DeferredRasterizer.cpp:328,358`, `PathTracing.cpp:206,209`,
+  `PostStage.cpp:303`, `Rasterizer.cpp:424`, `Raytracing.cpp:254`) — a drop-in
+  `std::span` substitution. Six caller-side `std::vector` temporaries of 1-2
+  elements exist purely to satisfy the parameter type
+  (`VulkanRenderer.cpp:101,102,117,420,423` and the RT pair at `:123,428`).
+  Commit `6e4d0204` already did exactly this for descriptor *sets* across the
+  record path; this is the same convention applied to the init/hot-reload path.
+
+Candidates found but NOT tasked this cycle (queue discipline; re-verify next
+pass): the `auto r = device...createX(info); ASSERT_VULKAN(...); h = r.value;`
+idiom appears at **52** sites and could collapse into a `vkCheck()` helper, but
+that is a whole-codebase sweep touching ~20 files in one commit — wants a
+deliberate moment, not an executor session; `PostStage.cpp:272` is the only
+`createRenderPass` call using the C-style `(&info, nullptr, &out)` overload
+while the other four use the `ResultValue` form (a one-line consistency nit,
+folded into the `vkCheck()` sweep if that ever happens); the per-stage
+`createRenderPass` bodies are genuinely different (1, 2 and 3 subpass
+dependencies, different attachment sets) and are **not** a consolidation
+target.
+
+### C++ Vulkan engine
+
+- [ ] **(M) (refactor) Consolidate the three copies of model-file extension
+  dispatch into one module** — the filter has already drifted once and shipped a
+  bug; three copies means it can happen again.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:96-106` — the
+    `scanAvailableModels` filter (lowercases `path().extension()`; the comment
+    records the `== ".obj"` drift that hid `cube.glb`)
+  - `Src/GraphicsEngineVulkan/scene/Scene.cpp:28-52` — `loadModelByExtension`
+    in the anonymous namespace
+  - `Src/GraphicsEngineVulkan/scene/AsyncModelParse.ixx:122-132` —
+    `isGltfPath`, a third copy of the same predicate
+  - `Src/GraphicsEngineVulkan/scene/MeshRange.ixx` (or whichever small module is
+    nearest to hand) — the pattern for a tiny shared module that both loaders
+    `import`, established by wave 6 (`kataglyphis.vulkan.mesh_range`)
+  - `Test/commit/VulkanEngine/cameraSceneConfigSuite.cpp` — the `SceneConfigUnit`
+    tests to extend
+
+  **Steps:**
+  1. Add `Src/GraphicsEngineVulkan/scene/ModelFileKind.ixx` exporting
+     `export module kataglyphis.vulkan.model_file_kind;` with two `constexpr`-
+     friendly free functions in `namespace Kataglyphis`:
+     `bool isGltfModelPath(std::string_view path)` and
+     `bool isSupportedModelPath(std::string_view path)`. Both must classify off
+     `std::filesystem::path(path).extension()` lowercased — **not** `ends_with`
+     on the whole path, which is what the `Scene.cpp` / `AsyncModelParse` copies
+     do today and is why a directory named `assets.glb/` would misroute.
+     `isSupportedModelPath` returns true for `.obj`, `.gltf`, `.glb`;
+     `isGltfModelPath` for `.gltf`, `.glb`.
+  2. Register the new `.ixx` wherever the other scene modules are listed
+     (`Src/GraphicsEngineVulkan/CMakeLists.txt` — follow how `MeshRange.ixx` is
+     listed; do not invent a new target).
+  3. Replace the body of `SceneConfig.cpp`'s filter (`:100-105`) with a call to
+     `isSupportedModelPath(entry.path().string())`. Keep the surrounding
+     directory walk untouched.
+  4. Replace `Scene.cpp:38-43`'s lowercase + `ends_with` block with
+     `isGltfModelPath(modelFile)`. `loadModelByExtension` keeps its shape;
+     only the predicate moves.
+  5. Delete `AsyncModelParse::isGltfPath` (`.ixx:125-132`) and call
+     `isGltfModelPath` from `start()` (`:56`). Add the `import` and drop the
+     now-unused `<algorithm>` / `<cctype>` includes from that module's global
+     fragment **only if** nothing else in the file uses them.
+  6. Re-grep for any remaining `ends_with(".glb")` / `== ".obj"` in `Src/` and
+     fold in anything the survey missed.
+
+  **Test:** Add to `SceneConfigUnit` in
+  `Test/commit/VulkanEngine/cameraSceneConfigSuite.cpp` (that suite name is
+  already in the Windows CI filter, so no `.github/workflows/Windows.yml` edit
+  is needed — a **new** suite name would silently not run in CI):
+  - `SceneConfigUnit.ModelExtensionDispatchIsCaseInsensitive` — asserts
+    `isSupportedModelPath` accepts `"a.OBJ"`, `"a.GlTF"`, `"a.GLB"` and rejects
+    `"a.png"` / `"a"` / `""`; and `isGltfModelPath` is true for `.gltf`/`.glb`
+    in any case, false for `.obj`.
+  - `SceneConfigUnit.ModelExtensionDispatchUsesTheExtensionNotTheWholePath` —
+    asserts `isGltfModelPath("C:/assets.glb/model.obj")` is **false**. This is
+    the case the two `ends_with` copies get wrong today; write it red-first
+    against the old `Scene.cpp` logic to confirm it is a real behaviour fix and
+    not a tautology.
+
+  Then re-run `AsyncModelParseUnit.RoutesGltfToTheGltfLoaderOffThread` and
+  `ObjParseUnit.*` unchanged — they pin that step 5 did not reroute anything.
+
+  **Build:** `clangcl-debug` with `-FreshContainer` (new module + `.ixx` edits):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer -SkipTests`
+  Then run `commitTestSuite.exe` from the repo root per
+  `docs/gpu-golden-testing.md`.
+
+  **Context:** This is the one duplication in the tree with a *recorded* history
+  of drifting into a shipped bug (the `SceneConfig.cpp:97-99` comment). Follow
+  the wave-6 `kataglyphis.vulkan.mesh_range` precedent: a tiny module both
+  consumers `import`, not a header, and not a method on `Scene` (both other
+  callers are device-free and must stay that way — `AsyncModelParse` runs on a
+  worker thread and `SceneConfig` has no device at all).
+
+- [ ] **(S) (refactor) Take pipeline-layout arrays as
+  `std::span<const vk::DescriptorSetLayout>` across the five render stages** —
+  finishes the `std::span` convention commit `6e4d0204` started, and drops six
+  caller-side `std::vector` temporaries.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.ixx:31,34,92` +
+    `Rasterizer.cpp:40,54,393` (and the `.size()`/`.data()` use at `:424-425`)
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.ixx:31,34,103` +
+    `DeferredRasterizer.cpp:32,47,307` (uses at `:328-329,358-359` — **two**
+    pipeline layouts)
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.ixx:25,27,66` +
+    `PostStage.cpp:37,52,277` (use at `:303-304`)
+  - `Src/GraphicsEngineVulkan/renderer/Raytracing.ixx:26,29,63` +
+    `Raytracing.cpp:27,39,176` (use at `:254-255`)
+  - `Src/GraphicsEngineVulkan/renderer/PathTracing.ixx:25,27,80` +
+    `PathTracing.cpp:33,53,198` (use at `:206,209`)
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:101-126` and
+    `:416-432` — the six caller-side temporaries
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.ixx` +
+    `CascadedShadowMap.ixx:89` — how `std::span<const vk::DescriptorSet>` is
+    already spelled in this codebase; copy that style exactly
+
+  **Steps:**
+  1. In each of the five stage `.ixx` files, change every
+     `const std::vector<vk::DescriptorSetLayout> &` parameter to
+     `std::span<const vk::DescriptorSetLayout>` (three declarations per stage:
+     `init`, `shaderHotReload`, and the private `create*Pipeline*`). Add
+     `#include <span>` to the global module fragment where it is not already
+     there.
+  2. Mirror the change in the five `.cpp` definitions. **No body changes are
+     needed** — the parameter is only ever used via `.size()` and `.data()`,
+     both of which `std::span` provides with identical semantics. If a body
+     turns out to do anything else (copy it, store it, outlive the call), stop
+     and leave that stage on `std::vector`: a span does not own, and storing one
+     past the call is a dangling read. Say so in the commit message rather than
+     forcing it.
+  3. In `VulkanRenderer.cpp`, convert the six local temporaries to
+     `std::array`: `:101` and `:117` and `:420` and `:423` become
+     `std::array<vk::DescriptorSetLayout, 1>`; `:102` and the two RT `layouts`
+     at `:123` and `:428` become `std::array<vk::DescriptorSetLayout, 2>`.
+     Keep them `const`.
+  4. Rebuild and fix any call site the compiler flags. Do **not** add
+     `std::span` conversions at call sites that pass a `std::vector` from
+     elsewhere — the implicit conversion is what makes this a drop-in.
+
+  **Test:** No new assertion — this is a signature change with no observable
+  behaviour, and the existing suites already cover every affected path. Verify
+  with the GPU goldens on the host RX 9070 XT
+  (`docs/gpu-golden-testing.md`): `GoldenRender.RendersNonBlankFrame` and
+  `DeferredMatchesForwardRoughly` cover the two raster pipelines,
+  `RaytracedWorldFollowsTheModelTransform` and
+  `PathTracingAccumulatesAndConverges` the two RT pipelines (note the latter is
+  the known-failing large-mesh case tracked in the blocked path-tracing entry
+  above — compare against its pre-change result, do not treat a pre-existing red
+  as caused by this change), and
+  `GoldenRender.SwapchainRecreationKeepsRendering` covers the recreate path that
+  re-enters `createGraphicsPipeline`. Also exercise `shaderHotReload` once by
+  hand (the GUI button) since no automated test drives it.
+
+  **Build:** `clangcl-debug` with `-FreshContainer` (five `.ixx` files change):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer -SkipTests`
+
+  **Context:** `6e4d0204` ("take descriptor sets as `std::span` across the
+  record path") established the convention for descriptor *sets*; the *layouts*
+  on the init/hot-reload path were left on `std::vector`, so the codebase now
+  says both things. The allocation saving is real but small (init and
+  hot-reload only, not per-frame) — the point is one spelling, and callers
+  being able to pass a `std::array` without materialising a heap vector.
+  `CascadedShadowMap::init` already takes a bare `vk::DescriptorSetLayout` and
+  needs no change.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
