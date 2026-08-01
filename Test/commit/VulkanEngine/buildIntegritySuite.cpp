@@ -1299,38 +1299,49 @@ TEST(BuildIntegrity, EveryModuleInterfaceIsImported)
 
 namespace {
 
-// file (relative to Src/GraphicsEngineVulkan/, forward slashes) : line
-// (1-based, of the ".value" read) -> a deliberate exception to the rule
-// below, with the reason it does not need ASSERT_VULKAN. This is not a way
-// to silence a real gap - every entry must be justified.
+// file (relative to Src/GraphicsEngineVulkan/, forward slashes) : marker ->
+// a deliberate exception to the rule below, with the reason it does not
+// need ASSERT_VULKAN. This is not a way to silence a real gap - every entry
+// must be justified, and every entry must be matched by a
+// "// UNCHECKED_VULKAN_RESULT_OK: <marker>" trailing comment on the exempted
+// line in the source (checked by VulkanCreationResultsAreChecked below), so
+// an exemption cannot rot silently after the line it protects moves or is
+// deleted.
 struct AllowlistEntry
 {
     std::string file;
-    int line;
+    std::string marker;
 };
 
 const std::vector<AllowlistEntry> kCheckedResultAllowlist = {
-    // Pipeline cache is a performance optimization, not a correctness
-    // requirement: a corrupt/stale on-disk cache (e.g. after a driver
-    // update) must not be fatal. Already checked a few lines above - falls
-    // back to a null cache and logs a warning instead of aborting.
-    { "vulkan_base/VulkanDevice.cpp", 231 },
     // Already fatal: spdlog::critical + std::abort() a few lines above,
     // just not spelled with the ASSERT_VULKAN macro (the message embeds the
     // numeric vk::Result, which the macro's fixed string cannot).
-    { "vulkan_base/ShaderHelper.cpp", 37 },
+    { "vulkan_base/ShaderHelper.cpp", "already-fatal-abort-above" },
     // Deliberately non-fatal: cloud noise generation is a one-shot compute
     // dispatch. If the transient command pool fails to create, the dispatch
     // is skipped (logged) rather than aborting the whole renderer over an
     // atmospheric effect.
-    { "scene/atmospheric_effects/clouds/Clouds.cpp", 249 },
+    { "scene/atmospheric_effects/clouds/Clouds.cpp", "noise-dispatch-skip-on-failure" },
 };
 
-bool is_allowlisted_result_check(const std::string &relative_file, int line)
+const std::string kUncheckedResultMarkerPrefix = "UNCHECKED_VULKAN_RESULT_OK: ";
+
+// Returns the index of the kCheckedResultAllowlist entry whose marker is
+// present as a trailing "// UNCHECKED_VULKAN_RESULT_OK: <marker>" comment on
+// `line`, or -1 if none matches. Anchoring on the marker text rather than the
+// line number means an unrelated edit above the exempted line cannot turn a
+// live exemption into a false positive (or, worse, a silently-wrong one).
+int allowlisted_result_check_index(const std::string &relative_file, const std::string &line)
 {
-    return std::any_of(kCheckedResultAllowlist.begin(), kCheckedResultAllowlist.end(), [&](const AllowlistEntry &entry) {
-        return entry.line == line && entry.file == relative_file;
-    });
+    for (std::size_t idx = 0; idx < kCheckedResultAllowlist.size(); ++idx) {
+        const AllowlistEntry &entry = kCheckedResultAllowlist[idx];
+        if (entry.file != relative_file) { continue; }
+        if (line.find(kUncheckedResultMarkerPrefix + entry.marker) != std::string::npos) {
+            return static_cast<int>(idx);
+        }
+    }
+    return -1;
 }
 
 // True if `line` calls something that looks like a Vulkan/VMA creation or
@@ -1393,6 +1404,7 @@ TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
 
     constexpr int kWindow = 8;
     std::vector<std::string> violations;
+    std::vector<bool> allowlist_entry_matched(kCheckedResultAllowlist.size(), false);
     std::error_code error;
     for (fs::recursive_directory_iterator it(engine_root, error), end; it != end; it.increment(error)) {
         if (error) { break; }
@@ -1420,7 +1432,11 @@ TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
             if (!triggered || asserted) { continue; }
 
             const std::string relative_file = fs::relative(path, engine_root).generic_string();
-            if (is_allowlisted_result_check(relative_file, static_cast<int>(i + 1))) { continue; }
+            const int allowlist_index = allowlisted_result_check_index(relative_file, lines[i]);
+            if (allowlist_index >= 0) {
+                allowlist_entry_matched[static_cast<std::size_t>(allowlist_index)] = true;
+                continue;
+            }
 
             violations.push_back(relative_file + ":" + std::to_string(i + 1) + ": " + lines[i]);
         }
@@ -1431,10 +1447,28 @@ TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
       << " Vulkan creation/allocation result(s) read via .value with no ASSERT_VULKAN nearby "
          "(exceptions are disabled project-wide, so a failed creation call must abort rather than "
          "continue into a null-handle dereference; add ASSERT_VULKAN, or for a deliberate exception "
-         "add a justified entry to kCheckedResultAllowlist above):"
+         "add a \"// UNCHECKED_VULKAN_RESULT_OK: <marker>\" comment on the line and a justified entry "
+         "to kCheckedResultAllowlist above):"
       << [&violations] {
              std::string joined;
              for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    std::vector<std::string> dead_exemptions;
+    for (std::size_t idx = 0; idx < kCheckedResultAllowlist.size(); ++idx) {
+        if (!allowlist_entry_matched[idx]) {
+            dead_exemptions.push_back(kCheckedResultAllowlist[idx].file + " (" + kCheckedResultAllowlist[idx].marker + ")");
+        }
+    }
+
+    EXPECT_TRUE(dead_exemptions.empty())
+      << dead_exemptions.size()
+      << " kCheckedResultAllowlist entr(y/ies) matched no \"// UNCHECKED_VULKAN_RESULT_OK: <marker>\" "
+         "comment in the source - the exemption is dead and must be deleted:"
+      << [&dead_exemptions] {
+             std::string joined;
+             for (const auto &entry : dead_exemptions) { joined += "\n  " + entry; }
              return joined;
          }();
 }

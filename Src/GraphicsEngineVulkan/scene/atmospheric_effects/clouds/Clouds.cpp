@@ -224,7 +224,7 @@ void Clouds::dispatchNoiseGeneration()
         spdlog::error("Failed to create command pool for noise generation");
         return;
     }
-    commandPool = poolRes.value;
+    commandPool = poolRes.value;// UNCHECKED_VULKAN_RESULT_OK: noise-dispatch-skip-on-failure
 
     vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);
 

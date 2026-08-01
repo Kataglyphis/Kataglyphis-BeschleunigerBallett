@@ -3464,6 +3464,345 @@ that touches `Texture`.
   task's own build instructions only called for the `BuildIntegrity.*` filter,
   which is green.
 
+## 2026-08-01 batch XVI — planner (two RED BuildIntegrity gates that fail Windows CI, a ray-tracing SBT that reads past its miss region, an unpinned manifest pair, unpinned Rust/Slang constants)
+
+Batch XV is fully drained (`8b28543c`, `cb669253`, `3a0a49c7`, `c9e920b7`,
+`e2767bb1`); every checkbox left in the file before this batch was `- [b]`.
+Every `file:line` below was read out of the tree this pass.
+
+**Tasks 1 and 2 are the priority: both are `BuildIntegrity` tests that are RED
+right now, and `'BuildIntegrity.*'` is in the Windows CI filter
+(`Windows.yml:210`), so any `[build-win]` commit fails the Test step.** Batch
+XV's executor notes spotted both as "unrelated, pre-existing failures … worth
+their own task" and correctly did not chase them mid-task; this is that task.
+Neither needs a GPU — they are pure file-scanning CPU gtests.
+
+**Task 1 is a stale line-number allowlist, not a real unchecked result.**
+`VulkanCreationResultsAreChecked` (`buildIntegritySuite.cpp:1386`) exempts three
+`.value` reads via `kCheckedResultAllowlist` (`:1312-1327`), keyed on
+`{relative file, 1-based line}`. Two of the three line numbers have drifted out
+from under it: the allowlist says `vulkan_base/ShaderHelper.cpp` **37** but the
+`.value` read is now at **38**, and `scene/atmospheric_effects/clouds/Clouds.cpp`
+**249** but the read is now at **227**. (`vulkan_base/VulkanDevice.cpp` 231 is
+still correct.) Both written justifications still hold verbatim — I read both
+sites: `ShaderHelper.cpp:30-38` still does `spdlog::critical` + `std::abort()`
+above the read, and `Clouds.cpp:222-227` still logs and `return`s on failure
+rather than aborting. So the test is reporting a bookkeeping drift as a
+correctness gap, which is exactly the failure mode that trains people to ignore
+a red gate. A line-number key cannot survive an edit anywhere above it in the
+file; the fix is to anchor the exemption to something that moves *with* the
+code.
+
+**Task 2 is a scope bug: the gate scans a shader the Vulkan engine does not
+consume.** `NoShaderRedeclaresTheCascadeCount` (`:1094`) walks every `.slang`
+under `Resources/ShadersSlang/` outside `build/`, and fails on any
+`static const int <name containing "cascade"> = <MAX_CASCADES>`. It fires on
+`Resources/ShadersSlang/forward/forward.slang:15`
+(`static const int CASCADE_COUNT = 3;`). That constant is **not** a stale copy of
+the C++ engine's `MAX_CASCADES` — `forward/forward.slang` is the Rust/WebGPU
+forward shader, WGSL-emit only (`compile-slang-shaders.ps1` /
+`.sh` list it with `Targets = wgsl` only), and no `forward.*.spv` appears
+anywhere in the engine's SPIR-V load list (checked: the engine loads
+`rasterizer.*`, `deferred.*`, `shadow_map.*`, `skybox.*`, `post.*`,
+`raytrace.*`, `shadow.rmiss.*`, `path_tracing.*`, `compute/*` and nothing else).
+Its owner is `crates/webgpu_renderer/src/render/forward.rs:43`
+(`pub const CASCADE_COUNT: usize = 3;`), and the shader's own comment at `:13`
+says so. The two constants are equal at 3 by coincidence of both renderers
+choosing three cascades. Raising the C++ `MAX_CASCADES` cannot make
+`forward.slang` stale, which is the only thing this gate is for. Widening the
+gate to "any cascade-ish 3 anywhere" made it fire on a shader it has no claim
+over.
+
+**Task 3 is a real Vulkan spec violation in the ray-tracing shader binding
+table, latent on this GPU and wrong on a device with
+`shaderGroupHandleAlignment > shaderGroupHandleSize`.** Three coupled defects in
+`Raytracing.cpp`, all verified by reading `createSBT` (`:289-334`),
+`recordCommands` (`:45-73`), the group table (`:210-250`) and the two
+`TraceRay` call sites. The pipeline has four groups — 0 raygen, **1 and 2 both
+miss** (`rmiss_main`, `shadow_rmiss_main`), 3 triangles-hit — and
+`raytrace.rchit.slang:98-103` traces its shadow ray with **miss index 1**
+(`0u, 0u, 1u,   // sbt offset, stride, miss index (shadow miss)`), while
+`raytrace.rgen.slang:36-43` uses miss index 0. But `recordCommands` sets
+`miss_region.stride = handle_size_aligned; miss_region.size =
+handle_size_aligned;` (`:65-66`) — a region declared to hold **one** record,
+from which the shader reads record **1**. Separately, `createSBT` copies handles
+out of the `getRayTracingShaderGroupHandlesKHR` blob at the *aligned* stride
+(`handles.data() + handle_size_aligned`, `handles.data() + handle_size_aligned *
+3`, `:332-333`), but that call writes handles **tightly packed at
+`shaderGroupHandleSize`** — the aligned stride is the SBT's *device-side* record
+stride, not the blob's. And the two miss handles are then written back-to-back
+at `handle_size` stride (`memcpy(mapped_miss, …, handle_size * 2)`) into a
+buffer allocated `2 * handle_size` (`:319`), while the device reads them at
+`handle_size_aligned` stride. All three are identities when
+`shaderGroupHandleAlignment == shaderGroupHandleSize` (32/32 on the RX 9070 XT
+and most desktop drivers), which is why every RT golden test passes today.
+
+**Task 4 pins a manifest pair that has not drifted yet but has no gate**, and
+task 5 pins two Rust/Slang constants that do. Both follow precedents already in
+the tree (`SlangWgslPatchTablesAgree`, `EveryFuzzTargetIsInTheWindowsCiFuzzList`,
+and batch XV's `render/lights.rs` layout pin).
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **the Windows and Linux Slang manifests currently
+disagree on `histogram/histogram.slang`** — false alarm, that row is *commented
+out* in `compile-slang-shaders.ps1:109` (the hand-written `histogram.wgsl`
+documented in AGENTS.md); the 49 live rows match exactly, which is why task 4 is
+written as a preventive gate and not a bug fix. Note the same comment trap for
+whoever implements it. **The GUI `# cascades` slider advertising 1..8** — stale
+backlog claim, `GUI.cpp:196` already reads
+`ImGui::SliderInt("# cascades", …, 1, MAX_CASCADES)`. **`Clouds::
+recordComputeCommands` indexes `descriptorSets[0]` with no emptiness check**
+(`Clouds.cpp:246`) — same dead-defensive-path class batch XV already rejected for
+`CascadedShadowMap::recordCommands`; the only caller always passes a non-empty
+span.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Un-red `BuildIntegrity.NoShaderRedeclaresTheCascadeCount`: scope it to the shaders the Vulkan engine actually consumes** — it currently fails on the Rust/WebGPU-only `forward/forward.slang`, which the C++ engine never loads.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1083-1159` — the test, its
+    rationale comment, and its `build/` + `scene_types.slang` exclusions.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:600-692` —
+    `EveryShaderSourceHasCompiledBinary` / `ActivePipelineShadersHaveCompiledBinaries`
+    for how the suite already distinguishes SPIR-V-consumed shaders (reuse that
+    knowledge rather than inventing a second list if one is already derivable).
+  - `Resources/ShadersSlang/forward/forward.slang:13-15` — the constant and its
+    "Must match CASCADE_COUNT in forward.rs" comment.
+  - `Scripts/Linux/compile-slang-shaders.sh:38-107` — the manifest, the machine-
+    readable statement of which shaders emit `spirv` and which emit `wgsl` only.
+
+  **Steps:**
+  1. Derive the set of Vulkan-consumed `.slang` files from the Slang manifest
+     (parse `Scripts/Linux/compile-slang-shaders.sh`'s `MANIFEST=( … )` rows and
+     keep those whose targets include `spirv`). Prefer this over a hand-written
+     exclusion list — the manifest is already the source of truth for
+     "who consumes this shader", and a hand list is the drift this suite exists
+     to prevent. Skip rows that are commented out (`#`).
+  2. Restrict the `NoShaderRedeclaresTheCascadeCount` scan to that set. Update
+     the test's header comment to say *why* WGSL-only shaders are out of scope
+     (they cannot go stale against `MAX_CASCADES`; their constants are owned and
+     pinned on the Rust side — see the task below).
+  3. Verify the test is green, then verify it still bites: temporarily add
+     `static const int NUM_CASCADES = 3;` to
+     `Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang`, confirm red,
+     revert.
+
+  **Test:** `BuildIntegrity.NoShaderRedeclaresTheCascadeCount` must pass, and the
+  step-3 red-then-green check must be done by hand (do not commit the probe). If
+  the manifest parse is non-trivial, factor it into a file-local helper and share
+  it with the task below rather than writing it twice.
+
+  **Build:** `clangcl-debug`, same commands as the task above,
+  `--gtest_filter='BuildIntegrity.*'`. No GPU needed.
+
+  **Context:** The gate's own comment states its purpose precisely — catch a
+  shader still reading a stale private copy after `MAX_CASCADES` is raised on
+  both gated sides. `forward/forward.slang` cannot be that shader: it emits WGSL
+  only and the C++ engine loads no `forward.*.spv`. Narrowing the scan is the fix;
+  do **not** "fix" it by making `forward.slang` import `MAX_CASCADES` from
+  `common/scene_types.slang` — that would couple the Rust renderer's cascade count
+  to the Vulkan engine's, which is a real (if currently invisible) behaviour
+  change and the opposite of what either side wants.
+
+- [ ] **(M) Fix the ray-tracing SBT: the miss region declares one record while the shadow ray reads record 1, and handle offsets assume the device stride** — a spec violation that is invisible only because `shaderGroupHandleAlignment == shaderGroupHandleSize` on this GPU.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp:289-334` (`createSBT`),
+    `:45-73` (the three `vk::StridedDeviceAddressRegionKHR` set-ups in
+    `recordCommands`), `:210-250` (the four-group table: 0 raygen, 1 miss,
+    2 shadow miss, 3 triangles-hit).
+  - `Resources/ShadersSlang/raytracing/raytrace.rchit.slang:98-103` — the shadow
+    `TraceRay` with **miss index 1**; `raytrace.rgen.slang:36-43` — miss index 0.
+  - `Src/GraphicsEngineVulkan/common/MemoryHelper.hpp:6` — `align_up`, and
+    `Test/commit/VulkanEngine/memoryHelperSuite.cpp` for the existing pure-CPU
+    test pattern to extend.
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp:560-580` — where
+    `shaderGroupBaseAlignment`/`shaderGroupHandleAlignment` are already read and
+    logged at device selection.
+
+  **Steps:**
+  1. **Source offsets.** `getRayTracingShaderGroupHandlesKHR` writes handles
+     tightly packed at `shaderGroupHandleSize`. Change the three `memcpy` sources
+     at `:331-333` to index by `handle_size`, not `handle_size_aligned`
+     (group 0 at `0`, groups 1-2 at `handle_size`/`2 * handle_size`, group 3 at
+     `3 * handle_size`).
+  2. **Destination layout.** Size the three SBT buffers in units of
+     `handle_size_aligned`, not `handle_size` (`:317-322`): raygen
+     `handle_size_aligned`, miss `2 * handle_size_aligned`, hit
+     `handle_size_aligned`. Copy each record into its own aligned slot — the two
+     miss handles must land at offsets `0` and `handle_size_aligned`, replacing
+     the single `handle_size * 2` block copy.
+  3. **Region sizes.** In `recordCommands`, set
+     `miss_region.size = 2 * handle_size_aligned` (stride stays
+     `handle_size_aligned`) so the declared region covers the miss index 1 the
+     closest-hit shader actually uses. Leave raygen and hit at
+     `size == stride == handle_size_aligned` (the spec requires
+     `size == stride` for the raygen region specifically).
+  4. **Make the arithmetic testable.** Extract the two offset formulas as
+     `constexpr` free functions next to `align_up` in
+     `common/MemoryHelper.hpp` — e.g.
+     `sbt_handle_source_offset(groupIndex, handleSize)` and
+     `sbt_record_offset(recordIndex, handleSizeAligned)` — and call them from
+     `createSBT` instead of inline multiplications. Keep them header-only and
+     free of Vulkan types so the headless test binary can use them.
+  5. Add a short comment at `createSBT` recording *why* the two strides differ
+     (blob is packed, device records are aligned) — that distinction is the whole
+     bug and the next reader will otherwise re-collapse them.
+
+  **Test:** Add to `Test/commit/VulkanEngine/memoryHelperSuite.cpp` (suite name
+  is **`MemoryHelperUnit`**, already in the Windows CI filter at
+  `Windows.yml:239` — no workflow edit needed):
+  `MemoryHelperUnit.SbtSourceOffsetsArePackedAtHandleSize` and
+  `MemoryHelperUnit.SbtRecordOffsetsUseTheAlignedStride`, both exercising the
+  **`handleSize = 32`, `alignment = 64`** case (so `aligned = 64 != 32`) where
+  every current formula is wrong: source offsets must be `0, 32, 64, 96`, record
+  offsets `0, 64`. Also assert the degenerate `alignment == handleSize` case
+  still yields today's values, so the change is provably a no-op on this
+  hardware. These are pure CPU. If you do add a new suite name,
+  `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter` will tell you to register
+  it.
+
+  **Build:** `clangcl-debug` for the CPU tests. **Then GPU-verify on the host RX
+  9070 XT** — this is a render-path change and the CPU tests cannot see it:
+  `.\commitTestSuite.exe --gtest_filter='GoldenRender.Raytrac*:GoldenRender.*Raytraced*:GoldenRender.PathTracing*:GoldenRender.AddedModelAppearsInPathTracing'`
+  from the repo root (`RaytracedWorldFollowsTheModelTransform`,
+  `RaytracingFrameSkipsTheRasterPass`, `RaytracedLargeMeshDoesNotLoseTheDevice`,
+  and the five path-tracing tests). A wrong handle offset shows up as the wrong
+  shader being invoked — expect visibly broken RT output, not a subtle shift, if
+  step 1 or 2 is done wrong. Also run
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1`;
+  the validation layers check SBT region sizes against the miss indices used, so
+  step 3 is directly observable there.
+
+  **Context:** See `docs/gpu-golden-testing.md` for the host verification loop
+  and `[[host-gpu-golden-verification]]`. This is deliberately three fixes in one
+  change because they are one bug — the code conflates the packed *source* stride
+  with the aligned *device record* stride, and fixing either half alone leaves the
+  SBT self-inconsistent. Do not "simplify" by asserting
+  `shaderGroupHandleAlignment == shaderGroupHandleSize`: that is exactly the
+  portability assumption being removed, and the RX 9070 XT would never fail the
+  assert.
+
+### Build / scripts
+
+- [ ] **(S) Pin the Windows and Linux Slang manifests against each other (refactor)** — the patch tables are gated; the manifests they patch are not.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:870-927`
+    (`SlangWgslPatchTablesAgree`) — the exact precedent: parse both scripts as
+    text, compare, report both directions. Reuse its helper style
+    (`parse_powershell_wgsl_patch_counts` / `parse_bash_wgsl_patch_counts`).
+  - `Scripts/Windows/compile-slang-shaders.ps1:42-115` — the `$Manifest` array of
+    `@{ File; Entry; Stage; Targets }` hashtables (note `\` path separators).
+  - `Scripts/Linux/compile-slang-shaders.sh:36-107` — the `MANIFEST=( … )` array
+    of `"file|entry|stage|targets"` strings (`/` separators).
+
+  **Steps:**
+  1. Add `BuildIntegrity.SlangCompileManifestsAgree`. Parse `$Manifest` from the
+     `.ps1` and `MANIFEST=( … )` from the `.sh` into a normalized
+     `{file, entry, stage, sorted targets}` set each: lower-case nothing, convert
+     `\` to `/`, and sort the comma-separated targets so `spirv,wgsl` and
+     `wgsl,spirv` compare equal.
+  2. **Skip commented-out rows in both files.** This is not hypothetical:
+     `compile-slang-shaders.ps1:105-109` carries a commented
+     `histogram\histogram.slang` row (the hand-written `histogram.wgsl` that Slang
+     cannot emit — see AGENTS.md § Shaders). A naive regex counts it and the test
+     fails on day one against a manifest pair that actually agrees. Strip
+     everything from the first unquoted `#` in the bash file and from a leading
+     `#` in the PowerShell file before parsing.
+  3. Report both directions (`windows_only` / `linux_only`) with the same
+     violation-vector + `EXPECT_TRUE(v.empty())` style as
+     `SlangWgslPatchTablesAgree`, and `ASSERT_FALSE(parsed.empty())` on each side
+     so an anchor-text change fails loudly instead of passing vacuously.
+  4. If task 2 above lands first, reuse its manifest parser instead of writing a
+     second one.
+
+  **Test:** The new test is the deliverable. Verify red-then-green by hand:
+  temporarily delete one row from the `.sh` manifest, confirm it names that row,
+  restore. Confirm `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter` still
+  passes (the suite is already in the filter, so no `Windows.yml` edit is
+  expected).
+
+  **Build:** `clangcl-debug`, `--gtest_filter='BuildIntegrity.*'`. No GPU needed.
+
+  **Context:** Verified this pass that the 49 live rows are currently identical
+  on both sides, so this is a preventive gate, not a bug fix — say so in the test
+  comment. The consequence it prevents is real and silent: a shader added to one
+  script only is never compiled on the other platform, and the *stale checked-in
+  artifact* keeps every existing staleness gate green because the source it is
+  compared against was never recompiled there.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(S) Make the Rust-side `forward.slang` constant pins actually read `forward.slang`, and add the missing `TILE_SIZE` pin** — one existing pin asserts a literal against a literal, and a second host/device constant has no pin at all.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/tests/headless.rs:396-403` —
+    `cascade_count_matches_the_slang_constant`. Its doc comment says it "pins
+    `CASCADE_COUNT` in Rust against the `static const int CASCADE_COUNT` baked
+    into `forward.slang`", but the body is
+    `assert_eq!(…::forward::CASCADE_COUNT, 3)` — it never opens the shader, so
+    editing `forward.slang:15` to `4` leaves it green.
+  - `Resources/ShadersSlang/forward/forward.slang:15` (`CASCADE_COUNT`),
+    `:292-293` (`uint tileX = uint(fragCoord.x) / 16u; uint tileY =
+    uint(fragCoord.y) / 16u;`) and `:294-300` (`tileW`/`tileH` read from
+    `frame.cascade_splits.zw`, `tileIndex = ty * tileW + tx`).
+  - `crates/webgpu_renderer/src/render/tile_grid.rs:19`
+    (`pub const TILE_SIZE: u32 = 16;`) and `build_tile_light_grid`'s
+    `tile_x = (width + TILE_SIZE - 1) / TILE_SIZE` (`:157-158`) — the CPU half of
+    the same contract.
+  - `crates/webgpu_renderer/src/render/lights.rs` — batch XV's precedent for
+    documenting and testing a host/device layout in-module.
+
+  **Steps:**
+  1. Add a small test-local helper that reads
+     `<repo>/Resources/ShadersSlang/forward/forward.slang` (resolve from
+     `CARGO_MANIFEST_DIR` — the shader tree is four levels up, out of the
+     submodule; if that path is fragile in this workspace, put the helper behind
+     a single `fn slang_source() -> Option<String>` that returns `None` and lets
+     the test `eprintln!("SKIP: …")` rather than failing when the superproject
+     tree is not present, matching the existing no-GPU skip convention).
+  2. Rewrite `cascade_count_matches_the_slang_constant` to parse
+     `static const int CASCADE_COUNT = <n>;` out of that source and assert it
+     equals `render::forward::CASCADE_COUNT`. Keep the existing `== 3` assertion
+     as a second, separate line only if you also assert the shader agrees —
+     otherwise it is the tautology being removed.
+  3. **Name the tile size in the shader.** Replace the two `16u` literals at
+     `forward.slang:292-293` with a `static const uint TILE_SIZE = 16;`
+     declared near `CASCADE_COUNT`, with a comment naming
+     `render::tile_grid::TILE_SIZE` as the CPU half.
+  4. Add `tile_size_matches_the_slang_constant`, parsing that new constant and
+     asserting it equals `render::tile_grid::TILE_SIZE`.
+  5. Recompile the shaders
+     (`pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`)
+     and check in the regenerated `forward.wgsl` — step 3 edits a `.slang`
+     source, so `BuildIntegrity.CheckedInWgslIsNotOlderThanItsSlangSource` and
+     `CheckedInWgslHasNoHandEdits` will fail otherwise.
+
+  **Test:** The two pin tests above, plus red-then-green by hand: change
+  `forward.slang`'s `CASCADE_COUNT` to `4`, confirm the test fails, revert; same
+  for `TILE_SIZE`.
+
+  **Build:** `cargo test --workspace --locked` from
+  `ExternalLib/Kataglyphis-RustProjectTemplate` (both new tests are pure CPU — no
+  adapter). **Expect pre-existing unrelated failures in this environment**:
+  `auto_exposure_brightens_a_dark_scene_over_successive_frames` and ~11 `ibl`
+  tests fail identically on unmodified `develop` (headless-adapter issues,
+  confirmed by stashing — see batch XV's note). Then `clangcl-debug` container
+  build + `.\commitTestSuite.exe --gtest_filter='BuildIntegrity.*'` for step 5's
+  WGSL staleness gates.
+
+  **Context:** The drift this closes is concrete, not theoretical. `TILE_SIZE`
+  appears on both sides of the tiled-lighting contract: the CPU derives
+  `tileW`/`tileH` from it and uploads them in `cascade_splits.zw`, and the
+  shader independently divides `fragCoord` by a hard-coded `16u` to pick the
+  tile. Change the Rust constant to 32 and the shader keeps indexing a 16-pixel
+  grid — `min(tileX, tileW - 1)` silently clamps most fragments to the wrong
+  tile, and lights vanish with no error anywhere. That is the same class as the
+  upside-down binning batch XV fixed and the `cascade_splits.z` double-duty bug
+  before it, and it is exactly what a pin test is cheap enough to prevent.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
