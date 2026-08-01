@@ -20,6 +20,19 @@ struct Aabb
 [vk::binding(2, 0)] StructuredBuffer<Aabb> aabbData;
 [vk::binding(3, 0)] RWStructuredBuffer<uint> visibility;
 
+// Unit-cube corner selectors: lerp(aabb.min, aabb.max, UNIT_CORNERS[i])
+// walks all eight AABB corners.
+static const float3 UNIT_CORNERS[8] = {
+    float3(0.0, 0.0, 0.0), float3(1.0, 0.0, 0.0),
+    float3(0.0, 1.0, 0.0), float3(1.0, 1.0, 0.0),
+    float3(0.0, 0.0, 1.0), float3(1.0, 0.0, 1.0),
+    float3(0.0, 1.0, 1.0), float3(1.0, 1.0, 1.0),
+};
+
+// Depth taps across the AABB's clamped screen-space rect. 8x8 keeps the
+// shader O(1) while still catching an occluder that only covers part of it.
+static const uint DEPTH_TAPS = 8u;
+
 [shader("compute")]
 [numthreads(64, 1, 1)]
 void cs_main(uint3 gid : SV_DispatchThreadID)
@@ -28,18 +41,57 @@ void cs_main(uint3 gid : SV_DispatchThreadID)
     if (idx >= params.primitive_count) return;
 
     Aabb aabb = aabbData[idx];
-    float3 center = (aabb.min.xyz + aabb.max.xyz) * 0.5;
-    float4 clip = mul(params.view_proj, float4(center, 1.0));
-    float2 ndc = clip.xy / clip.w;
-    float depth = clip.z / clip.w;
-    float2 uv = ndc * 0.5 + 0.5;
 
-    if (depth < 0.0 || depth > 1.0) { visibility[idx] = 0u; return; }
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { visibility[idx] = 0u; return; }
+    // Project all eight AABB corners. A box that crosses the near plane
+    // (any corner w <= 0) has no reliable NDC/UV — uncertainty must resolve
+    // to visible, never culled.
+    const float FAR_SENTINEL = 1e30;
+    float aabbNear = FAR_SENTINEL;
+    float2 uvMin = float2(FAR_SENTINEL, FAR_SENTINEL);
+    float2 uvMax = float2(-FAR_SENTINEL, -FAR_SENTINEL);
+
+    for (uint i = 0u; i < 8u; ++i)
+    {
+        float3 corner = lerp(aabb.min.xyz, aabb.max.xyz, UNIT_CORNERS[i]);
+        float4 clip = mul(params.view_proj, float4(corner, 1.0));
+        if (clip.w <= 0.0) { visibility[idx] = 1u; return; }
+
+        float2 ndc = clip.xy / clip.w;
+        float depth = clip.z / clip.w;
+        float2 uv = ndc * 0.5 + 0.5;
+
+        aabbNear = min(aabbNear, depth);
+        uvMin = min(uvMin, uv);
+        uvMax = max(uvMax, uv);
+    }
+
+    // Clamp the screen-space rect to the viewport. A rect that merely
+    // extends past the screen edge stays visible; only an empty clamped
+    // rect (fully off-screen) is culled here.
+    uvMin = clamp(uvMin, float2(0.0, 0.0), float2(1.0, 1.0));
+    uvMax = clamp(uvMax, float2(0.0, 0.0), float2(1.0, 1.0));
+    if (uvMax.x <= uvMin.x || uvMax.y <= uvMin.y) { visibility[idx] = 0u; return; }
 
     uint w, h;
     depthTex.GetDimensions(w, h);
-    int2 coords = int2(uv * float2(float(w), float(h)));
-    float sampledDepth = depthTex.Load(int3(coords, 0));
-    visibility[idx] = (depth <= sampledDepth) ? 1u : 0u;
+    int2 maxCoord = int2(int(w) - 1, int(h) - 1);
+
+    // Sample a bounded grid across the clamped rect and take the maximum
+    // (nearest-to-camera) sampled depth the box covers.
+    float maxSampled = 0.0;
+    for (uint ty = 0u; ty < DEPTH_TAPS; ++ty)
+    {
+        for (uint tx = 0u; tx < DEPTH_TAPS; ++tx)
+        {
+            float2 t = (float2(float(tx), float(ty)) + 0.5) / float(DEPTH_TAPS);
+            float2 uv = lerp(uvMin, uvMax, t);
+            int2 coords = clamp(int2(uv * float2(float(w), float(h))), int2(0, 0), maxCoord);
+            float sampledDepth = depthTex.Load(int3(coords, 0));
+            maxSampled = max(maxSampled, sampledDepth);
+        }
+    }
+
+    // Occluded only when the box's nearest corner is behind the closest
+    // surface everywhere it covers on screen.
+    visibility[idx] = (aabbNear > maxSampled) ? 0u : 1u;
 }
