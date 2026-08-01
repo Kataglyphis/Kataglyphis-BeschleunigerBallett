@@ -189,7 +189,9 @@ void fs_shadow_masked(VsShadowMaskedOut In)
     if (alpha < prim.emissive_factor.w) discard;
 }
 
-float shadow_factor(float viewDepth, float3 worldPos, float nDotL)
+// Returns visibility: 1 = fully lit, 0 = fully occluded — the inverse of
+// common/cascaded_shadow.slang's calc_cascaded_shadow.
+float shadow_visibility(float viewDepth, float3 worldPos, float nDotL)
 {
     int cascade = 0;
     if (viewDepth > frame.cascade_splits.x) cascade = 1;
@@ -361,8 +363,8 @@ float4 fs_main(VsOut In) : SV_Target
     float nDotL = max(dot(n, l), 0.0);
 
     float3 directLight = brdf_direct(n, v, l, albedo.rgb, metallic, roughness, f0, radiance);
-    float shadow = shadow_factor(In.viewDepth, In.worldPosition, nDotL);
-    directLight *= 1.0 - shadow;
+    float visibility = shadow_visibility(In.viewDepth, In.worldPosition, nDotL);
+    directLight *= visibility;
 
     float3 punctual = punctual_lighting(In.worldPosition, n, v, albedo.rgb, metallic, roughness, f0, In.svPosition);
 

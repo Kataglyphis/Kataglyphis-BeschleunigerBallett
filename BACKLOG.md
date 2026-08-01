@@ -2457,6 +2457,13 @@ engine-side clamp already makes it a cosmetic lie rather than a bug.
   fresh look at the compute-shader culling path itself" rather than "waiting
   on the shared depth read".
 
+  **That fresh look happened (2026-08-01, batch VI) and the bug is found: the
+  shader tests the AABB CENTRE, which for any opaque object sits behind its own
+  front face, so every visible primitive fails `depth <= sampledDepth`.** The
+  Rust side of this entry needs no further work — see the actionable
+  "Fix `gpu_cull.slang`" task in batch VI. This entry stays `- [b]` only so its
+  implementation record is not duplicated; it closes when that task lands.
+
 ## 2026-08-01 batch IV — planner (depth-resolve root cause, generated-shader gates)
 
 The actionable queue was empty when this batch was written (only `- [b]` entries
@@ -2574,6 +2581,283 @@ PostStage, CascadedShadowMap, SkyBox) — they differ in attachment count, layer
 and multiview, so the helper would be almost all parameters.
 
 ### C++ Vulkan engine
+
+## 2026-08-01 batch VI — planner (Slang-source shadow inversion, GPU-cull root cause, generated-artifact gate)
+
+The actionable queue was empty again when this batch was written (only the eight
+`- [b]` entries across the whole file; batch IV's and batch V's subsections are
+drained). Every claim below was read out of the tree this pass.
+
+**The headline finding: the inverted shadow factor has now been "fixed" twice and
+reverted twice, because both fixes were applied to a GENERATED file.**
+`git log -L 365,365:Resources/ShadersSlang/forward/forward.slang` returns exactly
+one commit — `40b1cbe3 complete slang migration` — so the Slang source has read
+`directLight *= 1.0 - shadow;` since the day it was written and has never been
+touched. Meanwhile `1dd2ebd` (Jul 31, "fix … inverted shadow factor", 16/33 →
+32/33 headless) and `9acdc0a6` (Jul 31, "restore reverted RPT shadow-factor fix")
+both edited only `crates/webgpu_renderer/src/shaders/forward.wgsl`, a
+`compile-slang-shaders` output. The RPT working tree is dirty again right now with
+the regenerated — i.e. re-inverted — WGSL, and the three-line warning comment
+`1dd2ebd` added ("Do not wrap it in `1.0 - ...`") is gone with it. That comment is
+itself the proof of the anti-pattern: Slang's WGSL backend emits zero comments, so
+a `//` in a generated file can only be a hand-edit awaiting deletion.
+
+Two mechanisms let this recur, both tasked below:
+
+- **The convention is inverted between the two renderers under near-identical
+  names.** `Resources/ShadersSlang/common/cascaded_shadow.slang:10-11`'s
+  `calc_cascaded_shadow` returns OCCLUSION ("0 = fully lit"), and its two C++ call
+  sites (`rasterizer.slang:82`, `deferred.slang:133`) correctly write
+  `color *= 1.0 - shadow * intensity`. `forward.slang:192`'s `shadow_factor`
+  returns VISIBILITY (line 207 early-returns `1.0` for out-of-cascade;
+  `SampleCmpLevelZero` returns 1 where the fragment passes the depth compare), so
+  `1.0 - shadow` at `:365` is wrong. Copying the C++ idiom onto the Rust helper is
+  the whole bug, and the names give no warning.
+- **Nothing automated can catch it.** `BuildIntegrity.CheckedInWgslIsNotOlderThanItsSlangSource`
+  (`buildIntegritySuite.cpp:807`) compares mtimes only — a regenerate makes the
+  destination *newer*, so it passes while carrying the regression (and after a
+  fresh CI checkout mtimes carry no staleness information at all). On the Rust
+  side, `shadow_darkens_plane_under_cube` *would* catch a full inversion (it
+  demands `lit_plane > 1000` neutral-bright pixels, which the inversion destroys),
+  but `rust_ubuntu24_04.yml` runs `cargo_test.sh` in a GPU-less container where
+  every `headless.rs` test hits its `GpuContext::new_headless()` early return and
+  prints `SKIP`.
+
+**Second root cause found this pass: the GPU-culling compute path culls every
+primitive, and the reason is in the shader.** The `- [b]` "Make `gpu_culling_enabled`
+actually cull" entry above closed with "needs a fresh look at the compute-shader
+culling path itself"; this is that look. `Resources/ShadersSlang/gpu_cull/gpu_cull.slang:31-44`
+projects **only the AABB centre** and keeps the primitive when
+`depth <= sampledDepth`. For any opaque object that rendered itself, the centre of
+its own bounding box sits *behind* its own front face, so its projected depth is
+strictly greater than the depth the object wrote at that texel and the test fails
+— every visible primitive is culled. That is exactly the reported symptom
+(`two_visible_cubes_are_both_drawn_with_gpu_culling` returning `(0, 2)`). The
+hardware-query path it was told to mirror does not have this property because it
+rasterizes the *box* (front face nearer than the object) with `LessEqual`.
+Lines 37-38 add a second over-cull: a primitive whose centre falls off-screen or
+behind the near plane is culled outright, so a large ground plane disappears.
+
+Verified this pass and folded into the tasks rather than tasked separately: the
+`alpha_modes_blend_and_mask` failure that batch IV recorded as "isolated, needs its
+own investigation" is very likely the same inversion — its classifier requires
+`g > 140 && r > 70 && b > 60` over a "bright white plane", and zeroing direct light
+everywhere outside a cascade takes the frame to ambient/IBL only, which reads as
+the reported 0 composited pixels. Task 1 states the expected outcome rather than
+assuming it. Also confirmed: `parseCpu`'s texture extraction (`GltfLoader.cpp:438-441`)
+is NOT a second alignment hazard — `textureID` is assigned from
+`textureImages.size()` at push time, so a dropped image shifts nothing.
+
+Candidates found but NOT tasked this cycle (checked, then rejected with a reason —
+do not re-propose without new evidence): **`histogram.wgsl` being the one
+hand-written WGSL** — AGENTS.md § Shaders already records why (Slang has no
+`InterlockedAdd` on `RWStructuredBuffer` for WGSL) and it is Rust-only, with no
+C++ counterpart to share; **README/`shader-build-pipeline.md`/`webgpu-renderer-roadmap.md`
+shader drift** that batch IV deferred — re-read this pass and all three are now
+correct (`shader-build-pipeline.md:49` explicitly frames the GLSL tree as a
+"Historical note", the roadmap marks the naga route retired); **the `Y`-flip
+divergence** between `cascaded_shadow.slang:29` (`proj.xy * 0.5 + 0.5`) and
+`forward.slang:206` (`0.5 - proj.y * 0.5`) — the two renderers build their cascade
+matrices differently and both shadow goldens pass, so there is no evidence either
+is wrong; **`CheckedInWgslIsNotOlderThanItsSlangSource`'s missing mtime tolerance**
+— a real sharp edge, but task 3's content gate makes the mtime test's vacuousness
+moot rather than needing its own fix.
+
+### Cross-renderer
+
+- [ ] **(S) Gate the checked-in generated WGSL against hand-edits** — a `//` in a
+  Slang-generated file is always a hand-edit with a regenerate's expiry date on it.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:91-118` — `kWgslMap`, the
+    deliberately independent copy of `$WgslMap`, already lists all ten
+    source→destination pairs and already documents why `histogram.wgsl` is excluded
+  - `:799-846` — `CheckedInWgslIsNotOlderThanItsSlangSource`, the mtime-only
+    neighbour whose skip/`find_repo_root` structure this test should copy verbatim
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/tests/shader_export.rs:48-78`
+    — the Rust-side self-enforcing sweep over `src/shaders/`, and its existing
+    `histogram` carve-out
+
+  **Steps:**
+  1. Add `TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)` next to the mtime
+     test. Walk `kWgslMap`, skip any destination that does not exist (submodule not
+     checked out) exactly as the neighbour does, `GTEST_SKIP()` if nothing was
+     checked, and fail naming every destination containing a line with `//`, with
+     the offending line numbers and text in the message.
+  2. Word the failure message so it says what to do: *"generated WGSL must not be
+     hand-edited — put the change in the .slang source, or in the post-emit patch
+     table in compile-slang-shaders.ps1/.sh"*.
+  3. Mirror it on the Rust side in `tests/shader_export.rs` so RPT's own CI (which
+     runs on every push, unlike the `[build-win]`-gated Windows lane) catches it
+     too: assert every `src/shaders/*.wgsl` except `histogram.wgsl` contains no
+     `//`.
+  4. Verify red-then-green: on today's tree the C++ test must fail naming
+     `forward.wgsl` (3 comment lines); after task 1 regenerates it, both must pass.
+     All nine other mapped destinations plus `crates/gui/src/shaders/tex_quad.wgsl`
+     are already at zero, measured this pass.
+
+  **Test:** the two tests above are the deliverable. `GoldenRender`/`Integration`
+  are untouched.
+
+  **Build:** `clangcl-debug`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipPerfTests -SkipMsix`
+  `BuildIntegrity` is already in `Windows.yml`'s CPU-only filter, so no filter edit
+  is needed (and `a63edf10` made that filter self-enforcing).
+
+  **Context:** `//` is safe as the sole signal: WGSL has no string literals, so it
+  cannot appear outside a comment, and the Slang WGSL backend emits none — all ten
+  mapped files were measured at zero this pass except the one carrying the
+  hand-edit. If a future post-emit patch ever needs to inject a comment, that is a
+  deliberate decision and belongs in an explicit allowlist, not a weakened gate.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) Fix `gpu_cull.slang`: the AABB-centre depth test culls every visible
+  primitive** — root cause for the two red compute-culling tests, found this pass.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/gpu_cull/gpu_cull.slang:23-45` — `cs_main`; the centre
+    projection at `:31-35`, the two early `visibility = 0` returns at `:37-38`, and
+    the test at `:44`
+  - `Resources/ShadersSlang/occlusion_bbox/occlusion_bbox.slang` and
+    `crates/webgpu_renderer/src/render/occlusion.rs:170-180` — the hardware-query
+    path that works, and *why* (it rasterizes the box front face, not the centre)
+  - `crates/webgpu_renderer/src/render/gpu_occlusion.rs:199-295` — `cull()`; the
+    Rust side needs no change for the core fix
+  - `crates/webgpu_renderer/tests/occlusion.rs` — the three `gpu_culling` tests
+
+  **Steps:**
+  1. Replace the single-point test with a conservative box test. Project all eight
+     AABB corners with `params.view_proj`. If **any** corner has `w <= 0` (the box
+     crosses the near plane), write `visibility = 1` and return — uncertainty must
+     resolve to visible, never culled.
+  2. From the eight projected corners take the minimum NDC depth (`aabbNear`) and
+     the screen-space UV rect (`uvMin`/`uvMax`), then clamp the rect to `[0,1]`.
+     Cull only when the clamped rect is empty; a rect that merely extends past the
+     screen edge stays visible. This retires the `:37-38` over-culls, which today
+     delete any primitive whose centre leaves the frame.
+  3. Sample `depthTex.Load` over a bounded grid across the clamped rect (8x8 taps
+     is enough and keeps the shader O(1)) and take the **maximum** sampled depth —
+     the far-most of the nearest-surface depths the rect covers.
+  4. Write `visibility[idx] = (aabbNear > maxSampled) ? 0u : 1u`. Occluded means
+     the whole box is behind the closest surface everywhere it covers; anything
+     else draws. Note the inequality is strict and the operands are the opposite
+     pair from today's `depth <= sampledDepth`.
+  5. Regenerate with `compile-slang-shaders.ps1` (never hand-edit
+     `src/shaders/gpu_cull.wgsl`) and commit source + artifact together, as in
+     task 1.
+
+  **Test:** `cargo test -p kataglyphis_webgpu_renderer --test occlusion --
+  --nocapture`. `an_occluded_primitive_is_skipped_with_gpu_culling` and
+  `two_visible_cubes_are_both_drawn_with_gpu_culling` must go green (they are the
+  two currently red; the second reports `(0, 2)` today and must reach `(2, 2)`).
+  `gpu_culling_is_off_by_default` and the four hardware-query tests
+  (`an_occluded_primitive_is_actually_skipped_in_the_opaque_pass`,
+  `two_side_by_side_cubes_are_both_visible`,
+  `a_cube_hidden_behind_another_reads_back_zero_samples`,
+  `loading_a_new_scene_does_not_inherit_the_old_scene_visibility`) must stay green
+  — they went green when the depth-resolve prerequisite was fixed and a regression
+  there means the shared depth read broke again, not this change.
+
+  **Build:** Rust only — `cargo build -p kataglyphis_webgpu_renderer && cargo
+  clippy -p kataglyphis_webgpu_renderer` (default features). No C++ build needed,
+  though the shader regenerate means `clangcl-debug` afterwards keeps the
+  BuildIntegrity artifacts honest.
+
+  **Context:** This resolves the blocker recorded on the `- [b]` "Make
+  `gpu_culling_enabled` actually cull" entry above — do not re-do that entry's
+  Rust-side work, which is finished and correct; only the shader is wrong.
+  `params.inv_view_proj` is declared in `CullParams` and never referenced by the
+  shader; leaving it is fine, and if you do remove it, remove it from
+  `gpu_occlusion.rs`'s `CullParams` in the same commit — a one-sided change
+  silently shifts every field after it.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Pin the glTF/OBJ texture-slot alignment fix with a test** — the
+  failure path that caused the bug has no coverage, only the success path does.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:63-88` — `uploadParsed()`; the
+    `else` branch at `:73-82` fills a failed decode with the default texture
+    specifically to keep `textureID` dense
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:114-138` — the same fix in the
+    OBJ path
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp:121-158` —
+    `ShortBase64ImageUriDoesNotUnderflow`, the inline-glTF-fixture pattern to copy
+    (write the document to `temp_directory_path()`, parse, assert, remove)
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` — the device harness and
+    `SKIP_WITHOUT_GPU`, since `uploadParsed` needs a real `Device`/command pool
+
+  **Steps:**
+  1. Build an inline two-material glTF fixture: image 0 is a base64 blob long
+     enough to survive extraction but not a decodable PNG (so `extractImageBytes`
+     yields non-empty bytes and `Texture::createFromMemory` returns false), image 1
+     is a small valid PNG. Material 0 references texture 0, material 1 references
+     texture 1.
+  2. Assert the CPU half first, in `gltfParseSuite` (no device needed):
+     `getTextureImages().size() == 2`, `materials[0].textureID == 0`,
+     `materials[1].textureID == 1`.
+  3. Add the device half as `GoldenRender.CorruptEmbeddedImageKeepsTextureSlotsAligned`
+     using the existing harness: after `uploadParsed`, `getTextureCount(0)` must be
+     **2**, not 1. That single count is the whole regression — a skipped slot
+     shifts every later texture down one and the last `textureID` indexes past the
+     descriptor array.
+  4. Do not add a pixel oracle. The count assertion is driver-independent; a
+     colour assertion on a deliberately-corrupt texture is not.
+
+  **Test:** the two tests above. `GltfParseUnit` runs in the Windows CPU CI filter
+  already; `GoldenRender` is GPU-only and runs locally.
+
+  **Build:** `clangcl-debug`, then GPU-verify by running the container-built
+  `commitTestSuite.exe` from the repo root on the RX 9070 XT (see
+  `docs/gpu-golden-testing.md` and `[[host-gpu-golden-verification]]`):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipPerfTests -SkipMsix`
+
+  **Context:** The misalignment was a real bug found and fixed in the 2026-07-23
+  deep review ("BUG texture-index misalignment (both loaders)"), and the review
+  itself noted the valid-texture path was unchanged — i.e. the golden suite proves
+  nothing about the fix. This is the missing half.
+
+- [ ] **(S) (refactor) Retire the "Mirrors `Resources/Shaders/…`" headers that
+  point at a deleted tree, and assert they cannot come back** — ten `.slang` files
+  cite an authoritative original that no longer exists.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/common/cascaded_shadow.slang:4`,
+    `common/material_fetch.slang:4`, `common/brdf.slang:5`, `common/noise.slang:4`,
+    `common/aces.slang:5`, `compute/noise.slang:2`, `post/post.slang:5-6`,
+    `rasterizer/rasterizer.slang:7`, `raytracing/raytrace.rgen.slang:5`,
+    `raytracing/raytrace.rmiss.slang:5`, `skybox/skybox.slang:3` — every "Mirrors
+    Resources/Shaders/…" / "`*.glsl`" reference
+  - `docs/shader-build-pipeline.md:49-60` — the historical note that already
+    records the GLSL tree's deletion correctly; link to it rather than restating it
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — where the guard goes
+
+  **Steps:**
+  1. Confirm the tree is gone: `Resources/` holds only `ShadersSlang/`, `Models/`
+     and `Textures/` (verified this pass — `Resources/Shaders/` does not exist).
+  2. Rewrite each header to say what is true now: the `.slang` file is the sole
+     source for this shader, and it emits SPIR-V and/or WGSL. Where the comment
+     carries information worth keeping (e.g. `post.slang:5-6` explains it uses the
+     shared ACES import rather than a hand-written copy), keep the information and
+     drop only the dead path.
+  3. Add `TEST(BuildIntegrity, SlangSourcesDoNotReferenceTheDeletedGlslTree)`:
+     walk every `.slang` under `Resources/ShadersSlang/` (excluding `build/`) and
+     fail naming any file plus line containing `Resources/Shaders/`.
+  4. Verify red-then-green: the test must fail on today's tree naming several
+     files, and pass after step 2.
+
+  **Test:** the BuildIntegrity test above; no shader recompile and no behaviour
+  change, so the golden suite is untouched.
+
+  **Build:** `clangcl-debug`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipPerfTests -SkipMsix`
+
+  **Context:** Low stakes on its own, but it is the same failure mode as this
+  batch's headline: a comment telling the reader the authoritative version lives
+  somewhere else is how a fix ends up in the wrong file. Comments-only, no `.ixx`
+  touched, so an incremental container build is fine here.
 
 ## Completed (kept for the reasoning, not the status)
 
