@@ -516,6 +516,153 @@ std::set<std::string> parse_vulkan_consumed_slang_sources(const fs::path &script
     return result;
 }
 
+// Normalizes a manifest row's target list ('spirv', 'wgsl', or both, in
+// either order) into a canonical comma-joined, sorted form so 'spirv,wgsl'
+// and 'wgsl,spirv' compare equal.
+std::string normalize_targets(std::vector<std::string> targets)
+{
+    std::sort(targets.begin(), targets.end());
+    std::string joined;
+    for (const auto &target : targets) {
+        if (!joined.empty()) { joined += ','; }
+        joined += target;
+    }
+    return joined;
+}
+
+// Parses $Manifest from compile-slang-shaders.ps1: an array of
+// `@{ File = '...'; Entry = '...'; Stage = '...'; Targets = @('...', ...) }`
+// hashtables. Returns each row normalized to "file|entry|stage|sorted
+// targets", with '\' path separators converted to '/' so a row compares
+// equal to its bash-side counterpart. Anchored on the "$Manifest = @(" opener
+// and the ")" that closes it. Commented-out rows (leading '#') are skipped -
+// compile-slang-shaders.ps1 carries one (the hand-written histogram.wgsl
+// row), and a naive parse would count it against a manifest pair that
+// actually agrees.
+std::set<std::string> parse_powershell_manifest_rows(const fs::path &script_path)
+{
+    std::set<std::string> result;
+    std::ifstream file(script_path);
+    if (!file) { return result; }
+
+    bool inside_manifest = false;
+    std::string line;
+    while (std::getline(file, line)) {
+        if (!inside_manifest) {
+            if (line.find("$Manifest = @(") != std::string::npos) { inside_manifest = true; }
+            continue;
+        }
+
+        const std::size_t first_non_space = line.find_first_not_of(" \t");
+        const std::string trimmed = first_non_space == std::string::npos ? std::string{} : line.substr(first_non_space);
+        if (trimmed.starts_with(")")) { break; }// end of $Manifest = @( ... )
+        if (trimmed.empty() || trimmed.starts_with("#")) { continue; }
+
+        const std::size_t file_key = line.find("File = '");
+        if (file_key == std::string::npos) { continue; }// not a manifest row
+        const std::size_t file_start = file_key + std::string("File = '").size();
+        const std::size_t file_end = line.find('\'', file_start);
+        if (file_end == std::string::npos) { continue; }
+        std::string manifest_file = line.substr(file_start, file_end - file_start);
+        std::replace(manifest_file.begin(), manifest_file.end(), '\\', '/');
+
+        const std::size_t entry_key = line.find("Entry = '", file_end);
+        if (entry_key == std::string::npos) { continue; }
+        const std::size_t entry_start = entry_key + std::string("Entry = '").size();
+        const std::size_t entry_end = line.find('\'', entry_start);
+        if (entry_end == std::string::npos) { continue; }
+        const std::string entry = line.substr(entry_start, entry_end - entry_start);
+
+        const std::size_t stage_key = line.find("Stage = '", entry_end);
+        if (stage_key == std::string::npos) { continue; }
+        const std::size_t stage_start = stage_key + std::string("Stage = '").size();
+        const std::size_t stage_end = line.find('\'', stage_start);
+        if (stage_end == std::string::npos) { continue; }
+        const std::string stage = line.substr(stage_start, stage_end - stage_start);
+
+        const std::size_t targets_key = line.find("Targets = @(", stage_end);
+        if (targets_key == std::string::npos) { continue; }
+        const std::size_t targets_list_start = targets_key + std::string("Targets = @(").size();
+        const std::size_t targets_list_end = line.find(')', targets_list_start);
+        if (targets_list_end == std::string::npos) { continue; }
+        const std::string targets_list = line.substr(targets_list_start, targets_list_end - targets_list_start);
+
+        std::vector<std::string> targets;
+        std::size_t pos = 0;
+        while (pos < targets_list.size()) {
+            const std::size_t open_quote = targets_list.find('\'', pos);
+            if (open_quote == std::string::npos) { break; }
+            const std::size_t close_quote = targets_list.find('\'', open_quote + 1);
+            if (close_quote == std::string::npos) { break; }
+            targets.push_back(targets_list.substr(open_quote + 1, close_quote - open_quote - 1));
+            pos = close_quote + 1;
+        }
+        if (targets.empty()) { continue; }
+
+        result.insert(manifest_file + '|' + entry + '|' + stage + '|' + normalize_targets(targets));
+    }
+    return result;
+}
+
+// Parses MANIFEST from compile-slang-shaders.sh: a bash array of
+// "file|entry|stage|targets" strings, targets a comma-separated list of
+// 'spirv' and/or 'wgsl'. Returns each row normalized identically to
+// parse_powershell_manifest_rows, so the two sets compare equal regardless of
+// path-separator or target-order differences. Anchored on the "MANIFEST=("
+// opener and the ")" that closes it, so the unrelated WGSL_MAP array further
+// down the script cannot be picked up. Commented-out rows (leading '#') are
+// skipped.
+std::set<std::string> parse_bash_manifest_rows(const fs::path &script_path)
+{
+    std::set<std::string> result;
+    std::ifstream file(script_path);
+    if (!file) { return result; }
+
+    bool inside_manifest = false;
+    std::string line;
+    while (std::getline(file, line)) {
+        if (!inside_manifest) {
+            if (line.find("MANIFEST=(") != std::string::npos) { inside_manifest = true; }
+            continue;
+        }
+
+        const std::size_t first_non_space = line.find_first_not_of(" \t");
+        const std::string trimmed = first_non_space == std::string::npos ? std::string{} : line.substr(first_non_space);
+        if (trimmed.starts_with(")")) { break; }// end of MANIFEST=( ... )
+        if (trimmed.empty() || trimmed.starts_with("#")) { continue; }
+
+        const std::size_t open_quote = line.find('"');
+        if (open_quote == std::string::npos) { continue; }
+        const std::size_t close_quote = line.find('"', open_quote + 1);
+        if (close_quote == std::string::npos) { continue; }
+        const std::string row = line.substr(open_quote + 1, close_quote - open_quote - 1);
+
+        std::vector<std::string> fields;
+        std::size_t pos = 0;
+        while (true) {
+            const std::size_t bar = row.find('|', pos);
+            fields.push_back(row.substr(pos, bar == std::string::npos ? std::string::npos : bar - pos));
+            if (bar == std::string::npos) { break; }
+            pos = bar + 1;
+        }
+        if (fields.size() != 4) { continue; }// not a "file|entry|stage|targets" row
+
+        std::vector<std::string> targets;
+        std::size_t target_pos = 0;
+        const std::string &targets_field = fields[3];
+        while (true) {
+            const std::size_t comma = targets_field.find(',', target_pos);
+            targets.push_back(
+              targets_field.substr(target_pos, comma == std::string::npos ? std::string::npos : comma - target_pos));
+            if (comma == std::string::npos) { break; }
+            target_pos = comma + 1;
+        }
+
+        result.insert(fields[0] + '|' + fields[1] + '|' + fields[2] + '|' + normalize_targets(targets));
+    }
+    return result;
+}
+
 }// namespace
 
 // Both the build-time compiler (Scripts/Windows/compile-slang-shaders.ps1) and
@@ -974,6 +1121,59 @@ TEST(BuildIntegrity, SlangWgslPatchTablesAgree)
       << windows_script.string() << ':' << [&linux_only] {
              std::string joined;
              for (const auto &entry : linux_only) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+// Scripts/Windows/compile-slang-shaders.ps1's $Manifest and
+// Scripts/Linux/compile-slang-shaders.sh's MANIFEST are two hand-maintained
+// copies of the same "which Slang source compiles to which target(s)" table -
+// one PowerShell array, one bash array - and nothing pins them together.
+// SlangWgslPatchTablesAgree above only compares the WGSL post-emit patch
+// tables, which are gated on the manifests they patch, not on the manifests'
+// own row sets: a shader added to one script's manifest and forgotten on the
+// other is never caught there, and is never compiled on that platform - while
+// the stale checked-in artifact keeps every other staleness gate green,
+// because the source it is compared against was never recompiled there. This
+// test parses both manifests as text and asserts they agree on every row.
+TEST(BuildIntegrity, SlangCompileManifestsAgree)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path windows_script = repo_root / "Scripts" / "Windows" / "compile-slang-shaders.ps1";
+    const fs::path linux_script = repo_root / "Scripts" / "Linux" / "compile-slang-shaders.sh";
+
+    const auto windows_rows = parse_powershell_manifest_rows(windows_script);
+    const auto linux_rows = parse_bash_manifest_rows(linux_script);
+
+    ASSERT_FALSE(windows_rows.empty())
+      << "parsed zero rows out of $Manifest in " << windows_script.string()
+      << " - the anchor text ('$Manifest = @(') may have changed";
+    ASSERT_FALSE(linux_rows.empty()) << "parsed zero rows out of MANIFEST=( ... ) in " << linux_script.string()
+                                     << " - the anchor text ('MANIFEST=(') may have changed";
+
+    std::vector<std::string> windows_only;
+    for (const auto &row : windows_rows) {
+        if (!linux_rows.contains(row)) { windows_only.push_back(row); }
+    }
+    EXPECT_TRUE(windows_only.empty())
+      << windows_only.size() << " row(s) in " << windows_script.string() << "'s $Manifest have no matching row in "
+      << linux_script.string() << "'s MANIFEST:" << [&windows_only] {
+             std::string joined;
+             for (const auto &entry : windows_only) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    std::vector<std::string> linux_only_rows;
+    for (const auto &row : linux_rows) {
+        if (!windows_rows.contains(row)) { linux_only_rows.push_back(row); }
+    }
+    EXPECT_TRUE(linux_only_rows.empty())
+      << linux_only_rows.size() << " row(s) in " << linux_script.string()
+      << "'s MANIFEST have no matching row in " << windows_script.string() << "'s $Manifest:" << [&linux_only_rows] {
+             std::string joined;
+             for (const auto &entry : linux_only_rows) { joined += "\n  " + entry; }
              return joined;
          }();
 }

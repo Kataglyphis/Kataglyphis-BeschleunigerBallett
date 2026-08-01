@@ -3661,53 +3661,6 @@ span.
 
 ### Build / scripts
 
-- [ ] **(S) Pin the Windows and Linux Slang manifests against each other (refactor)** — the patch tables are gated; the manifests they patch are not.
-
-  **Files to read:**
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:870-927`
-    (`SlangWgslPatchTablesAgree`) — the exact precedent: parse both scripts as
-    text, compare, report both directions. Reuse its helper style
-    (`parse_powershell_wgsl_patch_counts` / `parse_bash_wgsl_patch_counts`).
-  - `Scripts/Windows/compile-slang-shaders.ps1:42-115` — the `$Manifest` array of
-    `@{ File; Entry; Stage; Targets }` hashtables (note `\` path separators).
-  - `Scripts/Linux/compile-slang-shaders.sh:36-107` — the `MANIFEST=( … )` array
-    of `"file|entry|stage|targets"` strings (`/` separators).
-
-  **Steps:**
-  1. Add `BuildIntegrity.SlangCompileManifestsAgree`. Parse `$Manifest` from the
-     `.ps1` and `MANIFEST=( … )` from the `.sh` into a normalized
-     `{file, entry, stage, sorted targets}` set each: lower-case nothing, convert
-     `\` to `/`, and sort the comma-separated targets so `spirv,wgsl` and
-     `wgsl,spirv` compare equal.
-  2. **Skip commented-out rows in both files.** This is not hypothetical:
-     `compile-slang-shaders.ps1:105-109` carries a commented
-     `histogram\histogram.slang` row (the hand-written `histogram.wgsl` that Slang
-     cannot emit — see AGENTS.md § Shaders). A naive regex counts it and the test
-     fails on day one against a manifest pair that actually agrees. Strip
-     everything from the first unquoted `#` in the bash file and from a leading
-     `#` in the PowerShell file before parsing.
-  3. Report both directions (`windows_only` / `linux_only`) with the same
-     violation-vector + `EXPECT_TRUE(v.empty())` style as
-     `SlangWgslPatchTablesAgree`, and `ASSERT_FALSE(parsed.empty())` on each side
-     so an anchor-text change fails loudly instead of passing vacuously.
-  4. If task 2 above lands first, reuse its manifest parser instead of writing a
-     second one.
-
-  **Test:** The new test is the deliverable. Verify red-then-green by hand:
-  temporarily delete one row from the `.sh` manifest, confirm it names that row,
-  restore. Confirm `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter` still
-  passes (the suite is already in the filter, so no `Windows.yml` edit is
-  expected).
-
-  **Build:** `clangcl-debug`, `--gtest_filter='BuildIntegrity.*'`. No GPU needed.
-
-  **Context:** Verified this pass that the 49 live rows are currently identical
-  on both sides, so this is a preventive gate, not a bug fix — say so in the test
-  comment. The consequence it prevents is real and silent: a shader added to one
-  script only is never compiled on the other platform, and the *stale checked-in
-  artifact* keeps every existing staleness gate green because the source it is
-  compared against was never recompiled there.
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 - [ ] **(S) Make the Rust-side `forward.slang` constant pins actually read `forward.slang`, and add the missing `TILE_SIZE` pin** — one existing pin asserts a literal against a literal, and a second host/device constant has no pin at all.
