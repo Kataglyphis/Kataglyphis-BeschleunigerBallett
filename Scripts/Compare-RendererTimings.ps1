@@ -28,17 +28,89 @@ param(
 
     [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
     [string]$OutDir = (Join-Path ([IO.Path]::GetTempPath()) 'kataglyphis-timings'),
-    # Expected C++/Vulkan pass names (GPU_TIMED_PASS_EXPORT_NAMES).
-    [string[]]$CppExpectedPasses = @('Clouds', 'ShadowCascades', 'Main', 'Sky', 'Post'),
-    # Expected Rust/WebGPU pass names (from the dump_gpu_timings example).
-    [string[]]$RustExpectedPasses = @('Forward', 'ShadowCascades', 'Ssao', 'Bloom', 'Histogram', 'Post'),
+    # Source files the expected-pass lists are derived from (see
+    # Get-ExpectedPassNames below). Overridable so tests can point these at
+    # fixture files instead of the real sources.
+    [string]$CppPassSourcePath = (Join-Path $RepoRoot 'Src\GraphicsEngineVulkan\renderer\GUIRendererSharedVars.ixx'),
+    [string]$RustPassSourcePath = (Join-Path $RepoRoot 'ExternalLib\Kataglyphis-RustProjectTemplate\crates\webgpu_renderer\src\render\gpu_timing.rs'),
+    # Expected C++/Vulkan pass names. Defaults to every name in
+    # GPU_TIMED_PASS_EXPORT_NAMES (all required - the C++ engine always
+    # records all five). Left unset so the derived default (below) applies;
+    # pass explicitly to pin a subset.
+    [string[]]$CppExpectedPasses,
+    # Expected Rust/WebGPU pass names. Defaults to every TimedPass except
+    # OcclusionCull, which dump_gpu_timings only emits when occlusion culling
+    # is enabled - see the -Optional argument on the Rust Assert-PassesExist
+    # call below. Left unset so the derived default (below) applies.
+    [string[]]$RustExpectedPasses,
     # When set, skips GPU-dependent steps and checks only JSON schema / pass
     # names from previously-produced files (useful in CI with no GPU).
-    [switch]$ValidationOnly
+    [switch]$ValidationOnly,
+    # Prints the derived expected-pass lists as JSON and exits without
+    # running either renderer. Exists so tests can exercise
+    # Get-ExpectedPassNames without a GPU or build products.
+    [switch]$PrintExpectedPasses
 )
 
 $ErrorActionPreference = 'Stop'
 $exitCode = 0
+
+function Get-ExpectedPassNames {
+    # Parses the pass-name list out of the actual source of truth rather than
+    # relying on a hand-maintained mirror, so the two can no longer drift
+    # silently (that already happened once: this script's own $RustExpectedPasses
+    # named a 'Post' pass the Rust renderer has never had).
+    param(
+        [Parameter(Mandatory)] [ValidateSet('Cpp', 'Rust')] [string]$Engine,
+        [Parameter(Mandatory)] [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "Get-ExpectedPassNames: source file not found: $Path"
+    }
+    $content = Get-Content -LiteralPath $Path -Raw
+
+    $names = switch ($Engine) {
+        'Cpp' {
+            # GUIRendererSharedVars.ixx: GPU_TIMED_PASS_EXPORT_NAMES[GPU_TIMED_PASS_COUNT] = { "Name", ... };
+            $m = [regex]::Match($content, 'GPU_TIMED_PASS_EXPORT_NAMES\[GPU_TIMED_PASS_COUNT\]\s*=\s*\{([^}]*)\}')
+            if (-not $m.Success) {
+                throw "Get-ExpectedPassNames: could not find GPU_TIMED_PASS_EXPORT_NAMES initializer in $Path"
+            }
+            [regex]::Matches($m.Groups[1].Value, '"([^"]+)"') | ForEach-Object { $_.Groups[1].Value }
+        }
+        'Rust' {
+            # gpu_timing.rs: fn name(self) -> &'static str { match self { TimedPass::X => "X", ... } }
+            $m = [regex]::Match($content, 'fn\s+name\(self\)[\s\S]*?match self\s*\{([\s\S]*?)\}\s*\}')
+            if (-not $m.Success) {
+                throw "Get-ExpectedPassNames: could not find name() match arms in $Path"
+            }
+            [regex]::Matches($m.Groups[1].Value, '=>\s*"([^"]+)"') | ForEach-Object { $_.Groups[1].Value }
+        }
+    }
+
+    $names = @($names)
+    if ($names.Count -eq 0) {
+        # A silently-empty expected list turns the whole gate off - that is
+        # the exact failure mode this function exists to prevent.
+        throw "Get-ExpectedPassNames: parsed zero pass names from $Path - the expected-pass gate would silently disable itself."
+    }
+
+    return , $names
+}
+
+if (-not $PSBoundParameters.ContainsKey('CppExpectedPasses')) {
+    $CppExpectedPasses = Get-ExpectedPassNames -Engine Cpp -Path $CppPassSourcePath
+}
+if (-not $PSBoundParameters.ContainsKey('RustExpectedPasses')) {
+    $rustAllPasses = Get-ExpectedPassNames -Engine Rust -Path $RustPassSourcePath
+    $RustExpectedPasses = @($rustAllPasses | Where-Object { $_ -ne 'OcclusionCull' })
+}
+
+if ($PrintExpectedPasses) {
+    [PSCustomObject]@{ Cpp = @($CppExpectedPasses); Rust = @($RustExpectedPasses) } | ConvertTo-Json -Depth 3
+    exit 0
+}
 
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 
@@ -146,7 +218,7 @@ if ((-not $ValidationOnly) -and (Test-Path $suite)) {
 
 if (Test-Path $rustJson) {
     $rust = Get-Content $rustJson -Raw | ConvertFrom-Json
-    Assert-PassesExist -Label 'Rust/WebGPU' -JsonObj $rust -Expected $RustExpectedPasses -Optional @('Tonemap')
+    Assert-PassesExist -Label 'Rust/WebGPU' -JsonObj $rust -Expected $RustExpectedPasses -Optional @('OcclusionCull')
 } elseif ($ValidationOnly) {
     Write-Host "WARN: Rust JSON not found at $rustJson - skipping validation." -ForegroundColor Yellow
 } else {
