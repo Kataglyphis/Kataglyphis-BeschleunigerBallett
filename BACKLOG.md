@@ -3711,59 +3711,6 @@ drift fix.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Pin the golden-suite test counts documented in `docs/gpu-golden-testing.md` against the suite source** — the number has already had to be corrected twice; make it a gate instead of a planning chore.
-
-  **Files to read:**
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `find_repo_root()`,
-    `collect_defined_suites()` (used at `:963`), and
-    `SlangCompileManifestsAgree` (`:1139-1179`) as the "parse two files, compare,
-    fail with both numbers" pattern to mirror.
-  - `docs/gpu-golden-testing.md:42-48` — the "29 runnable … 30 defined … + 2
-    `Integration` = 31 total" sentence; `:115-123` — the "28 tests" figure that
-    is derived from it minus three named exclusions.
-  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` — 30 `TEST(GoldenRender, …)`,
-    one of them `DISABLED_DumpsFrameToPng`.
-  - `Test/commit/VulkanEngine/commitSuite.cpp:50` and `renderModesSuite.cpp:70` —
-    the two `TEST(Integration, …)`. **They are in two different files**, so the
-    Integration count must come from a directory scan, not from one file.
-
-  **Steps:**
-  1. Put the machine-readable numbers in the doc rather than parsing prose. Add
-     a marker line to `docs/gpu-golden-testing.md` next to the sentence at
-     `:46-48`:
-     `<!-- golden-counts: defined=30 runnable=29 integration=2 total=31 -->`
-     and reword the sentence to point at it, so the two can never disagree by
-     more than one edit.
-  2. Add `TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)`. Count from
-     source with pure file I/O: `TEST(GoldenRender,` occurrences under
-     `Test/commit/VulkanEngine/` for `defined`, those whose test name does not
-     start with `DISABLED_` for `runnable`, and `TEST(Integration,` occurrences
-     for `integration`.
-  3. Parse the marker; `GTEST_SKIP()` if the doc cannot be opened (mirroring
-     `EveryCpuSuiteIsInTheWindowsCiFilter:954-956`), but `ASSERT` if the marker
-     is missing — a deleted marker must be a failure, not a silent pass.
-  4. Assert all four numbers, including `runnable + integration == total`, and
-     print both the parsed and the counted values in the failure message with
-     the doc path, so fixing it is one edit.
-  5. Correct the doc if today's numbers disagree. They should not: 30 defined,
-     29 runnable, 2 Integration, 31 total, as of 2026-08-01.
-
-  **Test:** The test is the deliverable. Prove it bites: change `defined=30` to
-  `defined=31` in the marker, run
-  `.\commitTestSuite.exe --gtest_filter='BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite'`,
-  confirm red, revert, confirm green.
-
-  **Build:** `clangcl-debug`. `BuildIntegrity` is already in `$cpuOnlySuites`,
-  so no workflow edit is needed.
-
-  **Context:** Two commits already exist purely to correct this number
-  (`1cd6b8b5`, `e2767bb1`), and a planner batch found the doc claiming 21 tests
-  when the suite held 28. Same preventive justification as
-  `SlangCompileManifestsAgree`, which was written before its two manifests had
-  actually drifted. **The gate must never run the golden tests to count them** —
-  it has to stay pure file I/O so it passes in the GPU-less CI container, where
-  `GoldenRender` is excluded by name.
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 - [ ] **(S) Warn when a KTX2's declared transfer function contradicts how the material uses it** — the container's colour space is dropped at parse time and the usage flag decides alone, so a mismatch renders with the wrong gamma and logs nothing.

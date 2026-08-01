@@ -253,6 +253,96 @@ std::set<std::string> collect_defined_suites(const fs::path &tests_dir)
     return suites;
 }
 
+// Every TEST(<suite>, ...) test name defined anywhere under `tests_dir` whose
+// suite is exactly `suite`. Same start-of-line anchoring as
+// collect_defined_suites, so a name in a comment or a string literal is not
+// picked up. Pure file I/O - never runs the tests themselves, which matters
+// for GoldenRender/Integration: they require a GPU that the CI container
+// does not have.
+std::vector<std::string> collect_suite_test_names(const fs::path &tests_dir, const std::string &suite)
+{
+    std::vector<std::string> names;
+    const std::string macro_prefix = "TEST(" + suite + ",";
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(tests_dir, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        if (!it->is_regular_file(error) || it->path().extension() != ".cpp") { continue; }
+
+        std::ifstream file(it->path());
+        if (!file) { continue; }
+        std::string line;
+        while (std::getline(file, line)) {
+            const std::size_t start = line.find_first_not_of(" \t");
+            if (start == std::string::npos) { continue; }
+            if (line.compare(start, macro_prefix.size(), macro_prefix) != 0) { continue; }
+
+            const std::size_t name_start = start + macro_prefix.size();
+            const std::size_t close_paren = line.find(')', name_start);
+            if (close_paren == std::string::npos) { continue; }
+
+            const std::size_t name_begin = line.find_first_not_of(" \t", name_start);
+            const std::size_t name_end = line.find_last_not_of(" \t", close_paren - 1);
+            if (name_begin == std::string::npos || name_begin > name_end) { continue; }
+
+            names.push_back(line.substr(name_begin, name_end - name_begin + 1));
+        }
+    }
+    return names;
+}
+
+// The four named integers in docs/gpu-golden-testing.md's
+// `<!-- golden-counts: defined=N runnable=N integration=N total=N -->`
+// marker line.
+struct GoldenCountsMarker
+{
+    int defined = 0;
+    int runnable = 0;
+    int integration = 0;
+    int total = 0;
+};
+
+std::optional<int> parse_marker_field(const std::string &line, const std::string &key)
+{
+    const std::size_t pos = line.find(key);
+    if (pos == std::string::npos) { return std::nullopt; }
+
+    const std::size_t digits_start = pos + key.size();
+    std::size_t digits_end = digits_start;
+    while (digits_end < line.size() && std::isdigit(static_cast<unsigned char>(line[digits_end]))) { ++digits_end; }
+    if (digits_end == digits_start) { return std::nullopt; }
+
+    return std::stoi(line.substr(digits_start, digits_end - digits_start));
+}
+
+// Parses docs/gpu-golden-testing.md's golden-counts marker line. Returns
+// std::nullopt if the marker line, or any of its four fields, is missing -
+// the caller distinguishes that from "file not found" so a deleted marker is
+// a hard failure rather than a silent pass.
+std::optional<GoldenCountsMarker> parse_golden_counts_marker(const fs::path &doc_path)
+{
+    std::ifstream file(doc_path);
+    if (!file) { return std::nullopt; }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.find("<!-- golden-counts:") == std::string::npos) { continue; }
+
+        const auto defined_val = parse_marker_field(line, "defined=");
+        const auto runnable_val = parse_marker_field(line, "runnable=");
+        const auto integration_val = parse_marker_field(line, "integration=");
+        const auto total_val = parse_marker_field(line, "total=");
+        if (!defined_val || !runnable_val || !integration_val || !total_val) { return std::nullopt; }
+
+        GoldenCountsMarker marker;
+        marker.defined = *defined_val;
+        marker.runnable = *runnable_val;
+        marker.integration = *integration_val;
+        marker.total = *total_val;
+        return marker;
+    }
+    return std::nullopt;
+}
+
 // Parses the exact suite-name globs out of Windows.yml's hand-written
 // `$cpuOnlySuites` PowerShell array (the "Run CPU-only tests inside the
 // container" step). Anchored on the array opener and its `-join ':'` closer
@@ -1738,4 +1828,52 @@ TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
              for (const auto &entry : dead_exemptions) { joined += "\n  " + entry; }
              return joined;
          }();
+}
+
+// docs/gpu-golden-testing.md's golden-suite counts have already had to be
+// corrected twice by hand (commits 1cd6b8b5, e2767bb1), and a planner batch
+// once found the doc claiming 21 tests when the suite held 28. Pins the
+// doc's `<!-- golden-counts: ... -->` marker against a pure file-I/O count of
+// TEST(GoldenRender, ...) / TEST(Integration, ...) definitions, mirroring
+// SlangCompileManifestsAgree's "parse two sources, compare, fail with both
+// numbers" pattern. Must never run the golden tests themselves to count them
+// - they need a GPU the CI container does not have.
+TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path doc_path = repo_root / "docs" / "gpu-golden-testing.md";
+    if (!fs::exists(doc_path)) {
+        GTEST_SKIP() << "could not open " << doc_path.string() << " - not running from the repo root?";
+    }
+
+    const auto marker = parse_golden_counts_marker(doc_path);
+    ASSERT_TRUE(marker.has_value())
+      << doc_path.string()
+      << " is missing its '<!-- golden-counts: defined=N runnable=N integration=N total=N -->' marker line, or "
+         "one of its four fields - a deleted marker must fail this test, not silently pass";
+
+    const fs::path tests_dir = repo_root / "Test" / "commit" / "VulkanEngine";
+    const std::vector<std::string> golden_tests = collect_suite_test_names(tests_dir, "GoldenRender");
+    const std::vector<std::string> integration_tests = collect_suite_test_names(tests_dir, "Integration");
+
+    const int counted_defined = static_cast<int>(golden_tests.size());
+    const int counted_runnable = static_cast<int>(std::count_if(golden_tests.begin(), golden_tests.end(),
+      [](const std::string &name) { return !name.starts_with("DISABLED_"); }));
+    const int counted_integration = static_cast<int>(integration_tests.size());
+
+    EXPECT_EQ(marker->defined, counted_defined)
+      << doc_path.string() << "'s golden-counts marker says defined=" << marker->defined << " but "
+      << tests_dir.string() << " has " << counted_defined << " TEST(GoldenRender, ...) definitions";
+    EXPECT_EQ(marker->runnable, counted_runnable)
+      << doc_path.string() << "'s golden-counts marker says runnable=" << marker->runnable << " but "
+      << counted_runnable << " of " << counted_defined
+      << " TEST(GoldenRender, ...) definitions do not start with DISABLED_";
+    EXPECT_EQ(marker->integration, counted_integration)
+      << doc_path.string() << "'s golden-counts marker says integration=" << marker->integration << " but "
+      << tests_dir.string() << " has " << counted_integration << " TEST(Integration, ...) definitions";
+    EXPECT_EQ(marker->runnable + marker->integration, marker->total)
+      << doc_path.string() << "'s golden-counts marker is internally inconsistent: runnable(" << marker->runnable
+      << ") + integration(" << marker->integration << ") != total(" << marker->total << ")";
 }
