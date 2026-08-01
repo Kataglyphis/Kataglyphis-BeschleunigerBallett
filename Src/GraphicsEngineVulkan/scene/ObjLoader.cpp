@@ -240,80 +240,95 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
         for (size_t f = 0; f < shape.mesh.num_face_vertices.size(); f++) {
             auto const fv = static_cast<size_t>(shape.mesh.num_face_vertices[f]);
 
-            // Loop over vertices in the face.
+            // Malformed files can carry negative or out-of-range indices
+            // (fuzz-found hazard): validate every vertex of the face before
+            // emitting any of it. materialIndex is one entry per emitted
+            // triangle and indices must stay a multiple of 3, so dropping a
+            // single corner would desynchronise the shaders'
+            // materialIDs.i[prim] lookup as well as overrunning the array -
+            // a malformed corner drops the whole face instead.
+            bool face_valid = true;
             for (size_t v = 0; v < fv; v++) {
-                // access to vertex
                 tinyobj::index_t const idx = shape.mesh.indices[index_offset + v];
-                // Malformed files can carry negative or out-of-range indices
-                // (fuzz-found hazard): validate before every array access.
                 const auto vertex_index = static_cast<size_t>(idx.vertex_index);
                 if (idx.vertex_index < 0 || (3 * vertex_index) + 2 >= attrib.vertices.size()) {
-                    continue;
+                    face_valid = false;
+                    break;
                 }
-                tinyobj::real_t const vx = attrib.vertices[(3 * vertex_index) + 0];
-                tinyobj::real_t const vy = attrib.vertices[(3 * vertex_index) + 1];
-                tinyobj::real_t const vz = attrib.vertices[(3 * vertex_index) + 2];
-                glm::vec3 const pos = { vx, vy, vz };
+            }
 
-                glm::vec3 normals(0.0F);
-                // Check if `normal_index` is zero or positive. negative = no normal
-                // data
-                if (idx.normal_index >= 0
-                    && (3 * static_cast<size_t>(idx.normal_index)) + 2 < attrib.normals.size()) {
-                    tinyobj::real_t const nx = attrib.normals[(3 * static_cast<size_t>(idx.normal_index)) + 0];
-                    tinyobj::real_t const ny = attrib.normals[(3 * static_cast<size_t>(idx.normal_index)) + 1];
-                    tinyobj::real_t const nz = attrib.normals[(3 * static_cast<size_t>(idx.normal_index)) + 2];
-                    normals = glm::vec3(nx, ny, nz);
+            if (face_valid) {
+                // Loop over vertices in the face.
+                for (size_t v = 0; v < fv; v++) {
+                    // access to vertex
+                    tinyobj::index_t const idx = shape.mesh.indices[index_offset + v];
+                    const auto vertex_index = static_cast<size_t>(idx.vertex_index);
+                    tinyobj::real_t const vx = attrib.vertices[(3 * vertex_index) + 0];
+                    tinyobj::real_t const vy = attrib.vertices[(3 * vertex_index) + 1];
+                    tinyobj::real_t const vz = attrib.vertices[(3 * vertex_index) + 2];
+                    glm::vec3 const pos = { vx, vy, vz };
+
+                    glm::vec3 normals(0.0F);
+                    // Check if `normal_index` is zero or positive. negative = no normal
+                    // data
+                    if (idx.normal_index >= 0
+                        && (3 * static_cast<size_t>(idx.normal_index)) + 2 < attrib.normals.size()) {
+                        tinyobj::real_t const nx = attrib.normals[(3 * static_cast<size_t>(idx.normal_index)) + 0];
+                        tinyobj::real_t const ny = attrib.normals[(3 * static_cast<size_t>(idx.normal_index)) + 1];
+                        tinyobj::real_t const nz = attrib.normals[(3 * static_cast<size_t>(idx.normal_index)) + 2];
+                        normals = glm::vec3(nx, ny, nz);
+                    }
+
+                    // White when the OBJ carries no per-vertex colour: the fragment
+                    // shader multiplies this in (glTF COLOR_0 semantics, shared path),
+                    // so the absent case must be the identity (1,1,1), not the old -1
+                    // sentinel that would have darkened/inverted the surface.
+                    glm::vec3 color(1.F);
+                    if ((3 * vertex_index) + 2 < attrib.colors.size()) {
+                        tinyobj::real_t const red = attrib.colors[(3 * vertex_index) + 0];
+                        tinyobj::real_t const green = attrib.colors[(3 * vertex_index) + 1];
+                        tinyobj::real_t const blue = attrib.colors[(3 * vertex_index) + 2];
+                        color = glm::vec3(red, green, blue);
+                    }
+
+                    glm::vec2 tex_coords(0.0F);
+                    // Check if `texcoord_index` is zero or positive. negative = no texcoord
+                    // data
+                    if (idx.texcoord_index >= 0
+                        && (2 * static_cast<size_t>(idx.texcoord_index)) + 1 < attrib.texcoords.size()) {
+                        tinyobj::real_t const tx =
+                          attrib.texcoords[(2 * static_cast<size_t>(idx.texcoord_index)) + 0];
+                        // flip y coordinate !!
+                        tinyobj::real_t const ty =
+                          1.F - attrib.texcoords[(2 * static_cast<size_t>(idx.texcoord_index)) + 1];
+                        tex_coords = glm::vec2(tx, ty);
+                    }
+
+                    Vertex const vert{ pos, normals, color, tex_coords };
+
+                    // ONE hash lookup per vertex. This was three - contains(),
+                    // then operator[] to insert, then operator[] again to read -
+                    // and at ~900k face vertices that is 1.8 million redundant
+                    // hashes and probes.
+                    const auto [entry, inserted] =
+                      vertices_map.try_emplace(vert, static_cast<uint32_t>(vertices.size()));
+                    if (inserted) { vertices.push_back(vert); }
+                    indices.push_back(entry->second);
                 }
 
-                // White when the OBJ carries no per-vertex colour: the fragment
-                // shader multiplies this in (glTF COLOR_0 semantics, shared path),
-                // so the absent case must be the identity (1,1,1), not the old -1
-                // sentinel that would have darkened/inverted the surface.
-                glm::vec3 color(1.F);
-                if ((3 * vertex_index) + 2 < attrib.colors.size()) {
-                    tinyobj::real_t const red = attrib.colors[(3 * vertex_index) + 0];
-                    tinyobj::real_t const green = attrib.colors[(3 * vertex_index) + 1];
-                    tinyobj::real_t const blue = attrib.colors[(3 * vertex_index) + 2];
-                    color = glm::vec3(red, green, blue);
-                }
-
-                glm::vec2 tex_coords(0.0F);
-                // Check if `texcoord_index` is zero or positive. negative = no texcoord
-                // data
-                if (idx.texcoord_index >= 0
-                    && (2 * static_cast<size_t>(idx.texcoord_index)) + 1 < attrib.texcoords.size()) {
-                    tinyobj::real_t const tx = attrib.texcoords[(2 * static_cast<size_t>(idx.texcoord_index)) + 0];
-                    // flip y coordinate !!
-                    tinyobj::real_t const ty =
-                      1.F - attrib.texcoords[(2 * static_cast<size_t>(idx.texcoord_index)) + 1];
-                    tex_coords = glm::vec2(tx, ty);
-                }
-
-                Vertex const vert{ pos, normals, color, tex_coords };
-
-                // ONE hash lookup per vertex. This was three - contains(),
-                // then operator[] to insert, then operator[] again to read -
-                // and at ~900k face vertices that is 1.8 million redundant
-                // hashes and probes.
-                const auto [entry, inserted] =
-                  vertices_map.try_emplace(vert, static_cast<uint32_t>(vertices.size()));
-                if (inserted) { vertices.push_back(vert); }
-                indices.push_back(entry->second);
+                // Per-face material. tinyobj reports -1 for a face without a
+                // material (any OBJ shipping no mtllib); the plain cast sent
+                // 0xFFFFFFFF to the GPU, and every material fetch in the shaders
+                // (materials.m[materialIDs.i[prim]]) became an OUT-OF-BOUNDS
+                // buffer-device-address read. Route those faces to slot 0:
+                // loadTexturesAndMaterials appends a default material when the
+                // file ships none, and when it ships some, the first one is a
+                // strictly better fallback than reading unmapped memory.
+                const int face_material = shape.mesh.material_ids[f];
+                materialIndex.push_back(face_material >= 0 ? static_cast<uint32_t>(face_material) : 0U);
             }
 
             index_offset += fv;
-
-            // Per-face material. tinyobj reports -1 for a face without a
-            // material (any OBJ shipping no mtllib); the plain cast sent
-            // 0xFFFFFFFF to the GPU, and every material fetch in the shaders
-            // (materials.m[materialIDs.i[prim]]) became an OUT-OF-BOUNDS
-            // buffer-device-address read. Route those faces to slot 0:
-            // loadTexturesAndMaterials appends a default material when the
-            // file ships none, and when it ships some, the first one is a
-            // strictly better fallback than reading unmapped memory.
-            const int face_material = shape.mesh.material_ids[f];
-            materialIndex.push_back(face_material >= 0 ? static_cast<uint32_t>(face_material) : 0U);
         }
 
         // Record this shape's contiguous slice so uploadParsed can build it as
@@ -331,12 +346,16 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
 
     // precompute normals if no provided
     if (attrib.normals.empty()) {
-        for (size_t i = 0; i < indices.size(); i += 3) {
+        for (size_t i = 0; i + 2 < indices.size(); i += 3) {
             Vertex &v0 = vertices[indices[i + 0]];
             Vertex &v1 = vertices[indices[i + 1]];
             Vertex &v2 = vertices[indices[i + 2]];
 
-            glm::vec3 const n = glm::normalize(glm::cross((v1.position - v0.position), (v2.position - v0.position)));
+            const glm::vec3 faceNormal = glm::cross((v1.position - v0.position), (v2.position - v0.position));
+            // Degenerate triangle (zero area): leave the default normal
+            // rather than emit a NaN from normalizing a zero vector.
+            if (glm::dot(faceNormal, faceNormal) <= 0.0F) { continue; }
+            const glm::vec3 n = glm::normalize(faceNormal);
             v0.normal = n;
             v1.normal = n;
             v2.normal = n;

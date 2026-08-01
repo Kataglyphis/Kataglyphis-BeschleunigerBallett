@@ -13,6 +13,7 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <memory>
 #include <thread>
@@ -228,6 +229,49 @@ TEST(ObjParseUnit, ParsesOnAWorkerThreadWithTheSameResult)
     for (size_t i = 0; i < on_main.getIndices().size(); ++i) {
         ASSERT_EQ(on_worker.getIndices()[i], on_main.getIndices()[i]) << "index " << i << " differs off-thread";
     }
+}
+
+TEST(ObjParseUnit, AFaceWithAnOutOfRangeIndexIsDroppedWhole)
+{
+    // A malformed corner used to `continue` past just the bad vertex,
+    // leaving the face one index short of a triangle - desynchronising
+    // materialIndex from indices/3 and, via the flat-normal pass, reading
+    // past the end of indices. validate-then-emit drops the whole face
+    // instead: the good face survives untouched, the bad one leaves nothing.
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_bad_face.obj";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\nf 1 2 999999\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+
+    EXPECT_EQ(loader.getIndices().size() % 3U, 0U) << "indices must form whole triangles";
+    EXPECT_EQ(loader.getIndices().size(), 3U) << "the good face survives, the bad one is gone entirely";
+    EXPECT_EQ(loader.getMaterialIndices().size(), loader.getIndices().size() / 3U);
+
+    std::filesystem::remove(tmp);
+}
+
+TEST(ObjParseUnit, AFileWithOnlyMalformedFacesYieldsNoGeometry)
+{
+    // Same hazard with nothing left standing: every face falls to the guard,
+    // so the parse must leave empty arrays rather than crash walking them.
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_only_bad_face.obj";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 999999\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string())) << "a malformed face must not fail the parse itself";
+
+    EXPECT_TRUE(loader.getIndices().empty()) << "a file with only malformed faces yields no geometry";
+    EXPECT_TRUE(loader.getVertices().empty());
+    EXPECT_TRUE(loader.getMaterialIndices().empty());
+
+    std::filesystem::remove(tmp);
 }
 
 // The async wrapper (AsyncModelParse) has its own dedicated coverage in

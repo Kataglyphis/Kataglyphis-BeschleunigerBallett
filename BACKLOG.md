@@ -4074,6 +4074,330 @@ is gitignored.
   compute-pipeline setup) is the pattern; the risk here is deleting the wrong
   half of the comment, so re-read `:942-951` before cutting.
 
+## 2026-08-02 batch II — planner (a partial-face OBJ read that runs off the end of `indices`, a glTF emitter that writes unescaped JSON, a texture-path rule the two renderers disagree on, unpinned histogram constants)
+
+**Every task in this batch is verifiable with no GPU.** The three `- [b]`
+entries above are all blocked on host GPU golden verification, which is still
+unavailable in this session, so the whole batch was chosen to be provable with
+`commitTestSuite.exe --gtest_filter='ObjParseUnit.*'` (device-free by
+construction — `objParseSuite.cpp:1-10`) and `cargo test`. Nothing below needs
+a swapchain. Every `file:line` was read out of the tree this pass.
+
+**The headline is a memory-safety bug in the OBJ loader that its own fuzz
+target cannot find.** `ObjLoader::loadVertices` guards each face *vertex*
+against a malformed index and `continue`s past it
+(`ObjLoader.cpp:250-252`), but the enclosing face keeps going: the other two
+vertices are still emitted. That breaks the "`indices.size()` is a multiple of
+3" invariant the rest of the function assumes, and the flat-normal pass at
+`:333-344` walks `i += 3` bounded only by `i < indices.size()`, so it reads
+`indices[i+1]` / `indices[i+2]` past the end. `GltfLoader.cpp:358` writes the
+same loop correctly (`i + 2 < indices.size()`) and adds a degenerate-triangle
+guard the OBJ copy lacks — one rule, two hand-rolled copies, one wrong, which
+is the same shape as batch XVIII's depth-aspect finding and `a3b42dfc`.
+
+Reachability was traced through the vendored parser rather than assumed:
+`tiny_obj_loader.h:6398` (`fixIndex`) returns `idx - 1` for any **positive**
+index with no upper-bound check, and the `} else {` branch at `:8155` — which
+is the path a triangulating reader takes for a plain 3-vertex `f` — copies the
+face's indices into `shape.mesh.indices` verbatim with no validation. (The
+`npolys != 3` branch at `:7674` *does* validate, which is why quads are safe
+and triangles are not.) So `v 0 0 0 / v 1 0 0 / v 0 1 0 / f 1 2 999999`
+parses successfully and hands the loader an out-of-range positive index. Three
+lines of OBJ.
+
+`Test/fuzz/obj_parsing_fuzz_test.cpp` claims in its header comment to "prove
+malformed model files cannot crash or OOB-read the loader", but its mirror
+(`:44-73`) stops at the *attribute* reads — it accumulates a checksum and never
+reproduces the index emission or the flat-normal post-pass, i.e. exactly the
+two places the bug lives. Task 1 fixes the loader and closes that hole in the
+harness. There is a third mirror of the same walk in `Test/perf/perfSuite.cpp:214`.
+
+Tasks 3-5 are independent. Task 3 is a hand-written JSON emitter that
+interpolates untrusted strings unescaped. Task 4 is a genuine cross-renderer
+divergence: measured against the shipped asset tree, the C++ engine resolves
+**23/23** `map_Kd` references correctly and the Rust converter resolves **0/23**.
+Task 5 pins the one hand-written WGSL shader in the tree against its Rust
+constants — the Slang manifest gates cannot cover it because it is not generated
+from Slang (AGENTS.md § Shaders).
+
+Ordering: task 2 must land **after** task 1 (both edit `ObjLoader.cpp`'s
+flat-normal loop, and task 1 is the behaviour fix while task 2 is pure
+consolidation). Everything else is independent.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`common/cascaded_shadow.slang:32` (`proj.xy * 0.5 + 0.5`)
+vs `forward/forward.slang:230` (`0.5 - proj.y * 0.5`) looking like a third
+vertical mirror** — it is not one; `cascaded_shadow.slang` is SPIR-V/Vulkan
+(NDC +1 = bottom) and `forward.slang` is the Rust/WebGPU shader (NDC +1 = top),
+so each matches its own renderer's convention per the table in the batch above;
+**`MAX_OBJECTS`'s abuse as a byte count in the descriptor pool size**
+(`VulkanRenderer.cpp:1421-1423` passes `sizeof(ObjectDescription) * MAX_OBJECTS`
+as a *descriptor count*) — wrong units, but it only over-allocates, and the line
+above it already says "Historical pool sizing kept as-is (generously
+overallocated)"; **`GltfLoader.cpp:296-299`'s "Placeholder for now" comment** —
+reads like a TODO but the flat normals it defers to are genuinely computed at
+`:352-372`, so the comment is confusing rather than stale; **`bloom.rs` /
+`tonemap.rs` / `ssao.rs` / `context.rs` having no unit tests** — re-confirmed,
+and re-rejected for the reason the batch above gave.
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Give flat-normal generation one definition shared by the OBJ and glTF loaders** — the same "compute a geometric normal per triangle when the file shipped none" loop exists twice, and only the glTF copy handles degenerate triangles and its own array bound.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:352-372` — the correct copy
+    (bounded, degenerate-guarded, operates on a sub-range via `primIndexStart`).
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:332-344` — the other copy,
+    whole-array, after task 1 has fixed it.
+  - `Src/GraphicsEngineVulkan/scene/Vertex.ixx` /
+    `Src/shared/scene/Vertex.hpp` — where the shared `Vertex` type lives, so
+    the helper has somewhere to go that both loaders already import.
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.ixx:97` — the
+    `loadTexturesAndMaterials` declaration for step 4.
+  - `Test/commit/VulkanEngine/objParseSuite.cpp` — where the new unit test goes.
+
+  **Steps:**
+  1. Add one function — `computeFlatNormals(std::span<Vertex> vertices,
+     std::span<const unsigned int> indices, std::size_t firstIndex = 0)` —
+     next to the shared `Vertex` type, taking `std::span` rather than
+     `std::vector&` (the project is C++23; the glTF caller needs a sub-range
+     and the OBJ caller the whole array, which one span-taking signature covers
+     without an overload). Body is `GltfLoader.cpp:358-371` verbatim: bound
+     `i + 2 < indices.size()`, skip zero-area triangles, assign the normal to
+     all three vertices.
+  2. Replace both loops with calls to it. `GltfLoader.cpp` passes
+     `primIndexStart`; `ObjLoader.cpp` passes 0.
+  3. State on the helper that it is the only copy and that a caller adding a
+     third is the bug this consolidates away.
+  4. While in `ObjLoader`: `loadTexturesAndMaterials` returns
+     `std::vector<std::string>` (`ObjLoader.cpp:159-160`, declared at
+     `ObjLoader.ixx:97`) — a full copy of the `textures` member that its only
+     caller discards (`ObjLoader.cpp:62`). Change the return type to `void`.
+     `getTextureNames()` already exposes the member.
+
+  **Test:** Add `ObjParseUnit.DegenerateTrianglesDoNotProduceNaNNormals`:
+  write a temp OBJ with no `vn` and a zero-area triangle (three identical
+  vertices, or two coincident), `parseCpu` it, and assert every
+  `getVertices()[i].normal` component satisfies `std::isfinite`. This fails
+  against the pre-refactor OBJ path and passes against the glTF one, which is
+  the point of sharing the code. Keep the existing `ObjParseUnit` and
+  `GltfParseUnit` suites green — the refactor must be behaviour-neutral apart
+  from the degenerate case.
+
+  **Build:** `clangcl-debug`, same invocation and same
+  `--gtest_filter='ObjParseUnit.*:GltfParseUnit.*'` run as task 1. No GPU.
+
+  **Context:** Land this **after** task 1 — both edit the same loop, and
+  fixing then consolidating keeps the behaviour change reviewable separately
+  from the code motion. Straight continuation of `a3b42dfc` (one depth-aspect
+  definition in `FormatHelper.hpp`) and `f97712f4` (one `ShaderStagePair`
+  instead of six copies): the payoff is that the next loader cannot get the
+  degenerate case wrong, not the lines removed.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(S) Escape the strings `obj_to_gltf::to_gltf` interpolates into its glTF JSON** — material names and texture URIs go into the document verbatim, so a Windows-authored `map_Kd textures\wood.png` emits `"uri": "textures\wood.png"` and the whole `.gltf` stops being parseable JSON.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/asset/obj_to_gltf.rs:437-441` — `images_json`,
+    `format!(r#"{{ "uri": "{uri}" }}"#)`.
+  - `crates/webgpu_renderer/src/asset/obj_to_gltf.rs:455-480` — `materials_json`;
+    `material.name` at `:473` and the `baseColorTexture` block at `:464-470`.
+  - `crates/webgpu_renderer/src/asset/obj_to_gltf.rs:94-153` — `parse_mtl`,
+    where both strings originate. `newmtl` takes the name token as-is (`:110`)
+    and `map_Kd` takes the last token as-is (`:138`); neither is validated.
+  - `crates/webgpu_renderer/src/asset/obj_to_gltf.rs:363-537` — `to_gltf`, and
+    `:528-533` where `min`/`max` are interpolated as raw `f32` `Display`.
+  - `crates/webgpu_renderer/tests/obj_to_gltf.rs:1-36` — the round-trip
+    contract ("the emitter writes glTF JSON by hand, so 'it produced a file'
+    proves nothing") and the `temp_dir` helper.
+  - `crates/webgpu_renderer/tests/obj_to_gltf.rs:396-412` —
+    `map_kd_takes_the_filename_not_the_first_option`, the closest existing test.
+
+  **Steps:**
+  1. Add a private `fn json_escape(s: &str) -> String` that escapes `"`, `\`,
+     and the control characters below `0x20` (as `\u00XX`) per RFC 8259.
+     Keep it small and local — do not pull in `serde_json` for four call
+     sites in an emitter whose whole point (`:1-7`) is not depending on a JSON
+     crate.
+  2. Apply it at every interpolation of a file-derived string: the image `uri`
+     (`:439`), the material `name` (`:473`), and anywhere else a `String` from
+     `parse_mtl` reaches the `format!`. Numeric interpolations do not need it.
+  3. Guard the numeric ones instead: `bounds()` (`:75-85`) returns
+     `INFINITY`/`NEG_INFINITY` for an empty mesh, and `parse_f32` (`:326-329`)
+     happily accepts `inf` and `nan`, both of which `Display` as tokens that
+     are **not** valid JSON numbers. In `to_gltf`, replace any non-finite
+     `min`/`max` component with `0.0` and any non-finite `base_color`
+     component with the glTF default `1.0`. `to_gltf` is `pub` and reachable
+     with an empty mesh, so this is not only about malformed input.
+  4. Do not change `parse_mtl`'s tokenising — a backslash path is a legal MTL
+     path, and rewriting it is task 4's job, not this one's.
+
+  **Test:** Add to `crates/webgpu_renderer/tests/obj_to_gltf.rs`:
+  - `a_material_name_with_json_metacharacters_still_produces_loadable_gltf` —
+    `newmtl he said "hi"\\` (quote and trailing backslash), convert, then
+    `load_gltf` the result. It must load, which is the existing suite's whole
+    contract.
+  - `a_backslash_texture_path_does_not_corrupt_the_document` —
+    `map_Kd textures\wood.png`, convert, `load_gltf` must succeed.
+  - `an_empty_mesh_emits_finite_accessor_bounds` — call `to_gltf` directly on
+    `ObjMesh::default()` and assert the JSON contains neither `inf` nor `NaN`.
+
+  **Build:** no CMake preset needed. From
+  `ExternalLib/Kataglyphis-RustProjectTemplate`:
+  `cargo test -p kataglyphis_webgpu_renderer --test obj_to_gltf`. Pure CPU —
+  no adapter, so it runs headless. Also run `cargo clippy --workspace` since
+  a new helper is being added.
+
+  **Context:** The module doc says the output is "checked by loading it back
+  with the real `gltf` crate rather than by trusting the emitter" — that
+  contract is right, and these tests are the missing cases. Every existing
+  test uses ASCII-identifier material names and bare filenames, which is why
+  19 tests pass over an emitter that cannot survive a quote.
+
+- [ ] **(S) Pin `histogram.wgsl`'s constants against the Rust ones they silently duplicate** — the one hand-written WGSL shader in the tree declares `HISTOGRAM_BINS`, `MIN_LOG_LUMINANCE`, `MAX_LOG_LUMINANCE` and two workgroup sizes that Rust declares again, and no gate covers it because it is not generated from Slang.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/shaders/histogram.wgsl:14-16` —
+    `HISTOGRAM_BINS: u32 = 64u`, `MIN_LOG_LUMINANCE: f32 = -10.0`,
+    `MAX_LOG_LUMINANCE: f32 = 4.0`. Also `:57` `@compute @workgroup_size(16, 16, 1)`
+    and `:90` `@compute @workgroup_size(64, 1, 1)`.
+  - `crates/webgpu_renderer/src/render/auto_exposure.rs:20`, `:25-26` — the
+    same three values in Rust, and `:43-58` the CPU `histogram_bin` /
+    inverse that `histogram.wgsl:39-40` and `:130` mirror.
+  - `crates/webgpu_renderer/src/render/histogram.rs:12-15` — `BUILD_WORKGROUP = 16`
+    and `CLEAR_WORKGROUP = 64`, both commented "must match the shader" and
+    neither checked. They drive the dispatch counts at `:247-248` and `:264-266`.
+  - `crates/webgpu_renderer/tests/histogram.rs:1-15` — the existing GPU test
+    and, in its module doc, the claim this task makes checkable.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1445`
+    (`NoShaderRedeclaresTheCascadeCount`) — the in-repo shape for a
+    source-scanning gate, for reference only; this one is Rust-side.
+
+  **Steps:**
+  1. Add `crates/webgpu_renderer/tests/histogram_constants.rs` — a **pure-CPU**
+     integration test, deliberately separate from `tests/histogram.rs`, which
+     needs a `GpuContext` and skips wherever there is no adapter. This one must
+     run everywhere.
+  2. Read the shader with
+     `include_str!("../src/shaders/histogram.wgsl")` so the test cannot go
+     stale against a moved file, and parse out `const HISTOGRAM_BINS: u32 = <n>u;`,
+     `const MIN_LOG_LUMINANCE: f32 = <f>;`, `const MAX_LOG_LUMINANCE: f32 = <f>;`
+     with a small hand-rolled scan (no regex dependency).
+  3. Assert each against `auto_exposure::{HISTOGRAM_BINS, MIN_LOG_LUMINANCE,
+     MAX_LOG_LUMINANCE}`. Fail with a message naming both sites and saying they
+     must be edited together — a drifted `MIN_LOG_LUMINANCE` does not crash
+     anything, it just makes the CPU oracle in `tests/histogram.rs` validate the
+     GPU against a mapping the GPU is not using.
+  4. Assert the two `@compute @workgroup_size(...)` attributes match
+     `BUILD_WORKGROUP` and `CLEAR_WORKGROUP`. `histogram.rs`'s constants are
+     private, so either make them `pub(crate)` and reach them through a
+     `pub` re-export, or move both next to `HISTOGRAM_BINS` in
+     `auto_exposure.rs` (which is already `pub`) and have `histogram.rs` import
+     them — prefer the move, since it puts every shared-with-the-shader constant
+     in one module.
+  5. Add a line to `docs/webgpu-renderer-roadmap.md` (or wherever the histogram
+     is described) noting that `histogram.wgsl` is hand-written and pinned by
+     this test, so the next person does not look for a Slang source.
+
+  **Test:** the new `histogram_constants.rs` itself. Verify it bites: change
+  `MIN_LOG_LUMINANCE` in the `.wgsl` to `-9.0`, confirm the test fails and
+  names both files, then revert.
+
+  **Build:** from `ExternalLib/Kataglyphis-RustProjectTemplate`:
+  `cargo test -p kataglyphis_webgpu_renderer --test histogram_constants`, then
+  `cargo test --workspace --locked` to confirm nothing regressed. No GPU
+  required for the new test.
+
+  **Context:** Direct analogue of `ee4abb24` (naming `TILE_SIZE` in
+  `forward.slang` and pinning it plus `CASCADE_COUNT` against the shader
+  source). `histogram.wgsl` is the single shader the Slang pipeline cannot
+  produce — AGENTS.md § Shaders records that Slang has no `InterlockedAdd` on
+  `RWStructuredBuffer` for the WGSL target — so `SlangCompileManifestsAgree`,
+  `CheckedInWgslIsNotOlderThanItsSlangSource` and `CheckedInWgslHasNoHandEdits`
+  all structurally exclude it. It is the one shader with no gate at all.
+
+### Cross-renderer
+
+- [ ] **(M) Give OBJ `map_Kd` path resolution one rule that both renderers follow** — the C++ engine hard-codes a `textures/` subdirectory and the Rust converter looks beside the `.obj`; measured against the shipped asset tree the first resolves 23 of 23 references and the second resolves 0 of 23, so every engine OBJ converts to an untextured glTF.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:181-189` —
+    `model_file.getBaseDir() + "/textures/" + relative_texture_filename`.
+    The `.mtl`'s own path component is discarded.
+  - `Src/GraphicsEngineVulkan/util/File.cpp:43` — `getBaseDir()`.
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:114-132` — what happens when
+    the resolved file is missing: `Texture::createFromFile` fails and the slot
+    is filled with the default texture, so a wrong path degrades silently to
+    white.
+  - `crates/webgpu_renderer/src/asset/obj_to_gltf.rs:584-605` —
+    `obj_path.with_file_name(uri)`, the other rule, and the `log::warn!` that
+    is the only signal when it misses.
+  - `crates/webgpu_renderer/src/asset/obj_to_gltf.rs:132-140` — `map_Kd`
+    tokenising, where a `\`-separated path would need normalising.
+  - `crates/webgpu_renderer/tests/obj_to_gltf.rs:179-199` —
+    `converts_a_real_engine_asset`, which uses `shadow_rig.obj`. That model
+    ships no `mtllib` at all, which is why 19 green tests never noticed.
+  - `Resources/Models/crytek-sponza/sponza_triag.mtl` +
+    `Resources/Models/crytek-sponza/textures/` — the layout every shipped OBJ
+    uses (verified: `crytek-sponza`, `Pillum`, `Sulo/WolfStahl`, `VikingRoom`
+    all put textures in a `textures/` sibling and reference them by bare
+    filename).
+
+  **Steps:**
+  1. Write the rule down once, in `docs/model-loading.md`, before changing
+     either side: **resolve `map_Kd` relative to the directory containing the
+     `.mtl`; if that file does not exist, retry under a `textures/`
+     subdirectory of the same directory; if that misses too, warn and fall
+     back.** Relative-to-the-`.mtl` first is what the OBJ/MTL format actually
+     specifies; the `textures/` retry is what this repo's assets need.
+  2. C++ (`ObjLoader.cpp:181-189`): build both candidate paths and record the
+     first that `std::filesystem::exists`. When neither exists, keep today's
+     behaviour (record a path, let `uploadParsed` substitute the default
+     texture) but `spdlog::warn` with both candidates — a silently white model
+     is the failure mode this whole task is about.
+  3. Rust (`obj_to_gltf.rs:584-605`): apply the same two candidates in
+     `convert_file` before `std::fs::copy`. Emit the **bare filename** as the
+     glTF `uri` regardless of which candidate matched, so the converted
+     document stays self-contained next to its `.bin` — the copy already
+     targets `gltf_path.with_file_name(uri)`.
+  4. Rust: normalise `\` to `/` in `parse_mtl`'s `map_Kd` value (`:138`) so a
+     Windows-authored path resolves on Linux. Note in the doc comment that this
+     is a deliberate deviation from "as written in the .mtl". (Independent of
+     task 3's escaping fix, which must still be correct for names.)
+  5. Leave the `.mtl` **discovery** loop (`:549-562`) alone — it already
+     resolves `mtllib` beside the `.obj`, which is correct.
+
+  **Test:**
+  - Rust: `a_textures_subdirectory_layout_is_resolved` in
+    `crates/webgpu_renderer/tests/obj_to_gltf.rs` — build a temp tree with the
+    `.obj` and `.mtl` at the root and the PNG under `textures/`, convert, and
+    assert the copied texture exists next to the output `.gltf` and that
+    `load_gltf` returns a primitive with a base-colour texture. Follow
+    `a_textured_obj_converts_to_a_gltf_with_a_loadable_texture` (`:414`) and
+    reuse `write_test_png` (`:385`). Add a backslash-path case.
+    Keep `a_missing_texture_does_not_abort_the_conversion` (`:489`) green.
+  - C++: `ObjParseUnit.MtlRelativeTextureIsResolvedBesideTheMtl` in
+    `Test/commit/VulkanEngine/objParseSuite.cpp` — write a temp `.obj`/`.mtl`
+    pair plus a beside-the-mtl texture file, `parseCpu`, and assert
+    `getTextureNames()[0]` names a path that exists. Add a second case for the
+    `textures/` layout. Both are device-free; no `Texture` upload is involved.
+
+  **Build:** both sides. `clangcl-debug` for C++
+  (`--gtest_filter='ObjParseUnit.*'`, same invocation as the first task in this
+  batch), and
+  `cargo test -p kataglyphis_webgpu_renderer --test obj_to_gltf` from
+  `ExternalLib/Kataglyphis-RustProjectTemplate`. Neither needs a GPU.
+
+  **Context:** This is the first entry under `## Cross-renderer`, and it is the
+  archetype for the section: not a rendering difference but a *rule* the two
+  implementations each invented separately, where the divergence is invisible
+  because each renderer is only ever tested against assets that suit it. The
+  Rust converter's own module doc (`obj_to_gltf.rs:15-18`) says a converter
+  that quietly drops what it does not understand "produces assets that differ
+  from the source in ways nobody notices until the two renderers disagree" —
+  that is exactly what happened, one layer up, in path resolution.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
