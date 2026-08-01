@@ -161,8 +161,17 @@ Two things this baseline already tells us:
 Debug-only builds are the default working loop (fast, sanitized). Things
 that are *not* exercised that way and should be run periodically:
 
-- **Multiview `viewMask` validation warning (observed 2026-07-23) — fix landed
-  2026-07-31, GPU confirmation blocked by #2106.** `VulkanDevice` now queries
+- ~~**Multiview `viewMask` validation warning (observed 2026-07-23)**~~ —
+  **CONFIRMED RESOLVED (re-checked 2026-08-01).** The blocker this bullet was
+  waiting on (`#2106`, "multiview feature is not enabled") was root-caused and
+  fixed on 2026-07-31: `VulkanDevice.cpp` set `features2.pNext = nullptr`,
+  severing the whole Vulkan11/12/13 feature chain, so `features11.multiview`
+  never reached `vkCreateDevice` (see "GPU host verification" below). The
+  follow-up RX 9070 XT run recorded there states the `multiview` VUIDs are
+  "completely gone from the log". Both instruments therefore agree and there is
+  nothing left to re-run. Historical detail kept below because the
+  `clampCascadeCount` machinery it describes is still live code. `VulkanDevice`
+  now queries
   `VkPhysicalDeviceVulkan11Properties::maxMultiviewViewCount`
   (`getMaxMultiviewViewCount()`) and both cascade-count decision points
   (startup init, `handleShadowResolutionChange`) route through a new
@@ -648,6 +657,27 @@ cleanUp+recreate pair at the four scene-changed sites.
 
 ## Rust renderer ideas (unsized)
 
+- **`self.depth` (the resolved single-sample depth buffer) appears to read as
+  wrong/empty on the RX 9070 XT, breaking every one of its consumers**
+  (found 2026-08-01, chasing the `gpu_culling_enabled` task above). Hardware
+  occlusion queries, SSAO, and alpha-blend compositing all fail their tests on
+  this host with symptoms consistent with a bad or empty depth read: occlusion
+  sample counts are 0 for every primitive regardless of actual occlusion
+  (`cargo test -p kataglyphis_webgpu_renderer --test occlusion`,
+  `two_side_by_side_cubes_are_both_visible` and 3 others), `ssao_darkens_geometry`
+  reports SSAO *adding* energy instead of removing it, and
+  `alpha_modes_blend_and_mask` finds 0 composited pixels
+  (`cargo test -p kataglyphis_webgpu_renderer --test headless`). **Confirmed
+  pre-existing**, not a new regression from this session: reproduces identically
+  on a clean `git worktree` checkout of `171c740` (two commits back). Prime
+  suspect is the MSAA depth resolve pass (`forward.rs`, the "Depth resolve"
+  render pass that downsamples `self.depth_msaa` into `self.depth` for SSAO/
+  occlusion/tonemap to read) — three independent consumers of that one buffer
+  all misbehave, which points at the producer rather than three unrelated
+  bugs. Not root-caused. Needs a dedicated session: start by dumping `self.depth`
+  to a PNG (`KATAGLYPHIS_FRAME_DUMP`-style capture, or a throwaway readback) right
+  after the resolve pass and comparing against a known scene's expected depth
+  gradient, rather than debugging through three second-order symptoms at once.
 - **Render-graph v2**: the current graph validates declared read/write
   wiring but does not schedule or alias resources. Automatic barrier
   placement and transient-resource aliasing are the natural next steps —
@@ -2279,6 +2309,358 @@ folded into the `vkCheck()` sweep if that ever happens); the per-stage
 `createRenderPass` bodies are genuinely different (1, 2 and 3 subpass
 dependencies, different attachment sets) and are **not** a consolidation
 target.
+
+## 2026-08-01 batch III — planner (dead GPU-culling path, unchecked Vulkan results, shadow/CI test gaps)
+
+The actionable queue was empty when this batch was written (only `- [b]` entries
+remained across the whole file). Every claim below was read out of the tree this
+pass:
+
+- **The Rust GPU compute culling path is wired to nothing.** `gpu_culling` is
+  referenced at exactly five places in `forward.rs` (`:562, :573, :1117, :1119,
+  :2314-2316` — grepped). `GpuCulling::cull()` runs the compute dispatch and
+  copies the visibility buffer to `readback_buffer` (`gpu_occlusion.rs:240-247`),
+  but **`GpuCulling::readback()` (`:251`) has no caller anywhere in the crate**,
+  so `GpuCulling::visibility` stays an empty `Vec` forever. The draw loop's skip
+  is gated on `self.occlusion_queries_enabled && !self.occlusion.visible(i)`
+  (`forward.rs:2212-2216`) and never consults `gpu_culling` at all. Net effect:
+  setting `gpu_culling_enabled = true` costs a compute dispatch plus a buffer
+  copy every frame and culls nothing — and because the dispatch sits in an
+  `if/else if`, turning it on also *disables* the hardware-query path that does
+  work. Zero tests reference `gpu_culling_enabled` (`tests/occlusion.rs` covers
+  only the query path). `inv_view_proj` is passed as `Mat4::IDENTITY` with a
+  `// placeholder` comment (`:2328`); harmless today only because
+  `gpu_cull.wgsl` declares the field (`:9`) and never reads it.
+- **The doc comment on `occlusion_queries_enabled` is two increments stale.**
+  `forward.rs:566-569` says "this increment only DETECTS occlusion … it does not
+  yet skip any draw, so the frame renders exactly as before whether it is on or
+  off". It does skip: `:2212`. The test
+  `an_occluded_primitive_is_actually_skipped_in_the_opaque_pass`
+  (`tests/occlusion.rs:164`) exists precisely because it skips.
+- **~20 Vulkan creation calls take `.value` with no `ASSERT_VULKAN`.** Measured
+  by scanning every engine `.cpp` for `.value` with no `ASSERT_VULKAN` in the
+  preceding six lines. The worst is `VulkanInstance.cpp:79`,
+  `instance = vk::createInstance(create_info).value;` — and it is reached even
+  when the extension check *failed*: `:70-73` logs `spdlog::error("VkInstance
+  does not support required extensions!")` and then falls through to create the
+  instance anyway. On a driver missing an extension that is a guaranteed
+  `VK_ERROR_EXTENSION_NOT_PRESENT`, a null `VkInstance`, and
+  `VULKAN_HPP_DEFAULT_DISPATCHER.init(instance)` on it — a crash with no
+  diagnostic, one line after the diagnostic was already known. `Model.cpp:84-88`
+  carries a `TODO` admitting the same pattern for `createSampler`.
+- **Shadow-path GPU coverage is still one number.** `goldenRenderSuite.cpp` has
+  25 tests; the only shadow oracle is `ShadowsDarkenSomePixels` (:565), a
+  darkened-pixel *ratio*. `CascadedShadowMapUnit.CascadesRespondToLightDirection`
+  (:288) pins the same property on the CPU, but nothing checks end-to-end that
+  the light direction reaching the shadow pass actually moves the rendered
+  shadow — the exact gap that produced the "shadow baked into the model reported
+  as cast" retraction recorded above.
+- **The Windows CI test filter is a hand-maintained list that has already
+  drifted twice.** `.github/workflows/Windows.yml:209-237` enumerates 27
+  `<Suite>.*` globs. `Test/commit/VulkanEngine/*.cpp` defines 29 suite names, of
+  which `GoldenRender` and `Integration` are the deliberate GPU exclusions — so
+  the list is complete *right now*, but only because commit `eb077041` had to
+  add `PushConstantRasterizerUnit` by hand after it was missed. AGENTS.md and
+  this file both already warn "a suite added to the repo does not run in CI
+  unless it is added to the filter"; nothing enforces it.
+
+Candidates found but NOT tasked this cycle (queue discipline; re-verify next
+pass): `Model::addSampler` creates one `vk::Sampler` per texture with identical
+parameters except `maxLod`, so Sponza allocates 33 near-duplicate samplers
+against a device `maxSamplerAllocationCount` — dedup is real but small;
+`Model::cleanUp` (`Model.cpp:26-37`) does not `meshes.clear()` while it clears
+every other container, so a second `cleanUp()` re-walks already-cleaned meshes
+(idempotent in practice, inconsistent on its face); the `# cascades` GUI slider
+still advertises 1..8 against `MAX_CASCADES` 3 — now cheaply fixable since
+`host_device_shared_vars.hpp` is a plain header the GUI could include, but the
+engine-side clamp already makes it a cosmetic lie rather than a bug.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [b] **(M) Make `gpu_culling_enabled` actually cull, or the flag is a pure
+  cost** (**blocked on a pre-existing host/driver regression in every
+  depth-consuming pass, not on this task**) — implementation done
+  (2026-08-01), verification is not.
+
+  `GpuCulling` (`crates/webgpu_renderer/src/render/gpu_occlusion.rs`) now
+  mirrors `OcclusionQueries` exactly: a `SLOT_COUNT`-deep readback ring with
+  `map_async` polled non-blocking in a new `end_frame(&Device)` (no more
+  blocking `readback()`), `visible(i)` defaulting to `true` for
+  not-yet-covered indices, `reset()` bumping a generation so a scene change
+  can't inherit stale visibility. `forward.rs`'s draw-loop skip
+  (:2218-2225) now consults whichever of `gpu_culling_enabled` /
+  `occlusion_queries_enabled` is set (mutually exclusive, same
+  `aabb_contains_point` eye guard on both paths); `upload_scene` resets
+  `GpuCulling` alongside `OcclusionQueries`; the real `view_proj.inverse()`
+  replaces the `Mat4::IDENTITY` placeholder; `occlusion_cull_stats()`'s doc
+  comment now names both paths. `cargo build`/`cargo clippy` (default
+  features) compile clean for these files. Three new tests added to
+  `tests/occlusion.rs` mirroring the hardware-query suite:
+  `an_occluded_primitive_is_skipped_with_gpu_culling`,
+  `two_visible_cubes_are_both_drawn_with_gpu_culling`,
+  `gpu_culling_is_off_by_default`.
+
+  **What's blocked:** every one of the new tests, AND the pre-existing
+  hardware-query tests they mirror
+  (`an_occluded_primitive_is_actually_skipped_in_the_opaque_pass`,
+  `two_side_by_side_cubes_are_both_visible`,
+  `a_cube_hidden_behind_another_reads_back_zero_samples`,
+  `loading_a_new_scene_does_not_inherit_the_old_scene_visibility`), fail on
+  this host (RX 9070 XT, Vulkan/AMD 26.7.1 LLPC — confirmed via an adapter
+  probe, not a wrong/software adapter): every occlusion sample count reads 0,
+  visible or not. **Confirmed pre-existing and unrelated to this task**: reset
+  to a clean `git worktree` at `171c740` (two commits before this session,
+  before both the tiled-light-grid-binning commit and today's changes) and
+  the same hardware-query tests fail identically. `ssao_darkens_geometry` and
+  `alpha_modes_blend_and_mask` in `tests/headless.rs` fail the same run,
+  which is suggestive: SSAO reconstructs from `self.depth`, occlusion tests
+  it, GPU-culling samples it — three independent consumers of the resolved
+  single-sample depth buffer all read something wrong. The resolve pass
+  itself (MSAA depth -> `self.depth`, `forward.rs` "Depth resolve" comment) is
+  the prime suspect but not root-caused; that is a separate, bigger
+  investigation than this task (see the new unsized note below). Because the
+  reference implementation this task was told to mirror exactly is *itself*
+  failing for a reason outside this task, there is no way to tell this code
+  apart from broken code by testing on this host right now.
+
+  **To resume:** once the depth-resolve regression below is root-caused and
+  fixed, rerun `cargo test -p kataglyphis_webgpu_renderer --test occlusion --
+  --nocapture` — if the mirrored hardware-query tests go green and the three
+  new `gpu_culling` tests do not, the bug is actually in this change, not the
+  shared prerequisite, and needs a fresh look.
+
+- [ ] **(S) (refactor) Move the tile-light-grid binning out of the 4.3k-line
+  `forward.rs` hub into `render/tile_grid.rs`** — self-contained CPU math with
+  its own unit tests, currently buried in the file the backlog calls the Rust
+  equivalent of `VulkanRenderer`.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/render/forward.rs` — `TILE_SIZE` (:28-31), the
+    screen-rect helper (:290-312), `TileLightGridScratch` (:225-...),
+    `build_tile_light_grid` (:314-...), the single call site (:1932-1937), and
+    the in-module tests `build_tile_light_grid_bins_lights_into_correct_tiles`
+    (:4134), `build_tile_light_grid_covers_tiles_within_range`,
+    `build_tile_light_grid_handles_zero_lights` (:4167).
+  - `crates/webgpu_renderer/src/render/mod.rs` — the module list to extend.
+  - `crates/webgpu_renderer/src/render/gpu_timing.rs` — an existing sibling
+    module for the file-header doc-comment style to match.
+
+  **Steps:**
+  1. Create `src/render/tile_grid.rs` and register it in `render/mod.rs`.
+  2. Move `TILE_SIZE`, `TileLightGridScratch`, the screen-rect helper and
+     `build_tile_light_grid` across **verbatim** — no logic edits in this
+     commit. Export exactly what `forward.rs` needs (`TILE_SIZE` stays `pub`;
+     the rest can be `pub(crate)`).
+  3. Move the three `build_tile_light_grid_*` unit tests into the new module's
+     `#[cfg(test)] mod tests`. They must keep their names so `cargo test`
+     output is comparable before and after.
+  4. `use crate::render::tile_grid::{...}` in `forward.rs`; the call site at
+     :1932 and the `tile_light_grid_scratch` field are the only touch points.
+  5. Add a file-header doc comment stating the invariant the recent fix
+     established: binning is **range-aware** (a light covers the screen-space
+     rectangle its `range` subtends, not the single tile its centre projects
+     to), and `tileW == 0` is the shader's documented all-lights fallback.
+
+  **Test:** No new behaviour, so no new assertions — the moved tests are the
+  test. Verify by diffing test names and counts:
+  `cargo test -p kataglyphis_webgpu_renderer` before and after must list the
+  same set. If any moved test needs an edit beyond its `use` lines, the move
+  was not verbatim — stop and re-do it.
+
+  **Build:** `cargo test -p kataglyphis_webgpu_renderer --locked` from
+  `ExternalLib/Kataglyphis-RustProjectTemplate`, then
+  `cargo clippy --workspace --all-targets`.
+
+  **Context:** `forward.rs` is 4284 lines and the last planner pass explicitly
+  looked for a clean extraction and found none — this is one: pure CPU math,
+  one call site, tests that travel with it, zero GPU coupling. Keep the scope
+  to exactly this; do not opportunistically move the light packing or the
+  bind-group plumbing, which do touch `wgpu` state.
+
+### C++ Vulkan engine
+
+- [ ] **(M) `ASSERT_VULKAN` the ~20 unchecked Vulkan creation results, starting
+  with `vk::createInstance`** — today a missing instance extension is detected,
+  logged, and then ignored one line later.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanInstance.cpp` — `:70-73` (the
+    check that logs and continues), `:79` (`vk::createInstance(...).value`),
+    `:81` (`VULKAN_HPP_DEFAULT_DISPATCHER.init(instance)` on the possibly-null
+    handle), `:86`, `:107`.
+  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp` —
+    `:146`, `:194`, `:332`, `:414`.
+  - `Src/GraphicsEngineVulkan/scene/Model.cpp` — `:84-88`, which carries a
+    `TODO` naming this exact inconsistency.
+  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:249`,
+    `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.cpp:108,143,162`,
+    `vulkan_base/ShaderHelper.cpp:37`, `vulkan_base/VulkanDevice.cpp:231`,
+    `renderer/DeferredRasterizer.cpp:333,362`, `renderer/PathTracing.cpp:211`,
+    `renderer/Rasterizer.cpp:431`, `scene/atmospheric_effects/clouds/Clouds.cpp:249`,
+    `scene/light/directional_light/CascadedShadowMap.cpp:297`.
+  - `Src/GraphicsEngineVulkan/common/Utilities.hpp` — what `ASSERT_VULKAN`
+    actually does (logs critical + aborts; exceptions are disabled project-wide,
+    so this is the only failure mechanism available).
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `:411`
+    `HostAndShaderSharedConstantsAgree` is the precedent for a test that parses
+    repo sources; copy its repo-root resolution and file-reading helpers.
+
+  **Steps:**
+  1. Make the instance-extension failure fatal in `VulkanInstance.cpp:70-73`.
+     `ASSERT_VULKAN` takes a result, so use the same log-critical-and-abort
+     path the macro uses, or convert the check to report *which* extension is
+     missing (`check_instance_extension_support` already knows) and abort.
+     Reporting the name is the point — the current message names nothing.
+  2. Wrap `vk::createInstance` (`:79`) in the two-line `ResultValue` idiom the
+     rest of the codebase uses: capture the `ResultValue`, `ASSERT_VULKAN(result
+     .result, "…")`, then take `.value`.
+  3. Apply the same treatment to every **creation/allocation** site in the list
+     above. Leave query/enumeration calls (`enumerate*`, `getSurface*`) alone in
+     this task — they are a different failure class and would bloat the diff.
+  4. Resolve the `TODO` in `Model.cpp:84-86` by deleting it along with the
+     inconsistency it describes.
+
+  **Test:** Add `BuildIntegrity.VulkanCreationResultsAreChecked` to
+  `Test/commit/VulkanEngine/buildIntegritySuite.cpp`. Walk every `.cpp` under
+  `Src/GraphicsEngineVulkan/`, and for each line containing `.value` where the
+  same or a preceding line contains `create` or `allocate`, require an
+  `ASSERT_VULKAN` within the previous 8 lines. Keep an explicit, commented
+  allowlist in the test for the deliberate exceptions rather than loosening the
+  regex — an allowlist entry is reviewable, a weakened pattern is not. Run the
+  test BEFORE the fixes: it must fail and name the sites. Add the new suite to
+  the CI filter only if the sibling task below has not already automated that.
+
+  **Build:** `clangcl-debug`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -SkipPerfTests -SkipMsix`,
+  then `docker cp bb-build-persistent:C:\ws\build-clangcl-debug\commitTestSuite.exe .\`
+  and run from the repo root. Because this touches the startup path, finish with
+  a full `GoldenRender.*` run on the host GPU (see
+  `docs/gpu-golden-testing.md`) — the failure mode of a wrong `ASSERT_VULKAN`
+  is an abort at launch, which the CPU suites cannot see.
+
+  **Context:** The 2026-08-01 batch II pass deferred a `vkCheck()` helper sweep
+  over all 52 `ResultValue` sites as too large for one session. This is **not**
+  that sweep: it is the strictly smaller subset where no check exists at all, it
+  is a correctness change rather than a style change, and it deliberately keeps
+  the existing idiom so the two never conflict. If the `vkCheck()` sweep happens
+  later it subsumes this cleanly.
+
+- [ ] **(M) Golden test: rotating the directional light must move the shadow** —
+  the only end-to-end shadow oracle today is a single darkened-pixel ratio.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` — `ShadowsDarkenSomePixels`
+    (:565) is the harness, the rig and the noise-mask pattern to copy. Read it
+    in full, including the comment block explaining why the whole-frame mean is
+    useless here and why every capture needs a stability reference.
+  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx` — `:13`
+    `directional_light_direction[3]`, `:20` `cascaded_shadow_intensity`, `:50`
+    `shadows_enabled`.
+  - `Test/commit/VulkanEngine/cascadedShadowMapSuite.cpp:288`
+    `CascadesRespondToLightDirection` — the CPU half of this property; the new
+    test is its GPU counterpart, so keep the naming symmetric.
+  - `docs/gpu-golden-testing.md` — skip-without-GPU behaviour and the host run
+    loop.
+
+  **Steps:**
+  1. Add `GoldenRender.ShadowsMoveWhenTheLightRotates` next to
+     `ShadowsDarkenSomePixels`, reusing `SKIP_WITHOUT_GPU()`,
+     `ScopedModelOverride(SHADOW_RIG_MODEL)`, forward mode, and the same warmup
+     / settle frame counts.
+  2. Capture **four** frames, in this order: light direction A with
+     `cascaded_shadow_intensity = 0.0`, A with `1.0`, then direction B with
+     `0.0`, B with `1.0`. Rotate B about the Y axis by roughly 50-70 degrees
+     from A's default `{-0.55, -1.0, -0.35}`, keeping the same downward
+     component so both directions actually cast onto the ground plane.
+  3. Build a shadow mask per direction: pixel `p` is shadowed under direction D
+     when `luminance(D0, p) - luminance(D1, p) > CHANGE_THRESHOLD`. This is the
+     oracle that matters — the intensity 0/1 pair differs **only** in the shadow
+     term, so the diffuse response to the new light direction cancels out
+     entirely and cannot be mistaken for a moved shadow.
+  4. Assert: (a) both masks are non-empty and each exceeds the same area floor
+     `ShadowsDarkenSomePixels` uses, so a broken direction cannot pass by
+     casting nothing; (b) the symmetric difference of the two masks is a large
+     fraction of their union. Do NOT guess that fraction — measure it on the
+     host and set the threshold below the measured value with the same margin
+     discipline as :670-690, recording both the passing number and the number a
+     direction-insensitive renderer produces (pin the light direction in the
+     shadow-pass path to force that second measurement) in the comment.
+  5. Reuse the per-capture noise reference from `ShadowsDarkenSomePixels`: the
+     ImGui overlay redraws every frame and will otherwise contribute hundreds of
+     bogus mask pixels. Every pixel that moves between two identical captures is
+     excluded from both masks.
+
+  **Test:** the test *is* the deliverable. Before believing the numbers, dump
+  the pictures — `KATAGLYPHIS_FRAME_DUMP=out ./commitTestSuite.exe
+  --gtest_also_run_disabled_tests --gtest_filter=*DumpsFrameToPng*` — and
+  confirm by eye that the shadow in the two directions lands somewhere
+  different. A count says how much changed; only the shape says whether what
+  changed is the shadow. This exact caution is written above because
+  measurement alone twice produced confident wrong calls on this subsystem.
+
+  **Build:** `clangcl-debug` via `Build-Windows-Container.ps1`, then run
+  `commitTestSuite.exe --gtest_filter=GoldenRender.Shadows*` from the repo root
+  on the host GPU. Do **not** add this suite to the Windows CI filter —
+  `GoldenRender` is a deliberate GPU exclusion there.
+
+  **Context:** The backlog's "Test coverage ideas" section names shadow-path
+  coverage beyond the darkened-pixel ratio as one of exactly two remaining GPU
+  gaps. This closes the half that has a clean oracle. It also guards the failure
+  the campaign actually hit: a shadow that is baked in, or a light direction
+  that never reaches the shadow pass, produces two identical masks and fails
+  here while passing `ShadowsDarkenSomePixels`.
+
+- [ ] **(S) Make the Windows CI test filter self-enforcing** — a suite added to
+  the repo silently does not run in CI, and that has already been missed once.
+
+  **Files to read:**
+  - `.github/workflows/Windows.yml` — `:209-237`, the hand-written
+    `$cpuOnlySuites` array (27 entries) and the `--gtest_filter` it builds.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `:411`
+    `HostAndShaderSharedConstantsAgree` parses a repo source file and compares
+    it to another; copy its repo-root resolution (`:24-30`) and its "be forgiving
+    if the working directory changes" handling.
+  - Any suite file for the `TEST(Suite, Name)` shape, e.g.
+    `Test/commit/VulkanEngine/samplerBuilderSuite.cpp`.
+
+  **Steps:**
+  1. Add `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter`.
+  2. Collect suite names by scanning `Test/commit/VulkanEngine/*.cpp` for
+     `TEST(` and `TEST_F(` and taking the first macro argument.
+  3. Collect the filter entries by reading `.github/workflows/Windows.yml` and
+     extracting the single-quoted `'<Name>.*'` lines between the
+     `$cpuOnlySuites = @(` opener and its closing `) -join ':'`. Anchor on those
+     two literals so an unrelated array elsewhere in the file cannot be picked
+     up.
+  4. Assert every collected suite is either in the filter or in an explicit,
+     commented GPU-exclusion list — today exactly `GoldenRender` and
+     `Integration`, and the comment must say why (they need a GPU; the container
+     ships the Vulkan loader, so `SKIP_WITHOUT_GPU` can answer "yes" with no
+     device and then abort during device creation).
+  5. Assert the reverse direction too: every filter entry must correspond to a
+     suite that exists, so a renamed or deleted suite does not leave a dead glob
+     silently matching nothing.
+  6. `GTEST_SKIP()` if the workflow file is not found rather than failing — the
+     test must not break when the executable is run from a directory other than
+     the repo root.
+
+  **Test:** the test is the deliverable, and its red state is reachable: delete
+  one entry from the `Windows.yml` array, confirm the test fails and names the
+  missing suite, then restore it. Do that before committing — a drift guard that
+  has never been observed failing is not known to guard anything. No workflow
+  edit is needed to make it run: `BuildIntegrity.*` is already the first entry
+  in the filter this test checks.
+
+  **Build:** `clangcl-debug`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -SkipPerfTests -SkipMsix`,
+  then run `commitTestSuite.exe --gtest_filter=BuildIntegrity.*` from the repo
+  root.
+
+  **Context:** `eb077041` added `PushConstantRasterizerUnit` to the filter by
+  hand after a planner pass caught it by checking all 29 suite names against the
+  workflow one at a time. That check should be a test, not a planning cycle.
+  This is exactly the `BuildIntegrity` charter: invariants about the repo that
+  no compiler enforces.
 
 ## Completed (kept for the reasoning, not the status)
 
