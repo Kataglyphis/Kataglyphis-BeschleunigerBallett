@@ -9,11 +9,16 @@ import fullscreen;
 [shader("vertex")]
 FullscreenVsOut vs_main(uint vid : SV_VertexID)
 {
-    FullscreenVsOut o;
-    float2 uv = float2(float(vid & 1u) * 2.0, float((vid >> 1u) & 1u) * 2.0);
-    o.svPosition = float4(uv * 2.0 - 1.0, 0.0, 1.0);
-    o.uv = uv;
-    return o;
+    // Was a hand-rolled fullscreen triangle whose uv grew WITH ndc.y (uv.y=0
+    // at the bottom, 1 at the top) instead of matching the standard
+    // framebuffer/@builtin(position) convention fullscreen_vs uses (uv.y=0 at
+    // the top). fs_main below reads msaaDepth at that uv but WRITES via
+    // SV_Depth at its own (correctly, hardware-placed) fragCoord, so every
+    // resolved depth texel held the wrong source row - self.depth came out
+    // vertically mirrored versus the actual screen for any asymmetric scene,
+    // silently correct only when a consumer's own geometry was symmetric
+    // about the horizontal centreline (gpu_cull, ssao's own callers).
+    return fullscreen_vs(vid);
 }
 
 [shader("fragment")]

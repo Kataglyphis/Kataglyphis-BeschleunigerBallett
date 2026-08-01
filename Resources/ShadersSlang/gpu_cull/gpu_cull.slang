@@ -58,7 +58,10 @@ void cs_main(uint3 gid : SV_DispatchThreadID)
 
         float2 ndc = clip.xy / clip.w;
         float depth = clip.z / clip.w;
-        float2 uv = ndc * 0.5 + 0.5;
+        // WebGPU framebuffer convention (+1 = top), not the Vulkan one this
+        // formula would use for ndc.y - see tile_grid.rs:108, the correct
+        // version of this exact computation.
+        float2 uv = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
 
         aabbNear = min(aabbNear, depth);
         uvMin = min(uvMin, uv);
