@@ -22,6 +22,7 @@ import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.pipeline_builder;
+import kataglyphis.vulkan.mesh_draw_recorder;
 
 using namespace Kataglyphis::VulkanRendererInternals;
 
@@ -453,53 +454,13 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
     commandBuffer.bindDescriptorSets(
       vk::PipelineBindPoint::eGraphics, geometryPipelineLayout, 0, 1, &descriptorSets[0], 0, nullptr);
 
-    meshesDrawn = 0;
-    meshesConsidered = 0;
-
     // objectIndex is the flat mesh index into the per-mesh object-description
     // buffer; see Rasterizer::recordCommands. Advances for every mesh (culled
     // included); no-op vs the old per-model push while a Model holds one mesh.
-    uint32_t flat_mesh_index = 0;
-    for (uint32_t m = 0; m < scene->getModelCount(); m++) {
-        pushConstant.model = scene->getModelMatrix(m);
-        // Precompute the inverse-transpose for the Slang shaders (no inverse() in SPIR-V).
-        // Only the rows survive the push constant (see PushConstantRasterizer.hpp).
-        const glm::mat4 inv_transpose_model = glm::inverse(glm::transpose(scene->getModelMatrix(m)));
-        for (int row = 0; row < 3; ++row) {
-            pushConstant.invModelRows[row] =
-              glm::vec4(inv_transpose_model[0][row], inv_transpose_model[1][row], inv_transpose_model[2][row], 0.0F);
-        }
-
-        for (unsigned int k = 0; k < scene->getMeshCount(m); k++) {
-            const uint32_t object_index = flat_mesh_index++;
-            ++meshesConsidered;
-
-            // Same conservative visibility test as the forward path; see
-            // Rasterizer::recordCommands.
-            if (cameraFrustum.has_value()
-                && !isVisible(*cameraFrustum, transformAABB(pushConstant.model, scene->getMeshBounds(m, k)))) {
-                continue;
-            }
-
-            pushConstant.objectIndex = object_index;
-            commandBuffer.pushConstants(
-              geometryPipelineLayout, vk::ShaderStageFlagBits::eAll, 0, sizeof(PushConstantRasterizer), &pushConstant);
-
-            // glTF material.doubleSided: render both faces into the G-buffer, else
-            // back-face cull. Dynamic state, so every draw sets it (default eBack).
-            commandBuffer.setCullMode(scene->isMeshDoubleSided(m, k) ? vk::CullModeFlagBits::eNone
-                                                                     : vk::CullModeFlagBits::eBack);
-
-            const vk::Buffer vertex_buffer = scene->getVertexBuffer(m, k);
-            const vk::DeviceSize offset = 0;
-            commandBuffer.bindVertexBuffers(0, 1, &vertex_buffer, &offset);
-
-            commandBuffer.bindIndexBuffer(scene->getIndexBuffer(m, k), 0, vk::IndexType::eUint32);
-
-            commandBuffer.drawIndexed(scene->getIndexCount(m, k), 1, 0, 0, 0);
-            ++meshesDrawn;
-        }
-    }
+    const MeshDrawStats draw_stats = recordSceneMeshDraws(
+      commandBuffer, geometryPipelineLayout, vk::ShaderStageFlagBits::eAll, scene, cameraFrustum, pushConstant);
+    meshesDrawn = draw_stats.drawn;
+    meshesConsidered = draw_stats.considered;
 
     // Transition to Subpass 1: Lighting
     commandBuffer.nextSubpass(vk::SubpassContents::eInline);

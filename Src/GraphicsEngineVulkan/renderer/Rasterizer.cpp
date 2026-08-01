@@ -25,6 +25,7 @@ import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.pipeline_builder;
+import kataglyphis.vulkan.mesh_draw_recorder;
 
 namespace {
 auto hasStencilComponent(vk::Format format) -> bool
@@ -107,60 +108,14 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
     // The set is identical for every mesh: bind once, not per draw.
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout, 0, descriptorSets, nullptr);
 
-    meshesDrawn = 0;
-    meshesConsidered = 0;
-
-    // object descriptions are flattened one-per-mesh across all models
-    // (Scene::add_model), so objectIndex is the running FLAT mesh index, not the
-    // model index. It advances for every mesh - culled ones included - to stay
-    // aligned with that buffer. Identical to the old per-model push while each
-    // Model holds one mesh.
-    uint32_t flat_mesh_index = 0;
-    for (uint32_t m = 0; m < scene->getModelCount(); m++) {
-        pushConstant.model = scene->getModelMatrix(m);
-        // Precompute the inverse-transpose for the Slang shaders (no inverse() in SPIR-V).
-        // Only the rows survive the push constant (see PushConstantRasterizer.hpp).
-        const glm::mat4 inv_transpose_model = glm::inverse(glm::transpose(scene->getModelMatrix(m)));
-        for (int row = 0; row < 3; ++row) {
-            pushConstant.invModelRows[row] =
-              glm::vec4(inv_transpose_model[0][row], inv_transpose_model[1][row], inv_transpose_model[2][row], 0.0F);
-        }
-
-        for (unsigned int k = 0; k < scene->getMeshCount(m); k++) {
-            const uint32_t object_index = flat_mesh_index++;
-            ++meshesConsidered;
-
-            // Skip meshes provably outside the view. isVisible() is
-            // conservative and treats unknown bounds as visible, so this can
-            // only ever drop geometry the camera cannot see.
-            if (cameraFrustum.has_value()
-                && !isVisible(*cameraFrustum, transformAABB(pushConstant.model, scene->getMeshBounds(m, k)))) {
-                continue;
-            }
-
-            pushConstant.objectIndex = object_index;
-            commandBuffer.pushConstants(pipeline_layout,
-              vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-              0,
-              sizeof(PushConstantRasterizer),
-              &pushConstant);
-
-            // glTF material.doubleSided: render both faces for this mesh, else
-            // back-face cull. The pipeline declares eCullMode dynamic, so this
-            // must be set for every draw (default eBack for OBJ / single-sided).
-            commandBuffer.setCullMode(scene->isMeshDoubleSided(m, k) ? vk::CullModeFlagBits::eNone
-                                                                     : vk::CullModeFlagBits::eBack);
-
-            const vk::Buffer vertex_buffer = scene->getVertexBuffer(m, k);
-            const vk::DeviceSize offset = 0;
-            commandBuffer.bindVertexBuffers(0, 1, &vertex_buffer, &offset);
-
-            commandBuffer.bindIndexBuffer(scene->getIndexBuffer(m, k), 0, vk::IndexType::eUint32);
-
-            commandBuffer.drawIndexed(scene->getIndexCount(m, k), 1, 0, 0, 0);
-            ++meshesDrawn;
-        }
-    }
+    const MeshDrawStats draw_stats = recordSceneMeshDraws(commandBuffer,
+      pipeline_layout,
+      vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+      scene,
+      cameraFrustum,
+      pushConstant);
+    meshesDrawn = draw_stats.drawn;
+    meshesConsidered = draw_stats.considered;
 
     commandBuffer.endRenderPass();
 }
