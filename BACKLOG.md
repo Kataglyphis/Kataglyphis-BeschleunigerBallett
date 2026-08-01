@@ -2807,29 +2807,6 @@ scene-change path, still not worth a `std::span`, exactly as batch V concluded.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Fold `DescriptorSetGroup`'s four copy-pasted write prologues into one helper** — every write helper repeats the same precondition pair and the same five `vk::WriteDescriptorSet` field assignments.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.cpp:171-270` — the four writers, in full; they are only ~25 lines each and the differences are what matter
-  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.ixx:48-78` — the public signatures and the two existing private helpers (`findBinding`, `checkWritePreconditions`)
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1544-1545` — the only `writeImageArray` call sites, both passing a `std::vector`
-
-  **Steps:**
-  1. Add a private helper to `DescriptorSetGroup` — e.g. `bool beginWrite(uint32_t set_index, uint32_t binding, vk::WriteDescriptorSet &out) const` — that runs `checkWritePreconditions`, then `findBinding`, returns `false` (having already logged, exactly as today) if either fails, and otherwise fills `out.dstSet`, `out.dstBinding`, `out.dstArrayElement = 0`, `out.descriptorType` and `out.descriptorCount = 1`.
-  2. Rewrite `writeBuffer` and `writeImage` as: build the payload info struct, `vk::WriteDescriptorSet w{}; if (!beginWrite(set_index, binding, w)) { return; }`, set the one payload pointer, call `updateDescriptorSets`. Behaviour must be identical, including the early returns.
-  3. `writeImageArray` additionally needs the declared count, so after `beginWrite` succeeds it overrides `w.descriptorCount = infos.size()` — but keep its existing size-mismatch check and its `spdlog::error` message verbatim, and keep that check *before* the write. It is the only writer that validates the caller's payload and that guard must not be lost in the shuffle.
-  4. `writeAccelerationStructure` sets `w.pNext = &acceleration_structure_info` after `beginWrite` and leaves `descriptorCount` at 1. Watch the lifetime: `acceleration_structure_info` must outlive the `updateDescriptorSets` call, so declare it before `w` in the same scope, as the current code already does.
-  5. While in the header, change `writeImageArray`'s third parameter from `const std::vector<vk::DescriptorImageInfo> &` to `std::span<const vk::DescriptorImageInfo>` (add `#include <span>` to the `module;` preamble). Both call sites pass a `std::vector` and convert implicitly, so neither changes. Use `infos.size()` and `infos.data()` exactly as today.
-  6. Re-read the four rewritten functions side by side against the originals before building. The failure mode here is silent: a dropped field produces a descriptor write that the validation layers may or may not flag, and the wrong `descriptorType` reads as garbage in a shader rather than as an error.
-
-  **Test:** No new test. Every descriptor in the engine is written through these four functions, so the existing golden suite is the regression net — a dropped or mis-set field surfaces as a validation error or a visibly wrong frame across many tests at once. Run the **whole** suite, including the RT/PT tests: `writeAccelerationStructure` is exercised only by those, and it is the writer with the `pNext` lifetime subtlety.
-
-  **Build:** `DescriptorSetGroup.ixx` changes, so:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
-  Then run the extracted `commitTestSuite.exe` from the repo root on the GPU host. Debug builds run the validation layers, which is the point — this change is exactly the kind that a green pixel test can pass while the layers complain.
-
-  **Context:** Recorded as a deferred candidate in batch IV ("the 4× duplicated `DescriptorSetGroup` write prologue") and not tasked since. The class already exists to make descriptor writes declarative (its own header comment at `DescriptorSetGroup.ixx:13-26` says so), and the prologue duplication is the part that did not get the treatment. Keep it to one helper: a fully generic `write(set, binding, payload_variant)` would be worse than the duplication, because the four payloads attach to three different `vk::WriteDescriptorSet` members. Note the deliberate `{}` value-initialization on the members at `:87-92` and the comment above it about C++23 module ABI skew — do not "tidy" those braces away while editing this file.
-
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

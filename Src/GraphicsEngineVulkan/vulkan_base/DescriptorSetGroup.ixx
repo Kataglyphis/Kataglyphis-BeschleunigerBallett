@@ -2,6 +2,7 @@ module;
 #include <cstdint>
 
 #include <memory>
+#include <span>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -60,7 +61,7 @@ class DescriptorSetGroup
       vk::Sampler sampler = nullptr);
     // Writes the binding's whole descriptor array; infos.size() must match
     // the declared descriptor count.
-    void writeImageArray(uint32_t set_index, uint32_t binding, const std::vector<vk::DescriptorImageInfo> &infos);
+    void writeImageArray(uint32_t set_index, uint32_t binding, std::span<const vk::DescriptorImageInfo> infos);
     void writeAccelerationStructure(uint32_t set_index, uint32_t binding, const vk::AccelerationStructureKHR &tlas);
 
     [[nodiscard]] vk::DescriptorSetLayout getLayout() const { return layout; }
@@ -76,6 +77,12 @@ class DescriptorSetGroup
     // Returns nullptr (and logs) when the binding was never declared.
     const vk::DescriptorSetLayoutBinding *findBinding(uint32_t binding) const;
     bool checkWritePreconditions(uint32_t set_index, uint32_t binding) const;
+    // Runs checkWritePreconditions + findBinding and, on success, fills the
+    // common fields shared by every write (dstSet, dstBinding,
+    // dstArrayElement = 0, descriptorType, descriptorCount = 1). Returns
+    // false (having already logged, via the two checks above) if either
+    // check fails; callers must return early in that case.
+    bool beginWrite(uint32_t set_index, uint32_t binding, vk::WriteDescriptorSet &out) const;
 
     std::shared_ptr<VulkanDevice> device{ nullptr };
 
