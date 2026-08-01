@@ -24,6 +24,15 @@ all render math stay linear.
 
 **No known deviations.** The web swapchain caveat was closed on 2026-07-20.
 
+**KTX2 container vs. material usage.** glTF usage always decides the GPU
+format for a block-compressed texture (base colour/emissive are sRGB;
+normal/metallic-roughness/occlusion are linear), never the KTX2 container's
+declared vkFormat. If a KTX2's `*_SRGB_BLOCK`/`*_UNORM_BLOCK` vkFormat
+disagrees with how the material uses it, `create_compressed_texture`
+(`render/texture.rs`) logs a `log::warn!` naming the texture, the declared
+space and the used one — usage still wins, but the mismatch is no longer
+silent.
+
 The fix is guarded by `non_srgb_target_is_gamma_encoded_like_an_srgb_one`
 (`crates/webgpu_renderer/tests/headless.rs`), which renders the same scene to
 an sRGB and a non-sRGB target and asserts their mean byte values agree within
