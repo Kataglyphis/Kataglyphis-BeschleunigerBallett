@@ -293,19 +293,26 @@ float3 punctual_lighting(float3 worldPos, float3 n, float3 v, float3 albedo,
     uint tileY = uint(fragCoord.y) / 16u;
     uint tileW = uint(frame.cascade_splits.z);
     uint tileH = uint(frame.cascade_splits.w);
-    int tileCount = 0;
-    uint tileOffset = 0u;
-    uint tx = min(tileX, max(tileW, 1u) - 1u);
-    uint ty = min(tileY, max(tileH, 1u) - 1u);
-    uint tileIndex = ty * tileW + tx;
-    uint2 gridEntry = tileLightGrid[tileIndex];
-    int count = int(gridEntry.x);
-    tileOffset = gridEntry.y;
     int totalLights = int(frame.camera_position.w);
-    if (count <= 0 || tileW == 0u) tileCount = totalLights;
-    else tileCount = count;
+    int tileCount = totalLights;
+    uint tileOffset = 0u;
+    int count = 0;
+    if (tileW != 0u)
+    {
+        uint tx = min(tileX, max(tileW, 1u) - 1u);
+        uint ty = min(tileY, max(tileH, 1u) - 1u);
+        uint tileIndex = ty * tileW + tx;
+        uint2 gridEntry = tileLightGrid[tileIndex];
+        count = int(gridEntry.x);
+        tileOffset = gridEntry.y;
+        // `count <= 0` is the CPU binner finding no light for this tile.
+        // `tile_grid.rs`'s `tile_rect_for_light` is not yet a fully
+        // conservative bound in every case (see its doc comment), so this
+        // stays the safety net rather than "iterate nothing".
+        if (count > 0) tileCount = count;
+    }
 
-    for (uint j = 0u; j < uint(abs(tileCount)); j++)
+    for (uint j = 0u; j < uint(tileCount); j++)
     {
         uint lightIdx = (count > 0) ? tileLightIndices[tileOffset + j] : j;
         float4 a = punctualLights[lightIdx * 4u];

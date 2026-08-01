@@ -3386,71 +3386,83 @@ that touches `Texture`.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-- [ ] **(M) Stop an empty tile from iterating every light in the scene** —
-  depends on the mirror fix above; do not start until it has landed.
+- [b] **Stop an empty tile from iterating every light in the scene** —
+  **step 1 done (2026-08-01), step 2 blocked on a deeper, newly-found gap.**
+  `tile_rect_for_light` (`tile_grid.rs:47`) now returns the whole grid when a
+  light's seven candidate points straddle the near plane (some `clip.w > 0`,
+  some `<= 0`), same as the directional fallback — the case the original task
+  described. New test `a_light_straddling_the_near_plane_covers_the_whole_grid`
+  pins it (camera `(0,0,5)`, point light at `(0,0,4.9)` range `2.0`, every tile
+  must list it).
 
-  **Files to read:**
-  - `Resources/ShadersSlang/forward/forward.slang:288-345` — `punctual_lighting`;
-    `:305` is the conflated fallback, `:309` is `lightIdx = (count > 0) ? ... : j`
-  - `crates/webgpu_renderer/src/render/tile_grid.rs:44-104` — `tile_rect_for_light`,
-    specifically the `clip.w <= 0.0 { continue; }` skip at `:75-77` and the
-    `any_in_front` early-out at `:85-87`
-  - `docs/shader-build-pipeline.md` — how to recompile Slang and what the
-    checked-in WGSL gates expect
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:807`
-    (`CheckedInWgslIsNotOlderThanItsSlangSource`) and `:858`
-    (`CheckedInWgslHasNoHandEdits`) — these WILL fail if the `.wgsl` is edited by
-    hand or left unregenerated
+  **The shader's `count <= 0 || tileW == 0u` fallback in
+  `forward.slang`'s `punctual_lighting` was deliberately NOT removed.** Only
+  the safe half of step 3 (moving the `tileLightGrid` read so it does not fire
+  on the `tileW == 0` path) was applied; the `count <= 0` → iterate-everything
+  branch stays exactly as before.
 
-  **Steps:**
-  1. **First make the binning genuinely conservative.** In `tile_rect_for_light`,
-     handle the near-plane straddle: if any of the seven candidate points has
-     `clip.w <= 0.0` while at least one other has `clip.w > 0.0`, the light's
-     footprint is not bounded by the projected subset — return the whole grid
-     (`Some((0, 0, tile_x.saturating_sub(1), tile_y.saturating_sub(1)))`), the
-     same conservative answer the directional branch already gives. Keep the
-     existing `None` (every candidate behind the camera) as-is.
-  2. Only then change `forward.slang:305` to
-     `if (tileW == 0u) tileCount = totalLights;` so `count == 0` means "iterate
-     nothing", and make the `j` loop skip entirely when `count == 0 && tileW != 0`.
-     Keep `lightIdx = (count > 0) ? tileLightIndices[tileOffset + j] : j;` working
-     for the surviving `tileW == 0` fallback.
-  3. While in that function: `tileLightGrid[tileIndex]` is read at `:301` BEFORE
-     the `tileW == 0u` guard at `:305`, so the grid-not-built path indexes a
-     buffer it has already decided is meaningless. Move the read after the guard.
-  4. Recompile the shaders
-     (`pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`)
-     and commit the regenerated
-     `crates/webgpu_renderer/src/shaders/forward.wgsl` — never hand-edit it.
+  **Why: the "genuinely conservative" premise was wrong in a second, larger
+  way the original task text did not anticipate.** A completeness test
+  (`build_tile_light_grid_is_complete_for_random_lights` — sample many points
+  on each light's actual sphere surface, project each independently of
+  `tile_rect_for_light`, assert the grid lists the light for every tile a
+  sample lands in) was written per the task's step 4 and **failed on lights
+  with no near-plane involvement at all**. Root cause, confirmed by direct
+  calculation: the 7-candidate AABB (`pos` plus `pos ± range * axis`) is not
+  a bound on the sphere's true screen-space silhouette even when every
+  candidate is in front of the camera. The silhouette's tangent points
+  combine a lateral *and* a depth-axis offset — no single axis-aligned
+  candidate sits there — and the true extent exceeds the naive one by a
+  factor of `D / sqrt(D² - r²)` (`D` = eye-to-centre distance, `r` = range),
+  worse as range grows relative to distance. Repro: light at
+  `pos=(1.13,-2.07,0.77)`, `range=0.74` (`D≈4.84`, so `r/D≈0.15`, a small
+  ratio) still under-covered by a full tile row. This is documented in
+  `tile_grid.rs`'s `tile_rect_for_light` doc comment now.
 
-  **Test:** in `tile_grid.rs`, add
-  `a_light_straddling_the_near_plane_covers_the_whole_grid`: camera at
-  `(0,0,5)` looking at the origin with `znear = 0.1`, a point light at
-  `(0.0, 0.0, 4.9)` with range `2.0` (so its sphere spans both sides of the
-  camera plane), asserting every tile lists it. Add
-  `build_tile_light_grid_is_complete_for_random_lights`: for ~50 deterministically
-  generated lights (fixed seed, no `rand` dependency — an LCG in the test is
-  fine), brute-force which tiles each light's projected sphere overlaps and assert
-  the grid's list for each tile is a **superset** of the brute-force answer,
-  except where `MAX_LIGHTS_PER_TILE` truncated it. That completeness property is
-  what makes deleting the fallback safe, and it is the assertion the subsystem has
-  never had. Then re-run `cargo test --workspace --locked` and the headless render
-  tests (`cargo test -p webgpu_renderer --test headless`) — no pixel output should
-  change, because the fallback was only ever a slower route to the same answer.
+  A uniform scalar inflation using that factor was considered and rejected:
+  it is only exactly correct when the light lies on the view axis (the
+  aligned 2D case verified above) — for a light off to the side, on an
+  asymmetric or non-square-aspect projection, the correct bound is
+  direction-dependent and needs a projection-matrix-aware formula (see Mara &
+  McGuire, "2D Polyhedral Bounds of a Clipped, Perspective-Projected 3D
+  Sphere", 2013). Shipping the scalar-inflation shortcut would have looked
+  fixed while still under-covering in untested configurations — the same
+  "green because untested" trap this task's own context note warned about,
+  one level deeper. `build_tile_light_grid_is_complete_for_random_lights` was
+  therefore **not** added to the tree (it would either fail or need range
+  bounds tight enough to be dishonest about what it tests); the straddle test
+  is the only one that survived.
 
-  **Build:** `cargo test --workspace --locked` from
-  `ExternalLib/Kataglyphis-RustProjectTemplate`. The Slang change also affects the
-  C++ engine's SPIR-V, so follow with
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
-  and run `commitTestSuite.exe --gtest_filter='BuildIntegrity.*'` to confirm the
-  shader-staleness and no-hand-edit gates are green.
+  **Next step for whoever picks this up**: implement a real
+  projection-matrix-aware sphere screen-bound (Mara & McGuire or equivalent),
+  re-add the completeness test with unconstrained random ranges, confirm it
+  passes, *then* remove the shader's `count <= 0` fallback. Until that
+  lands, the fallback is load-bearing correctness, not just a performance
+  safety net — do not remove it as a drive-by.
 
-  **Context:** the "run it and it's green" trap this repo keeps rediscovering
-  applies directly here — the current code is green *because* the fallback makes
-  every mistake in the binner invisible. Removing it converts binning bugs from
-  silent to visible, which is the point, and is exactly why step 1 must come
-  first. If the completeness test cannot be made to pass, stop and record why
-  rather than shipping a partial removal.
+  Verified: `cargo test --workspace --locked` from
+  `ExternalLib/Kataglyphis-RustProjectTemplate` (all `tile_grid` tests green;
+  the pre-existing `auto_exposure_brightens_a_dark_scene_over_successive_frames`
+  and the 11 `ibl` test failures reproduce identically on unmodified `develop`,
+  confirmed by stashing this change — unrelated headless-GPU-adapter issues in
+  this environment, not caused by this change). Shaders recompiled
+  (`compile-slang-shaders.ps1`); `clangcl-debug` container build green;
+  `commitTestSuite.exe --gtest_filter='BuildIntegrity.*'` shows the
+  shader-staleness/no-hand-edit gates (`CompiledShadersAreNotOlderThanTheirSources`,
+  `CheckedInWgslIsNotOlderThanItsSlangSource`, `CheckedInWgslHasNoHandEdits`)
+  green. Two unrelated, pre-existing `BuildIntegrity` failures surfaced in the
+  same run and are NOT caused by this change (confirmed by file scope —
+  neither touches anything this change edited):
+  `NoShaderRedeclaresTheCascadeCount` (`forward.slang:15`'s
+  `CASCADE_COUNT`, untouched by this change) and `VulkanCreationResultsAreChecked`
+  (`Clouds.cpp:227`, `ShaderHelper.cpp:38` — files this change never opened).
+  Worth their own task. The full `commitTestSuite.exe` GPU golden suite was
+  also tried and failed broadly with "No synchronization frames available" —
+  looks like GPU/session contention from the three build containers already
+  running in this environment (matches the known "swapchain reads black
+  while the session is locked" papercut), not a rendering regression; the
+  task's own build instructions only called for the `BuildIntegrity.*` filter,
+  which is green.
 
 - [ ] **(S) Extract `pack_punctual_lights` into `render/lights.rs` and pin its
   layout against the shader** — a 4×`vec4` host/device contract with three
