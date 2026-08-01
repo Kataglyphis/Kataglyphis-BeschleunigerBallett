@@ -464,6 +464,58 @@ std::map<std::string, int> parse_bash_wgsl_patch_counts(const fs::path &script_p
     return result;
 }
 
+// Parses Scripts/Linux/compile-slang-shaders.sh's `MANIFEST=( ... )` bash
+// array - each row is "file|entry|stage|targets", targets being a
+// comma-separated list of 'spirv' and/or 'wgsl' - and returns the relative
+// (to Resources/ShadersSlang/) .slang paths of every row whose targets
+// include 'spirv'. That manifest is the single source of truth for which
+// shader sources the C++/Vulkan engine actually compiles; a hand-written
+// mirror of it would itself be the kind of drift this suite exists to catch.
+// Anchored on the "MANIFEST=(" opener and the ")" that closes it, so the
+// unrelated WGSL_MAP array further down the script cannot be picked up.
+// Commented-out rows (leading '#') are skipped.
+std::set<std::string> parse_vulkan_consumed_slang_sources(const fs::path &script_path)
+{
+    std::set<std::string> result;
+    std::ifstream file(script_path);
+    if (!file) { return result; }
+
+    bool inside_manifest = false;
+    std::string line;
+    while (std::getline(file, line)) {
+        if (!inside_manifest) {
+            if (line.find("MANIFEST=(") != std::string::npos) { inside_manifest = true; }
+            continue;
+        }
+
+        const std::size_t first_non_space = line.find_first_not_of(" \t");
+        const std::string trimmed = first_non_space == std::string::npos ? std::string{} : line.substr(first_non_space);
+        if (trimmed.starts_with(")")) { break; }// end of MANIFEST=( ... )
+        if (trimmed.empty() || trimmed.starts_with("#")) { continue; }
+
+        const std::size_t open_quote = line.find('"');
+        if (open_quote == std::string::npos) { continue; }
+        const std::size_t close_quote = line.find('"', open_quote + 1);
+        if (close_quote == std::string::npos) { continue; }
+        const std::string row = line.substr(open_quote + 1, close_quote - open_quote - 1);
+
+        std::vector<std::string> fields;
+        std::size_t pos = 0;
+        while (true) {
+            const std::size_t bar = row.find('|', pos);
+            fields.push_back(row.substr(pos, bar == std::string::npos ? std::string::npos : bar - pos));
+            if (bar == std::string::npos) { break; }
+            pos = bar + 1;
+        }
+        if (fields.size() != 4) { continue; }// not a "file|entry|stage|targets" row
+
+        const std::string &file_field = fields[0];
+        const std::string &targets_field = fields[3];
+        if (targets_field.find("spirv") != std::string::npos) { result.insert(file_field); }
+    }
+    return result;
+}
+
 }// namespace
 
 // Both the build-time compiler (Scripts/Windows/compile-slang-shaders.ps1) and
@@ -1091,6 +1143,15 @@ TEST(BuildIntegrity, SlangSourcesDoNotReferenceTheDeletedGlslTree)
 // MAX_CASCADES directly. This scans every other .slang file for a
 // "static const int" whose name contains "CASCADE" (case-insensitive) and
 // whose value equals MAX_CASCADES, and fails if one exists.
+//
+// The scan is restricted to Vulkan-consumed shaders (per
+// parse_vulkan_consumed_slang_sources, i.e. the compile-slang-shaders.sh
+// manifest rows that target 'spirv') rather than every .slang file: WGSL-only
+// shaders such as forward/forward.slang pin their own cascade count on the
+// Rust side (see forward.slang's "Must match CASCADE_COUNT in forward.rs"
+// comment) and cannot go stale against this C++-side MAX_CASCADES - the C++
+// engine never loads them, so a redeclaration there is not the bug this gate
+// exists to catch.
 TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
 {
     const fs::path repo_root = find_repo_root();
@@ -1105,6 +1166,11 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
       << "MAX_CASCADES not found (or not parseable) in " << (slang_root / scene_types_relative).string();
     const int max_cascades = scene_types_constants.at("MAX_CASCADES");
 
+    const fs::path manifest_script = repo_root / "Scripts" / "Linux" / "compile-slang-shaders.sh";
+    const auto vulkan_consumed_sources = parse_vulkan_consumed_slang_sources(manifest_script);
+    ASSERT_FALSE(vulkan_consumed_sources.empty())
+      << "no spirv-targeted rows parsed from " << manifest_script.string() << " - manifest format changed?";
+
     static const std::string kDeclKeyword = "static const int ";
 
     std::vector<std::string> violations;
@@ -1116,6 +1182,7 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
         const std::string relative_path = fs::relative(path, slang_root).generic_string();
         if (relative_path.starts_with("build/")) { continue; }
         if (relative_path == scene_types_relative.generic_string()) { continue; }
+        if (!vulkan_consumed_sources.contains(relative_path)) { continue; }
 
         std::ifstream file(path);
         if (!file) { continue; }

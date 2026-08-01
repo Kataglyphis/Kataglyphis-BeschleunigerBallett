@@ -3558,53 +3558,6 @@ span.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Un-red `BuildIntegrity.NoShaderRedeclaresTheCascadeCount`: scope it to the shaders the Vulkan engine actually consumes** — it currently fails on the Rust/WebGPU-only `forward/forward.slang`, which the C++ engine never loads.
-
-  **Files to read:**
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1083-1159` — the test, its
-    rationale comment, and its `build/` + `scene_types.slang` exclusions.
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:600-692` —
-    `EveryShaderSourceHasCompiledBinary` / `ActivePipelineShadersHaveCompiledBinaries`
-    for how the suite already distinguishes SPIR-V-consumed shaders (reuse that
-    knowledge rather than inventing a second list if one is already derivable).
-  - `Resources/ShadersSlang/forward/forward.slang:13-15` — the constant and its
-    "Must match CASCADE_COUNT in forward.rs" comment.
-  - `Scripts/Linux/compile-slang-shaders.sh:38-107` — the manifest, the machine-
-    readable statement of which shaders emit `spirv` and which emit `wgsl` only.
-
-  **Steps:**
-  1. Derive the set of Vulkan-consumed `.slang` files from the Slang manifest
-     (parse `Scripts/Linux/compile-slang-shaders.sh`'s `MANIFEST=( … )` rows and
-     keep those whose targets include `spirv`). Prefer this over a hand-written
-     exclusion list — the manifest is already the source of truth for
-     "who consumes this shader", and a hand list is the drift this suite exists
-     to prevent. Skip rows that are commented out (`#`).
-  2. Restrict the `NoShaderRedeclaresTheCascadeCount` scan to that set. Update
-     the test's header comment to say *why* WGSL-only shaders are out of scope
-     (they cannot go stale against `MAX_CASCADES`; their constants are owned and
-     pinned on the Rust side — see the task below).
-  3. Verify the test is green, then verify it still bites: temporarily add
-     `static const int NUM_CASCADES = 3;` to
-     `Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang`, confirm red,
-     revert.
-
-  **Test:** `BuildIntegrity.NoShaderRedeclaresTheCascadeCount` must pass, and the
-  step-3 red-then-green check must be done by hand (do not commit the probe). If
-  the manifest parse is non-trivial, factor it into a file-local helper and share
-  it with the task below rather than writing it twice.
-
-  **Build:** `clangcl-debug`, same commands as the task above,
-  `--gtest_filter='BuildIntegrity.*'`. No GPU needed.
-
-  **Context:** The gate's own comment states its purpose precisely — catch a
-  shader still reading a stale private copy after `MAX_CASCADES` is raised on
-  both gated sides. `forward/forward.slang` cannot be that shader: it emits WGSL
-  only and the C++ engine loads no `forward.*.spv`. Narrowing the scan is the fix;
-  do **not** "fix" it by making `forward.slang` import `MAX_CASCADES` from
-  `common/scene_types.slang` — that would couple the Rust renderer's cascade count
-  to the Vulkan engine's, which is a real (if currently invisible) behaviour
-  change and the opposite of what either side wants.
-
 - [ ] **(M) Fix the ray-tracing SBT: the miss region declares one record while the shadow ray reads record 1, and handle offsets assume the device stride** — a spec violation that is invisible only because `shaderGroupHandleAlignment == shaderGroupHandleSize` on this GPU.
 
   **Files to read:**
