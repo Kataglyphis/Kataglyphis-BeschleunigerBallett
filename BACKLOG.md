@@ -255,7 +255,7 @@ that are *not* exercised that way and should be run periodically:
   `Test/commit/VulkanEngine/guiSceneVarsRoundTripSuite.cpp`, and it is in the
   Windows CI filter.
 - Headless offscreen assertions in the C++ engine — **re-scoped, largely done.**
-  `goldenRenderSuite.cpp` now carries 22 GPU tests (forward/deferred raster,
+  `goldenRenderSuite.cpp` now carries 29 runnable GPU tests (forward/deferred raster,
   shadows, frustum culling, RT, path tracing incl. white furnace, textures,
   mask alpha, double-sided, KHR texture transform, second-model load). What is
   still genuinely missing is coverage of the *shadow* path beyond the single
@@ -369,7 +369,9 @@ pass** (all non-`.ixx`, one build+test cycle):
 **GPU verification is now available** (see `[[host-gpu-golden-verification]]`):
 the container-built `commitTestSuite.exe` runs the golden suite on the host
 RX 9070 XT from the repo root. The render-path refactors below are therefore
-verified, not blind — each was confirmed by all 19-21 GPU tests passing.
+verified, not blind — each was confirmed by the full GPU golden suite passing
+(the count as of those dates; see `docs/gpu-golden-testing.md` for the current
+tally).
 
 **DONE — wave 4 (commit `c43af69b`, GPU-verified):** `VulkanRenderer::record_commands`
 decomposed into `recordRasterPass` + `recordRaytracingOrPathTracing` (verbatim,
@@ -623,7 +625,7 @@ cleanUp+recreate pair at the four scene-changed sites.
   `FrameSync` (fences/semaphores/frame index), `SwapchainTarget`
   (swapchain + framebuffers + recreation), a stage registry so adding a
   pass does not mean editing the renderer.
-  - **FrameSync — DONE 2026-07-23 (`e7e7579d`, module `kataglyphis.vulkan.frame_sync`; 22 golden green).** For reference, the state was
+  - **FrameSync — DONE 2026-07-23 (`e7e7579d`, module `kataglyphis.vulkan.frame_sync`; the golden suite as of that date green).** For reference, the state was
     `current_frame`, `image_available` + `in_flight_fences` (sized per
     frame-in-flight / `MAX_FRAME_DRAWS`), and `render_finished_by_image` +
     `images_in_flight_fences` (sized per SWAPCHAIN IMAGE). **The per-image vs
@@ -636,8 +638,8 @@ cleanUp+recreate pair at the four scene-changed sites.
     acquire/submit/present path; `drawFrame` keeps its acquire→submit→present
     flow verbatim but reads handles from the instance. Do NOT collapse
     `render_finished_by_image` to per-frame. GPU-verifiable: sync mistakes
-    surface as validation errors / device hangs — run all 22 golden tests on the
-    RX 9070 XT (`docs/gpu-golden-testing.md`). Touches `VulkanRenderer.ixx` →
+    surface as validation errors / device hangs — run the full golden suite on
+    the RX 9070 XT (`docs/gpu-golden-testing.md`). Touches `VulkanRenderer.ixx` →
     FreshContainer.
   - **SwapchainTarget — investigated 2026-07-23, NOT a clean extraction (skip it).**
     First added the missing recreation coverage (`SwapchainRecreationKeepsRendering`,
@@ -706,12 +708,10 @@ cleanUp+recreate pair at the four scene-changed sites.
   back passing on its own after the `cascade_splits` double-duty fix, before
   any targeted investigation into this specific test) — the "blend pass
   doesn't touch `self.depth`" note above was never confirmed as its actual
-  cause. **Still red** (isolated, separate issue): the two GPU-culling-specific
-  tests
+  cause. The two GPU-culling-specific tests
   (`an_occluded_primitive_is_skipped_with_gpu_culling`,
-  `two_visible_cubes_are_both_drawn_with_gpu_culling` — see the
-  `gpu_culling_enabled` entry below, whose own "To resume" condition is now
-  met: the bug is in that change, not this shared prerequisite).
+  `two_visible_cubes_are_both_drawn_with_gpu_culling`) are now green, recorded
+  passing under `1594a4a0` (see the batch XIV planner notes below).
 - **Render-graph v2**: the current graph validates declared read/write
   wiring but does not schedule or alias resources. Automatic barrier
   placement and transient-resource aliasing are the natural next steps —
@@ -3463,54 +3463,6 @@ that touches `Texture`.
   while the session is locked" papercut), not a rendering regression; the
   task's own build instructions only called for the `BuildIntegrity.*` filter,
   which is green.
-
-### Docs
-
-- [ ] **(S) Correct the golden-suite counts and the stale "still red" GPU-culling
-  claim** (refactor) — one document contradicts itself 75 lines apart, and
-  BACKLOG repeats the old number four times.
-
-  **Files to read:**
-  - `docs/gpu-golden-testing.md:37-51` (the stale "19 + 2, ~44 s" baseline) and
-    `:114-123` (the 2026-08-01 run that says 28 of 31)
-  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` and `renderModesSuite.cpp` —
-    count them yourself, do not trust either number
-  - `BACKLOG.md:258`, `:372`, `:626`, `:639` — the four repeats
-  - `BACKLOG.md:700-714` (the "Still red" claim) and `:3001-3007` (the same file
-    recording those two tests as passing under `1594a4a0`)
-
-  **Steps:**
-  1. Count the GPU tests from the source:
-     `grep -c "^TEST(GoldenRender" Test/commit/VulkanEngine/goldenRenderSuite.cpp`
-     and the `Integration` suites, subtracting `DISABLED_DumpsFrameToPng`, which
-     does not run by default. At the time of writing that is 29 runnable
-     `GoldenRender` + 2 `Integration` = 31, and 31 − 3 currently-excluded = the 28
-     the document's later section already reports. Re-derive rather than copying
-     these figures — if they have moved again, the doc should say what is true
-     now.
-  2. Fix `docs/gpu-golden-testing.md:46-47` to the derived numbers, drop the "~44 s"
-     wall time (it is a single machine's figure with no machine named), and date
-     the line.
-  3. Fix the four BACKLOG repeats to the same number. Where a repeat is inside a
-     historical DONE note (`:372`, `:626`), do not rewrite history — say "the
-     N golden tests as of that date" or drop the count, since the point of those
-     lines is the verification method, not the tally.
-  4. Rewrite `BACKLOG.md:709-714`: the two GPU-culling tests are recorded as
-     passing under `1594a4a0` at `:3001-3007`, and
-     `crates/webgpu_renderer/tests/occlusion.rs:304-360` contains both. State that
-     they are green and remove the "Still red" sentence.
-
-  **Test:** no code test. Verify by re-running the count command in step 1 and by
-  `grep -rn "19 \`GoldenRender\`\|22 GPU tests\|19-21 GPU\|22 golden" docs/ BACKLOG.md`
-  returning nothing.
-
-  **Build:** none — documentation only. Do not run a container build for this.
-
-  **Context:** exactly the failure the `ROADMAP.md` merge note at the top of this
-  file describes ("a stale entry in one place cannot contradict a fresh one in the
-  other") happening *within* a single file. Same shape as batch XIV task 3
-  (`7b38ac3e`), which fixed `docs/model-loading.md` describing a struct that had
-  gained a field.
 
 ## Completed (kept for the reasoning, not the status)
 

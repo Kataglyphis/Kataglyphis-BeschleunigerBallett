@@ -43,8 +43,9 @@ feature, an image transition, or the loader upload path:
    interface changed — otherwise stale BMIs can ASan-fault at member init).
 2. Run the golden + integration suites on the host GPU as above.
 3. All tests passing = the recorded frames are unchanged = the refactor is
-   render-equivalent. As of 2026-07-23 the baseline is 19 `GoldenRender` +
-   2 `Integration` tests, ~44 s.
+   render-equivalent. As of 2026-08-01 the baseline is 29 runnable
+   `GoldenRender` tests (30 defined, minus `DISABLED_DumpsFrameToPng`, which
+   does not run by default) + 2 `Integration` tests = 31 total.
 
 This turns changes the container can only compile-check (device creation,
 image barriers, the deferred/forward command streams, path/ray tracing) into
