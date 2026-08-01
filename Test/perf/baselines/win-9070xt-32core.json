@@ -102,9 +102,9 @@
       "repetitions": 1,
       "repetition_index": 0,
       "threads": 1,
-      "iterations": 1866667,
-      "real_time": 3.7281914771240156e+02,
-      "cpu_time": 3.6830350566008826e+02,
+      "iterations": 4480000,
+      "real_time": 1.4305174107188839e+02,
+      "cpu_time": 1.4299665178571428e+02,
       "time_unit": "ns"
     },
     {
@@ -116,9 +116,9 @@
       "repetitions": 1,
       "repetition_index": 0,
       "threads": 1,
-      "iterations": 640000,
-      "real_time": 1.0127885937436076e+03,
-      "cpu_time": 1.0009765625000000e+03,
+      "iterations": 2133333,
+      "real_time": 3.2941678584472618e+02,
+      "cpu_time": 3.2958989524842116e+02,
       "time_unit": "ns"
     },
     {

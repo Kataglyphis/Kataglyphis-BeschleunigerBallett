@@ -127,7 +127,13 @@ committed to.
   +25%), and is deliberately not wired into CI (see the "measured baseline"
   table below for why: machine-dependent numbers).
 
-### Measured baseline (2026-07-19, clangcl-profile, 32-core 4.3 GHz)
+### Measured baseline (2026-07-31, clangcl-profile, 32-core 4.3 GHz)
+
+`Test/perf/baselines/win-9070xt-32core.json` is the machine-readable source of
+truth (checked in, diffed by `Compare-PerfBaseline.ps1`); the table below is a
+human-readable summary of it. Keep the two in sync — a 2026-08-01 re-run
+confirmed the `BM_ComputeCascadeData` rows below (the JSON previously had them
+wrong by ~3x; fixed to match this table, which a fresh run agreed with).
 
 | Benchmark | Time |
 | --- | --- |
@@ -139,12 +145,14 @@ committed to.
 | `BM_ResolveModelPath_Miss` | 15.7 us |
 | `BM_ObjParse_Plane` (1 KB) | 23 us |
 | `BM_ObjParse_Suzanne` (1 MB) | 7.1 ms |
-| `BM_ComputeCascadeData/1` (2026-07-31, `std::array` corners) | 142 ns |
-| `BM_ComputeCascadeData/3` (2026-07-31, `std::array` corners) | 324 ns |
-| `BM_FrustumCull/64` (2026-07-31) | 339 ns |
-| `BM_FrustumCull/512` (2026-07-31) | 2.93 us |
-| `BM_FrustumCullShadowCaster/64` (2026-07-31) | 326 ns |
-| `BM_FrustumCullShadowCaster/512` (2026-07-31) | 2.77 us |
+| `BM_GltfParse_CubeGlb` | 13.2 us |
+| `BM_GltfParse_CubeTextured` | 15.7 us |
+| `BM_ComputeCascadeData/1` (`std::array` corners) | 143 ns |
+| `BM_ComputeCascadeData/3` (`std::array` corners) | 329 ns |
+| `BM_FrustumCull/64` | 339 ns |
+| `BM_FrustumCull/512` | 2.93 us |
+| `BM_FrustumCullShadowCaster/64` | 326 ns |
+| `BM_FrustumCullShadowCaster/512` | 2.77 us |
 
 Two things this baseline already tells us:
 
@@ -2971,53 +2979,6 @@ and its own CPU oracle, so it is recorded here rather than half-specified;
 ### Build / scripts
 
 ### Docs
-
-- [ ] **(S) Reconcile the two perf instruments and the golden-suite count** — the
-  BACKLOG baseline table and the checked-in baseline JSON, taken on the same
-  machine the same day, disagree by 3x on one benchmark.
-
-  **Files to read:**
-  - `BACKLOG.md` — "### Measured baseline (2026-07-19, clangcl-profile, 32-core
-    4.3 GHz)", the table rows for `BM_ComputeCascadeData/1` and `/3`
-  - `Test/perf/baselines/win-9070xt-32core.json` — `context.date` is
-    `2026-07-31T19:36:11+02:00`, host `FENSTER_FUNDER`, 32 CPUs at 4300 MHz
-  - `docs/gpu-golden-testing.md:121` — "runs the rest of the suite (21 tests)"
-  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` — now 30 `GoldenRender.*`
-    tests, 2 of them `DISABLED_`
-
-  **Steps:**
-  1. Rebuild `clangcl-profile` and re-run the benchmarks to get a third reading:
-     `build-clangcl-profile\perfTestSuite.exe --benchmark_out=perf.json --benchmark_out_format=json`,
-     then `pwsh -File .\Scripts\Compare-PerfBaseline.ps1 -CandidatePath perf.json`.
-     Whichever of the two existing numbers the fresh run agrees with is the real
-     one; the other was recorded wrong.
-  2. Correct the BACKLOG table rows to match, and add the two `BM_GltfParse_*`
-     and `BM_AvailableModelPaths`/`BM_ResolveModelPath_*` rows so the table and
-     the JSON list the same 17 benchmarks. Update the table's heading date, which
-     still says 2026-07-19 while its newest rows are labelled 2026-07-31.
-  3. Add one line under the table naming
-     `Test/perf/baselines/win-9070xt-32core.json` as the machine-readable source
-     of truth and the table as a human-readable summary of it, so the next
-     divergence is a discrepancy someone can spot rather than two equal claims.
-  4. Fix `docs/gpu-golden-testing.md:121`. Do not guess the number — derive it:
-     run the documented `--gtest_filter` from that line with
-     `--gtest_list_tests` and count what it actually selects, then write that
-     number in.
-
-  **Test:** no code test. The verification is the fresh benchmark JSON: attach
-  the run output and show `Compare-PerfBaseline.ps1` exiting 0 against the
-  corrected baseline.
-
-  **Build:** `clangcl-profile` (the only configuration where benchmarks mean
-  anything — debug timings are noise):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-profile -SkipMsix`
-
-  **Context:** This repo's most expensive recorded mistake was two instruments
-  disagreeing and the discrepancy not being chased (see the note at the top of
-  "## C++ Vulkan engine"). A prose table that contradicts a checked-in JSON by
-  3x is that same setup, sitting in the file that documents the lesson. Batch IX
-  asked for the `gpu-golden-testing.md` count to be folded into "whichever task
-  next touches that file" — this is that task.
 
 ## Completed (kept for the reasoning, not the status)
 
