@@ -289,6 +289,72 @@ std::optional<std::vector<std::string>> parse_ci_filter_suites(const fs::path &w
     return suites;
 }
 
+// Every fuzz-target name declared via kataglyphis_add_fuzz_test(<name> ...)
+// in Test/fuzz/CMakeLists.txt. The function definition itself
+// ("function(kataglyphis_add_fuzz_test fuzz_target source_file)") does not
+// match: there is a space, not '(', right after the macro name there.
+std::vector<std::string> parse_declared_fuzz_targets(const fs::path &cmake_path)
+{
+    std::vector<std::string> targets;
+    std::ifstream file(cmake_path);
+    if (!file) { return targets; }
+
+    static const std::string kMacro = "kataglyphis_add_fuzz_test(";
+    std::string line;
+    while (std::getline(file, line)) {
+        const std::size_t pos = line.find(kMacro);
+        if (pos == std::string::npos) { continue; }
+
+        const std::size_t name_start = pos + kMacro.size();
+        std::size_t name_end = name_start;
+        while (name_end < line.size() && is_identifier_char(line[name_end])) { ++name_end; }
+        if (name_end == name_start) { continue; }
+        targets.push_back(line.substr(name_start, name_end - name_start));
+    }
+    return targets;
+}
+
+// Parses the fuzz-target names out of Windows.yml's "Run fuzz target seeds
+// inside the container" step: a PowerShell `foreach (`$t in @('a','b',...))`
+// loop. Anchored on "foreach (`$t in @(" (the backtick escapes $t inside the
+// surrounding double-quoted PowerShell string) and the following "))", so an
+// unrelated foreach loop elsewhere in the file cannot be picked up. Returns
+// std::nullopt only if the file cannot be opened; an empty vector means the
+// anchor text itself was not found, which the caller must fail loudly on
+// rather than skip.
+std::optional<std::vector<std::string>> parse_ci_fuzz_targets(const fs::path &workflow_path)
+{
+    std::ifstream file(workflow_path);
+    if (!file) { return std::nullopt; }
+
+    static const std::string kAnchor = "foreach (`$t in @(";
+    static const std::string kCloser = "))";
+
+    std::string line;
+    while (std::getline(file, line)) {
+        const std::size_t anchor_pos = line.find(kAnchor);
+        if (anchor_pos == std::string::npos) { continue; }
+
+        const std::size_t list_start = anchor_pos + kAnchor.size();
+        const std::size_t closer_pos = line.find(kCloser, list_start);
+        if (closer_pos == std::string::npos) { break; }
+
+        const std::string list = line.substr(list_start, closer_pos - list_start);
+        std::vector<std::string> targets;
+        std::size_t pos = 0;
+        while (pos < list.size()) {
+            const std::size_t open_quote = list.find('\'', pos);
+            if (open_quote == std::string::npos) { break; }
+            const std::size_t close_quote = list.find('\'', open_quote + 1);
+            if (close_quote == std::string::npos) { break; }
+            targets.push_back(list.substr(open_quote + 1, close_quote - open_quote - 1));
+            pos = close_quote + 1;
+        }
+        return targets;
+    }
+    return std::vector<std::string>{};
+}
+
 // Parses $DepthTexturePatches from compile-slang-shaders.ps1: a hashtable
 // keyed by output .wgsl filename, each value an array of `@{ Pattern = ...;
 // Replacement = ... }` entries. Returns filename -> number of Pattern
@@ -733,6 +799,70 @@ TEST(BuildIntegrity, EveryCpuSuiteIsInTheWindowsCiFilter)
       << [&dead_filter_entries] {
              std::string joined;
              for (const auto &entry : dead_filter_entries) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+// The fuzz step's target list in Windows.yml is a hand-maintained array, and
+// the step silently `continue`s past a missing executable rather than
+// failing - the same class of gap `EveryCpuSuiteIsInTheWindowsCiFilter`
+// closes for gtest suites, one step away in the same file: a fuzz target
+// declared in Test/fuzz/CMakeLists.txt but never added to Windows.yml's
+// array does not run in CI, and nothing says so.
+TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const std::vector<std::string> declared_targets =
+      parse_declared_fuzz_targets(repo_root / "Test" / "fuzz" / "CMakeLists.txt");
+    ASSERT_FALSE(declared_targets.empty())
+      << "parsed zero kataglyphis_add_fuzz_test(...) declarations out of Test/fuzz/CMakeLists.txt - the "
+         "anchor text ('kataglyphis_add_fuzz_test(') may have changed";
+    const std::set<std::string> declared_set(declared_targets.begin(), declared_targets.end());
+
+    const fs::path workflow_path = repo_root / ".github" / "workflows" / "Windows.yml";
+    const auto ci_targets_opt = parse_ci_fuzz_targets(workflow_path);
+    if (!ci_targets_opt.has_value()) {
+        GTEST_SKIP() << "could not open " << workflow_path.string() << " - not running from the repo root?";
+    }
+    const std::vector<std::string> &ci_targets = *ci_targets_opt;
+    ASSERT_FALSE(ci_targets.empty())
+      << "parsed zero fuzz targets out of the foreach array in " << workflow_path.string()
+      << R"( - the anchor text ('foreach (`$t in @(' / '))') may have changed)";
+    const std::set<std::string> ci_set(ci_targets.begin(), ci_targets.end());
+
+    // FuzzTest smoke targets (dummy.cpp / example_fuzz_test.cpp) - they exist to
+    // prove the fuzzing harness itself works, not to cover engine surface, so
+    // Windows.yml deliberately does not run them.
+    const std::set<std::string> excluded_from_ci = { "first_fuzz_test", "example_fuzz_test" };
+
+    std::vector<std::string> missing_from_ci;
+    for (const auto &target : declared_targets) {
+        if (ci_set.contains(target) || excluded_from_ci.contains(target)) { continue; }
+        missing_from_ci.push_back(target);
+    }
+    EXPECT_TRUE(missing_from_ci.empty())
+      << missing_from_ci.size()
+      << " fuzz target(s) declared in Test/fuzz/CMakeLists.txt are neither in Windows.yml's fuzz-seed foreach "
+         "array nor in the smoke-target exclusion list, so they silently do not run in CI: "
+      << [&missing_from_ci] {
+             std::string joined;
+             for (const auto &entry : missing_from_ci) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    std::vector<std::string> dead_ci_entries;
+    for (const auto &target : ci_targets) {
+        if (!declared_set.contains(target)) { dead_ci_entries.push_back(target); }
+    }
+    EXPECT_TRUE(dead_ci_entries.empty())
+      << dead_ci_entries.size()
+      << " entry/entries in Windows.yml's fuzz-seed foreach array do not correspond to any target declared "
+         "in Test/fuzz/CMakeLists.txt (renamed or deleted?): "
+      << [&dead_ci_entries] {
+             std::string joined;
+             for (const auto &entry : dead_ci_entries) { joined += "\n  " + entry; }
              return joined;
          }();
 }
