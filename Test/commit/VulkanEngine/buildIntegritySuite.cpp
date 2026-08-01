@@ -950,6 +950,84 @@ TEST(BuildIntegrity, SlangSourcesDoNotReferenceTheDeletedGlslTree)
          }();
 }
 
+// scene_types.slang's MAX_CASCADES (:68) is the gated source of truth for the
+// cascade count - HostAndShaderSharedConstantsAgree above pins it against
+// host_device_shared_vars.hpp. That gate is blind to a second, independent
+// "static const int" redeclaring the same value under a cascade-ish name
+// elsewhere: raising MAX_CASCADES on both currently-gated sides would pass
+// every existing pin test while a shader still reading its own stale local
+// copy kept clamping to the old count. shadow_map.slang carried exactly this
+// (`NUM_CASCADES = 3`) until it was retired in favour of importing
+// MAX_CASCADES directly. This scans every other .slang file for a
+// "static const int" whose name contains "CASCADE" (case-insensitive) and
+// whose value equals MAX_CASCADES, and fails if one exists.
+TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    const fs::path scene_types_relative = fs::path("common") / "scene_types.slang";
+    const auto scene_types_constants = parse_int_constants(slang_root / scene_types_relative);
+    ASSERT_TRUE(scene_types_constants.contains("MAX_CASCADES"))
+      << "MAX_CASCADES not found (or not parseable) in " << (slang_root / scene_types_relative).string();
+    const int max_cascades = scene_types_constants.at("MAX_CASCADES");
+
+    static const std::string kDeclKeyword = "static const int ";
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
+        const std::string relative_path = fs::relative(path, slang_root).generic_string();
+        if (relative_path.starts_with("build/")) { continue; }
+        if (relative_path == scene_types_relative.generic_string()) { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string raw_line;
+        int line_number = 0;
+        while (std::getline(file, raw_line)) {
+            ++line_number;
+            const std::string line = strip_line_comment(raw_line);
+            const auto keyword_pos = line.find(kDeclKeyword);
+            if (keyword_pos == std::string::npos) { continue; }
+
+            std::size_t name_start = keyword_pos + kDeclKeyword.size();
+            std::size_t name_end = name_start;
+            while (name_end < line.size() && is_identifier_char(line[name_end])) { ++name_end; }
+            if (name_end == name_start) { continue; }
+
+            const std::string name = line.substr(name_start, name_end - name_start);
+            const auto value = parse_int_after(line, name_end);
+            if (!value) { continue; }
+
+            std::string lower_name = name;
+            std::transform(lower_name.begin(), lower_name.end(), lower_name.begin(),
+                            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+            if (*value == max_cascades && lower_name.find("cascade") != std::string::npos) {
+                violations.push_back(fs::relative(path, repo_root).generic_string() + ':'
+                                      + std::to_string(line_number) + ": " + name + " = " + std::to_string(*value));
+            }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " shader-local cascade-count constant(s) redeclare MAX_CASCADES (" << max_cascades
+      << ") outside scene_types.slang - import MAX_CASCADES instead: "
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 namespace {
 
 // One `export module <name>;` declaration found in an .ixx file.

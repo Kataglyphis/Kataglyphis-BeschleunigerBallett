@@ -5,9 +5,7 @@ import material_fetch;
 // only. Single-pass layered cascade rendering: SV_ViewID IS the cascade
 // index.
 
-static const int NUM_CASCADES = 3;
-
-[vk::binding(1, 1)] ConstantBuffer<float4x4[3]> lightSpaceMatrices;
+[vk::binding(1, 1)] ConstantBuffer<float4x4[MAX_CASCADES]> lightSpaceMatrices;
 
 struct ShadowPushConstants
 {
@@ -32,7 +30,7 @@ ShadowVsOut shadow_vs_main(
     uint viewId : SV_ViewID)
 {
     ShadowVsOut o;
-    uint cascade = min(viewId, uint(NUM_CASCADES - 1));
+    uint cascade = min(viewId, uint(MAX_CASCADES - 1));
     o.fragUV = tex_coords;
     o.svPosition = mul(mul(lightSpaceMatrices[cascade], pc.model), float4(pos, 1.0));
     return o;
