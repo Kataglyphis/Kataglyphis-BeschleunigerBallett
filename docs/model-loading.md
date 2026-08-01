@@ -34,7 +34,8 @@ thread:
 
 1. `AsyncModelParse` (`scene/AsyncModelParse.ixx`) runs `parseCpu` on a worker
    thread against a fresh device-free loader (`ObjLoader{}` / `GltfLoader{}`),
-   dispatched by file extension.
+   dispatched by file extension via `isGltfModelPath` (`scene/ModelFileKind.ixx`).
+   `Scene::loadModel` routes through the same predicate.
 2. When the worker finishes, `Scene::pollModelLoad` (`scene/Scene.cpp`, the
    `pendingModelParse.parsedGltf()` branch) takes the worker's loader, hands it
    to a **device-owning** uploader via `adoptParsed`, and calls `uploadParsed` —
@@ -68,14 +69,26 @@ A `Model` holds `std::vector<Mesh>` (`scene/Model.ixx`). A single file becomes a
 multi-mesh model through a per-mesh **`MeshRange`** — a slice of the flat arrays:
 
 ```
-struct MeshRange { vertexBase, vertexCount, indexStart, indexCount, triStart, triCount };
+struct MeshRange {
+    vertexBase, vertexCount, indexStart, indexCount, triStart, triCount, doubleSided
+};
 ```
+
+`doubleSided` carries glTF `material.doubleSided` per range, so `uploadParsed`
+can hand it to `add_new_mesh` and the raster pass can disable back-face culling
+for that mesh alone; it is always `false` for OBJ, which has no such concept.
+
+The type lives in its own module, `kataglyphis.vulkan.mesh_range`
+(`scene/MeshRange.ixx`), `export import`ed by both loaders. It exports
+`MeshRange`, the `MeshSlice` return type, and `sliceMeshRange` — the single
+shared implementation of "sub-vertices copied, sub-indices re-based by
+`-vertexBase`, per-range material subset" that both loaders' `uploadParsed`
+call into rather than each doing the slicing themselves.
 
 `parseCpu` records one range per sub-object while keeping the flat arrays intact
 (so the `ObjParseUnit`/`GltfParseUnit` tests still assert on the flat getters),
-and `uploadParsed` slices each range into its own `add_new_mesh`
-(sub-vertices copied, sub-indices re-based by `-vertexBase`, per-range material
-subset, full `materials` array shared). What a "sub-object" is differs by format:
+and `uploadParsed` slices each range via `sliceMeshRange` into its own
+`add_new_mesh`. What a "sub-object" is differs by format:
 
 - **glTF** — one range per **primitive**. Primitives already parse into disjoint
   contiguous vertex ranges, so recording the range is direct.
@@ -110,11 +123,13 @@ meshes automatically feeds the systems that were already made mesh-aware:
   parse tests key on them, and the slice reads from them.
 - Every `MeshRange` must tile the flat arrays contiguously (no gap/overlap) and
   every index in a range must stay inside that range's own vertex block, or the
-  `-vertexBase` re-base in `uploadParsed` corrupts the mesh. The
+  `-vertexBase` re-base in `sliceMeshRange` corrupts the mesh. The
   `MultiShape…`/`MultiPrimitive…RecordsPerPrimitiveMeshRanges` parse tests assert
-  exactly this.
+  this at the parse level, and `Test/commit/VulkanEngine/meshRangeSliceSuite.cpp`
+  unit-tests `sliceMeshRange` itself directly, so the invariant has both a
+  parse-level and a slice-level test.
 - Each mesh currently shares the full `materials` array (its `materialIndex`
   holds the original indices). Trimming to a per-mesh material subset is an
-  optional optimisation tracked in the backlog; if done, it edits the same slice
-  loop in both loaders (a natural moment to dedup that loop — see the campaign
-  log's queued refactor).
+  optional optimisation tracked in the backlog; since the slice loop is already
+  shared in `sliceMeshRange`, that trim would edit exactly one place for both
+  loaders.
