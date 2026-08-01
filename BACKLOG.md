@@ -2909,53 +2909,6 @@ otherwise.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Stop `PathTracing`'s barriers declaring a queue-family ownership transfer that never completes** — a release with no acquire, latent on any device where the graphics and compute families differ.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/PathTracing.cpp` — `:69` (the
-    `getQueueFamilies()` call that feeds this), `:78-97` (the first barrier),
-    `:104-119` (the accumulation barrier)
-  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp` — `:100-101`, the correct
-    idiom in the sibling stage
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` — `:881-882`, the same
-    idiom on the clouds barrier
-  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp` — `:652-689`, why
-    `graphics_family == compute_family` on the dev rig and why that is luck
-
-  **Steps:**
-  1. In `PathTracing.cpp`, set all four queue-family fields —
-     `presentToPathTracingImageBarrier.srcQueueFamilyIndex`/`dstQueueFamilyIndex`
-     (`:79-80`) and `accumulationBarrier.srcQueueFamilyIndex`/`dstQueueFamilyIndex`
-     (`:105-106`) — to `VK_QUEUE_FAMILY_IGNORED`.
-  2. Replace them with a short comment stating the reason: an ownership transfer
-     needs a *paired* release on the source queue and acquire on the destination
-     queue, and this stage is recorded into the frame's graphics command buffer
-     and consumed by a dispatch on that same queue, so there is no transfer to
-     express.
-  3. Delete `:69`'s `QueueFamilyIndices const indices = device->getQueueFamilies();`
-     — grep the rest of the function first to confirm `indices` has no other
-     reader after step 1; if it does, leave it.
-  4. Do **not** change the stage masks or access masks. The execution and memory
-     dependencies at `:92-97` and `:114-119` are correct and are what actually
-     orders the accumulation read-modify-write; only the ownership fields are wrong.
-
-  **Test:** No CPU oracle exists for a barrier. Verify two ways: (a) the
-  path-tracing `GoldenRender.*` tests (including the white-furnace one) stay
-  green and validation-clean on the host GPU; (b) run
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1`
-  with path tracing exercised — it exits non-zero on any `SYNC-HAZARD`.
-
-  **Build:** `clangcl-debug` — only a `.cpp` changes, so a reused container is
-  fine. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -SkipPerfTests -SkipMsix`
-
-  **Context:** This is a portability and honesty fix, not a bug you can reproduce
-  here — say so in the commit message rather than claiming a fixed defect. The
-  reason it matters is that the fields currently *document* a queue handoff that
-  does not exist, which is the kind of thing a future async-compute change would
-  read as prior art. Every other barrier in the engine already uses
-  `VK_QUEUE_FAMILY_IGNORED`.
-
 - [ ] **(M) Close the cross-frame WAR hazard on `cloudOutputTexture`** — the code already names it as an unfixed follow-up; a WAR barrier before the dispatch closes it without duplicating the image.
 
   **Files to read:**

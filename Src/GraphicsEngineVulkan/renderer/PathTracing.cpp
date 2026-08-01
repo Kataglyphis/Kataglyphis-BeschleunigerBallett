@@ -20,7 +20,6 @@
 module kataglyphis.vulkan.path_tracing;
 
 import kataglyphis.vulkan.device;
-import kataglyphis.vulkan.queue_family_indices;
 import kataglyphis.vulkan.image;
 import kataglyphis.vulkan.shader_helper;
 
@@ -66,8 +65,6 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
   uint32_t samples_per_pixel,
   uint32_t max_bounces)
 {
-    Kataglyphis::VulkanRendererInternals::QueueFamilyIndices const indices = device->getQueueFamilies();
-
     vk::ImageSubresourceRange subresourceRange{};
     subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
     subresourceRange.baseMipLevel = 0;
@@ -76,8 +73,14 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
     subresourceRange.layerCount = 1;
 
     vk::ImageMemoryBarrier presentToPathTracingImageBarrier{};
-    presentToPathTracingImageBarrier.srcQueueFamilyIndex = static_cast<uint32_t>(indices.graphics_family);
-    presentToPathTracingImageBarrier.dstQueueFamilyIndex = static_cast<uint32_t>(indices.compute_family);
+    // This stage is recorded into the frame's graphics command buffer and
+    // consumed by a dispatch on that same queue, so there is no queue family
+    // ownership transfer to express here: a real transfer needs a paired
+    // release on the source queue and acquire on the destination queue,
+    // recorded into two separate command buffers submitted to two separate
+    // queues, not both halves back-to-back in one command buffer.
+    presentToPathTracingImageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    presentToPathTracingImageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     // eUndefined: the PT compute shader writes every pixel of vulkanImage, so
     // its previous contents (whether the raster pass ran this frame or was
     // skipped because PT owns the frame) are discarded, not read. eUndefined
@@ -102,8 +105,8 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
     // ALL prior commands on the queue, so this also covers the cross-command-
     // buffer frame-to-frame hazard.
     vk::ImageMemoryBarrier accumulationBarrier{};
-    accumulationBarrier.srcQueueFamilyIndex = static_cast<uint32_t>(indices.compute_family);
-    accumulationBarrier.dstQueueFamilyIndex = static_cast<uint32_t>(indices.compute_family);
+    accumulationBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    accumulationBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     accumulationBarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
     accumulationBarrier.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
     accumulationBarrier.oldLayout = vk::ImageLayout::eGeneral;
@@ -156,8 +159,10 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
     commandBuffer.dispatch(workGroupCountX, workGroupCountY, workGroupCountZ);
 
     vk::ImageMemoryBarrier pathTracingToPresentImageBarrier{};
-    pathTracingToPresentImageBarrier.srcQueueFamilyIndex = static_cast<uint32_t>(indices.compute_family);
-    pathTracingToPresentImageBarrier.dstQueueFamilyIndex = static_cast<uint32_t>(indices.graphics_family);
+    // Same queue, same command buffer as the barrier above: no ownership
+    // transfer to express (see the comment on presentToPathTracingImageBarrier).
+    pathTracingToPresentImageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    pathTracingToPresentImageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     pathTracingToPresentImageBarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
     pathTracingToPresentImageBarrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
     pathTracingToPresentImageBarrier.oldLayout = vk::ImageLayout::eGeneral;
