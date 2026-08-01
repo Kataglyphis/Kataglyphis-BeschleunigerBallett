@@ -2722,58 +2722,6 @@ hand-edit surface to guard.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Synchronize the clouds compute pass with the post pass that samples its
-  output** — a compute storage-image write is read by a fragment shader with no barrier
-  between them.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:866-873` — the cloud dispatch.
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1144-1161` — `updatePostDescriptorSets`,
-    which binds `cloudOutputTexture` at binding 1 in `eGeneral`.
-  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:250-256` — the only subpass
-    dependency, and why it does not cover this.
-  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanImage.cpp:118-151` — the
-    command-buffer `transitionImageLayout` overload and its layout-derived stage/access
-    masks (`eGeneral` maps to `eAllCommands`, `:218-219`).
-  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp:264-275` —
-    `recordComputeCommands`.
-
-  **Steps:**
-  1. Immediately after `clouds.recordComputeCommands(...)` (inside the same
-     `clouds_enabled` block, before the closing timestamp), record an explicit
-     `vk::ImageMemoryBarrier` on `clouds.getCloudOutputTexture()->getVulkanImage().getImage()`:
-     `oldLayout = newLayout = vk::ImageLayout::eGeneral`, aspect colour, 1 mip, 1 layer,
-     `srcAccessMask = eShaderWrite`, `dstAccessMask = eShaderRead`, submitted with
-     `srcStage = eComputeShader`, `dstStage = eFragmentShader`.
-  2. Write the barrier explicitly rather than calling
-     `VulkanImage::transitionImageLayout(cmd, eGeneral, eGeneral, 1, eColor)`. That
-     helper *would* be correct but derives both stages from the layout, giving
-     `eAllCommands -> eAllCommands` — a full pipeline stall every frame for what needs
-     one compute-to-fragment edge. Comment the barrier with what it orders and why the
-     post render pass's external dependency does not.
-  3. Consider the cross-frame WAR while you are here and record the finding either way:
-     `cloudOutputTexture` is a **single** image shared by all frames in flight, so
-     frame N+1's compute write races frame N's post read. If the frame fences already
-     serialize this on the host side, say so in the comment; if sync validation reports
-     it, note it as a follow-up rather than widening the scope of this task.
-
-  **Test:** run the script from the task above
-  (`Scripts/Windows/Run-SyncValidation.ps1`) with clouds enabled, before and after.
-  Before: expect a `SYNC-HAZARD_READ_AFTER_WRITE` naming the cloud output image and the
-  post fragment shader. After: that hazard must be gone and no new one introduced. Also
-  run the full golden suite on the host RX 9070 XT — the frame must be pixel-unchanged,
-  because this adds ordering, not output. `GoldenRender.GuiInputSweepNeverCrashes`
-  toggles `clouds_enabled`, so it exercises both branches.
-
-  **Build:** `.cpp`-only, no `.ixx` touched:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
-
-  **Context:** the note at `VulkanRenderer.cpp:917-920` records that a *different*
-  barrier (same-layout swapchain, colour-attachment to colour-attachment) was removed
-  after sync validation showed the render pass's external dependency covered it. That
-  reasoning does not transfer: an `eColorAttachmentOutput` dependency cannot order a
-  compute-shader write. Do not remove or weaken that existing note while editing nearby.
-
 - [ ] **(S) (refactor) Retire `shadow_map.slang`'s local `NUM_CASCADES` in favour of the
   gated `MAX_CASCADES`** — a third copy of the cascade count that the drift gate cannot
   see.

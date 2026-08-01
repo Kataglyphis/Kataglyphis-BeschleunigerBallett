@@ -869,6 +869,46 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "clouds", { 0.80F, 0.85F, 0.95F, 1.0F });
         write_pass_timestamp(GpuTimedPass::Clouds, true);
         clouds.recordComputeCommands(commandBuffer, rasterizer_descriptor_sets);
+
+        // Order this compute write before the post pass's fragment-shader read of
+        // cloudOutputTexture (bound at binding 1, eGeneral, in updatePostDescriptorSets).
+        // PostStage's only subpass dependency is eColorAttachmentOutput ->
+        // eColorAttachmentOutput (PostStage.cpp) and cannot order a compute-shader
+        // write, unlike the same-layout swapchain barrier removed below (that one
+        // WAS a colour-attachment write, so the render pass dependency covered it).
+        // Written by hand rather than via VulkanImage::transitionImageLayout's
+        // eGeneral->eGeneral overload: that helper derives both stages from the
+        // layout alone, giving eAllCommands -> eAllCommands (a full pipeline stall
+        // every frame) for what only needs one compute-to-fragment edge.
+        vk::ImageMemoryBarrier cloud_output_barrier{};
+        cloud_output_barrier.oldLayout = vk::ImageLayout::eGeneral;
+        cloud_output_barrier.newLayout = vk::ImageLayout::eGeneral;
+        cloud_output_barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        cloud_output_barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        cloud_output_barrier.image = clouds.getCloudOutputTexture()->getImage();
+        cloud_output_barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+        cloud_output_barrier.subresourceRange.baseMipLevel = 0;
+        cloud_output_barrier.subresourceRange.levelCount = 1;
+        cloud_output_barrier.subresourceRange.baseArrayLayer = 0;
+        cloud_output_barrier.subresourceRange.layerCount = 1;
+        cloud_output_barrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
+        cloud_output_barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+        commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
+          vk::PipelineStageFlagBits::eFragmentShader,
+          {},
+          nullptr,
+          nullptr,
+          cloud_output_barrier);
+
+        // Cross-frame WAR is a separate, real hazard this barrier does not close:
+        // cloudOutputTexture is a SINGLE image (not duplicated per frame-in-flight),
+        // and MAX_FRAME_DRAWS == 3 (common/Globals.hpp) means the fence a frame waits
+        // on (FrameSync::inFlightFence(), indexed by current_frame) only guarantees
+        // the submission 3 frames prior has completed, not the immediately preceding
+        // one — so frame N+1's compute write and frame N's post read are not ordered
+        // by any host-side wait. Follow-up, not fixed here: confirm with sync
+        // validation (khronos_validation.validate_sync) whether this surfaces as a
+        // hazard in practice before widening this barrier into a cross-frame one.
         write_pass_timestamp(GpuTimedPass::Clouds, false);
     }
 
