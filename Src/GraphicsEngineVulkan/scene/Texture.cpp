@@ -166,15 +166,13 @@ auto Kataglyphis::Texture::uploadRgba(std::shared_ptr<VulkanDevice>device,
       static_cast<uint32_t>(height));
 
     if (mip_levels > 1) {
-        generateMipMaps(device->getPhysicalDevice(),
-          device->getLogicalDevice(),
+        generateMipMaps(device->getLogicalDevice(),
           commandPool,
           device->getGraphicsQueue(),
           vulkanImage.getImage(),
           texture_format,
           width,
-          height,
-          mip_levels);
+          height);
     } else {
         vulkanImage.transitionImageLayout(device->getLogicalDevice(),
           device->getGraphicsQueue(),
@@ -288,23 +286,14 @@ auto Kataglyphis::Texture::loadTextureData(const std::string &file_name,
     return image;
 }
 
-void Kataglyphis::Texture::generateMipMaps(vk::PhysicalDevice physical_device,
-  vk::Device device,
+void Kataglyphis::Texture::generateMipMaps(vk::Device device,
   vk::CommandPool command_pool,
   vk::Queue queue,
   vk::Image image,
-  vk::Format image_format,
+  [[maybe_unused]] vk::Format image_format,
   int32_t width,
-  int32_t height,
-  [[maybe_unused]] uint32_t in_mip_levels)
+  int32_t height)
 {
-    vk::FormatProperties formatProperties = physical_device.getFormatProperties(image_format);
-
-    if ((formatProperties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImageFilterLinear)
-        == vk::FormatFeatureFlags{}) {
-        spdlog::error("Texture image format does not support linear blitting!");
-    }
-
     vk::CommandBuffer command_buffer =
       Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device, command_pool);
 

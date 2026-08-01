@@ -89,15 +89,13 @@ class Texture
 
     uint32_t mip_levels = 0;
 
-    void generateMipMaps(vk::PhysicalDevice physical_device,
-      vk::Device device,
+    void generateMipMaps(vk::Device device,
       vk::CommandPool command_pool,
       vk::Queue queue,
       vk::Image image,
       vk::Format image_format,
       int32_t width,
-      int32_t height,
-      uint32_t in_mip_levels);
+      int32_t height);
 
     Kataglyphis::VulkanRendererInternals::CommandBufferManager commandBufferManager;
     VulkanBufferManager vulkanBufferManager;

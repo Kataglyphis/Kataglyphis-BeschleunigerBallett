@@ -2968,50 +2968,6 @@ and its own CPU oracle, so it is recorded here rather than half-specified;
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Delete `generateMipMaps`'s unreachable linear-blit branch
-  and its dead parameter** — the error it logs cannot fire, and the parameter it
-  takes is shadowed by the member the loop actually reads.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/Texture.cpp` — `:127-132` (the caller
-    consults `supportsLinearBlit` and forces `mip_levels = 1` on failure),
-    `:168-186` (the `mip_levels > 1` guard around the call), `:291-391`
-    (`generateMipMaps` itself)
-  - `Src/GraphicsEngineVulkan/scene/Texture.ixx:92-100` — the declaration
-
-  **Steps:**
-  1. Delete the `getFormatProperties` re-query and the
-     `spdlog::error("Texture image format does not support linear blitting!")`
-     branch at `Texture.cpp:301-306`. It is unreachable: `uploadRgba` already
-     asked `supportsLinearBlit` at `:129`, set `mip_levels = 1` when it said no,
-     and only calls `generateMipMaps` when `mip_levels > 1` (`:168`).
-  2. Drop the now-unused `vk::PhysicalDevice physical_device` parameter from both
-     the definition (`:291`) and the declaration (`Texture.ixx:92`), and the
-     argument at the call site (`:169`).
-  3. Drop the `[[maybe_unused]] uint32_t in_mip_levels` parameter (`:299`) the
-     same way. This one is a trap, not just noise: the loop at `:323` and the
-     final barrier at `:376` read the **member** `mip_levels`, so a future caller
-     passing a different value would be silently ignored. Removing the parameter
-     makes the member the only input, which is what the code already does.
-  4. Leave the barrier logic, the loop, and the final `mip_levels - 1`
-     transition exactly as they are — this is a subtraction, not a rewrite.
-
-  **Test:** no new GPU test. `GoldenRender.TexturedModelRenders` and the
-  textured-glTF goldens already cover the mip path end to end; assert the change
-  by running them and by `Test/commit/VulkanEngine/` staying at its current
-  count. Add nothing to `goldenRenderSuite.cpp`.
-
-  **Build:** `clangcl-debug`. `Texture.ixx` changes, so this needs a fresh
-  container:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipPerfTests -SkipMsix -FreshContainer`
-  then run the extracted `commitTestSuite.exe` from the repo root on the host GPU
-  (see `[[host-gpu-golden-verification]]` and `docs/gpu-golden-testing.md`).
-
-  **Context:** Batch IX found and verified this, then deferred it purely for the
-  five-task cap with "pick this up next cycle" — re-verified unchanged this pass.
-  Follow the wave-2/wave-3 dead-code removals recorded under "Deep code-review
-  pass (2026-07-23)": delete, rebuild, prove the goldens are unchanged.
-
 ### Build / scripts
 
 - [ ] **(S) Pester coverage for `Compare-PerfBaseline.ps1`** — the one script in
