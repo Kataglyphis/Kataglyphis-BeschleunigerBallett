@@ -4,7 +4,11 @@ import scene_types;
 // shaders. Sole source for this shader. Uses scene_types (NOT rt_types) to
 // avoid pulling ray tracing capabilities into rasterization shaders.
 
-[vk::binding(5, 0)] Sampler2DArray directionalShadowMaps;
+// Comparison sampler (bound once, VkSampler compareEnable/compareOp set in
+// CascadedShadowMap.cpp): SampleCmpLevelZero below gets a free bilinear 2x2
+// PCF tap per sample instead of thresholding a bilinear-filtered raw depth
+// value, which is not PCF (it blends depths, not visibility).
+[vk::binding(5, 0)] Sampler2DArrayShadow directionalShadowMaps;
 
 // Fraction of direct light blocked: 0 = fully lit, 1 = fully shadowed.
 float calc_cascaded_shadow(float3 worldPos, float3 N, float3 L, ConstantBuffer<SceneUBO> sceneUBO)
@@ -36,16 +40,16 @@ float calc_cascaded_shadow(float3 worldPos, float3 N, float3 L, ConstantBuffer<S
     uint shadowWidth, shadowHeight, shadowLayers;
     directionalShadowMaps.GetDimensions(shadowWidth, shadowHeight, shadowLayers);
     float2 texelSize = 1.0 / float2(float(shadowWidth), float(shadowHeight));
-    float occluded = 0.0;
+    float visible = 0.0;
     float taps = 0.0;
     for (int x = -radius; x <= radius; x++)
     {
         for (int y = -radius; y <= radius; y++)
         {
-            float mapDepth = directionalShadowMaps.Sample(float3(shadowUV + float2(x, y) * texelSize, float(cascadeIndex))).r;
-            occluded += (currentDepth - bias) > mapDepth ? 1.0 : 0.0;
+            float2 uv = shadowUV + float2(x, y) * texelSize;
+            visible += directionalShadowMaps.SampleCmpLevelZero(float3(uv, float(cascadeIndex)), currentDepth - bias);
             taps += 1.0;
         }
     }
-    return occluded / max(taps, 1.0);
+    return 1.0 - visible / max(taps, 1.0);
 }

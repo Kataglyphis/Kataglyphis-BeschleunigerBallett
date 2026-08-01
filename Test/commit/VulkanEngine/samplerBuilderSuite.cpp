@@ -65,7 +65,29 @@ TEST(SamplerBuilderUnit, MatchesTextureSamplerConfigurationWithAnisotropyHardDis
     EXPECT_FLOAT_EQ(info.maxAnisotropy, 1.0F);
     EXPECT_EQ(info.borderColor, vk::BorderColor::eIntOpaqueBlack);
     EXPECT_FLOAT_EQ(info.maxLod, 5.0F);
-    // compareEnable/compareOp are left at the struct's zero-initialized default
-    // by the builder itself; Texture.cpp sets compareOp = eAlways afterwards,
-    // which this test does not model since that happens outside the helper.
+    // compareEnable/compareOp default to VK_FALSE/eNever when the caller omits
+    // them, as this call does. Texture::createTextureSampler's own defaults
+    // (VK_FALSE/eAlways) are threaded through explicitly instead - see
+    // MatchesShadowMapComparisonSamplerConfiguration below for a caller that
+    // opts in.
+    EXPECT_EQ(info.compareEnable, static_cast<vk::Bool32>(VK_FALSE));
+    EXPECT_EQ(info.compareOp, vk::CompareOp::eNever);
+}
+
+TEST(SamplerBuilderUnit, MatchesShadowMapComparisonSamplerConfiguration)
+{
+    // CascadedShadowMap.cpp's comparison sampler: linear filtering + a
+    // comparison op turns SampleCmpLevelZero into real bilinear PCF, unlike
+    // plain-sampled + manually-thresholded depth.
+    const vk::SamplerCreateInfo info = buildSamplerCreateInfo(vk::Filter::eLinear,
+      vk::SamplerAddressMode::eClampToEdge,
+      0.0F,
+      VK_FALSE,
+      1.0F,
+      vk::BorderColor::eIntOpaqueBlack,
+      VK_TRUE,
+      vk::CompareOp::eLessOrEqual);
+
+    EXPECT_EQ(info.compareEnable, static_cast<vk::Bool32>(VK_TRUE));
+    EXPECT_EQ(info.compareOp, vk::CompareOp::eLessOrEqual);
 }

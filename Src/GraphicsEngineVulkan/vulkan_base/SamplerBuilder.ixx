@@ -14,6 +14,8 @@ auto buildSamplerCreateInfo(vk::Filter filter,
   float maxLod,
   vk::Bool32 anisotropyEnable,
   float maxAnisotropy,
-  vk::BorderColor borderColor) -> vk::SamplerCreateInfo;
+  vk::BorderColor borderColor,
+  vk::Bool32 compareEnable = VK_FALSE,
+  vk::CompareOp compareOp = vk::CompareOp::eNever) -> vk::SamplerCreateInfo;
 
 }// namespace Kataglyphis

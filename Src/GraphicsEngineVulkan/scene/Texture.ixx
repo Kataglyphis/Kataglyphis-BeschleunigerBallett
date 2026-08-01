@@ -57,7 +57,11 @@ class Texture
 
     void createImageView(std::shared_ptr<VulkanDevice>device, vk::Format format, vk::ImageAspectFlags aspect_flags, uint32_t in_mip_levels, vk::ImageViewType view_type = vk::ImageViewType::e2D, uint32_t array_layers = 1);
 
-    void createTextureSampler(std::shared_ptr<VulkanDevice>device, vk::Filter filter = vk::Filter::eLinear, vk::SamplerAddressMode addressMode = vk::SamplerAddressMode::eRepeat);
+    void createTextureSampler(std::shared_ptr<VulkanDevice>device,
+      vk::Filter filter = vk::Filter::eLinear,
+      vk::SamplerAddressMode addressMode = vk::SamplerAddressMode::eRepeat,
+      vk::Bool32 compareEnable = VK_FALSE,
+      vk::CompareOp compareOp = vk::CompareOp::eAlways);
 
     void cleanUp();
 

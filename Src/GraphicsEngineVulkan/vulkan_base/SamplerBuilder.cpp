@@ -9,7 +9,9 @@ auto Kataglyphis::buildSamplerCreateInfo(vk::Filter filter,
   float maxLod,
   vk::Bool32 anisotropyEnable,
   float maxAnisotropy,
-  vk::BorderColor borderColor) -> vk::SamplerCreateInfo
+  vk::BorderColor borderColor,
+  vk::Bool32 compareEnable,
+  vk::CompareOp compareOp) -> vk::SamplerCreateInfo
 {
     vk::SamplerCreateInfo sampler_create_info{};
     sampler_create_info.magFilter = filter;
@@ -25,6 +27,8 @@ auto Kataglyphis::buildSamplerCreateInfo(vk::Filter filter,
     sampler_create_info.maxLod = maxLod;
     sampler_create_info.anisotropyEnable = anisotropyEnable;
     sampler_create_info.maxAnisotropy = maxAnisotropy;
+    sampler_create_info.compareEnable = compareEnable;
+    sampler_create_info.compareOp = compareOp;
 
     return sampler_create_info;
 }

@@ -228,7 +228,7 @@ void Kataglyphis::Texture::createImageView(std::shared_ptr<VulkanDevice>in_devic
     vulkanImageView.create(in_device, vulkanImage.getImage(), format, aspect_flags, in_mip_levels, view_type, array_layers);
 }
 
-void Kataglyphis::Texture::createTextureSampler(std::shared_ptr<VulkanDevice>in_device, vk::Filter filter, vk::SamplerAddressMode addressMode)
+void Kataglyphis::Texture::createTextureSampler(std::shared_ptr<VulkanDevice>in_device, vk::Filter filter, vk::SamplerAddressMode addressMode, vk::Bool32 compareEnable, vk::CompareOp compareOp)
 {
     this->device = in_device;
     vk::SamplerCreateInfo samplerInfo = buildSamplerCreateInfo(filter,
@@ -236,11 +236,9 @@ void Kataglyphis::Texture::createTextureSampler(std::shared_ptr<VulkanDevice>in_
       static_cast<float>(mip_levels),
       VK_FALSE,
       1.0f,
-      vk::BorderColor::eIntOpaqueBlack);
-    // Unlike the shared defaults, this sampler compares explicitly (always-pass)
-    // rather than leaving compare disabled at its zero-initialized default.
-    samplerInfo.compareEnable = VK_FALSE;
-    samplerInfo.compareOp = vk::CompareOp::eAlways;
+      vk::BorderColor::eIntOpaqueBlack,
+      compareEnable,
+      compareOp);
 
     vk::ResultValue<vk::Sampler> sampler_result = device->getLogicalDevice().createSampler(samplerInfo);
     ASSERT_VULKAN(sampler_result.result, "Failed to create texture sampler!")
