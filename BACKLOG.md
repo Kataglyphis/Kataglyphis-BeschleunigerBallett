@@ -114,10 +114,16 @@ committed to.
     benchmark config); host figures belong in the baseline table below, taken on
     a clean host run rather than a container (wcifs I/O dominates the wall time).
 - **GPU-side numbers already exist**: per-pass timestamps land in
-  `GUIRendererSharedVars::gpuTimings` (GUI "GPU timings" header). A headless
+  `GUIRendererSharedVars::gpuTimings` (GUI "GPU timings" header). ~~A headless
   mode that renders N frames and dumps the per-pass averages as JSON would
-  turn them into a comparable artifact instead of a number a human squints
-  at. Nothing asserts a budget for `GpuTimedPass::ShadowCascades` today.
+  turn them into a comparable artifact~~ — **that exists** (corrected
+  2026-08-01): the `KATAGLYPHIS_GPU_TIMING_JSON` export in
+  `GpuTimingSubsystem.ixx:211` writes one JSON object keyed by
+  `FrontendShared::GPU_TIMED_PASS_EXPORT_NAMES`, the Rust side mirrors it via
+  the `dump_gpu_timings` example, and `Scripts/Compare-RendererTimings.ps1`
+  drives both and prints them side by side. What is still missing is the
+  *assertion*: nothing sets a budget for `GpuTimedPass::ShadowCascades` (or
+  any other pass), so the artifact is comparable but ungated.
 - **Regression tracking**: Google Benchmark can emit JSON
   (`--benchmark_out=... --benchmark_out_format=json`); storing one baseline
   per machine and diffing beats eyeballing console output. **Done
@@ -481,9 +487,15 @@ cleanUp+recreate pair at the four scene-changed sites.
   it means "Windows CI passes" is usually a statement about a workflow that
   never ran. Worth deciding deliberately: run on PRs to `main`, run nightly,
   or keep it opt-in and stop treating a green tick as Windows coverage.
-- **Packaging paths are never exercised.** DEB (`linux-release-deb`), WiX
-  (`windows-clang-release-wix`) and MSIX are configured but nothing builds
-  them in CI, so breakage surfaces at release time.
+- **Packaging paths are only half exercised** (corrected 2026-08-01 — the
+  previous "never exercised" was stale). Linux CI *does* package: `Linux.yml`
+  runs a `linux-release-clang` configure/build followed by a
+  `--build-target package` step and uploads `*.deb` / `*.tar.gz` / `*.tgz` /
+  `*.AppImage` / `*.flatpak`. Still unexercised: **WiX**
+  (`windows-clang-release-wix`), which nothing builds anywhere, and **MSIX**,
+  which `Windows.yml` collects (`**/*.msix`) but only inside the workflow
+  that is itself gated on `[build-win]` — so in practice neither Windows
+  packaging path runs unless a commit message opts in.
 - **Coverage is clang-only** (Linux). GCC and Windows contribute no
   coverage data, which skews what Codecov reports.
 - ~~**Docs builds are unverified.**~~ — **done** (2026-07-31): `docs-build-web.sh`
@@ -2399,86 +2411,6 @@ engine-side clamp already makes it a cosmetic lie rather than a bug.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-- [b] **(M) Make `gpu_culling_enabled` actually cull, or the flag is a pure
-  cost** (**blocked on a bug in this change's own compute-shader culling path
-  — the shared depth-resolve prerequisite that used to block this is fixed,
-  see below**) — implementation done (2026-08-01), verification is not.
-
-  `GpuCulling` (`crates/webgpu_renderer/src/render/gpu_occlusion.rs`) now
-  mirrors `OcclusionQueries` exactly: a `SLOT_COUNT`-deep readback ring with
-  `map_async` polled non-blocking in a new `end_frame(&Device)` (no more
-  blocking `readback()`), `visible(i)` defaulting to `true` for
-  not-yet-covered indices, `reset()` bumping a generation so a scene change
-  can't inherit stale visibility. `forward.rs`'s draw-loop skip
-  (:2218-2225) now consults whichever of `gpu_culling_enabled` /
-  `occlusion_queries_enabled` is set (mutually exclusive, same
-  `aabb_contains_point` eye guard on both paths); `upload_scene` resets
-  `GpuCulling` alongside `OcclusionQueries`; the real `view_proj.inverse()`
-  replaces the `Mat4::IDENTITY` placeholder; `occlusion_cull_stats()`'s doc
-  comment now names both paths. `cargo build`/`cargo clippy` (default
-  features) compile clean for these files. Three new tests added to
-  `tests/occlusion.rs` mirroring the hardware-query suite:
-  `an_occluded_primitive_is_skipped_with_gpu_culling`,
-  `two_visible_cubes_are_both_drawn_with_gpu_culling`,
-  `gpu_culling_is_off_by_default`.
-
-  **What's blocked:** every one of the new tests, AND the pre-existing
-  hardware-query tests they mirror
-  (`an_occluded_primitive_is_actually_skipped_in_the_opaque_pass`,
-  `two_side_by_side_cubes_are_both_visible`,
-  `a_cube_hidden_behind_another_reads_back_zero_samples`,
-  `loading_a_new_scene_does_not_inherit_the_old_scene_visibility`), fail on
-  this host (RX 9070 XT, Vulkan/AMD 26.7.1 LLPC — confirmed via an adapter
-  probe, not a wrong/software adapter): every occlusion sample count reads 0,
-  visible or not. **Confirmed pre-existing and unrelated to this task**: reset
-  to a clean `git worktree` at `171c740` (two commits before this session,
-  before both the tiled-light-grid-binning commit and today's changes) and
-  the same hardware-query tests fail identically. `ssao_darkens_geometry` and
-  `alpha_modes_blend_and_mask` in `tests/headless.rs` fail the same run,
-  which is suggestive: SSAO reconstructs from `self.depth`, occlusion tests
-  it, GPU-culling samples it — three independent consumers of the resolved
-  single-sample depth buffer all read something wrong. The resolve pass
-  itself (MSAA depth -> `self.depth`, `forward.rs` "Depth resolve" comment) is
-  the prime suspect but not root-caused; that is a separate, bigger
-  investigation than this task (see the new unsized note below). Because the
-  reference implementation this task was told to mirror exactly is *itself*
-  failing for a reason outside this task, there is no way to tell this code
-  apart from broken code by testing on this host right now.
-
-  **To resume:** once the depth-resolve regression below is root-caused and
-  fixed, rerun `cargo test -p kataglyphis_webgpu_renderer --test occlusion --
-  --nocapture` — if the mirrored hardware-query tests go green and the three
-  new `gpu_culling` tests do not, the bug is actually in this change, not the
-  shared prerequisite, and needs a fresh look.
-
-  **Resumed and re-run (2026-08-01), condition met.** The shared depth-resolve
-  prerequisite is fixed (see the `self.depth` entry above). Re-ran `cargo test
-  -p kataglyphis_webgpu_renderer --test occlusion -- --nocapture`: all four
-  mirrored hardware-query tests are green
-  (`an_occluded_primitive_is_actually_skipped_in_the_opaque_pass`,
-  `two_side_by_side_cubes_are_both_visible`,
-  `a_cube_hidden_behind_another_reads_back_zero_samples`,
-  `loading_a_new_scene_does_not_inherit_the_old_scene_visibility`), and
-  `gpu_culling_is_off_by_default` was already green. The two tests that
-  exercise the compute-shader path itself are still red:
-  `an_occluded_primitive_is_skipped_with_gpu_culling` ("the hidden cube must
-  be culled by the compute-shader path, leaving 1 draw (got 0)") and
-  `two_visible_cubes_are_both_drawn_with_gpu_culling` ("both visible cubes
-  must draw", got `(0, 2)` not `(2, 2)` — the compute pass is culling
-  everything, visible or not). Per this entry's own condition: **the bug is in
-  `GpuCulling`/`gpu_cull.wgsl`, not the shared prerequisite.** Not
-  investigated further this pass (out of scope for the depth-resolve task
-  that unblocked this check) — stays `- [b]`, but the blocker is now "needs a
-  fresh look at the compute-shader culling path itself" rather than "waiting
-  on the shared depth read".
-
-  **That fresh look happened (2026-08-01, batch VI) and the bug is found: the
-  shader tests the AABB CENTRE, which for any opaque object sits behind its own
-  front face, so every visible primitive fails `depth <= sampledDepth`.** The
-  Rust side of this entry needs no further work — see the actionable
-  "Fix `gpu_cull.slang`" task in batch VI. This entry stays `- [b]` only so its
-  implementation record is not duplicated; it closes when that task lands.
-
 ## 2026-08-01 batch IV — planner (depth-resolve root cause, generated-shader gates)
 
 The actionable queue was empty when this batch was written (only `- [b]` entries
@@ -3059,6 +2991,396 @@ fixed in `CascadedShadowMapMath.cpp`) — a real cross-renderer parity gap, but 
 is a behaviour change needing its own CPU oracle, not a refactor, and task 3
 deliberately does **not** touch it (`light_matrix_for` stays in `forward.rs`
 because it reads `self.light_dir_ambient`).
+
+## 2026-08-01 batch XII — planner (Rust cascade fitting, texture-upload round trips, shadow comparison sampler, a drifted comparison script)
+
+The actionable queue was empty again — batches IV–XI are drained and the only
+checkboxes left in the file were `- [b]`. Every `file:line` below was read out
+of the tree this pass.
+
+**One `- [b]` closed while surveying, not re-proposed.** The
+`gpu_culling_enabled` entry above is now `- [x]`: its blocker ("needs a fresh
+look at the compute-shader culling path itself") was removed by `1594a4a0`,
+whose commit message records both
+`an_occluded_primitive_is_skipped_with_gpu_culling` and
+`two_visible_cubes_are_both_drawn_with_gpu_culling` as passing. Blocker gone
+*and* work done, so the entry was pruned to a stub per this file's own rules.
+Two stale prose claims were corrected in place for the same reason (packaging
+in CI, the headless GPU-timings JSON) — see those bullets.
+
+**Tasks 1 and 2 both edit Rust cascade fitting and task 2 builds on task 1's
+extraction. Do them in order.** They are split rather than merged because they
+fix different things: task 1 is a correctness bug (the near cascades cover a
+depth band nothing is ever assigned to), task 2 is a stability gap (shimmer).
+
+**Task 1 is a real bug, and the C++ engine already proves the invariant that
+catches it.** `update_cascades` (`forward.rs:2610-2635`) sets
+`cascade_splits = [near_radius * 2.0, mid_radius * 2.0, 0.0, 0.0]` — values
+derived from the *scene* radius — while `forward.slang:201-202` selects a
+cascade by comparing them against `In.viewDepth`, which
+`forward.slang:151` defines as `distance(worldPos, camera_position)`: an
+**eye distance**, not a scene-radius fraction. The two are unrelated
+quantities. Cascade 0's box is centred at `camera.target.lerp(camera.eye(),
+0.15)` with half-extent `near_radius`, i.e. it covers eye distances roughly
+`0.85 * camera.radius ± near_radius`, but it is *selected* for eye distances
+`< 2 * near_radius`. For any framing where the camera sits more than about
+`3.5 * near_radius` from its target — the normal case — those two intervals do
+not overlap at all, so every fragment routed to cascade 0 lands outside
+cascade 0's ortho box, `forward.slang:210` sees `uv` outside `[0,1]` and
+`return 1.0` (fully lit). The failure is silent by construction: shadows still
+appear, because everything far enough out falls through to cascade 2, which
+does cover the scene. The symptom is "the near cascades never do anything and
+shadow resolution is always the coarsest cascade's", not "shadows are
+missing" — which is exactly why no existing test catches it. The C++ engine
+has the right oracle already: `CascadedShadowMapUnit.EachCascadeCoversItsOwnFrustumSlice`
+(`cascadedShadowMapSuite.cpp:109`) and `StabilizedCascadesStillCoverTheirSlice`
+(`:430`) assert precisely this property against `computeCascadeData`, and the
+C++ splits come from real view-depth distances (`CascadeData::splitDepth =
+cascadeSplits[i + 1]`). Port the assertion, then make it pass.
+
+**Task 2 is the parity gap batch XI deliberately deferred**, re-proposed here
+with the new evidence batch XI said it needed: task 1 gives it a pure-CPU home
+(`render/cascades.rs`) and a working oracle to extend, which is the "own CPU
+oracle" that deferral was waiting on. `light_matrix_for`
+(`forward.rs:2637-2655`) anchors `Mat4::look_at_rh` at a continuously moving
+`center`, so the ortho box translates *and* the light basis rotates every
+frame; the C++ side fixed exactly this in `CascadedShadowMapMath.cpp:154-201`
+and documents the three necessary ingredients in the comment there.
+
+**Task 3: `Texture::uploadRgba` costs three full GPU round trips per texture.**
+`CommandBufferManager::endAndSubmitCommandBuffer`
+(`CommandBufferManager.cpp:57-125`) creates a fence, submits, and
+`waitForFences(..., UINT64_MAX)` before returning — every call is a
+synchronous stall. `uploadRgba` (`Texture.cpp:151-172`) makes three of them
+back to back: `transitionImageLayout`, `vulkanBufferManager.copyImageBuffer`,
+then either `generateMipMaps` (which begins/ends its own,
+`Texture.cpp:288-378`) or a second transition. They are all recordable into
+one command buffer — `VulkanImage::transitionImageLayout` already has a
+command-buffer overload (wave 5), and `copyImageBuffer` only needs one.
+Related and in the same file: every `Texture` **owns** a `VulkanBufferManager`
+(`Texture.ixx:100`) purely to reach `copyImageBuffer`, which touches no member
+state; the manager's whole reason to exist is its reusable staging buffer, and
+the texture path ignores it and creates a fresh `VulkanBuffer` per texture
+(`Texture.cpp:134-138`). One texture-heavy model pays both costs per texture.
+
+**Task 4: the cascade shadow map is bilinear-filtered and then compared, which
+is not PCF.** `CascadedShadowMap.cpp:57` builds the sampler with
+`vk::Filter::eLinear`, and `common/cascaded_shadow.slang` declares it as a
+plain `Sampler2DArray`, calls `.Sample()`, and does the depth compare in the
+shader (`occluded += (currentDepth - bias) > mapDepth ? 1.0 : 0.0`). Averaging
+four *depths* and then thresholding the average is the textbook wrong order:
+at any silhouette the blended depth is a value no surface actually has, so the
+comparison answers about geometry that does not exist. Hardware comparison
+samplers exist for this, and the Rust renderer already uses one —
+`forward.slang:215` calls `shadowMap.SampleCmpLevelZero(shadowSampler, ...)`.
+This is a cross-renderer parity fix with a free quality win (the 2x2 hardware
+PCF comes with the comparison sampler).
+
+**Task 5 is a defect in a checked-in tool, found by reading it against the two
+enums it claims to track.** `Scripts/Compare-RendererTimings.ps1:34` defaults
+`$RustExpectedPasses` to
+`@('Forward','ShadowCascades','Ssao','Bloom','Histogram','Post')`, and
+`Assert-PassesExist` (`:49-63`) sets `exitCode = 1` for any expected pass the
+JSON does not carry. **There is no `Post` pass on the Rust side.**
+`TimedPass::name()` (`gpu_timing.rs:83-93`) emits `ShadowCascades`, `Forward`,
+`OcclusionCull`, `Bloom`, `Ssao`, `Histogram`, `ExposureReduce`, `Tonemap` —
+the tonemap pass is called `Tonemap`. So the script fails on every run for a
+pass that cannot exist, and simultaneously never notices that
+`ExposureReduce`, `Tonemap` and `OcclusionCull` are unchecked. The C++ list
+(`:32`) does currently match `GPU_TIMED_PASS_EXPORT_NAMES`
+(`GUIRendererSharedVars.ixx:26-32`), but nothing keeps it that way. This is
+the same class the repo already gates elsewhere (`a63edf10` self-enforcing
+Windows CI test filter, `28887db1` / `41b76ab8` generated-WGSL gates), and the
+Pester precedent is `Scripts/Windows/tests/Compare-PerfBaseline.Tests.ps1`.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`Frustum::from_view_proj` in `render/bounds.rs:21-35`
+does not normalize its planes** while the C++ `extractFrustumPlanes`
+(`Frustum.cpp:26-53`) does — but normalization divides by a strictly positive
+length, so the sign test both sides perform is unaffected, and the C++
+normalization exists only so its `1e-4` epsilon is scale-independent (the Rust
+version has no epsilon). Cosmetic, not a defect. **`intersects_aabb_as_caster`
+(`bounds.rs:52`) has no production caller** — grepped the whole crate, only
+its own test — but this is deliberate and documented: `forward.rs:1877-1884`
+disabled per-cascade caster culling when the shadow draw list became a cached
+`RenderBundle`, and re-enabling it needs culling-aware bundle invalidation,
+which that comment explicitly defers as a design decision. Do not delete the
+function and do not re-enable culling without that design. **`GltfLoader.cpp:299`
+says "Placeholder for now"** about flat normals that `:352-372` actually
+computes — one stale sentence, too small to task; fold it into the next edit
+that touches the file. **The `Model::addSampler` per-texture sampler** — batch
+XI's instruction to stop re-checking this still stands; it was not re-checked.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) Stabilize the Rust cascades: world-fixed light basis + texel-snapped box** — do task 1 first; this extends the module it creates.
+
+  **Task 1 landed differently than originally scoped (2026-08-01) — read
+  `crates/webgpu_renderer/src/render/cascades.rs`'s module doc before
+  starting.** The exact-frustum-slice fitting this task's steps assume (each
+  cascade's box built from `Mat4::perspective_rh`-derived corners of its own
+  eye-distance band) measurably regressed `shadow_darkens_plane_under_cube`:
+  `forward.slang`'s `viewDepth` is only linearly interpolated per-vertex, not
+  recomputed per-fragment, and on `cube_on_plane.gltf`'s single-quad ground
+  plane that interpolation error is large enough that a tightly-fit box
+  misses the geometry entirely. The shipped `fit_cascades` instead keeps the
+  original sphere anchors (`focus_near`/`camera.target`/`scene_center` +
+  `light_matrix_for`, unchanged) and only makes the near/mid **radius**
+  track `camera.eye()`'s distance to the scene (floored at the scene's own
+  radius, so it's a no-op for every camera position the GPU goldens already
+  exercise). There is therefore no "cascade `i`'s bounding radius from slice
+  geometry" to start from — step 2 here needs sizing the box from
+  `fit_cascades`' existing `(center, radius)` pairs instead. `render/mod.rs`
+  and the `CascadeFit`/`fit_cascades(camera, scene_min, scene_max,
+  light_dir)` shape are otherwise as described below.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/render/cascades.rs` — created by task 1
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMapMath.cpp`
+    — `:154-201`, **the reference implementation**, including the comment that
+    numbers the three necessary ingredients and explains the one-texel pad
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.ixx`
+    — `:44-52`, the doc comment stating the trade-off
+  - `Test/commit/VulkanEngine/cascadedShadowMapSuite.cpp` — `:339-411`
+    (`StabilizedCascadesShiftByWholeTexelsUnderCameraMotion`,
+    `StabilizedBoxSizeIsInvariantUnderCameraMotion`) — **both oracles to port**
+  - `crates/webgpu_renderer/src/render/forward.rs` — `:41`, `SHADOW_MAP_SIZE`
+    (2048), the resolution to snap against
+
+  **Steps:**
+  1. Replace the per-cascade `Mat4::look_at_rh(eye, center, up)` with a
+     **world-fixed** light basis: `Mat4::look_at_rh(-light_dir, Vec3::ZERO,
+     up)`. A basis anchored at a moving centre absorbs camera translation
+     continuously, and no snap applied afterwards can undo that — this is
+     ingredient 1 in the C++ comment and skipping it makes the rest useless.
+  2. Size the box from the cascade's bounding radius only (a function of the
+     slice geometry, not of camera position), so its texel footprint is
+     invariant under camera motion.
+  3. Snap the box centre to whole texels *in that fixed basis*:
+     `texel_world = 2.0 * radius / SHADOW_MAP_SIZE as f32`, then
+     `center_ls.x = (center_ls.x / texel_world).floor() * texel_world` and the
+     same for `y`. Pad the half-extent by one `texel_world` — the snap can
+     shift the centre by up to a texel per axis and without the pad a slice
+     corner falls outside.
+  4. Fit near/far from the slice corners in the fixed basis, as
+     `CascadedShadowMapMath.cpp:182-192` does, and keep its guard
+     (`if far <= near { far = near + 1.0 }`). Note the C++ comment: near may
+     legitimately come out **negative** with an origin-anchored basis, and
+     `Mat4::orthographic_rh` accepts that — do not clamp it to a small
+     positive number.
+  5. Re-run task 1's coverage test unchanged; it must stay green. A snap that
+     breaks coverage is worse than shimmer.
+
+  **Test:** two tests in `render/cascades.rs`'s `mod tests`, ported from the
+  C++ pair. (a) `cascades_shift_by_whole_texels_under_camera_motion`: fit
+  twice with the camera translated by a sub-texel amount, and assert the
+  difference between the two cascade-0 box centres, expressed in texels, is
+  within a small epsilon of an integer. (b)
+  `cascade_box_size_is_invariant_under_camera_motion`: fit for several camera
+  positions and yaws and assert cascade 0's world-space box extent is
+  identical to within float tolerance across all of them.
+
+  **Build:** Rust only. `cargo test -p kataglyphis_webgpu_renderer` and
+  `cargo clippy -p kataglyphis_webgpu_renderer --all-targets` from
+  `ExternalLib/Kataglyphis-RustProjectTemplate`.
+
+  **Context:** batch XI listed this as a known parity gap and deferred it for
+  wanting "its own CPU oracle"; task 1 supplies both the oracle and the pure-CPU
+  module, which is the new evidence. The C++ doc comment is explicit that the
+  padded square trades a little texel density for edges that hold still —
+  make the same trade, do not invent a different one.
+
+### C++ Vulkan engine
+
+- [ ] **(M) Collapse `Texture::uploadRgba`'s three fence-waited submits into one, and drop the per-`Texture` `VulkanBufferManager`** — every texture in a model currently costs three full GPU round trips at load.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/CommandBufferManager.cpp` — `:57-125`,
+    proving each `endAndSubmitCommandBuffer` creates a fence, submits, and
+    blocks on `waitForFences(..., UINT64_MAX)`
+  - `Src/GraphicsEngineVulkan/scene/Texture.cpp` — `:113-190` (`uploadRgba`),
+    `:288-378` (`generateMipMaps`, which begins/ends its own buffer)
+  - `Src/GraphicsEngineVulkan/scene/Texture.ixx` — `:92-100`, the
+    `generateMipMaps` declaration and the `VulkanBufferManager` member
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanBufferManager.cpp` — `:53-83`
+    (`copyImageBuffer`: it reads no member state)
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanImage.cpp` — `:100-140`, the
+    existing command-buffer overload of `transitionImageLayout` (wave 5) —
+    **the pattern to follow**: a device overload that opens a buffer and
+    delegates to a command-buffer overload holding the actual logic
+
+  **Steps:**
+  1. Add a command-buffer overload of `VulkanBufferManager::copyImageBuffer`
+     taking `vk::CommandBuffer` and recording only the `copyBufferToImage`.
+     Keep the existing device overload as a thin wrapper around it, exactly
+     like `VulkanImage::transitionImageLayout` does — other callers must not
+     change.
+  2. Add a command-buffer overload of `Texture::generateMipMaps` (drop the
+     `device`/`command_pool`/`queue` parameters on it) holding the current
+     barrier/blit loop verbatim. **Do not touch the barrier or blit logic** —
+     it is correct and subtle (level `i-1` is what transitions to
+     `eShaderReadOnlyOptimal` inside the loop; the final barrier handles
+     `mip_levels - 1`).
+  3. In `uploadRgba`, open ONE command buffer via
+     `CommandBufferManager::beginCommandBuffer`, record
+     transition -> copy -> (mipmaps | final transition) into it, and submit
+     once with `endAndSubmitCommandBuffer`. Bail out cleanly if
+     `beginCommandBuffer` returned a null handle, as the existing call sites do.
+  4. Delete the `VulkanBufferManager vulkanBufferManager` member from
+     `Texture.ixx:100` and the `std::move` of it in the move ctor/assignment
+     (`Texture.cpp:32`, `:49`) and its `cleanUp()` (`:256`). Reach
+     `copyImageBuffer` through a local or a static — it holds no state the
+     texture path uses.
+  5. Leave the per-texture staging `VulkanBuffer` alone in this task. It is a
+     separate change (it needs a lifetime that outlives the submit) and
+     mixing it in makes the diff unverifiable.
+
+  **Test:** no new CPU test — this is a submit-count change with no
+  CPU-observable surface. Verify on the GPU: run the textured golden tests on
+  the RX 9070 XT per `[[host-gpu-golden-verification]]` /
+  `docs/gpu-golden-testing.md` —
+  `--gtest_filter=GoldenRender.TexturedModelRenders:*MaskAlpha*:*DoubleSided*:*KhrTextureTransform*`
+  must be green and pixel-identical in behaviour. Then run
+  `Scripts/Windows/Run-SyncValidation.ps1`: merging three separately-fenced
+  submits into one removes the implicit ordering the fences provided, so a
+  missing barrier would surface as a `SYNC-HAZARD` here and nowhere else.
+  **Do not skip the sync-validation run** — it is the only instrument that
+  can catch the specific way this change can go wrong.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -SkipPerfTests -SkipMsix`
+  then `docker cp bb-build-persistent:C:\ws\build-clangcl-debug\bin\commitTestSuite.exe .\`
+  and run it from the repo root. `Texture.ixx` changes, so this is a
+  module-interface edit — expect a full rebuild.
+
+  **Context:** `endAndSubmitCommandBuffer`'s own comment explains it moved off
+  `queue.waitIdle()` to a per-submit fence so other queued work is not
+  serialized — the remaining cost is the number of submits, which is what this
+  removes. The comment also flags the per-submit fence create/destroy as "a
+  separate, smaller inefficiency ... deliberately untouched"; leave it that way.
+
+- [ ] **(M) Give the cascade shadow map a comparison sampler and sample it with `SampleCmpLevelZero`** — bilinear-filtering raw depth and then thresholding it is not PCF; the Rust renderer already does this correctly.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp`
+    — `:57`, `createTextureSampler(device, vk::Filter::eLinear,
+    vk::SamplerAddressMode::eClampToEdge)`
+  - `Resources/ShadersSlang/common/cascaded_shadow.slang` — the whole file;
+    `[vk::binding(5, 0)] Sampler2DArray directionalShadowMaps`, the
+    `.Sample()` call and the manual `(currentDepth - bias) > mapDepth` compare
+  - `Resources/ShadersSlang/forward/forward.slang` — `:212-227`, **the
+    reference**: the Rust renderer's `SampleCmpLevelZero` loop
+  - `Src/GraphicsEngineVulkan/vulkan_base/SamplerBuilder.ixx` / `.cpp` — the
+    builder has no `compareEnable`/`compareOp` parameter yet
+  - `Src/GraphicsEngineVulkan/scene/Texture.ixx` / `Texture.cpp` — `:232-245`,
+    `createTextureSampler`, which needs to pass the comparison fields through
+  - `Test/commit/VulkanEngine/samplerBuilderSuite.cpp` — the CPU test pattern
+    for `buildSamplerCreateInfo`
+  - `docs/shader-build-pipeline.md` — recompiling Slang after a shader edit
+
+  **Steps:**
+  1. Extend `buildSamplerCreateInfo` with `vk::Bool32 compareEnable = VK_FALSE`
+     and `vk::CompareOp compareOp = vk::CompareOp::eNever`, defaulted so the
+     other two call sites are untouched, and set them on the create-info.
+  2. Thread the two through `Texture::createTextureSampler` (also defaulted)
+     and pass `VK_TRUE` / `vk::CompareOp::eLess` from
+     `CascadedShadowMap.cpp:57`. Keep `vk::Filter::eLinear` — with a
+     comparison sampler, linear filtering is what gives the free 2x2 PCF, and
+     it is the *plain* sampler that made linear wrong.
+  3. In `common/cascaded_shadow.slang`, change the binding to
+     `Sampler2DArrayShadow` (or the `Texture2DArray` +
+     `SamplerComparisonState` pair, whichever Slang emits cleanly for
+     SPIR-V), and replace the `.Sample()` + manual compare with
+     `SampleCmpLevelZero(float3(uv, float(cascadeIndex)), currentDepth - bias)`,
+     accumulating **visibility** and converting once at the end so the
+     function keeps returning *occlusion* (0 = fully lit) — its documented
+     contract, which `forward.slang:196-197` explicitly contrasts with.
+     Leave the `pcfRadius` loop, the bias formula and the out-of-range
+     `return 0.0` alone.
+  4. Recompile the shaders (`Scripts/Windows/compile-slang-shaders.ps1`) and
+     run `BuildIntegrity.CompiledShadersAreNotOlderThanTheirSources` **before**
+     believing any rendered measurement — see the warning at the top of this
+     file about stale SPIR-V producing a confident wrong number.
+  5. Check whether the deferred lighting shader shares this binding; if it
+     imports `cascaded_shadow.slang` it inherits the change and needs no edit,
+     but its descriptor write must match the new sampler.
+
+  **Test:** add a `SamplerBuilderUnit` case asserting
+  `buildSamplerCreateInfo(..., VK_TRUE, vk::CompareOp::eLess)` sets
+  `compareEnable`/`compareOp` and that the default overload leaves
+  `compareEnable == VK_FALSE` — that pins the "other call sites unaffected"
+  claim on the CPU. Then GPU-verify: `GoldenRender.ShadowsDarkenSomePixels` and
+  `GoldenRender.ShadowsMoveWhenTheLightRotates` must stay green.
+
+  **Context:** **the darkened-pixel ratio will move slightly** — real PCF has
+  different edge softness than compare-after-blend. If a golden threshold
+  fails, do NOT retune the threshold from the number alone: dump the picture
+  first (`KATAGLYPHIS_FRAME_DUMP=out ./commitTestSuite.exe
+  --gtest_also_run_disabled_tests --gtest_filter=*DumpsFrameToPng*`) and
+  confirm the shadow shape is intact and the edges are softer, not that the
+  shadow moved or vanished. This file records two separate occasions where a
+  shadow conclusion drawn from a ratio alone had to be retracted. If the shape
+  is wrong, the likely culprit is the visibility/occlusion polarity in step 3.
+
+### Cross-renderer tooling
+
+- [ ] **(S) `Compare-RendererTimings.ps1` expects a Rust pass named `Post` that does not exist — fix it and make both pass lists self-enforcing** — the script fails on every run for a pass that cannot be emitted, and silently ignores three that can.
+
+  **Files to read:**
+  - `Scripts/Compare-RendererTimings.ps1` — `:32` (`$CppExpectedPasses`),
+    `:34` (`$RustExpectedPasses`, the one with `'Post'` in it), `:49-63`
+    (`Assert-PassesExist`, which sets `exitCode = 1` on a missing expected
+    pass), and `:36-37` (the `-ValidationOnly` switch that skips every
+    GPU-dependent step — this is what makes the script testable here)
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/gpu_timing.rs`
+    — `:48-67` (the `TimedPass` enum) and `:83-93` (`name()`, the strings
+    actually written to JSON)
+  - `Src/GraphicsEngineVulkan/renderer/GUIRendererSharedVars.ixx` — `:22-32`,
+    `GPU_TIMED_PASS_EXPORT_NAMES` and the comment stating these keys are
+    "diffed between runs by tooling and must stay stable"
+  - `Scripts/Windows/tests/Compare-PerfBaseline.Tests.ps1` — **the Pester
+    pattern to follow** (added in `190eaa8e`)
+  - `.github/workflows/Windows.yml` — how `a63edf10` made the CI test filter
+    self-enforcing; same idea, different file
+
+  **Steps:**
+  1. Fix `$RustExpectedPasses`: `Post` is not a `TimedPass`. Decide per pass
+     which are *required* in a dump versus *optional*: `ShadowCascades`,
+     `Forward`, `Bloom`, `Ssao`, `Histogram`, `ExposureReduce` and `Tonemap`
+     are always recorded; `OcclusionCull` is only recorded when occlusion
+     culling is on, so it belongs in the `$Optional` set
+     `Assert-PassesExist` already supports — read the example
+     (`examples/dump_gpu_timings.rs`) to confirm which passes it actually
+     drives before classifying them.
+  2. Make the lists derivable rather than hand-written. Add a
+     `Get-ExpectedPassNames` helper that parses
+     `GUIRendererSharedVars.ixx`'s `GPU_TIMED_PASS_EXPORT_NAMES` initializer
+     and `gpu_timing.rs`'s `name()` match arms, and have the parameter
+     defaults come from it. Parse with a narrow regex anchored on the
+     identifier, and **fail loudly** if either parse yields zero names —
+     a silently-empty expected list turns the gate off, which is the failure
+     mode this task exists to prevent.
+  3. Keep the `-CppExpectedPasses` / `-RustExpectedPasses` parameters
+     overridable so a caller can still pin a subset.
+
+  **Test:** add `Scripts/Windows/tests/Compare-RendererTimings.Tests.ps1`,
+  mirroring `Compare-PerfBaseline.Tests.ps1`. Cover: (a) the extracted C++
+  names equal the five `GPU_TIMED_PASS_EXPORT_NAMES` entries; (b) the
+  extracted Rust names contain `Tonemap` and do **not** contain `Post` — the
+  regression this fixes; (c) `Assert-PassesExist` reports a failure for a JSON
+  object missing a required pass and passes for one missing only an optional
+  one; (d) an empty parse result is an error, not an empty list. Run:
+  `Invoke-Pester -Path .\Scripts\Windows\tests\Compare-RendererTimings.Tests.ps1 -Output Detailed`
+
+  **Build:** none — PowerShell and Pester only, no C++ or Rust build required.
+
+  **Context:** the value here is that the script is the only cross-renderer
+  comparison harness and it is currently lying in both directions at once —
+  a guaranteed FAIL that trains you to ignore its output, plus three real
+  passes it never checks. Deriving the lists from the enums is the pattern the
+  repo already applies to the Windows CI test filter and the generated WGSL;
+  a hand-maintained mirror of a source-of-truth list drifts, and this one
+  already has.
 
 ## Completed (kept for the reasoning, not the status)
 
