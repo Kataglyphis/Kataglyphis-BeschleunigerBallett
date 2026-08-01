@@ -309,12 +309,8 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
     // Run from the repo root (per AGENTS.md).
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/deferred/";
 
-    vk::ShaderModule geomVertModule = loadSpirvShaderModule(device, slang_spv_dir + "deferred.geometry_vs_main.spv");
-    vk::ShaderModule geomFragModule = loadSpirvShaderModule(device, slang_spv_dir + "deferred.geometry_fs_main.spv");
-
-    vk::PipelineShaderStageCreateInfo geomVertStage{ {}, vk::ShaderStageFlagBits::eVertex, geomVertModule, "main" };
-    vk::PipelineShaderStageCreateInfo geomFragStage{ {}, vk::ShaderStageFlagBits::eFragment, geomFragModule, "main" };
-    std::array<vk::PipelineShaderStageCreateInfo, 2> geomStages = { geomVertStage, geomFragStage };
+    ShaderStagePair geomStages{ device, slang_spv_dir + "deferred.geometry_vs_main.spv",
+        slang_spv_dir + "deferred.geometry_fs_main.spv" };
 
     vk::VertexInputBindingDescription bindingDescription;
     bindingDescription.binding = 0;
@@ -336,7 +332,7 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
 
     PipelineBuilder geometryPipelineBuilder;
     geometryPipeline =
-      geometryPipelineBuilder.setShaderStages({ geomStages.begin(), geomStages.end() })
+      geometryPipelineBuilder.setShaderStages({ geomStages.stages().begin(), geomStages.stages().end() })
         .setVertexInput({ bindingDescription }, { attributeDescriptions.begin(), attributeDescriptions.end() })
         .setColorAttachmentCount(3)
         // Per-draw cull mode so doubleSided glTF meshes disable back-face culling
@@ -345,16 +341,9 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
         .build(device->getLogicalDevice(), geometryPipelineLayout, renderPass, device->getPipelineCache(), 0);
     spdlog::info("DeferredRasterizer: Created geometryPipeline: 0x{:x}", (uint64_t)(VkPipeline)geometryPipeline);
 
-    device->getLogicalDevice().destroyShaderModule(geomVertModule);
-    device->getLogicalDevice().destroyShaderModule(geomFragModule);
-
     // Lighting Pipeline (Slang-emitted SPIR-V)
-    vk::ShaderModule lightVertModule = loadSpirvShaderModule(device, slang_spv_dir + "deferred.lighting_vs_main.spv");
-    vk::ShaderModule lightFragModule = loadSpirvShaderModule(device, slang_spv_dir + "deferred.lighting_fs_main.spv");
-
-    vk::PipelineShaderStageCreateInfo lightVertStage{ {}, vk::ShaderStageFlagBits::eVertex, lightVertModule, "main" };
-    vk::PipelineShaderStageCreateInfo lightFragStage{ {}, vk::ShaderStageFlagBits::eFragment, lightFragModule, "main" };
-    std::array<vk::PipelineShaderStageCreateInfo, 2> lightStages = { lightVertStage, lightFragStage };
+    ShaderStagePair lightStages{ device, slang_spv_dir + "deferred.lighting_vs_main.spv",
+        slang_spv_dir + "deferred.lighting_fs_main.spv" };
 
     vk::PipelineLayoutCreateInfo lightPipelineLayoutInfo{};
     lightPipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
@@ -367,7 +356,7 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
     lightingPipelineLayout = lighting_pipeline_layout_result.value;
 
     PipelineBuilder lightingPipelineBuilder;
-    lightingPipeline = lightingPipelineBuilder.setShaderStages({ lightStages.begin(), lightStages.end() })
+    lightingPipeline = lightingPipelineBuilder.setShaderStages({ lightStages.stages().begin(), lightStages.stages().end() })
                          // Vertex-less fullscreen triangle (gl_VertexIndex in lighting.vert):
                          // no vertex buffer is ever bound, so declare an empty vertex input.
                          .setVertexInput({}, {})
@@ -376,9 +365,6 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
                          .setDepthWrite(false)
                          .build(device->getLogicalDevice(), lightingPipelineLayout, renderPass, device->getPipelineCache(), 1);
     spdlog::info("DeferredRasterizer: Created lightingPipeline: 0x{:x}", (uint64_t)(VkPipeline)lightingPipeline);
-
-    device->getLogicalDevice().destroyShaderModule(lightVertModule);
-    device->getLogicalDevice().destroyShaderModule(lightFragModule);
 }
 
 void DeferredRasterizer::createFramebuffer()

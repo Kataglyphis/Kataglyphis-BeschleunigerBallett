@@ -283,21 +283,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
     std::string const post_vert_spv = "post.vs_main.spv";
     std::string const post_frag_spv = "post.fs_main.spv";
 
-    vk::ShaderModule vertex_shader_module = loadSpirvShaderModule(device, slang_spv_dir + post_vert_spv);
-    vk::ShaderModule fragment_shader_module = loadSpirvShaderModule(device, slang_spv_dir + post_frag_spv);
-
-    vk::PipelineShaderStageCreateInfo vertex_shader_create_info;
-    vertex_shader_create_info.stage = vk::ShaderStageFlagBits::eVertex;
-    vertex_shader_create_info.module = vertex_shader_module;
-    vertex_shader_create_info.pName = "main";
-
-    vk::PipelineShaderStageCreateInfo fragment_shader_create_info;
-    fragment_shader_create_info.stage = vk::ShaderStageFlagBits::eFragment;
-    fragment_shader_create_info.module = fragment_shader_module;
-    fragment_shader_create_info.pName = "main";
-
-    std::vector<vk::PipelineShaderStageCreateInfo> shader_stages = { vertex_shader_create_info,
-        fragment_shader_create_info };
+    ShaderStagePair stages{ device, slang_spv_dir + post_vert_spv, slang_spv_dir + post_frag_spv };
 
     vk::PipelineLayoutCreateInfo pipeline_layout_create_info;
     pipeline_layout_create_info.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
@@ -310,14 +296,11 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
     ASSERT_VULKAN(result, "Failed to create pipeline layout!")
 
     PipelineBuilder pipeline_builder;
-    graphics_pipeline = pipeline_builder.setShaderStages(shader_stages)
+    graphics_pipeline = pipeline_builder.setShaderStages({ stages.stages().begin(), stages.stages().end() })
                           .setCullMode(vk::CullModeFlagBits::eNone)
                           .setAlphaBlending(true)
                           .setDepthCompareOp(vk::CompareOp::eLessOrEqual)
                           .build(device->getLogicalDevice(), pipeline_layout, render_pass, device->getPipelineCache());
-
-    device->getLogicalDevice().destroyShaderModule(vertex_shader_module);
-    device->getLogicalDevice().destroyShaderModule(fragment_shader_module);
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createFramebuffer()

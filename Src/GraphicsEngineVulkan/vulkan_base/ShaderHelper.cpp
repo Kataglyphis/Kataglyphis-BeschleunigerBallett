@@ -5,6 +5,7 @@ module;
 #include <cstring>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -61,4 +62,26 @@ auto Kataglyphis::loadSpirvShaderModule(std::shared_ptr<VulkanDevice> device, co
     }
 
     return createShaderModuleFromBytes(device, code);
+}
+
+Kataglyphis::ShaderStagePair::ShaderStagePair(std::shared_ptr<VulkanDevice> device, const std::string &vertexSpvPath,
+  const std::string &fragmentSpvPath)
+  : device_(std::move(device)), vertexModule_(loadSpirvShaderModule(device_, vertexSpvPath)),
+    fragmentModule_(loadSpirvShaderModule(device_, fragmentSpvPath))
+{
+    stages_[0].stage = vk::ShaderStageFlagBits::eVertex;
+    stages_[0].module = vertexModule_;
+    stages_[0].pName = "main";
+
+    stages_[1].stage = vk::ShaderStageFlagBits::eFragment;
+    stages_[1].module = fragmentModule_;
+    stages_[1].pName = "main";
+}
+
+Kataglyphis::ShaderStagePair::~ShaderStagePair()
+{
+    if (device_) {
+        device_->getLogicalDevice().destroyShaderModule(vertexModule_);
+        device_->getLogicalDevice().destroyShaderModule(fragmentModule_);
+    }
 }

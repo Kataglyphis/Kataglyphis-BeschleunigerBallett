@@ -11,10 +11,12 @@
 #include <filesystem>
 #include <fstream>
 #include <span>
+#include <type_traits>
 #include <vector>
 
 import kataglyphis.vulkan.shader_helper;
 
+using Kataglyphis::ShaderStagePair;
 using Kataglyphis::validateSpirvBlob;
 
 namespace {
@@ -71,4 +73,20 @@ TEST(ShaderBlobUnit, RealCompiledShaderIsAccepted)
     file.read(bytes.data(), static_cast<std::streamsize>(size));
 
     EXPECT_TRUE(validateSpirvBlob(bytes));
+}
+
+// ShaderStagePair owns two vk::ShaderModule handles released in its
+// destructor - copying would let two instances both destroy the same
+// modules (double-destroy), and moving would leave the create-infos in the
+// moved-from instance pointing at handles the moved-to instance now owns.
+// Every call site constructs it as a function-local, so deleting both
+// outright (rather than making it move-only) costs nothing there and rules
+// out that whole class of bug. Needs no device to check, so it runs in
+// Windows CI.
+TEST(ShaderBlobUnit, ShaderStagePairIsNeitherCopyableNorMovable)
+{
+    static_assert(!std::is_copy_constructible_v<ShaderStagePair>, "ShaderStagePair must not be copy-constructible");
+    static_assert(!std::is_copy_assignable_v<ShaderStagePair>, "ShaderStagePair must not be copy-assignable");
+    static_assert(!std::is_move_constructible_v<ShaderStagePair>, "ShaderStagePair must not be move-constructible");
+    static_assert(!std::is_move_assignable_v<ShaderStagePair>, "ShaderStagePair must not be move-assignable");
 }

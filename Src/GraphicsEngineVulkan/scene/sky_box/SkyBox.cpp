@@ -329,20 +329,7 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
     // Run from the repo root (per AGENTS.md).
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/skybox/";
 
-    vk::ShaderModule vertexShaderModule = loadSpirvShaderModule(device, slang_spv_dir + "skybox.vs_main.spv");
-    vk::ShaderModule fragmentShaderModule = loadSpirvShaderModule(device, slang_spv_dir + "skybox.fs_main.spv");
-
-    vk::PipelineShaderStageCreateInfo vertStageInfo{};
-    vertStageInfo.stage = vk::ShaderStageFlagBits::eVertex;
-    vertStageInfo.module = vertexShaderModule;
-    vertStageInfo.pName = "main";
-
-    vk::PipelineShaderStageCreateInfo fragStageInfo{};
-    fragStageInfo.stage = vk::ShaderStageFlagBits::eFragment;
-    fragStageInfo.module = fragmentShaderModule;
-    fragStageInfo.pName = "main";
-
-    std::array skyStages = {vertStageInfo, fragStageInfo};
+    ShaderStagePair stages{ device, slang_spv_dir + "skybox.vs_main.spv", slang_spv_dir + "skybox.fs_main.spv" };
 
     vk::VertexInputBindingDescription bindingDescription{};
     bindingDescription.binding = 0;
@@ -369,7 +356,7 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
 
     PipelineBuilder pipelineBuilder;
     graphicsPipeline =
-      pipelineBuilder.setShaderStages({ skyStages.begin(), skyStages.end() })
+      pipelineBuilder.setShaderStages({ stages.stages().begin(), stages.stages().end() })
         .setVertexInput({ bindingDescription }, { attributeDescriptions.begin(), attributeDescriptions.end() })
         .setCullMode(vk::CullModeFlagBits::eNone)
         .setDepthTest(false)
@@ -381,9 +368,6 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
           device->getPipelineCache(),
           0,
           "Failed to create skybox graphics pipeline!");
-
-    device->getLogicalDevice().destroyShaderModule(vertexShaderModule);
-    device->getLogicalDevice().destroyShaderModule(fragmentShaderModule);
 }
 
 void SkyBox::createMesh(vk::CommandPool commandPool)

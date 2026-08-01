@@ -3217,6 +3217,190 @@ decision, not an agent's. **`Frustum::from_view_proj` plane normalization**
 and **`intersects_aabb_as_caster` having no production caller** — batch XII
 already rejected both with reasons; they still hold.
 
+## 2026-08-01 batch XIV — planner (refactor: a copy-pasted shader-stage block in six pipelines, forward.rs's texture helpers, model-loading doc drift)
+
+Batch XIII is fully drained (`62e56684`, `24baeeef`, `7b8c3ccd`, `ea464598`,
+`3fd2f217`); every checkbox left in the file was `- [b]`. Every `file:line`
+below was read out of the tree this pass.
+
+**Task 1: six pipelines each hand-write the same vertex+fragment stage
+block, and one of them leaks it across 48 lines.** The sequence "load two
+`.spv` into `vk::ShaderModule`, fill two `vk::PipelineShaderStageCreateInfo`
+with `pName = "main"`, pack them into a two-element array, build the
+pipeline, destroy both modules" appears verbatim at `Rasterizer.cpp:354-370`
++ `:402-403`, `PostStage.cpp:286-300` + `:319-320`,
+`DeferredRasterizer.cpp:312-317` + `:348-349` and `:352-357` + `:380-381`,
+`SkyBox.cpp:332-345` + `:385-386`, and
+`CascadedShadowMap.cpp:335-350` + `:435-436`. Two tells that this is
+copy-paste rather than convergent style: `CascadedShadowMap.cpp:350` names
+its local `std::array skyStages` — a name that only makes sense in
+`SkyBox.cpp:345`, where it was copied from — and `Rasterizer` puts 32 lines
+of vertex-input and layout setup between loading its modules and destroying
+them, so any early return added in that window leaks two `vk::ShaderModule`.
+`Raytracing.cpp` (four modules), `PathTracing.cpp` (one compute module) and
+`Clouds.cpp` (compute, already deduped by `9aac4cb2`) are deliberately out of
+scope: different stage counts, different shapes.
+
+**Task 2: `forward.rs` carries ~280 lines of texture/sampler code that no
+other renderer file needs and no test can currently reach.** `create_sampler`
+(`:2977`), `anisotropy_for` (`:3014`), `srgb_to_linear` (`:3022`),
+`linear_to_srgb` (`:3031`), `generate_mips` (`:3042`),
+`compressed_wgpu_format` (`:3081`), `create_compressed_texture` (`:3098`),
+`create_material_texture` (`:3149`), `create_depth_texture` (`:3217`) and
+`create_hdr_texture` (`:3236`) form one contiguous block; grepping the crate
+confirms **not one of them is referenced outside `forward.rs`** (the four
+other `create_sampler` hits in `bloom.rs`/`ibl.rs`/`tonemap.rs` are
+`wgpu::Device::create_sampler`, a different function). Three of them —
+`srgb_to_linear`, `linear_to_srgb`, `generate_mips` — are pure CPU with zero
+wgpu types and **zero tests**, even though `generate_mips` is the box filter
+every material texture's whole mip chain is built from and the sRGB pair is
+what keeps colour textures from being averaged in the wrong space. The
+precedents are `c85ef931` (`render/animation.rs`) and `0378178e`
+(`render/bounds.rs`); `render/mod.rs` is the one-line registry.
+
+**Task 3: `docs/model-loading.md` describes a `MeshRange` that no longer
+exists and points at a refactor that already landed.** `:71` lists the struct
+as six fields, but `scene/MeshRange.ixx:18-30` has a seventh — `bool
+doubleSided`, which `uploadParsed` forwards to `add_new_mesh` so glTF
+`doubleSided` materials disable back-face culling per mesh. The doc never
+mentions that the struct moved into its own `kataglyphis.vulkan.mesh_range`
+module (commit `fba308d7`, wave 6) or that the re-basing arithmetic it warns
+about at `:111-115` now lives in exactly one shared function,
+`sliceMeshRange`, with a `MeshSlice` return type and its own test suite
+(`Test/commit/VulkanEngine/meshRangeSliceSuite.cpp`). Worse, `:118-120` still
+tells the reader that deduplicating "that loop" is a queued refactor and "a
+natural moment" — that IS `fba308d7`. `:36-37` also predates
+`scene/ModelFileKind.ixx`, which now owns the extension dispatch that both
+`AsyncModelParse.ixx:55` and `Scene.cpp:36` call through
+(`isGltfModelPath`).
+
+- [ ] **(M) (refactor) Extract `forward.rs`'s texture/sampler helpers into `render/texture.rs` and put the three pure-CPU ones under test** — 280 lines out of a 3320-line file, and the mip/sRGB math finally gets an oracle.
+
+  **Files to read:**
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/forward.rs:2977-3253`
+    — the block to move, plus `:3302-3319` (the `anisotropy_for` test that
+    moves with it)
+  - `.../src/render/bounds.rs` and `.../src/render/animation.rs` — the two
+    existing extractions from this same file; copy their module-doc style
+  - `.../src/render/mod.rs` — the one-line registry
+  - `.../crates/webgpu_renderer/tests/headless.rs` — integration-test
+    conventions (GPU tests self-skip when no adapter is present)
+
+  **Steps:**
+  1. Create `src/render/texture.rs` with a module doc in the house style
+     ("Texture, sampler and mip-chain creation, split out of `forward.rs`").
+     Add `pub mod texture;` to `src/render/mod.rs`, keeping the list
+     alphabetical (between `tile_grid` and `tonemap`).
+  2. Move, verbatim, `create_sampler`, `anisotropy_for`, `srgb_to_linear`,
+     `linear_to_srgb`, `generate_mips`, `compressed_wgpu_format`,
+     `create_compressed_texture`, `create_material_texture`,
+     `create_depth_texture` and `create_hdr_texture`. Mark each `pub(crate)`
+     — they are private today but `forward.rs` is now a different module.
+  3. `create_depth_texture` / `create_hdr_texture` read `DEPTH_FORMAT` and
+     `HDR_FORMAT`, which stay in `forward.rs` (they are part of its public
+     surface): import them with
+     `use crate::render::forward::{DEPTH_FORMAT, HDR_FORMAT};`. The rest need
+     `crate::context::GpuContext` and
+     `crate::scene::{CompressedFormat, CompressedTexture, CpuSampler, CpuTexture, CpuWrap}`.
+  4. In `forward.rs`, add
+     `use crate::render::texture::{create_depth_texture, create_hdr_texture, create_material_texture, create_sampler};`
+     and delete the moved block. The call sites at `:793`, `:805`, `:848-851`,
+     `:1361`, `:1376`, `:1386` and `:1643-1646` stay byte-identical.
+  5. Move `anisotropy_is_requested_only_when_every_filter_is_linear` out of
+     `forward.rs`'s `mod tests` into a `#[cfg(test)] mod tests` in
+     `texture.rs`. Leave
+     `set_animation_time_recomputes_and_dirties_the_cached_normal_matrix`
+     where it is — it needs `ForwardRenderer`.
+  6. `cargo fmt` and `cargo clippy` clean (the crate is warning-free today).
+
+  **Test:** In `texture.rs`'s `mod tests`, add three CPU-only tests (no
+  adapter, so they run everywhere):
+  - `srgb_round_trip_is_stable_for_every_byte` — for all `0..=255`, assert
+    `linear_to_srgb(srgb_to_linear(b)) == b`.
+  - `generate_mips_halves_down_to_one_by_one` — a 4x4 `CpuTexture`, assert
+    the returned chain is `[(4,4), (2,2), (1,1)]` and that every level's data
+    length is `w * h * 4`.
+  - `generate_mips_averages_srgb_in_linear_space` — a 2x1 texture with one
+    black and one white texel: assert the 1x1 level's RGB is the
+    linear-space average re-encoded (i.e. **not** 127/128, which is what a
+    raw byte average would give) while the alpha channel *is* the raw
+    average. This is the invariant the `srgb && channel < 3` branch at
+    `:3063-3067` exists for and nothing currently pins it.
+
+  **Build:** `cd ExternalLib/Kataglyphis-RustProjectTemplate && cargo test -p webgpu_renderer --locked`.
+  The three new tests need no GPU; the existing headless suite will self-skip
+  if no adapter is present. If cargo fails on temp-file renames, the working
+  copy is on a redirected mount — see `[[local-build-bind-mount-limits]]` and
+  run from a native-filesystem checkout.
+
+  **Context:** Pure code movement plus new tests — no behaviour change, and
+  the diff should show zero edits inside any moved function body. Value is
+  twofold: `forward.rs` keeps shrinking along the boundary that has already
+  worked twice (`c85ef931`, `0378178e`), and the mip/sRGB math stops being
+  untestable-because-it-is-private. `generate_mips` is `pub(crate)` today but
+  has no caller outside `forward.rs` (verified this pass), so nothing outside
+  the crate can break. Do **not** move `create_forward_pipeline_set` and the
+  other four `create_*_pipeline` functions at `:2730-2975` in the same change
+  — they are a separate, larger boundary and mixing them would make the
+  "no body edits" review property useless.
+
+- [ ] **(S) (refactor) Bring `docs/model-loading.md` back in line with `MeshRange`, `sliceMeshRange` and `ModelFileKind`** — the doc still describes a six-field struct and advertises a refactor that shipped in `fba308d7`.
+
+  **Files to read:**
+  - `docs/model-loading.md` — specifically `:36-37`, `:65-72`, `:74-78`,
+    `:106-120`
+  - `Src/GraphicsEngineVulkan/scene/MeshRange.ixx` — the real struct (seven
+    fields), `MeshSlice`, and `sliceMeshRange`
+  - `Src/GraphicsEngineVulkan/scene/ModelFileKind.ixx:29` — `isGltfModelPath`
+  - `Src/GraphicsEngineVulkan/scene/AsyncModelParse.ixx:55` and
+    `Src/GraphicsEngineVulkan/scene/Scene.cpp:36` — its two callers
+  - `Test/commit/VulkanEngine/meshRangeSliceSuite.cpp` — the suite that now
+    pins the re-basing arithmetic
+
+  **Steps:**
+  1. Update the struct listing at `:71` to the actual seven fields and add
+     one sentence on `doubleSided`: it carries glTF `material.doubleSided`
+     per range so `uploadParsed` can hand it to `add_new_mesh` and the raster
+     pass can disable back-face culling for that mesh alone (always `false`
+     for OBJ, which has no such concept).
+  2. In the "One file, many meshes" section, say where the type lives now:
+     the `kataglyphis.vulkan.mesh_range` module
+     (`scene/MeshRange.ixx`), `export import`ed by both loaders, exporting
+     `MeshRange`, `MeshSlice` and `sliceMeshRange`.
+  3. Rewrite `:74-78` so the slicing sentence names `sliceMeshRange` as the
+     single shared implementation of "sub-vertices copied, sub-indices
+     re-based by `-vertexBase`, per-range material subset" rather than
+     describing it as something `uploadParsed` does twice.
+  4. In "Invariants worth preserving" `:111-115`, add that
+     `meshRangeSliceSuite.cpp` unit-tests `sliceMeshRange` directly, so the
+     invariant now has both a parse-level and a slice-level test.
+  5. Replace the trailing clause at `:118-120` ("a natural moment to dedup
+     that loop — see the campaign log's queued refactor"). That dedup is
+     done: state that the slice loop is already shared, so a per-mesh
+     material subset would edit `sliceMeshRange` in one place.
+  6. At `:36-37`, name `scene/ModelFileKind.ixx` (`isGltfModelPath`) as what
+     "dispatched by file extension" means, and note both `AsyncModelParse`
+     and `Scene::loadModel` route through it.
+  7. Do **not** touch the mermaid diagram at `:47-60` — re-checked this pass,
+     it is still accurate.
+
+  **Test:** None — documentation only. Verify by re-reading each changed
+  claim against the `file:line` it describes; every statement in the file
+  must be traceable to current source. Do not add a line number to the doc
+  (they rot); name symbols and files.
+
+  **Build:** None required. `docs/model-loading.md` is a root dev-doc, not a
+  Sphinx page (`docs/source/` is the built site — see the "Docs placement
+  audited" note above), so the `-W`-gated docs build is unaffected.
+
+  **Context:** This is the failure mode `BACKLOG.md`'s own "Test coverage
+  ideas" preamble names — prose that shadows work completed elsewhere and is
+  never walked back. The doc's `docs/` table entry in AGENTS.md makes it the
+  single home for model-loading architecture, so a reader hitting `:118`
+  today is told to do a refactor that is already in `git log`. Keep the
+  doc's existing voice (invariants and "why", not an API dump) and keep it
+  under its current length — this is a correction pass, not an expansion.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

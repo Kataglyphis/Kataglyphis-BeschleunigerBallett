@@ -351,22 +351,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
     // Run from the repo root (per AGENTS.md) — a relative path works from there.
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/";
 
-    vk::ShaderModule vertex_shader_module = loadSpirvShaderModule(device, slang_spv_dir + "rasterizer.vs_main.spv");
-    vk::ShaderModule fragment_shader_module =
-      loadSpirvShaderModule(device, slang_spv_dir + "rasterizer.fs_main.spv");
-
-    vk::PipelineShaderStageCreateInfo vertex_shader_create_info;
-    vertex_shader_create_info.stage = vk::ShaderStageFlagBits::eVertex;
-    vertex_shader_create_info.module = vertex_shader_module;
-    vertex_shader_create_info.pName = "main";
-
-    vk::PipelineShaderStageCreateInfo fragment_shader_create_info;
-    fragment_shader_create_info.stage = vk::ShaderStageFlagBits::eFragment;
-    fragment_shader_create_info.module = fragment_shader_module;
-    fragment_shader_create_info.pName = "main";
-
-    std::vector<vk::PipelineShaderStageCreateInfo> shader_stages = { vertex_shader_create_info,
-        fragment_shader_create_info };
+    ShaderStagePair stages{ device, slang_spv_dir + "rasterizer.vs_main.spv", slang_spv_dir + "rasterizer.fs_main.spv" };
 
     vk::VertexInputBindingDescription binding_description;
     binding_description.binding = 0;
@@ -390,7 +375,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
 
     PipelineBuilder pipeline_builder;
     graphics_pipeline =
-      pipeline_builder.setShaderStages(shader_stages)
+      pipeline_builder.setShaderStages({ stages.stages().begin(), stages.stages().end() })
         .setVertexInput({ binding_description }, { attribute_describtions.begin(), attribute_describtions.end() })
         .setAlphaBlending(true)
         // Per-draw cull mode: doubleSided glTF meshes disable back-face culling
@@ -398,7 +383,4 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
         .setDynamicCullMode(true)
         .build(device->getLogicalDevice(), pipeline_layout, render_pass, device->getPipelineCache());
     spdlog::info("Rasterizer: Created pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphics_pipeline);
-
-    device->getLogicalDevice().destroyShaderModule(vertex_shader_module);
-    device->getLogicalDevice().destroyShaderModule(fragment_shader_module);
 }

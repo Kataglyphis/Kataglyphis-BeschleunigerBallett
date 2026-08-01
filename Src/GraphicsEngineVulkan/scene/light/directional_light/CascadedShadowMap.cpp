@@ -332,22 +332,10 @@ void CascadedShadowMap::createGraphicsPipeline()
     // Run from the repo root (per AGENTS.md).
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/shadows/";
 
-    vk::ShaderModule vertModule = loadSpirvShaderModule(device, slang_spv_dir + "shadow_map.shadow_vs_main.spv");
-    vk::ShaderModule fragModule = loadSpirvShaderModule(device, slang_spv_dir + "shadow_map.shadow_fs_main.spv");
-
-    vk::PipelineShaderStageCreateInfo vertStageInfo{};
-    vertStageInfo.stage = vk::ShaderStageFlagBits::eVertex;
-    vertStageInfo.module = vertModule;
-    vertStageInfo.pName = "main";
-
     // No geometry stage: the vertex shader selects the cascade matrix by
     // SV_ViewID under multiview (Slang equivalent of gl_ViewIndex).
-    vk::PipelineShaderStageCreateInfo fragStageInfo{};
-    fragStageInfo.stage = vk::ShaderStageFlagBits::eFragment;
-    fragStageInfo.module = fragModule;
-    fragStageInfo.pName = "main";
-
-    std::array skyStages = {vertStageInfo, fragStageInfo};
+    ShaderStagePair stages{ device, slang_spv_dir + "shadow_map.shadow_vs_main.spv",
+        slang_spv_dir + "shadow_map.shadow_fs_main.spv" };
 
     vk::VertexInputBindingDescription bindingDesc{};
     bindingDesc.binding = 0;
@@ -391,7 +379,7 @@ void CascadedShadowMap::createGraphicsPipeline()
 
     PipelineBuilder pipelineBuilder;
     graphicsPipeline =
-      pipelineBuilder.setShaderStages({ skyStages.begin(), skyStages.end() })
+      pipelineBuilder.setShaderStages({ stages.stages().begin(), stages.stages().end() })
         .setVertexInput({ bindingDesc }, { posAttr, uvAttr })
         // Culling MUST be off here, and it is not an optimisation question.
         //
@@ -431,9 +419,6 @@ void CascadedShadowMap::createGraphicsPipeline()
           0,
           "Failed to create shadow map graphics pipeline!");
     spdlog::info("CascadedShadowMap: Created pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphicsPipeline);
-
-    device->getLogicalDevice().destroyShaderModule(vertModule);
-    device->getLogicalDevice().destroyShaderModule(fragModule);
 }
 
 void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, std::span<const vk::DescriptorSet> descriptorSets, bool cullingEnabled)
