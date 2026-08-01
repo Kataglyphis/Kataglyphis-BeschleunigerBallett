@@ -51,9 +51,5 @@ class VulkanSwapChain
     // Destroys the per-image views without touching the swapchain handle, so
     // recreate() can keep the old swapchain as the oldSwapchain handoff.
     void destroyImageViews();
-
-    static vk::SurfaceFormatKHR choose_best_surface_format(const std::vector<vk::SurfaceFormatKHR> &formats);
-    static vk::PresentModeKHR choose_best_presentation_mode(const std::vector<vk::PresentModeKHR> &presentation_modes);
-    vk::Extent2D choose_swap_extent(const vk::SurfaceCapabilitiesKHR &surface_capabilities);
 };
 }// namespace Kataglyphis

@@ -3663,6 +3663,292 @@ span.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
+## 2026-08-01 batch XVII — planner (a dangling pointer in swapchain creation, an incomplete blit-capability gate, three coverage gaps)
+
+The actionable queue was empty again: the only checkboxes left in the whole file
+are `- [b]` entries, and batch XVI is drained (`e8b1db52`, `f1a67217`,
+`74aaee23`, `302faa90`, `ee4abb24`). Every `file:line` below was read out of the
+tree this pass.
+
+**The headline finding is task 1 and it is undefined behaviour, not a style
+nit.** `VulkanSwapChain::initVulkanContext` declares
+`uint32_t queue_family_indices[]` **inside** the
+`if (indices.graphics_family != indices.presentation_family)` block
+(`VulkanSwapChain.cpp:95-96`), stores its address into
+`swap_chain_create_info.pQueueFamilyIndices` at `:100`, and the block closes at
+`:101`. `createSwapchainKHR` reads that pointer at `:117` — sixteen lines after
+the array's lifetime ended. It is invisible here for one reason only: on this
+box `graphics_family == presentation_family`, so the branch never executes and
+the `else` at `:102-105` writes `nullptr`/count 0. On a device that presents
+from a different queue family the driver reads freed stack. This is the same
+shape as the SBT stride bug batch XVI fixed — correct-by-luck on one machine,
+wrong by spec everywhere.
+
+Two smaller real gaps in the same pass. `Texture.cpp`'s `supportsLinearBlit`
+(`:59-64`) tests only `eSampledImageFilterLinear`, but `vkCmdBlitImage` also
+requires `eBlitSrc` on the source and `eBlitDst` on the destination — and since
+`c80e7503` deleted the (then-unreachable) in-loop fallback,
+`supportsLinearBlit` is the **only** gate left in front of
+`generateMipMaps`, so an incomplete check now means no check at all on a device
+that lacks those bits. And `AsyncModelParse` — the engine's only threaded class,
+driven every time the GUI loads a model — has **zero** tests, on a platform with
+no ThreadSanitizer (AGENTS.md § "There is no Windows ThreadSanitizer").
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **extracting the eight bind-group-layout and four
+pipeline-layout descriptors out of `ForwardRenderer::new`**
+(`forward.rs:431-745`, ~330 lines of inline descriptor construction) — this is
+pure code motion, which batch XIII already rejected for the same file and the
+same reason (the animation samplers); **`map_format` collapsing `*_SRGB_BLOCK`
+onto the Unorm `CompressedFormat`** is not itself a bug — `compressed_wgpu_format`
+(`render/texture.rs:111-125`) picks the sRGB wgpu variant from the *usage* flag,
+which is what glTF specifies; what is missing is a diagnostic when the container
+disagrees, which is task 5 and deliberately not a behaviour change;
+**`docs/gpu-golden-testing.md:47-48` vs `:122-123`** currently agree
+(30 defined − 1 `DISABLED_` = 29 runnable, + 2 `Integration` = 31 total, minus
+the 3 named exclusions = 28) — task 4 is therefore a preventive gate, not a
+drift fix.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Complete the mipmap blit-capability check: `vkCmdBlitImage` needs BLIT_SRC and BLIT_DST, not just SAMPLED_IMAGE_FILTER_LINEAR** — since `c80e7503` removed the in-loop fallback, this predicate is the only thing standing between an incapable device and an invalid blit.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:58-65` — `supportsLinearBlit`,
+    which tests one bit; `:124-128` — its only caller, which forces
+    `mip_levels = 1` on failure; `:279-358` — `generateMipMaps`, which issues
+    `blitImage(... vk::Filter::eLinear)` with the same image as source and
+    destination.
+  - `Src/GraphicsEngineVulkan/common/FormatHelper.hpp` — where the new pure
+    predicate goes (it already owns `choose_supported_format` /
+    `chooseDepthFormat` and is a plain header, so a headless test can include
+    it).
+  - `Test/commit/VulkanEngine/memoryHelperSuite.cpp` — the pure-CPU test pattern.
+
+  **Steps:**
+  1. Add to `common/FormatHelper.hpp`:
+     `constexpr bool supportsMipmapGeneration(vk::FormatFeatureFlags optimalTilingFeatures)`
+     returning true only when all three of `eSampledImageFilterLinear`,
+     `eBlitSrc` and `eBlitDst` are present. Take the flags, not a
+     `vk::PhysicalDevice`, so it is testable without a device.
+  2. Rewrite `Texture.cpp`'s `supportsLinearBlit` to query
+     `getFormatProperties(image_format).optimalTilingFeatures` and delegate to
+     the new predicate. Rename it `supportsMipmapGeneration` at the call site so
+     the name stops promising less than it checks.
+  3. Widen the warning at `:126` to say which capability is missing, so a real
+     device that trips it is diagnosable from the log alone.
+  4. Do **not** re-add a per-blit fallback inside `generateMipMaps` — `c80e7503`
+     deleted exactly that as unreachable, and it is unreachable precisely
+     because this predicate gates entry. Keep the single gate; make it correct.
+
+  **Test:** New `Test/commit/VulkanEngine/formatHelperSuite.cpp`, suite
+  **`FormatHelperUnit`**: `AllThreeBlitCapabilitiesAreRequired` (all three set →
+  true), plus one case per bit dropped (`eSampledImageFilterLinear` missing,
+  `eBlitSrc` missing, `eBlitDst` missing → all false), plus empty flags → false.
+  Register `FormatHelperUnit` in `$cpuOnlySuites` in
+  `.github/workflows/Windows.yml`.
+
+  **Build:** `clangcl-debug`. No `.ixx` changes (a plain header plus a module
+  implementation unit), so a normal incremental container build is fine:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** Spec references: `vkCmdBlitImage` requires
+  `VK_FORMAT_FEATURE_BLIT_SRC_BIT` on the source format,
+  `VK_FORMAT_FEATURE_BLIT_DST_BIT` on the destination, and — for
+  `VK_FILTER_LINEAR` — `VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT` on
+  the source. Source and destination here are the same
+  `eR8G8B8A8Srgb` image, so all three must hold on one format. Every desktop
+  driver advertises all three for that format, so **expect zero visible change on
+  the RX 9070 XT** — the value is that the fallback path (`mip_levels = 1`) now
+  actually engages where it is needed instead of proceeding into an invalid
+  blit. Same class of latent portability defect as the SBT stride fix
+  (`74aaee23`).
+
+- [ ] **(S) Give `AsyncModelParse` its first tests** — the engine's only threaded class sits in the GUI-driven model-load path and has no coverage at all, on the one platform with no ThreadSanitizer.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/AsyncModelParse.ixx` — the whole file (131
+    lines); note the documented contracts: "newest wins" (`:24-27`, `:40-45`),
+    "the destructor must never detach" (`:35-38`), and the release-last store
+    ordering (`:66-69`).
+  - `Src/GraphicsEngineVulkan/scene/Scene.cpp:97-140` — `pollModelLoad`, the
+    only consumer, and why it needs its own `modelLoadPending` flag.
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp:1-40` — the device-free parse
+    pattern, `sceneConfig::resolveModelPath`, and the
+    `GTEST_SKIP() << "test glb not present"` guard to copy.
+
+  **Steps:**
+  1. New `Test/commit/VulkanEngine/asyncModelParseSuite.cpp`, suite
+     **`AsyncModelParseUnit`**, `import kataglyphis.vulkan.async_model_parse;`.
+     No Vulkan device: both loaders' `parseCpu` are documented device-free
+     (`GltfLoader.ixx:30-33`), which is exactly why `gltfParseSuite` already
+     works headless.
+  2. Tests to add:
+     - `StartsIdleWithNothingRunningAndNoResult`
+     - `ParsesAnObjOffTheCallingThreadAndHandsBackTheLoader` — start, spin on
+       `isFinished()` (poll it; **do not sleep** as a synchronisation
+       mechanism), then `wasSuccessful()`, `parsedGltf() == false`,
+       `takeResult() != nullptr`.
+     - `ParsesAGltfAndRoutesTheResultToTakeGltfResult` — on
+       `Models/GltfTest/cube.glb`: `parsedGltf() == true`,
+       `takeGltfResult() != nullptr`, and the OBJ getter `takeResult()` returns
+       nullptr.
+     - `AFailedParseReportsUnsuccessfulAndHandsBackNullptr` — a path that does
+       not exist; assert `isFinished()` still becomes true (the worker must
+       always publish) and both take methods return nullptr.
+     - `StartingASecondParseDiscardsTheFirst` — the "newest wins" contract:
+       call `start(a)` then `start(b)` back to back, and assert the result
+       corresponds to `b` and that nothing is left joinable.
+     - `TakingAResultLeavesIsFinishedTrue` — **pin the current behaviour, do not
+       change it.** Neither take method resets `finished`/`succeeded`, so
+       `isFinished()` keeps answering true after the result was handed over;
+       `Scene::pollModelLoad` survives that only because it also gates on its
+       own `modelLoadPending` (`Scene.cpp:101`). Name the test after the
+       behaviour and comment why it is safe today, so a future change to reset
+       the atomics has to look at `Scene::pollModelLoad` deliberately.
+     - `DestructionJoinsTheWorkerInsteadOfDetaching` — construct in an inner
+       scope, `start()` a real model, let it go out of scope immediately; the
+       destructor must join. Under ASan this is the test that would catch a
+       detach regressing into a use-after-free.
+  3. Skip each asset-dependent test with `GTEST_SKIP()` when
+     `std::filesystem::exists` says the model is absent, exactly as
+     `gltfParseSuite` does — CI checkouts must not go red on a missing asset.
+  4. Register `AsyncModelParseUnit` in `$cpuOnlySuites` in
+     `.github/workflows/Windows.yml`.
+
+  **Build:** `clangcl-debug` specifically — it is the ASan+UBSan configuration
+  (`cmake/Sanitizers.cmake` applies sanitizers only to Debug), and a
+  detach/use-after-free is the failure mode these tests exist to catch:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  Then run `.\commitTestSuite.exe --gtest_filter='AsyncModelParseUnit.*'` from
+  the repo root.
+
+  **Context:** Windows has no ThreadSanitizer at all (AGENTS.md; the
+  `clangcl-tsan` preset was removed in 2026-07 because green runs under it meant
+  nothing), so race coverage on this class comes only from the Linux
+  `linux-debug-tsan-clang` lane in the build matrix — and that lane can only
+  find races in code a test actually drives. These tests are what make that lane
+  reach `AsyncModelParse` at all. Keep them deterministic: poll, do not sleep,
+  and do not assert on parse *timing*.
+
+- [ ] **(S) Pin the golden-suite test counts documented in `docs/gpu-golden-testing.md` against the suite source** — the number has already had to be corrected twice; make it a gate instead of a planning chore.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `find_repo_root()`,
+    `collect_defined_suites()` (used at `:963`), and
+    `SlangCompileManifestsAgree` (`:1139-1179`) as the "parse two files, compare,
+    fail with both numbers" pattern to mirror.
+  - `docs/gpu-golden-testing.md:42-48` — the "29 runnable … 30 defined … + 2
+    `Integration` = 31 total" sentence; `:115-123` — the "28 tests" figure that
+    is derived from it minus three named exclusions.
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` — 30 `TEST(GoldenRender, …)`,
+    one of them `DISABLED_DumpsFrameToPng`.
+  - `Test/commit/VulkanEngine/commitSuite.cpp:50` and `renderModesSuite.cpp:70` —
+    the two `TEST(Integration, …)`. **They are in two different files**, so the
+    Integration count must come from a directory scan, not from one file.
+
+  **Steps:**
+  1. Put the machine-readable numbers in the doc rather than parsing prose. Add
+     a marker line to `docs/gpu-golden-testing.md` next to the sentence at
+     `:46-48`:
+     `<!-- golden-counts: defined=30 runnable=29 integration=2 total=31 -->`
+     and reword the sentence to point at it, so the two can never disagree by
+     more than one edit.
+  2. Add `TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)`. Count from
+     source with pure file I/O: `TEST(GoldenRender,` occurrences under
+     `Test/commit/VulkanEngine/` for `defined`, those whose test name does not
+     start with `DISABLED_` for `runnable`, and `TEST(Integration,` occurrences
+     for `integration`.
+  3. Parse the marker; `GTEST_SKIP()` if the doc cannot be opened (mirroring
+     `EveryCpuSuiteIsInTheWindowsCiFilter:954-956`), but `ASSERT` if the marker
+     is missing — a deleted marker must be a failure, not a silent pass.
+  4. Assert all four numbers, including `runnable + integration == total`, and
+     print both the parsed and the counted values in the failure message with
+     the doc path, so fixing it is one edit.
+  5. Correct the doc if today's numbers disagree. They should not: 30 defined,
+     29 runnable, 2 Integration, 31 total, as of 2026-08-01.
+
+  **Test:** The test is the deliverable. Prove it bites: change `defined=30` to
+  `defined=31` in the marker, run
+  `.\commitTestSuite.exe --gtest_filter='BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite'`,
+  confirm red, revert, confirm green.
+
+  **Build:** `clangcl-debug`. `BuildIntegrity` is already in `$cpuOnlySuites`,
+  so no workflow edit is needed.
+
+  **Context:** Two commits already exist purely to correct this number
+  (`1cd6b8b5`, `e2767bb1`), and a planner batch found the doc claiming 21 tests
+  when the suite held 28. Same preventive justification as
+  `SlangCompileManifestsAgree`, which was written before its two manifests had
+  actually drifted. **The gate must never run the golden tests to count them** —
+  it has to stay pure file I/O so it passes in the GPU-less CI container, where
+  `GoldenRender` is excluded by name.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(S) Warn when a KTX2's declared transfer function contradicts how the material uses it** — the container's colour space is dropped at parse time and the usage flag decides alone, so a mismatch renders with the wrong gamma and logs nothing.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/asset/ktx2_loader.rs:22-36` — `map_format`,
+    which collapses `BC1/BC3/BC7_*_SRGB_BLOCK` and `*_UNORM_BLOCK` onto the same
+    `CompressedFormat`; `:39-65` — `load_ktx2`.
+  - `crates/webgpu_renderer/src/scene/mod.rs:104-130` — `CompressedFormat` and
+    `CompressedTexture`; `:144-150` — `CpuTextureRef::srgb`, the usage-derived
+    flag.
+  - `crates/webgpu_renderer/src/render/texture.rs:111-125` —
+    `compressed_wgpu_format(format, srgb)`, where the usage flag alone selects
+    the sRGB wgpu variant; `:128-177` — `create_compressed_texture`, which
+    already uses `log::warn!` at `:189` so the dependency is present.
+  - `docs/webgpu-srgb-audit.md` — currently claims no known colour-space
+    deviations.
+
+  **Steps:**
+  1. Add `declared_srgb: Option<bool>` to `CompressedTexture`
+     (`scene/mod.rs:126-130`).
+  2. Populate it in the loader: `Some(true)` for the three `*_SRGB_BLOCK`
+     vkFormats, `Some(false)` for the colour `*_UNORM_BLOCK` ones, and `None`
+     for `VK_FORMAT_BC5_UNORM_BLOCK` (a two-channel data format with no colour
+     space to declare). Have `map_format` return the pair, or add a sibling
+     `declared_srgb_for(vk_format)` — either is fine, but keep
+     `CompressedFormat` itself colour-space-agnostic.
+  3. In `create_compressed_texture`, `log::warn!` when
+     `declared_srgb == Some(d)` and `d != srgb`, naming the label, the declared
+     space and the used one.
+  4. **Do not change which wgpu format is chosen.** glTF specifies the transfer
+     function by usage (base colour and emissive are sRGB; normal,
+     metallic-roughness and occlusion are linear), and flipping to
+     container-wins would silently alter every existing render. This task adds a
+     diagnostic, nothing else.
+  5. Record the decision in `docs/webgpu-srgb-audit.md` — one short subsection:
+     usage wins, a container mismatch is a warning — so the "no known
+     deviations" claim stays true by being explicit rather than by omission.
+
+  **Test:** In `ktx2_loader.rs`'s `mod tests`, add
+  `declared_srgb_follows_the_container_vkformat`: `Some(true)` for
+  `VK_FORMAT_BC7_SRGB_BLOCK` and `VK_FORMAT_BC1_RGBA_SRGB_BLOCK`, `Some(false)`
+  for `VK_FORMAT_BC1_RGBA_UNORM_BLOCK` and `VK_FORMAT_BC3_UNORM_BLOCK`, `None`
+  for `VK_FORMAT_BC5_UNORM_BLOCK`. In `render/texture.rs`'s `mod tests`, add
+  `compressed_wgpu_format_is_decided_by_usage_not_by_the_container` asserting
+  the seven `(format, srgb)` mappings are unchanged. The existing
+  `loads_a_valid_bc1_container` (against `tests/assets/red_bc1.ktx2`) and
+  `rejects_non_ktx2_bytes_without_panicking` must both stay green.
+
+  **Build:** Pure CPU, no adapter needed. From
+  `ExternalLib/Kataglyphis-RustProjectTemplate`:
+  `cargo test -p kataglyphis_webgpu_renderer --lib`
+  (the GPU suites under `crates/webgpu_renderer/tests/` self-skip without an
+  adapter; `--lib` runs only the in-module unit tests this task touches).
+
+  **Context:** The C++ engine hit this exact class and recorded it at
+  `Texture.cpp:118-123` — sampling sRGB pixels through a UNORM view fed
+  gamma-space values into lighting math that assumes linear, and every textured
+  surface washed out. On the Rust side there is currently no way to notice at
+  all. The blocked Colosseum demo-scene entry is precisely where a
+  KTX2-with-mismatched-transfer-function would land, so the diagnostic wants to
+  exist before the asset does. This is deliberately scoped small and does not
+  touch the blocked Basis ETC1S/UASTC entry above — supercompressed files are
+  still rejected before any of this code runs (`ktx2_loader.rs:43-47`).
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

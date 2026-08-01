@@ -238,6 +238,7 @@ jobs:
             'TextureLoadUnit.*'
             'MemoryHelperUnit.*'
             'FrameSyncUnit.*'
+            'SwapchainChoicesUnit.*'
           ) -join ':'
 
           $cmd = "& 'C:\ws\build-clangcl-debug\commitTestSuite.exe' --gtest_filter='$cpuOnlySuites'; exit `$LASTEXITCODE"
