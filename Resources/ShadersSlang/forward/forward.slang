@@ -14,6 +14,11 @@ import fullscreen;
 // light_space* matrices below, so the cascade count is not variable.
 static const int CASCADE_COUNT = 3;
 
+// Must match render::tile_grid::TILE_SIZE in forward.rs — the CPU bins
+// lights into a TILE_SIZE x TILE_SIZE screen-space grid, and punctual_lighting
+// below must divide fragCoord by the same constant to land in the right tile.
+static const uint TILE_SIZE = 16;
+
 struct FrameUniforms
 {
     float4x4 view_proj;
@@ -289,8 +294,8 @@ float3 punctual_lighting(float3 worldPos, float3 n, float3 v, float3 albedo,
     float metallic, float roughness, float3 f0, float4 fragCoord)
 {
     float3 total = float3(0.0);
-    uint tileX = uint(fragCoord.x) / 16u;
-    uint tileY = uint(fragCoord.y) / 16u;
+    uint tileX = uint(fragCoord.x) / TILE_SIZE;
+    uint tileY = uint(fragCoord.y) / TILE_SIZE;
     uint tileW = uint(frame.cascade_splits.z);
     uint tileH = uint(frame.cascade_splits.w);
     int totalLights = int(frame.camera_position.w);
