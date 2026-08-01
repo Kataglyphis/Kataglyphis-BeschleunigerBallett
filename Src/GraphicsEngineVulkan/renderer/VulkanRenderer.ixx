@@ -78,7 +78,6 @@ class VulkanRenderer
     // settings and still comes from the `gui` member.
     void updateStateDueToUserInput(GUISceneSharedVars &guiSceneSharedVars);
     void finishAllRenderCommands();
-    void update_raytracing_descriptor_set(uint32_t image_index);
     bool hasDeviceLost() const { return device_lost_detected; }
     bool supportsHardwareRaytracing() const;
 
@@ -172,11 +171,11 @@ class VulkanRenderer
       const std::optional<FrustumPlanes> &camera_frustum);
 
     // The single predicate deciding whether recordRaytracingOrPathTracing will
-    // actually dispatch this frame. Shared with record_commands so the raster
-    // skip and the RT/PT dispatch can never disagree - if they do, a frame
-    // renders nothing. The TLAS-null term is load-bearing: during the async
-    // model-load window RT/PT is requested but cannot dispatch yet, so the
-    // raster pass must still run.
+    // actually dispatch this frame. Called from both record_commands (to skip
+    // the raster pass) and recordRaytracingOrPathTracing (to gate the RT/PT
+    // dispatch), so the two can never disagree. The TLAS-null term is
+    // load-bearing: during the async model-load window RT/PT is requested but
+    // cannot dispatch yet, so the raster pass must still run.
     [[nodiscard]] bool raytracingOwnsFrame(uint32_t image_index);
 
     // Records the ray-tracing or path-tracing pass (whichever the GUI selected)
@@ -276,7 +275,13 @@ class VulkanRenderer
 
     DescriptorSetGroup raytracingDescriptors;
     void createRaytracingDescriptorResources();
+    void update_raytracing_descriptor_set(uint32_t image_index);
     void updateRaytracingDescriptorSets();
+
+    // The three raytracingDescriptors.write* calls (TLAS, output image,
+    // accumulation image) shared verbatim by update_raytracing_descriptor_set
+    // (per-image) and updateRaytracingDescriptorSets (all images).
+    void writeRaytracingDescriptorsForImage(uint32_t image_index);
 
     void finishModelLoad();
 

@@ -788,11 +788,16 @@ void Kataglyphis::VulkanRenderer::update_raytracing_descriptor_set(uint32_t imag
         return;
     }
 
-    vk::AccelerationStructureKHR &vulkanTLAS = asManager.getTLAS();
-    if (!vulkanTLAS) {
+    if (!asManager.getTLAS()) {
         return;
     }
 
+    writeRaytracingDescriptorsForImage(image_index);
+}
+
+void Kataglyphis::VulkanRenderer::writeRaytracingDescriptorsForImage(uint32_t image_index)
+{
+    vk::AccelerationStructureKHR &vulkanTLAS = asManager.getTLAS();
     Texture &renderResult = activeOffscreenTexture(image_index);
 
     raytracingDescriptors.writeAccelerationStructure(image_index, TLAS_BINDING, vulkanTLAS);
@@ -1063,9 +1068,7 @@ bool Kataglyphis::VulkanRenderer::raytracingOwnsFrame(uint32_t image_index)
 
     // The TLAS-null term covers the async model-load window: with RT/PT
     // enabled before the scene arrives, RT/PT cannot dispatch yet, so the
-    // raster pass must still run. Kept in lockstep with
-    // recordRaytracingOrPathTracing's own guard below - if they ever
-    // disagree, a frame renders nothing.
+    // raster pass must still run.
     return device->supportsHardwareAcceleratedRRT() && image_index < raytracingDescriptors.sets().size()
            && asManager.getTLAS() && (guiRendererSharedVars.raytracing || guiRendererSharedVars.pathTracing);
 }
@@ -1079,43 +1082,42 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
     // before the scene arrives, the record path used to dispatch against
     // descriptor sets that were never written (TLAS, output, accumulation) -
     // 20 validation errors in the pre-load frames of the accumulation golden.
-    if (device->supportsHardwareAcceleratedRRT() && image_index < raytracingDescriptors.sets().size()
-        && asManager.getTLAS()) {
-        const std::array<vk::DescriptorSet, 2> raytracing_descriptor_sets = { sharedRenderDescriptors.sets()[image_index],
-            raytracingDescriptors.sets()[image_index] };
+    if (!raytracingOwnsFrame(image_index)) { return; }
 
-        if (guiRendererSharedVars.raytracing) {
-            Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "raytracing", { 0.85F, 0.25F, 0.55F, 1.0F });
-            Texture &renderResult = activeOffscreenTexture(image_index);
-            raytracingStage.recordCommands(
-              commandBuffer, renderResult.getVulkanImage(), raytracing_descriptor_sets);
-        } else if (guiRendererSharedVars.pathTracing) {
-            Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "pathtracing", { 0.60F, 0.25F, 0.85F, 1.0F });
-            Texture &renderResult = activeOffscreenTexture(image_index);
+    const std::array<vk::DescriptorSet, 2> raytracing_descriptor_sets = { sharedRenderDescriptors.sets()[image_index],
+        raytracingDescriptors.sets()[image_index] };
 
-            // A camera move or a quality change invalidates the accumulated
-            // history; restart the running mean from this frame.
-            glm::mat4 const current_view = camera->calculate_viewmatrix();
-            if (current_view != pathTracingLastView
-                || guiRendererSharedVars.pathTracingSamplesPerPixel != pathTracingLastSamples
-                || guiRendererSharedVars.pathTracingMaxBounces != pathTracingLastBounces) {
-                pathTracingAccumulatedFrames = 0;
-                pathTracingLastView = current_view;
-                pathTracingLastSamples = guiRendererSharedVars.pathTracingSamplesPerPixel;
-                pathTracingLastBounces = guiRendererSharedVars.pathTracingMaxBounces;
-            }
+    if (guiRendererSharedVars.raytracing) {
+        Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "raytracing", { 0.85F, 0.25F, 0.55F, 1.0F });
+        Texture &renderResult = activeOffscreenTexture(image_index);
+        raytracingStage.recordCommands(
+          commandBuffer, renderResult.getVulkanImage(), raytracing_descriptor_sets);
+    } else if (guiRendererSharedVars.pathTracing) {
+        Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "pathtracing", { 0.60F, 0.25F, 0.85F, 1.0F });
+        Texture &renderResult = activeOffscreenTexture(image_index);
 
-            pathTracing.recordCommands(commandBuffer,
-              image_index,
-              renderResult.getVulkanImage(),
-              pathTracingAccumulation.getVulkanImage(),
-              &vulkanSwapChain,
-              raytracing_descriptor_sets,
-              pathTracingAccumulatedFrames,
-              static_cast<uint32_t>(std::max(guiRendererSharedVars.pathTracingSamplesPerPixel, 1)),
-              static_cast<uint32_t>(std::max(guiRendererSharedVars.pathTracingMaxBounces, 1)));
-            ++pathTracingAccumulatedFrames;
+        // A camera move or a quality change invalidates the accumulated
+        // history; restart the running mean from this frame.
+        glm::mat4 const current_view = camera->calculate_viewmatrix();
+        if (current_view != pathTracingLastView
+            || guiRendererSharedVars.pathTracingSamplesPerPixel != pathTracingLastSamples
+            || guiRendererSharedVars.pathTracingMaxBounces != pathTracingLastBounces) {
+            pathTracingAccumulatedFrames = 0;
+            pathTracingLastView = current_view;
+            pathTracingLastSamples = guiRendererSharedVars.pathTracingSamplesPerPixel;
+            pathTracingLastBounces = guiRendererSharedVars.pathTracingMaxBounces;
         }
+
+        pathTracing.recordCommands(commandBuffer,
+          image_index,
+          renderResult.getVulkanImage(),
+          pathTracingAccumulation.getVulkanImage(),
+          &vulkanSwapChain,
+          raytracing_descriptor_sets,
+          pathTracingAccumulatedFrames,
+          static_cast<uint32_t>(std::max(guiRendererSharedVars.pathTracingSamplesPerPixel, 1)),
+          static_cast<uint32_t>(std::max(guiRendererSharedVars.pathTracingMaxBounces, 1)));
+        ++pathTracingAccumulatedFrames;
     }
 }
 
@@ -1362,14 +1364,7 @@ void Kataglyphis::VulkanRenderer::updateRaytracingDescriptorSets()
     // mean was healing from startup frames, not averaging samples).
     pathTracingAccumulatedFrames = 0;
 
-    for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
-        Texture &renderResult = activeOffscreenTexture(i);
-
-        raytracingDescriptors.writeAccelerationStructure(i, TLAS_BINDING, vulkanTLAS);
-        raytracingDescriptors.writeImage(i, OUT_IMAGE_BINDING, renderResult.getImageView(), vk::ImageLayout::eGeneral);
-        raytracingDescriptors.writeImage(
-          i, ACCUMULATION_IMAGE_BINDING, pathTracingAccumulation.getImageView(), vk::ImageLayout::eGeneral);
-    }
+    for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) { writeRaytracingDescriptorsForImage(i); }
 }
 
 void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()

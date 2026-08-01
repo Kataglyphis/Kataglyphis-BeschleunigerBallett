@@ -3713,6 +3713,232 @@ drift fix.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
+## 2026-08-01 batch XVIII — planner (refactor: a "kept in lockstep" guard that is written twice, untested texture-slot flattening, a depth-aspect rule with four hand-rolled copies)
+
+Batch XVII is fully drained (`ad836844`, `0705aa7f`, `2df83793`, `8e0d8294`,
+`73192584`); every checkbox left in the file before this batch was `- [b]`.
+Every `file:line` below was read out of the tree this pass.
+
+**All three tasks are refactors and all three are pure-CPU verifiable.** Tasks 1
+and 2 both edit `renderer/VulkanRenderer.cpp`, so do them in either order but
+not concurrently.
+
+**Task 1 is duplication the code itself already flags as dangerous.**
+`VulkanRenderer.ixx:174-180` documents `raytracingOwnsFrame` as "the single
+predicate deciding whether `recordRaytracingOrPathTracing` will actually
+dispatch this frame … if they do [disagree], a frame renders nothing" — and yet
+`recordRaytracingOrPathTracing` does **not call it**: it re-writes the same
+three-term condition inline at `VulkanRenderer.cpp:1082-1083`, with its own
+copy of the rationale comment at `:1078-1081` and a second copy at `:1064-1068`.
+Separately, the three descriptor writes that bind TLAS / output image /
+accumulation image exist verbatim twice — `:798-801` (per-image, from the frame
+path) and `:1368-1371` (inside the all-images loop). `update_raytracing_
+descriptor_set` is also declared **public** (`VulkanRenderer.ixx:81`) while its
+only caller in the tree is `VulkanRenderer.cpp:547`, inside the class.
+
+**Task 2 is the largest block of untested pure logic left in the renderer.**
+`updateTexturesInSharedRenderDescriptorSet` (`VulkanRenderer.cpp:1518-1592`)
+mixes four Vulkan writes with ~45 lines of index arithmetic — flatten every
+model's textures in model order, stop at `MAX_TEXTURE_COUNT`, pad the remaining
+fixed-size slots with slot 0 — and that arithmetic must agree slot-for-slot
+with `assignTextureOffsets` (`scene/ObjectDescription.ixx:21-36`), which stamps
+the `texture_offset` the shaders add to model-local `textureID`s. If they ever
+disagree, every model past the first samples the wrong images; that is the
+exact bug the offsets were introduced to fix (`ObjectDescription.hpp:14-19`).
+`assignTextureOffsets` has three CPU tests
+(`Test/commit/VulkanEngine/objectDescriptionOffsetsSuite.cpp`); its counterpart
+has **none**, because it is welded to `DescriptorSetGroup::writeImageArray`.
+The extraction also fixes a real (minor) reporting defect: the exhaustion
+warning at `:1558-1563` reports `image_info_textures.size() + (model_texture_
+count - t)`, which counts only up to the model that overflowed and **ignores
+every later model's textures** — so the number it prints is not the total the
+scene asked for, which is the one number the message exists to give you.
+
+**Task 3 is one rule with four hand-rolled implementations and no test.**
+Every depth image in the engine takes its format from
+`chooseDepthFormat` (`common/FormatHelper.hpp:43-49`), whose preference list
+contains two combined depth/stencil formats. Deriving the aspect mask from that
+format is then done four different ways: `Rasterizer.cpp:30-35` has a private
+anonymous-namespace `hasStencilComponent` and builds `eDepth | eStencil`
+(`:329-341`, correct — that view is also the subject of a layout transition,
+where a combined format must carry both aspects), while
+`DeferredRasterizer.cpp:99`, `PostStage.cpp:183` and
+`CascadedShadowMap.cpp:56`/`:181` each hard-code `eDepth`. Two of those
+hard-codes are **required** to stay single-aspect and must not be "fixed"
+(details in the task). Nothing states the rule in one place and nothing tests
+it, so the next depth image added is a coin flip.
+
+Found, real, and deliberately **deferred to a later batch** (not rejected — do
+not re-derive, just pick up): (a) the two cloud-output `vk::ImageMemoryBarrier`
+blocks at `VulkanRenderer.cpp:876-894` and `:908-926` are 20 lines of identical
+field setup differing only in stage/access masks, and the ~19-line rationale at
+`:928-936` **repeats `:869-874` almost verbatim** — only the 2026-08-01
+measurement note at `:937-946` is unique to it; (b)
+`DeferredRasterizer.cpp:194-200` lists six attachments including "1: Position",
+but the code builds five and has no position attachment — `:87-90` in the same
+file explains at length that it was removed. Both are small, both are real
+duplication/drift.
+
+### C++ Vulkan engine
+
+- [ ] **(M) (refactor) Extract the texture-slot flattening out of `updateTexturesInSharedRenderDescriptorSet` into a tested pure function** — the only untested half of the two-sided `texture_offset` invariant, and its exhaustion warning reports a number that is not the total.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1518-1592` — the whole
+    function; the pure part is `:1546-1586` (flatten, cap, pad).
+  - `Src/GraphicsEngineVulkan/scene/ObjectDescription.ixx:21-36` —
+    `assignTextureOffsets`, the other half of the same invariant and the exact
+    style to copy (header-only, `std::span` in, no Vulkan types).
+  - `Src/GraphicsEngineVulkan/ObjectDescription.hpp:14-19` — why
+    `texture_offset` exists at all.
+  - `Test/commit/VulkanEngine/objectDescriptionOffsetsSuite.cpp` — the suite to
+    extend (`ObjectDescriptionOffsets`, already in the Windows CI filter at
+    `.github/workflows/Windows.yml:227`, so no workflow edit is needed).
+  - `Src/GraphicsEngineVulkan/common/host_device_shared_vars.hpp` — where
+    `MAX_TEXTURE_COUNT` is defined; the new function must take the cap as a
+    parameter, not read the constant, so tests can use small values.
+
+  **Steps:**
+  1. Add to `scene/ObjectDescription.ixx` (same exported namespace as
+     `assignTextureOffsets` — it is the mirror image of that function and shares
+     its test suite):
+     ```cpp
+     struct FlattenedTextureSlot { uint32_t model; uint32_t indexInModel; };
+     struct FlattenedTexturePlan {
+         std::vector<FlattenedTextureSlot> slots;  // empty, or exactly maxSlots entries
+         uint32_t requestedCount;                  // total across ALL models
+         bool exhausted;
+     };
+     FlattenedTexturePlan planFlattenedTextureSlots(
+         std::span<const uint32_t> textureCountPerModel, uint32_t maxSlots);
+     ```
+     Semantics, matching today's behaviour exactly except where noted:
+     models are visited in order; each model contributes `textureCountPerModel[m]`
+     slots; filling stops at `maxSlots` and sets `exhausted`; if nothing was
+     collected the plan is empty (the caller's `:1579` early return); otherwise
+     the tail is padded with a copy of `slots.front()` up to `maxSlots`
+     (`:1583-1586`). `requestedCount` is the sum over **every** model — this is
+     the behaviour change, and it is confined to the log message.
+  2. Rewrite `updateTexturesInSharedRenderDescriptorSet` to: bind the shadow map
+     array exactly as it does now (`:1524-1535` — that block must stay ahead of
+     the model early-return, as its comment says), gather
+     `scene->getTextureCount(m)` for each model into a vector, call
+     `planFlattenedTextureSlots(counts, MAX_TEXTURE_COUNT)`, log the warning once
+     if `exhausted` (using `requestedCount`), return if `slots` is empty, then
+     build the two `vk::DescriptorImageInfo` vectors by indexing
+     `scene->getTextures(slot.model)[slot.indexInModel]` and
+     `scene->getTextureSampler(slot.model)[slot.indexInModel]`, and issue the two
+     `writeImageArray` calls per swapchain image as today.
+  3. Keep the existing explanatory comment at `:1541-1545` (why every model is
+     flattened, not just model 0) — move it to the new function's doc comment,
+     where it now belongs, and cross-reference `assignTextureOffsets`.
+
+  **Test:** Extend `Test/commit/VulkanEngine/objectDescriptionOffsetsSuite.cpp`
+  (suite name stays `ObjectDescriptionOffsets`):
+  - `PlanVisitsEveryModelsTexturesInModelOrder` — counts `{3, 2}`, `maxSlots`
+    large: expect slots `(0,0) (0,1) (0,2) (1,0) (1,1)` before padding.
+  - `PlanAgreesWithAssignTextureOffsets` — **the load-bearing one.** For counts
+    `{5, 2, 3}`, assert that for every model `m`, the first slot belonging to
+    `m` sits at index `assignTextureOffsets`' offset for `m` (build the
+    descriptions with mesh counts `{1,1,1}` and read `texture_offset`). This is
+    what keeps the two sides of the invariant from drifting.
+  - `ExhaustionReportsTheTotalAcrossEveryModelNotJustTheOverflowingOne` —
+    counts `{4, 4, 4}`, `maxSlots = 5`: `exhausted == true`,
+    `requestedCount == 12` (today's message would say 8), and
+    `slots.size() == maxSlots`.
+  - `PaddingRepeatsTheFirstSlot` — counts `{2}`, `maxSlots = 5`: slots 2-4 all
+    equal slot 0.
+  - `NoTexturesProducesAnEmptyPlan` — counts `{0, 0}`: `slots.empty()`,
+    `exhausted == false`.
+
+  **Build:** `clangcl-debug`, then run the CPU suite directly (host `ctest` 3.29
+  cannot read this tree — see `[[host-vulkan-sdk-and-ctest]]`):
+  `.\commitTestSuite.exe --gtest_filter='ObjectDescriptionOffsets.*'`.
+  Then GPU-verify the descriptor path did not change on the host RX 9070 XT:
+  `.\commitTestSuite.exe --gtest_filter='GoldenRender.*Model*:GoldenRender.RendersNonBlankFrame'`
+  (the added-model goldens are what caught the model-0-only binding originally).
+
+  **Context:** Precedents for exactly this move: `assignTextureOffsets` +
+  `objectDescriptionOffsetsSuite` (same invariant, other side), `sliceMeshRange`
+  + `meshRangeSliceSuite`, and `clampCascadeCount` in
+  `cascadedShadowMapSuite`. Do **not** move the Vulkan writes into the new
+  function — the point is that the extracted half has no Vulkan types and links
+  into the headless test binary. `ObjectDescription.ixx` is a module interface;
+  see the ODR/cold-build warning under task 1.
+
+- [ ] **(S) (refactor) Give the depth-aspect rule one definition in `FormatHelper.hpp` and a test, and document the three sites that must stay single-aspect** — four hand-rolled derivations from one shared format choice, none of them tested.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/common/FormatHelper.hpp:43-49`
+    (`chooseDepthFormat` — its preference list contains `eD32SfloatS8Uint` and
+    `eD24UnormS8Uint`) and `:56-62` (`supportsMipmapGeneration` — the exact
+    `constexpr`, Vulkan-flags-only style to copy).
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:30-35` (the private
+    `hasStencilComponent` to delete) and `:316-341` (its two uses: the image
+    view and the layout transition).
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:97-99` — depth
+    view is `eDepth` only, and that view is **also an input attachment**
+    (`:98` usage flags, consumed at `VulkanRenderer.cpp:1613`); an input
+    attachment view carries one aspect. **Do not change it.**
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:45-56`
+    — the array view at `:56` is **sampled** through a combined image sampler
+    (`:64-65`, bound at `VulkanRenderer.cpp:1529-1534`); a sampled view carries
+    one aspect. **Do not change it.** `:171-189` is the separate
+    framebuffer-attachment view.
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:170-183`.
+  - `Test/commit/VulkanEngine/formatHelperSuite.cpp` — the suite to extend
+    (`FormatHelperUnit`, already in the Windows CI filter at
+    `.github/workflows/Windows.yml:240`).
+
+  **Steps:**
+  1. Add two `constexpr` helpers to `common/FormatHelper.hpp`, directly below
+     `supportsMipmapGeneration`:
+     `constexpr bool formatHasStencil(vk::Format)` — true for
+     `eD32SfloatS8Uint`, `eD24UnormS8Uint`, `eD16UnormS8Uint`, `eS8Uint`; and
+     `constexpr vk::ImageAspectFlags depthStencilTransitionAspect(vk::Format)`
+     — `eDepth`, plus `eStencil` when `formatHasStencil`.
+  2. Document on `depthStencilTransitionAspect` what it is *for*: a layout
+     transition (or attachment view) of a combined depth/stencil image must name
+     both aspects, whereas a **sampled** view or an **input-attachment** view
+     must name exactly one. That distinction is the entire reason the call sites
+     differ, and it is currently written down nowhere.
+  3. Delete `Rasterizer.cpp:30-35` and replace `:329-330` with a call to the new
+     helper. Behaviour is identical.
+  4. Add a one-line comment at `DeferredRasterizer.cpp:99`,
+     `CascadedShadowMap.cpp:56` and `PostStage.cpp:183` naming why each stays
+     `eDepth` (input attachment / sampled / depth-only attachment, no
+     transition), each pointing at `depthStencilTransitionAspect`'s doc comment.
+     **Change no aspect mask in this task.** This is a consolidation with zero
+     behaviour change; anything else needs its own task and a validation run.
+
+  **Test:** Extend `Test/commit/VulkanEngine/formatHelperSuite.cpp`:
+  - a namespace-scope `static_assert` on `depthStencilTransitionAspect`,
+    matching the existing one at `:9-12`, proving it is usable in a constant
+    expression;
+  - `FormatHelperUnit.CombinedDepthStencilFormatsReportStencil`
+    (`eD32SfloatS8Uint`, `eD24UnormS8Uint`, `eD16UnormS8Uint`);
+  - `FormatHelperUnit.DepthOnlyFormatsDoNotReportStencil` (`eD32Sfloat`,
+    `eD16Unorm`);
+  - `FormatHelperUnit.TransitionAspectAddsStencilOnlyForCombinedFormats`;
+  - `FormatHelperUnit.ThePreferredDepthFormatIsStencilFree` — assert
+    `!formatHasStencil(vk::Format::eD32Sfloat)`, i.e. the head of
+    `chooseDepthFormat`'s list, so it is recorded that on every device that
+    supports it this whole rule is a no-op and the fallback formats are the
+    only ones it changes. Same "prove it is a no-op on this hardware" habit as
+    the SBT task above.
+
+  **Build:** `clangcl-debug`, then
+  `.\commitTestSuite.exe --gtest_filter='FormatHelperUnit.*'`. No GPU run is
+  required — step 4 makes this provably behaviour-neutral. If you want extra
+  confidence that nothing moved, `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1`
+  should produce a log identical to the pre-change one.
+
+  **Context:** `FormatHelper.hpp` is a plain header, not a module interface, so
+  the ODR/cold-build hazard under task 1 does not apply — but it is included by
+  several module implementation units, so expect a wide rebuild.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
