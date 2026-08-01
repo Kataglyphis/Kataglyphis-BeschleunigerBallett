@@ -62,7 +62,7 @@ class FrameSync
                     i,
                     static_cast<int>(image_available_result),
                     static_cast<int>(in_flight_fence_result)));
-                frame_sync_count = 0;
+                cleanUp(logicalDevice);
                 return;
             }
 
@@ -79,7 +79,7 @@ class FrameSync
                 spdlog::error(fmt::format("Failed to create render-finished semaphore for swapchain image {} ({}).",
                   image,
                   static_cast<int>(render_finished_result)));
-                frame_sync_count = 0;
+                cleanUp(logicalDevice);
                 return;
             }
 
@@ -113,12 +113,25 @@ class FrameSync
         }
         in_flight_fences.clear();
         images_in_flight_fences.clear();
+
+        frame_sync_count = 0;
+        current_frame = 0;
     }
 
     // current_frame = (current_frame + 1) % frame_sync_count; frame_sync_count
     // is min(MAX_FRAME_DRAWS, image count), not MAX_FRAME_DRAWS directly, so a
     // swapchain with fewer images than MAX_FRAME_DRAWS still cycles correctly.
-    void advanceFrame() { current_frame = (current_frame + 1) % frame_sync_count; }
+    void advanceFrame()
+    {
+        // create() can fail (and zero frame_sync_count) after the caller's
+        // frameSyncCount()==0 guard has already run this frame; guard the
+        // modulo here too so that ordering can never divide by zero.
+        if (frame_sync_count == 0) {
+            current_frame = 0;
+            return;
+        }
+        current_frame = (current_frame + 1) % frame_sync_count;
+    }
 
     [[nodiscard]] uint32_t currentFrame() const { return current_frame; }
     [[nodiscard]] uint32_t frameSyncCount() const { return frame_sync_count; }

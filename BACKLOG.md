@@ -3111,6 +3111,196 @@ computes — one stale sentence, too small to task; fold it into the next edit
 that touches the file. **The `Model::addSampler` per-texture sampler** — batch
 XI's instruction to stop re-checking this still stands; it was not re-checked.
 
+## 2026-08-01 batch XIII — planner (a divide-by-zero on the sync error path, a rotted comparison script, a CI GPU probe that always says yes, the Rust cascade oracle batch XII asked for, dead stateless-class members)
+
+Batch XII is fully drained (`50c0304b`, `add6f17c`, `d277fa99`, `9bfe48b4`,
+`092f166d`); every checkbox left in the file was `- [b]`. Every `file:line`
+below was read out of the tree this pass.
+
+**Task 1 is a real crash on an untested error path, traced end to end.**
+`FrameSync::advanceFrame()` (`FrameSync.ixx:121`) is
+`current_frame = (current_frame + 1) % frame_sync_count`, and `create()` sets
+`frame_sync_count = 0` on *any* creation failure (`:65` for the
+semaphore/fence loop, `:82` for the render-finished loop). `drawFrame` does
+guard on it — but at `VulkanRenderer.cpp:442`, **before** it can re-enter
+`recreateSwapChain()` at `:450`/`:484`, and `recreateSwapChain()` ends with
+`createSynchronization()` → `frameSync.create(...)`
+(`VulkanRenderer.cpp:1484-1487`). So the count can go to 0 *after* the only
+guard. Walk the second failure path (`FrameSync.ixx:82`, render-finished
+semaphore): `image_available` and `in_flight_fences` are already fully
+populated, so `currentFrame() >= inFlightFenceCount()` (`:455`) passes and
+`!inFlightFence()` (`:461`) passes; `render_finished_by_image` was resized to
+`imageCount` so `renderFinishedCount()` (`:501`) passes, and
+`!renderFinishedSemaphore(image_index)` only fires if the *acquired* image is
+one of the ones that failed. Acquire image 0 when image 2 was the failure and
+the frame runs all the way to `advanceFrame()` at `:613` → `% 0`. The class
+should defend its own invariant instead of relying on a caller check that
+runs too early.
+
+**Task 2: `Scripts/Compare-RendererPixels.ps1` cannot complete a run.**
+`$bmp.Dispose()` is called and the *next* statement passes `$bmp.Width` /
+`$bmp.Height` as arguments (`:204-205`, and again at `:223-224`).
+`System.Drawing.Image.Width` on a disposed bitmap throws, and the script sets
+`$ErrorActionPreference = 'Stop'` at `:37`, so Phase 3 dies the moment a C++
+frame exists — the exact path the script is for. Two more defects in the same
+file, all of the "a green run means nothing" class this repo keeps
+rediscovering: `-ValidationOnly` enumerates `*.png` at `:92` and then
+*ignores* that list, testing `Test-Path $cppPng` where `$cppPng` is the
+hard-coded `cpp-vulkan.png` (`:103`) while the capture at `:129-135` actually
+writes `cpp-vulkan-<suffix>.png` — so validation mode always finds nothing;
+and with neither renderer producing a frame, `$exitCode` stays 0 and the
+script prints `PIXEL COMPARISON PASSED`. It is also the only one of the three
+`Scripts/Compare-*.ps1` tools with no Pester suite. Sibling precedent for
+everything this needs: `Scripts/Windows/tests/Compare-RendererTimings.Tests.ps1`
+(child-process invocation + fixture files, Pester 3.4.0 dash-less syntax).
+
+**Task 3 is the half of batch XII task 1 that did not land.** That entry said
+"The C++ engine has the right oracle already:
+`CascadedShadowMapUnit.EachCascadeCoversItsOwnFrustumSlice`
+(`cascadedShadowMapSuite.cpp:109`) … Port the assertion, then make it pass."
+`add6f17c`/`50c0304b` shipped the fit and five good tests in
+`render/cascades.rs:161-344` — splits growing with the camera, the
+scene-radius fallback, finiteness, texel snapping, box-size invariance — but
+**not the coverage assertion**, and the gap it was meant to catch is still
+there. `fit_cascades` (`cascades.rs:91-96`) gives cascade 0 a sphere centred
+at `camera.target.lerp(camera.eye(), 0.15)` with radius `0.35 * d`, i.e. it
+covers eye distances `[0.5d, 1.2d]`, while `forward.slang:198-201` selects it
+for every eye distance below `splits[0] = 0.7d`. Everything closer than
+`0.5d` is routed to a cascade whose box does not contain it, and
+`forward.slang:212` answers that with `return 1.0` — **fully lit, silently**.
+Do NOT "fix" this by re-deriving the boxes from the camera frustum: the
+module doc at `cascades.rs:26-34` records that an earlier attempt at exactly
+that regressed `shadow_darkens_plane_under_cube` to zero shadowed pixels.
+
+**Task 4: the Windows CI GPU probe asks a question that is not about the
+GPU.** `Windows.yml:315` runs `commitTestSuite.exe --gtest_list_tests |
+Select-String "GoldenRender"` and prints `GPU_AVAILABLE` if it matches — but
+gtest lists registered test names without touching an adapter, so it matches
+on every runner that has the binary, and `:318` prints `GPU_NOT_AVAILABLE`
+unconditionally right after. `$test -match 'GPU_AVAILABLE'` at `:320` filters
+the array and gets a non-empty result, so `$hasGpu` is always true and `:323`
+resolves `$validationFlag` to `''` — the step runs
+`Compare-RendererTimings.ps1` **without** `-ValidationOnly` on a GPU-less
+hosted runner, which is the opposite of what its own comment (`:296-301`)
+says it does. Same family as the swapchain screenshot that reads black while
+the session is locked: a probe that cannot say no.
+
+**Task 5 (refactor): `CommandBufferManager` has no state, and six objects
+carry one anyway.** The class (`CommandBufferManager.ixx:8-22`) has exactly
+two members, both `static`, and an empty `private:` section. Six types hold a
+zero-information instance of it: `ASManager.ixx:52`, `Texture.ixx:97`,
+`DeferredRasterizer.ixx:74`, `VulkanRenderer.ixx:204`,
+`VulkanBufferManager.ixx:69`, `Rasterizer.ixx:78` — plus
+`DeferredRasterizer.cpp:39` (`commandBufferManager = CommandBufferManager();`,
+a no-op assignment) and `Texture.cpp:31`/`:47`, which move the dead member
+through `Texture`'s move constructor and move assignment. `d277fa99` deleted
+the per-`Texture` `VulkanBufferManager` for the same reason and left this one
+behind. Every call site in the tree already uses the static form
+(`Texture.cpp:152`, `VulkanBufferManager.cpp:21`, `:34`, `:62`, `:72`).
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`Texture::createImage` never assigns
+`this->mip_levels`** (`Texture.cpp:203-218`), so a texture built that way
+reports `getMipLevel() == 0` and `createTextureSampler` gives it
+`maxLod = 0.0`. Harmless today — every one of the seven external callers
+passes `in_mip_levels = 1` (`DeferredRasterizer.cpp:81`/`:100`,
+`PostStage.cpp:174`, `Rasterizer.cpp:301`/`:320`, `Clouds.cpp:33`,
+`CascadedShadowMap.cpp:53`, `SkyBox.cpp:112`, `VulkanRenderer.cpp:1269`) and
+`maxLod = 0` is correct for one mip — but it is a trap for the first mipped
+image created without going through `uploadRgba`. Fold the one-line
+assignment into the next change that touches `Texture`. **The PCF radius
+slider is 1..20** (`GUI.cpp:199`) and `cascaded_shadow.slang:39-52` loops
+`(2r+1)^2` comparison taps, so the maximum is 1681 taps per shadowed
+fragment; now that the comparison sampler adds hardware 2x2 filtering the
+useful range is much smaller, but narrowing a user-facing slider is an owner
+decision, not an agent's. **`Frustum::from_view_proj` plane normalization**
+and **`intersects_aabb_as_caster` having no production caller** — batch XII
+already rejected both with reasons; they still hold.
+
+- [ ] **(M) Repair `Compare-RendererPixels.ps1` and give it Pester coverage** — it throws on its own success path, its `-ValidationOnly` mode checks a filename the capture never writes, and it reports PASSED when it captured nothing.
+
+  **Files to read:**
+  - `Scripts/Compare-RendererPixels.ps1` — `Get-LuminanceMetrics` (`:49-84`), the `-ValidationOnly` block (`:89-98`), the C++ capture and its actual output filename (`:103-139`), the two dispose-then-read blocks (`:191-228`), the assertion block (`:240-309`)
+  - `Scripts/Compare-RendererTimings.ps1` — the sibling that was already repaired (`092f166d`): note `-PrintExpectedPasses` at `:52`, a switch that exists purely so tests can exercise the logic without a GPU
+  - `Scripts/Windows/tests/Compare-RendererTimings.Tests.ps1` — the Pester pattern to follow (child-process invocation, fixture files, **Pester 3.4.0 dash-less assertion syntax**)
+
+  **Steps:**
+  1. Fix the use-after-dispose: capture `$w = $bmp.Width; $h = $bmp.Height` **before** `$bmp.Dispose()` in both blocks (`:191-205` and `:211-224`), or drop the unused `-W`/`-H` parameters from `Get-LuminanceMetrics` entirely — they are never read in the body. Prefer dropping them; fewer arguments, no ordering hazard to reintroduce.
+  2. De-duplicate the two identical load-and-measure blocks into one `Get-FrameMetrics -Path <png>` function that returns the metrics hashtable (or `$null` when the file is missing). The two copies differ only in variable names.
+  3. Replace the per-pixel `GetPixel` loop with a single `LockBits` read into a byte array (`[System.Drawing.Imaging.PixelFormat]::Format32bppArgb`, `Marshal.Copy`, then `UnlockBits`). At 1200x768 the current code makes ~921 600 interpreted `GetPixel` calls per frame and then walks the array twice more; this is why the script is unusable even when it does not throw. Keep the Rec. 601 luma formula and the bucket/lit-fraction definitions bit-for-bit — the thresholds at `:242-280` are calibrated against them. Note `LockBits` gives **BGRA** byte order, so swap the R and B indices.
+  4. Make `-ValidationOnly` validate the frames it actually enumerates: use the `$existingPngs` list from `:92`, matching `cpp-vulkan*` and `rust-webgpu*` prefixes (same `delta|noise|golden-order|singletap` exclusion as `:130`), instead of testing the hard-coded `$cppPng`/`$rustPng` paths.
+  5. Stop reporting success on an empty run: if neither `$cppMetrics` nor `$rustMetrics` was produced, print an explicit "no frames were captured or found — nothing was checked" line and `exit 2` (distinct from 1 = a real assertion failure, so a caller can tell "broken" from "regressed"). Document the three exit codes in the header comment.
+  6. While in the header, translate the German fragment at `:296` ("sRGB-kodiert ~1.48× heller durch Gamma 2.2") into English to match the rest of the file.
+
+  **Test:** Add `Scripts/Windows/tests/Compare-RendererPixels.Tests.ps1`, mirroring `Compare-RendererTimings.Tests.ps1`. Generate small fixture PNGs into a temp dir with `System.Drawing` (one flat-grey image, one half-black/half-white image), then invoke the real script as a child process with `-SkipCpp -SkipRust -OutDir <tmp>`: assert the flat image is rejected (uniform → exit 1, message mentions stddev), the two-tone image passes its structural checks, and an empty `-OutDir` with `-ValidationOnly` exits 2 rather than printing PASSED. Verify with `Invoke-Pester .\Scripts\Windows\tests\Compare-RendererPixels.Tests.ps1` — no GPU and no build products needed.
+
+  **Build:** None — PowerShell only. Run the Pester suite above; also run `Invoke-Pester .\Scripts\Windows\tests\` once to confirm nothing else regressed.
+
+  **Context:** This is the third `Scripts/Compare-*.ps1` tool and the only one still untested; the other two were fixed by `190eaa8e` (perf baseline) and `092f166d` (timings), each after a defect that made the tool either always fail or always pass. Keep the structural-metric philosophy in the header — the point of this script is that the two renderers are *not* pixel-comparable, so do not "improve" it into an exact-image diff.
+
+- [ ] **(M) Port the C++ cascade-coverage oracle to `render/cascades.rs`, then close the near-band hole it exposes** — fragments closer than ~0.5x the camera distance are routed to cascade 0 but fall outside its box, and the shader silently returns "fully lit".
+
+  **Files to read:**
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/cascades.rs` — `fit_cascades` (`:80-120`), `stabilized_light_matrix_for` (`:126-159`), the existing five tests (`:161-344`) and the `texel_space` helper (`:256-262`)
+  - `Resources/ShadersSlang/forward/forward.slang` — `shadow_visibility` (`:196-228`): cascade selection at `:198-201`, the out-of-box `return 1.0` at `:212`
+  - `Test/commit/VulkanEngine/cascadedShadowMapSuite.cpp:109` — `EachCascadeCoversItsOwnFrustumSlice`, the oracle to port
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMapMath.cpp:154-201` — the C++ reference the module doc already cites
+
+  **Steps:**
+  1. Add the failing test first. In `cascades.rs`'s `mod tests`, add `every_selectable_eye_distance_lands_inside_the_cascade_it_selects`: for a camera and light, walk sample eye distances across `[0.05 * splits[0] .. 1.5 * splits[1]]`, build a world point at that distance along the camera's view direction from `camera.eye()`, apply the shader's own selection rule (`0` below `splits[0]`, `1` below `splits[1]`, else `2`), project it through `fit.matrices[selected]`, and assert the result lands in `uv ∈ [0,1]²` with `0 ≤ z ≤ 1`. Reuse the projection convention in `texel_space` (`:256-262`) and the shader's `uv = (proj.x*0.5+0.5, 0.5-proj.y*0.5)` from `forward.slang:210`. This must go red for the small distances — record the failing range in the commit message.
+  2. Fix it in the shader, not the fit. In `shadow_visibility`, when the selected cascade's `uv`/`proj.z` is out of range, retry the next coarser cascade (0 → 1 → 2) before giving up, and only `return 1.0` after cascade `CASCADE_COUNT - 1` also misses. Structure it as a small loop over `cascade..CASCADE_COUNT` so the sampling body is not triplicated. **Do not re-derive the cascade boxes from the camera frustum** — `cascades.rs:26-34` records that exact attempt regressing `shadow_darkens_plane_under_cube` to zero shadowed pixels.
+  3. Extend the CPU test to model the fallback: assert that *some* cascade at or above the selected index covers each sampled distance (the union-coverage property the shader now implements), which is the invariant that stays true regardless of how the boxes are fitted later.
+  4. Regenerate the WGSL: `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`. `forward.wgsl` is checked into the crate and gated — `28887db1` (hand-edit gate) and `41b76ab8` (Slang-source gate) will fail if the generated file and its source disagree, so commit the regenerated artifact in the same change and check the `$DepthTexturePatches` entry for `forward.wgsl` (`compile-slang-shaders.ps1:232-234`) still applies cleanly.
+
+  **Test:** the new `cascades.rs` unit tests above (`cargo test -p kataglyphis_webgpu_renderer --lib cascades`), plus the existing GPU-dependent headless tests, which must stay green: `shadow_darkens_plane_under_cube`, `caster_culling_engages_and_shadows_survive`, `shadow_caster_bundle_is_cached_across_frames`, `first_frame_uses_the_correct_cascade_and_tile_counts`. Run `cargo test -p kataglyphis_webgpu_renderer` from `ExternalLib/Kataglyphis-RustProjectTemplate`.
+
+  **Build:** Cargo only — no CMake preset needed. If you also want the C++ shaders rebuilt after running the Slang script, use `clangcl-debug` and re-run `BuildIntegrity.*` (the shader-staleness guard fires on any `common/` edit).
+
+  **Context:** The C++ engine does not have this bug — `computeCascadeData` fits each ortho box to that cascade's actual frustum slice and `EachCascadeCoversItsOwnFrustumSlice` pins it — which is exactly why porting the assertion is the right move rather than inventing an oracle. Note the symptom is "near geometry stops receiving shadows", never "shadows are missing", because everything farther out still falls through to a cascade that does cover it; that silence is why five existing tests pass over it.
+
+- [ ] **(S) Fix the Windows CI GPU probe, which lists gtest names and therefore always answers "GPU available"** — the timing-comparison step runs without `-ValidationOnly` on GPU-less hosted runners, the opposite of its own comment.
+
+  **Files to read:**
+  - `.github/workflows/Windows.yml:288-335` — the "GPU timing comparison" step: the comment at `:296-301`, the probe at `:309-321`, the flag at `:323-326`
+  - `Scripts/Compare-RendererTimings.ps1:46-52` — what `-ValidationOnly` and `-PrintExpectedPasses` actually do
+  - `docs/gpu-golden-testing.md` — why `SKIP_WITHOUT_GPU` / `glfwVulkanSupported()` is not a trustworthy adapter probe either (it can answer yes with no device present, then abort during device creation)
+
+  **Steps:**
+  1. Delete the `$hasGpu` sub-expression entirely (`:309-321`). It cannot fail: `--gtest_list_tests` enumerates registered names without creating a device, `Select-String "GoldenRender"` therefore always matches, and the unconditional `GPU_NOT_AVAILABLE` at `:318` is never consulted because `-match` on the array returns the one matching line.
+  2. Replace it with an explicit opt-in: `$hasGpu = $env:KATAGLYPHIS_CI_HAS_GPU -eq '1'`, defaulting to `-ValidationOnly`. GitHub-hosted Windows runners have no adapter, and a self-hosted GPU runner can set the variable deliberately. Keep the `Write-Host "GPU available: ..."` line so the log still says which mode ran.
+  3. Update the step's comment block (`:296-301`) to describe the opt-in rather than the removed auto-detection, and say plainly that the default is validation-only.
+  4. While in this step, drop the duplicated `-NoProfile -NoProfile` and note that this probe was the only `docker run` in the file that omitted the explicit `pwsh` entrypoint the other three steps pass — if any container invocation survives step 2, give it the same `'pwsh', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command'` shape as `:243-250`.
+  5. Do not change the `[build-win]` gating on the workflow — that is a separate open decision recorded under "CI and release gaps".
+
+  **Test:** No new automated test (this is workflow YAML; the repo has no workflow-lint harness). Verify two ways: (a) `pwsh -NoProfile -Command "[scriptblock]::Create((Get-Content .github/workflows/Windows.yml -Raw))"` is *not* a valid check — instead extract the edited `run:` body to a scratch `.ps1` and confirm `pwsh -NoProfile -File` parses it and that with `KATAGLYPHIS_CI_HAS_GPU` unset it builds a command string containing `-ValidationOnly`; (b) demonstrate the old probe's defect for the commit message by running `.\build-clangcl-debug\commitTestSuite.exe --gtest_list_tests | Select-String GoldenRender` and showing it matches with no adapter in play.
+
+  **Build:** None. If you want the resulting command exercised end to end, run `pwsh -ExecutionPolicy Bypass -File .\Scripts\Compare-RendererTimings.ps1 -ValidationOnly` locally.
+
+  **Context:** Same failure class the repo has now hit three times — the swapchain screenshot that reads black while the session is locked, the `clangcl-tsan` preset whose green runs proved nothing, and `Compare-RendererTimings.ps1`'s phantom `Post` pass. An instrument that structurally cannot report the negative case is worse than no instrument.
+
+- [ ] **(S) (refactor) Delete the six dead `CommandBufferManager` members and make the class explicitly stateless** — it has only static methods and an empty `private:` section, yet six types carry an instance of it.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/CommandBufferManager.ixx` — the whole file (`:8-22`): two static methods, a declared constructor, nothing else
+  - The six dead members: `renderer/accelerationStructures/ASManager.ixx:52`, `scene/Texture.ixx:97`, `renderer/DeferredRasterizer.ixx:74`, `renderer/VulkanRenderer.ixx:204`, `vulkan_base/VulkanBufferManager.ixx:69`, `renderer/Rasterizer.ixx:78`
+  - `renderer/DeferredRasterizer.cpp:39` — `commandBufferManager = CommandBufferManager();`, a no-op self-assignment
+  - `scene/Texture.cpp:31` and `:47` — the member being moved through `Texture`'s move constructor and move assignment
+  - Call sites that already use the static form and must be untouched: `scene/Texture.cpp:152`, `vulkan_base/VulkanBufferManager.cpp:21`, `:34`, `:62`, `:72`
+
+  **Steps:**
+  1. Delete all six member declarations, the assignment at `DeferredRasterizer.cpp:39`, and the two moves in `Texture.cpp` (`:31`, `:47`). `Texture`'s move constructor/assignment keep their remaining members in the same order.
+  2. Drop `import kataglyphis.vulkan.command_buffer_manager;` from any `.ixx` whose only reason to import it was the deleted member — check `Texture.ixx:13`, `VulkanBufferManager.ixx:9`, and the others. The implementation `.cpp` files that call the static methods keep their imports.
+  3. Make the class unable to regrow an instance: delete the declared constructor and add `CommandBufferManager() = delete;` (plus the existing destructor can go), or — cleaner and preferred if it compiles without churn — turn it into a plain namespace of two free functions and update the five call sites. Pick one and say which in the commit message; do not leave it half-converted.
+  4. Delete `CommandBufferManager::CommandBufferManager()`'s definition from `CommandBufferManager.cpp` if it exists.
+
+  **Test:** No new runtime test — this removes members that nothing reads. If you take the `= delete` route, add a `static_assert(!std::is_default_constructible_v<...>)` to an existing suite (`Test/commit/VulkanEngine/allocatorOwnershipSuite.cpp` is the precedent: it pins a move-only contract at compile time). The regression guard is the build itself plus the full CPU suite staying green.
+
+  **Build:** `clangcl-debug`, **`-FreshContainer`** (six `.ixx` files change, so every dependent BMI must be rebuilt). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer -SkipPerfTests -SkipMsix`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='-GoldenRender.*:Integration.*'` for the CPU suites. GPU-verify on the RX 9070 XT with the full golden run (`docs/gpu-golden-testing.md`) — this touches `VulkanRenderer.ixx` and both rasterizers, so a build error is the likely failure mode but a golden run is cheap insurance.
+
+  **Context:** Direct follow-on from `d277fa99`, which deleted the per-`Texture` `VulkanBufferManager` for exactly this reason and did not notice the sibling member next to it. `4cea780f` (last `[[maybe_unused]]` markers) and `2f2b1fdf` (dead module wrappers) are the same sweep; keep the habit of deleting the *ability* to reintroduce the dead thing, not just the instance.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
