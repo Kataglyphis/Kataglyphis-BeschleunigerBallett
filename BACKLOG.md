@@ -2970,52 +2970,6 @@ and its own CPU oracle, so it is recorded here rather than half-specified;
 
 ### Build / scripts
 
-- [ ] **(S) Pester coverage for `Compare-PerfBaseline.ps1`** — the one script in
-  `Scripts/` with a pass/fail contract and no test, on a machine where nothing
-  else can catch a regression in it.
-
-  **Files to read:**
-  - `Scripts/Compare-PerfBaseline.ps1` — `ConvertTo-Nanoseconds` (`:42-51`), the
-    tolerance comparison (`:95-105`), the only-in-one-file handling (`:106-112`),
-    the exit code (`:123-137`)
-  - `Scripts/Windows/tests/Run-SyncValidation.Tests.ps1` — **the pattern to
-    follow**: invoke the real script as a child process against canned fixtures
-    and assert `$LASTEXITCODE`, so no GPU and no built binary are needed
-  - `Test/perf/baselines/win-9070xt-32core.json` — the real baseline's shape
-    (17 entries, all `run_type: "iteration"`, units `ns`/`us`/`ms`)
-
-  **Steps:**
-  1. Add `Scripts/Windows/tests/Compare-PerfBaseline.Tests.ps1`. Write Pester
-     **3.4.0** syntax (dash-less assertions — the installed version; see the
-     NOTE at the top of `Run-SyncValidation.Tests.ps1` and
-     `Submodule.Pins.Tests.ps1`).
-  2. Generate small baseline/candidate JSON fixtures in a temp directory in
-     `BeforeAll`, each a `{ "benchmarks": [ { "name", "real_time", "time_unit" } ] }`
-     document — do not depend on the checked-in baseline, which will change.
-  3. Cover, one `It` each: (a) identical numbers exit 0; (b) a benchmark 50%
-     slower with the default tolerance exits non-zero; (c) the same 50%
-     regression with `-ToleranceFraction 1.0` exits 0; (d) a benchmark present
-     only in the candidate exits 0 (new benchmarks must never fail a comparison
-     — the script says so at `:22-25`); (e) a benchmark present only in the
-     baseline likewise exits 0; (f) **unit normalisation**: 1000 ns baseline vs
-     1 us candidate is a 0% delta and exits 0 — this is the one piece of real
-     arithmetic in the script; (g) a missing `-CandidatePath` exits non-zero.
-  4. Do not add a `-Capture`/`-UpdateBaseline` mode. The script refuses one on
-     purpose (`:17-20`) and a test must not create pressure to add it.
-
-  **Test:** the suite itself. Run
-  `pwsh -NoProfile -Command "Invoke-Pester -Path .\Scripts\Windows\tests\Compare-PerfBaseline.Tests.ps1"`
-  from the repo root and show it green.
-
-  **Build:** none — pure PowerShell, runs on the host in seconds, no container
-  and no GPU.
-
-  **Context:** `Compare-PerfBaseline.ps1` landed 2026-07-31 as the answer to
-  "Regression tracking" under "Performance testing". It is deliberately not in
-  CI (per-machine numbers), which means a bug in it surfaces as a *silently
-  passing* comparison — exactly the failure mode the Pester suite for
-  `Run-SyncValidation.ps1` was written to prevent for that script.
-
 ### Docs
 
 - [ ] **(S) Reconcile the two perf instruments and the golden-suite count** — the
