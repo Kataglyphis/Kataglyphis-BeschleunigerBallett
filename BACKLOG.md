@@ -3217,27 +3217,6 @@ decision, not an agent's. **`Frustum::from_view_proj` plane normalization**
 and **`intersects_aabb_as_caster` having no production caller** — batch XII
 already rejected both with reasons; they still hold.
 
-- [ ] **(M) Repair `Compare-RendererPixels.ps1` and give it Pester coverage** — it throws on its own success path, its `-ValidationOnly` mode checks a filename the capture never writes, and it reports PASSED when it captured nothing.
-
-  **Files to read:**
-  - `Scripts/Compare-RendererPixels.ps1` — `Get-LuminanceMetrics` (`:49-84`), the `-ValidationOnly` block (`:89-98`), the C++ capture and its actual output filename (`:103-139`), the two dispose-then-read blocks (`:191-228`), the assertion block (`:240-309`)
-  - `Scripts/Compare-RendererTimings.ps1` — the sibling that was already repaired (`092f166d`): note `-PrintExpectedPasses` at `:52`, a switch that exists purely so tests can exercise the logic without a GPU
-  - `Scripts/Windows/tests/Compare-RendererTimings.Tests.ps1` — the Pester pattern to follow (child-process invocation, fixture files, **Pester 3.4.0 dash-less assertion syntax**)
-
-  **Steps:**
-  1. Fix the use-after-dispose: capture `$w = $bmp.Width; $h = $bmp.Height` **before** `$bmp.Dispose()` in both blocks (`:191-205` and `:211-224`), or drop the unused `-W`/`-H` parameters from `Get-LuminanceMetrics` entirely — they are never read in the body. Prefer dropping them; fewer arguments, no ordering hazard to reintroduce.
-  2. De-duplicate the two identical load-and-measure blocks into one `Get-FrameMetrics -Path <png>` function that returns the metrics hashtable (or `$null` when the file is missing). The two copies differ only in variable names.
-  3. Replace the per-pixel `GetPixel` loop with a single `LockBits` read into a byte array (`[System.Drawing.Imaging.PixelFormat]::Format32bppArgb`, `Marshal.Copy`, then `UnlockBits`). At 1200x768 the current code makes ~921 600 interpreted `GetPixel` calls per frame and then walks the array twice more; this is why the script is unusable even when it does not throw. Keep the Rec. 601 luma formula and the bucket/lit-fraction definitions bit-for-bit — the thresholds at `:242-280` are calibrated against them. Note `LockBits` gives **BGRA** byte order, so swap the R and B indices.
-  4. Make `-ValidationOnly` validate the frames it actually enumerates: use the `$existingPngs` list from `:92`, matching `cpp-vulkan*` and `rust-webgpu*` prefixes (same `delta|noise|golden-order|singletap` exclusion as `:130`), instead of testing the hard-coded `$cppPng`/`$rustPng` paths.
-  5. Stop reporting success on an empty run: if neither `$cppMetrics` nor `$rustMetrics` was produced, print an explicit "no frames were captured or found — nothing was checked" line and `exit 2` (distinct from 1 = a real assertion failure, so a caller can tell "broken" from "regressed"). Document the three exit codes in the header comment.
-  6. While in the header, translate the German fragment at `:296` ("sRGB-kodiert ~1.48× heller durch Gamma 2.2") into English to match the rest of the file.
-
-  **Test:** Add `Scripts/Windows/tests/Compare-RendererPixels.Tests.ps1`, mirroring `Compare-RendererTimings.Tests.ps1`. Generate small fixture PNGs into a temp dir with `System.Drawing` (one flat-grey image, one half-black/half-white image), then invoke the real script as a child process with `-SkipCpp -SkipRust -OutDir <tmp>`: assert the flat image is rejected (uniform → exit 1, message mentions stddev), the two-tone image passes its structural checks, and an empty `-OutDir` with `-ValidationOnly` exits 2 rather than printing PASSED. Verify with `Invoke-Pester .\Scripts\Windows\tests\Compare-RendererPixels.Tests.ps1` — no GPU and no build products needed.
-
-  **Build:** None — PowerShell only. Run the Pester suite above; also run `Invoke-Pester .\Scripts\Windows\tests\` once to confirm nothing else regressed.
-
-  **Context:** This is the third `Scripts/Compare-*.ps1` tool and the only one still untested; the other two were fixed by `190eaa8e` (perf baseline) and `092f166d` (timings), each after a defect that made the tool either always fail or always pass. Keep the structural-metric philosophy in the header — the point of this script is that the two renderers are *not* pixel-comparable, so do not "improve" it into an exact-image diff.
-
 - [ ] **(M) Port the C++ cascade-coverage oracle to `render/cascades.rs`, then close the near-band hole it exposes** — fragments closer than ~0.5x the camera distance are routed to cascade 0 but fall outside its box, and the shader silently returns "fully lit".
 
   **Files to read:**

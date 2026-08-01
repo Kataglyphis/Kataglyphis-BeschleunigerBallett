@@ -18,6 +18,14 @@
 # structural integrity (luminance variety, lit fraction). Useful on GPU-less
 # runners where headless rendering is unavailable.
 #
+# Exit codes:
+#   0 - every frame that was captured/found passed its structural checks.
+#   1 - a real assertion failure (a frame was captured/found but failed a
+#       structural or cross-renderer check).
+#   2 - nothing was checked at all (no frame was captured and none was found
+#       on disk) - distinct from 1 so a caller can tell "broken" from
+#       "regressed".
+#
 # Prerequisites:
 #   - clangcl-debug built with Build-Windows-Container.ps1
 #   - Rust toolchain (for cargo build of WebGPU examples)
@@ -44,34 +52,67 @@ Write-Host "Output dir: $OutDir" -ForegroundColor Cyan
 Write-Host ''
 
 # ---------------------------------------------------------------------------
-# Helper: compute luminance metrics from a raw RGBA8 buffer
+# Helper: compute luminance metrics from a PNG file on disk
 # ---------------------------------------------------------------------------
-function Get-LuminanceMetrics {
-    param([byte[]]$Pixels, [int]$W, [int]$H)
+function Get-FrameMetrics {
+    param([string]$Path)
 
-    $total = $Pixels.Count / 4
+    if (-not (Test-Path $Path)) { return $null }
+
+    Add-Type -AssemblyName System.Drawing.Common
+    $img = [System.Drawing.Bitmap]::new($Path)
+    try {
+        $w = $img.Width
+        $h = $img.Height
+        $rect = [System.Drawing.Rectangle]::new(0, 0, $w, $h)
+        $data = $img.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+        try {
+            $byteCount = [Math]::Abs($data.Stride) * $h
+            $bytes = [byte[]]::new($byteCount)
+            [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $bytes, 0, $byteCount)
+        } finally {
+            $img.UnlockBits($data)
+        }
+    } finally {
+        $img.Dispose()
+    }
+
+    $total = $w * $h
     if ($total -eq 0) { return @{ mean = 0.0; stddev = 0.0; buckets = 0; lit_fraction = 0.0 } }
 
     $sum = 0.0
     $hist = @{}
     $lit = 0
+    $stride = [Math]::Abs($data.Stride)
 
-    for ($i = 0; $i -lt $Pixels.Count; $i += 4) {
-        # Relative luminance (Rec. 601 luma): L = 0.299*R + 0.587*G + 0.114*B
-        $lum = 0.299 * $Pixels[$i] + 0.587 * $Pixels[$i + 1] + 0.114 * $Pixels[$i + 2]
-        $sum += $lum
-        $bucket = [int][Math]::Clamp([Math]::Round($lum), 0, 255)
-        $hist[$bucket] = $hist.ContainsKey($bucket) ? ($hist[$bucket] + 1) : 1
-        if ($lum -gt 8.0) { $lit++ }
+    # LockBits with Format32bppArgb gives BGRA byte order per pixel.
+    for ($y = 0; $y -lt $h; $y++) {
+        $rowStart = $y * $stride
+        for ($x = 0; $x -lt $w; $x++) {
+            $i = $rowStart + ($x * 4)
+            $b = $bytes[$i]
+            $g = $bytes[$i + 1]
+            $r = $bytes[$i + 2]
+            # Relative luminance (Rec. 601 luma): L = 0.299*R + 0.587*G + 0.114*B
+            $lum = 0.299 * $r + 0.587 * $g + 0.114 * $b
+            $sum += $lum
+            $bucket = [int][Math]::Clamp([Math]::Round($lum), 0, 255)
+            $hist[$bucket] = $hist.ContainsKey($bucket) ? ($hist[$bucket] + 1) : 1
+            if ($lum -gt 8.0) { $lit++ }
+        }
     }
 
     $mean = $sum / $total
 
     $variance = 0.0
-    for ($i = 0; $i -lt $Pixels.Count; $i += 4) {
-        $lum = 0.299 * $Pixels[$i] + 0.587 * $Pixels[$i + 1] + 0.114 * $Pixels[$i + 2]
-        $delta = $lum - $mean
-        $variance += $delta * $delta
+    for ($y = 0; $y -lt $h; $y++) {
+        $rowStart = $y * $stride
+        for ($x = 0; $x -lt $w; $x++) {
+            $i = $rowStart + ($x * 4)
+            $lum = 0.299 * $bytes[$i + 2] + 0.587 * $bytes[$i + 1] + 0.114 * $bytes[$i]
+            $delta = $lum - $mean
+            $variance += $delta * $delta
+        }
     }
     $stddev = [Math]::Sqrt($variance / $total)
 
@@ -84,6 +125,14 @@ function Get-LuminanceMetrics {
 }
 
 # ---------------------------------------------------------------------------
+# Resolve target paths (may be overridden by validation-mode discovery below)
+# ---------------------------------------------------------------------------
+$cppPng = Join-Path $OutDir 'cpp-vulkan.png'
+$rustPng = Join-Path $OutDir 'rust-webgpu.png'
+$cppMetrics = $null
+$rustMetrics = $null
+
+# ---------------------------------------------------------------------------
 # Phase 0: Validation-only mode (CI, no GPU)
 # ---------------------------------------------------------------------------
 if ($ValidationOnly) {
@@ -92,6 +141,14 @@ if ($ValidationOnly) {
     $existingPngs = Get-ChildItem (Join-Path $OutDir '*.png') -ErrorAction SilentlyContinue
     if ($existingPngs) {
         Write-Host "Found $($existingPngs.Count) existing frame(s) to validate." -ForegroundColor Green
+        $cppCandidate = $existingPngs |
+            Where-Object { $_.Name -match '^cpp-vulkan' -and $_.Name -notmatch 'delta|noise|golden-order|singletap' } |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        $rustCandidate = $existingPngs |
+            Where-Object { $_.Name -match '^rust-webgpu' -and $_.Name -notmatch 'delta|noise|golden-order|singletap' } |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($cppCandidate) { $cppPng = $cppCandidate.FullName }
+        if ($rustCandidate) { $rustPng = $rustCandidate.FullName }
     } else {
         Write-Host 'No existing frames found; validation will be skipped.' -ForegroundColor Yellow
     }
@@ -100,9 +157,6 @@ if ($ValidationOnly) {
 # ---------------------------------------------------------------------------
 # Phase 1: C++/Vulkan frame capture
 # ---------------------------------------------------------------------------
-$cppPng = Join-Path $OutDir 'cpp-vulkan.png'
-$cppMetrics = $null
-
 if (-not $SkipCpp -and -not $ValidationOnly) {
     Write-Host '== C++/Vulkan (golden harness, RendersNonBlankFrame) ==' -ForegroundColor Cyan
 
@@ -144,9 +198,6 @@ if (-not $SkipCpp -and -not $ValidationOnly) {
 # ---------------------------------------------------------------------------
 # Phase 2: Rust/WebGPU frame capture
 # ---------------------------------------------------------------------------
-$rustPng = Join-Path $OutDir 'rust-webgpu.png'
-$rustMetrics = $null
-
 if (-not $SkipRust -and -not $ValidationOnly) {
     Write-Host '== Rust/WebGPU (headless_render, same scene, 1200x768) ==' -ForegroundColor Cyan
 
@@ -188,40 +239,15 @@ Write-Host '=== Metrics ===' -ForegroundColor Cyan
 
 $metricsTable = @()
 
-if (Test-Path $cppPng) {
-    # Load PNG -> raw RGBA via .NET
-    Add-Type -AssemblyName System.Drawing.Common
-    $img = [System.Drawing.Image]::FromFile($cppPng)
-    $bmp = [System.Drawing.Bitmap]$img
-    $raw = [byte[]]::new($bmp.Width * $bmp.Height * 4)
-    $idx = 0
-    for ($y = 0; $y -lt $bmp.Height; $y++) {
-        for ($x = 0; $x -lt $bmp.Width; $x++) {
-            $p = $bmp.GetPixel($x, $y)
-            $raw[$idx++] = $p.R; $raw[$idx++] = $p.G; $raw[$idx++] = $p.B; $raw[$idx++] = $p.A
-        }
-    }
-    $bmp.Dispose(); $img.Dispose()
-    $cppMetrics = Get-LuminanceMetrics -Pixels $raw -W $bmp.Width -H $bmp.Height
+$cppMetrics = Get-FrameMetrics -Path $cppPng
+if ($cppMetrics) {
     $metricsTable += [PSCustomObject]@{ Renderer = 'C++/Vulkan'; Mean = $cppMetrics.mean; StdDev = $cppMetrics.stddev; Buckets = $cppMetrics.buckets; LitFraction = $cppMetrics.lit_fraction }
 } else {
     Write-Host 'C++ frame not available.' -ForegroundColor Yellow
 }
 
-if (Test-Path $rustPng) {
-    Add-Type -AssemblyName System.Drawing.Common
-    $img = [System.Drawing.Image]::FromFile($rustPng)
-    $bmp = [System.Drawing.Bitmap]$img
-    $raw = [byte[]]::new($bmp.Width * $bmp.Height * 4)
-    $idx = 0
-    for ($y = 0; $y -lt $bmp.Height; $y++) {
-        for ($x = 0; $x -lt $bmp.Width; $x++) {
-            $p = $bmp.GetPixel($x, $y)
-            $raw[$idx++] = $p.R; $raw[$idx++] = $p.G; $raw[$idx++] = $p.B; $raw[$idx++] = $p.A
-        }
-    }
-    $bmp.Dispose(); $img.Dispose()
-    $rustMetrics = Get-LuminanceMetrics -Pixels $raw -W $bmp.Width -H $bmp.Height
+$rustMetrics = Get-FrameMetrics -Path $rustPng
+if ($rustMetrics) {
     $metricsTable += [PSCustomObject]@{ Renderer = 'Rust/WebGPU'; Mean = $rustMetrics.mean; StdDev = $rustMetrics.stddev; Buckets = $rustMetrics.buckets; LitFraction = $rustMetrics.lit_fraction }
 } else {
     Write-Host 'Rust frame not available.' -ForegroundColor Yellow
@@ -229,6 +255,16 @@ if (Test-Path $rustPng) {
 
 if ($metricsTable.Count -gt 0) {
     $metricsTable | Format-Table -Property Renderer, @{n='Mean Lum';e={'{0:N2}' -f $_.Mean}}, @{n='StdDev';e={'{0:N2}' -f $_.StdDev}}, Buckets, @{n='Lit%';e={'{0:N1}%' -f ($_.LitFraction * 100)}} -AutoSize | Out-Host
+}
+
+# ---------------------------------------------------------------------------
+# Stop reporting success on an empty run.
+# ---------------------------------------------------------------------------
+if (-not $cppMetrics -and -not $rustMetrics) {
+    Write-Host ''
+    Write-Host 'No frames were captured or found - nothing was checked.' -ForegroundColor Red
+    Write-Host '=== PIXEL COMPARISON: NOTHING CHECKED (exit code 2) ===' -ForegroundColor Red
+    exit 2
 }
 
 # ---------------------------------------------------------------------------
@@ -293,7 +329,7 @@ if ($cppMetrics -and $rustMetrics) {
 
     # Generous tolerance: the pipelines are structurally different (C++:
     # Clouds/Sky, Rust: Ssao/Bloom/Histogram) and the color spaces differ
-    # (C++ linear, Rust sRGB sRGB-kodiert ~1.48× heller durch Gamma 2.2).
+    # (C++ linear, Rust sRGB - sRGB-encoded is ~1.48x brighter due to gamma 2.2).
     # A passing value means both renderers produce a recognisable image of
     # similar relative brightness — it does NOT mean they shade identically.
     # Using ratio: Rust/C++ mean should be between 0.5 and 4.0 (generous).
@@ -325,4 +361,3 @@ if ($exitCode -eq 0) {
     Write-Host "=== PIXEL COMPARISON FAILED (exit code $exitCode) ===" -ForegroundColor Red
 }
 exit $exitCode
-
