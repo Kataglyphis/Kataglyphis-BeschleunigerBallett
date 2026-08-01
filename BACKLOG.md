@@ -3217,26 +3217,6 @@ decision, not an agent's. **`Frustum::from_view_proj` plane normalization**
 and **`intersects_aabb_as_caster` having no production caller** — batch XII
 already rejected both with reasons; they still hold.
 
-- [ ] **(M) Port the C++ cascade-coverage oracle to `render/cascades.rs`, then close the near-band hole it exposes** — fragments closer than ~0.5x the camera distance are routed to cascade 0 but fall outside its box, and the shader silently returns "fully lit".
-
-  **Files to read:**
-  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/cascades.rs` — `fit_cascades` (`:80-120`), `stabilized_light_matrix_for` (`:126-159`), the existing five tests (`:161-344`) and the `texel_space` helper (`:256-262`)
-  - `Resources/ShadersSlang/forward/forward.slang` — `shadow_visibility` (`:196-228`): cascade selection at `:198-201`, the out-of-box `return 1.0` at `:212`
-  - `Test/commit/VulkanEngine/cascadedShadowMapSuite.cpp:109` — `EachCascadeCoversItsOwnFrustumSlice`, the oracle to port
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMapMath.cpp:154-201` — the C++ reference the module doc already cites
-
-  **Steps:**
-  1. Add the failing test first. In `cascades.rs`'s `mod tests`, add `every_selectable_eye_distance_lands_inside_the_cascade_it_selects`: for a camera and light, walk sample eye distances across `[0.05 * splits[0] .. 1.5 * splits[1]]`, build a world point at that distance along the camera's view direction from `camera.eye()`, apply the shader's own selection rule (`0` below `splits[0]`, `1` below `splits[1]`, else `2`), project it through `fit.matrices[selected]`, and assert the result lands in `uv ∈ [0,1]²` with `0 ≤ z ≤ 1`. Reuse the projection convention in `texel_space` (`:256-262`) and the shader's `uv = (proj.x*0.5+0.5, 0.5-proj.y*0.5)` from `forward.slang:210`. This must go red for the small distances — record the failing range in the commit message.
-  2. Fix it in the shader, not the fit. In `shadow_visibility`, when the selected cascade's `uv`/`proj.z` is out of range, retry the next coarser cascade (0 → 1 → 2) before giving up, and only `return 1.0` after cascade `CASCADE_COUNT - 1` also misses. Structure it as a small loop over `cascade..CASCADE_COUNT` so the sampling body is not triplicated. **Do not re-derive the cascade boxes from the camera frustum** — `cascades.rs:26-34` records that exact attempt regressing `shadow_darkens_plane_under_cube` to zero shadowed pixels.
-  3. Extend the CPU test to model the fallback: assert that *some* cascade at or above the selected index covers each sampled distance (the union-coverage property the shader now implements), which is the invariant that stays true regardless of how the boxes are fitted later.
-  4. Regenerate the WGSL: `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`. `forward.wgsl` is checked into the crate and gated — `28887db1` (hand-edit gate) and `41b76ab8` (Slang-source gate) will fail if the generated file and its source disagree, so commit the regenerated artifact in the same change and check the `$DepthTexturePatches` entry for `forward.wgsl` (`compile-slang-shaders.ps1:232-234`) still applies cleanly.
-
-  **Test:** the new `cascades.rs` unit tests above (`cargo test -p kataglyphis_webgpu_renderer --lib cascades`), plus the existing GPU-dependent headless tests, which must stay green: `shadow_darkens_plane_under_cube`, `caster_culling_engages_and_shadows_survive`, `shadow_caster_bundle_is_cached_across_frames`, `first_frame_uses_the_correct_cascade_and_tile_counts`. Run `cargo test -p kataglyphis_webgpu_renderer` from `ExternalLib/Kataglyphis-RustProjectTemplate`.
-
-  **Build:** Cargo only — no CMake preset needed. If you also want the C++ shaders rebuilt after running the Slang script, use `clangcl-debug` and re-run `BuildIntegrity.*` (the shader-staleness guard fires on any `common/` edit).
-
-  **Context:** The C++ engine does not have this bug — `computeCascadeData` fits each ortho box to that cascade's actual frustum slice and `EachCascadeCoversItsOwnFrustumSlice` pins it — which is exactly why porting the assertion is the right move rather than inventing an oracle. Note the symptom is "near geometry stops receiving shadows", never "shadows are missing", because everything farther out still falls through to a cascade that does cover it; that silence is why five existing tests pass over it.
-
 - [ ] **(S) Fix the Windows CI GPU probe, which lists gtest names and therefore always answers "GPU available"** — the timing-comparison step runs without `-ValidationOnly` on GPU-less hosted runners, the opposite of its own comment.
 
   **Files to read:**

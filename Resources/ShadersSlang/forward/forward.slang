@@ -193,23 +193,44 @@ void fs_shadow_masked(VsShadowMaskedOut In)
     if (alpha < prim.emissive_factor.w) discard;
 }
 
+float4x4 light_space_for(int cascade)
+{
+    if (cascade == 1) return frame.light_space_1;
+    if (cascade == 2) return frame.light_space_2;
+    return frame.light_space;
+}
+
 // Returns visibility: 1 = fully lit, 0 = fully occluded — the inverse of
 // common/cascaded_shadow.slang's calc_cascaded_shadow.
 float shadow_visibility(float viewDepth, float3 worldPos, float nDotL)
 {
-    int cascade = 0;
-    if (viewDepth > frame.cascade_splits.x) cascade = 1;
-    if (viewDepth > frame.cascade_splits.y) cascade = 2;
-    if (cascade > CASCADE_COUNT - 1) cascade = CASCADE_COUNT - 1;
+    int selected = 0;
+    if (viewDepth > frame.cascade_splits.x) selected = 1;
+    if (viewDepth > frame.cascade_splits.y) selected = 2;
+    if (selected > CASCADE_COUNT - 1) selected = CASCADE_COUNT - 1;
 
-    float4 lightSpacePos;
-    if (cascade == 1) lightSpacePos = mul(frame.light_space_1, float4(worldPos, 1.0));
-    else if (cascade == 2) lightSpacePos = mul(frame.light_space_2, float4(worldPos, 1.0));
-    else lightSpacePos = mul(frame.light_space, float4(worldPos, 1.0));
+    // A fragment closer than roughly half the near split can fall outside
+    // the selected cascade's box (cascade 0 hugs the camera focus point,
+    // not the camera itself - see render/cascades.rs's module doc). Retry
+    // progressively coarser cascades before giving up, so the shader only
+    // reports "fully lit" once every remaining cascade has also missed.
+    float3 proj = float3(0.0, 0.0, 0.0);
+    float2 uv = float2(0.0, 0.0);
+    int cascade = selected;
+    bool inBounds = false;
+    for (; cascade < CASCADE_COUNT; cascade++)
+    {
+        float4 lightSpacePos = mul(light_space_for(cascade), float4(worldPos, 1.0));
+        proj = lightSpacePos.xyz / lightSpacePos.w;
+        uv = float2(proj.x * 0.5 + 0.5, 0.5 - proj.y * 0.5);
+        if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0 && proj.z <= 1.0)
+        {
+            inBounds = true;
+            break;
+        }
+    }
+    if (!inBounds) return 1.0;
 
-    float3 proj = lightSpacePos.xyz / lightSpacePos.w;
-    float2 uv = float2(proj.x * 0.5 + 0.5, 0.5 - proj.y * 0.5);
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || proj.z > 1.0) return 1.0;
     float bias = clamp(0.002 * (1.0 - nDotL) + 0.0005, 0.0005, 0.004);
 
     uint shadowWidth, shadowHeight, shadowLayers;
