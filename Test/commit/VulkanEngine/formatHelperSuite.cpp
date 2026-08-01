@@ -11,6 +11,10 @@ static_assert(Kataglyphis::supportsMipmapGeneration(vk::FormatFeatureFlagBits::e
                                                       | vk::FormatFeatureFlagBits::eBlitDst),
   "supportsMipmapGeneration must be usable in a constant expression");
 
+static_assert(Kataglyphis::depthStencilTransitionAspect(vk::Format::eD32SfloatS8Uint)
+                == (vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil),
+  "depthStencilTransitionAspect must be usable in a constant expression");
+
 namespace {
 
 TEST(FormatHelperUnit, AllThreeBlitCapabilitiesAreRequired)
@@ -41,5 +45,33 @@ TEST(FormatHelperUnit, MissingBlitDstFails)
 }
 
 TEST(FormatHelperUnit, EmptyFlagsFail) { EXPECT_FALSE(Kataglyphis::supportsMipmapGeneration(vk::FormatFeatureFlags{})); }
+
+TEST(FormatHelperUnit, CombinedDepthStencilFormatsReportStencil)
+{
+    EXPECT_TRUE(Kataglyphis::formatHasStencil(vk::Format::eD32SfloatS8Uint));
+    EXPECT_TRUE(Kataglyphis::formatHasStencil(vk::Format::eD24UnormS8Uint));
+    EXPECT_TRUE(Kataglyphis::formatHasStencil(vk::Format::eD16UnormS8Uint));
+}
+
+TEST(FormatHelperUnit, DepthOnlyFormatsDoNotReportStencil)
+{
+    EXPECT_FALSE(Kataglyphis::formatHasStencil(vk::Format::eD32Sfloat));
+    EXPECT_FALSE(Kataglyphis::formatHasStencil(vk::Format::eD16Unorm));
+}
+
+TEST(FormatHelperUnit, TransitionAspectAddsStencilOnlyForCombinedFormats)
+{
+    EXPECT_EQ(Kataglyphis::depthStencilTransitionAspect(vk::Format::eD32Sfloat), vk::ImageAspectFlagBits::eDepth);
+    EXPECT_EQ(Kataglyphis::depthStencilTransitionAspect(vk::Format::eD32SfloatS8Uint),
+      vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil);
+}
+
+TEST(FormatHelperUnit, ThePreferredDepthFormatIsStencilFree)
+{
+    // Head of chooseDepthFormat's preference list: on every device that
+    // supports it, depthStencilTransitionAspect is a no-op (eDepth only) and
+    // the combined-format fallbacks are the only inputs it actually changes.
+    EXPECT_FALSE(Kataglyphis::formatHasStencil(vk::Format::eD32Sfloat));
+}
 
 }// namespace

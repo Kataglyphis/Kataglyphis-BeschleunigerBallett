@@ -96,6 +96,7 @@ void DeferredRasterizer::createTextures(vk::CommandPool &commandPool)
     depthBufferImage = std::make_unique<Texture>();
     vk::Format depthFormat = Kataglyphis::chooseDepthFormat(device->getPhysicalDevice());
     depthBufferImage->createImage(device, extent.width, extent.height, 1, depthFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eInputAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal);
+    // Input-attachment view: exactly one aspect, not Kataglyphis::depthStencilTransitionAspect. See its doc comment.
     depthBufferImage->createImageView(device, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
 
     CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), cmdBuffer);

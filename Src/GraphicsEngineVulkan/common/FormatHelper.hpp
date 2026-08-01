@@ -60,4 +60,29 @@ constexpr bool supportsMipmapGeneration(vk::FormatFeatureFlags optimalTilingFeat
                                                  | vk::FormatFeatureFlagBits::eBlitDst;
     return (optimalTilingFeatures & required) == required;
 }
+
+// True for every depth format in chooseDepthFormat's preference list (and the
+// other combined depth/stencil formats Vulkan defines) that carries a stencil
+// aspect alongside depth.
+constexpr bool formatHasStencil(vk::Format format)
+{
+    return format == vk::Format::eD32SfloatS8Uint || format == vk::Format::eD24UnormS8Uint
+           || format == vk::Format::eD16UnormS8Uint || format == vk::Format::eS8Uint;
+}
+
+// Aspect mask for a layout transition (or attachment view) of a depth image:
+// a combined depth/stencil image must name both aspects it owns, so the
+// transition/attachment does not leave the stencil aspect in an undefined
+// layout. This does NOT apply to every view of a depth image - a **sampled**
+// view (combined image sampler) or an **input-attachment** view must name
+// exactly one aspect (eDepth), because both are validated against a single
+// aspect and stencil is never read back by either. Call sites that build such
+// a view stay hard-coded to eDepth and point back here instead of calling
+// this helper.
+constexpr vk::ImageAspectFlags depthStencilTransitionAspect(vk::Format format)
+{
+    vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eDepth;
+    if (formatHasStencil(format)) { aspect |= vk::ImageAspectFlagBits::eStencil; }
+    return aspect;
+}
 }// namespace Kataglyphis

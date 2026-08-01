@@ -53,6 +53,7 @@ void CascadedShadowMap::init(std::shared_ptr<VulkanDevice>in_device, uint32_t wi
     shadowMapArray->createImage(device, shadowWidth, shadowHeight, 1, depthFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, numCascades);
 
     // Create a view for the entire array (used in descriptor set for reading later)
+    // Sampled view: exactly one aspect, not Kataglyphis::depthStencilTransitionAspect. See its doc comment.
     shadowMapArray->createImageView(device, depthFormat, vk::ImageAspectFlagBits::eDepth, 1, vk::ImageViewType::e2DArray, numCascades);
     // Comparison sampler: paired with the Sampler2DArrayShadow binding in
     // common/cascaded_shadow.slang, linear filtering gives a free 2x2 PCF tap

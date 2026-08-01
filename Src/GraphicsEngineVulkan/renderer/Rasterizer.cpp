@@ -27,13 +27,6 @@ import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.pipeline_builder;
 import kataglyphis.vulkan.mesh_draw_recorder;
 
-namespace {
-auto hasStencilComponent(vk::Format format) -> bool
-{
-    return format == vk::Format::eD32SfloatS8Uint || format == vk::Format::eD24UnormS8Uint;
-}
-}// namespace
-
 Kataglyphis::VulkanRendererInternals::Rasterizer::Rasterizer() = default;
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::init(std::shared_ptr<VulkanDevice>in_device,
@@ -326,8 +319,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
       vk::ImageUsageFlagBits::eDepthStencilAttachment,
       vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-    vk::ImageAspectFlags depth_aspect_flags = vk::ImageAspectFlagBits::eDepth;
-    if (hasStencilComponent(depth_format)) { depth_aspect_flags |= vk::ImageAspectFlagBits::eStencil; }
+    vk::ImageAspectFlags depth_aspect_flags = depthStencilTransitionAspect(depth_format);
 
     depthBufferImage->createImageView(device, depth_format, depth_aspect_flags, 1);
 

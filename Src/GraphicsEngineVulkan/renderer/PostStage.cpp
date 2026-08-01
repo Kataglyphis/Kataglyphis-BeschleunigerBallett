@@ -180,6 +180,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createDepthbufferImage()
       vk::ImageUsageFlagBits::eDepthStencilAttachment,
       vk::MemoryPropertyFlagBits::eDeviceLocal);
 
+    // Depth-only attachment view, no layout transition: exactly one aspect,
+    // not Kataglyphis::depthStencilTransitionAspect. See its doc comment.
     depthBufferImage->createImageView(device, depth_format, vk::ImageAspectFlagBits::eDepth, 1);
 }
 
