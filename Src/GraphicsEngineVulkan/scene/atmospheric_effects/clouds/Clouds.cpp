@@ -27,30 +27,27 @@ void Clouds::init(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPo
     dispatchNoiseGeneration();
 }
 
+std::unique_ptr<Kataglyphis::Texture> Clouds::createStorageTexture(vk::CommandPool commandPool, uint32_t w, uint32_t h, uint32_t depth, vk::ImageType type, vk::ImageViewType viewType)
+{
+    auto texture = std::make_unique<Texture>();
+    texture->createImage(device, w, h, 1, vk::Format::eR16G16B16A16Sfloat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, 1, vk::ImageCreateFlags{}, type, depth);
+    texture->createImageView(device, vk::Format::eR16G16B16A16Sfloat, vk::ImageAspectFlagBits::eColor, 1, viewType, 1);
+    texture->createTextureSampler(device);
+
+    vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);
+    texture->getVulkanImage().transitionImageLayout(commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, 1, vk::ImageAspectFlagBits::eColor);
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer);
+
+    return texture;
+}
+
 void Clouds::createTextures(vk::CommandPool commandPool)
 {
-    // Create 3D Texture for Noise
-    cloudNoiseTexture = std::make_unique<Texture>();
-    cloudNoiseTexture->createImage(device, 128, 128, 1, vk::Format::eR16G16B16A16Sfloat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, 1, vk::ImageCreateFlags{}, vk::ImageType::e3D, 128);
-    cloudNoiseTexture->createImageView(device, vk::Format::eR16G16B16A16Sfloat, vk::ImageAspectFlagBits::eColor, 1, vk::ImageViewType::e3D, 1);
-    cloudNoiseTexture->createTextureSampler(device);
+    // 3D Texture for Noise
+    cloudNoiseTexture = createStorageTexture(commandPool, 128, 128, 128, vk::ImageType::e3D, vk::ImageViewType::e3D);
 
-    // Transition noise texture
-    vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);
-    cloudNoiseTexture->getVulkanImage().transitionImageLayout(commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, 1, vk::ImageAspectFlagBits::eColor);
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer);
-
-    // Create 2D Texture for Cloud Output
-    cloudOutputTexture = std::make_unique<Texture>();
-    // Assume screen size or half-screen size for performance
-    cloudOutputTexture->createImage(device, width, height, 1, vk::Format::eR16G16B16A16Sfloat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, 1, vk::ImageCreateFlags{}, vk::ImageType::e2D, 1);
-    cloudOutputTexture->createImageView(device, vk::Format::eR16G16B16A16Sfloat, vk::ImageAspectFlagBits::eColor, 1, vk::ImageViewType::e2D, 1);
-    cloudOutputTexture->createTextureSampler(device);
-
-    // Transition output texture
-    commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);
-    cloudOutputTexture->getVulkanImage().transitionImageLayout(commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, 1, vk::ImageAspectFlagBits::eColor);
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer);
+    // 2D Texture for Cloud Output. Assume screen size or half-screen size for performance
+    cloudOutputTexture = createStorageTexture(commandPool, width, height, 1, vk::ImageType::e2D, vk::ImageViewType::e2D);
 }
 
 void Clouds::createDescriptorSets()
@@ -167,65 +164,46 @@ void Clouds::createDescriptorSets()
     device->getLogicalDevice().updateDescriptorSets(static_cast<uint32_t>(allWrites.size()), allWrites.data(), 0, nullptr);
 }
 
+void Clouds::createComputePipeline(const char *spirvPath, std::span<const vk::DescriptorSetLayout> setLayouts, vk::PipelineLayout &outLayout, vk::Pipeline &outPipeline)
+{
+    vk::ShaderModule shaderModule = loadSpirvShaderModule(device, spirvPath);
+
+    vk::PipelineShaderStageCreateInfo stageInfo{};
+    stageInfo.stage = vk::ShaderStageFlagBits::eCompute;
+    stageInfo.module = shaderModule;
+    stageInfo.pName = "main";
+
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
+    pipelineLayoutInfo.pSetLayouts = setLayouts.data();
+
+    auto result = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
+    ASSERT_VULKAN(VkResult(result.result), "Failed to create compute pipeline layout!");
+    outLayout = result.value;
+
+    vk::ComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.stage = stageInfo;
+    pipelineInfo.layout = outLayout;
+
+    auto compResult = device->getLogicalDevice().createComputePipeline(device->getPipelineCache(), pipelineInfo);
+    ASSERT_VULKAN(VkResult(compResult.result), "Failed to create compute pipeline!");
+    outPipeline = compResult.value;
+
+    device->getLogicalDevice().destroyShaderModule(shaderModule);
+}
+
 void Clouds::createComputePipelines(vk::DescriptorSetLayout sharedLayout)
 {
     // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
     // Run from the repo root (per AGENTS.md).
-    vk::ShaderModule cloudShaderModule =
-      loadSpirvShaderModule(device, "Resources/ShadersSlang/build/spirv/compute/clouds.clouds_main.spv");
 
-    vk::PipelineShaderStageCreateInfo computeStageInfo{};
-    computeStageInfo.stage = vk::ShaderStageFlagBits::eCompute;
-    computeStageInfo.module = cloudShaderModule;
-    computeStageInfo.pName = "main";
-
-    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.setLayoutCount = 2; // cloud specific set AND sharedRenderDescriptorSet
-    
-    std::array<vk::DescriptorSetLayout, 2> layouts = { descriptorSetLayout, sharedLayout };
-    pipelineLayoutInfo.pSetLayouts = layouts.data();
-
-    auto result = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
-    ASSERT_VULKAN(VkResult(result.result), "Failed to create cloud compute pipeline layout!");
-    cloudPipelineLayout = result.value;
-
-    vk::ComputePipelineCreateInfo pipelineInfo{};
-    pipelineInfo.stage = computeStageInfo;
-    pipelineInfo.layout = cloudPipelineLayout;
-
-    auto compResult = device->getLogicalDevice().createComputePipeline(device->getPipelineCache(), pipelineInfo);
-    ASSERT_VULKAN(VkResult(compResult.result), "Failed to create cloud compute pipeline!");
-    cloudComputePipeline = compResult.value;
-
-    device->getLogicalDevice().destroyShaderModule(cloudShaderModule);
+    // cloud specific set AND sharedRenderDescriptorSet
+    std::array<vk::DescriptorSetLayout, 2> cloudLayouts = { descriptorSetLayout, sharedLayout };
+    createComputePipeline("Resources/ShadersSlang/build/spirv/compute/clouds.clouds_main.spv", cloudLayouts, cloudPipelineLayout, cloudComputePipeline);
 
     // Noise pipeline (Slang-emitted SPIR-V)
-    vk::ShaderModule noiseShaderModule =
-      loadSpirvShaderModule(device, "Resources/ShadersSlang/build/spirv/compute/noise.noise_main.spv");
-
-    vk::PipelineShaderStageCreateInfo noiseStageInfo{};
-    noiseStageInfo.stage = vk::ShaderStageFlagBits::eCompute;
-    noiseStageInfo.module = noiseShaderModule;
-    noiseStageInfo.pName = "main";
-
-    vk::PipelineLayoutCreateInfo noiseLayoutInfoCreate{};
-    noiseLayoutInfoCreate.setLayoutCount = 1;
-    noiseLayoutInfoCreate.pSetLayouts = &noiseDescriptorSetLayout;
-
-    auto noiseLayoutResult = device->getLogicalDevice().createPipelineLayout(noiseLayoutInfoCreate);
-    ASSERT_VULKAN(VkResult(noiseLayoutResult.result), "Failed to create noise pipeline layout!");
-    noisePipelineLayout = noiseLayoutResult.value;
-
-    vk::ComputePipelineCreateInfo noisePipelineInfo{};
-    noisePipelineInfo.stage = noiseStageInfo;
-    noisePipelineInfo.layout = noisePipelineLayout;
-
-    auto noiseCompResult =
-      device->getLogicalDevice().createComputePipeline(device->getPipelineCache(), noisePipelineInfo);
-    ASSERT_VULKAN(VkResult(noiseCompResult.result), "Failed to create noise pipeline!");
-    noiseComputePipeline = noiseCompResult.value;
-
-    device->getLogicalDevice().destroyShaderModule(noiseShaderModule);
+    std::array<vk::DescriptorSetLayout, 1> noiseLayouts = { noiseDescriptorSetLayout };
+    createComputePipeline("Resources/ShadersSlang/build/spirv/compute/noise.noise_main.spv", noiseLayouts, noisePipelineLayout, noiseComputePipeline);
 }
 
 void Clouds::dispatchNoiseGeneration()
@@ -283,14 +261,7 @@ void Clouds::recreateFrameResources(vk::CommandPool commandPool, uint32_t width,
         cloudOutputTexture->cleanUp();
     }
 
-    cloudOutputTexture = std::make_unique<Texture>();
-    cloudOutputTexture->createImage(device, width, height, 1, vk::Format::eR16G16B16A16Sfloat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, 1, vk::ImageCreateFlags{}, vk::ImageType::e2D, 1);
-    cloudOutputTexture->createImageView(device, vk::Format::eR16G16B16A16Sfloat, vk::ImageAspectFlagBits::eColor, 1, vk::ImageViewType::e2D, 1);
-    cloudOutputTexture->createTextureSampler(device);
-
-    vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);
-    cloudOutputTexture->getVulkanImage().transitionImageLayout(commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, 1, vk::ImageAspectFlagBits::eColor);
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer);
+    cloudOutputTexture = createStorageTexture(commandPool, width, height, 1, vk::ImageType::e2D, vk::ImageViewType::e2D);
 
     // Update descriptor set
     vk::DescriptorImageInfo outputImageInfo{};
