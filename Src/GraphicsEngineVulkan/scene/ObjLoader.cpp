@@ -4,6 +4,7 @@ module;
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <utility>
@@ -179,7 +180,33 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
         if (!mp->diffuse_texname.empty()) {
             std::string const relative_texture_filename = mp->diffuse_texname;
             File model_file(modelFile);
-            std::string const texture_filename = model_file.getBaseDir() + "/textures/" + relative_texture_filename;
+            std::string const base_dir = model_file.getBaseDir();
+
+            // docs/model-loading.md: resolve relative to the directory
+            // containing the .mtl first - what the OBJ/MTL format actually
+            // specifies - and retry under a textures/ subdirectory of that
+            // same directory, because every shipped asset in this repo puts
+            // its textures there instead of beside the .mtl.
+            std::string const beside_mtl = base_dir + "/" + relative_texture_filename;
+            std::string const under_textures = base_dir + "/textures/" + relative_texture_filename;
+            std::string texture_filename;
+            if (std::filesystem::exists(beside_mtl)) {
+                texture_filename = beside_mtl;
+            } else if (std::filesystem::exists(under_textures)) {
+                texture_filename = under_textures;
+            } else {
+                // Neither candidate exists. Keep today's behaviour - record a
+                // path and let uploadParsed substitute the default texture -
+                // but warn loudly: a wrong path degrading silently to white
+                // is the failure mode this whole resolution rule is about.
+                texture_filename = beside_mtl;
+                spdlog::warn(
+                  "map_Kd '{}' not found beside the .mtl ('{}') or under textures/ ('{}'); the model will "
+                  "render with the default texture",
+                  relative_texture_filename,
+                  beside_mtl,
+                  under_textures);
+            }
 
             textures.push_back(texture_filename);
             material.textureID = texture_id;

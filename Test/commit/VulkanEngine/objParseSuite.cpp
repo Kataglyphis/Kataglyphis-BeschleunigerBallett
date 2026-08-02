@@ -301,5 +301,71 @@ TEST(ObjParseUnit, DegenerateTrianglesDoNotProduceNaNNormals)
     std::filesystem::remove(tmp);
 }
 
+TEST(ObjParseUnit, MtlRelativeTextureIsResolvedBesideTheMtl)
+{
+    // docs/model-loading.md's first candidate: map_Kd resolves relative to
+    // the directory containing the .mtl, which is what the OBJ/MTL format
+    // actually specifies.
+    const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_beside";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    {
+        std::ofstream mtl(dir / "beside.mtl", std::ios::binary);
+        mtl << "newmtl painted\nKd 1 1 1\nmap_Kd paint.png\n";
+    }
+    { std::ofstream texture(dir / "paint.png", std::ios::binary); }
+    {
+        std::ofstream obj(dir / "beside.obj", std::ios::binary);
+        obj << "mtllib beside.mtl\n"
+               "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+               "vt 0 0\nvt 1 0\nvt 0 1\n"
+               "usemtl painted\nf 1/1 2/2 3/3\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu((dir / "beside.obj").string()));
+
+    ASSERT_FALSE(loader.getTextureNames().empty());
+    EXPECT_TRUE(std::filesystem::exists(loader.getTextureNames()[0]))
+      << "the resolved texture path must name a file that actually exists: "
+      << loader.getTextureNames()[0];
+
+    std::filesystem::remove_all(dir);
+}
+
+TEST(ObjParseUnit, MtlTextureUnderATexturesSubdirectoryIsResolved)
+{
+    // docs/model-loading.md's second candidate: the layout every shipped OBJ
+    // in this repo actually uses (crytek-sponza, Pillum, Sulo/WolfStahl,
+    // VikingRoom) - a bare filename in map_Kd, with the file itself one
+    // level down in textures/.
+    const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_textures_subdir";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir / "textures");
+
+    {
+        std::ofstream mtl(dir / "sub.mtl", std::ios::binary);
+        mtl << "newmtl painted\nKd 1 1 1\nmap_Kd paint.png\n";
+    }
+    { std::ofstream texture(dir / "textures" / "paint.png", std::ios::binary); }
+    {
+        std::ofstream obj(dir / "sub.obj", std::ios::binary);
+        obj << "mtllib sub.mtl\n"
+               "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+               "vt 0 0\nvt 1 0\nvt 0 1\n"
+               "usemtl painted\nf 1/1 2/2 3/3\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu((dir / "sub.obj").string()));
+
+    ASSERT_FALSE(loader.getTextureNames().empty());
+    EXPECT_TRUE(std::filesystem::exists(loader.getTextureNames()[0]))
+      << "the textures/-subdirectory candidate must resolve: " << loader.getTextureNames()[0];
+
+    std::filesystem::remove_all(dir);
+}
+
 // The async wrapper (AsyncModelParse) has its own dedicated coverage in
 // asyncModelParseSuite.cpp, suite AsyncModelParseUnit.

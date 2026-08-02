@@ -116,6 +116,35 @@ meshes automatically feeds the systems that were already made mesh-aware:
   mesh; RT/PT kernels fetch the per-mesh material with
   `instanceCustomIndex (= the model's first-mesh flat index) + gl_GeometryIndexEXT`.
 
+## `map_Kd` texture path resolution
+
+Both loaders resolve an OBJ material's `map_Kd` the same way:
+
+**Resolve relative to the directory containing the `.mtl`; if that file does
+not exist, retry under a `textures/` subdirectory of the same directory; if
+that misses too, warn and fall back to the default texture.**
+
+Relative-to-the-`.mtl` first is what the OBJ/MTL format actually specifies;
+the `textures/` retry exists because every OBJ shipped in `Resources/Models`
+(`crytek-sponza`, `Pillum`, `Sulo`/`WolfStahl`, `VikingRoom`) puts its textures
+in a `textures/` sibling directory and references them by bare filename, not
+by the format's own convention. A path that resolves to neither candidate
+degrades silently to the untextured default (Vulkan) or a missing image
+(glTF) rather than failing the whole load - so both sides log a warning
+naming both candidates, which is the only signal a wrong or missing texture
+leaves behind.
+
+- **C++** (`scene/ObjLoader.cpp`, `loadTexturesAndMaterials`) - builds both
+  candidate paths and records the first that `std::filesystem::exists`.
+- **Rust** (`crates/webgpu_renderer/src/asset/obj_to_gltf.rs`,
+  `convert_file`) - same two candidates, applied when copying the texture
+  next to the converted glTF. The glTF `uri` it emits is always the bare
+  filename as written in the `.mtl`, regardless of which candidate matched,
+  so the converted document stays self-contained next to its `.bin`.
+  `parse_mtl` also normalises `\` to `/` in `map_Kd`, so a Windows-authored
+  relative path resolves when the conversion runs on Linux - a deliberate
+  deviation from "as written in the .mtl".
+
 ## Invariants worth preserving
 
 - `parseCpu` leaves the flat `getVertices()`/`getIndices()`/
