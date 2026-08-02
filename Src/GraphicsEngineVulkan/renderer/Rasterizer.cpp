@@ -110,7 +110,6 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::cleanUp()
     // is only a safety net for the forgotten path).
     if (!device) { return; }
 
-    spdlog::info("Rasterizer: Destroying pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphics_pipeline);
     for (auto &framebuffer_handle : framebuffer) { device->getLogicalDevice().destroyFramebuffer(framebuffer_handle); }
     framebuffer.clear();
 
@@ -142,9 +141,8 @@ Kataglyphis::VulkanRendererInternals::Rasterizer::~Rasterizer() { cleanUp(); }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::destroyFramebuffers()
 {
-    for (auto &framebuffer_handle : framebuffer) { 
-        spdlog::info("Rasterizer: Destroying framebuffer: 0x{:x}", (uint64_t)(VkFramebuffer)framebuffer_handle);
-        device->getLogicalDevice().destroyFramebuffer(framebuffer_handle); 
+    for (auto &framebuffer_handle : framebuffer) {
+        device->getLogicalDevice().destroyFramebuffer(framebuffer_handle);
     }
     framebuffer.clear();
 }
@@ -240,7 +238,6 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createFramebuffer()
         auto result = device->getLogicalDevice().createFramebuffer(frame_buffer_create_info);
         if (result.result == vk::Result::eSuccess) {
             framebuffer[i] = result.value;
-            spdlog::info("Rasterizer: Created framebuffer[{}]: 0x{:x}", i, (uint64_t)(VkFramebuffer)framebuffer[i]);
         } else {
             ASSERT_VULKAN(static_cast<VkResult>(result.result), "Failed to create framebuffer!")
         }
@@ -345,5 +342,4 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
         // (set in the record loop). Every draw sets it explicitly below.
         .setDynamicCullMode(true)
         .build(device->getLogicalDevice(), pipeline_layout, render_pass, device->getPipelineCache());
-    spdlog::info("Rasterizer: Created pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphics_pipeline);
 }

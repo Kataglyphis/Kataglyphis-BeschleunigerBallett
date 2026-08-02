@@ -2249,3 +2249,48 @@ TEST(BuildIntegrity, EngineSourcesUseNonThrowingFilesystemOverloads)
              return joined;
          }();
 }
+
+TEST(BuildIntegrity, EngineSourcesDoNotLogRawVulkanHandles)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        const auto extension = path.extension();
+        if (extension != ".cpp" && extension != ".ixx") { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string line;
+        std::size_t line_number = 0;
+        while (std::getline(file, line)) {
+            ++line_number;
+            if (line.find("spdlog::") == std::string::npos) { continue; }
+            const bool has_vk_cast_to_uint64 = line.find("(uint64_t)(Vk") != std::string::npos;
+            const bool has_hex_format_with_vk_cast = line.find("0x{:x}") != std::string::npos && line.find("Vk") != std::string::npos;
+            if (has_vk_cast_to_uint64 || has_hex_format_with_vk_cast) {
+                violations.push_back(
+                  fs::relative(path, repo_root).generic_string() + ":" + std::to_string(line_number) + ": " + line);
+            }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " spdlog call(s) under Src/ log a raw Vulkan handle - these are noise (the validation layers and Vulkan "
+         "debug labels already give a better diagnostic) and read as intentional instrumentation; delete them "
+         "instead of demoting to spdlog::debug:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}

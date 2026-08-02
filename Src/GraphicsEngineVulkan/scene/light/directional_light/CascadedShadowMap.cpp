@@ -224,7 +224,6 @@ void CascadedShadowMap::cleanUp()
     // reusable: VulkanRenderer re-inits this stage when shadow settings change.
     if (!device) { return; }
 
-    spdlog::info("CascadedShadowMap: Destroying pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphicsPipeline);
     if (shadowMapArrayView) {
         device->getLogicalDevice().destroyImageView(shadowMapArrayView);
         shadowMapArrayView = nullptr;
@@ -433,7 +432,6 @@ void CascadedShadowMap::createGraphicsPipeline()
           device->getPipelineCache(),
           0,
           "Failed to create shadow map graphics pipeline!");
-    spdlog::info("CascadedShadowMap: Created pipeline handle: 0x{:x}", (uint64_t)(VkPipeline)graphicsPipeline);
 }
 
 void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, std::span<const vk::DescriptorSet> descriptorSets, bool cullingEnabled)

@@ -4844,29 +4844,6 @@ above it makes the result harmless.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Stop logging raw Vulkan handles at info level, and gate it** — eleven `spdlog::info` lines print pipeline/framebuffer addresses at startup and on every resize; no other render stage does.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:113,146,243,348`
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:119,166,330,355,377`
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:227,436`
-  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:145-157` — the same lifecycle, written silently; the target style
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:2179` — `EngineSourcesUseNonThrowingFilesystemOverloads`, the grep-gate pattern to copy
-
-  **Steps:**
-  1. Delete all eleven lines. They log an address and nothing else; there is no diagnostic in them a Vulkan debug label or the validation layers do not already give better. Do not demote them to `spdlog::debug` — that keeps eleven format strings alive to rot.
-  2. Drop any `#include`/import that becomes unused as a result (check each file compiles without it rather than assuming).
-  3. Add `BuildIntegrity.EngineSourcesDoNotLogRawVulkanHandles`: walk `Src/**/*.cpp` and `Src/**/*.ixx`, flag any line containing both a `spdlog::` call and a `(uint64_t)(Vk` cast (or `0x{:x}` paired with a `Vk*` cast), and report every offender with `file:line`. Skip nothing — there should be zero after step 1.
-  4. Verify the gate is RED before step 1 and GREEN after (run it against the pre-change tree first; a gate that never failed proves nothing).
-
-  **Test:** the new `BuildIntegrity` gate above is the test. Follow the source-walking helpers `buildIntegritySuite.cpp` already has rather than adding a new file-walk.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*` from the repo root.
-
-  **Context:** These were added while chasing a framebuffer-lifetime bug and never removed. They are noise in `logs/` on every run and, worse, they read as intentional instrumentation — which is why the gate matters more than the deletion. `BuildIntegrity` already owns this class of "the tree must not contain X" check; add to it rather than starting a parallel mechanism.
-
 - [ ] **(S) (refactor) Delete the redundant non-const `createBufferAndUploadVectorOnDevice` overload** — its whole body is a `static_cast` to the const overload's parameter type.
 
   **Files to read:**

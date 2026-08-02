@@ -116,7 +116,6 @@ void DeferredRasterizer::cleanUp()
     // is only a safety net for the forgotten path).
     if (!device) { return; }
 
-    spdlog::info("DeferredRasterizer: Destroying geometryPipeline: 0x{:x}, lightingPipeline: 0x{:x}", (uint64_t)(VkPipeline)geometryPipeline, (uint64_t)(VkPipeline)lightingPipeline);
     auto logicalDevice = device->getLogicalDevice();
     if (geometryPipeline) {
         logicalDevice.destroyPipeline(geometryPipeline);
@@ -162,9 +161,8 @@ DeferredRasterizer::~DeferredRasterizer() { cleanUp(); }
 
 void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::destroyFramebuffers()
 {
-    for (auto &fb : framebuffer) { 
-        spdlog::info("DeferredRasterizer: Destroying framebuffer: 0x{:x}", (uint64_t)(VkFramebuffer)fb);
-        device->getLogicalDevice().destroyFramebuffer(fb); 
+    for (auto &fb : framebuffer) {
+        device->getLogicalDevice().destroyFramebuffer(fb);
     }
     framebuffer.clear();
 }
@@ -327,7 +325,6 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
         // in the G-buffer pass too (set in the record loop below).
         .setDynamicCullMode(true)
         .build(device->getLogicalDevice(), geometryPipelineLayout, renderPass, device->getPipelineCache(), 0);
-    spdlog::info("DeferredRasterizer: Created geometryPipeline: 0x{:x}", (uint64_t)(VkPipeline)geometryPipeline);
 
     // Lighting Pipeline (Slang-emitted SPIR-V)
     ShaderStagePair lightStages{ device, slang_spv_dir + "deferred.lighting_vs_main.spv",
@@ -352,7 +349,6 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
                          .setDepthTest(false)
                          .setDepthWrite(false)
                          .build(device->getLogicalDevice(), lightingPipelineLayout, renderPass, device->getPipelineCache(), 1);
-    spdlog::info("DeferredRasterizer: Created lightingPipeline: 0x{:x}", (uint64_t)(VkPipeline)lightingPipeline);
 }
 
 void DeferredRasterizer::createFramebuffer()
@@ -374,7 +370,6 @@ void DeferredRasterizer::createFramebuffer()
         auto result = device->getLogicalDevice().createFramebuffer(framebufferInfo);
         ASSERT_VULKAN(VkResult(result.result), "Failed to create deferred framebuffer!");
         framebuffer[i] = result.value;
-        spdlog::info("DeferredRasterizer: Created framebuffer[{}]: 0x{:x}", i, (uint64_t)(VkFramebuffer)framebuffer[i]);
     }
 }
 
