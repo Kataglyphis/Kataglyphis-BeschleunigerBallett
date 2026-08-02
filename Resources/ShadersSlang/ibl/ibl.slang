@@ -52,12 +52,49 @@ float2 equirect_uv(float3 dir)
     return float2(longitude / (2.0 * PI) + 0.5, 0.5 - latitude / PI);
 }
 
+// Bilinear fetch from the equirect source via textureLoad rather than a
+// sampler: longitude wraps and latitude clamps, which is what an equirect map
+// means geometrically, and the source is bound non-filterable (see the
+// `filterable: false` binding in ibl.rs) since FLOAT32_FILTERABLE is not a
+// feature the context requests.
+float3 sample_equirect(float3 dir)
+{
+    uint dimsX, dimsY;
+    srcEquirect.GetDimensions(dimsX, dimsY);
+    int2 dims = int2(int(dimsX), int(dimsY));
+    float2 texel = equirect_uv(dir) * float2(dims) - 0.5;
+    float2 base = floor(texel);
+    float2 frac = texel - base;
+
+    int x0 = int(base.x);
+    int y0 = int(base.y);
+    int xa = ((x0 % dims.x) + dims.x) % dims.x;
+    int xb = (((x0 + 1) % dims.x) + dims.x) % dims.x;
+    int ya = clamp(y0, 0, dims.y - 1);
+    int yb = clamp(y0 + 1, 0, dims.y - 1);
+
+    float3 c00 = srcEquirect.Load(int3(xa, ya, 0)).rgb;
+    float3 c10 = srcEquirect.Load(int3(xb, ya, 0)).rgb;
+    float3 c01 = srcEquirect.Load(int3(xa, yb, 0)).rgb;
+    float3 c11 = srcEquirect.Load(int3(xb, yb, 0)).rgb;
+    return lerp(lerp(c00, c10, frac.x), lerp(c01, c11, frac.x), frac.y);
+}
+
 [shader("fragment")]
 float4 fs_equirect_to_cube(FullscreenVsOut In) : SV_Target
 {
     float3 dir = cube_direction(uint(params.face_roughness_samples_mip.x), In.uv);
-    float2 uv = equirect_uv(dir);
-    return srcEquirect.Sample(srcSampler, uv);
+    return float4(sample_equirect(dir), 1.0);
+}
+
+// One mip of the environment cube from the one above it. A target texel at
+// mip m sits on the corner shared by its four parents, so one bilinear tap
+// *is* their box average.
+[shader("fragment")]
+float4 fs_downsample_cube(FullscreenVsOut In) : SV_Target
+{
+    float3 dir = cube_direction(uint(params.face_roughness_samples_mip.x), In.uv);
+    return srcCube.SampleLevel(srcSampler, dir, params.face_roughness_samples_mip.w);
 }
 
 [shader("fragment")]

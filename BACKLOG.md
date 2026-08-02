@@ -4932,6 +4932,296 @@ compile-only verification (`obj_to_gltf.rs` looked untested by inline
 ### C++ Vulkan engine
 
 
+## 2026-08-02 batch XIII — planner (the Slang port of `ibl.wgsl` dropped an entry point the Rust code still creates a pipeline for, and the GGX importance sampling under it; a frame capture that assumes every swapchain format is 4 bytes; a G-buffer format list written twice)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the tree
+this pass.
+
+**The headline is a shipped regression in `ExternalLib/Kataglyphis-RustProjectTemplate`,
+introduced by `2a4ae68 "Replace hand-written WGSL shaders with Slang-emitted
+output"`.** Comparing every generated WGSL against its pre-Slang predecessor
+(`git show 2a4ae68^:crates/webgpu_renderer/src/shaders/<name>.wgsl`), nine of
+the ten kept exactly their old entry-point count. `ibl.wgsl` went **6 → 5**:
+
+| shader | lines before → after | entry points before → after |
+| --- | --- | --- |
+| forward | 613 → 692 | 5 → 5 |
+| bloom | 60 → 93 | 4 → 4 |
+| ssao | 137 → 217 | 3 → 3 |
+| occlusion_bbox | 77 → 37 | 2 → 2 |
+| **ibl** | **312 → 254** | **6 → 5** |
+
+The one that vanished is `fs_downsample_cube`, and
+`crates/webgpu_renderer/src/render/ibl.rs:321` still does
+`downsample_cube: make("fs_downsample_cube", CUBE_FORMAT, "ibl_downsample_cube")`
+inside `Precompute::new`, against a module built from
+`include_str!("../shaders/ibl.wgsl")` (`:236`). `grep -c downsample
+src/shaders/ibl.wgsl` = **0**. So constructing `Precompute` — which
+`IblEnvironment::bake` (`forward.rs:1172`) does on every environment bake —
+names an entry point that does not exist in the module.
+
+Under that, three more things were lost in the same rewrite, all of them
+load-bearing and all of them documented as such in the deleted comments:
+
+1. **`fs_prefilter` reads `roughness` and never uses it.** `ibl.slang:93` binds
+   `float roughness = params.face_roughness_samples_mip.y;` and lines 100-114
+   never mention it again — confirmed in the emitted WGSL, where
+   `fs_prefilter` (`ibl.wgsl:169-200`) contains no `.y` read at all. `tangent`
+   (`:96`) and `bitangent` (`:97`) are likewise dead: `h` is built in a local
+   frame and then used directly against `dir` in world space. And
+   `hammersley` is hard-coded to `float2(float(i)/float(sampleCount), 0.0) //
+   simplified` (`:102`, `:129`), so `phi` is always 0 and all N samples lie on
+   one arc. Net: `ibl.rs:596` computes a per-mip roughness, packs it into the
+   uniform, and the shader throws it away — **all five mips of the prefiltered
+   cube are the same convolution.**
+2. **The equirect source is sampled, not loaded.** `ibl.slang:60` is
+   `srcEquirect.Sample(srcSampler, uv)`. The bind-group layout at
+   `ibl.rs:245-256` declares binding 1 as
+   `TextureSampleType::Float { filterable: false }` with the comment "Not
+   filterable, and not sampled: `sample_equirect` uses textureLoad" — the
+   function `sample_equirect` no longer exists. The old shader hand-rolled a
+   bilinear fetch that **wrapped** longitude, specifically so ClampToEdge would
+   not darken a one-texel seam down the -X meridian of every derived map.
+3. **`fs_irradiance` went from midpoint to left-endpoint quadrature** and from
+   128×64 to 64×32 steps (`ibl.slang:72-79`: `phi = float(phi_i) * phiStep`).
+   The deleted comment states the measured cost of exactly this: a constant
+   environment convolves to ~0.997 of itself instead of ~0.9997.
+
+**The tests that would have caught (1) already exist and are correct.**
+`crates/webgpu_renderer/tests/ibl.rs:184`
+`higher_roughness_prefilter_mips_are_strictly_blurrier` asserts variance falls
+with every mip and that mip 4 is under 25% of mip 0's variance — it cannot pass
+against a roughness-independent prefilter. It never ran, because every test in
+that file opens with `let Ok(gpu) = GpuContext::new_headless() else {
+eprintln!("SKIP: no GPU adapter available in this environment"); return; };`
+and a skip is indistinguishable from a pass in the CI log. That is why tasks 1
+and 3 below exist as separate items: one fixes the shader, the other makes the
+absence of a GPU stop being silent.
+
+Candidates found but NOT tasked this cycle (re-verify next pass): `Model::cleanUp`
+(`Model.cpp:26-37`) still does not `meshes.clear()` while clearing every other
+container, and `Scene::cleanUp` (`Scene.cpp:180`) clears nothing at all, so the
+destructor re-walks already-released objects — safe only because every leaf
+`cleanUp()` happens to be idempotent, an invariant nothing tests; `Model::addSampler`
+(`Model.cpp:66-80`) still creates one `vk::Sampler` per texture differing only in
+`maxLod`; `VulkanDevice.cpp:586/589/592` take `.value` off three
+`getSurface*KHR` calls with no result check, which is the tail of batch III's
+unchecked-results finding.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) Restore roughness-driven GGX importance sampling to `fs_prefilter` and `fs_brdf_lut`** — `ibl.rs` bakes five roughness levels and the shader ignores the roughness it is handed, so every mip of the prefiltered cube is the same convolution.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/ibl/ibl.slang:89-147` — the two `// simplified`
+    Hammersley sites and the dead `roughness`/`tangent`/`bitangent` locals
+  - `git show 2a4ae68^:crates/webgpu_renderer/src/shaders/ibl.wgsl` — port back
+    `radical_inverse_vdc`, `hammersley`, `importance_sample_ggx`,
+    `distribution_ggx` and the bodies of `fs_prefilter` / `fs_brdf_lut`,
+    **including their comments** (the clamp inside `importance_sample_ggx`
+    documents a measured 44% energy loss in the mirror row of the LUT; the mip
+    selection documents the firefly spray it prevents)
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/ibl.rs:47-79`
+    — `ENV_MIPS`, `PREFILTER_MIPS`, `PREFILTER_SAMPLES`, `prefilter_roughness`
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/tests/ibl.rs:99-227`
+    — the two oracles this must satisfy
+
+  **Steps:**
+  1. Add `radical_inverse_vdc` / `hammersley` to `ibl.slang` (Slang has
+     `reversebits`, so the base-2 radical inverse can be one call —
+     `float(reversebits(i)) * 2.3283064365386963e-10` — but keep the manual
+     bit-twiddle if it emits cleaner WGSL; check the output either way).
+  2. Add `importance_sample_ggx(xi, normal, roughness)` and
+     `distribution_ggx(nDotH, roughness)`. Keep the
+     `clamp(..., 0.0, 1.0)` on `cosTheta` and the `max(1 - cos^2, 0)` on
+     `sinTheta` — the deleted comment records what happens without them.
+  3. Rewrite `fs_prefilter` to the ported body: early-return
+     `srcCube.SampleLevel(srcSampler, dir, 0.0)` when `roughness <= 0`, then
+     importance-sample with `sampleCount` from the uniform, select the source
+     mip per Krivanek/Colbert from `params.source_resolution.x`, and accumulate
+     with `nDotL` weights. This is what makes `ENV_MIPS` mean what its comment
+     at `ibl.rs:53-55` already claims ("Only the prefilter reads them, to pick
+     a footprint matching each GGX sample's solid angle") — that claim is
+     currently false.
+  4. Rewrite `fs_brdf_lut` the same way, with `BRDF_SAMPLE_COUNT = 1024`.
+  5. Delete the now-genuinely-unused locals rather than leaving them; regenerate
+     with `compile-slang-shaders.ps1` and confirm the emitted WGSL reads
+     `params_0.face_roughness_samples_mip_0.y`.
+
+  **Test:** No new test needed — `tests/ibl.rs` already has the oracles:
+  `higher_roughness_prefilter_mips_are_strictly_blurrier` (`:184`) must go from
+  failing to passing, and
+  `a_constant_environment_prefilters_to_its_own_radiance_at_every_roughness`
+  (`:101`), `the_brdf_lut_stays_in_range_and_conserves_energy` (`:229`) and
+  `the_brdf_lut_reproduces_the_known_mirror_and_grazing_behaviour` (`:258`)
+  must stay passing. **Record the printed variance-by-mip line from
+  `higher_roughness_...` in the commit message** — it is the measurement, and
+  the whole point is that it currently cannot be produced. Run on the host GPU
+  from the repo root; do not accept a `SKIP` line as a green run.
+
+  **Build:** `cargo test -p kataglyphis_webgpu_renderer --test ibl -- --nocapture`
+  from `ExternalLib/Kataglyphis-RustProjectTemplate`. No C++ rebuild.
+
+  **Context:** Do this AFTER the `fs_downsample_cube` task above — `bake` has
+  to construct before any of these tests can run. Ship both repos together and
+  bump the gitlink.
+
+- [ ] **(S) Make an absent GPU adapter fail loudly when the caller says one is expected** — a skipped GPU test and a passing GPU test are the same line in a CI log, which is why a roughness-independent prefilter shipped past an oracle written to catch it.
+
+  **Files to read:**
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/context.rs`
+    — `GpuContext::new_headless`
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/tests/ibl.rs:61-65`
+    — the `let Ok(gpu) = ... else { eprintln!("SKIP: ..."); return; }` shape,
+    repeated in `headless.rs`, `occlusion.rs`, `gpu_timing.rs`, `histogram.rs`,
+    `lod_pipeline.rs`, `skinned_bounds.rs` (grep `SKIP: no GPU` for the full
+    list and the exact count)
+  - `docs/gpu-golden-testing.md` — the host verification loop this plugs into
+
+  **Steps:**
+  1. Add `#[doc(hidden)] pub fn headless_or_skip() -> Option<GpuContext>` next
+     to `GpuContext::new_headless` in `context.rs`: returns `Some` on success;
+     on failure, `panic!` with the adapter error when
+     `std::env::var("KATAGLYPHIS_REQUIRE_GPU")` is set to anything non-empty,
+     otherwise `eprintln!` the existing SKIP line and return `None`. Keep
+     `new_headless` itself free of any env-var reading — the policy belongs in
+     the test-facing wrapper, not in the renderer.
+  2. Replace every `let Ok(gpu) = GpuContext::new_headless() else { ... }` in
+     `tests/` with `let Some(gpu) = ...::headless_or_skip() else { return; }`.
+     Do not miss any — grep `new_headless` afterwards and confirm the only
+     remaining hits are `context.rs` itself and any non-test caller.
+  3. Add a short subsection to `docs/gpu-golden-testing.md` stating that the
+     host verification run sets `KATAGLYPHIS_REQUIRE_GPU=1` for the Rust suite,
+     and why (a skip reads as a pass).
+
+  **Test:** Two runs, both recorded in the commit message. On the host GPU:
+  `$env:KATAGLYPHIS_REQUIRE_GPU=1; cargo test -p kataglyphis_webgpu_renderer`
+  — must pass with **no** `SKIP: no GPU` lines in the output. Then confirm the
+  guard actually bites, e.g. by pointing `WGPU_ADAPTER_NAME` at a nonexistent
+  adapter with the variable set and observing a panic rather than a green run.
+
+  **Build:** Rust side only. No C++ rebuild.
+
+  **Context:** Deliberately opt-in: the Linux CI lane has no GPU and must keep
+  skipping. This gives the host loop the one thing it lacks — a way to tell a
+  run that exercised the GPU from a run that did not. Ship with the gitlink bump.
+
+### C++ Vulkan engine
+
+- [ ] **(M) Stop `FrameCapture` assuming every swapchain format is 4 bytes per texel** — the staging buffer is sized `width * height * 4` unconditionally, so a surface that hands back a 16-bit-per-channel format makes `copyImageToBuffer` write twice the buffer's size.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/FrameCapture.ixx:70-73` (the hard-coded
+    `* 4ULL`), `:199-215` (`take()`, which memcpys `pixel_count * 4` and
+    swizzles only the four `eB8G8R8A8*` formats), `:35-38` (`supportsCapture`)
+  - `Src/GraphicsEngineVulkan/vulkan_base/SwapchainChoices.hpp:13-34` —
+    `chooseBestSurfaceFormat`, whose last branch is a bare `return formats[0]`
+    with the comment "really shouldn't be the case"
+  - `Src/GraphicsEngineVulkan/common/FormatHelper.hpp` — where the new helpers
+    go; `supportsMipmapGeneration` / `formatHasStencil` are the shape to copy
+    (plain `constexpr` on a plain header, no device handle)
+  - `Test/commit/VulkanEngine/formatHelperSuite.cpp` and
+    `swapchainChoicesSuite.cpp` — the two CPU suites to extend
+
+  **Steps:**
+  1. Add to `FormatHelper.hpp`: `constexpr bool isCapturableSwapchainFormat(vk::Format)`
+     — true for exactly the 8-bit 4-channel formats the capture path can
+     interpret (`eR8G8B8A8{Unorm,Srgb,Snorm,Uint}`, `eB8G8R8A8{Unorm,Srgb,Snorm,Uint}`)
+     — and `constexpr bool capturedFormatIsBgra(vk::Format)`, moving the
+     existing `is_bgra` list out of `take()` so the two lists cannot drift.
+  2. Make `FrameCapture::supportsCapture` take the swapchain format into
+     account and return false when `!isCapturableSwapchainFormat(...)`. The
+     caller (`VulkanRenderer::requestFrameCapture`) already logs and skips on
+     false, so a 10-bit or half-float surface now degrades to "capture
+     unsupported" instead of returning wrong or overflowing bytes.
+  3. Have `record()` re-check the same predicate before sizing the buffer (it
+     is the function that computes `required_size`, and it is reachable
+     independently of `request()`), and make `take()` call
+     `capturedFormatIsBgra(format)` instead of its inline list.
+  4. Leave `chooseBestSurfaceFormat` alone but add one sentence to its
+     `formats[0]` fallback comment pointing at the new predicate, so the next
+     reader knows the fallback is what makes an exotic format reachable.
+
+  **Test:** Add `FormatHelperUnit.CaptureOnlyAcceptsEightBitFourChannelFormats`
+  to `Test/commit/VulkanEngine/formatHelperSuite.cpp`, asserting
+  `isCapturableSwapchainFormat` is true for `eR8G8B8A8Unorm` / `eB8G8R8A8Srgb`
+  and **false** for `eA2B10G10R10UnormPack32` and `eR16G16B16A16Sfloat`, plus
+  `FormatHelperUnit.BgraCaptureFormatsAreExactlyTheBFirstOnes` for the swizzle
+  predicate. Add
+  `SwapchainChoicesUnit.AnExoticOnlySurfaceFallsBackToItsFirstFormat` to
+  `swapchainChoicesSuite.cpp`, passing a list containing only
+  `eA2B10G10R10UnormPack32` and asserting that is what comes back — that test
+  is what makes the reachability of the bad path a documented fact rather than
+  an argument. Both are CPU-only and run in the container lane. Then, on the
+  host GPU, re-run the golden suites (`.\build-clangcl-debug\commitTestSuite.exe
+  --gtest_filter=GoldenRender.*` from the repo root) and confirm captures still
+  work on this machine's `eB8G8R8A8*` surface.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** This is not hypothetical on the target hardware — an HDR-enabled
+  display configuration is the usual way a surface stops offering
+  `eR8G8B8A8Unorm`/`eB8G8R8A8Unorm` with `eSrgbNonlinear`, and the whole golden
+  suite reads its pixels through this path. Preferring "capture unsupported"
+  over "capture wrong" matters because the goldens assert structural pixel
+  properties: a channel-order or bit-depth error produces plausible-looking
+  numbers, not an obvious failure.
+
+- [ ] **(S) (refactor) Give the deferred G-buffer its formats once instead of twice** — `DeferredRasterizer` writes the same four `vk::Format` values in two functions 110 lines apart, and a mismatch between them is a validation error at framebuffer creation, not a compile error.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:86-93` (the image
+    creations) and `:196-215` (`finalFormat`/`normalFormat`/`albedoFormat`/
+    `materialFormat`, re-spelled as locals for the attachment descriptions)
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.ixx:71` —
+    `static constexpr vk::Format OFFSCREEN_FORMAT` is the convention already in
+    use for exactly this, one class over
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.ixx` — where the
+    constants belong
+  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp:34-35`
+    — a third and fourth copy of the same `eR16G16B16A16Sfloat` literal, this
+    one for the cloud target; check whether it is genuinely the same rule
+    before pulling it in, and if it is not, leave it and say why in the commit
+
+  **Steps:**
+  1. Add `static constexpr vk::Format` members to `DeferredRasterizer` in the
+     module interface — `FINAL_FORMAT`, `GBUFFER_NORMAL_FORMAT`,
+     `GBUFFER_ALBEDO_FORMAT`, `GBUFFER_MATERIAL_FORMAT` — named and ordered to
+     match the attachment indices the render pass already documents at
+     `:190-195`.
+  2. Use them in both `createTextures()` and `createRenderpass()`; delete the
+     four locals. `FINAL_FORMAT` should be defined as (or static-asserted
+     equal to) `Rasterizer::OFFSCREEN_FORMAT` — the comment at `:198` already
+     says "matches the forward offscreen (see Rasterizer.cpp)" and nothing
+     enforces it.
+  3. Add a `static_assert` next to the constants that `FINAL_FORMAT ==
+     Rasterizer::OFFSCREEN_FORMAT`, so the claim in that comment becomes a
+     compile error when it stops being true.
+
+  **Test:** No new gtest suite — this is a compile-verified restructure with no
+  behaviour change, and the `static_assert` is the test for the one invariant
+  that was previously only a comment. Verify by building and then running the
+  deferred golden on the host:
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GoldenRender.*Deferred*`
+  from the repo root, plus
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1`
+  since attachment formats feed the render pass.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** Same family as `buildAttachmentDescription` /
+  `fullExtentViewport` / `buildFramebufferCreateInfo` /
+  `buildRenderPassBeginInfo` — one rule, more than one hand-rolled copy. This
+  one is smaller than those (two copies, one file) but has the sharpest failure
+  mode, because the image and the attachment description it backs must agree
+  exactly. Do not invent a shared header for it: the formats are private to
+  this class, unlike the depth-format rule that legitimately lives in
+  `FormatHelper.hpp`.
+
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

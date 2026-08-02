@@ -98,6 +98,7 @@
     { "_comment": "Rust/WebGPU IBL precompute (WGSL emit).",
       "file": "ibl/ibl.slang", "entry": "vs_fullscreen", "stage": "vertex", "targets": ["wgsl"] },
     { "file": "ibl/ibl.slang", "entry": "fs_equirect_to_cube", "stage": "fragment", "targets": ["wgsl"] },
+    { "file": "ibl/ibl.slang", "entry": "fs_downsample_cube", "stage": "fragment", "targets": ["wgsl"] },
     { "file": "ibl/ibl.slang", "entry": "fs_irradiance", "stage": "fragment", "targets": ["wgsl"] },
     { "file": "ibl/ibl.slang", "entry": "fs_prefilter", "stage": "fragment", "targets": ["wgsl"] },
     { "file": "ibl/ibl.slang", "entry": "fs_brdf_lut", "stage": "fragment", "targets": ["wgsl"] },
