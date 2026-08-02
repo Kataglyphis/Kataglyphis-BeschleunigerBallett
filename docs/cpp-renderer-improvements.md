@@ -56,6 +56,7 @@ validation-layer-clean runtime check where rendering changed.
 | (feat) | **Forward `material.doubleSided` (#11 increment 2)** | A doubleSided glTF mesh (foliage/decal cards, two-sided surfaces) was back-face culled like everything else and vanished from behind. Now the forward pass disables back-face culling per doubleSided mesh via DYNAMIC cull state, NOT a second pipeline: `PipelineBuilder::setDynamicCullMode` adds `VK_DYNAMIC_STATE_CULL_MODE` (core Vulkan 1.3; opt-in so only the forward Rasterizer changes - deferred/CSM/skybox/post keep static culling), and the record loop sets `eNone` for doubleSided meshes / `eBack` otherwise per draw. Every non-doubleSided draw gets `eBack` = byte-identical to the old static cull, so existing rendering is unchanged. The flag rides glTF→Mesh: GltfLoader reads `cgltf material.double_sided` into MeshRange, uploadParsed forwards it to add_new_mesh (Mesh ctor unchanged), `Scene::isMeshDoubleSided` exposes it. Per-mesh is exact post-#10 (each glTF mesh = one primitive = one material). ABI-skew (5 module interfaces) - fresh container. Verified: `MaskCardDoubleSidedRendersFromBehind` rotates the doubleSided mask_card 180° so its BACK face faces the camera - visible (12779 changed px, checkerboard 0.475) ONLY because doubleSided renders it, RED-PROVEN by forcing single-sided (0 changed px, culled). 16/16 goldens unchanged, validation-clean run loading the card (vkCmdSetCullMode path VUID-clean). Deferred/shadow doubleSided is the deliberate follow-up |
 | (golden) | **Visual golden for forward MASK cut-out (#11 1b)** | The forward alphaMode MASK `discard` was CPU-verified (GltfParseUnit cutoff) + shadow-golden verified but never confirmed in the forward COLOUR image. `MaskCardDiscardsCutoutTexelsVisually`: DIFFERENTIAL oracle - render the base scene (A), `addModel` the mask_card over it (B), measure the changed-pixel fraction within the bounding box of the changed pixels. mask_card.gltf's texture is a verified 50/50 8x8 checkerboard, so with the discard working only the opaque squares change (holes leave the background = A). Two instrument traps navigated by LOOKING at the dumped diff: (1) an edge/detail-fraction metric is VACUOUS here (the card is a checkerboard whether or not discard runs - only the hole colour changes), so the differential is required; (2) the opaque ImGui panel covers the left ~68% and the card casts a floor shadow, so the scan is restricted to the GUI-free upper-right (FPS text + shadow excluded). MEASURED 0.37 discard-on vs 0.78 discard-off (not 1.0 - some cut-out texels are grey and blend into the ground), 0.55 gate between, red-proven by disabling the FS discard + recompiling the spv. Placement env-tunable (MASK_X/Y/Z/SCALE) for reframing without a rebuild. Local GPU golden (skips in CI). 15/15 goldens |
 | `09dadaa5` | **OBJ shapes split into separate meshes (#10, the OBJ half)** | `ObjLoader` flattened every OBJ shape (`o`/`g` group) into ONE mesh - a multi-object OBJ collapsed to a single Mesh, the pre-#10 glTF limitation. Now each shape becomes its own Mesh via a per-shape `MeshRange`, so #10's whole downstream (per-mesh objectIndex/culling/AS/RT-PT) applies to OBJ too. The glTF turnkey slice did NOT transfer: OBJ shapes share one attribute pool and the vertex-dedup map was declared OUTSIDE the shape loop, so vertices were deduped GLOBALLY (a shape's indices could point at a vertex an earlier shape emitted - not a contiguous range). Fix: reset the dedup map PER SHAPE, so each shape's vertices form a contiguous block `uploadParsed` slices (indices re-based by -vertexBase, per-range material subset, full materials shared); `adoptParsed` moves the ranges so the async worker path builds them too. The de-risking insight (the initial "goldens must re-baseline" fear was wrong): per-shape dedup is PIXEL-IDENTICAL (same triangles, vertices just stored per-shape), so pixel goldens don't shift from the vertex-count change - only CPU count-asserts (which use the preserved flat getters) and per-mesh culling could. ABI skew (ObjLoader.ixx member) - fresh-container. Verified: `ObjParseUnit.MultiShapeObjRecordsPerShapeMeshRanges` (dinosaurs, 3 shapes -> >1 range, asserting the ranges tile the flat arrays contiguously + every shape index stays inside its own vertex block - the slice-rebase invariant) + `SingleShapeObjIsOneMeshRangeSpanningEverything` (shadow_rig); the sponza golden (now a 373-mesh OBJ) held at detail 0.031 > 0.02, proving per-mesh materials/textures still render through the async path; 106/106 suite, 12s validation- + ASan-clean run loading 3-shape dinosaurs |
+| `fba308d7` + `deb7f009` | **Loaders' `MeshRange` slice dedup (was queued #7)** | The two byte-identical loader-local `MeshRange` structs and per-range slice loops (indices re-based by `-vertexBase`, per-range material subset) now live once in module `kataglyphis.vulkan.mesh_range` (`Src/GraphicsEngineVulkan/scene/MeshRange.ixx`) exporting `sliceMeshRange`; both loaders' `uploadParsed` call it. Unit suite `meshRangeSliceSuite.cpp` pins the re-basing arithmetic |
 
 ## In progress
 
@@ -87,47 +88,16 @@ validation-layer-clean runtime check where rendering changed.
    `KATAGLYPHIS_GPU_TIMING_JSON` export produces per-pass averages - the
    before/after evidence for every perf unit in the table above (the G-buffer
    and multiview-cascade units cite its numbers directly).
-7. **Dedup the loaders' `MeshRange` slice logic** (small refactor; do it when
-   next touching a loader, not standalone). After the glTF (`1d40e176`) and OBJ
-   (`09dadaa5`) mesh splits, `GltfLoader.ixx` and `ObjLoader.ixx` each carry an
-   IDENTICAL `struct MeshRange {vertexBase,vertexCount,indexStart,indexCount,
-   triStart,triCount}` and their `uploadParsed`s run a near-identical per-range
-   slice loop (subVertices copy, subIndices re-based by `-vertexBase`,
-   subMaterialIndex slice, full-materials `add_new_mesh`, empty-range fallback).
-   Clean extraction: move `MeshRange` to the model module as `Kataglyphis::MeshRange`
-   (it already imports Vertex/ObjMaterial/device and owns `add_new_mesh`), add a
-   free `build_meshes_from_ranges(Model&, device, queue, pool, vertices, indices,
-   materialIndex, materials, ranges)` there, and have both loaders' `getMeshRanges()`
-   return the shared type + `uploadParsed` call the helper. Transparent to the
-   ObjParseUnit/GltfParseUnit tests (same field names). WHY it is queued not done:
-   `model.ixx` is embedded in `Scene`, so this is an ABI-skew change needing the
-   full delete-build + `-FreshContainer` sequence - not worth a central-module
-   rebuild for ~30 lines of stable, tested duplication as a standalone. The payoff
-   lands naturally with the per-mesh-material-subset optimisation (the shared
-   follow-up both splits list), which edits exactly this slice loop.
 
 ## Verification pattern
 
-This is the canonical description; `AGENTS.md` links here rather than
-restating it.
-
-Container build (`Scripts/Windows/Build-Windows-Container.ps1
--Configurations 'clangcl-debug'`, tar-pipe fallback on Dev Drive) →
-`build-clangcl-debug/commitTestSuite.exe` directly (host ctest cannot read
-the container's CMake tree) → 8–10 s engine run with stderr captured,
-grepping validation output. GPU integration tests run on the host
-RX 9070 XT.
-
-Shader-only units are cheap: edit a `.slang` source, run
-`compile-slang-shaders.ps1` (Windows) / `compile-slang-shaders.sh` (Linux) to
-refresh the committed SPIR-V, then run one golden. The BuildIntegrity goldens
-check the committed `.spv` is not older than its `.slang` source.
-
-Fresh-container rule (`-FreshContainer` after deleting the local build
-tree): required after ANY module-interface change - `.ixx` member edits AND
-plain shared headers whose structs cross module boundaries
-(`ObjectDescription.hpp` taught this with an exit-3 crash). Body-only `.cpp`
-and shader edits build incrementally.
+The canonical description of the per-unit verification loop - container
+build (tar-pipe fallback on Dev Drive), running
+`build-clangcl-debug/commitTestSuite.exe` directly from the repo root, the
+fresh-container rule for module-interface and shared-header changes, the
+validation-grep runtime check, and the cheap shader-only iteration path -
+lives in [`docs/gpu-golden-testing.md`](gpu-golden-testing.md). `AGENTS.md`
+links there rather than restating it.
 
 ## The instrument playbook (earned, not designed)
 
@@ -144,16 +114,10 @@ the difference between a golden and a vacuous golden.
   (PowerShell preserves the source mtime; ninja skips the recompile - restore
   with bash `cp` or touch after), and one shader probe that silently
   no-oped.
-- **Look at the pixels before trusting a metric.** Dump amplified diff-map
-  PNGs to the scratchpad and read them. The ImGui panel covers the LEFT ~70%
-  of the 1200x768 test frame; whole-frame and centre-crop means have
-  measured, at various times: FPS-counter digits, SSAO, the caster's own
-  body, and nothing at all. The panel-free right edge (x >= 0.72w) is the
-  scene.
-- **Prefer counting to averaging for sparse signals**: changed-pixel /
-  swung-pixel / detail fractions discriminate where means drown (a UNORM
-  ceiling clamps, a texture is near-greyscale, a skeleton is 3% of the
-  frame).
+- **Look at the pixels, and count rather than average.** The frame-layout
+  and metric cautions (ImGui panel coverage, the panel-free right edge,
+  amplified diff-map dumps, counting metrics for sparse signals) live in
+  [`docs/gpu-golden-testing.md`](gpu-golden-testing.md)'s cautions section.
 - **Differential oracles beat colour signatures**: render the
   with/without-defect pair in-process and count what moved, with an explicit
   exclusion for the object's own body.

@@ -5,7 +5,7 @@
   Uses WindowsAgenticLoop.Common module from Kataglyphis-ContainerHub.
 
   Engines (config .engine, or -Engine / $env:AGENTIC_ENGINE):
-    claude   — planner: Fable 5 (fallback Opus 4.8), executor: Sonnet
+    claude   — planner: Opus 5 (fallback Fable 5), executor: Sonnet
     opencode — planner: GLM 5.2, executor: DeepSeek v4 Flash
 .PARAMETER Engine  Engine override: claude | opencode (default: config .engine).
 .PARAMETER DryRun  Print actions without executing.
@@ -37,24 +37,11 @@ if (-not $config) { Write-Host "FATAL: Invalid JSON" -ForegroundColor Red; exit 
 
 Initialize-AgenticLoop -ConfigPath $configPath -RepoRoot $repoRoot -DryRun:$DryRun
 
-$onWindows = Test-IsWindows
-# Prefer buildMatrix (richer: per-config sanitizer, testCommand, buildDir);
-# fall back to legacy buildConfigurations (string arrays) for backward compat.
-$buildConfigs = if (Get-AgenticConfigValue $config 'buildMatrix' $null) {
-    if ($onWindows) { $config.buildMatrix.windows } else { $config.buildMatrix.linux }
-} elseif (Get-AgenticConfigValue $config 'buildConfigurations' $null) {
-    if ($onWindows) { $config.buildConfigurations.windows } else { $config.buildConfigurations.linux }
-} else { $null }
-if (-not $buildConfigs) { Write-AgenticLog 'No build configs (need buildMatrix or buildConfigurations in config)' 'FATAL'; exit 1 }
-
-$plannerPrompt = 'Analyze the current state of the codebase. Review BACKLOG.md for existing open tasks. Identify new work opportunities: bugs, improvements, missing tests, technical debt, performance issues. Write detailed, actionable task entries to BACKLOG.md following the existing format. Do NOT duplicate existing tasks. Add at most 5 new tasks. Each task must include: size (S/M/L/XL), title, files to read, numbered implementation steps, test guidance, and build preset.'
-$refactorPlannerPrompt = 'Analyze the codebase for refactoring opportunities. Focus on dead code, API consolidation, test coverage gaps, documentation drift, performance issues, and C++23 modernization. Read BACKLOG.md first to avoid duplicates. Add at most 3 refactor tasks marked with (refactor) in the title. Each task must include file paths, numbered steps, test guidance, and build instructions.'
-$executorPrompt = 'Read BACKLOG.md and find the first unchecked task (- [ ]). Implement it fully: make the code changes, add or update tests, and build with the appropriate preset. Once the task is complete and the build passes, DELETE the completed task entry (the "- [ ]" title line and its indented body) from BACKLOG.md — do not just mark it checked. Then commit the changes with a message that summarizes what was done.'
-
+# Build configs and planner/executor task prompts come from the module:
+# configs from the config's buildMatrix (legacy buildConfigurations fallback),
+# prompts from ContainerHub's shared/agentic-loop/prompts/*.md defaults.
 try {
-    Invoke-AgenticLoop -Config $config -Engine $Engine `
-        -PlannerPrompt $plannerPrompt -RefactorPlannerPrompt $refactorPlannerPrompt -ExecutorPrompt $executorPrompt `
-        -BuildConfigs $buildConfigs -OnWindows $onWindows -RepoRoot $repoRoot `
+    Invoke-AgenticLoop -Config $config -Engine $Engine -RepoRoot $repoRoot `
         -MaxIterations:$MaxIterations -SkipBuild:$SkipBuild -SkipTests:$SkipTests `
         -SkipQuality:$SkipQuality -PlannerOnly:$PlannerOnly -ExecutorOnly:$ExecutorOnly
 } finally {

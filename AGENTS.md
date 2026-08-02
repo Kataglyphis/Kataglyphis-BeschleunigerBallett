@@ -127,25 +127,17 @@ here. Two documents cover it:
   transfers, `docker exec` bypassing the entrypoint, and the wcifs teardown
   lock.
 
-### Two transports — both supported
+### Transports and container reuse (short version)
 
-Sources get into the container either by **tar-pipe** (default) or by **bind
-mount** (`-UseBindMount`). Both work; keep both.
-
-| | no-change ninja | no-change wall |
-| --- | --- | --- |
-| tar-pipe + reusable container (default) | **9.6 s** | **44 s** |
-| bind mount | 32.7 s | 159 s |
-
-The bind mount is slower **on this Dev Drive host**: the build tree then lives
-on D: and every ninja stat and object write crosses the `bindFlt` filter. That
-result is host-specific — on a non-Dev-Drive volume or a smaller tree it can
-invert, so measure before switching rather than trusting the default.
-
-Bind mounting needs one elevated setup step plus a reboot, and both transports
-must mount at the same in-container path (`C:\ws`) or CMake rejects the cache.
-Setup, verification, revert and the reasoning:
-[§ Transports](ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md#transports-how-to-set-up-both).
+Default transport is a tar-pipe into the reusable container
+`bb-build-persistent`; `-UseBindMount` opts into a bind mount instead (slower
+on this Dev Drive host — measure before switching). `-FreshContainer` starts
+clean — **a file deleted on the host keeps building in a reused container**.
+The build **fails** if no executables were produced or none reached the host.
+General findings and transport setup:
+[ContainerHub windows-container-build-performance.md](ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md);
+this repo's numbers and wiring:
+[`docs/container-build-caching.md`](docs/container-build-caching.md).
 
 The reusable PowerShell is upstream too
 (`windows/scripts/modules/WindowsContainerBuild.Reuse.psm1`:
@@ -158,39 +150,12 @@ arguments, the cargo exclusions).
 
 ## Shaders: Slang (unified SPIR-V + WGSL)
 
-All shaders are written in [Slang](https://shader-slang.com/) under
-`Resources/ShadersSlang/`. The build scripts
-(`Scripts/Windows/compile-slang-shaders.ps1`,
-`Scripts/Linux/compile-slang-shaders.sh`) compile each `.slang` file to:
-- **SPIR-V** (`.spv`) for the C++ Vulkan renderer → `Resources/ShadersSlang/build/spirv/`
-- **WGSL** (`.wgsl`) for the Rust WebGPU renderer → `Resources/ShadersSlang/build/wgsl/`
-  (combined WGSL files are also copied to the Rust crate's `src/shaders/` directory)
-
-The C++ renderer loads pre-compiled SPIR-V via `File` I/O — there is no
-runtime shader compilation. Slang emits `"main"` as the SPIR-V entry point
-name (not the Slang function name), so all `pName` values in pipeline
-creation use `"main"`.
-
-`histogram.wgsl` in the Rust crate remains hand-written: Slang does not
-support `InterlockedAdd` on `RWStructuredBuffer` for the WGSL target.
-
-
-Builds are **incremental** via a reusable container (`bb-build-persistent`):
-the build tree never leaves it, so only sources go in and only executables +
-logs come out. Measured 2026-07-19: **9.6 s** build step (44 s wall) for a
-no-change rebuild, against 352-484 s when every build got a fresh container.
-Use `-FreshContainer` to start clean — **a file deleted on the host keeps
-building inside a reused container** until it is recreated (an image change
-recreates it automatically).
-
-The build **fails** if the container produced no executables, or if any it
-produced did not reach the host. Both have happened silently.
-
-Why this works and what does not, measured once and not repeated: the general
-Windows-container findings are in
-[ContainerHub](ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md);
-this repo's own numbers and wiring are in
-[`docs/container-build-caching.md`](docs/container-build-caching.md).
+All shaders are Slang under `Resources/ShadersSlang/`, compiled ahead of time
+to **SPIR-V** for the C++ Vulkan renderer and **WGSL** for the Rust WebGPU
+renderer. Build step, staleness rules, and fast shader iteration:
+[`docs/shader-build-pipeline.md`](docs/shader-build-pipeline.md); sharing
+shader code between the two renderers:
+[`docs/shader-sharing.md`](docs/shader-sharing.md).
 
 ## Rule: Reusable Work Belongs in ContainerHub
 
@@ -249,10 +214,10 @@ projects), otherwise from the vendored fallback **`Scripts/Windows/modules/`**.
 The vendored directory holds only what ContainerHub's module refactor (commit
 `b391a1d`) deleted upstream: `WindowsCMake`, `WindowsConfig`,
 `WindowsClang`, `WindowsFormatting`, `WindowsTesting`, `WindowsWebDav`,
-`WindowsMsix.Common`, `WindowsMsix.Signing` — plus `WindowsScripts.Shared`,
-which the vendored modules import internally by sibling path (direct imports of
-it still prefer the ContainerHub copy). `WindowsLogging.Common` was deleted:
-its functions were folded into ContainerHub's `WindowsBuild.Common.psm1`.
+`WindowsMsix.Common`, `WindowsMsix.Signing`. `WindowsScripts.Shared` always
+loads from ContainerHub (the vendored duplicate was removed 2026-08-02);
+`WindowsLogging.Common` was deleted: its functions were folded into
+ContainerHub's `WindowsBuild.Common.psm1`.
 If a module reappears upstream it wins automatically; if you improve a fallback
 module, consider upstreaming it to ContainerHub and deleting the vendored copy
 in the same change.
@@ -330,8 +295,6 @@ Then omit `--user root` from subsequent build commands.
 
 - C++ tests: `ctest --test-dir <build-dir> --output-on-failure` (add `-C Debug` for
   multi-config generators). `Build-Windows.ps1` runs them unless `-SkipTests`.
-  Test presets exist for the Debug and Profile configurations
-  (`test-<configure-preset>`).
 - Benchmarks: `clangcl-profile` builds `perfTestSuite.exe`; run via
   `Build-Windows.ps1` without `-SkipPerfTests`.
 - PowerShell module tests: Pester suites under `Scripts/Windows/tests/`.
@@ -345,9 +308,7 @@ when no adapter is present rather than fail. Ideas worth picking up live in
 [`BACKLOG.md`](BACKLOG.md), alongside the sized commitments.
 
 **Formatting and static analysis.** clang-format/clang-tidy/cmake-format
-commands, the host gotchas (LLVM is not on `PATH`; the container-generated
-`compile_commands.json` points at `C:/ws`; C++23 module TUs are skipped by
-clang-tidy), and the suggested cadence live in
+commands, the host gotchas, and the suggested cadence live in
 [`docs/code-quality.md`](docs/code-quality.md). Note that
 `Build-Windows-Container.ps1` hard-codes `-SkipTidy`, so
 containerized builds never run clang-tidy (clang-format is still
@@ -359,12 +320,9 @@ benchmarks mean anything) and a synchronization-validation pass each catch
 classes of problem the debug loop cannot. See [`BACKLOG.md`](BACKLOG.md) for
 what each one is for.
 
-**There is no Windows ThreadSanitizer.** clang-cl does not support
-`-fsanitize=thread` on this target, so a Windows "TSan" build is just a debug
-build and a green run proves nothing about data races. The `clangcl-tsan`
-preset that claimed otherwise was removed on 2026-07-20 — it cost ~185 s per
-full build to produce a duplicate of `clangcl-debug`. Use the Linux
-`linux-debug-tsan-clang` preset, which CI runs, for race detection.
+**There is no Windows ThreadSanitizer.** Use the Linux
+`linux-debug-tsan-clang` preset, which CI runs, for race detection — see
+"Sanitizer semantics" above.
 
 ## Code Conventions (C++ engine)
 
@@ -379,10 +337,13 @@ full build to produce a duplicate of `clangcl-debug`. Use the Linux
   (`cleanUp()` remains for explicit early teardown and is idempotent).
 - A `VkPipelineCache` persists to `pipeline_cache/kataglyphis_pipeline.cache`
   (gitignored, written on graceful shutdown only).
+- Slang emits `"main"` as the SPIR-V entry point name (not the Slang function
+  name), so all `pName` values in pipeline creation use `"main"`.
 - Per-unit verification pattern (container build -> direct test exe ->
-  validation run) and the log of what changed and why:
+  validation run): [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md).
+  The chronological log of what changed and why:
   [`docs/cpp-renderer-improvements.md`](docs/cpp-renderer-improvements.md).
-  Do not restate it here — that document is the source of truth.
+  Do not restate either here — those documents are the source of truth.
 
 ## Agentic Loop
 
@@ -394,7 +355,7 @@ queue must be fully drained before the planner adds new tasks.
 
 Two engines are selectable via `engine` in
 `Scripts/AgenticLoop/AgenticLoop.config.json` or the `AGENTIC_ENGINE` env
-var: **`claude`** (default — Claude Code CLI, Fable 5 planner with Opus 4.8
+var: **`claude`** (default — Claude Code CLI, Opus 5 planner with Fable 5
 fallback, Sonnet executor, prompts in `Scripts/AgenticLoop/prompts/`) and
 **`opencode`** (GLM 5.2 planner, DeepSeek v4 Flash executor, agents in
 `.opencode/agents/`). Full details, including per-engine setup and
@@ -402,89 +363,16 @@ troubleshooting: [`Scripts/AgenticLoop/README.md`](Scripts/AgenticLoop/README.md
 
 **Reusable logic lives in ContainerHub's `WindowsAgenticLoop.Common` module
 (PowerShell) and `agentic-loop.sh` library (Bash).** The project scripts are
-thin consumers. See the ContainerHub module docs, the
-[build matrix doc](ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md),
-and [`Scripts/AgenticLoop/README.md`](Scripts/AgenticLoop/README.md) for details.
-
-### Build Matrix
-
-The loop cycles through a **build matrix** — a set of build configurations
-that each define a preset, sanitizer, build directory, and test command.
-This ensures the loop regularly exercises ASAN, TSan, profile, and release
-builds across both platforms:
-
-| Platform | Configs | Sanitizer |
-|----------|---------|-----------|
-| Windows (Stevedore) | `clangcl-debug` | ASAN + UBSan |
-| Windows (Stevedore) | `clangcl-profile` | none |
-| Windows (Stevedore) | `clangcl-release` | none |
-| Linux (Rancher Desktop) | `linux-debug-asan-clang` | ASAN + UBSan |
-| Linux (Rancher Desktop) | `linux-debug-tsan-clang` | TSan |
-| Linux (Rancher Desktop) | `linux-profile-clang` | none |
-| Linux (Rancher Desktop) | `linux-release-clang` | none |
-
-**Sanitizer-aware test execution**: When a matrix entry has
-`sanitizer: "asan"` or `sanitizer: "tsan"`, the loop automatically sets
-`ASAN_OPTIONS` or `TSAN_OPTIONS` before running tests, then restores the
-original environment.
-
-**Full matrix sweep**: Every `fullMatrixEveryNIterations` iterations
-(default 5), the loop runs ALL configs in sequence instead of just one.
-
-See [`ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md`](ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md)
-for the full documentation.
-
-### Files
-
-| What | Where | Purpose |
-|------|-------|---------|
-| **PS module** (reusable) | `ExternalLib/Kataglyphis-ContainerHub/windows/scripts/modules/WindowsAgenticLoop.Common.psm1` | Building blocks: `Invoke-OpenCode`, logging, platform detection, git helpers, build matrix, sanitizer-aware tests, loop orchestration |
-| **Bash library** (reusable) | `ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/agentic-loop.sh` | Bash equivalents: `invoke_opencode`, `invoke_sanitizer_tests`, `resolve_build_matrix_entry`, `run_agentic_loop` |
-| **Module docs** | `ExternalLib/Kataglyphis-ContainerHub/docs/windows-agentic-loop.md` | API reference, usage examples, PS 5.1 notes |
-| **Build matrix docs** | `ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md` | Build matrix config, sanitizer env vars, full matrix sweep |
-| **Project script** | `Scripts/AgenticLoop/Run-AgenticLoop.ps1` | Thin wrapper — imports module, loads config, calls `Invoke-AgenticLoop` |
-| **Config** | `Scripts/AgenticLoop/AgenticLoop.config.json` | Engine selection, model IDs, intervals, build matrix (per-platform entries with sanitizer + testCommand) |
-| **Planner/executor prompts (claude engine)** | `Scripts/AgenticLoop/prompts/{planner,executor}.md` | Engine-neutral system prompts used via `--append-system-prompt-file` |
-| **Planner/executor agents (opencode engine)** | `.opencode/agents/{planner,executor}.md` | System prompts for the GLM 5.2 / DeepSeek v4 Flash agents |
-| **Slash commands** | `.opencode/commands/{plan,execute,build,test,quality}.md` | Interactive commands for OpenCode TUI |
-| **Linux script** | `Scripts/AgenticLoop/Run-AgenticLoop.sh` | Bash equivalent for Linux / Rancher Desktop |
-
-### Usage
-
-```pwsh
-# Windows — full loop (requires PowerShell 7+)
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\Scripts\AgenticLoop\Run-AgenticLoop.ps1
-
-# Dry run (test config, no opencode calls)
-pwsh .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -DryRun
-
-# Planner only (add tasks to BACKLOG.md)
-pwsh .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -PlannerOnly
-
-# Executor only (drain existing queue)
-pwsh .\Scripts\AgenticLoop\Run-AgenticLoop.ps1 -ExecutorOnly
-```
-
-```bash
-# Linux — full loop (requires jq)
-./Scripts/AgenticLoop/Run-AgenticLoop.sh
-
-# Dry run
-./Scripts/AgenticLoop/Run-AgenticLoop.sh --dry-run
-
-# Planner only
-./Scripts/AgenticLoop/Run-AgenticLoop.sh --planner-only
-
-# Executor only
-./Scripts/AgenticLoop/Run-AgenticLoop.sh --executor-only
-```
-
-Builds cycle through the build matrix (ASAN → profile → release on Windows;
-ASAN → TSan → profile → release on Linux) after every N completed tasks.
-Tests run after each build with sanitizer-aware env vars. Every 5 iterations,
-a full matrix sweep runs ALL configs. clang-tidy + cmake-format run every M
-tasks. The planner adds refactor-focused tasks every R iterations. Logs go to
-`logs/agentic-loop/`.
+thin consumers: run `Scripts/AgenticLoop/Run-AgenticLoop.ps1` (Windows,
+requires PowerShell 7+) or `Scripts/AgenticLoop/Run-AgenticLoop.sh` (Linux,
+requires `jq`). The default planner/executor task prompts are single-sourced
+in ContainerHub at `shared/agentic-loop/prompts/*.md` — both the PowerShell
+module and the Bash library read them. Architecture, configuration, and usage:
+[`Scripts/AgenticLoop/README.md`](Scripts/AgenticLoop/README.md); build matrix
+and sanitizer-aware tests:
+[agentic-loop-build-matrix.md](ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md);
+module API reference:
+[windows-agentic-loop.md](ExternalLib/Kataglyphis-ContainerHub/docs/windows-agentic-loop.md).
 
 ## Docs
 
@@ -496,7 +384,7 @@ ContainerHub (see the rule above), project-specific ones here.
 | `README.md` | Repo-level orientation, feature highlights |
 | `BACKLOG.md` | **All** open work: sized commitments, then unsized ideas and recurring chores |
 | `AGENTS.md` (this file) | How to build/test/run here, invariants, code conventions |
-| `docs/cpp-renderer-improvements.md` | C++ engine change log + verification pattern |
+| `docs/cpp-renderer-improvements.md` | C++ engine chronological change log |
 | `docs/model-loading.md` | Model-loading architecture: the two loaders, async parse/upload split, multi-mesh MeshRange flow |
 | `docs/webgpu-renderer-roadmap.md` | Rust WebGPU renderer status per feature |
 | `docs/webgpu-gltf-rust-plan.md` | Original WebGPU + glTF Rust renderer plan (milestones 1–5) |
@@ -511,7 +399,7 @@ ContainerHub (see the rule above), project-specific ones here.
 | `docs/LICENSES-README.md` | Third-party license documentation |
 | `Scripts/AgenticLoop/README.md` | Agentic loop (claude/opencode engines) architecture, config, usage |
 | `ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md` | Build matrix config, sanitizer env vars, full matrix sweep |
-| `docs/source/` | Sphinx pages (`getting_started.md`, `documentation_workflow.md`, `webgpu_demo.md`, `wsl2_vulkan.rst`) |
+| `docs/source/` | Sphinx pages (`README.md`, `getting_started.md`, `documentation_workflow.md`, `webgpu_demo.md`, `wsl2_vulkan.rst`, `graphviz_files.rst`) |
 
 - Keep docs, scripts, and presets aligned: when you change build behavior, update
   `README.md`, `docs/source/getting_started.md`, and this file in the same change.

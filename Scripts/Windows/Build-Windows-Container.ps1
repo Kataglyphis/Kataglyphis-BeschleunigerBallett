@@ -47,8 +47,6 @@ param(
   # Opt into the bind-mount transport. Off by default because it is MEASURED
   # SLOWER on this Dev Drive host - see Test-BindMountUsable below.
   [switch]$UseBindMount,
-  # Keep the fallback container around for debugging instead of removing it.
-  [switch]$KeepContainer,
   # Discard the reusable build container and start from a clean one. Use when a
   # build behaves strangely, or after deleting files that the container may
   # still hold (sources are overwritten in place, never pruned).
@@ -250,13 +248,13 @@ function Invoke-TarPipeBuild {
         }
     }
 
-    # cmd /c keeps the pipe a raw byte stream regardless of PowerShell version.
     # Anchor the build-tree excludes to the repo root (./...): unanchored
     # patterns match at every path depth in bsdtar and would strip nested
     # files like ExternalLib/Kataglyphis-ContainerHub/windows/build.ps1.
-    $tarIn = "tar -cf - --exclude .git --exclude ./logs --exclude `"./build`" --exclude `"./build-*`" --exclude `"./build_*`" -C `"$repoRoot`" . | `"$docker`" exec -i $container tar -xf - -C $ws"
-    cmd /c $tarIn
-    if ($LASTEXITCODE -ne 0) { throw "Source transfer failed (exit $LASTEXITCODE)." }
+    $sourcesIn = Copy-IntoBuildContainer -DockerExe $docker -Container $container `
+      -SourceRoot $repoRoot -TargetPath $ws `
+      -Exclude @('.git', './logs', './build', './build-*', './build_*')
+    if (-not $sourcesIn) { throw 'Source transfer failed.' }
 
     # Incremental builds: the host already holds the previous build tree (it is
     # streamed back out after every build), so stream it back IN. ninja then
@@ -275,9 +273,10 @@ function Invoke-TarPipeBuild {
         # past the Windows path limit inside the container ("Can't create ...
         # Invalid argument"), which failed the whole transfer. Cargo rebuilds
         # its own artifacts cheaply, so skipping them costs little.
-        $tarBuildIn = "tar -cf - --exclude `"$buildDirName/cargo`" -C `"$repoRoot`" `"$buildDirName`" | `"$docker`" exec -i $container tar -xf - -C $ws"
-        cmd /c $tarBuildIn
-        if ($LASTEXITCODE -ne 0) {
+        $treeIn = Copy-IntoBuildContainer -DockerExe $docker -Container $container `
+          -SourceRoot $repoRoot -TargetPath $ws `
+          -Items @($buildDirName) -Exclude @("$buildDirName/cargo")
+        if (-not $treeIn) {
           Write-Host "  transfer reported errors - ninja will rebuild whatever did not arrive"
         }
       }
@@ -321,17 +320,15 @@ function Invoke-TarPipeBuild {
       # database (clang-tidy) and logs. Copying the whole ~8.5 GB tree back was
       # pure overhead, and its deep cargo/cxxbridge paths are what produced the
       # "Artifact extraction failed" warnings.
-      # tar does NOT expand globs (it reports "Cannot stat" and produces an
-      # empty archive), so select by EXCLUSION instead. Dropping the heavy
-      # intermediates keeps the transfer small while the host still gets the
-      # executables, debug info, compile database and logs it needs. The
-      # container keeps the full tree, so nothing here has to seed a rebuild.
-      $skip = @('*/CMakeFiles', '*/_deps', '*/cargo', '*.obj', '*.lib', '*.ilk', '*.pcm', '*/corrosion')
-      $excludeArgs = ($skip | ForEach-Object { "--exclude `"$_`"" }) -join ' '
-      $tarOut = "`"$docker`" exec $container tar -cf - $excludeArgs -C $ws $($existing -join ' ') | tar -xf - -C `"$repoRoot`""
-      cmd /c $tarOut
-      if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Artifact extraction reported errors (exit $LASTEXITCODE) - check executable timestamps."
+      # Dropping the heavy intermediates keeps the transfer small while the
+      # host still gets the executables, debug info, compile database and logs
+      # it needs. The container keeps the full tree, so nothing here has to
+      # seed a rebuild.
+      $artifactsOut = Copy-FromBuildContainer -DockerExe $docker -Container $container `
+        -SourcePath $ws -TargetRoot $repoRoot -Items $existing `
+        -Exclude @('*/CMakeFiles', '*/_deps', '*/cargo', '*.obj', '*.lib', '*.ilk', '*.pcm', '*/corrosion')
+      if (-not $artifactsOut) {
+        Write-Warning 'Artifact extraction reported errors - check executable timestamps.'
       }
     }
 
@@ -369,30 +366,11 @@ function Invoke-TarPipeBuild {
       Write-Host "Verified $($containerExes.Count) executable(s) delivered from $dir."
     }
   } finally {
-    if ($true) {
-      # The container is intentionally reused across builds - that is what makes
-      # builds incremental without moving the tree. Remove it with
-      # 'docker rm -f bb-build-persistent' or rerun with -FreshContainer.
-      Write-Host "Keeping build container '$container' for the next build (reset: -FreshContainer)."
-    } elseif ($KeepContainer) {
-      Write-Host "Keeping container '$container' for debugging (remove with: docker rm -f $container)."
-    } else {
-      # On hosts with the wcifs layer-teardown quirk the immediate remove can
-      # fail even though a later manual 'docker rm' succeeds — surface it, but
-      # never let docker's stderr become a terminating error and flip a green
-      # build to exit 1 (same NativeCommandError trap as in the probe above).
-      $previousPreference = $ErrorActionPreference
-      $ErrorActionPreference = 'Continue'
-      try {
-        & $docker rm -f $container 2>&1 | Out-Null
-        & $docker inspect $container 2>&1 | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-          Write-Warning "Container '$container' could not be removed yet (wcifs teardown lock?). Remove it later with: docker rm -f $container"
-        }
-      } finally {
-        $ErrorActionPreference = $previousPreference
-      }
-    }
+    # The container is intentionally reused across builds - that is what makes
+    # builds incremental without moving the tree. Remove it with
+    # 'docker rm -f bb-build-persistent' (upstream Remove-BuildContainerSafe
+    # tolerates the wcifs teardown lock) or rerun with -FreshContainer.
+    Write-Host "Keeping build container '$container' for the next build (reset: -FreshContainer)."
   }
 }
 

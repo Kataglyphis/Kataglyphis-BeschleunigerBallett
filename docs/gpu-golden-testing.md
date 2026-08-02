@@ -18,7 +18,9 @@ prove a render/device refactor is behaviour-preserving.
 
 The container build delivers the built test executable back into the working
 tree at `build-clangcl-debug/commitTestSuite.exe`. On a host with a GPU it runs
-the golden tests for real. Run it **from the repository root**:
+the golden tests for real. Invoke the executable directly — the host's `ctest`
+cannot read the container-generated CMake tree — and run it **from the
+repository root**:
 
 ```
 cd <repo root>
@@ -36,13 +38,25 @@ runs fine on the host.
 
 ## The verification loop for render/device changes
 
+This is the canonical per-unit verification pattern; `AGENTS.md` and
+`docs/cpp-renderer-improvements.md` link here rather than restating it.
+
 For a behaviour-preserving refactor of the record path, a pipeline, a device
 feature, an image transition, or the loader upload path:
 
-1. Build in the container (`-FreshContainer` whenever a `.ixx` module
-   interface changed — otherwise stale BMIs can ASan-fault at member init).
-2. Run the golden + integration suites on the host GPU as above.
-3. All tests passing = the recorded frames are unchanged = the refactor is
+1. Build in the container: `Scripts/Windows/Build-Windows-Container.ps1
+   -Configurations 'clangcl-debug'` (tar-pipe fallback on a Dev Drive, where
+   bind mounts break). Fresh-container rule: `-FreshContainer` (after
+   deleting the local build tree) is required after ANY module-interface
+   change — `.ixx` member edits AND plain shared headers whose structs cross
+   module boundaries (`ObjectDescription.hpp` taught this with an exit-3
+   crash) — otherwise stale BMIs can ASan-fault at member init. Body-only
+   `.cpp` and shader edits build incrementally.
+2. Run the golden + integration suites on the host GPU (an RX 9070 XT here)
+   as above.
+3. Where rendering changed, add a validation-layer-clean runtime check: an
+   8–10 s engine run with stderr captured, grepping the validation output.
+4. All tests passing = the recorded frames are unchanged = the refactor is
    render-equivalent. As of 2026-08-01 the baseline is 29 runnable
    `GoldenRender` tests (30 defined, minus `DISABLED_DumpsFrameToPng`, which
    does not run by default) + 2 `Integration` tests = 31 total - see the
@@ -56,22 +70,39 @@ This turns changes the container can only compile-check (device creation,
 image barriers, the deferred/forward command streams, path/ray tracing) into
 verifiable ones.
 
+Shader-only units are cheap: edit a `.slang` source, run
+`compile-slang-shaders.ps1` (Windows) / `compile-slang-shaders.sh` (Linux) to
+refresh the committed SPIR-V, then run one golden — no C++ rebuild needed.
+The `BuildIntegrity` goldens check the committed `.spv` is not older than its
+`.slang` source.
+
 ## Writing a new golden test — cautions learned the hard way
 
-The suite's own comments document two expensive mistakes; heed them:
+This is the single home for these instrument cautions;
+`docs/cpp-renderer-improvements.md` and `docs/path-tracing.md` link here.
+The suite's own comments document the expensive mistakes; heed them:
 
 - **Captures are tonemapped**, and the **ImGui overlay is composited into
-  them**. A pixel classifier written against raw scene colours (e.g.
-  `r < 60 && b < 60`) can silently measure only the overlay. Crop away from the
-  overlay (the existing tests crop to the right/lower scene region) and prefer
+  them**. The opaque ImGui panel covers the LEFT ~70% of the 1200x768 test
+  frame — the panel-free right edge (x >= 0.72w) is the scene. A pixel
+  classifier written against raw scene colours (e.g. `r < 60 && b < 60`) can
+  silently measure only the overlay, and whole-frame or centre-crop means
+  have measured, at various times: the FPS-counter digits, SSAO, the
+  caster's own body, and nothing at all. Crop away from the overlay (the
+  existing tests crop to the right/lower scene region) and prefer
   luminance-delta oracles over absolute-colour thresholds.
+- **Prefer counting to averaging for sparse signals.** Changed-pixel /
+  swung-pixel / detail fractions discriminate where means drown (a UNORM
+  ceiling clamps, a texture is near-greyscale, a skeleton is 3% of the
+  frame).
 - **A count says how much changed; only the shape says whether what changed is
   the effect.** Always capture an unconditional control (the effect disabled)
   and a same-state noise reference in the same run, and compare against them.
-  `GoldenRender.DISABLED_DumpsFrameToPng` dumps the frame, the control, and an
-  amplified difference to PNG — use it (`--gtest_also_run_disabled_tests
-  --gtest_filter=*DumpsFrameToPng*`, `KATAGLYPHIS_FRAME_DUMP=out`) to *look* at
-  what a metric is really measuring before trusting it.
+  Dump amplified diff-map PNGs and *look* at them before trusting any new
+  pixel metric: `GoldenRender.DISABLED_DumpsFrameToPng` dumps the frame, the
+  control, and an amplified difference to PNG — use it
+  (`--gtest_also_run_disabled_tests --gtest_filter=*DumpsFrameToPng*`,
+  `KATAGLYPHIS_FRAME_DUMP=out`) to see what a metric is really measuring.
 
 Effects with no runtime toggle (the tonemap is always on) are hard to isolate
 this way: "compressed vs clipped" is ambiguous without a control, so a robust

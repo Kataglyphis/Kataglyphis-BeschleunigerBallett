@@ -4480,72 +4480,6 @@ still diff noise (batch VI rejected this for the same reason).
 
 ### C++ Vulkan engine
 
-- [ ] **(M) Add a `BuildIntegrity` gate that reads the compiled SPIR-V block offsets and compares them to the host `offsetof`s** — the mismatch in task 1 survived because every layout contract in this repo is a hand-copied number; make the compiled binary the source of truth.
-
-  **Files to read:**
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:34` (`find_repo_root`),
-    `:771-824` (`CompiledShadersAreNotOlderThanTheirSources` — how a gate walks
-    `Resources/ShadersSlang/build/spirv`), `:1008-1040`
-    (`SharedConstantsMatchTheCompiledHostValues` — the "compare a parsed
-    artifact against a compiled-in host value" shape to copy), `:1956-1989`
-    (`PathTracingDispatchMatchesTheShaderWorkgroupSize` — the closest existing
-    precedent).
-  - `Src/GraphicsEngineVulkan/vulkan_base/ShaderHelper.cpp:21,43-50` —
-    `kSpirvMagic` and `validateSpirvBlob`, already the project's SPIR-V header
-    check; reuse the constant rather than re-declaring it.
-  - `Test/commit/VulkanEngine/pushConstantSuite.cpp` — the hand-written
-    expectations this gate makes redundant. Leave them in place; they are the
-    cheap first signal.
-
-  **Steps:**
-  1. In `buildIntegritySuite.cpp`, add a file-local SPIR-V reader. The format is
-     small enough to parse directly: 5 header words (word 0 must equal
-     `0x07230203`; reject anything else rather than byte-swapping), then a
-     stream of instructions whose first word is `(wordCount << 16) | opcode`.
-     Collect three opcodes — `OpName` (5: result-id, then a NUL-terminated
-     literal string padded to a word boundary), `OpMemberName` (6: type-id,
-     member index, literal string) and `OpMemberDecorate` (72: struct-type-id,
-     member index, decoration; `Offset` is decoration **35**, and its value is
-     the next word). Build `map<structName, map<memberName, offset>>`.
-  2. Add a table of expectations: emitted struct name → a list of
-     `{ member name, offsetof(HostType, member) }`. Cover
-     `SceneUBO_std140`→`VulkanRendererInternals::SceneUBO`,
-     `GlobalUBO_std140`→`GlobalUBO`, `CameraUBO_std140`→`GlobalUBO` (the skybox
-     re-declaration; note that in a comment),
-     `DirectionalLightData_std140`→`DirectionalLightData`,
-     `ObjectDescription_std430`→`ObjectDescription`,
-     `ObjMaterial_natural`→`ObjMaterial`, `Vertex_natural`→`Vertex`,
-     `PushConstantRasterizer_std430`, `PushConstantPathTracing_std430`,
-     `PushConstantPost_std430`, `PushConstantRaytracing_std430` and
-     `ShadowPushConstants_std430`. Allowlist `PushConstantSkyBox_std430` by name
-     with the stated reason: `SkyBox.cpp:334,411` pushes a bare `uint32_t`, so
-     there is no host struct to compare.
-  3. Walk every `Resources/ShadersSlang/build/spirv/**/*.spv`, union the parsed
-     maps, and assert each table entry's offsets match. Include the `.spv` file
-     name in every failure message.
-  4. Fail the test if a table entry appears in **no** `.spv` — a renamed or
-     deleted shader struct must break the gate loudly, not silently pass.
-     Anchor the allowlist to a name, never a line number (`e8b1db52`).
-  5. Do not assert `ArrayStride`/`MatrixStride` in this pass; those live on
-     `OpDecorate` of pointer and array types and need type-id chasing. Say so in
-     a comment so the next reader knows it was a scope decision, not an
-     oversight.
-
-  **Test:** `BuildIntegrity.SharedStructOffsetsMatchTheCompiledSpirv` (new, pure
-  CPU). Verify it is genuinely load-bearing by temporarily deleting task 1's pad
-  member and confirming the gate goes red on `SceneUBO_std140.cascadeSplits`,
-  then restoring it. Run:
-  `.\commitTestSuite.exe --gtest_filter='BuildIntegrity.*:SceneUboLayoutUnit.*'`
-
-  **Build:** `clangcl-debug`, same invocation as task 1.
-
-  **Context:** Do this **after** task 1 — this gate is red until the pad lands,
-  and a red gate cannot be distinguished from a broken parser. This is the
-  durable half of the fix: `302faa90` (`SlangCompileManifestsAgree`),
-  `a348bd9f` (cloud dispatch grids) and `b9a8af95` (path-tracing dispatch grid)
-  all followed the same arc — fix the drift, then make the compiled artifact
-  the thing the test reads so the drift cannot come back.
-
 - [ ] **(S) Reject out-of-range glTF indices before they reach `computeFlatNormals` and the index buffer** — the OBJ loader drops malformed faces (`a0cffe7a`); the glTF loader still writes whatever the accessor says, straight into an unchecked `std::span` subscript.
 
   **Files to read:**
@@ -4892,3 +4826,41 @@ writable `${TMPDIR:-/tmp}/cargo-home` when the configured one is unwritable
 breakage date I had not verified, then spent three CI round trips on a control
 that moved two variables at once. The local reproduction took one container run
 and answered it outright. Get the failing thing into a shell before theorising.
+
+## 2026-08-02 batch — dedup audit leftovers (from the ContainerHub/docs dedup pass)
+
+- [ ] **Upstream Build-Windows-Container.ps1's remaining generic pieces to
+  ContainerHub** (M) — three blocks are generic to the reusable-container
+  pattern, not to this engine, and belong in
+  `windows/scripts/modules/WindowsContainerBuild.Reuse.psm1`:
+  (1) the ensure-pwsh-via-scoop bootstrap, (2) the stale-source pruning
+  inside a reused container (tar extracts over the tree but never deletes),
+  (3) the built-but-not-delivered executable verification. Files:
+  `Scripts/Windows/Build-Windows-Container.ps1` (read the pruning and
+  verification comments — they carry measured history that must move with
+  the code), ContainerHub `WindowsContainerBuild.Reuse.psm1`. Steps: extract
+  each block into an exported function with the project bits (build-dir
+  names) as parameters; consume them from the project script; extend the
+  upstream Pester suite. Test: `Invoke-Pester` upstream + a container build
+  (`Build-Windows-Container.ps1 -Configurations clangcl-debug`). Build
+  preset: none (scripts only).
+
+- [ ] **Reconcile the ASAN_OPTIONS disagreement between run helper and
+  module** (S) — `Scripts/Windows/run_clangcl_debug.ps1` sets
+  `report_globals=0` + `windows_hook_rtl_allocators=false` while the vendored
+  `Scripts/Windows/modules/WindowsTesting.Common.psm1` uses
+  `report_globals=1` for tests; the save/override/restore pattern is also
+  duplicated. Decide which values are correct per context (document why they
+  differ if both are right), extract one helper, and delete the copy. Test:
+  Pester suite + run the debug binary once on the host. Build preset: none.
+
+- [ ] **Reconcile PS/bash agentic-library feature drift** (M) — the two
+  reusable libraries have drifted: PS has `Invoke-GitAutoCommit`,
+  `Get-AgenticConfigValue`, `Get-AgenticBuildConfigs` as functions where bash
+  inlines the logic in `run_agentic_loop`; bash has `count_build_matrix` /
+  `get_matrix_entry_name` with no PS counterpart. Files: ContainerHub
+  `windows/scripts/modules/WindowsAgenticLoop.Common.psm1`,
+  `linux/scripts/lib/agentic-loop.sh`. Give each side the missing named
+  functions so the API surfaces match (behavior already matches). Test:
+  upstream Pester suite; `bash -n` + a `--dry-run` loop run on a host with
+  jq. Build preset: none.

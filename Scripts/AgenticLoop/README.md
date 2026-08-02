@@ -65,54 +65,59 @@ flowchart TD
    implementation — it relies on the planner's detailed task descriptions to
    work efficiently.
 
-4. **Build matrix cycling**: After every N completed tasks, a build is
-   triggered. The build configuration cycles through a **build matrix** —
-   a set of entries each defining a preset, sanitizer, build directory, and
-   test command. This ensures the loop exercises ASAN, profile, and release
-   builds regularly, not just one build type.
+4. **Build matrix cycling, sanitizer-aware tests, full sweeps**: After
+   every N completed tasks a build is triggered, cycling through the
+   config's `buildMatrix` (ASAN, TSan, profile, and release entries);
+   entries with a sanitizer get `ASAN_OPTIONS`/`TSAN_OPTIONS` set around
+   their tests, and every `fullMatrixEveryNIterations` iterations ALL
+   configs build in sequence instead of just one. Cycling order, env-var
+   values, and entry semantics are documented once in
+   [`agentic-loop-build-matrix.md`](../../ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md).
 
-5. **Sanitizer-aware test execution**: When a matrix entry has
-   `sanitizer: "asan"` or `sanitizer: "tsan"`, the loop automatically sets
-   `ASAN_OPTIONS` or `TSAN_OPTIONS` before running tests, then restores the
-   original environment. This ensures sanitizer-instrumented tests actually
-   catch memory errors and data races.
-
-6. **Full matrix sweep**: Every N iterations (configurable via
-   `fullMatrixEveryNIterations`), the loop runs ALL build configs in
-   sequence instead of just one. This ensures every config is exercised
-   regularly, not just the one that happens to be next in the cycle.
-
-7. **Periodic quality gates**: clang-tidy and cmake-format run every M
+5. **Periodic quality gates**: clang-tidy and cmake-format run every M
    tasks to catch drift early.
 
-8. **Periodic refactor focus**: Every R iterations, the planner focuses
+6. **Periodic refactor focus**: Every R iterations, the planner focuses
    exclusively on refactoring tasks (dead code, API consolidation, test
    gaps, documentation drift, C++23 modernization).
 
-9. **Build-failure fixing**: When a periodic build fails, the executor-tier
+7. **Build-failure fixing**: When a periodic build fails, the executor-tier
    model is dispatched with the tail of the build log and a focused
    "fix the build" prompt, then the build is retried once. After
    `maxConsecutiveBuildFailures` consecutive failed build phases the loop
    stops instead of churning.
 
-10. **Retry with backoff + per-role timeouts**: Every agent invocation
+8. **Retry with backoff + per-role timeouts**: Every agent invocation
    retries up to `agentRetries` times with linear backoff, and the planner /
    executor have independent wall-clock timeouts
    (`plannerTimeoutSeconds` / `executorTimeoutSeconds`).
 
-11. **Planner sandbox (claude engine)**: The planner runs with
+9. **Planner sandbox (claude engine)**: The planner runs with
     `--allowed-tools "Read Glob Grep Edit(BACKLOG.md) Bash(git:*) PowerShell(git:*)"`,
     so it can analyze everything but only write the backlog. The executor
     runs with `bypassPermissions` (trusted repo). Role system prompts come
     from `prompts/planner.md` / `prompts/executor.md` via
     `--append-system-prompt-file`.
 
+10. **Single-sourced task prompts**: the per-phase TASK prompts (the
+    planner / refactor-planner / executor instructions piped to each
+    invocation) live in ContainerHub at
+    `shared/agentic-loop/prompts/{planner,refactor-planner,executor}.md` —
+    the single source of truth read by both the PowerShell module
+    (`Get-AgenticDefaultPrompt`) and the Bash library
+    (`default_*_prompt`). The wrapper scripts here pass no prompt text;
+    `Invoke-AgenticLoop`'s prompt parameters are optional and default to
+    those files. These are distinct from the engine-neutral SYSTEM prompts
+    in `Scripts/AgenticLoop/prompts/` (principle 9), which stay
+    project-owned.
+
 ## Files
 
 | File | Purpose |
 | --- | --- |
-| `Scripts/AgenticLoop/prompts/planner.md` | Engine-neutral planner system prompt (used by the claude engine) |
-| `Scripts/AgenticLoop/prompts/executor.md` | Engine-neutral executor system prompt (used by the claude engine) |
+| `Scripts/AgenticLoop/prompts/planner.md` | Engine-neutral planner SYSTEM prompt (claude engine, via `--append-system-prompt-file`; project-owned) |
+| `Scripts/AgenticLoop/prompts/executor.md` | Engine-neutral executor SYSTEM prompt (claude engine, via `--append-system-prompt-file`; project-owned) |
+| `ExternalLib/Kataglyphis-ContainerHub/shared/agentic-loop/prompts/{planner,refactor-planner,executor}.md` | Default per-phase TASK prompts — single source of truth for both the PowerShell module and the Bash library |
 | `opencode.json` | OpenCode project config: agent definitions, model bindings, commands |
 | `.opencode/agents/planner.md` | Planner agent system prompt (opencode engine) |
 | `.opencode/agents/executor.md` | Executor agent system prompt (opencode engine) |
@@ -172,60 +177,34 @@ sudo apt install jq   # Debian/Ubuntu
 
 ## Configuration
 
-Edit `Scripts/AgenticLoop/AgenticLoop.config.json`:
+The live config is [`Scripts/AgenticLoop/AgenticLoop.config.json`](AgenticLoop.config.json).
+Its shape, abbreviated:
 
 ```json
 {
   "engine": "claude",
-  "engines": {
-    "claude": {
-      "plannerModel": "claude-fable-5",
-      "plannerFallbackModel": "claude-opus-4-8",
-      "executorModel": "claude-sonnet-5",
-      "plannerPromptFile": "Scripts/AgenticLoop/prompts/planner.md",
-      "executorPromptFile": "Scripts/AgenticLoop/prompts/executor.md",
-      "plannerAllowedTools": "Read Glob Grep Edit(BACKLOG.md) Bash(git:*) PowerShell(git:*)",
-      "permissionMode": "bypassPermissions"
-    },
-    "opencode": {
-      "plannerModel": "opencode-go/glm-5.2",
-      "executorModel": "opencode-go/deepseek-v4-flash"
-    }
-  },
-  "intervals": {
-    "buildEveryNTasks": 3,
-    "qualityEveryNTasks": 5,
-    "refactorEveryNIterations": 3,
-    "fullMatrixEveryNIterations": 5,
-    "testAfterBuild": true,
-    "maxExecutorRetries": 3,
-    "loopDelaySeconds": 10,
-    "maxIterations": 0,
-    "plannerTimeoutSeconds": 1800,
-    "executorTimeoutSeconds": 3600,
-    "agentRetries": 2,
-    "agentRetryDelaySeconds": 30,
-    "fixBuildFailures": true,
-    "maxConsecutiveBuildFailures": 3
-  },
-  "buildMatrix": {
-    "windows": [
-      {"name": "clangcl-debug", "sanitizer": "asan", "buildDir": "build-clangcl-debug", "buildType": "Debug", "testCommand": "ctest --test-dir build-clangcl-debug --output-on-failure -C Debug"},
-      {"name": "clangcl-profile", "sanitizer": "none", "buildDir": "build-clangcl-profile", "buildType": "RelWithDebInfo", "testCommand": "ctest --test-dir build-clangcl-profile --output-on-failure -C RelWithDebInfo"},
-      {"name": "clangcl-release", "sanitizer": "none", "buildDir": "build-clangcl-release", "buildType": "Release", "testCommand": null}
-    ],
-    "linux": [
-      {"name": "linux-debug-asan-clang", "sanitizer": "asan", "buildDir": "build-asan-clang", "buildType": "Debug", "testCommand": "ctest --test-dir build-asan-clang --output-on-failure -C Debug"},
-      {"name": "linux-debug-tsan-clang", "sanitizer": "tsan", "buildDir": "build-tsan-clang", "buildType": "Debug", "testCommand": "ctest --test-dir build-tsan-clang --output-on-failure -C Debug"},
-      {"name": "linux-profile-clang", "sanitizer": "none", "buildDir": "build-profile-clang", "buildType": "RelWithDebInfo", "testCommand": "ctest --test-dir build-profile-clang --output-on-failure -C RelWithDebInfo"},
-      {"name": "linux-release-clang", "sanitizer": "none", "buildDir": "build-release-clang", "buildType": "Release", "testCommand": null}
-    ]
-  }
+  "engines": { "claude": { "...": "models, prompt files, tool sandbox" } },
+  "intervals": { "buildEveryNTasks": 3, "...": "cadences, timeouts, retries" },
+  "buildMatrix": { "windows": ["..."], "linux": ["..."] }
 }
 ```
 
-See [`ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md`](../../ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md)
-for the full build matrix documentation.
+Key-by-key semantics live in ContainerHub's
+[`windows-agentic-loop.md`](../../ExternalLib/Kataglyphis-ContainerHub/docs/windows-agentic-loop.md)
+(config table); `buildMatrix` entry fields and behaviour in
+[`agentic-loop-build-matrix.md`](../../ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md).
+Values this project sets deliberately (rather than inheriting defaults):
+
+- `buildEveryNTasks: 3`, `qualityEveryNTasks: 5`,
+  `refactorEveryNIterations: 3`, `fullMatrixEveryNIterations: 5` — the
+  build/quality/refactor/sweep cadences.
+- `plannerTimeoutSeconds: 1800`, `executorTimeoutSeconds: 3600` — per-role
+  wall-clock timeouts (the module default is no timeout).
+- `agentRetries: 2` with `agentRetryDelaySeconds: 30`, plus
+  `fixBuildFailures: true` / `maxConsecutiveBuildFailures: 3`.
+- The `buildMatrix` maps the repo's clangcl (Windows) and clang
+  ASAN/TSan/profile/release (Linux) presets to their build dirs and `ctest`
+  commands (release entries skip tests via `testCommand: null`).
 
 ### Model IDs
 
@@ -335,6 +314,11 @@ claude -p --model claude-fable-5 --fallback-model claude-opus-4-8 \
 opencode run --agent planner --model opencode-go/glm-5.2
 ```
 
+The task prompt piped into the invocation is the shared default
+`shared/agentic-loop/prompts/planner.md` from ContainerHub
+(`refactor-planner.md` on refactor iterations) — the wrapper scripts no
+longer hard-code any prompt text.
+
 The planner agent (role prompt in `prompts/planner.md` /
 `.opencode/agents/planner.md`):
 - Has read access to the entire codebase
@@ -356,6 +340,9 @@ claude -p --model claude-sonnet-5 --dangerously-skip-permissions \
 opencode run --agent executor --model opencode-go/deepseek-v4-flash
 ```
 
+The task prompt is the shared default
+`shared/agentic-loop/prompts/executor.md` from ContainerHub.
+
 The executor agent (role prompt in `prompts/executor.md` /
 `.opencode/agents/executor.md`):
 - Has full tool access (read, write, bash)
@@ -370,38 +357,25 @@ The loop continues until all tasks are drained or max retries are hit.
 
 ### 3. Build Phase
 
-After every N completed tasks, a build is triggered. The configuration
-cycles through the `buildMatrix` array, so consecutive builds use
-different presets:
-
-| Build # | Windows | Linux |
-| --- | --- | --- |
-| 1 | `clangcl-debug` (ASAN) | `linux-debug-asan-clang` (ASAN) |
-| 2 | `clangcl-profile` | `linux-debug-tsan-clang` (TSan) |
-| 3 | `clangcl-release` | `linux-profile-clang` |
-| 4 | `clangcl-debug` (cycles back) | `linux-release-clang` |
-| 5 | `clangcl-profile` | `linux-debug-asan-clang` (cycles back) |
+After every N completed tasks, a build is triggered, cycling through the
+`buildMatrix` array so consecutive builds use different presets; every
+`fullMatrixEveryNIterations` iterations a **full matrix sweep** runs ALL
+configs in sequence instead of just one. The cycling-order table and sweep
+semantics are in
+[`agentic-loop-build-matrix.md`](../../ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md).
 
 On Windows, builds go through the Stevedore container script
 (`Build-Windows-Container.ps1`). On Linux, through the native build script
 (`cmake-configure-build.sh`) via Rancher Desktop.
 
-Every N iterations (configurable via `fullMatrixEveryNIterations`), a
-**full matrix sweep** runs ALL configs in sequence instead of just one.
-
 ### 4. Test Phase
 
-After each successful build, tests run via `ctest`. When the build matrix
-entry has `sanitizer: "asan"` or `sanitizer: "tsan"`, the loop
-automatically sets `ASAN_OPTIONS` or `TSAN_OPTIONS` before running tests,
-then restores the original environment. This ensures sanitizer-instrumented
-tests actually catch memory errors and data races.
-
-| Sanitizer | Env Var | Value |
-| --- | --- | --- |
-| `asan` | `ASAN_OPTIONS` | `detect_leaks=1:halt_on_error=1:abort_on_error=1:allocator_may_return_null=1` |
-| `tsan` | `TSAN_OPTIONS` | `halt_on_error=1:abort_on_error=1:second_deadlock_stack=1` |
-| `none` | — | No env vars set |
+After each successful build, tests run via the matrix entry's `ctest`
+command. Entries with `sanitizer: "asan"` / `"tsan"` get `ASAN_OPTIONS` /
+`TSAN_OPTIONS` set for the run and restored afterwards, so
+sanitizer-instrumented tests actually catch memory errors and data races;
+the exact env-var values are in
+[`agentic-loop-build-matrix.md`](../../ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md).
 
 ### 5. Quality Phase
 

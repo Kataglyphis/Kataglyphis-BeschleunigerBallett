@@ -7,7 +7,6 @@ Set-StrictMode -Version Latest
 # uses ONE WindowsScripts.Shared module - a second path-distinct copy would
 # knock the globally imported one out via this nested -Force import.
 $sharedPath = Join-Path $PSScriptRoot '..\..\..\ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules\WindowsScripts.Shared.psm1'
-if (-not (Test-Path $sharedPath)) { $sharedPath = Join-Path $PSScriptRoot 'WindowsScripts.Shared.psm1' }
 # No -Force when already loaded: a nested force-reimport moves the module's
 # exports out of the global session state on Windows PowerShell 5.1.
 if (-not (Get-Module -Name 'WindowsScripts.Shared')) { Import-Module $sharedPath }

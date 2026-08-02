@@ -87,7 +87,7 @@ Details worth knowing:
 
 - The script always uses Stevedore's `docker.exe`; `nerdctl` is not usable for builds or runs on Windows.
 - Process isolation is the default so the container sees all host CPUs.
-- The repo is bind-mounted to a fresh container path. If the repo lives on a Dev Drive that has not allow-listed the container filesystem filters, bind mounts fail; the script then falls back to streaming the sources into the container via tar and streaming the resulting build trees and logs back into the working tree. To enable the faster bind-mount path on a Dev Drive, run once from an elevated prompt `fsutil devdrv setfiltersallowed bindFlt, wcifs` and remount the volume.
+- By default the script streams the sources into a reusable container via tar and streams the resulting build trees and logs back into the working tree; `-UseBindMount` opts into bind-mounting the repo instead. On a Dev Drive the bind mount additionally requires the container filesystem filters to be allow-listed once from an elevated prompt, followed by a reboot: `fsutil devdrv setFiltersAllowed /volume D: "bindFlt,wcifs"` — the filter list must be one quoted argument (unquoted `bindFlt, wcifs` is parsed as two arguments and fails). Setup, verification, and revert steps live in `ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md`; this repo's measured transport numbers and incremental-build wiring live in `docs/container-build-caching.md` (on this Dev Drive host the tar-pipe measured faster than the bind mount — measure before switching).
 - Builds are supported against the recorded submodule pins; restore them with `git submodule update --checkout --recursive`. The Windows scripts resolve PowerShell modules from the `ExternalLib/Kataglyphis-ContainerHub` submodule when available, falling back to vendored copies in `Scripts/Windows/modules` (see `Scripts/Windows/Resolve-BuildModule.ps1`). When bumping `ExternalLib/FUZZTEST`, keep `ABSL_TAG` in `ExternalLib/CMakeLists.txt` >= FuzzTest's own Abseil pin (see `AGENTS.md`).
 
 ## Packaging
@@ -108,11 +108,18 @@ bash ./Scripts/Linux/cmake-configure-build.sh \
   --build-target package
 ```
 
-For AppImage packaging, enable `CPACK_ENABLE_APPIMAGE=ON` on a separate release build tree and ensure `appimagetool` is on `PATH`.
+Artifacts land in the selected build directory. For AppImage packaging, enable `CPACK_ENABLE_APPIMAGE=ON` on a separate release build tree and ensure `appimagetool` is on `PATH`:
+
+```bash
+cmake -S . -B build-release-appimage \
+  --preset linux-release-clang \
+  -DCPACK_ENABLE_APPIMAGE=ON
+cmake --build build-release-appimage --config Release --target package
+```
 
 ### Windows MSIX
 
-The Windows release workflow can produce an MSIX package. If signing is enabled, provide the certificate password through `MSIX_PFX_PASSWORD` or `MSIX_CERT_PASSWORD`.
+The Windows release workflow can produce an MSIX package. If signing is enabled, place the PFX certificate at the repository root and provide the certificate password through `MSIX_PFX_PASSWORD` or `MSIX_CERT_PASSWORD`.
 
 ## Shader Include Workflow
 
@@ -122,6 +129,18 @@ WGSL (Rust). See `docs/shader-build-pipeline.md` for details.
 
 ## Troubleshooting
 
-If Vulkan validation layers are missing, install the validation packages from your operating system or Vulkan SDK before retrying the build or run workflow.
+If Vulkan validation layers are missing, install the validation packages from your operating system or Vulkan SDK before retrying the build or run workflow. Startup then fails with errors like:
+
+```bash
+[error] Validation layers requested, but not available!
+[error] Failed to create a Vulkan instance!
+ERROR: vkGetInstanceProcAddr: Invalid instance
+```
+
+On Linux, install the runtime packages first:
+
+```bash
+sudo apt install libvulkan1 vulkan-tools vulkan-validationlayers
+```
 
 On Windows this shows up as Debug builds aborting at startup with exit code `-1073740791` (`0xC0000409`) right after logging `Validation layers requested, but not available!`. Install the Vulkan SDK (`winget install VulkanSDK`), or set `VK_LAYER_PATH` to a directory containing `VkLayer_khronos_validation.dll`/`.json`. Profile and Release builds run without validation layers. When running the AddressSanitizer Debug build manually, keep the `ASAN_OPTIONS` `log_path` relative (an absolute `C:\...` path breaks ASAN option parsing at the drive-letter colon) — the `run_clangcl_debug.ps1` helper already handles this.

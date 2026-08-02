@@ -53,16 +53,6 @@ Kataglyphis-BeschleunigerBallett is a renderer and graphics-engine playground us
 | `Documents/` | Generated PDF and reference artifacts |
 | `ExternalLib/` | Third-party dependencies and submodules |
 
-## Requirements
-
-- C++23
-- C17
-- CMake 4.1 or newer
-- Vulkan SDK 1.4 compatible environment for Vulkan builds
-- OpenGL 4.6 capable driver/runtime for OpenGL builds
-- Python plus `requirements.txt` for docs and formatting tools
-- Optional Rust toolchain for experimental Rust-enabled builds
-
 ## Quick Start
 
 ### Clone
@@ -81,66 +71,7 @@ cmake --build build --config Debug
 ctest --test-dir build --output-on-failure
 ```
 
-For Visual Studio style generators on Windows, add `-C Debug` or `-C Release` to `ctest` as needed.
-
-### Linux helper script
-
-```bash
-bash ./Scripts/Linux/cmake-configure-build.sh \
-  --preset linux-debug-clang \
-  --build-dir build \
-  --build-config Debug
-```
-
-### Windows helper scripts
-
-Use the build orchestration script when you want one entry point for formatting, configuration, build, and tests. Available configurations: `msvc-debug`, `msvc-release`, `clangcl-debug` (Debug with ASAN/UBSan), `clangcl-profile` (RelWithDebInfo with benchmarks), `clangcl-release`.
-
-```pwsh
-# single configuration
-pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 -Configurations clangcl-debug
-
-# full sanitizer/profile/release sweep
-pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 `
-  -Configurations "clangcl-debug,clangcl-profile,clangcl-release"
-```
-
-Note: sanitizers are Debug-only. `clangcl-debug` enables AddressSanitizer and UBSan by default. There is no Windows TSan preset (clang-cl does not support `-fsanitize=thread` on this target) — use the `linux-debug-tsan-clang` or `linux-debug-tsan-GNU` presets for real TSan runs.
-
-### Windows container build (Stevedore)
-
-The same builds run fully containerized in the ContainerHub developer image `ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64` — this is what CI does. Install [Stevedore](https://github.com/slonopotamus/stevedore) (`winget install stevedore`, then reboot) and run:
-
-```pwsh
-# defaults to clangcl-debug,clangcl-profile,clangcl-release
-pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1
-```
-
-The script uses Stevedore's `docker.exe` (never `nerdctl` — broken DNS/CNI on Windows) and prefers process isolation for full CPU count.
-
-Builds are **incremental**: one reusable container (`bb-build-persistent`) keeps the build tree, so a no-change rebuild takes ~9.6 s of ninja (~44 s wall) instead of the 352–484 s a fresh container per build used to cost. Use `-FreshContainer` to reset — note that a file *deleted* on the host keeps building inside a reused container until then.
-
-Two transports move the sources in and the artifacts out, and **both are supported**:
-
-- **tar-pipe (default)** — no host setup, works on a Dev Drive as-is.
-- **bind mount (`-UseBindMount`)** — no copying, but on a Dev Drive it needs the container filters allow-listed once (elevated, then reboot):
-
-  ```pwsh
-  fsutil devdrv setFiltersAllowed /volume D: "bindFlt,wcifs"
-  ```
-
-  The filter list must be **one quoted argument** — `bindFlt, wcifs` unquoted is parsed as two and fails.
-
-Counter-intuitively the bind mount measured **slower** on this Dev Drive host (32.7 s ninja vs 9.6 s), because the build tree then sits behind a filesystem filter and every ninja stat crosses it — hence the tar-pipe default. That result is host-specific and can invert elsewhere, so measure before switching. Setup, verification, revert and the full numbers: [ContainerHub § Transports](ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md#transports-how-to-set-up-both) and [`docs/container-build-caching.md`](docs/container-build-caching.md).
-
-Builds are supported against the recorded submodule pins (`git submodule update --checkout --recursive` restores them). The Windows scripts resolve PowerShell modules from the `ExternalLib/Kataglyphis-ContainerHub` submodule when available, with vendored fallbacks in `Scripts/Windows/modules` for modules removed upstream (see `Scripts/Windows/Resolve-BuildModule.ps1` and `AGENTS.md`). When bumping `ExternalLib/FUZZTEST`, keep `ABSL_TAG` in `ExternalLib/CMakeLists.txt` at least as new as the Abseil pin in FuzzTest's `cmake/BuildDependencies.cmake`.
-
-Run helpers after building:
-
-```pwsh
-& ./Scripts/Windows/run_clangcl_debug.ps1 2>&1 | Tee-Object -FilePath logs/debug/run.log
-& ./Scripts/Windows/run_clangcl_release.ps1 2>&1 | Tee-Object -FilePath logs/release/run.log
-```
+Full prerequisites, the per-platform workflows (Linux helper scripts, the Windows `Build-Windows.ps1` configurations, the containerized Stevedore build), packaging (CPack/MSIX), and troubleshooting live in [docs/source/getting_started.md](docs/source/getting_started.md).
 
 ## Documentation
 
@@ -149,18 +80,7 @@ The repository ships two documentation entry points:
 - this README for repository-level orientation
 - the Sphinx site under `docs/` for getting started, workflow notes, Graphviz output, and optional API reference material
 
-Topic guides (each topic has exactly one home — `AGENTS.md` links to these rather than restating them):
-
-| Doc | Covers |
-| --- | --- |
-| [`docs/container-build-caching.md`](docs/container-build-caching.md) | This repo's build caching: measurements, both transports, `KATAGLYPHIS_KEEP_BUILD_ROOT`, delivery verification |
-| [`docs/shader-build-pipeline.md`](docs/shader-build-pipeline.md) | Slang → SPIR-V/WGSL build step, staleness rules, fast shader iteration |
-| [`docs/code-quality.md`](docs/code-quality.md) | clang-tidy / clang-format commands and when to run them |
-| [`docs/cpp-renderer-improvements.md`](docs/cpp-renderer-improvements.md) | Renderer architecture work: what changed and why, plus the instrument playbook for writing goldens |
-| [`docs/path-tracing.md`](docs/path-tracing.md) | The path-tracing mode: estimator, temporal accumulation, furnace/convergence goldens |
-| [`ExternalLib/Kataglyphis-ContainerHub/docs/`](ExternalLib/Kataglyphis-ContainerHub/docs/) | Everything reusable about Windows containers — image, transports and their setup, performance findings |
-
-Renderer-agnostic and Windows-container knowledge lives in the ContainerHub submodule so other projects can consume it; see the "Reusable Work Belongs in ContainerHub" rule in `AGENTS.md`.
+Each topic has exactly one home; the full topic-guide inventory is the Docs table in [AGENTS.md](AGENTS.md). Renderer-agnostic and Windows-container knowledge lives in the ContainerHub submodule so other projects can consume it (see the "Reusable Work Belongs in ContainerHub" rule there).
 
 Build the Sphinx HTML docs locally:
 
@@ -181,34 +101,7 @@ If Doxygen XML is available, the Sphinx build automatically includes the generat
 
 ## Packaging
 
-### Linux
-
-Binary packages are generated with CPack. A typical release workflow is:
-
-```bash
-bash ./Scripts/Linux/cmake-configure-build.sh \
-  --vulkan-setup-script /opt/vulkan/1.4.341.1/setup-env.sh \
-  --preset linux-release-clang \
-  --build-dir build-release \
-  --build-config Release
-
-bash ./Scripts/Linux/cmake-configure-build.sh \
-  --vulkan-setup-script /opt/vulkan/1.4.341.1/setup-env.sh \
-  --build-dir build-release \
-  --skip-configure true \
-  --build-target package
-
-cmake -S . -B build-release-appimage \
-  --preset linux-release-clang \
-  -DCPACK_ENABLE_APPIMAGE=ON
-cmake --build build-release-appimage --config Release --target package
-```
-
-Artifacts land in the selected build directory. For AppImage builds, `appimagetool` must be available in `PATH`.
-
-### Windows
-
-The Windows release build can produce an MSIX package. For signing, place the PFX certificate at the repository root and provide the password via `MSIX_PFX_PASSWORD` or `MSIX_CERT_PASSWORD`.
+Linux binary packages are generated with CPack (optionally as AppImage); the Windows release build can produce a signed MSIX. The workflows live in [docs/source/getting_started.md](docs/source/getting_started.md#packaging).
 
 ## Shaders
 
@@ -220,7 +113,7 @@ Shaders for the full pipeline.
 
 ## Docker and Build Environments
 
-Containerized and reproducible environment details live in [Kataglyphis-ContainerHub](https://github.com/Kataglyphis/Kataglyphis-ContainerHub). On Windows the container runtime is [Stevedore](https://github.com/slonopotamus/stevedore); `Scripts/Windows/Build-Windows-Container.ps1` builds this project inside the prebuilt toolchain image (see the Windows container build section above), and `.github/workflows/Windows.yml` runs the same flow in CI.
+Containerized and reproducible environment details live in [Kataglyphis-ContainerHub](https://github.com/Kataglyphis/Kataglyphis-ContainerHub). On Windows the container runtime is [Stevedore](https://github.com/slonopotamus/stevedore); `Scripts/Windows/Build-Windows-Container.ps1` builds this project inside the prebuilt toolchain image (sources travel via a tar-pipe into a reusable container by default, `-UseBindMount` opts into a bind mount — see [`docs/container-build-caching.md`](docs/container-build-caching.md)), and `.github/workflows/Windows.yml` runs the same flow in CI.
 
 ## Roadmap
 
@@ -269,25 +162,6 @@ Project link: [https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett](
 - [Kataglyphis-ContainerHub](https://github.com/Kataglyphis/Kataglyphis-ContainerHub)
 - [Doxygen PDF reference](Documents/refman.pdf)
 - [Sphinx docs source](docs/source)
-
-## Common Issue: Missing Vulkan validation layers
-
-If validation layers are not available, startup can fail with errors like:
-
-```bash
-[error] Validation layers requested, but not available!
-[error] Failed to create a Vulkan instance!
-ERROR: vkGetInstanceProcAddr: Invalid instance
-```
-
-On Linux, install the runtime packages first:
-
-```bash
-sudo apt install libvulkan1 vulkan-tools vulkan-validationlayers
-```
-
-On Windows, Debug builds abort at startup with exit code `-1073740791` (`0xC0000409`) when the validation layers are missing. Install the Vulkan SDK (`winget install VulkanSDK`), or point `VK_LAYER_PATH` at a directory containing `VkLayer_khronos_validation.dll`/`.json` (extractable from the ContainerHub toolchain image). Profile and Release builds run without validation layers.
-
 
 ## Literature 
 
@@ -345,20 +219,7 @@ Docker
 
 Wenn in WSL2 nach dem Start der Anwendung nur "llvmpipe" (Mesa Software‑Renderer) angezeigt wird, siehe die Troubleshooting‑Seite: [docs/source/wsl2_vulkan.rst](docs/source/wsl2_vulkan.rst) für Schritt‑für‑Schritt‑Anweisungen zur Installation des NVIDIA‑ICD und zum Neustart von WSL (`wsl --shutdown`).
 
+### Missing Vulkan validation layers
 
-  * Problem: 
-    If **__Validation Layers__** could not be found:
-    ```bash
-    A value given directly by extern c function 322
-    [XXXX-XX-XX 10:30:40.877] [error] Validation layers requested, but not available!
-    [XXXX-XX-XX 10:30:40.879] [error] Failed to create a Vulkan instance!
-    [XXXX-XX-XX 10:30:40.880] [error] Validation layers requested, but not available!
-    [XXXX-XX-XX 10:30:40.882] [error] Failed to create a Vulkan instance!
-    ERROR:             vkGetInstanceProcAddr: Invalid instance [VUID-vkGetInstanceProcAddr-instance-parameter]
-    ```
-    Solution for linux:
-    ```bash
-    sudo apt install libvulkan1 vulkan-tools vulkan-validationlayers
-    ```
-    Otherwise you would have to install them via sdk.
+If startup fails with `Validation layers requested, but not available!`, see the Troubleshooting section in [docs/source/getting_started.md](docs/source/getting_started.md#troubleshooting) (Linux packages, Windows exit code and `VK_LAYER_PATH`).
 

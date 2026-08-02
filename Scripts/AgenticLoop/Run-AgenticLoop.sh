@@ -8,7 +8,7 @@ set -euo pipefail
 # ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/agentic-loop.sh.
 #
 # Engines (config .engine, or --engine / AGENTIC_ENGINE):
-#   claude   — planner: Fable 5 (fallback Opus 4.8), executor: Sonnet
+#   claude   — planner: Opus 5 (fallback Fable 5), executor: Sonnet
 #   opencode — planner: GLM 5.2, executor: DeepSeek v4 Flash
 #
 # Usage:
@@ -71,25 +71,11 @@ fi
 init_agentic_loop "Kataglyphis-BeschleunigerBallett" "$REPO_ROOT"
 
 EXIT_CODE=0
-START_TIME=$(date +%s)
 
 cleanup() {
   local ec=$?
   [[ $ec -ne 0 ]] && EXIT_CODE=$ec
-  local elapsed=$(( $(date +%s) - START_TIME ))
-  section "Agentic Loop Finished"
-  log "Exit code: $EXIT_CODE"
-  log "Elapsed time: $(( elapsed / 60 ))min"
-  log "Log file: $LOG_FILE"
-  if [[ $EXIT_CODE -ne 0 ]]; then
-    log "The loop exited with errors. Check sections above marked [ERROR] or [FATAL]." "WARN"
-    log "Common fixes:" "WARN"
-    log "  1. claude engine: run 'claude' once interactively to log in" "WARN"
-    log "  2. opencode engine: run 'opencode auth login' and 'opencode models'" "WARN"
-    log "  3. Verify model IDs in Scripts/AgenticLoop/AgenticLoop.config.json" "WARN"
-    log "  4. Run with --dry-run to test the configuration without executing" "WARN"
-    log "  5. Run with --max-iterations 1 to test a single iteration" "WARN"
-  fi
+  complete_agentic_loop "$EXIT_CODE"
   exit $EXIT_CODE
 }
 trap cleanup EXIT

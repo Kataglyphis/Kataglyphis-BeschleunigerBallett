@@ -94,13 +94,12 @@ lifting the UNORM ceiling widened several of them dramatically):
 - `RaytracedWorldFollowsTheModelTransform` - a GUI move must change the
   traced image: 0.397 vs exactly 0 on a stale TLAS.
 
-Instrument lessons that cost real hours, preserved in the test comments: the
-ImGui panel covers the left ~70% of the capture; whole-frame or centre-crop
-means measure FPS-counter digits, not the scene; before the HDR unit, lit
-surfaces clamped at the UNORM ceiling (186 after tonemap) and hid most of
-every light response. Measure changed-pixel fractions in the panel-free
-right edge, and dump amplified diff-map PNGs before trusting any new pixel
-metric.
+The instrument lessons these goldens were built on (ImGui panel coverage,
+measuring changed-pixel fractions in the panel-free right edge, dumping
+amplified diff-map PNGs before trusting a metric) are collected in
+[`gpu-golden-testing.md`](gpu-golden-testing.md)'s cautions section. The
+PT-specific one: before the HDR unit, lit surfaces clamped at the UNORM
+ceiling (186 after tonemap) and hid most of every light response.
 
 Editing the kernel no longer needs a C++ rebuild: the Slang compile script
 regenerates the `.spv` and the engine loads it at startup.
