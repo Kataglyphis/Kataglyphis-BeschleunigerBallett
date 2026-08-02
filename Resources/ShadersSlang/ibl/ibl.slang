@@ -5,6 +5,8 @@ import fullscreen;
 // GGX-prefiltered specular, and the environment BRDF lookup table.
 
 static const float PI = 3.14159265359;
+static const uint IRRADIANCE_PHI_STEPS = 128u;
+static const uint IRRADIANCE_THETA_STEPS = 64u;
 
 struct IblParams
 {
@@ -105,21 +107,18 @@ float4 fs_irradiance(FullscreenVsOut In) : SV_Target
     float3 right = normalize(cross(up, dir));
     up = cross(dir, right);
     float3 irradiance = float3(0.0);
-    float sampleCount = 0.0;
-    float phiStep = 2.0 * PI / 64.0;
-    float thetaStep = 0.5 * PI / 32.0;
-    for (uint phi_i = 0u; phi_i < 64u; phi_i++)
+    for (uint phi_i = 0u; phi_i < IRRADIANCE_PHI_STEPS; phi_i++)
     {
-        for (uint theta_i = 0u; theta_i < 32u; theta_i++)
+        float phi = 2.0 * PI * (float(phi_i) + 0.5) / float(IRRADIANCE_PHI_STEPS);
+        for (uint theta_i = 0u; theta_i < IRRADIANCE_THETA_STEPS; theta_i++)
         {
-            float phi = float(phi_i) * phiStep;
-            float theta = float(theta_i) * thetaStep;
+            float theta = 0.5 * PI * (float(theta_i) + 0.5) / float(IRRADIANCE_THETA_STEPS);
             float3 tangent = float3(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta));
             float3 sampleDir = tangent.x * right + tangent.y * up + tangent.z * dir;
-            irradiance += srcCube.Sample(srcSampler, sampleDir).rgb * cos(theta) * sin(theta);
-            sampleCount += 1.0;
+            irradiance += srcCube.SampleLevel(srcSampler, sampleDir, 0.0).rgb * cos(theta) * sin(theta);
         }
     }
+    float sampleCount = float(IRRADIANCE_PHI_STEPS * IRRADIANCE_THETA_STEPS);
     return float4(PI * irradiance / sampleCount, 1.0);
 }
 
