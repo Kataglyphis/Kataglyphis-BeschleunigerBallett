@@ -404,22 +404,32 @@ float4 fs_main(VsOut In) : SV_Target
 
     float3 punctual = punctual_lighting(In.worldPosition, n, v, albedo.rgb, metallic, roughness, f0, In.svPosition);
 
-    // IBL ambient
-    float3 ambient = float3(0.0);
-    if (iblParams.enabled_maxmip_intensity.x > 0.5)
-    {
-        float3 r = reflect(-v, n);
-        float3 irradiance = irradianceMap.Sample(iblSampler, n).xyz;
-        float3 prefiltered = prefilteredMap.SampleLevel(iblSampler, r, roughness * iblParams.enabled_maxmip_intensity.y).xyz;
-        float2 brdfLutSample = brdfLut.Sample(iblSampler, float2(max(dot(n, v), 0.0), roughness)).rg;
-        float3 specularIBL = prefiltered * (f0 * brdfLutSample.x + brdfLutSample.y);
-        ambient = (irradiance * albedo.rgb) * (1.0 - metallic) + specularIBL;
-    }
-    else
-    {
-        ambient = hemisphere_irradiance(n) * albedo.rgb * (1.0 - metallic);
-    }
+    // IBL ambient. Both the prefiltered-environment path and the analytic
+    // sky/ground fallback are evaluated unconditionally and picked between
+    // with a ternary (not a branch) - the cube samples use explicit LODs, so
+    // this is legal, and it keeps the no-environment path bit-identical to
+    // what the golden images were taken against.
+    float3 reflected = reflect(-v, n);
+    float nDotV = max(dot(n, v), 1e-4);
+    float3 kSIbl = fresnel_schlick(nDotV, f0);
+    float envIntensity = iblParams.enabled_maxmip_intensity.z;
+    float iblStrength = frame.light_dir_ambient.w;
+    bool envEnabled = iblParams.enabled_maxmip_intensity.x > 0.5;
 
-    float3 color = directLight + punctual + ambient * occlusion + emissive;
+    float3 irradianceAnalytic = hemisphere_irradiance(n);
+    float3 irradianceEnv = irradianceMap.SampleLevel(iblSampler, n, 0.0).xyz * envIntensity;
+    float3 irradiance = envEnabled ? irradianceEnv : irradianceAnalytic;
+    float3 diffuseIbl = (float3(1.0) - kSIbl) * (1.0 - metallic) * albedo.rgb * irradiance;
+
+    float3 prefiltered = prefilteredMap.SampleLevel(iblSampler, reflected, roughness * iblParams.enabled_maxmip_intensity.y).xyz * envIntensity;
+    float2 brdfLutSample = brdfLut.Sample(iblSampler, float2(max(dot(n, v), 0.0), roughness)).rg;
+    float3 specularSplitSum = prefiltered * (f0 * brdfLutSample.x + brdfLutSample.y);
+    float3 envAnalytic = lerp(sky_radiance(reflected, true), irradianceAnalytic, roughness * roughness);
+    float3 specularAnalytic = envAnalytic * env_brdf_approx(f0, roughness, nDotV);
+    float3 specularIbl = envEnabled ? specularSplitSum : specularAnalytic;
+
+    float3 ambient = iblStrength * occlusion * (diffuseIbl + specularIbl);
+
+    float3 color = directLight + punctual + ambient + emissive;
     return float4(color, albedo.a);
 }

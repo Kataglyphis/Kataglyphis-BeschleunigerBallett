@@ -5012,6 +5012,331 @@ unchecked-results finding.
 ### C++ Vulkan engine
 
 
+## 2026-08-02 batch XIV — planner (the same Slang port that broke `ibl` also dropped the forward pass's analytic ambient specular and two host-side strength controls; the irradiance quadrature it downgraded; the gate that would have caught all of it; six unchecked surface queries; one sampler per texture)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the tree
+this pass; the "before" side comes from
+`git show 2a4ae68^:crates/webgpu_renderer/src/shaders/<name>.wgsl` inside
+`ExternalLib/Kataglyphis-RustProjectTemplate`.
+
+**Batch XIII found three semantic regressions in `ibl.slang` and closed two of
+them. It stopped at the entry-point count, and that is why it missed the
+bigger one.** Comparing *reachable functions* instead of entry points,
+`forward.wgsl` lost two whole functions that its `.slang` source still defines:
+
+| helper | in `forward.slang` | in emitted `forward.wgsl` | called by |
+| --- | --- | --- | --- |
+| `hemisphere_irradiance` | `:277` | `hemisphere_irradiance_0` (`:575`) | `:420` |
+| `sky_radiance` | `:260` | **absent** | **nothing** |
+| `env_brdf_approx` | `:283` | **absent** | **nothing** |
+
+Slang dropped them because nothing calls them — they are dead in the source.
+`grep -n "sky_radiance\|env_brdf_approx" Resources/ShadersSlang/forward/forward.slang`
+returns only the two definitions, no call sites. `occlusion_bbox` was checked
+the same way and is faithful (77 → 37 lines is comment loss only), so this is
+`ibl` and `forward`, not a systematic emitter fault.
+
+What the old `fs_main` did between the pre-Slang lines 572 and 605, and what
+`forward.slang:407-421` does now:
+
+1. **The analytic specular ambient is gone.** Old:
+   `env_analytic = mix(sky_radiance(reflected, true), irradiance_analytic, roughness*roughness)`,
+   then `specular_analytic = env_analytic * env_brdf_approx(f0, roughness, n_dot_v)`,
+   `select`ed against the split-sum path on `env_enabled`. New: the `else`
+   branch is `ambient = hemisphere_irradiance(n) * albedo.rgb * (1.0 - metallic)`
+   and nothing else. For `metallic = 1` that is **identically zero** — with no
+   IBL environment bound, a metal renders black except for direct and punctual
+   light.
+2. **`enabled_maxmip_intensity.z` (environment intensity) is never read.** The
+   host writes it (`crates/webgpu_renderer/src/render/forward.rs:2619`,
+   `[1.0, max_mip, intensity, 0.0]`); the shader reads `.x` at `:409` and `.y`
+   at `:413` and stops. Old code multiplied both `irradiance_env` and
+   `prefiltered` by it. The control is inert.
+3. **`light_dir_ambient.w` (ambient strength) is never read.** Old:
+   `ibl_strength = frame.light_dir_ambient.w` scaling the whole ambient term.
+   `forward.slang:28` still documents the field as "w: ambient" and
+   `forward.rs:335` still documents it as "scales both IBL paths alike"; the
+   default is `0.35` (`forward.rs:931`). Also inert.
+4. **The `(1 - k_s)` Fresnel factor on the diffuse ambient is gone.** Old:
+   `diffuse_ibl = (1 - fresnel_schlick(n_dot_v, f0)) * (1 - metallic) * albedo * irradiance`.
+   New drops the Fresnel term entirely.
+
+The deleted comment on the old `select`-not-`mix` choice states the reason the
+fallback path had to stay bit-exact: "every golden test in the suite depends on
+it."
+
+Candidates found but NOT tasked this cycle (re-verify next pass): `Model::cleanUp`
+(`Src/GraphicsEngineVulkan/scene/Model.cpp:26-38`) still clears `modelTextures`
+and `modelTextureSamplers` but not `meshes`, and `Scene::cleanUp`
+(`Scene.cpp:186-189`) clears nothing, so `Scene::reloadModel` (`:166-169`) runs
+`cleanUp()` and then destroys the models, re-walking every already-released
+`Mesh` — safe only because each leaf `cleanUp()` happens to be idempotent, an
+invariant nothing tests; `ssao.slang` and `bloom.slang` were not compared
+function-by-function against their pre-Slang originals (both *grew*, so they are
+lower risk, but task 3 below would settle them mechanically).
+
+### Rust WebGPU renderer
+
+- [ ] **(S) Restore `fs_irradiance`'s midpoint quadrature, its 128×64 step count and its explicit mip-0 sampling** — the same port downgraded the cosine convolution to left-endpoint quadrature at a quarter of the samples, and left a test comment behind that still claims midpoint.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/ibl/ibl.slang` — `:100-124` (`fs_irradiance`)
+  - The original, for the exact form:
+    `cd ExternalLib/Kataglyphis-RustProjectTemplate && git show 2a4ae68^:crates/webgpu_renderer/src/shaders/ibl.wgsl`
+    — `:136-137` (`IRRADIANCE_PHI_STEPS = 128u`, `IRRADIANCE_THETA_STEPS = 64u`),
+    `:151-167` (the `(f32(i) + 0.5)` midpoint sampling and the
+    `textureSampleLevel(..., 0.0)` fetch)
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/tests/ibl.rs`
+    — `:60-97` `a_constant_environment_convolves_to_its_own_radiance`, whose
+    `:88-91` comment budgets "the midpoint quadrature (~1e-4)" against a
+    tolerance of `0.01`
+
+  **Steps:**
+  1. Introduce `static const uint IRRADIANCE_PHI_STEPS = 128u;` and
+     `static const uint IRRADIANCE_THETA_STEPS = 64u;` next to the existing
+     `static const float PI` at `ibl.slang:7`, and use them for both loop
+     bounds and the normalisation — the current code writes `64`/`32` in four
+     places (`:109-113`, `:120`), which is exactly the drift shape
+     `BuildIntegrity.NoShaderRedeclaresTheCascadeCount` exists to prevent
+     elsewhere.
+  2. Replace the left-endpoint angles at `:115-116` with midpoints:
+     `float phi = 2.0 * PI * (float(phi_i) + 0.5) / float(IRRADIANCE_PHI_STEPS);`
+     and `float theta = 0.5 * PI * (float(theta_i) + 0.5) / float(IRRADIANCE_THETA_STEPS);`.
+     Note the current code's `sampleCount` accumulator becomes redundant — use
+     `float(IRRADIANCE_PHI_STEPS * IRRADIANCE_THETA_STEPS)` directly, as the
+     original did.
+  3. Change the fetch at `:119` from `srcCube.Sample(srcSampler, sampleDir)` to
+     `srcCube.SampleLevel(srcSampler, sampleDir, 0.0)`. `Sample` picks a mip
+     from screen-space derivatives of a direction that sweeps the whole
+     hemisphere inside the loop; the irradiance target is small and the source
+     cube is not, so the implicit LOD is neither 0 nor stable. The original was
+     explicit about this.
+  4. Recompile with `Scripts/Windows/compile-slang-shaders.ps1` and commit the
+     regenerated `crates/webgpu_renderer/src/shaders/ibl.wgsl`.
+
+  **Test:** tighten the tolerance in
+  `a_constant_environment_convolves_to_its_own_radiance` from `0.01` to a value
+  the left-endpoint version cannot meet. Measure first — run the test with the
+  current shader and with the fixed one, print `worst` (the test already
+  `eprintln!`s it), and set the bound between the two measurements with both
+  numbers written into the comment. The historical figures are ~0.003
+  (left-endpoint) versus ~0.0003 (midpoint), so `0.001` is the expected
+  landing spot, but **use what you measure**, and keep the existing note about
+  the `Rgba16Float` storage floor (2^-11 each for source and result). Then
+  correct the `:88-91` comment, which currently describes quadrature the
+  shader does not do.
+  Run: `cd ExternalLib/Kataglyphis-RustProjectTemplate && cargo test -p kataglyphis_webgpu_renderer --test ibl`.
+
+  **Build:** no C++ build required (`ibl.slang` targets WGSL only — check
+  `Resources/ShadersSlang/shader-manifest.json` to confirm before assuming it).
+
+  **Context:** batch XIII identified this as item 3 of the `ibl` regression and
+  fixed only items 1 and 2 (commits `ad9e3921`, `e1f1dd30`). This closes it.
+  4× the samples on a bake-once pass is not a cost worth optimising away — the
+  original chose these numbers deliberately.
+
+### Cross-renderer
+
+- [ ] **(M) Add a `BuildIntegrity` gate that fails when a `.slang` file defines a function no entry point can reach** — the single check that would have caught both the `ibl` regression batch XIII found and the `forward` one above, and the only way to settle `ssao`/`bloom` without hand-diffing them.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `:1429`
+    `SlangSourcesDoNotReferenceTheDeletedGlslTree` for the "walk
+    `Resources/ShadersSlang`, skip `build/`, parse text" pattern; `:1490`
+    `NoShaderRedeclaresTheCascadeCount` for the identifier-scanning style;
+    `:1740-1800` `kCheckedResultAllowlist` +
+    `allowlisted_result_check_index` + the dead-exemption check for the
+    allowlist pattern to copy verbatim
+  - `Resources/ShadersSlang/forward/forward.slang` — the two currently
+    unreachable functions (`sky_radiance:260`, `env_brdf_approx:283`) that seed
+    the test
+  - `Resources/ShadersSlang/ibl/ibl.slang` and
+    `Resources/ShadersSlang/fullscreen/…` — the `import` case: `ibl.slang:1`
+    is `import fullscreen;`, so a helper defined in one file is called from
+    another and per-file scoping would produce false positives
+
+  **Steps:**
+  1. Add `TEST(BuildIntegrity, EverySlangFunctionIsReachableFromAnEntryPoint)`.
+     Collect every `.slang` under `Resources/ShadersSlang` **excluding
+     `build/`** into one corpus — analyse globally, not per file, so `import`
+     is handled without modelling it.
+  2. Extract function definitions with a line scan, not a real parser: a
+     definition is a line at brace depth 0 matching
+     `<type-ish> <identifier> (` whose matching body opens a block. Record the
+     identifier, the file, the line, and whether the *preceding* non-blank,
+     non-comment line contains `[shader("`. Skip `struct`/`static const`/
+     `[vk::binding` lines. Strip `//` comments and string literals before
+     scanning.
+  3. Mark every `[shader("...")]` function as a root. Walk the call graph:
+     for each function body, any bare identifier that matches a known function
+     name is an edge. Identifier matching must be whole-word (reuse
+     `is_identifier_char` already in this file at `:1767`) so `sky_radiance`
+     does not match inside `sky_radiance_helper`.
+  4. Report every function not reachable from any root as
+     `<file>:<line>: <name>`. Provide the same escape hatch this suite uses
+     elsewhere: a `// UNREACHABLE_SLANG_FUNCTION_OK: <marker>` comment on the
+     definition line plus a justified entry in a `kUnreachableSlangAllowlist`
+     table, **and** the dead-exemption check that fails when an allowlist entry
+     matches nothing.
+  5. Run it and read what it reports before believing the list. Expect
+     `sky_radiance` and `env_brdf_approx` if task 1 of this batch has not
+     landed yet — that is the gate working, not a bug in it; do task 1 first.
+     Anything else it reports is a genuine finding: triage each one (delete the
+     dead function, or wire it back up) rather than allowlisting it away.
+
+  **Test:** the test *is* the deliverable. Make it self-verifying: after the
+  corpus walk, `ASSERT_GT` the number of functions discovered and the number of
+  entry points discovered against small non-zero floors, so a parser change
+  that silently finds nothing cannot read as a pass. This suite has been burned
+  by exactly that shape before (see `EveryShaderSourceHasCompiledBinary`).
+  Run: `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+  from the repo root — host `ctest` cannot read a container-generated tree.
+
+  **Build:**
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** this is a text gate, deliberately — a real Slang front end is
+  not available to the test suite and is not needed. Two shipped regressions
+  in one week shared the signature "the source still defines it, the emitted
+  output no longer contains it, nothing calls it." Keep the failure message
+  explicit that a dead helper usually means a *lost call site*, not a helper
+  that should be deleted — deleting `sky_radiance` would have "fixed" the gate
+  and cemented the bug. Also add the new test to the Windows CI filter if
+  `EveryCpuSuiteIsInTheWindowsCiFilter` (`:1054`) demands it.
+
+### C++ Vulkan engine
+
+- [ ] **(M) Check the six Vulkan *query* results `VulkanDevice.cpp` reads through `.value`, and widen `VulkanCreationResultsAreChecked` to cover queries** — the existing gate only recognises `create*`/`allocate*`, so every surface and enumeration query slipped past it.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp` — `:205`
+    (`enumeratePhysicalDevices().value`), `:387` and `:617`
+    (`enumerateDeviceExtensionProperties().value`), `:564`
+    (`getSurfaceSupportKHR(...).value`), `:586` / `:589` / `:592`
+    (`getSurfaceCapabilitiesKHR` / `getSurfaceFormatsKHR` /
+    `getSurfacePresentModesKHR`)
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `:1761-1781`
+    `looks_like_creation_call` (the `create`/`Create`/`allocate`/`Allocate` +
+    camelCase + `(` rule that is why these sites are invisible), `:1800-1877`
+    the gate itself
+  - `Src/GraphicsEngineVulkan/common/Utilities.hpp` — `ASSERT_VULKAN`
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp:130-190` — the
+    pipeline-cache code, for the in-file precedent of an explicit
+    `if (x.result != vk::Result::eSuccess)` handling instead of an abort
+
+  **Steps:**
+  1. `getSurfaceCapabilitiesKHR` (`:586`) is the sharp one: on failure `.value`
+     is a default-constructed `vk::SurfaceCapabilitiesKHR`, i.e. zero extents
+     and zero image counts, which `getSwapchainDetails`'s caller then sizes a
+     swapchain from. Guard it with `ASSERT_VULKAN` — a surface whose
+     capabilities cannot be read is not recoverable.
+  2. `:589` / `:592` / `:617` / `:387` return empty vectors on failure, which
+     `check_device_suitable` (`:597-613`) already reads as "unsuitable". That
+     is the right *behaviour* but it is accidental — make it deliberate: check
+     the result and `spdlog::warn` with the device name and the result code
+     before returning, so a driver fault stops being indistinguishable from a
+     device that genuinely lacks the extension.
+  3. `:564` `getSurfaceSupportKHR` feeds a queue-family decision; treat it like
+     (1) — a failed query must not silently read as "no presentation support",
+     which would fail device selection with a misleading message.
+  4. `:205` `enumeratePhysicalDevices` — `ASSERT_VULKAN`; there is nothing to
+     do without it.
+  5. Widen the gate: add a `looks_like_query_call` alongside
+     `looks_like_creation_call` keyed on `get`/`Get`/`enumerate`/`Enumerate`
+     with the same camelCase-then-`(` rule, and OR it into the `triggered`
+     condition at `:1832`. **Also widen what counts as checked**: a query is
+     legitimately handled with an explicit `if (x.result != ...)` rather than
+     an abort, so treat a `.result` occurrence anywhere in the ±8-line window
+     (other than on the `.value` line itself) as satisfying the gate, in
+     addition to `ASSERT_VULKAN`.
+  6. Run the widened gate across the whole engine and triage everything it
+     newly reports. Do not bulk-allowlist: each site either gets a check or a
+     `// UNCHECKED_VULKAN_RESULT_OK: <marker>` with a written justification in
+     `kCheckedResultAllowlist`.
+
+  **Test:** the gate extension is the regression test. Additionally assert in
+  the test body that the widened `triggered` rule actually fires — e.g. a small
+  unit check `EXPECT_TRUE(looks_like_query_call("  auto x = d.getSurfaceFormatsKHR(*s).value;"))`
+  and `EXPECT_FALSE(looks_like_query_call("  auto x = getter(y).value;"))`, so a
+  future edit that neuters the matcher fails loudly instead of quietly passing
+  everything.
+  Run: `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+
+  **Build:**
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** batch III shipped the creation-call half of this gate; this is
+  the query half, and it is the reason batch XIII listed `:586/589/592` as an
+  open candidate two passes running. Exceptions are disabled project-wide, so
+  `.value` on a failed `vk::ResultValue` is not a throw — it is a silently
+  wrong value. Sizing is M rather than S because step 6 may surface sites
+  outside `VulkanDevice.cpp`; if it turns out to be only these six, it is an S.
+
+- [ ] **(S) (refactor) Stop `Model::addSampler` creating one `vk::Sampler` per texture when they differ only by mip count** — a 60-texture model allocates 60 samplers of which typically a handful are distinct.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/Model.cpp` — `:66-82` `addSampler` (the
+    only variable in the create-info is
+    `static_cast<float>(newTexture.getMipLevel())`; filter, address mode,
+    anisotropy and border colour are fixed), `:26-38` `cleanUp` (destroys every
+    element of `modelTextureSamplers`, which is what makes naive dedup a
+    double-free)
+  - `Src/GraphicsEngineVulkan/scene/Model.ixx` — `:35` `getTextureSamplers()`,
+    `:56` `modelTextureSamplers`
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1561` —
+    `sampler_info.sampler = scene->getTextureSampler(slot.model)[slot.indexInModel];`
+    — the consumer that requires the vector stay **index-parallel with the
+    textures**. This constrains the design: dedup the *handles*, not the
+    vector.
+  - `Src/GraphicsEngineVulkan/vulkan_base/SamplerBuilder.ixx` —
+    `buildSamplerCreateInfo`, where the pure helper belongs
+  - `Test/commit/VulkanEngine/samplerBuilderSuite.cpp` — the CPU-only test
+    pattern to follow
+
+  **Steps:**
+  1. Add a pure helper next to `buildSamplerCreateInfo` in
+     `SamplerBuilder.ixx`, e.g.
+     `auto findSamplerForMipLevel(std::span<const uint32_t> createdMipLevels, uint32_t mipLevel) -> std::optional<std::size_t>`
+     returning the index of an existing entry with the same mip count. Keep it
+     `constexpr`-friendly and free of Vulkan handles so it is unit-testable
+     without a device.
+  2. In `Model`, add two private members: `std::vector<uint32_t> ownedSamplerMipLevels`
+     and `std::vector<vk::Sampler> ownedSamplers`. In `addSampler`, consult the
+     helper; on a hit push the existing handle onto `modelTextureSamplers`, on
+     a miss create one, append to both owned vectors, then push it.
+     `modelTextureSamplers` stays exactly as long as `modelTextures`, so
+     `VulkanRenderer.cpp:1561` is untouched.
+  3. In `cleanUp`, destroy `ownedSamplers` (not `modelTextureSamplers`) and
+     clear all three vectors. Without this the shared handles are destroyed
+     once per referencing texture — a use-after-free the validation layers will
+     report as a destroyed-object use.
+  4. While in `cleanUp`, add the `meshes.clear()` that the loop at `:37` is
+     missing — every other container it touches is cleared, and `meshes` is why
+     `Scene::reloadModel` re-walks released meshes. This is a two-line fix that
+     belongs with the rest of the ownership tidy-up in this function.
+
+  **Test:** add `SamplerBuilder.FindSamplerForMipLevelReusesAnEqualMipCount` and
+  `SamplerBuilder.FindSamplerForMipLevelReturnsNulloptForANewMipCount` to
+  `Test/commit/VulkanEngine/samplerBuilderSuite.cpp` — pure CPU, no device
+  needed. Then verify the handle behaviour on the host with the golden suites,
+  which exercise a real multi-texture model:
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GoldenRender.*:Integration.*`
+  from the repo root, and a validation pass
+  (`pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1`)
+  since a double-destroy shows up there and nowhere else.
+
+  **Build:**
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** `Texture` already owns a separate `textureSampler` created by
+  `createTextureSampler` (`Texture.cpp:236-251`), used by `Clouds`, `SkyBox`
+  and `CascadedShadowMap` — model textures do not use it and get this parallel
+  one instead. Do **not** try to unify those two paths in this task; they have
+  different filter/compare settings and the merge is a separate, larger change.
+  The pixel output must not move: the create-infos are identical per mip count,
+  so a correct dedup is bit-exact.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
