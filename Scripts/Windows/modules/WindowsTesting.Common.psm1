@@ -108,6 +108,47 @@ function Resolve-TestExecutable {
   return $null
 }
 
+# Locates the built application executable inside a build tree. Shared by the
+# run_clangcl_{debug,profile,release}.ps1 launcher scripts. Tries the flat
+# build root, bin\, and per-configuration subdirectories (bin\<Config>\ and
+# <Config>\ for single- vs multi-config generators) before falling back to a
+# recursive search.
+function Resolve-AppExecutablePath {
+  param(
+    [Parameter(Mandatory)]
+    [string]$BuildRoot,
+    [Parameter(Mandatory)]
+    [string]$ExecutableName,
+    [string[]]$Configurations = @('Debug')
+  )
+
+  $candidateRelativePaths = @(
+    $ExecutableName,
+    (Join-Path 'bin' $ExecutableName)
+  )
+  foreach ($configuration in $Configurations) {
+    $candidateRelativePaths += @(
+      (Join-Path 'bin' (Join-Path $configuration $ExecutableName)),
+      (Join-Path $configuration $ExecutableName)
+    )
+  }
+
+  foreach ($relativePath in $candidateRelativePaths) {
+    $candidate = Join-Path $BuildRoot $relativePath
+    if (Test-Path $candidate) {
+      return (Resolve-Path $candidate).Path
+    }
+  }
+
+  $foundExecutable = Get-ChildItem -Path $BuildRoot -Filter $ExecutableName -File -Recurse -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+  if ($foundExecutable) {
+    return $foundExecutable.FullName
+  }
+
+  return $null
+}
+
 function Get-AsanRuntimeDirs {
   param(
     [Parameter(Mandatory)]
@@ -273,5 +314,5 @@ function Invoke-CtestDiscoveredTests {
   }
 }
 
-Export-ModuleMember -Function Resolve-TestExecutable, Invoke-ManualTestExecutable, Invoke-CtestDiscoveredTests, Invoke-WithAsanOptions
+Export-ModuleMember -Function Resolve-TestExecutable, Resolve-AppExecutablePath, Invoke-ManualTestExecutable, Invoke-CtestDiscoveredTests, Invoke-WithAsanOptions
 

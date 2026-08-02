@@ -67,7 +67,10 @@ function Get-FrameMetrics {
         $rect = [System.Drawing.Rectangle]::new(0, 0, $w, $h)
         $data = $img.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
         try {
-            $byteCount = [Math]::Abs($data.Stride) * $h
+            # Read Stride while the bits are still locked - after UnlockBits/
+            # Dispose it only works by accident of the detached managed object.
+            $stride = [Math]::Abs($data.Stride)
+            $byteCount = $stride * $h
             $bytes = [byte[]]::new($byteCount)
             [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $bytes, 0, $byteCount)
         } finally {
@@ -83,7 +86,6 @@ function Get-FrameMetrics {
     $sum = 0.0
     $hist = @{}
     $lit = 0
-    $stride = [Math]::Abs($data.Stride)
 
     # LockBits with Format32bppArgb gives BGRA byte order per pixel.
     for ($y = 0; $y -lt $h; $y++) {

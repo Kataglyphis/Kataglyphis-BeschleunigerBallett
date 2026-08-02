@@ -13,44 +13,25 @@ param (
 
 $ErrorActionPreference = "Stop"
 
-# 2. Locate the built executable 
-
 $ProjectRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
 
-# Search in known build directories created by CMake presets
+. (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
+Import-BuildModule @('WindowsTesting.Common')
+
+# Locate the built executable in the build directory created by the CMake preset
 $ProfileDir = Join-Path $ProjectRoot "build-clangcl-profile"
+$ExePath = Resolve-AppExecutablePath -BuildRoot $ProfileDir -ExecutableName $ExeName -Configurations @('Profile', 'RelWithDebInfo')
 
-# Attempt to find the exe path (fallback for single or multi-config generators)
-$ExePath = Join-Path $ProfileDir $ExeName
-
-if (-not (Test-Path $ExePath)) {
-    $ExePath = Join-Path $ProfileDir "bin\$ExeName"
-}
-if (-not (Test-Path $ExePath)) {
-    $ExePath = Join-Path $ProfileDir "bin\Profile\$ExeName"
-}
-if (-not (Test-Path $ExePath)) {
-    $ExePath = Join-Path $ProfileDir "Profile\$ExeName"
-}
-if (-not (Test-Path $ExePath)) {
-    $ExePath = Join-Path $ProfileDir "bin\RelWithDebInfo\$ExeName"
-}
-if (-not (Test-Path $ExePath)) {
-    $ExePath = Join-Path $ProfileDir "RelWithDebInfo\$ExeName"
-}
-
-if (-not (Test-Path $ExePath)) {
+if (-not $ExePath) {
     throw "Executable '$ExeName' not found inside $ProfileDir. Please build the profile preset first."
 }
 
-# 3. Start the application
-# We use the project root as the working directory so it can discover `images/` and `Resources/` 
+# Start the application.
+# We use the project root as the working directory so it can discover `images/` and `Resources/`
 $WorkDir = $ProjectRoot
 
 Write-Host "Starting $ExePath..."
 Write-Host "Working Directory: $WorkDir"
-
-# Use Start-Process so it executes properly without locking up the script but waits for completion
 
 try {
     # Force Vulkan to use the Proprietary AMD Driver to prevent AMD open-source driver access violations
@@ -65,14 +46,13 @@ try {
     } else {
         & $ExePath
     }
-    
+
     $ExitCode = $LASTEXITCODE
-    if ($ExitCode -ne 0) { 
-        Write-Warning "Process failed with exit code $ExitCode" 
+    if ($ExitCode -ne 0) {
+        Write-Warning "Process failed with exit code $ExitCode"
     }
     exit $ExitCode
 } catch {
     Write-Warning "Failed to start $ExePath : $_"
     exit 1
 }
-

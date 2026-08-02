@@ -41,11 +41,14 @@ info "Building kataglyphis_webgpu_renderer for wasm32-unknown-unknown (release)"
 
 if ! command -v wasm-opt >/dev/null 2>&1; then
   info "wasm-opt not on PATH; fetching pinned binaryen ${BINARYEN_VERSION}"
+  # SHA-verified download comes from ContainerHub 01-core (download_verified_file).
+  source_module downloads.sh || err "ContainerHub downloads.sh not available for verified binaryen fetch"
   TMP_DIR="$(mktemp -d)"
   trap 'rm -rf "${TMP_DIR}"' EXIT
-  curl -fsSL -o "${TMP_DIR}/${BINARYEN_ASSET}" \
-    "https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN_VERSION}/${BINARYEN_ASSET}"
-  echo "${BINARYEN_SHA256}  ${TMP_DIR}/${BINARYEN_ASSET}" | sha256sum -c -
+  download_verified_file \
+    "https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN_VERSION}/${BINARYEN_ASSET}" \
+    "${BINARYEN_SHA256}" \
+    "${TMP_DIR}/${BINARYEN_ASSET}"
   tar -xzf "${TMP_DIR}/${BINARYEN_ASSET}" -C "${TMP_DIR}"
   export PATH="${TMP_DIR}/binaryen-${BINARYEN_VERSION}/bin:${PATH}"
 fi

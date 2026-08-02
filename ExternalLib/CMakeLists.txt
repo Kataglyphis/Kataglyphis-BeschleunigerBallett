@@ -393,7 +393,7 @@ set_target_properties(IMGUI PROPERTIES CXX_CLANG_TIDY "" CXX_CPPCHECK "")
 if(RUST_FEATURES)
   if(WIN32)
     set(Rust_CARGO
-        "${CMAKE_SOURCE_DIR}/Scripts/Windows/cargo-retry.cmd"
+        "${CMAKE_SOURCE_DIR}/ExternalLib/Kataglyphis-ContainerHub/windows/scripts/cargo-retry.cmd"
         CACHE FILEPATH "Cargo wrapper used to retry transient Windows file-lock failures" FORCE)
   endif()
 

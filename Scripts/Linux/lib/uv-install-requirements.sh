@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-. ".venv/bin/activate"
-# Pin the install target to the local .venv. The CI container image exports
-# UV_PYTHON=/opt/venv/bin/python (its root-owned system venv), and uv honours
-# UV_PYTHON OVER the activated .venv - so a plain `uv pip install` targets
-# /opt/venv and dies with "Permission denied (os error 13)" as the CI user
-# (uid 1001). --python forces the writable local environment. Reproduced and
-# verified in the :latest-cross image; same class of fix as the CARGO_HOME
-# fallback in cmake-configure-build.sh.
-uv pip install --python .venv/bin/python -r requirements.txt
+# Thin wrapper: the requirements install lives upstream in ContainerHub's
+# shared python_uv.sh. uv_pip_install_requirements carries the load-bearing
+# `--python .venv/bin/python` pin (uv honours UV_PYTHON over the activated
+# venv - see the explanatory comment upstream), so no activation is needed.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+PYTHON_UV_LIB="${REPO_ROOT}/ExternalLib/Kataglyphis-ContainerHub/linux/scripts/01-core/python_uv.sh"
+
+if [[ ! -f "${PYTHON_UV_LIB}" ]]; then
+  echo "ERROR: shared uv helpers not found: ${PYTHON_UV_LIB}" >&2
+  echo "       Run: git submodule update --init ExternalLib/Kataglyphis-ContainerHub" >&2
+  exit 1
+fi
+
+# shellcheck source=../../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/01-core/python_uv.sh
+source "${PYTHON_UV_LIB}"
+
+uv_pip_install_requirements "${1:-.venv}" "${2:-requirements.txt}"

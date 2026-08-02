@@ -65,9 +65,31 @@ try {
 } catch { }
 
 if (-not $hasWasmOpt) {
-    Write-Host 'wasm-opt (binaryen) not found on PATH.' -ForegroundColor Yellow
-    Write-Host 'Install: winget install binaryen | brew install binaryen | sudo apt install binaryen' -ForegroundColor Yellow
-    exit 1
+    # Bootstrap a pinned binaryen instead of failing - parity with
+    # Scripts/Linux/wasm-size-budget.sh, which fetches the same release
+    # SHA-verified. Uses ContainerHub's Invoke-DownloadWithRetry.
+    $binaryenVersion = 'version_131'
+    $binaryenAsset = "binaryen-${binaryenVersion}-x86_64-windows.tar.gz"
+    $binaryenSha256 = '2f4edac1703a2f695254d6ff52ede03481e67db1f094915763d863158c17d9bc'
+    Write-Host "wasm-opt not on PATH; fetching pinned binaryen $binaryenVersion" -ForegroundColor Yellow
+
+    . (Join-Path $PSScriptRoot 'Windows\Resolve-BuildModule.ps1')
+    Import-BuildModule @('WindowsScripts.Shared')
+
+    $binaryenDir = Join-Path ([System.IO.Path]::GetTempPath()) "binaryen-$binaryenVersion"
+    $archivePath = Join-Path ([System.IO.Path]::GetTempPath()) $binaryenAsset
+    if (-not (Test-Path (Join-Path $binaryenDir 'bin\wasm-opt.exe'))) {
+        Invoke-DownloadWithRetry -Url "https://github.com/WebAssembly/binaryen/releases/download/$binaryenVersion/$binaryenAsset" -DestinationPath $archivePath
+        $actualSha = (Get-FileHash -Algorithm SHA256 $archivePath).Hash.ToLowerInvariant()
+        if ($actualSha -ne $binaryenSha256) {
+            Remove-Item $archivePath -Force
+            throw "binaryen download checksum mismatch: expected $binaryenSha256, got $actualSha"
+        }
+        tar -xzf $archivePath -C ([System.IO.Path]::GetTempPath())
+        Remove-Item $archivePath -Force
+    }
+    $env:PATH = (Join-Path $binaryenDir 'bin') + ';' + $env:PATH
+    $null = Get-Command wasm-opt -ErrorAction Stop
 }
 
 # ---- Build ----

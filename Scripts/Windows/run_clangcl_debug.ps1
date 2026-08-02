@@ -139,37 +139,6 @@ function Update-CTestMetadataPaths {
     }
 }
 
-function Resolve-AppExecutablePath {
-    param(
-        [Parameter(Mandatory)]
-        [string]$BuildRoot,
-        [Parameter(Mandatory)]
-        [string]$ExecutableName
-    )
-
-    $candidateRelativePaths = @(
-        $ExecutableName,
-        (Join-Path 'bin' $ExecutableName),
-        (Join-Path 'bin' (Join-Path 'Debug' $ExecutableName)),
-        (Join-Path 'Debug' $ExecutableName)
-    )
-
-    foreach ($relativePath in $candidateRelativePaths) {
-        $candidate = Join-Path $BuildRoot $relativePath
-        if (Test-Path $candidate) {
-            return (Resolve-Path $candidate).Path
-        }
-    }
-
-    $foundExecutable = Get-ChildItem -Path $BuildRoot -Filter $ExecutableName -File -Recurse -ErrorAction SilentlyContinue |
-        Select-Object -First 1
-    if ($foundExecutable) {
-        return $foundExecutable.FullName
-    }
-
-    return $null
-}
-
 $cmakeExePath = Resolve-PreferredTool -CommandName 'cmake.exe' -CandidatePaths @(
     'C:\Program Files\CMake\bin\cmake.exe'
 )
@@ -244,7 +213,7 @@ try {
         return
     }
 
-    $ExePath = Resolve-AppExecutablePath -BuildRoot $DebugDir -ExecutableName $ExeName
+    $ExePath = Resolve-AppExecutablePath -BuildRoot $DebugDir -ExecutableName $ExeName -Configurations @('Debug')
     if (-not $ExePath) {
         throw "Executable '$ExeName' not found inside $DebugDir. Please run the 'build_clangcl_debug.ps1' script first."
     }

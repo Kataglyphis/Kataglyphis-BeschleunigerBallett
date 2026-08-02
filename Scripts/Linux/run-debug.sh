@@ -5,76 +5,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-DEFAULT_BUILD_DIR="build"
-DEFAULT_EXE_NAME="GraphicsEngine"
-DEFAULT_BUILD_TYPE="Debug"
-
-EXE_NAME="${DEFAULT_EXE_NAME}"
-BUILD_DIR="${DEFAULT_BUILD_DIR}"
-BUILD_TYPE="${DEFAULT_BUILD_TYPE}"
-APP_ARGS=()
-
-usage() {
-  cat <<EOF
-Usage: $(basename "$0") [--exe-name NAME] [--build-dir DIR] [--build-type TYPE] [--clean-and-rebuild-shaders] [--] [app args...]
-
-Starts the built application from the debug build directory. Defaults:
-  --exe-name ${DEFAULT_EXE_NAME}
-  --build-dir ${DEFAULT_BUILD_DIR}
-  --build-type ${DEFAULT_BUILD_TYPE}
-  --clean-and-rebuild-shaders: Deletes all .spv files and runs the compiler script before running
-EOF
-}
-
-CLEAN_AND_REBUILD_SHADERS=false
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --exe-name)
-      EXE_NAME="${2:-}"
-      shift 2
-      ;;
-    --build-dir)
-      BUILD_DIR="${2:-}"
-      shift 2
-      ;;
-    --build-type)
-      BUILD_TYPE="${2:-}"
-      shift 2
-      ;;
-    --clean-and-rebuild-shaders)
-      CLEAN_AND_REBUILD_SHADERS=true
-      shift
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    --)
-      shift
-      APP_ARGS+=("$@")
-      break
-      ;;
-    -* )
-      err "Unknown option: $1"
-      ;;
-    *)
-      APP_ARGS+=("$1")
-      shift
-      ;;
-  esac
-done
-
-PROJECT_ROOT="$(get_project_root)"
-
-# Resolve build dir absolute path (accept absolute or repo-relative)
-if [[ "${BUILD_DIR}" = /* ]]; then
-  ABS_BUILD_DIR="${BUILD_DIR}"
-else
-  ABS_BUILD_DIR="${PROJECT_ROOT}/${BUILD_DIR}"
+APP_RUNNER_LIB="${SCRIPT_DIR}/../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/app-runner.sh"
+if [[ ! -f "${APP_RUNNER_LIB}" ]]; then
+  err "Shared app-runner library not found at '${APP_RUNNER_LIB}'. Initialize the Kataglyphis-ContainerHub submodule first."
 fi
+# shellcheck source=../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/app-runner.sh
+source "${APP_RUNNER_LIB}"
 
-source_vulkan_env
+APP_RUNNER_DEFAULT_EXE_NAME="GraphicsEngine"
+APP_RUNNER_DEFAULT_BUILD_DIR="build"
+APP_RUNNER_DEFAULT_BUILD_TYPE="Debug"
+APP_RUNNER_USAGE_INTRO="Starts the built application from the debug build directory."
+APP_RUNNER_ENABLE_SHADER_CLEAN=true
+APP_RUNNER_SHADER_CLEAN_DIR="Resources/ShadersSlang/build"
+APP_RUNNER_SHADER_COMPILE_SCRIPT="${SCRIPT_DIR}/compile-slang-shaders.sh"
 
 # Helper: check whether Vulkan SDK/tools are available in the current environment
 check_vulkan() {
@@ -127,7 +71,11 @@ install_vulkan_via_containerhub() {
 }
 
 # If Vulkan wasn't detected, attempt auto-install then source the installed SDK
-if ! check_vulkan; then
+app_runner_post_vulkan_hook() {
+  if check_vulkan; then
+    return 0
+  fi
+
   info "Vulkan SDK/tools not detected on PATH. Attempting automatic install..."
   if install_vulkan_via_containerhub; then
     # Prefer explicit version install location, then fallback to first found
@@ -160,59 +108,14 @@ if ! check_vulkan; then
   else
     warn "Automatic Vulkan installation failed or was not available. Continue at your own risk."
   fi
-fi
+}
 
-# Candidate locations to look for the executable
-CANDIDATES=(
-  "${ABS_BUILD_DIR}/${EXE_NAME}"
-  "${ABS_BUILD_DIR}/bin/${EXE_NAME}"
-  "${ABS_BUILD_DIR}/${BUILD_TYPE}/${EXE_NAME}"
-  "${ABS_BUILD_DIR}/bin/${BUILD_TYPE}/${EXE_NAME}"
-)
+app_runner_env_hook() {
+  export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
 
-EXE_PATH=""
-for c in "${CANDIDATES[@]}"; do
-  if [[ -x "${c}" ]]; then
-    EXE_PATH="${c}"
-    break
-  fi
-done
+  # Enable Vulkan loader debug output by default (can be overridden externally)
+  export VK_LOADER_DEBUG="${VK_LOADER_DEBUG:-all}"
+  info "VK_LOADER_DEBUG=${VK_LOADER_DEBUG}"
+}
 
-if [[ -z "${EXE_PATH}" && -d "${ABS_BUILD_DIR}" ]]; then
-  EXE_PATH=$(find "${ABS_BUILD_DIR}" -maxdepth 3 -type f -executable -name "${EXE_NAME}" -print -quit || true)
-fi
-
-if [[ -z "${EXE_PATH}" ]]; then
-  err "Executable '${EXE_NAME}' not found in '${ABS_BUILD_DIR}'. Please build the project first."
-fi
-
-# Ensure runtime loader finds built shared libraries
-export LD_LIBRARY_PATH="${ABS_BUILD_DIR}:${ABS_BUILD_DIR}/bin:${LD_LIBRARY_PATH:-}"
-export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
-
-# Enable Vulkan loader debug output by default (can be overridden externally)
-export VK_LOADER_DEBUG="${VK_LOADER_DEBUG:-all}"
-
-if [[ "${CLEAN_AND_REBUILD_SHADERS}" = true ]]; then
-  info "Cleaning and rebuilding Slang shaders..."
-  find "${PROJECT_ROOT}/Resources/ShadersSlang/build" -name "*.spv" -delete 2>/dev/null || true
-  if [[ -f "${SCRIPT_DIR}/compile-slang-shaders.sh" ]]; then
-    bash "${SCRIPT_DIR}/compile-slang-shaders.sh"
-  else
-    warn "compile-slang-shaders.sh not found, skipping rebuild step"
-  fi
-fi
-
-WORK_DIR="${PROJECT_ROOT}"
-info "Starting: ${EXE_PATH}"
-info "Working directory: ${WORK_DIR}"
-info "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}"
-info "VK_LOADER_DEBUG=${VK_LOADER_DEBUG}"
-
-cd "${WORK_DIR}"
-
-if [[ ${#APP_ARGS[@]} -gt 0 ]]; then
-  exec "${EXE_PATH}" "${APP_ARGS[@]}"
-else
-  exec "${EXE_PATH}"
-fi
+app_runner_main "$@"

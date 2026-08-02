@@ -4770,132 +4770,38 @@ breakage date I had not verified, then spent three CI round trips on a control
 that moved two variables at once. The local reproduction took one container run
 and answered it outright. Get the failing thing into a shell before theorising.
 
-## 2026-08-02 batch — reuse sweep (generic script logic to upstream into ContainerHub)
+## 2026-08-02 — reuse-sweep residuals (the sweep itself shipped)
 
-> From a full sweep of `Scripts/**` + workflows on 2026-08-02. Rule: reusable
-> logic lives in `ExternalLib/Kataglyphis-ContainerHub`; this repo keeps thin
-> wrappers and project data. Bump the submodule pin and push ContainerHub
-> `main` BEFORE the repo commit that consumes it.
+The 2026-08-02 reuse sweep landed: WindowsCMake/Config/Formatting/WebDav/
+MSIX modules + download script upstreamed to ContainerHub; uv-venv logic
+consolidated (4 copies -> upstream python_uv.sh / WindowsUv.Common); Slang
+manifest single-sourced as `Resources/ShadersSlang/shader-manifest.json`
+with the four PS/sh drifts fixed; app runners consolidated over ContainerHub
+`app-runner.sh` + `Resolve-AppExecutablePath`; CI docker-run boilerplate
+moved into ContainerHub composite actions; Pester wired into CI
+(`pester-tests` job); cargo-retry upstreamed; LICENSES-README rewritten;
+CHANGELOG.md deleted (git history + this file are the record). What remains:
 
-- [ ] **Upstream WindowsCMake.Common to ContainerHub** (L) — nothing in
-  `Scripts/Windows/modules/WindowsCMake.Common.psm1` (415 lines) is
-  renderer-specific: `Get-SanitizerRuntimeDlls`/`Copy-SanitizerRuntimeDlls`
-  (LLVM/vswhere probing for `clang_rt.*san*.dll`),
-  `Invoke-CmakeConfigureAndBuild` (~300 lines of sccache env plumbing,
-  `KATAGLYPHIS_KEEP_BUILD_ROOT`, ninja probe, streaming build), and
-  `Test-ClangClThreadSanitizerSupport`. Upstream already has
-  `Show-SccacheStats`/`Initialize-BuildCacheEnvironment` in
-  `WindowsBuild.Common` — merge, don't add a parallel copy. Keep only
-  preset/configuration choice in this repo; move the module's Pester test
-  with it and delete the vendored copy in the same change. Test:
-  `Invoke-Pester` both suites + `Build-Windows-Container.ps1
-  -Configurations clangcl-debug`. Build preset: none (scripts only).
+- [ ] **Migrate the two remaining Windows.yml inline container steps** (S) —
+  "Build/Test/Package" (passes secrets as literal argv to `pwsh -File`;
+  rewriting as `-Command` changes quoting semantics) and "GPU timing
+  comparison" (branches on the runner's `KATAGLYPHIS_CI_HAS_GPU` host env,
+  unreachable from a composite action's inputs without explicitly
+  forwarding it). Both need a deliberate design, not a mechanical swap;
+  the retry-pull loop could also move into an action input. Test: a
+  `[build-win]` push. Build preset: none (CI only).
 
-- [ ] **Consolidate the four uv-venv implementations** (M) — the same
-  "create venv + install requirements" exists 4x:
-  `Scripts/Windows/modules/WindowsFormatting.Common.psm1:102-163`,
-  `Scripts/Windows/modules/WindowsWebDav.Common.psm1:47-108`,
-  `Scripts/Linux/lib/uv-venv-create.sh` + `uv-install-requirements.sh`, and
-  `Scripts/Linux/run_static_analysis_format.sh:19-44` (`ensure_cmake_format`,
-  which ignores the lib/ scripts beside it). ContainerHub already owns this:
-  `linux/scripts/01-core/python_uv.sh` (`uv_venv_create`/`uv_sync_project`/
-  `uv_run`) and `windows/scripts/modules/WindowsUv.Common.psm1`. Make all
-  four call upstream; move the `--python .venv/bin/python` UV_PYTHON
-  workaround comment upstream with them. Test: `Scripts/Linux/
-  run_static_analysis_format.sh` in the container + Pester. Build preset:
-  none.
+- [ ] **Verify the 11 unverified Rust crate licenses** (S) —
+  docs/LICENSES-README.md lists env_logger, wgpu, winit, pollster, glam,
+  gltf, bevy_mikktspace, egui, egui-wgpu, egui-winit, ktx2 as
+  license-unverified (host ~/.cargo has no registry copies; builds run in
+  containers). Run `cargo license` (or read each crate's registry entry)
+  inside the `:latest-cross` container and fill in the table. Also covers
+  the KTX-embedded third-party bucket (basisu, zstd, lodepng, …) via KTX's
+  upstream LICENSE.md. Test: none (doc). Build preset: none.
 
-- [ ] **Single-source the Slang shader manifest; fix the four PS/sh
-  drifts** (L) — `Scripts/Windows/compile-slang-shaders.ps1:43-119` and
-  `Scripts/Linux/compile-slang-shaders.sh:38-107` hold the same 55-entry
-  manifest and the same depth-texture patch table in two languages, already
-  drifted four ways: (1) sh has NO staleness check — Linux recompiles all
-  shaders every build; (2) sh exits 0 when slangc is missing (PS exits 2) —
-  CI without slangc passes green; (3) sh warns-and-continues on a missing
-  manifest file (PS fails); (4) sh's sed silently no-ops when a depth patch
-  stops matching (PS warns "slangc output may have changed"). Move the
-  manifest + patch table to one data file under `Resources/ShadersSlang/`
-  (JSON), make both scripts read it, and port the PS staleness/exit-code/
-  patch-warning behavior to sh. Test: both compile scripts produce identical
-  output sets; BuildIntegrity spv-freshness goldens stay green. Build
-  preset: clangcl-debug.
-
-- [ ] **One app-runner per platform instead of five copies** (M) —
-  `Scripts/Linux/run-{debug,profile,release}.sh` share ~95 of ~110 lines
-  (arg parse, exe search, LD_LIBRARY_PATH, exec); `Scripts/Windows/
-  run_clangcl_{release,profile}.ps1` share ~52 of 65, and exe discovery is
-  written a third time in `run_clangcl_debug.ps1:142-171`
-  (`Resolve-AppExecutablePath`) and a fourth in
-  `WindowsTesting.Common.psm1:78-109` (`Resolve-TestExecutable`). Collapse
-  to one `run-app.sh` + one parameterized PS runner; upstream the generic
-  exe-discovery helper (bash: next to `01-core/cli-parsers.sh`; PS: with
-  WindowsTesting when it moves). Note `run_clangcl_profile.ps1` has zero
-  references anywhere — fold it in or delete it. Test: run each config once
-  on the host (debug needs validation layers). Build preset: none.
-
-- [ ] **Upstream the generic Windows packaging/formatting modules** (M) —
-  `WindowsMsix.Common.psm1` + `WindowsMsix.Signing.psm1` (SDK tool probing,
-  XML templating, signtool sign/verify — zero renderer references; the
-  `Kataglyphis_*` shim lookups show they were once upstream),
-  `WindowsFormatting.Common.psm1` (git-ls-files walkers, clang-format/
-  cmake-format steps, the cmd.exe-dispatch stderr workaround), and
-  `WindowsConfig.Common.psm1` (dotted-path psd1 lookup). Natural upstream
-  homes: `windows/scripts/certificates/` + modules dir. Parameterise the two
-  project tokens (`Src` root in `WindowsClang.Common.psm1:79`, the
-  `import kataglyphis` module-skip). Move `Scripts/download_pfx_files.py`
-  (fully generic WebDAV walker; only caller is WindowsWebDav) upstream with
-  an `--extension` arg. Move each module's Pester test along. Test: Pester
-  both suites; an MSIX build via `Build-Windows.ps1` without `-SkipMsix`.
-  Build preset: clangcl-release.
-
-- [ ] **CI: one container-run composite action instead of 21 inline
-  copies** (M) — `.github/workflows/Windows.yml` re-declares the same
-  docker-run preamble 5x (and hardcodes the image 5x despite
-  `env.GHCR_IMAGE_WIN` existing); `Linux.yml` wraps
-  `docker run --rm -v workspace… | tee` 16x; the image retry-pull loop
-  duplicates `01-core/logging.sh retry()` in yaml. ContainerHub already
-  hosts composite actions (`.github/actions/cleanup-disk-space`) — add
-  `run-in-windows-container` / `run-in-linux-container` actions there and
-  consume them. Gate on `[build-win]`/x86 lanes staying green. Test: push a
-  `[build-win]` commit and compare lane results against the previous run.
-  Build preset: none (CI only).
-
-- [ ] **Wire the Pester suites into CI** (S) — `Scripts/Windows/tests/`
-  (11 files, 781 lines) is never executed by any workflow; upstream has a
-  runner (`windows/scripts/tests/Invoke-Tests.ps1`). Add a cheap CPU-only
-  step to `Windows.yml` running both this repo's and ContainerHub's suites.
-  Also note `CMakePresets.Integrity.Tests.ps1`/`Submodule.Pins.Tests.ps1`
-  are Pester 3.4-syntax while upstream's harness is modern Pester — align
-  when wiring. Test: the new CI step goes green (and red when a preset name
-  is deliberately broken locally). Build preset: none.
-
-- [ ] **Small reuse leftovers** (S) — (1) `Scripts/Windows/cargo-retry.cmd`
-  is project-agnostic: move to ContainerHub windows/scripts and replace the
-  per-retry `pwsh` spawn with `timeout /t 2 /nobreak`; keep the CMake wiring
-  here. (2) `Scripts/Test-WasmSizeBudget.ps1` vs `Scripts/Linux/
-  wasm-size-budget.sh`: the sh side's SHA256-pinned binaryen bootstrap
-  duplicates `01-core/downloads.sh download_verified_file` and the PS side
-  has no bootstrap at all — one upstream helper, budget+crate stay as
-  project data. (3) `Scripts/Compare-RendererPixels.ps1:86` reads
-  `$data.Stride` after `UnlockBits`/`Dispose` — works by accident on a
-  detached BitmapData; hoist the read above the finally. (4)
-  `Scripts/test-all-configs.ps1` has no callers — decide keep-as-utility
-  (then mention it in AGENTS.md) or delete. Test: Pester + one
-  `Compare-RendererPixels` run against existing goldens. Build preset:
-  none.
-
-- [ ] **Refresh docs/LICENSES-README.md** (S) — dated 2026-03-26 and drifted:
-  it still lists **glad** (no OpenGL loader remains anywhere in `Src/`), and
-  is missing **cgltf** (`Src/GraphicsEngineVulkan/scene/cgltf_impl.cpp`),
-  **tomlplusplus**, and **Slang** (shader toolchain). Verify each entry
-  against `ExternalLib/` + `Cargo.toml` actually-linked dependencies, copy
-  the exact license names from the upstream repos (do not guess licenses),
-  update the date. Test: none (doc). Build preset: none.
-
-- [b] **CHANGELOG.md is abandoned — decide: delete or automate** (S,
-  **blocked on owner decision**) — last real entry is 1.5.0 (2026-03-08),
-  the `[Unreleased]` section holds six literal "Placeholder for …" lines,
-  and the diff links point at `https://your.repo.url/`. ~30 engine commits
-  since. Either delete it (git history + BACKLOG serve the purpose) or wire
-  it to the release flow (`version.txt` bump). Needs the owner to pick a
-  direction; both are cheap once chosen.
+- [b] **ContainerHub has no LICENSE file** (S, **blocked on owner
+  decision**) — surfaced by the license audit; consumers cannot state its
+  terms. Pick a license (sibling Kataglyphis repos use MIT) and add the
+  file in ContainerHub. Also queued in ContainerHub's
+  docs/refactoring-backlog.md.

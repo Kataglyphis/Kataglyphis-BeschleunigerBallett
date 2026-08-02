@@ -133,7 +133,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
+          $image = '${{ env.GHCR_IMAGE_WIN }}'
           # Give the container every logical processor the runner has. This was
           # pinned at 4, which throttled the 3-config clang-cl build on any
           # runner with more cores. NUMBER_OF_PROCESSORS is what Windows reports
@@ -195,85 +195,61 @@ jobs:
       #
       # If you add a suite, add it to this filter or it will not run in CI.
       - name: Run CPU-only tests inside the container
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
-          # Give the container every logical processor the runner has. This was
-          # pinned at 4, which throttled the 3-config clang-cl build on any
-          # runner with more cores. NUMBER_OF_PROCESSORS is what Windows reports
-          # to the host shell; the value is echoed so the log shows what we got.
-          $cores = [int]$env:NUMBER_OF_PROCESSORS
-          if ($cores -lt 1) { $cores = 2 }
-          Write-Host "Runner logical processors: $cores (container gets --cpus $cores)"
-          $cpuOnlySuites = @(
-            'BuildIntegrity.*'
-            'FrameInputUnit.*'
-            'WindowInputUnit.*'
-            'CameraUnit.*'
-            'SceneConfigUnit.*'
-            'GltfParseUnit.*'
-            'CascadedShadowMapUnit.*'
-            'GuiSceneVarsRoundTrip.*'
-            'HelloTestCommit.*'
-            'GpuTimingUnit.*'
-            'GoldenMetrics.*'
-            'AllocatorOwnership.*'
-            'AsyncModelParseUnit.*'
-            'FrustumUnit.*'
-            'MeshRangeSlice.*'
-            'ModelPickerUnit.*'
-            'SceneAccessorUnit.*'
-            'ObjectDescriptionOffsets.*'
-            'ObjParseUnit.*'
-            'PushConstantRasterizerUnit.*'
-            'PushConstantPathTracingUnit.*'
-            'PushConstantPostUnit.*'
-            'PushConstantRaytracingUnit.*'
-            'ObjMaterialLayoutUnit.*'
-            'SkyBoxUnit.*'
-            'ShaderBlobUnit.*'
-            'SamplerBuilderUnit.*'
-            'FileReaderUnit.*'
-            'TextureLoadUnit.*'
-            'MemoryHelperUnit.*'
-            'FormatHelperUnit.*'
-            'FrameSyncUnit.*'
-            'SwapchainChoicesUnit.*'
-            'PhysicalDeviceChoicesUnit.*'
-            'BlasGeometryLimitsUnit.*'
-            'DescriptorPoolSizesUnit.*'
-            'ShadowResolutionUnit.*'
-            'ViewportHelperUnit.*'
-            'SceneUboLayoutUnit.*'
-          ) -join ':'
-
-          $cmd = "& 'C:\ws\build-clangcl-debug\commitTestSuite.exe' --gtest_filter='$cpuOnlySuites'; exit `$LASTEXITCODE"
-          $runArgs = @(
-            'run', '--rm', '--memory', '16g', '--cpus', "$cores",
-            '--mount', 'type=bind,source=D:\ws,target=C:\ws',
-            '-w', 'C:\ws',
-            $image,
-            'pwsh', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd
-          )
-          docker @runArgs
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-windows-container@main
+        with:
+          image: ${{ env.GHCR_IMAGE_WIN }}
+          command: |
+            $cpuOnlySuites = @(
+              'BuildIntegrity.*'
+              'FrameInputUnit.*'
+              'WindowInputUnit.*'
+              'CameraUnit.*'
+              'SceneConfigUnit.*'
+              'GltfParseUnit.*'
+              'CascadedShadowMapUnit.*'
+              'GuiSceneVarsRoundTrip.*'
+              'HelloTestCommit.*'
+              'GpuTimingUnit.*'
+              'GoldenMetrics.*'
+              'AllocatorOwnership.*'
+              'AsyncModelParseUnit.*'
+              'FrustumUnit.*'
+              'MeshRangeSlice.*'
+              'ModelPickerUnit.*'
+              'SceneAccessorUnit.*'
+              'ObjectDescriptionOffsets.*'
+              'ObjParseUnit.*'
+              'PushConstantRasterizerUnit.*'
+              'PushConstantPathTracingUnit.*'
+              'PushConstantPostUnit.*'
+              'PushConstantRaytracingUnit.*'
+              'ObjMaterialLayoutUnit.*'
+              'SkyBoxUnit.*'
+              'ShaderBlobUnit.*'
+              'SamplerBuilderUnit.*'
+              'FileReaderUnit.*'
+              'TextureLoadUnit.*'
+              'MemoryHelperUnit.*'
+              'FormatHelperUnit.*'
+              'FrameSyncUnit.*'
+              'SwapchainChoicesUnit.*'
+              'PhysicalDeviceChoicesUnit.*'
+              'BlasGeometryLimitsUnit.*'
+              'DescriptorPoolSizesUnit.*'
+              'ShadowResolutionUnit.*'
+              'ViewportHelperUnit.*'
+              'SceneUboLayoutUnit.*'
+            ) -join ':'
+            & 'C:\ws\build-clangcl-debug\commitTestSuite.exe' --gtest_filter="$cpuOnlySuites"
+            exit $LASTEXITCODE
 
       # Fuzz targets run their seed corpus in unit-test mode - fast, CPU-only,
       # and the shader-file reader target found a real terminate-on-throw bug
       # from a seed on its first run.
       - name: Run fuzz target seeds inside the container
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
-          # Give the container every logical processor the runner has. This was
-          # pinned at 4, which throttled the 3-config clang-cl build on any
-          # runner with more cores. NUMBER_OF_PROCESSORS is what Windows reports
-          # to the host shell; the value is echoed so the log shows what we got.
-          $cores = [int]$env:NUMBER_OF_PROCESSORS
-          if ($cores -lt 1) { $cores = 2 }
-          Write-Host "Runner logical processors: $cores (container gets --cpus $cores)"
-
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-windows-container@main
+        with:
+          image: ${{ env.GHCR_IMAGE_WIN }}
           # Inner strings use single quotes and concatenation, NOT \" escapes:
           # backslash is not an escape character in PowerShell (backtick is), so
           # \" terminated the surrounding double-quoted string and the whole
@@ -281,23 +257,16 @@ jobs:
           # actually run before - every earlier attempt died at the docker run in
           # the build step - so the bug sat latent until the container finally
           # built successfully.
-          $cmd = "`$ErrorActionPreference='Stop';
-               foreach (`$t in @('obj_parsing_fuzz_test','gltf_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')) {
-                 `$exe = Join-Path 'C:\ws\build-clangcl-debug' (`$t + '.exe')
-                 if (-not (Test-Path `$exe)) { Write-Host ('missing ' + `$exe + ' - fuzz targets are Debug+clang-cl only'); exit 1 }
-                 Write-Host ('--- ' + `$t)
-                 & `$exe
-                 if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }
-               }
-               exit 0"
-          $runArgs = @(
-            'run', '--rm', '--memory', '16g', '--cpus', "$cores",
-            '--mount', 'type=bind,source=D:\ws,target=C:\ws',
-            '-w', 'C:\ws',
-            $image,
-            'pwsh', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd
-          )
-          docker @runArgs
+          command: |
+            $ErrorActionPreference='Stop';
+            foreach ($t in @('obj_parsing_fuzz_test','gltf_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')) {
+              $exe = Join-Path 'C:\ws\build-clangcl-debug' ($t + '.exe')
+              if (-not (Test-Path $exe)) { Write-Host ('missing ' + $exe + ' - fuzz targets are Debug+clang-cl only'); exit 1 }
+              Write-Host ('--- ' + $t)
+              & $exe
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
+            exit 0
 
       # GPU timing comparison — runs the Compare-RendererTimings.ps1 script
       # which drives both renderers headlessly and prints per-pass GPU ms side
@@ -315,7 +284,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
+          $image = '${{ env.GHCR_IMAGE_WIN }}'
           $cores = [int]$env:NUMBER_OF_PROCESSORS
           if ($cores -lt 1) { $cores = 2 }
 
@@ -335,22 +304,11 @@ jobs:
 
       # Cross-renderer pixel comparison (validation-only on GPU-less runners).
       - name: Pixel comparison (validation-only on GPU-less runners)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $image = 'ghcr.io/kataglyphis/kataglyphis_beschleuniger:winamd64'
-          $cores = [int]$env:NUMBER_OF_PROCESSORS
-          if ($cores -lt 1) { $cores = 2 }
-
-          $cmd = "& 'C:\ws\Scripts\Compare-RendererPixels.ps1' -RepoRoot C:\ws -ValidationOnly; exit `$LASTEXITCODE"
-          $runArgs = @(
-            'run', '--rm', '--memory', '16g', '--cpus', "$cores",
-            '--mount', 'type=bind,source=D:\ws,target=C:\ws',
-            '-w', 'C:\ws',
-            $image,
-            'pwsh', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd
-          )
-          docker @runArgs
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-windows-container@main
+        with:
+          image: ${{ env.GHCR_IMAGE_WIN }}
+          command: >-
+            & 'C:\ws\Scripts\Compare-RendererPixels.ps1' -RepoRoot C:\ws -ValidationOnly; exit $LASTEXITCODE
 
       # I limited the size of the builded package for storage restriction reasons on a github runner
       # see also the install commands in the bottom of the CMakeLists.txt
@@ -374,3 +332,33 @@ jobs:
             D:/ws/build-clangcl-release/**/*.dll
             D:/ws/build-clangcl-release/**/*.lib
 
+
+  # CPU-only, container-free: the PowerShell module Pester suites (this repo's
+  # Scripts/Windows/tests, written for Pester 3.4 syntax — pinned install, the
+  # runner's default Pester 5 cannot parse them). Cheap gate for the module
+  # moves to ContainerHub: every module must still resolve and behave.
+  pester-tests:
+    if: contains(github.event.head_commit.message, '[build-win]')
+    runs-on: windows-2025
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      # Top-level pins only: the suites resolve modules from the ContainerHub
+      # submodule, and Submodule.Pins.Tests reads non-recursive
+      # `git submodule status`, which needs every top-level submodule present.
+      - name: Checkout submodules (top-level)
+        run: git submodule update --init
+
+      - name: Run Pester suites (pinned 3.4.0)
+        run: |
+          Install-Module Pester -RequiredVersion 3.4.0 -Force -SkipPublisherCheck -Scope CurrentUser
+          Import-Module Pester -RequiredVersion 3.4.0
+          $r = Invoke-Pester -Path Scripts/Windows/tests -PassThru -Quiet
+          Write-Host "TOTAL=$($r.TotalCount) PASSED=$($r.PassedCount) FAILED=$($r.FailedCount)"
+          if ($r.FailedCount -gt 0) {
+            $r.TestResult | Where-Object { -not $_.Passed } | ForEach-Object { Write-Host "FAIL: $($_.Describe) / $($_.Name)" }
+            exit 1
+          }

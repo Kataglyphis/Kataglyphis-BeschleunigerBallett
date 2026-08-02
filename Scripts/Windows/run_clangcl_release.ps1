@@ -13,38 +13,26 @@ param (
 
 $ErrorActionPreference = "Stop"
 
-# 2. Locate the built executable 
-
 $ProjectRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
 
-# Search in known build directories created by CMake presets
+. (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
+Import-BuildModule @('WindowsTesting.Common')
+
+# Locate the built executable in the build directory created by the CMake preset
 $ReleaseDir = Join-Path $ProjectRoot "build-clangcl-release"
+$ExePath = Resolve-AppExecutablePath -BuildRoot $ReleaseDir -ExecutableName $ExeName -Configurations @('Release')
 
-# Attempt to find the exe path (fallback for single or multi-config generators)
-$ExePath = Join-Path $ReleaseDir $ExeName
-
-if (-not (Test-Path $ExePath)) {
-    $ExePath = Join-Path $ReleaseDir "bin\$ExeName"
-}
-if (-not (Test-Path $ExePath)) {
-    $ExePath = Join-Path $ReleaseDir "bin\Release\$ExeName"
-}
-if (-not (Test-Path $ExePath)) {
-    $ExePath = Join-Path $ReleaseDir "Release\$ExeName"
-}
-
-if (-not (Test-Path $ExePath)) {
+if (-not $ExePath) {
     throw "Executable '$ExeName' not found inside $ReleaseDir. Build it first: Build-Windows.ps1 -Configurations clangcl-release (or Build-Windows-Container.ps1)."
 }
 
-# 3. Start the application
-# We use the project root as the working directory so it can discover `images/` and `Resources/` 
+# Start the application.
+# We use the project root as the working directory so it can discover `images/` and `Resources/`
 $WorkDir = $ProjectRoot
 
 Write-Host "Starting $ExePath..."
 Write-Host "Working Directory: $WorkDir"
 
-# Use Start-Process so it executes properly without locking up the script but waits for completion
 Set-Location -Path $WorkDir
 try {
     if ($ExeArgs) {
@@ -52,14 +40,13 @@ try {
     } else {
         & $ExePath
     }
-    
+
     $ExitCode = $LASTEXITCODE
-    if ($ExitCode -ne 0) { 
-        Write-Warning "Process failed with exit code $ExitCode" 
+    if ($ExitCode -ne 0) {
+        Write-Warning "Process failed with exit code $ExitCode"
     }
     exit $ExitCode
 } catch {
     Write-Warning "Failed to start $ExePath : $_"
     exit 1
 }
-

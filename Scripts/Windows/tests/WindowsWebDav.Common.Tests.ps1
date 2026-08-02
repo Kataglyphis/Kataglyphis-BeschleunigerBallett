@@ -11,7 +11,12 @@ Describe 'WindowsWebDav.Common' {
 
   Context 'Invoke-EarlyWebDavDownload' {
     It 'skips if script missing' {
-      Mock -CommandName Test-Path { return $false }
+      # -ModuleName is required: the download script now ships next to the
+      # module (ContainerHub windows/scripts/certificates), so it always
+      # exists on disk and only a module-scoped Test-Path mock can simulate
+      # the missing-script path. An unscoped mock never reaches the module's
+      # internal call and the test would run the full download flow.
+      Mock -ModuleName WindowsWebDav.Common -CommandName Test-Path { return $false }
       # Create a realistic build context using the module helper so logging functions
       # and Write-ContextLog have the properties they expect.
       $logDir = Join-Path $script:workspace 'logs'

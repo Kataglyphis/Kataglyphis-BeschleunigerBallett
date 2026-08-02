@@ -213,13 +213,13 @@ PowerShell modules through `Scripts/Windows/Resolve-BuildModule.ps1`
 there (preferred — reusable scripts live upstream and are shared across
 projects), otherwise from the vendored fallback **`Scripts/Windows/modules/`**.
 
-The vendored directory holds only what ContainerHub's module refactor (commit
-`b391a1d`) deleted upstream: `WindowsCMake`, `WindowsConfig`,
-`WindowsClang`, `WindowsFormatting`, `WindowsTesting`, `WindowsWebDav`,
-`WindowsMsix.Common`, `WindowsMsix.Signing`. `WindowsScripts.Shared` always
-loads from ContainerHub (the vendored duplicate was removed 2026-08-02);
-`WindowsLogging.Common` was deleted: its functions were folded into
-ContainerHub's `WindowsBuild.Common.psm1`.
+The vendored directory holds only the two genuinely project-specific modules:
+`WindowsClang.Common` (hard-codes the `Src` root and the `import kataglyphis`
+module-TU skip) and `WindowsTesting.Common` (test-exe discovery + ASAN env
+handling for this repo's suites). Everything else was upstreamed to
+ContainerHub on 2026-08-02 (`WindowsCMake`, `WindowsConfig`,
+`WindowsFormatting`, `WindowsWebDav`, `WindowsMsix.Common`,
+`WindowsMsix.Signing`; `WindowsScripts.Shared` was already upstream-only).
 If a module reappears upstream it wins automatically; if you improve a fallback
 module, consider upstreaming it to ContainerHub and deleting the vendored copy
 in the same change.
@@ -299,7 +299,11 @@ Then omit `--user root` from subsequent build commands.
   multi-config generators). `Build-Windows.ps1` runs them unless `-SkipTests`.
 - Benchmarks: `clangcl-profile` builds `perfTestSuite.exe`; run via
   `Build-Windows.ps1` without `-SkipPerfTests`.
-- PowerShell module tests: Pester suites under `Scripts/Windows/tests/`.
+- PowerShell module tests: Pester suites under `Scripts/Windows/tests/`
+  (Pester 3.4 syntax; CI runs them in the `pester-tests` job of
+  `.github/workflows/Windows.yml` with a pinned Pester 3.4.0).
+- `Scripts/test-all-configs.ps1` is a local convenience sweep over every
+  build configuration on both platforms — not wired into CI.
 
 **Adding tests is always in scope.** You do not need permission to improve
 or extend the suites — a change that fixes behaviour should generally arrive

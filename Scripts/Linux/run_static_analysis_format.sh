@@ -27,16 +27,20 @@ ensure_cmake_format() {
 
   info "cmake-format not found. Preparing Python environment..."
 
+  # Venv creation and requirements install are delegated to the shared lib
+  # wrappers (which defer to ContainerHub's 01-core/python_uv.sh) instead of
+  # a third hand-rolled uv variant. They operate on the caller's cwd, hence
+  # the subshell cd.
   if [[ -d "${ROOT_DIR}/.venv" ]]; then
-    info "Found .venv - activating and installing requirements..."
+    info "Found .venv - installing requirements..."
   else
     info "No .venv found - creating one with uv..."
-    uv venv "${ROOT_DIR}/.venv"
+    (cd "${ROOT_DIR}" && "${SCRIPT_DIR}/lib/uv-venv-create.sh")
   fi
+  (cd "${ROOT_DIR}" && "${SCRIPT_DIR}/lib/uv-install-requirements.sh")
 
   # shellcheck disable=SC1091
   source "${ROOT_DIR}/.venv/bin/activate"
-  uv pip install -r "${ROOT_DIR}/requirements.txt"
 
   if ! has_tool cmake-format; then
     err "cmake-format is still not available after installing requirements."

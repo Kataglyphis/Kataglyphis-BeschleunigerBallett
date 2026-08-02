@@ -29,6 +29,18 @@ An output is reused only when it is newer than its source **and** every
 every dependent). The compile scripts walk the manifest and recompile only
 stale entries.
 
+## The manifest is data, in one place
+
+The shader list (source file, entry point, stage, targets), the combined-WGSL
+copy map, and the depth-texture patch table live in
+`Resources/ShadersSlang/shader-manifest.json` — the single source of truth
+read by BOTH compile scripts (PS via `ConvertFrom-Json`, bash via `jq`,
+which is required and fails loud when missing). Add or retarget a shader by
+editing the JSON, never by editing the scripts; the two scripts stayed in
+sync only by luck before this (they had drifted four ways, including Linux
+silently skipping compilation when slangc was absent). `_comment` fields in
+the JSON carry the rationale that used to be code comments.
+
 ## Fast shader iteration
 
 Edit a `.slang` file, then recompile locally:
