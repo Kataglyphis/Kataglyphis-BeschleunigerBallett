@@ -238,6 +238,16 @@ If a module reappears upstream it wins automatically; if you improve a fallback
 module, consider upstreaming it to ContainerHub and deleting the vendored copy
 in the same change.
 
+The launcher core is upstream too: `WindowsAppRunner.Common`
+(`Invoke-AppRun` + `Resolve-AppExecutablePath`) is the PowerShell twin of
+`linux/scripts/lib/app-runner.sh`, and `run_clangcl_release.ps1` /
+`run_clangcl_profile.ps1` are thin wrappers over it (per-profile defaults plus
+an `-EnvHook` script block for things like the AMD ICD override).
+`run_clangcl_debug.ps1` keeps its own flow — it orchestrates CTest and the fuzz
+executables before launching — but takes `Resolve-AppExecutablePath` from the
+same module. Likewise `Get-CompileCommandsDatabase` (the `ninja -t compdb`
+fallback) lives in upstream `WindowsCMake.Common`, not in `WindowsClang.Common`.
+
 ## Running on the Host (Windows)
 
 Containers cannot present a swapchain — run the built binaries on the bare host,

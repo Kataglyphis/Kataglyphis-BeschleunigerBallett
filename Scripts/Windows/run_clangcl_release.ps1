@@ -16,37 +16,19 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
 
 . (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
-Import-BuildModule @('WindowsTesting.Common')
+Import-BuildModule @('WindowsAppRunner.Common')
 
 # Locate the built executable in the build directory created by the CMake preset
 $ReleaseDir = Join-Path $ProjectRoot "build-clangcl-release"
-$ExePath = Resolve-AppExecutablePath -BuildRoot $ReleaseDir -ExecutableName $ExeName -Configurations @('Release')
-
-if (-not $ExePath) {
-    throw "Executable '$ExeName' not found inside $ReleaseDir. Build it first: Build-Windows.ps1 -Configurations clangcl-release (or Build-Windows-Container.ps1)."
-}
 
 # Start the application.
 # We use the project root as the working directory so it can discover `images/` and `Resources/`
-$WorkDir = $ProjectRoot
+Invoke-AppRun -BuildRoot $ReleaseDir `
+    -ExecutableName $ExeName `
+    -Configurations @('Release') `
+    -WorkingDirectory $ProjectRoot `
+    -ExeArgs $ExeArgs `
+    -Label 'release' `
+    -NotFoundHint 'Build it first: Build-Windows.ps1 -Configurations clangcl-release (or Build-Windows-Container.ps1).'
 
-Write-Host "Starting $ExePath..."
-Write-Host "Working Directory: $WorkDir"
-
-Set-Location -Path $WorkDir
-try {
-    if ($ExeArgs) {
-        & $ExePath $ExeArgs
-    } else {
-        & $ExePath
-    }
-
-    $ExitCode = $LASTEXITCODE
-    if ($ExitCode -ne 0) {
-        Write-Warning "Process failed with exit code $ExitCode"
-    }
-    exit $ExitCode
-} catch {
-    Write-Warning "Failed to start $ExePath : $_"
-    exit 1
-}
+exit $LASTEXITCODE

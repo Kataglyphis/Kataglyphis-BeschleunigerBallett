@@ -23,7 +23,10 @@ $DebugDir = Join-Path $ProjectRoot 'build-clangcl-debug'
 $FuzzDir = $DebugDir
 
 . (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
-Import-BuildModule @('WindowsBuild.Common', 'WindowsTesting.Common')
+# Resolve-AppExecutablePath comes from the upstream WindowsAppRunner.Common
+# module (the twin of app-runner.sh); this script keeps its own flow because it
+# orchestrates tests and fuzz executables before the launch.
+Import-BuildModule @('WindowsBuild.Common', 'WindowsAppRunner.Common', 'WindowsTesting.Common')
 
 function Add-DirectoryToPath {
     param([string]$Directory)
