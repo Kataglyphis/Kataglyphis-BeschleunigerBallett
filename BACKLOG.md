@@ -4241,61 +4241,6 @@ leaving `tlas.vulkanAS` non-null and `blas` unshrunk (`ASManager.cpp:381-401`)**
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-- [ ] **(S) Validate a KTX2 mip chain against the dimensions it claims, instead
-  of handing `mips.len()` straight to `create_texture`** — a malformed or
-  simply non-2D `.ktx2` currently reaches wgpu as a validation error (a panic on
-  native), not as a graceful load failure.
-
-  **Files to read:**
-  - `crates/webgpu_renderer/src/asset/ktx2_loader.rs:72-80` — `mips` is
-    `reader.levels()` verbatim, checked only for `!is_empty()`; `face_count`,
-    `layer_count` and `pixel_depth` from the header are never looked at
-  - `crates/webgpu_renderer/src/render/texture.rs:128-188` —
-    `create_compressed_texture`, which passes `compressed.mips.len() as u32` as
-    `mip_level_count` (`:155`) and computes each level's
-    `bytes_per_row` / `rows_per_image` from `texture.width >> level` (`:162-179`)
-    without ever checking `data.len()` against them
-  - `crates/webgpu_renderer/src/asset/hdr.rs:20-23` and its `HdrError` enum —
-    the "every failure is a typed error, dimensions are capped before anything
-    allocates" contract this module should match
-  - `crates/webgpu_renderer/src/asset/ktx2_loader.rs:83-136` — the existing
-    test module and the `tests/assets/red_bc1.ktx2` fixture
-
-  **Steps:**
-  1. In `ktx2_loader.rs`, add a pure, `pub(crate)` helper — no wgpu types, so
-     it is testable with no adapter:
-     ```rust
-     pub(crate) fn validate_mip_chain(
-         width: u32, height: u32, format: CompressedFormat, mips: &[Vec<u8>],
-     ) -> anyhow::Result<()>
-     ```
-     It must reject: an empty chain; more levels than
-     `32 - width.max(height).leading_zeros()` (the full-chain maximum, i.e.
-     `floor(log2(max(w,h))) + 1`); and any level whose `data.len()` is smaller
-     than `(w >> level).max(1).div_ceil(4) * (h >> level).max(1).div_ceil(4) * format.block_bytes()`
-     — the exact expression `create_compressed_texture:165-178` already uses, so
-     reuse it rather than re-deriving it.
-  2. Call it from `load_ktx2` after the `!mips.is_empty()` check at `:73`, with
-     `.context("KTX2 mip chain does not match the declared dimensions")`.
-  3. Also reject in `load_ktx2` what the 2D upload path cannot represent:
-     `header.face_count > 1` (a cubemap) and `header.layer_count > 1` (an
-     array) and `header.pixel_depth > 1` (a 3D texture). Today those load and
-     are uploaded as a single 2D slice, so five sixths of a cubemap silently
-     vanish. Report each by name in the error, so the message says which
-     unsupported shape the file has.
-  4. Leave `create_compressed_texture` unchanged — the point is that the
-     invariant is established at parse time. Add a one-line comment there
-     pointing at `validate_mip_chain` as the reason `mips.len()` is trusted.
-
-  **Test:** In `ktx2_loader.rs`'s `mod tests`, add
-  `validate_mip_chain_rejects_more_levels_than_the_dimensions_allow` (4x4 BC1
-  with 5 levels → `Err`; the same with 3 → `Ok`),
-  `validate_mip_chain_rejects_a_truncated_level` (a correct chain with the last
-  level's `Vec` truncated by one byte → `Err`), and
-  `validate_mip_chain_accepts_a_base_only_chain` (one level, no mips → `Ok`,
-  because base-only containers are legal and common). Keep
-  `loads_a_valid_bc1_container` green — it is the regression guard that the new
-  checks do not reject the shipped fixture.
 
   **Build / run:** no C++ build needed.
   `cargo test -p webgpu_renderer ktx2` from
