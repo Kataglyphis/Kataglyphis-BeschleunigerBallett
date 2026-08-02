@@ -8,50 +8,52 @@
 // loads six PNGs), so it was unreachable by any CPU test. This suite drives
 // the pure dimension-check function directly.
 //
-// The check is duplicated here rather than exported from SkyBox.cpp: the
-// helper is deliberately file-local (anonymous namespace) to stay out of the
-// module interface and avoid ABI skew, so this suite pins the same
-// behaviour via a local copy of the identical logic.
+// The guard now has one definition, in the plain header
+// scene/sky_box/CubemapFaces.hpp, shared by the SkyBox module TU and this
+// suite - there is no local copy to drift out of sync with the shipped code.
 
 #include <gtest/gtest.h>
 
+#include "scene/sky_box/CubemapFaces.hpp"
+
 namespace {
-
-bool cubemapFacesConsistent(const int widths[6], const int heights[6])
-{
-    for (size_t i = 0; i < 6; ++i) {
-        if (widths[i] <= 0 || heights[i] <= 0) { return false; }
-        if (widths[i] != widths[0] || heights[i] != heights[0]) { return false; }
-    }
-    return true;
-}
-
+constexpr int kConstexprEqualFaces[6] = { 64, 64, 64, 64, 64, 64 };
 }// namespace
+
+static_assert(Kataglyphis::cubemapFacesConsistent(kConstexprEqualFaces, kConstexprEqualFaces),
+  "cubemapFacesConsistent must be usable in a constant expression");
 
 TEST(SkyBoxUnit, CubemapFacesConsistentAcceptsSixEqualFaces)
 {
     const int widths[6] = { 64, 64, 64, 64, 64, 64 };
     const int heights[6] = { 64, 64, 64, 64, 64, 64 };
-    EXPECT_TRUE(cubemapFacesConsistent(widths, heights));
+    EXPECT_TRUE(Kataglyphis::cubemapFacesConsistent(widths, heights));
 }
 
 TEST(SkyBoxUnit, RejectsAMismatchedFace)
 {
     const int widths[6] = { 64, 64, 32, 64, 64, 64 };
     const int heights[6] = { 64, 64, 64, 64, 64, 64 };
-    EXPECT_FALSE(cubemapFacesConsistent(widths, heights));
+    EXPECT_FALSE(Kataglyphis::cubemapFacesConsistent(widths, heights));
 }
 
 TEST(SkyBoxUnit, RejectsADegenerateFace)
 {
     const int widths[6] = { 64, 64, 64, 64, 64, 0 };
     const int heights[6] = { 64, 64, 64, 64, 64, 64 };
-    EXPECT_FALSE(cubemapFacesConsistent(widths, heights));
+    EXPECT_FALSE(Kataglyphis::cubemapFacesConsistent(widths, heights));
+}
+
+TEST(SkyBoxUnit, RejectsADegenerateFirstFace)
+{
+    const int widths[6] = { 0, 64, 64, 64, 64, 64 };
+    const int heights[6] = { 64, 64, 64, 64, 64, 64 };
+    EXPECT_FALSE(Kataglyphis::cubemapFacesConsistent(widths, heights));
 }
 
 TEST(SkyBoxUnit, AcceptsAllLargeEqualFaces)
 {
     const int widths[6] = { 128, 128, 128, 128, 128, 128 };
     const int heights[6] = { 128, 128, 128, 128, 128, 128 };
-    EXPECT_TRUE(cubemapFacesConsistent(widths, heights));
+    EXPECT_TRUE(Kataglyphis::cubemapFacesConsistent(widths, heights));
 }

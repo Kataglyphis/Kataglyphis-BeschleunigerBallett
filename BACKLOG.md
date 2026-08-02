@@ -4146,6 +4146,177 @@ and re-rejected for the reason the batch above gave.
 
 ### Cross-renderer
 
+## 2026-08-02 batch III — planner (refactor: a guard whose test pins a copy of it, a full-extent viewport written five times, a per-model count vector built twice on both halves of one invariant)
+
+**Every task in this batch is verifiable with no GPU**, deliberately: the four
+`- [b]` entries above are all blocked on host GPU golden verification, which is
+still unavailable. All three tasks below are provable with device-free suites
+(`SkyBoxUnit.*`, a new `ViewportHelperUnit.*`, `SceneAccessorUnit.*` — the last
+constructs a bare `Scene` with no `VulkanDevice`, see
+`sceneAccessorSuite.cpp:18-31`). Every `file:line` was read out of the tree this
+pass.
+
+**The theme is one rule with more than one hand-rolled copy** — the same shape as
+`a3b42dfc` (depth aspect → `FormatHelper.hpp`), `f97712f4` (six shader-stage
+blocks → `ShaderStagePair`) and `15e64b10` (flat normals shared between loaders).
+Task 1 is the sharpest of the three because the duplicate copy lives *in the
+test*: `skyBoxSuite.cpp:11-14` states outright that it re-declares
+`cubemapFacesConsistent` rather than calling it, so the suite would stay green
+through any regression of the shipped guard. That is a test-coverage gap wearing
+a passing test's clothes. Task 3 is the same failure mode one level up: the
+"flatten every model's textures in model order" invariant is explicitly
+documented as having two halves (`VulkanRenderer.cpp:1536-1541`), and each half
+builds its own `textureCountPerModel` loop, so the two can silently disagree
+about model count or ordering.
+
+Ordering: all three are independent and touch disjoint files. Task 2 is the
+largest edit surface (five files) but the least subtle.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`SkyBox::recreateFrameResources` being a one-line
+pass-through to `createFramebuffers` (`SkyBox.cpp:500-503`)** — it is a
+pass-through, but it is the shape `Rasterizer`/`DeferredRasterizer`/`PostStage`
+all present to `VulkanRenderer.cpp:677-688`, so collapsing only SkyBox's would
+make the call site *less* uniform, not more; **`Scene::getObjectDescriptions()`
+returning by value (`Scene.ixx:111`)** — the one caller
+(`VulkanRenderer.cpp:1304`) mutates the result via `assignTextureOffsets`, so the
+copy is load-bearing; **`MAX_OBJECTS` used as a byte count in the descriptor pool
+size (`VulkanRenderer.cpp:1421-1423`)** — re-confirmed as wrong units and
+re-rejected for the reason batch II gave (it only over-allocates, and the line
+above already documents the generous sizing).
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Collapse the five hand-written copies of the full-extent viewport + scissor block** — the same 13 lines appear in every raster pass, and each one re-derives `minDepth`/`maxDepth`/origin from scratch.
+
+  **Files to read (each is the identical block, only the extent source differs):**
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:86-98` — `swap_chain_extent`
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:420-432` —
+    `vulkanSwapChain->getSwapChainExtent()`, called twice for width and height
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:82-94` — `swap_chain_extent`
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:418-430` —
+    `framebufferWidth`/`framebufferHeight`
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:463-475`
+    — `shadowWidth`/`shadowHeight`; note this one uses the `vk::ArrayProxy`
+    overloads (`setViewport(0, viewport)`) while the other four use
+    `(0, 1, &viewport)`
+  - `Src/GraphicsEngineVulkan/common/FormatHelper.hpp` — the header pattern to
+    follow (plain `#pragma once`, `namespace Kataglyphis`, `constexpr` where
+    possible)
+
+  **Steps:**
+  1. Create `Src/GraphicsEngineVulkan/common/ViewportHelper.hpp` with three
+     things in `namespace Kataglyphis`:
+     - `constexpr vk::Viewport fullExtentViewport(vk::Extent2D extent)` —
+       origin `(0, 0)`, size from `extent`, `minDepth = 0.0F`, `maxDepth = 1.0F`.
+     - `constexpr vk::Rect2D fullExtentScissor(vk::Extent2D extent)` — offset
+       `{0, 0}`, extent as given.
+     - `inline void setFullExtentViewportAndScissor(vk::CommandBuffer commandBuffer, vk::Extent2D extent)`
+       calling both and issuing `setViewport(0, ...)` / `setScissor(0, ...)`.
+     Document on the header that `maxDepth = 1.0F` with an unflipped `y` is the
+     engine-wide convention and that a pass needing anything else (a flipped
+     viewport, a depth slice) must **not** use these — it should write the
+     struct inline and say why, so this helper never becomes a place that
+     silently absorbs an exception.
+  2. Replace all five blocks with a single
+     `setFullExtentViewportAndScissor(commandBuffer, <extent>);`. For SkyBox pass
+     `vk::Extent2D{framebufferWidth, framebufferHeight}`; for CascadedShadowMap
+     pass `vk::Extent2D{shadowWidth, shadowHeight}`. Add the include to each
+     file's **global module fragment** (before its `module <name>;` line) — all
+     five are module implementation units.
+  3. In `DeferredRasterizer.cpp`, hoist the repeated
+     `vulkanSwapChain->getSwapChainExtent()` into one local and use it for both
+     the render-pass `renderArea` (`:405` region) and the new call, so the pass
+     cannot end up scissoring a different extent than it rendered.
+  4. Do not touch any other viewport state — `grep -n setViewport Src/` must
+     return exactly the five call sites before the change and zero
+     hand-rolled `vk::Viewport` locals after it.
+
+  **Test:** Add `Test/commit/VulkanEngine/viewportHelperSuite.cpp` with
+  `ViewportHelperUnit` tests (pure CPU, no device): `fullExtentViewport` puts the
+  origin at `(0, 0)` and returns `minDepth == 0.0F` / `maxDepth == 1.0F`;
+  `fullExtentScissor` covers exactly the passed extent; a `static_assert` that
+  both are usable in a constant expression (follow `formatHelperSuite.cpp:9-16`);
+  and one test asserting `fullExtentScissor(e).extent == e` for a non-square
+  extent, so a transposed width/height would fail. Run
+  `commitTestSuite.exe --gtest_filter='ViewportHelperUnit.*'`.
+
+  **Build:** `clangcl-debug`, same invocation as task 1. Because five module
+  implementation units change, expect a longer-than-usual rebuild; if the build
+  reports `.pcm` version drift, that is the already-fixed issue pinned in
+  `cmake/ProjectOptions.cmake` (`-fms-compatibility-version`) — do not re-chase
+  it as a stale cache.
+
+  **Context:** Straight continuation of `f97712f4` (six copy-pasted shader-stage
+  blocks → one `ShaderStagePair`) and `a3b42dfc` (one depth-aspect definition).
+  The payoff is not the ~50 lines removed; it is that the sixth pass someone adds
+  cannot quietly ship `maxDepth = 0.0F` or a transposed extent, and that the
+  convention now has a written home. This is a pure-refactor task: it must be
+  pixel-neutral, so if any golden test later disagrees, the refactor is wrong —
+  do not adjust a golden to accommodate it.
+
+- [ ] **(S) (refactor) Give the per-model texture/mesh count vectors one definition on `Scene`** — both halves of the "flatten textures in model order" invariant build the same vector with their own loop, so they can disagree about model count or ordering.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1302-1338` —
+    `create_object_description_buffer`; `:1310-1317` builds
+    `meshCountPerModel` and `textureCountPerModel` and feeds
+    `assignTextureOffsets`.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1513-1583` —
+    `updateTexturesInSharedRenderDescriptorSet`; `:1536-1546` states the
+    invariant in prose ("the same order create_object_description_buffer assigns
+    each model's texture_offset ... the other half of this invariant") and then
+    rebuilds `texture_count_per_model` with a second loop.
+  - `Src/GraphicsEngineVulkan/scene/Scene.ixx:48-68` — `getTextureCount` /
+    `getMeshCount` / `getModelCount`, the existing bounds-checked accessors to
+    build on.
+  - `Test/commit/VulkanEngine/sceneAccessorSuite.cpp:1-38` — the device-free
+    suite to extend, and its established framing (pin the safe fallback).
+
+  **Steps:**
+  1. Add to `Scene` (in `Scene.ixx`, next to the existing count accessors) two
+     methods returning `std::vector<uint32_t>` sized exactly `getModelCount()`,
+     in model order:
+     `std::vector<uint32_t> getTextureCountPerModel()` and
+     `std::vector<uint32_t> getMeshCountPerModel()`. Implement each with
+     `reserve(model_list.size())` + a loop over `model_list`, going through the
+     existing per-index accessors so the bounds behaviour stays identical.
+     Comment on `getTextureCountPerModel` that its ordering is the contract
+     `assignTextureOffsets` and `planFlattenedTextureSlots` are both indexed by,
+     and that the two consumers must never re-derive it.
+  2. In `create_object_description_buffer`, delete `:1310-1317` and call the two
+     new accessors. Keep the explanatory comment at `:1306-1309`.
+  3. In `updateTexturesInSharedRenderDescriptorSet`, delete `:1542-1546` and call
+     `scene->getTextureCountPerModel()`. Rewrite the `:1536-1541` comment so it
+     points at the shared accessor as the thing that guarantees the ordering,
+     rather than asserting by prose that two loops agree — keep the "this used to
+     bind model 0's textures only" history, that is why the invariant exists.
+  4. `grep -n 'getTextureCount(' Src/` afterwards: the only remaining call sites
+     should be inside `Scene.ixx` itself and the loader/golden-suite uses at
+     `ObjLoader.cpp:134`, `GltfLoader.cpp:84`, `goldenRenderSuite.cpp:1848,1888`.
+
+  **Test:** Add to `Test/commit/VulkanEngine/sceneAccessorSuite.cpp` (device-free
+  — it builds a bare `Scene` and `add_model(std::make_shared<Model>())`):
+  `SceneAccessorUnit.PerModelCountVectorsAreSizedByModelCount` asserting that
+  both vectors have `getModelCount()` entries for an empty scene (0) and after
+  adding two default `Model`s (2), and that each entry equals the corresponding
+  `getTextureCount(i)` / `getMeshCount(i)` — i.e. the vector form and the
+  indexed form cannot drift. Run
+  `commitTestSuite.exe --gtest_filter='SceneAccessorUnit.*'`.
+
+  **Build:** `clangcl-debug`, same invocation as task 1. `Scene.ixx` is a module
+  **interface**, so this triggers a wide rebuild of its importers — budget for it
+  and do not interrupt the build partway.
+
+  **Context:** `VulkanRenderer.cpp:1536-1541` and the multi-model texture-offset
+  work (batch VII, `21b263e0`) already paid for this bug once: binding model 0's
+  textures for every model. The fix then was `planFlattenedTextureSlots`; what is
+  left is that its *input* is still assembled twice. Same shape as batch XVIII's
+  depth-aspect finding — a rule with hand-rolled copies — except here neither
+  copy is currently wrong, so this is prevention, and the task must be
+  behaviour-neutral. Follow `planFlattenedTextureSlots`' precedent: the pure,
+  testable part lives where a device-free test can reach it.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

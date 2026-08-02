@@ -13,6 +13,7 @@ module;
 #include "shared/scene/ObjMaterial.hpp"
 
 #include "common/Utilities.hpp"
+#include "scene/sky_box/CubemapFaces.hpp"
 
 module kataglyphis.vulkan.sky_box;
 
@@ -25,23 +26,6 @@ import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.pipeline_builder;
 
 namespace Kataglyphis {
-
-namespace {
-
-// Returns true iff every face matches the first face's dimensions and none
-// are degenerate. The cubemap upload copies `layerSize` bytes out of every
-// face, so a face larger than the first reads off the end of an earlier
-// allocation and a smaller one writes overlapping layers.
-bool cubemapFacesConsistent(const int widths[6], const int heights[6])
-{
-    for (size_t i = 0; i < 6; ++i) {
-        if (widths[i] <= 0 || heights[i] <= 0) { return false; }
-        if (widths[i] != widths[0] || heights[i] != heights[0]) { return false; }
-    }
-    return true;
-}
-
-}// namespace
 
 SkyBox::SkyBox() = default;
 
