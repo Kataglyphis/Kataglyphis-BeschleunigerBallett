@@ -4478,67 +4478,6 @@ derivation and the degenerate-plane guards are all correct and documented in
 place; **18 source files carrying a UTF-8 BOM** — re-checked, still cosmetic,
 still diff noise (batch VI rejected this for the same reason).
 
-### C++ Vulkan engine
-
-- [ ] **(S) (refactor) Take the two per-frame heap allocations out of `CascadedShadowMap::updateCascades`** — batch VI verified this and deferred it for its three-task cap with "pick this up next cycle".
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:79-109`
-    — `updateCascades`: `:88` move-assigns a fresh `std::vector<CascadeData>`
-    returned by `computeCascadeData`, `:105` builds a `std::vector<glm::mat4>`
-    purely to `memcpy` it into the mapped UBO. Both run every frame via
-    `VulkanRenderer.cpp:194`.
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.ixx:53-62`
-    (the `computeCascadeData` declaration), `:103` (`getCascadeData` returns
-    `const std::vector<CascadeData>&` — keep this signature), `:145`
-    (the `cascadeData` member).
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMapMath.cpp`
-    — the implementation, and `:29` for the `std::array` idiom this module
-    already uses. `CascadedShadowMap.cpp:443` uses
-    `std::array<FrustumPlanes, MAX_CASCADES>` for the same reason.
-  - `Test/commit/VulkanEngine/cascadedShadowMapSuite.cpp` — ~15 call sites of
-    `computeCascadeData`; all must keep compiling untouched.
-
-  **Steps:**
-  1. Add `void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, ...)`
-     alongside `computeCascadeData` in `CascadedShadowMapMath.cpp`, carrying the
-     whole body. It must write at most `out.size()` entries and return early if
-     `out.size() < numCascades` rather than clamping silently.
-  2. Reimplement the existing `computeCascadeData` as a two-line wrapper that
-     sizes a `std::vector` and calls the new overload — this is what keeps the
-     15 test call sites and `Test/perf/perfSuite.cpp` compiling unchanged.
-  3. In `updateCascades`, replace `:88` with a call to `computeCascadeDataInto`
-     over the already-sized `cascadeData` member (`init()` does
-     `cascadeData.resize(numCascades)` at `CascadedShadowMap.cpp:44`, so it is
-     the right size before the first frame — assert that rather than resizing
-     on the frame path).
-  4. Replace `:104-108` with a direct write of each `viewProjMatrix` into the
-     mapped buffer — either a `std::array<glm::mat4, MAX_CASCADES>` staging
-     value or a per-cascade `memcpy` at `i * sizeof(glm::mat4)`. Keep the
-     existing "without this the buffer keeps default-constructed matrices"
-     comment (`:99-103`) — it records a real past bug.
-  5. Keep `getCascadeData`'s return type. This task must not change any
-     observable value.
-
-  **Test:** The existing `CascadedShadowMapUnit.*` suite must pass unchanged —
-  that is the point of keeping the `computeCascadeData` wrapper. Add
-  `CascadedShadowMapUnit.ComputeCascadeDataIntoAgreesWithTheAllocatingOverload`
-  asserting the two produce bit-identical `splitDepth` and `viewProjMatrix` for
-  the same inputs, plus a case where `out` is **shorter** than `numCascades` and
-  must leave the buffer untouched. Run:
-  `.\commitTestSuite.exe --gtest_filter='CascadedShadowMapUnit.*:ShadowResolutionUnit.*'`
-
-  **Build:** `clangcl-debug` for correctness. If you want a number for the
-  commit message, `clangcl-profile` is the only configuration where the
-  benchmark means anything.
-
-  **Context:** Batch VI's own words: "deferred purely for the three-task cap,
-  **pick this up next cycle**". Two allocations per frame is not a crisis; the
-  payoff is that the shadow update path stops allocating at all, matching what
-  `CascadedShadowMap.cpp:443` and `CascadedShadowMapMath.cpp:29` already do
-  three lines away. Do not fold this into any other cascade task — it must be
-  provably value-neutral on its own.
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 - [ ] **(S) Reject out-of-range indices in the Rust glTF loader instead of panicking on them** — the same gap as task 3, in the loader that backs the public WASM demo, where a panic is an abort with no message.
@@ -4782,41 +4721,6 @@ moved into ContainerHub composite actions; Pester wired into CI
 (`pester-tests` job); cargo-retry upstreamed; LICENSES-README rewritten;
 CHANGELOG.md deleted (git history + this file are the record). What remains:
 
-- [x] **Migrate the two remaining Windows.yml inline container steps** (S) —
-  done 2026-08-02. "GPU timing comparison" was already split earlier that
-  day into a host step that computes `TIMING_VALIDATION_FLAG` from
-  `KATAGLYPHIS_CI_HAS_GPU` plus a composite-action step that consumes it.
-  "Build/Test/Package" is now migrated too: `run-in-windows-container`
-  gained `extra-args` (Linux-action position, immediately before
-  `--mount`), plus `file`/`file-args` so a `pwsh -File <script> <argv...>`
-  payload keeps LITERAL argument semantics instead of being re-parsed as
-  `-Command`. All three are newline-delimited argv lists delivered through
-  env vars, so secrets never enter a host command string. Verified by
-  executing the old and new argv constructions side by side: same 35
-  arguments, identical multiset; the only ordering change is `-e
-  MSIX_CERT_PASSWORD=...` moving ahead of `--mount`, both being docker
-  options before the image name. The `docker pull` is now its own step.
-  Windows.yml has no inline `docker run` left. Not exercised on CI yet —
-  needs a `[build-win]` push. Build preset: none (CI only).
-
-- [x] **Verify the 11 unverified Rust crate licenses** (S) — done
-  2026-08-02 via `cargo metadata --format-version 1 --locked` in the
-  `:latest-cross` container (the `license` field per package, i.e. what the
-  crate published to crates.io, for the exact `Cargo.lock` versions). All
-  11 resolved; `anyhow`/`log`/`bytemuck` were re-verified against their
-  exact lock versions instead of neighbouring cached ones (expressions
-  unchanged). Three are not the expected dual MIT/Apache: `winit 0.30.13`
-  and `ktx2 0.5.0` are Apache-2.0 only, `bevy_mikktspace 1.0.0` is
-  `Zlib AND (MIT OR Apache-2.0)`. The KTX-embedded bucket is resolved too,
-  but NOT from an upstream `LICENSE.md` — `ExternalLib/KTX/LICENSE.md` does
-  not exist, so each component was read from the vendored file that carries
-  its terms (`basisu/LICENSE`, `basisu/zstd/LICENSE`, `dfdutils/LICENSE.adoc`,
-  and the license headers of `lodepng.h`, `jpgd.h`, `stb_image*.h`,
-  `tinyexr.h`, `astcenc.h`, `etcdec.cxx`). Notable: `etcdec.cxx` is the only
-  file in the tree under a non-OSI licence (Ericsson's own SLA). Only
-  ContainerHub's missing LICENSE remains unverified (blocked item below).
-  Test: none (doc). Build preset: none.
-
 - [b] **ContainerHub has no LICENSE file** (S, **blocked on owner
   decision**) — surfaced by the license audit; consumers cannot state its
   terms. Pick a license (sibling Kataglyphis repos use MIT) and add the
@@ -4847,30 +4751,6 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
   Until then treat host GPU goldens as unavailable and do not burn executor
   retries on them.
 
-- [x] **Checked-in WGSL differs between Windows and Linux from the SAME
-  slangc** (M) — done 2026-08-02, and the premise was wrong: the two hosts
-  did **not** have the same slangc. The Windows host is on Vulkan SDK
-  1.4.350.0 (slangc `2026.8`); the ContainerHub Linux image is pinned to
-  `VULKAN_VERSION=1.4.341.1` (slangc `2026.1-52-gc8ddf20bb`). It is a
-  **version** divergence, not a platform one: slangc 2026.8 on **Linux**
-  reproduces the committed files byte-for-byte (only CRLF vs LF differs, and
-  `.gitattributes` normalises that away). The bug is in slangc 2026.1's
-  **combined** (whole-module, no `-entry`/`-stage`) WGSL emit, which drops
-  `@location(N)` from every non-builtin varying-struct member; the
-  **per-entry** emits from the same binary are correct, so our scripts —
-  which copy slangc's output verbatim — were never at fault. Windows was the
-  correct side. Fixed by pinning `minSlangcVersionForWgsl: "2026.8"` in
-  `shader-manifest.json`: below it both compile scripts skip the combined
-  emit entirely (loud warning, SPIR-V still built, checked-in WGSL left
-  untouched — so a Linux build no longer corrupts the submodule); at or above
-  it they verify every emit and hard-fail, without copying, on any IO-struct
-  member carrying neither `@builtin` nor `@location`. Pinned by
-  `BuildIntegrity.CheckedInWgslVaryingStructsCarryLocations` and
-  `BuildIntegrity.ShaderManifestPinsAMinimumSlangcVersionForWgsl`; documented
-  in `docs/shader-build-pipeline.md`. Follow-up (separate item below): bump
-  the ContainerHub image's `VULKAN_VERSION` so Linux can regenerate again.
-  Build preset: none (shader tooling).
-
 - [ ] **Bump the ContainerHub Linux image's Vulkan SDK past slangc 2026.8**
   (S) — `ExternalLib/Kataglyphis-ContainerHub/linux/Dockerfile.base` pins
   `ARG VULKAN_VERSION=1.4.341.1`, whose slangc (`2026.1-52-gc8ddf20bb`)
@@ -4883,65 +4763,3 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
   `git -C ExternalLib/Kataglyphis-RustProjectTemplate status` clean.
   Build preset: none (container tooling).
 
-- [x] **Upstream the generic half of `docs-build-web.sh`** (S) — done
-  2026-08-02, and with it this whole "remaining upstreaming candidates"
-  entry. The Sphinx half is now ContainerHub
-  `linux/scripts/lib/docs-build.sh` (venv bootstrap via the caller's
-  `uv-venv-create.sh`/`uv-install-requirements.sh` — the same contract
-  `code-quality.sh` already uses —, `_static` SVG staging, an optional
-  diagram-generator step, then `make html`/`make linkcheck` under
-  `SPHINXOPTS=-W --keep-going`); `Scripts/Linux/docs-build-web.sh` (67 -> 67
-  lines, half of them the demo) keeps only the paths and the wasm-bindgen
-  demo rebuild. Kept
-  separate from `02-toolchain/python/ci_build_docs.sh`, which is the
-  pure-Python-repo docs step (uv_sync_project over a pyproject, pytest and
-  coverage staging, no linkcheck) rather than a sourceable library.
-  Two neighbours went up in the same pass: `Scripts/Linux/run-ctest.sh`
-  (77 -> 29 lines) over the new `linux/scripts/lib/ctest-run.sh`, and
-  `Scripts/Compare-PerfBaseline.ps1` (137 -> 53 lines) over the new
-  `WindowsPerfBaseline.Common` (Google-Benchmark JSON diffing is the same
-  everywhere; the no-capture-mode policy stays a wrapper-level rule and the
-  module has no capture mode to inherit). Verified by argv-logging the old
-  and new Linux wrappers side by side in the container (10 ctest cases,
-  3 docs cases, identical) and by byte-identical comparator output on the
-  checked-in baseline; +18 upstream Pester cases for the moved comparator.
-  The other three candidates in this entry were already DONE (2026-08-02):
-  `source_vulkan_env` now delegates to `01-core/vulkan-env.sh`, and the
-  sccache-stats and vswhere/sanitizer-discovery triplications collapsed into
-  `WindowsScripts.Shared` (each preserving its behavioural fork as a
-  parameter). The vendored `WindowsTesting.Common` ASAN probes were
-  deliberately NOT folded in - that module's contract is to work when the
-  ContainerHub submodule is absent, so importing from upstream inverts it.
-  Test: repo Pester 42/42, upstream `Invoke-Tests.ps1` green, and a real
-  build on the affected platform. Build preset: linux-debug-clang.
-
-- [x] **Upstream the Slang compile driver** (M) — done 2026-08-02, after the
-  WGSL platform-divergence guards landed (d17896f8) so they moved upstream
-  with the driver instead of being ported twice. The generic driver is now
-  ContainerHub `linux/scripts/lib/slang-compile.sh` (491 lines) and
-  `windows/scripts/modules/WindowsSlang.Common.psm1` (360): resolve slangc,
-  expand the `-I` include args over the source tree, read the manifest,
-  compile each (file, entry, target) with staleness checking, apply the
-  post-emit regex patches, emit/patch/validate/copy the combined WGSL, and
-  enforce the `minSlangcVersionForWgsl` floor. The consumers keep only paths:
-  `Scripts/Windows/compile-slang-shaders.ps1` 311 -> 63 lines,
-  `Scripts/Linux/compile-slang-shaders.sh` 340 -> 52 — manifest location,
-  Slang source root, SPIR-V/WGSL output roots, the combined-emit staging dir
-  and the repo root the `wgslMap` `dst` paths resolve against. All six
-  hard-won behaviours moved with it: conservative staleness (newer than the
-  source AND every `.slang` AND the manifest), exit 2 (never a silent skip)
-  when slangc is missing, hard failure on a manifest row whose source file is
-  gone, a loud warning when a post-emit patch matches nothing, the WGSL
-  toolchain floor, and the varying-location validator that refuses to copy a
-  bad emit.
-  Verified: all 72 artifacts (`Resources/ShadersSlang/build/**` plus the
-  `wgslMap` destinations under `crates/**/shaders/`) byte-identical after a
-  Windows host run AND a container run of the Linux script, which correctly
-  skipped the combined WGSL emit (its slangc is `2026.1-52-gc8ddf20bb`,
-  below the floor) while still compiling 30 per-entry artifacts;
-  `git -C ExternalLib/Kataglyphis-RustProjectTemplate status` clean of
-  regenerated WGSL; the missing-slangc (exit 2), missing-source and
-  patch-matched-nothing paths probed explicitly on both platforms;
-  clangcl-debug container build green with `BuildIntegrity.*` 22/22; +8
-  upstream Pester cases (`WindowsSlang.Common.Tests.ps1`).
-  Build preset: clangcl-debug (BuildIntegrity pins the shader outputs).
