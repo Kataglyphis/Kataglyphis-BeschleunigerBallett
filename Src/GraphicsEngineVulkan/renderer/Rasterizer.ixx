@@ -61,15 +61,16 @@ class Rasterizer
 
     ~Rasterizer();
 
-  private:
     // HDR offscreen target format. The render pass attachment and the offscreen
     // textures MUST agree on this, so it lives in one place: lighting scales
     // with the GUI light radiance (default 10), so the lit scene exceeds 1.0
     // everywhere - a UNORM target clamps it flat before post's tonemap runs
     // (measured: everything at the 186 ceiling). FP16 keeps the range for
-    // Reinhard.
+    // Reinhard. Public: DeferredRasterizer's FINAL_FORMAT is static-asserted
+    // equal to this one, since both back the same forward-offscreen contract.
     static constexpr vk::Format OFFSCREEN_FORMAT = vk::Format::eR16G16B16A16Sfloat;
 
+  private:
     unsigned int meshesDrawn{ 0 };
     unsigned int meshesConsidered{ 0 };
     std::shared_ptr<VulkanDevice>device{ nullptr };

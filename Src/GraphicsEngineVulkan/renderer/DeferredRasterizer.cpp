@@ -83,14 +83,14 @@ void DeferredRasterizer::createTextures()
     };
 
     // Use specific formats for GBuffer
-    createAttachment(offscreenTextures, vk::Format::eR16G16B16A16Sfloat, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferDst);
+    createAttachment(offscreenTextures, FINAL_FORMAT, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferDst);
     // No position attachment: the lighting pass reconstructs world position
     // from the DEPTH input attachment + the inverse view/projection - a full
     // rgba16f render target of bandwidth per frame for data the depth buffer
     // already encodes.
-    createAttachment(gBufferNormals, vk::Format::eR16G16B16A16Sfloat, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
-    createAttachment(gBufferAlbedos, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
-    createAttachment(gBufferMaterials, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
+    createAttachment(gBufferNormals, GBUFFER_NORMAL_FORMAT, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
+    createAttachment(gBufferAlbedos, GBUFFER_ALBEDO_FORMAT, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
+    createAttachment(gBufferMaterials, GBUFFER_MATERIAL_FORMAT, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
 
     // Depth buffer. No transition is recorded here: createRenderPass declares
     // initialLayout = eUndefined for every attachment this function creates,
@@ -194,11 +194,8 @@ void DeferredRasterizer::createRenderPass()
     // 4: Depth
     // No position attachment - see the comment at createTextures's :87-90.
 
-    // HDR final target - matches the forward offscreen (see Rasterizer.cpp).
-    vk::Format finalFormat = vk::Format::eR16G16B16A16Sfloat;
-    vk::Format normalFormat = vk::Format::eR16G16B16A16Sfloat;
-    vk::Format albedoFormat = vk::Format::eR8G8B8A8Unorm;
-    vk::Format materialFormat = vk::Format::eR8G8B8A8Unorm;
+    // FINAL_FORMAT matches the forward offscreen (see Rasterizer.ixx's
+    // OFFSCREEN_FORMAT and the static_assert next to these constants).
     vk::Format depthFormat = Kataglyphis::chooseDepthFormat(device->getPhysicalDevice());
 
     // All five use the engine-wide attachment defaults (clear on load, store,
@@ -206,10 +203,10 @@ void DeferredRasterizer::createRenderPass()
     // createAttachmentDesc lambda this replaces was one of five hand-written
     // copies of the same field list.
     std::array<vk::AttachmentDescription, 5> attachments = {
-        buildAttachmentDescription(finalFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 0: Final Output
-        buildAttachmentDescription(normalFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 1: Normal
-        buildAttachmentDescription(albedoFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 2: Albedo
-        buildAttachmentDescription(materialFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 3: Material
+        buildAttachmentDescription(FINAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal), // 0: Final Output
+        buildAttachmentDescription(GBUFFER_NORMAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal), // 1: Normal
+        buildAttachmentDescription(GBUFFER_ALBEDO_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal), // 2: Albedo
+        buildAttachmentDescription(GBUFFER_MATERIAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal), // 3: Material
         buildAttachmentDescription(depthFormat, vk::ImageLayout::eDepthStencilAttachmentOptimal) // 4: Depth
     };
 

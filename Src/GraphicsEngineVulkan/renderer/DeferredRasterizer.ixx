@@ -15,6 +15,7 @@ import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.frustum;
+import kataglyphis.vulkan.rasterizer;
 
 export namespace Kataglyphis::VulkanRendererInternals {
 class DeferredRasterizer
@@ -62,6 +63,20 @@ class DeferredRasterizer
     void cleanUp();
 
     ~DeferredRasterizer();
+
+    // GBuffer / final-target formats, written once here and read by both
+    // createTextures() and createRenderPass(): a mismatch between the image
+    // and the attachment description backing it is a validation error at
+    // framebuffer creation, not a compile error, so both call sites must use
+    // these instead of re-spelling the literals. Indices match the attachment
+    // order documented at createRenderPass()'s :190-195.
+    static constexpr vk::Format FINAL_FORMAT = vk::Format::eR16G16B16A16Sfloat;
+    static constexpr vk::Format GBUFFER_NORMAL_FORMAT = vk::Format::eR16G16B16A16Sfloat;
+    static constexpr vk::Format GBUFFER_ALBEDO_FORMAT = vk::Format::eR8G8B8A8Unorm;
+    static constexpr vk::Format GBUFFER_MATERIAL_FORMAT = vk::Format::eR8G8B8A8Unorm;
+    // FINAL_FORMAT backs the same forward-offscreen contract as Rasterizer's
+    // offscreen target, so the two must never drift apart silently.
+    static_assert(FINAL_FORMAT == Rasterizer::OFFSCREEN_FORMAT);
 
   private:
     unsigned int meshesDrawn{ 0 };

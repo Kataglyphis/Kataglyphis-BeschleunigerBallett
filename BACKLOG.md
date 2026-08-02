@@ -5011,58 +5011,6 @@ unchecked-results finding.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Give the deferred G-buffer its formats once instead of twice** — `DeferredRasterizer` writes the same four `vk::Format` values in two functions 110 lines apart, and a mismatch between them is a validation error at framebuffer creation, not a compile error.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:86-93` (the image
-    creations) and `:196-215` (`finalFormat`/`normalFormat`/`albedoFormat`/
-    `materialFormat`, re-spelled as locals for the attachment descriptions)
-  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.ixx:71` —
-    `static constexpr vk::Format OFFSCREEN_FORMAT` is the convention already in
-    use for exactly this, one class over
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.ixx` — where the
-    constants belong
-  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp:34-35`
-    — a third and fourth copy of the same `eR16G16B16A16Sfloat` literal, this
-    one for the cloud target; check whether it is genuinely the same rule
-    before pulling it in, and if it is not, leave it and say why in the commit
-
-  **Steps:**
-  1. Add `static constexpr vk::Format` members to `DeferredRasterizer` in the
-     module interface — `FINAL_FORMAT`, `GBUFFER_NORMAL_FORMAT`,
-     `GBUFFER_ALBEDO_FORMAT`, `GBUFFER_MATERIAL_FORMAT` — named and ordered to
-     match the attachment indices the render pass already documents at
-     `:190-195`.
-  2. Use them in both `createTextures()` and `createRenderpass()`; delete the
-     four locals. `FINAL_FORMAT` should be defined as (or static-asserted
-     equal to) `Rasterizer::OFFSCREEN_FORMAT` — the comment at `:198` already
-     says "matches the forward offscreen (see Rasterizer.cpp)" and nothing
-     enforces it.
-  3. Add a `static_assert` next to the constants that `FINAL_FORMAT ==
-     Rasterizer::OFFSCREEN_FORMAT`, so the claim in that comment becomes a
-     compile error when it stops being true.
-
-  **Test:** No new gtest suite — this is a compile-verified restructure with no
-  behaviour change, and the `static_assert` is the test for the one invariant
-  that was previously only a comment. Verify by building and then running the
-  deferred golden on the host:
-  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GoldenRender.*Deferred*`
-  from the repo root, plus
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1`
-  since attachment formats feed the render pass.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-
-  **Context:** Same family as `buildAttachmentDescription` /
-  `fullExtentViewport` / `buildFramebufferCreateInfo` /
-  `buildRenderPassBeginInfo` — one rule, more than one hand-rolled copy. This
-  one is smaller than those (two copies, one file) but has the sharpest failure
-  mode, because the image and the attachment description it backs must agree
-  exactly. Do not invent a shared header for it: the formats are private to
-  this class, unlike the depth-format rule that legitimately lives in
-  `FormatHelper.hpp`.
-
 
 ## Completed (kept for the reasoning, not the status)
 
