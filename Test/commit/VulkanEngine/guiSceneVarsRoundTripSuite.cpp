@@ -21,6 +21,7 @@
 
 #include <cstddef>
 #include <cstring>
+#include <string>
 
 import kataglyphis.vulkan.gui_scene_shared_vars;
 
@@ -180,4 +181,36 @@ TEST(GuiSceneVarsRoundTrip, CascadeCountDefaultIsWithinTheSliderRange)
     const GUISceneSharedVars defaults;
 
     EXPECT_LE(defaults.num_shadow_cascades, MAX_CASCADES);
+}
+
+// available_shadow_map_resolutions and shadowResolutionForIndex used to be
+// two hand-rolled copies of the same four-entry table (the GUI's combo
+// labels, and a second if/else chain in VulkanRenderer::handleShadowResolutionChange)
+// that were free to drift apart - which is exactly what happened: the combo
+// claimed "4096" for index 3 while VulkanRenderer::init hard-coded a 2048
+// startup allocation. This pins every label against the function that is now
+// the only source of the pixel counts.
+TEST(ShadowResolutionUnit, EveryComboLabelMatchesThePixelCount)
+{
+    const GUISceneSharedVars defaults;
+    for (int i = 0; i < 4; ++i) {
+        EXPECT_EQ(std::stoul(defaults.available_shadow_map_resolutions[i]), shadowResolutionForIndex(i))
+          << "label/pixel-count mismatch at index " << i;
+    }
+}
+
+TEST(ShadowResolutionUnit, OutOfRangeIndicesClampInsteadOfSilentlyPicking512)
+{
+    EXPECT_EQ(shadowResolutionForIndex(-1), 512U);
+    EXPECT_EQ(shadowResolutionForIndex(4), 4096U);
+}
+
+// Documents the behaviour this change pins: the GUI's default index is what
+// VulkanRenderer::init now allocates at startup (index 2 == 2048, matching
+// what the renderer already built before this fix - the combo's label was
+// the thing that was wrong, not the allocation).
+TEST(ShadowResolutionUnit, TheDefaultIndexIsWhatStartupAllocates)
+{
+    const GUISceneSharedVars defaults;
+    EXPECT_EQ(shadowResolutionForIndex(defaults.shadow_map_res_index), 2048U);
 }

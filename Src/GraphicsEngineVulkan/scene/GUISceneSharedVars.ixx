@@ -1,6 +1,24 @@
 module;
 
+#include <cstdint>
+
 export module kataglyphis.vulkan.gui_scene_shared_vars;
+
+// The one table of shadow-map resolutions; the combo's labels
+// (GUISceneSharedVars::available_shadow_map_resolutions) and every consumer
+// of shadow_map_res_index must derive from this array instead of re-typing
+// their own copy, which is what let the GUI's label and the renderer's
+// startup allocation drift apart (GUI claimed 4096, renderer built 2048).
+export constexpr uint32_t kShadowMapResolutions[4] = { 512, 1024, 2048, 4096 };
+
+// Clamps out-of-range indices into [0, 3] rather than silently falling
+// through to 512 the way the old if/else chain did.
+export constexpr uint32_t shadowResolutionForIndex(int index)
+{
+    if (index < 0) index = 0;
+    if (index > 3) index = 3;
+    return kShadowMapResolutions[index];
+}
 
 export struct GUISceneSharedVars
 {
@@ -13,7 +31,10 @@ export struct GUISceneSharedVars
     float directional_light_direction[3] = { -0.55f, -1.f, -0.35f };
 
     // Shadows
-    int shadow_map_res_index = 3;
+    // Index 2 ("2048") matches the pixel count VulkanRenderer::init actually
+    // allocates at startup (via shadowResolutionForIndex below) without
+    // needing a measurement of the 4x memory jump index 3 would cost.
+    int shadow_map_res_index = 2;
     bool shadow_resolution_changed = false;
     int num_shadow_cascades = 3; // must stay <= MAX_CASCADES (SceneUBO array size)
     int pcf_radius = 2;
@@ -30,6 +51,9 @@ export struct GUISceneSharedVars
     // only for a camera that sits close to its subject, where it does help
     // (1.52 -> 1.01 cm/texel at 0.35). See the table in CascadedShadowMap.cpp.
     float cascade_split_lambda = 0.f;
+    // Labels of kShadowMapResolutions, in the same order; index i's label
+    // must always read as the pixel count shadowResolutionForIndex(i)
+    // returns (pinned by ShadowResolutionUnit.EveryComboLabelMatchesThePixelCount).
     const char* available_shadow_map_resolutions[4] = { "512", "1024", "2048", "4096" };
 
     // Clouds

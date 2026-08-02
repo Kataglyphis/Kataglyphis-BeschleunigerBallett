@@ -111,7 +111,11 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
         spdlog::warn("Device maxMultiviewViewCount ({}) is below MAX_CASCADES ({}); clamping startup cascade count to {}.",
           device->getMaxMultiviewViewCount(), MAX_CASCADES, initial_cascade_count);
     }
-    dirShadowMap.init(device, 2048, 2048, initial_cascade_count, sharedRenderDescriptors.getLayout());
+    // The GUI is the single source of truth for the startup shadow-map
+    // resolution, so it can no longer disagree with what the combo shows.
+    constexpr GUISceneSharedVars kGuiDefaults{};
+    const uint32_t initial_shadow_res = shadowResolutionForIndex(kGuiDefaults.shadow_map_res_index);
+    dirShadowMap.init(device, initial_shadow_res, initial_shadow_res, initial_cascade_count, sharedRenderDescriptors.getLayout());
     dirShadowMap.createGraphicsPipeline();
 
     std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts_post = { postDescriptors.getLayout() };
@@ -302,10 +306,7 @@ void Kataglyphis::VulkanRenderer::handleShadowResolutionChange(
         (void)device->getLogicalDevice().waitIdle();
         dirShadowMap.cleanUp();
         
-        uint32_t shadow_res = 512;
-        if (guiSceneSharedVars.shadow_map_res_index == 1) shadow_res = 1024;
-        else if (guiSceneSharedVars.shadow_map_res_index == 2) shadow_res = 2048;
-        else if (guiSceneSharedVars.shadow_map_res_index == 3) shadow_res = 4096;
+        const uint32_t shadow_res = shadowResolutionForIndex(guiSceneSharedVars.shadow_map_res_index);
 
         // Clamp to MAX_CASCADES, matching the startup init: the SceneUBO only
         // has MAX_CASCADES cascade matrices and the shader samples that many, so
