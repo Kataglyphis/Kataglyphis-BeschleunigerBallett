@@ -254,8 +254,12 @@ silently no-op'ing. There is also an
 `linux-debug-asan-clang` preset (AddressSanitizer + UBSan, used in CI and
 fuzz-test integration). Coverage, ctest, and perf wrappers
 live next to it. Vulkan SDK env can be injected with `--vulkan-setup-script`.
-Run helpers (`run-debug.sh`, `run-profile.sh`, `run-release.sh`) and
-`compile-slang-shaders.sh` parallel the Windows equivalents.
+Run helpers (`run-debug.sh`, `run-profile.sh`, `run-release.sh`) are thin
+per-profile wrappers over ContainerHub's generic
+`linux/scripts/lib/app-runner.sh` (arg parsing, exe discovery,
+LD_LIBRARY_PATH, hooks) and fail loud if the submodule is uninitialized;
+`compile-slang-shaders.sh` parallels the Windows equivalent (both read
+`Resources/ShadersSlang/shader-manifest.json`).
 
 ### Cargo cache volume (persist Rust dependencies)
 
@@ -300,8 +304,10 @@ Then omit `--user root` from subsequent build commands.
 - Benchmarks: `clangcl-profile` builds `perfTestSuite.exe`; run via
   `Build-Windows.ps1` without `-SkipPerfTests`.
 - PowerShell module tests: Pester suites under `Scripts/Windows/tests/`
-  (Pester 3.4 syntax; CI runs them in the `pester-tests` job of
-  `.github/workflows/Windows.yml` with a pinned Pester 3.4.0).
+  (Pester 3.4 syntax; the `pester-tests` job of
+  `.github/workflows/Windows.yml` runs them with a pinned Pester 3.4.0 —
+  gated on a `[build-win]` commit-message marker like the rest of Windows
+  CI, so they do NOT run on ordinary pushes).
 - `Scripts/test-all-configs.ps1` is a local convenience sweep over every
   build configuration on both platforms — not wired into CI.
 
@@ -403,6 +409,9 @@ ContainerHub (see the rule above), project-specific ones here.
 | `docs/LICENSES-README.md` | Third-party license documentation |
 | `Scripts/AgenticLoop/README.md` | Agentic loop (claude/opencode engines) architecture, config, usage |
 | `ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md` | Build matrix config, sanitizer env vars, full matrix sweep |
+| `ExternalLib/Kataglyphis-ContainerHub/docs/windows-builds.md` | The Windows container image: build sequence, Stevedore setup, invariants |
+| `ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md` | Building inside the image: transports, reuse pattern, safety rails |
+| `ExternalLib/Kataglyphis-ContainerHub/docs/windows-agentic-loop.md` | WindowsAgenticLoop.Common module API + config reference |
 | `docs/source/` | Sphinx pages (`README.md`, `getting_started.md`, `documentation_workflow.md`, `webgpu_demo.md`, `wsl2_vulkan.rst`, `graphviz_files.rst`) |
 
 - Keep docs, scripts, and presets aligned: when you change build behavior, update

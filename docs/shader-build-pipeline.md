@@ -12,7 +12,7 @@ Shaders are written in [Slang](https://shader-slang.com/) under
 
 - **SPIR-V** (`.spv`) for the C++ Vulkan renderer → `Resources/ShadersSlang/build/spirv/`
 - **WGSL** (`.wgsl`) for the Rust WebGPU renderer → `Resources/ShadersSlang/build/wgsl/`
-  (combined WGSL files are also copied to the Rust crate's `src/shaders/` directory)
+  (combined WGSL files are also copied into the Rust crates per the manifest's `wgslMap` — `crates/webgpu_renderer/src/shaders/` and `crates/gui/src/shaders/`)
 
 The C++ renderer loads pre-compiled SPIR-V via `File` I/O — there is no
 runtime shader compilation. Slang emits `"main"` as the SPIR-V entry point

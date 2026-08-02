@@ -8,6 +8,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -98,43 +100,123 @@ bool newest_shared_import(const fs::path &slang_root, fs::file_time_type &out)
     return found;
 }
 
-// Subdirectories of Resources/ShadersSlang/ that the C++ Vulkan engine
-// actually loads compiled SPIR-V from - see every `slang_spv_dir` constant
-// under Src/. Everything else (bloom, ssao, forward, sky, ibl, gpu_cull,
-// tonemap, tex_quad, depth_resolve, occlusion_bbox, histogram, ...) is a
-// Rust/WebGPU shader that only ever emits WGSL and must not be scanned here.
-const std::vector<std::string> kEngineSpirvSubdirs = {
-    "compute", "deferred", "path_tracing", "post", "rasterizer", "raytracing", "skybox"
-};
+// Resources/ShadersSlang/shader-manifest.json is the SINGLE source of truth
+// for the Slang shader build: both Scripts/Windows/compile-slang-shaders.ps1
+// and Scripts/Linux/compile-slang-shaders.sh consume it. It replaced the two
+// per-script hand-maintained copies of the manifest/WGSL-map/patch tables
+// that this suite used to cross-check against each other - with one data
+// file there is no second copy left to drift, so the tests below instead
+// verify the FILESYSTEM (compiled SPIR-V, checked-in Rust-crate WGSL)
+// against that one manifest, and ShaderManifestJsonIsPresentAndWellFormed
+// fails loudly if the file goes missing or corrupt, because neither build
+// script can run without it.
 
-// Slang source (relative to Resources/ShadersSlang/) -> checked-in Rust-crate
-// WGSL destination (relative to
-// ExternalLib/Kataglyphis-RustProjectTemplate/crates/), mirroring $WgslMap in
-// Scripts/Windows/compile-slang-shaders.ps1 (and its bash equivalent). Kept as
-// a second hand-written copy, same as kSharedConstantNames below, rather than
-// parsed out of the PowerShell array - a divergence here is exactly the drift
-// this test exists to catch, so the pairs are deliberately independent of the
-// script's own list. histogram.wgsl is deliberately excluded: it is
-// hand-written, with no generating Slang source.
+// One "wgslMap" row: a Slang source whose combined WGSL emit is copied into
+// a Rust crate's shader directory. histogram.wgsl is absent by construction:
+// it is hand-written, with no generating Slang source (its manifest row is
+// marked disabled).
 struct WgslMapping
 {
-    std::string slang_source;// relative to Resources/ShadersSlang/
-    std::string crate_dir;   // relative to ExternalLib/Kataglyphis-RustProjectTemplate/crates/
-    std::string wgsl_file;
+    std::string slang_source;// "src": relative to Resources/ShadersSlang/
+    std::string dst_dir;     // "dst": relative to the repository root
+    std::string wgsl_file;   // "out": destination file name
 };
 
-const std::vector<WgslMapping> kWgslMap = {
-    { "forward/forward.slang", "webgpu_renderer/src/shaders", "forward.wgsl" },
-    { "sky/sky.slang", "webgpu_renderer/src/shaders", "sky.wgsl" },
-    { "bloom/bloom.slang", "webgpu_renderer/src/shaders", "bloom.wgsl" },
-    { "ssao/ssao.slang", "webgpu_renderer/src/shaders", "ssao.wgsl" },
-    { "ibl/ibl.slang", "webgpu_renderer/src/shaders", "ibl.wgsl" },
-    { "gpu_cull/gpu_cull.slang", "webgpu_renderer/src/shaders", "gpu_cull.wgsl" },
-    { "tonemap/tonemap.slang", "webgpu_renderer/src/shaders", "tonemap.wgsl" },
-    { "depth_resolve/depth_resolve.slang", "webgpu_renderer/src/shaders", "depth_resolve.wgsl" },
-    { "occlusion_bbox/occlusion_bbox.slang", "webgpu_renderer/src/shaders", "occlusion_bbox.wgsl" },
-    { "tex_quad/tex_quad.slang", "gui/src/shaders", "tex_quad.wgsl" },
+// Everything this suite needs out of shader-manifest.json, parsed once and
+// shared (see shader_manifest below).
+struct ShaderManifestData
+{
+    // Relative (to Resources/ShadersSlang/) .slang paths of every enabled
+    // manifest row whose targets include 'spirv' - exactly the sources the
+    // C++ Vulkan renderer consumes.
+    std::set<std::string> vulkan_spirv_sources;
+    // Distinct first path components of vulkan_spirv_sources - the
+    // build/spirv/ subdirectories the manifest emits into. Every other
+    // subdirectory of Resources/ShadersSlang/ (bloom, ssao, forward, sky,
+    // ibl, gpu_cull, tonemap, tex_quad, ...) is a Rust/WebGPU shader that
+    // only ever emits WGSL and must not be scanned for SPIR-V.
+    std::set<std::string> engine_spirv_subdirs;
+    std::vector<WgslMapping> wgsl_map;
+    // Output filenames keyed by "depthTexturePatches" (documentation
+    // "_comment" keys excluded).
+    std::set<std::string> depth_patched_files;
 };
+
+// Strict parse of shader-manifest.json: any missing/mistyped field in a row
+// returns std::nullopt rather than skipping the row, so a malformed manifest
+// fails ShaderManifestJsonIsPresentAndWellFormed loudly instead of silently
+// shrinking every JSON-derived check. Exceptions are disabled project-wide,
+// so nlohmann's no-throw parse mode is used and every access is type-checked
+// up front instead of relying on at()'s throws.
+std::optional<ShaderManifestData> parse_shader_manifest(const fs::path &manifest_path)
+{
+    std::ifstream file(manifest_path);
+    if (!file) { return std::nullopt; }
+
+    const nlohmann::json doc = nlohmann::json::parse(file, nullptr, /*allow_exceptions=*/false);
+    if (doc.is_discarded() || !doc.is_object()) { return std::nullopt; }
+
+    const auto manifest_it = doc.find("manifest");
+    if (manifest_it == doc.end() || !manifest_it->is_array()) { return std::nullopt; }
+
+    ShaderManifestData data;
+    for (const auto &row : *manifest_it) {
+        if (!row.is_object()) { return std::nullopt; }
+
+        const auto disabled_it = row.find("disabled");
+        if (disabled_it != row.end() && disabled_it->is_boolean() && disabled_it->get<bool>()) { continue; }
+
+        const auto file_it = row.find("file");
+        const auto targets_it = row.find("targets");
+        if (file_it == row.end() || !file_it->is_string()) { return std::nullopt; }
+        if (targets_it == row.end() || !targets_it->is_array() || targets_it->empty()) { return std::nullopt; }
+
+        bool emits_spirv = false;
+        for (const auto &target : *targets_it) {
+            if (!target.is_string()) { return std::nullopt; }
+            if (target.get<std::string>() == "spirv") { emits_spirv = true; }
+        }
+        if (!emits_spirv) { continue; }
+
+        const std::string source = file_it->get<std::string>();
+        data.vulkan_spirv_sources.insert(source);
+        const std::size_t slash = source.find('/');
+        if (slash != std::string::npos && slash > 0) { data.engine_spirv_subdirs.insert(source.substr(0, slash)); }
+    }
+
+    const auto wgsl_map_it = doc.find("wgslMap");
+    if (wgsl_map_it == doc.end() || !wgsl_map_it->is_array()) { return std::nullopt; }
+    for (const auto &row : *wgsl_map_it) {
+        if (!row.is_object()) { return std::nullopt; }
+        const auto src_it = row.find("src");
+        const auto out_it = row.find("out");
+        const auto dst_it = row.find("dst");
+        if (src_it == row.end() || !src_it->is_string()) { return std::nullopt; }
+        if (out_it == row.end() || !out_it->is_string()) { return std::nullopt; }
+        if (dst_it == row.end() || !dst_it->is_string()) { return std::nullopt; }
+        data.wgsl_map.push_back({ src_it->get<std::string>(), dst_it->get<std::string>(), out_it->get<std::string>() });
+    }
+
+    const auto patches_it = doc.find("depthTexturePatches");
+    if (patches_it == doc.end() || !patches_it->is_object()) { return std::nullopt; }
+    for (const auto &[key, value] : patches_it->items()) {
+        if (key.starts_with("_")) { continue; }// documentation-only keys
+        if (!value.is_array() || value.empty()) { return std::nullopt; }
+        data.depth_patched_files.insert(key);
+    }
+
+    return data;
+}
+
+// Parses shader-manifest.json exactly once per process and shares the result
+// across every test in this suite. std::nullopt means the file is missing or
+// malformed - callers must ASSERT on has_value(), never skip.
+const std::optional<ShaderManifestData> &shader_manifest(const fs::path &repo_root)
+{
+    static const std::optional<ShaderManifestData> cached =
+      parse_shader_manifest(repo_root / "Resources" / "ShadersSlang" / "shader-manifest.json");
+    return cached;
+}
 
 // A .slang file is only ever compiled on its own if slangc can find an entry
 // point in it. Files that exist purely to be `import`ed (e.g.
@@ -436,15 +518,29 @@ std::optional<std::vector<std::string>> parse_ci_fuzz_targets(const fs::path &wo
     std::ifstream file(workflow_path);
     if (!file) { return std::nullopt; }
 
-    static const std::string kAnchor = "foreach (`$t in @(";
+    // Two spellings, both legal: the step used to run in a host-side pwsh
+    // block where `$t` needed backtick-escaping so the RUNNER did not expand
+    // it; since the step moved to ContainerHub's run-in-windows-container
+    // action the command is passed through env, so it is a plain `$t`. Accept
+    // either rather than pinning the test to one CI plumbing style.
+    static const std::array<std::string, 2> kAnchors = { "foreach (`$t in @(", "foreach ($t in @(" };
     static const std::string kCloser = "))";
 
     std::string line;
     while (std::getline(file, line)) {
-        const std::size_t anchor_pos = line.find(kAnchor);
+        std::size_t anchor_pos = std::string::npos;
+        std::size_t anchor_size = 0;
+        for (const auto &anchor : kAnchors) {
+            const std::size_t pos = line.find(anchor);
+            if (pos != std::string::npos) {
+                anchor_pos = pos;
+                anchor_size = anchor.size();
+                break;
+            }
+        }
         if (anchor_pos == std::string::npos) { continue; }
 
-        const std::size_t list_start = anchor_pos + kAnchor.size();
+        const std::size_t list_start = anchor_pos + anchor_size;
         const std::size_t closer_pos = line.find(kCloser, list_start);
         if (closer_pos == std::string::npos) { break; }
 
@@ -462,314 +558,6 @@ std::optional<std::vector<std::string>> parse_ci_fuzz_targets(const fs::path &wo
         return targets;
     }
     return std::vector<std::string>{};
-}
-
-// Parses $DepthTexturePatches from compile-slang-shaders.ps1: a hashtable
-// keyed by output .wgsl filename, each value an array of `@{ Pattern = ...;
-// Replacement = ... }` entries. Returns filename -> number of Pattern
-// entries. Anchored on the "$DepthTexturePatches = @{" opener and the "}"
-// that closes it, so an unrelated hashtable elsewhere in the script cannot
-// be picked up; within that, each key is anchored on "'<name>' = @(" and its
-// matching ")" line.
-std::map<std::string, int> parse_powershell_wgsl_patch_counts(const fs::path &script_path)
-{
-    std::map<std::string, int> result;
-    std::ifstream file(script_path);
-    if (!file) { return result; }
-
-    bool inside_table = false;
-    std::string current_key;
-    bool in_block = false;
-    int count = 0;
-    std::string line;
-    while (std::getline(file, line)) {
-        if (!inside_table) {
-            if (line.find("$DepthTexturePatches = @{") != std::string::npos) { inside_table = true; }
-            continue;
-        }
-
-        const std::size_t first_non_space = line.find_first_not_of(" \t");
-        const std::string trimmed = first_non_space == std::string::npos ? std::string{} : line.substr(first_non_space);
-
-        if (!in_block) {
-            if (trimmed == "}") { break; }// end of $DepthTexturePatches
-
-            const std::size_t open_quote = line.find('\'');
-            if (open_quote == std::string::npos) { continue; }
-            const std::size_t close_quote = line.find('\'', open_quote + 1);
-            if (close_quote == std::string::npos) { continue; }
-            if (line.find("= @(", close_quote) == std::string::npos) { continue; }
-
-            current_key = line.substr(open_quote + 1, close_quote - open_quote - 1);
-            in_block = true;
-            count = 0;
-            continue;
-        }
-
-        if (trimmed == ")") {
-            result[current_key] = count;
-            in_block = false;
-            continue;
-        }
-
-        if (line.find("Pattern =") != std::string::npos) { ++count; }
-    }
-    return result;
-}
-
-// Parses the `case "$out_name" in ... esac` patch table from
-// compile-slang-shaders.sh. A label may list multiple filenames separated by
-// '|' (bash case syntax), sharing the sed lines up to the next ";;" -
-// counted once per filename so a shared case arm compares fairly against the
-// PowerShell side, where each filename owns its own array. Anchored on the
-// "case \"$out_name\" in" opener and "esac", so an unrelated case statement
-// elsewhere in the script cannot be picked up.
-std::map<std::string, int> parse_bash_wgsl_patch_counts(const fs::path &script_path)
-{
-    std::map<std::string, int> result;
-    std::ifstream file(script_path);
-    if (!file) { return result; }
-
-    bool inside_case = false;
-    std::vector<std::string> active_keys;
-    int count = 0;
-    std::string line;
-    while (std::getline(file, line)) {
-        if (!inside_case) {
-            if (line.find("case \"$out_name\" in") != std::string::npos) { inside_case = true; }
-            continue;
-        }
-
-        const std::size_t start = line.find_first_not_of(" \t");
-        const std::string trimmed = start == std::string::npos ? std::string{} : line.substr(start);
-
-        if (trimmed == "esac") { break; }
-
-        if (active_keys.empty()) {
-            if (trimmed.size() > 1 && trimmed.back() == ')' && trimmed.find(".wgsl") != std::string::npos) {
-                const std::string labels = trimmed.substr(0, trimmed.size() - 1);
-                std::size_t pos = 0;
-                while (pos <= labels.size()) {
-                    const std::size_t bar = labels.find('|', pos);
-                    const std::string label =
-                      labels.substr(pos, bar == std::string::npos ? std::string::npos : bar - pos);
-                    if (!label.empty()) { active_keys.push_back(label); }
-                    if (bar == std::string::npos) { break; }
-                    pos = bar + 1;
-                }
-                count = 0;
-            }
-            continue;
-        }
-
-        if (trimmed == ";;") {
-            for (const auto &key : active_keys) { result[key] = count; }
-            active_keys.clear();
-            continue;
-        }
-
-        if (line.find("sed -i -E") != std::string::npos) { ++count; }
-    }
-    return result;
-}
-
-// Parses Scripts/Linux/compile-slang-shaders.sh's `MANIFEST=( ... )` bash
-// array - each row is "file|entry|stage|targets", targets being a
-// comma-separated list of 'spirv' and/or 'wgsl' - and returns the relative
-// (to Resources/ShadersSlang/) .slang paths of every row whose targets
-// include 'spirv'. That manifest is the single source of truth for which
-// shader sources the C++/Vulkan engine actually compiles; a hand-written
-// mirror of it would itself be the kind of drift this suite exists to catch.
-// Anchored on the "MANIFEST=(" opener and the ")" that closes it, so the
-// unrelated WGSL_MAP array further down the script cannot be picked up.
-// Commented-out rows (leading '#') are skipped.
-std::set<std::string> parse_vulkan_consumed_slang_sources(const fs::path &script_path)
-{
-    std::set<std::string> result;
-    std::ifstream file(script_path);
-    if (!file) { return result; }
-
-    bool inside_manifest = false;
-    std::string line;
-    while (std::getline(file, line)) {
-        if (!inside_manifest) {
-            if (line.find("MANIFEST=(") != std::string::npos) { inside_manifest = true; }
-            continue;
-        }
-
-        const std::size_t first_non_space = line.find_first_not_of(" \t");
-        const std::string trimmed = first_non_space == std::string::npos ? std::string{} : line.substr(first_non_space);
-        if (trimmed.starts_with(")")) { break; }// end of MANIFEST=( ... )
-        if (trimmed.empty() || trimmed.starts_with("#")) { continue; }
-
-        const std::size_t open_quote = line.find('"');
-        if (open_quote == std::string::npos) { continue; }
-        const std::size_t close_quote = line.find('"', open_quote + 1);
-        if (close_quote == std::string::npos) { continue; }
-        const std::string row = line.substr(open_quote + 1, close_quote - open_quote - 1);
-
-        std::vector<std::string> fields;
-        std::size_t pos = 0;
-        while (true) {
-            const std::size_t bar = row.find('|', pos);
-            fields.push_back(row.substr(pos, bar == std::string::npos ? std::string::npos : bar - pos));
-            if (bar == std::string::npos) { break; }
-            pos = bar + 1;
-        }
-        if (fields.size() != 4) { continue; }// not a "file|entry|stage|targets" row
-
-        const std::string &file_field = fields[0];
-        const std::string &targets_field = fields[3];
-        if (targets_field.find("spirv") != std::string::npos) { result.insert(file_field); }
-    }
-    return result;
-}
-
-// Normalizes a manifest row's target list ('spirv', 'wgsl', or both, in
-// either order) into a canonical comma-joined, sorted form so 'spirv,wgsl'
-// and 'wgsl,spirv' compare equal.
-std::string normalize_targets(std::vector<std::string> targets)
-{
-    std::sort(targets.begin(), targets.end());
-    std::string joined;
-    for (const auto &target : targets) {
-        if (!joined.empty()) { joined += ','; }
-        joined += target;
-    }
-    return joined;
-}
-
-// Parses $Manifest from compile-slang-shaders.ps1: an array of
-// `@{ File = '...'; Entry = '...'; Stage = '...'; Targets = @('...', ...) }`
-// hashtables. Returns each row normalized to "file|entry|stage|sorted
-// targets", with '\' path separators converted to '/' so a row compares
-// equal to its bash-side counterpart. Anchored on the "$Manifest = @(" opener
-// and the ")" that closes it. Commented-out rows (leading '#') are skipped -
-// compile-slang-shaders.ps1 carries one (the hand-written histogram.wgsl
-// row), and a naive parse would count it against a manifest pair that
-// actually agrees.
-std::set<std::string> parse_powershell_manifest_rows(const fs::path &script_path)
-{
-    std::set<std::string> result;
-    std::ifstream file(script_path);
-    if (!file) { return result; }
-
-    bool inside_manifest = false;
-    std::string line;
-    while (std::getline(file, line)) {
-        if (!inside_manifest) {
-            if (line.find("$Manifest = @(") != std::string::npos) { inside_manifest = true; }
-            continue;
-        }
-
-        const std::size_t first_non_space = line.find_first_not_of(" \t");
-        const std::string trimmed = first_non_space == std::string::npos ? std::string{} : line.substr(first_non_space);
-        if (trimmed.starts_with(")")) { break; }// end of $Manifest = @( ... )
-        if (trimmed.empty() || trimmed.starts_with("#")) { continue; }
-
-        const std::size_t file_key = line.find("File = '");
-        if (file_key == std::string::npos) { continue; }// not a manifest row
-        const std::size_t file_start = file_key + std::string("File = '").size();
-        const std::size_t file_end = line.find('\'', file_start);
-        if (file_end == std::string::npos) { continue; }
-        std::string manifest_file = line.substr(file_start, file_end - file_start);
-        std::replace(manifest_file.begin(), manifest_file.end(), '\\', '/');
-
-        const std::size_t entry_key = line.find("Entry = '", file_end);
-        if (entry_key == std::string::npos) { continue; }
-        const std::size_t entry_start = entry_key + std::string("Entry = '").size();
-        const std::size_t entry_end = line.find('\'', entry_start);
-        if (entry_end == std::string::npos) { continue; }
-        const std::string entry = line.substr(entry_start, entry_end - entry_start);
-
-        const std::size_t stage_key = line.find("Stage = '", entry_end);
-        if (stage_key == std::string::npos) { continue; }
-        const std::size_t stage_start = stage_key + std::string("Stage = '").size();
-        const std::size_t stage_end = line.find('\'', stage_start);
-        if (stage_end == std::string::npos) { continue; }
-        const std::string stage = line.substr(stage_start, stage_end - stage_start);
-
-        const std::size_t targets_key = line.find("Targets = @(", stage_end);
-        if (targets_key == std::string::npos) { continue; }
-        const std::size_t targets_list_start = targets_key + std::string("Targets = @(").size();
-        const std::size_t targets_list_end = line.find(')', targets_list_start);
-        if (targets_list_end == std::string::npos) { continue; }
-        const std::string targets_list = line.substr(targets_list_start, targets_list_end - targets_list_start);
-
-        std::vector<std::string> targets;
-        std::size_t pos = 0;
-        while (pos < targets_list.size()) {
-            const std::size_t open_quote = targets_list.find('\'', pos);
-            if (open_quote == std::string::npos) { break; }
-            const std::size_t close_quote = targets_list.find('\'', open_quote + 1);
-            if (close_quote == std::string::npos) { break; }
-            targets.push_back(targets_list.substr(open_quote + 1, close_quote - open_quote - 1));
-            pos = close_quote + 1;
-        }
-        if (targets.empty()) { continue; }
-
-        result.insert(manifest_file + '|' + entry + '|' + stage + '|' + normalize_targets(targets));
-    }
-    return result;
-}
-
-// Parses MANIFEST from compile-slang-shaders.sh: a bash array of
-// "file|entry|stage|targets" strings, targets a comma-separated list of
-// 'spirv' and/or 'wgsl'. Returns each row normalized identically to
-// parse_powershell_manifest_rows, so the two sets compare equal regardless of
-// path-separator or target-order differences. Anchored on the "MANIFEST=("
-// opener and the ")" that closes it, so the unrelated WGSL_MAP array further
-// down the script cannot be picked up. Commented-out rows (leading '#') are
-// skipped.
-std::set<std::string> parse_bash_manifest_rows(const fs::path &script_path)
-{
-    std::set<std::string> result;
-    std::ifstream file(script_path);
-    if (!file) { return result; }
-
-    bool inside_manifest = false;
-    std::string line;
-    while (std::getline(file, line)) {
-        if (!inside_manifest) {
-            if (line.find("MANIFEST=(") != std::string::npos) { inside_manifest = true; }
-            continue;
-        }
-
-        const std::size_t first_non_space = line.find_first_not_of(" \t");
-        const std::string trimmed = first_non_space == std::string::npos ? std::string{} : line.substr(first_non_space);
-        if (trimmed.starts_with(")")) { break; }// end of MANIFEST=( ... )
-        if (trimmed.empty() || trimmed.starts_with("#")) { continue; }
-
-        const std::size_t open_quote = line.find('"');
-        if (open_quote == std::string::npos) { continue; }
-        const std::size_t close_quote = line.find('"', open_quote + 1);
-        if (close_quote == std::string::npos) { continue; }
-        const std::string row = line.substr(open_quote + 1, close_quote - open_quote - 1);
-
-        std::vector<std::string> fields;
-        std::size_t pos = 0;
-        while (true) {
-            const std::size_t bar = row.find('|', pos);
-            fields.push_back(row.substr(pos, bar == std::string::npos ? std::string::npos : bar - pos));
-            if (bar == std::string::npos) { break; }
-            pos = bar + 1;
-        }
-        if (fields.size() != 4) { continue; }// not a "file|entry|stage|targets" row
-
-        std::vector<std::string> targets;
-        std::size_t target_pos = 0;
-        const std::string &targets_field = fields[3];
-        while (true) {
-            const std::size_t comma = targets_field.find(',', target_pos);
-            targets.push_back(
-              targets_field.substr(target_pos, comma == std::string::npos ? std::string::npos : comma - target_pos));
-            if (comma == std::string::npos) { break; }
-            target_pos = comma + 1;
-        }
-
-        result.insert(fields[0] + '|' + fields[1] + '|' + fields[2] + '|' + normalize_targets(targets));
-    }
-    return result;
 }
 
 using Kataglyphis::ShadowPushConstants;
@@ -1109,9 +897,12 @@ TEST(BuildIntegrity, EveryShaderSourceHasCompiledBinary)
     const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
     const fs::path spirv_root = slang_root / "build" / "spirv";
 
+    const auto &manifest = shader_manifest(repo_root);
+    ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
+
     std::vector<std::string> missing;
     std::error_code error;
-    for (const auto &subdir : kEngineSpirvSubdirs) {
+    for (const auto &subdir : manifest->engine_spirv_subdirs) {
         const fs::path source_dir = slang_root / subdir;
         if (!fs::exists(source_dir, error)) { continue; }
 
@@ -1371,141 +1162,41 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
          }();
 }
 
-// compile-slang-shaders.ps1 and compile-slang-shaders.sh each hand-maintain
-// their own copy of the depth-texture WGSL patch table (one PowerShell
-// hashtable, one bash `case`), because Slang's WGSL backend has no
-// depth-texture resource type and every emitted depth/shadow texture
-// declaration needs a post-emit regex fix. Nothing pins the two copies
-// together: a patch added to fix one platform and forgotten on the other
-// ships broken WGSL on whichever platform builds it last. This test parses
-// both as text and asserts they agree on which output files are patched and
-// how many regex substitutions apply to each.
-TEST(BuildIntegrity, SlangWgslPatchTablesAgree)
-{
-    const fs::path repo_root = find_repo_root();
-    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
-
-    const fs::path windows_script = repo_root / "Scripts" / "Windows" / "compile-slang-shaders.ps1";
-    const fs::path linux_script = repo_root / "Scripts" / "Linux" / "compile-slang-shaders.sh";
-
-    const auto windows_counts = parse_powershell_wgsl_patch_counts(windows_script);
-    const auto linux_counts = parse_bash_wgsl_patch_counts(linux_script);
-
-    ASSERT_FALSE(windows_counts.empty())
-      << "parsed zero entries out of $DepthTexturePatches in " << windows_script.string()
-      << " - the anchor text ('$DepthTexturePatches = @{') may have changed";
-    ASSERT_FALSE(linux_counts.empty()) << "parsed zero entries out of the case over $out_name in "
-                                       << linux_script.string()
-                                       << R"( - the anchor text ('case "$out_name" in') may have changed)";
-
-    std::vector<std::string> windows_only;
-    for (const auto &[name, windows_count] : windows_counts) {
-        const auto it = linux_counts.find(name);
-        if (it == linux_counts.end()) {
-            windows_only.push_back(name);
-            continue;
-        }
-        EXPECT_EQ(windows_count, it->second)
-          << name << " has " << windows_count << " patch(es) in " << windows_script.string() << " but "
-          << it->second << " in " << linux_script.string();
-    }
-    EXPECT_TRUE(windows_only.empty())
-      << windows_only.size() << " file(s) patched in " << windows_script.string() << " but not in "
-      << linux_script.string() << ':' << [&windows_only] {
-             std::string joined;
-             for (const auto &entry : windows_only) { joined += "\n  " + entry; }
-             return joined;
-         }();
-
-    std::vector<std::string> linux_only;
-    for (const auto &entry : linux_counts) {
-        if (!windows_counts.contains(entry.first)) { linux_only.push_back(entry.first); }
-    }
-    EXPECT_TRUE(linux_only.empty())
-      << linux_only.size() << " file(s) patched in " << linux_script.string() << " but not in "
-      << windows_script.string() << ':' << [&linux_only] {
-             std::string joined;
-             for (const auto &entry : linux_only) { joined += "\n  " + entry; }
-             return joined;
-         }();
-}
-
-// Scripts/Windows/compile-slang-shaders.ps1's $Manifest and
-// Scripts/Linux/compile-slang-shaders.sh's MANIFEST are two hand-maintained
-// copies of the same "which Slang source compiles to which target(s)" table -
-// one PowerShell array, one bash array - and nothing pins them together.
-// SlangWgslPatchTablesAgree above only compares the WGSL post-emit patch
-// tables, which are gated on the manifests they patch, not on the manifests'
-// own row sets: a shader added to one script's manifest and forgotten on the
-// other is never caught there, and is never compiled on that platform - while
-// the stale checked-in artifact keeps every other staleness gate green,
-// because the source it is compared against was never recompiled there. This
-// test parses both manifests as text and asserts they agree on every row.
-TEST(BuildIntegrity, SlangCompileManifestsAgree)
-{
-    const fs::path repo_root = find_repo_root();
-    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
-
-    const fs::path windows_script = repo_root / "Scripts" / "Windows" / "compile-slang-shaders.ps1";
-    const fs::path linux_script = repo_root / "Scripts" / "Linux" / "compile-slang-shaders.sh";
-
-    const auto windows_rows = parse_powershell_manifest_rows(windows_script);
-    const auto linux_rows = parse_bash_manifest_rows(linux_script);
-
-    ASSERT_FALSE(windows_rows.empty())
-      << "parsed zero rows out of $Manifest in " << windows_script.string()
-      << " - the anchor text ('$Manifest = @(') may have changed";
-    ASSERT_FALSE(linux_rows.empty()) << "parsed zero rows out of MANIFEST=( ... ) in " << linux_script.string()
-                                     << " - the anchor text ('MANIFEST=(') may have changed";
-
-    std::vector<std::string> windows_only;
-    for (const auto &row : windows_rows) {
-        if (!linux_rows.contains(row)) { windows_only.push_back(row); }
-    }
-    EXPECT_TRUE(windows_only.empty())
-      << windows_only.size() << " row(s) in " << windows_script.string() << "'s $Manifest have no matching row in "
-      << linux_script.string() << "'s MANIFEST:" << [&windows_only] {
-             std::string joined;
-             for (const auto &entry : windows_only) { joined += "\n  " + entry; }
-             return joined;
-         }();
-
-    std::vector<std::string> linux_only_rows;
-    for (const auto &row : linux_rows) {
-        if (!windows_rows.contains(row)) { linux_only_rows.push_back(row); }
-    }
-    EXPECT_TRUE(linux_only_rows.empty())
-      << linux_only_rows.size() << " row(s) in " << linux_script.string()
-      << "'s MANIFEST have no matching row in " << windows_script.string() << "'s $Manifest:" << [&linux_only_rows] {
-             std::string joined;
-             for (const auto &entry : linux_only_rows) { joined += "\n  " + entry; }
-             return joined;
-         }();
-}
+// SlangWgslPatchTablesAgree and SlangCompileManifestsAgree lived here until
+// 2026-08-02. Both existed only to pin two hand-maintained copies of the same
+// data against each other - the manifest and the depth-texture patch table,
+// duplicated across compile-slang-shaders.ps1 and .sh. Both copies are gone:
+// Resources/ShadersSlang/shader-manifest.json is now the single source both
+// scripts read, so there is no second table left to disagree with. The
+// remaining tests below verify the FILESYSTEM against that manifest, which is
+// the check that still has teeth.
 
 // CompiledShadersAreNotOlderThanTheirSources guards the SPIR-V artifacts; the
-// checked-in Rust-crate WGSL artifacts (kWgslMap above) have no equivalent
-// guard, and they live two directories away
+// checked-in Rust-crate WGSL artifacts (the manifest's wgslMap) have no
+// equivalent guard, and they live two directories away
 // (ExternalLib/Kataglyphis-RustProjectTemplate/crates/.../shaders) from the
 // Slang source that generates them. A regenerate that drops one of the
-// hand-applied depth-texture patches (see SlangWgslPatchTablesAgree above),
-// or a .slang edit that never gets propagated, is silent today. This walks
-// kWgslMap and asserts each checked-in .wgsl is not older than its source.
+// depth-texture patches, or a .slang edit that never gets propagated, is
+// silent today. This walks the wgslMap and asserts each checked-in .wgsl is
+// not older than its source.
 TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
 {
     const fs::path repo_root = find_repo_root();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
-    const fs::path crates_root = repo_root / "ExternalLib" / "Kataglyphis-RustProjectTemplate" / "crates";
+
+    const auto &manifest = shader_manifest(repo_root);
+    ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
 
     std::vector<std::string> stale;
     int checked = 0;
-    for (const auto &mapping : kWgslMap) {
+    for (const auto &mapping : manifest->wgsl_map) {
         const fs::path source = slang_root / mapping.slang_source;
-        ASSERT_TRUE(fs::exists(source)) << "Slang source mapped by kWgslMap is missing: " << source.string();
+        ASSERT_TRUE(fs::exists(source))
+          << "Slang source mapped by the manifest's wgslMap is missing: " << source.string();
 
-        const fs::path dest = crates_root / mapping.crate_dir / mapping.wgsl_file;
+        const fs::path dest = repo_root / mapping.dst_dir / mapping.wgsl_file;
         if (!fs::exists(dest)) { continue; }// RustProjectTemplate submodule not checked out here
 
         std::error_code error;
@@ -1539,20 +1230,21 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
 
 // WGSL has no string literals, so a "//" can only ever appear as the start of
 // a comment - the Slang WGSL backend itself emits none. A "//" in a checked-in
-// destination from kWgslMap is therefore always a hand-edit made directly on
-// the generated file, with a regenerate's expiry date on it: the next
-// compile-slang-shaders run silently drops it. Catch it here instead.
+// destination from the manifest's wgslMap is therefore always a hand-edit made
+// directly on the generated file, with a regenerate's expiry date on it: the
+// next compile-slang-shaders run silently drops it. Catch it here instead.
 TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)
 {
     const fs::path repo_root = find_repo_root();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path crates_root = repo_root / "ExternalLib" / "Kataglyphis-RustProjectTemplate" / "crates";
+    const auto &manifest = shader_manifest(repo_root);
+    ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
 
     std::vector<std::string> hand_edits;
     int checked = 0;
-    for (const auto &mapping : kWgslMap) {
-        const fs::path dest = crates_root / mapping.crate_dir / mapping.wgsl_file;
+    for (const auto &mapping : manifest->wgsl_map) {
+        const fs::path dest = repo_root / mapping.dst_dir / mapping.wgsl_file;
         if (!fs::exists(dest)) { continue; }// RustProjectTemplate submodule not checked out here
         ++checked;
 
@@ -1671,10 +1363,11 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
       << "MAX_CASCADES not found (or not parseable) in " << (slang_root / scene_types_relative).string();
     const int max_cascades = scene_types_constants.at("MAX_CASCADES");
 
-    const fs::path manifest_script = repo_root / "Scripts" / "Linux" / "compile-slang-shaders.sh";
-    const auto vulkan_consumed_sources = parse_vulkan_consumed_slang_sources(manifest_script);
+    const auto &manifest = shader_manifest(repo_root);
+    ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
+    const auto &vulkan_consumed_sources = manifest->vulkan_spirv_sources;
     ASSERT_FALSE(vulkan_consumed_sources.empty())
-      << "no spirv-targeted rows parsed from " << manifest_script.string() << " - manifest format changed?";
+      << "no spirv-targeted rows in shader-manifest.json - manifest format changed?";
 
     static const std::string kDeclKeyword = "static const int ";
 
@@ -2049,9 +1742,9 @@ TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
 // corrected twice by hand (commits 1cd6b8b5, e2767bb1), and a planner batch
 // once found the doc claiming 21 tests when the suite held 28. Pins the
 // doc's `<!-- golden-counts: ... -->` marker against a pure file-I/O count of
-// TEST(GoldenRender, ...) / TEST(Integration, ...) definitions, mirroring
-// SlangCompileManifestsAgree's "parse two sources, compare, fail with both
-// numbers" pattern. Must never run the golden tests themselves to count them
+// TEST(GoldenRender, ...) / TEST(Integration, ...) definitions, following the
+// same "parse two sources, compare, fail with both numbers" pattern this
+// suite uses throughout. Must never run the golden tests themselves to count them
 // - they need a GPU the CI container does not have.
 TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)
 {

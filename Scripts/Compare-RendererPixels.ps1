@@ -203,18 +203,12 @@ if (-not $SkipCpp -and -not $ValidationOnly) {
 if (-not $SkipRust -and -not $ValidationOnly) {
     Write-Host '== Rust/WebGPU (headless_render, same scene, 1200x768) ==' -ForegroundColor Cyan
 
-    # Convert Dinosaurs OBJ -> glTF (reuse cached version)
-    $dinoObj = Join-Path $RepoRoot 'Resources\Models\Dinosaurs\dinosaurs.obj'
+    # Convert Dinosaurs OBJ -> glTF (shared helper, reuses cached version)
     $dinoGltf = Join-Path $OutDir 'dinosaurs.gltf'
+    Import-Module (Join-Path $PSScriptRoot 'Compare-Renderer.Common.psm1') -Force
+    Convert-DinosaursObjToGltf -RepoRoot $RepoRoot -OutputGltf $dinoGltf
     Push-Location (Join-Path $RepoRoot 'ExternalLib\Kataglyphis-RustProjectTemplate')
     try {
-        if (-not (Test-Path $dinoGltf) -or
-            (Get-Item $dinoObj).LastWriteTime -gt (Get-Item $dinoGltf).LastWriteTime) {
-            Write-Host '  Converting Dinosaurs OBJ -> glTF...' -ForegroundColor Cyan
-            cargo run -p kataglyphis_webgpu_renderer --example obj2gltf --quiet -- $dinoObj $dinoGltf 2>$null | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "obj2gltf failed." }
-        }
-
         Write-Host '  Running headless_render example...'
         cargo run -p kataglyphis_webgpu_renderer --example headless_render --quiet -- $dinoGltf $rustPng $Width $Height 2>$null | Out-Null
         if ($LASTEXITCODE -ne 0) {

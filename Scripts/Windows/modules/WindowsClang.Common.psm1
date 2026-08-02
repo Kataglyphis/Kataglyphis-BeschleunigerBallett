@@ -11,6 +11,11 @@ $sharedPath = Join-Path $PSScriptRoot '..\..\..\ExternalLib\Kataglyphis-Containe
 # exports out of the global session state on Windows PowerShell 5.1.
 if (-not (Get-Module -Name 'WindowsScripts.Shared')) { Import-Module $sharedPath }
 
+# File enumeration (Get-ProjectCppFiles) lives upstream in
+# WindowsFormatting.Common; same no-Force, load-once discipline as above.
+$formattingPath = Join-Path $PSScriptRoot '..\..\..\ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules\WindowsFormatting.Common.psm1'
+if (-not (Get-Module -Name 'WindowsFormatting.Common')) { Import-Module $formattingPath }
+
 function Get-CompileCommandsDatabase {
   param(
     [Parameter(Mandatory)]
@@ -77,9 +82,11 @@ function Invoke-ClangTidyFixStep {
   $compileDb = Get-CompileCommandsDatabase -Context $Context -BuildRoot $BuildRoot
 
   $srcDir = Join-Path $WorkspacePath 'Src'
-  $tidyFiles = @(Get-ChildItem -Path $srcDir -Recurse -File -ErrorAction SilentlyContinue |
-    Where-Object { $_.Extension -in @('.cpp', '.cc', '.cxx') } |
-    Select-Object -ExpandProperty FullName)
+  # File enumeration comes from upstream WindowsFormatting.Common
+  # (git-ls-files fast path + build/_deps/.venv exclusions) — scoped to Src
+  # and to the extensions clang-tidy should see.
+  $tidyFiles = @(Get-ProjectCppFiles -WorkspacePath $WorkspacePath |
+    Where-Object { $_ -like "$srcDir*" -and [System.IO.Path]::GetExtension($_) -in @('.cpp', '.cc', '.cxx') })
 
   $filteredFiles = @()
   foreach ($f in $tidyFiles) {
@@ -107,18 +114,8 @@ function Invoke-ClangTidyFixStep {
   }
 }
 
-# Approved-verb wrapper for the lint/analysis step so it is discoverable by Get-Command
-function Invoke-StaticAnalysis {
-  param(
-    [Parameter(Mandatory)] [string]$BuildRoot
-  )
-
-  return Invoke-ClangTidyFixStep -BuildRoot $BuildRoot
-}
-
 Export-ModuleMember -Function @(
   'Get-CompileCommandsDatabase',
-  'Invoke-ClangTidyFixStep',
-  'Invoke-StaticAnalysis'
+  'Invoke-ClangTidyFixStep'
 )
 

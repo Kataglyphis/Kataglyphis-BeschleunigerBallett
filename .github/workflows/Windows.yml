@@ -280,27 +280,24 @@ jobs:
       # adapter opts in explicitly by setting the KATAGLYPHIS_CI_HAS_GPU
       # repository/environment variable to '1', which drops -ValidationOnly
       # for a full timing comparison.
-      - name: GPU timing comparison (validation-only on GPU-less runners)
+      # The GPU probe must run on the HOST (the repository/environment
+      # variable is runner-side and unreachable from inside the container),
+      # so a small host step computes the flag and the container step below
+      # consumes it through the shared composite action.
+      - name: Determine GPU timing mode
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          $image = '${{ env.GHCR_IMAGE_WIN }}'
-          $cores = [int]$env:NUMBER_OF_PROCESSORS
-          if ($cores -lt 1) { $cores = 2 }
-
           $hasGpu = $env:KATAGLYPHIS_CI_HAS_GPU -eq '1'
-          $validationFlag = if (-not $hasGpu) { '-ValidationOnly' } else { '' }
-          Write-Host "GPU available: $hasGpu (validation flag: $($validationFlag -replace '-',''))"
+          $flag = if (-not $hasGpu) { '-ValidationOnly' } else { '' }
+          Write-Host "GPU available: $hasGpu (validation flag: $($flag -replace '-',''))"
+          "TIMING_VALIDATION_FLAG=$flag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-          $cmd = "& 'C:\ws\Scripts\Compare-RendererTimings.ps1' -RepoRoot C:\ws $validationFlag; exit `$LASTEXITCODE"
-          $runArgs = @(
-            'run', '--rm', '--memory', '16g', '--cpus', "$cores",
-            '--mount', 'type=bind,source=D:\ws,target=C:\ws',
-            '-w', 'C:\ws',
-            $image,
-            'pwsh', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd
-          )
-          docker @runArgs
+      - name: GPU timing comparison (validation-only on GPU-less runners)
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-windows-container@main
+        with:
+          image: ${{ env.GHCR_IMAGE_WIN }}
+          command: >-
+            & 'C:\ws\Scripts\Compare-RendererTimings.ps1' -RepoRoot C:\ws ${{ env.TIMING_VALIDATION_FLAG }}; exit $LASTEXITCODE
 
       # Cross-renderer pixel comparison (validation-only on GPU-less runners).
       - name: Pixel comparison (validation-only on GPU-less runners)

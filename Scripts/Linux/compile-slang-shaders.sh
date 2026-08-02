@@ -24,10 +24,45 @@ SLANG_ROOT="${REPO_ROOT}/Resources/ShadersSlang"
 BUILD_ROOT="${SLANG_ROOT}/build"
 MANIFEST_FILE="${SLANG_ROOT}/shader-manifest.json"
 
-if ! command -v jq &>/dev/null; then
-  echo "[ERROR] jq not found on PATH - required to read shader-manifest.json" >&2
+# shader-manifest.json is read with python3, NOT jq: jq is absent from the
+# ContainerHub Linux image (verified 2026-08-02 — a jq dependency here made
+# shader precompilation fail, and cmake-configure-build.sh's `|| warn` hid it,
+# leaving CI with no SPIR-V at all), while python3 ships in the image and is
+# already a documented project dependency. One reader, no second parser to
+# drift.
+if ! command -v python3 &>/dev/null; then
+  echo "[ERROR] python3 not found on PATH - required to read shader-manifest.json" >&2
   exit 2
 fi
+
+# manifest_query <python-expression-name> [args...]
+# Emits pipe-delimited rows on stdout. Every query lives here so the JSON
+# schema is touched in exactly one place.
+manifest_query() {
+  python3 - "$MANIFEST_FILE" "$@" <<'PY'
+import json, sys
+
+manifest_path, query = sys.argv[1], sys.argv[2]
+args = sys.argv[3:]
+with open(manifest_path, encoding="utf-8") as handle:
+    doc = json.load(handle)
+
+if query == "rows":
+    for row in doc["manifest"]:
+        if row.get("disabled") is True:
+            continue
+        print("|".join([row["file"], row["entry"], row["stage"], ",".join(row["targets"])]))
+elif query == "patch_count":
+    print(len(doc.get("depthTexturePatches", {}).get(args[0], [])))
+elif query == "patch_field":
+    print(doc["depthTexturePatches"][args[0]][int(args[1])][args[2]])
+elif query == "wgsl_map":
+    for row in doc["wgslMap"]:
+        print("|".join([row["src"], row["out"], row["dst"]]))
+else:
+    sys.exit(f"unknown manifest query: {query}")
+PY
+}
 
 if [[ ! -d "$SLANG_ROOT" ]]; then
   echo "[WARN] Slang shader directory not found: $SLANG_ROOT - skipping"
@@ -124,7 +159,7 @@ while IFS='|' read -r file entry_name stage targets; do
       COMPILED=$((COMPILED + 1))
     fi
   done
-done < <(jq -r '.manifest[] | select(.disabled != true) | [.file, .entry, .stage, (.targets | join(","))] | join("|")' "$MANIFEST_FILE" | tr -d '\r')
+done < <(manifest_query rows | tr -d '\r')
 
 if [[ ${#FAILED_ENTRIES[@]} -gt 0 ]]; then
   {
@@ -159,11 +194,11 @@ while IFS='|' read -r src_file out_name dst_rel; do
 
   # Depth-texture patch table: why each patch exists is documented in the
   # "_comment" fields next to the patterns in shader-manifest.json.
-  # tr strips the CR that jq emits on Windows hosts (harmless on Linux).
-  patch_count="$(jq -r --arg f "$out_name" '(.depthTexturePatches[$f] // []) | length' "$MANIFEST_FILE" | tr -d '\r')"
+  # tr strips the CR a Windows host may add (harmless on Linux).
+  patch_count="$(manifest_query patch_count "$out_name" | tr -d '\r')"
   for ((i = 0; i < patch_count; i++)); do
-    pattern="$(jq -r --arg f "$out_name" --argjson i "$i" '.depthTexturePatches[$f][$i].pattern' "$MANIFEST_FILE" | tr -d '\r')"
-    replacement="$(jq -r --arg f "$out_name" --argjson i "$i" '.depthTexturePatches[$f][$i].replacement' "$MANIFEST_FILE" | tr -d '\r')"
+    pattern="$(manifest_query patch_field "$out_name" "$i" pattern | tr -d '\r')"
+    replacement="$(manifest_query patch_field "$out_name" "$i" replacement | tr -d '\r')"
     # Rewrite ${N} group references to sed's \N form.
     sed_repl="$(printf '%s' "$replacement" | sed -E 's/\$\{([0-9]+)\}/\\\1/g')"
     before_sum="$(cksum < "$tmp_out")"
@@ -179,7 +214,7 @@ while IFS='|' read -r src_file out_name dst_rel; do
   mkdir -p "$dst_dir"
   cp "$tmp_out" "${dst_dir}/${out_name}"
   WGSL_EMITTED=$((WGSL_EMITTED + 1))
-done < <(jq -r '.wgslMap[] | [.src, .out, .dst] | join("|")' "$MANIFEST_FILE" | tr -d '\r')
+done < <(manifest_query wgsl_map | tr -d '\r')
 
 if [[ ${#WGSL_FAILED[@]} -gt 0 ]]; then
   echo "[WARN] Combined WGSL emit failed for ${#WGSL_FAILED[@]} file(s):"

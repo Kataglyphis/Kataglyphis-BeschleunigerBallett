@@ -4805,3 +4805,51 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
   terms. Pick a license (sibling Kataglyphis repos use MIT) and add the
   file in ContainerHub. Also queued in ContainerHub's
   docs/refactoring-backlog.md.
+
+## 2026-08-02 batch II — findings from the Stevedore + Rancher verification pass
+
+- [ ] **GoldenRender is 28/30 RED on the host GPU: no frames are ever drawn**
+  (L, **highest priority**) — every golden test fails with an empty frame.
+  Root cause is one line: `VulkanRenderer::draw()` bails at
+  `if (frameSync.frameSyncCount() == 0)` ("No synchronization frames
+  available; skipping draw frame", `renderer/VulkanRenderer.cpp:443`), and
+  `createSynchronization()` (`:1470`) sizes FrameSync from
+  `vulkanSwapChain.getNumberSwapChainImages()` — which is 0 in the headless
+  golden harness, so the guard fires on every frame and
+  `isModelLoadPending()` never clears. Introduced by
+  `e7e7579d refactor(renderer): extract FrameSync from the VulkanRenderer hub`
+  (2026-07-23); invisible for 10 days because the golden suite needs a real
+  adapter and only runs by hand on the host. Fix: give the headless path a
+  frame count independent of the swapchain (MAX_FRAME_DRAWS or the offscreen
+  target count) rather than weakening the guard. Verify: build clangcl-debug
+  in the container, then from the repo root
+  `./build-clangcl-debug/commitTestSuite.exe --gtest_filter='GoldenRender.*'`
+  on the RX 9070 XT — all 30 must pass (see docs/gpu-golden-testing.md).
+  Build preset: clangcl-debug.
+
+- [ ] **Checked-in WGSL differs between Windows and Linux from the SAME
+  slangc** (M) — running `Scripts/Linux/compile-slang-shaders.sh` inside
+  `:latest-cross` regenerates `crates/**/shaders/*.wgsl` with real content
+  differences against the committed (Windows-generated) files, e.g.
+  `bloom.wgsl` loses `@location(0)` on `FullscreenVsOut_0.uv_0` — which wgpu
+  rejects. Both hosts report slangc `2026.1-52-gc8ddf20bb`, and `bloom.wgsl`
+  has NO entry in the manifest's `depthTexturePatches`, so this is neither a
+  version skew nor the patch table: it is a genuine platform divergence in
+  the emit (or in how the combined emit is assembled). Whoever regenerates
+  last wins, and a Linux regeneration would commit WGSL the Rust renderer
+  cannot compile. Steps: diff the per-entry emits before combining to find
+  where they diverge; if Linux is correct, regenerate + commit from Linux and
+  document it; otherwise pin the generating platform in
+  docs/shader-build-pipeline.md and add a gate. Test: after deciding, a
+  regeneration on both platforms must leave the submodule clean.
+  Build preset: none (shader tooling).
+
+- [ ] **cmake-configure-build.sh hides shader-precompilation failures** (S) —
+  line ~221 runs `bash compile-slang-shaders.sh || warn "Slang shader
+  precompilation failed"`. That `|| warn` is why a broken shader step left
+  Linux CI with no SPIR-V at all while the build still reported success, and
+  three BuildIntegrity tests then failed with "missing
+  Resources/ShadersSlang/build/spirv" instead of pointing at the real cause.
+  Make the failure fatal (or at minimum print the child's exit code and mark
+  the build degraded). Test: temporarily rename slangc in the container and
+  confirm the build now fails loudly. Build preset: linux-debug-clang.
