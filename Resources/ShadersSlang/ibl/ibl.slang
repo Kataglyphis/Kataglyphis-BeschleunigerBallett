@@ -123,34 +123,103 @@ float4 fs_irradiance(FullscreenVsOut In) : SV_Target
     return float4(PI * irradiance / sampleCount, 1.0);
 }
 
+// Van der Corput radical inverse, base 2.
+float radical_inverse_vdc(uint bits_in)
+{
+    uint bits = bits_in;
+    bits = (bits << 16u) | (bits >> 16u);
+    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
+    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
+    bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
+    bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
+    return float(bits) * 2.3283064365386963e-10;
+}
+
+float2 hammersley(uint i, uint count)
+{
+    return float2(float(i) / float(count), radical_inverse_vdc(i));
+}
+
+// GGX/Trowbridge-Reitz importance sample around `normal`.
+float3 importance_sample_ggx(float2 xi, float3 normal, float roughness)
+{
+    float a = roughness * roughness;
+    float phi = 2.0 * PI * xi.x;
+    // Both clamps are load-bearing, not defensive noise. As roughness -> 0,
+    // a*a underflows against 1.0 and the ratio becomes (1 - xi.y) / (1 - xi.y),
+    // which rounds to just above 1 for about half the sample sequence; the
+    // unclamped sqrt(1 - cos^2) is then sqrt(-epsilon) = NaN, and the sample
+    // is silently dropped. Measured before the clamp: the mirror row of the
+    // BRDF LUT summed to 0.563 instead of 1.0 - a 44% energy loss that looks
+    // exactly like a plausible-but-dark material.
+    float cosTheta = sqrt(clamp((1.0 - xi.y) / (1.0 + (a * a - 1.0) * xi.y), 0.0, 1.0));
+    float sinTheta = sqrt(max(1.0 - cosTheta * cosTheta, 0.0));
+    float3 halfLocal = float3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
+
+    float3 up = abs(normal.z) < 0.999 ? float3(0.0, 0.0, 1.0) : float3(0.0, 1.0, 0.0);
+    float3 tangent = normalize(cross(up, normal));
+    float3 bitangent = cross(normal, tangent);
+    return normalize(halfLocal.x * tangent + halfLocal.y * bitangent + halfLocal.z * normal);
+}
+
+float distribution_ggx(float nDotH, float roughness)
+{
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float denom = nDotH * nDotH * (a2 - 1.0) + 1.0;
+    return a2 / max(PI * denom * denom, 1e-6);
+}
+
+// Prefiltered specular radiance for one roughness (one mip of the cube). N =
+// V = R is the standard split-sum simplification: it drops the stretched
+// grazing highlight, the price of storing the result in a cubemap indexed
+// only by reflection vector.
 [shader("fragment")]
 float4 fs_prefilter(FullscreenVsOut In) : SV_Target
 {
-    float3 dir = cube_direction(uint(params.face_roughness_samples_mip.x), In.uv);
+    float3 normal = cube_direction(uint(params.face_roughness_samples_mip.x), In.uv);
     float roughness = params.face_roughness_samples_mip.y;
     uint sampleCount = uint(params.face_roughness_samples_mip.z);
-    float3 up = abs(dir.y) < 0.999 ? float3(0.0, 1.0, 0.0) : float3(1.0, 0.0, 0.0);
-    float3 tangent = normalize(cross(up, dir));
-    float3 bitangent = cross(dir, tangent);
-    float3 prefiltered = float3(0.0);
+    float resolution = params.source_resolution.x;
+
+    // Mip 0 is the environment itself. Importance sampling at roughness 0
+    // degenerates to sampleCount identical taps, so this is not an
+    // optimisation but the exact answer, cheaper.
+    if (roughness <= 0.0)
+    {
+        return srcCube.SampleLevel(srcSampler, normal, 0.0);
+    }
+
+    float3 color = float3(0.0);
     float totalWeight = 0.0;
     for (uint i = 0u; i < sampleCount; i++)
     {
-        float2 hammersley = float2(float(i) / float(sampleCount), 0.0); // simplified
-        float cosTheta = sqrt(1.0 - hammersley.x * hammersley.x);
-        float sinTheta = hammersley.x;
-        float phi = 2.0 * PI * hammersley.y;
-        float3 h = float3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
-        float3 sampleDir = normalize(2.0 * dot(dir, h) * h - dir);
-        float nDotL = max(dot(dir, sampleDir), 0.0);
+        float2 xi = hammersley(i, sampleCount);
+        float3 halfVector = importance_sample_ggx(xi, normal, roughness);
+        float3 sampleDir = normalize(2.0 * dot(normal, halfVector) * halfVector - normal);
+        float nDotL = dot(normal, sampleDir);
         if (nDotL > 0.0)
         {
-            prefiltered += srcCube.Sample(srcSampler, sampleDir).rgb * nDotL;
+            // Sample the environment at a mip whose texel solid angle matches
+            // the sample's, per Krivanek/Colbert. Without this a high-contrast
+            // environment (a sun disc, a bright window) aliases into a spray
+            // of fireflies that no amount of samples removes. V = N here, so
+            // H.V is H.N and the usual D * NdotH / (4 * HdotV) collapses to
+            // D / 4.
+            float nDotH = max(dot(normal, halfVector), 0.0);
+            float pdf = distribution_ggx(nDotH, roughness) * 0.25 + 1e-4;
+            float texelSolidAngle = 4.0 * PI / (6.0 * resolution * resolution);
+            float sampleSolidAngle = 1.0 / (float(sampleCount) * pdf);
+            float mip = max(0.5 * log2(sampleSolidAngle / texelSolidAngle), 0.0);
+
+            color += srcCube.SampleLevel(srcSampler, sampleDir, mip).rgb * nDotL;
             totalWeight += nDotL;
         }
     }
-    return float4(prefiltered / max(totalWeight, 1e-4), 1.0);
+    return float4(color / max(totalWeight, 1e-4), 1.0);
 }
+
+static const uint BRDF_SAMPLE_COUNT = 1024u;
 
 [shader("fragment")]
 float4 fs_brdf_lut(FullscreenVsOut In) : SV_Target
@@ -159,28 +228,27 @@ float4 fs_brdf_lut(FullscreenVsOut In) : SV_Target
     float nDotV = uv.x;
     float roughness = uv.y;
     float3 v = float3(sqrt(1.0 - nDotV * nDotV), 0.0, nDotV);
+    float3 normal = float3(0.0, 0.0, 1.0);
     float2 result = float2(0.0);
-    uint sampleCount = 1024u;
-    for (uint i = 0u; i < sampleCount; i++)
+    for (uint i = 0u; i < BRDF_SAMPLE_COUNT; i++)
     {
-        float2 hammersley = float2(float(i) / float(sampleCount), 0.0); // simplified
-        float cosTheta = sqrt(1.0 - hammersley.x * hammersley.x);
-        float sinTheta = hammersley.x;
-        float phi = 2.0 * PI * hammersley.y;
-        float3 h = float3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
-        float3 l = normalize(2.0 * dot(v, h) * h - v);
-        float nDotL = max(l.z, 0.0);
-        float nDotH = max(h.z, 0.0);
-        float vDotH = max(dot(v, h), 0.0);
+        float2 xi = hammersley(i, BRDF_SAMPLE_COUNT);
+        float3 halfVector = importance_sample_ggx(xi, normal, roughness);
+        float3 light = normalize(2.0 * dot(v, halfVector) * halfVector - v);
+        float nDotL = max(light.z, 0.0);
         if (nDotL > 0.0)
         {
-            float g = geometry_smith_ibl(nDotV, nDotL, roughness);
-            float gv = g * vDotH / max(nDotH * nDotV, 1e-4);
-            float gl = g * vDotH / max(nDotH * nDotL, 1e-4);
-            result += float2(gl, gv);
+            float nDotH = max(halfVector.z, 0.0);
+            float vDotH = max(dot(v, halfVector), 0.0);
+            float g = geometry_smith_ibl(max(nDotV, 1e-4), nDotL, roughness);
+            float gVis = (g * vDotH) / max(nDotH * max(nDotV, 1e-4), 1e-6);
+            // Fresnel factored into (1 - fc) * F0 + fc, so the integral
+            // splits into a scale on F0 and an F0-independent bias.
+            float fc = pow(1.0 - vDotH, 5.0);
+            result += float2((1.0 - fc) * gVis, fc * gVis);
         }
     }
-    return float4(result / float(sampleCount), 0.0, 1.0);
+    return float4(result / float(BRDF_SAMPLE_COUNT), 0.0, 1.0);
 }
 
 float geometry_smith_ibl(float nDotV, float nDotL, float roughness)
