@@ -43,6 +43,18 @@ inline std::string readTextFile(const std::string &file_location)
 
 inline std::vector<char> readBinaryFile(const std::string &file_location)
 {
+    // Reject anything that is not a regular file BEFORE opening it. On POSIX
+    // an ifstream opens a directory happily: is_open() is true and, with
+    // std::ios::ate, tellg() reports a nonzero size, so the read below
+    // allocates that many bytes, fails, and hands the caller a buffer of
+    // uninitialised garbage. Windows refuses the open and returns {}. That
+    // divergence is not academic - this is the function the engine loads
+    // SPIR-V through, and it kept FileReaderUnit.ReadBinaryFileEmptyForDirectoryPath
+    // red on the Linux CI lane only. error_code overload for the same reason
+    // documented above: exceptions are disabled project-wide.
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(file_location, ec) || ec) { return {}; }
+
     std::ifstream file(file_location, std::ios::binary | std::ios::ate);
 
     if (!file.is_open()) { return {}; }

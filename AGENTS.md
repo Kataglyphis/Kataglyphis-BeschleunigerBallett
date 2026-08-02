@@ -261,41 +261,18 @@ LD_LIBRARY_PATH, hooks) and fail loud if the submodule is uninitialized;
 `compile-slang-shaders.sh` parallels the Windows equivalent (both read
 `Resources/ShadersSlang/shader-manifest.json`).
 
-### Cargo cache volume (persist Rust dependencies)
+### Running the Linux build locally (Rancher Desktop)
 
-The `:latest-cross` image runs as uid 1001 with `/usr/local/cargo` owned by
-root, so cargo redirects to `/tmp/cargo-home` by default — every fresh
-container rebuilds all Rust dependencies from scratch. Use
-`--cargo-cache-dir` to point at a named docker volume or host bind mount:
+`cmake-configure-build.sh` is a thin wrapper over ContainerHub's
+`linux/scripts/lib/cmake-build.sh`; the Slang precompile is its pre-build
+hook and a failure there is **fatal** (use `--allow-prebuild-failure` only
+deliberately — a silent `|| warn` once left CI green with no SPIR-V at all).
 
-```bash
-# Create a named volume once
-nerdctl volume create cargo-cache
-
-# Mount it when running the build (as root, to sidestep volume ownership)
-rdctl shell nerdctl run --rm --user root \
-  -v cargo-cache:/cargo-cache \
-  -v /mnt/d/...:/workspace \
-  ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest-cross \
-  bash -c "cd /workspace && bash Scripts/Linux/cmake-configure-build.sh \
-    --preset linux-debug-clang --build-dir build \
-    --cargo-cache-dir /cargo-cache"
-```
-
-The script also redirects `CARGO_TARGET_DIR` to a `target/` subdirectory on
-the same volume, keeping compiled artifacts off the 9p host mount (which has
-known permission issues with cargo's temp-file rename operations).
-
-After the first long build, subsequent builds reuse the cached registry and
-compiled dependencies. On a second run the build completes much faster.
-
-Alternatively, to avoid `--user root`, chown the volume to uid 1001 once:
-```bash
-rdctl shell nerdctl run --rm --user root \
-  -v cargo-cache:/cargo-cache alpine:3.20 \
-  chown -R 1001:1001 /cargo-cache
-```
-Then omit `--user root` from subsequent build commands.
+Two things that will bite you locally, both documented with the full recipe in
+[ContainerHub § Persisting the cargo cache](ExternalLib/Kataglyphis-ContainerHub/docs/rancher-desktop-linux-containers.md#persisting-the-cargo-cache):
+pass `--build-dir /tmp/...` (a build dir on the bind-mounted host tree breaks
+FetchContent renames and cargo cleanup), and `--cargo-cache-dir` at a named
+volume so Rust dependencies survive the container.
 
 ## Testing
 
