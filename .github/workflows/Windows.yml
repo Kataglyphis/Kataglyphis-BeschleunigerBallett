@@ -256,6 +256,7 @@ jobs:
               'ShadowResolutionUnit.*'
               'ViewportHelperUnit.*'
               'RenderPassHelperUnit.*'
+              'RenderPassCreateHelperUnit.*'
               'FramebufferHelperUnit.*'
               'SceneUboLayoutUnit.*'
               'RenderPassBeginHelperUnit.*'

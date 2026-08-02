@@ -273,13 +273,8 @@ void DeferredRasterizer::createRenderPass()
 
     std::array<vk::SubpassDescription, 2> subpasses = {geometrySubpass, lightingSubpass};
 
-    vk::RenderPassCreateInfo renderPassInfo;
-    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-    renderPassInfo.pAttachments = attachments.data();
-    renderPassInfo.subpassCount = static_cast<uint32_t>(subpasses.size());
-    renderPassInfo.pSubpasses = subpasses.data();
-    renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
-    renderPassInfo.pDependencies = dependencies.data();
+    vk::RenderPassCreateInfo const renderPassInfo =
+      Kataglyphis::buildRenderPassCreateInfo(attachments, subpasses, dependencies);
 
     auto result = device->getLogicalDevice().createRenderPass(renderPassInfo);
     ASSERT_VULKAN(VkResult(result.result), "Failed to create deferred render pass!")

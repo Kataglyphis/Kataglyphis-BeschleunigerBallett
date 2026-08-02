@@ -75,4 +75,37 @@ constexpr vk::RenderPassBeginInfo buildRenderPassBeginInfo(vk::RenderPass render
         static_cast<uint32_t>(clear_values.size()), clear_values.data() };
 }
 
+// Every render pass in this engine spelled out the same six field
+// assignments by hand, in Rasterizer, PostStage, DeferredRasterizer, SkyBox
+// and CascadedShadowMap - SkyBox hard-coded attachmentCount = 2 next to a
+// two-element std::array instead of deriving it, exactly as it did for
+// FramebufferHelper.hpp's attachmentCount.
+//
+// attachmentCount, subpassCount and dependencyCount are all deliberately
+// DERIVED from their span's .size() rather than taken as parameters, so none
+// of the three can drift from the array actually passed in.
+//
+// Lifetime note: the returned vk::RenderPassCreateInfo borrows all three
+// spans' .data() pointers - they must outlive the createRenderPass call that
+// consumes it.
+//
+// flags and pNext are deliberately left at their defaults so a pass that
+// needs either - CascadedShadowMap chains a
+// vk::RenderPassMultiviewCreateInfo through pNext - assigns it on the
+// returned value rather than this helper growing a parameter, the same rule
+// RenderPassHelper.hpp's other two helpers and FramebufferHelper.hpp state.
+//
+// Built via the fully-explicit vk::RenderPassCreateInfo constructor rather
+// than value-init-then-assign, for the same constexpr reason
+// FramebufferHelper.hpp documents.
+constexpr vk::RenderPassCreateInfo buildRenderPassCreateInfo(
+  std::span<const vk::AttachmentDescription> attachments,
+  std::span<const vk::SubpassDescription> subpasses,
+  std::span<const vk::SubpassDependency> dependencies)
+{
+    return vk::RenderPassCreateInfo{ vk::RenderPassCreateFlags{}, static_cast<uint32_t>(attachments.size()),
+        attachments.data(), static_cast<uint32_t>(subpasses.size()), subpasses.data(),
+        static_cast<uint32_t>(dependencies.size()), dependencies.data() };
+}
+
 }// namespace Kataglyphis

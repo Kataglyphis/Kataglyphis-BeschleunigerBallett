@@ -5082,6 +5082,252 @@ lower risk, but task 3 below would settle them mechanically).
 
 ### C++ Vulkan engine
 
+## 2026-08-03 batch — planner (refactor: the seventh and eighth members of the "one rule, five hand-rolled copies" family — render-pass creation and pipeline-layout creation, both of which SkyBox again hard-codes a count in; 22 generated Sphinx artifacts that `.gitignore` already claims to exclude but git still tracks)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the tree
+this pass; the git-state claims in task 2 come from
+`git ls-files -i -c --exclude-standard` run against this checkout.
+
+**Every task in this batch is verifiable with no GPU**, deliberately: the
+fifteen `- [b]` entries above are still blocked. Tasks 1 and 3 land device-free
+`constexpr` helpers with new gtest suites that run in the container CPU lane;
+task 2 is a git-tracking + `.gitignore` change gated by a new Pester suite.
+
+**The headline is that the `buildAttachmentDescription` /
+`fullExtentViewport` / `buildFramebufferCreateInfo` / `buildRenderPassBeginInfo`
+family has two more members that never got their helper, and SkyBox hard-codes a
+count in both of them.** `SkyBox.cpp` now has *four* places where a literal count
+sits next to the container it should have been derived from: the framebuffer
+`attachmentCount = 2` (fixed by `4f799788`), the render-pass-begin
+`clearValueCount = 2` (fixed by `c041b756`), and the two still open below —
+`renderPassInfo.attachmentCount = 2` (`SkyBox.cpp:303`) next to
+`std::array attachments = {colorAttachment, depthAttachment}` (`:260`), and
+`pipelineLayoutInfo.setLayoutCount = 2` (`SkyBox.cpp:347`) next to
+`std::array<vk::DescriptorSetLayout, 2> combinedLayouts` (`:345`). That is the
+same defect class the family exists to kill, in the same file, twice more.
+
+**Second, the same two seams carry the same result-handling drift as the
+framebuffer one did.** `vk::RenderPassCreateInfo` is spelled out by hand in
+`Rasterizer.cpp:206-212`, `PostStage.cpp:246-252`,
+`DeferredRasterizer.cpp:276-282`, `SkyBox.cpp:302-308` and
+`CascadedShadowMap.cpp:177-184`; **PostStage alone** uses the two-out-param
+`createRenderPass(&info, nullptr, &render_pass)` overload (`:254-255`) where the
+other four use `ResultValue` — byte-for-byte the deviation batch IX found in the
+framebuffer copies. `vk::PipelineLayoutCreateInfo` is worse: nine hand-written
+blocks across eight files (`Clouds.cpp:178`, `Raytracing.cpp:253`,
+`SkyBox.cpp:346`, `Rasterizer.cpp:318`, `PathTracing.cpp:197`,
+`PostStage.cpp:271`, `CascadedShadowMap.cpp:384`, `DeferredRasterizer.cpp:305`
+and `:330`) with **four different result-handling shapes** —
+`ResultValue` + `ASSERT_VULKAN(VkResult(...))`, `ResultValue` +
+`ASSERT_VULKAN(...result)`, the two-out-param overload, and Rasterizer's
+hand-rolled `if (result == eSuccess) {...} else { ASSERT_VULKAN(...) }`
+(`Rasterizer.cpp:324-329`), which is the only site where the assert is reached
+through a branch rather than unconditionally.
+
+**Third: 22 generated files are tracked in git that `.gitignore` already tries
+to exclude.** `git ls-files -i -c --exclude-standard` returns 21 paths, every one
+of them under `docs/build/` — Sphinx output, last touched 2026-05-16 (`c69e03b8`)
+while `docs/source/` moved on 2026-07-31 (`16020e28`), so the committed HTML is
+two months stale relative to the sources that generate it. `.gitignore` names the
+directory **twice** (`docs/build/**/*` at line 11, `docs/build/*` at line 85), and
+neither rule can take effect because git ignores exclude patterns for files
+already in the index. A 22nd generated file,
+`docs/source/__pycache__/conf.cpython-313.pyc`, is tracked with **no** ignore rule
+covering it at all.
+
+Ordering: **task 1 before task 3** — both touch `Rasterizer.cpp`, `PostStage.cpp`,
+`DeferredRasterizer.cpp`, `SkyBox.cpp` and `CascadedShadowMap.cpp`, so doing them
+in the other order or interleaved invites conflicts. Task 2 is disjoint.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **the twelve hand-rolled `vk::ImageMemoryBarrier`
+blocks** — still owned by the `- [b]` cloud-barrier entry above (the two cloud
+barriers are `VulkanRenderer.cpp:882-900` and `:914-932`), unchanged since
+batches IX and XII rejected it; **the five copies of the blocking
+`map_async` + channel + `poll` + `get_mapped_range` + `unmap` readback in the
+Rust crate** (`render/forward.rs:2315`, `render/ibl.rs:898`,
+`render/histogram.rs:329` and `:367`, `render/gpu_timing.rs:476`) — a real
+five-way duplication, but every extracted unit needs a live wgpu adapter, so the
+refactor would ship with compile-only verification; **`render/histogram.rs` and
+`render/gpu_occlusion.rs` having zero inline tests** — same adapter problem, and
+the CPU-side maths they mirror is already covered by `render/auto_exposure.rs`'s
+16 tests; **`CommandBufferManager::beginCommandBuffer` allocating a
+`std::vector<vk::CommandBuffer>` for exactly one handle**
+(`CommandBufferManager.cpp:29`) — a genuine needless heap allocation, but it is
+upload/transition-time only, never on the frame path, and too small to spend a
+task on alone; fold it in if something else touches that file.
+**`Src/KomputePlayground`** — unchanged since batch XII raised it; still an owner
+decision ("repair" vs "delete"), still not an executor task.
+
+### C++ Vulkan engine
+
+- [ ] **(M) (refactor) Give `vk::PipelineLayoutCreateInfo` one definition — nine hand-written blocks, four different result-handling shapes, and a second hard-coded count in SkyBox** — the eighth member of the same family, and the one with the widest drift.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/common/FramebufferHelper.hpp` and
+    `Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp` — the house style for
+    a new `common/*Helper.hpp`: `constexpr`, spans in, counts derived, explicit
+    constructor, a header comment that names the call sites and the bug removed
+  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp:178-180`
+    — set layouts only, no push constants
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:330-333` — the
+    other no-push-constant site, carrying the stale comment
+    `// No push constants for lighting pass usually, or same if needed`
+  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp:253-259` — two-out-param
+    `createPipelineLayout` overload
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:271-278` — the other
+    two-out-param site
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:318-329` — the only site
+    whose `ASSERT_VULKAN` sits in an `else` branch instead of running
+    unconditionally
+  - `Src/GraphicsEngineVulkan/renderer/PathTracing.cpp:197-204` — sets
+    `pSetLayouts` LAST, after the push-constant fields, so the block does not
+    even read the same as the others
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:345-360` —
+    `setLayoutCount = 2` hard-coded next to
+    `std::array<vk::DescriptorSetLayout, 2> combinedLayouts`
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:382-392`
+    — the other two-set site, this one deriving the count correctly
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:305-309` — the
+    geometry pipeline's layout
+
+  **Steps:**
+  1. Add `Src/GraphicsEngineVulkan/common/PipelineLayoutHelper.hpp`
+     (`#pragma once`, `<span>`, `<vulkan/vulkan.hpp>`, namespace
+     `Kataglyphis`):
+     ```cpp
+     constexpr vk::PipelineLayoutCreateInfo buildPipelineLayoutCreateInfo(
+       std::span<const vk::DescriptorSetLayout> set_layouts,
+       std::span<const vk::PushConstantRange> push_constant_ranges = {})
+     ```
+     returning the explicit `vk::PipelineLayoutCreateInfo{ flags,
+     setLayoutCount, pSetLayouts, pushConstantRangeCount, pPushConstantRanges }`
+     constructor. Both counts DERIVED from `.size()`. The defaulted empty
+     push-constant span is what lets Clouds and the deferred lighting pass drop
+     their "no push constants" special case entirely. Header comment: name the
+     nine call sites, name SkyBox's `setLayoutCount = 2` as the bug removed by
+     construction, state the borrow/lifetime caveat, and state the escape hatch.
+  2. Convert all nine sites. Where a site passes a single push-constant range by
+     address, wrap it: `const std::array<vk::PushConstantRange, 1> ranges = { push_constant_range };`.
+     Where a site already has a `std::array` of set layouts (SkyBox,
+     CascadedShadowMap) pass it directly; where it has a
+     `std::span<const vk::DescriptorSetLayout> descriptorSetLayouts` parameter
+     (Rasterizer, PostStage, PathTracing, DeferredRasterizer×2, Raytracing,
+     Clouds) pass that.
+  3. Make the result handling uniform across all nine: the `ResultValue`
+     overload plus an unconditional `ASSERT_VULKAN`. That means converting
+     `Raytracing.cpp:258` and `PostStage.cpp:277` off the two-out-param overload,
+     and flattening `Rasterizer.cpp:324-329`'s `if/else` — `ASSERT_VULKAN` already
+     aborts on non-success (`common/Utilities.hpp:15-19`), so the branch adds
+     nothing but a second shape to read. Keep each site's existing error message
+     text; they are distinguishable on purpose.
+  4. Delete the stale `// No push constants for lighting pass usually, or same
+     if needed` comment at `DeferredRasterizer.cpp:332` — the defaulted empty
+     span now says that unambiguously.
+  5. Add `Test/commit/VulkanEngine/pipelineLayoutHelperSuite.cpp` (no CMake edit
+     needed; the glob is `CONFIGURE_DEPENDS`).
+
+  **Test:** Add suite `PipelineLayoutHelperUnit` with, at minimum:
+  - `SetLayoutCountIsDerivedFromTheSpan` — the direct regression test for
+    `SkyBox.cpp:347`: a two-element layout array yields `setLayoutCount == 2`,
+    a three-element one yields 3.
+  - `PushConstantRangeCountIsDerivedFromTheSpan` — one range → 1, two → 2.
+  - `OmittedPushConstantsGiveZeroAndNullptr` — the Clouds / deferred-lighting
+    shape: `pushConstantRangeCount == 0` **and** `pPushConstantRanges == nullptr`,
+    which is what makes dropping their special case safe.
+  - `PointersPointAtTheCallersStorage` — both `p*` fields equal `.data()`.
+  - `FlagsAreDefaulted` — `flags == vk::PipelineLayoutCreateFlags{}`; no call
+    site sets them today and a future one must do so deliberately.
+  Include a `static_assert` on `setLayoutCount` if `vk::DescriptorSetLayout`
+  permits it in a constant expression (use the `vk::DescriptorSetLayout(nullptr)`
+  stand-in from `framebufferHelperSuite.cpp:24-25`); drop it with a comment if
+  not.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=PipelineLayoutHelperUnit.*:PushConstant*` from the repo root.
+  `pushConstantSuite.cpp` pins the host/device push-constant contract and must
+  stay green — if it does not, a range was dropped or reordered.
+
+  **Context:** Do task 1 first; both touch `Rasterizer.cpp`, `PostStage.cpp`,
+  `DeferredRasterizer.cpp`, `SkyBox.cpp` and `CascadedShadowMap.cpp`. Batch VIII
+  already shipped one bug from this exact seam — a skybox pipeline layout handed
+  `vkCreatePipelineLayout` a null set layout — which is the empirical case for
+  consolidating it rather than leaving nine copies to be audited by eye. **Do
+  not change which layouts or ranges any pipeline gets**: the set-layout ORDER
+  is load-bearing (set 0 = shared render descriptors, set 1 = the pass's own —
+  see the comment at `CascadedShadowMap.cpp:379-381`), and a swapped pair
+  compiles, links, and renders wrong. This task moves only the create-info
+  construction and unifies the result check.
+
+### Docs / repo hygiene
+
+- [ ] **(S) (refactor) Untrack the 22 generated Sphinx artifacts that `.gitignore` already excludes, and add the gate that keeps them out** — git keeps serving a two-month-stale `docs/build/html/` that CI regenerates from scratch on every run.
+
+  **Files to read:**
+  - `.gitignore:11` (`docs/build/**/*`) and `.gitignore:85` (`docs/build/*`) —
+    the same directory excluded twice, neither rule effective because the files
+    are already in the index
+  - `.github/workflows/Linux.yml:283-312` — the docs job: "Build web page"
+    (`Scripts/Linux/docs-build-web.sh`) regenerates `docs/build/html/` before
+    "📂 Sync files to domain" deploys `./docs/build/html/` over FTP
+  - `Scripts/Linux/docs-build-web.sh` — `set -euo pipefail` + `docs_build_main`
+    (warnings-as-errors `make html`), so a Sphinx failure fails the step and the
+    deploy never runs against a missing directory. **Read the
+    `build_webgpu_wasm_demo` comment before touching anything**: the demo under
+    `docs/source/_webgpu_demo/` is a *deliberately committed* fallback snapshot
+    and must NOT be untracked.
+  - `Scripts/Windows/tests/Submodule.Pins.Tests.ps1` — the precedent for a
+    Pester suite that asserts a git-state invariant; Pester 3.4 syntax
+  - `AGENTS.md:265-266` — the wrapper map's line counts
+
+  **Steps:**
+  1. `git rm --cached -r docs/build` (21 files) and
+     `git rm --cached docs/source/__pycache__/conf.cpython-313.pyc`. **`--cached`
+     only** — the working-tree copies stay, so a local docs preview is
+     unaffected. Confirm with `git ls-files -i -c --exclude-standard`, which must
+     print nothing afterwards, and `git ls-files docs/source/__pycache__`, which
+     must print nothing.
+  2. In `.gitignore`: collapse the duplicate `docs/build/**/*` (line 11) and
+     `docs/build/*` (line 85) into one rule, keeping it next to the other
+     docs entries around line 84 and leaving a one-line comment saying the
+     directory is regenerated by `Scripts/Linux/docs-build-web.sh` on every CI
+     run. Add `__pycache__/` and `*.pyc` — nothing covers them today.
+  3. Add `Scripts/Windows/tests/Repo.GeneratedArtifacts.Tests.ps1` (Pester 3.4
+     syntax, matching the suites already in that directory): run
+     `git ls-files -i -c --exclude-standard` from the repo root and assert the
+     output is empty, with a failure message that tells the reader to
+     `git rm --cached` the listed paths rather than to relax `.gitignore`. This
+     is the general gate, not a `docs/build`-specific one: any future generated
+     artifact that lands in the index while being ignored fails it too.
+  4. Fix the two drifted line counts in `AGENTS.md:265-266` — the wrapper map
+     says `Build-Windows-Container.ps1` is 121 lines (it is 103) and
+     `cmake-configure-build.sh` is 40 lines (it is 35).
+
+  **Test:** The new Pester suite IS the test. Run it with the pinned Pester
+  version the CI job uses:
+  `pwsh -ExecutionPolicy Bypass -Command "Import-Module Pester -RequiredVersion 3.4.0; Invoke-Pester -Path .\Scripts\Windows\tests\Repo.GeneratedArtifacts.Tests.ps1"`.
+  Verify it FAILS before step 1 and passes after — a gate that was never seen
+  red is not a gate. No C++ build is required for this task.
+
+  **Build:** None needed. If you want CI confirmation, the `pester-tests` job of
+  `.github/workflows/Windows.yml` runs these suites but is gated on `[build-win]`
+  in the HEAD commit message (AGENTS.md § What CI runs) — without that marker
+  this change gets no CI signal at all.
+
+  **Context:** The deploy is safe to untrack against because CI rebuilds
+  `docs/build/html/` in the same job, in a step that cannot silently no-op:
+  `docs-build-web.sh` runs under `set -euo pipefail` and `docs_build_main` treats
+  Sphinx warnings as errors, so the step fails loudly rather than leaving the
+  directory empty for the FTP sync. (The wasm-demo rebuild inside that script is
+  separately best-effort and falls back to the committed
+  `docs/source/_webgpu_demo/` snapshot — that snapshot is intentional and stays
+  tracked.) This is the same "a generated artifact is not source" rule the repo
+  already applies to `Resources/ShadersSlang/build/` (`.gitignore:106-107`) and
+  the gtest discovery JSON (`:109-110`); `docs/build/` is the one place it was
+  written down but never enforced.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

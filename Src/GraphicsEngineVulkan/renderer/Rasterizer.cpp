@@ -202,14 +202,10 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
     subpass_dependencies[0].dependencyFlags = vk::DependencyFlags{};
 
     std::array<vk::AttachmentDescription, 2> render_pass_attachments = { color_attachment, depth_attachment };
+    const std::array<vk::SubpassDescription, 1> subpasses = { subpass };
 
-    vk::RenderPassCreateInfo render_pass_create_info;
-    render_pass_create_info.attachmentCount = static_cast<uint32_t>(render_pass_attachments.size());
-    render_pass_create_info.pAttachments = render_pass_attachments.data();
-    render_pass_create_info.subpassCount = 1;
-    render_pass_create_info.pSubpasses = &subpass;
-    render_pass_create_info.dependencyCount = static_cast<uint32_t>(subpass_dependencies.size());
-    render_pass_create_info.pDependencies = subpass_dependencies.data();
+    vk::RenderPassCreateInfo const render_pass_create_info =
+      Kataglyphis::buildRenderPassCreateInfo(render_pass_attachments, subpasses, subpass_dependencies);
 
     auto result = device->getLogicalDevice().createRenderPass(render_pass_create_info);
     if (result.result == vk::Result::eSuccess) {

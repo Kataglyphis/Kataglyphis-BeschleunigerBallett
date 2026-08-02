@@ -299,13 +299,10 @@ void SkyBox::createRenderPass(vk::Format format, vk::Format depthFormat)
     dependencies[1].dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead;
     dependencies[1].dependencyFlags = vk::DependencyFlagBits::eByRegion;
 
-    vk::RenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.attachmentCount = 2;
-    renderPassInfo.pAttachments = attachments.data();
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
-    renderPassInfo.pDependencies = dependencies.data();
+    const std::array<vk::SubpassDescription, 1> subpasses = { subpass };
+
+    vk::RenderPassCreateInfo const renderPassInfo =
+      Kataglyphis::buildRenderPassCreateInfo(attachments, subpasses, dependencies);
 
     auto result = device->getLogicalDevice().createRenderPass(renderPassInfo);
     ASSERT_VULKAN(VkResult(result.result), "Failed to create skybox render pass!");

@@ -174,14 +174,12 @@ void CascadedShadowMap::createRenderPass()
     multiviewInfo.correlationMaskCount = 1;
     multiviewInfo.pCorrelationMasks = &view_mask;
 
-    vk::RenderPassCreateInfo renderPassInfo{};
+    const std::array<vk::AttachmentDescription, 1> attachments = { depthAttachment };
+    const std::array<vk::SubpassDescription, 1> subpasses = { subpass };
+
+    vk::RenderPassCreateInfo renderPassInfo =
+      Kataglyphis::buildRenderPassCreateInfo(attachments, subpasses, dependencies);
     renderPassInfo.pNext = &multiviewInfo;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &depthAttachment;
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
-    renderPassInfo.pDependencies = dependencies.data();
 
     auto result = device->getLogicalDevice().createRenderPass(renderPassInfo);
     ASSERT_VULKAN(VkResult(result.result), "Failed to create cascaded shadow map render pass!");
