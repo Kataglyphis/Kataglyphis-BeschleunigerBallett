@@ -6,12 +6,13 @@ module;
 
 #include "common/Utilities.hpp"
 #include "spdlog/spdlog.h"
+#include "vulkan_base/PhysicalDeviceChoices.hpp"
 #include <algorithm>
-#include <cctype>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -20,12 +21,6 @@ module;
 module kataglyphis.vulkan.device;
 
 namespace {
-constexpr int DEVICE_TYPE_SCORE_DISCRETE = 10000;
-constexpr int DEVICE_TYPE_SCORE_INTEGRATED = 1000;
-constexpr int DEVICE_TYPE_SCORE_VIRTUAL = 100;
-constexpr int DEVICE_TYPE_SCORE_CPU = 10;
-
-enum class GpuSelectionMode : std::uint8_t { Auto, Dedicated, Integrated };
 
 auto readGpuSelectionFromEnvironment() -> std::string
 {
@@ -45,72 +40,6 @@ auto readGpuSelectionFromEnvironment() -> std::string
     if (value == nullptr) { return ""; }
     return std::string(value);
 #endif
-}
-
-auto parseGpuSelectionMode() -> GpuSelectionMode
-{
-    std::string mode = readGpuSelectionFromEnvironment();
-    if (mode.empty()) { return GpuSelectionMode::Auto; }
-
-    std::transform(mode.begin(), mode.end(), mode.begin(), [](unsigned char character) {
-        return static_cast<char>(std::tolower(character));
-    });
-
-    if (mode == "dedicated") { return GpuSelectionMode::Dedicated; }
-    if (mode == "integrated") { return GpuSelectionMode::Integrated; }
-
-    return GpuSelectionMode::Auto;
-}
-
-auto gpuSelectionModeToString(GpuSelectionMode mode) -> const char *
-{
-    switch (mode) {
-    case GpuSelectionMode::Dedicated:
-        return "dedicated";
-    case GpuSelectionMode::Integrated:
-        return "integrated";
-    case GpuSelectionMode::Auto:
-    default:
-        return "auto";
-    }
-}
-
-auto matchesSelectionMode(const vk::PhysicalDeviceProperties &properties, GpuSelectionMode mode) -> bool
-{
-    switch (mode) {
-    case GpuSelectionMode::Dedicated:
-        return properties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu;
-    case GpuSelectionMode::Integrated:
-        return properties.deviceType == vk::PhysicalDeviceType::eIntegratedGpu;
-    case GpuSelectionMode::Auto:
-    default:
-        return true;
-    }
-}
-
-auto scorePhysicalDevice(const vk::PhysicalDeviceProperties &properties) -> int
-{
-    int score = 0;
-
-    switch (properties.deviceType) {
-    case vk::PhysicalDeviceType::eDiscreteGpu:
-        score += DEVICE_TYPE_SCORE_DISCRETE;
-        break;
-    case vk::PhysicalDeviceType::eIntegratedGpu:
-        score += DEVICE_TYPE_SCORE_INTEGRATED;
-        break;
-    case vk::PhysicalDeviceType::eVirtualGpu:
-        score += DEVICE_TYPE_SCORE_VIRTUAL;
-        break;
-    case vk::PhysicalDeviceType::eCpu:
-        score += DEVICE_TYPE_SCORE_CPU;
-        break;
-    default:
-        break;
-    }
-
-    score += static_cast<int>(properties.limits.maxImageDimension2D);
-    return score;
 }
 
 // On-disk location of the persisted VkPipelineCache blob, relative to the
@@ -280,7 +209,7 @@ auto Kataglyphis::VulkanDevice::getQueueFamilies() -> Kataglyphis::VulkanRendere
 
 void Kataglyphis::VulkanDevice::get_physical_device()
 {
-    const GpuSelectionMode selection_mode = parseGpuSelectionMode();
+    const GpuSelectionMode selection_mode = parseGpuSelectionMode(readGpuSelectionFromEnvironment());
 
     // Enumerate physical devices the vkInstance can access
     std::vector<vk::PhysicalDevice> device_list = instance->getVulkanInstance().enumeratePhysicalDevices().value;
@@ -288,8 +217,8 @@ void Kataglyphis::VulkanDevice::get_physical_device()
     // if no devices available, then none support of Vulkan
     if (device_list.empty()) { spdlog::error("Can not find GPU's that support Vulkan Instance!"); }
 
-    int best_device_score = std::numeric_limits<int>::min();
-    int best_device_score_fallback = std::numeric_limits<int>::min();
+    std::optional<PhysicalDeviceScore> best_device_score;
+    std::optional<PhysicalDeviceScore> best_device_score_fallback;
     vk::PhysicalDevice fallback_device{};
     vk::PhysicalDeviceProperties fallback_properties{};
 
@@ -298,8 +227,8 @@ void Kataglyphis::VulkanDevice::get_physical_device()
 
         vk::PhysicalDeviceProperties candidate_properties = device.getProperties();
 
-        const int candidate_score = scorePhysicalDevice(candidate_properties);
-        if (candidate_score > best_device_score_fallback) {
+        const PhysicalDeviceScore candidate_score = scorePhysicalDevice(candidate_properties);
+        if (!best_device_score_fallback || candidate_score > *best_device_score_fallback) {
             best_device_score_fallback = candidate_score;
             fallback_device = device;
             fallback_properties = candidate_properties;
@@ -307,7 +236,7 @@ void Kataglyphis::VulkanDevice::get_physical_device()
 
         if (!matchesSelectionMode(candidate_properties, selection_mode)) { continue; }
 
-        if (candidate_score > best_device_score) {
+        if (!best_device_score || candidate_score > *best_device_score) {
             best_device_score = candidate_score;
             physical_device = device;
             device_properties = candidate_properties;
@@ -327,8 +256,6 @@ void Kataglyphis::VulkanDevice::get_physical_device()
         std::abort();
     }
 
-    // get properties of our new device
-    device_properties = physical_device.getProperties();
     spdlog::default_logger_raw()->log(spdlog::level::info,
       std::string("Selected Vulkan physical device: ") + device_properties.deviceName.data() + " ("
         + deviceTypeToString(device_properties.deviceType) + ")");
