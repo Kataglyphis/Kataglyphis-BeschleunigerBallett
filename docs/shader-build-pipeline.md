@@ -14,6 +14,17 @@ Shaders are written in [Slang](https://shader-slang.com/) under
 - **WGSL** (`.wgsl`) for the Rust WebGPU renderer → `Resources/ShadersSlang/build/wgsl/`
   (combined WGSL files are also copied into the Rust crates per the manifest's `wgslMap` — `crates/webgpu_renderer/src/shaders/` and `crates/gui/src/shaders/`)
 
+Both scripts are thin wrappers: they hold only this project's paths (manifest,
+Slang source root, the SPIR-V/WGSL output roots and the repository root the
+manifest's `wgslMap` destinations resolve against). The driver itself —
+slangc resolution, `-I` expansion, the manifest walk, staleness checking, the
+combined WGSL emit with its patch table, the toolchain floor and the
+varying-location validator described below — lives upstream in ContainerHub
+(`linux/scripts/lib/slang-compile.sh` and
+`windows/scripts/modules/WindowsSlang.Common.psm1`), so any Slang project gets
+the same guarantees. Change behaviour there, in both twins, and keep the
+`BuildIntegrity` tests in step.
+
 The C++ renderer loads pre-compiled SPIR-V via `File` I/O — there is no
 runtime shader compilation. Slang emits `"main"` as the SPIR-V entry point
 name (not the Slang function name), so all `pName` values in pipeline
