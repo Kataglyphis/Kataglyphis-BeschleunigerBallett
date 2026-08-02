@@ -258,6 +258,8 @@ jobs:
               'RenderPassHelperUnit.*'
               'FramebufferHelperUnit.*'
               'SceneUboLayoutUnit.*'
+              'RenderPassBeginHelperUnit.*'
+              'CameraSceneConfigUnit.*'
             ) -join ':'
             & 'C:\ws\build-clangcl-debug\commitTestSuite.exe' --gtest_filter="$cpuOnlySuites"
             exit $LASTEXITCODE

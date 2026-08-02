@@ -409,18 +409,12 @@ void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_ind
 
     spdlog::debug("SkyBox: enabled={}, fbSize={}, indexCount={}", skyboxEnabled, framebuffers.size(), skyMesh->getIndexCount());
 
-    vk::RenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.renderPass = renderPass;
-    renderPassInfo.framebuffer = framebuffers[image_index];
-    renderPassInfo.renderArea.offset = vk::Offset2D{0, 0};
-    renderPassInfo.renderArea.extent = vk::Extent2D{framebufferWidth, framebufferHeight};
-
     std::array clearValues = {
         vk::ClearValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}},
         vk::ClearValue{vk::ClearDepthStencilValue{1.0f, 0}}
     };
-    renderPassInfo.clearValueCount = 2;
-    renderPassInfo.pClearValues = clearValues.data();
+    const vk::RenderPassBeginInfo renderPassInfo = Kataglyphis::buildRenderPassBeginInfo(
+      renderPass, framebuffers[image_index], vk::Extent2D{framebufferWidth, framebufferHeight}, clearValues);
 
     commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 

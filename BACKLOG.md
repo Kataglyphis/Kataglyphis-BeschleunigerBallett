@@ -4846,6 +4846,235 @@ above it makes the result harmless.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
+## 2026-08-02 batch XII — planner (refactor: a sixth "one rule, five hand-rolled copies" — render-pass begin; four copies of the extension/layer lookup that already produced one shipped bug; a descriptor write that looks its binding up twice and dereferences the second one unchecked)
+
+**Every task in this batch is verifiable with no GPU**, deliberately: the `- [b]`
+entries above are still blocked on host GPU golden verification in this RDP
+session. Tasks 1 and 2 land device-free `constexpr`/pure helpers with new gtest
+suites that run in the container CPU lane; task 3 is a compile-verified
+restructure of private helpers with no behaviour change. Every `file:line`
+below was read out of the tree this pass, and every duplication count was
+confirmed by a whole-tree grep over `Src/` + `Test/`. The actionable queue was
+empty when this batch was written (the only `- [ ]`-shaped entries in this file
+are `- [b]`).
+
+**The headline is that `vk::RenderPassBeginInfo` is the sixth member of the
+`buildAttachmentDescription` / `fullExtentViewport` / `buildFramebufferCreateInfo`
+family, and it has drifted in exactly the way that family exists to prevent.**
+Five files each spell out the same six-field block by hand:
+`Rasterizer.cpp:73-85`, `PostStage.cpp:68-81`, `DeferredRasterizer.cpp:381-395`,
+`SkyBox.cpp:412-423` and `CascadedShadowMap.cpp:461-471`. All five set
+`renderArea.offset = {0, 0}` and a full-extent `renderArea.extent`, and all five
+are followed immediately by `setFullExtentViewportAndScissor` on the same
+extent. **Two of the five hard-code `clearValueCount` instead of deriving it**
+— `SkyBox.cpp:422` writes `clearValueCount = 2` next to a two-element
+`std::array` and `CascadedShadowMap.cpp:469` writes `clearValueCount = 1` — which
+is byte-for-byte the bug `buildFramebufferCreateInfo` was introduced to kill
+(`SkyBox`'s `attachmentCount = 2`, pinned today by
+`FramebufferHelperUnit.AttachmentCountIsDerivedFromTheSpan`). Two others
+(`Rasterizer.cpp:73`, `PostStage.cpp:68`) declare the struct without `{}` while
+the other three value-initialize.
+
+**Second: "is this name in the list vulkan-hpp just enumerated" is written four
+times, and one of the four already shipped a bug.** `VulkanInstance.cpp:91-102`
+(layers), `VulkanInstance.cpp:113-127` (instance extensions),
+`VulkanDevice.cpp:422-427` (the `isExtensionSupported` lambda) and
+`VulkanDevice.cpp:659-670` (`check_device_extension_support`) are four
+independent nested loops around `strcmp(..., props.{extension,layer}Name) == 0`.
+The 2026-07-23 deep-review pass fixed `check_instance_extension_support`'s
+`strcmp(...) != 0 != 0` — which parsed as `(strcmp != 0) != 0` and made the
+function effectively always return true — in **one** of those four copies; the
+other three were correct by luck, not by construction. `check_device_extension_support`
+also carries an `extensions.empty()` early-return the other three lack, and
+`check_instance_extension_support` still takes its input as a mutable
+`std::vector<const char *> *` (`VulkanInstance.ixx:27`) where the body only
+iterates it.
+
+**Third: `DescriptorSetGroup::writeImageArray` looks its binding up twice and
+dereferences the second result without a null check.** `beginWrite`
+(`DescriptorSetGroup.cpp:136-149`) already calls `findBinding` and returns false
+when it misses, but `writeImageArray` (`:187-207`) throws that away, calls
+`findBinding(binding)` again at `:194` and reads `layout_binding->descriptorCount`
+at `:195` with no guard. It is unreachable today only because the first lookup
+succeeded — the deref is a static-analysis finding waiting to be re-derived, and
+the second lookup is a second linear scan. `checkWritePreconditions` (`:127-134`)
+has exactly one caller, `beginWrite`. Grep-confirmed: `findBinding`,
+`checkWritePreconditions` and `beginWrite` have zero callers outside
+`DescriptorSetGroup.cpp`.
+
+Ordering: all three are independent and touch disjoint files.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **the twelve hand-rolled `vk::ImageMemoryBarrier`
+blocks** — still owned by the `- [b]` cloud-barrier entry above, unchanged since
+batch IX rejected it; pick it up once host GPU verification unblocks;
+**`Src/KomputePlayground`** — `KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND` is OFF by
+default (`Src/CMakeLists.txt:103`) and its `CMakeLists.txt` has the entire
+kompute acquisition block commented out while still linking `kompute::kompute`,
+so turning the option ON cannot configure; and `src/main.cpp:40` throws
+`std::runtime_error` with no `<stdexcept>` include. Real, but "repair it" vs
+"delete it" is an owner decision, not an executor one — raise it, do not task
+it; **`FormatHelper.hpp:5`'s unused `#include <stdexcept>`** in a
+`-fno-exceptions` build and **the ~25 redundant `= false` assignments on the
+value-initialized `vk::PhysicalDevice*Features` structs**
+(`VulkanDevice.cpp:331-362`) — both genuine noise, both too small to spend a
+task on alone; fold them into whichever of the above touches those files;
+**batching the four `updateDescriptorSets(1, &write, ...)` calls in
+`DescriptorSetGroup`** — one vkUpdateDescriptorSets per descriptor is real, but
+it is initialization-time only and the API change would ripple into every write
+call site for no measurable gain; **the Rust `render/{bloom,ssao,tonemap,
+overlay,gpu_occlusion}.rs` modules having no tests** — every one of them needs a
+live wgpu adapter to exercise, so a coverage task there would ship
+compile-only verification (`obj_to_gltf.rs` looked untested by inline
+`#[test]` count but has a 650-line integration suite at
+`crates/webgpu_renderer/tests/obj_to_gltf.rs`; do not re-flag it).
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Collapse the four hand-rolled "is this extension/layer in the enumerated list" loops into one tested helper** — one of the four already shipped a silently-always-true bug; the other three were correct by luck.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanInstance.cpp:87-130` — the layer
+    check and the instance-extension check.
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanInstance.ixx:23-27` — the
+    `validationLayers` member and the two private declarations; note
+    `check_instance_extension_support` takes `std::vector<const char *> *`.
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp:415-451` — the
+    `isExtensionSupported` lambda and its one loop of callers; `:653-673` —
+    `check_device_extension_support`.
+  - `Src/GraphicsEngineVulkan/common/FormatHelper.hpp` — the house style for a
+    header-only, device-free `common/` helper.
+  - `Test/commit/VulkanEngine/formatHelperSuite.cpp` — a suite that tests a pure
+    `common/` header; follow its shape.
+
+  **Steps:**
+  1. Add `Src/GraphicsEngineVulkan/common/ExtensionSupport.hpp` (`#pragma once`,
+     `namespace Kataglyphis`) with three pure functions:
+     ```cpp
+     [[nodiscard]] inline bool supportsExtension(
+       std::span<const vk::ExtensionProperties> available, std::string_view name);
+     [[nodiscard]] inline bool supportsLayer(
+       std::span<const vk::LayerProperties> available, std::string_view name);
+     // nullptr when every required name is present; otherwise the first missing one.
+     [[nodiscard]] inline const char *firstMissingExtension(
+       std::span<const vk::ExtensionProperties> available, std::span<const char *const> required);
+     ```
+     Compare with `std::string_view` against `props.extensionName.data()` /
+     `props.layerName.data()` rather than `strcmp` — `vk::ArrayWrapper1D<char, 256>`
+     is a `std::array` and `.data()` is the null-terminated C string. A
+     `string_view` comparison also cannot be written as `!= 0 != 0`, which is the
+     whole point.
+  2. Replace `VulkanDevice.cpp`'s `isExtensionSupported` lambda with
+     `supportsExtension(availableExtensions, name)` at both use sites
+     (`:446` and `:530`) and delete the lambda.
+  3. Replace `check_device_extension_support`'s body with
+     `firstMissingExtension(device.enumerateDeviceExtensionProperties().value,
+     device_extensions) == nullptr`. The `extensions.empty()` early-return goes
+     away: it is equivalent whenever `device_extensions` is non-empty, and it is
+     (`VK_KHR_SWAPCHAIN_EXTENSION_NAME`). Say that in the commit message.
+  4. Replace `check_validation_layer_support`'s body with a loop over
+     `validationLayers` calling `supportsLayer`, and
+     `check_instance_extension_support`'s with `firstMissingExtension`, logging
+     the returned name in the existing `spdlog::critical("Required instance
+     extension not supported: {}", ...)` message. Keep both log messages.
+  5. Change `check_instance_extension_support`'s parameter from
+     `std::vector<const char *> *` to `std::span<const char *const>` in
+     `VulkanInstance.ixx:27` and the definition; the one caller
+     (`VulkanInstance.cpp:71`) drops its `&`.
+  6. While in `VulkanDevice.cpp`, delete the ~25 redundant `= false` assignments
+     on the value-initialized `vk::PhysicalDevice*Features` structs at
+     `:331-362` (`{}` already zeroes every `VkBool32`). Keep every `pNext`
+     assignment and every `= available_*` read — only the literal `= false`
+     lines go. If any of them is NOT preceded by a `{}`-initialized declaration,
+     leave that one alone and say so.
+
+  **Test:** Add `Test/commit/VulkanEngine/extensionSupportSuite.cpp` with
+  `TEST(ExtensionSupportUnit, ...)` cases over a hand-built
+  `std::array<vk::ExtensionProperties, N>` (fill each `extensionName` by copying
+  into `.data()` — it is a `vk::ArrayWrapper1D<char, 256>`, so
+  `std::snprintf(props.extensionName.data(), 256, "%s", "VK_KHR_swapchain")`
+  works): `PresentNameIsFound`, `AbsentNameIsNotFound`,
+  `PrefixOfAPresentNameIsNotFound` (guards against a length-blind compare —
+  `"VK_KHR_swap"` must not match `"VK_KHR_swapchain"`),
+  `FirstMissingExtensionReturnsNullptrWhenAllPresent`,
+  `FirstMissingExtensionNamesTheFirstAbsentOne`, and
+  `EmptyAvailableListFindsNothing`. Add one `supportsLayer` case so the layer
+  overload is not untested.
+
+  **Build:** `clangcl-debug`, same invocation as task 1; run
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=ExtensionSupportUnit.*`
+  then the whole suite.
+
+  **Context:** The bug this prevents already happened and is written down in
+  this file under "Deep code-review pass (2026-07-23)":
+  `check_instance_extension_support` had `strcmp(...) != 0 != 0`, which parses as
+  `(strcmp != 0) != 0`, so it set `has_extension = true` on the first
+  *non-matching* entry and effectively always returned true. It was fixed in one
+  of four copies. This is the same "one rule, N hand-rolled copies" class as
+  `4f799788` / `36937517` / `a3b42dfc` — the difference is that here the drift
+  already cost a shipped defect, so lead with that. Do **not** touch the
+  `device_extensions` / `device_extensions_for_raytracing` lists themselves or
+  any feature-gating logic in `create_logical_device`: this task changes how a
+  name is looked up, nothing about which names are required.
+
+- [ ] **(S) (refactor) Make `DescriptorSetGroup::beginWrite` return the binding it found, removing a duplicate lookup, an unchecked dereference and a single-caller helper** — and fix the `create()` doc comment that promises cleanup the code does not do.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.cpp:118-222` — the
+    three private helpers and the four write functions.
+  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.ixx:49-89` — the
+    declarations and the comments that describe them.
+  - `Test/commit/VulkanEngine/descriptorPoolSizesSuite.cpp` — the existing
+    device-free coverage for this file's other pure function; the write path
+    itself needs a device and stays untested.
+
+  **Steps:**
+  1. Change `beginWrite`'s signature to return
+     `const vk::DescriptorSetLayoutBinding *` (nullptr on failure) instead of
+     `bool`, keeping the `vk::WriteDescriptorSet &out` out-parameter. Fold
+     `checkWritePreconditions`'s body (`:129-132`) into it verbatim — including
+     the exact `spdlog::error` text and the `!device || set_index >=
+     descriptor_sets.size()` condition — and delete `checkWritePreconditions`
+     from both the `.cpp` and the `.ixx`.
+  2. Update the three simple writers (`writeBuffer`, `writeImage`,
+     `writeAccelerationStructure`) to `if (beginWrite(...) == nullptr) { return; }`.
+  3. In `writeImageArray`, capture the returned pointer and use it for the
+     `descriptorCount` comparison. **Delete the second `findBinding(binding)`
+     call at `:194` and the unchecked `layout_binding->descriptorCount` deref at
+     `:195`.** The mismatch check and its `spdlog::error` message stay exactly
+     as they are.
+  4. Update the `beginWrite` comment block in `.ixx:84-89` — it currently says
+     "Runs checkWritePreconditions + findBinding … Returns false" and both
+     halves become wrong.
+  5. Fix the drifted comment on `create()` (`.ixx:49-51`): it claims "partially
+     created objects are cleaned up" on failure. The body returns `false` only
+     before creating anything (empty bindings / zero sets); every later failure
+     goes through `ASSERT_VULKAN`, which logs critical and `abort()`s, so there
+     is no partial-cleanup path. State what actually happens instead of
+     describing a path that does not exist.
+
+  **Test:** No new test — the write path is unreachable without a
+  `VulkanDevice`, and this is a behaviour-preserving restructure of private
+  helpers. Verification is a clean compile plus the full
+  `.\build-clangcl-debug\commitTestSuite.exe` run staying green (in particular
+  `DescriptorPoolSizes*`, which links the same translation unit). If you find a
+  way to exercise `findBinding` device-free without widening the public API, add
+  it; do **not** make private members public to get a test.
+
+  **Build:** `clangcl-debug`, same invocation as task 1. This file is a C++23
+  module implementation unit, so pass `-FreshContainer` on the first build after
+  editing `DescriptorSetGroup.ixx` — the fresh-container rule in
+  [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md) applies to any
+  module-interface change.
+
+  **Context:** `DescriptorSetGroup` is the extraction that took 617 lines out of
+  `VulkanRenderer` (see the Completed section), and its comments have been the
+  load-bearing documentation for the module-ABI workarounds in the same file —
+  which is why step 4 and step 5 are not optional polish. Do not touch the
+  explicitly-defined default constructor, the move operations, or their
+  comments: `DescriptorSetGroup.cpp:16-36` records an ASAN-caught C++23 module
+  ABI mismatch and the `= default` form is known to reintroduce it.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

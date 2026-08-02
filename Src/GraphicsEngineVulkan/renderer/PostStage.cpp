@@ -65,20 +65,14 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
   bool shadowsEnabled,
   bool skyboxEnabled)
 {
-    vk::RenderPassBeginInfo render_pass_begin_info;
-    render_pass_begin_info.renderPass = render_pass;
-    render_pass_begin_info.renderArea.offset = vk::Offset2D{ 0, 0 };
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-    render_pass_begin_info.renderArea.extent = swap_chain_extent;
 
     std::array<vk::ClearValue, 2> clear_values;
     clear_values[0].color = vk::ClearColorValue{ 0.2F, 0.65F, 0.4F, 1.0F };
     clear_values[1].depthStencil = vk::ClearDepthStencilValue{ 1.0F, 0 };
 
-    render_pass_begin_info.pClearValues = clear_values.data();
-    render_pass_begin_info.clearValueCount = static_cast<uint32_t>(clear_values.size());
-
-    render_pass_begin_info.framebuffer = framebuffers[image_index];
+    const vk::RenderPassBeginInfo render_pass_begin_info = Kataglyphis::buildRenderPassBeginInfo(
+      render_pass, framebuffers[image_index], swap_chain_extent, clear_values);
 
     commandBuffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
 

@@ -378,12 +378,6 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
 {
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
 
-    vk::RenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.renderPass = renderPass;
-    renderPassInfo.framebuffer = framebuffer[image_index];
-    renderPassInfo.renderArea.offset = vk::Offset2D{0, 0};
-    renderPassInfo.renderArea.extent = swap_chain_extent;
-
     std::array<vk::ClearValue, 5> clearValues{};
     clearValues[0].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}};
     clearValues[1].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}};
@@ -391,8 +385,8 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
     clearValues[3].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}};
     clearValues[4].depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
 
-    renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-    renderPassInfo.pClearValues = clearValues.data();
+    const vk::RenderPassBeginInfo renderPassInfo = Kataglyphis::buildRenderPassBeginInfo(
+      renderPass, framebuffer[image_index], swap_chain_extent, clearValues);
 
     commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 

@@ -458,16 +458,10 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
         }
     }
 
-    vk::RenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.renderPass = renderPass;
-    renderPassInfo.framebuffer = framebuffer;
-    renderPassInfo.renderArea.offset = vk::Offset2D{0, 0};
-    renderPassInfo.renderArea.extent = vk::Extent2D{shadowWidth, shadowHeight};
-
-    vk::ClearValue clearValue{};
-    clearValue.depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearValue;
+    std::array<vk::ClearValue, 1> clearValues{};
+    clearValues[0].depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
+    const vk::RenderPassBeginInfo renderPassInfo = Kataglyphis::buildRenderPassBeginInfo(
+      renderPass, framebuffer, vk::Extent2D{shadowWidth, shadowHeight}, clearValues);
 
     commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <span>
+
 #include <vulkan/vulkan.hpp>
 
 namespace Kataglyphis {
@@ -42,6 +44,35 @@ constexpr vk::AttachmentDescription buildAttachmentDescription(vk::Format format
     description.initialLayout = initial_layout;
     description.finalLayout = final_layout;
     return description;
+}
+
+// Every render pass begin in this engine spelled out the same five field
+// assignments by hand, in Rasterizer, PostStage, DeferredRasterizer, SkyBox
+// and CascadedShadowMap - two of the five hard-coded clearValueCount as a
+// literal rather than deriving it from the clear-value array actually
+// passed.
+//
+// renderArea.offset is always {0, 0} and the extent is always the target's
+// full extent - every call site follows the beginRenderPass with
+// setFullExtentViewportAndScissor on that same extent. clearValueCount is
+// deliberately DERIVED from clear_values.size() rather than taken as a
+// parameter, so it can never drift from the array actually passed.
+//
+// A pass that needs a partial render area must build the
+// vk::RenderPassBeginInfo inline and say why, rather than growing this
+// helper new parameters - the same rule FramebufferHelper.hpp and
+// ViewportHelper.hpp state, for the same reason.
+//
+// Built via the fully-explicit vk::RenderPassBeginInfo constructor rather
+// than value-init-then-assign, for the same constexpr reason
+// FramebufferHelper.hpp documents.
+constexpr vk::RenderPassBeginInfo buildRenderPassBeginInfo(vk::RenderPass render_pass,
+  vk::Framebuffer framebuffer,
+  vk::Extent2D extent,
+  std::span<const vk::ClearValue> clear_values)
+{
+    return vk::RenderPassBeginInfo{ render_pass, framebuffer, vk::Rect2D{ vk::Offset2D{ 0, 0 }, extent },
+        static_cast<uint32_t>(clear_values.size()), clear_values.data() };
 }
 
 }// namespace Kataglyphis
