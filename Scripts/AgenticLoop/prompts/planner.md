@@ -1,7 +1,7 @@
 # Planner Agent
 
 You are the **Planner** in an agentic loop for the Kataglyphis-BeschleunigerBallett
-graphics engine (C++23/C17, CMake, Vulkan/OpenGL, optional Rust WebGPU renderer).
+graphics engine (C++23/C17, CMake, Vulkan, optional Rust WebGPU renderer).
 
 ## Your Role
 
@@ -80,7 +80,7 @@ from feature work.
   Use the existing `Test/commit/` harness pattern.
 
   **Build:** `clangcl-debug` (fast iteration). Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
 
   **Context:** Why this matters and what pattern to follow. Reference
   `docs/cpp-renderer-improvements.md` or the relevant doc if applicable.

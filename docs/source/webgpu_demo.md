@@ -24,18 +24,11 @@ Open the demo full-page ↗
 
 ## About
 
-- **Milestones shipped**: surface lifecycle, glTF loading (meshes,
-  transforms, samplers, mipmaps, tangents), PBR materials (GGX
-  metallic-roughness, normal/emissive/occlusion maps), directional shadows,
-  HDR + ACES tonemap, this browser build.
-- **Roadmap**: see `docs/webgpu-renderer-roadmap.md` in the repository —
-  phases A–G from material correctness up to IBL, animation, and a
-  Colosseum-scale showcase scene.
-- **Rebuild the demo**: the docs deploy rebuilds it automatically —
-  `Scripts/Linux/docs-build-web.sh` compiles `kataglyphis_webgpu_renderer` to
-  wasm32, runs `wasm-bindgen`, and refreshes this folder before Sphinx runs, so
-  the deployed demo always tracks the current renderer. To rebuild locally:
-  `cargo build -p kataglyphis_webgpu_renderer --target wasm32-unknown-unknown
-  --release`, then `wasm-bindgen --target web` into
-  `crates/webgpu_renderer/web/pkg`, and copy `web/` into
-  `docs/source/_webgpu_demo/webgpu-demo/`.
+- **Features shipped**: the renderer is well past the original milestones —
+  the authoritative per-feature status (IBL, skybox, animation/skinning/morph
+  targets, egui overlay, bloom, SSAO, auto-exposure, LOD, GPU occlusion
+  culling, and more) is `docs/webgpu-renderer-roadmap.md` in the repository.
+- **Rebuild the demo**: `Scripts/Linux/docs-build-web.sh` compiles
+  `kataglyphis_webgpu_renderer` to wasm32, runs `wasm-bindgen`, and refreshes
+  this folder before Sphinx runs; the CI docs deploy runs it automatically,
+  so the deployed demo always tracks the current renderer.

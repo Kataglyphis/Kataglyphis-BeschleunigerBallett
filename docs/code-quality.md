@@ -100,9 +100,11 @@ consistent by construction (see below).
 
 **Caveat worth knowing:** `Scripts/Windows/Build-Windows-Container.ps1`
 hard-codes `-SkipTidy` when it invokes `Build-Windows.ps1`, so
-containerized builds never run clang-tidy. clang-format is still attempted
-unless `-SkipFormat` is also passed. That is why tidy drift accumulates
-even when every build is green.
+containerized builds never run clang-tidy — but they always run the
+clang-format check (only `-SkipTidy` is hard-coded; the container script
+has no `-SkipFormat` to forward). Host `Build-Windows.ps1` accepts
+`-SkipFormat`. That is why tidy drift accumulates even when every build is
+green.
 
 ## Suggested cadence
 

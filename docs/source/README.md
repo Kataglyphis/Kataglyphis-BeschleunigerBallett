@@ -1,11 +1,11 @@
 # Project Overview
 
-Kataglyphis-BeschleunigerBallett is a renderer and graphics-engine playground for experimenting with Vulkan, OpenGL, modern CMake, testing, packaging, and optional Rust integration. This documentation focuses on the build and maintenance workflow around the engine, not only on the rendering features themselves.
+Kataglyphis-BeschleunigerBallett is a renderer and graphics-engine playground for experimenting with Vulkan, a companion Rust WebGPU renderer, modern CMake, testing, packaging, and optional Rust integration. This documentation focuses on the build and maintenance workflow around the engine, not only on the rendering features themselves.
 
 ## What is in Scope?
 
 - Vulkan rendering with rasterization, ray tracing, path tracing, PBR, OBJ loading, and mip mapping
-- OpenGL rendering with lights, shadow mapping, clouds, compute shaders, skyboxes, and PBR
+- A companion Rust WebGPU renderer (native and browser) sharing Slang shader sources with the Vulkan engine
 - Tooling around CMake presets, CI, coverage, benchmarks, fuzzing, packaging, Sphinx, Doxygen, and Graphviz
 - Linux and Windows as the primary development platforms
 
@@ -28,7 +28,6 @@ Kataglyphis-BeschleunigerBallett is a renderer and graphics-engine playground fo
 - C++23 and C17 toolchains
 - CMake 4.1 or newer
 - Vulkan SDK 1.4 compatible environment for Vulkan builds
-- OpenGL 4.6 capable runtime for the OpenGL renderer
 - Optional Rust toolchain for the experimental Rust-enabled build path
 
 ## Where to Go Next

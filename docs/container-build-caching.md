@@ -33,8 +33,9 @@ build tree then sits on the Dev Drive and every file operation crosses the
 `-UseBindMount` opts in. Full measurements and the caveat about when the trade
 inverts: [ContainerHub](../ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md).
 
-Verified against these numbers: 21/21 commit tests and 18/18 Pester tests pass
-on the incrementally built binaries.
+Verified against these numbers: at the time of measurement (2026-07-19),
+21/21 commit tests and 18/18 Pester tests passed on the incrementally built
+binaries.
 
 ## What is actually cached
 

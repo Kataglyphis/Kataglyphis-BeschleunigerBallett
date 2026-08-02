@@ -2144,7 +2144,7 @@ and unchecked rather than guessed at.
     host GPU.
 
   **Build:** `clangcl-debug` via
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
   (`-FreshContainer` needed here because `PathTracing.ixx` changed), then host
   GPU runs per `docs/gpu-golden-testing.md`. Shader-only iterations:
   `pwsh Scripts/Windows/compile-slang-shaders.ps1`, no C++ rebuild needed.
@@ -3951,7 +3951,7 @@ is gitignored.
   (`buildIntegritySuite.cpp:1841`) will fail otherwise.
 
   **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
   then `docker cp bb-build-persistent:C:\ws\build-clangcl-debug\bin\commitTestSuite.exe .\`
   and run it from the repo root on the host GPU (containers have no swapchain —
   AGENTS.md § Running on the Host).
@@ -4883,3 +4883,19 @@ and answered it outright. Get the failing thing into a shell before theorising.
   (then mention it in AGENTS.md) or delete. Test: Pester + one
   `Compare-RendererPixels` run against existing goldens. Build preset:
   none.
+
+- [ ] **Refresh docs/LICENSES-README.md** (S) — dated 2026-03-26 and drifted:
+  it still lists **glad** (no OpenGL loader remains anywhere in `Src/`), and
+  is missing **cgltf** (`Src/GraphicsEngineVulkan/scene/cgltf_impl.cpp`),
+  **tomlplusplus**, and **Slang** (shader toolchain). Verify each entry
+  against `ExternalLib/` + `Cargo.toml` actually-linked dependencies, copy
+  the exact license names from the upstream repos (do not guess licenses),
+  update the date. Test: none (doc). Build preset: none.
+
+- [b] **CHANGELOG.md is abandoned — decide: delete or automate** (S,
+  **blocked on owner decision**) — last real entry is 1.5.0 (2026-03-08),
+  the `[Unreleased]` section holds six literal "Placeholder for …" lines,
+  and the diff links point at `https://your.repo.url/`. ~30 engine commits
+  since. Either delete it (git history + BACKLOG serve the purpose) or wire
+  it to the release flow (`version.txt` bump). Needs the owner to pick a
+  direction; both are cheap once chosen.

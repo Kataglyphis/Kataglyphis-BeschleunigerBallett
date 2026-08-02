@@ -5,7 +5,7 @@
 
   <h1>Kataglyphis-BeschleunigerBallett</h1>
 
-  <h4>Experimental graphics engine and renderer playground for Vulkan, OpenGL, modern CMake, testing, packaging, and optional Rust integration.</h4>
+  <h4>Experimental graphics engine and renderer playground for Vulkan, a Rust WebGPU sibling renderer, modern CMake, testing, packaging, and optional Rust integration.</h4>
 </div>
 
 <div align="center"> 
@@ -82,12 +82,8 @@ The repository ships two documentation entry points:
 
 Each topic has exactly one home; the full topic-guide inventory is the Docs table in [AGENTS.md](AGENTS.md). Renderer-agnostic and Windows-container knowledge lives in the ContainerHub submodule so other projects can consume it (see the "Reusable Work Belongs in ContainerHub" rule there).
 
-Build the Sphinx HTML docs locally:
-
-```pwsh
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m sphinx -M html docs/source docs/build -E
-```
+To build the Sphinx HTML docs locally, see
+[docs/source/documentation_workflow.md](docs/source/documentation_workflow.md).
 
 If Doxygen XML is available, the Sphinx build automatically includes the generated C++ API reference. If no XML is present, the hand-written docs still build cleanly and the API section stays hidden.
 

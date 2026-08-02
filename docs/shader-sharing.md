@@ -8,24 +8,19 @@ coincide.
 
 ## The pipeline (current)
 
-```pwsh
-pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1
-```
+Compile commands, output directories, staleness rules, and fast shader
+iteration are owned by
+[`shader-build-pipeline.md`](shader-build-pipeline.md) — this document does
+not restate them. The compile step is wired into the C++ build
+unconditionally (no opt-in flag needed): compiling either `clangcl-*` or
+`linux-*` configuration compiles the Slang manifest first, so a `.slang`
+edit reaches the Vulkan engine on the next build. `slangc` is resolved from
+`VULKAN_SDK\Bin` then `PATH` (the Vulkan SDK ships it; verified against
+1.4.350.0).
 
-Wired into the C++ build unconditionally (no opt-in flag needed): compiling
-either `clangcl-*` or `linux-*` configuration compiles the Slang manifest
-first, so a `.slang` edit reaches the Vulkan engine on the next build.
-
-`slangc` is resolved from `VULKAN_SDK\Bin` then `PATH` (the Vulkan SDK ships
-it; verified against 1.4.350.0). Output lands in
-`Resources/ShadersSlang/build/{spv,wgsl}/` (gitignored, derived, regenerated
-on every Slang edit — staleness is timestamp-based, conservative: any
-`.slang` file changing invalidates every output, since imports are not
-tracked individually).
-
-**Rust side:** the same script additionally compiles each shared shader
+**Rust side:** the compile scripts additionally compile each shared shader
 *without* `-entry`/`-stage` (Slang then emits every entry point of that file
-into one combined WGSL file) and copies the result straight into the Rust
+into one combined WGSL file) and copy the result straight into the Rust
 crate's shader directories (`crates/webgpu_renderer/src/shaders/`,
 `crates/gui/src/shaders/`), replacing the hand-written WGSL there. The
 crate's `include_str!` calls are unchanged — they just now read
@@ -59,9 +54,8 @@ ever emit one target.
 **WGSL fallback policy:** if Slang's experimental WGSL emitter can't handle
 a particular shared shader, that shader's WGSL stays hand-written and the
 Slang source (if one exists) is kept for documentation/future SPIR-V use
-only. `histogram.wgsl` is the one case today: Slang's `InterlockedAdd` on
-`RWStructuredBuffer` is not supported for the WGSL target (WGSL requires
-`array<atomic<u32>>` storage).
+only. `histogram.wgsl` is the one case today (rationale in
+[`shader-build-pipeline.md`](shader-build-pipeline.md)).
 
 ## Architecture: Slang-native, not `#include`
 

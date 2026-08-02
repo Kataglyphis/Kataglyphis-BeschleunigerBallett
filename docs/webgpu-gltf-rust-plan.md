@@ -1,8 +1,12 @@
 # Plan: WebGPU + glTF Renderer in Rust
 
+*Historical planning document, kept for the record — current per-feature
+status lives in [webgpu-renderer-roadmap.md](webgpu-renderer-roadmap.md).*
+
 Status: **milestones 1–5 implemented** (2026-07-18) as
 `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer`
-(`kataglyphis_webgpu_renderer`): wgpu 27 context with headless + windowed
+(`kataglyphis_webgpu_renderer`): wgpu context (wgpu 27 then; the crate is on
+wgpu 29 now) with headless + windowed
 paths, resize/Outdated/Lost-safe surface lifecycle (attachment sizes derive
 from the *acquired* frame texture, never the window), glTF loader
 (positions/normals/UVs/indices, node transforms, base-color materials, flat
@@ -29,10 +33,11 @@ serve `crates/webgpu_renderer/web/`). Hard-won lessons: winit does not size
 the canvas backing store (explicitly set it or the surface renders at ~1x1),
 and Chrome's WGSL validator rejects `textureSampleCompare` in non-uniform
 control flow — use `textureSampleCompareLevel` (an invalid module silently
-voids the whole submit: pure black canvas, no page-visible error). CI runs
-the crate's tests via Invoke-DebugTests.ps1. Public hosting (e.g. GitHub
-Pages) still open. Milestone 6 (parity extras: egui overlay, skybox,
-animations) remains open. **The full follow-on feature roadmap lives in
+voids the whole submit: pure black canvas, no page-visible error). The
+crate's tests run in CI via the Linux workflow. Public hosting (the demo is
+live on the docs site) and the Milestone 6 parity extras (egui overlay,
+skybox, animations) are **done** — shipped 2026-07-18 per the roadmap.
+**The full follow-on feature roadmap lives in
 [webgpu-renderer-roadmap.md](webgpu-renderer-roadmap.md).**
 
 ## Why wgpu
@@ -59,7 +64,7 @@ crates/webgpu_renderer/
 │   │   ├── forward.rs      # forward PBR pass (first milestone)
 │   │   ├── shadow.rs       # depth-only pass (milestone 4)
 │   │   └── tonemap.rs      # post pass: HDR -> swapchain (milestone 3)
-│   └── shaders/            # WGSL, checked in, hot-reloadable in debug
+│   └── shaders/            # WGSL — now Slang-emitted (see shader-sharing.md); histogram.wgsl excepted
 ├── examples/
 │   └── viewer.rs           # winit window, orbit camera, drag&drop a .gltf
 └── tests/                  # headless golden-image tests (no window needed)

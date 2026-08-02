@@ -3,16 +3,18 @@
 # Stevedore's docker.exe (see ExternalLib/Kataglyphis-ContainerHub/docs/windows-builds.md
 # for why nerdctl is not an option on Windows).
 #
-# Two transport modes, chosen automatically:
-#   1. Bind mount (fast path): the repo is mounted read/write into the container
-#      and build directories land directly in the working tree — same flow as CI
-#      (.github/workflows/Windows.yml).
-#   2. Tar pipe (fallback): when the bind mount cannot attach (e.g. the repo
-#      lives on a Dev Drive whose filters are not allow-listed — error
+# Two transport modes; the tar pipe is the default, -UseBindMount opts in:
+#   1. Tar pipe (default): sources are streamed into a container-local
+#      directory in the reusable build container, built there, and the build
+#      trees + logs are streamed back out. Measured FASTER than the bind
+#      mount on this Dev Drive host (the build tree stays off the bindFlt
+#      filter).
+#   2. Bind mount (-UseBindMount): the repo is mounted read/write into the
+#      container and build directories land directly in the working tree —
+#      same flow as CI (.github/workflows/Windows.yml). On a Dev Drive whose
+#      filters are not allow-listed the mount cannot attach at all (error
 #      "Der Dateisystem-Minifilter kann nicht an das Entwicklervolume angefügt
-#      werden"), sources are streamed into a fresh container-local directory,
-#      built there, and the build trees + logs are streamed back out.
-#      To enable the fast path on a Dev Drive host instead, run once (elevated):
+#      werden"); to make it attachable, run once (elevated):
 #        fsutil devdrv setfiltersallowed bindFlt, wcifs
 #      then remount the volume (or reboot).
 #

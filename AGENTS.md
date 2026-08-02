@@ -1,7 +1,8 @@
 # AGENTS.md
 
 Guidance for AI agents and new contributors working in Kataglyphis-BeschleunigerBallett
-(a Vulkan/OpenGL graphics-engine playground: C++23/C17, CMake presets, optional Rust).
+(a Vulkan graphics-engine playground with a Rust WebGPU sibling renderer:
+C++23/C17, CMake presets, optional Rust).
 
 ## AI Agent Workflow (Windows)
 
@@ -15,10 +16,11 @@ Concrete workflow for the `clangcl-debug` configuration:
 1. **Build:**
    ```pwsh
    pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 `
-     -Configurations "clangcl-debug" -SkipTests -SkipPerfTests -SkipMsix
+     -Configurations "clangcl-debug"
    ```
    This produces `build-clangcl-debug/GraphicsEngine.exe` (and other artifacts)
-   inside the reusable container `bb-build-persistent`.
+   inside the reusable container `bb-build-persistent`. Tests are skipped by
+   default; pass `-RunTests` to run them in-container.
 
 2. **Copy the binary to the host:**
    ```pwsh
@@ -308,11 +310,9 @@ when no adapter is present rather than fail. Ideas worth picking up live in
 [`BACKLOG.md`](BACKLOG.md), alongside the sized commitments.
 
 **Formatting and static analysis.** clang-format/clang-tidy/cmake-format
-commands, the host gotchas, and the suggested cadence live in
-[`docs/code-quality.md`](docs/code-quality.md). Note that
-`Build-Windows-Container.ps1` hard-codes `-SkipTidy`, so
-containerized builds never run clang-tidy (clang-format is still
-attempted unless `-SkipFormat` is also passed).
+commands, the host gotchas, the container-build behavior (clang-format always
+runs; clang-tidy never does), and the suggested cadence live in
+[`docs/code-quality.md`](docs/code-quality.md).
 
 **Run more than the debug loop periodically.** `clangcl-debug` is the fast
 default, but `clangcl-profile` (optimized, and the only configuration where

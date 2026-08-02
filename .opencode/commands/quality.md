@@ -4,12 +4,12 @@ agent: executor
 ---
 Run code quality checks and fix any issues found.
 
-**Windows:**
-```
-pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows.ps1 -Configurations clangcl-debug -SkipBuild -SkipTests -SkipPerfTests -SkipMsix
-```
-This runs clang-format (check mode) and clang-tidy. To apply formatting fixes,
-add `-ApplyFormat`.
+**Windows:** quality = clang-format and cmake-format; use the commands and
+scoping in `docs/code-quality.md`. clang-tidy needs the
+`compile_commands.json` path-rewrite dance described there (the database is
+generated in-container with `C:/ws` paths, so a plain host run fails), and
+containerized builds never run it (`Build-Windows-Container.ps1` hard-codes
+`-SkipTidy`).
 
 **Linux:**
 ```

@@ -6,10 +6,10 @@ Build the project with the specified configuration.
 
 **Windows (container build via Stevedore):**
 ```
-pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations $ARGUMENTS -SkipTests
+pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations $ARGUMENTS
 ```
 
-**Linux (via Rancher Desktop container runtime):**
+**Linux:**
 ```
 Scripts/Linux/cmake-configure-build.sh --preset $ARGUMENTS --build-dir build
 ```
