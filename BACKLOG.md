@@ -4860,3 +4860,27 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
   ContainerHub submodule is absent, so importing from upstream inverts it.
   Test: repo Pester 42/42, upstream `Invoke-Tests.ps1` green, and a real
   build on the affected platform. Build preset: linux-debug-clang.
+
+- [ ] **Upstream the Slang compile driver** (M) — `Scripts/Windows/compile-slang-shaders.ps1`
+  (195) and `Scripts/Linux/compile-slang-shaders.sh` (224) are now mostly a
+  generic driver: resolve slangc, expand `-I` include args, read a manifest,
+  compile each (file, entry, target), apply post-emit regex patches, emit and
+  combine WGSL, and staleness-check the outputs. None of that is
+  engine-specific any more — the project data was externalized to
+  `Resources/ShadersSlang/shader-manifest.json` on 2026-08-02, which is
+  exactly what makes this extractable now.
+  Move the driver to ContainerHub (`linux/scripts/lib/slang-compile.sh` +
+  a `WindowsSlang.Common.psm1`), parameterised on manifest path, source root
+  and output roots; the consumers keep only those paths. Any Slang project
+  then gets the whole pipeline, including the four behaviours that had to be
+  fixed by hand here (staleness checking, exit 2 on missing slangc, hard fail
+  on a manifest entry whose source is missing, and a loud warning when a
+  post-emit patch matches nothing).
+  Sequence this AFTER the WGSL platform-divergence task in this file: that
+  investigation may add a validation guard to these same scripts, and it
+  should land first so the guard moves upstream with the driver rather than
+  being ported twice.
+  Test: both scripts must still produce byte-identical output to the current
+  ones (snapshot the 72 artifacts before and after, as the 2026-08-02
+  extraction did); repo Pester 42/42; upstream `Invoke-Tests.ps1` green.
+  Build preset: clangcl-debug (BuildIntegrity pins the shader outputs).
