@@ -14,6 +14,7 @@ module;
 // <cgltf.h>); forward declarations keep them out of this module's interface.
 struct cgltf_primitive;
 struct cgltf_data;
+struct cgltf_node;
 
 export module kataglyphis.vulkan.gltf_loader;
 
@@ -95,6 +96,15 @@ class GltfLoader
       const glm::mat3 &normalMatrix,
       const cgltf_data *data,
       unsigned int fallbackMaterial);
+
+    /// Visits `node` and recurses over its children, processing every
+    /// primitive of every mesh reached this way. Shared with
+    /// `asset/gltf_loader.rs`'s `default_scene().or_else(|| scenes().next())`
+    /// walk - the two must change together. `cgltf_node_transform_world`
+    /// walks the parent chain regardless of where the walk started, so
+    /// recursion only changes which nodes are visited, never the transform a
+    /// visited node gets.
+    void visitNode(const cgltf_node *node, const cgltf_data *data, unsigned int fallbackMaterial);
 
     std::shared_ptr<VulkanDevice> device;
     vk::CommandPool command_pool;

@@ -403,6 +403,30 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
       doubleSided });
 }
 
+void GltfLoader::visitNode(const cgltf_node *node, const cgltf_data *data, unsigned int fallbackMaterial)
+{
+    if (node->mesh != nullptr) {
+        // glTF 2.0 spec (Skins): the transform of a skinned mesh node MUST be
+        // ignored - only joint transforms position a skinned mesh. The engine
+        // has no joint animation, so skinned vertices stay in bind pose.
+        glm::mat4 world(1.0F);
+        if (node->skin == nullptr) {
+            cgltf_float worldRaw[16];
+            cgltf_node_transform_world(node, worldRaw);
+            world = glm::make_mat4(worldRaw);
+        }
+        const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(world));
+
+        for (cgltf_size p = 0; p < node->mesh->primitives_count; ++p) {
+            processPrimitive(&node->mesh->primitives[p], world, normalMatrix, data, fallbackMaterial);
+        }
+    }
+
+    for (cgltf_size c = 0; c < node->children_count; ++c) {
+        visitNode(node->children[c], data, fallbackMaterial);
+    }
+}
+
 bool GltfLoader::parseCpu(const std::string &modelFile)
 {
     // clear prior state if called multiple times on the same instance
@@ -463,27 +487,40 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
     const auto fallbackMaterial = static_cast<unsigned int>(materials.size());
     materials.push_back(neutralMaterial());
 
-    // Walk the node hierarchy so each mesh instance carries its world transform
-    // (glTF has nodes the OBJ path lacks; bake the transform into positions like
-    // the Rust loader does). A mesh referenced by several nodes is emitted once
-    // per node, matching glTF instancing semantics.
-    for (cgltf_size n = 0; n < data->nodes_count; ++n) {
-        const cgltf_node *node = &data->nodes[n];
-        if (node->mesh == nullptr) { continue; }
+    // Walk the default scene only (glTF spec: a document may name one via
+    // `scene`; otherwise the first entry of `scenes` is the convention every
+    // viewer follows), matching asset/gltf_loader.rs's
+    // `default_scene().or_else(|| scenes().next())` - the two walks must
+    // change together. Each mesh instance carries its world transform (glTF
+    // has nodes the OBJ path lacks; bake the transform into positions like
+    // the Rust loader does). A mesh referenced by several nodes is emitted
+    // once per node, matching glTF instancing semantics.
+    const cgltf_scene *scene =
+      data->scene != nullptr ? data->scene : (data->scenes_count > 0 ? &data->scenes[0] : nullptr);
+    if (scene != nullptr) {
+        for (cgltf_size n = 0; n < scene->nodes_count; ++n) { visitNode(scene->nodes[n], data, fallbackMaterial); }
+    } else {
+        // No `scenes` array at all - cgltf_validate permits this. Fall back to
+        // the old flat walk (every node processed once, no recursion into
+        // children - they are already in data->nodes) so such a file still
+        // loads, but warn since this is not the spec's intended path and can
+        // pull in nodes no scene ever referenced.
+        spdlog::warn("GltfLoader: {} has no scenes; loading every node in the document", modelFile);
+        for (cgltf_size n = 0; n < data->nodes_count; ++n) {
+            const cgltf_node *node = &data->nodes[n];
+            if (node->mesh == nullptr) { continue; }
 
-        // glTF 2.0 spec (Skins): the transform of a skinned mesh node MUST be
-        // ignored - only joint transforms position a skinned mesh. The engine
-        // has no joint animation, so skinned vertices stay in bind pose.
-        glm::mat4 world(1.0F);
-        if (node->skin == nullptr) {
-            cgltf_float worldRaw[16];
-            cgltf_node_transform_world(node, worldRaw);
-            world = glm::make_mat4(worldRaw);
-        }
-        const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(world));
+            glm::mat4 world(1.0F);
+            if (node->skin == nullptr) {
+                cgltf_float worldRaw[16];
+                cgltf_node_transform_world(node, worldRaw);
+                world = glm::make_mat4(worldRaw);
+            }
+            const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(world));
 
-        for (cgltf_size p = 0; p < node->mesh->primitives_count; ++p) {
-            processPrimitive(&node->mesh->primitives[p], world, normalMatrix, data, fallbackMaterial);
+            for (cgltf_size p = 0; p < node->mesh->primitives_count; ++p) {
+                processPrimitive(&node->mesh->primitives[p], world, normalMatrix, data, fallbackMaterial);
+            }
         }
     }
 

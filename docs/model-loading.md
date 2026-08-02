@@ -26,6 +26,18 @@ expose the same three-part interface:
 
 `loadModel(path)` is just `parseCpu` + `uploadParsed` for the synchronous path.
 
+### Which nodes a glTF load walks
+
+`GltfLoader::parseCpu` walks a single scene, not every node in the document:
+the document's default scene (`data->scene`) if it names one, else the first
+entry of `data->scenes`. Only nodes reachable from that scene's roots are
+loaded; a node no scene references is skipped. A document with no `scenes`
+array at all (`cgltf_validate` permits this) falls back to every node, with a
+warning, since that is the only geometry available. This mirrors the WebGPU
+Rust loader's `default_scene().or_else(|| scenes().next())` rule
+(`crates/webgpu_renderer/src/asset/gltf_loader.rs`) — the two must be kept in
+sync.
+
 ## The async parse/upload split
 
 The parse dominates load time — a measured 2802 ms of a 2818 ms load on the

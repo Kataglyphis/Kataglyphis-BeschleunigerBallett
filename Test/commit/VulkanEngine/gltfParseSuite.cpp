@@ -786,3 +786,109 @@ TEST(GltfParseUnit, PrimitiveWithoutMaterialRoutesToNeutralFallback)
           << "a material-less primitive must use the neutral fallback (index 0), not an arbitrary material";
     }
 }
+
+TEST(GltfParseUnit, OnlyTheDefaultSceneIsLoaded)
+{
+    // Two scenes, each a single-triangle mesh node at a distinct translation.
+    // "scene": 1 names scene 1 as the default - the Rust loader's rule this
+    // pins. A loader that (incorrectly) still merges every node in the
+    // document would load both triangles (6 vertices); one that picks scene 0
+    // instead of the named default would load the untranslated triangle.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "scene": 1,
+      "scenes": [ { "nodes": [ 0 ] }, { "nodes": [ 1 ] } ],
+      "nodes": [
+        { "mesh": 0, "translation": [0, 0, 0] },
+        { "mesh": 0, "translation": [100, 0, 0] }
+      ],
+      "meshes": [ { "primitives": [ { "attributes": { "POSITION": 0 } } ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_default_scene.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getVertices().size(), 3U) << "only scene 1's single triangle must load";
+    for (const Vertex &v : loader.getVertices()) {
+        EXPECT_GT(v.position.x, 99.0F) << "the loaded triangle must carry scene 1's +100 translation";
+    }
+}
+
+TEST(GltfParseUnit, ANodeNoSceneReferencesIsNotLoaded)
+{
+    // One scene lists node 0; node 1 is an orphan with its own mesh that no
+    // scene references. Only node 0's geometry must arrive.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "scene": 0,
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "nodes": [
+        { "mesh": 0, "translation": [0, 0, 0] },
+        { "mesh": 0, "translation": [100, 0, 0] }
+      ],
+      "meshes": [ { "primitives": [ { "attributes": { "POSITION": 0 } } ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_orphan_node.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getVertices().size(), 3U) << "the orphan node's mesh must not load";
+    for (const Vertex &v : loader.getVertices()) {
+        EXPECT_LT(v.position.x, 2.0F) << "only the scene-referenced node's (untranslated) triangle must load";
+    }
+}
+
+TEST(GltfParseUnit, ChildNodesOfASceneRootAreStillLoaded)
+{
+    // The scene lists only the root (node 0, meshless); its mesh-bearing child
+    // (node 1) must still be reached by the recursion, or the fix would
+    // regress from "every node in the document" to "roots only".
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "scene": 0,
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "nodes": [
+        { "children": [ 1 ] },
+        { "mesh": 0, "translation": [50, 0, 0] }
+      ],
+      "meshes": [ { "primitives": [ { "attributes": { "POSITION": 0 } } ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_scene_root_child.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string())) << "a scene root's mesh-bearing child must still be loaded";
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getVertices().size(), 3U);
+    for (const Vertex &v : loader.getVertices()) {
+        EXPECT_GT(v.position.x, 49.0F) << "the child node's own translation must apply";
+    }
+}
