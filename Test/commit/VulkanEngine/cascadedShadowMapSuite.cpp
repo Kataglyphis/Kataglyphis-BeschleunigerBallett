@@ -12,7 +12,9 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <array>
 #include <cmath>
+#include <span>
 #include <vector>
 
 import kataglyphis.vulkan.cascaded_shadow_map;
@@ -22,6 +24,7 @@ namespace {
 using Kataglyphis::CascadeData;
 using Kataglyphis::clampCascadeCount;
 using Kataglyphis::computeCascadeData;
+using Kataglyphis::computeCascadeDataInto;
 using Kataglyphis::makeShadowPush;
 
 constexpr uint32_t kCascades = 3;
@@ -454,4 +457,93 @@ TEST(CascadedShadowMapUnit, StabilizedCascadesStillCoverTheirSlice)
         }
         slice_near = slice_far;
     }
+}
+
+// computeCascadeDataInto is what the per-frame path (CascadedShadowMap::
+// updateCascades) calls, so that path allocates nothing; computeCascadeData is
+// now a wrapper over it that only exists for callers happy to allocate (this
+// suite, Test/perf/perfSuite.cpp). The refactor is only value-neutral if the
+// two agree BIT for bit - not "close enough" - so compare exactly. A drift here
+// means the frame path and every test above it are measuring different maths.
+TEST(CascadedShadowMapUnit, ComputeCascadeDataIntoAgreesWithTheAllocatingOverload)
+{
+    constexpr uint32_t kResolution = 2048;
+    // Both branches of the function: the legacy tight-fit path (resolution 0)
+    // and the stabilized texel-snapped one.
+    for (const uint32_t resolution : { 0U, kResolution }) {
+        const std::vector<CascadeData> allocating = computeCascadeData(
+          kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F, resolution);
+        ASSERT_EQ(allocating.size(), kCascades);
+
+        std::array<CascadeData, kCascades> in_place{};
+        computeCascadeDataInto(in_place,
+          kCascades,
+          default_view(),
+          kFov,
+          kAspect,
+          kNear,
+          kFar,
+          default_light(),
+          0.0F,
+          0.5F,
+          resolution);
+
+        for (size_t i = 0; i < kCascades; ++i) {
+            EXPECT_EQ(in_place[i].splitDepth, allocating[i].splitDepth)
+              << "resolution " << resolution << ", cascade " << i << ": split depth must be bit-identical";
+            for (int col = 0; col < 4; ++col) {
+                for (int row = 0; row < 4; ++row) {
+                    EXPECT_EQ(in_place[i].viewProjMatrix[col][row], allocating[i].viewProjMatrix[col][row])
+                      << "resolution " << resolution << ", cascade " << i << ", element [" << col << "][" << row
+                      << "] must be bit-identical";
+                }
+            }
+        }
+    }
+}
+
+TEST(CascadedShadowMapUnit, ComputeCascadeDataIntoRefusesAnUndersizedBuffer)
+{
+    // Silently clamping to out.size() would hand the caller a well-formed but
+    // PARTLY STALE cascade set - exactly the failure the mapped-UBO comment in
+    // updateCascades records (matrices left over from init, so the shadow map
+    // is rendered from a viewpoint the lighting pass does not sample with).
+    // Refusing outright means the caller sees unchanged sentinel data.
+    constexpr float kSentinelSplit = -12345.0F;
+    std::array<CascadeData, kCascades - 1> too_small{};
+    for (CascadeData &cascade : too_small) {
+        cascade.splitDepth = kSentinelSplit;
+        cascade.viewProjMatrix = glm::mat4(7.0F);
+    }
+
+    computeCascadeDataInto(too_small,
+      kCascades,
+      default_view(),
+      kFov,
+      kAspect,
+      kNear,
+      kFar,
+      default_light());
+
+    for (const CascadeData &cascade : too_small) {
+        EXPECT_EQ(cascade.splitDepth, kSentinelSplit) << "an undersized buffer must be left completely untouched";
+        EXPECT_EQ(cascade.viewProjMatrix, glm::mat4(7.0F)) << "an undersized buffer must be left completely untouched";
+    }
+
+    // An exactly-sized buffer is of course written, and a LARGER one only has
+    // its first numCascades entries touched.
+    std::array<CascadeData, kCascades + 1> oversized{};
+    oversized[kCascades].splitDepth = kSentinelSplit;
+    computeCascadeDataInto(oversized,
+      kCascades,
+      default_view(),
+      kFov,
+      kAspect,
+      kNear,
+      kFar,
+      default_light());
+    for (size_t i = 0; i < kCascades; ++i) {
+        EXPECT_GT(oversized[i].splitDepth, 0.0F) << "cascade " << i << " must have been written";
+    }
+    EXPECT_EQ(oversized[kCascades].splitDepth, kSentinelSplit) << "entries past numCascades must not be written";
 }

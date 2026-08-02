@@ -61,6 +61,26 @@ std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
   float splitLambda = 0.5F,
   uint32_t shadowMapResolution = 0);
 
+// The same maths, written into storage the CALLER owns, so the per-frame
+// shadow update path allocates nothing at all. computeCascadeData above is a
+// thin wrapper over this - the two are required to agree bit for bit.
+//
+// Writes exactly the first `numCascades` entries of `out`. If `out` is too
+// short it writes NOTHING and returns: silently clamping would hand the
+// caller a partly-stale cascade set that still looks well-formed, which is
+// exactly the class of bug the mapped-UBO comment in updateCascades records.
+void computeCascadeDataInto(std::span<CascadeData> out,
+  uint32_t numCascades,
+  const glm::mat4 &cameraView,
+  float cameraFov,
+  float aspect,
+  float nearPlane,
+  float farPlane,
+  const glm::vec3 &lightDir,
+  float shadowDistance = 0.0F,
+  float splitLambda = 0.5F,
+  uint32_t shadowMapResolution = 0);
+
 // The caster transform. This exists as a named function purely so a test can
 // pin the invariant that was once broken: the shadow pass must transform
 // casters by the SAME model matrix as the forward pass, not by identity.

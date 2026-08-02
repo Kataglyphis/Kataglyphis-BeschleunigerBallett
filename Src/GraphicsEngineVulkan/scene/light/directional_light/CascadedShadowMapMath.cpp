@@ -3,6 +3,7 @@ module;
 #include <array>
 #include <cmath>
 #include <limits>
+#include <span>
 #include <vector>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -77,8 +78,40 @@ std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
   float splitLambda,
   uint32_t shadowMapResolution)
 {
+    // Allocating convenience wrapper. It exists so callers that are NOT on the
+    // frame path (tests, the benchmark) keep a value-returning signature; the
+    // maths lives once, in computeCascadeDataInto.
     std::vector<CascadeData> cascadeData(numCascades);
-    if (numCascades == 0U) { return cascadeData; }
+    computeCascadeDataInto(cascadeData,
+      numCascades,
+      cameraView,
+      cameraFov,
+      aspect,
+      nearPlane,
+      farPlane,
+      lightDir,
+      shadowDistance,
+      splitLambda,
+      shadowMapResolution);
+    return cascadeData;
+}
+
+void computeCascadeDataInto(std::span<CascadeData> out,
+  uint32_t numCascades,
+  const glm::mat4 &cameraView,
+  float cameraFov,
+  float aspect,
+  float nearPlane,
+  float farPlane,
+  const glm::vec3 &lightDir,
+  float shadowDistance,
+  float splitLambda,
+  uint32_t shadowMapResolution)
+{
+    if (numCascades == 0U) { return; }
+    // Refuse rather than clamp: a caller that under-sized its buffer would
+    // otherwise get a silently truncated cascade set.
+    if (out.size() < numCascades) { return; }
 
     // Shadows are fitted to shadowDistance, NOT to the camera far plane. The
     // two are unrelated: the debug scene ends at ~36 units of view depth while
@@ -93,10 +126,15 @@ std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
     const float shadowNear = std::min(nearPlane, shadowFar * 0.5F);
     const float lambda = std::clamp(splitLambda, 0.0F, 1.0F);
 
-    std::vector<float> cascadeSplits(numCascades + 1);
-    cascadeSplits[0] = shadowNear;
-
-    for (uint32_t i = 1; i < numCascades + 1; i++) {
+    // Split i as a pure function of i rather than a heap vector of them: this
+    // runs every frame, each split is used by exactly one cascade iteration
+    // (as [i] and [i+1]), and the two endpoints are exact by definition.
+    const auto cascadeSplit = [&](uint32_t i) -> float {
+        if (i == 0U) { return shadowNear; }
+        // The last split must land exactly on shadowFar; the blend below is
+        // only accurate to float rounding, and a short final cascade leaves a
+        // band of geometry that samples nothing and renders unshadowed.
+        if (i >= numCascades) { return shadowFar; }
         // Practical split scheme (Zhang et al.): blend a logarithmic
         // distribution, which matches how perspective projection compresses
         // depth, with a uniform one, which keeps the near cascades from
@@ -119,15 +157,13 @@ std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
         const float p = static_cast<float>(i) / static_cast<float>(numCascades);
         const float logSplit = shadowNear * std::pow(shadowFar / shadowNear, p);
         const float uniformSplit = shadowNear + ((shadowFar - shadowNear) * p);
-        cascadeSplits[i] = (lambda * logSplit) + ((1.0F - lambda) * uniformSplit);
-    }
-    // The last split must land exactly on shadowFar; the blend above is only
-    // accurate to float rounding, and a short final cascade leaves a band of
-    // geometry that samples nothing and renders unshadowed.
-    cascadeSplits[numCascades] = shadowFar;
+        return (lambda * logSplit) + ((1.0F - lambda) * uniformSplit);
+    };
 
     for (uint32_t i = 0; i < numCascades; i++) {
-        glm::mat4 const curr_cascade_proj = glm::perspective(glm::radians(cameraFov), aspect, cascadeSplits[i], cascadeSplits[i + 1]);
+        const float splitNear = cascadeSplit(i);
+        const float splitFar = cascadeSplit(i + 1);
+        glm::mat4 const curr_cascade_proj = glm::perspective(glm::radians(cameraFov), aspect, splitNear, splitFar);
 
         std::array<glm::vec4, 8> frustumCornerWorldSpace = frustumCornersWorldSpace(curr_cascade_proj, cameraView);
 
@@ -198,8 +234,8 @@ std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
               snap_near,
               snap_far);
 
-            cascadeData[i].viewProjMatrix = snap_projection * light_basis;
-            cascadeData[i].splitDepth = cascadeSplits[i + 1];
+            out[i].viewProjMatrix = snap_projection * light_basis;
+            out[i].splitDepth = splitFar;
             continue;
         }
 
@@ -237,13 +273,11 @@ std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
         glm::mat4 const light_projection =
           glm::ortho(minX, maxX, minY, maxY, near_distance, far_distance);
 
-        cascadeData[i].viewProjMatrix = light_projection * light_view_matrix;
+        out[i].viewProjMatrix = light_projection * light_view_matrix;
         // The split depth is the far plane of this cascade frustum, but measured in view space depth
         // A simple way is to pass the positive distance
-        cascadeData[i].splitDepth = cascadeSplits[i + 1];
+        out[i].splitDepth = splitFar;
     }
-
-    return cascadeData;
 }
 
 }// namespace Kataglyphis

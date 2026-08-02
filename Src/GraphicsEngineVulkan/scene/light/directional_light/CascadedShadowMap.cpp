@@ -2,6 +2,7 @@ module;
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include <vector>
 #include <memory>
@@ -86,7 +87,21 @@ void CascadedShadowMap::updateCascades(const glm::mat4 &cameraView,
   float shadowDistance,
   float splitLambda)
 {
-    cascadeData = computeCascadeData(numCascades,
+    // This runs once per frame, so it must not allocate. cascadeData is sized
+    // exactly once, by init() (cascadeData.resize(numCascades)), and the only
+    // way numCascades can change is another init() via
+    // VulkanRenderer::handleShadowResolutionChange - so the frame path only
+    // ever WRITES into storage that is already the right size. Assert that
+    // instead of resizing here; a resize on the frame path would mean the
+    // invariant broke somewhere upstream.
+    if (cascadeData.size() != numCascades) {
+        spdlog::error("CascadedShadowMap::updateCascades: cascadeData ({}) not sized for numCascades ({}); init() must size it",
+          cascadeData.size(),
+          numCascades);
+        return;
+    }
+    computeCascadeDataInto(cascadeData,
+      numCascades,
       cameraView,
       cameraFov,
       aspect,
@@ -102,10 +117,16 @@ void CascadedShadowMap::updateCascades(const glm::mat4 &cameraView,
     // cascadeData when createGraphicsPipeline() ran at init - i.e. default
     // constructed matrices - so the shadow map was rendered from a garbage
     // viewpoint while the lighting shader sampled it with the correct ones.
+    //
+    // Written cascade by cascade, straight into the mapped buffer: the staging
+    // std::vector<glm::mat4> this replaced was a heap allocation per frame for
+    // a copy that is thrown away one line later. The buffer holds exactly
+    // numCascades matrices (createDescriptorSetAndPipeline uploads that many).
     if (void *mapped = lightMatricesBuffer.getMappedData(); mapped != nullptr) {
-        std::vector<glm::mat4> lightMatrices(cascadeData.size());
-        for (size_t i = 0; i < cascadeData.size(); i++) { lightMatrices[i] = cascadeData[i].viewProjMatrix; }
-        std::memcpy(mapped, lightMatrices.data(), lightMatrices.size() * sizeof(glm::mat4));
+        auto *const matrices = static_cast<std::byte *>(mapped);
+        for (size_t i = 0; i < cascadeData.size(); i++) {
+            std::memcpy(matrices + (i * sizeof(glm::mat4)), &cascadeData[i].viewProjMatrix, sizeof(glm::mat4));
+        }
     }
 }
 
