@@ -15,7 +15,7 @@ class Window
     Window();
     Window(uint32_t window_width, uint32_t window_height);
 
-    int initialize();
+    [[nodiscard]] int initialize(uint32_t window_width, uint32_t window_height);
     void cleanUp();
 
     bool get_should_close() { return glfwWindowShouldClose(main_window); }
@@ -26,14 +26,15 @@ class Window
     std::span<const bool> get_keys() { return input_state.keys; }
     bool framebuffer_size_has_changed() const;
     void reset_framebuffer_has_changed();
+    [[nodiscard]] bool is_valid() const { return initialized && main_window != nullptr; }
 
     ~Window();
 
   private:
     GLFWwindow *main_window{};
-    uint32_t window_width, window_height;
     Kataglyphis::Frontend::WindowInputState input_state;
     bool framebuffer_resized;
+    bool initialized{ false };
 
     void init_callbacks();
     static void framebuffer_size_callback(GLFWwindow *window, int width, int height);

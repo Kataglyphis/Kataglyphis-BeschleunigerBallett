@@ -22,30 +22,22 @@ static void onErrorCallback(int error, const char *description)
     std::cerr << "GLFW Error " << error << ": " << description << '\n';
 }
 
-Window::Window()
-  :
-
-    window_width(800.F), window_height(600.F), framebuffer_resized(false)
-
+Window::Window() : framebuffer_resized(false)
 {
     Kataglyphis::Frontend::reset_window_keys(input_state.keys.data());
 
-    initialize();
+    if (initialize(800, 600) != 0) { spdlog::critical("Window initialization failed!"); }
 }
 
 // please use this constructor; never the standard
-Window::Window(uint32_t window_width, uint32_t window_height)
-  :
-
-    window_width(window_width), window_height(window_height), framebuffer_resized(false)
-
+Window::Window(uint32_t window_width, uint32_t window_height) : framebuffer_resized(false)
 {
     Kataglyphis::Frontend::reset_window_keys(input_state.keys.data());
 
-    initialize();
+    if (initialize(window_width, window_height) != 0) { spdlog::critical("Window initialization failed!"); }
 }
 
-auto Window::initialize() -> int
+auto Window::initialize(uint32_t window_width, uint32_t window_height) -> int
 {
     glfwSetErrorCallback(onErrorCallback);
     if (glfwInit() == 0) {
@@ -75,6 +67,7 @@ auto Window::initialize() -> int
 
     init_callbacks();
 
+    initialized = true;
     return 0;
 }
 
@@ -106,10 +99,12 @@ void Window::init_callbacks()
 
 void Window::framebuffer_size_callback(GLFWwindow *window, int width, int height)
 {
+    // size itself is queried on demand via glfwGetFramebufferSize
+    // (VulkanRenderer.cpp:646, VulkanSwapChain.cpp:52); this callback only flags the change.
+    (void)width;
+    (void)height;
     auto *app = reinterpret_cast<Window *>(glfwGetWindowUserPointer(window));
     app->framebuffer_resized = true;
-    app->window_width = static_cast<uint32_t>(width);
-    app->window_height = static_cast<uint32_t>(height);
 }
 
 void Window::window_focus_callback(GLFWwindow *window, int focused)

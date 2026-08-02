@@ -34,6 +34,12 @@ auto Kataglyphis::App::run() -> int
 
     std::unique_ptr<Kataglyphis::Frontend::Window> const window =
       std::make_unique<Kataglyphis::Frontend::Window>(window_width, window_height);
+
+    if (!window->is_valid()) {
+        spdlog::critical("Window creation failed, aborting startup!");
+        return EXIT_FAILURE;
+    }
+
     std::unique_ptr<Scene> const scene = std::make_unique<Scene>();
     std::unique_ptr<Kataglyphis::Frontend::GUI> const gui = std::make_unique<Kataglyphis::Frontend::GUI>(window.get());
     std::unique_ptr<Camera> const camera = std::make_unique<Camera>();
