@@ -367,5 +367,50 @@ TEST(ObjParseUnit, MtlTextureUnderATexturesSubdirectoryIsResolved)
     std::filesystem::remove_all(dir);
 }
 
+TEST(ObjParseUnit, BackslashMapKdResolvesLikeAForwardSlash)
+{
+    // docs/model-loading.md: a Windows-authored map_Kd value must resolve
+    // the same as its forward-slash equivalent. viking_room.mtl's map_Kd is
+    // a bare filename with the texture one level down in textures/, so
+    // spelling the map_Kd as "textures\viking_room.png" exercises both the
+    // normalisation and the beside-the-.mtl candidate in one shot.
+    const std::string obj = sceneConfig::resolveModelPath("Models/VikingRoom/viking_room.obj");
+    if (!std::filesystem::exists(obj)) { GTEST_SKIP() << "VikingRoom asset not present"; }
+    const std::string dir = std::filesystem::path(obj).parent_path().string();
+
+    const std::string backslash_result = Kataglyphis::resolveObjTexturePath(dir, "textures\\viking_room.png");
+    const std::string forward_slash_result = Kataglyphis::resolveObjTexturePath(dir, "textures/viking_room.png");
+
+    EXPECT_EQ(backslash_result, forward_slash_result);
+    EXPECT_TRUE(std::filesystem::exists(backslash_result))
+      << "the resolved path must name a file that actually exists: " << backslash_result;
+}
+
+TEST(ObjParseUnit, BareFilenameFallsBackToTheTexturesSubdirectory)
+{
+    // viking_room.mtl's actual map_Kd value: a bare filename, with the
+    // texture living one level down in textures/ - the second candidate.
+    const std::string obj = sceneConfig::resolveModelPath("Models/VikingRoom/viking_room.obj");
+    if (!std::filesystem::exists(obj)) { GTEST_SKIP() << "VikingRoom asset not present"; }
+    const std::string dir = std::filesystem::path(obj).parent_path().string();
+
+    const std::string resolved = Kataglyphis::resolveObjTexturePath(dir, "viking_room.png");
+
+    EXPECT_TRUE(std::filesystem::exists(resolved))
+      << "a bare filename must fall back to the textures/ subdirectory: " << resolved;
+}
+
+TEST(ObjParseUnit, EmptyBaseDirStaysRelative)
+{
+    // An OBJ referenced by a bare filename (no directory component) yields
+    // an empty base dir from getBaseDir(); that must not turn into a
+    // filesystem-root path ("/viking_room.png").
+    const std::string resolved = Kataglyphis::resolveObjTexturePath("", "viking_room.png");
+
+    EXPECT_FALSE(resolved.starts_with('/')) << "an empty base dir must not resolve against the filesystem root: "
+                                             << resolved;
+    EXPECT_FALSE(std::filesystem::path(resolved).is_absolute());
+}
+
 // The async wrapper (AsyncModelParse) has its own dedicated coverage in
 // asyncModelParseSuite.cpp, suite AsyncModelParseUnit.

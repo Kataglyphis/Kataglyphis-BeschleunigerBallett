@@ -16,6 +16,17 @@ import kataglyphis.vulkan.device;
 export import kataglyphis.vulkan.mesh_range;
 
 export namespace Kataglyphis {
+
+/// docs/model-loading.md's map_Kd resolution rule: normalise `\` to `/` (a
+/// Windows-authored .mtl must still resolve when the path is otherwise
+/// portable), then try `<baseDir>/<mapKd>` beside the .mtl, then
+/// `<baseDir>/textures/<mapKd>`; on neither existing, return the beside-the-
+/// .mtl candidate and let the caller warn. Free (not a method) so parseCpu's
+/// tests can call it without constructing a device-owning loader. An empty
+/// baseDir is treated as "." so the candidates stay relative instead of
+/// becoming filesystem-root paths.
+std::string resolveObjTexturePath(const std::string &baseDir, const std::string &mapKd);
+
 class ObjLoader
 {
   public:

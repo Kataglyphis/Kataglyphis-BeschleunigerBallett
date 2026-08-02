@@ -157,6 +157,44 @@ auto ObjLoader::uploadParsed() -> std::shared_ptr<Model>
     return new_model;
 }
 
+std::string Kataglyphis::resolveObjTexturePath(const std::string &baseDir, const std::string &mapKd)
+{
+    // docs/model-loading.md: normalise `\` to `/` first - a Windows-authored
+    // .mtl (`textures\wood.png`) must still resolve on platforms where `\`
+    // is just another filename character, matching the Rust side's
+    // parse_mtl (obj_to_gltf.rs).
+    std::string normalized_map_kd = mapKd;
+    std::replace(normalized_map_kd.begin(), normalized_map_kd.end(), '\\', '/');
+
+    // An empty baseDir (a bare filename with no directory component) stays
+    // relative rather than growing a leading "/" that resolves against the
+    // filesystem root.
+    const std::string base = baseDir.empty() ? "." : baseDir;
+
+    const std::string beside_mtl = base + "/" + normalized_map_kd;
+    const std::string under_textures = base + "/textures/" + normalized_map_kd;
+
+    std::error_code beside_mtl_ec;
+    if (std::filesystem::exists(beside_mtl, beside_mtl_ec) && !beside_mtl_ec) { return beside_mtl; }
+
+    std::error_code under_textures_ec;
+    if (std::filesystem::exists(under_textures, under_textures_ec) && !under_textures_ec) {
+        return under_textures;
+    }
+
+    // Neither candidate exists. Keep today's behaviour - record a path and
+    // let uploadParsed substitute the default texture - but warn loudly: a
+    // wrong path degrading silently to white is the failure mode this whole
+    // resolution rule is about.
+    spdlog::warn(
+      "map_Kd '{}' not found beside the .mtl ('{}') or under textures/ ('{}'); the model will "
+      "render with the default texture",
+      mapKd,
+      beside_mtl,
+      under_textures);
+    return beside_mtl;
+}
+
 void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const std::string &modelFile)
 {
     const auto &tol_materials = reader.GetMaterials();
@@ -179,39 +217,10 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
         material.illum = mp->illum;
 
         if (!mp->diffuse_texname.empty()) {
-            std::string const relative_texture_filename = mp->diffuse_texname;
             File model_file(modelFile);
             std::string const base_dir = model_file.getBaseDir();
 
-            // docs/model-loading.md: resolve relative to the directory
-            // containing the .mtl first - what the OBJ/MTL format actually
-            // specifies - and retry under a textures/ subdirectory of that
-            // same directory, because every shipped asset in this repo puts
-            // its textures there instead of beside the .mtl.
-            std::string const beside_mtl = base_dir + "/" + relative_texture_filename;
-            std::string const under_textures = base_dir + "/textures/" + relative_texture_filename;
-            std::string texture_filename;
-            std::error_code beside_mtl_ec;
-            std::error_code under_textures_ec;
-            if (std::filesystem::exists(beside_mtl, beside_mtl_ec) && !beside_mtl_ec) {
-                texture_filename = beside_mtl;
-            } else if (std::filesystem::exists(under_textures, under_textures_ec) && !under_textures_ec) {
-                texture_filename = under_textures;
-            } else {
-                // Neither candidate exists. Keep today's behaviour - record a
-                // path and let uploadParsed substitute the default texture -
-                // but warn loudly: a wrong path degrading silently to white
-                // is the failure mode this whole resolution rule is about.
-                texture_filename = beside_mtl;
-                spdlog::warn(
-                  "map_Kd '{}' not found beside the .mtl ('{}') or under textures/ ('{}'); the model will "
-                  "render with the default texture",
-                  relative_texture_filename,
-                  beside_mtl,
-                  under_textures);
-            }
-
-            textures.push_back(texture_filename);
+            textures.push_back(resolveObjTexturePath(base_dir, mp->diffuse_texname));
             material.textureID = texture_id;
             texture_id++;
 
