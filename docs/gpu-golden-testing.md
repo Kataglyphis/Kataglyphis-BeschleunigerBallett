@@ -36,6 +36,23 @@ bug. Run from the repo root, where `Resources/` resolves.
 The executable carries AddressSanitizer/UBSan (the debug config's flags); it
 runs fine on the host.
 
+## Rust WebGPU suite: requiring a GPU explicitly
+
+The Rust renderer (`ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer`)
+has the same problem in miniature: its GPU tests guard on
+`GpuContext::headless_or_skip()` and print `SKIP: no GPU adapter available in
+this environment` and return early when no adapter is usable, so a skipped
+test and a passing test are the same `ok` line in `cargo test` output. Set
+`KATAGLYPHIS_REQUIRE_GPU=1` when running this host verification loop so a
+missing/unusable adapter panics instead of silently skipping:
+
+```
+$env:KATAGLYPHIS_REQUIRE_GPU=1
+cargo test -p kataglyphis_webgpu_renderer
+```
+
+A clean run has zero `SKIP: no GPU` lines in the output.
+
 ## The verification loop for render/device changes
 
 This is the canonical per-unit verification pattern; `AGENTS.md` and

@@ -5009,48 +5009,6 @@ destructor re-walks already-released objects — safe only because every leaf
 `getSurface*KHR` calls with no result check, which is the tail of batch III's
 unchecked-results finding.
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
-
-- [ ] **(S) Make an absent GPU adapter fail loudly when the caller says one is expected** — a skipped GPU test and a passing GPU test are the same line in a CI log, which is why a roughness-independent prefilter shipped past an oracle written to catch it.
-
-  **Files to read:**
-  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/context.rs`
-    — `GpuContext::new_headless`
-  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/tests/ibl.rs:61-65`
-    — the `let Ok(gpu) = ... else { eprintln!("SKIP: ..."); return; }` shape,
-    repeated in `headless.rs`, `occlusion.rs`, `gpu_timing.rs`, `histogram.rs`,
-    `lod_pipeline.rs`, `skinned_bounds.rs` (grep `SKIP: no GPU` for the full
-    list and the exact count)
-  - `docs/gpu-golden-testing.md` — the host verification loop this plugs into
-
-  **Steps:**
-  1. Add `#[doc(hidden)] pub fn headless_or_skip() -> Option<GpuContext>` next
-     to `GpuContext::new_headless` in `context.rs`: returns `Some` on success;
-     on failure, `panic!` with the adapter error when
-     `std::env::var("KATAGLYPHIS_REQUIRE_GPU")` is set to anything non-empty,
-     otherwise `eprintln!` the existing SKIP line and return `None`. Keep
-     `new_headless` itself free of any env-var reading — the policy belongs in
-     the test-facing wrapper, not in the renderer.
-  2. Replace every `let Ok(gpu) = GpuContext::new_headless() else { ... }` in
-     `tests/` with `let Some(gpu) = ...::headless_or_skip() else { return; }`.
-     Do not miss any — grep `new_headless` afterwards and confirm the only
-     remaining hits are `context.rs` itself and any non-test caller.
-  3. Add a short subsection to `docs/gpu-golden-testing.md` stating that the
-     host verification run sets `KATAGLYPHIS_REQUIRE_GPU=1` for the Rust suite,
-     and why (a skip reads as a pass).
-
-  **Test:** Two runs, both recorded in the commit message. On the host GPU:
-  `$env:KATAGLYPHIS_REQUIRE_GPU=1; cargo test -p kataglyphis_webgpu_renderer`
-  — must pass with **no** `SKIP: no GPU` lines in the output. Then confirm the
-  guard actually bites, e.g. by pointing `WGPU_ADAPTER_NAME` at a nonexistent
-  adapter with the variable set and observing a panic rather than a green run.
-
-  **Build:** Rust side only. No C++ rebuild.
-
-  **Context:** Deliberately opt-in: the Linux CI lane has no GPU and must keep
-  skipping. This gives the host loop the one thing it lacks — a way to tell a
-  run that exercised the GPU from a run that did not. Ship with the gitlink bump.
-
 ### C++ Vulkan engine
 
 - [ ] **(M) Stop `FrameCapture` assuming every swapchain format is 4 bytes per texel** — the staging buffer is sized `width * height * 4` unconditionally, so a surface that hands back a 16-bit-per-channel format makes `copyImageToBuffer` write twice the buffer's size.
