@@ -47,15 +47,6 @@ class VulkanBufferManager
       vk::MemoryAllocateFlags dstBufferMemoryAllocateFlags = {},
       vk::Queue transfer_queue = {});
 
-    template<typename T>
-    void createBufferAndUploadVectorOnDevice(std::shared_ptr<VulkanDevice>device,
-      vk::CommandPool commandPool,
-      VulkanBuffer &vulkanBuffer,
-      vk::BufferUsageFlags dstBufferUsageFlags,
-      vk::MemoryPropertyFlags dstBufferMemoryPropertyFlags,
-      std::vector<T> &data,
-      vk::MemoryAllocateFlags dstBufferMemoryAllocateFlags = {});
-
     // Releases the reusable staging buffer. Must run (or the manager be
     // destroyed) while the device's VMA allocator is still alive, i.e.
     // before VulkanDevice::cleanUp(). Safe to call multiple times; the
@@ -106,24 +97,5 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(std::shared
 
     // stagingBuffer is intentionally kept alive for reuse by the next upload;
     // it is released in cleanUp().
-}
-
-template<typename T>
-inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(std::shared_ptr<VulkanDevice>device,
-  vk::CommandPool commandPool,
-  VulkanBuffer &vulkanBuffer,
-  vk::BufferUsageFlags dstBufferUsageFlags,
-  vk::MemoryPropertyFlags dstBufferMemoryPropertyFlags,
-  std::vector<T> &data,
-  vk::MemoryAllocateFlags dstBufferMemoryAllocateFlags)
-{
-    createBufferAndUploadVectorOnDevice(device,
-      commandPool,
-      vulkanBuffer,
-      dstBufferUsageFlags,
-      dstBufferMemoryPropertyFlags,
-      static_cast<const std::vector<T> &>(data),
-      dstBufferMemoryAllocateFlags,
-      vk::Queue{});
 }
 }// namespace Kataglyphis

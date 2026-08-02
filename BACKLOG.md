@@ -4844,26 +4844,6 @@ above it makes the result harmless.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Delete the redundant non-const `createBufferAndUploadVectorOnDevice` overload** — its whole body is a `static_cast` to the const overload's parameter type.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanBufferManager.ixx:40-57` — the two declarations
-  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanBufferManager.ixx:78-128` — the two definitions; `:111-128` is the forwarder to delete
-  - The five call sites: `Src/GraphicsEngineVulkan/scene/Mesh.ixx:130`, `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:320`, `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1315`, `:1323`, `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp:273`
-
-  **Steps:**
-  1. Delete the non-const-`std::vector<T>&` declaration (`:50-57`) and its definition (`:111-128`).
-  2. Build. Any call site that passed a non-const lvalue now binds the const-ref overload; none of the five passes a `transfer_queue`, so the defaulted trailing parameters cover them. Fix nothing else — if a call site fails to compile, that is new information worth recording, not something to paper over with a cast at the call site.
-  3. Check whether the const overload's `transfer_queue` parameter has any caller passing a non-default value; if it does not, say so in the commit message but leave it (it is the documented escape hatch for a dedicated transfer queue) rather than deleting it in the same change.
-
-  **Test:** No new test — this is a compile-verified deletion with no behavioural surface. Confirm the existing `AllocatorOwnership` and `MemoryHelper` suites still pass.
-
-  **Build:** `clangcl-debug`, and because this edits a module interface (`.ixx`), pass `-FreshContainer`:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
-  then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root.
-
-  **Context:** Same "dead generality" class as batch VIII II's descriptor-pool override and batch XI's dead parameters. The `-FreshContainer` requirement for module-interface changes is not optional — see the fresh-container rule in `docs/gpu-golden-testing.md`.
-
 - [ ] **(S) (refactor) Collapse `getModelMatrix`'s identical `#if NDEBUG` branches and correct `Camera.cpp`'s stale cascade-split comment** — batch X deferred the first explicitly, asking for it to ride along with the next `SceneConfig` change; this is it.
 
   **Files to read:**
