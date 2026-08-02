@@ -251,9 +251,14 @@ function Invoke-TarPipeBuild {
     # Anchor the build-tree excludes to the repo root (./...): unanchored
     # patterns match at every path depth in bsdtar and would strip nested
     # files like ExternalLib/Kataglyphis-ContainerHub/windows/build.ps1.
+    # The host-side cargo target tree is excluded too: the container builds
+    # its own Rust artifacts under the build dirs, and a stale incremental
+    # cache streamed in once wedged every later transfer ("Can't unlink
+    # already-existing object: Permission denied", observed 2026-08-02).
     $sourcesIn = Copy-IntoBuildContainer -DockerExe $docker -Container $container `
       -SourceRoot $repoRoot -TargetPath $ws `
-      -Exclude @('.git', './logs', './build', './build-*', './build_*')
+      -Exclude @('.git', './logs', './build', './build-*', './build_*',
+                 './ExternalLib/Kataglyphis-RustProjectTemplate/target')
     if (-not $sourcesIn) { throw 'Source transfer failed.' }
 
     # Incremental builds: the host already holds the previous build tree (it is
