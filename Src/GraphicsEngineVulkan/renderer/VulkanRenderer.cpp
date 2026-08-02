@@ -1411,10 +1411,7 @@ void Kataglyphis::VulkanRenderer::createSharedRenderDescriptorResources()
       .addBinding(
         SAMPLER_BINDING, vk::DescriptorType::eSampler, static_cast<uint32_t>(MAX_TEXTURE_COUNT), sampler_stages)
       // Cascaded shadow map array, consumed by the forward lighting shader.
-      .addBinding(SHADOW_MAP_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment)
-      // Historical pool sizing kept as-is (generously overallocated).
-      .setPoolSize(
-        vk::DescriptorType::eStorageBuffer, static_cast<uint32_t>(sizeof(ObjectDescription) * Kataglyphis::MAX_OBJECTS));
+      .addBinding(SHADOW_MAP_BINDING, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment);
 
     if (!sharedRenderDescriptors.create(device, vulkanSwapChain.getNumberSwapChainImages())) {
         spdlog::error("Failed to create shared render descriptor resources!");

@@ -1,7 +1,6 @@
 module;
 #include <cstdint>
 
-#include <algorithm>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -20,13 +19,12 @@ import kataglyphis.vulkan.device;
 // garbage internal state. ASAN caught this as a heap-buffer-overflow in
 // the move constructor (which reads the corrupted vector pointers).
 Kataglyphis::DescriptorSetGroup::DescriptorSetGroup()
-  : device(nullptr), bindings(), pool_size_overrides(), layout(nullptr), pool(nullptr), descriptor_sets()
+  : device(nullptr), bindings(), layout(nullptr), pool(nullptr), descriptor_sets()
 {
 }
 
 Kataglyphis::DescriptorSetGroup::DescriptorSetGroup(DescriptorSetGroup &&other) noexcept
-  : device(std::move(other.device)), bindings(std::move(other.bindings)),
-    pool_size_overrides(std::move(other.pool_size_overrides)), layout(other.layout), pool(other.pool),
+  : device(std::move(other.device)), bindings(std::move(other.bindings)), layout(other.layout), pool(other.pool),
     descriptor_sets(std::move(other.descriptor_sets))
 {
     // std::move on vectors leaves them in a valid but unspecified state
@@ -44,7 +42,6 @@ auto Kataglyphis::DescriptorSetGroup::operator=(DescriptorSetGroup &&other) noex
 
         device = std::move(other.device);
         bindings = std::move(other.bindings);
-        pool_size_overrides = std::move(other.pool_size_overrides);
         layout = other.layout;
         pool = other.pool;
         descriptor_sets = std::move(other.descriptor_sets);
@@ -52,7 +49,6 @@ auto Kataglyphis::DescriptorSetGroup::operator=(DescriptorSetGroup &&other) noex
         other.layout = nullptr;
         other.pool = nullptr;
         other.bindings.clear();
-        other.pool_size_overrides.clear();
         other.descriptor_sets.clear();
     }
 
@@ -74,19 +70,6 @@ auto Kataglyphis::DescriptorSetGroup::addBinding(uint32_t binding,
     return *this;
 }
 
-auto Kataglyphis::DescriptorSetGroup::setPoolSize(vk::DescriptorType type, uint32_t descriptor_count)
-  -> DescriptorSetGroup &
-{
-    for (vk::DescriptorPoolSize &pool_size : pool_size_overrides) {
-        if (pool_size.type == type) {
-            pool_size.descriptorCount = descriptor_count;
-            return *this;
-        }
-    }
-    pool_size_overrides.push_back(vk::DescriptorPoolSize{ type, descriptor_count });
-    return *this;
-}
-
 bool Kataglyphis::DescriptorSetGroup::create(std::shared_ptr<VulkanDevice> vulkan_device, uint32_t set_count)
 {
     device = std::move(vulkan_device);
@@ -105,26 +88,8 @@ bool Kataglyphis::DescriptorSetGroup::create(std::shared_ptr<VulkanDevice> vulka
     ASSERT_VULKAN(layout_result.result, "Failed to create a descriptor set layout!")
     layout = layout_result.value;
 
-    // -- pool (sizes derived per descriptor type: binding count * set count,
-    // unless overridden via setPoolSize)
-    std::vector<vk::DescriptorPoolSize> pool_sizes;
-    for (const vk::DescriptorSetLayoutBinding &binding : bindings) {
-        const bool overridden = std::any_of(pool_size_overrides.begin(),
-          pool_size_overrides.end(),
-          [&](const vk::DescriptorPoolSize &pool_size) { return pool_size.type == binding.descriptorType; });
-        if (overridden) { continue; }
-
-        const auto existing = std::find_if(pool_sizes.begin(), pool_sizes.end(), [&](const vk::DescriptorPoolSize &pool_size) {
-            return pool_size.type == binding.descriptorType;
-        });
-        const uint32_t descriptor_count = binding.descriptorCount * set_count;
-        if (existing != pool_sizes.end()) {
-            existing->descriptorCount += descriptor_count;
-        } else {
-            pool_sizes.push_back(vk::DescriptorPoolSize{ binding.descriptorType, descriptor_count });
-        }
-    }
-    pool_sizes.insert(pool_sizes.end(), pool_size_overrides.begin(), pool_size_overrides.end());
+    // -- pool (sizes derived per descriptor type: binding count * set count)
+    const std::vector<vk::DescriptorPoolSize> pool_sizes = deriveDescriptorPoolSizes(bindings, set_count);
 
     vk::DescriptorPoolCreateInfo pool_create_info{};
     pool_create_info.maxSets = set_count;
@@ -267,7 +232,6 @@ void Kataglyphis::DescriptorSetGroup::cleanUp()
     layout = nullptr;
     descriptor_sets.clear();
     bindings.clear();
-    pool_size_overrides.clear();
     device = nullptr;
 }
 

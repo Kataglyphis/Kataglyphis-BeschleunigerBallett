@@ -11,15 +11,22 @@ export module kataglyphis.vulkan.descriptor_set_group;
 import kataglyphis.vulkan.device;
 
 export namespace Kataglyphis {
+// Derives descriptor pool sizes from a set of layout bindings: one entry per
+// distinct descriptor type, accumulated as descriptorCount * set_count
+// across all bindings that share the type, in first-seen order. Pure and
+// device-free so it can be unit-tested without a VulkanDevice.
+std::vector<vk::DescriptorPoolSize> deriveDescriptorPoolSizes(
+  std::span<const vk::DescriptorSetLayoutBinding> bindings, uint32_t set_count);
+
 // Owns ONE descriptor set layout + descriptor pool + N descriptor sets
 // (typically one per swapchain image). Replaces the four structurally
 // identical layout/pool/set triads that used to live in VulkanRenderer.
 //
 // Usage: declare the bindings with addBinding(), then create(device, N).
-// Pool sizes are derived from the bindings (count * set_count per type);
-// setPoolSize() overrides the derived size for a single descriptor type.
-// The write helpers look up descriptor type and array count from the
-// declared binding, so call sites stay declarative.
+// Pool sizes are derived from the bindings (count * set_count per type)
+// via deriveDescriptorPoolSizes(). The write helpers look up descriptor
+// type and array count from the declared binding, so call sites stay
+// declarative.
 //
 // cleanUp() is idempotent and also clears the recorded bindings, so a
 // swapchain recreation can rebuild the group from a fresh declarative
@@ -38,9 +45,6 @@ class DescriptorSetGroup
       vk::DescriptorType type,
       uint32_t descriptor_count,
       vk::ShaderStageFlags stages);
-    // Overrides the pool size derived from the bindings for one descriptor
-    // type (e.g. the historical oversized storage-buffer pool slot).
-    DescriptorSetGroup &setPoolSize(vk::DescriptorType type, uint32_t descriptor_count);
 
     // Creates layout + pool and allocates set_count sets. Logs and returns
     // false on failure (partially created objects are cleaned up).
@@ -68,7 +72,7 @@ class DescriptorSetGroup
     [[nodiscard]] const std::vector<vk::DescriptorSet> &sets() const { return descriptor_sets; }
 
     // Destroys pool + layout, frees the sets and forgets the declared
-    // bindings/pool-size overrides. Safe to call multiple times.
+    // bindings. Safe to call multiple times.
     void cleanUp();
 
     ~DescriptorSetGroup();
@@ -92,7 +96,6 @@ class DescriptorSetGroup
     // (the module interface unit's default init and the implementation
     // unit's constructor definition disagree on whether to zero-init).
     std::vector<vk::DescriptorSetLayoutBinding> bindings{};
-    std::vector<vk::DescriptorPoolSize> pool_size_overrides{};
 
     vk::DescriptorSetLayout layout{};
     vk::DescriptorPool pool{};

@@ -17,7 +17,6 @@ class VulkanDevice
   public:
     VulkanDevice(VulkanInstance *instance, vk::SurfaceKHR *surface);
 
-    const vk::PhysicalDeviceProperties &getPhysicalDeviceProperties() const { return device_properties; };
     vk::PhysicalDevice getPhysicalDevice() const { return physical_device; };
     vk::Device getLogicalDevice() const { return logical_device; };
     Kataglyphis::VulkanRendererInternals::QueueFamilyIndices getQueueFamilies();
@@ -40,7 +39,6 @@ class VulkanDevice
     uint32_t getMaxPerStageDescriptorSampledImages() const { return device_properties.limits.maxPerStageDescriptorSampledImages; };
     uint32_t getMaxPerStageDescriptorSamplers() const { return device_properties.limits.maxPerStageDescriptorSamplers; };
     vk::DeviceAddress getBufferDeviceAddress(const vk::BufferDeviceAddressInfo &info) const;
-    Allocator &getAllocator() { return allocator; };
     VmaAllocator getVmaAllocator() const { return allocator.getVmaAllocator(); };
     // Minimum alignment for allocations backing buffers whose device address
     // is consumed directly (SBTs, acceleration structure scratch).

@@ -242,6 +242,7 @@ jobs:
             'SwapchainChoicesUnit.*'
             'PhysicalDeviceChoicesUnit.*'
             'BlasGeometryLimitsUnit.*'
+            'DescriptorPoolSizesUnit.*'
             'ShadowResolutionUnit.*'
             'ViewportHelperUnit.*'
           ) -join ':'

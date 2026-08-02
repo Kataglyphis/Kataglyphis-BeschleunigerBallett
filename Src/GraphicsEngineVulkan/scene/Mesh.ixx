@@ -39,7 +39,6 @@ class Mesh
     uint32_t getVertexCount() { return vertex_count; };
     uint32_t getIndexCount() { return index_count; };
     vk::Buffer &getVertexBuffer() { return vertexBuffer.getBuffer(); };
-    vk::Buffer &getMaterialIDBuffer() { return materialIdsBuffer.getBuffer(); };
     vk::Buffer &getIndexBuffer() { return indexBuffer.getBuffer(); };
 
     /// Object-space bounds, computed from the vertex positions at
