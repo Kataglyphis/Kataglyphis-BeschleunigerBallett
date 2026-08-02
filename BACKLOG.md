@@ -4306,6 +4306,254 @@ flag, so a reallocation cannot double-destroy; **`cs_reduce_exposure` having no
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
+## 2026-08-02 batch VI — planner (refactor: a RED CI gate that says three suites never run, a source file grep classifies as binary, a descriptor-pool override with one caller that passes bytes as a count)
+
+**Every task in this batch is verifiable with no GPU**, deliberately: the twelve
+`- [b]` entries above are all blocked on host GPU golden verification, which is
+still unavailable in this session. Task 1 is a YAML edit proven by a test that is
+red *right now*; task 2 is a one-character source fix plus a `BuildIntegrity`
+source-scan gate of exactly the shape `a348bd9f`/`302faa90` added; task 3 is a
+dead-code deletion whose only behavioural edge becomes a pure free function with
+its own device-free suite. Every `file:line` below was read out of the tree this
+pass; the actionable queue was empty when this batch was written.
+
+**The headline is that `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter` is
+currently RED, and it is red about the thing it exists to catch.** Three
+device-free suites are defined under `Test/commit/VulkanEngine` but appear
+neither in `Windows.yml`'s `$cpuOnlySuites` array (`.github/workflows/Windows.yml:209-244`)
+nor in the test's `gpu_excluded_suites` set (`buildIntegritySuite.cpp:1066`):
+`BlasGeometryLimitsUnit` (`blasGeometryLimitsSuite.cpp`, added by `20c242ef`),
+`ShadowResolutionUnit` (`guiSceneVarsRoundTripSuite.cpp:193,202,212`, added by
+`adb0c183`) and `ViewportHelperUnit` (`viewportHelperSuite.cpp`, added by
+`29081658`). Reproduced this pass by running the gate's own two parsers by hand:
+`collect_defined_suites`'s start-of-line `TEST(`/`TEST_F(` anchoring
+(`buildIntegritySuite.cpp:226-258`) against `parse_ci_filter_suites`'s
+`$cpuOnlySuites` scrape (`:355-386`) yields exactly those three names and no dead
+filter entries. Because `'BuildIntegrity.*'` *is* in the filter
+(`Windows.yml:210`), the Windows CI test step runs this assertion and fails on
+it — so the three suites do not run in CI *and* the gate that reports it is
+itself failing the job. The comment directly above the array
+(`Windows.yml:196`, "If you add a suite, add it to this filter or it will not
+run in CI") is the instruction three consecutive executor commits missed.
+
+**Second finding: `SceneConfig.cpp` contains a literal NUL byte, so grep and
+ripgrep classify the whole file as binary and silently skip it.**
+`Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:116` reads
+`if (*override_path != '<NUL>')` — the intended `'\0'` was committed as the raw
+0x00 byte itself (confirmed at byte offset 4573; it is the only NUL in any
+tracked file under `Src/`, `Test/`, `Resources/ShadersSlang/`, `cmake/` or
+`Scripts/`). The code is semantically correct and compiles, but every
+`grep -rn`/`rg` over `Src/` reports "binary file matches" instead of the line, so
+`resolveModelPath`, `getModelFile`, `getAvailableModelPaths`,
+`findResourcesBasePath` and `KATAGLYPHIS_MODEL_OVERRIDE` are all invisible to the
+search tool that both the agentic loop and a human use to find call sites. Two
+searches in this planning pass returned "Binary file
+Src/GraphicsEngineVulkan/scene/SceneConfig.cpp matches" where a real hit list was
+expected. This is the same failure class as the shader-manifest and CI-filter
+gates: a source of truth that tooling silently declines to read.
+
+**Third finding: `DescriptorSetGroup`'s pool-size override exists for exactly one
+caller, and that caller passes a byte count where a descriptor count belongs.**
+`setPoolSize` (`DescriptorSetGroup.ixx:41-43`, `.cpp:77-89`) is called from one
+place in the whole tree — `VulkanRenderer.cpp:1415-1417`, `setPoolSize(eStorageBuffer,
+sizeof(ObjectDescription) * MAX_OBJECTS)` = 40 × 40 = **1600** storage-buffer
+descriptors, where the derived rule (`DescriptorSetGroup.cpp:108-127`,
+`binding.descriptorCount * set_count`) gives 1 × 3. Batches II and III both saw
+the wrong units and rejected a fix because "it only over-allocates". **The new
+evidence is that the units are not the point**: the override is the sole reason
+`pool_size_overrides` exists at all, and it drags a member
+(`DescriptorSetGroup.ixx:95`), three move-constructor/assignment clauses
+(`.cpp:29,47,55`), a `create()` branch (`.cpp:112-115,127`), a `cleanUp()` line
+(`.cpp:270`) and two doc comments (`.ixx:19-20,70-71`) behind it. Delete the one
+call and all of it is dead — and the derivation left behind is pure, device-free
+logic that has **zero** test coverage today (`grep -rn DescriptorSetGroup Test/`
+returns nothing). `MAX_OBJECTS` (`common/Globals.hpp:4`) then has no reader
+either. Three never-called public accessors are in the same deletion class,
+grep-confirmed at one occurrence each across `Src/` + `Test/`:
+`VulkanDevice::getAllocator` (`VulkanDevice.ixx:43`),
+`VulkanDevice::getPhysicalDeviceProperties` (`:20`) and
+`Mesh::getMaterialIDBuffer` (`Mesh.ixx:42` — the *buffer* is live via
+`Mesh.cpp:78`'s device address; only the accessor is dead).
+
+**Ordering matters here, unusually.** Do task 1 first: task 3 adds a new suite
+name and will trip the same gate if the array is still stale, and until task 1
+lands a green Windows CI run is impossible for any task in this batch.
+
+Candidates found but NOT tasked (checked, then rejected or deferred with a reason
+— do not re-propose without new evidence): **`CascadedShadowMap::updateCascades`'s
+two per-frame heap allocations** — real (`CascadedShadowMap.cpp:88` move-assigns a
+fresh `std::vector<CascadeData>` from `computeCascadeData`, `:105` builds a
+`std::vector<glm::mat4>` purely to `memcpy` into the mapped UBO, both on the
+per-frame path via `VulkanRenderer.cpp:194`), and the fix is the
+`std::array`/`std::span` shape the same module already uses at
+`CascadedShadowMapMath.cpp:29` and `CascadedShadowMap.cpp:443` — deferred purely
+for the three-task cap, **pick this up next cycle** (it wants a
+`computeCascadeDataInto(std::span<CascadeData>, …)` overload so the fifteen
+existing `computeCascadeData` call sites in `cascadedShadowMapSuite.cpp` keep
+compiling); **18 source files carrying a UTF-8 BOM while the rest do not**
+(`GUI.cpp:1`, `Mesh.ixx:1`, `VulkanSwapChain.cpp:1`, …) — cosmetic, no tool in
+this project misreads a BOM, and stripping them is pure diff noise;
+**`resolveModelPath` (`SceneConfig.cpp:19-41`) and `findResourcesBasePath`
+(`:44-67`) running near-identical depth-8 walks for a `Resources/` root** — real
+duplication, but they test different predicates (`Resources/<rel>` vs
+`Resources/Models`) and collapsing them changes which ancestor wins in trees
+where only one predicate holds, so it needs a decision rather than a mechanical
+extraction; **`CascadedShadowMap::recordCommands`'s draw loop
+(`CascadedShadowMap.cpp:485-517`) as a third copy of
+`MeshDrawRecorder::recordSceneMeshDraws`** — the two differ in push-constant
+struct *and* in single-frustum vs union-over-cascades visibility, so this is a
+generalization, not the verbatim extraction the `MeshDrawRecorder.ixx:24-32`
+comment describes; **the docs sweep** — every repo-rooted `` `path` `` reference
+in `docs/`, `README.md` and `AGENTS.md` resolves, and the two
+`Resources/Shaders/` hits (`shader-build-pipeline.md:53`,
+`shader-sharing.md:140-148`) are both inside explicit "Historical note" sections.
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Replace the raw NUL byte in `SceneConfig.cpp` with `'\0'`, and gate stray control bytes in project sources** — the byte makes grep/ripgrep treat the entire file as binary, so every call site in it is invisible to the search tools this project is worked with.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:115-117` — the
+    `KATAGLYPHIS_MODEL_OVERRIDE` guard; line 116 holds a literal 0x00 byte inside
+    the character literal (byte offset 4573).
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:34` — `find_repo_root()`.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:893-930`
+    (`EveryShaderSourceHasCompiledBinary`) — the directory-walk + collect-then-
+    assert-empty shape to copy for the new gate.
+
+  **Steps:**
+  1. Rewrite `SceneConfig.cpp:116` so the literal is the two-character escape
+     `'\0'`, i.e. `if (*override_path != '\0') { return resolveModelPath(override_path); }`.
+     Behaviour is unchanged — this is a source-encoding fix, not a logic fix.
+     Verify afterwards that the file is no longer binary: a plain
+     `grep -n resolveModelPath Src/GraphicsEngineVulkan/scene/SceneConfig.cpp`
+     must print lines instead of "binary file matches".
+  2. Add `TEST(BuildIntegrity, ProjectSourcesContainNoStrayControlBytes)` to
+     `Test/commit/VulkanEngine/buildIntegritySuite.cpp`. Walk, from
+     `find_repo_root()`: `Src/` and `Test/` for `.cpp`/`.hpp`/`.ixx`, and
+     `Resources/ShadersSlang/` for `.slang`. **Skip
+     `Resources/ShadersSlang/build/`** — it holds compiled `.spv`/`.wgsl`
+     output. Open each file with `std::ios::binary` and flag any byte that is
+     `\0` or a C0 control character other than `\t` (0x09), `\n` (0x0A) and
+     `\r` (0x0D). Collect `fs::relative(path, repo_root).string()` plus the byte
+     offset, then `EXPECT_TRUE(offenders.empty())` with the list in the failure
+     message, as the neighbouring gates do.
+  3. Do **not** flag bytes >= 0x80: 18 files legitimately carry a UTF-8 BOM
+     (`GUI.cpp:1`, `Mesh.ixx:1`, …) and many comments use UTF-8 em-dashes. The
+     gate is about control bytes only.
+  4. `GTEST_SKIP()` if `find_repo_root()` returns empty, matching the sibling
+     tests.
+
+  **Test:** `BuildIntegrity.ProjectSourcesContainNoStrayControlBytes` — assert it
+  passes after step 1, and sanity-check that it would have caught the bug by
+  temporarily re-inserting a NUL into a scratch file under `Src/` and confirming
+  the test fails (then remove it). No new suite name, so `Windows.yml` needs no
+  edit.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
+  then run `commitTestSuite.exe --gtest_filter='BuildIntegrity.*'` from the repo
+  root.
+
+  **Context:** No GPU needed; `SceneConfig.cpp` is a regular implementation unit
+  of the `kataglyphis.vulkan.scene_config` module, not a module interface, so no
+  `-FreshContainer` is required. The value is not the one-character fix but the
+  gate: the project's whole planner/executor workflow finds call sites by
+  grepping `Src/`, and this file has been silently excluded from every such
+  search. Follow the existing `BuildIntegrity` convention of naming the offending
+  file **and** why it matters in the failure message.
+
+- [ ] **(M) (refactor) Delete `DescriptorSetGroup`'s pool-size override machinery and three never-called accessors; extract the pool-size derivation as a pure, tested free function** — one caller keeps ~30 lines of generality alive, and it passes a byte count where a descriptor count belongs.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.ixx:19-20,41-43,70-71,95`
+    — the doc comments, the `setPoolSize` declaration, the `pool_size_overrides`
+    member.
+  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.cpp:23,29,47,55,77-89,108-136,270`
+    — constructor, the three move clauses, `setPoolSize`, the derivation inside
+    `create()`, and the `cleanUp()` reset.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1406-1422` — the sole
+    `setPoolSize` call and the `// Historical pool sizing kept as-is` comment
+    above it.
+  - `Src/GraphicsEngineVulkan/common/Globals.hpp:3-4` — `MAX_OBJECTS`.
+  - `Test/commit/VulkanEngine/swapchainChoicesSuite.cpp` and
+    `Test/commit/VulkanEngine/blasGeometryLimitsSuite.cpp` — the established
+    "pure free function extracted so it can be tested without a device" suite
+    pattern to copy.
+
+  **Steps:**
+  1. In `DescriptorSetGroup.ixx`, export a free function next to the class:
+     `std::vector<vk::DescriptorPoolSize> deriveDescriptorPoolSizes(std::span<const vk::DescriptorSetLayoutBinding> bindings, uint32_t set_count);`
+     Move the loop currently at `DescriptorSetGroup.cpp:110-126` into its
+     definition **verbatim minus the override branch** (`:112-115`) — same
+     accumulate-by-type behaviour, same `binding.descriptorCount * set_count`,
+     same first-seen ordering. It touches no `VulkanDevice`, so it must live in
+     a TU that does not pull one in (see the same reasoning in
+     `CascadedShadowMapMath.cpp:13-23`).
+  2. Make `DescriptorSetGroup::create` call it:
+     `const std::vector<vk::DescriptorPoolSize> pool_sizes = deriveDescriptorPoolSizes(bindings, set_count);`
+     and drop the `pool_sizes.insert(..., pool_size_overrides...)` line (`:127`).
+  3. Delete `VulkanRenderer.cpp:1415-1417` (the `.setPoolSize(...)` link in the
+     `addBinding` chain) and the `// Historical pool sizing kept as-is` comment
+     above it, so the chain now ends at the `SHADOW_MAP_BINDING` `addBinding`.
+     The pool's storage-buffer slot goes from 1600 to `1 * set_count`, which is
+     exactly what the one `OBJECT_DESCRIPTION_BINDING` descriptor per set needs;
+     `maxSets` is untouched.
+  4. Delete `setPoolSize` (declaration `.ixx:41-43`, definition `.cpp:77-89`),
+     the `pool_size_overrides` member (`.ixx:95`), its three move clauses
+     (`.cpp:29,47,55`), its `cleanUp()` reset (`.cpp:270`), and update the two
+     doc comments that mention it (`.ixx:19-20` "setPoolSize() overrides the
+     derived size…" and `:70-71` "…and pool-size overrides").
+  5. Delete `MAX_OBJECTS` from `common/Globals.hpp:4` (no readers left; leave
+     `MAX_FRAME_DRAWS`, which has several) and the three never-called accessors:
+     `VulkanDevice::getAllocator` (`VulkanDevice.ixx:43`),
+     `VulkanDevice::getPhysicalDeviceProperties` (`:20`) and
+     `Mesh::getMaterialIDBuffer` (`Mesh.ixx:42`). Leave the underlying `allocator`,
+     `device_properties` and `materialIdsBuffer` members alone — all three are
+     used internally, and `materialIdsBuffer` is bound by device address at
+     `Mesh.cpp:78`. Re-grep each name across `Src/` + `Test/` before deleting.
+  6. Because step 5 edits `.ixx` module interfaces, rebuild with
+     `-FreshContainer` (module-BMI skew: `kataglyphis_collect_module_interfaces`
+     in `cmake/KataglyphisCMakeHelpers.cmake` globs `*.ixx` without
+     `CONFIGURE_DEPENDS`).
+
+  **Test:** Add `Test/commit/VulkanEngine/descriptorPoolSizesSuite.cpp` with
+  suite name `DescriptorPoolSizesUnit` — no `VulkanDevice`, just
+  `vk::DescriptorSetLayoutBinding` values. Cover:
+  `DerivesCountTimesSetCountPerBinding`;
+  `AccumulatesBindingsThatShareADescriptorType` (two `eUniformBuffer` bindings of
+  1 and 2 with `set_count = 3` → one entry of 9);
+  `KeepsOneEntryPerDistinctType`;
+  `HandlesAnArrayBinding` (`MAX_TEXTURE_COUNT` sampled images × `set_count`);
+  `ReturnsEmptyForNoBindings`. Then add
+  `TheSharedRenderSetNeedsOnlyOneStorageBufferPerSet` — build the exact binding
+  list from `createSharedRenderDescriptorResources` and assert the derived
+  `eStorageBuffer` entry is `set_count`, not 1600 — that is the regression this
+  task's behavioural change is about. The file is picked up automatically
+  (`Test/commit/VulkanEngine/CMakeLists.txt:9` globs with `CONFIGURE_DEPENDS`),
+  but the **new suite name must be added to `.github/workflows/Windows.yml`'s
+  `$cpuOnlySuites` array** as `'DescriptorPoolSizesUnit.*'` or task 1's gate goes
+  red again.
+
+  **Build:** `clangcl-debug`, fresh container (step 6). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -FreshContainer`
+  then, from the repo root,
+  `commitTestSuite.exe --gtest_filter='DescriptorPoolSizesUnit.*:BuildIntegrity.*:AllocatorOwnership.*'`.
+  The runtime effect of step 3 (a smaller descriptor pool) is only observable on
+  a GPU, so if an adapter is available also run
+  `--gtest_filter='GoldenRender.*'`; if not, say so in the commit message rather
+  than implying it was verified.
+
+  **Context:** Batches II and III both looked at `sizeof(ObjectDescription) * MAX_OBJECTS`
+  and rejected it as harmless over-allocation. That judgement stands on its own
+  terms — this task is not "fix the units", it is "delete the only caller of a
+  mechanism nobody else uses, and give the surviving derivation a test". The
+  extraction follows the pattern `ad836844` (swapchain choosers), `20c242ef`
+  (`blasTriangleLimits`) and `3519b753` (physical-device ranking) established:
+  pull the pure decision out of the device-bound class, test it without a GPU.
+  Keep the `spdlog::error` early-outs in `create()` exactly as they are — they
+  are not part of the extraction.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
