@@ -11,6 +11,7 @@
 
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 #include "common/FormatHelper.hpp"
+#include "common/FramebufferHelper.hpp"
 #include "common/RenderPassHelper.hpp"
 #include "common/ViewportHelper.hpp"
 #include "common/Utilities.hpp"
@@ -359,14 +360,6 @@ void DeferredRasterizer::createFramebuffer()
     std::array<vk::ImageView, 5> attachments;
     const vk::Extent2D &extent = vulkanSwapChain->getSwapChainExtent();
 
-    vk::FramebufferCreateInfo framebufferInfo;
-    framebufferInfo.renderPass = renderPass;
-    framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-    framebufferInfo.pAttachments = attachments.data();
-    framebufferInfo.width = extent.width;
-    framebufferInfo.height = extent.height;
-    framebufferInfo.layers = 1;
-
     framebuffer.resize(vulkanSwapChain->getNumberSwapChainImages());
     for (uint32_t i = 0; i < vulkanSwapChain->getNumberSwapChainImages(); i++) {
         attachments[0] = offscreenTextures[i]->getImageView();
@@ -374,6 +367,9 @@ void DeferredRasterizer::createFramebuffer()
         attachments[2] = gBufferAlbedos[i]->getImageView();
         attachments[3] = gBufferMaterials[i]->getImageView();
         attachments[4] = depthBufferImage->getImageView();
+
+        const vk::FramebufferCreateInfo framebufferInfo =
+          Kataglyphis::buildFramebufferCreateInfo(renderPass, attachments, extent);
 
         auto result = device->getLogicalDevice().createFramebuffer(framebufferInfo);
         ASSERT_VULKAN(VkResult(result.result), "Failed to create deferred framebuffer!");

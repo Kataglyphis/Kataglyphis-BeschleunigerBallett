@@ -4533,6 +4533,225 @@ loop already `continue`s before allocating for non-matching primitives, so the
 measured cost is a few thousand comparisons per frame on any realistic scene;
 not worth a task until something measures it.
 
+## 2026-08-02 batch IX — planner (refactor: a sixth "one rule, five hand-rolled copies" — framebuffer creation; a positional 9-field aggregate spelled out three times; 15 accessors on the two shared scene structs that nothing calls)
+
+**Every task in this batch is verifiable with no GPU**, deliberately: the `- [b]`
+entries above are still blocked on host GPU golden verification. Every
+`file:line` below was read out of the tree this pass, and every dead-code claim
+was confirmed by a whole-tree grep over `Src/` + `Test/`. The actionable queue
+was empty when this batch was written (the only remaining `- [ ]`-shaped entries
+in this file are `- [b]`).
+
+**The headline is that framebuffer creation is the one remaining member of the
+`buildAttachmentDescription` / `fullExtentViewport` family that never got its
+helper.** Five files each spell out the same six-field `vk::FramebufferCreateInfo`
+block by hand: `Rasterizer.cpp:236-243`, `PostStage.cpp:304-311`,
+`DeferredRasterizer.cpp:362-368`, `SkyBox.cpp:321-327` and
+`CascadedShadowMap.cpp:210-216`. The five copies have already drifted in three
+ways that a shared builder removes by construction: **SkyBox hard-codes
+`attachmentCount = 2`** rather than deriving it from `attachments.size()`, so
+adding a third attachment to its `std::array` there is silently ignored;
+**DeferredRasterizer hoists the create-info out of the loop** and mutates the
+`attachments` array it borrows through `pAttachments` on every iteration — correct
+today, but it is precisely the borrowed-pointer shape batch XVII found dangling in
+swapchain creation; and **PostStage alone uses the two-out-param
+`createFramebuffer(&info, nullptr, &framebuffers[i])` overload** where the other
+four use the `ResultValue` one. This is the same finding class as `a3b42dfc`
+(depth aspect → `FormatHelper.hpp`), `f97712f4` (six shader-stage blocks →
+`ShaderStagePair`), `29081658` (`ViewportHelper.hpp`) and `36937517`
+(`RenderPassHelper.hpp`).
+
+**Second: `Camera.cpp` constructs the same nine-member `CameraControllerState`
+aggregate three times, positionally.** `key_control` (`:63-71`), `mouse_control`
+(`:79-87`) and `update` (`:110-118`) each list `position, front, world_up, right,
+up, yaw, pitch, movement_speed, turn_speed` in order, with no designated
+initializers. Because the four `glm::vec3&` members are mutually interchangeable
+to the compiler and so are the two leading `float&` members
+(`CameraController.ixx:15-26`), **reordering the struct silently rebinds
+`right`↔`up` or `yaw`↔`pitch` at all three call sites with no diagnostic** — the
+camera would just start rolling instead of yawing. `apply_keyboard_input`
+(`CameraController.ixx:39`) additionally takes a bare `const bool *keys` and
+indexes it up to `GLFW_KEY_E` (69) with no length: `Window::get_keys()`
+(`Window.ixx:24`) hands out `input_state.keys.data()` off a
+`std::array<bool, 1024>` (`WindowInputState.hpp:7,11`) while
+`cameraSceneConfigSuite.cpp:108` passes a `std::array<bool, GLFW_KEY_LAST + 1>`,
+so two different array sizes already flow into the same unchecked pointer.
+
+**Third, the dead code: 15 of the 19 accessors on the two shared scene structs
+have no caller anywhere in `Src/` or `Test/`.** Grep-confirmed at exactly one
+occurrence each (their own definition): `ObjMaterial::get_{ambient,diffuse,
+specular,transmittance,emission,shininess,ior,dissolve,illum,alphaCutoff,
+uv_scale,uv_offset}` (`Src/shared/scene/ObjMaterial.hpp:68-82`) and
+`Vertex::get_{normal,color,tex_coors}` (`Src/shared/scene/Vertex.hpp:31-33`).
+Only `ObjMaterial::get_textureID` and `Vertex::get_position` are live. Every
+field is public, so each accessor is pure redundancy over the direct member
+access the rest of the engine already uses.
+
+Ordering: all three are independent and touch disjoint files.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **the twelve hand-rolled `vk::ImageMemoryBarrier` blocks**
+(`FrameCapture.ixx:90,122`, `PathTracing.cpp:62,94,148`, `Raytracing.cpp:92,123`,
+`VulkanRenderer.cpp:882,914`, `SkyBox.cpp:147`, `Texture.cpp:288`,
+`VulkanImage.cpp:124`) — the same "seven fields a copy-paste drops" shape as task
+1, but the `- [b]` cloud-barrier entry above already owns two of those lines, and
+a helper task would collide with it; pick this up once that unblocks;
+**`ForwardRenderer::new` at 583 lines** (`crates/webgpu_renderer/src/render/forward.rs:364-947`)
+— real, and the file already has the `create_*_pipeline` free-function shape to
+extract into, but every extracted unit needs a live adapter to exercise, so the
+refactor would ship with compile-only verification; **the accessor sweep across
+`Src/**/*.ixx`** — re-run this pass over every `get*`/`is*`/`has*`/`set*`
+declaration, and apart from the fifteen in task 3 every one has a live caller
+(`getComputeQueue`→`Clouds.cpp:241`, `getPresentationQueue`→`VulkanRenderer.cpp:605`,
+`getGBuffer{Normal,Albedo,Material}`→`VulkanRenderer.cpp:1587-1589`,
+`getMipLevel`→`Model.cpp:72`, `getVertexCount`→`ASManager.cpp:496`,
+`isDoubleSided`→`Scene.ixx:120`, …), so batches VI–VIII drained this seam;
+**pinning `forward.wgsl`'s binding indices against `forward.rs`'s hand-built
+layout** — the `histogram_constants.rs` gate shape would fit, but wgpu validates
+the bind-group layout against the shader at pipeline-creation time and errors, so
+this drift is loud, not silent; **`Texture::createDefaultTexture`
+(`Texture.cpp:195-202`) discarding `uploadRgba`'s `bool`** — the one caller path
+already tolerates a texture-less material, and making it propagate is a
+behaviour change, not a refactor.
+
+### C++ Vulkan engine
+
+- [ ] **(M) (refactor) One `CameraControllerState` construction instead of three positional copies, and a `std::span` key array instead of a bare `const bool *`** — reordering the struct today silently rebinds `right`↔`up` or `yaw`↔`pitch` at all three call sites with no compile error.
+
+  **Files to read:**
+  - `Src/shared/frontend/CameraController.ixx` — the 9-member reference
+    aggregate (`:15-26`) and the three functions that take it.
+  - `Src/GraphicsEngineVulkan/scene/Camera.cpp:61-119` — the three positional
+    constructions.
+  - `Src/GraphicsEngineVulkan/scene/Camera.ixx:15` and
+    `Src/shared/frontend/CameraState.hpp` — the owning struct.
+  - `Src/GraphicsEngineVulkan/window/Window.ixx:24`
+    (`bool *get_keys() { return input_state.keys.data(); }`),
+    `Src/shared/frontend/WindowInputState.hpp:7,11`
+    (`std::array<bool, window_key_count>`, 1024),
+    `Src/shared/frontend/FrameInput.ixx:36-37` — the only production caller.
+  - `Test/commit/VulkanEngine/cameraSceneConfigSuite.cpp:105-126` — the existing
+    `CameraUnit.KeyControlMovesAlongFront` pattern to extend.
+
+  **Steps:**
+  1. In `Camera.cpp`, add a file-local helper in an anonymous namespace —
+     `auto controllerState(Kataglyphis::Frontend::CameraState &s) -> Kataglyphis::Frontend::CameraControllerState`
+     — built with **designated initializers** (`.position = s.position, .front = s.front, …`).
+     Deliberately keep it in the `.cpp`: putting it on `Camera` would drag
+     `CameraController.ixx`'s GLFW include into the camera module interface.
+  2. Replace all three aggregate literals (`Camera.cpp:63-71`, `:79-87`,
+     `:110-118`) with `controllerState(camera_state)`.
+  3. Change `apply_keyboard_input`'s second parameter
+     (`CameraController.ixx:39`) from `const bool *keys` to
+     `std::span<const bool> keys`, add `#include <span>` to the global module
+     fragment, and read each key through a small local
+     `pressed = [keys](int k) { return static_cast<std::size_t>(k) < keys.size() && keys[static_cast<std::size_t>(k)]; }`
+     so a span shorter than `GLFW_KEY_E` (69) cannot read out of bounds.
+  4. Change `Camera::key_control` to `void key_control(std::span<const bool> keys, float delta_time)`
+     in both `Camera.ixx:15` and `Camera.cpp:61`, adding `#include <span>` to
+     `Camera.ixx`'s global module fragment.
+  5. Change `Window::get_keys()` (`Window.ixx:24`) to return
+     `std::span<const bool>` over `input_state.keys` — grep confirms
+     `FrameInput.ixx:37` is its only caller, and it only reads.
+  6. Update the two test/bench call sites that pass `keys.data()`:
+     `Test/commit/VulkanEngine/cameraSceneConfigSuite.cpp:118,123` and
+     `Test/perf/perfSuite.cpp:57` — pass the `std::array` directly (it converts
+     to `std::span<const bool>`).
+
+  **Test:** Add suite `CameraControllerUnit` in a new
+  `Test/commit/VulkanEngine/cameraControllerSuite.cpp` covering
+  `CameraController.ixx` directly (it is device-free — no `VulkanDevice`, no
+  window): `WKeyMovesAlongFrontAndSAlongMinusFront`,
+  `DKeyMovesAlongRightAndAAlongMinusRight` (the assertion a `right`↔`up`
+  rebinding fails), `QAndEChangeYawInOppositeDirections`,
+  `PitchClampsAtPlusMinus89` (feed ±100000 as in
+  `cameraSceneConfigSuite.cpp:95-101`), `FrontIsNormalizedAndRightIsPerpendicularToFront`,
+  and `AShortKeySpanIsIgnoredRatherThanReadPastTheEnd` (pass
+  `std::span<const bool>` of length 4 with `GLFW_KEY_W` in range and assert no
+  movement for `GLFW_KEY_E`). Add `'CameraControllerUnit.*'` to
+  `$cpuOnlySuites` in `.github/workflows/Windows.yml` or
+  `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter` goes red.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=CameraControllerUnit.*:CameraUnit.*:FrameInputUnit.*:WindowInputUnit.*:BuildIntegrity.*`
+  from the repo root.
+
+  **Context:** Q/E do take effect today — `Camera::key_control` calls `update()`
+  after `apply_keyboard_input`, which is what re-derives `front`/`right`/`up`
+  from the mutated `yaw`. Do not "fix" that by calling `update_camera_vectors`
+  inside `apply_keyboard_input`; it would just run twice per frame. The bug this
+  task prevents is the silent rebinding, not a current misbehaviour, so every
+  assertion must be written against the behaviour that holds **now**.
+
+- [ ] **(S) (refactor) Delete the 15 never-called accessors on the two shared scene structs, the two one-line bridge headers, and the IDE filter's reference to a header that does not exist** — grep-confirmed one occurrence each; every field is public, so each accessor is pure redundancy.
+
+  **Files to read:**
+  - `Src/shared/scene/ObjMaterial.hpp:68-82` — 13 accessors, of which only
+    `get_textureID` (`:79`) has callers (`gltfParseSuite.cpp:498`,
+    `objParseSuite.cpp:85`).
+  - `Src/shared/scene/Vertex.hpp:30-33` — 4 accessors, of which only
+    `get_position` (`:30`) has callers (`Mesh.cpp:50,53,54`,
+    `meshRangeSliceSuite.cpp:45-47`).
+  - `Src/GraphicsEngineVulkan/scene/Vertex.hpp` and
+    `Src/GraphicsEngineVulkan/scene/ObjMaterial.hpp` — six-line headers whose
+    entire body is `#include "../../shared/scene/<name>.hpp"`.
+  - `Src/GraphicsEngineVulkan/cmake/filters/SetProjectFilters.cmake:92-103`.
+
+  **Steps:**
+  1. Delete these 12 lines from `Src/shared/scene/ObjMaterial.hpp`:
+     `get_ambient`, `get_diffuse`, `get_specular`, `get_transmittance`,
+     `get_emission`, `get_shininess`, `get_ior`, `get_dissolve`, `get_illum`,
+     `get_alphaCutoff`, `get_uv_scale`, `get_uv_offset`. **Keep
+     `get_textureID`.**
+  2. Delete `get_normal`, `get_color` and `get_tex_coors` from
+     `Src/shared/scene/Vertex.hpp`. **Keep `get_position`**, and keep
+     `operator==` and the `std::hash<Vertex>` specialization — both are live
+     (the loaders deduplicate vertices through an `unordered_map`).
+  3. Do **not** touch the `#ifdef __cplusplus` / `KTG_VEC3` scaffolding in
+     either header. It is unreachable today (the shaders declare their own
+     copies in `Resources/ShadersSlang/common/scene_types.slang:23,32` and
+     `import`, they do not `#include`), but the same scaffolding is present in
+     eight other host/device headers and removing it from only two would make
+     the convention less uniform, not more.
+  4. Delete `Src/GraphicsEngineVulkan/scene/Vertex.hpp` and
+     `Src/GraphicsEngineVulkan/scene/ObjMaterial.hpp`, and point their two
+     consumers at the shared headers directly:
+     `scene/Vertex.ixx:3` → `#include "shared/scene/Vertex.hpp"` and
+     `scene/ObjMaterial.ixx:3` → `#include "shared/scene/ObjMaterial.hpp"`.
+     `SkyBox.cpp:13` already uses that spelling, so the include path resolves.
+  5. In `SetProjectFilters.cmake`, drop the now-deleted
+     `${PROJECT_INCLUDE_DIR}scene/ObjMaterial.hpp` entry (`:92-95`) and the
+     `${PROJECT_INCLUDE_DIR}scene/Scene.hpp` entry (`:102-104`) — `PROJECT_INCLUDE_DIR`
+     and `PROJECT_SRC_DIR` are the same directory (`CMakeLists.txt:2-3`) and
+     there is no `scene/Scene.hpp` in the tree; that entry is already stale.
+     This file only feeds `source_group`, so it cannot break the build — but a
+     stale entry is exactly the drift this task exists to remove.
+
+  **Test:** No new test. The change is provably behaviour-free (deleting
+  never-called inline accessors and a pass-through include), and the existing
+  layout gates already pin what matters:
+  `PushConstantSuite`'s `ObjMaterialLayoutUnit.MatchesTheSlangTwinScalarLayout`
+  (13 `offsetof` assertions plus `sizeof(ObjMaterial) == 100`) and
+  `buildIntegritySuite.cpp:734-735`'s `offsetof(Vertex, …)` sweep against the
+  compiled SPIR-V. Run both and `ObjParseUnit.*` / `GltfParseUnit.*` /
+  `MeshRangeSlice.*`.
+
+  **Build:** `clangcl-debug`, and **you must pass `-FreshContainer`** — this
+  task deletes two files, and a reused container overwrites sources in place
+  without pruning, so the deleted headers would keep building (see AGENTS.md
+  § Containerized Windows Builds):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=ObjMaterialLayoutUnit.*:BuildIntegrity.*:ObjParseUnit.*:GltfParseUnit.*:MeshRangeSlice.*`
+  from the repo root.
+
+  **Context:** Deleting a member of a `#ifdef __cplusplus` host/device struct is
+  only safe because these are member **functions**, not data members — the
+  layout the shaders and the BLAS/vertex-input descriptions depend on
+  (`ASManager.cpp:495`, `Vertex.cpp:40-49`) is untouched. If any `offsetof` or
+  `sizeof` assertion moves, stop: that is a real finding, not a number to
+  update.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

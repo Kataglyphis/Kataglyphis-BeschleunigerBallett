@@ -14,6 +14,7 @@ module;
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
 #include "common/FormatHelper.hpp"
+#include "common/FramebufferHelper.hpp"
 #include "common/RenderPassHelper.hpp"
 #include "common/Utilities.hpp"
 #include "common/ViewportHelper.hpp"
@@ -207,13 +208,8 @@ void CascadedShadowMap::createFramebuffers()
     ASSERT_VULKAN(VkResult(viewResult.result), "Failed to create shadow map array view!");
     shadowMapArrayView = viewResult.value;
 
-    vk::FramebufferCreateInfo framebufferInfo{};
-    framebufferInfo.renderPass = renderPass;
-    framebufferInfo.attachmentCount = 1;
-    framebufferInfo.pAttachments = &shadowMapArrayView;
-    framebufferInfo.width = shadowWidth;
-    framebufferInfo.height = shadowHeight;
-    framebufferInfo.layers = 1;
+    const vk::FramebufferCreateInfo framebufferInfo = Kataglyphis::buildFramebufferCreateInfo(
+      renderPass, std::span<const vk::ImageView>(&shadowMapArrayView, 1), vk::Extent2D{ shadowWidth, shadowHeight });
 
     auto fbResult = device->getLogicalDevice().createFramebuffer(framebufferInfo);
     ASSERT_VULKAN(VkResult(fbResult.result), "Failed to create shadow map framebuffer!");

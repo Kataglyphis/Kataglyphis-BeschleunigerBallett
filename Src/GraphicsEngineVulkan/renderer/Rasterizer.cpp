@@ -13,6 +13,7 @@
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 
 #include "common/FormatHelper.hpp"
+#include "common/FramebufferHelper.hpp"
 #include "common/RenderPassHelper.hpp"
 #include "common/ViewportHelper.hpp"
 
@@ -233,14 +234,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createFramebuffer()
         std::array<vk::ImageView, 2> attachments = { offscreenTextures[i]->getImageView(),
             depthBufferImage->getImageView() };
 
-        vk::FramebufferCreateInfo frame_buffer_create_info;
-        frame_buffer_create_info.renderPass = render_pass;
-        frame_buffer_create_info.attachmentCount = static_cast<uint32_t>(attachments.size());
-        frame_buffer_create_info.pAttachments = attachments.data();
-        const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-        frame_buffer_create_info.width = swap_chain_extent.width;
-        frame_buffer_create_info.height = swap_chain_extent.height;
-        frame_buffer_create_info.layers = 1;
+        const vk::FramebufferCreateInfo frame_buffer_create_info = Kataglyphis::buildFramebufferCreateInfo(
+          render_pass, attachments, vulkanSwapChain->getSwapChainExtent());
 
         auto result = device->getLogicalDevice().createFramebuffer(frame_buffer_create_info);
         if (result.result == vk::Result::eSuccess) {

@@ -1,0 +1,78 @@
+// Direct unit coverage for common/FramebufferHelper.hpp's
+// buildFramebufferCreateInfo - the helper that replaced five hand-written
+// vk::FramebufferCreateInfo blocks across Rasterizer, PostStage,
+// DeferredRasterizer, SkyBox and CascadedShadowMap.
+//
+// SkyBox's original call site hard-coded attachmentCount = 2 instead of
+// deriving it from the span it was handed - AttachmentCountIsDerivedFromTheSpan
+// below is the regression test for exactly that bug.
+
+#include <gtest/gtest.h>
+
+#include <array>
+#include <span>
+#include <vulkan/vulkan.hpp>
+
+#include "common/FramebufferHelper.hpp"
+
+using Kataglyphis::buildFramebufferCreateInfo;
+
+namespace {
+// vk::ImageView/vk::RenderPass's default constructors are not constexpr in
+// this vulkan-hpp version - the nullptr_t constructor is, so it stands in for
+// "no real handle" wherever a constant expression is required below.
+constexpr std::array<vk::ImageView, 3> kThreeViews{ vk::ImageView(nullptr), vk::ImageView(nullptr),
+    vk::ImageView(nullptr) };
+}// namespace
+
+static_assert(buildFramebufferCreateInfo(vk::RenderPass(nullptr), std::span<const vk::ImageView>(kThreeViews),
+                vk::Extent2D{ 1920, 1080 })
+                .layers
+    == 1,
+  "buildFramebufferCreateInfo must be usable in a constant expression");
+
+namespace {
+
+TEST(FramebufferHelperUnit, AttachmentCountIsDerivedFromTheSpan)
+{
+    const vk::FramebufferCreateInfo info =
+      buildFramebufferCreateInfo(vk::RenderPass{}, std::span<const vk::ImageView>(kThreeViews), vk::Extent2D{ 800, 600 });
+
+    EXPECT_EQ(info.attachmentCount, 3U);
+}
+
+TEST(FramebufferHelperUnit, PAttachmentsPointsAtTheCallersStorage)
+{
+    const vk::FramebufferCreateInfo info =
+      buildFramebufferCreateInfo(vk::RenderPass{}, std::span<const vk::ImageView>(kThreeViews), vk::Extent2D{ 800, 600 });
+
+    EXPECT_EQ(info.pAttachments, kThreeViews.data());
+}
+
+TEST(FramebufferHelperUnit, WidthAndHeightComeFromTheExtent)
+{
+    const vk::Extent2D extent{ 1920, 1080 };
+    const vk::FramebufferCreateInfo info =
+      buildFramebufferCreateInfo(vk::RenderPass{}, std::span<const vk::ImageView>(kThreeViews), extent);
+
+    EXPECT_EQ(info.width, 1920U);
+    EXPECT_EQ(info.height, 1080U);
+}
+
+TEST(FramebufferHelperUnit, LayersDefaultsToOne)
+{
+    const vk::FramebufferCreateInfo info =
+      buildFramebufferCreateInfo(vk::RenderPass{}, std::span<const vk::ImageView>(kThreeViews), vk::Extent2D{ 800, 600 });
+
+    EXPECT_EQ(info.layers, 1U);
+}
+
+TEST(FramebufferHelperUnit, LayersOverrideIsHonoured)
+{
+    const vk::FramebufferCreateInfo info = buildFramebufferCreateInfo(
+      vk::RenderPass{}, std::span<const vk::ImageView>(kThreeViews), vk::Extent2D{ 800, 600 }, 6);
+
+    EXPECT_EQ(info.layers, 6U);
+}
+
+}// namespace

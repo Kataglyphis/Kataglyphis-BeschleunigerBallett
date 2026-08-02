@@ -12,6 +12,7 @@ module;
 #include <glm/glm.hpp>
 #include "shared/scene/ObjMaterial.hpp"
 
+#include "common/FramebufferHelper.hpp"
 #include "common/RenderPassHelper.hpp"
 #include "common/Utilities.hpp"
 #include "common/ViewportHelper.hpp"
@@ -318,13 +319,8 @@ void SkyBox::createFramebuffers(std::span<const vk::ImageView> imageViews, vk::I
     framebuffers.resize(imageViews.size());
     for (size_t i = 0; i < imageViews.size(); i++) {
         std::array attachments = {imageViews[i], depthView};
-        vk::FramebufferCreateInfo fbInfo{};
-        fbInfo.renderPass = renderPass;
-        fbInfo.attachmentCount = 2;
-        fbInfo.pAttachments = attachments.data();
-        fbInfo.width = width;
-        fbInfo.height = height;
-        fbInfo.layers = 1;
+        const vk::FramebufferCreateInfo fbInfo = Kataglyphis::buildFramebufferCreateInfo(
+          renderPass, attachments, vk::Extent2D{ width, height });
         auto fbResult = device->getLogicalDevice().createFramebuffer(fbInfo);
         ASSERT_VULKAN(VkResult(fbResult.result), "Failed to create skybox framebuffer!");
         framebuffers[i] = fbResult.value;

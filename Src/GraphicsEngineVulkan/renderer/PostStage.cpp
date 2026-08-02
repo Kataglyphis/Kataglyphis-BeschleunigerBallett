@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "common/FormatHelper.hpp"
+#include "common/FramebufferHelper.hpp"
 #include "common/RenderPassHelper.hpp"
 #include "common/ViewportHelper.hpp"
 #include "renderer/pushConstants/PushConstantPost.hpp"
@@ -301,17 +302,11 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createFramebuffer()
         std::array<vk::ImageView, 2> attachments = { swap_chain_image.getImageView(),
             depthBufferImage->getImageView() };
 
-        vk::FramebufferCreateInfo frame_buffer_create_info;
-        frame_buffer_create_info.renderPass = render_pass;
-        frame_buffer_create_info.attachmentCount = static_cast<uint32_t>(attachments.size());
-        frame_buffer_create_info.pAttachments = attachments.data();
-        const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-        frame_buffer_create_info.width = swap_chain_extent.width;
-        frame_buffer_create_info.height = swap_chain_extent.height;
-        frame_buffer_create_info.layers = 1;
+        const vk::FramebufferCreateInfo frame_buffer_create_info = Kataglyphis::buildFramebufferCreateInfo(
+          render_pass, attachments, vulkanSwapChain->getSwapChainExtent());
 
-        vk::Result const result =
-          device->getLogicalDevice().createFramebuffer(&frame_buffer_create_info, nullptr, &framebuffers[i]);
-        ASSERT_VULKAN(result, "Failed to create framebuffer!")
+        auto result = device->getLogicalDevice().createFramebuffer(frame_buffer_create_info);
+        ASSERT_VULKAN(static_cast<VkResult>(result.result), "Failed to create framebuffer!")
+        framebuffers[i] = result.value;
     }
 }
