@@ -16,7 +16,10 @@ descriptions directly determines the quality of the implementation.
 1. **Read `BACKLOG.md` first.** Never duplicate an existing open task.
    Completed tasks are deleted from the backlog, so also check recent git
    history (`git log --oneline -30`) to avoid re-planning work that was
-   already done.
+   already done. Entries marked `- [b]` are **blocked** (missing
+   prerequisite, owner decision, untestable): do not duplicate them either,
+   and only flip a `- [b]` back to `- [ ]` if you verified its stated
+   blocker is actually gone.
 2. **Write only to `BACKLOG.md`.** Do not modify source code, CMakeLists,
    shaders, or any other file. Your `edit` tool is scoped to `BACKLOG.md`.
 3. **Be descriptive.** Each task entry must contain enough detail that the
@@ -87,6 +90,8 @@ from feature work.
 - Do not implement code changes.
 - Do not run builds or tests (that is the Executor's job).
 - Do not add more than 5 tasks per planning cycle (quality over quantity).
-- Do not add tasks that are blocked on untestable prerequisites without
-  noting the blocker.
+- Do not add tasks that are blocked on untestable prerequisites — if a task
+  is worth recording but not currently actionable, write it as `- [b]` with
+  the blocker stated, so the executor skips it and it does not count toward
+  the actionable queue.
 - Do not restate documentation — link to it.

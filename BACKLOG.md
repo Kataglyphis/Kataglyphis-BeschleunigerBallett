@@ -4770,40 +4770,116 @@ breakage date I had not verified, then spent three CI round trips on a control
 that moved two variables at once. The local reproduction took one container run
 and answered it outright. Get the failing thing into a shell before theorising.
 
-## 2026-08-02 batch — dedup audit leftovers (from the ContainerHub/docs dedup pass)
+## 2026-08-02 batch — reuse sweep (generic script logic to upstream into ContainerHub)
 
-- [ ] **Upstream Build-Windows-Container.ps1's remaining generic pieces to
-  ContainerHub** (M) — three blocks are generic to the reusable-container
-  pattern, not to this engine, and belong in
-  `windows/scripts/modules/WindowsContainerBuild.Reuse.psm1`:
-  (1) the ensure-pwsh-via-scoop bootstrap, (2) the stale-source pruning
-  inside a reused container (tar extracts over the tree but never deletes),
-  (3) the built-but-not-delivered executable verification. Files:
-  `Scripts/Windows/Build-Windows-Container.ps1` (read the pruning and
-  verification comments — they carry measured history that must move with
-  the code), ContainerHub `WindowsContainerBuild.Reuse.psm1`. Steps: extract
-  each block into an exported function with the project bits (build-dir
-  names) as parameters; consume them from the project script; extend the
-  upstream Pester suite. Test: `Invoke-Pester` upstream + a container build
-  (`Build-Windows-Container.ps1 -Configurations clangcl-debug`). Build
-  preset: none (scripts only).
+> From a full sweep of `Scripts/**` + workflows on 2026-08-02. Rule: reusable
+> logic lives in `ExternalLib/Kataglyphis-ContainerHub`; this repo keeps thin
+> wrappers and project data. Bump the submodule pin and push ContainerHub
+> `main` BEFORE the repo commit that consumes it.
 
-- [ ] **Reconcile the ASAN_OPTIONS disagreement between run helper and
-  module** (S) — `Scripts/Windows/run_clangcl_debug.ps1` sets
-  `report_globals=0` + `windows_hook_rtl_allocators=false` while the vendored
-  `Scripts/Windows/modules/WindowsTesting.Common.psm1` uses
-  `report_globals=1` for tests; the save/override/restore pattern is also
-  duplicated. Decide which values are correct per context (document why they
-  differ if both are right), extract one helper, and delete the copy. Test:
-  Pester suite + run the debug binary once on the host. Build preset: none.
+- [ ] **Upstream WindowsCMake.Common to ContainerHub** (L) — nothing in
+  `Scripts/Windows/modules/WindowsCMake.Common.psm1` (415 lines) is
+  renderer-specific: `Get-SanitizerRuntimeDlls`/`Copy-SanitizerRuntimeDlls`
+  (LLVM/vswhere probing for `clang_rt.*san*.dll`),
+  `Invoke-CmakeConfigureAndBuild` (~300 lines of sccache env plumbing,
+  `KATAGLYPHIS_KEEP_BUILD_ROOT`, ninja probe, streaming build), and
+  `Test-ClangClThreadSanitizerSupport`. Upstream already has
+  `Show-SccacheStats`/`Initialize-BuildCacheEnvironment` in
+  `WindowsBuild.Common` — merge, don't add a parallel copy. Keep only
+  preset/configuration choice in this repo; move the module's Pester test
+  with it and delete the vendored copy in the same change. Test:
+  `Invoke-Pester` both suites + `Build-Windows-Container.ps1
+  -Configurations clangcl-debug`. Build preset: none (scripts only).
 
-- [ ] **Reconcile PS/bash agentic-library feature drift** (M) — the two
-  reusable libraries have drifted: PS has `Invoke-GitAutoCommit`,
-  `Get-AgenticConfigValue`, `Get-AgenticBuildConfigs` as functions where bash
-  inlines the logic in `run_agentic_loop`; bash has `count_build_matrix` /
-  `get_matrix_entry_name` with no PS counterpart. Files: ContainerHub
-  `windows/scripts/modules/WindowsAgenticLoop.Common.psm1`,
-  `linux/scripts/lib/agentic-loop.sh`. Give each side the missing named
-  functions so the API surfaces match (behavior already matches). Test:
-  upstream Pester suite; `bash -n` + a `--dry-run` loop run on a host with
-  jq. Build preset: none.
+- [ ] **Consolidate the four uv-venv implementations** (M) — the same
+  "create venv + install requirements" exists 4x:
+  `Scripts/Windows/modules/WindowsFormatting.Common.psm1:102-163`,
+  `Scripts/Windows/modules/WindowsWebDav.Common.psm1:47-108`,
+  `Scripts/Linux/lib/uv-venv-create.sh` + `uv-install-requirements.sh`, and
+  `Scripts/Linux/run_static_analysis_format.sh:19-44` (`ensure_cmake_format`,
+  which ignores the lib/ scripts beside it). ContainerHub already owns this:
+  `linux/scripts/01-core/python_uv.sh` (`uv_venv_create`/`uv_sync_project`/
+  `uv_run`) and `windows/scripts/modules/WindowsUv.Common.psm1`. Make all
+  four call upstream; move the `--python .venv/bin/python` UV_PYTHON
+  workaround comment upstream with them. Test: `Scripts/Linux/
+  run_static_analysis_format.sh` in the container + Pester. Build preset:
+  none.
+
+- [ ] **Single-source the Slang shader manifest; fix the four PS/sh
+  drifts** (L) — `Scripts/Windows/compile-slang-shaders.ps1:43-119` and
+  `Scripts/Linux/compile-slang-shaders.sh:38-107` hold the same 55-entry
+  manifest and the same depth-texture patch table in two languages, already
+  drifted four ways: (1) sh has NO staleness check — Linux recompiles all
+  shaders every build; (2) sh exits 0 when slangc is missing (PS exits 2) —
+  CI without slangc passes green; (3) sh warns-and-continues on a missing
+  manifest file (PS fails); (4) sh's sed silently no-ops when a depth patch
+  stops matching (PS warns "slangc output may have changed"). Move the
+  manifest + patch table to one data file under `Resources/ShadersSlang/`
+  (JSON), make both scripts read it, and port the PS staleness/exit-code/
+  patch-warning behavior to sh. Test: both compile scripts produce identical
+  output sets; BuildIntegrity spv-freshness goldens stay green. Build
+  preset: clangcl-debug.
+
+- [ ] **One app-runner per platform instead of five copies** (M) —
+  `Scripts/Linux/run-{debug,profile,release}.sh` share ~95 of ~110 lines
+  (arg parse, exe search, LD_LIBRARY_PATH, exec); `Scripts/Windows/
+  run_clangcl_{release,profile}.ps1` share ~52 of 65, and exe discovery is
+  written a third time in `run_clangcl_debug.ps1:142-171`
+  (`Resolve-AppExecutablePath`) and a fourth in
+  `WindowsTesting.Common.psm1:78-109` (`Resolve-TestExecutable`). Collapse
+  to one `run-app.sh` + one parameterized PS runner; upstream the generic
+  exe-discovery helper (bash: next to `01-core/cli-parsers.sh`; PS: with
+  WindowsTesting when it moves). Note `run_clangcl_profile.ps1` has zero
+  references anywhere — fold it in or delete it. Test: run each config once
+  on the host (debug needs validation layers). Build preset: none.
+
+- [ ] **Upstream the generic Windows packaging/formatting modules** (M) —
+  `WindowsMsix.Common.psm1` + `WindowsMsix.Signing.psm1` (SDK tool probing,
+  XML templating, signtool sign/verify — zero renderer references; the
+  `Kataglyphis_*` shim lookups show they were once upstream),
+  `WindowsFormatting.Common.psm1` (git-ls-files walkers, clang-format/
+  cmake-format steps, the cmd.exe-dispatch stderr workaround), and
+  `WindowsConfig.Common.psm1` (dotted-path psd1 lookup). Natural upstream
+  homes: `windows/scripts/certificates/` + modules dir. Parameterise the two
+  project tokens (`Src` root in `WindowsClang.Common.psm1:79`, the
+  `import kataglyphis` module-skip). Move `Scripts/download_pfx_files.py`
+  (fully generic WebDAV walker; only caller is WindowsWebDav) upstream with
+  an `--extension` arg. Move each module's Pester test along. Test: Pester
+  both suites; an MSIX build via `Build-Windows.ps1` without `-SkipMsix`.
+  Build preset: clangcl-release.
+
+- [ ] **CI: one container-run composite action instead of 21 inline
+  copies** (M) — `.github/workflows/Windows.yml` re-declares the same
+  docker-run preamble 5x (and hardcodes the image 5x despite
+  `env.GHCR_IMAGE_WIN` existing); `Linux.yml` wraps
+  `docker run --rm -v workspace… | tee` 16x; the image retry-pull loop
+  duplicates `01-core/logging.sh retry()` in yaml. ContainerHub already
+  hosts composite actions (`.github/actions/cleanup-disk-space`) — add
+  `run-in-windows-container` / `run-in-linux-container` actions there and
+  consume them. Gate on `[build-win]`/x86 lanes staying green. Test: push a
+  `[build-win]` commit and compare lane results against the previous run.
+  Build preset: none (CI only).
+
+- [ ] **Wire the Pester suites into CI** (S) — `Scripts/Windows/tests/`
+  (11 files, 781 lines) is never executed by any workflow; upstream has a
+  runner (`windows/scripts/tests/Invoke-Tests.ps1`). Add a cheap CPU-only
+  step to `Windows.yml` running both this repo's and ContainerHub's suites.
+  Also note `CMakePresets.Integrity.Tests.ps1`/`Submodule.Pins.Tests.ps1`
+  are Pester 3.4-syntax while upstream's harness is modern Pester — align
+  when wiring. Test: the new CI step goes green (and red when a preset name
+  is deliberately broken locally). Build preset: none.
+
+- [ ] **Small reuse leftovers** (S) — (1) `Scripts/Windows/cargo-retry.cmd`
+  is project-agnostic: move to ContainerHub windows/scripts and replace the
+  per-retry `pwsh` spawn with `timeout /t 2 /nobreak`; keep the CMake wiring
+  here. (2) `Scripts/Test-WasmSizeBudget.ps1` vs `Scripts/Linux/
+  wasm-size-budget.sh`: the sh side's SHA256-pinned binaryen bootstrap
+  duplicates `01-core/downloads.sh download_verified_file` and the PS side
+  has no bootstrap at all — one upstream helper, budget+crate stay as
+  project data. (3) `Scripts/Compare-RendererPixels.ps1:86` reads
+  `$data.Stride` after `UnlockBits`/`Dispose` — works by accident on a
+  detached BitmapData; hoist the read above the finally. (4)
+  `Scripts/test-all-configs.ps1` has no callers — decide keep-as-utility
+  (then mention it in AGENTS.md) or delete. Test: Pester + one
+  `Compare-RendererPixels` run against existing goldens. Build preset:
+  none.

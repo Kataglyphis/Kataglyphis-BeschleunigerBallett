@@ -34,7 +34,7 @@ if (-not (Test-Path $ExePath)) {
 }
 
 if (-not (Test-Path $ExePath)) {
-    throw "Executable '$ExeName' not found inside $ReleaseDir. Please run the 'build_clangcl_release.ps1' script first."
+    throw "Executable '$ExeName' not found inside $ReleaseDir. Build it first: Build-Windows.ps1 -Configurations clangcl-release (or Build-Windows-Container.ps1)."
 }
 
 # 3. Start the application

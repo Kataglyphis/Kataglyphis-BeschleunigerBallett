@@ -223,14 +223,7 @@ function Invoke-CmakeConfigureAndBuild {
       $env:RUSTC_WRAPPER = $sccacheExe
       $env:CC_WRAPPER = $sccacheExe
       $env:CXX_WRAPPER = $sccacheExe
-
-      if (-not $env:SCCACHE_MAX_JOBS) {
-        # Default cache concurrency to CPU count when not already set.
-        $env:SCCACHE_MAX_JOBS = [Environment]::ProcessorCount.ToString()
-        Write-BuildLog -Context $Context -Message "DEBUG: AUTO-SET SCCACHE_MAX_JOBS=$($env:SCCACHE_MAX_JOBS)"
-      } else {
-        Write-BuildLog -Context $Context -Message "DEBUG: SCCACHE_MAX_JOBS already set to: $env:SCCACHE_MAX_JOBS"
-      }
+      # SCCACHE_MAX_JOBS is already defaulted above, before the wrapper choice.
     } else {
       Write-BuildLog -Context $Context -Message "DEBUG: sccache wrappers remain disabled (DisableSccache=true)"
     }

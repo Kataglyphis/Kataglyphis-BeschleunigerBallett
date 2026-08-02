@@ -126,11 +126,6 @@ if ($SkipBuild) {
   $selectedConfigurations.Clear()
 }
 
-function Test-ConfigurationSelected {
-  param([Parameter(Mandatory)][string]$Name)
-  return $selectedConfigurations.Contains($Name)
-}
-
 $script:clangClVersionLogged = $false
 
 function Invoke-ConfiguredBuild {
@@ -241,7 +236,7 @@ try {
     }
   }
 
-  if (Test-ConfigurationSelected -Name 'msvc-debug') {
+  if (Test-ConfigurationSelected -Name 'msvc-debug' -SelectedConfigurations $selectedConfigurations) {
     # Make MSVC debug configure/build optional so failures here don't fail the whole orchestration
     Invoke-BuildOptional -Context $context -Name "Configure/Build: $presetMsvcDebug (MSVC Debug - optional)" -Script {
       Invoke-CmakeConfigureAndBuild -Context $context -BuildPath $buildPathMsvcDebug -Preset $presetMsvcDebug -Configuration 'Debug' -CleanBuildRoot -ParallelJobs $ParallelJobs -VerboseOutput:$VerboseBuild -DisableSccache:$DisableSccache
@@ -261,7 +256,7 @@ try {
     }
   }
 
-  if (Test-ConfigurationSelected -Name 'msvc-release') {
+  if (Test-ConfigurationSelected -Name 'msvc-release' -SelectedConfigurations $selectedConfigurations) {
     # Make MSVC release configure/build optional so failures here don't fail the whole orchestration
     Invoke-BuildOptional -Context $context -Name "Configure/Build: $presetMsvcRelease (MSVC Release - optional)" -Script {
       Invoke-SlangShaderPrecompile -BuildLabel 'MSVC Release'
@@ -269,7 +264,7 @@ try {
     }
   }
 
-  if (Test-ConfigurationSelected -Name 'clangcl-debug') {
+  if (Test-ConfigurationSelected -Name 'clangcl-debug' -SelectedConfigurations $selectedConfigurations) {
     Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangDebug" -Critical -Script {
       Invoke-SlangShaderPrecompile -BuildLabel 'ClangCL Debug'
       Invoke-ConfiguredBuild -BuildPath $buildPathClangDebug -Preset $presetClangDebug -Configuration 'Debug'
@@ -288,7 +283,7 @@ try {
     }
   }
 
-  if (Test-ConfigurationSelected -Name 'clangcl-profile') {
+  if (Test-ConfigurationSelected -Name 'clangcl-profile' -SelectedConfigurations $selectedConfigurations) {
     Invoke-BuildStep -Context $context -StepName "Configure/Build: $presetClangProfile" -Critical -Script {
       Invoke-ConfiguredBuild -BuildPath $buildPathClangProfile -Preset $presetClangProfile -Configuration 'RelWithDebInfo'
     } | Out-Null
@@ -314,7 +309,7 @@ try {
     }
   }
 
-  if (Test-ConfigurationSelected -Name 'clangcl-release') {
+  if (Test-ConfigurationSelected -Name 'clangcl-release' -SelectedConfigurations $selectedConfigurations) {
     Invoke-BuildStep -Context $context -StepName "Release build/package: $presetClangRelease" -Critical -Script {
       if ($SkipBuild) {
         # When -SkipBuild is requested, skip configure/build but still run
@@ -344,7 +339,7 @@ try {
     } | Out-Null
   }
 
-  if ((-not $SkipMsix) -and (Test-ConfigurationSelected -Name 'clangcl-release')) {
+  if ((-not $SkipMsix) -and (Test-ConfigurationSelected -Name 'clangcl-release' -SelectedConfigurations $selectedConfigurations)) {
     Invoke-BuildOptional -Context $context -Name 'MSIX packaging' -Script {
       $makeappxPath = Resolve-WindowsSdkToolPath -ToolName 'makeappx.exe' -OverridePath $null
       if (-not $makeappxPath) {
