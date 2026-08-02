@@ -1978,3 +1978,73 @@ TEST(BuildIntegrity, PathTracingDispatchMatchesTheShaderWorkgroupSize)
       << path_tracing_path.string() << "'s [numthreads(" << (*path_tracing_threads)[0] << ", "
       << (*path_tracing_threads)[1] << ", " << (*path_tracing_threads)[2] << ")] Z is not 1";
 }
+
+// A stray NUL or other C0 control byte inside a source file makes
+// grep/ripgrep treat the whole file as binary ("binary file matches" instead
+// of printing the line), which silently excludes every call site in it from
+// this project's grep-based planner/executor workflow. SceneConfig.cpp's
+// KATAGLYPHIS_MODEL_OVERRIDE guard carried a literal NUL byte instead of the
+// two-character '\0' escape for exactly this reason until this test caught
+// it. UTF-8 continuation bytes (>= 0x80) and BOMs are not control bytes and
+// are intentionally not flagged.
+TEST(BuildIntegrity, ProjectSourcesContainNoStrayControlBytes)
+{
+    const fs::path repo_root = find_repo_root();
+    if (repo_root.empty()) { GTEST_SKIP() << "could not locate the repository root"; }
+
+    std::vector<std::string> offenders;
+
+    auto scan_file = [&](const fs::path &path) {
+        std::ifstream file(path, std::ios::binary);
+        if (!file) { return; }
+        const std::string relative = fs::relative(path, repo_root).generic_string();
+        char raw_byte;
+        std::size_t offset = 0;
+        while (file.get(raw_byte)) {
+            const auto byte = static_cast<unsigned char>(raw_byte);
+            const bool is_stray_control_byte = byte < 0x20 && byte != '\t' && byte != '\n' && byte != '\r';
+            if (is_stray_control_byte) {
+                offenders.push_back(relative + " (byte offset " + std::to_string(offset) + ")");
+            }
+            ++offset;
+        }
+    };
+
+    const std::vector<fs::path> code_roots = { repo_root / "Src", repo_root / "Test" };
+    for (const auto &root : code_roots) {
+        std::error_code error;
+        if (!fs::exists(root, error)) { continue; }
+
+        for (fs::recursive_directory_iterator it(root, error), end; it != end; it.increment(error)) {
+            if (error) { break; }
+            if (!it->is_regular_file(error)) { continue; }
+            const auto extension = it->path().extension();
+            if (extension != ".cpp" && extension != ".hpp" && extension != ".ixx") { continue; }
+            scan_file(it->path());
+        }
+    }
+
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const std::string slang_build_prefix = (slang_root / "build").generic_string() + "/";
+    std::error_code error;
+    if (fs::exists(slang_root, error)) {
+        for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+            if (error) { break; }
+            const fs::path &path = it->path();
+            if (path.generic_string().rfind(slang_build_prefix, 0) == 0) { continue; }// compiled output tree
+            if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
+            scan_file(path);
+        }
+    }
+
+    EXPECT_TRUE(offenders.empty())
+      << offenders.size()
+      << " project source file(s) contain a stray control byte (NUL or a C0 control other than tab/LF/CR), "
+         "which makes grep/ripgrep treat the file as binary and silently excludes it from every text search "
+         "this project's tooling relies on: "
+      << [&offenders] {
+             std::string joined;
+             for (const auto &entry : offenders) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}

@@ -4410,59 +4410,6 @@ in `docs/`, `README.md` and `AGENTS.md` resolves, and the two
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Replace the raw NUL byte in `SceneConfig.cpp` with `'\0'`, and gate stray control bytes in project sources** — the byte makes grep/ripgrep treat the entire file as binary, so every call site in it is invisible to the search tools this project is worked with.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:115-117` — the
-    `KATAGLYPHIS_MODEL_OVERRIDE` guard; line 116 holds a literal 0x00 byte inside
-    the character literal (byte offset 4573).
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:34` — `find_repo_root()`.
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:893-930`
-    (`EveryShaderSourceHasCompiledBinary`) — the directory-walk + collect-then-
-    assert-empty shape to copy for the new gate.
-
-  **Steps:**
-  1. Rewrite `SceneConfig.cpp:116` so the literal is the two-character escape
-     `'\0'`, i.e. `if (*override_path != '\0') { return resolveModelPath(override_path); }`.
-     Behaviour is unchanged — this is a source-encoding fix, not a logic fix.
-     Verify afterwards that the file is no longer binary: a plain
-     `grep -n resolveModelPath Src/GraphicsEngineVulkan/scene/SceneConfig.cpp`
-     must print lines instead of "binary file matches".
-  2. Add `TEST(BuildIntegrity, ProjectSourcesContainNoStrayControlBytes)` to
-     `Test/commit/VulkanEngine/buildIntegritySuite.cpp`. Walk, from
-     `find_repo_root()`: `Src/` and `Test/` for `.cpp`/`.hpp`/`.ixx`, and
-     `Resources/ShadersSlang/` for `.slang`. **Skip
-     `Resources/ShadersSlang/build/`** — it holds compiled `.spv`/`.wgsl`
-     output. Open each file with `std::ios::binary` and flag any byte that is
-     `\0` or a C0 control character other than `\t` (0x09), `\n` (0x0A) and
-     `\r` (0x0D). Collect `fs::relative(path, repo_root).string()` plus the byte
-     offset, then `EXPECT_TRUE(offenders.empty())` with the list in the failure
-     message, as the neighbouring gates do.
-  3. Do **not** flag bytes >= 0x80: 18 files legitimately carry a UTF-8 BOM
-     (`GUI.cpp:1`, `Mesh.ixx:1`, …) and many comments use UTF-8 em-dashes. The
-     gate is about control bytes only.
-  4. `GTEST_SKIP()` if `find_repo_root()` returns empty, matching the sibling
-     tests.
-
-  **Test:** `BuildIntegrity.ProjectSourcesContainNoStrayControlBytes` — assert it
-  passes after step 1, and sanity-check that it would have caught the bug by
-  temporarily re-inserting a NUL into a scratch file under `Src/` and confirming
-  the test fails (then remove it). No new suite name, so `Windows.yml` needs no
-  edit.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests`
-  then run `commitTestSuite.exe --gtest_filter='BuildIntegrity.*'` from the repo
-  root.
-
-  **Context:** No GPU needed; `SceneConfig.cpp` is a regular implementation unit
-  of the `kataglyphis.vulkan.scene_config` module, not a module interface, so no
-  `-FreshContainer` is required. The value is not the one-character fix but the
-  gate: the project's whole planner/executor workflow finds call sites by
-  grepping `Src/`, and this file has been silently excluded from every such
-  search. Follow the existing `BuildIntegrity` convention of naming the offending
-  file **and** why it matters in the failure message.
-
 - [ ] **(M) (refactor) Delete `DescriptorSetGroup`'s pool-size override machinery and three never-called accessors; extract the pool-size derivation as a pure, tested free function** — one caller keeps ~30 lines of generality alive, and it passes a byte count where a descriptor count belongs.
 
   **Files to read:**
