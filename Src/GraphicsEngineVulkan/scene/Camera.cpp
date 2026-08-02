@@ -40,12 +40,14 @@ auto controllerState(Kataglyphis::Frontend::CameraState &s) -> Kataglyphis::Fron
 // These defaults put the camera outside it, looking slightly down, so the
 // cascaded shadows on the floor are visible the moment the app opens.
 //
-// far_plane matters as much as the position here: cascade splits are computed
-// as farPlane * (i / numCascades), so a 4000-unit far plane put the first
-// cascade at 1333 units and spread a 2048x2048 shadow map across it - a
-// 20-unit scene then landed on a handful of texels. 150 keeps cascade 0 at
-// ~50 units, which is tight enough for crisp shadows while still allowing
-// some flying around.
+// far_plane matters as much as the position here: cascades are fitted to
+// shadowDistance, not directly to far_plane (see CascadedShadowMapMath.cpp's
+// computeCascadeDataInto), but shadowFar = min(shadowDistance, farPlane) still
+// clamps to whichever is smaller. The debug scene ends at ~36 units of view
+// depth, so a 4000-unit far plane would have let shadowDistance's default of
+// 60 through unclamped while leaving the camera itself absurdly far-sighted.
+// 150 is deliberate: still comfortably above the scene and shadow distance
+// for flying around, without being the 4000 that motivated this comment.
 Camera::Camera()
   :
 #if NDEBUG

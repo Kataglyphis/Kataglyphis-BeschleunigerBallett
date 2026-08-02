@@ -113,21 +113,14 @@ auto getModelFile() -> std::string
     return resolveModelPath(relativeModelPath);
 }
 
+// Both configurations scale by (1,1,1), i.e. not at all. The function still
+// exists because of its history: the old 60x scale for the tiny viking_room
+// made the camera start INSIDE the geometry (all backfaces, culled -> black
+// viewport) and stretched the scene far beyond a cascade's useful resolution.
+// Dinosaurs (debug) and crytek-sponza (release) both need no scaling.
 auto getModelMatrix() -> glm::mat4
 {
-    glm::mat4 modelMatrix(1.0F);
-
-#if NDEBUG
-    modelMatrix = glm::scale(modelMatrix, glm::vec3(1.0f, 1.0f, 1.0f));
-#else
-    // Dinosaurs is already ~20 units across, so it needs no scaling. The old
-    // 60x scale existed for the tiny viking_room and made the camera start
-    // INSIDE the geometry (all backfaces, culled -> black viewport), while
-    // stretching the scene far beyond a cascade's useful resolution.
-    modelMatrix = glm::scale(modelMatrix, glm::vec3(1.0F, 1.0F, 1.0F));
-#endif
-
-    return modelMatrix;
+    return glm::mat4(1.0F);
 }
 
 auto getAvailableModelPaths() -> std::span<const std::string>

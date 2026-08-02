@@ -231,3 +231,17 @@ TEST(SceneConfigUnit, ModelMatrixIsUniformPositiveScale)
         }
     }
 }
+
+TEST(CameraSceneConfigUnit, ModelMatrixIsIdentityInEveryConfiguration)
+{
+    // getModelMatrix() used to branch on #if NDEBUG, but both branches scaled
+    // by (1,1,1) - i.e. neither Debug nor Release could ever produce a
+    // different answer. This asserts the identity directly so that fact can't
+    // regress silently in either build configuration.
+    const glm::mat4 model = sceneConfig::getModelMatrix();
+    const glm::mat4 identity(1.0F);
+
+    for (int col = 0; col < 4; ++col) {
+        for (int row = 0; row < 4; ++row) { EXPECT_FLOAT_EQ(model[col][row], identity[col][row]); }
+    }
+}

@@ -4844,27 +4844,6 @@ above it makes the result harmless.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Collapse `getModelMatrix`'s identical `#if NDEBUG` branches and correct `Camera.cpp`'s stale cascade-split comment** — batch X deferred the first explicitly, asking for it to ride along with the next `SceneConfig` change; this is it.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:116-131` — both branches are `glm::scale(identity, vec3(1,1,1))`
-  - `Src/GraphicsEngineVulkan/scene/Camera.cpp:38-48` — the comment claiming `farPlane * (i / numCascades)`
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMapMath.cpp:124-161` — what the split scheme actually does now
-  - `Test/commit/VulkanEngine/cameraSceneConfigSuite.cpp` — where the new assertion goes
-
-  **Steps:**
-  1. Replace `getModelMatrix`'s `#if NDEBUG` block with a single `return glm::mat4(1.0F);`, keeping the explanatory sentence about the removed 60x viking-room scale (that history is the reason the function still exists) as a comment on the function.
-  2. Rewrite `Camera.cpp:44-48`: the far plane no longer drives the cascade splits — `computeCascadeDataInto` fits to `shadowFar = min(shadowDistance, farPlane)` (default `shadow_distance` 60) and blends a logarithmic and a uniform split by `cascade_split_lambda`. Keep the *conclusion* (150 rather than 4000 in debug is deliberate) and state the real current reason: the debug scene ends at ~36 units of view depth, and the far plane still bounds `shadowFar`. Do not restate the split scheme — point at `CascadedShadowMapMath.cpp`.
-  3. Grep `Src/` for any other comment repeating the `farPlane * (i / numCascades)` formula and fix or delete each one found.
-
-  **Test:** Add `CameraSceneConfigUnit.ModelMatrixIsIdentityInEveryConfiguration` asserting `sceneConfig::getModelMatrix() == glm::mat4(1.0F)` (compare component-wise with `EXPECT_FLOAT_EQ`, not `==` on the matrix). It passes in Debug and Release, which is the point: the conditional it replaces could not have had a different answer in either.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=CameraSceneConfigUnit.*` from the repo root. Because the change is `#if NDEBUG`-adjacent, also build `clangcl-release` once and confirm it compiles.
-
-  **Context:** Batch X's rejected-candidates list already records the `getModelMatrix` finding verbatim and the instruction to fold it into the next `SceneConfig` change — this closes that. The `Camera.cpp` comment is the same class of failure `b8cef733` ("docs: fix two claims that contradicted the code") fixed in the docs: a comment that describes code as it was two refactors ago is worse than no comment, because it is read as authority. `docs/cpp-renderer-improvements.md` is where the chronological record lives; do not duplicate the reasoning there.
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 ## Completed (kept for the reasoning, not the status)
