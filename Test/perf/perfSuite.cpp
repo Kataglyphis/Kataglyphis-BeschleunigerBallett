@@ -54,7 +54,7 @@ void BM_CameraKeyControl(benchmark::State &state)
     keys[static_cast<size_t>('W')] = true;
 
     for (auto _ : state) {
-        camera.key_control(keys.data(), 0.016F);
+        camera.key_control(keys, 0.016F);
         benchmark::DoNotOptimize(camera.get_camera_position());
     }
 }

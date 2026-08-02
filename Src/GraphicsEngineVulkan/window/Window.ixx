@@ -4,6 +4,8 @@ module;
 
 #include "../../shared/frontend/WindowInputState.hpp"
 
+#include <span>
+
 export module kataglyphis.vulkan.window;
 
 export namespace Kataglyphis::Frontend {
@@ -21,7 +23,7 @@ class Window
     float get_y_change();
     GLFWwindow *get_window() { return main_window; }
 
-    bool *get_keys() { return input_state.keys.data(); }
+    std::span<const bool> get_keys() { return input_state.keys; }
     bool framebuffer_size_has_changed() const;
     void reset_framebuffer_has_changed();
 

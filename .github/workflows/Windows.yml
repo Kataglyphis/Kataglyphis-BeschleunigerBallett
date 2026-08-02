@@ -219,6 +219,7 @@ jobs:
               'FrameInputUnit.*'
               'WindowInputUnit.*'
               'CameraUnit.*'
+              'CameraControllerUnit.*'
               'SceneConfigUnit.*'
               'GltfParseUnit.*'
               'CascadedShadowMapUnit.*'

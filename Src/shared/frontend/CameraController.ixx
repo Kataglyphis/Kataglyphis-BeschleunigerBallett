@@ -7,6 +7,7 @@ module;
 
 #include <algorithm>
 #include <cmath>
+#include <span>
 
 export module kataglyphis.shared.frontend.camera_controller;
 
@@ -36,16 +37,20 @@ inline void update_camera_vectors(CameraControllerState state)
     state.up = glm::normalize(glm::cross(state.right, state.front));
 }
 
-inline void apply_keyboard_input(CameraControllerState state, const bool *keys, float delta_time)
+inline void apply_keyboard_input(CameraControllerState state, std::span<const bool> keys, float delta_time)
 {
     float const velocity = state.movement_speed * delta_time;
 
-    if (keys[GLFW_KEY_W]) { state.position += state.front * velocity; }
-    if (keys[GLFW_KEY_D]) { state.position += state.right * velocity; }
-    if (keys[GLFW_KEY_A]) { state.position += -state.right * velocity; }
-    if (keys[GLFW_KEY_S]) { state.position += -state.front * velocity; }
-    if (keys[GLFW_KEY_Q]) { state.yaw += -velocity; }
-    if (keys[GLFW_KEY_E]) { state.yaw += velocity; }
+    auto pressed = [keys](int k) {
+        return static_cast<std::size_t>(k) < keys.size() && keys[static_cast<std::size_t>(k)];
+    };
+
+    if (pressed(GLFW_KEY_W)) { state.position += state.front * velocity; }
+    if (pressed(GLFW_KEY_D)) { state.position += state.right * velocity; }
+    if (pressed(GLFW_KEY_A)) { state.position += -state.right * velocity; }
+    if (pressed(GLFW_KEY_S)) { state.position += -state.front * velocity; }
+    if (pressed(GLFW_KEY_Q)) { state.yaw += -velocity; }
+    if (pressed(GLFW_KEY_E)) { state.yaw += velocity; }
 }
 
 inline void apply_mouse_input(CameraControllerState state, float x_change, float y_change)

@@ -115,12 +115,12 @@ TEST(CameraUnit, KeyControlMovesAlongFront)
     constexpr float kStep = 10.0F * 0.5F;// movement_speed * dt
 
     keys[GLFW_KEY_W] = true;
-    camera.key_control(keys.data(), 0.5F);
+    camera.key_control(keys, 0.5F);
     expect_vec3_near(camera.get_camera_position(), start + front * kStep);
 
     keys[GLFW_KEY_W] = false;
     keys[GLFW_KEY_S] = true;
-    camera.key_control(keys.data(), 0.5F);
+    camera.key_control(keys, 0.5F);
     expect_vec3_near(camera.get_camera_position(), start);
 }
 

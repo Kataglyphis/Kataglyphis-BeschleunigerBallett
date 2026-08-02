@@ -5,6 +5,8 @@ module;
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <span>
+
 export module kataglyphis.vulkan.camera;
 
 export class Camera
@@ -12,7 +14,7 @@ export class Camera
   public:
     Camera();
 
-    void key_control(const bool *keys, float delta_time);
+    void key_control(std::span<const bool> keys, float delta_time);
     void mouse_control(float x_change, float y_change);
 
     glm::vec3 get_camera_position() const { return camera_state.position; };

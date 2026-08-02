@@ -3,15 +3,37 @@ module;
 #include <GLFW/glfw3.h>
 #include <glm/geometric.hpp>
 
+#include "../../shared/frontend/CameraState.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/trigonometric.hpp>
+#include <span>
 
 module kataglyphis.vulkan.camera;
 
 import kataglyphis.shared.frontend.camera_controller;
+
+namespace {
+
+// Kept in the .cpp rather than on Camera: putting it there would drag
+// CameraController.ixx's GLFW include into the camera module interface.
+auto controllerState(Kataglyphis::Frontend::CameraState &s) -> Kataglyphis::Frontend::CameraControllerState
+{
+    return { .position = s.position,
+        .front = s.front,
+        .world_up = s.world_up,
+        .right = s.right,
+        .up = s.up,
+        .yaw = s.yaw,
+        .pitch = s.pitch,
+        .movement_speed = s.movement_speed,
+        .turn_speed = s.turn_speed };
+}
+
+}// namespace
 
 // Debug starts on the Dinosaurs scene (see SceneConfig::getModelFile), which
 // spans x/z [-10,10] with figures up to y=3.64 on their own ground plane.
@@ -58,35 +80,15 @@ Camera::Camera()
     update();
 }
 
-void Camera::key_control(const bool *keys, float delta_time)
+void Camera::key_control(std::span<const bool> keys, float delta_time)
 {
-    Kataglyphis::Frontend::apply_keyboard_input({ camera_state.position,
-                                                  camera_state.front,
-                                                  camera_state.world_up,
-                                                  camera_state.right,
-                                                  camera_state.up,
-                                                  camera_state.yaw,
-                                                  camera_state.pitch,
-                                                  camera_state.movement_speed,
-                                                  camera_state.turn_speed },
-      keys,
-      delta_time);
+    Kataglyphis::Frontend::apply_keyboard_input(controllerState(camera_state), keys, delta_time);
     update();
 }
 
 void Camera::mouse_control(float x_change, float y_change)
 {
-    Kataglyphis::Frontend::apply_mouse_input({ camera_state.position,
-                                               camera_state.front,
-                                               camera_state.world_up,
-                                               camera_state.right,
-                                               camera_state.up,
-                                               camera_state.yaw,
-                                               camera_state.pitch,
-                                               camera_state.movement_speed,
-                                               camera_state.turn_speed },
-      x_change,
-      y_change);
+    Kataglyphis::Frontend::apply_mouse_input(controllerState(camera_state), x_change, y_change);
 }
 
 void Camera::set_near_plane(float near_plane) { camera_state.near_plane = near_plane; }
@@ -105,15 +107,4 @@ auto Camera::calculate_viewmatrix() -> glm::mat4
 
 Camera::~Camera() = default;
 
-void Camera::update()
-{
-    Kataglyphis::Frontend::update_camera_vectors({ camera_state.position,
-      camera_state.front,
-      camera_state.world_up,
-      camera_state.right,
-      camera_state.up,
-      camera_state.yaw,
-      camera_state.pitch,
-      camera_state.movement_speed,
-      camera_state.turn_speed });
-}
+void Camera::update() { Kataglyphis::Frontend::update_camera_vectors(controllerState(camera_state)); }
