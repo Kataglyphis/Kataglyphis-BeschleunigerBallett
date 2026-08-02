@@ -3,8 +3,6 @@
 #include <optional>
 
 #include <algorithm>
-#include <array>
-#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -15,6 +13,7 @@
 #include <vulkan/vulkan.hpp>
 
 #include "common/Utilities.hpp"
+#include "renderer/PathTracingDispatch.hpp"
 #include "renderer/pushConstants/PushConstantPathTracing.hpp"
 
 module kataglyphis.vulkan.path_tracing;
@@ -32,18 +31,6 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::init(std::shared_ptr<Vul
   std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
     this->device = in_device;
-
-    vk::PhysicalDeviceProperties const physicalDeviceProps = device->getPhysicalDeviceProperties();
-
-    computeLimits.maxComputeWorkGroupCount[0] = physicalDeviceProps.limits.maxComputeWorkGroupCount[0];
-    computeLimits.maxComputeWorkGroupCount[1] = physicalDeviceProps.limits.maxComputeWorkGroupCount[1];
-    computeLimits.maxComputeWorkGroupCount[2] = physicalDeviceProps.limits.maxComputeWorkGroupCount[2];
-
-    computeLimits.maxComputeWorkGroupInvocations = physicalDeviceProps.limits.maxComputeWorkGroupInvocations;
-
-    computeLimits.maxComputeWorkGroupSize[0] = physicalDeviceProps.limits.maxComputeWorkGroupSize[0];
-    computeLimits.maxComputeWorkGroupSize[1] = physicalDeviceProps.limits.maxComputeWorkGroupSize[1];
-    computeLimits.maxComputeWorkGroupSize[2] = physicalDeviceProps.limits.maxComputeWorkGroupSize[2];
 
     createPipeline(descriptorSetLayouts);
 }
@@ -151,9 +138,9 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipeline_layout, 0, descriptorSets, nullptr);
 
     uint32_t const workGroupCountX = std::max(
-      (imageSize.width + specializationData.specWorkGroupSizeX - 1) / specializationData.specWorkGroupSizeX, 1U);
+      (imageSize.width + Kataglyphis::kPathTracingWorkgroupSizeX - 1) / Kataglyphis::kPathTracingWorkgroupSizeX, 1U);
     uint32_t const workGroupCountY = std::max(
-      (imageSize.height + specializationData.specWorkGroupSizeY - 1) / specializationData.specWorkGroupSizeY, 1U);
+      (imageSize.height + Kataglyphis::kPathTracingWorkgroupSizeY - 1) / Kataglyphis::kPathTracingWorkgroupSizeY, 1U);
     uint32_t const workGroupCountZ = 1;
 
     commandBuffer.dispatch(workGroupCountX, workGroupCountY, workGroupCountZ);
@@ -226,26 +213,9 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
 
     vk::ShaderModule pathTracingModule = loadSpirvShaderModule(device, slang_spv_dir + pathTracing_spv);
 
-    std::array<vk::SpecializationMapEntry, 2> specEntries{};
-
-    specEntries[0].constantID = 0;
-    specEntries[0].size = sizeof(specializationData.specWorkGroupSizeX);
-    specEntries[0].offset = 0;
-
-    specEntries[1].constantID = 1;
-    specEntries[1].size = sizeof(specializationData.specWorkGroupSizeY);
-    specEntries[1].offset = offsetof(SpecializationData, specWorkGroupSizeY);
-
-    vk::SpecializationInfo specInfo{};
-    specInfo.dataSize = sizeof(specializationData);
-    specInfo.mapEntryCount = static_cast<uint32_t>(specEntries.size());
-    specInfo.pMapEntries = specEntries.data();
-    specInfo.pData = &specializationData;
-
     vk::PipelineShaderStageCreateInfo compute_shader_integrate_create_info{};
     compute_shader_integrate_create_info.stage = vk::ShaderStageFlagBits::eCompute;
     compute_shader_integrate_create_info.module = pathTracingModule;
-    compute_shader_integrate_create_info.pSpecializationInfo = &specInfo;
     compute_shader_integrate_create_info.pName = "main";
 
     vk::ComputePipelineCreateInfo compute_pipeline_create_info{};

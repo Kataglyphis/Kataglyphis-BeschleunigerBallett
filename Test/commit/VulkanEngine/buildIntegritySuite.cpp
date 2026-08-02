@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "common/host_device_shared_vars.hpp"
+#include "renderer/PathTracingDispatch.hpp"
 #include "scene/atmospheric_effects/clouds/CloudDispatch.hpp"
 
 namespace {
@@ -1943,4 +1944,37 @@ TEST(BuildIntegrity, CloudDispatchGridsMatchTheShaderWorkgroupSizes)
       << Kataglyphis::kCloudWorkgroupSize << ')';
     EXPECT_EQ((*cloud_threads)[2], 1) << clouds_path.string() << "'s [numthreads(" << (*cloud_threads)[0] << ", "
                                        << (*cloud_threads)[1] << ", " << (*cloud_threads)[2] << ")] Z is not 1";
+}
+
+// PathTracing.cpp dispatches the path tracing compute pass using
+// kPathTracingWorkgroupSizeX/Y (PathTracingDispatch.hpp) to size the
+// thread-group grid. Those constants have no compiler-enforced link to the
+// [numthreads(...)] attribute path_tracing.slang actually declares - this
+// already went wrong once (found 2026-07-31 at (16, 8) against a shader
+// compiled at (8, 8), under-covering the image width by 2x every frame).
+// Mirrors CloudDispatchGridsMatchTheShaderWorkgroupSizes's shape.
+TEST(BuildIntegrity, PathTracingDispatchMatchesTheShaderWorkgroupSize)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path path_tracing_path =
+      repo_root / "Resources" / "ShadersSlang" / "path_tracing" / "path_tracing.slang";
+
+    const auto path_tracing_threads = parse_numthreads(path_tracing_path);
+    ASSERT_TRUE(path_tracing_threads.has_value())
+      << "no [numthreads(...)] attribute found in " << path_tracing_path.string();
+    EXPECT_EQ((*path_tracing_threads)[0], static_cast<int>(Kataglyphis::kPathTracingWorkgroupSizeX))
+      << path_tracing_path.string() << "'s [numthreads(" << (*path_tracing_threads)[0] << ", "
+      << (*path_tracing_threads)[1] << ", " << (*path_tracing_threads)[2]
+      << ")] X does not match PathTracingDispatch.hpp's kPathTracingWorkgroupSizeX ("
+      << Kataglyphis::kPathTracingWorkgroupSizeX << ')';
+    EXPECT_EQ((*path_tracing_threads)[1], static_cast<int>(Kataglyphis::kPathTracingWorkgroupSizeY))
+      << path_tracing_path.string() << "'s [numthreads(" << (*path_tracing_threads)[0] << ", "
+      << (*path_tracing_threads)[1] << ", " << (*path_tracing_threads)[2]
+      << ")] Y does not match PathTracingDispatch.hpp's kPathTracingWorkgroupSizeY ("
+      << Kataglyphis::kPathTracingWorkgroupSizeY << ')';
+    EXPECT_EQ((*path_tracing_threads)[2], 1)
+      << path_tracing_path.string() << "'s [numthreads(" << (*path_tracing_threads)[0] << ", "
+      << (*path_tracing_threads)[1] << ", " << (*path_tracing_threads)[2] << ")] Z is not 1";
 }

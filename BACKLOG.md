@@ -4241,6 +4241,320 @@ leaving `tlas.vulkanAS` non-null and `blas` unshrunk (`ASManager.cpp:381-401`)**
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
+## 2026-08-02 batch V — planner (an SSAO hemisphere pointed into the screen, an exposure shader that snaps on a stalled frame, the last unpinned dispatch grid plus its inert spec constants, two command buffers that record nothing, an LOD merge that is only half order-independent)
+
+**Every task in this batch is verifiable with no GPU**, deliberately: the five
+`- [b]` entries above are all blocked on host GPU golden verification, which is
+still unavailable in this session. Tasks 1, 2 and 5 are provable with `cargo
+test` (unit tests, plus headless tests that already skip themselves when no
+adapter is present — `headless.rs:621-624`); task 3 is a `BuildIntegrity`
+source-scan gate of exactly the shape `a348bd9f` added for the cloud dispatches;
+task 4 is a provable no-op (an empty command buffer executes nothing) that the
+compiler and the existing suites confirm. Every `file:line` below was read out of
+the tree this pass.
+
+**The headline is that the Rust renderer's SSAO hemisphere points away from the
+camera.** `ssao.slang:66` builds the reconstructed normal as
+`normalize(cross(px - p, py - p))` where `px` is one texel to the RIGHT and `py`
+one texel DOWN. `view_pos_at` (`ssao.slang:40-45`) maps `uv.y` down to `ndc.y`
+up, and the camera is `Mat4::perspective_rh` (`scene/camera.rs:52`), so in view
+space `px - p ≈ +X` and `py - p ≈ -Y`; `cross(+X, -Y) = -Z`. View space here is
+right-handed with visible geometry at `z < 0`, so a surface facing the camera has
+a normal of **+Z** — every reconstructed normal is negated. The kernel
+(`ssao.slang:17-30`, all twelve entries with `k.z > 0`) is then rotated into a
+hemisphere that points *into* the surface, so every sample lands behind the
+geometry and the occlusion test `sceneZ >= samplePos.z + bias` is true for
+essentially every sample on every surface. Worked through at the shipped tuning
+(`forward.rs:1663`, `radius = 0.6, bias = 0.02, intensity = 1.0`) for a
+fronto-parallel wall at view `z = -5`: `samplePos.z ≈ -5.18`, `sceneZ = -5`,
+`rangeCheck = 1`, so `ao = 1 - 12/12 = 0` — the AO buffer is black wherever there
+is geometry, and `tonemap.slang:58-60`'s `lerp(1.0, aoRaw, ssao_strength)`
+multiplies the whole image by `1 - ssao_strength` (0.3 at the default 0.7). SSAO
+currently contributes a flat global dimming and **no** crease darkening at all.
+The existing oracle cannot see it: `ssao_darkens_geometry`
+(`tests/headless.rs:620-655`) only asserts that total energy drops, which a
+uniform multiply satisfies perfectly — the same "the test that should have caught
+it cannot tell the two cases apart" shape as `6a6fa2bf` and `8b28543c`.
+
+Tasks 2-5 are independent. Task 2 is a CPU-oracle/shader divergence on a case
+`FrameClock` is documented to produce. Task 3 finishes the dispatch-pinning sweep
+`a348bd9f` started and deletes the specialization machinery that the
+already-fixed entry at line 2044 proved inert. Tasks 4 and 5 are refactors, the
+second of which strengthens an invariant the module already claims.
+
+Ordering: all five are independent and touch disjoint files. Task 1 regenerates a
+committed `.wgsl`, so run it before any other change that touches
+`Resources/ShadersSlang/`.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`Texture::createImage` not recording `in_mip_levels`
+into `mip_levels`** — re-confirmed, re-rejected for the reason batch IV gave;
+**`PostStage::recreateFrameResources` not destroying its framebuffers before
+`createFramebuffer()` re-fills the vector (`PostStage.cpp:149-155`)** — looks
+like a per-resize leak, but `VulkanRenderer::recreateSwapChain` calls
+`postStage.destroyFramebuffers()` first (`VulkanRenderer.cpp:664`), and the same
+holds for `Rasterizer`/`DeferredRasterizer`/`SkyBox`; **`VulkanSwapChain`'s
+`std::vector<Texture>` reallocating mid-loop while each element wraps a swapchain
+image (`VulkanSwapChain.cpp:155-161`)** — `VulkanImage::setImage` clears
+`owns_image` (`VulkanImage.cpp:153-159`) and the move constructor carries the
+flag, so a reallocation cannot double-destroy; **`cs_reduce_exposure` having no
+`is_finite` recovery for a NaN `exposure_state[0]`, unlike
+`adapt_exposure_ev`** — real divergence, but nothing writes NaN into that buffer
+(`histogram.wgsl` guards every divide) so there is no reachable path.
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Delete two command buffers that are allocated, submitted and fence-waited without ever recording a command** — one per swapchain resize in each rasterizer, and in `Rasterizer` it also hides that the real transition submits its own second buffer first.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:272-326` —
+    `createTextures` opens `cmdBuffer` at :276, records nothing into it, calls
+    the *device/queue/pool* overload of `transitionImageLayout` at :316 (which
+    allocates, submits and fence-waits its own command buffer), then submits the
+    empty `cmdBuffer` at :324
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:65-105` — same
+    empty open/submit pair, with no transition at all in between
+  - `Src/GraphicsEngineVulkan/renderer/CommandBufferManager.cpp:54-124` —
+    `endAndSubmitCommandBuffer` creates a fence, submits, waits and destroys it;
+    this is what the empty buffers cost
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:104-105`, `:679-680` —
+    the four call sites that pass `graphics_command_pool`
+
+  **Steps:**
+  1. In `Rasterizer::createTextures`, delete the `beginCommandBuffer` at :276 and
+     the matching `endAndSubmitCommandBuffer` at :324. Keep the
+     `transitionImageLayout(device, queue, commandPool, ...)` call at :316 and
+     the `commandPool` parameter — that overload still needs the pool. Add a
+     one-line comment on the transition saying it submits and waits on its own.
+  2. In `DeferredRasterizer::createTextures`, delete the same pair. No
+     transition remains, so the parameter becomes unused: drop it from
+     `createTextures`, from `recreateFrameResources`
+     (`DeferredRasterizer.cpp:177`, `DeferredRasterizer.ixx:61`) and from `init`
+     (`DeferredRasterizer.cpp:31-44`, `.ixx`), then update
+     `VulkanRenderer.cpp:105` and `:680`. Leave `Rasterizer`'s signatures alone —
+     the two classes' signatures diverging is correct here, because only one of
+     them still does queue work.
+  3. Confirm no depth/GBuffer transition was silently being relied on in
+     `DeferredRasterizer`: its render pass declares
+     `initialLayout = eUndefined` for the attachments it creates
+     (`DeferredRasterizer::createRenderPass`), which is why nothing was ever
+     recorded. Note that in a comment next to the depth image creation.
+  4. Delete the three stray blank lines left at
+     `DeferredRasterizer.cpp:106-109`.
+
+  **Test:** No new test — an empty command buffer executes nothing, so this is a
+  provable no-op and there is no behaviour to pin. The existing device-free
+  suites plus a clean `clangcl-debug` build (and, when a GPU is next available,
+  any golden render) are the verification.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipPerfTests -SkipMsix`
+
+  **Context:** The pattern is a leftover from when `createTextures` recorded its
+  transitions inline. `endAndSubmitCommandBuffer` is fully synchronous
+  (`CommandBufferManager.cpp:97-114`: create fence, submit, `waitForFences`,
+  destroy fence), so each empty pair is an allocation, a queue submit and a
+  round trip to the GPU on every window resize, twice. The larger prize is
+  legibility: reading `Rasterizer::createTextures` today suggests the layout
+  transition is batched into `cmdBuffer`, when in fact it has already been
+  submitted and waited on by the time the outer submit runs.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) Fix SSAO's reconstructed normal, which points away from the camera, and give the pass an oracle that can tell occlusion from a global dimming** — every kernel sample currently lands behind the surface, so the AO buffer is ~0 everywhere there is geometry and SSAO is a flat `1 - ssao_strength` multiply.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/ssao/ssao.slang:40-92` — `view_pos_at`, the normal
+    at :66, the tangent frame at :68-71, and the occlusion test at :89
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/shaders/ssao.wgsl:81`
+    — the generated copy of the same expression (regenerated, not hand-edited)
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/ssao.rs:183-198`
+    — `write_uniforms`; `inv_proj` is `proj.inverse()`, `proj` is
+    `Mat4::perspective_rh` (`src/scene/camera.rs:50-58`)
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/forward.rs:1662-1664`
+    — the shipped tuning: `radius = 0.6, bias = 0.02, intensity = 1.0`
+  - `Resources/ShadersSlang/tonemap/tonemap.slang:55-60` — how the AO value
+    reaches the frame
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/tests/headless.rs:620-655`
+    — `ssao_darkens_geometry`, the oracle that cannot currently fail
+  - `Scripts/Windows/compile-slang-shaders.ps1:94-96`, `:220`, `:253` — the
+    manifest rows and post-patch list for `ssao.wgsl`
+
+  **Steps:**
+  1. In `ssao.slang`, swap the cross-product operands to
+     `normalize(cross(py - p, px - p))` (equivalently negate the current
+     result). Replace the bare line with a comment that states the derivation
+     the way `Frustum.cpp:40-50` and `tile_grid.rs` state theirs: `+du` is `+X`
+     in view space, `+dv` is `-Y` because `view_pos_at` flips `uv.y`, view space
+     is right-handed with visible geometry at `z < 0`, so the camera-facing
+     normal is `+Z` and `cross(py - p, px - p)` is the order that produces it.
+  2. Regenerate the committed WGSL — do not hand-edit `src/shaders/ssao.wgsl`.
+     The manifest/patch gates (`BuildIntegrity.SlangCompileManifestsAgree`, the
+     generated-artifact gate) will fail if the two drift.
+  3. Re-check the tangent frame at :68-71 after the flip: `up` is switched on
+     `abs(n.y) > 0.98`, which is sign-independent, so it needs no change — say
+     so in a comment rather than leaving the reader to re-derive it.
+  4. Sanity-check the sign end to end with the numbers in this batch's preamble:
+     for a fronto-parallel wall the corrected normal must give `ao == 1` (no
+     occlusion), not `0`.
+
+  **Test:** Add `ssao_leaves_a_flat_surface_unoccluded` to
+  `tests/headless.rs`, next to `ssao_darkens_geometry` and following its
+  skip-without-adapter preamble: render a scene whose visible geometry is a
+  single plane roughly facing the camera (an axis-aligned view of
+  `tests/assets/cube_alpha.gltf` works — pitch 0, so one face fills the frame),
+  read back the AO-affected image at `ssao_strength = 1.0` and at `0.0`, and
+  assert the two agree to within a small tolerance over the interior of the
+  face. That is the assertion the current code fails (interior drops to ~0.3 of
+  the unoccluded value) and `ssao_darkens_geometry` cannot express. Keep
+  `ssao_darkens_geometry` — with correct normals a cube seen at
+  `pitch_deg: 60.0` still has creases, so it should stay green; if its
+  `50_000` margin no longer holds, retune the margin and record the measured
+  before/after in the test comment rather than deleting the test.
+
+  **Build:** Rust only. Run from the crate root:
+  `cargo test -p kataglyphis_webgpu_renderer --test headless` (headless tests
+  skip themselves with `SKIP: no GPU adapter available` when there is no
+  adapter — if that is what you see, say so explicitly in the commit message
+  rather than reporting the suite as green). Then a full
+  `clangcl-debug` container build to keep the shader gates honest.
+
+  **Context:** Same class as `6a6fa2bf` (`gpu_cull.slang`'s NDC→uv vertical
+  mirror) and `8b28543c` (tile-light binning): a handedness/orientation error
+  that survives because the only test asserts a direction of change rather than
+  a structural property. The uv↔NDC mapping in `view_pos_at` is NOT the bug —
+  the backlog already records `ssao.slang:40-46` as the correct consumer of that
+  convention (see the batch at line 3893). Only the cross-product operand order
+  is wrong.
+
+- [ ] **(S) Make the exposure shader hold the current EV on a zero-length frame, the way the CPU oracle it claims to mirror does** — `FrameClock` is documented to emit `0.0` on a coarse or repeated timer reading, and the shader treats that as "snap instantly to the new target".
+
+  **Files to read:**
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/shaders/histogram.wgsl`
+    — `cs_reduce_exposure`; `var adapted = target_ev;` followed by
+    `if (dt > 0.0 && speed > 0.0) { ... }`, so both degenerate cases fall
+    through to an instant snap
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/auto_exposure.rs:119-133`
+    — `adapt_exposure_ev`, which returns `current_ev` when
+    `delta_time_seconds <= 0.0 || speed <= 0.0`
+  - `.../src/render/auto_exposure.rs:323-335` —
+    `a_stalled_frame_or_disabled_adaptation_holds_the_current_value`, the test
+    that pins the CPU rule
+  - `.../src/render/frame_clock.rs:38-45`, `:73-81` — `tick_at` deliberately
+    clamps a backwards or repeated reading to `0.0`, and its test comment names
+    `adapt_exposure_ev` as the consumer being protected
+  - `.../src/render/forward.rs:1666-1675` — `delta_time_seconds:
+    self.frame_delta_seconds.max(0.0)`, so a `0.0` from the clock reaches the
+    shader unchanged
+  - `.../tests/histogram.rs:184-235` — `reduce_exposure` and
+    `gpu_reduction_matches_the_cpu_exposure_maths`, which only exercises
+    `speed: 0.0`
+
+  **Steps:**
+  1. Decide and record the two rules explicitly, because they are different
+     cases and the code currently conflates them:
+     `speed <= 0` means "no smoothing — use the target immediately" (this is
+     what `tests/histogram.rs:230` already documents and what a 0 on the UI
+     slider should do), and `dt <= 0` means "no time passed — hold the current
+     value" (a stalled frame or a coarse timer must not produce an exposure
+     pop).
+  2. In `histogram.wgsl`'s `cs_reduce_exposure`, add the `dt` case: when
+     `dt <= 0.0`, write `exposure_state[0] = current_ev` and
+     `exposure_state[1] = target_ev` and return, leaving the `speed <= 0.0`
+     snap as it is. Replace the "Mirrors ... adapt_exposure_ev" claim at the top
+     of the reduction section with the two rules above, so the next reader does
+     not have to diff the two implementations to find where they part.
+  3. In `auto_exposure.rs`, make `adapt_exposure_ev` agree: `speed <= 0.0` now
+     returns `target_ev`, `delta_time_seconds <= 0.0` keeps returning
+     `current_ev`. Update the doc comment.
+  4. Regenerate nothing — `histogram.wgsl` is hand-written by design (see
+     `AGENTS.md`, "Shaders"), and `buildIntegritySuite.cpp:101` deliberately
+     excludes it from the generated-artifact gate.
+
+  **Test:** Update
+  `a_stalled_frame_or_disabled_adaptation_holds_the_current_value` in
+  `auto_exposure.rs` — split it into `a_stalled_frame_holds_the_current_value`
+  (dt 0 → 1.5) and `disabled_smoothing_uses_the_target_immediately`
+  (speed 0 → target), each naming which rule it pins. Then add
+  `a_zero_length_frame_does_not_snap_the_exposure` to `tests/histogram.rs`
+  using the existing `reduce_exposure` helper: run one reduce with
+  `speed: 3.0` and a normal `dt` to move the adapted EV off its start, then a
+  second with the same settings and `delta_time_seconds: 0.0`, and assert the
+  adapted value did not move. That is the case both the current shader and the
+  current CPU function get differently, and neither suite covers today.
+
+  **Build:** Rust only:
+  `cargo test -p kataglyphis_webgpu_renderer` (unit tests need no adapter;
+  `--test histogram` needs one and skips itself without).
+
+  **Context:** The CPU functions in `auto_exposure.rs` are not on the render
+  path — the adaptation that ships runs entirely in `cs_reduce_exposure`
+  (`histogram.wgsl` documents exactly why it never reads back). That makes the
+  CPU module an oracle, and an oracle that disagrees with the shipped path on a
+  reachable input is worse than no oracle: `frame_clock.rs` is *built* to emit
+  the input they disagree on, on the wasm target where `Performance::now()` has
+  deliberately reduced resolution. Same shape as the drifted comparison scripts
+  in the 2026-08-01 batches.
+
+- [ ] **(M) (refactor) Make LOD vertex merging order-independent for every attribute, not just position and normal** — `simplify_primitive` averages position and normal but keeps uv, tangent, colour, joints and weights from whichever vertex the loop happened to visit first, so a reordered mesh simplifies to a different surface and a skinned LOD binds to an arbitrary bone.
+
+  **Files to read:**
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/scene/lod.rs:60-96`
+    — the merge loop; `vertices.push(*v)` inside `or_insert_with` is the
+    first-wins copy, and only `normal` and `position` are recomputed afterwards
+  - `.../src/scene/lod.rs:111-122` — the result carries `skin_index` through, so
+    simplified primitives of skinned meshes are still skinned
+  - `.../src/scene/lod.rs:357-419` —
+    `simplification_is_independent_of_vertex_order`, which compares positions
+    only, and whose comment explains why the jitter in it is load-bearing
+  - `.../src/scene/mod.rs` — `Vertex` (`position`, `normal`, `uv`, `tangent`,
+    `joints`, `weights`, `color`, `uv1`)
+  - `.../src/scene/qem.rs` — the other simplifier, for how it handles the same
+    question (match its convention if it already has one; diverge only with a
+    comment saying why)
+
+  **Steps:**
+  1. Define one rule and write it into the module doc: merged position and
+     normal stay averaged (they are meaningfully interpolable and the existing
+     tests pin them), and every other attribute is taken from the cell's
+     **medoid** — the input vertex nearest the merged centroid. Averaging
+     `joints` is meaningless (a bone index is not a number you can interpolate)
+     and averaging `uv` across a seam smears the atlas, so "nearest real vertex"
+     is the rule that is both defensible and order-independent.
+  2. Implement it in a second pass, after the centroids are known: track per
+     cell the index of the input vertex with the smallest squared distance to
+     the final centroid, breaking ties by the smaller original vertex index so
+     the choice cannot depend on iteration order. Copy `uv`, `uv1`, `tangent`,
+     `color`, `joints` and `weights` from that vertex, then re-apply the
+     averaged position and normal.
+  3. Keep the allocation shape: one extra `Vec<usize>`/`Vec<f32>` sized by
+     merged-vertex count, no per-cell `Vec`. The function's O(n) contract is in
+     its module doc — do not turn it into O(n·k).
+  4. Check `build_lod_chain_with`'s `Simplifier::Quadric` arm: if `qem.rs`
+     already has a different attribute rule, say which in the doc comment on
+     `Simplifier` rather than silently having two.
+
+  **Test:** Extend `simplification_is_independent_of_vertex_order` to compare
+  `uv`, `joints` and `weights` alongside position (exact equality is right for
+  these — they are copied, not summed, so the f32-summation tolerance the
+  comment explains does not apply). Then add
+  `merged_vertices_take_their_skin_binding_from_the_nearest_real_vertex`: a
+  single cell containing vertices bound to different joints, asserting the
+  merged vertex carries the medoid's `joints`/`weights` and that reversing the
+  input order does not change the answer. The first test fails today for `uv`
+  and `joints`; verify that before fixing.
+
+  **Build:** Rust only:
+  `cargo test -p kataglyphis_webgpu_renderer --lib scene::lod`
+
+  **Context:** The module already claims order-independence and explains at
+  length (`lod.rs:50-59`, `:357-367`) why first-wins merging was wrong for
+  position — the fix stopped one attribute short, and the property test stopped
+  at the same place, so the remaining half has been invisible. Skinned LODs are
+  the concrete failure: a merged vertex straddling two bones follows exactly one
+  of them, chosen by authoring order, which tears the limb at LOD switch
+  distance.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
