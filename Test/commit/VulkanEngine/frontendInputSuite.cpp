@@ -22,6 +22,7 @@ using Kataglyphis::Frontend::consume_axis_delta;
 using Kataglyphis::Frontend::handle_key_callback;
 using Kataglyphis::Frontend::handle_mouse_callback;
 using Kataglyphis::Frontend::reset_window_keys;
+using Kataglyphis::Frontend::should_capture_cursor;
 using Kataglyphis::Frontend::window_key_count;
 }// namespace
 
@@ -138,4 +139,48 @@ TEST(WindowInputUnit, ImGuiCaptureGateSwallowsInput)
     EXPECT_TRUE(keys[GLFW_KEY_W]);
 
     ImGui::DestroyContext(ctx);
+}
+
+TEST(WindowInputUnit, ReleaseIsHonouredWhileImGuiHasCapture)
+{
+    // A key held when an ImGui widget takes focus must still be releasable -
+    // otherwise the camera keeps moving forever once focus returns.
+    ImGuiContext *ctx = ImGui::CreateContext();
+    ASSERT_NE(ctx, nullptr);
+    ImGui::GetIO().WantCaptureKeyboard = false;
+
+    bool keys[window_key_count];
+    reset_window_keys(keys);
+    handle_key_callback(nullptr, keys, GLFW_KEY_W, GLFW_PRESS);
+    EXPECT_TRUE(keys[GLFW_KEY_W]);
+
+    ImGui::GetIO().WantCaptureKeyboard = true;
+    handle_key_callback(nullptr, keys, GLFW_KEY_W, GLFW_RELEASE);
+    EXPECT_FALSE(keys[GLFW_KEY_W]) << "release must fall through the ImGui capture gate";
+
+    ImGui::DestroyContext(ctx);
+}
+
+TEST(WindowInputUnit, PressIsStillSwallowedWhileImGuiHasCapture)
+{
+    ImGuiContext *ctx = ImGui::CreateContext();
+    ASSERT_NE(ctx, nullptr);
+    ImGui::GetIO().WantCaptureKeyboard = true;
+
+    bool keys[window_key_count];
+    reset_window_keys(keys);
+    handle_key_callback(nullptr, keys, GLFW_KEY_A, GLFW_PRESS);
+    EXPECT_FALSE(keys[GLFW_KEY_A]) << "press must still be gated while ImGui has capture";
+
+    ImGui::DestroyContext(ctx);
+}
+
+TEST(WindowInputUnit, CursorCaptureDecisionIgnoresImGuiState)
+{
+    // A release must always return false regardless of capture - the
+    // decision to (re)install the cursor callback is a pure function of
+    // button/action, independent of ImGui.
+    EXPECT_TRUE(should_capture_cursor(GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS));
+    EXPECT_FALSE(should_capture_cursor(GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE));
+    EXPECT_FALSE(should_capture_cursor(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS));
 }

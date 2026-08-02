@@ -100,6 +100,8 @@ void Window::init_callbacks()
     glfwSetScrollCallback(main_window, &scroll_callback);
     glfwSetCharCallback(main_window, &char_callback);
     glfwSetFramebufferSizeCallback(main_window, &framebuffer_size_callback);
+    glfwSetWindowFocusCallback(main_window, &window_focus_callback);
+    glfwSetCursorEnterCallback(main_window, &cursor_enter_callback);
 }
 
 void Window::framebuffer_size_callback(GLFWwindow *window, int width, int height)
@@ -108,8 +110,21 @@ void Window::framebuffer_size_callback(GLFWwindow *window, int width, int height
     app->framebuffer_resized = true;
     app->window_width = static_cast<uint32_t>(width);
     app->window_height = static_cast<uint32_t>(height);
+}
 
-    ImGui_ImplGlfw_WindowFocusCallback(window, GLFW_TRUE);
+void Window::window_focus_callback(GLFWwindow *window, int focused)
+{
+    ImGui_ImplGlfw_WindowFocusCallback(window, focused);
+
+    if (focused == GLFW_FALSE) {
+        auto *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
+        Kataglyphis::Frontend::reset_window_keys(the_window->input_state.keys.data());
+    }
+}
+
+void Window::cursor_enter_callback(GLFWwindow *window, int entered)
+{
+    ImGui_ImplGlfw_CursorEnterCallback(window, entered);
 }
 
 void Window::reset_framebuffer_has_changed() { this->framebuffer_resized = false; }
@@ -119,8 +134,6 @@ void Window::key_callback(GLFWwindow *window, int key, int scancode, int action,
     ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
 
     auto *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
-    if (ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureKeyboard) { return; }
-
     Kataglyphis::Frontend::handle_key_callback(window, the_window->input_state.keys.data(), key, action);
 }
 
@@ -129,8 +142,6 @@ void Window::mouse_callback(GLFWwindow *window, double x_pos, double y_pos)
     ImGui_ImplGlfw_CursorPosCallback(window, x_pos, y_pos);
 
     auto *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
-    if (ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse) { return; }
-
     Kataglyphis::Frontend::handle_mouse_callback(window,
       the_window->input_state.last_x,
       the_window->input_state.last_y,
@@ -146,8 +157,6 @@ void Window::mouse_button_callback(GLFWwindow *window, int button, int action, i
     ImGui_ImplGlfw_MouseButtonCallback(window, button, action, mods);
 
     auto *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
-    if (ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse) { return; }
-
     Kataglyphis::Frontend::handle_mouse_button_callback(
       window, the_window->input_state.mouse_first_moved, button, action, mouse_callback);
 }

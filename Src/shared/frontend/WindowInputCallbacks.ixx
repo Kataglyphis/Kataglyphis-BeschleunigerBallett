@@ -23,18 +23,29 @@ inline float consume_axis_delta(float &axis_change)
     return delta;
 }
 
+inline bool imgui_wants_keyboard_capture()
+{
+    return ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureKeyboard;
+}
+
 inline void handle_key_callback(GLFWwindow *window, bool *keys, int key, int action)
 {
-    if (ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureKeyboard) { return; }
+    bool const captured = imgui_wants_keyboard_capture();
+
+    // RELEASE must always fall through, even while ImGui holds capture -
+    // otherwise a key held when a widget grabs focus is never released and
+    // the camera keeps moving forever.
+    if (action == GLFW_RELEASE) {
+        if (key >= 0 && static_cast<std::size_t>(key) < window_key_count) { keys[key] = false; }
+        return;
+    }
+
+    if (captured) { return; }
 
     if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) { glfwSetWindowShouldClose(window, GLFW_TRUE); }
 
     if (key >= 0 && static_cast<std::size_t>(key) < window_key_count) {
-        if (action == GLFW_PRESS) {
-            keys[key] = true;
-        } else if (action == GLFW_RELEASE) {
-            keys[key] = false;
-        }
+        if (action == GLFW_PRESS) { keys[key] = true; }
     }
 }
 
@@ -68,17 +79,24 @@ inline bool imgui_wants_mouse_capture()
     return ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse;
 }
 
+inline bool should_capture_cursor(int button, int action)
+{
+    return (action == GLFW_PRESS) && (button == GLFW_MOUSE_BUTTON_RIGHT);
+}
+
 inline void handle_mouse_button_callback(GLFWwindow *window,
   bool &mouse_first_moved,
   int button,
   int action,
   GLFWcursorposfun mouse_callback)
 {
-    if (imgui_wants_mouse_capture()) { return; }
-
-    if ((action == GLFW_PRESS) && (button == GLFW_MOUSE_BUTTON_RIGHT)) {
+    if (should_capture_cursor(button, action)) {
+        if (imgui_wants_mouse_capture()) { return; }
         glfwSetCursorPosCallback(window, mouse_callback);
     } else {
+        // A release must always end look mode, even while ImGui holds
+        // capture - otherwise releasing the mouse over a panel leaves the
+        // cursor callback installed forever.
         mouse_first_moved = true;
         glfwSetCursorPosCallback(window, nullptr);
     }

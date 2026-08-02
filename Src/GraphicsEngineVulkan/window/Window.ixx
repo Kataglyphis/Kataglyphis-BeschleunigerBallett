@@ -40,5 +40,7 @@ class Window
     static void mouse_button_callback(GLFWwindow *window, int button, int action, int mods);
     static void scroll_callback(GLFWwindow *window, double x_offset, double y_offset);
     static void char_callback(GLFWwindow *window, unsigned int codepoint);
+    static void window_focus_callback(GLFWwindow *window, int focused);
+    static void cursor_enter_callback(GLFWwindow *window, int entered);
 };
 }// namespace Kataglyphis::Frontend

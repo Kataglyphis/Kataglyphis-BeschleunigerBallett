@@ -4478,6 +4478,207 @@ derivation and the degenerate-plane guards are all correct and documented in
 place; **18 source files carrying a UTF-8 BOM** — re-checked, still cosmetic,
 still diff noise (batch VI rejected this for the same reason).
 
+## 2026-08-02 batch VIII — planner (a key that never stops being held once ImGui takes focus, ten throwing `std::filesystem` calls in a `-fno-exceptions` build, a Rust test suite this repo's CI never runs, a skybox that hands `vkCreatePipelineLayout` a null set layout, four copies of the same "walk up for Resources/" search)
+
+**The headline is the input path: hold `W`, click an ImGui widget, release `W` — the
+camera keeps flying forever.** `Window::key_callback`
+(`Src/GraphicsEngineVulkan/window/Window.cpp:122`) returns on
+`ImGui::GetIO().WantCaptureKeyboard` **before** reaching
+`handle_key_callback`, so the `GLFW_RELEASE` never clears
+`keys[GLFW_KEY_W]` and `Camera::key_control` keeps translating every frame.
+The same shape kills the right-drag look mode:
+`handle_mouse_button_callback`
+(`Src/shared/frontend/WindowInputCallbacks.ixx:77`) returns on
+`WantCaptureMouse` before `glfwSetCursorPosCallback(window, nullptr)`, so
+releasing the right button over a panel leaves the cursor callback installed.
+`WindowInputUnit.ImGuiCaptureGateSwallowsInput`
+(`Test/commit/VulkanEngine/frontendInputSuite.cpp:111`) pins the *swallow*
+direction only — the release direction is the half that was never asserted,
+and it is the half that leaves the camera moving.
+
+The second finding is systematic rather than local. `cmake/ProjectOptions.cmake`
+compiles everything with `-fno-exceptions` / `/EHs-`, and
+`Src/shared/util/FileReader.ixx:13` already writes the rule down — "The
+`error_code` overload is REQUIRED, not stylistic". A grep for
+`std::filesystem::` across `Src/` this pass found **ten calls that use the
+throwing overload anyway**, in four files. Under these flags a
+`filesystem_error` is not an exception, it is `std::terminate` with no log
+line. The `recursive_directory_iterator` one is the subtle member of the set:
+passing `ec` to the *constructor* makes construction non-throwing, but the
+range-for's `operator++` is still the throwing increment.
+
+Tasks 1–4 are independent. Task 5 depends on task 2 (so the shared resolver is
+exception-free by construction) and should land after task 4 (which fixes the
+skybox crash; task 5 then folds the skybox's path lookup into the resolver).
+Every task is verifiable **without a GPU** except task 4's end-to-end check,
+which is a host launch rather than a golden. The actionable queue was empty
+when this batch was written.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`Resources/ShadersSlang/.../bloom.wgsl`'s blur kernel**
+— read end to end, it derives its texel size from `textureDimensions` rather
+than a hard-coded constant, so the half-res chain is correct at every extent;
+**`asset/hdr.rs`** — the whole RGBE decoder was audited against Radiance's
+`freadcolrs`/`oldreadcolrs`, including the `MAX_PIXELS` cap, the `-8` mantissa
+shift and every RLE overrun path, and its nine tests already cover them;
+**`Clouds::dispatchNoiseGeneration`'s grid** — already pinned by
+`CloudDispatch.hpp`'s `static_assert` plus
+`BuildIntegrity.CloudDispatchGridsMatchTheShaderWorkgroupSizes`;
+**`VulkanDevice::create_pipeline_cache`** — the stale-blob retry and the
+"continue without a cache" fallback are both already correct;
+**`keyframe_lerp_indices`'s linear keyframe scan**
+(`crates/webgpu_renderer/src/render/animation.rs:22`) — genuinely O(n) per
+channel per frame where `partition_point` would be O(log n), but the morph
+loop already `continue`s before allocating for non-matching primitives, so the
+measured cost is a few thousand comparisons per frame on any realistic scene;
+not worth a task until something measures it.
+
+- [ ] **(M) Replace the ten throwing `std::filesystem` calls that abort a `-fno-exceptions` build, and stop latching an empty model scan forever** — the project's own rule is written down in `FileReader.ixx`; four files break it.
+
+  **Files to read:**
+  - `Src/shared/util/FileReader.ixx:13-28,56` — the rule ("The `error_code` overload is REQUIRED, not stylistic") and the shape to copy.
+  - `cmake/ProjectOptions.cmake` — where `-fno-exceptions` / `/EHs-` are set, so the failure mode is `std::terminate`, not a caught error.
+  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:84-103` — `scanAvailableModels`: `recursive_directory_iterator` at :95 (the `ec` only covers *construction*; the range-for's `operator++` throws), `entry.is_regular_file()` at :97, `std::filesystem::relative(...)` at :98. Also the `s_models_scanned = true` at :86-87, set *before* the directory is known to exist.
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:193,195` — two `std::filesystem::exists` without `ec`.
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:45` — `std::filesystem::current_path()` without `ec`.
+  - `Src/shared/imgui/KataglyphisImGuiFonts.ixx:15,22,36,43` — three `exists` and one `current_path`, all throwing overloads.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — the existing source-scanning `BuildIntegrity.*` tests; reuse their source-root resolution helper.
+
+  **Steps:**
+  1. `scanAvailableModels`: replace the range-for with an explicit non-throwing walk —
+     `std::filesystem::recursive_directory_iterator it(models_dir, std::filesystem::directory_options::skip_permission_denied, ec);`
+     then `for (const auto end = std::filesystem::recursive_directory_iterator{}; !ec && it != end; it.increment(ec))`.
+     Inside, use `it->is_regular_file(entry_ec)` and
+     `std::filesystem::relative(it->path(), resources_path, rel_ec)`, and
+     `continue` on any per-entry error instead of aborting the process.
+  2. Same function: do not latch `s_models_scanned = true` up front. Latch it only after a scan that actually found `models_dir`; otherwise one call made from a working directory where `Resources/Models` is unreachable makes the GUI report "No loadable models" for the rest of the process even after the cwd is right.
+  3. `ObjLoader.cpp:193,195`: use the `error_code` overload of `exists`; a set `ec` means "not usable" for this decision, so the existing else-branch warning still fires.
+  4. `SkyBox.cpp:45`: `current_path(ec)`, falling back to `"."` on error rather than terminating.
+  5. `KataglyphisImGuiFonts.ixx:15,22,36,43`: same treatment; `addKataglyphisFontIfAvailable` returns `false` when `ec` is set.
+  6. Add a regression gate `TEST(BuildIntegrity, EngineSourcesUseNonThrowingFilesystemOverloads)` in `buildIntegritySuite.cpp` that scans `Src/**/*.{cpp,ixx,hpp}` for `filesystem::exists(`, `filesystem::current_path(`, `filesystem::relative(`, `filesystem::create_directories(` and `directory_iterator(`, and fails any call site whose argument list carries no `ec` / `error_code` token. Allow an explicit `// NO_EC_OK: <reason>` marker on the same line for deliberate exceptions.
+
+  **Test:** step 6 is the gate. Also add a `SceneConfigUnit` case in
+  `Test/commit/VulkanEngine/cameraSceneConfigSuite.cpp` asserting that
+  `sceneConfig::getAvailableModelPaths()` is non-empty when the test runs from
+  the repo root — the `ModelPickerUnit` tests in the same file show the cwd
+  assumption to follow.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`,
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='BuildIntegrity.*:SceneConfigUnit.*:ModelPickerUnit.*'`.
+
+  **Context:** this is not hypothetical hardening — the model scan walks a
+  user-populated directory (`Resources/Models`, recursively) and the font and
+  OBJ-texture lookups walk paths that come out of asset files. A junction
+  loop, a permission-denied subdirectory, or an entry deleted between
+  enumeration and stat is enough. Do task 2 before task 5, so the shared
+  resolver that task 5 extracts is exception-free from the start.
+
+- [ ] **(S) Run the Rust renderer's own test suite from this repo — CI never does** — `grep -i cargo .github/workflows/` returns only the wasm size budget.
+
+  **Files to read:**
+  - `.github/workflows/Linux.yml:259-286` — the "Run performance benchmarks" and "Enforce wasm demo size budget" steps; the new step goes alongside them and uses the same `Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main` action.
+  - `Scripts/Linux/wasm-size-budget.sh:30-45` — the wrapper shape to copy (`REPO_ROOT`, `RUST_PROJECT_DIR`, `CARGO_TARGET_DIR=target`, `( cd "${RUST_PROJECT_DIR}" && cargo ... )`).
+  - `ExternalLib/Kataglyphis-ContainerHub/linux/scripts/02-toolchain/rust/cargo_test.sh` — the upstream driver. Delegate to it; do **not** copy its body (AGENTS.md § Rule: Reusable Work Belongs in ContainerHub).
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/.github/workflows/rust_ubuntu24_04.yml:127-140` — how upstream invokes it, including the `-e CARGO_HOME=/tmp/cargo-home` override (the image ships a root-owned `CARGO_HOME` and the container runs as uid 1001).
+  - `AGENTS.md` § "What CI runs, and what it does not" and the wrapper-map table.
+
+  **Steps:**
+  1. Add `Scripts/Linux/run-cargo-tests.sh` as a thin wrapper: resolve `REPO_ROOT`, default `RUST_PROJECT_DIR` to `ExternalLib/Kataglyphis-RustProjectTemplate`, export `CARGO_TARGET_DIR=target` and a writable `CARGO_HOME`, then delegate to ContainerHub's `cargo_test.sh` with a package filter of `kataglyphis_webgpu_renderer`. If the upstream script takes no package argument, extend it upstream rather than forking it here (both repos ship together, ContainerHub first).
+  2. Add a `Run Rust renderer tests` step to `.github/workflows/Linux.yml` after the perf-benchmark step, guarded with `if: ${{ inputs.runner == 'ubuntu-24.04' }}` so the ARM lane does not pay for it, and with `log-file: output.log` like its neighbours.
+  3. Update the wrapper-map table and the "What CI runs" section in `AGENTS.md` in the same change.
+
+  **Test:** the step is the test. Every GPU-touching test in the crate already
+  self-skips — `crates/webgpu_renderer/tests/headless.rs`, `ibl.rs`,
+  `occlusion.rs` and `gpu_timing.rs` print `SKIP: no GPU adapter available in
+  this environment` and return — so a GPU-less runner exercises the CPU tests
+  and skips the rest. Run it locally first under Rancher (AGENTS.md § Running
+  the Linux build locally: pass a `--build-dir` outside the bind mount and a
+  named-volume cargo cache), record the wall time in the commit message, and
+  if it exceeds ~5 minutes narrow the step to `--lib` plus the pure test
+  targets rather than dropping it.
+
+  **Build:** no C++ build. `bash -n Scripts/Linux/run-cargo-tests.sh`, then the
+  local container run above. Push with `[build-arm]` omitted — the x86 lane
+  runs on every push.
+
+  **Context:** this repo's Linux lane compiles the crate twice (the Rust bridge
+  during the C++ build, and wasm for the demo) and runs none of its ~150
+  tests. Upstream's own workflow does run them, but the agentic loop edits
+  `crates/webgpu_renderer` from *this* working tree — those edits get no signal
+  here until RustProjectTemplate is pushed separately, which is exactly the
+  window in which the recent glTF, SSAO, exposure and LOD fixes were made. Do
+  not duplicate upstream's fmt/clippy/audit steps; tests only.
+
+- [ ] **(S) A skybox whose faces fail to load hands `vkCreatePipelineLayout` a null descriptor-set layout** — running the binary from the wrong working directory turns a missing texture into a crash.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp` — `init` (:34-40), `loadCubeMap` (:42-159) and its two early returns (:68 on a failed `stbi_load`, :83 on inconsistent face dimensions), `createDescriptorSetForCubeMap` (:161-233, called only at the very end of `loadCubeMap`), `createGraphicsPipeline` (:300-344, `combinedLayouts` at :315 with `setLayoutCount = 2`), `recordCommands` (:367-...; it indexes `descriptorSets[0]` unchecked and binds `descriptorSet`).
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.ixx` — the handle members that stay `VK_NULL_HANDLE` on the failure path.
+  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp:246-251` — the guard shape to copy (`recordComputeCommands` rejects an empty descriptor-set span).
+  - `Test/commit/VulkanEngine/skyBoxSuite.cpp` and `Src/GraphicsEngineVulkan/scene/sky_box/CubemapFaces.hpp` — the existing `SkyBoxUnit` CPU tests and the pure predicate they cover.
+
+  **Steps:**
+  1. Split `createDescriptorSetForCubeMap` so the layout, pool and set are created **unconditionally** from `init` — they describe a binding, not a resource, and `createGraphicsPipeline` needs `descriptorSetLayout` valid on every path. Only the `updateDescriptorSets` write depends on the loaded image.
+  2. On the failure paths (:68, :83), build a 1x1, 6-layer opaque-black `eR8G8B8A8Srgb` cube texture in-process (no file I/O — same upload shape as the real path, 24 bytes of staging) and write *that* into the descriptor. The pass then renders a black sky instead of aborting.
+  3. Add an early-return guard to `recordCommands` in the shape of `Clouds::recordComputeCommands`: bail with an `spdlog::error` when `descriptorSets.empty()`, or when `graphicsPipeline` / `descriptorSet` is null.
+  4. Do **not** "fix" this by skipping the skybox render pass: it is what clears the colour and depth attachments the rasterizer subsequently loads (:227-236, and the `dependencies[1]` external transition), so skipping it leaves an uninitialised attachment.
+
+  **Test:** add `SkyBoxUnit` cases in `Test/commit/VulkanEngine/skyBoxSuite.cpp`
+  for the pure logic the split exposes — the "is the loaded cubemap usable"
+  predicate and the fallback-face byte pattern — following the
+  `cubemapFacesConsistent` tests already there. The end-to-end proof is a host
+  launch: build, then run `build-clangcl-debug\GraphicsEngine.exe` with the
+  working directory set to `build-clangcl-debug\` (so `Resources/` does not
+  resolve) and confirm it starts with a black sky and a validation-clean log
+  instead of aborting. That is the crash today.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`,
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='SkyBoxUnit.*'`,
+  then — because a render pass's descriptors changed —
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1`.
+
+  **Context:** AGENTS.md warns in three separate places that the binaries must
+  run from the repo root; this is the code path that punishes getting it wrong
+  with an abort rather than a log line. The dimension-mismatch return at :83
+  has the identical shape, and the comment above it (:72-79) shows this
+  function has already been the source of one memory-safety bug.
+
+- [ ] **(M) (refactor) One resolver for the "walk up looking for `Resources/`" search — there are four copies, and the fourth is the skybox's, which does not walk at all** — the divergence is what makes a wrong working directory fatal in one place and harmless in the others.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:19-41` — `resolveModelPath`: `current_path()` + `RELATIVE_RESOURCE_PATH`, then up to `kModelSearchDepth = 8` parents testing `<parent>/Resources/<relative>`.
+  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:44-67` — `findResourcesBasePath`: the same loop, testing `Resources/Models` instead, with its own private `kModelSearchDepth = 8`.
+  - `Src/shared/imgui/KataglyphisImGuiFonts.ixx:11-30` — `resolveKataglyphisImGuiFontDirectory`: the same loop again, with `RELATIVE_IMGUI_FONTS_PATH`.
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:44-47` — the same intent with **no** upward search at all.
+  - `Src/shared/util/FileReader.ixx` — the module shape and error-handling convention for `Src/shared/util/`.
+  - `Src/GraphicsEngineVulkan/CMakeLists.txt` and `Src/shared/CMakeLists.txt` — check which target defines `RELATIVE_RESOURCE_PATH` and `RELATIVE_IMGUI_FONTS_PATH` **before** moving code between them; a compile definition visible to the engine target may not be visible to `shared`.
+
+  **Steps:**
+  1. Add one primitive next to `FileReader.ixx`, e.g. module `kataglyphis.shared.util.resource_paths`, exporting `resolveResourceRelativePath(std::string_view relative) -> std::optional<std::filesystem::path>` and `resourcesRootOrEmpty() -> std::filesystem::path`. Implementation: `current_path(ec)`, try `<cwd><RELATIVE_RESOURCE_PATH>/<relative>` first, then walk at most one shared `kResourceSearchDepth = 8` parents testing `<parent>/Resources/<relative>`. Every filesystem call takes an `std::error_code` — land task 2 first so this is exception-free by construction.
+  2. Rewrite `resolveModelPath`, `findResourcesBasePath` and `resolveKataglyphisImGuiFontDirectory` to delegate, deleting their private loops and their duplicate depth constants. Preserve `resolveModelPath`'s "return the direct candidate when nothing matched" contract — `ObjLoader`/`GltfLoader` rely on getting a path back to log.
+  3. Point `SkyBox::loadCubeMap` at the resolver for `Textures/Skybox/DOOM2016/`, so a non-root working directory resolves instead of failing. Land this **after** task 4, which makes the failure survivable; this step makes it rarer.
+  4. Keep `Src/shared/` free of engine dependencies — the new module must not import anything from `kataglyphis.vulkan.*`.
+
+  **Test:** extend `Test/commit/VulkanEngine/fileReaderSuite.cpp` (it already
+  covers `Src/shared/util`) with cases driving the resolver against a
+  `std::filesystem::temp_directory_path` tree: a hit at depth 0, a hit at
+  depth 3, a miss past the depth cap, and a `relative` argument containing
+  `..` returning `nullopt` rather than a path outside the tree. The existing
+  `SceneConfigUnit` / `ModelPickerUnit` cases in `cameraSceneConfigSuite.cpp`
+  must pass **unchanged** — they are the regression net for step 2.
+
+  **Build:** `clangcl-debug`, and pass `-FreshContainer` because this adds a
+  new C++23 module interface (AGENTS.md § Containerized Windows Builds):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`,
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='FileReaderUnit.*:SceneConfigUnit.*:ModelPickerUnit.*:SkyBoxUnit.*'`.
+
+  **Context:** mark `(refactor)`. Ordering: task 2, then task 4, then this.
+  The payoff is not line count — it is that "where do resources live" becomes
+  one answer with one depth cap and one error convention, instead of four that
+  have already drifted into three different behaviours plus a crash.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
