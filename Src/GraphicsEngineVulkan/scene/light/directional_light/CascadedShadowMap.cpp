@@ -15,6 +15,7 @@ module;
 #include <glm/ext/matrix_clip_space.hpp>
 #include "common/FormatHelper.hpp"
 #include "common/FramebufferHelper.hpp"
+#include "common/PipelineLayoutHelper.hpp"
 #include "common/RenderPassHelper.hpp"
 #include "common/Utilities.hpp"
 #include "common/ViewportHelper.hpp"
@@ -378,12 +379,9 @@ void CascadedShadowMap::createGraphicsPipeline()
     // descriptions) the fragment alpha test samples; set 1 = the light matrices
     // this pass owns. The shared layout is owned by VulkanRenderer.
     std::array<vk::DescriptorSetLayout, 2> setLayouts = { sharedRenderDescriptorSetLayout, descriptorSetLayout };
+    const std::array<vk::PushConstantRange, 1> pushConstantRanges = { pushConstantRange };
 
-    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
-    pipelineLayoutInfo.pSetLayouts = setLayouts.data();
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo = buildPipelineLayoutCreateInfo(setLayouts, pushConstantRanges);
 
     auto layoutRes = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
     ASSERT_VULKAN(VkResult(layoutRes.result), "Failed to create shadow map pipeline layout!");

@@ -12,6 +12,7 @@
 #include <vulkan/vulkan.hpp>
 
 #include "common/MemoryHelper.hpp"
+#include "common/PipelineLayoutHelper.hpp"
 #include "common/Utilities.hpp"
 #include <spdlog/spdlog.h>
 #include "renderer/pushConstants/PushConstantRayTracing.hpp"
@@ -250,15 +251,14 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
 
     shader_groups.push_back(shader_group_create_infos[3]);
 
-    vk::PipelineLayoutCreateInfo pipeline_layout_create_info{};
-    pipeline_layout_create_info.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
-    pipeline_layout_create_info.pSetLayouts = descriptorSetLayouts.data();
-    pipeline_layout_create_info.pushConstantRangeCount = 1;
-    pipeline_layout_create_info.pPushConstantRanges = &pc_ranges;
+    const std::array<vk::PushConstantRange, 1> push_constant_ranges = { pc_ranges };
+    vk::PipelineLayoutCreateInfo pipeline_layout_create_info =
+      buildPipelineLayoutCreateInfo(descriptorSetLayouts, push_constant_ranges);
 
-    vk::Result result =
-      device->getLogicalDevice().createPipelineLayout(&pipeline_layout_create_info, nullptr, &pipeline_layout);
-    ASSERT_VULKAN(result, "Failed to create raytracing pipeline layout!")
+    vk::ResultValue<vk::PipelineLayout> pipeline_layout_result =
+      device->getLogicalDevice().createPipelineLayout(pipeline_layout_create_info);
+    ASSERT_VULKAN(pipeline_layout_result.result, "Failed to create raytracing pipeline layout!")
+    pipeline_layout = pipeline_layout_result.value;
 
     vk::PipelineLibraryCreateInfoKHR pipeline_library_create_info{};
     pipeline_library_create_info.libraryCount = 0;

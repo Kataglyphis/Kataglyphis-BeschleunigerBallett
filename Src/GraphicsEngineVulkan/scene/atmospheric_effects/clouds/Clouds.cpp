@@ -5,6 +5,7 @@ module;
 #include <span>
 #include <vulkan/vulkan.hpp>
 #include "common/FormatHelper.hpp"
+#include "common/PipelineLayoutHelper.hpp"
 #include "common/Utilities.hpp"
 #include "scene/atmospheric_effects/clouds/CloudDispatch.hpp"
 
@@ -175,9 +176,7 @@ void Clouds::createComputePipeline(const char *spirvPath, std::span<const vk::De
     stageInfo.module = shaderModule;
     stageInfo.pName = "main";
 
-    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
-    pipelineLayoutInfo.pSetLayouts = setLayouts.data();
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo = buildPipelineLayoutCreateInfo(setLayouts);
 
     auto result = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
     ASSERT_VULKAN(VkResult(result.result), "Failed to create compute pipeline layout!");

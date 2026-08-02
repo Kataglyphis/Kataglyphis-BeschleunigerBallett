@@ -12,6 +12,7 @@
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 #include "common/FormatHelper.hpp"
 #include "common/FramebufferHelper.hpp"
+#include "common/PipelineLayoutHelper.hpp"
 #include "common/RenderPassHelper.hpp"
 #include "common/ViewportHelper.hpp"
 #include "common/Utilities.hpp"
@@ -297,11 +298,9 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
     
     std::array<vk::VertexInputAttributeDescription, 4> attributeDescriptions = vertex::getVertexInputAttributeDesc();
 
-    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
-    pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &push_constant_range;
+    const std::array<vk::PushConstantRange, 1> push_constant_ranges = { push_constant_range };
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo =
+      buildPipelineLayoutCreateInfo(descriptorSetLayouts, push_constant_ranges);
 
     vk::ResultValue<vk::PipelineLayout> geometry_pipeline_layout_result =
       device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
@@ -322,10 +321,7 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
     ShaderStagePair lightStages{ device, slang_spv_dir + "deferred.lighting_vs_main.spv",
         slang_spv_dir + "deferred.lighting_fs_main.spv" };
 
-    vk::PipelineLayoutCreateInfo lightPipelineLayoutInfo{};
-    lightPipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
-    lightPipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
-    // No push constants for lighting pass usually, or same if needed
+    vk::PipelineLayoutCreateInfo lightPipelineLayoutInfo = buildPipelineLayoutCreateInfo(descriptorSetLayouts);
 
     vk::ResultValue<vk::PipelineLayout> lighting_pipeline_layout_result =
       device->getLogicalDevice().createPipelineLayout(lightPipelineLayoutInfo);

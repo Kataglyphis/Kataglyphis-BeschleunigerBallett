@@ -14,6 +14,7 @@
 
 #include "common/FormatHelper.hpp"
 #include "common/FramebufferHelper.hpp"
+#include "common/PipelineLayoutHelper.hpp"
 #include "common/RenderPassHelper.hpp"
 #include "common/ViewportHelper.hpp"
 
@@ -311,18 +312,13 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
 
     std::array<vk::VertexInputAttributeDescription, 4> attribute_describtions = vertex::getVertexInputAttributeDesc();
 
-    vk::PipelineLayoutCreateInfo pipeline_layout_create_info;
-    pipeline_layout_create_info.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
-    pipeline_layout_create_info.pSetLayouts = descriptorSetLayouts.data();
-    pipeline_layout_create_info.pushConstantRangeCount = 1;
-    pipeline_layout_create_info.pPushConstantRanges = &push_constant_range;
+    const std::array<vk::PushConstantRange, 1> push_constant_ranges = { push_constant_range };
+    vk::PipelineLayoutCreateInfo pipeline_layout_create_info =
+      buildPipelineLayoutCreateInfo(descriptorSetLayouts, push_constant_ranges);
 
     auto layout_result = device->getLogicalDevice().createPipelineLayout(pipeline_layout_create_info);
-    if (layout_result.result == vk::Result::eSuccess) {
-        pipeline_layout = layout_result.value;
-    } else {
-        ASSERT_VULKAN(static_cast<VkResult>(layout_result.result), "Failed to create pipeline layout!")
-    }
+    ASSERT_VULKAN(static_cast<VkResult>(layout_result.result), "Failed to create pipeline layout!")
+    pipeline_layout = layout_result.value;
 
     PipelineBuilder pipeline_builder;
     graphics_pipeline =

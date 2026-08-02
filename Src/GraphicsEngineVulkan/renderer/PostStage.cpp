@@ -14,6 +14,7 @@
 
 #include "common/FormatHelper.hpp"
 #include "common/FramebufferHelper.hpp"
+#include "common/PipelineLayoutHelper.hpp"
 #include "common/RenderPassHelper.hpp"
 #include "common/ViewportHelper.hpp"
 #include "renderer/pushConstants/PushConstantPost.hpp"
@@ -264,15 +265,14 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
 
     ShaderStagePair stages{ device, slang_spv_dir + post_vert_spv, slang_spv_dir + post_frag_spv };
 
-    vk::PipelineLayoutCreateInfo pipeline_layout_create_info;
-    pipeline_layout_create_info.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
-    pipeline_layout_create_info.pSetLayouts = descriptorSetLayouts.data();
-    pipeline_layout_create_info.pushConstantRangeCount = 1;
-    pipeline_layout_create_info.pPushConstantRanges = &push_constant_range;
+    const std::array<vk::PushConstantRange, 1> push_constant_ranges = { push_constant_range };
+    vk::PipelineLayoutCreateInfo pipeline_layout_create_info =
+      buildPipelineLayoutCreateInfo(descriptorSetLayouts, push_constant_ranges);
 
-    vk::Result result =
-      device->getLogicalDevice().createPipelineLayout(&pipeline_layout_create_info, nullptr, &pipeline_layout);
-    ASSERT_VULKAN(result, "Failed to create pipeline layout!")
+    vk::ResultValue<vk::PipelineLayout> pipeline_layout_result =
+      device->getLogicalDevice().createPipelineLayout(pipeline_layout_create_info);
+    ASSERT_VULKAN(pipeline_layout_result.result, "Failed to create pipeline layout!")
+    pipeline_layout = pipeline_layout_result.value;
 
     PipelineBuilder pipeline_builder;
     graphics_pipeline = pipeline_builder.setShaderStages({ stages.stages().begin(), stages.stages().end() })

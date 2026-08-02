@@ -3,6 +3,7 @@
 #include <optional>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -12,6 +13,7 @@
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#include "common/PipelineLayoutHelper.hpp"
 #include "common/Utilities.hpp"
 #include "renderer/PathTracingDispatch.hpp"
 #include "renderer/pushConstants/PushConstantPathTracing.hpp"
@@ -194,11 +196,9 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
     push_constant_range.offset = 0;
     push_constant_range.size = sizeof(PushConstantPathTracing);
 
-    vk::PipelineLayoutCreateInfo compute_pipeline_layout_create_info{};
-    compute_pipeline_layout_create_info.setLayoutCount = static_cast<uint32_t>(descriptorSetLayouts.size());
-    compute_pipeline_layout_create_info.pushConstantRangeCount = 1;
-    compute_pipeline_layout_create_info.pPushConstantRanges = &push_constant_range;
-    compute_pipeline_layout_create_info.pSetLayouts = descriptorSetLayouts.data();
+    const std::array<vk::PushConstantRange, 1> push_constant_ranges = { push_constant_range };
+    vk::PipelineLayoutCreateInfo compute_pipeline_layout_create_info =
+      buildPipelineLayoutCreateInfo(descriptorSetLayouts, push_constant_ranges);
 
     vk::ResultValue<vk::PipelineLayout> pipeline_layout_result =
       device->getLogicalDevice().createPipelineLayout(compute_pipeline_layout_create_info);

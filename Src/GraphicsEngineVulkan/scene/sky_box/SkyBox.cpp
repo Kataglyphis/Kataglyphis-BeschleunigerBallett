@@ -13,6 +13,7 @@ module;
 #include "shared/scene/ObjMaterial.hpp"
 
 #include "common/FramebufferHelper.hpp"
+#include "common/PipelineLayoutHelper.hpp"
 #include "common/RenderPassHelper.hpp"
 #include "common/Utilities.hpp"
 #include "common/ViewportHelper.hpp"
@@ -340,16 +341,14 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
     std::array<vk::VertexInputAttributeDescription, 4> attributeDescriptions = vertex::getVertexInputAttributeDesc();
 
     std::array<vk::DescriptorSetLayout, 2> combinedLayouts = {sharedLayout, descriptorSetLayout};
-    vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
-    pipelineLayoutInfo.setLayoutCount = 2;
-    pipelineLayoutInfo.pSetLayouts = combinedLayouts.data();
 
     vk::PushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eFragment;
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(uint32_t);
-    pipelineLayoutInfo.pushConstantRangeCount = 1;
-    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+    const std::array<vk::PushConstantRange, 1> pushConstantRanges = { pushConstantRange };
+
+    vk::PipelineLayoutCreateInfo pipelineLayoutInfo = buildPipelineLayoutCreateInfo(combinedLayouts, pushConstantRanges);
 
     auto layoutRes = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
     ASSERT_VULKAN(VkResult(layoutRes.result), "Failed to create skybox pipeline layout!");
