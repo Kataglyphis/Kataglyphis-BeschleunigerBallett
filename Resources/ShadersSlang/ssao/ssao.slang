@@ -63,8 +63,13 @@ float4 fs_ssao(FullscreenVsOut In) : SV_Target
     float2 dv = float2(0.0, 1.0 / float(h));
     float3 px = view_pos_at(In.uv + du, load_depth(In.uv + du));
     float3 py = view_pos_at(In.uv + dv, load_depth(In.uv + dv));
-    float3 n = normalize(cross(px - p, py - p));
+    // +du is +X in view space; +dv is -Y because view_pos_at flips uv.y.
+    // View space is right-handed with visible geometry at z < 0, so the
+    // camera-facing normal is +Z, which cross(py - p, px - p) produces.
+    float3 n = normalize(cross(py - p, px - p));
 
+    // up is switched on abs(n.y) > 0.98, a sign-independent test, so it
+    // needs no change for the flipped normal.
     float3 up = float3(0.0, 1.0, 0.0);
     if (abs(n.y) > 0.98) up = float3(1.0, 0.0, 0.0);
     float3 t = normalize(cross(up, n));
