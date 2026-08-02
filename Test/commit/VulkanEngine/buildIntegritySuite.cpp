@@ -9,17 +9,20 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <map>
 #include <optional>
+#include <regex>
 #include <set>
 #include <string>
 #include <vector>
 
 #include "common/host_device_shared_vars.hpp"
+#include "scene/atmospheric_effects/clouds/CloudDispatch.hpp"
 
 namespace {
 
@@ -1876,4 +1879,68 @@ TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)
     EXPECT_EQ(marker->runnable + marker->integration, marker->total)
       << doc_path.string() << "'s golden-counts marker is internally inconsistent: runnable(" << marker->runnable
       << ") + integration(" << marker->integration << ") != total(" << marker->total << ")";
+}
+
+// Parses the X, Y, Z triple out of the first "[numthreads(X, Y, Z)]" in
+// `path`. Returns nullopt if the attribute is not found, so callers can tell
+// "found and mismatched" apart from "a renamed/removed attribute silently
+// matched zero times".
+std::optional<std::array<int, 3>> parse_numthreads(const fs::path &path)
+{
+    std::ifstream file(path);
+    if (!file) { return std::nullopt; }
+
+    static const std::regex kNumThreadsPattern(R"(\[numthreads\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)\])");
+
+    std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    std::smatch match;
+    if (!std::regex_search(contents, match, kNumThreadsPattern)) { return std::nullopt; }
+
+    return std::array<int, 3>{ std::stoi(match[1].str()), std::stoi(match[2].str()), std::stoi(match[3].str()) };
+}
+
+// Clouds.cpp dispatches the noise and cloud compute passes using
+// kNoiseWorkgroupSize/kCloudWorkgroupSize (CloudDispatch.hpp) to size the
+// thread-group grid. Those constants have no compiler-enforced link to the
+// [numthreads(...)] attribute the corresponding Slang kernel actually
+// declares - halving noise.slang's workgroup to (4,4,4) without touching
+// CloudDispatch.hpp would leave 7/8 of the noise volume undefined, and
+// nothing short of a GPU golden test would notice. Mirrors
+// HostAndShaderSharedConstantsAgree's "parse the shader text, compare
+// against the compiled host value" shape.
+TEST(BuildIntegrity, CloudDispatchGridsMatchTheShaderWorkgroupSizes)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path noise_path = repo_root / "Resources" / "ShadersSlang" / "compute" / "noise.slang";
+    const fs::path clouds_path = repo_root / "Resources" / "ShadersSlang" / "compute" / "clouds.slang";
+
+    const auto noise_threads = parse_numthreads(noise_path);
+    ASSERT_TRUE(noise_threads.has_value()) << "no [numthreads(...)] attribute found in " << noise_path.string();
+    EXPECT_EQ((*noise_threads)[0], static_cast<int>(Kataglyphis::kNoiseWorkgroupSize))
+      << noise_path.string() << "'s [numthreads(" << (*noise_threads)[0] << ", " << (*noise_threads)[1] << ", "
+      << (*noise_threads)[2] << ")] X does not match CloudDispatch.hpp's kNoiseWorkgroupSize ("
+      << Kataglyphis::kNoiseWorkgroupSize << ')';
+    EXPECT_EQ((*noise_threads)[1], static_cast<int>(Kataglyphis::kNoiseWorkgroupSize))
+      << noise_path.string() << "'s [numthreads(" << (*noise_threads)[0] << ", " << (*noise_threads)[1] << ", "
+      << (*noise_threads)[2] << ")] Y does not match CloudDispatch.hpp's kNoiseWorkgroupSize ("
+      << Kataglyphis::kNoiseWorkgroupSize << ')';
+    EXPECT_EQ((*noise_threads)[2], static_cast<int>(Kataglyphis::kNoiseWorkgroupSize))
+      << noise_path.string() << "'s [numthreads(" << (*noise_threads)[0] << ", " << (*noise_threads)[1] << ", "
+      << (*noise_threads)[2] << ")] Z does not match CloudDispatch.hpp's kNoiseWorkgroupSize ("
+      << Kataglyphis::kNoiseWorkgroupSize << ')';
+
+    const auto cloud_threads = parse_numthreads(clouds_path);
+    ASSERT_TRUE(cloud_threads.has_value()) << "no [numthreads(...)] attribute found in " << clouds_path.string();
+    EXPECT_EQ((*cloud_threads)[0], static_cast<int>(Kataglyphis::kCloudWorkgroupSize))
+      << clouds_path.string() << "'s [numthreads(" << (*cloud_threads)[0] << ", " << (*cloud_threads)[1] << ", "
+      << (*cloud_threads)[2] << ")] X does not match CloudDispatch.hpp's kCloudWorkgroupSize ("
+      << Kataglyphis::kCloudWorkgroupSize << ')';
+    EXPECT_EQ((*cloud_threads)[1], static_cast<int>(Kataglyphis::kCloudWorkgroupSize))
+      << clouds_path.string() << "'s [numthreads(" << (*cloud_threads)[0] << ", " << (*cloud_threads)[1] << ", "
+      << (*cloud_threads)[2] << ")] Y does not match CloudDispatch.hpp's kCloudWorkgroupSize ("
+      << Kataglyphis::kCloudWorkgroupSize << ')';
+    EXPECT_EQ((*cloud_threads)[2], 1) << clouds_path.string() << "'s [numthreads(" << (*cloud_threads)[0] << ", "
+                                       << (*cloud_threads)[1] << ", " << (*cloud_threads)[2] << ")] Z is not 1";
 }

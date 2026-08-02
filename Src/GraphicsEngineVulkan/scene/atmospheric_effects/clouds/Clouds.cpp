@@ -6,6 +6,7 @@ module;
 #include <vulkan/vulkan.hpp>
 #include "common/FormatHelper.hpp"
 #include "common/Utilities.hpp"
+#include "scene/atmospheric_effects/clouds/CloudDispatch.hpp"
 
 module kataglyphis.vulkan.clouds;
 
@@ -44,7 +45,8 @@ std::unique_ptr<Kataglyphis::Texture> Clouds::createStorageTexture(vk::CommandPo
 void Clouds::createTextures(vk::CommandPool commandPool)
 {
     // 3D Texture for Noise
-    cloudNoiseTexture = createStorageTexture(commandPool, 128, 128, 128, vk::ImageType::e3D, vk::ImageViewType::e3D);
+    cloudNoiseTexture = createStorageTexture(
+      commandPool, kNoiseVolumeExtent, kNoiseVolumeExtent, kNoiseVolumeExtent, vk::ImageType::e3D, vk::ImageViewType::e3D);
 
     // 2D Texture for Cloud Output. Assume screen size or half-screen size for performance
     cloudOutputTexture = createStorageTexture(commandPool, width, height, 1, vk::ImageType::e2D, vk::ImageViewType::e2D);
@@ -231,8 +233,10 @@ void Clouds::dispatchNoiseGeneration()
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, noiseComputePipeline);
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, noisePipelineLayout, 0, 1, &noiseDescriptorSet, 0, nullptr);
 
-    // noise texture is 128x128x128, local_size is 8x8x8
-    commandBuffer.dispatch(128 / 8, 128 / 8, 128 / 8);
+    // noise texture is kNoiseVolumeExtent^3, workgroup size is kNoiseWorkgroupSize^3
+    commandBuffer.dispatch(kNoiseVolumeExtent / kNoiseWorkgroupSize,
+      kNoiseVolumeExtent / kNoiseWorkgroupSize,
+      kNoiseVolumeExtent / kNoiseWorkgroupSize);
 
     Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getComputeQueue(), commandBuffer);
 
@@ -241,15 +245,21 @@ void Clouds::dispatchNoiseGeneration()
 
 void Clouds::recordComputeCommands(vk::CommandBuffer &commandBuffer, std::span<const vk::DescriptorSet> descriptorSets)
 {
+    if (descriptorSets.empty()) {
+        spdlog::error("Clouds::recordComputeCommands called with an empty shared descriptor set span");
+        return;
+    }
+
     // Bind cloud compute pipeline and dispatch thread groups based on screen extent
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, cloudComputePipeline);
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, cloudPipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
-    
+
     // Also bind the shared rendering descriptor set (which was passed to us as layout 1)
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, cloudPipelineLayout, 1, 1, &descriptorSets[0], 0, nullptr);
 
     // Image size is dynamically set to width x height
-    commandBuffer.dispatch((width + 15) / 16, (height + 15) / 16, 1);
+    commandBuffer.dispatch(
+      (width + kCloudWorkgroupSize - 1) / kCloudWorkgroupSize, (height + kCloudWorkgroupSize - 1) / kCloudWorkgroupSize, 1);
 }
 
 void Clouds::recreateFrameResources(vk::CommandPool commandPool, uint32_t width, uint32_t height)
