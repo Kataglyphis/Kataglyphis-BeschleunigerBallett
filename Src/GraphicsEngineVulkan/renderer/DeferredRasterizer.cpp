@@ -31,13 +31,12 @@ DeferredRasterizer::DeferredRasterizer() = default;
 
 void DeferredRasterizer::init(std::shared_ptr<VulkanDevice>in_device,
   VulkanSwapChain *swap_chain,
-  std::span<const vk::DescriptorSetLayout> descriptorSetLayouts,
-  vk::CommandPool &commandPool)
+  std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
     device = in_device;
     vulkanSwapChain = swap_chain;
 
-    createTextures(commandPool);
+    createTextures();
     createRenderPass();
     createPushConstantRange();
     createPipelines(descriptorSetLayouts);
@@ -63,15 +62,13 @@ void DeferredRasterizer::setPushConstant(PushConstantRasterizer push_constant)
     pushConstant = push_constant;
 }
 
-void DeferredRasterizer::createTextures(vk::CommandPool &commandPool)
+void DeferredRasterizer::createTextures()
 {
     uint32_t count = vulkanSwapChain->getNumberSwapChainImages();
     offscreenTextures.resize(count);
     gBufferNormals.resize(count);
     gBufferAlbedos.resize(count);
     gBufferMaterials.resize(count);
-
-    vk::CommandBuffer cmdBuffer = CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);
 
     const vk::Extent2D &extent = vulkanSwapChain->getSwapChainExtent();
     auto createAttachment = [&](std::vector<std::unique_ptr<Texture>>& textures, vk::Format format, vk::ImageUsageFlags usage) {
@@ -93,19 +90,15 @@ void DeferredRasterizer::createTextures(vk::CommandPool &commandPool)
     createAttachment(gBufferAlbedos, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
     createAttachment(gBufferMaterials, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eInputAttachment);
 
-    // Depth buffer
+    // Depth buffer. No transition is recorded here: createRenderPass declares
+    // initialLayout = eUndefined for every attachment this function creates,
+    // so the render pass itself performs the first transition.
     depthBufferImage = std::make_unique<Texture>();
     vk::Format depthFormat = Kataglyphis::chooseDepthFormat(device->getPhysicalDevice());
     depthBufferImage->createImage(device, extent.width, extent.height, 1, depthFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eInputAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal);
     // Input-attachment view: exactly one aspect, not Kataglyphis::depthStencilTransitionAspect. See its doc comment.
     depthBufferImage->createImageView(device, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
-
-    CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), cmdBuffer);
 }
-
-
-
-
 
 void DeferredRasterizer::createPushConstantRange()
 {
@@ -174,7 +167,7 @@ void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::destroyFramebuffe
     framebuffer.clear();
 }
 
-void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::recreateFrameResources(vk::CommandPool commandPool)
+void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::recreateFrameResources()
 {
     for (auto& tex : offscreenTextures) { if (tex) tex->cleanUp(); }
     offscreenTextures.clear();
@@ -187,7 +180,7 @@ void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::recreateFrameReso
     if (depthBufferImage) { depthBufferImage->cleanUp(); }
     depthBufferImage.reset();
 
-    createTextures(commandPool);
+    createTextures();
     createFramebuffer();
 }
 

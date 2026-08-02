@@ -273,9 +273,6 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
 {
     offscreenTextures.resize(vulkanSwapChain->getNumberSwapChainImages());
 
-    vk::CommandBuffer cmdBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
-      device->getLogicalDevice(), commandPool);
-
     for (uint32_t index = 0; index < vulkanSwapChain->getNumberSwapChainImages(); index++) {
         auto texture = std::make_unique<Texture>();
         const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
@@ -312,6 +309,8 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
 
     depthBufferImage->createImageView(device, depth_format, depth_aspect_flags, 1);
 
+    // This overload allocates, submits and fence-waits its own command buffer -
+    // there is no outer command buffer batching this transition.
     VulkanImage &vulkanImage = depthBufferImage->getVulkanImage();
     vulkanImage.transitionImageLayout(device->getLogicalDevice(),
       device->getGraphicsQueue(),
@@ -320,9 +319,6 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
       vk::ImageLayout::eDepthStencilAttachmentOptimal,
       depth_aspect_flags,
       1);
-
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), cmdBuffer);
 }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(

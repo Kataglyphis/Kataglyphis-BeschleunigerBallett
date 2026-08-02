@@ -12,7 +12,6 @@ export module kataglyphis.vulkan.deferred_rasterizer;
 
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.swapchain;
-import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.frustum;
@@ -28,8 +27,7 @@ class DeferredRasterizer
 
     void init(std::shared_ptr<VulkanDevice>in_device,
       VulkanSwapChain *swap_chain,
-      std::span<const vk::DescriptorSetLayout> descriptorSetLayouts,
-      vk::CommandPool &commandPool);
+      std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
 
     void shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts);
 
@@ -58,7 +56,7 @@ class DeferredRasterizer
     unsigned int getMeshesDrawn() const { return meshesDrawn; }
     unsigned int getMeshesConsidered() const { return meshesConsidered; }
 
-    void recreateFrameResources(vk::CommandPool commandPool);
+    void recreateFrameResources();
     void destroyFramebuffers();
 
     void cleanUp();
@@ -96,7 +94,7 @@ class DeferredRasterizer
 
     vk::RenderPass renderPass{};
 
-    void createTextures(vk::CommandPool &commandPool);
+    void createTextures();
     void createRenderPass();
     void createPipelines(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
     void createFramebuffer();

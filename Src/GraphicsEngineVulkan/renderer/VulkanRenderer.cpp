@@ -102,7 +102,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     std::array<vk::DescriptorSetLayout, 2> const descriptor_set_layouts_deferred = { sharedRenderDescriptors.getLayout(), gbufferDescriptors.getLayout() };
 
     rasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_rasterizer, graphics_command_pool);
-    deferredRasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_deferred, graphics_command_pool);
+    deferredRasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_deferred);
 
     clouds.init(device, graphics_command_pool, sharedRenderDescriptors.getLayout(), vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
     const auto initial_cascade_count = clampCascadeCount(
@@ -677,7 +677,7 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
     // Recreate depth buffers and framebuffers with new swapchain
     postStage.recreateFrameResources();
     rasterizer.recreateFrameResources(graphics_command_pool);
-    deferredRasterizer.recreateFrameResources(graphics_command_pool);
+    deferredRasterizer.recreateFrameResources();
     clouds.recreateFrameResources(graphics_command_pool, vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
 
     // The accumulation history is swapchain-extent-sized; recreate it (which
