@@ -301,6 +301,15 @@ volume so Rust dependencies survive the container.
   CI, so they do NOT run on ordinary pushes).
 - `Scripts/test-all-configs.ps1` is a local convenience sweep over every
   build configuration on both platforms — not wired into CI.
+- ContainerHub's own suites (the modules this repo imports) run via
+  `ExternalLib/Kataglyphis-ContainerHub/windows/scripts/tests/Invoke-Tests.ps1`.
+  Run it after changing anything upstream.
+- **GPU tests** (`GoldenRender.*`, `Integration.*`) skip in containers and run
+  only on the host — procedure, cwd requirement and the golden-writing
+  cautions are in [`docs/gpu-golden-testing.md`](docs/gpu-golden-testing.md).
+  Known trap: over an RDP session the swapchain reports zero images and every
+  golden fails with "No synchronization frames available" — that is the
+  session, not a renderer regression (see `BACKLOG.md`).
 
 **Adding tests is always in scope.** You do not need permission to improve
 or extend the suites — a change that fixes behaviour should generally arrive
