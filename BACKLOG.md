@@ -4808,24 +4808,27 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
 
 ## 2026-08-02 batch II — findings from the Stevedore + Rancher verification pass
 
-- [ ] **GoldenRender is 28/30 RED on the host GPU: no frames are ever drawn**
-  (L, **highest priority**) — every golden test fails with an empty frame.
-  Root cause is one line: `VulkanRenderer::draw()` bails at
-  `if (frameSync.frameSyncCount() == 0)` ("No synchronization frames
-  available; skipping draw frame", `renderer/VulkanRenderer.cpp:443`), and
-  `createSynchronization()` (`:1470`) sizes FrameSync from
-  `vulkanSwapChain.getNumberSwapChainImages()` — which is 0 in the headless
-  golden harness, so the guard fires on every frame and
-  `isModelLoadPending()` never clears. Introduced by
-  `e7e7579d refactor(renderer): extract FrameSync from the VulkanRenderer hub`
-  (2026-07-23); invisible for 10 days because the golden suite needs a real
-  adapter and only runs by hand on the host. Fix: give the headless path a
-  frame count independent of the swapchain (MAX_FRAME_DRAWS or the offscreen
-  target count) rather than weakening the guard. Verify: build clangcl-debug
-  in the container, then from the repo root
-  `./build-clangcl-debug/commitTestSuite.exe --gtest_filter='GoldenRender.*'`
-  on the RX 9070 XT — all 30 must pass (see docs/gpu-golden-testing.md).
-  Build preset: clangcl-debug.
+- [b] **Host GPU golden verification is unusable over RDP** (M, **blocked on
+  a console/physical login**) — re-confirmed 2026-08-02: 28 of 30
+  `GoldenRender.*` fail from the repo root on the RX 9070 XT, every frame
+  logging "No synchronization frames available; skipping draw frame"
+  (`VulkanRenderer.cpp:443`) because `createSynchronization()` (`:1470`)
+  sizes FrameSync from `vulkanSwapChain.getNumberSwapChainImages()` and the
+  swapchain reports **0 images** under this session. `query session` shows
+  the work running in `rdp-tcp#0` while `console` (ID 1) is a separate
+  session — the same environmental failure first recorded 2026-08-01, in
+  both active and disconnected RDP states.
+  **This is NOT the FrameSync extraction (`e7e7579d`) misbehaving** — that
+  guard only reports the empty swapchain — and it is not the 2026-08-02
+  dedup/shader work either (which touched no engine source and whose shader
+  outputs are byte-identical). Do not "fix" it by weakening the guard or
+  rewriting FrameSync.
+  What is actually needed: run the suite from a console/physical login and
+  confirm 30/30, then decide whether host GPU verification needs a documented
+  console-session prerequisite (docs/gpu-golden-testing.md) and/or whether
+  the offscreen golden path should stop depending on a real swapchain at all.
+  Until then treat host GPU goldens as unavailable and do not burn executor
+  retries on them.
 
 - [ ] **Checked-in WGSL differs between Windows and Linux from the SAME
   slangc** (M) — running `Scripts/Linux/compile-slang-shaders.sh` inside
