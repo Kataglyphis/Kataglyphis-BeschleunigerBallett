@@ -46,12 +46,21 @@ completion notifications never arrive. Therefore:
    ```
    Scripts/Linux/cmake-configure-build.sh --preset linux-debug-clang --build-dir build
    ```
+   When running that inside a container with the repo bind-mounted, pass a
+   **container-native** build dir instead (`--build-dir /tmp/bb`): CMake's
+   FetchContent rename and cargo's temp cleanup both fail on the mounted
+   host filesystem, and the build dies partway through on a stale artifact.
    If the build fails, fix the error and rebuild. Do not mark the task
    complete with a failing build.
-7. **Run tests** (when the task description says to):
+7. **Run tests** (when the task description says to). The Windows build runs
+   in a container, so its CTest metadata carries container paths and host
+   `ctest --test-dir` cannot read it. Run the delivered executable from the
+   **repo root** (cwd matters — some shaders resolve relative to it):
    ```
-   ctest --test-dir build-clangcl-debug --output-on-failure -C Debug
+   ./build-clangcl-debug/commitTestSuite.exe --gtest_filter='<Suite>.*'
    ```
+   `ctest --test-dir <build-dir> --output-on-failure` is the right call on
+   Linux, or inside the container via `docker exec`.
 8. **Delete the completed task from `BACKLOG.md`.** Remove the entire task
    entry — the `- [ ]` title line and its indented body — instead of marking
    it checked. Completed work is tracked in git history, not in the backlog.
