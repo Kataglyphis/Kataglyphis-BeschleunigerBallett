@@ -270,6 +270,58 @@ TEST(GltfParseUnit, TriangleFanIsTriangulatedAroundTheHubVertex)
       << "a fan must triangulate around the shared hub vertex 0, not with the strip winding";
 }
 
+TEST(GltfParseUnit, OutOfRangeIndicesDropTheirTriangleNotTheMesh)
+{
+    // A malformed glTF can carry index values that don't address any vertex
+    // the primitive actually shipped (fuzz-found hazard, mirrors the OBJ
+    // loader's face_valid guard). Positions: 3 vertices. Indices: two
+    // triangles, the second of which references vertex 7 - out of range for
+    // a 3-vertex primitive. The whole triangle must be dropped, not just the
+    // bad corner (materialIndex is one id per triangle, and indices must
+    // stay a multiple of 3). The fixture also carries no NORMAL attribute, so
+    // the flat-normal pass below runs on the SANITIZED index list - under
+    // clangcl-debug (ASAN) the pre-fix version is an out-of-bounds write into
+    // `vertices`, making this the ASAN oracle for the guard.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 },
+        "indices": 1
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [
+        { "componentType": 5126, "count": 3, "type": "VEC3",
+          "min": [0,0,0], "max": [1,1,0], "bufferView": 0 },
+        { "componentType": 5123, "count": 6, "type": "SCALAR", "bufferView": 1 }
+      ],
+      "bufferViews": [
+        { "buffer": 0, "byteOffset": 0, "byteLength": 36, "target": 34962 },
+        { "buffer": 0, "byteOffset": 36, "byteLength": 12, "target": 34963 }
+      ],
+      "buffers": [ { "byteLength": 48,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAAABAAIABwABAAIA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_oob_index.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()))
+      << "an out-of-range index must drop its triangle, not fail the whole mesh";
+    std::filesystem::remove(tmp);
+
+    EXPECT_EQ(loader.getVertices().size(), 3U);
+    EXPECT_EQ(loader.getIndices().size(), 3U) << "only the first (valid) triangle survives";
+    EXPECT_EQ(loader.getIndices().size() % 3U, 0U);
+    for (unsigned int idx : loader.getIndices()) {
+        EXPECT_LT(idx, loader.getVertices().size()) << "every surviving index addresses a real vertex";
+    }
+    EXPECT_EQ(loader.getMaterialIndices().size(), loader.getIndices().size() / 3U)
+      << "material-id count must equal the surviving triangle count";
+}
+
 namespace {
 
 // A minimal one-triangle glTF (same POSITION buffer as the tests above: three

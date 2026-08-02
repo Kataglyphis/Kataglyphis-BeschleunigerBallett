@@ -323,7 +323,19 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
     }
 
     const std::size_t primIndexStart = indices.size();
+    const auto vertexCount = positions.size();
+    std::size_t droppedTriangles = 0;
+    // Malformed files can carry indices that don't address any vertex the
+    // primitive actually shipped (fuzz-found hazard, mirrors ObjLoader.cpp's
+    // face_valid guard): validate every corner before emitting the triangle.
+    // computeFlatNormals below and the BLAS build both index vertices
+    // unchecked, so an out-of-range corner reaching either is an
+    // out-of-bounds write / device fault rather than a diagnosable error.
     const auto emitTri = [&](unsigned int a, unsigned int b, unsigned int c) {
+        if (a >= vertexCount || b >= vertexCount || c >= vertexCount) {
+            ++droppedTriangles;
+            return;
+        }
         indices.push_back(base + a);
         indices.push_back(base + b);
         indices.push_back(base + c);
@@ -347,6 +359,12 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
         for (std::size_t i = 0; i + 2 < localSeq.size(); i += 3) {
             emitTri(localSeq[i], localSeq[i + 1], localSeq[i + 2]);
         }
+    }
+
+    if (droppedTriangles > 0) {
+        spdlog::warn("GltfLoader: dropped {} out-of-range triangle(s) in a primitive with {} vertices",
+          droppedTriangles,
+          vertexCount);
     }
 
     // Flat normals when NORMAL is absent (glTF spec: implementations

@@ -10,6 +10,10 @@ module kataglyphis.vulkan.vertex;
 
 namespace vertex {
 
+// Indices are trusted to already address existing vertices - that
+// validation is the caller's contract (ObjLoader.cpp's face_valid guard,
+// GltfLoader.cpp's emitTri guard), not this function's. An out-of-range
+// index here is an unchecked std::span subscript: an out-of-bounds write.
 void computeFlatNormals(std::span<Vertex> vertices, std::span<const unsigned int> indices, std::size_t firstIndex)
 {
     for (std::size_t i = firstIndex; i + 2 < indices.size(); i += 3) {
