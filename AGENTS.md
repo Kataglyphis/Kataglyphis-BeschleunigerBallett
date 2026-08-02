@@ -172,22 +172,36 @@ What belongs upstream:
   `windows/scripts/modules/` and consume it via
   `Scripts/Windows/Resolve-BuildModule.ps1` (ContainerHub first, vendored
   fallback second).
+- **Bash** likewise, in `linux/scripts/lib/` (consumer-facing libraries) or
+  `linux/scripts/01-core/` (primitives: logging, retry, verified downloads,
+  uv/python, parallelism). Source it by relative path and fail loudly when the
+  submodule is missing.
 - **Knowledge about the container image or Windows containers in general** —
   build performance, platform traps, setup fixes. ContainerHub's `docs/` is the
   single home; link to it from here.
 - **Anything learned the hard way** that is not about this renderer: write down
   the symptom, not just the fix, so the next person recognises it.
 
-What stays here: engine code, shaders, this project's presets and build
-orchestration (build-directory names, `Build-Windows.ps1` arguments,
-project-specific exclusions), and `Resolve-BuildModule.ps1` itself — it is the
-bootstrap that *finds* ContainerHub, so it cannot live inside it.
+What stays here: engine code, shaders, this project's presets, and the
+*payload* the shared drivers execute (build-directory names,
+`Build-Windows.ps1` arguments, project-specific exclusions, the Slang
+precompile hook) — plus `Resolve-BuildModule.ps1` itself, the bootstrap that
+*finds* ContainerHub and therefore cannot live inside it.
 
-Worked example: the container-reuse work (2026-07) put seven functions in
-`WindowsContainerBuild.Reuse.psm1` and two documents in ContainerHub's `docs/`,
-while this repo kept only the tar-pipe orchestration for its own build
-directories. Both repos are committed and pushed together, and the submodule
-pin is bumped in the same change.
+The build drivers are the worked example: `Build-Windows-Container.ps1` (~100
+lines) and `cmake-configure-build.sh` (~40) are wrappers over upstream
+`Invoke-ContainerBuild` and `linux/scripts/lib/cmake-build.sh`. Read those two
+when you need to know what a build actually does — the wrappers only supply
+this project's payload.
+
+**Adopting any of this in another project** — the loop, both container flows,
+the launchers, the CI actions — is a checklist upstream:
+[`adopting-in-a-new-project.md`](ExternalLib/Kataglyphis-ContainerHub/docs/adopting-in-a-new-project.md).
+Read it before hand-rolling equivalents elsewhere.
+
+Both repos are committed and pushed together, ContainerHub **first** (CI
+resolves its composite actions at `@main`), and the submodule pin is bumped in
+the same change.
 
 ## Critical Invariant: Submodule Pins
 
@@ -386,6 +400,8 @@ ContainerHub (see the rule above), project-specific ones here.
 | `docs/LICENSES-README.md` | Third-party license documentation |
 | `Scripts/AgenticLoop/README.md` | Agentic loop (claude/opencode engines) architecture, config, usage |
 | `ExternalLib/Kataglyphis-ContainerHub/docs/agentic-loop-build-matrix.md` | Build matrix config, sanitizer env vars, full matrix sweep |
+| `ExternalLib/Kataglyphis-ContainerHub/docs/adopting-in-a-new-project.md` | Wiring another project to the loop, both container flows, launchers, CI actions |
+| `ExternalLib/Kataglyphis-ContainerHub/docs/rancher-desktop-linux-containers.md` | Running the Linux image locally: nerdctl, cargo cache volume, build-dir rules |
 | `ExternalLib/Kataglyphis-ContainerHub/docs/windows-builds.md` | The Windows container image: build sequence, Stevedore setup, invariants |
 | `ExternalLib/Kataglyphis-ContainerHub/docs/windows-container-build-performance.md` | Building inside the image: transports, reuse pattern, safety rails |
 | `ExternalLib/Kataglyphis-ContainerHub/docs/windows-agentic-loop.md` | WindowsAgenticLoop.Common module API + config reference |
