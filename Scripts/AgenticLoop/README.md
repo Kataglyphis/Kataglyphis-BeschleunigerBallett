@@ -9,7 +9,7 @@ Two engines are supported (select via `engine` in the config, `--engine` /
 
 | Engine | Planner | Executor | CLI |
 | --- | --- | --- | --- |
-| `claude` (default) | Claude Fable 5 (`claude-fable-5`), falls back to Opus 4.8 (`claude-opus-4-8`) when overloaded | Claude Sonnet (`claude-sonnet-5`) | [Claude Code](https://claude.com/claude-code) `claude -p` |
+| `claude` (default) | Claude Opus 5 (`claude-opus-5`), falls back to Fable 5 (`claude-fable-5`) when overloaded | Claude Sonnet (`claude-sonnet-5`) | [Claude Code](https://claude.com/claude-code) `claude -p` |
 | `opencode` | GLM 5.2 | DeepSeek v4 Flash | [OpenCode](https://opencode.ai) `opencode run` |
 
 The reusable loop logic lives in the
@@ -59,7 +59,7 @@ flowchart TD
    entries (this exact failure mode cost a 7.6 h zero-progress run on
    2026-07-31).
 
-3. **Model tiering**: The planner uses an expensive, powerful model (Fable 5
+3. **Model tiering**: The planner uses an expensive, powerful model (Opus 5
    or GLM 5.2) for high-quality analysis and task descriptions. The executor
    uses a cheaper, faster model (Sonnet or DeepSeek v4 Flash) for
    implementation — it relies on the planner's detailed task descriptions to
@@ -210,7 +210,7 @@ Values this project sets deliberately (rather than inheriting defaults):
 
 | Engine | Role | Model ID | Notes |
 | --- | --- | --- | --- |
-| claude | Planner | `claude-fable-5` | Fable 5 — most capable; `claude-opus-4-8` configured as fallback |
+| claude | Planner | `claude-opus-5` | Opus 5 — powerful, fast; `claude-fable-5` configured as fallback |
 | claude | Executor | `claude-sonnet-5` | Sonnet — fast, cheap, strong at implementation |
 | opencode | Planner | `opencode-go/glm-5.2` | GLM 5.2 — powerful, expensive |
 | opencode | Executor | `opencode-go/deepseek-v4-flash` | DeepSeek v4 Flash — cheap, fast |
@@ -222,7 +222,7 @@ Environment overrides (both engines, both platforms):
 
 ```pwsh
 $env:AGENTIC_ENGINE = "claude"           # or "opencode"
-$env:AGENTIC_PLANNER_MODEL = "claude-opus-4-8"
+$env:AGENTIC_PLANNER_MODEL = "claude-fable-5"
 $env:AGENTIC_EXECUTOR_MODEL = "claude-sonnet-5"
 ```
 
@@ -307,7 +307,7 @@ test output, and quality output are all captured in the log file.
 The orchestration script invokes (depending on the engine):
 
 ```
-claude -p --model claude-fable-5 --fallback-model claude-opus-4-8 \
+claude -p --model claude-opus-5 --fallback-model claude-fable-5 \
   --append-system-prompt-file Scripts/AgenticLoop/prompts/planner.md \
   --allowed-tools Read Glob Grep "Edit(BACKLOG.md)" "Bash(git:*)" "PowerShell(git:*)"
 # or
