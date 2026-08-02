@@ -1,11 +1,32 @@
 #!/usr/bin/env bash
+# docs-build-web.sh - project wrapper around ContainerHub's generic Sphinx docs
+# builder. Everything reusable (venv bootstrap, _static staging, the diagram
+# generator step and the `make html` / `make linkcheck` pair with warnings as
+# errors) lives in
+# ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/docs-build.sh; only
+# this project's paths and its WebGPU wasm demo live here.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
+DOCS_BUILD_LIB="${SCRIPT_DIR}/../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/docs-build.sh"
+if [[ ! -f "${DOCS_BUILD_LIB}" ]]; then
+  err "Shared docs-build library not found at '${DOCS_BUILD_LIB}'. Initialize the Kataglyphis-ContainerHub submodule first."
+fi
+# shellcheck source=../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/docs-build.sh
+source "${DOCS_BUILD_LIB}"
+
+# Directory the C++ build wrote its Doxygen/Graphviz SVGs to.
 DOCS_OUT="${1:-${DOCS_OUT:-build/build/html}}"
+
+# Paths are relative to the repo root because CI invokes this from there; the
+# library resolves them against DOCS_BUILD_PROJECT_ROOT (cwd by default).
+DOCS_BUILD_SVG_SOURCE_DIR="${DOCS_OUT}"
+DOCS_BUILD_GENERATOR_SCRIPT="graphviz_generator.py"
+DOCS_BUILD_UV_VENV_CREATE_SCRIPT="${SCRIPT_DIR}/lib/uv-venv-create.sh"
+DOCS_BUILD_UV_INSTALL_REQUIREMENTS_SCRIPT="${SCRIPT_DIR}/lib/uv-install-requirements.sh"
 
 # Rebuild the Rust WebGPU renderer to wasm32 + wasm-bindgen and refresh the
 # committed demo under docs/source/_webgpu_demo, so the deployed docs always
@@ -43,26 +64,4 @@ else
     info "WebGPU WASM demo rebuild skipped/failed; keeping the committed snapshot"
 fi
 
-info "Ensuring Python virtual environment and dependencies"
-"${SCRIPT_DIR}/lib/uv-venv-create.sh"
-"${SCRIPT_DIR}/lib/uv-install-requirements.sh"
-
-info "Activating virtual environment"
-# shellcheck disable=SC1091
-source ".venv/bin/activate"
-
-info "Copying SVG files to docs static directory"
-cp "${DOCS_OUT}"/*.svg ./docs/source/_static
-
-info "Generating Graphviz diagrams"
-cd docs/source
-python graphviz_generator.py
-cd ..
-
-info "Building HTML documentation"
-SPHINXOPTS="-W --keep-going" make html
-
-info "Checking internal links and toctree references"
-SPHINXOPTS="-W --keep-going" make linkcheck
-
-info "Documentation build completed successfully"
+docs_build_main

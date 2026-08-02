@@ -4883,11 +4883,29 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
   `git -C ExternalLib/Kataglyphis-RustProjectTemplate status` clean.
   Build preset: none (container tooling).
 
-- [ ] **Upstream the generic half of `docs-build-web.sh`** (S) — the last
-  deferred reuse candidate. The Sphinx documentation build is generic to any
-  project using the docs image; the wasm-bindgen half is this project's demo
-  and stays. Split accordingly into ContainerHub `linux/scripts/lib/`.
-  The other three candidates in this entry are DONE (2026-08-02):
+- [x] **Upstream the generic half of `docs-build-web.sh`** (S) — done
+  2026-08-02, and with it this whole "remaining upstreaming candidates"
+  entry. The Sphinx half is now ContainerHub
+  `linux/scripts/lib/docs-build.sh` (venv bootstrap via the caller's
+  `uv-venv-create.sh`/`uv-install-requirements.sh` — the same contract
+  `code-quality.sh` already uses —, `_static` SVG staging, an optional
+  diagram-generator step, then `make html`/`make linkcheck` under
+  `SPHINXOPTS=-W --keep-going`); `Scripts/Linux/docs-build-web.sh` (67 -> 67
+  lines, half of them the demo) keeps only the paths and the wasm-bindgen
+  demo rebuild. Kept
+  separate from `02-toolchain/python/ci_build_docs.sh`, which is the
+  pure-Python-repo docs step (uv_sync_project over a pyproject, pytest and
+  coverage staging, no linkcheck) rather than a sourceable library.
+  Two neighbours went up in the same pass: `Scripts/Linux/run-ctest.sh`
+  (77 -> 29 lines) over the new `linux/scripts/lib/ctest-run.sh`, and
+  `Scripts/Compare-PerfBaseline.ps1` (137 -> 53 lines) over the new
+  `WindowsPerfBaseline.Common` (Google-Benchmark JSON diffing is the same
+  everywhere; the no-capture-mode policy stays a wrapper-level rule and the
+  module has no capture mode to inherit). Verified by argv-logging the old
+  and new Linux wrappers side by side in the container (10 ctest cases,
+  3 docs cases, identical) and by byte-identical comparator output on the
+  checked-in baseline; +18 upstream Pester cases for the moved comparator.
+  The other three candidates in this entry were already DONE (2026-08-02):
   `source_vulkan_env` now delegates to `01-core/vulkan-env.sh`, and the
   sccache-stats and vswhere/sanitizer-discovery triplications collapsed into
   `WindowsScripts.Shared` (each preserving its behavioural fork as a
@@ -4897,26 +4915,33 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
   Test: repo Pester 42/42, upstream `Invoke-Tests.ps1` green, and a real
   build on the affected platform. Build preset: linux-debug-clang.
 
-- [ ] **Upstream the Slang compile driver** (M) — `Scripts/Windows/compile-slang-shaders.ps1`
-  (195) and `Scripts/Linux/compile-slang-shaders.sh` (224) are now mostly a
-  generic driver: resolve slangc, expand `-I` include args, read a manifest,
-  compile each (file, entry, target), apply post-emit regex patches, emit and
-  combine WGSL, and staleness-check the outputs. None of that is
-  engine-specific any more — the project data was externalized to
-  `Resources/ShadersSlang/shader-manifest.json` on 2026-08-02, which is
-  exactly what makes this extractable now.
-  Move the driver to ContainerHub (`linux/scripts/lib/slang-compile.sh` +
-  a `WindowsSlang.Common.psm1`), parameterised on manifest path, source root
-  and output roots; the consumers keep only those paths. Any Slang project
-  then gets the whole pipeline, including the four behaviours that had to be
-  fixed by hand here (staleness checking, exit 2 on missing slangc, hard fail
-  on a manifest entry whose source is missing, and a loud warning when a
-  post-emit patch matches nothing).
-  Sequence this AFTER the WGSL platform-divergence task in this file: that
-  investigation may add a validation guard to these same scripts, and it
-  should land first so the guard moves upstream with the driver rather than
-  being ported twice.
-  Test: both scripts must still produce byte-identical output to the current
-  ones (snapshot the 72 artifacts before and after, as the 2026-08-02
-  extraction did); repo Pester 42/42; upstream `Invoke-Tests.ps1` green.
+- [x] **Upstream the Slang compile driver** (M) — done 2026-08-02, after the
+  WGSL platform-divergence guards landed (d17896f8) so they moved upstream
+  with the driver instead of being ported twice. The generic driver is now
+  ContainerHub `linux/scripts/lib/slang-compile.sh` (491 lines) and
+  `windows/scripts/modules/WindowsSlang.Common.psm1` (360): resolve slangc,
+  expand the `-I` include args over the source tree, read the manifest,
+  compile each (file, entry, target) with staleness checking, apply the
+  post-emit regex patches, emit/patch/validate/copy the combined WGSL, and
+  enforce the `minSlangcVersionForWgsl` floor. The consumers keep only paths:
+  `Scripts/Windows/compile-slang-shaders.ps1` 311 -> 63 lines,
+  `Scripts/Linux/compile-slang-shaders.sh` 340 -> 52 — manifest location,
+  Slang source root, SPIR-V/WGSL output roots, the combined-emit staging dir
+  and the repo root the `wgslMap` `dst` paths resolve against. All six
+  hard-won behaviours moved with it: conservative staleness (newer than the
+  source AND every `.slang` AND the manifest), exit 2 (never a silent skip)
+  when slangc is missing, hard failure on a manifest row whose source file is
+  gone, a loud warning when a post-emit patch matches nothing, the WGSL
+  toolchain floor, and the varying-location validator that refuses to copy a
+  bad emit.
+  Verified: all 72 artifacts (`Resources/ShadersSlang/build/**` plus the
+  `wgslMap` destinations under `crates/**/shaders/`) byte-identical after a
+  Windows host run AND a container run of the Linux script, which correctly
+  skipped the combined WGSL emit (its slangc is `2026.1-52-gc8ddf20bb`,
+  below the floor) while still compiling 30 per-entry artifacts;
+  `git -C ExternalLib/Kataglyphis-RustProjectTemplate status` clean of
+  regenerated WGSL; the missing-slangc (exit 2), missing-source and
+  patch-matched-nothing paths probed explicitly on both platforms;
+  clangcl-debug container build green with `BuildIntegrity.*` 22/22; +8
+  upstream Pester cases (`WindowsSlang.Common.Tests.ps1`).
   Build preset: clangcl-debug (BuildIntegrity pins the shader outputs).

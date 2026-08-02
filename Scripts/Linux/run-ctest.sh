@@ -1,78 +1,29 @@
 #!/usr/bin/env bash
+# run-ctest.sh - project wrapper around ContainerHub's generic ctest runner.
+# Everything reusable (arg parsing, git safe.directory, Vulkan env, the ctest
+# verbosity/-T test flag set and the --ctest-exclude plumbing) lives in
+# ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/ctest-run.sh; only this
+# project's defaults live here.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
-git config --global --add safe.directory /workspace || true
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --vulkan-version)
-      VULKAN_VERSION="${2:-}"
-      shift 2
-      ;;
-    --vulkan-setup-script)
-      VULKAN_SETUP_SCRIPT="${2:-}"
-      shift 2
-      ;;
-    --vulkan-sdk)
-      VULKAN_SDK="${2:-}"
-      shift 2
-      ;;
-    --build-dir)
-      BUILD_DIR="${2:-}"
-      shift 2
-      ;;
-    --build-type)
-      BUILD_TYPE="${2:-}"
-      shift 2
-      ;;
-    --ctest-exclude)
-      CTEST_EXCLUDE="${2:-}"
-      shift 2
-      ;;
-    --)
-      shift
-      break
-      ;;
-    -*)
-      err "Unknown argument: $1"
-      ;;
-    *)
-      break
-      ;;
-  esac
-done
-
-source_vulkan_env
-
-BUILD_DIR="${BUILD_DIR:-${BUILD_DIR_DEFAULT:-build}}"
-BUILD_TYPE="${BUILD_TYPE:-${BUILD_TYPE_DEFAULT:-Debug}}"
-CTEST_EXCLUDE="${CTEST_EXCLUDE:-${CTEST_EXCLUDE_DEFAULT:-}}"
-
-if [[ -n "${BUILD_DIR}" ]]; then
-  info "Changing to build directory: ${BUILD_DIR}"
-  cd "${BUILD_DIR}"
+CTEST_RUN_LIB="${SCRIPT_DIR}/../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/ctest-run.sh"
+if [[ ! -f "${CTEST_RUN_LIB}" ]]; then
+  err "Shared ctest-run library not found at '${CTEST_RUN_LIB}'. Initialize the Kataglyphis-ContainerHub submodule first."
 fi
+# shellcheck source=../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/ctest-run.sh
+source "${CTEST_RUN_LIB}"
 
-CTEST_CMD=(
-  ctest
-  -C "${BUILD_TYPE}"
-  --verbose
-  --extra-verbose
-  --debug
-  -T test
-  --output-on-failure
-)
+CTEST_RUN_DEFAULT_BUILD_DIR="build"
+CTEST_RUN_DEFAULT_BUILD_TYPE="Debug"
+CTEST_RUN_USAGE_INTRO="Runs the BeschleunigerBallett test suite inside the Linux container image."
 
-if [[ -n "${CTEST_EXCLUDE}" ]]; then
-  info "Excluding tests matching: ${CTEST_EXCLUDE}"
-  CTEST_CMD+=( -E "${CTEST_EXCLUDE}" )
-fi
+# No default --ctest-exclude: which suites are GPU/device-dependent differs per
+# lane (Linux.yml excludes Integration/GoldenRender and the shader-freshness
+# check on the headless runners), so the exclusion stays an explicit CI
+# argument rather than a silent default here.
 
-CTEST_CMD+=( "$@" )
-
-info "Executing: ${CTEST_CMD[*]}"
-"${CTEST_CMD[@]}"
+ctest_run_main "$@"
