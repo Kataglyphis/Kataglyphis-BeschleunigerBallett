@@ -4856,3 +4856,26 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
   Make the failure fatal (or at minimum print the child's exit code and mark
   the build degraded). Test: temporarily rename slangc in the container and
   confirm the build now fails loudly. Build preset: linux-debug-clang.
+
+- [ ] **Remaining upstreaming candidates after the 2026-08-02 sweeps** (M) —
+  what is still project-local but arguably generic, with the reason each was
+  deferred rather than done:
+  (a) `Scripts/Linux/lib/common.sh::source_vulkan_env` — overlaps
+  ContainerHub `02-toolchain/vulkan.sh::source_vulkan_sdk_env`, but the local
+  one has five fallbacks upstream lacks (explicit $VULKAN_SETUP_SCRIPT,
+  $HOME/vulkan, arch-subdir glob, $VULKAN_SDK/setup-env.sh, glslc-on-PATH
+  short-circuit) AND the opposite error contract (warn+return 0 vs return 1,
+  which upstream callers depend on). Needs a small `01-core/vulkan-env.sh`
+  split (no `set -e`, no downloads dependency) before either side can move.
+  (b) `Scripts/Linux/docs-build-web.sh` — Sphinx + wasm-bindgen; the Sphinx
+  half is generic, the wasm half is this project's demo.
+  (c) The sanitizer-runtime discovery now exists three times upstream
+  (`WindowsCMake.Common::Get-SanitizerRuntimeDlls`, `WindowsTesting.Common`'s
+  VS/LLVM probes, `WindowsSourceBuild.Common::Get-VsInstallPath`) — each
+  forked for a stated reason (throwing vs silent, DLLs vs directories), so
+  the fix is one parameterized implementation, not a delete.
+  (d) sccache stats likewise has three upstream implementations, each with a
+  merge-candidate comment left in place at the fork.
+  Test: whatever moves must keep the repo Pester suite at 42/42, the upstream
+  suite green via `Invoke-Tests.ps1`, and a real build on the affected
+  platform. Build preset: per item.
