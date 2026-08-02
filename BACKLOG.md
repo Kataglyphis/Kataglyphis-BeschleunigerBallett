@@ -4733,6 +4733,206 @@ pointer cannot be null; a redundant lookup, not a defect.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
+## 2026-08-02 batch XI — planner (a frame-sync counter that erases itself one line after it is computed, a glTF loader that keeps the previous parse's mesh ranges, eleven raw-handle log lines, a dead overload, a conditional whose two branches are identical)
+
+**The headline is a live regression that stops the engine rendering, shipped
+2026-08-01 in `62e56684`.** `FrameSync::create`
+(`Src/GraphicsEngineVulkan/renderer/FrameSync.ixx:33-43`) computes
+`frame_sync_count = min(MAX_FRAME_DRAWS, imageCount)` on line 35 and then calls
+`cleanUp(logicalDevice)` on line 38 — and `cleanUp` now ends with
+`frame_sync_count = 0; current_frame = 0;` (`:117-118`), which `62e56684` added
+so the failure paths could reuse it. The ordering was never revisited: the
+count is wiped immediately, `image_available.resize(frame_sync_count)` and
+`in_flight_fences.resize(frame_sync_count)` resize to **0**, and the
+`for (i = 0; i < frame_sync_count; i++)` loop that creates the per-frame
+semaphores and fences never executes. `VulkanRenderer::drawFrame` then takes
+its `if (frameSync.frameSyncCount() == 0)` early return
+(`VulkanRenderer.cpp:443`) on every single frame. `git show 62e56684^` confirms
+the `cleanUp` call already sat above the resizes before that commit — it was
+harmless only because `cleanUp` did not touch the counter then. **This survived
+a full day of executor sessions precisely because host GPU golden verification
+is the blocked path** (the fifteen `- [b]` entries above): nothing in the CPU
+suites calls `create()`, so `FrameSyncUnit`'s three tests all still pass.
+
+**Second, `GltfLoader::parseCpu` does not reset `meshRanges`, and
+`sliceMeshRange` has no bounds guard to survive that.** `parseCpu`
+(`GltfLoader.cpp:405-411`) clears `vertices`, `indices`, `materials`,
+`materialIndex` and `textureImages` — five of the six arrays `adoptParsed`
+moves (`:42-50`). `ObjLoader::parseCpu` clears all six, `meshRanges` included,
+under an explicit comment (`ObjLoader.cpp:43-49`). So a second `parseCpu` on
+one `GltfLoader` appends the new document's ranges after the previous
+document's, and `uploadParsed` (`:99-109`) then feeds every one of them to
+`sliceMeshRange` (`MeshRange.ixx:43-63`), which does
+`vertices.begin() + range.vertexBase` and `indices[range.indexStart + i]` with
+no size check — an out-of-bounds read, not a diagnosable error. Today every
+`GltfLoader` is constructed fresh per parse (`AsyncModelParse.ixx:56`,
+`Scene.cpp:37`, `:116`), so this is latent rather than firing; `loadModel`
+(`:33-40`) is the reachable second-call path the moment anyone reuses an
+instance, which is exactly what `ObjLoader`'s comment says it was written to
+survive.
+
+**Third, eleven `spdlog::info` lines print raw Vulkan handles.** Grep-confirmed
+across exactly three files: `Rasterizer.cpp:113,146,243,348`,
+`DeferredRasterizer.cpp:119,166,330,355,377`, `CascadedShadowMap.cpp:227,436`.
+They fire once per swapchain image at startup **and again on every window
+resize** (`recreateSwapChain` → `destroyFramebuffers` → `recreateFrameResources`),
+so an ordinary resize on a triple-buffered swapchain emits a dozen
+`0x7f…`-style lines at info level. No other stage does this — `PostStage`,
+`SkyBox` and `Clouds` create and destroy the same objects silently — and a
+handle address is useful only to a debugger, never to a user reading `logs/`.
+
+**Fourth and fifth, two pieces of confirmed-dead code.**
+`VulkanBufferManager` declares `createBufferAndUploadVectorOnDevice` twice
+(`VulkanBufferManager.ixx:40-48` const-ref, `:50-57` non-const-ref); the
+non-const body (`:111-128`) does nothing but `static_cast` to
+`const std::vector<T>&` and call the other one. All five call sites
+(`Mesh.ixx:130`, `CascadedShadowMap.cpp:320`, `VulkanRenderer.cpp:1315`,
+`:1323`, `ASManager.cpp:273`) bind fine to the const overload. And
+`sceneConfig::getModelMatrix` (`SceneConfig.cpp:116-131`) has an `#if NDEBUG`
+split whose two branches are byte-identical `glm::scale(identity, vec3(1,1,1))`
+— batch X found this, rejected it as too small to stand alone, and asked for it
+to be folded into the next `SceneConfig` change; this is that change, paired
+with the stale claim in `Camera.cpp:44-48` that "cascade splits are computed as
+farPlane * (i / numCascades)", which `computeCascadeDataInto` stopped doing when
+`shadowDistance` and the practical split scheme landed
+(`CascadedShadowMapMath.cpp:124-161` — `shadowFar = min(shadowDistance, farPlane)`,
+so the comment's 4000 → 1333 arithmetic describes code that no longer exists).
+
+**Every task in this batch is verifiable with no GPU**, deliberately, for the
+same reason batch X gave. Tasks 1, 2 and 5 land device-free unit tests in
+suites that already run in Windows CI (`FrameSyncUnit`, `GltfParseUnit`,
+`MeshRangeSlice`, `CameraSceneConfigUnit`); task 3 adds a grep-based
+`BuildIntegrity` gate in the shape of the existing
+`EngineSourcesUseNonThrowingFilesystemOverloads`; task 4 is a compile-verified
+deletion. Every `file:line` below was read out of the tree this pass. The
+actionable queue was empty when this batch was written.
+
+Ordering: **task 1 first, and on its own** — it is a live rendering outage and
+the other four are cleanups. Tasks 2–5 are independent and touch disjoint
+files.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`GpuTimingSubsystem::create`** — checked for the same
+assign-then-`destroy()` ordering hazard as task 1; it calls `destroy(device)`
+FIRST (`GpuTimingSubsystem.ixx:73`) and `destroy` touches no counters, so it is
+correct; **`PostStage`/`Rasterizer`/`DeferredRasterizer`/`SkyBox`
+`recreateFrameResources` leaking framebuffers** — traced
+`VulkanRenderer.cpp:664-689`; all four `destroyFramebuffers()` calls run before
+the corresponding `recreateFrameResources()`, so nothing leaks;
+**`FrameCapture::invalidateFence` leaving `pending == true` across a swapchain
+recreate** — real, but `buffer_size` only ever grows and `width`/`height` are
+the *old* (already-fitting) extent, so `take()`'s memcpy stays in bounds; the
+class comment already states this is intended; **`Texture::uploadRgba`'s
+`mip_levels` vs `createImage`'s `in_mip_levels`** — the third-time-rejected
+candidate from batches IV/V/X; `uploadRgba` sets the member before calling
+`createImage`, so the sampler's `maxLod` is right on this path, and the three
+single-mip callers are correct by accident as batch X recorded;
+**`Shared::getBaseDir` returning `""` for a bare filename** (batch X's
+second-half finding) — already fixed: `resolveObjTexturePath`
+(`ObjLoader.ixx:20-28`) treats an empty base dir as `"."`, and
+`ObjParseUnit.EmptyBaseDirStaysRelative` (`objParseSuite.cpp:403-411`) pins it;
+**`GUISceneSharedVars::shadow_distance` / `cascade_split_lambda` having no GUI
+control** — genuinely unexposed (`GUI.cpp:185-201` offers only resolution,
+cascade count, PCF radius and intensity) while both are plumbed through to the
+cascade math (`VulkanRenderer.cpp:198-199`) and documented as knobs worth
+turning; left untasked because an ImGui panel addition has no device-free
+oracle, so it cannot be verified while GPU goldens are blocked — pick it up in
+the first batch after that unblocks; **`extractImageBytes` counting a padding
+byte at `b64[len-2]` without checking `b64[len-1]`** (`GltfLoader.cpp:228-231`)
+— only misreads input that is already invalid base64, and the length guard
+above it makes the result harmless.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Clear `meshRanges` in `GltfLoader::parseCpu` and make `sliceMeshRange` refuse an out-of-range range instead of reading past the arrays** — the glTF loader is the one of the two that does not reset its per-parse slices, and the helper it feeds them to has no guard.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:405-411` — the five arrays `parseCpu` clears
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:41-49` — the symmetric six-array clear to copy
+  - `Src/GraphicsEngineVulkan/scene/MeshRange.ixx:43-63` — `sliceMeshRange`, the unguarded slicer
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:96-110` — `uploadParsed`, which loops the ranges
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp:543-575` — `MultiPrimitiveGltfRecordsPerPrimitiveMeshRanges`, the fixture and assertion style to follow
+  - `Test/commit/VulkanEngine/meshRangeSliceSuite.cpp` — the existing direct unit coverage for the slicer
+
+  **Steps:**
+  1. Add `meshRanges.clear();` to `GltfLoader::parseCpu`'s reset block, next to the other five, with a short comment mirroring `ObjLoader.cpp:43` ("clear prior state if called multiple times on the same instance").
+  2. In `sliceMeshRange`, return an empty `MeshSlice` (and do not touch the arrays) when any of the three ranges does not fit: `range.vertexBase + range.vertexCount > vertices.size()`, `range.indexStart + range.indexCount > indices.size()`, or `range.triStart + range.triCount > materialIndex.size()`. Guard each sum against overflow the way `GltfLoader.cpp:212` does (compare `count > size - base` after checking `base <= size`).
+  3. Keep the re-basing arithmetic and the half-open bounds exactly as they are — `MeshRangeSlice`'s existing tests pin both.
+
+  **Test:** Add `GltfParseUnit.ReparsingTheSameLoaderDoesNotAccumulateMeshRanges` — call `parseCpu` twice on ONE `GltfLoader` with the multi-primitive fixture already used at `gltfParseSuite.cpp:543`, and assert `getMeshRanges().size()` is identical both times and that the last range's `indexStart + indexCount == getIndices().size()`. Add `MeshRangeSlice.OutOfRangeRangeYieldsAnEmptySliceInsteadOfReadingPastTheArrays` covering all three overflow directions.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GltfParseUnit.*:MeshRangeSlice.*` from the repo root.
+
+  **Context:** No shipped call path reuses a `GltfLoader` today (`AsyncModelParse.ixx:56` and `Scene.cpp:37,116` all construct fresh ones), so this is a latent defect plus a missing guard, not a live crash — say so in the commit message rather than overclaiming. The reason it is worth an executor session anyway is the second half: `sliceMeshRange` is the shared entry point for both loaders' sub-mesh split, and it currently converts any bad `MeshRange` into an out-of-bounds read. See `docs/model-loading.md` for the multi-mesh `MeshRange` flow.
+
+- [ ] **(S) (refactor) Stop logging raw Vulkan handles at info level, and gate it** — eleven `spdlog::info` lines print pipeline/framebuffer addresses at startup and on every resize; no other render stage does.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:113,146,243,348`
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:119,166,330,355,377`
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:227,436`
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:145-157` — the same lifecycle, written silently; the target style
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:2179` — `EngineSourcesUseNonThrowingFilesystemOverloads`, the grep-gate pattern to copy
+
+  **Steps:**
+  1. Delete all eleven lines. They log an address and nothing else; there is no diagnostic in them a Vulkan debug label or the validation layers do not already give better. Do not demote them to `spdlog::debug` — that keeps eleven format strings alive to rot.
+  2. Drop any `#include`/import that becomes unused as a result (check each file compiles without it rather than assuming).
+  3. Add `BuildIntegrity.EngineSourcesDoNotLogRawVulkanHandles`: walk `Src/**/*.cpp` and `Src/**/*.ixx`, flag any line containing both a `spdlog::` call and a `(uint64_t)(Vk` cast (or `0x{:x}` paired with a `Vk*` cast), and report every offender with `file:line`. Skip nothing — there should be zero after step 1.
+  4. Verify the gate is RED before step 1 and GREEN after (run it against the pre-change tree first; a gate that never failed proves nothing).
+
+  **Test:** the new `BuildIntegrity` gate above is the test. Follow the source-walking helpers `buildIntegritySuite.cpp` already has rather than adding a new file-walk.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*` from the repo root.
+
+  **Context:** These were added while chasing a framebuffer-lifetime bug and never removed. They are noise in `logs/` on every run and, worse, they read as intentional instrumentation — which is why the gate matters more than the deletion. `BuildIntegrity` already owns this class of "the tree must not contain X" check; add to it rather than starting a parallel mechanism.
+
+- [ ] **(S) (refactor) Delete the redundant non-const `createBufferAndUploadVectorOnDevice` overload** — its whole body is a `static_cast` to the const overload's parameter type.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanBufferManager.ixx:40-57` — the two declarations
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanBufferManager.ixx:78-128` — the two definitions; `:111-128` is the forwarder to delete
+  - The five call sites: `Src/GraphicsEngineVulkan/scene/Mesh.ixx:130`, `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:320`, `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1315`, `:1323`, `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp:273`
+
+  **Steps:**
+  1. Delete the non-const-`std::vector<T>&` declaration (`:50-57`) and its definition (`:111-128`).
+  2. Build. Any call site that passed a non-const lvalue now binds the const-ref overload; none of the five passes a `transfer_queue`, so the defaulted trailing parameters cover them. Fix nothing else — if a call site fails to compile, that is new information worth recording, not something to paper over with a cast at the call site.
+  3. Check whether the const overload's `transfer_queue` parameter has any caller passing a non-default value; if it does not, say so in the commit message but leave it (it is the documented escape hatch for a dedicated transfer queue) rather than deleting it in the same change.
+
+  **Test:** No new test — this is a compile-verified deletion with no behavioural surface. Confirm the existing `AllocatorOwnership` and `MemoryHelper` suites still pass.
+
+  **Build:** `clangcl-debug`, and because this edits a module interface (`.ixx`), pass `-FreshContainer`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root.
+
+  **Context:** Same "dead generality" class as batch VIII II's descriptor-pool override and batch XI's dead parameters. The `-FreshContainer` requirement for module-interface changes is not optional — see the fresh-container rule in `docs/gpu-golden-testing.md`.
+
+- [ ] **(S) (refactor) Collapse `getModelMatrix`'s identical `#if NDEBUG` branches and correct `Camera.cpp`'s stale cascade-split comment** — batch X deferred the first explicitly, asking for it to ride along with the next `SceneConfig` change; this is it.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:116-131` — both branches are `glm::scale(identity, vec3(1,1,1))`
+  - `Src/GraphicsEngineVulkan/scene/Camera.cpp:38-48` — the comment claiming `farPlane * (i / numCascades)`
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMapMath.cpp:124-161` — what the split scheme actually does now
+  - `Test/commit/VulkanEngine/cameraSceneConfigSuite.cpp` — where the new assertion goes
+
+  **Steps:**
+  1. Replace `getModelMatrix`'s `#if NDEBUG` block with a single `return glm::mat4(1.0F);`, keeping the explanatory sentence about the removed 60x viking-room scale (that history is the reason the function still exists) as a comment on the function.
+  2. Rewrite `Camera.cpp:44-48`: the far plane no longer drives the cascade splits — `computeCascadeDataInto` fits to `shadowFar = min(shadowDistance, farPlane)` (default `shadow_distance` 60) and blends a logarithmic and a uniform split by `cascade_split_lambda`. Keep the *conclusion* (150 rather than 4000 in debug is deliberate) and state the real current reason: the debug scene ends at ~36 units of view depth, and the far plane still bounds `shadowFar`. Do not restate the split scheme — point at `CascadedShadowMapMath.cpp`.
+  3. Grep `Src/` for any other comment repeating the `farPlane * (i / numCascades)` formula and fix or delete each one found.
+
+  **Test:** Add `CameraSceneConfigUnit.ModelMatrixIsIdentityInEveryConfiguration` asserting `sceneConfig::getModelMatrix() == glm::mat4(1.0F)` (compare component-wise with `EXPECT_FLOAT_EQ`, not `==` on the matrix). It passes in Debug and Release, which is the point: the conditional it replaces could not have had a different answer in either.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=CameraSceneConfigUnit.*` from the repo root. Because the change is `#if NDEBUG`-adjacent, also build `clangcl-release` once and confirm it compiles.
+
+  **Context:** Batch X's rejected-candidates list already records the `getModelMatrix` finding verbatim and the instruction to fold it into the next `SceneConfig` change — this closes that. The `Camera.cpp` comment is the same class of failure `b8cef733` ("docs: fix two claims that contradicted the code") fixed in the docs: a comment that describes code as it was two refactors ago is worse than no comment, because it is read as authority. `docs/cpp-renderer-improvements.md` is where the chronological record lives; do not duplicate the reasoning there.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

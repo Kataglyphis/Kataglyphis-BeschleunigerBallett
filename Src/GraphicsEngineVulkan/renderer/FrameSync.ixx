@@ -32,15 +32,7 @@ class FrameSync
     // early, exactly as the renderer did inline.
     void create(vk::Device logicalDevice, uint32_t imageCount)
     {
-        frame_sync_count =
-          std::min<uint32_t>(static_cast<uint32_t>(Kataglyphis::MAX_FRAME_DRAWS), imageCount);
-
-        cleanUp(logicalDevice);
-
-        image_available.resize(frame_sync_count);
-        render_finished_by_image.resize(imageCount);
-        in_flight_fences.resize(frame_sync_count);
-        images_in_flight_fences.resize(imageCount);
+        resetAndSize(logicalDevice, imageCount);
 
         vk::SemaphoreCreateInfo semaphore_create_info{};
 
@@ -91,6 +83,23 @@ class FrameSync
         }
 
         current_frame = 0;
+    }
+
+    // Device-free half of create(): tears down any existing set, computes the
+    // frame_sync_count/imageCount split and resizes the four handle vectors
+    // to match. cleanUp() zeroes frame_sync_count, so the sizing must be
+    // computed after it, not before.
+    void resetAndSize(vk::Device logicalDevice, uint32_t imageCount)
+    {
+        cleanUp(logicalDevice);
+
+        frame_sync_count =
+          std::min<uint32_t>(static_cast<uint32_t>(Kataglyphis::MAX_FRAME_DRAWS), imageCount);
+
+        image_available.resize(frame_sync_count);
+        render_finished_by_image.resize(imageCount);
+        in_flight_fences.resize(frame_sync_count);
+        images_in_flight_fences.resize(imageCount);
     }
 
     void cleanUp(vk::Device logicalDevice)
