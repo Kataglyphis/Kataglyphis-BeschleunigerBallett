@@ -404,11 +404,13 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
 
 bool GltfLoader::parseCpu(const std::string &modelFile)
 {
+    // clear prior state if called multiple times on the same instance
     vertices.clear();
     indices.clear();
     materials.clear();
     materialIndex.clear();
     textureImages.clear();
+    meshRanges.clear();
 
     cgltf_options options{};
     cgltf_data *data = nullptr;

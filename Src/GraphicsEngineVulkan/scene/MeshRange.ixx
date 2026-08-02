@@ -40,12 +40,20 @@ struct MeshSlice
 };
 
 /// Slices the flat arrays for a single range. Shared by both loaders'
-/// uploadParsed so the re-basing arithmetic lives in one place.
+/// uploadParsed so the re-basing arithmetic lives in one place. A range that
+/// does not fit within the arrays (a malformed asset, or a slicer bug in the
+/// loader) yields an empty MeshSlice instead of reading past the arrays.
 MeshSlice sliceMeshRange(const MeshRange &range,
   const std::vector<Vertex> &vertices,
   const std::vector<unsigned int> &indices,
   const std::vector<unsigned int> &materialIndex)
 {
+    if (range.vertexBase > vertices.size() || range.vertexCount > vertices.size() - range.vertexBase
+        || range.indexStart > indices.size() || range.indexCount > indices.size() - range.indexStart
+        || range.triStart > materialIndex.size() || range.triCount > materialIndex.size() - range.triStart) {
+        return {};
+    }
+
     MeshSlice slice;
     slice.vertices.assign(vertices.begin() + static_cast<std::ptrdiff_t>(range.vertexBase),
       vertices.begin() + static_cast<std::ptrdiff_t>(range.vertexBase + range.vertexCount));

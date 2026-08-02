@@ -573,6 +573,27 @@ TEST(GltfParseUnit, MultiPrimitiveGltfRecordsPerPrimitiveMeshRanges)
     EXPECT_EQ(loader.getMaterialIndices()[r1.triStart], 1U);
 }
 
+TEST(GltfParseUnit, ReparsingTheSameLoaderDoesNotAccumulateMeshRanges)
+{
+    // GltfLoader::parseCpu did not clear meshRanges, unlike the other five
+    // per-parse arrays (and unlike ObjLoader, which clears all six). Calling
+    // parseCpu twice on one instance would append the second parse's ranges
+    // to the first's. Red without the fix: getMeshRanges().size() doubles.
+    const auto path = sceneConfig::resolveModelPath("Models/GltfTest/two_primitives.gltf");
+    if (!std::filesystem::exists(path)) { GTEST_SKIP() << "two-primitive fixture not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(path));
+    const std::size_t firstCount = loader.getMeshRanges().size();
+
+    ASSERT_TRUE(loader.parseCpu(path));
+    EXPECT_EQ(loader.getMeshRanges().size(), firstCount) << "reparsing must not accumulate mesh ranges";
+
+    const auto &last = loader.getMeshRanges().back();
+    EXPECT_EQ(last.indexStart + last.indexCount, loader.getIndices().size())
+      << "the last range must still end exactly at the flat index array's end";
+}
+
 TEST(GltfParseUnit, ReadsColor0VertexColours)
 {
     // vertex_colored_quad.gltf tags its four corners red/green/blue/white via

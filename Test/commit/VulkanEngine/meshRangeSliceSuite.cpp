@@ -72,3 +72,42 @@ TEST(MeshRangeSlice, SingleRangeSpanningEverythingReproducesTheInputs)
     EXPECT_EQ(slice.indices, indices);
     EXPECT_EQ(slice.materialIndex, materialIndex);
 }
+
+TEST(MeshRangeSlice, OutOfRangeRangeYieldsAnEmptySliceInsteadOfReadingPastTheArrays)
+{
+    // Three vertices, three indices, one material id - a well-formed
+    // single-triangle input. Each sub-test below breaks exactly one of the
+    // three range checks; sliceMeshRange must refuse to read past the arrays
+    // and return an empty MeshSlice instead of crashing/UB.
+    std::vector<Vertex> vertices;
+    for (int i = 0; i < 3; ++i) { vertices.push_back(vertexAtX(static_cast<float>(i))); }
+    const std::vector<unsigned int> indices = { 0, 1, 2 };
+    const std::vector<unsigned int> materialIndex = { 0 };
+
+    // vertexBase + vertexCount > vertices.size() (3 + 1 > 3).
+    {
+        const MeshRange range{ 3, 1, 0, 3, 0, 1 };
+        const MeshSlice slice = sliceMeshRange(range, vertices, indices, materialIndex);
+        EXPECT_TRUE(slice.vertices.empty());
+        EXPECT_TRUE(slice.indices.empty());
+        EXPECT_TRUE(slice.materialIndex.empty());
+    }
+
+    // indexStart + indexCount > indices.size() (1 + 3 > 3).
+    {
+        const MeshRange range{ 0, 3, 1, 3, 0, 1 };
+        const MeshSlice slice = sliceMeshRange(range, vertices, indices, materialIndex);
+        EXPECT_TRUE(slice.vertices.empty());
+        EXPECT_TRUE(slice.indices.empty());
+        EXPECT_TRUE(slice.materialIndex.empty());
+    }
+
+    // triStart + triCount > materialIndex.size() (0 + 2 > 1).
+    {
+        const MeshRange range{ 0, 3, 0, 3, 0, 2 };
+        const MeshSlice slice = sliceMeshRange(range, vertices, indices, materialIndex);
+        EXPECT_TRUE(slice.vertices.empty());
+        EXPECT_TRUE(slice.indices.empty());
+        EXPECT_TRUE(slice.materialIndex.empty());
+    }
+}

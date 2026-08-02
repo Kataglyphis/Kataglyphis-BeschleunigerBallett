@@ -4844,29 +4844,6 @@ above it makes the result harmless.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Clear `meshRanges` in `GltfLoader::parseCpu` and make `sliceMeshRange` refuse an out-of-range range instead of reading past the arrays** — the glTF loader is the one of the two that does not reset its per-parse slices, and the helper it feeds them to has no guard.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:405-411` — the five arrays `parseCpu` clears
-  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:41-49` — the symmetric six-array clear to copy
-  - `Src/GraphicsEngineVulkan/scene/MeshRange.ixx:43-63` — `sliceMeshRange`, the unguarded slicer
-  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:96-110` — `uploadParsed`, which loops the ranges
-  - `Test/commit/VulkanEngine/gltfParseSuite.cpp:543-575` — `MultiPrimitiveGltfRecordsPerPrimitiveMeshRanges`, the fixture and assertion style to follow
-  - `Test/commit/VulkanEngine/meshRangeSliceSuite.cpp` — the existing direct unit coverage for the slicer
-
-  **Steps:**
-  1. Add `meshRanges.clear();` to `GltfLoader::parseCpu`'s reset block, next to the other five, with a short comment mirroring `ObjLoader.cpp:43` ("clear prior state if called multiple times on the same instance").
-  2. In `sliceMeshRange`, return an empty `MeshSlice` (and do not touch the arrays) when any of the three ranges does not fit: `range.vertexBase + range.vertexCount > vertices.size()`, `range.indexStart + range.indexCount > indices.size()`, or `range.triStart + range.triCount > materialIndex.size()`. Guard each sum against overflow the way `GltfLoader.cpp:212` does (compare `count > size - base` after checking `base <= size`).
-  3. Keep the re-basing arithmetic and the half-open bounds exactly as they are — `MeshRangeSlice`'s existing tests pin both.
-
-  **Test:** Add `GltfParseUnit.ReparsingTheSameLoaderDoesNotAccumulateMeshRanges` — call `parseCpu` twice on ONE `GltfLoader` with the multi-primitive fixture already used at `gltfParseSuite.cpp:543`, and assert `getMeshRanges().size()` is identical both times and that the last range's `indexStart + indexCount == getIndices().size()`. Add `MeshRangeSlice.OutOfRangeRangeYieldsAnEmptySliceInsteadOfReadingPastTheArrays` covering all three overflow directions.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GltfParseUnit.*:MeshRangeSlice.*` from the repo root.
-
-  **Context:** No shipped call path reuses a `GltfLoader` today (`AsyncModelParse.ixx:56` and `Scene.cpp:37,116` all construct fresh ones), so this is a latent defect plus a missing guard, not a live crash — say so in the commit message rather than overclaiming. The reason it is worth an executor session anyway is the second half: `sliceMeshRange` is the shared entry point for both loaders' sub-mesh split, and it currently converts any bad `MeshRange` into an out-of-bounds read. See `docs/model-loading.md` for the multi-mesh `MeshRange` flow.
-
 - [ ] **(S) (refactor) Stop logging raw Vulkan handles at info level, and gate it** — eleven `spdlog::info` lines print pipeline/framebuffer addresses at startup and on every resize; no other render stage does.
 
   **Files to read:**
