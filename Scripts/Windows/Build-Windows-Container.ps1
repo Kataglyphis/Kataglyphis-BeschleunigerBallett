@@ -193,59 +193,13 @@ function Invoke-TarPipeBuild {
   try {
     & $docker exec $container cmd /c "mkdir $ws" | Out-Null
 
-    # Ensure PowerShell Core (pwsh) is available inside the container. The
-    # container image has Windows PowerShell 5.1 (powershell.exe) but the
-    # build scripts now require PS 7.0. If pwsh is missing, install it via
-    # scoop (which is pre-installed in the image). Measured 2026-07-29:
-    # ~10 s on first install (scoop update may run); subsequent builds are
-    # a no-op ~1 s check.
-    & $docker exec $container cmd /c "where pwsh >nul 2>nul" | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-      Write-Host 'pwsh not found in container — installing via scoop...'
-      & $docker exec $container powershell -NoProfile -Command "scoop install pwsh" 2>&1 | Out-Null
-      if ($LASTEXITCODE -ne 0) {
-        Write-Warning "pwsh installation failed (exit $LASTEXITCODE) — build may fail if modules require PS 7."
-      } else {
-        Write-Host 'pwsh installed successfully.'
-      }
-    }
+    $null = Initialize-ContainerPwsh -DockerExe $docker -Container $container
 
     Write-Host 'Streaming sources into the container (excluding .git and build trees)...'
-    # Prune stale sources first: tar extracts over the existing tree but never
-    # removes files, so a source deleted on the host keeps building inside the
-    # reusable container (observed and repo'd 2026-07-19). We keep only the build
-    # trees (build, build-*, build_*) and logs; sources re-stream in seconds.
-    #
-    # The exclusion test is designed so a wrong pattern CANNOT delete the build
-    # tree: we match on directory names that start with "build" (with optional
-    # suffix patterns) and "logs", and remove everything else. A future
-    # build-directory naming convention must start with "build" to be kept.
     if ($reusedContainer) {
         Write-Host 'Pruning stale sources from the reusable container...'
-        # Pipe the pruning script via stdin to avoid nested-quote hell with
-        # -Command when the script itself contains double-quoted strings.
-        $pruneLines = @(
-            '$d = Get-ChildItem C:\ws -Directory -ErrorAction SilentlyContinue',
-            'if ($d) {',
-            '  $k = @("logs","sccache-local")',
-            '  $d | Where-Object { $_.Name -notin $k -and $_.Name -ne "build" -and $_.Name -notlike "build-*" -and $_.Name -notlike "build_*" } |',
-            '    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue',
-            '}'
-        ) -join "`n"
-        $pruneTmp = [System.IO.Path]::GetTempFileName()
-        try {
-            Set-Content -Path $pruneTmp -Value $pruneLines -Encoding UTF8 -NoNewline
-            Get-Content $pruneTmp -Raw | & $docker exec -i $container powershell -NoProfile -Command -
-            $pruneExit = $LASTEXITCODE
-        } finally {
-            if (Test-Path $pruneTmp) { Remove-Item $pruneTmp -Force }
-        }
-        if ($pruneExit -ne 0) {
-            Write-Warning "Source pruning reported errors (exit $pruneExit) - continuing anyway."
-        }
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warning "Source pruning reported errors (exit $LASTEXITCODE) - continuing anyway."
-        }
+        $null = Remove-StaleContainerSources -DockerExe $docker -Container $container `
+          -WorkspacePath $ws -KeepDirs @('logs', 'sccache-local')
     }
 
     # Anchor the build-tree excludes to the repo root (./...): unanchored
@@ -339,36 +293,14 @@ function Invoke-TarPipeBuild {
 
     if ($buildExit -ne 0) { throw "Container build failed (exit $buildExit)." }
 
-    # A green build is not proof that anything was produced or delivered. Both
-    # halves of that have already failed here, silently:
-    #   - a build was cut off partway and still looked successful, leaving no
-    #     commitTestSuite.exe at all;
-    #   - the outbound tar used globs, which tar does not expand, so it copied
-    #     NOTHING and only appeared to work because stale host artifacts were
-    #     already in place.
-    # Compare what the container actually has against what reached the host.
-    # Existence, not timestamps: on a no-change build ninja does not relink, so
-    # the executables are legitimately older than this run.
+    # A green build is not proof that anything was produced or delivered —
+    # both halves of that have already failed here silently (see
+    # Test-BuildArtifactsDelivered upstream). Throws on either failure mode.
     foreach ($dir in $existing) {
       if ($dir -eq 'logs') { continue }
-
-      $containerExes = @(& $docker exec $container cmd /c "dir /b $ws\$dir\*.exe 2>nul" |
-        ForEach-Object { $_.Trim() } | Where-Object { $_ })
-
-      if ($containerExes.Count -eq 0) {
-        throw ("Build reported success but produced no executables in $dir. " +
-          'The build was almost certainly cut off before linking - check the tail of the build log ' +
-          'for a step count that never reached its total.')
-      }
-
-      $notDelivered = @($containerExes | Where-Object { -not (Test-Path (Join-Path (Join-Path $repoRoot $dir) $_)) })
-      if ($notDelivered.Count -gt 0) {
-        throw ("$($notDelivered.Count) executable(s) built in the container never reached the host " +
-          "($dir): $($notDelivered -join ', '). The outbound transfer is broken - anything you run " +
-          'on the host is stale.')
-      }
-
-      Write-Host "Verified $($containerExes.Count) executable(s) delivered from $dir."
+      $delivered = Test-BuildArtifactsDelivered -DockerExe $docker -Container $container `
+        -WorkspacePath $ws -Directory $dir -HostRoot $repoRoot
+      Write-Host "Verified $delivered executable(s) delivered from $dir."
     }
   } finally {
     # The container is intentionally reused across builds - that is what makes

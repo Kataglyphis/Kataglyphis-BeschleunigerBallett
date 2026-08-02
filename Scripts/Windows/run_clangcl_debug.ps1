@@ -201,7 +201,6 @@ if (-not $clangClExePath) {
 }
 
 $WorkDir = $ProjectRoot
-$originalAsanOptions = $env:ASAN_OPTIONS
 
 Open-BuildLog -Context $context
 
@@ -261,44 +260,42 @@ try {
 
     $env:VK_LAYER_PATH = ''
     $env:VK_INSTANCE_LAYERS = ''
-    $env:ASAN_OPTIONS = "log_path=logs/asan.log:report_globals=0:windows_hook_rtl_allocators=false:$originalAsanOptions"
 
-    if ($ExeArgs) {
-        & $ExePath $ExeArgs
-    } else {
-        & $ExePath
-    }
-
-    $exitCode = $LASTEXITCODE
-    if ($exitCode -eq -1073740791) {
-        Write-Error "Vulkan validation layers are missing or VulkanSDK is not installed. Install it with 'winget install VulkanSDK'."
-
-        $vulkanSdkRoot = $null
-        if (Test-Path 'C:\VulkanSDK') {
-            $vulkanSdkRoot = (Get-ChildItem -Path 'C:\VulkanSDK' -Directory | Sort-Object Name -Descending | Select-Object -First 1).FullName
-        }
-
-        if ($null -ne $vulkanSdkRoot -and (Test-Path $vulkanSdkRoot)) {
-            $env:VULKAN_SDK = $vulkanSdkRoot
-            $vulkanBin = Join-Path $vulkanSdkRoot 'Bin'
-            $vulkanLib = Join-Path $vulkanSdkRoot 'Lib'
-            Add-DirectoryToPath $vulkanLib
-            Add-DirectoryToPath $vulkanBin
-            $env:VK_LAYER_PATH = $vulkanBin
-            Write-BuildLog -Context $context -Message 'VulkanSDK environment variables were updated. Run the script again.'
+    # App-run ASAN options differ from the test-run defaults on purpose:
+    # report_globals=0 + windows_hook_rtl_allocators=false silence GUI/driver
+    # global-init and RTL-allocator noise the test binaries do not have.
+    Invoke-WithAsanOptions -Options 'log_path=logs/asan.log:report_globals=0:windows_hook_rtl_allocators=false' -Script {
+        if ($ExeArgs) {
+            & $ExePath $ExeArgs
         } else {
-            Write-BuildLogWarning -Context $context -Message 'VulkanSDK could not be detected automatically. Install it and run the script again.'
+            & $ExePath
         }
-    } elseif ($exitCode -ne 0) {
-        Write-BuildLogWarning -Context $context -Message "Process failed with exit code $exitCode"
+
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -eq -1073740791) {
+            Write-Error "Vulkan validation layers are missing or VulkanSDK is not installed. Install it with 'winget install VulkanSDK'."
+
+            $vulkanSdkRoot = $null
+            if (Test-Path 'C:\VulkanSDK') {
+                $vulkanSdkRoot = (Get-ChildItem -Path 'C:\VulkanSDK' -Directory | Sort-Object Name -Descending | Select-Object -First 1).FullName
+            }
+
+            if ($null -ne $vulkanSdkRoot -and (Test-Path $vulkanSdkRoot)) {
+                $env:VULKAN_SDK = $vulkanSdkRoot
+                $vulkanBin = Join-Path $vulkanSdkRoot 'Bin'
+                $vulkanLib = Join-Path $vulkanSdkRoot 'Lib'
+                Add-DirectoryToPath $vulkanLib
+                Add-DirectoryToPath $vulkanBin
+                $env:VK_LAYER_PATH = $vulkanBin
+                Write-BuildLog -Context $context -Message 'VulkanSDK environment variables were updated. Run the script again.'
+            } else {
+                Write-BuildLogWarning -Context $context -Message 'VulkanSDK could not be detected automatically. Install it and run the script again.'
+            }
+        } elseif ($exitCode -ne 0) {
+            Write-BuildLogWarning -Context $context -Message "Process failed with exit code $exitCode"
+        }
     }
 } finally {
-    if ($null -ne $originalAsanOptions) {
-        $env:ASAN_OPTIONS = $originalAsanOptions
-    } else {
-        Remove-Item Env:\ASAN_OPTIONS -ErrorAction SilentlyContinue
-    }
-
     Close-BuildLog -Context $context
 }
 

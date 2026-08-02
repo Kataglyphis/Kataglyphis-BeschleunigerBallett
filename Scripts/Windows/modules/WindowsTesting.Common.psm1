@@ -148,11 +148,40 @@ function Get-AsanRuntimeDirs {
   return @($asanRuntimeDirs)
 }
 
+# Prepends ASAN options for the duration of a script block, then restores the
+# previous value (removing the variable if it was unset). The single home for
+# the save/override/restore pattern - do not hand-roll it at call sites.
+# ASAN option VALUES stay with the callers: test executables run with
+# report_globals=1, while the full engine run (run_clangcl_debug.ps1) needs
+# report_globals=0 + windows_hook_rtl_allocators=false - GUI/driver globals
+# and RTL allocator hooking produce noise the test binaries do not have.
+function Invoke-WithAsanOptions {
+  param(
+    [Parameter(Mandatory)]
+    [string]$Options,
+    [Parameter(Mandatory)]
+    [scriptblock]$Script
+  )
+
+  $oldAsanOptions = $env:ASAN_OPTIONS
+  $env:ASAN_OPTIONS = "${Options}:$oldAsanOptions"
+  try {
+    & $Script
+  } finally {
+    if ($null -ne $oldAsanOptions) {
+      $env:ASAN_OPTIONS = $oldAsanOptions
+    } else {
+      Remove-Item Env:\ASAN_OPTIONS -ErrorAction SilentlyContinue
+    }
+  }
+}
+
 function Invoke-WithRuntimePath {
   param(
     [string[]]$RuntimeDirs = @(),
     [Parameter(Mandatory)]
-    [scriptblock]$Script
+    [scriptblock]$Script,
+    [string]$AsanOptions = 'log_path=logs/asan.log:report_globals=1'
   )
 
   # Normalize to a clean string array, even when the caller provides $null or a scalar value.
@@ -162,19 +191,11 @@ function Invoke-WithRuntimePath {
     $env:PATH = (($normalizedRuntimeDirs -join ';') + ';' + $oldPath)
   }
 
-  $oldAsanOptions = $env:ASAN_OPTIONS
-  $env:ASAN_OPTIONS = "log_path=logs/asan.log:report_globals=1:$oldAsanOptions"
-
   try {
-    & $Script
+    Invoke-WithAsanOptions -Options $AsanOptions -Script $Script
   } finally {
     if ($normalizedRuntimeDirs.Length -gt 0) {
       $env:PATH = $oldPath
-    }
-    if ($null -ne $oldAsanOptions) {
-      $env:ASAN_OPTIONS = $oldAsanOptions
-    } else {
-      Remove-Item Env:\ASAN_OPTIONS -ErrorAction SilentlyContinue
     }
   }
 }
@@ -252,5 +273,5 @@ function Invoke-CtestDiscoveredTests {
   }
 }
 
-Export-ModuleMember -Function Resolve-TestExecutable, Invoke-ManualTestExecutable, Invoke-CtestDiscoveredTests
+Export-ModuleMember -Function Resolve-TestExecutable, Invoke-ManualTestExecutable, Invoke-CtestDiscoveredTests, Invoke-WithAsanOptions
 
