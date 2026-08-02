@@ -125,6 +125,7 @@ kataglyphis_append_prefixed_files(
 kataglyphis_append_prefixed_files(
   COMMON_FILTER
   "${PROJECT_INCLUDE_DIR}common/"
+  ExtensionSupport.hpp
   FormatHelper.hpp
   Globals.hpp
   MemoryHelper.hpp

@@ -3,9 +3,10 @@ module;
 #include "GLFW/glfw3.h"
 #include "spdlog/spdlog.h"
 
+#include "common/ExtensionSupport.hpp"
 #include "common/Utilities.hpp"
 #include <cstdint>
-#include <cstring>
+#include <span>
 #include <vector>
 #define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
 #include <vulkan/vulkan.hpp>
@@ -68,7 +69,7 @@ Kataglyphis::VulkanInstance::VulkanInstance()
     if (Kataglyphis::ENABLE_VALIDATION_LAYERS) { instance_extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME); }
 
     // check instance extensions supported
-    if (!check_instance_extension_support(&instance_extensions)) {
+    if (!check_instance_extension_support(instance_extensions)) {
         spdlog::critical("VkInstance does not support required extensions!");
         std::abort();
     }
@@ -89,41 +90,21 @@ auto Kataglyphis::VulkanInstance::check_validation_layer_support() -> bool
     std::vector<vk::LayerProperties> availableLayers = vk::enumerateInstanceLayerProperties().value;
 
     for (const char *layerName : validationLayers) {
-        bool layerFound = false;
-
-        for (const auto &layerProperties : availableLayers) {
-            if (strcmp(layerName, layerProperties.layerName) == 0) {
-                layerFound = true;
-                break;
-            }
-        }
-
-        if (!layerFound) { return false; }
+        if (!supportsLayer(availableLayers, layerName)) { return false; }
     }
 
     return true;
 }
 
-auto Kataglyphis::VulkanInstance::check_instance_extension_support(std::vector<const char *> *check_extensions) -> bool
+auto Kataglyphis::VulkanInstance::check_instance_extension_support(std::span<const char *const> check_extensions)
+  -> bool
 {
-    // create a list of vk::ExtensionProperties
     std::vector<vk::ExtensionProperties> extensions = vk::enumerateInstanceExtensionProperties().value;
 
-    // check if given extensions are in list of available extensions
-    for (const auto &check_extension : *check_extensions) {
-        bool has_extension = false;
-
-        for (const auto &extension : extensions) {
-            if (strcmp(check_extension, extension.extensionName) == 0) {
-                has_extension = true;
-                break;
-            }
-        }
-
-        if (!has_extension) {
-            spdlog::critical("Required instance extension not supported: {}", check_extension);
-            return false;
-        }
+    const char *missing = firstMissingExtension(extensions, check_extensions);
+    if (missing != nullptr) {
+        spdlog::critical("Required instance extension not supported: {}", missing);
+        return false;
     }
 
     return true;

@@ -1,5 +1,6 @@
 module;
 
+#include <span>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -23,6 +24,6 @@ class VulkanInstance
     std::vector<const char *> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 
     bool check_validation_layer_support();
-    static bool check_instance_extension_support(std::vector<const char *> *check_extensions);
+    static bool check_instance_extension_support(std::span<const char *const> check_extensions);
 };
 }// namespace Kataglyphis

@@ -2,8 +2,8 @@ module;
 
 #include "renderer/SwapChainDetails.hpp"
 #include <cstdint>
-#include <cstring>
 
+#include "common/ExtensionSupport.hpp"
 #include "common/Utilities.hpp"
 #include "spdlog/spdlog.h"
 #include "vulkan_base/PhysicalDeviceChoices.hpp"
@@ -46,9 +46,7 @@ auto readGpuSelectionFromEnvironment() -> std::string
 // working directory (the engine already resolves Resources/ and logs/ the
 // same way).
 auto pipelineCacheFilePath() -> std::filesystem::path
-{
-    return std::filesystem::path("pipeline_cache") / "kataglyphis_pipeline.cache";
-}
+{ return std::filesystem::path("pipeline_cache") / "kataglyphis_pipeline.cache"; }
 
 auto deviceTypeToString(vk::PhysicalDeviceType type) -> const char *
 {
@@ -67,12 +65,9 @@ auto deviceTypeToString(vk::PhysicalDeviceType type) -> const char *
 }
 }// namespace
 
-const std::vector<const char *> device_extensions = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME
-};
+const std::vector<const char *> device_extensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
 
-const std::vector<const char *> device_extensions_for_raytracing = {
-    VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+const std::vector<const char *> device_extensions_for_raytracing = { VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
     VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
     VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
     VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
@@ -80,8 +75,7 @@ const std::vector<const char *> device_extensions_for_raytracing = {
     VK_KHR_SPIRV_1_4_EXTENSION_NAME,
     VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
     VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
-    VK_KHR_RAY_QUERY_EXTENSION_NAME
-};
+    VK_KHR_RAY_QUERY_EXTENSION_NAME };
 
 Kataglyphis::VulkanDevice::VulkanDevice(VulkanInstance *instance, vk::SurfaceKHR *surface)
   : instance(instance), surface(surface)
@@ -94,9 +88,7 @@ Kataglyphis::VulkanDevice::VulkanDevice(VulkanInstance *instance, vk::SurfaceKHR
 }
 
 auto Kataglyphis::VulkanDevice::getSwapchainDetails() -> Kataglyphis::VulkanRendererInternals::SwapChainDetails
-{
-    return getSwapchainDetails(physical_device);
-}
+{ return getSwapchainDetails(physical_device); }
 
 void Kataglyphis::VulkanDevice::cleanUp()
 {
@@ -129,8 +121,8 @@ void Kataglyphis::VulkanDevice::create_pipeline_cache()
                 }
             }
         } else {
-            spdlog::warn("Could not open pipeline cache file '{}'; starting with an empty pipeline cache.",
-              cache_file.string());
+            spdlog::warn(
+              "Could not open pipeline cache file '{}'; starting with an empty pipeline cache.", cache_file.string());
         }
     }
 
@@ -187,8 +179,8 @@ void Kataglyphis::VulkanDevice::save_and_destroy_pipeline_cache()
                 spdlog::info(
                   "Persisted Vulkan pipeline cache ({} bytes) to '{}'.", cache_data.value.size(), cache_file.string());
             } else {
-                spdlog::warn("Failed to write pipeline cache file '{}'. Pipeline cache not persisted.",
-                  cache_file.string());
+                spdlog::warn(
+                  "Failed to write pipeline cache file '{}'. Pipeline cache not persisted.", cache_file.string());
             }
         }
     } else if (cache_data.result != vk::Result::eSuccess) {
@@ -203,9 +195,7 @@ void Kataglyphis::VulkanDevice::save_and_destroy_pipeline_cache()
 Kataglyphis::VulkanDevice::~VulkanDevice() = default;
 
 auto Kataglyphis::VulkanDevice::getQueueFamilies() -> Kataglyphis::VulkanRendererInternals::QueueFamilyIndices
-{
-    return getQueueFamilies(physical_device);
-}
+{ return getQueueFamilies(physical_device); }
 
 void Kataglyphis::VulkanDevice::get_physical_device()
 {
@@ -267,8 +257,8 @@ void Kataglyphis::VulkanDevice::get_physical_device()
     properties2.pNext = &vulkan11_properties;
     physical_device.getProperties2(&properties2);
     maxMultiviewViewCount = vulkan11_properties.maxMultiviewViewCount;
-    spdlog::default_logger_raw()->log(spdlog::level::info,
-      std::string("Device maxMultiviewViewCount: ") + std::to_string(maxMultiviewViewCount));
+    spdlog::default_logger_raw()->log(
+      spdlog::level::info, std::string("Device maxMultiviewViewCount: ") + std::to_string(maxMultiviewViewCount));
 }
 
 void Kataglyphis::VulkanDevice::create_logical_device()
@@ -281,8 +271,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     // renderer's GPU-timing feature keys off this value.
     {
         std::vector<vk::QueueFamilyProperties> const queue_family_props = physical_device.getQueueFamilyProperties();
-        if (indices.graphics_family >= 0
-            && static_cast<size_t>(indices.graphics_family) < queue_family_props.size()) {
+        if (indices.graphics_family >= 0 && static_cast<size_t>(indices.graphics_family) < queue_family_props.size()) {
             graphics_queue_timestamp_valid_bits =
               queue_family_props[static_cast<size_t>(indices.graphics_family)].timestampValidBits;
         }
@@ -328,38 +317,17 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     // --ENABLE RAY TRACING PIPELINE
     vk::PhysicalDeviceRayTracingPipelineFeaturesKHR ray_tracing_pipeline_features{};
     ray_tracing_pipeline_features.pNext = nullptr;
-    ray_tracing_pipeline_features.rayTracingPipeline = false;
 
     // -- ENABLE ACCELERATION STRUCTURES
     vk::PhysicalDeviceAccelerationStructureFeaturesKHR acceleration_structure_features{};
     acceleration_structure_features.pNext = &ray_tracing_pipeline_features;
-    acceleration_structure_features.accelerationStructure = false;
-    acceleration_structure_features.accelerationStructureCaptureReplay = false;
-    acceleration_structure_features.accelerationStructureIndirectBuild = false;
-    acceleration_structure_features.accelerationStructureHostCommands = false;
-    acceleration_structure_features.descriptorBindingAccelerationStructureUpdateAfterBind = false;
 
     vk::PhysicalDeviceVulkan13Features features13{};
-    features13.maintenance4 = false;
-    features13.robustImageAccess = false;
-    features13.inlineUniformBlock = false;
-    features13.descriptorBindingInlineUniformBlockUpdateAfterBind = false;
-    features13.pipelineCreationCacheControl = false;
-    features13.privateData = false;
     features13.shaderDemoteToHelperInvocation = available_features13.shaderDemoteToHelperInvocation;
-    features13.shaderTerminateInvocation = false;
-    features13.subgroupSizeControl = false;
-    features13.computeFullSubgroups = false;
-    features13.synchronization2 = false;
-    features13.textureCompressionASTC_HDR = false;
-    features13.shaderZeroInitializeWorkgroupMemory = false;
-    features13.dynamicRendering = false;
-    features13.shaderIntegerDotProduct = false;
     features13.pNext = &acceleration_structure_features;
 
     vk::PhysicalDeviceRayQueryFeaturesKHR rayQueryFeature{};
     rayQueryFeature.pNext = &features13;
-    rayQueryFeature.rayQuery = false;
 
     vk::PhysicalDeviceRayQueryFeaturesKHR availableRayQueryFeature{};
 
@@ -418,14 +386,6 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     std::vector<vk::ExtensionProperties> availableExtensions =
       physical_device.enumerateDeviceExtensionProperties().value;
 
-    // Helper function to check if an extension is supported
-    auto isExtensionSupported = [&availableExtensions](const char *extensionName) -> bool {
-        for (const auto &ext : availableExtensions) {
-            if (strcmp(ext.extensionName, extensionName) == 0) { return true; }
-        }
-        return false;
-    };
-
     const bool hasBufferDeviceAddressFeature = available_features12.bufferDeviceAddress == VK_TRUE;
     deviceSupportsBufferDeviceAddress = hasBufferDeviceAddressFeature;
     deviceSupportsDepthClamp = available_features2.features.depthClamp == VK_TRUE;
@@ -443,7 +403,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         + ", robustBufferAccess=" + (available_features2.features.robustBufferAccess == VK_TRUE ? "true" : "false"));
 
     for (const char *extensionName : device_extensions_for_raytracing) {
-        if (!isExtensionSupported(extensionName)) {
+        if (!supportsExtension(availableExtensions, extensionName)) {
             deviceSupportsHardwareAcceleratedRRT = false;
             spdlog::default_logger_raw()->log(
               spdlog::level::info, std::string("Required extension not supported: ") + extensionName);
@@ -497,10 +457,9 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         properties2.pNext = &ray_tracing_pipeline_properties;
         physical_device.getProperties2(&properties2);
 
-        deviceAddressAlignment = std::max<vk::DeviceSize>(
-          { vk::DeviceSize{ 1 },
-            ray_tracing_pipeline_properties.shaderGroupBaseAlignment,
-            acceleration_structure_properties.minAccelerationStructureScratchOffsetAlignment });
+        deviceAddressAlignment = std::max<vk::DeviceSize>({ vk::DeviceSize{ 1 },
+          ray_tracing_pipeline_properties.shaderGroupBaseAlignment,
+          acceleration_structure_properties.minAccelerationStructureScratchOffsetAlignment });
 
         // COPY ALL NECESSARY EXTENSIONS FOR RAYTRACING TO THE EXTENSION
         extensions.insert(
@@ -527,7 +486,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     // for compute shaders (clouds, noise). Enable the extension if supported.
     vk::PhysicalDeviceComputeShaderDerivativesFeaturesKHR computeDerivativeFeatures{};
     computeDerivativeFeatures.computeDerivativeGroupQuads = VK_TRUE;
-    if (isExtensionSupported(VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME)) {
+    if (supportsExtension(availableExtensions, VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME)) {
         extensions.push_back(VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME);
         computeDerivativeFeatures.pNext = features2.pNext;
         features2.pNext = &computeDerivativeFeatures;
@@ -548,7 +507,10 @@ void Kataglyphis::VulkanDevice::create_logical_device()
 
     // create logical device for the given physical device
     VkDevice c_device;
-    VkResult const result = vkCreateDevice(static_cast<VkPhysicalDevice>(physical_device), reinterpret_cast<const VkDeviceCreateInfo*>(&device_create_info), nullptr, &c_device);
+    VkResult const result = vkCreateDevice(static_cast<VkPhysicalDevice>(physical_device),
+      reinterpret_cast<const VkDeviceCreateInfo *>(&device_create_info),
+      nullptr,
+      &c_device);
     logical_device = c_device;
     if (result != VK_SUCCESS) {
         spdlog::critical("Failed to create logical device. Vulkan Result: {}", static_cast<int>(result));
@@ -572,8 +534,8 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     // Central VMA allocator for all buffer/image memory. Only request the
     // buffer-device-address capability when the feature was actually enabled
     // on the logical device above.
-    allocator = Allocator(
-      logical_device, physical_device, instance->getVulkanInstance(), deviceSupportsBufferDeviceAddress);
+    allocator =
+      Allocator(logical_device, physical_device, instance->getVulkanInstance(), deviceSupportsBufferDeviceAddress);
 }
 
 auto Kataglyphis::VulkanDevice::getQueueFamilies(vk::PhysicalDevice selectedPhysicalDevice)
@@ -654,22 +616,7 @@ auto Kataglyphis::VulkanDevice::check_device_extension_support(vk::PhysicalDevic
 {
     std::vector<vk::ExtensionProperties> extensions = device.enumerateDeviceExtensionProperties().value;
 
-    if (extensions.empty()) { return false; }
-
-    for (const auto &device_extension : device_extensions) {
-        bool has_extension = false;
-
-        for (const auto &extension : extensions) {
-            if (strcmp(device_extension, extension.extensionName) == 0) {
-                has_extension = true;
-                break;
-            }
-        }
-
-        if (!has_extension) { return false; }
-    }
-
-    return true;
+    return firstMissingExtension(extensions, device_extensions) == nullptr;
 }
 
 auto Kataglyphis::VulkanDevice::getBufferDeviceAddress(const vk::BufferDeviceAddressInfo &info) const
