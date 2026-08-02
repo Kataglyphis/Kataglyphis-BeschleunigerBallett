@@ -236,7 +236,6 @@ class GpuTimingSubsystem
     [[nodiscard]] uint32_t queriesPerImage() const { return QUERIES_PER_IMAGE; }
     [[nodiscard]] bool isSupported() const { return gpu_timings_supported; }
     [[nodiscard]] uint64_t timestampMask() const { return gpu_timestamp_mask; }
-    [[nodiscard]] uint32_t passRecordedMask(uint32_t imageIndex) const { return gpu_timing_pass_mask[imageIndex]; }
     // Records the mask of passes written into imageIndex's slice this frame,
     // and marks the slice as safe to read back (freshly created pools hold
     // queries in an undefined state until reset+written at least once).
@@ -245,10 +244,6 @@ class GpuTimingSubsystem
         if (imageIndex >= gpu_timing_pass_mask.size()) { return; }
         gpu_timing_pass_mask[imageIndex] = mask;
         gpu_timing_slice_recorded[imageIndex] = true;
-    }
-    [[nodiscard]] bool sliceWasRecorded(uint32_t imageIndex) const
-    {
-        return imageIndex < gpu_timing_slice_recorded.size() && gpu_timing_slice_recorded[imageIndex];
     }
 
   private:

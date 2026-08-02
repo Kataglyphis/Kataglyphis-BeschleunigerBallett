@@ -4731,41 +4731,6 @@ pointer cannot be null; a redundant lookup, not a defect.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Delete `GpuTimingSubsystem::passRecordedMask` and `sliceWasRecorded`** — zero callers anywhere, and the unguarded one is the accessor that would fire.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/GpuTimingSubsystem.ixx:235-252` — the accessor block; `create()`'s unsupported-timestamps early return at `:83-88` is why the vectors can be empty
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:844-864` — the only consumer of this class's public surface (`isSupported`, `queryPool`, `queriesPerImage`, `QUERIES_PER_PASS`)
-  - `Test/commit/VulkanEngine/gpuTimingSuite.cpp` — the existing device-free `GpuTimingUnit` tests (they cover `GpuPassAverage` only)
-
-  **Steps:**
-  1. Re-run the grep before deleting anything:
-     `rg -n 'passRecordedMask|sliceWasRecorded' Src Test` must show only the
-     definitions in `GpuTimingSubsystem.ixx`. If a caller has appeared, stop and
-     bounds-check `passRecordedMask` instead of deleting it.
-  2. Delete `passRecordedMask` (`:239`) and `sliceWasRecorded` (`:249-252`).
-     Keep `setPassRecordedMask` — `readTimings` reads
-     `gpu_timing_pass_mask[imageIndex]` at `:144` and
-     `gpu_timing_slice_recorded[imageIndex]` at `:128`, and both members stay.
-  3. Do not weaken the guard at `:128`: it is the bounds check that makes the
-     `:144` read safe, and it is the reason the two deleted accessors were the
-     only unguarded reads left.
-
-  **Test:** No new test — this is a pure deletion of unreachable code. Verify
-  with the grep above plus a clean build, and confirm `GpuTimingUnit.*` still
-  passes.
-
-  **Build:** `clangcl-debug`, with `-FreshContainer` (`GpuTimingSubsystem.ixx`
-  is a module interface):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='GpuTimingUnit.*'`.
-
-  **Context:** Batch IX's rejected-candidates note claimed the `Src/**/*.ixx`
-  accessor sweep was drained and that every surviving `get*`/`is*`/`has*`
-  accessor had a live caller. These two are the counter-example, so the seam is
-  not fully drained — a future refactor batch may re-run that sweep over
-  `renderer/*.ixx` specifically, which batch IX's spot checks skipped.
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 - [ ] **(S) Round instead of truncating when box-filtering non-sRGB mip levels** — the integer average always rounds down, so the bias compounds once per level down the whole chain.
