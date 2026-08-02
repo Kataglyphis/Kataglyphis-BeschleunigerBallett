@@ -141,6 +141,25 @@ if [[ ! -w "${CARGO_HOME:-/usr/local/cargo}" ]]; then
   echo "CARGO_HOME not writable in this image; using ${CARGO_HOME}"
 fi
 
+# Same treatment for the compiler caches. The image bakes
+# SCCACHE_DIR=/var/cache/sccache (ContainerHub Dockerfile.base), which is
+# only writable through BuildKit cache mounts during IMAGE builds; at
+# runtime it is root-owned, and as a non-root user every sccache-wrapped
+# compile dies with "failed to create directory ... Permission denied"
+# (sccache exits 254 — the exact failure that held the Linux CI x86 lane
+# red from 2026-07-28 to 2026-08-02). The cache never persisted across CI
+# containers anyway (no cache mount at runtime), so a container-local
+# fallback loses nothing.
+for cache_var in SCCACHE_DIR CCACHE_DIR; do
+  cache_dir="${!cache_var:-}"
+  if [[ -n "${cache_dir}" ]] && ! { mkdir -p "${cache_dir}" 2>/dev/null && [[ -w "${cache_dir}" ]]; }; then
+    fallback="${TMPDIR:-/tmp}/$(echo "${cache_var}" | tr '[:upper:]' '[:lower:]')"
+    export "${cache_var}=${fallback}"
+    mkdir -p "${fallback}"
+    echo "${cache_var} not writable in this image; using ${fallback}"
+  fi
+done
+
 PRESET="${PRESET_ARG:-${PRESET:-${1:-${DEFAULT_PRESET}}}}"
 BUILD_DIR="${BUILD_DIR_ARG:-${BUILD_DIR:-${DEFAULT_BUILD_DIR}}}"
 CLEAN_BUILD_DIR="${CLEAN_BUILD_DIR_ARG:-${CLEAN_BUILD_DIR:-${DEFAULT_CLEAN_BUILD_DIR}}}"
