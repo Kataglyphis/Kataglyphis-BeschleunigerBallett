@@ -77,7 +77,9 @@ not relink, so the executables are legitimately older than the run.
 ## Gotchas
 
 - The script takes `-Configurations` (comma-separated), **not** `-Preset`.
-  Passing the wrong parameter silently builds all four configurations.
+  Passing the wrong parameter silently builds the default set — all three of
+  `clangcl-debug,clangcl-profile,clangcl-release` — instead of the one you
+  meant, which reads as a mysteriously slow build rather than an error.
 - Host `cmake` (3.29) cannot read this repo's `CMakePresets.json`
   (`version: 10`); only the container's newer CMake can.
 - **A file deleted on the host keeps building in the container** — sources are

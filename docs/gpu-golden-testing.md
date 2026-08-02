@@ -72,9 +72,12 @@ verifiable ones.
 
 Shader-only units are cheap: edit a `.slang` source, run
 `compile-slang-shaders.ps1` (Windows) / `compile-slang-shaders.sh` (Linux) to
-refresh the committed SPIR-V, then run one golden — no C++ rebuild needed.
-The `BuildIntegrity` goldens check the committed `.spv` is not older than its
-`.slang` source.
+refresh the compiled SPIR-V, then run one golden — no C++ rebuild needed.
+The `BuildIntegrity` tests check each `.spv` is not older than its `.slang`
+source. Note the output tree (`Resources/ShadersSlang/build/`) is **gitignored,
+not committed** — a fresh clone must run the compile script once before the
+engine has anything to load (see
+[`shader-build-pipeline.md`](shader-build-pipeline.md)).
 
 ## Writing a new golden test — cautions learned the hard way
 
