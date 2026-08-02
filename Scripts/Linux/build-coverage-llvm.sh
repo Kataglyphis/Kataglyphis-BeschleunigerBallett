@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
+# build-coverage-llvm.sh - project wrapper around ContainerHub's generic
+# coverage driver (linux/scripts/lib/coverage.sh). Only this project's test
+# suite name, profile paths and exclusion filters live here.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
+
+COVERAGE_LIB="${SCRIPT_DIR}/../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/coverage.sh"
+if [[ ! -f "${COVERAGE_LIB}" ]]; then
+  err "Shared coverage library not found at '${COVERAGE_LIB}'. Initialize the Kataglyphis-ContainerHub submodule first."
+fi
+# shellcheck source=../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/coverage.sh
+source "${COVERAGE_LIB}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -29,31 +39,15 @@ COVERAGE_JSON="${COVERAGE_JSON_ARG:-${COVERAGE_JSON:-${BUILD_DIR}/coverage.json}
 
 require_tools llvm-profdata llvm-cov
 
+# compileTestSuite is device-free (it links VulkanEngineCore but touches no
+# Vulkan), which is what lets the coverage run work in headless CI.
 TEST_SUITE="${BUILD_DIR}/compileTestSuite"
-if [[ ! -f "${TEST_SUITE}" ]]; then
-  err "Test executable not found at ${TEST_SUITE}. Build the project first."
-fi
-
-# Generate the raw profile by RUNNING the instrumented suite. Nothing else in
-# the pipeline produced this file, which is why coverage silently never ran and
-# the merge below failed on a missing profraw. compileTestSuite is device-free
-# (it links VulkanEngineCore but touches no Vulkan), so it runs in headless CI.
-# LLVM_PROFILE_FILE both names and locates the output; detect_leaks=0 because a
-# coverage run only wants the profile, not a LeakSanitizer verdict.
 PROFRAW="${BUILD_DIR}/Test/compile/default.profraw"
-mkdir -p "$(dirname "${PROFRAW}")"
-info "Running ${TEST_SUITE} to generate coverage data"
-LLVM_PROFILE_FILE="${PROFRAW}" ASAN_OPTIONS="detect_leaks=0" "${TEST_SUITE}"
+PROFDATA="${BUILD_DIR}/compileTestSuite.profdata"
 
-if [[ ! -f "${PROFRAW}" ]]; then
-  err "Profile data still not found at ${PROFRAW} after running the suite."
-fi
+# No exclusion filters applied today; add llvm-cov -ignore-filename-regex
+# patterns here rather than in the shared library.
+COVERAGE_LLVM_IGNORE_REGEX=()
 
-info "Merging profile data from ${PROFRAW}"
-llvm-profdata merge -sparse "${PROFRAW}" -o "${BUILD_DIR}/compileTestSuite.profdata"
-
-info "Generating coverage report"
-llvm-cov report "${TEST_SUITE}" -instr-profile="${BUILD_DIR}/compileTestSuite.profdata"
-
-info "Exporting coverage to JSON: ${COVERAGE_JSON}"
-llvm-cov export "${TEST_SUITE}" -format=text -instr-profile="${BUILD_DIR}/compileTestSuite.profdata" > "${COVERAGE_JSON}"
+coverage_llvm_generate_profile "${TEST_SUITE}" "${PROFRAW}"
+coverage_llvm_report "${TEST_SUITE}" "${PROFRAW}" "${PROFDATA}" "${COVERAGE_JSON}"

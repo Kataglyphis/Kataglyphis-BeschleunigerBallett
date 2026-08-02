@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+# run_static_analysis_format.sh - project wrapper around ContainerHub's generic
+# code-quality driver. Everything reusable (cmake-format bootstrap, the
+# file-enumeration walks, clang-format, clang-tidy, and the container
+# compile-database path remapping) lives in
+# ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/code-quality.sh; only
+# this project's source roots, tool arguments and paths live here.
+#
+# NOTE: the Windows formatting/tidy path deliberately behaves differently on six
+# axes (source roots, module-TU skip, --header-filter, --checks, per-file vs
+# batched invocation, missing-compile-DB handling). They are enumerated at the
+# top of code-quality.sh. Do not "align" either side without reading that block.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -6,6 +17,13 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
+
+CODE_QUALITY_LIB="${SCRIPT_DIR}/../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/code-quality.sh"
+if [[ ! -f "${CODE_QUALITY_LIB}" ]]; then
+  err "Shared code-quality library not found at '${CODE_QUALITY_LIB}'. Initialize the Kataglyphis-ContainerHub submodule first."
+fi
+# shellcheck source=../../ExternalLib/Kataglyphis-ContainerHub/linux/scripts/lib/code-quality.sh
+source "${CODE_QUALITY_LIB}"
 
 BUILD_DIR="${BUILD_DIR:-build}"
 PRESET="${PRESET:-}"
@@ -16,39 +34,33 @@ RUN_CLANG_ANALYZE_HTML="${RUN_CLANG_ANALYZE_HTML:-false}"
 RUN_FORMAT_AND_TIDY="${RUN_FORMAT_AND_TIDY:-true}"
 RUN_SCAN_BUILD="${RUN_SCAN_BUILD:-true}"
 
-ensure_cmake_format() {
-  if has_tool cmake-format; then
-    return
-  fi
+# --- Project defaults consumed by the shared library -------------------------
+CODE_QUALITY_PROJECT_ROOT="${ROOT_DIR}"
 
-  if ! has_tool uv; then
-    err "Required tool not found: uv (needed to manage .venv and install requirements)"
-  fi
+# Source roots walked for clang-format AND clang-tidy. Windows tidies Src only;
+# see divergence 1 in code-quality.sh.
+CPP_SOURCE_ROOTS=(Src Test)
 
-  info "cmake-format not found. Preparing Python environment..."
+# clang++ --analyze only ever looked at Src.
+ANALYZE_SOURCE_ROOT="Src"
+ANALYZE_EXTRA_ARGS=(-DUSE_RUST=1)
 
-  # Venv creation and requirements install are delegated to the shared lib
-  # wrappers (which defer to ContainerHub's 01-core/python_uv.sh) instead of
-  # a third hand-rolled uv variant. They operate on the caller's cwd, hence
-  # the subshell cd.
-  if [[ -d "${ROOT_DIR}/.venv" ]]; then
-    info "Found .venv - installing requirements..."
-  else
-    info "No .venv found - creating one with uv..."
-    (cd "${ROOT_DIR}" && "${SCRIPT_DIR}/lib/uv-venv-create.sh")
-  fi
-  (cd "${ROOT_DIR}" && "${SCRIPT_DIR}/lib/uv-install-requirements.sh")
+CODE_QUALITY_CMAKE_SEARCH_ROOT="."
+CODE_QUALITY_CMAKE_EXCLUDE_PATHS=('./build/*' './build-release/*' './ExternalLib/*')
+CODE_QUALITY_CMAKE_FORMAT_CONFIG=".cmake-format.yaml"
 
-  # shellcheck disable=SC1091
-  source "${ROOT_DIR}/.venv/bin/activate"
+# The container image builds against /opt/gcc-<version>; when that exact
+# toolchain is missing on the host, its flags are stripped from the remapped
+# compile DB so a local clang-tidy run still works.
+CODE_QUALITY_GCC_TOOLCHAIN_PROBE_DIR="/opt/gcc-15.2.0"
+CODE_QUALITY_GCC_TOOLCHAIN_PREFIX="/opt/gcc-"
 
-  if ! has_tool cmake-format; then
-    err "cmake-format is still not available after installing requirements."
-  fi
-}
+# cmake-format is installed into the repo-local .venv when it is not on PATH.
+CODE_QUALITY_UV_VENV_CREATE_SCRIPT="${SCRIPT_DIR}/lib/uv-venv-create.sh"
+CODE_QUALITY_UV_INSTALL_REQUIREMENTS_SCRIPT="${SCRIPT_DIR}/lib/uv-install-requirements.sh"
 
 run_format_and_tidy() {
-  ensure_cmake_format
+  code_quality_ensure_cmake_format
 
   require_tools cmake-format clang-format clang-tidy
 
@@ -57,79 +69,43 @@ run_format_and_tidy() {
   fi
 
   info "Formatting CMake files..."
-  mapfile -t cmake_files < <(find . \
-    -type f \( -name 'CMakeLists.txt' -o -name '*.cmake' \) \
-    -not -path './build/*' \
-    -not -path './build-release/*' \
-    -not -path './ExternalLib/*')
+  local cmake_files=()
+  mapfile -t cmake_files < <(code_quality_find_cmake_files)
 
   if [[ ${#cmake_files[@]} -gt 0 ]]; then
-    cmake-format -c .cmake-format.yaml -i "${cmake_files[@]}"
+    code_quality_run_cmake_format "${cmake_files[@]}"
   fi
 
-  local cpp_search_dirs=()
-  if [[ -d "Src" ]]; then
-    cpp_search_dirs+=("Src")
-  fi
-  if [[ -d "Test" ]]; then
-    cpp_search_dirs+=("Test")
-  fi
+  local cpp_search_dirs=() root
+  for root in "${CPP_SOURCE_ROOTS[@]}"; do
+    if [[ -d "${root}" ]]; then
+      cpp_search_dirs+=("${root}")
+    fi
+  done
 
   local cpp_files=()
-  if [[ ${#cpp_search_dirs[@]} -gt 0 ]]; then
-    info "Finding C/C++ source files..."
-    mapfile -t cpp_files < <(find "${cpp_search_dirs[@]}" \
-      -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.h' -o -name '*.hh' -o -name '*.hpp' -o -name '*.hxx' -o -name '*.ixx' -o -name '*.cppm' -o -name '*.ccm' -o -name '*.cxxm' -o -name '*.mpp' \))
-  fi
-
   local clang_tidy_files=()
   if [[ ${#cpp_search_dirs[@]} -gt 0 ]]; then
-    mapfile -t clang_tidy_files < <(find "${cpp_search_dirs[@]}" \
-      -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' \))
+    info "Finding C/C++ source files..."
+    mapfile -t cpp_files < <(code_quality_find_cpp_files "${cpp_search_dirs[@]}")
+    mapfile -t clang_tidy_files < <(code_quality_find_clang_tidy_files "${cpp_search_dirs[@]}")
   fi
 
   if [[ ${#cpp_files[@]} -gt 0 ]]; then
-    info "Running clang-format on ${#cpp_files[@]} files..."
-    clang-format -i "${cpp_files[@]}"
+    code_quality_run_clang_format "${cpp_files[@]}"
   fi
 
-  local clang_tidy_build_dir="${BUILD_DIR}"
-  local compile_db_path="${BUILD_DIR}/compile_commands.json"
-  local temp_db_dir=""
+  code_quality_prepare_compile_db "${BUILD_DIR}"
 
-  # If the compile DB was generated in a container (/workspace), remap paths for local runs.
-  if grep -q '/workspace' "${compile_db_path}"; then
-    temp_db_dir="$(mktemp -d)"
-    info "Remapping container paths in compile_commands.json..."
-    sed "s#\"/workspace#\"${ROOT_DIR}#g" "${compile_db_path}" > "${temp_db_dir}/compile_commands.json"
-
-    # Drop container-only GCC toolchain flags if that toolchain path is unavailable locally.
-    if [[ ! -d "/opt/gcc-15.2.0" ]]; then
-      sed -E -i \
-        -e 's#[[:space:]]--gcc-toolchain=/opt/gcc-[^[:space:]"]+##g' \
-        -e 's#-Wl,-rpath,/opt/gcc-[^[:space:]"]+/lib64##g' \
-        -e 's#[[:space:]]-L/opt/gcc-[^[:space:]"]+/lib64##g' \
-        "${temp_db_dir}/compile_commands.json"
-    fi
-
-    clang_tidy_build_dir="${temp_db_dir}"
-  fi
-
-  local clang_tidy_args=( -p "${clang_tidy_build_dir}" )
   warn "Disabling for internal bug of clang-tidy..."
-  clang_tidy_args+=( -checks=-modernize-use-scoped-lock )
-  if [[ "${CLANG_TIDY_FIX}" == "true" ]]; then
-    clang_tidy_args+=( -fix )
-  fi
+  CODE_QUALITY_CLANG_TIDY_ARGS=(-checks=-modernize-use-scoped-lock)
+  CODE_QUALITY_CLANG_TIDY_FIX="${CLANG_TIDY_FIX}"
 
   if [[ ${#clang_tidy_files[@]} -gt 0 ]]; then
-    info "Running clang-tidy on ${#clang_tidy_files[@]} files..."
-    clang-tidy "${clang_tidy_args[@]}" "${clang_tidy_files[@]}"
+    code_quality_run_clang_tidy "${CODE_QUALITY_COMPILE_DB_DIR}" "${clang_tidy_files[@]}"
   fi
 
-  if [[ -n "${temp_db_dir}" ]]; then
-    rm -rf "${temp_db_dir}"
-  fi
+  code_quality_cleanup_compile_db
 }
 
 run_scan_build() {
@@ -149,19 +125,19 @@ run_scan_build() {
 run_clang_analyze_html() {
   require_tools clang++
 
-  if [[ ! -d "Src" ]]; then
-    warn "Skipping clang++ --analyze: Src directory not found."
+  if [[ ! -d "${ANALYZE_SOURCE_ROOT}" ]]; then
+    warn "Skipping clang++ --analyze: ${ANALYZE_SOURCE_ROOT} directory not found."
     return
   fi
 
-  mapfile -t src_cpp_files < <(find Src -type f \( -name '*.cpp' -o -name '*.cc' \))
+  mapfile -t src_cpp_files < <(find "${ANALYZE_SOURCE_ROOT}" -type f \( -name '*.cpp' -o -name '*.cc' \))
   if [[ ${#src_cpp_files[@]} -eq 0 ]]; then
-    warn "Skipping clang++ --analyze: no Src/*.cpp or Src/*.cc files found."
+    warn "Skipping clang++ --analyze: no ${ANALYZE_SOURCE_ROOT}/*.cpp or ${ANALYZE_SOURCE_ROOT}/*.cc files found."
     return
   fi
 
   info "Running clang++ --analyze (HTML output)..."
-  clang++ --analyze -DUSE_RUST=1 -Xanalyzer -analyzer-output=html "${src_cpp_files[@]}"
+  clang++ --analyze "${ANALYZE_EXTRA_ARGS[@]}" -Xanalyzer -analyzer-output=html "${src_cpp_files[@]}"
 }
 
 usage() {
@@ -236,6 +212,9 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# The compile-DB hint quotes the final build dir, so refresh it after parsing.
+CODE_QUALITY_COMPILE_DB_HINT="e.g. Scripts/Linux/cmake-configure-build.sh --build-dir ${BUILD_DIR} --preset <preset>"
 
 git config --global --add safe.directory /workspace || true
 
