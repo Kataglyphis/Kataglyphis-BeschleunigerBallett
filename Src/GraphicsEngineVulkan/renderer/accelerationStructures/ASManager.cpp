@@ -12,6 +12,7 @@ module;
 #include <spdlog/spdlog.h>
 #include "common/Utilities.hpp"
 #include "renderer/accelerationStructures/BottomLevelAccelerationStructure.hpp"
+#include "renderer/accelerationStructures/BlasGeometryLimits.hpp"
 
 module kataglyphis.vulkan.as_manager;
 
@@ -492,7 +493,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::objectToVkGeometryKHR(std:
     acceleration_structure_triangles_data.vertexFormat = vk::Format::eR32G32B32Sfloat;
     acceleration_structure_triangles_data.vertexData = vertex_device_or_host_address_const;
     acceleration_structure_triangles_data.vertexStride = sizeof(Vertex);
-    acceleration_structure_triangles_data.maxVertex = mesh->getVertexCount();
+    const auto limits = Kataglyphis::blasTriangleLimits(mesh->getVertexCount(), mesh->getIndexCount());
+    acceleration_structure_triangles_data.maxVertex = limits.maxVertex;
     acceleration_structure_triangles_data.indexType = vk::IndexType::eUint32;
     acceleration_structure_triangles_data.indexData = index_device_or_host_address_const;
 
@@ -503,7 +505,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::objectToVkGeometryKHR(std:
     acceleration_structure_geometry.geometry = acceleration_structure_geometry_data;
     acceleration_structure_geometry.flags = vk::GeometryFlagBitsKHR::eOpaque;
 
-    acceleration_structure_build_range_info.primitiveCount = mesh->getIndexCount() / 3;
+    acceleration_structure_build_range_info.primitiveCount = limits.primitiveCount;
     acceleration_structure_build_range_info.primitiveOffset = 0;
     acceleration_structure_build_range_info.firstVertex = 0;
     acceleration_structure_build_range_info.transformOffset = 0;

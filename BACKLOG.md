@@ -4185,6 +4185,339 @@ size (`VulkanRenderer.cpp:1421-1423`)** — re-confirmed as wrong units and
 re-rejected for the reason batch II gave (it only over-allocates, and the line
 above already documents the generous sizing).
 
+## 2026-08-02 batch IV — planner (a BLAS that declares one vertex too many, a GPU ranking where the tie-break outweighs the device type, a shadow-map combo that lies at startup, two hard-coded dispatch grids, a KTX2 mip count nothing checks)
+
+**Every task in this batch is verifiable with no GPU**, deliberately: the four
+`- [b]` entries above are all blocked on host GPU golden verification, which is
+still unavailable in this session. All five tasks below are provable with
+device-free gtest suites (the `SwapchainChoices.hpp` / `FormatHelper.hpp`
+"extract the pure decision into a header, test it without a device" pattern —
+`swapchainChoicesSuite.cpp:1-6`, `formatHelperSuite.cpp:1-16`), a
+`BuildIntegrity` source-scan gate, or `cargo test`. Every `file:line` below was
+read out of the tree this pass.
+
+**The headline is a Vulkan spec violation in the BLAS build.**
+`ASManager::objectToVkGeometryKHR` sets
+`acceleration_structure_triangles_data.maxVertex = mesh->getVertexCount()`
+(`ASManager.cpp:495`), but `maxVertex` is defined as the **highest index of a
+vertex that will be addressed**, i.e. `vertexCount - 1` — and
+`Mesh::vertex_count` is `vertices.size()` (`Mesh.cpp:38`). Every BLAS this
+engine builds therefore tells the driver it may read one `sizeof(Vertex)`
+stride past the end of the vertex buffer. It is invisible today only because
+VMA suballocation almost always leaves readable bytes there and because
+`robustBufferAccess` is explicitly `VK_FALSE` (`VulkanDevice.cpp:484`), so
+there is no bounds check to trip either. This is the same shape as the SBT
+handle-stride finding (`74aaee23`): correct on this GPU, undefined by the spec.
+
+Tasks 2-5 are independent. Task 2 is a ranking function whose tie-break term is
+numerically larger than the gaps it is meant to break. Task 3 is a startup/GUI
+divergence the user sees on every launch. Task 4 pins two dispatch grids against
+the `[numthreads(...)]` they must match, the way `ee4abb24` pinned `TILE_SIZE`.
+Task 5 is untrusted-asset hardening in the Rust crate, the same class as
+`a0cffe7a` / `d25cd1e5`.
+
+Ordering: all five are independent and touch disjoint files.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`Texture::createImage` never recording its
+`in_mip_levels` into the `mip_levels` member (`Texture.cpp:208-223`), so
+`createTextureSampler` builds a `maxLod = 0` sampler for every non-`uploadRgba`
+caller** — real, but all three such callers (`Clouds.cpp:33`, `SkyBox.cpp:97`,
+`CascadedShadowMap.cpp:54`) pass exactly 1 mip, for which `maxLod = 0` is the
+correct value; **the scratch-buffer reuse barrier in
+`ASManager::createBLAS:112-121`** — `srcAccessMask = eAccelerationStructureWriteKHR`
+/ `dstAccessMask = eAccelerationStructureReadKHR` between consecutive builds is
+verbatim the nvpro-core `cmdCreateBlas` idiom, not a missing WAW barrier;
+**`asset/hdr.rs`** — swept for the OOB/overflow class the OBJ loader had and
+found already hardened at every branch (`checked_add` on the old-style repeat
+shift, `get_mut` on every span, a zero-length-literal guard against the infinite
+loop), with a test that enumerates twelve malformed inputs; **`ASManager::cleanUp`
+leaving `tlas.vulkanAS` non-null and `blas` unshrunk (`ASManager.cpp:381-401`)**
+— a double-`cleanUp` would double-destroy, but the only caller
+(`VulkanRenderer.cpp:1173`) runs once at shutdown and the destructor is
+`= default`, so there is no reachable path.
+
+### C++ Vulkan engine
+
+- [ ] **(M) Make the physical-device ranking put device type ahead of its
+  tie-break, and extract it into a testable header** — `scorePhysicalDevice`
+  adds `maxImageDimension2D` (4096-32768 in practice) to a device-type score
+  whose adjacent tiers are only 90 to 9000 apart, so the tie-break can outvote
+  the type it is supposed to be breaking ties within.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp:22-114` — the
+    anonymous namespace holding `DEVICE_TYPE_SCORE_*` (10000 / 1000 / 100 / 10),
+    `GpuSelectionMode`, `readGpuSelectionFromEnvironment`,
+    `parseGpuSelectionMode`, `gpuSelectionModeToString`, `matchesSelectionMode`
+    and `scorePhysicalDevice`
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp:281-345` —
+    `get_physical_device`, the single consumer, including the
+    `fallback_device` path
+  - `Src/GraphicsEngineVulkan/vulkan_base/SwapchainChoices.hpp` and
+    `Test/commit/VulkanEngine/swapchainChoicesSuite.cpp` — the exact pattern to
+    copy (pure header, no device, one `...ChoicesUnit` suite)
+
+  **Steps:**
+  1. Add `Src/GraphicsEngineVulkan/vulkan_base/PhysicalDeviceChoices.hpp`
+     (`#pragma once`, `namespace Kataglyphis`) and move into it: the enum
+     `GpuSelectionMode`, `parseGpuSelectionMode(std::string_view)` (the
+     *string* overload only — `readGpuSelectionFromEnvironment` stays in the
+     `.cpp` because it is platform-conditional I/O),
+     `gpuSelectionModeToString`, `matchesSelectionMode` and the scoring.
+  2. Replace the single `int` score with an ordered pair so type strictly
+     dominates:
+     ```cpp
+     struct PhysicalDeviceScore {
+         int typeRank;          // 4 discrete, 3 integrated, 2 virtual, 1 cpu, 0 other
+         uint32_t capability;   // maxImageDimension2D, tie-break only
+         friend auto operator<=>(const PhysicalDeviceScore &, const PhysicalDeviceScore &) = default;
+     };
+     PhysicalDeviceScore scorePhysicalDevice(const vk::PhysicalDeviceProperties &);
+     ```
+     `operator<=>` on the aggregate compares `typeRank` first, so no additive
+     weighting can invert it. Delete `DEVICE_TYPE_SCORE_DISCRETE` and friends —
+     they only exist to encode the (broken) additive weighting.
+  3. In `VulkanDevice.cpp`, `#include "vulkan_base/PhysicalDeviceChoices.hpp"`
+     in the global-module fragment and change `best_device_score` /
+     `best_device_score_fallback` from `int` (seeded with
+     `std::numeric_limits<int>::min()`) to `std::optional<PhysicalDeviceScore>`,
+     with the comparison `!best || candidate > *best`. Keep the two-pass
+     "preferred mode, else fall back to any suitable device" structure at
+     `:296-323` exactly as it is — only the comparison changes.
+  4. Delete the redundant re-fetch at `:331`
+     (`device_properties = physical_device.getProperties();`) — both branches
+     above already assigned `device_properties` from the same query.
+
+  **Test:** Add `Test/commit/VulkanEngine/physicalDeviceChoicesSuite.cpp` with
+  `TEST(PhysicalDeviceChoicesUnit, DeviceTypeOutranksTheCapabilityTieBreak)` —
+  build two `vk::PhysicalDeviceProperties` by hand, a discrete GPU with
+  `limits.maxImageDimension2D = 8192` and an integrated one with `32768`, and
+  assert the discrete scores higher (this test FAILS against today's additive
+  score: 18192 vs 33768). Add
+  `TEST(PhysicalDeviceChoicesUnit, CapabilityBreaksTiesWithinOneType)` (two
+  discrete GPUs, 16384 beats 8192),
+  `TEST(PhysicalDeviceChoicesUnit, ACpuDeviceNeverOutranksAnyGpu)` (CPU at
+  32768 loses to a virtual GPU at 4096 — today 16394 vs 4196, i.e. also
+  currently inverted), and
+  `TEST(PhysicalDeviceChoicesUnit, SelectionModeParsingIsCaseInsensitiveAndDefaultsToAuto)`
+  covering `"Dedicated"`, `"INTEGRATED"`, `""` and `"nonsense"`.
+
+  **Build:** `clangcl-debug`, same invocation as the task above; filter
+  `--gtest_filter='PhysicalDeviceChoicesUnit.*'`.
+
+  **Context:** Follows `ad836844` ("extract testable choosers") and the
+  `SwapchainChoices.hpp` precedent — device selection is pure decision logic
+  that currently cannot be tested at all because it is buried in an anonymous
+  namespace inside a module implementation unit. Do not change *which* device
+  the dev machine picks in the common case (one discrete GPU): the tests above
+  pin the ordering rule, not a machine.
+
+- [ ] **(S) Stop the shadow-map resolution combo from advertising 4096 while
+  the renderer built a 2048 map, and give the index→pixels table one
+  definition** — the GUI shows the wrong shadow resolution for the entire
+  session unless the user happens to touch the control.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx:16` —
+    `int shadow_map_res_index = 3;` and `:33`
+    `const char* available_shadow_map_resolutions[4] = { "512", "1024", "2048", "4096" };`
+    (index 3 = "4096")
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:114` —
+    `dirShadowMap.init(device, 2048, 2048, initial_cascade_count, ...)`, the
+    hard-coded startup resolution
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:296-333` —
+    `handleShadowResolutionChange`, whose `:305-308` if/else chain is the second
+    copy of the same four-entry table
+  - `Src/GraphicsEngineVulkan/gui/GUI.cpp:188-193` — the combo, which only sets
+    `shadow_resolution_changed` on an actual index change, so the startup
+    mismatch never self-corrects
+  - `Test/commit/VulkanEngine/guiSceneVarsRoundTripSuite.cpp` — existing
+    device-free suite over `GUISceneSharedVars`
+
+  **Steps:**
+  1. Add `shadowResolutionForIndex(int index) -> uint32_t` next to the
+     `available_shadow_map_resolutions` array it must agree with. Put it in
+     `GUISceneSharedVars.ixx` as an exported `constexpr` free function backed by
+     a `constexpr uint32_t kShadowMapResolutions[4] = { 512, 1024, 2048, 4096 };`,
+     and change `available_shadow_map_resolutions` to be the labels *of that
+     table*. Out-of-range indices must clamp into `[0, 3]` rather than fall
+     through to 512 the way the current `else` chain does.
+  2. Replace the `:305-308` if/else chain in `handleShadowResolutionChange`
+     with `const uint32_t shadow_res = shadowResolutionForIndex(guiSceneSharedVars.shadow_map_res_index);`.
+  3. Replace the hard-coded `2048, 2048` at `:114` with
+     `shadowResolutionForIndex(GUISceneSharedVars{}.shadow_map_res_index)` —
+     i.e. the startup map is whatever the combo's default index says. Note in a
+     comment that this deliberately makes the GUI the single source of truth,
+     so the two can no longer disagree.
+  4. `VulkanRenderer::init` needs the default `GUISceneSharedVars` value here;
+     if the real instance is not yet reachable at `:114`, use a
+     `constexpr GUISceneSharedVars kGuiDefaults{};` local rather than
+     re-typing the index.
+
+  **Test:** Extend `guiSceneVarsRoundTripSuite.cpp` (or add
+  `shadowResolutionSuite.cpp`) with
+  `TEST(ShadowResolutionUnit, EveryComboLabelMatchesThePixelCount)` — for each
+  of the four indices, `std::stoul(available_shadow_map_resolutions[i])` must
+  equal `shadowResolutionForIndex(i)`, which is what makes the label and the
+  allocation impossible to drift apart —
+  `TEST(ShadowResolutionUnit, OutOfRangeIndicesClampInsteadOfSilentlyPicking512)`
+  (`-1` → 512, `4` → 4096), and
+  `TEST(ShadowResolutionUnit, TheDefaultIndexIsWhatStartupAllocates)` asserting
+  `shadowResolutionForIndex(GUISceneSharedVars{}.shadow_map_res_index) == 4096U`
+  — the assertion that documents the behaviour change (startup now builds a
+  4096 map, matching what the combo has always claimed).
+
+  **Build:** `clangcl-debug`, same invocation; filter
+  `--gtest_filter='ShadowResolutionUnit.*:GuiSceneVars*'`.
+
+  **Context:** Same "one rule, two hand-rolled copies" theme as `a3b42dfc`,
+  `f97712f4` and `ae2ac64e`, but with a user-visible symptom rather than a
+  latent one. Be aware this changes the startup shadow-map allocation from
+  2048² to 4096² per cascade (3 cascades, a depth format from
+  `chooseDepthFormat`) — roughly 4x the shadow-map memory. If that is judged
+  too aggressive a default, the alternative fix is to change the *default index*
+  to 2 ("2048") instead of the startup resolution; either way the two must agree
+  and the test above pins whichever is chosen. Prefer changing the default index
+  to 2 if the executor cannot measure the memory impact.
+
+- [ ] **(S) Pin the two cloud compute dispatch grids against the
+  `[numthreads(...)]` they must match, and name the noise-volume extent** —
+  four magic numbers in `Clouds.cpp` silently encode three facts that live in
+  the Slang sources.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp:47`
+    (`createStorageTexture(commandPool, 128, 128, 128, ...)`), `:235`
+    (`commandBuffer.dispatch(128 / 8, 128 / 8, 128 / 8)`), `:252`
+    (`commandBuffer.dispatch((width + 15) / 16, (height + 15) / 16, 1)`)
+  - `Resources/ShadersSlang/compute/noise.slang:73` — `[numthreads(8, 8, 8)]`
+  - `Resources/ShadersSlang/compute/clouds.slang:102` — `[numthreads(16, 16, 1)]`
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:974-1024` —
+    `HostAndShaderSharedConstantsAgree` /
+    `SharedConstantsMatchTheCompiledHostValues`: the two-part pattern (parse the
+    shader text, then compare against the *compiled* host constant) to follow
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:28-40` —
+    `find_repo_root()`, which every source-scanning gate uses
+
+  **Steps:**
+  1. In `Clouds.ixx`, add exported `constexpr uint32_t` members or file-scope
+     constants: `kNoiseVolumeExtent = 128`, `kNoiseWorkgroupSize = 8`,
+     `kCloudWorkgroupSize = 16`. Keep them in the module interface so a test
+     can `import kataglyphis.vulkan.clouds` — or, if importing the module from
+     the test is awkward, put them in a new plain
+     `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/CloudDispatch.hpp`
+     that both `Clouds.cpp` and the test include (the `FormatHelper.hpp`
+     shape). Prefer the header: `buildIntegritySuite.cpp` already includes
+     plain headers, not modules.
+  2. Rewrite the three sites to use them: the `createTextures` call becomes
+     `createStorageTexture(commandPool, kNoiseVolumeExtent, kNoiseVolumeExtent, kNoiseVolumeExtent, ...)`;
+     `dispatchNoiseGeneration` dispatches
+     `kNoiseVolumeExtent / kNoiseWorkgroupSize` on all three axes;
+     `recordComputeCommands` dispatches
+     `(width + kCloudWorkgroupSize - 1) / kCloudWorkgroupSize` and the same for
+     height. Add a `static_assert(kNoiseVolumeExtent % kNoiseWorkgroupSize == 0)`
+     so a future extent that does not tile evenly fails to compile rather than
+     leaving a slab of the volume unwritten.
+  3. While in `recordComputeCommands`, guard the unchecked
+     `descriptorSets[0]` at `Clouds.cpp:249` — return early (with an
+     `spdlog::error`) when the span is empty, rather than reading past a
+     zero-length `std::span`.
+
+  **Test:** Add `TEST(BuildIntegrity, CloudDispatchGridsMatchTheShaderWorkgroupSizes)`
+  to `buildIntegritySuite.cpp`: read
+  `Resources/ShadersSlang/compute/noise.slang` and
+  `Resources/ShadersSlang/compute/clouds.slang`, regex out the
+  `[numthreads(X, Y, Z)]` triple from each, and assert
+  `X == Y == Z == kNoiseWorkgroupSize` for noise and
+  `X == Y == kCloudWorkgroupSize && Z == 1` for clouds. Fail with a message
+  naming the file and both values, the way
+  `HostAndShaderSharedConstantsAgree:993-995` does. Assert the `[numthreads`
+  was actually *found* (`ASSERT_TRUE(matched)`) so a renamed attribute fails
+  loudly instead of the gate silently passing on zero matches.
+
+  **Build:** `clangcl-debug`, same invocation. Run the suite **from the repo
+  root** (the gate resolves `Resources/` relative to `find_repo_root()`):
+  `.\commitTestSuite.exe --gtest_filter='BuildIntegrity.CloudDispatch*'`.
+
+  **Context:** Exactly the gate `ee4abb24` added for `TILE_SIZE` in
+  `forward.slang` and `71f34028` added for `histogram.wgsl`. The failure this
+  prevents is silent: halving `noise.slang`'s workgroup to `(4,4,4)` would leave
+  7/8 of the noise volume as undefined memory, and nothing — not validation, not
+  a golden test without a GPU — would say so.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(S) Validate a KTX2 mip chain against the dimensions it claims, instead
+  of handing `mips.len()` straight to `create_texture`** — a malformed or
+  simply non-2D `.ktx2` currently reaches wgpu as a validation error (a panic on
+  native), not as a graceful load failure.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/asset/ktx2_loader.rs:72-80` — `mips` is
+    `reader.levels()` verbatim, checked only for `!is_empty()`; `face_count`,
+    `layer_count` and `pixel_depth` from the header are never looked at
+  - `crates/webgpu_renderer/src/render/texture.rs:128-188` —
+    `create_compressed_texture`, which passes `compressed.mips.len() as u32` as
+    `mip_level_count` (`:155`) and computes each level's
+    `bytes_per_row` / `rows_per_image` from `texture.width >> level` (`:162-179`)
+    without ever checking `data.len()` against them
+  - `crates/webgpu_renderer/src/asset/hdr.rs:20-23` and its `HdrError` enum —
+    the "every failure is a typed error, dimensions are capped before anything
+    allocates" contract this module should match
+  - `crates/webgpu_renderer/src/asset/ktx2_loader.rs:83-136` — the existing
+    test module and the `tests/assets/red_bc1.ktx2` fixture
+
+  **Steps:**
+  1. In `ktx2_loader.rs`, add a pure, `pub(crate)` helper — no wgpu types, so
+     it is testable with no adapter:
+     ```rust
+     pub(crate) fn validate_mip_chain(
+         width: u32, height: u32, format: CompressedFormat, mips: &[Vec<u8>],
+     ) -> anyhow::Result<()>
+     ```
+     It must reject: an empty chain; more levels than
+     `32 - width.max(height).leading_zeros()` (the full-chain maximum, i.e.
+     `floor(log2(max(w,h))) + 1`); and any level whose `data.len()` is smaller
+     than `(w >> level).max(1).div_ceil(4) * (h >> level).max(1).div_ceil(4) * format.block_bytes()`
+     — the exact expression `create_compressed_texture:165-178` already uses, so
+     reuse it rather than re-deriving it.
+  2. Call it from `load_ktx2` after the `!mips.is_empty()` check at `:73`, with
+     `.context("KTX2 mip chain does not match the declared dimensions")`.
+  3. Also reject in `load_ktx2` what the 2D upload path cannot represent:
+     `header.face_count > 1` (a cubemap) and `header.layer_count > 1` (an
+     array) and `header.pixel_depth > 1` (a 3D texture). Today those load and
+     are uploaded as a single 2D slice, so five sixths of a cubemap silently
+     vanish. Report each by name in the error, so the message says which
+     unsupported shape the file has.
+  4. Leave `create_compressed_texture` unchanged — the point is that the
+     invariant is established at parse time. Add a one-line comment there
+     pointing at `validate_mip_chain` as the reason `mips.len()` is trusted.
+
+  **Test:** In `ktx2_loader.rs`'s `mod tests`, add
+  `validate_mip_chain_rejects_more_levels_than_the_dimensions_allow` (4x4 BC1
+  with 5 levels → `Err`; the same with 3 → `Ok`),
+  `validate_mip_chain_rejects_a_truncated_level` (a correct chain with the last
+  level's `Vec` truncated by one byte → `Err`), and
+  `validate_mip_chain_accepts_a_base_only_chain` (one level, no mips → `Ok`,
+  because base-only containers are legal and common). Keep
+  `loads_a_valid_bc1_container` green — it is the regression guard that the new
+  checks do not reject the shipped fixture.
+
+  **Build / run:** no C++ build needed.
+  `cargo test -p webgpu_renderer ktx2` from
+  `ExternalLib/Kataglyphis-RustProjectTemplate`. If the local cargo run hits the
+  bind-mount temp-file problem, run it on a native-filesystem checkout — see
+  `docs/container-build-caching.md`.
+
+  **Context:** Same hardening class as `a0cffe7a` (malformed OBJ faces) and
+  `d25cd1e5` (unescaped JSON in `obj_to_gltf`), applied to the one asset path in
+  the Rust crate that still trusts a header. The `hdr.rs` module in the same
+  directory is the standard to match: dimensions capped before allocation, every
+  branch a typed error, no panics on any input. Do **not** attempt Basis
+  ETC1S/UASTC transcoding here — that is the separate `- [b]` entry at the top
+  of this file.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
