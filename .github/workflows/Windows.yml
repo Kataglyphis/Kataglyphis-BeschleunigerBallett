@@ -245,6 +245,7 @@ jobs:
             'DescriptorPoolSizesUnit.*'
             'ShadowResolutionUnit.*'
             'ViewportHelperUnit.*'
+            'SceneUboLayoutUnit.*'
           ) -join ':'
 
           $cmd = "& 'C:\ws\build-clangcl-debug\commitTestSuite.exe' --gtest_filter='$cpuOnlySuites'; exit `$LASTEXITCODE"

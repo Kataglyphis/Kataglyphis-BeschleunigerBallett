@@ -4410,6 +4410,310 @@ in `docs/`, `README.md` and `AGENTS.md` resolves, and the two
 
 ### C++ Vulkan engine
 
+## 2026-08-02 batch VII — planner (a uniform block the host and the shader lay out differently, the gate that would have caught it, two glTF loaders that trust index values, the per-frame allocation batch VI deferred)
+
+**The headline is `SceneUBO`: the C++ struct and the compiled SPIR-V disagree
+about where every field from `cascadeSplits` onward lives, by exactly 4 bytes.**
+This was not inferred — it was read out of the compiled binaries this pass with
+`C:\VulkanSDK\1.4.350.0\Bin\spirv-dis.exe`. `Resources/ShadersSlang/build/spirv/rasterizer/rasterizer.fs_main.spv`
+declares `%SceneUBO_std140` with `OpMemberDecorate ... Offset` values
+`0, 32, 36, 40, 48, 64, 256, 272, 288, 304, 320, 336`. Slang compiles
+`ConstantBuffer<T>` as **std140** (the emitted type is literally named
+`SceneUBO_std140`; `Scripts/Windows/compile-slang-shaders.ps1:191` passes no
+`-fvk-use-scalar-layout`), so the `uint/float/uint` run at bytes 32/36/40 is
+followed by 4 bytes of std140 padding before `cascadeSplits` at 48. The host
+struct (`Src/GraphicsEngineVulkan/renderer/SceneUBO.hpp:29-52`) has no such pad,
+and this project does **not** define `GLM_FORCE_DEFAULT_ALIGNED_GENTYPES`
+(`Src/GraphicsEngineVulkan/CMakeLists.txt:51` sets only
+`GLM_FORCE_DEPTH_ZERO_TO_ONE GLM_FORCE_RADIANS`), so `glm::vec4`/`glm::mat4`
+carry alignment 4 and `cascadeSplits` lands at 44. Consequence: the shader's
+`cascadeSplits.x` reads the host's `cascadeSplits.y`, all three
+`cascadeLightSpaceMatrices` are read 4 bytes off (i.e. garbage light-space
+matrices), `view_dir`/`cam_pos`/every cloud vec4 are shifted, and
+`cloudParameters` at 336..351 reads past the end of a buffer created and bound
+at `sizeof(SceneUBO)` (`VulkanRenderer.cpp:1492-1493`, `:716`, `:723`). Five
+shaders bind this block: `rasterizer.fs_main`, `deferred.lighting_fs_main`,
+`clouds.clouds_main`, `path_tracing.path_tracing_main`,
+`raytrace.rchit.rchit_main`.
+
+**Why nothing caught it: `SceneUBO` is the only shared host/device struct with
+no layout test, and it is the only one that mismatches.** An exhaustive sweep of
+every laid-out block in `Resources/ShadersSlang/build/spirv/**/*.spv` this pass
+found 13 distinct emitted types; every other one agrees with its host twin, and
+most are already pinned by `Test/commit/VulkanEngine/pushConstantSuite.cpp`
+(`PushConstantRasterizerUnit:36-104`, `PushConstantPathTracingUnit:110`,
+`PushConstantPostUnit:125`, `PushConstantRaytracingUnit:137`,
+`ObjMaterialLayoutUnit:151`). Verified agreeing this pass:
+`ObjMaterial_natural` (0/12/24/36/48/60/64/68/72/76/80/84/92, `ArrayStride 100`
+= `sizeof(ObjMaterial)`), `Vertex_natural` (0/12/24/36, `ArrayStride 44`),
+`ObjectDescription_std430` (0/8/16/24/32, `ArrayStride 40`),
+`PushConstantRasterizer_std430` (0/64/112), `GlobalUBO_std140` and
+`CameraUBO_std140` (both 0/64/128/192 — all-`mat4` structs cannot drift),
+`ShadowPushConstants_std430`, `DirectionalLightData_std140` (0/16). The rule the
+sweep exposes is simple: a shared struct is safe exactly when every member is
+16-byte-sized; `SceneUBO` is the only one that interleaves scalars, and it is
+the only one that is wrong.
+
+Tasks 1 and 2 are ordered: **do task 1 first**, then task 2 turns its
+hand-written expectations into a gate that reads the `.spv` itself. Tasks 3–5
+are independent of both. Every task in this batch is verifiable **without a
+GPU** — the twelve `- [b]` entries above are still blocked on host GPU golden
+verification, and task 1's oracle is deliberately a CPU `offsetof` test rather
+than a rendered image. The actionable queue was empty when this batch was
+written.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`skybox.slang:6-13`'s `CameraUBO` is a verbatim
+re-declaration of `common/scene_types.slang:75-82`'s `GlobalUBO`** — real
+duplication, but both emit identical offsets (all `mat4`), and deleting it means
+editing a `.slang` and regenerating + committing every SPIR-V/WGSL artifact
+(`BuildIntegrity.CompiledShadersAreNotOlderThanSharedIncludes`,
+`CheckedInWgslIsNotOlderThanItsSlangSource`) for a zero-behaviour change; fold
+it into the next shader-touching task instead; **`PushConstantSkyBox`
+(`skybox.slang:18-21`) has no host struct at all** — `SkyBox.cpp:334,411` pushes
+a bare `sizeof(uint32_t)`, which is correct at offset 0 and needs an allowlist
+entry in task 2, not a fix; **`Frustum.cpp`** — read end to end this pass, the
+Gribb-Hartmann extraction, the `GLM_FORCE_DEPTH_ZERO_TO_ONE` near-plane
+derivation and the degenerate-plane guards are all correct and documented in
+place; **18 source files carrying a UTF-8 BOM** — re-checked, still cosmetic,
+still diff noise (batch VI rejected this for the same reason).
+
+### C++ Vulkan engine
+
+- [ ] **(M) Add a `BuildIntegrity` gate that reads the compiled SPIR-V block offsets and compares them to the host `offsetof`s** — the mismatch in task 1 survived because every layout contract in this repo is a hand-copied number; make the compiled binary the source of truth.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:34` (`find_repo_root`),
+    `:771-824` (`CompiledShadersAreNotOlderThanTheirSources` — how a gate walks
+    `Resources/ShadersSlang/build/spirv`), `:1008-1040`
+    (`SharedConstantsMatchTheCompiledHostValues` — the "compare a parsed
+    artifact against a compiled-in host value" shape to copy), `:1956-1989`
+    (`PathTracingDispatchMatchesTheShaderWorkgroupSize` — the closest existing
+    precedent).
+  - `Src/GraphicsEngineVulkan/vulkan_base/ShaderHelper.cpp:21,43-50` —
+    `kSpirvMagic` and `validateSpirvBlob`, already the project's SPIR-V header
+    check; reuse the constant rather than re-declaring it.
+  - `Test/commit/VulkanEngine/pushConstantSuite.cpp` — the hand-written
+    expectations this gate makes redundant. Leave them in place; they are the
+    cheap first signal.
+
+  **Steps:**
+  1. In `buildIntegritySuite.cpp`, add a file-local SPIR-V reader. The format is
+     small enough to parse directly: 5 header words (word 0 must equal
+     `0x07230203`; reject anything else rather than byte-swapping), then a
+     stream of instructions whose first word is `(wordCount << 16) | opcode`.
+     Collect three opcodes — `OpName` (5: result-id, then a NUL-terminated
+     literal string padded to a word boundary), `OpMemberName` (6: type-id,
+     member index, literal string) and `OpMemberDecorate` (72: struct-type-id,
+     member index, decoration; `Offset` is decoration **35**, and its value is
+     the next word). Build `map<structName, map<memberName, offset>>`.
+  2. Add a table of expectations: emitted struct name → a list of
+     `{ member name, offsetof(HostType, member) }`. Cover
+     `SceneUBO_std140`→`VulkanRendererInternals::SceneUBO`,
+     `GlobalUBO_std140`→`GlobalUBO`, `CameraUBO_std140`→`GlobalUBO` (the skybox
+     re-declaration; note that in a comment),
+     `DirectionalLightData_std140`→`DirectionalLightData`,
+     `ObjectDescription_std430`→`ObjectDescription`,
+     `ObjMaterial_natural`→`ObjMaterial`, `Vertex_natural`→`Vertex`,
+     `PushConstantRasterizer_std430`, `PushConstantPathTracing_std430`,
+     `PushConstantPost_std430`, `PushConstantRaytracing_std430` and
+     `ShadowPushConstants_std430`. Allowlist `PushConstantSkyBox_std430` by name
+     with the stated reason: `SkyBox.cpp:334,411` pushes a bare `uint32_t`, so
+     there is no host struct to compare.
+  3. Walk every `Resources/ShadersSlang/build/spirv/**/*.spv`, union the parsed
+     maps, and assert each table entry's offsets match. Include the `.spv` file
+     name in every failure message.
+  4. Fail the test if a table entry appears in **no** `.spv` — a renamed or
+     deleted shader struct must break the gate loudly, not silently pass.
+     Anchor the allowlist to a name, never a line number (`e8b1db52`).
+  5. Do not assert `ArrayStride`/`MatrixStride` in this pass; those live on
+     `OpDecorate` of pointer and array types and need type-id chasing. Say so in
+     a comment so the next reader knows it was a scope decision, not an
+     oversight.
+
+  **Test:** `BuildIntegrity.SharedStructOffsetsMatchTheCompiledSpirv` (new, pure
+  CPU). Verify it is genuinely load-bearing by temporarily deleting task 1's pad
+  member and confirming the gate goes red on `SceneUBO_std140.cascadeSplits`,
+  then restoring it. Run:
+  `.\commitTestSuite.exe --gtest_filter='BuildIntegrity.*:SceneUboLayoutUnit.*'`
+
+  **Build:** `clangcl-debug`, same invocation as task 1.
+
+  **Context:** Do this **after** task 1 — this gate is red until the pad lands,
+  and a red gate cannot be distinguished from a broken parser. This is the
+  durable half of the fix: `302faa90` (`SlangCompileManifestsAgree`),
+  `a348bd9f` (cloud dispatch grids) and `b9a8af95` (path-tracing dispatch grid)
+  all followed the same arc — fix the drift, then make the compiled artifact
+  the thing the test reads so the drift cannot come back.
+
+- [ ] **(S) Reject out-of-range glTF indices before they reach `computeFlatNormals` and the index buffer** — the OBJ loader drops malformed faces (`a0cffe7a`); the glTF loader still writes whatever the accessor says, straight into an unchecked `std::span` subscript.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:293` (`base`), `:311-323`
+    (`localSeq` built from `cgltf_accessor_read_index`, no validation),
+    `:325-350` (`emitTri` and the strip/fan/list expansion), `:358`
+    (`computeFlatNormals(vertices, indices, primIndexStart)`).
+  - `Src/GraphicsEngineVulkan/scene/Vertex.cpp:13-29` — `computeFlatNormals`
+    does `vertices[indices[i + 0]]` on a `std::span`, which is **unchecked**:
+    an out-of-range index is an out-of-bounds write, not a throw.
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:269-292` — the guard to
+    mirror, including its comment on why a whole face is dropped rather than a
+    corner (indices must stay a multiple of 3).
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp:107-159` — `MalformedTextIsRejectedNotCrashed`
+    and `ShortBase64ImageUriDoesNotUnderflow`; `:200-233`
+    (`TriangleStripIsTriangulatedNotDropped`) shows how to build an inline glTF
+    fixture with a chosen index buffer.
+
+  **Steps:**
+  1. After `localSeq` is filled (`:323`), drop every entry that is
+     `>= positions.size()`. Do it at whole-triangle granularity in the three
+     expansion loops, not by erasing from `localSeq`: an out-of-range corner
+     must skip that triangle only, and for a strip or fan it must not silently
+     re-wind the neighbours. The simplest correct shape is to give `emitTri` the
+     guard — `if (a >= n || b >= n || c >= n) { ++dropped; return; }` — since
+     every path funnels through it, and the per-triangle material id at `:363`
+     is emitted per emitted triangle.
+  2. Confirm the material-id vector stays in lockstep with the emitted triangle
+     count (read `:360-370` before changing anything — if it is sized from
+     `localSeq` rather than from emitted triangles, fix that in the same step).
+  3. Log once per primitive at `warn` with the dropped count and the primitive's
+     vertex count. One line per primitive, not per triangle.
+  4. Leave `Vertex.cpp` alone. The contract that indices are in range belongs to
+     the loaders; state that in a comment above `computeFlatNormals` naming both
+     callers.
+
+  **Test:** Add `GltfParseUnit.OutOfRangeIndicesDropTheirTriangleNotTheMesh` to
+  `Test/commit/VulkanEngine/gltfParseSuite.cpp`: an inline glTF with 3 positions
+  and a 6-entry index accessor whose second triangle references vertex 7. Assert
+  the mesh loads, that exactly 3 indices survive, that every surviving index is
+  `< vertexCount`, and that the material-id count equals the surviving triangle
+  count. Add a second case with **no** NORMAL attribute so the flat-normal path
+  runs on the sanitized list — under `clangcl-debug` (ASAN) the pre-fix version
+  is an out-of-bounds write, so this test is also the ASAN oracle.
+
+  **Build:** `clangcl-debug` (ASAN is the point here). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -SkipTests -SkipPerfTests -SkipMsix`
+  then `.\commitTestSuite.exe --gtest_filter='GltfParseUnit.*:ObjParseUnit.*'`
+
+  **Context:** Direct sequel to `a0cffe7a`, which fixed exactly this in the OBJ
+  path and left the glTF path untouched. `cgltf` validates that an accessor fits
+  its buffer view; it does not validate that index *values* address existing
+  vertices, and nothing downstream does either — the same indices are also
+  handed to the BLAS build, where an out-of-range vertex is a device fault
+  rather than a heap write. See `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:269-292`
+  for the tone the warning should take.
+
+- [ ] **(S) (refactor) Take the two per-frame heap allocations out of `CascadedShadowMap::updateCascades`** — batch VI verified this and deferred it for its three-task cap with "pick this up next cycle".
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:79-109`
+    — `updateCascades`: `:88` move-assigns a fresh `std::vector<CascadeData>`
+    returned by `computeCascadeData`, `:105` builds a `std::vector<glm::mat4>`
+    purely to `memcpy` it into the mapped UBO. Both run every frame via
+    `VulkanRenderer.cpp:194`.
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.ixx:53-62`
+    (the `computeCascadeData` declaration), `:103` (`getCascadeData` returns
+    `const std::vector<CascadeData>&` — keep this signature), `:145`
+    (the `cascadeData` member).
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMapMath.cpp`
+    — the implementation, and `:29` for the `std::array` idiom this module
+    already uses. `CascadedShadowMap.cpp:443` uses
+    `std::array<FrustumPlanes, MAX_CASCADES>` for the same reason.
+  - `Test/commit/VulkanEngine/cascadedShadowMapSuite.cpp` — ~15 call sites of
+    `computeCascadeData`; all must keep compiling untouched.
+
+  **Steps:**
+  1. Add `void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, ...)`
+     alongside `computeCascadeData` in `CascadedShadowMapMath.cpp`, carrying the
+     whole body. It must write at most `out.size()` entries and return early if
+     `out.size() < numCascades` rather than clamping silently.
+  2. Reimplement the existing `computeCascadeData` as a two-line wrapper that
+     sizes a `std::vector` and calls the new overload — this is what keeps the
+     15 test call sites and `Test/perf/perfSuite.cpp` compiling unchanged.
+  3. In `updateCascades`, replace `:88` with a call to `computeCascadeDataInto`
+     over the already-sized `cascadeData` member (`init()` does
+     `cascadeData.resize(numCascades)` at `CascadedShadowMap.cpp:44`, so it is
+     the right size before the first frame — assert that rather than resizing
+     on the frame path).
+  4. Replace `:104-108` with a direct write of each `viewProjMatrix` into the
+     mapped buffer — either a `std::array<glm::mat4, MAX_CASCADES>` staging
+     value or a per-cascade `memcpy` at `i * sizeof(glm::mat4)`. Keep the
+     existing "without this the buffer keeps default-constructed matrices"
+     comment (`:99-103`) — it records a real past bug.
+  5. Keep `getCascadeData`'s return type. This task must not change any
+     observable value.
+
+  **Test:** The existing `CascadedShadowMapUnit.*` suite must pass unchanged —
+  that is the point of keeping the `computeCascadeData` wrapper. Add
+  `CascadedShadowMapUnit.ComputeCascadeDataIntoAgreesWithTheAllocatingOverload`
+  asserting the two produce bit-identical `splitDepth` and `viewProjMatrix` for
+  the same inputs, plus a case where `out` is **shorter** than `numCascades` and
+  must leave the buffer untouched. Run:
+  `.\commitTestSuite.exe --gtest_filter='CascadedShadowMapUnit.*:ShadowResolutionUnit.*'`
+
+  **Build:** `clangcl-debug` for correctness. If you want a number for the
+  commit message, `clangcl-profile` is the only configuration where the
+  benchmark means anything.
+
+  **Context:** Batch VI's own words: "deferred purely for the three-task cap,
+  **pick this up next cycle**". Two allocations per frame is not a crisis; the
+  payoff is that the shadow update path stops allocating at all, matching what
+  `CascadedShadowMap.cpp:443` and `CascadedShadowMapMath.cpp:29` already do
+  three lines away. Do not fold this into any other cascade task — it must be
+  provably value-neutral on its own.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(S) Reject out-of-range indices in the Rust glTF loader instead of panicking on them** — the same gap as task 3, in the loader that backs the public WASM demo, where a panic is an abort with no message.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/asset/gltf_loader.rs:502-518` — `raw_indices`
+    from `reader.read_indices()`, `triangulate`, then `compute_flat_normals` and
+    `compute_tangents` on the result. Nothing between them checks index values.
+  - `:638-649` — `compute_flat_normals` indexes `vertices[i0]` directly; `:666+`
+    — `compute_tangents` does the same; `:747-766` — the MikkTSpace adapter's
+    `self.indices[face * 3 + vert] as usize` is used as a vertex index too.
+  - `:203-228` — `triangulate`, which already handles degenerate input with
+    `saturating_sub` and has a test pinning it.
+  - `:835-857` — the in-file `mod tests` and
+    `strips_and_fans_expand_to_triangle_lists`, the unit-test shape to follow.
+
+  **Steps:**
+  1. Add `fn drop_out_of_range_triangles(indices: Vec<u32>, vertex_count: usize) -> (Vec<u32>, usize)`
+     next to `triangulate`, returning the surviving triangle-list indices and
+     the dropped-triangle count. Operate on `chunks_exact(3)` so a bad corner
+     drops its whole triangle and the list stays a multiple of 3.
+  2. Call it immediately after `triangulate` at `:510`, before
+     `compute_flat_normals` / `compute_tangents` / the MikkTSpace path — all
+     three consume `indices` and all three would panic.
+  3. `log::warn!` once per primitive when the count is non-zero, naming the
+     primitive and the vertex count. Do not log per triangle.
+  4. Check whether any per-triangle side table (material ids, morph-target
+     bookkeeping) is derived from `indices.len() / 3` downstream of `:510`; if
+     so it must be built from the filtered list, not the raw one.
+
+  **Test:** Add to the in-file `mod tests`:
+  `out_of_range_indices_drop_their_triangle` — a 6-index list over 3 vertices
+  where the second triangle references vertex 7, asserting 3 indices survive, a
+  dropped count of 1, and that `compute_flat_normals` over the filtered list
+  does not panic. Add an empty/short-input case, mirroring how
+  `strips_and_fans_expand_to_triangle_lists` pins degenerate input.
+  Run: `cargo test -p kataglyphis_webgpu_renderer` from the submodule root.
+
+  **Build:** No C++ build needed. Bump the
+  `ExternalLib/Kataglyphis-RustProjectTemplate` submodule pin in the same commit
+  as the submodule change, per the "Critical Invariant: Submodule Pins" rule in
+  `AGENTS.md`, and push the submodule before the superproject.
+
+  **Context:** Cross-renderer parity with task 3 — `a0cffe7a` fixed the C++ OBJ
+  path, task 3 fixes the C++ glTF path, this fixes the Rust glTF path. The
+  severity differs and that is worth stating in the commit message: Rust's
+  bounds check makes this a clean panic rather than the heap write task 3
+  prevents — but in the WASM demo a panic is an unrecoverable abort of the whole
+  canvas, so a malformed upload takes the page down. The `gltf` crate validates
+  that an accessor fits its buffer view; it does not validate that index values
+  address existing vertices.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

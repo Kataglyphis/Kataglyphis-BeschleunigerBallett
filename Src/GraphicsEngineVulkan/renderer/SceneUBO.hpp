@@ -35,6 +35,15 @@ struct SceneUBO
     float cascadedShadowIntensity;
     uint numCascades;
 
+    // Slang compiles ConstantBuffer<SceneUBO> as std140 (emitted type
+    // SceneUBO_std140), where a vec4 has base alignment 16, so cascadeSplits
+    // starts at byte 48 on the GPU. glm's plain (non-aligned) vec4 gives the
+    // host struct no such padding, so this member must be explicit here.
+    // See SceneUboLayoutUnit and
+    // `spirv-dis Resources/ShadersSlang/build/spirv/rasterizer/rasterizer.fs_main.spv`
+    // to re-derive these offsets.
+    uint _pad_std140_0;
+
     // Cascaded shadow maps
     vec4 cascadeSplits; // up to 4 cascades
     mat4 cascadeLightSpaceMatrices[MAX_CASCADES];
