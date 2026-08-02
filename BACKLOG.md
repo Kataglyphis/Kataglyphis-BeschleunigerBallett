@@ -4733,55 +4733,6 @@ pointer cannot be null; a redundant lookup, not a defect.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-- [ ] **(S) Round instead of truncating when box-filtering non-sRGB mip levels** — the integer average always rounds down, so the bias compounds once per level down the whole chain.
-
-  **Files to read:**
-  - `crates/webgpu_renderer/src/render/texture.rs:72-108` — `generate_mips`; the non-sRGB arm is `(samples.iter().map(|&b| b as u32).sum::<u32>() / 4) as u8` at `:97`
-  - `crates/webgpu_renderer/src/render/texture.rs:62-68` — `linear_to_srgb`, which DOES round (`* 255.0 + 0.5`), so only the raw arm is affected
-  - `crates/webgpu_renderer/src/render/texture.rs:354-398` — the existing `#[cfg(test)]` cases; `generate_mips_averages_srgb_in_linear_space` ends with `assert_eq!(data[3], 127)`, which pins the truncation on the alpha channel
-  - `crates/webgpu_renderer/src/render/texture.rs:216` — the single caller, `upload_texture`
-
-  **Steps:**
-  1. Change the raw arm at `:97` to round-half-up:
-     `((samples.iter().map(|&b| b as u32).sum::<u32>() + 2) / 4) as u8`, with a
-     comment recording that the sRGB arm already rounds via `linear_to_srgb` and
-     that the two arms disagreeing is what made the chain drift. The `+ 2`
-     cannot overflow: four `u8` values sum to at most 1020.
-  2. Update `generate_mips_averages_srgb_in_linear_space`'s final assertion
-     (`data[3]`) from `127` to `128` and amend its comment — the exact mean of
-     two 0s and two 255s is 127.5, and rounding up is now the documented
-     behaviour. Do not touch the RGB assertions in that test; they go through
-     `linear_to_srgb` and are unchanged.
-  3. While in this function, guard the degenerate input: `pw - 1` at `:85-88`
-     underflows to `u32::MAX` when a level's width or height is 0, after which
-     `fetch` indexes an empty slice and panics. Return `levels` early if
-     `base.width == 0 || base.height == 0`. Flag it in the commit message as
-     defence-in-depth — no current decode path produces a zero-sized
-     `CpuTexture`, so this is not a reachable panic today.
-
-  **Test:** Add `generate_mips_does_not_drift_darker_over_a_long_chain` to the
-  same `#[cfg(test)]` module: build a 64x64 non-sRGB `CpuTexture` whose bytes
-  come from a deterministic non-constant pattern (e.g.
-  `((x * 7 + y * 13) % 256) as u8` per channel), compute the exact mean of the
-  base level in `f64`, run `generate_mips(&base, false)`, and assert the 1x1
-  level's channels are within 1 of `mean.round()`. With truncation the deepest
-  level lands several counts low (the bias adds ~0.375 per level across six
-  levels); with rounding it stays inside the tolerance. Also add
-  `generate_mips_on_a_zero_sized_texture_returns_only_the_base` for step 3.
-
-  **Build:** No CMake preset — this is Rust-only. Run from
-  `ExternalLib/Kataglyphis-RustProjectTemplate`:
-  `cargo test -p kataglyphis_webgpu_renderer render::texture`
-  (the whole crate suite runs in the Linux CI lane via
-  `Scripts/Linux/run-cargo-tests.sh`, added by `3b2a310b`, so this is covered on
-  every push once merged).
-
-  **Context:** `generate_mips` is pure CPU and already has its own test module —
-  keep it that way; no adapter is needed for any of this. The C++ engine does
-  NOT share this code path (it generates mips on the GPU with
-  `vkCmdBlitImage`, `Texture.cpp:286-365`), so there is no cross-renderer parity
-  obligation here and nothing to regenerate under `Resources/ShadersSlang/`.
-
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
