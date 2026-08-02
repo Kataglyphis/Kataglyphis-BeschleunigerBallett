@@ -10,6 +10,7 @@ export module kataglyphis.vulkan.clouds;
 
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.texture;
+import kataglyphis.vulkan.descriptor_set_group;
 
 export namespace Kataglyphis {
 class Clouds
@@ -38,12 +39,8 @@ class Clouds
     std::unique_ptr<Kataglyphis::Texture> cloudNoiseTexture;
     std::unique_ptr<Kataglyphis::Texture> cloudOutputTexture;
 
-    vk::DescriptorSetLayout descriptorSetLayout;
-    vk::DescriptorPool descriptorPool;
-    vk::DescriptorSet descriptorSet;
-
-    vk::DescriptorSetLayout noiseDescriptorSetLayout;
-    vk::DescriptorSet noiseDescriptorSet;
+    DescriptorSetGroup cloudDescriptors;
+    DescriptorSetGroup noiseDescriptors;
 
     vk::Pipeline noiseComputePipeline;
     vk::PipelineLayout noisePipelineLayout;

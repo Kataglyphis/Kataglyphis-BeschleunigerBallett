@@ -245,15 +245,7 @@ void CascadedShadowMap::cleanUp()
         device->getLogicalDevice().destroyPipelineLayout(pipelineLayout);
         pipelineLayout = nullptr;
     }
-    if (descriptorSetLayout) {
-        device->getLogicalDevice().destroyDescriptorSetLayout(descriptorSetLayout);
-        descriptorSetLayout = nullptr;
-    }
-    if (descriptorPool) {
-        device->getLogicalDevice().destroyDescriptorPool(descriptorPool);
-        descriptorPool = nullptr;
-    }
-    descriptorSet = nullptr;// freed with the pool
+    lightMatricesDescriptors.cleanUp();
     if (shadowMapArray) {
         shadowMapArray->cleanUp();
         shadowMapArray.reset();
@@ -265,41 +257,11 @@ void CascadedShadowMap::cleanUp()
 
 void CascadedShadowMap::createDescriptorSetAndPipeline()
 {
-    vk::DescriptorSetLayoutBinding lightMatricesBinding{};
-    lightMatricesBinding.binding = 1;  // UNIFORM_LIGHT_MATRICES_BINDING = 1
-    lightMatricesBinding.descriptorCount = 1;
-    lightMatricesBinding.descriptorType = vk::DescriptorType::eUniformBuffer;
-    lightMatricesBinding.stageFlags = vk::ShaderStageFlagBits::eVertex;
-
-    vk::DescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &lightMatricesBinding;
-
-    auto layoutRes = device->getLogicalDevice().createDescriptorSetLayout(layoutInfo);
-    ASSERT_VULKAN(VkResult(layoutRes.result), "Failed to create shadow map descriptor set layout!");
-    descriptorSetLayout = layoutRes.value;
-
-    vk::DescriptorPoolSize poolSize{};
-    poolSize.type = vk::DescriptorType::eUniformBuffer;
-    poolSize.descriptorCount = 1;
-
-    vk::DescriptorPoolCreateInfo poolInfo{};
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = 1;
-
-    auto poolRes = device->getLogicalDevice().createDescriptorPool(poolInfo);
-    ASSERT_VULKAN(VkResult(poolRes.result), "Failed to create shadow map descriptor pool!");
-    descriptorPool = poolRes.value;
-
-    vk::DescriptorSetAllocateInfo allocInfo{};
-    allocInfo.descriptorPool = descriptorPool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &descriptorSetLayout;
-
-    auto allocRes = device->getLogicalDevice().allocateDescriptorSets(allocInfo);
-    ASSERT_VULKAN(VkResult(allocRes.result), "Failed to allocate shadow map descriptor set!");
-    descriptorSet = allocRes.value[0];
+    // UNIFORM_LIGHT_MATRICES_BINDING = 1
+    lightMatricesDescriptors.addBinding(1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex);
+    if (!lightMatricesDescriptors.create(device, 1)) {
+        spdlog::error("Failed to create shadow map descriptor resources!");
+    }
 
     std::vector<glm::mat4> lightMatrices(numCascades);
     for (size_t i = 0; i < lightMatrices.size(); i++) {
@@ -321,20 +283,8 @@ void CascadedShadowMap::createDescriptorSetAndPipeline()
 
     device->getLogicalDevice().destroyCommandPool(transferCommandPool);
 
-    vk::DescriptorBufferInfo bufferInfo{};
-    bufferInfo.buffer = lightMatricesBuffer.getBuffer();
-    bufferInfo.offset = 0;
-    bufferInfo.range = sizeof(glm::mat4) * numCascades;
-
-    vk::WriteDescriptorSet write{};
-    write.dstSet = descriptorSet;
-    write.dstBinding = 1;  // UNIFORM_LIGHT_MATRICES_BINDING = 1
-    write.dstArrayElement = 0;
-    write.descriptorType = vk::DescriptorType::eUniformBuffer;
-    write.descriptorCount = 1;
-    write.pBufferInfo = &bufferInfo;
-
-    device->getLogicalDevice().updateDescriptorSets(1, &write, 0, nullptr);
+    // UNIFORM_LIGHT_MATRICES_BINDING = 1
+    lightMatricesDescriptors.writeBuffer(0, 1, lightMatricesBuffer.getBuffer(), sizeof(glm::mat4) * numCascades);
 }
 
 void CascadedShadowMap::createGraphicsPipeline()
@@ -378,7 +328,7 @@ void CascadedShadowMap::createGraphicsPipeline()
     // set 0 = the shared render descriptor set (materials/textures/object
     // descriptions) the fragment alpha test samples; set 1 = the light matrices
     // this pass owns. The shared layout is owned by VulkanRenderer.
-    std::array<vk::DescriptorSetLayout, 2> setLayouts = { sharedRenderDescriptorSetLayout, descriptorSetLayout };
+    std::array<vk::DescriptorSetLayout, 2> setLayouts = { sharedRenderDescriptorSetLayout, lightMatricesDescriptors.getLayout() };
     const std::array<vk::PushConstantRange, 1> pushConstantRanges = { pushConstantRange };
 
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo = buildPipelineLayoutCreateInfo(setLayouts, pushConstantRanges);
@@ -467,9 +417,10 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
     // set 0 = the shared render set passed in (materials/textures/object
     // descriptions, for the fragment alpha test); set 1 = this pass's light
     // matrices. descriptorSets is the same span the forward rasterizer receives.
-    std::array<vk::DescriptorSet, 2> shadowDescriptorSets = {descriptorSet, descriptorSet};
+    const vk::DescriptorSet lightMatricesSet = lightMatricesDescriptors.sets()[0];
+    std::array<vk::DescriptorSet, 2> shadowDescriptorSets = {lightMatricesSet, lightMatricesSet};
     const uint32_t shadowDescriptorSetCount = descriptorSets.empty() ? 1 : 2;
-    if (!descriptorSets.empty()) { shadowDescriptorSets = {descriptorSets[0], descriptorSet}; }
+    if (!descriptorSets.empty()) { shadowDescriptorSets = {descriptorSets[0], lightMatricesSet}; }
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
       pipelineLayout,
       0,

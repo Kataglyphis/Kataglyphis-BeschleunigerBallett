@@ -12,6 +12,7 @@ import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.buffer;
+import kataglyphis.vulkan.descriptor_set_group;
 
 export namespace Kataglyphis {
 
@@ -153,13 +154,11 @@ class CascadedShadowMap
 
     vk::Pipeline graphicsPipeline{};
     vk::PipelineLayout pipelineLayout{};
-    vk::DescriptorSetLayout descriptorSetLayout{};
+    DescriptorSetGroup lightMatricesDescriptors;
     // Owned by VulkanRenderer's sharedRenderDescriptors, NOT this class - bound as
     // set 0 so the alpha-test fragment stage reaches materials + textures. Never
     // destroyed here.
     vk::DescriptorSetLayout sharedRenderDescriptorSetLayout{};
-    vk::DescriptorPool descriptorPool{};
-    vk::DescriptorSet descriptorSet{};
     VulkanBuffer lightMatricesBuffer;
 
     std::vector<CascadeData> cascadeData;

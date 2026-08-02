@@ -2725,3 +2725,64 @@ TEST(BuildIntegrity, EngineSourcesDoNotLogRawVulkanHandles)
              return joined;
          }();
 }
+
+// Descriptor set layout/pool/set triads must be declared through
+// DescriptorSetGroup (vulkan_base/DescriptorSetGroup.ixx) rather than
+// hand-rolled per subsystem - see that class's own comment on the triads it
+// was extracted to own. The allowlist below is anchored to relative file
+// paths (stable across line-number churn), not line numbers, matching the
+// other allowlists in this file.
+TEST(BuildIntegrity, DescriptorSetsAreCreatedThroughDescriptorSetGroup)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    static const std::array<const char *, 3> kRawDescriptorTypeNames = {
+        "vk::DescriptorSetLayoutCreateInfo", "vk::DescriptorPoolCreateInfo", "vk::DescriptorSetAllocateInfo"
+    };
+
+    // DescriptorSetGroup.cpp is the abstraction's own implementation. GUI.cpp
+    // creates one descriptor pool (only) for ImGui, which allocates and
+    // manages its own descriptor sets internally via ImGui_ImplVulkan - that
+    // pool is not a layout/pool/set triad this project owns the shape of.
+    static const std::array<const char *, 2> kExemptFiles = {
+        "Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.cpp", "Src/GraphicsEngineVulkan/gui/GUI.cpp"
+    };
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".cpp") { continue; }
+
+        const std::string relative_file = fs::relative(path, repo_root).generic_string();
+        if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string line;
+        std::size_t line_number = 0;
+        while (std::getline(file, line)) {
+            ++line_number;
+            for (const char *type_name : kRawDescriptorTypeNames) {
+                if (line.find(type_name) == std::string::npos) { continue; }
+                violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
+            }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " hand-rolled descriptor set layout/pool/set triad(s) found under Src/ - declare bindings through "
+         "DescriptorSetGroup (vulkan_base/DescriptorSetGroup.ixx) via addBinding()/create() instead:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}

@@ -13,6 +13,7 @@ import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.mesh;
 import kataglyphis.vulkan.buffer;
 import kataglyphis.vulkan.command_buffer_manager;
+import kataglyphis.vulkan.descriptor_set_group;
 
 export namespace Kataglyphis {
 class SkyBox
@@ -47,9 +48,7 @@ class SkyBox
 
     vk::Pipeline graphicsPipeline{};
     vk::PipelineLayout pipelineLayout{};
-    vk::DescriptorSetLayout descriptorSetLayout{};
-    vk::DescriptorPool descriptorPool{};
-    vk::DescriptorSet descriptorSet{};
+    DescriptorSetGroup cubemapDescriptors;
     vk::RenderPass renderPass{};
     std::vector<vk::Framebuffer> framebuffers{};
     uint32_t framebufferWidth{0};

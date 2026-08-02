@@ -55,116 +55,17 @@ void Clouds::createTextures(vk::CommandPool commandPool)
 
 void Clouds::createDescriptorSets()
 {
-    // Layout
-    std::array<vk::DescriptorSetLayoutBinding, 2> bindings{};
-    bindings[0].binding = 0;
-    bindings[0].descriptorCount = 1;
-    bindings[0].descriptorType = vk::DescriptorType::eStorageImage;
-    bindings[0].pImmutableSamplers = nullptr;
-    bindings[0].stageFlags = vk::ShaderStageFlagBits::eCompute;
+    cloudDescriptors.addBinding(0, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute)
+      .addBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eCompute);
+    if (!cloudDescriptors.create(device, 1)) { spdlog::error("Failed to create cloud descriptor resources!"); }
 
-    bindings[1].binding = 1;
-    bindings[1].descriptorCount = 1;
-    bindings[1].descriptorType = vk::DescriptorType::eCombinedImageSampler;
-    bindings[1].pImmutableSamplers = nullptr;
-    bindings[1].stageFlags = vk::ShaderStageFlagBits::eCompute;
+    noiseDescriptors.addBinding(0, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute);
+    if (!noiseDescriptors.create(device, 1)) { spdlog::error("Failed to create noise descriptor resources!"); }
 
-    vk::DescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-    layoutInfo.pBindings = bindings.data();
-
-    auto result = device->getLogicalDevice().createDescriptorSetLayout(layoutInfo);
-    ASSERT_VULKAN(VkResult(result.result), "Failed to create cloud descriptor set layout!");
-    descriptorSetLayout = result.value;
-
-    // Pool
-    std::array<vk::DescriptorPoolSize, 2> poolSizes{};
-    poolSizes[0].type = vk::DescriptorType::eStorageImage;
-    poolSizes[0].descriptorCount = 2; // +1 for noise
-    poolSizes[1].type = vk::DescriptorType::eCombinedImageSampler;
-    poolSizes[1].descriptorCount = 1;
-
-    vk::DescriptorPoolCreateInfo poolInfo{};
-    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-    poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = 2; // 2 sets total
-
-    auto poolResult = device->getLogicalDevice().createDescriptorPool(poolInfo);
-    ASSERT_VULKAN(VkResult(poolResult.result), "Failed to create cloud descriptor pool!");
-    descriptorPool = poolResult.value;
-
-    // Allocate Set
-    vk::DescriptorSetAllocateInfo allocInfo{};
-    allocInfo.descriptorPool = descriptorPool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &descriptorSetLayout;
-
-    auto allocResult = device->getLogicalDevice().allocateDescriptorSets(allocInfo);
-    ASSERT_VULKAN(VkResult(allocResult.result), "Failed to allocate cloud descriptor sets!");
-    descriptorSet = allocResult.value[0];
-
-    // Noise Layout
-    vk::DescriptorSetLayoutBinding noiseBinding{};
-    noiseBinding.binding = 0;
-    noiseBinding.descriptorCount = 1;
-    noiseBinding.descriptorType = vk::DescriptorType::eStorageImage;
-    noiseBinding.pImmutableSamplers = nullptr;
-    noiseBinding.stageFlags = vk::ShaderStageFlagBits::eCompute;
-
-    vk::DescriptorSetLayoutCreateInfo noiseLayoutInfo{};
-    noiseLayoutInfo.bindingCount = 1;
-    noiseLayoutInfo.pBindings = &noiseBinding;
-
-    auto noiseLayoutResult = device->getLogicalDevice().createDescriptorSetLayout(noiseLayoutInfo);
-    ASSERT_VULKAN(VkResult(noiseLayoutResult.result), "Failed to create noise descriptor set layout!");
-    noiseDescriptorSetLayout = noiseLayoutResult.value;
-
-    // Allocate Noise Set
-    vk::DescriptorSetAllocateInfo noiseAllocInfo{};
-    noiseAllocInfo.descriptorPool = descriptorPool;
-    noiseAllocInfo.descriptorSetCount = 1;
-    noiseAllocInfo.pSetLayouts = &noiseDescriptorSetLayout;
-
-    auto noiseAllocResult = device->getLogicalDevice().allocateDescriptorSets(noiseAllocInfo);
-    ASSERT_VULKAN(VkResult(noiseAllocResult.result), "Failed to allocate noise descriptor sets!");
-    noiseDescriptorSet = noiseAllocResult.value[0];
-
-    // Write Descriptor Set
-    vk::DescriptorImageInfo outputImageInfo{};
-    outputImageInfo.imageLayout = vk::ImageLayout::eGeneral;
-    outputImageInfo.imageView = cloudOutputTexture->getImageView();
-
-    vk::DescriptorImageInfo noiseImageInfo{};
-    noiseImageInfo.imageLayout = vk::ImageLayout::eGeneral;
-    noiseImageInfo.imageView = cloudNoiseTexture->getImageView();
-    noiseImageInfo.sampler = cloudNoiseTexture->getSampler();
-
-    std::array<vk::WriteDescriptorSet, 2> descriptorWrites{};
-    descriptorWrites[0].dstSet = descriptorSet;
-    descriptorWrites[0].dstBinding = 0;
-    descriptorWrites[0].dstArrayElement = 0;
-    descriptorWrites[0].descriptorType = vk::DescriptorType::eStorageImage;
-    descriptorWrites[0].descriptorCount = 1;
-    descriptorWrites[0].pImageInfo = &outputImageInfo;
-
-    descriptorWrites[1].dstSet = descriptorSet;
-    descriptorWrites[1].dstBinding = 1;
-    descriptorWrites[1].dstArrayElement = 0;
-    descriptorWrites[1].descriptorType = vk::DescriptorType::eCombinedImageSampler;
-    descriptorWrites[1].descriptorCount = 1;
-    descriptorWrites[1].pImageInfo = &noiseImageInfo;
-
-    vk::WriteDescriptorSet noiseWrite{};
-    noiseWrite.dstSet = noiseDescriptorSet;
-    noiseWrite.dstBinding = 0;
-    noiseWrite.dstArrayElement = 0;
-    noiseWrite.descriptorType = vk::DescriptorType::eStorageImage;
-    noiseWrite.descriptorCount = 1;
-    noiseWrite.pImageInfo = &noiseImageInfo;
-
-    std::array<vk::WriteDescriptorSet, 3> allWrites = { descriptorWrites[0], descriptorWrites[1], noiseWrite };
-
-    device->getLogicalDevice().updateDescriptorSets(static_cast<uint32_t>(allWrites.size()), allWrites.data(), 0, nullptr);
+    cloudDescriptors.writeImage(0, 0, cloudOutputTexture->getImageView(), vk::ImageLayout::eGeneral);
+    cloudDescriptors.writeImage(
+      0, 1, cloudNoiseTexture->getImageView(), vk::ImageLayout::eGeneral, cloudNoiseTexture->getSampler());
+    noiseDescriptors.writeImage(0, 0, cloudNoiseTexture->getImageView(), vk::ImageLayout::eGeneral);
 }
 
 void Clouds::createComputePipeline(const char *spirvPath, std::span<const vk::DescriptorSetLayout> setLayouts, vk::PipelineLayout &outLayout, vk::Pipeline &outPipeline)
@@ -199,11 +100,11 @@ void Clouds::createComputePipelines(vk::DescriptorSetLayout sharedLayout)
     // Run from the repo root (per AGENTS.md).
 
     // cloud specific set AND sharedRenderDescriptorSet
-    std::array<vk::DescriptorSetLayout, 2> cloudLayouts = { descriptorSetLayout, sharedLayout };
+    std::array<vk::DescriptorSetLayout, 2> cloudLayouts = { cloudDescriptors.getLayout(), sharedLayout };
     createComputePipeline("Resources/ShadersSlang/build/spirv/compute/clouds.clouds_main.spv", cloudLayouts, cloudPipelineLayout, cloudComputePipeline);
 
     // Noise pipeline (Slang-emitted SPIR-V)
-    std::array<vk::DescriptorSetLayout, 1> noiseLayouts = { noiseDescriptorSetLayout };
+    std::array<vk::DescriptorSetLayout, 1> noiseLayouts = { noiseDescriptors.getLayout() };
     createComputePipeline("Resources/ShadersSlang/build/spirv/compute/noise.noise_main.spv", noiseLayouts, noisePipelineLayout, noiseComputePipeline);
 }
 
@@ -229,6 +130,7 @@ void Clouds::dispatchNoiseGeneration()
 
     vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);
 
+    const vk::DescriptorSet noiseDescriptorSet = noiseDescriptors.sets()[0];
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, noiseComputePipeline);
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, noisePipelineLayout, 0, 1, &noiseDescriptorSet, 0, nullptr);
 
@@ -250,8 +152,9 @@ void Clouds::recordComputeCommands(vk::CommandBuffer &commandBuffer, std::span<c
     }
 
     // Bind cloud compute pipeline and dispatch thread groups based on screen extent
+    const vk::DescriptorSet cloudDescriptorSet = cloudDescriptors.sets()[0];
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, cloudComputePipeline);
-    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, cloudPipelineLayout, 0, 1, &descriptorSet, 0, nullptr);
+    commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, cloudPipelineLayout, 0, 1, &cloudDescriptorSet, 0, nullptr);
 
     // Also bind the shared rendering descriptor set (which was passed to us as layout 1)
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, cloudPipelineLayout, 1, 1, &descriptorSets[0], 0, nullptr);
@@ -272,20 +175,7 @@ void Clouds::recreateFrameResources(vk::CommandPool commandPool, uint32_t width,
 
     cloudOutputTexture = createStorageTexture(commandPool, width, height, 1, vk::ImageType::e2D, vk::ImageViewType::e2D);
 
-    // Update descriptor set
-    vk::DescriptorImageInfo outputImageInfo{};
-    outputImageInfo.imageLayout = vk::ImageLayout::eGeneral;
-    outputImageInfo.imageView = cloudOutputTexture->getImageView();
-
-    vk::WriteDescriptorSet descriptorWrite{};
-    descriptorWrite.dstSet = descriptorSet;
-    descriptorWrite.dstBinding = 0;
-    descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorType = vk::DescriptorType::eStorageImage;
-    descriptorWrite.descriptorCount = 1;
-    descriptorWrite.pImageInfo = &outputImageInfo;
-
-    device->getLogicalDevice().updateDescriptorSets(1, &descriptorWrite, 0, nullptr);
+    cloudDescriptors.writeImage(0, 0, cloudOutputTexture->getImageView(), vk::ImageLayout::eGeneral);
 }
 
 void Clouds::cleanUp()
@@ -294,20 +184,8 @@ void Clouds::cleanUp()
     // is only a safety net for the forgotten path).
     if (!device) { return; }
 
-    if (descriptorPool) {
-        device->getLogicalDevice().destroyDescriptorPool(descriptorPool);
-        descriptorPool = nullptr;
-    }
-    descriptorSet = nullptr;// freed with the pool
-    noiseDescriptorSet = nullptr;// freed with the pool
-    if (descriptorSetLayout) {
-        device->getLogicalDevice().destroyDescriptorSetLayout(descriptorSetLayout);
-        descriptorSetLayout = nullptr;
-    }
-    if (noiseDescriptorSetLayout) {
-        device->getLogicalDevice().destroyDescriptorSetLayout(noiseDescriptorSetLayout);
-        noiseDescriptorSetLayout = nullptr;
-    }
+    cloudDescriptors.cleanUp();
+    noiseDescriptors.cleanUp();
     if (noiseComputePipeline) {
         device->getLogicalDevice().destroyPipeline(noiseComputePipeline);
         noiseComputePipeline = nullptr;

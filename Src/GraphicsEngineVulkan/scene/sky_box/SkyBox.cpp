@@ -193,59 +193,14 @@ void SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool, uint32_t width, uin
 
 void SkyBox::createDescriptorSetForCubeMap()
 {
-    vk::DescriptorSetLayoutBinding cubemapBinding{};
-    cubemapBinding.binding = 1;
-    cubemapBinding.descriptorCount = 1;
-    cubemapBinding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
-    cubemapBinding.stageFlags = vk::ShaderStageFlagBits::eFragment;
-
-    vk::DescriptorSetLayoutCreateInfo layoutInfo{};
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &cubemapBinding;
-
-    auto layoutResult = device->getLogicalDevice().createDescriptorSetLayout(layoutInfo);
-    ASSERT_VULKAN(VkResult(layoutResult.result), "Failed to create skybox descriptor set layout!");
-    descriptorSetLayout = layoutResult.value;
-
-    vk::DescriptorPoolSize poolSize{};
-    poolSize.type = vk::DescriptorType::eCombinedImageSampler;
-    poolSize.descriptorCount = 1;
-
-    vk::DescriptorPoolCreateInfo poolInfo{};
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
-    poolInfo.maxSets = 1;
-
-    auto poolResult = device->getLogicalDevice().createDescriptorPool(poolInfo);
-    ASSERT_VULKAN(VkResult(poolResult.result), "Failed to create skybox descriptor pool!");
-    descriptorPool = poolResult.value;
-
-    vk::DescriptorSetAllocateInfo allocInfo{};
-    allocInfo.descriptorPool = descriptorPool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &descriptorSetLayout;
-
-    auto allocResult = device->getLogicalDevice().allocateDescriptorSets(allocInfo);
-    ASSERT_VULKAN(VkResult(allocResult.result), "Failed to allocate skybox descriptor set!");
-    descriptorSet = allocResult.value[0];
+    cubemapDescriptors.addBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment);
+    if (!cubemapDescriptors.create(device, 1)) { spdlog::error("Failed to create skybox descriptor resources!"); }
 }
 
 void SkyBox::updateDescriptorSetForCubeMap()
 {
-    vk::DescriptorImageInfo imageInfo{};
-    imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-    imageInfo.imageView = cubeMapTexture->getImageView();
-    imageInfo.sampler = cubeMapTexture->getSampler();
-
-    vk::WriteDescriptorSet write{};
-    write.dstSet = descriptorSet;
-    write.dstBinding = 1;
-    write.dstArrayElement = 0;
-    write.descriptorType = vk::DescriptorType::eCombinedImageSampler;
-    write.descriptorCount = 1;
-    write.pImageInfo = &imageInfo;
-
-    device->getLogicalDevice().updateDescriptorSets(1, &write, 0, nullptr);
+    cubemapDescriptors.writeImage(
+      0, 1, cubeMapTexture->getImageView(), vk::ImageLayout::eShaderReadOnlyOptimal, cubeMapTexture->getSampler());
 }
 
 void SkyBox::createRenderPass(vk::Format format, vk::Format depthFormat)
@@ -340,7 +295,7 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
 
     std::array<vk::VertexInputAttributeDescription, 4> attributeDescriptions = vertex::getVertexInputAttributeDesc();
 
-    std::array<vk::DescriptorSetLayout, 2> combinedLayouts = {sharedLayout, descriptorSetLayout};
+    std::array<vk::DescriptorSetLayout, 2> combinedLayouts = {sharedLayout, cubemapDescriptors.getLayout()};
 
     vk::PushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eFragment;
@@ -398,7 +353,7 @@ void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_ind
         return;
     }
 
-    if (descriptorSets.empty() || !graphicsPipeline || !descriptorSet) {
+    if (descriptorSets.empty() || !graphicsPipeline || cubemapDescriptors.sets().empty()) {
         spdlog::error("SkyBox::recordCommands called with an empty shared descriptor set span or an unready pipeline");
         return;
     }
@@ -418,7 +373,7 @@ void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_ind
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
 
-    std::array<vk::DescriptorSet, 2> skyboxDescriptorSets = {descriptorSets[0], descriptorSet};
+    std::array<vk::DescriptorSet, 2> skyboxDescriptorSets = {descriptorSets[0], cubemapDescriptors.sets()[0]};
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, skyboxDescriptorSets, nullptr);
 
     uint32_t skyboxEnabledVal = skyboxEnabled ? 1u : 0u;
@@ -451,15 +406,7 @@ void SkyBox::cleanUp()
         device->getLogicalDevice().destroyPipelineLayout(pipelineLayout);
         pipelineLayout = nullptr;
     }
-    if (descriptorSetLayout) {
-        device->getLogicalDevice().destroyDescriptorSetLayout(descriptorSetLayout);
-        descriptorSetLayout = nullptr;
-    }
-    if (descriptorPool) {
-        device->getLogicalDevice().destroyDescriptorPool(descriptorPool);
-        descriptorPool = nullptr;
-    }
-    descriptorSet = nullptr;// freed with the pool
+    cubemapDescriptors.cleanUp();
     if (renderPass) {
         device->getLogicalDevice().destroyRenderPass(renderPass);
         renderPass = nullptr;
