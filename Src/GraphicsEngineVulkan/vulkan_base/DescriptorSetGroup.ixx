@@ -47,7 +47,9 @@ class DescriptorSetGroup
       vk::ShaderStageFlags stages);
 
     // Creates layout + pool and allocates set_count sets. Logs and returns
-    // false on failure (partially created objects are cleaned up).
+    // false only if called without bindings or with zero sets, before
+    // anything is created; every later failure goes through ASSERT_VULKAN,
+    // which logs critical and aborts, so there is no partial-cleanup path.
     [[nodiscard]] bool create(std::shared_ptr<VulkanDevice> vulkan_device, uint32_t set_count);
 
     // -- write helpers (thin wrappers around vkUpdateDescriptorSets; the
@@ -80,13 +82,13 @@ class DescriptorSetGroup
   private:
     // Returns nullptr (and logs) when the binding was never declared.
     const vk::DescriptorSetLayoutBinding *findBinding(uint32_t binding) const;
-    bool checkWritePreconditions(uint32_t set_index, uint32_t binding) const;
-    // Runs checkWritePreconditions + findBinding and, on success, fills the
-    // common fields shared by every write (dstSet, dstBinding,
-    // dstArrayElement = 0, descriptorType, descriptorCount = 1). Returns
-    // false (having already logged, via the two checks above) if either
-    // check fails; callers must return early in that case.
-    bool beginWrite(uint32_t set_index, uint32_t binding, vk::WriteDescriptorSet &out) const;
+    // Validates set_index/binding and looks up the declared binding, filling
+    // the common fields shared by every write (dstSet, dstBinding,
+    // dstArrayElement = 0, descriptorType, descriptorCount = 1). Returns the
+    // found binding, or nullptr (having already logged) on failure; callers
+    // must return early in that case.
+    const vk::DescriptorSetLayoutBinding *beginWrite(uint32_t set_index, uint32_t binding,
+      vk::WriteDescriptorSet &out) const;
 
     std::shared_ptr<VulkanDevice> device{ nullptr };
 

@@ -124,20 +124,15 @@ auto Kataglyphis::DescriptorSetGroup::findBinding(uint32_t binding) const -> con
     return nullptr;
 }
 
-bool Kataglyphis::DescriptorSetGroup::checkWritePreconditions(uint32_t set_index, uint32_t binding) const
+const vk::DescriptorSetLayoutBinding *Kataglyphis::DescriptorSetGroup::beginWrite(
+  uint32_t set_index, uint32_t binding, vk::WriteDescriptorSet &out) const
 {
     if (!device || set_index >= descriptor_sets.size()) {
         spdlog::error("DescriptorSetGroup: write to binding {} with invalid set index {}.", binding, set_index);
-        return false;
+        return nullptr;
     }
-    return true;
-}
-
-bool Kataglyphis::DescriptorSetGroup::beginWrite(uint32_t set_index, uint32_t binding, vk::WriteDescriptorSet &out) const
-{
-    if (!checkWritePreconditions(set_index, binding)) { return false; }
     const vk::DescriptorSetLayoutBinding *layout_binding = findBinding(binding);
-    if (layout_binding == nullptr) { return false; }
+    if (layout_binding == nullptr) { return nullptr; }
 
     out.dstSet = descriptor_sets[set_index];
     out.dstBinding = binding;
@@ -145,7 +140,7 @@ bool Kataglyphis::DescriptorSetGroup::beginWrite(uint32_t set_index, uint32_t bi
     out.descriptorType = layout_binding->descriptorType;
     out.descriptorCount = 1;
 
-    return true;
+    return layout_binding;
 }
 
 void Kataglyphis::DescriptorSetGroup::writeBuffer(uint32_t set_index,
@@ -160,7 +155,7 @@ void Kataglyphis::DescriptorSetGroup::writeBuffer(uint32_t set_index,
     buffer_info.range = range;
 
     vk::WriteDescriptorSet descriptor_write{};
-    if (!beginWrite(set_index, binding, descriptor_write)) { return; }
+    if (beginWrite(set_index, binding, descriptor_write) == nullptr) { return; }
     descriptor_write.pBufferInfo = &buffer_info;
 
     device->getLogicalDevice().updateDescriptorSets(1, &descriptor_write, 0, nullptr);
@@ -178,7 +173,7 @@ void Kataglyphis::DescriptorSetGroup::writeImage(uint32_t set_index,
     image_info.sampler = sampler;
 
     vk::WriteDescriptorSet descriptor_write{};
-    if (!beginWrite(set_index, binding, descriptor_write)) { return; }
+    if (beginWrite(set_index, binding, descriptor_write) == nullptr) { return; }
     descriptor_write.pImageInfo = &image_info;
 
     device->getLogicalDevice().updateDescriptorSets(1, &descriptor_write, 0, nullptr);
@@ -189,9 +184,9 @@ void Kataglyphis::DescriptorSetGroup::writeImageArray(uint32_t set_index,
   std::span<const vk::DescriptorImageInfo> infos)
 {
     vk::WriteDescriptorSet descriptor_write{};
-    if (!beginWrite(set_index, binding, descriptor_write)) { return; }
+    const vk::DescriptorSetLayoutBinding *layout_binding = beginWrite(set_index, binding, descriptor_write);
+    if (layout_binding == nullptr) { return; }
 
-    const vk::DescriptorSetLayoutBinding *layout_binding = findBinding(binding);
     if (infos.size() != layout_binding->descriptorCount) {
         spdlog::error("DescriptorSetGroup: image array write to binding {} with {} infos (declared {}).",
           binding,
@@ -215,7 +210,7 @@ void Kataglyphis::DescriptorSetGroup::writeAccelerationStructure(uint32_t set_in
     acceleration_structure_info.pAccelerationStructures = &tlas;
 
     vk::WriteDescriptorSet descriptor_write{};
-    if (!beginWrite(set_index, binding, descriptor_write)) { return; }
+    if (beginWrite(set_index, binding, descriptor_write) == nullptr) { return; }
     descriptor_write.pNext = &acceleration_structure_info;
 
     device->getLogicalDevice().updateDescriptorSets(1, &descriptor_write, 0, nullptr);
