@@ -100,6 +100,91 @@ TEST(GltfParseUnit, ExtractsAnEmbeddedBaseColorTexture)
     EXPECT_TRUE(anyTextured) << "a textured material must reference the extracted texture";
 }
 
+TEST(GltfParseUnit, MaterialsSharingAnImageShareOneTextureSlot)
+{
+    // Two materials whose baseColorTexture both name textures[0] -> images[0]:
+    // the second must reuse the first's textureImages slot instead of
+    // decoding and appending a duplicate.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [
+        { "pbrMetallicRoughness": { "baseColorTexture": { "index": 0 } } },
+        { "pbrMetallicRoughness": { "baseColorTexture": { "index": 0 } } }
+      ],
+      "textures": [ { "source": 0 } ],
+      "images": [
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" }
+      ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 }
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_shared_image.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getTextureImages().size(), 1U) << "the shared image must be extracted only once";
+    ASSERT_EQ(loader.getMaterials().size(), 3U) << "the two declared materials, plus the neutral fallback";
+    EXPECT_EQ(loader.getMaterials()[0].textureID, 0);
+    EXPECT_EQ(loader.getMaterials()[1].textureID, 0) << "the second material must share slot 0, not get its own";
+}
+
+TEST(GltfParseUnit, DistinctImagesStillGetDistinctSlots)
+{
+    // The negative case for the memoisation above: two materials pointing at
+    // two DIFFERENT declared images (even with identical bytes) must not be
+    // collapsed into one slot.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [
+        { "pbrMetallicRoughness": { "baseColorTexture": { "index": 0 } } },
+        { "pbrMetallicRoughness": { "baseColorTexture": { "index": 1 } } }
+      ],
+      "textures": [ { "source": 0 }, { "source": 1 } ],
+      "images": [
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" },
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" }
+      ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 }
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_distinct_images.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getTextureImages().size(), 2U) << "two distinct declared images must both be extracted";
+    ASSERT_EQ(loader.getMaterials().size(), 3U) << "the two declared materials, plus the neutral fallback";
+    EXPECT_EQ(loader.getMaterials()[0].textureID, 0);
+    EXPECT_EQ(loader.getMaterials()[1].textureID, 1);
+}
+
 // Untrusted-input hardening (2026-07-22): the GUI model picker feeds arbitrary
 // files to parseCpu. These prove the structural guards reject rather than
 // crash. The full coverage-guided sweep is gltf_parsing_fuzz_test; these pin

@@ -5164,6 +5164,350 @@ decision ("repair" vs "delete"), still not an executor task.
 
 ### Docs / repo hygiene
 
+## 2026-08-03 batch II — planner (both model loaders upload the same image once per material that references it, straight into a 128-slot cap; a glTF walk that renders every scene in the document at once while the Rust twin renders one; three subsystems that hand-roll the descriptor triad `DescriptorSetGroup` exists to own; a config transform stamped onto model 0 whatever was loaded; a fourth copy of the shadow-resolution table size)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the tree
+this pass.
+
+**Every task in this batch is verifiable with no GPU except task 3**, which is a
+Vulkan-object refactor and says so in its own Test section. The other four are
+provable with device-free gtest suites that already exist and already construct
+the objects under test without a `VulkanDevice`: `GltfParseUnit.*`
+(`gltfParseSuite.cpp` — 28 tests, all on `parseCpu` + the device-free accessors),
+`ObjParseUnit.*` (`objParseSuite.cpp` — 18 tests, same shape),
+`SceneAccessorUnit.*` (`sceneAccessorSuite.cpp:18-31` builds a bare `Scene` and
+`std::make_shared<Model>()` with no device) and `ShadowResolutionUnit.*`
+(`guiSceneVarsRoundTripSuite.cpp:193`).
+
+**The headline is that neither model loader deduplicates an image that several
+materials share, and the global texture array they feed is capped at 128 slots.**
+`GltfLoader::parseCpu` (`GltfLoader.cpp:434-449`) extracts encoded bytes per
+*material*: `objMaterial.textureID = textureImages.size(); textureImages.push_back(bytes)`.
+Two materials pointing at the same `cgltf_image` therefore produce two copies of
+the same PNG in `textureImages`, which `uploadParsed` (`:69-83`) decodes and
+uploads as two independent `Texture`s. `ObjLoader::loadTexturesAndMaterials`
+(`ObjLoader.cpp:223-225`) does the identical thing keyed on `diffuse_texname`:
+`textures.push_back(resolveObjTexturePath(...)); material.textureID = texture_id++`,
+so an `.mtl` where five materials share `wood.png` reads, decodes and uploads that
+file five times. The cost is not only startup time and VRAM: every duplicate
+consumes one entry of the flattened global array whose cap is
+`MAX_TEXTURE_COUNT = 128` (`common/host_device_shared_vars.hpp:8`), enforced by
+`planFlattenedTextureSlots` (`scene/ObjectDescription.ixx:66-84`) and reported by
+`VulkanRenderer.cpp:1537-1544` as "models past the cap will sample the wrong
+slots". A 40-material glTF with 8 distinct images currently spends 40 slots
+instead of 8. This is the same defect class as `dca11022` (dedup `Model` texture
+*samplers* by mip level) one level up the pipeline — that change deduplicated the
+samplers while leaving the images they sample duplicated.
+
+**Second, the two glTF loaders disagree about which nodes are in the scene.** The
+Rust loader takes `document.default_scene().or_else(|| document.scenes().next())`
+and recurses that scene's roots (`asset/gltf_loader.rs:163-170`); the C++ loader
+iterates `data->nodes` — every node in the *document*
+(`GltfLoader.cpp:457-475`). For a single-scene file the two agree. For a
+multi-scene file the C++ renderer merges every scene into one, and a node present
+in the document but referenced by no scene (legal glTF, and what most DCC tools
+leave behind when a collection is disabled on export) is rendered by C++ and not
+by Rust. This is the fifth entry in the cross-renderer-divergence family
+(`bd315707` `map_Kd` backslashes, `6aa5eec6` the `Resources/` search,
+`d25cd1e5` index validation, `92df2e7f` adapter absence).
+
+Tasks 3, 4 and 5 are cleanups with a real failure mode behind each: three
+subsystems hand-rolling the descriptor layout/pool/allocate triad that
+`DescriptorSetGroup` was extracted to own — including a *hand-computed* pool size
+with the arithmetic left in a comment (`Clouds.cpp:83`, `descriptorCount = 2; // +1 for noise`);
+a scene-config transform applied to model index `0` no matter which model was just
+appended; and a fourth hand-written copy of "the shadow-resolution table has four
+entries".
+
+Ordering: tasks 1 and 2 both edit `GltfLoader.cpp` — **do task 1 first**, since it
+changes the material loop task 2 leaves alone, and doing them in the other order
+puts task 2's traversal rewrite under task 1's diff. Tasks 3, 4 and 5 are disjoint
+from those and from each other.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`GUI.cpp:319`'s hand-rolled `vk::DescriptorPoolCreateInfo`**
+— it is the pool handed to `ImGui_ImplVulkan_Init`, which allocates its own sets
+outside `DescriptorSetGroup`'s model, so it cannot use the helper and must stay;
+**`CommandBufferManager::beginCommandBuffer` allocating a `std::vector<vk::CommandBuffer>`
+for one handle (`CommandBufferManager.cpp:29`)** — re-confirmed and re-rejected for
+the reason the 2026-08-03 batch gave (upload/transition-time only, never on the
+frame path); **`MeshDrawRecorder` computing `glm::inverse(glm::transpose(model))`
+per model per pass (`MeshDrawRecorder.cpp:35`)** — real redundant work, but
+`recordSceneMeshDraws` has exactly two callers (`Rasterizer.cpp:91`,
+`DeferredRasterizer.cpp:394`) and only one runs per frame, so it is one 4x4
+inverse per model per frame; **the C++ glTF loader reading only `TEXCOORD_0` and
+ignoring each texture's `texcoord` index (`GltfLoader.cpp:277-279`)** — a genuine
+divergence from `uv_set_bit` in the Rust loader, but `Vertex` carries a single UV
+set, so closing it is a vertex-format change, not a loader fix; **the
+checked-in generated WGSL having no *content* gate** (`CheckedInWgslIsNotOlderThanItsSlangSource`
+compares mtimes only, `buildIntegritySuite.cpp:1220`) — a real hole, but closing it
+means running `slangc` inside the test or diffing after a compile, and the
+combined WGSL emit is skipped below `minSlangcVersionForWgsl`, which the
+`- [b]` ContainerHub SDK-bump entry above still blocks.
+
+### C++ Vulkan engine
+
+- [ ] **(M) Make the C++ glTF loader walk the default scene, not every node in the document** — the Rust loader renders one scene, the C++ loader merges all of them plus any node no scene references.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:453-475` — the
+    `for (n < data->nodes_count)` walk, including the skinned-node rule at
+    `:461-469` that must be preserved verbatim.
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/asset/gltf_loader.rs:163-170`
+    — the rule to match: `default_scene().or_else(|| scenes().next())`, then
+    recurse each root.
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:246-403` — `processPrimitive`;
+    it takes the already-baked `world`/`normalMatrix`, so it needs no change.
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp:330-354` — `skin_node_gltf`,
+    the fixture that already exercises the node-transform rules;
+    `:392-435` — the two tests over it.
+  - `docs/model-loading.md:11-40` — the loader description to update.
+
+  **Steps:**
+  1. Add a file-local recursive helper next to `processPrimitive`, e.g.
+     `void GltfLoader::visitNode(const cgltf_node *node, const cgltf_data *data,
+     unsigned int fallbackMaterial)`. Body: keep the existing
+     `node->mesh != nullptr` guard, the skin rule
+     (`node->skin == nullptr ? cgltf_node_transform_world(node, ...) : identity`)
+     and the `glm::inverseTranspose(glm::mat3(world))` line exactly as they are
+     today, call `processPrimitive` per primitive, then recurse over
+     `node->children[0 .. node->children_count)`. `cgltf_node_transform_world`
+     already walks the parent chain, so recursion changes *which* nodes are
+     visited, never the transform any visited node gets.
+  2. Replace the `for (n < data->nodes_count)` loop in `parseCpu` with: pick
+     `const cgltf_scene *scene = data->scene != nullptr ? data->scene
+     : (data->scenes_count > 0 ? &data->scenes[0] : nullptr);` and, when it is
+     non-null, `visitNode` each of `scene->nodes[0 .. scene->nodes_count)`.
+  3. Keep a fallback for `scene == nullptr` (a document with no `scenes` array
+     at all — `cgltf_validate` permits it): walk `data->nodes` as today, and
+     `spdlog::warn` once naming the file, so the old behaviour is reachable but
+     never silent.
+  4. Add a comment above the traversal stating that the rule is shared with
+     `asset/gltf_loader.rs:163-170` and that the two must be changed together —
+     the same cross-reference `bd315707` added for `map_Kd`.
+  5. Update `docs/model-loading.md`'s loader description to state the rule
+     (default scene, else first scene, else every node with a warning) in one
+     place for both renderers. Do not restate it in `AGENTS.md`.
+
+  **Test:** Add `GltfParseUnit.OnlyTheDefaultSceneIsLoaded`: an in-test document
+  with two scenes, each holding one single-triangle mesh node at a distinct
+  translation, and `"scene": 1`. Assert the parsed vertices are exactly the
+  triangle from scene 1 — check the vertex count *and* that the world positions
+  carry scene 1's translation, so the test cannot pass by loading the wrong
+  scene at the right count. Add
+  `GltfParseUnit.ANodeNoSceneReferencesIsNotLoaded`: one scene listing node 0,
+  plus an orphan node 1 with its own mesh; assert only node 0's geometry
+  arrives. Add `GltfParseUnit.ChildNodesOfASceneRootAreStillLoaded` — a root with
+  one child mesh node — so the recursion in step 1 is pinned and the fix cannot
+  regress into "roots only". `SkinnedNodeTransformIsIgnored` and
+  `UnskinnedNodeTransformStillApplies` must stay green unchanged.
+
+  **Build:** `clangcl-debug`, same invocation as task 1, filter
+  `--gtest_filter=GltfParseUnit.*`.
+
+  **Context:** Do this **after** task 1 — both edit `GltfLoader.cpp`. This is
+  the fifth cross-renderer-divergence fix (`bd315707`, `6aa5eec6`, `d25cd1e5`,
+  `92df2e7f`); the pattern each time is to write the rule down once and point
+  both loaders at it. The single-scene assets in `Resources/Models/` are
+  unaffected, which is exactly why the divergence survived — the new tests, not
+  the bundled assets, are what pins it.
+
+- [ ] **(M) (refactor) Move SkyBox, CascadedShadowMap and Clouds onto `DescriptorSetGroup`** — three subsystems hand-roll the layout + pool + allocate + write triad the helper was extracted to own, one of them with the pool arithmetic left in a comment.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.ixx:13-105` — the
+    API and its contract (pool sizes derived from the declared bindings; write
+    helpers take the type and array count from the binding).
+  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.cpp:120-217` — what
+    the write helpers actually do, including `writeImageArray`'s
+    `infos.size() == descriptorCount` requirement.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1222-1249` and
+    `:1571-1592` — the two reference call sites (`create_post_descriptor_resources`
+    / `updatePostDescriptorSets`, `create_gbuffer_descriptor_resources` /
+    `updateGBufferDescriptorSets`): declare bindings, `create(device, N)`, then
+    `writeImage`.
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:194-249` — the simplest of
+    the three (one binding, one set); start here.
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:268-300`
+    — one uniform-buffer binding, one set.
+  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp:56-168`
+    — the hardest: **two** layouts (a 2-binding cloud set and a 1-binding noise
+    set) served from **one** pool, whose `poolSizes[0].descriptorCount = 2;`
+    carries the comment `// +1 for noise` — hand-maintained arithmetic across two
+    layouts; also `:264-289` (`recreateFrameResources` rewrites binding 0) and
+    `:291-333` (`cleanUp`).
+  - `Test/commit/VulkanEngine/descriptorPoolSizesSuite.cpp` — the existing
+    device-free cover for `deriveDescriptorPoolSizes`, which becomes the thing
+    computing the sizes these three files hard-code.
+
+  **Steps:**
+  1. `SkyBox` first. Replace the `descriptorSetLayout` / `descriptorPool` /
+     `descriptorSet` members with one `DescriptorSetGroup cubemapDescriptors;`.
+     `createDescriptorSetForCubeMap` becomes
+     `cubemapDescriptors.addBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment);`
+     followed by `if (!cubemapDescriptors.create(device, 1)) { spdlog::error(...); }`.
+     `updateDescriptorSetForCubeMap` becomes one
+     `writeImage(0, 1, view, eShaderReadOnlyOptimal, sampler)`. Route
+     `getDescriptorSetLayout()` to `cubemapDescriptors.getLayout()` and the set
+     accessor to `cubemapDescriptors.sets()[0]`, and delete the three
+     `destroyDescriptorPool`/`destroyDescriptorSetLayout` calls from `cleanUp` —
+     `DescriptorSetGroup::cleanUp` is idempotent and the destructor is a safety
+     net.
+  2. `CascadedShadowMap` next, same shape, one binding, one set.
+  3. `Clouds` last, and give it **two** groups (`cloudDescriptors`,
+     `noiseDescriptors`) rather than trying to keep one shared pool: each group
+     owns its own pool, `deriveDescriptorPoolSizes` computes both, and the
+     `// +1 for noise` arithmetic disappears. `recreateFrameResources` becomes a
+     single `cloudDescriptors.writeImage(0, 0, newView, vk::ImageLayout::eGeneral)`.
+     Keep the *bindings, types, stages and layouts* byte-identical to what is
+     there now — this task must be behaviour-neutral.
+  4. Grep for any remaining `vk::DescriptorSetLayoutCreateInfo` /
+     `vk::DescriptorPoolCreateInfo` / `vk::DescriptorSetAllocateInfo` under
+     `Src/`. After this change the only survivor must be `GUI.cpp:319` (the
+     ImGui pool, which allocates its sets outside this model). Add
+     `BuildIntegrity.DescriptorSetsAreCreatedThroughDescriptorSetGroup`: scan
+     `Src/**/*.cpp` for those three type names and fail on any hit outside
+     `vulkan_base/DescriptorSetGroup.cpp` and `gui/GUI.cpp`, with the ImGui
+     exemption named and its reason stated inline. Follow
+     `EngineSourcesDoNotLogRawVulkanHandles` (`buildIntegritySuite.cpp:2684`) for
+     structure, and anchor the allowlist to a source marker rather than a line
+     number (`e8b1db52`).
+
+  **Test:** `BuildIntegrity.DescriptorSetsAreCreatedThroughDescriptorSetGroup`
+  (new, pure CPU) plus the existing `DescriptorPoolSizesUnit.*` and
+  `SkyBoxUnit.*`. **This task also needs the host GPU**: it rewires live
+  descriptor sets, so run `commitTestSuite.exe --gtest_filter=GoldenRender.*:Integration.*`
+  from the repo root on the host and then
+  `Scripts/Windows/Run-SyncValidation.ps1`, following the per-unit loop in
+  `docs/gpu-golden-testing.md`. The change must be pixel-neutral. **If no GPU is
+  reachable in this session, stop after the container build and flip this entry to
+  `- [b]` with "blocked on host GPU golden verification" rather than landing it
+  unverified** — a skybox or shadow-map descriptor that silently stops being
+  written renders as a black cubemap or unshadowed scene, which no CPU suite sees.
+
+  **Build:** `clangcl-debug` for iteration; use `-FreshContainer` because this
+  changes module interfaces (`SkyBox.ixx`, `CascadedShadowMap.ixx`, `Clouds.ixx`)
+  — see the fresh-container rule in `docs/gpu-golden-testing.md`.
+
+  **Context:** `DescriptorSetGroup.ixx:21-23` says it "replaces the four
+  structurally identical layout/pool/set triads that used to live in
+  `VulkanRenderer`" — the replacement stopped at `VulkanRenderer`'s door and three
+  subsystems kept their copies. Same family as `4f799788` (framebuffer),
+  `c041b756` (render-pass begin), `876a151f` (render-pass create) and `c743d99d`
+  (pipeline layout); as in all of those, the payoff is that the next descriptor
+  set cannot hard-code a count, not the lines removed. `Clouds.cpp:83` is the
+  proof the family is right: a pool size maintained by hand across two layouts,
+  with the arithmetic surviving only as a comment.
+
+- [ ] **(S) Apply the scene-config transform to the model that was just loaded, not to model 0** — `add_model` appends, and all three load paths then transform index `0` unconditionally.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/Scene.cpp:49-64` (`loadModel`), `:99-138`
+    (`pollModelLoad`), `:166-184` (`reloadModel`) — the three
+    `update_model_matrix(..., 0)` call sites.
+  - `Src/GraphicsEngineVulkan/scene/Scene.cpp:66-87` — `loadAdditionalModel`,
+    the one path that already does it correctly
+    (`const uint32_t model_index = getModelCount() - 1U;`).
+  - `Src/GraphicsEngineVulkan/scene/Scene.cpp:140-154` — `add_model`, including
+    the null guard that must keep returning without appending.
+  - `Src/GraphicsEngineVulkan/scene/Scene.ixx:30, 55-60, 168` —
+    `update_model_matrix`, `getModelCount`, `getModelMatrix`, `add_model`.
+  - `Test/commit/VulkanEngine/sceneAccessorSuite.cpp:18-38` — a bare `Scene`
+    plus `std::make_shared<Model>()`, no device.
+
+  **Steps:**
+  1. Change `Scene::add_model` to return `std::optional<uint32_t>` — the index
+     of the appended model, or `std::nullopt` for the null-model guard it
+     already logs and returns from. Update the declaration in `Scene.ixx:168`.
+  2. In `loadModel`, `pollModelLoad` and `reloadModel`, capture that return and
+     pass it to `update_model_matrix` instead of the literal `0`; skip the
+     transform when it is `nullopt`. In `reloadModel` this also replaces the
+     `if (model_list.empty())` check that stands in for it today.
+  3. Rewrite `loadAdditionalModel` to use the returned index rather than
+     recomputing `getModelCount() - 1U`, so there is one expression for "which
+     model did I just add" instead of two.
+  4. Check the other `add_model` callers compile — `sceneAccessorSuite.cpp:20`
+     and `:35`, and `objParseSuite.cpp:172` (`AddingANullModelIsSafeNotACrash`)
+     call it for effect and ignore the result; a `[[nodiscard]]` would break
+     them, so do **not** mark the return `[[nodiscard]]`.
+
+  **Test:** Add `SceneAccessorUnit.TheConfigTransformLandsOnTheModelThatWasAdded`:
+  construct a bare `Scene`, `add_model` twice, assert the second call returns
+  index `1`, `update_model_matrix(M, *index)`, then assert
+  `getModelMatrix(1) == M` **and** `getModelMatrix(0) == glm::mat4(1.0F)` — the
+  second half is what fails today. Add
+  `SceneAccessorUnit.AddingANullModelReturnsNoIndex` asserting `add_model(nullptr)`
+  yields `nullopt` and leaves `getModelCount() == 0`.
+
+  **Build:** `clangcl-debug`, filter
+  `--gtest_filter=SceneAccessorUnit.*:ObjParseUnit.*`.
+
+  **Context:** Reachable today: `loadAdditionalModel` appends without touching
+  the pending-load state, so a subsequent GUI model reload
+  (`guiSceneSharedVars.model_reload_requested` → `reloadModel`) or a completing
+  async parse stamps `sceneConfig::getModelMatrix()` onto whatever sits at index
+  0 while the model it was meant for keeps identity. The bug is small; the point
+  is that "the index I just appended at" should be returned by the function that
+  appended, not re-derived by four callers in three different ways — the same
+  reasoning as `a4610948` (`beginWrite` returning the binding it found).
+
+- [ ] **(S) (refactor) Derive the shadow-resolution table's size from `kShadowMapResolutions`** — the count `4` (and its `index > 3` twin) is hand-written in four more places, one of them in the test that is supposed to pin the table.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx:7-21` — the header
+    comment already declares this the single source of truth; `:12`
+    (`kShadowMapResolutions[4]`), `:16-21` (`shadowResolutionForIndex`'s
+    `index > 3`), `:54-57` (`available_shadow_map_resolutions[4]`).
+  - `Src/GraphicsEngineVulkan/gui/GUI.cpp:188-193` — `ImGui::Combo(..., 4)`, the
+    literal furthest from the table.
+  - `Test/commit/VulkanEngine/guiSceneVarsRoundTripSuite.cpp:185-215` — the three
+    `ShadowResolutionUnit` tests; `:195`'s `for (int i = 0; i < 4; ++i)` is a
+    fifth copy, and it is inside the guard.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:117, 309` — the two
+    `shadowResolutionForIndex` consumers; they must keep compiling unchanged.
+
+  **Steps:**
+  1. In `GUISceneSharedVars.ixx`, add
+     `export inline constexpr int kShadowMapResolutionCount =
+     static_cast<int>(std::size(kShadowMapResolutions));` immediately after the
+     table (`<iterator>` in the global-module fragment), and restate the table as
+     `kShadowMapResolutions[]` so its size comes from the initialiser rather than
+     from a repeated literal.
+  2. Rewrite `shadowResolutionForIndex`'s clamp as
+     `if (index >= kShadowMapResolutionCount) index = kShadowMapResolutionCount - 1;`.
+     Keep it `constexpr` — `VulkanRenderer.cpp:117` calls it at namespace scope.
+  3. Declare `available_shadow_map_resolutions` as
+     `const char *available_shadow_map_resolutions[kShadowMapResolutionCount]`
+     and add a `static_assert(std::size(...) == kShadowMapResolutionCount, ...)`
+     next to it — the labels and the pixel counts must stay the same length, and
+     a mismatched initialiser should fail the build, not a test.
+  4. In `GUI.cpp:189-192`, pass `kShadowMapResolutionCount` to `ImGui::Combo`
+     instead of `4`.
+  5. In `guiSceneVarsRoundTripSuite.cpp:195`, loop to `kShadowMapResolutionCount`
+     instead of `4`, so adding a fifth entry extends the guard automatically
+     rather than leaving it silently covering only the first four.
+
+  **Test:** Extend `ShadowResolutionUnit.OutOfRangeIndicesClampInsteadOfSilentlyPicking512`
+  to assert `shadowResolutionForIndex(kShadowMapResolutionCount) ==
+  kShadowMapResolutions[kShadowMapResolutionCount - 1]` (it currently spells the
+  same claim as the literals `4` and `4096U`). Add
+  `ShadowResolutionUnit.TheLabelTableAndThePixelTableAreTheSameLength` asserting
+  `std::size(defaults.available_shadow_map_resolutions) ==
+  std::size(kShadowMapResolutions)`. `EveryComboLabelMatchesThePixelCount` and
+  `TheDefaultIndexIsWhatStartupAllocates` must stay green unchanged.
+
+  **Build:** `clangcl-debug`, filter `--gtest_filter=ShadowResolutionUnit.*`.
+  Use `-FreshContainer` — `GUISceneSharedVars.ixx` is a module interface.
+
+  **Context:** `GUISceneSharedVars.ixx:7-11` records that the GUI's labels and
+  the renderer's allocation once drifted apart (the combo claimed 4096 while
+  startup built 2048). The value/label drift was closed; the *length* drift was
+  not, and adding an 8192 entry today means editing five places, one of which is
+  the test that is supposed to notice. Smallest member of the
+  `buildFramebufferCreateInfo` / `buildRenderPassBeginInfo` family, and the same
+  rule: derive the count from the container, never write it next to it.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

@@ -334,6 +334,43 @@ TEST(ObjParseUnit, MtlRelativeTextureIsResolvedBesideTheMtl)
     std::filesystem::remove_all(dir);
 }
 
+TEST(ObjParseUnit, MaterialsSharingAMapKdShareOneTextureSlot)
+{
+    // Two newmtl blocks naming the same map_Kd must upload that texture once:
+    // the second material reuses the first's textures slot instead of
+    // pushing a duplicate path.
+    const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_shared_texture";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    {
+        std::ofstream mtl(dir / "shared.mtl", std::ios::binary);
+        mtl << "newmtl first\nKd 1 1 1\nmap_Kd paint.png\n"
+               "newmtl second\nKd 1 1 1\nmap_Kd paint.png\n";
+    }
+    { std::ofstream texture(dir / "paint.png", std::ios::binary); }
+    {
+        std::ofstream obj(dir / "shared.obj", std::ios::binary);
+        obj << "mtllib shared.mtl\n"
+               "v 0 0 0\nv 1 0 0\nv 0 1 0\nv 0 0 1\n"
+               "vt 0 0\nvt 1 0\nvt 0 1\n"
+               "usemtl first\nf 1/1 2/2 3/3\n"
+               "usemtl second\nf 1/1 2/2 4/3\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu((dir / "shared.obj").string()));
+
+    ASSERT_EQ(loader.getMaterials().size(), 2U) << "both declared materials must be present";
+    ASSERT_EQ(loader.getTextureNames().size(), 2U);
+    EXPECT_FALSE(loader.getTextureNames()[0].empty()) << "the first material's texture must be recorded";
+    EXPECT_TRUE(loader.getTextureNames()[1].empty()) << "the second, duplicate texture must not be re-pushed";
+    EXPECT_EQ(loader.getMaterials()[0].textureID, 0);
+    EXPECT_EQ(loader.getMaterials()[1].textureID, 0) << "the second material must share slot 0, not get its own";
+
+    std::filesystem::remove_all(dir);
+}
+
 TEST(ObjParseUnit, MtlTextureUnderATexturesSubdirectoryIsResolved)
 {
     // docs/model-loading.md's second candidate: the layout every shipped OBJ

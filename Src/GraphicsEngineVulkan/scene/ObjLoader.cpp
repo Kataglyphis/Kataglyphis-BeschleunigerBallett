@@ -201,6 +201,13 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
     textures.reserve(tol_materials.size());
 
     int texture_id = 0;
+    File model_file(modelFile);
+    const std::string base_dir = model_file.getBaseDir();
+
+    // Materials whose diffuse texture resolves to the same on-disk path share
+    // one textures slot: keyed on the resolved path (not the raw map_Kd), so
+    // two .mtl spellings of the same file collapse together.
+    std::unordered_map<std::string, int> pathSlot;
 
     // we now iterate over all materials to get diffuse textures
     for (const auto &tol_material : tol_materials) {
@@ -217,12 +224,20 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
         material.illum = mp->illum;
 
         if (!mp->diffuse_texname.empty()) {
-            File model_file(modelFile);
-            std::string const base_dir = model_file.getBaseDir();
-
-            textures.push_back(resolveObjTexturePath(base_dir, mp->diffuse_texname));
-            material.textureID = texture_id;
-            texture_id++;
+            const std::string resolved = resolveObjTexturePath(base_dir, mp->diffuse_texname);
+            const auto existing = pathSlot.find(resolved);
+            if (existing != pathSlot.end()) {
+                material.textureID = existing->second;
+                // uploadParsed's dense counter walks textures 1:1 with
+                // materials; an empty entry here keeps that mapping intact
+                // while skipping the (already-uploaded) duplicate texture.
+                textures.emplace_back("");
+            } else {
+                pathSlot[resolved] = texture_id;
+                textures.push_back(resolved);
+                material.textureID = texture_id;
+                texture_id++;
+            }
 
         } else {
             // No diffuse texture: -1 routes the shaders to material.diffuse.

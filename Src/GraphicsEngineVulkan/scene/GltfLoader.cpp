@@ -4,6 +4,7 @@ module;
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -431,6 +432,12 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
     // One ObjMaterial per glTF material, plus a trailing neutral used by any
     // primitive that references none. `materialIndex` (per triangle) points into
     // this table.
+    //
+    // Materials that share the same glTF image share one textureImages slot:
+    // each image is decoded/uploaded once no matter how many materials point at
+    // it, which matters because textureID indexes into the engine's fixed
+    // MAX_TEXTURE_COUNT descriptor budget.
+    std::unordered_map<const cgltf_image *, int> imageSlot;
     for (cgltf_size m = 0; m < data->materials_count; ++m) {
         const cgltf_material &material = data->materials[m];
         ObjMaterial objMaterial = fromGltfMaterial(material);
@@ -438,11 +445,17 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
         // encoded bytes and point the material at the new texture slot.
         if (material.has_pbr_metallic_roughness != 0
             && material.pbr_metallic_roughness.base_color_texture.texture != nullptr) {
-            std::vector<unsigned char> bytes =
-              extractImageBytes(material.pbr_metallic_roughness.base_color_texture.texture->image, options);
-            if (!bytes.empty()) {
-                objMaterial.textureID = static_cast<int>(textureImages.size());
-                textureImages.push_back(std::move(bytes));
+            const cgltf_image *img = material.pbr_metallic_roughness.base_color_texture.texture->image;
+            const auto existing = imageSlot.find(img);
+            if (existing != imageSlot.end()) {
+                objMaterial.textureID = existing->second;
+            } else {
+                std::vector<unsigned char> bytes = extractImageBytes(img, options);
+                if (!bytes.empty()) {
+                    objMaterial.textureID = static_cast<int>(textureImages.size());
+                    imageSlot[img] = objMaterial.textureID;
+                    textureImages.push_back(std::move(bytes));
+                }
             }
         }
         materials.push_back(objMaterial);

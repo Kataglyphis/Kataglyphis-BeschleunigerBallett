@@ -67,10 +67,11 @@ class GltfLoader
     const std::vector<unsigned int> &getIndices() const { return indices; }
     const std::vector<ObjMaterial> &getMaterials() const { return materials; }
     const std::vector<unsigned int> &getMaterialIndices() const { return materialIndex; }
-    /// Encoded base-colour image bytes (PNG/JPG...), one entry per textured
-    /// material, indexed by that material's textureID. loadModel decodes and
-    /// uploads them via Texture::createFromMemory; a test can assert the CPU
-    /// extraction without a device.
+    /// Encoded base-colour image bytes (PNG/JPG...), one entry per *distinct*
+    /// image; materials sharing an image share a slot, indexed by that
+    /// material's textureID. loadModel decodes and uploads them via
+    /// Texture::createFromMemory; a test can assert the CPU extraction without
+    /// a device.
     const std::vector<std::vector<unsigned char>> &getTextureImages() const { return textureImages; }
 
     // One entry per glTF primitive (see the shared kataglyphis.vulkan.mesh_range
