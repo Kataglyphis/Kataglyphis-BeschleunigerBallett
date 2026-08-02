@@ -26,7 +26,27 @@ Die folgenden Tabellen listen die im Repository genutzten Open-Source-Abhängigk
 |---|---|---|---|
 | KTX (KTX-Software, Teil-Vendoring: `include/`, `lib/`, `other_include/`) | https://github.com/KhronosGroup/KTX-Software | Apache-2.0 (SPDX-Header in `include/ktx.h` und in 98 Dateien unter `lib/`) | `ExternalLib/KTX/include/ktx.h` |
 
-Hinweis KTX: Die gevendorte `lib/` enthält eingebettete Third-Party-Komponenten ohne SPDX-Header (u.a. basisu, zstd, lodepng, stb_image, tinyexr, jpgd, etcdec) mit eigenen Lizenzhinweisen in den Dateiköpfen; die vollständige `LICENSE.md` von KTX-Software ist nicht mitvendort. Siehe Abschnitt "Unverifiziert".
+Hinweis KTX: Die vollständige `LICENSE.md` von KTX-Software ist **nicht** mitvendort
+(`ExternalLib/KTX/LICENSE.md` existiert nicht). Die eingebetteten
+Third-Party-Komponenten unter `ExternalLib/KTX/lib/` wurden deshalb einzeln aus den
+Dateien auf der Festplatte verifiziert — teils aus mitvendorten Lizenzdateien, teils
+aus dem Lizenzkopf der Quelldatei selbst:
+
+| Komponente | Lizenz | Geprüfte Datei (jeweils unter `ExternalLib/KTX/lib/`) |
+|---|---|---|
+| basisu (Encoder + Transcoder) | Apache-2.0 (Copyright Binomial LLC) | `basisu/LICENSE` (voller Apache-2.0-Text); Lizenzkopf in `basisu/encoder/basisu_enc.cpp` und `basisu/transcoder/basisu_transcoder.cpp`. Die REUSE-Texte `basisu/LICENSES/{Apache-2.0,BSD,Zlib}.txt` liegen für die Unterkomponenten bei. |
+| zstd (in basisu gebündelt) | BSD-3-Clause; der Dateikopf nennt zusätzlich GPLv2 zur Wahl ("You may select, at your option, one of the above-listed licenses") | `basisu/zstd/LICENSE` (BSD-Text, Copyright Facebook, Inc.); Kopf von `basisu/zstd/zstd.c` |
+| LodePNG | Zlib-Lizenztext (Copyright 2005-2019 Lode Vandevenne) | Lizenzkopf in `basisu/encoder/lodepng.h` |
+| jpgd | Public Domain (Rich Geldreich) | Lizenzkopf in `basisu/encoder/jpgd.h` |
+| stb_image / stb_image_write | Dual: MIT ("ALTERNATIVE A") oder Public Domain/Unlicense ("ALTERNATIVE B"), nach Wahl | Lizenzblock am Dateiende von `astc-encoder/Source/stb_image.h` und `astc-encoder/Source/stb_image_write.h` |
+| tinyexr | BSD-3-Clause (Copyright 2014-2019 Syoyo Fujita und Beitragende) | Lizenzkopf in `astc-encoder/Source/tinyexr.h` |
+| etcdec.cxx | **Keine OSI-Lizenz**: "Ericsson Texture Compression Codec Software License Agreement" — eine nicht-exklusive, nicht übertragbare, kostenlose, unbefristete, weltweite Einzellizenz mit eigenen Bedingungen | Lizenzkopf in `etcdec.cxx` |
+| astc-encoder (Arm) | Apache-2.0 | SPDX-Header `// SPDX-License-Identifier: Apache-2.0` in `astc-encoder/Source/astcenc.h`. Hinweis: die in `astc-encoder/README.md` referenzierte `LICENSE.txt` ist nicht mitvendort. |
+| dfdutils (Khronos) | Apache-2.0, einzelne aus MIT-Projekten übernommene Dateien MIT | `dfdutils/LICENSE.adoc`; Volltexte in `dfdutils/LICENSES/{Apache-2.0,MIT}.txt` |
+
+Zu beachten: `etcdec.cxx` ist die einzige Komponente im gesamten Baum, die nicht
+unter einer OSI-anerkannten Lizenz steht. Für Redistribution ist der Wortlaut der
+SLA im Dateikopf maßgeblich.
 
 ## Build-Zeit-Abhängigkeiten via FetchContent (`ExternalLib/CMakeLists.txt`, nicht im Repo eingecheckt)
 
@@ -50,24 +70,50 @@ Lizenz jeweils aus der LICENSE-Datei des lokalen FetchContent-Checkouts unter `b
 
 ## Rust-Crate-Abhängigkeiten (`ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/Cargo.toml`, `[dependencies]`)
 
-Versionen laut `ExternalLib/Kataglyphis-RustProjectTemplate/Cargo.lock`. Lizenz nur angegeben, wo eine lokale Registry-Kopie (`~/.cargo/registry/src/`) gelesen werden konnte; die Crate-Builds laufen im Container, daher ist der Host-Cache unvollständig.
+Versionen laut `ExternalLib/Kataglyphis-RustProjectTemplate/Cargo.lock`.
+
+**Quelle der Lizenzangaben (alle Zeilen dieser Tabelle):** das `license`-Feld der
+Cargo-Metadaten — also genau das Feld, das die Crate auf crates.io veröffentlicht
+hat — für die exakte Version aus `Cargo.lock`, gelesen am 2026-08-02 im
+`:latest-cross`-Container (dort liegt die vollständige Registry; der Host-Cache
+ist unvollständig, weil die Crate-Builds im Container laufen) mit:
+
+```sh
+cargo metadata --format-version 1 --locked   # CARGO_HOME=/cargo-cache
+```
+
+Für jedes Paket wurde zusätzlich `source` geprüft; alle stehen auf
+`registry+https://github.com/rust-lang/crates.io-index`. Kein Eintrag stammt aus
+einem README, einer benachbarten Version oder einer Vermutung. Die Schreibweise
+der Lizenzausdrücke ist unverändert aus dem Metadatenfeld übernommen (daher z. B.
+das alte Trennzeichen bei `pollster`).
 
 | Crate | Version (Lock) | Lizenz (`license`-Feld) | Geprüfte Quelle |
 |---|---|---|---|
-| anyhow | 1.0.104 | MIT OR Apache-2.0 | `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/anyhow-1.0.100/Cargo.toml` (Registry-Kopie 1.0.100) |
-| log | 0.4.33 | MIT OR Apache-2.0 | `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/log-0.4.29/Cargo.toml` (Registry-Kopie 0.4.29) |
-| bytemuck | 1.25.2 | Zlib OR Apache-2.0 OR MIT | `~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/bytemuck-1.24.0/Cargo.toml` (Registry-Kopie 1.24.0) |
-| env_logger | 0.11.11 | unverifiziert — keine lokale Registry-Kopie | — |
-| wgpu | 29.0.4 | unverifiziert — keine lokale Registry-Kopie | — |
-| winit | 0.30.13 | unverifiziert — keine lokale Registry-Kopie | — |
-| pollster | 0.4.0 | unverifiziert — keine lokale Registry-Kopie | — |
-| glam | 0.30.10 | unverifiziert — keine lokale Registry-Kopie | — |
-| gltf | 1.4.1 | unverifiziert — keine lokale Registry-Kopie | — |
-| bevy_mikktspace | 1.0.0 | unverifiziert — keine lokale Registry-Kopie | — |
-| egui | 0.35.0 | unverifiziert — keine lokale Registry-Kopie | — |
-| egui-wgpu | 0.35.0 | unverifiziert — keine lokale Registry-Kopie | — |
-| egui-winit | 0.35.0 | unverifiziert — keine lokale Registry-Kopie | — |
-| ktx2 | 0.5.0 | unverifiziert — keine lokale Registry-Kopie | — |
+| anyhow | 1.0.104 | MIT OR Apache-2.0 | `cargo metadata` (exakte Lock-Version, Container) |
+| log | 0.4.33 | MIT OR Apache-2.0 | `cargo metadata` (exakte Lock-Version, Container) |
+| bytemuck | 1.25.2 | Zlib OR Apache-2.0 OR MIT | `cargo metadata` (exakte Lock-Version, Container) |
+| env_logger | 0.11.11 | MIT OR Apache-2.0 | `cargo metadata` (exakte Lock-Version, Container) |
+| wgpu | 29.0.4 | MIT OR Apache-2.0 | `cargo metadata` (exakte Lock-Version, Container) |
+| winit | 0.30.13 | Apache-2.0 | `cargo metadata` (exakte Lock-Version, Container) |
+| pollster | 0.4.0 | Apache-2.0/MIT | `cargo metadata` (exakte Lock-Version, Container) |
+| glam | 0.30.10 | MIT OR Apache-2.0 | `cargo metadata` (exakte Lock-Version, Container) |
+| gltf | 1.4.1 | MIT OR Apache-2.0 | `cargo metadata` (exakte Lock-Version, Container) |
+| bevy_mikktspace | 1.0.0 | Zlib AND (MIT OR Apache-2.0) | `cargo metadata` (exakte Lock-Version, Container) |
+| egui | 0.35.0 | MIT OR Apache-2.0 | `cargo metadata` (exakte Lock-Version, Container) |
+| egui-wgpu | 0.35.0 | MIT OR Apache-2.0 | `cargo metadata` (exakte Lock-Version, Container) |
+| egui-winit | 0.35.0 | MIT OR Apache-2.0 | `cargo metadata` (exakte Lock-Version, Container) |
+| ktx2 | 0.5.0 | Apache-2.0 | `cargo metadata` (exakte Lock-Version, Container) |
+
+Hinweise zu einzelnen Einträgen:
+
+- **winit 0.30.13** und **ktx2 0.5.0** sind *nicht* dual lizenziert, sondern reines
+  Apache-2.0 — anders als die übrigen Crates dieser Tabelle.
+- **bevy_mikktspace 1.0.0** ist ein zusammengesetzter Ausdruck: der gevendorte
+  MikkTSpace-C-Code steht unter Zlib, der Rust-Anteil dual MIT/Apache-2.0; beide
+  Bedingungen gelten gleichzeitig (`AND`).
+- **pollster 0.4.0** verwendet die veraltete Slash-Schreibweise `Apache-2.0/MIT`;
+  gemeint ist eine Wahlmöglichkeit (entspricht `Apache-2.0 OR MIT`).
 
 ## Toolchain (Build-Zeit, nicht mit ausgeliefert)
 
@@ -78,15 +124,24 @@ Versionen laut `ExternalLib/Kataglyphis-RustProjectTemplate/Cargo.lock`. Lizenz 
 ## Unverifiziert — zu prüfen
 
 - **Kataglyphis-ContainerHub**: kein LICENSE/COPYING im Submodul vorhanden; Lizenz im Upstream-Repository klären.
-- **Rust-Crates ohne lokale Registry-Kopie** (siehe Tabelle oben): env_logger, wgpu, winit, pollster, glam, gltf, bevy_mikktspace, egui, egui-wgpu, egui-winit, ktx2 — Lizenzfelder gegen crates.io bzw. einen vollständigen Cargo-Cache verifizieren.
-- **Eingebettete Third-Party-Anteile in `ExternalLib/KTX/lib/`** ohne SPDX-Header (basisu, zstd, lodepng, stb_image, tinyexr, jpgd, etcdec u.a.): Lizenzköpfe der einzelnen Dateien bzw. die Upstream-`LICENSE.md` von KTX-Software prüfen.
-- **Rust-Crates bei anderen `anyhow`/`log`/`bytemuck`-Versionen**: Lizenzfeld wurde aus einer benachbarten, lokal gecachten Version gelesen (siehe Tabelle); bei Bedarf gegen die exakte Lock-Version verifizieren.
+
+Am 2026-08-02 erledigt und daher aus dieser Liste entfernt:
+
+- Die 11 zuvor unverifizierten Rust-Crates (env_logger, wgpu, winit, pollster,
+  glam, gltf, bevy_mikktspace, egui, egui-wgpu, egui-winit, ktx2) sind jetzt aus
+  `cargo metadata` im Container verifiziert — siehe Crate-Tabelle oben.
+- `anyhow`, `log` und `bytemuck` sind jetzt für die **exakte** Lock-Version
+  belegt statt für eine benachbarte gecachte Version; die Lizenzausdrücke sind
+  dabei unverändert geblieben.
+- Die eingebetteten Third-Party-Anteile in `ExternalLib/KTX/lib/` sind einzeln
+  aus den Dateien auf der Festplatte belegt — siehe die Tabelle im Abschnitt
+  "Gevendorte Quellen".
 
 ## Hinweise
 
 - Entfernt gegenüber Stand 2026-03-26: **glad** (kein `ExternalLib/glad`-Submodul mehr vorhanden, keine glad-/OpenGL-Loader-Referenzen unter `Src/`) und **KTX als Submodul** (jetzt Teil-Vendoring, siehe oben).
 - Kompute wird nur mit `KATAGLYPHIS_BUILD_KOMPUTE_PLAYGROUND=ON` gebaut (Demo, nicht Teil der Engine).
-- Die `build*/_deps/`- und `~/.cargo/`-Pfade sind lokale Checkouts/Caches (nicht eingecheckt); sie dokumentieren, welche Datei bei der Verifikation tatsächlich gelesen wurde.
+- Die `build*/_deps/`-Pfade sind lokale Checkouts (nicht eingecheckt); sie dokumentieren, welche Datei bei der Verifikation tatsächlich gelesen wurde. Für die Rust-Crates tritt an diese Stelle die Registry im `:latest-cross`-Container (Volume `cargo-cache`, `CARGO_HOME=/cargo-cache`), aus der `cargo metadata` das `license`-Feld liest.
 
 ---
-Erstellt automatisch im Repository auf Anforderung; zuletzt vollständig gegen den Datenträger verifiziert am 2026-08-02.
+Erstellt automatisch im Repository auf Anforderung; zuletzt vollständig gegen den Datenträger verifiziert am 2026-08-02 — die Rust-Crate-Lizenzen zusätzlich gegen `cargo metadata --format-version 1 --locked` im `:latest-cross`-Container (vollständige crates.io-Registry) am 2026-08-02.
