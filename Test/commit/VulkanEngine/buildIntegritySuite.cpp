@@ -11,6 +11,9 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -19,11 +22,23 @@
 #include <regex>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
+#include "ObjectDescription.hpp"
 #include "common/host_device_shared_vars.hpp"
+#include "renderer/GlobalUBO.hpp"
 #include "renderer/PathTracingDispatch.hpp"
+#include "renderer/SceneUBO.hpp"
+#include "renderer/pushConstants/PushConstantPathTracing.hpp"
+#include "renderer/pushConstants/PushConstantPost.hpp"
+#include "renderer/pushConstants/PushConstantRasterizer.hpp"
+#include "renderer/pushConstants/PushConstantRayTracing.hpp"
 #include "scene/atmospheric_effects/clouds/CloudDispatch.hpp"
+#include "shared/scene/ObjMaterial.hpp"
+#include "shared/scene/Vertex.hpp"
+
+import kataglyphis.vulkan.cascaded_shadow_map;// Kataglyphis::ShadowPushConstants
 
 namespace {
 
@@ -755,6 +770,202 @@ std::set<std::string> parse_bash_manifest_rows(const fs::path &script_path)
         result.insert(fields[0] + '|' + fields[1] + '|' + fields[2] + '|' + normalize_targets(targets));
     }
     return result;
+}
+
+using Kataglyphis::ShadowPushConstants;
+using Kataglyphis::VulkanRendererInternals::DirectionalLightData;
+using Kataglyphis::VulkanRendererInternals::GlobalUBO;
+using Kataglyphis::VulkanRendererInternals::PushConstantPathTracing;
+using Kataglyphis::VulkanRendererInternals::PushConstantPost;
+using Kataglyphis::VulkanRendererInternals::PushConstantRasterizer;
+using Kataglyphis::VulkanRendererInternals::PushConstantRaytracing;
+using Kataglyphis::VulkanRendererInternals::SceneUBO;
+
+// --- SPIR-V struct-offset parsing, backing SharedStructOffsetsMatchTheCompiledSpirv ---
+//
+// Mirrors Kataglyphis::validateSpirvBlob's magic-number check
+// (vulkan_base/ShaderHelper.cpp) - that constant lives in an anonymous
+// namespace inside a module implementation unit and cannot be included from
+// here, so the literal is re-declared rather than reused.
+constexpr uint32_t kSpirvMagicNumber = 0x07230203;
+constexpr std::size_t kSpirvHeaderWordCount = 5;
+constexpr uint32_t kOpName = 5;
+constexpr uint32_t kOpMemberName = 6;
+constexpr uint32_t kOpMemberDecorate = 72;
+constexpr uint32_t kDecorationOffset = 35;
+
+// Decodes a SPIR-V literal string operand: ASCII/UTF-8 bytes packed 4 per
+// word (little end first), NUL-terminated and padded to a word boundary.
+std::string spirv_literal_string(const std::vector<uint32_t> &words, std::size_t word_start, std::size_t word_count)
+{
+    std::string text;
+    text.reserve(word_count * 4);
+    for (std::size_t i = 0; i < word_count; ++i) {
+        const uint32_t word = words[word_start + i];
+        for (uint32_t shift = 0; shift < 32U; shift += 8U) {
+            const auto ch = static_cast<char>((word >> shift) & 0xFFU);
+            if (ch == '\0') { return text; }
+            text.push_back(ch);
+        }
+    }
+    return text;
+}
+
+// Parses a compiled .spv module for every named struct's per-member byte
+// Offset decoration: { struct name as emitted (e.g. "SceneUBO_std140") ->
+// { member name -> Offset } }. Returns std::nullopt if the file cannot be
+// opened or does not start with the SPIR-V magic number - callers treat
+// that as "not a SPIR-V module" rather than byte-swapping, the same
+// contract as Kataglyphis::validateSpirvBlob.
+std::optional<std::map<std::string, std::map<std::string, uint32_t>>> parse_spirv_member_offsets(
+  const fs::path &spv_path)
+{
+    std::ifstream file(spv_path, std::ios::binary);
+    if (!file) { return std::nullopt; }
+    const std::vector<char> raw((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    if (raw.size() < kSpirvHeaderWordCount * sizeof(uint32_t) || raw.size() % sizeof(uint32_t) != 0) {
+        return std::nullopt;
+    }
+
+    std::vector<uint32_t> words(raw.size() / sizeof(uint32_t));
+    std::memcpy(words.data(), raw.data(), raw.size());
+    if (words[0] != kSpirvMagicNumber) { return std::nullopt; }
+
+    std::map<uint32_t, std::string> type_names;// OpName: id -> name
+    std::map<std::pair<uint32_t, uint32_t>, std::string> member_names;// OpMemberName: (type id, member) -> name
+    std::map<std::pair<uint32_t, uint32_t>, uint32_t> member_offsets;// OpMemberDecorate Offset: (type id, member) -> offset
+
+    std::size_t pos = kSpirvHeaderWordCount;
+    while (pos < words.size()) {
+        const uint32_t instruction_word = words[pos];
+        const uint32_t word_count = instruction_word >> 16U;
+        const uint32_t opcode = instruction_word & 0xFFFFU;
+        if (word_count == 0 || pos + word_count > words.size()) { break; }// malformed stream - stop, do not read OOB
+
+        if (opcode == kOpName && word_count >= 2) {
+            type_names[words[pos + 1]] = spirv_literal_string(words, pos + 2, word_count - 2);
+        } else if (opcode == kOpMemberName && word_count >= 3) {
+            member_names[{ words[pos + 1], words[pos + 2] }] = spirv_literal_string(words, pos + 3, word_count - 3);
+        } else if (opcode == kOpMemberDecorate && word_count >= 4) {
+            if (words[pos + 3] == kDecorationOffset && word_count >= 5) {
+                member_offsets[{ words[pos + 1], words[pos + 2] }] = words[pos + 4];
+            }
+        }
+
+        pos += word_count;
+    }
+
+    std::map<std::string, std::map<std::string, uint32_t>> result;
+    for (const auto &[ids, offset] : member_offsets) {
+        const auto type_it = type_names.find(ids.first);
+        const auto member_it = member_names.find(ids);
+        if (type_it == type_names.end() || member_it == member_names.end()) { continue; }
+        result[type_it->second][member_it->second] = offset;
+    }
+    return result;
+}
+
+// One shared-layout struct's contract: the struct name Slang emits it as in
+// compiled SPIR-V, paired with { emitted member name -> offsetof(HostType,
+// member) }. ArrayStride/MatrixStride are deliberately not checked here -
+// those live on OpDecorate of the pointer/array types, not OpMemberDecorate
+// of the struct, and need type-id chasing this pass does not do; that is a
+// scope decision, not an oversight.
+struct SpirvStructContract
+{
+    std::string spirv_name;
+    std::map<std::string, std::size_t> member_offsets;
+};
+
+// PushConstantSkyBox_std430 deliberately has no entry below: SkyBox.cpp:334,
+// 411 pushes a bare sizeof(uint32_t) with no host struct to compare against.
+std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
+{
+    return {
+        { "SceneUBO_std140",
+          { { "dirLight", offsetof(SceneUBO, dirLight) },
+            { "pcfRadius", offsetof(SceneUBO, pcfRadius) },
+            { "cascadedShadowIntensity", offsetof(SceneUBO, cascadedShadowIntensity) },
+            { "numCascades", offsetof(SceneUBO, numCascades) },
+            { "cascadeSplits", offsetof(SceneUBO, cascadeSplits) },
+            { "cascadeLightSpaceMatrices", offsetof(SceneUBO, cascadeLightSpaceMatrices) },
+            { "view_dir", offsetof(SceneUBO, view_dir) },
+            { "cam_pos", offsetof(SceneUBO, cam_pos) },
+            { "cloudMovementDirection", offsetof(SceneUBO, cloudMovementDirection) },
+            { "cloudMeshScale", offsetof(SceneUBO, cloudMeshScale) },
+            { "cloudMeshOffset", offsetof(SceneUBO, cloudMeshOffset) },
+            { "cloudParameters", offsetof(SceneUBO, cloudParameters) } } },
+        { "GlobalUBO_std140",
+          { { "projection", offsetof(GlobalUBO, projection) },
+            { "view", offsetof(GlobalUBO, view) },
+            { "inv_projection", offsetof(GlobalUBO, inv_projection) },
+            { "inv_view", offsetof(GlobalUBO, inv_view) } } },
+        // skybox.slang re-declares GlobalUBO's four members verbatim under its
+        // own ConstantBuffer name - same host type (GlobalUBO), different
+        // emitted struct name.
+        { "CameraUBO_std140",
+          { { "projection", offsetof(GlobalUBO, projection) },
+            { "view", offsetof(GlobalUBO, view) },
+            { "inv_projection", offsetof(GlobalUBO, inv_projection) },
+            { "inv_view", offsetof(GlobalUBO, inv_view) } } },
+        { "DirectionalLightData_std140",
+          { { "direction", offsetof(DirectionalLightData, direction) },
+            { "color", offsetof(DirectionalLightData, color) } } },
+        { "ObjectDescription_std430",
+          { { "vertex_address", offsetof(ObjectDescription, vertex_address) },
+            { "index_address", offsetof(ObjectDescription, index_address) },
+            { "material_index_address", offsetof(ObjectDescription, material_index_address) },
+            { "material_address", offsetof(ObjectDescription, material_address) },
+            { "texture_offset", offsetof(ObjectDescription, texture_offset) } } },
+        { "ObjMaterial_natural",
+          { { "ambient", offsetof(ObjMaterial, ambient) },
+            { "diffuse", offsetof(ObjMaterial, diffuse) },
+            { "specular", offsetof(ObjMaterial, specular) },
+            { "transmittance", offsetof(ObjMaterial, transmittance) },
+            { "emission", offsetof(ObjMaterial, emission) },
+            { "shininess", offsetof(ObjMaterial, shininess) },
+            { "ior", offsetof(ObjMaterial, ior) },
+            { "dissolve", offsetof(ObjMaterial, dissolve) },
+            { "illum", offsetof(ObjMaterial, illum) },
+            { "textureID", offsetof(ObjMaterial, textureID) },
+            { "alphaCutoff", offsetof(ObjMaterial, alphaCutoff) },
+            { "uv_scale", offsetof(ObjMaterial, uv_scale) },
+            { "uv_offset", offsetof(ObjMaterial, uv_offset) } } },
+        { "Vertex_natural",
+          { { "position", offsetof(Vertex, position) },
+            { "normal", offsetof(Vertex, normal) },
+            { "color", offsetof(Vertex, color) },
+            { "texture_coords", offsetof(Vertex, texture_coords) } } },
+        { "PushConstantRasterizer_std430",
+          { { "model", offsetof(PushConstantRasterizer, model) },
+            { "invModelRows", offsetof(PushConstantRasterizer, invModelRows) },
+            { "objectIndex", offsetof(PushConstantRasterizer, objectIndex) } } },
+        { "PushConstantPathTracing_std430",
+          { { "clearColor", offsetof(PushConstantPathTracing, clearColor) },
+            { "width", offsetof(PushConstantPathTracing, width) },
+            { "height", offsetof(PushConstantPathTracing, height) },
+            { "frame_index", offsetof(PushConstantPathTracing, frame_index) },
+            { "samples_per_pixel", offsetof(PushConstantPathTracing, samples_per_pixel) },
+            { "max_bounces", offsetof(PushConstantPathTracing, max_bounces) } } },
+        { "PushConstantPost_std430",
+          { { "aspect_ratio", offsetof(PushConstantPost, aspect_ratio) },
+            { "clouds_enabled", offsetof(PushConstantPost, clouds_enabled) },
+            { "shadows_enabled", offsetof(PushConstantPost, shadows_enabled) },
+            { "skybox_enabled", offsetof(PushConstantPost, skybox_enabled) } } },
+        { "PushConstantRaytracing_std430",
+          { { "clear_color", offsetof(PushConstantRaytracing, clear_color) } } },
+        { "ShadowPushConstants_std430",
+          // shadow_map.slang names its second field objectIndex, while the
+          // host Kataglyphis::ShadowPushConstants (CascadedShadowMap.ixx)
+          // calls the same field cascadeIndex - CascadedShadowMap.cpp:504
+          // actually passes the flat object index through it
+          // (makeShadowPush(modelMatrix, object_index)), so the field is
+          // genuinely the shader's objectIndex under an older host name.
+          // Keying on the emitted name here checks the two sides agree on
+          // BYTE OFFSET, which is what the GPU actually reads.
+          { { "model", offsetof(ShadowPushConstants, model) },
+            { "objectIndex", offsetof(ShadowPushConstants, cascadeIndex) } } },
+    };
 }
 
 }// namespace
@@ -2045,6 +2256,79 @@ TEST(BuildIntegrity, ProjectSourcesContainNoStrayControlBytes)
       << [&offenders] {
              std::string joined;
              for (const auto &entry : offenders) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+// Every layout contract in this repo used to be a hand-copied number: the
+// SceneUBO_std140.cascadeSplits drift (fixed by SceneUboLayoutUnit's pad
+// member) survived because nothing compared the host offsetof()s against
+// what slangc actually emitted. This test makes the compiled SPIR-V the
+// source of truth: it parses every committed .spv's OpName/OpMemberName/
+// OpMemberDecorate triples and checks each contracted struct's members land
+// at the same byte offset the host struct computes.
+TEST(BuildIntegrity, SharedStructOffsetsMatchTheCompiledSpirv)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path spirv_root = repo_root / "Resources" / "ShadersSlang" / "build" / "spirv";
+    ASSERT_TRUE(fs::exists(spirv_root)) << "missing " << spirv_root.string();
+
+    std::map<std::string, std::map<std::string, uint32_t>> compiled;// union across every .spv
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(spirv_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        if (!it->is_regular_file(error) || it->path().extension() != ".spv") { continue; }
+
+        const auto parsed = parse_spirv_member_offsets(it->path());
+        if (!parsed.has_value()) { continue; }// unreadable/invalid SPIR-V - CompiledShadersAreNotOlderThan* catches that
+
+        for (const auto &[struct_name, members] : *parsed) {
+            for (const auto &[member_name, offset] : members) { compiled[struct_name][member_name] = offset; }
+        }
+    }
+
+    const auto contracts = build_shared_struct_offset_contracts();
+    std::vector<std::string> not_found_in_any_spv;
+    std::vector<std::string> offset_mismatches;
+
+    for (const auto &contract : contracts) {
+        const auto struct_it = compiled.find(contract.spirv_name);
+        if (struct_it == compiled.end()) {
+            not_found_in_any_spv.push_back(contract.spirv_name);
+            continue;
+        }
+
+        for (const auto &[member_name, host_offset] : contract.member_offsets) {
+            const auto member_it = struct_it->second.find(member_name);
+            if (member_it == struct_it->second.end()) {
+                offset_mismatches.push_back(
+                  contract.spirv_name + "." + member_name + ": not emitted as a member by any compiled .spv");
+                continue;
+            }
+            if (member_it->second != host_offset) {
+                offset_mismatches.push_back(contract.spirv_name + "." + member_name + ": compiled SPIR-V offset "
+                  + std::to_string(member_it->second) + " != host offsetof " + std::to_string(host_offset));
+            }
+        }
+    }
+
+    EXPECT_TRUE(not_found_in_any_spv.empty())
+      << not_found_in_any_spv.size()
+      << " struct(s) expected in the compiled SPIR-V were not emitted by ANY .spv under " << spirv_root.string()
+      << " - renamed or deleted shader struct: "
+      << [&not_found_in_any_spv] {
+             std::string joined;
+             for (const auto &entry : not_found_in_any_spv) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    EXPECT_TRUE(offset_mismatches.empty())
+      << offset_mismatches.size() << " host/SPIR-V struct-offset mismatch(es):"
+      << [&offset_mismatches] {
+             std::string joined;
+             for (const auto &entry : offset_mismatches) { joined += "\n  " + entry; }
              return joined;
          }();
 }
