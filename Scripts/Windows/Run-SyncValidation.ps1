@@ -13,6 +13,13 @@ July 2026; in practice nobody re-runs a manual procedure, so this exists to
 make it something a "before touching render passes/barriers/frames-in-flight"
 habit can actually be.
 
+Thin wrapper: the generic driver (staging vk_layer_settings.txt next to the
+executable and removing it again, VK_LAYER_PATH save/restore, running the
+target, scanning the log, reporting hazard counts) lives upstream in
+ExternalLib/Kataglyphis-ContainerHub/windows/scripts/modules/WindowsVulkanValidation.Common.psm1
+and is reusable by any Vulkan project. Only this project's executable, gtest
+filter, SDK path and log location are supplied here.
+
 Deliberately NOT wired into CI: the GoldenRender/Integration suites need a
 GPU and skip everywhere except a host with one (see docs/gpu-golden-testing.md),
 so a CI gate here would be vacuous. Run it locally instead, the same way
@@ -49,45 +56,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-function Get-SyncHazardLines {
-    param(
-        [Parameter(Mandatory)]
-        [string]$LogPath
-    )
-
-    if (-not (Test-Path $LogPath)) {
-        throw "Log file not found at '$LogPath'."
-    }
-
-    return @(Select-String -Path $LogPath -Pattern 'SYNC-HAZARD' -SimpleMatch -ErrorAction SilentlyContinue)
-}
-
-function Write-HazardReport {
-    param(
-        [Parameter(Mandatory)]
-        [array]$HazardLines,
-        [Parameter(Mandatory)]
-        [string]$LogPath
-    )
-
-    Write-Host ''
-    Write-Host "=== SYNCHRONIZATION HAZARDS DETECTED ($($HazardLines.Count)) ===" -ForegroundColor Red
-    foreach ($line in $HazardLines) {
-        Write-Host "  $($line.Line.Trim())" -ForegroundColor Red
-    }
-    Write-Host "Full log: $LogPath" -ForegroundColor Red
-}
+. (Join-Path $PSScriptRoot 'Resolve-BuildModule.ps1')
+Import-BuildModule @('WindowsVulkanValidation.Common')
 
 # Test-only path: evaluate a canned log instead of running the GPU suite, so
 # the pass/fail contract is verifiable on a machine (or in CI) with no GPU.
 if ($LogFixturePath) {
-    $hazards = Get-SyncHazardLines -LogPath $LogFixturePath
-    if ($hazards.Count -gt 0) {
-        Write-HazardReport -HazardLines $hazards -LogPath $LogFixturePath
-        exit 1
-    }
-    Write-Host '=== NO SYNCHRONIZATION HAZARDS DETECTED ===' -ForegroundColor Green
-    exit 0
+    if (Test-VulkanValidationLog -LogPath $LogFixturePath) { exit 0 }
+    exit 1
 }
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -120,42 +96,20 @@ if (-not (Test-Path $LogDir)) {
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $logPath = Join-Path $LogDir "$timestamp.log"
 
-# The loader reads vk_layer_settings.txt from the CWD or from the directory
-# containing the executable - copy next to the executable so this works
-# regardless of where the caller runs the exe from.
-$settingsDest = Join-Path (Split-Path $ExecutablePath -Parent) 'vk_layer_settings.txt'
-Copy-Item -Path $settingsSource -Destination $settingsDest -Force
+# Resources/ (shaders, models, textures) is loaded via CWD-relative paths -
+# must run from the repo root regardless of where the exe lives
+# (docs/gpu-golden-testing.md).
+Invoke-VulkanValidationRun -ExecutablePath $ExecutablePath `
+    -Arguments @("--gtest_filter=$GtestFilter") `
+    -WorkingDirectory $repoRoot `
+    -LogPath $logPath `
+    -LayerPath $VulkanSdkBin `
+    -SettingsPath $settingsSource
+$exitCode = $LASTEXITCODE
 
-$originalLayerPath = $env:VK_LAYER_PATH
-$exitCode = 0
-try {
-    $env:VK_LAYER_PATH = $VulkanSdkBin
-
-    # Resources/ (shaders, models, textures) is loaded via CWD-relative
-    # paths - must run from the repo root regardless of where the exe lives
-    # (docs/gpu-golden-testing.md).
-    Push-Location $repoRoot
-    try {
-        Write-Host "Running $ExecutablePath --gtest_filter='$GtestFilter' with khronos_validation.validate_sync=true" -ForegroundColor Cyan
-        & $ExecutablePath "--gtest_filter=$GtestFilter" 2>&1 | Tee-Object -FilePath $logPath
-        $exitCode = $LASTEXITCODE
-    } finally {
-        Pop-Location
-    }
-} finally {
-    if ($null -ne $originalLayerPath) {
-        $env:VK_LAYER_PATH = $originalLayerPath
-    } else {
-        Remove-Item Env:\VK_LAYER_PATH -ErrorAction SilentlyContinue
-    }
-    # Never leave a copy lying around next to the binary - it would silently
-    # enable (expensive) sync validation on every later, unrelated run.
-    Remove-Item -Path $settingsDest -Force -ErrorAction SilentlyContinue
-}
-
-$hazards = Get-SyncHazardLines -LogPath $logPath
+$hazards = @(Get-VulkanValidationHazard -LogPath $logPath)
 if ($hazards.Count -gt 0) {
-    Write-HazardReport -HazardLines $hazards -LogPath $logPath
+    Write-VulkanValidationReport -Hazard $hazards -LogPath $logPath
     exit 1
 }
 

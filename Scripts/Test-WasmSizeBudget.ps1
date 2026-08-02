@@ -9,12 +9,13 @@
 #
 # Prerequisites:
 #   - Rust toolchain with wasm32-unknown-unknown target
-#   - binaryen (wasm-opt) on PATH
+#   - binaryen (wasm-opt) - bootstrapped automatically from the pin in
+#     ContainerHub's versions.env when it is not already on PATH
 #
 # Install wasm target:
 #   rustup target add wasm32-unknown-unknown
 #
-# Install binaryen (wasm-opt):
+# Install binaryen (wasm-opt) yourself if you prefer a system copy:
 #   winget install binaryen          # Windows
 #   brew install binaryen            # macOS
 #   sudo apt install binaryen        # Linux
@@ -58,39 +59,13 @@ if (-not $hasWasmTarget) {
     exit 1
 }
 
-$hasWasmOpt = $false
-try {
-    $null = Get-Command wasm-opt -ErrorAction Stop
-    $hasWasmOpt = $true
-} catch { }
-
-if (-not $hasWasmOpt) {
-    # Bootstrap a pinned binaryen instead of failing - parity with
-    # Scripts/Linux/wasm-size-budget.sh, which fetches the same release
-    # SHA-verified. Uses ContainerHub's Invoke-DownloadWithRetry.
-    $binaryenVersion = 'version_131'
-    $binaryenAsset = "binaryen-${binaryenVersion}-x86_64-windows.tar.gz"
-    $binaryenSha256 = '2f4edac1703a2f695254d6ff52ede03481e67db1f094915763d863158c17d9bc'
-    Write-Host "wasm-opt not on PATH; fetching pinned binaryen $binaryenVersion" -ForegroundColor Yellow
-
-    . (Join-Path $PSScriptRoot 'Windows\Resolve-BuildModule.ps1')
-    Import-BuildModule @('WindowsScripts.Shared')
-
-    $binaryenDir = Join-Path ([System.IO.Path]::GetTempPath()) "binaryen-$binaryenVersion"
-    $archivePath = Join-Path ([System.IO.Path]::GetTempPath()) $binaryenAsset
-    if (-not (Test-Path (Join-Path $binaryenDir 'bin\wasm-opt.exe'))) {
-        Invoke-DownloadWithRetry -Url "https://github.com/WebAssembly/binaryen/releases/download/$binaryenVersion/$binaryenAsset" -DestinationPath $archivePath
-        $actualSha = (Get-FileHash -Algorithm SHA256 $archivePath).Hash.ToLowerInvariant()
-        if ($actualSha -ne $binaryenSha256) {
-            Remove-Item $archivePath -Force
-            throw "binaryen download checksum mismatch: expected $binaryenSha256, got $actualSha"
-        }
-        tar -xzf $archivePath -C ([System.IO.Path]::GetTempPath())
-        Remove-Item $archivePath -Force
-    }
-    $env:PATH = (Join-Path $binaryenDir 'bin') + ';' + $env:PATH
-    $null = Get-Command wasm-opt -ErrorAction Stop
-}
+# Bootstrap a pinned, SHA-verified binaryen instead of failing when wasm-opt is
+# missing - parity with Scripts/Linux/wasm-size-budget.sh, which fetches the
+# same release from the same pin. Both read version + checksums from
+# ContainerHub's linux/scripts/01-core/versions.env.
+. (Join-Path $PSScriptRoot 'Windows\Resolve-BuildModule.ps1')
+Import-BuildModule @('WindowsWasmOpt.Common')
+$null = Install-WasmOpt
 
 # ---- Build ----
 if (-not $SkipBuild) {
@@ -122,25 +97,10 @@ Write-Host "Pre-opt size: $preSize bytes ($([math]::Round($preSize / 1KB, 1)) Ki
 # ---- Optimise with wasm-opt ----
 Write-Host '== Running wasm-opt -Oz ==' -ForegroundColor Cyan
 $optFile = $wasmFile -replace '\.wasm$', '.opt.wasm'
-# Enable required WebAssembly features (wgpu/naga emits bulk-memory,
-# nontrapping-float-to-int, sign-extension, and simd instructions).
-# The flag names are taken from wasm-opt validator error messages.
-wasm-opt -Oz `
-    --enable-bulk-memory-opt `
-    --enable-nontrapping-float-to-int `
-    --enable-simd `
-    --enable-sign-ext `
-    --enable-reference-types `
-    --enable-mutable-globals `
-    --enable-multivalue `
-    $wasmFile -o $optFile
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "wasm-opt with explicit feature flags failed. Retrying with --all-features..." -ForegroundColor Yellow
-    wasm-opt -Oz --all-features $wasmFile -o $optFile
-    if ($LASTEXITCODE -ne 0) {
-        throw "wasm-opt failed (exit code $LASTEXITCODE)."
-    }
-}
+# Invoke-WasmOpt supplies the required WebAssembly feature flags (wgpu/naga
+# emits bulk-memory, nontrapping-float-to-int, sign-extension and simd
+# instructions) and the --all-features retry.
+Invoke-WasmOpt -InputPath $wasmFile -OutputPath $optFile -OptimizationLevel '-Oz'
 
 $optSize = (Get-Item $optFile).Length
 Write-Host "Post-opt size: $optSize bytes ($([math]::Round($optSize / 1KB, 1)) KiB)" -ForegroundColor Cyan
