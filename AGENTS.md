@@ -269,6 +269,7 @@ wrapper only supplies this project's payload.
 | `Scripts/Linux/run_static_analysis_format.sh` | `linux/scripts/lib/code-quality.sh` |
 | `Scripts/Linux/build-coverage-{gcovr,llvm}.sh` | `linux/scripts/lib/coverage.sh` |
 | `Scripts/Linux/wasm-size-budget.sh` / `Scripts/Test-WasmSizeBudget.ps1` | `linux/scripts/lib/wasm-opt.sh` / `windows/scripts/modules/WindowsWasmOpt.Common.psm1` |
+| `Scripts/Linux/run-cargo-tests.sh` | `linux/scripts/02-toolchain/rust/cargo_test.sh` |
 | `Scripts/Windows/Run-SyncValidation.ps1` | `windows/scripts/modules/WindowsVulkanValidation.Common.psm1` |
 | `Scripts/AgenticLoop/Run-AgenticLoop.{ps1,sh}` | `windows/scripts/modules/WindowsAgenticLoop.Common.psm1` / `linux/scripts/lib/agentic-loop.sh` |
 
@@ -436,6 +437,14 @@ Reading pipeline status from a shell (`gh`):
 `Linux_x86.yml` and `Linux_arm.yml` both call the reusable `Linux.yml`, so a fix
 to the x86 lane applies to ARM automatically. No CI lane has a GPU — the golden
 and synchronization suites are host-only by construction.
+
+The `ubuntu-24.04` leg of the Linux lane also runs the Rust renderer crate's
+own test suite (`Scripts/Linux/run-cargo-tests.sh`, `cargo test -p
+kataglyphis_webgpu_renderer`) after the performance benchmarks step. Before
+this, the crate was compiled twice in this repo (the Rust bridge and the wasm
+demo) but its ~150 tests only ran in `Kataglyphis-RustProjectTemplate`'s own
+workflow — so edits made to `crates/webgpu_renderer` from this working tree
+got no test signal until the submodule was pushed separately.
 
 ## Code Conventions (C++ engine)
 

@@ -4533,42 +4533,6 @@ loop already `continue`s before allocating for non-matching primitives, so the
 measured cost is a few thousand comparisons per frame on any realistic scene;
 not worth a task until something measures it.
 
-- [ ] **(S) Run the Rust renderer's own test suite from this repo — CI never does** — `grep -i cargo .github/workflows/` returns only the wasm size budget.
-
-  **Files to read:**
-  - `.github/workflows/Linux.yml:259-286` — the "Run performance benchmarks" and "Enforce wasm demo size budget" steps; the new step goes alongside them and uses the same `Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main` action.
-  - `Scripts/Linux/wasm-size-budget.sh:30-45` — the wrapper shape to copy (`REPO_ROOT`, `RUST_PROJECT_DIR`, `CARGO_TARGET_DIR=target`, `( cd "${RUST_PROJECT_DIR}" && cargo ... )`).
-  - `ExternalLib/Kataglyphis-ContainerHub/linux/scripts/02-toolchain/rust/cargo_test.sh` — the upstream driver. Delegate to it; do **not** copy its body (AGENTS.md § Rule: Reusable Work Belongs in ContainerHub).
-  - `ExternalLib/Kataglyphis-RustProjectTemplate/.github/workflows/rust_ubuntu24_04.yml:127-140` — how upstream invokes it, including the `-e CARGO_HOME=/tmp/cargo-home` override (the image ships a root-owned `CARGO_HOME` and the container runs as uid 1001).
-  - `AGENTS.md` § "What CI runs, and what it does not" and the wrapper-map table.
-
-  **Steps:**
-  1. Add `Scripts/Linux/run-cargo-tests.sh` as a thin wrapper: resolve `REPO_ROOT`, default `RUST_PROJECT_DIR` to `ExternalLib/Kataglyphis-RustProjectTemplate`, export `CARGO_TARGET_DIR=target` and a writable `CARGO_HOME`, then delegate to ContainerHub's `cargo_test.sh` with a package filter of `kataglyphis_webgpu_renderer`. If the upstream script takes no package argument, extend it upstream rather than forking it here (both repos ship together, ContainerHub first).
-  2. Add a `Run Rust renderer tests` step to `.github/workflows/Linux.yml` after the perf-benchmark step, guarded with `if: ${{ inputs.runner == 'ubuntu-24.04' }}` so the ARM lane does not pay for it, and with `log-file: output.log` like its neighbours.
-  3. Update the wrapper-map table and the "What CI runs" section in `AGENTS.md` in the same change.
-
-  **Test:** the step is the test. Every GPU-touching test in the crate already
-  self-skips — `crates/webgpu_renderer/tests/headless.rs`, `ibl.rs`,
-  `occlusion.rs` and `gpu_timing.rs` print `SKIP: no GPU adapter available in
-  this environment` and return — so a GPU-less runner exercises the CPU tests
-  and skips the rest. Run it locally first under Rancher (AGENTS.md § Running
-  the Linux build locally: pass a `--build-dir` outside the bind mount and a
-  named-volume cargo cache), record the wall time in the commit message, and
-  if it exceeds ~5 minutes narrow the step to `--lib` plus the pure test
-  targets rather than dropping it.
-
-  **Build:** no C++ build. `bash -n Scripts/Linux/run-cargo-tests.sh`, then the
-  local container run above. Push with `[build-arm]` omitted — the x86 lane
-  runs on every push.
-
-  **Context:** this repo's Linux lane compiles the crate twice (the Rust bridge
-  during the C++ build, and wasm for the demo) and runs none of its ~150
-  tests. Upstream's own workflow does run them, but the agentic loop edits
-  `crates/webgpu_renderer` from *this* working tree — those edits get no signal
-  here until RustProjectTemplate is pushed separately, which is exactly the
-  window in which the recent glTF, SSAO, exposure and LOD fixes were made. Do
-  not duplicate upstream's fmt/clippy/audit steps; tests only.
-
 - [ ] **(S) A skybox whose faces fail to load hands `vkCreatePipelineLayout` a null descriptor-set layout** — running the binary from the wrong working directory turns a missing texture into a crash.
 
   **Files to read:**

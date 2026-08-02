@@ -263,6 +263,19 @@ jobs:
           script: bash ./Scripts/Linux/run-perf-suite.sh "${{ env.BUILD_DIR }}"
           log-file: output.log
 
+      # The Rust bridge and the wasm demo are both compiled from this crate
+      # elsewhere in this lane, but neither run its ~150 tests - this is the
+      # only place in this repo that does. GPU-touching tests self-skip
+      # without an adapter (see Scripts/Linux/run-cargo-tests.sh). ARM does
+      # not pay for a second run of the same crate's CPU-only tests.
+      - name: Run Rust renderer tests
+        if: ${{ inputs.runner == 'ubuntu-24.04' }}
+        uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-linux-container@main
+        with:
+          image: ${{ env.CONTAINER_IMAGE }}
+          script: bash ./Scripts/Linux/run-cargo-tests.sh
+          log-file: output.log
+
       #################################################################################################################
       ######################################## Build docs #############################################################
       #################################################################################################################
