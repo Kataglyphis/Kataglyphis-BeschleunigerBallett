@@ -9,8 +9,9 @@ namespace Kataglyphis {
 // Error checking on vulkan function calls. The project builds with
 // exceptions disabled (/EHs-, VULKAN_HPP_NO_EXCEPTIONS), so the fail-fast
 // primitive is abort(): a failed creation call must not continue into a
-// null-handle dereference. Every current call site is a creation/
-// allocation; none tolerates non-success.
+// null-handle dereference. Also used on a handful of query calls whose
+// result feeds a decision with no safe fallback (e.g. surface capabilities
+// sizing a swapchain) - none of those tolerate non-success either.
 #define ASSERT_VULKAN(val, error_string) \
     if (static_cast<vk::Result>(val) != vk::Result::eSuccess) { \
         spdlog::critical(error_string); \

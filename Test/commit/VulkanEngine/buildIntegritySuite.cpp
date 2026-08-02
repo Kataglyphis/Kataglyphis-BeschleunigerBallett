@@ -2109,17 +2109,13 @@ struct AllowlistEntry
     std::string marker;
 };
 
-const std::vector<AllowlistEntry> kCheckedResultAllowlist = {
-    // Already fatal: spdlog::critical + std::abort() a few lines above,
-    // just not spelled with the ASSERT_VULKAN macro (the message embeds the
-    // numeric vk::Result, which the macro's fixed string cannot).
-    { "vulkan_base/ShaderHelper.cpp", "already-fatal-abort-above" },
-    // Deliberately non-fatal: cloud noise generation is a one-shot compute
-    // dispatch. If the transient command pool fails to create, the dispatch
-    // is skipped (logged) rather than aborting the whole renderer over an
-    // atmospheric effect.
-    { "scene/atmospheric_effects/clouds/Clouds.cpp", "noise-dispatch-skip-on-failure" },
-};
+// Both former entries here (ShaderHelper.cpp's already-fatal-abort-above and
+// Clouds.cpp's noise-dispatch-skip-on-failure) became dead once the ".result"
+// check in the ±8-line window was accepted as satisfying the gate on its own
+// (see VulkanCreationResultsAreChecked below): each site's explicit
+// `if (x.result != ...)` a few lines above its `.value` read already
+// satisfies the gate without a special-case exemption.
+const std::vector<AllowlistEntry> kCheckedResultAllowlist = {};
 
 const std::string kUncheckedResultMarkerPrefix = "UNCHECKED_VULKAN_RESULT_OK: ";
 
@@ -2173,6 +2169,33 @@ bool looks_like_creation_call(const std::string &line)
     return false;
 }
 
+// Same shape as looks_like_creation_call, keyed on the query verbs instead
+// of the creation/allocation ones. `enumeratePhysicalDevices`,
+// `getSurfaceCapabilitiesKHR` and friends return a vk::ResultValue exactly
+// like a create*/allocate* call does, but the naming-based gate above never
+// saw them - every surface and enumeration query silently slipped past it.
+bool looks_like_query_call(const std::string &line)
+{
+    static const std::vector<std::string> keywords = { "get", "Get", "enumerate", "Enumerate" };
+    for (const auto &keyword : keywords) {
+        std::size_t pos = 0;
+        while ((pos = line.find(keyword, pos)) != std::string::npos) {
+            const bool left_ok = pos == 0 || !is_identifier_char(line[pos - 1]);
+            const std::size_t after_keyword = pos + keyword.size();
+            const bool camel_case_continuation =
+              after_keyword < line.size() && std::isupper(static_cast<unsigned char>(line[after_keyword])) != 0;
+            if (left_ok && camel_case_continuation) {
+                std::size_t scan = after_keyword;
+                while (scan < line.size() && is_identifier_char(line[scan])) { ++scan; }
+                while (scan < line.size() && std::isspace(static_cast<unsigned char>(line[scan])) != 0) { ++scan; }
+                if (scan < line.size() && line[scan] == '(') { return true; }
+            }
+            pos += keyword.size();
+        }
+    }
+    return false;
+}
+
 }// namespace
 
 // The instance-extension check used to detect a missing extension, log it,
@@ -2192,6 +2215,12 @@ bool looks_like_creation_call(const std::string &line)
 // with ASSERT_VULKAN in the `else`, which is a few lines *below* the read.
 TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
 {
+    // Self-verifying floor: assert the widened matcher actually fires before
+    // relying on it below, so a future edit that neuters it fails loudly
+    // instead of quietly reporting zero violations forever.
+    EXPECT_TRUE(looks_like_query_call("  auto x = d.getSurfaceFormatsKHR(*s).value;"));
+    EXPECT_FALSE(looks_like_query_call("  auto x = getter(y).value;"));
+
     const fs::path repo_root = find_repo_root();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
@@ -2222,8 +2251,16 @@ TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
             bool triggered = false;
             bool asserted = false;
             for (std::size_t w = window_begin; w <= window_end; ++w) {
-                if (w <= i && looks_like_creation_call(lines[w])) { triggered = true; }
+                if (w <= i && (looks_like_creation_call(lines[w]) || looks_like_query_call(lines[w]))) {
+                    triggered = true;
+                }
                 if (lines[w].find("ASSERT_VULKAN") != std::string::npos) { asserted = true; }
+                // A query (unlike a creation/allocation call) is legitimately
+                // handled with an explicit `if (x.result != ...)` rather than
+                // an abort. Exclude the .value line itself so an unrelated
+                // ".result" mention there cannot retroactively satisfy a
+                // check that was never actually performed.
+                if (w != i && lines[w].find(".result") != std::string::npos) { asserted = true; }
             }
             if (!triggered || asserted) { continue; }
 
@@ -2240,10 +2277,11 @@ TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
 
     EXPECT_TRUE(violations.empty())
       << violations.size()
-      << " Vulkan creation/allocation result(s) read via .value with no ASSERT_VULKAN nearby "
-         "(exceptions are disabled project-wide, so a failed creation call must abort rather than "
-         "continue into a null-handle dereference; add ASSERT_VULKAN, or for a deliberate exception "
-         "add a \"// UNCHECKED_VULKAN_RESULT_OK: <marker>\" comment on the line and a justified entry "
+      << " Vulkan creation/allocation/query result(s) read via .value with no ASSERT_VULKAN and no "
+         "\".result\" check nearby (exceptions are disabled project-wide, so a failed call must either "
+         "abort via ASSERT_VULKAN or be handled explicitly via an `if (x.result != ...)` check rather "
+         "than continue with a silently default/empty value; or, for a deliberate exception, add a "
+         "\"// UNCHECKED_VULKAN_RESULT_OK: <marker>\" comment on the line and a justified entry "
          "to kCheckedResultAllowlist above):"
       << [&violations] {
              std::string joined;

@@ -163,7 +163,8 @@ void Kataglyphis::VulkanDevice::save_and_destroy_pipeline_cache()
     if (!pipeline_cache) { return; }
 
     auto cache_data = logical_device.getPipelineCacheData(pipeline_cache);
-    if (cache_data.result == vk::Result::eSuccess && !cache_data.value.empty()) {
+    const bool cache_data_ok = cache_data.result == vk::Result::eSuccess;
+    if (cache_data_ok && !cache_data.value.empty()) {
         const std::filesystem::path cache_file = pipelineCacheFilePath();
         std::error_code dir_error;
         std::filesystem::create_directories(cache_file.parent_path(), dir_error);
@@ -202,7 +203,9 @@ void Kataglyphis::VulkanDevice::get_physical_device()
     const GpuSelectionMode selection_mode = parseGpuSelectionMode(readGpuSelectionFromEnvironment());
 
     // Enumerate physical devices the vkInstance can access
-    std::vector<vk::PhysicalDevice> device_list = instance->getVulkanInstance().enumeratePhysicalDevices().value;
+    auto physical_devices_result = instance->getVulkanInstance().enumeratePhysicalDevices();
+    ASSERT_VULKAN(physical_devices_result.result, "Failed to enumerate Vulkan physical devices!");
+    std::vector<vk::PhysicalDevice> device_list = physical_devices_result.value;
 
     // if no devices available, then none support of Vulkan
     if (device_list.empty()) { spdlog::error("Can not find GPU's that support Vulkan Instance!"); }
@@ -383,8 +386,14 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     std::vector<const char *> extensions(device_extensions);
 
     // Query available extensions for the physical device
-    std::vector<vk::ExtensionProperties> availableExtensions =
-      physical_device.enumerateDeviceExtensionProperties().value;
+    auto available_extensions_result = physical_device.enumerateDeviceExtensionProperties();
+    if (available_extensions_result.result != vk::Result::eSuccess) {
+        spdlog::warn("vkEnumerateDeviceExtensionProperties failed for device '{}' (result {}); treating as no "
+                     "supported extensions.",
+          device_properties.deviceName.data(),
+          static_cast<int>(available_extensions_result.result));
+    }
+    std::vector<vk::ExtensionProperties> availableExtensions = available_extensions_result.value;
 
     const bool hasBufferDeviceAddressFeature = available_features12.bufferDeviceAddress == VK_TRUE;
     deviceSupportsBufferDeviceAddress = hasBufferDeviceAddressFeature;
@@ -560,8 +569,12 @@ auto Kataglyphis::VulkanDevice::getQueueFamilies(vk::PhysicalDevice selectedPhys
             indices.compute_family = static_cast<int>(index);
         }
 
-        // check if queue family suppports presentation
-        vk::Bool32 presentation_support = selectedPhysicalDevice.getSurfaceSupportKHR(index, *surface).value;
+        // check if queue family suppports presentation. A failed query must
+        // not silently read as "no presentation support", which would fail
+        // device selection with a misleading message.
+        auto presentation_support_result = selectedPhysicalDevice.getSurfaceSupportKHR(index, *surface);
+        ASSERT_VULKAN(presentation_support_result.result, "Failed to query surface presentation support!");
+        vk::Bool32 presentation_support = presentation_support_result.value;
         // check if queue is presentation type (can be both graphics and
         // presentation)
         if (queue_family.queueCount > 0 && presentation_support) {
@@ -581,15 +594,35 @@ auto Kataglyphis::VulkanDevice::getSwapchainDetails(vk::PhysicalDevice device)
   -> Kataglyphis::VulkanRendererInternals::SwapChainDetails
 {
     Kataglyphis::VulkanRendererInternals::SwapChainDetails swapchain_details{};
-    // get the surface capabilities for the given surface on the given physical
-    // device
-    swapchain_details.surface_capabilities = device.getSurfaceCapabilitiesKHR(*surface).value;
+
+    // get the surface capabilities for the given surface on the given
+    // physical device. Not recoverable: the caller sizes the swapchain
+    // directly from this, and a default-constructed SurfaceCapabilitiesKHR
+    // (zero extents, zero image counts) would silently build a zero-sized
+    // swapchain instead of failing loudly.
+    auto surface_capabilities_result = device.getSurfaceCapabilitiesKHR(*surface);
+    ASSERT_VULKAN(surface_capabilities_result.result, "Failed to query surface capabilities!");
+    swapchain_details.surface_capabilities = surface_capabilities_result.value;
 
     // get list of formats
-    swapchain_details.formats = device.getSurfaceFormatsKHR(*surface).value;
+    auto formats_result = device.getSurfaceFormatsKHR(*surface);
+    if (formats_result.result != vk::Result::eSuccess) {
+        spdlog::warn("vkGetPhysicalDeviceSurfaceFormatsKHR failed for device '{}' (result {}); treating as no "
+                     "supported formats.",
+          device.getProperties().deviceName.data(),
+          static_cast<int>(formats_result.result));
+    }
+    swapchain_details.formats = formats_result.value;
 
     // get list of presentation modes
-    swapchain_details.presentation_mode = device.getSurfacePresentModesKHR(*surface).value;
+    auto presentation_modes_result = device.getSurfacePresentModesKHR(*surface);
+    if (presentation_modes_result.result != vk::Result::eSuccess) {
+        spdlog::warn("vkGetPhysicalDeviceSurfacePresentModesKHR failed for device '{}' (result {}); treating as no "
+                     "supported presentation modes.",
+          device.getProperties().deviceName.data(),
+          static_cast<int>(presentation_modes_result.result));
+    }
+    swapchain_details.presentation_mode = presentation_modes_result.value;
 
     return swapchain_details;
 }
@@ -614,7 +647,14 @@ auto Kataglyphis::VulkanDevice::check_device_suitable(vk::PhysicalDevice device)
 
 auto Kataglyphis::VulkanDevice::check_device_extension_support(vk::PhysicalDevice device) -> bool
 {
-    std::vector<vk::ExtensionProperties> extensions = device.enumerateDeviceExtensionProperties().value;
+    auto extensions_result = device.enumerateDeviceExtensionProperties();
+    if (extensions_result.result != vk::Result::eSuccess) {
+        spdlog::warn("vkEnumerateDeviceExtensionProperties failed for device '{}' (result {}); treating as no "
+                     "supported extensions.",
+          device.getProperties().deviceName.data(),
+          static_cast<int>(extensions_result.result));
+    }
+    std::vector<vk::ExtensionProperties> extensions = extensions_result.value;
 
     return firstMissingExtension(extensions, device_extensions) == nullptr;
 }

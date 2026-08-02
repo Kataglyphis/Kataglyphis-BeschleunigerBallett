@@ -35,7 +35,7 @@ auto createShaderModuleFromBytes(const std::shared_ptr<Kataglyphis::VulkanDevice
         std::abort();
     }
 
-    return shader_module_result.value;// UNCHECKED_VULKAN_RESULT_OK: already-fatal-abort-above
+    return shader_module_result.value;
 }
 
 }// namespace
