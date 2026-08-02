@@ -11,6 +11,7 @@
 
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 #include "common/FormatHelper.hpp"
+#include "common/ViewportHelper.hpp"
 #include "common/Utilities.hpp"
 
 module kataglyphis.vulkan.deferred_rasterizer;
@@ -399,11 +400,13 @@ void DeferredRasterizer::createFramebuffer()
 
 void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Kataglyphis::Scene *scene, std::span<const vk::DescriptorSet> descriptorSets, const std::optional<FrustumPlanes> &cameraFrustum)
 {
+    const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
+
     vk::RenderPassBeginInfo renderPassInfo{};
     renderPassInfo.renderPass = renderPass;
     renderPassInfo.framebuffer = framebuffer[image_index];
     renderPassInfo.renderArea.offset = vk::Offset2D{0, 0};
-    renderPassInfo.renderArea.extent = vulkanSwapChain->getSwapChainExtent();
+    renderPassInfo.renderArea.extent = swap_chain_extent;
 
     std::array<vk::ClearValue, 5> clearValues{};
     clearValues[0].color = vk::ClearColorValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 0.0f}};
@@ -417,19 +420,7 @@ void DeferredRasterizer::recordCommands(vk::CommandBuffer &commandBuffer, uint32
 
     commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 
-    vk::Viewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<float>(vulkanSwapChain->getSwapChainExtent().width);
-    viewport.height = static_cast<float>(vulkanSwapChain->getSwapChainExtent().height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    commandBuffer.setViewport(0, 1, &viewport);
-
-    vk::Rect2D scissor{};
-    scissor.offset = vk::Offset2D{ 0, 0 };
-    scissor.extent = vulkanSwapChain->getSwapChainExtent();
-    commandBuffer.setScissor(0, 1, &scissor);
+    setFullExtentViewportAndScissor(commandBuffer, swap_chain_extent);
 
     // Subpass 0: Geometry
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, geometryPipeline);

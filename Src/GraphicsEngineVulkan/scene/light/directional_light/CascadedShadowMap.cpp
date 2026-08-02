@@ -14,6 +14,7 @@ module;
 #include <glm/ext/matrix_clip_space.hpp>
 #include "common/FormatHelper.hpp"
 #include "common/Utilities.hpp"
+#include "common/ViewportHelper.hpp"
 #include "renderer/SceneUBO.hpp"
 
 module kataglyphis.vulkan.cascaded_shadow_map;
@@ -460,19 +461,7 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
     commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
 
-    vk::Viewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<float>(shadowWidth);
-    viewport.height = static_cast<float>(shadowHeight);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    commandBuffer.setViewport(0, viewport);
-
-    vk::Rect2D scissor{};
-    scissor.offset = vk::Offset2D{0, 0};
-    scissor.extent = vk::Extent2D{shadowWidth, shadowHeight};
-    commandBuffer.setScissor(0, scissor);
+    setFullExtentViewportAndScissor(commandBuffer, vk::Extent2D{ shadowWidth, shadowHeight });
 
     // set 0 = the shared render set passed in (materials/textures/object
     // descriptions, for the fragment alpha test); set 1 = this pass's light

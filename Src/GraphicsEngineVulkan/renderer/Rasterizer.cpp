@@ -13,6 +13,7 @@
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 
 #include "common/FormatHelper.hpp"
+#include "common/ViewportHelper.hpp"
 
 #include "common/Utilities.hpp"
 
@@ -83,19 +84,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recordCommands(vk::Comman
 
     commandBuffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
 
-    vk::Viewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<float>(swap_chain_extent.width);
-    viewport.height = static_cast<float>(swap_chain_extent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    commandBuffer.setViewport(0, 1, &viewport);
-
-    vk::Rect2D scissor{};
-    scissor.offset = vk::Offset2D{ 0, 0 };
-    scissor.extent = swap_chain_extent;
-    commandBuffer.setScissor(0, 1, &scissor);
+    setFullExtentViewportAndScissor(commandBuffer, swap_chain_extent);
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphics_pipeline);
     // The set is identical for every mesh: bind once, not per draw.

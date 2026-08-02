@@ -13,6 +13,7 @@ module;
 #include "shared/scene/ObjMaterial.hpp"
 
 #include "common/Utilities.hpp"
+#include "common/ViewportHelper.hpp"
 #include "scene/sky_box/CubemapFaces.hpp"
 
 module kataglyphis.vulkan.sky_box;
@@ -399,19 +400,7 @@ void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_ind
 
     commandBuffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
 
-    vk::Viewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<float>(framebufferWidth);
-    viewport.height = static_cast<float>(framebufferHeight);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    commandBuffer.setViewport(0, 1, &viewport);
-
-    vk::Rect2D scissor{};
-    scissor.offset = vk::Offset2D{ 0, 0 };
-    scissor.extent = vk::Extent2D{ framebufferWidth, framebufferHeight };
-    commandBuffer.setScissor(0, 1, &scissor);
+    setFullExtentViewportAndScissor(commandBuffer, vk::Extent2D{ framebufferWidth, framebufferHeight });
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
 
