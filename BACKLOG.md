@@ -4478,58 +4478,6 @@ derivation and the degenerate-plane guards are all correct and documented in
 place; **18 source files carrying a UTF-8 BOM** — re-checked, still cosmetic,
 still diff noise (batch VI rejected this for the same reason).
 
-### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
-
-- [ ] **(S) Reject out-of-range indices in the Rust glTF loader instead of panicking on them** — the same gap as task 3, in the loader that backs the public WASM demo, where a panic is an abort with no message.
-
-  **Files to read:**
-  - `crates/webgpu_renderer/src/asset/gltf_loader.rs:502-518` — `raw_indices`
-    from `reader.read_indices()`, `triangulate`, then `compute_flat_normals` and
-    `compute_tangents` on the result. Nothing between them checks index values.
-  - `:638-649` — `compute_flat_normals` indexes `vertices[i0]` directly; `:666+`
-    — `compute_tangents` does the same; `:747-766` — the MikkTSpace adapter's
-    `self.indices[face * 3 + vert] as usize` is used as a vertex index too.
-  - `:203-228` — `triangulate`, which already handles degenerate input with
-    `saturating_sub` and has a test pinning it.
-  - `:835-857` — the in-file `mod tests` and
-    `strips_and_fans_expand_to_triangle_lists`, the unit-test shape to follow.
-
-  **Steps:**
-  1. Add `fn drop_out_of_range_triangles(indices: Vec<u32>, vertex_count: usize) -> (Vec<u32>, usize)`
-     next to `triangulate`, returning the surviving triangle-list indices and
-     the dropped-triangle count. Operate on `chunks_exact(3)` so a bad corner
-     drops its whole triangle and the list stays a multiple of 3.
-  2. Call it immediately after `triangulate` at `:510`, before
-     `compute_flat_normals` / `compute_tangents` / the MikkTSpace path — all
-     three consume `indices` and all three would panic.
-  3. `log::warn!` once per primitive when the count is non-zero, naming the
-     primitive and the vertex count. Do not log per triangle.
-  4. Check whether any per-triangle side table (material ids, morph-target
-     bookkeeping) is derived from `indices.len() / 3` downstream of `:510`; if
-     so it must be built from the filtered list, not the raw one.
-
-  **Test:** Add to the in-file `mod tests`:
-  `out_of_range_indices_drop_their_triangle` — a 6-index list over 3 vertices
-  where the second triangle references vertex 7, asserting 3 indices survive, a
-  dropped count of 1, and that `compute_flat_normals` over the filtered list
-  does not panic. Add an empty/short-input case, mirroring how
-  `strips_and_fans_expand_to_triangle_lists` pins degenerate input.
-  Run: `cargo test -p kataglyphis_webgpu_renderer` from the submodule root.
-
-  **Build:** No C++ build needed. Bump the
-  `ExternalLib/Kataglyphis-RustProjectTemplate` submodule pin in the same commit
-  as the submodule change, per the "Critical Invariant: Submodule Pins" rule in
-  `AGENTS.md`, and push the submodule before the superproject.
-
-  **Context:** Cross-renderer parity with task 3 — `a0cffe7a` fixed the C++ OBJ
-  path, task 3 fixes the C++ glTF path, this fixes the Rust glTF path. The
-  severity differs and that is worth stating in the commit message: Rust's
-  bounds check makes this a clean panic rather than the heap write task 3
-  prevents — but in the WASM demo a panic is an unrecoverable abort of the whole
-  canvas, so a malformed upload takes the page down. The `gltf` crate validates
-  that an accessor fits its buffer view; it does not validate that index values
-  address existing vertices.
-
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
