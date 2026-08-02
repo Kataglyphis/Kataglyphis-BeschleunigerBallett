@@ -53,64 +53,25 @@ source_module verify.sh 2>/dev/null || true
 # Import ContainerHub parallelism utilities via source_module pattern
 source_module parallelism.sh 2>/dev/null || true
 
-# Standard Vulkan environment sourcing (shared across all scripts)
+# Import the ContainerHub Vulkan env resolver via source_module pattern.
+# It carries the union of the search strategies this file used to implement
+# inline (explicit $VULKAN_SETUP_SCRIPT, $VULKAN_VERSION under /opt/vulkan and
+# ~/vulkan, the arch-subdirectory glob, $VULKAN_SDK/setup-env.sh, the plain
+# /opt/vulkan/*/setup-env.sh sweep and the glslc-on-PATH short circuit) plus the
+# prefix handling from 02-toolchain/vulkan.sh, and it is dependency-free: it
+# does NOT drag in downloads.sh or a file-scope `set -euo pipefail`.
+source_module vulkan-env.sh 2>/dev/null || true
+
+# Standard Vulkan environment sourcing (shared across all scripts).
+# Non-strict on purpose (strict=0): a dev box without an installed SDK must warn
+# and still proceed, unlike the image-side source_vulkan_sdk_env which returns 1.
 source_vulkan_env() {
-  if [[ -n "${VULKAN_SETUP_SCRIPT:-}" && -f "${VULKAN_SETUP_SCRIPT}" ]]; then
-    info "Sourcing Vulkan env from: ${VULKAN_SETUP_SCRIPT}"
-    # shellcheck disable=SC1090
-    . "${VULKAN_SETUP_SCRIPT}"
+  if declare -F vulkan_env_source >/dev/null 2>&1; then
+    vulkan_env_source "" "keep-libs" 0
     return 0
   fi
 
-  if [[ -n "${VULKAN_VERSION:-}" ]]; then
-    if [[ -f "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh" ]]; then
-      info "Sourcing Vulkan env from /opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-      . "/opt/vulkan/${VULKAN_VERSION}/setup-env.sh"
-      return 0
-    fi
-    if [[ -f "${HOME}/vulkan/${VULKAN_VERSION}/setup-env.sh" ]]; then
-      info "Sourcing Vulkan env from ${HOME}/vulkan/${VULKAN_VERSION}/setup-env.sh"
-      . "${HOME}/vulkan/${VULKAN_VERSION}/setup-env.sh"
-      return 0
-    fi
-    # Also accept SDKs installed into a subdirectory (arch folder), e.g.
-    # /opt/vulkan/<version>/x86_64/setup-env.sh
-    shopt -s nullglob >/dev/null 2>&1 || true
-    for s in /opt/vulkan/${VULKAN_VERSION}/*/setup-env.sh "${HOME}/vulkan/${VULKAN_VERSION}"/*/setup-env.sh; do
-      if [[ -f "${s}" ]]; then
-        info "Sourcing Vulkan env from ${s}"
-        . "${s}"
-        shopt -u nullglob >/dev/null 2>&1 || true
-        return 0
-      fi
-    done
-    shopt -u nullglob >/dev/null 2>&1 || true
-  fi
-
-  if [[ -n "${VULKAN_SDK:-}" && -f "${VULKAN_SDK}/setup-env.sh" ]]; then
-    info "Sourcing Vulkan env from ${VULKAN_SDK}/setup-env.sh"
-    . "${VULKAN_SDK}/setup-env.sh"
-    return 0
-  fi
-
-  # Fallback: source the first setup-env.sh found under /opt/vulkan or ~/vulkan
-  shopt -s nullglob >/dev/null 2>&1 || true
-  for s in /opt/vulkan/*/setup-env.sh "${HOME}/vulkan"/*/setup-env.sh; do
-    if [[ -f "${s}" ]]; then
-      info "Sourcing Vulkan env from ${s}"
-      . "${s}"
-      shopt -u nullglob >/dev/null 2>&1 || true
-      return 0
-    fi
-  done
-  shopt -u nullglob >/dev/null 2>&1 || true
-
-  if command -v glslc >/dev/null 2>&1; then
-    info "glslc found in PATH, skipping explicit Vulkan env sourcing"
-    return 0
-  fi
-
-  warn "Vulkan setup-env.sh not found – continuing without explicit sourcing"
+  warn "vulkan-env.sh module not found – continuing without explicit sourcing"
   return 0
 }
 
