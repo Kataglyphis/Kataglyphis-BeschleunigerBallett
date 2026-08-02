@@ -238,6 +238,7 @@ jobs:
               'DescriptorPoolSizesUnit.*'
               'ShadowResolutionUnit.*'
               'ViewportHelperUnit.*'
+              'RenderPassHelperUnit.*'
               'SceneUboLayoutUnit.*'
             ) -join ':'
             & 'C:\ws\build-clangcl-debug\commitTestSuite.exe' --gtest_filter="$cpuOnlySuites"

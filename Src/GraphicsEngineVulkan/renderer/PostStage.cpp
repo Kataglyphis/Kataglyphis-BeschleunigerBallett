@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "common/FormatHelper.hpp"
+#include "common/RenderPassHelper.hpp"
 #include "common/ViewportHelper.hpp"
 #include "renderer/pushConstants/PushConstantPost.hpp"
 
@@ -199,30 +200,26 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createPushConstantRange()
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
 {
-    vk::AttachmentDescription color_attachment;
-    const vk::Format &swap_chain_image_format = vulkanSwapChain->getSwapChainFormat();
-    color_attachment.format = swap_chain_image_format;
-    color_attachment.samples = vk::SampleCountFlagBits::e1;
-    color_attachment.loadOp = vk::AttachmentLoadOp::eLoad;
-    color_attachment.storeOp = vk::AttachmentStoreOp::eStore;
-    color_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
-    color_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
+    // The only pass that overrides all three attachment defaults: the skybox
+    // pass already rendered into this swapchain image, so its contents are
+    // LOADED (not cleared) out of eColorAttachmentOptimal (not eUndefined) and
+    // handed to the presentation engine.
+    const vk::AttachmentDescription color_attachment = buildAttachmentDescription(
+      vulkanSwapChain->getSwapChainFormat(),
+      vk::ImageLayout::ePresentSrcKHR,
+      vk::AttachmentLoadOp::eLoad,
+      vk::AttachmentStoreOp::eStore,
+      vk::ImageLayout::eColorAttachmentOptimal);
 
-    color_attachment.initialLayout = vk::ImageLayout::eColorAttachmentOptimal;
-    color_attachment.finalLayout = vk::ImageLayout::ePresentSrcKHR;
-
-    vk::AttachmentDescription depth_attachment;
     // depth_format was already resolved by createDepthbufferImage(), which
     // init() always runs first - reuse it rather than querying again, so the
     // attachment and the image it is paired with cannot diverge.
-    depth_attachment.format = depth_format;
-    depth_attachment.samples = vk::SampleCountFlagBits::e1;
-    depth_attachment.loadOp = vk::AttachmentLoadOp::eClear;
-    depth_attachment.storeOp = vk::AttachmentStoreOp::eDontCare;
-    depth_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
-    depth_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
-    depth_attachment.initialLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
-    depth_attachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+    const vk::AttachmentDescription depth_attachment = buildAttachmentDescription(
+      depth_format,
+      vk::ImageLayout::eDepthStencilAttachmentOptimal,
+      vk::AttachmentLoadOp::eClear,
+      vk::AttachmentStoreOp::eDontCare,
+      vk::ImageLayout::eDepthStencilAttachmentOptimal);
 
     vk::AttachmentReference color_attachment_reference;
     color_attachment_reference.attachment = 0;

@@ -12,6 +12,7 @@ module;
 #include <glm/glm.hpp>
 #include "shared/scene/ObjMaterial.hpp"
 
+#include "common/RenderPassHelper.hpp"
 #include "common/Utilities.hpp"
 #include "common/ViewportHelper.hpp"
 #include "scene/sky_box/CubemapFaces.hpp"
@@ -213,25 +214,13 @@ void SkyBox::createDescriptorSetForCubeMap()
 
 void SkyBox::createRenderPass(vk::Format format, vk::Format depthFormat)
 {
-    vk::AttachmentDescription colorAttachment{};
-    colorAttachment.format = format;
-    colorAttachment.samples = vk::SampleCountFlagBits::e1;
-    colorAttachment.loadOp = vk::AttachmentLoadOp::eClear;
-    colorAttachment.storeOp = vk::AttachmentStoreOp::eStore;
-    colorAttachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
-    colorAttachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
-    colorAttachment.initialLayout = vk::ImageLayout::eUndefined;
-    colorAttachment.finalLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    // The post stage LOADS this colour attachment afterwards, so it is left in
+    // eColorAttachmentOptimal rather than handed straight to presentation.
+    const vk::AttachmentDescription colorAttachment =
+      buildAttachmentDescription(format, vk::ImageLayout::eColorAttachmentOptimal);
 
-    vk::AttachmentDescription depthAttachment{};
-    depthAttachment.format = depthFormat;
-    depthAttachment.samples = vk::SampleCountFlagBits::e1;
-    depthAttachment.loadOp = vk::AttachmentLoadOp::eClear;
-    depthAttachment.storeOp = vk::AttachmentStoreOp::eStore;
-    depthAttachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
-    depthAttachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
-    depthAttachment.initialLayout = vk::ImageLayout::eUndefined;
-    depthAttachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+    const vk::AttachmentDescription depthAttachment =
+      buildAttachmentDescription(depthFormat, vk::ImageLayout::eDepthStencilAttachmentOptimal);
 
     std::array attachments = {colorAttachment, depthAttachment};
 

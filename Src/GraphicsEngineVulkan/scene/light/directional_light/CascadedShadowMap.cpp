@@ -13,6 +13,7 @@ module;
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
 #include "common/FormatHelper.hpp"
+#include "common/RenderPassHelper.hpp"
 #include "common/Utilities.hpp"
 #include "common/ViewportHelper.hpp"
 #include "renderer/SceneUBO.hpp"
@@ -110,15 +111,10 @@ void CascadedShadowMap::updateCascades(const glm::mat4 &cameraView,
 
 void CascadedShadowMap::createRenderPass()
 {
-    vk::AttachmentDescription depthAttachment{};
-    depthAttachment.format = depth_format;
-    depthAttachment.samples = vk::SampleCountFlagBits::e1;
-    depthAttachment.loadOp = vk::AttachmentLoadOp::eClear;
-    depthAttachment.storeOp = vk::AttachmentStoreOp::eStore;
-    depthAttachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
-    depthAttachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
-    depthAttachment.initialLayout = vk::ImageLayout::eUndefined;
-    depthAttachment.finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    // Stored, not eDontCare: the lighting pass samples this depth map as the
+    // shadow map, so its final layout is eShaderReadOnlyOptimal.
+    const vk::AttachmentDescription depthAttachment =
+      buildAttachmentDescription(depth_format, vk::ImageLayout::eShaderReadOnlyOptimal);
 
     vk::AttachmentReference depthAttachmentRef{};
     depthAttachmentRef.attachment = 0;

@@ -13,6 +13,7 @@
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 
 #include "common/FormatHelper.hpp"
+#include "common/RenderPassHelper.hpp"
 #include "common/ViewportHelper.hpp"
 
 #include "common/Utilities.hpp"
@@ -160,26 +161,16 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::recreateFrameResources(vk
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
 {
-    vk::AttachmentDescription color_attachment;
-    color_attachment.format = OFFSCREEN_FORMAT;
-    color_attachment.samples = vk::SampleCountFlagBits::e1;
-    color_attachment.loadOp = vk::AttachmentLoadOp::eClear;
-    color_attachment.storeOp = vk::AttachmentStoreOp::eStore;
-    color_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
-    color_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
-    color_attachment.initialLayout = vk::ImageLayout::eUndefined;
-    color_attachment.finalLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    // The offscreen colour target is sampled by the post stage afterwards.
+    const vk::AttachmentDescription color_attachment =
+      buildAttachmentDescription(OFFSCREEN_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal);
 
-    vk::AttachmentDescription depth_attachment;
-    depth_attachment.format = chooseDepthFormat(device->getPhysicalDevice());
-
-    depth_attachment.samples = vk::SampleCountFlagBits::e1;
-    depth_attachment.loadOp = vk::AttachmentLoadOp::eClear;
-    depth_attachment.storeOp = vk::AttachmentStoreOp::eDontCare;
-    depth_attachment.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
-    depth_attachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
-    depth_attachment.initialLayout = vk::ImageLayout::eUndefined;
-    depth_attachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+    // Depth is never read after the pass, so its writeback is eDontCare.
+    const vk::AttachmentDescription depth_attachment =
+      buildAttachmentDescription(chooseDepthFormat(device->getPhysicalDevice()),
+        vk::ImageLayout::eDepthStencilAttachmentOptimal,
+        vk::AttachmentLoadOp::eClear,
+        vk::AttachmentStoreOp::eDontCare);
 
     vk::AttachmentReference color_attachment_reference;
     color_attachment_reference.attachment = 0;

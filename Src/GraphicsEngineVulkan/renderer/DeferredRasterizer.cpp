@@ -11,6 +11,7 @@
 
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 #include "common/FormatHelper.hpp"
+#include "common/RenderPassHelper.hpp"
 #include "common/ViewportHelper.hpp"
 #include "common/Utilities.hpp"
 
@@ -201,25 +202,16 @@ void DeferredRasterizer::createRenderPass()
     vk::Format materialFormat = vk::Format::eR8G8B8A8Unorm;
     vk::Format depthFormat = Kataglyphis::chooseDepthFormat(device->getPhysicalDevice());
 
-    auto createAttachmentDesc = [](vk::Format format, vk::ImageLayout finalLayout) {
-        vk::AttachmentDescription desc;
-        desc.format = format;
-        desc.samples = vk::SampleCountFlagBits::e1;
-        desc.loadOp = vk::AttachmentLoadOp::eClear;
-        desc.storeOp = vk::AttachmentStoreOp::eStore;
-        desc.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
-        desc.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
-        desc.initialLayout = vk::ImageLayout::eUndefined;
-        desc.finalLayout = finalLayout;
-        return desc;
-    };
-
+    // All five use the engine-wide attachment defaults (clear on load, store,
+    // start from eUndefined) - see common/RenderPassHelper.hpp. The local
+    // createAttachmentDesc lambda this replaces was one of five hand-written
+    // copies of the same field list.
     std::array<vk::AttachmentDescription, 5> attachments = {
-        createAttachmentDesc(finalFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 0: Final Output
-        createAttachmentDesc(normalFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 1: Normal
-        createAttachmentDesc(albedoFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 2: Albedo
-        createAttachmentDesc(materialFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 3: Material
-        createAttachmentDesc(depthFormat, vk::ImageLayout::eDepthStencilAttachmentOptimal) // 4: Depth
+        buildAttachmentDescription(finalFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 0: Final Output
+        buildAttachmentDescription(normalFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 1: Normal
+        buildAttachmentDescription(albedoFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 2: Albedo
+        buildAttachmentDescription(materialFormat, vk::ImageLayout::eShaderReadOnlyOptimal), // 3: Material
+        buildAttachmentDescription(depthFormat, vk::ImageLayout::eDepthStencilAttachmentOptimal) // 4: Depth
     };
 
     // Subpass 0: Geometry Pass
