@@ -140,9 +140,11 @@ target_sources(
          CXX_MODULES
          BASE_DIRS
          ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan
+         ${CMAKE_SOURCE_DIR}/Src/shared
          FILES
          ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan/scene/SceneConfig.ixx
-         ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan/scene/ModelFileKind.ixx)
+         ${CMAKE_SOURCE_DIR}/Src/GraphicsEngineVulkan/scene/ModelFileKind.ixx
+         ${CMAKE_SOURCE_DIR}/Src/shared/util/ResourcePaths.ixx)
 target_link_libraries(scene_config_fuzz_test PRIVATE glm)
 # SceneConfig builds its candidate paths from RELATIVE_RESOURCE_PATH; the engine
 # feeds it the same value via kataglyphis_apply_runtime_compile_definitions.

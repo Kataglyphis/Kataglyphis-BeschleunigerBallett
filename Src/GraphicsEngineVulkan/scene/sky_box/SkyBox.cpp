@@ -3,7 +3,6 @@ module;
 #include <array>
 #include <filesystem>
 #include <span>
-#include <sstream>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -27,6 +26,7 @@ import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.buffer;
 import kataglyphis.vulkan.command_buffer_manager;
 import kataglyphis.vulkan.pipeline_builder;
+import kataglyphis.shared.util.resource_paths;
 
 namespace Kataglyphis {
 
@@ -46,11 +46,15 @@ void SkyBox::init(std::shared_ptr<VulkanDevice>in_device, vk::CommandPool comman
 
 void SkyBox::loadCubeMap(vk::CommandPool commandPool)
 {
-    std::stringstream skybox_base_dir;
-    std::error_code current_path_ec;
-    std::filesystem::path const cwd = std::filesystem::current_path(current_path_ec);
-    skybox_base_dir << (current_path_ec ? "." : cwd.string());
-    skybox_base_dir << "/Resources/Textures/Skybox/DOOM2016/";
+    std::filesystem::path skybox_base_dir;
+    if (const auto resolved = Kataglyphis::Shared::resolveResourceRelativePath("Textures/Skybox/DOOM2016");
+        resolved.has_value()) {
+        skybox_base_dir = *resolved;
+    } else {
+        std::error_code current_path_ec;
+        std::filesystem::path const cwd = std::filesystem::current_path(current_path_ec);
+        skybox_base_dir = (current_path_ec ? std::filesystem::path(".") : cwd) / "Resources/Textures/Skybox/DOOM2016";
+    }
 
     std::array<std::string, 6> skybox_textures = {
         "DOOM16RT.png", "DOOM16LF.png", "DOOM16UP.png", "DOOM16DN.png", "DOOM16FT.png", "DOOM16BK.png"
@@ -64,7 +68,7 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
     int face_heights[6] = {};
 
     for (size_t i = 0; i < 6; i++) {
-        std::string path = skybox_base_dir.str() + skybox_textures[i];
+        std::string path = (skybox_base_dir / skybox_textures[i]).string();
         face_data[i] = stbi_load(path.c_str(), &face_widths[i], &face_heights[i], &bit_depth, 4);
         if (!face_data[i]) {
             spdlog::error("Failed to load skybox texture: {}", path);

@@ -243,6 +243,7 @@ jobs:
               'ShaderBlobUnit.*'
               'SamplerBuilderUnit.*'
               'FileReaderUnit.*'
+              'ResourcePathsUnit.*'
               'TextureLoadUnit.*'
               'MemoryHelperUnit.*'
               'FormatHelperUnit.*'

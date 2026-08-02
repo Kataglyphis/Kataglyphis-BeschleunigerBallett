@@ -4533,40 +4533,6 @@ loop already `continue`s before allocating for non-matching primitives, so the
 measured cost is a few thousand comparisons per frame on any realistic scene;
 not worth a task until something measures it.
 
-- [ ] **(M) (refactor) One resolver for the "walk up looking for `Resources/`" search — there are four copies, and the fourth is the skybox's, which does not walk at all** — the divergence is what makes a wrong working directory fatal in one place and harmless in the others.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:19-41` — `resolveModelPath`: `current_path()` + `RELATIVE_RESOURCE_PATH`, then up to `kModelSearchDepth = 8` parents testing `<parent>/Resources/<relative>`.
-  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:44-67` — `findResourcesBasePath`: the same loop, testing `Resources/Models` instead, with its own private `kModelSearchDepth = 8`.
-  - `Src/shared/imgui/KataglyphisImGuiFonts.ixx:11-30` — `resolveKataglyphisImGuiFontDirectory`: the same loop again, with `RELATIVE_IMGUI_FONTS_PATH`.
-  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:44-47` — the same intent with **no** upward search at all.
-  - `Src/shared/util/FileReader.ixx` — the module shape and error-handling convention for `Src/shared/util/`.
-  - `Src/GraphicsEngineVulkan/CMakeLists.txt` and `Src/shared/CMakeLists.txt` — check which target defines `RELATIVE_RESOURCE_PATH` and `RELATIVE_IMGUI_FONTS_PATH` **before** moving code between them; a compile definition visible to the engine target may not be visible to `shared`.
-
-  **Steps:**
-  1. Add one primitive next to `FileReader.ixx`, e.g. module `kataglyphis.shared.util.resource_paths`, exporting `resolveResourceRelativePath(std::string_view relative) -> std::optional<std::filesystem::path>` and `resourcesRootOrEmpty() -> std::filesystem::path`. Implementation: `current_path(ec)`, try `<cwd><RELATIVE_RESOURCE_PATH>/<relative>` first, then walk at most one shared `kResourceSearchDepth = 8` parents testing `<parent>/Resources/<relative>`. Every filesystem call takes an `std::error_code` — land task 2 first so this is exception-free by construction.
-  2. Rewrite `resolveModelPath`, `findResourcesBasePath` and `resolveKataglyphisImGuiFontDirectory` to delegate, deleting their private loops and their duplicate depth constants. Preserve `resolveModelPath`'s "return the direct candidate when nothing matched" contract — `ObjLoader`/`GltfLoader` rely on getting a path back to log.
-  3. Point `SkyBox::loadCubeMap` at the resolver for `Textures/Skybox/DOOM2016/`, so a non-root working directory resolves instead of failing. Land this **after** task 4, which makes the failure survivable; this step makes it rarer.
-  4. Keep `Src/shared/` free of engine dependencies — the new module must not import anything from `kataglyphis.vulkan.*`.
-
-  **Test:** extend `Test/commit/VulkanEngine/fileReaderSuite.cpp` (it already
-  covers `Src/shared/util`) with cases driving the resolver against a
-  `std::filesystem::temp_directory_path` tree: a hit at depth 0, a hit at
-  depth 3, a miss past the depth cap, and a `relative` argument containing
-  `..` returning `nullopt` rather than a path outside the tree. The existing
-  `SceneConfigUnit` / `ModelPickerUnit` cases in `cameraSceneConfigSuite.cpp`
-  must pass **unchanged** — they are the regression net for step 2.
-
-  **Build:** `clangcl-debug`, and pass `-FreshContainer` because this adds a
-  new C++23 module interface (AGENTS.md § Containerized Windows Builds):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`,
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='FileReaderUnit.*:SceneConfigUnit.*:ModelPickerUnit.*:SkyBoxUnit.*'`.
-
-  **Context:** mark `(refactor)`. Ordering: task 2, then task 4, then this.
-  The payoff is not line count — it is that "where do resources live" becomes
-  one answer with one depth cap and one error convention, instead of four that
-  have already drifted into three different behaviours plus a crash.
-
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

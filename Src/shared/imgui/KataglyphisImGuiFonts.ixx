@@ -8,6 +8,8 @@ module;
 
 export module kataglyphis.shared.imgui.fonts;
 
+import kataglyphis.shared.util.resource_paths;
+
 export namespace Kataglyphis::Frontend {
 inline auto resolveKataglyphisImGuiFontDirectory(const std::filesystem::path &cwd) -> std::filesystem::path
 {
@@ -17,16 +19,10 @@ inline auto resolveKataglyphisImGuiFontDirectory(const std::filesystem::path &cw
     if (std::filesystem::exists(fromMacro, ec) && !ec) { return fromMacro; }
 #endif
 
-    constexpr int maxSearchDepth = 8;
-    std::filesystem::path current = cwd;
-    for (int depth = 0; depth < maxSearchDepth; ++depth) {
-        const auto candidate = (current / "ExternalLib/IMGUI/misc/fonts").lexically_normal();
-        if (std::filesystem::exists(candidate, ec) && !ec) { return candidate; }
-
-        if (!current.has_parent_path()) { break; }
-        const auto parent = current.parent_path();
-        if (parent == current) { break; }
-        current = parent;
+    if (const auto found = Kataglyphis::Shared::searchAncestorsForRelative(
+          cwd, "ExternalLib/IMGUI/misc/fonts", Kataglyphis::Shared::kResourceSearchDepth);
+        found.has_value()) {
+        return *found;
     }
 
     return {};

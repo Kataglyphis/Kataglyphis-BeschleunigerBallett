@@ -14,12 +14,14 @@
 #include <vulkan/vulkan.hpp>
 
 import kataglyphis.shared.util.file_reader;
+import kataglyphis.shared.util.resource_paths;
 import kataglyphis.vulkan.texture;
 
 using Kataglyphis::Shared::fileExists;
 using Kataglyphis::Shared::getBaseDir;
 using Kataglyphis::Shared::readBinaryFile;
 using Kataglyphis::Shared::readTextFile;
+using Kataglyphis::Shared::resolveResourceRelativePath;
 
 namespace {
 
@@ -27,6 +29,31 @@ std::filesystem::path uniqueTempPath(const std::string &name)
 {
     return std::filesystem::temp_directory_path() / name;
 }
+
+// Swaps the process working directory for the lifetime of the guard and puts
+// it back on destruction - resolveResourceRelativePath reads
+// std::filesystem::current_path() internally, and the working directory is
+// process-global state shared with every other test in this binary.
+class ScopedWorkingDirectory
+{
+  public:
+    explicit ScopedWorkingDirectory(const std::filesystem::path &newCwd)
+    {
+        std::error_code ec;
+        original_ = std::filesystem::current_path(ec);
+        std::filesystem::current_path(newCwd, ec);
+    }
+    ~ScopedWorkingDirectory()
+    {
+        std::error_code ec;
+        std::filesystem::current_path(original_, ec);
+    }
+    ScopedWorkingDirectory(const ScopedWorkingDirectory &) = delete;
+    ScopedWorkingDirectory &operator=(const ScopedWorkingDirectory &) = delete;
+
+  private:
+    std::filesystem::path original_;
+};
 
 }// namespace
 
@@ -184,4 +211,77 @@ TEST(TextureLoadUnit, FailedDecodeZeroesAllOutputs)
 
     std::error_code ec;
     std::filesystem::remove(path, ec);
+}
+
+// resolveResourceRelativePath consolidates what used to be four independent
+// "walk up looking for Resources/" copies (SceneConfig::resolveModelPath,
+// SceneConfig::findResourcesBasePath, the ImGui font resolver and the
+// skybox loader). These cases pin the walk itself against a scratch tree,
+// independent of the real repo layout.
+TEST(ResourcePathsUnit, ResolvesAtDepthZero)
+{
+    const auto root = uniqueTempPath("kat_respath_depth0");
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    std::filesystem::create_directories(root / "Resources" / "Models", ec);
+    ASSERT_FALSE(ec);
+
+    ScopedWorkingDirectory cwdGuard(root);
+    const auto resolved = resolveResourceRelativePath("Models");
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_TRUE(std::filesystem::equivalent(*resolved, root / "Resources" / "Models"));
+
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST(ResourcePathsUnit, ResolvesAtDepthThree)
+{
+    const auto root = uniqueTempPath("kat_respath_depth3");
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    const auto leaf = root / "a" / "b" / "c";
+    std::filesystem::create_directories(leaf, ec);
+    std::filesystem::create_directories(root / "Resources" / "Models", ec);
+    ASSERT_FALSE(ec);
+
+    ScopedWorkingDirectory cwdGuard(leaf);
+    const auto resolved = resolveResourceRelativePath("Models");
+    ASSERT_TRUE(resolved.has_value());
+    EXPECT_TRUE(std::filesystem::equivalent(*resolved, root / "Resources" / "Models"));
+
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST(ResourcePathsUnit, MissesPastTheDepthCap)
+{
+    const auto root = uniqueTempPath("kat_respath_toodeep");
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    // kResourceSearchDepth == 8 tests cwd plus 7 parents; put the leaf 8
+    // levels below root so "Resources/Models" (at root) is one hop past
+    // what the walk ever reaches.
+    auto leaf = root;
+    for (int i = 0; i < 8; ++i) { leaf /= "d" + std::to_string(i); }
+    std::filesystem::create_directories(leaf, ec);
+    std::filesystem::create_directories(root / "Resources" / "Models", ec);
+    ASSERT_FALSE(ec);
+
+    ScopedWorkingDirectory cwdGuard(leaf);
+    EXPECT_FALSE(resolveResourceRelativePath("Models").has_value());
+
+    std::filesystem::remove_all(root, ec);
+}
+
+TEST(ResourcePathsUnit, RejectsRelativePathEscapingTheTree)
+{
+    const auto root = uniqueTempPath("kat_respath_escape");
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    std::filesystem::create_directories(root, ec);
+    ASSERT_FALSE(ec);
+
+    ScopedWorkingDirectory cwdGuard(root);
+    EXPECT_FALSE(resolveResourceRelativePath("../etc/passwd").has_value());
+
+    std::filesystem::remove_all(root, ec);
 }

@@ -13,58 +13,29 @@ module;
 module kataglyphis.vulkan.scene_config;
 
 import kataglyphis.vulkan.model_file_kind;
+import kataglyphis.shared.util.resource_paths;
 
 namespace sceneConfig {
 
 auto resolveModelPath(const std::string &relativeModelPath) -> std::string
 {
+    if (const auto resolved = Kataglyphis::Shared::resolveResourceRelativePath(relativeModelPath);
+        resolved.has_value()) {
+        return resolved->string();
+    }
+
+    // Nothing matched: fall back to the build-relative candidate so callers
+    // (ObjLoader/GltfLoader) still get a path back to log, rather than the
+    // bare relative string.
     std::error_code filesystem_error;
     const std::filesystem::path current_path = std::filesystem::current_path(filesystem_error);
     if (filesystem_error) { return relativeModelPath; }
 
-    const std::filesystem::path direct_candidate =
-      std::filesystem::path(current_path.string() + RELATIVE_RESOURCE_PATH) / relativeModelPath;
-    if (std::filesystem::exists(direct_candidate, filesystem_error)) { return direct_candidate.string(); }
-
-    auto search_path = current_path;
-    constexpr int kModelSearchDepth = 8;
-    for (int depth = 0; depth < kModelSearchDepth; ++depth) {
-        const std::filesystem::path candidate = search_path / "Resources" / relativeModelPath;
-        if (std::filesystem::exists(candidate, filesystem_error)) { return candidate.string(); }
-
-        if (filesystem_error || !search_path.has_parent_path()) { break; }
-
-        search_path = search_path.parent_path();
-    }
-
-    return direct_candidate.string();
+    return (std::filesystem::path(current_path.string() + RELATIVE_RESOURCE_PATH) / relativeModelPath).string();
 }
 
 namespace {
-    auto findResourcesBasePath() -> std::filesystem::path
-    {
-        std::error_code filesystem_error;
-        const std::filesystem::path current_path = std::filesystem::current_path(filesystem_error);
-
-        const std::filesystem::path direct_candidate =
-          std::filesystem::path(current_path.string() + RELATIVE_RESOURCE_PATH);
-        if (std::filesystem::exists(direct_candidate / "Models", filesystem_error)) {
-            return direct_candidate;
-        }
-
-        auto search_path = current_path;
-        constexpr int kModelSearchDepth = 8;
-        for (int depth = 0; depth < kModelSearchDepth; ++depth) {
-            const std::filesystem::path candidate = search_path / "Resources";
-            if (std::filesystem::exists(candidate / "Models", filesystem_error)) {
-                return candidate;
-            }
-            if (filesystem_error || !search_path.has_parent_path()) { break; }
-            search_path = search_path.parent_path();
-        }
-
-        return direct_candidate;
-    }
+    auto findResourcesBasePath() -> std::filesystem::path { return Kataglyphis::Shared::resourcesRootOrEmpty(); }
 
     auto computeModelDisplayName(const std::string &relativePath) -> std::string
     {
