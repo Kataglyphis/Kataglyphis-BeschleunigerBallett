@@ -4241,21 +4241,6 @@ leaving `tlas.vulkanAS` non-null and `blas` unshrunk (`ASManager.cpp:381-401`)**
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-
-  **Build / run:** no C++ build needed.
-  `cargo test -p webgpu_renderer ktx2` from
-  `ExternalLib/Kataglyphis-RustProjectTemplate`. If the local cargo run hits the
-  bind-mount temp-file problem, run it on a native-filesystem checkout — see
-  `docs/container-build-caching.md`.
-
-  **Context:** Same hardening class as `a0cffe7a` (malformed OBJ faces) and
-  `d25cd1e5` (unescaped JSON in `obj_to_gltf`), applied to the one asset path in
-  the Rust crate that still trusts a header. The `hdr.rs` module in the same
-  directory is the standard to match: dimensions capped before allocation, every
-  branch a typed error, no panics on any input. Do **not** attempt Basis
-  ETC1S/UASTC transcoding here — that is the separate `- [b]` entry at the top
-  of this file.
-
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
