@@ -59,9 +59,83 @@ elif query == "patch_field":
 elif query == "wgsl_map":
     for row in doc["wgslMap"]:
         print("|".join([row["src"], row["out"], row["dst"]]))
+elif query == "min_slangc_version":
+    print(doc.get("minSlangcVersionForWgsl", ""))
 else:
     sys.exit(f"unknown manifest query: {query}")
 PY
+}
+
+# ---------------------------------------------------------------------------
+# Combined-WGSL emit correctness guard.
+#
+# WGSL requires every non-builtin member of an inter-stage (varying) struct to
+# carry @location(N). slangc 2026.1-52-gc8ddf20bb - the build in Vulkan SDK
+# 1.4.341.1, i.e. the ContainerHub Linux image - drops that attribute in the
+# COMBINED emit (no -entry/-stage) while emitting it correctly per entry point,
+# so a regeneration on that toolchain silently produced WGSL naga rejects.
+# 2026.8 is correct on both Windows and Linux. Two defences, both needed:
+#   1. slangc_supports_wgsl_emit: below the manifest's floor we do not emit at
+#      all, so the (correct) checked-in WGSL is never overwritten.
+#   2. wgsl_varyings_are_located: at or above the floor we emit and then verify,
+#      so ANY future emit regression fails the build instead of being copied.
+# The same rule is pinned in Test/commit/VulkanEngine/buildIntegritySuite.cpp
+# (BuildIntegrity.CheckedInWgslVaryingStructsCarryLocations) and reimplemented
+# in Scripts/Windows/compile-slang-shaders.ps1 - keep the three in step.
+# ---------------------------------------------------------------------------
+
+# wgsl_varyings_are_located <file>
+# A struct with at least one @builtin/@location member is an IO struct; every
+# member of it must then carry one of those attributes. Prints offenders and
+# returns non-zero when the file is invalid.
+wgsl_varyings_are_located() {
+  python3 - "$1" <<'PY'
+import re, sys
+
+path = sys.argv[1]
+lines = open(path, encoding="utf-8").read().splitlines()
+member = re.compile(r"^\s*((?:@\w+\([^)]*\)\s*)*)([A-Za-z_]\w*)\s*:\s*\S.*?,?\s*$")
+offenders = []
+index = 0
+while index < len(lines):
+    head = re.match(r"^struct\s+([A-Za-z_]\w*)", lines[index])
+    index += 1
+    if head is None:
+        continue
+    if index < len(lines) and lines[index].strip() == "{":
+        index += 1
+    members = []
+    while index < len(lines) and not lines[index].lstrip().startswith("}"):
+        hit = member.match(lines[index])
+        if hit is not None:
+            members.append((index + 1, hit.group(1), lines[index]))
+        index += 1
+    io = [m for m in members if "@builtin(" in m[1] or "@location(" in m[1]]
+    if not io:
+        continue
+    for line_no, attrs, raw in members:
+        if "@builtin(" not in attrs and "@location(" not in attrs:
+            offenders.append(f"{line_no}: struct {head.group(1)}: {raw.strip()}")
+
+for offender in offenders:
+    print(offender)
+sys.exit(1 if offenders else 0)
+PY
+}
+
+# version_at_least <have> <want> - compares the leading MAJOR.MINOR only.
+# slangc prints e.g. "2026.8" or "2026.1-52-gc8ddf20bb". An unparseable
+# version is treated as new enough: the emit guard above is the backstop, and
+# refusing to compile on an unrecognised version string would be worse.
+version_at_least() {
+  local have="$1" want="$2"
+  local have_major have_minor want_major want_minor
+  if [[ ! "$have" =~ ^([0-9]+)\.([0-9]+) ]]; then return 0; fi
+  have_major="${BASH_REMATCH[1]}"; have_minor="${BASH_REMATCH[2]}"
+  if [[ ! "$want" =~ ^([0-9]+)\.([0-9]+) ]]; then return 0; fi
+  want_major="${BASH_REMATCH[1]}"; want_minor="${BASH_REMATCH[2]}"
+  if ((have_major != want_major)); then ((have_major > want_major)); return; fi
+  ((have_minor >= want_minor))
 }
 
 if [[ ! -d "$SLANG_ROOT" ]]; then
@@ -175,10 +249,27 @@ fi
 # directory so include_str! picks up the Slang-emitted WGSL.
 # ---------------------------------------------------------------------------
 WGSL_FAILED=()
+WGSL_INVALID=()
 WGSL_EMITTED=0
 mkdir -p "$BUILD_ROOT"
 
-while IFS='|' read -r src_file out_name dst_rel; do
+# Toolchain floor: below it slangc's combined emit is known to drop varying
+# @location attributes, so skip the emit entirely rather than overwrite the
+# checked-in WGSL with output naga rejects. Regenerating after a .slang edit
+# then needs a newer slangc - BuildIntegrity.CheckedInWgslIsNotOlderThanItsSlangSource
+# fails if that regeneration is skipped and forgotten.
+MIN_SLANGC_VERSION="$(manifest_query min_slangc_version | tr -d '\r')"
+SLANGC_VERSION="$("$SLANGC" -version 2>&1 | head -n 1 | tr -d '\r')"
+WGSL_EMIT_ENABLED=1
+if [[ -n "$MIN_SLANGC_VERSION" ]] && ! version_at_least "$SLANGC_VERSION" "$MIN_SLANGC_VERSION"; then
+  WGSL_EMIT_ENABLED=0
+  echo "[WARN] slangc ${SLANGC_VERSION} is older than ${MIN_SLANGC_VERSION}, whose combined (whole-module)" >&2
+  echo "[WARN] WGSL emit is the first known-correct one: older builds drop @location(N) from varying" >&2
+  echo "[WARN] structs and produce WGSL that wgpu/naga rejects. SKIPPING the combined WGSL emit - the" >&2
+  echo "[WARN] checked-in Rust-crate WGSL is left untouched. See docs/shader-build-pipeline.md." >&2
+fi
+
+while [[ $WGSL_EMIT_ENABLED -eq 1 ]] && IFS='|' read -r src_file out_name dst_rel; do
   src_path="${SLANG_ROOT}/${src_file}"
   if [[ ! -f "$src_path" ]]; then continue; fi
 
@@ -209,6 +300,19 @@ while IFS='|' read -r src_file out_name dst_rel; do
     fi
   done
 
+  # Reject a structurally invalid emit BEFORE it can overwrite the checked-in
+  # file, so a broken regeneration can never be committed silently.
+  if ! offenders="$(wgsl_varyings_are_located "$tmp_out")"; then
+    {
+      echo "[ERROR] ${out_name}: slangc ${SLANGC_VERSION} emitted varying struct member(s) with neither"
+      echo "[ERROR]   @builtin nor @location - that is not valid WGSL and wgpu/naga will reject it."
+      echo "[ERROR]   Emit kept at ${tmp_out}; ${dst_rel}/${out_name} NOT overwritten."
+      while IFS= read -r offender; do echo "[ERROR]   ${offender}"; done <<< "$offenders"
+    } >&2
+    WGSL_INVALID+=("${out_name}")
+    continue
+  fi
+
   # Copy to the Rust crate's shader directory (replaces hand-written WGSL).
   dst_dir="${REPO_ROOT}/${dst_rel}"
   mkdir -p "$dst_dir"
@@ -222,3 +326,15 @@ if [[ ${#WGSL_FAILED[@]} -gt 0 ]]; then
 fi
 
 echo "[INFO] Slang shader compilation finished (${COMPILED} SPIR-V/WGSL artifact(s) + ${WGSL_EMITTED} combined WGSL file(s) for Rust)"
+
+# Fatal, and last so the SPIR-V summary above is still reported: an emit that
+# violates WGSL's varying rules is a toolchain regression, not a warning.
+if [[ ${#WGSL_INVALID[@]} -gt 0 ]]; then
+  {
+    echo "[ERROR] ${#WGSL_INVALID[@]} combined WGSL emit(s) had varying struct members without @builtin/@location:"
+    printf '  %s\n' "${WGSL_INVALID[@]}"
+    echo "[ERROR] None of them were copied into the Rust crates. Fix the toolchain (slangc >= ${MIN_SLANGC_VERSION}"
+    echo "[ERROR] is known good; this run used ${SLANGC_VERSION}) - do not hand-patch the generated WGSL."
+  } >&2
+  exit 1
+fi

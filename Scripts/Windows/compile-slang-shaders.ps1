@@ -41,6 +41,81 @@ $slangRoot = Join-Path $scriptRoot 'Resources\ShadersSlang'
 $buildRoot = Join-Path $slangRoot 'build'
 $manifestPath = Join-Path $slangRoot 'shader-manifest.json'
 
+# ---------------------------------------------------------------------------
+# Combined-WGSL emit correctness guard.
+#
+# WGSL requires every non-builtin member of an inter-stage (varying) struct to
+# carry @location(N). slangc 2026.1-52-gc8ddf20bb - the build in Vulkan SDK
+# 1.4.341.1, i.e. the ContainerHub Linux image - drops that attribute in the
+# COMBINED emit (no -entry/-stage) while emitting it correctly per entry point,
+# so a regeneration on that toolchain silently produced WGSL naga rejects.
+# 2026.8 is correct on both Windows and Linux. Two defences, both needed:
+#   1. the manifest's minSlangcVersionForWgsl floor - below it we do not emit at
+#      all, so the (correct) checked-in WGSL is never overwritten;
+#   2. Test-WgslVaryingsAreLocated - at or above the floor we emit and then
+#      verify, so ANY future emit regression fails the build instead of being
+#      copied.
+# The same rule is pinned in Test/commit/VulkanEngine/buildIntegritySuite.cpp
+# (BuildIntegrity.CheckedInWgslVaryingStructsCarryLocations) and reimplemented
+# in Scripts/Linux/compile-slang-shaders.sh - keep the three in step.
+# ---------------------------------------------------------------------------
+
+# A struct with at least one @builtin/@location member is an IO struct; every
+# member of it must then carry one of those attributes. Returns the offending
+# "<line>: struct <name>: <text>" descriptions (empty array = valid).
+function Test-WgslVaryingsAreLocated {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $lines = [IO.File]::ReadAllLines($Path)
+    $offenders = @()
+    $i = 0
+    while ($i -lt $lines.Count) {
+        $head = [regex]::Match($lines[$i], '^struct\s+([A-Za-z_]\w*)')
+        $i++
+        if (-not $head.Success) { continue }
+        if ($i -lt $lines.Count -and $lines[$i].Trim() -eq '{') { $i++ }
+
+        $members = @()
+        while ($i -lt $lines.Count -and -not $lines[$i].TrimStart().StartsWith('}')) {
+            $m = [regex]::Match($lines[$i], '^\s*((?:@\w+\([^)]*\)\s*)*)([A-Za-z_]\w*)\s*:\s*\S.*?,?\s*$')
+            if ($m.Success) {
+                $members += [pscustomobject]@{
+                    Line  = $i + 1
+                    Attrs = $m.Groups[1].Value
+                    Text  = $lines[$i]
+                }
+            }
+            $i++
+        }
+
+        $isIoStruct = @($members | Where-Object { $_.Attrs -match '@builtin\(|@location\(' }).Count -gt 0
+        if (-not $isIoStruct) { continue }
+        foreach ($member in $members) {
+            if ($member.Attrs -notmatch '@builtin\(|@location\(') {
+                $offenders += "$($member.Line): struct $($head.Groups[1].Value): $($member.Text.Trim())"
+            }
+        }
+    }
+    return , $offenders
+}
+
+# Compares the leading MAJOR.MINOR only. slangc prints e.g. "2026.8" or
+# "2026.1-52-gc8ddf20bb". An unparseable version is treated as new enough: the
+# emit guard above is the backstop, and refusing to compile on an unrecognised
+# version string would be worse.
+function Test-VersionAtLeast {
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Have,
+          [Parameter(Mandatory)][AllowEmptyString()][string]$Want)
+
+    $haveMatch = [regex]::Match($Have, '^(\d+)\.(\d+)')
+    $wantMatch = [regex]::Match($Want, '^(\d+)\.(\d+)')
+    if (-not $haveMatch.Success -or -not $wantMatch.Success) { return $true }
+
+    $haveVersion = [version]::new([int]$haveMatch.Groups[1].Value, [int]$haveMatch.Groups[2].Value)
+    $wantVersion = [version]::new([int]$wantMatch.Groups[1].Value, [int]$wantMatch.Groups[2].Value)
+    return $haveVersion -ge $wantVersion
+}
+
 function Resolve-Slangc {
     if ($env:VULKAN_SDK) {
         $candidate = Join-Path $env:VULKAN_SDK 'Bin\slangc.exe'
@@ -146,9 +221,29 @@ if ($failed.Count -gt 0) {
 # directory so include_str! picks up the Slang-emitted WGSL.
 # ---------------------------------------------------------------------------
 $wgslFailed = @()
+$wgslInvalid = @()
 $wgslEmitted = 0
 
-foreach ($entry in $manifestData.wgslMap) {
+# Toolchain floor: below it slangc's combined emit is known to drop varying
+# @location attributes, so skip the emit entirely rather than overwrite the
+# checked-in WGSL with output naga rejects. Regenerating after a .slang edit
+# then needs a newer slangc -
+# BuildIntegrity.CheckedInWgslIsNotOlderThanItsSlangSource fails if that
+# regeneration is skipped and forgotten.
+$minSlangcVersion = if ($manifestData.PSObject.Properties['minSlangcVersionForWgsl']) {
+    $manifestData.minSlangcVersionForWgsl
+} else { '' }
+$slangcVersion = (& $slangc -version 2>&1 | Select-Object -First 1 | Out-String).Trim()
+$wgslEmitEnabled = $true
+if ($minSlangcVersion -and -not (Test-VersionAtLeast -Have $slangcVersion -Want $minSlangcVersion)) {
+    $wgslEmitEnabled = $false
+    Write-Warning ("slangc $slangcVersion is older than $minSlangcVersion, whose combined (whole-module) WGSL " +
+        'emit is the first known-correct one: older builds drop @location(N) from varying structs and produce ' +
+        'WGSL that wgpu/naga rejects. SKIPPING the combined WGSL emit - the checked-in Rust-crate WGSL is left ' +
+        'untouched. See docs/shader-build-pipeline.md.')
+}
+
+foreach ($entry in $(if ($wgslEmitEnabled) { @($manifestData.wgslMap) } else { @() })) {
     $srcPath = Join-Path $slangRoot $entry.src
     if (-not (Test-Path $srcPath)) { continue }
 
@@ -181,6 +276,17 @@ foreach ($entry in $manifestData.wgslMap) {
         Set-Content -Path $tmpOut -Value $wgslText -NoNewline -Encoding utf8
     }
 
+    # Reject a structurally invalid emit BEFORE it can overwrite the checked-in
+    # file, so a broken regeneration can never be committed silently.
+    $offenders = Test-WgslVaryingsAreLocated -Path $tmpOut
+    if ($offenders.Count -gt 0) {
+        Write-Warning ("[ERROR] $($entry.out): slangc $slangcVersion emitted varying struct member(s) with " +
+            "neither @builtin nor @location - that is not valid WGSL and wgpu/naga will reject it. Emit kept " +
+            "at $tmpOut; $($entry.dst)/$($entry.out) NOT overwritten:`n  " + ($offenders -join "`n  "))
+        $wgslInvalid += $entry.out
+        continue
+    }
+
     # Copy to the Rust crate's shader directory (replaces hand-written WGSL).
     $dstDir = Join-Path $scriptRoot $entry.dst
     if (-not (Test-Path $dstDir)) { New-Item -ItemType Directory -Force -Path $dstDir | Out-Null }
@@ -193,3 +299,13 @@ if ($wgslFailed.Count -gt 0) {
 }
 
 Write-Host "[INFO] Slang shader compilation finished ($compiled SPIR-V/WGSL artifact(s) + $wgslEmitted combined WGSL file(s) for Rust)"
+
+# Fatal, and last so the SPIR-V summary above is still reported: an emit that
+# violates WGSL's varying rules is a toolchain regression, not a warning.
+if ($wgslInvalid.Count -gt 0) {
+    Write-Error ("$($wgslInvalid.Count) combined WGSL emit(s) had varying struct members without " +
+        "@builtin/@location:`n  " + ($wgslInvalid -join "`n  ") +
+        "`nNone of them were copied into the Rust crates. Fix the toolchain (slangc >= $minSlangcVersion is " +
+        "known good; this run used $slangcVersion) - do not hand-patch the generated WGSL.")
+    exit 1
+}

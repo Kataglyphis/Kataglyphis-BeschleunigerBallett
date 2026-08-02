@@ -34,12 +34,62 @@ stale entries.
 The shader list (source file, entry point, stage, targets), the combined-WGSL
 copy map, and the depth-texture patch table live in
 `Resources/ShadersSlang/shader-manifest.json` — the single source of truth
-read by BOTH compile scripts (PS via `ConvertFrom-Json`, bash via `jq`,
-which is required and fails loud when missing). Add or retarget a shader by
+read by BOTH compile scripts (PS via `ConvertFrom-Json`, bash via `python3`,
+which is required and fails loud when missing — `jq` is *not* in the
+ContainerHub Linux image). Add or retarget a shader by
 editing the JSON, never by editing the scripts; the two scripts stayed in
 sync only by luck before this (they had drifted four ways, including Linux
 silently skipping compilation when slangc was absent). `_comment` fields in
 the JSON carry the rationale that used to be code comments.
+
+## The combined WGSL emit needs slangc ≥ 2026.8
+
+WGSL requires every non-builtin member of an inter-stage (varying) struct to
+carry `@location(N)`. **slangc `2026.1-52-gc8ddf20bb`** — the build shipped by
+Vulkan SDK 1.4.341.1, i.e. what the ContainerHub Linux image
+(`:latest-cross`, `VULKAN_VERSION=1.4.341.1`) puts on `PATH` — drops that
+attribute in the **combined** emit (compiled without `-entry`/`-stage`, which
+is exactly how every `wgslMap` file is produced), turning
+
+```wgsl
+    @location(0) uv_0 : vec2<f32>,
+```
+
+into a bare `uv_0 : vec2<f32>,` that wgpu/naga rejects. The **per-entry**
+emits from the *same binary* are correct, so this is a whole-module-emit bug,
+not a layout-assignment one, and none of it comes from our scripts: they copy
+slangc's output verbatim apart from the `depthTexturePatches` regexes (and
+`bloom.wgsl`, one of the affected files, has no patches at all).
+
+It is **not** a Windows-vs-Linux divergence, which is what it looked like
+while the Windows host ran a newer SDK than the container. Verified
+2026-08-02: slangc **2026.8** produces `@location` correctly and its output on
+Linux is **byte-for-byte identical** to the checked-in (Windows-generated)
+files — the only Windows/Linux difference in the emit is CRLF vs LF, which
+`.gitattributes` normalises away.
+
+Two guards, in `shader-manifest.json`'s `minSlangcVersionForWgsl` (`2026.8`)
+and in both compile scripts:
+
+1. **Below the floor the combined emit is skipped entirely** with a loud
+   warning. SPIR-V still compiles, and the checked-in WGSL is left untouched
+   instead of being overwritten with output naga rejects. If you edit a
+   `.slang` that feeds `wgslMap` you must regenerate on a toolchain at or
+   above the floor —
+   `BuildIntegrity.CheckedInWgslIsNotOlderThanItsSlangSource` fails if that
+   regeneration is skipped and forgotten.
+2. **At or above the floor the emit is verified before it is copied**: any
+   struct that has at least one `@builtin`/`@location` member (i.e. an IO
+   struct) but also a member with neither fails the script, names the
+   offending file and lines, and is *not* copied into the Rust crate. So a
+   future emit regression can never be committed silently either.
+
+`BuildIntegrity.CheckedInWgslVaryingStructsCarryLocations` applies the same
+rule to the checked-in files on every CI platform, and
+`BuildIntegrity.ShaderManifestPinsAMinimumSlangcVersionForWgsl` keeps the
+floor from being deleted. Raise the floor rather than hand-editing generated
+WGSL; bumping `VULKAN_VERSION` in the ContainerHub image is what re-enables
+WGSL regeneration on Linux.
 
 ## Fast shader iteration
 

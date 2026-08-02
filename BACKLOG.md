@@ -4782,23 +4782,40 @@ moved into ContainerHub composite actions; Pester wired into CI
 (`pester-tests` job); cargo-retry upstreamed; LICENSES-README rewritten;
 CHANGELOG.md deleted (git history + this file are the record). What remains:
 
-- [ ] **Migrate the two remaining Windows.yml inline container steps** (S) —
-  "Build/Test/Package" (passes secrets as literal argv to `pwsh -File`;
-  rewriting as `-Command` changes quoting semantics) and "GPU timing
-  comparison" (branches on the runner's `KATAGLYPHIS_CI_HAS_GPU` host env,
-  unreachable from a composite action's inputs without explicitly
-  forwarding it). Both need a deliberate design, not a mechanical swap;
-  the retry-pull loop could also move into an action input. Test: a
-  `[build-win]` push. Build preset: none (CI only).
+- [x] **Migrate the two remaining Windows.yml inline container steps** (S) —
+  done 2026-08-02. "GPU timing comparison" was already split earlier that
+  day into a host step that computes `TIMING_VALIDATION_FLAG` from
+  `KATAGLYPHIS_CI_HAS_GPU` plus a composite-action step that consumes it.
+  "Build/Test/Package" is now migrated too: `run-in-windows-container`
+  gained `extra-args` (Linux-action position, immediately before
+  `--mount`), plus `file`/`file-args` so a `pwsh -File <script> <argv...>`
+  payload keeps LITERAL argument semantics instead of being re-parsed as
+  `-Command`. All three are newline-delimited argv lists delivered through
+  env vars, so secrets never enter a host command string. Verified by
+  executing the old and new argv constructions side by side: same 35
+  arguments, identical multiset; the only ordering change is `-e
+  MSIX_CERT_PASSWORD=...` moving ahead of `--mount`, both being docker
+  options before the image name. The `docker pull` is now its own step.
+  Windows.yml has no inline `docker run` left. Not exercised on CI yet —
+  needs a `[build-win]` push. Build preset: none (CI only).
 
-- [ ] **Verify the 11 unverified Rust crate licenses** (S) —
-  docs/LICENSES-README.md lists env_logger, wgpu, winit, pollster, glam,
-  gltf, bevy_mikktspace, egui, egui-wgpu, egui-winit, ktx2 as
-  license-unverified (host ~/.cargo has no registry copies; builds run in
-  containers). Run `cargo license` (or read each crate's registry entry)
-  inside the `:latest-cross` container and fill in the table. Also covers
-  the KTX-embedded third-party bucket (basisu, zstd, lodepng, …) via KTX's
-  upstream LICENSE.md. Test: none (doc). Build preset: none.
+- [x] **Verify the 11 unverified Rust crate licenses** (S) — done
+  2026-08-02 via `cargo metadata --format-version 1 --locked` in the
+  `:latest-cross` container (the `license` field per package, i.e. what the
+  crate published to crates.io, for the exact `Cargo.lock` versions). All
+  11 resolved; `anyhow`/`log`/`bytemuck` were re-verified against their
+  exact lock versions instead of neighbouring cached ones (expressions
+  unchanged). Three are not the expected dual MIT/Apache: `winit 0.30.13`
+  and `ktx2 0.5.0` are Apache-2.0 only, `bevy_mikktspace 1.0.0` is
+  `Zlib AND (MIT OR Apache-2.0)`. The KTX-embedded bucket is resolved too,
+  but NOT from an upstream `LICENSE.md` — `ExternalLib/KTX/LICENSE.md` does
+  not exist, so each component was read from the vendored file that carries
+  its terms (`basisu/LICENSE`, `basisu/zstd/LICENSE`, `dfdutils/LICENSE.adoc`,
+  and the license headers of `lodepng.h`, `jpgd.h`, `stb_image*.h`,
+  `tinyexr.h`, `astcenc.h`, `etcdec.cxx`). Notable: `etcdec.cxx` is the only
+  file in the tree under a non-OSI licence (Ericsson's own SLA). Only
+  ContainerHub's missing LICENSE remains unverified (blocked item below).
+  Test: none (doc). Build preset: none.
 
 - [b] **ContainerHub has no LICENSE file** (S, **blocked on owner
   decision**) — surfaced by the license audit; consumers cannot state its
@@ -4830,22 +4847,41 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
   Until then treat host GPU goldens as unavailable and do not burn executor
   retries on them.
 
-- [ ] **Checked-in WGSL differs between Windows and Linux from the SAME
-  slangc** (M) — running `Scripts/Linux/compile-slang-shaders.sh` inside
-  `:latest-cross` regenerates `crates/**/shaders/*.wgsl` with real content
-  differences against the committed (Windows-generated) files, e.g.
-  `bloom.wgsl` loses `@location(0)` on `FullscreenVsOut_0.uv_0` — which wgpu
-  rejects. Both hosts report slangc `2026.1-52-gc8ddf20bb`, and `bloom.wgsl`
-  has NO entry in the manifest's `depthTexturePatches`, so this is neither a
-  version skew nor the patch table: it is a genuine platform divergence in
-  the emit (or in how the combined emit is assembled). Whoever regenerates
-  last wins, and a Linux regeneration would commit WGSL the Rust renderer
-  cannot compile. Steps: diff the per-entry emits before combining to find
-  where they diverge; if Linux is correct, regenerate + commit from Linux and
-  document it; otherwise pin the generating platform in
-  docs/shader-build-pipeline.md and add a gate. Test: after deciding, a
-  regeneration on both platforms must leave the submodule clean.
+- [x] **Checked-in WGSL differs between Windows and Linux from the SAME
+  slangc** (M) — done 2026-08-02, and the premise was wrong: the two hosts
+  did **not** have the same slangc. The Windows host is on Vulkan SDK
+  1.4.350.0 (slangc `2026.8`); the ContainerHub Linux image is pinned to
+  `VULKAN_VERSION=1.4.341.1` (slangc `2026.1-52-gc8ddf20bb`). It is a
+  **version** divergence, not a platform one: slangc 2026.8 on **Linux**
+  reproduces the committed files byte-for-byte (only CRLF vs LF differs, and
+  `.gitattributes` normalises that away). The bug is in slangc 2026.1's
+  **combined** (whole-module, no `-entry`/`-stage`) WGSL emit, which drops
+  `@location(N)` from every non-builtin varying-struct member; the
+  **per-entry** emits from the same binary are correct, so our scripts —
+  which copy slangc's output verbatim — were never at fault. Windows was the
+  correct side. Fixed by pinning `minSlangcVersionForWgsl: "2026.8"` in
+  `shader-manifest.json`: below it both compile scripts skip the combined
+  emit entirely (loud warning, SPIR-V still built, checked-in WGSL left
+  untouched — so a Linux build no longer corrupts the submodule); at or above
+  it they verify every emit and hard-fail, without copying, on any IO-struct
+  member carrying neither `@builtin` nor `@location`. Pinned by
+  `BuildIntegrity.CheckedInWgslVaryingStructsCarryLocations` and
+  `BuildIntegrity.ShaderManifestPinsAMinimumSlangcVersionForWgsl`; documented
+  in `docs/shader-build-pipeline.md`. Follow-up (separate item below): bump
+  the ContainerHub image's `VULKAN_VERSION` so Linux can regenerate again.
   Build preset: none (shader tooling).
+
+- [ ] **Bump the ContainerHub Linux image's Vulkan SDK past slangc 2026.8**
+  (S) — `ExternalLib/Kataglyphis-ContainerHub/linux/Dockerfile.base` pins
+  `ARG VULKAN_VERSION=1.4.341.1`, whose slangc (`2026.1-52-gc8ddf20bb`)
+  cannot emit valid combined WGSL (see the entry above). Until it is bumped,
+  `Scripts/Linux/compile-slang-shaders.sh` deliberately skips the WGSL half
+  of its job, so `crates/**/shaders/*.wgsl` can only be regenerated from
+  Windows. Bump to the SDK carrying slangc ≥ 2026.8 (1.4.350.0 is verified),
+  rebuild/push `:latest-cross`, then confirm a container run of
+  `compile-slang-shaders.sh` emits 10 combined WGSL files and leaves
+  `git -C ExternalLib/Kataglyphis-RustProjectTemplate status` clean.
+  Build preset: none (container tooling).
 
 - [ ] **Upstream the generic half of `docs-build-web.sh`** (S) — the last
   deferred reuse candidate. The Sphinx documentation build is generic to any

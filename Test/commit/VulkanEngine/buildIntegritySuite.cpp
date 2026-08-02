@@ -24,6 +24,7 @@
 #include <regex>
 #include <set>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -140,6 +141,11 @@ struct ShaderManifestData
     // Output filenames keyed by "depthTexturePatches" (documentation
     // "_comment" keys excluded).
     std::set<std::string> depth_patched_files;
+    // "minSlangcVersionForWgsl": the toolchain floor both compile scripts use
+    // to decide whether the combined WGSL emit may run at all. Empty when the
+    // key is absent - ShaderManifestPinsAMinimumSlangcVersionForWgsl fails on
+    // that, because an absent floor silently re-enables the broken emit.
+    std::string min_slangc_version_for_wgsl;
 };
 
 // Strict parse of shader-manifest.json: any missing/mistyped field in a row
@@ -203,6 +209,11 @@ std::optional<ShaderManifestData> parse_shader_manifest(const fs::path &manifest
         if (key.starts_with("_")) { continue; }// documentation-only keys
         if (!value.is_array() || value.empty()) { return std::nullopt; }
         data.depth_patched_files.insert(key);
+    }
+
+    const auto min_version_it = doc.find("minSlangcVersionForWgsl");
+    if (min_version_it != doc.end() && min_version_it->is_string()) {
+        data.min_slangc_version_for_wgsl = min_version_it->get<std::string>();
     }
 
     return data;
@@ -1277,6 +1288,133 @@ TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)
              for (const auto &entry : hand_edits) { joined += "\n  " + entry; }
              return joined;
          }();
+}
+
+// WGSL requires every non-builtin member of an inter-stage (varying) struct to
+// carry @location(N); only @builtin members may omit it. slangc
+// 2026.1-52-gc8ddf20bb (Vulkan SDK 1.4.341.1 - the ContainerHub Linux image)
+// drops @location from varying structs in the COMBINED emit (compiled without
+// -entry/-stage, which is exactly how the manifest's wgslMap files are
+// produced) while emitting it correctly per entry point from the SAME binary;
+// slangc 2026.8 is correct on both Windows and Linux and reproduces these
+// files byte-for-byte. A regeneration on the older toolchain therefore turned
+// `@location(0) uv_0 : vec2<f32>` into a bare `uv_0 : vec2<f32>` in eight of
+// the ten checked-in files - WGSL naga rejects, committed silently because
+// nothing looked at the emit. The compile scripts now skip the emit below the
+// manifest's minSlangcVersionForWgsl and hard-fail on a violation above it;
+// this is the backstop that runs in CI on every platform and cannot be
+// bypassed by regenerating with a different tool.
+//
+// A struct with at least one @builtin/@location member is an IO struct, so
+// every member of it must carry one of those attributes. Structs with no such
+// member (uniform/storage layouts, which use @align instead) are not IO and
+// are skipped.
+TEST(BuildIntegrity, CheckedInWgslVaryingStructsCarryLocations)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const auto &manifest = shader_manifest(repo_root);
+    ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
+
+    static const std::regex kStructHead(R"(^struct\s+([A-Za-z_]\w*))");
+    static const std::regex kMember(R"(^\s*((?:@\w+\([^)]*\)\s*)*)([A-Za-z_]\w*)\s*:\s*\S.*?,?\s*$)");
+    const auto is_io_attr = [](const std::string &attrs) {
+        return attrs.find("@builtin(") != std::string::npos || attrs.find("@location(") != std::string::npos;
+    };
+
+    std::vector<std::string> violations;
+    int checked = 0;
+    for (const auto &mapping : manifest->wgsl_map) {
+        const fs::path dest = repo_root / mapping.dst_dir / mapping.wgsl_file;
+        if (!fs::exists(dest)) { continue; }// RustProjectTemplate submodule not checked out here
+        ++checked;
+
+        std::ifstream file(dest);
+        if (!file) { continue; }
+
+        std::vector<std::string> lines;
+        std::string line;
+        while (std::getline(file, line)) {
+            if (!line.empty() && line.back() == '\r') { line.pop_back(); }
+            lines.push_back(line);
+        }
+
+        std::size_t index = 0;
+        while (index < lines.size()) {
+            std::smatch head;
+            const std::string struct_line = lines[index];
+            ++index;
+            if (!std::regex_search(struct_line, head, kStructHead)) { continue; }
+            const std::string struct_name = head[1].str();
+
+            if (index < lines.size() && lines[index].find_first_not_of(" \t") != std::string::npos
+                && lines[index].substr(lines[index].find_first_not_of(" \t")) == "{") {
+                ++index;
+            }
+
+            // (1-based line number, attribute prefix, raw text) per member.
+            std::vector<std::tuple<std::size_t, std::string, std::string>> members;
+            while (index < lines.size()) {
+                const std::size_t first = lines[index].find_first_not_of(" \t");
+                if (first != std::string::npos && lines[index][first] == '}') { break; }
+                std::smatch member;
+                if (std::regex_match(lines[index], member, kMember)) {
+                    members.emplace_back(index + 1, member[1].str(), lines[index]);
+                }
+                ++index;
+            }
+
+            const bool is_io_struct = std::any_of(members.begin(), members.end(), [&](const auto &member) {
+                return is_io_attr(std::get<1>(member));
+            });
+            if (!is_io_struct) { continue; }
+
+            for (const auto &[line_number, attrs, text] : members) {
+                if (is_io_attr(attrs)) { continue; }
+                violations.push_back(fs::relative(dest, repo_root).generic_string() + ':'
+                                      + std::to_string(line_number) + ": struct " + struct_name + ": " + text);
+            }
+        }
+    }
+
+    if (checked == 0) {
+        GTEST_SKIP() << "none of the checked-in Rust-crate WGSL destinations exist - the "
+                        "RustProjectTemplate submodule is likely not checked out here";
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " member(s) of an inter-stage WGSL struct carry neither @builtin nor @location - naga rejects that. "
+         "This is the signature of a regeneration with slangc older than the manifest's "
+         "minSlangcVersionForWgsl; regenerate with a newer slangc rather than hand-editing: "
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+// The floor above is only enforced if it is actually in the manifest: both
+// compile scripts treat a missing minSlangcVersionForWgsl as "no floor" (they
+// must, so an older manifest still builds), which would silently re-enable the
+// broken combined emit on the container's slangc. Pin its presence and shape
+// here instead - the scripts compare the leading MAJOR.MINOR only.
+TEST(BuildIntegrity, ShaderManifestPinsAMinimumSlangcVersionForWgsl)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const auto &manifest = shader_manifest(repo_root);
+    ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
+
+    EXPECT_FALSE(manifest->min_slangc_version_for_wgsl.empty())
+      << "shader-manifest.json has no \"minSlangcVersionForWgsl\" - without it both compile scripts stop "
+         "skipping the combined WGSL emit on toolchains whose emit drops varying @location attributes";
+    EXPECT_TRUE(std::regex_search(manifest->min_slangc_version_for_wgsl, std::regex(R"(^\d+\.\d+)")))
+      << "\"minSlangcVersionForWgsl\" (" << manifest->min_slangc_version_for_wgsl
+      << ") must start with MAJOR.MINOR - the compile scripts compare only that prefix and treat anything "
+         "unparseable as new enough";
 }
 
 // `Resources/Shaders/` (the pre-Slang GLSL tree) was deleted once the Slang
