@@ -4,6 +4,7 @@
 #include "common/Utilities.hpp"
 #include <cstdint>
 #include <glm/ext/matrix_float4x4.hpp>
+#include <optional>
 #include <utility>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -29,12 +30,13 @@ void Model::cleanUp()
     for (Texture &texture : modelTextures) { texture.cleanUp(); }
     modelTextures.clear();
 
-    for (vk::Sampler texture_sampler : modelTextureSamplers) {
-        device->getLogicalDevice().destroySampler(texture_sampler);
-    }
+    for (vk::Sampler owned_sampler : ownedSamplers) { device->getLogicalDevice().destroySampler(owned_sampler); }
+    ownedSamplers.clear();
+    ownedSamplerMipLevels.clear();
     modelTextureSamplers.clear();
 
     for (Mesh &m : meshes) { m.cleanUp(); }
+    meshes.clear();
 }
 
 void Model::add_new_mesh(std::shared_ptr<VulkanDevice>vulkan_device,
@@ -65,11 +67,19 @@ Model::~Model() { cleanUp(); }
 
 void Model::addSampler(const Texture &newTexture)
 {
+    const uint32_t mip_level = newTexture.getMipLevel();
+
+    if (std::optional<std::size_t> existing = findSamplerForMipLevel(ownedSamplerMipLevels, mip_level);
+        existing.has_value()) {
+        modelTextureSamplers.push_back(ownedSamplers[*existing]);
+        return;
+    }
+
     const bool aniso = device->supportsSamplerAnisotropy();
 
     vk::SamplerCreateInfo sampler_create_info = buildSamplerCreateInfo(vk::Filter::eLinear,
       vk::SamplerAddressMode::eRepeat,
-      static_cast<float>(newTexture.getMipLevel()),
+      static_cast<float>(mip_level),
       aniso,
       aniso ? 16.0F : 1.0F,
       vk::BorderColor::eFloatOpaqueBlack);
@@ -78,5 +88,7 @@ void Model::addSampler(const Texture &newTexture)
     ASSERT_VULKAN(sampler_result.result, "Failed to create texture sampler!")
     vk::Sampler newSampler = sampler_result.value;
 
+    ownedSamplerMipLevels.push_back(mip_level);
+    ownedSamplers.push_back(newSampler);
     modelTextureSamplers.push_back(newSampler);
 }

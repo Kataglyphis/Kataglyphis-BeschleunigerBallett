@@ -1,5 +1,9 @@
 module;
 
+#include <algorithm>
+#include <cstdint>
+#include <optional>
+#include <span>
 #include <vulkan/vulkan.hpp>
 
 module kataglyphis.vulkan.sampler_builder;
@@ -31,4 +35,12 @@ auto Kataglyphis::buildSamplerCreateInfo(vk::Filter filter,
     sampler_create_info.compareOp = compareOp;
 
     return sampler_create_info;
+}
+
+auto Kataglyphis::findSamplerForMipLevel(std::span<const uint32_t> createdMipLevels, uint32_t mipLevel)
+  -> std::optional<std::size_t>
+{
+    const auto it = std::ranges::find(createdMipLevels, mipLevel);
+    if (it == createdMipLevels.end()) { return std::nullopt; }
+    return static_cast<std::size_t>(std::ranges::distance(createdMipLevels.begin(), it));
 }

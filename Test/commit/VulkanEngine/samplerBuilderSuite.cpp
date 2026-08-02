@@ -6,11 +6,15 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <cstdint>
+#include <optional>
 #include <vulkan/vulkan.hpp>
 
 import kataglyphis.vulkan.sampler_builder;
 
 using Kataglyphis::buildSamplerCreateInfo;
+using Kataglyphis::findSamplerForMipLevel;
 
 TEST(SamplerBuilderUnit, MatchesPostStageOffscreenSamplerConfiguration)
 {
@@ -90,4 +94,21 @@ TEST(SamplerBuilderUnit, MatchesShadowMapComparisonSamplerConfiguration)
 
     EXPECT_EQ(info.compareEnable, static_cast<vk::Bool32>(VK_TRUE));
     EXPECT_EQ(info.compareOp, vk::CompareOp::eLessOrEqual);
+}
+
+TEST(SamplerBuilder, FindSamplerForMipLevelReusesAnEqualMipCount)
+{
+    const std::array<uint32_t, 3> created_mip_levels{ 1U, 4U, 7U };
+
+    EXPECT_EQ(findSamplerForMipLevel(created_mip_levels, 4U), 1U);
+    EXPECT_EQ(findSamplerForMipLevel(created_mip_levels, 1U), 0U);
+    EXPECT_EQ(findSamplerForMipLevel(created_mip_levels, 7U), 2U);
+}
+
+TEST(SamplerBuilder, FindSamplerForMipLevelReturnsNulloptForANewMipCount)
+{
+    const std::array<uint32_t, 3> created_mip_levels{ 1U, 4U, 7U };
+
+    EXPECT_EQ(findSamplerForMipLevel(created_mip_levels, 2U), std::nullopt);
+    EXPECT_EQ(findSamplerForMipLevel({}, 0U), std::nullopt);
 }

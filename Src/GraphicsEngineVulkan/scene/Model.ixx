@@ -54,5 +54,12 @@ class Model
 
     std::vector<Texture> modelTextures;
     std::vector<vk::Sampler> modelTextureSamplers;
+
+    // Backing storage for the samplers this Model actually created (and
+    // therefore owns and must destroy). Distinct from modelTextureSamplers,
+    // which stays index-parallel with modelTextures and may repeat a handle
+    // when two textures share a mip level.
+    std::vector<uint32_t> ownedSamplerMipLevels;
+    std::vector<vk::Sampler> ownedSamplers;
 };
 }// namespace Kataglyphis
