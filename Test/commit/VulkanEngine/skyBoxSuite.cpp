@@ -57,3 +57,11 @@ TEST(SkyBoxUnit, AcceptsAllLargeEqualFaces)
     const int heights[6] = { 128, 128, 128, 128, 128, 128 };
     EXPECT_TRUE(Kataglyphis::cubemapFacesConsistent(widths, heights));
 }
+
+TEST(SkyBoxUnit, FallbackCubemapFacePixelIsOpaqueBlack)
+{
+    EXPECT_EQ(Kataglyphis::kFallbackCubemapFacePixel[0], 0);
+    EXPECT_EQ(Kataglyphis::kFallbackCubemapFacePixel[1], 0);
+    EXPECT_EQ(Kataglyphis::kFallbackCubemapFacePixel[2], 0);
+    EXPECT_EQ(Kataglyphis::kFallbackCubemapFacePixel[3], 255);
+}

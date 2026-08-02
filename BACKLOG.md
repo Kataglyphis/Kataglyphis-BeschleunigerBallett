@@ -4533,41 +4533,6 @@ loop already `continue`s before allocating for non-matching primitives, so the
 measured cost is a few thousand comparisons per frame on any realistic scene;
 not worth a task until something measures it.
 
-- [ ] **(S) A skybox whose faces fail to load hands `vkCreatePipelineLayout` a null descriptor-set layout** — running the binary from the wrong working directory turns a missing texture into a crash.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp` — `init` (:34-40), `loadCubeMap` (:42-159) and its two early returns (:68 on a failed `stbi_load`, :83 on inconsistent face dimensions), `createDescriptorSetForCubeMap` (:161-233, called only at the very end of `loadCubeMap`), `createGraphicsPipeline` (:300-344, `combinedLayouts` at :315 with `setLayoutCount = 2`), `recordCommands` (:367-...; it indexes `descriptorSets[0]` unchecked and binds `descriptorSet`).
-  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.ixx` — the handle members that stay `VK_NULL_HANDLE` on the failure path.
-  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp:246-251` — the guard shape to copy (`recordComputeCommands` rejects an empty descriptor-set span).
-  - `Test/commit/VulkanEngine/skyBoxSuite.cpp` and `Src/GraphicsEngineVulkan/scene/sky_box/CubemapFaces.hpp` — the existing `SkyBoxUnit` CPU tests and the pure predicate they cover.
-
-  **Steps:**
-  1. Split `createDescriptorSetForCubeMap` so the layout, pool and set are created **unconditionally** from `init` — they describe a binding, not a resource, and `createGraphicsPipeline` needs `descriptorSetLayout` valid on every path. Only the `updateDescriptorSets` write depends on the loaded image.
-  2. On the failure paths (:68, :83), build a 1x1, 6-layer opaque-black `eR8G8B8A8Srgb` cube texture in-process (no file I/O — same upload shape as the real path, 24 bytes of staging) and write *that* into the descriptor. The pass then renders a black sky instead of aborting.
-  3. Add an early-return guard to `recordCommands` in the shape of `Clouds::recordComputeCommands`: bail with an `spdlog::error` when `descriptorSets.empty()`, or when `graphicsPipeline` / `descriptorSet` is null.
-  4. Do **not** "fix" this by skipping the skybox render pass: it is what clears the colour and depth attachments the rasterizer subsequently loads (:227-236, and the `dependencies[1]` external transition), so skipping it leaves an uninitialised attachment.
-
-  **Test:** add `SkyBoxUnit` cases in `Test/commit/VulkanEngine/skyBoxSuite.cpp`
-  for the pure logic the split exposes — the "is the loaded cubemap usable"
-  predicate and the fallback-face byte pattern — following the
-  `cubemapFacesConsistent` tests already there. The end-to-end proof is a host
-  launch: build, then run `build-clangcl-debug\GraphicsEngine.exe` with the
-  working directory set to `build-clangcl-debug\` (so `Resources/` does not
-  resolve) and confirm it starts with a black sky and a validation-clean log
-  instead of aborting. That is the crash today.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`,
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='SkyBoxUnit.*'`,
-  then — because a render pass's descriptors changed —
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1`.
-
-  **Context:** AGENTS.md warns in three separate places that the binaries must
-  run from the repo root; this is the code path that punishes getting it wrong
-  with an abort rather than a log line. The dimension-mismatch return at :83
-  has the identical shape, and the comment above it (:72-79) shows this
-  function has already been the source of one memory-safety bug.
-
 - [ ] **(M) (refactor) One resolver for the "walk up looking for `Resources/`" search — there are four copies, and the fourth is the skybox's, which does not walk at all** — the divergence is what makes a wrong working directory fatal in one place and harmless in the others.
 
   **Files to read:**

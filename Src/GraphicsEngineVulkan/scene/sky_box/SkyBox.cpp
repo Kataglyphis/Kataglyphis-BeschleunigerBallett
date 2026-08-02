@@ -37,6 +37,10 @@ void SkyBox::init(std::shared_ptr<VulkanDevice>in_device, vk::CommandPool comman
     this->device = in_device;
 
     createMesh(commandPool);
+    // The layout/pool/set describe a binding shape, not a loaded resource, so
+    // they are created unconditionally here - createGraphicsPipeline() needs
+    // descriptorSetLayout valid on every path, including a failed load below.
+    createDescriptorSetForCubeMap();
     loadCubeMap(commandPool);
 }
 
@@ -58,8 +62,6 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
     std::vector<unsigned char*> face_data(6);
     int face_widths[6] = {};
     int face_heights[6] = {};
-    vk::DeviceSize layerSize = 0;
-    vk::DeviceSize imageSize = 0;
 
     for (size_t i = 0; i < 6; i++) {
         std::string path = skybox_base_dir.str() + skybox_textures[i];
@@ -67,6 +69,7 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
         if (!face_data[i]) {
             spdlog::error("Failed to load skybox texture: {}", path);
             for (size_t j = 0; j < i; j++) { stbi_image_free(face_data[j]); }
+            loadFallbackCubeMap(commandPool);
             return;
         }
     }
@@ -82,22 +85,48 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
     if (!cubemapFacesConsistent(face_widths, face_heights)) {
         spdlog::error("Skybox faces have inconsistent or degenerate dimensions; all six faces must match.");
         for (size_t j = 0; j < 6; j++) { stbi_image_free(face_data[j]); }
+        loadFallbackCubeMap(commandPool);
         return;
     }
 
     width = face_widths[0];
     height = face_heights[0];
 
-    layerSize = static_cast<vk::DeviceSize>(width) * static_cast<vk::DeviceSize>(height) * 4;
-    imageSize = layerSize * 6;
+    spdlog::info("SkyBox: All 6 textures loaded, width={}, height={}", width, height);
 
-    spdlog::info("SkyBox: All 6 textures loaded, width={}, height={}, totalImageSize={}", width, height, imageSize);
-
+    std::array<const unsigned char*, 6> faces = {
+        face_data[0], face_data[1], face_data[2], face_data[3], face_data[4], face_data[5]
+    };
     // sRGB, not UNORM: the DOOM skybox faces are sRGB-encoded PNGs, so a UNORM
     // view fed gamma-space values into the HDR target that post then gamma-
     // encodes again - the same defect the material-texture sRGB fix caught,
     // on a separate texture path. sRGB makes the hardware decode to linear.
-    cubeMapTexture->createImage(device, static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, 6, vk::ImageCreateFlagBits::eCubeCompatible);
+    uploadCubeMapFaces(commandPool, static_cast<uint32_t>(width), static_cast<uint32_t>(height), faces);
+
+    for (size_t i = 0; i < 6; i++) { stbi_image_free(face_data[i]); }
+
+    updateDescriptorSetForCubeMap();
+}
+
+void SkyBox::loadFallbackCubeMap(vk::CommandPool commandPool)
+{
+    // 1x1, 6-layer opaque-black RGBA8 (24 bytes of staging) - same upload
+    // shape as the real path, so a missing/broken skybox renders a black sky
+    // instead of leaving cubeMapTexture/descriptorSet pointed at nothing.
+    std::array<const unsigned char*, 6> faces = {
+        kFallbackCubemapFacePixel, kFallbackCubemapFacePixel, kFallbackCubemapFacePixel,
+        kFallbackCubemapFacePixel, kFallbackCubemapFacePixel, kFallbackCubemapFacePixel
+    };
+    uploadCubeMapFaces(commandPool, 1, 1, faces);
+    updateDescriptorSetForCubeMap();
+}
+
+void SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool, uint32_t width, uint32_t height, std::span<const unsigned char *const, 6> faceData)
+{
+    vk::DeviceSize const layerSize = static_cast<vk::DeviceSize>(width) * static_cast<vk::DeviceSize>(height) * 4;
+    vk::DeviceSize const imageSize = layerSize * 6;
+
+    cubeMapTexture->createImage(device, width, height, 1, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, 6, vk::ImageCreateFlagBits::eCubeCompatible);
 
     VulkanBuffer stagingBuffer;
     stagingBuffer.create(device, imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
@@ -106,10 +135,8 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
     void* mappedData = stagingBuffer.getMappedData();
     for (size_t i = 0; i < 6; i++) {
         void* layerOffset = static_cast<char*>(mappedData) + i * layerSize;
-        std::memcpy(layerOffset, face_data[i], static_cast<size_t>(layerSize));
+        std::memcpy(layerOffset, faceData[i], static_cast<size_t>(layerSize));
     }
-
-    for (size_t i = 0; i < 6; i++) { stbi_image_free(face_data[i]); }
 
     vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);
 
@@ -132,14 +159,14 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
 
     vk::BufferImageCopy region{};
     region.bufferOffset = 0;
-    region.bufferRowLength = static_cast<uint32_t>(width);
-    region.bufferImageHeight = static_cast<uint32_t>(height);
+    region.bufferRowLength = width;
+    region.bufferImageHeight = height;
     region.imageSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
     region.imageSubresource.mipLevel = 0;
     region.imageSubresource.baseArrayLayer = 0;
     region.imageSubresource.layerCount = 6;
     region.imageOffset = vk::Offset3D{0, 0, 0};
-    region.imageExtent = vk::Extent3D{static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1};
+    region.imageExtent = vk::Extent3D{width, height, 1};
 
     commandBuffer.copyBufferToImage(stagingBuffer.getBuffer(), cubeMapTexture->getImage(), vk::ImageLayout::eTransferDstOptimal, 1, &region);
 
@@ -156,8 +183,6 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
 
     cubeMapTexture->createImageView(device, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, 1, vk::ImageViewType::eCube, 6);
     cubeMapTexture->createTextureSampler(device);
-
-    createDescriptorSetForCubeMap();
 }
 
 void SkyBox::createDescriptorSetForCubeMap()
@@ -197,7 +222,10 @@ void SkyBox::createDescriptorSetForCubeMap()
     auto allocResult = device->getLogicalDevice().allocateDescriptorSets(allocInfo);
     ASSERT_VULKAN(VkResult(allocResult.result), "Failed to allocate skybox descriptor set!");
     descriptorSet = allocResult.value[0];
+}
 
+void SkyBox::updateDescriptorSetForCubeMap()
+{
     vk::DescriptorImageInfo imageInfo{};
     imageInfo.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
     imageInfo.imageView = cubeMapTexture->getImageView();
@@ -371,6 +399,11 @@ void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_ind
 {
     if (image_index >= framebuffers.size() || framebuffers.empty()) {
         spdlog::error("SkyBox: framebuffer not created or index out of range!");
+        return;
+    }
+
+    if (descriptorSets.empty() || !graphicsPipeline || !descriptorSet) {
+        spdlog::error("SkyBox::recordCommands called with an empty shared descriptor set span or an unready pipeline");
         return;
     }
 

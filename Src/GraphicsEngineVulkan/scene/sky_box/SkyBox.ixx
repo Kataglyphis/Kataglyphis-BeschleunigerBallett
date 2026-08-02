@@ -56,7 +56,10 @@ class SkyBox
     uint32_t framebufferHeight{0};
 
     void loadCubeMap(vk::CommandPool commandPool);
+    void loadFallbackCubeMap(vk::CommandPool commandPool);
+    void uploadCubeMapFaces(vk::CommandPool commandPool, uint32_t width, uint32_t height, std::span<const unsigned char *const, 6> faceData);
     void createMesh(vk::CommandPool commandPool);
     void createDescriptorSetForCubeMap();
+    void updateDescriptorSetForCubeMap();
 };
 }

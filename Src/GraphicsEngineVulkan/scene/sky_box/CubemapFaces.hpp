@@ -18,4 +18,9 @@ constexpr bool cubemapFacesConsistent(std::span<const int, 6> widths, std::span<
     return true;
 }
 
+// The fallback face SkyBox uploads when a real face fails to load or the six
+// faces disagree in size: one opaque-black RGBA8 texel. Shared with the test
+// suite so the shipped byte pattern cannot drift from what is asserted here.
+inline constexpr unsigned char kFallbackCubemapFacePixel[4] = { 0, 0, 0, 255 };
+
 }// namespace Kataglyphis
