@@ -23,6 +23,7 @@ using Kataglyphis::Frontend::handle_key_callback;
 using Kataglyphis::Frontend::handle_mouse_callback;
 using Kataglyphis::Frontend::reset_window_keys;
 using Kataglyphis::Frontend::should_capture_cursor;
+using Kataglyphis::Frontend::should_release_cursor;
 using Kataglyphis::Frontend::window_key_count;
 }// namespace
 
@@ -177,10 +178,19 @@ TEST(WindowInputUnit, PressIsStillSwallowedWhileImGuiHasCapture)
 
 TEST(WindowInputUnit, CursorCaptureDecisionIgnoresImGuiState)
 {
-    // A release must always return false regardless of capture - the
-    // decision to (re)install the cursor callback is a pure function of
-    // button/action, independent of ImGui.
+    // Covers should_capture_cursor only - the decision to (re)install the
+    // cursor callback is a pure function of button/action, independent of
+    // ImGui. should_release_cursor is covered separately below.
     EXPECT_TRUE(should_capture_cursor(GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS));
     EXPECT_FALSE(should_capture_cursor(GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE));
     EXPECT_FALSE(should_capture_cursor(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS));
+}
+
+TEST(WindowInputUnit, OnlyTheRightButtonReleaseEndsLookMode)
+{
+    EXPECT_TRUE(should_release_cursor(GLFW_MOUSE_BUTTON_RIGHT, GLFW_RELEASE));
+    EXPECT_FALSE(should_release_cursor(GLFW_MOUSE_BUTTON_RIGHT, GLFW_PRESS));
+    EXPECT_FALSE(should_release_cursor(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS));
+    EXPECT_FALSE(should_release_cursor(GLFW_MOUSE_BUTTON_LEFT, GLFW_RELEASE));
+    EXPECT_FALSE(should_release_cursor(GLFW_MOUSE_BUTTON_MIDDLE, GLFW_RELEASE));
 }

@@ -4623,6 +4623,314 @@ behaviour change, not a refactor.
   `sizeof` assertion moves, stop: that is a real finding, not a number to
   update.
 
+## 2026-08-02 batch X — planner (a left click that cancels right-button look mode, a `map_Kd` backslash rule only one of the two OBJ loaders applies, a window whose creation failure nothing checks, two more dead accessors, a mip filter that always rounds down)
+
+**Every task in this batch is verifiable with no GPU**, deliberately: the
+fifteen `- [b]` entries above are still blocked on host GPU golden verification.
+Tasks 1, 2 and 4 land device-free unit tests in suites that already run in
+Windows CI (`WindowInputUnit`, `ObjParseUnit`); task 5 is `cargo test` on a pure
+function that already has its own `#[cfg(test)]` module; task 3 is a
+compile-verified dead-state deletion plus a one-line guard. Every `file:line`
+below was read out of the tree this pass, and every dead-code claim was
+confirmed by a whole-tree grep over `Src/` + `Test/`. The actionable queue was
+empty when this batch was written.
+
+**The headline is that pressing ANY button other than the right one ends
+right-button look mode.** `handle_mouse_button_callback`
+(`Src/shared/frontend/WindowInputCallbacks.ixx:87-103`) uses one predicate for
+two decisions: `should_capture_cursor(button, action)` answers "should I START
+look mode", and everything else falls into an `else` branch that does
+`mouse_first_moved = true; glfwSetCursorPosCallback(window, nullptr)`. A left
+press while the right button is still held is not a right-button press, so it
+takes the `else` branch and tears the cursor callback down mid-orbit; the camera
+stops turning until the user releases and re-presses the right button. The
+existing test even pins the input half of it —
+`CursorCaptureDecisionIgnoresImGuiState`
+(`Test/commit/VulkanEngine/frontendInputSuite.cpp:178-186`) asserts
+`should_capture_cursor(GLFW_MOUSE_BUTTON_LEFT, GLFW_PRESS) == false`, which is
+correct for "start" and is exactly what the `else` branch then misreads as
+"stop". Same shape as the RELEASE-under-ImGui-capture bug `c37394b4` fixed one
+callback over: one predicate asked to answer two different questions.
+
+**Second: the two OBJ loaders do not resolve `map_Kd` the same way, and
+`docs/model-loading.md:121` claims they do.** The Rust side normalises `\` to
+`/` before resolving (`crates/webgpu_renderer/src/asset/obj_to_gltf.rs:132-147`,
+`values.last().map(|name| name.replace('\\', "/"))`); the C++ side takes
+`mp->diffuse_texname` verbatim (`Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:181-192`)
+and tinyobjloader does not translate separators either (grep-checked
+`ExternalLib/TINY_OBJ_LOADER/tiny_obj_loader.h` — its only backslash handling is
+the Windows UNC prefix at `:1284-1299`). So a Windows-authored
+`map_Kd textures\wall.png` resolves in the Rust renderer on every platform and
+silently degrades to the white default texture in the C++ one on Linux — i.e.
+in the only CI lane that runs on every push. The doc's own bullet
+(`docs/model-loading.md:144-146`) already records the normalisation as
+"a deliberate deviation", which contradicts the headline sentence six lines
+earlier. **No shipped asset under `Resources/Models` uses a backslash**
+(grep-confirmed this pass), so nothing is broken today: this is parity plus the
+doc fix, not a live defect. The same call site has a second, unrelated gap —
+`Kataglyphis::Shared::getBaseDir` (`Src/shared/util/FileReader.ixx:73-79`)
+returns `""` for a path with no separator, and `ObjLoader.cpp:191-192` then
+builds `"" + "/" + name`, so an OBJ opened by bare filename resolves its
+textures against the **filesystem root**.
+
+**Third, the dead state: `Window` keeps two members nothing reads and throws
+away the one value that says whether it worked.** `window_width` /
+`window_height` (`Window.ixx:34`) are read exactly once, by `glfwCreateWindow`
+(`Window.cpp:64-65`); `framebuffer_size_callback` (`Window.cpp:107-113`) keeps
+writing the resized values into them and no reader exists anywhere in `Src/` or
+`Test/` (grep-confirmed — every consumer calls `glfwGetFramebufferSize`
+directly: `VulkanRenderer.cpp:646,648`, `VulkanSwapChain.cpp:52`). Separately,
+`initialize()` returns `int` and **both constructors discard it**
+(`Window.cpp:33,45`), so a failed `glfwInit`/`glfwCreateWindow` leaves
+`main_window == nullptr` and `App::run()` (`App.cpp:35-41`) walks straight into
+`glfwCreateWindowSurface(instance, nullptr, …)` (`VulkanRenderer.cpp:1214-1220`)
+— GLFW's `assert(window != NULL)` is compiled out in Release, so the release
+build crashes with no diagnostic while the message it should have printed
+("GLFW Window creation failed!") is already sitting in `initialize()`.
+
+**Fourth, two more dead accessors — which contradicts batch IX's claim that the
+`Src/**/*.ixx` accessor sweep was drained.** `GpuTimingSubsystem::passRecordedMask`
+(`GpuTimingSubsystem.ixx:239`) and `sliceWasRecorded` (`:249-252`) have exactly
+one occurrence each in the whole tree (their own definitions). `passRecordedMask`
+additionally indexes `gpu_timing_pass_mask[imageIndex]` with no bounds check
+while both of its siblings (`setPassRecordedMask` at `:245`, `sliceWasRecorded`
+at `:251`) check — and the vector is empty whenever `create()` took its
+unsupported-timestamps early return (`:83-88`), so the one accessor without a
+guard is the one that would fire.
+
+Ordering: all five are independent and touch disjoint files. Task 2 edits
+`docs/model-loading.md`; nothing else in this batch touches docs.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`Texture::createImage` not recording `in_mip_levels`
+into `mip_levels`, so `createTextureSampler` builds `maxLod = 0` for Clouds,
+SkyBox and CascadedShadowMap** — re-confirmed a third time and re-rejected for
+the reason batches IV and V gave, with the extra note that all three of those
+images are created with exactly one mip level, so `maxLod = 0` is the correct
+value by accident and no sampling behaviour changes; **`BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter`**
+— re-ran both of its parsers by hand this pass (45 defined suites vs 43 filter
+entries plus `GoldenRender`/`Integration`); it is GREEN, unlike when batch VI
+found it red, so do not re-file it; **the shader manifest vs the tree** —
+cross-checked `Resources/ShadersSlang/shader-manifest.json` against every
+`.slang` on disk: no manifest row names a missing file, and the eleven
+unreferenced sources are all `import`-only (`common/*.slang`,
+`raytracing/rt_types.slang`) or the `spike/` scratch pair, which is what
+`EveryShaderSourceHasCompiledBinary` already encodes; **`sceneConfig::getModelMatrix()`'s
+`#if NDEBUG` split** (`SceneConfig.cpp:116-131`) — both branches are
+`glm::scale(identity, vec3(1,1,1))`, i.e. the same identity matrix, so the
+conditional is dead; real, but a three-line deletion with no behavioural or
+test consequence, so it is not worth an executor session on its own — fold it
+into the next `SceneConfig` change; **`Scene::reloadModel` not calling
+`resolveModelPath`** (`Scene.cpp:166-184`) unlike `loadAdditionalModel` — looks
+like the same class as task 2, but its only caller already resolves
+(`VulkanRenderer.cpp:390-394`), so the asymmetry is cosmetic;
+**`DescriptorSetGroup::writeImageArray` re-calling `findBinding` and
+dereferencing without a null check** (`DescriptorSetGroup.cpp:194-195`) —
+`beginWrite` at `:192` already returned false if that lookup fails, so the
+pointer cannot be null; a redundant lookup, not a defect.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Give the C++ OBJ loader the same `map_Kd` rule the Rust one has: normalise `\` and stop resolving against the filesystem root** — `docs/model-loading.md` says both loaders resolve identically and they do not.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:160-228` — `loadTexturesAndMaterials`; the two candidate paths are built at `:191-192`
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.ixx` — where a new free function or private helper declaration goes
+  - `Src/shared/util/FileReader.ixx:73-79` — `getBaseDir`, which returns `""` when the path has no separator
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/asset/obj_to_gltf.rs:132-147` and `:632-644` — the Rust rule this must match
+  - `docs/model-loading.md:119-147` — the section to correct
+  - `Test/commit/VulkanEngine/objParseSuite.cpp` — the existing device-free `ObjParseUnit` pattern
+
+  **Steps:**
+  1. In `ObjLoader.ixx`, export a free function
+     `std::string resolveObjTexturePath(const std::string &baseDir, const std::string &mapKd);`
+     (free, not a method — `parseCpu` runs on a device-free loader and the tests
+     must be able to call it without constructing one).
+  2. Implement it in `ObjLoader.cpp` by moving the body of `:186-212` into it:
+     (a) replace every `\` in `mapKd` with `/` first, quoting the Rust comment's
+     reasoning; (b) treat an empty `baseDir` as `"."` so the candidates stay
+     relative instead of becoming `/textures/...`; (c) build
+     `<base>/<name>` then `<base>/textures/<name>`, probe each with the existing
+     `std::filesystem::exists(path, ec) && !ec` form (exceptions are disabled —
+     keep the `error_code` overloads, `BuildIntegrity.EngineSourcesUseNonThrowingFilesystemOverloads`
+     enforces this), and return the first hit; (d) on neither, return the
+     beside-the-`.mtl` candidate and emit the same `spdlog::warn` naming both.
+  3. Call it from `loadTexturesAndMaterials` so that function shrinks to
+     `textures.push_back(resolveObjTexturePath(base_dir, mp->diffuse_texname));`
+     plus the `textureID` bookkeeping. Do not change the `textureID = -1` /
+     empty-string branch at `:218-225`.
+  4. Fix `docs/model-loading.md`: the headline at `:121` now really is true, so
+     move the `\`-normalisation from the Rust-only bullet (`:144-146`) up into
+     the shared rule, and note the empty-base-dir case.
+
+  **Test:** Add to `Test/commit/VulkanEngine/objParseSuite.cpp` (suite
+  `ObjParseUnit`, already in the CI filter) three cases against the shipped
+  `Resources/Models/VikingRoom` asset, whose `.mtl` says `map_Kd viking_room.png`
+  while the file lives in `textures/`:
+  `BackslashMapKdResolvesLikeAForwardSlash` — `resolveObjTexturePath(dir, "textures\\viking_room.png")`
+  and `resolveObjTexturePath(dir, "textures/viking_room.png")` return the same
+  existing path; `BareFilenameFallsBackToTheTexturesSubdirectory` — the bare
+  name resolves under `textures/`; `EmptyBaseDirStaysRelative` — the result of
+  `resolveObjTexturePath("", "viking_room.png")` does **not** start with `/` and
+  is not `std::filesystem::path::is_absolute()`. Resolve the model directory
+  with `sceneConfig::resolveModelPath("Models/VikingRoom/viking_room.obj")`, as
+  the suite already does at `:159`, so the test works from either working
+  directory. Add no new asset files.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='ObjParseUnit.*:BuildIntegrity.*'`
+  from the repo root.
+
+  **Context:** No shipped asset uses a backslash today, so this is parity work,
+  not a live regression — say so in the commit message rather than claiming a
+  fixed defect. The rule itself is documented once, in
+  `docs/model-loading.md`; that file is the source of truth and both loaders are
+  consumers of it. Do NOT change what the Rust side does — it is already
+  correct, and `obj_to_gltf.rs` additionally emits the bare filename as the
+  glTF `uri` on purpose (`:645-647`).
+
+- [ ] **(S) (refactor) `Window`: propagate the creation failure `initialize()` already detects, and delete the two write-only size members** — a failed `glfwCreateWindow` currently reaches `glfwCreateWindowSurface(instance, nullptr, …)` with no diagnostic.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/window/Window.ixx:11-46` — the class; `window_width`/`window_height` at `:34`
+  - `Src/GraphicsEngineVulkan/window/Window.cpp:25-79` — both constructors and `initialize()`; `framebuffer_size_callback` at `:107-113`
+  - `Src/GraphicsEngineVulkan/app/App.cpp:27-41` — the only production construction site
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1214-1220` — `create_surface`, where a null window lands
+
+  **Steps:**
+  1. Delete `window_width` / `window_height` from `Window.ixx:34` and from both
+     constructors' member-init lists. Keep the two-argument constructor's
+     parameters — pass them straight into `glfwCreateWindow` from
+     `initialize()`; the simplest shape is to store them in two locals the
+     constructor forwards, or to give `initialize(uint32_t, uint32_t)` the two
+     parameters. Delete the two assignments in `framebuffer_size_callback`
+     (`:111-112`) so the callback only sets `framebuffer_resized`; leave a
+     one-line comment saying the size itself comes from
+     `glfwGetFramebufferSize` (`VulkanRenderer.cpp:646`, `VulkanSwapChain.cpp:52`).
+     Note in passing that the default constructor's initialisers were `800.F` /
+     `600.F` — float literals narrowing into `uint32_t` members — which the
+     deletion removes.
+  2. Add a private `bool initialized{ false };` set at the end of a successful
+     `initialize()`, and a public `[[nodiscard]] bool is_valid() const { return initialized && main_window != nullptr; }`.
+     Mark `initialize()` `[[nodiscard]]` and have both constructors consume its
+     return value explicitly (log `spdlog::critical` on failure rather than
+     discarding it silently).
+  3. In `App::run()`, immediately after constructing the window, return
+     `EXIT_FAILURE` with an `spdlog::critical` when `!window->is_valid()`,
+     before `Scene`/`GUI`/`VulkanRenderer` are constructed. `App::run()`'s
+     return value is already the process exit code.
+  4. Leave `cleanUp()` alone — `glfwDestroyWindow(nullptr)` is a documented
+     no-op and `glfwTerminate()` must still run on the failure path.
+
+  **Test:** No new suite. Verification is (a) the build, (b) `commitTestSuite.exe`
+  staying green — `Test/commit/VulkanEngine/commitSuite.cpp:58-63` and
+  `renderModesSuite.cpp:76-81` both construct a `Window`, so a broken
+  constructor shows up there — and (c) `BuildIntegrity.*` still green (the
+  `[[nodiscard]]` addition must not introduce a discarded-result warning
+  anywhere; grep for other `initialize()` callers before changing the
+  signature). If a device-free assertion is cheap to add, extend an existing
+  suite rather than creating a new one: a new suite name would have to be added
+  to `Windows.yml`'s `$cpuOnlySuites` or
+  `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter` goes red.
+
+  **Build:** `clangcl-debug`, with `-FreshContainer` — this changes a C++23
+  module interface (`Window.ixx`), and the fresh-container rule in
+  `docs/gpu-golden-testing.md` applies:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+
+  **Context:** The point of the change is the failure path, and unlike the
+  `- [b]` renderer-RAII entry near the top of this file, this one IS reachable
+  and checkable: it is triggered by a missing display/driver, not by device
+  loss. Keep the behaviour on the success path byte-identical — this is a
+  state-contract cleanup, not a lifecycle redesign.
+
+- [ ] **(S) (refactor) Delete `GpuTimingSubsystem::passRecordedMask` and `sliceWasRecorded`** — zero callers anywhere, and the unguarded one is the accessor that would fire.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/GpuTimingSubsystem.ixx:235-252` — the accessor block; `create()`'s unsupported-timestamps early return at `:83-88` is why the vectors can be empty
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:844-864` — the only consumer of this class's public surface (`isSupported`, `queryPool`, `queriesPerImage`, `QUERIES_PER_PASS`)
+  - `Test/commit/VulkanEngine/gpuTimingSuite.cpp` — the existing device-free `GpuTimingUnit` tests (they cover `GpuPassAverage` only)
+
+  **Steps:**
+  1. Re-run the grep before deleting anything:
+     `rg -n 'passRecordedMask|sliceWasRecorded' Src Test` must show only the
+     definitions in `GpuTimingSubsystem.ixx`. If a caller has appeared, stop and
+     bounds-check `passRecordedMask` instead of deleting it.
+  2. Delete `passRecordedMask` (`:239`) and `sliceWasRecorded` (`:249-252`).
+     Keep `setPassRecordedMask` — `readTimings` reads
+     `gpu_timing_pass_mask[imageIndex]` at `:144` and
+     `gpu_timing_slice_recorded[imageIndex]` at `:128`, and both members stay.
+  3. Do not weaken the guard at `:128`: it is the bounds check that makes the
+     `:144` read safe, and it is the reason the two deleted accessors were the
+     only unguarded reads left.
+
+  **Test:** No new test — this is a pure deletion of unreachable code. Verify
+  with the grep above plus a clean build, and confirm `GpuTimingUnit.*` still
+  passes.
+
+  **Build:** `clangcl-debug`, with `-FreshContainer` (`GpuTimingSubsystem.ixx`
+  is a module interface):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='GpuTimingUnit.*'`.
+
+  **Context:** Batch IX's rejected-candidates note claimed the `Src/**/*.ixx`
+  accessor sweep was drained and that every surviving `get*`/`is*`/`has*`
+  accessor had a live caller. These two are the counter-example, so the seam is
+  not fully drained — a future refactor batch may re-run that sweep over
+  `renderer/*.ixx` specifically, which batch IX's spot checks skipped.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(S) Round instead of truncating when box-filtering non-sRGB mip levels** — the integer average always rounds down, so the bias compounds once per level down the whole chain.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/render/texture.rs:72-108` — `generate_mips`; the non-sRGB arm is `(samples.iter().map(|&b| b as u32).sum::<u32>() / 4) as u8` at `:97`
+  - `crates/webgpu_renderer/src/render/texture.rs:62-68` — `linear_to_srgb`, which DOES round (`* 255.0 + 0.5`), so only the raw arm is affected
+  - `crates/webgpu_renderer/src/render/texture.rs:354-398` — the existing `#[cfg(test)]` cases; `generate_mips_averages_srgb_in_linear_space` ends with `assert_eq!(data[3], 127)`, which pins the truncation on the alpha channel
+  - `crates/webgpu_renderer/src/render/texture.rs:216` — the single caller, `upload_texture`
+
+  **Steps:**
+  1. Change the raw arm at `:97` to round-half-up:
+     `((samples.iter().map(|&b| b as u32).sum::<u32>() + 2) / 4) as u8`, with a
+     comment recording that the sRGB arm already rounds via `linear_to_srgb` and
+     that the two arms disagreeing is what made the chain drift. The `+ 2`
+     cannot overflow: four `u8` values sum to at most 1020.
+  2. Update `generate_mips_averages_srgb_in_linear_space`'s final assertion
+     (`data[3]`) from `127` to `128` and amend its comment — the exact mean of
+     two 0s and two 255s is 127.5, and rounding up is now the documented
+     behaviour. Do not touch the RGB assertions in that test; they go through
+     `linear_to_srgb` and are unchanged.
+  3. While in this function, guard the degenerate input: `pw - 1` at `:85-88`
+     underflows to `u32::MAX` when a level's width or height is 0, after which
+     `fetch` indexes an empty slice and panics. Return `levels` early if
+     `base.width == 0 || base.height == 0`. Flag it in the commit message as
+     defence-in-depth — no current decode path produces a zero-sized
+     `CpuTexture`, so this is not a reachable panic today.
+
+  **Test:** Add `generate_mips_does_not_drift_darker_over_a_long_chain` to the
+  same `#[cfg(test)]` module: build a 64x64 non-sRGB `CpuTexture` whose bytes
+  come from a deterministic non-constant pattern (e.g.
+  `((x * 7 + y * 13) % 256) as u8` per channel), compute the exact mean of the
+  base level in `f64`, run `generate_mips(&base, false)`, and assert the 1x1
+  level's channels are within 1 of `mean.round()`. With truncation the deepest
+  level lands several counts low (the bias adds ~0.375 per level across six
+  levels); with rounding it stays inside the tolerance. Also add
+  `generate_mips_on_a_zero_sized_texture_returns_only_the_base` for step 3.
+
+  **Build:** No CMake preset — this is Rust-only. Run from
+  `ExternalLib/Kataglyphis-RustProjectTemplate`:
+  `cargo test -p kataglyphis_webgpu_renderer render::texture`
+  (the whole crate suite runs in the Linux CI lane via
+  `Scripts/Linux/run-cargo-tests.sh`, added by `3b2a310b`, so this is covered on
+  every push once merged).
+
+  **Context:** `generate_mips` is pure CPU and already has its own test module —
+  keep it that way; no adapter is needed for any of this. The C++ engine does
+  NOT share this code path (it generates mips on the GPU with
+  `vkCmdBlitImage`, `Texture.cpp:286-365`), so there is no cross-renderer parity
+  obligation here and nothing to regenerate under `Resources/ShadersSlang/`.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

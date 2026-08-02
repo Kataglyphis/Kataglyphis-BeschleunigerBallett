@@ -84,6 +84,15 @@ inline bool should_capture_cursor(int button, int action)
     return (action == GLFW_PRESS) && (button == GLFW_MOUSE_BUTTON_RIGHT);
 }
 
+// Start and stop cannot share one predicate: "not a right-press" also
+// matches unrelated buttons (left click, middle click, ...), so treating
+// its negation as "release look mode" ends look mode on input that never
+// started it.
+inline bool should_release_cursor(int button, int action)
+{
+    return (action == GLFW_RELEASE) && (button == GLFW_MOUSE_BUTTON_RIGHT);
+}
+
 inline void handle_mouse_button_callback(GLFWwindow *window,
   bool &mouse_first_moved,
   int button,
@@ -93,7 +102,7 @@ inline void handle_mouse_button_callback(GLFWwindow *window,
     if (should_capture_cursor(button, action)) {
         if (imgui_wants_mouse_capture()) { return; }
         glfwSetCursorPosCallback(window, mouse_callback);
-    } else {
+    } else if (should_release_cursor(button, action)) {
         // A release must always end look mode, even while ImGui holds
         // capture - otherwise releasing the mouse over a panel leaves the
         // cursor callback installed forever.
