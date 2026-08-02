@@ -1307,15 +1307,8 @@ void Kataglyphis::VulkanRenderer::create_object_description_buffer()
     // every mesh of a model shares that model's offset into the flattened
     // global texture array. The shaders add this to the model-LOCAL material
     // textureIDs.
-    std::vector<uint32_t> meshCountPerModel;
-    std::vector<uint32_t> textureCountPerModel;
-    meshCountPerModel.reserve(scene->getModelCount());
-    textureCountPerModel.reserve(scene->getModelCount());
-    for (uint32_t i = 0; i < scene->getModelCount(); ++i) {
-        meshCountPerModel.push_back(scene->getMeshCount(i));
-        textureCountPerModel.push_back(scene->getTextureCount(i));
-    }
-    Kataglyphis::assignTextureOffsets(objectDescriptions, meshCountPerModel, textureCountPerModel);
+    Kataglyphis::assignTextureOffsets(
+      objectDescriptions, scene->getMeshCountPerModel(), scene->getTextureCountPerModel());
 
     if (!objectDescriptions.empty()) {
         vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
@@ -1536,17 +1529,12 @@ void Kataglyphis::VulkanRenderer::updateTexturesInSharedRenderDescriptorSet()
     // Flatten EVERY model's textures into the global array, in model order -
     // the same order create_object_description_buffer assigns each model's
     // texture_offset (see Kataglyphis::assignTextureOffsets, the other half
-    // of this invariant). This function used to bind model 0's textures
-    // only, so any added model shaded with the FIRST model's images (its
-    // local textureIDs collided with model 0's slots).
-    std::vector<uint32_t> texture_count_per_model;
-    texture_count_per_model.reserve(scene->getModelCount());
-    for (uint32_t model = 0; model < scene->getModelCount(); ++model) {
-        texture_count_per_model.push_back(scene->getTextureCount(model));
-    }
-
-    const Kataglyphis::FlattenedTexturePlan plan =
-      Kataglyphis::planFlattenedTextureSlots(texture_count_per_model, static_cast<uint32_t>(MAX_TEXTURE_COUNT));
+    // of this invariant). Scene::getTextureCountPerModel() is the shared
+    // accessor that guarantees both halves agree; this function used to bind
+    // model 0's textures only, so any added model shaded with the FIRST
+    // model's images (its local textureIDs collided with model 0's slots).
+    const Kataglyphis::FlattenedTexturePlan plan = Kataglyphis::planFlattenedTextureSlots(
+      scene->getTextureCountPerModel(), static_cast<uint32_t>(MAX_TEXTURE_COUNT));
 
     if (plan.exhausted) {
         spdlog::warn(

@@ -36,3 +36,27 @@ TEST(SceneAccessorUnit, AddModelIgnoresNull)
     scene.add_model(nullptr);
     EXPECT_EQ(scene.getModelCount(), 0U) << "a null model (a failed load upstream) must leave the scene unchanged";
 }
+
+TEST(SceneAccessorUnit, PerModelCountVectorsAreSizedByModelCount)
+{
+    Scene scene;
+
+    EXPECT_EQ(scene.getTextureCountPerModel().size(), 0U);
+    EXPECT_EQ(scene.getMeshCountPerModel().size(), 0U);
+
+    scene.add_model(std::make_shared<Model>());
+    scene.add_model(std::make_shared<Model>());
+
+    const std::vector<uint32_t> texture_counts = scene.getTextureCountPerModel();
+    const std::vector<uint32_t> mesh_counts = scene.getMeshCountPerModel();
+
+    ASSERT_EQ(texture_counts.size(), scene.getModelCount());
+    ASSERT_EQ(mesh_counts.size(), scene.getModelCount());
+
+    for (uint32_t i = 0; i < scene.getModelCount(); ++i) {
+        EXPECT_EQ(texture_counts[i], scene.getTextureCount(i))
+          << "the vector form and the indexed form must never drift, model " << i;
+        EXPECT_EQ(mesh_counts[i], scene.getMeshCount(i))
+          << "the vector form and the indexed form must never drift, model " << i;
+    }
+}

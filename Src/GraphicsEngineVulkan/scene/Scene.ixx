@@ -66,6 +66,27 @@ class Scene
         }
         return static_cast<uint32_t>(model_list[static_cast<size_t>(model_index)]->getMeshCount());
     };
+    // This ordering is the contract assignTextureOffsets and
+    // planFlattenedTextureSlots are both indexed by; consumers must use this
+    // accessor rather than re-deriving the per-model vector themselves.
+    std::vector<uint32_t> getTextureCountPerModel()
+    {
+        std::vector<uint32_t> counts;
+        counts.reserve(model_list.size());
+        for (uint32_t i = 0; i < static_cast<uint32_t>(model_list.size()); ++i) {
+            counts.push_back(getTextureCount(i));
+        }
+        return counts;
+    };
+    std::vector<uint32_t> getMeshCountPerModel()
+    {
+        std::vector<uint32_t> counts;
+        counts.reserve(model_list.size());
+        for (uint32_t i = 0; i < static_cast<uint32_t>(model_list.size()); ++i) {
+            counts.push_back(getMeshCount(i));
+        }
+        return counts;
+    };
     vk::Buffer getVertexBuffer(uint32_t model_index, uint32_t mesh_index)
     {
         if (model_index >= model_list.size()) {
