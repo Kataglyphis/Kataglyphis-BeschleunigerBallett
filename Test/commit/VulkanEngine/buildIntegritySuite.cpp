@@ -1563,6 +1563,399 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
 
 namespace {
 
+// A text-only call-graph reachability check for the whole Slang corpus (see
+// EverySlangFunctionIsReachableFromAnEntryPoint below). No real Slang front
+// end is available to this suite, so this is a tokenizer, not a parser: it
+// extracts identifiers and a handful of punctuation marks and reasons about
+// brace/paren nesting depth, nothing more.
+
+// One identifier or one punctuation mark of interest ("(){}:;,") found while
+// scanning a file. Whitespace, numeric literals, and every other character
+// are not tokenized at all - see tokenize_slang below for why numeric
+// literals need special handling.
+struct SlangToken
+{
+    std::string text;
+    std::size_t offset = 0;// into the comment/string-stripped text this token came from
+    bool is_identifier = false;
+};
+
+// Tokenizes comment/string-stripped Slang source text into SlangTokens.
+// Numeric literals (including a letter suffix, e.g. "8u", "1.0f") are
+// consumed and discarded as a single opaque run rather than left for the
+// generic scan - otherwise a suffix letter like the 'u' in "8u" would start
+// its own spurious one-character identifier token.
+std::vector<SlangToken> tokenize_slang(const std::string &text)
+{
+    std::vector<SlangToken> tokens;
+    std::size_t i = 0;
+    while (i < text.size()) {
+        const unsigned char ch = static_cast<unsigned char>(text[i]);
+        if (std::isspace(ch) != 0) {
+            ++i;
+            continue;
+        }
+        if (std::isdigit(ch) != 0) {
+            while (i < text.size()
+                   && (std::isalnum(static_cast<unsigned char>(text[i])) != 0 || text[i] == '.')) {
+                ++i;
+            }
+            continue;
+        }
+        if (std::isalpha(ch) != 0 || ch == '_') {
+            const std::size_t start = i;
+            while (i < text.size() && is_identifier_char(text[i])) { ++i; }
+            tokens.push_back({ text.substr(start, i - start), start, true });
+            continue;
+        }
+        static const std::string kInteresting = "(){}:;,";
+        if (kInteresting.find(static_cast<char>(ch)) != std::string::npos) {
+            tokens.push_back({ std::string(1, static_cast<char>(ch)), i, false });
+        }
+        ++i;
+    }
+    return tokens;
+}
+
+// Blanks out double-quoted string contents (keeping the quotes and every
+// other character in place, so offsets are unaffected) - only
+// `[shader("...")]`-style attributes carry string literals in this corpus,
+// but this is generic rather than special-cased to that attribute.
+std::string strip_string_literals(const std::string &line)
+{
+    std::string result = line;
+    bool in_string = false;
+    for (char &ch : result) {
+        if (ch == '"') {
+            in_string = !in_string;
+            continue;
+        }
+        if (in_string) { ch = ' '; }
+    }
+    return result;
+}
+
+// True once `line`, trimmed, is empty.
+bool is_blank_line(const std::string &line) { return line.find_first_not_of(" \t\r") == std::string::npos; }
+
+// True if `line`, trimmed, starts with '[' - every Slang attribute
+// ([shader(...)], [numthreads(...)], [vk::binding(...)], ...) in this corpus
+// is written on its own line directly above the declaration it decorates.
+bool is_attribute_line(const std::string &line)
+{
+    const auto first = line.find_first_not_of(" \t\r");
+    return first != std::string::npos && line[first] == '[';
+}
+
+// Whether the contiguous run of blank/attribute lines immediately preceding
+// stripped_lines[def_line_index] contains a `[shader("...")]` attribute -
+// the marker that makes a function a call-graph root. Slang stacks multiple
+// attributes directly on top of each other with no blank line between them
+// (gpu_cull.slang's `cs_main` has `[shader("compute")]` then
+// `[numthreads(64, 1, 1)]` immediately above it), so this walks the whole
+// contiguous run rather than looking at only the single immediately
+// preceding line, which would miss exactly that case.
+bool preceded_by_shader_attribute(const std::vector<std::string> &stripped_lines, std::size_t def_line_index)
+{
+    std::size_t i = def_line_index;
+    while (i > 0) {
+        --i;
+        const std::string &line = stripped_lines[i];
+        if (is_blank_line(line)) { continue; }
+        if (!is_attribute_line(line)) { break; }
+        if (line.find("[shader(") != std::string::npos) { return true; }
+    }
+    return false;
+}
+
+// One function definition found somewhere under Resources/ShadersSlang.
+struct SlangFunctionDef
+{
+    std::string name;
+    std::string relative_file;// relative to Resources/ShadersSlang, forward slashes
+    int line = 0;             // 1-based, the line the return type starts on
+    bool is_root = false;     // preceded by a [shader("...")] attribute
+    std::string body;         // comment/string-stripped body text, for call-graph edges
+    std::string raw_def_line; // original (unstripped) text of `line`, for allowlist marker lookup
+};
+
+// Scans one already comment/string-stripped, tokenized file for function
+// definitions: two consecutive identifier tokens (a return type and a name)
+// immediately followed by '(' at brace depth 0. This is deliberately not a
+// real parser - see EverySlangFunctionIsReachableFromAnEntryPoint's comment
+// for why a text gate is enough here - but two lightweight checks keep it
+// honest: the parameter list's matching ')' is located by paren-depth
+// counting (so multi-line parameter lists such as rasterizer.slang's
+// `vs_main` do not break it), and after skipping an optional
+// " : SEMANTIC" clause the next token must be '{' - a bare declaration
+// (next token ';') is not treated as a definition.
+void collect_functions_from_file(const std::vector<std::string> &stripped_lines, const std::vector<std::string> &raw_lines,
+                                  const std::string &relative_file, std::vector<SlangFunctionDef> &out)
+{
+    std::string text;
+    std::vector<std::size_t> line_start_offsets;
+    line_start_offsets.reserve(stripped_lines.size());
+    for (const auto &line : stripped_lines) {
+        line_start_offsets.push_back(text.size());
+        text += line;
+        text += '\n';
+    }
+
+    auto line_for_offset = [&](std::size_t offset) -> int {
+        const auto it = std::upper_bound(line_start_offsets.begin(), line_start_offsets.end(), offset);
+        return static_cast<int>(std::distance(line_start_offsets.begin(), it));// upper_bound - 1, then +1 for 1-based
+    };
+
+    const std::vector<SlangToken> tokens = tokenize_slang(text);
+
+    int depth = 0;
+    std::size_t t = 0;
+    while (t < tokens.size()) {
+        const SlangToken &tok = tokens[t];
+        if (!tok.is_identifier) {
+            if (tok.text == "{") { ++depth; }
+            else if (tok.text == "}") { --depth; }
+            ++t;
+            continue;
+        }
+
+        if (depth == 0 && t + 2 < tokens.size() && tokens[t + 1].is_identifier && !tokens[t + 2].is_identifier
+            && tokens[t + 2].text == "(") {
+            // Find the parameter list's matching ')'.
+            int paren_depth = 1;
+            std::size_t j = t + 3;
+            while (j < tokens.size() && paren_depth > 0) {
+                if (!tokens[j].is_identifier && tokens[j].text == "(") { ++paren_depth; }
+                else if (!tokens[j].is_identifier && tokens[j].text == ")") { --paren_depth; }
+                ++j;
+            }
+            if (paren_depth == 0) {
+                // Skip an optional " : SEMANTIC" clause.
+                std::size_t k = j;
+                if (k < tokens.size() && !tokens[k].is_identifier && tokens[k].text == ":") {
+                    ++k;
+                    if (k < tokens.size() && tokens[k].is_identifier) { ++k; }
+                }
+                if (k < tokens.size() && !tokens[k].is_identifier && tokens[k].text == "{") {
+                    // Confirmed definition - locate the matching '}' for the body.
+                    int body_depth = 1;
+                    std::size_t m = k + 1;
+                    while (m < tokens.size() && body_depth > 0) {
+                        if (!tokens[m].is_identifier && tokens[m].text == "{") { ++body_depth; }
+                        else if (!tokens[m].is_identifier && tokens[m].text == "}") { --body_depth; }
+                        ++m;
+                    }
+                    const std::size_t body_begin_offset = tokens[k].offset;
+                    const std::size_t body_end_offset =
+                      (m > 0 && m <= tokens.size()) ? (tokens[m - 1].offset + 1) : text.size();
+
+                    SlangFunctionDef fn;
+                    fn.name = tokens[t + 1].text;
+                    fn.relative_file = relative_file;
+                    fn.line = line_for_offset(tok.offset);
+                    fn.is_root = preceded_by_shader_attribute(stripped_lines, static_cast<std::size_t>(fn.line - 1));
+                    fn.body = text.substr(body_begin_offset, body_end_offset - body_begin_offset);
+                    fn.raw_def_line = (fn.line >= 1 && static_cast<std::size_t>(fn.line - 1) < raw_lines.size())
+                                         ? raw_lines[static_cast<std::size_t>(fn.line - 1)]
+                                         : std::string();
+                    out.push_back(std::move(fn));
+
+                    depth = 0;// back to top level once the function's own body has closed
+                    t = m;
+                    continue;
+                }
+            }
+        }
+        ++t;
+    }
+}
+
+// Every function definition under Resources/ShadersSlang (excluding
+// build/), analysed as one global corpus rather than per file - see
+// EverySlangFunctionIsReachableFromAnEntryPoint for why.
+std::vector<SlangFunctionDef> collect_slang_functions(const fs::path &slang_root)
+{
+    std::vector<SlangFunctionDef> functions;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
+        const std::string relative_path = fs::relative(path, slang_root).generic_string();
+        if (relative_path.starts_with("build/")) { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::vector<std::string> raw_lines;
+        std::vector<std::string> stripped_lines;
+        std::string raw_line;
+        while (std::getline(file, raw_line)) {
+            stripped_lines.push_back(strip_line_comment(strip_string_literals(raw_line)));
+            raw_lines.push_back(std::move(raw_line));
+        }
+
+        collect_functions_from_file(stripped_lines, raw_lines, relative_path, functions);
+    }
+    return functions;
+}
+
+// A deliberate exception to EverySlangFunctionIsReachableFromAnEntryPoint,
+// with the reason the function is not reachable from any [shader(...)]
+// entry point. Every entry must be matched by a
+// "// UNREACHABLE_SLANG_FUNCTION_OK: <marker>" trailing comment on the
+// function's definition line (checked below), so an exemption cannot rot
+// silently after the line it protects moves or is deleted.
+struct UnreachableSlangAllowlistEntry
+{
+    std::string file;// relative to Resources/ShadersSlang/, forward slashes
+    std::string marker;
+};
+
+const std::vector<UnreachableSlangAllowlistEntry> kUnreachableSlangAllowlist = {};
+
+const std::string kUnreachableSlangMarkerPrefix = "UNREACHABLE_SLANG_FUNCTION_OK: ";
+
+}// namespace
+
+// Two shipped regressions in one week (the `ibl` batch XIII found, and the
+// `forward` one immediately above in this file's history) shared the same
+// signature: the .slang source still defined the helper, the emitted output
+// no longer contained it, and nothing called it any more - a lost call site,
+// not dead code that should have been deleted. This is the general form of
+// that check: every function defined anywhere under Resources/ShadersSlang
+// must be reachable, by name, from some `[shader("...")]` entry point.
+//
+// The corpus is analysed globally rather than per file because Slang has no
+// preprocessor #include - modules are pulled in via `import` (e.g.
+// ibl.slang's `import fullscreen;`), so a helper's caller routinely lives in
+// a different file than its definition. Reachability is therefore also by
+// NAME rather than by a fully resolved symbol: two unrelated functions that
+// happen to share a name (ibl.slang's own `distribution_ggx` and
+// common/brdf.slang's) are both treated as reachable if either name is
+// called from a root, which can only produce false negatives (a genuinely
+// dead function hiding behind a live same-named one), never false
+// positives - an acceptable trade for a text gate with no real Slang front
+// end behind it.
+//
+// A dead helper usually means a lost call site, not a helper that should be
+// deleted: deleting `sky_radiance` (see forward.slang) would have "fixed"
+// this gate and cemented that regression rather than catching it. Triage
+// every finding - wire the call back up, or if it is a genuine one-off
+// (spike code, a test fixture), justify it in kUnreachableSlangAllowlist
+// above rather than deleting the function.
+TEST(BuildIntegrity, EverySlangFunctionIsReachableFromAnEntryPoint)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    const std::vector<SlangFunctionDef> functions = collect_slang_functions(slang_root);
+
+    // Self-verifying floors: EveryShaderSourceHasCompiledBinary has already
+    // been burned once by a parser change that silently found nothing and
+    // still read as a pass. These floors are well below the real counts (at
+    // time of writing: ~90 functions, ~53 entry points) so ordinary shader
+    // edits never bump into them, but a scan that finds (near-)zero of
+    // either cannot pass silently.
+    const int total_functions = static_cast<int>(functions.size());
+    const int total_roots =
+      static_cast<int>(std::count_if(functions.begin(), functions.end(), [](const auto &fn) { return fn.is_root; }));
+    ASSERT_GT(total_functions, 40) << "found only " << total_functions
+                                    << " Slang function definition(s) under " << slang_root.string()
+                                    << " - the definition scan itself is broken";
+    ASSERT_GT(total_roots, 20) << "found only " << total_roots
+                                << " [shader(\"...\")] entry point(s) under " << slang_root.string()
+                                << " - the root scan itself is broken";
+
+    std::map<std::string, std::vector<std::size_t>> functions_by_name;
+    for (std::size_t idx = 0; idx < functions.size(); ++idx) { functions_by_name[functions[idx].name].push_back(idx); }
+
+    std::vector<bool> reachable(functions.size(), false);
+    std::vector<std::size_t> worklist;
+    for (std::size_t idx = 0; idx < functions.size(); ++idx) {
+        if (functions[idx].is_root) {
+            reachable[idx] = true;
+            worklist.push_back(idx);
+        }
+    }
+
+    while (!worklist.empty()) {
+        const std::size_t idx = worklist.back();
+        worklist.pop_back();
+
+        std::set<std::string> called_names;
+        for (const auto &tok : tokenize_slang(functions[idx].body)) {
+            if (tok.is_identifier) { called_names.insert(tok.text); }
+        }
+
+        for (const auto &name : called_names) {
+            const auto found = functions_by_name.find(name);
+            if (found == functions_by_name.end()) { continue; }
+            for (const std::size_t callee : found->second) {
+                if (!reachable[callee]) {
+                    reachable[callee] = true;
+                    worklist.push_back(callee);
+                }
+            }
+        }
+    }
+
+    std::vector<bool> allowlist_entry_matched(kUnreachableSlangAllowlist.size(), false);
+    std::vector<std::string> violations;
+    for (std::size_t idx = 0; idx < functions.size(); ++idx) {
+        if (reachable[idx]) { continue; }
+        const SlangFunctionDef &fn = functions[idx];
+
+        int allowlist_index = -1;
+        for (std::size_t a = 0; a < kUnreachableSlangAllowlist.size(); ++a) {
+            const auto &entry = kUnreachableSlangAllowlist[a];
+            if (entry.file != fn.relative_file) { continue; }
+            if (fn.raw_def_line.find(kUnreachableSlangMarkerPrefix + entry.marker) == std::string::npos) { continue; }
+            allowlist_index = static_cast<int>(a);
+            break;
+        }
+        if (allowlist_index >= 0) {
+            allowlist_entry_matched[static_cast<std::size_t>(allowlist_index)] = true;
+            continue;
+        }
+
+        violations.push_back(fn.relative_file + ":" + std::to_string(fn.line) + ": " + fn.name);
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " Slang function(s) are not reachable, by name, from any [shader(\"...\")] entry point in "
+      << slang_root.string()
+      << " - this almost always means a lost call site (see this test's comment), not dead code to delete; wire "
+         "the call back up, or if it is deliberate add a \"// UNREACHABLE_SLANG_FUNCTION_OK: <marker>\" comment "
+         "on the definition line and a justified entry to kUnreachableSlangAllowlist above:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    std::vector<std::string> dead_exemptions;
+    for (std::size_t idx = 0; idx < kUnreachableSlangAllowlist.size(); ++idx) {
+        if (!allowlist_entry_matched[idx]) {
+            dead_exemptions.push_back(kUnreachableSlangAllowlist[idx].file + " (" + kUnreachableSlangAllowlist[idx].marker + ")");
+        }
+    }
+    EXPECT_TRUE(dead_exemptions.empty())
+      << dead_exemptions.size()
+      << " kUnreachableSlangAllowlist entr(y/ies) matched no unreachable function - the exemption is dead and "
+         "must be deleted:"
+      << [&dead_exemptions] {
+             std::string joined;
+             for (const auto &entry : dead_exemptions) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+namespace {
+
 // One `export module <name>;` declaration found in an .ixx file.
 struct ModuleInterface
 {

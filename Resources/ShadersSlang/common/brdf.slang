@@ -75,6 +75,6 @@ float3 brdf_direct(
     float g = geometry_smith(n_dot_v, n_dot_l, roughness);
     float3 f = fresnel_schlick(h_dot_v, f0);
     float3 specular = (d * g * f) / max(4.0 * n_dot_v * n_dot_l, 1e-6);
-    float3 diffuse = (float3(1.0) - f) * (1.0 - metallic) * albedo / PI;
+    float3 diffuse = (float3(1.0) - f) * (1.0 - metallic) * lambert_diffuse(albedo);
     return (diffuse + specular) * radiance * n_dot_l;
 }
