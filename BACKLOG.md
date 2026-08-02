@@ -4699,15 +4699,25 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
   Until then treat host GPU goldens as unavailable and do not burn executor
   retries on them.
 
-- [ ] **Bump the ContainerHub Linux image's Vulkan SDK past slangc 2026.8**
-  (S) — `ExternalLib/Kataglyphis-ContainerHub/linux/Dockerfile.base` pins
-  `ARG VULKAN_VERSION=1.4.341.1`, whose slangc (`2026.1-52-gc8ddf20bb`)
-  cannot emit valid combined WGSL (see the entry above). Until it is bumped,
-  `Scripts/Linux/compile-slang-shaders.sh` deliberately skips the WGSL half
-  of its job, so `crates/**/shaders/*.wgsl` can only be regenerated from
-  Windows. Bump to the SDK carrying slangc ≥ 2026.8 (1.4.350.0 is verified),
-  rebuild/push `:latest-cross`, then confirm a container run of
-  `compile-slang-shaders.sh` emits 10 combined WGSL files and leaves
+- [b] **Bump the ContainerHub Linux image's Vulkan SDK past slangc 2026.8**
+  (S) — `ExternalLib/Kataglyphis-ContainerHub/linux/Dockerfile.base` already
+  carries `ARG VULKAN_VERSION=1.4.350.0` (landed in ContainerHub `709756e`,
+  "bump Vulkan SDK to 1.4.350.0"), and this repo's submodule pin
+  (`6aeb0f6`) is already past that commit — the Dockerfile edit itself is
+  done, nothing left to change there.
+  BLOCKER: what remains is rebuilding and pushing the multi-arch
+  `:latest-cross` image to `ghcr.io/kataglyphis/kataglyphis_beschleuniger`.
+  There is no CI job that does this automatically (ContainerHub's
+  `ubuntu24.04.yml` only runs `preflight` + `build-docs`); it's a manual,
+  local run of `linux/scripts/build-cross-chain.sh`, which `preflight.sh`
+  itself documents as taking **hours under QEMU** across 3 architectures,
+  requires `GHCR_PAT` push credentials, and mutates a shared registry tag
+  that CI (`Linux.yml`) pulls for every build. That's an hours-long,
+  hard-to-reverse, shared-infrastructure action outside a one-shot headless
+  executor turn — needs to be run by the owner (or a long-lived session)
+  with registry credentials, not attempted unattended.
+  Once pushed, confirm a container run of `compile-slang-shaders.sh` emits
+  10 combined WGSL files and leaves
   `git -C ExternalLib/Kataglyphis-RustProjectTemplate status` clean.
   Build preset: none (container tooling).
 
