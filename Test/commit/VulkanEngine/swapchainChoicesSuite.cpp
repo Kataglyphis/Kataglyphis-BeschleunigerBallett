@@ -55,6 +55,18 @@ TEST(SwapchainChoicesUnit, AnEmptyFormatListYieldsTheDefaultInsteadOfIndexingPas
     EXPECT_EQ(chosen.colorSpace, vk::ColorSpaceKHR::eSrgbNonlinear);
 }
 
+TEST(SwapchainChoicesUnit, AnExoticOnlySurfaceFallsBackToItsFirstFormat)
+{
+    const std::vector<vk::SurfaceFormatKHR> formats = {
+        { vk::Format::eA2B10G10R10UnormPack32, vk::ColorSpaceKHR::eSrgbNonlinear },
+        { vk::Format::eR16G16B16A16Sfloat, vk::ColorSpaceKHR::eSrgbNonlinear },
+    };
+
+    const vk::SurfaceFormatKHR chosen = Kataglyphis::chooseBestSurfaceFormat(formats);
+    EXPECT_EQ(chosen.format, vk::Format::eA2B10G10R10UnormPack32);
+    EXPECT_EQ(chosen.colorSpace, vk::ColorSpaceKHR::eSrgbNonlinear);
+}
+
 TEST(SwapchainChoicesUnit, ClampsAnExtentIntoTheSurfaceMinMax)
 {
     vk::SurfaceCapabilitiesKHR capabilities{};

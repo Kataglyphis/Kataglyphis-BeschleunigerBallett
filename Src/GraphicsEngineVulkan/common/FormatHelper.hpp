@@ -85,4 +85,27 @@ constexpr vk::ImageAspectFlags depthStencilTransitionAspect(vk::Format format)
     if (formatHasStencil(format)) { aspect |= vk::ImageAspectFlagBits::eStencil; }
     return aspect;
 }
+
+// True for exactly the 8-bit 4-channel formats FrameCapture::take() knows how
+// to interpret: it memcpys the staging buffer at 4 bytes/texel and, for the
+// BGRA half of this list, swizzles channels 0 and 2. Any other format (10-bit
+// packed, half-float, etc.) must not reach that code path, since both the
+// byte width and the channel layout assumption would be wrong.
+constexpr bool isCapturableSwapchainFormat(vk::Format format)
+{
+    return format == vk::Format::eR8G8B8A8Unorm || format == vk::Format::eR8G8B8A8Srgb
+           || format == vk::Format::eR8G8B8A8Snorm || format == vk::Format::eR8G8B8A8Uint
+           || format == vk::Format::eB8G8R8A8Unorm || format == vk::Format::eB8G8R8A8Srgb
+           || format == vk::Format::eB8G8R8A8Snorm || format == vk::Format::eB8G8R8A8Uint;
+}
+
+// True for the BGRA half of isCapturableSwapchainFormat's list - the channel
+// order FrameCapture::take() must swizzle back to RGBA. Kept as its own
+// predicate (rather than re-deriving it from isCapturableSwapchainFormat) so
+// the two lists cannot drift apart.
+constexpr bool capturedFormatIsBgra(vk::Format format)
+{
+    return format == vk::Format::eB8G8R8A8Unorm || format == vk::Format::eB8G8R8A8Srgb
+           || format == vk::Format::eB8G8R8A8Snorm || format == vk::Format::eB8G8R8A8Uint;
+}
 }// namespace Kataglyphis

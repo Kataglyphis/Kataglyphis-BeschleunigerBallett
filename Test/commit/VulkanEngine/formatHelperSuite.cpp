@@ -74,4 +74,24 @@ TEST(FormatHelperUnit, ThePreferredDepthFormatIsStencilFree)
     EXPECT_FALSE(Kataglyphis::formatHasStencil(vk::Format::eD32Sfloat));
 }
 
+TEST(FormatHelperUnit, CaptureOnlyAcceptsEightBitFourChannelFormats)
+{
+    EXPECT_TRUE(Kataglyphis::isCapturableSwapchainFormat(vk::Format::eR8G8B8A8Unorm));
+    EXPECT_TRUE(Kataglyphis::isCapturableSwapchainFormat(vk::Format::eB8G8R8A8Srgb));
+    EXPECT_FALSE(Kataglyphis::isCapturableSwapchainFormat(vk::Format::eA2B10G10R10UnormPack32));
+    EXPECT_FALSE(Kataglyphis::isCapturableSwapchainFormat(vk::Format::eR16G16B16A16Sfloat));
+}
+
+TEST(FormatHelperUnit, BgraCaptureFormatsAreExactlyTheBFirstOnes)
+{
+    EXPECT_TRUE(Kataglyphis::capturedFormatIsBgra(vk::Format::eB8G8R8A8Unorm));
+    EXPECT_TRUE(Kataglyphis::capturedFormatIsBgra(vk::Format::eB8G8R8A8Srgb));
+    EXPECT_TRUE(Kataglyphis::capturedFormatIsBgra(vk::Format::eB8G8R8A8Snorm));
+    EXPECT_TRUE(Kataglyphis::capturedFormatIsBgra(vk::Format::eB8G8R8A8Uint));
+    EXPECT_FALSE(Kataglyphis::capturedFormatIsBgra(vk::Format::eR8G8B8A8Unorm));
+    EXPECT_FALSE(Kataglyphis::capturedFormatIsBgra(vk::Format::eR8G8B8A8Srgb));
+    EXPECT_FALSE(Kataglyphis::capturedFormatIsBgra(vk::Format::eR8G8B8A8Snorm));
+    EXPECT_FALSE(Kataglyphis::capturedFormatIsBgra(vk::Format::eR8G8B8A8Uint));
+}
+
 }// namespace

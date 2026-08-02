@@ -30,6 +30,8 @@ static vk::SurfaceFormatKHR chooseBestSurfaceFormat(const std::vector<vk::Surfac
     }
 
     // in case just return first one--- but really shouldn't be the case ....
+    // (this is exactly what makes an exotic, non-capturable surface format
+    // reachable at runtime - see FormatHelper.hpp's isCapturableSwapchainFormat)
     return formats[0];
 }
 

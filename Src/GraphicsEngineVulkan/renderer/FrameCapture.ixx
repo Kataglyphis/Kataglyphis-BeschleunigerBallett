@@ -7,6 +7,7 @@ module;
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#include "common/FormatHelper.hpp"
 #include "spdlog/spdlog.h"
 
 export module kataglyphis.vulkan.frame_capture;
@@ -34,7 +35,8 @@ class FrameCapture
   public:
     [[nodiscard]] bool supportsCapture(const VulkanSwapChain &swapChain, bool deviceLostDetected) const
     {
-        return !deviceLostDetected && swapChain.supportsTransferSrc();
+        return !deviceLostDetected && swapChain.supportsTransferSrc()
+               && isCapturableSwapchainFormat(swapChain.getSwapChainFormat());
     }
 
     [[nodiscard]] bool isArmed() const { return armed; }
@@ -208,9 +210,7 @@ class FrameCapture
         std::memcpy(pixels.data(), mapped, pixels.size());
 
         // Normalize to RGBA8 regardless of the swapchain's channel order.
-        const bool is_bgra = format == vk::Format::eB8G8R8A8Unorm || format == vk::Format::eB8G8R8A8Srgb
-                             || format == vk::Format::eB8G8R8A8Snorm || format == vk::Format::eB8G8R8A8Uint;
-        if (is_bgra) {
+        if (capturedFormatIsBgra(format)) {
             for (size_t i = 0; i < pixels.size(); i += 4U) { std::swap(pixels[i], pixels[i + 2U]); }
         }
 
