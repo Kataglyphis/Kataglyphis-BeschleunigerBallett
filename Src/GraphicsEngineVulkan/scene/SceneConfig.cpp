@@ -84,21 +84,32 @@ namespace {
     void scanAvailableModels()
     {
         if (s_models_scanned) return;
-        s_models_scanned = true;
 
         std::error_code ec;
         const std::filesystem::path resources_path = findResourcesBasePath();
         const std::filesystem::path models_dir = resources_path / "Models";
 
-        if (!std::filesystem::exists(models_dir, ec)) return;
+        if (!std::filesystem::exists(models_dir, ec) || ec) return;
 
-        for (const auto &entry : std::filesystem::recursive_directory_iterator(models_dir, ec)) {
-            if (ec) break;
-            if (entry.is_regular_file() && Kataglyphis::isSupportedModelPath(entry.path().string())) {
-                const std::filesystem::path rel = std::filesystem::relative(entry.path(), resources_path);
-                s_cached_model_paths.push_back(rel.string());
-                s_cached_model_display_names.push_back(computeModelDisplayName(rel.string()));
-            }
+        // s_models_scanned latches only once models_dir is confirmed
+        // reachable - a call made before the working directory finds
+        // Resources/Models must be free to retry on the next call instead of
+        // reporting "No loadable models" for the rest of the process.
+        s_models_scanned = true;
+
+        std::filesystem::recursive_directory_iterator it(
+          models_dir, std::filesystem::directory_options::skip_permission_denied, ec);
+        const std::filesystem::recursive_directory_iterator end;
+        for (; !ec && it != end; it.increment(ec)) {
+            std::error_code entry_ec;
+            if (!it->is_regular_file(entry_ec) || entry_ec) { continue; }
+            if (!Kataglyphis::isSupportedModelPath(it->path().string())) { continue; }
+
+            std::error_code rel_ec;
+            const std::filesystem::path rel = std::filesystem::relative(it->path(), resources_path, rel_ec);
+            if (rel_ec) { continue; }
+            s_cached_model_paths.push_back(rel.string());
+            s_cached_model_display_names.push_back(computeModelDisplayName(rel.string()));
         }
     }
 }// namespace

@@ -7,6 +7,7 @@ module;
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -190,9 +191,11 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
             std::string const beside_mtl = base_dir + "/" + relative_texture_filename;
             std::string const under_textures = base_dir + "/textures/" + relative_texture_filename;
             std::string texture_filename;
-            if (std::filesystem::exists(beside_mtl)) {
+            std::error_code beside_mtl_ec;
+            std::error_code under_textures_ec;
+            if (std::filesystem::exists(beside_mtl, beside_mtl_ec) && !beside_mtl_ec) {
                 texture_filename = beside_mtl;
-            } else if (std::filesystem::exists(under_textures)) {
+            } else if (std::filesystem::exists(under_textures, under_textures_ec) && !under_textures_ec) {
                 texture_filename = under_textures;
             } else {
                 // Neither candidate exists. Keep today's behaviour - record a

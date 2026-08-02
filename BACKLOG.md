@@ -4533,47 +4533,6 @@ loop already `continue`s before allocating for non-matching primitives, so the
 measured cost is a few thousand comparisons per frame on any realistic scene;
 not worth a task until something measures it.
 
-- [ ] **(M) Replace the ten throwing `std::filesystem` calls that abort a `-fno-exceptions` build, and stop latching an empty model scan forever** — the project's own rule is written down in `FileReader.ixx`; four files break it.
-
-  **Files to read:**
-  - `Src/shared/util/FileReader.ixx:13-28,56` — the rule ("The `error_code` overload is REQUIRED, not stylistic") and the shape to copy.
-  - `cmake/ProjectOptions.cmake` — where `-fno-exceptions` / `/EHs-` are set, so the failure mode is `std::terminate`, not a caught error.
-  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:84-103` — `scanAvailableModels`: `recursive_directory_iterator` at :95 (the `ec` only covers *construction*; the range-for's `operator++` throws), `entry.is_regular_file()` at :97, `std::filesystem::relative(...)` at :98. Also the `s_models_scanned = true` at :86-87, set *before* the directory is known to exist.
-  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:193,195` — two `std::filesystem::exists` without `ec`.
-  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:45` — `std::filesystem::current_path()` without `ec`.
-  - `Src/shared/imgui/KataglyphisImGuiFonts.ixx:15,22,36,43` — three `exists` and one `current_path`, all throwing overloads.
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — the existing source-scanning `BuildIntegrity.*` tests; reuse their source-root resolution helper.
-
-  **Steps:**
-  1. `scanAvailableModels`: replace the range-for with an explicit non-throwing walk —
-     `std::filesystem::recursive_directory_iterator it(models_dir, std::filesystem::directory_options::skip_permission_denied, ec);`
-     then `for (const auto end = std::filesystem::recursive_directory_iterator{}; !ec && it != end; it.increment(ec))`.
-     Inside, use `it->is_regular_file(entry_ec)` and
-     `std::filesystem::relative(it->path(), resources_path, rel_ec)`, and
-     `continue` on any per-entry error instead of aborting the process.
-  2. Same function: do not latch `s_models_scanned = true` up front. Latch it only after a scan that actually found `models_dir`; otherwise one call made from a working directory where `Resources/Models` is unreachable makes the GUI report "No loadable models" for the rest of the process even after the cwd is right.
-  3. `ObjLoader.cpp:193,195`: use the `error_code` overload of `exists`; a set `ec` means "not usable" for this decision, so the existing else-branch warning still fires.
-  4. `SkyBox.cpp:45`: `current_path(ec)`, falling back to `"."` on error rather than terminating.
-  5. `KataglyphisImGuiFonts.ixx:15,22,36,43`: same treatment; `addKataglyphisFontIfAvailable` returns `false` when `ec` is set.
-  6. Add a regression gate `TEST(BuildIntegrity, EngineSourcesUseNonThrowingFilesystemOverloads)` in `buildIntegritySuite.cpp` that scans `Src/**/*.{cpp,ixx,hpp}` for `filesystem::exists(`, `filesystem::current_path(`, `filesystem::relative(`, `filesystem::create_directories(` and `directory_iterator(`, and fails any call site whose argument list carries no `ec` / `error_code` token. Allow an explicit `// NO_EC_OK: <reason>` marker on the same line for deliberate exceptions.
-
-  **Test:** step 6 is the gate. Also add a `SceneConfigUnit` case in
-  `Test/commit/VulkanEngine/cameraSceneConfigSuite.cpp` asserting that
-  `sceneConfig::getAvailableModelPaths()` is non-empty when the test runs from
-  the repo root — the `ModelPickerUnit` tests in the same file show the cwd
-  assumption to follow.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`,
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='BuildIntegrity.*:SceneConfigUnit.*:ModelPickerUnit.*'`.
-
-  **Context:** this is not hypothetical hardening — the model scan walks a
-  user-populated directory (`Resources/Models`, recursively) and the font and
-  OBJ-texture lookups walk paths that come out of asset files. A junction
-  loop, a permission-denied subdirectory, or an entry deleted between
-  enumeration and stat is enough. Do task 2 before task 5, so the shared
-  resolver that task 5 extracts is exception-free from the start.
-
 - [ ] **(S) Run the Rust renderer's own test suite from this repo — CI never does** — `grep -i cargo .github/workflows/` returns only the wasm size budget.
 
   **Files to read:**

@@ -2,6 +2,7 @@ module;
 
 #include <array>
 #include <filesystem>
+#include <system_error>
 
 #include <imgui.h>
 
@@ -10,16 +11,17 @@ export module kataglyphis.shared.imgui.fonts;
 export namespace Kataglyphis::Frontend {
 inline auto resolveKataglyphisImGuiFontDirectory(const std::filesystem::path &cwd) -> std::filesystem::path
 {
+    std::error_code ec;
 #ifdef RELATIVE_IMGUI_FONTS_PATH
     auto fromMacro = (cwd / std::filesystem::path(RELATIVE_IMGUI_FONTS_PATH)).lexically_normal();
-    if (std::filesystem::exists(fromMacro)) { return fromMacro; }
+    if (std::filesystem::exists(fromMacro, ec) && !ec) { return fromMacro; }
 #endif
 
     constexpr int maxSearchDepth = 8;
     std::filesystem::path current = cwd;
     for (int depth = 0; depth < maxSearchDepth; ++depth) {
         const auto candidate = (current / "ExternalLib/IMGUI/misc/fonts").lexically_normal();
-        if (std::filesystem::exists(candidate)) { return candidate; }
+        if (std::filesystem::exists(candidate, ec) && !ec) { return candidate; }
 
         if (!current.has_parent_path()) { break; }
         const auto parent = current.parent_path();
@@ -33,14 +35,18 @@ inline auto resolveKataglyphisImGuiFontDirectory(const std::filesystem::path &cw
 inline auto addKataglyphisFontIfAvailable(ImFontAtlas *fonts, const std::filesystem::path &fontPath, float sizePixels)
   -> bool
 {
-    if (!std::filesystem::exists(fontPath)) { return false; }
+    std::error_code ec;
+    if (!std::filesystem::exists(fontPath, ec) || ec) { return false; }
 
     return fonts->AddFontFromFileTTF(fontPath.string().c_str(), sizePixels) != nullptr;
 }
 
 inline void configureKataglyphisImGuiFonts(ImGuiIO &imguiIo, float sizePixels)
 {
-    const std::filesystem::path fontDir = resolveKataglyphisImGuiFontDirectory(std::filesystem::current_path());
+    std::error_code current_path_ec;
+    const std::filesystem::path cwd = std::filesystem::current_path(current_path_ec);
+    const std::filesystem::path fontDir =
+      resolveKataglyphisImGuiFontDirectory(current_path_ec ? std::filesystem::path(".") : cwd);
 
     bool hasCustomFont = false;
     if (!fontDir.empty()) {

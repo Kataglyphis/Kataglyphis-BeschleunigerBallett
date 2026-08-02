@@ -5,6 +5,7 @@ module;
 #include <span>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 #include <stb_image.h>
@@ -42,8 +43,9 @@ void SkyBox::init(std::shared_ptr<VulkanDevice>in_device, vk::CommandPool comman
 void SkyBox::loadCubeMap(vk::CommandPool commandPool)
 {
     std::stringstream skybox_base_dir;
-    std::filesystem::path const cwd = std::filesystem::current_path();
-    skybox_base_dir << cwd.string();
+    std::error_code current_path_ec;
+    std::filesystem::path const cwd = std::filesystem::current_path(current_path_ec);
+    skybox_base_dir << (current_path_ec ? "." : cwd.string());
     skybox_base_dir << "/Resources/Textures/Skybox/DOOM2016/";
 
     std::array<std::string, 6> skybox_textures = {

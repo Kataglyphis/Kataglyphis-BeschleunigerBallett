@@ -2163,3 +2163,89 @@ TEST(BuildIntegrity, SharedStructOffsetsMatchTheCompiledSpirv)
              return joined;
          }();
 }
+
+// FileReader.ixx spells out the rule this test enforces: the error_code
+// overload of std::filesystem's query functions is REQUIRED, not stylistic,
+// because exceptions are disabled project-wide (-fno-exceptions/EHs-) and the
+// throwing overloads therefore std::terminate the whole process on any OS
+// error the query reports - most commonly permission denied. scanAvailableModels
+// used to walk a user-populated directory (Resources/Models, recursively)
+// with the throwing range-for form; a permission-denied subdirectory or a
+// junction loop was enough to take the engine down instead of skipping the
+// entry. This scans every .cpp/.ixx/.hpp under Src/ for a call to one of the
+// throwing-capable functions and fails any call site with no error_code
+// argument in sight. A deliberate exception can carry a
+// "// NO_EC_OK: <reason>" trailing comment.
+TEST(BuildIntegrity, EngineSourcesUseNonThrowingFilesystemOverloads)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    static const std::vector<std::string> kWatchedCalls = {
+        "filesystem::exists(",
+        "filesystem::current_path(",
+        "filesystem::relative(",
+        "filesystem::create_directories(",
+        "directory_iterator(",// also matches recursive_directory_iterator(
+    };
+    static const std::string kNoEcMarker = "NO_EC_OK:";
+
+    // Not a full parser - a plain substring search for the naming idioms this
+    // codebase actually uses for an std::error_code out-parameter (ec,
+    // *_ec, *_error, error_code, or the FileReader.ixx "ignored" idiom for a
+    // deliberately-discarded one).
+    auto carries_error_code_token = [](const std::string &text) {
+        return text.find("ec") != std::string::npos || text.find("error") != std::string::npos
+          || text.find("ignored") != std::string::npos;
+    };
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        const auto extension = path.extension();
+        if (extension != ".cpp" && extension != ".ixx" && extension != ".hpp") { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::vector<std::string> lines;
+        std::string raw_line;
+        while (std::getline(file, raw_line)) { lines.push_back(raw_line); }
+
+        constexpr int kLookaheadLines = 2;
+        for (std::size_t i = 0; i < lines.size(); ++i) {
+            for (const auto &watched : kWatchedCalls) {
+                if (lines[i].find(watched) == std::string::npos) { continue; }
+                if (lines[i].find(kNoEcMarker) != std::string::npos) { continue; }
+
+                std::string window = lines[i];
+                for (int extra = 1; extra <= kLookaheadLines && i + static_cast<std::size_t>(extra) < lines.size();
+                     ++extra) {
+                    window += lines[i + static_cast<std::size_t>(extra)];
+                }
+
+                if (!carries_error_code_token(window)) {
+                    violations.push_back(
+                      fs::relative(path, repo_root).generic_string() + ":" + std::to_string(i + 1) + ": " + lines[i]);
+                }
+            }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " std::filesystem call(s) under Src/ use a throwing overload (no error_code argument found nearby) - "
+         "exceptions are disabled project-wide (-fno-exceptions/EHs-), so this aborts the process instead of "
+         "returning an error; pass the error_code overload (see FileReader.ixx), or for a deliberate exception "
+         "add a \"// NO_EC_OK: <reason>\" trailing comment on the line:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
