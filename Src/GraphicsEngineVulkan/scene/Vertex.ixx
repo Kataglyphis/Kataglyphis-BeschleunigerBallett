@@ -1,6 +1,6 @@
 module;
 
-#include "scene/Vertex.hpp"
+#include "shared/scene/Vertex.hpp"
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <vulkan/vulkan.hpp>

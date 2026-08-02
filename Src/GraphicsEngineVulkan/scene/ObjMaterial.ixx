@@ -1,6 +1,6 @@
 module;
 
-#include "scene/ObjMaterial.hpp"
+#include "shared/scene/ObjMaterial.hpp"
 
 export module kataglyphis.vulkan.obj_material;
 

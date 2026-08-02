@@ -4616,67 +4616,6 @@ behaviour change, not a refactor.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Delete the 15 never-called accessors on the two shared scene structs, the two one-line bridge headers, and the IDE filter's reference to a header that does not exist** — grep-confirmed one occurrence each; every field is public, so each accessor is pure redundancy.
-
-  **Files to read:**
-  - `Src/shared/scene/ObjMaterial.hpp:68-82` — 13 accessors, of which only
-    `get_textureID` (`:79`) has callers (`gltfParseSuite.cpp:498`,
-    `objParseSuite.cpp:85`).
-  - `Src/shared/scene/Vertex.hpp:30-33` — 4 accessors, of which only
-    `get_position` (`:30`) has callers (`Mesh.cpp:50,53,54`,
-    `meshRangeSliceSuite.cpp:45-47`).
-  - `Src/GraphicsEngineVulkan/scene/Vertex.hpp` and
-    `Src/GraphicsEngineVulkan/scene/ObjMaterial.hpp` — six-line headers whose
-    entire body is `#include "../../shared/scene/<name>.hpp"`.
-  - `Src/GraphicsEngineVulkan/cmake/filters/SetProjectFilters.cmake:92-103`.
-
-  **Steps:**
-  1. Delete these 12 lines from `Src/shared/scene/ObjMaterial.hpp`:
-     `get_ambient`, `get_diffuse`, `get_specular`, `get_transmittance`,
-     `get_emission`, `get_shininess`, `get_ior`, `get_dissolve`, `get_illum`,
-     `get_alphaCutoff`, `get_uv_scale`, `get_uv_offset`. **Keep
-     `get_textureID`.**
-  2. Delete `get_normal`, `get_color` and `get_tex_coors` from
-     `Src/shared/scene/Vertex.hpp`. **Keep `get_position`**, and keep
-     `operator==` and the `std::hash<Vertex>` specialization — both are live
-     (the loaders deduplicate vertices through an `unordered_map`).
-  3. Do **not** touch the `#ifdef __cplusplus` / `KTG_VEC3` scaffolding in
-     either header. It is unreachable today (the shaders declare their own
-     copies in `Resources/ShadersSlang/common/scene_types.slang:23,32` and
-     `import`, they do not `#include`), but the same scaffolding is present in
-     eight other host/device headers and removing it from only two would make
-     the convention less uniform, not more.
-  4. Delete `Src/GraphicsEngineVulkan/scene/Vertex.hpp` and
-     `Src/GraphicsEngineVulkan/scene/ObjMaterial.hpp`, and point their two
-     consumers at the shared headers directly:
-     `scene/Vertex.ixx:3` → `#include "shared/scene/Vertex.hpp"` and
-     `scene/ObjMaterial.ixx:3` → `#include "shared/scene/ObjMaterial.hpp"`.
-     `SkyBox.cpp:13` already uses that spelling, so the include path resolves.
-  5. In `SetProjectFilters.cmake`, drop the now-deleted
-     `${PROJECT_INCLUDE_DIR}scene/ObjMaterial.hpp` entry (`:92-95`) and the
-     `${PROJECT_INCLUDE_DIR}scene/Scene.hpp` entry (`:102-104`) — `PROJECT_INCLUDE_DIR`
-     and `PROJECT_SRC_DIR` are the same directory (`CMakeLists.txt:2-3`) and
-     there is no `scene/Scene.hpp` in the tree; that entry is already stale.
-     This file only feeds `source_group`, so it cannot break the build — but a
-     stale entry is exactly the drift this task exists to remove.
-
-  **Test:** No new test. The change is provably behaviour-free (deleting
-  never-called inline accessors and a pass-through include), and the existing
-  layout gates already pin what matters:
-  `PushConstantSuite`'s `ObjMaterialLayoutUnit.MatchesTheSlangTwinScalarLayout`
-  (13 `offsetof` assertions plus `sizeof(ObjMaterial) == 100`) and
-  `buildIntegritySuite.cpp:734-735`'s `offsetof(Vertex, …)` sweep against the
-  compiled SPIR-V. Run both and `ObjParseUnit.*` / `GltfParseUnit.*` /
-  `MeshRangeSlice.*`.
-
-  **Build:** `clangcl-debug`, and **you must pass `-FreshContainer`** — this
-  task deletes two files, and a reused container overwrites sources in place
-  without pruning, so the deleted headers would keep building (see AGENTS.md
-  § Containerized Windows Builds):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=ObjMaterialLayoutUnit.*:BuildIntegrity.*:ObjParseUnit.*:GltfParseUnit.*:MeshRangeSlice.*`
-  from the repo root.
-
   **Context:** Deleting a member of a `#ifdef __cplusplus` host/device struct is
   only safe because these are member **functions**, not data members — the
   layout the shaders and the BLAS/vertex-input descriptions depend on

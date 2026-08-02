@@ -65,21 +65,7 @@ struct ObjMaterial
         uv_scale(uv_scale), uv_offset(uv_offset)
     {}
 
-    KTG_VEC3 get_ambient() const { return ambient; }
-    KTG_VEC3 get_diffuse() const { return diffuse; }
-    KTG_VEC3 get_specular() const { return specular; }
-    KTG_VEC3 get_transmittance() const { return transmittance; }
-    KTG_VEC3 get_emission() const { return emission; }
-
-    float get_shininess() const { return shininess; }
-    float get_ior() const { return ior; }
-    float get_dissolve() const { return dissolve; }
-
-    int get_illum() const { return illum; }
     int get_textureID() const { return textureID; }
-    float get_alphaCutoff() const { return alphaCutoff; }
-    KTG_VEC2 get_uv_scale() const { return uv_scale; }
-    KTG_VEC2 get_uv_offset() const { return uv_offset; }
 #endif
 };
 

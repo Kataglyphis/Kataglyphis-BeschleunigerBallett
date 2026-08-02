@@ -28,9 +28,6 @@ struct Vertex
     {}
 
     glm::vec3 get_position() const { return position; }
-    glm::vec3 get_normal() const { return normal; }
-    glm::vec3 get_color() const { return color; }
-    glm::vec2 get_tex_coors() const { return texture_coords; }
 
     bool operator==(const Vertex &other) const
     {

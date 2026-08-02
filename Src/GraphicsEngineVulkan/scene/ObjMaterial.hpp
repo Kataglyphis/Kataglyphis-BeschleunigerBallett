@@ -1,6 +1,0 @@
-#ifndef KATAGLYPHIS_VULKAN_SCENE_OBJ_MATERIAL_BRIDGE_HPP
-#define KATAGLYPHIS_VULKAN_SCENE_OBJ_MATERIAL_BRIDGE_HPP
-
-#include "../../shared/scene/ObjMaterial.hpp"
-
-#endif

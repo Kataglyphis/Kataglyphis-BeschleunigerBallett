@@ -91,16 +91,8 @@ kataglyphis_append_prefixed_files(
   Camera.ixx)
 kataglyphis_append_prefixed_files(
   SCENE_FILTER
-  "${PROJECT_INCLUDE_DIR}scene/"
-  ObjMaterial.hpp)
-kataglyphis_append_prefixed_files(
-  SCENE_FILTER
   "${PROJECT_SRC_DIR}scene/"
   Vertex.ixx)
-kataglyphis_append_prefixed_files(
-  SCENE_FILTER
-  "${PROJECT_INCLUDE_DIR}scene/"
-  Scene.hpp)
 kataglyphis_append_prefixed_files(
   SCENE_FILTER
   "${PROJECT_SRC_DIR}scene/"
