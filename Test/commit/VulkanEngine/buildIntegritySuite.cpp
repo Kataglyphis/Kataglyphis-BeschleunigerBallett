@@ -4668,6 +4668,60 @@ TEST(BuildIntegrity, PipelineTeardownGoesThroughTheSharedHelper)
          }();
 }
 
+// Every hand-rolled framebuffer teardown used to be spelled out at each of
+// nine call sites across five stages, four of which duplicated it a second
+// time inside their own cleanUp(). Kataglyphis::destroyFramebuffers /
+// destroyFramebuffer (common/FramebufferHelper.hpp) are now the one place
+// that destroy framebuffers - this pins that down the same way
+// PipelineTeardownGoesThroughTheSharedHelper does for pipelines.
+TEST(BuildIntegrity, FramebufferTeardownGoesThroughTheSharedHelper)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    static const char *const kRawTeardownCall = ".destroyFramebuffer(";
+
+    // FramebufferHelper.hpp is the helper's own definition.
+    static const std::array<const char *, 1> kExemptFiles = {
+        "Src/GraphicsEngineVulkan/common/FramebufferHelper.hpp"
+    };
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".cpp" && path.extension() != ".ixx") { continue; }
+
+        const std::string relative_file = fs::relative(path, repo_root).generic_string();
+        if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string line;
+        std::size_t line_number = 0;
+        while (std::getline(file, line)) {
+            ++line_number;
+            if (line.find(kRawTeardownCall) == std::string::npos) { continue; }
+            violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " hand-rolled .destroyFramebuffer(...) call(s) found under Src/GraphicsEngineVulkan/ - destroy "
+         "framebuffers through Kataglyphis::destroyFramebuffers (common/FramebufferHelper.hpp) instead:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 // Texture::createImage takes in_mip_levels but, before this test existed, only
 // uploadRgba's own path assigned it to the mip_levels field - every other
 // caller (Clouds, SkyBox, CascadedShadowMap) went through createImage

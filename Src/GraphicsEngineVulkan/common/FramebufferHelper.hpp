@@ -1,6 +1,7 @@
 #pragma once
 
 #include <span>
+#include <vector>
 
 #include <vulkan/vulkan.hpp>
 
@@ -40,6 +41,33 @@ constexpr vk::FramebufferCreateInfo buildFramebufferCreateInfo(vk::RenderPass re
 {
     return vk::FramebufferCreateInfo{ vk::FramebufferCreateFlags{}, render_pass,
         static_cast<uint32_t>(attachments.size()), attachments.data(), extent.width, extent.height, layers };
+}
+
+// Destroys every framebuffer in the vector and clears it, and destroys a
+// single framebuffer and nulls its handle - the same idempotence rule
+// PipelineLayoutHelper.hpp's destroyPipelineAndLayout follows: a device-less
+// call (already torn down, or never had a device) is a no-op rather than a
+// crash, so an explicit cleanUp followed by the destructor's safety net stays
+// safe. The target is taken by reference for the same reason
+// destroyPipelineAndLayout takes its handles by reference; passing by value
+// would destroy without clearing/nulling and leave the caller holding a
+// dangling handle.
+inline void destroyFramebuffers(vk::Device device, std::vector<vk::Framebuffer> &framebuffers)
+{
+    if (!device) { return; }
+    for (auto &framebuffer : framebuffers) {
+        if (framebuffer) { device.destroyFramebuffer(framebuffer); }
+    }
+    framebuffers.clear();
+}
+
+inline void destroyFramebuffer(vk::Device device, vk::Framebuffer &framebuffer)
+{
+    if (!device) { return; }
+    if (framebuffer) {
+        device.destroyFramebuffer(framebuffer);
+        framebuffer = nullptr;
+    }
 }
 
 }// namespace Kataglyphis

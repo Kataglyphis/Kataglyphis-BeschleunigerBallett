@@ -395,10 +395,7 @@ void SkyBox::cleanUp()
     // is only a safety net for the forgotten path).
     if (!device) { return; }
 
-    for (auto fb : framebuffers) {
-        device->getLogicalDevice().destroyFramebuffer(fb);
-    }
-    framebuffers.clear();
+    destroyFramebuffers();
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphicsPipeline, pipelineLayout);
     cubemapDescriptors.cleanUp();
     if (renderPass) {
@@ -421,8 +418,7 @@ SkyBox::~SkyBox() { cleanUp(); }
 
 void SkyBox::destroyFramebuffers()
 {
-    for (auto fb : framebuffers) { device->getLogicalDevice().destroyFramebuffer(fb); }
-    framebuffers.clear();
+    Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffers);
 }
 
 void SkyBox::recreateFrameResources(std::span<const vk::ImageView> imageViews, vk::ImageView depthView, uint32_t width, uint32_t height)

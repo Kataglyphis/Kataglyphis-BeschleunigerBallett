@@ -123,10 +123,7 @@ void DeferredRasterizer::cleanUp()
         renderPass = nullptr;
     }
 
-    for (auto &fb : framebuffer) {
-        logicalDevice.destroyFramebuffer(fb);
-    }
-    framebuffer.clear();
+    destroyFramebuffers();
 
     for (auto& tex : offscreenTextures) { if (tex) tex->cleanUp(); }
     offscreenTextures.clear();
@@ -146,10 +143,7 @@ DeferredRasterizer::~DeferredRasterizer() { cleanUp(); }
 
 void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::destroyFramebuffers()
 {
-    for (auto &fb : framebuffer) {
-        device->getLogicalDevice().destroyFramebuffer(fb);
-    }
-    framebuffer.clear();
+    Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffer);
 }
 
 void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::recreateFrameResources()

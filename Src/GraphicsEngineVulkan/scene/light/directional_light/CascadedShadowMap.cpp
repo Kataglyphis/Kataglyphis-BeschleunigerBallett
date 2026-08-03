@@ -243,10 +243,7 @@ void CascadedShadowMap::cleanUp()
         shadowMapArrayView = nullptr;
     }
 
-    if (framebuffer) {
-        device->getLogicalDevice().destroyFramebuffer(framebuffer);
-        framebuffer = nullptr;
-    }
+    Kataglyphis::destroyFramebuffer(device->getLogicalDevice(), framebuffer);
 
     if (renderPass) {
         device->getLogicalDevice().destroyRenderPass(renderPass);

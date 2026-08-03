@@ -11,11 +11,14 @@
 
 #include <array>
 #include <span>
+#include <vector>
 #include <vulkan/vulkan.hpp>
 
 #include "common/FramebufferHelper.hpp"
 
 using Kataglyphis::buildFramebufferCreateInfo;
+using Kataglyphis::destroyFramebuffer;
+using Kataglyphis::destroyFramebuffers;
 
 namespace {
 // vk::ImageView/vk::RenderPass's default constructors are not constexpr in
@@ -73,6 +76,17 @@ TEST(FramebufferHelperUnit, LayersOverrideIsHonoured)
       vk::RenderPass{}, std::span<const vk::ImageView>(kThreeViews), vk::Extent2D{ 800, 600 }, 6);
 
     EXPECT_EQ(info.layers, 6U);
+}
+
+TEST(FramebufferHelperUnit, NullDeviceLeavesTheHandlesAlone)
+{
+    std::vector<vk::Framebuffer> framebuffers{ vk::Framebuffer(nullptr), vk::Framebuffer(nullptr) };
+    destroyFramebuffers(vk::Device{}, framebuffers);
+    EXPECT_EQ(framebuffers.size(), 2U);
+
+    vk::Framebuffer framebuffer(nullptr);
+    destroyFramebuffer(vk::Device{}, framebuffer);
+    EXPECT_EQ(framebuffer, vk::Framebuffer(nullptr));
 }
 
 }// namespace

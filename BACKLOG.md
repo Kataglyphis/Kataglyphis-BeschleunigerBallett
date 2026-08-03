@@ -6399,6 +6399,257 @@ first (`VulkanRenderer.cpp:1002-1008`); fragile, but correct as recorded.
 
 ### C++ Vulkan engine
 
+## 2026-08-03 batch XIV — planner (refactor: framebuffer teardown spelled out nine times across five stages, where four stages re-implement their own `destroyFramebuffers()` inside `cleanUp()` and only `cleanUp()` guards the null device; a golden-suite count in prose that the gate written to stop exactly this drift does not reach, already stale by one test; the two model loaders' `uploadParsed` tails, where only one of the two forwards `MeshRange::doubleSided`)
+
+The actionable queue was empty again — 0 `- [ ]`, 15 `- [b]` across the whole
+file. Every `file:line` below was read out of the tree this pass.
+
+**Every task in this batch is verifiable with no GPU**, deliberately: the
+fifteen `- [b]` entries are all blocked on host GPU golden verification, so
+nothing here depends on it. Each task lands device-free code plus a
+`BuildIntegrity` source-scanning gate that runs in the container CPU lane.
+`Test/commit/VulkanEngine/CMakeLists.txt` globs `*.cpp` with
+`CONFIGURE_DEPENDS` and `kataglyphis_collect_module_interfaces`
+(`Src/GraphicsEngineVulkan/CMakeLists.txt:30`) globs `*.ixx`, so neither a new
+suite file nor a new module interface needs registering anywhere.
+
+**Re-confirming the standing rejection first so it is not re-derived:** an
+`ImageMemoryBarrier` builder was checked again this pass and is **still not
+tasked** — twelve hand-rolled blocks, still owned by the `- [b]` cloud-barrier
+entry, still gated on host GPU verification. Same for the four remaining
+`vk::ImageSubresourceRange` blocks. The three tasks below are the create-info
+family members whose acceptance test is *not* a rendered pixel.
+
+**The headline is that framebuffer teardown is written nine times and the four
+`destroyFramebuffers()` methods that exist are each duplicated by the
+`cleanUp()` of the very class that owns them.** `Rasterizer::cleanUp:109` and
+`Rasterizer::destroyFramebuffers:133-136` are the same loop over the same
+member; so are `DeferredRasterizer.cpp:126-129`/`:149-152`,
+`PostStage.cpp:109`/`:129`, and `SkyBox.cpp:398-400`/`:424`. Only the
+`cleanUp()` half of each pair sits behind an `if (!device) { return; }`, so
+calling `destroyFramebuffers()` after `cleanUp()` has reset the `shared_ptr`
+dereferences null — an ordering the four stages happen to satisfy today
+(`VulkanRenderer.cpp:664-689`) and nothing enforces.
+`CascadedShadowMap.cpp:246-249` is the ninth copy, the single-handle variant,
+and it is the only one that nulls what it destroyed. This is the exact
+destruction-half counterpart to `buildFramebufferCreateInfo`, and
+`destroyPipelineAndLayout` in `common/PipelineLayoutHelper.hpp` — with its
+`BuildIntegrity.PipelineTeardownGoesThroughTheSharedHelper` gate at
+`buildIntegritySuite.cpp:4622` — is the template for both the helper and the
+gate.
+
+**Second, `docs/gpu-golden-testing.md` has drifted again, in the one place the
+gate cannot see.** `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite`
+(`buildIntegritySuite.cpp:3313`) pins the four integers in the
+`<!-- golden-counts: defined=31 runnable=30 integration=2 total=32 -->` marker
+at `:84`, and those are correct. But `:178-179`, 94 lines below the marker,
+still says "runs the rest of the suite (**28** tests) clean … '28 tests from 2
+test suites ran', 'PASSED 28 tests'" — a number the same document derives as
+`total − 3 known-excluded`, which is `32 − 3 = 29` today. Batch XV introduced
+the marker *because* these counts had already been corrected by hand twice;
+the prose sentence was left ungated and has now drifted within two days of the
+marker being made correct. The durable fix is to derive that number too.
+
+**Third, `ObjLoader::uploadParsed` and `GltfLoader::uploadParsed` are the same
+function with two different texture sources.** `ObjLoader.cpp:97-158` and
+`GltfLoader.cpp:53-112` each spell out: the device/empty-vertices guard, the
+per-texture "if creation failed, occupy the slot with the default texture
+anyway" fallback (with a ~6-line comment repeated nearly verbatim in both), the
+"no textures at all → reserve slot 0" fallback, and the mesh-range loop over
+`sliceMeshRange`. `MeshRange.ixx:41-44` already states the design intent —
+"Shared by both loaders' `uploadParsed` so the re-basing arithmetic lives in one
+place" — and the arithmetic *is* shared; the loop around it is not. The drift
+that intent was meant to prevent has already happened once: `GltfLoader.cpp:109`
+passes `range.doubleSided` to `add_new_mesh` and `ObjLoader.cpp:153-154` does
+not, relying on the default argument. That is inert today (`MeshRange.ixx:26-28`
+records `doubleSided` as "always false for OBJ"), which is exactly why nothing
+has caught it.
+
+Ordering: **land these one at a time, rebuilding between them** — all three add
+a test to `buildIntegritySuite.cpp` and would otherwise collide there. They are
+otherwise disjoint. Task 3 adds a module interface and therefore needs
+`-FreshContainer`; tasks 1 and 2 do not.
+
+- [ ] **(S) (refactor) Derive the "excluding the three known-bad tests" golden count instead of writing it in prose, and correct the 28 that has already drifted to 29** — the gate that exists to stop this drift pins a marker comment 94 lines above the sentence that drifted.
+
+  **Files to read:**
+  - `docs/gpu-golden-testing.md:77-84` — the gated prose plus the
+    `<!-- golden-counts: defined=31 runnable=30 integration=2 total=32 -->`
+    marker. These are correct; do not touch the numbers.
+  - `docs/gpu-golden-testing.md:158-179` — the "Known issue: path-tracing
+    compute device-lost" section. `:160-162` names the three excluded tests,
+    `:176-177` is the `--gtest_filter` that excludes them, `:178-179` is the
+    stale sentence ("28 tests" three times; `32 − 3 = 29` today).
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:3305-3352` —
+    `GoldenTestCountsInDocsMatchTheSuite` and its
+    `parse_golden_counts_marker`/`parse_marker_field` helpers at `:413-465`.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:395-411` —
+    `collect_suite_test_names`, the pure file-I/O counter. It must stay the
+    only counting mechanism: the golden tests need a GPU the CI container does
+    not have and must never be run to count them.
+
+  **Steps:**
+  1. Extend the marker at `docs/gpu-golden-testing.md:84` with a fifth field:
+     `<!-- golden-counts: defined=31 runnable=30 integration=2 total=32 excluded=3 -->`.
+     `excluded` is the number of tests named in the exclusion filter at
+     `:176-177`, not a free-standing constant.
+  2. Rewrite `:178-179` so the two run-report numbers are stated once and
+     consistently as `total − excluded = 29`, and re-date the verification note
+     to say what it actually is: a 2026-08-01 run of the 28 tests that existed
+     then, not a claim about today's suite. Do not invent a run that did not
+     happen — the entry is a record, and the count is what the gate is now
+     going to check.
+  3. In `GoldenTestCountsInDocsMatchTheSuite`, parse the new `excluded=` field
+     via `parse_marker_field` (missing field ⇒ the same hard `ASSERT_TRUE`
+     failure the other four already produce — a deleted field must fail, not
+     silently pass).
+  4. Add a second source for `excluded`: parse the `--gtest_filter=` line in
+     the same document for the `:-`-prefixed negative section and count the
+     `:`-separated names in it. Assert that count equals `marker->excluded`, so
+     removing a test from the filter without updating the marker fails.
+  5. Assert each excluded name actually exists in the suite —
+     `collect_suite_test_names(tests_dir, "GoldenRender")` /
+     `"Integration"` already returns the bare names — so a renamed or deleted
+     golden cannot leave a dead name in the filter (a filter that excludes
+     nothing is another probe-that-cannot-say-no).
+  6. Grep `docs/gpu-golden-testing.md` for any remaining bare count and either
+     delete it or make it point at the marker. Do not add a second marker.
+
+  **Test:** `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` (extended,
+  pure file-I/O). Verify red/green in both directions: bump `excluded=3` to
+  `excluded=4` and confirm the filter-derived count disagrees; rename one of
+  the three excluded tests in the filter string and confirm step 5 fails.
+
+  **Build:** `clangcl-debug` (test + docs only):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite'`
+  from the repo root (the test locates the doc via `find_repo_root()` and
+  skips if the cwd is wrong — a skip is not a pass here, read the output).
+
+  **Context:** The counts in this document have now been corrected by hand
+  three times (`1cd6b8b5`, `e2767bb1`, batch XV task 5) and drifted a fourth
+  within two days of the gate landing, because the gate pinned the marker and
+  not the sentence a reader actually reads. This is the same failure mode as
+  the CI fuzz allowlist and the GPU probe that always said yes: a check whose
+  scope is narrower than the claim it appears to protect. Adding the number to
+  the marker is the cheap part; step 5 is the part that makes the filter itself
+  unable to rot.
+
+- [ ] **(M) (refactor) Give both model loaders' `uploadParsed` tail one definition, and forward `MeshRange::doubleSided` from both** — the two loaders differ only in where a texture's bytes come from, and the one difference that is not that is a defaulted argument OBJ silently drops.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:97-158` — the OBJ half. Note
+    `:114-133`'s `if (!textureNames[i].empty())` skip, which is OBJ-only and
+    must stay in `ObjLoader`, and `:153-154`'s `add_new_mesh` call with no
+    `double_sided` argument.
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:53-112` — the glTF half.
+    `:109` passes `range.doubleSided`.
+  - `Src/GraphicsEngineVulkan/scene/MeshRange.ixx` — `MeshRange` (`:26-28`
+    documents `doubleSided` as always false for OBJ), `MeshSlice`, and
+    `sliceMeshRange`, whose comment at `:41-44` already states the
+    one-place-for-this rule this task extends.
+  - `Src/GraphicsEngineVulkan/scene/Model.ixx:25-31` — `add_new_mesh`'s
+    signature, including `bool double_sided = false`.
+  - `Src/GraphicsEngineVulkan/renderer/FrameCapture.ixx:1-35` — a module
+    interface that defines everything inline, the shape to follow.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:4615-4668` — the gate
+    template again.
+
+  **Steps:**
+  1. Add `Src/GraphicsEngineVulkan/scene/ModelAssembly.ixx`, exporting
+     `kataglyphis.vulkan.model_assembly` and importing
+     `kataglyphis.vulkan.{model,device,mesh_range,obj_material,vertex,texture}`.
+     Define all three functions inline in the interface, the way
+     `MeshRange.ixx` defines `sliceMeshRange`; no new `.cpp`.
+  2. `void addTextureOrDefault(Model &model, const std::shared_ptr<VulkanDevice> &device, vk::CommandPool pool, bool created, Texture &&texture)`
+     — appends `texture` when `created`, otherwise creates and appends the
+     default texture. Carry over (once) the reason both loaders state: a failed
+     load must still occupy its slot, because `textureID` is a dense index and
+     a skipped slot shifts every later texture down one and pushes the last
+     `textureID` past the descriptor array.
+  3. `void ensureAtLeastOneTexture(Model &model, const std::shared_ptr<VulkanDevice> &device, vk::CommandPool pool)`
+     — the `getTextureCount() == 0` fallback, verbatim from either loader.
+  4. `void addMeshesForRanges(Model &model, const std::shared_ptr<VulkanDevice> &device, vk::CommandPool pool, std::vector<Vertex> &vertices, std::vector<unsigned int> &indices, std::vector<unsigned int> &materialIndex, std::vector<ObjMaterial> &materials, const std::vector<MeshRange> &ranges)`
+     — the empty-ranges single-mesh case plus the per-range
+     `sliceMeshRange` → `add_new_mesh` loop, **always** passing
+     `range.doubleSided`. The arrays stay non-const references because
+     `add_new_mesh` takes them that way; say so in a comment rather than
+     const_cast'ing.
+  5. Rewrite both `uploadParsed` bodies against those three. Keep in each
+     loader only what is genuinely its own: the guard's log message (the two
+     strings differ and should stay distinguishable), OBJ's empty-name skip,
+     and the `createFromFile` vs `createFromMemory` call that produces the
+     `bool created` argument.
+  6. Add `TEST(BuildIntegrity, ModelUploadGoesThroughTheSharedAssembly)`:
+     walk `Src/GraphicsEngineVulkan/`, flag any `.cpp`/`.ixx` line containing
+     `sliceMeshRange(` or `createDefaultTexture(`, exempting
+     `Src/GraphicsEngineVulkan/scene/ModelAssembly.ixx`,
+     `Src/GraphicsEngineVulkan/scene/MeshRange.ixx` (`sliceMeshRange`'s own
+     definition) and `Src/GraphicsEngineVulkan/scene/Texture.cpp` /
+     `Texture.ixx` (`createDefaultTexture`'s own definition). Verified this
+     pass: after step 5 those are the only remaining hits under `Src/`.
+     `Test/` is not scanned, so `meshRangeSliceSuite.cpp` is unaffected.
+
+  **Test:** `BuildIntegrity.ModelUploadGoesThroughTheSharedAssembly` (new, pure
+  file-I/O), plus `ObjParse.*`, `GltfParse.*`, `MeshRangeSlice.*` and
+  `AsyncModelParse.*` staying green — those cover `parseCpu` and the slicing
+  arithmetic, which this task does not touch, so any movement there means the
+  refactor was not behaviour-preserving. `uploadParsed` itself needs a device
+  and cannot be unit-tested; its oracles are the GPU goldens
+  `MultiPrimitiveGltfLoadsAsMultipleMeshes`,
+  `CorruptEmbeddedImageKeepsTextureSlotsAligned`,
+  `MaskCardDoubleSidedRendersFromBehind` and
+  `SecondModelShadesWithItsOwnTextures`. **Run them if the host GPU is
+  available; if it is not, ship anyway and say so in the commit message** — the
+  one behavioural delta is OBJ now passing `range.doubleSided` where it
+  previously took the default, and `MeshRange.ixx:26-28` states that field is
+  always `false` for OBJ, so the two are the same value by construction.
+  Confirm that by reading `ObjLoader.cpp:388-395`, the only place OBJ
+  constructs a `MeshRange`, before you rely on it.
+
+  **Build:** `clangcl-debug` **with `-FreshContainer`** — this adds a module
+  interface, and `AGENTS.md`'s fresh-container rule makes that mandatory
+  (stale BMIs ASan-fault at member init rather than failing to build):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='BuildIntegrity.*:ObjParse.*:GltfParse.*:MeshRangeSlice.*:AsyncModelParse.*'`
+  from the repo root.
+
+  **Context:** `MeshRange.ixx` already committed to this — "shared by both
+  loaders' `uploadParsed` so the re-basing arithmetic lives in one place" — and
+  stopped one level short, which is precisely how `doubleSided` ended up
+  forwarded by one caller and not the other. Same shape as `d88959ac` (eleven
+  bounds-checked lookups collapsed into `findModel`/`findMesh`) and `a3b42dfc`
+  (one depth-aspect definition). The value is that the next loader — or the
+  next parameter `add_new_mesh` grows — cannot reach only one of the two
+  paths. Do **not** fold the texture *loops* themselves together behind a
+  callback: the OBJ loop skips empty names and the glTF loop does not, and
+  hiding that difference inside a shared template is how the dense-index
+  invariant gets broken by someone who cannot see it any more.
+
+Candidates found but NOT tasked this cycle (checked, then rejected — do not
+re-propose without new evidence): **an `ImageMemoryBarrier` builder and the
+four `vk::ImageSubresourceRange` blocks** — re-checked, unchanged, still owned
+by the `- [b]` cloud-barrier entry and still gated on host GPU verification;
+this is the seventh rejection, stop re-checking them. **Dead accessors** —
+swept again this pass (every `get*`/`is*`/`has*` name declared in any
+`.ixx`/`.hpp` under `Src/`, counted against `Src/` + `Test/` + the Rust crate);
+zero zero-caller names remain, so batch XI's sweep is still complete apart from
+`Mesh::setModel`, which that batch already recorded as fold-it-in. **The five
+pipeline-creation functions at `forward.rs:2707-2947`** — `create_shadow_pipeline`
+and `create_masked_shadow_pipeline` do repeat the same
+`DepthBiasState { constant: 2, slope_scale: 2.0 }` and the two MSAA-enabled
+pipelines repeat `MultisampleState { count: MSAA_SAMPLE_COUNT, .. }`, but every
+extracted unit is a `wgpu::RenderPipeline` that only a live adapter can
+observe, so this would ship with compile-only verification — the same reason
+`ForwardRenderer::new`/`upload_scene`/`render_tonemapped` were rejected in the
+2026-08-03 batch XII prose. **`src/render/{bloom,ssao,overlay,tonemap}.rs` and
+`gpu_occlusion.rs` having no `mod tests`** — real gaps, but each module's whole
+surface is GPU-resident; there is no device-free unit to assert, which is why
+their coverage lives in `tests/headless.rs` instead. **`Src/KomputePlayground`**
+— unchanged; still an owner decision.
+
+### C++ Vulkan engine
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

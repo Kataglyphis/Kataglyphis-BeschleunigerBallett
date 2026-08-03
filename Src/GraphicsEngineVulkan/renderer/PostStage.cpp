@@ -106,8 +106,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::cleanUp()
     if (depthBufferImage) { depthBufferImage->cleanUp(); }
     depthBufferImage.reset();
 
-    for (auto &framebuffer : framebuffers) { device->getLogicalDevice().destroyFramebuffer(framebuffer); }
-    framebuffers.clear();
+    destroyFramebuffers();
 
     if (offscreenTextureSampler) {
         device->getLogicalDevice().destroySampler(offscreenTextureSampler);
@@ -126,8 +125,7 @@ Kataglyphis::VulkanRendererInternals::PostStage::~PostStage() { cleanUp(); }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::destroyFramebuffers()
 {
-    for (auto &framebuffer : framebuffers) { device->getLogicalDevice().destroyFramebuffer(framebuffer); }
-    framebuffers.clear();
+    Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffers);
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::recreateFrameResources()

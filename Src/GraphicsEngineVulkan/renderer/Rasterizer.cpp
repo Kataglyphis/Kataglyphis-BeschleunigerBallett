@@ -106,8 +106,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::cleanUp()
     // is only a safety net for the forgotten path).
     if (!device) { return; }
 
-    for (auto &framebuffer_handle : framebuffer) { device->getLogicalDevice().destroyFramebuffer(framebuffer_handle); }
-    framebuffer.clear();
+    destroyFramebuffers();
 
     for (const auto &texture : offscreenTextures) {
         if (texture) { texture->cleanUp(); }
@@ -130,10 +129,7 @@ Kataglyphis::VulkanRendererInternals::Rasterizer::~Rasterizer() { cleanUp(); }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::destroyFramebuffers()
 {
-    for (auto &framebuffer_handle : framebuffer) {
-        device->getLogicalDevice().destroyFramebuffer(framebuffer_handle);
-    }
-    framebuffer.clear();
+    Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffer);
 }
 
 void Kataglyphis::VulkanRendererInternals::Rasterizer::recreateFrameResources(vk::CommandPool commandPool)
