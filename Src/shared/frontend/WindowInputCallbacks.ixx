@@ -25,6 +25,10 @@ inline void handle_focus_lost(bool *keys, bool &mouse_first_moved)
     mouse_first_moved = true;
 }
 
+// Producers (handle_mouse_callback) accumulate into axis_change so several
+// cursor events landing in one frame - a 1000 Hz mouse at 60 FPS delivers
+// ~16 - are not lost; the frame loop consumes exactly once per frame via
+// this function, which reads the total and resets it for the next frame.
 inline float consume_axis_delta(float &axis_change)
 {
     float const delta = axis_change;
@@ -79,14 +83,18 @@ inline void handle_mouse_callback(GLFWwindow *window,
         return;
     }
 
+    // Re-seeding first, then accumulating below, makes the "first event after
+    // (re)capture produces no delta" property hold by construction: the diff
+    // against the just-seeded last position is exactly zero, so it adds
+    // nothing to whatever x_change/y_change already hold.
     if (mouse_first_moved) {
         last_x = static_cast<float>(x_pos);
         last_y = static_cast<float>(y_pos);
         mouse_first_moved = false;
     }
 
-    x_change = static_cast<float>(x_pos) - last_x;
-    y_change = last_y - static_cast<float>(y_pos);
+    x_change += static_cast<float>(x_pos) - last_x;
+    y_change += last_y - static_cast<float>(y_pos);
 
     last_x = static_cast<float>(x_pos);
     last_y = static_cast<float>(y_pos);

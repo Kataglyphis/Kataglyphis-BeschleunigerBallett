@@ -103,6 +103,37 @@ TEST(WindowInputUnit, FirstMouseMoveDoesNotJumpTheCamera)
     EXPECT_FLOAT_EQ(y_change, 10.0F);
 }
 
+TEST(WindowInputUnit, MultipleEventsInOneFrameAccumulate)
+{
+    // A 1000 Hz mouse polled at 60 FPS delivers several move events per
+    // frame; each must add to x_change/y_change rather than overwrite it, or
+    // all but the last event of the frame is silently dropped.
+    float last_x = 0.0F;
+    float last_y = 0.0F;
+    float x_change = 0.0F;
+    float y_change = 0.0F;
+    bool first_moved = true;
+
+    // Re-seeds, contributing zero.
+    handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, 640.0, 360.0);
+
+    handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, 650.0, 355.0);
+    handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, 660.0, 350.0);
+    handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, 670.0, 345.0);
+    handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, 680.0, 340.0);
+
+    EXPECT_FLOAT_EQ(consume_axis_delta(x_change), 40.0F);
+    EXPECT_FLOAT_EQ(consume_axis_delta(y_change), 20.0F);
+
+    // A consume between two events is the frame boundary: it must reset the
+    // accumulator, not let motion leak into the next frame's total.
+    handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, 690.0, 335.0);
+    EXPECT_FLOAT_EQ(consume_axis_delta(x_change), 10.0F);
+    EXPECT_FLOAT_EQ(consume_axis_delta(y_change), 5.0F);
+    EXPECT_FLOAT_EQ(consume_axis_delta(x_change), 0.0F);
+    EXPECT_FLOAT_EQ(consume_axis_delta(y_change), 0.0F);
+}
+
 TEST(WindowInputUnit, LookModeEntryReSeedsTheMouseOrigin)
 {
     // A default-constructed WindowInputState must re-seed on its first
@@ -168,6 +199,11 @@ TEST(WindowInputUnit, CursorCrossingAnImGuiPanelDoesNotJumpTheCamera)
     ImGui::GetIO().WantCaptureMouse = false;
     handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, 100.0, 100.0);
 
+    // x_change/y_change accumulate, so reset before each call under test -
+    // otherwise a passing assertion could just mean an earlier call happened
+    // to add zero, not that THIS call swallowed its input.
+    x_change = 0.0F;
+    y_change = 0.0F;
     ImGui::GetIO().WantCaptureMouse = true;
     handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, 400.0, 100.0);
     EXPECT_FLOAT_EQ(x_change, 0.0F) << "mouse input leaked past the ImGui capture gate";
@@ -175,6 +211,7 @@ TEST(WindowInputUnit, CursorCrossingAnImGuiPanelDoesNotJumpTheCamera)
     // Leaving the panel: the first event after capture ends must re-seed
     // against the cursor's current position, not difference against the
     // stale pre-panel position (which would produce 310, not 10).
+    x_change = 0.0F;
     ImGui::GetIO().WantCaptureMouse = false;
     handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, 410.0, 100.0);
     EXPECT_FLOAT_EQ(x_change, 10.0F);

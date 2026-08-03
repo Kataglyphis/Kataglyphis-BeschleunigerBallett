@@ -7781,58 +7781,6 @@ shape.
 
 ### Cross-renderer / shared frontend
 
-- [ ] **(S) Accumulate mouse deltas instead of overwriting them, so a frame that receives several cursor events keeps all of their travel** — `consume_axis_delta` zeroes the field on read, which makes it an accumulator; `handle_mouse_callback` assigns to it, so a 1000 Hz mouse at 60 FPS throws away ~15 of every 16 events.
-
-  **Files to read:**
-  - `Src/shared/frontend/WindowInputCallbacks.ixx:61-93` — `handle_mouse_callback`;
-    the two assignments are at `:88-89`. Note the ImGui-capture early return
-    at `:71-80` still updates `last_x`/`last_y` and must keep doing so.
-  - `Src/shared/frontend/WindowInputCallbacks.ixx:28-33` — `consume_axis_delta`,
-    the read-and-zero that establishes the accumulator contract.
-  - `Src/shared/frontend/FrameInput.ixx:35-39` — `process_camera_input`,
-    which consumes exactly once per frame.
-  - `Src/GraphicsEngineVulkan/window/Window.cpp:80-82` — the `get_x_change` /
-    `get_y_change` wrappers.
-  - `Test/commit/VulkanEngine/frontendInputSuite.cpp:85-193` — the existing
-    tests; every one of them measures a delta while `x_change` happens to be
-    `0`, so they all still pass under accumulation. Confirm that rather than
-    assume it.
-
-  **Steps:**
-  1. Change `:88-89` to `x_change += …` and `y_change += …`.
-  2. Leave the re-seed branch (`:82-86`) as it is: it sets `last_x`/`last_y`
-     to the current position first, so the accumulation that follows adds
-     exactly zero — the "first event after (re)capture produces no delta"
-     property the suite pins at `:94-96` is preserved by construction, not by
-     a special case. Say so in a comment.
-  3. Update the comment above `consume_axis_delta` (`:28-33`) to state the
-     contract explicitly: producers accumulate, the frame loop consumes once
-     and resets.
-  4. Re-read `frontendInputSuite.cpp:157-183` and `:195-224` and add an
-     explicit `x_change = 0.0F; y_change = 0.0F;` before any assertion that
-     was only correct because the accumulator happened to be empty — the
-     tests must pin the intended behaviour, not depend on it.
-
-  **Test:** Add `WindowInputUnit.MultipleEventsInOneFrameAccumulate` to
-  `Test/commit/VulkanEngine/frontendInputSuite.cpp`: seed with one call (which
-  re-seeds to zero), then deliver four moves of +10 px in x and −5 px in y each,
-  and assert `consume_axis_delta(x_change) == 40.0F` and
-  `consume_axis_delta(y_change) == 20.0F` — under today's assignment those read
-  `10.0F` and `5.0F`, so the test is red before the fix and green after. Add a
-  second case proving a consume between two events resets the accumulator (the
-  frame boundary). Both run with no GLFW window and no ImGui context, like the
-  suite's existing cases.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=WindowInputUnit.*`.
-
-  **Context:** This is the same family as the two look-mode fixes already
-  shipped from this file (the focus-loss re-seed and the first-drag snap), and
-  the last one in it that is about *losing* input rather than *misapplying*
-  it. The suite is the ideal harness — pure references, no window — so make the
-  new test red-then-green rather than trusting the reasoning.
-
 ### Docs
 
 - [ ] **(S) Fix `docs/path-tracing.md`'s stale "open work" and golden list, and gate it against the suite** — the doc still asks for the white-furnace toggle that shipped, and counts four PT-facing goldens where the suite has six; it is the only PT/RT doc with no gate.
