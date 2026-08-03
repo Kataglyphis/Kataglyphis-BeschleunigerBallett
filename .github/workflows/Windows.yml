@@ -248,6 +248,7 @@ jobs:
               'TextureLoadUnit.*'
               'MemoryHelperUnit.*'
               'FormatHelperUnit.*'
+              'ImageLayoutHelperUnit.*'
               'FrameSyncUnit.*'
               'SwapchainChoicesUnit.*'
               'PhysicalDeviceChoicesUnit.*'

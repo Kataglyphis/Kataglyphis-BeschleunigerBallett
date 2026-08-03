@@ -5451,6 +5451,244 @@ runs is already pinned by `auto_exposure.rs`'s unit tests and a headless
 comparison, so the drift has no runtime reach; **`Src/KomputePlayground`** —
 unchanged; still an owner decision.
 
+## 2026-08-03 batch V — planner (refactor: the layout→access/stage mapping that is private, untested, and hand-copied by the one caller it cannot serve; the ninth member of the create-info builder family; a model-loading doc that predates the texture and sampler dedup that just shipped)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the tree
+this pass.
+
+**Every task in this batch is verifiable with no GPU**, deliberately: the
+fifteen `- [b]` entries above are still blocked on host GPU golden verification.
+Tasks 1 and 2 land device-free `constexpr`/pure helpers with new gtest suites
+that run in the container CPU lane; task 3 is a docs change gated by a new
+`BuildIntegrity` test built on the existing marker-parsing pattern.
+
+**The headline is that `VulkanImage` owns the engine's layout→access-mask and
+layout→pipeline-stage tables, they are `private` (`VulkanImage.ixx:66-67`) and
+therefore have never had a single unit test, and the one call site the shared
+transition cannot serve hand-copies both of them.** `transitionImageLayout`
+(`VulkanImage.cpp:118-151`) derives `srcAccessMask`/`dstAccessMask` from
+`accessFlagsForImageLayout` and the two pipeline stages from
+`pipelineStageForLayout` — the whole point being that this logic "lives in
+exactly one place" (`VulkanImage.cpp:110-111`). But it hard-codes
+`subresourceRange.layerCount = 1` (`:134`), so the cubemap upload cannot use it:
+`SkyBox::uploadCubeMapFaces` spells out a nine-field `vk::ImageMemoryBarrier`
+(`SkyBox.cpp:149-157`, `layerCount = 6`) and then re-derives both transitions by
+hand — `eTopOfPipe → eTransfer` with `{} → eTransferWrite` (`:159-164`) and
+`eTransfer → eFragmentShader` with `eTransferWrite → eShaderRead`
+(`:179-184`). Both derivations agree with the tables today; the first is
+byte-identical to what the helper would produce, and the second differs only in
+that the helper maps `eShaderReadOnlyOptimal` to the deliberately-broader
+`eAllCommands` (`VulkanImage.cpp:210-213`). That is a copy that is correct
+*right now* and has no test on either side of it — the same shape as the
+framebuffer/render-pass/pipeline-layout duplications this repo has been
+retiring since `36937517`.
+
+**Second, `vk::ImageViewCreateInfo` is the ninth member of the
+"one rule, N hand-rolled copies" family and its second copy already drifted.**
+`VulkanImageView::create` (`VulkanImageView.cpp:49-67`) writes the full eleven
+fields including four explicit `eIdentity` component swizzles;
+`CascadedShadowMap::createFramebuffers` (`:196-204`) writes nine of them, omits
+the swizzles entirely, and hard-codes `levelCount = 1` next to a `layerCount`
+taken from `numCascades`. The omission is harmless only because
+`vk::ComponentSwizzle::eIdentity` is zero — exactly the "the copies agree by
+luck" state `buildFramebufferCreateInfo`, `buildRenderPassCreateInfo`,
+`buildRenderPassBeginInfo`, `buildPipelineLayoutCreateInfo`,
+`fullExtentViewport` and `buildAttachmentDescription` were each extracted to
+end. `common/` already holds six such headers with six matching suites, so the
+pattern, the file layout and the test shape are all settled.
+
+**Third, `docs/model-loading.md` is the architecture reference for the loaders
+and it stops before the texture layer that shipped 2026-08-03.** The doc covers
+the two loaders, the async split, `MeshRange`/`sliceMeshRange` and `map_Kd`
+resolution, and says nothing about: the glTF per-image dedup keyed on
+`const cgltf_image *` (`GltfLoader.cpp:464-482`), the OBJ dedup keyed on the
+*resolved* texture path (`ObjLoader.cpp:208-215`), the sampler dedup by mip
+level (`Model.cpp:68-93` via `findSamplerForMipLevel`,
+`SamplerBuilder.cpp:40`), or the reason all three exist — the flat
+`MAX_TEXTURE_COUNT = 128` descriptor budget
+(`common/host_device_shared_vars.hpp:8`) that `assignTextureOffsets`
+(`scene/ObjectDescription.ixx:22`) packs every model into. Three shipped commits
+(`1da7c1f3`, `dca11022`, `c158dfe6`) are invisible in the doc that claims to be
+their architecture reference, and the 128 is the kind of number
+`docs/gpu-golden-testing.md`'s golden counts already had to be corrected twice
+by hand (`buildIntegritySuite.cpp:2393-2400`).
+
+Ordering: all three are independent and touch disjoint files (task 1:
+`VulkanImage` + `SkyBox`; task 2: `VulkanImageView` + `CascadedShadowMap`;
+task 3: `docs/` + `buildIntegritySuite.cpp`). Do them one at a time anyway.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **the nine hand-written `vk::ImageSubresourceRange`
+blocks** (`PathTracing.cpp:57-62`, `Raytracing.cpp:86-91`, `SkyBox.cpp:153-157`,
+`Texture.cpp:292-295`, `VulkanImage.cpp:130-134`, `VulkanImageView.cpp:60-67`,
+`CascadedShadowMap.cpp:200-204`, plus the two cloud barriers) — the two cloud
+copies are still owned by the `- [b]` cloud-barrier entry above, `FrameCapture`
+already uses the compact `vk::ImageSubresourceRange{ aspect, 0, 1, 0, 1 }`
+constructor that makes a helper redundant, and tasks 1 and 2 below remove three
+of the copies as a side effect; re-count after both land; **`Mesh::setModel`
+(`Mesh.ixx:57`, `Mesh.cpp:92`) and `GpuTimingSubsystem::timestampMask`
+(`GpuTimingSubsystem.ixx:238`) having zero callers** — both genuinely dead (a
+full sweep of the 277 member-function names declared across all `.ixx` files
+found exactly these two), but `34a1e00f` already deleted `timestampMask`'s
+sibling `passRecordedMask` and two batches have now run dead-accessor sweeps;
+fold these two into whatever next touches those files rather than spending a
+task; **`CascadedShadowMap` managing a raw `vk::ImageView shadowMapArrayView`
+(`CascadedShadowMap.ixx:153`) with a hand-written `destroyImageView` in
+`cleanUp` (`:226-229`) instead of the move-only `VulkanImageView` RAII wrapper
+that exists for exactly this** — a real API-consolidation gap, but converting it
+changes live shadow-pass object lifetimes with no device-free test available;
+re-propose once GPU verification is back; **`Texture::loadTextureData` returning
+a raw owning `unsigned char *` through three out-params
+(`Texture.cpp:265-284`)** — a `std::expected`/struct return would be more modern,
+but it has exactly one caller (`Texture.cpp:74`) which already wraps the result
+in a `unique_ptr` with the right deleter, so the modernization buys nothing;
+**`CommandBufferManager::beginCommandBuffer` allocating a
+`std::vector<vk::CommandBuffer>` for one handle** — re-confirmed and re-rejected
+for the fourth time (upload-time only, never on the frame path).
+**`Src/KomputePlayground`** — unchanged; still an owner decision.
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Give `vk::ImageViewCreateInfo` one definition in `common/ImageViewHelper.hpp`** — the ninth member of the create-info builder family, and its second copy has already dropped the component swizzles.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/common/FramebufferHelper.hpp` — the template to
+    copy, including the "built via the fully-explicit constructor rather than
+    value-init-then-assign" rationale and the "a pass that needs another flag
+    builds it inline and says why" rule
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanImageView.cpp:39-75` — copy 1
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:190-217`
+    — copy 2, the drifted one (no swizzles, hard-coded `levelCount = 1`)
+  - `Test/commit/VulkanEngine/framebufferHelperSuite.cpp` — the suite shape,
+    including the `static_assert` that pins constant-expression usability
+
+  **Steps:**
+  1. Add `Src/GraphicsEngineVulkan/common/ImageViewHelper.hpp` with
+     `constexpr vk::ImageViewCreateInfo buildImageViewCreateInfo(vk::Image image,
+     vk::Format format, vk::ImageAspectFlags aspect_flags, uint32_t mip_levels,
+     vk::ImageViewType view_type = vk::ImageViewType::e2D,
+     uint32_t array_layers = 1)`. Build it through the fully-explicit
+     `vk::ImageViewCreateInfo` constructor (flags, image, viewType, format,
+     `vk::ComponentMapping{}` — which is all-`eIdentity` — and
+     `vk::ImageSubresourceRange{ aspect_flags, 0, mip_levels, 0, array_layers }`),
+     for the reason `FramebufferHelper.hpp:30-35` gives: value-init-then-assign
+     would make the function uncallable in a constant expression.
+  2. Replace `VulkanImageView.cpp:49-67` with one call, keeping the existing
+     `ASSERT_VULKAN` and the comment at `:69-71` about why the result is checked.
+  3. Replace `CascadedShadowMap.cpp:196-204` with one call passing
+     `vk::ImageViewType::e2DArray`, `mip_levels = 1` and
+     `array_layers = numCascades`, so the multiview framebuffer's layer count is
+     derived from the same place the image was created with
+     (`CascadedShadowMap.cpp:58-62`) rather than re-typed.
+  4. Grep for any remaining `vk::ImageViewCreateInfo` in `Src/` and either route
+     it through the helper or add the "builds it inline because …" comment the
+     header's contract requires.
+
+  **Test:** Add `Test/commit/VulkanEngine/imageViewHelperSuite.cpp` with
+  `TEST(ImageViewHelperUnit, ...)` asserting: `subresourceRange.levelCount` and
+  `.layerCount` come from the arguments (a 4-mip, 6-layer cube view); the
+  defaults produce `e2D` with one layer; **`components.r/g/b/a` are all
+  `vk::ComponentSwizzle::eIdentity`** — the regression test for the swizzles
+  CascadedShadowMap's copy dropped; and `baseMipLevel`/`baseArrayLayer` are `0`.
+  Add a file-scope `static_assert` on a field of the returned info to pin
+  constant-expression usability, exactly as `framebufferHelperSuite.cpp:28-32`
+  does. `*.cpp` is globbed, so no CMake edit is needed.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=ImageViewHelperUnit.*:CascadedShadowMapUnit.*`
+  from the repo root.
+
+  **Context:** Six headers in `common/` already own one create-info rule each,
+  each with a matching `*HelperUnit` suite; this is the seam that was missed.
+  Keep the helper minimal — do NOT grow it a `pNext`, a swizzle parameter or a
+  `baseMipLevel`, for the reason `FramebufferHelper.hpp:25-28` states: a caller
+  that needs one builds its info inline and says why. Do not attempt the larger
+  change of putting `CascadedShadowMap`'s raw `vk::ImageView shadowMapArrayView`
+  (`CascadedShadowMap.ixx:153`) behind the `VulkanImageView` RAII wrapper in this
+  task — that is listed as rejected-for-now above because it changes live
+  shadow-pass lifetimes with no device-free test.
+
+### Docs
+
+- [ ] **(S) (refactor) Document the texture and sampler dedup layer in `docs/model-loading.md` and pin `MAX_TEXTURE_COUNT` against the header** — three shipped commits are invisible in the doc that claims to be their architecture reference.
+
+  **Files to read:**
+  - `docs/model-loading.md` — 180 lines; the doc to extend. Note it already ends
+    with an "Invariants worth preserving" section, and that `AGENTS.md:515`
+    names it the owner of "Model-loading architecture"
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:460-490` — the `imageSlot`
+    dedup keyed on `const cgltf_image *`
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:205-250` — the `pathSlot` dedup
+    keyed on the **resolved** path, and the comment at `:124-127` explaining why a
+    failed texture still occupies a slot
+  - `Src/GraphicsEngineVulkan/scene/Model.cpp:60-93` — `addTexture`/`addSampler`
+    and the mip-level sampler dedup via `findSamplerForMipLevel`
+  - `Src/GraphicsEngineVulkan/scene/ObjectDescription.ixx:22-70` —
+    `assignTextureOffsets` and its documented mirror image
+  - `Src/GraphicsEngineVulkan/common/host_device_shared_vars.hpp:8` —
+    `MAX_TEXTURE_COUNT = 128`
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:2393-2439` — the
+    `GoldenTestCountsInDocsMatchTheSuite` gate; the marker-parse-and-compare
+    pattern to copy
+
+  **Steps:**
+  1. Add a `## Textures, samplers and the 128-slot budget` section to
+     `docs/model-loading.md`, between "One file, many meshes" and
+     "`map_Kd` texture path resolution". Cover, with `file:line` references:
+     (a) the flat global texture array and its
+     `<!-- max-texture-count: 128 -->` marker line (see step 3);
+     (b) glTF dedup keyed on the `cgltf_image *` — one decode+upload per image
+     however many materials point at it;
+     (c) OBJ dedup keyed on the **resolved** path, not the raw `map_Kd`, so two
+     materials naming the same file through different spellings still share a
+     slot; (d) that a texture which fails to load still consumes its slot
+     (`ObjLoader.cpp:124-127`), because skipping it would shift every later
+     `textureID` down one; (e) sampler dedup by mip level in `Model::addSampler`,
+     so N textures with the same mip count share one `vk::Sampler`;
+     (f) `assignTextureOffsets` flattening per-model slots into the global array
+     in model order, and the shader-side `clamp(..., 0, MAX_TEXTURE_COUNT - 1)`
+     that makes an over-budget model sample a wrong slot rather than read out of
+     bounds.
+  2. In the same pass, fix the two smaller gaps the same commits opened: note
+     under "Two loaders, one shape" that both loaders emit per-vertex colours
+     (`COLOR_0` on the glTF side, `attrib.colors` on the OBJ side) and that both
+     fall back to shared flat-normal generation when a file carries no normals.
+     Keep it to two or three sentences with pointers — do not restate the code.
+  3. Add `TEST(BuildIntegrity, MaxTextureCountInDocsMatchesTheHeader)` to
+     `Test/commit/VulkanEngine/buildIntegritySuite.cpp`, modelled directly on
+     `GoldenTestCountsInDocsMatchTheSuite` (`:2401-2439`): locate the repo root
+     with the existing `find_repo_root()`, `GTEST_SKIP()` if the doc is missing,
+     parse the `<!-- max-texture-count: N -->` marker out of
+     `docs/model-loading.md`, parse `const int MAX_TEXTURE_COUNT = <N>;` out of
+     `Src/GraphicsEngineVulkan/common/host_device_shared_vars.hpp` by file I/O
+     (not by including the header — the point is to catch the header changing),
+     and `EXPECT_EQ` the two with both numbers in the failure message. A missing
+     or malformed marker must **fail**, not skip, exactly as `:2412-2415` does.
+  4. Confirm no other doc restates the 128 (`grep -rn "MAX_TEXTURE_COUNT\|128
+     texture" docs/`); if one does, replace it with a link to this section rather
+     than adding a second marker.
+
+  **Test:** The new `BuildIntegrity.MaxTextureCountInDocsMatchesTheHeader`.
+  Red-prove it before committing: temporarily edit the marker to `127`, confirm
+  the test fails naming both numbers, then restore. `buildIntegritySuite.cpp` is
+  already in the glob, so no CMake edit is needed.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+  from the repo root.
+
+  **Context:** `docs/model-loading.md` is the single owner of this topic per the
+  Docs table in `AGENTS.md` — extend it, do not start a second document, and do
+  not duplicate any of it into `AGENTS.md`. The doc-marker gate exists because
+  `docs/gpu-golden-testing.md`'s counts drifted twice and had to be corrected by
+  hand (`1cd6b8b5`, `e2767bb1`); the 128 is the same kind of number, and it is
+  load-bearing for a cap the loaders now actively economise against. Prose style:
+  match the existing sections — state the rule, then say why it is that way and
+  what broke without it.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

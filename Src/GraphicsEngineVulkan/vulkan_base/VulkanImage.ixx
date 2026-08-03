@@ -37,13 +37,15 @@ class VulkanImage
       vk::ImageLayout old_layout,
       vk::ImageLayout new_layout,
       vk::ImageAspectFlags aspectMask,
-      uint32_t mip_levels);
+      uint32_t mip_levels,
+      uint32_t array_layers = 1);
 
     void transitionImageLayout(vk::CommandBuffer command_buffer,
       vk::ImageLayout old_layout,
       vk::ImageLayout new_layout,
       uint32_t mip_levels,
-      vk::ImageAspectFlags aspectMask);
+      vk::ImageAspectFlags aspectMask,
+      uint32_t array_layers = 1);
 
     void setImage(vk::Image image);
     vk::Image &getImage() { return image; };
@@ -62,8 +64,5 @@ class VulkanImage
     // False for wrapped external images (setImage, e.g. swapchain images),
     // whose lifetime belongs to their creator. Mirrors VulkanBuffer's flag.
     bool owns_image{ false };
-
-    static vk::AccessFlags accessFlagsForImageLayout(vk::ImageLayout layout);
-    static vk::PipelineStageFlags pipelineStageForLayout(vk::ImageLayout oldImageLayout);
 };
 }// namespace Kataglyphis

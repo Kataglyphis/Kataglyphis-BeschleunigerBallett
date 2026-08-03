@@ -7,6 +7,7 @@
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.hpp>
 
+#include "common/ImageLayoutHelper.hpp"
 #include "common/Utilities.hpp"
 
 module kataglyphis.vulkan.image;
@@ -102,14 +103,15 @@ void Kataglyphis::VulkanImage::transitionImageLayout(vk::Device in_logical_devic
   vk::ImageLayout old_layout,
   vk::ImageLayout new_layout,
   vk::ImageAspectFlags aspectMask,
-  uint32_t mip_levels)
+  uint32_t mip_levels,
+  uint32_t array_layers)
 {
     vk::CommandBuffer command_buffer =
       Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(in_logical_device, command_pool);
 
     // Record the barrier through the command-buffer overload so the access-mask /
     // pipeline-stage / layout-case logic lives in exactly one place.
-    transitionImageLayout(command_buffer, old_layout, new_layout, mip_levels, aspectMask);
+    transitionImageLayout(command_buffer, old_layout, new_layout, mip_levels, aspectMask, array_layers);
 
     Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
       in_logical_device, command_pool, queue, command_buffer);
@@ -119,7 +121,8 @@ void Kataglyphis::VulkanImage::transitionImageLayout(vk::CommandBuffer command_b
   vk::ImageLayout old_layout,
   vk::ImageLayout new_layout,
   uint32_t mip_levels,
-  vk::ImageAspectFlags aspectMask)
+  vk::ImageAspectFlags aspectMask,
+  uint32_t array_layers)
 {
     vk::ImageMemoryBarrier memory_barrier{};
     memory_barrier.oldLayout = old_layout;
@@ -131,13 +134,13 @@ void Kataglyphis::VulkanImage::transitionImageLayout(vk::CommandBuffer command_b
     memory_barrier.subresourceRange.baseMipLevel = 0;// first mip level to start alterations on
     memory_barrier.subresourceRange.levelCount = mip_levels;// number of mip levels to alter starting from baseMipLevel
     memory_barrier.subresourceRange.baseArrayLayer = 0;// first layer to start alterations on
-    memory_barrier.subresourceRange.layerCount = 1;// number of layers to alter starting from baseArrayLayer
+    memory_barrier.subresourceRange.layerCount = array_layers;// number of layers to alter starting from baseArrayLayer
 
-    memory_barrier.srcAccessMask = accessFlagsForImageLayout(old_layout);
-    memory_barrier.dstAccessMask = accessFlagsForImageLayout(new_layout);
+    memory_barrier.srcAccessMask = Kataglyphis::accessFlagsForImageLayout(old_layout);
+    memory_barrier.dstAccessMask = Kataglyphis::accessFlagsForImageLayout(new_layout);
 
-    vk::PipelineStageFlags const src_stage = pipelineStageForLayout(old_layout);
-    vk::PipelineStageFlags const dst_stage = pipelineStageForLayout(new_layout);
+    vk::PipelineStageFlags const src_stage = Kataglyphis::pipelineStageForLayout(old_layout);
+    vk::PipelineStageFlags const dst_stage = Kataglyphis::pipelineStageForLayout(new_layout);
 
     // if transitioning from new image to image ready to receive data
 
@@ -170,54 +173,3 @@ void Kataglyphis::VulkanImage::cleanUp()
 }
 
 Kataglyphis::VulkanImage::~VulkanImage() { cleanUp(); }
-
-auto Kataglyphis::VulkanImage::accessFlagsForImageLayout(vk::ImageLayout layout) -> vk::AccessFlags
-{
-    switch (layout) {
-    case vk::ImageLayout::ePreinitialized:
-        return vk::AccessFlagBits::eHostWrite;
-    case vk::ImageLayout::eTransferDstOptimal:
-        return vk::AccessFlagBits::eTransferWrite;
-    case vk::ImageLayout::eTransferSrcOptimal:
-        return vk::AccessFlagBits::eTransferRead;
-    case vk::ImageLayout::eColorAttachmentOptimal:
-        return vk::AccessFlagBits::eColorAttachmentWrite;
-    case vk::ImageLayout::eDepthStencilAttachmentOptimal:
-        return vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-    case vk::ImageLayout::eShaderReadOnlyOptimal:
-        return vk::AccessFlagBits::eShaderRead;
-    case vk::ImageLayout::eGeneral:
-        return vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite
-               | vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eTransferRead
-               | vk::AccessFlagBits::eTransferWrite;
-    default:
-        return vk::AccessFlags();
-    }
-}
-
-auto Kataglyphis::VulkanImage::pipelineStageForLayout(vk::ImageLayout oldImageLayout) -> vk::PipelineStageFlags
-{
-    switch (oldImageLayout) {
-    case vk::ImageLayout::eTransferDstOptimal:
-    case vk::ImageLayout::eTransferSrcOptimal:
-        return vk::PipelineStageFlagBits::eTransfer;
-    case vk::ImageLayout::eColorAttachmentOptimal:
-        return vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    case vk::ImageLayout::eDepthStencilAttachmentOptimal:
-        return vk::PipelineStageFlagBits::eAllCommands;// We do this to allow queue
-                                                       // other than graphic return
-                                                       // vk::PipelineStageFlagBits::eEarlyFragmentTests;
-    case vk::ImageLayout::eShaderReadOnlyOptimal:
-        return vk::PipelineStageFlagBits::eAllCommands;// We do this to allow queue
-                                                       // other than graphic return
-                                                       // vk::PipelineStageFlagBits::eFragmentShader;
-    case vk::ImageLayout::ePreinitialized:
-        return vk::PipelineStageFlagBits::eHost;
-    case vk::ImageLayout::eUndefined:
-        return vk::PipelineStageFlagBits::eTopOfPipe;
-    case vk::ImageLayout::eGeneral:
-        return vk::PipelineStageFlagBits::eAllCommands;
-    default:
-        return vk::PipelineStageFlagBits::eBottomOfPipe;
-    }
-}
