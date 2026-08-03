@@ -208,65 +208,17 @@ jobs:
       # GPU suites (Integration, GoldenRender) stay out, by name rather than by
       # hoping they skip, and the CPU-only ones run here.
       #
-      # If you add a suite, add it to this filter or it will not run in CI.
+      # New suites now run automatically; nothing to add here.
       - name: Run CPU-only tests inside the container
         uses: Kataglyphis/Kataglyphis-ContainerHub/.github/actions/run-in-windows-container@main
         with:
           image: ${{ env.GHCR_IMAGE_WIN }}
           command: |
-            $cpuOnlySuites = @(
-              'BuildIntegrity.*'
-              'FrameInputUnit.*'
-              'WindowInputUnit.*'
-              'CameraUnit.*'
-              'CameraControllerUnit.*'
-              'SceneConfigUnit.*'
-              'GltfParseUnit.*'
-              'CascadedShadowMapUnit.*'
-              'GuiSceneVarsRoundTrip.*'
-              'HelloTestCommit.*'
-              'GpuTimingUnit.*'
-              'GoldenMetrics.*'
-              'AllocatorOwnership.*'
-              'AsyncModelParseUnit.*'
-              'FrustumUnit.*'
-              'MeshRangeSlice.*'
-              'ModelPickerUnit.*'
-              'SceneAccessorUnit.*'
-              'ObjectDescriptionOffsets.*'
-              'ObjParseUnit.*'
-              'PushConstantRasterizerUnit.*'
-              'PushConstantPathTracingUnit.*'
-              'PushConstantPostUnit.*'
-              'PushConstantRaytracingUnit.*'
-              'ObjMaterialLayoutUnit.*'
-              'SkyBoxUnit.*'
-              'ShaderBlobUnit.*'
-              'SamplerBuilderUnit.*'
-              'FileReaderUnit.*'
-              'ResourcePathsUnit.*'
-              'TextureLoadUnit.*'
-              'MemoryHelperUnit.*'
-              'FormatHelperUnit.*'
-              'ImageLayoutHelperUnit.*'
-              'FrameSyncUnit.*'
-              'SwapchainChoicesUnit.*'
-              'PhysicalDeviceChoicesUnit.*'
-              'BlasGeometryLimitsUnit.*'
-              'DescriptorPoolSizesUnit.*'
-              'ShadowResolutionUnit.*'
-              'ViewportHelperUnit.*'
-              'RenderPassHelperUnit.*'
-              'RenderPassCreateHelperUnit.*'
-              'FramebufferHelperUnit.*'
-              'SceneUboLayoutUnit.*'
-              'RenderPassBeginHelperUnit.*'
-              'CameraSceneConfigUnit.*'
-              'GuiModelTransformUnit.*'
-              'PathTracingHistoryUnit.*'
-              'LightDirectionUnit.*'
+            $gpuOnlySuites = @(
+              'GoldenRender.*'
+              'Integration.*'
             ) -join ':'
-            & 'C:\ws\build-clangcl-debug\commitTestSuite.exe' --gtest_filter="$cpuOnlySuites"
+            & 'C:\ws\build-clangcl-debug\commitTestSuite.exe' --gtest_filter="-$gpuOnlySuites"
             exit $LASTEXITCODE
 
       # Fuzz targets run their seed corpus in unit-test mode - fast, CPU-only,

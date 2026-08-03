@@ -456,11 +456,11 @@ std::optional<GoldenCountsMarker> parse_golden_counts_marker(const fs::path &doc
 }
 
 // Parses the exact suite-name globs out of Windows.yml's hand-written
-// `$cpuOnlySuites` PowerShell array (the "Run CPU-only tests inside the
+// `$gpuOnlySuites` PowerShell array (the "Run CPU-only tests inside the
 // container" step). Anchored on the array opener and its `-join ':'` closer
 // so an unrelated array elsewhere in the file cannot be picked up. Returns
 // std::nullopt only if the file cannot be opened.
-std::optional<std::vector<std::string>> parse_ci_filter_suites(const fs::path &workflow_path)
+std::optional<std::vector<std::string>> parse_ci_gpu_excluded_suites(const fs::path &workflow_path)
 {
     std::ifstream file(workflow_path);
     if (!file) { return std::nullopt; }
@@ -470,7 +470,7 @@ std::optional<std::vector<std::string>> parse_ci_filter_suites(const fs::path &w
     std::string line;
     while (std::getline(file, line)) {
         if (!inside_array) {
-            if (line.find("$cpuOnlySuites = @(") != std::string::npos) { inside_array = true; }
+            if (line.find("$gpuOnlySuites = @(") != std::string::npos) { inside_array = true; }
             continue;
         }
         if (line.find("-join ':'") != std::string::npos) { break; }
@@ -1038,30 +1038,27 @@ TEST(BuildIntegrity, SharedConstantsMatchTheCompiledHostValues)
     EXPECT_EQ(shader.at("ACCUMULATION_IMAGE_BINDING"), ACCUMULATION_IMAGE_BINDING);
 }
 
-// A suite added to Test/commit/VulkanEngine that is never added to
-// Windows.yml's `$cpuOnlySuites` filter silently does not run in CI - that
-// happened once (`eb077041` added `PushConstantRasterizerUnit` to the filter
-// by hand only after a planner pass checked all 29 suite names against the
-// workflow one at a time). This test makes that check automatic instead of a
-// planning cycle: every CPU suite defined under Test/commit/VulkanEngine must
-// be either in the filter or in the explicit, justified GPU-exclusion list
-// below, and every filter entry must name a suite that still exists (so a
-// renamed or deleted suite cannot leave a dead glob silently matching
-// nothing).
-TEST(BuildIntegrity, EveryCpuSuiteIsInTheWindowsCiFilter)
+// Windows.yml now runs every CPU suite by default and excludes GPU suites by
+// name (`$gpuOnlySuites`), the same negative-filter shape Linux.yml already
+// uses via `--ctest-exclude`. A suite added to Test/commit/VulkanEngine no
+// longer needs to be added anywhere to run in CI - the only thing that can
+// still drift silently is the GPU-exclusion list itself: an entry there that
+// does not match the hardcoded set below, or that does not name a suite that
+// actually exists.
+TEST(BuildIntegrity, WindowsCiExcludesExactlyTheGpuSuites)
 {
     const fs::path repo_root = find_repo_root();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path workflow_path = repo_root / ".github" / "workflows" / "Windows.yml";
-    const auto filter_suites_opt = parse_ci_filter_suites(workflow_path);
+    const auto filter_suites_opt = parse_ci_gpu_excluded_suites(workflow_path);
     if (!filter_suites_opt.has_value()) {
         GTEST_SKIP() << "could not open " << workflow_path.string() << " - not running from the repo root?";
     }
     const std::vector<std::string> &filter_suites = *filter_suites_opt;
     ASSERT_FALSE(filter_suites.empty())
-      << "parsed zero suites out of the $cpuOnlySuites array in " << workflow_path.string()
-      << " - the anchor text ('$cpuOnlySuites = @(' / \"-join ':'\") may have changed";
+      << "parsed zero suites out of the $gpuOnlySuites array in " << workflow_path.string()
+      << " - the anchor text ('$gpuOnlySuites = @(' / \"-join ':'\") may have changed";
     const std::set<std::string> filter_set(filter_suites.begin(), filter_suites.end());
 
     const std::set<std::string> defined_suites =
@@ -1072,46 +1069,29 @@ TEST(BuildIntegrity, EveryCpuSuiteIsInTheWindowsCiFilter)
     // The container ships the Vulkan loader, so SKIP_WITHOUT_GPU's
     // glfwVulkanSupported() check can answer "yes" with no physical device
     // present, after which device creation aborts the process rather than
-    // skipping. These stay out of the CI filter until a GPU-capable
-    // self-hosted runner exists.
+    // skipping. These stay excluded until a GPU-capable self-hosted runner
+    // exists.
     const std::set<std::string> gpu_excluded_suites = { "GoldenRender", "Integration" };
 
-    std::vector<std::string> missing_from_filter;
-    for (const auto &suite : defined_suites) {
-        if (filter_set.contains(suite) || gpu_excluded_suites.contains(suite)) { continue; }
-        missing_from_filter.push_back(suite);
-    }
-    EXPECT_TRUE(missing_from_filter.empty())
-      << missing_from_filter.size()
-      << " suite(s) under Test/commit/VulkanEngine are neither in Windows.yml's $cpuOnlySuites filter nor in "
-         "the GPU-exclusion list, so they silently do not run in CI: "
-      << [&missing_from_filter] {
-             std::string joined;
-             for (const auto &entry : missing_from_filter) { joined += "\n  " + entry; }
-             return joined;
-         }();
+    EXPECT_EQ(filter_set, gpu_excluded_suites)
+      << "Windows.yml's $gpuOnlySuites exclusion list no longer matches the expected GPU-suite set - "
+         "update either the workflow or this test's gpu_excluded_suites";
 
-    std::vector<std::string> dead_filter_entries;
     for (const auto &suite : filter_suites) {
-        if (!defined_suites.contains(suite)) { dead_filter_entries.push_back(suite); }
+        EXPECT_TRUE(defined_suites.contains(suite))
+          << "Windows.yml excludes '" << suite
+          << "' from $gpuOnlySuites, but no such suite is defined under Test/commit/VulkanEngine "
+             "(renamed or deleted?)";
     }
-    EXPECT_TRUE(dead_filter_entries.empty())
-      << dead_filter_entries.size()
-      << " entry/entries in Windows.yml's $cpuOnlySuites filter do not correspond to any suite under "
-         "Test/commit/VulkanEngine (renamed or deleted?): "
-      << [&dead_filter_entries] {
-             std::string joined;
-             for (const auto &entry : dead_filter_entries) { joined += "\n  " + entry; }
-             return joined;
-         }();
 }
 
 // The fuzz step's target list in Windows.yml is a hand-maintained array, and
 // the step silently `continue`s past a missing executable rather than
-// failing - the same class of gap `EveryCpuSuiteIsInTheWindowsCiFilter`
-// closes for gtest suites, one step away in the same file: a fuzz target
-// declared in Test/fuzz/CMakeLists.txt but never added to Windows.yml's
-// array does not run in CI, and nothing says so.
+// failing. Unlike the gtest suites above, this list has no negative-filter
+// equivalent (fuzz targets are per-target executables, not gtest_filter
+// globs), so it still needs an explicit check: a fuzz target declared in
+// Test/fuzz/CMakeLists.txt but never added to Windows.yml's array does not
+// run in CI, and nothing says so.
 TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
 {
     const fs::path repo_root = find_repo_root();
