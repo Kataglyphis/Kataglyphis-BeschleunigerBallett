@@ -22,6 +22,19 @@ if (-not (Get-Module -Name 'WindowsFormatting.Common')) { Import-Module $formatt
 $cmakePath = Join-Path $PSScriptRoot '..\..\..\ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules\WindowsCMake.Common.psm1'
 if (-not (Get-Module -Name 'WindowsCMake.Common')) { Import-Module $cmakePath }
 
+function Test-IsCxxModuleTranslationUnit {
+  param(
+    [string]$Content,
+    [string]$Path
+  )
+
+  if (-not $PSBoundParameters.ContainsKey('Content')) {
+    $Content = Get-Content $Path -Raw -ErrorAction SilentlyContinue
+  }
+
+  return [bool]($Content -match '(?m)^\s*import\s+kataglyphis')
+}
+
 function Invoke-ClangTidyFixStep {
   param(
     [Parameter(Mandatory)]
@@ -56,7 +69,7 @@ function Invoke-ClangTidyFixStep {
   $filteredFiles = @()
   foreach ($f in $tidyFiles) {
     $content = Get-Content $f -Raw -ErrorAction SilentlyContinue
-    if ($content -match '^import\s+kataglyphis') {
+    if (Test-IsCxxModuleTranslationUnit -Content $content) {
       Write-BuildLog -Context $Context -Message "Skipping clang-tidy for $f (uses C++20 module syntax)"
       continue
     }
@@ -80,6 +93,7 @@ function Invoke-ClangTidyFixStep {
 }
 
 Export-ModuleMember -Function @(
-  'Invoke-ClangTidyFixStep'
+  'Invoke-ClangTidyFixStep',
+  'Test-IsCxxModuleTranslationUnit'
 )
 

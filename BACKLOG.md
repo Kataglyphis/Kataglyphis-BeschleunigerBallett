@@ -7331,28 +7331,6 @@ PowerShell file plus one new Pester suite; task 3 touches `Linux.yml`,
 `Texture.ixx` and `buildIntegritySuite.cpp`. Task 4 edits a module interface
 (`Texture.ixx`) and therefore needs `-FreshContainer`; nothing else here does.
 
-- [ ] **(S) Make the clang-tidy module-TU skip actually match, and give `WindowsClang.Common` its first Pester suite** — `^import\s+kataglyphis` anchors at the start of the file, so 32 of the 33 module translation units it exists to exclude are handed to clang-tidy anyway.
-
-  **Files to read:**
-  - `Scripts/Windows/modules/WindowsClang.Common.psm1:53-65` — the file filter; `:59` is the regex.
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1-20` and `Src/GraphicsEngineVulkan/Main.cpp:1` — the two shapes: `module;` first (32 files, currently NOT skipped) versus `import kataglyphis` on line 1 (1 file, skipped).
-  - `docs/code-quality.md` — states the clang-tidy cadence and that it never runs in the container build; update it if it describes the skip.
-  - `Scripts/Windows/tests/WindowsCMake.Common.Tests.ps1` — Pester 3.4 style for a module test that reads real repo files.
-
-  **Steps:**
-  1. Extract the predicate into an exported function so it is testable on its own — `Test-IsCxxModuleTranslationUnit` taking `[string]$Content` (and optionally `-Path`, reading with `Get-Content -Raw`). Add it to `Export-ModuleMember` alongside `Invoke-ClangTidyFixStep`.
-  2. Implement it as `$Content -match '(?m)^\s*import\s+kataglyphis'`. `(?m)` is the fix; `\s*` tolerates indentation. Do not switch to `Select-String`/line splitting — a single multiline regex over the `-Raw` content is the cheapest correct form and keeps the one-call shape.
-  3. Rewrite the loop at `:57-64` to call the new function. Keep the `Write-BuildLog` "uses C++20 module syntax" message and keep `-ErrorAction SilentlyContinue` on the read.
-  4. Add `Scripts/Windows/tests/WindowsClang.Common.Tests.ps1`, resolving the module through `Resolve-BuildModulePath 'WindowsClang.Common'`.
-  5. Unit-cover the predicate: a `module;`-first body with `import kataglyphis.vulkan.device;` on a later line is `$true`; `import kataglyphis` on line 1 is `$true`; a plain `#include`-only TU is `$false`; a file whose only mention is inside a comment such as `// import kataglyphis...` at column 0 — decide and pin the behaviour (a leading `//` means `^\s*import` does not match, which is the wanted answer).
-  6. Add one repo-level case that would have caught this: run the predicate over `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` and assert `$true`. Anchor on that one file, not on a count of 33 — the count moves with every new TU.
-
-  **Test:** the new `Scripts/Windows/tests/WindowsClang.Common.Tests.ps1`, with the repo-level case named for the contract, e.g. `It 'detects a module TU whose import is not on the first line'`.
-
-  **Build:** none — Pester only, same command as the task above.
-
-  **Context:** clang-tidy is not run by the container build (`docs/code-quality.md`), so nothing has been failing; this is about the manual/local `Invoke-ClangTidyFixStep` path doing what its own comment claims. Note the size of the behaviour change: after the fix clang-tidy sees ~12 files under `Src` instead of 45. That is the intent — AGENTS.md documents this module as owning "the `import kataglyphis` module-TU skip". If the smaller run surfaces new diagnostics on the remaining non-module TUs, record them in `BACKLOG.md`; do not widen the skip to silence them.
-
 - [ ] **(M) Run every registered fuzz target on the always-on Linux lane, and gate both CI lists against `Test/fuzz/CMakeLists.txt`** — `shader_file_reader_fuzz_test` and `texture_loading_fuzz_test` run only on the opt-in Windows lane, and nothing notices when a new target is added to neither.
 
   **Files to read:**
