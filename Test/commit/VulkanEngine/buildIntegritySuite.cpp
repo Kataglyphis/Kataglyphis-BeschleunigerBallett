@@ -1561,6 +1561,92 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
          }();
 }
 
+// dirLight.direction stores the direction the light TRAVELS (a host-slider
+// convention confirmed by CascadedShadowMapMath.cpp and the path-tracing
+// history key). Every shader that wants the vector pointing TOWARD the light
+// must negate it. clouds.slang once read the field un-negated, integrating
+// self-shadowing and phase scattering away from the sun instead of toward it.
+// This gate pins the one convention across every consumer: negation must
+// happen right where the field is read, inside normalize(...).
+TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    static const std::string kMarker = "dirLight.direction";
+    static const std::string kNormalizeCall = "normalize(";
+
+    int occurrences_checked = 0;
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string raw_line;
+        int line_number = 0;
+        while (std::getline(file, raw_line)) {
+            ++line_number;
+            const std::string line = strip_line_comment(raw_line);
+            std::size_t search_from = 0;
+            while (true) {
+                const auto marker_pos = line.find(kMarker, search_from);
+                if (marker_pos == std::string::npos) { break; }
+                search_from = marker_pos + kMarker.size();
+                ++occurrences_checked;
+
+                // Walk back over the qualifying "scene." / "sceneUBO_lighting."
+                // prefix to find where the read expression actually starts.
+                std::size_t expr_start = marker_pos;
+                while (expr_start > 0
+                       && (is_identifier_char(line[expr_start - 1]) || line[expr_start - 1] == '.')) {
+                    --expr_start;
+                }
+
+                std::size_t before = expr_start;
+                while (before > 0 && std::isspace(static_cast<unsigned char>(line[before - 1])) != 0) { --before; }
+
+                const bool negated = before > 0 && line[before - 1] == '-';
+                std::size_t normalize_end = negated ? before - 1 : before;
+                while (normalize_end > 0
+                       && std::isspace(static_cast<unsigned char>(line[normalize_end - 1])) != 0) {
+                    --normalize_end;
+                }
+                const bool inside_normalize = normalize_end >= kNormalizeCall.size()
+                  && line.compare(normalize_end - kNormalizeCall.size(), kNormalizeCall.size(), kNormalizeCall) == 0;
+
+                if (!negated || !inside_normalize) {
+                    violations.push_back(fs::relative(path, repo_root).generic_string() + ':'
+                                          + std::to_string(line_number) + ": "
+                                          + line.substr(expr_start, marker_pos + kMarker.size() - expr_start)
+                                          + " is not negated inside normalize(...)");
+                }
+            }
+        }
+    }
+
+    EXPECT_EQ(occurrences_checked, 6)
+      << "expected exactly 6 shader sites reading dirLight.direction, found " << occurrences_checked
+      << " - update this count if a consumer was intentionally added or removed, and confirm the new "
+         "site also negates the field";
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " shader site(s) read dirLight.direction without negating it inside normalize(...) - "
+         "dirLight.direction is a travel direction, negate it to get the vector toward the light: "
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 namespace {
 
 // A text-only call-graph reachability check for the whole Slang corpus (see

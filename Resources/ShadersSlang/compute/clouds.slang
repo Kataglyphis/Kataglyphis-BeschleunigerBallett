@@ -82,7 +82,10 @@ bool box_intersect(float3 ro, float3 rd, float4x4 txx, float4x4 txi, float3 rad,
 float light_march(float3 samplePos, float3 eyePosition, Clouds cloud)
 {
     float totalDensity = 0.0;
-    float3 directionToLight = normalize(scene.dirLight.direction.xyz);
+    // dirLight.direction is the direction the light travels; the vector
+    // toward the light is its negation, matching every other shader that
+    // reads this field (rasterizer/deferred/raytrace/path_tracing).
+    float3 directionToLight = normalize(-scene.dirLight.direction.xyz);
     float2 oT;
     bool intersection = box_intersect(eyePosition, directionToLight, cloud.inv_model_to_world, cloud.model_to_world, cloud.radius, oT);
 
@@ -166,7 +169,7 @@ void clouds_main(uint3 tid : SV_DispatchThreadID)
             float lightTransmittance = light_march(samplePos, eyePosition, cloud);
 
             lightEnergy += densityOfSample * stepSize * transmittance * lightTransmittance
-                         * phase_HG(dot(normalize(rayDirection), normalize(scene.dirLight.direction.xyz)), 0.5);
+                         * phase_HG(dot(normalize(rayDirection), normalize(-scene.dirLight.direction.xyz)), 0.5);
 
             transmittance *= exp(-densityOfSample * stepSize);
 

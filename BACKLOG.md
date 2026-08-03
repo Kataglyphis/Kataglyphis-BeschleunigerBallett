@@ -5351,6 +5351,333 @@ for the third time (upload-time only, never on the frame path).
 
 ### Rust WebGPU renderer
 
+## 2026-08-03 batch IV — planner (a cloud shader that marches toward the ground instead of the sun; a light-direction slider that can be set to zero and NaN six shaders; a post push-constant block where three of four fields are read by nobody; two OBJ loaders that each mishandle a missing `vn`, in opposite directions)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the tree
+this pass.
+
+**The headline is that six shaders read `sceneUBO.dirLight.direction` and one of
+them disagrees with the other five about which way it points.**
+`rasterizer.slang:52`, `deferred.slang:119`, `raytrace.rchit.slang:84` and
+`path_tracing.slang:227` all compute `L = normalize(-sceneUBO.dirLight.direction.xyz)`
+— the field is the direction the light *travels*, so the vector *toward* the
+light is its negation. `compute/clouds.slang:85` names its local
+`directionToLight` and assigns it `normalize(scene.dirLight.direction.xyz)`,
+**without the negation**, then marches density along it from each sample
+(`:91-94`) and feeds the same unnegated vector to the Henyey-Greenstein phase
+term (`:169`). With the default light `(-0.55, -1.0, -0.35)`
+(`GUISceneSharedVars.ixx:35`) the sun is overhead, so cloud self-shadowing
+integrates *downward, away from the sun*, and forward scattering behaves as
+back scattering. The host writes this field in exactly one place
+(`VulkanRenderer.cpp:179-182`), so there is no second convention to blame.
+
+**Second, that same field can be set to the zero vector from the GUI, and only
+one of its consumers survives it.** `GUI.cpp:183` is a
+`SliderFloat3("Light Direction", ..., -1.F, 1.0F)` with no length constraint;
+`updateUniforms` copies the three floats into `sceneUBO.dirLight.direction`
+verbatim. `CascadedShadowMapMath.cpp:183-185` defends itself
+(`if (glm::length(light_direction) < 1e-6F) { light_direction = glm::vec3(0.0F, -1.0F, 0.0F); }`)
+— the six shader sites above do not, and `normalize(float3(0))` is a NaN. The
+cascade fit therefore keeps working against a fallback direction while every
+lighting shader goes NaN, which is also a silent host/device disagreement
+whenever the vector is merely non-unit.
+
+**Third, `PushConstantPost` ships 16 bytes per post-pass draw and the shader
+reads 4 of them.** `post.slang:19-26` declares `aspect_ratio`,
+`clouds_enabled`, `shadows_enabled`, `skybox_enabled`; `fs_main` (`:45-65`)
+references only `pc_post.clouds_enabled`. The host fills all four
+(`PostStage.cpp:83-92`), `recordCommands` takes `shadowsEnabled`/`skyboxEnabled`
+parameters to do it (`:62-67`), `VulkanRenderer.cpp:1000` threads two GUI
+booleans down to feed them, and two separate gates pin the layout of the dead
+fields (`buildIntegritySuite.cpp:749-753`, `pushConstantSuite.cpp:125-131`).
+The real skybox toggle is a *different* push constant that the skybox shader
+actually reads (`skybox.slang:20`, `:48`), and shadows are switched off by
+`sceneUBO.numCascades = 0` (`VulkanRenderer.cpp:213`), so nothing is lost by
+deleting these.
+
+**Fourth, both OBJ loaders mishandle a face corner with no normal index, in
+opposite directions.** C++ `ObjLoader.cpp:321-330` leaves `normals` at
+`glm::vec3(0.0F)` for such a corner, and the flat-normal fallback at `:397-399`
+is guarded on `attrib.normals.empty()` — the *whole file* having no `vn`. An OBJ
+where only some faces carry `vn` therefore ships zero normals into the vertex
+buffer, which every lighting shader turns into `dot(N, L) == 0` or a NaN.
+The Rust converter has the mirror-image defect: `obj_to_gltf.rs:283-291`
+fabricates `[0.0, 1.0, 0.0]` for a corner with no normal index — the exact
+"normal-less asset lit as if every face pointed up" failure that
+`GltfLoader.cpp:297-302` documents having fixed on the C++ side — and then
+`to_gltf` always emits a NORMAL accessor (`:507`), so
+`gltf_loader.rs:560-563`'s `compute_flat_normals` fallback never fires. A `vn`-less
+OBJ renders correctly lit in the Vulkan engine and flat-lit-from-above in the
+WebGPU one: the seventh entry in the cross-renderer-divergence family
+(`bd315707` `map_Kd` backslashes, `6aa5eec6` the `Resources/` search,
+`d25cd1e5` index validation, `92df2e7f` adapter absence, `c7b66fa5` the
+default-scene walk, `c158dfe6` COLOR_0).
+
+Ordering: **task 1 before task 2** — task 2 normalizes the vector task 1's gate
+scans for, and both reason about the same convention. Tasks 3, 4 and 5 are
+disjoint from those two and from each other (`PostStage.cpp`, `ObjLoader.cpp`,
+and the Rust submodule respectively); still, do them one at a time. Tasks 4 and
+5 are the two halves of one divergence — do 4 first so the C++ behaviour task 5
+must match is already pinned by a test.
+
+**GPU verification is currently unavailable** (see the `- [b]` RDP entry above),
+so every task below lands a device-free gate or unit test as its primary
+evidence, and names the GPU golden only as the secondary check to run once a
+console session exists.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`GltfLoader` attribute accessors shorter than
+POSITION** (`GltfLoader.cpp:295-306` indexes `normals`/`uvs`/`colors` with
+`i < .size()` guards and falls back to constants) — unreachable, because
+`loadDocument` calls `cgltf_validate` (`:447`) *before* walking the document and
+cgltf rejects a primitive whose attribute accessors disagree in count;
+**`updateTexturesInSharedRenderDescriptorSet` writing fewer descriptors than
+`MAX_TEXTURE_COUNT`** (`VulkanRenderer.cpp:1553-1556` feeds `writeImageArray`,
+which refuses a short write at `DescriptorSetGroup.cpp:190-196`) — not a bug:
+`planFlattenedTextureSlots` pads the plan back up to `maxSlots` with the first
+slot (`ObjectDescription.ixx:86-91`); **the per-frame
+`update_raytracing_descriptor_set` call in `drawFrame`** (`:541`, guarded on
+`.raytracing` only, so the path-tracing branch never gets it and its goldens
+still pass — i.e. the rewrite is redundant, since every state change that
+invalidates those descriptors already routes through `updateAllDescriptorSets`)
+— the deletion is almost certainly right and saves three descriptor writes per
+frame, but "almost certainly" plus no host GPU is the wrong trade on the RT
+frame path; re-propose once GPU verification is back; **`histogram/histogram.slang`
+being a `disabled: true` manifest row whose header claims to mirror
+`histogram.wgsl` while covering 1 of its 3 entry points with a different
+algorithm** — real documentation drift, but the WGSL↔Rust pair that actually
+runs is already pinned by `auto_exposure.rs`'s unit tests and a headless
+comparison, so the drift has no runtime reach; **`Src/KomputePlayground`** —
+unchanged; still an owner decision.
+
+- [ ] **(S) Normalize the directional light once on the host, so a zero slider
+  cannot NaN six shaders** — the cascade fit already guards against it; nothing
+  else does.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/gui/GUI.cpp:183` — `SliderFloat3("Light Direction",
+    ..., -1.F, 1.0F)`; every component can be dragged (or typed) to 0.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:179-182` — the verbatim
+    copy into `sceneUBO.dirLight.direction`.
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMapMath.cpp:183-185`
+    — the existing guard and its fallback `(0, -1, 0)`. Reuse this rule; do not
+    invent a second one.
+  - `Src/GraphicsEngineVulkan/common/GuiModelTransform.hpp` and
+    `Test/commit/VulkanEngine/guiModelTransformSuite.cpp` — the pattern to copy:
+    a small pure header helper extracted out of `VulkanRenderer.cpp` plus its own
+    device-free suite (`13773702`).
+  - `Test/commit/VulkanEngine/CMakeLists.txt` — how a new suite file is added.
+
+  **Steps:**
+  1. Add `Src/GraphicsEngineVulkan/common/LightDirection.hpp` with a single
+     `constexpr`-friendly free function
+     `glm::vec3 normalizedLightDirection(glm::vec3 raw)` returning
+     `glm::normalize(raw)`, or the fallback `(0, -1, 0)` when
+     `glm::length(raw) < 1e-6F`. Document that the returned vector is the
+     direction the light travels (see task 1) and that the fallback matches
+     `CascadedShadowMapMath.cpp`'s.
+  2. In `VulkanRenderer::updateUniforms`, build the `glm::vec3` from the three
+     GUI floats, pass it through the helper, and store the result in
+     `sceneUBO.dirLight.direction` (keep `w = 1.0F`). The unchanged call at
+     `:196-201` then receives an already-unit vector.
+  3. Replace the inline guard in `CascadedShadowMapMath.cpp:183-185` with a call
+     to the new helper so there is exactly one copy of the rule. Keep the
+     function defensive — it is called directly from tests and the benchmark with
+     arbitrary vectors.
+  4. Leave the six shaders' `normalize(...)` calls in place: they are now
+     no-ops on well-formed input and remain the last line of defence.
+
+  **Test:** Add `LightDirectionUnit.*` in a new
+  `Test/commit/VulkanEngine/lightDirectionSuite.cpp`: a zero vector returns the
+  fallback and is finite; a non-unit vector comes back unit-length with its
+  direction preserved (dot with the normalized input ≈ 1); the default
+  `(-0.55, -1.0, -0.35)` normalizes without changing sign on any axis. Extend
+  `cascadedShadowMapSuite.cpp` with a case asserting `computeCascadeData` with a
+  zero `lightDir` produces finite, non-degenerate matrices (it should already
+  pass — that is the point: it pins the behaviour the shaders are being brought
+  in line with).
+
+  **Build:** `clangcl-debug`, same invocation as task 1.
+
+  **Context:** Do this **after** task 1, which touches the same convention. Two
+  separate wins: the NaN is user-reachable in three drags, and normalizing once
+  on the host removes six per-fragment `normalize` calls from the hot lighting
+  paths. Follow the `makeGuiModelTransform` precedent (`13773702`) — a pure
+  helper in `common/` with its own suite is what makes this checkable without a
+  device.
+
+- [ ] **(S) (refactor) Shrink `PushConstantPost` to the one field the shader
+  reads, and delete the plumbing that fills the other three** — 12 of its 16
+  bytes are written every post-pass draw and read by nobody.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/post/post.slang:19-26` (the struct) and `:45-65`
+    (`fs_main`, which references `pc_post.clouds_enabled` and nothing else).
+  - `Src/GraphicsEngineVulkan/renderer/pushConstants/PushConstantPost.hpp:18-24`
+    — the host twin.
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:62-92` — `recordCommands`,
+    its `shadowsEnabled`/`skyboxEnabled` parameters and the `aspectRatio`
+    computation at `:82`; `:194` — `push_constant_range.size`.
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.ixx` — the declaration to match.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1000` — the only call
+    site, which passes `guiSceneSharedVars.shadows_enabled` and `.skybox_enabled`.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:749-753` — the
+    `PushConstantPost_std430` rows of `SharedStructOffsetsMatchTheCompiledSpirv`.
+  - `Test/commit/VulkanEngine/pushConstantSuite.cpp:122-131` —
+    `PushConstantPostUnit.MatchesTheSlangTwinLayout`.
+  - `Resources/ShadersSlang/skybox/skybox.slang:20`, `:48` — the *other*
+    `skybox_enabled`, which is real and must not be touched.
+
+  **Steps:**
+  1. Reduce both twins to `struct PushConstantPost { uint clouds_enabled; };` —
+     the `.hpp` and the `post.slang` copy, in the same change.
+  2. Drop the `shadowsEnabled` and `skyboxEnabled` parameters from
+     `PostStage::recordCommands` (declaration and definition) and the
+     `aspectRatio` local at `:82`; update the call at `VulkanRenderer.cpp:1000`.
+     `guiSceneSharedVars.shadows_enabled` and `.skybox_enabled` stay — they are
+     still read at `VulkanRenderer.cpp:213` and `:987`.
+  3. `sizeof(PushConstantPost)` is now 4; `:91` and `:194` already use `sizeof`,
+     so no literal needs editing. Confirm the `vk::PushConstantRange` stage flags
+     stay `eVertex | eFragment` (the vertex shader declares the block).
+  4. Recompile shaders (`compile-slang-shaders.ps1`); `post.slang` is SPIR-V
+     only, so no WGSL changes.
+  5. Update `pushConstantSuite.cpp:125-131` to assert
+     `offsetof(clouds_enabled) == 0` and `sizeof == 4`, and reduce the
+     `PushConstantPost_std430` rows in `buildIntegritySuite.cpp:749-753` to the
+     one surviving field.
+
+  **Test:** `PushConstantPostUnit.MatchesTheSlangTwinLayout` and
+  `BuildIntegrity.SharedStructOffsetsMatchTheCompiledSpirv` — the second one
+  reflects the *compiled* SPIR-V, so it fails if `post.slang` and the header are
+  shrunk out of step, which is the whole risk in this change. Both are pure CPU.
+
+  **Build:** `clangcl-debug`, same invocation as task 1.
+
+  **Context:** Same family as `34a1e00f` (unused `passRecordedMask`), `d0846c7e`
+  (write-only size members) and `4d13f570`'s cleanup work: dead plumbing that two
+  gates were paying to pin. Do not "fix" this by making the shader *use* the
+  fields — shadows and the skybox are already toggled correctly elsewhere
+  (`numCascades = 0` and the skybox pass's own push constant), and wiring a
+  second mechanism in the post pass would be a behaviour change, not a cleanup.
+
+- [ ] **(S) Give the C++ OBJ loader a flat-normal fallback per corner, not per
+  file** — an OBJ where only some faces carry `vn` currently ships zero normals
+  into the vertex buffer.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:321-330` — the corner-level
+    read that leaves `glm::vec3(0.0F)` when `idx.normal_index < 0`.
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:397-399` — the fallback,
+    guarded on `attrib.normals.empty()` (whole file), which is why the mixed case
+    escapes it.
+  - `Src/GraphicsEngineVulkan/scene/Vertex.cpp:17-33` — `computeFlatNormals`,
+    including its degenerate-triangle skip; `Vertex.ixx` for the declaration.
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:371-377` — the other caller,
+    which passes a `firstIndex`. Keep it working unchanged.
+  - `Test/commit/VulkanEngine/objParseSuite.cpp:278`
+    (`DegenerateTrianglesDoNotProduceNaNNormals`) — the device-free pattern to
+    follow, including how it writes a temporary `.obj` and parses it with the
+    no-device `ObjLoader{}` constructor.
+
+  **Steps:**
+  1. Add `vertex::fillMissingFlatNormals(std::span<Vertex>, std::span<const unsigned int>, std::size_t firstIndex = 0)`
+     next to `computeFlatNormals` in `Vertex.cpp`/`Vertex.ixx`: same face-normal
+     loop, but assign to a corner only when its current normal is
+     (near-)zero-length (`glm::dot(n, n) <= 1e-12F`). Keep the degenerate-triangle
+     skip.
+  2. In `ObjLoader.cpp`, replace the `if (attrib.normals.empty())` guard at
+     `:397-399` with an unconditional `vertex::fillMissingFlatNormals(...)`. The
+     all-normals case becomes a no-op pass over the index buffer; the no-normals
+     case behaves exactly as `computeFlatNormals` did; the mixed case is fixed.
+  3. Leave `GltfLoader.cpp`'s `computeFlatNormals` call alone — glTF's
+     `cgltf_validate` makes partial normals unreachable there (see the rejected
+     candidates above), and changing it would be an unverified behaviour change.
+  4. Note in a comment that vertex dedup keys on the whole `Vertex` including the
+     normal (`:363-365`), so a corner shared between faces with different
+     geometric normals resolves to whichever triangle is visited last — the same
+     flat approximation `computeFlatNormals` already makes, not a new limitation.
+
+  **Test:** Add `ObjParseUnit.FacesWithoutANormalIndexGetAFlatNormal`: write a
+  temporary `.obj` with two triangles where the first face uses `f a//n b//n c//n`
+  and the second uses bare `f a b c`, parse it device-free, and assert every
+  vertex normal has length ≈ 1 (today the second face's vertices come back at
+  length 0). Add a second case asserting a fully `vn`-less OBJ still produces the
+  same normals it does today, so the rewrite of the guard is pinned as
+  behaviour-preserving.
+
+  **Build:** `clangcl-debug`, same invocation as task 1.
+
+  **Context:** Do this **before** task 5 — task 5's job is to make the Rust
+  converter match C++, so C++ should be correct and pinned first. Same shape as
+  `bd315707` and `a5c19019`: a loader edge case that only a hand-written asset
+  reaches, fixed with a device-free test that writes the asset itself.
+
+### Rust WebGPU renderer
+
+- [ ] **(S) Compute real flat normals in `obj_to_gltf` instead of fabricating an
+  up vector** — a `vn`-less OBJ renders correctly lit in the Vulkan engine and
+  flat-lit-from-above in the WebGPU one.
+
+  **Files to read (all under
+  `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/`):**
+  - `src/asset/obj_to_gltf.rs:283-291` — the `[0.0, 1.0, 0.0]` fabrication and
+    the comment that admits it is "wrong but visibly wrong".
+  - `src/asset/obj_to_gltf.rs:55-64` — `ObjMesh` and the `has_vertex_colors`
+    presence flag; `:235` where it is set. This is the pattern to copy for a
+    `has_normals` flag.
+  - `src/asset/obj_to_gltf.rs:426-471`, `:477-507`, `:577-632` — `to_gltf`'s
+    buffer layout and the fixed accessor slots (`POSITION` 0, `NORMAL` 1,
+    `TEXCOORD_0` 2, optional `COLOR_0` 3). **Do not renumber these.**
+  - `src/asset/gltf_loader.rs:560-563` and `:686-698` — the loader-side
+    `compute_flat_normals` fallback and the exact face-normal rule to mirror.
+  - `Src/GraphicsEngineVulkan/scene/Vertex.cpp:17-33` (this repo) — the C++ rule
+    the output has to agree with, including the degenerate-triangle skip.
+  - `src/asset/obj_to_gltf.rs`'s existing `#[cfg(test)] mod tests` — the
+    in-file test convention for this module.
+
+  **Steps:**
+  1. Add `has_normals: bool` to `ObjMesh` next to `has_vertex_colors`, set it
+     `true` the first time a `"vn"` line parses.
+  2. At `:283-291`, keep pushing a placeholder for a corner with no normal index
+     (so the per-vertex arrays stay the same length), but push `[0.0, 0.0, 0.0]`
+     rather than an up vector — a zero is a marker the fill pass can find, and it
+     never survives to the emitted file.
+  3. After parsing completes and before `to_gltf`, run a fill pass over
+     `mesh.indices` in triples: compute the face normal
+     `(p1 - p0).cross(p2 - p0)`, skip it if its squared length is 0 (degenerate),
+     and assign the normalized result to each of the triangle's three vertices
+     whose current normal is (near-)zero. This mirrors both
+     `gltf_loader.rs::compute_flat_normals` and C++ `vertex::computeFlatNormals`.
+  4. Leave the emitted JSON layout untouched — `NORMAL` stays accessor 1, and
+     the buffer offsets stay byte-identical. The fix is the *values*, not the
+     schema, which also keeps the converted asset correct for consumers other
+     than this renderer (the same argument `:255-257` makes about the V flip).
+  5. Note in a comment that `seen` keys on the `(position, uv, normal)` triple
+     (`:266-297`), so with no `vn` every corner at one position collapses to one
+     vertex and the fill pass resolves shared vertices to the last visiting
+     triangle — the same flat approximation the two C++ loaders make.
+
+  **Test:** Add to `obj_to_gltf.rs`'s test module: an OBJ with two coplanar
+  triangles in the XZ plane and **no** `vn` converts to normals ≈ `(0, ±1, 0)`
+  *because of the geometry*, and a second OBJ whose single triangle lies in the
+  XY plane converts to `(0, 0, ±1)` — which the old code returned `(0, 1, 0)` for,
+  so this case red-proves the fix. Add a mixed case (one face with `vn`, one
+  without) asserting the explicit normal is preserved verbatim and the other face
+  gets its geometric normal. Run with
+  `bash Scripts/Linux/run-cargo-tests.sh` (or `cargo test -p kataglyphis_webgpu_renderer`
+  from the submodule); this crate's suite runs in the `ubuntu-24.04` leg of Linux
+  CI, so it is a real signal on every push.
+
+  **Build:** No C++ build needed. If you want the bridge compiled too:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** Do this **after** task 4. Seventh member of the cross-renderer
+  divergence family — see the batch preamble for the six that shipped before it.
+  The commit touches the submodule, so follow the usual rule: commit and push
+  `ExternalLib/Kataglyphis-RustProjectTemplate` first, then bump the gitlink here
+  in the same change (`AGENTS.md` § Critical Invariant: Submodule Pins).
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
