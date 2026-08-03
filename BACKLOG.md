@@ -6729,29 +6729,6 @@ still an owner decision.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Stop `CascadedShadowMap` from building a command pool, a buffer manager and a staging round trip to seed a host-visible buffer** — three throwaway allocations per shadow-resolution change, for data `uploadLightMatrices` overwrites before the first frame.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:257-294` — the whole function: pool create at `:270-276`, `VulkanBufferManager vbm;` at `:282`, the per-image `createBufferAndUploadVectorOnDevice` at `:285-287`, pool destroy at `:293`.
-  - `:120-155` (`uploadLightMatrices`) — `memcpy` straight into `getMappedData()`, which is what makes the staging copy redundant.
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.ixx:122-123` — the `init()` signature to extend.
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:108-123` (startup order: `graphics_command_pool` is live well before `dirShadowMap.init`), `:324-357` (`handleShadowResolutionChange`, the second `init` call site), `:1481-1492` (where the pool is created).
-  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanBufferManager.ixx:59-100` — why a member manager exists and what `createBufferAndUploadVectorOnDevice` does for a host-visible destination.
-
-  **Steps:**
-  1. Add a `vk::CommandPool commandPool` parameter to `CascadedShadowMap::init` (`.ixx:122-123` and the definition), store it in a member, and pass `graphics_command_pool` from both call sites (`VulkanRenderer.cpp:122` and `:350`).
-  2. Delete the local pool creation/destruction (`:270-276`, `:293`). Nothing else in the file uses it.
-  3. Replace the staging upload: the destination is `eHostVisible | eHostCoherent`, so create each `lightMatricesBuffers[i]` directly with `VulkanBuffer::create(device, sizeof(glm::mat4) * numCascades, eUniformBuffer, eHostVisible | eHostCoherent)` and `memcpy` the initial `lightMatrices` into `getMappedData()` — the same shape `uploadLightMatrices` already uses. Drop `eTransferDst` from the usage flags if nothing else needs it, and drop the local `VulkanBufferManager` and the `lightMatrices` vector if it becomes dead. Keep the per-swapchain-image loop and the `writeBuffer` call at `:290` exactly as they are, including the comment at `:278-281` explaining why there is one buffer per image.
-  4. Fold in the deferred finding from batch XV while the file is open (it named this as "fold it in whenever `CascadedShadowMap.cpp` is next opened"): with the local pool gone, that item is closed by step 2 — say so in the commit message so it is not re-proposed.
-
-  **Test:** Add `TEST(BuildIntegrity, OnlyTheRendererCreatesACommandPool)` to `buildIntegritySuite.cpp`: scan every `.cpp`/`.ixx` under `Src/GraphicsEngineVulkan/` for `createCommandPool(` and assert the only file containing it is `renderer/VulkanRenderer.cpp`. Reuse `find_repo_root` and the existing recursive-source-scan helpers in that file. Also add a `BuildIntegrity` assertion that `CascadedShadowMap.cpp` contains no `VulkanBufferManager` declaration, pinning that the shadow map no longer stages.
-
-  **Build:** `clangcl-debug`, **with `-FreshContainer`** (this changes `CascadedShadowMap.ixx`, a module interface):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='BuildIntegrity.*:CascadedShadowMapUnit.*:ShadowResolutionUnit.*'` from the repo root.
-
-  **Context:** The GPU suites are what would prove the shadow map still renders, and they are unavailable here — so keep the change strictly mechanical: same buffer count, same size, same descriptor write, same binding. The behavioural claim being relied on is one line of existing code: `uploadLightMatrices` (`:149-154`) already writes these buffers through `getMappedData()`, so a host-visible destination is not a new assumption. Do **not** also change the descriptor set or the pipeline in this task.
-
 - [ ] **(S) Make `DescriptorSetGroup` refuse a duplicate binding number and release a previous layout/pool** — a second `addBinding(1, ...)` today produces an invalid layout and a `findBinding` that silently picks one of the pair.
 
   **Files to read:**

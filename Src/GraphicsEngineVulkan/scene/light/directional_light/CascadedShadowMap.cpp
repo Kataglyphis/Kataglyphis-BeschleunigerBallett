@@ -31,14 +31,14 @@ import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.mesh;
 import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.buffer;
-import kataglyphis.vulkan.buffer_manager;
 import kataglyphis.vulkan.pipeline_builder;
 
 namespace Kataglyphis {
 
 
 void CascadedShadowMap::init(std::shared_ptr<VulkanDevice>in_device, uint32_t width, uint32_t height, uint32_t num_cascades,
-  vk::DescriptorSetLayout sharedRenderDescriptorSetLayout, uint32_t swapChainImageCount)
+  vk::DescriptorSetLayout sharedRenderDescriptorSetLayout, uint32_t swapChainImageCount,
+  vk::CommandPool commandPool)
 {
     this->device = in_device;
     this->shadowWidth = width;
@@ -46,6 +46,7 @@ void CascadedShadowMap::init(std::shared_ptr<VulkanDevice>in_device, uint32_t wi
     this->numCascades = num_cascades;
     this->sharedRenderDescriptorSetLayout = sharedRenderDescriptorSetLayout;
     this->swapChainImageCount = swapChainImageCount;
+    this->commandPool = commandPool;
 
     cascadeData.resize(numCascades);
 
@@ -262,35 +263,25 @@ void CascadedShadowMap::createDescriptorSetAndPipeline()
         spdlog::error("Failed to create shadow map descriptor resources!");
     }
 
-    std::vector<glm::mat4> lightMatrices(numCascades);
-    for (size_t i = 0; i < lightMatrices.size(); i++) {
-        lightMatrices[i] = cascadeData[i].viewProjMatrix;
-    }
-
-    vk::CommandPool transferCommandPool{};
-    vk::CommandPoolCreateInfo poolCreateInfo{};
-    poolCreateInfo.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
-    poolCreateInfo.queueFamilyIndex = static_cast<uint32_t>(device->getQueueFamilies().graphics_family);
-    auto poolResult = device->getLogicalDevice().createCommandPool(poolCreateInfo);
-    ASSERT_VULKAN(VkResult(poolResult.result), "Failed to create transfer command pool for cascaded shadow map!");
-    transferCommandPool = poolResult.value;
-
     // One buffer per swapchain image, like globalUBOBuffer/sceneUBOBuffer -
     // uploadLightMatrices() rewrites lightMatricesBuffers[image_index] every
     // frame, independently of whichever other image's shadow pass is still
-    // in flight.
-    VulkanBufferManager vbm;
+    // in flight. Host-visible and written directly through getMappedData(),
+    // the same way uploadLightMatrices() (:149-154) rewrites it every frame -
+    // so seeding it via a staging buffer + transfer would only duplicate data
+    // that path immediately overwrites.
     lightMatricesBuffers.resize(swapChainImageCount);
     for (uint32_t i = 0; i < swapChainImageCount; i++) {
-        vbm.createBufferAndUploadVectorOnDevice(device, transferCommandPool, lightMatricesBuffers[i],
-            vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-            lightMatrices);
+        lightMatricesBuffers[i].create(device, sizeof(glm::mat4) * numCascades,
+          vk::BufferUsageFlagBits::eUniformBuffer,
+          vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
         // UNIFORM_LIGHT_MATRICES_BINDING = 1
         lightMatricesDescriptors.writeBuffer(i, 1, lightMatricesBuffers[i].getBuffer(), sizeof(glm::mat4) * numCascades);
     }
-
-    device->getLogicalDevice().destroyCommandPool(transferCommandPool);
+    // Seed every image's buffer with the current cascade data now, rather than
+    // duplicating uploadLightMatrices()'s memcpy loop here.
+    for (uint32_t i = 0; i < swapChainImageCount; i++) { uploadLightMatrices(i); }
 }
 
 void CascadedShadowMap::createGraphicsPipeline()

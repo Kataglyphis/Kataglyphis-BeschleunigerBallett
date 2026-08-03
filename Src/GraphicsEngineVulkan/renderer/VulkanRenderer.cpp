@@ -119,7 +119,7 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     // resolution, so it can no longer disagree with what the combo shows.
     constexpr GUISceneSharedVars kGuiDefaults{};
     const uint32_t initial_shadow_res = shadowResolutionForIndex(kGuiDefaults.shadow_map_res_index);
-    dirShadowMap.init(device, initial_shadow_res, initial_shadow_res, initial_cascade_count, sharedRenderDescriptors.getLayout(), vulkanSwapChain.getNumberSwapChainImages());
+    dirShadowMap.init(device, initial_shadow_res, initial_shadow_res, initial_cascade_count, sharedRenderDescriptors.getLayout(), vulkanSwapChain.getNumberSwapChainImages(), graphics_command_pool);
     dirShadowMap.createGraphicsPipeline();
 
     std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts_post = { postDescriptors.getLayout() };
@@ -347,7 +347,7 @@ void Kataglyphis::VulkanRenderer::handleShadowResolutionChange(
               "Device maxMultiviewViewCount ({}) is the binding constraint on cascade count; clamping to {}.",
               device_view_limit, cascade_count);
         }
-        dirShadowMap.init(device, shadow_res, shadow_res, cascade_count, sharedRenderDescriptors.getLayout(), vulkanSwapChain.getNumberSwapChainImages());
+        dirShadowMap.init(device, shadow_res, shadow_res, cascade_count, sharedRenderDescriptors.getLayout(), vulkanSwapChain.getNumberSwapChainImages(), graphics_command_pool);
         // cleanUp() destroyed the pipeline, descriptor resources and the light
         // matrices buffer; recreate them (same sequence as at startup).
         dirShadowMap.createGraphicsPipeline();

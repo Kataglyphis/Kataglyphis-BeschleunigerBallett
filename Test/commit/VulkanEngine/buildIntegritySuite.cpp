@@ -5201,3 +5201,69 @@ TEST(BuildIntegrity, ModelUploadGoesThroughTheSharedAssembly)
              return joined;
          }();
 }
+
+// CascadedShadowMap::createDescriptorSetAndPipeline() used to spin up a
+// throwaway command pool + VulkanBufferManager staging round trip to seed a
+// host-visible buffer that uploadLightMatrices() overwrites before the first
+// frame anyway. It now takes the renderer's own graphics_command_pool through
+// init() (unused today, but kept for parity with every other stage's
+// init(..., commandPool) signature) and writes lightMatricesBuffers directly
+// through getMappedData(). Pin both halves of that: the renderer stays the
+// only place that owns a command pool, and the shadow map file stays free of
+// the staging abstraction it no longer needs.
+TEST(BuildIntegrity, OnlyTheRendererCreatesACommandPool)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path engine_root = repo_root / "Src" / "GraphicsEngineVulkan";
+    ASSERT_TRUE(fs::exists(engine_root)) << "missing " << engine_root.string();
+
+    std::vector<std::string> files_with_pool_creation;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(engine_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".cpp" && path.extension() != ".ixx") { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        if (contents.find("createCommandPool(") == std::string::npos) { continue; }
+
+        files_with_pool_creation.push_back(fs::relative(path, repo_root).generic_string());
+    }
+
+    static const std::array<const char *, 1> kExpected = { "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp" };
+    std::sort(files_with_pool_creation.begin(), files_with_pool_creation.end());
+
+    EXPECT_TRUE(std::equal(files_with_pool_creation.begin(),
+      files_with_pool_creation.end(),
+      kExpected.begin(),
+      kExpected.end()))
+      << "expected only VulkanRenderer.cpp to create a vk::CommandPool, found:"
+      << [&files_with_pool_creation] {
+             std::string joined;
+             for (const auto &entry : files_with_pool_creation) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+TEST(BuildIntegrity, CascadedShadowMapDoesNotStageThroughABufferManager)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path shadow_map_cpp = repo_root
+      / "Src" / "GraphicsEngineVulkan" / "scene" / "light" / "directional_light" / "CascadedShadowMap.cpp";
+    ASSERT_TRUE(fs::exists(shadow_map_cpp)) << "missing " << shadow_map_cpp.string();
+
+    std::ifstream file(shadow_map_cpp);
+    ASSERT_TRUE(file) << "could not open " << shadow_map_cpp.string();
+    std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    EXPECT_EQ(contents.find("VulkanBufferManager"), std::string::npos)
+      << "CascadedShadowMap.cpp should seed lightMatricesBuffers directly through getMappedData(), not a "
+         "VulkanBufferManager staging round trip";
+}

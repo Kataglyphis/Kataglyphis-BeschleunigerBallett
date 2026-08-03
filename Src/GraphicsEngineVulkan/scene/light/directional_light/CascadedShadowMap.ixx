@@ -120,7 +120,8 @@ class CascadedShadowMap
     CascadedShadowMap &operator=(const CascadedShadowMap &) = delete;
 
     void init(std::shared_ptr<VulkanDevice>device, uint32_t width, uint32_t height, uint32_t num_cascades,
-      vk::DescriptorSetLayout sharedRenderDescriptorSetLayout, uint32_t swapChainImageCount);
+      vk::DescriptorSetLayout sharedRenderDescriptorSetLayout, uint32_t swapChainImageCount,
+      vk::CommandPool commandPool);
 
     void createGraphicsPipeline();
     void shaderHotReload();
@@ -164,6 +165,8 @@ class CascadedShadowMap
     uint32_t shadowHeight{ 0 };
     uint32_t numCascades{ 0 };
     uint32_t swapChainImageCount{ 0 };
+    // Owned by VulkanRenderer, not this class - never created/destroyed here.
+    vk::CommandPool commandPool{};
 
     std::unique_ptr<Kataglyphis::Texture> shadowMapArray;
     // Depth format chosen in init() via chooseDepthFormat(). The render pass
