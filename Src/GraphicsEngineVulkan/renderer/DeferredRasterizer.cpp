@@ -95,10 +95,10 @@ void DeferredRasterizer::createTextures()
     // initialLayout = eUndefined for every attachment this function creates,
     // so the render pass itself performs the first transition.
     depthBufferImage = std::make_unique<Texture>();
-    vk::Format depthFormat = Kataglyphis::chooseDepthFormat(device->getPhysicalDevice());
-    depthBufferImage->createImage(device, extent.width, extent.height, 1, depthFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eInputAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal);
+    depth_format = Kataglyphis::chooseDepthFormat(device->getPhysicalDevice());
+    depthBufferImage->createImage(device, extent.width, extent.height, 1, depth_format, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eInputAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal);
     // Input-attachment view: exactly one aspect, not Kataglyphis::depthStencilTransitionAspect. See its doc comment.
-    depthBufferImage->createImageView(device, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
+    depthBufferImage->createImageView(device, depth_format, vk::ImageAspectFlagBits::eDepth, 1);
 }
 
 void DeferredRasterizer::createPushConstantRange()
@@ -175,7 +175,9 @@ void DeferredRasterizer::createRenderPass()
 
     // FINAL_FORMAT matches the forward offscreen (see Rasterizer.ixx's
     // OFFSCREEN_FORMAT and the static_assert next to these constants).
-    vk::Format depthFormat = Kataglyphis::chooseDepthFormat(device->getPhysicalDevice());
+    // depth_format was already resolved by createTextures(), which init()
+    // always runs first - reuse it rather than querying again, so the
+    // attachment and the image it is paired with cannot diverge.
 
     // All five use the engine-wide attachment defaults (clear on load, store,
     // start from eUndefined) - see common/RenderPassHelper.hpp. The local
@@ -186,7 +188,7 @@ void DeferredRasterizer::createRenderPass()
         buildAttachmentDescription(GBUFFER_NORMAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal), // 1: Normal
         buildAttachmentDescription(GBUFFER_ALBEDO_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal), // 2: Albedo
         buildAttachmentDescription(GBUFFER_MATERIAL_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal), // 3: Material
-        buildAttachmentDescription(depthFormat, vk::ImageLayout::eDepthStencilAttachmentOptimal) // 4: Depth
+        buildAttachmentDescription(depth_format, vk::ImageLayout::eDepthStencilAttachmentOptimal) // 4: Depth
     };
 
     // Subpass 0: Geometry Pass

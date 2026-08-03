@@ -6823,51 +6823,6 @@ saying so, not a task; fold it into task 2 if convenient.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Give `Rasterizer` and `DeferredRasterizer` one depth-format derivation each, the way `PostStage` and `CascadedShadowMap` already do** — two of the four stages call `chooseDepthFormat` twice, so the render-pass attachment format and the image it is paired with are derived independently.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:139-157` and `:195-203` — the pattern to copy, including the comment that states the invariant ("reuse it rather than querying again, so the attachment and the image it is paired with cannot diverge"); the member is `PostStage.ixx:51`, exposed by `getDepthFormat()` at `:32`
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.ixx:172-175` and `CascadedShadowMap.cpp:53` — the second stage that already caches
-  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:146-203` (`createRenderPass`, query at `:154`) and `:233-271` (`createTextures`, query at `:256`); `init()` order at `:44-48`; `recreateFrameResources` at `:138-144`
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:93-101` (`createTextures`, query at `:98`) and `:170-215` (`createRenderPass`, query at `:178`); its `init()` and `recreateFrameResources`
-  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.ixx:71` and `DeferredRasterizer.ixx:73-76` — where the other format constants live, and where the new member belongs
-  - `Src/GraphicsEngineVulkan/common/FormatHelper.hpp` — `chooseDepthFormat` itself
-
-  **Steps:**
-  1. Add `vk::Format depth_format{ vk::Format::eUndefined };` as a private member of `Rasterizer` and of `DeferredRasterizer`, next to the existing `static constexpr vk::Format` attachment constants.
-  2. In each stage's `createTextures()` — which `init()` runs **before** `createRenderPass()` in both (`Rasterizer.cpp:44-45`; same order in `DeferredRasterizer::init`) — assign the member from the single `chooseDepthFormat` call and use the member for both `createImage` and `createImageView`.
-  3. In each stage's `createRenderPass()`, read the member instead of calling `chooseDepthFormat` again. `Rasterizer.cpp:154` currently has the call inline in the `buildAttachmentDescription` argument list — replace it with `depth_format` and add a short comment mirroring `PostStage.cpp:195-197`.
-  4. Check `recreateFrameResources()` on both stages: `Rasterizer`'s re-runs `createTextures` (so the member is refreshed) but not `createRenderPass`. Confirm the render pass is not recreated on resize; if it is, make sure the ordering still assigns before it reads. Do not reorder `init()`.
-  5. Do **not** touch the aspect-mask difference between the stages — `Rasterizer.cpp:269` deliberately uses `depthStencilTransitionAspect(depth_format)` because it records a layout transition, while `PostStage.cpp:156` and `DeferredRasterizer.cpp:100` use `eDepth` alone because they do not. That divergence is documented at each site and is correct.
-
-  **Test:** Add `TEST(BuildIntegrity, EveryRenderStageDerivesItsDepthFormatOnce)`
-  to `Test/commit/VulkanEngine/buildIntegritySuite.cpp`, alongside the other
-  source-scanning gates: for each of `renderer/Rasterizer.cpp`,
-  `renderer/DeferredRasterizer.cpp`, `renderer/PostStage.cpp` and
-  `scene/light/directional_light/CascadedShadowMap.cpp`, count occurrences of
-  `chooseDepthFormat(` and assert exactly one per file, with a failure message
-  naming the invariant (the attachment and the image it is paired with are
-  derived from the same value). Red-prove it by reinstating the second call in
-  `Rasterizer.cpp`. Run:
-  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  This changes two module interfaces (`Rasterizer.ixx`, `DeferredRasterizer.ixx`),
-  so pass `-FreshContainer`.
-
-  **Context:** Sixth member of the family that `buildAttachmentDescription`,
-  `fullExtentViewport`, `buildFramebufferCreateInfo`, `buildRenderPassBeginInfo`,
-  `buildRenderPassCreateInfo` and `buildPipelineLayoutCreateInfo` already
-  cover — except here the shared definition already exists (`chooseDepthFormat`)
-  and what is duplicated is the *derivation*, which is exactly what the
-  `PostStage` comment warns about. There is no live bug: `chooseDepthFormat` is
-  a deterministic function of the physical device, so today the two calls agree.
-  The cost is that any future change to how a depth format is chosen (an extra
-  usage-flag argument, a per-stage preference list) has to be made in six places
-  instead of four, and the two uncached stages give no compile error if it is
-  not.
-
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

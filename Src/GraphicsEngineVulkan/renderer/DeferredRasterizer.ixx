@@ -95,6 +95,10 @@ class DeferredRasterizer
     std::vector<std::unique_ptr<Kataglyphis::Texture>> gBufferMaterials; // Metallic, Roughness, AO
 
     std::unique_ptr<Kataglyphis::Texture> depthBufferImage;
+    // Resolved once by createTextures(), which init() always runs before
+    // createRenderPass() - reuse it there rather than querying again, so the
+    // attachment and the image it is paired with cannot diverge.
+    vk::Format depth_format{ vk::Format::eUndefined };
 
     vk::PushConstantRange push_constant_range{ vk::ShaderStageFlagBits::eAll, 0, 0 };
     PushConstantRasterizer pushConstant{ glm::mat4(1.f) };

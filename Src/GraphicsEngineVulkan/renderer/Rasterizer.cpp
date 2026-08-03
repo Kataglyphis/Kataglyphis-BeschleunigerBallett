@@ -150,8 +150,11 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
       buildAttachmentDescription(OFFSCREEN_FORMAT, vk::ImageLayout::eShaderReadOnlyOptimal);
 
     // Depth is never read after the pass, so its writeback is eDontCare.
+    // depth_format was already resolved by createTextures(), which init()
+    // always runs first - reuse it rather than querying again, so the
+    // attachment and the image it is paired with cannot diverge.
     const vk::AttachmentDescription depth_attachment =
-      buildAttachmentDescription(chooseDepthFormat(device->getPhysicalDevice()),
+      buildAttachmentDescription(depth_format,
         vk::ImageLayout::eDepthStencilAttachmentOptimal,
         vk::AttachmentLoadOp::eClear,
         vk::AttachmentStoreOp::eDontCare);
@@ -253,7 +256,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
         offscreenTextures[index] = std::move(texture);
     }
 
-    vk::Format const depth_format = chooseDepthFormat(device->getPhysicalDevice());
+    depth_format = chooseDepthFormat(device->getPhysicalDevice());
 
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
     depthBufferImage = std::make_unique<Texture>();

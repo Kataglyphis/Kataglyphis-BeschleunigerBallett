@@ -5420,3 +5420,42 @@ TEST(BuildIntegrity, CascadedShadowMapDoesNotStageThroughABufferManager)
       << "CascadedShadowMap.cpp should seed lightMatricesBuffers directly through getMappedData(), not a "
          "VulkanBufferManager staging round trip";
 }
+
+// Rasterizer and DeferredRasterizer used to call chooseDepthFormat() once in
+// createTextures() and again in createRenderPass(), so the render-pass
+// attachment format and the depth image it is paired with were derived
+// independently and could silently diverge. PostStage and CascadedShadowMap
+// already cache the result in a member and read it a second time; this test
+// holds all four render stages to that invariant by counting call sites.
+TEST(BuildIntegrity, EveryRenderStageDerivesItsDepthFormatOnce)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const std::array<const char *, 4> kFiles = {
+        "Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp",
+        "Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp",
+        "Src/GraphicsEngineVulkan/renderer/PostStage.cpp",
+        "Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp",
+    };
+
+    for (const char *relative_path : kFiles) {
+        const fs::path path = repo_root / relative_path;
+        ASSERT_TRUE(fs::exists(path)) << "missing " << path.string();
+
+        std::ifstream file(path);
+        ASSERT_TRUE(file) << "could not open " << path.string();
+        const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = contents.find("chooseDepthFormat(", pos)) != std::string::npos) {
+            ++count;
+            pos += std::strlen("chooseDepthFormat(");
+        }
+
+        EXPECT_EQ(count, 1U) << relative_path << " calls chooseDepthFormat() " << count
+                              << " time(s); it must be derived exactly once and cached in a member, so the "
+                                 "render-pass attachment and the image it is paired with cannot diverge";
+    }
+}
