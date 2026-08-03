@@ -8,7 +8,7 @@
 #include "spdlog/spdlog.h"
 
 namespace Kataglyphis {
-static vk::Format choose_supported_format(vk::PhysicalDevice physical_device,
+inline vk::Format choose_supported_format(vk::PhysicalDevice physical_device,
   const std::vector<vk::Format> &formats,
   vk::ImageTiling tiling,
   vk::FormatFeatureFlags feature_flags)

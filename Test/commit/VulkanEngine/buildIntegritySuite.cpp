@@ -25,6 +25,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -5910,4 +5911,58 @@ TEST(BuildIntegrity, RendererImprovementLogDoesNotAskForShippedWork)
     EXPECT_EQ(in_progress_section.find("sync-validated barrier removal"), std::string::npos)
       << doc_path.string() << "'s \"## In progress\" section still lists \"sync-validated barrier removal\" as "
          "remaining queue, but " << renderer_path.string() << " already records the removal (\"used to sit here\").";
+}
+
+// Internal linkage in a header gives every translation unit its own copy of
+// the function, and an inline function that names one (chooseDepthFormat used
+// to call the internal-linkage choose_supported_format) is IFNDR under
+// [basic.def.odr] - which is exactly how FormatHelper.hpp got into this state.
+// Namespace-scope function definitions in this tree are unindented, while
+// static member functions inside a class body are indented, so column 0 is
+// the whole discriminator between "internal-linkage free function" and
+// "static member function" (the latter is fine and must stay untouched).
+TEST(BuildIntegrity, HeadersDoNotDefineStaticFreeFunctions)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        const auto extension = path.extension();
+        if (extension != ".hpp" && extension != ".ixx") { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string line;
+        std::size_t line_number = 0;
+        while (std::getline(file, line)) {
+            ++line_number;
+            constexpr std::string_view kStaticPrefix = "static ";
+            if (line.compare(0, kStaticPrefix.size(), kStaticPrefix) != 0) { continue; }
+            if (line.find('(') == std::string::npos) { continue; }
+            if (line.find("static_assert") != std::string::npos) { continue; }
+
+            violations.push_back(
+              fs::relative(path, repo_root).generic_string() + ":" + std::to_string(line_number) + ": " + line);
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " namespace-scope function definition(s) under Src/ use internal linkage (\"static\") instead of "
+         "\"inline\" - internal linkage in a header gives every translation unit its own copy, which is how "
+         "chooseDepthFormat (FormatHelper.hpp) ended up calling an internal-linkage function across ten TUs, "
+         "an IFNDR ODR violation the compiler is not required to diagnose:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
 }

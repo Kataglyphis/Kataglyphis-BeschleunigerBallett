@@ -7079,6 +7079,216 @@ re-rejected for the fourth time (upload-time only, never on the frame path).
   out of CI — this gates only the *membership* of the two lists, which is
   machine-independent.
 
+## 2026-08-03 batch XX — planner (refactor: three headers whose free functions still have internal linkage, one of which an `inline` neighbour calls across ten translation units; 47 hand-written `wgpu::BindGroupLayoutEntry` literals in the Rust crate, reducible to five named shapes; the cascade-fit signature — eleven positional parameters, four of them adjacent floats with defaults, spelled out six times)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the tree
+this pass.
+
+**Every task in this batch is verifiable with no GPU**, deliberately: host
+golden verification is still blocked over RDP (see the `- [b]` entry near the
+end of this file), so nothing here may depend on it. Task 1 is a header-linkage
+change gated by a new `BuildIntegrity` source scan; task 2 lands entirely in the
+Rust crate's `cargo test` lane (which `Linux.yml` runs on `ubuntu-24.04`); task
+3 is a signature change covered by the 19 existing `CascadedShadowMapUnit`
+tests plus one new one. `Test/commit/VulkanEngine/CMakeLists.txt` globs `*.cpp`
+with `CONFIGURE_DEPENDS`, so no new suite file needs registering.
+
+**The headline is that three headers still define their free functions
+`static`, and one of them is called from an `inline` function in the same
+header.** Fifteen helper headers under `Src/GraphicsEngineVulkan/` use `inline`
+or `constexpr` — `ExtensionSupport.hpp`, `ImageBarrierHelper.hpp`,
+`RenderPassHelper.hpp`, `PipelineLayoutHelper.hpp`, `ViewportHelper.hpp`,
+`FramebufferHelper.hpp`, `ImageViewHelper.hpp`, `ImageLayoutHelper.hpp`,
+`MemoryHelper.hpp`, `ComputePipelineHelper.hpp`, `SceneUboMarshal.hpp`,
+`LightDirection.hpp`, `GuiModelTransform.hpp`, plus `Src/shared/util/`'s two
+`.ixx` — and three do not:
+
+- `common/FormatHelper.hpp:11` `choose_supported_format`
+- `vulkan_base/PhysicalDeviceChoices.hpp:23,38,51,73`
+  `parseGpuSelectionMode`, `gpuSelectionModeToString`, `matchesSelectionMode`,
+  `scorePhysicalDevice`
+- `vulkan_base/SwapchainChoices.hpp:13,38,52`
+  `chooseBestSurfaceFormat`, `chooseBestPresentationMode`, `clampSwapExtent`
+
+All eight sit at namespace scope in column 0 (every `static` in a `.ixx` is an
+indented class member, so the two cases are trivially separable). `static` at
+namespace scope in a header means **internal linkage**: each including TU gets
+its own private copy of the function body.
+
+`FormatHelper.hpp` is inconsistent with itself, and that is the part that is a
+real defect rather than a style nit. `chooseDepthFormat` (`:43`) is `inline` —
+external linkage, one entity, defined identically in every TU — and its body
+calls `choose_supported_format` (`:45`), which is a **different entity in every
+TU**. [basic.def.odr] requires that in each definition of an inline function,
+each name refer to the same entity; naming an internal-linkage function from an
+inline one violates that, and it is IFNDR — no diagnostic required, so a green
+build proves nothing. `FormatHelper.hpp` is included by nine TUs
+(`DeferredRasterizer.cpp`, `FrameCapture.ixx`, `PostStage.cpp`,
+`Rasterizer.cpp`, `CloudDispatch.hpp`, `Clouds.cpp`, `CascadedShadowMap.cpp`,
+`Texture.cpp`) plus `formatHelperSuite.cpp`, so there are ten copies of
+`choose_supported_format` and ten `chooseDepthFormat` definitions that
+disagree about which one they call. Nothing is misbehaving today — the ten
+copies are byte-identical, so whichever the linker keeps behaves the same — but
+this is precisely the ODR class that cost this repo three months of red Linux
+CI, and the fix is one keyword per function.
+
+**Second, the Rust crate writes out `wgpu::BindGroupLayoutEntry` longhand 47
+times, and there are only five shapes.** Counted across
+`render/{bloom,forward,gpu_occlusion,histogram,ibl,occlusion,ssao,tonemap}.rs`
+(22 of them in `forward.rs` alone), every entry is 6–9 lines of nested struct
+literal, and the taxonomy is tiny:
+
+| shape | count |
+| --- | --- |
+| `Buffer { Uniform, has_dynamic_offset: false, min_binding_size: None }` | 13 |
+| `Buffer { Storage { read_only: true }, false, None }` | 8 |
+| `Buffer { Storage { read_only: false }, false, None }` | 3 |
+| `Texture { Float { filterable: true }, D2, multisampled: false }` | 7 |
+| `Texture { Float { filterable: false }, D2, false }` | 2 |
+| `Texture { Depth, D2, false }` / `Depth, D2Array` / `Depth, D2, ms: true` | 4 |
+| `Texture { Float { filterable: true }, Cube, false }` | 1 |
+| `Sampler(Filtering)` / `Sampler(Comparison)` | 7 |
+
+`has_dynamic_offset: false` and `min_binding_size: None` are written 24 times
+without exception — they carry no information at any call site. This is the
+Rust twin of the C++ create-info builder family (`buildAttachmentDescription`,
+`buildFramebufferCreateInfo`, `buildRenderPassCreateInfo`,
+`buildPipelineLayoutCreateInfo`, `buildSubpassDescription`,
+`buildImageMemoryBarrier`, `buildComputePipelineCreateInfo`, …), which this
+repo has now consolidated eleven times over for exactly this reason: the
+boilerplate is where the one field that differs gets lost. The crate already
+has device-free unit tests living next to the code they cover
+(`forward.rs:2984-3002`, `graph.rs`'s `mod tests`), so the helpers and their
+guard are testable without an adapter.
+
+**Third, the cascade-fit signature is eleven positional parameters, and it is
+spelled out six times.** `computeCascadeData` and `computeCascadeDataInto` each
+take `(uint32_t numCascades, const glm::mat4 &cameraView, float cameraFov,
+float aspect, float nearPlane, float farPlane, const glm::vec3 &lightDir, float
+shadowDistance = 0.0F, float splitLambda = 0.5F, uint32_t shadowMapResolution =
+0)` — declared at `CascadedShadowMap.ixx:54` and `:73`, defined at
+`CascadedShadowMapMath.cpp:82` and `:111`, and the five-line tail
+`float cameraFov, / float aspect, / float nearPlane, / float farPlane, /
+const glm::vec3 &lightDir,` appears six times across those two files plus
+`CascadedShadowMap.cpp:87`. Four consecutive `float`s, three of them with
+defaults, mean every call site is a silent transposition away from a wrong
+answer that still type-checks — and the calls do look like that:
+`computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar,
+default_light(), 0.0F, 0.5F)` (`cascadedShadowMapSuite.cpp:178`),
+`computeCascadeData(numCascades, view, kFov, kAspect, kNear, kFar, lightDir,
+kShadowDistance, 0.5F, kShadowMapResolution)` (`perfSuite.cpp:123-124`). The
+repo already prefers named aggregates for exactly this — `PathTracingHistoryKey`
+is built with designated initializers at `VulkanRenderer.cpp:1161-1167`, and
+`ShadowSetBinding` / `PhysicalDeviceScore` exist to give small tuples names.
+
+Ordering: the three tasks are disjoint — task 1 touches three headers plus
+`buildIntegritySuite.cpp`, task 2 only the Rust submodule, task 3 only the
+`CascadedShadowMap` module and its two test callers. Task 3 edits a module
+interface (`CascadedShadowMap.ixx`) and therefore needs `-FreshContainer`; tasks
+1 and 2 do not.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`Mesh::setModel`** (`Mesh.ixx:57`, `Mesh.cpp:92`) —
+re-confirmed dead by a fresh whole-tree sweep of every declared function
+(`setModel` is still the only name whose sole two references are its own
+declaration and definition); unchanged from batch XVII, still a three-line
+deletion rather than a task, fold it in if something else touches `Mesh`.
+**The two cloud-output barriers and their twice-written WAR comment**
+(`VulkanRenderer.cpp:938-956`, `:970-1008`) — still owned by the `- [b]` entry
+in the 2026-08-02 batch and still gated on a host GPU golden; this is the ninth
+rejection, stop re-checking them. **The two shadow-bias formulas** —
+`cascaded_shadow.slang:38` uses `max(0.002 * (1 - N·L), 0.0005)` while
+`forward.slang:242` uses `clamp(0.002 * (1 - N·L) + 0.0005, 0.0005, 0.004)`, so
+the two renderers disagree at grazing angles. A real divergence, but closing it
+means editing `forward.slang`, which regenerates checked-in WGSL and therefore
+runs straight into the `- [b]` slangc version floor at the end of this file — it
+cannot be an executor task until that unblocks. **`create_shadow_pipeline` and
+`create_masked_shadow_pipeline`** (`forward.rs:2836`, `:2882`) — share a
+`DepthStencilState` verbatim, but they are two copies of six lines and their
+`cull_mode`/`fragment` differences are documented on the spot; not worth a
+helper. **`Scene::getObjectDescriptions()` returning by value**
+(`Scene.ixx:142`) — re-confirmed scene-change-only, never per frame; unchanged
+from batch XIX. **`VulkanRenderer`'s mixed `snake_case`/`camelCase` method
+names** (`record_commands` and `drawFrame` on the same class) — real
+inconsistency, but `.clang-tidy` enables `readability-*` yet clang-tidy never
+runs in the container build (`docs/code-quality.md`), so a rename would be a
+large untested diff with no gate behind it. **`Src/KomputePlayground`** —
+unchanged; still an owner decision.
+
+### C++ Vulkan engine
+
+- [ ] **(M) (refactor) Replace the eleven-parameter cascade-fit signature with a `CascadeFitParams` aggregate** — four adjacent `float`s with defaults, spelled out six times, where a transposed argument still compiles.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.ixx:45-84` — both declarations plus the long doc comment on `shadowMapResolution`.
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMapMath.cpp:82-121` — the allocating wrapper and the real implementation. Read the file header comment at `:16-26` first: this TU is deliberately separate from `CascadedShadowMap.cpp` so the perf benchmark does not link `Scene`. Do not merge them.
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:87-119` — the one production call site (`computeCascadeDataInto`, on the per-frame path).
+  - `Test/commit/VulkanEngine/cascadedShadowMapSuite.cpp` — 35 call sites; the local `kFov`/`kAspect`/`kNear`/`kFar`/`default_view()`/`default_light()`/`default_cascades()` helpers at `:32-45` are where the new struct should be built.
+  - `Test/perf/perfSuite.cpp:100-126` — `BM_ComputeCascadeData`, the one benchmark call site.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1161-1167` — the designated-initializer style to match (`PathTracingHistoryKey`).
+
+  **Steps:**
+  1. In `CascadedShadowMap.ixx`, add above the two declarations:
+     ```cpp
+     struct CascadeFitParams {
+         glm::mat4 cameraView{ 1.0F };
+         float cameraFov{ 45.0F };
+         float aspect{ 1.0F };
+         float nearPlane{ 0.1F };
+         float farPlane{ 100.0F };
+         glm::vec3 lightDir{ 0.0F, -1.0F, 0.0F };
+         float shadowDistance{ 0.0F };
+         float splitLambda{ 0.5F };
+         uint32_t shadowMapResolution{ 0U };
+     };
+     ```
+     The last three member initializers must reproduce the trailing default arguments exactly (`0.0F`, `0.5F`, `0U`) — those defaults are load-bearing for the existing tests.
+  2. Change both declarations to `std::vector<CascadeData> computeCascadeData(uint32_t numCascades, const CascadeFitParams &params)` and `void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, const CascadeFitParams &params)`. Move the existing per-parameter doc comment onto the struct's members — keep the `shadowMapResolution` stabilization paragraph verbatim, it is the only record of why the snapped path exists.
+  3. In `CascadedShadowMapMath.cpp`, update both definitions. Inside `computeCascadeDataInto`, either destructure into local `const` references at the top or use `params.` throughout — do not reorder or re-derive any of the maths; this task must not change a single computed value.
+  4. Update the production call site in `CascadedShadowMap.cpp` and the benchmark in `perfSuite.cpp` to build a `CascadeFitParams` with designated initializers.
+  5. Update `cascadedShadowMapSuite.cpp`: add a `CascadeFitParams default_params()` next to `default_view()`/`default_light()` returning the current defaults, and rewrite each of the 35 call sites as `auto params = default_params(); params.splitLambda = 0.0F;` (or a designated-initializer literal where the test overrides several fields). Keep every assertion and every test name unchanged.
+
+  **Test:** all 19 existing `CascadedShadowMapUnit` tests must stay green with their assertions untouched — that is the proof the refactor is value-preserving. Add one new `TEST(CascadedShadowMapUnit, DefaultFitParamsMatchTheRetiredTrailingDefaults)` asserting `CascadeFitParams{}.shadowDistance == 0.0F`, `.splitLambda == 0.5F` and `.shadowMapResolution == 0U`, so a later edit to the struct cannot silently move a default that used to live in a function declaration.
+
+  **Build:** `clangcl-debug`, **with `-FreshContainer`** — this edits a module interface (`CascadedShadowMap.ixx`), and `AGENTS.md` § Containerized Windows Builds requires a fresh container after any C++23 module-interface change:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=CascadedShadowMapUnit.*` from the repo root. Also build `clangcl-profile` afterwards — `perfSuite.cpp` only compiles in that configuration, so a debug-only build will not catch a broken benchmark call site.
+
+  **Context:** This is the same "give the positional aggregate a name" move as `ShadowSetBinding`, `PhysicalDeviceScore` and `PathTracingHistoryKey`. The specific hazard is `(kFov, kAspect, kNear, kFar)` followed by `(shadowDistance, splitLambda)` — six floats where any swap type-checks and produces a plausible-looking cascade set. `makeShadowPush` exists in this same file precisely because an earlier silent-wrong-value bug in this subsystem (identity instead of the model matrix) shipped unnoticed. Do not change `computeCascadeData`'s existence or its wrapper relationship to `computeCascadeDataInto` — the comment at `CascadedShadowMapMath.cpp:93-95` explains that split, and the two are required to agree bit for bit.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) (refactor) Give `wgpu::BindGroupLayoutEntry` five named constructors and route all 47 call sites through them** — 24 of those entries repeat `has_dynamic_offset: false, min_binding_size: None` verbatim, which is where the one field that actually differs gets lost.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/render/ssao.rs:38-70` — three entries in a row (depth texture, uniform, filterable texture); the clearest example of the shape.
+  - `crates/webgpu_renderer/src/render/forward.rs:370-730` — 22 of the 47 entries, including the `VERTEX_FRAGMENT` uniforms and the read-only storage buffers.
+  - `crates/webgpu_renderer/src/render/{bloom,gpu_occlusion,histogram,ibl,occlusion,tonemap}.rs` — the remaining 25.
+  - `crates/webgpu_renderer/src/render/mod.rs` — the flat `pub mod` list the new module joins.
+  - `crates/webgpu_renderer/src/render/graph.rs` (its `mod tests`) and `forward.rs:2960-3002` — the crate's device-free unit-test convention.
+
+  **Steps:**
+  1. Add `crates/webgpu_renderer/src/render/bind_layout.rs` and `pub mod bind_layout;` to `render/mod.rs`. Give it a module doc comment naming the problem it solves (47 longhand literals, 24 of them repeating two no-information fields).
+  2. Define, each returning `wgpu::BindGroupLayoutEntry` with `count: None`:
+     - `pub fn uniform(binding: u32, visibility: wgpu::ShaderStages)` → `Buffer { ty: Uniform, has_dynamic_offset: false, min_binding_size: None }`
+     - `pub fn storage_buffer(binding: u32, visibility: wgpu::ShaderStages, read_only: bool)`
+     - `pub fn texture(binding: u32, visibility: wgpu::ShaderStages, sample_type: wgpu::TextureSampleType, view_dimension: wgpu::TextureViewDimension, multisampled: bool)` — the general form
+     - `pub fn texture_2d(binding: u32, visibility: wgpu::ShaderStages, filterable: bool)` — thin wrapper over `texture` for the 9-copy majority case
+     - `pub fn sampler(binding: u32, visibility: wgpu::ShaderStages, ty: wgpu::SamplerBindingType)`
+     Make them `const fn` if that compiles against the pinned wgpu; fall back to plain `fn` if not. Do **not** add a wrapper per call site — five is the whole point.
+  3. Convert all 47 sites. Every one is a pure substitution: same binding number, same visibility, same type. The depth/array/cube/multisampled entries (`Depth`+`D2Array`, `Float{filterable:true}`+`Cube`, `Depth`+`D2`+`multisampled: true`) go through the general `texture` and keep their existing comments.
+  4. Leave `wgpu::BindGroupEntry` (the *binding* side, `resource: ...`) alone — this task is only about layout entries.
+
+  **Test:** in `bind_layout.rs`'s `#[cfg(test)] mod tests`, one test per helper asserting the produced entry matches the longhand it replaces, e.g.
+  `assert!(matches!(uniform(3, wgpu::ShaderStages::FRAGMENT).ty, wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }))`,
+  plus `binding`/`visibility`/`count` field assertions and a `storage_buffer(.., true)` vs `(.., false)` pair. Then add the regression guard: `#[test] fn bind_group_layout_entries_go_through_the_helpers()` that walks `concat!(env!("CARGO_MANIFEST_DIR"), "/src")` with `std::fs`, and fails listing every file:line containing `BindGroupLayoutEntry {` outside `bind_layout.rs`. Confirm that guard goes RED before the conversion and GREEN after. No wgpu adapter is needed for any of this — these are plain data structs.
+
+  **Build:** `cargo test --workspace --locked` run from `ExternalLib/Kataglyphis-RustProjectTemplate` on the host. **Known-unrelated failures in this environment:** `auto_exposure_brightens_a_dark_scene_over_successive_frames` and 11 `ibl` tests fail on unmodified `develop` too (headless-GPU-adapter issues, recorded in the 2026-08-01 batch XV notes) — do not chase them, and do not treat them as caused by this change. Then a `clangcl-debug` container build, because the crate is compiled into the engine through the Rust bridge:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** This is the Rust twin of the create-info builder family the C++ side has now consolidated eleven times (`buildAttachmentDescription` → `buildFramebufferCreateInfo` → `buildRenderPassCreateInfo` → `buildPipelineLayoutCreateInfo` → `buildSubpassDescription` → `buildImageMemoryBarrier` → `buildComputePipelineCreateInfo` → …), and the rationale is identical: every one of those consolidations was prompted by drift that had already appeared between copies. The crate is a **submodule** — commit inside `ExternalLib/Kataglyphis-RustProjectTemplate` and bump the gitlink in this repo in the same change, per `AGENTS.md` § Critical Invariant: Submodule Pins.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

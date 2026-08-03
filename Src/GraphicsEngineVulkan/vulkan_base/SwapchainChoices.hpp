@@ -10,7 +10,7 @@ namespace Kataglyphis {
 // best format is subjective, but I go with:
 //  Format:           vk::Format::eR8G8B8A8Unorm (backup-format:
 //  vk::Format::eB8G8R8A8Unorm) color_space:  vk::ColorSpaceKHR::eSrgbNonlinear
-static vk::SurfaceFormatKHR chooseBestSurfaceFormat(const std::vector<vk::SurfaceFormatKHR> &formats)
+inline vk::SurfaceFormatKHR chooseBestSurfaceFormat(const std::vector<vk::SurfaceFormatKHR> &formats)
 {
     // an empty list has no formats[0] to fall back on - use the same default
     // as the "no restrictions" case below instead of indexing past the end.
@@ -35,7 +35,7 @@ static vk::SurfaceFormatKHR chooseBestSurfaceFormat(const std::vector<vk::Surfac
     return formats[0];
 }
 
-static vk::PresentModeKHR chooseBestPresentationMode(const std::vector<vk::PresentModeKHR> &presentation_modes)
+inline vk::PresentModeKHR chooseBestPresentationMode(const std::vector<vk::PresentModeKHR> &presentation_modes)
 {
     // look for mailbox presentation mode
     for (const auto &presentation_mode : presentation_modes) {
@@ -49,7 +49,7 @@ static vk::PresentModeKHR chooseBestPresentationMode(const std::vector<vk::Prese
 // Clamps a candidate extent into the surface's [min, max] image extent
 // bounds. The window-query / currentExtent short-circuit stays with the
 // caller since that part needs a live window, not just capability data.
-static vk::Extent2D clampSwapExtent(const vk::SurfaceCapabilitiesKHR &surface_capabilities,
+inline vk::Extent2D clampSwapExtent(const vk::SurfaceCapabilitiesKHR &surface_capabilities,
   uint32_t width,
   uint32_t height)
 {

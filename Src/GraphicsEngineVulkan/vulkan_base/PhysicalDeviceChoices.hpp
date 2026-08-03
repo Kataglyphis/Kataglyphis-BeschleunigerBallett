@@ -20,7 +20,7 @@ struct PhysicalDeviceScore {
     friend auto operator<=>(const PhysicalDeviceScore &, const PhysicalDeviceScore &) = default;
 };
 
-static auto parseGpuSelectionMode(std::string_view mode) -> GpuSelectionMode
+inline auto parseGpuSelectionMode(std::string_view mode) -> GpuSelectionMode
 {
     if (mode.empty()) { return GpuSelectionMode::Auto; }
 
@@ -35,7 +35,7 @@ static auto parseGpuSelectionMode(std::string_view mode) -> GpuSelectionMode
     return GpuSelectionMode::Auto;
 }
 
-static auto gpuSelectionModeToString(GpuSelectionMode mode) -> const char *
+inline auto gpuSelectionModeToString(GpuSelectionMode mode) -> const char *
 {
     switch (mode) {
     case GpuSelectionMode::Dedicated:
@@ -48,7 +48,7 @@ static auto gpuSelectionModeToString(GpuSelectionMode mode) -> const char *
     }
 }
 
-static auto matchesSelectionMode(const vk::PhysicalDeviceProperties &properties, GpuSelectionMode mode) -> bool
+inline auto matchesSelectionMode(const vk::PhysicalDeviceProperties &properties, GpuSelectionMode mode) -> bool
 {
     switch (mode) {
     case GpuSelectionMode::Dedicated:
@@ -70,7 +70,7 @@ constexpr bool shouldEnableComputeDerivativeGroupQuads(bool extensionPresent, vk
     return extensionPresent && quadsSupported == VK_TRUE;
 }
 
-static auto scorePhysicalDevice(const vk::PhysicalDeviceProperties &properties) -> PhysicalDeviceScore
+inline auto scorePhysicalDevice(const vk::PhysicalDeviceProperties &properties) -> PhysicalDeviceScore
 {
     int type_rank = 0;
 
