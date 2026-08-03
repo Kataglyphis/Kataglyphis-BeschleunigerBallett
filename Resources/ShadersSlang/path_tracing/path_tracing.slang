@@ -204,7 +204,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 ObjMaterial material = materials->m[materialIDs->i[primitiveID]];
                 if (material.textureID >= 0)
                 {
-                    int textureId = clamp(int(obj.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
+                    int textureId = resolve_texture_slot(obj, material);
                     hitColor = textures[textureId].Sample(textureSamplers[textureId], texCoords).xyz;
                 }
                 else

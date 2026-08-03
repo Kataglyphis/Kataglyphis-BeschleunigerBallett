@@ -1936,6 +1936,54 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
          }();
 }
 
+// The flattened texture-slot clamp (int(obj.texture_offset) + textureID,
+// clamped into [0, MAX_TEXTURE_COUNT - 1]) has exactly one definition:
+// resolve_texture_slot() in scene_types.slang. Every consumer must call it
+// rather than re-deriving the clamp locally - a second copy could drift from
+// the "over-cap models sample a wrong slot" behaviour VulkanRenderer.cpp's
+// warning documents.
+TEST(BuildIntegrity, TextureSlotClampHasOneDefinition)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    static const std::string kClampLiteral = "MAX_TEXTURE_COUNT - 1)";
+    const fs::path scene_types_relative = fs::path("common") / "scene_types.slang";
+
+    std::vector<std::string> other_definitions;
+    bool found_in_scene_types = false;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
+        const std::string relative_path = fs::relative(path, slang_root).generic_string();
+        if (relative_path.starts_with("build/")) { continue; }
+
+        const auto text = read_file_text(path);
+        if (!text.has_value() || text->find(kClampLiteral) == std::string::npos) { continue; }
+
+        if (relative_path == scene_types_relative.generic_string()) {
+            found_in_scene_types = true;
+        } else {
+            other_definitions.push_back(relative_path);
+        }
+    }
+
+    EXPECT_TRUE(found_in_scene_types) << kClampLiteral << " not found in " << scene_types_relative.generic_string()
+                                       << " - resolve_texture_slot() moved or was rewritten?";
+    EXPECT_TRUE(other_definitions.empty())
+      << other_definitions.size() << " .slang file(s) besides scene_types.slang re-derive the clamp instead of "
+      << "calling resolve_texture_slot(): " << [&other_definitions] {
+             std::string joined;
+             for (const auto &entry : other_definitions) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 // dirLight.direction stores the direction the light TRAVELS (a host-slider
 // convention confirmed by CascadedShadowMapMath.cpp and the path-tracing
 // history key). Every shader that wants the vector pointing TOWARD the light

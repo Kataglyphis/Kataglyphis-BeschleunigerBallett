@@ -55,7 +55,7 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID)
     float4 texColor;
     if (material.textureID >= 0)
     {
-        int textureId = clamp(int(obj.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
+        int textureId = resolve_texture_slot(obj, material);
         texColor = textures[textureId].Sample(textureSamplers[textureId], transform_uv(In.texCoords, material));
         if (alpha_masked_out(material, texColor.a)) discard;
     }

@@ -56,7 +56,7 @@ float4 fs_main(VsOut In, uint primitiveID : SV_PrimitiveID) : SV_Target
     float3 ambient;
     if (material.textureID >= 0)
     {
-        int textureId = clamp(int(obj.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
+        int textureId = resolve_texture_slot(obj, material);
         float4 baseSample = textures[textureId].Sample(textureSamplers[textureId], transform_uv(In.texCoords, material));
         if (alpha_masked_out(material, baseSample.a)) discard;
         ambient = baseSample.xyz;

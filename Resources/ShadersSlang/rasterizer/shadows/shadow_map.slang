@@ -45,7 +45,7 @@ void shadow_fs_main(ShadowVsOut In, uint primitiveID : SV_PrimitiveID)
     // Only textured MASK materials alpha-test; everything else casts unchanged.
     if (material.alphaCutoff >= 0.0 && material.textureID >= 0)
     {
-        int textureId = clamp(int(obj.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
+        int textureId = resolve_texture_slot(obj, material);
         float alpha = textures[textureId].Sample(textureSamplers[textureId], transform_uv(In.fragUV, material)).a;
         if (alpha_masked_out(material, alpha)) discard;
     }

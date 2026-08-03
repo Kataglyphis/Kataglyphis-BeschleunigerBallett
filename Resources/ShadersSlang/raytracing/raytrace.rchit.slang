@@ -69,7 +69,7 @@ void rchit_main(
     float3 ambient = float3(0.0);
     if (material.textureID >= 0)
     {
-        int textureId = clamp(int(obj.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
+        int textureId = resolve_texture_slot(obj, material);
         // Explicit LOD: closesthit runs under RayClosestHitKHR, which has no
         // fragment derivatives, so an implicit-LOD .Sample() fails SPIR-V
         // validation (ImplicitLod requires Fragment/GLCompute/MeshEXT/TaskEXT).

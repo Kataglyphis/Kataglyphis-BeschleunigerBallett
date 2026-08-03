@@ -65,6 +65,16 @@ struct Indices { int3 i[]; }
 struct MaterialIDs { int i[]; }
 struct Materials { ObjMaterial m[]; }
 
+// Flattened global-texture-array index for a material's textureID within its
+// model's slot range. Clamped rather than bounds-checked: a model whose
+// texture count pushes it past MAX_TEXTURE_COUNT silently samples a wrong
+// slot instead of going out of bounds (see VulkanRenderer.cpp's
+// "models past the cap will sample the wrong slots" warning).
+int resolve_texture_slot(ObjectDescription obj, ObjMaterial material)
+{
+    return clamp(int(obj.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
+}
+
 static const int MAX_CASCADES = 3;
 static const int MAX_PCF_RADIUS = 20;
 

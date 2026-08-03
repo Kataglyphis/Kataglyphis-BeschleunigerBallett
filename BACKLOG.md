@@ -7068,50 +7068,6 @@ re-rejected for the fourth time (upload-time only, never on the frame path).
 
 ### Shaders
 
-- [ ] **(S) (refactor) Give the flattened texture-slot clamp one definition in
-  `scene_types.slang`** — the same `clamp(...)` expression is written out in all
-  five shaders that sample the global texture array.
-
-  **Files to read:**
-  - `Resources/ShadersSlang/common/scene_types.slang:8` — `MAX_TEXTURE_COUNT`,
-    already imported by all five consumers
-  - The five copies: `rasterizer/rasterizer.slang:59`, `deferred/deferred.slang:58`,
-    `rasterizer/shadows/shadow_map.slang:48`, `path_tracing/path_tracing.slang:207`,
-    `raytracing/raytrace.rchit.slang:72`
-  - `Src/GraphicsEngineVulkan/scene/ObjectDescription.ixx:29-84` — the host half
-    (`assignTextureOffsets` / `planFlattenedTextureSlots`) the clamp is the
-    device-side counterpart of
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1537-1544` — the
-    over-cap warning whose "will sample the wrong slots" wording is only true
-    because of this clamp
-  - `Resources/ShadersSlang/common/material_fetch.slang:1-6` — why the helper
-    must NOT go here (RT capability conflict; `path_tracing` and
-    `raytrace.rchit` cannot import it)
-
-  **Steps:**
-  1. Add `int resolve_texture_slot(ObjectDescription obj, ObjMaterial material)`
-     (or equivalent taking `uint texture_offset, int textureID`) to
-     `common/scene_types.slang`, returning the clamped index, with a comment
-     stating that an over-cap model samples a wrong slot rather than out of
-     bounds — the property `VulkanRenderer.cpp:1537-1544` warns about.
-  2. Replace all five call sites with the helper. Nothing else in those blocks
-     changes.
-  3. Recompile SPIR-V with `Scripts/Windows/compile-slang-shaders.ps1` (no WGSL
-     target imports `scene_types`, so no checked-in WGSL moves).
-  4. Add `TEST(BuildIntegrity, TextureSlotClampHasOneDefinition)`: assert the
-     literal `MAX_TEXTURE_COUNT - 1)` appears in `scene_types.slang` and in no
-     other `.slang` file under `Resources/ShadersSlang/`.
-
-  **Test:** the new gate above; `BuildIntegrity.CompiledShadersAreNotOlderThanTheirSources`
-  and `BuildIntegrity.HostAndShaderSharedConstantsAgree` stay green.
-
-  **Build:** `clangcl-debug`, same command as task 1.
-
-  **Context:** Do task 1 first — both touch the same three raster shaders. Put
-  the helper in `scene_types.slang`, not `material_fetch.slang`: the latter's
-  header comment records that it deliberately avoids RT capabilities, and two of
-  the five call sites are ray-tracing shaders.
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 - [ ] **(M) Make `render::graph` describe the frame the renderer actually
