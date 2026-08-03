@@ -1,8 +1,7 @@
 // Shared procedural noise: 3D simplex noise (snoise) + fractal Brownian
 // motion (fbm). Based on the Ashima Arts / Stefan Gustavson implementation
-// (MIT License, https://github.com/ashima/webgl-noise) used by the C++
-// engine's common/grad_noise.glsl. Pure math, no bindings — usable by both
-// renderers' compute/raster passes.
+// (MIT License, https://github.com/ashima/webgl-noise). Pure math, no
+// bindings — usable by both renderers' compute/raster passes.
 //
 // Porting note: Slang/HLSL uses `float3`/`float4` (not `vec3`/`vec4`) and
 // `float4(x,y,z,w)` constructors. The `step`, `floor`, `mod`, `mix`,

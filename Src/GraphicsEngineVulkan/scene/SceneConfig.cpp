@@ -141,7 +141,7 @@ auto defaultSelectedModelIndex(std::span<const std::string> availablePaths, std:
   -> int
 {
     // generic_string() normalises the separator on both sides: scanAvailableModels()
-    // builds availablePaths via std::filesystem::relative(...).string(), which is
+    // builds availablePaths from a relative-path computation that comes out
     // backslashed on Windows, while preferredRelativePath is a forward-slashed
     // literal - without this normalisation the exact match below would never fire
     // on Windows even when the path is otherwise correct.

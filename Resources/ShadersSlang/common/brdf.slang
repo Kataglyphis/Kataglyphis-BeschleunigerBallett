@@ -2,9 +2,9 @@
 //
 // Single source of truth for both renderers. This is the same model the Rust
 // renderer's forward.wgsl already uses (distribution_ggx / geometry_smith /
-// fresnel_schlick / brdf_direct) and the C++ engine's pbr/brdf/unreal4.glsl
-// (D_GGX_EPIC_GAMES / G_GGX_EPIC_GAMES / F_EPIC_GAMES). Unifying them here
-// removes the duplication and guarantees both renderers shade identically.
+// fresnel_schlick / brdf_direct). The C++ engine imports this module
+// directly (forward.slang, rasterizer.slang, deferred.slang,
+// raytracing/raytrace.rchit.slang), so both renderers shade identically.
 //
 // Epsilon guards (max(..., 1e-6)) come from the Rust side: the C++ GLSL
 // version had none, which produced NaN/inf on grazing angles.

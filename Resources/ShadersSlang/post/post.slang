@@ -11,8 +11,7 @@ import fullscreen;
 // Emits SPIR-V only (the C++ renderer loads .spv). The Rust renderer has its
 // own tonemap.slang (different compositing: bloom + SSAO + exposure).
 
-// Combined image+sampler (maps to GLSL sampler2D / Vulkan combined
-// descriptor). Matches the C++ post.frag's `uniform sampler2D` layout.
+// Combined image+sampler (Vulkan combined image sampler descriptor).
 [vk::binding(0, 0)] Sampler2D noisyTxt;
 [vk::binding(1, 0)] Sampler2D cloudTxt;
 

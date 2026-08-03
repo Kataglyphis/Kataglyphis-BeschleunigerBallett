@@ -75,6 +75,9 @@ struct IblParams
 [vk::binding(0, 4)] StructuredBuffer<uint2> tileLightGrid;
 [vk::binding(1, 4)] StructuredBuffer<uint> tileLightIndices;
 
+// Shares set 1 binding 0 with iblParams above: this shader's forward
+// pipeline and the shadow pass use different bind-group layouts, so the
+// slot is never live in both at once.
 [vk::binding(0, 1)] ConstantBuffer<uint4> shadowCascadeIndex;
 
 struct VsIn

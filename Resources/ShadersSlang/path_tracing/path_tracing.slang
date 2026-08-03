@@ -146,9 +146,10 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             // object-space position still faults). Consuming ONLY the
             // material-fetched .color (no vertex-buffer position/normal
             // read) never faults, across 40+ frames and an 8x-per-invocation
-            // RayQuery loop, on this same large mesh. raytracing/raytrace.
-            // rchit.slang reads the identical fields via the identical
-            // Vertex/Vertices BDA types successfully, but has only ever been
+            // RayQuery loop, on this same large mesh.
+            // raytracing/raytrace.rchit.slang reads the identical fields via
+            // the identical Vertex/Vertices BDA types successfully, but has
+            // only ever been
             // exercised against the tiny shadow_rig.obj rig - it is NOT yet
             // known whether this is scoped to RayQuery/compute specifically
             // or is a more general large-mesh vertex-buffer-device-address

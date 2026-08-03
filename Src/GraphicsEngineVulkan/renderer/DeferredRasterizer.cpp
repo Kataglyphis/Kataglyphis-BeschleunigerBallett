@@ -302,8 +302,9 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
 
     PipelineBuilder lightingPipelineBuilder;
     lightingPipeline = lightingPipelineBuilder.setShaderStages({ lightStages.stages().begin(), lightStages.stages().end() })
-                         // Vertex-less fullscreen triangle (gl_VertexIndex in lighting.vert):
-                         // no vertex buffer is ever bound, so declare an empty vertex input.
+                         // Vertex-less fullscreen triangle (SV_VertexID in deferred.slang's
+                         // lighting_vs_main): no vertex buffer is ever bound, so declare an
+                         // empty vertex input.
                          .setVertexInput({}, {})
                          .setCullMode(vk::CullModeFlagBits::eNone)
                          .setDepthTest(false)

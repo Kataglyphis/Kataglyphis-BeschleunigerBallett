@@ -8,7 +8,7 @@
 // counterparts (vec3, mat4, uint, ...) instead of glm::vec3 / unsigned int.
 // This header is C++-only - there is no GLSL/Slang half to guard against,
 // the pre-Slang dual-compile shim these aliases used to live inside was
-// retired with Resources/Shaders/.
+// retired when the GLSL shader tree was deleted.
 #include <glm/glm.hpp>
 
 using vec2 = glm::vec2;

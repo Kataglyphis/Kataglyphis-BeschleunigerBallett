@@ -1674,14 +1674,22 @@ TEST(BuildIntegrity, ShaderManifestPinsAMinimumSlangcVersionForWgsl)
 
 // `Resources/Shaders/` (the pre-Slang GLSL tree) was deleted once the Slang
 // migration finished; every .slang file is now the sole source for its
-// shader. A handful of header comments still said "Mirrors
-// Resources/Shaders/..." for months afterward, pointing a reader at a tree
-// that no longer exists instead of at the file they were already reading -
-// the same failure mode as trusting stale SPIR-V above: a comment claiming
-// the authoritative version lives elsewhere. This walks every .slang under
-// Resources/ShadersSlang/ (excluding the build/ output directory) and fails
-// naming any file plus line that still references the deleted path.
-TEST(BuildIntegrity, SlangSourcesDoNotReferenceTheDeletedGlslTree)
+// shader, and no .glsl/.vert/.frag/.geom/.tesc/.tese/.comp/.rgen/.rchit/.rmiss
+// file exists anywhere in the tree any more. A handful of comments still
+// said "Mirrors Resources/Shaders/..." or named a bare GLSL-era shader-stage
+// file for months afterward, pointing a reader at something that no longer
+// exists instead of at the file they were already reading - the same
+// failure mode as trusting stale SPIR-V above: a comment claiming the
+// authoritative version lives elsewhere. This walks every .slang file under
+// Resources/ShadersSlang/ (excluding the build/ output directory) plus every
+// comment in a .cpp/.hpp/.ixx file under Src/GraphicsEngineVulkan/ and
+// Src/shared/, and fails naming any file plus line that either:
+//   (a) mentions the deleted Resources/Shaders path,
+//   (b) mentions a GLSL-era shader-stage extension - none of these can
+//       exist in the tree any more, so any occurrence is stale, or
+//   (c) names a *.slang file, by basename, for which no file with that
+//       basename exists under Resources/ShadersSlang/.
+TEST(BuildIntegrity, SourceCommentsDoNotReferenceDeletedShaderFiles)
 {
     const fs::path repo_root = find_repo_root();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
@@ -1689,10 +1697,53 @@ TEST(BuildIntegrity, SlangSourcesDoNotReferenceTheDeletedGlslTree)
     const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
     ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
 
-    static const std::string kDeadPath = "Resources/Shaders";
+    std::set<std::string> real_slang_basenames;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
+        if (fs::relative(path, slang_root).generic_string().starts_with("build/")) { continue; }
+        real_slang_basenames.insert(path.filename().string());
+    }
+    ASSERT_FALSE(real_slang_basenames.empty()) << "found zero .slang files under " << slang_root.string();
+
+    // Trailing slash matters: "Resources/Shaders" alone is a substring of
+    // the current "Resources/ShadersSlang" tree, which every file under
+    // Resources/ShadersSlang legitimately mentions in path comments.
+    static const std::string kDeadPath = "Resources/Shaders/";
+    // Not followed by ".slang": raytrace.rchit.slang legitimately contains
+    // ".rchit" as a mid-name segment - only a *trailing* GLSL-era extension
+    // (nothing left to exist as a real file) is dead.
+    static const std::regex kDeadExtension(R"(\.(glsl|frag|vert|geom|tesc|tese|comp|rgen|rchit|rmiss)(?!\.slang)\b)");
+    static const std::regex kSlangMention(R"([A-Za-z0-9_./-]+\.slang)");
 
     std::vector<std::string> violations;
-    std::error_code error;
+
+    auto record = [&](const fs::path &path, int line_number, const std::string &line, const std::string &reason) {
+        violations.push_back(fs::relative(path, repo_root).generic_string() + ':' + std::to_string(line_number)
+                              + ": " + reason + ": " + line);
+    };
+
+    auto scan_line = [&](const fs::path &path, int line_number, const std::string &line, const std::string &text) {
+        if (text.find(kDeadPath) != std::string::npos) {
+            record(path, line_number, line, "references the deleted " + kDeadPath + " tree");
+        }
+        if (std::regex_search(text, kDeadExtension)) {
+            record(path, line_number, line, "references a GLSL-era shader-stage extension that no longer exists");
+        }
+        for (auto match = std::sregex_iterator(text.begin(), text.end(), kSlangMention), match_end = std::sregex_iterator();
+             match != match_end; ++match) {
+            const std::string basename = fs::path(match->str()).filename().string();
+            if (!real_slang_basenames.contains(basename)) {
+                record(path, line_number, line,
+                       "names '" + basename + "', which does not exist under Resources/ShadersSlang/");
+            }
+        }
+    };
+
+    // .slang files: scan every line - shader source has no string-literal
+    // filenames that would collide with these patterns.
     for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
         if (error) { break; }
         const fs::path &path = it->path();
@@ -1705,16 +1756,39 @@ TEST(BuildIntegrity, SlangSourcesDoNotReferenceTheDeletedGlslTree)
         int line_number = 0;
         while (std::getline(file, line)) {
             ++line_number;
-            if (line.find(kDeadPath) != std::string::npos) {
-                violations.push_back(fs::relative(path, repo_root).generic_string() + ':'
-                                      + std::to_string(line_number) + ": " + line);
+            scan_line(path, line_number, line, line);
+        }
+    }
+
+    // C++ sources: comment-only, so a live string literal such as
+    // Raytracing.cpp's "raytrace.rgen.rgen_main.spv" is never scanned.
+    for (const char *sub_dir : { "GraphicsEngineVulkan", "shared" }) {
+        const fs::path root = repo_root / "Src" / sub_dir;
+        if (!fs::exists(root)) { continue; }
+        for (fs::recursive_directory_iterator it(root, error), end; it != end; it.increment(error)) {
+            if (error) { break; }
+            const fs::path &path = it->path();
+            if (!it->is_regular_file(error)) { continue; }
+            const std::string extension = path.extension().string();
+            if (extension != ".cpp" && extension != ".hpp" && extension != ".ixx") { continue; }
+
+            std::ifstream file(path);
+            if (!file) { continue; }
+            std::string line;
+            int line_number = 0;
+            while (std::getline(file, line)) {
+                ++line_number;
+                const std::size_t comment_at = line.find("//");
+                if (comment_at == std::string::npos) { continue; }
+                scan_line(path, line_number, line, line.substr(comment_at));
             }
         }
     }
 
     EXPECT_TRUE(violations.empty())
-      << violations.size() << " line(s) under " << slang_root.string() << " still reference the deleted "
-      << kDeadPath << " tree - update the comment to describe the .slang file as the sole source: "
+      << violations.size()
+      << " line(s) reference a deleted GLSL-era shader file or an unresolved .slang filename - update the "
+         "comment to name the file that actually exists today:"
       << [&violations] {
              std::string joined;
              for (const auto &entry : violations) { joined += "\n  " + entry; }

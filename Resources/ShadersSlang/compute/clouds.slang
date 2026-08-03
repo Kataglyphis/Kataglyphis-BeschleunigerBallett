@@ -5,8 +5,9 @@ import scene_types;
 //
 // Ray-marches a cloud volume, sampling a 3D noise texture for density,
 // with Henyey-Greenstein phase function and Beer-Lambert transmittance.
-// The box intersection (from Matlib.glsl) is inlined here; the inverse
-// model matrix is precomputed on the CPU (Slang has no inverse() for SPIR-V).
+// The box intersection (iquilezles' ray-box formula, see box_intersect
+// below) is inlined here; the inverse model matrix is precomputed on the
+// CPU (Slang has no inverse() for SPIR-V).
 
 static const float PI = 3.14159265358979323846;
 

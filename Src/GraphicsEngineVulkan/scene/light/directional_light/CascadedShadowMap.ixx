@@ -21,7 +21,7 @@ struct CascadeData {
     glm::mat4 viewProjMatrix;
 };
 
-// Push constants consumed by directional_shadow_map.vert/.geom.
+// Push constants consumed by rasterizer/shadows/shadow_map.slang.
 struct ShadowPushConstants
 {
     glm::mat4 model;
