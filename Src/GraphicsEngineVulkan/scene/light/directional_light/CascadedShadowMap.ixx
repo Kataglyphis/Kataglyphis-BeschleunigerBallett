@@ -87,6 +87,22 @@ void computeCascadeDataInto(std::span<CascadeData> out,
 // casters by the SAME model matrix as the forward pass, not by identity.
 ShadowPushConstants makeShadowPush(const glm::mat4 &modelMatrix, uint32_t cascadeIndex);
 
+// vkCmdBindDescriptorSets arguments for the shadow pass's set 0/1 split. Named
+// and pulled out for the same reason as makeShadowPush: the no-shared-set
+// fallback used to bind the light-matrices set at set 0, against a pipeline
+// layout (CascadedShadowMap.cpp's setLayouts) that says set 0 is the shared
+// render set and set 1 is light matrices - so the vertex shader's set 1 read
+// was never bound. The light matrices set must land at set index 1 in BOTH
+// cases; only firstSet/setCount change.
+struct ShadowSetBinding
+{
+    uint32_t firstSet;
+    uint32_t setCount;
+
+    friend bool operator==(const ShadowSetBinding &, const ShadowSetBinding &) = default;
+};
+ShadowSetBinding shadowSetBinding(bool hasSharedSet);
+
 // Cascade count actually usable: never above maxCascades (the SceneUBO array
 // size the shader samples), never above deviceViewLimit (the multiview render
 // pass broadcasts one view per cascade, so a viewMask bit past the device's

@@ -26,6 +26,8 @@ using Kataglyphis::clampCascadeCount;
 using Kataglyphis::computeCascadeData;
 using Kataglyphis::computeCascadeDataInto;
 using Kataglyphis::makeShadowPush;
+using Kataglyphis::ShadowSetBinding;
+using Kataglyphis::shadowSetBinding;
 
 constexpr uint32_t kCascades = 3;
 constexpr float kFov = 45.0F;
@@ -319,6 +321,17 @@ TEST(CascadedShadowMapUnit, ShadowPushCarriesTheSceneModelMatrix)
     EXPECT_EQ(push.model, scene_model) << "the shadow pass must use the scene's model matrix, not identity";
     EXPECT_NE(push.model, glm::mat4(1.0F)) << "a non-identity scene matrix must not collapse to identity";
     EXPECT_EQ(push.cascadeIndex, 2U);
+}
+
+// Regression guard: the no-shared-set fallback used to bind the light matrices
+// set at set 0, against a pipeline layout (CascadedShadowMap.cpp's setLayouts,
+// :351) that says set 0 is the shared render set and set 1 is light matrices -
+// so the vertex shader's set 1 read was never bound. The light matrices set
+// must land at set index 1 in both cases; only firstSet/setCount change.
+TEST(CascadedShadowMapUnit, ShadowSetBindingKeepsLightMatricesAtSetOne)
+{
+    EXPECT_EQ(shadowSetBinding(true), (ShadowSetBinding{ 0, 2 }));
+    EXPECT_EQ(shadowSetBinding(false), (ShadowSetBinding{ 1, 1 }));
 }
 
 namespace {

@@ -442,14 +442,23 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
     // set 0 = the shared render set passed in (materials/textures/object
     // descriptions, for the fragment alpha test); set 1 = this pass's light
     // matrices. descriptorSets is the same span the forward rasterizer receives.
+    // The pipeline layout (:351 above) always describes set 0 = shared, set 1 =
+    // light matrices, so the light matrices set must land at index 1 whether or
+    // not the shared set is bound - shadowSetBinding is what keeps firstSet in
+    // agreement with that layout.
     const vk::DescriptorSet lightMatricesSet = lightMatricesDescriptors.sets()[image_index];
-    std::array<vk::DescriptorSet, 2> shadowDescriptorSets = {lightMatricesSet, lightMatricesSet};
-    const uint32_t shadowDescriptorSetCount = descriptorSets.empty() ? 1 : 2;
-    if (!descriptorSets.empty()) { shadowDescriptorSets = {descriptorSets[0], lightMatricesSet}; }
+    if (descriptorSets.empty()) {
+        spdlog::warn("CascadedShadowMap::recordCommands: no shared render set bound; the fragment alpha test will "
+                     "sample nothing (degraded mode)");
+    }
+    const std::array<vk::DescriptorSet, 2> sets =
+      descriptorSets.empty() ? std::array<vk::DescriptorSet, 2>{ lightMatricesSet, VK_NULL_HANDLE }
+                              : std::array<vk::DescriptorSet, 2>{ descriptorSets[0], lightMatricesSet };
+    const ShadowSetBinding binding = shadowSetBinding(!descriptorSets.empty());
     commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
       pipelineLayout,
-      0,
-      std::span(shadowDescriptorSets.data(), shadowDescriptorSetCount),
+      binding.firstSet,
+      std::span(sets.data(), binding.setCount),
       nullptr);
 
     // objectIndex is the running FLAT mesh index (matching the forward pass and

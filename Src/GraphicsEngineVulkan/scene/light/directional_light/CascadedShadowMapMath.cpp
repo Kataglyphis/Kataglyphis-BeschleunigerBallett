@@ -69,6 +69,16 @@ ShadowPushConstants makeShadowPush(const glm::mat4 &modelMatrix, uint32_t cascad
     return ShadowPushConstants{ modelMatrix, cascadeIndex };
 }
 
+ShadowSetBinding shadowSetBinding(bool hasSharedSet)
+{
+    // With the shared set: both sets are bound starting at set 0. Without it:
+    // the shared set is skipped entirely and light matrices are bound at set 1
+    // alone - firstSet = 1 makes vkCmdBindDescriptorSets place it at the
+    // pipeline layout's set index 1, not 0.
+    if (hasSharedSet) { return ShadowSetBinding{ 0, 2 }; }
+    return ShadowSetBinding{ 1, 1 };
+}
+
 std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
   const glm::mat4 &cameraView,
   float cameraFov,
