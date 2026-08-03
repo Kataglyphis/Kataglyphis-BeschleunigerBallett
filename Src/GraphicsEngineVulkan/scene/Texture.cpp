@@ -187,8 +187,8 @@ auto Kataglyphis::Texture::uploadRgba(std::shared_ptr<VulkanDevice>device,
           vk::ImageAspectFlagBits::eColor);
     }
 
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer);
+    static_cast<void>(Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer));
 
     stagingBuffer.cleanUp();
 

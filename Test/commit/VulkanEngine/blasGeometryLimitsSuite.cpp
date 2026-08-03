@@ -2,9 +2,11 @@
 // vertex index (count - 1), never the vertex count itself, and an empty mesh
 // must not wrap to 0xFFFFFFFF.
 
+#include <array>
 #include <gtest/gtest.h>
 
 #include "renderer/accelerationStructures/BlasGeometryLimits.hpp"
+#include "renderer/accelerationStructures/BlasCompaction.hpp"
 
 static_assert(Kataglyphis::blasTriangleLimits(100, 300).maxVertex == 99,
   "blasTriangleLimits must be usable in a constant expression");
@@ -25,6 +27,23 @@ TEST(BlasGeometryLimitsUnit, AnEmptyMeshDoesNotWrapToUintMax)
 TEST(BlasGeometryLimitsUnit, PrimitiveCountTruncatesAPartialTriangle)
 {
     EXPECT_EQ(Kataglyphis::blasTriangleLimits(4, 7).primitiveCount, 2U);
+}
+
+TEST(BlasCompactionUnit, RejectsEmptyAndZeroSizedResults)
+{
+    EXPECT_FALSE(Kataglyphis::compactedSizesAreUsable({}));
+
+    const std::array<vk::DeviceSize, 3> zero_first = { 0, 128, 256 };
+    EXPECT_FALSE(Kataglyphis::compactedSizesAreUsable(zero_first));
+
+    const std::array<vk::DeviceSize, 3> zero_middle = { 128, 0, 256 };
+    EXPECT_FALSE(Kataglyphis::compactedSizesAreUsable(zero_middle));
+
+    const std::array<vk::DeviceSize, 3> zero_last = { 128, 256, 0 };
+    EXPECT_FALSE(Kataglyphis::compactedSizesAreUsable(zero_last));
+
+    const std::array<vk::DeviceSize, 3> all_positive = { 128, 256, 512 };
+    EXPECT_TRUE(Kataglyphis::compactedSizesAreUsable(all_positive));
 }
 
 }// namespace

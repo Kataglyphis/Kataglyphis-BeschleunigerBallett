@@ -120,8 +120,8 @@ void Kataglyphis::VulkanImage::transitionImageLayout(vk::Device in_logical_devic
     // pipeline-stage / layout-case logic lives in exactly one place.
     transitionImageLayout(command_buffer, old_layout, new_layout, mip_levels, aspectMask, array_layers);
 
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      in_logical_device, command_pool, queue, command_buffer);
+    static_cast<void>(Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      in_logical_device, command_pool, queue, command_buffer));
 }
 
 void Kataglyphis::VulkanImage::transitionImageLayout(vk::CommandBuffer command_buffer,

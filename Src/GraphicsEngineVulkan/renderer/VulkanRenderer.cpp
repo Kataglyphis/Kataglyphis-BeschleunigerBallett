@@ -1352,8 +1352,8 @@ void Kataglyphis::VulkanRenderer::createPathTracingAccumulationResources()
     }
     pathTracingAccumulation.getVulkanImage().transitionImageLayout(
       commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, 1, vk::ImageAspectFlagBits::eColor);
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      device->getLogicalDevice(), graphics_command_pool, device->getGraphicsQueue(), commandBuffer);
+    static_cast<void>(Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      device->getLogicalDevice(), graphics_command_pool, device->getGraphicsQueue(), commandBuffer));
 
     pathTracingAccumulatedFrames = 0;
 }

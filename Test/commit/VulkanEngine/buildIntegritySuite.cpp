@@ -3821,6 +3821,68 @@ TEST(BuildIntegrity, EveryBeginCommandBufferResultIsChecked)
          }();
 }
 
+// endAndSubmitCommandBuffer's submit half used to return void, so a failed
+// queue.submit was invisible to every caller - compactBLAS in particular
+// would destroy the (never-copied) original BLAS right after a submit that
+// silently failed. It now returns bool; this scans every .cpp under Src/ for
+// an endAndSubmitCommandBuffer( call and requires the result to be either
+// assigned to a variable, used in a condition, or explicitly discarded via
+// static_cast<void>(...) - mirroring EveryBeginCommandBufferResultIsChecked
+// above, but the qualifying forms differ because most call sites have
+// nothing to unwind on failure and legitimately discard the result.
+TEST(BuildIntegrity, EveryEndAndSubmitCommandBufferResultIsChecked)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".cpp") { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::vector<std::string> lines;
+        std::string raw_line;
+        while (std::getline(file, raw_line)) { lines.push_back(raw_line); }
+
+        for (std::size_t i = 0; i < lines.size(); ++i) {
+            const std::string &line = lines[i];
+            const std::size_t call_pos = line.find("endAndSubmitCommandBuffer(");
+            if (call_pos == std::string::npos) { continue; }
+            // The function's own definition signature, not a call.
+            if (line.find("endAndSubmitCommandBuffer(vk::Device device") != std::string::npos) { continue; }
+
+            const std::string relative_file = fs::relative(path, repo_root).generic_string();
+            const std::string prefix = line.substr(0, call_pos);
+
+            const bool discarded = prefix.find("static_cast<void>(") != std::string::npos;
+            const bool assigned = prefix.find(" = ") != std::string::npos;
+            const bool in_condition = prefix.find("if (") != std::string::npos
+              || prefix.find("if(") != std::string::npos || prefix.find("while (") != std::string::npos;
+
+            if (!discarded && !assigned && !in_condition) {
+                violations.push_back(relative_file + ":" + std::to_string(i + 1) + ": " + line);
+            }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " endAndSubmitCommandBuffer(...) call(s) whose bool result is neither assigned, used in a condition, "
+         "nor explicitly static_cast<void>-discarded - a failed submit must not be silently ignored:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 // 0c4d2faa added the null-check gate above (EveryBeginCommandBufferResultIsChecked)
 // for every beginCommandBuffer() call, but a checked return is not the same as a
 // handled failure: ASManager::createTLAS used to index blas[model_index]

@@ -53,14 +53,14 @@ auto Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuf
     return command_buffer;
 }
 
-void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(vk::Device device,
+auto Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(vk::Device device,
   vk::CommandPool command_pool,
   vk::Queue queue,
-  vk::CommandBuffer &command_buffer)
+  vk::CommandBuffer &command_buffer) -> bool
 {
     if (!command_buffer) {
         spdlog::default_logger_raw()->log(spdlog::level::err, "Cannot submit null command buffer.");
-        return;
+        return false;
     }
 
     // end commands
@@ -95,7 +95,7 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
         // rather than leak it on the error path.
         device.freeCommandBuffers(command_pool, 1, &command_buffer);
         command_buffer = vk::CommandBuffer{};
-        return;
+        return false;
     }
 
     if (fence) {
@@ -123,4 +123,5 @@ void Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCom
     // inefficiency and is deliberately untouched here.)
     device.freeCommandBuffers(command_pool, 1, &command_buffer);
     command_buffer = vk::CommandBuffer{};
+    return true;
 }

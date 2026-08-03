@@ -13,6 +13,7 @@ module;
 #include "common/Utilities.hpp"
 #include "renderer/accelerationStructures/BottomLevelAccelerationStructure.hpp"
 #include "renderer/accelerationStructures/BlasGeometryLimits.hpp"
+#include "renderer/accelerationStructures/BlasCompaction.hpp"
 
 module kataglyphis.vulkan.as_manager;
 
@@ -132,8 +133,8 @@ bool Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(std::shared_ptr
           {});
     }
 
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer);
+    static_cast<void>(Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer));
 
     for (auto &b : build_as_structures) { blas.emplace_back(std::move(b.single_blas)); }
 
@@ -174,8 +175,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(std::shared_pt
     query_cmd.resetQueryPool(query_pool, 0, count);
     query_cmd.writeAccelerationStructuresPropertiesKHR(
       count, handles.data(), vk::QueryType::eAccelerationStructureCompactedSizeKHR, query_pool, 0);
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      logical, commandPool, device->getGraphicsQueue(), query_cmd);
+    static_cast<void>(Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      logical, commandPool, device->getGraphicsQueue(), query_cmd));
 
     std::vector<vk::DeviceSize> compacted_sizes(count);
     vk::Result const query_result = logical.getQueryPoolResults(query_pool,
@@ -188,6 +189,12 @@ void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(std::shared_pt
     if (query_result != vk::Result::eSuccess) {
         spdlog::warn("ASManager: compacted-size query failed ({}); keeping uncompacted BLAS.",
           static_cast<int>(query_result));
+        logical.destroyQueryPool(query_pool);
+        return;
+    }
+
+    if (!Kataglyphis::compactedSizesAreUsable(compacted_sizes)) {
+        spdlog::warn("ASManager: driver reported an empty or 0-byte compacted BLAS size; keeping uncompacted BLAS.");
         logical.destroyQueryPool(query_pool);
         return;
     }
@@ -227,8 +234,17 @@ void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(std::shared_pt
         copy_info.mode = vk::CopyAccelerationStructureModeKHR::eCompact;
         copy_cmd.copyAccelerationStructureKHR(copy_info);
     }
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+    bool const copy_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
       logical, commandPool, device->getGraphicsQueue(), copy_cmd);
+    if (!copy_submitted) {
+        spdlog::error("ASManager::compactBLAS: failed to submit BLAS copy commands; keeping uncompacted BLAS.");
+        for (uint32_t i = 0; i < count; ++i) {
+            logical.destroyAccelerationStructureKHR(compacted[i].vulkanAS);
+            compacted[i].vulkanBuffer.cleanUp();
+        }
+        logical.destroyQueryPool(query_pool);
+        return;
+    }
 
     // 3. The copies are complete (synchronous submit), so the originals can
     // go and the compacted set takes their place. TLAS is built after this
@@ -407,8 +423,8 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(std::shared_ptr
     command_buffer.buildAccelerationStructuresKHR(
       1, &acceleration_structure_build_geometry_info, &acceleration_structure_build_range_infos);
 
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer);
+    static_cast<void>(Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer));
     scratchBuffer.cleanUp();
     geometryInstanceBuffer.cleanUp();
 }

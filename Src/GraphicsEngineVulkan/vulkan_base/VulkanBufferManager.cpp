@@ -31,8 +31,8 @@ void copy_buffer_impl(vk::Device device,
 
     command_buffer.copyBuffer(src_buffer.getBuffer(), dst_buffer.getBuffer(), buffer_copy_region);
 
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      device, transfer_command_pool, transfer_queue, command_buffer);
+    static_cast<void>(Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      device, transfer_command_pool, transfer_queue, command_buffer));
 }
 }// namespace
 
@@ -69,8 +69,8 @@ void Kataglyphis::VulkanBufferManager::copyImageBuffer(vk::Device device,
     // lives in exactly one place.
     copyImageBuffer(transfer_command_buffer, src_buffer, image, width, height);
 
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      device, transfer_command_pool, transfer_queue, transfer_command_buffer);
+    static_cast<void>(Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      device, transfer_command_pool, transfer_queue, transfer_command_buffer));
 }
 
 void Kataglyphis::VulkanBufferManager::copyImageBuffer(vk::CommandBuffer command_buffer,

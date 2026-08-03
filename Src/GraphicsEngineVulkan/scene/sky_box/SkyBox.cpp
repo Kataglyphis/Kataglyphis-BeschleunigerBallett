@@ -186,7 +186,7 @@ void SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool, uint32_t width, uin
       vk::ImageAspectFlagBits::eColor,
       6);
 
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer);
+    static_cast<void>(Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer));
 
     stagingBuffer.cleanUp();
 
