@@ -203,11 +203,8 @@ void DeferredRasterizer::createRenderPass()
     };
     vk::AttachmentReference geometryDepthRef{4, vk::ImageLayout::eDepthStencilAttachmentOptimal};
 
-    vk::SubpassDescription geometrySubpass;
-    geometrySubpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
-    geometrySubpass.colorAttachmentCount = static_cast<uint32_t>(geometryColorRefs.size());
-    geometrySubpass.pColorAttachments = geometryColorRefs.data();
-    geometrySubpass.pDepthStencilAttachment = &geometryDepthRef;
+    const vk::SubpassDescription geometrySubpass =
+      buildSubpassDescription(std::span<const vk::AttachmentReference>(geometryColorRefs), &geometryDepthRef);
 
     // Subpass 1: Lighting Pass
     vk::AttachmentReference lightingColorRef{0, vk::ImageLayout::eColorAttachmentOptimal};
@@ -219,12 +216,9 @@ void DeferredRasterizer::createRenderPass()
         vk::AttachmentReference{4, vk::ImageLayout::eShaderReadOnlyOptimal}
     };
 
-    vk::SubpassDescription lightingSubpass;
-    lightingSubpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
-    lightingSubpass.colorAttachmentCount = 1;
-    lightingSubpass.pColorAttachments = &lightingColorRef;
-    lightingSubpass.inputAttachmentCount = static_cast<uint32_t>(lightingInputRefs.size());
-    lightingSubpass.pInputAttachments = lightingInputRefs.data();
+    const vk::SubpassDescription lightingSubpass = buildSubpassDescription(
+      std::span<const vk::AttachmentReference>(&lightingColorRef, 1), nullptr,
+      std::span<const vk::AttachmentReference>(lightingInputRefs));
 
     // Dependencies
     std::array<vk::SubpassDependency, 3> dependencies;

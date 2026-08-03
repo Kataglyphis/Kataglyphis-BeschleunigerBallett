@@ -212,11 +212,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
     depth_attachment_reference.attachment = 1;
     depth_attachment_reference.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
 
-    vk::SubpassDescription subpass;
-    subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &color_attachment_reference;
-    subpass.pDepthStencilAttachment = &depth_attachment_reference;
+    const vk::SubpassDescription subpass = buildSubpassDescription(
+      std::span<const vk::AttachmentReference>(&color_attachment_reference, 1), &depth_attachment_reference);
 
     std::array<vk::SubpassDependency, 1> subpass_dependencies;
 

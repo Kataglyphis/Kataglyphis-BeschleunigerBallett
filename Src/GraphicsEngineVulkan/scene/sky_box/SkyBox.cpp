@@ -221,11 +221,8 @@ void SkyBox::createRenderPass(vk::Format format, vk::Format depthFormat)
     depthRef.attachment = 1;
     depthRef.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
 
-    vk::SubpassDescription subpass{};
-    subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorRef;
-    subpass.pDepthStencilAttachment = &depthRef;
+    const vk::SubpassDescription subpass =
+      Kataglyphis::buildSubpassDescription(std::span<const vk::AttachmentReference>(&colorRef, 1), &depthRef);
 
     std::array<vk::SubpassDependency, 2> dependencies{};
 

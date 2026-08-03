@@ -98,6 +98,44 @@ constexpr vk::RenderPassBeginInfo buildRenderPassBeginInfo(vk::RenderPass render
 // Built via the fully-explicit vk::RenderPassCreateInfo constructor rather
 // than value-init-then-assign, for the same constexpr reason
 // FramebufferHelper.hpp documents.
+// Every render pass in this engine spelled out the same three or four field
+// assignments by hand, in Rasterizer, PostStage, DeferredRasterizer, SkyBox
+// and CascadedShadowMap - three of the five hard-coded colorAttachmentCount
+// as a literal (usually 1) next to a single-element reference instead of
+// deriving it, the same drift buildRenderPassCreateInfo's attachmentCount
+// fixed for the attachment array.
+//
+// colorAttachmentCount and inputAttachmentCount are both deliberately
+// DERIVED from their span's .size() rather than taken as parameters.
+// pipelineBindPoint is always eGraphics: a compute or ray-tracing subpass
+// does not go through a vk::RenderPass at all, so none of the five passes
+// this replaced ever set anything else.
+//
+// pResolveAttachments, preserveAttachmentCount and flags are deliberately
+// left at their defaults - nothing in this engine resolves a multisampled
+// attachment or preserves one across subpasses. A pass that needs either
+// must build the vk::SubpassDescription inline and say why, rather than
+// growing this helper new parameters - the same rule this file's other two
+// helpers and ViewportHelper.hpp state.
+//
+// Lifetime note: the returned vk::SubpassDescription borrows both spans'
+// .data() pointers and depth_attachment - they must all outlive the
+// createRenderPass call that consumes it (via buildRenderPassCreateInfo).
+constexpr vk::SubpassDescription buildSubpassDescription(
+  std::span<const vk::AttachmentReference> color_attachments,
+  const vk::AttachmentReference *depth_attachment,
+  std::span<const vk::AttachmentReference> input_attachments = {})
+{
+    vk::SubpassDescription subpass{};
+    subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
+    subpass.colorAttachmentCount = static_cast<uint32_t>(color_attachments.size());
+    subpass.pColorAttachments = color_attachments.data();
+    subpass.pDepthStencilAttachment = depth_attachment;
+    subpass.inputAttachmentCount = static_cast<uint32_t>(input_attachments.size());
+    subpass.pInputAttachments = input_attachments.data();
+    return subpass;
+}
+
 constexpr vk::RenderPassCreateInfo buildRenderPassCreateInfo(
   std::span<const vk::AttachmentDescription> attachments,
   std::span<const vk::SubpassDescription> subpasses,

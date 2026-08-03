@@ -145,9 +145,8 @@ void CascadedShadowMap::createRenderPass()
     depthAttachmentRef.attachment = 0;
     depthAttachmentRef.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
 
-    vk::SubpassDescription subpass{};
-    subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
-    subpass.pDepthStencilAttachment = &depthAttachmentRef;
+    const vk::SubpassDescription subpass =
+      buildSubpassDescription(std::span<const vk::AttachmentReference>{}, &depthAttachmentRef);
 
     std::array<vk::SubpassDependency, 2> dependencies;
     dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
