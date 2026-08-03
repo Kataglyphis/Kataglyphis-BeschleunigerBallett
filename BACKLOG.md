@@ -5801,6 +5801,246 @@ code. **`Src/KomputePlayground`** — unchanged; still an owner decision.
 
 ### Shaders
 
+## 2026-08-03 batch VIII — planner (refactor: compute-pipeline creation is the one member of the create-info builder family that never got a shared home; a BuildIntegrity gate whose 19-entry `.spv` list is hand-copied from the eight sources it is supposed to guard; a GPU-timing pass count written out five times, where adding a sixth pass silently yields null name pointers)
+
+The actionable queue was empty again — every remaining checkbox in this file is
+`- [b]`. Every `file:line` below was read out of the tree this pass.
+
+**Task 1 is the gap the "one rule, N hand-rolled copies" family left behind.**
+Nine helpers now exist for graphics-side create-infos (`PipelineLayoutHelper`,
+`RenderPassHelper`, `FramebufferHelper`, `ImageViewHelper`, `ViewportHelper`,
+`FormatHelper`, `ImageLayoutHelper`, `MemoryHelper`, `SamplerBuilder`) and
+`AGENTS.md` mandates `kataglyphis.vulkan.pipeline_builder` for graphics
+pipelines — but **compute** pipelines have no equivalent, so the two subsystems
+that create one each spell out the whole chain by hand.
+`Clouds::createComputePipeline` (`Clouds.cpp:71-95`) already extracted that
+chain — as a **private method**, which is exactly the shape batch V flagged for
+`ImageLayoutHelper` ("private, untested, and hand-copied by the one caller it
+cannot serve"): `PathTracing::createPipeline` (`PathTracing.cpp:198-242`) cannot
+call it and re-writes the same eight assignments, including the `pName = "main"`
+that only holds because Slang renames every entry point (`AGENTS.md`, "Code
+Conventions"). `ShaderStagePair` (`ShaderHelper.ixx:35-55`) is the precedent for
+where this belongs and how to test it without a device.
+
+**Task 2 is the hand-maintained-allowlist antipattern this repo just retired
+twice.** `BuildIntegrity.ActivePipelineShadersHaveCompiledBinaries`
+(`buildIntegritySuite.cpp:949-993`) opens with the comment "Exactly the paths
+built from the `slang_spv_dir` constants under `Src/`" and then hard-codes 19
+of them. Nothing enforces the "exactly". Retarget a shader in
+`shader-manifest.json`, rename an entry point, or add a pass, and the list keeps
+asserting about paths the engine no longer loads while saying nothing about the
+one it now does — the test goes green *because* it drifted. `30154355` replaced
+Windows CI's `cpuOnlySuites` allowlist with a derived negative filter and
+`3467`'s batch replaced a fuzz-target allowlist "that cannot say no" for exactly
+this reason; this is the same fix applied to the third and last such list.
+
+**Task 3 is a five-place count with a plausible-looking failure mode.**
+`GPU_TIMED_PASS_COUNT = 5` (`GUIRendererSharedVars.ixx:12`) is hand-maintained
+against `enum class GpuTimedPass` (`:13`, five enumerators),
+`GPU_TIMED_PASS_NAMES` (`:14-20`), `GPU_TIMED_PASS_EXPORT_NAMES` (`:26-32`) and
+the `pass_ms` initializer (`:40`, five literal `-1.0f`s). Bump the count without
+touching the rest and C++ zero-fills: the two name arrays gain `nullptr` entries
+that `ImGui::Text("%-18s", …)` (`CommonGuiPanels.ixx:70,72`) reads as a string
+and `dump["passes"][…]` (`GpuTimingSubsystem.ixx:211`) uses as a JSON key, while
+`pass_ms` gains `0.0F` — which the GUI renders as a measured **0.000 ms** rather
+than `n/a`, because `-1.0F` is the sentinel (`:69`). This is the same class as
+`c7a55c2e` (shadow-resolution table size derived from `kShadowMapResolutions`)
+and `a0759d88` (`MAX_TEXTURE_COUNT` pinned against the header), and the existing
+`gpuTimingSuite.cpp` covers only `GpuPassAverage`, never the tables.
+
+Candidates found but NOT tasked this cycle (checked, then rejected or deferred
+with a reason — do not re-propose without new evidence): **an
+`ImageMemoryBarrier` builder for the eleven hand-rolled barriers**
+(`FrameCapture.ixx:92,124`, `PathTracing.cpp:71,103,157`,
+`Raytracing.cpp:101,132`, `VulkanRenderer.cpp:874,906`, `Texture.cpp:288`,
+`VulkanImage.cpp:127`) — this is the tenth member of the builder family and the
+obvious next one, but two of those sites are owned by the `- [b]` cloud-barrier
+entry and the whole set is cross-frame synchronization whose acceptance test is
+a host-GPU golden run plus `Run-SyncValidation.ps1`, both unavailable in this
+RDP session; re-propose once host GPU verification is restored, not before.
+**`Clouds` has no `shaderHotReload`** (grepped: `Clouds.cpp` has none, unlike
+the five stages `EveryShaderHotReloadImplementationIsCalledByTheRenderer`
+covers), so `clouds.slang` and `noise.slang` cannot be hot-reloaded — a real
+gap, but it is a feature with a GPU-only acceptance test, not a refactor.
+**The four remaining hand-rolled `vk::ImageSubresourceRange` blocks** —
+unchanged since batch VI and re-rejected for the third time; stop re-checking
+them. **`Src/KomputePlayground`** — unchanged; still an owner decision.
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Derive `ActivePipelineShadersHaveCompiledBinaries`'s SPIR-V list from the sources it guards, instead of hand-copying it** — the test's own comment claims the list is "exactly" what `Src/` loads; nothing checks that, so the list can only drift silently green.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:946-993` — the test, and
+    the 19-entry `required` vector at `:960-980` that this task deletes.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1489-1568`
+    (`NoShaderRedeclaresTheCascadeCount`) and `:3341-3404`
+    (`DescriptorSetsAreCreatedThroughDescriptorSetGroup`) — the two
+    source-scanning gates whose structure to copy (repo-root discovery,
+    recursive walk, accumulate-then-assert with a joined failure message).
+  - The eight sources that own the literals, in the two shapes the scanner must
+    handle:
+    - **`slang_spv_dir` prefix + bare `*.spv` literal** —
+      `Rasterizer.cpp:311-313`, `DeferredRasterizer.cpp:289-322`,
+      `PostStage.cpp:262-267`, `SkyBox.cpp:280-282`,
+      `CascadedShadowMap.cpp:290-295`, `Raytracing.cpp:189-199`,
+      `PathTracing.cpp:217-221`. Note `PostStage` and `Raytracing` bind the
+      filename to a named `std::string const` first; the literal is still
+      there, so a literal scan does not care.
+    - **one full path per literal** — `Clouds.cpp:104` and `:108`.
+
+  **Steps:**
+  1. Add a file-local helper to `buildIntegritySuite.cpp`,
+     `collect_spirv_paths_referenced_by_sources(const fs::path &repo_root)`,
+     returning `std::vector<std::pair<std::string /*spv relative to spirv_root*/,
+     std::string /*source file, for the failure message*/>>`. For each
+     `Src/**/*.cpp`: read it once, capture the value of the **last**
+     `slang_spv_dir = "…"` string literal seen before each match (the eight
+     files each declare exactly one, but scanning positionally rather than
+     per-file keeps it honest if one grows a second), then for every
+     double-quoted literal ending in `.spv`:
+     - if the literal already begins with `Resources/ShadersSlang/build/spirv/`,
+       strip that prefix and record the remainder;
+     - otherwise concatenate the in-scope `slang_spv_dir` and strip the prefix
+       the same way.
+     Skip literals inside `//` comments (`SceneUBO.hpp:43` is a comment, and it
+     is a `.hpp` so the `*.cpp` filter already excludes it — but a future
+     comment in a `.cpp` should not become a requirement).
+  2. Replace the hard-coded `required` vector with a call to that helper. Keep
+     the existing per-entry logic verbatim, including the
+     `source_for_spirv(...)` / "shader itself moved — not this test's job"
+     escape hatch at `:985-986`.
+  3. Guard against the scanner silently finding nothing — the failure mode that
+     would make this test *worse* than the list it replaces. Assert
+     `ASSERT_GE(referenced.size(), 19U)` with a message naming the eight
+     sources, so a future refactor that changes how paths are spelled (e.g. a
+     `constexpr std::string_view` table) fails loudly instead of asserting
+     about an empty set. State in a comment that this floor must be raised, not
+     lowered, when a pass is added.
+  4. Rewrite the test's leading comment (`:946-948`) and the inline comment at
+     `:957-959`: they currently describe a hand-maintained list. The new text
+     should say the list is derived, and that adding a compute/raster pass needs
+     no edit here.
+  5. While in the file, add `BuildIntegrity.EveryReferencedSpirvPathHasAManifestRow`
+     **only if** the manifest already exposes the mapping cheaply
+     (`shader_manifest(repo_root)` at `:915` and `source_for_spirv` at `:985`
+     suggest it does). If it does not fall out in a few lines, skip it — that is
+     a separate task, not scope creep for this one.
+
+  **Test:** The changed `BuildIntegrity.ActivePipelineShadersHaveCompiledBinaries`
+  is itself the test. Verify it is not vacuous by temporarily editing
+  `Rasterizer.cpp:313` to name `rasterizer.vs_main_typo.spv`, confirming the test
+  goes **red** naming that file, then reverting. Record that check in the commit
+  message — a derived gate that cannot fail is worse than the list it replaced.
+
+  **Build:** `clangcl-debug`. Run:
+  ```pwsh
+  pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug
+  .\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*
+  ```
+  No `-FreshContainer` needed (test-side change only, no module interface
+  touched). Tests must run with the repo root as the working directory.
+
+  **Context:** Test-side only — no engine behaviour changes, so no GPU
+  verification is required and this is safe to ship while host golden runs are
+  blocked. If task 1 of this batch lands first, re-run this gate afterwards: task
+  1 deliberately preserves every `.spv` literal and the `slang_spv_dir`
+  constants precisely so this scanner keeps working, and a green run here is the
+  cheapest confirmation that it did. Do not "simplify" by scanning
+  `shader-manifest.json` instead — the manifest says what gets *compiled*, this
+  test must say what the C++ actually *loads*, and the whole point is that the
+  two can disagree.
+
+- [ ] **(S) (refactor) Derive the GPU-timing pass count from one table, and pass the two tables as spans** — `GPU_TIMED_PASS_COUNT` is written out five times; bumping it alone yields `nullptr` pass names and a `0.000 ms` reading that means "no sample".
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/GUIRendererSharedVars.ixx:8-41` — the
+    count, the enum, the two name tables and the `pass_ms` initializer. All five
+    edits live here.
+  - `Src/shared/frontend/CommonGuiPanels.ixx:55-75` — `renderGpuTimingsPanel`,
+    the raw-pointer-plus-count consumer; `:70,72` is where a `nullptr` name
+    would be handed to `%-18s`, and `:69` is the `>= 0.0F` sentinel test that
+    makes a zero-filled entry read as a real measurement.
+  - `Src/GraphicsEngineVulkan/gui/GUI.cpp:266-269` — the only call site.
+  - `Src/GraphicsEngineVulkan/renderer/GpuTimingSubsystem.ixx:35,148,206-212,261-270`
+    — the five other users of the count, including
+    `dump["passes"][GPU_TIMED_PASS_EXPORT_NAMES[pass]]` at `:211`, which would
+    take a `nullptr` as a JSON key.
+  - `Test/commit/VulkanEngine/gpuTimingSuite.cpp` — the existing suite (covers
+    only `GpuPassAverage`) to extend.
+
+  **Steps:**
+  1. In `GUIRendererSharedVars.ixx`, make the display table the single source of
+     truth: change `GPU_TIMED_PASS_NAMES` to
+     `inline constexpr std::array GPU_TIMED_PASS_NAMES = std::to_array<const char *>({ … });`
+     (add `#include <array>` to the global-module fragment) and define
+     `inline constexpr int GPU_TIMED_PASS_COUNT = static_cast<int>(GPU_TIMED_PASS_NAMES.size());`
+     **after** it. Do the same for `GPU_TIMED_PASS_EXPORT_NAMES`.
+  2. Pin the other two spellings with `static_assert`s next to the definitions:
+     - `static_assert(GPU_TIMED_PASS_EXPORT_NAMES.size() == GPU_TIMED_PASS_NAMES.size(), …)`
+       — the two tables must stay parallel; the export names are diffed by
+       tooling and the display names are not, which is exactly why they are
+       separate and exactly why they can drift.
+     - Add a trailing `Count` enumerator to `enum class GpuTimedPass` and
+       `static_assert(static_cast<int>(GpuTimedPass::Count) == GPU_TIMED_PASS_COUNT, …)`.
+       Check `VulkanRenderer.cpp:834-1011` first — the enum is only used by name
+       (`GpuTimedPass::Clouds` etc.) and never iterated, so a trailing
+       enumerator is additive; if any `switch` over it exists, leave the enum
+       alone and static_assert against `Post` + 1 instead.
+  3. Change `GpuTimings::pass_ms` (`:40`) from a C array with five literal
+     initializers to
+     `std::array<float, GPU_TIMED_PASS_COUNT> pass_ms = [] { std::array<float, GPU_TIMED_PASS_COUNT> a{}; a.fill(-1.0F); return a; }();`
+     — or an equivalent `constexpr` helper. The point is that **every** element
+     is the `-1.0F` "no sample" sentinel for any count, not five of them by
+     hand. Add a `static_assert` that `pass_ms.size() == GPU_TIMED_PASS_NAMES.size()`.
+  4. Change `renderGpuTimingsPanel` (`CommonGuiPanels.ixx:59`) to
+     `renderGpuTimingsPanel(bool supported, std::span<const float> pass_ms, std::span<const char *const> pass_names)`
+     (add `#include <span>`), iterate
+     `std::min(pass_ms.size(), pass_names.size())`, and state in the comment
+     that the shorter span wins so a caller mismatch truncates rather than reads
+     out of bounds. Update `GUI.cpp:266-269` to pass the two containers directly
+     and drop the count argument. `Src/shared/` is renderer-agnostic — check
+     with `grep -rn renderGpuTimingsPanel` that the Vulkan GUI is still the only
+     caller before changing the signature.
+  5. Leave `GpuTimingSubsystem.ixx`'s `int`-indexed loops alone except where the
+     C-array-to-`std::array` change forces a cast — this task is about the
+     tables, not about re-typing that file's loop counters.
+
+  **Test:** Extend `Test/commit/VulkanEngine/gpuTimingSuite.cpp` with a
+  `GpuTimingTablesUnit` group (pure CPU, no device — the module is already
+  imported by the suite; import `kataglyphis.vulkan.gui_renderer_shared_vars`
+  as well):
+  - `EveryPassHasBothADisplayAndAnExportName` — loop `0..GPU_TIMED_PASS_COUNT`
+    and `ASSERT_NE(GPU_TIMED_PASS_NAMES[i], nullptr)` /
+    `EXPECT_STRNE(GPU_TIMED_PASS_NAMES[i], "")`, same for the export names. This
+    is the assertion that fails on a zero-filled table.
+  - `ExportNamesAreUniqueAndContainNoSpaces` — they are JSON keys diffed between
+    runs (`GUIRendererSharedVars.ixx:22-25`).
+  - `DefaultTimingsReportNoSampleForEveryPass` — default-construct `GpuTimings`
+    and assert every `pass_ms[i] < 0.0F`. This is the one that fails if a sixth
+    pass is added and `pass_ms` zero-fills.
+  - `PassCountMatchesTheEnum` — a runtime mirror of the step-2 static_assert, so
+    the failure names the problem instead of being a compile error in a header.
+
+  **Build:** `clangcl-debug`. Run:
+  ```pwsh
+  pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer
+  .\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GpuTiming*
+  ```
+  `-FreshContainer`: `GUIRendererSharedVars.ixx` and `CommonGuiPanels.ixx` are
+  both module interfaces.
+
+  **Context:** No rendering changes — the GUI panel and the JSON export must
+  produce identical output for the current five passes, which is the acceptance
+  bar. Verify the export end-to-end without a golden run by launching the engine
+  from the repo root with `KATAGLYPHIS_GPU_TIMING_JSON=gpu_timings.json` set
+  (`GpuTimingSubsystem.ixx:196`) and diffing the five keys against a run from
+  before the change; on a host where the app cannot start, the CPU tests plus a
+  green `BuildIntegrity.*` are sufficient. Do **not** take the opportunity to add
+  a sixth timed pass — that is a feature, and the whole point of this task is
+  that adding one should afterwards be a one-line edit that the tests catch if
+  it is not.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

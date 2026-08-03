@@ -5,7 +5,6 @@ module;
 #include <span>
 #include <vulkan/vulkan.hpp>
 #include "common/FormatHelper.hpp"
-#include "common/PipelineLayoutHelper.hpp"
 #include "common/Utilities.hpp"
 #include "scene/atmospheric_effects/clouds/CloudDispatch.hpp"
 
@@ -68,32 +67,6 @@ void Clouds::createDescriptorSets()
     noiseDescriptors.writeImage(0, 0, cloudNoiseTexture->getImageView(), vk::ImageLayout::eGeneral);
 }
 
-void Clouds::createComputePipeline(const char *spirvPath, std::span<const vk::DescriptorSetLayout> setLayouts, vk::PipelineLayout &outLayout, vk::Pipeline &outPipeline)
-{
-    vk::ShaderModule shaderModule = loadSpirvShaderModule(device, spirvPath);
-
-    vk::PipelineShaderStageCreateInfo stageInfo{};
-    stageInfo.stage = vk::ShaderStageFlagBits::eCompute;
-    stageInfo.module = shaderModule;
-    stageInfo.pName = "main";
-
-    vk::PipelineLayoutCreateInfo pipelineLayoutInfo = buildPipelineLayoutCreateInfo(setLayouts);
-
-    auto result = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
-    ASSERT_VULKAN(VkResult(result.result), "Failed to create compute pipeline layout!");
-    outLayout = result.value;
-
-    vk::ComputePipelineCreateInfo pipelineInfo{};
-    pipelineInfo.stage = stageInfo;
-    pipelineInfo.layout = outLayout;
-
-    auto compResult = device->getLogicalDevice().createComputePipeline(device->getPipelineCache(), pipelineInfo);
-    ASSERT_VULKAN(VkResult(compResult.result), "Failed to create compute pipeline!");
-    outPipeline = compResult.value;
-
-    device->getLogicalDevice().destroyShaderModule(shaderModule);
-}
-
 void Clouds::createComputePipelines(vk::DescriptorSetLayout sharedLayout)
 {
     // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
@@ -101,11 +74,17 @@ void Clouds::createComputePipelines(vk::DescriptorSetLayout sharedLayout)
 
     // cloud specific set AND sharedRenderDescriptorSet
     std::array<vk::DescriptorSetLayout, 2> cloudLayouts = { cloudDescriptors.getLayout(), sharedLayout };
-    createComputePipeline("Resources/ShadersSlang/build/spirv/compute/clouds.clouds_main.spv", cloudLayouts, cloudPipelineLayout, cloudComputePipeline);
+    ComputePipelineHandles cloudHandles = createComputePipeline(
+      device, "Resources/ShadersSlang/build/spirv/compute/clouds.clouds_main.spv", cloudLayouts);
+    cloudPipelineLayout = cloudHandles.layout;
+    cloudComputePipeline = cloudHandles.pipeline;
 
     // Noise pipeline (Slang-emitted SPIR-V)
     std::array<vk::DescriptorSetLayout, 1> noiseLayouts = { noiseDescriptors.getLayout() };
-    createComputePipeline("Resources/ShadersSlang/build/spirv/compute/noise.noise_main.spv", noiseLayouts, noisePipelineLayout, noiseComputePipeline);
+    ComputePipelineHandles noiseHandles = createComputePipeline(
+      device, "Resources/ShadersSlang/build/spirv/compute/noise.noise_main.spv", noiseLayouts);
+    noisePipelineLayout = noiseHandles.layout;
+    noiseComputePipeline = noiseHandles.pipeline;
 }
 
 void Clouds::dispatchNoiseGeneration()

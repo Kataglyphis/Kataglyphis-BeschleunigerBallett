@@ -9,6 +9,9 @@ module;
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#include "common/ComputePipelineHelper.hpp"
+#include "common/PipelineLayoutHelper.hpp"
+#include "common/Utilities.hpp"
 #include "spdlog/spdlog.h"
 
 module kataglyphis.vulkan.shader_helper;
@@ -84,4 +87,30 @@ Kataglyphis::ShaderStagePair::~ShaderStagePair()
         device_->getLogicalDevice().destroyShaderModule(vertexModule_);
         device_->getLogicalDevice().destroyShaderModule(fragmentModule_);
     }
+}
+
+auto Kataglyphis::createComputePipeline(const std::shared_ptr<VulkanDevice> &device, const std::string &spvPath,
+  std::span<const vk::DescriptorSetLayout> setLayouts, std::span<const vk::PushConstantRange> pushConstantRanges,
+  const char *layoutErrorMessage, const char *pipelineErrorMessage) -> ComputePipelineHandles
+{
+    vk::ShaderModule shaderModule = loadSpirvShaderModule(device, spvPath);
+
+    const vk::PipelineShaderStageCreateInfo stageInfo = buildComputeShaderStageCreateInfo(shaderModule);
+
+    const vk::PipelineLayoutCreateInfo pipelineLayoutInfo = buildPipelineLayoutCreateInfo(setLayouts, pushConstantRanges);
+
+    auto layoutResult = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
+    ASSERT_VULKAN(layoutResult.result, layoutErrorMessage)
+    ComputePipelineHandles handles{};
+    handles.layout = layoutResult.value;
+
+    const vk::ComputePipelineCreateInfo pipelineInfo = buildComputePipelineCreateInfo(stageInfo, handles.layout);
+
+    auto pipelineResult = device->getLogicalDevice().createComputePipeline(device->getPipelineCache(), pipelineInfo);
+    ASSERT_VULKAN(pipelineResult.result, pipelineErrorMessage)
+    handles.pipeline = pipelineResult.value;
+
+    device->getLogicalDevice().destroyShaderModule(shaderModule);
+
+    return handles;
 }

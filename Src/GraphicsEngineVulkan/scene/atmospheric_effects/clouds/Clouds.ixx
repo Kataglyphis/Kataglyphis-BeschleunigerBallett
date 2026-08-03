@@ -57,6 +57,5 @@ class Clouds
     void dispatchNoiseGeneration(); // Run once during init
 
     std::unique_ptr<Kataglyphis::Texture> createStorageTexture(vk::CommandPool commandPool, uint32_t w, uint32_t h, uint32_t depth, vk::ImageType type, vk::ImageViewType viewType);
-    void createComputePipeline(const char *spirvPath, std::span<const vk::DescriptorSetLayout> setLayouts, vk::PipelineLayout &outLayout, vk::Pipeline &outPipeline);
 };
 }

@@ -6,6 +6,8 @@ module;
 #include <string>
 #include <vulkan/vulkan.hpp>
 
+#include "common/ComputePipelineHelper.hpp"
+
 export module kataglyphis.vulkan.shader_helper;
 
 import kataglyphis.vulkan.device;
@@ -53,5 +55,26 @@ class ShaderStagePair
     vk::ShaderModule fragmentModule_{ nullptr };
     std::array<vk::PipelineShaderStageCreateInfo, 2> stages_{};
 };
+
+// The layout + pipeline pair every compute-pass createPipeline() produces.
+// Returned as a struct rather than via two out-params so a call site can
+// assign both members straight from the return value with a plain `=` -
+// including reassigning them in-place on a shaderHotReload, which is what
+// lets that call site keep being a plain assignment instead of an alias.
+struct ComputePipelineHandles
+{
+    vk::PipelineLayout layout;
+    vk::Pipeline pipeline;
+};
+
+// Loads spvPath, builds the one shader stage and pipeline layout every
+// compute pass in this engine needs, and creates the pipeline - the shape
+// Clouds and PathTracing each hand-rolled independently. The shader module
+// is destroyed before returning, exactly as every call site already did.
+[[nodiscard]] auto createComputePipeline(const std::shared_ptr<VulkanDevice> &device, const std::string &spvPath,
+  std::span<const vk::DescriptorSetLayout> setLayouts,
+  std::span<const vk::PushConstantRange> pushConstantRanges = {},
+  const char *layoutErrorMessage = "Failed to create a compute pipeline layout!",
+  const char *pipelineErrorMessage = "Failed to create a compute pipeline!") -> ComputePipelineHandles;
 
 }// namespace Kataglyphis

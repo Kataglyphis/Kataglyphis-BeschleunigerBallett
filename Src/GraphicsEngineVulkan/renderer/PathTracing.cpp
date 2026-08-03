@@ -13,8 +13,6 @@
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
-#include "common/PipelineLayoutHelper.hpp"
-#include "common/Utilities.hpp"
 #include "renderer/PathTracingDispatch.hpp"
 #include "renderer/pushConstants/PushConstantPathTracing.hpp"
 
@@ -204,13 +202,6 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
     push_constant_range.size = sizeof(PushConstantPathTracing);
 
     const std::array<vk::PushConstantRange, 1> push_constant_ranges = { push_constant_range };
-    vk::PipelineLayoutCreateInfo compute_pipeline_layout_create_info =
-      buildPipelineLayoutCreateInfo(descriptorSetLayouts, push_constant_ranges);
-
-    vk::ResultValue<vk::PipelineLayout> pipeline_layout_result =
-      device->getLogicalDevice().createPipelineLayout(compute_pipeline_layout_create_info);
-    ASSERT_VULKAN(pipeline_layout_result.result, "Failed to create path tracing pipeline layout!")
-    pipeline_layout = pipeline_layout_result.value;
 
     // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
     // Run from the repo root (per AGENTS.md).
@@ -218,25 +209,12 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::createPipeline(
 
     std::string const pathTracing_spv = "path_tracing.path_tracing_main.spv";
 
-    vk::ShaderModule pathTracingModule = loadSpirvShaderModule(device, slang_spv_dir + pathTracing_spv);
-
-    vk::PipelineShaderStageCreateInfo compute_shader_integrate_create_info{};
-    compute_shader_integrate_create_info.stage = vk::ShaderStageFlagBits::eCompute;
-    compute_shader_integrate_create_info.module = pathTracingModule;
-    compute_shader_integrate_create_info.pName = "main";
-
-    vk::ComputePipelineCreateInfo compute_pipeline_create_info{};
-    compute_pipeline_create_info.stage = compute_shader_integrate_create_info;
-    compute_pipeline_create_info.layout = pipeline_layout;
-    compute_pipeline_create_info.flags = vk::PipelineCreateFlags{};
-
-    auto result =
-      device->getLogicalDevice().createComputePipeline(device->getPipelineCache(), compute_pipeline_create_info);
-    if (result.result == vk::Result::eSuccess) {
-        pipeline = result.value;
-    } else {
-        ASSERT_VULKAN(result.result, "Failed to create compute pipeline!")
-    }
-
-    device->getLogicalDevice().destroyShaderModule(pathTracingModule);
+    Kataglyphis::ComputePipelineHandles handles = Kataglyphis::createComputePipeline(device,
+      slang_spv_dir + pathTracing_spv,
+      descriptorSetLayouts,
+      push_constant_ranges,
+      "Failed to create path tracing pipeline layout!",
+      "Failed to create compute pipeline!");
+    pipeline_layout = handles.layout;
+    pipeline = handles.pipeline;
 }

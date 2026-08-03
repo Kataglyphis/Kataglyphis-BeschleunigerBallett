@@ -3722,3 +3722,58 @@ TEST(BuildIntegrity, RaytracingShaderHotReloadRebuildsTheShaderBindingTable)
          "hot reload must call recreateSBT() (or createSBT()) after createGraphicsPipeline(), or "
          "traceRaysKHR reads shader-group handles from a destroyed pipeline";
 }
+
+// Clouds and PathTracing used to each hand-roll their own
+// vk::ComputePipelineCreateInfo. createComputePipeline
+// (vulkan_base/ShaderHelper.ixx/.cpp) is now the one place that builds one -
+// this pins that down so a future compute pass cannot silently reintroduce
+// the duplication.
+TEST(BuildIntegrity, ComputePipelinesAreCreatedThroughTheSharedHelper)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    static const char *const kRawComputePipelineTypeName = "vk::ComputePipelineCreateInfo";
+
+    // ComputePipelineHelper.hpp is the pure builder; ShaderHelper.cpp is the
+    // device-side helper's own implementation.
+    static const std::array<const char *, 2> kExemptFiles = {
+        "Src/GraphicsEngineVulkan/common/ComputePipelineHelper.hpp",
+        "Src/GraphicsEngineVulkan/vulkan_base/ShaderHelper.cpp"
+    };
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".cpp" && path.extension() != ".ixx") { continue; }
+
+        const std::string relative_file = fs::relative(path, repo_root).generic_string();
+        if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string line;
+        std::size_t line_number = 0;
+        while (std::getline(file, line)) {
+            ++line_number;
+            if (line.find(kRawComputePipelineTypeName) == std::string::npos) { continue; }
+            violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " hand-rolled vk::ComputePipelineCreateInfo found under Src/ - create compute pipelines through "
+         "createComputePipeline (vulkan_base/ShaderHelper.ixx) instead:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
