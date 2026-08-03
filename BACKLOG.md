@@ -5349,31 +5349,6 @@ warns; **`CommandBufferManager::beginCommandBuffer` allocating a
 for the third time (upload-time only, never on the frame path).
 **`Src/KomputePlayground`** — unchanged; still an owner decision.
 
-### C++ Vulkan engine
-
-- [ ] **(S) Make the path-tracing accumulation history include the directional light, not just the camera** — changing the light while path tracing keeps averaging frames lit by the old one.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` — `recordRaytracingOrPathTracing` (`:1077-1123`), the existing reset at `:1102-1110`; `updateUniforms` (`:177-187`) for where `sceneUBO.dirLight` is filled from the GUI
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.ixx` — the `pathTracingLastView` / `pathTracingLastSamples` / `pathTracingLastBounces` members
-  - `Resources/ShadersSlang/path_tracing/path_tracing.slang` — `:227` and `:253-255` (the NEE terms that read `sceneUBO.dirLight`), `:282-292` (the running mean the stale samples land in)
-  - `Src/GraphicsEngineVulkan/renderer/SceneUBO.hpp` — the `dirLight` layout
-  - `Test/commit/VulkanEngine/renderModesSuite.cpp` — an existing small device-free suite over renderer-side state to follow
-
-  **Steps:**
-  1. Add `Src/GraphicsEngineVulkan/renderer/PathTracingHistory.hpp` with a `struct PathTracingHistoryKey { glm::mat4 view; glm::vec4 lightDirection; glm::vec4 lightColorAndRadiance; int samplesPerPixel; int maxBounces; }` and `bool operator==` / `!=` (defaulted is fine — the members are compared exactly, matching today's `current_view != pathTracingLastView`).
-  2. Replace the three `pathTracingLast*` members in `VulkanRenderer.ixx` with a single `PathTracingHistoryKey pathTracingLastHistory{};`.
-  3. In `recordRaytracingOrPathTracing`, build the current key from `camera->calculate_viewmatrix()`, `sceneUBO.dirLight.direction`, `sceneUBO.dirLight.color` (whose `.w` already carries the radiance, see `:182-185`) and the two GUI quality values; reset `pathTracingAccumulatedFrames = 0` and store the key when it differs.
-  4. Update the comment at `:1100-1101` to say "camera, light or quality change" and name the shader terms (`path_tracing.slang:227`, `:253-255`) that make the light part of the integrand.
-
-  **Test:** Add `Test/commit/VulkanEngine/pathTracingHistorySuite.cpp` with `PathTracingHistoryUnit.IdenticalKeysCompareEqual`, `PathTracingHistoryUnit.ALightDirectionChangeInvalidatesTheHistory`, `PathTracingHistoryUnit.ARadianceChangeInvalidatesTheHistory` (the `.w` channel specifically — it is easy to drop when only comparing rgb) and `PathTracingHistoryUnit.ACameraMoveStillInvalidatesTheHistory` (the behaviour that must not regress). Register the file in `Test/commit/VulkanEngine/CMakeLists.txt` **and** the Windows CI suite filter (see `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter`).
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=PathTracingHistoryUnit.*`.
-
-  **Context:** `updateRaytracingDescriptorSets` (`:1346-1362`) already resets the counter for the "traced world changed" case and its comment explains the failure mode in detail — frames traced against a stale world "stay blended into the running mean until the camera happens to move". This is the same failure mode for a stale *light*, and the fix belongs at the same granularity. Do not widen the key to the whole `SceneUBO`: cloud, shadow and PCF parameters are not read by `path_tracing.slang`, and resetting on them would throw away valid samples.
-
 ### Rust WebGPU renderer
 
 - [ ] **(M) Carry OBJ per-vertex colours through the OBJ→glTF converter as `COLOR_0`** — a vertex-coloured OBJ renders tinted in the Vulkan engine and flat white in the WebGPU one.

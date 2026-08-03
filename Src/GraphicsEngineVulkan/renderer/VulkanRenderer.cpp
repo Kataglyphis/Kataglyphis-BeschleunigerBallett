@@ -3,6 +3,7 @@ module;
 #include "common/GuiModelTransform.hpp"
 #include "common/Utilities.hpp"
 #include "common/host_device_shared_vars.hpp"
+#include "renderer/PathTracingHistory.hpp"
 #include "renderer/pushConstants/PushConstantPost.hpp"
 #include "renderer/pushConstants/PushConstantRasterizer.hpp"
 #include "renderer/pushConstants/PushConstantRayTracing.hpp"
@@ -1079,16 +1080,21 @@ void Kataglyphis::VulkanRenderer::recordRaytracingOrPathTracing(vk::CommandBuffe
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "pathtracing", { 0.60F, 0.25F, 0.85F, 1.0F });
         Texture &renderResult = activeOffscreenTexture(image_index);
 
-        // A camera move or a quality change invalidates the accumulated
-        // history; restart the running mean from this frame.
-        glm::mat4 const current_view = camera->calculate_viewmatrix();
-        if (current_view != pathTracingLastView
-            || guiRendererSharedVars.pathTracingSamplesPerPixel != pathTracingLastSamples
-            || guiRendererSharedVars.pathTracingMaxBounces != pathTracingLastBounces) {
+        // A camera, light or quality change invalidates the accumulated
+        // history; restart the running mean from this frame. The light is
+        // part of the key because path_tracing.slang's NEE terms (:227,
+        // :253-255) read sceneUBO.dirLight, so a light change makes the
+        // running mean blend samples lit by two different lights.
+        const Kataglyphis::VulkanRendererInternals::PathTracingHistoryKey current_history{
+            .view = camera->calculate_viewmatrix(),
+            .lightDirection = sceneUBO.dirLight.direction,
+            .lightColorAndRadiance = sceneUBO.dirLight.color,
+            .samplesPerPixel = guiRendererSharedVars.pathTracingSamplesPerPixel,
+            .maxBounces = guiRendererSharedVars.pathTracingMaxBounces,
+        };
+        if (current_history != pathTracingLastHistory) {
             pathTracingAccumulatedFrames = 0;
-            pathTracingLastView = current_view;
-            pathTracingLastSamples = guiRendererSharedVars.pathTracingSamplesPerPixel;
-            pathTracingLastBounces = guiRendererSharedVars.pathTracingMaxBounces;
+            pathTracingLastHistory = current_history;
         }
 
         pathTracing.recordCommands(commandBuffer,
