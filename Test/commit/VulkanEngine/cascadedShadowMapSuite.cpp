@@ -375,6 +375,33 @@ TEST(CascadedShadowMapUnit, StabilizedCascadesShiftByWholeTexelsUnderCameraMotio
       << "legacy path unexpectedly texel-aligned; the stabilized assertions are vacuous";
 }
 
+TEST(CascadedShadowMapUnit, StabilizedCascadesStayTexelAlignedOverLongCameraTravel)
+{
+    // The off-by-2/resolution bug: texel_world was computed from the
+    // UNPADDED radius, but the box that is actually projected is
+    // 2*half_extent wide (half_extent = radius + texel_world), so the true
+    // texel size is texel_world * (1 + 2/resolution), not texel_world.
+    // Snapping the center by k grid steps then moves a fixed world point by
+    // only k/(1+2/resolution) texels - short of an integer by ~2k/resolution
+    // texels. That error is invisible for the sub-texel offset used above
+    // (k is 0 or 1), so probe a camera translation of hundreds of grid steps
+    // instead, which accumulates the drift to well over the 5e-2 tolerance
+    // unless the fix (deriving texel_world from the padded half_extent) is in
+    // place.
+    constexpr uint32_t kResolution = 2048;
+    const glm::vec3 long_offset(3.0F, 0.0F, 0.0F);
+    const glm::vec3 probe(0.0F, 1.0F, 10.0F);
+
+    const auto stab_a = computeCascadeData(
+      kCascades, translated_view({}), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F, kResolution);
+    const auto stab_b = computeCascadeData(
+      kCascades, translated_view(long_offset), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F, kResolution);
+
+    const glm::vec2 delta = texel_space(stab_a[0], probe, kResolution) - texel_space(stab_b[0], probe, kResolution);
+    EXPECT_NEAR(delta.x, std::round(delta.x), 5e-2F) << "x drifted off whole-texel alignment: " << delta.x;
+    EXPECT_NEAR(delta.y, std::round(delta.y), 5e-2F) << "y drifted off whole-texel alignment: " << delta.y;
+}
+
 TEST(CascadedShadowMapUnit, StabilizedBoxSizeIsInvariantUnderCameraMotion)
 {
     // The other half of the shimmer: the tight-fit box RESIZES as the camera

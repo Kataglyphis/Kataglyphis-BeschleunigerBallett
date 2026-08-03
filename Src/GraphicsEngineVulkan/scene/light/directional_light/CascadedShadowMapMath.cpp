@@ -202,18 +202,34 @@ void computeCascadeDataInto(std::span<CascadeData> out,
             //
             // The box is padded by one texel because the snap can shift the
             // center by up to a texel in each axis - without the pad, slice
-            // corners could fall just outside. Depth still fits the corners;
-            // near may come out NEGATIVE here (the basis is anchored at the
-            // origin, not behind the scene) - glm::ortho is a plain box and
-            // accepts that; the legacy 0.01 clamp assumed an eye placed
-            // behind everything.
+            // corners could fall just outside. The pad is derived from the
+            // PADDED extent, not the raw radius: texel_world must be the size
+            // of a texel of the box that is actually projected
+            // (2*half_extent/resolution), not of the unpadded radius, or the
+            // grid the center snaps to and the grid the box projects disagree
+            // and a "whole texel" snap drifts by a fraction of a texel every
+            // step. Solving half_extent = radius + 2*half_extent/resolution
+            // gives half_extent = radius * resolution / (resolution - 2).
+            // Depth still fits the corners; near may come out NEGATIVE here
+            // (the basis is anchored at the origin, not behind the scene) -
+            // glm::ortho is a plain box and accepts that; the legacy 0.01
+            // clamp assumed an eye placed behind everything.
             glm::mat4 const light_basis = glm::lookAt(-light_direction, glm::vec3(0.0F), up_axis);
 
-            float const texel_world = (2.0F * radius) / static_cast<float>(shadowMapResolution);
+            // resolution <= 2 has no consistent solution (the pad would
+            // swallow the whole box); fall back to the unsnapped tight fit.
+            float half_extent = radius;
+            float texel_world = 0.0F;
+            if (shadowMapResolution > 2) {
+                half_extent = radius * static_cast<float>(shadowMapResolution)
+                              / static_cast<float>(shadowMapResolution - 2);
+                texel_world = (2.0F * half_extent) / static_cast<float>(shadowMapResolution);
+            }
             glm::vec3 center_ls = glm::vec3(light_basis * glm::vec4(center, 1.0F));
-            center_ls.x = std::floor(center_ls.x / texel_world) * texel_world;
-            center_ls.y = std::floor(center_ls.y / texel_world) * texel_world;
-            float const half_extent = radius + texel_world;
+            if (texel_world > 0.0F) {
+                center_ls.x = std::floor(center_ls.x / texel_world) * texel_world;
+                center_ls.y = std::floor(center_ls.y / texel_world) * texel_world;
+            }
 
             float snapMinZ = std::numeric_limits<float>::max();
             float snapMaxZ = std::numeric_limits<float>::lowest();

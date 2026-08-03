@@ -5941,6 +5941,328 @@ repeat of the batch XI mesh-range bug. **`docs/cpp-renderer-improvements.md` has
 not been touched since 2026-08-02** — it is a curated campaign log, not a
 per-commit changelog; drift is arguable and no gate claims otherwise.
 
+## 2026-08-03 batch X — planner (a shadow-map stabilization that snaps to a grid one texel coarser than the box it snaps inside, in both renderers; a Rust cascade whose texel size changes continuously as you dolly; two `beginCommandBuffer` failure gates whose callers then index an empty vector and dereference a null texture; a device feature enabled without ever asking whether the device has it; the destruction half of the pipeline-layout builder family)
+
+The actionable queue was empty again — every remaining checkbox in this file was
+`- [b]`. Every `file:line` below was read out of the tree this pass.
+
+**Tasks 1 and 2 are two independent defects in the same feature**, cascade
+stabilization, which both renderers implement and both got subtly wrong in ways
+their own tests are constructed not to see. Task 1's arithmetic is a two-line
+fix in each renderer; task 2 is Rust-only. They are separate tasks because task
+1's oracle is "does the probe move by an integer over a LONG camera travel" and
+task 2's is "does the box size stay put when the camera dollies" — different
+assertions, different files, and task 1 must land first (task 2's test would
+otherwise fail for task 1's reason).
+
+**Task 3 is the other half of `0c4d2faa`.** That commit added the
+`if (!command_buffer) { … return; }` gate at every `beginCommandBuffer` call
+site and `EveryBeginCommandBufferResultIsChecked`
+(`buildIntegritySuite.cpp:2936`) to keep it that way — correct, and it stopped
+the recording-into-`VK_NULL_HANDLE` class. What no gate covers is what the
+CALLER of the gated function then does. Two of those early returns hand back a
+half-built object that the next line uses unconditionally: `ASManager::createBLAS`
+returns with `blas` empty and `createASForScene` immediately calls `createTLAS`,
+which reads `blas[model_index]` (`ASManager.cpp:265`); `Clouds::createStorageTexture`
+returns `nullptr` and six sites dereference it. A gate that proves the return
+value is checked is not a gate that proves the failure is survivable.
+
+**Task 4 is the one feature in `VulkanDevice::createLogicalDevice` that is
+asserted rather than queried.** Every other feature in that function is
+`features2.features.X = available_features2.features.X` — copied from a
+`getFeatures2` result, and the comment at `:372-380` explains at length why the
+chain matters. `computeDerivativeFeatures.computeDerivativeGroupQuads = VK_TRUE`
+(`:497`) is set unconditionally, gated only on the EXTENSION being present. The
+extension exposes two independent bits (`computeDerivativeGroupQuads`,
+`computeDerivativeGroupLinear`) and a device may advertise the extension while
+supporting only linear — on such a device `vkCreateDevice` fails outright with
+`VK_ERROR_FEATURE_NOT_PRESENT` and the engine does not start at all.
+
+**Task 5 is the destruction half of `PipelineLayoutHelper.hpp`.** The creation
+side was collapsed into `buildPipelineLayoutCreateInfo` across nine sites; the
+teardown side is still hand-rolled `if (h) { destroy(h); h = nullptr; }` pairs
+in **20** places (10 owners × `shaderHotReload` + `cleanUp`). This is not the
+deferred `ImageMemoryBarrier` builder — no barrier, no synchronization, no GPU
+oracle: `destroyPipelineLayout`/`destroyPipeline` calls only, verifiable by a
+source gate in the exact shape of `ComputePipelinesAreCreatedThroughTheSharedHelper`
+(`buildIntegritySuite.cpp:3980`).
+
+- [ ] **(S) Quantize the Rust cascade radius so dollying the camera cannot resize the shadow box** — cascades 0 and 1 size themselves from a continuous function of camera distance, which defeats texel snapping for exactly the motion that snapping exists to fix.
+
+  **Files to read:**
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/cascades.rs:80-120` — `fit_cascades`, `dist_to_center`, `near_radius`/`mid_radius`
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/cascades.rs:381-423` — `cascade_box_size_is_invariant_under_camera_motion`
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/cascades.rs:199-237` — `a_camera_inside_the_scene_radius_matches_the_original_scene_radius_derived_split`, the pin that must keep passing
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMapMath.cpp:186-200` — the C++ contrast: `radius` there depends only on fov/aspect/splits
+
+  **The defect, exactly.** `dist_to_center = (scene_center - camera.eye()).length().max(scene_radius)` varies
+  continuously with the camera, and `near_radius`/`mid_radius` are `0.35`/`0.7`
+  of it. `stabilized_light_matrix_for` derives `texel_world` from that radius,
+  so moving the camera one millimetre toward the scene changes the world size
+  of a texel — the box no longer moves in whole increments of a FIXED grid, it
+  moves in increments of a grid that itself resized. The module doc at
+  `cascades.rs:43-48` claims the box is "a function of the cascade's `radius`
+  alone … so its texel footprint never changes as the camera turns", which is
+  true for turning and false for dollying. The existing invariance test only
+  varies `yaw_deg`/`pitch_deg` at a fixed `radius: 5.0` AND keeps the camera
+  inside `scene_radius` so the `.max()` floor is what binds — it cannot observe
+  this.
+
+  **Steps:**
+  1. Land the batch X task 1 fix first (same function; otherwise the new test
+     below fails for that reason instead of this one).
+  2. In `fit_cascades`, quantize the distance before it sizes anything, in
+     multiples of `scene_radius` so the existing floor case is bit-for-bit
+     unchanged:
+     ```rust
+     // Sizing the cascade from a CONTINUOUS camera distance re-scales the
+     // texel grid every frame, which defeats the whole-texel snap in
+     // stabilized_light_matrix_for. Quantize to powers of two of the scene's
+     // own radius: the box then changes size only at discrete zoom steps
+     // (where a one-frame reprojection is invisible) and is otherwise fixed.
+     let raw_dist = (scene_center - camera.eye()).length().max(scene_radius);
+     let steps = (raw_dist / scene_radius).log2().ceil().max(0.0);
+     let dist_to_center = scene_radius * steps.exp2();
+     ```
+     Guard non-finite `raw_dist`/`steps` the same way `scene_radius` is guarded
+     at `:83-85`.
+  3. Update the module doc comment (`:14-33`, `:43-48`) — it currently
+     describes the raw distance and claims turn-invariance; say quantized, and
+     say why (this defect).
+
+  **Test:** Add `cascade_box_size_is_invariant_under_small_camera_dolly` to
+  `cascades.rs`'s `mod tests`: a scene at `Vec3::splat(-1.0)..=Vec3::splat(1.0)`
+  and two `OrbitCamera`s at `radius: 50.0` and `radius: 50.3` (both well outside
+  `scene_radius`, so the floor does not bind), then assert the `row_norm`
+  comparison the existing invariance test uses is equal to `1e-4` for every
+  cascade. Confirm it FAILS before step 2. Also assert the existing
+  `a_camera_inside_the_scene_radius_matches_the_original_scene_radius_derived_split`
+  still passes untouched — that pin is what guarantees the crate's shadow
+  goldens keep their current sizing.
+
+  **Build:** Rust only. `cargo test -p kataglyphis_webgpu_renderer cascades`
+  from `ExternalLib\Kataglyphis-RustProjectTemplate`. No C++ rebuild. CI covers
+  it on the `ubuntu-24.04` leg via `Scripts/Linux/run-cargo-tests.sh`.
+
+  **Context:** The C++ renderer does not have this defect — its `radius` comes
+  from `frustumCornersWorldSpace` of a fixed split, so it is already a function
+  of fov/aspect/splits only. This brings the Rust twin to the same property.
+  Do not "simplify" by copying the C++ frustum-corner fit: this crate's cascades
+  are sphere-fitted around three different centres on purpose
+  (`cascades.rs:96`), and the split scheme is separately pinned.
+
+- [ ] **(M) Make the two `beginCommandBuffer` failure paths survivable by their callers: an empty BLAS vector that `createTLAS` then indexes, and a null cloud texture that six sites dereference** — the gate added in `0c4d2faa` proves the return value is CHECKED, not that the failure is HANDLED.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp:30-40` (`createASForScene`), `:107-137` (the early return that leaves `blas` empty), `:259-281` (`blas[model_index]`)
+  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.ixx` — the `createBLAS`/`createASForScene` declarations
+  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp:31-45` (`createStorageTexture` returning `nullptr`), `:48-71` (`createTextures`/`createDescriptorSets`), `:180-192` (`recreateFrameResources`)
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:884`, `:916`, `:1247`, `:1249` — four unguarded `clouds.getCloudOutputTexture()->…`
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:2936` — `EveryBeginCommandBufferResultIsChecked`, the gate to extend
+  - `Src/GraphicsEngineVulkan/common/Utilities.hpp` — `ASSERT_VULKAN`, and AGENTS.md § Code Conventions on when it is the right tool
+
+  **Steps:**
+  1. `ASManager::createBLAS` — change the return type to `bool`: `false` on the
+     `!command_buffer` path (after `scratchBuffer.cleanUp()`), `true` at the
+     end. Update the declaration in `ASManager.ixx`.
+  2. `ASManager::createASForScene` — `if (!createBLAS(...)) { return; }` before
+     `createTLAS`. Add a `spdlog::error` naming the consequence ("no
+     acceleration structure this scene change; ray tracing and path tracing
+     will keep the previous TLAS").
+  3. `ASManager::createTLAS` — add a defensive guard at the top:
+     `if (blas.size() < scene->getModelCount()) { spdlog::error(...); return; }`.
+     `refreshAfterSceneChange(false)` (`VulkanRenderer.cpp:262`) calls
+     `createTLAS` directly, so the guard must live in `createTLAS`, not only in
+     its sibling.
+  4. `Clouds::createStorageTexture` — a storage texture that cannot be created
+     is a creation failure, and this engine's rule for those is
+     `ASSERT_VULKAN(...)` (log critical + abort), not a null that escapes into
+     the frame path. Replace the `return nullptr` with
+     `ASSERT_VULKAN(VkResult(VK_ERROR_INITIALIZATION_FAILED), "Clouds: failed to begin a command buffer for a storage texture!")`
+     and change the return type to a non-optional `std::unique_ptr<Texture>`
+     that is always engaged on return. This removes the null from
+     `createTextures`, `createDescriptorSets`, `recreateFrameResources` and all
+     four `VulkanRenderer` sites at once — do NOT add four null checks instead;
+     a half-initialized clouds subsystem has no defined rendering behaviour
+     (the post pipeline's binding 1 is not optional).
+  5. Re-read the four `VulkanRenderer` sites afterwards and delete any now-dead
+     defensive code; do not add any.
+
+  **Test:** Extend `buildIntegritySuite.cpp` with
+  `BuildIntegrity.CommandBufferFailurePathsDoNotLeaveHalfBuiltResources`, in the
+  shape of the neighbouring source gates: read
+  `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp` and
+  assert (a) `createBLAS` is declared returning `bool`, (b) `createASForScene`
+  contains a `createBLAS(` call inside an `if (!` guard, (c) `createTLAS`
+  contains a `blas.size()` comparison before the first `blas[` index; and read
+  `Clouds.cpp` and assert it contains no `return nullptr;`. Follow
+  `EveryBeginCommandBufferResultIsChecked`'s file-reading and
+  path-resolution helpers rather than writing new ones — it is 60 lines above
+  in the same file.
+
+  **Build:** `clangcl-debug`, and pass `-FreshContainer` — `ASManager.ixx` is a
+  module interface, and a reused container does not prune stale BMIs (AGENTS.md
+  § Containerized Windows Builds):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+  from the repo root.
+
+  **Context:** `0c4d2faa` is the right change and none of it should be undone —
+  this is its missing second half. The `ASSERT_VULKAN`-on-creation-failure
+  choice in step 4 is the documented convention ("use it on creation/allocation
+  calls only"), not an escalation: the alternative, threading a "clouds are
+  absent" state through the post descriptor set, the two barriers and the
+  dispatch, is a larger change for a path that only fires when command-buffer
+  allocation has already failed at startup.
+
+- [ ] **(S) Ask the device whether it supports `computeDerivativeGroupQuads` before requiring it, and stop chaining ray-tracing feature structs on devices without the extensions** — a device that advertises `VK_KHR_compute_shader_derivatives` but only the linear bit fails `vkCreateDevice` outright, so the engine does not start.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp:306-345` — the `available_features*` query chain, the pattern every other feature follows
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp:363-383` — `features2.pNext = &features11` and the comment explaining why the chain link matters
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp:456-502` — the ray-tracing branch that re-links `features12.pNext`, and the compute-derivatives block
+  - `Src/GraphicsEngineVulkan/vulkan_base/PhysicalDeviceChoices.hpp` — the home for the pure decision helper
+  - `Test/commit/VulkanEngine/physicalDeviceChoicesSuite.cpp` and `Test/commit/VulkanEngine/extensionSupportSuite.cpp` — the fake-`vk::ExtensionProperties` test pattern to copy
+
+  **Steps:**
+  1. Add `vk::PhysicalDeviceComputeShaderDerivativesFeaturesKHR availableComputeDerivativeFeatures{}`
+     and query it, alongside the existing `availableRayTracingFeatures2`
+     `getFeatures2` call at `:345` (chain it into that same call — one extra
+     `pNext` link, no third query).
+  2. Add to `PhysicalDeviceChoices.hpp`:
+     ```cpp
+     // The extension exposes two independent bits and a device may support
+     // only computeDerivativeGroupLinear. Requesting the quads bit on such a
+     // device makes vkCreateDevice fail with VK_ERROR_FEATURE_NOT_PRESENT -
+     // the engine does not start at all, rather than degrading.
+     constexpr bool shouldEnableComputeDerivativeGroupQuads(bool extensionPresent, vk::Bool32 quadsSupported)
+     {
+         return extensionPresent && quadsSupported == VK_TRUE;
+     }
+     ```
+  3. Rewrite `VulkanDevice.cpp:496-502` to call it, and only push the extension
+     name AND link `computeDerivativeFeatures` into `features2.pNext` when it
+     returns true. Keep the existing "Slang emits ComputeDerivativeGroupQuadsKHR
+     for the cloud/noise compute shaders" comment and extend it with what
+     happens when the bit is absent.
+  4. Separately, in the same function: `features13.pNext` is set to
+     `&acceleration_structure_features` unconditionally at `:329`, so on a
+     device WITHOUT the ray-tracing extensions the `vkCreateDevice` pNext chain
+     still carries `VkPhysicalDeviceAccelerationStructureFeaturesKHR` and
+     `VkPhysicalDeviceRayTracingPipelineFeaturesKHR` for extensions that are not
+     in `ppEnabledExtensionNames`. Set `features13.pNext = nullptr` by default
+     and assign `&acceleration_structure_features` inside the
+     `if (deviceSupportsHardwareAcceleratedRRT)` block at `:456`, next to the
+     existing `features12.pNext = &rayQueryFeature;` line. Leave the ray-tracing
+     branch's behaviour on an RT-capable device bit-for-bit identical — that
+     chain is what `:372-380` warns was silently broken for five months.
+
+  **Test:** Add `PhysicalDeviceChoicesUnit.ComputeDerivativeQuadsNeedBothTheExtensionAndTheFeature`
+  to `physicalDeviceChoicesSuite.cpp`: all four combinations of
+  (extension present / absent) × (`quadsSupported` VK_TRUE / VK_FALSE), asserting
+  true only for both-present. Then add
+  `BuildIntegrity.EveryEnabledDeviceFeatureIsCopiedFromAnAvailabilityQuery` to
+  `buildIntegritySuite.cpp`: read `VulkanDevice.cpp` and assert no line matching
+  `features1[123]\.\w+ = VK_TRUE` or `features2\.features\.\w+ = VK_TRUE`
+  survives outside the `deviceSupportsHardwareAcceleratedRRT` block (where the
+  bits were already proven available by the checks at `:437-448`). Follow the
+  line-scanning style of `EngineSourcesDoNotLogRawVulkanHandles`
+  (`buildIntegritySuite.cpp:3440`).
+
+  **Build:** `clangcl-debug`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=PhysicalDeviceChoicesUnit.*:BuildIntegrity.*`
+  from the repo root. The behaviour change itself cannot be observed on this
+  host (the RX 9070 XT supports both bits) — that is expected; the unit test and
+  the gate are the acceptance criteria, not a device run.
+
+  **Context:** Step 4 is deliberately conservative: it removes structs from the
+  create-info chain on devices that cannot use them and changes nothing on
+  devices that can. Do not go further and "tidy" the chain construction — the
+  ordering at `:325-336` is load-bearing and the comment at `:372-380` records
+  what breaking it cost last time.
+
+- [ ] **(S) (refactor) Give pipeline + pipeline-layout destruction one definition — the destruction half of the `PipelineLayoutHelper` family, hand-rolled in 20 places** — the creation side was collapsed into `buildPipelineLayoutCreateInfo` across nine sites; teardown never was.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/common/PipelineLayoutHelper.hpp` — the existing creation helper and the doc-comment conventions to match
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:56-66` and `:125-136` — the canonical shape, once in `shaderHotReload` and once in `cleanUp`
+  - The other eight owners, each with the same pair: `Rasterizer.cpp`,
+    `DeferredRasterizer.cpp` (two layouts), `Raytracing.cpp`, `PathTracing.cpp`,
+    `Clouds.cpp` (two layouts, `:134-165` and `:191-215`),
+    `CascadedShadowMap.cpp`, `SkyBox.cpp`
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:3980` — `ComputePipelinesAreCreatedThroughTheSharedHelper`, the gate shape to copy
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:3851` — `EveryShaderHotReloadDestroysThePipelineLayoutItRecreates`, which must keep passing
+
+  **Steps:**
+  1. Add to `common/PipelineLayoutHelper.hpp`:
+     ```cpp
+     // Destroys a pipeline and the layout it was built with, and nulls both
+     // handles so a second call (an explicit cleanUp followed by the
+     // destructor) is a no-op - the same idempotence rule VulkanBuffer and
+     // VulkanImage follow. Handles are taken by reference for exactly that
+     // reason; passing by value would destroy without nulling and the caller
+     // would keep a dangling handle.
+     inline void destroyPipelineAndLayout(vk::Device device, vk::Pipeline &pipeline, vk::PipelineLayout &layout)
+     ```
+     Null-handle-safe on both arguments, and a no-op when `device` is null.
+  2. Replace all 20 hand-rolled blocks with calls to it. `DeferredRasterizer`
+     and `Clouds` each own two pipeline/layout pairs — two calls each, not one.
+     Preserve the existing ordering (pipeline before layout) and do not move any
+     call across a `device.reset()` or a `createXPipeline()` call.
+  3. Leave `destroyPipeline` calls that have no paired layout (if any survive
+     after step 2) alone, and say so in the helper's comment.
+
+  **Test:** Add `BuildIntegrity.PipelineTeardownGoesThroughTheSharedHelper` to
+  `buildIntegritySuite.cpp`: walk `Src/GraphicsEngineVulkan/**` and assert no
+  `.cpp`/`.ixx` outside `common/PipelineLayoutHelper.hpp` contains
+  `destroyPipelineLayout(`. Model it on
+  `ComputePipelinesAreCreatedThroughTheSharedHelper` — same directory walk, same
+  allowlist-of-one structure, same failure message naming every offending
+  `file:line` so the next violation is a one-line fix. Re-run
+  `EveryShaderHotReloadDestroysThePipelineLayoutItRecreates` and, if it greps
+  for the literal `destroyPipelineLayout` inside each `shaderHotReload`, update
+  it to accept the helper call instead — do not weaken what it asserts.
+
+  **Build:** `clangcl-debug`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+  from the repo root. Pure teardown-order-preserving refactor: no golden run is
+  needed, and none is available (see the RDP `- [b]` entry).
+
+  **Context:** This is the tenth member of the create-info builder family
+  (`FramebufferHelper`, `RenderPassHelper`, `PipelineLayoutHelper`,
+  `ViewportHelper`, `ImageViewHelper`, `ComputePipelineHelper`, …) and the first
+  on the destruction side. It is explicitly NOT the `ImageMemoryBarrier` builder
+  that batches VIII and IX deferred: no barrier is touched, nothing is
+  submitted, and the acceptance test is a source gate rather than a host-GPU
+  golden.
+
+Candidates found but NOT tasked this cycle (checked, then rejected or deferred
+with a reason — do not re-propose without new evidence): **an
+`ImageMemoryBarrier` builder** — unchanged since batch VIII, still gated on host
+GPU verification being restored; task 5 above is the adjacent, GPU-free member
+of the same family, and landing it does not unblock this one. **The four
+remaining hand-rolled `vk::ImageSubresourceRange` blocks** — re-rejected for the
+fifth time; stop re-checking them. **`Src/KomputePlayground`** — still an owner
+decision. **`ASManager::createBLAS`'s single shared scratch buffer with a
+Write→Read barrier between builds** — the write-after-write on the scratch
+region is arguably under-synchronized, but the barrier matches the upstream
+nvpro reference verbatim and the only instrument that can settle it is
+`Run-SyncValidation.ps1`, which needs the host GPU; re-propose with a
+`SYNC-HAZARD` line, not from reading. **`apply_mouse_input`/`apply_keyboard_input`
+never wrap `yaw`** (`CameraController.ixx:58-59,69`) — real unbounded growth,
+but the measured cost is ~0.03° of angular quantization after an hour of
+continuous turning, below what the existing `cameraControllerSuite` tolerances
+could even assert; not worth a task. **`chooseSwapchainImageCount` is the one
+swapchain choice still inline** (`VulkanSwapChain.cpp:58-64`) rather than in the
+tested `SwapchainChoices.hpp` — checked the logic for a defect and found none
+(`minImageCount + 1` clamped down to `maxImageCount` is always `>= minImageCount`),
+so this is a pure symmetry itch with no bug behind it. **`ASManager::cleanUp`
+leaves destroyed handles in `blas`/`tlas`** — not idempotent unlike its
+siblings, but it is called exactly once, from a destructor path; folded into
+task 3's reading list rather than tasked on its own.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
