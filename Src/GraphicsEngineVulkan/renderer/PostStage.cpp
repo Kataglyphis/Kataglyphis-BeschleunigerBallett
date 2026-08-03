@@ -128,6 +128,9 @@ void Kataglyphis::VulkanRendererInternals::PostStage::destroyFramebuffers()
     Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffers);
 }
 
+// Rebuilds framebuffers but deliberately does not destroy the previous ones -
+// VulkanRenderer::recreateSwapChain() must call destroyFramebuffers() before
+// this, while the swapchain images they reference still exist.
 void Kataglyphis::VulkanRendererInternals::PostStage::recreateFrameResources()
 {
     depthBufferImage->cleanUp();

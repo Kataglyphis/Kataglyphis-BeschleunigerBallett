@@ -146,6 +146,9 @@ void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::destroyFramebuffe
     Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffer);
 }
 
+// Rebuilds framebuffers but deliberately does not destroy the previous ones -
+// VulkanRenderer::recreateSwapChain() must call destroyFramebuffers() before
+// this, while the swapchain images they reference still exist.
 void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::recreateFrameResources()
 {
     for (auto& tex : offscreenTextures) { if (tex) tex->cleanUp(); }

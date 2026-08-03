@@ -426,6 +426,9 @@ void SkyBox::destroyFramebuffers()
     Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffers);
 }
 
+// Rebuilds framebuffers but deliberately does not destroy the previous ones -
+// VulkanRenderer::recreateSwapChain() must call destroyFramebuffers() before
+// this, while the swapchain images they reference still exist.
 void SkyBox::recreateFrameResources(std::span<const vk::ImageView> imageViews, vk::ImageView depthView, uint32_t width, uint32_t height)
 {
     createFramebuffers(imageViews, depthView, width, height);

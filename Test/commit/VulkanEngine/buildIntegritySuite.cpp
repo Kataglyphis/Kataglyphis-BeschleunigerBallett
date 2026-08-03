@@ -5657,6 +5657,120 @@ TEST(BuildIntegrity, FramebufferTeardownGoesThroughTheSharedHelper)
          }();
 }
 
+// Four render stages' framebuffers reference the outgoing swapchain's image
+// views, so VulkanRenderer::recreateSwapChain() must destroy them before
+// calling vulkanSwapChain.recreate() - recreateFrameResources() necessarily
+// runs after that call (it needs the new image views), so the teardown
+// cannot move into the stages themselves. Dropping one of those destroy
+// calls leaks N framebuffers per window resize and only surfaces as a
+// live-object error at vkDestroyDevice, which no CI lane runs - this pins
+// the ordering down so that stays true.
+TEST(BuildIntegrity, EveryStageFramebufferIsDestroyedBeforeTheSwapchainIsRecreated)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path renderer_cpp =
+      repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
+    std::ifstream file(renderer_cpp);
+    ASSERT_TRUE(static_cast<bool>(file)) << "missing " << renderer_cpp.string();
+    const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    static const std::string kFunctionSignature = "Kataglyphis::VulkanRenderer::recreateSwapChain(";
+    const std::size_t signature_pos = contents.find(kFunctionSignature);
+    ASSERT_NE(signature_pos, std::string::npos)
+      << "VulkanRenderer::recreateSwapChain is no longer defined in " << renderer_cpp.string();
+
+    const std::size_t body_open = contents.find('{', signature_pos);
+    ASSERT_NE(body_open, std::string::npos) << "could not locate the opening brace of recreateSwapChain";
+
+    int brace_depth = 0;
+    std::size_t body_close = std::string::npos;
+    for (std::size_t i = body_open; i < contents.size(); ++i) {
+        if (contents[i] == '{') { ++brace_depth; }
+        else if (contents[i] == '}') {
+            --brace_depth;
+            if (brace_depth == 0) {
+                body_close = i;
+                break;
+            }
+        }
+    }
+    ASSERT_NE(body_close, std::string::npos)
+      << "could not brace-match the closing '}' of recreateSwapChain";
+
+    const std::string body = contents.substr(body_open, body_close - body_open + 1);
+
+    // Blank out '//'-comment lines (offsets preserved) so a call that was
+    // commented out rather than removed cannot satisfy the checks below.
+    std::string code_only = body;
+    for (std::size_t line_start = 0; line_start < code_only.size();) {
+        std::size_t line_end = code_only.find('\n', line_start);
+        if (line_end == std::string::npos) { line_end = code_only.size(); }
+        const std::size_t first_non_space = code_only.find_first_not_of(" \t", line_start);
+        if (first_non_space != std::string::npos && first_non_space < line_end
+            && code_only.compare(first_non_space, 2, "//") == 0) {
+            std::fill(code_only.begin() + static_cast<std::ptrdiff_t>(line_start),
+                code_only.begin() + static_cast<std::ptrdiff_t>(line_end), ' ');
+        }
+        line_start = line_end + 1;
+    }
+
+    const std::size_t recreate_pos = code_only.find("vulkanSwapChain.recreate(");
+    ASSERT_NE(recreate_pos, std::string::npos)
+      << "recreateSwapChain no longer calls vulkanSwapChain.recreate(...) - update this gate";
+
+    // Receiver -> the file that would define its ::destroyFramebuffers(), if
+    // it owns any framebuffers at all (clouds does not). A receiver missing
+    // from this map fails the test so a sixth stage cannot be added silently.
+    static const std::map<std::string, const char *> kReceiverFiles = {
+        { "postStage", "Src/GraphicsEngineVulkan/renderer/PostStage.cpp" },
+        { "rasterizer", "Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp" },
+        { "deferredRasterizer", "Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp" },
+        { "skyBox", "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp" },
+        { "clouds", "Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp" },
+    };
+
+    static const std::regex kReceiverPattern(R"((\w+)\.recreateFrameResources\()");
+    std::set<std::string> receivers;
+    for (auto it = std::sregex_iterator(code_only.begin(), code_only.end(), kReceiverPattern),
+              end = std::sregex_iterator();
+         it != end; ++it) {
+        receivers.insert((*it)[1].str());
+    }
+    ASSERT_FALSE(receivers.empty()) << "found no X.recreateFrameResources(...) calls in recreateSwapChain";
+
+    for (const std::string &receiver : receivers) {
+        const auto map_it = kReceiverFiles.find(receiver);
+        ASSERT_NE(map_it, kReceiverFiles.end())
+          << "recreateSwapChain calls " << receiver
+          << ".recreateFrameResources(...) but this gate has no entry for it - add " << receiver
+          << " to kReceiverFiles above (pointing at the file that defines its ::destroyFramebuffers(), "
+             "or that owns none, like clouds) so a sixth stage cannot silently skip this check";
+
+        const fs::path stage_path = repo_root / map_it->second;
+        std::ifstream stage_file(stage_path);
+        ASSERT_TRUE(static_cast<bool>(stage_file)) << "missing " << stage_path.string();
+        const std::string stage_contents(
+          (std::istreambuf_iterator<char>(stage_file)), std::istreambuf_iterator<char>());
+        const bool owns_framebuffers = stage_contents.find("::destroyFramebuffers()") != std::string::npos;
+
+        if (!owns_framebuffers) { continue; }// e.g. clouds - nothing to require here
+
+        const std::string destroy_call = receiver + ".destroyFramebuffers();";
+        const std::size_t destroy_pos = code_only.find(destroy_call);
+        EXPECT_NE(destroy_pos, std::string::npos)
+          << receiver << " owns framebuffers (destroyFramebuffers() is defined in " << map_it->second
+          << ") but recreateSwapChain never calls " << destroy_call
+          << " - its framebuffers reference the outgoing swapchain image views and must be destroyed "
+             "before vulkanSwapChain.recreate(), or vkDestroyDevice will report them as live objects";
+        EXPECT_LT(destroy_pos, recreate_pos)
+          << receiver << ".destroyFramebuffers() is called after vulkanSwapChain.recreate() in "
+             "recreateSwapChain - its framebuffers reference the outgoing swapchain image views, so the "
+             "destroy must happen before the swapchain is recreated, not after";
+    }
+}
+
 // Texture::createImage takes in_mip_levels but, before this test existed, only
 // uploadRgba's own path assigned it to the mip_levels field - every other
 // caller (Clouds, SkyBox, CascadedShadowMap) went through createImage

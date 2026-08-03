@@ -7495,57 +7495,6 @@ logic. **`transformAABB` rebuilds eight corners per mesh per frame, twice**
 where the model matrix is per-model — measurable only under `BM_FrustumCull`,
 which already covers the hot loop and shows it is not the bottleneck.
 
-- [ ] **(S) Gate the invariant that each render stage's framebuffers are destroyed before the swapchain they reference is recreated** — four stages depend on `recreateSwapChain()` having torn their framebuffers down first, the ordering cannot move into the stages, and nothing checks it.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:703-763` — `recreateSwapChain()`: the four `destroyFramebuffers()` calls at `:724-727`, `vulkanSwapChain.recreate()` at `:729`, the `recreateFrameResources()` calls at `:738-748`
-  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:126-137`, `:267-284` — the `destroyFramebuffers()`/`createFramebuffer()` pair and the `resize()`+overwrite loop
-  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:130-144`, `:208-226`
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:144-164`, `:317-337`
-  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:424-432`, `:268-281`
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:5451-5506` — `FramebufferTeardownGoesThroughTheSharedHelper`, the gate to sit next to and the text-scanning style to copy
-
-  **Steps:**
-  1. Add `TEST(BuildIntegrity, EveryStageFramebufferIsDestroyedBeforeTheSwapchainIsRecreated)`
-     to `buildIntegritySuite.cpp`. Read `VulkanRenderer.cpp`, slice out the body
-     of `recreateSwapChain()` (brace-match from its signature, the way the
-     neighbouring gates slice functions), and record the offset of
-     `vulkanSwapChain.recreate(`.
-  2. In that body, collect every receiver `X` in `X.recreateFrameResources(`.
-     For each, decide whether `X` owns framebuffers by looking for a
-     `::destroyFramebuffers()` definition in the stage's own `.cpp` — resolve
-     the receiver to a file via a small hard-coded map in the test
-     (`postStage` → `PostStage.cpp`, `rasterizer` → `Rasterizer.cpp`,
-     `deferredRasterizer` → `DeferredRasterizer.cpp`, `skyBox` →
-     `SkyBox.cpp`, `clouds` → `Clouds.cpp`), and fail if a receiver is not in
-     the map so a sixth stage cannot be added silently.
-  3. For every receiver that owns framebuffers, require `X.destroyFramebuffers();`
-     to appear in the same body **before** the `vulkanSwapChain.recreate(`
-     offset. `clouds` owns none and must pass without one.
-  4. Fail with the receiver name and what was missing (no destroy call at all
-     vs. a destroy call after the recreate), not a bare boolean.
-  5. Add a one-line comment to each of the four `recreateFrameResources()`
-     definitions: it rebuilds framebuffers and deliberately does not destroy
-     the previous ones, because `VulkanRenderer::recreateSwapChain()` must do
-     that before the swapchain images they reference are gone.
-
-  **Test:** the new gate. Prove it bites by temporarily commenting out
-  `postStage.destroyFramebuffers();` at `VulkanRenderer.cpp:724` and confirming
-  the failure names `postStage`; then by moving one destroy call below
-  `vulkanSwapChain.recreate(` and confirming it names the ordering. Revert both.
-  Run: `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-
-  **Context:** **do not move the teardown into the stages.** The framebuffers
-  reference the outgoing swapchain image views, which is why the destroy must
-  happen before `vulkanSwapChain.recreate()` while `recreateFrameResources()`
-  necessarily runs after it. The current code is correct; this task only makes
-  it stay correct. Dropping one of those four lines costs N framebuffers per
-  window resize, unbounded, and surfaces only as a live-object error at
-  `vkDestroyDevice` — which no CI lane runs.
-
 - [ ] **(S) (refactor) Rename `direcional_light_radiance` and stop labelling it "Ambient intensity"** — the slider is the directional light's radiance, it is spelled with a missing `t`, and the engine has no ambient term for it to be the intensity of.
 
   **Files to read:**
