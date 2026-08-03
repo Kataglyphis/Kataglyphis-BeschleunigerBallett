@@ -11,6 +11,7 @@
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#include "common/ImageBarrierHelper.hpp"
 #include "common/MemoryHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
 #include "common/Utilities.hpp"
@@ -84,26 +85,12 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
 
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, graphicsPipeline);
 
-    vk::ImageSubresourceRange subresourceRange{};
-    subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    subresourceRange.baseMipLevel = 0;
-    subresourceRange.levelCount = 1;
-    subresourceRange.baseArrayLayer = 0;
-    subresourceRange.layerCount = 1;
-
-    vk::ImageMemoryBarrier rasterizerToRaytracingImageBarrier{};
     // eUndefined: the rgen shader writes every pixel of renderImage, so its
     // previous contents (whether the raster pass ran this frame or was
     // skipped because RT owns the frame) are discarded, not read. eUndefined
     // is the only oldLayout valid in both cases.
-    rasterizerToRaytracingImageBarrier.srcAccessMask = {};
-    rasterizerToRaytracingImageBarrier.dstAccessMask = vk::AccessFlagBits::eShaderWrite;
-    rasterizerToRaytracingImageBarrier.oldLayout = vk::ImageLayout::eUndefined;
-    rasterizerToRaytracingImageBarrier.newLayout = vk::ImageLayout::eGeneral;
-    rasterizerToRaytracingImageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    rasterizerToRaytracingImageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    rasterizerToRaytracingImageBarrier.image = renderImage.getImage();
-    rasterizerToRaytracingImageBarrier.subresourceRange = subresourceRange;
+    const vk::ImageMemoryBarrier rasterizerToRaytracingImageBarrier = Kataglyphis::buildImageMemoryBarrier(
+      renderImage.getImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, {}, vk::AccessFlagBits::eShaderWrite);
 
     commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
       vk::PipelineStageFlagBits::eRayTracingShaderKHR,
@@ -122,15 +109,12 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::Comman
     commandBuffer.traceRaysKHR(
       rgen_region, miss_region, hit_region, call_region, swap_chain_extent.width, swap_chain_extent.height, 1);
 
-    vk::ImageMemoryBarrier raytracingToPostImageBarrier{};
-    raytracingToPostImageBarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
-    raytracingToPostImageBarrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-    raytracingToPostImageBarrier.oldLayout = vk::ImageLayout::eGeneral;
-    raytracingToPostImageBarrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-    raytracingToPostImageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    raytracingToPostImageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    raytracingToPostImageBarrier.image = renderImage.getImage();
-    raytracingToPostImageBarrier.subresourceRange = subresourceRange;
+    const vk::ImageMemoryBarrier raytracingToPostImageBarrier =
+      Kataglyphis::buildImageMemoryBarrier(renderImage.getImage(),
+        vk::ImageLayout::eGeneral,
+        vk::ImageLayout::eShaderReadOnlyOptimal,
+        vk::AccessFlagBits::eShaderWrite,
+        vk::AccessFlagBits::eShaderRead);
 
     commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eRayTracingShaderKHR,
       vk::PipelineStageFlagBits::eFragmentShader,

@@ -6931,30 +6931,6 @@ still an owner decision.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Give `vk::ImageMemoryBarrier` one definition — the eleventh member of the create-info builder family** — seven hand-written field lists across three files, already drifted into two spellings of "ignored queue family" and two of the same subresource range.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp` and `Test/commit/VulkanEngine/renderPassHelperSuite.cpp` — the exact shape to copy (plain header, `constexpr` where possible, one CPU test per call site pinning it field by field)
-  - `Src/GraphicsEngineVulkan/common/FramebufferHelper.hpp`, `common/ImageViewHelper.hpp`, `common/PipelineLayoutHelper.hpp` — the same family, for naming and comment style
-  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp` — `:86-113` and `:125-140`
-  - `Src/GraphicsEngineVulkan/renderer/PathTracing.cpp` — `:63`, `:101`, `:155`
-  - `Src/GraphicsEngineVulkan/renderer/FrameCapture.ixx` — `:95-113` and `:127-135`
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `TEST(BuildIntegrity, FramebufferTeardownGoesThroughTheSharedHelper)` (`:5079`), the gate shape to copy
-
-  **Steps:**
-  1. Add `Src/GraphicsEngineVulkan/common/ImageBarrierHelper.hpp` exporting `buildImageMemoryBarrier(vk::Image image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::AccessFlags srcAccess, vk::AccessFlags dstAccess, vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor, uint32_t baseMipLevel = 0, uint32_t levelCount = 1, uint32_t baseArrayLayer = 0, uint32_t layerCount = 1) -> vk::ImageMemoryBarrier`. Bake in both queue-family indices as `vk::QueueFamilyIgnored` (pick that spelling; say in the header comment that `VK_QUEUE_FAMILY_IGNORED` was the other of the two spellings this replaces). Plain header, not a module interface, so `buildIntegritySuite.cpp` can include it — see `FormatHelper.hpp` and `CloudDispatch.hpp` for why.
-  2. Route the seven sites through it, keeping every field byte-identical. Keep each site's explanatory comment where it has one (`Raytracing.cpp:95-98`'s `eUndefined` rationale and `FrameCapture.ixx:126`'s "restore the layout the present expects" are load-bearing).
-  3. Do **not** touch `VulkanRenderer.cpp:922` / `:954` — the two cloud-output barriers are the subject of a `- [b]` entry in the 2026-08-02 batch. Do **not** touch `VulkanImage.cpp:134` or `Texture.cpp:302` — their aspect/mip/layer values come from parameters of a general transition helper, so they are not boilerplate; note both exemptions in the header comment so a later sweep does not re-litigate them.
-  4. `#include` the new header from the three files and drop the now-unused local `vk::ImageSubresourceRange subresourceRange` in `Raytracing.cpp:87-92`.
-
-  **Test:** Add `Test/commit/VulkanEngine/imageBarrierHelperSuite.cpp` with one `TEST(ImageBarrierHelperUnit, ...)` per converted call site, each re-creating that site's arguments and asserting every field of the result — including the two queue-family indices and all four subresource-range fields, which is the class of defect no pixel oracle sees. No device is required; follow `renderPassHelperSuite.cpp`'s device-free structure. Then add `TEST(BuildIntegrity, ImageMemoryBarriersGoThroughTheSharedHelper)`: scan `Src/` for `vk::ImageMemoryBarrier` declarations and fail on any outside the four documented exemptions (`ImageBarrierHelper.hpp` itself, `VulkanImage.cpp`, `Texture.cpp`, and the two cloud barriers in `VulkanRenderer.cpp`), listing the exemptions in the failure message.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=ImageBarrierHelperUnit.*:BuildIntegrity.*`. A new `.cpp` under `Test/commit/VulkanEngine/` is picked up by the directory `file(GLOB ...)` and by CI's negative gtest filter automatically — nothing to register.
-
-  **Context:** This is the same move as `buildAttachmentDescription` (8 copies → 1), `buildFramebufferCreateInfo` (5 → 1), `buildRenderPassCreateInfo`, `buildPipelineLayoutCreateInfo` and `buildSubpassDescription`, and it earns its keep the same way: the field-by-field CPU suite catches a dropped queue-family index or a wrong `layerCount` on the container lane, with no GPU. Pure consolidation — no barrier's stage masks or access masks change, so `Run-SyncValidation.ps1` behaviour is unchanged by construction; do not "tidy" a stage mask while converting.
-
 ### Docs
 
 - [ ] **(M) Bring `docs/cpp-renderer-improvements.md` back in line with the tree, and gate the two claims that are now wrong** — its "queued" list still asks for two units that shipped on 2026-07-19, and its last shipped entry predates ~90 engine commits.

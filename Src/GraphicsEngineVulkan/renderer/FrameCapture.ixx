@@ -8,6 +8,7 @@ module;
 #include <vulkan/vulkan.hpp>
 
 #include "common/FormatHelper.hpp"
+#include "common/ImageBarrierHelper.hpp"
 #include "spdlog/spdlog.h"
 
 export module kataglyphis.vulkan.frame_capture;
@@ -92,15 +93,11 @@ class FrameCapture
 
         vk::Image &swapchain_image = swapChain.getSwapChainImage(image_index).getImage();
 
-        vk::ImageMemoryBarrier to_transfer_src{};
-        to_transfer_src.oldLayout = vk::ImageLayout::ePresentSrcKHR;
-        to_transfer_src.newLayout = vk::ImageLayout::eTransferSrcOptimal;
-        to_transfer_src.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
-        to_transfer_src.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
-        to_transfer_src.image = swapchain_image;
-        to_transfer_src.subresourceRange = vk::ImageSubresourceRange{ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 };
-        to_transfer_src.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-        to_transfer_src.dstAccessMask = vk::AccessFlagBits::eTransferRead;
+        const vk::ImageMemoryBarrier to_transfer_src = Kataglyphis::buildImageMemoryBarrier(swapchain_image,
+          vk::ImageLayout::ePresentSrcKHR,
+          vk::ImageLayout::eTransferSrcOptimal,
+          vk::AccessFlagBits::eColorAttachmentWrite,
+          vk::AccessFlagBits::eTransferRead);
 
         commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,
           vk::PipelineStageFlagBits::eTransfer,
@@ -124,15 +121,11 @@ class FrameCapture
           swapchain_image, vk::ImageLayout::eTransferSrcOptimal, buffer.getBuffer(), 1, &region);
 
         // Restore the layout the present expects.
-        vk::ImageMemoryBarrier back_to_present{};
-        back_to_present.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
-        back_to_present.newLayout = vk::ImageLayout::ePresentSrcKHR;
-        back_to_present.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
-        back_to_present.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
-        back_to_present.image = swapchain_image;
-        back_to_present.subresourceRange = vk::ImageSubresourceRange{ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 };
-        back_to_present.srcAccessMask = vk::AccessFlagBits::eTransferRead;
-        back_to_present.dstAccessMask = vk::AccessFlagBits{};
+        const vk::ImageMemoryBarrier back_to_present = Kataglyphis::buildImageMemoryBarrier(swapchain_image,
+          vk::ImageLayout::eTransferSrcOptimal,
+          vk::ImageLayout::ePresentSrcKHR,
+          vk::AccessFlagBits::eTransferRead,
+          vk::AccessFlagBits{});
 
         // Make the copy visible to host reads of the staging buffer as well.
         vk::BufferMemoryBarrier buffer_to_host{};

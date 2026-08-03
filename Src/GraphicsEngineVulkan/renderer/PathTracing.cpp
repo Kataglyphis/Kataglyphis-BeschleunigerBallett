@@ -13,6 +13,7 @@
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#include "common/ImageBarrierHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
 #include "renderer/PathTracingDispatch.hpp"
 #include "renderer/pushConstants/PushConstantPathTracing.hpp"
@@ -53,32 +54,19 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
   uint32_t samples_per_pixel,
   uint32_t max_bounces)
 {
-    vk::ImageSubresourceRange subresourceRange{};
-    subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    subresourceRange.baseMipLevel = 0;
-    subresourceRange.baseArrayLayer = 0;
-    subresourceRange.levelCount = 1;
-    subresourceRange.layerCount = 1;
-
-    vk::ImageMemoryBarrier presentToPathTracingImageBarrier{};
     // This stage is recorded into the frame's graphics command buffer and
     // consumed by a dispatch on that same queue, so there is no queue family
     // ownership transfer to express here: a real transfer needs a paired
     // release on the source queue and acquire on the destination queue,
     // recorded into two separate command buffers submitted to two separate
     // queues, not both halves back-to-back in one command buffer.
-    presentToPathTracingImageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    presentToPathTracingImageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    //
     // eUndefined: the PT compute shader writes every pixel of vulkanImage, so
     // its previous contents (whether the raster pass ran this frame or was
     // skipped because PT owns the frame) are discarded, not read. eUndefined
     // is the only oldLayout valid in both cases.
-    presentToPathTracingImageBarrier.srcAccessMask = {};
-    presentToPathTracingImageBarrier.dstAccessMask = vk::AccessFlagBits::eShaderWrite;
-    presentToPathTracingImageBarrier.oldLayout = vk::ImageLayout::eUndefined;
-    presentToPathTracingImageBarrier.newLayout = vk::ImageLayout::eGeneral;
-    presentToPathTracingImageBarrier.subresourceRange = subresourceRange;
-    presentToPathTracingImageBarrier.image = vulkanImage.getImage();
+    const vk::ImageMemoryBarrier presentToPathTracingImageBarrier = Kataglyphis::buildImageMemoryBarrier(
+      vulkanImage.getImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, {}, vk::AccessFlagBits::eShaderWrite);
 
     // Source stages name whoever actually produced vulkanImage's prior
     // contents: eColorAttachmentOutput covers the raster/skybox pass writing
@@ -98,15 +86,12 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
     // visible before this frame reads them. A pipeline barrier orders against
     // ALL prior commands on the queue, so this also covers the cross-command-
     // buffer frame-to-frame hazard.
-    vk::ImageMemoryBarrier accumulationBarrier{};
-    accumulationBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    accumulationBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    accumulationBarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
-    accumulationBarrier.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
-    accumulationBarrier.oldLayout = vk::ImageLayout::eGeneral;
-    accumulationBarrier.newLayout = vk::ImageLayout::eGeneral;
-    accumulationBarrier.subresourceRange = subresourceRange;
-    accumulationBarrier.image = accumulationImage.getImage();
+    const vk::ImageMemoryBarrier accumulationBarrier = Kataglyphis::buildImageMemoryBarrier(
+      accumulationImage.getImage(),
+      vk::ImageLayout::eGeneral,
+      vk::ImageLayout::eGeneral,
+      vk::AccessFlagBits::eShaderWrite,
+      vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite);
 
     commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
       vk::PipelineStageFlagBits::eComputeShader,
@@ -152,17 +137,14 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
 
     commandBuffer.dispatch(workGroupCountX, workGroupCountY, workGroupCountZ);
 
-    vk::ImageMemoryBarrier pathTracingToPresentImageBarrier{};
     // Same queue, same command buffer as the barrier above: no ownership
     // transfer to express (see the comment on presentToPathTracingImageBarrier).
-    pathTracingToPresentImageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    pathTracingToPresentImageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    pathTracingToPresentImageBarrier.srcAccessMask = vk::AccessFlagBits::eShaderWrite;
-    pathTracingToPresentImageBarrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-    pathTracingToPresentImageBarrier.oldLayout = vk::ImageLayout::eGeneral;
-    pathTracingToPresentImageBarrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-    pathTracingToPresentImageBarrier.image = vulkanImage.getImage();
-    pathTracingToPresentImageBarrier.subresourceRange = subresourceRange;
+    const vk::ImageMemoryBarrier pathTracingToPresentImageBarrier = Kataglyphis::buildImageMemoryBarrier(
+      vulkanImage.getImage(),
+      vk::ImageLayout::eGeneral,
+      vk::ImageLayout::eShaderReadOnlyOptimal,
+      vk::AccessFlagBits::eShaderWrite,
+      vk::AccessFlagBits::eShaderRead);
 
     // Destination stage names the actual consumer: PostStage's fragment
     // shader samples this image (post.slang's fs_main), matching

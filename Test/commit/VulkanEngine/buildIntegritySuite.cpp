@@ -3903,8 +3903,12 @@ TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
         "Src/GraphicsEngineVulkan/renderer/Raytracing.cpp",
     };
 
-    static const std::regex kShaderReadOnlyTransition(
-      R"((\w+)\.newLayout\s*=\s*vk::ImageLayout::eShaderReadOnlyOptimal\s*;)");
+    // Barriers are built via Kataglyphis::buildImageMemoryBarrier
+    // (common/ImageBarrierHelper.hpp) rather than field-by-field assignment,
+    // so the gate looks for `name = buildImageMemoryBarrier(image, oldLayout,
+    // newLayout, ...)` and reads newLayout back out of the third argument.
+    static const std::regex kBarrierConstruction(
+      R"((\w+)\s*=\s*Kataglyphis::buildImageMemoryBarrier\(([\s\S]*?)\);)");
     static const std::regex kPipelineBarrierCall(R"(commandBuffer\.pipelineBarrier\(([\s\S]*?)\);)");
     static const std::regex kIdentifier(R"([A-Za-z_]\w*)");
 
@@ -3918,9 +3922,31 @@ TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
         const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
         std::set<std::string> transitions_to_shader_read_only;
-        for (auto it = std::sregex_iterator(contents.begin(), contents.end(), kShaderReadOnlyTransition);
+        for (auto it = std::sregex_iterator(contents.begin(), contents.end(), kBarrierConstruction);
              it != std::sregex_iterator(); ++it) {
-            transitions_to_shader_read_only.insert((*it)[1].str());
+            const std::string barrier_name = (*it)[1].str();
+            const std::string call_args = (*it)[2].str();
+
+            std::vector<std::string> args;
+            std::size_t arg_start = 0;
+            while (true) {
+                const std::size_t comma = call_args.find(',', arg_start);
+                if (comma == std::string::npos) {
+                    args.push_back(call_args.substr(arg_start));
+                    break;
+                }
+                args.push_back(call_args.substr(arg_start, comma - arg_start));
+                arg_start = comma + 1;
+            }
+            ASSERT_GE(args.size(), 3u)
+              << relative_path
+              << ": buildImageMemoryBarrier call does not have the expected (image, oldLayout, newLayout, ...) "
+                 "shape - the scan needs updating:\n"
+              << call_args;
+
+            if (args[2].find("eShaderReadOnlyOptimal") != std::string::npos) {
+                transitions_to_shader_read_only.insert(barrier_name);
+            }
         }
 
         for (auto it = std::sregex_iterator(contents.begin(), contents.end(), kPipelineBarrierCall);
@@ -5543,4 +5569,72 @@ TEST(BuildIntegrity, EveryRenderStageDerivesItsDepthFormatOnce)
                               << " time(s); it must be derived exactly once and cached in a member, so the "
                                  "render-pass attachment and the image it is paired with cannot diverge";
     }
+}
+
+// Every image memory barrier used to be spelled out at each of seven call
+// sites across Raytracing.cpp, PathTracing.cpp and FrameCapture.ixx, hand-
+// rolled via default construction (`vk::ImageMemoryBarrier name{};`) followed
+// by field-by-field assignment. Kataglyphis::buildImageMemoryBarrier
+// (common/ImageBarrierHelper.hpp) is now the one place that builds an image
+// barrier - this pins that down the same way FramebufferTeardownGoesThrough
+// TheSharedHelper does for framebuffer teardown.
+//
+// The scan looks specifically for the empty-brace default-construction
+// idiom, not every mention of the type: a converted call site still declares
+// a `const vk::ImageMemoryBarrier` local to hold the helper's return value,
+// and that is exactly the pattern this test must NOT flag.
+TEST(BuildIntegrity, ImageMemoryBarriersGoThroughTheSharedHelper)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    // ImageBarrierHelper.hpp is the helper's own definition (it builds its
+    // return value via a fully-explicit constructor, not this idiom, but is
+    // listed here so a later sweep does not re-litigate it). VulkanImage.cpp
+    // and Texture.cpp build a vk::ImageMemoryBarrier from a general
+    // transition helper's own aspect/mip/layer parameters, not boilerplate.
+    // VulkanRenderer.cpp's two cloud-output barriers are the subject of a
+    // separate, blocked backlog entry.
+    static const std::array<const char *, 4> kExemptFiles = { "Src/GraphicsEngineVulkan/common/ImageBarrierHelper.hpp",
+        "Src/GraphicsEngineVulkan/vulkan_base/VulkanImage.cpp", "Src/GraphicsEngineVulkan/scene/Texture.cpp",
+        "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp" };
+
+    const std::regex hand_rolled_barrier(R"(vk::ImageMemoryBarrier\s+\w+\s*\{\s*\}\s*;)");
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".cpp" && path.extension() != ".ixx" && path.extension() != ".hpp") { continue; }
+
+        const std::string relative_file = fs::relative(path, repo_root).generic_string();
+        if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string line;
+        std::size_t line_number = 0;
+        while (std::getline(file, line)) {
+            ++line_number;
+            if (!std::regex_search(line, hand_rolled_barrier)) { continue; }
+            violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " hand-rolled vk::ImageMemoryBarrier declaration(s) found under Src/GraphicsEngineVulkan/ - build image "
+         "memory barriers through Kataglyphis::buildImageMemoryBarrier (common/ImageBarrierHelper.hpp) instead. "
+         "Documented exemptions: ImageBarrierHelper.hpp itself, VulkanImage.cpp, Texture.cpp and the two "
+         "cloud-output barriers in VulkanRenderer.cpp."
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
 }
