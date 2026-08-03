@@ -104,7 +104,8 @@ lines; pick a preset.
 | `clangcl-debug` | `x64-ClangCL-Windows-Debug` | `build-clangcl-debug` | Debug + **ASAN** + UBSan, FuzzTest fuzzing mode |
 | `clangcl-profile` | `x64-ClangCL-Windows-Profile` | `build-clangcl-profile` | RelWithDebInfo + tests/benchmarks |
 | `clangcl-release` | `x64-ClangCL-Windows-Release` | `build-clangcl-release` | Release + CPack packaging |
-| `msvc-debug` / `msvc-release` | `x64-MSVC-Windows-*` | `build-msvc-debug` | MSVC (cl) builds, optional steps |
+| `msvc-debug` | `x64-MSVC-Windows-Debug` | `build-msvc-debug` | MSVC (cl) builds, optional steps |
+| `msvc-release` | `x64-MSVC-Windows-Release` | `build-msvc-release` | MSVC (cl) builds, optional steps |
 
 There is also an `x64-ClangCL-Windows-Debug-ASan` preset (AddressSanitizer
 without the fuzzing-mode extras; not wired into `Build-Windows.config.psd1`).

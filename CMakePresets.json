@@ -283,8 +283,8 @@
 			"name": "x64-MSVC-Windows-Debug",
 			"description": "Windows and standard MSVC - Debug",
 			"generator": "Visual Studio 18 2026",
-			"binaryDir": "${sourceDir}/build/",
-			"installDir": "${sourceDir}/build/",
+			"binaryDir": "${sourceDir}/build-msvc-debug/",
+			"installDir": "${sourceDir}/build-msvc-debug/",
 			"cacheVariables": {
 				"CMAKE_VERBOSE_MAKEFILE": "ON",
 				"CMAKE_C_COMPILER": "cl",
@@ -309,8 +309,8 @@
 			"name": "x64-MSVC-Windows-Release",
 			"description": "Windows and standard MSVC - Release",
 			"generator": "Visual Studio 18 2026",
-			"binaryDir": "${sourceDir}/build/",
-			"installDir": "${sourceDir}/build/",
+			"binaryDir": "${sourceDir}/build-msvc-release/",
+			"installDir": "${sourceDir}/build-msvc-release/",
 			"cacheVariables": {
 				"CMAKE_VERBOSE_MAKEFILE": "ON",
 				"CMAKE_C_COMPILER": "cl",
@@ -387,6 +387,8 @@
 		{
 			"name": "x64-ClangCL-Windows-Profile",
 			"inherits": "x64-ClangCL-Windows-RelWithDebInfo-Base",
+			"binaryDir": "${sourceDir}/build-clangcl-profile/",
+			"installDir": "${sourceDir}/build-clangcl-profile/",
 			"cacheVariables": {
 				"BUILD_TESTING": "TRUE"
 			}
@@ -414,7 +416,9 @@
 		},
 		{
 			"name": "x64-ClangCL-Windows-Release",
-			"inherits": "x64-ClangCL-Windows-Release-Base"
+			"inherits": "x64-ClangCL-Windows-Release-Base",
+			"binaryDir": "${sourceDir}/build-clangcl-release/",
+			"installDir": "${sourceDir}/build-clangcl-release/"
 		},
 		{
 			"name": "x64-Clang-Windows-Release",

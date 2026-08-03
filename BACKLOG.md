@@ -7355,6 +7355,327 @@ the `- [b]` **Renderer-level RAII cleanup consolidation** entry at the top of
 this file and blocked on the same thing: device loss cannot be induced here, so
 the fix is untestable. Record it there if that entry is ever unblocked.
 
+## 2026-08-03 batch XXII — planner (a build-directory name that three Windows presets share and two more get wrong, which CI papers over by uploading installers from both trees; a shader-sharing doc whose "compiled to both targets" list is wrong for every entry in it; the cascade-count half of a double lock whose PCF-radius twin shipped last week; a framebuffer teardown that lives in the caller and is enforced by nothing; a light slider labelled after the wrong term)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the tree
+this pass.
+
+**Every task in this batch is verifiable with no GPU**, deliberately: host
+golden verification is still blocked over RDP (see the `- [b]` entry near the
+end of this file), so nothing here may depend on it. Task 1 is PowerShell +
+JSON + a Pester suite and needs no build at all. Tasks 2 and 5 add
+`buildIntegritySuite.cpp` gates that read files off disk. Tasks 3 and 4 are
+small source edits plus CPU unit tests.
+`Test/commit/VulkanEngine/CMakeLists.txt` globs `*.cpp` with
+`CONFIGURE_DEPENDS`, so no new suite file needs registering.
+
+**The headline is that `CMakePresets.json`'s `binaryDir` and
+`Scripts/Windows/Build-Windows.config.psd1`'s `BuildDir` are two independent
+answers to "where does this configuration build", and they have drifted apart
+far enough that CI hedges.** `Build-Windows.ps1:94-95` reads `BuildDir`/`Preset`
+out of the `.psd1` and passes the directory to the upstream driver as
+`-BuildPath` (`:241`, `:263`, `:270`, `:288`, `:320`), which overrides the
+preset's own `binaryDir`. So the preset field is dead on the script path and
+authoritative everywhere else — `ctest --preset`, a bare `cmake --preset`, and
+anyone reading the file. Measured this pass:
+
+| configuration | `.psd1` `BuildDir` | preset | preset `binaryDir` |
+| --- | --- | --- | --- |
+| `clangcl-debug` | `build-clangcl-debug` | `x64-ClangCL-Windows-Debug` | `build-clangcl-debug/` ✔ |
+| `clangcl-profile` | `build-clangcl-profile` | `x64-ClangCL-Windows-Profile` | **`build_release/`** |
+| `clangcl-release` | `build-clangcl-release` | `x64-ClangCL-Windows-Release` | **`build_release/`** |
+| `msvc-debug` | `build-msvc-debug` | `x64-MSVC-Windows-Debug` | **`build/`** |
+| `msvc-release` | **`build-msvc-debug`** | `x64-MSVC-Windows-Release` | **`build/`** |
+
+Three consequences, all real:
+
+- `x64-ClangCL-Windows-Profile`, `x64-ClangCL-Windows-Release` and
+  `x64-ClangCL-Windows-RelWithDebInfo` all inherit `build_release/`
+  (`CMakePresets.json:362-371`, `:373-382`, `:384-393`, `:416-418`), so
+  configuring any two of them in sequence without the script reconfigures the
+  same directory with a different `CMAKE_BUILD_TYPE`. The MSVC pair does the
+  same in `build/` (`:283-332`) — which is also the Linux presets' directory.
+- `test-x64-ClangCL-Windows-Profile` (`:606-617`) points at
+  `x64-ClangCL-Windows-Profile`, i.e. at `build_release/` — a directory the
+  container build never creates. The one preset AGENTS.md advertises for
+  benchmarking cannot find the tree that holds `perfTestSuite.exe`.
+- `Windows.yml:293-308` uploads installers from **both** `build_release/**` and
+  `build-clangcl-release/**`, commented "legacy/expected CMake preset output"
+  and "also include the build directory used by the PowerShell build script".
+  That is the drift, written down, in CI.
+
+Separately, `msvc-release`'s `BuildDir` is literally `build-msvc-debug` with
+`BuildDirEnv = 'BUILD_DIR_MSVC'` (`.psd1:13-18`): a Release MSVC build writes
+into the Debug MSVC tree. AGENTS.md's table (`:107`) records the collision
+rather than flagging it. `CMakePresets.Integrity.Tests.ps1` already guards this
+file against dangling `configurePreset` and `inherits` references — it just has
+no assertion tying it to the `.psd1`, which is the only reason all of the above
+survived.
+
+**Second, `docs/shader-sharing.md`'s central claim is wrong for every shader it
+names.** `:90-97` lists "**Entry points compiled to both targets** (Rust/WebGPU
++ C++/Vulkan share the pass)": forward, sky, bloom, SSAO, IBL, GPU occlusion
+culling, tonemap, depth resolve, occlusion bbox, tex quad. Parsing
+`shader-manifest.json` this pass, the rows carrying a `spirv` target are exactly
+21, and **not one of those ten files is among them**: post, the two test guards,
+the four raytracing sources, path tracing, skybox, compute noise, clouds,
+rasterizer, deferred and shadow_map. Every shader in the "both targets" list is
+WGSL-only; only `tonemap` is annotated as such in the prose. The paragraph below
+it ("**Vulkan-only**", `:99-104`) is correct, which is what makes the first one
+easy to believe. Cross-checked against the engine: `grep -rn '\.spv' Src/` loads
+17 distinct names, all from that Vulkan-only set — nothing loads
+`gpu_cull`/`depth_resolve`/`occlusion_bbox`/`tex_quad` SPIR-V. This repo already
+gates prose against data in four places (golden-suite counts,
+`max-texture-count`, the perf baseline, the renderer change log); this list is
+the next one.
+
+**Third, `numCascades` never got the second lock `pcfRadius` did.**
+`cascaded_shadow.slang:43` clamps the PCF radius in the shader with a comment
+explaining that it is "the second lock, not the first, so a stray unclamped
+write can never turn the loop below into zero iterations". Twelve lines above
+it, `:16` does `int cascadeCount = int(sceneUBO.numCascades);` with no clamp,
+and `:30` indexes `sceneUBO.cascadeLightSpaceMatrices[cascadeIndex]` — an array
+of `MAX_CASCADES` (3) elements (`scene_types.slang:78`, `:102`) — with
+`cascadeIndex` derived from that unclamped count. The host side is the only
+guard, and its own bound is one-sided: `fillSceneUboCascades`
+(`SceneUboMarshal.hpp:58-74`) computes `activeCascades` from `splitDepths.size()`
+alone and pairs it with `viewProjMatrices[i]` under a bare `assert` (`:63`) that
+compiles out in Release. Be honest about the impact: **both are latent, not
+live.** The one caller (`VulkanRenderer.cpp:216-228`) already clamps to
+`MAX_CASCADES` and passes two spans of identical length, and the GUI slider is
+capped at `MAX_CASCADES` (`GUI.cpp:191`). The value is symmetry with a lock that
+shipped four days ago and a gate that keeps both.
+
+**Fourth, framebuffer teardown for four render stages lives in the caller.**
+`VulkanRenderer::recreateSwapChain()` destroys them at `:724-727`, *before*
+`vulkanSwapChain.recreate()` at `:729`, because they reference the outgoing
+swapchain image views; the stages then rebuild them at `:738-748`. But
+`PostStage::recreateFrameResources` (`PostStage.cpp:131-137`),
+`Rasterizer::recreateFrameResources` (`Rasterizer.cpp:135-144`),
+`DeferredRasterizer::recreateFrameResources` (`DeferredRasterizer.cpp:149-164`)
+and `SkyBox::recreateFrameResources` (`SkyBox.cpp:429-432`) all call a
+`createFramebuffer(s)` that does `resize()` + overwrite
+(`PostStage.cpp:267-284`, `Rasterizer.cpp:208-226`,
+`DeferredRasterizer.cpp:317-337`, `SkyBox.cpp:268-281`) and none of them
+destroys anything. **Today that is correct and leak-free** — this is not a bug
+report. It is that the invariant is load-bearing (dropping one line at `:724-727`
+leaks N framebuffers per resize, forever, and surfaces only as an object-lifetime
+error at `vkDestroyDevice`), stated in exactly one comment, and enforced by
+nothing. A fifth stage gets it wrong by default. The ordering constraint is why
+the destroy cannot simply move into the callee.
+
+Ordering: the five tasks are disjoint. Task 1 touches `CMakePresets.json`, the
+`.psd1`, `Windows.yml`, `AGENTS.md` and one Pester suite; task 2 touches
+`docs/shader-sharing.md` and `buildIntegritySuite.cpp`; task 3 touches
+`GUISceneSharedVars.ixx` (a module interface — needs `-FreshContainer`) plus its
+readers; task 4 touches one Slang source, one header and two test files; task 5
+touches `buildIntegritySuite.cpp` plus four comments. Nothing here needs a GPU
+and nothing here needs the RDP blocker resolved.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`BuildIntegrity.CheckedInWgslIsNotOlderThanItsSlangSource`
+is mtime-based and therefore inert on a fresh clone** (`buildIntegritySuite.cpp:1691-1747`)
+— already known, already recorded twice in this file (see the batch VI and batch
+XIII prose), and already answered by the content gate
+`EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl` (`:2984`). Stop
+re-finding it. **The deferred lighting pass hard-codes `metallic = 0.0` and
+folds `f0 = lerp(float3(0.04), ambient, 0.0)`** (`deferred/deferred.slang:126-127`),
+and the G-buffer material target spends three of four channels on constants
+(`:72`) — real dead generality, but it sits inside the shader the `- [b]`
+world-position-mirror entry owns, and any edit there wants the forward/deferred
+parity oracle that entry is blocked on. **`FrameCapture` has no CPU suite**
+where `FrameSync` and `GpuTimingSubsystem` do (`FrameCapture.ixx:34-238`) — read
+it end to end this pass and found nothing wrong; its only device-free surface is
+a four-flag state machine, and the two predicates worth pinning
+(`isCapturableSwapchainFormat`, `capturedFormatIsBgra`) already live in
+`FormatHelper.hpp` under `formatHelperSuite`. Not worth a suite until it grows
+logic. **`transformAABB` rebuilds eight corners per mesh per frame, twice**
+(`Frustum.cpp:95-118`, once for the camera and once for the shadow casters)
+where the model matrix is per-model — measurable only under `BM_FrustumCull`,
+which already covers the hot loop and shows it is not the bottleneck.
+
+- [ ] **(M) Fix `docs/shader-sharing.md`'s target lists — every shader in the "compiled to both targets" list is WGSL-only — and gate the lists against `shader-manifest.json`** — the doc's central claim about which passes the two renderers share is wrong for all ten entries, and the manifest that proves it is right there.
+
+  **Files to read:**
+  - `docs/shader-sharing.md:76-113` — the three lists ("shared math modules", "compiled to both targets", "Vulkan-only") and the status paragraph
+  - `Resources/ShadersSlang/shader-manifest.json` — `manifest[]` rows carry `file`, `entry`, `targets`, optional `disabled`; `wgslMap[]` is the separate combined-WGSL emit
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1228-1330` — `shader_manifest(repo_root)` and how existing gates walk it
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:3999-4092` — the `<!-- max-texture-count: N -->` marker pattern to copy for a doc-side marker
+
+  **Steps:**
+  1. Recompute the truth: for each distinct `file` in `manifest[]`, collect the
+     union of `targets` over its non-`disabled` rows. Expect exactly two classes
+     — `spirv` only, and `wgsl` only. Confirm no file currently carries both
+     before writing anything; if one does, the doc gets a third list.
+  2. Rewrite `docs/shader-sharing.md:90-104`. The "compiled to both targets"
+     heading is wrong as written — replace the two paragraphs with a
+     marker-delimited table listing every Slang source with an entry point and
+     its target set, between `<!-- shader-targets:begin -->` and
+     `<!-- shader-targets:end -->`, one row per file: `| <path> | spirv |` or
+     `| <path> | wgsl |`. Keep the surrounding prose (why Slang, the binding
+     lever, the WGSL fallback policy) — only the factual lists change.
+  3. Fix the two sentences that depend on the wrong classification: the
+     tonemap parenthetical at `:94-97` (it is no longer the only WGSL-only
+     entry) and the "Status" paragraph at `:111-113`.
+  4. Add `TEST(BuildIntegrity, ShaderSharingDocMatchesTheManifestTargets)` to
+     `buildIntegritySuite.cpp`: parse the marker block, parse the manifest,
+     and fail with the full symmetric difference — files in the doc that the
+     manifest does not have, files the manifest has that the doc omits, and
+     files whose target set disagrees. Skip (do not fail) when
+     `docs/shader-sharing.md` is missing, matching the other doc gates.
+  5. Note in the test's comment that `histogram.wgsl` is the hand-written
+     holdout with **no** Slang source, so it must never appear in either side.
+
+  **Test:** `BuildIntegrity.ShaderSharingDocMatchesTheManifestTargets`. Verify
+  it actually bites by temporarily flipping one row's target in the doc and
+  confirming the failure names that file. Run the suite directly (host `ctest`
+  cannot read a container-generated tree):
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** `docs/shader-sharing.md` is the answer to "do the two renderers
+  really share this pass", and it is currently answering yes for ten shaders
+  the C++ engine never loads. See `docs/shader-build-pipeline.md` for the
+  manifest schema. Do not restate the compile commands in the doc — that file
+  owns them.
+
+- [ ] **(S) Close the cascade-count half of the double lock whose PCF-radius twin already shipped** — the shader clamps `pcfRadius` and explains why, then indexes a 3-element matrix array with an unclamped `numCascades`; the host helper that feeds it bounds two spans by the length of one.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/common/cascaded_shadow.slang:14-43` — the unclamped `cascadeCount` at `:16`, the `cascadeLightSpaceMatrices[cascadeIndex]` read at `:30`, and the `pcfRadius` clamp + rationale at `:39-43` (the pattern to mirror)
+  - `Resources/ShadersSlang/common/scene_types.slang:78-79`, `:95-109` — `MAX_CASCADES`, `MAX_PCF_RADIUS`, and the `SceneUBO` layout
+  - `Src/GraphicsEngineVulkan/common/SceneUboMarshal.hpp:53-74` — `fillSceneUboCascades` and the `assert` at `:63`
+  - `Test/commit/VulkanEngine/sceneUboMarshalSuite.cpp` — existing test shape
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:2117-2196` — `NoShaderRedeclaresTheCascadeCount`, the neighbouring gate
+
+  **Steps:**
+  1. `cascaded_shadow.slang:16`: clamp on read —
+     `int cascadeCount = clamp(int(sceneUBO.numCascades), 0, MAX_CASCADES);`
+     Add a two-line comment in the same voice as `:39-42`: the host is the
+     first lock, this is the second, and an unclamped count would index
+     `cascadeLightSpaceMatrices` out of bounds rather than merely misbehave.
+  2. `SceneUboMarshal.hpp:65`: bound `activeCascades` by **both** spans —
+     `std::min({ splitDepths.size(), viewProjMatrices.size(), static_cast<size_t>(MAX_CASCADES) })`.
+     Keep the `assert`; it still documents the caller contract.
+  3. Extend the doc comment at `:53-57` to say the helper truncates to the
+     shorter span rather than trusting the assert, and why (`NDEBUG`).
+  4. Add a gate to `buildIntegritySuite.cpp` — either a new
+     `TEST(BuildIntegrity, CascadedShadowClampsBothItsUboCounts)` or two more
+     assertions inside `NoShaderRedeclaresTheCascadeCount` — asserting
+     `cascaded_shadow.slang` contains a `clamp(` of `numCascades` bounded by
+     `MAX_CASCADES` and a `clamp(` of `pcfRadius` bounded by `MAX_PCF_RADIUS`.
+  5. Rebuild so the Slang sources recompile; confirm
+     `BuildIntegrity.CompiledShadersAreNotOlderThanSharedIncludes` stays green
+     (`cascaded_shadow.slang` is a shared import, so every dependent `.spv`
+     must be regenerated).
+
+  **Test:** add `SceneUboMarshal.FillCascadesTruncatesToTheShorterSpan` asserting
+  that passing 3 splits and 2 matrices writes 2 cascades and returns 2, and
+  `SceneUboMarshal.FillCascadesNeverExceedsMaxCascades` for 8/8. Both are pure
+  CPU. Run: `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=SceneUboMarshal.*:BuildIntegrity.*`
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** this is hardening, not a live bug — say so in the commit message.
+  The clamp is a no-op for every value the current host can produce
+  (`VulkanRenderer.cpp:216-228` already truncates, `GUI.cpp:191` caps the
+  slider at `MAX_CASCADES`), so the rendered output must not change. The
+  precedent is `a6fbd968` (PCF radius) and the "second lock" comment it left
+  behind. Do not raise `MAX_CASCADES` or widen `cascadeSplits` as part of this.
+
+- [ ] **(S) Gate the invariant that each render stage's framebuffers are destroyed before the swapchain they reference is recreated** — four stages depend on `recreateSwapChain()` having torn their framebuffers down first, the ordering cannot move into the stages, and nothing checks it.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:703-763` — `recreateSwapChain()`: the four `destroyFramebuffers()` calls at `:724-727`, `vulkanSwapChain.recreate()` at `:729`, the `recreateFrameResources()` calls at `:738-748`
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:126-137`, `:267-284` — the `destroyFramebuffers()`/`createFramebuffer()` pair and the `resize()`+overwrite loop
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:130-144`, `:208-226`
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:144-164`, `:317-337`
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:424-432`, `:268-281`
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:5451-5506` — `FramebufferTeardownGoesThroughTheSharedHelper`, the gate to sit next to and the text-scanning style to copy
+
+  **Steps:**
+  1. Add `TEST(BuildIntegrity, EveryStageFramebufferIsDestroyedBeforeTheSwapchainIsRecreated)`
+     to `buildIntegritySuite.cpp`. Read `VulkanRenderer.cpp`, slice out the body
+     of `recreateSwapChain()` (brace-match from its signature, the way the
+     neighbouring gates slice functions), and record the offset of
+     `vulkanSwapChain.recreate(`.
+  2. In that body, collect every receiver `X` in `X.recreateFrameResources(`.
+     For each, decide whether `X` owns framebuffers by looking for a
+     `::destroyFramebuffers()` definition in the stage's own `.cpp` — resolve
+     the receiver to a file via a small hard-coded map in the test
+     (`postStage` → `PostStage.cpp`, `rasterizer` → `Rasterizer.cpp`,
+     `deferredRasterizer` → `DeferredRasterizer.cpp`, `skyBox` →
+     `SkyBox.cpp`, `clouds` → `Clouds.cpp`), and fail if a receiver is not in
+     the map so a sixth stage cannot be added silently.
+  3. For every receiver that owns framebuffers, require `X.destroyFramebuffers();`
+     to appear in the same body **before** the `vulkanSwapChain.recreate(`
+     offset. `clouds` owns none and must pass without one.
+  4. Fail with the receiver name and what was missing (no destroy call at all
+     vs. a destroy call after the recreate), not a bare boolean.
+  5. Add a one-line comment to each of the four `recreateFrameResources()`
+     definitions: it rebuilds framebuffers and deliberately does not destroy
+     the previous ones, because `VulkanRenderer::recreateSwapChain()` must do
+     that before the swapchain images they reference are gone.
+
+  **Test:** the new gate. Prove it bites by temporarily commenting out
+  `postStage.destroyFramebuffers();` at `VulkanRenderer.cpp:724` and confirming
+  the failure names `postStage`; then by moving one destroy call below
+  `vulkanSwapChain.recreate(` and confirming it names the ordering. Revert both.
+  Run: `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** **do not move the teardown into the stages.** The framebuffers
+  reference the outgoing swapchain image views, which is why the destroy must
+  happen before `vulkanSwapChain.recreate()` while `recreateFrameResources()`
+  necessarily runs after it. The current code is correct; this task only makes
+  it stay correct. Dropping one of those four lines costs N framebuffers per
+  window resize, unbounded, and surfaces only as a live-object error at
+  `vkDestroyDevice` — which no CI lane runs.
+
+- [ ] **(S) (refactor) Rename `direcional_light_radiance` and stop labelling it "Ambient intensity"** — the slider is the directional light's radiance, it is spelled with a missing `t`, and the engine has no ambient term for it to be the intensity of.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx:29` — the field (a module interface: this change needs `-FreshContainer`)
+  - `Src/GraphicsEngineVulkan/gui/GUI.cpp:171-178` — the "Ambient intensity" slider, sitting under a `Directional Light` tree node between the light's colour and direction controls
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:193-197` — the only consumer: it becomes `sceneUBO.dirLight.color.w`
+  - `Resources/ShadersSlang/common/scene_types.slang:81-85` — `DirectionalLightData.color`, "w = radiance"
+  - `Resources/ShadersSlang/deferred/deferred.slang:123-128` — how the shader reads it (`lightIntensity`, multiplied into the direct-lighting radiance; there is no ambient term in this path)
+  - `Test/commit/VulkanEngine/guiSceneVarsRoundTripSuite.cpp:48` and `Test/commit/VulkanEngine/goldenRenderSuite.cpp:1521, 1640, 2527, 2626, 2668, 2695` — the other seven references
+
+  **Steps:**
+  1. Rename the field to `directional_light_radiance` in
+     `GUISceneSharedVars.ixx:29` and update all nine other references
+     (`grep -rn 'direcional_light_radiance' Src/ Test/` must come back empty).
+  2. Change the ImGui label at `GUI.cpp:173` to `"Radiance"` — it already sits
+     inside the `Directional Light` tree node, so the prefix would be
+     redundant. Do not change the `0.0F..50.0F` range; `GoldenRender.GuiInputSweepNeverCrashes`
+     sweeps it and `goldenRenderSuite.cpp:2626` pins the 50.0 endpoint.
+  3. Check whether the label is asserted anywhere
+     (`grep -rn 'Ambient intensity' .`) and update if so.
+  4. Leave the shader-side name alone: `dirLight.color.w` is already documented
+     as radiance in `scene_types.slang:84`.
+
+  **Test:** `guiSceneVarsRoundTripSuite` already round-trips this field — update
+  it to the new name and confirm it still passes. Add nothing new; this is a
+  rename. Run:
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GuiSceneVarsRoundTrip.*`
+
+  **Build:** `clangcl-debug` **with `-FreshContainer`** (module-interface
+  change — see the fresh-container rule in `docs/gpu-golden-testing.md`). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+
+  **Context:** a control named after a term the renderer does not implement is
+  worse than an unnamed one — "Ambient intensity" reads as "the ambient term is
+  configurable", and the next person looking for why raising it brightens the
+  lit side spends the afternoon in `brdf.slang`. The typo is the smaller half;
+  fix both in one commit so the field never gets renamed twice.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

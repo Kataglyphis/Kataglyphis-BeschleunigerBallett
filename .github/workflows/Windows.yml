@@ -292,14 +292,6 @@ jobs:
         with:
           name: windows-installers-container
           path: |
-            # legacy/expected CMake preset output
-            D:/ws/build_release/**/*.msi
-            D:/ws/build_release/**/*.exe
-            D:/ws/build_release/**/*.zip
-            D:/ws/build_release/**/*.msix
-            D:/ws/build_release/**/*.dll
-            D:/ws/build_release/**/*.lib
-            # also include the build directory used by the PowerShell build script
             D:/ws/build-clangcl-release/**/*.msi
             D:/ws/build-clangcl-release/**/*.msix
             D:/ws/build-clangcl-release/**/*.exe

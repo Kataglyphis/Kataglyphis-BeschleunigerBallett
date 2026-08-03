@@ -11,8 +11,8 @@
         PresetEnv = 'PRESET_MSVC_DEBUG'
       }
       'msvc-release' = @{
-        BuildDir = 'build-msvc-debug'
-        BuildDirEnv = 'BUILD_DIR_MSVC'
+        BuildDir = 'build-msvc-release'
+        BuildDirEnv = 'BUILD_DIR_MSVC_RELEASE'
         Preset = 'x64-MSVC-Windows-Release'
         PresetEnv = 'PRESET_MSVC_RELEASE'
       }
