@@ -5657,6 +5657,59 @@ TEST(BuildIntegrity, FramebufferTeardownGoesThroughTheSharedHelper)
          }();
 }
 
+// Every hand-rolled render-pass teardown used to be spelled out at each of
+// five stages' cleanUp(). Kataglyphis::destroyRenderPass
+// (common/RenderPassHelper.hpp) is now the one place that destroys render
+// passes - this pins that down the same way
+// FramebufferTeardownGoesThroughTheSharedHelper does for framebuffers.
+TEST(BuildIntegrity, RenderPassTeardownGoesThroughTheSharedHelper)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    static const char *const kRawTeardownCall = ".destroyRenderPass(";
+
+    // RenderPassHelper.hpp is the helper's own definition.
+    static const std::array<const char *, 1> kExemptFiles = {
+        "Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp"
+    };
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".cpp" && path.extension() != ".ixx") { continue; }
+
+        const std::string relative_file = fs::relative(path, repo_root).generic_string();
+        if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string line;
+        std::size_t line_number = 0;
+        while (std::getline(file, line)) {
+            ++line_number;
+            if (line.find(kRawTeardownCall) == std::string::npos) { continue; }
+            violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " hand-rolled .destroyRenderPass(...) call(s) found under Src/GraphicsEngineVulkan/ - destroy render "
+         "passes through Kataglyphis::destroyRenderPass (common/RenderPassHelper.hpp) instead:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 // Four render stages' framebuffers reference the outgoing swapchain's image
 // views, so VulkanRenderer::recreateSwapChain() must destroy them before
 // calling vulkanSwapChain.recreate() - recreateFrameResources() necessarily

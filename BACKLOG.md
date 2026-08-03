@@ -7629,43 +7629,6 @@ RDP-blocked host run. Task it when that blocker clears. **The C++
 `DescriptorSetGroup.cpp`; nothing outside it hand-rolls a descriptor write any
 more. Stop re-checking.
 
-- [ ] **(S) (refactor) Give render-pass teardown one definition and a gate, matching the eleven helpers that came before it** — five stages hand-roll the same three lines, three of them on the line directly after a call to the shared helper that does the same job for pipelines.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/common/FramebufferHelper.hpp:45-70` — `destroyFramebuffers`/`destroyFramebuffer`; copy the doc-comment reasoning (idempotence, by-reference handles) and the guard order
-  - `Src/GraphicsEngineVulkan/common/PipelineLayoutHelper.hpp:44-60` — `destroyPipelineAndLayout`, the other half of the precedent
-  - `Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp` — the new helper's home; it already owns `buildAttachmentDescription`, `buildRenderPassBeginInfo`, `buildSubpassDescription`, `buildRenderPassCreateInfo`
-  - `Test/commit/VulkanEngine/framebufferHelperSuite.cpp:80-90` — the device-free teardown tests to mirror
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:5606-5657` — `FramebufferTeardownGoesThroughTheSharedHelper`, the gate to clone
-  - The five call sites: `renderer/Rasterizer.cpp:120-123`, `renderer/DeferredRasterizer.cpp:121-124`, `renderer/PostStage.cpp:115-118`, `scene/sky_box/SkyBox.cpp:406-409`, `scene/light/directional_light/CascadedShadowMap.cpp:244-247`
-
-  **Steps:**
-  1. Add to `common/RenderPassHelper.hpp`, at the end of the `Kataglyphis` namespace:
-     ```cpp
-     inline void destroyRenderPass(vk::Device device, vk::RenderPass &render_pass)
-     {
-         if (!device) { return; }
-         if (render_pass) {
-             device.destroyRenderPass(render_pass);
-             render_pass = nullptr;
-         }
-     }
-     ```
-     Document it in the voice of `FramebufferHelper.hpp:45-54`: by reference so the caller cannot keep a dangling handle, no-op on a null device so an explicit `cleanUp()` followed by the destructor's safety net stays safe, and name the five stages it replaced.
-  2. Replace all five sites with `Kataglyphis::destroyRenderPass(<device expr>, <member>);`. The device expression differs per site — `device->getLogicalDevice()` in four, a local `logicalDevice` in `DeferredRasterizer.cpp:120`. Do not change the member names (`render_pass` vs `renderPass`); that is the naming task this batch explicitly did not take.
-  3. Check each site's `#include` block already pulls in `common/RenderPassHelper.hpp` — four of the five build render passes and will, but confirm rather than assume, especially `PostStage.cpp`.
-  4. `CascadedShadowMap.cpp:244` and `SkyBox.cpp:406` reach the device through a `shared_ptr`. After the change the null-*device* case is handled inside the helper, but a null `shared_ptr` still faults at the `->`. Check whether those two `cleanUp()` bodies have the `if (!device) { return; }` early return `Rasterizer.cpp:107` has; if either does not, add it — that is in scope here and is the reason this task is worth more than a line count.
-
-  **Test:** Two pieces.
-  (a) Add to `Test/commit/VulkanEngine/renderPassHelperSuite.cpp`, mirroring `framebufferHelperSuite.cpp:80-90`: `RenderPassHelperUnit.DestroyRenderPassOnANullDeviceIsANoOp` (call with `vk::Device{}` and a non-null-looking handle; assert the handle is untouched and nothing crashes) and `RenderPassHelperUnit.DestroyRenderPassOnANullHandleIsANoOp`.
-  (b) Add `BuildIntegrity.RenderPassTeardownGoesThroughTheSharedHelper` to `buildIntegritySuite.cpp`, cloned from `FramebufferTeardownGoesThroughTheSharedHelper` at `:5612`: same `find_repo_root()` + `recursive_directory_iterator` walk over `Src/GraphicsEngineVulkan`, `kRawTeardownCall = ".destroyRenderPass("`, and `kExemptFiles = { "Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp" }`. The existing walk only visits `.cpp` and `.ixx`, so the `.hpp` exemption is belt-and-braces — keep it anyway, so the gate survives someone moving the helper into a module interface. Verify the gate can fail by reverting one call site before you finish.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then, from the repo root, `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='RenderPassHelper*:BuildIntegrity.*'` followed by a full CPU run (`--gtest_filter='-GoldenRender.*:Integration.*'`). No `-FreshContainer` needed: this touches a `.hpp` and five `.cpp` files, no module interface unit. No GPU work either — the five edits are inside `cleanUp()` paths that a headless CPU run does not exercise, which is exactly why the `buildIntegrity` gate carries the weight here.
-
-  **Context:** Twelfth member of the create/destroy helper family; the eleven before it are logged in this file and in `docs/cpp-renderer-improvements.md`. Two rules from those tasks apply: the helper takes its handle by reference (a by-value version destroys without nulling and hands the caller a dangling handle — stated at `PipelineLayoutHelper.hpp:44-48`), and the extraction ships with the grep gate in the same change, because every one of these that shipped without a gate grew a new hand-rolled copy within a month. Log the change in `docs/cpp-renderer-improvements.md`; `BuildIntegrity` already gates that file against drift.
-
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

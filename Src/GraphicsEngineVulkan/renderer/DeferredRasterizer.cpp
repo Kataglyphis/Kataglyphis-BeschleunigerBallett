@@ -118,10 +118,7 @@ void DeferredRasterizer::cleanUp()
     auto logicalDevice = device->getLogicalDevice();
     Kataglyphis::destroyPipelineAndLayout(logicalDevice, geometryPipeline, geometryPipelineLayout);
     Kataglyphis::destroyPipelineAndLayout(logicalDevice, lightingPipeline, lightingPipelineLayout);
-    if (renderPass) {
-        logicalDevice.destroyRenderPass(renderPass);
-        renderPass = nullptr;
-    }
+    Kataglyphis::destroyRenderPass(logicalDevice, renderPass);
 
     destroyFramebuffers();
 

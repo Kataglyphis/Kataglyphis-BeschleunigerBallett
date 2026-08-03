@@ -241,10 +241,7 @@ void CascadedShadowMap::cleanUp()
 
     Kataglyphis::destroyFramebuffer(device->getLogicalDevice(), framebuffer);
 
-    if (renderPass) {
-        device->getLogicalDevice().destroyRenderPass(renderPass);
-        renderPass = nullptr;
-    }
+    Kataglyphis::destroyRenderPass(device->getLogicalDevice(), renderPass);
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphicsPipeline, pipelineLayout);
     lightMatricesDescriptors.cleanUp();
     if (shadowMapArray) {

@@ -117,10 +117,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::cleanUp()
     depthBufferImage.reset();
 
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphics_pipeline, pipeline_layout);
-    if (render_pass) {
-        device->getLogicalDevice().destroyRenderPass(render_pass);
-        render_pass = nullptr;
-    }
+    Kataglyphis::destroyRenderPass(device->getLogicalDevice(), render_pass);
 
     device.reset();
 }

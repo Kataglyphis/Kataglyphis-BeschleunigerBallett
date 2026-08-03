@@ -71,6 +71,12 @@ validation-layer-clean runtime check where rendering changed.
 | `0c62dfe9`, `95ae08f3`, `090ab81f`, `a15a4f73`, `d2042fa0`, `85a2191d` | **Cascade/shadow fixes** | The cascade light-matrix UBO is double-buffered per swapchain image; the stabilized cascade box snaps to the grid it actually projects onto; the PCF kernel stops sampling past the shadow map's edge; the cascade framebuffer attachment has one image view; the shadow pass binds light matrices at set 1 on the no-shared-set fallback; `CascadedShadowMap` no longer stages its light matrices through a throwaway command pool. |
 | `c37394b4`, `4c5f0294`, `13773702`, `49e1f5d4` | **Input and GUI** | Key/mouse-button RELEASE is honoured under ImGui capture, with real focus/enter callbacks; look mode ends and the mouse origin re-seeds on window focus loss; the GUI model transform is a pure helper (dropping a stale 60x scale); the GUI model picker's default index no longer leaves Position/Rotation controls dead. |
 
+### 2026-08-04
+
+| Commits | Theme | Notes |
+| --- | --- | --- |
+| (refactor) | **`destroyRenderPass` - render-pass teardown dedup** | Twelfth member of the create/destroy helper family. Five stages (Rasterizer, DeferredRasterizer, PostStage, SkyBox, CascadedShadowMap) hand-rolled the same null-checked `destroyRenderPass`/null-out pair in `cleanUp()`; collapsed into one `Kataglyphis::destroyRenderPass(device, render_pass)` in `common/RenderPassHelper.hpp`, following `destroyPipelineAndLayout`'s by-reference, device-null-is-a-no-op shape. `BuildIntegrity.RenderPassTeardownGoesThroughTheSharedHelper` (cloned from the framebuffer-teardown gate) greps `Src/GraphicsEngineVulkan` for a stray `.destroyRenderPass(` outside the helper. |
+
 ## In progress
 
 (nothing left that is actionable here — the only remaining item is

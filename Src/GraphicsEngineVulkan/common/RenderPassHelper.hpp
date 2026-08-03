@@ -146,4 +146,23 @@ constexpr vk::RenderPassCreateInfo buildRenderPassCreateInfo(
         static_cast<uint32_t>(dependencies.size()), dependencies.data() };
 }
 
+// Destroys a render pass and nulls its handle - the same idempotence rule
+// FramebufferHelper.hpp's destroyFramebuffer/destroyFramebuffers and
+// PipelineLayoutHelper.hpp's destroyPipelineAndLayout follow: a device-less
+// call (already torn down, or never had a device) is a no-op rather than a
+// crash, so an explicit cleanUp followed by the destructor's safety net stays
+// safe. Rasterizer, DeferredRasterizer, PostStage, SkyBox and
+// CascadedShadowMap each hand-rolled this. The handle is taken by reference
+// for the same reason destroyPipelineAndLayout takes its handles by
+// reference; passing by value would destroy without nulling and leave the
+// caller holding a dangling handle.
+inline void destroyRenderPass(vk::Device device, vk::RenderPass &render_pass)
+{
+    if (!device) { return; }
+    if (render_pass) {
+        device.destroyRenderPass(render_pass);
+        render_pass = nullptr;
+    }
+}
+
 }// namespace Kataglyphis

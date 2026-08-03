@@ -403,10 +403,7 @@ void SkyBox::cleanUp()
     destroyFramebuffers();
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphicsPipeline, pipelineLayout);
     cubemapDescriptors.cleanUp();
-    if (renderPass) {
-        device->getLogicalDevice().destroyRenderPass(renderPass);
-        renderPass = nullptr;
-    }
+    Kataglyphis::destroyRenderPass(device->getLogicalDevice(), renderPass);
     if (skyMesh) {
         skyMesh->cleanUp();
     }

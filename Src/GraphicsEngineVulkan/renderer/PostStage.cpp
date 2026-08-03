@@ -112,10 +112,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::cleanUp()
         device->getLogicalDevice().destroySampler(offscreenTextureSampler);
         offscreenTextureSampler = nullptr;
     }
-    if (render_pass) {
-        device->getLogicalDevice().destroyRenderPass(render_pass);
-        render_pass = nullptr;
-    }
+    Kataglyphis::destroyRenderPass(device->getLogicalDevice(), render_pass);
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphics_pipeline, pipeline_layout);
 
     device.reset();

@@ -26,6 +26,7 @@
 #include "common/RenderPassHelper.hpp"
 
 using Kataglyphis::buildAttachmentDescription;
+using Kataglyphis::destroyRenderPass;
 
 // Usable in a constant expression, matching ViewportHelper.hpp's convention.
 static_assert(
@@ -180,6 +181,22 @@ TEST(RenderPassHelperUnit, MatchesCascadedShadowMapDepthAttachmentThatIsSampledL
     EXPECT_EQ(description.initialLayout, vk::ImageLayout::eUndefined);
     EXPECT_EQ(description.finalLayout, vk::ImageLayout::eShaderReadOnlyOptimal);
     expectEngineWideAttachmentInvariants(description);
+}
+
+TEST(RenderPassHelperUnit, DestroyRenderPassOnANullDeviceIsANoOp)
+{
+    // A non-null-looking handle: with no device, destroyRenderPass must
+    // return before ever touching it, so it must come back unchanged.
+    vk::RenderPass render_pass(reinterpret_cast<VkRenderPass>(0x1));
+    destroyRenderPass(vk::Device{}, render_pass);
+    EXPECT_EQ(render_pass, vk::RenderPass(reinterpret_cast<VkRenderPass>(0x1)));
+}
+
+TEST(RenderPassHelperUnit, DestroyRenderPassOnANullHandleIsANoOp)
+{
+    vk::RenderPass render_pass(nullptr);
+    destroyRenderPass(vk::Device{}, render_pass);
+    EXPECT_EQ(render_pass, vk::RenderPass(nullptr));
 }
 
 }// namespace
