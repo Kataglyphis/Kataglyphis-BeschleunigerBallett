@@ -50,6 +50,8 @@ the loop skips these and they do not count toward its pending-task queue),
   first (a device-simulation layer, or a deliberate fault injection behind a
   debug flag); then the refactor is safe and its correctness is checkable.
 
+- Animate the cloud volume (needs a time uniform + a deterministic override for the goldens).
+
 ## Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 - [b] **Basis ETC1S/UASTC transcoding** (M, **blocked on a transcoder + a test
@@ -6394,87 +6396,6 @@ eDepthStencilAttachmentOptimal` for an image nothing transitions out of
 `SkyBox`'s pass, which shares the view and declares `eUndefined`, always runs
 first (`VulkanRenderer.cpp:1002-1008`); fragile, but correct as recorded.
 **`Src/KomputePlayground`** — unchanged; still an owner decision.
-
-### Shaders
-
-- [ ] **(M) Retire the cloud movement `vec4` no shader reads, give `# march steps to light` a path to the GPU, and gate the whole class** — four Cloud Settings controls currently change nothing, including a `vec4` uploaded to every swapchain image every frame.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/gui/GUI.cpp:209-226` — the Cloud Settings panel;
-    `:212` and `:215` are the dead sliders, `:214` the unwired one, `:216-217`
-    the two mislabelled ones.
-  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx:67-72` — the backing
-    fields (`cloud_speed`, `cloud_num_march_steps_to_light`,
-    `cloud_movement_direction`, `cloud_scale`, `cloud_density`).
-  - `Src/GraphicsEngineVulkan/renderer/SceneUBO.hpp:61-64` — the four cloud
-    `vec4`s and their `w`-slot comments.
-  - `Resources/ShadersSlang/common/scene_types.slang:94-97` — the device-side
-    mirror of those four members.
-  - `Resources/ShadersSlang/compute/clouds.slang:126-135` — every `SceneUBO`
-    field the shader actually reads, plus the hard-coded
-    `num_march_steps_to_light = 4` at `:127`.
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:221-243` — the pack
-    site.
-  - `Test/commit/VulkanEngine/sceneUboLayoutSuite.cpp:34-37`,
-    `buildIntegritySuite.cpp:695-705` (the `SharedStructOffsetsMatchTheCompiledSpirv`
-    name→offset map), `guiSceneVarsRoundTripSuite.cpp:60-70`,
-    `goldenRenderSuite.cpp:2630-2695` — every place the names are pinned.
-
-  **Steps:**
-  1. Rename the member in **both** halves of the shared layout —
-     `SceneUBO.hpp:61` and `scene_types.slang:94` — from
-     `cloudMovementDirection` to `cloudLightMarch`, documented as
-     `x = numMarchStepsToLight, y/z/w reserved (0)`. The offset does not move
-     (288), so this is a rename, not a layout change; `sceneUboLayoutSuite.cpp:34`
-     and `buildIntegritySuite.cpp:700` need the new name and keep their numbers.
-  2. `VulkanRenderer::updateUniforms:221-225`: replace the movement/speed pack
-     with
-     `sceneUBO.cloudLightMarch = glm::vec4(static_cast<float>(guiSceneSharedVars.cloud_num_march_steps_to_light), 0.0F, 0.0F, 0.0F);`
-  3. `clouds.slang:127`: read it, clamped to the slider's own range so a
-     zero-initialised UBO cannot divide by zero in `light_march`:
-     `cloud.num_march_steps_to_light = int(clamp(scene.cloudLightMarch.x, 1.0, 128.0));`
-  4. Delete `cloud_speed` and `cloud_movement_direction` from
-     `GUISceneSharedVars.ixx`, their two sliders (`GUI.cpp:212,215`), and every
-     reference in `guiSceneVarsRoundTripSuite.cpp`, `goldenRenderSuite.cpp:2635`,
-     `:2683` and `:2686`. This is the same call `ba1f597a` made when it shrank
-     `PushConstantPost` to the one field `post.slang` reads: no shader has ever
-     consumed that `vec4`, and animating the volume needs an elapsed-time
-     uniform the `SceneUBO` does not have — adding one would also make the
-     cloud goldens non-deterministic. Record "animate the cloud volume (needs a
-     time uniform + a deterministic override for the goldens)" as a one-line
-     unsized idea under `## C++ Vulkan engine`; do not half-wire it here.
-  5. Relabel the two misleading sliders (ImGui label strings only — the C++
-     field names are pinned by `guiSceneVarsRoundTripSuite`):
-     `GUI.cpp:216` "Illumination intensity" → `"Density"` (it is `cloud.scale`,
-     the density multiplier) and `:217` "Density" → `"Coverage threshold"` (it
-     is `cloud.threshold`, the noise cut-off). Add a one-line comment naming the
-     `SceneUBO` slot each one lands in.
-
-  **Test:** Add `BuildIntegrity.EverySceneUboFieldIsReadByAShader` (new, pure
-  CPU) — the gate that would have caught this whole class. Parse the member
-  names out of `struct SceneUBO` in
-  `Src/GraphicsEngineVulkan/renderer/SceneUBO.hpp` (skip anything starting
-  `_pad`), then read every `Resources/ShadersSlang/**/*.slang` and fail listing
-  any member no shader source mentions by name.
-  `SharedStructOffsetsMatchTheCompiledSpirv` (`buildIntegritySuite.cpp:3596`)
-  already reads that header and can be followed for the parsing half. Also
-  update `sceneUboLayoutSuite.cpp` and the offset map in
-  `buildIntegritySuite.cpp:700` for the rename, and confirm
-  `guiSceneVarsRoundTripSuite` still builds after the two field deletions.
-
-  **Build:** `clangcl-debug` (fast iteration). Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  Recompile shaders first (`Scripts\Windows\compile-slang-shaders.ps1`) —
-  `scene_types.slang` is a shared import, so
-  `BuildIntegrity.CompiledShadersAreNotOlderThanSharedIncludes` fails otherwise.
-
-  **Context:** Land **after** task 1; both edit `clouds.slang`. The gate is the
-  point, not the four controls: `SceneUBO` is 352 bytes uploaded to every
-  swapchain image every frame, and there was no test anywhere that a member the
-  host fills is read by anything. Same shape as
-  `EveryShaderHotReloadImplementationIsCalledByTheRenderer` and
-  `EverySlangFunctionIsReachableFromAnEntryPoint` — reachability, checked in
-  one direction, on data instead of code.
 
 ### C++ Vulkan engine
 

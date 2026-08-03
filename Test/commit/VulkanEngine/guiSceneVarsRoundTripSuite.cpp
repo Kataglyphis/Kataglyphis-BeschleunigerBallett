@@ -30,7 +30,7 @@ namespace {
 
 // Byte size of GUISceneSharedVars as of the last time makeNonDefaultVars()
 // below was checked against it. See the size test at the bottom.
-constexpr std::size_t GUI_SCENE_SHARED_VARS_EXPECTED_SIZE = 192;
+constexpr std::size_t GUI_SCENE_SHARED_VARS_EXPECTED_SIZE = 176;
 
 // Every field a caller can flip, set to something distinguishable from the
 // default. Kept exhaustive on purpose: a field added to GUISceneSharedVars
@@ -59,12 +59,8 @@ GUISceneSharedVars makeNonDefaultVars()
     vars.cascaded_shadow_intensity = 0.125F;
     vars.shadow_distance = 42.0F;
     vars.cascade_split_lambda = 0.75F;
-    vars.cloud_speed = 11;
     vars.cloud_num_march_steps = 16;
     vars.cloud_num_march_steps_to_light = 5;
-    vars.cloud_movement_direction[0] = 2.0F;
-    vars.cloud_movement_direction[1] = 3.0F;
-    vars.cloud_movement_direction[2] = 4.0F;
     vars.cloud_scale = 0.11F;
     vars.cloud_density = 0.22F;
     vars.cloud_pillowness = 0.33F;

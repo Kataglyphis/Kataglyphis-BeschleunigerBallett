@@ -91,7 +91,7 @@ struct SceneUBO
     float4x4 cascadeLightSpaceMatrices[MAX_CASCADES];
     float4 view_dir;
     float4 cam_pos;
-    float4 cloudMovementDirection;
+    float4 cloudLightMarch;
     float4 cloudMeshScale;
     float4 cloudMeshOffset;
     float4 cloudParameters;

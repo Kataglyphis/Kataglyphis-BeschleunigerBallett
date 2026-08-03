@@ -218,11 +218,8 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
       std::span<const glm::mat4>(cascadeViewProjMatrices).first(active_cascades),
       guiSceneSharedVars.shadows_enabled);
 
-    sceneUBO.cloudMovementDirection = glm::vec4(
-        guiSceneSharedVars.cloud_movement_direction[0],
-        guiSceneSharedVars.cloud_movement_direction[1],
-        guiSceneSharedVars.cloud_movement_direction[2],
-        static_cast<float>(guiSceneSharedVars.cloud_speed));
+    sceneUBO.cloudLightMarch = glm::vec4(
+        static_cast<float>(guiSceneSharedVars.cloud_num_march_steps_to_light), 0.0F, 0.0F, 0.0F);
 
     sceneUBO.cloudMeshScale = glm::vec4(
         guiSceneSharedVars.cloud_mesh_scale[0],

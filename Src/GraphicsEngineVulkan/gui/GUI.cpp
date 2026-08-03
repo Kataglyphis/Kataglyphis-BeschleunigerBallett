@@ -209,12 +209,12 @@ void GUI::render()
         if (ImGui::TreeNode("Cloud Settings")) {
             ImGui::Checkbox("Enable Clouds", &guiSceneSharedVars.clouds_enabled);
             if (guiSceneSharedVars.clouds_enabled) {
-                ImGui::SliderInt("Speed", &guiSceneSharedVars.cloud_speed, 0, 30);
                 ImGui::SliderInt("# march steps", &guiSceneSharedVars.cloud_num_march_steps, 1, 128);
                 ImGui::SliderInt("# march steps to light", &guiSceneSharedVars.cloud_num_march_steps_to_light, 1, 128);
-                ImGui::SliderFloat3("Movement Direction", guiSceneSharedVars.cloud_movement_direction, -10.F, 10.0F);
-                ImGui::SliderFloat("Illumination intensity", &guiSceneSharedVars.cloud_scale, 0.F, 1.0F);
-                ImGui::SliderFloat("Density", &guiSceneSharedVars.cloud_density, 0.F, 1.0F);
+                // cloud.scale (clouds.slang) - the density multiplier applied to the noise sample.
+                ImGui::SliderFloat("Density", &guiSceneSharedVars.cloud_scale, 0.F, 1.0F);
+                // cloud.threshold (clouds.slang) - the noise cut-off below which a sample counts as clear sky.
+                ImGui::SliderFloat("Coverage threshold", &guiSceneSharedVars.cloud_density, 0.F, 1.0F);
                 ImGui::SliderFloat("Pillowness", &guiSceneSharedVars.cloud_pillowness, 0.F, 1.0F);
                 ImGui::SliderFloat("Cirrus effect", &guiSceneSharedVars.cloud_cirrus_effect, 0.F, 1.0F);
                 ImGui::Checkbox("Powder effect", &guiSceneSharedVars.cloud_powder_effect);

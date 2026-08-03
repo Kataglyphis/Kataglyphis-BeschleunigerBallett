@@ -23,6 +23,7 @@
 #include <optional>
 #include <regex>
 #include <set>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -697,7 +698,7 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "cascadeLightSpaceMatrices", offsetof(SceneUBO, cascadeLightSpaceMatrices) },
             { "view_dir", offsetof(SceneUBO, view_dir) },
             { "cam_pos", offsetof(SceneUBO, cam_pos) },
-            { "cloudMovementDirection", offsetof(SceneUBO, cloudMovementDirection) },
+            { "cloudLightMarch", offsetof(SceneUBO, cloudLightMarch) },
             { "cloudMeshScale", offsetof(SceneUBO, cloudMeshScale) },
             { "cloudMeshOffset", offsetof(SceneUBO, cloudMeshOffset) },
             { "cloudParameters", offsetof(SceneUBO, cloudParameters) } } },
@@ -3689,6 +3690,124 @@ TEST(BuildIntegrity, SharedStructOffsetsMatchTheCompiledSpirv)
       << [&offset_mismatches] {
              std::string joined;
              for (const auto &entry : offset_mismatches) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+namespace {
+
+// Parses the member names straight out of SceneUBO's C++ definition (not the
+// compiled SPIR-V - a member the host writes but no shader reads compiles
+// fine and never turns up in SharedStructOffsetsMatchTheCompiledSpirv, which
+// only checks members shaders DO reference). Follows the same "scan by
+// text, not by AST" approach as SharedStructOffsetsMatchTheCompiledSpirv's
+// SPIR-V parser above. Members prefixed `_pad` are layout filler, not data a
+// shader could plausibly read, and are skipped.
+std::vector<std::string> parse_scene_ubo_member_names(const fs::path &header_path)
+{
+    std::ifstream file(header_path);
+    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    const std::size_t struct_pos = text.find("struct SceneUBO");
+    if (struct_pos == std::string::npos) { return {}; }
+    const std::size_t open_brace = text.find('{', struct_pos);
+    if (open_brace == std::string::npos) { return {}; }
+
+    int depth = 1;
+    std::size_t close_brace = std::string::npos;
+    for (std::size_t pos = open_brace + 1; pos < text.size(); ++pos) {
+        if (text[pos] == '{') {
+            ++depth;
+        } else if (text[pos] == '}') {
+            --depth;
+            if (depth == 0) {
+                close_brace = pos;
+                break;
+            }
+        }
+    }
+    if (close_brace == std::string::npos) { return {}; }
+
+    const std::string body = text.substr(open_brace + 1, close_brace - open_brace - 1);
+    const std::regex array_suffix(R"(\[[^\]]*\])");
+    // A genuine member declaration's last token before ';' is a bare
+    // identifier. Anything else (e.g. the closing `");` of a static_assert
+    // message that wraps onto its own line) is not a declaration and is
+    // skipped rather than mis-captured as a bogus member name.
+    const std::regex identifier(R"(^[A-Za-z_]\w*$)");
+
+    std::vector<std::string> names;
+    std::istringstream body_stream(body);
+    std::string line;
+    while (std::getline(body_stream, line)) {
+        const auto comment_pos = line.find("//");
+        if (comment_pos != std::string::npos) { line = line.substr(0, comment_pos); }
+        line = std::regex_replace(line, array_suffix, "");
+
+        const auto semi_pos = line.find(';');
+        if (semi_pos == std::string::npos) { continue; }
+
+        std::istringstream decl_stream(line.substr(0, semi_pos));
+        std::string token;
+        std::string last_token;
+        while (decl_stream >> token) { last_token = token; }
+
+        if (!std::regex_match(last_token, identifier) || last_token.rfind("_pad", 0) == 0) { continue; }
+        names.push_back(last_token);
+    }
+    return names;
+}
+
+}// namespace
+
+// SceneUBO is 352 bytes uploaded to every swapchain image every frame, and
+// nothing checked that a member the host fills is ever read by a shader -
+// cloudMovementDirection shipped as a dead vec4 for this exact reason. This
+// is the gate: parse every member name out of the C++ struct, then fail
+// listing any that no Slang source under Resources/ShadersSlang mentions by
+// name. Same shape as EveryShaderHotReloadImplementationIsCalledByTheRenderer
+// and EverySlangFunctionIsReachableFromAnEntryPoint - reachability, checked
+// in one direction, on data instead of code.
+TEST(BuildIntegrity, EverySceneUboFieldIsReadByAShader)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path header_path = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "SceneUBO.hpp";
+    ASSERT_TRUE(fs::exists(header_path)) << "missing " << header_path.string();
+
+    const std::vector<std::string> members = parse_scene_ubo_member_names(header_path);
+    ASSERT_GT(members.size(), 5U) << "found only " << members.size() << " SceneUBO member(s) in "
+                                   << header_path.string() << " - the parser itself is broken";
+
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    std::string all_slang_text;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        if (!it->is_regular_file(error) || it->path().extension() != ".slang") { continue; }
+        std::ifstream file(it->path());
+        all_slang_text += std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        all_slang_text += '\n';
+    }
+
+    std::vector<std::string> unread;
+    for (const auto &member : members) {
+        const std::regex word_boundary(R"(\b)" + member + R"(\b)");
+        if (!std::regex_search(all_slang_text, word_boundary)) { unread.push_back(member); }
+    }
+
+    EXPECT_TRUE(unread.empty())
+      << unread.size()
+      << " SceneUBO member(s) are written by the host every frame but read by no Slang shader source under "
+      << slang_root.string()
+      << " - either wire the field into a shader or delete it (see the cloudMovementDirection removal for the "
+         "precedent):"
+      << [&unread] {
+             std::string joined;
+             for (const auto &entry : unread) { joined += "\n  " + entry; }
              return joined;
          }();
 }

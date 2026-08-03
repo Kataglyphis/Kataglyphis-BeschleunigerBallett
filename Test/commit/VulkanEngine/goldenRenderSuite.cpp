@@ -2632,7 +2632,6 @@ TEST(GoldenRender, GuiInputSweepNeverCrashesOrLosesTheDevice)
     s.shadow_distance = 200.0F;
     s.shadow_resolution_changed = true;
     s.clouds_enabled = true;
-    s.cloud_speed = 30;
     s.cloud_num_march_steps = 128;
     s.cloud_num_march_steps_to_light = 128;
     s.cloud_scale = 1.0F;
@@ -2680,10 +2679,8 @@ TEST(GoldenRender, GuiInputSweepNeverCrashesOrLosesTheDevice)
         s.shadow_resolution_changed = true;
 
         s.clouds_enabled = rng.ub();
-        s.cloud_speed = rng.ui(0, 30);
         s.cloud_num_march_steps = rng.ui(1, 128);
         s.cloud_num_march_steps_to_light = rng.ui(1, 128);
-        for (float &d : s.cloud_movement_direction) { d = rng.uf(-10.0F, 10.0F); }
         s.cloud_scale = rng.uf(0.0F, 1.0F);
         s.cloud_density = rng.uf(0.0F, 1.0F);
         s.cloud_pillowness = rng.uf(0.0F, 1.0F);

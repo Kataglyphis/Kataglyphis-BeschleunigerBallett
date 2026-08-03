@@ -64,10 +64,8 @@ export struct GUISceneSharedVars
                   "available_shadow_map_resolutions must have one label per kShadowMapResolutions entry");
 
     // Clouds
-    int cloud_speed = 6;
     int cloud_num_march_steps = 8;
     int cloud_num_march_steps_to_light = 3;
-    float cloud_movement_direction[3] = { 1.f, 1.f, 1.f };
     float cloud_scale = 0.63f;
     float cloud_density = 0.493f;
     float cloud_pillowness = 0.966f;

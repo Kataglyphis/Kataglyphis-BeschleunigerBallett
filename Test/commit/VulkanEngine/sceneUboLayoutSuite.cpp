@@ -31,7 +31,7 @@ TEST(SceneUboLayoutUnit, MatchesTheCompiledStd140Block)
     EXPECT_EQ(offsetof(SceneUBO, cascadeLightSpaceMatrices), 64U);
     EXPECT_EQ(offsetof(SceneUBO, view_dir), 256U);
     EXPECT_EQ(offsetof(SceneUBO, cam_pos), 272U);
-    EXPECT_EQ(offsetof(SceneUBO, cloudMovementDirection), 288U);
+    EXPECT_EQ(offsetof(SceneUBO, cloudLightMarch), 288U);
     EXPECT_EQ(offsetof(SceneUBO, cloudMeshScale), 304U);
     EXPECT_EQ(offsetof(SceneUBO, cloudMeshOffset), 320U);
     EXPECT_EQ(offsetof(SceneUBO, cloudParameters), 336U);
