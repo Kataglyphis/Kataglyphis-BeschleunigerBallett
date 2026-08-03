@@ -5351,29 +5351,6 @@ for the third time (upload-time only, never on the frame path).
 
 ### Rust WebGPU renderer
 
-- [ ] **(M) Carry OBJ per-vertex colours through the OBJ→glTF converter as `COLOR_0`** — a vertex-coloured OBJ renders tinted in the Vulkan engine and flat white in the WebGPU one.
-
-  **Files to read:**
-  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/asset/obj_to_gltf.rs` — the `"v"` arm (`:200-209`), the `ObjMesh` fields (`:48-66`), `to_gltf` (`:399-459` for the buffer layout and the `"attributes"` string at `:455`), the JSON template's `bufferViews`/`accessors` arrays (`:531-542`), and the module doc (`:15-18`)
-  - `.../src/asset/gltf_loader.rs` — `:492-495` and `:530`, the `COLOR_0` read (vec3 → vec4 with a = 1) that the converted document must feed
-  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp` — `:332-342`, the C++ behaviour this must match (absent colour ⇒ identity `(1,1,1)`, never a sentinel)
-  - `Test/commit/VulkanEngine/gltfParseSuite.cpp` — `:682`, `GltfParseUnit.ReadsColor0VertexColours`, the C++ half of the invariant
-
-  **Steps:**
-  1. Add `pub colors: Vec<[f32; 4]>` to `ObjMesh` and a `pub has_vertex_colors: bool` (or make the field `Option<Vec<...>>`) so a colourless OBJ converts byte-identically to today — existing converted assets and the comparison harness must not move.
-  2. In the `"v"` arm, accept 6 (and 7, for `v x y z r g b a`) components: push the position as now, and push the colour into a parallel `vertex_colors` array, defaulting to `[1.0, 1.0, 1.0, 1.0]` when the line carried only 3. Reject a length that is neither 3, 6 nor 7 with the existing `bail!` style.
-  3. In the `"f"` arm, where a new unique vertex is pushed (`:241-265`), push the corresponding entry into `mesh.colors` alongside `mesh.uvs` / `mesh.normals` so the arrays stay parallel per unique vertex.
-  4. In `to_gltf`, append the colour floats to `bin` after the UVs (before the 4-byte pad at `:423-425`), add a fifth `bufferView`, and emit a `VEC4` `componentType: 5126` accessor. **The index accessors are addressed as `3 + run` (`:456`)** — replace that literal with a computed base so adding an attribute accessor cannot silently repoint every primitive's `indices`. Emit `"COLOR_0": 3` in the primitive attributes only when the mesh actually carries colours.
-  5. Fix the module doc at `:15-18`: it claims smoothing groups are "rejected rather than silently mangled", but `"s"` is in the ignore list at `:307`. State what actually happens (ignored, because every real OBJ carries them) and leave negative indices as the genuinely rejected case (`resolve`, `:381-393`).
-
-  **Test:** In `obj_to_gltf.rs`'s test module, add: a parse test that `v 0 0 0 1 0 0` yields `colors[i] == [1.0, 0.0, 0.0, 1.0]`; a test that a colourless OBJ produces `has_vertex_colors == false` and a `to_gltf` output whose primitive attributes contain no `COLOR_0`; and a round-trip test that loads the emitted document back with the real `gltf` crate (the pattern the module doc at `:6-7` already describes) and asserts `read_colors(0)` returns the source colours. Add one test asserting the index accessor indices are unchanged for a colourless mesh, so step 4's renumbering is pinned.
-
-  **Build:** No C++ build needed. Run:
-  `cargo test -p kataglyphis_webgpu_renderer` from `ExternalLib/Kataglyphis-RustProjectTemplate`.
-  This crate's suite runs in the `ubuntu-24.04` leg of Linux CI via `Scripts/Linux/run-cargo-tests.sh` (see AGENTS.md), so a push gets signal without `[build-win]`. Commit the submodule and bump the gitlink in the same change.
-
-  **Context:** See `docs/shader-sharing.md` and the divergence family listed in this batch's preamble — the rule is that the two renderers may differ only in ways that are written down. `Vertex::color` is already multiplied into the C++ fragment output with glTF `COLOR_0` semantics (`ObjLoader.cpp:332-335` spells out why the absent case must be `(1,1,1)`), and `forward.wgsl` already consumes `vertexColor`, so this closes the gap entirely on the converter side — no shader change is needed on either renderer.
-
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
