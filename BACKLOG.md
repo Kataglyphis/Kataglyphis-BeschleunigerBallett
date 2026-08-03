@@ -5248,6 +5248,202 @@ combined WGSL emit is skipped below `minSlangcVersionForWgsl`, which the
 
 ### C++ Vulkan engine
 
+## 2026-08-03 batch III — planner (the one scene-changing path that forgets to rebind the acceleration structure it just destroyed, plus the gate that would have caught it; a GUI transform that re-applies the 60× scale SceneConfig deleted; a path-tracing history that ignores the light it integrates; an OBJ→glTF converter that drops the vertex colours the C++ loader honours)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the tree
+this pass.
+
+**The headline is that three code paths change the scene and only two of them
+rebind the descriptors afterwards.** `finishModelLoad`
+(`VulkanRenderer.cpp:243-253`) and `addModel` (`:727-758`) both run
+`createASForScene` → `rebuildObjectDescriptions` → **`updateAllDescriptorSets()`**.
+`handleModelReloadRequest` — the GUI model-picker path (`:380-405`) — runs
+`createASForScene` → `rebuildObjectDescriptions` →
+**`updateTexturesInSharedRenderDescriptorSet()`** and stops there.
+`updateRaytracingDescriptorSets()` (`:1346-1362`) is reachable *only* through
+`updateAllDescriptorSets()` (`:760-769`), so after picking a different model
+from the combo the raytracing descriptor sets still hold the
+`vk::AccelerationStructureKHR` that `ASManager::createTLAS` destroyed at
+`ASManager.cpp:230-233` — a destroyed handle bound at `TLAS_BINDING` for every
+swapchain image, dispatched against on the next frame in which
+`guiRendererSharedVars.raytracing || .pathTracing` is set. The same omission
+also skips `updatePostDescriptorSets`, `updateGBufferDescriptorSets` and the
+`pathTracingAccumulatedFrames = 0` reset that `updateRaytracingDescriptorSets`
+performs precisely because "any accumulated history predates that world"
+(`:1353-1359`). `goldenRenderSuite.cpp:2280-2341` already pins the equivalent
+invariant for `addModel` ("red-proven by removing the addModel AS rebuild"); the
+reload path has no such test.
+
+**Second, the GUI model transform re-applies a scale the engine deliberately
+removed.** `sceneConfig::getModelMatrix()` returns identity, and its comment
+(`SceneConfig.cpp:116-124`) explains why: "the old 60x scale for the tiny
+viking_room made the camera start INSIDE the geometry (all backfaces, culled ->
+black viewport) and stretched the scene far beyond a cascade's useful
+resolution". `handleModelTransformChange` (`VulkanRenderer.cpp:342-343`) still
+opens with `glm::scale(modelMatrix, glm::vec3(60.0f, 60.0f, 60.0f)); //
+Apply original scale`. `model_position`/`model_rotation` default to all-zero
+(`GUISceneSharedVars.ixx:90-91`), so the *first* one-pixel drag of the Position
+or Rotation widget (`GUI.cpp:101-106`) jumps the loaded model from 1× to 60×.
+
+**Third, the path tracer's temporal accumulation is invalidated by camera and
+quality changes but not by the light it integrates.**
+`recordRaytracingOrPathTracing` (`VulkanRenderer.cpp:1102-1110`) resets
+`pathTracingAccumulatedFrames` when the view matrix, samples-per-pixel or
+max-bounces changed. `path_tracing.slang` reads `sceneUBO.dirLight.direction`
+(`:227`) and `sceneUBO.dirLight.color` rgb + w-as-intensity (`:253-255`) inside
+the NEE loop and folds the result into the running mean at `:282-292`. Dragging
+the directional-light direction, colour or radiance in the GUI therefore leaves
+frames lit by the *old* light weighted into the mean, decaying only as `k/N`
+with no reset — the same defect the view-matrix check exists to prevent.
+
+**Fourth, the OBJ→glTF converter drops per-vertex colours that the C++ loader
+honours.** `ObjLoader::loadVertices` reads `attrib.colors` into `Vertex::color`
+(`ObjLoader.cpp:336-342`) and the Rust glTF loader reads `COLOR_0`
+(`asset/gltf_loader.rs:492-495`, `:530`), pinned on the C++ side by
+`GltfParseUnit.ReadsColor0VertexColours` (`gltfParseSuite.cpp:682`). But
+`asset/obj_to_gltf.rs`'s `"v"` arm (`:200-209`) reads exactly three components
+and silently ignores the optional `r g b` of `v x y z r g b`, and `to_gltf`
+emits `"attributes": { "POSITION": 0, "NORMAL": 1, "TEXCOORD_0": 2 }` (`:455`)
+with no colour accessor (`:537-541`). A vertex-coloured OBJ renders tinted in
+the Vulkan engine and flat-white in the WebGPU one — the sixth entry in the
+cross-renderer-divergence family (`bd315707` `map_Kd` backslashes, `6aa5eec6`
+the `Resources/` search, `d25cd1e5` index validation, `92df2e7f` adapter
+absence, `c7b66fa5` the default-scene walk).
+
+Ordering: **task 1 before task 2** — task 2's gate asserts the helper task 1
+introduces. Tasks 3 and 4 also edit `VulkanRenderer.cpp` but in disjoint regions
+(`:336-378` and `:1096-1122` versus task 1's `:243-253`/`:380-405`/`:760-769`);
+still, do them one at a time. Task 5 is in the Rust submodule and disjoint from
+all four.
+
+**GPU verification is currently unavailable** (see the `- [b]` RDP entry above),
+so every task below lands a device-free gate or unit test as its primary
+evidence, and names the GPU golden only as the secondary check to run once a
+console session exists.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`ASManager::cleanUp()` is not idempotent**
+(`ASManager.cpp:382-402` destroys `tlas.vulkanAS` and every `blas[i].vulkanAS`
+without nulling them or clearing `blas`, so a second `cleanUp()` — or a
+`createASForScene()` after one — double-destroys) — a real latent double-free
+and the odd one out against the "Idempotent: safe to call again" convention
+`Clouds::cleanUp`, `CascadedShadowMap::cleanUp` and `DeferredRasterizer::cleanUp`
+all state, but no call site reaches either sequence today and the fix has no
+device-free test; **`CascadedShadowMap::recordCommands` binding the light-matrices
+set at index 0 when the shared span is empty** (`CascadedShadowMap.cpp:421-423`,
+a pipeline-layout mismatch where `Clouds::recordComputeCommands` bails instead,
+`Clouds.cpp:149-152`) — same unreachability, same lack of a device-free test;
+**an absolute `map_Kd` path** (`resolveObjTexturePath` prefixes `base + "/"`
+unconditionally, `ObjLoader.cpp:174`; the Rust twin does the same with
+`obj_path.with_file_name(uri)`, `obj_to_gltf.rs:635`) — both renderers are wrong
+*identically*, so it is a shared limitation, not a divergence, and no shipped
+asset uses one; **`assignTextureOffsets` advancing past `MAX_TEXTURE_COUNT`**
+(`scene/ObjectDescription.ixx:29-36`) — every shader already clamps
+(`int textureId = clamp(int(obj.texture_offset) + material.textureID, 0,
+MAX_TEXTURE_COUNT - 1)` in all five of `rasterizer`, `deferred`, `path_tracing`,
+`raytrace.rchit`, `shadow_map`), so an over-cap model samples a wrong slot, not
+out of bounds, which is exactly what `VulkanRenderer.cpp:1537-1544` already
+warns; **`CommandBufferManager::beginCommandBuffer` allocating a
+`std::vector<vk::CommandBuffer>` for one handle** — re-confirmed and re-rejected
+for the third time (upload-time only, never on the frame path).
+**`Src/KomputePlayground`** — unchanged; still an owner decision.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Add a BuildIntegrity gate that no acceleration-structure rebuild bypasses `refreshAfterSceneChange`** — the device-free gate that would have caught the reload bug, in the CPU lane where it costs nothing.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `TEST(BuildIntegrity, DescriptorSetsAreCreatedThroughDescriptorSetGroup)` at `:2735` is the exact pattern (source scan + allow-listed definition site); `EngineSourcesDoNotLogRawVulkanHandles` (`:2684`) and `EngineSourcesUseNonThrowingFilesystemOverloads` (`:2610`) show the file-walk and reporting helpers
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` — the call sites after task 1 has landed
+
+  **Steps:**
+  1. Add `TEST(BuildIntegrity, AccelerationStructureRebuildsGoThroughTheSceneChangeHelper)`.
+  2. Scan every `.cpp`/`.ixx` under `Src/GraphicsEngineVulkan/` for `asManager.createASForScene(` and `asManager.createTLAS(`, reusing the suite's existing source-enumeration helper.
+  3. Allow exactly one file+function: the body of `VulkanRenderer::refreshAfterSceneChange`. Every other match fails the test with the offending `file:line` and a message naming `refreshAfterSceneChange` as the required entry point.
+  4. Assert the scan found at least one match, so a rename that removes every call site cannot make the gate vacuously green — `EveryCpuSuiteIsInTheWindowsCiFilter` (`:1054`) shows the "must not be empty" assertion style.
+  5. Add the same not-empty guard for the helper's own definition: fail if `refreshAfterSceneChange` is not declared in `VulkanRenderer.ixx`.
+
+  **Test:** The gate *is* the test. Red-prove it: temporarily re-inline `asManager.createASForScene(...)` into `handleModelReloadRequest`, confirm the new test fails naming that line, then revert.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`.
+
+  **Context:** **Do task 1 first** — this gate references the helper task 1 introduces. Source-scanning gates are how this repo pins invariants no unit test can reach; see `0a3ea323` and `5805867a` for two that shipped. If a new CPU suite file is added, `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter` (`:1054`) requires it in the Windows CI filter — this task adds a test to an existing file, so no filter change is needed.
+
+- [ ] **(S) Stop the GUI model transform from re-applying the 60× scale SceneConfig deleted, and pin the matrix in a device-free test** — one drag of the Position slider currently rescales the loaded model by 60.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` — `handleModelTransformChange` (`:336-378`); the offending `glm::scale(..., glm::vec3(60.0f, 60.0f, 60.0f))` is `:343`
+  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp` — `:116-124`, the comment recording why the 60× scale was removed and why `getModelMatrix()` returns identity
+  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx` — `:86-91`, the all-zero `model_position` / `model_rotation` defaults
+  - `Src/GraphicsEngineVulkan/gui/GUI.cpp` — `:101-106`, the two `DragFloat3` widgets that raise `model_transform_changed`
+  - `Src/GraphicsEngineVulkan/common/PipelineLayoutHelper.hpp` — the header-with-`constexpr`-helper shape to copy; `Test/commit/VulkanEngine/pipelineLayoutHelperSuite.cpp` for the matching suite shape
+
+  **Steps:**
+  1. Add `Src/GraphicsEngineVulkan/common/GuiModelTransform.hpp` exporting `inline glm::mat4 makeGuiModelTransform(std::span<const float, 3> position, std::span<const float, 3> rotationDegrees)`. Move the body of `handleModelTransformChange`'s matrix construction into it, **without** the `glm::scale` line: start from `glm::mat4(1.0f)`, write the translation into column 3, then apply the Z→Y→X `glm::rotate` chain in the existing order.
+  2. Document in the header why there is no scale factor, linking the reasoning to `SceneConfig.cpp:116-124` (the 60× scale put the camera inside the geometry and blew out cascade resolution) so the constant cannot come back as a "fix".
+  3. Replace `:342-354` with a call to the helper.
+  4. Leave the `selected_model_index >= 0` guard and the `update_model_matrix(modelMatrix, 0)` target alone, but add a one-line comment stating that the index is a *file-list* index (`GUI.cpp:88-94` fills it from `sceneConfig::getAvailableModelPaths()`) and that the transform applies to scene model 0, which is what `reloadModel` leaves behind. Do not silently change the target — that is a separate behaviour decision.
+  5. Add the new header to whatever `Src/GraphicsEngineVulkan/CMakeLists.txt` list the other `common/*Helper.hpp` headers are in, if they are listed explicitly.
+
+  **Test:** Add `Test/commit/VulkanEngine/guiModelTransformSuite.cpp` with `GuiModelTransformUnit.ZeroInputIsIdentity` (all-zero position and rotation → `glm::mat4(1.0f)` within 1e-5, the case that currently returns a 60× scale), `GuiModelTransformUnit.PositionLandsInTheTranslationColumn`, and `GuiModelTransformUnit.RotationIsAppliedZThenYThenX` (compare against a hand-built `glm::rotate` chain). Register the file in `Test/commit/VulkanEngine/CMakeLists.txt` **and** in the Windows CI suite filter, or `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter` (`buildIntegritySuite.cpp:1054`) will fail.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GuiModelTransformUnit.*`.
+
+  **Context:** `goldenRenderSuite.cpp:1682-1684` already drives `selected_model_index` + `model_transform_changed`; check whether that golden's expectations encode the 60× scale and update them in the same change if so. The extraction follows the same "make the rule a pure function and pin it" move as `makeShadowPush` (`CascadedShadowMapMath.cpp:61-68`), which exists for exactly this reason — an inline matrix that was silently wrong.
+
+- [ ] **(S) Make the path-tracing accumulation history include the directional light, not just the camera** — changing the light while path tracing keeps averaging frames lit by the old one.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` — `recordRaytracingOrPathTracing` (`:1077-1123`), the existing reset at `:1102-1110`; `updateUniforms` (`:177-187`) for where `sceneUBO.dirLight` is filled from the GUI
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.ixx` — the `pathTracingLastView` / `pathTracingLastSamples` / `pathTracingLastBounces` members
+  - `Resources/ShadersSlang/path_tracing/path_tracing.slang` — `:227` and `:253-255` (the NEE terms that read `sceneUBO.dirLight`), `:282-292` (the running mean the stale samples land in)
+  - `Src/GraphicsEngineVulkan/renderer/SceneUBO.hpp` — the `dirLight` layout
+  - `Test/commit/VulkanEngine/renderModesSuite.cpp` — an existing small device-free suite over renderer-side state to follow
+
+  **Steps:**
+  1. Add `Src/GraphicsEngineVulkan/renderer/PathTracingHistory.hpp` with a `struct PathTracingHistoryKey { glm::mat4 view; glm::vec4 lightDirection; glm::vec4 lightColorAndRadiance; int samplesPerPixel; int maxBounces; }` and `bool operator==` / `!=` (defaulted is fine — the members are compared exactly, matching today's `current_view != pathTracingLastView`).
+  2. Replace the three `pathTracingLast*` members in `VulkanRenderer.ixx` with a single `PathTracingHistoryKey pathTracingLastHistory{};`.
+  3. In `recordRaytracingOrPathTracing`, build the current key from `camera->calculate_viewmatrix()`, `sceneUBO.dirLight.direction`, `sceneUBO.dirLight.color` (whose `.w` already carries the radiance, see `:182-185`) and the two GUI quality values; reset `pathTracingAccumulatedFrames = 0` and store the key when it differs.
+  4. Update the comment at `:1100-1101` to say "camera, light or quality change" and name the shader terms (`path_tracing.slang:227`, `:253-255`) that make the light part of the integrand.
+
+  **Test:** Add `Test/commit/VulkanEngine/pathTracingHistorySuite.cpp` with `PathTracingHistoryUnit.IdenticalKeysCompareEqual`, `PathTracingHistoryUnit.ALightDirectionChangeInvalidatesTheHistory`, `PathTracingHistoryUnit.ARadianceChangeInvalidatesTheHistory` (the `.w` channel specifically — it is easy to drop when only comparing rgb) and `PathTracingHistoryUnit.ACameraMoveStillInvalidatesTheHistory` (the behaviour that must not regress). Register the file in `Test/commit/VulkanEngine/CMakeLists.txt` **and** the Windows CI suite filter (see `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter`).
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=PathTracingHistoryUnit.*`.
+
+  **Context:** `updateRaytracingDescriptorSets` (`:1346-1362`) already resets the counter for the "traced world changed" case and its comment explains the failure mode in detail — frames traced against a stale world "stay blended into the running mean until the camera happens to move". This is the same failure mode for a stale *light*, and the fix belongs at the same granularity. Do not widen the key to the whole `SceneUBO`: cloud, shadow and PCF parameters are not read by `path_tracing.slang`, and resetting on them would throw away valid samples.
+
+### Rust WebGPU renderer
+
+- [ ] **(M) Carry OBJ per-vertex colours through the OBJ→glTF converter as `COLOR_0`** — a vertex-coloured OBJ renders tinted in the Vulkan engine and flat white in the WebGPU one.
+
+  **Files to read:**
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/asset/obj_to_gltf.rs` — the `"v"` arm (`:200-209`), the `ObjMesh` fields (`:48-66`), `to_gltf` (`:399-459` for the buffer layout and the `"attributes"` string at `:455`), the JSON template's `bufferViews`/`accessors` arrays (`:531-542`), and the module doc (`:15-18`)
+  - `.../src/asset/gltf_loader.rs` — `:492-495` and `:530`, the `COLOR_0` read (vec3 → vec4 with a = 1) that the converted document must feed
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp` — `:332-342`, the C++ behaviour this must match (absent colour ⇒ identity `(1,1,1)`, never a sentinel)
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp` — `:682`, `GltfParseUnit.ReadsColor0VertexColours`, the C++ half of the invariant
+
+  **Steps:**
+  1. Add `pub colors: Vec<[f32; 4]>` to `ObjMesh` and a `pub has_vertex_colors: bool` (or make the field `Option<Vec<...>>`) so a colourless OBJ converts byte-identically to today — existing converted assets and the comparison harness must not move.
+  2. In the `"v"` arm, accept 6 (and 7, for `v x y z r g b a`) components: push the position as now, and push the colour into a parallel `vertex_colors` array, defaulting to `[1.0, 1.0, 1.0, 1.0]` when the line carried only 3. Reject a length that is neither 3, 6 nor 7 with the existing `bail!` style.
+  3. In the `"f"` arm, where a new unique vertex is pushed (`:241-265`), push the corresponding entry into `mesh.colors` alongside `mesh.uvs` / `mesh.normals` so the arrays stay parallel per unique vertex.
+  4. In `to_gltf`, append the colour floats to `bin` after the UVs (before the 4-byte pad at `:423-425`), add a fifth `bufferView`, and emit a `VEC4` `componentType: 5126` accessor. **The index accessors are addressed as `3 + run` (`:456`)** — replace that literal with a computed base so adding an attribute accessor cannot silently repoint every primitive's `indices`. Emit `"COLOR_0": 3` in the primitive attributes only when the mesh actually carries colours.
+  5. Fix the module doc at `:15-18`: it claims smoothing groups are "rejected rather than silently mangled", but `"s"` is in the ignore list at `:307`. State what actually happens (ignored, because every real OBJ carries them) and leave negative indices as the genuinely rejected case (`resolve`, `:381-393`).
+
+  **Test:** In `obj_to_gltf.rs`'s test module, add: a parse test that `v 0 0 0 1 0 0` yields `colors[i] == [1.0, 0.0, 0.0, 1.0]`; a test that a colourless OBJ produces `has_vertex_colors == false` and a `to_gltf` output whose primitive attributes contain no `COLOR_0`; and a round-trip test that loads the emitted document back with the real `gltf` crate (the pattern the module doc at `:6-7` already describes) and asserts `read_colors(0)` returns the source colours. Add one test asserting the index accessor indices are unchanged for a colourless mesh, so step 4's renumbering is pinned.
+
+  **Build:** No C++ build needed. Run:
+  `cargo test -p kataglyphis_webgpu_renderer` from `ExternalLib/Kataglyphis-RustProjectTemplate`.
+  This crate's suite runs in the `ubuntu-24.04` leg of Linux CI via `Scripts/Linux/run-cargo-tests.sh` (see AGENTS.md), so a push gets signal without `[build-win]`. Commit the submodule and bump the gitlink in the same change.
+
+  **Context:** See `docs/shader-sharing.md` and the divergence family listed in this batch's preamble — the rule is that the two renderers may differ only in ways that are written down. `Vertex::color` is already multiplied into the C++ fragment output with glTF `COLOR_0` semantics (`ObjLoader.cpp:332-335` spells out why the absent case must be `(1,1,1)`), and `forward.wgsl` already consumes `vertexColor`, so this closes the gap entirely on the converter side — no shader change is needed on either renderer.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

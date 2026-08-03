@@ -31,6 +31,7 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -39,6 +40,8 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
+#include <spdlog/sinks/callback_sink.h>
+#include <spdlog/spdlog.h>
 #include <sstream>
 #include <string>
 #include <tuple>
@@ -254,6 +257,42 @@ constexpr const char *MASK_CARD_MODEL = "Models/GltfTest/mask_card.gltf";
 // PNG - the device-side half of the 2026-07-23 texture-index-misalignment fix.
 constexpr const char *CORRUPT_EMBEDDED_IMAGE_MODEL = "Models/GltfTest/corrupt_embedded_image.gltf";
 constexpr const char *UV_TRANSFORM_MODEL = "Models/GltfTest/uv_transform_card.gltf";
+
+// Counts spdlog::error (or above) messages logged while alive, by attaching a
+// callback sink to the default logger for the object's lifetime. This is the
+// only way this suite can observe a Vulkan validation error that a driver
+// tolerates without losing the device or visibly corrupting the frame -
+// debugUtilsMessengerCallback (VulkanDebug.cpp) routes every eError-severity
+// validation message through spdlog::error, so "an invalid/destroyed
+// acceleration structure descriptor was bound" surfaces here even when the
+// resulting pixels happen to look unchanged (observed on the RX 9070 XT: the
+// freed TLAS memory was still readable, so a stale-descriptor bug did not
+// reliably move a pixel oracle).
+class ScopedValidationErrorCounter
+{
+  public:
+    ScopedValidationErrorCounter()
+      : sink_(std::make_shared<spdlog::sinks::callback_sink_mt>(
+          [this](const spdlog::details::log_msg &msg) {
+              if (msg.level >= spdlog::level::err) { ++error_count_; }
+          }))
+    {
+        spdlog::default_logger()->sinks().push_back(sink_);
+    }
+    ScopedValidationErrorCounter(const ScopedValidationErrorCounter &) = delete;
+    ScopedValidationErrorCounter &operator=(const ScopedValidationErrorCounter &) = delete;
+    ~ScopedValidationErrorCounter()
+    {
+        auto &sinks = spdlog::default_logger()->sinks();
+        sinks.erase(std::remove(sinks.begin(), sinks.end(), sink_), sinks.end());
+    }
+
+    int errorCount() const { return error_count_.load(); }
+
+  private:
+    std::shared_ptr<spdlog::sinks::callback_sink_mt> sink_;
+    std::atomic<int> error_count_{ 0 };
+};
 
 // Points KATAGLYPHIS_GPU_TIMING_JSON at a file for the lifetime of the object,
 // same shape as ScopedModelOverride above. The renderer reads the variable in
@@ -2341,6 +2380,87 @@ TEST(GoldenRender, AddedModelAppearsInPathTracing)
     // cleanly between - red-proven by removing the addModel AS rebuild.
     EXPECT_GT(detail, 0.07)
       << "the runtime-added card is not visible in path tracing - the AS was not rebuilt to include it";
+}
+
+// A model reload requested from the GUI (picking a different entry in the
+// model combo box) must appear in PATH TRACING, not leave the raytracing
+// descriptor set bound to the TLAS that reloadModel's AS rebuild just
+// destroyed. handleModelReloadRequest rebuilt the acceleration structure but,
+// before refreshAfterSceneChange consolidated the scene-changed paths, never
+// called updateAllDescriptorSets - so the raytracing descriptor kept
+// referencing the destroyed handle. On the RX 9070 XT this driver tolerates
+// the stale handle (the freed memory was still readable) so it did not
+// reliably move a pixel oracle - the validation layers catch it every time,
+// so that is the primary oracle here; the panel-free-crop swing is a
+// secondary sanity check that the reload did not otherwise leave the scene
+// empty. Drives the reload through the same GUISceneSharedVars flags the GUI
+// combo box sets (selected_model_index + model_reload_requested, the same
+// shape :1682-1684 uses for the transform flag).
+TEST(GoldenRender, ReloadedModelIsVisibleInPathTracing)
+{
+    SKIP_WITHOUT_GPU();
+
+    // A small, known-good-in-PT scene (the same one AddedModelAppearsInPathTracing
+    // starts from) rather than the shipped debug scene - the large dinosaur mesh's
+    // BLAS is not what this test measures.
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    if (!harness.renderer->supportsFrameCapture()) {
+        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+    }
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = true;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> before = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(before.empty());
+
+    // Reload to a different scene (the uv-transform card) through the same
+    // flags the GUI's model combo box sets.
+    const auto model_paths = sceneConfig::getAvailableModelPaths();
+    int reload_index = -1;
+    for (size_t i = 0; i < model_paths.size(); ++i) {
+        if (std::filesystem::path(model_paths[i]) == std::filesystem::path(UV_TRANSFORM_MODEL)) {
+            reload_index = static_cast<int>(i);
+            break;
+        }
+    }
+    ASSERT_GE(reload_index, 0) << UV_TRANSFORM_MODEL << " not found among the scanned models";
+
+    ScopedValidationErrorCounter validation_errors;
+    scene_vars.selected_model_index = reload_index;
+    scene_vars.model_reload_requested = true;
+    harness.render_frames(SETTLE_FRAMES);
+    // Deepen the PT history after the AS-rebuild reset so noise does not
+    // swamp the measurement (same reasoning as AddedModelAppearsInPathTracing).
+    harness.render_frames(60);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    EXPECT_EQ(validation_errors.errorCount(), 0)
+      << "the reload logged a Vulkan validation error - almost certainly the "
+         "raytracing descriptor set still referencing the TLAS the AS rebuild destroyed";
+
+    const std::vector<uint8_t> after = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_EQ(before.size(), after.size());
+
+    const double swung = swung_fraction(before, after, width, height, panel_free_crop(width, height));
+    GTEST_LOG_(INFO) << "reload PT before/after swung-pixel fraction (panel-free crop): " << swung;
+
+    EXPECT_GT(swung, 0.05)
+      << "the reloaded model is not visible in path tracing - the scene "
+         "looks unchanged after the reload";
 }
 
 // The white furnace: with a uniform environment and albedo forced to 1 (the

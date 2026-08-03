@@ -240,15 +240,25 @@ auto Kataglyphis::VulkanRenderer::supportsHardwareRaytracing() const -> bool
     return device && device->supportsHardwareAcceleratedRRT();
 }
 
-void Kataglyphis::VulkanRenderer::finishModelLoad()
+void Kataglyphis::VulkanRenderer::finishModelLoad() { refreshAfterSceneChange(true); }
+
+void Kataglyphis::VulkanRenderer::refreshAfterSceneChange(bool rebuildBottomLevel)
 {
     // Rebuild everything that reads scene contents. Skipping any of these
-    // leaves the model present but invisible, or sampled through descriptors
-    // that still point at the empty scene.
-    if (device->supportsHardwareAcceleratedRRT()) {
-        asManager.createASForScene(device, graphics_command_pool, scene);
-    }
+    // leaves the model present but invisible, or sampled/traced through
+    // descriptors and acceleration structures that still point at stale data.
     rebuildObjectDescriptions();
+
+    // Must run BEFORE updateAllDescriptorSets, which binds the (possibly new)
+    // TLAS handle and resets the PT accumulation history a rebuild invalidates.
+    if (device->supportsHardwareAcceleratedRRT()) {
+        if (rebuildBottomLevel) {
+            asManager.createASForScene(device, graphics_command_pool, scene);
+        } else {
+            asManager.createTLAS(device, graphics_command_pool, scene);
+        }
+    }
+
     updateAllDescriptorSets();
 }
 
@@ -356,21 +366,11 @@ void Kataglyphis::VulkanRenderer::handleModelTransformChange(
         if (guiSceneSharedVars.selected_model_index >= 0) {
             scene->update_model_matrix(modelMatrix, 0);
 
-            // Re-upload object descriptions as the transform changed
+            // Re-upload object descriptions and refresh the traced world so it
+            // follows the raster world. BLAS geometry is untouched - only the
+            // instance transform moved - so the TLAS-only rebuild is enough.
             (void)device->getLogicalDevice().waitIdle();
-            rebuildObjectDescriptions();
-
-            // The traced world must follow the raster world: without this,
-            // RT/PT kept tracing the OLD pose after a GUI transform change.
-            // BLAS geometry is untouched - only the instance transform moved
-            // - so rebuilding the TLAS alone is enough. Must run BEFORE the
-            // descriptor update below, which binds the new TLAS handle (and
-            // resets the PT accumulation history this change invalidates).
-            if (device->supportsHardwareAcceleratedRRT()) {
-                asManager.createTLAS(device, graphics_command_pool, scene);
-            }
-
-            updateAllDescriptorSets();
+            refreshAfterSceneChange(false);
         }
 
 
@@ -393,13 +393,12 @@ void Kataglyphis::VulkanRenderer::handleModelReloadRequest(
 
             scene->reloadModel(device, graphics_command_pool, resolved_path);
 
-            if (device->supportsHardwareAcceleratedRRT()) {
-                asManager.createASForScene(device, graphics_command_pool, scene);
-            }
-
-            rebuildObjectDescriptions();
-
-            updateTexturesInSharedRenderDescriptorSet();
+            // The reload swaps in entirely new geometry, so this needs the
+            // same full refresh as addModel (BLAS+TLAS rebuild and every
+            // descriptor set, not just the shared-texture one) - otherwise
+            // RT/PT keep the destroyed TLAS bound and the GBuffer/post/
+            // raytracing descriptors stay pointed at the old scene.
+            refreshAfterSceneChange(true);
         }
     }
 }
@@ -737,23 +736,13 @@ std::optional<uint32_t> Kataglyphis::VulkanRenderer::addModel(const std::string 
       scene->loadAdditionalModel(device, graphics_command_pool, modelPath, modelMatrix);
     if (!index.has_value()) { return std::nullopt; }
 
-    // Release the old buffer BEFORE building the replacement. Skipping this
-    // leaks the previous allocation and trips VMA's
-    // "some allocations were not freed" assertion when the block is
-    // destroyed - which is how the two-model test first failed.
-    rebuildObjectDescriptions();
-
     // The added model is NEW geometry, so its BLAS must be built and the TLAS
     // rebuilt to reference it - otherwise it loads and renders in the raster
     // paths (which iterate the scene directly) but is INVISIBLE to RT/PT, which
-    // only see the acceleration structure. Unlike a transform change (TLAS-only,
-    // see updateStateDueToUserInput), new geometry needs the BLAS too, so this is
-    // the full createASForScene (it clears the old BLAS/TLAS first, so a rebuild
-    // is safe). Must run BEFORE updateAllDescriptorSets, which binds the new TLAS.
-    if (device->supportsHardwareAcceleratedRRT()) {
-        asManager.createASForScene(device, graphics_command_pool, scene);
-    }
-    updateAllDescriptorSets();
+    // only see the acceleration structure. Unlike a transform change (TLAS-only),
+    // new geometry needs the BLAS too, so this is the full createASForScene
+    // (it clears the old BLAS/TLAS first, so a rebuild is safe).
+    refreshAfterSceneChange(true);
     return index;
 }
 

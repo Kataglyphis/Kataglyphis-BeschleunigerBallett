@@ -285,6 +285,17 @@ class VulkanRenderer
 
     void finishModelLoad();
 
+    // The single entry point every scene-changing path (finishModelLoad,
+    // addModel, handleModelTransformChange, handleModelReloadRequest) must go
+    // through: rebuilds the object-description buffer, rebuilds the
+    // acceleration structure (BLAS+TLAS via createASForScene when geometry
+    // changed, TLAS-only via createTLAS for a transform-only change), then
+    // refreshes every descriptor set that could be bound to stale data. A
+    // caller that rebuilds the AS without also going through this helper is
+    // exactly the bug this consolidates away - see BuildIntegrity's
+    // AccelerationStructureRebuildsGoThroughTheSceneChangeHelper gate.
+    void refreshAfterSceneChange(bool rebuildBottomLevel);
+
     void updateAllDescriptorSets();
     void cleanUpDescriptorResources();
     void initDescriptorResources();

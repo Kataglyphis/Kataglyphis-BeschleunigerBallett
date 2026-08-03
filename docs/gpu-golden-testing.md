@@ -74,14 +74,14 @@ feature, an image transition, or the loader upload path:
 3. Where rendering changed, add a validation-layer-clean runtime check: an
    8–10 s engine run with stderr captured, grepping the validation output.
 4. All tests passing = the recorded frames are unchanged = the refactor is
-   render-equivalent. As of 2026-08-01 the baseline is 29 runnable
-   `GoldenRender` tests (30 defined, minus `DISABLED_DumpsFrameToPng`, which
-   does not run by default) + 2 `Integration` tests = 31 total - see the
+   render-equivalent. As of 2026-08-03 the baseline is 30 runnable
+   `GoldenRender` tests (31 defined, minus `DISABLED_DumpsFrameToPng`, which
+   does not run by default) + 2 `Integration` tests = 32 total - see the
    machine-readable counts below, which
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the
    suite source.
 
-<!-- golden-counts: defined=30 runnable=29 integration=2 total=31 -->
+<!-- golden-counts: defined=31 runnable=30 integration=2 total=32 -->
 
 This turns changes the container can only compile-check (device creation,
 image barriers, the deferred/forward command streams, path/ray tracing) into
