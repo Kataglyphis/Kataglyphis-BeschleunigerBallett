@@ -3393,6 +3393,40 @@ TEST(BuildIntegrity, CloudDispatchGridsMatchTheShaderWorkgroupSizes)
                                        << (*cloud_threads)[1] << ", " << (*cloud_threads)[2] << ")] Z is not 1";
 }
 
+// clouds.slang used to multiply density by the distance already travelled
+// along the ray (`float(i) / float(num_march_steps)`) instead of a per-step
+// LENGTH, making the volume ~63x too dense at the default quality and turning
+// the quality slider into a de-facto density slider. Guards against that
+// shape reappearing, both in the primary march and in light_march's mean
+// (rather than integrated) density.
+TEST(BuildIntegrity, CloudRayMarchesUseAConstantStepLength)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path clouds_path = repo_root / "Resources" / "ShadersSlang" / "compute" / "clouds.slang";
+    std::ifstream file(clouds_path);
+    ASSERT_TRUE(static_cast<bool>(file)) << "missing " << clouds_path.string();
+    const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    static const std::regex kDistanceAsStepSize(R"(float\(i\)\s*/\s*float\()");
+    EXPECT_FALSE(std::regex_search(contents, kDistanceAsStepSize))
+      << clouds_path.string()
+      << " contains the distance-as-step-size shape (float(i) / float(...)) - "
+         "step length must be (segment length) / (step count), not a fraction "
+         "of distance already travelled";
+
+    static const std::regex kLightMarchOriginIsSamplePos(R"(box_intersect\(samplePos,)");
+    EXPECT_TRUE(std::regex_search(contents, kLightMarchOriginIsSamplePos))
+      << clouds_path.string() << "'s light_march must intersect the box from the point being "
+                                 "shadowed (samplePos), not the camera";
+
+    EXPECT_EQ(contents.find("totalDensity /= "), std::string::npos)
+      << clouds_path.string()
+      << " must not average the light march's density samples - exp(-totalDensity) needs an "
+         "integrated optical depth (density * step length), not a mean density";
+}
+
 // PathTracing.cpp dispatches the path tracing compute pass using
 // kPathTracingWorkgroupSizeX/Y (PathTracingDispatch.hpp) to size the
 // thread-group grid. Those constants have no compiler-enforced link to the

@@ -6254,6 +6254,443 @@ unreachable. **`Src/KomputePlayground`** — unchanged; still an owner decision.
 
 ### Shaders
 
+## 2026-08-03 batch XIII — planner (a cloud ray march that multiplies density by the distance already travelled instead of the step length, and shadows the volume from the camera rather than from the sample; four Cloud Settings controls that reach no shader, one of them a whole `vec4` uploaded every frame; the cascade light matrices, single-buffered while the matrices the lighting pass samples with are per-image; three post-acquire early returns that leave the acquire semaphore signaled forever; a noise volume written by a queue family that does not own it)
+
+The actionable queue was empty again — 0 `- [ ]`, 15 `- [b]` across the whole
+file. Every `file:line` below was read out of the tree this pass.
+
+**Three of the five findings are in the clouds subsystem, and that is not a
+coincidence.** Clouds is the one stage with no pixel oracle: the two goldens
+that touch it (`GoldenRender.CloudsAcrossManyFramesDoesNotLoseTheDevice`,
+`GuiInputSweepNeverCrashesOrLosesTheDevice`, `goldenRenderSuite.cpp:2785` and
+`:2620-2700`) assert only that the device survives, so anything short of a
+crash reads as green. Every other subsystem in this engine has had a
+correctness pass driven by something that could see it being wrong.
+
+**Every task in this batch is verifiable with no GPU.** The fifteen `- [b]`
+entries are still blocked on host GPU golden verification, so nothing here
+depends on it: each task lands device-free code plus a `BuildIntegrity`
+source-scanning gate that runs in the container CPU lane.
+`Test/commit/VulkanEngine/CMakeLists.txt` globs `*.cpp` with
+`CONFIGURE_DEPENDS` and Windows CI's suite filter is derived (`30154355`), so
+a new suite file needs no registration anywhere.
+
+**The headline is that `clouds.slang`'s ray march uses the distance already
+travelled where it needs the step length.** `clouds_main:163-176` computes
+`stepSize = (float(i) / float(N)) * (oT.y - oT.x)` — the offset of sample `i`
+from the box entry point — and then uses that same value as the segment
+length in *both* integration terms: `lightEnergy += density * stepSize * …`
+and `transmittance *= exp(-density * stepSize)`. Summed over the loop that is
+`L * (N-1)/2` of optical depth where Beer-Lambert wants `L`, so with the GUI's
+default 128 march steps (`GUI.cpp:213`, slider range 1–128) the volume
+integrates roughly 63× too dense, and moving the *quality* slider changes the
+*density* proportionally. Sample 0 also contributes nothing (`stepSize == 0`)
+and the last sample never reaches `oT.y`. `light_march:82-102` is wrong twice
+over: it takes its box span from `box_intersect(eyePosition, …)` — the ray
+leaving the **camera** toward the light, not the one leaving `samplePos`,
+which is the point being shadowed — and then averages raw density
+(`totalDensity /= float(M)`) and feeds that straight to `exp(-totalDensity)`,
+so the self-shadow term carries no length units at all and does not change
+when the volume is scaled. Both are pure shader edits; `clouds.slang` is
+SPIR-V-only (`shader-manifest.json`), so no WGSL regeneration and no submodule
+bump.
+
+**Second, four of the eleven Cloud Settings controls reach no shader.**
+`sceneUBO.cloudMovementDirection` is packed every frame from
+`cloud_movement_direction` and `cloud_speed`
+(`VulkanRenderer.cpp:221-225`) — and grepping every `.slang` in the tree for
+that name returns exactly one hit, its declaration in
+`scene_types.slang:94`. No shader has ever read it: a whole `vec4` of the
+per-image uniform upload, plus two sliders (`GUI.cpp:212,215`), that do
+nothing. `cloud_num_march_steps_to_light` (`GUI.cpp:214`, slider 1–128) is the
+same story from the other end — it exists in `GUISceneSharedVars`, is set by
+both cloud goldens, is round-tripped by `guiSceneVarsRoundTripSuite.cpp:64`,
+and never enters the UBO at all, because `clouds.slang:127` hard-codes
+`num_march_steps_to_light = 4`. Two more controls are merely mislabelled:
+"Illumination intensity" writes `cloud_scale` → `cloudMeshScale.w` →
+`cloud.scale`, the density multiplier, and "Density" writes `cloud_density` →
+`cloudMeshOffset.w` → `cloud.threshold`, the noise cut-off. The durable win
+here is the gate, not the wiring: there is no test anywhere that a `SceneUBO`
+member the host fills is read by anything.
+
+**Third, the cascade light matrices are single-buffered while the matrices
+the lighting pass samples with are per-image.** `CascadedShadowMap` owns one
+`VulkanBuffer lightMatricesBuffer`, host-visible and persistently mapped, and
+`updateCascades:129-134` memcpys the freshly computed
+`cascadeData[i].viewProjMatrix` into it every frame from `App::run`'s loop —
+i.e. from `VulkanRenderer::updateUniforms`, which runs *before* `drawFrame`
+and therefore before any fence wait. `MAX_FRAME_DRAWS == 3`
+(`common/Globals.hpp`), and the fence `drawFrame` waits on only guarantees the
+submission three frames prior has completed, which is exactly the reasoning
+`VulkanRenderer.cpp:874-883` spells out for the cloud-output image. So the CPU
+overwrites the uniform buffer that up to two in-flight shadow passes are still
+reading. The same matrices reach the lighting shader by a second route —
+`fillSceneUboCascades` into `sceneUBO.cascadeLightSpaceMatrices`
+(`VulkanRenderer.cpp:216-219`), which *is* duplicated per swapchain image and
+uploaded inside `drawFrame` (`update_uniform_buffers`, `:720-729`). Two halves
+of one piece of data with two different buffering schemes: the depth map can
+be rendered from frame N's cascades and sampled with frame N+2's. The fix is
+to copy the pattern that is already correct twenty lines away — compute into a
+CPU struct in `updateUniforms`, upload per-image in `update_uniform_buffers`.
+
+**Fourth, three of `drawFrame`'s early returns run after
+`acquireNextImageKHR` has already signaled `imageAvailableSemaphore` and never
+retire it.** `VulkanRenderer.cpp:509-513` (image index out of range),
+`:515-519` (missing render-finished semaphore) and `:562-565`
+(`record_commands` returned false) all `return` without submitting anything
+that waits on that semaphore, and `frameSync.advanceFrame()` is the last
+statement of the function (`:626`), so `currentFrame` does not move and the
+**same** semaphore is handed to the next `acquireNextImageKHR`. That is
+VUID-vkAcquireNextImageKHR-semaphore-01286: the semaphore must have no pending
+signal operation and must be unsignaled. These are defensive paths, which is
+why nothing has tripped over them — the same category as `0c4d2faa` and
+`c75d2c7e`, both of which were worth closing. Two smaller defects sit in the
+same function: `checkChangedFramebufferSize():461-465` consumes the resize
+flag and then recreates only *conditionally*, so a resize that arrives while
+the guard is false is lost permanently; and `update_uniform_buffers:720-729`
+logs an out-of-range index and returns while `drawFrame` carries on and
+renders the frame against never-written uniforms.
+
+**Fifth, the cloud noise volume is written by a queue family that does not own
+it.** `Clouds::createStorageTexture:39-47` creates `cloudNoiseTexture` with
+`sharingMode = eExclusive` (`VulkanImage.cpp:78`) and transitions it on the
+**graphics** queue; `dispatchNoiseGeneration:97-136` then builds its own
+command pool on `compute_family` and submits the noise dispatch on
+`device->getComputeQueue():133`. There is no release/acquire barrier pair, so
+per spec the contents written by the compute family are undefined to the
+graphics family that reads them in `recordComputeCommands`. And the two
+families genuinely differ here: `VulkanDevice::getQueueFamilies:576-586` walks
+every family and assigns without breaking, so `compute_family` ends up as the
+**last** compute-capable family — on this project's RX 9070 XT that is a
+dedicated async-compute family, not family 0. `getComputeQueue()` has exactly
+one caller in the whole tree (that line), and the per-frame cloud dispatch is
+already recorded into the graphics command buffer, so moving the one-off noise
+dispatch onto the graphics queue removes the hazard and the accessor together.
+
+Ordering: **land task 1 before task 2** — both edit `clouds.slang`, and task 1
+is a pure shader change while task 2 moves a UBO field underneath it. Tasks 3,
+4 and 5 are disjoint from those and from each other. All five add a
+`BuildIntegrity` gate, so rebuild between them rather than batching.
+
+Candidates found but NOT tasked this cycle (checked, then rejected — do not
+re-propose without new evidence): **the twelve hand-rolled
+`vk::ImageMemoryBarrier` blocks and the four `vk::ImageSubresourceRange`
+blocks** — unchanged; still owned by the `- [b]` cloud-barrier entry and still
+gated on host GPU verification. **`PostStage::recordCommands:69-71` building a
+colour clear value its render pass can never use** (`loadOp = eLoad`,
+`PostStage.cpp:190-195`) — real dead code, two lines; fold it into whatever
+next touches `PostStage.cpp`. **`rasterizer.slang:76`'s
+`lerp(float3(0.04), ambient, 0.0)`** — the metallic term is hard-wired to 0, so
+the second operand and the lerp are both dead; same disposition, fold it in.
+**`histogram.wgsl`'s `cs_reduce_exposure` having no counterpart to
+`adapt_exposure_ev`'s `!current_ev.is_finite()` recovery**
+(`auto_exposure.rs:130-132`, pinned by a test at `:350-355`, while the shader's
+own header claims to mirror that function) — a genuine divergence, but every
+value feeding `exposure_state[0]` is provably finite (`bin_luminance` is
+bounded and positive over `1..62`), so it is unreachable rather than latent.
+**`PostStage`'s depth attachment declaring `initialLayout =
+eDepthStencilAttachmentOptimal` for an image nothing transitions out of
+`eUndefined`** (`PostStage.cpp:141-158, 200-205`) — works only because
+`SkyBox`'s pass, which shares the view and declares `eUndefined`, always runs
+first (`VulkanRenderer.cpp:1002-1008`); fragile, but correct as recorded.
+**`Src/KomputePlayground`** — unchanged; still an owner decision.
+
+### Shaders
+
+- [ ] **(M) Retire the cloud movement `vec4` no shader reads, give `# march steps to light` a path to the GPU, and gate the whole class** — four Cloud Settings controls currently change nothing, including a `vec4` uploaded to every swapchain image every frame.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/gui/GUI.cpp:209-226` — the Cloud Settings panel;
+    `:212` and `:215` are the dead sliders, `:214` the unwired one, `:216-217`
+    the two mislabelled ones.
+  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx:67-72` — the backing
+    fields (`cloud_speed`, `cloud_num_march_steps_to_light`,
+    `cloud_movement_direction`, `cloud_scale`, `cloud_density`).
+  - `Src/GraphicsEngineVulkan/renderer/SceneUBO.hpp:61-64` — the four cloud
+    `vec4`s and their `w`-slot comments.
+  - `Resources/ShadersSlang/common/scene_types.slang:94-97` — the device-side
+    mirror of those four members.
+  - `Resources/ShadersSlang/compute/clouds.slang:126-135` — every `SceneUBO`
+    field the shader actually reads, plus the hard-coded
+    `num_march_steps_to_light = 4` at `:127`.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:221-243` — the pack
+    site.
+  - `Test/commit/VulkanEngine/sceneUboLayoutSuite.cpp:34-37`,
+    `buildIntegritySuite.cpp:695-705` (the `SharedStructOffsetsMatchTheCompiledSpirv`
+    name→offset map), `guiSceneVarsRoundTripSuite.cpp:60-70`,
+    `goldenRenderSuite.cpp:2630-2695` — every place the names are pinned.
+
+  **Steps:**
+  1. Rename the member in **both** halves of the shared layout —
+     `SceneUBO.hpp:61` and `scene_types.slang:94` — from
+     `cloudMovementDirection` to `cloudLightMarch`, documented as
+     `x = numMarchStepsToLight, y/z/w reserved (0)`. The offset does not move
+     (288), so this is a rename, not a layout change; `sceneUboLayoutSuite.cpp:34`
+     and `buildIntegritySuite.cpp:700` need the new name and keep their numbers.
+  2. `VulkanRenderer::updateUniforms:221-225`: replace the movement/speed pack
+     with
+     `sceneUBO.cloudLightMarch = glm::vec4(static_cast<float>(guiSceneSharedVars.cloud_num_march_steps_to_light), 0.0F, 0.0F, 0.0F);`
+  3. `clouds.slang:127`: read it, clamped to the slider's own range so a
+     zero-initialised UBO cannot divide by zero in `light_march`:
+     `cloud.num_march_steps_to_light = int(clamp(scene.cloudLightMarch.x, 1.0, 128.0));`
+  4. Delete `cloud_speed` and `cloud_movement_direction` from
+     `GUISceneSharedVars.ixx`, their two sliders (`GUI.cpp:212,215`), and every
+     reference in `guiSceneVarsRoundTripSuite.cpp`, `goldenRenderSuite.cpp:2635`,
+     `:2683` and `:2686`. This is the same call `ba1f597a` made when it shrank
+     `PushConstantPost` to the one field `post.slang` reads: no shader has ever
+     consumed that `vec4`, and animating the volume needs an elapsed-time
+     uniform the `SceneUBO` does not have — adding one would also make the
+     cloud goldens non-deterministic. Record "animate the cloud volume (needs a
+     time uniform + a deterministic override for the goldens)" as a one-line
+     unsized idea under `## C++ Vulkan engine`; do not half-wire it here.
+  5. Relabel the two misleading sliders (ImGui label strings only — the C++
+     field names are pinned by `guiSceneVarsRoundTripSuite`):
+     `GUI.cpp:216` "Illumination intensity" → `"Density"` (it is `cloud.scale`,
+     the density multiplier) and `:217` "Density" → `"Coverage threshold"` (it
+     is `cloud.threshold`, the noise cut-off). Add a one-line comment naming the
+     `SceneUBO` slot each one lands in.
+
+  **Test:** Add `BuildIntegrity.EverySceneUboFieldIsReadByAShader` (new, pure
+  CPU) — the gate that would have caught this whole class. Parse the member
+  names out of `struct SceneUBO` in
+  `Src/GraphicsEngineVulkan/renderer/SceneUBO.hpp` (skip anything starting
+  `_pad`), then read every `Resources/ShadersSlang/**/*.slang` and fail listing
+  any member no shader source mentions by name.
+  `SharedStructOffsetsMatchTheCompiledSpirv` (`buildIntegritySuite.cpp:3596`)
+  already reads that header and can be followed for the parsing half. Also
+  update `sceneUboLayoutSuite.cpp` and the offset map in
+  `buildIntegritySuite.cpp:700` for the rename, and confirm
+  `guiSceneVarsRoundTripSuite` still builds after the two field deletions.
+
+  **Build:** `clangcl-debug` (fast iteration). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  Recompile shaders first (`Scripts\Windows\compile-slang-shaders.ps1`) —
+  `scene_types.slang` is a shared import, so
+  `BuildIntegrity.CompiledShadersAreNotOlderThanSharedIncludes` fails otherwise.
+
+  **Context:** Land **after** task 1; both edit `clouds.slang`. The gate is the
+  point, not the four controls: `SceneUBO` is 352 bytes uploaded to every
+  swapchain image every frame, and there was no test anywhere that a member the
+  host fills is read by anything. Same shape as
+  `EveryShaderHotReloadImplementationIsCalledByTheRenderer` and
+  `EverySlangFunctionIsReachableFromAnEntryPoint` — reachability, checked in
+  one direction, on data instead of code.
+
+### C++ Vulkan engine
+
+- [ ] **(M) Duplicate the cascade light-matrix UBO per swapchain image, like the SceneUBO copy of the same matrices** — the CPU rewrites it every frame while up to two in-flight shadow passes are still reading it, so the depth map can be rendered from a different frame's cascades than the lighting pass samples with.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:85-135` —
+    `updateCascades`, and the `getMappedData()` memcpy at `:129-134`.
+  - `…/CascadedShadowMap.cpp:245-275` — `createDescriptorSetAndPipeline`:
+    `lightMatricesDescriptors.create(device, 1)` and the single
+    `lightMatricesBuffer` upload.
+  - `…/CascadedShadowMap.cpp:384-482` — `recordCommands`: it already takes
+    `image_index` but binds `lightMatricesDescriptors.sets()[0]` at `:421`.
+  - `…/CascadedShadowMap.ixx` — the member declarations to change.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:196-219` — the caller,
+    which computes the cascades and then packs the *same* matrices into the
+    per-image `sceneUBO` via `fillSceneUboCascades`.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:487-514` and
+    `:720-729` — `create_uniform_buffers` / `update_uniform_buffers`: the
+    "compute into a CPU struct in `updateUniforms`, upload per-image inside
+    `drawFrame`" pattern to copy verbatim.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:874-883` — the
+    existing statement of the `MAX_FRAME_DRAWS == 3` cross-frame reasoning.
+
+  **Steps:**
+  1. `CascadedShadowMap::init` gains a `uint32_t swapChainImageCount`
+     parameter; `VulkanRenderer` passes
+     `vulkanSwapChain.getNumberSwapChainImages()` at both call sites
+     (`VulkanRenderer.cpp:122` and `:344`).
+  2. Replace `VulkanBuffer lightMatricesBuffer` with
+     `std::vector<VulkanBuffer> lightMatricesBuffers` and create
+     `lightMatricesDescriptors.create(device, swapChainImageCount)`, writing
+     buffer `i` into set `i` (`writeBuffer(i, 1, …, sizeof(glm::mat4) * numCascades)`).
+     `cleanUp()` must clear the vector.
+  3. Strip the memcpy out of `updateCascades` — it keeps computing into
+     `cascadeData` only, which is what makes it callable before the swapchain
+     image index is known. Add
+     `void CascadedShadowMap::uploadLightMatrices(uint32_t image_index)` doing
+     the same per-cascade memcpy into `lightMatricesBuffers[image_index]`, with
+     a range guard.
+  4. Call it from `VulkanRenderer::update_uniform_buffers(image_index)`, next
+     to the two existing `std::memcpy` calls, so the shadow-render matrices and
+     the shadow-sample matrices are uploaded for the same image in the same
+     place.
+  5. `recordCommands` binds `lightMatricesDescriptors.sets()[image_index]`
+     instead of `sets()[0]`, with the same bounds check the function already
+     applies to `numCascades`.
+  6. Check the re-init path: `handleShadowResolutionChange`
+     (`VulkanRenderer.cpp:318-352`) does `cleanUp()` then `init()` then
+     `createGraphicsPipeline()`, so the vector must be sized in `init`/
+     `createDescriptorSetAndPipeline` and released in `cleanUp`, not assumed
+     to survive.
+
+  **Test:** Add `BuildIntegrity.ShadowLightMatricesAreDoubleBufferedPerSwapchainImage`
+  (new, pure CPU). Read `CascadedShadowMap.ixx` and `CascadedShadowMap.cpp` and
+  assert (a) the member is declared as a `std::vector<` of buffers, not a bare
+  `VulkanBuffer lightMatricesBuffer;`, and (b) `recordCommands` contains
+  `lightMatricesDescriptors.sets()[image_index]` and no
+  `lightMatricesDescriptors.sets()[0]`. Follow
+  `AccelerationStructureRebuildsGoThroughTheSceneChangeHelper`
+  (`buildIntegritySuite.cpp:3863`) for the read-a-source-and-assert-a-shape
+  structure. Say plainly in the test's doc comment that this pins the *shape*,
+  because the behaviour it protects (a host write racing an in-flight read of
+  coherent memory) is invisible to both the golden suites and
+  synchronization validation.
+
+  On a host GPU (optional): `GoldenRender.Shadows*` must be unchanged — this is
+  a buffering fix, not a maths change.
+
+  **Build:** `clangcl-debug` (fast iteration). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** `95ae08f3` and `298df0aa` both went to some length to make the
+  cascade box stop moving between frames; this is the remaining way the two
+  ends of the cascade pipeline can disagree, and it gets worse the higher the
+  frame rate. The pattern to copy is not novel — `globalUBOBuffer` and
+  `sceneUBOBuffer` are already `std::vector`s indexed by `image_index` for
+  exactly this reason, and `sceneUBO` already carries a correctly-buffered copy
+  of these very matrices.
+
+- [ ] **(M) Retire the acquire semaphore on every one of `drawFrame`'s post-acquire failure paths** — three early returns leave `imageAvailableSemaphore` signaled and then hand the same semaphore straight back to `vkAcquireNextImageKHR`.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:439-627` — `drawFrame`
+    in full. The three offenders are `:509-513`, `:515-519` and `:562-565`; the
+    existing `abort_frame_with_fatal_error` lambda is at `:446-453`;
+    `advanceFrame()` is the last statement at `:626`.
+  - `…/VulkanRenderer.cpp:461-465` — `checkChangedFramebufferSize()` consumes
+    the flag, the recreate is conditional.
+  - `…/VulkanRenderer.cpp:655-718` — `recreateSwapChain`: it waits idle and
+    calls `createSynchronization()`, which destroys and recreates every
+    semaphore.
+  - `…/VulkanRenderer.cpp:720-729` — `update_uniform_buffers`, which logs and
+    returns while the frame carries on.
+  - `Src/GraphicsEngineVulkan/renderer/FrameSync.ixx` — the accessors and what
+    `advanceFrame` does.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:3099` —
+    `EveryBeginCommandBufferResultIsChecked`, the function-body-scanning gate to
+    copy.
+
+  **Steps:**
+  1. Add a lambda next to `abort_frame_with_fatal_error`:
+     `abort_frame_after_acquire(const char *message)` — log the message,
+     `end_imgui_frame_if_needed()`, then `recreateSwapChain()`. Document in
+     place *why* recreating is the fix: after `vkDeviceWaitIdle` the acquire's
+     signal operation has completed, so the semaphore is signaled but has no
+     pending operation, and destroying it in `createSynchronization()` is legal
+     — it is the only way to retire a semaphore this frame never waited on
+     without submitting a dummy batch.
+  2. Route `:509-513`, `:515-519` and `:562-565` through it. On the
+     `record_commands` path the command buffer is already recording, so call
+     `command_buffers[image_index].end()` (ignoring the result) before
+     recreating, so `create_command_buffers()` is not freeing a buffer in the
+     recording state.
+  3. Stop swallowing the resize at `:461-465`: only clear
+     `framebuffer_size_has_changed` when the recreate actually runs. Either
+     check `frameSync` state *before* calling `checkChangedFramebufferSize()`,
+     or re-arm the flag when the guard fails — whichever reads cleaner in
+     `Window`'s API (`window->reset_framebuffer_has_changed()` is at
+     `Window.cpp`, called from `checkChangedFramebufferSize`).
+  4. Make `update_uniform_buffers` return `bool` and route a `false` through
+     `abort_frame_after_acquire` — rendering a frame against uniforms that were
+     never written is worse than dropping it.
+
+  **Test:** Add `BuildIntegrity.EveryPostAcquireEarlyReturnRetiresTheAcquireSemaphore`
+  (new, pure CPU). Read `VulkanRenderer.cpp`, isolate the body of `drawFrame`
+  between the `acquireNextImageKHR(` call and the `frameSync.advanceFrame();`
+  line, and fail on any bare `return;` in that span that is not immediately
+  preceded (within the previous three non-blank lines) by a call to
+  `abort_frame_after_acquire(` or `abort_frame_with_fatal_error(`. Follow
+  `EveryBeginCommandBufferResultIsChecked` (`buildIntegritySuite.cpp:3099`) for
+  the span-extraction and reporting structure, and anchor the span on the two
+  call texts rather than on line numbers (`e8b1db52`).
+
+  On a host GPU (optional): resize the window repeatedly with
+  `Scripts\Windows\Run-SyncValidation.ps1` running; the log must stay free of
+  `SYNC-HAZARD` and of `VUID-vkAcquireNextImageKHR-semaphore`.
+
+  **Build:** `clangcl-debug` (fast iteration). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** Same family as `0c4d2faa` ("check `beginCommandBuffer`'s null
+  return at every call site") and `c75d2c7e` ("make `beginCommandBuffer`
+  failure paths survivable"): defensive branches that were written to *report*
+  a problem and then leave the object in a state the next frame cannot recover
+  from. Do not "fix" this by deleting the range checks — they are cheap and
+  they are what turns a swapchain-count change into a log line instead of an
+  out-of-bounds index.
+
+- [ ] **(S) Generate the cloud noise volume on the queue family that owns the image, and delete the compute-queue accessor it was the only caller of** — the volume is written on a family that does not own the `eExclusive` image, with no ownership transfer, so its contents are undefined to the family that samples it.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp:32-50` —
+    `createStorageTexture`: creation plus the `eUndefined -> eGeneral`
+    transition, submitted on `device->getGraphicsQueue()` at `:47`.
+  - `…/Clouds.cpp:97-136` — `dispatchNoiseGeneration`: the ad-hoc
+    `compute_family` command pool (`:106-115`) and the
+    `device->getComputeQueue()` submit (`:133`).
+  - `…/Clouds.cpp:21-30` and `:147-165` — `init` already receives the graphics
+    command pool; the per-frame cloud dispatch is recorded into the graphics
+    command buffer.
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp:565-600` — the family
+    walk that assigns without breaking, so `compute_family` is the **last**
+    compute-capable family; `:284-303` for `queue_create_infos`; `:555-557` for
+    the queue handles.
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.ixx:24` and `:70` —
+    `getComputeQueue()` / `compute_queue`.
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanImage.cpp:78` —
+    `sharingMode = vk::SharingMode::eExclusive`.
+
+  **Steps:**
+  1. Give `dispatchNoiseGeneration` the graphics command pool `init` already
+     has (pass it through, like `createTextures` does) and submit on
+     `device->getGraphicsQueue()`. Delete the `createCommandPool` /
+     `destroyCommandPool` pair and the `compute_family < 0` early return.
+  2. Add `bool graphicsFamilySupportsCompute()` to `VulkanDevice`, set during
+     the family walk from that family's `queueFlags & vk::QueueFlagBits::eCompute`.
+     In `Clouds::init`, skip the noise dispatch with one
+     `spdlog::warn` when it is false, so a device whose graphics family is not
+     compute-capable degrades to an unwritten (zeroed) noise volume rather than
+     an invalid submission.
+  3. Delete `VulkanDevice::getComputeQueue()` and the `compute_queue` member,
+     and the `logical_device.getQueue(compute_family, 0)` line at
+     `VulkanDevice.cpp:557`. **Leave `queue_create_infos` and
+     `QueueFamilyIndices::compute_family` alone** — the family index is still
+     part of device suitability (`isValid()`), and changing that is a separate
+     decision with its own blast radius.
+  4. Add a one-line comment at the new submit site stating the rule: the noise
+     volume is created, transitioned, written and sampled entirely on the
+     graphics family, so the `eExclusive` image never needs a queue-family
+     ownership transfer.
+
+  **Test:** Add `BuildIntegrity.CloudResourcesAreProducedAndConsumedOnOneQueue`
+  (new, pure CPU): read `Clouds.cpp` and fail on any occurrence of
+  `getComputeQueue` or `createCommandPool`; read `VulkanDevice.ixx` and fail if
+  it still declares `getComputeQueue`. Follow
+  `CloudDispatchGridsMatchTheShaderWorkgroupSizes`
+  (`buildIntegritySuite.cpp:3359`) for the file-reading structure — it already
+  reads `Clouds.cpp`.
+
+  On a host GPU (optional): `GoldenRender.CloudsAcrossManyFramesDoesNotLoseTheDevice`
+  must stay green, and the clouds must still have structure (a volume of
+  undefined or zeroed noise renders as uniform haze).
+
+  **Build:** `clangcl-debug` (fast iteration). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** Disjoint from tasks 1 and 2 — this touches `Clouds.cpp` and
+  `VulkanDevice`, neither of which they edit — but it is the third clouds
+  finding this batch, so do not interleave it with them. `getComputeQueue()`
+  having exactly one caller is what makes the cleanup safe; verify that with a
+  fresh grep before deleting, because a task landing between now and then could
+  add one. Note that this is a spec-correctness fix, not an observed
+  corruption: AMD and NVIDIA drivers in practice keep the contents readable
+  across families, which is precisely why it has survived.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

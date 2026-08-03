@@ -79,7 +79,7 @@ bool box_intersect(float3 ro, float3 rd, float4x4 txx, float4x4 txi, float3 rad,
     return true;
 }
 
-float light_march(float3 samplePos, float3 eyePosition, Clouds cloud)
+float light_march(float3 samplePos, Clouds cloud)
 {
     float totalDensity = 0.0;
     // dirLight.direction is the direction the light travels; the vector
@@ -87,17 +87,19 @@ float light_march(float3 samplePos, float3 eyePosition, Clouds cloud)
     // reads this field (rasterizer/deferred/raytrace/path_tracing).
     float3 directionToLight = normalize(-scene.dirLight.direction.xyz);
     float2 oT;
-    bool intersection = box_intersect(eyePosition, directionToLight, cloud.inv_model_to_world, cloud.model_to_world, cloud.radius, oT);
+    bool intersection = box_intersect(samplePos, directionToLight, cloud.inv_model_to_world, cloud.model_to_world, cloud.radius, oT);
 
     if (!intersection) return 1.0;
 
+    // samplePos is inside the box, so the near intersection can be behind it.
+    float t0 = max(oT.x, 0.0);
+    float dtL = (oT.y - t0) / float(cloud.num_march_steps_to_light);
+
     for (int i = 0; i < cloud.num_march_steps_to_light; i++)
     {
-        float stepSize = (float(i) / float(cloud.num_march_steps_to_light)) * (oT.y - oT.x);
-        float3 p = samplePos + directionToLight * stepSize;
-        totalDensity += sample_density(p, cloud);
+        float3 p = samplePos + directionToLight * (t0 + (float(i) + 0.5) * dtL);
+        totalDensity += sample_density(p, cloud) * dtL;
     }
-    totalDensity /= float(cloud.num_march_steps_to_light);
     return exp(-totalDensity);
 }
 
@@ -160,25 +162,26 @@ void clouds_main(uint3 tid : SV_DispatchThreadID)
     if (intersection && oT.y > 0.0)
     {
         oT.x = max(0.0, oT.x);
+        float marchLength = oT.y - oT.x;
+        float dt = marchLength / float(cloud.num_march_steps);
         for (int i = 0; i < cloud.num_march_steps; i++)
         {
-            float stepSize = (float(i) / float(cloud.num_march_steps)) * (oT.y - oT.x);
-            float3 samplePos = eyePosition + rayDirection * (oT.x + stepSize);
+            float3 samplePos = eyePosition + rayDirection * (oT.x + (float(i) + 0.5) * dt);
 
             float densityOfSample = sample_density(samplePos, cloud);
-            float lightTransmittance = light_march(samplePos, eyePosition, cloud);
+            float lightTransmittance = light_march(samplePos, cloud);
 
-            lightEnergy += densityOfSample * stepSize * transmittance * lightTransmittance
+            lightEnergy += densityOfSample * dt * transmittance * lightTransmittance
                          * phase_HG(dot(normalize(rayDirection), normalize(-scene.dirLight.direction.xyz)), 0.5);
 
-            transmittance *= exp(-densityOfSample * stepSize);
+            transmittance *= exp(-densityOfSample * dt);
 
             if (transmittance < 0.01) break;
 
             if (cloud.powder_effect)
             {
-                float powderness = 1.0 - exp(-(densityOfSample * stepSize) / 2.0);
-                transmittance += powderness;
+                float powderness = 1.0 - exp(-(densityOfSample * dt) / 2.0);
+                transmittance = saturate(transmittance + powderness);
             }
         }
     }
