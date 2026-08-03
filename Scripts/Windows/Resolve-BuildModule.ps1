@@ -50,12 +50,14 @@ function Import-BuildModule {
         Import-Module (Resolve-BuildModulePath -Name $moduleName) -Force -Global
     }
 
-    # Re-expose WindowsScripts.Shared after the batch: ContainerHub's
-    # WindowsBuild.Common internally imports it with -Force, which can
-    # shadow the global session's copy. Re-importing it last ensures
-    # its exports (Resolve-WorkspacePath, Resolve-NormalizedPath, etc.)
-    # are visible to the calling script.
-    if ($Name -notcontains 'WindowsScripts.Shared') { return }
+    # Re-expose WindowsScripts.Shared after every batch, unconditionally:
+    # ContainerHub's WindowsBuild.Common internally imports it with -Force,
+    # which can shadow the global session's copy. Gating this on the caller
+    # having named 'WindowsScripts.Shared' only re-ran the repair in the one
+    # case where it was never needed (the caller already imported it itself);
+    # callers that pull in WindowsBuild.Common without naming it - e.g.
+    # run_clangcl_debug.ps1 - got the shadowed copy. The re-import is cheap
+    # (it just resolves and re-imports one small module), so always do it.
     Import-Module (Resolve-BuildModulePath -Name 'WindowsScripts.Shared') -Force -Global
 }
 

@@ -7331,28 +7331,6 @@ PowerShell file plus one new Pester suite; task 3 touches `Linux.yml`,
 `Texture.ixx` and `buildIntegritySuite.cpp`. Task 4 edits a module interface
 (`Texture.ixx`) and therefore needs `-FreshContainer`; nothing else here does.
 
-- [ ] **(S) Give `Resolve-BuildModule.ps1` a Pester suite, and fix `Import-BuildModule`'s repair guard** — every Windows script and every Pester suite in this repo resolves its modules through this file, AGENTS.md says it is the one thing that cannot move upstream, and it has no test; its `WindowsScripts.Shared` re-import fires on the one condition where it is least needed.
-
-  **Files to read:**
-  - `Scripts/Windows/Resolve-BuildModule.ps1` — `Resolve-BuildModulePath` (`:15-41`) and `Import-BuildModule` (`:43-60`); the guard is `:58`.
-  - `Scripts/Windows/run_clangcl_debug.ps1:29` — `Import-BuildModule @('WindowsBuild.Common', 'WindowsAppRunner.Common', 'WindowsTesting.Common')`: imports `WindowsBuild.Common`, does not list `WindowsScripts.Shared`, and therefore skips the repair.
-  - `Scripts/Windows/tests/WindowsWebDav.Common.Tests.ps1:4` — the one call site that does list `WindowsScripts.Shared`, i.e. the only place the repair currently runs.
-  - AGENTS.md § "PowerShell module resolution (ContainerHub first, vendored fallback)" — the contract the suite should pin.
-
-  **Steps:**
-  1. Read `Import-BuildModule`'s own comment (`:53-57`): the hazard is that ContainerHub's `WindowsBuild.Common` force-imports `WindowsScripts.Shared` internally and can shadow the global copy. That happens whenever `WindowsBuild.Common` is imported — but the repair is gated on `$Name` *containing* `WindowsScripts.Shared`, which is the case where the caller was going to import it anyway. Invert it: always re-import `WindowsScripts.Shared` last (it resolves and is cheap), or gate on the batch containing a module known to nest-import it. Prefer the unconditional form and say why in the comment.
-  2. Add `Scripts/Windows/tests/Resolve-BuildModule.Tests.ps1` (Pester 3.4 syntax, dot-source the script under test — it is a plain `.ps1`, not a module, so `Import-BuildModule`/`InModuleScope` do not apply).
-  3. Pin the preference order: `Resolve-BuildModulePath 'WindowsScripts.Shared'` must return a path under `ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules`, and `Resolve-BuildModulePath 'WindowsTesting.Common'` must return one under `Scripts\Windows\modules` — those are the two live examples of "upstream wins" and "vendored fallback" as the tree stands today.
-  4. Pin the failure mode: `{ Resolve-BuildModulePath -Name 'NoSuchModule' } | Should Throw`, and assert the message names both searched locations (the current message does; keep it that way).
-  5. Pin the vendored directory's contents against AGENTS.md's claim: assert `Scripts\Windows\modules` contains exactly `WindowsClang.Common.psm1` and `WindowsTesting.Common.psm1`. That turns "everything else was upstreamed on 2026-08-02" into a checked statement, and fails loudly if a module is re-vendored without a decision.
-  6. Pin the repair from step 1: after `Import-BuildModule @('WindowsBuild.Common')`, `Get-Command Resolve-WorkspacePath -ErrorAction SilentlyContinue` must be non-null — i.e. `WindowsScripts.Shared`'s exports are reachable even though the caller never named it.
-
-  **Test:** the new `Scripts/Windows/tests/Resolve-BuildModule.Tests.ps1`.
-
-  **Build:** none — Pester only, same command as tasks 1 and 2. Run the whole `Scripts/Windows/tests` directory: this suite imports modules globally and the ordering interaction with the other suites is part of what it is pinning.
-
-  **Context:** This is the bootstrap that finds ContainerHub, so it is the single point where the whole upstream-first arrangement can break silently — a renamed upstream module, a re-vendored copy, or a submodule that was not initialised all surface here first. Step 5 is the cheap half and the one most likely to catch a future drift; do not skip it because it looks like a tautology today.
-
 Candidates found but NOT tasked (checked, then rejected — do not re-propose
 without new evidence): **a whole-tree sweep for dead public accessors** — ran it
 this pass over every `get*`/`is*`/`has*`/`supports*` declared in a `.ixx` and it
