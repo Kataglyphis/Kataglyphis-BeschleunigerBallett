@@ -39,14 +39,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::init(std::shared_ptr<Vulk
 void Kataglyphis::VulkanRendererInternals::Raytracing::shaderHotReload(
   std::span<const vk::DescriptorSetLayout> descriptor_set_layouts)
 {
-    if (graphicsPipeline) {
-        device->getLogicalDevice().destroyPipeline(graphicsPipeline);
-        graphicsPipeline = nullptr;
-    }
-    if (pipeline_layout) {
-        device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
-        pipeline_layout = nullptr;
-    }
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphicsPipeline, pipeline_layout);
     createGraphicsPipeline(descriptor_set_layouts);
     recreateSBT();
 }
@@ -159,14 +152,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::cleanUp()
     missShaderBindingTableBuffer.cleanUp();
     hitShaderBindingTableBuffer.cleanUp();
 
-    if (graphicsPipeline) {
-        device->getLogicalDevice().destroyPipeline(graphicsPipeline);
-        graphicsPipeline = nullptr;
-    }
-    if (pipeline_layout) {
-        device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
-        pipeline_layout = nullptr;
-    }
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphicsPipeline, pipeline_layout);
 
     device.reset();
 }

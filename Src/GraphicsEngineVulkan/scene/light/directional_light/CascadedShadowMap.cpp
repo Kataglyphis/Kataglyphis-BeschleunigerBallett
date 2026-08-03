@@ -231,14 +231,7 @@ void CascadedShadowMap::cleanUp()
         device->getLogicalDevice().destroyRenderPass(renderPass);
         renderPass = nullptr;
     }
-    if (graphicsPipeline) {
-        device->getLogicalDevice().destroyPipeline(graphicsPipeline);
-        graphicsPipeline = nullptr;
-    }
-    if (pipelineLayout) {
-        device->getLogicalDevice().destroyPipelineLayout(pipelineLayout);
-        pipelineLayout = nullptr;
-    }
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphicsPipeline, pipelineLayout);
     lightMatricesDescriptors.cleanUp();
     if (shadowMapArray) {
         shadowMapArray->cleanUp();
@@ -289,14 +282,7 @@ void CascadedShadowMap::createGraphicsPipeline()
 
 void CascadedShadowMap::shaderHotReload()
 {
-    if (graphicsPipeline) {
-        device->getLogicalDevice().destroyPipeline(graphicsPipeline);
-        graphicsPipeline = nullptr;
-    }
-    if (pipelineLayout) {
-        device->getLogicalDevice().destroyPipelineLayout(pipelineLayout);
-        pipelineLayout = nullptr;
-    }
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphicsPipeline, pipelineLayout);
     // Rebuilds only the pipeline/layout, not lightMatricesDescriptors or its
     // buffer - createDescriptorSetAndPipeline() re-uploads the light matrices
     // buffer and would leak the previous descriptor set + buffer if called

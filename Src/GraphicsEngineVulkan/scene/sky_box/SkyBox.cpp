@@ -325,14 +325,7 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
 
 void SkyBox::shaderHotReload(vk::DescriptorSetLayout sharedLayout)
 {
-    if (graphicsPipeline) {
-        device->getLogicalDevice().destroyPipeline(graphicsPipeline);
-        graphicsPipeline = nullptr;
-    }
-    if (pipelineLayout) {
-        device->getLogicalDevice().destroyPipelineLayout(pipelineLayout);
-        pipelineLayout = nullptr;
-    }
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphicsPipeline, pipelineLayout);
     createGraphicsPipeline(sharedLayout);
 }
 
@@ -409,14 +402,7 @@ void SkyBox::cleanUp()
         device->getLogicalDevice().destroyFramebuffer(fb);
     }
     framebuffers.clear();
-    if (graphicsPipeline) {
-        device->getLogicalDevice().destroyPipeline(graphicsPipeline);
-        graphicsPipeline = nullptr;
-    }
-    if (pipelineLayout) {
-        device->getLogicalDevice().destroyPipelineLayout(pipelineLayout);
-        pipelineLayout = nullptr;
-    }
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphicsPipeline, pipelineLayout);
     cubemapDescriptors.cleanUp();
     if (renderPass) {
         device->getLogicalDevice().destroyRenderPass(renderPass);

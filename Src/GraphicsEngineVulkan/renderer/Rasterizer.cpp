@@ -51,14 +51,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::init(std::shared_ptr<Vulk
 void Kataglyphis::VulkanRendererInternals::Rasterizer::shaderHotReload(
   std::span<const vk::DescriptorSetLayout> descriptor_set_layouts)
 {
-    if (graphics_pipeline) {
-        device->getLogicalDevice().destroyPipeline(graphics_pipeline);
-        graphics_pipeline = nullptr;
-    }
-    if (pipeline_layout) {
-        device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
-        pipeline_layout = nullptr;
-    }
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphics_pipeline, pipeline_layout);
     createGraphicsPipeline(descriptor_set_layouts);
 }
 
@@ -124,14 +117,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::cleanUp()
     if (depthBufferImage) { depthBufferImage->cleanUp(); }
     depthBufferImage.reset();
 
-    if (graphics_pipeline) {
-        device->getLogicalDevice().destroyPipeline(graphics_pipeline);
-        graphics_pipeline = nullptr;
-    }
-    if (pipeline_layout) {
-        device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
-        pipeline_layout = nullptr;
-    }
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphics_pipeline, pipeline_layout);
     if (render_pass) {
         device->getLogicalDevice().destroyRenderPass(render_pass);
         render_pass = nullptr;

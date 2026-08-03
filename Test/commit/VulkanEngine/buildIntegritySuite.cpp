@@ -3954,7 +3954,8 @@ TEST(BuildIntegrity, EveryShaderHotReloadDestroysThePipelineLayoutItRecreates)
             if (class_name != kExcludedClass) {
                 ++checked;
                 const std::string body = contents.substr(body_open, body_close - body_open + 1);
-                if (body.find("destroyPipelineLayout(") == std::string::npos) {
+                if (body.find("destroyPipelineLayout(") == std::string::npos
+                    && body.find("destroyPipelineAndLayout(") == std::string::npos) {
                     offenders.push_back(class_name + " (" + fs::relative(path, repo_root).string() + ")");
                 }
             }
@@ -4075,6 +4076,62 @@ TEST(BuildIntegrity, ComputePipelinesAreCreatedThroughTheSharedHelper)
       << violations.size()
       << " hand-rolled vk::ComputePipelineCreateInfo found under Src/ - create compute pipelines through "
          "createComputePipeline (vulkan_base/ShaderHelper.ixx) instead:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+// Every hand-rolled destroyPipelineLayout(...)/destroyPipeline(...) teardown
+// pair used to be spelled out at each of the 20 call sites across 8 files.
+// Kataglyphis::destroyPipelineAndLayout (common/PipelineLayoutHelper.hpp) is
+// now the one place that destroys a pipeline and its layout together - this
+// pins that down so a future stage cannot silently reintroduce the
+// duplication, the same way ComputePipelinesAreCreatedThroughTheSharedHelper
+// pins down pipeline creation.
+TEST(BuildIntegrity, PipelineTeardownGoesThroughTheSharedHelper)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    static const char *const kRawTeardownCall = "destroyPipelineLayout(";
+
+    // PipelineLayoutHelper.hpp is the helper's own definition.
+    static const std::array<const char *, 1> kExemptFiles = {
+        "Src/GraphicsEngineVulkan/common/PipelineLayoutHelper.hpp"
+    };
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".cpp" && path.extension() != ".ixx") { continue; }
+
+        const std::string relative_file = fs::relative(path, repo_root).generic_string();
+        if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string line;
+        std::size_t line_number = 0;
+        while (std::getline(file, line)) {
+            ++line_number;
+            if (line.find(kRawTeardownCall) == std::string::npos) { continue; }
+            violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " hand-rolled destroyPipelineLayout(...) call(s) found under Src/GraphicsEngineVulkan/ - destroy "
+         "pipelines and their layouts through Kataglyphis::destroyPipelineAndLayout "
+         "(common/PipelineLayoutHelper.hpp) instead:"
       << [&violations] {
              std::string joined;
              for (const auto &entry : violations) { joined += "\n  " + entry; }

@@ -5,6 +5,7 @@ module;
 #include <span>
 #include <vulkan/vulkan.hpp>
 #include "common/FormatHelper.hpp"
+#include "common/PipelineLayoutHelper.hpp"
 #include "common/Utilities.hpp"
 #include "scene/atmospheric_effects/clouds/CloudDispatch.hpp"
 
@@ -136,22 +137,8 @@ void Clouds::dispatchNoiseGeneration()
 
 void Clouds::shaderHotReload(vk::DescriptorSetLayout sharedLayout)
 {
-    if (cloudComputePipeline) {
-        device->getLogicalDevice().destroyPipeline(cloudComputePipeline);
-        cloudComputePipeline = nullptr;
-    }
-    if (cloudPipelineLayout) {
-        device->getLogicalDevice().destroyPipelineLayout(cloudPipelineLayout);
-        cloudPipelineLayout = nullptr;
-    }
-    if (noiseComputePipeline) {
-        device->getLogicalDevice().destroyPipeline(noiseComputePipeline);
-        noiseComputePipeline = nullptr;
-    }
-    if (noisePipelineLayout) {
-        device->getLogicalDevice().destroyPipelineLayout(noisePipelineLayout);
-        noisePipelineLayout = nullptr;
-    }
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), cloudComputePipeline, cloudPipelineLayout);
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), noiseComputePipeline, noisePipelineLayout);
     // Descriptor sets and both textures are untouched; the noise volume is
     // content, not a pipeline, so dispatchNoiseGeneration() does not re-run.
     createComputePipelines(sharedLayout);
@@ -199,22 +186,8 @@ void Clouds::cleanUp()
 
     cloudDescriptors.cleanUp();
     noiseDescriptors.cleanUp();
-    if (noiseComputePipeline) {
-        device->getLogicalDevice().destroyPipeline(noiseComputePipeline);
-        noiseComputePipeline = nullptr;
-    }
-    if (noisePipelineLayout) {
-        device->getLogicalDevice().destroyPipelineLayout(noisePipelineLayout);
-        noisePipelineLayout = nullptr;
-    }
-    if (cloudComputePipeline) {
-        device->getLogicalDevice().destroyPipeline(cloudComputePipeline);
-        cloudComputePipeline = nullptr;
-    }
-    if (cloudPipelineLayout) {
-        device->getLogicalDevice().destroyPipelineLayout(cloudPipelineLayout);
-        cloudPipelineLayout = nullptr;
-    }
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), noiseComputePipeline, noisePipelineLayout);
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), cloudComputePipeline, cloudPipelineLayout);
     if (cloudNoiseTexture) { cloudNoiseTexture->cleanUp(); }
     cloudNoiseTexture.reset();
     if (cloudOutputTexture) { cloudOutputTexture->cleanUp(); }

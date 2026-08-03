@@ -13,6 +13,7 @@
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#include "common/PipelineLayoutHelper.hpp"
 #include "renderer/PathTracingDispatch.hpp"
 #include "renderer/pushConstants/PushConstantPathTracing.hpp"
 
@@ -38,14 +39,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::init(std::shared_ptr<Vul
 void Kataglyphis::VulkanRendererInternals::PathTracing::shaderHotReload(
   std::span<const vk::DescriptorSetLayout> descriptor_set_layouts)
 {
-    if (pipeline) {
-        device->getLogicalDevice().destroyPipeline(pipeline);
-        pipeline = nullptr;
-    }
-    if (pipeline_layout) {
-        device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
-        pipeline_layout = nullptr;
-    }
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), pipeline, pipeline_layout);
     createPipeline(descriptor_set_layouts);
 }
 
@@ -179,14 +173,7 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::cleanUp()
     // init() was never called (no hardware raytracing support).
     if (!device) { return; }
 
-    if (pipeline) {
-        device->getLogicalDevice().destroyPipeline(pipeline);
-        pipeline = nullptr;
-    }
-    if (pipeline_layout) {
-        device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
-        pipeline_layout = nullptr;
-    }
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), pipeline, pipeline_layout);
 
     device.reset();
 }

@@ -40,4 +40,23 @@ constexpr vk::PipelineLayoutCreateInfo buildPipelineLayoutCreateInfo(
         set_layouts.data(), static_cast<uint32_t>(push_constant_ranges.size()), push_constant_ranges.data() };
 }
 
+// Destroys a pipeline and the layout it was built with, and nulls both
+// handles so a second call (an explicit cleanUp followed by the
+// destructor) is a no-op - the same idempotence rule VulkanBuffer and
+// VulkanImage follow. Handles are taken by reference for exactly that
+// reason; passing by value would destroy without nulling and the caller
+// would keep a dangling handle.
+inline void destroyPipelineAndLayout(vk::Device device, vk::Pipeline &pipeline, vk::PipelineLayout &layout)
+{
+    if (!device) { return; }
+    if (pipeline) {
+        device.destroyPipeline(pipeline);
+        pipeline = nullptr;
+    }
+    if (layout) {
+        device.destroyPipelineLayout(layout);
+        layout = nullptr;
+    }
+}
+
 }// namespace Kataglyphis

@@ -48,10 +48,8 @@ void DeferredRasterizer::init(std::shared_ptr<VulkanDevice>in_device,
 
 void DeferredRasterizer::shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts)
 {
-    device->getLogicalDevice().destroyPipeline(geometryPipeline);
-    device->getLogicalDevice().destroyPipelineLayout(geometryPipelineLayout);
-    device->getLogicalDevice().destroyPipeline(lightingPipeline);
-    device->getLogicalDevice().destroyPipelineLayout(lightingPipelineLayout);
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), geometryPipeline, geometryPipelineLayout);
+    Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), lightingPipeline, lightingPipelineLayout);
     createPipelines(descriptor_set_layouts);
 }
 
@@ -118,22 +116,8 @@ void DeferredRasterizer::cleanUp()
     if (!device) { return; }
 
     auto logicalDevice = device->getLogicalDevice();
-    if (geometryPipeline) {
-        logicalDevice.destroyPipeline(geometryPipeline);
-        geometryPipeline = nullptr;
-    }
-    if (geometryPipelineLayout) {
-        logicalDevice.destroyPipelineLayout(geometryPipelineLayout);
-        geometryPipelineLayout = nullptr;
-    }
-    if (lightingPipeline) {
-        logicalDevice.destroyPipeline(lightingPipeline);
-        lightingPipeline = nullptr;
-    }
-    if (lightingPipelineLayout) {
-        logicalDevice.destroyPipelineLayout(lightingPipelineLayout);
-        lightingPipelineLayout = nullptr;
-    }
+    Kataglyphis::destroyPipelineAndLayout(logicalDevice, geometryPipeline, geometryPipelineLayout);
+    Kataglyphis::destroyPipelineAndLayout(logicalDevice, lightingPipeline, lightingPipelineLayout);
     if (renderPass) {
         logicalDevice.destroyRenderPass(renderPass);
         renderPass = nullptr;

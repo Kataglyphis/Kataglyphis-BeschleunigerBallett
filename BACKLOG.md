@@ -5987,62 +5987,6 @@ oracle: `destroyPipelineLayout`/`destroyPipeline` calls only, verifiable by a
 source gate in the exact shape of `ComputePipelinesAreCreatedThroughTheSharedHelper`
 (`buildIntegritySuite.cpp:3980`).
 
-- [ ] **(S) (refactor) Give pipeline + pipeline-layout destruction one definition — the destruction half of the `PipelineLayoutHelper` family, hand-rolled in 20 places** — the creation side was collapsed into `buildPipelineLayoutCreateInfo` across nine sites; teardown never was.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/common/PipelineLayoutHelper.hpp` — the existing creation helper and the doc-comment conventions to match
-  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:56-66` and `:125-136` — the canonical shape, once in `shaderHotReload` and once in `cleanUp`
-  - The other eight owners, each with the same pair: `Rasterizer.cpp`,
-    `DeferredRasterizer.cpp` (two layouts), `Raytracing.cpp`, `PathTracing.cpp`,
-    `Clouds.cpp` (two layouts, `:134-165` and `:191-215`),
-    `CascadedShadowMap.cpp`, `SkyBox.cpp`
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:3980` — `ComputePipelinesAreCreatedThroughTheSharedHelper`, the gate shape to copy
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:3851` — `EveryShaderHotReloadDestroysThePipelineLayoutItRecreates`, which must keep passing
-
-  **Steps:**
-  1. Add to `common/PipelineLayoutHelper.hpp`:
-     ```cpp
-     // Destroys a pipeline and the layout it was built with, and nulls both
-     // handles so a second call (an explicit cleanUp followed by the
-     // destructor) is a no-op - the same idempotence rule VulkanBuffer and
-     // VulkanImage follow. Handles are taken by reference for exactly that
-     // reason; passing by value would destroy without nulling and the caller
-     // would keep a dangling handle.
-     inline void destroyPipelineAndLayout(vk::Device device, vk::Pipeline &pipeline, vk::PipelineLayout &layout)
-     ```
-     Null-handle-safe on both arguments, and a no-op when `device` is null.
-  2. Replace all 20 hand-rolled blocks with calls to it. `DeferredRasterizer`
-     and `Clouds` each own two pipeline/layout pairs — two calls each, not one.
-     Preserve the existing ordering (pipeline before layout) and do not move any
-     call across a `device.reset()` or a `createXPipeline()` call.
-  3. Leave `destroyPipeline` calls that have no paired layout (if any survive
-     after step 2) alone, and say so in the helper's comment.
-
-  **Test:** Add `BuildIntegrity.PipelineTeardownGoesThroughTheSharedHelper` to
-  `buildIntegritySuite.cpp`: walk `Src/GraphicsEngineVulkan/**` and assert no
-  `.cpp`/`.ixx` outside `common/PipelineLayoutHelper.hpp` contains
-  `destroyPipelineLayout(`. Model it on
-  `ComputePipelinesAreCreatedThroughTheSharedHelper` — same directory walk, same
-  allowlist-of-one structure, same failure message naming every offending
-  `file:line` so the next violation is a one-line fix. Re-run
-  `EveryShaderHotReloadDestroysThePipelineLayoutItRecreates` and, if it greps
-  for the literal `destroyPipelineLayout` inside each `shaderHotReload`, update
-  it to accept the helper call instead — do not weaken what it asserts.
-
-  **Build:** `clangcl-debug`:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
-  from the repo root. Pure teardown-order-preserving refactor: no golden run is
-  needed, and none is available (see the RDP `- [b]` entry).
-
-  **Context:** This is the tenth member of the create-info builder family
-  (`FramebufferHelper`, `RenderPassHelper`, `PipelineLayoutHelper`,
-  `ViewportHelper`, `ImageViewHelper`, `ComputePipelineHelper`, …) and the first
-  on the destruction side. It is explicitly NOT the `ImageMemoryBarrier` builder
-  that batches VIII and IX deferred: no barrier is touched, nothing is
-  submitted, and the acceptance test is a source gate rather than a host-GPU
-  golden.
-
 Candidates found but NOT tasked this cycle (checked, then rejected or deferred
 with a reason — do not re-propose without new evidence): **an
 `ImageMemoryBarrier` builder** — unchanged since batch VIII, still gated on host
