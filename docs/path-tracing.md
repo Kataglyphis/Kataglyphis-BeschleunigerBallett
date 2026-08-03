@@ -53,6 +53,15 @@ estimators is biased):
 Self-intersection is guarded by a 1e-4 normal offset **and** ray-query
 `t_min = 0.001` (matches the RT path).
 
+Setting `KATAGLYPHIS_PT_FURNACE=<radiance>` (read via `getenv` once per
+`recordCommands` call, not cached, so several tests sharing one process each
+see their own setting) forces every hit's albedo to 1 and replaces the
+gradient sky with a uniform `<radiance>` environment; the shader gates on
+`pc_ray.clearColor.w > 0.5`. This is the classic white-furnace test: an
+unbiased estimator must converge every pixel to exactly the environment
+radiance, for any geometry.
+`GoldenRender.PathTracingPassesTheWhiteFurnaceTest` is the oracle.
+
 ## Temporal accumulation
 
 The kernel folds the frame index into the RNG seed (without it, every frame
@@ -79,7 +88,9 @@ naive golden pass with per-frame sampling disabled.
 
 ## Verification
 
-Four PT-facing goldens in `Test/commit/VulkanEngine/goldenRenderSuite.cpp`,
+<!-- pt-goldens: PathTracingAccumulatesAndConverges, PathTracingRespondsToTheDirectionalLight, PathTracingHonorsTheQualityControls, RaytracedWorldFollowsTheModelTransform, PathTracingPassesTheWhiteFurnaceTest, RaytracedLargeMeshDoesNotLoseTheDevice -->
+
+Six PT-facing goldens in `Test/commit/VulkanEngine/goldenRenderSuite.cpp`,
 each red/green-proven against the pre-fix kernel (numbers are post-HDR;
 lifting the UNORM ceiling widened several of them dramatically):
 
@@ -93,6 +104,16 @@ lifting the UNORM ceiling widened several of them dramatically):
   (all indirect sky light vanishes); hardcoded-bounds kernel: 7.3e-5.
 - `RaytracedWorldFollowsTheModelTransform` - a GUI move must change the
   traced image: 0.397 vs exactly 0 on a stale TLAS.
+- `PathTracingPassesTheWhiteFurnaceTest` - furnace-mode crop converges to
+  mean luminance ~205 (matching `aces_tonemap(1.0) * 255`) with >98% of
+  pixels within +-6 of that value; a biased estimator either drifts off
+  205 or leaves visible geometry in the (supposedly uniform) image.
+- `RaytracedLargeMeshDoesNotLoseTheDevice` - the RT pipeline must survive
+  10 frames against the shipped large dinosaur-mesh debug scene; a
+  diagnostic/regression guard scoping the `VK_ERROR_DEVICE_LOST` the PT
+  reproducer hits on the same mesh (KNOWN ISSUE comment in
+  `path_tracing.slang`, BACKLOG.md) to `path_tracing.slang`/`RayQuery`
+  specifically versus the shared vertex-upload/BDA path.
 
 The instrument lessons these goldens were built on (ImGui panel coverage,
 measuring changed-pixel fractions in the panel-free right edge, dumping
@@ -107,7 +128,5 @@ regenerates the `.spv` and the engine loads it at startup.
 
 ## Open work (BACKLOG, "PT survey" section)
 
-- Furnace golden: wants a uniform-environment toggle (the sky is a
-  gradient), folded into the PT-goldens remainder of item 10.
 - RNG decorrelation (item 11, partially done via the frame fold): linear
   seeds still correlate neighbours within a frame.

@@ -7783,65 +7783,6 @@ shape.
 
 ### Docs
 
-- [ ] **(S) Fix `docs/path-tracing.md`'s stale "open work" and golden list, and gate it against the suite** — the doc still asks for the white-furnace toggle that shipped, and counts four PT-facing goldens where the suite has six; it is the only PT/RT doc with no gate.
-
-  **Files to read:**
-  - `docs/path-tracing.md:80-96` (Verification) and `:108-113` (Open work).
-  - `Src/GraphicsEngineVulkan/renderer/PathTracing.cpp:106-123` — the
-    `KATAGLYPHIS_PT_FURNACE` hook and the sample/bounce clamps.
-  - `Resources/ShadersSlang/path_tracing/path_tracing.slang:60-65`,
-    `:122-125`, `:198-201` — the furnace branch the doc says is missing.
-  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp:1338`, `:1476`, `:1568`,
-    `:1694`, `:2486`, `:2829` — the six tests.
-  - `docs/cpp-renderer-improvements.md:27` — the change-log row for
-    `44e93e52` that already records the furnace as shipped.
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:6322-6357`
-    (`RendererImprovementLogDoesNotAskForShippedWork`) and `:3974`
-    (`GoldenTestCountsInDocsMatchTheSuite`) — the two gates to model on.
-
-  **Steps:**
-  1. Delete the "Furnace golden" bullet from the Open work section
-     (`:110-111`) and describe the shipped mode instead: add a short paragraph
-     to "The estimator" saying that `KATAGLYPHIS_PT_FURNACE=<radiance>` forces
-     albedo to 1 and replaces the gradient sky with a uniform radiance, that
-     the shader gates on `clearColor.w > 0.5`, and that
-     `GoldenRender.PathTracingPassesTheWhiteFurnaceTest` is the oracle.
-  2. Update Verification: say **six**, and add the two missing rows —
-     `PathTracingPassesTheWhiteFurnaceTest` (uniformity of the furnace image)
-     and `RaytracedLargeMeshDoesNotLoseTheDevice` (the device-loss regression
-     guard). Keep the existing four rows' measured numbers untouched; they are
-     the record of how each was red/green-proven.
-  3. Add a machine-readable marker line the gate can parse, in the style
-     `gpu-golden-testing.md` already uses, e.g.
-     `<!-- pt-goldens: PathTracingAccumulatesAndConverges, … -->`, listing
-     exactly the `TEST(GoldenRender, …)` names.
-  4. Cross-check the rest of the doc against the shader while you are in
-     there: the `1e-4` normal offset (`:53-54` vs `path_tracing.slang:221`),
-     `t_min = 0.001` (`:103`), the `samples_per_pixel`/`max_bounces` defaults
-     of 8 (`GUIRendererSharedVars.ixx:109-110`), and the Russian-roulette
-     start at the fourth segment (`:89`). Fix anything that has moved; report
-     "checked, unchanged" for anything that has not.
-
-  **Test:** Add `BuildIntegrity.PathTracingDocMatchesTheGoldenSuite` to
-  `Test/commit/VulkanEngine/buildIntegritySuite.cpp`: parse the marker line
-  from `docs/path-tracing.md`, collect every `TEST(GoldenRender, PathTracing…)`
-  and `TEST(GoldenRender, Raytraced…)` name out of
-  `Test/commit/VulkanEngine/goldenRenderSuite.cpp`, and assert the two sets are
-  equal — naming the missing/extra entries in the failure message. Additionally
-  assert the doc no longer contains the string "wants a uniform-environment
-  toggle" while `PathTracing.cpp` contains `KATAGLYPHIS_PT_FURNACE`, mirroring
-  the shipped-work check at `:6338-6346`.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
-  from the repo root (the gate resolves paths against it).
-
-  **Context:** Four docs are already pinned to the code they describe and one
-  is not; the one that is not is the one that drifted. Do not restate the
-  shader in the doc — the fix is to make the doc's *claims* checkable, not
-  longer.
-
 Candidates found but NOT tasked (checked, then rejected — do not re-propose
 without new evidence): **`compute/clouds.slang`'s `phase_HG` (`:57-61`)
 spells its denominator `1 + g² + 2g·cosθ` where the canonical

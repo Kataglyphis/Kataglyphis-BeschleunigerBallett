@@ -521,6 +521,46 @@ std::optional<std::vector<std::pair<std::string, std::string>>> parse_golden_tes
     return std::vector<std::pair<std::string, std::string>>{};
 }
 
+// Parses docs/path-tracing.md's `<!-- pt-goldens: name1, name2, ... -->`
+// marker line into the list of TEST(GoldenRender, ...) names it lists,
+// trimming whitespace around each comma-separated entry. Returns
+// std::nullopt if the marker line is missing, malformed (no closing "-->"),
+// or lists zero names - a deleted marker must fail the calling test, not
+// silently pass.
+std::optional<std::vector<std::string>> parse_pt_goldens_marker(const fs::path &doc_path)
+{
+    std::ifstream file(doc_path);
+    if (!file) { return std::nullopt; }
+
+    static const std::string kMarkerKey = "<!-- pt-goldens:";
+    std::string line;
+    while (std::getline(file, line)) {
+        const std::size_t marker_start = line.find(kMarkerKey);
+        if (marker_start == std::string::npos) { continue; }
+
+        const std::size_t value_start = marker_start + kMarkerKey.size();
+        const std::size_t value_end = line.find("-->", value_start);
+        if (value_end == std::string::npos) { return std::nullopt; }
+
+        const std::string list = line.substr(value_start, value_end - value_start);
+        std::vector<std::string> names;
+        std::size_t pos = 0;
+        while (pos <= list.size()) {
+            std::size_t next = list.find(',', pos);
+            if (next == std::string::npos) { next = list.size(); }
+            const std::string entry = list.substr(pos, next - pos);
+            const std::size_t begin = entry.find_first_not_of(" \t");
+            const std::size_t end = entry.find_last_not_of(" \t");
+            if (begin != std::string::npos && begin <= end) { names.push_back(entry.substr(begin, end - begin + 1)); }
+            if (next == list.size()) { break; }
+            pos = next + 1;
+        }
+        if (names.empty()) { return std::nullopt; }
+        return names;
+    }
+    return std::nullopt;
+}
+
 // Parses the exact suite-name globs out of Windows.yml's hand-written
 // `$gpuOnlySuites` PowerShell array (the "Run CPU-only tests inside the
 // container" step). Anchored on the array opener and its `-join ':'` closer
@@ -4087,6 +4127,82 @@ TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)
           << doc_path.string() << "'s --gtest_filter= excludes " << suite << "." << name << " but no such TEST("
           << suite << ", " << name << ") exists in " << tests_dir.string();
     }
+}
+
+// docs/path-tracing.md's "## Verification" section drifted out of sync with
+// the golden suite: it counted four PT-facing goldens and its "Open work"
+// section still asked for a furnace-mode golden after
+// PathTracingPassesTheWhiteFurnaceTest had already shipped it, alongside
+// RaytracedLargeMeshDoesNotLoseTheDevice - six PT-facing goldens exist, not
+// four. Pins the doc's `<!-- pt-goldens: ... -->` marker against a pure
+// file-I/O scan of TEST(GoldenRender, PathTracing...)/
+// TEST(GoldenRender, Raytraced...) definitions, following
+// GoldenTestCountsInDocsMatchTheSuite's "parse two sources, compare, fail
+// with both sides named" pattern, and mirrors
+// RendererImprovementLogDoesNotAskForShippedWork's shipped-work check for
+// the furnace toggle specifically.
+TEST(BuildIntegrity, PathTracingDocMatchesTheGoldenSuite)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path doc_path = repo_root / "docs" / "path-tracing.md";
+    if (!fs::exists(doc_path)) {
+        GTEST_SKIP() << "could not open " << doc_path.string() << " - not running from the repo root?";
+    }
+
+    const auto marker_names = parse_pt_goldens_marker(doc_path);
+    ASSERT_TRUE(marker_names.has_value())
+      << doc_path.string()
+      << " is missing its '<!-- pt-goldens: name1, name2, ... -->' marker line, or it lists zero names - a "
+         "deleted marker must fail this test, not silently pass";
+
+    const fs::path tests_dir = repo_root / "Test" / "commit" / "VulkanEngine";
+    const std::vector<std::string> golden_tests = collect_suite_test_names(tests_dir, "GoldenRender");
+
+    std::vector<std::string> pt_tests;
+    for (const auto &name : golden_tests) {
+        if (name.starts_with("PathTracing") || name.starts_with("Raytraced")) { pt_tests.push_back(name); }
+    }
+
+    std::vector<std::string> missing_from_doc;
+    for (const auto &name : pt_tests) {
+        if (std::find(marker_names->begin(), marker_names->end(), name) == marker_names->end()) {
+            missing_from_doc.push_back(name);
+        }
+    }
+    std::vector<std::string> extra_in_doc;
+    for (const auto &name : *marker_names) {
+        if (std::find(pt_tests.begin(), pt_tests.end(), name) == pt_tests.end()) { extra_in_doc.push_back(name); }
+    }
+
+    const auto joined = [](const std::vector<std::string> &names) -> std::string {
+        std::string result;
+        for (const auto &name : names) { result += name + " "; }
+        return result;
+    };
+
+    EXPECT_TRUE(missing_from_doc.empty() && extra_in_doc.empty())
+      << doc_path.string() << "'s '<!-- pt-goldens: ... -->' marker is out of sync with " << tests_dir.string()
+      << "'s TEST(GoldenRender, PathTracing...)/TEST(GoldenRender, Raytraced...) definitions - missing from doc: ["
+      << joined(missing_from_doc) << "], extra in doc: [" << joined(extra_in_doc) << "]";
+
+    const fs::path pathtracing_cpp_path = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "PathTracing.cpp";
+    std::ifstream cpp_file(pathtracing_cpp_path);
+    ASSERT_TRUE(static_cast<bool>(cpp_file)) << "could not open " << pathtracing_cpp_path.string();
+    const std::string cpp_content((std::istreambuf_iterator<char>(cpp_file)), std::istreambuf_iterator<char>());
+
+    std::ifstream doc_file(doc_path);
+    ASSERT_TRUE(static_cast<bool>(doc_file)) << "could not open " << doc_path.string();
+    const std::string doc_content((std::istreambuf_iterator<char>(doc_file)), std::istreambuf_iterator<char>());
+
+    const bool shader_ships_furnace = cpp_content.find("KATAGLYPHIS_PT_FURNACE") != std::string::npos;
+    const bool doc_still_wants_toggle = doc_content.find("wants a uniform-environment toggle") != std::string::npos;
+    EXPECT_FALSE(shader_ships_furnace && doc_still_wants_toggle)
+      << doc_path.string()
+      << " still asks for a uniform-environment furnace toggle (\"wants a uniform-environment toggle\"), but "
+      << pathtracing_cpp_path.string()
+      << " already ships it (\"KATAGLYPHIS_PT_FURNACE\") - the doc is asking for shipped work.";
 }
 
 // Parses docs/model-loading.md's `<!-- max-texture-count: N -->` marker line.
