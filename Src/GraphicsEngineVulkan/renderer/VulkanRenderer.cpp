@@ -400,12 +400,20 @@ void Kataglyphis::VulkanRenderer::handleModelReloadRequest(
 
 void Kataglyphis::VulkanRenderer::finishAllRenderCommands() { std::ignore = device->getLogicalDevice().waitIdle(); }
 
+// Reloads every stage that owns a shaderHotReload implementation:
+// rasterizer, deferredRasterizer, postStage, and (when supported)
+// raytracingStage/pathTracing. skyBox, dirShadowMap and clouds deliberately
+// have no shaderHotReload yet, so their omission here is not an oversight.
 void Kataglyphis::VulkanRenderer::shaderHotReload()
 {
     std::ignore = device->getLogicalDevice().waitIdle();
 
     std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts = { sharedRenderDescriptors.getLayout() };
     rasterizer.shaderHotReload(descriptor_set_layouts);
+
+    std::array<vk::DescriptorSetLayout, 2> const descriptor_set_layouts_deferred = { sharedRenderDescriptors.getLayout(),
+        gbufferDescriptors.getLayout() };
+    deferredRasterizer.shaderHotReload(descriptor_set_layouts_deferred);
 
     std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts_post = { postDescriptors.getLayout() };
     postStage.shaderHotReload(descriptor_set_layouts_post);

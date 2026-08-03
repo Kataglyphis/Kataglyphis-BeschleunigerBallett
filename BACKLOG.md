@@ -5663,6 +5663,357 @@ reasoning stands; do not re-propose until GPU verification is back.
 
 ### Shaders
 
+## 2026-08-03 batch VII — planner (a shader hot-reload button that skips the deferred pipelines entirely, leaks a pipeline layout in four of the five stages that implement it, and leaves the ray-tracing SBT holding a destroyed pipeline's group handles; a look-mode camera that snaps by the cursor's absolute position on the first right-drag of every run; a Slang source that is disabled, compiles to nothing, and diverged wholesale from the WGSL it claims to mirror)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file — batch VI's five tasks all shipped as `f7a5710d`,
+`30154355`, `66f36b0f`, `6a7c3b88`, `66dfa78a`). Every `file:line` below was read
+out of the tree this pass.
+
+**Tasks 1, 2, 4 and 5 are verifiable with no GPU** (source-scanning
+`BuildIntegrity` gates plus one CPU gtest suite that already exists); task 3's
+*behaviour* needs the GPU golden suites that the fifteen `- [b]` entries are
+still blocked on, but its fix and its gate are device-free, and the defect is a
+spec violation readable off the source.
+
+**The headline is that the shader hot-reload path — one GUI button, four
+distinct defects.** `VulkanRenderer::shaderHotReload`
+(`VulkanRenderer.cpp:403-419`) reloads `rasterizer`, `postStage`,
+`raytracingStage` and `pathTracing`, and **never calls
+`deferredRasterizer.shaderHotReload`**, even though that method exists, is
+declared (`DeferredRasterizer.ixx:33`), is implemented
+(`DeferredRasterizer.cpp:49-56`) — and is the *only* one of the five
+implementations that gets resource lifetimes right. So it is simultaneously dead
+code and a functional hole: press hot reload while `rasterizationMode` is
+Deferred and nothing about the deferred G-buffer or lighting shaders is
+re-read, silently. (`skyBox`, `dirShadowMap` and `clouds` have no
+`shaderHotReload` at all — a wider gap, deliberately out of scope below.)
+
+**Second, four of the five implementations leak a `vk::PipelineLayout` per
+press.** Each destroys only the pipeline and then calls a `create...` function
+that *also* creates the layout and overwrites the member handle:
+`PostStage.cpp:55-60` → `:263-269`, `Rasterizer.cpp:51-54` → `:319-321`,
+`Raytracing.cpp:39-43` → `:259-261`, `PathTracing.cpp:40-45` → `:204-206`.
+`DeferredRasterizer.cpp:49-56` is the reference — it destroys both pipelines and
+both layouts before recreating. Nothing catches this: the layouts are only
+destroyed once, in each stage's `cleanUp()`, so the leak is invisible until a
+long session with repeated reloads, and ASAN cannot see a Vulkan object leak.
+
+**Third, `Raytracing::shaderHotReload` recreates the ray-tracing pipeline and
+does not rebuild the SBT.** `createSBT` (`Raytracing.cpp:291-351`) fills the
+three shader-binding-table buffers from
+`getRayTracingShaderGroupHandlesKHR(graphicsPipeline, ...)` (`:308`), and
+`init` runs it right after `createGraphicsPipeline`. After a hot reload the SBT
+still holds handles obtained from a pipeline that has since been destroyed —
+group handles are only valid for the pipeline that produced them, so every
+`traceRaysKHR` after a reload dispatches through stale handles. `recordCommands`
+re-reads the buffers' device addresses each frame (`:301-307`), so the buffers
+themselves are picked up; their *contents* are what went stale. Note
+`VulkanBuffer::create` (`VulkanBuffer.cpp:51-100`) does **not** release a prior
+allocation, so a naive second `createSBT()` call would leak three buffers —
+the fix has to clean them up first. This is **not** the `- [b]` SBT miss-region
+alignment item above (`BACKLOG.md:3561`); that one is about record strides and
+is still blocked. Do not conflate them.
+
+**Fourth, look mode re-seeds its mouse origin on release but never on
+entry**, so the first right-drag of every run snaps the camera by the cursor's
+absolute screen position. `WindowInputState::mouse_first_moved`
+(`WindowInputState.hpp:16`) default-initialises to `false`, and
+`handle_mouse_button_callback` (`WindowInputCallbacks.ixx:96-112`) sets it
+`true` only on the *release* branch (`:109`). The press branch installs the
+cursor callback (`:104`) without re-seeding, so the very first cursor event of
+the first look session computes `x_change = x_pos - 0.0` — roughly half the
+window width of yaw in one frame. The same omission repeats mid-session: when
+ImGui takes mouse capture, `handle_mouse_callback` early-returns (`:62`)
+*without* updating `last_x`/`last_y` or setting `mouse_first_moved`, so moving
+the cursor across an ImGui panel during a right-drag and back out produces one
+delta measured against the position from before the panel. `mouse_first_moved`
+exists for exactly this, and `WindowInputUnit.FirstMouseMoveDoesNotJumpTheCamera`
+(`frontendInputSuite.cpp:80-101`) tests the mechanism — by setting
+`first_moved = true` by hand, which is why the two paths that should set it
+were never noticed. `WindowInputUnit.ImGuiCaptureGateSwallowsInput`
+(`:113-143`) stops one event short of the jump: it asserts the captured move
+yields zero, then never turns capture back off and moves again.
+
+**Fifth, `Resources/ShadersSlang/histogram/histogram.slang` is disabled,
+compiles to nothing, and has diverged wholesale from the file its own header
+claims it "Mirrors".** Its manifest row (`shader-manifest.json:107-113`) lists
+`targets: ["wgsl"]` with `"disabled": true`, so no script emits anything from
+it, and it has no `wgslMap` entry — it is the documented WGSL fallback, kept
+"for documentation and future SPIR-V use". Except the C++ Vulkan engine has no
+auto-exposure pass, so there is no SPIR-V consumer, and as documentation it is
+wrong: `histogram.wgsl` has three entry points (`cs_build_histogram`,
+`cs_clear_histogram`, `cs_reduce_exposure`) and a per-workgroup privatised
+histogram measured at 6.4× the naive version (`histogram.wgsl:43-51`);
+`histogram.slang` has one entry point and the naive global-atomic loop it
+explicitly notes it fell back to (`histogram.slang:36-39`). No gate can see
+this: `EveryShaderSourceHasCompiledBinary` (`buildIntegritySuite.cpp:900-937`)
+only walks `manifest->engine_spirv_subdirs`, so a source that is in no *enabled*
+row is invisible to it, and `buildIntegritySuite.cpp:115-118` asserts in a
+comment that `histogram.wgsl` is "hand-written, with no generating Slang
+source" — which is half true and reads as if the file below did not exist.
+The same header-comment drift runs through the whole family: all ten `wgslMap`
+sources still say "Mirrors `<x>`.wgsl" (`bloom.slang:3`, `forward.slang:3`,
+`sky.slang:1`, `ssao.slang:3`, `ibl.slang:3`, `gpu_cull.slang:1`,
+`tonemap.slang:4`, `depth_resolve.slang:4`, `occlusion_bbox.slang:1`,
+`tex_quad.slang:1`) — true during the migration, backwards now that those
+`.wgsl` files are generated *from* the `.slang` and checked in by
+`wgslMap`. And `Resources/ShadersSlang/spike/` is the leftover phase-0 scratch
+pair whose own header says it is "deleted once the toolchain is proven"
+(`spike/trivial.slang:1-3`); the toolchain has been proven for the entire
+shader tree, and its presence is the only thing that would force an exclusion
+list onto the gate task 5 adds.
+
+Ordering: **tasks 1 and 2 first, in that order** — they touch the same five
+`shaderHotReload` bodies, and task 1's gate counts implementations against call
+sites while task 2's gate inspects each body, so doing 2 before 1 leaves 1's
+gate red for a different reason. **Task 3 after task 2** (both edit
+`Raytracing.cpp:39-43`). Tasks 4 and 5 are independent of all of the above.
+Every task adds or edits a test in
+`Test/commit/VulkanEngine/buildIntegritySuite.cpp` or
+`frontendInputSuite.cpp` — rebuild between them.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **adding `shaderHotReload` to `SkyBox`,
+`CascadedShadowMap` and `Clouds`** — a real gap, but it is new behaviour on
+three GPU-only subsystems with no device-free oracle, and `CascadedShadowMap`
+already has a full destroy/recreate path via `handleShadowResolutionChange`
+(`VulkanRenderer.cpp:313-343`) that would need to be factored rather than
+duplicated; re-propose once GPU verification is back; **`Texture::uploadRgba`
+(`Texture.cpp:109-193`) not calling `cleanUp()` first, so re-uploading into a
+live `Texture` would leak the image** — no call site does that (the three
+callers are `createFromFile`, `createFromMemory` and `createDefaultTexture`,
+all on freshly constructed objects), so it is a latent trap with no reachable
+failure; **`GpuTimingSubsystem::readTimings` indexing
+`gpu_timing_pass_mask[imageIndex]` (`GpuTimingSubsystem.ixx:144`) after
+bounds-checking only `gpu_timing_slice_recorded`** — both vectors are assigned
+the same size in `create` (`:105-106`) and cleared together in `destroy`
+(`:115-116`), so the check does cover it; **`apply_keyboard_input` scaling Q/E
+yaw by `movement_speed` instead of the unused `turn_speed`
+(`CameraController.ixx:52-53`)** — re-confirmed and re-rejected for the second
+time (both are compile-time constants with no slider, nothing observable
+changes, no oracle for the new rate); **the four remaining hand-rolled
+`vk::ImageSubresourceRange` blocks** — unchanged since batch VI; two are owned
+by the `- [b]` cloud-barrier entry and the rest is a style change on GPU-only
+code. **`Src/KomputePlayground`** — unchanged; still an owner decision.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Stop leaking a `vk::PipelineLayout` on every shader hot reload, in the four stages that recreate the pipeline but not the layout** — `DeferredRasterizer` already does it right; the other four overwrite a live handle.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:49-56` — the reference implementation (destroys both pipelines **and** both layouts)
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:55-60` and `:250-277` — reload body, and `createGraphicsPipeline` creating `pipeline_layout` at `:263-269`
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:51-54` and `:319-321`
+  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp:39-43` and `:259-261`
+  - `Src/GraphicsEngineVulkan/renderer/PathTracing.cpp:40-45` and `:204-206`
+  - each stage's `cleanUp()` (e.g. `PostStage.cpp:100-130`) — the only place the layout is destroyed today, and the guarded `if (handle) { destroy; handle = nullptr; }` idiom to reuse
+
+  **Steps:**
+  1. In each of the four `shaderHotReload` bodies, destroy the pipeline layout
+     alongside the pipeline before recalling the create function, using the same
+     guarded form the `cleanUp()` methods use, e.g. for `PostStage`:
+     `device->getLogicalDevice().destroyPipeline(graphics_pipeline); graphics_pipeline = nullptr;`
+     then `if (pipeline_layout) { device->getLogicalDevice().destroyPipelineLayout(pipeline_layout); pipeline_layout = nullptr; }`.
+     `PathTracing` and `Raytracing` use `pipeline`/`graphicsPipeline` and
+     `pipeline_layout`; check each member name rather than assuming.
+  2. Do not change `cleanUp()` — nulling the handles in step 1 keeps it
+     idempotent, which is the invariant AGENTS.md § Code Conventions states for
+     `cleanUp`.
+  3. Add `TEST(BuildIntegrity, EveryShaderHotReloadDestroysThePipelineLayoutItRecreates)`
+     to `buildIntegritySuite.cpp`: for every `<Identifier>::shaderHotReload(`
+     definition under `Src/GraphicsEngineVulkan/` (excluding
+     `VulkanRenderer::shaderHotReload`, which delegates), brace-match the body
+     and assert it contains `destroyPipelineLayout(`. All five create a layout
+     via their create function, so the rule needs no exceptions — say so in the
+     test's comment, and make the failure message name the offending file and
+     class.
+
+  **Test:** `BuildIntegrity.EveryShaderHotReloadDestroysThePipelineLayoutItRecreates`
+  — RED before step 1 (four offenders, `DeferredRasterizer` passing), GREEN
+  after. Confirm the red state and the four names in the failure message first.
+
+  **Build:** `clangcl-debug`, same commands as task 1.
+
+  **Context:** A leaked Vulkan object is invisible to ASAN and to every
+  existing gate; the only reason this is cheap to fix now is that
+  `DeferredRasterizer` already shows the shape. Hot reload is a rare
+  interactive action, so behaviour does not change — do not attempt a golden
+  run for this one.
+
+- [ ] **(M) Rebuild the ray-tracing SBT after a shader hot reload — it currently holds shader-group handles from a destroyed pipeline** — a spec violation on every `traceRaysKHR` after the button is pressed.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp:39-43` — `shaderHotReload`: destroys and recreates `graphicsPipeline`, nothing else
+  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp:291-351` — `createSBT`: reads group handles out of `graphicsPipeline` (`:308`) and `create`s the three SBT buffers (`:322-331`)
+  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp:47-100` — `recordCommands`, which re-derives the three region device addresses per frame (so the buffers are re-read; only their contents go stale)
+  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp:150-170` — `cleanUp`, for how the three SBT buffers are released
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanBuffer.cpp:51-100` — `create` does **not** free a prior allocation; a second `createSBT()` without `cleanUp()` leaks three buffers
+  - `Src/GraphicsEngineVulkan/renderer/Raytracing.ixx` — the three `VulkanBuffer` members' exact names
+
+  **Steps:**
+  1. Add a private `recreateSBT()` to `Raytracing` that calls `cleanUp()` on
+     each of `raygenShaderBindingTableBuffer`, `missShaderBindingTableBuffer`
+     and `hitShaderBindingTableBuffer` (confirm the member names first), then
+     calls `createSBT()`. Note in its comment that `VulkanBuffer::create` does
+     not release a prior allocation, which is why the explicit cleanups are
+     required and must not be "simplified" away.
+  2. Call `recreateSBT()` at the end of `shaderHotReload`, after
+     `createGraphicsPipeline`. Order matters: `createSBT` reads handles out of
+     the pipeline that must already exist.
+  3. Leave `init`'s `createGraphicsPipeline` + `createSBT` sequence alone (do
+     not reroute it through `recreateSBT` — there is nothing to clean up on the
+     first pass and `VulkanBuffer::cleanUp` on a never-created buffer is extra
+     surface for no gain).
+  4. Add `TEST(BuildIntegrity, RaytracingShaderHotReloadRebuildsTheShaderBindingTable)`
+     to `buildIntegritySuite.cpp`: brace-match the
+     `Raytracing::shaderHotReload` body in `Raytracing.cpp` and assert it
+     contains `recreateSBT` (or `createSBT`). Explain in the comment *why* —
+     shader group handles are only valid for the pipeline that produced them —
+     so the gate cannot be deleted as arbitrary.
+
+  **Test:** `BuildIntegrity.RaytracingShaderHotReloadRebuildsTheShaderBindingTable`
+  — RED before step 2, GREEN after. The runtime effect is GPU-only; do **not**
+  claim it verified from a container build.
+
+  **Build:** `clangcl-debug`, same commands as task 1. If a host GPU is
+  available, additionally run
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='GoldenRender.*:Integration.*'`
+  from the repo root and `Scripts\Windows\Run-SyncValidation.ps1`; if it is not
+  (RDP session — see the `- [b]` entry above), say so explicitly in the commit
+  message rather than implying GPU verification happened.
+
+  **Context:** This is **not** the `- [b]` SBT miss-region/stride item
+  (`BACKLOG.md:3561`) — that one is about record strides and handle offsets and
+  stays blocked. Keep the two changes separate so the blocked item's eventual
+  fix is still reviewable on its own.
+
+- [ ] **(S) Re-seed the look-mode mouse origin when look mode starts and when ImGui takes capture, not only on release** — the first right-drag of every run snaps the camera by the cursor's absolute screen position.
+
+  **Files to read:**
+  - `Src/shared/frontend/WindowInputState.hpp:16` — `bool mouse_first_moved{};` (false)
+  - `Src/shared/frontend/WindowInputCallbacks.ixx:52-75` — `handle_mouse_callback`: the ImGui-capture early return at `:62` leaves `last_x`/`last_y` stale
+  - `Src/shared/frontend/WindowInputCallbacks.ixx:96-112` — `handle_mouse_button_callback`: sets `mouse_first_moved = true` only on the release branch (`:109`)
+  - `Src/GraphicsEngineVulkan/window/Window.cpp:135-157` — the only wiring: both callbacks operate on `Window::input_state`, and nothing else ever writes `mouse_first_moved`
+  - `Test/commit/VulkanEngine/frontendInputSuite.cpp:80-143` — the two existing tests to follow (`FirstMouseMoveDoesNotJumpTheCamera` sets `first_moved = true` by hand; `ImGuiCaptureGateSwallowsInput` builds a real `ImGuiContext`)
+
+  **Steps:**
+  1. `WindowInputState.hpp`: change to `bool mouse_first_moved{ true };` so a
+     freshly constructed state re-seeds on its first event.
+  2. `handle_mouse_button_callback`: in the `should_capture_cursor` branch,
+     after the `imgui_wants_mouse_capture()` gate and before
+     `glfwSetCursorPosCallback`, set `mouse_first_moved = true`. Entering look
+     mode must always re-seed, not just leaving it.
+  3. `handle_mouse_callback`: on the ImGui-capture early return, set
+     `mouse_first_moved = true` before returning, so the first event after
+     capture ends re-seeds instead of differencing against a pre-panel position.
+     Comment why, in the style of the `RELEASE must always fall through`
+     comment at `:35-37`.
+  4. Do not touch `x_change`/`y_change` on the captured path — they are
+     consumed and zeroed every frame by `consume_axis_delta`
+     (`Window.cpp:80-82`), so there is no stale-delta problem to fix there.
+
+  **Test:** add two tests to `Test/commit/VulkanEngine/frontendInputSuite.cpp`:
+  - `WindowInputUnit.LookModeEntryReSeedsTheMouseOrigin` — a
+    default-constructed `Kataglyphis::Frontend::WindowInputState`, then one
+    `handle_mouse_callback` at (640, 360), must yield `x_change == 0` and
+    `y_change == 0`. This is the first-drag jump; it must be RED before step 1.
+  - `WindowInputUnit.CursorCrossingAnImGuiPanelDoesNotJumpTheCamera` — extend
+    the `ImGuiCaptureGateSwallowsInput` pattern: create a context, capture off,
+    move to (100, 100), capture on, move to (400, 100) (asserted zero, as
+    today), capture off, move to (410, 100), and assert `x_change == 10.0F`,
+    not `310.0F`. RED before step 3.
+  Follow the existing suite's `ImGui::CreateContext()` / `DestroyContext(ctx)`
+  bracketing so the tests stay order-independent.
+
+  **Build:** `clangcl-debug`. Run
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='WindowInputUnit.*:FrameInputUnit.*'`
+  from the repo root. Fully CPU — no GPU or window needed (both callbacks take
+  `GLFWwindow *` and the tests pass `nullptr`, as the suite header at
+  `frontendInputSuite.cpp:1-9` explains).
+
+  **Context:** `mouse_first_moved` was added for exactly this and is only half
+  wired. Both defects are user-visible on the bare host (right-drag to look);
+  the suite's existing tests miss them because one sets the flag by hand and the
+  other stops one event short of the jump.
+
+### Shaders
+
+- [ ] **(M) (refactor) Retire `histogram.slang`, correct the ten "Mirrors `<x>`.wgsl" headers that now describe the relationship backwards, delete the proven-out `spike/` pair, and gate every entry-point Slang source against the manifest** — a source that compiles to nothing, diverged wholesale from the file it claims to mirror, and no gate can see it.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/histogram/histogram.slang` — one entry point, naive global-atomic loop (`:36-39`)
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/shaders/histogram.wgsl` — three entry points, privatised histogram with the 6.4× measurement (`:43-51`); the file that actually ships
+  - `Resources/ShadersSlang/shader-manifest.json:107-113` — the `disabled: true` row and its rationale; `:124-135` — the `wgslMap` list histogram is absent from
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:115-118` — the comment claiming histogram.wgsl has "no generating Slang source"
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:236-242` (`has_entry_point`) and `:900-937` (`EveryShaderSourceHasCompiledBinary`) — the helper to reuse and the gate that structurally cannot see this
+  - `docs/shader-sharing.md:54-58` and `docs/shader-build-pipeline.md` — the WGSL-fallback policy's two homes
+  - `Resources/ShadersSlang/spike/` — `trivial.slang:1-3` says it is "deleted once the toolchain is proven"; `samefile.slang`, `samefile.glsl`
+
+  **Steps:**
+  1. Delete `Resources/ShadersSlang/histogram/` and its manifest row
+     (`shader-manifest.json:107-113`) — delete the whole row object, do not
+     leave a `_comment`-only row, which neither compile script can parse as a
+     manifest entry. Move its rationale (Slang's `InterlockedAdd` on
+     `RWStructuredBuffer` has no WGSL target support) into
+     `docs/shader-build-pipeline.md`, which `docs/shader-sharing.md:57-58`
+     already points at as its home, and update `shader-sharing.md:54-58` to say
+     the fallback WGSL is hand-written with **no** Slang source at all.
+  2. Delete `Resources/ShadersSlang/spike/` (all three files). Confirm first
+     with a repo-wide grep that nothing outside `BACKLOG.md` and
+     `buildIntegritySuite.cpp` comments references it —
+     `kUnreachableSlangAllowlist` is currently empty
+     (`buildIntegritySuite.cpp:1892`), so no allowlist entry needs removing,
+     but the comment at `:1922` naming "spike code" as an example should be
+     updated.
+  3. Fix `buildIntegritySuite.cpp:115-118` to state the truth after step 1:
+     `histogram.wgsl` is hand-written and has no Slang source.
+  4. Rewrite the header comment of each of the ten `wgslMap` sources so it says
+     the `.wgsl` is **generated from** this file and checked into the Rust crate
+     by `wgslMap`, instead of "Mirrors `<x>`.wgsl": `bloom.slang:3`,
+     `forward.slang:3`, `sky.slang:1`, `ssao.slang:3`, `ibl.slang:3`,
+     `gpu_cull.slang:1`, `tonemap.slang:4`, `depth_resolve.slang:4`,
+     `occlusion_bbox.slang:1`, `tex_quad.slang:1`. Comment-only edits — they do
+     not change emitted WGSL, so no regeneration is needed. Confirm that with
+     `git status` on the submodule after the change.
+  5. Add `TEST(BuildIntegrity, EverySlangSourceWithAnEntryPointHasAnEnabledManifestRow)`:
+     walk every `.slang` under `Resources/ShadersSlang`, skipping the `build/`
+     output tree and the `common/` module directory, skip files where
+     `has_entry_point` is false, and assert each remaining path appears as the
+     `file` of at least one manifest row that is **not** `disabled`. Note in
+     the comment that `common/` is excluded because `has_entry_point` matches
+     `[shader(` inside comments too and `common/fullscreen.slang:8` has one in
+     its usage example — an exclusion by convention, not a workaround for a
+     real entry point.
+  6. Add `TEST(BuildIntegrity, NoGeneratedWgslSourceClaimsToMirrorItsOutput)`:
+     for each `wgslMap` `src`, assert the file's text does not contain
+     `"Mirrors "`. Cheap, exact, and it names the drift it prevents.
+
+  **Test:** both new `BuildIntegrity` tests. Test 5 must be RED before step 1
+  (histogram the sole offender once `spike/` is gone — run it after step 2 and
+  before step 1 to see exactly that) and GREEN after; test 6 RED before step 4,
+  GREEN after. Also re-run the whole `BuildIntegrity.*` filter: steps 1 and 2
+  delete shader sources, which several existing gates enumerate
+  (`EveryShaderSourceHasCompiledBinary`,
+  `EverySlangFunctionIsReachableFromAnEntryPoint`,
+  `EveryImportedSlangModuleIsUsed`).
+
+  **Build:** `clangcl-debug` **with `-FreshContainer`** — this task deletes
+  files, and a reused container keeps building deleted sources (AGENTS.md
+  § Containerized Windows Builds):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='BuildIntegrity.*'`
+  from the repo root.
+
+  **Context:** This is the same "the source still says it does X" signature
+  that `EverySlangFunctionIsReachableFromAnEntryPoint` (`5805867a`) and
+  `EveryImportedSlangModuleIsUsed` (`f7a5710d`) were written for, one level up:
+  the *file* rather than the function. Step 2 exists so the gate in step 5 needs
+  no allowlist — if you keep `spike/`, the gate needs an exclusion and stops
+  being a clean rule. Do not "fix" `histogram.slang` into a real mirror
+  instead: nothing consumes it (the C++ engine has no auto-exposure pass), so
+  the only outcome would be a second copy to keep in sync.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

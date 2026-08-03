@@ -3413,3 +3413,90 @@ TEST(BuildIntegrity, AccelerationStructureRebuildsGoThroughTheSceneChangeHelper)
       << "VulkanRenderer::refreshAfterSceneChange is no longer declared in VulkanRenderer.ixx - this gate's "
          "allow-list needs updating if it was renamed or its signature changed";
 }
+
+// Every stage class that defines its own shaderHotReload(...) must actually
+// be called from VulkanRenderer::shaderHotReload, or hot reload silently
+// does nothing for that stage (see DeferredRasterizer::shaderHotReload,
+// which was fully implemented but uncalled). This is a count-based gate
+// rather than a name-to-member allowlist deliberately - a hand-maintained
+// mapping is the failure mode 30154355 just removed from Windows CI's suite
+// allowlist.
+TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    static const std::regex kDefinition(R"(([A-Za-z_][A-Za-z0-9_]*)::shaderHotReload\s*\()");
+    static const char *const kExcludedClass = "VulkanRenderer";
+
+    std::vector<std::string> implementing_classes;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".cpp") { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string line;
+        while (std::getline(file, line)) {
+            std::smatch match;
+            if (std::regex_search(line, match, kDefinition)) {
+                std::string class_name = match[1].str();
+                if (class_name != kExcludedClass) { implementing_classes.push_back(class_name); }
+            }
+        }
+    }
+
+    ASSERT_GT(implementing_classes.size(), 0u)
+      << "found zero <Stage>::shaderHotReload(...) implementations under " << src_root.string()
+      << " - the scan itself is broken, or every implementation was removed and this gate is now vacuous";
+
+    const fs::path renderer_path = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
+    std::ifstream renderer_file(renderer_path);
+    ASSERT_TRUE(static_cast<bool>(renderer_file)) << "missing " << renderer_path.string();
+    const std::string renderer_contents((std::istreambuf_iterator<char>(renderer_file)), std::istreambuf_iterator<char>());
+
+    const std::size_t signature_pos = renderer_contents.find("VulkanRenderer::shaderHotReload(");
+    ASSERT_NE(signature_pos, std::string::npos) << "VulkanRenderer::shaderHotReload is no longer defined in "
+                                                 << renderer_path.string();
+
+    const std::size_t body_open = renderer_contents.find('{', signature_pos);
+    ASSERT_NE(body_open, std::string::npos) << "could not locate the opening brace of VulkanRenderer::shaderHotReload";
+
+    int brace_depth = 0;
+    std::size_t body_close = std::string::npos;
+    for (std::size_t i = body_open; i < renderer_contents.size(); ++i) {
+        if (renderer_contents[i] == '{') { ++brace_depth; }
+        else if (renderer_contents[i] == '}') {
+            --brace_depth;
+            if (brace_depth == 0) {
+                body_close = i;
+                break;
+            }
+        }
+    }
+    ASSERT_NE(body_close, std::string::npos) << "could not brace-match the closing '}' of VulkanRenderer::shaderHotReload";
+
+    const std::string body = renderer_contents.substr(body_open, body_close - body_open + 1);
+    std::size_t call_sites = 0;
+    std::size_t pos = 0;
+    while ((pos = body.find(".shaderHotReload(", pos)) != std::string::npos) {
+        ++call_sites;
+        pos += std::string(".shaderHotReload(").size();
+    }
+
+    EXPECT_GE(call_sites, implementing_classes.size())
+      << "VulkanRenderer::shaderHotReload only calls " << call_sites << " stage(s)' shaderHotReload, but "
+      << implementing_classes.size() << " stage(s) implement it - some implementation is silently unreachable. "
+         "Stage classes implementing shaderHotReload: "
+      << [&implementing_classes] {
+             std::string joined;
+             for (const auto &name : implementing_classes) { joined += "\n  " + name; }
+             return joined;
+         }();
+}
