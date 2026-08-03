@@ -574,6 +574,79 @@ std::vector<std::string> parse_declared_fuzz_targets(const fs::path &cmake_path)
     return targets;
 }
 
+// Every benchmark name Test/perf/perfSuite.cpp registers via BENCHMARK(<name>)
+// - and, for names chained with one or more ->Arg(<n>), "<name>/<n>" for each
+// argument, matching Google Benchmark's own run-name convention (e.g.
+// "BM_ComputeCascadeData/1"). Modeled on parse_declared_fuzz_targets: a plain
+// substring scan per line, with the same "parsed zero declarations" guard so
+// a macro rename fails the perf-baseline gate test instead of silently
+// passing it.
+std::vector<std::string> parse_declared_perf_benchmarks(const fs::path &source_path)
+{
+    std::vector<std::string> names;
+    std::ifstream file(source_path);
+    if (!file) { return names; }
+
+    static const std::string kMacro = "BENCHMARK(";
+    std::string line;
+    while (std::getline(file, line)) {
+        const std::size_t pos = line.find(kMacro);
+        if (pos == std::string::npos) { continue; }
+
+        const std::size_t name_start = pos + kMacro.size();
+        std::size_t name_end = name_start;
+        while (name_end < line.size() && is_identifier_char(line[name_end])) { ++name_end; }
+        if (name_end == name_start) { continue; }
+        const std::string benchmark_name = line.substr(name_start, name_end - name_start);
+
+        std::vector<std::string> args;
+        static const std::string kArgMacro = "->Arg(";
+        std::size_t arg_pos = name_end;
+        while ((arg_pos = line.find(kArgMacro, arg_pos)) != std::string::npos) {
+            const std::size_t digits_start = arg_pos + kArgMacro.size();
+            std::size_t digits_end = digits_start;
+            while (digits_end < line.size() && std::isdigit(static_cast<unsigned char>(line[digits_end])) != 0) {
+                ++digits_end;
+            }
+            if (digits_end > digits_start) { args.push_back(line.substr(digits_start, digits_end - digits_start)); }
+            arg_pos = digits_end;
+        }
+
+        if (args.empty()) {
+            names.push_back(benchmark_name);
+        } else {
+            for (const auto &arg : args) { names.push_back(benchmark_name + "/" + arg); }
+        }
+    }
+    return names;
+}
+
+// Reads Test/perf/baselines/win-9070xt-32core.json (Google Benchmark's own
+// JSON output format) and returns benchmarks[].name for every row. Follows
+// parse_shader_manifest's no-throw nlohmann convention above: exceptions are
+// disabled project-wide, so a malformed file returns std::nullopt rather than
+// throwing.
+std::optional<std::vector<std::string>> parse_perf_baseline_names(const fs::path &baseline_path)
+{
+    std::ifstream file(baseline_path);
+    if (!file) { return std::nullopt; }
+
+    const nlohmann::json doc = nlohmann::json::parse(file, nullptr, /*allow_exceptions=*/false);
+    if (doc.is_discarded() || !doc.is_object()) { return std::nullopt; }
+
+    const auto benchmarks_it = doc.find("benchmarks");
+    if (benchmarks_it == doc.end() || !benchmarks_it->is_array()) { return std::nullopt; }
+
+    std::vector<std::string> names;
+    for (const auto &entry : *benchmarks_it) {
+        if (!entry.is_object()) { continue; }
+        const auto name_it = entry.find("name");
+        if (name_it == entry.end() || !name_it->is_string()) { continue; }
+        names.push_back(name_it->get<std::string>());
+    }
+    return names;
+}
+
 // Parses the fuzz-target names out of Windows.yml's "Run fuzz target seeds
 // inside the container" step: a PowerShell `foreach (`$t in @('a','b',...))`
 // loop. Anchored on "foreach (`$t in @(" (the backtick escapes $t inside the
@@ -1409,6 +1482,69 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
       << [&dead_ci_entries] {
              std::string joined;
              for (const auto &entry : dead_ci_entries) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+// Test/perf/perfSuite.cpp and Test/perf/baselines/win-9070xt-32core.json are
+// two independently hand-maintained lists of the same benchmark set, exactly
+// like the fuzz-target check above. Compare-PerfBaseline.ps1 deliberately
+// never fails on a one-sided entry (see its header - the suite grows over
+// time and that alone should not fail a comparison), which means a benchmark
+// added to perfSuite.cpp without a matching baseline row is silently never
+// compared. This test closes that hole at the source instead of in the
+// comparator.
+TEST(BuildIntegrity, PerfBaselineCoversEveryRegisteredBenchmark)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const std::vector<std::string> declared_benchmarks =
+      parse_declared_perf_benchmarks(repo_root / "Test" / "perf" / "perfSuite.cpp");
+    ASSERT_FALSE(declared_benchmarks.empty())
+      << "parsed zero BENCHMARK(...) declarations out of Test/perf/perfSuite.cpp - the anchor text "
+         "('BENCHMARK(') may have changed";
+    const std::set<std::string> declared_set(declared_benchmarks.begin(), declared_benchmarks.end());
+
+    const fs::path baseline_path = repo_root / "Test" / "perf" / "baselines" / "win-9070xt-32core.json";
+    const auto baseline_names_opt = parse_perf_baseline_names(baseline_path);
+    ASSERT_TRUE(baseline_names_opt.has_value())
+      << "could not parse " << baseline_path.string() << " as Google Benchmark JSON";
+    const std::vector<std::string> &baseline_names = *baseline_names_opt;
+    ASSERT_FALSE(baseline_names.empty())
+      << "parsed zero benchmarks[] rows out of " << baseline_path.string() << " - is the file empty or malformed?";
+    const std::set<std::string> baseline_set(baseline_names.begin(), baseline_names.end());
+
+    static const char *const kRefreshHint =
+      "see Compare-PerfBaseline.ps1's header for the refresh procedure (run the suite, eyeball the result, copy "
+      "the JSON over by hand - there is deliberately no capture mode)";
+
+    std::vector<std::string> missing_from_baseline;
+    for (const auto &name : declared_benchmarks) {
+        if (!baseline_set.contains(name)) { missing_from_baseline.push_back(name); }
+    }
+    EXPECT_TRUE(missing_from_baseline.empty())
+      << missing_from_baseline.size()
+      << " benchmark(s) registered in Test/perf/perfSuite.cpp have no row in " << baseline_path.string()
+      << ", so Compare-PerfBaseline.ps1 silently never compares them (" << kRefreshHint << "): "
+      << [&missing_from_baseline] {
+             std::string joined;
+             for (const auto &entry : missing_from_baseline) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    std::vector<std::string> dead_baseline_rows;
+    for (const auto &name : baseline_names) {
+        if (!declared_set.contains(name)) { dead_baseline_rows.push_back(name); }
+    }
+    EXPECT_TRUE(dead_baseline_rows.empty())
+      << dead_baseline_rows.size() << " row(s) in " << baseline_path.string()
+      << " do not correspond to any BENCHMARK(...) currently registered in Test/perf/perfSuite.cpp (renamed or "
+         "removed? "
+      << kRefreshHint << "): "
+      << [&dead_baseline_rows] {
+             std::string joined;
+             for (const auto &entry : dead_baseline_rows) { joined += "\n  " + entry; }
              return joined;
          }();
 }

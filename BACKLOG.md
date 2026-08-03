@@ -7072,50 +7072,6 @@ re-rejected for the fourth time (upload-time only, never on the frame path).
 
 ### Performance testing
 
-- [ ] **(S) Gate the perf baseline against the benchmarks `perfSuite.cpp`
-  registers** — a benchmark added without a baseline row is silently never
-  compared, and the comparator is deliberately not allowed to say so.
-
-  **Files to read:**
-  - `Test/perf/perfSuite.cpp` — the `BENCHMARK(...)` / `BENCHMARK(...)->Arg(N)`
-    registrations (14 macros, 17 instantiations today)
-  - `Test/perf/baselines/win-9070xt-32core.json` — the checked-in rows, named
-    with Google Benchmark's `name/arg` convention (`BM_ComputeCascadeData/1`)
-  - `Scripts/Compare-PerfBaseline.ps1:29-32` — the documented "present in only
-    one file is reported, never fatal" policy, and
-    `Scripts/Windows/tests/Compare-PerfBaseline.Tests.ps1:70-94`, which pins it
-    in both directions
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:552-600` and `:1351-1395`
-    — the fuzz-target gate: the same "hand-maintained list, parsed out of its
-    source of truth, compared to its consumer" shape, including how it fails
-    loudly when its own anchor text stops matching
-
-  **Steps:**
-  1. Add a parser to `buildIntegritySuite.cpp` that reads `Test/perf/perfSuite.cpp`
-     and returns the expected benchmark names: for each `BENCHMARK(<name>)`,
-     emit `<name>` when the statement has no `->Arg(`, and `<name>/<n>` for each
-     `->Arg(<n>)` on that statement. Model it on `parse_declared_fuzz_targets`,
-     including its "parsed zero declarations" guard so a macro rename fails the
-     test instead of silently passing.
-  2. Read `Test/perf/baselines/win-9070xt-32core.json` with `nlohmann/json`
-     (already a dependency — see `GpuTimingSubsystem.ixx`) and collect
-     `benchmarks[].name`.
-  3. Add `TEST(BuildIntegrity, PerfBaselineCoversEveryRegisteredBenchmark)`
-     asserting set equality in both directions, with failure messages naming the
-     offending benchmark and pointing at the refresh procedure in
-     `Compare-PerfBaseline.ps1`'s header (run the suite, eyeball, copy the JSON
-     by hand — there is deliberately no capture mode).
-  4. Do NOT change `Compare-PerfBaseline.ps1` or its Pester suite: the
-     never-fatal policy for one-sided benchmarks is deliberate and tested. This
-     gate closes the hole at the source instead.
-
-  **Test:** the new `BuildIntegrity.PerfBaselineCoversEveryRegisteredBenchmark`.
-  Verify it is genuinely red-provable by temporarily deleting one row from the
-  JSON (and by temporarily adding a throwaway `BENCHMARK`), then restoring both.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`,
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.PerfBaseline*`
 
   **Context:** A `BuildIntegrity` gtest, not a Pester test, on purpose: the
   Pester suites only run on `[build-win]` commits, while the commit suite runs
