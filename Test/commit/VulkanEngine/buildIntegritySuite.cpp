@@ -1005,6 +1005,30 @@ TEST(BuildIntegrity, ResourceCreateReleasesThePreviousAllocation)
     }
 }
 
+// DescriptorSetGroup::create() did not release a previous layout/pool either
+// - a second create() call overwrote `layout`/`pool` and leaked both. Same
+// text-order reasoning as ResourceCreateReleasesThePreviousAllocation above:
+// this asserts create()'s first statement is releaseGpuResources(), the
+// GPU-resource half of cleanUp(), so the release lives in create() itself.
+TEST(BuildIntegrity, DescriptorSetGroupCreateReleasesThePreviousAllocation)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path source = repo_root / "Src" / "GraphicsEngineVulkan" / "vulkan_base" / "DescriptorSetGroup.cpp";
+    const auto text = read_file_text(source);
+    ASSERT_TRUE(text.has_value()) << "could not read " << source.string();
+
+    const auto first_statement = first_statement_of_function(*text, "Kataglyphis::DescriptorSetGroup::create");
+    ASSERT_TRUE(first_statement.has_value())
+      << "Kataglyphis::DescriptorSetGroup::create(...) definition not found in " << source.string();
+
+    EXPECT_EQ(*first_statement, "releaseGpuResources();")
+      << "DescriptorSetGroup::create's first statement must be releaseGpuResources(), so calling create() on an "
+         "already-created instance releases the previous layout/pool instead of leaking them. Found: \""
+      << *first_statement << "\" in " << source.string();
+}
+
 // Texture::uploadRgba and SkyBox::uploadCubeMapFaces both re-create an image
 // that an existing VulkanImageView still looks at. VUID-vkDestroyImage-image-
 // 01000 requires the view to be destroyed before the image is, so the view

@@ -2,6 +2,7 @@ module;
 #include <cstdint>
 
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -72,10 +73,17 @@ auto Kataglyphis::DescriptorSetGroup::addBinding(uint32_t binding,
 
 bool Kataglyphis::DescriptorSetGroup::create(std::shared_ptr<VulkanDevice> vulkan_device, uint32_t set_count)
 {
+    releaseGpuResources();
+
     device = std::move(vulkan_device);
 
     if (bindings.empty() || set_count == 0) {
         spdlog::error("DescriptorSetGroup::create called without bindings or with zero sets.");
+        return false;
+    }
+
+    if (const std::optional<uint32_t> duplicate = firstDuplicateBinding(bindings); duplicate.has_value()) {
+        spdlog::error("DescriptorSetGroup::create called with duplicate binding number {}.", *duplicate);
         return false;
     }
 
@@ -232,7 +240,7 @@ void Kataglyphis::DescriptorSetGroup::writeAccelerationStructure(uint32_t set_in
     device->getLogicalDevice().updateDescriptorSets(1, &descriptor_write, 0, nullptr);
 }
 
-void Kataglyphis::DescriptorSetGroup::cleanUp()
+void Kataglyphis::DescriptorSetGroup::releaseGpuResources()
 {
     if (device) {
         if (pool) { device->getLogicalDevice().destroyDescriptorPool(pool); }
@@ -242,6 +250,11 @@ void Kataglyphis::DescriptorSetGroup::cleanUp()
     pool = nullptr;
     layout = nullptr;
     descriptor_sets.clear();
+}
+
+void Kataglyphis::DescriptorSetGroup::cleanUp()
+{
+    releaseGpuResources();
     bindings.clear();
     device = nullptr;
 }

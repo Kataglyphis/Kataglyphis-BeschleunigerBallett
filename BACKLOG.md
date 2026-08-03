@@ -6729,32 +6729,6 @@ still an owner decision.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Make `DescriptorSetGroup` refuse a duplicate binding number and release a previous layout/pool** — a second `addBinding(1, ...)` today produces an invalid layout and a `findBinding` that silently picks one of the pair.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.cpp:58-71` (`addBinding`), `:73-116` (`create`), `:118-125` (`findBinding`), `:235-247` (`cleanUp`, which clears `bindings` — this is why `create` cannot just call it).
-  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroupPoolSizes.cpp` — the device-free implementation unit of the same module, and its header comment explaining exactly why it exists. The new helper belongs here.
-  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.ixx:18-24` — where `deriveDescriptorPoolSizes` and `descriptorWriteCountMatchesBinding` are declared.
-  - `Test/commit/VulkanEngine/descriptorPoolSizesSuite.cpp:33-120` — the pure-function test pattern to follow; `DescriptorPoolSizesUnit.WriteCountMustMatchTheDeclaredBinding` is the closest analogue.
-  - Call sites that build bindings: `Clouds.cpp:64-69`, `SkyBox.cpp:192-196`, `CascadedShadowMap.cpp:260`, `VulkanRenderer.cpp:1455-1465`.
-
-  **Steps:**
-  1. Add a pure free function to `DescriptorSetGroupPoolSizes.cpp` (declared in `DescriptorSetGroup.ixx` next to `descriptorWriteCountMatchesBinding`):
-     `auto firstDuplicateBinding(std::span<const vk::DescriptorSetLayoutBinding> bindings) -> std::optional<uint32_t>` — returns the first binding number that appears more than once, `std::nullopt` otherwise. No device, no Vulkan calls.
-  2. In `create()`, after the `bindings.empty() || set_count == 0` guard, call it; on a hit, `spdlog::error` naming the duplicated binding and `return false` (matching the existing early-out contract — the two call sites that check the return already log).
-  3. Add a private `releaseGpuResources()` that destroys `pool` and `layout` (guarded on `device`) and clears `descriptor_sets`, leaving `bindings` and `device` alone. Call it as the first statement of `create()` — so a second `create()` releases instead of leaking — and make `cleanUp()` `releaseGpuResources(); bindings.clear(); device = nullptr;` so the two cannot drift.
-  4. Do **not** change `addBinding`'s signature or make it de-duplicate: rejecting at `create()` keeps the failure at the point where it is observable and returnable.
-
-  **Test:** Add to `descriptorPoolSizesSuite.cpp`:
-  `TEST(DescriptorPoolSizesUnit, FirstDuplicateBindingFindsARepeatedBindingNumber)` — the shared render set's real binding list (0,1,2,3,4,5) returns `nullopt`; a list with binding 1 twice returns `1`; an empty list returns `nullopt`; two bindings that share a *descriptor type* but not a number return `nullopt` (the case `deriveDescriptorPoolSizes` deliberately merges — the two functions must not be confused).
-  Then extend `BuildIntegrity.ResourceCreateReleasesThePreviousAllocation` (or add a sibling) asserting `DescriptorSetGroup::create`'s first body statement is `releaseGpuResources();`.
-
-  **Build:** `clangcl-debug`, **with `-FreshContainer`** (`DescriptorSetGroup.ixx` is a module interface):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='DescriptorPoolSizesUnit.*:BuildIntegrity.*'` from the repo root.
-
-  **Context:** This is the same "the obligation lives in the class, not at every call site" argument batch XV shipped for `VulkanBuffer`/`VulkanImage`, plus the guard `writeImageArray` already has for descriptor *counts* (`DescriptorSetGroup.cpp:190-207`) applied to binding *numbers*. Nothing declares a duplicate today; four subsystems build their bindings by hand and a fifth is one copy-paste away. Follow `DescriptorSetGroupPoolSizes.cpp`'s header comment when placing the new function — keeping it out of the device-touching TU is what makes it testable.
-
 - [ ] **(S) Give the PCF radius one bound and clamp it before it reaches the shader** — `20` is spelled in three files, the shader clamps nothing, and a negative value renders the whole scene fully shadowed.
 
   **Files to read:**

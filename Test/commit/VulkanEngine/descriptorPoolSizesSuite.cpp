@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <optional>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
@@ -19,6 +20,7 @@ namespace {
 
 using Kataglyphis::descriptorWriteCountMatchesBinding;
 using Kataglyphis::deriveDescriptorPoolSizes;
+using Kataglyphis::firstDuplicateBinding;
 
 vk::DescriptorSetLayoutBinding makeBinding(uint32_t binding, vk::DescriptorType type, uint32_t descriptor_count)
 {
@@ -122,6 +124,36 @@ TEST(DescriptorPoolSizesUnit, WriteCountMustMatchTheDeclaredBinding)
     EXPECT_TRUE(descriptorWriteCountMatchesBinding(array_binding, static_cast<uint32_t>(MAX_TEXTURE_COUNT)));
     EXPECT_FALSE(descriptorWriteCountMatchesBinding(array_binding, 1));
     EXPECT_FALSE(descriptorWriteCountMatchesBinding(single_descriptor_binding, static_cast<uint32_t>(MAX_TEXTURE_COUNT)));
+}
+
+TEST(DescriptorPoolSizesUnit, FirstDuplicateBindingFindsARepeatedBindingNumber)
+{
+    const std::vector<vk::DescriptorSetLayoutBinding> shared_render_set_bindings = {
+        makeBinding(globalUBO_BINDING, vk::DescriptorType::eUniformBuffer, 1),
+        makeBinding(sceneUBO_BINDING, vk::DescriptorType::eUniformBuffer, 1),
+        makeBinding(OBJECT_DESCRIPTION_BINDING, vk::DescriptorType::eStorageBuffer, 1),
+        makeBinding(TEXTURES_BINDING, vk::DescriptorType::eSampledImage, static_cast<uint32_t>(MAX_TEXTURE_COUNT)),
+        makeBinding(SAMPLER_BINDING, vk::DescriptorType::eSampler, static_cast<uint32_t>(MAX_TEXTURE_COUNT)),
+        makeBinding(SHADOW_MAP_BINDING, vk::DescriptorType::eCombinedImageSampler, 1),
+    };
+    EXPECT_EQ(firstDuplicateBinding(shared_render_set_bindings), std::nullopt);
+
+    const std::vector<vk::DescriptorSetLayoutBinding> duplicate_binding_number = {
+        makeBinding(1, vk::DescriptorType::eUniformBuffer, 1), makeBinding(1, vk::DescriptorType::eStorageBuffer, 1)
+    };
+    ASSERT_TRUE(firstDuplicateBinding(duplicate_binding_number).has_value());
+    EXPECT_EQ(*firstDuplicateBinding(duplicate_binding_number), 1U);
+
+    const std::vector<vk::DescriptorSetLayoutBinding> no_bindings;
+    EXPECT_EQ(firstDuplicateBinding(no_bindings), std::nullopt);
+
+    // Two bindings that share a descriptor type but not a binding number are
+    // exactly what deriveDescriptorPoolSizes deliberately merges - the two
+    // functions must not be confused.
+    const std::vector<vk::DescriptorSetLayoutBinding> same_type_different_binding = {
+        makeBinding(0, vk::DescriptorType::eUniformBuffer, 1), makeBinding(1, vk::DescriptorType::eUniformBuffer, 1)
+    };
+    EXPECT_EQ(firstDuplicateBinding(same_type_different_binding), std::nullopt);
 }
 
 }// namespace

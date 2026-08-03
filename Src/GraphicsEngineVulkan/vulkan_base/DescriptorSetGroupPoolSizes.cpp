@@ -2,6 +2,7 @@ module;
 #include <cstdint>
 
 #include <algorithm>
+#include <optional>
 #include <span>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -35,4 +36,14 @@ std::vector<vk::DescriptorPoolSize> Kataglyphis::deriveDescriptorPoolSizes(
 bool Kataglyphis::descriptorWriteCountMatchesBinding(const vk::DescriptorSetLayoutBinding &binding, uint32_t writeCount)
 {
     return binding.descriptorCount == writeCount;
+}
+
+std::optional<uint32_t> Kataglyphis::firstDuplicateBinding(std::span<const vk::DescriptorSetLayoutBinding> bindings)
+{
+    for (std::size_t i = 0; i < bindings.size(); ++i) {
+        for (std::size_t j = i + 1; j < bindings.size(); ++j) {
+            if (bindings[i].binding == bindings[j].binding) { return bindings[i].binding; }
+        }
+    }
+    return std::nullopt;
 }

@@ -2,6 +2,7 @@ module;
 #include <cstdint>
 
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -22,6 +23,12 @@ std::vector<vk::DescriptorPoolSize> deriveDescriptorPoolSizes(
 // declared. Named (rather than an inline comparison) so beginWrite's
 // single-descriptor writers and writeImageArray's array writer cannot drift.
 bool descriptorWriteCountMatchesBinding(const vk::DescriptorSetLayoutBinding &binding, uint32_t writeCount);
+
+// Returns the first binding number that appears more than once in
+// `bindings`, or std::nullopt if every binding number is unique. Pure and
+// device-free, matching deriveDescriptorPoolSizes, so create() can reject a
+// duplicate binding before it produces an invalid layout.
+std::optional<uint32_t> firstDuplicateBinding(std::span<const vk::DescriptorSetLayoutBinding> bindings);
 
 // Owns ONE descriptor set layout + descriptor pool + N descriptor sets
 // (typically one per swapchain image). Replaces the four structurally
@@ -51,10 +58,13 @@ class DescriptorSetGroup
       uint32_t descriptor_count,
       vk::ShaderStageFlags stages);
 
-    // Creates layout + pool and allocates set_count sets. Logs and returns
-    // false only if called without bindings or with zero sets, before
-    // anything is created; every later failure goes through ASSERT_VULKAN,
-    // which logs critical and aborts, so there is no partial-cleanup path.
+    // Creates layout + pool and allocates set_count sets. Releases any
+    // layout/pool from a previous create() first, so calling create() again
+    // on an already-created instance replaces rather than leaks it. Logs and
+    // returns false if called without bindings, with zero sets, or with a
+    // duplicate binding number, before anything is created; every later
+    // failure goes through ASSERT_VULKAN, which logs critical and aborts, so
+    // there is no partial-cleanup path.
     [[nodiscard]] bool create(std::shared_ptr<VulkanDevice> vulkan_device, uint32_t set_count);
 
     // -- write helpers (thin wrappers around vkUpdateDescriptorSets; the
@@ -94,6 +104,12 @@ class DescriptorSetGroup
     // must return early in that case.
     const vk::DescriptorSetLayoutBinding *beginWrite(uint32_t set_index, uint32_t binding,
       vk::WriteDescriptorSet &out) const;
+
+    // Destroys pool + layout (guarded on device) and clears descriptor_sets,
+    // leaving bindings and device alone. The GPU-resource half of cleanUp();
+    // called as create()'s first statement so a second create() releases
+    // instead of leaking, and by cleanUp() itself so the two cannot drift.
+    void releaseGpuResources();
 
     std::shared_ptr<VulkanDevice> device{ nullptr };
 
