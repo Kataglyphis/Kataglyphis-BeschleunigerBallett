@@ -265,8 +265,7 @@ void GUI::render()
 
     Kataglyphis::Frontend::renderGpuTimingsPanel(guiRendererSharedVars.gpuTimings.supported,
       guiRendererSharedVars.gpuTimings.pass_ms,
-      VulkanRendererInternals::FrontendShared::GPU_TIMED_PASS_NAMES,
-      VulkanRendererInternals::FrontendShared::GPU_TIMED_PASS_COUNT);
+      VulkanRendererInternals::FrontendShared::GPU_TIMED_PASS_NAMES);
 
     ImGui::End();
 }

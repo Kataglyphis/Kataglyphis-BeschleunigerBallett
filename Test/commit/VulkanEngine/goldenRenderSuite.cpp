@@ -1776,7 +1776,7 @@ TEST(GoldenRender, RaytracingFrameSkipsTheRasterPass)
     const unsigned int forward_meshes_drawn = renderer_vars.visibility.meshes_drawn;
     ASSERT_GT(forward_meshes_drawn, 0U) << "the renderer reported drawing no meshes at all in forward mode";
     const float forward_main_ms =
-      renderer_vars.gpuTimings.pass_ms[static_cast<int>(Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass::Main)];
+      renderer_vars.gpuTimings.pass_ms[static_cast<size_t>(Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass::Main)];
 
     renderer_vars.raytracing = true;
     // Flush the rolling window again so the average is dominated by RT-only
@@ -1792,7 +1792,7 @@ TEST(GoldenRender, RaytracingFrameSkipsTheRasterPass)
     if (renderer_vars.gpuTimings.supported) {
         const float rt_main_ms =
           renderer_vars.gpuTimings
-            .pass_ms[static_cast<int>(Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass::Main)];
+            .pass_ms[static_cast<size_t>(Kataglyphis::VulkanRendererInternals::FrontendShared::GpuTimedPass::Main)];
         GTEST_LOG_(INFO) << "Main-pass GPU time: forward(raster only)=" << forward_main_ms
                           << "ms, RT(dispatch only)=" << rt_main_ms << "ms";
     }

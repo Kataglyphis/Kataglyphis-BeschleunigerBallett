@@ -72,8 +72,12 @@ function Get-ExpectedPassNames {
 
     $names = switch ($Engine) {
         'Cpp' {
-            # GUIRendererSharedVars.ixx: GPU_TIMED_PASS_EXPORT_NAMES[GPU_TIMED_PASS_COUNT] = { "Name", ... };
-            $m = [regex]::Match($content, 'GPU_TIMED_PASS_EXPORT_NAMES\[GPU_TIMED_PASS_COUNT\]\s*=\s*\{([^}]*)\}')
+            # GUIRendererSharedVars.ixx: either the legacy
+            # `GPU_TIMED_PASS_EXPORT_NAMES[GPU_TIMED_PASS_COUNT] = { "Name", ... };`
+            # or the std::array form
+            # `GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const char *>({ "Name", ... });`.
+            $m = [regex]::Match($content,
+              'GPU_TIMED_PASS_EXPORT_NAMES\s*(?:\[[A-Za-z_]+\])?\s*=\s*(?:std::to_array<[^>]*>\s*)?\(?\{([^}]*)\}\)?')
             if (-not $m.Success) {
                 throw "Get-ExpectedPassNames: could not find GPU_TIMED_PASS_EXPORT_NAMES initializer in $Path"
             }

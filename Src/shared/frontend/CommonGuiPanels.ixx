@@ -1,6 +1,8 @@
 module;
 
+#include <algorithm>
 #include <iomanip>
+#include <span>
 #include <sstream>
 
 #include <imgui.h>
@@ -52,11 +54,12 @@ inline void renderCommonFrameStats()
     ImGui::TextUnformatted(text.str().c_str());
 }
 
-// Per-pass GPU timings panel. `pass_ms` holds `pass_count` smoothed values in
-// milliseconds; entries < 0 render as "n/a" (pass disabled or no sample yet).
-// When `supported` is false (no timestamp support on the queue family) the
-// panel only shows "unavailable".
-inline void renderGpuTimingsPanel(bool supported, const float *pass_ms, const char *const *pass_names, int pass_count)
+// Per-pass GPU timings panel. `pass_ms` holds smoothed values in milliseconds;
+// entries < 0 render as "n/a" (pass disabled or no sample yet). When
+// `supported` is false (no timestamp support on the queue family) the panel
+// only shows "unavailable". If the two spans differ in length, the shorter
+// one wins - a caller mismatch truncates rather than reads out of bounds.
+inline void renderGpuTimingsPanel(bool supported, std::span<const float> pass_ms, std::span<const char *const> pass_names)
 {
     if (!ImGui::CollapsingHeader("GPU timings")) { return; }
 
@@ -65,7 +68,8 @@ inline void renderGpuTimingsPanel(bool supported, const float *pass_ms, const ch
         return;
     }
 
-    for (int i = 0; i < pass_count; i++) {
+    const size_t count = std::min(pass_ms.size(), pass_names.size());
+    for (size_t i = 0; i < count; i++) {
         if (pass_ms[i] >= 0.0F) {
             ImGui::Text("%-18s %6.3f ms", pass_names[i], static_cast<double>(pass_ms[i]));
         } else {

@@ -28,6 +28,19 @@ inline constexpr const char *GPU_TIMED_PASS_EXPORT_NAMES[GPU_TIMED_PASS_COUNT] =
 };
 '@ | Set-Content -Path $script:cppFixturePath
 
+    # std::array form (post GPU_TIMED_PASS_COUNT-table-derivation refactor) -
+    # the parser must accept both spellings.
+    $script:cppArrayFixturePath = Join-Path $script:tmpDir 'GUIRendererSharedVarsArray.ixx'
+    @'
+inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const char *>({
+  "Clouds",
+  "ShadowCascades",
+  "Main",
+  "Sky",
+  "Post",
+});
+'@ | Set-Content -Path $script:cppArrayFixturePath
+
     $script:rustFixturePath = Join-Path $script:tmpDir 'gpu_timing.rs'
     @'
 impl TimedPass {
@@ -68,6 +81,13 @@ impl TimedPass {
 
   It 'derives the five C++ pass names from GPU_TIMED_PASS_EXPORT_NAMES' {
     $result = Invoke-PrintExpectedPasses -CppPassSourcePath $script:cppFixturePath -RustPassSourcePath $script:rustFixturePath
+    $result.ExitCode | Should Be 0
+    $json = $result.Output | ConvertFrom-Json
+    ($json.Cpp -join ',') | Should Be 'Clouds,ShadowCascades,Main,Sky,Post'
+  }
+
+  It 'derives the five C++ pass names from the std::array GPU_TIMED_PASS_EXPORT_NAMES form' {
+    $result = Invoke-PrintExpectedPasses -CppPassSourcePath $script:cppArrayFixturePath -RustPassSourcePath $script:rustFixturePath
     $result.ExitCode | Should Be 0
     $json = $result.Output | ConvertFrom-Json
     ($json.Cpp -join ',') | Should Be 'Clouds,ShadowCascades,Main,Sky,Post'

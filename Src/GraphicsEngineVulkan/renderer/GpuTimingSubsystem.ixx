@@ -150,7 +150,7 @@ class GpuTimingSubsystem
                 // Pass not recorded in that frame (e.g. clouds/shadows disabled):
                 // show it as inactive and drop stale history so a re-enabled pass
                 // starts a fresh average.
-                guiRendererSharedVars.gpuTimings.pass_ms[pass] = -1.0F;
+                guiRendererSharedVars.gpuTimings.pass_ms[static_cast<size_t>(pass)] = -1.0F;
                 gpu_pass_averages[static_cast<size_t>(pass)].reset();
                 continue;
             }
@@ -169,7 +169,7 @@ class GpuTimingSubsystem
             const uint64_t delta_ticks = (end_value - start_value) & gpu_timestamp_mask;
             const double pass_ms_raw = static_cast<double>(delta_ticks) * static_cast<double>(gpu_timestamp_period)
                                         / NANOSECONDS_PER_MILLISECOND;
-            guiRendererSharedVars.gpuTimings.pass_ms[pass] =
+            guiRendererSharedVars.gpuTimings.pass_ms[static_cast<size_t>(pass)] =
               gpu_pass_averages[static_cast<size_t>(pass)].add(static_cast<float>(pass_ms_raw));
 
             // The JSON export accumulates the RAW sample, not the smoothed value

@@ -1,5 +1,7 @@
 module;
 
+#include <array>
+
 export module kataglyphis.vulkan.gui_renderer_shared_vars;
 
 export namespace Kataglyphis::VulkanRendererInternals::FrontendShared {
@@ -9,36 +11,52 @@ enum class RasterizationMode { Forward, Deferred };
 // "Main" is forward/deferred rasterization plus the optional ray-/path-tracing
 // stage that post-processes the raster result; "Post" includes the GUI draw
 // (ImGui renders inside the post render pass).
-inline constexpr int GPU_TIMED_PASS_COUNT = 5;
-enum class GpuTimedPass : int { Clouds = 0, ShadowCascades, Main, Sky, Post };
-inline constexpr const char *GPU_TIMED_PASS_NAMES[GPU_TIMED_PASS_COUNT] = {
+enum class GpuTimedPass : int { Clouds = 0, ShadowCascades, Main, Sky, Post, Count };
+
+// Single source of truth for the pass count: bumping this table is the only
+// edit needed to add a pass, and the static_asserts below catch every other
+// table that must stay in step with it.
+inline constexpr std::array GPU_TIMED_PASS_NAMES = std::to_array<const char *>({
     "Clouds (compute)",
     "Shadow cascades",
     "Main (raster/RT)",
     "Sky",
     "Post + GUI",
-};
+});
+inline constexpr int GPU_TIMED_PASS_COUNT = static_cast<int>(GPU_TIMED_PASS_NAMES.size());
 
 // Machine-readable identifiers for the same passes, used as JSON keys by the
 // KATAGLYPHIS_GPU_TIMING_JSON export. Separate from the display names above:
 // those may be reworded for the GUI at will, while these are diffed between
 // runs by tooling and must stay stable.
-inline constexpr const char *GPU_TIMED_PASS_EXPORT_NAMES[GPU_TIMED_PASS_COUNT] = {
+inline constexpr std::array GPU_TIMED_PASS_EXPORT_NAMES = std::to_array<const char *>({
     "Clouds",
     "ShadowCascades",
     "Main",
     "Sky",
     "Post",
-};
+});
+
+static_assert(GPU_TIMED_PASS_EXPORT_NAMES.size() == GPU_TIMED_PASS_NAMES.size(),
+  "display and export name tables must stay parallel");
+static_assert(
+  static_cast<int>(GpuTimedPass::Count) == GPU_TIMED_PASS_COUNT, "GpuTimedPass::Count must track the pass name table");
 
 struct GpuTimings
 {
     // false when the graphics queue family reports timestampValidBits == 0.
     bool supported = false;
     // Smoothed milliseconds per pass; < 0 means no sample yet or the pass is
-    // currently disabled/not recorded.
-    float pass_ms[GPU_TIMED_PASS_COUNT] = { -1.0f, -1.0f, -1.0f, -1.0f, -1.0f };
+    // currently disabled/not recorded. Every element starts at the -1.0F
+    // "no sample" sentinel, for any GPU_TIMED_PASS_COUNT.
+    std::array<float, GPU_TIMED_PASS_COUNT> pass_ms = [] {
+        std::array<float, GPU_TIMED_PASS_COUNT> a{};
+        a.fill(-1.0F);
+        return a;
+    }();
 };
+static_assert(std::tuple_size_v<decltype(GpuTimings::pass_ms)> == GPU_TIMED_PASS_NAMES.size(),
+  "GpuTimings::pass_ms must have one slot per timed pass");
 
 struct VisibilityStats
 {
