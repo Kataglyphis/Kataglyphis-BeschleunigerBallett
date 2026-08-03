@@ -7629,31 +7629,6 @@ RDP-blocked host run. Task it when that blocker clears. **The C++
 `DescriptorSetGroup.cpp`; nothing outside it hand-rolls a descriptor write any
 more. Stop re-checking.
 
-- [ ] **(S) (refactor) Name and pin `gpu_cull.wgsl`'s workgroup size, and use `div_ceil` like its two siblings** — the one dispatch grid in the Rust crate still written as `(count as u32 + 63) / 64` against a literal that nothing checks.
-
-  **Files to read:**
-  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/auto_exposure.rs:29-33` — the two constants to mirror, including the doc-comment form ("Workgroup size of `<file>`'s `<entry>`; must match the shader's `@workgroup_size(...)`")
-  - `.../crates/webgpu_renderer/tests/histogram_constants.rs` — the whole file; `extract_workgroup_x` at `:45-70` is the parser to reuse, and the module doc explains why this gate class exists
-  - `.../crates/webgpu_renderer/src/render/gpu_occlusion.rs:242-253` — the dispatch to change
-  - `.../crates/webgpu_renderer/src/shaders/gpu_cull.wgsl:29-31` — `@compute @workgroup_size(64, 1, 1)` on `fn cs_main`
-  - `.../crates/webgpu_renderer/src/render/histogram.rs:205-227` — the `div_ceil` call shape to copy
-
-  **Steps:**
-  1. In `gpu_occlusion.rs`, next to `SLOT_COUNT` (`:39`), add
-     `/// Workgroup size of `gpu_cull.wgsl`'s `cs_main`; must match the shader's `@workgroup_size(64, 1, 1)`.`
-     followed by `pub const CULL_WORKGROUP: u32 = 64;`. Make it `pub` — the gate in step 3 is an integration test under `tests/`, so it can only see the crate's public API. Confirm `render::gpu_occlusion` is re-exported the way `render::auto_exposure` is (`src/render/mod.rs`, `src/lib.rs`).
-  2. Replace `:250-251` with `let wg_count = (count as u32).div_ceil(CULL_WORKGROUP);` and delete the now-redundant `// round up to 64 (workgroup_size)` comment — the constant's own doc comment says it. `count` is `usize` (`:183`), so the cast stays where it is.
-  3. Add `tests/cull_constants.rs`. Copy `extract_workgroup_x` from `tests/histogram_constants.rs` verbatim, retargeted at `include_str!("../src/shaders/gpu_cull.wgsl")` — do not try to share it between the two integration-test binaries; Cargo compiles each `tests/*.rs` as its own crate and a `mod common` for one 25-line function is more machinery than the duplication costs. Write a module doc comment saying what this gate covers that the generated-shader gates do not: `gpu_cull.wgsl` *is* Slang-generated, so `SlangCompileManifestsAgree` and `CheckedInWgslHasNoHandEdits` keep it honest against its Slang source, but nothing checks it against the Rust dispatch count.
-  4. Grep the crate for other bare `+ 63) /`, `+ 15) /` or similar hand-rolled ceilings: `dispatch_workgroups` appears at `histogram.rs:207`, `:224`, `:262` and `gpu_occlusion.rs:252` only, and the first three already go through the named constants.
-
-  **Test:** Add `cull_workgroup_size_matches_the_shader` to `tests/cull_constants.rs`, asserting `extract_workgroup_x("cs_main") == CULL_WORKGROUP` with the same "edit both together" failure message the five histogram tests use. Verify it can fail: temporarily change `CULL_WORKGROUP` to `32` and confirm the test goes red, then change it back.
-
-  **Build:** No C++ build. From `ExternalLib/Kataglyphis-RustProjectTemplate`:
-  `cargo test -p kataglyphis_webgpu_renderer --test cull_constants`, then the full
-  `cargo test -p kataglyphis_webgpu_renderer` and `cargo clippy -p kataglyphis_webgpu_renderer --all-targets -- -D warnings`. This is CPU-only and runs everywhere, including CI's `ubuntu-24.04` leg (`Scripts/Linux/run-cargo-tests.sh`).
-
-  **Context:** The repo's standing habit is to gate a duplicated constant against its source of truth rather than trust a comment — it already does this for golden-suite counts, `max-texture-count`, the perf baseline, the renderer change log, the shader manifest, and (here) the histogram constants. This is the last unpinned member on the Rust side. `clippy::manual_div_ceil` would flag step 2 on its own, which is a hint the lint level in CI is not `-D warnings` for this crate yet — if clippy is already clean after your change, leave the lint config alone; that is a separate task.
-
 - [ ] **(S) (refactor) Give render-pass teardown one definition and a gate, matching the eleven helpers that came before it** — five stages hand-roll the same three lines, three of them on the line directly after a call to the shared helper that does the same job for pipelines.
 
   **Files to read:**
