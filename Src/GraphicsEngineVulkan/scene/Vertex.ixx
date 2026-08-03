@@ -23,4 +23,11 @@ std::array<vk::VertexInputAttributeDescription, 4> getVertexInputAttributeDesc()
 /// `i + 2 < indices.size()` and skips zero-area (degenerate) triangles,
 /// which would otherwise normalize a zero vector into NaN.
 void computeFlatNormals(std::span<Vertex> vertices, std::span<const unsigned int> indices, std::size_t firstIndex = 0);
+
+/// Same per-triangle geometric normal as computeFlatNormals, but only fills
+/// in a corner whose current normal is (near-)zero-length instead of
+/// overwriting every corner - for OBJs where only some faces carry `vn`.
+void fillMissingFlatNormals(std::span<Vertex> vertices,
+  std::span<const unsigned int> indices,
+  std::size_t firstIndex = 0);
 }

@@ -394,7 +394,14 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
         }
     }
 
-    // precompute normals if no provided - kataglyphis.vulkan.vertex's
-    // computeFlatNormals, the shared copy of this loop (also used by GltfLoader).
-    if (attrib.normals.empty()) { vertex::computeFlatNormals(vertices, indices); }
+    // Fill any corner left at a zero normal - kataglyphis.vulkan.vertex's
+    // fillMissingFlatNormals. Covers both the no-`vn`-at-all file (every
+    // corner is zero, so this behaves exactly like computeFlatNormals) and
+    // the mixed file where only some faces carry `vn` (only the zero corners
+    // are touched). Vertex dedup (`:363-365` above) keys on the whole
+    // Vertex including the normal, so a corner shared between faces with
+    // different geometric normals resolves to whichever triangle is visited
+    // last - the same flat approximation computeFlatNormals already makes,
+    // not a new limitation.
+    vertex::fillMissingFlatNormals(vertices, indices);
 }

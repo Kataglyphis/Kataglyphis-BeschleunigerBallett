@@ -5451,58 +5451,6 @@ runs is already pinned by `auto_exposure.rs`'s unit tests and a headless
 comparison, so the drift has no runtime reach; **`Src/KomputePlayground`** —
 unchanged; still an owner decision.
 
-- [ ] **(S) Give the C++ OBJ loader a flat-normal fallback per corner, not per
-  file** — an OBJ where only some faces carry `vn` currently ships zero normals
-  into the vertex buffer.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:321-330` — the corner-level
-    read that leaves `glm::vec3(0.0F)` when `idx.normal_index < 0`.
-  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:397-399` — the fallback,
-    guarded on `attrib.normals.empty()` (whole file), which is why the mixed case
-    escapes it.
-  - `Src/GraphicsEngineVulkan/scene/Vertex.cpp:17-33` — `computeFlatNormals`,
-    including its degenerate-triangle skip; `Vertex.ixx` for the declaration.
-  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:371-377` — the other caller,
-    which passes a `firstIndex`. Keep it working unchanged.
-  - `Test/commit/VulkanEngine/objParseSuite.cpp:278`
-    (`DegenerateTrianglesDoNotProduceNaNNormals`) — the device-free pattern to
-    follow, including how it writes a temporary `.obj` and parses it with the
-    no-device `ObjLoader{}` constructor.
-
-  **Steps:**
-  1. Add `vertex::fillMissingFlatNormals(std::span<Vertex>, std::span<const unsigned int>, std::size_t firstIndex = 0)`
-     next to `computeFlatNormals` in `Vertex.cpp`/`Vertex.ixx`: same face-normal
-     loop, but assign to a corner only when its current normal is
-     (near-)zero-length (`glm::dot(n, n) <= 1e-12F`). Keep the degenerate-triangle
-     skip.
-  2. In `ObjLoader.cpp`, replace the `if (attrib.normals.empty())` guard at
-     `:397-399` with an unconditional `vertex::fillMissingFlatNormals(...)`. The
-     all-normals case becomes a no-op pass over the index buffer; the no-normals
-     case behaves exactly as `computeFlatNormals` did; the mixed case is fixed.
-  3. Leave `GltfLoader.cpp`'s `computeFlatNormals` call alone — glTF's
-     `cgltf_validate` makes partial normals unreachable there (see the rejected
-     candidates above), and changing it would be an unverified behaviour change.
-  4. Note in a comment that vertex dedup keys on the whole `Vertex` including the
-     normal (`:363-365`), so a corner shared between faces with different
-     geometric normals resolves to whichever triangle is visited last — the same
-     flat approximation `computeFlatNormals` already makes, not a new limitation.
-
-  **Test:** Add `ObjParseUnit.FacesWithoutANormalIndexGetAFlatNormal`: write a
-  temporary `.obj` with two triangles where the first face uses `f a//n b//n c//n`
-  and the second uses bare `f a b c`, parse it device-free, and assert every
-  vertex normal has length ≈ 1 (today the second face's vertices come back at
-  length 0). Add a second case asserting a fully `vn`-less OBJ still produces the
-  same normals it does today, so the rewrite of the guard is pinned as
-  behaviour-preserving.
-
-  **Build:** `clangcl-debug`, same invocation as task 1.
-
-  **Context:** Do this **before** task 5 — task 5's job is to make the Rust
-  converter match C++, so C++ should be correct and pinned first. Same shape as
-  `bd315707` and `a5c19019`: a loader edge case that only a hand-written asset
-  reaches, fixed with a device-free test that writes the asset itself.
-
 ### Rust WebGPU renderer
 
 - [ ] **(S) Compute real flat normals in `obj_to_gltf` instead of fabricating an

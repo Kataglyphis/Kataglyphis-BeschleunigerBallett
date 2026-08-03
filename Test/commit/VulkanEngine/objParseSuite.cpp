@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <glm/geometric.hpp>
 #include <string>
 #include <memory>
 #include <thread>
@@ -296,6 +297,57 @@ TEST(ObjParseUnit, DegenerateTrianglesDoNotProduceNaNNormals)
         EXPECT_TRUE(std::isfinite(vertex.normal.x));
         EXPECT_TRUE(std::isfinite(vertex.normal.y));
         EXPECT_TRUE(std::isfinite(vertex.normal.z));
+    }
+
+    std::filesystem::remove(tmp);
+}
+
+TEST(ObjParseUnit, FacesWithoutANormalIndexGetAFlatNormal)
+{
+    // Only the second face omits `vn`. The old guard only ran
+    // computeFlatNormals when attrib.normals was empty for the WHOLE file, so
+    // a mixed file left the second face's vertices at the zero normal they
+    // were initialised to. fillMissingFlatNormals must patch exactly that gap.
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_mixed_normals.obj";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+               "v 0 0 1\nv 1 0 1\nv 0 1 1\n"
+               "vn 0 0 1\n"
+               "f 1//1 2//1 3//1\n"
+               "f 4 5 6\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+
+    ASSERT_FALSE(loader.getVertices().empty());
+    for (const auto &vertex : loader.getVertices()) {
+        const float len2 = glm::dot(vertex.normal, vertex.normal);
+        EXPECT_NEAR(len2, 1.0F, 1e-4F) << "every vertex must end up with a unit-length normal";
+    }
+
+    std::filesystem::remove(tmp);
+}
+
+TEST(ObjParseUnit, FullyNormalLessObjStillGetsFlatNormals)
+{
+    // Behaviour-preservation check: a file with no `vn` at all must produce
+    // the same result as before this task's guard rewrite.
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_no_normals.obj";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+
+    ASSERT_FALSE(loader.getVertices().empty());
+    for (const auto &vertex : loader.getVertices()) {
+        const float len2 = glm::dot(vertex.normal, vertex.normal);
+        EXPECT_NEAR(len2, 1.0F, 1e-4F);
+        EXPECT_NEAR(vertex.normal.z, 1.0F, 1e-4F) << "flat normal for this triangle points along +Z";
     }
 
     std::filesystem::remove(tmp);
