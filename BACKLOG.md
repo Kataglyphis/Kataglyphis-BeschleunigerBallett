@@ -7220,36 +7220,6 @@ unchanged; still an owner decision.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-- [ ] **(M) (refactor) Give `wgpu::BindGroupLayoutEntry` five named constructors and route all 47 call sites through them** — 24 of those entries repeat `has_dynamic_offset: false, min_binding_size: None` verbatim, which is where the one field that actually differs gets lost.
-
-  **Files to read:**
-  - `crates/webgpu_renderer/src/render/ssao.rs:38-70` — three entries in a row (depth texture, uniform, filterable texture); the clearest example of the shape.
-  - `crates/webgpu_renderer/src/render/forward.rs:370-730` — 22 of the 47 entries, including the `VERTEX_FRAGMENT` uniforms and the read-only storage buffers.
-  - `crates/webgpu_renderer/src/render/{bloom,gpu_occlusion,histogram,ibl,occlusion,tonemap}.rs` — the remaining 25.
-  - `crates/webgpu_renderer/src/render/mod.rs` — the flat `pub mod` list the new module joins.
-  - `crates/webgpu_renderer/src/render/graph.rs` (its `mod tests`) and `forward.rs:2960-3002` — the crate's device-free unit-test convention.
-
-  **Steps:**
-  1. Add `crates/webgpu_renderer/src/render/bind_layout.rs` and `pub mod bind_layout;` to `render/mod.rs`. Give it a module doc comment naming the problem it solves (47 longhand literals, 24 of them repeating two no-information fields).
-  2. Define, each returning `wgpu::BindGroupLayoutEntry` with `count: None`:
-     - `pub fn uniform(binding: u32, visibility: wgpu::ShaderStages)` → `Buffer { ty: Uniform, has_dynamic_offset: false, min_binding_size: None }`
-     - `pub fn storage_buffer(binding: u32, visibility: wgpu::ShaderStages, read_only: bool)`
-     - `pub fn texture(binding: u32, visibility: wgpu::ShaderStages, sample_type: wgpu::TextureSampleType, view_dimension: wgpu::TextureViewDimension, multisampled: bool)` — the general form
-     - `pub fn texture_2d(binding: u32, visibility: wgpu::ShaderStages, filterable: bool)` — thin wrapper over `texture` for the 9-copy majority case
-     - `pub fn sampler(binding: u32, visibility: wgpu::ShaderStages, ty: wgpu::SamplerBindingType)`
-     Make them `const fn` if that compiles against the pinned wgpu; fall back to plain `fn` if not. Do **not** add a wrapper per call site — five is the whole point.
-  3. Convert all 47 sites. Every one is a pure substitution: same binding number, same visibility, same type. The depth/array/cube/multisampled entries (`Depth`+`D2Array`, `Float{filterable:true}`+`Cube`, `Depth`+`D2`+`multisampled: true`) go through the general `texture` and keep their existing comments.
-  4. Leave `wgpu::BindGroupEntry` (the *binding* side, `resource: ...`) alone — this task is only about layout entries.
-
-  **Test:** in `bind_layout.rs`'s `#[cfg(test)] mod tests`, one test per helper asserting the produced entry matches the longhand it replaces, e.g.
-  `assert!(matches!(uniform(3, wgpu::ShaderStages::FRAGMENT).ty, wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None }))`,
-  plus `binding`/`visibility`/`count` field assertions and a `storage_buffer(.., true)` vs `(.., false)` pair. Then add the regression guard: `#[test] fn bind_group_layout_entries_go_through_the_helpers()` that walks `concat!(env!("CARGO_MANIFEST_DIR"), "/src")` with `std::fs`, and fails listing every file:line containing `BindGroupLayoutEntry {` outside `bind_layout.rs`. Confirm that guard goes RED before the conversion and GREEN after. No wgpu adapter is needed for any of this — these are plain data structs.
-
-  **Build:** `cargo test --workspace --locked` run from `ExternalLib/Kataglyphis-RustProjectTemplate` on the host. **Known-unrelated failures in this environment:** `auto_exposure_brightens_a_dark_scene_over_successive_frames` and 11 `ibl` tests fail on unmodified `develop` too (headless-GPU-adapter issues, recorded in the 2026-08-01 batch XV notes) — do not chase them, and do not treat them as caused by this change. Then a `clangcl-debug` container build, because the crate is compiled into the engine through the Rust bridge:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-
-  **Context:** This is the Rust twin of the create-info builder family the C++ side has now consolidated eleven times (`buildAttachmentDescription` → `buildFramebufferCreateInfo` → `buildRenderPassCreateInfo` → `buildPipelineLayoutCreateInfo` → `buildSubpassDescription` → `buildImageMemoryBarrier` → `buildComputePipelineCreateInfo` → …), and the rationale is identical: every one of those consolidations was prompted by drift that had already appeared between copies. The crate is a **submodule** — commit inside `ExternalLib/Kataglyphis-RustProjectTemplate` and bump the gitlink in this repo in the same change, per `AGENTS.md` § Critical Invariant: Submodule Pins.
-
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
