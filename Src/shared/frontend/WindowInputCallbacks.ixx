@@ -16,6 +16,15 @@ inline void reset_window_keys(bool *keys)
     for (std::size_t index = 0; index < window_key_count; ++index) { keys[index] = false; }
 }
 
+// GLFW-touching half (uninstalling the cursor callback) stays at the call
+// site precisely so this half stays testable - see the frontendInputSuite.cpp
+// header comment for why a live GLFWwindow cannot be exercised here.
+inline void handle_focus_lost(bool *keys, bool &mouse_first_moved)
+{
+    reset_window_keys(keys);
+    mouse_first_moved = true;
+}
+
 inline float consume_axis_delta(float &axis_change)
 {
     float const delta = axis_change;

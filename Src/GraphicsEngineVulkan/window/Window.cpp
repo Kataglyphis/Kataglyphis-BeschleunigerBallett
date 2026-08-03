@@ -113,7 +113,9 @@ void Window::window_focus_callback(GLFWwindow *window, int focused)
 
     if (focused == GLFW_FALSE) {
         auto *the_window = static_cast<Window *>(glfwGetWindowUserPointer(window));
-        Kataglyphis::Frontend::reset_window_keys(the_window->input_state.keys.data());
+        Kataglyphis::Frontend::handle_focus_lost(
+          the_window->input_state.keys.data(), the_window->input_state.mouse_first_moved);
+        glfwSetCursorPosCallback(window, nullptr);
     }
 }
 

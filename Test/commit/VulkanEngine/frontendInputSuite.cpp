@@ -21,6 +21,7 @@ import kataglyphis.shared.frontend.window_input_callbacks;
 namespace {
 using Kataglyphis::Frontend::clamp_frame_delta;
 using Kataglyphis::Frontend::consume_axis_delta;
+using Kataglyphis::Frontend::handle_focus_lost;
 using Kataglyphis::Frontend::handle_key_callback;
 using Kataglyphis::Frontend::handle_mouse_callback;
 using Kataglyphis::Frontend::reset_window_keys;
@@ -114,6 +115,43 @@ TEST(WindowInputUnit, LookModeEntryReSeedsTheMouseOrigin)
       nullptr, state.last_x, state.last_y, state.x_change, state.y_change, state.mouse_first_moved, 640.0, 360.0);
     EXPECT_FLOAT_EQ(state.x_change, 0.0F);
     EXPECT_FLOAT_EQ(state.y_change, 0.0F);
+}
+
+TEST(WindowInputUnit, FocusLossEndsLookModeAndReSeedsTheMouseOrigin)
+{
+    // A right-drag interrupted by alt-tab must not leave last_x/last_y stale -
+    // otherwise the first move after refocus snaps the camera by the
+    // distance crossed while the window was unfocused.
+    bool keys[window_key_count];
+    reset_window_keys(keys);
+    handle_key_callback(nullptr, keys, GLFW_KEY_W, GLFW_PRESS);
+    handle_key_callback(nullptr, keys, GLFW_KEY_A, GLFW_PRESS);
+
+    float last_x = 0.0F;
+    float last_y = 0.0F;
+    float x_change = 0.0F;
+    float y_change = 0.0F;
+    bool first_moved = true;
+
+    handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, 400.0, 300.0);
+    EXPECT_FALSE(first_moved);
+
+    handle_focus_lost(keys, first_moved);
+    for (int i = 0; i < window_key_count; ++i) {
+        ASSERT_FALSE(keys[i]) << "key " << i << " still held after focus loss";
+    }
+
+    // The re-seed absorbs the jump: the first move after refocus produces
+    // zero delta even though the cursor is far from last_x/last_y.
+    handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, 900.0, 50.0);
+    EXPECT_FLOAT_EQ(x_change, 0.0F);
+    EXPECT_FLOAT_EQ(y_change, 0.0F);
+
+    // The second move after refocus must produce a normal delta - pinning a
+    // re-seed, not a permanently dead axis.
+    handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, 910.0, 60.0);
+    EXPECT_FLOAT_EQ(x_change, 10.0F);
+    EXPECT_FLOAT_EQ(y_change, -10.0F);
 }
 
 TEST(WindowInputUnit, CursorCrossingAnImGuiPanelDoesNotJumpTheCamera)
