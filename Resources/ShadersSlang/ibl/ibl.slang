@@ -1,6 +1,7 @@
 import fullscreen;
 
-// IBL precompute (Rust/WebGPU side). Mirrors ibl.wgsl. Emits WGSL.
+// IBL precompute (Rust/WebGPU side). ibl.wgsl is generated from this
+// file and checked into the Rust crate by wgslMap. Emits WGSL.
 // Split-sum: equirectangular HDR -> cubemap, cosine-convolved irradiance,
 // GGX-prefiltered specular, and the environment BRDF lookup table.
 

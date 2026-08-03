@@ -1,4 +1,5 @@
-// Procedural sky (Rust/WebGPU side). Mirrors sky.wgsl. Emits WGSL.
+// Procedural sky (Rust/WebGPU side). sky.wgsl is generated from this
+// file and checked into the Rust crate by wgslMap. Emits WGSL.
 // Horizon/zenith gradient + analytic sun disk derived from the directional light.
 
 struct SkyUniforms

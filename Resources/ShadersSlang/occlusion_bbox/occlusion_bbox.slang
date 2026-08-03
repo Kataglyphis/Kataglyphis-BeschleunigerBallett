@@ -1,6 +1,7 @@
-// GPU occlusion culling detection (Rust/WebGPU side). Mirrors
-// occlusion_bbox.wgsl. Emits WGSL. Draws a primitive's world-space AABB as
-// a solid box for hardware occlusion queries.
+// GPU occlusion culling detection (Rust/WebGPU side). occlusion_bbox.wgsl
+// is generated from this file and checked into the Rust crate by wgslMap.
+// Emits WGSL. Draws a primitive's world-space AABB as a solid box for
+// hardware occlusion queries.
 
 struct OcclusionUniforms
 {

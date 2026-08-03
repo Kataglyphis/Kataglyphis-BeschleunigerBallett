@@ -114,8 +114,9 @@ bool newest_shared_import(const fs::path &slang_root, fs::file_time_type &out)
 
 // One "wgslMap" row: a Slang source whose combined WGSL emit is copied into
 // a Rust crate's shader directory. histogram.wgsl is absent by construction:
-// it is hand-written, with no generating Slang source (its manifest row is
-// marked disabled).
+// it is hand-written, with no generating Slang source at all (Slang's
+// InterlockedAdd on RWStructuredBuffer is not supported for the WGSL
+// target).
 struct WgslMapping
 {
     std::string slang_source;// "src": relative to Resources/ShadersSlang/
@@ -137,6 +138,10 @@ struct ShaderManifestData
     // ibl, gpu_cull, tonemap, tex_quad, ...) is a Rust/WebGPU shader that
     // only ever emits WGSL and must not be scanned for SPIR-V.
     std::set<std::string> engine_spirv_subdirs;
+    // Relative (to Resources/ShadersSlang/) .slang paths of every enabled
+    // manifest row, regardless of target - used to check that every Slang
+    // source with an entry point is accounted for, not just the SPIR-V ones.
+    std::set<std::string> all_enabled_manifest_files;
     std::vector<WgslMapping> wgsl_map;
     // Output filenames keyed by "depthTexturePatches" (documentation
     // "_comment" keys excluded).
@@ -177,6 +182,9 @@ std::optional<ShaderManifestData> parse_shader_manifest(const fs::path &manifest
         if (file_it == row.end() || !file_it->is_string()) { return std::nullopt; }
         if (targets_it == row.end() || !targets_it->is_array() || targets_it->empty()) { return std::nullopt; }
 
+        const std::string source = file_it->get<std::string>();
+        data.all_enabled_manifest_files.insert(source);
+
         bool emits_spirv = false;
         for (const auto &target : *targets_it) {
             if (!target.is_string()) { return std::nullopt; }
@@ -184,7 +192,6 @@ std::optional<ShaderManifestData> parse_shader_manifest(const fs::path &manifest
         }
         if (!emits_spirv) { continue; }
 
-        const std::string source = file_it->get<std::string>();
         data.vulkan_spirv_sources.insert(source);
         const std::size_t slash = source.find('/');
         if (slash != std::string::npos && slash > 0) { data.engine_spirv_subdirs.insert(source.substr(0, slash)); }
@@ -1919,8 +1926,8 @@ const std::string kUnreachableSlangMarkerPrefix = "UNREACHABLE_SLANG_FUNCTION_OK
 // deleted: deleting `sky_radiance` (see forward.slang) would have "fixed"
 // this gate and cemented that regression rather than catching it. Triage
 // every finding - wire the call back up, or if it is a genuine one-off
-// (spike code, a test fixture), justify it in kUnreachableSlangAllowlist
-// above rather than deleting the function.
+// (a proven-out toolchain spike, a test fixture), justify it in
+// kUnreachableSlangAllowlist above rather than deleting the function.
 TEST(BuildIntegrity, EverySlangFunctionIsReachableFromAnEntryPoint)
 {
     const fs::path repo_root = find_repo_root();
@@ -2394,6 +2401,91 @@ TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
       << violations.size()
       << " Slang import(s) pull in a module whose exported functions/structs are never referenced by the "
          "importing file - delete the dead import (and any comment justifying it):"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+// histogram.slang used to compile to nothing (its manifest row was
+// "disabled": true, kept only for documentation) while looking, to a casual
+// reader, like a live shader - no gate could see that mismatch because every
+// existing check starts from the manifest and walks outward, never from the
+// filesystem inward. This is the inverse check: every .slang source with an
+// entry point must be claimed by some enabled manifest row, so a source that
+// compiles to nothing (or was never added at all) fails loudly instead of
+// aging invisibly.
+TEST(BuildIntegrity, EverySlangSourceWithAnEntryPointHasAnEnabledManifestRow)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    const auto &manifest = shader_manifest(repo_root);
+    ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
+
+    int entry_point_sources_checked = 0;
+    std::vector<std::string> violations;
+    for (const std::string &relative_path : collect_all_slang_relative_paths(slang_root)) {
+        // common/ is a module directory with no entry points of its own;
+        // has_entry_point matches "[shader(" inside comments too, and
+        // common/fullscreen.slang:8 has one in its usage example - an
+        // exclusion by convention, not a workaround for a real entry point.
+        if (relative_path.starts_with("common/")) { continue; }
+        if (!has_entry_point(slang_root / relative_path)) { continue; }
+
+        ++entry_point_sources_checked;
+        if (!manifest->all_enabled_manifest_files.contains(relative_path)) { violations.push_back(relative_path); }
+    }
+
+    ASSERT_GE(entry_point_sources_checked, 10)
+      << "found only " << entry_point_sources_checked << " Slang source(s) with an entry point under "
+      << slang_root.string() << " - the entry-point scan itself is broken";
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " Slang source(s) with an entry point have no enabled row in shader-manifest.json - a source that "
+         "compiles to nothing:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+// The ten Slang sources feeding wgslMap used to say "Mirrors <x>.wgsl" in
+// their header comments, describing a two-way relationship that stopped
+// being true once the WGSL became a one-way build output of the Slang
+// source - the same "source still says it does X" drift
+// EveryImportedSlangModuleIsUsed and EverySlangFunctionIsReachableFromAnEntryPoint
+// exist for, one level up: the file rather than the function. Cheap, exact,
+// and it names the drift it prevents.
+TEST(BuildIntegrity, NoGeneratedWgslSourceClaimsToMirrorItsOutput)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const auto &manifest = shader_manifest(repo_root);
+    ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
+    ASSERT_GE(manifest->wgsl_map.size(), 5U) << "found only " << manifest->wgsl_map.size()
+                                              << " wgslMap entr(y/ies) - the manifest parse itself is broken";
+
+    std::vector<std::string> violations;
+    for (const auto &mapping : manifest->wgsl_map) {
+        std::ifstream file(slang_root / mapping.slang_source);
+        ASSERT_TRUE(static_cast<bool>(file)) << "could not open " << mapping.slang_source;
+        const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        if (content.find("Mirrors ") != std::string::npos) { violations.push_back(mapping.slang_source); }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " wgslMap source(s) still claim to \"Mirror\" their generated output instead of saying they generate "
+         "it:"
       << [&violations] {
              std::string joined;
              for (const auto &entry : violations) { joined += "\n  " + entry; }

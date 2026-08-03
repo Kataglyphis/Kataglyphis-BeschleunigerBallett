@@ -51,10 +51,10 @@ ever emit one target.
 | SPIR-V (Vulkan) | **stable** | Rasterization, compute, **ray tracing pipeline**, **ray query**, descriptor sets, push constants |
 | WGSL (WebGPU) | **experimental** | Functional (official `wgpu-html5` example uses it). **No** ray tracing, ray query, mesh/tessellation/geometry shaders, wave intrinsics, `f64`, `i8`/`u8` |
 
-**WGSL fallback policy:** if Slang's experimental WGSL emitter can't handle
-a particular shared shader, that shader's WGSL stays hand-written and the
-Slang source (if one exists) is kept for documentation/future SPIR-V use
-only. `histogram.wgsl` is the one case today (rationale in
+**WGSL fallback policy:** if Slang can't express a particular shared shader
+for the WGSL target at all (not merely emit it), that shader's WGSL is
+hand-written with **no** Slang source. `histogram.wgsl` is the one case
+today (rationale in
 [`shader-build-pipeline.md`](shader-build-pipeline.md)).
 
 ## Architecture: Slang-native, not `#include`

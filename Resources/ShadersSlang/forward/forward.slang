@@ -1,6 +1,7 @@
 import brdf;
 
-// Forward PBR pass (Rust/WebGPU side). Mirrors forward.wgsl. Emits WGSL.
+// Forward PBR pass (Rust/WebGPU side). forward.wgsl is generated from
+// this file and checked into the Rust crate by wgslMap. Emits WGSL.
 // Uses the shared BRDF math (import brdf), eliminating the duplicated BRDF
 // functions that were in forward.wgsl. ACES tonemapping happens later, as
 // its own pass, in tonemap/tonemap.slang.

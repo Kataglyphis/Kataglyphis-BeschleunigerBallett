@@ -104,13 +104,6 @@
     { "file": "ibl/ibl.slang", "entry": "fs_brdf_lut", "stage": "fragment", "targets": ["wgsl"] },
     { "_comment": "Rust/WebGPU GPU occlusion culling (WGSL emit).",
       "file": "gpu_cull/gpu_cull.slang", "entry": "cs_main", "stage": "compute", "targets": ["wgsl"] },
-    { "_comment": [
-        "Rust/WebGPU luminance histogram — WGSL fallback: Slang's InterlockedAdd on",
-        "RWStructuredBuffer is not supported for the WGSL target (atomics require",
-        "array<atomic<u32>> storage). This shader's WGSL stays hand-written; the",
-        "Slang source is kept for documentation and future SPIR-V use."
-      ],
-      "file": "histogram/histogram.slang", "entry": "histogram_main", "stage": "compute", "targets": ["wgsl"], "disabled": true },
     { "_comment": "Rust/WebGPU occlusion bbox detection (WGSL emit).",
       "file": "occlusion_bbox/occlusion_bbox.slang", "entry": "vs_main", "stage": "vertex", "targets": ["wgsl"] },
     { "file": "occlusion_bbox/occlusion_bbox.slang", "entry": "fs_main", "stage": "fragment", "targets": ["wgsl"] },

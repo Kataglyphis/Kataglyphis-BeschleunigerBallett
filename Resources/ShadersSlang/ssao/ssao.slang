@@ -1,6 +1,7 @@
 import fullscreen;
 
-// Depth-only SSAO (Rust/WebGPU side). Mirrors ssao.wgsl. Emits WGSL.
+// Depth-only SSAO (Rust/WebGPU side). ssao.wgsl is generated from this
+// file and checked into the Rust crate by wgslMap. Emits WGSL.
 // View-space position reconstruction from the depth buffer, normals from
 // depth neighbors, fixed hemisphere kernel, plus a 3x3 box blur entry point.
 

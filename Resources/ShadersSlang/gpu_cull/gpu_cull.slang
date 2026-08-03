@@ -1,4 +1,5 @@
-// GPU occlusion culling (Rust/WebGPU side). Mirrors gpu_cull.wgsl. Emits WGSL.
+// GPU occlusion culling (Rust/WebGPU side). gpu_cull.wgsl is generated
+// from this file and checked into the Rust crate by wgslMap. Emits WGSL.
 // Tests each primitive's projected AABB against the depth buffer.
 
 struct CullParams

@@ -30,8 +30,12 @@ runtime shader compilation. Slang emits `"main"` as the SPIR-V entry point
 name (not the Slang function name), so all `pName` values in pipeline
 creation use `"main"`.
 
-`histogram.wgsl` in the Rust crate remains hand-written: Slang does not
-support `InterlockedAdd` on `RWStructuredBuffer` for the WGSL target.
+`histogram.wgsl` in the Rust crate is hand-written with no generating Slang
+source at all: Slang's `InterlockedAdd` on `RWStructuredBuffer` is not
+supported for the WGSL target (atomics require `array<atomic<u32>>`
+storage), and the WGSL fallback policy above is that such a shader's WGSL
+stays hand-written rather than kept in sync with a Slang source nothing
+consumes on the C++ side.
 
 ## Staleness rules
 

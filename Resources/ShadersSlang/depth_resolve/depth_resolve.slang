@@ -1,7 +1,8 @@
 import fullscreen;
 
 // Depth resolve: downsamples MSAA depth to single-sample via nearest-sample
-// selection (minimum depth = nearest fragment). Mirrors depth_resolve.wgsl.
+// selection (minimum depth = nearest fragment). depth_resolve.wgsl is
+// generated from this file and checked into the Rust crate by wgslMap.
 // Emits WGSL.
 
 [vk::binding(0, 0)] Texture2DMS<float> msaaDepth;

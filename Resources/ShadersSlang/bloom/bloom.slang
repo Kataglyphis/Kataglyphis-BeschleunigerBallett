@@ -1,6 +1,7 @@
 import fullscreen;
 
-// Bloom chain (Rust/WebGPU side). Mirrors bloom.wgsl. Emits WGSL.
+// Bloom chain (Rust/WebGPU side). bloom.wgsl is generated from this
+// file and checked into the Rust crate by wgslMap. Emits WGSL.
 // Bright-pass extraction and separable 9-tap Gaussian blur, all fullscreen
 // triangles at half resolution on Rgba16Float targets.
 

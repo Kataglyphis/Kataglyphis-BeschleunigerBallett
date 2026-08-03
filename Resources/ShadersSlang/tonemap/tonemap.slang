@@ -1,7 +1,8 @@
 import aces;
 import fullscreen;
 
-// Fullscreen tonemap pass (Rust/WebGPU side). Mirrors tonemap.wgsl; the
+// Fullscreen tonemap pass (Rust/WebGPU side). tonemap.wgsl is generated
+// from this file and checked into the Rust crate by wgslMap; the
 // shared ACES + sRGB-encode math comes from aces.slang (imported), and the
 // fullscreen-triangle vertex from fullscreen.slang. Bindings match the
 // Rust renderer's bind group 0 layout (see forward.rs TonemapPass).
