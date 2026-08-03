@@ -7495,6 +7495,202 @@ logic. **`transformAABB` rebuilds eight corners per mesh per frame, twice**
 where the model matrix is per-model — measurable only under `BM_FrustumCull`,
 which already covers the hot loop and shows it is not the bottleneck.
 
+## 2026-08-04 batch — planner (refactor: eleven fullscreen render pipelines in the Rust crate that differ in four fields and repeat twenty; the one compute dispatch grid in that crate still spelled as a bare `+ 63) / 64`, next to two siblings that are named and pinned; the twelfth member of the C++ create/destroy helper family — render-pass teardown, hand-rolled in the same five stages that already route framebuffers and pipelines through a shared helper)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the tree
+this pass.
+
+**Every task in this batch is verifiable with no GPU**, deliberately: host
+golden verification is still blocked over RDP (see the `- [b]` entry near the
+end of this file), so nothing here may depend on it. Tasks 1 and 2 are Rust and
+verify with `cargo test` (the crate's unit tests and its `tests/*.rs`
+CPU-only integration tests are all device-free; the ones that need an adapter
+skip themselves). Task 3 is a header, five call sites, one CPU suite and one
+`buildIntegritySuite.cpp` gate that reads files off disk.
+`Test/commit/VulkanEngine/CMakeLists.txt` globs `*.cpp` with
+`CONFIGURE_DEPENDS`, so no new suite file needs registering.
+
+**The headline is that the Rust crate solved "one rule, N hand-rolled copies"
+for bind-group layout entries (`render/bind_layout.rs`, five named
+constructors, 47 call sites) and then never did it for the thing above it —
+the pipeline descriptor.** Eleven render pipelines across four modules are the
+*same* fullscreen pass, and they agree on every field but four. Measured this
+pass:
+
+| module | pipelines | vertex entry | color format | blend |
+| --- | --- | --- | --- | --- |
+| `render/bloom.rs:55-79` | 3 (`fs_brightpass`, `fs_blur_h`, `fs_blur_v`) | `vs_main` | `HDR_FORMAT` | `None` |
+| `render/ssao.rs:57-81` | 2 (`fs_ssao`, `fs_blur`) | `vs_main` | `AO_FORMAT` | `None` |
+| `render/tonemap.rs:58-81` | 1 (`fs_main`) | `vs_main` | `output_format` (runtime) | `None` |
+| `render/ibl.rs:270-294` | 5 (`fs_equirect_to_cube`, `fs_downsample_cube`, `fs_irradiance`, `fs_prefilter`, `fs_brdf_lut`) | `vs_fullscreen` | `CUBE_FORMAT` ×4, `LUT_FORMAT` | `Some(BlendState::REPLACE)` |
+
+Everything else is byte-identical in all eleven: `buffers: &[]`,
+`write_mask: ColorWrites::ALL`, `primitive: PrimitiveState::default()`,
+`depth_stencil: None`, `multisample: MultisampleState::default()`,
+`multiview_mask: None`, `cache: None`, and `compilation_options: Default::default()`
+twice. That is ~20 repeated lines per site against 4 that carry meaning. The
+divergence it has already produced is in the last column: `ibl.rs` writes
+`Some(BlendState::REPLACE)` where the other three write `None`. Those are the
+same thing — `REPLACE` is `src * 1 + dst * 0` — so nothing renders differently
+today; it is two spellings of "no blending" that arrived because nobody was
+looking at the same line twice. The same file also holds nine copies of the
+single-bind-group-layout pipeline layout (`bind_group_layouts: &[Some(&x)],
+immediate_size: 0`): `bloom.rs:49-53`, `forward.rs:622-626`,
+`forward.rs:2696-2700`, `gpu_occlusion.rs:105-109`, `histogram.rs:73-77`,
+`ibl.rs:264-268`, `occlusion.rs:153-157`, `ssao.rs:51-55`, `tonemap.rs:52-56`.
+Three sites in `forward.rs` (`:520`, `:570`, `:600`) take multiple layouts and
+are correctly out of scope.
+
+**Second, `gpu_occlusion.rs` is the one compute dispatch in the crate whose
+workgroup size is a bare literal.** `:250-251` reads
+
+```rust
+// round up to 64 (workgroup_size)
+let wg_count = (count as u32 + 63) / 64;
+```
+
+Twelve lines of `histogram.rs` do the identical thing through
+`auto_exposure::BUILD_WORKGROUP` / `CLEAR_WORKGROUP` (`:208`, `:225-226`),
+using `div_ceil`, against constants whose doc comments name the shader entry
+point they mirror (`auto_exposure.rs:29-33`) — and
+`tests/histogram_constants.rs` *pins both of them* against
+`src/shaders/histogram.wgsl` by parsing `@workgroup_size(...)` out of the
+source. `gpu_cull.wgsl:29-31` declares `@workgroup_size(64, 1, 1)` on
+`cs_main`; the Rust side has no constant, no `div_ceil`, and no gate. Be
+honest about the impact: **this is latent, not live** — 64 is correct in both
+places today. `gpu_cull.wgsl` is Slang-generated, so the generated-shader
+gates do cover WGSL-vs-Slang; what none of them cover is WGSL-vs-Rust, which
+is exactly the edge `tests/histogram_constants.rs` was written for. The value
+is that changing the Slang workgroup size would currently produce a silently
+wrong dispatch count with no test saying so.
+
+**Third, render-pass teardown is the twelfth member of the create/destroy
+helper family, and the only one still hand-rolled.** The engine has
+`Kataglyphis::destroyFramebuffers` / `destroyFramebuffer`
+(`common/FramebufferHelper.hpp:55-70`) and `destroyPipelineAndLayout`
+(`common/PipelineLayoutHelper.hpp:49-60`), both taking their handles by
+reference, both no-op'ing on a null device, and both enforced by a
+`buildIntegritySuite.cpp` gate that greps `Src/GraphicsEngineVulkan/` for the
+raw call (`FramebufferTeardownGoesThroughTheSharedHelper` at `:5612-5657`,
+`PipelineTeardownGoesThroughTheSharedHelper` at `:5504-5555`). The render pass
+sitting between them in every one of those `cleanUp()` bodies is still written
+out longhand, five times, in the same five stages:
+
+| file | lines | member |
+| --- | --- | --- |
+| `renderer/Rasterizer.cpp` | `:120-123` | `render_pass` |
+| `renderer/DeferredRasterizer.cpp` | `:121-124` | `renderPass` |
+| `renderer/PostStage.cpp` | `:115-118` | `render_pass` |
+| `scene/sky_box/SkyBox.cpp` | `:406-409` | `renderPass` |
+| `scene/light/directional_light/CascadedShadowMap.cpp` | `:244-247` | `renderPass` |
+
+All five are the identical three-line `if (handle) { device.destroyRenderPass(handle); handle = nullptr; }`,
+and three of the five sit on the line directly after a
+`destroyPipelineAndLayout(...)` call — i.e. the shared helper and its
+hand-rolled neighbour are adjacent in the same function. Two of the five omit
+the null-device guard that `Rasterizer.cpp:107` provides earlier in the body;
+`CascadedShadowMap.cpp:244` and `SkyBox.cpp:406` reach
+`device->getLogicalDevice()` through a `shared_ptr` that `cleanUp()`'s own
+idempotence contract says may already be reset. Nothing is broken today — the
+early returns cover it — but that is one more invariant held by reading, in
+the family the repo has spent eleven tasks making unnecessary to read.
+
+Ordering: the three tasks are disjoint and touch no shared file. Tasks 1 and 2
+are both in `crates/webgpu_renderer` but in different modules (task 1:
+`bloom`/`ssao`/`tonemap`/`ibl` + a new `pipeline_desc.rs`; task 2:
+`gpu_occlusion.rs` + a new `tests/cull_constants.rs`) — the one overlap is
+`gpu_occlusion.rs:105-109`, which task 1 rewrites and task 2 does not read, so
+do task 1 first if both land in one session. Task 3 is C++ only.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`ForwardRenderer::animation_duration`
+(`forward.rs:2375`) and `disable_gpu_timing` (`:981`) have no caller anywhere
+in the workspace** — real dead API, but two accessors is thinner than the two
+dead-accessor sweeps that already shipped (batches VIII and X), and
+`animation_duration` is the natural read-side pair of `set_animation_time`,
+which a viewer UI would want. **`GpuTimingSubsystem::timestampMask()`
+(`GpuTimingSubsystem.ixx:238`) is dead** — one reference in the tree, its own
+definition; same reasoning, and it is the accessor for a field the class
+genuinely uses internally. Fold all three into the next dead-API sweep rather
+than spending a task on them. **`VulkanRenderer` mixes ~50 `snake_case` member
+functions (`record_commands`, `update_uniform_buffers`, `create_surface`,
+`create_command_pool`, …) with camelCase ones (`drawFrame`,
+`recreateSwapChain`, `recordRasterPass`)** — a real convention violation, but
+renaming across module interface units means `-FreshContainer` rebuilds for
+pure churn with no assertion that can distinguish success from failure. Not
+worth an executor session. **`render_tonemapped` is 647 lines
+(`forward.rs:1511-2158`) and `ForwardRenderer::new` is 479 (`:368-847`)** —
+the extraction is real and wanted, but it is the one change in this crate that
+can silently reorder passes, and the oracles that would catch that
+(`tests/headless.rs`, `tests/forward_ambient.rs`) need an adapter, i.e. the
+RDP-blocked host run. Task it when that blocker clears. **The C++
+`vk::WriteDescriptorSet` sites are fully consolidated** — all seven live inside
+`DescriptorSetGroup.cpp`; nothing outside it hand-rolls a descriptor write any
+more. Stop re-checking.
+
+- [ ] **(S) (refactor) Name and pin `gpu_cull.wgsl`'s workgroup size, and use `div_ceil` like its two siblings** — the one dispatch grid in the Rust crate still written as `(count as u32 + 63) / 64` against a literal that nothing checks.
+
+  **Files to read:**
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/auto_exposure.rs:29-33` — the two constants to mirror, including the doc-comment form ("Workgroup size of `<file>`'s `<entry>`; must match the shader's `@workgroup_size(...)`")
+  - `.../crates/webgpu_renderer/tests/histogram_constants.rs` — the whole file; `extract_workgroup_x` at `:45-70` is the parser to reuse, and the module doc explains why this gate class exists
+  - `.../crates/webgpu_renderer/src/render/gpu_occlusion.rs:242-253` — the dispatch to change
+  - `.../crates/webgpu_renderer/src/shaders/gpu_cull.wgsl:29-31` — `@compute @workgroup_size(64, 1, 1)` on `fn cs_main`
+  - `.../crates/webgpu_renderer/src/render/histogram.rs:205-227` — the `div_ceil` call shape to copy
+
+  **Steps:**
+  1. In `gpu_occlusion.rs`, next to `SLOT_COUNT` (`:39`), add
+     `/// Workgroup size of `gpu_cull.wgsl`'s `cs_main`; must match the shader's `@workgroup_size(64, 1, 1)`.`
+     followed by `pub const CULL_WORKGROUP: u32 = 64;`. Make it `pub` — the gate in step 3 is an integration test under `tests/`, so it can only see the crate's public API. Confirm `render::gpu_occlusion` is re-exported the way `render::auto_exposure` is (`src/render/mod.rs`, `src/lib.rs`).
+  2. Replace `:250-251` with `let wg_count = (count as u32).div_ceil(CULL_WORKGROUP);` and delete the now-redundant `// round up to 64 (workgroup_size)` comment — the constant's own doc comment says it. `count` is `usize` (`:183`), so the cast stays where it is.
+  3. Add `tests/cull_constants.rs`. Copy `extract_workgroup_x` from `tests/histogram_constants.rs` verbatim, retargeted at `include_str!("../src/shaders/gpu_cull.wgsl")` — do not try to share it between the two integration-test binaries; Cargo compiles each `tests/*.rs` as its own crate and a `mod common` for one 25-line function is more machinery than the duplication costs. Write a module doc comment saying what this gate covers that the generated-shader gates do not: `gpu_cull.wgsl` *is* Slang-generated, so `SlangCompileManifestsAgree` and `CheckedInWgslHasNoHandEdits` keep it honest against its Slang source, but nothing checks it against the Rust dispatch count.
+  4. Grep the crate for other bare `+ 63) /`, `+ 15) /` or similar hand-rolled ceilings: `dispatch_workgroups` appears at `histogram.rs:207`, `:224`, `:262` and `gpu_occlusion.rs:252` only, and the first three already go through the named constants.
+
+  **Test:** Add `cull_workgroup_size_matches_the_shader` to `tests/cull_constants.rs`, asserting `extract_workgroup_x("cs_main") == CULL_WORKGROUP` with the same "edit both together" failure message the five histogram tests use. Verify it can fail: temporarily change `CULL_WORKGROUP` to `32` and confirm the test goes red, then change it back.
+
+  **Build:** No C++ build. From `ExternalLib/Kataglyphis-RustProjectTemplate`:
+  `cargo test -p kataglyphis_webgpu_renderer --test cull_constants`, then the full
+  `cargo test -p kataglyphis_webgpu_renderer` and `cargo clippy -p kataglyphis_webgpu_renderer --all-targets -- -D warnings`. This is CPU-only and runs everywhere, including CI's `ubuntu-24.04` leg (`Scripts/Linux/run-cargo-tests.sh`).
+
+  **Context:** The repo's standing habit is to gate a duplicated constant against its source of truth rather than trust a comment — it already does this for golden-suite counts, `max-texture-count`, the perf baseline, the renderer change log, the shader manifest, and (here) the histogram constants. This is the last unpinned member on the Rust side. `clippy::manual_div_ceil` would flag step 2 on its own, which is a hint the lint level in CI is not `-D warnings` for this crate yet — if clippy is already clean after your change, leave the lint config alone; that is a separate task.
+
+- [ ] **(S) (refactor) Give render-pass teardown one definition and a gate, matching the eleven helpers that came before it** — five stages hand-roll the same three lines, three of them on the line directly after a call to the shared helper that does the same job for pipelines.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/common/FramebufferHelper.hpp:45-70` — `destroyFramebuffers`/`destroyFramebuffer`; copy the doc-comment reasoning (idempotence, by-reference handles) and the guard order
+  - `Src/GraphicsEngineVulkan/common/PipelineLayoutHelper.hpp:44-60` — `destroyPipelineAndLayout`, the other half of the precedent
+  - `Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp` — the new helper's home; it already owns `buildAttachmentDescription`, `buildRenderPassBeginInfo`, `buildSubpassDescription`, `buildRenderPassCreateInfo`
+  - `Test/commit/VulkanEngine/framebufferHelperSuite.cpp:80-90` — the device-free teardown tests to mirror
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:5606-5657` — `FramebufferTeardownGoesThroughTheSharedHelper`, the gate to clone
+  - The five call sites: `renderer/Rasterizer.cpp:120-123`, `renderer/DeferredRasterizer.cpp:121-124`, `renderer/PostStage.cpp:115-118`, `scene/sky_box/SkyBox.cpp:406-409`, `scene/light/directional_light/CascadedShadowMap.cpp:244-247`
+
+  **Steps:**
+  1. Add to `common/RenderPassHelper.hpp`, at the end of the `Kataglyphis` namespace:
+     ```cpp
+     inline void destroyRenderPass(vk::Device device, vk::RenderPass &render_pass)
+     {
+         if (!device) { return; }
+         if (render_pass) {
+             device.destroyRenderPass(render_pass);
+             render_pass = nullptr;
+         }
+     }
+     ```
+     Document it in the voice of `FramebufferHelper.hpp:45-54`: by reference so the caller cannot keep a dangling handle, no-op on a null device so an explicit `cleanUp()` followed by the destructor's safety net stays safe, and name the five stages it replaced.
+  2. Replace all five sites with `Kataglyphis::destroyRenderPass(<device expr>, <member>);`. The device expression differs per site — `device->getLogicalDevice()` in four, a local `logicalDevice` in `DeferredRasterizer.cpp:120`. Do not change the member names (`render_pass` vs `renderPass`); that is the naming task this batch explicitly did not take.
+  3. Check each site's `#include` block already pulls in `common/RenderPassHelper.hpp` — four of the five build render passes and will, but confirm rather than assume, especially `PostStage.cpp`.
+  4. `CascadedShadowMap.cpp:244` and `SkyBox.cpp:406` reach the device through a `shared_ptr`. After the change the null-*device* case is handled inside the helper, but a null `shared_ptr` still faults at the `->`. Check whether those two `cleanUp()` bodies have the `if (!device) { return; }` early return `Rasterizer.cpp:107` has; if either does not, add it — that is in scope here and is the reason this task is worth more than a line count.
+
+  **Test:** Two pieces.
+  (a) Add to `Test/commit/VulkanEngine/renderPassHelperSuite.cpp`, mirroring `framebufferHelperSuite.cpp:80-90`: `RenderPassHelperUnit.DestroyRenderPassOnANullDeviceIsANoOp` (call with `vk::Device{}` and a non-null-looking handle; assert the handle is untouched and nothing crashes) and `RenderPassHelperUnit.DestroyRenderPassOnANullHandleIsANoOp`.
+  (b) Add `BuildIntegrity.RenderPassTeardownGoesThroughTheSharedHelper` to `buildIntegritySuite.cpp`, cloned from `FramebufferTeardownGoesThroughTheSharedHelper` at `:5612`: same `find_repo_root()` + `recursive_directory_iterator` walk over `Src/GraphicsEngineVulkan`, `kRawTeardownCall = ".destroyRenderPass("`, and `kExemptFiles = { "Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp" }`. The existing walk only visits `.cpp` and `.ixx`, so the `.hpp` exemption is belt-and-braces — keep it anyway, so the gate survives someone moving the helper into a module interface. Verify the gate can fail by reverting one call site before you finish.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then, from the repo root, `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='RenderPassHelper*:BuildIntegrity.*'` followed by a full CPU run (`--gtest_filter='-GoldenRender.*:Integration.*'`). No `-FreshContainer` needed: this touches a `.hpp` and five `.cpp` files, no module interface unit. No GPU work either — the five edits are inside `cleanUp()` paths that a headless CPU run does not exercise, which is exactly why the `buildIntegrity` gate carries the weight here.
+
+  **Context:** Twelfth member of the create/destroy helper family; the eleven before it are logged in this file and in `docs/cpp-renderer-improvements.md`. Two rules from those tasks apply: the helper takes its handle by reference (a by-value version destroys without nulling and hands the caller a dangling handle — stated at `PipelineLayoutHelper.hpp:44-48`), and the extraction ships with the grep gate in the same change, because every one of these that shipped without a gate grew a new hand-rolled copy within a month. Log the change in `docs/cpp-renderer-improvements.md`; `BuildIntegrity` already gates that file against drift.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
