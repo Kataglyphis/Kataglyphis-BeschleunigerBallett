@@ -168,7 +168,11 @@ function Invoke-WithAsanOptions {
   )
 
   $oldAsanOptions = $env:ASAN_OPTIONS
-  $env:ASAN_OPTIONS = "${Options}:$oldAsanOptions"
+  if ([string]::IsNullOrEmpty($oldAsanOptions)) {
+    $env:ASAN_OPTIONS = $Options
+  } else {
+    $env:ASAN_OPTIONS = "${Options}:$oldAsanOptions"
+  }
   try {
     & $Script
   } finally {
@@ -225,20 +229,22 @@ function Invoke-ManualTestExecutable {
 
   $asanRuntimeDirs = Get-AsanRuntimeDirs -BuildRoot $BuildRoot -RuntimeFlavor $RuntimeFlavor
 
-  Invoke-WithRuntimePath -RuntimeDirs $asanRuntimeDirs -Script {
+  $started = Invoke-WithRuntimePath -RuntimeDirs $asanRuntimeDirs -Script {
     try {
       Invoke-BuildExternal -Context $Context -File $testExecutable -Parameters $Arguments | Out-Null
+      $true
     } catch {
       $errorText = $_.Exception.Message
       if ($errorText -match 'exit code -1073741511|exit code -1073741515') {
         Write-BuildLogWarning -Context $Context -Message "Manual test execution failed to start '$ExecutableName' (Windows loader/runtime mismatch). Continuing pipeline."
-        return $false
+        $false
+      } else {
+        throw
       }
-      throw
     }
   }
 
-  return $true
+  return [bool]$started
 }
 
 function Invoke-CtestDiscoveredTests {

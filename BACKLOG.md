@@ -7220,6 +7220,232 @@ unchanged; still an owner decision.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
+## 2026-08-03 batch XXI — planner (the two PowerShell modules that genuinely live in this repo have no tests, and both are broken: one reports success for a test binary that never started, the other's clang-tidy skip matches 1 of 33 module TUs; the always-on Linux lane runs 4 of 6 fuzz targets and skips exactly the one that has caught a real bug; the fourth member of the `create()`-releases-previous family; the module bootstrap AGENTS.md says cannot move upstream)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the tree
+this pass.
+
+**Every task in this batch is verifiable with no GPU**, deliberately: host
+golden verification is still blocked over RDP (see the `- [b]` entry near the
+end of this file), so nothing here may depend on it. Tasks 1, 2 and 5 land
+entirely in `Scripts/Windows/tests/` and run under the existing `pester-tests`
+CI job and locally with pinned Pester 3.4.0 — no build at all. Task 3 adds a
+filesystem gate to `buildIntegritySuite.cpp` plus a workflow edit. Task 4 is a
+five-line source change plus an extension of an existing text-order gate.
+`Test/commit/VulkanEngine/CMakeLists.txt` globs `*.cpp` with
+`CONFIGURE_DEPENDS`, so no new suite file needs registering.
+
+**The headline is that `Scripts/Windows/modules/` holds exactly two modules —
+the two AGENTS.md says are genuinely project-specific and must stay here
+(`WindowsClang.Common`, `WindowsTesting.Common`) — and they are the only two
+with no Pester suite at all.** `Scripts/Windows/tests/` carries twelve suites;
+five of them (`WindowsCMake.Common`, `WindowsConfig.Common`,
+`WindowsMsix.Common`, `WindowsMsix.Signing`, `WindowsWebDav.Common`) cover
+modules that were **upstreamed to ContainerHub on 2026-08-02** and no longer
+exist under `Scripts/Windows/modules/`. Those suites are not redundant —
+ContainerHub's own `windows/scripts/tests/` has no equivalents, so this repo is
+their only coverage, do not delete them — but the coverage map is exactly
+inverted from where the risk is. Reading the two untested modules found a real
+defect in each, and neither is subtle once you look:
+
+- `WindowsTesting.Common.psm1:228-241` — `Invoke-ManualTestExecutable` wraps the
+  run in `Invoke-WithRuntimePath -Script { ... }` and puts `return $false`
+  **inside the scriptblock** (`:236`). In PowerShell that returns from the
+  *scriptblock*, emitting `$false` into the pipeline; `Invoke-WithAsanOptions`'s
+  `& $Script` propagates it, `Invoke-WithRuntimePath` returns it, and
+  `Invoke-ManualTestExecutable` never captures it — then falls through to
+  `return $true` (`:241`). The function's output is therefore `@($false, $true)`,
+  a two-element array. `run_clangcl_debug.ps1:203-206` does
+  `$ranFuzzExecutable = Invoke-ManualTestExecutable ...; if (-not
+  $ranFuzzExecutable) { throw ... }` — and `-not` on a non-empty array is
+  `$false`, so **the "did not start successfully" throw is unreachable on
+  exactly the path it was written for** (the Windows loader/runtime mismatch
+  exit codes `-1073741511` / `-1073741515`). A fuzz executable that cannot start
+  reads as a clean run.
+- `WindowsClang.Common.psm1:59` — the module-TU skip is
+  `if ($content -match '^import\s+kataglyphis')` over `Get-Content -Raw`.
+  PowerShell's `-match` is .NET `Regex` with default options, so `^` anchors at
+  the **start of the whole string**, not at each line. Every module
+  implementation unit in this repo opens with `module;` and reaches
+  `import kataglyphis...` only after the global-fragment includes and the
+  `module kataglyphis...;` declaration. Measured this pass: 33 of the 45 `.cpp`
+  files under `Src/` contain `import kataglyphis` at line start, and exactly
+  **one** (`Src/GraphicsEngineVulkan/Main.cpp`) has it on line 1. So the skip
+  fires for 1 file and hands the other 32 module TUs to clang-tidy — the thing
+  AGENTS.md describes this module as existing to prevent
+  ("hard-codes the `Src` root and the `import kataglyphis` module-TU skip").
+
+**Second, the always-on Linux lane runs four of the six registered fuzz
+targets, and the two it skips are the two that touch real engine surface.**
+`Test/fuzz/CMakeLists.txt` registers six via `kataglyphis_add_fuzz_test`:
+`first_fuzz_test` (`:106`), `example_fuzz_test` (`:107`),
+`obj_parsing_fuzz_test` (`:109`), `gltf_parsing_fuzz_test` (`:116`),
+`scene_config_fuzz_test` (`:133`), `shader_file_reader_fuzz_test` (`:160`),
+`texture_loading_fuzz_test` (`:166`). Both CI lanes hand-list a subset, and the
+two lists disagree with each other and with the CMake file:
+
+| target | `Linux.yml:139-146` | `Windows.yml:240` |
+| --- | --- | --- |
+| `first_fuzz_test` | yes | no |
+| `example_fuzz_test` | no | no |
+| `obj_parsing_fuzz_test` | yes | yes |
+| `gltf_parsing_fuzz_test` | yes | yes |
+| `scene_config_fuzz_test` | yes | yes |
+| `shader_file_reader_fuzz_test` | **no** | yes |
+| `texture_loading_fuzz_test` | **no** | yes |
+
+The asymmetry matters because the lanes are not equal: `Linux_x86.yml` runs on
+every push/PR, while `Windows.yml` is opt-in per commit via `[build-win]`. So
+the two targets that only Windows runs get a signal on a minority of commits —
+and `Windows.yml:224-226` records that *"the shader-file reader target found a
+real terminate-on-throw bug from a seed on its first run"*. `example_fuzz_test`
+runs on neither lane. Windows at least fails loudly on a missing binary
+(`Windows.yml:242`); the Linux step has no such check and no gate ties either
+list to `Test/fuzz/CMakeLists.txt`, so target #7 will be born unrun and nothing
+will say so. This repo has already single-sourced two hand-maintained lists for
+exactly this reason (the Slang shader manifest, the perf-baseline/benchmark gate
+in `14faba9e`); the fuzz lists are the next one.
+
+**Third, `Texture::createTextureSampler` is the fourth member of the
+`create()`-releases-previous family and the only one that still leaks.**
+`Texture.cpp:242-262` overwrites `textureSampler` with a freshly created
+`vk::Sampler` and never destroys the previous one, while `VulkanBuffer::create`,
+`VulkanImage::create` (`ef9a8a4d`), `VulkanImageView::create` (`e9ecb576`) and
+`DescriptorSetGroup::create` (`fe384d1a`) were all given release-previous
+semantics in the last two days, each pinned by a text-order gate in
+`buildIntegritySuite.cpp` (`ResourceCreateReleasesThePreviousAllocation:1048`,
+`DescriptorSetGroupCreateReleasesThePreviousAllocation:1087`). Be honest about
+the impact: this is **latent, not live**. All three current callers
+(`Clouds.cpp:37`, `CascadedShadowMap.cpp:73`, `SkyBox.cpp:194`) reach it through
+a freshly `make_unique<Texture>()`, including on the re-provisioning paths
+(`Clouds::recreateFrameResources:164` replaces the `unique_ptr`;
+`CascadedShadowMap::init` rebuilds `shadowMapArray`). The value is closing the
+family — `Texture` already has the matching `releaseImageView()` (`:264`), so
+the asymmetry is one missing three-line helper — and the gate that stops it
+being reintroduced.
+
+Ordering: the five tasks are disjoint. Tasks 1, 2 and 5 each touch one
+PowerShell file plus one new Pester suite; task 3 touches `Linux.yml`,
+`Windows.yml` and `buildIntegritySuite.cpp`; task 4 touches `Texture.cpp`,
+`Texture.ixx` and `buildIntegritySuite.cpp`. Task 4 edits a module interface
+(`Texture.ixx`) and therefore needs `-FreshContainer`; nothing else here does.
+
+- [ ] **(S) Make the clang-tidy module-TU skip actually match, and give `WindowsClang.Common` its first Pester suite** — `^import\s+kataglyphis` anchors at the start of the file, so 32 of the 33 module translation units it exists to exclude are handed to clang-tidy anyway.
+
+  **Files to read:**
+  - `Scripts/Windows/modules/WindowsClang.Common.psm1:53-65` — the file filter; `:59` is the regex.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1-20` and `Src/GraphicsEngineVulkan/Main.cpp:1` — the two shapes: `module;` first (32 files, currently NOT skipped) versus `import kataglyphis` on line 1 (1 file, skipped).
+  - `docs/code-quality.md` — states the clang-tidy cadence and that it never runs in the container build; update it if it describes the skip.
+  - `Scripts/Windows/tests/WindowsCMake.Common.Tests.ps1` — Pester 3.4 style for a module test that reads real repo files.
+
+  **Steps:**
+  1. Extract the predicate into an exported function so it is testable on its own — `Test-IsCxxModuleTranslationUnit` taking `[string]$Content` (and optionally `-Path`, reading with `Get-Content -Raw`). Add it to `Export-ModuleMember` alongside `Invoke-ClangTidyFixStep`.
+  2. Implement it as `$Content -match '(?m)^\s*import\s+kataglyphis'`. `(?m)` is the fix; `\s*` tolerates indentation. Do not switch to `Select-String`/line splitting — a single multiline regex over the `-Raw` content is the cheapest correct form and keeps the one-call shape.
+  3. Rewrite the loop at `:57-64` to call the new function. Keep the `Write-BuildLog` "uses C++20 module syntax" message and keep `-ErrorAction SilentlyContinue` on the read.
+  4. Add `Scripts/Windows/tests/WindowsClang.Common.Tests.ps1`, resolving the module through `Resolve-BuildModulePath 'WindowsClang.Common'`.
+  5. Unit-cover the predicate: a `module;`-first body with `import kataglyphis.vulkan.device;` on a later line is `$true`; `import kataglyphis` on line 1 is `$true`; a plain `#include`-only TU is `$false`; a file whose only mention is inside a comment such as `// import kataglyphis...` at column 0 — decide and pin the behaviour (a leading `//` means `^\s*import` does not match, which is the wanted answer).
+  6. Add one repo-level case that would have caught this: run the predicate over `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` and assert `$true`. Anchor on that one file, not on a count of 33 — the count moves with every new TU.
+
+  **Test:** the new `Scripts/Windows/tests/WindowsClang.Common.Tests.ps1`, with the repo-level case named for the contract, e.g. `It 'detects a module TU whose import is not on the first line'`.
+
+  **Build:** none — Pester only, same command as the task above.
+
+  **Context:** clang-tidy is not run by the container build (`docs/code-quality.md`), so nothing has been failing; this is about the manual/local `Invoke-ClangTidyFixStep` path doing what its own comment claims. Note the size of the behaviour change: after the fix clang-tidy sees ~12 files under `Src` instead of 45. That is the intent — AGENTS.md documents this module as owning "the `import kataglyphis` module-TU skip". If the smaller run surfaces new diagnostics on the remaining non-module TUs, record them in `BACKLOG.md`; do not widen the skip to silence them.
+
+- [ ] **(M) Run every registered fuzz target on the always-on Linux lane, and gate both CI lists against `Test/fuzz/CMakeLists.txt`** — `shader_file_reader_fuzz_test` and `texture_loading_fuzz_test` run only on the opt-in Windows lane, and nothing notices when a new target is added to neither.
+
+  **Files to read:**
+  - `Test/fuzz/CMakeLists.txt:106-170` — the seven `kataglyphis_add_fuzz_test(<target> <source>)` calls (six distinct engine targets plus `first_fuzz_test` from `dummy.cpp`), and the comment at `:96-103` explaining why they are deliberately NOT `gtest_discover_tests`'d (so ctest can never be the gate).
+  - `.github/workflows/Linux.yml:129-147` — the "Run fuzzer tests" step, four hand-written paths under `build-asan-clang/`, plus the ASan-ODR history that dictates the build directory.
+  - `.github/workflows/Windows.yml:222-247` — the five-name `foreach` with its `Test-Path`/`exit 1` existence check; copy that shape, not the bare-path shape.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1-130` — `find_repo_root()` / `read_file_text()` and the manifest-vs-filesystem gates to model the new test on.
+
+  **Steps:**
+  1. Add `shader_file_reader_fuzz_test` and `texture_loading_fuzz_test` to `Linux.yml`'s fuzzer step, and `first_fuzz_test` + `example_fuzz_test` to `Windows.yml`'s `foreach` list, so both lanes run all seven registered targets. Give the Linux step the same missing-binary check Windows has (`test -x "build-asan-clang/$t" || { echo "missing $t"; exit 1; }` in a `for` loop) rather than leaving bare paths.
+  2. Add `TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)` to `buildIntegritySuite.cpp`. Parse `Test/fuzz/CMakeLists.txt` for every `kataglyphis_add_fuzz_test(` call and take the first whitespace-delimited argument as the target name — skip the `function(kataglyphis_add_fuzz_test ...)` definition line itself (`:53`), which is why matching on the literal `kataglyphis_add_fuzz_test(` plus "not preceded by `function`" matters.
+  3. For each target, assert the name appears as a whole word in both `.github/workflows/Linux.yml` and `.github/workflows/Windows.yml`. Include an explicit, initially empty, `kNotRunInCi` set of `{target, reason}` pairs in the test; a target may only be absent from a lane if it is listed there, and the failure message must say so.
+  4. Report every offender in one message (accumulate into a vector, then one `EXPECT_TRUE(missing.empty()) << ...`), matching how the other list gates in this file report.
+  5. Build `clangcl-debug` in the container and run `commitTestSuite.exe --gtest_filter=BuildIntegrity.*` from the repo root; the test is pure filesystem and passes without a GPU.
+
+  **Test:** `BuildIntegrity.EveryRegisteredFuzzTargetRunsInCi`. Verify it actually bites: temporarily delete one target name from `Linux.yml`, confirm the test fails and names it, restore.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*` from the repo root.
+
+  **Context:** `Linux_x86.yml` runs on every push; `Windows.yml` only on `[build-win]` (see AGENTS.md "What CI runs"). That is why moving these two targets onto the Linux lane is the substance of the task and the gate is the part that keeps it true.
+  **Expect the two newly-added Linux targets to be the risky part**, and do not paper over it: both link `VulkanEngineCore` (`Test/fuzz/CMakeLists.txt:161`, `:167`) and `texture_loading_fuzz_test` additionally pulls ImGui sources (`:170`) — the same headless-global-constructor hazard that the `scene_config_fuzz_test` comment at `:119-132` describes taking a fuzzer down at static-init time. If either fails or crashes on the Linux lane, that is a genuine finding: record the symptom in `BACKLOG.md`, add the target to `kNotRunInCi` with the reason, and leave the gate in place — do not delete the gate or silently shrink the list.
+
+- [ ] **(S) (refactor) Give `Texture::createTextureSampler` release-previous semantics — the fourth member of a family whose other three shipped this week** — it overwrites `textureSampler` and leaks the old `vk::Sampler`, while `Texture` already has the matching `releaseImageView()` next to it.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:242-262` (`createTextureSampler`), `:264` (`releaseImageView`, the helper to mirror), `:266-275` (`cleanUp`, which already destroys the sampler under an `if (textureSampler && device)` guard — reuse that exact guard).
+  - `Src/GraphicsEngineVulkan/scene/Texture.ixx` — where to declare the new helper.
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanImageView.cpp` — the shape the other three members took (`cleanUp()` as the literal first statement of `create()`).
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1040-1080` — `ResourceCreateReleasesThePreviousAllocation`, its `Target` struct and the `first_statement_of_function` helper it uses.
+
+  **Steps:**
+  1. Add `void Texture::releaseSampler()` next to `releaseImageView()`: destroy `textureSampler` when both it and `device` are non-null, then null it. Declare it in `Texture.ixx` in the same access section as `releaseImageView`.
+  2. Make `releaseSampler();` the **literal first statement** of `createTextureSampler`'s body — before `this->device = in_device;`, so the release uses the device that created the old sampler, not the incoming one. Add a one-line comment saying that is why the order matters.
+  3. Replace the sampler-destroying block inside `cleanUp()` with a call to `releaseSampler()` so there is one definition; leave the rest of `cleanUp()` alone.
+  4. Extend the gate. `ResourceCreateReleasesThePreviousAllocation` currently hard-codes the expected first statement as `"cleanUp();"` for all three targets — add an `expected_first_statement` field to its `Target` struct, keep `"cleanUp();"` for the existing three, and add `Target{ scene_dir / "Texture.cpp", "Kataglyphis::Texture::createTextureSampler", "releaseSampler();" }`. Update the test's leading comment to say the family is now four.
+  5. Build `clangcl-debug` with `-FreshContainer` (a module interface changed) and run the full `commitTestSuite.exe`.
+
+  **Test:** the extended `BuildIntegrity.ResourceCreateReleasesThePreviousAllocation`. Confirm it bites by temporarily moving `releaseSampler();` below the `this->device = in_device;` line and checking the test fails.
+
+  **Build:** `clangcl-debug`, **with `-FreshContainer`**:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root.
+
+  **Context:** Honest framing for the commit message: no caller reaches this twice today (`Clouds.cpp:37`, `CascadedShadowMap.cpp:73`, `SkyBox.cpp:194` all construct a fresh `Texture`, including on the re-provisioning paths), so this closes a latent leak and an inconsistency, not an observed one. The reason it is worth doing is the family: `ef9a8a4d`, `e9ecb576` and `fe384d1a` made "create() releases what it is about to overwrite" a rule with a gate behind it, and one member silently not following the rule is how the rule stops being one.
+
+- [ ] **(S) Give `Resolve-BuildModule.ps1` a Pester suite, and fix `Import-BuildModule`'s repair guard** — every Windows script and every Pester suite in this repo resolves its modules through this file, AGENTS.md says it is the one thing that cannot move upstream, and it has no test; its `WindowsScripts.Shared` re-import fires on the one condition where it is least needed.
+
+  **Files to read:**
+  - `Scripts/Windows/Resolve-BuildModule.ps1` — `Resolve-BuildModulePath` (`:15-41`) and `Import-BuildModule` (`:43-60`); the guard is `:58`.
+  - `Scripts/Windows/run_clangcl_debug.ps1:29` — `Import-BuildModule @('WindowsBuild.Common', 'WindowsAppRunner.Common', 'WindowsTesting.Common')`: imports `WindowsBuild.Common`, does not list `WindowsScripts.Shared`, and therefore skips the repair.
+  - `Scripts/Windows/tests/WindowsWebDav.Common.Tests.ps1:4` — the one call site that does list `WindowsScripts.Shared`, i.e. the only place the repair currently runs.
+  - AGENTS.md § "PowerShell module resolution (ContainerHub first, vendored fallback)" — the contract the suite should pin.
+
+  **Steps:**
+  1. Read `Import-BuildModule`'s own comment (`:53-57`): the hazard is that ContainerHub's `WindowsBuild.Common` force-imports `WindowsScripts.Shared` internally and can shadow the global copy. That happens whenever `WindowsBuild.Common` is imported — but the repair is gated on `$Name` *containing* `WindowsScripts.Shared`, which is the case where the caller was going to import it anyway. Invert it: always re-import `WindowsScripts.Shared` last (it resolves and is cheap), or gate on the batch containing a module known to nest-import it. Prefer the unconditional form and say why in the comment.
+  2. Add `Scripts/Windows/tests/Resolve-BuildModule.Tests.ps1` (Pester 3.4 syntax, dot-source the script under test — it is a plain `.ps1`, not a module, so `Import-BuildModule`/`InModuleScope` do not apply).
+  3. Pin the preference order: `Resolve-BuildModulePath 'WindowsScripts.Shared'` must return a path under `ExternalLib\Kataglyphis-ContainerHub\windows\scripts\modules`, and `Resolve-BuildModulePath 'WindowsTesting.Common'` must return one under `Scripts\Windows\modules` — those are the two live examples of "upstream wins" and "vendored fallback" as the tree stands today.
+  4. Pin the failure mode: `{ Resolve-BuildModulePath -Name 'NoSuchModule' } | Should Throw`, and assert the message names both searched locations (the current message does; keep it that way).
+  5. Pin the vendored directory's contents against AGENTS.md's claim: assert `Scripts\Windows\modules` contains exactly `WindowsClang.Common.psm1` and `WindowsTesting.Common.psm1`. That turns "everything else was upstreamed on 2026-08-02" into a checked statement, and fails loudly if a module is re-vendored without a decision.
+  6. Pin the repair from step 1: after `Import-BuildModule @('WindowsBuild.Common')`, `Get-Command Resolve-WorkspacePath -ErrorAction SilentlyContinue` must be non-null — i.e. `WindowsScripts.Shared`'s exports are reachable even though the caller never named it.
+
+  **Test:** the new `Scripts/Windows/tests/Resolve-BuildModule.Tests.ps1`.
+
+  **Build:** none — Pester only, same command as tasks 1 and 2. Run the whole `Scripts/Windows/tests` directory: this suite imports modules globally and the ordering interaction with the other suites is part of what it is pinning.
+
+  **Context:** This is the bootstrap that finds ContainerHub, so it is the single point where the whole upstream-first arrangement can break silently — a renamed upstream module, a re-vendored copy, or a submodule that was not initialised all surface here first. Step 5 is the cheap half and the one most likely to catch a future drift; do not skip it because it looks like a tautology today.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **a whole-tree sweep for dead public accessors** — ran it
+this pass over every `get*`/`is*`/`has*`/`supports*` declared in a `.ixx` and it
+came back clean; the ten with only two references each have exactly one real
+call site (`graphicsFamilySupportsCompute` → `Clouds.cpp:102`, `getCascadeData`
+→ `VulkanRenderer.cpp:217`, `getVertexCount` → `ASManager.cpp:530`, and so on).
+Stop re-checking this. **`VulkanDevice` creates a device queue on
+`compute_family` that it never retrieves** (`VulkanDevice.cpp:287-307` builds
+the queue set from three families; `:557-558` fetches only graphics and
+presentation) — real, but harmless: the Vulkan spec guarantees a
+graphics+compute family exists, so `compute_family` always equals
+`graphics_family` on any device that gets this far, and removing it changes
+`vkCreateDevice` on a path no CPU test reaches while host GPU verification is
+blocked. Revisit together with the RDP blocker. **`Scene`'s destructor undoes
+`App::run()`'s device-lost guard** — `App.cpp:69-75` deliberately skips
+`scene->cleanUp()` when the device is lost, but `scene` is declared *before*
+`vulkan_renderer` (`App.cpp:37-45`), so `~Scene()` (`Scene.cpp:210`) runs its
+`cleanUp()` after `VulkanRenderer::cleanUp()` has already destroyed the VMA
+allocator and the logical device. Only benign because the leaf `cleanUp()`s are
+idempotent and the normal path cleans first. Not tasked because it is owned by
+the `- [b]` **Renderer-level RAII cleanup consolidation** entry at the top of
+this file and blocked on the same thing: device loss cannot be induced here, so
+the fix is untestable. Record it there if that entry is ever unblocked.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
