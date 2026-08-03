@@ -1,6 +1,7 @@
 module;
 #include <optional>
 #include "common/GuiModelTransform.hpp"
+#include "common/LightDirection.hpp"
 #include "common/Utilities.hpp"
 #include "common/host_device_shared_vars.hpp"
 #include "renderer/PathTracingHistory.hpp"
@@ -176,10 +177,10 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
 
     sceneUBO.view_dir = glm::vec4(camera_data->get_camera_direction().x, camera_data->get_camera_direction().y, camera_data->get_camera_direction().z, 1.0F);
 
-    sceneUBO.dirLight.direction = glm::vec4(guiSceneSharedVars.directional_light_direction[0],
+    const glm::vec3 dirLightDirection = normalizedLightDirection(glm::vec3(guiSceneSharedVars.directional_light_direction[0],
       guiSceneSharedVars.directional_light_direction[1],
-      guiSceneSharedVars.directional_light_direction[2],
-      1.0F);
+      guiSceneSharedVars.directional_light_direction[2]));
+    sceneUBO.dirLight.direction = glm::vec4(dirLightDirection, 1.0F);
 
     sceneUBO.dirLight.color = glm::vec4(guiSceneSharedVars.directional_light_color[0],
       guiSceneSharedVars.directional_light_color[1],

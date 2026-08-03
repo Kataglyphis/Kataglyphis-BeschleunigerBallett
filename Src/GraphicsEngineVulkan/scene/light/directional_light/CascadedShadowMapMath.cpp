@@ -9,6 +9,8 @@ module;
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/ext/matrix_clip_space.hpp>
 
+#include "common/LightDirection.hpp"
+
 module kataglyphis.vulkan.cascaded_shadow_map;
 
 // Split into its own implementation unit (of the SAME module as
@@ -180,9 +182,7 @@ void computeCascadeDataInto(std::span<CascadeData> out,
             radius = std::max(radius, glm::length(glm::vec3(v) - center));
         }
 
-        glm::vec3 light_direction = lightDir;
-        if (glm::length(light_direction) < 1e-6F) { light_direction = glm::vec3(0.0F, -1.0F, 0.0F); }
-        light_direction = glm::normalize(light_direction);
+        const glm::vec3 light_direction = normalizedLightDirection(lightDir);
         const glm::vec3 up_axis =
           (std::abs(light_direction.y) > 0.99F) ? glm::vec3(0.0F, 0.0F, 1.0F) : glm::vec3(0.0F, 1.0F, 0.0F);
 

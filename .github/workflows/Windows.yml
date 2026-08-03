@@ -263,6 +263,7 @@ jobs:
               'CameraSceneConfigUnit.*'
               'GuiModelTransformUnit.*'
               'PathTracingHistoryUnit.*'
+              'LightDirectionUnit.*'
             ) -join ':'
             & 'C:\ws\build-clangcl-debug\commitTestSuite.exe' --gtest_filter="$cpuOnlySuites"
             exit $LASTEXITCODE
