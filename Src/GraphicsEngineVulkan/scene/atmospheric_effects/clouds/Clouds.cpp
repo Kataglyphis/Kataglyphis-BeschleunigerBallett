@@ -26,7 +26,7 @@ void Clouds::init(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPo
     createTextures(commandPool);
     createDescriptorSets();
     createComputePipelines(sharedLayout);
-    dispatchNoiseGeneration();
+    dispatchNoiseGeneration(commandPool);
 }
 
 std::unique_ptr<Kataglyphis::Texture> Clouds::createStorageTexture(vk::CommandPool commandPool, uint32_t w, uint32_t h, uint32_t depth, vk::ImageType type, vk::ImageViewType viewType)
@@ -94,30 +94,20 @@ void Clouds::createComputePipelines(vk::DescriptorSetLayout sharedLayout)
     noiseComputePipeline = noiseHandles.pipeline;
 }
 
-void Clouds::dispatchNoiseGeneration()
+void Clouds::dispatchNoiseGeneration(vk::CommandPool commandPool)
 {
-    // Dispatch to fill the 3D texture
-    auto queueFamilies = device->getQueueFamilies();
-    if (queueFamilies.compute_family < 0) {
-        spdlog::warn("No compute queue family available, skipping noise generation dispatch");
+    // Dispatch to fill the 3D texture. The noise volume is created,
+    // transitioned, written and sampled entirely on the graphics family, so
+    // the eExclusive image never needs a queue-family ownership transfer.
+    if (!device->graphicsFamilySupportsCompute()) {
+        spdlog::warn("Graphics queue family does not support compute; skipping noise generation dispatch "
+                     "(cloud noise volume will render as uniform haze).");
         return;
     }
-
-    vk::CommandPool commandPool;
-    vk::CommandPoolCreateInfo poolInfo{};
-    poolInfo.queueFamilyIndex = static_cast<uint32_t>(queueFamilies.compute_family);
-    poolInfo.flags = vk::CommandPoolCreateFlagBits::eTransient;
-    auto poolRes = device->getLogicalDevice().createCommandPool(poolInfo);
-    if (poolRes.result != vk::Result::eSuccess) {
-        spdlog::error("Failed to create command pool for noise generation");
-        return;
-    }
-    commandPool = poolRes.value;
 
     vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);
     if (!commandBuffer) {
         spdlog::error("Clouds::dispatchNoiseGeneration: failed to begin command buffer, skipping noise generation.");
-        device->getLogicalDevice().destroyCommandPool(commandPool);
         return;
     }
 
@@ -130,9 +120,7 @@ void Clouds::dispatchNoiseGeneration()
       kNoiseVolumeExtent / kNoiseWorkgroupSize,
       kNoiseVolumeExtent / kNoiseWorkgroupSize);
 
-    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getComputeQueue(), commandBuffer);
-
-    device->getLogicalDevice().destroyCommandPool(commandPool);
+    Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer);
 }
 
 void Clouds::shaderHotReload(vk::DescriptorSetLayout sharedLayout)

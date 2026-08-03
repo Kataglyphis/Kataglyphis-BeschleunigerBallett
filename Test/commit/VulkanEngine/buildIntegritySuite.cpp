@@ -3481,6 +3481,42 @@ TEST(BuildIntegrity, CloudDispatchGridsMatchTheShaderWorkgroupSizes)
                                        << (*cloud_threads)[1] << ", " << (*cloud_threads)[2] << ")] Z is not 1";
 }
 
+// The cloud noise volume used to be written on a dedicated compute queue
+// while the eExclusive storage image it lives in is owned by the graphics
+// family - undefined contents on the family that samples it, with no
+// ownership transfer performed. Guards against the ad-hoc compute command
+// pool / queue reappearing, and against VulkanDevice growing back a
+// getComputeQueue() accessor that would tempt a caller into the same bug.
+TEST(BuildIntegrity, CloudResourcesAreProducedAndConsumedOnOneQueue)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path clouds_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "atmospheric_effects"
+                                  / "clouds" / "Clouds.cpp";
+    std::ifstream clouds_file(clouds_path);
+    ASSERT_TRUE(clouds_file) << "missing " << clouds_path.string();
+    std::string const clouds_source((std::istreambuf_iterator<char>(clouds_file)), std::istreambuf_iterator<char>());
+
+    EXPECT_EQ(clouds_source.find("getComputeQueue"), std::string::npos)
+      << "Clouds.cpp must dispatch noise generation on the graphics queue that owns the eExclusive noise image, "
+         "not a separate compute queue";
+    EXPECT_EQ(clouds_source.find("createCommandPool"), std::string::npos)
+      << "Clouds.cpp must reuse the graphics command pool passed into init(), not create its own transient pool "
+         "for a different queue family";
+
+    const fs::path device_header_path =
+      repo_root / "Src" / "GraphicsEngineVulkan" / "vulkan_base" / "VulkanDevice.ixx";
+    std::ifstream device_header_file(device_header_path);
+    ASSERT_TRUE(device_header_file) << "missing " << device_header_path.string();
+    std::string const device_header_source(
+      (std::istreambuf_iterator<char>(device_header_file)), std::istreambuf_iterator<char>());
+
+    EXPECT_EQ(device_header_source.find("getComputeQueue"), std::string::npos)
+      << "VulkanDevice must not expose getComputeQueue() - the only caller (Clouds.cpp) now dispatches on the "
+         "graphics queue instead";
+}
+
 // clouds.slang used to multiply density by the distance already travelled
 // along the ray (`float(i) / float(num_march_steps)`) instead of a per-step
 // LENGTH, making the volume ~63x too dense at the default quality and turning

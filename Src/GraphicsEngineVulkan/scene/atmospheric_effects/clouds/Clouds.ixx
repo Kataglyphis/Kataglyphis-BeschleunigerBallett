@@ -56,7 +56,7 @@ class Clouds
     void createTextures(vk::CommandPool commandPool);
     void createDescriptorSets();
     void createComputePipelines(vk::DescriptorSetLayout sharedLayout);
-    void dispatchNoiseGeneration(); // Run once during init
+    void dispatchNoiseGeneration(vk::CommandPool commandPool); // Run once during init
 
     std::unique_ptr<Kataglyphis::Texture> createStorageTexture(vk::CommandPool commandPool, uint32_t w, uint32_t h, uint32_t depth, vk::ImageType type, vk::ImageViewType viewType);
 };

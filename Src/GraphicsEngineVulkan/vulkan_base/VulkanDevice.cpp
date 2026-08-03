@@ -277,6 +277,8 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         if (indices.graphics_family >= 0 && static_cast<size_t>(indices.graphics_family) < queue_family_props.size()) {
             graphics_queue_timestamp_valid_bits =
               queue_family_props[static_cast<size_t>(indices.graphics_family)].timestampValidBits;
+            graphics_family_supports_compute = static_cast<bool>(
+              queue_family_props[static_cast<size_t>(indices.graphics_family)].queueFlags & vk::QueueFlagBits::eCompute);
         }
     }
 
@@ -554,7 +556,6 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     // since only one queue), place reference in given vk::Queue
     graphics_queue = logical_device.getQueue(static_cast<uint32_t>(indices.graphics_family), 0);
     presentation_queue = logical_device.getQueue(static_cast<uint32_t>(indices.presentation_family), 0);
-    compute_queue = logical_device.getQueue(static_cast<uint32_t>(indices.compute_family), 0);
 
     // Central VMA allocator for all buffer/image memory. Only request the
     // buffer-device-address capability when the feature was actually enabled

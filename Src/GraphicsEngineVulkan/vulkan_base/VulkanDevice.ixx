@@ -21,8 +21,11 @@ class VulkanDevice
     vk::Device getLogicalDevice() const { return logical_device; };
     Kataglyphis::VulkanRendererInternals::QueueFamilyIndices getQueueFamilies();
     vk::Queue getGraphicsQueue() const { return graphics_queue; };
-    vk::Queue getComputeQueue() const { return compute_queue; };
     vk::Queue getPresentationQueue() const { return presentation_queue; };
+    // Whether the graphics queue family also exposes eCompute - lets a caller
+    // that only has a graphics command pool/queue know if it can dispatch
+    // compute work there instead of needing a dedicated compute queue.
+    bool graphicsFamilySupportsCompute() const { return graphics_family_supports_compute; };
     Kataglyphis::VulkanRendererInternals::SwapChainDetails getSwapchainDetails();
     bool supportsHardwareAcceleratedRRT() const { return deviceSupportsHardwareAcceleratedRRT; };
     bool supportsBufferDeviceAddress() const { return deviceSupportsBufferDeviceAddress; };
@@ -67,7 +70,7 @@ class VulkanDevice
 
     vk::Queue graphics_queue{};
     vk::Queue presentation_queue{};
-    vk::Queue compute_queue{};
+    bool graphics_family_supports_compute = false;
     bool deviceSupportsHardwareAcceleratedRRT = true;
     bool deviceSupportsBufferDeviceAddress = false;
     bool deviceSupportsDepthClamp = false;
