@@ -5638,3 +5638,46 @@ TEST(BuildIntegrity, ImageMemoryBarriersGoThroughTheSharedHelper)
              return joined;
          }();
 }
+
+// docs/cpp-renderer-improvements.md's "In progress" section once asked for
+// the redundant same-layout swapchain barrier removal as still outstanding
+// after the removal had already shipped (2026-07-19) - the doc contradicted
+// the source it describes. Follows NoGeneratedWgslSourceClaimsToMirrorItsOutput's
+// structure: read both files, assert the contradiction cannot coexist, and
+// name both sides in the failure message.
+TEST(BuildIntegrity, RendererImprovementLogDoesNotAskForShippedWork)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path doc_path = repo_root / "docs" / "cpp-renderer-improvements.md";
+    const fs::path renderer_path = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
+
+    std::ifstream doc_file(doc_path);
+    ASSERT_TRUE(static_cast<bool>(doc_file)) << "could not open " << doc_path.string();
+    const std::string doc_content((std::istreambuf_iterator<char>(doc_file)), std::istreambuf_iterator<char>());
+
+    std::ifstream renderer_file(renderer_path);
+    ASSERT_TRUE(static_cast<bool>(renderer_file)) << "could not open " << renderer_path.string();
+    const std::string renderer_content(
+      (std::istreambuf_iterator<char>(renderer_file)), std::istreambuf_iterator<char>());
+
+    const bool renderer_records_the_removal = renderer_content.find("used to sit here") != std::string::npos;
+    const bool doc_still_asks_for_the_removal = doc_content.find("remove only after a sync-validation") != std::string::npos;
+
+    EXPECT_FALSE(renderer_records_the_removal && doc_still_asks_for_the_removal)
+      << doc_path.string() << " still asks for the same-layout swapchain barrier to be removed "
+         "(\"remove only after a sync-validation\"), but " << renderer_path.string()
+      << " already records the removal (\"used to sit here\") - the doc is asking for shipped work.";
+
+    const std::string in_progress_marker = "## In progress";
+    const auto in_progress_pos = doc_content.find(in_progress_marker);
+    ASSERT_NE(in_progress_pos, std::string::npos) << doc_path.string() << " is missing its \"## In progress\" section";
+    const auto queued_pos = doc_content.find("## Queued", in_progress_pos);
+    ASSERT_NE(queued_pos, std::string::npos) << doc_path.string() << " is missing its \"## Queued\" section";
+    const std::string in_progress_section = doc_content.substr(in_progress_pos, queued_pos - in_progress_pos);
+
+    EXPECT_EQ(in_progress_section.find("sync-validated barrier removal"), std::string::npos)
+      << doc_path.string() << "'s \"## In progress\" section still lists \"sync-validated barrier removal\" as "
+         "remaining queue, but " << renderer_path.string() << " already records the removal (\"used to sit here\").";
+}

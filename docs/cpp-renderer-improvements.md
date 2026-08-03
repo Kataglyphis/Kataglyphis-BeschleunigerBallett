@@ -59,9 +59,24 @@ validation-layer-clean runtime check where rendering changed.
 | `fba308d7` + `deb7f009` | **Loaders' `MeshRange` slice dedup (was queued #7)** | The two byte-identical loader-local `MeshRange` structs and per-range slice loops (indices re-based by `-vertexBase`, per-range material subset) now live once in module `kataglyphis.vulkan.mesh_range` (`Src/GraphicsEngineVulkan/scene/MeshRange.ixx`) exporting `sliceMeshRange`; both loaders' `uploadParsed` call it. Unit suite `meshRangeSliceSuite.cpp` pins the re-basing arithmetic |
 | (refactor) | **`buildAttachmentDescription` - render-pass attachment dedup** | Eight hand-written `vk::AttachmentDescription` field lists across five files (Rasterizer x2, DeferredRasterizer's local `createAttachmentDesc` lambda, PostStage x2, SkyBox x2, CascadedShadowMap x1) collapsed into one `constexpr` helper in `common/RenderPassHelper.hpp`, following the same shape as `ViewportHelper.hpp`/`SamplerBuilder`. Three fields are identical in EVERY pass and are now baked in - `samples = e1` and both stencil ops `eDontCare` (no pass touches a stencil aspect, even when `chooseDepthFormat` returns `eD32SfloatS8Uint`); the five the passes genuinely disagree on stay parameters defaulting to the majority variant (clear/store/from-eUndefined). PostStage's colour attachment is the sole site overriding all three. Configurations preserved field-for-field; -87/+53 at the call sites. `renderPassHelperSuite.cpp` (8 tests) re-creates every call site and pins it field-by-field with no device, so a dropped stencil op or a flipped load op fails on CPU - the class of defect no pixel oracle sees. 235/235 CPU tests (was 227), `BuildIntegrity` 20/20 |
 
+### 2026-08-02 → 2026-08-03
+
+| Commits | Theme | Notes |
+| --- | --- | --- |
+| `876a151f`, `c743d99d`, `4f799788`, `ed9a1fd2`, `c041b756`, `3f05964c`, `51a404d0`, `07024edf` | **Create-info builder family** | Following `buildAttachmentDescription`'s shape, one shared definition each for `vk::RenderPassCreateInfo`, `vk::PipelineLayoutCreateInfo`, `vk::FramebufferCreateInfo`, `vk::ImageViewCreateInfo`, `vk::RenderPassBeginInfo`, `vk::SubpassDescription`, compute-pipeline creation, and framebuffer teardown - each collapsing several hand-rolled call sites into one helper with a `BuildIntegrity` gate against regressions. |
+| `ef9a8a4d`, `e9ecb576`, `fe384d1a`, `23ace7d9` | **Resource-ownership hardening** | `VulkanBuffer::create()`/`VulkanImage::create()` now release the previous allocation before taking a new one; `VulkanImageView::create()` releases its previous view before its image; `DescriptorSetGroup::create` refuses a duplicate binding and releases its previous layout/pool; its single-descriptor writers refuse an array binding. |
+| `e1f1dd30`, `ad9e3921`, `f9383a3b`, `f5e43cac` | **`ibl.slang` port regressions and their restorations** | The Slang port of the IBL pipeline had dropped `fs_downsample_cube`/equirect `textureLoad`, roughness-driven GGX importance sampling in `fs_prefilter`/`fs_brdf_lut`, the forward pass's analytic ambient specular and IBL strength controls, and `fs_irradiance`'s midpoint quadrature (128x64 steps, mip-0 sampling); all four restored. |
+| `0b009d89`, `c00c2212`, `f5371b87`, `3673f5a7` | **Shader hot reload completed across all eight SPIR-V subsystems** | `deferredRasterizer.shaderHotReload` wired into `VulkanRenderer` and gated against call sites; shadow/sky/cloud subsystems gained a `shaderHotReload`; `PostStage`/`Rasterizer`/`Raytracing`/`PathTracing` now destroy the pipeline layout on reload; the ray-tracing SBT rebuilds after a reload. |
+| `1da7c1f3`, `dca11022`, `c7b66fa5`, `22d0253c` | **Model-loading dedup and correctness** | Shared textures deduplicated across the glTF and OBJ loaders; `Model` texture samplers deduplicated by mip level; the glTF loader now walks only the default scene; both loaders' `uploadParsed` tail unified into one definition, forwarding `MeshRange::doubleSided` from OBJ. |
+| `0c62dfe9`, `95ae08f3`, `090ab81f`, `a15a4f73`, `d2042fa0`, `85a2191d` | **Cascade/shadow fixes** | The cascade light-matrix UBO is double-buffered per swapchain image; the stabilized cascade box snaps to the grid it actually projects onto; the PCF kernel stops sampling past the shadow map's edge; the cascade framebuffer attachment has one image view; the shadow pass binds light matrices at set 1 on the no-shared-set fallback; `CascadedShadowMap` no longer stages its light matrices through a throwaway command pool. |
+| `c37394b4`, `4c5f0294`, `13773702`, `49e1f5d4` | **Input and GUI** | Key/mouse-button RELEASE is honoured under ImGui capture, with real focus/enter callbacks; look mode ends and the mouse origin re-seeds on window focus loss; the GUI model transform is a pure helper (dropping a stale 60x scale); the GUI model picker's default index no longer leaves Position/Rotation controls dead. |
+
 ## In progress
 
-(nothing — remaining queue: stage/renderer-level RAII, sync-validated barrier removal)
+(nothing left that is actionable here — the only remaining item is
+renderer-level RAII, which is `- [b]` in `BACKLOG.md` (blocked on a way to
+induce device loss so the device-lost teardown path is testable); see that
+entry for the reasoning rather than restating it here.)
 
 ## Queued (design notes)
 
@@ -75,14 +90,17 @@ validation-layer-clean runtime check where rendering changed.
    pipelines still read the `.spv` and create shader modules at startup
    rather than consuming a fully cached pipeline binary, which the
    VkPipelineCache already covers on the second run.
-3. **`vk::raii` teardown migration** — ~30 manual `cleanUp()` methods with
-   defaulted destructors; hand-ordered 48-line teardown; device-lost
-   special-casing in App.cpp. Migrate leaf types first (`VulkanBuffer`,
-   `VulkanImage`, samplers), then stages, then the renderer.
-5. **Redundant same-layout swapchain barrier** (`VulkanRenderer.cpp` post-sky) —
-   remove only after a sync-validation (`VK_LAYER_KHRONOS_validation` with
-   `VALIDATION_CHECK_ENABLE_SYNCHRONIZATION_VALIDATION`) run confirms the
-   post render pass's external dependency covers it.
+3. **`vk::raii` teardown migration** — leaf types (`VulkanBuffer`,
+   `VulkanImage`, samplers) and the render stages are already move-only with
+   destructor release. What is left is renderer-level: `VulkanRenderer`'s
+   hand-ordered teardown and the device-lost special-casing in `App.cpp` —
+   tracked as the `- [b]` "Renderer-level RAII cleanup consolidation" entry
+   in `BACKLOG.md`, blocked on inducing device loss to test it.
+5. **Redundant same-layout swapchain barrier** — **done** (`VulkanRenderer.cpp:1064-1067`).
+   A sync-validation run (`VK_LAYER_KHRONOS_validation` with
+   `VALIDATION_CHECK_ENABLE_SYNCHRONIZATION_VALIDATION`) confirmed the post
+   render pass's external dependency already covers the ordering, so the
+   barrier was removed and the comment left in its place records why.
 6. **Per-pass GPU timestamps + debug labels** — **DONE.** `GpuTimedPass`
    brackets Clouds/ShadowCascades/Main/Sky/Post with timestamp-query pairs,
    `ScopedCmdLabel` names every pass for RenderDoc, and the

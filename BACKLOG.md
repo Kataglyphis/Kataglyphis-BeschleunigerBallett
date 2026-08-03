@@ -6933,30 +6933,6 @@ still an owner decision.
 
 ### Docs
 
-- [ ] **(M) Bring `docs/cpp-renderer-improvements.md` back in line with the tree, and gate the two claims that are now wrong** — its "queued" list still asks for two units that shipped on 2026-07-19, and its last shipped entry predates ~90 engine commits.
-
-  **Files to read:**
-  - `docs/cpp-renderer-improvements.md` — the whole file (129 lines); specifically the "In progress" block (`:62-64`) and "Queued (design notes)" items 3 and 5 (`:78-85`)
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1048-1051` — the comment recording that the same-layout swapchain barrier was removed *after* a sync-validation run confirmed the post render pass's external dependency covers it
-  - `BACKLOG.md` § "Completed (kept for the reasoning, not the status)" — the `Stage-level RAII (2026-07-19)` and `Sync-validated barrier removal (2026-07-19)` entries
-  - `AGENTS.md` § Docs and its routing table row that sends renderer/device-path refactors to this file
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)` (`:3597`) and `TEST(BuildIntegrity, NoGeneratedWgslSourceClaimsToMirrorItsOutput)` (`:2959`), the two docs-drift gates to copy
-
-  **Steps:**
-  1. Fix the "In progress" block: sync-validated barrier removal and stage-level RAII both shipped 2026-07-19. The only remaining item is renderer-level RAII, which is `- [b]` (blocked on being able to induce device loss) — say so and link the `BACKLOG.md` entry rather than restating its reasoning.
-  2. Fix queued design note 5: the redundant same-layout swapchain barrier is **gone**, and the sync-validation run it was gated on happened. Rewrite it as a shipped row citing `VulkanRenderer.cpp:1048-1051`, or delete it and record it in the table.
-  3. Fix queued design note 3 (`vk::raii` teardown migration): its first step, "migrate leaf types first (`VulkanBuffer`, `VulkanImage`, samplers)", is done — leaf types are move-only with destructor release and the pattern was extended through the render stages. Keep the item, narrow it to what is actually left, and drop the stale "~30 manual `cleanUp()` methods" count or re-derive it.
-  4. Add ONE new section covering 2026-08-02 → 2026-08-03, grouped by theme with a representative commit hash each — **not** one table row per commit. Reasonable groupings, from `git log 36937517..HEAD -- Src/GraphicsEngineVulkan Resources/ShadersSlang`: the create-info builder family (`876a151f`, `c743d99d`, `4f799788`, `ed9a1fd2`, `c041b756`, `3f05964c`, `51a404d0`, `07024edf`); resource-ownership hardening (`ef9a8a4d`, `e9ecb576`, `fe384d1a`, `23ace7d9`); the `ibl.slang` port regressions and their restorations (`e1f1dd30`, `ad9e3921`, `f9383a3b`, `f5e43cac`); shader hot reload completed across all eight SPIR-V subsystems (`0b009d89`, `c00c2212`, `f5371b87`, `3673f5a7`); model-loading dedup and correctness (`1da7c1f3`, `dca11022`, `c7b66fa5`, `22d0253c`); cascade/shadow fixes (`0c62dfe9`, `95ae08f3`, `090ab81f`, `a15a4f73`, `d2042fa0`, `85a2191d`); input and GUI (`c37394b4`, `4c5f0294`, `13773702`, `49e1f5d4`). Verify each hash still resolves before writing it.
-  5. Leave the header's historical test counts ("72 tests at campaign start, 103 as of 2026-07-23") and the table's per-row counts alone — those are dated statements about the day a unit shipped, not drift.
-
-  **Test:** Add `TEST(BuildIntegrity, RendererImprovementLogDoesNotAskForShippedWork)` to `buildIntegritySuite.cpp`: read `docs/cpp-renderer-improvements.md` and `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp`, and fail if the doc still contains `"remove only after a sync-validation"` while `VulkanRenderer.cpp` contains the removal comment (`"used to sit here"`) — i.e. the doc asks for something the source says is done. Add a second assertion that the doc does not list `"sync-validated barrier removal"` in its "In progress" remaining-queue line. Follow `NoGeneratedWgslSourceClaimsToMirrorItsOutput`'s structure: read both files, assert the contradiction cannot coexist, and make the failure message name both sides.
-
-  **Build:** `clangcl-debug` (the gate is a CPU test; no engine code changes). Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`.
-
-  **Context:** `AGENTS.md` names this file as the single home for the C++ engine's chronological change log and routes every renderer refactor to it, so drift here is drift in the one place a newcomer is told to read. Two existing gates (`GoldenTestCountsInDocsMatchTheSuite`, `MaxTextureCountInDocsMatchesTheHeader`) already pin numbers in docs against the tree; this adds the same discipline to a *claim*. Do not rewrite the "instrument playbook" section — it is earned reasoning, not status, and is still accurate. Keep the file's existing table format; a summary section is fine, ninety new rows are not.
-
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
