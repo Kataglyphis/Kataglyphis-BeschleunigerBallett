@@ -2438,6 +2438,73 @@ TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)
       << ") + integration(" << marker->integration << ") != total(" << marker->total << ")";
 }
 
+// Parses docs/model-loading.md's `<!-- max-texture-count: N -->` marker line.
+// Returns std::nullopt if the marker line, or its value, is missing - a
+// deleted or malformed marker must fail the calling test, not skip it.
+std::optional<int> parse_max_texture_count_marker(const fs::path &doc_path)
+{
+    std::ifstream file(doc_path);
+    if (!file) { return std::nullopt; }
+
+    static const std::regex kMarkerPattern(R"(<!--\s*max-texture-count:\s*(\d+)\s*-->)");
+
+    std::string line;
+    while (std::getline(file, line)) {
+        std::smatch match;
+        if (std::regex_search(line, match, kMarkerPattern)) { return std::stoi(match[1].str()); }
+    }
+    return std::nullopt;
+}
+
+// Parses `const int MAX_TEXTURE_COUNT = <N>;` out of
+// common/host_device_shared_vars.hpp by plain file I/O, not by including the
+// header - the point is to catch the header changing out from under the doc.
+std::optional<int> parse_max_texture_count_header(const fs::path &header_path)
+{
+    std::ifstream file(header_path);
+    if (!file) { return std::nullopt; }
+
+    static const std::regex kMaxTextureCountPattern(R"(const\s+int\s+MAX_TEXTURE_COUNT\s*=\s*(\d+)\s*;)");
+
+    std::string line;
+    while (std::getline(file, line)) {
+        std::smatch match;
+        if (std::regex_search(line, match, kMaxTextureCountPattern)) { return std::stoi(match[1].str()); }
+    }
+    return std::nullopt;
+}
+
+// docs/model-loading.md's "Textures, samplers and the 128-slot budget"
+// section pins MAX_TEXTURE_COUNT in prose; pins the doc's
+// `<!-- max-texture-count: N -->` marker against a pure file-I/O read of the
+// header constant so the two cannot silently drift apart, following the same
+// "parse two sources, compare, fail with both numbers" pattern as
+// GoldenTestCountsInDocsMatchTheSuite above.
+TEST(BuildIntegrity, MaxTextureCountInDocsMatchesTheHeader)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path doc_path = repo_root / "docs" / "model-loading.md";
+    if (!fs::exists(doc_path)) {
+        GTEST_SKIP() << "could not open " << doc_path.string() << " - not running from the repo root?";
+    }
+
+    const auto doc_value = parse_max_texture_count_marker(doc_path);
+    ASSERT_TRUE(doc_value.has_value())
+      << doc_path.string() << " is missing its '<!-- max-texture-count: N -->' marker line - a deleted marker must "
+                              "fail this test, not silently pass";
+
+    const fs::path header_path = repo_root / "Src" / "GraphicsEngineVulkan" / "common" / "host_device_shared_vars.hpp";
+    const auto header_value = parse_max_texture_count_header(header_path);
+    ASSERT_TRUE(header_value.has_value())
+      << header_path.string() << " does not define 'const int MAX_TEXTURE_COUNT = <N>;'";
+
+    EXPECT_EQ(*doc_value, *header_value)
+      << doc_path.string() << "'s max-texture-count marker says " << *doc_value << " but " << header_path.string()
+      << " defines MAX_TEXTURE_COUNT = " << *header_value;
+}
+
 // Parses the X, Y, Z triple out of the first "[numthreads(X, Y, Z)]" in
 // `path`. Returns nullopt if the attribute is not found, so callers can tell
 // "found and mismatched" apart from "a renamed/removed attribute silently

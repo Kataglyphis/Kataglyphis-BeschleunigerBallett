@@ -128,6 +128,51 @@ meshes automatically feeds the systems that were already made mesh-aware:
   mesh; RT/PT kernels fetch the per-mesh material with
   `instanceCustomIndex (= the model's first-mesh flat index) + gl_GeometryIndexEXT`.
 
+## Textures, samplers and the 128-slot budget
+
+<!-- max-texture-count: 128 -->
+
+Every texture from every loaded model lands in one flat, fixed-size global
+array bound at `TEXTURES_BINDING`/`SAMPLER_BINDING`
+(`common/host_device_shared_vars.hpp:8`):
+`const int MAX_TEXTURE_COUNT = 128;`. Both loaders actively economise
+against that budget rather than just hoping models stay small:
+
+- **glTF dedup by image** — `GltfLoader.cpp:464-483` keys an `imageSlot` map
+  on the `const cgltf_image *`, not the material: one decode+upload per
+  image no matter how many materials reference it (e.g. a base-colour and a
+  normal map sharing the same PNG).
+- **OBJ dedup by resolved path** — `ObjLoader.cpp:210-240` keys a `pathSlot`
+  map on the path `resolveObjTexturePath` returns, not the raw `map_Kd`
+  string, so two materials naming the same file through different `.mtl`
+  spellings (`tex.png` vs `./tex.png`) still collapse onto one slot.
+- **A failed texture still occupies its slot** — `ObjLoader.cpp:122-131`:
+  when `Texture::createFromFile` fails for a non-empty name, `uploadParsed`
+  substitutes the default texture rather than skipping the slot, because
+  `textureID` is a dense counter over non-empty names and skipping would
+  shift every later `textureID` down by one.
+- **Sampler dedup by mip level** — `Model::addSampler` (`Model.cpp:68-94`)
+  keys on mip level via `findSamplerForMipLevel`
+  (`vulkan_base/SamplerBuilder.cpp`): N textures that happen to share a mip
+  count share one `vk::Sampler`, instead of one sampler per texture.
+- **Flattening into the global array** — `assignTextureOffsets`
+  (`ObjectDescription.ixx:22-37`) stamps each mesh's `texture_offset` with
+  its model's running offset into the flattened array, advancing by that
+  model's texture count once its meshes are done; `planFlattenedTextureSlots`
+  (`ObjectDescription.ixx:66-`) is the mirror image that actually builds the
+  array, model order, capped at `MAX_TEXTURE_COUNT` and padded with slot 0
+  past the cap. On the shader side, all five entry points
+  (`rasterizer`, `deferred`, `shadow_map`, `path_tracing`, `raytrace.rchit`)
+  compute `textureId` the same way and clamp it —
+  `clamp(int(obj.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1)`
+  — so a model that pushes the total past budget samples a wrong (but
+  in-bounds) slot instead of reading out of the descriptor array.
+
+Both loaders also emit per-vertex colours (glTF `COLOR_0`, `GltfLoader.cpp:282`;
+OBJ `attrib.colors`, `ObjLoader.cpp:333-340`) and fall back to the shared
+`computeFlatNormals` (`scene/Vertex.{ixx,cpp}`) whenever a file carries no
+normals (`GltfLoader.cpp:377`; `ObjLoader.cpp:399-404`).
+
 ## `map_Kd` texture path resolution
 
 Both loaders resolve an OBJ material's `map_Kd` the same way:
