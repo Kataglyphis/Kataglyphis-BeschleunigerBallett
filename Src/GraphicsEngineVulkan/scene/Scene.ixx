@@ -165,7 +165,10 @@ class Scene
       const std::string &modelPath,
       const glm::mat4 &modelMatrix);
 
-    void add_model(const std::shared_ptr<Model> &model);
+    /// Appends model to the scene and returns the index it landed at, or
+    /// std::nullopt for the null-model guard (a failed load upstream) - the
+    /// caller no longer has to re-derive "which model did I just add".
+    std::optional<uint32_t> add_model(const std::shared_ptr<Model> &model);
 
     void cleanUp();
     ~Scene();

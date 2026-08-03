@@ -7,7 +7,10 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <optional>
 #include <vulkan/vulkan.hpp>
+
+#include <glm/gtc/matrix_transform.hpp>
 
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.model;
@@ -35,6 +38,31 @@ TEST(SceneAccessorUnit, AddModelIgnoresNull)
     Scene scene;
     scene.add_model(nullptr);
     EXPECT_EQ(scene.getModelCount(), 0U) << "a null model (a failed load upstream) must leave the scene unchanged";
+}
+
+TEST(SceneAccessorUnit, TheConfigTransformLandsOnTheModelThatWasAdded)
+{
+    Scene scene;
+    scene.add_model(std::make_shared<Model>());
+    const glm::mat4 model_zero_matrix_before_second_add = scene.getModelMatrix(0);
+    const std::optional<uint32_t> index = scene.add_model(std::make_shared<Model>());
+
+    ASSERT_TRUE(index.has_value());
+    EXPECT_EQ(*index, 1U);
+
+    const glm::mat4 transform = glm::scale(glm::mat4(1.0F), glm::vec3(2.0F));
+    scene.update_model_matrix(transform, *index);
+
+    EXPECT_EQ(scene.getModelMatrix(1), transform);
+    EXPECT_EQ(scene.getModelMatrix(0), model_zero_matrix_before_second_add)
+      << "the transform for the model just added must not land on model 0";
+}
+
+TEST(SceneAccessorUnit, AddingANullModelReturnsNoIndex)
+{
+    Scene scene;
+    EXPECT_EQ(scene.add_model(nullptr), std::nullopt);
+    EXPECT_EQ(scene.getModelCount(), 0U);
 }
 
 TEST(SceneAccessorUnit, PerModelCountVectorsAreSizedByModelCount)

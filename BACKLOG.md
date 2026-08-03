@@ -5248,58 +5248,6 @@ combined WGSL emit is skipped below `minSlangcVersionForWgsl`, which the
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Apply the scene-config transform to the model that was just loaded, not to model 0** — `add_model` appends, and all three load paths then transform index `0` unconditionally.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/Scene.cpp:49-64` (`loadModel`), `:99-138`
-    (`pollModelLoad`), `:166-184` (`reloadModel`) — the three
-    `update_model_matrix(..., 0)` call sites.
-  - `Src/GraphicsEngineVulkan/scene/Scene.cpp:66-87` — `loadAdditionalModel`,
-    the one path that already does it correctly
-    (`const uint32_t model_index = getModelCount() - 1U;`).
-  - `Src/GraphicsEngineVulkan/scene/Scene.cpp:140-154` — `add_model`, including
-    the null guard that must keep returning without appending.
-  - `Src/GraphicsEngineVulkan/scene/Scene.ixx:30, 55-60, 168` —
-    `update_model_matrix`, `getModelCount`, `getModelMatrix`, `add_model`.
-  - `Test/commit/VulkanEngine/sceneAccessorSuite.cpp:18-38` — a bare `Scene`
-    plus `std::make_shared<Model>()`, no device.
-
-  **Steps:**
-  1. Change `Scene::add_model` to return `std::optional<uint32_t>` — the index
-     of the appended model, or `std::nullopt` for the null-model guard it
-     already logs and returns from. Update the declaration in `Scene.ixx:168`.
-  2. In `loadModel`, `pollModelLoad` and `reloadModel`, capture that return and
-     pass it to `update_model_matrix` instead of the literal `0`; skip the
-     transform when it is `nullopt`. In `reloadModel` this also replaces the
-     `if (model_list.empty())` check that stands in for it today.
-  3. Rewrite `loadAdditionalModel` to use the returned index rather than
-     recomputing `getModelCount() - 1U`, so there is one expression for "which
-     model did I just add" instead of two.
-  4. Check the other `add_model` callers compile — `sceneAccessorSuite.cpp:20`
-     and `:35`, and `objParseSuite.cpp:172` (`AddingANullModelIsSafeNotACrash`)
-     call it for effect and ignore the result; a `[[nodiscard]]` would break
-     them, so do **not** mark the return `[[nodiscard]]`.
-
-  **Test:** Add `SceneAccessorUnit.TheConfigTransformLandsOnTheModelThatWasAdded`:
-  construct a bare `Scene`, `add_model` twice, assert the second call returns
-  index `1`, `update_model_matrix(M, *index)`, then assert
-  `getModelMatrix(1) == M` **and** `getModelMatrix(0) == glm::mat4(1.0F)` — the
-  second half is what fails today. Add
-  `SceneAccessorUnit.AddingANullModelReturnsNoIndex` asserting `add_model(nullptr)`
-  yields `nullopt` and leaves `getModelCount() == 0`.
-
-  **Build:** `clangcl-debug`, filter
-  `--gtest_filter=SceneAccessorUnit.*:ObjParseUnit.*`.
-
-  **Context:** Reachable today: `loadAdditionalModel` appends without touching
-  the pending-load state, so a subsequent GUI model reload
-  (`guiSceneSharedVars.model_reload_requested` → `reloadModel`) or a completing
-  async parse stamps `sceneConfig::getModelMatrix()` onto whatever sits at index
-  0 while the model it was meant for keeps identity. The bug is small; the point
-  is that "the index I just appended at" should be returned by the function that
-  appended, not re-derived by four callers in three different ways — the same
-  reasoning as `a4610948` (`beginWrite` returning the binding it found).
-
 - [ ] **(S) (refactor) Derive the shadow-resolution table's size from `kShadowMapResolutions`** — the count `4` (and its `index > 3` twin) is hand-written in four more places, one of them in the test that is supposed to pin the table.
 
   **Files to read:**

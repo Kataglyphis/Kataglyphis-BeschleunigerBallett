@@ -53,10 +53,12 @@ void Scene::loadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool comma
     std::shared_ptr<Model> const new_model = loadModelByExtension(device, commandPool, modelFileName);
 
     if (new_model) {
-        add_model(new_model);
+        const std::optional<uint32_t> model_index = add_model(new_model);
         spdlog::info("Model added successfully.");
-        glm::mat4 const modelMatrix = sceneConfig::getModelMatrix();
-        update_model_matrix(modelMatrix, 0);
+        if (model_index) {
+            glm::mat4 const modelMatrix = sceneConfig::getModelMatrix();
+            update_model_matrix(modelMatrix, *model_index);
+        }
     } else {
         spdlog::error("Failed to load model: {}", modelFileName);
         return;
@@ -79,10 +81,10 @@ std::optional<uint32_t> Scene::loadAdditionalModel(std::shared_ptr<VulkanDevice>
         return std::nullopt;
     }
 
-    add_model(new_model);
-    const uint32_t model_index = getModelCount() - 1U;
-    update_model_matrix(modelMatrix, model_index);
-    spdlog::info("Additional model added at index {}.", model_index);
+    const std::optional<uint32_t> model_index = add_model(new_model);
+    if (!model_index) { return std::nullopt; }
+    update_model_matrix(modelMatrix, *model_index);
+    spdlog::info("Additional model added at index {}.", *model_index);
     return model_index;
 }
 
@@ -131,19 +133,19 @@ bool Scene::pollModelLoad(std::shared_ptr<VulkanDevice> device, vk::CommandPool 
         return false;
     }
 
-    add_model(new_model);
-    update_model_matrix(sceneConfig::getModelMatrix(), 0);
+    const std::optional<uint32_t> model_index = add_model(new_model);
+    if (model_index) { update_model_matrix(sceneConfig::getModelMatrix(), *model_index); }
     spdlog::info("Model added successfully (async).");
     return true;
 }
 
-void Scene::add_model(const std::shared_ptr<Model> &model)
+std::optional<uint32_t> Scene::add_model(const std::shared_ptr<Model> &model)
 {
     // Loaders return nullptr for malformed assets; dereferencing it here
     // turned a bad file from the GUI picker into a crash.
     if (!model) {
         spdlog::error("add_model called with a null model - a load failed upstream; scene unchanged.");
-        return;
+        return std::nullopt;
     }
     model_list.push_back(model);
     // One object description per MESH, flattened across models: objectIndex (the
@@ -151,6 +153,7 @@ void Scene::add_model(const std::shared_ptr<Model> &model)
     for (uint32_t k = 0; k < model->getMeshCount(); ++k) {
         object_descriptions.push_back(model->getMesh(k)->getObjectDescription());
     }
+    return getModelCount() - 1U;
 }
 
 void Scene::update_model_matrix(glm::mat4 model_matrix, uint32_t model_id)
@@ -173,14 +176,14 @@ void Scene::reloadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool com
     // ObjLoader directly, so picking a .glb from the GUI fed glTF bytes to
     // the OBJ parser.
     std::shared_ptr<Model> const new_model = loadModelByExtension(device, commandPool, modelPath);
-    add_model(new_model);
-    if (model_list.empty()) {
+    const std::optional<uint32_t> model_index = add_model(new_model);
+    if (!model_index) {
         spdlog::error("reloadModel: '{}' failed to load; scene is now empty.", modelPath);
         return;
     }
 
     glm::mat4 const modelMatrix = sceneConfig::getModelMatrix();
-    update_model_matrix(modelMatrix, 0);
+    update_model_matrix(modelMatrix, *model_index);
 }
 
 void Scene::cleanUp()
