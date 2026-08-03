@@ -37,9 +37,15 @@ inline void update_camera_vectors(CameraControllerState state)
     state.up = glm::normalize(glm::cross(state.right, state.front));
 }
 
+// Degrees per second of keyboard-driven yaw. Deliberately not `turn_speed`
+// (degrees per pixel of mouse travel - a different unit) and not
+// `movement_speed` (world units per second of translation).
+inline constexpr float kKeyboardTurnDegreesPerSecond = 90.0F;
+
 inline void apply_keyboard_input(CameraControllerState state, std::span<const bool> keys, float delta_time)
 {
     float const velocity = state.movement_speed * delta_time;
+    float const turn = kKeyboardTurnDegreesPerSecond * delta_time;
 
     auto pressed = [keys](int k) {
         return static_cast<std::size_t>(k) < keys.size() && keys[static_cast<std::size_t>(k)];
@@ -49,8 +55,10 @@ inline void apply_keyboard_input(CameraControllerState state, std::span<const bo
     if (pressed(GLFW_KEY_D)) { state.position += state.right * velocity; }
     if (pressed(GLFW_KEY_A)) { state.position += -state.right * velocity; }
     if (pressed(GLFW_KEY_S)) { state.position += -state.front * velocity; }
-    if (pressed(GLFW_KEY_Q)) { state.yaw += -velocity; }
-    if (pressed(GLFW_KEY_E)) { state.yaw += velocity; }
+    if (pressed(GLFW_KEY_Q)) { state.yaw += -turn; }
+    if (pressed(GLFW_KEY_E)) { state.yaw += turn; }
+
+    update_camera_vectors(state);
 }
 
 inline void apply_mouse_input(CameraControllerState state, float x_change, float y_change)

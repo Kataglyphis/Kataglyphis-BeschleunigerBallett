@@ -84,6 +84,9 @@ Camera::Camera()
 
 void Camera::key_control(std::span<const bool> keys, float delta_time)
 {
+    // apply_keyboard_input already refreshes front/right/up itself now, so
+    // this update() call is idempotent - kept for callers that used to rely
+    // on key_control() alone updating derived state.
     Kataglyphis::Frontend::apply_keyboard_input(controllerState(camera_state), keys, delta_time);
     update();
 }

@@ -125,6 +125,37 @@ TEST(CameraControllerUnit, QAndEChangeYawInOppositeDirections)
     EXPECT_GT(rig.yaw, start_yaw);
 }
 
+TEST(CameraControllerUnit, KeyboardYawRateIsIndependentOfMovementSpeed)
+{
+    Rig slow_rig;
+    slow_rig.movement_speed = 10.0F;
+    Rig fast_rig;
+    fast_rig.movement_speed = 100.0F;
+    constexpr float kDeltaTime = 0.5F;
+
+    std::array<bool, GLFW_KEY_LAST + 1> keys{};
+    keys[GLFW_KEY_Q] = true;
+    Kataglyphis::Frontend::apply_keyboard_input(state(slow_rig), keys, kDeltaTime);
+    Kataglyphis::Frontend::apply_keyboard_input(state(fast_rig), keys, kDeltaTime);
+
+    const float expected_yaw = -90.0F - Kataglyphis::Frontend::kKeyboardTurnDegreesPerSecond * kDeltaTime;
+    EXPECT_NEAR(slow_rig.yaw, expected_yaw, kEpsilon);
+    EXPECT_NEAR(fast_rig.yaw, expected_yaw, kEpsilon);
+}
+
+TEST(CameraControllerUnit, KeyboardYawUpdatesTheBasis)
+{
+    Rig rig;
+    Kataglyphis::Frontend::update_camera_vectors(state(rig));
+    const glm::vec3 start_front = rig.front;
+
+    std::array<bool, GLFW_KEY_LAST + 1> keys{};
+    keys[GLFW_KEY_Q] = true;
+    Kataglyphis::Frontend::apply_keyboard_input(state(rig), keys, 1.0F);
+
+    EXPECT_GT(glm::length(rig.front - start_front), kEpsilon);
+}
+
 TEST(CameraControllerUnit, PitchClampsAtPlusMinus89)
 {
     Rig rig;
