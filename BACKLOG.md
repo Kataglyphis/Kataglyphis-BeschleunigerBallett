@@ -5552,6 +5552,340 @@ for the fourth time (upload-time only, never on the frame path).
 
 ### Docs
 
+## 2026-08-03 batch VI — planner (a shared Slang module edited six commits ago whose generated WGSL was never regenerated, the two gates that both failed to notice, a Windows CI allowlist that has silently orphaned four suites, and three `import`s nothing uses)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the tree
+this pass; the drift in task 1 is sitting in the working tree right now, so it
+is directly observable rather than inferred.
+
+**Every task in this batch is verifiable with no GPU**, deliberately: the
+fifteen `- [b]` entries above are still blocked on host GPU golden
+verification. Tasks 1–3 and 5 are text/manifest gates plus one regenerated
+generated file; task 4 is a CI-filter change whose safety is already proven by
+the Linux lane running the same suites on every push.
+
+**The headline is that `5805867a` edited `Resources/ShadersSlang/common/brdf.slang`
+— a module `forward/forward.slang` imports — and never regenerated the WGSL
+that Slang emits from it.** That commit rewired `brdf_direct` to call
+`lambert_diffuse` instead of duplicating its math inline (`brdf.slang:78`).
+`forward.wgsl` is generated output, checked into the Rust crate via the
+manifest's `wgslMap` (`shader-manifest.json`, `src: forward/forward.slang` →
+`dst: ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/shaders`),
+and the committed copy still inlines the division by π with no
+`fn lambert_diffuse_0`. Regenerating with the host's slangc 2026.8 — the exact
+version the manifest's `minSlangcVersionForWgsl` names, and which reproduces
+the other nine `wgslMap` outputs byte-for-byte — produces a 13-line/8-line diff
+that is currently uncommitted in
+`ExternalLib/Kataglyphis-RustProjectTemplate`. Six commits shipped on top of it.
+
+**Both gates that should have caught it are structurally unable to.**
+`BuildIntegrity.CheckedInWgslIsNotOlderThanItsSlangSource`
+(`buildIntegritySuite.cpp:1190-1237`) compares each `wgslMap` destination's
+mtime against `mapping.slang_source` **only** — not against the modules that
+source imports. Editing `common/brdf.slang` therefore never makes
+`forward.wgsl` look stale, even locally. The SPIR-V half of the pipeline
+already has the missing check as a separate test
+(`CompiledShadersAreNotOlderThanSharedIncludes`, `:832-857`, built on the
+`newest_shared_import` helper); the WGSL half never got the twin. And mtimes
+are meaningless after a fresh `git clone` — every file lands with roughly the
+same timestamp — so even the fixed mtime gate is a coin flip in CI and a
+content check is needed alongside it. That the drift survived six commits *and*
+the Linux lane (which does run this test) is the proof.
+
+**Third, `Windows.yml`'s `$cpuOnlySuites` is a hand-maintained 50-entry
+allowlist and four suites have already fallen out of it**, so
+`BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter` (`:1051-1107`) is RED
+right now: `ExtensionSupportUnit` (`93d435e2`), `PipelineLayoutHelperUnit`
+(`c743d99d`), `ImageViewHelperUnit` (`ed9a1fd2`, yesterday) and `SamplerBuilder`
+(the non-`Unit` sibling in `samplerBuilderSuite.cpp:99,108` — the listed
+`'SamplerBuilderUnit.*'` glob does not match it, because `.` is a literal in a
+gtest filter). The gate turns a silent gap into a loud one but cannot stop it
+recurring: it only fires *after* someone runs `BuildIntegrity.*`, which the
+last four suite-adding commits did not. **`Linux.yml` already solved this the
+other way round** — `--ctest-exclude "^(Integration|GoldenRender)\."` over
+gtest-discovered tests (`Linux.yml:114,160,186,337`), a negative filter that
+needs no maintenance and keeps the GPU suites out by name just as explicitly.
+Windows is the odd one out. The four orphaned suites run green on Linux on
+every push, so un-orphaning them on Windows is low risk.
+
+**Fourth, three `import` statements name modules the importing shader never
+uses**, and one of them backs a comment that claims the opposite:
+`forward/forward.slang:2-3` imports `aces` and `fullscreen` while the file
+references neither `aces_tonemap`, `linear_to_srgb` nor `FullscreenVsOut`
+(the Rust pipeline tonemaps in a separate pass, `tonemap/tonemap.slang`), yet
+`forward.slang:6` states it "Uses the shared BRDF math (import brdf) and ACES
+tonemap (import aces)". `sky/sky.slang:1` imports `fullscreen` and hand-rolls
+its own `vs_main`. `ibl/ibl.slang:1` is the counter-example that has to keep
+working: it never calls `fullscreen_vs` but does use the `FullscreenVsOut`
+*type* seven times, so a gate here must look at struct names as well as
+function names. This is the same "the source still says it does X, nothing does
+X" signature that `EverySlangFunctionIsReachableFromAnEntryPoint` was written
+for one commit later.
+
+Ordering: **task 1 first** (it is the drift itself, and tasks 2, 3 and 5 all go
+red or noisy against a stale `forward.wgsl`). Tasks 2, 3, 4 and 5 all edit
+`Test/commit/VulkanEngine/buildIntegritySuite.cpp`, so do them one at a time
+and rebuild between them.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **the glTF loader's `(0,1,0)` fallback normal when
+`NORMAL` is shorter than `POSITION`** (`GltfLoader.cpp:301-302`, which skips
+`computeFlatNormals` because `normals` is non-empty) — unreachable, because
+`GltfLoader.cpp:447` runs `cgltf_validate`, which rejects a primitive whose
+attribute accessors disagree on `count`; **`assignTextureOffsets` advancing
+`offset` past `MAX_TEXTURE_COUNT` while `planFlattenedTextureSlots` caps at it**
+(`ObjectDescription.ixx:35` vs `:77`) — not an out-of-bounds descriptor read:
+all five consumers clamp (`deferred.slang:58`, `rasterizer.slang:59`,
+`shadow_map.slang:48`, `raytrace.rchit.slang:72`, `path_tracing.slang:207`);
+**`apply_keyboard_input` scaling Q/E yaw by `movement_speed` rather than the
+`turn_speed` that sits unused next to it** (`CameraController.ixx:52-53`) — a
+real smell, but both are compile-time constants with no GUI slider
+(`Camera.cpp:62-63,75-76`), so nothing observable changes and there is no
+oracle for the new rate; **the Rust OBJ→glTF converter dropping `Ks`/`Ns`/`Ke`
+that `parse_mtl` never reads** (`obj_to_gltf.rs:109-172`) — a documented
+deliberate decision (`obj_to_gltf.rs:12`, "dropped rather than guessed into
+metallic/roughness"), not drift; **`asset/obj_to_gltf.rs` having zero `#[test]`
+blocks** — it has a 650-line integration suite at
+`crates/webgpu_renderer/tests/obj_to_gltf.rs`; **the four remaining hand-rolled
+`vk::ImageSubresourceRange` field-by-field blocks** (`PathTracing.cpp:57-62`,
+`Raytracing.cpp:86-91`, `Texture.cpp:292-295`, `VulkanImage.cpp:133-137`) —
+this is the re-count batch V asked for after its tasks 1 and 2 landed:
+`SkyBox` and `CascadedShadowMap` are gone, two of the six survivors are the
+cloud pair still owned by the `- [b]` cloud-barrier entry, and the rest is a
+pure style change on GPU-only code with no device-free test. Batch V's
+reasoning stands; do not re-propose until GPU verification is back.
+**`Src/KomputePlayground`** — unchanged; still an owner decision.
+
+### Cross-renderer
+
+- [ ] **(S) Make `CheckedInWgslIsNotOlderThanItsSlangSource` look at the imports too** —
+  it compares against the direct `.slang` source only, which is why editing
+  `common/brdf.slang` never marked `forward.wgsl` stale.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1190-1237` — the test to
+    change
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:832-857` — the SPIR-V
+    twin, `CompiledShadersAreNotOlderThanSharedIncludes`, and the
+    `newest_shared_import(slang_root, out)` helper it uses
+  - `Resources/ShadersSlang/common/` — the shared modules
+    (`brdf.slang`, `aces.slang`, `fullscreen.slang`, `scene_types.slang`, …)
+
+  **Steps:**
+  1. In `CheckedInWgslIsNotOlderThanItsSlangSource`, call
+     `newest_shared_import(slang_root, newest_import)` once before the
+     `wgsl_map` loop. If it returns false (no `common/` modules), keep the
+     existing behaviour rather than skipping the whole test.
+  2. Inside the loop, compare `dest_time` against
+     `std::max(source_time, newest_import)` instead of `source_time` alone, and
+     name which of the two won in the failure message so the reader knows
+     whether to look at the source or at a shared module.
+  3. Keep both existing escape hatches unchanged: `if (!fs::exists(dest)) continue;`
+     (submodule not checked out) and the `checked == 0` → `GTEST_SKIP()` floor.
+  4. Update the comment block at `:1182-1189` to say the check now covers the
+     shared-import closure, and to state plainly that mtimes are meaningless
+     after a fresh clone so this test is a local-iteration guard, not the CI
+     backstop — that is task 3.
+
+  **Test:** No new suite; this strengthens an existing one. Verify by
+  `touch`-ing `Resources/ShadersSlang/common/brdf.slang` and re-running
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.CheckedInWgslIsNotOlderThanItsSlangSource`
+  from the repo root: it must now report `forward.wgsl` stale. Regenerate (or
+  `touch` the destination) and confirm it goes green again.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** Do task 1 first, or this goes red on the drift it is meant to
+  prevent. The SPIR-V side has had exactly this pair of checks
+  (`…ThanTheirSources` + `…ThanSharedIncludes`) since the Slang migration; the
+  WGSL side only ever got the first half.
+
+- [ ] **(M) Add a content-based freshness gate: every function reachable from a `wgslMap` source's entry points must appear in the checked-in WGSL** —
+  mtime checks cannot survive a `git clone`, so CI needs an oracle that reads
+  the files.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1647-1900` — the
+    text-only Slang call-graph machinery: `tokenize_slang`,
+    `collect_slang_functions(slang_root)` and `SlangFunctionDef`
+    (`name`, `relative_file`, `is_root`, `body`)
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1930-2030` —
+    `EverySlangFunctionIsReachableFromAnEntryPoint`, the worklist to copy, and
+    its self-verifying floors
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1190-1237` — how to walk
+    `manifest->wgsl_map` (`slang_source`, `wgsl_file`, `dst_dir`)
+  - `Resources/ShadersSlang/ibl/ibl.slang:22-27` — the case that must NOT fail:
+    `fullscreen_vs` is imported-but-uncalled, so it is legitimately absent from
+    `ibl.wgsl`
+
+  **Steps:**
+  1. Add `TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)`.
+     Load the manifest and `collect_slang_functions(slang_root)` once.
+  2. For each `wgsl_map` entry: build the file set = the mapped source plus the
+     transitive closure of its `import <module>;` lines resolved against
+     `Resources/ShadersSlang/common/<module>.slang`. Seed the reachability
+     worklist with the roots (`is_root`) whose `relative_file` is the **mapped
+     source**, then walk edges exactly as the existing test does, restricted to
+     functions in that file set.
+  3. Read the destination WGSL (`repo_root / dst_dir / wgsl_file`; `continue`
+     if absent — submodule not checked out, same escape hatch as the two tests
+     above). For each reachable function name `f`, require a match for
+     `fn <f>(` or `fn <f>_<digits>(` (Slang mangles with a `_N` suffix; see
+     `fn brdf_direct_0(`, `fn distribution_ggx_0(` in `forward.wgsl`).
+  4. Add the same shape of self-verifying floor the sibling test uses: assert
+     at least 8 of the 10 `wgslMap` destinations were actually checked and that
+     the reachable set for `forward.wgsl` is non-trivial (> 8 functions), so a
+     parser change that silently finds nothing cannot read as a pass.
+  5. Make the failure message name the source file, the destination file and
+     the missing function, and say "regenerate with
+     `Scripts/Windows/compile-slang-shaders.ps1`".
+
+  **Test:** The new test IS the deliverable. Prove it has teeth by checking out
+  the pre-task-1 `forward.wgsl`
+  (`git -C ExternalLib/Kataglyphis-RustProjectTemplate checkout <sha-before-task-1> -- crates/webgpu_renderer/src/shaders/forward.wgsl`),
+  confirming the test names `lambert_diffuse` as missing, then restoring the
+  regenerated file and confirming green. Run the whole gate suite after:
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+  from the repo root.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** Measured this pass over all ten `wgslMap` pairs: with the
+  reachability restriction, every reachable function is present in every
+  destination except `lambert_diffuse` in the stale `forward.wgsl`. Without the
+  restriction there are three false positives (`aces_tonemap`/`linear_to_srgb`
+  in `forward.wgsl`, `fullscreen_vs` in `sky.wgsl` and `ibl.wgsl`) — all
+  imported-but-uncalled, correctly dead-code-eliminated by slangc. Do not drop
+  the restriction. Task 5 removes two of those three imports, but `ibl.slang`'s
+  stays, so the restriction is load-bearing either way. Do task 1 first.
+
+### CI and release gaps
+
+- [ ] **(S) Replace Windows CI's hand-maintained `$cpuOnlySuites` allowlist with the negative filter Linux already uses** —
+  four suites are orphaned today and `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter`
+  is RED.
+
+  **Files to read:**
+  - `.github/workflows/Windows.yml:205-270` — the `$cpuOnlySuites` array (50
+    entries) and the `commitTestSuite.exe --gtest_filter=...` invocation
+  - `.github/workflows/Linux.yml:114,160,186,337` — the pattern to copy:
+    `--ctest-exclude "^(Integration|GoldenRender)\."`
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:463-492` —
+    `parse_ci_filter_suites`, anchored on `$cpuOnlySuites = @(` and `-join ':'`
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1041-1107` — the gate to
+    rewrite, including its `gpu_excluded_suites` set
+
+  **Steps:**
+  1. In `Windows.yml`, replace the array + `-join ':'` with a single named
+     exclusion, e.g.
+     `$gpuOnlySuites = @('GoldenRender.*', 'Integration.*') -join ':'` and
+     `& 'C:\ws\build-clangcl-debug\commitTestSuite.exe' --gtest_filter="-$gpuOnlySuites"`.
+     Keep the existing comment explaining *why* those two stay out (they do not
+     reliably self-skip: `SKIP_WITHOUT_GPU` only asks `glfwVulkanSupported()`),
+     and replace "If you add a suite, add it to this filter or it will not run
+     in CI" with a note that new suites now run automatically.
+  2. Rewrite `parse_ci_filter_suites` to parse the new `$gpuOnlySuites` array
+     (same quote-scanning and `.*`-stripping logic, new anchor text). Keep it
+     returning `std::nullopt` only on open failure.
+  3. Rewrite `EveryCpuSuiteIsInTheWindowsCiFilter` — rename it to something like
+     `WindowsCiExcludesExactlyTheGpuSuites` — so it asserts the parsed
+     exclusion set equals the in-test `gpu_excluded_suites` set
+     (`{"GoldenRender", "Integration"}`) exactly, in both directions, and that
+     every excluded name still corresponds to a suite that exists under
+     `Test/commit/VulkanEngine`. Keep `collect_defined_suites` and the
+     "found zero suites — the scan itself is broken" floor.
+  4. Do **not** touch the fuzz-target gate below it
+     (`buildIntegritySuite.cpp:1109+`); its list is a genuinely different
+     shape (per-target executables) and it is green.
+
+  **Test:** No new suite. Verify that
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+  from the repo root is green after the change, and that
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=ExtensionSupportUnit.*:ImageViewHelperUnit.*:PipelineLayoutHelperUnit.*:SamplerBuilder.*`
+  passes — those four have never run in the Windows lane, so confirm they are
+  actually green before making CI depend on them. Push with `[build-win]` in
+  the HEAD commit message or the Windows lane produces no signal at all.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** Verified this pass: `commitTestSuite` defines 57 suites; 50 are
+  in the allowlist, `GoldenRender` and `Integration` are deliberately excluded,
+  and `ExtensionSupportUnit`, `PipelineLayoutHelperUnit`, `ImageViewHelperUnit`
+  and `SamplerBuilder` are in neither — so the gate at `:1084` fails today. All
+  four already run green on Linux, which discovers tests via
+  `kataglyphis_configure_gtest_discovery`
+  (`Test/commit/VulkanEngine/CMakeLists.txt:32`) and excludes by regex rather
+  than enumerating. The allowlist is the last hand-maintained copy of a list
+  the build system already knows; `a63edf10` made the copy self-checking, this
+  removes the copy. See `AGENTS.md` § What CI runs, and what it does not.
+
+### Shaders
+
+- [ ] **(S) (refactor) Delete the three `import`s nothing uses and the ACES comment that outlives them, then pin imports against usage** —
+  `forward.slang` claims to tonemap and imports `aces` to prove it; it does
+  neither.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/forward/forward.slang:1-6` — `import aces;`,
+    `import fullscreen;`, and the header comment claiming ACES is used
+  - `Resources/ShadersSlang/sky/sky.slang:1,20` — `import fullscreen;` next to
+    a hand-rolled `vs_main`
+  - `Resources/ShadersSlang/ibl/ibl.slang:1,22-27,86-224` — the import that must
+    STAY: `fullscreen_vs` is never called, but `FullscreenVsOut` is used seven
+    times
+  - `Resources/ShadersSlang/common/aces.slang:16,30` — the only two symbols
+    `aces` exports
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1647-1900` —
+    `tokenize_slang` / `collect_slang_functions`, reused by the new gate
+
+  **Steps:**
+  1. Delete `import aces;` and `import fullscreen;` from
+     `forward/forward.slang`, and `import fullscreen;` from `sky/sky.slang`.
+     Leave `ibl/ibl.slang` alone.
+  2. Fix `forward.slang:6`: it says the file "Uses the shared BRDF math (import
+     brdf) and ACES tonemap (import aces)". Only the first half is true —
+     tonemapping happens in `tonemap/tonemap.slang` as its own pass. Say that.
+  3. Add `TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)`: for each
+     `Resources/ShadersSlang/**/*.slang`, for each `import <module>;`, resolve
+     `common/<module>.slang`, collect that module's **function names and struct
+     names**, and require at least one of them to appear as an identifier token
+     in the importing file (use `tokenize_slang` so a name inside a comment or
+     string does not count). Fail with the importing file, the module, and the
+     symbol set that went unreferenced.
+  4. Give the new test the same self-verifying floor the sibling gates use:
+     assert the scan found at least 10 `import` statements overall, so a broken
+     parser cannot pass silently.
+  5. Regenerate the WGSL
+     (`pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`)
+     and confirm `forward.wgsl` and `sky.wgsl` are **unchanged** — slangc
+     already dead-code-eliminates unused imports, so this must be a no-op on
+     the generated output. If either file changes, stop and report it.
+
+  **Test:** `BuildIntegrity.EveryImportedSlangModuleIsUsed` is the deliverable.
+  Prove it has teeth by temporarily re-adding `import aces;` to
+  `forward/forward.slang` and confirming the test names it, then removing it
+  again. Also confirm `ibl.slang`'s `import fullscreen;` stays green (the
+  struct-name half of step 3 is what keeps it green — if the test only looked
+  at function names, `ibl` would be a false positive). Run
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+  from the repo root.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** `5805867a` added
+  `EverySlangFunctionIsReachableFromAnEntryPoint` after two "source still
+  defines it, nothing calls it" regressions in one week; this is the
+  module-level form of the same check, and it removes exactly the three false
+  positives that the task-3 gate has to work around. Follow that test's
+  structure (allowlist constant, self-verifying floors, one message per
+  finding) rather than inventing a new shape. Do task 1 first so the
+  regeneration in step 5 has a clean baseline to compare against.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
