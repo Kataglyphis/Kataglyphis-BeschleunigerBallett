@@ -5659,49 +5659,6 @@ reasoning stands; do not re-propose until GPU verification is back.
 
 ### Cross-renderer
 
-- [ ] **(S) Make `CheckedInWgslIsNotOlderThanItsSlangSource` look at the imports too** —
-  it compares against the direct `.slang` source only, which is why editing
-  `common/brdf.slang` never marked `forward.wgsl` stale.
-
-  **Files to read:**
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1190-1237` — the test to
-    change
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:832-857` — the SPIR-V
-    twin, `CompiledShadersAreNotOlderThanSharedIncludes`, and the
-    `newest_shared_import(slang_root, out)` helper it uses
-  - `Resources/ShadersSlang/common/` — the shared modules
-    (`brdf.slang`, `aces.slang`, `fullscreen.slang`, `scene_types.slang`, …)
-
-  **Steps:**
-  1. In `CheckedInWgslIsNotOlderThanItsSlangSource`, call
-     `newest_shared_import(slang_root, newest_import)` once before the
-     `wgsl_map` loop. If it returns false (no `common/` modules), keep the
-     existing behaviour rather than skipping the whole test.
-  2. Inside the loop, compare `dest_time` against
-     `std::max(source_time, newest_import)` instead of `source_time` alone, and
-     name which of the two won in the failure message so the reader knows
-     whether to look at the source or at a shared module.
-  3. Keep both existing escape hatches unchanged: `if (!fs::exists(dest)) continue;`
-     (submodule not checked out) and the `checked == 0` → `GTEST_SKIP()` floor.
-  4. Update the comment block at `:1182-1189` to say the check now covers the
-     shared-import closure, and to state plainly that mtimes are meaningless
-     after a fresh clone so this test is a local-iteration guard, not the CI
-     backstop — that is task 3.
-
-  **Test:** No new suite; this strengthens an existing one. Verify by
-  `touch`-ing `Resources/ShadersSlang/common/brdf.slang` and re-running
-  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.CheckedInWgslIsNotOlderThanItsSlangSource`
-  from the repo root: it must now report `forward.wgsl` stale. Regenerate (or
-  `touch` the destination) and confirm it goes green again.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-
-  **Context:** Do task 1 first, or this goes red on the drift it is meant to
-  prevent. The SPIR-V side has had exactly this pair of checks
-  (`…ThanTheirSources` + `…ThanSharedIncludes`) since the Slang migration; the
-  WGSL side only ever got the first half.
-
 - [ ] **(M) Add a content-based freshness gate: every function reachable from a `wgslMap` source's entry points must appear in the checked-in WGSL** —
   mtime checks cannot survive a `git clone`, so CI needs an oracle that reads
   the files.

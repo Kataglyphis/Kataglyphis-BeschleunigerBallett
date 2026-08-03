@@ -1186,7 +1186,13 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
 // Slang source that generates them. A regenerate that drops one of the
 // depth-texture patches, or a .slang edit that never gets propagated, is
 // silent today. This walks the wgslMap and asserts each checked-in .wgsl is
-// not older than its source.
+// not older than its source OR any shared Slang import under common/ - the
+// same pair of checks CompiledShadersAreNotOlderThanTheirSources /
+// …ThanSharedIncludes apply to the SPIR-V side. mtimes are meaningless after a
+// fresh clone (git does not preserve them), so this is a local-iteration
+// guard that catches "I edited a .slang and forgot to regenerate" before you
+// commit - not the CI backstop; that is the content-based freshness gate
+// (task 3 below).
 TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
 {
     const fs::path repo_root = find_repo_root();
@@ -1196,6 +1202,9 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
 
     const auto &manifest = shader_manifest(repo_root);
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
+
+    fs::file_time_type newest_import{};
+    const bool has_shared_imports = newest_shared_import(slang_root, newest_import);
 
     std::vector<std::string> stale;
     int checked = 0;
@@ -1213,11 +1222,16 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
         const auto dest_time = fs::last_write_time(dest, error);
         if (error) { continue; }
 
+        const bool import_is_newer = has_shared_imports && newest_import > source_time;
+        const auto newest_time = import_is_newer ? newest_import : source_time;
+
         ++checked;
-        if (dest_time < source_time) {
+        if (dest_time < newest_time) {
             stale.push_back(fs::relative(dest, repo_root).string() + " (mtime ticks=" + std::to_string(dest_time.time_since_epoch().count())
-                             + ") is older than " + fs::relative(source, repo_root).string()
-                             + " (mtime ticks=" + std::to_string(source_time.time_since_epoch().count()) + ')');
+                             + ") is older than "
+                             + (import_is_newer ? std::string("a shared Slang import under common/")
+                                                 : fs::relative(source, repo_root).string())
+                             + " (mtime ticks=" + std::to_string(newest_time.time_since_epoch().count()) + ')');
         }
     }
 
@@ -1227,8 +1241,9 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
     }
 
     EXPECT_TRUE(stale.empty()) << stale.size()
-                               << " checked-in Rust-crate WGSL file(s) are older than the Slang source that "
-                                  "generates them (regenerate via compile-slang-shaders.ps1/.sh): "
+                               << " checked-in Rust-crate WGSL file(s) are older than the Slang source (or a "
+                                  "shared common/ import) that generates them (regenerate via "
+                                  "compile-slang-shaders.ps1/.sh): "
                                << [&stale] {
                                       std::string joined;
                                       for (const auto &entry : stale) { joined += "\n  " + entry; }
