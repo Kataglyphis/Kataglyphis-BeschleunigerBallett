@@ -458,16 +458,33 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
         end_imgui_frame_if_needed();
     };
 
+    // Used by every RECOVERABLE post-acquire early return (the app keeps
+    // running and will hand imageAvailableSemaphore() straight back to the
+    // next vkAcquireNextImageKHR call). recreateSwapChain() waits idle first,
+    // so the acquire's signal operation has already completed by the time it
+    // reaches createSynchronization() - the semaphore is signaled but has no
+    // pending wait, which makes destroying and recreating it legal. That is
+    // the only way to retire a semaphore this frame never waited on without
+    // submitting a dummy batch.
+    const auto abort_frame_after_acquire = [&](const char *message) -> void {
+        spdlog::error(message);
+        end_imgui_frame_if_needed();
+        recreateSwapChain();
+    };
+
     if (frameSync.frameSyncCount() == 0) {
         spdlog::error("No synchronization frames available; skipping draw frame.");
         end_imgui_frame_if_needed();
         return;
     }
 
-    if (checkChangedFramebufferSize()) {
-        if (frameSync.frameSyncCount() > 0 && !frameSync.inFlightFencesEmpty()) {
-            recreateSwapChain();
-        }
+    // Only consult (and clear) the resize flag once the frameSync guard has
+    // already passed - checkChangedFramebufferSize() clears the flag as soon
+    // as it observes it, so calling it while the guard would still block the
+    // recreate swallows the resize: the flag is gone but recreateSwapChain()
+    // never ran.
+    if (frameSync.frameSyncCount() > 0 && !frameSync.inFlightFencesEmpty() && checkChangedFramebufferSize()) {
+        recreateSwapChain();
     }
 
     if (frameSync.currentFrame() >= frameSync.inFlightFenceCount()
@@ -499,8 +516,7 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
       nullptr);
 
     if (result == vk::Result::eErrorOutOfDateKHR) {
-        end_imgui_frame_if_needed();
-        recreateSwapChain();
+        abort_frame_after_acquire("Swapchain out of date at acquire; recreating.");
         return;
     }
 
@@ -513,14 +529,14 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
     }
 
     if (image_index >= frameSync.imagesInFlightFenceCount() || image_index >= command_buffers.size()) {
-        spdlog::error(fmt::format("Swapchain image index out of range: {}", image_index));
-        end_imgui_frame_if_needed();
+        abort_frame_after_acquire(
+          fmt::format("Swapchain image index out of range: {}", image_index).c_str());
         return;
     }
 
     if (image_index >= frameSync.renderFinishedCount() || !frameSync.renderFinishedSemaphore(image_index)) {
-        spdlog::error(fmt::format("Render-finished semaphore missing for swapchain image {}.", image_index));
-        end_imgui_frame_if_needed();
+        abort_frame_after_acquire(
+          fmt::format("Render-finished semaphore missing for swapchain image {}.", image_index).c_str());
         return;
     }
 
@@ -554,7 +570,16 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
         return;
     }
 
-    update_uniform_buffers(image_index);
+    if (!update_uniform_buffers(image_index)) {
+        // The command buffer is already recording (begin() above succeeded);
+        // rendering this frame against uniforms that were never written is
+        // worse than dropping it, but create_command_buffers() (called from
+        // recreateSwapChain()) must not free a buffer still in the recording
+        // state.
+        std::ignore = command_buffers[image_index].end();
+        abort_frame_after_acquire("Failed to update uniform buffers; dropping this frame.");
+        return;
+    }
 
     Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars const &guiRendererSharedVars =
       gui->getGuiRendererSharedVars();
@@ -566,7 +591,8 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
     if (raytracing_available && guiRendererSharedVars.raytracing) { update_raytracing_descriptor_set(image_index); }
 
     if (!record_commands(image_index, guiSceneSharedVars)) {
-        end_imgui_frame_if_needed();
+        std::ignore = command_buffers[image_index].end();
+        abort_frame_after_acquire("record_commands failed; dropping this frame.");
         return;
     }
 
@@ -723,11 +749,11 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
     createSynchronization();
 }
 
-void Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
+bool Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
 {
     if (image_index >= globalUBOMapped.size() || image_index >= sceneUBOMapped.size()) {
         spdlog::error(fmt::format("Uniform buffer index out of range: {}", image_index));
-        return;
+        return false;
     }
 
     std::memcpy(globalUBOMapped[image_index], &globalUBO, sizeof(VulkanRendererInternals::GlobalUBO));
@@ -737,6 +763,7 @@ void Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
     // matrices (this) and the shadow-sample matrices (sceneUBO, filled in
     // updateUniforms) must land in the SAME image's buffers together.
     dirShadowMap.uploadLightMatrices(image_index);
+    return true;
 }
 
 void Kataglyphis::VulkanRenderer::updateUBODescriptorSets()

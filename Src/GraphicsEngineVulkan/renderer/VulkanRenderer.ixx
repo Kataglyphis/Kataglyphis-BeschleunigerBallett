@@ -196,7 +196,9 @@ class VulkanRenderer
     std::vector<VulkanBuffer> sceneUBOBuffer;
     std::vector<void*> sceneUBOMapped;
     void create_uniform_buffers();
-    void update_uniform_buffers(uint32_t image_index);
+    // Returns false (and leaves the UBOs untouched) if image_index is out of
+    // range for the currently sized UBO vectors.
+    bool update_uniform_buffers(uint32_t image_index);
     void cleanUpUBOs();
 
     std::vector<vk::CommandBuffer> command_buffers;

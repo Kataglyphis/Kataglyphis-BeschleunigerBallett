@@ -3215,6 +3215,93 @@ TEST(BuildIntegrity, CommandBufferFailurePathsDoNotLeaveHalfBuiltResources)
          "subsystem has no defined rendering behaviour, so a failed command buffer must ASSERT_VULKAN instead";
 }
 
+// drawFrame used to have three post-acquire early returns that left
+// frameSync's imageAvailableSemaphore() signaled with no pending wait, then
+// handed that same semaphore straight back to the next frame's
+// vkAcquireNextImageKHR (which requires an unsignaled semaphore) - a
+// validation-layer hazard on every framebuffer-size-change, out-of-range
+// image index or record_commands failure. abort_frame_after_acquire()
+// (drawFrame's second lambda, next to abort_frame_with_fatal_error) fixes
+// this by recreating the swap chain - which destroys and recreates every
+// semaphore - before returning. This scans every bare `return;` between the
+// acquireNextImageKHR( call and frameSync.advanceFrame() and requires it be
+// preceded (within the previous three non-blank lines) by a call to
+// abort_frame_after_acquire( or abort_frame_with_fatal_error(, so a future
+// early return added to this span cannot reintroduce the leak silently.
+TEST(BuildIntegrity, EveryPostAcquireEarlyReturnRetiresTheAcquireSemaphore)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path renderer_path =
+      repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
+    std::ifstream renderer_file(renderer_path);
+    ASSERT_TRUE(renderer_file) << "missing " << renderer_path.string();
+
+    std::vector<std::string> lines;
+    std::string raw_line;
+    while (std::getline(renderer_file, raw_line)) { lines.push_back(raw_line); }
+
+    std::size_t acquire_line = lines.size();
+    std::size_t advance_frame_line = lines.size();
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+        if (acquire_line == lines.size() && lines[i].find("acquireNextImageKHR(") != std::string::npos) {
+            acquire_line = i;
+        }
+        if (lines[i].find("frameSync.advanceFrame();") != std::string::npos) {
+            advance_frame_line = i;
+            break;
+        }
+    }
+    ASSERT_NE(acquire_line, lines.size()) << "could not locate the acquireNextImageKHR( call in drawFrame";
+    ASSERT_NE(advance_frame_line, lines.size()) << "could not locate the frameSync.advanceFrame(); call in drawFrame";
+    ASSERT_LT(acquire_line, advance_frame_line)
+      << "acquireNextImageKHR( must appear before frameSync.advanceFrame(); - drawFrame was restructured; "
+         "update this test";
+
+    const auto trim = [](const std::string &s) -> std::string {
+        const std::size_t begin = s.find_first_not_of(" \t");
+        if (begin == std::string::npos) { return ""; }
+        const std::size_t end = s.find_last_not_of(" \t");
+        return s.substr(begin, end - begin + 1);
+    };
+
+    constexpr int kLookback = 3;
+    std::vector<std::string> violations;
+    for (std::size_t i = acquire_line; i <= advance_frame_line; ++i) {
+        if (trim(lines[i]) != "return;") { continue; }
+
+        bool retires_semaphore = false;
+        int checked = 0;
+        for (std::size_t w = i; w-- > 0 && checked < kLookback;) {
+            if (trim(lines[w]).empty()) { continue; }
+            ++checked;
+            if (lines[w].find("abort_frame_after_acquire(") != std::string::npos
+                || lines[w].find("abort_frame_with_fatal_error(") != std::string::npos) {
+                retires_semaphore = true;
+                break;
+            }
+        }
+
+        if (!retires_semaphore) {
+            violations.push_back(
+              "VulkanRenderer.cpp:" + std::to_string(i + 1)
+              + ": bare \"return;\" in drawFrame's post-acquire span with no abort_frame_after_acquire(/"
+                "abort_frame_with_fatal_error( call in the previous " + std::to_string(kLookback) + " non-blank lines");
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " post-acquire early return(s) in drawFrame do not retire imageAvailableSemaphore() before returning "
+         "(via abort_frame_after_acquire( or abort_frame_with_fatal_error():"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 // docs/gpu-golden-testing.md's golden-suite counts have already had to be
 // corrected twice by hand (commits 1cd6b8b5, e2767bb1), and a planner batch
 // once found the doc claiming 21 tests when the suite held 28. Pins the
