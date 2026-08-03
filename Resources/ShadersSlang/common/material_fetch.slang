@@ -29,3 +29,11 @@ float2 transform_uv(float2 uv, ObjMaterial material)
 {
     return uv * material.uv_scale + material.uv_offset;
 }
+
+// glTF alphaMode MASK test. ObjMaterial.hpp defines a negative alphaCutoff as
+// "not a MASK material" (OPAQUE/BLEND) - never discard. OBJ materials and
+// every non-MASK glTF material default to -1, so they are unaffected.
+bool alpha_masked_out(ObjMaterial material, float sampledAlpha)
+{
+    return material.alphaCutoff >= 0.0 && sampledAlpha < material.alphaCutoff;
+}

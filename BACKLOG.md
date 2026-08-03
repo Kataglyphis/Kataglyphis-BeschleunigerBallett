@@ -6933,6 +6933,345 @@ still an owner decision.
 
 ### Docs
 
+## 2026-08-03 batch XIX — planner (a deferred geometry pass that invents a 0.1 alpha cutoff for every OPAQUE material, contradicting the header comment that defines the rule; the texture-slot clamp written out five times; a Rust frame graph that omits four of the passes it is documented to mirror, validated by a `debug_assert` that can only compare a literal to itself; a full-screen histogram compute pass recorded every frame in the mode that discards its output; the last hand-maintained list in the repo with no gate)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the tree
+this pass.
+
+**Every task in this batch is verifiable with no GPU**, deliberately: host
+golden verification is still blocked over RDP (see the `- [b]` entry below).
+Tasks 1 and 2 are Slang edits whose evidence is a recompile plus new
+`BuildIntegrity` source scans; tasks 3 and 4 land in the Rust crate's own
+`cargo test` lane (which `Linux.yml` runs on `ubuntu-24.04`); task 5 is a new
+`BuildIntegrity` gate over two checked-in files.
+
+**The headline is that the deferred geometry pass applies an alpha cutoff of
+0.1 to materials that the engine's own contract says must never discard.**
+`Src/shared/scene/ObjMaterial.hpp:20-26` states the rule in prose: "A negative
+value means 'not a MASK material' (OPAQUE/BLEND) — the raster shaders discard a
+fragment only when `alphaCutoff >= 0` and the sampled base-colour alpha falls
+below it, so OPAQUE materials (the default, and every OBJ material) never
+discard and are bit-unchanged." `GltfLoader.cpp:128` implements the producer
+side (`alpha_mode == cgltf_alpha_mode_mask ? material.alpha_cutoff : -1.0F`),
+and `ObjMaterial`'s default ctor sets `alphaCutoff(-1.0F)`, so *every* OBJ
+material and every glTF OPAQUE/BLEND material arrives with a negative cutoff.
+Two of the three raster consumers honour that: `rasterizer.slang:61-62`
+(`material.alphaCutoff >= 0.0 && baseSample.a < material.alphaCutoff`) and
+`shadow_map.slang:46-50` (`alphaCutoff >= 0.0 && textureID >= 0`). The third
+does not — `deferred.slang:60-61` reads
+
+    float alphaCull = (material.alphaCutoff >= 0.0) ? material.alphaCutoff : 0.1;
+    if (texColor.a < alphaCull) discard;
+
+so the sentinel that means "never discard" is turned into "discard below 0.1".
+Any textured surface whose base-colour texture carries alpha below 0.1 anywhere
+— a diffuse PNG with an unused/zeroed alpha channel is the common case — is
+solid in forward mode and full of holes in deferred mode, in the same scene,
+from the same material. This is a spec deviation as well as an internal
+divergence: glTF says an OPAQUE material's alpha "is ignored and the rendered
+output is fully opaque".
+
+**Second, the texture-slot clamp that batch III cited as the reason
+`assignTextureOffsets` needs no bounds check is written out five times.**
+`clamp(int(obj.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1)`
+appears byte-identically at `rasterizer.slang:59`, `deferred.slang:58`,
+`shadow_map.slang:48`, `path_tracing.slang:207` and `raytrace.rchit.slang:72`.
+All five already `import scene_types`, which is where `MAX_TEXTURE_COUNT` is
+defined (`common/scene_types.slang:8`), so unlike the `material_fetch` helpers
+this one has a home every consumer can reach — including the two ray-tracing
+shaders, which cannot import `material_fetch` (its header comment explains why:
+`discard` conflicts with RT capabilities). The cap is the same one
+`VulkanRenderer.cpp:1537-1544` warns about and `planFlattenedTextureSlots`
+enforces; five copies is how the host and device halves of that rule drift.
+
+**Third, the Rust crate's frame graph declares five passes where the renderer
+records nine, and the assertion that was supposed to keep them in step cannot
+fail.** `render/graph.rs:102-103` says the graph is "the frame graph the forward
+renderer records, as data. Kept next to the recording code so the two stay in
+step; `validate` proves the wiring." `forward_frame_graph()` lists shadow,
+forward+sky, bloom, ssao, tonemap. `ForwardRenderer::render` additionally
+records a `depth_resolve` fullscreen pass (`render/forward.rs:2100-2118`), the
+occlusion/GPU-cull pass (`:2131-2167`, `TimedPass::OcclusionCull`), the
+histogram build (`:2188-2193`, `TimedPass::Histogram`) and the exposure
+reduction (`:2194-2198`, `TimedPass::ExposureReduce`) — so three of the eight
+variants of `TimedPass::ALL` (`render/gpu_timing.rs:71-80`) have no row in the
+graph at all, plus the untimed depth resolve. The `debug_assert` at
+`forward.rs:2126-2129` validates `forward_frame_graph()` against `&[]` — a
+literal against itself, with the identical call already asserted by
+`graph::tests::forward_graph_is_valid` — so it can only ever pass, while
+allocating a `Vec<PassDesc>` and a `HashSet` on every debug frame.
+
+**Fourth, the histogram build pass runs every frame in the mode that throws its
+result away.** `forward.rs:2188-2198` calls `self.histogram.encode(...)` (a
+clear plus a full-screen build over the HDR target) and then
+`encode_reduce(...)` unconditionally. `auto_exposure` defaults to `false`
+(`forward.rs:921`), and in that mode the reduce shader takes the manual branch
+immediately — `src/shaders/histogram.wgsl:146-149` reads `auto_enabled` and
+returns `manual_ev` without touching a single bin. So in the default
+configuration the renderer pays one full-resolution compute pass per frame
+whose only consumer is a branch that is not taken. The fix is the one the code
+twelve lines above already applies to bloom and SSAO, with its rationale
+spelled out ("Turning the overlay slider to 0 used to cost exactly as much as
+leaving it on", `forward.rs:2169-2177`): skip the pass, keep the consumer.
+
+**Fifth, `Test/perf/baselines/win-9070xt-32core.json` is the last
+hand-maintained list in this repo with nothing gating it.** The fuzz-target
+array in `Windows.yml` got its gate at `buildIntegritySuite.cpp:1351-1395`
+precisely because "a fuzz target declared in `Test/fuzz/CMakeLists.txt` but
+never added to Windows.yml's array does not run and nothing says so"; the
+Windows CPU-suite allowlist was replaced by "run everything except the two GPU
+suites". The perf baseline has the same shape and no gate:
+`Compare-PerfBaseline.ps1:29-32` documents that "benchmarks present in only one
+file are reported but never fatal", and `Compare-PerfBaseline.Tests.ps1:70-94`
+pins that behaviour in both directions. That policy is correct for the
+comparator — but it means a benchmark added to `perfSuite.cpp` without a
+baseline row is silently never compared, forever. The two lists happen to agree
+today (17 registered instantiations, 17 baseline rows); nothing keeps them that
+way.
+
+Ordering: **task 1 before task 2** — both edit `deferred.slang`,
+`rasterizer.slang` and `shadow_map.slang`, and task 2's gate is easier to write
+once task 1 has already moved the alpha rule into a named helper. **Task 3
+before task 4** — task 4 makes the histogram pass conditional, which task 3's
+graph must then describe accurately (say so in the graph's doc comment rather
+than adding a conditional row). Task 5 is disjoint from all four.
+
+Note for tasks 1 and 2: `common/scene_types.slang` and
+`common/material_fetch.slang` are imported **only** by SPIR-V-target shaders
+(`rasterizer`, `deferred`, `shadow_map`, `path_tracing`, `raytrace.rchit`,
+`clouds`, `cascaded_shadow`) — no `wgslMap` entry reaches them, so neither task
+regenerates any checked-in WGSL and neither is blocked by the `- [b]` slangc
+version floor.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`gpu_cull.slang:83-84`'s comment** ("take the maximum
+(nearest-to-camera) sampled depth") — backwards for this renderer's standard
+0=near/1=far depth, where the maximum is the *farthest* sample; the code itself
+is correct (`aabbNear > maxSampled` is the conservative test) and a one-line
+comment fix is not a task — fold it in if something else touches that shader.
+**The C++ engine rendering glTF `BLEND` materials as opaque** (`GltfLoader.cpp:128`
+maps BLEND to the same -1 sentinel as OPAQUE, while the Rust renderer has a
+sorted blend pass) — a real seventh cross-renderer divergence, but closing it
+means a whole transparent pass with its own sort and pipeline state, which is an
+L-sized feature and not an executor task. **`Scene::getObjectDescriptions()`
+returning the vector by value** (`Scene.ixx:142`, copied at
+`VulkanRenderer.cpp:1371`) — a genuine needless copy, but its only caller runs
+on scene change, never per frame; fold it in if something else touches `Scene`.
+**The five blocking `map_async` readbacks in the Rust crate** and
+**`render/histogram.rs`/`render/gpu_occlusion.rs` having no inline tests** —
+unchanged since the 2026-08-03 batch and batch XVII rejected both; every
+extracted unit still needs a live wgpu adapter. **`CommandBufferManager::beginCommandBuffer`
+allocating a `std::vector<vk::CommandBuffer>` for one handle** — re-confirmed and
+re-rejected for the fourth time (upload-time only, never on the frame path).
+**`Src/KomputePlayground`** — unchanged; still an owner decision.
+
+### Shaders
+
+- [ ] **(S) (refactor) Give the flattened texture-slot clamp one definition in
+  `scene_types.slang`** — the same `clamp(...)` expression is written out in all
+  five shaders that sample the global texture array.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/common/scene_types.slang:8` — `MAX_TEXTURE_COUNT`,
+    already imported by all five consumers
+  - The five copies: `rasterizer/rasterizer.slang:59`, `deferred/deferred.slang:58`,
+    `rasterizer/shadows/shadow_map.slang:48`, `path_tracing/path_tracing.slang:207`,
+    `raytracing/raytrace.rchit.slang:72`
+  - `Src/GraphicsEngineVulkan/scene/ObjectDescription.ixx:29-84` — the host half
+    (`assignTextureOffsets` / `planFlattenedTextureSlots`) the clamp is the
+    device-side counterpart of
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1537-1544` — the
+    over-cap warning whose "will sample the wrong slots" wording is only true
+    because of this clamp
+  - `Resources/ShadersSlang/common/material_fetch.slang:1-6` — why the helper
+    must NOT go here (RT capability conflict; `path_tracing` and
+    `raytrace.rchit` cannot import it)
+
+  **Steps:**
+  1. Add `int resolve_texture_slot(ObjectDescription obj, ObjMaterial material)`
+     (or equivalent taking `uint texture_offset, int textureID`) to
+     `common/scene_types.slang`, returning the clamped index, with a comment
+     stating that an over-cap model samples a wrong slot rather than out of
+     bounds — the property `VulkanRenderer.cpp:1537-1544` warns about.
+  2. Replace all five call sites with the helper. Nothing else in those blocks
+     changes.
+  3. Recompile SPIR-V with `Scripts/Windows/compile-slang-shaders.ps1` (no WGSL
+     target imports `scene_types`, so no checked-in WGSL moves).
+  4. Add `TEST(BuildIntegrity, TextureSlotClampHasOneDefinition)`: assert the
+     literal `MAX_TEXTURE_COUNT - 1)` appears in `scene_types.slang` and in no
+     other `.slang` file under `Resources/ShadersSlang/`.
+
+  **Test:** the new gate above; `BuildIntegrity.CompiledShadersAreNotOlderThanTheirSources`
+  and `BuildIntegrity.HostAndShaderSharedConstantsAgree` stay green.
+
+  **Build:** `clangcl-debug`, same command as task 1.
+
+  **Context:** Do task 1 first — both touch the same three raster shaders. Put
+  the helper in `scene_types.slang`, not `material_fetch.slang`: the latter's
+  header comment records that it deliberately avoids RT capabilities, and two of
+  the five call sites are ray-tracing shaders.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) Make `render::graph` describe the frame the renderer actually
+  records, and pin it against `TimedPass::ALL`** — the declared graph is four
+  passes short of the recording code it claims to mirror, and its per-frame
+  `debug_assert` validates a literal against itself.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/render/graph.rs` — `Resource`, `validate`,
+    `forward_frame_graph()` at `:102-132`, and the module doc claiming the graph
+    and the recording code stay in step
+  - `crates/webgpu_renderer/src/render/forward.rs:2126-2129` — the tautological
+    `debug_assert`; `:1919-1950` (shadow pass), `:1950-2095` (forward+sky),
+    `:2100-2118` (depth resolve), `:2131-2167` (occlusion / GPU cull),
+    `:2169-2177` (bloom, ssao), `:2188-2198` (histogram, exposure reduce),
+    `:2199-2203` (tonemap)
+  - `crates/webgpu_renderer/src/render/gpu_timing.rs:48-80` — `TimedPass` and
+    `TimedPass::ALL`, the eight passes that are already enumerated as data
+
+  **Steps:**
+  1. Split the single `Resource::Depth` into `DepthMsaa` (written by the forward
+     pass) and `Depth` (written by the depth-resolve pass, read by SSAO and the
+     cull pass). Without this, adding the resolve pass makes `validate` return
+     `DuplicateWrite` — the existing rule is what forces the distinction, so do
+     not weaken `validate` to accommodate it.
+  2. Add `Resource::Visibility` (written by the occlusion/cull pass),
+     `Resource::Histogram` (written by the histogram build, read by the
+     reduction) and `Resource::Exposure` (written by the reduction, read by
+     tonemap).
+  3. Extend `forward_frame_graph()` to the full record order: shadow →
+     forward+sky → depth resolve → occlusion cull → bloom → ssao → histogram →
+     exposure reduce → tonemap, with reads/writes per the call sites above, and
+     make `tonemap` read `Exposure` as well as `HdrColor`/`Bloom`/`Ambient`.
+  4. Document in the function's doc comment that passes the renderer may *skip*
+     at runtime (bloom/ssao at zero strength, occlusion when disabled, and the
+     histogram once task 4 lands) are still declared — the graph is the maximal
+     frame, not a per-frame trace. Do not add conditional rows.
+  5. Delete the `debug_assert` at `forward.rs:2126-2129`: it re-runs, on every
+     debug frame and with a `Vec` + `HashSet` allocation, exactly the call
+     `graph::tests::forward_graph_is_valid` already makes, against an input that
+     cannot vary at runtime.
+
+  **Test:** add `graph::tests::every_timed_pass_has_a_graph_row` asserting that
+  for each `TimedPass::ALL` variant there is a `PassDesc` whose `name` maps to
+  it (a small `match` from `TimedPass` to the graph pass name keeps the mapping
+  explicit and makes a new `TimedPass` variant a compile error). Keep
+  `forward_graph_is_valid`. Run
+  `bash ./Scripts/Linux/run-cargo-tests.sh` (or
+  `cargo test -p kataglyphis_webgpu_renderer --lib`) — these are pure CPU tests,
+  no adapter needed.
+
+  **Build:** no C++ build needed. The crate's tests run in `Linux.yml`'s
+  `ubuntu-24.04` leg, so this gets CI signal on an ordinary push.
+
+  **Context:** The value is the invariant, not the list: today a new pass can be
+  added to the renderer, get a `TimedPass` variant, appear in the GUI and the
+  timing export, and still be missing from the one artifact that documents the
+  frame's read/write wiring — which is how four of them got there. Avoid turning
+  this into a scheduler; the module doc is explicit that execution order stays
+  explicit.
+
+- [ ] **(S) Skip the histogram build pass when auto-exposure is off** — a
+  full-resolution compute pass is recorded every frame in the default
+  configuration, and its output is never read.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/render/forward.rs:2169-2198` — the bloom/SSAO
+    zero-strength skip and its rationale comment, immediately above the
+    unconditional histogram calls
+  - `crates/webgpu_renderer/src/render/forward.rs:921` — `auto_exposure: false`
+    is the default; `:1665-1677` — `set_exposure_settings` feeding
+    `auto_enabled` to the reduction every frame
+  - `crates/webgpu_renderer/src/shaders/histogram.wgsl:146-149` — the reduce
+    shader's manual branch, taken before any bin is read
+  - `crates/webgpu_renderer/src/render/histogram.rs:224-313` — `encode`
+    (clear + build) versus `encode_reduce`
+
+  **Steps:**
+  1. Gate the `self.histogram.encode(...)` call on `self.auto_exposure`. Leave
+     `encode_reduce(...)` unconditional — `forward.rs:1666-1668` records why
+     (manual mode routes through the same buffer so switching modes cannot
+     strand a stale value).
+  2. Re-encode the build on the frame auto-exposure is switched **on**, so the
+     first adapted frame does not reduce over bins left behind by whatever was
+     on screen when it was last enabled. A `bool` latch (`auto_exposure_was_on`)
+     compared at the top of `render` is enough; state in a comment that
+     adaptation is temporal so one warm-up frame is the cost, not a visible pop.
+  3. Confirm the timing subsystem tolerates a frame in which
+     `TimedPass::Histogram` is never scoped — bloom, SSAO and the occlusion pass
+     are already conditional, so the precedent exists; if a skipped pass reports
+     a stale rather than an absent value, say so in the commit message.
+
+  **Test:** add an inline unit test in `forward.rs` (or on a small
+  `fn histogram_build_needed(auto_enabled: bool, was_enabled: bool) -> bool`
+  extracted for the purpose) covering off → false, on → true, and the
+  off→on transition frame → true. Run
+  `cargo test -p kataglyphis_webgpu_renderer`. The adapter-gated suites
+  (`tests/histogram.rs`) self-skip without a GPU; run them on the host if one is
+  available.
+
+  **Context:** Identical in shape to the bloom/SSAO skip four lines above, which
+  the code documents as having been worth doing ("Turning the overlay slider to
+  0 used to cost exactly as much as leaving it on"). The saving here is larger:
+  the histogram build is full-resolution, not half, and unlike bloom/SSAO it is
+  paid in the *default* configuration. Do not remove the reduction — it is the
+  single writer of the exposure buffer in both modes.
+
+### Performance testing
+
+- [ ] **(S) Gate the perf baseline against the benchmarks `perfSuite.cpp`
+  registers** — a benchmark added without a baseline row is silently never
+  compared, and the comparator is deliberately not allowed to say so.
+
+  **Files to read:**
+  - `Test/perf/perfSuite.cpp` — the `BENCHMARK(...)` / `BENCHMARK(...)->Arg(N)`
+    registrations (14 macros, 17 instantiations today)
+  - `Test/perf/baselines/win-9070xt-32core.json` — the checked-in rows, named
+    with Google Benchmark's `name/arg` convention (`BM_ComputeCascadeData/1`)
+  - `Scripts/Compare-PerfBaseline.ps1:29-32` — the documented "present in only
+    one file is reported, never fatal" policy, and
+    `Scripts/Windows/tests/Compare-PerfBaseline.Tests.ps1:70-94`, which pins it
+    in both directions
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:552-600` and `:1351-1395`
+    — the fuzz-target gate: the same "hand-maintained list, parsed out of its
+    source of truth, compared to its consumer" shape, including how it fails
+    loudly when its own anchor text stops matching
+
+  **Steps:**
+  1. Add a parser to `buildIntegritySuite.cpp` that reads `Test/perf/perfSuite.cpp`
+     and returns the expected benchmark names: for each `BENCHMARK(<name>)`,
+     emit `<name>` when the statement has no `->Arg(`, and `<name>/<n>` for each
+     `->Arg(<n>)` on that statement. Model it on `parse_declared_fuzz_targets`,
+     including its "parsed zero declarations" guard so a macro rename fails the
+     test instead of silently passing.
+  2. Read `Test/perf/baselines/win-9070xt-32core.json` with `nlohmann/json`
+     (already a dependency — see `GpuTimingSubsystem.ixx`) and collect
+     `benchmarks[].name`.
+  3. Add `TEST(BuildIntegrity, PerfBaselineCoversEveryRegisteredBenchmark)`
+     asserting set equality in both directions, with failure messages naming the
+     offending benchmark and pointing at the refresh procedure in
+     `Compare-PerfBaseline.ps1`'s header (run the suite, eyeball, copy the JSON
+     by hand — there is deliberately no capture mode).
+  4. Do NOT change `Compare-PerfBaseline.ps1` or its Pester suite: the
+     never-fatal policy for one-sided benchmarks is deliberate and tested. This
+     gate closes the hole at the source instead.
+
+  **Test:** the new `BuildIntegrity.PerfBaselineCoversEveryRegisteredBenchmark`.
+  Verify it is genuinely red-provable by temporarily deleting one row from the
+  JSON (and by temporarily adding a throwaway `BENCHMARK`), then restoring both.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`,
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.PerfBaseline*`
+
+  **Context:** A `BuildIntegrity` gtest, not a Pester test, on purpose: the
+  Pester suites only run on `[build-win]` commits, while the commit suite runs
+  on every Linux push. The baseline numbers themselves stay machine-specific and
+  out of CI — this gates only the *membership* of the two lists, which is
+  machine-independent.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

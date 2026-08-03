@@ -1796,6 +1796,52 @@ TEST(BuildIntegrity, SourceCommentsDoNotReferenceDeletedShaderFiles)
          }();
 }
 
+// The deferred geometry pass used to invent its own "0.1 alpha cutoff"
+// fallback for OPAQUE materials instead of sharing material_fetch.slang's
+// alpha_masked_out() with the forward rasterizer and shadow map shaders -
+// see ObjMaterial.hpp's alphaCutoff contract (negative means never discard).
+// This pins all three raster shaders to the one shared predicate so the
+// drift cannot silently come back.
+TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const std::array<const char *, 3> kShaders = {
+        "Resources/ShadersSlang/deferred/deferred.slang",
+        "Resources/ShadersSlang/rasterizer/rasterizer.slang",
+        "Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang",
+    };
+    static const std::string kSharedPredicate = "alpha_masked_out(";
+    static const std::string kBannedFallback = "alphaCutoff >= 0.0) ?";
+
+    std::vector<std::string> violations;
+    for (const char *relative_path : kShaders) {
+        const fs::path path = repo_root / relative_path;
+        std::ifstream file(path);
+        ASSERT_TRUE(file) << "missing " << path.string();
+
+        std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+        if (text.find(kSharedPredicate) == std::string::npos) {
+            violations.push_back(std::string(relative_path) + ": does not call " + kSharedPredicate);
+        }
+        if (text.find(kBannedFallback) != std::string::npos) {
+            violations.push_back(std::string(relative_path) + ": still contains the hand-rolled '"
+                                  + kBannedFallback + "' alpha-cutoff fallback");
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " raster shader(s) do not share the single alpha_masked_out() MASK rule:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 // scene_types.slang's MAX_CASCADES (:68) is the gated source of truth for the
 // cascade count - HostAndShaderSharedConstantsAgree above pins it against
 // host_device_shared_vars.hpp. That gate is blind to a second, independent

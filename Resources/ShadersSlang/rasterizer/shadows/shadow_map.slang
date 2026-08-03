@@ -47,6 +47,6 @@ void shadow_fs_main(ShadowVsOut In, uint primitiveID : SV_PrimitiveID)
     {
         int textureId = clamp(int(obj.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
         float alpha = textures[textureId].Sample(textureSamplers[textureId], transform_uv(In.fragUV, material)).a;
-        if (alpha < material.alphaCutoff) discard;
+        if (alpha_masked_out(material, alpha)) discard;
     }
 }
