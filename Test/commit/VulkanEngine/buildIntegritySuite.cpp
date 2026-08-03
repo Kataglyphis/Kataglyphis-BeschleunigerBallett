@@ -4734,6 +4734,54 @@ TEST(BuildIntegrity, PipelineTeardownGoesThroughTheSharedHelper)
          }();
 }
 
+// CascadedShadowMap used to create TWO byte-identical image views over the
+// same shadow-map-array image: shadowMapArray's own sampled view (init(),
+// passed (format, eDepth, 1, e2DArray, numCascades)) and a second view built
+// by hand in createFramebuffers() from the exact same five values, purely to
+// hand to the framebuffer as its attachment. createFramebuffers() now reuses
+// shadowMapArray->getImageView() instead, and the shadowMapArrayView member
+// is gone.
+TEST(BuildIntegrity, ShadowMapArrayHasExactlyOneImageView)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path cpp_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "light" / "directional_light"
+                               / "CascadedShadowMap.cpp";
+    const fs::path ixx_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "light" / "directional_light"
+                               / "CascadedShadowMap.ixx";
+    std::ifstream cpp_file(cpp_path);
+    ASSERT_TRUE(static_cast<bool>(cpp_file)) << "missing " << cpp_path.string();
+    const std::string cpp_contents((std::istreambuf_iterator<char>(cpp_file)), std::istreambuf_iterator<char>());
+    std::ifstream ixx_file(ixx_path);
+    ASSERT_TRUE(static_cast<bool>(ixx_file)) << "missing " << ixx_path.string();
+    const std::string ixx_contents((std::istreambuf_iterator<char>(ixx_file)), std::istreambuf_iterator<char>());
+
+    const auto count_occurrences = [](const std::string &haystack, const std::string &needle) {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+            ++count;
+            pos += needle.size();
+        }
+        return count;
+    };
+
+    EXPECT_EQ(count_occurrences(cpp_contents, "createImageView("), 1U)
+      << "CascadedShadowMap.cpp should build exactly one image view for the shadow map array (the sampled "
+         "view in init()) - the framebuffer attachment in createFramebuffers() must reuse it via "
+         "shadowMapArray->getImageView() rather than creating a second, byte-identical view";
+    EXPECT_EQ(count_occurrences(cpp_contents, "buildImageViewCreateInfo("), 0U)
+      << "CascadedShadowMap.cpp should no longer hand-roll an image-view create info for the framebuffer "
+         "attachment - reuse shadowMapArray->getImageView() instead";
+    EXPECT_EQ(cpp_contents.find("shadowMapArrayView"), std::string::npos)
+      << "CascadedShadowMap.cpp still references shadowMapArrayView - the framebuffer attachment view "
+         "should come from shadowMapArray->getImageView() instead of a second owned view";
+    EXPECT_EQ(ixx_contents.find("shadowMapArrayView"), std::string::npos)
+      << "CascadedShadowMap.ixx still declares the shadowMapArrayView member - it should be removed now "
+         "that createFramebuffers() reuses shadowMapArray's own image view";
+}
+
 // Every hand-rolled framebuffer teardown used to be spelled out at each of
 // nine call sites across five stages, four of which duplicated it a second
 // time inside their own cleanUp(). Kataglyphis::destroyFramebuffers /

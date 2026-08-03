@@ -156,10 +156,6 @@ class CascadedShadowMap
     vk::Format depth_format{ vk::Format::eD32Sfloat };
     vk::RenderPass renderPass;
     vk::Framebuffer framebuffer{};
-    // Depth image view the framebuffer attaches to (one full-cascade-array
-    // view since the multiview conversion). Owned here and destroyed in
-    // cleanUp; was previously a file-static map keyed by `this`.
-    vk::ImageView shadowMapArrayView{};
 
     vk::Pipeline graphicsPipeline{};
     vk::PipelineLayout pipelineLayout{};

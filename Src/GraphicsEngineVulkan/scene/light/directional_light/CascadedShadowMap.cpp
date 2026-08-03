@@ -15,7 +15,6 @@ module;
 #include <glm/ext/matrix_clip_space.hpp>
 #include "common/FormatHelper.hpp"
 #include "common/FramebufferHelper.hpp"
-#include "common/ImageViewHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
 #include "common/RenderPassHelper.hpp"
 #include "common/Utilities.hpp"
@@ -215,15 +214,14 @@ void CascadedShadowMap::createFramebuffers()
     // framebuffer layers == 1 with the attachment view spanning every
     // rendered layer. The per-layer views and per-cascade framebuffers are
     // gone.
-    const vk::ImageViewCreateInfo viewInfo = Kataglyphis::buildImageViewCreateInfo(shadowMapArray->getImage(),
-      depth_format, vk::ImageAspectFlagBits::eDepth, 1, vk::ImageViewType::e2DArray, numCascades);
-
-    auto viewResult = device->getLogicalDevice().createImageView(viewInfo);
-    ASSERT_VULKAN(VkResult(viewResult.result), "Failed to create shadow map array view!");
-    shadowMapArrayView = viewResult.value;
-
+    //
+    // Reuses shadowMapArray's own sampled view instead of creating a second,
+    // byte-identical one for the framebuffer attachment: both used to pass
+    // the exact same (format, eDepth, 1, e2DArray, numCascades) tuple to the
+    // image-view create info.
+    const vk::ImageView attachment = shadowMapArray->getImageView();
     const vk::FramebufferCreateInfo framebufferInfo = Kataglyphis::buildFramebufferCreateInfo(
-      renderPass, std::span<const vk::ImageView>(&shadowMapArrayView, 1), vk::Extent2D{ shadowWidth, shadowHeight });
+      renderPass, std::span<const vk::ImageView>(&attachment, 1), vk::Extent2D{ shadowWidth, shadowHeight });
 
     auto fbResult = device->getLogicalDevice().createFramebuffer(framebufferInfo);
     ASSERT_VULKAN(VkResult(fbResult.result), "Failed to create shadow map framebuffer!");
@@ -237,11 +235,6 @@ void CascadedShadowMap::cleanUp()
     // is only a safety net for the forgotten path). Must leave the object
     // reusable: VulkanRenderer re-inits this stage when shadow settings change.
     if (!device) { return; }
-
-    if (shadowMapArrayView) {
-        device->getLogicalDevice().destroyImageView(shadowMapArrayView);
-        shadowMapArrayView = nullptr;
-    }
 
     Kataglyphis::destroyFramebuffer(device->getLogicalDevice(), framebuffer);
 
