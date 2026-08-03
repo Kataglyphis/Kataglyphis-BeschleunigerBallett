@@ -163,11 +163,10 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(std::shared_ptr<VulkanDevic
 
 void Kataglyphis::VulkanSwapChain::destroyImageViews()
 {
-    for (Texture &image : swap_chain_images) {
-        device->getLogicalDevice().destroyImageView(image.getImageView());
-        image.setImageView(vk::ImageView{});
-        image.setImage(vk::Image{});
-    }
+    // Each Texture owns the view VulkanImageView::create produced for it (the
+    // wrapped swapchain image itself is not owned - setImage cleared
+    // owns_image, so VulkanImage::cleanUp is a no-op there).
+    for (Texture &image : swap_chain_images) { image.cleanUp(); }
     swap_chain_images.clear();
 }
 

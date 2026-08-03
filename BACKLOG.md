@@ -6607,6 +6607,228 @@ decision.
 
 ### C++ Vulkan engine
 
+## 2026-08-03 batch XVI — planner (the third member of the `create()`-releases-previous family, and the image/view destruction order the first two just made reachable; a shadow-map setup that builds a command pool, a buffer manager and a staging round trip to write a host-visible buffer that is overwritten a frame later; a descriptor group that will happily declare the same binding twice; a PCF radius bounded by the literal `20` in three files and clamped nowhere; a GUI model-transform control that has been dead since `viking_room` left the tree)
+
+The actionable queue was empty again — 0 `- [ ]`, 15 `- [b]` across the whole
+file. Every `file:line` below was read out of the tree this pass.
+
+**Every task in this batch is verifiable with no GPU**, deliberately, for the
+same reason as batches XIV and XV: all fifteen `- [b]` entries are blocked on
+host GPU golden verification, so nothing here may depend on it. Every task
+lands device-free C++ plus either a pure-function gtest or a `BuildIntegrity`
+source scan. `Test/commit/VulkanEngine/CMakeLists.txt` globs `*.cpp` with
+`CONFIGURE_DEPENDS`, so no new suite file needs registering.
+
+**The headline is that `VulkanImageView::create()` is the third member of the
+family batch XV only half-finished.** `VulkanBuffer::create()` and
+`VulkanImage::create()` now open with `cleanUp()` (`VulkanBuffer.cpp:51`,
+`VulkanImage.cpp:62`), gated by
+`BuildIntegrity.ResourceCreateReleasesThePreviousAllocation`
+(`buildIntegritySuite.cpp:966+`). `VulkanImageView::create()`
+(`VulkanImageView.cpp:40-59`) still assigns `device` and `imageView`
+unconditionally while its own `operator=(&&)` calls `cleanUp()` first
+(`:26`) — the identical asymmetry, in the identical class shape, left behind.
+Worse, the two shipped fixes made a *new* ordering hazard reachable:
+`Texture::uploadRgba` calls `createImage()` (`Texture.cpp:146`) — which now
+**destroys** the previous `VkImage` — while `vulkanImageView` still holds a
+view of that image, and only then calls `createImageView()` (`:190`).
+Destroying a `VkImage` that still has live `VkImageView`s is
+VUID-vkDestroyImage-image-01000. `SkyBox::uploadCubeMapFaces` has the same
+shape (`SkyBox.cpp:135` then `:188`). Nothing re-uploads into a live `Texture`
+today, which is why validation has not fired; the point is that the guarantee
+now advertised on `create()` is only half true.
+
+**Second, `CascadedShadowMap::createDescriptorSetAndPipeline` builds three
+throwaway things to write a buffer that is overwritten a frame later.** It
+creates its own `vk::CommandPool` on the graphics family (`:270-276`) and
+destroys it 20 lines on (`:293`) — the family
+`VulkanRenderer::graphics_command_pool` (`VulkanRenderer.cpp:1481-1492`)
+already owns and hands to `rasterizer.init` (`:108`), `clouds.init` (`:111`)
+and `skyBox.init` (`:150`). It then constructs a function-local
+`VulkanBufferManager vbm;` (`:282`) — the only local one in the tree; `Mesh`,
+`VulkanRenderer` and `ASManager` all hold it as a member precisely so its
+staging buffer is reused (`VulkanBufferManager.ixx:59-64`) — so the reuse is
+defeated and a fresh 64 KB staging allocation is created and destroyed. And
+the destination it stages into is **host-visible and persistently mapped**
+(`:286`, `eHostVisible | eHostCoherent`), which is exactly what
+`uploadLightMatrices` relies on to `memcpy` straight into it
+(`:149-154`). So the staging buffer, the copy, the command pool and the
+fence-synchronised submit all exist to seed matrices that
+`VulkanRenderer::init`'s per-image loop (`VulkanRenderer.cpp:148`) rewrites
+before the first frame. All of it runs again on **every** shadow-resolution or
+cascade-count change (`VulkanRenderer.cpp:327-357`), not just at startup.
+
+**Third, `DescriptorSetGroup` cannot notice that the same binding number was
+declared twice.** `addBinding` (`DescriptorSetGroup.cpp:58-71`) pushes
+unconditionally; `create` (`:73-116`) hands the whole vector to
+`createDescriptorSetLayout` (`:84-88`), where a duplicate `binding` is
+VUID-VkDescriptorSetLayoutCreateInfo-binding-00279; and `findBinding`
+(`:118-125`) silently returns the first of the pair, so every write would land
+on one of the two. `create` also overwrites `layout`, `pool` and
+`descriptor_sets` without releasing what was there — the same asymmetry as the
+headline, on a class whose `operator=(&&)` again calls `cleanUp()` first
+(`:41`). It cannot simply call `cleanUp()`, because `cleanUp()` clears
+`bindings` and those are populated *before* `create()`.
+
+**Fourth, the PCF radius is bounded by a literal `20` in three files and
+clamped in none.** `GUI.cpp:199` slides `pcf_radius` over `1..20`;
+`goldenRenderSuite.cpp:2630` and `:2675` re-spell the same `20`;
+`VulkanRenderer.cpp:202` does a bare
+`static_cast<unsigned int>(guiSceneSharedVars.pcf_radius)` into
+`SceneUBO::pcfRadius` (`SceneUBO.hpp:34`, `scene_types.slang:87`); and
+`cascaded_shadow.slang:39` does `int radius = int(sceneUBO.pcfRadius)` and
+loops `(2r+1)^2` taps with no bound of its own. A negative `pcf_radius` from
+any non-GUI writer (a test, a config load, future scripting — `pcf_radius` is
+a plain `int` at `GUISceneSharedVars.ixx:44`, and `goldenRenderSuite.cpp:540`
+already writes it directly) casts to `4294967295`, back to `-1` in the shader,
+runs zero loop iterations, and returns `1.0` — **the entire scene fully
+shadowed**. This is the same unpinned-constant class as the shadow-resolution
+table (`kShadowMapResolutionCount`) and `MAX_CASCADES`, both of which already
+have one home and a gate.
+
+**Fifth, the GUI's model Position/Rotation controls have been dead for as long
+as `viking_room` has been gone.** `GUI.cpp:69` hard-codes
+`kDefaultSelectedModelPath = "Models/VikingRoom/viking_room.obj"` and only
+sets `selected_model_index` when that exact path appears in
+`sceneConfig::getAvailableModelPaths()` (`:70-78`). There is no
+`Resources/Models/VikingRoom` in the tree — `SceneConfig.cpp:117-120`'s own
+comment describes the 60x viking_room scale as history — so the index stays
+`-1`, the combo reads "Select a model...", and although the `DragFloat3`
+widgets still render and set `model_transform_changed` (`:101-106`),
+`VulkanRenderer::handleModelTransformChange` gates the whole body on
+`selected_model_index >= 0` (`VulkanRenderer.cpp:374`) and drops it.
+
+Ordering: **tasks 1, 2, 3 and 4 all add to `buildIntegritySuite.cpp` — land
+them one at a time, rebuilding between them.** Tasks 2, 3 and 5 change a
+module interface (`CascadedShadowMap.ixx`, `DescriptorSetGroup.ixx`,
+`SceneConfig.ixx`), so each needs `-FreshContainer` per the module rule in
+`docs/gpu-golden-testing.md`. Task 1 and task 4 do not.
+
+Candidates found but NOT tasked this cycle (checked, then rejected — do not
+re-propose without new evidence): **an `ImageMemoryBarrier` builder and the
+four `vk::ImageSubresourceRange` blocks** — ninth rejection, still owned by the
+`- [b]` cloud-barrier entry and still gated on host GPU verification; stop
+re-checking them. **`SkyBox::recreateFrameResources` not destroying its own
+framebuffers** — looked like a leak, is not: `VulkanRenderer::recreateSwapChain`
+destroys all four stages' framebuffers at `:708-711` *before*
+`vulkanSwapChain.recreate()`, and it must, because the framebuffers reference
+the old swapchain image views. Moving the teardown into the stages would
+invert a required order; leave it. **`MeshDrawRecorder`'s `unknownBounds`
+sentinel surviving `transformAABB`** — checked, `transformAABB` returns an
+invalid box unchanged (`Frustum.cpp:97`), so the "unknown bounds are visible"
+rule holds. **`Clouds` giving `cloudOutputTexture` a sampler** — checked the
+consumer: the post pass binds it as a combined image sampler
+(`VulkanRenderer.cpp:1290-1292`), so the sampler is used. **`Window.cpp:102-103`'s
+comment citing `VulkanRenderer.cpp:646`** — still stale (the call is at
+`:690-692`); still too small to task, fix it in passing. **The unclamped
+`num_shadow_cascades` write-back** (`VulkanRenderer.cpp:343-350` clamps the
+cascade count but never tells the GUI) — real but latent: `MAX_CASCADES` is 3
+and no desktop `maxMultiviewViewCount` is below it, and the write-back itself
+is not unit-testable without a device. **`Src/KomputePlayground`** — unchanged;
+still an owner decision.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Stop `CascadedShadowMap` from building a command pool, a buffer manager and a staging round trip to seed a host-visible buffer** — three throwaway allocations per shadow-resolution change, for data `uploadLightMatrices` overwrites before the first frame.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:257-294` — the whole function: pool create at `:270-276`, `VulkanBufferManager vbm;` at `:282`, the per-image `createBufferAndUploadVectorOnDevice` at `:285-287`, pool destroy at `:293`.
+  - `:120-155` (`uploadLightMatrices`) — `memcpy` straight into `getMappedData()`, which is what makes the staging copy redundant.
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.ixx:122-123` — the `init()` signature to extend.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:108-123` (startup order: `graphics_command_pool` is live well before `dirShadowMap.init`), `:324-357` (`handleShadowResolutionChange`, the second `init` call site), `:1481-1492` (where the pool is created).
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanBufferManager.ixx:59-100` — why a member manager exists and what `createBufferAndUploadVectorOnDevice` does for a host-visible destination.
+
+  **Steps:**
+  1. Add a `vk::CommandPool commandPool` parameter to `CascadedShadowMap::init` (`.ixx:122-123` and the definition), store it in a member, and pass `graphics_command_pool` from both call sites (`VulkanRenderer.cpp:122` and `:350`).
+  2. Delete the local pool creation/destruction (`:270-276`, `:293`). Nothing else in the file uses it.
+  3. Replace the staging upload: the destination is `eHostVisible | eHostCoherent`, so create each `lightMatricesBuffers[i]` directly with `VulkanBuffer::create(device, sizeof(glm::mat4) * numCascades, eUniformBuffer, eHostVisible | eHostCoherent)` and `memcpy` the initial `lightMatrices` into `getMappedData()` — the same shape `uploadLightMatrices` already uses. Drop `eTransferDst` from the usage flags if nothing else needs it, and drop the local `VulkanBufferManager` and the `lightMatrices` vector if it becomes dead. Keep the per-swapchain-image loop and the `writeBuffer` call at `:290` exactly as they are, including the comment at `:278-281` explaining why there is one buffer per image.
+  4. Fold in the deferred finding from batch XV while the file is open (it named this as "fold it in whenever `CascadedShadowMap.cpp` is next opened"): with the local pool gone, that item is closed by step 2 — say so in the commit message so it is not re-proposed.
+
+  **Test:** Add `TEST(BuildIntegrity, OnlyTheRendererCreatesACommandPool)` to `buildIntegritySuite.cpp`: scan every `.cpp`/`.ixx` under `Src/GraphicsEngineVulkan/` for `createCommandPool(` and assert the only file containing it is `renderer/VulkanRenderer.cpp`. Reuse `find_repo_root` and the existing recursive-source-scan helpers in that file. Also add a `BuildIntegrity` assertion that `CascadedShadowMap.cpp` contains no `VulkanBufferManager` declaration, pinning that the shadow map no longer stages.
+
+  **Build:** `clangcl-debug`, **with `-FreshContainer`** (this changes `CascadedShadowMap.ixx`, a module interface):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='BuildIntegrity.*:CascadedShadowMapUnit.*:ShadowResolutionUnit.*'` from the repo root.
+
+  **Context:** The GPU suites are what would prove the shadow map still renders, and they are unavailable here — so keep the change strictly mechanical: same buffer count, same size, same descriptor write, same binding. The behavioural claim being relied on is one line of existing code: `uploadLightMatrices` (`:149-154`) already writes these buffers through `getMappedData()`, so a host-visible destination is not a new assumption. Do **not** also change the descriptor set or the pipeline in this task.
+
+- [ ] **(S) Make `DescriptorSetGroup` refuse a duplicate binding number and release a previous layout/pool** — a second `addBinding(1, ...)` today produces an invalid layout and a `findBinding` that silently picks one of the pair.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.cpp:58-71` (`addBinding`), `:73-116` (`create`), `:118-125` (`findBinding`), `:235-247` (`cleanUp`, which clears `bindings` — this is why `create` cannot just call it).
+  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroupPoolSizes.cpp` — the device-free implementation unit of the same module, and its header comment explaining exactly why it exists. The new helper belongs here.
+  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.ixx:18-24` — where `deriveDescriptorPoolSizes` and `descriptorWriteCountMatchesBinding` are declared.
+  - `Test/commit/VulkanEngine/descriptorPoolSizesSuite.cpp:33-120` — the pure-function test pattern to follow; `DescriptorPoolSizesUnit.WriteCountMustMatchTheDeclaredBinding` is the closest analogue.
+  - Call sites that build bindings: `Clouds.cpp:64-69`, `SkyBox.cpp:192-196`, `CascadedShadowMap.cpp:260`, `VulkanRenderer.cpp:1455-1465`.
+
+  **Steps:**
+  1. Add a pure free function to `DescriptorSetGroupPoolSizes.cpp` (declared in `DescriptorSetGroup.ixx` next to `descriptorWriteCountMatchesBinding`):
+     `auto firstDuplicateBinding(std::span<const vk::DescriptorSetLayoutBinding> bindings) -> std::optional<uint32_t>` — returns the first binding number that appears more than once, `std::nullopt` otherwise. No device, no Vulkan calls.
+  2. In `create()`, after the `bindings.empty() || set_count == 0` guard, call it; on a hit, `spdlog::error` naming the duplicated binding and `return false` (matching the existing early-out contract — the two call sites that check the return already log).
+  3. Add a private `releaseGpuResources()` that destroys `pool` and `layout` (guarded on `device`) and clears `descriptor_sets`, leaving `bindings` and `device` alone. Call it as the first statement of `create()` — so a second `create()` releases instead of leaking — and make `cleanUp()` `releaseGpuResources(); bindings.clear(); device = nullptr;` so the two cannot drift.
+  4. Do **not** change `addBinding`'s signature or make it de-duplicate: rejecting at `create()` keeps the failure at the point where it is observable and returnable.
+
+  **Test:** Add to `descriptorPoolSizesSuite.cpp`:
+  `TEST(DescriptorPoolSizesUnit, FirstDuplicateBindingFindsARepeatedBindingNumber)` — the shared render set's real binding list (0,1,2,3,4,5) returns `nullopt`; a list with binding 1 twice returns `1`; an empty list returns `nullopt`; two bindings that share a *descriptor type* but not a number return `nullopt` (the case `deriveDescriptorPoolSizes` deliberately merges — the two functions must not be confused).
+  Then extend `BuildIntegrity.ResourceCreateReleasesThePreviousAllocation` (or add a sibling) asserting `DescriptorSetGroup::create`'s first body statement is `releaseGpuResources();`.
+
+  **Build:** `clangcl-debug`, **with `-FreshContainer`** (`DescriptorSetGroup.ixx` is a module interface):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='DescriptorPoolSizesUnit.*:BuildIntegrity.*'` from the repo root.
+
+  **Context:** This is the same "the obligation lives in the class, not at every call site" argument batch XV shipped for `VulkanBuffer`/`VulkanImage`, plus the guard `writeImageArray` already has for descriptor *counts* (`DescriptorSetGroup.cpp:190-207`) applied to binding *numbers*. Nothing declares a duplicate today; four subsystems build their bindings by hand and a fifth is one copy-paste away. Follow `DescriptorSetGroupPoolSizes.cpp`'s header comment when placing the new function — keeping it out of the device-touching TU is what makes it testable.
+
+- [ ] **(S) Give the PCF radius one bound and clamp it before it reaches the shader** — `20` is spelled in three files, the shader clamps nothing, and a negative value renders the whole scene fully shadowed.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/common/host_device_shared_vars.hpp:8-9` — `MAX_TEXTURE_COUNT` / `MAX_CASCADES`, the pattern to copy.
+  - `Resources/ShadersSlang/common/scene_types.slang:68` (`MAX_CASCADES`), `:87` (`pcfRadius`).
+  - `Resources/ShadersSlang/common/cascaded_shadow.slang:39` (`int radius = int(sceneUBO.pcfRadius)`), `:52-64` (the `(2r+1)^2` tap loop and the `max(taps, 1.0)` that turns zero iterations into "fully shadowed").
+  - `Src/GraphicsEngineVulkan/gui/GUI.cpp:199` — the `1..20` slider.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:202` — the unclamped `static_cast<unsigned int>`.
+  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx:14-24, 43-44` — `kShadowMapResolutions` + `shadowResolutionForIndex`, the "one table, one clamping accessor" shape to mirror.
+  - `Src/GraphicsEngineVulkan/common/SceneUboMarshal.hpp` and `Test/commit/VulkanEngine/sceneUboMarshalSuite.cpp` — where a pure clamp helper and its test belong.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:269-273` (`kSharedHostDeviceConstants`) and `:1181-1222` — the host/device constant gate that a new constant joins by being added to one array.
+
+  **Steps:**
+  1. Add `const int MAX_PCF_RADIUS = 20;` to `host_device_shared_vars.hpp` next to `MAX_CASCADES`, and `static const int MAX_PCF_RADIUS = 20;` to `scene_types.slang` next to its `MAX_CASCADES`.
+  2. Add `"MAX_PCF_RADIUS"` to `kSharedHostDeviceConstants` (`buildIntegritySuite.cpp:273`) and an `EXPECT_EQ(shader.at("MAX_PCF_RADIUS"), MAX_PCF_RADIUS);` alongside the two existing ones at `:1221-1222`. Both gates then pin the two spellings together.
+  3. Add `constexpr auto clampPcfRadius(int guiValue) -> uint32_t` to `SceneUboMarshal.hpp`, returning `static_cast<uint32_t>(std::clamp(guiValue, 0, MAX_PCF_RADIUS))`. Use it at `VulkanRenderer.cpp:202` in place of the bare cast.
+  4. Drive the GUI slider from the constant: `ImGui::SliderInt("PCF radius", &guiSceneSharedVars.pcf_radius, 0, MAX_PCF_RADIUS)`. Use `0`, not `1`, as the lower bound — `goldenRenderSuite.cpp:540` already sets `pcf_radius = 0` deliberately (a single tap, hard shadows) and the slider should be able to express what the tests use.
+  5. Replace the literal `20` at `goldenRenderSuite.cpp:2630` and `:2675` with `MAX_PCF_RADIUS`.
+  6. In `cascaded_shadow.slang:39`, clamp defensively: `int radius = clamp(int(sceneUBO.pcfRadius), 0, MAX_PCF_RADIUS);`, with a one-line comment that the host clamps too and this is the second lock, not the first. Recompile shaders (`Scripts/Windows/compile-slang-shaders.ps1`) — this is a `.slang` edit, so `BuildIntegrity.CompiledShadersAreNotOlderThanSharedIncludes` will otherwise go red.
+
+  **Test:** Add `TEST(SceneUboMarshalUnit, ClampPcfRadiusPinsTheBoundTheShaderLoopsOver)` to `sceneUboMarshalSuite.cpp`: `-1` and `INT_MIN` clamp to `0` (**not** to `4294967295`, which is the defect — assert the exact value, and say in the failure message that the un-clamped cast made the shader return fully-shadowed); `0` stays `0`; `MAX_PCF_RADIUS` stays; `MAX_PCF_RADIUS + 1` and `INT_MAX` clamp down to `MAX_PCF_RADIUS`. The two `BuildIntegrity` constant gates cover the host↔Slang mirror.
+
+  **Build:** `clangcl-debug`. Shader-only edits do not need a C++ rebuild, but this task also touches C++, so build normally:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='SceneUboMarshalUnit.*:BuildIntegrity.*:SceneUboLayoutUnit.*'` from the repo root. `MAX_PCF_RADIUS` is not a UBO field, so `SceneUboLayoutUnit` offsets must not move — that suite going red means step 1 landed in the struct by mistake.
+
+  **Context:** `docs/cpp-renderer-improvements.md` records several "one rule, N hand-rolled copies" fixes; this is the same shape for a scalar bound. Note the asymmetry with the Rust renderer: `forward.wgsl`'s PCF kernel is fixed-size and has no equivalent uniform, so this is C++-only — do **not** invent a `pcf_radius` on the Rust side to "match".
+
+- [ ] **(S) Fix the GUI model picker's default selection so the Position/Rotation controls stop being dead** — the default path points at a model that left the tree, so `selected_model_index` never leaves `-1` and every transform edit is dropped.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/gui/GUI.cpp:61-110` — the whole "Model Selection" block: the hard-coded `kDefaultSelectedModelPath` at `:69`, the match loop at `:70-78`, and the `DragFloat3` pair at `:101-106` that sets `model_transform_changed` regardless.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:360-384` — `handleModelTransformChange`, whose `selected_model_index >= 0` gate at `:374` is what silently drops the edit, and its comment explaining that the index is a *file-list* index and the transform always targets scene model 0.
+  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:36-83` (`scanAvailableModels`, and the `Resources`-relative path shape it produces, e.g. `Models/Dinosaurs/dinosaurs.obj`), `:86-112` (`getModelFile`, which owns the debug/release default), `:113-120` (the comment recording `viking_room` as history).
+  - `Src/GraphicsEngineVulkan/scene/SceneConfig.ixx` — where `getAvailableModelPaths` / `getAvailableModelDisplayNames` / `resolveModelPath` are exported.
+  - `Test/commit/VulkanEngine/cameraSceneConfigSuite.cpp` (`SceneConfigUnit` / `ModelPickerUnit`) — the existing pure-function test pattern.
+
+  **Steps:**
+  1. Export the *relative* startup model path from `SceneConfig` as its own function — e.g. `auto defaultModelRelativePath() -> std::string_view` returning `"Models/crytek-sponza/sponza_triag.obj"` under `NDEBUG` and `"Models/Dinosaurs/dinosaurs.obj"` otherwise — and make `getModelFile()` call `resolveModelPath(defaultModelRelativePath())` so the two cannot drift. Leave the `KATAGLYPHIS_MODEL_OVERRIDE` hook at `:94-97` exactly as it is; it must keep winning.
+  2. Add a pure helper next to it: `auto defaultSelectedModelIndex(std::span<const std::string> availablePaths, std::string_view preferredRelativePath) -> int` — returns the index of an exact match; else `0` when the list is non-empty; else `-1`. Compare with `std::filesystem::path::generic_string()` normalisation on both sides so a `\` vs `/` separator cannot cause a spurious miss (`scanAvailableModels` builds these with `std::filesystem::relative(...).string()`, which is backslashed on Windows, while the literal is forward-slashed — this is a second, independent reason the current match fails and it must not survive the fix).
+  3. Replace `GUI.cpp:69-78` with a single call to that helper, passing `sceneConfig::defaultModelRelativePath()`. Delete `kDefaultSelectedModelPath`.
+  4. Leave `handleModelTransformChange`'s `>= 0` gate alone — with a real index it is now reachable, and it is still the right guard for an empty `Resources/Models`.
+
+  **Test:** Add `TEST(SceneConfigUnit, DefaultSelectedModelIndexPrefersTheStartupModelAndFallsBackToTheFirst)` to `cameraSceneConfigSuite.cpp`: an exact hit returns its index; a list that does **not** contain the preferred path returns `0` (the regression — assert it is not `-1`, and say in the message that `-1` is what made the Position/Rotation controls dead); an empty list returns `-1`; and a list holding the Windows-separator spelling (`Models\\Dinosaurs\\dinosaurs.obj`) still matches the forward-slashed preferred path. Add a second test asserting `defaultModelRelativePath()` is one of the entries `getModelFile()` can resolve, so the two stay coupled.
+
+  **Build:** `clangcl-debug`, **with `-FreshContainer`** (`SceneConfig.ixx` is a module interface):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='SceneConfigUnit.*:ModelPickerUnit.*:CameraSceneConfigUnit.*'` from the repo root.
+
+  **Context:** The combo itself works — picking a model sets `model_reload_requested` and reloads (`VulkanRenderer.cpp:386-410`) — so the bug is confined to the *initial* index and therefore to the transform controls. Keep the fix in `SceneConfig`, not in `GUI.cpp`: the GUI already treats `sceneConfig` as the source of truth for the model list, and a second hard-coded path in the GUI layer is what created this in the first place.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

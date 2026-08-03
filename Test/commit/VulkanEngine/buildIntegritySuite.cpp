@@ -983,9 +983,10 @@ TEST(BuildIntegrity, ResourceCreateReleasesThePreviousAllocation)
         fs::path source;
         std::string qualified_name;
     };
-    const std::array<Target, 2> targets = {
+    const std::array<Target, 3> targets = {
         Target{ vulkan_base_dir / "VulkanBuffer.cpp", "Kataglyphis::VulkanBuffer::create" },
         Target{ vulkan_base_dir / "VulkanImage.cpp", "Kataglyphis::VulkanImage::create" },
+        Target{ vulkan_base_dir / "VulkanImageView.cpp", "Kataglyphis::VulkanImageView::create" },
     };
 
     for (const auto &target : targets) {
@@ -1001,6 +1002,50 @@ TEST(BuildIntegrity, ResourceCreateReleasesThePreviousAllocation)
           << "'s first statement must be cleanUp(), so calling create() on an already-created instance "
              "releases the previous VMA allocation instead of leaking it. Found: \""
           << *first_statement << "\" in " << target.source.string();
+    }
+}
+
+// Texture::uploadRgba and SkyBox::uploadCubeMapFaces both re-create an image
+// that an existing VulkanImageView still looks at. VUID-vkDestroyImage-image-
+// 01000 requires the view to be destroyed before the image is, so the view
+// release must appear, in source order, before the createImage() call that
+// triggers VulkanImage::cleanUp() on the old image. This is a text-order
+// check, not a behavioural one - see ResourceCreateReleasesThePreviousAllocation's
+// comment for why (a behavioural test would need a device).
+TEST(BuildIntegrity, ViewIsReleasedBeforeItsImageOnRecreate)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path scene_dir = repo_root / "Src" / "GraphicsEngineVulkan" / "scene";
+
+    struct Target
+    {
+        fs::path source;
+        std::string release_needle;
+        std::string create_needle;
+    };
+    const std::array<Target, 2> targets = {
+        Target{ scene_dir / "Texture.cpp", "vulkanImageView.cleanUp();", "createImage(device," },
+        Target{ scene_dir / "sky_box" / "SkyBox.cpp", "cubeMapTexture->releaseImageView();",
+          "cubeMapTexture->createImage(device," },
+    };
+
+    for (const auto &target : targets) {
+        const auto text = read_file_text(target.source);
+        ASSERT_TRUE(text.has_value()) << "could not read " << target.source.string();
+
+        const std::size_t release_pos = text->find(target.release_needle);
+        const std::size_t create_pos = text->find(target.create_needle);
+        ASSERT_NE(release_pos, std::string::npos)
+          << "could not find \"" << target.release_needle << "\" in " << target.source.string();
+        ASSERT_NE(create_pos, std::string::npos)
+          << "could not find \"" << target.create_needle << "\" in " << target.source.string();
+
+        EXPECT_LT(release_pos, create_pos)
+          << target.source.string() << " must release the previous view (\"" << target.release_needle
+          << "\") before it recreates the image (\"" << target.create_needle
+          << "\"), or the view outlives the image it was created from.";
     }
 }
 

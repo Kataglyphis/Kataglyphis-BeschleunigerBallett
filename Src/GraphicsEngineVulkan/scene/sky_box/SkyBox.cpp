@@ -132,6 +132,11 @@ void SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool, uint32_t width, uin
     vk::DeviceSize const layerSize = static_cast<vk::DeviceSize>(width) * static_cast<vk::DeviceSize>(height) * 4;
     vk::DeviceSize const imageSize = layerSize * 6;
 
+    // Destroy the previous view before createImage() replaces the image it
+    // looks at - VUID-vkDestroyImage-image-01000 requires every view created
+    // from an image to be destroyed before the image itself is.
+    cubeMapTexture->releaseImageView();
+
     cubeMapTexture->createImage(device, width, height, 1, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, 6, vk::ImageCreateFlagBits::eCubeCompatible);
 
     VulkanBuffer stagingBuffer;

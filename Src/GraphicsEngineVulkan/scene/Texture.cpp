@@ -143,6 +143,11 @@ auto Kataglyphis::Texture::uploadRgba(std::shared_ptr<VulkanDevice>device,
     // Host-visible buffers are persistently mapped by VMA.
     memcpy(stagingBuffer.getMappedData(), rgba, static_cast<size_t>(size));
 
+    // Destroy the previous view before createImage() replaces the image it
+    // looks at - VUID-vkDestroyImage-image-01000 requires every view created
+    // from an image to be destroyed before the image itself is.
+    vulkanImageView.cleanUp();
+
     createImage(device,
       static_cast<uint32_t>(width),
       static_cast<uint32_t>(height),
@@ -255,6 +260,8 @@ void Kataglyphis::Texture::createTextureSampler(std::shared_ptr<VulkanDevice>in_
     ASSERT_VULKAN(sampler_result.result, "Failed to create texture sampler!")
     textureSampler = sampler_result.value;
 }
+
+void Kataglyphis::Texture::releaseImageView() { vulkanImageView.cleanUp(); }
 
 void Kataglyphis::Texture::cleanUp()
 {

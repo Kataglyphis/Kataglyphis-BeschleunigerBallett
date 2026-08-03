@@ -62,6 +62,11 @@ class Texture
       vk::Bool32 compareEnable = VK_FALSE,
       vk::CompareOp compareOp = vk::CompareOp::eAlways);
 
+    /// Releases the current view only, leaving the sampler and image alone.
+    /// Call before a createImage() that will replace the image the view looks
+    /// at, so the view is destroyed before its image (VUID-vkDestroyImage-image-01000).
+    void releaseImageView();
+
     void cleanUp();
 
     // Decodes an image file to tightly packed RGBA8. Returns nullptr on

@@ -45,6 +45,8 @@ void Kataglyphis::VulkanImageView::create(std::shared_ptr<VulkanDevice>in_device
   vk::ImageViewType view_type,
   uint32_t array_layers)
 {
+    cleanUp();
+
     this->device = in_device;
 
     const vk::ImageViewCreateInfo view_create_info =
