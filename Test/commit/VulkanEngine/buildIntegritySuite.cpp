@@ -2054,6 +2054,177 @@ TEST(BuildIntegrity, EverySlangFunctionIsReachableFromAnEntryPoint)
 
 namespace {
 
+// Resolves the transitive closure of `import <module>;` lines starting from
+// `entry_relative` (relative to slang_root, forward slashes). Every wgslMap
+// source's imports resolve to Resources/ShadersSlang/common/<module>.slang
+// today - see the grep in this task's history - so that is the only place
+// looked up; a common/ module that itself imports another common/ module
+// (e.g. cascaded_shadow.slang -> scene_types.slang) is still followed,
+// because the worklist recurses into every file it adds.
+std::set<std::string> resolve_slang_import_closure(const fs::path &slang_root, const std::string &entry_relative)
+{
+    std::set<std::string> file_set;
+    std::vector<std::string> worklist{ entry_relative };
+    static const std::regex kImportRe(R"(^\s*import\s+([A-Za-z_]\w*)\s*;)");
+
+    while (!worklist.empty()) {
+        const std::string relative = worklist.back();
+        worklist.pop_back();
+        if (!file_set.insert(relative).second) { continue; }// already visited
+
+        std::ifstream file(slang_root / relative);
+        if (!file) { continue; }
+        std::string raw_line;
+        while (std::getline(file, raw_line)) {
+            const std::string stripped = strip_line_comment(raw_line);
+            std::smatch match;
+            if (std::regex_search(stripped, match, kImportRe)) { worklist.push_back("common/" + match[1].str() + ".slang"); }
+        }
+    }
+    return file_set;
+}
+
+// Every Slang function name reachable, by name, from a [shader("...")] entry
+// point defined in `entry_relative` (the wgslMap source itself - a shared
+// common/ module never carries an entry point), restricted to functions
+// defined somewhere in `file_set`. This mirrors
+// EverySlangFunctionIsReachableFromAnEntryPoint's worklist walk above, but
+// scoped to one source's own import closure rather than the whole corpus:
+// the combined WGSL emit for that source only ever contains ITS call graph,
+// so a same-named function reachable only via some unrelated source (e.g.
+// another wgslMap entry that happens to import the same common/ module) must
+// not count here - that would produce a false negative, not a false
+// positive, but it would defeat the point of restricting the scope at all.
+std::set<std::string> slang_function_names_reachable_from_source(const std::vector<SlangFunctionDef> &all_functions,
+                                                                   const std::set<std::string> &file_set,
+                                                                   const std::string &entry_relative)
+{
+    std::vector<std::size_t> in_scope;
+    for (std::size_t idx = 0; idx < all_functions.size(); ++idx) {
+        if (file_set.contains(all_functions[idx].relative_file)) { in_scope.push_back(idx); }
+    }
+
+    std::map<std::string, std::vector<std::size_t>> functions_by_name;
+    for (const std::size_t idx : in_scope) { functions_by_name[all_functions[idx].name].push_back(idx); }
+
+    std::set<std::size_t> reachable;
+    std::vector<std::size_t> worklist;
+    for (const std::size_t idx : in_scope) {
+        if (all_functions[idx].is_root && all_functions[idx].relative_file == entry_relative) {
+            reachable.insert(idx);
+            worklist.push_back(idx);
+        }
+    }
+
+    while (!worklist.empty()) {
+        const std::size_t idx = worklist.back();
+        worklist.pop_back();
+
+        std::set<std::string> called_names;
+        for (const auto &tok : tokenize_slang(all_functions[idx].body)) {
+            if (tok.is_identifier) { called_names.insert(tok.text); }
+        }
+
+        for (const auto &name : called_names) {
+            const auto found = functions_by_name.find(name);
+            if (found == functions_by_name.end()) { continue; }
+            for (const std::size_t callee : found->second) {
+                if (reachable.insert(callee).second) { worklist.push_back(callee); }
+            }
+        }
+    }
+
+    std::set<std::string> names;
+    for (const std::size_t idx : reachable) { names.insert(all_functions[idx].name); }
+    return names;
+}
+
+}// namespace
+
+// mtimes (CheckedInWgslIsNotOlderThanItsSlangSource, above) cannot survive a
+// `git clone`, so they are a local-iteration guard only, not a CI backstop -
+// this is that backstop. For each wgslMap source, every Slang function
+// reachable from its OWN [shader("...")] entry point(s) must appear, by
+// name, in the checked-in destination WGSL: `fn <name>(` for an (unmangled)
+// entry point itself, or `fn <name>_<digits>(` for a helper, since slangc's
+// WGSL backend mangles every non-entry function with a numeric suffix. A
+// lambert_diffuse-shaped regression - defined, called, but the emitted WGSL
+// silently lost it on the next regenerate - fails loudly here instead of
+// shipping. `fullscreen_vs` (imported by ibl.slang but never called, since
+// ibl.slang defines its own vs_fullscreen with different winding) must NOT
+// show up as a violation: the reachability restriction to `entry_relative`'s
+// own import closure is what keeps it out of ibl.slang's reachable set in
+// the first place.
+TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const auto &manifest = shader_manifest(repo_root);
+    ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
+
+    const std::vector<SlangFunctionDef> functions = collect_slang_functions(slang_root);
+    ASSERT_GT(functions.size(), 40u) << "found only " << functions.size()
+                                      << " Slang function definition(s) under " << slang_root.string()
+                                      << " - the definition scan itself is broken";
+
+    std::vector<std::string> violations;
+    int checked_destinations = 0;
+    int forward_reachable_count = 0;
+
+    for (const auto &mapping : manifest->wgsl_map) {
+        const fs::path dest = repo_root / mapping.dst_dir / mapping.wgsl_file;
+        if (!fs::exists(dest)) { continue; }// RustProjectTemplate submodule not checked out here
+
+        std::ifstream dest_file(dest);
+        ASSERT_TRUE(static_cast<bool>(dest_file)) << "could not open " << dest.string();
+        const std::string dest_text((std::istreambuf_iterator<char>(dest_file)), std::istreambuf_iterator<char>());
+
+        const std::set<std::string> file_set = resolve_slang_import_closure(slang_root, mapping.slang_source);
+        const std::set<std::string> reachable_names =
+          slang_function_names_reachable_from_source(functions, file_set, mapping.slang_source);
+
+        ++checked_destinations;
+        if (mapping.wgsl_file == "forward.wgsl") { forward_reachable_count = static_cast<int>(reachable_names.size()); }
+
+        for (const auto &name : reachable_names) {
+            const std::regex pattern("fn " + name + "(_[0-9]+)?\\(");
+            if (!std::regex_search(dest_text, pattern)) {
+                violations.push_back(mapping.slang_source + " -> " + fs::relative(dest, repo_root).string()
+                                      + ": reachable function '" + name
+                                      + "' is missing from the checked-in WGSL (regenerate with "
+                                        "Scripts/Windows/compile-slang-shaders.ps1 or .sh)");
+            }
+        }
+    }
+
+    if (checked_destinations == 0) {
+        GTEST_SKIP() << "none of the checked-in Rust-crate WGSL destinations exist - the RustProjectTemplate "
+                        "submodule is likely not checked out here";
+    }
+
+    ASSERT_GE(checked_destinations, 8) << "only checked " << checked_destinations << " of "
+                                        << manifest->wgsl_map.size()
+                                        << " wgslMap destination(s) - most are missing, which is more than a "
+                                           "submodule simply not being checked out";
+    ASSERT_GT(forward_reachable_count, 8)
+      << "found only " << forward_reachable_count
+      << " function(s) reachable from forward.wgsl's own entry point(s) - the reachability scan itself is broken";
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " Slang function(s) reachable from a wgslMap source's own entry point(s) are missing from the "
+         "checked-in WGSL that source generates: "
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+namespace {
+
 // One `export module <name>;` declaration found in an .ixx file.
 struct ModuleInterface
 {
