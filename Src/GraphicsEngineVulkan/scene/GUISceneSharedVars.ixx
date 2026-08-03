@@ -1,6 +1,8 @@
 module;
 
+#include <cstddef>
 #include <cstdint>
+#include <iterator>
 
 export module kataglyphis.vulkan.gui_scene_shared_vars;
 
@@ -9,14 +11,16 @@ export module kataglyphis.vulkan.gui_scene_shared_vars;
 // of shadow_map_res_index must derive from this array instead of re-typing
 // their own copy, which is what let the GUI's label and the renderer's
 // startup allocation drift apart (GUI claimed 4096, renderer built 2048).
-export constexpr uint32_t kShadowMapResolutions[4] = { 512, 1024, 2048, 4096 };
+export constexpr uint32_t kShadowMapResolutions[] = { 512, 1024, 2048, 4096 };
 
-// Clamps out-of-range indices into [0, 3] rather than silently falling
-// through to 512 the way the old if/else chain did.
+export inline constexpr int kShadowMapResolutionCount = static_cast<int>(std::size(kShadowMapResolutions));
+
+// Clamps out-of-range indices into [0, kShadowMapResolutionCount - 1] rather
+// than silently falling through to 512 the way the old if/else chain did.
 export constexpr uint32_t shadowResolutionForIndex(int index)
 {
     if (index < 0) index = 0;
-    if (index > 3) index = 3;
+    if (index >= kShadowMapResolutionCount) index = kShadowMapResolutionCount - 1;
     return kShadowMapResolutions[index];
 }
 
@@ -54,7 +58,10 @@ export struct GUISceneSharedVars
     // Labels of kShadowMapResolutions, in the same order; index i's label
     // must always read as the pixel count shadowResolutionForIndex(i)
     // returns (pinned by ShadowResolutionUnit.EveryComboLabelMatchesThePixelCount).
-    const char* available_shadow_map_resolutions[4] = { "512", "1024", "2048", "4096" };
+    const char* available_shadow_map_resolutions[kShadowMapResolutionCount] = { "512", "1024", "2048", "4096" };
+    static_assert(sizeof(available_shadow_map_resolutions) / sizeof(const char*) ==
+                    static_cast<std::size_t>(kShadowMapResolutionCount),
+                  "available_shadow_map_resolutions must have one label per kShadowMapResolutions entry");
 
     // Clouds
     int cloud_speed = 6;

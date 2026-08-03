@@ -189,7 +189,7 @@ void GUI::render()
                     ImGui::Combo("Shadow Map Resolution",
                       &guiSceneSharedVars.shadow_map_res_index,
                       guiSceneSharedVars.available_shadow_map_resolutions,
-                      4);
+                      kShadowMapResolutionCount);
                     if (shadow_map_res_index_before != guiSceneSharedVars.shadow_map_res_index) { guiSceneSharedVars.shadow_resolution_changed = true; }
 
                     int const num_cascades_before = guiSceneSharedVars.num_shadow_cascades;

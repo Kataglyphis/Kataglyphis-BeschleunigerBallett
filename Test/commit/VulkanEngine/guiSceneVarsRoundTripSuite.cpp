@@ -21,6 +21,7 @@
 
 #include <cstddef>
 #include <cstring>
+#include <iterator>
 #include <string>
 
 import kataglyphis.vulkan.gui_scene_shared_vars;
@@ -193,7 +194,7 @@ TEST(GuiSceneVarsRoundTrip, CascadeCountDefaultIsWithinTheSliderRange)
 TEST(ShadowResolutionUnit, EveryComboLabelMatchesThePixelCount)
 {
     const GUISceneSharedVars defaults;
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < kShadowMapResolutionCount; ++i) {
         EXPECT_EQ(std::stoul(defaults.available_shadow_map_resolutions[i]), shadowResolutionForIndex(i))
           << "label/pixel-count mismatch at index " << i;
     }
@@ -202,7 +203,18 @@ TEST(ShadowResolutionUnit, EveryComboLabelMatchesThePixelCount)
 TEST(ShadowResolutionUnit, OutOfRangeIndicesClampInsteadOfSilentlyPicking512)
 {
     EXPECT_EQ(shadowResolutionForIndex(-1), 512U);
-    EXPECT_EQ(shadowResolutionForIndex(4), 4096U);
+    EXPECT_EQ(shadowResolutionForIndex(kShadowMapResolutionCount),
+      kShadowMapResolutions[kShadowMapResolutionCount - 1]);
+}
+
+// available_shadow_map_resolutions (the GUI's labels) and kShadowMapResolutions
+// (the pixel-count table) are two separately-initialised arrays; nothing but
+// this test stops them from drifting to different lengths if a resolution is
+// added to one and not the other.
+TEST(ShadowResolutionUnit, TheLabelTableAndThePixelTableAreTheSameLength)
+{
+    const GUISceneSharedVars defaults;
+    EXPECT_EQ(std::size(defaults.available_shadow_map_resolutions), std::size(kShadowMapResolutions));
 }
 
 // Documents the behaviour this change pins: the GUI's default index is what
