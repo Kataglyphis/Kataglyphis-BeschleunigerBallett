@@ -18,6 +18,11 @@ export namespace Kataglyphis {
 std::vector<vk::DescriptorPoolSize> deriveDescriptorPoolSizes(
   std::span<const vk::DescriptorSetLayoutBinding> bindings, uint32_t set_count);
 
+// True when a write of writeCount descriptors matches what the binding
+// declared. Named (rather than an inline comparison) so beginWrite's
+// single-descriptor writers and writeImageArray's array writer cannot drift.
+bool descriptorWriteCountMatchesBinding(const vk::DescriptorSetLayoutBinding &binding, uint32_t writeCount);
+
 // Owns ONE descriptor set layout + descriptor pool + N descriptor sets
 // (typically one per swapchain image). Replaces the four structurally
 // identical layout/pool/set triads that used to live in VulkanRenderer.

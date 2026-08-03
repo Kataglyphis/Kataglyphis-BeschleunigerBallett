@@ -17,6 +17,7 @@ import kataglyphis.vulkan.descriptor_set_group;
 
 namespace {
 
+using Kataglyphis::descriptorWriteCountMatchesBinding;
 using Kataglyphis::deriveDescriptorPoolSizes;
 
 vk::DescriptorSetLayoutBinding makeBinding(uint32_t binding, vk::DescriptorType type, uint32_t descriptor_count)
@@ -103,6 +104,24 @@ TEST(DescriptorPoolSizesUnit, TheSharedRenderSetNeedsOnlyOneStorageBufferPerSet)
     ASSERT_NE(storage_buffer_entry, pool_sizes.end());
     EXPECT_EQ(storage_buffer_entry->descriptorCount, set_count);
     EXPECT_NE(storage_buffer_entry->descriptorCount, 1600U);
+}
+
+// The shared render set's TEXTURES_BINDING/SAMPLER_BINDING declare
+// MAX_TEXTURE_COUNT (128) descriptors (VulkanRenderer.cpp:1459-1462); a
+// single-descriptor writer that silently wrote element 0 would under-write
+// the other 127. This predicate is what beginWrite/writeImageArray now check
+// before issuing the vkUpdateDescriptorSets call.
+TEST(DescriptorPoolSizesUnit, WriteCountMustMatchTheDeclaredBinding)
+{
+    const vk::DescriptorSetLayoutBinding single_descriptor_binding =
+      makeBinding(0, vk::DescriptorType::eCombinedImageSampler, 1);
+    const vk::DescriptorSetLayoutBinding array_binding =
+      makeBinding(1, vk::DescriptorType::eSampledImage, static_cast<uint32_t>(MAX_TEXTURE_COUNT));
+
+    EXPECT_TRUE(descriptorWriteCountMatchesBinding(single_descriptor_binding, 1));
+    EXPECT_TRUE(descriptorWriteCountMatchesBinding(array_binding, static_cast<uint32_t>(MAX_TEXTURE_COUNT)));
+    EXPECT_FALSE(descriptorWriteCountMatchesBinding(array_binding, 1));
+    EXPECT_FALSE(descriptorWriteCountMatchesBinding(single_descriptor_binding, static_cast<uint32_t>(MAX_TEXTURE_COUNT)));
 }
 
 }// namespace

@@ -31,3 +31,8 @@ std::vector<vk::DescriptorPoolSize> Kataglyphis::deriveDescriptorPoolSizes(
     }
     return pool_sizes;
 }
+
+bool Kataglyphis::descriptorWriteCountMatchesBinding(const vk::DescriptorSetLayoutBinding &binding, uint32_t writeCount)
+{
+    return binding.descriptorCount == writeCount;
+}

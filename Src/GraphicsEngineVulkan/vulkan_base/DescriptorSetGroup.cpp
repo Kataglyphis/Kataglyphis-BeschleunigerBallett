@@ -134,6 +134,14 @@ const vk::DescriptorSetLayoutBinding *Kataglyphis::DescriptorSetGroup::beginWrit
     const vk::DescriptorSetLayoutBinding *layout_binding = findBinding(binding);
     if (layout_binding == nullptr) { return nullptr; }
 
+    if (!descriptorWriteCountMatchesBinding(*layout_binding, 1)) {
+        spdlog::error("DescriptorSetGroup: single-descriptor write to binding {} (declared descriptorCount {}) "
+                      "would under-write; use writeImageArray for array bindings.",
+          binding,
+          layout_binding->descriptorCount);
+        return nullptr;
+    }
+
     out.dstSet = descriptor_sets[set_index];
     out.dstBinding = binding;
     out.dstArrayElement = 0;
@@ -183,11 +191,14 @@ void Kataglyphis::DescriptorSetGroup::writeImageArray(uint32_t set_index,
   uint32_t binding,
   std::span<const vk::DescriptorImageInfo> infos)
 {
-    vk::WriteDescriptorSet descriptor_write{};
-    const vk::DescriptorSetLayoutBinding *layout_binding = beginWrite(set_index, binding, descriptor_write);
+    if (!device || set_index >= descriptor_sets.size()) {
+        spdlog::error("DescriptorSetGroup: write to binding {} with invalid set index {}.", binding, set_index);
+        return;
+    }
+    const vk::DescriptorSetLayoutBinding *layout_binding = findBinding(binding);
     if (layout_binding == nullptr) { return; }
 
-    if (infos.size() != layout_binding->descriptorCount) {
+    if (!descriptorWriteCountMatchesBinding(*layout_binding, static_cast<uint32_t>(infos.size()))) {
         spdlog::error("DescriptorSetGroup: image array write to binding {} with {} infos (declared {}).",
           binding,
           infos.size(),
@@ -195,6 +206,11 @@ void Kataglyphis::DescriptorSetGroup::writeImageArray(uint32_t set_index,
         return;
     }
 
+    vk::WriteDescriptorSet descriptor_write{};
+    descriptor_write.dstSet = descriptor_sets[set_index];
+    descriptor_write.dstBinding = binding;
+    descriptor_write.dstArrayElement = 0;
+    descriptor_write.descriptorType = layout_binding->descriptorType;
     descriptor_write.descriptorCount = static_cast<uint32_t>(infos.size());
     descriptor_write.pImageInfo = infos.data();
 
