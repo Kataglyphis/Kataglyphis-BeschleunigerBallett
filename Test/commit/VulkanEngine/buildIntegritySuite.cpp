@@ -4661,3 +4661,51 @@ TEST(BuildIntegrity, EveryEnabledDeviceFeatureIsCopiedFromAnAvailabilityQuery)
              return joined;
          }();
 }
+
+// Pins the SHAPE of the cascade light-matrix double-buffering fix, not its
+// runtime behaviour: the bug (the CPU rewriting a single UBO while up to
+// MAX_FRAME_DRAWS in-flight shadow passes may still be reading it) is a data
+// race on host-coherent memory, invisible to both the golden render suites
+// and Vulkan synchronization validation - there is no observable symptom to
+// assert on short of a flaky multi-frame GPU race repro. So this checks the
+// source directly: the buffer is a std::vector (one per swapchain image, like
+// globalUBOBuffer/sceneUBOBuffer), and recordCommands binds the set for the
+// CURRENT image_index rather than always set 0.
+TEST(BuildIntegrity, ShadowLightMatricesAreDoubleBufferedPerSwapchainImage)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path shadow_dir =
+      repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "light" / "directional_light";
+
+    const fs::path ixx_path = shadow_dir / "CascadedShadowMap.ixx";
+    std::ifstream ixx_file(ixx_path);
+    ASSERT_TRUE(static_cast<bool>(ixx_file)) << "could not open " << ixx_path.string();
+    const std::string ixx_contents((std::istreambuf_iterator<char>(ixx_file)), std::istreambuf_iterator<char>());
+
+    EXPECT_NE(ixx_contents.find("std::vector<VulkanBuffer> lightMatricesBuffers"), std::string::npos)
+      << "CascadedShadowMap no longer declares lightMatricesBuffers as a std::vector<VulkanBuffer> in "
+      << ixx_path.string()
+      << " - a bare VulkanBuffer lightMatricesBuffer member means the CPU rewrites one buffer while an in-flight "
+         "shadow pass for a different swapchain image may still be reading it.";
+
+    EXPECT_EQ(ixx_contents.find("VulkanBuffer lightMatricesBuffer;"), std::string::npos)
+      << "CascadedShadowMap still declares the old single-buffer lightMatricesBuffer member in " << ixx_path.string();
+
+    const fs::path cpp_path = shadow_dir / "CascadedShadowMap.cpp";
+    std::ifstream cpp_file(cpp_path);
+    ASSERT_TRUE(static_cast<bool>(cpp_file)) << "could not open " << cpp_path.string();
+    const std::string cpp_contents((std::istreambuf_iterator<char>(cpp_file)), std::istreambuf_iterator<char>());
+
+    EXPECT_NE(cpp_contents.find("lightMatricesDescriptors.sets()[image_index]"), std::string::npos)
+      << "CascadedShadowMap::recordCommands in " << cpp_path.string()
+      << " no longer binds lightMatricesDescriptors.sets()[image_index] - it must select the descriptor set for "
+         "the swapchain image being rendered, not always the same one.";
+
+    EXPECT_EQ(cpp_contents.find("lightMatricesDescriptors.sets()[0]"), std::string::npos)
+      << "CascadedShadowMap.cpp still binds lightMatricesDescriptors.sets()[0] unconditionally in "
+      << cpp_path.string()
+      << " - that is the exact bug this test pins: the CPU rewrites the light-matrix UBO for whichever image is "
+         "current, while the shadow pass keeps sampling set 0 regardless of image_index.";
+}

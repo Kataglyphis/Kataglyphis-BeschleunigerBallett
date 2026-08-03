@@ -104,7 +104,7 @@ class CascadedShadowMap
     CascadedShadowMap &operator=(const CascadedShadowMap &) = delete;
 
     void init(std::shared_ptr<VulkanDevice>device, uint32_t width, uint32_t height, uint32_t num_cascades,
-      vk::DescriptorSetLayout sharedRenderDescriptorSetLayout);
+      vk::DescriptorSetLayout sharedRenderDescriptorSetLayout, uint32_t swapChainImageCount);
 
     void createGraphicsPipeline();
     void shaderHotReload();
@@ -124,6 +124,13 @@ class CascadedShadowMap
       float splitLambda = 0.5F);
     const std::vector<CascadeData>& getCascadeData() const { return cascadeData; }
 
+    // Uploads the current cascadeData into this swapchain image's own light
+    // matrices buffer. Call once per image_index, before recordCommands binds
+    // that image's descriptor set - see the caller in
+    // VulkanRenderer::update_uniform_buffers for why this must happen per
+    // image rather than once per frame.
+    void uploadLightMatrices(uint32_t image_index);
+
     /// Caster draws submitted / considered across all cascades in the last
     /// recordCommands call. Summed over cascades, so a 3-cascade scene with
     /// one mesh considers 3.
@@ -140,6 +147,7 @@ class CascadedShadowMap
     uint32_t shadowWidth{ 0 };
     uint32_t shadowHeight{ 0 };
     uint32_t numCascades{ 0 };
+    uint32_t swapChainImageCount{ 0 };
 
     std::unique_ptr<Kataglyphis::Texture> shadowMapArray;
     // Depth format chosen in init() via chooseDepthFormat(). The render pass
@@ -160,7 +168,10 @@ class CascadedShadowMap
     // set 0 so the alpha-test fragment stage reaches materials + textures. Never
     // destroyed here.
     vk::DescriptorSetLayout sharedRenderDescriptorSetLayout{};
-    VulkanBuffer lightMatricesBuffer;
+    // One buffer per swapchain image, like globalUBOBuffer/sceneUBOBuffer -
+    // otherwise the CPU rewrites the single buffer while an earlier frame's
+    // shadow pass may still be reading it in flight.
+    std::vector<VulkanBuffer> lightMatricesBuffers;
 
     std::vector<CascadeData> cascadeData;
 

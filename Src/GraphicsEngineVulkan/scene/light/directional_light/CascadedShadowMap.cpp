@@ -39,14 +39,15 @@ namespace Kataglyphis {
 
 
 void CascadedShadowMap::init(std::shared_ptr<VulkanDevice>in_device, uint32_t width, uint32_t height, uint32_t num_cascades,
-  vk::DescriptorSetLayout sharedRenderDescriptorSetLayout)
+  vk::DescriptorSetLayout sharedRenderDescriptorSetLayout, uint32_t swapChainImageCount)
 {
     this->device = in_device;
     this->shadowWidth = width;
     this->shadowHeight = height;
     this->numCascades = num_cascades;
     this->sharedRenderDescriptorSetLayout = sharedRenderDescriptorSetLayout;
-    
+    this->swapChainImageCount = swapChainImageCount;
+
     cascadeData.resize(numCascades);
 
     vk::Format depthFormat = Kataglyphis::chooseDepthFormat(device->getPhysicalDevice());
@@ -115,18 +116,38 @@ void CascadedShadowMap::updateCascades(const glm::mat4 &cameraView,
       shadowDistance,
       splitLambda,
       shadowWidth);
+}
 
+void CascadedShadowMap::uploadLightMatrices(uint32_t image_index)
+{
     // Push the freshly computed matrices into the UBO the shadow geometry
     // shader renders with. Without this the buffer keeps whatever was in
     // cascadeData when createGraphicsPipeline() ran at init - i.e. default
     // constructed matrices - so the shadow map was rendered from a garbage
     // viewpoint while the lighting shader sampled it with the correct ones.
     //
+    // One buffer per swapchain image (like globalUBOBuffer/sceneUBOBuffer):
+    // called once per image_index from update_uniform_buffers, so the CPU
+    // never rewrites a buffer an in-flight shadow pass for a DIFFERENT image
+    // may still be reading.
+    //
+    // Silently no-op (not an error) while empty: VulkanRenderer's very first
+    // create_uniform_buffers() pass runs before dirShadowMap.init() has ever
+    // been called, so every image is seeded again once the pipeline exists -
+    // see the loop after updateUniforms() in VulkanRenderer::init(). Once
+    // non-empty, an out-of-range index is a genuine caller bug.
+    if (lightMatricesBuffers.empty()) { return; }
+    if (image_index >= lightMatricesBuffers.size()) {
+        spdlog::error("CascadedShadowMap::uploadLightMatrices: image_index ({}) exceeds buffer count ({})",
+          image_index, lightMatricesBuffers.size());
+        return;
+    }
+
     // Written cascade by cascade, straight into the mapped buffer: the staging
     // std::vector<glm::mat4> this replaced was a heap allocation per frame for
     // a copy that is thrown away one line later. The buffer holds exactly
     // numCascades matrices (createDescriptorSetAndPipeline uploads that many).
-    if (void *mapped = lightMatricesBuffer.getMappedData(); mapped != nullptr) {
+    if (void *mapped = lightMatricesBuffers[image_index].getMappedData(); mapped != nullptr) {
         auto *const matrices = static_cast<std::byte *>(mapped);
         for (size_t i = 0; i < cascadeData.size(); i++) {
             std::memcpy(matrices + (i * sizeof(glm::mat4)), &cascadeData[i].viewProjMatrix, sizeof(glm::mat4));
@@ -237,7 +258,8 @@ void CascadedShadowMap::cleanUp()
         shadowMapArray->cleanUp();
         shadowMapArray.reset();
     }
-    lightMatricesBuffer.cleanUp();
+    for (auto &buffer : lightMatricesBuffers) { buffer.cleanUp(); }
+    lightMatricesBuffers.clear();
 
     device.reset();
 }
@@ -246,7 +268,7 @@ void CascadedShadowMap::createDescriptorSetAndPipeline()
 {
     // UNIFORM_LIGHT_MATRICES_BINDING = 1
     lightMatricesDescriptors.addBinding(1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex);
-    if (!lightMatricesDescriptors.create(device, 1)) {
+    if (!lightMatricesDescriptors.create(device, swapChainImageCount)) {
         spdlog::error("Failed to create shadow map descriptor resources!");
     }
 
@@ -263,15 +285,22 @@ void CascadedShadowMap::createDescriptorSetAndPipeline()
     ASSERT_VULKAN(VkResult(poolResult.result), "Failed to create transfer command pool for cascaded shadow map!");
     transferCommandPool = poolResult.value;
 
+    // One buffer per swapchain image, like globalUBOBuffer/sceneUBOBuffer -
+    // uploadLightMatrices() rewrites lightMatricesBuffers[image_index] every
+    // frame, independently of whichever other image's shadow pass is still
+    // in flight.
     VulkanBufferManager vbm;
-    vbm.createBufferAndUploadVectorOnDevice(device, transferCommandPool, lightMatricesBuffer,
-        vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
-        lightMatrices);
+    lightMatricesBuffers.resize(swapChainImageCount);
+    for (uint32_t i = 0; i < swapChainImageCount; i++) {
+        vbm.createBufferAndUploadVectorOnDevice(device, transferCommandPool, lightMatricesBuffers[i],
+            vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent,
+            lightMatrices);
+
+        // UNIFORM_LIGHT_MATRICES_BINDING = 1
+        lightMatricesDescriptors.writeBuffer(i, 1, lightMatricesBuffers[i].getBuffer(), sizeof(glm::mat4) * numCascades);
+    }
 
     device->getLogicalDevice().destroyCommandPool(transferCommandPool);
-
-    // UNIFORM_LIGHT_MATRICES_BINDING = 1
-    lightMatricesDescriptors.writeBuffer(0, 1, lightMatricesBuffer.getBuffer(), sizeof(glm::mat4) * numCascades);
 }
 
 void CascadedShadowMap::createGraphicsPipeline()
@@ -398,6 +427,11 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
         spdlog::error("CascadedShadowMap::recordCommands: numCascades ({}) exceeds MAX_CASCADES ({})", numCascades, MAX_CASCADES);
         return;
     }
+    if (image_index >= lightMatricesDescriptors.sets().size()) {
+        spdlog::error("CascadedShadowMap::recordCommands: image_index ({}) exceeds descriptor set count ({})",
+          image_index, lightMatricesDescriptors.sets().size());
+        return;
+    }
     std::array<FrustumPlanes, MAX_CASCADES> cascadeFrusta{};
     if (cullingEnabled) {
         for (uint32_t cascade = 0; cascade < numCascades; cascade++) {
@@ -418,7 +452,7 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
     // set 0 = the shared render set passed in (materials/textures/object
     // descriptions, for the fragment alpha test); set 1 = this pass's light
     // matrices. descriptorSets is the same span the forward rasterizer receives.
-    const vk::DescriptorSet lightMatricesSet = lightMatricesDescriptors.sets()[0];
+    const vk::DescriptorSet lightMatricesSet = lightMatricesDescriptors.sets()[image_index];
     std::array<vk::DescriptorSet, 2> shadowDescriptorSets = {lightMatricesSet, lightMatricesSet};
     const uint32_t shadowDescriptorSetCount = descriptorSets.empty() ? 1 : 2;
     if (!descriptorSets.empty()) { shadowDescriptorSets = {descriptorSets[0], lightMatricesSet}; }
