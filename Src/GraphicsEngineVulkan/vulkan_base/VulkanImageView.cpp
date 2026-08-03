@@ -1,6 +1,7 @@
 ﻿module;
 #include <memory>
 
+#include "common/ImageViewHelper.hpp"
 #include "common/Utilities.hpp"
 #include <cstdint>
 #include <utility>
@@ -46,25 +47,8 @@ void Kataglyphis::VulkanImageView::create(std::shared_ptr<VulkanDevice>in_device
 {
     this->device = in_device;
 
-    vk::ImageViewCreateInfo view_create_info{};
-    view_create_info.image = image;// image to create view for
-    view_create_info.viewType = view_type;// typ of image
-    view_create_info.format = format;
-    view_create_info.components.r = vk::ComponentSwizzle::eIdentity;// allows remapping of rgba components to
-                                                                    // other rgba values
-    view_create_info.components.g = vk::ComponentSwizzle::eIdentity;
-    view_create_info.components.b = vk::ComponentSwizzle::eIdentity;
-    view_create_info.components.a = vk::ComponentSwizzle::eIdentity;
-
-    // subresources allow the view to view only a part of an image
-    view_create_info.subresourceRange.aspectMask = aspect_flags;// which aspect of an image to view (e.g. color bit for
-                                                                // viewing color)
-
-    view_create_info.subresourceRange.baseMipLevel = 0;// start mipmap level to view from
-    view_create_info.subresourceRange.levelCount = mip_levels;// number of mipmap levels to view
-
-    view_create_info.subresourceRange.baseArrayLayer = 0;// start array level to view from
-    view_create_info.subresourceRange.layerCount = array_layers;// number of array levels to view
+    const vk::ImageViewCreateInfo view_create_info =
+      Kataglyphis::buildImageViewCreateInfo(image, format, aspect_flags, mip_levels, view_type, array_layers);
 
     // create image view. The result was unchecked - exceptions are disabled
     // project-wide (VULKAN_HPP_NO_EXCEPTIONS), so a failure stored a null

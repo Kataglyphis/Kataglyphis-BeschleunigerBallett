@@ -15,6 +15,7 @@ module;
 #include <glm/ext/matrix_clip_space.hpp>
 #include "common/FormatHelper.hpp"
 #include "common/FramebufferHelper.hpp"
+#include "common/ImageViewHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
 #include "common/RenderPassHelper.hpp"
 #include "common/Utilities.hpp"
@@ -193,15 +194,8 @@ void CascadedShadowMap::createFramebuffers()
     // framebuffer layers == 1 with the attachment view spanning every
     // rendered layer. The per-layer views and per-cascade framebuffers are
     // gone.
-    vk::ImageViewCreateInfo viewInfo{};
-    viewInfo.image = shadowMapArray->getImage();
-    viewInfo.viewType = vk::ImageViewType::e2DArray;
-    viewInfo.format = depth_format;
-    viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = numCascades;
+    const vk::ImageViewCreateInfo viewInfo = Kataglyphis::buildImageViewCreateInfo(shadowMapArray->getImage(),
+      depth_format, vk::ImageAspectFlagBits::eDepth, 1, vk::ImageViewType::e2DArray, numCascades);
 
     auto viewResult = device->getLogicalDevice().createImageView(viewInfo);
     ASSERT_VULKAN(VkResult(viewResult.result), "Failed to create shadow map array view!");
