@@ -943,9 +943,63 @@ TEST(BuildIntegrity, EveryShaderSourceHasCompiledBinary)
                                     }();
 }
 
+// Every literal .spv path referenced from Src/**/*.cpp, expressed relative to
+// spirv_root the same way ActivePipelineShadersHaveCompiledBinaries checks
+// it - either a full "Resources/ShadersSlang/build/spirv/..." literal
+// (Clouds.cpp), or a bare filename concatenated onto the last in-scope
+// `slang_spv_dir` constant declared earlier in the same source (the other
+// seven callers). Positional (not per-file) tracking of slang_spv_dir keeps
+// this honest if a file ever grows a second one for a different subdirectory.
+// Returns {spv path relative to spirv_root, source file - for failure
+// messages}; a source may appear more than once (one row per literal).
+std::vector<std::pair<std::string, std::string>> collect_spirv_paths_referenced_by_sources(const fs::path &repo_root)
+{
+    static const std::string kSpirvPrefix = "Resources/ShadersSlang/build/spirv/";
+    static const std::regex kSlangSpvDirRegex(R"re(slang_spv_dir\s*=\s*"([^"]*)")re");
+    static const std::regex kSpvLiteralRegex(R"re("([^"]*\.spv)")re");
+
+    std::vector<std::pair<std::string, std::string>> result;
+    const fs::path src_root = repo_root / "Src";
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".cpp") { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+
+        const std::string relative_source = fs::relative(path, repo_root).generic_string();
+        std::string in_scope_slang_spv_dir;
+        std::string raw_line;
+        while (std::getline(file, raw_line)) {
+            const std::string line = strip_line_comment(raw_line);
+
+            std::smatch dir_match;
+            if (std::regex_search(line, dir_match, kSlangSpvDirRegex)) {
+                in_scope_slang_spv_dir = dir_match[1].str();
+                continue;
+            }
+
+            for (auto match = std::sregex_iterator(line.begin(), line.end(), kSpvLiteralRegex);
+                 match != std::sregex_iterator(); ++match) {
+                const std::string literal = (*match)[1].str();
+                const std::string full = literal.starts_with(kSpirvPrefix) ? literal : in_scope_slang_spv_dir + literal;
+                if (!full.starts_with(kSpirvPrefix)) { continue; }// not a spirv_root path; not this scanner's concern
+                result.emplace_back(full.substr(kSpirvPrefix.size()), relative_source);
+            }
+        }
+    }
+    return result;
+}
+
 // Every shader the Vulkan pipelines actually load must have a compiled .spv.
 // A missing binary only surfaces at pipeline creation, i.e. at runtime on a
-// machine that may not be yours.
+// machine that may not be yours. The required list is derived (via
+// collect_spirv_paths_referenced_by_sources) from the `.spv` literals under
+// Src/ rather than hand-copied, so adding a compute/raster pass needs no edit
+// here - it just needs to actually reference its .spv the way every existing
+// caller does.
 TEST(BuildIntegrity, ActivePipelineShadersHaveCompiledBinaries)
 {
     const fs::path repo_root = find_repo_root();
@@ -954,42 +1008,33 @@ TEST(BuildIntegrity, ActivePipelineShadersHaveCompiledBinaries)
     const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
     const fs::path spirv_root = slang_root / "build" / "spirv";
 
-    // Exactly the paths built from the `slang_spv_dir` constants under Src/
-    // (Rasterizer.cpp, DeferredRasterizer.cpp, PostStage.cpp, SkyBox.cpp,
-    // CascadedShadowMap.cpp, Clouds.cpp, Raytracing.cpp, PathTracing.cpp).
-    const std::vector<std::string> required = {
-        "rasterizer/rasterizer.vs_main.spv",
-        "rasterizer/rasterizer.fs_main.spv",
-        "rasterizer/shadows/shadow_map.shadow_vs_main.spv",
-        "rasterizer/shadows/shadow_map.shadow_fs_main.spv",
-        "deferred/deferred.geometry_vs_main.spv",
-        "deferred/deferred.geometry_fs_main.spv",
-        "deferred/deferred.lighting_vs_main.spv",
-        "deferred/deferred.lighting_fs_main.spv",
-        "post/post.vs_main.spv",
-        "post/post.fs_main.spv",
-        "skybox/skybox.vs_main.spv",
-        "skybox/skybox.fs_main.spv",
-        "path_tracing/path_tracing.path_tracing_main.spv",
-        "raytracing/raytrace.rgen.rgen_main.spv",
-        "raytracing/raytrace.rchit.rchit_main.spv",
-        "raytracing/raytrace.rmiss.rmiss_main.spv",
-        "raytracing/shadow.rmiss.shadow_rmiss_main.spv",
-        "compute/clouds.clouds_main.spv",
-        "compute/noise.noise_main.spv",
-    };
+    const auto referenced = collect_spirv_paths_referenced_by_sources(repo_root);
+    // Guards against the scanner silently finding nothing - the failure mode
+    // that would make this test *worse* than the hand-maintained list it
+    // replaced. This floor (the size of the original list) must only be
+    // raised, never lowered, when a pass is added.
+    ASSERT_GE(referenced.size(), 19U)
+      << "collect_spirv_paths_referenced_by_sources found only " << referenced.size()
+      << " .spv reference(s) under Src/ - expected at least 19 from Rasterizer.cpp, DeferredRasterizer.cpp, "
+         "PostStage.cpp, SkyBox.cpp, CascadedShadowMap.cpp, Clouds.cpp, Raytracing.cpp and PathTracing.cpp. "
+         "Did a source stop using a literal `.spv` string or the `slang_spv_dir` naming convention?";
 
     std::vector<std::string> missing;
-    for (const auto &relative : required) {
+    for (const auto &[relative, referencing_source] : referenced) {
         const fs::path spv = spirv_root / relative;
         const fs::path source = source_for_spirv(spv, spirv_root, slang_root);
         if (!source.empty() && !fs::exists(source)) { continue; }// shader itself moved - not this test's job
-        if (!fs::exists(spv)) { missing.push_back(relative); }
+        if (!fs::exists(spv)) { missing.push_back(relative + " (referenced by " + referencing_source + ")"); }
     }
 
     EXPECT_TRUE(missing.empty()) << missing.size()
                                  << " active pipeline shaders have no compiled SPIR-V; pipeline "
-                                    "creation would fail at runtime.";
+                                    "creation would fail at runtime: "
+                                 << [&missing] {
+                                        std::string joined;
+                                        for (const auto &entry : missing) { joined += "\n  " + entry; }
+                                        return joined;
+                                    }();
 }
 
 // host_device_shared_vars.hpp (C++) and scene_types.slang (Slang) hand-mirror
