@@ -2,6 +2,7 @@ module;
 #include <optional>
 #include "common/GuiModelTransform.hpp"
 #include "common/LightDirection.hpp"
+#include "common/SceneUboMarshal.hpp"
 #include "common/Utilities.hpp"
 #include "common/host_device_shared_vars.hpp"
 #include "renderer/PathTracingHistory.hpp"
@@ -166,14 +167,13 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
   const GUISceneSharedVars &guiSceneSharedVars)
 {
     const vk::Extent2D extent = vulkanSwapChain.getSwapChainExtent();
-    float const aspect_ratio = (extent.height > 0) ? static_cast<float>(extent.width) / static_cast<float>(extent.height) : 1.0f;
+    float const aspect_ratio = aspectRatioOf(extent.width, extent.height);
 
     globalUBO.view = camera_data->calculate_viewmatrix();
-    globalUBO.projection = glm::perspective(glm::radians(camera_data->get_fov()),
+    globalUBO.projection = makeVulkanProjection(camera_data->get_fov(),
       aspect_ratio,
       camera_data->get_near_plane(),
       camera_data->get_far_plane());
-    globalUBO.projection[1][1] *= -1;
 
     sceneUBO.view_dir = glm::vec4(camera_data->get_camera_direction().x, camera_data->get_camera_direction().y, camera_data->get_camera_direction().z, 1.0F);
 
@@ -207,11 +207,16 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
 
     const auto& cascadeData = dirShadowMap.getCascadeData();
     const size_t active_cascades = std::min(cascadeData.size(), static_cast<size_t>(MAX_CASCADES));
+    std::array<float, MAX_CASCADES> cascadeSplitDepths{};
+    std::array<glm::mat4, MAX_CASCADES> cascadeViewProjMatrices{};
     for (size_t i = 0; i < active_cascades; ++i) {
-        sceneUBO.cascadeSplits[static_cast<int>(i)] = cascadeData[i].splitDepth;
-        sceneUBO.cascadeLightSpaceMatrices[i] = cascadeData[i].viewProjMatrix;
+        cascadeSplitDepths[i] = cascadeData[i].splitDepth;
+        cascadeViewProjMatrices[i] = cascadeData[i].viewProjMatrix;
     }
-    sceneUBO.numCascades = guiSceneSharedVars.shadows_enabled ? static_cast<unsigned int>(active_cascades) : 0U;
+    fillSceneUboCascades(sceneUBO,
+      std::span<const float>(cascadeSplitDepths).first(active_cascades),
+      std::span<const glm::mat4>(cascadeViewProjMatrices).first(active_cascades),
+      guiSceneSharedVars.shadows_enabled);
 
     sceneUBO.cloudMovementDirection = glm::vec4(
         guiSceneSharedVars.cloud_movement_direction[0],

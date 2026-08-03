@@ -1,0 +1,65 @@
+#pragma once
+
+#include <algorithm>
+#include <cassert>
+#include <cstdint>
+#include <span>
+
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
+#include "common/host_device_shared_vars.hpp"
+#include "renderer/SceneUBO.hpp"
+
+namespace Kataglyphis {
+
+// Aspect ratio for the camera projection. Guards the zero-height swapchain
+// extent VulkanRenderer::updateUniforms sees for a single frame while a
+// window is being resized/minimized - dividing by it would otherwise poison
+// the projection matrix with NaN/Inf.
+constexpr auto aspectRatioOf(uint32_t width, uint32_t height) -> float
+{
+    return (height > 0) ? static_cast<float>(width) / static_cast<float>(height) : 1.0F;
+}
+
+// The camera projection matrix, in Vulkan's clip-space convention. glm's
+// perspective() targets OpenGL's clip space, whose Y axis points the
+// opposite way from Vulkan's, so [1][1] is flipped here.
+//
+// CascadedShadowMap.cpp:342-352 depends on the cascade light-space matrices
+// NOT having this flip: they are built from glm::ortho with no flip applied,
+// and the shadow pass disables culling specifically because flipping only
+// the camera projection (and not the cascade matrices) reverses the two
+// passes' triangle winding relative to each other. Do not add the flip to
+// the cascade matrices to "match" this function.
+inline auto makeVulkanProjection(float fovDegrees, float aspect, float nearPlane, float farPlane) -> glm::mat4
+{
+    glm::mat4 projection = glm::perspective(glm::radians(fovDegrees), aspect, nearPlane, farPlane);
+    projection[1][1] *= -1;
+    return projection;
+}
+
+// Writes up to MAX_CASCADES splits/matrices into the SceneUBO and returns the
+// count actually written. shadowsEnabled false zeroes ubo.numCascades (the
+// field the shaders gate on) but still writes the matrices/splits - keeping
+// the last computed cascades in the UBO is harmless since nothing samples
+// them while numCascades is 0, and avoids a second branch at every call site.
+inline auto fillSceneUboCascades(VulkanRendererInternals::SceneUBO &ubo,
+  std::span<const float> splitDepths,
+  std::span<const glm::mat4> viewProjMatrices,
+  bool shadowsEnabled) -> uint32_t
+{
+    assert(splitDepths.size() == viewProjMatrices.size());
+
+    const size_t activeCascades = std::min(splitDepths.size(), static_cast<size_t>(MAX_CASCADES));
+    for (size_t i = 0; i < activeCascades; ++i) {
+        ubo.cascadeSplits[static_cast<int>(i)] = splitDepths[i];
+        ubo.cascadeLightSpaceMatrices[i] = viewProjMatrices[i];
+    }
+
+    const auto numCascades = shadowsEnabled ? static_cast<uint32_t>(activeCascades) : 0U;
+    ubo.numCascades = numCascades;
+    return numCascades;
+}
+
+}// namespace Kataglyphis

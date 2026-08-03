@@ -170,7 +170,7 @@ TEST(GuiSceneVarsRoundTrip, ShippedDefaultsAreTheMeasuredOnes)
       << "lambda defaults to uniform splits deliberately; raising it needs a measurement, not a hunch";
     EXPECT_GT(defaults.shadow_distance, 0.0F) << "a non-positive shadow distance silently disables the clamp";
     EXPECT_GT(defaults.num_shadow_cascades, 0);
-    EXPECT_LE(defaults.num_shadow_cascades, 4) << "must stay <= MAX_CASCADES (SceneUBO array size)";
+    EXPECT_LE(defaults.num_shadow_cascades, MAX_CASCADES) << "must stay <= MAX_CASCADES (SceneUBO array size)";
     EXPECT_TRUE(defaults.shadows_enabled) << "the debug scene exists to show shadows";
 }
 

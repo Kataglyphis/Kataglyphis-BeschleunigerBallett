@@ -46,6 +46,10 @@ struct SceneUBO
 
     // Cascaded shadow maps
     vec4 cascadeSplits; // up to 4 cascades
+#ifdef __cplusplus
+    static_assert(MAX_CASCADES <= 4,
+      "cascadeSplits is a single vec4 - a fourth-plus cascade would write past its end");
+#endif
     mat4 cascadeLightSpaceMatrices[MAX_CASCADES];
 
     // Camera
