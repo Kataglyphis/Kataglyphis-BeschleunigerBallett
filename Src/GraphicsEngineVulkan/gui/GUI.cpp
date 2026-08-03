@@ -63,20 +63,15 @@ void GUI::render()
         const auto model_names = sceneConfig::getAvailableModelDisplayNames();
         const int model_count = static_cast<int>(model_paths.size());
         
-        // Find index of standard model if needed or keep existing index
-        // kDefaultSelectedModelPath controls the combo's initial display selection
-        // only — NOT the loaded scene (SceneConfig::getModelFile() picks that).
-        constexpr const char *kDefaultSelectedModelPath = "Models/VikingRoom/viking_room.obj";
+        // Find index of standard model if needed or keep existing index.
+        // This controls the combo's initial display selection AND is the
+        // index handleModelTransformChange gates the Position/Rotation
+        // controls on - it must not stay -1.
         if (guiSceneSharedVars.selected_model_index == -1 && model_count > 0) {
-            std::string standardModelPath = kDefaultSelectedModelPath;
-            for(int i=0; i<model_count; ++i) {
-                if(model_paths[i] == standardModelPath) {
-                    guiSceneSharedVars.selected_model_index = i;
-                    break;
-                }
-            }
+            guiSceneSharedVars.selected_model_index =
+              sceneConfig::defaultSelectedModelIndex(model_paths, sceneConfig::defaultModelRelativePath());
         }
-        
+
         const int num_model_names = static_cast<int>(model_names.size());
 
         if (model_count > 0 && model_count == num_model_names) {

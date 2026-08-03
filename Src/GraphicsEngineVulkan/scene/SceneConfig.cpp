@@ -7,6 +7,7 @@ module;
 #include <glm/trigonometric.hpp>
 #include <span>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -85,6 +86,19 @@ namespace {
     }
 }// namespace
 
+auto defaultModelRelativePath() -> std::string_view
+{
+#if NDEBUG
+    return "Models/crytek-sponza/sponza_triag.obj";
+#else
+    // Dinosaurs is the default debug scene because it SHOWS the cascaded
+    // shadow maps: it carries its own 20x20 ground plane at y=0 with the
+    // figures standing up to y=3.64, so the shadows land on a visible floor
+    // instead of only self-shadowing a single object.
+    return "Models/Dinosaurs/dinosaurs.obj";
+#endif
+}
+
 auto getModelFile() -> std::string
 {
     // Tests need a scene chosen for what it MEASURES, not for how it looks,
@@ -98,19 +112,7 @@ auto getModelFile() -> std::string
         if (*override_path != '\0') { return resolveModelPath(override_path); }
     }
 
-    std::string relativeModelPath;
-
-#if NDEBUG
-    relativeModelPath = "Models/crytek-sponza/sponza_triag.obj";
-#else
-    // Dinosaurs is the default debug scene because it SHOWS the cascaded
-    // shadow maps: it carries its own 20x20 ground plane at y=0 with the
-    // figures standing up to y=3.64, so the shadows land on a visible floor
-    // instead of only self-shadowing a single object.
-    relativeModelPath = "Models/Dinosaurs/dinosaurs.obj";
-#endif
-
-    return resolveModelPath(relativeModelPath);
+    return resolveModelPath(std::string(defaultModelRelativePath()));
 }
 
 // Both configurations scale by (1,1,1), i.e. not at all. The function still
@@ -133,6 +135,26 @@ auto getAvailableModelDisplayNames() -> std::span<const std::string>
 {
     scanAvailableModels();
     return s_cached_model_display_names;
+}
+
+auto defaultSelectedModelIndex(std::span<const std::string> availablePaths, std::string_view preferredRelativePath)
+  -> int
+{
+    // generic_string() normalises the separator on both sides: scanAvailableModels()
+    // builds availablePaths via std::filesystem::relative(...).string(), which is
+    // backslashed on Windows, while preferredRelativePath is a forward-slashed
+    // literal - without this normalisation the exact match below would never fire
+    // on Windows even when the path is otherwise correct.
+    const std::string preferred = std::filesystem::path(preferredRelativePath).generic_string();
+    for (size_t i = 0; i < availablePaths.size(); ++i) {
+        if (std::filesystem::path(availablePaths[i]).generic_string() == preferred) {
+            return static_cast<int>(i);
+        }
+    }
+
+    if (!availablePaths.empty()) { return 0; }
+
+    return -1;
 }
 
 }// namespace sceneConfig

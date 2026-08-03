@@ -12,7 +12,9 @@
 #include <filesystem>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 import kataglyphis.vulkan.camera;
@@ -230,6 +232,43 @@ TEST(SceneConfigUnit, ModelMatrixIsUniformPositiveScale)
             if (col != row) { EXPECT_NEAR(model[col][row], 0.0F, kEpsilon); }
         }
     }
+}
+
+TEST(SceneConfigUnit, DefaultModelRelativePathIsAmongTheModelsGetModelFileCanResolve)
+{
+    // getModelFile() and defaultModelRelativePath() must stay coupled - if
+    // they drift, the GUI's default selection can point at a path
+    // getModelFile() would never actually load.
+    const std::string_view relative_path = sceneConfig::defaultModelRelativePath();
+    EXPECT_FALSE(relative_path.empty());
+    EXPECT_TRUE(std::filesystem::exists(sceneConfig::resolveModelPath(std::string(relative_path))))
+      << "defaultModelRelativePath() does not resolve to a bundled model: " << relative_path;
+}
+
+TEST(ModelPickerUnit, DefaultSelectedModelIndexPrefersTheStartupModelAndFallsBackToTheFirst)
+{
+    const std::vector<std::string> models_with_preferred{
+        "Models/Dinosaurs/dinosaurs.obj", "Models/VikingRoom/viking_room.obj"};
+    EXPECT_EQ(sceneConfig::defaultSelectedModelIndex(models_with_preferred, "Models/Dinosaurs/dinosaurs.obj"), 0);
+    EXPECT_EQ(sceneConfig::defaultSelectedModelIndex(models_with_preferred, "Models/VikingRoom/viking_room.obj"), 1);
+
+    // Regression: a list that does NOT contain the preferred path must still
+    // fall back to 0, not -1 - -1 is what left the Position/Rotation
+    // DragFloat3 controls permanently dead (handleModelTransformChange's
+    // `selected_model_index >= 0` gate never opened).
+    const std::vector<std::string> models_without_preferred{"Models/VikingRoom/viking_room.obj"};
+    const int fallback_index =
+      sceneConfig::defaultSelectedModelIndex(models_without_preferred, "Models/Dinosaurs/dinosaurs.obj");
+    EXPECT_EQ(fallback_index, 0) << "must fall back to 0, not -1 - -1 disables the transform controls";
+
+    const std::vector<std::string> empty_models;
+    EXPECT_EQ(sceneConfig::defaultSelectedModelIndex(empty_models, "Models/Dinosaurs/dinosaurs.obj"), -1);
+
+    // Windows-separator spelling must still match the forward-slashed
+    // preferred path via generic_string() normalisation.
+    const std::vector<std::string> models_with_backslash{"Models\\Dinosaurs\\dinosaurs.obj"};
+    EXPECT_EQ(
+      sceneConfig::defaultSelectedModelIndex(models_with_backslash, "Models/Dinosaurs/dinosaurs.obj"), 0);
 }
 
 TEST(CameraSceneConfigUnit, ModelMatrixIsIdentityInEveryConfiguration)

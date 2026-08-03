@@ -6729,29 +6729,6 @@ still an owner decision.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Fix the GUI model picker's default selection so the Position/Rotation controls stop being dead** — the default path points at a model that left the tree, so `selected_model_index` never leaves `-1` and every transform edit is dropped.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/gui/GUI.cpp:61-110` — the whole "Model Selection" block: the hard-coded `kDefaultSelectedModelPath` at `:69`, the match loop at `:70-78`, and the `DragFloat3` pair at `:101-106` that sets `model_transform_changed` regardless.
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:360-384` — `handleModelTransformChange`, whose `selected_model_index >= 0` gate at `:374` is what silently drops the edit, and its comment explaining that the index is a *file-list* index and the transform always targets scene model 0.
-  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp:36-83` (`scanAvailableModels`, and the `Resources`-relative path shape it produces, e.g. `Models/Dinosaurs/dinosaurs.obj`), `:86-112` (`getModelFile`, which owns the debug/release default), `:113-120` (the comment recording `viking_room` as history).
-  - `Src/GraphicsEngineVulkan/scene/SceneConfig.ixx` — where `getAvailableModelPaths` / `getAvailableModelDisplayNames` / `resolveModelPath` are exported.
-  - `Test/commit/VulkanEngine/cameraSceneConfigSuite.cpp` (`SceneConfigUnit` / `ModelPickerUnit`) — the existing pure-function test pattern.
-
-  **Steps:**
-  1. Export the *relative* startup model path from `SceneConfig` as its own function — e.g. `auto defaultModelRelativePath() -> std::string_view` returning `"Models/crytek-sponza/sponza_triag.obj"` under `NDEBUG` and `"Models/Dinosaurs/dinosaurs.obj"` otherwise — and make `getModelFile()` call `resolveModelPath(defaultModelRelativePath())` so the two cannot drift. Leave the `KATAGLYPHIS_MODEL_OVERRIDE` hook at `:94-97` exactly as it is; it must keep winning.
-  2. Add a pure helper next to it: `auto defaultSelectedModelIndex(std::span<const std::string> availablePaths, std::string_view preferredRelativePath) -> int` — returns the index of an exact match; else `0` when the list is non-empty; else `-1`. Compare with `std::filesystem::path::generic_string()` normalisation on both sides so a `\` vs `/` separator cannot cause a spurious miss (`scanAvailableModels` builds these with `std::filesystem::relative(...).string()`, which is backslashed on Windows, while the literal is forward-slashed — this is a second, independent reason the current match fails and it must not survive the fix).
-  3. Replace `GUI.cpp:69-78` with a single call to that helper, passing `sceneConfig::defaultModelRelativePath()`. Delete `kDefaultSelectedModelPath`.
-  4. Leave `handleModelTransformChange`'s `>= 0` gate alone — with a real index it is now reachable, and it is still the right guard for an empty `Resources/Models`.
-
-  **Test:** Add `TEST(SceneConfigUnit, DefaultSelectedModelIndexPrefersTheStartupModelAndFallsBackToTheFirst)` to `cameraSceneConfigSuite.cpp`: an exact hit returns its index; a list that does **not** contain the preferred path returns `0` (the regression — assert it is not `-1`, and say in the message that `-1` is what made the Position/Rotation controls dead); an empty list returns `-1`; and a list holding the Windows-separator spelling (`Models\\Dinosaurs\\dinosaurs.obj`) still matches the forward-slashed preferred path. Add a second test asserting `defaultModelRelativePath()` is one of the entries `getModelFile()` can resolve, so the two stay coupled.
-
-  **Build:** `clangcl-debug`, **with `-FreshContainer`** (`SceneConfig.ixx` is a module interface):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='SceneConfigUnit.*:ModelPickerUnit.*:CameraSceneConfigUnit.*'` from the repo root.
-
-  **Context:** The combo itself works — picking a model sets `model_reload_requested` and reloads (`VulkanRenderer.cpp:386-410`) — so the bug is confined to the *initial* index and therefore to the transform controls. Keep the fix in `SceneConfig`, not in `GUI.cpp`: the GUI already treats `sceneConfig` as the source of truth for the model list, and a second hard-coded path in the GUI layer is what created this in the first place.
-
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
