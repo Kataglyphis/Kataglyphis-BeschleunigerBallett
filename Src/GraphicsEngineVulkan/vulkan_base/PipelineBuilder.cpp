@@ -2,6 +2,7 @@ module;
 #include <cstdint>
 
 #include <array>
+#include <span>
 #include <utility>
 #include <vector>
 #include <vulkan/vulkan.hpp>
@@ -82,57 +83,49 @@ Kataglyphis::PipelineBuilder &Kataglyphis::PipelineBuilder::setDynamicCullMode(b
     return *this;
 }
 
-vk::Pipeline Kataglyphis::PipelineBuilder::build(vk::Device device,
-  vk::PipelineLayout pipeline_layout,
-  vk::RenderPass render_pass,
-  vk::PipelineCache pipeline_cache,
-  uint32_t subpass,
-  const char *error_message) const
+Kataglyphis::GraphicsPipelineState Kataglyphis::PipelineBuilder::buildState() const
 {
-    vk::PipelineVertexInputStateCreateInfo vertex_input_create_info;
-    vertex_input_create_info.vertexBindingDescriptionCount = static_cast<uint32_t>(vertex_bindings.size());
-    vertex_input_create_info.pVertexBindingDescriptions = vertex_bindings.empty() ? nullptr : vertex_bindings.data();
-    vertex_input_create_info.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_attributes.size());
-    vertex_input_create_info.pVertexAttributeDescriptions =
+    GraphicsPipelineState state;
+
+    state.vertex_input_create_info.vertexBindingDescriptionCount = static_cast<uint32_t>(vertex_bindings.size());
+    state.vertex_input_create_info.pVertexBindingDescriptions =
+      vertex_bindings.empty() ? nullptr : vertex_bindings.data();
+    state.vertex_input_create_info.vertexAttributeDescriptionCount =
+      static_cast<uint32_t>(vertex_attributes.size());
+    state.vertex_input_create_info.pVertexAttributeDescriptions =
       vertex_attributes.empty() ? nullptr : vertex_attributes.data();
 
-    vk::PipelineInputAssemblyStateCreateInfo input_assembly;
-    input_assembly.topology = vk::PrimitiveTopology::eTriangleList;
-    input_assembly.primitiveRestartEnable = VK_FALSE;
+    state.input_assembly.topology = vk::PrimitiveTopology::eTriangleList;
+    state.input_assembly.primitiveRestartEnable = VK_FALSE;
 
-    vk::PipelineViewportStateCreateInfo viewport_state_create_info;
-    viewport_state_create_info.viewportCount = 1;
-    viewport_state_create_info.pViewports = nullptr;
-    viewport_state_create_info.scissorCount = 1;
-    viewport_state_create_info.pScissors = nullptr;
+    state.viewport_state_create_info.viewportCount = 1;
+    state.viewport_state_create_info.pViewports = nullptr;
+    state.viewport_state_create_info.scissorCount = 1;
+    state.viewport_state_create_info.pScissors = nullptr;
 
     // Viewport/scissor are always dynamic; cull mode is opt-in (setDynamicCullMode)
     // so only the pass that needs per-draw culling pays the per-draw vkCmdSetCullMode.
-    std::vector<vk::DynamicState> dynamic_states = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
-    if (dynamic_cull_mode) { dynamic_states.push_back(vk::DynamicState::eCullMode); }
-    vk::PipelineDynamicStateCreateInfo dynamic_state_create_info;
-    dynamic_state_create_info.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
-    dynamic_state_create_info.pDynamicStates = dynamic_states.data();
+    state.dynamic_states = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+    if (dynamic_cull_mode) { state.dynamic_states.push_back(vk::DynamicState::eCullMode); }
+    state.dynamic_state_create_info.dynamicStateCount = static_cast<uint32_t>(state.dynamic_states.size());
+    state.dynamic_state_create_info.pDynamicStates = state.dynamic_states.data();
 
-    vk::PipelineRasterizationStateCreateInfo rasterizer_create_info;
-    rasterizer_create_info.depthClampEnable = depth_clamp ? VK_TRUE : VK_FALSE;
-    rasterizer_create_info.rasterizerDiscardEnable = VK_FALSE;
-    rasterizer_create_info.polygonMode = vk::PolygonMode::eFill;
-    rasterizer_create_info.lineWidth = 1.0F;
-    rasterizer_create_info.cullMode = cull_mode;
-    rasterizer_create_info.frontFace = front_face;
-    rasterizer_create_info.depthBiasEnable = VK_FALSE;
+    state.rasterizer_create_info.depthClampEnable = depth_clamp ? VK_TRUE : VK_FALSE;
+    state.rasterizer_create_info.rasterizerDiscardEnable = VK_FALSE;
+    state.rasterizer_create_info.polygonMode = vk::PolygonMode::eFill;
+    state.rasterizer_create_info.lineWidth = 1.0F;
+    state.rasterizer_create_info.cullMode = cull_mode;
+    state.rasterizer_create_info.frontFace = kFrontFace;
+    state.rasterizer_create_info.depthBiasEnable = VK_FALSE;
 
-    vk::PipelineMultisampleStateCreateInfo multisample_create_info;
-    multisample_create_info.sampleShadingEnable = VK_FALSE;
-    multisample_create_info.rasterizationSamples = vk::SampleCountFlagBits::e1;
+    state.multisample_create_info.sampleShadingEnable = VK_FALSE;
+    state.multisample_create_info.rasterizationSamples = vk::SampleCountFlagBits::e1;
 
-    vk::PipelineDepthStencilStateCreateInfo depth_stencil_create_info;
-    depth_stencil_create_info.depthTestEnable = depth_test ? VK_TRUE : VK_FALSE;
-    depth_stencil_create_info.depthWriteEnable = depth_write ? VK_TRUE : VK_FALSE;
-    depth_stencil_create_info.depthCompareOp = depth_compare_op;
-    depth_stencil_create_info.depthBoundsTestEnable = VK_FALSE;
-    depth_stencil_create_info.stencilTestEnable = VK_FALSE;
+    state.depth_stencil_create_info.depthTestEnable = depth_test ? VK_TRUE : VK_FALSE;
+    state.depth_stencil_create_info.depthWriteEnable = depth_write ? VK_TRUE : VK_FALSE;
+    state.depth_stencil_create_info.depthCompareOp = depth_compare_op;
+    state.depth_stencil_create_info.depthBoundsTestEnable = VK_FALSE;
+    state.depth_stencil_create_info.stencilTestEnable = VK_FALSE;
 
     vk::PipelineColorBlendAttachmentState color_state;
     color_state.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG
@@ -149,30 +142,51 @@ vk::Pipeline Kataglyphis::PipelineBuilder::build(vk::Device device,
         color_state.blendEnable = VK_FALSE;
     }
 
-    std::vector<vk::PipelineColorBlendAttachmentState> const color_states(color_attachment_count, color_state);
+    state.color_states.assign(color_attachment_count, color_state);
 
-    vk::PipelineColorBlendStateCreateInfo color_blending_create_info;
-    color_blending_create_info.logicOpEnable = VK_FALSE;
-    color_blending_create_info.attachmentCount = static_cast<uint32_t>(color_states.size());
-    color_blending_create_info.pAttachments = color_states.data();
+    state.color_blending.logicOpEnable = VK_FALSE;
+    state.color_blending.attachmentCount = static_cast<uint32_t>(state.color_states.size());
+    state.color_blending.pAttachments = state.color_states.data();
+    state.use_color_blend_state = use_color_blend_state;
 
+    return state;
+}
+
+vk::GraphicsPipelineCreateInfo Kataglyphis::linkGraphicsPipelineCreateInfo(const GraphicsPipelineState &state,
+  std::span<const vk::PipelineShaderStageCreateInfo> stages,
+  vk::PipelineLayout layout,
+  vk::RenderPass render_pass,
+  uint32_t subpass)
+{
     vk::GraphicsPipelineCreateInfo graphics_pipeline_create_info;
-    graphics_pipeline_create_info.stageCount = static_cast<uint32_t>(shader_stages.size());
-    graphics_pipeline_create_info.pStages = shader_stages.data();
-    graphics_pipeline_create_info.pVertexInputState = &vertex_input_create_info;
-    graphics_pipeline_create_info.pInputAssemblyState = &input_assembly;
-    graphics_pipeline_create_info.pViewportState = &viewport_state_create_info;
-    graphics_pipeline_create_info.pDynamicState = &dynamic_state_create_info;
-    graphics_pipeline_create_info.pRasterizationState = &rasterizer_create_info;
-    graphics_pipeline_create_info.pMultisampleState = &multisample_create_info;
-    graphics_pipeline_create_info.pDepthStencilState = &depth_stencil_create_info;
-    graphics_pipeline_create_info.pColorBlendState =
-      use_color_blend_state ? &color_blending_create_info : nullptr;
-    graphics_pipeline_create_info.layout = pipeline_layout;
+    graphics_pipeline_create_info.stageCount = static_cast<uint32_t>(stages.size());
+    graphics_pipeline_create_info.pStages = stages.data();
+    graphics_pipeline_create_info.pVertexInputState = &state.vertex_input_create_info;
+    graphics_pipeline_create_info.pInputAssemblyState = &state.input_assembly;
+    graphics_pipeline_create_info.pViewportState = &state.viewport_state_create_info;
+    graphics_pipeline_create_info.pDynamicState = &state.dynamic_state_create_info;
+    graphics_pipeline_create_info.pRasterizationState = &state.rasterizer_create_info;
+    graphics_pipeline_create_info.pMultisampleState = &state.multisample_create_info;
+    graphics_pipeline_create_info.pDepthStencilState = &state.depth_stencil_create_info;
+    graphics_pipeline_create_info.pColorBlendState = state.use_color_blend_state ? &state.color_blending : nullptr;
+    graphics_pipeline_create_info.layout = layout;
     graphics_pipeline_create_info.renderPass = render_pass;
     graphics_pipeline_create_info.subpass = subpass;
     graphics_pipeline_create_info.basePipelineHandle = nullptr;
     graphics_pipeline_create_info.basePipelineIndex = -1;
+    return graphics_pipeline_create_info;
+}
+
+vk::Pipeline Kataglyphis::PipelineBuilder::build(vk::Device device,
+  vk::PipelineLayout pipeline_layout,
+  vk::RenderPass render_pass,
+  vk::PipelineCache pipeline_cache,
+  uint32_t subpass,
+  const char *error_message) const
+{
+    const GraphicsPipelineState state = buildState();
+    const vk::GraphicsPipelineCreateInfo graphics_pipeline_create_info =
+      linkGraphicsPipelineCreateInfo(state, shader_stages, pipeline_layout, render_pass, subpass);
 
     auto pipeline_result = device.createGraphicsPipelines(pipeline_cache, graphics_pipeline_create_info);
     if (pipeline_result.result != vk::Result::eSuccess) {
