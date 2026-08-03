@@ -119,6 +119,13 @@ class VulkanRenderer
         Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars &guiRendererSharedVars);
     void handleShadowResolutionChange(
         GUISceneSharedVars &guiSceneSharedVars);
+    // Tears down and re-creates dirShadowMap against the resolution/cascade
+    // count the GUI currently holds and the swapchain's current image count.
+    // Shared by handleShadowResolutionChange (GUI-driven resolution change)
+    // and reprovisionPerImageResources (swapchain image count change) - both
+    // need the exact same cleanUp()+init()+createGraphicsPipeline() sequence,
+    // just triggered by a different condition.
+    void reinitShadowMapForCurrentSettings();
     void handleModelTransformChange(
         GUISceneSharedVars &guiSceneSharedVars);
     void handleModelReloadRequest(

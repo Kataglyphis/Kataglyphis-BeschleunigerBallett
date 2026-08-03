@@ -6823,6 +6823,187 @@ saying so, not a task; fold it into task 2 if convenient.
 
 ### C++ Vulkan engine
 
+## 2026-08-03 batch XVIII — planner (the one per-swapchain-image subsystem `recreateSwapChain()` forgets, whose two symptoms are an error log and a shadow pass that silently stops rendering; a model reload issued during the 2.8 s startup parse that leaves the scene holding both models; the eleventh member of the create-info builder family; a renderer change log whose "queued" list still asks for two things that shipped in July)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the tree
+this pass.
+
+**Every task in this batch is verifiable with no GPU**, deliberately: host
+golden verification is still blocked over RDP (see the `- [b]` entry at the end
+of this file), so all four land in the container CPU lane — three are gated by
+`BuildIntegrity` source scans, one by a new device-free unit suite.
+
+**The headline is that `VulkanRenderer::reprovisionPerImageResources()`
+(`VulkanRenderer.cpp:673-685`) re-provisions the UBOs, the shared/post/G-buffer
+descriptors and the raytracing descriptors — and nothing else.** But
+`CascadedShadowMap` is *also* sized per swapchain image: `init()` stores
+`swapChainImageCount` (`CascadedShadowMap.cpp:48`), and
+`createDescriptorSetAndPipeline()` allocates exactly that many descriptor sets
+(`:262`) and that many light-matrix buffers (`:273`). The only two calls to
+`dirShadowMap.init(...)` are the constructor (`VulkanRenderer.cpp:122`) and
+`handleShadowResolutionChange` (`:350`); `recreateSwapChain()` never re-inits it,
+so after a recreate that changes the image count the shadow map keeps the OLD
+count. Both consumers then bail by index, and both bails are silent to a pixel
+oracle: `uploadLightMatrices` error-logs and returns
+(`CascadedShadowMap.cpp:140-144`, reached every frame from
+`update_uniform_buffers` at `VulkanRenderer.cpp:765`), and `recordCommands`
+returns before recording anything (`CascadedShadowMap.cpp:411-413`) — so for the
+added images the shadow pass renders nothing and the lighting pass samples
+whatever depth the array held last. `record_commands` bounds-checks
+`sharedRenderDescriptors` and `postDescriptors` (`VulkanRenderer.cpp:870-871`)
+but not the shadow map's own set vector, which is the asymmetry that let this
+sit. Every other per-image subsystem is handled: `Rasterizer` resizes
+`offscreenTextures`/`framebuffer` from `getNumberSwapChainImages()`
+(`Rasterizer.cpp:210,238`), `PostStage` likewise (`PostStage.cpp:269`),
+`GpuTimingSubsystem` is recreated at `VulkanRenderer.cpp:717`, `FrameSync` and
+the command buffers at `:748-749`.
+
+**Second, `Scene::reloadModel` wipes the scene without cancelling the
+asynchronous startup parse that is still running.** `beginModelLoadAsync()`
+(`Scene.cpp:91-97`) sets `modelLoadPending = true` and starts a ~2.8 s worker
+(the figure is `AsyncModelParse.ixx:18`'s own measurement on the bundled model);
+the GUI is live from frame one, so its "reload model" button
+(`VulkanRenderer::handleModelReloadRequest`, `VulkanRenderer.cpp:386-410`) can
+fire inside that window. `reloadModel` clears `model_list` and loads
+synchronously (`Scene.cpp:170-188`) but leaves `modelLoadPending` set, so the
+next `pollModelLoad` (`:101`) uploads the startup model and `add_model`s it on
+top — two models in a scene the user asked to replace, with
+`sceneConfig::getModelMatrix()` applied to whichever landed at index 0.
+`AsyncModelParse` already has everything needed to discard a parse
+(`waitForCompletion()`, `takeResult()`, `takeGltfResult()`), so this is a
+missing call, not missing machinery.
+
+**Third, seven hand-written `vk::ImageMemoryBarrier` field lists, in two
+mutually incompatible spellings.** `Raytracing.cpp:94,125`,
+`PathTracing.cpp:63,101,155` and `FrameCapture.ixx:95,127` each set the same six
+boilerplate fields (both queue-family indices to ignored, and a
+colour/mip-0/layer-0/count-1 subresource range) around the four that actually
+differ. The drift is already visible: Raytracing/PathTracing write
+`VK_QUEUE_FAMILY_IGNORED` and build the range field by field, FrameCapture
+writes `vk::QueueFamilyIgnored` and uses the braced aggregate
+`vk::ImageSubresourceRange{ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }`. This
+is the same shape as `buildAttachmentDescription`,
+`buildFramebufferCreateInfo`, `buildRenderPassCreateInfo`,
+`buildPipelineLayoutCreateInfo` and `buildSubpassDescription` before it.
+
+**Fourth, `docs/cpp-renderer-improvements.md` still asks for two units that
+shipped in July.** `AGENTS.md`'s routing table sends every renderer/device-path
+refactor there, but its last "Shipped" row is `buildAttachmentDescription`
+(commit `36937517`, 2026-08-02) and ~90 engine commits have landed since. Two
+statements are now actively wrong rather than merely incomplete: "In progress
+(nothing — remaining queue: stage/renderer-level RAII, sync-validated barrier
+removal)" names sync-validated barrier removal and stage-level RAII, both of
+which this file's own **Completed** section records as done on 2026-07-19; and
+queued design note 5 says the redundant same-layout swapchain barrier should be
+"remove[d] only after a sync-validation ... run confirms the post render pass's
+external dependency covers it", when `VulkanRenderer.cpp:1048-1051` says exactly
+that run happened and the barrier is gone.
+
+Ordering: the four tasks are disjoint. Tasks 1, 3 and 4 each add a
+`BuildIntegrity` test, so if several are done in one session, add all of them
+before rebuilding.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **the shared depth image in `Rasterizer`** (one
+`depthBufferImage` behind N per-image framebuffers, `Rasterizer.cpp:213-214`) —
+looks like a cross-frame WAW between frames in flight, is not: the render pass's
+external dependency already carries `eLateFragmentTests` +
+`eDepthStencilAttachmentWrite` in its source scope for precisely this reason,
+with a comment saying so (`Rasterizer.cpp:176-185`). **The stale
+`vk::DescriptorSetLayout` handles that `reprovisionPerImageResources()` leaves in
+`rasterizer`/`deferredRasterizer`/`clouds`/`skyBox`/`dirShadowMap`** — destroying
+a set layout after the pipeline layout was created from it is legal, and sets
+allocated from an identically-defined replacement stay compatible, so this is
+spec-clean; task 1 removes the shadow-map instance of it anyway as a side
+effect. **The two cloud-output barriers** (`VulkanRenderer.cpp:922,954`) — task 3
+deliberately leaves them alone; they belong to the `- [b]` entry in the
+2026-08-02 batch, which is blocked on a GPU golden. **`VulkanImage.cpp:134` and
+`Texture.cpp:302`** — also `vk::ImageMemoryBarrier`, but their aspect/mip/layer
+values are parameters of a general transition helper, not boilerplate, so they
+are exempt from task 3. **Every sampler site** — all three already go through
+`buildSamplerCreateInfo` (`PostStage.cpp:163`, `Model.cpp:80`,
+`Texture.cpp:250`); no fourth copy exists. **`App::run()` skipping
+`window->cleanUp()` on the `!window->is_valid()` early return**
+(`App.cpp:38-41`) — a leak that lasts microseconds before process exit; fold it
+in if something else touches `App.cpp`. **`Src/KomputePlayground`** — unchanged;
+still an owner decision.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Cancel the pending asynchronous model parse when `Scene::reloadModel` wipes the scene** — a reload issued during the ~2.8 s startup parse leaves the scene holding both the reloaded model and the startup one.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/Scene.cpp` — `beginModelLoadAsync` (`:91-97`), `pollModelLoad` (`:101-135`), `reloadModel` (`:170-188`), `loadAdditionalModel` (`:68-89`)
+  - `Src/GraphicsEngineVulkan/scene/Scene.ixx` — the `modelLoadPending` / `pendingModelParse` members and the public surface (`isModelLoadPending()`)
+  - `Src/GraphicsEngineVulkan/scene/AsyncModelParse.ixx` — `waitForCompletion()` (`:116`), `takeResult()` (`:89`), `takeGltfResult()` (`:106`), `parsedGltf()` (`:102`), and the class comment on "newest-wins" (`:24-27`)
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` — `updateStateDueToUserInput` (`:279-294`), which polls at `:283` and can reload at `:293`
+  - `Test/commit/VulkanEngine/asyncModelParseSuite.cpp` and `Test/commit/VulkanEngine/sceneAccessorSuite.cpp` — the two device-free test patterns to follow
+
+  **Steps:**
+  1. Add `void Scene::cancelPendingModelLoad()`: return immediately when `!modelLoadPending`; otherwise `pendingModelParse.waitForCompletion()`, discard whichever result is outstanding (`parsedGltf()` selects `takeGltfResult()` vs `takeResult()`; both already join and reset), set `modelLoadPending = false`, and `spdlog::info` that the in-flight parse was discarded because the scene was replaced. Declare it in `Scene.ixx`.
+  2. Call it as the **first** statement of `Scene::reloadModel`, before `cleanUp()` — the worker must be joined before the models it is about to be adopted into are destroyed.
+  3. Do **not** call it from `loadAdditionalModel`: that path adds to the scene rather than replacing it, so a still-loading startup model is legitimately still wanted.
+  4. Leave `pollModelLoad` untouched — with `modelLoadPending` cleared it already returns false on the first line.
+
+  **Test:** Add `SceneAsyncLoad.ReloadCancelsAPendingParse` to `Test/commit/VulkanEngine/sceneAccessorSuite.cpp` (or a new `sceneAsyncLoadSuite.cpp` — the commit suite CMakeLists `file(GLOB ...)`s every `*.cpp` in the directory, and Windows CI runs new CPU suites automatically via a negative gtest filter, so nothing needs registering). Construct a device-free `Scene`, call `beginModelLoadAsync()`, assert `isModelLoadPending()` is true, call `cancelPendingModelLoad()`, assert it is false, and assert a second `cancelPendingModelLoad()` is a no-op (idempotent, like every other `cleanUp` in this codebase). Then add a `BuildIntegrity` source-scan asserting `Scene.cpp`'s `reloadModel` body contains `cancelPendingModelLoad`, with a message naming the two-models-in-the-scene outcome. `reloadModel` itself needs a device and stays out of the unit test.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=SceneAsyncLoad.*:BuildIntegrity.*` from the repo root.
+
+  **Context:** `AsyncModelParse`'s own header comment says a queue "would need cancellation semantics for the common case — the user picking a third model while the second is still loading" and settles on newest-wins. `start()` implements newest-wins for *parses*; nothing implements it for the scene-replacing reload, which is the asymmetry. Joining the worker can block `reloadModel` for the remainder of the parse — that is acceptable and consistent: the caller (`handleModelReloadRequest`) already does a full `device->waitIdle()` and a synchronous load on the frame thread.
+
+- [ ] **(S) (refactor) Give `vk::ImageMemoryBarrier` one definition — the eleventh member of the create-info builder family** — seven hand-written field lists across three files, already drifted into two spellings of "ignored queue family" and two of the same subresource range.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp` and `Test/commit/VulkanEngine/renderPassHelperSuite.cpp` — the exact shape to copy (plain header, `constexpr` where possible, one CPU test per call site pinning it field by field)
+  - `Src/GraphicsEngineVulkan/common/FramebufferHelper.hpp`, `common/ImageViewHelper.hpp`, `common/PipelineLayoutHelper.hpp` — the same family, for naming and comment style
+  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp` — `:86-113` and `:125-140`
+  - `Src/GraphicsEngineVulkan/renderer/PathTracing.cpp` — `:63`, `:101`, `:155`
+  - `Src/GraphicsEngineVulkan/renderer/FrameCapture.ixx` — `:95-113` and `:127-135`
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `TEST(BuildIntegrity, FramebufferTeardownGoesThroughTheSharedHelper)` (`:5079`), the gate shape to copy
+
+  **Steps:**
+  1. Add `Src/GraphicsEngineVulkan/common/ImageBarrierHelper.hpp` exporting `buildImageMemoryBarrier(vk::Image image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::AccessFlags srcAccess, vk::AccessFlags dstAccess, vk::ImageAspectFlags aspect = vk::ImageAspectFlagBits::eColor, uint32_t baseMipLevel = 0, uint32_t levelCount = 1, uint32_t baseArrayLayer = 0, uint32_t layerCount = 1) -> vk::ImageMemoryBarrier`. Bake in both queue-family indices as `vk::QueueFamilyIgnored` (pick that spelling; say in the header comment that `VK_QUEUE_FAMILY_IGNORED` was the other of the two spellings this replaces). Plain header, not a module interface, so `buildIntegritySuite.cpp` can include it — see `FormatHelper.hpp` and `CloudDispatch.hpp` for why.
+  2. Route the seven sites through it, keeping every field byte-identical. Keep each site's explanatory comment where it has one (`Raytracing.cpp:95-98`'s `eUndefined` rationale and `FrameCapture.ixx:126`'s "restore the layout the present expects" are load-bearing).
+  3. Do **not** touch `VulkanRenderer.cpp:922` / `:954` — the two cloud-output barriers are the subject of a `- [b]` entry in the 2026-08-02 batch. Do **not** touch `VulkanImage.cpp:134` or `Texture.cpp:302` — their aspect/mip/layer values come from parameters of a general transition helper, so they are not boilerplate; note both exemptions in the header comment so a later sweep does not re-litigate them.
+  4. `#include` the new header from the three files and drop the now-unused local `vk::ImageSubresourceRange subresourceRange` in `Raytracing.cpp:87-92`.
+
+  **Test:** Add `Test/commit/VulkanEngine/imageBarrierHelperSuite.cpp` with one `TEST(ImageBarrierHelperUnit, ...)` per converted call site, each re-creating that site's arguments and asserting every field of the result — including the two queue-family indices and all four subresource-range fields, which is the class of defect no pixel oracle sees. No device is required; follow `renderPassHelperSuite.cpp`'s device-free structure. Then add `TEST(BuildIntegrity, ImageMemoryBarriersGoThroughTheSharedHelper)`: scan `Src/` for `vk::ImageMemoryBarrier` declarations and fail on any outside the four documented exemptions (`ImageBarrierHelper.hpp` itself, `VulkanImage.cpp`, `Texture.cpp`, and the two cloud barriers in `VulkanRenderer.cpp`), listing the exemptions in the failure message.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=ImageBarrierHelperUnit.*:BuildIntegrity.*`. A new `.cpp` under `Test/commit/VulkanEngine/` is picked up by the directory `file(GLOB ...)` and by CI's negative gtest filter automatically — nothing to register.
+
+  **Context:** This is the same move as `buildAttachmentDescription` (8 copies → 1), `buildFramebufferCreateInfo` (5 → 1), `buildRenderPassCreateInfo`, `buildPipelineLayoutCreateInfo` and `buildSubpassDescription`, and it earns its keep the same way: the field-by-field CPU suite catches a dropped queue-family index or a wrong `layerCount` on the container lane, with no GPU. Pure consolidation — no barrier's stage masks or access masks change, so `Run-SyncValidation.ps1` behaviour is unchanged by construction; do not "tidy" a stage mask while converting.
+
+### Docs
+
+- [ ] **(M) Bring `docs/cpp-renderer-improvements.md` back in line with the tree, and gate the two claims that are now wrong** — its "queued" list still asks for two units that shipped on 2026-07-19, and its last shipped entry predates ~90 engine commits.
+
+  **Files to read:**
+  - `docs/cpp-renderer-improvements.md` — the whole file (129 lines); specifically the "In progress" block (`:62-64`) and "Queued (design notes)" items 3 and 5 (`:78-85`)
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1048-1051` — the comment recording that the same-layout swapchain barrier was removed *after* a sync-validation run confirmed the post render pass's external dependency covers it
+  - `BACKLOG.md` § "Completed (kept for the reasoning, not the status)" — the `Stage-level RAII (2026-07-19)` and `Sync-validated barrier removal (2026-07-19)` entries
+  - `AGENTS.md` § Docs and its routing table row that sends renderer/device-path refactors to this file
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)` (`:3597`) and `TEST(BuildIntegrity, NoGeneratedWgslSourceClaimsToMirrorItsOutput)` (`:2959`), the two docs-drift gates to copy
+
+  **Steps:**
+  1. Fix the "In progress" block: sync-validated barrier removal and stage-level RAII both shipped 2026-07-19. The only remaining item is renderer-level RAII, which is `- [b]` (blocked on being able to induce device loss) — say so and link the `BACKLOG.md` entry rather than restating its reasoning.
+  2. Fix queued design note 5: the redundant same-layout swapchain barrier is **gone**, and the sync-validation run it was gated on happened. Rewrite it as a shipped row citing `VulkanRenderer.cpp:1048-1051`, or delete it and record it in the table.
+  3. Fix queued design note 3 (`vk::raii` teardown migration): its first step, "migrate leaf types first (`VulkanBuffer`, `VulkanImage`, samplers)", is done — leaf types are move-only with destructor release and the pattern was extended through the render stages. Keep the item, narrow it to what is actually left, and drop the stale "~30 manual `cleanUp()` methods" count or re-derive it.
+  4. Add ONE new section covering 2026-08-02 → 2026-08-03, grouped by theme with a representative commit hash each — **not** one table row per commit. Reasonable groupings, from `git log 36937517..HEAD -- Src/GraphicsEngineVulkan Resources/ShadersSlang`: the create-info builder family (`876a151f`, `c743d99d`, `4f799788`, `ed9a1fd2`, `c041b756`, `3f05964c`, `51a404d0`, `07024edf`); resource-ownership hardening (`ef9a8a4d`, `e9ecb576`, `fe384d1a`, `23ace7d9`); the `ibl.slang` port regressions and their restorations (`e1f1dd30`, `ad9e3921`, `f9383a3b`, `f5e43cac`); shader hot reload completed across all eight SPIR-V subsystems (`0b009d89`, `c00c2212`, `f5371b87`, `3673f5a7`); model-loading dedup and correctness (`1da7c1f3`, `dca11022`, `c7b66fa5`, `22d0253c`); cascade/shadow fixes (`0c62dfe9`, `95ae08f3`, `090ab81f`, `a15a4f73`, `d2042fa0`, `85a2191d`); input and GUI (`c37394b4`, `4c5f0294`, `13773702`, `49e1f5d4`). Verify each hash still resolves before writing it.
+  5. Leave the header's historical test counts ("72 tests at campaign start, 103 as of 2026-07-23") and the table's per-row counts alone — those are dated statements about the day a unit shipped, not drift.
+
+  **Test:** Add `TEST(BuildIntegrity, RendererImprovementLogDoesNotAskForShippedWork)` to `buildIntegritySuite.cpp`: read `docs/cpp-renderer-improvements.md` and `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp`, and fail if the doc still contains `"remove only after a sync-validation"` while `VulkanRenderer.cpp` contains the removal comment (`"used to sit here"`) — i.e. the doc asks for something the source says is done. Add a second assertion that the doc does not list `"sync-validated barrier removal"` in its "In progress" remaining-queue line. Follow `NoGeneratedWgslSourceClaimsToMirrorItsOutput`'s structure: read both files, assert the contradiction cannot coexist, and make the failure message name both sides.
+
+  **Build:** `clangcl-debug` (the gate is a CPU test; no engine code changes). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`.
+
+  **Context:** `AGENTS.md` names this file as the single home for the C++ engine's chronological change log and routes every renderer refactor to it, so drift here is drift in the one place a newcomer is told to read. Two existing gates (`GoldenTestCountsInDocsMatchTheSuite`, `MaxTextureCountInDocsMatchesTheHeader`) already pin numbers in docs against the tree; this adds the same discipline to a *claim*. Do not rewrite the "instrument playbook" section — it is earned reasoning, not status, and is still accurate. Keep the file's existing table format; a summary section is fine, ninety new rows are not.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

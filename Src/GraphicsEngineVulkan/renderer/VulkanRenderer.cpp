@@ -321,6 +321,35 @@ void Kataglyphis::VulkanRenderer::handleRasterizationModeChange(
     }
 }
 
+void Kataglyphis::VulkanRenderer::reinitShadowMapForCurrentSettings()
+{
+    GUISceneSharedVars &guiSceneSharedVars = gui->getGuiSceneSharedVars();
+
+    dirShadowMap.cleanUp();
+
+    const uint32_t shadow_res = shadowResolutionForIndex(guiSceneSharedVars.shadow_map_res_index);
+
+    // Clamp to MAX_CASCADES, matching the startup init: the SceneUBO only
+    // has MAX_CASCADES cascade matrices and the shader samples that many, so
+    // a GUI value above it (the slider allows up to 8) renders extra cascades
+    // that are never sampled. Also clamp to the device's queried
+    // maxMultiviewViewCount so the shadow multiview render pass never uses a
+    // viewMask whose top bit exceeds it (a validation error) - previously this
+    // relied on MAX_CASCADES happening to be small enough for every device.
+    const auto device_view_limit = device->getMaxMultiviewViewCount();
+    const auto cascade_count = clampCascadeCount(
+      static_cast<uint32_t>(guiSceneSharedVars.num_shadow_cascades), static_cast<uint32_t>(MAX_CASCADES), device_view_limit);
+    if (cascade_count == device_view_limit && device_view_limit < static_cast<uint32_t>(MAX_CASCADES)) {
+        spdlog::warn(
+          "Device maxMultiviewViewCount ({}) is the binding constraint on cascade count; clamping to {}.",
+          device_view_limit, cascade_count);
+    }
+    dirShadowMap.init(device, shadow_res, shadow_res, cascade_count, sharedRenderDescriptors.getLayout(), vulkanSwapChain.getNumberSwapChainImages(), graphics_command_pool);
+    // cleanUp() destroyed the pipeline, descriptor resources and the light
+    // matrices buffer; recreate them (same sequence as at startup).
+    dirShadowMap.createGraphicsPipeline();
+}
+
 void Kataglyphis::VulkanRenderer::handleShadowResolutionChange(
     GUISceneSharedVars &guiSceneSharedVars)
 {
@@ -328,29 +357,8 @@ void Kataglyphis::VulkanRenderer::handleShadowResolutionChange(
         guiSceneSharedVars.shadow_resolution_changed = false;
 
         (void)device->getLogicalDevice().waitIdle();
-        dirShadowMap.cleanUp();
-        
-        const uint32_t shadow_res = shadowResolutionForIndex(guiSceneSharedVars.shadow_map_res_index);
 
-        // Clamp to MAX_CASCADES, matching the startup init: the SceneUBO only
-        // has MAX_CASCADES cascade matrices and the shader samples that many, so
-        // a GUI value above it (the slider allows up to 8) renders extra cascades
-        // that are never sampled. Also clamp to the device's queried
-        // maxMultiviewViewCount so the shadow multiview render pass never uses a
-        // viewMask whose top bit exceeds it (a validation error) - previously this
-        // relied on MAX_CASCADES happening to be small enough for every device.
-        const auto device_view_limit = device->getMaxMultiviewViewCount();
-        const auto cascade_count = clampCascadeCount(
-          static_cast<uint32_t>(guiSceneSharedVars.num_shadow_cascades), static_cast<uint32_t>(MAX_CASCADES), device_view_limit);
-        if (cascade_count == device_view_limit && device_view_limit < static_cast<uint32_t>(MAX_CASCADES)) {
-            spdlog::warn(
-              "Device maxMultiviewViewCount ({}) is the binding constraint on cascade count; clamping to {}.",
-              device_view_limit, cascade_count);
-        }
-        dirShadowMap.init(device, shadow_res, shadow_res, cascade_count, sharedRenderDescriptors.getLayout(), vulkanSwapChain.getNumberSwapChainImages(), graphics_command_pool);
-        // cleanUp() destroyed the pipeline, descriptor resources and the light
-        // matrices buffer; recreate them (same sequence as at startup).
-        dirShadowMap.createGraphicsPipeline();
+        reinitShadowMapForCurrentSettings();
 
         // We must recreate descriptor sets that depend on the shadow map
         updateTexturesInSharedRenderDescriptorSet();
@@ -677,6 +685,14 @@ void Kataglyphis::VulkanRenderer::reprovisionPerImageResources()
 
     cleanUpDescriptorResources();
     initDescriptorResources();
+
+    // dirShadowMap is sized per swapchain image (its light-matrices buffer
+    // vector and lightMatricesDescriptors set) and CascadedShadowMap::init
+    // caches sharedRenderDescriptors' layout, so it must be re-provisioned
+    // whenever this method runs - and only after initDescriptorResources()
+    // just replaced that layout, or it would cache the layout about to be
+    // destroyed.
+    reinitShadowMapForCurrentSettings();
 
     if (device->supportsHardwareAcceleratedRRT()) {
         raytracingDescriptors.cleanUp();

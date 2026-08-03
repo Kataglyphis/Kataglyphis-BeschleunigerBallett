@@ -5289,6 +5289,91 @@ TEST(BuildIntegrity, ShadowLightMatricesAreDoubleBufferedPerSwapchainImage)
          "current, while the shadow pass keeps sampling set 0 regardless of image_index.";
 }
 
+// dirShadowMap is sized per swapchain image (lightMatricesBuffers, above) but
+// recreateSwapChain()'s newImageCount != oldImageCount branch only calls
+// reprovisionPerImageResources() - which never touched dirShadowMap - so the
+// shadow pass silently stopped rendering for any image added past the
+// original count. reinitShadowMapForCurrentSettings() (extracted out of
+// handleShadowResolutionChange, which already proved the
+// cleanUp()+init()+createGraphicsPipeline() sequence) must be called from
+// reprovisionPerImageResources() too, and strictly after
+// initDescriptorResources() - CascadedShadowMap::init caches the
+// sharedRenderDescriptors layout, and initDescriptorResources() is what
+// (re)creates that layout via cleanUpDescriptorResources()/initDescriptorResources()
+// in reprovisionPerImageResources() itself.
+TEST(BuildIntegrity, EveryPerSwapchainImageSubsystemIsReprovisionedOnImageCountChange)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path renderer_path =
+      repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
+    std::ifstream renderer_file(renderer_path);
+    ASSERT_TRUE(static_cast<bool>(renderer_file)) << "could not open " << renderer_path.string();
+    const std::string renderer_contents(
+      (std::istreambuf_iterator<char>(renderer_file)), std::istreambuf_iterator<char>());
+
+    const std::size_t reinit_occurrences = [&renderer_contents] {
+        std::size_t count = 0;
+        std::size_t pos = 0;
+        while ((pos = renderer_contents.find("reinitShadowMapForCurrentSettings", pos)) != std::string::npos) {
+            ++count;
+            pos += std::string("reinitShadowMapForCurrentSettings").size();
+        }
+        return count;
+    }();
+
+    EXPECT_GE(reinit_occurrences, 3u)
+      << "found only " << reinit_occurrences << " occurrence(s) of reinitShadowMapForCurrentSettings in "
+      << renderer_path.string()
+      << " - expected at least 3 (the definition plus a call from handleShadowResolutionChange and a call from "
+         "reprovisionPerImageResources); deleting either call site regresses the swapchain-image-count-change bug "
+         "this test guards against.";
+
+    const std::size_t signature_pos = renderer_contents.find("VulkanRenderer::reprovisionPerImageResources(");
+    ASSERT_NE(signature_pos, std::string::npos)
+      << "VulkanRenderer::reprovisionPerImageResources is no longer defined in " << renderer_path.string();
+
+    const std::size_t body_open = renderer_contents.find('{', signature_pos);
+    ASSERT_NE(body_open, std::string::npos)
+      << "could not locate the opening brace of VulkanRenderer::reprovisionPerImageResources";
+
+    int brace_depth = 0;
+    std::size_t body_close = std::string::npos;
+    for (std::size_t i = body_open; i < renderer_contents.size(); ++i) {
+        if (renderer_contents[i] == '{') { ++brace_depth; }
+        else if (renderer_contents[i] == '}') {
+            --brace_depth;
+            if (brace_depth == 0) {
+                body_close = i;
+                break;
+            }
+        }
+    }
+    ASSERT_NE(body_close, std::string::npos)
+      << "could not brace-match the closing '}' of VulkanRenderer::reprovisionPerImageResources";
+
+    const std::string body = renderer_contents.substr(body_open, body_close - body_open + 1);
+
+    const std::size_t init_descriptor_pos = body.find("initDescriptorResources();");
+    ASSERT_NE(init_descriptor_pos, std::string::npos)
+      << "VulkanRenderer::reprovisionPerImageResources no longer calls initDescriptorResources() - "
+         "reinitShadowMapForCurrentSettings must run after it, since CascadedShadowMap::init caches the "
+         "sharedRenderDescriptors layout that call (re)creates.";
+
+    const std::size_t reinit_call_pos = body.find("reinitShadowMapForCurrentSettings();");
+    ASSERT_NE(reinit_call_pos, std::string::npos)
+      << "VulkanRenderer::reprovisionPerImageResources no longer calls reinitShadowMapForCurrentSettings() - "
+         "without it, dirShadowMap is never re-provisioned when the swapchain image count changes, so the shadow "
+         "pass silently stops rendering for the added images.";
+
+    EXPECT_GT(reinit_call_pos, init_descriptor_pos)
+      << "reinitShadowMapForCurrentSettings() is called before initDescriptorResources() inside "
+         "reprovisionPerImageResources - CascadedShadowMap::init caches the sharedRenderDescriptors layout handed "
+         "to it, so re-initing before initDescriptorResources() replaces that layout would leave it caching the "
+         "layout that is about to be destroyed.";
+}
+
 // ObjLoader::uploadParsed and GltfLoader::uploadParsed used to each hand-roll
 // their own texture-slot-fill and mesh-range-to-Mesh loop; the only genuine
 // difference between them (texture bytes from a file vs. from memory) got
