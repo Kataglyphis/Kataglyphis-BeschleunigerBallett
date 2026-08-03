@@ -7,6 +7,7 @@
 
 const int MAX_TEXTURE_COUNT = 128;
 const int MAX_CASCADES = 3;
+const int MAX_PCF_RADIUS = 20;
 
 // ----- MAIN RENDER DESCRIPTOR SET ----- START (shared between rasterizer and
 // raytracer)

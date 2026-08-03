@@ -36,7 +36,11 @@ float calc_cascaded_shadow(float3 worldPos, float3 N, float3 L, ConstantBuffer<S
         return 0.0;
 
     float bias = max(0.002 * (1.0 - dot(N, L)), 0.0005);
-    int radius = int(sceneUBO.pcfRadius);
+    // The host already clamps pcfRadius (SceneUboMarshal::clampPcfRadius); this
+    // is the second lock, not the first, so a stray unclamped write can never
+    // turn the loop below into zero iterations (which would read as fully
+    // shadowed via the max(taps, 1.0) fallback).
+    int radius = clamp(int(sceneUBO.pcfRadius), 0, MAX_PCF_RADIUS);
     uint shadowWidth, shadowHeight, shadowLayers;
     directionalShadowMaps.GetDimensions(shadowWidth, shadowHeight, shadowLayers);
     float2 texelSize = 1.0 / float2(float(shadowWidth), float(shadowHeight));

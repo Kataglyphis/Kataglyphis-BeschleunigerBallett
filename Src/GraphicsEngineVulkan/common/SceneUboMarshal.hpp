@@ -39,6 +39,17 @@ inline auto makeVulkanProjection(float fovDegrees, float aspect, float nearPlane
     return projection;
 }
 
+// Clamps the GUI's PCF radius slider into [0, MAX_PCF_RADIUS] before it
+// reaches SceneUBO. Without this, a negative guiValue cast straight to
+// uint32_t (as VulkanRenderer::updateUniforms used to) wraps to a huge
+// unsigned value, cascaded_shadow.slang's tap loop never executes, and the
+// "no taps sampled" fallback (max(taps, 1.0) with visible == 0) reads as
+// fully shadowed.
+constexpr auto clampPcfRadius(int guiValue) -> uint32_t
+{
+    return static_cast<uint32_t>(std::clamp(guiValue, 0, MAX_PCF_RADIUS));
+}
+
 // Writes up to MAX_CASCADES splits/matrices into the SceneUBO and returns the
 // count actually written. shadowsEnabled false zeroes ubo.numCascades (the
 // field the shaders gate on) but still writes the matrices/splits - keeping

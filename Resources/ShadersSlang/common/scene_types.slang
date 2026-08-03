@@ -66,6 +66,7 @@ struct MaterialIDs { int i[]; }
 struct Materials { ObjMaterial m[]; }
 
 static const int MAX_CASCADES = 3;
+static const int MAX_PCF_RADIUS = 20;
 
 struct DirectionalLightData
 {

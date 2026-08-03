@@ -199,7 +199,7 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
     sceneUBO.cam_pos = glm::vec4(camera_data->get_camera_position().x, camera_data->get_camera_position().y, camera_data->get_camera_position().z, camera_data->get_fov());
 
     // Populate GUI state into SceneUBO
-    sceneUBO.pcfRadius = static_cast<unsigned int>(guiSceneSharedVars.pcf_radius);
+    sceneUBO.pcfRadius = clampPcfRadius(guiSceneSharedVars.pcf_radius);
     sceneUBO.cascadedShadowIntensity = guiSceneSharedVars.cascaded_shadow_intensity;
 
     // Calculate CSM cascades

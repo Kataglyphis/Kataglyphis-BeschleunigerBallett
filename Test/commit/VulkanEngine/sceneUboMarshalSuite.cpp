@@ -12,11 +12,14 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <span>
 
+#include <climits>
+
 #include "common/SceneUboMarshal.hpp"
 #include "common/host_device_shared_vars.hpp"
 #include "renderer/SceneUBO.hpp"
 
 using Kataglyphis::aspectRatioOf;
+using Kataglyphis::clampPcfRadius;
 using Kataglyphis::fillSceneUboCascades;
 using Kataglyphis::makeVulkanProjection;
 using Kataglyphis::VulkanRendererInternals::SceneUBO;
@@ -115,6 +118,18 @@ TEST(SceneUboMarshalUnit, FewerCascadesThanMaxLeavesTheRestUntouched)
     EXPECT_FLOAT_EQ(ubo.cascadeSplits[2], -3.0F);
     EXPECT_EQ(ubo.cascadeLightSpaceMatrices[1], glm::mat4(-2.0F));
     EXPECT_EQ(ubo.cascadeLightSpaceMatrices[2], glm::mat4(-3.0F));
+}
+
+TEST(SceneUboMarshalUnit, ClampPcfRadiusPinsTheBoundTheShaderLoopsOver)
+{
+    EXPECT_EQ(clampPcfRadius(-1), 0U)
+      << "an unclamped cast turns -1 into 4294967295, which the shader's tap "
+         "loop never finishes, reading as fully shadowed";
+    EXPECT_EQ(clampPcfRadius(INT_MIN), 0U);
+    EXPECT_EQ(clampPcfRadius(0), 0U);
+    EXPECT_EQ(clampPcfRadius(MAX_PCF_RADIUS), static_cast<uint32_t>(MAX_PCF_RADIUS));
+    EXPECT_EQ(clampPcfRadius(MAX_PCF_RADIUS + 1), static_cast<uint32_t>(MAX_PCF_RADIUS));
+    EXPECT_EQ(clampPcfRadius(INT_MAX), static_cast<uint32_t>(MAX_PCF_RADIUS));
 }
 
 }// namespace

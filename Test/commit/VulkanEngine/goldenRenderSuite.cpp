@@ -2627,7 +2627,7 @@ TEST(GoldenRender, GuiInputSweepNeverCrashesOrLosesTheDevice)
     s.shadows_enabled = true;
     s.num_shadow_cascades = 8;
     s.shadow_map_res_index = 3;// 4096
-    s.pcf_radius = 20;
+    s.pcf_radius = MAX_PCF_RADIUS;
     s.cascaded_shadow_intensity = 1.0F;
     s.shadow_distance = 200.0F;
     s.shadow_resolution_changed = true;
@@ -2672,7 +2672,7 @@ TEST(GoldenRender, GuiInputSweepNeverCrashesOrLosesTheDevice)
         s.shadows_enabled = rng.ub();
         s.num_shadow_cascades = rng.ui(1, 8);// slider allows 1..8 (clamped to MAX_CASCADES in use)
         s.shadow_map_res_index = rng.ui(0, 3);// combo: 512 / 1024 / 2048 / 4096
-        s.pcf_radius = rng.ui(1, 20);
+        s.pcf_radius = rng.ui(1, MAX_PCF_RADIUS);
         s.cascaded_shadow_intensity = rng.uf(0.0F, 1.0F);
         s.shadow_distance = rng.uf(1.0F, 200.0F);
         // Force the shadow map to honour the new cascade count / resolution.

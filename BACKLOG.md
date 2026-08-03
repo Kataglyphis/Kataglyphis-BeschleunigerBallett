@@ -6729,34 +6729,6 @@ still an owner decision.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Give the PCF radius one bound and clamp it before it reaches the shader** — `20` is spelled in three files, the shader clamps nothing, and a negative value renders the whole scene fully shadowed.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/common/host_device_shared_vars.hpp:8-9` — `MAX_TEXTURE_COUNT` / `MAX_CASCADES`, the pattern to copy.
-  - `Resources/ShadersSlang/common/scene_types.slang:68` (`MAX_CASCADES`), `:87` (`pcfRadius`).
-  - `Resources/ShadersSlang/common/cascaded_shadow.slang:39` (`int radius = int(sceneUBO.pcfRadius)`), `:52-64` (the `(2r+1)^2` tap loop and the `max(taps, 1.0)` that turns zero iterations into "fully shadowed").
-  - `Src/GraphicsEngineVulkan/gui/GUI.cpp:199` — the `1..20` slider.
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:202` — the unclamped `static_cast<unsigned int>`.
-  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx:14-24, 43-44` — `kShadowMapResolutions` + `shadowResolutionForIndex`, the "one table, one clamping accessor" shape to mirror.
-  - `Src/GraphicsEngineVulkan/common/SceneUboMarshal.hpp` and `Test/commit/VulkanEngine/sceneUboMarshalSuite.cpp` — where a pure clamp helper and its test belong.
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:269-273` (`kSharedHostDeviceConstants`) and `:1181-1222` — the host/device constant gate that a new constant joins by being added to one array.
-
-  **Steps:**
-  1. Add `const int MAX_PCF_RADIUS = 20;` to `host_device_shared_vars.hpp` next to `MAX_CASCADES`, and `static const int MAX_PCF_RADIUS = 20;` to `scene_types.slang` next to its `MAX_CASCADES`.
-  2. Add `"MAX_PCF_RADIUS"` to `kSharedHostDeviceConstants` (`buildIntegritySuite.cpp:273`) and an `EXPECT_EQ(shader.at("MAX_PCF_RADIUS"), MAX_PCF_RADIUS);` alongside the two existing ones at `:1221-1222`. Both gates then pin the two spellings together.
-  3. Add `constexpr auto clampPcfRadius(int guiValue) -> uint32_t` to `SceneUboMarshal.hpp`, returning `static_cast<uint32_t>(std::clamp(guiValue, 0, MAX_PCF_RADIUS))`. Use it at `VulkanRenderer.cpp:202` in place of the bare cast.
-  4. Drive the GUI slider from the constant: `ImGui::SliderInt("PCF radius", &guiSceneSharedVars.pcf_radius, 0, MAX_PCF_RADIUS)`. Use `0`, not `1`, as the lower bound — `goldenRenderSuite.cpp:540` already sets `pcf_radius = 0` deliberately (a single tap, hard shadows) and the slider should be able to express what the tests use.
-  5. Replace the literal `20` at `goldenRenderSuite.cpp:2630` and `:2675` with `MAX_PCF_RADIUS`.
-  6. In `cascaded_shadow.slang:39`, clamp defensively: `int radius = clamp(int(sceneUBO.pcfRadius), 0, MAX_PCF_RADIUS);`, with a one-line comment that the host clamps too and this is the second lock, not the first. Recompile shaders (`Scripts/Windows/compile-slang-shaders.ps1`) — this is a `.slang` edit, so `BuildIntegrity.CompiledShadersAreNotOlderThanSharedIncludes` will otherwise go red.
-
-  **Test:** Add `TEST(SceneUboMarshalUnit, ClampPcfRadiusPinsTheBoundTheShaderLoopsOver)` to `sceneUboMarshalSuite.cpp`: `-1` and `INT_MIN` clamp to `0` (**not** to `4294967295`, which is the defect — assert the exact value, and say in the failure message that the un-clamped cast made the shader return fully-shadowed); `0` stays `0`; `MAX_PCF_RADIUS` stays; `MAX_PCF_RADIUS + 1` and `INT_MAX` clamp down to `MAX_PCF_RADIUS`. The two `BuildIntegrity` constant gates cover the host↔Slang mirror.
-
-  **Build:** `clangcl-debug`. Shader-only edits do not need a C++ rebuild, but this task also touches C++, so build normally:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='SceneUboMarshalUnit.*:BuildIntegrity.*:SceneUboLayoutUnit.*'` from the repo root. `MAX_PCF_RADIUS` is not a UBO field, so `SceneUboLayoutUnit` offsets must not move — that suite going red means step 1 landed in the struct by mistake.
-
-  **Context:** `docs/cpp-renderer-improvements.md` records several "one rule, N hand-rolled copies" fixes; this is the same shape for a scalar bound. Note the asymmetry with the Rust renderer: `forward.wgsl`'s PCF kernel is fixed-size and has no equivalent uniform, so this is C++-only — do **not** invent a `pcf_radius` on the Rust side to "match".
-
 - [ ] **(S) Fix the GUI model picker's default selection so the Position/Rotation controls stop being dead** — the default path points at a model that left the tree, so `selected_model_index` never leaves `-1` and every transform edit is dropped.
 
   **Files to read:**
