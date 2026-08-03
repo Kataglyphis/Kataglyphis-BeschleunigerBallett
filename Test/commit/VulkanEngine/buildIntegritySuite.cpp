@@ -4043,6 +4043,60 @@ TEST(BuildIntegrity, SharedStructOffsetsMatchTheCompiledSpirv)
          }();
 }
 
+// The host/device push-constant and UBO headers (PushConstant*.hpp,
+// GlobalUBO.hpp, SceneUBO.hpp, and the shared/scene/ Vertex.hpp and
+// ObjMaterial.hpp) used to be dual-compiled: an `#ifdef __cplusplus` guard
+// switched between a C++ definition and a bare-GLSL one for a shader
+// compiler that read these headers directly. That compiler was deleted with
+// Resources/Shaders/ (see SlangSourcesDoNotReferenceTheDeletedGlslTree
+// above), so every one of these headers is now compiled only by C++, and the
+// GLSL half of the guard is dead text describing a build that no longer
+// exists. `KTG_VEC2`/`KTG_VEC3` were the same shim under a different name.
+// This walks every .hpp/.ixx under Src/ (skipping ExternalLib/) and fails on
+// any line still mentioning either, so the shim cannot silently come back.
+TEST(BuildIntegrity, NoHostDeviceHeaderCarriesTheRetiredGlslDualCompileShim)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (path.generic_string().find("/ExternalLib/") != std::string::npos) { continue; }
+        if (!it->is_regular_file(error)) { continue; }
+        const auto extension = path.extension();
+        if (extension != ".hpp" && extension != ".ixx") { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string line;
+        int line_number = 0;
+        while (std::getline(file, line)) {
+            ++line_number;
+            if (line.find("__cplusplus") != std::string::npos || line.find("KTG_VEC") != std::string::npos) {
+                violations.push_back(fs::relative(path, repo_root).generic_string() + ':'
+                                      + std::to_string(line_number) + ": " + line);
+            }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " line(s) under " << src_root.string()
+      << " still carry the retired GLSL dual-compile shim (__cplusplus guard or KTG_VEC macro) - the GLSL tree "
+         "these guarded against is gone and these headers are compiled only by C++: "
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 namespace {
 
 // Parses the member names straight out of SceneUBO's C++ definition (not the

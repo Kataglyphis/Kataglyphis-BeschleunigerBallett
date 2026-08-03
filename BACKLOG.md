@@ -6729,6 +6729,220 @@ still an owner decision.
 
 ### C++ Vulkan engine
 
+## 2026-08-03 batch XVII — planner (refactor: nine headers still carry a dual-compile shim for a GLSL consumer deleted months ago, in two mutually incompatible spellings; the gate written to catch exactly this drift greps for one literal path and misses eight stale comments; two of four render stages derive their depth format twice where the other two cache it and document why)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the tree
+this pass.
+
+**Every task in this batch is verifiable with no GPU**, deliberately: the
+fifteen `- [b]` entries above are still blocked. All three land in the
+container CPU lane — tasks 1 and 2 are header/comment edits gated by new
+`BuildIntegrity` source scans, task 3 is a two-member change gated the same way.
+
+**The headline is that nine headers still `#ifdef __cplusplus` themselves for a
+shader compiler that no longer exists.** `Resources/Shaders/` (the GLSL tree)
+was deleted when the engine moved to Slang — `TEST(BuildIntegrity,
+SlangSourcesDoNotReferenceTheDeletedGlslTree)` (`buildIntegritySuite.cpp:1684`)
+exists to keep it deleted, and `find Resources -name '*.glsl' -o -name '*.frag'
+-o -name '*.vert' -o -name '*.comp'` returns nothing. The Slang shaders do not
+`#include` these headers at all: they **redeclare** the structs
+(`common/scene_types.slang:52` `ObjectDescription`, `:77` `GlobalUBO`, `:85`
+`SceneUBO`; `common/push_constants.slang:14` `PushConstantRasterizer`), which is
+why `TEST(BuildIntegrity, SharedStructOffsetsMatchTheCompiledSpirv)`
+(`:3980`) and `HostAndShaderSharedConstantsAgree` (`:1257`) exist. No script
+under `Scripts/` feeds any of these headers to `slangc`. So every `#ifdef
+__cplusplus` in them is a branch that is always taken and every `#else` branch
+is unreachable text.
+
+The nine, in **two incompatible spellings** of the same dead idea:
+`renderer/pushConstants/PushConstant{PathTracing,Post,Rasterizer,RayTracing}.hpp`,
+`renderer/GlobalUBO.hpp` and `renderer/SceneUBO.hpp` open with the same
+`#ifdef __cplusplus` / `#pragma once` / five `using vec2 = glm::vec2; … using
+uint = unsigned int;` aliases / `namespace Kataglyphis::VulkanRendererInternals {`
+block — **six byte-comparable copies**, already drifted in their includes
+(`GlobalUBO.hpp:7-10` takes four `glm/vecN.hpp` headers, the four push-constant
+headers take `glm/glm.hpp`). `Src/shared/scene/Vertex.hpp:4-14` and
+`Src/shared/scene/ObjMaterial.hpp:4-11` instead define `KTG_VEC2`/`KTG_VEC3`
+macros with a live `glm::vecN` branch and a dead `#else` branch expanding to
+bare `vec2`/`vec3`. `Src/GraphicsEngineVulkan/ObjectDescription.hpp:4-6` is a
+third variant, guarding `#include <cstdint>`, with a comment still calling
+itself a "shared C++/GLSL header" (`:18`).
+
+**Second, the gate that was supposed to stop this drift only ever looks for one
+literal string.** `SlangSourcesDoNotReferenceTheDeletedGlslTree` greps `.slang`
+files for `"Resources/Shaders"` (`buildIntegritySuite.cpp:1692`) — so a comment
+naming a dead GLSL file by its *bare* name sails through, and C++ sources are
+not scanned at all. Eight such comments are live in the tree today (listed in
+task 2), including `common/aces.slang:12` asserting "The C++ post.frag currently
+uses pow(x, 1/2.2); migrating to this shared function fixes that discrepancy"
+when `post.slang` has imported `aces` and used `aces_tonemap` since the port
+(`post/post.slang:1,56`, and its own header comment at `:5-6` says so).
+
+**Third, `PostStage` and `CascadedShadowMap` cache the chosen depth format in a
+member and say why; `Rasterizer` and `DeferredRasterizer` re-derive it.**
+`PostStage.cpp:195-197`: "depth_format was already resolved by
+createDepthbufferImage(), which init() always runs first — reuse it rather than
+querying again, so the attachment and the image it is paired with cannot
+diverge." `Rasterizer` calls `chooseDepthFormat` at `:154` (inside the
+`buildAttachmentDescription` argument list, with no named variable) and again at
+`:256`; `DeferredRasterizer` calls it at `:98` and `:178`. In both, `init()`
+runs `createTextures()` before `createRenderPass()`
+(`Rasterizer.cpp:44-45`, `DeferredRasterizer.cpp` `init`), so the PostStage
+shape applies verbatim.
+
+Ordering: the three tasks are disjoint — task 1 touches only the nine headers
+(plus whatever they force), task 2 only comments plus one gate, task 3 only
+`Rasterizer`/`DeferredRasterizer`. Tasks 2 and 3 both add a `BuildIntegrity`
+test, so if they are done in one session, add both before rebuilding.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`Mesh::setModel`** (`Mesh.ixx:57`, `Mesh.cpp:92`) — a
+genuinely uncalled setter and the only one a whole-tree sweep of 263 declared
+functions turned up (every other accessor flagged at ≤2 references has a real
+caller, including the `getCastersDrawn`/`getGBuffer*`/`getShadowMapArray`
+family earlier batches suspected); one three-line deletion is not a task, fold
+it in if something else touches `Mesh`. **`common/noise.slang`'s `snoise`/`fbm`
+having no production consumer** — only `tests/noise_test.slang` imports it, but
+the manifest row calls that out as a deliberate cross-target CI guard
+("verify the shared noise math emits to BOTH targets"), so deleting it would
+remove a gate, not dead weight. **The five blocking `map_async` readbacks in
+the Rust crate** and **`render/histogram.rs`/`render/gpu_occlusion.rs` having no
+inline tests** — unchanged since the 2026-08-03 batch rejected both; every
+extracted unit still needs a live wgpu adapter. **The two `vk::AttachmentReference`
+colour/depth pairs** (`Rasterizer.cpp:159-165`, `PostStage.cpp:205-211`) — two
+copies of four lines, and the other three render passes
+(`DeferredRasterizer.cpp:193-210`, `SkyBox.cpp:221-225`,
+`CascadedShadowMap.cpp:165`) each need a different shape, so a helper would
+serve two of five callers. **`forward.slang`'s `iblParams` and
+`shadowCascadeIndex` both sitting at `[vk::binding(0, 1)]`** (`:66`, `:78`) —
+looks like the batch X over-subscription bug returning, is not: they belong to
+different pipelines with different bind-group layouts. It deserves a comment
+saying so, not a task; fold it into task 2 if convenient.
+**`Src/KomputePlayground`** — unchanged; still an owner decision.
+
+### C++ Vulkan engine
+
+- [ ] **(M) (refactor) Retire the dual-compile shim from all nine host/device headers, and give the GLSL type aliases one definition** — nine headers still branch on `#ifdef __cplusplus` for a shader compiler that was deleted with `Resources/Shaders/`, in two mutually incompatible spellings, and six of them carry a byte-comparable copy of the same alias block.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/pushConstants/PushConstantRasterizer.hpp`, `PushConstantPost.hpp`, `PushConstantPathTracing.hpp`, `PushConstantRayTracing.hpp` — the four copies of the `#ifdef __cplusplus` + five-alias + `namespace` preamble (each at `:6-16`, closing at `:23`/`:32`/`:41`)
+  - `Src/GraphicsEngineVulkan/renderer/GlobalUBO.hpp:5-18,31-33` and `renderer/SceneUBO.hpp:6-22,49-52,66-68` — copies five and six; note `SceneUBO.hpp:49-52` guards a `static_assert` that becomes unconditional
+  - `Src/GraphicsEngineVulkan/ObjectDescription.hpp:4-6,18` — the `<cstdint>` variant, plus the "shared C++/GLSL header" comment
+  - `Src/shared/scene/Vertex.hpp:4-14` and `Src/shared/scene/ObjMaterial.hpp:4-11` — the `KTG_VEC2`/`KTG_VEC3` macro variant with the dead `#else` branch; `KTG_VEC` appears nowhere else in `Src/` or `Test/` (verified this pass)
+  - `Src/GraphicsEngineVulkan/common/host_device_shared_vars.hpp` — the header that already got this right: C++-only, no guard, pinned against the shaders by `HostAndShaderSharedConstantsAgree`
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1257` (`HostAndShaderSharedConstantsAgree`), `:3980` (`SharedStructOffsetsMatchTheCompiledSpirv`) — the two gates that pin these structs against the compiled SPIR-V; they must stay green unchanged
+  - `Test/commit/VulkanEngine/pushConstantSuite.cpp`, `sceneUboLayoutSuite.cpp` — the size/offset pins
+
+  **Steps:**
+  1. Add `Src/GraphicsEngineVulkan/common/HostDeviceGlmAliases.hpp`: `#pragma once`, the glm includes, and the five aliases (`vec2`, `vec3`, `vec4`, `mat4`, `uint`) at **global** scope. Keep them global and keep the spellings byte-identical to today's — this task must not change a single struct's layout or any unqualified use elsewhere. Document in the header that the aliases are global on purpose (they are what makes the struct bodies read like the Slang declarations they mirror) and that the header is C++-only.
+  2. In the four `PushConstant*.hpp`, `GlobalUBO.hpp` and `SceneUBO.hpp`: delete the `#ifdef __cplusplus` / `#endif` pairs, replace the alias block with `#include "common/HostDeviceGlmAliases.hpp"`, keep `#pragma once` and the `namespace Kataglyphis::VulkanRendererInternals { … }` unconditional. `SceneUBO.hpp` keeps its `#include "common/host_device_shared_vars.hpp"` (it needs `MAX_CASCADES`) and its `static_assert`, now unguarded.
+  3. In `ObjectDescription.hpp`: drop the guard around `#include <cstdint>`, and reword `:14-19`'s comment — it is a host header whose layout is pinned against `common/scene_types.slang`'s redeclaration, not a "shared C++/GLSL header".
+  4. In `Src/shared/scene/Vertex.hpp` and `ObjMaterial.hpp`: delete the `#ifdef __cplusplus` / `#else` / `#endif` blocks, delete the `KTG_VEC2`/`KTG_VEC3` macros, and spell the members `glm::vec2` / `glm::vec3` directly. These two live under `Src/shared/` and are consumed by both the Vulkan engine and the Rust bridge's C++ side — do not add the global aliases here, qualify instead.
+  5. Update each header's leading comment: the "little hack … for using it on the CPU side as well for the GPU side" / NVIDIA-tutorial preamble describes a mechanism that no longer exists. Say instead that the struct is host-side and that its layout is pinned against the Slang redeclaration by `SharedStructOffsetsMatchTheCompiledSpirv`.
+  6. Add the gate. In `buildIntegritySuite.cpp`, next to `SharedStructOffsetsMatchTheCompiledSpirv`, add `TEST(BuildIntegrity, NoHostDeviceHeaderCarriesTheRetiredGlslDualCompileShim)`: walk `Src/` for `.hpp`/`.ixx`, fail on any line containing `__cplusplus` or `KTG_VEC`, and word the failure message with *why* (the GLSL tree is gone; these headers are compiled only by C++; see `SlangSourcesDoNotReferenceTheDeletedGlslTree`). Skip `ExternalLib/`.
+
+  **Test:** Add `BuildIntegrity.NoHostDeviceHeaderCarriesTheRetiredGlslDualCompileShim`
+  as above, and red-prove it by temporarily reinstating one `#ifdef __cplusplus`.
+  The real safety net is that `BuildIntegrity.SharedStructOffsetsMatchTheCompiledSpirv`,
+  `BuildIntegrity.HostAndShaderSharedConstantsAgree`, `PushConstantUnit.*` and
+  `SceneUboLayoutUnit.*` must all stay green **without being edited** — if any
+  offset moves, step 1 or 4 changed a type. Run:
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*:PushConstantUnit.*:SceneUboLayoutUnit.*`
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  Pass `-FreshContainer`: this adds a header and touches ones included by module
+  interfaces (`GlobalUBO.ixx`, `SceneUBO.ixx`, `Rasterizer.ixx`, `MeshDrawRecorder.ixx`,
+  …), and a reused container never prunes stale `.pcm` files.
+
+  **Context:** This is the "one rule, N hand-rolled copies" family applied to
+  headers rather than create-infos, with a dead-code half attached: the six
+  alias copies have already drifted in their glm includes, and the `#else`
+  branches in `Src/shared/scene/` are unreachable text describing a compiler
+  this project no longer runs. Keep the change strictly mechanical — the whole
+  point is that the layout gates prove nothing moved. Do **not** try to make
+  these headers C++ modules; the reason they cannot be is unrelated and still
+  holds.
+
+- [ ] **(S) (refactor) Fix the eight comments still naming deleted GLSL-era shader files, and widen the gate that was supposed to catch them** — `SlangSourcesDoNotReferenceTheDeletedGlslTree` greps for one literal path, so a bare `foo.glsl` in a comment passes and C++ sources are never scanned at all.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1675-1723` — the existing gate; `kDeadPath = "Resources/Shaders"` at `:1692` is the whole check
+  - `Resources/ShadersSlang/common/aces.slang:5,12` — cites the `generated/aces.glsl` POC, and claims "The C++ post.frag currently uses pow(x, 1/2.2); migrating to this shared function fixes that discrepancy"
+  - `Resources/ShadersSlang/post/post.slang:1,5-6,15,56` — the shader that already did that migration; `:15` still says "Matches the C++ post.frag's `uniform sampler2D` layout"
+  - `Resources/ShadersSlang/common/brdf.slang:5` — "the C++ engine's pbr/brdf/unreal4.glsl"
+  - `Resources/ShadersSlang/common/noise.slang:4` — "the C++ engine's common/grad_noise.glsl"
+  - `Resources/ShadersSlang/compute/clouds.slang:8` — "The box intersection (from Matlib.glsl)"
+  - `Resources/ShadersSlang/path_tracing/path_tracing.slang:150` — "rchit.slang reads the identical fields"; the file is `raytracing/raytrace.rchit.slang` (spelled correctly at `Raytracing.cpp:69`)
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.ixx:24` — "Push constants consumed by directional_shadow_map.vert/.geom"; the real consumer is `Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang`
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:305` — "Vertex-less fullscreen triangle (gl_VertexIndex in lighting.vert)"; the real source is `deferred/deferred.slang`'s lighting vertex entry point
+  - `Src/GraphicsEngineVulkan/window/Window.cpp:102-103` — cites `VulkanRenderer.cpp:646`; the calls are at `:690` and `:692` (`VulkanSwapChain.cpp:52` in the same comment is correct). Carried over from the batch XVI reject list as "fix it in passing"
+
+  **Steps:**
+  1. Rewrite the eight comments above to name the file that actually exists today. Do not delete the history where it is load-bearing — e.g. `noise.slang`'s attribution to the Ashima/Gustavson implementation stays; only "used by the C++ engine's `common/grad_noise.glsl`" goes. For `aces.slang:12`, replace the stale claim with the present tense: both `post/post.slang` and `tonemap/tonemap.slang` import this module, and `post.slang` uses `aces_tonemap` at `:56`.
+  2. Fix `Window.cpp:102-103`'s line reference to `VulkanRenderer.cpp:690`.
+  3. Widen the gate in `buildIntegritySuite.cpp`. Keep the existing `Resources/Shaders` check, and add: (a) scan `Src/GraphicsEngineVulkan/` and `Src/shared/` `.cpp`/`.hpp`/`.ixx` files as well as `Resources/ShadersSlang/**.slang`; (b) flag any comment token matching a GLSL-era shader extension — `.glsl`, `.frag`, `.vert`, `.geom`, `.tesc`, `.tese`, `.comp`, `.rgen`, `.rchit`, `.rmiss` — since none of those extensions exist anywhere in the tree any more; (c) flag any `*.slang` filename mentioned in a comment for which no matching file exists under `Resources/ShadersSlang/` (this is what catches `rchit.slang`). Match on basename so a path prefix does not matter. Skip `Resources/ShadersSlang/build/` and `ExternalLib/`.
+  4. Keep `docs/cpp-renderer-improvements.md` out of scope entirely — it is a chronological change log and its references to deleted files are correct history. Same for `docs/shader-sharing.md:134-142`, which narrates the retired `Resources/Shaders/generated/` POC in the past tense on purpose.
+  5. Optional, if convenient: add a one-line comment at `Resources/ShadersSlang/forward/forward.slang:78` recording that `shadowCascadeIndex` sharing `[vk::binding(0, 1)]` with `iblParams` (`:66`) is legal because the shadow and forward pipelines have different bind-group layouts. Nothing today says so, and it reads like the batch X over-subscription bug.
+
+  **Test:** Extend the existing `BuildIntegrity.SlangSourcesDoNotReferenceTheDeletedGlslTree`
+  rather than adding a second suite, and rename it to match its new scope (e.g.
+  `SourceCommentsDoNotReferenceDeletedShaderFiles`) — `BuildIntegrity.WindowsCiExcludesExactlyTheGpuSuites`
+  derives its list from the defined suite names, so check whether a rename needs
+  anything else updated. Red-prove by reinstating one of the eight strings. Run:
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  No shader recompile is needed — only comments change, and no `.spv`/`.wgsl`
+  output depends on them.
+
+- [ ] **(S) (refactor) Give `Rasterizer` and `DeferredRasterizer` one depth-format derivation each, the way `PostStage` and `CascadedShadowMap` already do** — two of the four stages call `chooseDepthFormat` twice, so the render-pass attachment format and the image it is paired with are derived independently.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:139-157` and `:195-203` — the pattern to copy, including the comment that states the invariant ("reuse it rather than querying again, so the attachment and the image it is paired with cannot diverge"); the member is `PostStage.ixx:51`, exposed by `getDepthFormat()` at `:32`
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.ixx:172-175` and `CascadedShadowMap.cpp:53` — the second stage that already caches
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:146-203` (`createRenderPass`, query at `:154`) and `:233-271` (`createTextures`, query at `:256`); `init()` order at `:44-48`; `recreateFrameResources` at `:138-144`
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:93-101` (`createTextures`, query at `:98`) and `:170-215` (`createRenderPass`, query at `:178`); its `init()` and `recreateFrameResources`
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.ixx:71` and `DeferredRasterizer.ixx:73-76` — where the other format constants live, and where the new member belongs
+  - `Src/GraphicsEngineVulkan/common/FormatHelper.hpp` — `chooseDepthFormat` itself
+
+  **Steps:**
+  1. Add `vk::Format depth_format{ vk::Format::eUndefined };` as a private member of `Rasterizer` and of `DeferredRasterizer`, next to the existing `static constexpr vk::Format` attachment constants.
+  2. In each stage's `createTextures()` — which `init()` runs **before** `createRenderPass()` in both (`Rasterizer.cpp:44-45`; same order in `DeferredRasterizer::init`) — assign the member from the single `chooseDepthFormat` call and use the member for both `createImage` and `createImageView`.
+  3. In each stage's `createRenderPass()`, read the member instead of calling `chooseDepthFormat` again. `Rasterizer.cpp:154` currently has the call inline in the `buildAttachmentDescription` argument list — replace it with `depth_format` and add a short comment mirroring `PostStage.cpp:195-197`.
+  4. Check `recreateFrameResources()` on both stages: `Rasterizer`'s re-runs `createTextures` (so the member is refreshed) but not `createRenderPass`. Confirm the render pass is not recreated on resize; if it is, make sure the ordering still assigns before it reads. Do not reorder `init()`.
+  5. Do **not** touch the aspect-mask difference between the stages — `Rasterizer.cpp:269` deliberately uses `depthStencilTransitionAspect(depth_format)` because it records a layout transition, while `PostStage.cpp:156` and `DeferredRasterizer.cpp:100` use `eDepth` alone because they do not. That divergence is documented at each site and is correct.
+
+  **Test:** Add `TEST(BuildIntegrity, EveryRenderStageDerivesItsDepthFormatOnce)`
+  to `Test/commit/VulkanEngine/buildIntegritySuite.cpp`, alongside the other
+  source-scanning gates: for each of `renderer/Rasterizer.cpp`,
+  `renderer/DeferredRasterizer.cpp`, `renderer/PostStage.cpp` and
+  `scene/light/directional_light/CascadedShadowMap.cpp`, count occurrences of
+  `chooseDepthFormat(` and assert exactly one per file, with a failure message
+  naming the invariant (the attachment and the image it is paired with are
+  derived from the same value). Red-prove it by reinstating the second call in
+  `Rasterizer.cpp`. Run:
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  This changes two module interfaces (`Rasterizer.ixx`, `DeferredRasterizer.ixx`),
+  so pass `-FreshContainer`.
+
+  **Context:** Sixth member of the family that `buildAttachmentDescription`,
+  `fullExtentViewport`, `buildFramebufferCreateInfo`, `buildRenderPassBeginInfo`,
+  `buildRenderPassCreateInfo` and `buildPipelineLayoutCreateInfo` already
+  cover — except here the shared definition already exists (`chooseDepthFormat`)
+  and what is duplicated is the *derivation*, which is exactly what the
+  `PostStage` comment warns about. There is no live bug: `chooseDepthFormat` is
+  a deterministic function of the physical device, so today the two calls agree.
+  The cost is that any future change to how a depth format is chosen (an extra
+  usage-flag argument, a per-stage preference list) has to be made in six places
+  instead of four, and the two uncached stages give no compile error if it is
+  not.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

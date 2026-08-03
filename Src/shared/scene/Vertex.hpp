@@ -1,26 +1,18 @@
 #ifndef KATAGLYPHIS_SHARED_SCENE_VERTEX_HPP
 #define KATAGLYPHIS_SHARED_SCENE_VERTEX_HPP
 
-#ifdef __cplusplus
 #include <glm/glm.hpp>
-#define KTG_VEC2 glm::vec2
-#define KTG_VEC3 glm::vec3
 #define GLM_ENABLE_EXPERIMENTAL
 #include <functional>
 #include <glm/gtx/hash.hpp>
-#else
-#define KTG_VEC2 vec2
-#define KTG_VEC3 vec3
-#endif
 
 struct Vertex
 {
-    KTG_VEC3 position;
-    KTG_VEC3 normal;
-    KTG_VEC3 color;
-    KTG_VEC2 texture_coords;
+    glm::vec3 position;
+    glm::vec3 normal;
+    glm::vec3 color;
+    glm::vec2 texture_coords;
 
-#ifdef __cplusplus
     Vertex() = default;
 
     Vertex(glm::vec3 pos, glm::vec3 normal, glm::vec3 color, glm::vec2 texture_coords)
@@ -34,10 +26,8 @@ struct Vertex
         return position == other.position && normal == other.normal && texture_coords == other.texture_coords
                && color == other.color;
     }
-#endif
 };
 
-#ifdef __cplusplus
 namespace std {
 
 template<> struct hash<Vertex>
@@ -65,9 +55,5 @@ template<> struct hash<Vertex>
 };
 
 }// namespace std
-#endif
-
-#undef KTG_VEC2
-#undef KTG_VEC3
 
 #endif

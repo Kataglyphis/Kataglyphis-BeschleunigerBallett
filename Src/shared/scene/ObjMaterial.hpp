@@ -1,22 +1,15 @@
 #ifndef KATAGLYPHIS_SHARED_SCENE_OBJ_MATERIAL_HPP
 #define KATAGLYPHIS_SHARED_SCENE_OBJ_MATERIAL_HPP
 
-#ifdef __cplusplus
 #include <glm/glm.hpp>
-#define KTG_VEC3 glm::vec3
-#define KTG_VEC2 glm::vec2
-#else
-#define KTG_VEC3 vec3
-#define KTG_VEC2 vec2
-#endif
 
 struct ObjMaterial
 {
-    KTG_VEC3 ambient;
-    KTG_VEC3 diffuse;
-    KTG_VEC3 specular;
-    KTG_VEC3 transmittance;
-    KTG_VEC3 emission;
+    glm::vec3 ambient;
+    glm::vec3 diffuse;
+    glm::vec3 specular;
+    glm::vec3 transmittance;
+    glm::vec3 emission;
     float shininess;
     float ior;
     float dissolve;
@@ -36,10 +29,8 @@ struct ObjMaterial
     // at uv * uv_scale + uv_offset. Identity (scale 1, offset 0) leaves the UV
     // unchanged, so materials without the extension (and every OBJ material) are
     // bit-identical. Trailing vec2s, same scalar-layout rationale as alphaCutoff.
-    KTG_VEC2 uv_scale;
-    KTG_VEC2 uv_offset;
-
-#ifdef __cplusplus
+    glm::vec2 uv_scale;
+    glm::vec2 uv_offset;
 
     ObjMaterial()
       : ambient(0.1F, 0.1F, 0.1F), diffuse(0.7F, 0.7F, 0.7F), specular(1.0F, 1.0F, 1.0F),
@@ -47,29 +38,25 @@ struct ObjMaterial
         illum(0), textureID(-1), alphaCutoff(-1.0F), uv_scale(1.0F, 1.0F), uv_offset(0.0F, 0.0F)
     {}
 
-    ObjMaterial(KTG_VEC3 ambient,
-      KTG_VEC3 diffuse,
-      KTG_VEC3 specular,
-      KTG_VEC3 transmittance,
-      KTG_VEC3 emission,
+    ObjMaterial(glm::vec3 ambient,
+      glm::vec3 diffuse,
+      glm::vec3 specular,
+      glm::vec3 transmittance,
+      glm::vec3 emission,
       float shininess,
       float ior,
       float dissolve,
       int illum,
       int textureID,
       float alphaCutoff = -1.0F,
-      KTG_VEC2 uv_scale = KTG_VEC2(1.0F, 1.0F),
-      KTG_VEC2 uv_offset = KTG_VEC2(0.0F, 0.0F))
+      glm::vec2 uv_scale = glm::vec2(1.0F, 1.0F),
+      glm::vec2 uv_offset = glm::vec2(0.0F, 0.0F))
       : ambient(ambient), diffuse(diffuse), specular(specular), transmittance(transmittance), emission(emission),
         shininess(shininess), ior(ior), dissolve(dissolve), illum(illum), textureID(textureID), alphaCutoff(alphaCutoff),
         uv_scale(uv_scale), uv_offset(uv_offset)
     {}
 
     int get_textureID() const { return textureID; }
-#endif
 };
-
-#undef KTG_VEC3
-#undef KTG_VEC2
 
 #endif
