@@ -6823,39 +6823,6 @@ saying so, not a task; fold it into task 2 if convenient.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Fix the eight comments still naming deleted GLSL-era shader files, and widen the gate that was supposed to catch them** — `SlangSourcesDoNotReferenceTheDeletedGlslTree` greps for one literal path, so a bare `foo.glsl` in a comment passes and C++ sources are never scanned at all.
-
-  **Files to read:**
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1675-1723` — the existing gate; `kDeadPath = "Resources/Shaders"` at `:1692` is the whole check
-  - `Resources/ShadersSlang/common/aces.slang:5,12` — cites the `generated/aces.glsl` POC, and claims "The C++ post.frag currently uses pow(x, 1/2.2); migrating to this shared function fixes that discrepancy"
-  - `Resources/ShadersSlang/post/post.slang:1,5-6,15,56` — the shader that already did that migration; `:15` still says "Matches the C++ post.frag's `uniform sampler2D` layout"
-  - `Resources/ShadersSlang/common/brdf.slang:5` — "the C++ engine's pbr/brdf/unreal4.glsl"
-  - `Resources/ShadersSlang/common/noise.slang:4` — "the C++ engine's common/grad_noise.glsl"
-  - `Resources/ShadersSlang/compute/clouds.slang:8` — "The box intersection (from Matlib.glsl)"
-  - `Resources/ShadersSlang/path_tracing/path_tracing.slang:150` — "rchit.slang reads the identical fields"; the file is `raytracing/raytrace.rchit.slang` (spelled correctly at `Raytracing.cpp:69`)
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.ixx:24` — "Push constants consumed by directional_shadow_map.vert/.geom"; the real consumer is `Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang`
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:305` — "Vertex-less fullscreen triangle (gl_VertexIndex in lighting.vert)"; the real source is `deferred/deferred.slang`'s lighting vertex entry point
-  - `Src/GraphicsEngineVulkan/window/Window.cpp:102-103` — cites `VulkanRenderer.cpp:646`; the calls are at `:690` and `:692` (`VulkanSwapChain.cpp:52` in the same comment is correct). Carried over from the batch XVI reject list as "fix it in passing"
-
-  **Steps:**
-  1. Rewrite the eight comments above to name the file that actually exists today. Do not delete the history where it is load-bearing — e.g. `noise.slang`'s attribution to the Ashima/Gustavson implementation stays; only "used by the C++ engine's `common/grad_noise.glsl`" goes. For `aces.slang:12`, replace the stale claim with the present tense: both `post/post.slang` and `tonemap/tonemap.slang` import this module, and `post.slang` uses `aces_tonemap` at `:56`.
-  2. Fix `Window.cpp:102-103`'s line reference to `VulkanRenderer.cpp:690`.
-  3. Widen the gate in `buildIntegritySuite.cpp`. Keep the existing `Resources/Shaders` check, and add: (a) scan `Src/GraphicsEngineVulkan/` and `Src/shared/` `.cpp`/`.hpp`/`.ixx` files as well as `Resources/ShadersSlang/**.slang`; (b) flag any comment token matching a GLSL-era shader extension — `.glsl`, `.frag`, `.vert`, `.geom`, `.tesc`, `.tese`, `.comp`, `.rgen`, `.rchit`, `.rmiss` — since none of those extensions exist anywhere in the tree any more; (c) flag any `*.slang` filename mentioned in a comment for which no matching file exists under `Resources/ShadersSlang/` (this is what catches `rchit.slang`). Match on basename so a path prefix does not matter. Skip `Resources/ShadersSlang/build/` and `ExternalLib/`.
-  4. Keep `docs/cpp-renderer-improvements.md` out of scope entirely — it is a chronological change log and its references to deleted files are correct history. Same for `docs/shader-sharing.md:134-142`, which narrates the retired `Resources/Shaders/generated/` POC in the past tense on purpose.
-  5. Optional, if convenient: add a one-line comment at `Resources/ShadersSlang/forward/forward.slang:78` recording that `shadowCascadeIndex` sharing `[vk::binding(0, 1)]` with `iblParams` (`:66`) is legal because the shadow and forward pipelines have different bind-group layouts. Nothing today says so, and it reads like the batch X over-subscription bug.
-
-  **Test:** Extend the existing `BuildIntegrity.SlangSourcesDoNotReferenceTheDeletedGlslTree`
-  rather than adding a second suite, and rename it to match its new scope (e.g.
-  `SourceCommentsDoNotReferenceDeletedShaderFiles`) — `BuildIntegrity.WindowsCiExcludesExactlyTheGpuSuites`
-  derives its list from the defined suite names, so check whether a rename needs
-  anything else updated. Red-prove by reinstating one of the eight strings. Run:
-  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  No shader recompile is needed — only comments change, and no `.spv`/`.wgsl`
-  output depends on them.
-
 - [ ] **(S) (refactor) Give `Rasterizer` and `DeferredRasterizer` one depth-format derivation each, the way `PostStage` and `CascadedShadowMap` already do** — two of the four stages call `chooseDepthFormat` twice, so the render-pass attachment format and the image it is paired with are derived independently.
 
   **Files to read:**
