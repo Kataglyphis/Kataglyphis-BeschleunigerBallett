@@ -42,12 +42,23 @@ float calc_cascaded_shadow(float3 worldPos, float3 N, float3 L, ConstantBuffer<S
     float2 texelSize = 1.0 / float2(float(shadowWidth), float(shadowHeight));
     float visible = 0.0;
     float taps = 0.0;
+    // The comparison sampler is ClampToEdge (CascadedShadowMap.cpp), so a tap
+    // that wanders past the map's border re-samples the border texel's depth
+    // instead of falling off the map - it does NOT read as unshadowed.
+    // ClampToBorder + an opaque-white border would do that instead, but is
+    // blocked here: Texture.cpp:249 hard-codes an int opaque-black border
+    // colour, which reads as depth 0 (fully shadowed) on this float-format
+    // image. This in-shader bounds check is the portable equivalent: an
+    // out-of-map tap counts as lit, matching the whole-fragment rejection
+    // above.
     for (int x = -radius; x <= radius; x++)
     {
         for (int y = -radius; y <= radius; y++)
         {
             float2 uv = shadowUV + float2(x, y) * texelSize;
-            visible += directionalShadowMaps.SampleCmpLevelZero(float3(uv, float(cascadeIndex)), currentDepth - bias);
+            visible += (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0)
+              ? directionalShadowMaps.SampleCmpLevelZero(float3(uv, float(cascadeIndex)), currentDepth - bias)
+              : 1.0;
             taps += 1.0;
         }
     }

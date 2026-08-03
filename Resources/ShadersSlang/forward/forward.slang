@@ -242,12 +242,24 @@ float shadow_visibility(float viewDepth, float3 worldPos, float nDotL)
     shadowMap.GetDimensions(shadowWidth, shadowHeight, shadowLayers);
     float texel = 1.0 / float(shadowWidth);
     float sum = 0.0;
+    // The comparison sampler is ClampToEdge (matching the C++ path's
+    // CascadedShadowMap.cpp), so a tap that wanders past the map's border
+    // re-samples the border texel's depth instead of falling off the map -
+    // it does NOT read as unshadowed. ClampToBorder + an opaque-white border
+    // would do that instead, but is unavailable here: wgpu's
+    // ADDRESS_MODE_CLAMP_TO_BORDER feature does not exist on the web target.
+    // This in-shader bounds check is the portable equivalent: an
+    // out-of-map tap counts as lit, matching the whole-fragment rejection
+    // above (`inBounds`).
     for (int y = -1; y <= 1; y++)
     {
         for (int x = -1; x <= 1; x++)
         {
             float2 offset = float2(float(x), float(y)) * texel;
-            sum += shadowMap.SampleCmpLevelZero(shadowSampler, float3(uv + offset, float(cascade)), proj.z - bias);
+            float2 tapUV = uv + offset;
+            sum += (tapUV.x >= 0.0 && tapUV.x <= 1.0 && tapUV.y >= 0.0 && tapUV.y <= 1.0)
+              ? shadowMap.SampleCmpLevelZero(shadowSampler, float3(tapUV, float(cascade)), proj.z - bias)
+              : 1.0;
         }
     }
     return sum / 9.0;

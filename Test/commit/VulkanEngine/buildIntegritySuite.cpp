@@ -1691,6 +1691,94 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
          }();
 }
 
+TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    static const std::string kMarker = "SampleCmpLevelZero(";
+    static const std::string kGeLower = ">= 0.0";
+    static const std::string kLeUpper = "<= 1.0";
+
+    int occurrences_checked = 0;
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string stripped_text;
+        std::string raw_line;
+        while (std::getline(file, raw_line)) {
+            stripped_text += strip_line_comment(raw_line);
+            stripped_text += '\n';
+        }
+
+        std::size_t search_from = 0;
+        while (true) {
+            const auto marker_pos = stripped_text.find(kMarker, search_from);
+            if (marker_pos == std::string::npos) { break; }
+            ++occurrences_checked;
+
+            // The enclosing statement runs from the previous statement
+            // terminator (';' or '{') up to the call site - the tap coordinate
+            // must be range-checked to [0,1] on both components somewhere in
+            // that statement (e.g. the condition of a guarding ternary).
+            std::size_t statement_start = marker_pos;
+            while (statement_start > 0 && stripped_text[statement_start - 1] != ';'
+                   && stripped_text[statement_start - 1] != '{') {
+                --statement_start;
+            }
+            const std::string statement = stripped_text.substr(statement_start, marker_pos - statement_start);
+
+            auto count_occurrences = [](const std::string &haystack, const std::string &needle) {
+                int count = 0;
+                std::size_t pos = 0;
+                while ((pos = haystack.find(needle, pos)) != std::string::npos) {
+                    ++count;
+                    pos += needle.size();
+                }
+                return count;
+            };
+
+            const bool bounds_checked =
+              count_occurrences(statement, kGeLower) >= 2 && count_occurrences(statement, kLeUpper) >= 2;
+
+            search_from = marker_pos + kMarker.size();
+
+            if (!bounds_checked) {
+                std::size_t line_number = 1 + static_cast<std::size_t>(
+                                                 std::count(stripped_text.begin(), stripped_text.begin() + static_cast<long>(marker_pos), '\n'));
+                violations.push_back(fs::relative(path, repo_root).generic_string() + ':' + std::to_string(line_number)
+                                      + ": SampleCmpLevelZero tap is not guarded by a [0,1] bounds check on both "
+                                        "components of the tap coordinate in its enclosing statement");
+            }
+        }
+    }
+
+    EXPECT_EQ(occurrences_checked, 2)
+      << "expected exactly 2 SampleCmpLevelZero call site(s), found " << occurrences_checked
+      << " - update this count if a new PCF kernel was intentionally added, and confirm it also "
+         "bounds-checks its tap coordinate";
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " PCF tap(s) sample past the shadow map's border unguarded - the ClampToEdge comparison "
+         "sampler replicates the border texel's depth for an out-of-map tap rather than treating it "
+         "as unshadowed, so every tap must be range-checked to [0,1] before sampling: "
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 namespace {
 
 // A text-only call-graph reachability check for the whole Slang corpus (see
