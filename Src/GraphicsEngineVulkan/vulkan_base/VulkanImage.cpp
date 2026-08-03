@@ -6,6 +6,7 @@
 #include <utility>
 #include <vk_mem_alloc.h>
 #include <vulkan/vulkan.hpp>
+#include <spdlog/spdlog.h>
 
 #include "common/ImageLayoutHelper.hpp"
 #include "common/Utilities.hpp"
@@ -108,6 +109,10 @@ void Kataglyphis::VulkanImage::transitionImageLayout(vk::Device in_logical_devic
 {
     vk::CommandBuffer command_buffer =
       Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(in_logical_device, command_pool);
+    if (!command_buffer) {
+        spdlog::error("Skipping image layout transition due to invalid command buffer.");
+        return;
+    }
 
     // Record the barrier through the command-buffer overload so the access-mask /
     // pipeline-stage / layout-case logic lives in exactly one place.

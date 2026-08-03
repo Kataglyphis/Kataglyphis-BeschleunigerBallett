@@ -1286,6 +1286,11 @@ void Kataglyphis::VulkanRenderer::createPathTracingAccumulationResources()
     // as the clouds output texture).
     vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
       device->getLogicalDevice(), graphics_command_pool);
+    if (!commandBuffer) {
+        spdlog::error("Failed to begin command buffer for path tracing accumulation image transition!");
+        pathTracingAccumulation.cleanUp();
+        return;
+    }
     pathTracingAccumulation.getVulkanImage().transitionImageLayout(
       commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, 1, vk::ImageAspectFlagBits::eColor);
     Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(

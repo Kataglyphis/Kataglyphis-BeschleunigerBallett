@@ -5941,56 +5941,6 @@ repeat of the batch XI mesh-range bug. **`docs/cpp-renderer-improvements.md` has
 not been touched since 2026-08-02** — it is a curated campaign log, not a
 per-commit changelog; drift is arguable and no gate claims otherwise.
 
-- [ ] **(S) Check `beginCommandBuffer`'s documented null return at the eight call sites that ignore it, free the buffer it leaks when `begin()` fails, and gate it** — eight sites record commands into `VK_NULL_HANDLE` on a path the factory explicitly supports returning.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/CommandBufferManager.cpp:11-52` — the
-    three `return vk::CommandBuffer{}` paths; note that the one at `:48` returns
-    **after** `allocateCommandBuffers` succeeded, so the buffer is never freed.
-  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:157-164` — the only call site
-    that checks. Copy its shape (log, release anything already acquired,
-    return/skip) at the others.
-  - The eight unchecked sites: `ASManager.cpp:107`, `:157`, `:182`, `:268`;
-    `VulkanRenderer.cpp:1282`; `Clouds.cpp:38`, `:110`; `SkyBox.cpp:147`;
-    `VulkanBufferManager.cpp:21`. (Nine call sites total, one already checked.)
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:2800` —
-    `VulkanCreationResultsAreChecked`, the gate this one is modelled on.
-
-  **Steps:**
-  1. In `beginCommandBuffer`, on the `begin()` failure path
-     (`CommandBufferManager.cpp:44-49`), call
-     `device.freeCommandBuffers(command_pool, 1, &command_buffer)` before
-     returning the null handle.
-  2. While in that function, replace the one-element
-     `std::vector<vk::CommandBuffer> buffers(1)` (`:29`) with a
-     `std::array<vk::CommandBuffer, 1>` — this function runs once per texture
-     upload, per layout transition and per AS build, and the heap allocation
-     buys nothing. Drop the now-impossible `buffers.empty()` check.
-  3. At each of the eight sites, add an early-out immediately after the call:
-     log via `spdlog::error` naming the operation, clean up anything already
-     created in that function (e.g. the staging buffer at `SkyBox.cpp:137`, the
-     transient command pool at `Clouds.cpp:99-108`), and return. Do not call
-     `endAndSubmitCommandBuffer` on the null handle — it already no-ops, but the
-     work in between is what must be skipped.
-  4. Add `TEST(BuildIntegrity, EveryBeginCommandBufferResultIsChecked)`: scan
-     `Src/**/*.cpp` for `beginCommandBuffer(`, and for each hit require a
-     null-check on the assigned variable within the following ~6 source lines.
-     Follow `VulkanCreationResultsAreChecked`'s scanning and reporting style.
-
-  **Test:** the new gate, RED before step 3 (it must name all eight files) and
-  GREEN after. No device needed.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
-  from the repo root.
-
-  **Context:** This is the same class as `3467`'s "a CI fuzz list that cannot say
-  no" and batch III's unchecked-`vk::Result` sweep: a failure signal that exists
-  and is never read. Exceptions are disabled project-wide (`AGENTS.md`, "Code
-  Conventions"), so a returned null handle is the only failure channel these
-  functions have — reading it is not optional defensiveness.
-
 - [ ] **(S) (refactor) Make `Texture::createImage` record the mip count it was given, so `getMipLevel()` and the sampler's `maxLod` stop depending on which constructor path ran** — today only `uploadRgba` sets the field, and every other path samples mip 0 forever.
 
   **Files to read:**

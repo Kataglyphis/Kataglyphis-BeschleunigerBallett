@@ -36,6 +36,10 @@ std::unique_ptr<Kataglyphis::Texture> Clouds::createStorageTexture(vk::CommandPo
     texture->createTextureSampler(device);
 
     vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);
+    if (!commandBuffer) {
+        spdlog::error("Clouds::createStorageTexture: failed to begin command buffer, skipping storage texture creation.");
+        return nullptr;
+    }
     texture->getVulkanImage().transitionImageLayout(commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, 1, vk::ImageAspectFlagBits::eColor);
     Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer);
 
@@ -108,6 +112,11 @@ void Clouds::dispatchNoiseGeneration()
     commandPool = poolRes.value;
 
     vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);
+    if (!commandBuffer) {
+        spdlog::error("Clouds::dispatchNoiseGeneration: failed to begin command buffer, skipping noise generation.");
+        device->getLogicalDevice().destroyCommandPool(commandPool);
+        return;
+    }
 
     const vk::DescriptorSet noiseDescriptorSet = noiseDescriptors.sets()[0];
     commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, noiseComputePipeline);

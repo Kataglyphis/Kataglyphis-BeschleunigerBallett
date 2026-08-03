@@ -2,6 +2,7 @@ module;
 
 #include "spdlog/spdlog.h"
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vulkan/vulkan.hpp>
@@ -26,9 +27,9 @@ auto Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuf
     alloc_info.commandBufferCount = 1;
 
     // allocate command buffer from pool
-    std::vector<vk::CommandBuffer> buffers(1);
+    std::array<vk::CommandBuffer, 1> buffers{};
     vk::Result const result = device.allocateCommandBuffers(&alloc_info, buffers.data());
-    if (result != vk::Result::eSuccess || buffers.empty()) {
+    if (result != vk::Result::eSuccess) {
         spdlog::default_logger_raw()->log(
           spdlog::level::err, "Failed to allocate command buffer! (vk::Result={})", static_cast<int>(result));
         return vk::CommandBuffer{};
@@ -45,6 +46,7 @@ auto Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuf
     if (begin_result != vk::Result::eSuccess) {
         spdlog::default_logger_raw()->log(
           spdlog::level::err, "Failed to begin command buffer! (vk::Result={})", static_cast<int>(begin_result));
+        device.freeCommandBuffers(command_pool, 1, &command_buffer);
         return vk::CommandBuffer{};
     }
 

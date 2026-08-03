@@ -2891,6 +2891,111 @@ TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
          }();
 }
 
+namespace {
+
+// The one non-call occurrence of "beginCommandBuffer(" under Src/ is the
+// function's own definition signature in CommandBufferManager.cpp.
+bool is_begin_command_buffer_definition_line(const std::string &line)
+{
+    return line.find("beginCommandBuffer(vk::Device device") != std::string::npos;
+}
+
+// Looks backward from `call_line` (inclusive) up to `lookback` lines for a
+// "vk::CommandBuffer <name>" declaration and returns <name>, or an empty
+// string if none is found. The declaration is always on the call line itself
+// (single-line "vk::CommandBuffer x = ...beginCommandBuffer(...)") or one to
+// two lines above it, when the declaration and the call are split across a
+// line break.
+std::string declared_command_buffer_name(const std::vector<std::string> &lines, std::size_t call_line, int lookback)
+{
+    static const std::string marker = "vk::CommandBuffer ";
+    const std::size_t begin =
+      (call_line >= static_cast<std::size_t>(lookback)) ? call_line - static_cast<std::size_t>(lookback) : 0;
+    for (std::size_t w = call_line + 1; w-- > begin;) {
+        const std::string &line = lines[w];
+        const std::size_t marker_pos = line.find(marker);
+        if (marker_pos == std::string::npos) { continue; }
+        const std::size_t name_begin = marker_pos + marker.size();
+        std::size_t name_end = name_begin;
+        while (name_end < line.size() && is_identifier_char(line[name_end])) { ++name_end; }
+        if (name_end > name_begin) { return line.substr(name_begin, name_end - name_begin); }
+    }
+    return "";
+}
+
+}// namespace
+
+// beginCommandBuffer (CommandBufferManager.cpp) documents a null vk::CommandBuffer
+// return on either the pool-null guard or an allocate/begin failure. Exceptions
+// are disabled project-wide, so that null handle is the only failure signal a
+// caller has - recording commands into it, or handing it to
+// endAndSubmitCommandBuffer's queue.submit, is undefined behaviour. This scans
+// every .cpp under Src/ for a beginCommandBuffer( call and requires a
+// "!<the assigned variable>" null-check within the following kWindow lines,
+// mirroring VulkanCreationResultsAreChecked's window-scan shape above.
+TEST(BuildIntegrity, EveryBeginCommandBufferResultIsChecked)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    constexpr int kLookback = 3;
+    constexpr int kWindow = 6;
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".cpp") { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::vector<std::string> lines;
+        std::string raw_line;
+        while (std::getline(file, raw_line)) { lines.push_back(raw_line); }
+
+        for (std::size_t i = 0; i < lines.size(); ++i) {
+            if (lines[i].find("beginCommandBuffer(") == std::string::npos) { continue; }
+            if (is_begin_command_buffer_definition_line(lines[i])) { continue; }
+
+            const std::string relative_file = fs::relative(path, repo_root).generic_string();
+            const std::string var_name = declared_command_buffer_name(lines, i, kLookback);
+            if (var_name.empty()) {
+                violations.push_back(relative_file + ":" + std::to_string(i + 1)
+                  + ": beginCommandBuffer( call whose assigned vk::CommandBuffer variable could not be located - "
+                    "cannot verify a null-check exists");
+                continue;
+            }
+
+            const std::string negated_check = "!" + var_name;
+            const std::size_t window_end = std::min(lines.size() - 1, i + static_cast<std::size_t>(kWindow));
+            bool checked = false;
+            for (std::size_t w = i; w <= window_end; ++w) {
+                if (lines[w].find(negated_check) != std::string::npos) {
+                    checked = true;
+                    break;
+                }
+            }
+
+            if (!checked) { violations.push_back(relative_file + ":" + std::to_string(i + 1) + ": " + lines[i]); }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " beginCommandBuffer() call(s) with no null-check on the returned command buffer within " << kWindow
+      << " lines - beginCommandBuffer documents a null return on allocate/begin failure, and exceptions are "
+         "disabled project-wide, so that null handle is the only failure signal available; recording into it "
+         "or submitting it is undefined behaviour:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 // docs/gpu-golden-testing.md's golden-suite counts have already had to be
 // corrected twice by hand (commits 1cd6b8b5, e2767bb1), and a planner batch
 // once found the doc claiming 21 tests when the suite held 28. Pins the

@@ -106,6 +106,11 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(std::shared_ptr
 
     vk::CommandBuffer command_buffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
       device->getLogicalDevice(), commandPool);
+    if (!command_buffer) {
+        spdlog::error("ASManager::createBLAS: failed to begin command buffer, skipping BLAS build.");
+        scratchBuffer.cleanUp();
+        return;
+    }
 
     for (size_t i = 0; i < scene->getModelCount(); i++) {
         createSingleBlas(device, command_buffer, build_as_structures[i], scratch_buffer_address);
@@ -155,6 +160,11 @@ void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(std::shared_pt
 
     vk::CommandBuffer query_cmd =
       Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(logical, commandPool);
+    if (!query_cmd) {
+        spdlog::error("ASManager::compactBLAS: failed to begin query command buffer, keeping uncompacted BLAS.");
+        logical.destroyQueryPool(query_pool);
+        return;
+    }
     query_cmd.resetQueryPool(query_pool, 0, count);
     query_cmd.writeAccelerationStructuresPropertiesKHR(
       count, handles.data(), vk::QueryType::eAccelerationStructureCompactedSizeKHR, query_pool, 0);
@@ -180,6 +190,11 @@ void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(std::shared_pt
     std::vector<BottomLevelAccelerationStructure> compacted(count);
     vk::CommandBuffer copy_cmd =
       Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(logical, commandPool);
+    if (!copy_cmd) {
+        spdlog::error("ASManager::compactBLAS: failed to begin copy command buffer, keeping uncompacted BLAS.");
+        logical.destroyQueryPool(query_pool);
+        return;
+    }
     vk::DeviceSize total_compacted = 0;
     for (uint32_t i = 0; i < count; ++i) {
         total_compacted += compacted_sizes[i];
@@ -267,6 +282,10 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(std::shared_ptr
 
     vk::CommandBuffer command_buffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(
       device->getLogicalDevice(), commandPool);
+    if (!command_buffer) {
+        spdlog::error("ASManager::createTLAS: failed to begin command buffer, skipping TLAS build.");
+        return;
+    }
 
     VulkanBuffer geometryInstanceBuffer;
 

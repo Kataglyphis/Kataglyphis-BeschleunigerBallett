@@ -145,6 +145,11 @@ void SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool, uint32_t width, uin
     }
 
     vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);
+    if (!commandBuffer) {
+        spdlog::error("SkyBox::uploadCubeMapFaces: failed to begin command buffer, skipping cubemap upload.");
+        stagingBuffer.cleanUp();
+        return;
+    }
 
     cubeMapTexture->getVulkanImage().transitionImageLayout(commandBuffer,
       vk::ImageLayout::eUndefined,
