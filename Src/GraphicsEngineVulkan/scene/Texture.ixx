@@ -67,6 +67,12 @@ class Texture
     /// at, so the view is destroyed before its image (VUID-vkDestroyImage-image-01000).
     void releaseImageView();
 
+    /// Releases the current sampler only, leaving the view and image alone.
+    /// Called first by createTextureSampler() so a second call on an
+    /// already-created instance releases the previous sampler instead of
+    /// leaking it.
+    void releaseSampler();
+
     void cleanUp();
 
     // Decodes an image file to tightly packed RGBA8. Returns nullptr on

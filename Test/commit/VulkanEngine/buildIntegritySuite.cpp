@@ -1075,25 +1075,29 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanSharedIncludes)
 // cleanUp() before overwriting their handle, but create() did not - calling
 // create() a second time on an already-created instance overwrote `buffer`/
 // `image` and `allocation` and leaked the previous VMA allocation. This test
-// reads both sources as text and asserts the first statement in each
-// create()'s body is cleanUp(), so the obligation lives in create() itself
-// rather than at every call site. A behavioural test would need a device.
+// reads all four sources as text and asserts the first statement in each
+// create()'s body is its matching release, so the obligation lives in
+// create() itself rather than at every call site. A behavioural test would
+// need a device.
 TEST(BuildIntegrity, ResourceCreateReleasesThePreviousAllocation)
 {
     const fs::path repo_root = find_repo_root();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path vulkan_base_dir = repo_root / "Src" / "GraphicsEngineVulkan" / "vulkan_base";
+    const fs::path scene_dir = repo_root / "Src" / "GraphicsEngineVulkan" / "scene";
 
     struct Target
     {
         fs::path source;
         std::string qualified_name;
+        std::string expected_first_statement;
     };
-    const std::array<Target, 3> targets = {
-        Target{ vulkan_base_dir / "VulkanBuffer.cpp", "Kataglyphis::VulkanBuffer::create" },
-        Target{ vulkan_base_dir / "VulkanImage.cpp", "Kataglyphis::VulkanImage::create" },
-        Target{ vulkan_base_dir / "VulkanImageView.cpp", "Kataglyphis::VulkanImageView::create" },
+    const std::array<Target, 4> targets = {
+        Target{ vulkan_base_dir / "VulkanBuffer.cpp", "Kataglyphis::VulkanBuffer::create", "cleanUp();" },
+        Target{ vulkan_base_dir / "VulkanImage.cpp", "Kataglyphis::VulkanImage::create", "cleanUp();" },
+        Target{ vulkan_base_dir / "VulkanImageView.cpp", "Kataglyphis::VulkanImageView::create", "cleanUp();" },
+        Target{ scene_dir / "Texture.cpp", "Kataglyphis::Texture::createTextureSampler", "releaseSampler();" },
     };
 
     for (const auto &target : targets) {
@@ -1104,10 +1108,10 @@ TEST(BuildIntegrity, ResourceCreateReleasesThePreviousAllocation)
         ASSERT_TRUE(first_statement.has_value())
           << target.qualified_name << "(...) definition not found in " << target.source.string();
 
-        EXPECT_EQ(*first_statement, "cleanUp();")
-          << target.qualified_name
-          << "'s first statement must be cleanUp(), so calling create() on an already-created instance "
-             "releases the previous VMA allocation instead of leaking it. Found: \""
+        EXPECT_EQ(*first_statement, target.expected_first_statement)
+          << target.qualified_name << "'s first statement must be " << target.expected_first_statement
+          << ", so calling create() on an already-created instance "
+             "releases the previous allocation instead of leaking it. Found: \""
           << *first_statement << "\" in " << target.source.string();
     }
 }

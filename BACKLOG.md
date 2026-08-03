@@ -7331,29 +7331,6 @@ PowerShell file plus one new Pester suite; task 3 touches `Linux.yml`,
 `Texture.ixx` and `buildIntegritySuite.cpp`. Task 4 edits a module interface
 (`Texture.ixx`) and therefore needs `-FreshContainer`; nothing else here does.
 
-- [ ] **(S) (refactor) Give `Texture::createTextureSampler` release-previous semantics — the fourth member of a family whose other three shipped this week** — it overwrites `textureSampler` and leaks the old `vk::Sampler`, while `Texture` already has the matching `releaseImageView()` next to it.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:242-262` (`createTextureSampler`), `:264` (`releaseImageView`, the helper to mirror), `:266-275` (`cleanUp`, which already destroys the sampler under an `if (textureSampler && device)` guard — reuse that exact guard).
-  - `Src/GraphicsEngineVulkan/scene/Texture.ixx` — where to declare the new helper.
-  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanImageView.cpp` — the shape the other three members took (`cleanUp()` as the literal first statement of `create()`).
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1040-1080` — `ResourceCreateReleasesThePreviousAllocation`, its `Target` struct and the `first_statement_of_function` helper it uses.
-
-  **Steps:**
-  1. Add `void Texture::releaseSampler()` next to `releaseImageView()`: destroy `textureSampler` when both it and `device` are non-null, then null it. Declare it in `Texture.ixx` in the same access section as `releaseImageView`.
-  2. Make `releaseSampler();` the **literal first statement** of `createTextureSampler`'s body — before `this->device = in_device;`, so the release uses the device that created the old sampler, not the incoming one. Add a one-line comment saying that is why the order matters.
-  3. Replace the sampler-destroying block inside `cleanUp()` with a call to `releaseSampler()` so there is one definition; leave the rest of `cleanUp()` alone.
-  4. Extend the gate. `ResourceCreateReleasesThePreviousAllocation` currently hard-codes the expected first statement as `"cleanUp();"` for all three targets — add an `expected_first_statement` field to its `Target` struct, keep `"cleanUp();"` for the existing three, and add `Target{ scene_dir / "Texture.cpp", "Kataglyphis::Texture::createTextureSampler", "releaseSampler();" }`. Update the test's leading comment to say the family is now four.
-  5. Build `clangcl-debug` with `-FreshContainer` (a module interface changed) and run the full `commitTestSuite.exe`.
-
-  **Test:** the extended `BuildIntegrity.ResourceCreateReleasesThePreviousAllocation`. Confirm it bites by temporarily moving `releaseSampler();` below the `this->device = in_device;` line and checking the test fails.
-
-  **Build:** `clangcl-debug`, **with `-FreshContainer`**:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
-  then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root.
-
-  **Context:** Honest framing for the commit message: no caller reaches this twice today (`Clouds.cpp:37`, `CascadedShadowMap.cpp:73`, `SkyBox.cpp:194` all construct a fresh `Texture`, including on the re-provisioning paths), so this closes a latent leak and an inconsistency, not an observed one. The reason it is worth doing is the family: `ef9a8a4d`, `e9ecb576` and `fe384d1a` made "create() releases what it is about to overwrite" a rule with a gate behind it, and one member silently not following the rule is how the rule stops being one.
-
 - [ ] **(S) Give `Resolve-BuildModule.ps1` a Pester suite, and fix `Import-BuildModule`'s repair guard** — every Windows script and every Pester suite in this repo resolves its modules through this file, AGENTS.md says it is the one thing that cannot move upstream, and it has no test; its `WindowsScripts.Shared` re-import fires on the one condition where it is least needed.
 
   **Files to read:**

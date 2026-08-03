@@ -241,6 +241,9 @@ void Kataglyphis::Texture::createImageView(std::shared_ptr<VulkanDevice>in_devic
 
 void Kataglyphis::Texture::createTextureSampler(std::shared_ptr<VulkanDevice>in_device, vk::Filter filter, vk::SamplerAddressMode addressMode, vk::Bool32 compareEnable, vk::CompareOp compareOp)
 {
+    // Must run before `this->device` is overwritten: releaseSampler() destroys
+    // the old sampler with the device that created it, not the incoming one.
+    releaseSampler();
     this->device = in_device;
     // maxLod now tracks the mip count createImage() was actually given (was
     // always 0.0F before mip_levels was recorded). For the current single-mip
@@ -263,12 +266,17 @@ void Kataglyphis::Texture::createTextureSampler(std::shared_ptr<VulkanDevice>in_
 
 void Kataglyphis::Texture::releaseImageView() { vulkanImageView.cleanUp(); }
 
-void Kataglyphis::Texture::cleanUp()
+void Kataglyphis::Texture::releaseSampler()
 {
     if (textureSampler && device) {
         device->getLogicalDevice().destroySampler(textureSampler);
         textureSampler = nullptr;
     }
+}
+
+void Kataglyphis::Texture::cleanUp()
+{
+    releaseSampler();
     vulkanImageView.cleanUp();
     vulkanImage.cleanUp();
     mip_levels = 0;
