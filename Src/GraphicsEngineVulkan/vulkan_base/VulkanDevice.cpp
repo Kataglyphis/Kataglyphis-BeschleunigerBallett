@@ -327,7 +327,12 @@ void Kataglyphis::VulkanDevice::create_logical_device()
 
     vk::PhysicalDeviceVulkan13Features features13{};
     features13.shaderDemoteToHelperInvocation = available_features13.shaderDemoteToHelperInvocation;
-    features13.pNext = &acceleration_structure_features;
+    // Linked to &acceleration_structure_features only inside the
+    // deviceSupportsHardwareAcceleratedRRT block below - on a device without
+    // the ray-tracing extensions this chain must not carry
+    // VkPhysicalDeviceAccelerationStructureFeaturesKHR/RayTracingPipelineFeaturesKHR
+    // for extensions that are not in ppEnabledExtensionNames.
+    features13.pNext = nullptr;
 
     vk::PhysicalDeviceRayQueryFeaturesKHR rayQueryFeature{};
     rayQueryFeature.pNext = &features13;
@@ -340,8 +345,11 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     vk::PhysicalDeviceAccelerationStructureFeaturesKHR availableAccelerationStructureFeatures{};
     availableAccelerationStructureFeatures.pNext = &availableRayTracingPipelineFeatures;
 
+    vk::PhysicalDeviceComputeShaderDerivativesFeaturesKHR availableComputeDerivativeFeatures{};
+    availableComputeDerivativeFeatures.pNext = &availableAccelerationStructureFeatures;
+
     vk::PhysicalDeviceFeatures2 availableRayTracingFeatures2{};
-    availableRayTracingFeatures2.pNext = &availableAccelerationStructureFeatures;
+    availableRayTracingFeatures2.pNext = &availableComputeDerivativeFeatures;
     physical_device.getFeatures2(&availableRayTracingFeatures2);
 
     vk::PhysicalDeviceVulkan12Features features12{};
@@ -485,6 +493,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
         ray_tracing_pipeline_features.rayTracingPipeline = true;
         rayQueryFeature.rayQuery = true;
         features12.pNext = &rayQueryFeature;
+        features13.pNext = &acceleration_structure_features;
     }
 
     if (!deviceSupportsHardwareAcceleratedRRT && !hasBufferDeviceAddressFeature) {
@@ -492,11 +501,18 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     }
 
     // Compute shader derivatives: Slang emits ComputeDerivativeGroupQuadsKHR
-    // for compute shaders (clouds, noise). Enable the extension if supported.
+    // for compute shaders (clouds, noise). The extension exposes two
+    // independent bits and a device may support only the linear one -
+    // requesting the quads bit unconditionally made vkCreateDevice fail with
+    // VK_ERROR_FEATURE_NOT_PRESENT on such a device, so the engine did not
+    // start. Only request the bit once the availability query has proven it.
     vk::PhysicalDeviceComputeShaderDerivativesFeaturesKHR computeDerivativeFeatures{};
-    computeDerivativeFeatures.computeDerivativeGroupQuads = VK_TRUE;
-    if (supportsExtension(availableExtensions, VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME)) {
+    const bool computeDerivativeExtensionPresent =
+      supportsExtension(availableExtensions, VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME);
+    if (shouldEnableComputeDerivativeGroupQuads(
+          computeDerivativeExtensionPresent, availableComputeDerivativeFeatures.computeDerivativeGroupQuads)) {
         extensions.push_back(VK_KHR_COMPUTE_SHADER_DERIVATIVES_EXTENSION_NAME);
+        computeDerivativeFeatures.computeDerivativeGroupQuads = VK_TRUE;
         computeDerivativeFeatures.pNext = features2.pNext;
         features2.pNext = &computeDerivativeFeatures;
     }

@@ -61,6 +61,15 @@ static auto matchesSelectionMode(const vk::PhysicalDeviceProperties &properties,
     }
 }
 
+// The extension exposes two independent bits and a device may support
+// only computeDerivativeGroupLinear. Requesting the quads bit on such a
+// device makes vkCreateDevice fail with VK_ERROR_FEATURE_NOT_PRESENT -
+// the engine does not start at all, rather than degrading.
+constexpr bool shouldEnableComputeDerivativeGroupQuads(bool extensionPresent, vk::Bool32 quadsSupported)
+{
+    return extensionPresent && quadsSupported == VK_TRUE;
+}
+
 static auto scorePhysicalDevice(const vk::PhysicalDeviceProperties &properties) -> PhysicalDeviceScore
 {
     int type_rank = 0;

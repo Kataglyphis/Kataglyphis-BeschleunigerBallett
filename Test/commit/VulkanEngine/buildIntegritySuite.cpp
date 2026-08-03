@@ -4127,3 +4127,74 @@ TEST(BuildIntegrity, TextureCreateImageRecordsTheMipLevelItWasGiven)
       << "Texture::createImage no longer assigns mip_levels from in_mip_levels - getMipLevel() and the "
          "sampler's maxLod would go back to depending on which constructor path ran.";
 }
+
+// Every feature bit enabled on features11/features12/features13/features2 in
+// VulkanDevice::create_logical_device must come from an availability query
+// (available_features11/12/13, availableRayTracingFeatures2, ...), never a
+// hardcoded literal - the one place that is allowed to hardcode a bit to true
+// is inside the `if (deviceSupportsHardwareAcceleratedRRT)` block, because the
+// checks immediately above it already proved those specific bits are
+// available on this device. A hardcoded bit anywhere else risks requesting a
+// feature vkCreateDevice then rejects with VK_ERROR_FEATURE_NOT_PRESENT on a
+// device that does not support it - the engine does not start at all, rather
+// than degrading.
+TEST(BuildIntegrity, EveryEnabledDeviceFeatureIsCopiedFromAnAvailabilityQuery)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path vulkan_device_cpp = repo_root / "Src" / "GraphicsEngineVulkan" / "vulkan_base" / "VulkanDevice.cpp";
+    std::ifstream file(vulkan_device_cpp);
+    ASSERT_TRUE(static_cast<bool>(file)) << "could not open " << vulkan_device_cpp.string();
+
+    std::vector<std::string> lines;
+    std::string line;
+    while (std::getline(file, line)) { lines.push_back(line); }
+
+    static const std::string kGuard = "if (deviceSupportsHardwareAcceleratedRRT)";
+    std::size_t guard_start = lines.size();
+    for (std::size_t index = 0; index < lines.size(); ++index) {
+        if (lines[index].find(kGuard) != std::string::npos) {
+            guard_start = index;
+            break;
+        }
+    }
+    ASSERT_LT(guard_start, lines.size())
+      << vulkan_device_cpp.string() << " has no " << kGuard << " block to check - did the guard get renamed?";
+
+    std::size_t guard_end = lines.size();
+    int brace_depth = 0;
+    bool guard_body_started = false;
+    for (std::size_t index = guard_start; index < lines.size(); ++index) {
+        brace_depth += static_cast<int>(std::count(lines[index].begin(), lines[index].end(), '{'));
+        brace_depth -= static_cast<int>(std::count(lines[index].begin(), lines[index].end(), '}'));
+        if (brace_depth > 0) { guard_body_started = true; }
+        if (guard_body_started && brace_depth <= 0) {
+            guard_end = index;
+            break;
+        }
+    }
+    ASSERT_LT(guard_end, lines.size()) << "could not find the closing '}' of the " << kGuard << " block";
+
+    static const std::regex kHardcodedFeatureBit(
+      R"((features1[123]\.\w+|features2\.features\.\w+)\s*=\s*(VK_TRUE|true)\b)");
+
+    std::vector<std::string> violations;
+    for (std::size_t index = 0; index < lines.size(); ++index) {
+        if (index >= guard_start && index <= guard_end) { continue; }
+        if (std::regex_search(lines[index], kHardcodedFeatureBit)) {
+            violations.push_back("VulkanDevice.cpp:" + std::to_string(index + 1) + ": " + lines[index]);
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " device feature bit(s) are hardcoded to true outside the " << kGuard
+      << " block - every enabled feature must be copied from an availability query so a device that does not "
+         "support it degrades instead of failing vkCreateDevice:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}

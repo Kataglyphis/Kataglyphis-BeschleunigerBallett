@@ -47,4 +47,12 @@ TEST(PhysicalDeviceChoicesUnit, SelectionModeParsingIsCaseInsensitiveAndDefaults
     EXPECT_EQ(Kataglyphis::parseGpuSelectionMode("nonsense"), Kataglyphis::GpuSelectionMode::Auto);
 }
 
+TEST(PhysicalDeviceChoicesUnit, ComputeDerivativeQuadsNeedBothTheExtensionAndTheFeature)
+{
+    EXPECT_TRUE(Kataglyphis::shouldEnableComputeDerivativeGroupQuads(true, VK_TRUE));
+    EXPECT_FALSE(Kataglyphis::shouldEnableComputeDerivativeGroupQuads(true, VK_FALSE));
+    EXPECT_FALSE(Kataglyphis::shouldEnableComputeDerivativeGroupQuads(false, VK_TRUE));
+    EXPECT_FALSE(Kataglyphis::shouldEnableComputeDerivativeGroupQuads(false, VK_FALSE));
+}
+
 }// namespace
