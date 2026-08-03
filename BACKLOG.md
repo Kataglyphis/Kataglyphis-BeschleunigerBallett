@@ -7070,52 +7070,6 @@ re-rejected for the fourth time (upload-time only, never on the frame path).
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-- [ ] **(S) Skip the histogram build pass when auto-exposure is off** — a
-  full-resolution compute pass is recorded every frame in the default
-  configuration, and its output is never read.
-
-  **Files to read:**
-  - `crates/webgpu_renderer/src/render/forward.rs:2169-2198` — the bloom/SSAO
-    zero-strength skip and its rationale comment, immediately above the
-    unconditional histogram calls
-  - `crates/webgpu_renderer/src/render/forward.rs:921` — `auto_exposure: false`
-    is the default; `:1665-1677` — `set_exposure_settings` feeding
-    `auto_enabled` to the reduction every frame
-  - `crates/webgpu_renderer/src/shaders/histogram.wgsl:146-149` — the reduce
-    shader's manual branch, taken before any bin is read
-  - `crates/webgpu_renderer/src/render/histogram.rs:224-313` — `encode`
-    (clear + build) versus `encode_reduce`
-
-  **Steps:**
-  1. Gate the `self.histogram.encode(...)` call on `self.auto_exposure`. Leave
-     `encode_reduce(...)` unconditional — `forward.rs:1666-1668` records why
-     (manual mode routes through the same buffer so switching modes cannot
-     strand a stale value).
-  2. Re-encode the build on the frame auto-exposure is switched **on**, so the
-     first adapted frame does not reduce over bins left behind by whatever was
-     on screen when it was last enabled. A `bool` latch (`auto_exposure_was_on`)
-     compared at the top of `render` is enough; state in a comment that
-     adaptation is temporal so one warm-up frame is the cost, not a visible pop.
-  3. Confirm the timing subsystem tolerates a frame in which
-     `TimedPass::Histogram` is never scoped — bloom, SSAO and the occlusion pass
-     are already conditional, so the precedent exists; if a skipped pass reports
-     a stale rather than an absent value, say so in the commit message.
-
-  **Test:** add an inline unit test in `forward.rs` (or on a small
-  `fn histogram_build_needed(auto_enabled: bool, was_enabled: bool) -> bool`
-  extracted for the purpose) covering off → false, on → true, and the
-  off→on transition frame → true. Run
-  `cargo test -p kataglyphis_webgpu_renderer`. The adapter-gated suites
-  (`tests/histogram.rs`) self-skip without a GPU; run them on the host if one is
-  available.
-
-  **Context:** Identical in shape to the bloom/SSAO skip four lines above, which
-  the code documents as having been worth doing ("Turning the overlay slider to
-  0 used to cost exactly as much as leaving it on"). The saving here is larger:
-  the histogram build is full-resolution, not half, and unlike bloom/SSAO it is
-  paid in the *default* configuration. Do not remove the reduction — it is the
-  single writer of the exposure buffer in both modes.
-
 ### Performance testing
 
 - [ ] **(S) Gate the perf baseline against the benchmarks `perfSuite.cpp`
