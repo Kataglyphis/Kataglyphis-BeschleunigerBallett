@@ -31,6 +31,7 @@ import kataglyphis.vulkan.model;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.file;
 import kataglyphis.vulkan.mesh_range;
+import kataglyphis.vulkan.model_assembly;
 
 using namespace Kataglyphis;
 
@@ -117,43 +118,20 @@ auto ObjLoader::uploadParsed() -> std::shared_ptr<Model>
         // will be reserved for a default texture
         if (!textureNames[i].empty()) {
             Texture texture;
-            if (texture.createFromFile(device, command_pool, textureNames[i])) {
-                new_model->addTexture(std::move(texture));
-            } else {
-                // Load failed (e.g. a missing .mtl texture file). Occupy this
-                // slot with the default texture instead of skipping it:
-                // textureID is a dense counter over non-empty names, so a
-                // skipped slot would shift every later texture down one and
-                // make the final textureID index past the descriptor array.
-                Texture defaultTexture;
-                defaultTexture.createDefaultTexture(device, command_pool);
-                new_model->addTexture(std::move(defaultTexture));
-            }
+            const bool created = texture.createFromFile(device, command_pool, textureNames[i]);
+            addTextureOrDefault(*new_model, device, command_pool, created, std::move(texture));
         }
     }
 
-    if (new_model->getTextureCount() == 0) {
-        Texture defaultTexture;
-        defaultTexture.createDefaultTexture(device, command_pool);
-        new_model->addTexture(std::move(defaultTexture));
-    }
+    ensureAtLeastOneTexture(*new_model, device, command_pool);
 
     // One Mesh per OBJ shape (see MeshRange). Each mesh shares the full materials
     // array - its materialIndex still holds the original indices - matching the
     // glTF split; a per-mesh material subset is a later optimisation. A
     // single-shape OBJ (or the empty-range fallback) builds exactly one mesh, so
     // existing single-object models are behaviour-identical.
-    if (meshRanges.empty()) {
-        new_model->add_new_mesh(
-          device, command_pool, vertices, indices, materialIndex, this->materials);
-    } else {
-        for (const MeshRange &range : meshRanges) {
-            // Non-const: Model::add_new_mesh takes the arrays by non-const ref.
-            MeshSlice slice = sliceMeshRange(range, vertices, indices, materialIndex);
-            new_model->add_new_mesh(
-              device, command_pool, slice.vertices, slice.indices, slice.materialIndex, this->materials);
-        }
-    }
+    addMeshesForRanges(
+      *new_model, device, command_pool, vertices, indices, materialIndex, this->materials, meshRanges);
     return new_model;
 }
 

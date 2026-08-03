@@ -4952,3 +4952,69 @@ TEST(BuildIntegrity, ShadowLightMatricesAreDoubleBufferedPerSwapchainImage)
       << " - that is the exact bug this test pins: the CPU rewrites the light-matrix UBO for whichever image is "
          "current, while the shadow pass keeps sampling set 0 regardless of image_index.";
 }
+
+// ObjLoader::uploadParsed and GltfLoader::uploadParsed used to each hand-roll
+// their own texture-slot-fill and mesh-range-to-Mesh loop; the only genuine
+// difference between them (texture bytes from a file vs. from memory) got
+// buried inside that duplication, and the one non-genuine difference
+// (GltfLoader forwarding MeshRange::doubleSided, ObjLoader relying on
+// add_new_mesh's default argument) went unnoticed for it. ModelAssembly.ixx
+// (kataglyphis.vulkan.model_assembly) is now the one place that fills a
+// texture slot and builds meshes from MeshRanges - this pins that down so a
+// future loader (or uploadParsed itself) cannot silently reintroduce a
+// hand-rolled copy that drifts from the shared one again.
+TEST(BuildIntegrity, ModelUploadGoesThroughTheSharedAssembly)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    // sliceMeshRange's own definition (MeshRange.ixx) and createDefaultTexture's
+    // own definition (Texture.ixx/.cpp) are exempt - everyone else, including
+    // ModelAssembly.ixx's own callers, must reach them through the shared
+    // functions ModelAssembly.ixx wraps them in.
+    static const std::array<const char *, 4> kExemptFiles = {
+        "Src/GraphicsEngineVulkan/scene/ModelAssembly.ixx",
+        "Src/GraphicsEngineVulkan/scene/MeshRange.ixx",
+        "Src/GraphicsEngineVulkan/scene/Texture.ixx",
+        "Src/GraphicsEngineVulkan/scene/Texture.cpp"
+    };
+    static const std::array<const char *, 2> kBannedCalls = { "sliceMeshRange(", "createDefaultTexture(" };
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".cpp" && path.extension() != ".ixx") { continue; }
+
+        const std::string relative_file = fs::relative(path, repo_root).generic_string();
+        if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string line;
+        std::size_t line_number = 0;
+        while (std::getline(file, line)) {
+            ++line_number;
+            for (const char *banned : kBannedCalls) {
+                if (line.find(banned) == std::string::npos) { continue; }
+                violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
+            }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " call(s) to sliceMeshRange/createDefaultTexture found outside ModelAssembly.ixx under Src/ - build "
+         "meshes and texture slots through addMeshesForRanges/addTextureOrDefault/ensureAtLeastOneTexture "
+         "(kataglyphis.vulkan.model_assembly) instead:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}

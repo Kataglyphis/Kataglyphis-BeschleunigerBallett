@@ -24,6 +24,7 @@ import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.model;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.mesh_range;
+import kataglyphis.vulkan.model_assembly;
 
 namespace Kataglyphis {
 
@@ -69,24 +70,10 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
     // matching the OBJ path.
     for (const std::vector<unsigned char> &encoded : textureImages) {
         Texture texture;
-        if (texture.createFromMemory(device, command_pool, encoded.data(), encoded.size())) {
-            model->addTexture(std::move(texture));
-        } else {
-            // Decode failed (e.g. a corrupt embedded image). Occupy this slot
-            // with the default texture instead of skipping it: each material's
-            // textureID is a dense index into textureImages, so a skipped slot
-            // would shift every later texture down one and make the final
-            // textureID index past the descriptor array.
-            Texture defaultTexture;
-            defaultTexture.createDefaultTexture(device, command_pool);
-            model->addTexture(std::move(defaultTexture));
-        }
+        const bool created = texture.createFromMemory(device, command_pool, encoded.data(), encoded.size());
+        addTextureOrDefault(*model, device, command_pool, created, std::move(texture));
     }
-    if (model->getTextureCount() == 0) {
-        Texture defaultTexture;
-        defaultTexture.createDefaultTexture(device, command_pool);
-        model->addTexture(std::move(defaultTexture));
-    }
+    ensureAtLeastOneTexture(*model, device, command_pool);
 
     // One Mesh per glTF primitive (backlog #10). Each range is that primitive's
     // slice of the flat arrays; a sub-mesh's indices are re-based to its own
@@ -94,21 +81,7 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
     // everything, so this builds one mesh - behaviour-identical to before. Each
     // mesh shares the full materials array (its materialIndex holds the original
     // indices); a per-mesh material subset is a later optimisation.
-    if (meshRanges.empty()) {
-        model->add_new_mesh(device, command_pool, vertices, indices, materialIndex, materials);
-    } else {
-        for (const MeshRange &range : meshRanges) {
-            // Non-const: Model::add_new_mesh takes the arrays by non-const ref.
-            MeshSlice slice = sliceMeshRange(range, vertices, indices, materialIndex);
-            model->add_new_mesh(device,
-              command_pool,
-              slice.vertices,
-              slice.indices,
-              slice.materialIndex,
-              materials,
-              range.doubleSided);
-        }
-    }
+    addMeshesForRanges(*model, device, command_pool, vertices, indices, materialIndex, materials, meshRanges);
     return model;
 }
 
