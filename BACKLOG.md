@@ -5351,30 +5351,6 @@ for the third time (upload-time only, never on the frame path).
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Stop the GUI model transform from re-applying the 60× scale SceneConfig deleted, and pin the matrix in a device-free test** — one drag of the Position slider currently rescales the loaded model by 60.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` — `handleModelTransformChange` (`:336-378`); the offending `glm::scale(..., glm::vec3(60.0f, 60.0f, 60.0f))` is `:343`
-  - `Src/GraphicsEngineVulkan/scene/SceneConfig.cpp` — `:116-124`, the comment recording why the 60× scale was removed and why `getModelMatrix()` returns identity
-  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx` — `:86-91`, the all-zero `model_position` / `model_rotation` defaults
-  - `Src/GraphicsEngineVulkan/gui/GUI.cpp` — `:101-106`, the two `DragFloat3` widgets that raise `model_transform_changed`
-  - `Src/GraphicsEngineVulkan/common/PipelineLayoutHelper.hpp` — the header-with-`constexpr`-helper shape to copy; `Test/commit/VulkanEngine/pipelineLayoutHelperSuite.cpp` for the matching suite shape
-
-  **Steps:**
-  1. Add `Src/GraphicsEngineVulkan/common/GuiModelTransform.hpp` exporting `inline glm::mat4 makeGuiModelTransform(std::span<const float, 3> position, std::span<const float, 3> rotationDegrees)`. Move the body of `handleModelTransformChange`'s matrix construction into it, **without** the `glm::scale` line: start from `glm::mat4(1.0f)`, write the translation into column 3, then apply the Z→Y→X `glm::rotate` chain in the existing order.
-  2. Document in the header why there is no scale factor, linking the reasoning to `SceneConfig.cpp:116-124` (the 60× scale put the camera inside the geometry and blew out cascade resolution) so the constant cannot come back as a "fix".
-  3. Replace `:342-354` with a call to the helper.
-  4. Leave the `selected_model_index >= 0` guard and the `update_model_matrix(modelMatrix, 0)` target alone, but add a one-line comment stating that the index is a *file-list* index (`GUI.cpp:88-94` fills it from `sceneConfig::getAvailableModelPaths()`) and that the transform applies to scene model 0, which is what `reloadModel` leaves behind. Do not silently change the target — that is a separate behaviour decision.
-  5. Add the new header to whatever `Src/GraphicsEngineVulkan/CMakeLists.txt` list the other `common/*Helper.hpp` headers are in, if they are listed explicitly.
-
-  **Test:** Add `Test/commit/VulkanEngine/guiModelTransformSuite.cpp` with `GuiModelTransformUnit.ZeroInputIsIdentity` (all-zero position and rotation → `glm::mat4(1.0f)` within 1e-5, the case that currently returns a 60× scale), `GuiModelTransformUnit.PositionLandsInTheTranslationColumn`, and `GuiModelTransformUnit.RotationIsAppliedZThenYThenX` (compare against a hand-built `glm::rotate` chain). Register the file in `Test/commit/VulkanEngine/CMakeLists.txt` **and** in the Windows CI suite filter, or `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter` (`buildIntegritySuite.cpp:1054`) will fail.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GuiModelTransformUnit.*`.
-
-  **Context:** `goldenRenderSuite.cpp:1682-1684` already drives `selected_model_index` + `model_transform_changed`; check whether that golden's expectations encode the 60× scale and update them in the same change if so. The extraction follows the same "make the rule a pure function and pin it" move as `makeShadowPush` (`CascadedShadowMapMath.cpp:61-68`), which exists for exactly this reason — an inline matrix that was silently wrong.
-
 - [ ] **(S) Make the path-tracing accumulation history include the directional light, not just the camera** — changing the light while path tracing keeps averaging frames lit by the old one.
 
   **Files to read:**

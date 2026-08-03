@@ -1,5 +1,6 @@
 module;
 #include <optional>
+#include "common/GuiModelTransform.hpp"
 #include "common/Utilities.hpp"
 #include "common/host_device_shared_vars.hpp"
 #include "renderer/pushConstants/PushConstantPost.hpp"
@@ -349,20 +350,14 @@ void Kataglyphis::VulkanRenderer::handleModelTransformChange(
     if (guiSceneSharedVars.model_transform_changed) {
         guiSceneSharedVars.model_transform_changed = false;
 
-        glm::mat4 modelMatrix = glm::mat4(1.0f);
-        modelMatrix = glm::scale(modelMatrix, glm::vec3(60.0f, 60.0f, 60.0f)); // Apply original scale
-        
-        // Apply world position directly to the matrix's translation column
-        modelMatrix[3] = glm::vec4(guiSceneSharedVars.model_position[0], 
-                                   guiSceneSharedVars.model_position[1], 
-                                   guiSceneSharedVars.model_position[2], 
-                                   1.0f);
-        
-        // ZYX rotation order
-        modelMatrix = glm::rotate(modelMatrix, glm::radians(guiSceneSharedVars.model_rotation[2]), glm::vec3(0.0f, 0.0f, 1.0f));
-        modelMatrix = glm::rotate(modelMatrix, glm::radians(guiSceneSharedVars.model_rotation[1]), glm::vec3(0.0f, 1.0f, 0.0f));
-        modelMatrix = glm::rotate(modelMatrix, glm::radians(guiSceneSharedVars.model_rotation[0]), glm::vec3(1.0f, 0.0f, 0.0f));
-        
+        const glm::mat4 modelMatrix = makeGuiModelTransform(
+          std::span<const float, 3>(guiSceneSharedVars.model_position),
+          std::span<const float, 3>(guiSceneSharedVars.model_rotation));
+
+        // selected_model_index is a *file-list* index into
+        // sceneConfig::getAvailableModelPaths() (GUI.cpp:88-94), not a scene
+        // model index - the transform always targets scene model 0, which is
+        // what reloadModel leaves behind.
         if (guiSceneSharedVars.selected_model_index >= 0) {
             scene->update_model_matrix(modelMatrix, 0);
 
@@ -372,8 +367,6 @@ void Kataglyphis::VulkanRenderer::handleModelTransformChange(
             (void)device->getLogicalDevice().waitIdle();
             refreshAfterSceneChange(false);
         }
-
-
     }
 }
 
