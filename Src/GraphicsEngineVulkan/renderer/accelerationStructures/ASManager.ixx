@@ -38,7 +38,7 @@ class ASManager
 
     void createASForScene(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
 
-    void createBLAS(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
+    bool createBLAS(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
 
     void createTLAS(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
 

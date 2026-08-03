@@ -2996,6 +2996,61 @@ TEST(BuildIntegrity, EveryBeginCommandBufferResultIsChecked)
          }();
 }
 
+// 0c4d2faa added the null-check gate above (EveryBeginCommandBufferResultIsChecked)
+// for every beginCommandBuffer() call, but a checked return is not the same as a
+// handled failure: ASManager::createTLAS used to index blas[model_index]
+// unconditionally, and Clouds::createStorageTexture used to hand a null texture
+// back into createTextures/createDescriptorSets/recreateFrameResources and four
+// VulkanRenderer call sites. This pins the fix: createBLAS reports failure to its
+// caller, createTLAS refuses to index a short BLAS vector, and the clouds storage
+// texture path no longer has an escaping null.
+TEST(BuildIntegrity, CommandBufferFailurePathsDoNotLeaveHalfBuiltResources)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path as_manager_path =
+      repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "accelerationStructures" / "ASManager.cpp";
+    std::ifstream as_manager_file(as_manager_path);
+    ASSERT_TRUE(as_manager_file) << "missing " << as_manager_path.string();
+    std::string as_manager_source(
+      (std::istreambuf_iterator<char>(as_manager_file)), std::istreambuf_iterator<char>());
+
+    EXPECT_NE(as_manager_source.find("bool Kataglyphis::VulkanRendererInternals::ASManager::createBLAS("),
+      std::string::npos)
+      << "ASManager::createBLAS must be declared returning bool so its caller can react to a failed build";
+
+    {
+        const std::string needle = "if (!createBLAS(";
+        EXPECT_NE(as_manager_source.find(needle), std::string::npos)
+          << "ASManager::createASForScene must guard its createBLAS(...) call with an if (!...) check";
+    }
+
+    {
+        const std::size_t create_tlas_pos =
+          as_manager_source.find("Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(");
+        ASSERT_NE(create_tlas_pos, std::string::npos) << "could not locate ASManager::createTLAS definition";
+        const std::size_t body_start = as_manager_source.find('{', create_tlas_pos);
+        ASSERT_NE(body_start, std::string::npos);
+        const std::size_t first_index = as_manager_source.find("blas[", body_start);
+        ASSERT_NE(first_index, std::string::npos) << "createTLAS no longer indexes blas[...]; update this test";
+        const std::size_t size_guard = as_manager_source.find("blas.size()", body_start);
+        EXPECT_NE(size_guard, std::string::npos) << "createTLAS must check blas.size() before indexing blas[...]";
+        EXPECT_LT(size_guard, first_index)
+          << "createTLAS's blas.size() guard must appear before the first blas[...] index";
+    }
+
+    const fs::path clouds_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "atmospheric_effects"
+                                  / "clouds" / "Clouds.cpp";
+    std::ifstream clouds_file(clouds_path);
+    ASSERT_TRUE(clouds_file) << "missing " << clouds_path.string();
+    std::string clouds_source((std::istreambuf_iterator<char>(clouds_file)), std::istreambuf_iterator<char>());
+
+    EXPECT_EQ(clouds_source.find("return nullptr;"), std::string::npos)
+      << "Clouds.cpp must not return a null texture from createStorageTexture - a half-initialized clouds "
+         "subsystem has no defined rendering behaviour, so a failed command buffer must ASSERT_VULKAN instead";
+}
+
 // docs/gpu-golden-testing.md's golden-suite counts have already had to be
 // corrected twice by hand (commits 1cd6b8b5, e2767bb1), and a planner batch
 // once found the doc claiming 21 tests when the suite held 28. Pins the

@@ -37,8 +37,10 @@ std::unique_ptr<Kataglyphis::Texture> Clouds::createStorageTexture(vk::CommandPo
 
     vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);
     if (!commandBuffer) {
-        spdlog::error("Clouds::createStorageTexture: failed to begin command buffer, skipping storage texture creation.");
-        return nullptr;
+        // A half-initialized clouds subsystem has no defined rendering behaviour
+        // (the post pipeline's binding 1 is not optional), so this is a creation
+        // failure like any other ASSERT_VULKAN site, not a null that callers must check.
+        ASSERT_VULKAN(VkResult(VK_ERROR_INITIALIZATION_FAILED), "Clouds: failed to begin a command buffer for a storage texture!")
     }
     texture->getVulkanImage().transitionImageLayout(commandBuffer, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, 1, vk::ImageAspectFlagBits::eColor);
     Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer);

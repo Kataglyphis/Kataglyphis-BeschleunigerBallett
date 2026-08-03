@@ -35,11 +35,16 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createASForScene(std::shar
     if (scene == nullptr || scene->getModelCount() == 0) {
         return;
     }
-    createBLAS(device, commandPool, scene);
+    if (!createBLAS(device, commandPool, scene)) {
+        spdlog::error(
+          "ASManager::createASForScene: BLAS build failed; no acceleration structure this scene change; ray "
+          "tracing and path tracing will keep the previous TLAS.");
+        return;
+    }
     createTLAS(device, commandPool, scene);
 }
 
-void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(std::shared_ptr<VulkanDevice>device,
+bool Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(std::shared_ptr<VulkanDevice>device,
   vk::CommandPool commandPool,
   Kataglyphis::Scene *scene)
 {
@@ -109,7 +114,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(std::shared_ptr
     if (!command_buffer) {
         spdlog::error("ASManager::createBLAS: failed to begin command buffer, skipping BLAS build.");
         scratchBuffer.cleanUp();
-        return;
+        return false;
     }
 
     for (size_t i = 0; i < scene->getModelCount(); i++) {
@@ -135,6 +140,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createBLAS(std::shared_ptr
     scratchBuffer.cleanUp();
 
     compactBLAS(device, commandPool);
+    return true;
 }
 
 void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(std::shared_ptr<VulkanDevice> device,
@@ -241,6 +247,15 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(std::shared_ptr
   vk::CommandPool commandPool,
   Kataglyphis::Scene *scene)
 {
+    if (blas.size() < scene->getModelCount()) {
+        spdlog::error(
+          "ASManager::createTLAS: fewer BLAS ({}) than models ({}); a prior BLAS build failed, skipping TLAS "
+          "build and keeping the previous TLAS.",
+          blas.size(),
+          scene->getModelCount());
+        return;
+    }
+
     // Clear old TLAS
     if (tlas.vulkanAS) {
         device->getLogicalDevice().destroyAccelerationStructureKHR(tlas.vulkanAS);
