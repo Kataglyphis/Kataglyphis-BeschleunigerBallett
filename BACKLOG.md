@@ -7495,53 +7495,6 @@ logic. **`transformAABB` rebuilds eight corners per mesh per frame, twice**
 where the model matrix is per-model — measurable only under `BM_FrustumCull`,
 which already covers the hot loop and shows it is not the bottleneck.
 
-- [ ] **(M) Fix `docs/shader-sharing.md`'s target lists — every shader in the "compiled to both targets" list is WGSL-only — and gate the lists against `shader-manifest.json`** — the doc's central claim about which passes the two renderers share is wrong for all ten entries, and the manifest that proves it is right there.
-
-  **Files to read:**
-  - `docs/shader-sharing.md:76-113` — the three lists ("shared math modules", "compiled to both targets", "Vulkan-only") and the status paragraph
-  - `Resources/ShadersSlang/shader-manifest.json` — `manifest[]` rows carry `file`, `entry`, `targets`, optional `disabled`; `wgslMap[]` is the separate combined-WGSL emit
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1228-1330` — `shader_manifest(repo_root)` and how existing gates walk it
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:3999-4092` — the `<!-- max-texture-count: N -->` marker pattern to copy for a doc-side marker
-
-  **Steps:**
-  1. Recompute the truth: for each distinct `file` in `manifest[]`, collect the
-     union of `targets` over its non-`disabled` rows. Expect exactly two classes
-     — `spirv` only, and `wgsl` only. Confirm no file currently carries both
-     before writing anything; if one does, the doc gets a third list.
-  2. Rewrite `docs/shader-sharing.md:90-104`. The "compiled to both targets"
-     heading is wrong as written — replace the two paragraphs with a
-     marker-delimited table listing every Slang source with an entry point and
-     its target set, between `<!-- shader-targets:begin -->` and
-     `<!-- shader-targets:end -->`, one row per file: `| <path> | spirv |` or
-     `| <path> | wgsl |`. Keep the surrounding prose (why Slang, the binding
-     lever, the WGSL fallback policy) — only the factual lists change.
-  3. Fix the two sentences that depend on the wrong classification: the
-     tonemap parenthetical at `:94-97` (it is no longer the only WGSL-only
-     entry) and the "Status" paragraph at `:111-113`.
-  4. Add `TEST(BuildIntegrity, ShaderSharingDocMatchesTheManifestTargets)` to
-     `buildIntegritySuite.cpp`: parse the marker block, parse the manifest,
-     and fail with the full symmetric difference — files in the doc that the
-     manifest does not have, files the manifest has that the doc omits, and
-     files whose target set disagrees. Skip (do not fail) when
-     `docs/shader-sharing.md` is missing, matching the other doc gates.
-  5. Note in the test's comment that `histogram.wgsl` is the hand-written
-     holdout with **no** Slang source, so it must never appear in either side.
-
-  **Test:** `BuildIntegrity.ShaderSharingDocMatchesTheManifestTargets`. Verify
-  it actually bites by temporarily flipping one row's target in the doc and
-  confirming the failure names that file. Run the suite directly (host `ctest`
-  cannot read a container-generated tree):
-  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-
-  **Context:** `docs/shader-sharing.md` is the answer to "do the two renderers
-  really share this pass", and it is currently answering yes for ten shaders
-  the C++ engine never loads. See `docs/shader-build-pipeline.md` for the
-  manifest schema. Do not restate the compile commands in the doc — that file
-  owns them.
-
 - [ ] **(S) Close the cascade-count half of the double lock whose PCF-radius twin already shipped** — the shader clamps `pcfRadius` and explains why, then indexes a 3-element matrix array with an unclamped `numCascades`; the host helper that feeds it bounds two spans by the length of one.
 
   **Files to read:**

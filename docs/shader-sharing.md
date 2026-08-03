@@ -87,30 +87,51 @@ system rather than textual `#include`:
 - `common/fullscreen.slang` — the shared fullscreen-triangle vertex trick
   (`vid/2*4-1`), used by every fullscreen pass on both sides.
 
-**Entry points compiled to both targets** (Rust/WebGPU + C++/Vulkan share
-the pass): forward PBR (`forward/forward.slang`), sky
-(`sky/sky.slang`), bloom (`bloom/bloom.slang`), SSAO (`ssao/ssao.slang`),
-IBL precompute (`ibl/ibl.slang`), GPU occlusion culling
-(`gpu_cull/gpu_cull.slang`), tonemap (`tonemap/tonemap.slang`, WGSL only —
-the C++ side's fullscreen post pass is `post/post.slang` instead, SPIR-V
-only, since it also handles cloud compositing via push constants), depth
-resolve, occlusion bbox, and the GUI tex quad.
+**Entry-point shader targets:** every Slang entry-point source below compiles
+to exactly one target today — none is currently shared between the two
+renderers at the entry-point level (only the shared math modules above, and
+the CI guards below, cross both targets). `tonemap/tonemap.slang` (WGSL) and
+`post/post.slang` (SPIR-V) look like a shared pass but are two separate
+sources: the C++ side's `post/post.slang` also handles cloud compositing via
+push constants, so it never merged with the Rust tonemap shader.
 
-**Vulkan-only** (SPIR-V emit — WebGPU has no RT pipeline, and these still
-`import` the shared math): `raytracing/*.slang` (rgen/rchit/rmiss, shadow
-miss), `path_tracing/path_tracing.slang` (ray query), plus the
-raster-only-on-Vulkan set: `rasterizer/rasterizer.slang`,
-`deferred/deferred.slang`, `rasterizer/shadows/shadow_map.slang`,
-`skybox/skybox.slang`, `compute/noise.slang`, `compute/clouds.slang`.
+<!-- shader-targets:begin -->
+| File | Target |
+| --- | --- |
+| `bloom/bloom.slang` | wgsl |
+| `compute/clouds.slang` | spirv |
+| `compute/noise.slang` | spirv |
+| `deferred/deferred.slang` | spirv |
+| `depth_resolve/depth_resolve.slang` | wgsl |
+| `forward/forward.slang` | wgsl |
+| `gpu_cull/gpu_cull.slang` | wgsl |
+| `ibl/ibl.slang` | wgsl |
+| `occlusion_bbox/occlusion_bbox.slang` | wgsl |
+| `path_tracing/path_tracing.slang` | spirv |
+| `post/post.slang` | spirv |
+| `rasterizer/rasterizer.slang` | spirv |
+| `rasterizer/shadows/shadow_map.slang` | spirv |
+| `raytracing/raytrace.rchit.slang` | spirv |
+| `raytracing/raytrace.rgen.slang` | spirv |
+| `raytracing/raytrace.rmiss.slang` | spirv |
+| `raytracing/shadow.rmiss.slang` | spirv |
+| `sky/sky.slang` | wgsl |
+| `skybox/skybox.slang` | spirv |
+| `ssao/ssao.slang` | wgsl |
+| `tex_quad/tex_quad.slang` | wgsl |
+| `tonemap/tonemap.slang` | wgsl |
+<!-- shader-targets:end -->
 
 **CI guards:** `tests/brdf_test.slang` and `tests/noise_test.slang` each
 `import` a shared math module and dual-emit to SPIR-V + WGSL, so a change
 that breaks either target's compile fails the manifest run in
-`compile-slang-shaders.ps1` before it reaches either renderer.
+`compile-slang-shaders.ps1` before it reaches either renderer. They are
+deliberately excluded from the table above (see its gating test).
 
 **Status:** all C++ shaders are on Slang SPIR-V (all 8 loading sites), and
-all shared Rust shaders are on Slang-emitted WGSL. The migration described
-in earlier revisions of this document as "in progress" is complete.
+all Rust shaders are on Slang-emitted WGSL (`histogram.wgsl` excepted — see
+the WGSL fallback policy above). The migration described in earlier
+revisions of this document as "in progress" is complete.
 
 ## Beyond shaders
 

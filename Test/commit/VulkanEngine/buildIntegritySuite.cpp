@@ -144,6 +144,11 @@ struct ShaderManifestData
     // manifest row, regardless of target - used to check that every Slang
     // source with an entry point is accounted for, not just the SPIR-V ones.
     std::set<std::string> all_enabled_manifest_files;
+    // Union of "targets" (e.g. {"spirv"}, {"wgsl"}, or both) over every
+    // enabled row for a given file - used by
+    // ShaderSharingDocMatchesTheManifestTargets to classify each source as
+    // spirv-only, wgsl-only, or (unexpectedly) both.
+    std::map<std::string, std::set<std::string>> file_targets;
     std::vector<WgslMapping> wgsl_map;
     // Output filenames keyed by "depthTexturePatches" (documentation
     // "_comment" keys excluded).
@@ -190,7 +195,9 @@ std::optional<ShaderManifestData> parse_shader_manifest(const fs::path &manifest
         bool emits_spirv = false;
         for (const auto &target : *targets_it) {
             if (!target.is_string()) { return std::nullopt; }
-            if (target.get<std::string>() == "spirv") { emits_spirv = true; }
+            const std::string target_name = target.get<std::string>();
+            data.file_targets[source].insert(target_name);
+            if (target_name == "spirv") { emits_spirv = true; }
         }
         if (!emits_spirv) { continue; }
 
@@ -4061,6 +4068,136 @@ TEST(BuildIntegrity, MaxTextureCountInDocsMatchesTheHeader)
     EXPECT_EQ(*doc_value, *header_value)
       << doc_path.string() << "'s max-texture-count marker says " << *doc_value << " but " << header_path.string()
       << " defines MAX_TEXTURE_COUNT = " << *header_value;
+}
+
+// Parses docs/shader-sharing.md's `<!-- shader-targets:begin -->` /
+// `:end` marker table - one `| \`<file>\` | spirv|wgsl |` row per Slang
+// entry-point source. Returns std::nullopt if the marker pair is missing, so
+// a deleted marker block fails the calling test instead of comparing against
+// an empty (vacuously matching) map.
+std::optional<std::map<std::string, std::string>> parse_shader_targets_marker(const fs::path &doc_path)
+{
+    std::ifstream file(doc_path);
+    if (!file) { return std::nullopt; }
+
+    static const std::regex kRowPattern(R"(\|\s*`([^`]+)`\s*\|\s*(spirv|wgsl)\s*\|)");
+
+    std::map<std::string, std::string> rows;
+    bool in_block = false;
+    bool saw_block = false;
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.find("<!-- shader-targets:begin -->") != std::string::npos) {
+            in_block = true;
+            saw_block = true;
+            continue;
+        }
+        if (line.find("<!-- shader-targets:end -->") != std::string::npos) {
+            in_block = false;
+            continue;
+        }
+        if (!in_block) { continue; }
+
+        std::smatch match;
+        if (std::regex_search(line, match, kRowPattern)) { rows[match[1].str()] = match[2].str(); }
+    }
+
+    if (!saw_block) { return std::nullopt; }
+    return rows;
+}
+
+// docs/shader-sharing.md's shader-targets table claims, per Slang
+// entry-point source, which single target it compiles to (spirv for the C++
+// Vulkan engine, wgsl for the Rust WebGPU renderer). shader-manifest.json is
+// the actual source of truth compile-slang-shaders.ps1/.sh read from, so this
+// pins the doc against it the same way MaxTextureCountInDocsMatchesTheHeader
+// pins a doc constant against its header - a previous revision of this doc
+// claimed ten WGSL-only shaders were "compiled to both targets", which this
+// test would have caught immediately.
+//
+// tests/*.slang (brdf_test.slang, noise_test.slang) are excluded on both
+// sides: they are CI dual-emit smoke tests documented separately in the
+// "CI guards" paragraph, not production entry points, and they are the one
+// case that genuinely does compile to both targets - which is exactly why
+// they do not belong in a table whose two columns are spirv-only/wgsl-only.
+// histogram.wgsl is excluded too: it has no Slang source (hand-written WGSL
+// fallback), so it can never appear in shader-manifest.json's manifest[].
+TEST(BuildIntegrity, ShaderSharingDocMatchesTheManifestTargets)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path doc_path = repo_root / "docs" / "shader-sharing.md";
+    if (!fs::exists(doc_path)) {
+        GTEST_SKIP() << "could not open " << doc_path.string() << " - not running from the repo root?";
+    }
+
+    const auto doc_targets = parse_shader_targets_marker(doc_path);
+    ASSERT_TRUE(doc_targets.has_value())
+      << doc_path.string()
+      << " is missing its '<!-- shader-targets:begin -->' / '<!-- shader-targets:end -->' marker block";
+
+    const auto &manifest = shader_manifest(repo_root);
+    ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
+
+    std::map<std::string, std::string> truth;
+    std::vector<std::string> ambiguous;
+    for (const auto &[source, targets] : manifest->file_targets) {
+        if (source.starts_with("tests/")) { continue; }
+        if (targets.size() != 1) {
+            ambiguous.push_back(source);
+            continue;
+        }
+        truth.emplace(source, *targets.begin());
+    }
+    EXPECT_TRUE(ambiguous.empty())
+      << "shader-manifest.json has " << ambiguous.size()
+      << " non-test file(s) compiled to BOTH spirv and wgsl - " << doc_path.string()
+      << "'s shader-targets table has only two columns (spirv-only / wgsl-only) and needs a third list for:"
+      << [&ambiguous] {
+             std::string joined;
+             for (const auto &entry : ambiguous) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    std::vector<std::string> doc_only;
+    std::vector<std::string> mismatched;
+    for (const auto &[source, target] : *doc_targets) {
+        const auto it = truth.find(source);
+        if (it == truth.end()) {
+            doc_only.push_back(source);
+        } else if (it->second != target) {
+            mismatched.push_back(source + ": doc says " + target + ", manifest says " + it->second);
+        }
+    }
+    std::vector<std::string> manifest_only;
+    for (const auto &[source, target] : truth) {
+        if (!doc_targets->contains(source)) { manifest_only.push_back(source); }
+    }
+
+    EXPECT_TRUE(doc_only.empty()) << doc_path.string() << " lists file(s) shader-manifest.json does not have:"
+                                  << [&doc_only] {
+                                         std::string joined;
+                                         for (const auto &entry : doc_only) { joined += "\n  " + entry; }
+                                         return joined;
+                                     }();
+    EXPECT_TRUE(manifest_only.empty())
+      << doc_path.string() << " is missing file(s) shader-manifest.json has:" << [&manifest_only] {
+             std::string joined;
+             for (const auto &entry : manifest_only) { joined += "\n  " + entry; }
+             return joined;
+         }();
+    EXPECT_TRUE(mismatched.empty())
+      << doc_path.string() << " disagrees with shader-manifest.json on target(s):" << [&mismatched] {
+             std::string joined;
+             for (const auto &entry : mismatched) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    EXPECT_FALSE(doc_targets->contains("histogram.wgsl"))
+      << doc_path.string()
+      << "'s shader-targets table must not list histogram.wgsl - it has no Slang source (hand-written WGSL "
+         "fallback) and cannot appear in shader-manifest.json";
 }
 
 // Parses the X, Y, Z triple out of the first "[numthreads(X, Y, Z)]" in
