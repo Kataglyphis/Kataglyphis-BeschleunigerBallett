@@ -6494,6 +6494,345 @@ their coverage lives in `tests/headless.rs` instead. **`Src/KomputePlayground`**
 
 ### C++ Vulkan engine
 
+## 2026-08-03 batch XV — planner (a shadow-map array that carries two byte-identical `VkImageView`s; a descriptor fallback that binds the light matrices at the set index the shared layout owns; three single-descriptor writers that ignore the declared `descriptorCount` on the two 128-entry array bindings; two `create()`s that leak their previous allocation; an animation keyframe lookup that rescans from index 0 every channel every frame)
+
+The actionable queue was empty again — 0 `- [ ]`, 15 `- [b]` across the whole
+file. Every `file:line` below was read out of the tree this pass.
+
+**Every task in this batch is verifiable with no GPU**, deliberately, for the
+same reason as batch XIV: all fifteen `- [b]` entries are blocked on host GPU
+golden verification, so nothing here may depend on it. Tasks 2–5 land device-free
+C++ plus a CPU gtest (a pure-function suite or a `BuildIntegrity` source scan);
+task 1 is entirely in the Rust crate and runs under `cargo test`.
+`Test/commit/VulkanEngine/CMakeLists.txt` globs `*.cpp` with `CONFIGURE_DEPENDS`
+and `kataglyphis_collect_module_interfaces` (`Src/GraphicsEngineVulkan/CMakeLists.txt:30`)
+globs `*.ixx`, so neither a new suite file nor a new module interface needs
+registering anywhere.
+
+**The headline is that `CascadedShadowMap` builds the same image view twice.**
+`init()` creates the sampled view through the `Texture` it owns
+(`CascadedShadowMap.cpp:65`: `depthFormat`, `eDepth`, 1 mip, `e2DArray`,
+`numCascades` layers) and `createFramebuffers()` then creates a *second* view
+over the same image with byte-identical parameters
+(`:218-223`, via `buildImageViewCreateInfo`), stores it in the private
+`shadowMapArrayView` (`CascadedShadowMap.ixx:162`), and destroys it separately
+in `cleanUp()` (`:241-244`). The first view is what the renderer binds as the
+sampled shadow map (`VulkanRenderer.cpp:1562`, via `getShadowMapArray()`); the
+second is used for exactly one thing — the single-attachment framebuffer at
+`:225-230`. That is one redundant `VkImageView` per shadow-map creation, and the
+shadow map is recreated on **every** shadow-resolution change
+(`VulkanRenderer.cpp:331-353`), not just at startup.
+
+**Second, the shadow pass's "no shared descriptor set" fallback binds the wrong
+set index.** `recordCommands` (`CascadedShadowMap.cpp:452-460`) builds
+`shadowDescriptorSets = {lightMatricesSet, lightMatricesSet}` and, when the
+incoming span is empty, binds **one** set starting at index 0 — but the pipeline
+layout declares set 0 = `sharedRenderDescriptorSetLayout` and set 1 =
+`lightMatricesDescriptors.getLayout()` (`:358`). So on that path the light
+matrices go to a slot whose layout does not describe them and set 1, which the
+vertex shader actually reads, is never bound at all. It is unreachable from
+`VulkanRenderer` today (`:1002-1003` always passes a one-element span), which is
+exactly why it has never been noticed.
+
+**Third, three of the four `DescriptorSetGroup` writers cannot express the two
+array bindings they share a set with.** `beginWrite` hard-codes
+`out.descriptorCount = 1` (`DescriptorSetGroup.cpp:141`) and `writeBuffer` /
+`writeImage` / `writeAccelerationStructure` never revisit it. `writeImageArray`
+is the only one that checks the declared count (`:190-196`). The shared render
+set declares `TEXTURES_BINDING` and `SAMPLER_BINDING` with
+`static_cast<uint32_t>(MAX_TEXTURE_COUNT)` descriptors each
+(`VulkanRenderer.cpp:1459-1462`), so a `writeImage` aimed at either one writes
+element 0 and silently leaves the other 127 descriptors unwritten — the class of
+mistake `writeImageArray`'s own guard exists to catch, on the same object.
+
+**Fourth, `VulkanBuffer::create()` and `VulkanImage::create()` overwrite their
+handles without releasing what was there.** `VulkanBuffer::create`
+(`VulkanBuffer.cpp:51-121`) assigns `buffer`, `allocation`, `mappedData` and
+`created = true` unconditionally; `VulkanImage::create`
+(`VulkanImage.cpp:49-90`) does the same with `image`/`allocation`/`owns_image`.
+Both classes' move-assignment operators *do* call `cleanUp()` first
+(`VulkanBuffer.cpp:33`, `VulkanImage.cpp:33`) and `cleanUp()` is already
+idempotent, so the asymmetry is the whole finding. Every call site currently
+carries the obligation instead, and two of them document it in prose —
+`FrameCapture.ixx:76-83` and `VulkanBufferManager.cpp:106-113` both write
+`cleanUp(); create(...)` with a comment explaining why. Nothing is leaking
+today; the point is that nothing stops the next call site from leaking.
+
+**Fifth, in the Rust crate, the animation keyframe lookup is a linear rescan.**
+`keyframe_lerp_indices` (`render/animation.rs:22-25`) walks `times` from index 0
+on every call, and it is called once per channel per animation per frame — twice
+over, since the morph-weight pass repeats the whole loop
+(`render/forward.rs:2466` and `:2514`). `times` is sorted by construction (glTF
+requires it), so this is a `partition_point` away from `O(log n)`. The same two
+call sites also each spell out the segment duration by hand
+(`forward.rs:2467-2470` and `:2515-2518`, byte-identical), re-deriving from
+`i0`/`i1` a quantity the helper already computes internally as `span`
+(`animation.rs:26`) — and the two disagree on the degenerate case (`span` clamps
+with `.max(1e-6)`, the callers do not).
+
+Ordering: **tasks 2 and 3 both edit `CascadedShadowMap.cpp` and tasks 2 and 5
+both add to `buildIntegritySuite.cpp` — land those three one at a time,
+rebuilding between them.** Task 1 (Rust) and task 4 (`DescriptorSetGroup` +
+`descriptorPoolSizesSuite.cpp`) are disjoint from everything else. No task in
+this batch adds a module interface, so none needs `-FreshContainer`.
+
+Candidates found but NOT tasked this cycle (checked, then rejected — do not
+re-propose without new evidence): **an `ImageMemoryBarrier` builder and the four
+`vk::ImageSubresourceRange` blocks** — re-checked again, unchanged, still owned
+by the `- [b]` cloud-barrier entry and still gated on host GPU verification;
+this is the eighth rejection, stop re-checking them.
+**`CascadedShadowMap::createDescriptorSetAndPipeline` creating and destroying its
+own throwaway `VkCommandPool`** (`:277-283`, `:300`) on the graphics family that
+`VulkanRenderer::graphics_command_pool` (`VulkanRenderer.cpp:1481-1492`) already
+owns and hands to every other subsystem's `init()` — real, but it is a third
+edit to the same file this batch already touches twice; fold it in whenever
+`CascadedShadowMap.cpp` is next opened. **The per-image
+`dirShadowMap.uploadLightMatrices(i)` seeding loop at `VulkanRenderer.cpp:148`**
+— it looks redundant against `update_uniform_buffers`
+(`VulkanRenderer.cpp:765`), which uploads the acquired image's matrices before
+`record_commands` every frame, but the comment at `:141-147` claims a first-frame
+ordering reason and disproving it needs a GPU run; left alone.
+**`Window.cpp:102-103`'s comment citing `VulkanRenderer.cpp:646`** — the
+`glfwGetFramebufferSize` call it points at is now at `:690-692`; a stale
+line-number reference in a comment, too small to task, fix it in passing.
+**`pack_punctual_lights` returning a 16 KB array by value**
+(`render/lights.rs:23-25`) — checked the caller: it runs from `upload_scene`
+(`forward.rs:1243`), not the frame path, so it is not the per-frame cost it
+looks like. **`src/render/{bloom,ssao,overlay,tonemap}.rs` and `gpu_occlusion.rs`
+having no `mod tests`** — unchanged; every unit is GPU-resident, coverage lives
+in `tests/headless.rs`. **`Src/KomputePlayground`** — unchanged; still an owner
+decision.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Give the cascade shadow map one image view instead of two
+  byte-identical ones** — the framebuffer attachment view duplicates the sampled
+  view exactly, and is recreated on every shadow-resolution change.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp`
+    — `init()` at `:59-74` (the sampled view at `:65`), `createFramebuffers()` at
+    `:212-232`, `cleanUp()` at `:241-244`
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.ixx`
+    — the `shadowMapArrayView` member at `:162`, `getShadowMapArray()` at `:113`
+  - `Src/GraphicsEngineVulkan/common/ImageViewHelper.hpp` — `buildImageViewCreateInfo`
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1562` — the one consumer
+    of the sampled view
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:4622` —
+    `BuildIntegrity.PipelineTeardownGoesThroughTheSharedHelper`, the template for
+    the gate below
+
+  **Steps:**
+  1. Confirm the two create-infos are identical before deleting either: `:65`
+     passes `(depthFormat, eDepth, 1, e2DArray, numCascades)` through
+     `Texture::createImageView`; `:218-219` passes the same five values to
+     `buildImageViewCreateInfo` over `shadowMapArray->getImage()`. Record what you
+     checked in the commit message.
+  2. In `createFramebuffers()`, drop the `createImageView` call and the
+     `shadowMapArrayView` assignment; build the framebuffer from
+     `shadowMapArray->getImageView()` instead
+     (`std::span<const vk::ImageView>(&view, 1)` needs an lvalue — take it into a
+     local `const vk::ImageView attachment = ...` first).
+  3. Delete the `shadowMapArrayView` member (`.ixx:162`) and its teardown block
+     (`.cpp:241-244`). `Texture::cleanUp()` already destroys the remaining view.
+  4. Check the ordering still holds: `init()` creates the image *and* the view
+     (`:60-74`) before `createFramebuffers()` runs at `:77`, so the attachment
+     handle is valid at framebuffer-creation time. Nothing else calls
+     `createFramebuffers()`.
+
+  **Test:** add `BuildIntegrity.ShadowMapArrayHasExactlyOneImageView` to
+  `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — read
+  `CascadedShadowMap.cpp` and `CascadedShadowMap.ixx` as text and assert (a) the
+  `.cpp` contains exactly one image-view creation for the array (one
+  `createImageView` call and zero `buildImageViewCreateInfo` calls), and (b) the
+  identifier `shadowMapArrayView` appears nowhere in either file. Use the
+  existing source-scanning helpers in that suite; follow
+  `PipelineTeardownGoesThroughTheSharedHelper` for the file-reading and failure-message
+  style, and state in the test's comment that the two views were byte-identical.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='BuildIntegrity.*'`
+  from the repo root. No `-FreshContainer` needed (no module-interface change; the
+  `.ixx` edit removes a private member, which is a normal recompile).
+
+  **Context:** rendering is unchanged *by construction* — the same image, aspect,
+  view type, mip count and layer count reach the framebuffer either way — which
+  is why this is safe to land without the host GPU goldens the fifteen `- [b]`
+  entries are waiting on. Do not "simplify" further by dropping the sampled view
+  and keeping the attachment one: the sampled view lives on the `Texture` whose
+  sampler `VulkanRenderer.cpp:1562` binds alongside it, and separating those two
+  is how the pair drifts apart again.
+
+- [ ] **(S) Stop the shadow pass's no-shared-set fallback from binding the light
+  matrices at set 0** — on that path the pipeline layout says set 0 is the shared
+  render set, and set 1 (the one the vertex shader reads) is never bound.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp`
+    — `recordCommands` at `:410-460`, especially the fallback at `:452-460`; the
+    layout it must agree with at `:358` (`setLayouts = { shared, lightMatrices }`)
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1002-1003` — the only
+    caller, which always passes a one-element span
+  - `Test/commit/VulkanEngine/cascadedShadowMapSuite.cpp` — the existing
+    device-free suite for this class's pure helpers, and the pattern to follow
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMapMath.cpp:63-70`
+    — `makeShadowPush`, the precedent for "trivial, and deliberately a named
+    function so a unit test can pin it"
+
+  **Steps:**
+  1. Add a pure free function next to `makeShadowPush` (declare it in
+     `CascadedShadowMap.ixx` alongside the other free functions, define it in
+     `CascadedShadowMapMath.cpp` so it stays out of the Scene/Device/Texture TU):
+     `struct ShadowSetBinding { uint32_t firstSet; uint32_t setCount; };` and
+     `ShadowSetBinding shadowSetBinding(bool hasSharedSet)` returning
+     `{0, 2}` when the shared set is present and `{1, 1}` when it is not.
+  2. In `recordCommands`, replace `:452-460` with: build a
+     `std::array<vk::DescriptorSet, 2> sets` holding
+     `{sharedSet, lightMatricesSet}` when the span is non-empty and
+     `{lightMatricesSet, <unused>}` otherwise, take
+     `const ShadowSetBinding binding = shadowSetBinding(!descriptorSets.empty());`
+     and pass `binding.firstSet` plus a span of `binding.setCount` sets starting
+     at the right element. The light-matrices set must land at set index 1 in
+     both cases.
+  3. Add a `spdlog::warn` on the empty-span path saying the shared render set is
+     missing so the fragment alpha test will sample nothing — it is a degraded
+     mode, not a normal one, and today it is silent.
+  4. Leave `VulkanRenderer.cpp:1002-1003` alone; it already passes the shared set.
+
+  **Test:** add `CascadedShadowMapUnit.ShadowSetBindingKeepsLightMatricesAtSetOne`
+  to `Test/commit/VulkanEngine/cascadedShadowMapSuite.cpp`, asserting
+  `shadowSetBinding(true) == ShadowSetBinding{0, 2}` and
+  `shadowSetBinding(false) == ShadowSetBinding{1, 1}`, with a comment naming the
+  layout at `CascadedShadowMap.cpp:358` as the thing the numbers have to agree
+  with. `vkCmdBindDescriptorSets` itself needs a device and stays untested.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='CascadedShadowMap*'`
+  from the repo root.
+
+  **Context:** the reachable path (`descriptorSets` non-empty) is unchanged, so
+  this cannot regress the goldens. What it fixes is a defensive branch that is
+  worse than no branch: binding a set against a layout that does not describe it
+  is a spec violation, and leaving set 1 unbound means the vertex shader reads
+  the light matrices from nothing. The extraction is the established pattern here
+  — `makeShadowPush` exists for exactly this reason, and its comment records the
+  bug that motivated it.
+
+- [ ] **(S) Make `DescriptorSetGroup`'s single-descriptor writers refuse an array
+  binding instead of writing element 0** — the shared render set has two
+  128-descriptor bindings that `writeBuffer`/`writeImage`/`writeAccelerationStructure`
+  would silently under-write.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.cpp` — `findBinding`
+    at `:118-125`, `beginWrite` at `:127-144` (the hard-coded
+    `out.descriptorCount = 1` at `:141`), the three single-descriptor writers at
+    `:146-217`, and `writeImageArray`'s existing count check at `:190-196`
+  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroupPoolSizes.cpp` — where
+    `deriveDescriptorPoolSizes` lives, i.e. the device-free half of this class
+  - `Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.ixx` — the public
+    surface to extend
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1456-1464` — the set
+    that declares `TEXTURES_BINDING` and `SAMPLER_BINDING` with `MAX_TEXTURE_COUNT`
+    descriptors
+  - `Test/commit/VulkanEngine/descriptorPoolSizesSuite.cpp` — the suite that
+    already tests the device-free half
+
+  **Steps:**
+  1. Add a pure free function to `DescriptorSetGroupPoolSizes.cpp` (declared in
+     `DescriptorSetGroup.ixx` next to `deriveDescriptorPoolSizes`):
+     `bool descriptorWriteCountMatchesBinding(const vk::DescriptorSetLayoutBinding &binding, uint32_t writeCount)`
+     returning `binding.descriptorCount == writeCount`. Keep it a named function,
+     not an inline comparison, so the two call sites cannot drift.
+  2. In `beginWrite`, after `findBinding` succeeds, call it with `writeCount == 1`
+     and, on mismatch, `spdlog::error` naming the binding, its declared count and
+     the attempted count, then `return nullptr` — the three writers already treat
+     a null return as "skip the write", so no call-site change is needed.
+  3. Rewrite `writeImageArray`'s inline check at `:190-196` to call the same
+     function with `infos.size()`, keeping its existing error message.
+  4. Confirm no current caller trips the new guard: every `writeBuffer`/`writeImage`/
+     `writeAccelerationStructure` in `Src/` today targets a `descriptorCount == 1`
+     binding (`rg 'writeBuffer\(|writeImage\(|writeAccelerationStructure\(' Src/`
+     and check each binding's declaration). If one does trip it, that is the bug
+     this task exists to surface — report it rather than relaxing the guard.
+
+  **Test:** add `DescriptorPoolSizesUnit.WriteCountMustMatchTheDeclaredBinding` to
+  `Test/commit/VulkanEngine/descriptorPoolSizesSuite.cpp`: build
+  `vk::DescriptorSetLayoutBinding` values with `descriptorCount` 1 and 128 and
+  assert the predicate accepts `(1, 1)` and `(128, 128)` and rejects `(128, 1)`
+  and `(1, 128)`. Add a comment naming `VulkanRenderer.cpp:1459-1462` as the real
+  128-descriptor bindings this protects.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='DescriptorPoolSizes*'`
+  from the repo root.
+
+  **Context:** `DescriptorSetGroup` is the type three subsystems were moved onto
+  precisely so descriptor bookkeeping lives in one place, and it already knows how
+  to catch this — `writeImageArray` does. The asymmetry is that the other three
+  writers never ask. Do not "fix" this by making `beginWrite` fan a single
+  descriptor across the whole array; a caller that means to write 128 descriptors
+  has `writeImageArray`, and silently broadcasting would hide the same mistake in
+  a different shape.
+
+- [ ] **(S) (refactor) Make `VulkanBuffer::create()` and `VulkanImage::create()`
+  release what they are about to overwrite** — both are move-assignable with a
+  `cleanUp()` first, and both leak if `create()` is called twice.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanBuffer.cpp` — `operator=` at
+    `:30-49` (which *does* `cleanUp()` first, at `:33`), `create` at `:51-121`,
+    `cleanUp` at `:123-133`
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanImage.cpp` — the same three, at
+    `:30-47`, `:49-90+` and its `cleanUp`
+  - `Src/GraphicsEngineVulkan/renderer/FrameCapture.ixx:76-83` and
+    `Src/GraphicsEngineVulkan/vulkan_base/VulkanBufferManager.cpp:106-113` — the
+    two call sites that already write `cleanUp(); create(...)` and explain why
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — for the gate below
+
+  **Steps:**
+  1. Add `cleanUp();` as the first statement of `VulkanBuffer::create()` (before
+     `device = vulkan_device;` — `cleanUp()` reads the *old* `device`, so the
+     order matters and getting it backwards destroys the new allocation against
+     the wrong allocator). Do the same in `VulkanImage::create()`.
+  2. Verify `cleanUp()` is safe on a default-constructed instance: it is guarded
+     by `created && device != nullptr` (`VulkanBuffer.cpp:125`); check
+     `VulkanImage::cleanUp()` has an equivalent guard and add one if not.
+  3. Leave the explicit `cleanUp()` calls at the two documented call sites in
+     place — they are now redundant but their comments record a *synchronisation*
+     argument (why destroying at that point is safe) that the new one-liner does
+     not make. Add a one-line note at each pointing at the new guarantee.
+  4. Do not touch `owns_image`/`created` semantics otherwise; a `VulkanImage` that
+     wraps a swapchain image (`setImage`, `owns_image == false`) must keep not
+     destroying it.
+
+  **Test:** add `BuildIntegrity.ResourceCreateReleasesThePreviousAllocation` to
+  `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — read `VulkanBuffer.cpp` and
+  `VulkanImage.cpp` as text, locate each `::create(` definition, and assert the
+  first non-comment, non-blank statement in its body is `cleanUp();`. Reuse that
+  suite's existing source-scanning helpers rather than adding a new parser, and
+  make the failure message say *why* (the handle is overwritten, so the previous
+  VMA allocation is unreachable). A behavioural test would need a device.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='BuildIntegrity.*'`
+  from the repo root. Also worth a `clangcl-debug` ASAN app run
+  (`.\Scripts\Windows\run_clangcl_debug.ps1`) if a host GPU is available, but the
+  gate is the acceptance criterion.
+
+  **Context:** nothing leaks today — every one of the four `create()` call sites
+  on an already-created instance happens to call `cleanUp()` first. This is about
+  where the obligation lives. Both classes are documented in `AGENTS.md` as
+  "move-only with destructor release", and both already honour that in
+  `operator=`; `create()` is the one entry point that does not, which is exactly
+  the kind of asymmetry that survives until someone adds a fifth call site.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
