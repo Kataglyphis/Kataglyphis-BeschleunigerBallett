@@ -230,17 +230,17 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
     sceneUBO.cloudLightMarch = glm::vec4(
         static_cast<float>(guiSceneSharedVars.cloud_num_march_steps_to_light), 0.0F, 0.0F, 0.0F);
 
-    sceneUBO.cloudMeshScale = glm::vec4(
-        guiSceneSharedVars.cloud_mesh_scale[0],
-        guiSceneSharedVars.cloud_mesh_scale[1],
-        guiSceneSharedVars.cloud_mesh_scale[2],
-        guiSceneSharedVars.cloud_scale);
+    sceneUBO.cloudMeshScale = clampCloudMeshScale(
+        glm::vec3(guiSceneSharedVars.cloud_mesh_scale[0],
+          guiSceneSharedVars.cloud_mesh_scale[1],
+          guiSceneSharedVars.cloud_mesh_scale[2]),
+        guiSceneSharedVars.cloud_density_multiplier);
 
     sceneUBO.cloudMeshOffset = glm::vec4(
         guiSceneSharedVars.cloud_mesh_offset[0],
         guiSceneSharedVars.cloud_mesh_offset[1],
         guiSceneSharedVars.cloud_mesh_offset[2],
-        guiSceneSharedVars.cloud_density);
+        guiSceneSharedVars.cloud_coverage_threshold);
 
     sceneUBO.cloudParameters = glm::vec4(
         guiSceneSharedVars.cloud_pillowness,

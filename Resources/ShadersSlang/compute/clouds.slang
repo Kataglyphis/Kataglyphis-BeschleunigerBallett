@@ -134,6 +134,11 @@ void clouds_main(uint3 tid : SV_DispatchThreadID)
     cloud.cirrus_effect = scene.cloudParameters.y;
     cloud.powder_effect = scene.cloudParameters.z > 0.5;
 
+    // cloud.scale is deliberately doing double duty: sample_density() uses it
+    // as a density multiplier, and here it also scales the box half-extents.
+    // The host clamps both cloud.scale and cloudMeshScale.xyz away from zero
+    // (SceneUboMarshal.hpp's clampCloudMeshScale) so this product - which the
+    // inverse matrix below divides by - can never be zero.
     cloud.radius = scene.cloudMeshScale.xyz * cloud.scale * 10.0;
     cloud.offset = scene.cloudMeshOffset.xyz;
 

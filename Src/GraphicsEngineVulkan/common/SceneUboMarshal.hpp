@@ -50,6 +50,22 @@ constexpr auto clampPcfRadius(int guiValue) -> uint32_t
     return static_cast<uint32_t>(std::clamp(guiValue, 0, MAX_PCF_RADIUS));
 }
 
+// Floors for the cloud volume's mesh scale and density multiplier. clouds.slang
+// (:137) multiplies the mesh half-extents by the density multiplier to get
+// cloud.radius, and the inverse model matrix (:150-155) divides by each
+// component of cloud.radius - a zero in either the mesh scale or the density
+// multiplier makes that division produce +-inf and NaN box intersections.
+constexpr float kMinCloudMeshExtent = 1e-3F;
+constexpr float kMinCloudDensityMultiplier = 1e-3F;
+
+constexpr auto clampCloudMeshScale(glm::vec3 meshScale, float densityMultiplier) -> glm::vec4
+{
+    return { std::max(meshScale.x, kMinCloudMeshExtent),
+        std::max(meshScale.y, kMinCloudMeshExtent),
+        std::max(meshScale.z, kMinCloudMeshExtent),
+        std::max(densityMultiplier, kMinCloudDensityMultiplier) };
+}
+
 // Writes up to MAX_CASCADES splits/matrices into the SceneUBO and returns the
 // count actually written. shadowsEnabled false zeroes ubo.numCascades (the
 // field the shaders gate on) but still writes the matrices/splits - keeping

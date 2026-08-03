@@ -61,8 +61,8 @@ GUISceneSharedVars makeNonDefaultVars()
     vars.cascade_split_lambda = 0.75F;
     vars.cloud_num_march_steps = 16;
     vars.cloud_num_march_steps_to_light = 5;
-    vars.cloud_scale = 0.11F;
-    vars.cloud_density = 0.22F;
+    vars.cloud_density_multiplier = 0.11F;
+    vars.cloud_coverage_threshold = 0.22F;
     vars.cloud_pillowness = 0.33F;
     vars.cloud_cirrus_effect = 0.44F;
     vars.cloud_powder_effect = false;

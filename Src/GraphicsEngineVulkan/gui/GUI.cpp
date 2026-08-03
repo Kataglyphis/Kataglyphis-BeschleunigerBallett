@@ -1,6 +1,7 @@
 ﻿module;
 #include <memory>
 
+#include "common/SceneUboMarshal.hpp"
 #include "common/Utilities.hpp"
 #include "common/host_device_shared_vars.hpp"
 
@@ -207,13 +208,13 @@ void GUI::render()
                 ImGui::SliderInt("# march steps", &guiSceneSharedVars.cloud_num_march_steps, 1, 128);
                 ImGui::SliderInt("# march steps to light", &guiSceneSharedVars.cloud_num_march_steps_to_light, 1, 128);
                 // cloud.scale (clouds.slang) - the density multiplier applied to the noise sample.
-                ImGui::SliderFloat("Density", &guiSceneSharedVars.cloud_scale, 0.F, 1.0F);
+                ImGui::SliderFloat("Density", &guiSceneSharedVars.cloud_density_multiplier, Kataglyphis::kMinCloudDensityMultiplier, 1.0F);
                 // cloud.threshold (clouds.slang) - the noise cut-off below which a sample counts as clear sky.
-                ImGui::SliderFloat("Coverage threshold", &guiSceneSharedVars.cloud_density, 0.F, 1.0F);
+                ImGui::SliderFloat("Coverage threshold", &guiSceneSharedVars.cloud_coverage_threshold, 0.F, 1.0F);
                 ImGui::SliderFloat("Pillowness", &guiSceneSharedVars.cloud_pillowness, 0.F, 1.0F);
                 ImGui::SliderFloat("Cirrus effect", &guiSceneSharedVars.cloud_cirrus_effect, 0.F, 1.0F);
                 ImGui::Checkbox("Powder effect", &guiSceneSharedVars.cloud_powder_effect);
-                ImGui::SliderFloat3("Scale", guiSceneSharedVars.cloud_mesh_scale, 0.F, 1000.0F);
+                ImGui::SliderFloat3("Scale", guiSceneSharedVars.cloud_mesh_scale, Kataglyphis::kMinCloudMeshExtent, 1000.0F);
                 ImGui::SliderFloat3("Translation", guiSceneSharedVars.cloud_mesh_offset, -200.F, 400.0F);
             }
 

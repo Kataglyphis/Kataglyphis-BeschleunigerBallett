@@ -19,12 +19,18 @@
 #include "renderer/SceneUBO.hpp"
 
 using Kataglyphis::aspectRatioOf;
+using Kataglyphis::clampCloudMeshScale;
 using Kataglyphis::clampPcfRadius;
 using Kataglyphis::fillSceneUboCascades;
+using Kataglyphis::kMinCloudDensityMultiplier;
+using Kataglyphis::kMinCloudMeshExtent;
 using Kataglyphis::makeVulkanProjection;
 using Kataglyphis::VulkanRendererInternals::SceneUBO;
 
 static_assert(aspectRatioOf(1920, 0) == 1.0F, "a zero-height extent must not divide by zero");
+static_assert(clampCloudMeshScale(glm::vec3(0.0F), 0.0F).x >= kMinCloudMeshExtent
+                && clampCloudMeshScale(glm::vec3(0.0F), 0.0F).w >= kMinCloudDensityMultiplier,
+  "an all-zero cloud mesh scale/density must not survive the clamp");
 
 namespace {
 
@@ -151,6 +157,27 @@ TEST(SceneUboMarshalUnit, FillCascadesNeverExceedsMaxCascades)
     EXPECT_EQ(written, static_cast<uint32_t>(MAX_CASCADES))
       << "both spans exceed MAX_CASCADES; the write must still stop at MAX_CASCADES";
     EXPECT_EQ(ubo.numCascades, static_cast<uint32_t>(MAX_CASCADES));
+}
+
+TEST(SceneUboMarshalUnit, CloudMeshScaleNeverReachesZero)
+{
+    const glm::vec4 degenerate = clampCloudMeshScale(glm::vec3(0.0F, 0.0F, 0.0F), 0.0F);
+    EXPECT_GE(degenerate.x, kMinCloudMeshExtent);
+    EXPECT_GE(degenerate.y, kMinCloudMeshExtent);
+    EXPECT_GE(degenerate.z, kMinCloudMeshExtent);
+    EXPECT_GE(degenerate.w, kMinCloudDensityMultiplier);
+
+    // This is the quantity clouds.slang:150-155 divides by; it must be
+    // strictly positive for every component even from an all-zero input.
+    EXPECT_GT(degenerate.x * degenerate.w * 10.0F, 0.0F);
+    EXPECT_GT(degenerate.y * degenerate.w * 10.0F, 0.0F);
+    EXPECT_GT(degenerate.z * degenerate.w * 10.0F, 0.0F);
+
+    const glm::vec4 normal = clampCloudMeshScale(glm::vec3(1000.0F, 5.0F, 1000.0F), 0.63F);
+    EXPECT_FLOAT_EQ(normal.x, 1000.0F);
+    EXPECT_FLOAT_EQ(normal.y, 5.0F);
+    EXPECT_FLOAT_EQ(normal.z, 1000.0F);
+    EXPECT_FLOAT_EQ(normal.w, 0.63F);
 }
 
 TEST(SceneUboMarshalUnit, ClampPcfRadiusPinsTheBoundTheShaderLoopsOver)

@@ -66,8 +66,8 @@ export struct GUISceneSharedVars
     // Clouds
     int cloud_num_march_steps = 8;
     int cloud_num_march_steps_to_light = 3;
-    float cloud_scale = 0.63f;
-    float cloud_density = 0.493f;
+    float cloud_density_multiplier = 0.63f;
+    float cloud_coverage_threshold = 0.493f;
     float cloud_pillowness = 0.966f;
     float cloud_cirrus_effect = 0.034f;
     bool cloud_powder_effect = true;

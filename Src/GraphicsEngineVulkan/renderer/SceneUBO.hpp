@@ -43,8 +43,8 @@ struct SceneUBO
     
     // Clouds
     vec4 cloudLightMarch; // x = numMarchStepsToLight, y/z/w reserved (0)
-    vec4 cloudMeshScale; // w = cloudScale
-    vec4 cloudMeshOffset; // w = cloudDensity
+    vec4 cloudMeshScale; // w = cloud.scale (density multiplier)
+    vec4 cloudMeshOffset; // w = cloud.threshold (coverage threshold)
     vec4 cloudParameters; // x = pillowness, y = cirrus_effect, z = powder_effect, w = numMarchSteps
 };
 }// namespace Kataglyphis::VulkanRendererInternals

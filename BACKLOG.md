@@ -7629,6 +7629,428 @@ RDP-blocked host run. Task it when that blocker clears. **The C++
 `DescriptorSetGroup.cpp`; nothing outside it hand-rolls a descriptor write any
 more. Stop re-checking.
 
+## 2026-08-04 batch II — planner (a cloud volume whose half-extents are the density slider, so either of two sliders at 0 divides by zero in the inverse model matrix; a mouse delta that is assigned instead of accumulated, so every cursor event but the last one in a frame is thrown away; the path-tracing doc's "open work" still asking for the white furnace it shipped; six `cleanUp()` bodies that release raw handles yet are neither idempotent nor called from a destructor, against 17 siblings that are; the submit half of the command-buffer pair that cannot report failure, and the one caller that destroys its originals anyway)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the
+tree this pass.
+
+**Every task in this batch is verifiable with no GPU**, deliberately: host
+golden verification is still blocked over RDP (see the `- [b]` entry near the
+end of this file). Tasks 1, 2 and 5 land pure helpers plus unit suites that
+already exist (`sceneUboMarshalSuite.cpp`, `frontendInputSuite.cpp`,
+`blasGeometryLimitsSuite.cpp`); tasks 3 and 4 are `buildIntegritySuite.cpp`
+gates that read files off disk. `Test/commit/VulkanEngine/CMakeLists.txt`
+globs `*.cpp` with `CONFIGURE_DEPENDS`, so no new suite file needs
+registering. Nothing here is Rust, so the broken host MSVC linker is not in
+the way.
+
+**The headline is that `compute/clouds.slang` uses one field for two
+unrelated jobs.** `:131` reads `cloud.scale = scene.cloudMeshScale.w` — the
+density multiplier every `sample_density` term is scaled by (`:40-52`) — and
+then `:137` reads
+
+```hlsl
+cloud.radius = scene.cloudMeshScale.xyz * cloud.scale * 10.0;
+```
+
+so the same value is also a multiplier on the volume's half-extents. Three
+lines later `:150-155` builds the inverse model matrix by dividing by those
+half-extents (`1.0 / cloud.radius.x`, `-cloud.offset.x / cloud.radius.x`, and
+the y/z twins). `cloudMeshScale.w` is `guiSceneSharedVars.cloud_scale`
+(`VulkanRenderer.cpp:237`), whose GUI slider is `0.F..1.0F`
+(`GUI.cpp:210`), and `cloudMeshScale.xyz` is `cloud_mesh_scale`, slider
+`0.F..1000.0F` (`GUI.cpp:216`). **Both minima are exactly zero**, and ImGui
+lets a slider sit on its minimum, so either one dragged to the left end makes
+a `cloud.radius` component zero and the inverse matrix `±inf`; `box_intersect`
+(`:64-81`) then compares NaNs, and whatever `outputImage[tid.xy]` receives
+(`:191`) flows into the offscreen HDR target and through post. Clouds default
+to off (`GUISceneSharedVars.ixx:73`), so this needs the user to tick "Enable
+Clouds" first — it is a reachable hang-your-frame bug, not a startup one.
+
+Sitting on top of that, the two host variables are named for the opposite of
+what they feed:
+
+| GUI variable | GUI label | UBO slot | shader field | what it does |
+| --- | --- | --- | --- | --- |
+| `cloud_scale` | "Density" | `cloudMeshScale.w` | `cloud.scale` | density multiplier (+ the radius coupling above) |
+| `cloud_density` | "Coverage threshold" | `cloudMeshOffset.w` | `cloud.threshold` | noise cut-off below which a sample is clear sky |
+
+`SceneUBO.hpp:46-47` even documents the slots as `w = cloudScale` /
+`w = cloudDensity`, propagating the inversion one layer further. This is the
+same class of defect as the shipped `direcional_light_radiance` rename
+(`02d7aa38`), one step worse because here the two names are swapped rather
+than merely misspelled.
+
+**Second, `handle_mouse_callback` assigns where it must accumulate.**
+`Src/shared/frontend/WindowInputCallbacks.ixx:88-89` ends with
+
+```cpp
+    x_change = static_cast<float>(x_pos) - last_x;
+    y_change = last_y - static_cast<float>(y_pos);
+```
+
+and the reader is `consume_axis_delta` (`:28-33`), which returns the value
+**and zeroes it**. A field that is zeroed on read is an accumulator; this one
+is overwritten by every event. `glfwPollEvents()` dispatches every queued
+cursor-position event before the frame runs, and `process_camera_input`
+(`FrameInput.ixx:35-39`) consumes exactly once per frame, so with a 1000 Hz
+mouse at 60 FPS roughly sixteen events arrive per frame and fifteen of their
+deltas are discarded — the camera turns by the last event's step instead of
+the frame's total travel. The symptom is a look that under-rotates and
+stutters in proportion to how fast you move the mouse, which reads as "mouse
+sensitivity is inconsistent" rather than as a dropped-input bug.
+
+**Third, `docs/path-tracing.md` asks for work its own sibling doc records as
+shipped.** Its "Open work" section (`:108-113`) still lists "Furnace golden:
+wants a uniform-environment toggle (the sky is a gradient)". That toggle
+shipped: `PathTracing.cpp:106-117` reads `KATAGLYPHIS_PT_FURNACE` and sets
+`clearColor.w = 1.0F`, `path_tracing.slang:60-65` branches on it
+(`bool furnace = pc_ray.clearColor.w > 0.5`) for both the albedo (`:198-201`)
+and the environment (`:122-125`), `GoldenRender.PathTracingPassesTheWhiteFurnaceTest`
+exists at `goldenRenderSuite.cpp:2486`, and
+`docs/cpp-renderer-improvements.md:27` logs it under commit `44e93e52`. The
+same doc's "Verification" section (`:80-96`) says "**Four** PT-facing
+goldens" and names four; the suite now holds six —
+`PathTracingAccumulatesAndConverges` (`:1338`),
+`PathTracingRespondsToTheDirectionalLight` (`:1476`),
+`PathTracingHonorsTheQualityControls` (`:1568`),
+`RaytracedWorldFollowsTheModelTransform` (`:1694`),
+`PathTracingPassesTheWhiteFurnaceTest` (`:2486`) and
+`RaytracedLargeMeshDoesNotLoseTheDevice` (`:2829`). Unlike
+`gpu-golden-testing.md` (gated by `GoldenTestCountsInDocsMatchTheSuite`,
+`buildIntegritySuite.cpp:3974`), `model-loading.md` (`:4072`),
+`shader-sharing.md` (`:4149`) and `cpp-renderer-improvements.md` (`:6322`),
+**`path-tracing.md` has no gate at all** — which is why it drifted.
+
+**Fourth, `cleanUp()` idempotence is a convention 17 classes keep and 6
+break.** `AGENTS.md`'s Code Conventions state that `cleanUp()` "remains for
+explicit early teardown and is idempotent". Measured this pass across the 24
+classes under `Src/GraphicsEngineVulkan/` that declare `void cleanUp()`:
+
+| class | destructor | `cleanUp()` releases | guard |
+| --- | --- | --- | --- |
+| `GUI` | `GUI.cpp:344` `= default` | ImGui context + backends + `vk::DescriptorPool` (`:268-275`) | none |
+| `Window` | `Window.cpp:171` `= default` | `glfwDestroyWindow` + `glfwTerminate` (`:74-78`) | none |
+| `VulkanSwapChain` | `VulkanSwapChain.cpp:180` `= default` | image views + `vk::SwapchainKHR` (`:173-178`) | none; `device` deref unguarded |
+| `VulkanInstance` | `VulkanInstance.cpp:127` `= default` | `instance.destroy()` (`:125`) | none |
+| `VulkanDevice` | `VulkanDevice.cpp:196` `= default` | pipeline cache + VMA allocator + `logical_device.destroy()` (`:93-102`) | none |
+| `ASManager` | `ASManager.cpp:438` `= default` | TLAS + every BLAS handle (`:416-436`) | `if (!vulkanDevice)` only; handles are never nulled |
+
+The other seventeen (`Allocator`, `DeferredRasterizer`, `PathTracing`,
+`PostStage`, `Rasterizer`, `Raytracing`, `VulkanRenderer`, `Clouds`,
+`CascadedShadowMap`, `Model`, `Scene`, `SkyBox`, `Texture`,
+`DescriptorSetGroup`, `VulkanBuffer`, `VulkanImage`, `VulkanImageView`) all
+spell `~X() { cleanUp(); }`. `Mesh` and `VulkanBufferManager` are the two
+legitimate `= default`s — every member is itself RAII — and must be left
+alone. The live consequence is in `App.cpp:70-81`: on the device-lost path
+`gui->cleanUp()` is deliberately skipped, and because `~GUI()` is `= default`
+the ImGui context and both backends are never shut down at all, even though
+`ImGui_ImplGlfw_Shutdown()`/`ImGui::DestroyContext()` need no device. The rest
+is latent: nothing calls any of these twice today, which is exactly what makes
+it an invariant held by reading.
+
+**Fifth, the command-buffer pair is only half checked.**
+`beginCommandBuffer` returns a null handle on failure and every call site
+checks it — `EveryBeginCommandBufferResultIsChecked`
+(`buildIntegritySuite.cpp:3761`) enforces that. Its partner
+`endAndSubmitCommandBuffer` (`CommandBufferManager.ixx:9-12`,
+`CommandBufferManager.cpp:56-126`) returns `void`, yet it has two failure
+exits that leave the work unperformed: `queue.submit` failing (`:89-99`) and
+the fence-wait fallback (`:101-112`). Eleven call sites cannot tell.
+`ASManager::compactBLAS` is the one where that matters:
+`ASManager.cpp:230-231` submits the compaction copies, and `:236-240` then
+destroys every original BLAS and installs `compacted` in its place —
+unconditionally. If that submit failed, the copies never ran, and the TLAS
+built moments later (`createTLAS`, `:246`) is built over acceleration
+structures whose contents are undefined. The same function has a second gap:
+`:205-229` builds a buffer and a `vk::AccelerationStructureKHR` per
+`compacted_sizes[i]` with no check that the value is non-zero, and
+`VkBufferCreateInfo::size` must be greater than zero
+(VUID-VkBufferCreateInfo-size-00912) — a BLAS the driver reports as
+compacting to 0 bytes turns into an invalid create call.
+
+Ordering: the five tasks are disjoint. Task 1 and task 4 both touch
+`gui/GUI.cpp`, but at different ends (task 1 the cloud sliders at `:204-221`,
+task 4 `cleanUp()` at `:268-275`) — do them in either order. Task 5 touches
+`ASManager.cpp` teardown-adjacent code; if it lands in the same session as
+task 4, do task 4's `ASManager` idempotence first so task 5 edits the final
+shape.
+
+### C++ Vulkan engine
+
+- [ ] **(M) Make the six `cleanUp()` bodies that release raw handles idempotent, give four of them a destructor safety net, and gate the convention** — `AGENTS.md` says `cleanUp()` is idempotent; 17 classes implement that and 6 do not, and one of the six leaks the whole ImGui context on the device-lost path.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/app/App.cpp:70-81` — the device-lost branch that
+    skips `gui->cleanUp()`; this is why `~GUI()` matters.
+  - `Src/GraphicsEngineVulkan/gui/GUI.cpp:268-275` and `GUI.ixx:37`.
+  - `Src/GraphicsEngineVulkan/window/Window.cpp:74-78` and `:171`.
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanSwapChain.cpp:164-180` — note
+    `cleanUp()` dereferences `device` with no null check.
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanInstance.cpp:125-127`.
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp:93-102` and `:196`.
+  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp:416-438`
+    — has the null guard but never nulls `tlas.vulkanAS` / `bla.vulkanAS`.
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:100-121` — the model to
+    copy: early return on a null device, then teardown, then `device.reset()`,
+    with `~PostStage() { cleanUp(); }`.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:5612-5657`
+    (`FramebufferTeardownGoesThroughTheSharedHelper`) — a source-scanning gate
+    to model the new one on.
+
+  **Steps:**
+  1. Make all six `cleanUp()` bodies idempotent, following `PostStage`: guard
+     on the owning handle/pointer at the top, null every raw handle after
+     destroying it, and reset the owning `shared_ptr` last where one exists.
+     For `ASManager`, additionally clear `blas` and null `tlas.vulkanAS` after
+     the loop so a second call cannot double-destroy.
+  2. Add `~GUI() { cleanUp(); }`, `~Window() { cleanUp(); }`,
+     `~VulkanSwapChain() { cleanUp(); }` and `~ASManager() { cleanUp(); }`,
+     replacing the four `= default`s. Step 1 must land first — these are only
+     safe because the second call is now a no-op.
+  3. Split `GUI::cleanUp()` so the non-Vulkan half runs unconditionally:
+     `ImGui_ImplVulkan_Shutdown()` and the descriptor-pool destroy stay behind
+     the device guard, while `ImGui_ImplGlfw_Shutdown()` and
+     `ImGui::DestroyContext()` run whether or not the device is alive. That is
+     the actual leak `App.cpp:72-77` produces today.
+  4. **Leave `VulkanDevice` and `VulkanInstance` with `= default`
+     destructors** — `VulkanRenderer::cleanUp()` owns the order in which the
+     logical device and instance go away, and a destructor call would move it.
+     Make their `cleanUp()` idempotent (step 1) and add a one-line comment on
+     each `= default` saying so, so the next reader does not "fix" it.
+  5. Leave `Mesh` (`Mesh.cpp:94`) and `VulkanBufferManager`
+     (`VulkanBufferManager.cpp:124`) untouched: every member is already RAII,
+     and their `= default` is correct.
+
+  **Test:** Add `BuildIntegrity.EveryCleanUpIsCalledFromItsDestructor` to
+  `Test/commit/VulkanEngine/buildIntegritySuite.cpp`: walk
+  `Src/GraphicsEngineVulkan/`, collect every class declaring `void cleanUp()`,
+  and assert each one either defines `~<Class>() { cleanUp(); }` (in the
+  `.ixx` or the `.cpp`) or appears in a four-entry allowlist —
+  `Mesh`, `VulkanBufferManager` (all-RAII members), `VulkanDevice`,
+  `VulkanInstance` (teardown order owned by `VulkanRenderer::cleanUp()`) —
+  with the reason in the failure message. Follow the `find_repo_root()` +
+  file-scan shape used at `:5612`.
+
+  **Build:** `clangcl-debug`, with `-FreshContainer` (this changes module
+  interface units). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`.
+
+  **Context:** The engine has spent a dozen tasks turning "held by reading"
+  invariants into helpers plus gates; this is the same move for the one
+  `AGENTS.md` states in prose and nothing checks. Keep the behaviour change
+  minimal — idempotence is by construction a no-op on the single-call path
+  that runs today, and the only intended behaviour change is step 3.
+
+- [ ] **(M) Let `endAndSubmitCommandBuffer` report failure, and stop `compactBLAS` from destroying the originals after a copy that never ran** — the begin half of the pair is checked at every call site and gated; the submit half returns `void`, and its one safety-critical caller swaps in never-copied acceleration structures.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/CommandBufferManager.cpp:56-126` —
+    both failure exits (`:89-99` submit, `:101-112` fence-wait fallback).
+  - `Src/GraphicsEngineVulkan/renderer/CommandBufferManager.ixx:9-12` — the
+    declaration to change.
+  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp:146-244`
+    — `compactBLAS`; `:205-229` creates one buffer + AS per reported size,
+    `:230-231` submits the copies, `:236-240` destroys the originals
+    unconditionally.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:3761-3831`
+    (`EveryBeginCommandBufferResultIsChecked`) — the gate whose partner this
+    task writes.
+  - `Test/commit/VulkanEngine/blasGeometryLimitsSuite.cpp` — the CPU suite to
+    extend.
+
+  **Steps:**
+  1. Change `endAndSubmitCommandBuffer` to `[[nodiscard]] auto … -> bool` in
+     both `CommandBufferManager.ixx` and `.cpp`: `false` from the submit
+     failure path at `:90-99`, `true` otherwise. The fence-wait fallback at
+     `:103-108` already recovers via `queue.waitIdle()`, so it stays `true` —
+     say so in a comment.
+  2. Update all eleven call sites. The nine that have nothing to unwind
+     (`Texture.cpp:190`, `VulkanBufferManager.cpp:34/72`,
+     `VulkanImage.cpp:123`, `Clouds.cpp:47/123`, `SkyBox.cpp:189`,
+     `VulkanRenderer.cpp:1355`, `ASManager.cpp:135/177/410`) may discard the
+     result explicitly with `static_cast<void>(...)`, matching the MSVC-ICE
+     discard idiom already used at `CommandBufferManager.cpp:67`.
+  3. In `compactBLAS`, capture the result of the copy submit at `:230-231`. On
+     `false`, destroy the `compacted[i]` acceleration structures and buffers
+     that were just created, log at error level, and return **without**
+     touching `blas` — the uncompacted set is still valid and `createTLAS`
+     will build over it.
+  4. Add a pure helper to a small new header
+     `Src/GraphicsEngineVulkan/renderer/accelerationStructures/BlasCompaction.hpp`:
+     `[[nodiscard]] auto compactedSizesAreUsable(std::span<const vk::DeviceSize> sizes) -> bool`,
+     returning `false` when `sizes` is empty or any entry is `0`. Call it in
+     `compactBLAS` right after the `getQueryPoolResults` check at `:188-193`
+     and bail (keeping the uncompacted BLAS) when it says no. Comment it with
+     the rule it enforces: `VkBufferCreateInfo::size` must be greater than
+     zero (VUID-VkBufferCreateInfo-size-00912), so a driver reporting a
+     0-byte compacted size cannot be honoured.
+
+  **Test:** Add `BlasCompactionUnit.RejectsEmptyAndZeroSizedResults` to
+  `Test/commit/VulkanEngine/blasGeometryLimitsSuite.cpp`: assert
+  `compactedSizesAreUsable({})` is `false`, that a span containing a `0` is
+  `false` wherever the zero sits (first, middle, last), and that an all-positive
+  span is `true`. Add
+  `BuildIntegrity.EveryEndAndSubmitCommandBufferResultIsChecked` next to
+  `:3761`, scanning `Src/GraphicsEngineVulkan/` for
+  `endAndSubmitCommandBuffer(` and requiring each call to be either assigned,
+  used in a condition, or explicitly `static_cast<void>`-discarded — modelled
+  on the begin-half gate directly above it.
+
+  **Build:** `clangcl-debug`, `-FreshContainer` (module interface change). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BlasCompactionUnit.*:BuildIntegrity.*`.
+
+  **Context:** Batch IX made `beginCommandBuffer`'s null return meaningful and
+  gated it; this is the same job for its partner, and the payoff is concrete
+  rather than stylistic — `compactBLAS` is the one caller whose failure path
+  currently destroys still-needed GPU objects. Keep the recovery conservative:
+  every failure exit must leave the *uncompacted* BLAS in place, never a
+  half-swapped mixture.
+
+### Cross-renderer / shared frontend
+
+- [ ] **(S) Accumulate mouse deltas instead of overwriting them, so a frame that receives several cursor events keeps all of their travel** — `consume_axis_delta` zeroes the field on read, which makes it an accumulator; `handle_mouse_callback` assigns to it, so a 1000 Hz mouse at 60 FPS throws away ~15 of every 16 events.
+
+  **Files to read:**
+  - `Src/shared/frontend/WindowInputCallbacks.ixx:61-93` — `handle_mouse_callback`;
+    the two assignments are at `:88-89`. Note the ImGui-capture early return
+    at `:71-80` still updates `last_x`/`last_y` and must keep doing so.
+  - `Src/shared/frontend/WindowInputCallbacks.ixx:28-33` — `consume_axis_delta`,
+    the read-and-zero that establishes the accumulator contract.
+  - `Src/shared/frontend/FrameInput.ixx:35-39` — `process_camera_input`,
+    which consumes exactly once per frame.
+  - `Src/GraphicsEngineVulkan/window/Window.cpp:80-82` — the `get_x_change` /
+    `get_y_change` wrappers.
+  - `Test/commit/VulkanEngine/frontendInputSuite.cpp:85-193` — the existing
+    tests; every one of them measures a delta while `x_change` happens to be
+    `0`, so they all still pass under accumulation. Confirm that rather than
+    assume it.
+
+  **Steps:**
+  1. Change `:88-89` to `x_change += …` and `y_change += …`.
+  2. Leave the re-seed branch (`:82-86`) as it is: it sets `last_x`/`last_y`
+     to the current position first, so the accumulation that follows adds
+     exactly zero — the "first event after (re)capture produces no delta"
+     property the suite pins at `:94-96` is preserved by construction, not by
+     a special case. Say so in a comment.
+  3. Update the comment above `consume_axis_delta` (`:28-33`) to state the
+     contract explicitly: producers accumulate, the frame loop consumes once
+     and resets.
+  4. Re-read `frontendInputSuite.cpp:157-183` and `:195-224` and add an
+     explicit `x_change = 0.0F; y_change = 0.0F;` before any assertion that
+     was only correct because the accumulator happened to be empty — the
+     tests must pin the intended behaviour, not depend on it.
+
+  **Test:** Add `WindowInputUnit.MultipleEventsInOneFrameAccumulate` to
+  `Test/commit/VulkanEngine/frontendInputSuite.cpp`: seed with one call (which
+  re-seeds to zero), then deliver four moves of +10 px in x and −5 px in y each,
+  and assert `consume_axis_delta(x_change) == 40.0F` and
+  `consume_axis_delta(y_change) == 20.0F` — under today's assignment those read
+  `10.0F` and `5.0F`, so the test is red before the fix and green after. Add a
+  second case proving a consume between two events resets the accumulator (the
+  frame boundary). Both run with no GLFW window and no ImGui context, like the
+  suite's existing cases.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=WindowInputUnit.*`.
+
+  **Context:** This is the same family as the two look-mode fixes already
+  shipped from this file (the focus-loss re-seed and the first-drag snap), and
+  the last one in it that is about *losing* input rather than *misapplying*
+  it. The suite is the ideal harness — pure references, no window — so make the
+  new test red-then-green rather than trusting the reasoning.
+
+### Docs
+
+- [ ] **(S) Fix `docs/path-tracing.md`'s stale "open work" and golden list, and gate it against the suite** — the doc still asks for the white-furnace toggle that shipped, and counts four PT-facing goldens where the suite has six; it is the only PT/RT doc with no gate.
+
+  **Files to read:**
+  - `docs/path-tracing.md:80-96` (Verification) and `:108-113` (Open work).
+  - `Src/GraphicsEngineVulkan/renderer/PathTracing.cpp:106-123` — the
+    `KATAGLYPHIS_PT_FURNACE` hook and the sample/bounce clamps.
+  - `Resources/ShadersSlang/path_tracing/path_tracing.slang:60-65`,
+    `:122-125`, `:198-201` — the furnace branch the doc says is missing.
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp:1338`, `:1476`, `:1568`,
+    `:1694`, `:2486`, `:2829` — the six tests.
+  - `docs/cpp-renderer-improvements.md:27` — the change-log row for
+    `44e93e52` that already records the furnace as shipped.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:6322-6357`
+    (`RendererImprovementLogDoesNotAskForShippedWork`) and `:3974`
+    (`GoldenTestCountsInDocsMatchTheSuite`) — the two gates to model on.
+
+  **Steps:**
+  1. Delete the "Furnace golden" bullet from the Open work section
+     (`:110-111`) and describe the shipped mode instead: add a short paragraph
+     to "The estimator" saying that `KATAGLYPHIS_PT_FURNACE=<radiance>` forces
+     albedo to 1 and replaces the gradient sky with a uniform radiance, that
+     the shader gates on `clearColor.w > 0.5`, and that
+     `GoldenRender.PathTracingPassesTheWhiteFurnaceTest` is the oracle.
+  2. Update Verification: say **six**, and add the two missing rows —
+     `PathTracingPassesTheWhiteFurnaceTest` (uniformity of the furnace image)
+     and `RaytracedLargeMeshDoesNotLoseTheDevice` (the device-loss regression
+     guard). Keep the existing four rows' measured numbers untouched; they are
+     the record of how each was red/green-proven.
+  3. Add a machine-readable marker line the gate can parse, in the style
+     `gpu-golden-testing.md` already uses, e.g.
+     `<!-- pt-goldens: PathTracingAccumulatesAndConverges, … -->`, listing
+     exactly the `TEST(GoldenRender, …)` names.
+  4. Cross-check the rest of the doc against the shader while you are in
+     there: the `1e-4` normal offset (`:53-54` vs `path_tracing.slang:221`),
+     `t_min = 0.001` (`:103`), the `samples_per_pixel`/`max_bounces` defaults
+     of 8 (`GUIRendererSharedVars.ixx:109-110`), and the Russian-roulette
+     start at the fourth segment (`:89`). Fix anything that has moved; report
+     "checked, unchanged" for anything that has not.
+
+  **Test:** Add `BuildIntegrity.PathTracingDocMatchesTheGoldenSuite` to
+  `Test/commit/VulkanEngine/buildIntegritySuite.cpp`: parse the marker line
+  from `docs/path-tracing.md`, collect every `TEST(GoldenRender, PathTracing…)`
+  and `TEST(GoldenRender, Raytraced…)` name out of
+  `Test/commit/VulkanEngine/goldenRenderSuite.cpp`, and assert the two sets are
+  equal — naming the missing/extra entries in the failure message. Additionally
+  assert the doc no longer contains the string "wants a uniform-environment
+  toggle" while `PathTracing.cpp` contains `KATAGLYPHIS_PT_FURNACE`, mirroring
+  the shipped-work check at `:6338-6346`.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+  from the repo root (the gate resolves paths against it).
+
+  **Context:** Four docs are already pinned to the code they describe and one
+  is not; the one that is not is the one that drifted. Do not restate the
+  shader in the doc — the fix is to make the doc's *claims* checkable, not
+  longer.
+
+Candidates found but NOT tasked (checked, then rejected — do not re-propose
+without new evidence): **`compute/clouds.slang`'s `phase_HG` (`:57-61`)
+spells its denominator `1 + g² + 2g·cosθ` where the canonical
+Henyey-Greenstein form for this `cosTheta` convention is `1 + g² − 2g·cosθ`,
+which would make the volume back-scattering at `g = 0.5` instead of
+forward-scattering**, and **the powder term at `:182-186` ADDS to
+transmittance (`transmittance = saturate(transmittance + powderness)`) after
+the `< 0.01` early-out, so denser samples come out more transmissive**. Both
+look wrong on the derivation, both change how clouds look, and neither can be
+confirmed without the host GPU run that is blocked over RDP — task them
+together the moment that blocker clears, with a golden that measures cloud
+luminance against sun azimuth. **Decoupling `cloud.radius` from
+`cloud.scale` (`clouds.slang:137`)** is the natural follow-up to task 1 and is
+deliberately excluded from it for the same reason: it resizes the rendered
+volume. **`GpuTimingSubsystem::timestampMask()`
+(`GpuTimingSubsystem.ixx:238`), `ForwardRenderer::animation_duration`
+(`forward.rs:2373`) and `disable_gpu_timing` (`forward.rs:979`) are still the
+only dead public API in either renderer** — re-measured this pass by scanning
+every zero-arg and every argument-taking member declaration under `Src/` and
+every `pub fn` in `crates/webgpu_renderer/src/`; three symbols is still too
+thin for a task of its own, so keep folding them into the next sweep that has
+other reasons to exist. **`Scene::reloadModel` (`Scene.cpp:184`) does not call
+`resolveModelPath` while `loadAdditionalModel` (`:76`) does** — checked, and
+it is correct: the only caller (`VulkanRenderer.cpp:404-408`) resolves the
+path first. Stop re-checking that one.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)
