@@ -81,7 +81,7 @@ feature, an image transition, or the loader upload path:
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the
    suite source.
 
-<!-- golden-counts: defined=31 runnable=30 integration=2 total=32 -->
+<!-- golden-counts: defined=31 runnable=30 integration=2 total=32 excluded=3 -->
 
 This turns changes the container can only compile-check (device creation,
 image barriers, the deferred/forward command streams, path/ray tracing) into
@@ -175,5 +175,8 @@ identical dinosaur mesh through the RT *pipeline* (`raytrace.rchit.slang`,
 same `Vertices*` BDA read pattern) and does not lose the device. Excluding
 the three tests above with
 `--gtest_filter='GoldenRender.*:Integration.*:-GoldenRender.PathTracingAccumulatesAndConverges:GoldenRender.GuiInputSweepNeverCrashesOrLosesTheDevice:Integration.RenderModesSelectableInGui'`
-runs the rest of the suite (28 tests) clean (verified 2026-08-01 on the RX 9070 XT —
-"28 tests from 2 test suites ran", "PASSED 28 tests", 1 `DISABLED_` test not run).
+runs the rest of the suite clean: `total - excluded` = 29 tests today (see the
+`golden-counts` marker above). This is a record of a 2026-08-01 run against
+the 28-test suite that existed then on the RX 9070 XT — "28 tests from 2
+test suites ran", "PASSED 28 tests", 1 `DISABLED_` test not run — not a
+claim about today's suite.

@@ -410,8 +410,8 @@ std::vector<std::string> collect_suite_test_names(const fs::path &tests_dir, con
     return names;
 }
 
-// The four named integers in docs/gpu-golden-testing.md's
-// `<!-- golden-counts: defined=N runnable=N integration=N total=N -->`
+// The five named integers in docs/gpu-golden-testing.md's
+// `<!-- golden-counts: defined=N runnable=N integration=N total=N excluded=N -->`
 // marker line.
 struct GoldenCountsMarker
 {
@@ -419,6 +419,7 @@ struct GoldenCountsMarker
     int runnable = 0;
     int integration = 0;
     int total = 0;
+    int excluded = 0;
 };
 
 std::optional<int> parse_marker_field(const std::string &line, const std::string &key)
@@ -435,7 +436,7 @@ std::optional<int> parse_marker_field(const std::string &line, const std::string
 }
 
 // Parses docs/gpu-golden-testing.md's golden-counts marker line. Returns
-// std::nullopt if the marker line, or any of its four fields, is missing -
+// std::nullopt if the marker line, or any of its five fields, is missing -
 // the caller distinguishes that from "file not found" so a deleted marker is
 // a hard failure rather than a silent pass.
 std::optional<GoldenCountsMarker> parse_golden_counts_marker(const fs::path &doc_path)
@@ -451,16 +452,65 @@ std::optional<GoldenCountsMarker> parse_golden_counts_marker(const fs::path &doc
         const auto runnable_val = parse_marker_field(line, "runnable=");
         const auto integration_val = parse_marker_field(line, "integration=");
         const auto total_val = parse_marker_field(line, "total=");
-        if (!defined_val || !runnable_val || !integration_val || !total_val) { return std::nullopt; }
+        const auto excluded_val = parse_marker_field(line, "excluded=");
+        if (!defined_val || !runnable_val || !integration_val || !total_val || !excluded_val) {
+            return std::nullopt;
+        }
 
         GoldenCountsMarker marker;
         marker.defined = *defined_val;
         marker.runnable = *runnable_val;
         marker.integration = *integration_val;
         marker.total = *total_val;
+        marker.excluded = *excluded_val;
         return marker;
     }
     return std::nullopt;
+}
+
+// Parses the `:-`-prefixed exclusion section of docs/gpu-golden-testing.md's
+// `--gtest_filter='...'` line in the "Known issue" section (the known-device-
+// lost tests excluded from the "runs clean" claim there), returning each
+// excluded test as a (suite, name) pair. The doc has an earlier, unrelated
+// `--gtest_filter='GoldenRender.*:Integration.*'` example with no exclusion
+// section, so a line is only a match once it actually contains `:-`; lines
+// without it are skipped rather than taken as "no exclusions". Returns
+// std::nullopt only if the file cannot be opened; an empty vector means no
+// line with a `:-` exclusion section was found at all - the caller must fail
+// loudly on that, not skip.
+std::optional<std::vector<std::pair<std::string, std::string>>> parse_golden_test_exclusion_filter(
+  const fs::path &doc_path)
+{
+    std::ifstream file(doc_path);
+    if (!file) { return std::nullopt; }
+
+    static const std::string kFilterKey = "--gtest_filter='";
+    std::string line;
+    while (std::getline(file, line)) {
+        const std::size_t filter_start = line.find(kFilterKey);
+        if (filter_start == std::string::npos) { continue; }
+
+        const std::size_t value_start = filter_start + kFilterKey.size();
+        const std::size_t value_end = line.find('\'', value_start);
+        if (value_end == std::string::npos) { continue; }
+
+        const std::string filter = line.substr(value_start, value_end - value_start);
+        const std::size_t exclude_start = filter.find(":-");
+        if (exclude_start == std::string::npos) { continue; }
+
+        std::vector<std::pair<std::string, std::string>> excluded;
+        std::size_t pos = exclude_start + 2;
+        while (pos < filter.size()) {
+            std::size_t next = filter.find(':', pos);
+            if (next == std::string::npos) { next = filter.size(); }
+            const std::string entry = filter.substr(pos, next - pos);
+            const std::size_t dot = entry.find('.');
+            if (dot != std::string::npos) { excluded.emplace_back(entry.substr(0, dot), entry.substr(dot + 1)); }
+            pos = next + 1;
+        }
+        return excluded;
+    }
+    return std::vector<std::pair<std::string, std::string>>{};
 }
 
 // Parses the exact suite-name globs out of Windows.yml's hand-written
@@ -3323,8 +3373,8 @@ TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)
     const auto marker = parse_golden_counts_marker(doc_path);
     ASSERT_TRUE(marker.has_value())
       << doc_path.string()
-      << " is missing its '<!-- golden-counts: defined=N runnable=N integration=N total=N -->' marker line, or "
-         "one of its four fields - a deleted marker must fail this test, not silently pass";
+      << " is missing its '<!-- golden-counts: defined=N runnable=N integration=N total=N excluded=N -->' marker "
+         "line, or one of its five fields - a deleted marker must fail this test, not silently pass";
 
     const fs::path tests_dir = repo_root / "Test" / "commit" / "VulkanEngine";
     const std::vector<std::string> golden_tests = collect_suite_test_names(tests_dir, "GoldenRender");
@@ -3348,6 +3398,22 @@ TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)
     EXPECT_EQ(marker->runnable + marker->integration, marker->total)
       << doc_path.string() << "'s golden-counts marker is internally inconsistent: runnable(" << marker->runnable
       << ") + integration(" << marker->integration << ") != total(" << marker->total << ")";
+
+    const auto exclusion_filter = parse_golden_test_exclusion_filter(doc_path);
+    ASSERT_TRUE(exclusion_filter.has_value())
+      << doc_path.string() << " is missing its '--gtest_filter=' line in the \"Known issue\" section";
+
+    const int counted_excluded = static_cast<int>(exclusion_filter->size());
+    EXPECT_EQ(marker->excluded, counted_excluded)
+      << doc_path.string() << "'s golden-counts marker says excluded=" << marker->excluded
+      << " but the --gtest_filter= line's ':-'-prefixed section names " << counted_excluded << " test(s)";
+
+    for (const auto &[suite, name] : *exclusion_filter) {
+        const std::vector<std::string> &suite_tests = suite == "GoldenRender" ? golden_tests : integration_tests;
+        EXPECT_TRUE(std::find(suite_tests.begin(), suite_tests.end(), name) != suite_tests.end())
+          << doc_path.string() << "'s --gtest_filter= excludes " << suite << "." << name << " but no such TEST("
+          << suite << ", " << name << ") exists in " << tests_dir.string();
+    }
 }
 
 // Parses docs/model-loading.md's `<!-- max-texture-count: N -->` marker line.
