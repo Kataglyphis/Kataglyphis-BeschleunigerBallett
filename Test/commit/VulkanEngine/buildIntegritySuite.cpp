@@ -3638,6 +3638,105 @@ TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
          }();
 }
 
+// Every subsystem that loads SPIR-V must implement shaderHotReload, or the
+// GUI's reload button silently does nothing for it. SkyBox, CascadedShadowMap
+// and Clouds were missing theirs until this gate was added - source-scanned
+// by the literal SPIR-V directory rather than a hand-maintained file list, so
+// the NEXT pipeline-owning subsystem cannot be added without one either.
+TEST(BuildIntegrity, EverySpirvLoadingSubsystemImplementsShaderHotReload)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    static const char *const kSpirvMarker = "Resources/ShadersSlang/build/spirv/";
+
+    std::vector<fs::path> spirv_loading_files;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".cpp") { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        if (contents.find(kSpirvMarker) != std::string::npos) { spirv_loading_files.push_back(path); }
+    }
+
+    ASSERT_GT(spirv_loading_files.size(), 0u)
+      << "found zero .cpp files referencing " << kSpirvMarker << " under " << src_root.string()
+      << " - the scan itself is broken";
+
+    std::vector<std::string> missing_implementation;
+    for (const fs::path &path : spirv_loading_files) {
+        std::ifstream file(path);
+        ASSERT_TRUE(static_cast<bool>(file)) << "could not re-open " << path.string();
+        const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+        bool declares_reload = contents.find("shaderHotReload") != std::string::npos;
+        if (!declares_reload) {
+            const fs::path paired_ixx = fs::path(path).replace_extension(".ixx");
+            std::ifstream ixx_file(paired_ixx);
+            if (ixx_file) {
+                const std::string ixx_contents((std::istreambuf_iterator<char>(ixx_file)), std::istreambuf_iterator<char>());
+                declares_reload = ixx_contents.find("shaderHotReload") != std::string::npos;
+            }
+        }
+
+        if (!declares_reload) { missing_implementation.push_back(fs::relative(path, repo_root).string()); }
+    }
+
+    EXPECT_TRUE(missing_implementation.empty())
+      << missing_implementation.size()
+      << " subsystem(s) load SPIR-V but declare no shaderHotReload (neither the .cpp nor its paired .ixx): "
+      << [&missing_implementation] {
+             std::string joined;
+             for (const auto &entry : missing_implementation) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    const fs::path renderer_path = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
+    std::ifstream renderer_file(renderer_path);
+    ASSERT_TRUE(static_cast<bool>(renderer_file)) << "missing " << renderer_path.string();
+    const std::string renderer_contents((std::istreambuf_iterator<char>(renderer_file)), std::istreambuf_iterator<char>());
+
+    const std::size_t signature_pos = renderer_contents.find("VulkanRenderer::shaderHotReload(");
+    ASSERT_NE(signature_pos, std::string::npos) << "VulkanRenderer::shaderHotReload is no longer defined in "
+                                                 << renderer_path.string();
+
+    const std::size_t body_open = renderer_contents.find('{', signature_pos);
+    ASSERT_NE(body_open, std::string::npos) << "could not locate the opening brace of VulkanRenderer::shaderHotReload";
+
+    int brace_depth = 0;
+    std::size_t body_close = std::string::npos;
+    for (std::size_t i = body_open; i < renderer_contents.size(); ++i) {
+        if (renderer_contents[i] == '{') { ++brace_depth; }
+        else if (renderer_contents[i] == '}') {
+            --brace_depth;
+            if (brace_depth == 0) {
+                body_close = i;
+                break;
+            }
+        }
+    }
+    ASSERT_NE(body_close, std::string::npos) << "could not brace-match the closing '}' of VulkanRenderer::shaderHotReload";
+
+    const std::string body = renderer_contents.substr(body_open, body_close - body_open + 1);
+    std::size_t call_sites = 0;
+    std::size_t pos = 0;
+    while ((pos = body.find(".shaderHotReload(", pos)) != std::string::npos) {
+        ++call_sites;
+        pos += std::string(".shaderHotReload(").size();
+    }
+
+    EXPECT_GE(call_sites, spirv_loading_files.size())
+      << "VulkanRenderer::shaderHotReload only calls " << call_sites << " stage(s)' shaderHotReload, but "
+      << spirv_loading_files.size() << " subsystem(s) load SPIR-V - some reload is silently unreachable.";
+}
+
 // Every stage's shaderHotReload(...) recreates its pipeline (and thus a fresh
 // vk::PipelineLayout) without first destroying the old layout - only
 // DeferredRasterizer got this right; PostStage, Rasterizer, Raytracing and

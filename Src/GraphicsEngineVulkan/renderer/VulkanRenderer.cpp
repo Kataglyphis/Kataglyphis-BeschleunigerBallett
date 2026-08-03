@@ -401,9 +401,10 @@ void Kataglyphis::VulkanRenderer::handleModelReloadRequest(
 void Kataglyphis::VulkanRenderer::finishAllRenderCommands() { std::ignore = device->getLogicalDevice().waitIdle(); }
 
 // Reloads every stage that owns a shaderHotReload implementation:
-// rasterizer, deferredRasterizer, postStage, and (when supported)
-// raytracingStage/pathTracing. skyBox, dirShadowMap and clouds deliberately
-// have no shaderHotReload yet, so their omission here is not an oversight.
+// rasterizer, deferredRasterizer, postStage, skyBox, dirShadowMap, clouds and
+// (when supported) raytracingStage/pathTracing - i.e. all eight subsystems
+// that load SPIR-V, per
+// BuildIntegrity.EverySpirvLoadingSubsystemImplementsShaderHotReload.
 void Kataglyphis::VulkanRenderer::shaderHotReload()
 {
     std::ignore = device->getLogicalDevice().waitIdle();
@@ -417,6 +418,10 @@ void Kataglyphis::VulkanRenderer::shaderHotReload()
 
     std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts_post = { postDescriptors.getLayout() };
     postStage.shaderHotReload(descriptor_set_layouts_post);
+
+    skyBox.shaderHotReload(sharedRenderDescriptors.getLayout());
+    dirShadowMap.shaderHotReload();
+    clouds.shaderHotReload(sharedRenderDescriptors.getLayout());
 
     if (device->supportsHardwareAcceleratedRRT()) {
         std::array<vk::DescriptorSetLayout, 2> const layouts = { sharedRenderDescriptors.getLayout(),

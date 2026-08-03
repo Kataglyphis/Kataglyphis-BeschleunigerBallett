@@ -123,6 +123,29 @@ void Clouds::dispatchNoiseGeneration()
     device->getLogicalDevice().destroyCommandPool(commandPool);
 }
 
+void Clouds::shaderHotReload(vk::DescriptorSetLayout sharedLayout)
+{
+    if (cloudComputePipeline) {
+        device->getLogicalDevice().destroyPipeline(cloudComputePipeline);
+        cloudComputePipeline = nullptr;
+    }
+    if (cloudPipelineLayout) {
+        device->getLogicalDevice().destroyPipelineLayout(cloudPipelineLayout);
+        cloudPipelineLayout = nullptr;
+    }
+    if (noiseComputePipeline) {
+        device->getLogicalDevice().destroyPipeline(noiseComputePipeline);
+        noiseComputePipeline = nullptr;
+    }
+    if (noisePipelineLayout) {
+        device->getLogicalDevice().destroyPipelineLayout(noisePipelineLayout);
+        noisePipelineLayout = nullptr;
+    }
+    // Descriptor sets and both textures are untouched; the noise volume is
+    // content, not a pipeline, so dispatchNoiseGeneration() does not re-run.
+    createComputePipelines(sharedLayout);
+}
+
 void Clouds::recordComputeCommands(vk::CommandBuffer &commandBuffer, std::span<const vk::DescriptorSet> descriptorSets)
 {
     if (descriptorSets.empty()) {

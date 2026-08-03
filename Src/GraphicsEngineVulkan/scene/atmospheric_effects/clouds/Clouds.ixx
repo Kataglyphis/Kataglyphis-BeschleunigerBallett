@@ -25,6 +25,8 @@ class Clouds
 
     void recordComputeCommands(vk::CommandBuffer &commandBuffer, std::span<const vk::DescriptorSet> descriptorSets);
 
+    void shaderHotReload(vk::DescriptorSetLayout sharedLayout);
+
     void recreateFrameResources(vk::CommandPool commandPool, uint32_t width, uint32_t height);
 
     void cleanUp();

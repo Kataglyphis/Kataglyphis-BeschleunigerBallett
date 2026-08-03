@@ -5868,6 +5868,276 @@ them. **`Src/KomputePlayground`** — unchanged; still an owner decision.
 
 ### C++ Vulkan engine
 
+## 2026-08-03 batch IX — planner (three of the eight subsystems that load SPIR-V have no hot reload, so the GUI button silently skips the shadow, sky and cloud shaders; a command-buffer factory documented to return null that eight of its nine call sites record into anyway; a `Texture` that forgets how many mip levels it has; a near-plane derivation its own test file says it cannot check; a keyboard turn rate measured in metres per second)
+
+The actionable queue was empty again — every remaining checkbox in this file was
+`- [b]`. Every `file:line` below was read out of the tree this pass.
+
+**Task 1 re-opens a candidate batch VIII rejected, with a different acceptance
+test.** Batch VIII noted "`Clouds` has no `shaderHotReload`" and dropped it as "a
+feature with a GPU-only acceptance test, not a refactor". Grepping the whole tree
+this pass shows the gap is three times larger and has a CPU-only oracle:
+**eight** files load a `Resources/ShadersSlang/build/spirv/…` path
+(`DeferredRasterizer.cpp`, `PathTracing.cpp`, `PostStage.cpp`, `Rasterizer.cpp`,
+`Raytracing.cpp`, `Clouds.cpp`, `CascadedShadowMap.cpp`, `SkyBox.cpp`) and only
+**five** implement `shaderHotReload`. `VulkanRenderer.cpp:403-406` states the
+omission is deliberate — but the button in the GUI is unlabelled about it, so
+editing `shadows/*.slang`, `skybox.slang`, `clouds.slang` or `compute/noise.slang`
+and pressing reload appears to work and changes nothing, which is exactly the
+"instruments disagree" failure this file opens with. The existing gate
+`EveryShaderHotReloadImplementationIsCalledByTheRenderer`
+(`buildIntegritySuite.cpp:3561`) checks implementation → call site; inverting it
+to creator → implementation is the same grep in the other direction and needs no
+device.
+
+**Task 2 is the third member of the "a documented failure return that nobody
+reads" family.** `CommandBufferManager::beginCommandBuffer` returns
+`vk::CommandBuffer{}` on three failure paths (`CommandBufferManager.cpp:16,34,48`)
+and its partner `endAndSubmitCommandBuffer` guards against exactly that
+(`:59-62`) — so the null return is the contract, not an accident. Nine call sites
+exist; **one** checks it (`Texture.cpp:160`). The other eight record commands into
+`VK_NULL_HANDLE` — `vkCmdPipelineBarrier(VK_NULL_HANDLE, …)`, not a validation
+error the layers can catch on a dispatchable-handle argument. Same shape as
+`VulkanCreationResultsAreChecked` (`buildIntegritySuite.cpp:2800`), and the same
+gate technique applies.
+
+**Task 3 is a member field that is only ever written on one of the two paths that
+should write it.** `Texture::createImage` (`Texture.cpp:208-223`) takes
+`in_mip_levels`, forwards it to `VulkanImage::create`, and never assigns
+`this->mip_levels`. `mip_levels` is what `createTextureSampler` passes as the
+sampler's `maxLod` (`Texture.cpp:241`) and what the public `getMipLevel()` returns
+(`Texture.ixx:38`). Only `uploadRgba` sets it. Every texture built the other way —
+`Clouds::createStorageTexture`, `SkyBox::uploadCubeMapFaces`,
+`CascadedShadowMap`'s array — therefore gets `maxLod = 0`. All three happen to use
+one mip level today, so this is latent, not currently visible; it is also exactly
+the trap the next multi-mip storage/cubemap texture walks into, and it will
+present as "my mips are ignored", not as an error.
+
+**Task 4 is a coverage gap the test file itself declares.**
+`frustumSuite.cpp:107-109` says in a comment that its tests do NOT distinguish the
+`[0,1]`-depth near plane (`row2`) from the OpenGL `row3 + row2` form, and
+`Frustum.cpp:40-51` spends twelve lines justifying the unusual choice. A
+derivation that is deliberate, non-textbook, and unpinned is one "cleanup" commit
+from silently reverting.
+
+**Task 5 is a unit mismatch in shared frontend code.**
+`apply_keyboard_input` (`CameraController.ixx:52-53`) adds
+`movement_speed * delta_time` — a distance in world units — to `yaw`, a value in
+degrees, while `turn_speed` (the field that exists for exactly this) is read only
+by `apply_mouse_input`. It is also the only one of the two input helpers that does
+not refresh the basis it invalidated.
+
+Candidates found but NOT tasked this cycle (checked, then rejected or deferred
+with a reason — do not re-propose without new evidence): **an
+`ImageMemoryBarrier` builder** — unchanged since batch VIII, still gated on host
+GPU verification being restored. **The four remaining hand-rolled
+`vk::ImageSubresourceRange` blocks** — re-rejected for the fourth time; stop
+re-checking them. **`Src/KomputePlayground`** — still an owner decision.
+**`histogram.wgsl` is the only file in the Rust crate's `src/shaders/` with no
+`wgslMap` row** — that is the intended outcome of `b1016f25` retiring
+`histogram.slang`, not drift. **`GltfLoader::adoptParsed`** — checked against
+`GltfLoader.ixx`'s member list; it moves all six parse-result members, no
+repeat of the batch XI mesh-range bug. **`docs/cpp-renderer-improvements.md` has
+not been touched since 2026-08-02** — it is a curated campaign log, not a
+per-commit changelog; drift is arguable and no gate claims otherwise.
+
+- [ ] **(S) Check `beginCommandBuffer`'s documented null return at the eight call sites that ignore it, free the buffer it leaks when `begin()` fails, and gate it** — eight sites record commands into `VK_NULL_HANDLE` on a path the factory explicitly supports returning.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/CommandBufferManager.cpp:11-52` — the
+    three `return vk::CommandBuffer{}` paths; note that the one at `:48` returns
+    **after** `allocateCommandBuffers` succeeded, so the buffer is never freed.
+  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:157-164` — the only call site
+    that checks. Copy its shape (log, release anything already acquired,
+    return/skip) at the others.
+  - The eight unchecked sites: `ASManager.cpp:107`, `:157`, `:182`, `:268`;
+    `VulkanRenderer.cpp:1282`; `Clouds.cpp:38`, `:110`; `SkyBox.cpp:147`;
+    `VulkanBufferManager.cpp:21`. (Nine call sites total, one already checked.)
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:2800` —
+    `VulkanCreationResultsAreChecked`, the gate this one is modelled on.
+
+  **Steps:**
+  1. In `beginCommandBuffer`, on the `begin()` failure path
+     (`CommandBufferManager.cpp:44-49`), call
+     `device.freeCommandBuffers(command_pool, 1, &command_buffer)` before
+     returning the null handle.
+  2. While in that function, replace the one-element
+     `std::vector<vk::CommandBuffer> buffers(1)` (`:29`) with a
+     `std::array<vk::CommandBuffer, 1>` — this function runs once per texture
+     upload, per layout transition and per AS build, and the heap allocation
+     buys nothing. Drop the now-impossible `buffers.empty()` check.
+  3. At each of the eight sites, add an early-out immediately after the call:
+     log via `spdlog::error` naming the operation, clean up anything already
+     created in that function (e.g. the staging buffer at `SkyBox.cpp:137`, the
+     transient command pool at `Clouds.cpp:99-108`), and return. Do not call
+     `endAndSubmitCommandBuffer` on the null handle — it already no-ops, but the
+     work in between is what must be skipped.
+  4. Add `TEST(BuildIntegrity, EveryBeginCommandBufferResultIsChecked)`: scan
+     `Src/**/*.cpp` for `beginCommandBuffer(`, and for each hit require a
+     null-check on the assigned variable within the following ~6 source lines.
+     Follow `VulkanCreationResultsAreChecked`'s scanning and reporting style.
+
+  **Test:** the new gate, RED before step 3 (it must name all eight files) and
+  GREEN after. No device needed.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+  from the repo root.
+
+  **Context:** This is the same class as `3467`'s "a CI fuzz list that cannot say
+  no" and batch III's unchecked-`vk::Result` sweep: a failure signal that exists
+  and is never read. Exceptions are disabled project-wide (`AGENTS.md`, "Code
+  Conventions"), so a returned null handle is the only failure channel these
+  functions have — reading it is not optional defensiveness.
+
+- [ ] **(S) (refactor) Make `Texture::createImage` record the mip count it was given, so `getMipLevel()` and the sampler's `maxLod` stop depending on which constructor path ran** — today only `uploadRgba` sets the field, and every other path samples mip 0 forever.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:208-223` — `createImage`, which
+    takes `in_mip_levels` and never stores it.
+  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:236-251` — `createTextureSampler`,
+    which passes `mip_levels` as `maxLod`.
+  - `Src/GraphicsEngineVulkan/scene/Texture.ixx:38,92` — `getMipLevel()` and the
+    `mip_levels = 0` default.
+  - The three affected call sites:
+    `Clouds.cpp:34-36`, `SkyBox.cpp:135,184`,
+    `CascadedShadowMap.cpp:71` (all single-mip today).
+  - `Src/GraphicsEngineVulkan/vulkan_base/SamplerBuilder.cpp:11-38` — where
+    `maxLod` lands.
+
+  **Steps:**
+  1. In `createImage`, assign `this->mip_levels = in_mip_levels;` before
+     forwarding to `VulkanImage::create`.
+  2. Audit the three call sites above: each currently passes `1`, so
+     `maxLod` moves from `0.0F` to `1.0F`. Both are correct for a one-mip image
+     (the LOD is clamped to the view's level count either way) — state that in a
+     comment at `createTextureSampler` so a future reader does not "fix" it back.
+  3. Reset `mip_levels` to `0` in `cleanUp()`, alongside the sampler reset — the
+     move-assignment operator already does this for the moved-from object
+     (`Texture.cpp:54`) and `cleanUp` is the other teardown path.
+  4. `getMipLevel()` currently has no callers in `Src/` or `Test/`. Do not delete
+     it — step 1 makes it correct, and the new test below is its first caller.
+
+  **Test:** add `TextureMipLevels.CreateImageRecordsTheRequestedMipCount` to a
+  new `Test/commit/VulkanEngine/` suite only if it can run without a device;
+  otherwise extend the existing device-free assertions and instead pin the
+  invariant in `buildIntegritySuite.cpp`: assert that `Texture::createImage`'s
+  body in `Src/GraphicsEngineVulkan/scene/Texture.cpp` assigns `mip_levels`.
+  Prefer the source gate — a real `createImage` needs VMA and a logical device.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root.
+
+  **Context:** Same family as `c7a55c2e` (shadow-resolution table size derived
+  rather than restated) and `a0759d88` (`MAX_TEXTURE_COUNT` pinned): a value that
+  has one true source and several places that can disagree with it. Nothing
+  renders differently today — say so in the commit message rather than claiming a
+  fix, and do not go looking for a golden that moves.
+
+- [ ] **(S) Pin the near plane's actual position, which `frustumSuite.cpp` says in a comment it cannot currently distinguish** — the `[0,1]`-depth derivation is deliberate, non-textbook and unguarded.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/Frustum.cpp:40-53` — the twelve-line
+    justification for `planes[4] = normalizePlane(row2)` instead of the OpenGL
+    `row3 + row2`, including the worked example (near 0.1, far 100: `row2` puts
+    the plane at view z = -0.1; the OpenGL form at -0.05).
+  - `Test/commit/VulkanEngine/frustumSuite.cpp:101-116` — the existing
+    `CullsGeometryOutsideEachPlane` and the comment at `:107-109` admitting the
+    gap. `:33-45` has the shared `kNear`/`kFar`/`default_view_projection()` rig
+    to reuse.
+
+  **Steps:**
+  1. Add `TEST(FrustumUnit, NearPlaneSitsAtTheProjectionNearDistance)` using the
+     existing rig.
+  2. Build an AABB that lies **entirely** inside the sliver between the two
+     candidate planes: view-space z in roughly `[-0.09, -0.06]`, x/y small enough
+     to be well inside the side planes (e.g. ±0.01).
+  3. Assert `isVisible(planes, box)` is `false`. With `row2` the box is behind
+     the near plane and culled; with `row3 + row2` the near plane sits at -0.05
+     and the box survives — so the assertion fails on the OpenGL form. Say that
+     in a comment, and reference `Frustum.cpp:40-51`.
+  4. Add the mirror assertion: a box at view z `[-0.2, -0.15]` (just beyond the
+     near plane) must be visible, so the test cannot pass by culling everything.
+  5. Update the comment at `frustumSuite.cpp:107-109` — it becomes false.
+  6. Keep the epsilon in mind: `visibleAgainstPlanes` uses `kEpsilon = 1e-4F`
+     (`Frustum.cpp:75`), so leave more than that much margin on both boxes.
+
+  **Test:** the two new assertions above. Verify step 3 is meaningful by
+  temporarily changing `Frustum.cpp:51` to `normalizePlane(row3 + row2)` and
+  confirming the new test goes RED and the rest of `FrustumUnit.*` stays GREEN —
+  that is the whole point of the task. Revert the probe.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=FrustumUnit.*`
+  from the repo root. No GPU needed.
+
+  **Context:** `frustumSuite.cpp`'s header explains why culling tests weigh the
+  two error directions asymmetrically — a false negative deletes geometry the
+  user should see. This test is the other direction (a plane that is too
+  permissive costs a few draws), which is precisely why it was skipped and
+  precisely why the derivation can rot unnoticed. Follow the file's existing
+  convention of asserting on structural properties, not on plane coefficients.
+
+- [ ] **(S) Stop `apply_keyboard_input` from rotating the camera at its movement speed, and make it refresh the basis it just invalidated** — Q/E add a value in world-units-per-second to a field in degrees, and leave `front`/`right`/`up` stale.
+
+  **Files to read:**
+  - `Src/shared/frontend/CameraController.ixx:40-68` — `apply_keyboard_input`
+    (`:52-53` are the Q/E lines; `velocity` is `movement_speed * delta_time`)
+    and `apply_mouse_input`, which scales by `turn_speed` and ends with
+    `update_camera_vectors`.
+  - `Src/GraphicsEngineVulkan/scene/Camera.cpp:85-89` — `Camera::key_control`,
+    which papers over the missing refresh by calling `update()` itself.
+  - `Src/shared/frontend/CameraState.hpp:18-19` and `Camera.cpp:62-63,75-76` —
+    `movement_speed = 10.0`, `turn_speed = 0.25` (degrees per pixel; not a
+    per-second rate, so it is **not** the right multiplier here either).
+  - `Test/commit/VulkanEngine/cameraControllerSuite.cpp:47-61,74,95` — the rig
+    and the existing per-key assertions to extend.
+
+  **Steps:**
+  1. Add a named constant in `CameraController.ixx`, e.g.
+     `inline constexpr float kKeyboardTurnDegreesPerSecond = 90.0F;`, with a
+     comment saying why it is not `turn_speed` (that field is degrees per pixel
+     of mouse travel, a different unit) and not `movement_speed` (world units
+     per second).
+  2. Change the Q/E branches to
+     `state.yaw -= kKeyboardTurnDegreesPerSecond * delta_time;` / `+=`,
+     keeping the existing sign convention.
+  3. Call `update_camera_vectors(state)` at the end of `apply_keyboard_input`,
+     so the helper is self-consistent with `apply_mouse_input` and a caller other
+     than `Camera::key_control` cannot get a stale basis.
+  4. Leave `Camera::key_control`'s `update()` call in place (it is idempotent)
+     but note in a comment that the helper now handles it.
+  5. Check `Test/commit/VulkanEngine/cameraSceneConfigSuite.cpp:112-115`, which
+     hard-codes `movement_speed * dt` for W/S — translation is unchanged, so that
+     test must still pass untouched. If it does not, the change touched the wrong
+     branch.
+
+  **Steps to avoid:** do not add a GUI slider for the new constant, and do not
+  touch `turn_speed` or the mouse path — a second knob is a separate decision.
+
+  **Test:** extend `cameraControllerSuite.cpp` with
+  `CameraController.KeyboardYawRateIsIndependentOfMovementSpeed`: run one Q press
+  for a fixed `delta_time` at `movement_speed = 10`, then the same at
+  `movement_speed = 100`, and assert the yaw delta is identical and equals
+  `kKeyboardTurnDegreesPerSecond * delta_time`. Add
+  `CameraController.KeyboardYawUpdatesTheBasis`: assert `front` changed after a Q
+  press, calling `apply_keyboard_input` **directly** (not through `Camera`, whose
+  `update()` would mask the bug).
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=CameraController*:Camera*`
+  from the repo root. No GPU needed.
+
+  **Context:** `Src/shared/frontend/` is renderer-agnostic code — the Rust
+  controller (`crates/webgpu_renderer/src/scene/controller.rs`) has no keyboard
+  yaw at all, so there is no cross-renderer contract to keep here, only an
+  internal one. The user-visible effect today is that Q/E turn at ~10°/s, which
+  reads as "the keys barely work" rather than as a bug.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

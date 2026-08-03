@@ -318,6 +318,19 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
           "Failed to create skybox graphics pipeline!");
 }
 
+void SkyBox::shaderHotReload(vk::DescriptorSetLayout sharedLayout)
+{
+    if (graphicsPipeline) {
+        device->getLogicalDevice().destroyPipeline(graphicsPipeline);
+        graphicsPipeline = nullptr;
+    }
+    if (pipelineLayout) {
+        device->getLogicalDevice().destroyPipelineLayout(pipelineLayout);
+        pipelineLayout = nullptr;
+    }
+    createGraphicsPipeline(sharedLayout);
+}
+
 void SkyBox::createMesh(vk::CommandPool commandPool)
 {
     // Fullscreen quad indices

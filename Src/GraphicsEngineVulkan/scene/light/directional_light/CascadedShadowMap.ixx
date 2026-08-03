@@ -107,6 +107,7 @@ class CascadedShadowMap
       vk::DescriptorSetLayout sharedRenderDescriptorSetLayout);
 
     void createGraphicsPipeline();
+    void shaderHotReload();
     void recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, std::span<const vk::DescriptorSet> descriptorSets, bool cullingEnabled);
 
     Kataglyphis::Texture* getShadowMapArray() { return shadowMapArray.get(); }
@@ -166,5 +167,6 @@ class CascadedShadowMap
     void createRenderPass();
     void createFramebuffers();
     void createDescriptorSetAndPipeline();
+    void buildGraphicsPipeline();
 };
 }

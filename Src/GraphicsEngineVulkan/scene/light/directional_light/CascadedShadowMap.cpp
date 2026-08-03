@@ -284,7 +284,28 @@ void CascadedShadowMap::createDescriptorSetAndPipeline()
 void CascadedShadowMap::createGraphicsPipeline()
 {
     createDescriptorSetAndPipeline();
+    buildGraphicsPipeline();
+}
 
+void CascadedShadowMap::shaderHotReload()
+{
+    if (graphicsPipeline) {
+        device->getLogicalDevice().destroyPipeline(graphicsPipeline);
+        graphicsPipeline = nullptr;
+    }
+    if (pipelineLayout) {
+        device->getLogicalDevice().destroyPipelineLayout(pipelineLayout);
+        pipelineLayout = nullptr;
+    }
+    // Rebuilds only the pipeline/layout, not lightMatricesDescriptors or its
+    // buffer - createDescriptorSetAndPipeline() re-uploads the light matrices
+    // buffer and would leak the previous descriptor set + buffer if called
+    // again here, and a reload changes shaders, not cascade data.
+    buildGraphicsPipeline();
+}
+
+void CascadedShadowMap::buildGraphicsPipeline()
+{
     // Slang-emitted SPIR-V: compiled by compile-slang-shaders.ps1 at build time.
     // Run from the repo root (per AGENTS.md).
     std::string const slang_spv_dir = "Resources/ShadersSlang/build/spirv/rasterizer/shadows/";

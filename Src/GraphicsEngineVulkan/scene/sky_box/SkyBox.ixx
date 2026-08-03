@@ -29,6 +29,7 @@ class SkyBox
     void createRenderPass(vk::Format format, vk::Format depthFormat);
     void createFramebuffers(std::span<const vk::ImageView> imageViews, vk::ImageView depthView, uint32_t width, uint32_t height);
     void createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout);
+    void shaderHotReload(vk::DescriptorSetLayout sharedLayout);
     void recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, std::span<const vk::DescriptorSet> descriptorSets, bool skyboxEnabled);
 
     void recreateFrameResources(std::span<const vk::ImageView> imageViews, vk::ImageView depthView, uint32_t width, uint32_t height);
