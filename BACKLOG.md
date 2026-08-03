@@ -5941,51 +5941,6 @@ repeat of the batch XI mesh-range bug. **`docs/cpp-renderer-improvements.md` has
 not been touched since 2026-08-02** — it is a curated campaign log, not a
 per-commit changelog; drift is arguable and no gate claims otherwise.
 
-- [ ] **(S) (refactor) Make `Texture::createImage` record the mip count it was given, so `getMipLevel()` and the sampler's `maxLod` stop depending on which constructor path ran** — today only `uploadRgba` sets the field, and every other path samples mip 0 forever.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:208-223` — `createImage`, which
-    takes `in_mip_levels` and never stores it.
-  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:236-251` — `createTextureSampler`,
-    which passes `mip_levels` as `maxLod`.
-  - `Src/GraphicsEngineVulkan/scene/Texture.ixx:38,92` — `getMipLevel()` and the
-    `mip_levels = 0` default.
-  - The three affected call sites:
-    `Clouds.cpp:34-36`, `SkyBox.cpp:135,184`,
-    `CascadedShadowMap.cpp:71` (all single-mip today).
-  - `Src/GraphicsEngineVulkan/vulkan_base/SamplerBuilder.cpp:11-38` — where
-    `maxLod` lands.
-
-  **Steps:**
-  1. In `createImage`, assign `this->mip_levels = in_mip_levels;` before
-     forwarding to `VulkanImage::create`.
-  2. Audit the three call sites above: each currently passes `1`, so
-     `maxLod` moves from `0.0F` to `1.0F`. Both are correct for a one-mip image
-     (the LOD is clamped to the view's level count either way) — state that in a
-     comment at `createTextureSampler` so a future reader does not "fix" it back.
-  3. Reset `mip_levels` to `0` in `cleanUp()`, alongside the sampler reset — the
-     move-assignment operator already does this for the moved-from object
-     (`Texture.cpp:54`) and `cleanUp` is the other teardown path.
-  4. `getMipLevel()` currently has no callers in `Src/` or `Test/`. Do not delete
-     it — step 1 makes it correct, and the new test below is its first caller.
-
-  **Test:** add `TextureMipLevels.CreateImageRecordsTheRequestedMipCount` to a
-  new `Test/commit/VulkanEngine/` suite only if it can run without a device;
-  otherwise extend the existing device-free assertions and instead pin the
-  invariant in `buildIntegritySuite.cpp`: assert that `Texture::createImage`'s
-  body in `Src/GraphicsEngineVulkan/scene/Texture.cpp` assigns `mip_levels`.
-  Prefer the source gate — a real `createImage` needs VMA and a logical device.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root.
-
-  **Context:** Same family as `c7a55c2e` (shadow-resolution table size derived
-  rather than restated) and `a0759d88` (`MAX_TEXTURE_COUNT` pinned): a value that
-  has one true source and several places that can disagree with it. Nothing
-  renders differently today — say so in the commit message rather than claiming a
-  fix, and do not go looking for a golden that moves.
-
 - [ ] **(S) Pin the near plane's actual position, which `frustumSuite.cpp` says in a comment it cannot currently distinguish** — the `[0,1]`-depth derivation is deliberate, non-textbook and unguarded.
 
   **Files to read:**

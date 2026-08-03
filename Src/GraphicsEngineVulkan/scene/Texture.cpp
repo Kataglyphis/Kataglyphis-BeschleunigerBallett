@@ -219,6 +219,7 @@ void Kataglyphis::Texture::createImage(std::shared_ptr<VulkanDevice>in_device,
   uint32_t depth)
 {
     this->device = in_device;
+    this->mip_levels = in_mip_levels;
     vulkanImage.create(in_device, width, height, in_mip_levels, format, tiling, use_flags, prop_flags, array_layers, create_flags, image_type, depth);
 }
 
@@ -236,6 +237,11 @@ void Kataglyphis::Texture::createImageView(std::shared_ptr<VulkanDevice>in_devic
 void Kataglyphis::Texture::createTextureSampler(std::shared_ptr<VulkanDevice>in_device, vk::Filter filter, vk::SamplerAddressMode addressMode, vk::Bool32 compareEnable, vk::CompareOp compareOp)
 {
     this->device = in_device;
+    // maxLod now tracks the mip count createImage() was actually given (was
+    // always 0.0F before mip_levels was recorded). For the current single-mip
+    // callers (Clouds, SkyBox, CascadedShadowMap) this moves maxLod from 0.0F
+    // to 1.0F, which is still correct: Vulkan clamps LOD to the image view's
+    // level count either way, so do not "fix" this back to 0.0F.
     vk::SamplerCreateInfo samplerInfo = buildSamplerCreateInfo(filter,
       addressMode,
       static_cast<float>(mip_levels),
@@ -258,6 +264,7 @@ void Kataglyphis::Texture::cleanUp()
     }
     vulkanImageView.cleanUp();
     vulkanImage.cleanUp();
+    mip_levels = 0;
 }
 
 Kataglyphis::Texture::~Texture() { cleanUp(); }

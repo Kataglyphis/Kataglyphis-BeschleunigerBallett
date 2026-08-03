@@ -4026,3 +4026,49 @@ TEST(BuildIntegrity, ComputePipelinesAreCreatedThroughTheSharedHelper)
              return joined;
          }();
 }
+
+// Texture::createImage takes in_mip_levels but, before this test existed, only
+// uploadRgba's own path assigned it to the mip_levels field - every other
+// caller (Clouds, SkyBox, CascadedShadowMap) went through createImage
+// directly and left mip_levels at its 0 default, so getMipLevel() and the
+// sampler's maxLod silently disagreed with the image that was actually
+// created. There is no device-free way to construct a Texture and call
+// createImage (it needs VMA and a logical device), so this pins the source
+// text instead of exercising the function.
+TEST(BuildIntegrity, TextureCreateImageRecordsTheMipLevelItWasGiven)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path texture_cpp = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "Texture.cpp";
+    std::ifstream file(texture_cpp);
+    ASSERT_TRUE(static_cast<bool>(file)) << "could not open " << texture_cpp.string();
+
+    static const std::string kFunctionSignature = "Kataglyphis::Texture::createImage(";
+    static const std::string kAssignment = "mip_levels = in_mip_levels;";
+
+    std::string line;
+    bool in_function = false;
+    bool function_started = false;// seen the opening '{' of the definition body
+    int brace_depth = 0;
+    bool found_assignment = false;
+    while (std::getline(file, line)) {
+        if (!in_function) {
+            if (line.find(kFunctionSignature) == std::string::npos) { continue; }
+            in_function = true;
+            continue;
+        }
+
+        brace_depth += static_cast<int>(std::count(line.begin(), line.end(), '{'));
+        brace_depth -= static_cast<int>(std::count(line.begin(), line.end(), '}'));
+        if (brace_depth > 0) { function_started = true; }
+        if (line.find(kAssignment) != std::string::npos) { found_assignment = true; }
+        if (function_started && brace_depth <= 0) { break; }// reached the closing '}'
+    }
+
+    ASSERT_TRUE(in_function) << texture_cpp.string() << " has no " << kFunctionSignature
+                             << " definition to check - did createImage move or get renamed?";
+    EXPECT_TRUE(found_assignment)
+      << "Texture::createImage no longer assigns mip_levels from in_mip_levels - getMipLevel() and the "
+         "sampler's maxLod would go back to depending on which constructor path ran.";
+}
