@@ -19,8 +19,10 @@ import fullscreen;
 
 struct TonemapUniforms
 {
-    // x: bloom strength, y: SSAO strength, z: unused, w: 1.0 when this
-    // shader must gamma-encode its own output (non-sRGB web canvas).
+    // x: bloom strength, y: SSAO strength, z: unused (exposure comes from
+    // exposureState, not a CPU uniform - bloom is pre-exposed the same way),
+    // w: 1.0 when this shader must gamma-encode its own output (non-sRGB web
+    // canvas).
     float4 params;
 };
 [vk::binding(3, 0)] ConstantBuffer<TonemapUniforms> tonemapUniforms;
@@ -58,7 +60,7 @@ float4 fs_main(VsOut In) : SV_Target
     float aoRaw = aoTex.Sample(hdrSampler, In.uv).r;
     float ao = lerp(1.0, aoRaw, tonemapUniforms.params.y);
     float exposure = exp2(exposureState[0]);
-    float3 mapped = aces_tonemap((hdr * ao + bloom * tonemapUniforms.params.x) * exposure);
+    float3 mapped = aces_tonemap(hdr * ao * exposure + bloom * tonemapUniforms.params.x);
 
     // An sRGB target encodes in hardware and gets linear values. WebGPU
     // canvases expose no sRGB surface format, so on web the encode happens

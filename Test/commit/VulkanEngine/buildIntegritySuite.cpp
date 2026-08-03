@@ -1691,6 +1691,81 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
          }();
 }
 
+// bloom.slang's fs_brightpass and tonemap.slang's fs_main must agree on
+// where auto-exposure is applied: bloom pre-exposes in the bright pass (so
+// its fixed THRESHOLD of 1.0 means something across the whole auto-exposure
+// range), and tonemap must apply exposure to the raw HDR term only - never
+// to the bloom term, which would double-expose it. See BACKLOG.md's
+// "Threshold bloom in post-exposure units" entry for the reasoning.
+TEST(BuildIntegrity, BloomAndTonemapAgreeOnWhereExposureIsApplied)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path bloom_path = repo_root / "Resources" / "ShadersSlang" / "bloom" / "bloom.slang";
+    std::ifstream bloom_file(bloom_path);
+    ASSERT_TRUE(bloom_file) << "missing " << bloom_path.string();
+    const std::string bloom_source((std::istreambuf_iterator<char>(bloom_file)), std::istreambuf_iterator<char>());
+
+    EXPECT_NE(bloom_source.find("exposureState"), std::string::npos)
+      << "bloom.slang must read exposureState so fs_brightpass thresholds the exposed HDR value, not the raw "
+         "one: "
+      << bloom_path.string();
+
+    const fs::path tonemap_path = repo_root / "Resources" / "ShadersSlang" / "tonemap" / "tonemap.slang";
+    std::ifstream tonemap_file(tonemap_path);
+    ASSERT_TRUE(tonemap_file) << "missing " << tonemap_path.string();
+    const std::string tonemap_source(
+      (std::istreambuf_iterator<char>(tonemap_file)), std::istreambuf_iterator<char>());
+
+    static const std::string kCompositeCall = "aces_tonemap(";
+    const std::size_t call_pos = tonemap_source.find(kCompositeCall);
+    ASSERT_NE(call_pos, std::string::npos)
+      << "tonemap.slang's aces_tonemap(...) composite call moved or was renamed: " << tonemap_path.string();
+
+    const std::size_t args_start = call_pos + kCompositeCall.size();
+    std::size_t depth = 1;
+    std::size_t pos = args_start;
+    for (; pos < tonemap_source.size() && depth > 0; ++pos) {
+        if (tonemap_source[pos] == '(') { ++depth; }
+        else if (tonemap_source[pos] == ')') { --depth; }
+    }
+    ASSERT_EQ(depth, 0u) << "unbalanced parentheses after aces_tonemap( in " << tonemap_path.string();
+    const std::string composite_expr = tonemap_source.substr(args_start, pos - 1 - args_start);
+
+    // Split the composite's top-level '+' terms (none of them contain nested
+    // '+' inside parens here, but track depth anyway so a future refactor
+    // that adds one does not silently break this into the wrong terms).
+    std::vector<std::string> terms;
+    std::size_t term_start = 0;
+    std::size_t term_depth = 0;
+    for (std::size_t i = 0; i < composite_expr.size(); ++i) {
+        const char ch = composite_expr[i];
+        if (ch == '(') { ++term_depth; }
+        else if (ch == ')') { --term_depth; }
+        else if (ch == '+' && term_depth == 0) {
+            terms.push_back(composite_expr.substr(term_start, i - term_start));
+            term_start = i + 1;
+        }
+    }
+    terms.push_back(composite_expr.substr(term_start));
+
+    const auto bloom_term =
+      std::find_if(terms.begin(), terms.end(), [](const std::string &term) { return term.find("bloom") != std::string::npos; });
+    ASSERT_NE(bloom_term, terms.end())
+      << "no term of aces_tonemap(...)'s composite references bloom: " << composite_expr;
+    EXPECT_EQ(bloom_term->find("exposure"), std::string::npos)
+      << "tonemap.slang must not multiply the bloom term by exposure - bloom.slang's fs_brightpass already "
+         "pre-exposed it, so multiplying again here double-exposes bloom: "
+      << *bloom_term;
+
+    const auto hdr_term =
+      std::find_if(terms.begin(), terms.end(), [](const std::string &term) { return term.find("hdr") != std::string::npos; });
+    ASSERT_NE(hdr_term, terms.end()) << "no term of aces_tonemap(...)'s composite references hdr: " << composite_expr;
+    EXPECT_NE(hdr_term->find("exposure"), std::string::npos)
+      << "tonemap.slang must still apply exposure to the raw HDR term: " << *hdr_term;
+}
+
 TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)
 {
     const fs::path repo_root = find_repo_root();

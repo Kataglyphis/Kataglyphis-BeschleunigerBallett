@@ -8,6 +8,11 @@ import fullscreen;
 [vk::binding(0, 0)] Texture2D<float4> srcTex;
 [vk::binding(1, 0)] SamplerState srcSampler;
 
+// [adapted EV, target EV], written by cs_reduce_exposure and also read by
+// tonemap.slang. Read here rather than pre-exposing on the CPU so there is
+// ONE source of truth. The blur entry points do not read it.
+[vk::binding(2, 0)] StructuredBuffer<float> exposureState;
+
 static const float THRESHOLD = 1.0;
 
 static const float W0 = 0.227027;
@@ -42,7 +47,7 @@ FullscreenVsOut vs_main(uint vid : SV_VertexID)
 [shader("fragment")]
 float4 fs_brightpass(FullscreenVsOut In) : SV_Target
 {
-    float3 hdr = srcTex.Sample(srcSampler, In.uv).rgb;
+    float3 hdr = srcTex.Sample(srcSampler, In.uv).rgb * exp2(exposureState[0]);
     float3 bright = max(hdr - float3(THRESHOLD), float3(0.0));
     return float4(bright, 1.0);
 }
