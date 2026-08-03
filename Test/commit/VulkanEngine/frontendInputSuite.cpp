@@ -13,6 +13,8 @@
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 
+#include "shared/frontend/WindowInputState.hpp"
+
 import kataglyphis.shared.frontend.frame_input;
 import kataglyphis.shared.frontend.window_input_callbacks;
 
@@ -98,6 +100,48 @@ TEST(WindowInputUnit, FirstMouseMoveDoesNotJumpTheCamera)
     handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, 650.0, 350.0);
     EXPECT_FLOAT_EQ(x_change, 10.0F);
     EXPECT_FLOAT_EQ(y_change, 10.0F);
+}
+
+TEST(WindowInputUnit, LookModeEntryReSeedsTheMouseOrigin)
+{
+    // A default-constructed WindowInputState must re-seed on its first
+    // event, matching a freshly (re)entered look mode - otherwise the first
+    // right-drag of every run snaps the camera by the cursor's absolute
+    // screen position.
+    Kataglyphis::Frontend::WindowInputState state;
+
+    handle_mouse_callback(
+      nullptr, state.last_x, state.last_y, state.x_change, state.y_change, state.mouse_first_moved, 640.0, 360.0);
+    EXPECT_FLOAT_EQ(state.x_change, 0.0F);
+    EXPECT_FLOAT_EQ(state.y_change, 0.0F);
+}
+
+TEST(WindowInputUnit, CursorCrossingAnImGuiPanelDoesNotJumpTheCamera)
+{
+    ImGuiContext *ctx = ImGui::CreateContext();
+    ASSERT_NE(ctx, nullptr);
+
+    float last_x = 0.0F;
+    float last_y = 0.0F;
+    float x_change = 0.0F;
+    float y_change = 0.0F;
+    bool first_moved = true;
+
+    ImGui::GetIO().WantCaptureMouse = false;
+    handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, 100.0, 100.0);
+
+    ImGui::GetIO().WantCaptureMouse = true;
+    handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, 400.0, 100.0);
+    EXPECT_FLOAT_EQ(x_change, 0.0F) << "mouse input leaked past the ImGui capture gate";
+
+    // Leaving the panel: the first event after capture ends must re-seed
+    // against the cursor's current position, not difference against the
+    // stale pre-panel position (which would produce 310, not 10).
+    ImGui::GetIO().WantCaptureMouse = false;
+    handle_mouse_callback(nullptr, last_x, last_y, x_change, y_change, first_moved, 410.0, 100.0);
+    EXPECT_FLOAT_EQ(x_change, 10.0F);
+
+    ImGui::DestroyContext(ctx);
 }
 
 TEST(WindowInputUnit, ConsumeAxisDeltaReturnsAndResets)

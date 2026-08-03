@@ -59,7 +59,16 @@ inline void handle_mouse_callback(GLFWwindow *window,
   double y_pos)
 {
     (void)window;
-    if (ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse) { return; }
+    if (ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse) {
+        // Keep tracking the raw cursor position while ImGui holds capture,
+        // even though no delta is emitted - otherwise last_x/last_y go stale
+        // at the pre-panel position and the first event after capture ends
+        // differences against it, snapping the camera by the distance
+        // crossed while hovering the panel.
+        last_x = static_cast<float>(x_pos);
+        last_y = static_cast<float>(y_pos);
+        return;
+    }
 
     if (mouse_first_moved) {
         last_x = static_cast<float>(x_pos);
@@ -101,6 +110,10 @@ inline void handle_mouse_button_callback(GLFWwindow *window,
 {
     if (should_capture_cursor(button, action)) {
         if (imgui_wants_mouse_capture()) { return; }
+        // Entering look mode must always re-seed, not just leaving it -
+        // otherwise the first drag of every run snaps the camera by the
+        // cursor's absolute screen position.
+        mouse_first_moved = true;
         glfwSetCursorPosCallback(window, mouse_callback);
     } else if (should_release_cursor(button, action)) {
         // A release must always end look mode, even while ImGui holds

@@ -5799,55 +5799,6 @@ code. **`Src/KomputePlayground`** — unchanged; still an owner decision.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Re-seed the look-mode mouse origin when look mode starts and when ImGui takes capture, not only on release** — the first right-drag of every run snaps the camera by the cursor's absolute screen position.
-
-  **Files to read:**
-  - `Src/shared/frontend/WindowInputState.hpp:16` — `bool mouse_first_moved{};` (false)
-  - `Src/shared/frontend/WindowInputCallbacks.ixx:52-75` — `handle_mouse_callback`: the ImGui-capture early return at `:62` leaves `last_x`/`last_y` stale
-  - `Src/shared/frontend/WindowInputCallbacks.ixx:96-112` — `handle_mouse_button_callback`: sets `mouse_first_moved = true` only on the release branch (`:109`)
-  - `Src/GraphicsEngineVulkan/window/Window.cpp:135-157` — the only wiring: both callbacks operate on `Window::input_state`, and nothing else ever writes `mouse_first_moved`
-  - `Test/commit/VulkanEngine/frontendInputSuite.cpp:80-143` — the two existing tests to follow (`FirstMouseMoveDoesNotJumpTheCamera` sets `first_moved = true` by hand; `ImGuiCaptureGateSwallowsInput` builds a real `ImGuiContext`)
-
-  **Steps:**
-  1. `WindowInputState.hpp`: change to `bool mouse_first_moved{ true };` so a
-     freshly constructed state re-seeds on its first event.
-  2. `handle_mouse_button_callback`: in the `should_capture_cursor` branch,
-     after the `imgui_wants_mouse_capture()` gate and before
-     `glfwSetCursorPosCallback`, set `mouse_first_moved = true`. Entering look
-     mode must always re-seed, not just leaving it.
-  3. `handle_mouse_callback`: on the ImGui-capture early return, set
-     `mouse_first_moved = true` before returning, so the first event after
-     capture ends re-seeds instead of differencing against a pre-panel position.
-     Comment why, in the style of the `RELEASE must always fall through`
-     comment at `:35-37`.
-  4. Do not touch `x_change`/`y_change` on the captured path — they are
-     consumed and zeroed every frame by `consume_axis_delta`
-     (`Window.cpp:80-82`), so there is no stale-delta problem to fix there.
-
-  **Test:** add two tests to `Test/commit/VulkanEngine/frontendInputSuite.cpp`:
-  - `WindowInputUnit.LookModeEntryReSeedsTheMouseOrigin` — a
-    default-constructed `Kataglyphis::Frontend::WindowInputState`, then one
-    `handle_mouse_callback` at (640, 360), must yield `x_change == 0` and
-    `y_change == 0`. This is the first-drag jump; it must be RED before step 1.
-  - `WindowInputUnit.CursorCrossingAnImGuiPanelDoesNotJumpTheCamera` — extend
-    the `ImGuiCaptureGateSwallowsInput` pattern: create a context, capture off,
-    move to (100, 100), capture on, move to (400, 100) (asserted zero, as
-    today), capture off, move to (410, 100), and assert `x_change == 10.0F`,
-    not `310.0F`. RED before step 3.
-  Follow the existing suite's `ImGui::CreateContext()` / `DestroyContext(ctx)`
-  bracketing so the tests stay order-independent.
-
-  **Build:** `clangcl-debug`. Run
-  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='WindowInputUnit.*:FrameInputUnit.*'`
-  from the repo root. Fully CPU — no GPU or window needed (both callbacks take
-  `GLFWwindow *` and the tests pass `nullptr`, as the suite header at
-  `frontendInputSuite.cpp:1-9` explains).
-
-  **Context:** `mouse_first_moved` was added for exactly this and is only half
-  wired. Both defects are user-visible on the bare host (right-drag to look);
-  the suite's existing tests miss them because one sets the flag by hand and the
-  other stops one event short of the jump.
-
 ### Shaders
 
 - [ ] **(M) (refactor) Retire `histogram.slang`, correct the ten "Mirrors `<x>`.wgsl" headers that now describe the relationship backwards, delete the proven-out `spike/` pair, and gate every entry-point Slang source against the manifest** — a source that compiles to nothing, diverged wholesale from the file it claims to mirror, and no gate can see it.

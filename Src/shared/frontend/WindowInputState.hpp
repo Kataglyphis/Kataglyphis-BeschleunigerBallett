@@ -13,7 +13,7 @@ struct WindowInputState
     float last_y{};
     float x_change{};
     float y_change{};
-    bool mouse_first_moved{};
+    bool mouse_first_moved{ true };
 };
 }// namespace Kataglyphis::Frontend
 
