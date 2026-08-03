@@ -39,7 +39,14 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::init(std::shared_ptr<Vulk
 void Kataglyphis::VulkanRendererInternals::Raytracing::shaderHotReload(
   std::span<const vk::DescriptorSetLayout> descriptor_set_layouts)
 {
-    device->getLogicalDevice().destroyPipeline(graphicsPipeline);
+    if (graphicsPipeline) {
+        device->getLogicalDevice().destroyPipeline(graphicsPipeline);
+        graphicsPipeline = nullptr;
+    }
+    if (pipeline_layout) {
+        device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
+        pipeline_layout = nullptr;
+    }
     createGraphicsPipeline(descriptor_set_layouts);
 }
 

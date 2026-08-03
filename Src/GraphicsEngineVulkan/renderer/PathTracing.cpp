@@ -40,7 +40,14 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::init(std::shared_ptr<Vul
 void Kataglyphis::VulkanRendererInternals::PathTracing::shaderHotReload(
   std::span<const vk::DescriptorSetLayout> descriptor_set_layouts)
 {
-    device->getLogicalDevice().destroyPipeline(pipeline);
+    if (pipeline) {
+        device->getLogicalDevice().destroyPipeline(pipeline);
+        pipeline = nullptr;
+    }
+    if (pipeline_layout) {
+        device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
+        pipeline_layout = nullptr;
+    }
     createPipeline(descriptor_set_layouts);
 }
 

@@ -5799,48 +5799,6 @@ code. **`Src/KomputePlayground`** — unchanged; still an owner decision.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Stop leaking a `vk::PipelineLayout` on every shader hot reload, in the four stages that recreate the pipeline but not the layout** — `DeferredRasterizer` already does it right; the other four overwrite a live handle.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:49-56` — the reference implementation (destroys both pipelines **and** both layouts)
-  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:55-60` and `:250-277` — reload body, and `createGraphicsPipeline` creating `pipeline_layout` at `:263-269`
-  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:51-54` and `:319-321`
-  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp:39-43` and `:259-261`
-  - `Src/GraphicsEngineVulkan/renderer/PathTracing.cpp:40-45` and `:204-206`
-  - each stage's `cleanUp()` (e.g. `PostStage.cpp:100-130`) — the only place the layout is destroyed today, and the guarded `if (handle) { destroy; handle = nullptr; }` idiom to reuse
-
-  **Steps:**
-  1. In each of the four `shaderHotReload` bodies, destroy the pipeline layout
-     alongside the pipeline before recalling the create function, using the same
-     guarded form the `cleanUp()` methods use, e.g. for `PostStage`:
-     `device->getLogicalDevice().destroyPipeline(graphics_pipeline); graphics_pipeline = nullptr;`
-     then `if (pipeline_layout) { device->getLogicalDevice().destroyPipelineLayout(pipeline_layout); pipeline_layout = nullptr; }`.
-     `PathTracing` and `Raytracing` use `pipeline`/`graphicsPipeline` and
-     `pipeline_layout`; check each member name rather than assuming.
-  2. Do not change `cleanUp()` — nulling the handles in step 1 keeps it
-     idempotent, which is the invariant AGENTS.md § Code Conventions states for
-     `cleanUp`.
-  3. Add `TEST(BuildIntegrity, EveryShaderHotReloadDestroysThePipelineLayoutItRecreates)`
-     to `buildIntegritySuite.cpp`: for every `<Identifier>::shaderHotReload(`
-     definition under `Src/GraphicsEngineVulkan/` (excluding
-     `VulkanRenderer::shaderHotReload`, which delegates), brace-match the body
-     and assert it contains `destroyPipelineLayout(`. All five create a layout
-     via their create function, so the rule needs no exceptions — say so in the
-     test's comment, and make the failure message name the offending file and
-     class.
-
-  **Test:** `BuildIntegrity.EveryShaderHotReloadDestroysThePipelineLayoutItRecreates`
-  — RED before step 1 (four offenders, `DeferredRasterizer` passing), GREEN
-  after. Confirm the red state and the four names in the failure message first.
-
-  **Build:** `clangcl-debug`, same commands as task 1.
-
-  **Context:** A leaked Vulkan object is invisible to ASAN and to every
-  existing gate; the only reason this is cheap to fix now is that
-  `DeferredRasterizer` already shows the shape. Hot reload is a rare
-  interactive action, so behaviour does not change — do not attempt a golden
-  run for this one.
-
 - [ ] **(M) Rebuild the ray-tracing SBT after a shader hot reload — it currently holds shader-group handles from a destroyed pipeline** — a spec violation on every `traceRaysKHR` after the button is pressed.
 
   **Files to read:**

@@ -3500,3 +3500,85 @@ TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
              return joined;
          }();
 }
+
+// Every stage's shaderHotReload(...) recreates its pipeline (and thus a fresh
+// vk::PipelineLayout) without first destroying the old layout - only
+// DeferredRasterizer got this right; PostStage, Rasterizer, Raytracing and
+// PathTracing all overwrote a live handle, leaking one vk::PipelineLayout per
+// hot reload. All five stages create a layout in their create function, so
+// the rule below needs no per-class exceptions.
+TEST(BuildIntegrity, EveryShaderHotReloadDestroysThePipelineLayoutItRecreates)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    static const std::regex kDefinition(R"(([A-Za-z_][A-Za-z0-9_]*)::shaderHotReload\s*\()");
+    static const char *const kExcludedClass = "VulkanRenderer";// delegates to the per-stage implementations
+
+    std::vector<std::string> offenders;
+    std::size_t checked = 0;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".cpp") { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+        std::smatch match;
+        std::string remaining = contents;
+        std::size_t offset = 0;
+        while (std::regex_search(remaining, match, kDefinition)) {
+            const std::size_t signature_pos = offset + static_cast<std::size_t>(match.position(0));
+            const std::string class_name = match[1].str();
+
+            const std::size_t body_open = contents.find('{', signature_pos);
+            if (body_open == std::string::npos) { break; }
+
+            int brace_depth = 0;
+            std::size_t body_close = std::string::npos;
+            for (std::size_t i = body_open; i < contents.size(); ++i) {
+                if (contents[i] == '{') { ++brace_depth; }
+                else if (contents[i] == '}') {
+                    --brace_depth;
+                    if (brace_depth == 0) {
+                        body_close = i;
+                        break;
+                    }
+                }
+            }
+            ASSERT_NE(body_close, std::string::npos)
+              << "could not brace-match the closing '}' of " << class_name << "::shaderHotReload in " << path.string();
+
+            if (class_name != kExcludedClass) {
+                ++checked;
+                const std::string body = contents.substr(body_open, body_close - body_open + 1);
+                if (body.find("destroyPipelineLayout(") == std::string::npos) {
+                    offenders.push_back(class_name + " (" + fs::relative(path, repo_root).string() + ")");
+                }
+            }
+
+            const std::size_t advance = body_close + 1;
+            offset = advance;
+            remaining = contents.substr(advance);
+        }
+    }
+
+    ASSERT_GT(checked, 0u) << "found zero non-delegating <Stage>::shaderHotReload(...) implementations under "
+                           << src_root.string() << " - the scan itself is broken";
+
+    EXPECT_TRUE(offenders.empty())
+      << offenders.size()
+      << " shaderHotReload(...) implementation(s) recreate a pipeline layout without destroying the previous "
+         "one first, leaking a vk::PipelineLayout on every hot reload: "
+      << [&offenders] {
+             std::string joined;
+             for (const auto &entry : offenders) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}

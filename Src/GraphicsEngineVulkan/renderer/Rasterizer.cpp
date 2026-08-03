@@ -51,7 +51,14 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::init(std::shared_ptr<Vulk
 void Kataglyphis::VulkanRendererInternals::Rasterizer::shaderHotReload(
   std::span<const vk::DescriptorSetLayout> descriptor_set_layouts)
 {
-    device->getLogicalDevice().destroyPipeline(graphics_pipeline);
+    if (graphics_pipeline) {
+        device->getLogicalDevice().destroyPipeline(graphics_pipeline);
+        graphics_pipeline = nullptr;
+    }
+    if (pipeline_layout) {
+        device->getLogicalDevice().destroyPipelineLayout(pipeline_layout);
+        pipeline_layout = nullptr;
+    }
     createGraphicsPipeline(descriptor_set_layouts);
 }
 
