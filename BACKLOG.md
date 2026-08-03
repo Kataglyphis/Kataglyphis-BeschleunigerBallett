@@ -6823,48 +6823,6 @@ saying so, not a task; fold it into task 2 if convenient.
 
 ### C++ Vulkan engine
 
-- [ ] **(M) (refactor) Retire the dual-compile shim from all nine host/device headers, and give the GLSL type aliases one definition** — nine headers still branch on `#ifdef __cplusplus` for a shader compiler that was deleted with `Resources/Shaders/`, in two mutually incompatible spellings, and six of them carry a byte-comparable copy of the same alias block.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/pushConstants/PushConstantRasterizer.hpp`, `PushConstantPost.hpp`, `PushConstantPathTracing.hpp`, `PushConstantRayTracing.hpp` — the four copies of the `#ifdef __cplusplus` + five-alias + `namespace` preamble (each at `:6-16`, closing at `:23`/`:32`/`:41`)
-  - `Src/GraphicsEngineVulkan/renderer/GlobalUBO.hpp:5-18,31-33` and `renderer/SceneUBO.hpp:6-22,49-52,66-68` — copies five and six; note `SceneUBO.hpp:49-52` guards a `static_assert` that becomes unconditional
-  - `Src/GraphicsEngineVulkan/ObjectDescription.hpp:4-6,18` — the `<cstdint>` variant, plus the "shared C++/GLSL header" comment
-  - `Src/shared/scene/Vertex.hpp:4-14` and `Src/shared/scene/ObjMaterial.hpp:4-11` — the `KTG_VEC2`/`KTG_VEC3` macro variant with the dead `#else` branch; `KTG_VEC` appears nowhere else in `Src/` or `Test/` (verified this pass)
-  - `Src/GraphicsEngineVulkan/common/host_device_shared_vars.hpp` — the header that already got this right: C++-only, no guard, pinned against the shaders by `HostAndShaderSharedConstantsAgree`
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1257` (`HostAndShaderSharedConstantsAgree`), `:3980` (`SharedStructOffsetsMatchTheCompiledSpirv`) — the two gates that pin these structs against the compiled SPIR-V; they must stay green unchanged
-  - `Test/commit/VulkanEngine/pushConstantSuite.cpp`, `sceneUboLayoutSuite.cpp` — the size/offset pins
-
-  **Steps:**
-  1. Add `Src/GraphicsEngineVulkan/common/HostDeviceGlmAliases.hpp`: `#pragma once`, the glm includes, and the five aliases (`vec2`, `vec3`, `vec4`, `mat4`, `uint`) at **global** scope. Keep them global and keep the spellings byte-identical to today's — this task must not change a single struct's layout or any unqualified use elsewhere. Document in the header that the aliases are global on purpose (they are what makes the struct bodies read like the Slang declarations they mirror) and that the header is C++-only.
-  2. In the four `PushConstant*.hpp`, `GlobalUBO.hpp` and `SceneUBO.hpp`: delete the `#ifdef __cplusplus` / `#endif` pairs, replace the alias block with `#include "common/HostDeviceGlmAliases.hpp"`, keep `#pragma once` and the `namespace Kataglyphis::VulkanRendererInternals { … }` unconditional. `SceneUBO.hpp` keeps its `#include "common/host_device_shared_vars.hpp"` (it needs `MAX_CASCADES`) and its `static_assert`, now unguarded.
-  3. In `ObjectDescription.hpp`: drop the guard around `#include <cstdint>`, and reword `:14-19`'s comment — it is a host header whose layout is pinned against `common/scene_types.slang`'s redeclaration, not a "shared C++/GLSL header".
-  4. In `Src/shared/scene/Vertex.hpp` and `ObjMaterial.hpp`: delete the `#ifdef __cplusplus` / `#else` / `#endif` blocks, delete the `KTG_VEC2`/`KTG_VEC3` macros, and spell the members `glm::vec2` / `glm::vec3` directly. These two live under `Src/shared/` and are consumed by both the Vulkan engine and the Rust bridge's C++ side — do not add the global aliases here, qualify instead.
-  5. Update each header's leading comment: the "little hack … for using it on the CPU side as well for the GPU side" / NVIDIA-tutorial preamble describes a mechanism that no longer exists. Say instead that the struct is host-side and that its layout is pinned against the Slang redeclaration by `SharedStructOffsetsMatchTheCompiledSpirv`.
-  6. Add the gate. In `buildIntegritySuite.cpp`, next to `SharedStructOffsetsMatchTheCompiledSpirv`, add `TEST(BuildIntegrity, NoHostDeviceHeaderCarriesTheRetiredGlslDualCompileShim)`: walk `Src/` for `.hpp`/`.ixx`, fail on any line containing `__cplusplus` or `KTG_VEC`, and word the failure message with *why* (the GLSL tree is gone; these headers are compiled only by C++; see `SlangSourcesDoNotReferenceTheDeletedGlslTree`). Skip `ExternalLib/`.
-
-  **Test:** Add `BuildIntegrity.NoHostDeviceHeaderCarriesTheRetiredGlslDualCompileShim`
-  as above, and red-prove it by temporarily reinstating one `#ifdef __cplusplus`.
-  The real safety net is that `BuildIntegrity.SharedStructOffsetsMatchTheCompiledSpirv`,
-  `BuildIntegrity.HostAndShaderSharedConstantsAgree`, `PushConstantUnit.*` and
-  `SceneUboLayoutUnit.*` must all stay green **without being edited** — if any
-  offset moves, step 1 or 4 changed a type. Run:
-  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*:PushConstantUnit.*:SceneUboLayoutUnit.*`
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  Pass `-FreshContainer`: this adds a header and touches ones included by module
-  interfaces (`GlobalUBO.ixx`, `SceneUBO.ixx`, `Rasterizer.ixx`, `MeshDrawRecorder.ixx`,
-  …), and a reused container never prunes stale `.pcm` files.
-
-  **Context:** This is the "one rule, N hand-rolled copies" family applied to
-  headers rather than create-infos, with a dead-code half attached: the six
-  alias copies have already drifted in their glm includes, and the `#else`
-  branches in `Src/shared/scene/` are unreachable text describing a compiler
-  this project no longer runs. Keep the change strictly mechanical — the whole
-  point is that the layout gates prove nothing moved. Do **not** try to make
-  these headers C++ modules; the reason they cannot be is unrelated and still
-  holds.
-
 - [ ] **(S) (refactor) Fix the eight comments still naming deleted GLSL-era shader files, and widen the gate that was supposed to catch them** — `SlangSourcesDoNotReferenceTheDeletedGlslTree` greps for one literal path, so a bare `foo.glsl` in a comment passes and C++ sources are never scanned at all.
 
   **Files to read:**
