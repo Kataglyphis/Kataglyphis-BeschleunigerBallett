@@ -6931,29 +6931,6 @@ still an owner decision.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Cancel the pending asynchronous model parse when `Scene::reloadModel` wipes the scene** — a reload issued during the ~2.8 s startup parse leaves the scene holding both the reloaded model and the startup one.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/Scene.cpp` — `beginModelLoadAsync` (`:91-97`), `pollModelLoad` (`:101-135`), `reloadModel` (`:170-188`), `loadAdditionalModel` (`:68-89`)
-  - `Src/GraphicsEngineVulkan/scene/Scene.ixx` — the `modelLoadPending` / `pendingModelParse` members and the public surface (`isModelLoadPending()`)
-  - `Src/GraphicsEngineVulkan/scene/AsyncModelParse.ixx` — `waitForCompletion()` (`:116`), `takeResult()` (`:89`), `takeGltfResult()` (`:106`), `parsedGltf()` (`:102`), and the class comment on "newest-wins" (`:24-27`)
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` — `updateStateDueToUserInput` (`:279-294`), which polls at `:283` and can reload at `:293`
-  - `Test/commit/VulkanEngine/asyncModelParseSuite.cpp` and `Test/commit/VulkanEngine/sceneAccessorSuite.cpp` — the two device-free test patterns to follow
-
-  **Steps:**
-  1. Add `void Scene::cancelPendingModelLoad()`: return immediately when `!modelLoadPending`; otherwise `pendingModelParse.waitForCompletion()`, discard whichever result is outstanding (`parsedGltf()` selects `takeGltfResult()` vs `takeResult()`; both already join and reset), set `modelLoadPending = false`, and `spdlog::info` that the in-flight parse was discarded because the scene was replaced. Declare it in `Scene.ixx`.
-  2. Call it as the **first** statement of `Scene::reloadModel`, before `cleanUp()` — the worker must be joined before the models it is about to be adopted into are destroyed.
-  3. Do **not** call it from `loadAdditionalModel`: that path adds to the scene rather than replacing it, so a still-loading startup model is legitimately still wanted.
-  4. Leave `pollModelLoad` untouched — with `modelLoadPending` cleared it already returns false on the first line.
-
-  **Test:** Add `SceneAsyncLoad.ReloadCancelsAPendingParse` to `Test/commit/VulkanEngine/sceneAccessorSuite.cpp` (or a new `sceneAsyncLoadSuite.cpp` — the commit suite CMakeLists `file(GLOB ...)`s every `*.cpp` in the directory, and Windows CI runs new CPU suites automatically via a negative gtest filter, so nothing needs registering). Construct a device-free `Scene`, call `beginModelLoadAsync()`, assert `isModelLoadPending()` is true, call `cancelPendingModelLoad()`, assert it is false, and assert a second `cancelPendingModelLoad()` is a no-op (idempotent, like every other `cleanUp` in this codebase). Then add a `BuildIntegrity` source-scan asserting `Scene.cpp`'s `reloadModel` body contains `cancelPendingModelLoad`, with a message naming the two-models-in-the-scene outcome. `reloadModel` itself needs a device and stays out of the unit test.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=SceneAsyncLoad.*:BuildIntegrity.*` from the repo root.
-
-  **Context:** `AsyncModelParse`'s own header comment says a queue "would need cancellation semantics for the common case — the user picking a third model while the second is still loading" and settles on newest-wins. `start()` implements newest-wins for *parses*; nothing implements it for the scene-replacing reload, which is the asymmetry. Joining the worker can block `reloadModel` for the remainder of the parse — that is acceptable and consistent: the caller (`handleModelReloadRequest`) already does a full `device->waitIdle()` and a synchronous load on the frame thread.
-
 - [ ] **(S) (refactor) Give `vk::ImageMemoryBarrier` one definition — the eleventh member of the create-info builder family** — seven hand-written field lists across three files, already drifted into two spellings of "ignored queue family" and two of the same subresource range.
 
   **Files to read:**

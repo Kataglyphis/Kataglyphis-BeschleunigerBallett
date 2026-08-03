@@ -167,8 +167,23 @@ void Scene::update_model_matrix(glm::mat4 model_matrix, uint32_t model_id)
     model->set_model(model_matrix);
 }
 
+void Scene::cancelPendingModelLoad()
+{
+    if (!modelLoadPending) { return; }
+
+    pendingModelParse.waitForCompletion();
+    if (pendingModelParse.parsedGltf()) {
+        pendingModelParse.takeGltfResult();
+    } else {
+        pendingModelParse.takeResult();
+    }
+    modelLoadPending = false;
+    spdlog::info("Discarded an in-flight asynchronous model parse; the scene is being replaced.");
+}
+
 void Scene::reloadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, const std::string &modelPath)
 {
+    cancelPendingModelLoad();
     cleanUp();
     model_list.clear();
     object_descriptions.clear();

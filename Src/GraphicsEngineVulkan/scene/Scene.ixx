@@ -160,6 +160,12 @@ class Scene
     /// scene contents. Cheap to call every frame.
     bool pollModelLoad(std::shared_ptr<VulkanDevice> device, vk::CommandPool commandPool);
 
+    /// Joins and discards a still-running beginModelLoadAsync() parse. A
+    /// no-op when no parse is pending. reloadModel() calls this first so a
+    /// reload issued mid-parse cannot let the startup load land in the scene
+    /// alongside the reloaded model.
+    void cancelPendingModelLoad();
+
     void reloadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, const std::string &modelPath);
 
     /// Loads an ADDITIONAL model, leaving existing ones in place, and returns
