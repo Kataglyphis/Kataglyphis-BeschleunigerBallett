@@ -10,6 +10,7 @@ module kataglyphis.vulkan.mesh_draw_recorder;
 
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.frustum;
+import kataglyphis.vulkan.mesh;
 
 Kataglyphis::VulkanRendererInternals::MeshDrawStats
   Kataglyphis::VulkanRendererInternals::recordSceneMeshDraws(vk::CommandBuffer commandBuffer,
@@ -42,11 +43,19 @@ Kataglyphis::VulkanRendererInternals::MeshDrawStats
             const uint32_t object_index = flat_mesh_index++;
             ++stats.considered;
 
+            // Unreachable with a null mesh: m/k come from getModelCount()/
+            // getMeshCount(m), so findMesh() always resolves here. Kept as a
+            // fallback rather than an assert so behaviour matches the former
+            // per-accessor calls byte-for-byte.
+            Mesh *mesh = scene->findMesh(m, k);
+            static const AABB unknownBounds{ glm::vec3(1.0F), glm::vec3(-1.0F) };
+            const AABB &meshBounds = mesh != nullptr ? mesh->getBounds() : unknownBounds;
+
             // Skip meshes provably outside the view. isVisible() is
             // conservative and treats unknown bounds as visible, so this can
             // only ever drop geometry the camera cannot see.
             if (cameraFrustum.has_value()
-                && !isVisible(*cameraFrustum, transformAABB(pushConstant.model, scene->getMeshBounds(m, k)))) {
+                && !isVisible(*cameraFrustum, transformAABB(pushConstant.model, meshBounds))) {
                 continue;
             }
 
@@ -57,16 +66,17 @@ Kataglyphis::VulkanRendererInternals::MeshDrawStats
             // glTF material.doubleSided: render both faces for this mesh, else
             // back-face cull. The pipeline declares eCullMode dynamic, so this
             // must be set for every draw (default eBack for OBJ / single-sided).
-            commandBuffer.setCullMode(scene->isMeshDoubleSided(m, k) ? vk::CullModeFlagBits::eNone
-                                                                      : vk::CullModeFlagBits::eBack);
+            commandBuffer.setCullMode(mesh != nullptr && mesh->isDoubleSided() ? vk::CullModeFlagBits::eNone
+                                                                                : vk::CullModeFlagBits::eBack);
 
-            const vk::Buffer vertex_buffer = scene->getVertexBuffer(m, k);
+            const vk::Buffer vertex_buffer = mesh != nullptr ? mesh->getVertexBuffer() : vk::Buffer{};
             const vk::DeviceSize offset = 0;
             commandBuffer.bindVertexBuffers(0, 1, &vertex_buffer, &offset);
 
-            commandBuffer.bindIndexBuffer(scene->getIndexBuffer(m, k), 0, vk::IndexType::eUint32);
+            commandBuffer.bindIndexBuffer(
+              mesh != nullptr ? mesh->getIndexBuffer() : vk::Buffer{}, 0, vk::IndexType::eUint32);
 
-            commandBuffer.drawIndexed(scene->getIndexCount(m, k), 1, 0, 0, 0);
+            commandBuffer.drawIndexed(mesh != nullptr ? mesh->getIndexCount() : 0, 1, 0, 0, 0);
             ++stats.drawn;
         }
     }

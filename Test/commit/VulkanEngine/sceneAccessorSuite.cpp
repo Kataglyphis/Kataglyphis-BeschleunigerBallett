@@ -88,3 +88,48 @@ TEST(SceneAccessorUnit, PerModelCountVectorsAreSizedByModelCount)
           << "the vector form and the indexed form must never drift, model " << i;
     }
 }
+
+// findModel()/findMesh() consolidate the eleven hand-written bounds checks
+// into one definition (Scene.ixx); these pin every accessor's documented
+// out-of-range fallback so the consolidation cannot silently change one.
+TEST(SceneAccessorUnit, EveryAccessorReturnsItsDocumentedFallbackOutOfRange)
+{
+    Scene scene;
+    scene.add_model(std::make_shared<Model>());
+    const uint32_t out_of_range = scene.getModelCount();
+
+    EXPECT_TRUE(scene.getTextures(out_of_range).empty());
+    EXPECT_TRUE(scene.getTextureSampler(out_of_range).empty());
+    EXPECT_EQ(scene.getTextureCount(out_of_range), 0U);
+    EXPECT_EQ(scene.getModelMatrix(out_of_range), glm::mat4(1.0F));
+    EXPECT_EQ(scene.getMeshCount(out_of_range), 0U);
+    EXPECT_EQ(scene.getVertexBuffer(out_of_range, 0), vk::Buffer{});
+    EXPECT_EQ(scene.getIndexBuffer(out_of_range, 0), vk::Buffer{});
+    EXPECT_EQ(scene.getIndexCount(out_of_range, 0), 0U);
+    EXPECT_FALSE(scene.isMeshDoubleSided(out_of_range, 0));
+
+    const auto &bounds = scene.getMeshBounds(out_of_range, 0);
+    EXPECT_GT(bounds.min.x, bounds.max.x) << "an out-of-range model must return the inverted 'unknown' box";
+}
+
+TEST(SceneAccessorUnit, UpdateModelMatrixOutOfRangeLeavesEveryModelUntouched)
+{
+    Scene scene;
+    scene.add_model(std::make_shared<Model>());
+    const glm::mat4 model_zero_matrix_before = scene.getModelMatrix(0);
+
+    scene.update_model_matrix(glm::scale(glm::mat4(1.0F), glm::vec3(2.0F)), scene.getModelCount());
+
+    EXPECT_EQ(scene.getModelMatrix(0), model_zero_matrix_before)
+      << "an out-of-range model_id must not touch any existing model";
+}
+
+TEST(SceneAccessorUnit, FindMeshAgreesWithThePerMeshAccessors)
+{
+    Scene scene;
+    scene.add_model(std::make_shared<Model>());
+
+    EXPECT_EQ(scene.findMesh(0, 0), nullptr) << "the added model has zero meshes";
+    EXPECT_NE(scene.findModel(0), nullptr);
+    EXPECT_EQ(scene.findModel(1), nullptr);
+}

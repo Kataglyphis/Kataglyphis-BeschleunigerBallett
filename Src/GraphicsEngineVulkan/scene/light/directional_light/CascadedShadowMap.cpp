@@ -29,6 +29,7 @@ import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.scene;
 import kataglyphis.vulkan.frustum;
+import kataglyphis.vulkan.mesh;
 import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.buffer;
 import kataglyphis.vulkan.buffer_manager;
@@ -441,7 +442,15 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
         for (uint32_t k = 0; k < scene->getMeshCount(m); k++) {
             const uint32_t object_index = flat_mesh_index++;
             ++castersConsidered;
-            const AABB casterBounds = transformAABB(modelMatrix, scene->getMeshBounds(m, k));
+
+            // Unreachable with a null mesh: m/k come from getModelCount()/
+            // getMeshCount(m), so findMesh() always resolves here. Kept as a
+            // fallback rather than an assert so behaviour matches the former
+            // per-accessor calls byte-for-byte.
+            Mesh *mesh = scene->findMesh(m, k);
+            static const AABB unknownBounds{ glm::vec3(1.0F), glm::vec3(-1.0F) };
+            const AABB &meshBounds = mesh != nullptr ? mesh->getBounds() : unknownBounds;
+            const AABB casterBounds = transformAABB(modelMatrix, meshBounds);
             bool visible_in_any_cascade = !cullingEnabled;
             if (cullingEnabled) {
                 for (uint32_t cascade = 0; cascade < numCascades; cascade++) {
@@ -461,11 +470,12 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
               sizeof(ShadowPushConstants),
               &push);
 
-            const vk::Buffer vertex_buffer = scene->getVertexBuffer(m, k);
+            const vk::Buffer vertex_buffer = mesh != nullptr ? mesh->getVertexBuffer() : vk::Buffer{};
             const vk::DeviceSize offset = 0;
             commandBuffer.bindVertexBuffers(0, 1, &vertex_buffer, &offset);
-            commandBuffer.bindIndexBuffer(scene->getIndexBuffer(m, k), 0, vk::IndexType::eUint32);
-            commandBuffer.drawIndexed(scene->getIndexCount(m, k), 1, 0, 0, 0);
+            commandBuffer.bindIndexBuffer(
+              mesh != nullptr ? mesh->getIndexBuffer() : vk::Buffer{}, 0, vk::IndexType::eUint32);
+            commandBuffer.drawIndexed(mesh != nullptr ? mesh->getIndexCount() : 0, 1, 0, 0, 0);
         }
     }
 

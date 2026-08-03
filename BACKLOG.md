@@ -6012,6 +6012,301 @@ leaves destroyed handles in `blas`/`tlas`** — not idempotent unlike its
 siblings, but it is called exactly once, from a destructor path; folded into
 task 3's reading list rather than tasked on its own.
 
+## 2026-08-03 batch XI — planner (refactor: `Scene` writes the same "is this index in range" rule eleven times and the two per-frame record loops pay for it four times per mesh; the one pipeline builder `AGENTS.md` mandates has zero CPU coverage and carries a member nothing reads; the per-frame GUI→UBO marshalling is 76 untestable lines with a `vec4` capacity nothing pins)
+
+The actionable queue was empty again — 0 `- [ ]`, 15 `- [b]` across the whole
+file. Every `file:line` below was read out of the tree this pass.
+
+**Every task in this batch is verifiable with no GPU**, deliberately: the
+fifteen `- [b]` entries above are still blocked (host GPU goldens remain
+unusable over RDP). All three land device-free code with gtest suites that run
+in the container CPU lane. `Test/commit/VulkanEngine/CMakeLists.txt` globs
+`*.cpp` with `CONFIGURE_DEPENDS` and Windows CI's suite filter is derived
+(`30154355`), so a new suite file needs no registration anywhere.
+
+**The headline is a twelfth member of the "one rule, N hand-rolled copies"
+family, and this one is on the frame path.** `Scene` spells out
+`if (model_index >= model_list.size()) { return <fallback>; }` in **ten**
+accessors (`Scene.ixx:34, 42, 50, 57, 64, 92, 100, 108, 118, 128`) plus an
+eleventh spelling in `Scene.cpp:161` (`model_id >= getModelCount()`), and five
+of those ten then repeat
+`Mesh *mesh = model_list[…]->getMesh(…)` + a null test (`:95, 103, 111, 119,
+129`). The eleven copies do not even agree on what failure means: out of range
+returns a `static` empty vector (`:35, 43`), `0` (`:51, 66`), an identity matrix
+(`:58`), a `vk::Buffer{}` (`:93`), `false` (`:118`), an inverted "unknown" AABB
+(`:128`) — and, in the one mutator, an `spdlog::error` (`Scene.cpp:162`). That
+is the same "four different result-handling shapes" spread batch `2026-08-03`
+found across the pipeline-layout copies. The cost is not only duplication:
+`MeshDrawRecorder.cpp:49-69` and `CascadedShadowMap.cpp:444-468` each redo the
+whole bounds-check-plus-`getMesh` walk **four times per mesh per frame**
+(`getMeshBounds`, `isMeshDoubleSided`/none, `getVertexBuffer`, `getIndexBuffer`,
+`getIndexCount`) for a lookup whose answer cannot change between the calls.
+
+**Second, `kataglyphis.vulkan.pipeline_builder` has no test file at all.**
+`AGENTS.md` ("Code Conventions") mandates it for every graphics pipeline and six
+call sites obey (`Rasterizer.cpp:316`, `DeferredRasterizer.cpp:294` and `:315`,
+`PostStage.cpp:264`, `CascadedShadowMap.cpp:341`, `SkyBox.cpp:310`) — grep
+confirms no stage hand-rolls `createGraphicsPipelines`. But `grep -rl
+pipeline_builder Test/` returns nothing, because `PipelineBuilder::build`
+(`PipelineBuilder.cpp:85-182`) assembles ~65 lines of create-infos and then
+calls `device.createGraphicsPipelines` in the same function, so there is no
+seam a device-free test can reach. Nine sibling helpers
+(`RenderPassHelper`, `FramebufferHelper`, `PipelineLayoutHelper`, …) all took
+the opposite shape — return the create-info, let the caller make the device call
+— and each one has a suite pinning every call site field-by-field. This is that
+split, applied to the builder the conventions single out. It also removes
+`int32_t base_pipeline_index = 0;` (`PipelineBuilder.ixx:70`): grep finds
+exactly one occurrence in the whole tree, and `build()` hard-codes
+`basePipelineIndex = -1` (`:175`).
+
+**Third, the per-frame GUI→UBO marshalling has never been tested, and one of
+its two array capacities is a magic `4`.** `VulkanRenderer::updateUniforms`
+(`VulkanRenderer.cpp:164-239`) is 76 lines that are almost entirely pure host
+maths — aspect ratio with a divide-by-zero guard (`:169`), the Vulkan
+projection with its `[1][1] *= -1` flip (`:172-176`), the cascade split/matrix
+copy clamped to `MAX_CASCADES` and zeroed when shadows are off (`:208-214`),
+and ~40 lines of flat GUI field packing. Nothing reaches it on CPU because it
+takes a `Scene*`, a `Camera*` and reads `vulkanSwapChain.getSwapChainExtent()`.
+The precedent for fixing exactly this is in the tree: `13773702` pulled
+`handleModelTransformChange`'s maths into `common/GuiModelTransform.hpp` — a
+plain header taking `std::span<const float, 3>`, with `guiModelTransformSuite.cpp`
+pinning it — and `511cc2cb` did the same for the light-direction normalization
+(`common/LightDirection.hpp`). The capacity detail: `sceneUBO.cascadeSplits` is
+a single `vec4` (`SceneUBO.hpp:48`, comment "up to 4 cascades") while
+`cascadeLightSpaceMatrices` is `[MAX_CASCADES]` (`:49`, `MAX_CASCADES = 3` in
+`host_device_shared_vars.hpp:9`). Raising `MAX_CASCADES` to 5 grows the matrix
+array correctly and writes `cascadeSplits[4]` past the end of a `vec4`. No
+`static_assert` covers it, and the one test that gestures at it hard-codes the
+literal — `guiSceneVarsRoundTripSuite.cpp:173` reads
+`EXPECT_LE(defaults.num_shadow_cascades, 4) << "must stay <= MAX_CASCADES
+(SceneUBO array size)"`, a `4` whose message names a constant that is `3`.
+
+Ordering: **task 1 and task 3 both touch `VulkanRenderer.cpp`** (task 1 only via
+`MeshDrawRecorder.cpp`/`CascadedShadowMap.cpp`, task 3 only in `updateUniforms`)
+— they do not overlap line-wise, but land task 1 first if both are in flight.
+Task 2 is disjoint.
+
+Candidates found but NOT tasked this cycle (checked, then rejected or deferred
+with a reason — do not re-propose without new evidence): **dead accessors** —
+swept exhaustively this pass (every lowercase member-function name in every
+`.ixx`/`.hpp` under `Src/`, counted against `Src/` + `Test/`); the only zero-caller
+name left is `Mesh::setModel` (`Mesh.ixx:57`, `Mesh.cpp:92`), one two-line
+function, too small to task alone — fold it into whatever next touches `Mesh`.
+**An `ImageMemoryBarrier` builder** — unchanged since batch VIII, still gated on
+host GPU verification. **The four remaining hand-rolled
+`vk::ImageSubresourceRange` blocks** — re-rejected for the sixth time; stop
+re-checking them. **A `GraphicsPipelinesAreCreatedThroughTheBuilder` gate** in
+the shape of `ComputePipelinesAreCreatedThroughTheSharedHelper`
+(`buildIntegritySuite.cpp:4036`) — all six sites already comply and no site has
+ever drifted, so it would gate a violation that has not happened; revisit if one
+appears. **The five copies of the blocking `map_async` readback in the Rust
+crate** — unchanged since the `2026-08-03` batch rejected it; every extracted
+unit still needs a live wgpu adapter. **`ForwardRenderer::new` (583 lines),
+`upload_scene` (379) and `render_tonemapped` (616)** in
+`crates/webgpu_renderer/src/render/forward.rs` — genuinely monolithic, but a
+method extraction there ships with compile-only verification for the same
+adapter reason, and `render_tonemapped` is the whole frame graph. **`Scene::
+getObjectDescriptions()` returning by value** (`Scene.ixx:132`) — looks like a
+needless copy but its one caller (`VulkanRenderer.cpp:1312`) mutates the result
+via `assignTextureOffsets`; the copy is load-bearing. **`Src/KomputePlayground`**
+— still an owner decision.
+
+### C++ Vulkan engine
+
+- [ ] **(M) (refactor) Split `PipelineBuilder::build` into a device-free state assembly plus the device call, give it its first test suite, and delete the member nothing reads** — the one builder `AGENTS.md` mandates is the only one of ten with no CPU coverage.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/PipelineBuilder.ixx` (73 lines) — the
+    fluent setters and the private state. `int32_t base_pipeline_index = 0;` at
+    `:70` and `vk::FrontFace front_face = eCounterClockwise;` at `:61`.
+  - `Src/GraphicsEngineVulkan/vulkan_base/PipelineBuilder.cpp:85-182` — `build()`.
+    Lines `92-157` are pure assembly; `159-175` wire the pointers; `177-181` are
+    the device call.
+  - The six call sites, which the new suite must reproduce:
+    `Rasterizer.cpp:316-324`, `DeferredRasterizer.cpp:294-302` (geometry) and
+    `:315-322` (lighting), `PostStage.cpp:264-269`,
+    `CascadedShadowMap.cpp:341-381`, `SkyBox.cpp:310-324`.
+  - `Src/GraphicsEngineVulkan/common/PipelineLayoutHelper.hpp` +
+    `Test/commit/VulkanEngine/pipelineLayoutHelperSuite.cpp` — the shape to
+    copy: helper returns the create-info, suite reconstructs every call site and
+    pins it field-by-field with no device.
+  - `Test/commit/VulkanEngine/renderPassHelperSuite.cpp` — the eight-test
+    "re-create every call site" precedent described in
+    `docs/cpp-renderer-improvements.md`.
+
+  **Steps:**
+  1. Export a `struct GraphicsPipelineState` from `PipelineBuilder.ixx` holding
+     the sub-states `build()` currently makes as locals: the four
+     `vk::Pipeline*StateCreateInfo` values, the `vk::PipelineVertexInputStateCreateInfo`,
+     the `std::vector<vk::DynamicState> dynamic_states`, the
+     `std::vector<vk::PipelineColorBlendAttachmentState> color_states`, the
+     `vk::PipelineColorBlendStateCreateInfo`, and a `bool use_color_blend_state`.
+     It must contain **no pointers into itself** so it is freely movable — the
+     pointer wiring happens in step 3.
+  2. Add `[[nodiscard]] GraphicsPipelineState buildState() const;` and move
+     `PipelineBuilder.cpp:92-157` into it verbatim, including
+     `pVertexBindingDescriptions`/`pVertexAttributeDescriptions` going `nullptr`
+     when their vector is empty (`:94, 96-97` — the deferred lighting pass's
+     `setVertexInput({}, {})` depends on it).
+  3. Add a free function
+     `vk::GraphicsPipelineCreateInfo linkGraphicsPipelineCreateInfo(const GraphicsPipelineState &state, std::span<const vk::PipelineShaderStageCreateInfo> stages, vk::PipelineLayout layout, vk::RenderPass render_pass, uint32_t subpass)`
+     carrying `PipelineBuilder.cpp:159-175`, including
+     `pColorBlendState = state.use_color_blend_state ? &state.color_blending : nullptr`.
+     Document the borrow the way `PipelineLayoutHelper.hpp` does: the returned
+     create-info points into `state` and into `stages`, both of which must
+     outlive the `createGraphicsPipelines` call.
+  4. `build()` becomes `buildState()` → `linkGraphicsPipelineCreateInfo(...)` →
+     `device.createGraphicsPipelines(...)` → the existing `ASSERT_VULKAN` +
+     `.value.front()`. No observable change; every call site keeps its current
+     signature.
+  5. Delete `int32_t base_pipeline_index = 0;` (`PipelineBuilder.ixx:70`).
+     Nothing in `Src/` or `Test/` names it and `build()` hard-codes
+     `basePipelineIndex = -1`. In the same edit turn `front_face` (`:61`) into
+     `static constexpr vk::FrontFace kFrontFace = vk::FrontFace::eCounterClockwise;`
+     — it has no setter and never varies, and `CascadedShadowMap.cpp:342-352`
+     reasons about it explicitly as a fixed default.
+
+  **Test:** Add `Test/commit/VulkanEngine/pipelineBuilderSuite.cpp` (the
+  CMake glob is `CONFIGURE_DEPENDS`, so no registration needed) with
+  `PipelineBuilderUnit.*`, no device anywhere:
+  - `DefaultStateMatchesTheDocumentedDefaults` — triangle list,
+    `primitiveRestartEnable == VK_FALSE`, `viewportCount == scissorCount == 1`
+    with null `pViewports`/`pScissors`, exactly two dynamic states
+    (`eViewport`, `eScissor`), `eFill`, `lineWidth == 1.0F`, cull `eBack`,
+    front face counter-clockwise, `depthClampEnable == VK_FALSE`,
+    `rasterizationSamples == e1`, depth test + write with `eLess`, one colour
+    attachment, blending off.
+  - `DynamicCullModeAppendsExactlyOneState` — `setDynamicCullMode(true)` yields
+    three dynamic states with `eCullMode` last; `false` leaves two.
+  - `AlphaBlendingUsesTheStandardFactors` — the seven fields at
+    `PipelineBuilder.cpp:142-147`, and `blendEnable == VK_FALSE` otherwise.
+  - `ColorAttachmentCountReplicatesTheBlendState` — `setColorAttachmentCount(3)`
+    (the deferred geometry pass) gives three identical `color_states` and
+    `attachmentCount == 3`.
+  - `DepthOnlyPipelineHasNoColorBlendState` — `setUseColorBlendState(false)`
+    (the CSM pass) makes `linkGraphicsPipelineCreateInfo(...).pColorBlendState`
+    null.
+  - `EmptyVertexInputCarriesNullPointers` — `setVertexInput({}, {})` (the
+    deferred lighting pass) gives both counts `0` and both pointers `nullptr`.
+  - One test per call site reproducing its exact chain and asserting the
+    distinguishing fields: `SkyBox` (`eAlways`, depth test+write off, cull
+    `eNone`), `PostStage` (`eLessOrEqual`, blending on, cull `eNone`),
+    `CascadedShadowMap` (cull `eNone`, `depthClampEnable` following the flag
+    passed in, no colour blend state), `Rasterizer` (blending on, dynamic cull),
+    deferred geometry (three attachments, dynamic cull), deferred lighting
+    (cull `eNone`, depth off).
+  Use `vk::PipelineLayout(nullptr)` / `vk::RenderPass(nullptr)` stand-ins for
+  `linkGraphicsPipelineCreateInfo` — the same `nullptr`-constructor trick
+  `pipelineLayoutHelperSuite.cpp:22-31` documents.
+
+  **Build:** `clangcl-debug`, module-interface change → `-FreshContainer`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='PipelineBuilderUnit.*:BuildIntegrity.*'`.
+
+  **Context:** Nine create-info helpers in this engine return the struct and let
+  the caller make the device call, precisely so a CPU suite can pin every call
+  site; `PipelineBuilder` predates that pattern and is the only one still
+  fusing assembly with `vkCreate*`. A dropped `depthWriteEnable` or a flipped
+  compare op is exactly the class of defect no pixel oracle reliably catches —
+  `docs/cpp-renderer-improvements.md` records `buildAttachmentDescription`
+  being motivated by the same argument. Behaviour must be byte-identical:
+  this is a seam, not a redesign.
+
+- [ ] **(M) (refactor) Extract the pure maths out of `updateUniforms` so the per-frame GUI→UBO marshalling can be tested, and pin `cascadeSplits`' capacity** — 76 lines that run every frame and that no test can reach, with a `vec4` that silently caps `MAX_CASCADES` at 4.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:164-239` —
+    `updateUniforms`. The extractable parts: aspect ratio `:169`, projection +
+    Y flip `:172-176`, cascade fill `:208-214`. `:180-183` already delegates to
+    `normalizedLightDirection`.
+  - `Src/GraphicsEngineVulkan/common/GuiModelTransform.hpp` +
+    `Test/commit/VulkanEngine/guiModelTransformSuite.cpp` — the exact precedent
+    (`13773702`): a plain header in `common/`, plain parameter types, its own
+    suite. Copy the comment style, which names the bug the extraction fixed.
+  - `Src/GraphicsEngineVulkan/common/LightDirection.hpp` — the other precedent
+    (`511cc2cb`), already used by `:180`.
+  - `Src/GraphicsEngineVulkan/renderer/SceneUBO.hpp:48-49` — `vec4 cascadeSplits;`
+    ("up to 4 cascades") next to `mat4 cascadeLightSpaceMatrices[MAX_CASCADES];`.
+  - `Src/GraphicsEngineVulkan/common/host_device_shared_vars.hpp:9` —
+    `MAX_CASCADES = 3`.
+  - `Test/commit/VulkanEngine/guiSceneVarsRoundTripSuite.cpp:170-185` — `:173`
+    hard-codes the literal `4` under a message naming `MAX_CASCADES`; `:184`
+    does the real check. That literal is the capacity this task pins properly.
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.ixx:19-22`
+    — `CascadeData {float splitDepth; glm::mat4 viewProjMatrix;}`, the input to
+    the cascade fill.
+
+  **Steps:**
+  1. Add `Src/GraphicsEngineVulkan/common/SceneUboMarshal.hpp` — a **plain
+     header**, not a module interface, so tests can `#include` it the way
+     `guiModelTransformSuite.cpp` includes `common/GuiModelTransform.hpp`.
+     Include only `<span>`, `<glm/…>`, `common/host_device_shared_vars.hpp` and
+     `renderer/SceneUBO.hpp`; take no module types (that is why `CascadeData`
+     is decomposed into spans in step 3).
+  2. Move two pure functions into it, verbatim in behaviour:
+     `constexpr auto aspectRatioOf(uint32_t width, uint32_t height) -> float`
+     (returns `1.0F` when `height == 0` — the guard at `:169`), and
+     `auto makeVulkanProjection(float fovDegrees, float aspect, float nearPlane, float farPlane) -> glm::mat4`
+     (`glm::perspective(glm::radians(fov), …)` then `[1][1] *= -1`, `:172-176`).
+     Comment WHY the Y flip is there and that
+     `CascadedShadowMap.cpp:342-352` depends on the cascade matrices NOT
+     having it.
+  3. Move the cascade fill into
+     `auto fillSceneUboCascades(SceneUBO &ubo, std::span<const float> splitDepths, std::span<const glm::mat4> viewProjMatrices, bool shadowsEnabled) -> uint32_t`,
+     carrying `:209-214`: clamp the count to `MAX_CASCADES`, write
+     `ubo.cascadeSplits[i]` and `ubo.cascadeLightSpaceMatrices[i]`, set
+     `ubo.numCascades` to `0` when `shadowsEnabled` is false, and return the
+     count written. Assert in the body that both spans are the same length.
+  4. Add `static_assert(MAX_CASCADES <= 4, "cascadeSplits is a single vec4 - a
+     fourth-plus cascade would write past its end");` in `SceneUBO.hpp` next to
+     the `cascadeSplits` declaration, and fix `guiSceneVarsRoundTripSuite.cpp:173`
+     to use `MAX_CASCADES` instead of the literal `4` so its message stops
+     naming a constant it is not testing.
+  5. Rewrite `updateUniforms` to call the three helpers. Build the two spans
+     from `dirShadowMap.getCascadeData()` locally (a small
+     `std::array<float, MAX_CASCADES>` / `std::array<glm::mat4, MAX_CASCADES>`
+     filled from `cascadeData`, or two `reserve`d locals) — do NOT change
+     `CascadeData` or `getCascadeData()`. Leave the ~40 lines of flat GUI field
+     packing (`:178-194`, `:216-238`) inline: routing a dozen loose floats
+     through a helper signature is worse than the duplication it would remove.
+  6. `dirShadowMap.updateCascades` (`:197-202`) stays where it is — it needs the
+     shadow map, and the aspect ratio it consumes now comes from
+     `aspectRatioOf`.
+
+  **Test:** Add `Test/commit/VulkanEngine/sceneUboMarshalSuite.cpp`
+  (`SceneUboMarshalUnit.*`, device-free):
+  - `ZeroHeightExtentDoesNotDivideByZero` — `aspectRatioOf(1920, 0) == 1.0F`,
+    and a normal extent gives `width / height`. Make it a `static_assert` too,
+    the way `pipelineLayoutHelperSuite.cpp:34` does.
+  - `ProjectionFlipsYForVulkan` — `makeVulkanProjection(...)[1][1]` is the
+    negation of `glm::perspective(...)[1][1]` for the same arguments, and every
+    other element matches element-by-element.
+  - `CascadeFillClampsToMaxCascades` — hand it `MAX_CASCADES + 2` splits and
+    assert `numCascades == MAX_CASCADES` and that no write landed past
+    `cascadeSplits[MAX_CASCADES - 1]` (pre-fill the UBO with a sentinel and
+    check the tail survives).
+  - `ShadowsDisabledZeroesTheCascadeCountButKeepsTheMatrices` — the
+    `guiSceneSharedVars.shadows_enabled` branch at `:214`, which is the field
+    the shaders actually gate on.
+  - `FewerCascadesThanMaxLeavesTheRestUntouched` — one cascade in, sentinel
+    preserved in slots 1 and 2.
+
+  **Build:** `clangcl-debug` (no module interface changes if the helper is a
+  plain header, so no `-FreshContainer` needed):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='SceneUboMarshalUnit.*:SceneUboLayoutUnit.*:GuiSceneVars*:BuildIntegrity.*'`.
+  `SceneUboLayoutUnit` must stay green — step 4 adds a `static_assert` to a
+  header it pins offsets in, and any accidental field reorder shows up there.
+
+  **Context:** Extraction only — every value written must be identical to what
+  `updateUniforms` writes today. The reason this is worth a task is that the
+  neighbourhood has shipped real bugs (`511cc2cb` normalized the light direction
+  on the host, `be2ec807` fixed a sign that six shaders disagreed on, and the
+  cascade count "silently failed to reach the renderer once" per
+  `guiSceneVarsRoundTripSuite.cpp:8-11`) and none of them were catchable on
+  CPU. Follow `common/GuiModelTransform.hpp`'s comment discipline: say what the
+  helper must NOT do, not just what it does.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

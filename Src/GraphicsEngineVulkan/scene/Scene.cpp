@@ -158,12 +158,13 @@ std::optional<uint32_t> Scene::add_model(const std::shared_ptr<Model> &model)
 
 void Scene::update_model_matrix(glm::mat4 model_matrix, uint32_t model_id)
 {
-    if (model_id >= getModelCount()) {
+    Model *model = findModel(model_id);
+    if (model == nullptr) {
         spdlog::error("Wrong model id value! model_id: {}, model_count: {}", model_id, getModelCount());
         return;
     }
 
-    model_list[static_cast<size_t>(model_id)]->set_model(model_matrix);
+    model->set_model(model_matrix);
 }
 
 void Scene::reloadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, const std::string &modelPath)

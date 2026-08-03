@@ -29,42 +29,63 @@ class Scene
 
     void update_model_matrix(glm::mat4 model_matrix, uint32_t model_id);
 
+    // The same `model_index >= model_list.size()` rule was spelled out by
+    // hand in eleven places across three files: ten Scene.ixx accessors and
+    // Scene.cpp's update_model_matrix, plus the mesh half repeated per-call
+    // in MeshDrawRecorder.cpp's and CascadedShadowMap.cpp's per-mesh record
+    // loops (four Scene calls per mesh, each re-deriving the same model and
+    // mesh pointer). findModel()/findMesh() are the one definition; every
+    // fallback value stays byte-identical to what it replaced - in
+    // particular getMeshBounds()'s inverted box, which isVisible() treats as
+    // visible, so a missing bound must never skip a draw.
+    //
+    // Public, not private: MeshDrawRecorder and CascadedShadowMap are
+    // separate translation units and hoist their own Mesh* with these.
+    [[nodiscard]] Model *findModel(uint32_t model_index) const
+    {
+        return model_index < model_list.size() ? model_list[static_cast<size_t>(model_index)].get() : nullptr;
+    };
+    /// findModel() chained through Model::getMesh(), which is already
+    /// nullptr out of range - so the mesh half of the rule is one null
+    /// test, not a second bounds check.
+    [[nodiscard]] Mesh *findMesh(uint32_t model_index, uint32_t mesh_index) const
+    {
+        Model *model = findModel(model_index);
+        return model != nullptr ? model->getMesh(static_cast<size_t>(mesh_index)) : nullptr;
+    };
+
     std::vector<Texture> &getTextures(uint32_t model_index)
     {
-        if (model_index >= model_list.size()) {
+        Model *model = findModel(model_index);
+        if (model == nullptr) {
             static std::vector<Texture> empty;
             return empty;
         }
-        return model_list[static_cast<size_t>(model_index)]->getTextures();
+        return model->getTextures();
     };
     std::vector<vk::Sampler> &getTextureSampler(uint32_t model_index)
     {
-        if (model_index >= model_list.size()) {
+        Model *model = findModel(model_index);
+        if (model == nullptr) {
             static std::vector<vk::Sampler> empty;
             return empty;
         }
-        return model_list[static_cast<size_t>(model_index)]->getTextureSamplers();
+        return model->getTextureSamplers();
     };
     uint32_t getTextureCount(uint32_t model_index)
     {
-        if (model_index >= model_list.size()) {
-            return 0;
-        }
-        return model_list[static_cast<size_t>(model_index)]->getTextureCount();
+        Model *model = findModel(model_index);
+        return model != nullptr ? model->getTextureCount() : 0;
     };
     uint32_t getModelCount() { return static_cast<uint32_t>(model_list.size()); };
     glm::mat4 getModelMatrix(uint32_t model_index) {
-        if (model_index >= model_list.size()) {
-            return glm::mat4(1.0f);
-        }
-        return model_list[static_cast<size_t>(model_index)]->getModel();
+        Model *model = findModel(model_index);
+        return model != nullptr ? model->getModel() : glm::mat4(1.0f);
     };
     uint32_t getMeshCount(uint32_t model_index)
     {
-        if (model_index >= model_list.size()) {
-            return 0;
-        }
-        return static_cast<uint32_t>(model_list[static_cast<size_t>(model_index)]->getMeshCount());
+        Model *model = findModel(model_index);
+        return model != nullptr ? static_cast<uint32_t>(model->getMeshCount()) : 0;
     };
     // This ordering is the contract assignTextureOffsets and
     // planFlattenedTextureSlots are both indexed by; consumers must use this
@@ -89,34 +110,24 @@ class Scene
     };
     vk::Buffer getVertexBuffer(uint32_t model_index, uint32_t mesh_index)
     {
-        if (model_index >= model_list.size()) {
-            return vk::Buffer{};
-        }
-        Mesh *mesh = model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index));
+        Mesh *mesh = findMesh(model_index, mesh_index);
         return mesh != nullptr ? mesh->getVertexBuffer() : vk::Buffer{};
     };
     vk::Buffer getIndexBuffer(uint32_t model_index, uint32_t mesh_index)
     {
-        if (model_index >= model_list.size()) {
-            return vk::Buffer{};
-        }
-        Mesh *mesh = model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index));
+        Mesh *mesh = findMesh(model_index, mesh_index);
         return mesh != nullptr ? mesh->getIndexBuffer() : vk::Buffer{};
     };
     uint32_t getIndexCount(uint32_t model_index, uint32_t mesh_index)
     {
-        if (model_index >= model_list.size()) {
-            return 0;
-        }
-        Mesh *mesh = model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index));
+        Mesh *mesh = findMesh(model_index, mesh_index);
         return mesh != nullptr ? mesh->getIndexCount() : 0;
     };
     /// glTF material.doubleSided for a mesh, so the raster pass can disable
     /// back-face culling for it. Out-of-range defaults to single-sided.
     bool isMeshDoubleSided(uint32_t model_index, uint32_t mesh_index)
     {
-        if (model_index >= model_list.size()) { return false; }
-        Mesh *mesh = model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index));
+        Mesh *mesh = findMesh(model_index, mesh_index);
         return mesh != nullptr && mesh->isDoubleSided();
     };
     /// Object-space bounds of a mesh, for frustum culling. An invalid box is
@@ -125,8 +136,7 @@ class Scene
     const AABB &getMeshBounds(uint32_t model_index, uint32_t mesh_index)
     {
         static const AABB unknown{ glm::vec3(1.0F), glm::vec3(-1.0F) };
-        if (model_index >= model_list.size()) { return unknown; }
-        Mesh *mesh = model_list[static_cast<size_t>(model_index)]->getMesh(static_cast<size_t>(mesh_index));
+        Mesh *mesh = findMesh(model_index, mesh_index);
         return mesh != nullptr ? mesh->getBounds() : unknown;
     };
     std::vector<ObjectDescription> getObjectDescriptions() { return object_descriptions; };
