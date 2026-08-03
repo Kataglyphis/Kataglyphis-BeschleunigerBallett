@@ -998,7 +998,7 @@ bool Kataglyphis::VulkanRenderer::record_commands(uint32_t image_index, const GU
     {
         Kataglyphis::debug::ScopedCmdLabel const label(commandBuffer, "post", { 0.35F, 0.80F, 0.40F, 1.0F });
         const std::array<vk::DescriptorSet, 1> post_descriptor_sets = { postDescriptors.sets()[image_index] };
-        postStage.recordCommands(commandBuffer, image_index, post_descriptor_sets, guiSceneSharedVars.clouds_enabled, guiSceneSharedVars.shadows_enabled, guiSceneSharedVars.skybox_enabled);
+        postStage.recordCommands(commandBuffer, image_index, post_descriptor_sets, guiSceneSharedVars.clouds_enabled);
     }
     write_pass_timestamp(GpuTimedPass::Post, false);
 

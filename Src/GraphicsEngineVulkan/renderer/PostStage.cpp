@@ -62,9 +62,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::shaderHotReload(
 void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::CommandBuffer &commandBuffer,
   uint32_t image_index,
   std::span<const vk::DescriptorSet> descriptorSets,
-  bool cloudsEnabled,
-  bool shadowsEnabled,
-  bool skyboxEnabled)
+  bool cloudsEnabled)
 {
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
 
@@ -79,12 +77,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
 
     setFullExtentViewportAndScissor(commandBuffer, swap_chain_extent);
 
-    auto aspectRatio = static_cast<float>(swap_chain_extent.width) / static_cast<float>(swap_chain_extent.height);
     PushConstantPost pc_post{};
-    pc_post.aspect_ratio = aspectRatio;
     pc_post.clouds_enabled = cloudsEnabled ? 1u : 0u;
-    pc_post.shadows_enabled = shadowsEnabled ? 1u : 0u;
-    pc_post.skybox_enabled = skyboxEnabled ? 1u : 0u;
     commandBuffer.pushConstants(pipeline_layout,
       vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
       0,

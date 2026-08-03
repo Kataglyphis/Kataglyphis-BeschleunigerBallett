@@ -17,10 +17,7 @@ namespace Kataglyphis::VulkanRendererInternals {
 
 struct PushConstantPost
 {
-    float aspect_ratio;
     uint clouds_enabled;
-    uint shadows_enabled;
-    uint skybox_enabled;
 };
 
 #ifdef __cplusplus

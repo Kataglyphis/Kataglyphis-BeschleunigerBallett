@@ -124,11 +124,8 @@ TEST(PushConstantPathTracingUnit, MatchesTheSlangTwinLayout)
 // pc_post).
 TEST(PushConstantPostUnit, MatchesTheSlangTwinLayout)
 {
-    EXPECT_EQ(offsetof(PushConstantPost, aspect_ratio), 0U);
-    EXPECT_EQ(offsetof(PushConstantPost, clouds_enabled), 4U);
-    EXPECT_EQ(offsetof(PushConstantPost, shadows_enabled), 8U);
-    EXPECT_EQ(offsetof(PushConstantPost, skybox_enabled), 12U);
-    EXPECT_EQ(sizeof(PushConstantPost), 16U);
+    EXPECT_EQ(offsetof(PushConstantPost, clouds_enabled), 0U);
+    EXPECT_EQ(sizeof(PushConstantPost), 4U);
 }
 
 // PushConstantRaytracing's layout contract: hand-mirrored in

@@ -37,9 +37,7 @@ class PostStage
     void recordCommands(vk::CommandBuffer &commandBuffer,
       uint32_t image_index,
       std::span<const vk::DescriptorSet> descriptorSets,
-      bool cloudsEnabled,
-      bool shadowsEnabled,
-      bool skyboxEnabled);
+      bool cloudsEnabled);
     void cleanUp();
 
     ~PostStage();

@@ -18,10 +18,7 @@ import fullscreen;
 
 struct PushConstantPost
 {
-    float aspect_ratio;
-    uint  clouds_enabled;
-    uint  shadows_enabled;
-    uint  skybox_enabled;
+    uint clouds_enabled;
 };
 [[vk::push_constant]] PushConstantPost pc_post;
 
