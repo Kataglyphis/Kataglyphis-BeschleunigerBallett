@@ -2786,3 +2786,116 @@ TEST(BuildIntegrity, DescriptorSetsAreCreatedThroughDescriptorSetGroup)
              return joined;
          }();
 }
+
+// asManager.createASForScene()/createTLAS() rebuild the acceleration
+// structure that the raytracing/post/GBuffer descriptors are bound to; a
+// rebuild that isn't immediately followed by updateAllDescriptorSets()
+// leaves those descriptors bound to the TLAS handle the rebuild just
+// destroyed - reproduced on the RX 9070 XT as a
+// VUID-vkCmdDispatch-None-08114 validation error (see 08f01ce5). The only
+// place that pairs the rebuild with the descriptor refresh is
+// VulkanRenderer::refreshAfterSceneChange, so every call site must go
+// through it rather than calling the ASManager methods directly.
+TEST(BuildIntegrity, AccelerationStructureRebuildsGoThroughTheSceneChangeHelper)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    static const std::array<const char *, 2> kGuardedCalls = { "asManager.createASForScene(",
+        "asManager.createTLAS(" };
+    static const char *const kAllowedFile = "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp";
+    static const char *const kAllowedFunction = "VulkanRenderer::refreshAfterSceneChange";
+    static const std::regex kFunctionSignature(R"(([A-Za-z_][A-Za-z0-9_:]*::[A-Za-z_][A-Za-z0-9_]*)\s*\()");
+
+    std::vector<std::string> violations;
+    std::size_t matches_found = 0;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        const auto extension = path.extension();
+        if (extension != ".cpp" && extension != ".ixx") { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        const std::string relative_file = fs::relative(path, repo_root).generic_string();
+
+        std::string line;
+        std::size_t line_number = 0;
+        int brace_depth = 0;
+        std::string current_function;
+        bool awaiting_open_brace = false;
+        std::string pending_function_name;
+
+        while (std::getline(file, line)) {
+            ++line_number;
+
+            if (awaiting_open_brace) {
+                if (line.find('{') != std::string::npos) {
+                    current_function = pending_function_name;
+                    awaiting_open_brace = false;
+                } else if (line.find(';') != std::string::npos) {
+                    // A declaration/prototype after all, not a definition.
+                    awaiting_open_brace = false;
+                    pending_function_name.clear();
+                }
+            } else if (brace_depth == 0 && line.find("::") != std::string::npos) {
+                std::smatch match;
+                if (std::regex_search(line, match, kFunctionSignature)) {
+                    if (line.find('{') != std::string::npos) {
+                        // Signature and opening brace share this line (e.g. a
+                        // one-line forwarding function) - the brace-counting
+                        // pass below will clear this once its body closes.
+                        current_function = match[1].str();
+                    } else {
+                        pending_function_name = match[1].str();
+                        awaiting_open_brace = true;
+                    }
+                }
+            }
+
+            for (const char letter : line) {
+                if (letter == '{') {
+                    ++brace_depth;
+                } else if (letter == '}') {
+                    if (brace_depth > 0) { --brace_depth; }
+                    if (brace_depth == 0) { current_function.clear(); }
+                }
+            }
+
+            for (const char *guarded_call : kGuardedCalls) {
+                if (line.find(guarded_call) == std::string::npos) { continue; }
+                ++matches_found;
+                const bool is_allowed =
+                  relative_file == kAllowedFile && current_function.find(kAllowedFunction) != std::string::npos;
+                if (!is_allowed) { violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line); }
+            }
+        }
+    }
+
+    ASSERT_GT(matches_found, 0u) << "found zero asManager.createASForScene(...)/asManager.createTLAS(...) call "
+                                    "sites under Src/ - the scan itself is broken, or every call site was removed "
+                                    "and this gate is now vacuous";
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " acceleration-structure rebuild(s) bypass VulkanRenderer::refreshAfterSceneChange(), the only place "
+         "that follows a rebuild with updateAllDescriptorSets() - route through it instead of calling "
+         "asManager.createASForScene()/createTLAS() directly:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    std::ifstream header(repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.ixx");
+    ASSERT_TRUE(static_cast<bool>(header)) << "missing VulkanRenderer.ixx";
+    const std::string header_contents((std::istreambuf_iterator<char>(header)), std::istreambuf_iterator<char>());
+    ASSERT_NE(header_contents.find("void refreshAfterSceneChange(bool rebuildBottomLevel);"), std::string::npos)
+      << "VulkanRenderer::refreshAfterSceneChange is no longer declared in VulkanRenderer.ixx - this gate's "
+         "allow-list needs updating if it was renamed or its signature changed";
+}

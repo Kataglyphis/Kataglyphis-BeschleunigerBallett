@@ -5351,27 +5351,6 @@ for the third time (upload-time only, never on the frame path).
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Add a BuildIntegrity gate that no acceleration-structure rebuild bypasses `refreshAfterSceneChange`** — the device-free gate that would have caught the reload bug, in the CPU lane where it costs nothing.
-
-  **Files to read:**
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `TEST(BuildIntegrity, DescriptorSetsAreCreatedThroughDescriptorSetGroup)` at `:2735` is the exact pattern (source scan + allow-listed definition site); `EngineSourcesDoNotLogRawVulkanHandles` (`:2684`) and `EngineSourcesUseNonThrowingFilesystemOverloads` (`:2610`) show the file-walk and reporting helpers
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` — the call sites after task 1 has landed
-
-  **Steps:**
-  1. Add `TEST(BuildIntegrity, AccelerationStructureRebuildsGoThroughTheSceneChangeHelper)`.
-  2. Scan every `.cpp`/`.ixx` under `Src/GraphicsEngineVulkan/` for `asManager.createASForScene(` and `asManager.createTLAS(`, reusing the suite's existing source-enumeration helper.
-  3. Allow exactly one file+function: the body of `VulkanRenderer::refreshAfterSceneChange`. Every other match fails the test with the offending `file:line` and a message naming `refreshAfterSceneChange` as the required entry point.
-  4. Assert the scan found at least one match, so a rename that removes every call site cannot make the gate vacuously green — `EveryCpuSuiteIsInTheWindowsCiFilter` (`:1054`) shows the "must not be empty" assertion style.
-  5. Add the same not-empty guard for the helper's own definition: fail if `refreshAfterSceneChange` is not declared in `VulkanRenderer.ixx`.
-
-  **Test:** The gate *is* the test. Red-prove it: temporarily re-inline `asManager.createASForScene(...)` into `handleModelReloadRequest`, confirm the new test fails naming that line, then revert.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`.
-
-  **Context:** **Do task 1 first** — this gate references the helper task 1 introduces. Source-scanning gates are how this repo pins invariants no unit test can reach; see `0a3ea323` and `5805867a` for two that shipped. If a new CPU suite file is added, `BuildIntegrity.EveryCpuSuiteIsInTheWindowsCiFilter` (`:1054`) requires it in the Windows CI filter — this task adds a test to an existing file, so no filter change is needed.
-
 - [ ] **(S) Stop the GUI model transform from re-applying the 60× scale SceneConfig deleted, and pin the matrix in a device-free test** — one drag of the Position slider currently rescales the loaded model by 60.
 
   **Files to read:**
