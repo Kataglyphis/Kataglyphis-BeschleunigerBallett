@@ -7495,44 +7495,6 @@ logic. **`transformAABB` rebuilds eight corners per mesh per frame, twice**
 where the model matrix is per-model — measurable only under `BM_FrustumCull`,
 which already covers the hot loop and shows it is not the bottleneck.
 
-- [ ] **(S) (refactor) Rename `direcional_light_radiance` and stop labelling it "Ambient intensity"** — the slider is the directional light's radiance, it is spelled with a missing `t`, and the engine has no ambient term for it to be the intensity of.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx:29` — the field (a module interface: this change needs `-FreshContainer`)
-  - `Src/GraphicsEngineVulkan/gui/GUI.cpp:171-178` — the "Ambient intensity" slider, sitting under a `Directional Light` tree node between the light's colour and direction controls
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:193-197` — the only consumer: it becomes `sceneUBO.dirLight.color.w`
-  - `Resources/ShadersSlang/common/scene_types.slang:81-85` — `DirectionalLightData.color`, "w = radiance"
-  - `Resources/ShadersSlang/deferred/deferred.slang:123-128` — how the shader reads it (`lightIntensity`, multiplied into the direct-lighting radiance; there is no ambient term in this path)
-  - `Test/commit/VulkanEngine/guiSceneVarsRoundTripSuite.cpp:48` and `Test/commit/VulkanEngine/goldenRenderSuite.cpp:1521, 1640, 2527, 2626, 2668, 2695` — the other seven references
-
-  **Steps:**
-  1. Rename the field to `directional_light_radiance` in
-     `GUISceneSharedVars.ixx:29` and update all nine other references
-     (`grep -rn 'direcional_light_radiance' Src/ Test/` must come back empty).
-  2. Change the ImGui label at `GUI.cpp:173` to `"Radiance"` — it already sits
-     inside the `Directional Light` tree node, so the prefix would be
-     redundant. Do not change the `0.0F..50.0F` range; `GoldenRender.GuiInputSweepNeverCrashes`
-     sweeps it and `goldenRenderSuite.cpp:2626` pins the 50.0 endpoint.
-  3. Check whether the label is asserted anywhere
-     (`grep -rn 'Ambient intensity' .`) and update if so.
-  4. Leave the shader-side name alone: `dirLight.color.w` is already documented
-     as radiance in `scene_types.slang:84`.
-
-  **Test:** `guiSceneVarsRoundTripSuite` already round-trips this field — update
-  it to the new name and confirm it still passes. Add nothing new; this is a
-  rename. Run:
-  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GuiSceneVarsRoundTrip.*`
-
-  **Build:** `clangcl-debug` **with `-FreshContainer`** (module-interface
-  change — see the fresh-container rule in `docs/gpu-golden-testing.md`). Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
-
-  **Context:** a control named after a term the renderer does not implement is
-  worse than an unnamed one — "Ambient intensity" reads as "the ambient term is
-  configurable", and the next person looking for why raising it brightens the
-  lit side spends the afternoon in `brdf.slang`. The typo is the smaller half;
-  fix both in one commit so the field never gets renamed twice.
-
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

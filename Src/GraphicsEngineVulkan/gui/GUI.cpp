@@ -170,7 +170,7 @@ void GUI::render()
 
         if (ImGui::TreeNode("Directional Light")) {
             ImGui::Separator();
-            ImGui::SliderFloat("Ambient intensity", &guiSceneSharedVars.direcional_light_radiance, 0.0F, 50.0F);
+            ImGui::SliderFloat("Radiance", &guiSceneSharedVars.directional_light_radiance, 0.0F, 50.0F);
             ImGui::Separator();
             // Edit a color (stored as ~4 floats)
             ImGui::ColorEdit3("Directional Light Color", guiSceneSharedVars.directional_light_color);

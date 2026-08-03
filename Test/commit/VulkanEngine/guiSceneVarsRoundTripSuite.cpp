@@ -45,7 +45,7 @@ GUISceneSharedVars makeNonDefaultVars()
     // whole object (padding included) before the member initialisers run, so
     // both sides of the comparison have deterministic padding.
     GUISceneSharedVars vars{};
-    vars.direcional_light_radiance = 3.5F;
+    vars.directional_light_radiance = 3.5F;
     vars.directional_light_color[0] = 0.25F;
     vars.directional_light_color[1] = 0.5F;
     vars.directional_light_color[2] = 0.75F;

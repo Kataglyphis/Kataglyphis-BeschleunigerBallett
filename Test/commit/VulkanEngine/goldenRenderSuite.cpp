@@ -1518,7 +1518,7 @@ TEST(GoldenRender, PathTracingRespondsToTheDirectionalLight)
     // camera/scene changes, not light changes, so render enough frames for
     // the running mean to wash the lit history out (the mean moves by
     // (new-old)/N per frame; 30 frames flips the majority of the weight).
-    scene_vars.direcional_light_radiance = 0.0F;
+    scene_vars.directional_light_radiance = 0.0F;
     harness.render_frames(30);
     const std::vector<uint8_t> unlit = harness.capture_frame(width, height);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
@@ -1637,7 +1637,7 @@ TEST(GoldenRender, ForwardLightingRespondsToTheDirectionalLight)
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
     ASSERT_FALSE(lit.empty());
 
-    scene_vars.direcional_light_radiance = 0.0F;
+    scene_vars.directional_light_radiance = 0.0F;
     harness.render_frames(SETTLE_FRAMES);
     const std::vector<uint8_t> unlit = harness.capture_frame(width, height);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
@@ -2524,7 +2524,7 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
     renderer_vars.rasterizationMode = RasterizationMode::Forward;
     // The directional light must not contribute (NEE would add energy on top
     // of the furnace); bounces high so truncation loss stays small.
-    scene_vars.direcional_light_radiance = 0.0F;
+    scene_vars.directional_light_radiance = 0.0F;
     renderer_vars.pathTracingMaxBounces = 16;
     harness.render_frames(WARMUP_FRAMES);
 
@@ -2623,7 +2623,7 @@ TEST(GoldenRender, GuiInputSweepNeverCrashesOrLosesTheDevice)
     r.pathTracingMaxBounces = 16;
     r.frustum_culling_enabled = false;
     s.skybox_enabled = true;
-    s.direcional_light_radiance = 50.0F;
+    s.directional_light_radiance = 50.0F;
     s.shadows_enabled = true;
     s.num_shadow_cascades = 8;
     s.shadow_map_res_index = 3;// 4096
@@ -2665,7 +2665,7 @@ TEST(GoldenRender, GuiInputSweepNeverCrashesOrLosesTheDevice)
         r.pathTracingMaxBounces = rng.ui(1, 16);
 
         s.skybox_enabled = rng.ub();
-        s.direcional_light_radiance = rng.uf(0.0F, 50.0F);
+        s.directional_light_radiance = rng.uf(0.0F, 50.0F);
         for (float &c : s.directional_light_color) { c = rng.uf(0.0F, 1.0F); }
         for (float &d : s.directional_light_direction) { d = rng.uf(-1.0F, 1.0F); }
 
@@ -2692,7 +2692,7 @@ TEST(GoldenRender, GuiInputSweepNeverCrashesOrLosesTheDevice)
                                  + " cascades=" + std::to_string(s.num_shadow_cascades)
                                  + " res=" + std::to_string(s.shadow_map_res_index)
                                  + " clouds=" + std::to_string(static_cast<int>(s.clouds_enabled))
-                                 + " radiance=" + std::to_string(s.direcional_light_radiance);
+                                 + " radiance=" + std::to_string(s.directional_light_radiance);
 
         // render_frame() applies the GUI state (updateStateDueToUserInput) each
         // frame; a few frames let a shadow-map re-init settle.

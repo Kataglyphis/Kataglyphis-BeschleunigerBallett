@@ -26,7 +26,7 @@ export constexpr uint32_t shadowResolutionForIndex(int index)
 
 export struct GUISceneSharedVars
 {
-    float direcional_light_radiance = 10.f;
+    float directional_light_radiance = 10.f;
     float directional_light_color[3] = { 1.f, 1.f, 1.f };
     // Angled rather than near-vertical: a straight-down sun drops every shadow
     // directly underneath its caster, where it is barely visible. This throws

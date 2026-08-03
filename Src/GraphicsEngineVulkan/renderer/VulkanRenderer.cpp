@@ -194,7 +194,7 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
     sceneUBO.dirLight.color = glm::vec4(guiSceneSharedVars.directional_light_color[0],
       guiSceneSharedVars.directional_light_color[1],
       guiSceneSharedVars.directional_light_color[2],
-      guiSceneSharedVars.direcional_light_radiance);
+      guiSceneSharedVars.directional_light_radiance);
 
     sceneUBO.cam_pos = glm::vec4(camera_data->get_camera_position().x, camera_data->get_camera_position().y, camera_data->get_camera_position().z, camera_data->get_fov());
 
