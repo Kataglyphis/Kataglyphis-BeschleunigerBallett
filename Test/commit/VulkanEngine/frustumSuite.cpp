@@ -98,6 +98,29 @@ TEST(FrustumUnit, NeverCullsGeometryTheCameraCanSee)
     EXPECT_TRUE(isVisible(planes, inverted)) << "unknown bounds must render, not vanish";
 }
 
+// Distinguishes the [0,1]-depth near plane (row2, view z = -kNear) from the
+// OpenGL form (row3 + row2, view z = -kNear/2) that CullsGeometryOutsideEachPlane
+// below cannot tell apart. A box entirely inside the sliver between the two
+// candidate planes is culled by row2 but survives row3 + row2.
+TEST(FrustumUnit, NearPlaneSitsAtTheProjectionNearDistance)
+{
+    const FrustumPlanes planes = extractFrustumPlanes(default_view_projection());
+
+    // View z in [-0.09, -0.06]: closer to the camera than the accurate near
+    // plane at z = -kNear = -0.1 (so row2 alone culls it), but farther than
+    // the OpenGL-style plane at z = -kNear/2 = -0.05 (so row3 + row2 would
+    // let it survive).
+    const AABB inSliver{ { -0.01F, -0.01F, -0.09F }, { 0.01F, 0.01F, -0.06F } };
+    EXPECT_FALSE(isVisible(planes, inSliver))
+      << "a box between the accurate and OpenGL-style near planes must be culled; "
+         "if this fails, Frustum.cpp:51 regressed to normalizePlane(row3 + row2)";
+
+    // Well past the near plane: must still be visible, so the assertion above
+    // cannot pass by culling everything.
+    const AABB pastNearPlane{ { -0.01F, -0.01F, -0.2F }, { 0.01F, 0.01F, -0.15F } };
+    EXPECT_TRUE(isVisible(planes, pastNearPlane)) << "geometry safely past the near plane must remain visible";
+}
+
 TEST(FrustumUnit, CullsGeometryOutsideEachPlane)
 {
     const FrustumPlanes planes = extractFrustumPlanes(default_view_projection());
@@ -105,10 +128,11 @@ TEST(FrustumUnit, CullsGeometryOutsideEachPlane)
     // Behind the camera, at several distances.
     //
     // These do NOT distinguish the [0,1]-depth near plane (row2) from the
-    // OpenGL one (row3 + row2) - checked by building with each. The OpenGL
-    // form only shifts the near plane from -0.1 to -0.05, so it draws a
-    // sliver extra rather than admitting anything behind the viewer. Do not
-    // read these as guarding that choice; see the comment in Frustum.cpp.
+    // OpenGL one (row3 + row2) - see NearPlaneSitsAtTheProjectionNearDistance
+    // above for a test that does. The OpenGL form only shifts the near plane
+    // from -0.1 to -0.05, so it draws a sliver extra rather than admitting
+    // anything behind the viewer. Do not read these as guarding that choice;
+    // see the comment in Frustum.cpp.
     EXPECT_FALSE(isVisible(planes, box_at({ 0.0F, 0.0F, 10.0F }, 1.0F))) << "geometry behind the camera must be culled";
     EXPECT_FALSE(isVisible(planes, box_at({ 0.0F, 0.0F, 0.05F }, 0.01F)))
       << "geometry just behind the camera must be culled";

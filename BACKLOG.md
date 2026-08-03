@@ -5941,51 +5941,6 @@ repeat of the batch XI mesh-range bug. **`docs/cpp-renderer-improvements.md` has
 not been touched since 2026-08-02** — it is a curated campaign log, not a
 per-commit changelog; drift is arguable and no gate claims otherwise.
 
-- [ ] **(S) Pin the near plane's actual position, which `frustumSuite.cpp` says in a comment it cannot currently distinguish** — the `[0,1]`-depth derivation is deliberate, non-textbook and unguarded.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/Frustum.cpp:40-53` — the twelve-line
-    justification for `planes[4] = normalizePlane(row2)` instead of the OpenGL
-    `row3 + row2`, including the worked example (near 0.1, far 100: `row2` puts
-    the plane at view z = -0.1; the OpenGL form at -0.05).
-  - `Test/commit/VulkanEngine/frustumSuite.cpp:101-116` — the existing
-    `CullsGeometryOutsideEachPlane` and the comment at `:107-109` admitting the
-    gap. `:33-45` has the shared `kNear`/`kFar`/`default_view_projection()` rig
-    to reuse.
-
-  **Steps:**
-  1. Add `TEST(FrustumUnit, NearPlaneSitsAtTheProjectionNearDistance)` using the
-     existing rig.
-  2. Build an AABB that lies **entirely** inside the sliver between the two
-     candidate planes: view-space z in roughly `[-0.09, -0.06]`, x/y small enough
-     to be well inside the side planes (e.g. ±0.01).
-  3. Assert `isVisible(planes, box)` is `false`. With `row2` the box is behind
-     the near plane and culled; with `row3 + row2` the near plane sits at -0.05
-     and the box survives — so the assertion fails on the OpenGL form. Say that
-     in a comment, and reference `Frustum.cpp:40-51`.
-  4. Add the mirror assertion: a box at view z `[-0.2, -0.15]` (just beyond the
-     near plane) must be visible, so the test cannot pass by culling everything.
-  5. Update the comment at `frustumSuite.cpp:107-109` — it becomes false.
-  6. Keep the epsilon in mind: `visibleAgainstPlanes` uses `kEpsilon = 1e-4F`
-     (`Frustum.cpp:75`), so leave more than that much margin on both boxes.
-
-  **Test:** the two new assertions above. Verify step 3 is meaningful by
-  temporarily changing `Frustum.cpp:51` to `normalizePlane(row3 + row2)` and
-  confirming the new test goes RED and the rest of `FrustumUnit.*` stays GREEN —
-  that is the whole point of the task. Revert the probe.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=FrustumUnit.*`
-  from the repo root. No GPU needed.
-
-  **Context:** `frustumSuite.cpp`'s header explains why culling tests weigh the
-  two error directions asymmetrically — a false negative deletes geometry the
-  user should see. This test is the other direction (a plane that is too
-  permissive costs a few draws), which is precisely why it was skipped and
-  precisely why the derivation can rot unnoticed. Follow the file's existing
-  convention of asserting on structural properties, not on plane coefficients.
-
 - [ ] **(S) Stop `apply_keyboard_input` from rotating the camera at its movement speed, and make it refresh the basis it just invalidated** — Q/E add a value in world-units-per-second to a field in degrees, and leave `front`/`right`/`up` stale.
 
   **Files to read:**
