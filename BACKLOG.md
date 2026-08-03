@@ -6113,6 +6113,429 @@ via `assignTextureOffsets`; the copy is load-bearing. **`Src/KomputePlayground`*
 
 ### C++ Vulkan engine
 
+## 2026-08-03 batch XII — planner (the path tracer's two image barriers name the vertex shader on both edges where its ray-tracing twin names the right stages; a window that loses focus mid-drag keeps look mode engaged forever; a PCF kernel that walks off the shadow map into a ClampToEdge sampler, identically in both renderers; a bloom threshold measured in pre-exposure units; the tenth member of the create-info builder family)
+
+The actionable queue was empty again — 0 `- [ ]`, 15 `- [b]` across the whole
+file. Every `file:line` below was read out of the tree this pass.
+
+**Every task in this batch is verifiable with no GPU.** The fifteen `- [b]`
+entries are still blocked on host GPU golden verification, so nothing here
+depends on it: tasks 1, 2 and 5 land device-free code plus gtest suites that
+run in the container CPU lane, and tasks 3 and 4 are shader edits whose
+acceptance is the regenerated-WGSL gate set plus a source-scanning
+`BuildIntegrity` test. `Test/commit/VulkanEngine/CMakeLists.txt` globs `*.cpp`
+with `CONFIGURE_DEPENDS` and Windows CI's suite filter is derived (`30154355`),
+so a new suite file needs no registration anywhere.
+
+**The headline is that `PathTracing::recordCommands` names `eVertexShader` on
+both of its image barriers, and its ray-tracing twin — same image, same
+consumer, thirty lines away — names the correct stages.** `Raytracing.cpp`
+transitions `renderImage` into the compute-equivalent stage with
+`eColorAttachmentOutput -> eRayTracingShaderKHR` (`:108-114`) and back out with
+`eRayTracingShaderKHR -> eFragmentShader` (`:135-141`) — `eFragmentShader`
+because the consumer is `post.slang`'s `fs_main`, sampling the offscreen image
+in the post pass. `PathTracing.cpp` writes the same two edges as
+`eVertexShader -> eComputeShader` (`:83-88`) and `eComputeShader ->
+eVertexShader` (`:161-166`). Both halves are wrong in the same direction. The
+first barrier's *source* scope is supposed to cover whatever last wrote that
+image — the raster/skybox colour-attachment writes, or the previous frame's
+post-pass fragment read — and `eVertexShader` covers neither, so the PT
+dispatch's `eShaderWrite` is unordered against them. The second barrier's
+*destination* scope is supposed to be the stage that reads the image, and the
+only reader is a fragment shader; as written, the layout transition and the
+visibility operation are only guaranteed complete before vertex-shader
+execution. This is precisely the class `Run-SyncValidation.ps1` exists for (it
+found 10 real WRITE-AFTER-WRITE hazards in July 2026), and it is the same
+reasoning the cloud-output barriers already carry in full at
+`VulkanRenderer.cpp:906-915` ("PostStage's only subpass dependency is
+`eColorAttachmentOutput -> eColorAttachmentOutput` and cannot order a
+compute-shader write"). Path tracing is behind a GUI toggle, which is why
+nothing has tripped over it.
+
+**Second, look mode survives a focus loss.** `handle_mouse_button_callback`
+installs the cursor-position callback on right-press and uninstalls it on
+right-release (`WindowInputCallbacks.ixx:111-124`). If the window loses focus
+while the button is held — alt-tab, Win+D, a system dialog — GLFW never
+delivers the release, so the callback stays installed and `mouse_first_moved`
+stays `false`. `Window::window_focus_callback` (`Window.cpp:110-118`) already
+knows about this shape for the keyboard: it calls `reset_window_keys` on focus
+loss for exactly the reason `handle_key_callback:35-37` documents ("otherwise a
+key held when a widget grabs focus is never released and the camera keeps
+moving forever"). It does nothing for the mouse. The consequence is the same
+defect `58dcda35` fixed for look-mode entry and `CursorCrossingAnImGuiPanel...`
+fixed for panel hand-off: `last_x`/`last_y` go stale at the pre-alt-tab
+position and the first cursor event after refocus differences against it,
+snapping the camera by the distance the cursor travelled elsewhere.
+
+**Third, the PCF kernel samples outside the region it just bounds-checked, in
+both renderers, against a `ClampToEdge` comparison sampler.**
+`cascaded_shadow.slang:34-36` rejects `shadowUV` outside `[0,1]` and returns
+"fully lit", then `:45-53` samples `shadowUV + float2(x,y) * texelSize` for
+`x,y` in `[-pcfRadius, +pcfRadius]` — `pcfRadius` is a live GUI value
+(`sceneUBO.pcfRadius`, `:39`), so the kernel reaches arbitrarily far past the
+edge. `forward.slang` has the identical shape: bounds check at `:232`, a fixed
+3x3 at `:244-253`. Both shadow samplers are `ClampToEdge`
+(`CascadedShadowMap.cpp:72-73`; `forward.rs:747-755`), so an off-map tap
+compares `Dref` against the *replicated edge texel's* depth. Where that edge
+texel holds a near occluder — routine, since the cascade box edge cuts through
+geometry — a fully lit fragment reads as partly shadowed, producing a dark
+fringe along every cascade boundary whose width scales with the slider. Note
+that the C++ sampler cannot simply be switched to `ClampToBorder`:
+`Texture::createTextureSampler` hard-codes `vk::BorderColor::eIntOpaqueBlack`
+(`Texture.cpp:249`), which for a depth format reads as depth 0 — *everything*
+shadowed — and an int border colour on a float-format image is itself invalid;
+the wgpu half would additionally need the `ADDRESS_MODE_CLAMP_TO_BORDER`
+feature, which is not universally available on the web target the wasm demo
+ships to. The portable fix is in the shader and identical on both sides.
+
+**Fourth, bloom's bright pass thresholds in pre-exposure units, so
+auto-exposure switches bloom on and off wholesale.** `bloom.slang:11` fixes
+`THRESHOLD = 1.0` and `:43-48` subtracts it from the raw HDR sample;
+`tonemap.slang:61` then composites `aces_tonemap((hdr * ao + bloom *
+params.x) * exposure)`, i.e. exposure is applied *after* bloom is added. The
+adapted exposure is real and can span decades — `auto_exposure.rs` bins
+luminance over `MIN_LOG_LUMINANCE = -10.0` to `MAX_LOG_LUMINANCE = 4.0` and
+maps the geometric mean onto `EXPOSURE_KEY = 0.18`. In a scene averaging 0.05
+linear the exposure is ~3.6 and nothing in raw HDR exceeds 1.0, so bloom is
+identically zero however bright the frame looks; in a scene averaging 2.0 the
+exposure is ~0.09 and essentially every pixel exceeds the threshold, so the
+whole frame blooms. Bloom should key off what is blown out *after* exposure,
+which is the same "ONE source of truth" rule `tonemap.slang:28-30` already
+states for the exposure value itself. A corroborating dead write sits next to
+it: `tonemap.rs:167` still packs `exposure_ev.exp2()` into `params.z`, which
+`tonemap.slang:22` documents as `z: unused` because the shader reads
+`exposureState[0]` instead.
+
+**Fifth, `vk::SubpassDescription` and its `vk::AttachmentReference` operands are
+hand-rolled in all five render passes** — the tenth member of the family
+`RenderPassHelper.hpp` already names by file in its own header comment. The
+copies are `Rasterizer.cpp:163-174`, `PostStage.cpp:207-219`,
+`DeferredRasterizer.cpp:199-227`, `SkyBox.cpp:216-227` and
+`CascadedShadowMap.cpp:144-150`, and they carry the same
+count-typed-out-by-hand defect the previous nine did: `colorAttachmentCount = 1`
+is written as a literal next to a single reference in three of them, while
+`DeferredRasterizer` correctly derives both its `3` and its `4` from
+`.size()`. `CascadedShadowMap` is the depth-only case (no colour attachment at
+all) and `DeferredRasterizer`'s lighting subpass is the only one with input
+attachments, so the helper needs all three arms.
+
+Ordering: **tasks 3 and 4 both regenerate WGSL and bump the
+`ExternalLib/Kataglyphis-RustProjectTemplate` submodule pin** — land them one
+at a time, pushing the submodule before the superproject each time (AGENTS.md,
+"Shipping a change that spans both repos"). Tasks 1, 2 and 5 are disjoint from
+everything, though **task 5 touches the same five files as several shipped
+refactors**, so do not interleave it with anything else that edits a render
+pass. Tasks 1 and 4 both add a `BuildIntegrity` gate, so rebuild between them.
+
+Candidates found but NOT tasked this cycle (checked, then rejected — do not
+re-propose without new evidence): **the twelve hand-rolled
+`vk::ImageMemoryBarrier` blocks and the four `vk::ImageSubresourceRange`
+blocks** — unchanged; still owned by the `- [b]` cloud-barrier entry and still
+gated on host GPU verification, and task 1 deliberately edits only the stage
+arguments so it does not collide when that unblocks. **`Texture::generateMipMaps`
+ending every mip in `eShaderReadOnlyOptimal` with `dstStageMask =
+eFragmentShader` while the RT closest-hit and PT compute kernels also sample
+those textures** (`Texture.cpp:349-354, 366-371`) — looks like task 1's defect
+but is not reachable: every caller goes through
+`CommandBufferManager::endAndSubmitCommandBuffer`, which fence-waits the whole
+submission before returning (`CommandBufferManager.cpp:101-112`), so no later
+submission races it. **`App::run` returning `EXIT_SUCCESS` after a device-lost
+abort** (`App.cpp:70-82`, `hasDeviceLost()` is checked three times and never
+reaches the return) — real, and it makes a crashed run read as green to
+`run_clangcl_*.ps1`, but there is no device-free way to exercise it and it is
+two lines; fold it into whatever next touches `App.cpp`. **`apply_mouse_input`
+never wrapping `yaw`** (`CameraController.ixx:69`) — unbounded growth is real
+but float precision stays adequate for any plausible session length and there
+is no oracle for "wrapped correctly" that the existing pitch-clamp tests do not
+already cover. **`depth_resolve.slang:30` computing `int2(In.uv * dims)` with no
+clamp** where `ssao.slang:37` clamps — the fullscreen triangle only produces
+pixel-centre uvs strictly inside `[0,1)`, so the out-of-range index is
+unreachable. **`Src/KomputePlayground`** — unchanged; still an owner decision.
+
+### C++ Vulkan engine
+
+- [ ] **(S) End look mode when the window loses focus, and re-seed the mouse origin the way every other entry path already does** — a right-drag interrupted by alt-tab leaves the cursor callback installed and `last_x`/`last_y` stale, so the first move after refocus snaps the camera.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/window/Window.cpp:110-118` —
+    `window_focus_callback`. Resets the key array on focus loss, does nothing for
+    the mouse.
+  - `Src/shared/frontend/WindowInputCallbacks.ixx:105-125` —
+    `handle_mouse_button_callback`, the only place `glfwSetCursorPosCallback` is
+    installed and uninstalled, plus `:14-17` `reset_window_keys` and `:52-84`
+    `handle_mouse_callback` (the `mouse_first_moved` re-seed).
+  - `Src/shared/frontend/WindowInputCallbacks.ixx:31-50` — `handle_key_callback`
+    and the `:34-37` comment stating the keyboard half of this exact argument.
+  - `Test/commit/VulkanEngine/frontendInputSuite.cpp:105-146` —
+    `LookModeEntryReSeedsTheMouseOrigin` and
+    `CursorCrossingAnImGuiPanelDoesNotJumpTheCamera`, the two tests this one
+    mirrors, and the header comment at `:1-9` stating that anything needing a
+    live `GLFWwindow` is deliberately out of scope.
+
+  **Steps:**
+  1. Add to `WindowInputCallbacks.ixx`, next to `reset_window_keys`, a pure
+     helper that makes no GLFW calls:
+     `inline void handle_focus_lost(bool *keys, bool &mouse_first_moved)`,
+     calling `reset_window_keys(keys)` and setting `mouse_first_moved = true`.
+     Document that the GLFW-touching half (uninstalling the cursor callback)
+     stays at the call site precisely so this half stays testable — the same
+     split the suite header describes.
+  2. In `Window::window_focus_callback`, on `focused == GLFW_FALSE`, replace the
+     bare `reset_window_keys` call with `handle_focus_lost(the_window->
+     input_state.keys.data(), the_window->input_state.mouse_first_moved)` and add
+     `glfwSetCursorPosCallback(window, nullptr);` so look mode genuinely ends.
+     Leave the `ImGui_ImplGlfw_WindowFocusCallback` forward at `:112` first, as
+     it is.
+  3. Check whether `input_state.mouse_first_moved` is reachable from
+     `window_focus_callback` (it is a static member function with the `Window*`
+     in hand via `glfwGetWindowUserPointer`); if `WindowInputState` members are
+     private, widen access the same way `key_callback` already does rather than
+     adding an accessor.
+
+  **Test:** Add
+  `TEST(WindowInputUnit, FocusLossEndsLookModeAndReSeedsTheMouseOrigin)` to
+  `frontendInputSuite.cpp`: set a couple of keys via `handle_key_callback`,
+  drive `handle_mouse_callback` twice to establish `last_x`/`last_y` at (400,
+  300), call `handle_focus_lost`, then drive `handle_mouse_callback` at (900,
+  50) and assert `x_change == 0.0F` and `y_change == 0.0F` (the re-seed
+  absorbed the jump) and that every entry of the key array is `false`. Assert
+  the *second* move after refocus still produces a normal delta, so the test
+  pins a re-seed and not a permanently dead axis.
+
+  **Build:** `clangcl-debug`, same invocation as task 1. Run
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='WindowInputUnit.*:FrameInputUnit.*'`.
+
+  **Context:** Third instance of the same defect: `58dcda35` fixed the
+  look-mode-entry seed, the ImGui-panel hand-off fixed the capture seed, and
+  focus loss is the remaining entry into `handle_mouse_callback` with a stale
+  origin. Keep the GLFW call out of the pure helper — `frontendInputSuite.cpp`'s
+  header comment says a null window would hit real GLFW, and that is why the
+  cursor-callback swap has no coverage today.
+
+- [ ] **(S) (refactor) Give `vk::SubpassDescription` one definition, deriving every attachment count from the span passed** — the tenth member of the family `RenderPassHelper.hpp` already names by file; three of the five copies write `colorAttachmentCount = 1` as a literal.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp` — all three existing
+    helpers, especially `buildRenderPassCreateInfo:101-109` for the
+    derive-the-count rule and `:84-100` for the comment style (lifetime note,
+    "a pass that needs X builds it inline and says why").
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:163-174` and
+    `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:207-219` — the two
+    colour+depth copies with a literal count.
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:216-227` — the third,
+    and the file that hard-coded a literal count in both prior family members.
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:144-150`
+    — the depth-only case: no colour attachment at all.
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:199-227` — the
+    only multi-colour and only input-attachment case; already derives its counts.
+  - `Test/commit/VulkanEngine/renderPassCreateHelperSuite.cpp` — the suite shape
+    to copy, including how it pins each call site's fields.
+
+  **Steps:**
+  1. Add to `RenderPassHelper.hpp`:
+     `constexpr vk::SubpassDescription buildSubpassDescription(
+       std::span<const vk::AttachmentReference> color_attachments,
+       const vk::AttachmentReference *depth_attachment,
+       std::span<const vk::AttachmentReference> input_attachments = {})`,
+     deriving `colorAttachmentCount` and `inputAttachmentCount` from `.size()`
+     and always setting `pipelineBindPoint = eGraphics` (all five passes are
+     graphics; a compute or RT subpass does not go through a `VkRenderPass` at
+     all). Leave `pResolveAttachments`, `preserveAttachmentCount` and `flags` at
+     their defaults and say so in the comment — nothing here resolves or
+     preserves. Add the same lifetime note `buildRenderPassCreateInfo` carries:
+     the returned struct borrows the spans' `.data()`, which must outlive the
+     `createRenderPass` call.
+  2. Convert all five call sites. Keep each site's existing
+     `vk::AttachmentReference` locals — they are the storage the returned struct
+     points at, so they must stay in scope through `createRenderPass`. Pass
+     `nullptr` for `depth_attachment` only where there genuinely is none
+     (none of the five today; `CascadedShadowMap` passes a depth ref and an
+     empty colour span).
+  3. Do not change any subpass dependency, attachment description or layout —
+     this task must be behaviourally identical. `DeferredRasterizer`'s
+     `lightingInputRefs` array is the only `input_attachments` argument.
+
+  **Test:** Add `subpassDescriptionHelperSuite.cpp` (new file; the CMake glob
+  picks it up) with `TEST(SubpassDescriptionHelperUnit, ...)` cases pinning:
+  counts derived from a 1-, 3- and 0-element colour span; `pDepthStencilAttachment`
+  round-tripping the pointer given; `inputAttachmentCount == 0` when the
+  defaulted argument is omitted and `== 4` for the deferred lighting shape;
+  `pipelineBindPoint == eGraphics` unconditionally; and `pResolveAttachments ==
+  nullptr`. Then add one test per call site asserting the exact struct each
+  produces, the way `renderPassCreateHelperSuite.cpp` does.
+
+  **Build:** `clangcl-debug`, same invocation as task 1. Run
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='SubpassDescriptionHelperUnit.*:RenderPass*'`.
+
+  **Context:** Straight continuation of the nine that shipped
+  (`ed9a1fd2` image views, `2026-08-02` batch IX framebuffers, `2026-08-03`
+  batch render passes and pipeline layouts, `51a404d0` compute pipelines,
+  `5094785f` pipeline teardown). The payoff is that the next pass cannot write a
+  count that disagrees with its array, not the lines removed — that is the
+  specific defect each of the previous nine actually found in the wild. Do not
+  grow this helper a `flags` or resolve-attachment parameter; the rule stated in
+  `ViewportHelper.hpp` and repeated in every family member is that a pass
+  needing those builds the struct inline and says why.
+
+### Shaders
+
+- [ ] **(M) Stop the PCF kernel from sampling past the shadow map's edge, in both renderers, and pin the rule** — both shaders bounds-check `uv` and then tap up to `pcfRadius` texels outside it, against a `ClampToEdge` comparison sampler that replicates whatever depth the border texel holds.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/common/cascaded_shadow.slang:30-54` — the C++ path:
+    the `[0,1]` rejection at `:34-36`, then the `-radius..+radius` loop at
+    `:45-53` that samples outside it. `radius` is `int(sceneUBO.pcfRadius)`, a
+    live GUI value.
+  - `Resources/ShadersSlang/forward/forward.slang:226-254` — the Rust path: the
+    same rejection at `:232`, a fixed 3x3 at `:244-253`. Note it also retries
+    coarser cascades before giving up (`:226-238`), which the C++ one does not —
+    leave that difference alone, it is not this task.
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:65-73`
+    — `createTextureSampler(..., eClampToEdge, VK_TRUE, eLessOrEqual)` and the
+    comment explaining the comparison sampler.
+  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:237-257` — why the address mode
+    cannot simply become `eClampToBorder`: `vk::BorderColor::eIntOpaqueBlack` is
+    hard-coded at `:249`, which reads as depth 0 (fully shadowed) and is an int
+    border on a float-format image.
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/forward.rs:747-755`
+    — the wgpu twin, also `ClampToEdge` + `CompareFunction::LessEqual`.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1615` —
+    `EveryShaderDerivesTheLightVectorByNegation`, the cross-shader
+    source-scanning gate to copy.
+
+  **Steps:**
+  1. In `cascaded_shadow.slang`, inside the PCF loop, compute
+     `float2 tapUV = shadowUV + float2(x, y) * texelSize;` and accumulate
+     `visible += (tapUV.x >= 0.0 && tapUV.x <= 1.0 && tapUV.y >= 0.0 && tapUV.y
+     <= 1.0) ? directionalShadowMaps.SampleCmpLevelZero(...) : 1.0;` — an
+     out-of-map tap counts as **lit**, matching what the function already
+     returns for an out-of-map fragment at `:36`. Keep `taps += 1.0`
+     unconditional so the kernel weight does not change with position (dropping
+     the tap instead would brighten the shadow near the edge, which is the
+     opposite artefact).
+  2. Make the identical change in `forward.slang`'s 3x3 loop, keeping the
+     `/ 9.0` divisor. Note its inverted convention — `uv.y = 0.5 - proj.y * 0.5`
+     versus the C++ `proj.y * 0.5 + 0.5` — is irrelevant here: the test is on
+     the final `uv`, whichever way it was built.
+  3. Add a comment in **both** files stating that the shadow sampler is
+     `ClampToEdge`, that a `ClampToBorder` + opaque-white alternative is blocked
+     on `Texture.cpp:249`'s int border colour on the C++ side and on the
+     `ADDRESS_MODE_CLAMP_TO_BORDER` wgpu feature (unavailable on the web target)
+     on the Rust side, and that this in-shader test is the portable equivalent.
+  4. Recompile shaders. `forward.slang` emits WGSL via the manifest's `wgslMap`,
+     so run `Scripts/Windows/compile-slang-shaders.ps1` and commit the
+     regenerated `crates/webgpu_renderer/src/shaders/forward.wgsl` inside the
+     submodule, then bump the submodule pin here in the same change.
+     `cascaded_shadow.slang` is SPIR-V only (it is imported by `deferred.slang`
+     and `rasterizer.slang`), so it produces no WGSL.
+  5. Add `TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)`: scan every
+     `Resources/ShadersSlang/**/*.slang` for a `SampleCmpLevelZero` call and
+     fail unless the enclosing statement is guarded by a `[0,1]` test on the
+     tap coordinate. Follow `EveryShaderDerivesTheLightVectorByNegation`'s
+     structure, including anchoring any allowlist entry to a source marker
+     rather than a line number (`e8b1db52`).
+
+  **Test:** `BuildIntegrity.EveryPcfKernelBoundsChecksItsTaps` (new, pure CPU),
+  plus the four WGSL gates that must stay green after regenerating
+  `forward.wgsl`: `CheckedInWgslIsNotOlderThanItsSlangSource`,
+  `CheckedInWgslHasNoHandEdits`, `CheckedInWgslVaryingStructsCarryLocations` and
+  `EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl`. Also run
+  `Scripts/Linux/run-cargo-tests.sh`'s equivalent locally
+  (`cargo test -p kataglyphis_webgpu_renderer`) — no test there reads the
+  shader, but the crate must still build with the regenerated WGSL. If a local
+  console GPU session is available, compare `GoldenRender.*` before/after: the
+  change should darken nothing and lighten only cascade-border pixels.
+
+  **Build:** `clangcl-debug`, same invocation as task 1, plus
+  `Scripts/Windows/compile-slang-shaders.ps1` for step 4. Requires slangc
+  >= 2026.8 (`shader-manifest.json`'s `minSlangcVersionForWgsl`); below that the
+  compile script skips the combined WGSL emit and step 4 silently produces
+  nothing — check the script's output rather than assuming.
+
+  **Context:** Both renderers have the same bug, so this is a shared-rule fix,
+  not a divergence fix — `docs/shader-sharing.md` is the doc to consult if the
+  two halves seem to want to diverge here. This is the same shape as
+  `be2ec807`/`511cc2cb` (one light-direction convention, gated) and
+  `3673f5a7`-era cascade work: the gate is the deliverable as much as the two
+  edits, because the next PCF kernel someone writes will make the same mistake.
+
+- [ ] **(M) Threshold bloom in post-exposure units so auto-exposure stops switching it on and off wholesale** — the bright pass subtracts a fixed 1.0 from raw HDR while the tonemap applies exposure *after* adding bloom, so a dark auto-exposed scene has no bloom at all and a bright one blooms everywhere.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/bloom/bloom.slang:8-11, 42-48` — the bindings
+    (`srcTex`, `srcSampler`), the `THRESHOLD = 1.0` constant, and
+    `fs_brightpass`.
+  - `Resources/ShadersSlang/tonemap/tonemap.slang:15-31, 53-69` — the composite.
+    `:26` `tonemapUniforms`, `:28-30` the "ONE source of truth" comment on
+    `exposureState`, and `:61`
+    `aces_tonemap((hdr * ao + bloom * params.x) * exposure)`.
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/bloom.rs:31-56`
+    — the two-entry bind group layout shared by all three bloom pipelines, and
+    `:111-157` `rebuild`, which builds all three bind groups.
+  - `.../src/render/tonemap.rs:82-93` — the `exposureState` storage-buffer
+    layout entry (binding 5, read-only storage, FRAGMENT), the exact shape to
+    replicate; `:150-176` `set_params`, whose `params.z` write is already dead.
+  - `.../src/render/forward.rs:1630-1665` — where `bloom.rebuild` and
+    `tonemap.set_input`/`set_params` are called and where the exposure buffer is
+    in scope.
+  - `.../src/render/auto_exposure.rs:20-105` — the exposure range this has to
+    survive (`MIN_LOG_LUMINANCE = -10.0`, `MAX_LOG_LUMINANCE = 4.0`,
+    `EXPOSURE_KEY = 0.18`), and the pure-function + `#[test]` style to follow.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1615` —
+    `EveryShaderDerivesTheLightVectorByNegation`, the gate shape for step 5.
+
+  **Steps:**
+  1. In `bloom.slang`, add `[vk::binding(2, 0)] StructuredBuffer<float>
+     exposureState;` — the same `[adapted EV, target EV]` buffer
+     `tonemap.slang:30` reads, so there is still exactly one source of truth —
+     and change `fs_brightpass` to threshold the *exposed* value:
+     `float3 hdr = srcTex.Sample(...).rgb * exp2(exposureState[0]);` before the
+     `max(hdr - THRESHOLD, 0)`. The blur entry points do not read it.
+  2. In `tonemap.slang:61`, apply exposure to the HDR term only —
+     `aces_tonemap(hdr * ao * exposure + bloom * params.x)` — since `bloom` now
+     arrives already exposed. Update the `:22-24` `params` comment: `z` is still
+     unused, and say why (the exposure comes from `exposureState`).
+  3. In `bloom.rs`, add a third entry to `bind_group_layout` (binding 2,
+     `BufferBindingType::Storage { read_only: true }`, `ShaderStages::FRAGMENT`,
+     `min_binding_size: None`), thread an `exposure_buffer: &wgpu::Buffer`
+     parameter through `rebuild`, and bind it in all three bind groups built by
+     the `bind` closure — copy `ssao.rs:59-68, 155-178` for the "one layout,
+     one binding some pipelines ignore" precedent, including its comment.
+  4. In `forward.rs`, pass the same exposure buffer into `bloom.rebuild` that is
+     already passed to `tonemap.set_input`. Delete the dead `exposure_ev.exp2()`
+     write into `params.z` at `tonemap.rs:167` (replace with `0.0` and keep the
+     field, since the uniform layout is pinned by the shader struct), and drop
+     the now-unused `exposure_ev` parameter from `set_params` if nothing else
+     uses it — check `forward.rs:1655-1665` before removing it.
+  5. Recompile shaders and commit the regenerated `bloom.wgsl` and
+     `tonemap.wgsl` in the submodule, then bump the pin here. Add
+     `TEST(BuildIntegrity, BloomAndTonemapAgreeOnWhereExposureIsApplied)`:
+     assert `bloom.slang` references `exposureState`, and that
+     `tonemap.slang`'s composite does not multiply the bloom term by
+     `exposure`. Follow `EveryShaderDerivesTheLightVectorByNegation`.
+
+  **Test:** `BuildIntegrity.BloomAndTonemapAgreeOnWhereExposureIsApplied` (new,
+  pure CPU) plus the four WGSL gates listed in the task above, which must stay
+  green after regenerating both files. Add a `#[test]` in `auto_exposure.rs`
+  next to the existing sixteen, pinning the *reason* this change exists:
+  for a scene whose `average_luminance` is 0.05 and one whose average is 2.0,
+  assert that `exposure_for_luminance(avg) * 1.0` — the linear value that now
+  lands exactly on the bright-pass threshold — differs by more than a decade
+  between the two, i.e. that a fixed pre-exposure threshold cannot serve both.
+  Run `cargo test -p kataglyphis_webgpu_renderer` and `cargo clippy`.
+
+  **Build:** `clangcl-debug` for the `BuildIntegrity` gate (same invocation as
+  task 1), plus `Scripts/Windows/compile-slang-shaders.ps1` and the slangc
+  version caveat from the task above.
+
+  **Context:** Do this **after** the PCF task or before it, never concurrently —
+  both regenerate WGSL and bump the same submodule pin. The threshold value
+  itself (`1.0`) is deliberately left alone: post-exposure, 1.0 means "at or
+  above the value ACES maps to roughly full output", which is what a bright pass
+  is supposed to key on, so the constant finally means something. Resist making
+  it a GUI slider in the same change — `bloom_strength` at `forward.rs:918`
+  already exists and this task is about the units, not the tuning.
+
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

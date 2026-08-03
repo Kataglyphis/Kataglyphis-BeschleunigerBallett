@@ -80,7 +80,13 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
     presentToPathTracingImageBarrier.subresourceRange = subresourceRange;
     presentToPathTracingImageBarrier.image = vulkanImage.getImage();
 
-    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eVertexShader,
+    // Source stages name whoever actually produced vulkanImage's prior
+    // contents: eColorAttachmentOutput covers the raster/skybox pass writing
+    // it this frame, eFragmentShader covers the previous frame's post-pass
+    // read of it (the image is single, not per-frame-in-flight, mirroring the
+    // cross-frame argument VulkanRenderer.cpp makes for cloudOutputTexture).
+    commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput
+        | vk::PipelineStageFlagBits::eFragmentShader,
       vk::PipelineStageFlagBits::eComputeShader,
       vk::DependencyFlags{},
       {},
@@ -158,8 +164,11 @@ void Kataglyphis::VulkanRendererInternals::PathTracing::recordCommands(vk::Comma
     pathTracingToPresentImageBarrier.image = vulkanImage.getImage();
     pathTracingToPresentImageBarrier.subresourceRange = subresourceRange;
 
+    // Destination stage names the actual consumer: PostStage's fragment
+    // shader samples this image (post.slang's fs_main), matching
+    // Raytracing.cpp's raytracingToPostImageBarrier on the same renderImage.
     commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
-      vk::PipelineStageFlagBits::eVertexShader,
+      vk::PipelineStageFlagBits::eFragmentShader,
       vk::DependencyFlags{},
       {},
       {},

@@ -3263,6 +3263,96 @@ TEST(BuildIntegrity, PathTracingDispatchMatchesTheShaderWorkgroupSize)
       << (*path_tracing_threads)[1] << ", " << (*path_tracing_threads)[2] << ")] Z is not 1";
 }
 
+// Any image barrier that transitions into eShaderReadOnlyOptimal is handing
+// the image to a shader that samples it - naming a stage other than
+// eFragmentShader as the destination silently drops the actual hazard being
+// guarded against (PathTracing.cpp named eVertexShader on both edges of its
+// offscreen image barrier until this gate was added, even though nothing in
+// the pass reads a vertex-stage sampler). Raytracing.cpp's
+// raytracingToPostImageBarrier is the correct twin this gate is modelled on.
+// Anchored on source text via regex, not line numbers, so it survives
+// reformatting.
+TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const std::array<const char *, 2> kFiles = {
+        "Src/GraphicsEngineVulkan/renderer/PathTracing.cpp",
+        "Src/GraphicsEngineVulkan/renderer/Raytracing.cpp",
+    };
+
+    static const std::regex kShaderReadOnlyTransition(
+      R"((\w+)\.newLayout\s*=\s*vk::ImageLayout::eShaderReadOnlyOptimal\s*;)");
+    static const std::regex kPipelineBarrierCall(R"(commandBuffer\.pipelineBarrier\(([\s\S]*?)\);)");
+    static const std::regex kIdentifier(R"([A-Za-z_]\w*)");
+
+    std::size_t gated_barriers_found = 0;
+    std::vector<std::string> violations;
+
+    for (const char *relative_path : kFiles) {
+        const fs::path path = repo_root / relative_path;
+        std::ifstream file(path);
+        ASSERT_TRUE(static_cast<bool>(file)) << "missing " << path.string();
+        const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+        std::set<std::string> transitions_to_shader_read_only;
+        for (auto it = std::sregex_iterator(contents.begin(), contents.end(), kShaderReadOnlyTransition);
+             it != std::sregex_iterator(); ++it) {
+            transitions_to_shader_read_only.insert((*it)[1].str());
+        }
+
+        for (auto it = std::sregex_iterator(contents.begin(), contents.end(), kPipelineBarrierCall);
+             it != std::sregex_iterator(); ++it) {
+            const std::string call_args = (*it)[1].str();
+
+            std::vector<std::string> parts;
+            std::size_t start = 0;
+            while (true) {
+                const std::size_t comma = call_args.find(',', start);
+                if (comma == std::string::npos) {
+                    parts.push_back(call_args.substr(start));
+                    break;
+                }
+                parts.push_back(call_args.substr(start, comma - start));
+                start = comma + 1;
+            }
+            ASSERT_EQ(parts.size(), 6u) << relative_path
+                                        << ": pipelineBarrier call does not have the expected 6 arguments - either "
+                                           "this file grew a differently-shaped call the scan needs updating for, "
+                                           "or the naive comma-split broke on one containing a literal comma:\n"
+                                        << call_args;
+
+            const std::string &dst_stage = parts[1];
+            const std::string &image_barrier_arg = parts[5];
+
+            std::smatch identifier_match;
+            if (!std::regex_search(image_barrier_arg, identifier_match, kIdentifier)) { continue; }
+            const std::string barrier_name = identifier_match.str();
+
+            if (transitions_to_shader_read_only.find(barrier_name) == transitions_to_shader_read_only.end()) {
+                continue;
+            }
+
+            ++gated_barriers_found;
+            if (dst_stage.find("eFragmentShader") == std::string::npos) {
+                violations.push_back(std::string(relative_path) + ": barrier '" + barrier_name +
+                  "' transitions to eShaderReadOnlyOptimal but names dst stage '" + dst_stage +
+                  "' instead of eFragmentShader");
+            }
+        }
+    }
+
+    ASSERT_GT(gated_barriers_found, 0u) << "found zero image barriers transitioning to eShaderReadOnlyOptimal in "
+                                           "PathTracing.cpp/Raytracing.cpp - the scan itself is broken";
+
+    EXPECT_TRUE(violations.empty()) << [&violations] {
+        std::string joined;
+        for (const auto &entry : violations) { joined += "\n  " + entry; }
+        return joined;
+    }();
+}
+
 // A stray NUL or other C0 control byte inside a source file makes
 // grep/ripgrep treat the whole file as binary ("binary file matches" instead
 // of printing the line), which silently excludes every call site in it from
