@@ -122,6 +122,16 @@ auto Kataglyphis::VulkanInstance::check_instance_extension_support(std::span<con
     return true;
 }
 
-void Kataglyphis::VulkanInstance::cleanUp() { instance.destroy(); }
+void Kataglyphis::VulkanInstance::cleanUp()
+{
+    if (!instance) { return; }
+    instance.destroy();
+    instance = nullptr;
+}
 
+// Not `~VulkanInstance() { cleanUp(); }`: VulkanRenderer::cleanUp() owns the
+// teardown order between the logical device and the instance, and a
+// destructor call here would let the instance's lifetime move independently
+// of that order. cleanUp() is idempotent (above), so calling it explicitly
+// stays safe.
 Kataglyphis::VulkanInstance::~VulkanInstance() = default;

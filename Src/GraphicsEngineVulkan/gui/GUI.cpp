@@ -268,11 +268,24 @@ void GUI::render()
 
 void GUI::cleanUp()
 {
-    // clean up of GUI stuff
-    ImGui_ImplVulkan_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
-    ImGui::DestroyContext();
-    device->getLogicalDevice().destroyDescriptorPool(gui_descriptor_pool);
+    // The Vulkan half needs a live device and only ever ran once it was
+    // initialized.
+    if (device) {
+        ImGui_ImplVulkan_Shutdown();
+        device->getLogicalDevice().destroyDescriptorPool(gui_descriptor_pool);
+        gui_descriptor_pool = nullptr;
+        device.reset();
+    }
+    // The ImGui/GLFW half owns no Vulkan handles, so it must run whether or
+    // not the device is alive - otherwise a device-lost shutdown (which
+    // never reaches the branch above; see App.cpp) leaks the whole ImGui
+    // context. Guarded on the context itself, not on `device`, so a second
+    // call (the destructor's safety net after an explicit cleanUp()) is a
+    // no-op.
+    if (ImGui::GetCurrentContext() != nullptr) {
+        ImGui_ImplGlfw_Shutdown();
+        ImGui::DestroyContext();
+    }
 }
 
 void GUI::create_gui_context(Window *frontend_window,
@@ -342,4 +355,4 @@ void GUI::create_gui_context(Window *frontend_window,
     ImGui_ImplVulkan_Init(&init_info);// post_render_pass
 }
 
-GUI::~GUI() = default;
+GUI::~GUI() { cleanUp(); }

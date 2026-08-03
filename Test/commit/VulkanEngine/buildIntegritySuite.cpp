@@ -6409,3 +6409,82 @@ TEST(BuildIntegrity, HeadersDoNotDefineStaticFreeFunctions)
              return joined;
          }();
 }
+
+// AGENTS.md states that cleanUp() must be idempotent and safe to call twice.
+// The idempotence itself is not source-scannable, but the destructor half of
+// the convention is: every class that declares cleanUp() should call it from
+// its own destructor, so a caller who forgets the explicit call (or a
+// device-lost path that skips it, see App.cpp) still gets torn down. Four
+// classes are intentionally exempt - see kExemptClasses below.
+TEST(BuildIntegrity, EveryCleanUpIsCalledFromItsDestructor)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    // Mesh, VulkanBufferManager: every member is already RAII, so `= default`
+    // is correct - there is nothing for a destructor call to do.
+    // VulkanDevice, VulkanInstance: VulkanRenderer::cleanUp() owns the
+    // teardown order between the logical device and the instance; a
+    // destructor call would let either move independently of that order.
+    static const std::array<const char *, 4> kExemptClasses = {
+        "Mesh", "VulkanBufferManager", "VulkanDevice", "VulkanInstance"
+    };
+
+    // Anchored to the start of a line (no leading whitespace) so prose like
+    // "...exactly the class of bug..." in a comment cannot masquerade as a
+    // class declaration.
+    const std::regex class_pattern(R"(\nclass\s+(\w+))");
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".ixx") { continue; }
+
+        std::ifstream ixx_file(path);
+        if (!ixx_file) { continue; }
+        const std::string ixx_contents((std::istreambuf_iterator<char>(ixx_file)), std::istreambuf_iterator<char>());
+
+        if (ixx_contents.find("void cleanUp();") == std::string::npos) { continue; }
+
+        std::smatch match;
+        if (!std::regex_search(ixx_contents, match, class_pattern)) { continue; }
+        const std::string class_name = match[1].str();
+
+        if (std::find(kExemptClasses.begin(), kExemptClasses.end(), class_name) != kExemptClasses.end()) { continue; }
+
+        std::string combined_contents = ixx_contents;
+        const fs::path cpp_path = fs::path(path).replace_extension(".cpp");
+        std::ifstream cpp_file(cpp_path);
+        if (cpp_file) {
+            combined_contents += std::string(
+              (std::istreambuf_iterator<char>(cpp_file)), std::istreambuf_iterator<char>());
+        }
+
+        // Matches "~Name() { cleanUp(); }" whether spelled inline in the
+        // .ixx or out-of-line (possibly namespace-qualified) in the .cpp.
+        const std::regex dtor_pattern(
+          R"(~)" + class_name + R"(\s*\(\s*\)\s*\{\s*cleanUp\s*\(\s*\)\s*;\s*\})");
+        if (std::regex_search(combined_contents, dtor_pattern)) { continue; }
+
+        violations.push_back(fs::relative(path, repo_root).generic_string() + ": class " + class_name
+                              + " declares cleanUp() but its destructor does not call it");
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " class(es) under Src/GraphicsEngineVulkan/ declare cleanUp() without a destructor that calls it "
+         "(`~Name() { cleanUp(); }`) - AGENTS.md requires cleanUp() to double as the destructor body so a "
+         "forgotten explicit call still tears the object down. Add the destructor call, or add the class to "
+         "kExemptClasses with a reason if it genuinely cannot call cleanUp() from its destructor:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}

@@ -92,6 +92,7 @@ auto Kataglyphis::VulkanDevice::getSwapchainDetails() -> Kataglyphis::VulkanRend
 
 void Kataglyphis::VulkanDevice::cleanUp()
 {
+    if (!logical_device) { return; }
     // Persist the pipeline cache to disk and destroy it before the logical
     // device it was created from goes away.
     save_and_destroy_pipeline_cache();
@@ -99,6 +100,7 @@ void Kataglyphis::VulkanDevice::cleanUp()
     // destroyed before the logical device it was created from.
     allocator.cleanUp();
     logical_device.destroy();
+    logical_device = nullptr;
 }
 
 void Kataglyphis::VulkanDevice::create_pipeline_cache()
@@ -193,6 +195,11 @@ void Kataglyphis::VulkanDevice::save_and_destroy_pipeline_cache()
     pipeline_cache = nullptr;
 }
 
+// Not `~VulkanDevice() { cleanUp(); }`: VulkanRenderer::cleanUp() owns the
+// teardown order between the logical device and the instance, and a
+// destructor call here would let the device's lifetime move independently
+// of that order. cleanUp() is idempotent (above), so calling it explicitly
+// stays safe.
 Kataglyphis::VulkanDevice::~VulkanDevice() = default;
 
 auto Kataglyphis::VulkanDevice::getQueueFamilies() -> Kataglyphis::VulkanRendererInternals::QueueFamilyIndices

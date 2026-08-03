@@ -73,7 +73,9 @@ auto Window::initialize(uint32_t window_width, uint32_t window_height) -> int
 
 void Window::cleanUp()
 {
+    if (main_window == nullptr) { return; }
     glfwDestroyWindow(main_window);
+    main_window = nullptr;
     glfwTerminate();
 }
 
@@ -168,4 +170,4 @@ void Window::char_callback(GLFWwindow *window, unsigned int codepoint)
     ImGui_ImplGlfw_CharCallback(window, codepoint);
 }
 
-Window::~Window() = default;
+Window::~Window() { cleanUp(); }

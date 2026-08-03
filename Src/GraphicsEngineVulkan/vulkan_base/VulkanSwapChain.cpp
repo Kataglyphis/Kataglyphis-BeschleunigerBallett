@@ -172,12 +172,14 @@ void Kataglyphis::VulkanSwapChain::destroyImageViews()
 
 void Kataglyphis::VulkanSwapChain::cleanUp()
 {
+    if (!device) { return; }
     destroyImageViews();
     device->getLogicalDevice().destroySwapchainKHR(swapchain);
     swapchain = nullptr;
+    device.reset();
 }
 
-Kataglyphis::VulkanSwapChain::~VulkanSwapChain() = default;
+Kataglyphis::VulkanSwapChain::~VulkanSwapChain() { cleanUp(); }
 
 void Kataglyphis::VulkanSwapChain::recreate(std::shared_ptr<VulkanDevice>in_device, const vk::SurfaceKHR &surface)
 {

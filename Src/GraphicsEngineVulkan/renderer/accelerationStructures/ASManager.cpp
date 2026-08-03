@@ -425,17 +425,22 @@ void Kataglyphis::VulkanRendererInternals::ASManager::cleanUp()
     vulkanBufferManager.cleanUp();
 
     vulkanDevice->getLogicalDevice().destroyAccelerationStructureKHR(tlas.vulkanAS);
+    tlas.vulkanAS = nullptr;
 
     tlas.vulkanBuffer.cleanUp();
 
     for (auto &bla : blas) {
         vulkanDevice->getLogicalDevice().destroyAccelerationStructureKHR(bla.vulkanAS);
+        bla.vulkanAS = nullptr;
 
         bla.vulkanBuffer.cleanUp();
     }
+    blas.clear();
+
+    vulkanDevice.reset();
 }
 
-Kataglyphis::VulkanRendererInternals::ASManager::~ASManager() = default;
+Kataglyphis::VulkanRendererInternals::ASManager::~ASManager() { cleanUp(); }
 
 void Kataglyphis::VulkanRendererInternals::ASManager::createSingleBlas(std::shared_ptr<VulkanDevice>device,
   vk::CommandBuffer command_buffer,
