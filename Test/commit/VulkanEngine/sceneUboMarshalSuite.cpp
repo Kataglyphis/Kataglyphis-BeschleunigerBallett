@@ -120,6 +120,39 @@ TEST(SceneUboMarshalUnit, FewerCascadesThanMaxLeavesTheRestUntouched)
     EXPECT_EQ(ubo.cascadeLightSpaceMatrices[2], glm::mat4(-3.0F));
 }
 
+TEST(SceneUboMarshalUnit, FillCascadesTruncatesToTheShorterSpan)
+{
+    const std::array<float, 3> splitDepths{ 1.0F, 2.0F, 3.0F };
+    const std::array<glm::mat4, 2> viewProjMatrices{ glm::mat4(1.0F), glm::mat4(2.0F) };
+
+    SceneUBO ubo{};
+
+    const uint32_t written = fillSceneUboCascades(ubo,
+      std::span<const float>(splitDepths.data(), 2),
+      std::span<const glm::mat4>(viewProjMatrices),
+      /*shadowsEnabled=*/true);
+
+    EXPECT_EQ(written, 2U) << "the shorter span (matrices) must bound the write, not the longer one (splits)";
+    EXPECT_EQ(ubo.numCascades, 2U);
+}
+
+TEST(SceneUboMarshalUnit, FillCascadesNeverExceedsMaxCascades)
+{
+    std::array<float, MAX_CASCADES + 5> splitDepths{};
+    std::array<glm::mat4, MAX_CASCADES + 5> viewProjMatrices{};
+
+    SceneUBO ubo{};
+
+    const uint32_t written = fillSceneUboCascades(ubo,
+      std::span<const float>(splitDepths),
+      std::span<const glm::mat4>(viewProjMatrices),
+      /*shadowsEnabled=*/true);
+
+    EXPECT_EQ(written, static_cast<uint32_t>(MAX_CASCADES))
+      << "both spans exceed MAX_CASCADES; the write must still stop at MAX_CASCADES";
+    EXPECT_EQ(ubo.numCascades, static_cast<uint32_t>(MAX_CASCADES));
+}
+
 TEST(SceneUboMarshalUnit, ClampPcfRadiusPinsTheBoundTheShaderLoopsOver)
 {
     EXPECT_EQ(clampPcfRadius(-1), 0U)

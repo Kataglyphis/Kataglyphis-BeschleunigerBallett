@@ -13,7 +13,10 @@ import scene_types;
 // Fraction of direct light blocked: 0 = fully lit, 1 = fully shadowed.
 float calc_cascaded_shadow(float3 worldPos, float3 N, float3 L, ConstantBuffer<SceneUBO> sceneUBO)
 {
-    int cascadeCount = int(sceneUBO.numCascades);
+    // The host already clamps numCascades (SceneUboMarshal::fillSceneUboCascades);
+    // this is the second lock, not the first, so a stray unclamped write can
+    // never index cascadeLightSpaceMatrices[cascadeIndex] out of bounds below.
+    int cascadeCount = clamp(int(sceneUBO.numCascades), 0, MAX_CASCADES);
     if (cascadeCount <= 0) return 0.0;
 
     float fragDistance = dot(worldPos - sceneUBO.cam_pos.xyz, normalize(sceneUBO.view_dir.xyz));

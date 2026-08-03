@@ -2195,6 +2195,30 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
          }();
 }
 
+// cascaded_shadow.slang reads two SceneUBO fields the host already clamps
+// (SceneUboMarshal.hpp's clampPcfRadius and fillSceneUboCascades) and must
+// clamp them again itself: the host is the first lock, the shader is the
+// second, and only the second is what actually protects the
+// cascadeLightSpaceMatrices[] index / tap loop bound at GPU-execution time.
+// This pins that both clamps still exist in the shader source, so a future
+// edit cannot silently drop one half of the double lock.
+TEST(BuildIntegrity, CascadedShadowClampsBothItsUboCounts)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path shadow_path = repo_root / "Resources" / "ShadersSlang" / "common" / "cascaded_shadow.slang";
+    std::ifstream file(shadow_path);
+    ASSERT_TRUE(file) << "missing " << shadow_path.string();
+    const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    EXPECT_NE(content.find("clamp(int(sceneUBO.numCascades), 0, MAX_CASCADES)"), std::string::npos)
+      << "cascaded_shadow.slang must clamp numCascades to MAX_CASCADES before indexing "
+         "cascadeLightSpaceMatrices[]";
+    EXPECT_NE(content.find("clamp(int(sceneUBO.pcfRadius), 0, MAX_PCF_RADIUS)"), std::string::npos)
+      << "cascaded_shadow.slang must clamp pcfRadius to MAX_PCF_RADIUS before the tap loop";
+}
+
 // The flattened texture-slot clamp (int(obj.texture_offset) + textureID,
 // clamped into [0, MAX_TEXTURE_COUNT - 1]) has exactly one definition:
 // resolve_texture_slot() in scene_types.slang. Every consumer must call it

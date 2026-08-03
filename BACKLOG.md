@@ -7495,51 +7495,6 @@ logic. **`transformAABB` rebuilds eight corners per mesh per frame, twice**
 where the model matrix is per-model — measurable only under `BM_FrustumCull`,
 which already covers the hot loop and shows it is not the bottleneck.
 
-- [ ] **(S) Close the cascade-count half of the double lock whose PCF-radius twin already shipped** — the shader clamps `pcfRadius` and explains why, then indexes a 3-element matrix array with an unclamped `numCascades`; the host helper that feeds it bounds two spans by the length of one.
-
-  **Files to read:**
-  - `Resources/ShadersSlang/common/cascaded_shadow.slang:14-43` — the unclamped `cascadeCount` at `:16`, the `cascadeLightSpaceMatrices[cascadeIndex]` read at `:30`, and the `pcfRadius` clamp + rationale at `:39-43` (the pattern to mirror)
-  - `Resources/ShadersSlang/common/scene_types.slang:78-79`, `:95-109` — `MAX_CASCADES`, `MAX_PCF_RADIUS`, and the `SceneUBO` layout
-  - `Src/GraphicsEngineVulkan/common/SceneUboMarshal.hpp:53-74` — `fillSceneUboCascades` and the `assert` at `:63`
-  - `Test/commit/VulkanEngine/sceneUboMarshalSuite.cpp` — existing test shape
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:2117-2196` — `NoShaderRedeclaresTheCascadeCount`, the neighbouring gate
-
-  **Steps:**
-  1. `cascaded_shadow.slang:16`: clamp on read —
-     `int cascadeCount = clamp(int(sceneUBO.numCascades), 0, MAX_CASCADES);`
-     Add a two-line comment in the same voice as `:39-42`: the host is the
-     first lock, this is the second, and an unclamped count would index
-     `cascadeLightSpaceMatrices` out of bounds rather than merely misbehave.
-  2. `SceneUboMarshal.hpp:65`: bound `activeCascades` by **both** spans —
-     `std::min({ splitDepths.size(), viewProjMatrices.size(), static_cast<size_t>(MAX_CASCADES) })`.
-     Keep the `assert`; it still documents the caller contract.
-  3. Extend the doc comment at `:53-57` to say the helper truncates to the
-     shorter span rather than trusting the assert, and why (`NDEBUG`).
-  4. Add a gate to `buildIntegritySuite.cpp` — either a new
-     `TEST(BuildIntegrity, CascadedShadowClampsBothItsUboCounts)` or two more
-     assertions inside `NoShaderRedeclaresTheCascadeCount` — asserting
-     `cascaded_shadow.slang` contains a `clamp(` of `numCascades` bounded by
-     `MAX_CASCADES` and a `clamp(` of `pcfRadius` bounded by `MAX_PCF_RADIUS`.
-  5. Rebuild so the Slang sources recompile; confirm
-     `BuildIntegrity.CompiledShadersAreNotOlderThanSharedIncludes` stays green
-     (`cascaded_shadow.slang` is a shared import, so every dependent `.spv`
-     must be regenerated).
-
-  **Test:** add `SceneUboMarshal.FillCascadesTruncatesToTheShorterSpan` asserting
-  that passing 3 splits and 2 matrices writes 2 cascades and returns 2, and
-  `SceneUboMarshal.FillCascadesNeverExceedsMaxCascades` for 8/8. Both are pure
-  CPU. Run: `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=SceneUboMarshal.*:BuildIntegrity.*`
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-
-  **Context:** this is hardening, not a live bug — say so in the commit message.
-  The clamp is a no-op for every value the current host can produce
-  (`VulkanRenderer.cpp:216-228` already truncates, `GUI.cpp:191` caps the
-  slider at `MAX_CASCADES`), so the rendered output must not change. The
-  precedent is `a6fbd968` (PCF radius) and the "second lock" comment it left
-  behind. Do not raise `MAX_CASCADES` or widen `cascadeSplits` as part of this.
-
 - [ ] **(S) Gate the invariant that each render stage's framebuffers are destroyed before the swapchain they reference is recreated** — four stages depend on `recreateSwapChain()` having torn their framebuffers down first, the ordering cannot move into the stages, and nothing checks it.
 
   **Files to read:**

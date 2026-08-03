@@ -55,6 +55,10 @@ constexpr auto clampPcfRadius(int guiValue) -> uint32_t
 // field the shaders gate on) but still writes the matrices/splits - keeping
 // the last computed cascades in the UBO is harmless since nothing samples
 // them while numCascades is 0, and avoids a second branch at every call site.
+// activeCascades is truncated to the shorter of the two spans rather than
+// trusting the assert below: NDEBUG builds compile it out, and a caller
+// mismatch would otherwise read viewProjMatrices (or splitDepths) out of
+// bounds instead of merely misbehaving.
 inline auto fillSceneUboCascades(VulkanRendererInternals::SceneUBO &ubo,
   std::span<const float> splitDepths,
   std::span<const glm::mat4> viewProjMatrices,
@@ -62,7 +66,8 @@ inline auto fillSceneUboCascades(VulkanRendererInternals::SceneUBO &ubo,
 {
     assert(splitDepths.size() == viewProjMatrices.size());
 
-    const size_t activeCascades = std::min(splitDepths.size(), static_cast<size_t>(MAX_CASCADES));
+    const size_t activeCascades = std::min(
+      { splitDepths.size(), viewProjMatrices.size(), static_cast<size_t>(MAX_CASCADES) });
     for (size_t i = 0; i < activeCascades; ++i) {
         ubo.cascadeSplits[static_cast<int>(i)] = splitDepths[i];
         ubo.cascadeLightSpaceMatrices[i] = viewProjMatrices[i];
