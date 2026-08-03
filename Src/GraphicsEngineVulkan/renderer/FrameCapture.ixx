@@ -74,6 +74,9 @@ class FrameCapture
           static_cast<vk::DeviceSize>(extent.width) * static_cast<vk::DeviceSize>(extent.height) * 4ULL;
 
         if (buffer_size < required_size) {
+            // Redundant since create() now releases the previous allocation itself,
+            // but kept: it documents that destroying here (before the new create)
+            // is synchronisation-safe.
             buffer.cleanUp();
             buffer.create(device,
               required_size,

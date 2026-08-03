@@ -59,6 +59,8 @@ void Kataglyphis::VulkanImage::create(std::shared_ptr<VulkanDevice>in_device,
   vk::ImageType image_type,
   uint32_t depth)
 {
+    cleanUp();
+
     this->device = in_device;
     this->owns_image = true;
     // CREATE image

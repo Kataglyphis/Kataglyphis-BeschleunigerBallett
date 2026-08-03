@@ -6607,59 +6607,6 @@ decision.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Make `VulkanBuffer::create()` and `VulkanImage::create()`
-  release what they are about to overwrite** — both are move-assignable with a
-  `cleanUp()` first, and both leak if `create()` is called twice.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanBuffer.cpp` — `operator=` at
-    `:30-49` (which *does* `cleanUp()` first, at `:33`), `create` at `:51-121`,
-    `cleanUp` at `:123-133`
-  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanImage.cpp` — the same three, at
-    `:30-47`, `:49-90+` and its `cleanUp`
-  - `Src/GraphicsEngineVulkan/renderer/FrameCapture.ixx:76-83` and
-    `Src/GraphicsEngineVulkan/vulkan_base/VulkanBufferManager.cpp:106-113` — the
-    two call sites that already write `cleanUp(); create(...)` and explain why
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — for the gate below
-
-  **Steps:**
-  1. Add `cleanUp();` as the first statement of `VulkanBuffer::create()` (before
-     `device = vulkan_device;` — `cleanUp()` reads the *old* `device`, so the
-     order matters and getting it backwards destroys the new allocation against
-     the wrong allocator). Do the same in `VulkanImage::create()`.
-  2. Verify `cleanUp()` is safe on a default-constructed instance: it is guarded
-     by `created && device != nullptr` (`VulkanBuffer.cpp:125`); check
-     `VulkanImage::cleanUp()` has an equivalent guard and add one if not.
-  3. Leave the explicit `cleanUp()` calls at the two documented call sites in
-     place — they are now redundant but their comments record a *synchronisation*
-     argument (why destroying at that point is safe) that the new one-liner does
-     not make. Add a one-line note at each pointing at the new guarantee.
-  4. Do not touch `owns_image`/`created` semantics otherwise; a `VulkanImage` that
-     wraps a swapchain image (`setImage`, `owns_image == false`) must keep not
-     destroying it.
-
-  **Test:** add `BuildIntegrity.ResourceCreateReleasesThePreviousAllocation` to
-  `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — read `VulkanBuffer.cpp` and
-  `VulkanImage.cpp` as text, locate each `::create(` definition, and assert the
-  first non-comment, non-blank statement in its body is `cleanUp();`. Reuse that
-  suite's existing source-scanning helpers rather than adding a new parser, and
-  make the failure message say *why* (the handle is overwritten, so the previous
-  VMA allocation is unreachable). A behavioural test would need a device.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='BuildIntegrity.*'`
-  from the repo root. Also worth a `clangcl-debug` ASAN app run
-  (`.\Scripts\Windows\run_clangcl_debug.ps1`) if a host GPU is available, but the
-  gate is the acceptance criterion.
-
-  **Context:** nothing leaks today — every one of the four `create()` call sites
-  on an already-created instance happens to call `cleanUp()` first. This is about
-  where the obligation lives. Both classes are documented in `AGENTS.md` as
-  "move-only with destructor release", and both already honour that in
-  `operator=`; `create()` is the one entry point that does not, which is exactly
-  the kind of asymmetry that survives until someone adds a fifth call site.
-
 ## Completed (kept for the reasoning, not the status)
 
 - **Stage-level RAII** (2026-07-19) — leaf types (`VulkanBuffer`/`VulkanImage`)

@@ -105,6 +105,8 @@ void Kataglyphis::VulkanBufferManager::ensureStagingBufferCapacity(const std::sh
 
     // Safe to destroy here: every upload submit is fence-synchronized before
     // returning, so no previously recorded copy can still reference it.
+    // Redundant since create() now releases the previous allocation itself,
+    // but kept for that synchronisation argument.
     stagingBuffer.cleanUp();
     stagingBuffer.create(device,
       new_capacity,

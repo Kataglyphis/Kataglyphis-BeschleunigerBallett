@@ -54,6 +54,8 @@ void Kataglyphis::VulkanBuffer::create(std::shared_ptr<VulkanDevice>vulkan_devic
   vk::MemoryPropertyFlags buffer_propertiy_flags,
   vk::MemoryAllocateFlags buffer_allocate_flags)
 {
+    cleanUp();
+
     device = vulkan_device;
 
     if (buffer_size == 0) {

@@ -822,6 +822,55 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
     };
 }
 
+// Reads `path` in full, or std::nullopt if it cannot be opened.
+std::optional<std::string> read_file_text(const fs::path &path)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file) { return std::nullopt; }
+    return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+}
+
+// Finds the definition of `qualified_name(...)` in `text` (e.g.
+// "Kataglyphis::VulkanBuffer::create") and returns the first non-comment,
+// non-blank statement in its body, or std::nullopt if the function or its
+// body cannot be located. Assumes the parameter list itself contains no
+// parentheses - true for every overload this suite scans - so a simple
+// depth counter finds the parameter list's matching close paren.
+std::optional<std::string> first_statement_of_function(const std::string &text, const std::string &qualified_name)
+{
+    const std::string signature = qualified_name + "(";
+    const std::size_t sig_pos = text.find(signature);
+    if (sig_pos == std::string::npos) { return std::nullopt; }
+
+    std::size_t pos = sig_pos + signature.size();
+    int depth = 1;
+    while (pos < text.size() && depth > 0) {
+        if (text[pos] == '(') { ++depth; } else if (text[pos] == ')') { --depth; }
+        ++pos;
+    }
+    if (depth != 0) { return std::nullopt; }
+
+    const std::size_t brace_pos = text.find('{', pos);
+    if (brace_pos == std::string::npos) { return std::nullopt; }
+
+    std::size_t body_pos = brace_pos + 1;
+    while (body_pos < text.size()) {
+        while (body_pos < text.size() && std::isspace(static_cast<unsigned char>(text[body_pos])) != 0) {
+            ++body_pos;
+        }
+        if (body_pos + 1 < text.size() && text[body_pos] == '/' && text[body_pos + 1] == '/') {
+            const std::size_t newline = text.find('\n', body_pos);
+            body_pos = newline == std::string::npos ? text.size() : newline + 1;
+            continue;
+        }
+        break;
+    }
+
+    const std::size_t stmt_end = text.find(';', body_pos);
+    if (stmt_end == std::string::npos) { return std::nullopt; }
+    return text.substr(body_pos, stmt_end - body_pos + 1);
+}
+
 }// namespace
 
 // Both the build-time compiler (Scripts/Windows/compile-slang-shaders.ps1) and
@@ -912,6 +961,47 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanSharedIncludes)
     EXPECT_TRUE(stale.empty()) << stale.size()
                                << " SPIR-V binaries are older than the newest shared Slang import under "
                                   "common/; editing a shared module must rebuild its dependents.";
+}
+
+// VulkanBuffer and VulkanImage are documented in AGENTS.md as "move-only with
+// destructor release". Both operator=(&&) overloads honour that by calling
+// cleanUp() before overwriting their handle, but create() did not - calling
+// create() a second time on an already-created instance overwrote `buffer`/
+// `image` and `allocation` and leaked the previous VMA allocation. This test
+// reads both sources as text and asserts the first statement in each
+// create()'s body is cleanUp(), so the obligation lives in create() itself
+// rather than at every call site. A behavioural test would need a device.
+TEST(BuildIntegrity, ResourceCreateReleasesThePreviousAllocation)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path vulkan_base_dir = repo_root / "Src" / "GraphicsEngineVulkan" / "vulkan_base";
+
+    struct Target
+    {
+        fs::path source;
+        std::string qualified_name;
+    };
+    const std::array<Target, 2> targets = {
+        Target{ vulkan_base_dir / "VulkanBuffer.cpp", "Kataglyphis::VulkanBuffer::create" },
+        Target{ vulkan_base_dir / "VulkanImage.cpp", "Kataglyphis::VulkanImage::create" },
+    };
+
+    for (const auto &target : targets) {
+        const auto text = read_file_text(target.source);
+        ASSERT_TRUE(text.has_value()) << "could not read " << target.source.string();
+
+        const auto first_statement = first_statement_of_function(*text, target.qualified_name);
+        ASSERT_TRUE(first_statement.has_value())
+          << target.qualified_name << "(...) definition not found in " << target.source.string();
+
+        EXPECT_EQ(*first_statement, "cleanUp();")
+          << target.qualified_name
+          << "'s first statement must be cleanUp(), so calling create() on an already-created instance "
+             "releases the previous VMA allocation instead of leaking it. Found: \""
+          << *first_statement << "\" in " << target.source.string();
+    }
 }
 
 // GLM_FORCE_DEPTH_ZERO_TO_ONE used to be defined ONLY in App.cpp - a
