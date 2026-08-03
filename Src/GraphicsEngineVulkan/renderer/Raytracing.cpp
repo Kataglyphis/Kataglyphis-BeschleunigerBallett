@@ -48,6 +48,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::shaderHotReload(
         pipeline_layout = nullptr;
     }
     createGraphicsPipeline(descriptor_set_layouts);
+    recreateSBT();
 }
 
 void Kataglyphis::VulkanRendererInternals::Raytracing::recordCommands(vk::CommandBuffer &commandBuffer,
@@ -356,4 +357,18 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createSBT()
     memcpy(mapped_rchit,
       handles.data() + sbt_handle_source_offset(3, handle_size),
       handle_size);
+}
+
+void Kataglyphis::VulkanRendererInternals::Raytracing::recreateSBT()
+{
+    // Shader group handles are only valid for the pipeline that produced
+    // them, so the SBT buffers must be released before createSBT() re-reads
+    // them from the pipeline recreated by shaderHotReload. VulkanBuffer::create
+    // does not release a prior allocation, so skipping these cleanups would
+    // leak three buffers on every hot reload.
+    raygenShaderBindingTableBuffer.cleanUp();
+    missShaderBindingTableBuffer.cleanUp();
+    hitShaderBindingTableBuffer.cleanUp();
+
+    createSBT();
 }

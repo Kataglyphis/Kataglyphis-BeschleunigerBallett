@@ -5799,53 +5799,6 @@ code. **`Src/KomputePlayground`** — unchanged; still an owner decision.
 
 ### C++ Vulkan engine
 
-- [ ] **(M) Rebuild the ray-tracing SBT after a shader hot reload — it currently holds shader-group handles from a destroyed pipeline** — a spec violation on every `traceRaysKHR` after the button is pressed.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp:39-43` — `shaderHotReload`: destroys and recreates `graphicsPipeline`, nothing else
-  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp:291-351` — `createSBT`: reads group handles out of `graphicsPipeline` (`:308`) and `create`s the three SBT buffers (`:322-331`)
-  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp:47-100` — `recordCommands`, which re-derives the three region device addresses per frame (so the buffers are re-read; only their contents go stale)
-  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp:150-170` — `cleanUp`, for how the three SBT buffers are released
-  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanBuffer.cpp:51-100` — `create` does **not** free a prior allocation; a second `createSBT()` without `cleanUp()` leaks three buffers
-  - `Src/GraphicsEngineVulkan/renderer/Raytracing.ixx` — the three `VulkanBuffer` members' exact names
-
-  **Steps:**
-  1. Add a private `recreateSBT()` to `Raytracing` that calls `cleanUp()` on
-     each of `raygenShaderBindingTableBuffer`, `missShaderBindingTableBuffer`
-     and `hitShaderBindingTableBuffer` (confirm the member names first), then
-     calls `createSBT()`. Note in its comment that `VulkanBuffer::create` does
-     not release a prior allocation, which is why the explicit cleanups are
-     required and must not be "simplified" away.
-  2. Call `recreateSBT()` at the end of `shaderHotReload`, after
-     `createGraphicsPipeline`. Order matters: `createSBT` reads handles out of
-     the pipeline that must already exist.
-  3. Leave `init`'s `createGraphicsPipeline` + `createSBT` sequence alone (do
-     not reroute it through `recreateSBT` — there is nothing to clean up on the
-     first pass and `VulkanBuffer::cleanUp` on a never-created buffer is extra
-     surface for no gain).
-  4. Add `TEST(BuildIntegrity, RaytracingShaderHotReloadRebuildsTheShaderBindingTable)`
-     to `buildIntegritySuite.cpp`: brace-match the
-     `Raytracing::shaderHotReload` body in `Raytracing.cpp` and assert it
-     contains `recreateSBT` (or `createSBT`). Explain in the comment *why* —
-     shader group handles are only valid for the pipeline that produced them —
-     so the gate cannot be deleted as arbitrary.
-
-  **Test:** `BuildIntegrity.RaytracingShaderHotReloadRebuildsTheShaderBindingTable`
-  — RED before step 2, GREEN after. The runtime effect is GPU-only; do **not**
-  claim it verified from a container build.
-
-  **Build:** `clangcl-debug`, same commands as task 1. If a host GPU is
-  available, additionally run
-  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='GoldenRender.*:Integration.*'`
-  from the repo root and `Scripts\Windows\Run-SyncValidation.ps1`; if it is not
-  (RDP session — see the `- [b]` entry above), say so explicitly in the commit
-  message rather than implying GPU verification happened.
-
-  **Context:** This is **not** the `- [b]` SBT miss-region/stride item
-  (`BACKLOG.md:3561`) — that one is about record strides and handle offsets and
-  stays blocked. Keep the two changes separate so the blocked item's eventual
-  fix is still reviewable on its own.
-
 - [ ] **(S) Re-seed the look-mode mouse origin when look mode starts and when ImGui takes capture, not only on release** — the first right-drag of every run snaps the camera by the cursor's absolute screen position.
 
   **Files to read:**

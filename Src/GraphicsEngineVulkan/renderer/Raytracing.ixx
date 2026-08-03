@@ -61,5 +61,6 @@ class Raytracing
     void createPCRange();
     void createGraphicsPipeline(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
     void createSBT();
+    void recreateSBT();
 };
 }// namespace Kataglyphis::VulkanRendererInternals

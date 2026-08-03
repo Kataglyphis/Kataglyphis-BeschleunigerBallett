@@ -3582,3 +3582,51 @@ TEST(BuildIntegrity, EveryShaderHotReloadDestroysThePipelineLayoutItRecreates)
              return joined;
          }();
 }
+
+// Raytracing::shaderHotReload destroys and recreates graphicsPipeline, but
+// the shader binding table buffers hold shader-group handles read out of the
+// *previous* pipeline (see Raytracing::createSBT). Shader group handles are
+// only valid for the pipeline that produced them, so every hot reload must
+// rebuild the SBT alongside the pipeline or traceRaysKHR reads handles from a
+// destroyed pipeline - a spec violation. This gate cannot be deleted as
+// arbitrary busywork for that reason.
+TEST(BuildIntegrity, RaytracingShaderHotReloadRebuildsTheShaderBindingTable)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path raytracing_path =
+      repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "Raytracing.cpp";
+    std::ifstream file(raytracing_path);
+    ASSERT_TRUE(static_cast<bool>(file)) << "missing " << raytracing_path.string();
+    const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    const std::size_t signature_pos = contents.find("Raytracing::shaderHotReload(");
+    ASSERT_NE(signature_pos, std::string::npos)
+      << "Raytracing::shaderHotReload is no longer defined in " << raytracing_path.string();
+
+    const std::size_t body_open = contents.find('{', signature_pos);
+    ASSERT_NE(body_open, std::string::npos) << "could not locate the opening brace of Raytracing::shaderHotReload";
+
+    int brace_depth = 0;
+    std::size_t body_close = std::string::npos;
+    for (std::size_t i = body_open; i < contents.size(); ++i) {
+        if (contents[i] == '{') { ++brace_depth; }
+        else if (contents[i] == '}') {
+            --brace_depth;
+            if (brace_depth == 0) {
+                body_close = i;
+                break;
+            }
+        }
+    }
+    ASSERT_NE(body_close, std::string::npos)
+      << "could not brace-match the closing '}' of Raytracing::shaderHotReload";
+
+    const std::string body = contents.substr(body_open, body_close - body_open + 1);
+    EXPECT_TRUE(body.find("recreateSBT") != std::string::npos || body.find("createSBT") != std::string::npos)
+      << "Raytracing::shaderHotReload no longer rebuilds the shader binding table after recreating the "
+         "pipeline - shader group handles are only valid for the pipeline that produced them, so every "
+         "hot reload must call recreateSBT() (or createSBT()) after createGraphicsPipeline(), or "
+         "traceRaysKHR reads shader-group handles from a destroyed pipeline";
+}
