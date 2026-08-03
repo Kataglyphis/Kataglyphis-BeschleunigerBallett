@@ -1,5 +1,3 @@
-import fullscreen;
-
 // Procedural sky (Rust/WebGPU side). Mirrors sky.wgsl. Emits WGSL.
 // Horizon/zenith gradient + analytic sun disk derived from the directional light.
 

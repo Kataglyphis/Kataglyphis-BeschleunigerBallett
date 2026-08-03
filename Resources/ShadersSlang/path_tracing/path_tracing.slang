@@ -1,5 +1,4 @@
 import scene_types;
-import rt_types;
 
 // Path tracing compute kernel using ray query (GL_EXT_ray_query).
 // Sole source for this shader. Emits SPIR-V only (Vulkan ray query — WebGPU

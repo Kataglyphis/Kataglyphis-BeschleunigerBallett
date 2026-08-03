@@ -1,10 +1,9 @@
 import brdf;
-import aces;
-import fullscreen;
 
 // Forward PBR pass (Rust/WebGPU side). Mirrors forward.wgsl. Emits WGSL.
-// Uses the shared BRDF math (import brdf) and ACES tonemap (import aces),
-// eliminating the duplicated BRDF functions that were in forward.wgsl.
+// Uses the shared BRDF math (import brdf), eliminating the duplicated BRDF
+// functions that were in forward.wgsl. ACES tonemapping happens later, as
+// its own pass, in tonemap/tonemap.slang.
 //
 // This is a comprehensive port: skinning, instancing, IBL, tiled punctual
 // lighting, cascaded shadows, normal mapping, KHR_texture_transform,

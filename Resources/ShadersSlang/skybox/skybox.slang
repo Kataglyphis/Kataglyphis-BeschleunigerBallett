@@ -1,5 +1,3 @@
-import fullscreen;
-
 // Skybox shaders. Sole source for this shader. Emits SPIR-V only
 // (C++/Vulkan cubemap-based skybox).
 

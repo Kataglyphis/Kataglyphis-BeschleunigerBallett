@@ -1,4 +1,3 @@
-import scene_types;
 import rt_types;
 
 // Ray tracing miss shader: background color when a ray hits nothing.

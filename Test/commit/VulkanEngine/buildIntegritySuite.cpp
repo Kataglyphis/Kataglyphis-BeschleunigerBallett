@@ -2205,6 +2205,204 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
 
 namespace {
 
+// One `struct <Name> { ... }` definition found somewhere under
+// Resources/ShadersSlang - the struct-name counterpart to SlangFunctionDef.
+// Needed because a common module's public surface is not just its
+// functions: ibl.slang imports fullscreen only for `FullscreenVsOut`, never
+// calling `fullscreen_vs` at all (see
+// EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl's comment above) -
+// a function-name-only version of the check below would flag that import as
+// unused and be wrong.
+struct SlangStructDef
+{
+    std::string name;
+    std::string relative_file;// relative to Resources/ShadersSlang, forward slashes
+};
+
+// Scans one already comment/string-stripped file's tokens for `struct
+// <Name>` pairs. Unlike collect_functions_from_file this needs no brace or
+// paren bookkeeping: `struct` is a keyword that only ever precedes the
+// type's name, so any "struct" identifier token immediately followed by
+// another identifier token is a definition.
+void collect_structs_from_file(const std::vector<std::string> &stripped_lines, const std::string &relative_file,
+                                std::vector<SlangStructDef> &out)
+{
+    std::string text;
+    for (const auto &line : stripped_lines) {
+        text += line;
+        text += '\n';
+    }
+    const std::vector<SlangToken> tokens = tokenize_slang(text);
+    for (std::size_t t = 0; t + 1 < tokens.size(); ++t) {
+        if (tokens[t].is_identifier && tokens[t].text == "struct" && tokens[t + 1].is_identifier) {
+            out.push_back({ tokens[t + 1].text, relative_file });
+        }
+    }
+}
+
+// Every relative path (forward slashes, relative to slang_root) of a
+// non-generated .slang file under `slang_root`.
+std::vector<std::string> collect_all_slang_relative_paths(const fs::path &slang_root)
+{
+    std::vector<std::string> paths;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
+        const std::string relative_path = fs::relative(path, slang_root).generic_string();
+        if (relative_path.starts_with("build/")) { continue; }
+        paths.push_back(relative_path);
+    }
+    return paths;
+}
+
+// Every `struct` definition under Resources/ShadersSlang (excluding
+// build/), mirroring collect_slang_functions.
+std::vector<SlangStructDef> collect_slang_structs(const fs::path &slang_root)
+{
+    std::vector<SlangStructDef> structs;
+    for (const std::string &relative_path : collect_all_slang_relative_paths(slang_root)) {
+        std::ifstream file(slang_root / relative_path);
+        if (!file) { continue; }
+        std::vector<std::string> stripped_lines;
+        std::string raw_line;
+        while (std::getline(file, raw_line)) {
+            stripped_lines.push_back(strip_line_comment(strip_string_literals(raw_line)));
+        }
+        collect_structs_from_file(stripped_lines, relative_path, structs);
+    }
+    return structs;
+}
+
+// Resolves `import <module_name>;` to the .slang file slangc would find:
+// slangc searches -I paths in order (see Get-SlangIncludeArgument in
+// WindowsSlang.Common.psm1) - the importing file's own directory first, then
+// every directory under Resources/ShadersSlang. Two modules share a
+// filename in this corpus today (common/noise.slang and compute/noise.slang
+// - see tests/noise_test.slang, which imports the common/ one), so an exact
+// same-directory match is tried first, then a common/ preference, matching
+// how those two actually resolve in practice; anything left ambiguous falls
+// back to the alphabetically-first candidate.
+std::optional<std::string> resolve_slang_module(const std::map<std::string, std::vector<std::string>> &files_by_stem,
+                                                  const std::string &module_name,
+                                                  const std::string &importer_relative_file)
+{
+    const auto found = files_by_stem.find(module_name);
+    if (found == files_by_stem.end() || found->second.empty()) { return std::nullopt; }
+    const std::vector<std::string> &candidates = found->second;
+    if (candidates.size() == 1) { return candidates.front(); }
+
+    const std::string importer_dir = fs::path(importer_relative_file).parent_path().generic_string();
+    for (const auto &candidate : candidates) {
+        if (fs::path(candidate).parent_path().generic_string() == importer_dir) { return candidate; }
+    }
+    for (const auto &candidate : candidates) {
+        if (candidate.starts_with("common/")) { return candidate; }
+    }
+    return candidates.front();
+}
+
+}// namespace
+
+// forward.slang claimed to tonemap via `import aces;` while the actual
+// tonemap pass lives entirely in tonemap/tonemap.slang - the import was dead
+// weight left over from before that split, and the header comment above it
+// was simply wrong (see the fix alongside this test). This is the general
+// form of that check: for every `import <module>;` anywhere in the Slang
+// corpus, the importing file must actually reference at least one of the
+// module's exported function or struct names - otherwise the import (and
+// any comment justifying it) is stale and should be deleted.
+TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    const std::vector<std::string> all_relative_paths = collect_all_slang_relative_paths(slang_root);
+    std::map<std::string, std::vector<std::string>> files_by_stem;
+    for (const auto &relative_path : all_relative_paths) {
+        files_by_stem[fs::path(relative_path).stem().string()].push_back(relative_path);
+    }
+    for (auto &entry : files_by_stem) { std::sort(entry.second.begin(), entry.second.end()); }
+
+    const std::vector<SlangFunctionDef> functions = collect_slang_functions(slang_root);
+    const std::vector<SlangStructDef> structs = collect_slang_structs(slang_root);
+
+    std::map<std::string, std::vector<std::string>> exported_names_by_file;
+    for (const auto &fn : functions) { exported_names_by_file[fn.relative_file].push_back(fn.name); }
+    for (const auto &st : structs) { exported_names_by_file[st.relative_file].push_back(st.name); }
+
+    static const std::regex kImportRe(R"(^\s*import\s+([A-Za-z_]\w*)\s*;)");
+
+    int imports_checked = 0;
+    std::vector<std::string> violations;
+
+    for (const auto &relative_path : all_relative_paths) {
+        std::ifstream file(slang_root / relative_path);
+        ASSERT_TRUE(static_cast<bool>(file)) << "could not open " << relative_path;
+
+        std::vector<std::string> module_names;
+        std::vector<std::string> stripped_lines;
+        std::string raw_line;
+        while (std::getline(file, raw_line)) {
+            const std::string stripped = strip_line_comment(strip_string_literals(raw_line));
+            stripped_lines.push_back(stripped);
+            std::smatch match;
+            if (std::regex_search(stripped, match, kImportRe)) { module_names.push_back(match[1].str()); }
+        }
+        if (module_names.empty()) { continue; }
+
+        std::string text;
+        for (const auto &line : stripped_lines) {
+            text += line;
+            text += '\n';
+        }
+        std::set<std::string> identifiers;
+        for (const auto &tok : tokenize_slang(text)) {
+            if (tok.is_identifier) { identifiers.insert(tok.text); }
+        }
+
+        for (const auto &module_name : module_names) {
+            ++imports_checked;
+            const auto resolved = resolve_slang_module(files_by_stem, module_name, relative_path);
+            if (!resolved.has_value()) {
+                violations.push_back(relative_path + ": import " + module_name
+                                      + " does not resolve to any .slang file under " + slang_root.string()
+                                      + " - the resolution scan itself is broken");
+                continue;
+            }
+
+            const auto exported = exported_names_by_file.find(*resolved);
+            const bool used = exported != exported_names_by_file.end()
+              && std::any_of(exported->second.begin(), exported->second.end(),
+                              [&identifiers](const std::string &name) { return identifiers.contains(name); });
+            if (!used) {
+                violations.push_back(relative_path + ": import " + module_name + " (" + *resolved
+                                      + ") is unused - none of its exported function or struct names appear in "
+                                        "this file");
+            }
+        }
+    }
+
+    ASSERT_GE(imports_checked, 10) << "found only " << imports_checked << " Slang import statement(s) under "
+                                    << slang_root.string() << " - the import scan itself is broken";
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " Slang import(s) pull in a module whose exported functions/structs are never referenced by the "
+         "importing file - delete the dead import (and any comment justifying it):"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+namespace {
+
 // One `export module <name>;` declaration found in an .ixx file.
 struct ModuleInterface
 {
