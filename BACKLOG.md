@@ -7331,30 +7331,6 @@ PowerShell file plus one new Pester suite; task 3 touches `Linux.yml`,
 `Texture.ixx` and `buildIntegritySuite.cpp`. Task 4 edits a module interface
 (`Texture.ixx`) and therefore needs `-FreshContainer`; nothing else here does.
 
-- [ ] **(M) Run every registered fuzz target on the always-on Linux lane, and gate both CI lists against `Test/fuzz/CMakeLists.txt`** — `shader_file_reader_fuzz_test` and `texture_loading_fuzz_test` run only on the opt-in Windows lane, and nothing notices when a new target is added to neither.
-
-  **Files to read:**
-  - `Test/fuzz/CMakeLists.txt:106-170` — the seven `kataglyphis_add_fuzz_test(<target> <source>)` calls (six distinct engine targets plus `first_fuzz_test` from `dummy.cpp`), and the comment at `:96-103` explaining why they are deliberately NOT `gtest_discover_tests`'d (so ctest can never be the gate).
-  - `.github/workflows/Linux.yml:129-147` — the "Run fuzzer tests" step, four hand-written paths under `build-asan-clang/`, plus the ASan-ODR history that dictates the build directory.
-  - `.github/workflows/Windows.yml:222-247` — the five-name `foreach` with its `Test-Path`/`exit 1` existence check; copy that shape, not the bare-path shape.
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1-130` — `find_repo_root()` / `read_file_text()` and the manifest-vs-filesystem gates to model the new test on.
-
-  **Steps:**
-  1. Add `shader_file_reader_fuzz_test` and `texture_loading_fuzz_test` to `Linux.yml`'s fuzzer step, and `first_fuzz_test` + `example_fuzz_test` to `Windows.yml`'s `foreach` list, so both lanes run all seven registered targets. Give the Linux step the same missing-binary check Windows has (`test -x "build-asan-clang/$t" || { echo "missing $t"; exit 1; }` in a `for` loop) rather than leaving bare paths.
-  2. Add `TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)` to `buildIntegritySuite.cpp`. Parse `Test/fuzz/CMakeLists.txt` for every `kataglyphis_add_fuzz_test(` call and take the first whitespace-delimited argument as the target name — skip the `function(kataglyphis_add_fuzz_test ...)` definition line itself (`:53`), which is why matching on the literal `kataglyphis_add_fuzz_test(` plus "not preceded by `function`" matters.
-  3. For each target, assert the name appears as a whole word in both `.github/workflows/Linux.yml` and `.github/workflows/Windows.yml`. Include an explicit, initially empty, `kNotRunInCi` set of `{target, reason}` pairs in the test; a target may only be absent from a lane if it is listed there, and the failure message must say so.
-  4. Report every offender in one message (accumulate into a vector, then one `EXPECT_TRUE(missing.empty()) << ...`), matching how the other list gates in this file report.
-  5. Build `clangcl-debug` in the container and run `commitTestSuite.exe --gtest_filter=BuildIntegrity.*` from the repo root; the test is pure filesystem and passes without a GPU.
-
-  **Test:** `BuildIntegrity.EveryRegisteredFuzzTargetRunsInCi`. Verify it actually bites: temporarily delete one target name from `Linux.yml`, confirm the test fails and names it, restore.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*` from the repo root.
-
-  **Context:** `Linux_x86.yml` runs on every push; `Windows.yml` only on `[build-win]` (see AGENTS.md "What CI runs"). That is why moving these two targets onto the Linux lane is the substance of the task and the gate is the part that keeps it true.
-  **Expect the two newly-added Linux targets to be the risky part**, and do not paper over it: both link `VulkanEngineCore` (`Test/fuzz/CMakeLists.txt:161`, `:167`) and `texture_loading_fuzz_test` additionally pulls ImGui sources (`:170`) — the same headless-global-constructor hazard that the `scene_config_fuzz_test` comment at `:119-132` describes taking a fuzzer down at static-init time. If either fails or crashes on the Linux lane, that is a genuine finding: record the symptom in `BACKLOG.md`, add the target to `kNotRunInCi` with the reason, and leave the gate in place — do not delete the gate or silently shrink the list.
-
 - [ ] **(S) (refactor) Give `Texture::createTextureSampler` release-previous semantics — the fourth member of a family whose other three shipped this week** — it overwrites `textureSampler` and leaks the old `vk::Sampler`, while `Texture` already has the matching `releaseImageView()` next to it.
 
   **Files to read:**

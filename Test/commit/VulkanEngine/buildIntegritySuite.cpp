@@ -703,6 +703,39 @@ std::optional<std::vector<std::string>> parse_ci_fuzz_targets(const fs::path &wo
     return std::vector<std::string>{};
 }
 
+// Parses the fuzz-target names out of Linux.yml's "Run fuzzer tests" step: a
+// bash `for t in a b c; do` loop. Anchored on "for t in " and the following
+// "; do", so an unrelated for-loop elsewhere in the file cannot be picked up.
+// Returns std::nullopt only if the file cannot be opened; an empty vector
+// means the anchor text itself was not found, which the caller must fail
+// loudly on rather than skip. Modeled on parse_ci_fuzz_targets above.
+std::optional<std::vector<std::string>> parse_linux_ci_fuzz_targets(const fs::path &workflow_path)
+{
+    std::ifstream file(workflow_path);
+    if (!file) { return std::nullopt; }
+
+    static const std::string kAnchor = "for t in ";
+    static const std::string kCloser = "; do";
+
+    std::string line;
+    while (std::getline(file, line)) {
+        const std::size_t anchor_pos = line.find(kAnchor);
+        if (anchor_pos == std::string::npos) { continue; }
+
+        const std::size_t list_start = anchor_pos + kAnchor.size();
+        const std::size_t closer_pos = line.find(kCloser, list_start);
+        if (closer_pos == std::string::npos) { break; }
+
+        const std::string list = line.substr(list_start, closer_pos - list_start);
+        std::vector<std::string> targets;
+        std::istringstream iss(list);
+        std::string token;
+        while (iss >> token) { targets.push_back(token); }
+        return targets;
+    }
+    return std::vector<std::string>{};
+}
+
 using Kataglyphis::ShadowPushConstants;
 using Kataglyphis::VulkanRendererInternals::DirectionalLightData;
 using Kataglyphis::VulkanRendererInternals::GlobalUBO;
@@ -1452,10 +1485,13 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
       << R"( - the anchor text ('foreach (`$t in @(' / '))') may have changed)";
     const std::set<std::string> ci_set(ci_targets.begin(), ci_targets.end());
 
-    // FuzzTest smoke targets (dummy.cpp / example_fuzz_test.cpp) - they exist to
-    // prove the fuzzing harness itself works, not to cover engine surface, so
-    // Windows.yml deliberately does not run them.
-    const std::set<std::string> excluded_from_ci = { "first_fuzz_test", "example_fuzz_test" };
+    // FuzzTest smoke targets (dummy.cpp / example_fuzz_test.cpp) - they exist
+    // to prove the fuzzing harness itself works, not to cover engine surface.
+    // Windows.yml now runs them alongside every other declared target (see
+    // BuildIntegrity.EveryRegisteredFuzzTargetRunsInCi below), so this set is
+    // currently empty; it stays here as the extension point for a future
+    // smoke-only target that should not gate CI.
+    const std::set<std::string> excluded_from_ci;
 
     std::vector<std::string> missing_from_ci;
     for (const auto &target : declared_targets) {
@@ -1483,6 +1519,81 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
       << [&dead_ci_entries] {
              std::string joined;
              for (const auto &entry : dead_ci_entries) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+// shader_file_reader_fuzz_test and texture_loading_fuzz_test used to run only
+// on the opt-in Windows lane (see AGENTS.md "What CI runs": Linux.yml runs on
+// every push, Windows.yml only on [build-win]), so a real engine-surface
+// fuzzer could sit unexercised for weeks between opt-in runs, and nothing
+// noticed when a new target was added to neither lane. This gates every
+// target declared in Test/fuzz/CMakeLists.txt against BOTH workflow files.
+TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const std::vector<std::string> declared_targets =
+      parse_declared_fuzz_targets(repo_root / "Test" / "fuzz" / "CMakeLists.txt");
+    ASSERT_FALSE(declared_targets.empty())
+      << "parsed zero kataglyphis_add_fuzz_test(...) declarations out of Test/fuzz/CMakeLists.txt - the "
+         "anchor text ('kataglyphis_add_fuzz_test(') may have changed";
+
+    const fs::path linux_workflow_path = repo_root / ".github" / "workflows" / "Linux.yml";
+    const fs::path windows_workflow_path = repo_root / ".github" / "workflows" / "Windows.yml";
+
+    const auto linux_targets_opt = parse_linux_ci_fuzz_targets(linux_workflow_path);
+    if (!linux_targets_opt.has_value()) {
+        GTEST_SKIP() << "could not open " << linux_workflow_path.string() << " - not running from the repo root?";
+    }
+    const auto windows_targets_opt = parse_ci_fuzz_targets(windows_workflow_path);
+    if (!windows_targets_opt.has_value()) {
+        GTEST_SKIP() << "could not open " << windows_workflow_path.string() << " - not running from the repo root?";
+    }
+    ASSERT_FALSE(linux_targets_opt->empty())
+      << "parsed zero fuzz targets out of the for-loop in " << linux_workflow_path.string()
+      << " - the anchor text ('for t in ' / '; do') may have changed";
+    ASSERT_FALSE(windows_targets_opt->empty())
+      << "parsed zero fuzz targets out of the foreach array in " << windows_workflow_path.string()
+      << R"( - the anchor text ('foreach (`$t in @(' / '))') may have changed)";
+
+    const std::set<std::string> linux_set(linux_targets_opt->begin(), linux_targets_opt->end());
+    const std::set<std::string> windows_set(windows_targets_opt->begin(), windows_targets_opt->end());
+
+    // A target may be absent from a lane only if it is listed here, with a
+    // reason - e.g. a linked-VulkanEngineCore target crashing at static init
+    // on the Linux lane the way scene_config_fuzz_test's comment above
+    // describes. Empty means every declared target runs in every lane.
+    struct NotRunInCi
+    {
+        std::string target;
+        std::string lane;// "Linux.yml" or "Windows.yml"
+        std::string reason;
+    };
+    const std::vector<NotRunInCi> kNotRunInCi;
+
+    std::vector<std::string> missing;
+    auto check_lane = [&](const std::string &lane_name, const std::set<std::string> &lane_set) {
+        for (const auto &target : declared_targets) {
+            if (lane_set.contains(target)) { continue; }
+            const bool excused = std::any_of(kNotRunInCi.begin(), kNotRunInCi.end(), [&](const NotRunInCi &entry) {
+                return entry.target == target && entry.lane == lane_name;
+            });
+            if (excused) { continue; }
+            missing.push_back(target + " missing from " + lane_name);
+        }
+    };
+    check_lane("Linux.yml", linux_set);
+    check_lane("Windows.yml", windows_set);
+
+    EXPECT_TRUE(missing.empty())
+      << missing.size()
+      << " fuzz target(s) declared in Test/fuzz/CMakeLists.txt do not run in every CI lane and are not listed "
+         "in kNotRunInCi with a reason: "
+      << [&missing] {
+             std::string joined;
+             for (const auto &entry : missing) { joined += "\n  " + entry; }
              return joined;
          }();
 }

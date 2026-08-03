@@ -237,7 +237,7 @@ jobs:
           # built successfully.
           command: |
             $ErrorActionPreference='Stop';
-            foreach ($t in @('obj_parsing_fuzz_test','gltf_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')) {
+            foreach ($t in @('first_fuzz_test','example_fuzz_test','obj_parsing_fuzz_test','gltf_parsing_fuzz_test','scene_config_fuzz_test','shader_file_reader_fuzz_test','texture_loading_fuzz_test')) {
               $exe = Join-Path 'C:\ws\build-clangcl-debug' ($t + '.exe')
               if (-not (Test-Path $exe)) { Write-Host ('missing ' + $exe + ' - fuzz targets are Debug+clang-cl only'); exit 1 }
               Write-Host ('--- ' + $t)

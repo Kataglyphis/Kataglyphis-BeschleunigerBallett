@@ -135,15 +135,24 @@ jobs:
       # this same image: raw_hash_set.h "Try enabling sanitizers." assertion
       # with per-target ASan, all tests passing with ASan applied to every TU.
       # It broke the lane from 2026-05-17 until 2026-07-20.
+      #
+      # Every target declared in Test/fuzz/CMakeLists.txt runs here - see that
+      # file for what each one covers (shader_file_reader_fuzz_test and
+      # texture_loading_fuzz_test both link VulkanEngineCore, the same
+      # headless-global-constructor hazard scene_config_fuzz_test's comment
+      # describes). Test/commit/VulkanEngine/buildIntegritySuite.cpp's
+      # BuildIntegrity.EveryRegisteredFuzzTargetRunsInCi gates this list
+      # against the CMakeLists.txt declarations, and the existence check below
+      # turns a renamed or unbuilt target into a loud failure instead of a
+      # step that silently runs fewer fuzzers than it claims to.
       - name: Run fuzzer tests
         run: |
-          build-asan-clang/first_fuzz_test
-          # Real engine surface: OBJ parsing hardening (ObjLoader mirror).
-          build-asan-clang/obj_parsing_fuzz_test
-          # Real engine surface: scene-config path resolution.
-          build-asan-clang/scene_config_fuzz_test
-          # Real engine surface: glTF parsing (cgltf mirror).
-          build-asan-clang/gltf_parsing_fuzz_test
+          for t in first_fuzz_test example_fuzz_test obj_parsing_fuzz_test gltf_parsing_fuzz_test scene_config_fuzz_test shader_file_reader_fuzz_test texture_loading_fuzz_test; do
+            exe="build-asan-clang/$t"
+            test -x "$exe" || { echo "missing $exe"; exit 1; }
+            echo "--- $t"
+            "$exe"
+          done
         working-directory: ${{ github.workspace }}
 
       - name: Run tests under AddressSanitizer
