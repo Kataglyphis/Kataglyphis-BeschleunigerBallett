@@ -33,34 +33,39 @@ struct ShadowPushConstants
 // without one, which is why neither had any coverage while a hard-coded
 // identity model matrix silently disabled shadows entirely.
 
+// Aggregate for the parameters shared by computeCascadeData and
+// computeCascadeDataInto - six adjacent floats where a transposed argument
+// still compiles, so callers build this by name instead.
+struct CascadeFitParams {
+    glm::mat4 cameraView{ 1.0F };
+    float cameraFov{ 45.0F };
+    float aspect{ 1.0F };
+    float nearPlane{ 0.1F };
+    float farPlane{ 100.0F };
+    glm::vec3 lightDir{ 0.0F, -1.0F, 0.0F };
+    // shadowDistance clamps how far shadows are fitted, independently of the
+    // camera far plane - geometry beyond it is simply unshadowed, which is far
+    // cheaper than spreading the map over space nothing occupies. Pass <= 0 to
+    // fall back to farPlane (the old behaviour).
+    float shadowDistance{ 0.0F };
+    // splitLambda blends logarithmic (1.0) against uniform (0.0) splits. See
+    // the measurements in the implementation before raising it: high lambda
+    // starves subjects that are framed from a distance.
+    float splitLambda{ 0.5F };
+    // shadowMapResolution (optional): when > 0, cascades are STABILIZED - the
+    // light basis is world-fixed (pure rotation), the ortho box is sized from
+    // the slice's bounding radius (camera-motion invariant), and its center
+    // snaps to whole shadow-map texels. Without it the box is refitted to the
+    // exact frustum corners every frame, so it translates AND resizes
+    // continuously and every shadow edge shimmers as the camera moves. 0
+    // keeps the legacy tight-fit behaviour. The stabilized box is a padded
+    // square (radius + one texel), which trades a little texel density for
+    // edges that hold still.
+    uint32_t shadowMapResolution{ 0U };
+};
+
 // Splits and light-space matrices for `numCascades` cascades. Pure maths.
-//
-// shadowDistance clamps how far shadows are fitted, independently of the
-// camera far plane - geometry beyond it is simply unshadowed, which is far
-// cheaper than spreading the map over space nothing occupies. Pass <= 0 to
-// fall back to farPlane (the old behaviour).
-//
-// splitLambda blends logarithmic (1.0) against uniform (0.0) splits. See the
-// measurements in the implementation before raising it: high lambda starves
-// subjects that are framed from a distance.
-// shadowMapResolution (optional): when > 0, cascades are STABILIZED - the
-// light basis is world-fixed (pure rotation), the ortho box is sized from the
-// slice's bounding radius (camera-motion invariant), and its center snaps to
-// whole shadow-map texels. Without it the box is refitted to the exact frustum
-// corners every frame, so it translates AND resizes continuously and every
-// shadow edge shimmers as the camera moves. 0 keeps the legacy tight-fit
-// behaviour. The stabilized box is a padded square (radius + one texel), which
-// trades a little texel density for edges that hold still.
-std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
-  const glm::mat4 &cameraView,
-  float cameraFov,
-  float aspect,
-  float nearPlane,
-  float farPlane,
-  const glm::vec3 &lightDir,
-  float shadowDistance = 0.0F,
-  float splitLambda = 0.5F,
-  uint32_t shadowMapResolution = 0);
+std::vector<CascadeData> computeCascadeData(uint32_t numCascades, const CascadeFitParams &params);
 
 // The same maths, written into storage the CALLER owns, so the per-frame
 // shadow update path allocates nothing at all. computeCascadeData above is a
@@ -70,17 +75,7 @@ std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
 // short it writes NOTHING and returns: silently clamping would hand the
 // caller a partly-stale cascade set that still looks well-formed, which is
 // exactly the class of bug the mapped-UBO comment in updateCascades records.
-void computeCascadeDataInto(std::span<CascadeData> out,
-  uint32_t numCascades,
-  const glm::mat4 &cameraView,
-  float cameraFov,
-  float aspect,
-  float nearPlane,
-  float farPlane,
-  const glm::vec3 &lightDir,
-  float shadowDistance = 0.0F,
-  float splitLambda = 0.5F,
-  uint32_t shadowMapResolution = 0);
+void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, const CascadeFitParams &params);
 
 // The caster transform. This exists as a named function purely so a test can
 // pin the invariant that was once broken: the shadow pass must transform

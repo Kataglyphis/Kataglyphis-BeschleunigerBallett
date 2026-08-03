@@ -79,51 +79,32 @@ ShadowSetBinding shadowSetBinding(bool hasSharedSet)
     return ShadowSetBinding{ 1, 1 };
 }
 
-std::vector<CascadeData> computeCascadeData(uint32_t numCascades,
-  const glm::mat4 &cameraView,
-  float cameraFov,
-  float aspect,
-  float nearPlane,
-  float farPlane,
-  const glm::vec3 &lightDir,
-  float shadowDistance,
-  float splitLambda,
-  uint32_t shadowMapResolution)
+std::vector<CascadeData> computeCascadeData(uint32_t numCascades, const CascadeFitParams &params)
 {
     // Allocating convenience wrapper. It exists so callers that are NOT on the
     // frame path (tests, the benchmark) keep a value-returning signature; the
     // maths lives once, in computeCascadeDataInto.
     std::vector<CascadeData> cascadeData(numCascades);
-    computeCascadeDataInto(cascadeData,
-      numCascades,
-      cameraView,
-      cameraFov,
-      aspect,
-      nearPlane,
-      farPlane,
-      lightDir,
-      shadowDistance,
-      splitLambda,
-      shadowMapResolution);
+    computeCascadeDataInto(cascadeData, numCascades, params);
     return cascadeData;
 }
 
-void computeCascadeDataInto(std::span<CascadeData> out,
-  uint32_t numCascades,
-  const glm::mat4 &cameraView,
-  float cameraFov,
-  float aspect,
-  float nearPlane,
-  float farPlane,
-  const glm::vec3 &lightDir,
-  float shadowDistance,
-  float splitLambda,
-  uint32_t shadowMapResolution)
+void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, const CascadeFitParams &params)
 {
     if (numCascades == 0U) { return; }
     // Refuse rather than clamp: a caller that under-sized its buffer would
     // otherwise get a silently truncated cascade set.
     if (out.size() < numCascades) { return; }
+
+    const glm::mat4 &cameraView = params.cameraView;
+    const float cameraFov = params.cameraFov;
+    const float aspect = params.aspect;
+    const float nearPlane = params.nearPlane;
+    const float farPlane = params.farPlane;
+    const glm::vec3 &lightDir = params.lightDir;
+    const float shadowDistance = params.shadowDistance;
+    const float splitLambda = params.splitLambda;
+    const uint32_t shadowMapResolution = params.shadowMapResolution;
 
     // Shadows are fitted to shadowDistance, NOT to the camera far plane. The
     // two are unrelated: the debug scene ends at ~36 units of view depth while

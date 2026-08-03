@@ -119,10 +119,18 @@ void BM_ComputeCascadeData(benchmark::State &state)
     constexpr float kShadowDistance = 60.0F;
     constexpr uint32_t kShadowMapResolution = 2048;
 
-    for (auto _ : state) {
-        benchmark::DoNotOptimize(Kataglyphis::computeCascadeData(
-          numCascades, view, kFov, kAspect, kNear, kFar, lightDir, kShadowDistance, 0.5F, kShadowMapResolution));
-    }
+    const Kataglyphis::CascadeFitParams params{
+        .cameraView = view,
+        .cameraFov = kFov,
+        .aspect = kAspect,
+        .nearPlane = kNear,
+        .farPlane = kFar,
+        .lightDir = lightDir,
+        .shadowDistance = kShadowDistance,
+        .splitLambda = 0.5F,
+        .shadowMapResolution = kShadowMapResolution,
+    };
+    for (auto _ : state) { benchmark::DoNotOptimize(Kataglyphis::computeCascadeData(numCascades, params)); }
 }
 BENCHMARK(BM_ComputeCascadeData)->Arg(1)->Arg(3);
 

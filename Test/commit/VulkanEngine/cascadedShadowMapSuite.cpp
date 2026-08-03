@@ -22,6 +22,7 @@ import kataglyphis.vulkan.cascaded_shadow_map;
 namespace {
 
 using Kataglyphis::CascadeData;
+using Kataglyphis::CascadeFitParams;
 using Kataglyphis::clampCascadeCount;
 using Kataglyphis::computeCascadeData;
 using Kataglyphis::computeCascadeDataInto;
@@ -39,10 +40,19 @@ glm::mat4 default_view() { return glm::lookAt(glm::vec3(0.0F, 6.0F, 26.0F), glm:
 
 glm::vec3 default_light() { return glm::vec3(-0.55F, -1.0F, -0.35F); }
 
-std::vector<CascadeData> default_cascades()
+CascadeFitParams default_params()
 {
-    return computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light());
+    return CascadeFitParams{
+        .cameraView = default_view(),
+        .cameraFov = kFov,
+        .aspect = kAspect,
+        .nearPlane = kNear,
+        .farPlane = kFar,
+        .lightDir = default_light(),
+    };
 }
+
+std::vector<CascadeData> default_cascades() { return computeCascadeData(kCascades, default_params()); }
 
 bool is_finite(const glm::mat4 &m)
 {
@@ -79,7 +89,7 @@ std::vector<glm::vec4> frustum_slice_corners(const glm::mat4 &view, float near_d
 TEST(CascadedShadowMapUnit, ProducesRequestedNumberOfCascades)
 {
     EXPECT_EQ(default_cascades().size(), kCascades);
-    EXPECT_TRUE(computeCascadeData(0U, default_view(), kFov, kAspect, kNear, kFar, default_light()).empty());
+    EXPECT_TRUE(computeCascadeData(0U, default_params()).empty());
 }
 
 TEST(CascadedShadowMapUnit, SplitDepthsIncreaseAndEndAtFarPlane)
@@ -151,8 +161,9 @@ TEST(CascadedShadowMapUnit, EachCascadeCoversItsOwnFrustumSlice)
 TEST(CascadedShadowMapUnit, ShadowDistanceClampsTheCascadeRange)
 {
     constexpr float kShadowDistance = 60.0F;
-    const std::vector<CascadeData> cascades = computeCascadeData(
-      kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), kShadowDistance, 0.5F);
+    auto params = default_params();
+    params.shadowDistance = kShadowDistance;
+    const std::vector<CascadeData> cascades = computeCascadeData(kCascades, params);
 
     ASSERT_EQ(cascades.size(), kCascades);
     // The last cascade must end exactly on the shadow distance: short of it
@@ -163,8 +174,9 @@ TEST(CascadedShadowMapUnit, ShadowDistanceClampsTheCascadeRange)
 
 TEST(CascadedShadowMapUnit, ShadowDistanceBeyondTheFarPlaneIsClampedToIt)
 {
-    const std::vector<CascadeData> cascades = computeCascadeData(
-      kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), kFar * 10.0F, 0.5F);
+    auto params = default_params();
+    params.shadowDistance = kFar * 10.0F;
+    const std::vector<CascadeData> cascades = computeCascadeData(kCascades, params);
 
     ASSERT_EQ(cascades.size(), kCascades);
     EXPECT_NEAR(cascades.back().splitDepth, kFar, 1e-3F) << "cascades must never extend past what the camera sees";
@@ -174,8 +186,7 @@ TEST(CascadedShadowMapUnit, ZeroShadowDistanceFallsBackToTheFarPlane)
 {
     // The documented escape hatch, and what every existing caller relied on
     // before shadowDistance existed.
-    const std::vector<CascadeData> cascades =
-      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F);
+    const std::vector<CascadeData> cascades = computeCascadeData(kCascades, default_params());
 
     ASSERT_EQ(cascades.size(), kCascades);
     EXPECT_NEAR(cascades.back().splitDepth, kFar, 1e-3F);
@@ -183,8 +194,9 @@ TEST(CascadedShadowMapUnit, ZeroShadowDistanceFallsBackToTheFarPlane)
 
 TEST(CascadedShadowMapUnit, LambdaZeroReproducesUniformSplits)
 {
-    const std::vector<CascadeData> cascades =
-      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.0F);
+    auto params = default_params();
+    params.splitLambda = 0.0F;
+    const std::vector<CascadeData> cascades = computeCascadeData(kCascades, params);
 
     ASSERT_EQ(cascades.size(), kCascades);
     for (size_t i = 0; i < cascades.size(); ++i) {
@@ -202,10 +214,12 @@ TEST(CascadedShadowMapUnit, LambdaZeroReproducesUniformSplits)
 // that reason; this test exists so raising it is a deliberate act.
 TEST(CascadedShadowMapUnit, HigherLambdaPullsSplitsTowardTheCamera)
 {
-    const std::vector<CascadeData> low =
-      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.1F);
-    const std::vector<CascadeData> high =
-      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.9F);
+    auto low_params = default_params();
+    low_params.splitLambda = 0.1F;
+    auto high_params = default_params();
+    high_params.splitLambda = 0.9F;
+    const std::vector<CascadeData> low = computeCascadeData(kCascades, low_params);
+    const std::vector<CascadeData> high = computeCascadeData(kCascades, high_params);
 
     ASSERT_EQ(low.size(), high.size());
     ASSERT_GE(low.size(), 2U);
@@ -218,14 +232,19 @@ TEST(CascadedShadowMapUnit, HigherLambdaPullsSplitsTowardTheCamera)
 
 TEST(CascadedShadowMapUnit, OutOfRangeLambdaIsClamped)
 {
-    const std::vector<CascadeData> below =
-      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, -5.0F);
-    const std::vector<CascadeData> uniform =
-      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.0F);
-    const std::vector<CascadeData> above =
-      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 5.0F);
-    const std::vector<CascadeData> logarithmic =
-      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 1.0F);
+    auto below_params = default_params();
+    below_params.splitLambda = -5.0F;
+    auto uniform_params = default_params();
+    uniform_params.splitLambda = 0.0F;
+    auto above_params = default_params();
+    above_params.splitLambda = 5.0F;
+    auto logarithmic_params = default_params();
+    logarithmic_params.splitLambda = 1.0F;
+
+    const std::vector<CascadeData> below = computeCascadeData(kCascades, below_params);
+    const std::vector<CascadeData> uniform = computeCascadeData(kCascades, uniform_params);
+    const std::vector<CascadeData> above = computeCascadeData(kCascades, above_params);
+    const std::vector<CascadeData> logarithmic = computeCascadeData(kCascades, logarithmic_params);
 
     ASSERT_EQ(below.size(), kCascades);
     for (size_t i = 0; i < kCascades; ++i) {
@@ -265,13 +284,17 @@ TEST(CascadedShadowMapUnit, ShadowDistanceImprovesTexelDensityOverTheSubject)
         return worst;
     };
 
-    const float fitted_to_far_plane =
-      worst_density(computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.0F));
+    auto far_plane_params = default_params();
+    far_plane_params.splitLambda = 0.0F;
     // The lambda here must match GUISceneSharedVars::cascade_split_lambda, or
     // this measures a configuration nobody runs. It is 0 for a measured
     // reason - see the table in CascadedShadowMap.cpp.
-    const float fitted_to_shadow_distance =
-      worst_density(computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 60.0F, 0.0F));
+    auto shadow_distance_params = default_params();
+    shadow_distance_params.shadowDistance = 60.0F;
+    shadow_distance_params.splitLambda = 0.0F;
+
+    const float fitted_to_far_plane = worst_density(computeCascadeData(kCascades, far_plane_params));
+    const float fitted_to_shadow_distance = worst_density(computeCascadeData(kCascades, shadow_distance_params));
 
     ASSERT_GT(fitted_to_far_plane, 0.0F) << "no cascade covered the subject - the test framing is wrong";
     ASSERT_GT(fitted_to_shadow_distance, 0.0F) << "no cascade covered the subject - shadow distance is too short";
@@ -283,8 +306,9 @@ TEST(CascadedShadowMapUnit, DegenerateLightDirectionDoesNotProduceGarbage)
 {
     // A zero light vector must fall back to a sane direction rather than
     // normalising to NaN and poisoning every matrix.
-    const std::vector<CascadeData> cascades =
-      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, glm::vec3(0.0F));
+    auto params = default_params();
+    params.lightDir = glm::vec3(0.0F);
+    const std::vector<CascadeData> cascades = computeCascadeData(kCascades, params);
 
     ASSERT_EQ(cascades.size(), kCascades);
     for (const CascadeData &cascade : cascades) { EXPECT_TRUE(is_finite(cascade.viewProjMatrix)); }
@@ -292,10 +316,13 @@ TEST(CascadedShadowMapUnit, DegenerateLightDirectionDoesNotProduceGarbage)
 
 TEST(CascadedShadowMapUnit, CascadesRespondToLightDirection)
 {
-    const std::vector<CascadeData> from_above =
-      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, glm::vec3(0.0F, -1.0F, 0.0F));
-    const std::vector<CascadeData> from_the_side =
-      computeCascadeData(kCascades, default_view(), kFov, kAspect, kNear, kFar, glm::vec3(-1.0F, -0.2F, 0.0F));
+    auto from_above_params = default_params();
+    from_above_params.lightDir = glm::vec3(0.0F, -1.0F, 0.0F);
+    auto from_the_side_params = default_params();
+    from_the_side_params.lightDir = glm::vec3(-1.0F, -0.2F, 0.0F);
+
+    const std::vector<CascadeData> from_above = computeCascadeData(kCascades, from_above_params);
+    const std::vector<CascadeData> from_the_side = computeCascadeData(kCascades, from_the_side_params);
 
     ASSERT_EQ(from_above.size(), from_the_side.size());
     // Moving the sun must move the light-space matrices; if it does not, the
@@ -364,10 +391,15 @@ TEST(CascadedShadowMapUnit, StabilizedCascadesShiftByWholeTexelsUnderCameraMotio
     const glm::vec3 tiny_offset(0.0137F, 0.0F, 0.0F);
     const glm::vec3 probe(0.0F, 1.0F, 10.0F);
 
-    const auto stab_a = computeCascadeData(
-      kCascades, translated_view({}), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F, kResolution);
-    const auto stab_b = computeCascadeData(
-      kCascades, translated_view(tiny_offset), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F, kResolution);
+    auto stab_params_a = default_params();
+    stab_params_a.cameraView = translated_view({});
+    stab_params_a.shadowMapResolution = kResolution;
+    auto stab_params_b = default_params();
+    stab_params_b.cameraView = translated_view(tiny_offset);
+    stab_params_b.shadowMapResolution = kResolution;
+
+    const auto stab_a = computeCascadeData(kCascades, stab_params_a);
+    const auto stab_b = computeCascadeData(kCascades, stab_params_b);
 
     const glm::vec2 delta = texel_space(stab_a[0], probe, kResolution) - texel_space(stab_b[0], probe, kResolution);
     EXPECT_NEAR(delta.x, std::round(delta.x), 5e-2F) << "x moved by a fractional texel: " << delta.x;
@@ -376,10 +408,12 @@ TEST(CascadedShadowMapUnit, StabilizedCascadesShiftByWholeTexelsUnderCameraMotio
     // Control - the LEGACY path (no resolution) must show the crawl this
     // feature removes, or the assertions above prove nothing: the same camera
     // pair must produce a fractional shift on at least one axis.
-    const auto legacy_a =
-      computeCascadeData(kCascades, translated_view({}), kFov, kAspect, kNear, kFar, default_light());
-    const auto legacy_b =
-      computeCascadeData(kCascades, translated_view(tiny_offset), kFov, kAspect, kNear, kFar, default_light());
+    auto legacy_params_a = default_params();
+    legacy_params_a.cameraView = translated_view({});
+    auto legacy_params_b = default_params();
+    legacy_params_b.cameraView = translated_view(tiny_offset);
+    const auto legacy_a = computeCascadeData(kCascades, legacy_params_a);
+    const auto legacy_b = computeCascadeData(kCascades, legacy_params_b);
     const glm::vec2 legacy_delta =
       texel_space(legacy_a[0], probe, kResolution) - texel_space(legacy_b[0], probe, kResolution);
     const float frac_x = std::abs(legacy_delta.x - std::round(legacy_delta.x));
@@ -405,10 +439,15 @@ TEST(CascadedShadowMapUnit, StabilizedCascadesStayTexelAlignedOverLongCameraTrav
     const glm::vec3 long_offset(3.0F, 0.0F, 0.0F);
     const glm::vec3 probe(0.0F, 1.0F, 10.0F);
 
-    const auto stab_a = computeCascadeData(
-      kCascades, translated_view({}), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F, kResolution);
-    const auto stab_b = computeCascadeData(
-      kCascades, translated_view(long_offset), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F, kResolution);
+    auto stab_params_a = default_params();
+    stab_params_a.cameraView = translated_view({});
+    stab_params_a.shadowMapResolution = kResolution;
+    auto stab_params_b = default_params();
+    stab_params_b.cameraView = translated_view(long_offset);
+    stab_params_b.shadowMapResolution = kResolution;
+
+    const auto stab_a = computeCascadeData(kCascades, stab_params_a);
+    const auto stab_b = computeCascadeData(kCascades, stab_params_b);
 
     const glm::vec2 delta = texel_space(stab_a[0], probe, kResolution) - texel_space(stab_b[0], probe, kResolution);
     EXPECT_NEAR(delta.x, std::round(delta.x), 5e-2F) << "x drifted off whole-texel alignment: " << delta.x;
@@ -427,10 +466,15 @@ TEST(CascadedShadowMapUnit, StabilizedBoxSizeIsInvariantUnderCameraMotion)
     const glm::mat4 view_b =
       glm::lookAt(glm::vec3(3.0F, 6.0F, 20.0F), glm::vec3(1.0F, 0.0F, -4.0F), glm::vec3(0.0F, 1.0F, 0.0F));
 
-    const auto cascades_a =
-      computeCascadeData(kCascades, view_a, kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F, kResolution);
-    const auto cascades_b =
-      computeCascadeData(kCascades, view_b, kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F, kResolution);
+    auto params_a = default_params();
+    params_a.cameraView = view_a;
+    params_a.shadowMapResolution = kResolution;
+    auto params_b = default_params();
+    params_b.cameraView = view_b;
+    params_b.shadowMapResolution = kResolution;
+
+    const auto cascades_a = computeCascadeData(kCascades, params_a);
+    const auto cascades_b = computeCascadeData(kCascades, params_b);
 
     for (uint32_t i = 0; i < kCascades; ++i) {
         // viewProj = ortho * rotation; row norms of the upper 3x3 recover the
@@ -476,8 +520,9 @@ TEST(CascadedShadowMapUnit, StabilizedCascadesStillCoverTheirSlice)
     // its cascade's box (the one-texel pad exists precisely because snapping
     // can shift the center by up to a texel).
     constexpr uint32_t kResolution = 2048;
-    const std::vector<CascadeData> cascades = computeCascadeData(
-      kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F, kResolution);
+    auto params = default_params();
+    params.shadowMapResolution = kResolution;
+    const std::vector<CascadeData> cascades = computeCascadeData(kCascades, params);
     ASSERT_EQ(cascades.size(), kCascades);
 
     float slice_near = kNear;
@@ -511,22 +556,13 @@ TEST(CascadedShadowMapUnit, ComputeCascadeDataIntoAgreesWithTheAllocatingOverloa
     // Both branches of the function: the legacy tight-fit path (resolution 0)
     // and the stabilized texel-snapped one.
     for (const uint32_t resolution : { 0U, kResolution }) {
-        const std::vector<CascadeData> allocating = computeCascadeData(
-          kCascades, default_view(), kFov, kAspect, kNear, kFar, default_light(), 0.0F, 0.5F, resolution);
+        auto params = default_params();
+        params.shadowMapResolution = resolution;
+        const std::vector<CascadeData> allocating = computeCascadeData(kCascades, params);
         ASSERT_EQ(allocating.size(), kCascades);
 
         std::array<CascadeData, kCascades> in_place{};
-        computeCascadeDataInto(in_place,
-          kCascades,
-          default_view(),
-          kFov,
-          kAspect,
-          kNear,
-          kFar,
-          default_light(),
-          0.0F,
-          0.5F,
-          resolution);
+        computeCascadeDataInto(in_place, kCascades, params);
 
         for (size_t i = 0; i < kCascades; ++i) {
             EXPECT_EQ(in_place[i].splitDepth, allocating[i].splitDepth)
@@ -556,14 +592,7 @@ TEST(CascadedShadowMapUnit, ComputeCascadeDataIntoRefusesAnUndersizedBuffer)
         cascade.viewProjMatrix = glm::mat4(7.0F);
     }
 
-    computeCascadeDataInto(too_small,
-      kCascades,
-      default_view(),
-      kFov,
-      kAspect,
-      kNear,
-      kFar,
-      default_light());
+    computeCascadeDataInto(too_small, kCascades, default_params());
 
     for (const CascadeData &cascade : too_small) {
         EXPECT_EQ(cascade.splitDepth, kSentinelSplit) << "an undersized buffer must be left completely untouched";
@@ -574,16 +603,20 @@ TEST(CascadedShadowMapUnit, ComputeCascadeDataIntoRefusesAnUndersizedBuffer)
     // its first numCascades entries touched.
     std::array<CascadeData, kCascades + 1> oversized{};
     oversized[kCascades].splitDepth = kSentinelSplit;
-    computeCascadeDataInto(oversized,
-      kCascades,
-      default_view(),
-      kFov,
-      kAspect,
-      kNear,
-      kFar,
-      default_light());
+    computeCascadeDataInto(oversized, kCascades, default_params());
     for (size_t i = 0; i < kCascades; ++i) {
         EXPECT_GT(oversized[i].splitDepth, 0.0F) << "cascade " << i << " must have been written";
     }
     EXPECT_EQ(oversized[kCascades].splitDepth, kSentinelSplit) << "entries past numCascades must not be written";
+}
+
+TEST(CascadedShadowMapUnit, DefaultFitParamsMatchTheRetiredTrailingDefaults)
+{
+    // Pins the values that used to live as trailing default arguments on
+    // computeCascadeData/computeCascadeDataInto, so a later edit to the struct
+    // cannot silently move one of them.
+    const CascadeFitParams params{};
+    EXPECT_EQ(params.shadowDistance, 0.0F);
+    EXPECT_EQ(params.splitLambda, 0.5F);
+    EXPECT_EQ(params.shadowMapResolution, 0U);
 }

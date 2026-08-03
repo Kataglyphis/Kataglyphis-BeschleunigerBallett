@@ -7218,45 +7218,6 @@ unchanged; still an owner decision.
 
 ### C++ Vulkan engine
 
-- [ ] **(M) (refactor) Replace the eleven-parameter cascade-fit signature with a `CascadeFitParams` aggregate** — four adjacent `float`s with defaults, spelled out six times, where a transposed argument still compiles.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.ixx:45-84` — both declarations plus the long doc comment on `shadowMapResolution`.
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMapMath.cpp:82-121` — the allocating wrapper and the real implementation. Read the file header comment at `:16-26` first: this TU is deliberately separate from `CascadedShadowMap.cpp` so the perf benchmark does not link `Scene`. Do not merge them.
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:87-119` — the one production call site (`computeCascadeDataInto`, on the per-frame path).
-  - `Test/commit/VulkanEngine/cascadedShadowMapSuite.cpp` — 35 call sites; the local `kFov`/`kAspect`/`kNear`/`kFar`/`default_view()`/`default_light()`/`default_cascades()` helpers at `:32-45` are where the new struct should be built.
-  - `Test/perf/perfSuite.cpp:100-126` — `BM_ComputeCascadeData`, the one benchmark call site.
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1161-1167` — the designated-initializer style to match (`PathTracingHistoryKey`).
-
-  **Steps:**
-  1. In `CascadedShadowMap.ixx`, add above the two declarations:
-     ```cpp
-     struct CascadeFitParams {
-         glm::mat4 cameraView{ 1.0F };
-         float cameraFov{ 45.0F };
-         float aspect{ 1.0F };
-         float nearPlane{ 0.1F };
-         float farPlane{ 100.0F };
-         glm::vec3 lightDir{ 0.0F, -1.0F, 0.0F };
-         float shadowDistance{ 0.0F };
-         float splitLambda{ 0.5F };
-         uint32_t shadowMapResolution{ 0U };
-     };
-     ```
-     The last three member initializers must reproduce the trailing default arguments exactly (`0.0F`, `0.5F`, `0U`) — those defaults are load-bearing for the existing tests.
-  2. Change both declarations to `std::vector<CascadeData> computeCascadeData(uint32_t numCascades, const CascadeFitParams &params)` and `void computeCascadeDataInto(std::span<CascadeData> out, uint32_t numCascades, const CascadeFitParams &params)`. Move the existing per-parameter doc comment onto the struct's members — keep the `shadowMapResolution` stabilization paragraph verbatim, it is the only record of why the snapped path exists.
-  3. In `CascadedShadowMapMath.cpp`, update both definitions. Inside `computeCascadeDataInto`, either destructure into local `const` references at the top or use `params.` throughout — do not reorder or re-derive any of the maths; this task must not change a single computed value.
-  4. Update the production call site in `CascadedShadowMap.cpp` and the benchmark in `perfSuite.cpp` to build a `CascadeFitParams` with designated initializers.
-  5. Update `cascadedShadowMapSuite.cpp`: add a `CascadeFitParams default_params()` next to `default_view()`/`default_light()` returning the current defaults, and rewrite each of the 35 call sites as `auto params = default_params(); params.splitLambda = 0.0F;` (or a designated-initializer literal where the test overrides several fields). Keep every assertion and every test name unchanged.
-
-  **Test:** all 19 existing `CascadedShadowMapUnit` tests must stay green with their assertions untouched — that is the proof the refactor is value-preserving. Add one new `TEST(CascadedShadowMapUnit, DefaultFitParamsMatchTheRetiredTrailingDefaults)` asserting `CascadeFitParams{}.shadowDistance == 0.0F`, `.splitLambda == 0.5F` and `.shadowMapResolution == 0U`, so a later edit to the struct cannot silently move a default that used to live in a function declaration.
-
-  **Build:** `clangcl-debug`, **with `-FreshContainer`** — this edits a module interface (`CascadedShadowMap.ixx`), and `AGENTS.md` § Containerized Windows Builds requires a fresh container after any C++23 module-interface change:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=CascadedShadowMapUnit.*` from the repo root. Also build `clangcl-profile` afterwards — `perfSuite.cpp` only compiles in that configuration, so a debug-only build will not catch a broken benchmark call site.
-
-  **Context:** This is the same "give the positional aggregate a name" move as `ShadowSetBinding`, `PhysicalDeviceScore` and `PathTracingHistoryKey`. The specific hazard is `(kFov, kAspect, kNear, kFar)` followed by `(shadowDistance, splitLambda)` — six floats where any swap type-checks and produces a plausible-looking cascade set. `makeShadowPush` exists in this same file precisely because an earlier silent-wrong-value bug in this subsystem (identity instead of the model matrix) shipped unnoticed. Do not change `computeCascadeData`'s existence or its wrapper relationship to `computeCascadeDataInto` — the comment at `CascadedShadowMapMath.cpp:93-95` explains that split, and the two are required to agree bit for bit.
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 - [ ] **(M) (refactor) Give `wgpu::BindGroupLayoutEntry` five named constructors and route all 47 call sites through them** — 24 of those entries repeat `has_dynamic_offset: false, min_binding_size: None` verbatim, which is where the one field that actually differs gets lost.

@@ -107,15 +107,17 @@ void CascadedShadowMap::updateCascades(const glm::mat4 &cameraView,
     }
     computeCascadeDataInto(cascadeData,
       numCascades,
-      cameraView,
-      cameraFov,
-      aspect,
-      nearPlane,
-      farPlane,
-      lightDir,
-      shadowDistance,
-      splitLambda,
-      shadowWidth);
+      CascadeFitParams{
+        .cameraView = cameraView,
+        .cameraFov = cameraFov,
+        .aspect = aspect,
+        .nearPlane = nearPlane,
+        .farPlane = farPlane,
+        .lightDir = lightDir,
+        .shadowDistance = shadowDistance,
+        .splitLambda = splitLambda,
+        .shadowMapResolution = shadowWidth,
+      });
 }
 
 void CascadedShadowMap::uploadLightMatrices(uint32_t image_index)
