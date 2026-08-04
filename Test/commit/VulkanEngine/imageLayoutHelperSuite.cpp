@@ -95,4 +95,20 @@ TEST(ImageLayoutHelperUnit, ReproducesSkyBoxFirstBarrier)
     EXPECT_EQ(Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eTransferDstOptimal), vk::PipelineStageFlagBits::eTransfer);
 }
 
+// Texture::generateMipMaps publishes every mip level to eShaderReadOnlyOptimal
+// and is read back by the raster fragment shaders, raytrace.rchit.slang's ray
+// queries and the path_tracing.slang compute kernel. eComputeShader and
+// eRayTracingShaderKHR are distinct bits from eAllCommands (0x00000800 and
+// 0x00200000 versus 0x00010000), so they cannot be pulled out of the mask
+// with a bitwise AND - eAllCommands is the sentinel the Vulkan spec defines
+// to mean "synchronize against every stage", which is what actually covers
+// those two readers as well as eFragmentShader. Pin that the helper still
+// answers this sentinel rather than the narrower eFragmentShader alone.
+TEST(ImageLayoutHelperUnit, ShaderReadOnlyDestinationCoversComputeAndRayTracing)
+{
+    const vk::PipelineStageFlags stage = Kataglyphis::pipelineStageForLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
+    EXPECT_EQ(stage, vk::PipelineStageFlagBits::eAllCommands);
+    EXPECT_NE(stage, vk::PipelineStageFlagBits::eFragmentShader);
+}
+
 }// namespace

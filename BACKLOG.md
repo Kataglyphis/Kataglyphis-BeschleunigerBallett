@@ -9585,3 +9585,442 @@ other.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
+## 2026-08-04 batch XVII — planner (a `doubleSided` rule both renderers implement in the pipeline and neither implements in the shader, so every back face is lit by a normal pointing away from it; two ray-tracing normal transforms that column-multiply `WorldToObject` where their own comment says row-multiply, reachable from the GUI's Rotation slider; the emissive *texture*, the one lit glTF texture slot the Rust twin samples and the C++ engine has no field for; the tangent attribute that is the single prerequisite for closing the normal-map gap; and two mip-chain barriers that publish to `eFragmentShader` in an engine where three of five shading paths read those textures from compute and ray-tracing stages)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Batch XVI's five tasks all shipped
+(`94567de7`, `5f5b2e77`, `59c563fd`, `5dfb1dcf`, `53eef705`). Everything below
+was read out of the tree this pass, at `53eef705`.
+
+**First, neither renderer flips the shading normal on a back face.** glTF 2.0
+§3.9.4 (Double Sided): when a material is double-sided, the normal vector MUST
+be flipped for back-facing fragments. Both renderers already do the *pipeline*
+half of `doubleSided` and stop there. C++: `MeshDrawRecorder.cpp:44-52` sets
+`eCullMode` dynamically per draw — `eNone` for a double-sided mesh, `eBack`
+otherwise. Rust: `forward.rs:1934` / `:2630` select
+`pipeline_double_sided` (cull `None`) for exactly those primitives. Then all
+three raster fragment shaders use the interpolated normal unmodified:
+`rasterizer.slang:54` (`float3 N = normalize(In.shadingNormal)`),
+`deferred.slang:76` (`g.outNormal = float4(normalize(In.shadingNormal), …)`)
+and `forward.slang:390` (`float3 nGeom = normalize(In.worldNormal)`, which then
+seeds the whole TBN at `:391-394`). `SV_IsFrontFace` / `@builtin(front_facing)`
+appears nowhere in `Resources/ShadersSlang/` — a grep for it returns nothing.
+
+The visible failure is the one double-sided authoring exists for: a leaf card,
+a curtain, a sheet of cloth, a flag. Seen from behind, `dot(N, L)` has the
+wrong sign for every fragment, so `brdf_direct` returns ~0 and the surface goes
+black — while the exact same geometry seen from the front lights correctly.
+In deferred the wrong normal is *stored*, so it also corrupts the specular term
+and the shadow bias in the lighting pass.
+
+The fix needs no new material plumbing, and this is the part worth getting
+right: a back-facing fragment can only reach the shader if culling was off for
+that draw, and culling is off only for double-sided meshes. `!isFrontFace`
+therefore already *means* "double-sided back face" in both renderers. Do not
+add a `doubleSided` field to `ObjMaterial` for this.
+
+**Second, the two ray-tracing normal transforms are transposed.**
+`raytrace.rchit.slang:58-59` carries the comment "Normal at hit position
+(inverse-transpose = row-multiply WorldToObject)" and then writes
+`mul((float3x3)WorldToObject(), normalHit)` — a **column**-multiply. Slang
+follows HLSL: `mul(M, v)` is `M·v`, `mul(v, M)` is `Mᵀ·v`. The correct normal
+transform is `(M⁻¹)ᵀ·n` = `WorldToObjectᵀ·n` = `mul(normalHit,
+(float3x3)WorldToObject())`, which is the row form the comment names.
+`path_tracing.slang:205` has the same shape:
+`mul(worldToObject, float4(normalHit, 0.0))`, where `worldToObject` is
+`CommittedWorldToObject3x4()`. The sibling line for *position* two lines up
+(`:200-201`) is correct — an affine point transform genuinely is a column
+multiply — which is likely how the normal line acquired the same spelling.
+
+For a model instance whose transform is a rotation `R`, the correct world
+normal is `R·n` and both shaders compute `Rᵀ·n`: the normal is rotated by −θ
+instead of +θ, a 2θ error. This is not hypothetical or dev-only.
+`GUI.cpp:100` exposes a `DragFloat3("Rotation", …)` slider;
+`VulkanRenderer.cpp:351-375` turns it into a model matrix and rebuilds the
+TLAS so the traced world follows the raster world; `ASManager.cpp:291` writes
+that matrix straight into the instance transform. So: rotate the model in the
+GUI, switch to RT or PT, and the lighting rotates the wrong way while the
+rasterizer's lighting rotates correctly. With an identity or
+translation-only model matrix the linear part is `I` and the two spellings
+agree — which is why every golden passes.
+
+**Third, `raytrace.rchit.slang` never face-forwards its normal, and its own
+sibling does.** `path_tracing.slang:206-210` flips `hitWorldNormal` against
+the ray direction and cites the reason ("GLSL `faceforward(N, I, N)`"). The
+closest-hit shader has no equivalent: `:88-96` computes `N = worldNormal` and
+immediately gates the shadow ray on `dot(worldNormal, L) > 0`. Neither RT nor
+PT culls back faces, so a hit on the far side of any surface — every
+double-sided card, and the interior of any single-sided shell — is shaded with
+a normal pointing away from the ray and comes out black. This is the same
+defect as finding one, in the path where it is not conditional on a cull mode.
+It is folded into task 2 rather than task 1 because it edits the same four
+lines as the transpose fix.
+
+**Fourth, the emissive texture has no C++ representation at all.** The Rust
+loader reads five texture slots per material (`gltf_loader.rs:649-665`:
+base colour, metallic-roughness, normal, emissive, occlusion) and
+`forward.slang:378/388` samples `emissiveTex` and multiplies it into
+`prim.emissive_factor.rgb`. The C++ `ObjMaterial`
+(`Src/shared/scene/ObjMaterial.hpp`) has exactly one `textureID`, and all four
+C++ shading paths add the *factor* alone: `rasterizer.slang:86`,
+`deferred.slang:89`, `raytrace.rchit.slang:132`, `path_tracing.slang:253` each
+read `material.emission` with no texture lookup. So a material that authors a
+dim `emissiveFactor` and puts the actual pattern in an `emissiveTexture` —
+the standard way to author a lit sign, a screen, a glowing panel or a strip of
+windows — renders as a uniform wash of the factor colour over the whole
+surface in the C++ renderer and correctly in the Rust one.
+
+Emissive is the right slot to close first, and the cheapest: it needs no
+tangent frame (unlike normal), it is sRGB like base colour so
+`Texture::uploadRgba`'s hard-coded `eR8G8B8A8Srgb` (`Texture.cpp:123`) is
+already correct for it (metallic-roughness and occlusion are *not* — those
+need a UNORM upload path first), and the descriptor side is already built: the
+128-slot `TEXTURES_BINDING`/`SAMPLER_BINDING` arrays and
+`resolve_texture_slot()` do not care how many slots one material claims.
+
+**Fifth, `Vertex` has no tangent, and that is the whole reason the C++ engine
+has no normal mapping.** `Src/shared/scene/Vertex.hpp` is
+position/normal/color/texture_coords, mirrored device-side in
+`scene_types.slang:24-30` (which the RT and PT shaders read *by buffer device
+address*, so the two must change together or every hit reads garbage) and
+pinned by the `Vertex_natural` layout gate at
+`buildIntegritySuite.cpp:1053-1057`. The Rust twin reads `TANGENT`, and when
+the file ships none it generates them (`gltf_loader.rs:564`, `compute_tangents`
+at `:714`, Lengyel's method with an accumulated bitangent for the handedness
+sign) with an optional MikkTSpace pass behind a flag. Normal mapping is the
+largest remaining visual gap between the two renderers and it is gated on this
+one attribute; task 4 adds it and its generation as its own verifiable
+increment, and deliberately changes no shading.
+
+**Sixth, `Texture::generateMipMaps` publishes its mip chain to the fragment
+stage only.** `Texture.cpp:371-376` and `:388-393` transition each level to
+`eShaderReadOnlyOptimal` with `dstStageMask = eFragmentShader`. The engine has
+exactly one answer to "what stage does this layout imply" —
+`pipelineStageForLayout` in `common/ImageLayoutHelper.hpp`, which returns
+`eAllCommands` for `eShaderReadOnlyOptimal` and says why in a comment ("this is
+what lets a transition be recorded on a queue other than graphics"), and which
+`VulkanImage.cpp:146` routes through. These are model textures: three of the
+five shading paths sample them from a stage `eFragmentShader` does not cover —
+`raytrace.rchit.slang` (`eRayTracingShaderKHR`) and `path_tracing.slang`, a
+compute kernel (`eComputeShader`). `SkyBox.cpp:189-191` already carries the
+note for exactly this widening ("Destination stage widens from
+`eFragmentShader` to `eAllCommands` … not a behavioural regression"), so
+`Texture.cpp` is the last hand-rolled narrow copy. Note that
+`ImageBarrierHelper.hpp:25-27` exempts `Texture.cpp` from conversion — that
+exemption is about the *subresource range* (a mip chain cannot use the helper's
+one-mip default) and says nothing about the stage mask, so it does not cover
+this.
+
+**GPU verification is still blocked over RDP** (the `- [b]` entry near the end
+of this file), and `path_tracing` mode additionally device-losts on the host
+RX 9070 XT on unmodified `develop` (the `- [b]` at line ~2030). Every task
+below therefore states a CPU-only acceptance criterion the container build and
+the always-on Linux lane can actually deliver — a source-level `BuildIntegrity`
+gate, a CPU parse/unit test, or both — and treats a golden run as "if you have
+an adapter, also do this". Do not claim a rendered result you cannot obtain.
+
+**Ordering:** tasks 1, 2, 3 and 5 are independent and touch disjoint files.
+Task 4 must land *last* of the shader-touching set: it changes
+`scene_types.slang`'s `Vertex`, which every RT/PT shader reads by address, so
+landing it in the middle would rebase tasks 1–3's diffs for no reason. Task 5
+is the only one that touches no shader at all and can go first or last.
+
+### C++ Vulkan engine
+
+- [ ] **(M) Flip the shading normal on back-facing fragments in all three raster shaders, in both renderers** — glTF 2.0 §3.9.4 requires it, both renderers already turn culling off for `doubleSided` meshes, and no shader anywhere in `Resources/ShadersSlang/` reads `SV_IsFrontFace`, so every double-sided surface viewed from behind is lit by a normal pointing away from the viewer and renders black.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/rasterizer/rasterizer.slang:47-88` — `fs_main`;
+    `N` is set at `:54` and consumed by `brdf_direct` (`:77`) and
+    `calc_cascaded_shadow` (`:81`).
+  - `Resources/ShadersSlang/deferred/deferred.slang:49-90` —
+    `geometry_fs_main`; the normal is *stored* at `:76`, so the flip must
+    happen before the G-buffer write, not in the lighting pass.
+  - `Resources/ShadersSlang/forward/forward.slang:127-138` (`VsOut`) and
+    `:361-400` — `fs_main`; `nGeom` at `:390` seeds the tangent frame built at
+    `:391-394`, so the flip must happen *before* `t`/`b` are derived or the
+    bitangent handedness comes out wrong.
+  - `Src/GraphicsEngineVulkan/renderer/MeshDrawRecorder.cpp:44-52` — the
+    dynamic `eCullMode` that makes `!isFrontFace` imply "double-sided".
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/forward.rs:1930-1980`
+    and `:2620-2635` — the Rust half of the same rule (`pipeline_double_sided`,
+    cull `None`).
+  - `Resources/ShadersSlang/shader-manifest.json:81-86` and `:119` —
+    `forward.slang` is a **WGSL-only** target whose output is checked in at
+    `crates/webgpu_renderer/src/shaders/forward.wgsl`; see
+    `docs/shader-build-pipeline.md`.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:2739-2785` —
+    `VertexColourIsConsumedByEveryShadingPath`, the gate shape to copy.
+
+  **Steps:**
+  1. `rasterizer.slang`: add `bool isFrontFace : SV_IsFrontFace` to `fs_main`'s
+     parameter list and, immediately after `:54`, `if (!isFrontFace) N = -N;`.
+  2. `deferred.slang`: same parameter on `geometry_fs_main`; compute
+     `float3 N = normalize(In.shadingNormal); if (!isFrontFace) N = -N;` and
+     write `g.outNormal = float4(N, material.metallic);` at `:76`.
+  3. `forward.slang`: add `bool frontFacing : SV_IsFrontFace` to `fs_main`
+     (`:362`) and flip `nGeom` at `:390` **before** line `:391` derives `t`.
+     Do not also flip `b` — it is `cross(nGeom, t) * w` and follows
+     automatically.
+  4. Write one comment, in one of the three, stating the invariant the others
+     can point at: back faces reach a fragment shader only where culling was
+     disabled, and culling is disabled only for `doubleSided` materials, so
+     `!isFrontFace` is the double-sided test — no `ObjMaterial` field is
+     needed and none should be added.
+  5. Recompile shaders (`Scripts/Windows/compile-slang-shaders.ps1`, no C++
+     rebuild required for the SPIR-V pair) and **commit the regenerated
+     `forward.wgsl`**. Confirm the emitted WGSL contains
+     `@builtin(front_facing)`; if this slangc rejects `SV_IsFrontFace` on the
+     WGSL target, say so in the commit message and land the two SPIR-V shaders
+     alone rather than hand-editing the generated WGSL.
+
+  **Test:** Add `BuildIntegrity.DoubleSidedBackFacesFlipTheShadingNormal`
+  asserting all three Slang sources contain `SV_IsFrontFace` and a negation of
+  their normal, with a failure message naming the spec clause — the same
+  source-gate shape as `VertexColourIsConsumedByEveryShadingPath`
+  (`buildIntegritySuite.cpp:2745`). Run `cargo check -p
+  kataglyphis_webgpu_renderer` for the Rust side (see the `- [b]` note on the
+  host MSVC linker — `cargo check`/`clippy`, not `cargo build`). If an adapter
+  is available, also add a `GoldenRender` case that views the existing
+  double-sided mask-card fixture from behind and asserts the lit mean rises;
+  do not block the task on it.
+
+  **Build:** `clangcl-debug` for the gate. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** The tempting wrong fix is to plumb `doubleSided` from
+  `MeshRange` into `ObjMaterial` so the shader can test it — that is a
+  host/device layout change, a gate update and a second source of truth for a
+  fact the rasterizer already encodes in whether the fragment exists at all.
+  RT and PT are deliberately out of scope here: they do not cull, so
+  `SV_IsFrontFace` has no meaning there and the equivalent fix is the
+  face-forward in the next task.
+
+- [ ] **(S) Fix the transposed object→world normal transform in `raytrace.rchit.slang` and `path_tracing.slang`, and face-forward the closest-hit normal like the path tracer already does** — both shaders column-multiply `WorldToObject` where the rchit comment itself says "row-multiply", so any rotated model instance is lit by a normal rotated the wrong way; the GUI's Rotation slider reaches this in three clicks.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/raytracing/raytrace.rchit.slang:54-96` — the
+    comment at `:58` states the correct rule and `:59` contradicts it; `:88-96`
+    is where the face-forward belongs (before `N` is used and before the
+    `dot(worldNormal, L) > 0` shadow gate).
+  - `Resources/ShadersSlang/path_tracing/path_tracing.slang:181-211` — `:200`
+    carries a correct `mul(float3x4, float4)` comment for the *position*, `:205`
+    reuses that spelling for the normal, `:206-210` already face-forwards.
+  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp:285-311`
+    — where the model matrix becomes the TLAS instance transform.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:351-375` and
+    `Src/GraphicsEngineVulkan/gui/GUI.cpp:97-102` — the reachable path from
+    the Rotation slider to that transform.
+
+  **Steps:**
+  1. `raytrace.rchit.slang:59`: change
+     `normalize((float3)mul((float3x3)WorldToObject(), normalHit))` to
+     `normalize(mul(normalHit, (float3x3)WorldToObject()))`. Keep the comment
+     — it was already right; extend it to record that `mul(v, M)` is the row
+     form and that the *position* line above is a column multiply on purpose.
+  2. `path_tracing.slang:205`: change
+     `normalize(mul(worldToObject, float4(normalHit, 0.0)))` to
+     `normalize(mul(normalHit, (float3x3)worldToObject))`. If slangc rejects
+     the `float3x4 → float3x3` truncation cast, build the 3×3 explicitly from
+     `worldToObject`'s first three columns and say why in a comment — do not
+     revert to the column form.
+  3. `raytrace.rchit.slang`, after the normal is computed: flip it against the
+     incoming ray, mirroring `path_tracing.slang:206-210` verbatim including
+     its rationale —
+     `if (dot(worldNormal, WorldRayDirection()) > 0.0) worldNormal = -worldNormal;`.
+     Place it before `:88`'s `float3 N = worldNormal;` so the shadow-ray gate
+     and the BRDF both see the corrected normal.
+  4. Recompile shaders. Both files are SPIR-V-only targets, so no WGSL is
+     regenerated and no C++ rebuild is required for the shader change itself.
+
+  **Test:** Add `BuildIntegrity.RayTracedNormalsUseTheInverseTransposeTransform`
+  asserting neither source contains the column spellings
+  (`mul((float3x3)WorldToObject()` / `mul(worldToObject, float4(normalHit`) and
+  that both contain a `mul(normalHit,` row multiply, with a failure message
+  spelling out the HLSL/Slang `mul(M,v)` vs `mul(v,M)` rule so the next reader
+  does not "simplify" it back. Add a second assertion that
+  `raytrace.rchit.slang` contains a face-forward against `WorldRayDirection()`.
+  Follow `buildIntegritySuite.cpp:2745-2785`. If an adapter is available, the
+  end-to-end check is: load any model, set the GUI Rotation to `(0, 90, 0)`,
+  and confirm rasterizer and RT modes agree on which side is lit — but PT mode
+  device-losts on this host, so do not gate on it.
+
+  **Build:** `clangcl-debug` for the gate. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** Both shaders bake the *node* transform into vertices at load
+  time (`GltfLoader::visitNode`), so the only non-identity linear part that
+  ever reaches `WorldToObject` is the per-model matrix from `SceneConfig` and
+  the GUI. That is why this survived: the default scene has a
+  translation-only model matrix, where `Rᵀ = R = I` and both spellings agree,
+  so no golden can see it. Write the fix so the *comment* is the thing a
+  future gate greps for.
+
+- [ ] **(M) Carry glTF's `emissiveTexture` into `ObjMaterial` and multiply it into the emission term in all four C++ shading paths** — the Rust twin samples five texture slots per material and the C++ engine has a field for one, so a material that puts its glow pattern in a texture and its colour in the factor renders as a flat uniform wash.
+
+  **Files to read:**
+  - `Src/shared/scene/ObjMaterial.hpp` — the whole struct and the "trailing
+    scalar, scalar block layout" rationale repeated on `alphaCutoff`,
+    `metallic` and `roughness`; the new field follows the same rule.
+  - `Resources/ShadersSlang/common/scene_types.slang:32-50` — the device
+    mirror that must stay field-for-field identical.
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:116-208` (`fromGltfMaterial`)
+    and `:650-677` (the `imageSlot` dedup map keyed on
+    `(const cgltf_image *, const cgltf_sampler *)` and the base-colour slot
+    assignment to clone).
+  - `Resources/ShadersSlang/common/base_color.slang` and
+    `common/material_fetch.slang` — `base_color()`, `resolve_texture_slot()`,
+    `transform_uv()`; the emission helper should live beside them, not be
+    written out four times.
+  - The four emission sites: `rasterizer.slang:86`, `deferred.slang:89`,
+    `raytrace.rchit.slang:132`, `path_tracing.slang:253`.
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp:74-190` and `:1061-1110` —
+    the embedded-texture fixture pattern and the emissive-factor tests to sit
+    beside.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1040-1060` — the
+    `Vertex_natural` / `ObjMaterial` host↔device offset gate to extend.
+  - `docs/model-loading.md:140-190` — the per-field table and the texture-slot
+    budget section, both of which gain a row.
+
+  **Steps:**
+  1. Add a trailing `int emissiveTextureID;` to `ObjMaterial` with the sentinel
+     `-1` = "no emissive texture", documented in the same voice as
+     `alphaCutoff`. Mirror it in `scene_types.slang`. Default it to `-1` in
+     every constructor and in `neutralMaterial()` (`GltfLoader.cpp:107-114`) so
+     every OBJ material and every pre-existing scene is bit-unchanged.
+  2. In `parseCpu`, hoist the base-colour slot-assignment block
+     (`:658-675`) into a local lambda taking a `const cgltf_texture_view &`
+     and returning the slot or `-1`, sharing the same `imageSlot` map and
+     `textureSamplerDescs` push. Call it for
+     `material.pbr_metallic_roughness.base_color_texture` and for
+     `material.emissive_texture`. Sharing the map is the point: a document
+     whose emissive and base-colour views name the same `(image, sampler)`
+     pair must land on **one** slot, because slots are the 128-entry
+     descriptor budget.
+  3. Warn on a non-zero `material.emissive_texture.texcoord` via the existing
+     `describeTexCoordSet` (`GltfLoader.cpp:98-101`), exactly as the
+     base-colour path does at `:147-152`.
+  4. Add `float3 material_emission(ObjMaterial m, float3 sampled)` — or a
+     `emission.slang` module beside `base_color.slang` — returning
+     `m.emission * sampled`, and have all four shading paths call it. Sample
+     with `resolve_texture_slot(obj, material)` offset by
+     `emissiveTextureID` (**not** `textureID`) and with
+     `transform_uv(uv, material)`; use `SampleLevel(…, 0.0)` in
+     `raytrace.rchit.slang` and `path_tracing.slang` for the reason already
+     documented at `raytrace.rchit.slang:78-81`. In `deferred.slang` the
+     multiply happens in the geometry pass, before `g.outMaterial` is written.
+  5. Keep `path_tracing.slang`'s `furnace` gate intact — furnace mode must
+     still add no emission at all.
+  6. Update the `docs/model-loading.md` per-field table and the
+     textures/samplers/budget section.
+
+  **Test:** Add to `gltfParseSuite.cpp`, following the
+  `ExtractsAnEmbeddedBaseColorTexture` fixture shape:
+  `GltfParseUnit.EmissiveTextureGetsItsOwnTextureSlot` (two distinct images →
+  two slots, `textureID != emissiveTextureID`),
+  `GltfParseUnit.EmissiveAndBaseColourSharingOneImageShareOneSlot` (one image,
+  one sampler, one slot, both ids equal), and
+  `GltfParseUnit.MaterialWithoutAnEmissiveTextureKeepsTheSentinel`. Extend the
+  `ObjMaterial` host↔device offset gate in `buildIntegritySuite.cpp` with the
+  new field. Add a `BuildIntegrity` assertion that all four shading paths
+  reference the shared emission helper, mirroring
+  `VertexColourIsConsumedByEveryShadingPath`.
+
+  **Build:** `clangcl-debug`, and **`-FreshContainer`** — `ObjMaterial.hpp` is
+  consumed through the `kataglyphis.vulkan.obj_material` module interface, and
+  the fresh-container rule in `docs/gpu-golden-testing.md` applies to any
+  module-interface change. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GltfParseUnit.*:BuildIntegrity.*` from the repo root.
+
+  **Context:** Emissive is deliberately the only slot in scope. Normal maps
+  need the tangent attribute (next task). Metallic-roughness and occlusion need
+  a **UNORM** upload path — `Texture::uploadRgba` (`Texture.cpp:123`)
+  hard-codes `eR8G8B8A8Srgb` for every texture, which is right for colour data
+  and wrong for the non-colour channels those two carry, so they need a
+  colour-space parameter first. Emissive is colour data, so it needs nothing
+  new. Follow the shape of the shipped `metallic`/`roughness`/`alphaCutoff`
+  additions: trailing field, sentinel default, layout gate, parse test.
+
+- [ ] **(M) Add a per-vertex tangent to the shared `Vertex`, generate it in both C++ loaders, and pin the new host↔device layout** — the prerequisite the C++ engine's missing normal mapping is entirely gated on; the Rust twin has read and generated tangents since its glTF loader shipped.
+
+  **Files to read:**
+  - `Src/shared/scene/Vertex.hpp` — the struct, its constructor,
+    `operator==` and the `std::hash` specialization (which the OBJ loader's
+    vertex dedup keys on, so a new field that participates in `==` must
+    participate in the hash).
+  - `Resources/ShadersSlang/common/scene_types.slang:24-30` — the device
+    mirror. RT and PT read this struct **by buffer device address**, so a
+    mismatched field order is silent garbage, not a compile error.
+  - `Src/GraphicsEngineVulkan/scene/Vertex.cpp:51-70` and `Vertex.ixx:17` —
+    `getVertexInputAttributeDesc()` returns `std::array<…, 4>`; growing it to 5
+    also changes its three call sites: `Rasterizer.cpp:279`,
+    `DeferredRasterizer.cpp:271`, `SkyBox.cpp:299`.
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:210-240` (`readAttribute`)
+    and `:430-450` (the attribute switch) — where `TANGENT` is read.
+  - `Src/GraphicsEngineVulkan/scene/Vertex.cpp` / `ObjLoader.cpp` —
+    `vertex::computeFlatNormals`, the existing "derive a missing attribute
+    after triangulation" helper whose shape `computeTangents` should copy.
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/asset/gltf_loader.rs:699-760`
+    — `compute_tangents`, the reference implementation (Lengyel's method,
+    accumulating **both** tangent and bitangent so the `.w` handedness sign is
+    real). Port it, do not reinvent it.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1053-1057` — the
+    `Vertex_natural` offset gate.
+
+  **Steps:**
+  1. Add a trailing `glm::vec4 tangent;` to `Vertex` (xyz = tangent, w =
+     handedness ±1). Give the constructor a defaulted trailing parameter so
+     existing call sites compile unchanged; add it to `operator==` and to the
+     hash combine, with the same note the `color` line already carries.
+  2. Mirror it as a trailing `float4 tangent;` in `scene_types.slang`'s
+     `Vertex` and extend the `Vertex_natural` gate with the new offset.
+  3. Grow `getVertexInputAttributeDesc()` to `std::array<…, 5>` with location
+     4, `vk::Format::eR32G32B32A32Sfloat`, `offsetof(Vertex, tangent)`, and
+     update the three `std::array<…, 4>` declarations at the call sites.
+  4. Add `vertex::computeTangents(std::span<Vertex>, std::span<const unsigned int>, std::size_t startIndex)`
+     beside `computeFlatNormals`, ported from the Rust `compute_tangents`:
+     accumulate per-triangle tangent and bitangent from the UV gradients,
+     Gram-Schmidt against the vertex normal, store
+     `w = dot(cross(N, T), accumulatedBitangent) < 0 ? -1 : 1`. Degenerate UVs
+     (zero determinant) must fall back to an arbitrary vector orthogonal to
+     the normal rather than producing NaN.
+  5. `GltfLoader::processPrimitive`: read `cgltf_attribute_type_tangent` via
+     `readAttribute<4>` when present; call `computeTangents` for the
+     primitive's slice when absent, after triangulation and after
+     `computeFlatNormals` (it needs final normals). `ObjLoader`: always
+     compute — OBJ has no tangent concept.
+  6. **Change no shading.** The shaders declare the field so the buffer layout
+     matches; consuming it is the follow-up normal-mapping task.
+
+  **Test:** Add a `VertexUnit` (or extend `gltfParseSuite`) with: a unit quad
+  whose UVs run along +U producing a tangent parallel to the quad's U
+  direction; `dot(T, N) ≈ 0` and `|T| ≈ 1` for every vertex of the Suzanne/cube
+  fixtures; `w == ±1` exactly; and a mirrored-UV quad producing `w == -1`.
+  Add `GltfParseUnit.AuthoredTangentsArePreferredOverGeneratedOnes` (a document
+  shipping `TANGENT` keeps its values verbatim). Extend the `Vertex_natural`
+  layout gate.
+
+  **Build:** `clangcl-debug` with **`-FreshContainer`** (shared header behind a
+  module interface). Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=Vertex*:GltfParseUnit.*:BuildIntegrity.*`
+
+  **Context:** This deliberately adds 16 bytes per vertex with no reader yet,
+  and that is the trade being made: the attribute, the vertex-input
+  descriptions, the device-side struct and the layout gate all have to move in
+  one lockstep change, and doing that *plus* four shading paths in one session
+  is how a half-landed normal-map change corrupts every RT hit. Land the
+  plumbing with real generation and real unit tests first; the shading change
+  is then a small, isolated diff. Record it in
+  `docs/cpp-renderer-improvements.md` as the enabling step, and add a follow-up
+  backlog note naming the four shaders that will consume it.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+> The back-face normal flip above is cross-renderer: its third step edits
+> `forward.slang`, whose WGSL output is checked in under
+> `crates/webgpu_renderer/src/shaders/forward.wgsl`. Verify the Rust half with
+> `cargo check`/`cargo clippy`, not `cargo build`/`cargo test` — see the
+> `- [b]` entry on this host's incomplete MSVC linker install.
+

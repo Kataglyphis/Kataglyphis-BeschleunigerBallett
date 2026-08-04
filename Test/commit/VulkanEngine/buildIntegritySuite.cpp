@@ -8055,6 +8055,28 @@ TEST(BuildIntegrity, BarrierBudgetsNameOnlyFilesThatStillHaveBarriers)
     }
 }
 
+// Texture::generateMipMaps' two eShaderReadOnlyOptimal barriers route their
+// access mask and pipeline stage through ImageLayoutHelper.hpp's shared rule
+// rather than a hand-written eFragmentShader destination stage, so the model
+// textures they publish stay synchronized for raytrace.rchit.slang's ray
+// queries and the path_tracing.slang compute kernel, not just the raster
+// fragment shaders. A reintroduced eFragmentShader literal would silently
+// narrow that destination stage back to raster-only.
+TEST(BuildIntegrity, TextureUploadDoesNotNarrowItsShaderReadStage)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path texture_path = repo_root / "Src/GraphicsEngineVulkan/scene/Texture.cpp";
+    const auto texture_text = readFileText(texture_path);
+    ASSERT_TRUE(texture_text.has_value()) << "could not open " << texture_path.string();
+
+    EXPECT_EQ(texture_text->find("eFragmentShader"), std::string::npos)
+      << "Texture.cpp reintroduced eFragmentShader as a barrier destination stage - route "
+         "eShaderReadOnlyOptimal transitions through Kataglyphis::pipelineStageForLayout instead, "
+         "or the compute/ray-tracing readers of the mip chain lose synchronization.";
+}
+
 // docs/cpp-renderer-improvements.md's "In progress" section once asked for
 // the redundant same-layout swapchain barrier removal as still outstanding
 // after the removal had already shipped (2026-07-19) - the doc contradicted
