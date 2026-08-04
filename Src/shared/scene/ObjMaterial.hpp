@@ -50,6 +50,15 @@ struct ObjMaterial
     // scalar, same scalar-layout rationale as alphaCutoff.
     int emissiveTextureID;
 
+    // glTF normalTexture, dedup'd into the same textureImages/imageSlot
+    // budget as textureID/emissiveTextureID (see GltfLoader.cpp's
+    // fromGltfMaterial/parseCpu). -1 = "no normal texture" (same sentinel
+    // convention as textureID); every OBJ material and every glTF material
+    // without a normalTexture defaults to -1, so pre-existing scenes are
+    // bit-unchanged. Trailing scalar, same scalar-layout rationale as
+    // alphaCutoff.
+    int normalTextureID;
+
     // No authored Ke/emissive_factor means no emitted radiance: the shading
     // paths add material.emission unattenuated after shadowing
     // (rasterizer.slang:84-86), so any non-zero default is a scene-wide glow
@@ -57,7 +66,7 @@ struct ObjMaterial
     ObjMaterial()
       : diffuse(0.7F, 0.7F, 0.7F), emission(0.0F), shininess(0.0F), dissolve(1.0F), textureID(-1),
         alphaCutoff(-1.0F), uv_transform_row0(1.0F, 0.0F, 0.0F), uv_transform_row1(0.0F, 1.0F, 0.0F), metallic(0.0F),
-        roughness(-1.0F), emissiveTextureID(-1)
+        roughness(-1.0F), emissiveTextureID(-1), normalTextureID(-1)
     {}
 
     ObjMaterial(glm::vec3 diffuse,
@@ -70,10 +79,12 @@ struct ObjMaterial
       glm::vec3 uv_transform_row1 = glm::vec3(0.0F, 1.0F, 0.0F),
       float metallic = 0.0F,
       float roughness = -1.0F,
-      int emissiveTextureID = -1)
+      int emissiveTextureID = -1,
+      int normalTextureID = -1)
       : diffuse(diffuse), emission(emission), shininess(shininess), dissolve(dissolve), textureID(textureID),
         alphaCutoff(alphaCutoff), uv_transform_row0(uv_transform_row0), uv_transform_row1(uv_transform_row1),
-        metallic(metallic), roughness(roughness), emissiveTextureID(emissiveTextureID)
+        metallic(metallic), roughness(roughness), emissiveTextureID(emissiveTextureID),
+        normalTextureID(normalTextureID)
     {}
 
     int get_textureID() const { return textureID; }
