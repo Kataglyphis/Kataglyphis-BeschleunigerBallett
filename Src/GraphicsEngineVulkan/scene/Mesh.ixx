@@ -35,7 +35,6 @@ class Mesh
     void cleanUp();
 
     ObjectDescription &getObjectDescription() { return object_description; };
-    glm::mat4 getModel() { return model; };
     uint32_t getVertexCount() { return vertex_count; };
     uint32_t getIndexCount() { return index_count; };
     vk::Buffer &getVertexBuffer() { return vertexBuffer.getBuffer(); };
@@ -62,8 +61,6 @@ class Mesh
     /// stale the way a loader-set flag could.
     bool hasMaskedMaterial() const { return has_masked_material; };
 
-    void setModel(glm::mat4 new_model);
-
     ~Mesh();
 
   private:
@@ -80,8 +77,6 @@ class Mesh
     VulkanBuffer indexBuffer;
     VulkanBuffer materialIdsBuffer;
     VulkanBuffer materialsBuffer;
-
-    glm::mat4 model{};
 
     static constexpr uint32_t INVALID_COUNT = ~uint32_t(0);
     uint32_t vertex_count{ INVALID_COUNT };

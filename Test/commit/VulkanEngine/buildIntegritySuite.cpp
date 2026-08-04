@@ -8896,3 +8896,30 @@ TEST(BuildIntegrity, DoubleSidedBackFacesFlipTheShadingNormal)
       << "forward.slang no longer negates nGeom for back-facing fragments before t/b are derived. "
       << kFailureMessage;
 }
+
+// Mesh used to hold its own `model` matrix plus a getModel()/setModel() pair
+// that nothing ever called - the per-model transform is owned by
+// Model::set_model/Model::getModel and reached through
+// Scene::update_model_matrix/Scene::getModelMatrix. A per-mesh copy would be
+// a second source of truth that no draw path reads, so it must not come
+// back.
+TEST(BuildIntegrity, MeshDoesNotHoldAModelMatrix)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path mesh_ixx_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "Mesh.ixx";
+    const auto text_opt = readFileText(mesh_ixx_path);
+    ASSERT_TRUE(text_opt.has_value()) << "could not read " << mesh_ixx_path.string();
+    const std::string &text = *text_opt;
+
+    static const char *kFailureMessage =
+      "the per-model transform is owned by Model::set_model/Model::getModel and reached through "
+      "Scene::update_model_matrix/Scene::getModelMatrix; a per-mesh copy would be a second source of truth that no "
+      "draw path reads";
+
+    EXPECT_EQ(text.find("setModel"), std::string::npos) << "Mesh.ixx must not declare setModel(). " << kFailureMessage;
+    EXPECT_EQ(text.find("getModel"), std::string::npos) << "Mesh.ixx must not declare getModel(). " << kFailureMessage;
+    EXPECT_EQ(text.find("glm::mat4 model"), std::string::npos)
+      << "Mesh.ixx must not hold a glm::mat4 model member. " << kFailureMessage;
+}

@@ -90,11 +90,7 @@ Mesh::Mesh(const std::shared_ptr<VulkanDevice> &device,
         object_description.material_index_address = device->getBufferDeviceAddress(material_index_info);
         object_description.material_address = device->getBufferDeviceAddress(material_info);
     }
-
-    model = glm::mat4(1.0F);
 }
-
-void Mesh::setModel(glm::mat4 new_model) { model = new_model; }
 
 Mesh::~Mesh() = default;
 

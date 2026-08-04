@@ -9733,3 +9733,164 @@ is the only one that touches no shader at all and can go first or last.
 > `cargo check`/`cargo clippy`, not `cargo build`/`cargo test` — see the
 > `- [b]` entry on this host's incomplete MSVC linker install.
 
+## 2026-08-05 batch — planner (refactor: a model matrix `Mesh` stores, initialises to identity and never reads, whose setter has zero callers and whose real owner is `Model` one level up; two `buildSamplerCreateInfo` overloads whose last ten field assignments are byte-identical and whose first five differ only in where the filters come from; and `ObjMaterial`'s twelve-parameter positional constructor, which has grown one argument per glTF factor for four commits running and now needs a trailing `// comment` on every argument at all four call sites)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Batch XVII's five tasks all shipped
+(`923011db`, `70796fa0`, `d0a25d21`, `bb7092ae`, `f6741266`), plus the normal-
+mapping follow-up task 4 filed (`2030c374`). Everything below was read out of
+the tree this pass, at `2030c374`.
+
+**First, `Mesh` carries a model matrix nothing reads.** `Mesh.ixx:84` declares
+`glm::mat4 model{}`, `Mesh.cpp:94` assigns it `glm::mat4(1.0F)` as the last
+statement of the constructor, `Mesh.cpp:97` defines
+`Mesh::setModel(glm::mat4)` — and a repo-wide search for callers of either
+`Mesh::setModel` or `Mesh::getModel` (`Mesh.ixx:38`) returns nothing but the
+declarations themselves. The live twin is one level up and fully wired:
+`Model::set_model` (`Model.ixx:43`, `Model.cpp:59`) and `Model::getModel`
+(`Model.ixx:41`), reached through `Scene::update_model_matrix`
+(`Scene.cpp:159-168`, the only writer, called from `VulkanRenderer.cpp:366`
+when the GUI Rotation/Scale sliders move) and `Scene::getModelMatrix`
+(`Scene.ixx:81-84`, which `MeshDrawRecorder.ixx:67` reads once per model per
+frame). So the per-mesh copy is not a stale mirror of the per-model one — it
+is a second, unrelated identity matrix that was never connected to anything.
+
+This matters beyond the four lines: `Mesh::getModel()` is a public accessor
+that compiles, returns a plausible value, and would silently hand a future
+caller identity for a rotated model. The class already documents the opposite
+rule for `double_sided` vs `has_masked_material` (`Mesh.ixx:50-63`) — derive
+state where it cannot go stale, or do not hold it. Deleting is the cheap half
+of that rule.
+
+**Second, the two `buildSamplerCreateInfo` overloads share ten identical
+lines.** `SamplerBuilder.cpp:11-38` (scalar `filter` + `addressMode`) and
+`:40-66` (`GltfSamplerDesc`) differ in exactly five assignments —
+`magFilter`/`minFilter` (one `filter` vs `desc.mag`/`desc.min`),
+`addressModeU`/`addressModeV`/`addressModeW` (one `addressMode` vs
+`desc.addressModeU`/`desc.addressModeV`/`desc.addressModeU`) and `mipmapMode`
+(hard-coded `eLinear` vs `desc.mipmapMode`). The remaining ten
+(`borderColor`, `unnormalizedCoordinates`, `mipLodBias`, `minLod`, `maxLod`,
+`anisotropyEnable`, `maxAnisotropy`, `compareEnable`, `compareOp`, plus the
+zero-initialised struct) are copied verbatim, in the same order, with the same
+values.
+
+The scalar overload is expressible as the desc overload with no behaviour
+change at all: `GltfSamplerDesc`'s defaults (`SamplerBuilder.ixx:32-36`) are
+`eRepeat`/`eRepeat`/`eLinear`/`eLinear`/`eLinear`, and the desc overload's
+`addressModeW = desc.addressModeU` collapses to the scalar overload's
+`addressModeW = addressMode` whenever U and V are the same value — which is
+the only thing a single `addressMode` parameter can produce. This is the same
+consolidation `ImageBarrierHelper.hpp:7-17` and `RenderPassHelper.hpp` already
+performed on their own duplicated field blocks, and the reason is the same one
+that header states: the two copies drift. `samplerBuilderSuite.cpp` already
+pins all four production call sites field-by-field, so the refactor is
+verifiable without a device.
+
+**Third, `ObjMaterial`'s positional constructor has become the drift risk it
+was meant to prevent.** `ObjMaterial.hpp:72-88` takes twelve parameters, eight
+of them defaulted, in an order that must match the twelve default-member
+values in the sibling default constructor at `:66-70`. Four of those
+parameters (`metallic`, `roughness`, `emissiveTextureID`, `normalTextureID`)
+were appended in the last four days, one per commit — `9611f22d`, `d0a25d21`,
+`2030c374` and the roughness work — and each append had to touch both
+constructors, both call sites in `GltfLoader.cpp` and both in
+`blasGeometryLimitsSuite.cpp`. The call sites show what that costs:
+`GltfLoader.cpp:219-230` is a twelve-line argument list where every single
+line carries a trailing `// name` comment restating the parameter it is
+positionally bound to, and `blasGeometryLimitsSuite.cpp:39` and `:44` are
+`ObjMaterial({...}, {...}, 0.0F, 1.0F, -1, -1.0F)` with no comments at all —
+six positional values whose meaning is only recoverable by counting.
+
+C++20 designated initializers remove the counting entirely, and this struct is
+the ideal candidate: it is standard-layout by construction (both layout gates
+depend on that), it has no bases, no virtuals and no private data, and its
+only member function (`get_textureID`, `:90`) does not affect aggregate-ness.
+Replacing both constructors with per-member default initializers keeps every
+offset, `sizeof`, and default value bit-identical — which
+`ObjMaterialLayoutUnit.MatchesTheSlangTwinScalarLayout`
+(`pushConstantSuite.cpp:148-164`, thirteen exact offsets plus
+`sizeof == 80`) and the `ObjMaterial_natural` entry in
+`buildIntegritySuite.cpp:1042-1054` both prove mechanically, with no GPU.
+
+The same file has a smaller instance of the same pattern: `GltfLoader.cpp`
+warns "only TEXCOORD_0 is supported" in three near-identical blocks — for
+base colour (`:147-152`), emissive (`:200-207`) and normal (`:210-217`) —
+that differ only in the texture view, the slot name in the message, and
+whether the guard is `has_pbr_metallic_roughness` or a null `texture`. Folding
+them into one helper is the natural companion edit, and it is what a fourth
+texture slot (metallic-roughness, occlusion) will otherwise copy a fourth
+time.
+
+**Verification context.** Host GPU goldens are still blocked over RDP (the
+`- [b]` entry near the end of this file), and `path_tracing` mode additionally
+device-losts on the host RX 9070 XT on unmodified `develop` (the `- [b]` at
+line ~2030). All three tasks below are accepted CPU-only by construction:
+none changes a shader, a barrier, a render pass, or any value that reaches the
+GPU. Task 1 deletes unreachable code, task 2 is a byte-identical struct
+factoring pinned by an existing field-by-field suite, and task 3 is a
+declaration-syntax change pinned by two existing offset gates. Do not claim a
+rendered result you cannot obtain.
+
+**Ordering:** tasks 1, 2 and 3 are independent and touch disjoint files. Tasks
+1 and 3 both edit a C++23 module interface (`Mesh.ixx`; `ObjMaterial.hpp`,
+which sits in `ObjMaterial.ixx`'s global module fragment) and therefore both
+need `-FreshContainer`. Task 2 edits only a module *implementation* unit and
+does not.
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Collapse `buildSamplerCreateInfo`'s two overloads onto one body** — ten of the fifteen field assignments are copied verbatim between them, which is exactly the drift this helper was extracted to stop.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/SamplerBuilder.cpp:11-66` — the two overloads side by side
+  - `Src/GraphicsEngineVulkan/vulkan_base/SamplerBuilder.ixx:12-51` — the declarations, `GltfSamplerDesc` and its defaults (`:30-39`)
+  - `Test/commit/VulkanEngine/samplerBuilderSuite.cpp` — the existing field-by-field pins for all four call sites; the new test follows the same style
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:136`, `Src/GraphicsEngineVulkan/scene/Texture.cpp:261` — the two scalar-overload call sites whose output must not change
+  - `Src/GraphicsEngineVulkan/common/ImageBarrierHelper.hpp:7-33` — the precedent for this kind of collapse, including the rule about when a call site may stay unconverted
+
+  **Steps:**
+  1. In `SamplerBuilder.cpp`, rewrite the scalar overload's body (`:19-38`) to construct a `GltfSamplerDesc` and delegate:
+     `return buildSamplerCreateInfo(GltfSamplerDesc{ .addressModeU = addressMode, .addressModeV = addressMode, .magFilter = filter, .minFilter = filter, .mipmapMode = vk::SamplerMipmapMode::eLinear }, maxLod, anisotropyEnable, maxAnisotropy, borderColor, compareEnable, compareOp);`
+     Use designated initializers in **declaration order** (`addressModeU`, `addressModeV`, `magFilter`, `minFilter`, `mipmapMode` — see `SamplerBuilder.ixx:32-36`); out-of-order designated initializers are ill-formed in C++.
+  2. Verify the one asymmetry before trusting the delegation: the desc overload sets `addressModeW = desc.addressModeU` (`:53`), while the scalar overload sets `addressModeW = addressMode` (`:25`). With `addressModeU == addressModeV == addressMode` these are the same value, so the result is byte-identical — state that in a short comment above the delegation rather than leaving the reader to re-derive it.
+  3. Leave the desc overload's body untouched: it is now the single definition.
+  4. Update the comment at `SamplerBuilder.ixx:41-44` ("Same as the overload above, but sourced from a glTF sampler description") so it reads in the new direction — the desc form is the primitive and the scalar form is the convenience wrapper.
+  5. Do not change either declaration's signature or defaults; both are called with positional arguments from three files.
+
+  **Test:** Add `SamplerBuilderUnit.ScalarOverloadDelegatesToTheDescOverload` to `Test/commit/VulkanEngine/samplerBuilderSuite.cpp`. Build one info from the scalar overload and one from the equivalent `GltfSamplerDesc` with the same `maxLod`/anisotropy/border/compare arguments, and assert every field the builder writes matches between them: `magFilter`, `minFilter`, `addressModeU`, `addressModeV`, `addressModeW`, `borderColor`, `unnormalizedCoordinates`, `mipmapMode`, `mipLodBias`, `minLod`, `maxLod`, `anisotropyEnable`, `maxAnisotropy`, `compareEnable`, `compareOp`. Cover at least two parameter sets, one of them non-default (e.g. `eNearest` + `eClampToEdge` + `compareEnable = VK_TRUE`), so the test cannot pass on defaults alone. Compare fields individually — do not rely on `operator==` for `vk::SamplerCreateInfo`, whose availability depends on the vulkan.hpp spaceship-operator configuration.
+
+  **Build:** `clangcl-debug`. This edits only `SamplerBuilder.cpp` (a module *implementation* unit) plus a comment in the interface — if you touch `SamplerBuilder.ixx` at all, use `-FreshContainer`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  Then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=SamplerBuilder*`. All eight pre-existing `samplerBuilderSuite` tests must stay green unmodified — they are the proof the four production call sites still get the same struct.
+
+  **Context:** `SamplerBuilder` exists because three hand-written `vk::SamplerCreateInfo` literals had already drifted (see the suite's header comment). It then acquired a second overload for glTF samplers (`94567de7`) and re-created the duplication one level up: fifteen assignments, ten of them the same twice. Every future field (`unnormalizedCoordinates` for a rect sampler, a real `mipLodBias`, `reductionMode`) would have to be added in both places or drift again. The delegation makes that structurally impossible while leaving both call-site spellings intact.
+
+- [ ] **(M) (refactor) Make `ObjMaterial` an aggregate with default member initializers, and fold `GltfLoader`'s three copy-pasted TEXCOORD warnings into one helper** — the twelve-parameter positional constructor has grown one argument per glTF factor for four commits running.
+
+  **Files to read:**
+  - `Src/shared/scene/ObjMaterial.hpp` — `:66-70` the default constructor, `:72-88` the twelve-parameter constructor, `:90` `get_textureID()`
+  - `Src/GraphicsEngineVulkan/scene/ObjMaterial.ixx` — the module that wraps the header in its global module fragment (this is why the build needs `-FreshContainer`)
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp` — `:107-114` `neutralMaterial()`, `:124-231` `fromGltfMaterial()` incl. the `return ObjMaterial(...)` at `:219-230`, and the three TEXCOORD warnings at `:147-152`, `:200-207`, `:210-217`
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:193-220` — the field-assignment style that must keep working unchanged (`ObjMaterial material{};` then per-field writes)
+  - `Test/commit/VulkanEngine/pushConstantSuite.cpp:140-164` — `ObjMaterialLayoutUnit.MatchesTheSlangTwinScalarLayout`, thirteen exact offsets plus `sizeof == 80`; this is the primary regression proof
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1042-1054` — the `ObjMaterial_natural` offset gate, the second proof
+  - `Test/commit/VulkanEngine/blasGeometryLimitsSuite.cpp:36-46` — the two uncommented positional call sites
+
+  **Steps:**
+  1. In `ObjMaterial.hpp`, give every member a default member initializer carrying exactly the value the default constructor sets today: `diffuse{0.7F, 0.7F, 0.7F}`, `emission{0.0F}`, `shininess{0.0F}`, `dissolve{1.0F}`, `textureID{-1}`, `alphaCutoff{-1.0F}`, `uv_transform_row0{1.0F, 0.0F, 0.0F}`, `uv_transform_row1{0.0F, 1.0F, 0.0F}`, `metallic{0.0F}`, `roughness{-1.0F}`, `emissiveTextureID{-1}`, `normalTextureID{-1}`. **Do not reorder any member** — both offset gates pin the current order.
+  2. Delete both constructors (`:66-70` and `:72-88`). Keep the per-field doc comments where they are; they are the reason the fields are readable. Keep `get_textureID()` — a member function does not stop a class from being an aggregate, and two tests call it.
+  3. Add `static_assert(std::is_aggregate_v<ObjMaterial>, "...")` and `static_assert(std::is_standard_layout_v<ObjMaterial>, "...")` next to the struct (include `<type_traits>`), with messages explaining that designated-initializer construction and the `offsetof` gates both depend on these. This is what stops a future field from being added back via a positional constructor.
+  4. Rewrite `GltfLoader.cpp:109-113` (`neutralMaterial`) as `return ObjMaterial{ .diffuse = glm::vec3(0.8F), .shininess = 1.0F };` — every other field's default already matches what the positional call was passing, so name only the two that differ, and say so in a one-line comment.
+  5. Rewrite `GltfLoader.cpp:219-230` (`fromGltfMaterial`'s return) with designated initializers in declaration order, dropping all twelve trailing `// name` comments — the designator now *is* the name. The three `-1` texture IDs are the struct defaults; either omit them or keep them with the existing "assigned in parseCpu" note, but be consistent between the two.
+  6. Rewrite `blasGeometryLimitsSuite.cpp:39` and `:44` with designated initializers so the `-1.0F` / `0.5F` sixth argument becomes a visible `.alphaCutoff`.
+  7. Fold the three TEXCOORD warnings into one file-local helper in `GltfLoader.cpp`'s anonymous namespace, e.g. `void warnUnsupportedTexCoordSet(const char *materialName, const cgltf_texture_view &view, const char *slotLabel)`, which returns immediately when `view.texture == nullptr`, calls the existing `describeTexCoordSet(view.texcoord)` and emits the existing message with `slotLabel` substituted ("base-colour", "emissive", "normal"). Call it three times. Keep the base-colour call inside the `has_pbr_metallic_roughness` guard where it is today — that guard is not about the texture being null and must not be dropped.
+  8. Verify no other construction site exists: search the whole tree for `ObjMaterial(` and for `ObjMaterial{`. `ObjLoader.cpp:193`'s `ObjMaterial material{};` keeps compiling unchanged (aggregate value-initialization applies every default member initializer).
+
+  **Test:** Add `ObjMaterialLayoutUnit.ValueInitializedMaterialCarriesTheDocumentedSentinels` to `Test/commit/VulkanEngine/pushConstantSuite.cpp` (next to the existing layout test): construct `const ObjMaterial m{};` and assert all twelve defaults — `diffuse == vec3(0.7F)`, `emission == vec3(0.0F)`, `shininess == 0.0F`, `dissolve == 1.0F`, `textureID == -1`, `alphaCutoff == -1.0F`, `uv_transform_row0 == vec3(1,0,0)`, `uv_transform_row1 == vec3(0,1,0)`, `metallic == 0.0F`, `roughness == -1.0F`, `emissiveTextureID == -1`, `normalTextureID == -1`. Those sentinels are load-bearing (`alphaCutoff < 0` = never discard, `roughness < 0` = derive from `shininess`, `-1` = no texture) and are currently guaranteed only by a constructor body that nothing tests — this task removes that constructor, so the guarantee needs its own pin. `ObjMaterialLayoutUnit.MatchesTheSlangTwinScalarLayout` and `BuildIntegrity`'s `ObjMaterial_natural` must both pass **unmodified**: if either reports a changed offset or `sizeof`, the aggregate conversion changed the layout and the task is wrong — revert, do not adjust the expected numbers.
+
+  **Build:** `clangcl-debug`. `ObjMaterial.hpp` lives in `ObjMaterial.ixx`'s global module fragment, so this is a module-interface change and the fresh-container rule applies:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  Then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=ObjMaterialLayout*:GltfParse*:ObjParse*:BlasGeometry*:BuildIntegrity.*`. The glTF and OBJ parse suites are the behavioural check that both loaders still produce the same materials.
+
+  **Context:** Nothing about the bytes changes here — same fields, same order, same defaults, same 80-byte scalar block that `scene_types.slang` mirrors and the RT/PT kernels read by buffer device address. What changes is that adding the *next* glTF factor (occlusion strength, a metallic-roughness texture ID, a second UV set) stops requiring an edit to two constructors and four positional argument lists. The last four such fields each cost exactly that, and the `GltfLoader.cpp:219-230` call site — twelve arguments, twelve comments restating the parameter names — is the visible symptom. Do not touch `Resources/ShadersSlang/common/scene_types.slang`: its `ObjMaterial` twin is unaffected, and the two offset gates are what prove it.
+
