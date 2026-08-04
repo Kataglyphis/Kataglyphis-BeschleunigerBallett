@@ -389,6 +389,117 @@ TEST(GltfParseUnit, ShortBase64ImageUriDoesNotUnderflow)
     std::filesystem::remove(tmp);
 }
 
+namespace {
+
+// A minimal-but-real PNG: the 8-byte signature plus a truncated IHDR chunk
+// header. extractImageBytes never decodes it (that is Texture::createFromMemory's
+// job in uploadParsed, untested here) - only that the bytes made it through
+// unmodified, so a short-but-genuine PNG prefix is enough.
+const unsigned char kMinimalPngBytes[] = {
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,// PNG signature
+    0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52// IHDR length + tag
+};
+
+// The same accessors/bufferViews/buffers skeleton ShortBase64ImageUriDoesNotUnderflow
+// uses (one triangle, irrelevant to the image path); only the "images" entry's
+// uri differs per test.
+std::string externalImageGltfDoc(const std::string &imageUri)
+{
+    return "{\n"
+           "  \"asset\": { \"version\": \"2.0\" },\n"
+           "  \"images\": [ { \"uri\": \""
+      + imageUri
+      + "\" } ],\n"
+        "  \"textures\": [ { \"source\": 0 } ],\n"
+        "  \"materials\": [ { \"pbrMetallicRoughness\": { \"baseColorTexture\": { \"index\": 0 } } } ],\n"
+        "  \"meshes\": [ { \"primitives\": [ {\n"
+        "    \"attributes\": { \"POSITION\": 0 },\n"
+        "    \"material\": 0\n"
+        "  } ] } ],\n"
+        "  \"nodes\": [ { \"mesh\": 0 } ],\n"
+        "  \"scenes\": [ { \"nodes\": [ 0 ] } ],\n"
+        "  \"accessors\": [ { \"componentType\": 5126, \"count\": 3, \"type\": \"VEC3\",\n"
+        "                   \"min\": [0,0,0], \"max\": [1,1,1], \"bufferView\": 0 } ],\n"
+        "  \"bufferViews\": [ { \"buffer\": 0, \"byteLength\": 36 } ],\n"
+        "  \"buffers\": [ { \"byteLength\": 36,\n"
+        "    \"uri\": \"data:application/octet-stream;base64,"
+        "AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA\" } ]\n"
+        "}\n";
+}
+
+void writeFile(const std::filesystem::path &path, const std::string &text)
+{
+    std::ofstream out(path, std::ios::binary);
+    out << text;
+}
+
+void writePngFile(const std::filesystem::path &path)
+{
+    std::ofstream out(path, std::ios::binary);
+    out.write(reinterpret_cast<const char *>(kMinimalPngBytes), sizeof(kMinimalPngBytes));
+}
+
+}// namespace
+
+TEST(GltfParseUnit, ExternalImageUriIsResolvedRelativeToTheDocument)
+{
+    const auto dir = std::filesystem::temp_directory_path() / "kat_gltf_ext_ok";
+    std::filesystem::create_directories(dir);
+    writePngFile(dir / "tex.png");
+    writeFile(dir / "model.gltf", externalImageGltfDoc("tex.png"));
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu((dir / "model.gltf").string()));
+
+    ASSERT_EQ(loader.getTextureImages().size(), 1U);
+    EXPECT_FALSE(loader.getTextureImages()[0].empty());
+    bool anyTextured = false;
+    for (const ObjMaterial &material : loader.getMaterials()) {
+        if (material.textureID >= 0) {
+            EXPECT_EQ(material.textureID, 0);
+            anyTextured = true;
+        }
+    }
+    EXPECT_TRUE(anyTextured);
+
+    std::filesystem::remove_all(dir);
+}
+
+TEST(GltfParseUnit, ExternalImageUriEscapingTheDocumentDirectoryIsRejected)
+{
+    const auto parentDir = std::filesystem::temp_directory_path() / "kat_gltf_ext_escape";
+    const auto docDir = parentDir / "doc";
+    std::filesystem::create_directories(docDir);
+    writePngFile(parentDir / "secret.png");
+    writeFile(docDir / "model.gltf", externalImageGltfDoc("../secret.png"));
+
+    Kataglyphis::GltfLoader loader;
+    const bool parsed = loader.parseCpu((docDir / "model.gltf").string());
+    if (parsed) {
+        EXPECT_TRUE(loader.getTextureImages().empty())
+          << "a URI that escapes the document directory must yield no texture";
+        for (const ObjMaterial &material : loader.getMaterials()) { EXPECT_EQ(material.textureID, -1); }
+    }
+
+    std::filesystem::remove_all(parentDir);
+}
+
+TEST(GltfParseUnit, PercentEncodedExternalUriResolves)
+{
+    const auto dir = std::filesystem::temp_directory_path() / "kat_gltf_ext_percent";
+    std::filesystem::create_directories(dir);
+    writePngFile(dir / "my tex.png");
+    writeFile(dir / "model.gltf", externalImageGltfDoc("my%20tex.png"));
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu((dir / "model.gltf").string()));
+
+    ASSERT_EQ(loader.getTextureImages().size(), 1U);
+    EXPECT_FALSE(loader.getTextureImages()[0].empty());
+
+    std::filesystem::remove_all(dir);
+}
+
 TEST(GltfParseUnit, MissingNormalsAreComputedFlatNotDefaultedUp)
 {
     // glTF spec: when NORMAL is absent, the implementation MUST compute flat

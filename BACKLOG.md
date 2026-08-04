@@ -9583,40 +9583,6 @@ other.
 
 ### C++ Vulkan engine
 
-- [ ] **(M) Resolve external image URIs in the C++ glTF loader** — `extractImageBytes` handles `.glb` buffer views and base64 data URIs only, so a `.gltf` that names its textures as sibling files — which is exactly what this repo's own `obj2gltf` emits — loads with full geometry and no textures at all.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp` — `extractImageBytes` (`:219-266`) and its call site in `parseCpu` (`:521-527`); note `modelFile` is in scope there
-  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp` — `resolveObjTexturePath`, the sibling-directory resolution rule already in use
-  - `Src/shared/util/FileReader.ixx` — the shared whole-file reader to use rather than a fresh `ifstream`
-  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/asset/obj_to_gltf.rs:591-604` and `:820-855` — the converter that emits the bare-filename `uri` and copies the file next to the document
-  - `docs/model-loading.md:225-233` — the documented contract this closes
-  - `Test/commit/VulkanEngine/gltfParseSuite.cpp` — `MalformedTextIsRejectedNotCrashed` (`:241`) and `ShortBase64ImageUriDoesNotUnderflow` (`:255`) for the temp-file pattern
-
-  **Steps:**
-  1. Give `extractImageBytes` a third parameter: the directory containing the document (`std::filesystem::path`). Pass `std::filesystem::path(modelFile).parent_path()` from `parseCpu`; an empty parent means the document is a bare filename, so treat it as `.` — the same rule `resolveObjTexturePath` applies.
-  2. Add the external branch **after** the existing `buffer_view` and `base64,` branches, so both current forms stay on exactly the path they are on today. Guard it on the URI *not* containing `base64,` and not starting with a scheme (`data:`, `http:`, `https:`) — a remote URI is out of scope and must return `{}` with a warning, not attempt a fetch.
-  3. Percent-decode the URI before using it as a path (glTF requires URI encoding, so a space is `%20` and a real exporter emits it). Decode only `%XX` triplets with two valid hex digits; leave anything else literal rather than failing the load.
-  4. Normalise `\` to `/` before resolving, for the same reason `resolveObjTexturePath` does — a Windows-authored relative path must still resolve elsewhere.
-  5. **Reject any resolved path that escapes the document's directory.** Build the candidate as `documentDir / decodedUri`, then `weakly_canonical` it and require that the result is under `weakly_canonical(documentDir)`. A `.gltf` is untrusted input fed from the GUI's file picker, and a `"uri": "../../../../Windows/System32/..."` must be refused, not read. Log the rejection.
-  6. Read the file with the shared `FileReader` helper. A missing or unreadable file returns `{}` (the existing "no bytes" contract), and `parseCpu:521-527` already handles that by leaving `textureID` at `-1`. Log a warning naming the resolved candidate — a wrong texture path otherwise leaves no signal at all, which is the whole failure mode here.
-  7. Delete the now-false comment at `:219-223` and replace it with the three forms actually handled plus the traversal rule from step 5.
-
-  **Test:** In `gltfParseSuite.cpp`, add `GltfParseUnit.ExternalImageUriIsResolvedRelativeToTheDocument` — write a temp directory holding a minimal `.gltf` with `"images": [{ "uri": "tex.png" }]` plus a real 1×1 PNG named `tex.png`, parse, and assert the material's `textureID` is `0` and `getTextureImages()[0]` is non-empty. Add `GltfParseUnit.ExternalImageUriEscapingTheDocumentDirectoryIsRejected` (`"uri": "../secret.png"` with the file present one level up, asserting `textureID == -1`) and `GltfParseUnit.PercentEncodedExternalUriResolves` (a file named `my tex.png`, referenced as `my%20tex.png`). All CPU-only.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GltfParse*`.
-
-  **Context:** Do not "fix" this by making `obj2gltf` embed its images instead
-  — the converter's self-contained-document-next-to-its-`.bin` layout is
-  deliberate and documented, and `obj_to_gltf.rs`'s tests depend on the
-  emitted JSON staying byte-stable. The gap is on the reading side. Keep the
-  base64 length guard at `:250-254` exactly as it is; it is a fuzz-found
-  underflow fix and the new branch must not be reachable from a URI that
-  contains `base64,`. `Texture::createFromMemory` already decodes whatever
-  bytes it is handed via `stbi`, so no new image-format handling is involved.
-
 - [ ] **(M) Set `eOpaque` per BLAS geometry, off only for meshes that carry a MASK material** — the follow-up `ASManager.cpp:564-571` asks for by name: with the any-hit shader shipped, every hit on every triangle in the scene now runs two buffer-device-address loads just to discover the material has no cutoff.
 
   **Files to read:**

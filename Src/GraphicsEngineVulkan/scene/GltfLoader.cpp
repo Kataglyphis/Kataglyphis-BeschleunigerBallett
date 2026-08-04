@@ -1,10 +1,14 @@
 module;
 
+#include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <cstdlib>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -28,6 +32,7 @@ import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.mesh_range;
 import kataglyphis.vulkan.model_assembly;
 import kataglyphis.vulkan.sampler_builder;
+import kataglyphis.shared.util.file_reader;
 
 namespace Kataglyphis {
 
@@ -219,12 +224,45 @@ void readAttribute(const cgltf_accessor *accessor, std::vector<VecT> &out)
     }
 }
 
+/// Percent-decodes a URI (glTF requires URI-encoding for reserved characters,
+/// so a real exporter emits a space as %20). Decodes only well-formed %XX
+/// triplets (two valid hex digits); anything else - a bare '%' or a truncated
+/// escape - is left byte-for-byte rather than failing the whole decode.
+std::string percentDecodeUri(const std::string &uri)
+{
+    std::string out;
+    out.reserve(uri.size());
+    for (std::string::size_type i = 0; i < uri.size(); ++i) {
+        if (uri[i] == '%' && i + 2 < uri.size() && std::isxdigit(static_cast<unsigned char>(uri[i + 1])) != 0
+            && std::isxdigit(static_cast<unsigned char>(uri[i + 2])) != 0) {
+            out.push_back(static_cast<char>(std::strtoul(uri.substr(i + 1, 2).c_str(), nullptr, 16)));
+            i += 2;
+        } else {
+            out.push_back(uri[i]);
+        }
+    }
+    return out;
+}
+
+/// True if `candidate` (already weakly_canonical) is `base` itself or nested
+/// under it. Used to reject a glTF image URI that walks out of the document's
+/// directory via `..` - a `.gltf` is untrusted input fed from the GUI's file
+/// picker. lexically_relative (rather than a string-prefix compare) avoids the
+/// classic "/foo/bar" matching "/foo/barbaz" false positive.
+bool isWithinDirectory(const std::filesystem::path &candidate, const std::filesystem::path &base)
+{
+    const std::filesystem::path rel = candidate.lexically_relative(base);
+    return !rel.empty() && rel.begin()->string() != "..";
+}
+
 /// Returns the ENCODED image bytes (PNG/JPG/...) for a glTF image, or empty if
-/// unavailable. Handles the two forms every testable asset uses: glb buffer-view
-/// embedded (bytes in a loaded buffer) and a base64 data-URI (cgltf decodes it).
-/// External file URIs are not handled - no asset in the tree uses one, and it
-/// would need the document path to resolve.
-std::vector<unsigned char> extractImageBytes(const cgltf_image *image, const cgltf_options &options)
+/// unavailable. Handles the three forms a glTF document can use: glb
+/// buffer-view embedded (bytes in a loaded buffer), a base64 data-URI (cgltf
+/// decodes it), and a sibling-file URI resolved against `documentDir` - the
+/// layout `obj2gltf`/`obj_to_gltf.rs` emits. A remote URI (`http:`/`https:`)
+/// is out of scope and yields no bytes, not a fetch.
+std::vector<unsigned char> extractImageBytes(
+  const cgltf_image *image, const cgltf_options &options, const std::filesystem::path &documentDir)
 {
     if (image == nullptr) { return {}; }
 
@@ -264,7 +302,44 @@ std::vector<unsigned char> extractImageBytes(const cgltf_image *image, const cgl
                 free(out);// cgltf's default allocator is malloc/free
                 return result;
             }
+            return {};
         }
+
+        // Not a data URI. A scheme prefix (data:/http:/https:) names a form
+        // this loader does not fetch - a remote asset is out of scope, and a
+        // malformed data: URI (no "base64," marker) must not fall through to
+        // being read as a relative filesystem path.
+        if (uri.rfind("data:", 0) == 0 || uri.rfind("http:", 0) == 0 || uri.rfind("https:", 0) == 0) { return {}; }
+
+        std::string decodedUri = percentDecodeUri(uri);
+        std::replace(decodedUri.begin(), decodedUri.end(), '\\', '/');
+
+        const std::filesystem::path baseDir = documentDir.empty() ? std::filesystem::path(".") : documentDir;
+        const std::filesystem::path candidate = baseDir / decodedUri;
+
+        std::error_code baseEc;
+        const std::filesystem::path canonicalBase = std::filesystem::weakly_canonical(baseDir, baseEc);
+        std::error_code candidateEc;
+        const std::filesystem::path canonicalCandidate = std::filesystem::weakly_canonical(candidate, candidateEc);
+        if (baseEc || candidateEc) { return {}; }
+
+        if (!isWithinDirectory(canonicalCandidate, canonicalBase)) {
+            spdlog::warn(
+              "GltfLoader: external image URI '{}' resolves outside the document directory ('{}'); rejected",
+              uri,
+              canonicalCandidate.string());
+            return {};
+        }
+
+        const std::vector<char> fileBytes = Kataglyphis::Shared::readBinaryFile(canonicalCandidate.string());
+        if (fileBytes.empty()) {
+            spdlog::warn(
+              "GltfLoader: external image URI '{}' resolved to '{}' but the file could not be read",
+              uri,
+              canonicalCandidate.string());
+            return {};
+        }
+        return std::vector<unsigned char>(fileBytes.begin(), fileBytes.end());
     }
     return {};
 }
@@ -572,6 +647,8 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
     // not just the image - two textures may share one image with different
     // samplers, and collapsing them onto one slot would make the sampler
     // unobservable.
+    const std::filesystem::path documentDir = std::filesystem::path(modelFile).parent_path();
+
     std::map<std::pair<const cgltf_image *, const cgltf_sampler *>, int> imageSlot;
     for (cgltf_size m = 0; m < data->materials_count; ++m) {
         const cgltf_material &material = data->materials[m];
@@ -587,7 +664,7 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
             if (existing != imageSlot.end()) {
                 objMaterial.textureID = existing->second;
             } else {
-                std::vector<unsigned char> bytes = extractImageBytes(img, options);
+                std::vector<unsigned char> bytes = extractImageBytes(img, options, documentDir);
                 if (!bytes.empty()) {
                     objMaterial.textureID = static_cast<int>(textureImages.size());
                     imageSlot[key] = objMaterial.textureID;
