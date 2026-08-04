@@ -70,6 +70,16 @@ constexpr bool shouldEnableComputeDerivativeGroupQuads(bool extensionPresent, vk
     return extensionPresent && quadsSupported == VK_TRUE;
 }
 
+// VUID-VkSamplerCreateInfo-anisotropyEnable-01071: maxAnisotropy must not
+// exceed the device's maxSamplerAnisotropy limit when anisotropy is enabled.
+// 16x is the ceiling we ask for rather than the device limit itself -
+// requesting the raw limit would silently change texture quality per GPU,
+// while diminishing returns above 16x make that not worth it.
+constexpr float resolveMaxAnisotropy(bool anisotropyEnabled, float deviceLimit)
+{
+    return anisotropyEnabled ? std::clamp(16.0F, 1.0F, deviceLimit) : 1.0F;
+}
+
 inline auto scorePhysicalDevice(const vk::PhysicalDeviceProperties &properties) -> PhysicalDeviceScore
 {
     int type_rank = 0;

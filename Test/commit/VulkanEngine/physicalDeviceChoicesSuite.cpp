@@ -55,4 +55,12 @@ TEST(PhysicalDeviceChoicesUnit, ComputeDerivativeQuadsNeedBothTheExtensionAndThe
     EXPECT_FALSE(Kataglyphis::shouldEnableComputeDerivativeGroupQuads(false, VK_FALSE));
 }
 
+TEST(PhysicalDeviceChoicesUnit, MaxAnisotropyIsClampedToTheDeviceLimit)
+{
+    EXPECT_FLOAT_EQ(Kataglyphis::resolveMaxAnisotropy(false, 16.0F), 1.0F);
+    EXPECT_FLOAT_EQ(Kataglyphis::resolveMaxAnisotropy(true, 16.0F), 16.0F);
+    EXPECT_FLOAT_EQ(Kataglyphis::resolveMaxAnisotropy(true, 2.0F), 2.0F);
+    EXPECT_FLOAT_EQ(Kataglyphis::resolveMaxAnisotropy(true, 1.0F), 1.0F);
+}
+
 }// namespace

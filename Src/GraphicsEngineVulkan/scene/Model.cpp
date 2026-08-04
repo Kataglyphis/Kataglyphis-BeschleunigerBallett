@@ -2,6 +2,7 @@
 #include <memory>
 
 #include "common/Utilities.hpp"
+#include "vulkan_base/PhysicalDeviceChoices.hpp"
 #include <cstdint>
 #include <glm/ext/matrix_float4x4.hpp>
 #include <optional>
@@ -81,7 +82,7 @@ void Model::addSampler(const Texture &newTexture)
       vk::SamplerAddressMode::eRepeat,
       static_cast<float>(mip_level),
       aniso,
-      aniso ? 16.0F : 1.0F,
+      resolveMaxAnisotropy(aniso, device->maxSamplerAnisotropy()),
       vk::BorderColor::eFloatOpaqueBlack);
 
     vk::ResultValue<vk::Sampler> sampler_result = device->getLogicalDevice().createSampler(sampler_create_info);

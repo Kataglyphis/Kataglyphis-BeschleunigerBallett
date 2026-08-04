@@ -416,6 +416,7 @@ void Kataglyphis::VulkanDevice::create_logical_device()
     deviceSupportsBufferDeviceAddress = hasBufferDeviceAddressFeature;
     deviceSupportsDepthClamp = available_features2.features.depthClamp == VK_TRUE;
     deviceSupportsSamplerAnisotropy = available_features2.features.samplerAnisotropy == VK_TRUE;
+    deviceMaxSamplerAnisotropy = device_properties.limits.maxSamplerAnisotropy;
     const bool hasRequiredDescriptorIndexingFeatures =
       available_features12.descriptorIndexing == VK_TRUE && available_features12.runtimeDescriptorArray == VK_TRUE
       && available_features12.shaderSampledImageArrayNonUniformIndexing == VK_TRUE;
@@ -653,8 +654,6 @@ auto Kataglyphis::VulkanDevice::getSwapchainDetails(vk::PhysicalDevice device)
 
 auto Kataglyphis::VulkanDevice::check_device_suitable(vk::PhysicalDevice device) -> bool
 {
-    vk::PhysicalDeviceFeatures device_features = device.getFeatures();
-
     Kataglyphis::VulkanRendererInternals::QueueFamilyIndices indices = getQueueFamilies(device);
 
     bool const extensions_supported = check_device_extension_support(device);
@@ -666,7 +665,12 @@ auto Kataglyphis::VulkanDevice::check_device_suitable(vk::PhysicalDevice device)
         swap_chain_valid = !swap_chain_details.presentation_mode.empty() && !swap_chain_details.formats.empty();
     }
 
-    return indices.is_valid() && extensions_supported && swap_chain_valid && device_features.samplerAnisotropy;
+    // samplerAnisotropy is deliberately not required here: it is a quality
+    // knob with a working fallback (resolveMaxAnisotropy() clamps to 1.0F
+    // when unsupported), not a hard requirement. Vetoing devices without it
+    // rejected every software Vulkan implementation (e.g. lavapipe), which is
+    // exactly the class of device that could host the golden suites headless.
+    return indices.is_valid() && extensions_supported && swap_chain_valid;
 }
 
 auto Kataglyphis::VulkanDevice::check_device_extension_support(vk::PhysicalDevice device) -> bool

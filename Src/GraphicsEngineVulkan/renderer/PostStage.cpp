@@ -20,6 +20,7 @@
 #include "renderer/pushConstants/PushConstantPost.hpp"
 
 #include "common/Utilities.hpp"
+#include "vulkan_base/PhysicalDeviceChoices.hpp"
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 
@@ -130,13 +131,13 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recreateFrameResources()
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createOffscreenTextureSampler()
 {
-    vk::PhysicalDeviceFeatures physical_device_features = device->getPhysicalDevice().getFeatures();
+    const bool aniso = device->supportsSamplerAnisotropy();
 
     vk::SamplerCreateInfo sampler_create_info = buildSamplerCreateInfo(vk::Filter::eLinear,
       vk::SamplerAddressMode::eRepeat,
       0.0F,
-      physical_device_features.samplerAnisotropy,
-      (physical_device_features.samplerAnisotropy != 0u) ? 16.0F : 1.0F,
+      aniso,
+      resolveMaxAnisotropy(aniso, device->maxSamplerAnisotropy()),
       vk::BorderColor::eFloatOpaqueBlack);
 
     vk::Result const result =

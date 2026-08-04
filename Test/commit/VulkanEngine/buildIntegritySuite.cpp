@@ -8087,3 +8087,117 @@ TEST(BuildIntegrity, EverySwapchainWritingShaderEncodesSrgb)
           << shader_path.string() << "'s fragment entry point must call linear_to_srgb before writing the swapchain";
     }
 }
+
+// Pins the anisotropy fix: every buildSamplerCreateInfo call must derive its
+// maxAnisotropy argument from Kataglyphis::resolveMaxAnisotropy(...) (which
+// itself clamps to the device's queried limit), never a bare numeric literal
+// above 1.0 - a literal above the device's maxSamplerAnisotropy limit is
+// VUID-VkSamplerCreateInfo-anisotropyEnable-01071. Also pins that
+// vk::PhysicalDevice::getFeatures()/getFeatures2() only run inside
+// VulkanDevice.cpp, the one place a device's capabilities should be queried.
+TEST(BuildIntegrity, NoSamplerHardCodesItsMaxAnisotropy)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    static const std::string kSignature = "buildSamplerCreateInfo(";
+    // A bare floating-point literal greater than 1 - "1.0F" / "1.0f" is the
+    // disabled-anisotropy sentinel and stays allowed.
+    static const std::regex kLiteralAboveOne(R"(^\s*(?:[2-9]|\d{2,})(?:\.\d+)?[fF]?\s*$)");
+    static const char *const kGetFeatures = "getFeatures";
+
+    std::vector<std::string> anisotropy_violations;
+    std::vector<std::string> get_features_violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".cpp" && path.extension() != ".ixx" && path.extension() != ".hpp") { continue; }
+
+        const std::string relative_file = fs::relative(path, repo_root).generic_string();
+
+        const auto contentsOpt = readFileText(path);
+        ASSERT_TRUE(contentsOpt.has_value()) << "could not open " << path.string();
+        const std::string &contents = *contentsOpt;
+
+        std::size_t sig_pos = 0;
+        while ((sig_pos = contents.find(kSignature, sig_pos)) != std::string::npos) {
+            const std::size_t args_begin = sig_pos + kSignature.size();
+
+            // Balanced-paren extraction (not a lazy `\);` regex): a `\);`
+            // regex would run past the parameter list on the two sites where
+            // this text names a declaration/definition rather than a call -
+            // `buildSamplerCreateInfo(...) -> vk::SamplerCreateInfo` has no
+            // `);` right after its own parameter list, so a lazy regex keeps
+            // scanning into unrelated code far below looking for the next one.
+            std::size_t pos = args_begin;
+            int paren_depth = 1;
+            while (pos < contents.size() && paren_depth > 0) {
+                if (contents[pos] == '(') { ++paren_depth; }
+                else if (contents[pos] == ')') { --paren_depth; }
+                ++pos;
+            }
+            sig_pos = pos;
+            ASSERT_EQ(paren_depth, 0)
+              << relative_file << ": unbalanced parentheses scanning a buildSamplerCreateInfo(...) argument list";
+
+            const std::string call_args = contents.substr(args_begin, pos - 1 - args_begin);
+
+            // Depth-aware split: a top-level comma separates arguments, but
+            // maxAnisotropy is itself a nested call
+            // (resolveMaxAnisotropy(anisotropyEnable, device->maxSamplerAnisotropy()))
+            // whose internal comma must not be mistaken for one.
+            std::vector<std::string> args;
+            std::size_t arg_start = 0;
+            int depth = 0;
+            for (std::size_t i = 0; i < call_args.size(); ++i) {
+                const char character = call_args[i];
+                if (character == '(') { ++depth; }
+                else if (character == ')') { --depth; }
+                else if (character == ',' && depth == 0) {
+                    args.push_back(call_args.substr(arg_start, i - arg_start));
+                    arg_start = i + 1;
+                }
+            }
+            args.push_back(call_args.substr(arg_start));
+            ASSERT_GE(args.size(), 5u)
+              << relative_file
+              << ": buildSamplerCreateInfo(...) does not have the expected (filter, addressMode, maxLod, "
+                 "anisotropyEnable, maxAnisotropy, ...) shape - the scan needs updating:\n"
+              << call_args;
+
+            if (std::regex_match(args[4], kLiteralAboveOne)) {
+                anisotropy_violations.push_back(relative_file + ": maxAnisotropy=" + args[4]);
+            }
+        }
+
+        if (relative_file == "Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp") { continue; }
+        std::size_t pos = 0;
+        while ((pos = contents.find(kGetFeatures, pos)) != std::string::npos) {
+            get_features_violations.push_back(relative_file);
+            pos += std::strlen(kGetFeatures);
+        }
+    }
+
+    EXPECT_TRUE(anisotropy_violations.empty())
+      << "buildSamplerCreateInfo call(s) hard-code a maxAnisotropy literal above the disabled sentinel - route "
+         "through Kataglyphis::resolveMaxAnisotropy(anisotropyEnabled, device->maxSamplerAnisotropy()) instead:"
+      << [&anisotropy_violations] {
+             std::string joined;
+             for (const auto &entry : anisotropy_violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    EXPECT_TRUE(get_features_violations.empty())
+      << "getFeatures()/getFeatures2() called outside VulkanDevice.cpp - device capability queries belong in one "
+         "place so availability and the features actually enabled cannot diverge:"
+      << [&get_features_violations] {
+             std::string joined;
+             for (const auto &entry : get_features_violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}

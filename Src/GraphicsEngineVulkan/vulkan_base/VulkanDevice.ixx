@@ -31,6 +31,10 @@ class VulkanDevice
     bool supportsBufferDeviceAddress() const { return deviceSupportsBufferDeviceAddress; };
     bool supportsDepthClamp() const { return deviceSupportsDepthClamp; };
     bool supportsSamplerAnisotropy() const { return deviceSupportsSamplerAnisotropy; };
+    // VkPhysicalDeviceLimits::maxSamplerAnisotropy - the ceiling a sampler's
+    // maxAnisotropy may request without violating
+    // VUID-VkSamplerCreateInfo-anisotropyEnable-01071.
+    float maxSamplerAnisotropy() const { return deviceMaxSamplerAnisotropy; };
     // VkPhysicalDeviceVulkan11Properties::maxMultiviewViewCount - the CSM
     // render pass broadcasts to one view per cascade via multiview, so a
     // cascade count above this would create a non-conformant render pass.
@@ -75,6 +79,7 @@ class VulkanDevice
     bool deviceSupportsBufferDeviceAddress = false;
     bool deviceSupportsDepthClamp = false;
     bool deviceSupportsSamplerAnisotropy = false;
+    float deviceMaxSamplerAnisotropy = 1.0F;
     uint32_t maxMultiviewViewCount = 0;
     vk::DeviceSize deviceAddressAlignment{ 1 };
     uint32_t graphics_queue_timestamp_valid_bits{ 0 };
