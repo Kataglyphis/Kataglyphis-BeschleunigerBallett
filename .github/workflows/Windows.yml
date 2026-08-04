@@ -310,14 +310,23 @@ jobs:
     permissions:
       contents: read
     steps:
+      # `submodules: true` is top-level only (NOT recursive) - exactly what these
+      # suites need: they resolve modules from the ContainerHub submodule, and
+      # Submodule.Pins.Tests reads non-recursive `git submodule status`, so every
+      # top-level submodule must be present but none of the nested ones.
+      #
+      # It must be actions/checkout doing this, not a hand-rolled
+      # `git submodule update --init` step. .gitmodules pins git@github.com:
+      # (SSH) URLs for Kataglyphis-ContainerHub and Kataglyphis-RustProjectTemplate,
+      # and a hosted runner has no SSH key - the bare git command died with
+      # "git@github.com: Permission denied (publickey)" on both, every single run.
+      # checkout's submodule support installs the same `url.<https>.insteadOf
+      # git@github.com:` rewrite plus token auth that the build job's clone step
+      # sets up by hand, so the SSH pins resolve over HTTPS.
       - name: Checkout
         uses: actions/checkout@v7.0.1
-
-      # Top-level pins only: the suites resolve modules from the ContainerHub
-      # submodule, and Submodule.Pins.Tests reads non-recursive
-      # `git submodule status`, which needs every top-level submodule present.
-      - name: Checkout submodules (top-level)
-        run: git submodule update --init
+        with:
+          submodules: true
 
       - name: Run Pester suites (pinned 3.4.0)
         run: |
