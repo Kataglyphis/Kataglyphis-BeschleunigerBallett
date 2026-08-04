@@ -7874,3 +7874,49 @@ TEST(BuildIntegrity, TestSuitesShareOneRepoRootHelper)
              return joined;
          }();
 }
+
+// README.md and docs/source/conf.py drifted to the old "Kataglyphis-Renderer"
+// repository slug after the rename to Kataglyphis-BeschleunigerBallett -
+// conf.py's repository_url was fixed but project/breathe_projects/
+// breathe_default_project were not, and the README's build badges kept
+// pointing at someone else's CI. Nothing else gates prose, so a partial
+// rename like that can sit there indefinitely.
+TEST(BuildIntegrity, DocsNameThisRepository)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const std::string kStaleSlug = "Kataglyphis-Renderer";
+
+    std::vector<fs::path> candidates = { repo_root / "README.md" };
+
+    const fs::path docs_source = repo_root / "docs" / "source";
+    ASSERT_TRUE(fs::exists(docs_source)) << "missing " << docs_source.string();
+
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(docs_source, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        const auto extension = path.extension();
+        if (extension != ".md" && extension != ".rst" && path.filename() != "conf.py") { continue; }
+        candidates.push_back(path);
+    }
+
+    std::vector<std::string> violations;
+    for (const fs::path &path : candidates) {
+        const auto text = readFileText(path);
+        if (!text) { continue; }
+        if (text->find(kStaleSlug) != std::string::npos) {
+            violations.push_back(fs::relative(path, repo_root).generic_string());
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size() << " doc file(s) still reference the old repository slug \"" << kStaleSlug << "\":"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}

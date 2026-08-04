@@ -75,7 +75,7 @@ def _find_doxygen_xml_dir() -> Path | None:
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = "Kataglyphis-Renderer"
+project = "Kataglyphis-BeschleunigerBallett"
 copyright = "2024, Jonas Heinle"
 author = "Jonas Heinle"
 release = (REPO_ROOT / "version.txt").read_text(encoding="utf-8").strip()
@@ -112,8 +112,8 @@ myst_enable_extensions = [
 doxygen_xml_dir = _find_doxygen_xml_dir()
 if doxygen_xml_dir is not None:
     extensions.extend(["breathe", "exhale"])
-    breathe_projects = {"Kataglyphis-Renderer": str(doxygen_xml_dir)}
-    breathe_default_project = "Kataglyphis-Renderer"
+    breathe_projects = {"Kataglyphis-BeschleunigerBallett": str(doxygen_xml_dir)}
+    breathe_default_project = "Kataglyphis-BeschleunigerBallett"
     exhale_args = {
         "containmentFolder": "./api",
         "rootFileName": "library_root.rst",

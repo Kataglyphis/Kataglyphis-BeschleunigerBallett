@@ -8,7 +8,6 @@ Make sure these tools are available before you build the project:
 - a C17 capable compiler
 - CMake 4.1 or newer
 - a Vulkan SDK installation for Vulkan-enabled builds
-- an OpenGL 4.6 capable driver/runtime for the OpenGL renderer
 - Python plus the packages from `requirements.txt` for docs and formatting tasks
 - optionally Rust if you want to enable the experimental Rust path
 
@@ -31,6 +30,13 @@ ctest --test-dir build --output-on-failure
 ```
 
 For Visual Studio style generators on Windows, add `-C Debug` or `-C Release` to `ctest`.
+
+A host CMake older than 4.1 cannot read `CMakePresets.json` (`"version": 10`)
+and fails `cmake --list-presets` with `Unrecognized "version" field` — read
+the file itself, or the Windows configurations table in
+[AGENTS.md](../../AGENTS.md#windows-configurations-build-windowsps1), instead.
+On Windows, prefer `Scripts/Windows/Build-Windows-Container.ps1`, which builds
+inside a container that already has a new enough CMake.
 
 ## Linux Workflow
 

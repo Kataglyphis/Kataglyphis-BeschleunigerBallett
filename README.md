@@ -13,17 +13,16 @@
   <a href="https://jonasheinle.de"><img src="images/vulkan-logo.png" alt="VulkanEngine" width="200"></a>
   <a href="https://jonasheinle.de"><img src="images/Engine_logo.png" alt="VulkanEngine" width="200"></a>
   <a href="https://jonasheinle.de"><img src="images/glm_logo.png" alt="VulkanEngine" width="200"></a>
-  <a href="https://jonasheinle.de"><img src="images/Opengl-logo.png" alt="OpenGLEngine" width="200"></a>
 </div>
 
 see also [**__Official homepage__**](https://beschleunigerballette.jonasheinle.de/). 
 
-[![Linux build + test + coverage on Ubuntu 24.04 ARM](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_arm.yml/badge.svg?branch=main)](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_arm.yml)
-[![Linux build + test + coverage on Ubuntu 24.04 x86](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_x86.yml/badge.svg)](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Linux_x86.yml)
-[![Windows Server 2025 build x86 MSVC and Clang](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Windows.yml/badge.svg)](https://github.com/Kataglyphis/Kataglyphis-Renderer/actions/workflows/Windows.yml)  
+[![Linux build + test + coverage on Ubuntu 24.04 ARM](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/Linux_arm.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/Linux_arm.yml)
+[![Linux build + test + coverage on Ubuntu 24.04 x86](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/Linux_x86.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/Linux_x86.yml)
+[![Windows Server 2025 build x86 MSVC and Clang](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/Windows.yml/badge.svg?branch=develop)](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/Windows.yml)  
 [![CodeQL](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/github-code-scanning/codeql)
 [![Automatic Dependency Submission](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/dependency-graph/auto-submission/badge.svg)](https://github.com/Kataglyphis/Kataglyphis-BeschleunigerBallett/actions/workflows/dependency-graph/auto-submission)
-[![TopLang](https://img.shields.io/github/languages/top/Kataglyphis/Kataglyphis-Renderer)]()  
+[![TopLang](https://img.shields.io/github/languages/top/Kataglyphis/Kataglyphis-BeschleunigerBallett)]()  
 [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/donate/?hosted_button_id=BX9AVVES2P9LN)
 [![Twitter](https://img.shields.io/twitter/follow/Cataglyphis_?style=social)](https://twitter.com/Cataglyphis_)
 [![YouTube](https://img.shields.io/youtube/channel/subscribers/UC3LZiH4sZzzaVBCUV8knYeg?style=social)](https://www.youtube.com/channel/UC3LZiH4sZzzaVBCUV8knYeg)
@@ -70,6 +69,13 @@ cmake --preset <preset-name>
 cmake --build build --config Debug
 ctest --test-dir build --output-on-failure
 ```
+
+A host CMake older than 4.1 cannot read `CMakePresets.json` (`"version": 10`)
+and fails `cmake --list-presets` with `Unrecognized "version" field` — read
+the file itself, or the Windows configurations table in
+[AGENTS.md](AGENTS.md#windows-configurations-build-windowsps1), instead. On
+Windows, prefer `Scripts/Windows/Build-Windows-Container.ps1`, which builds
+inside a container that already has a new enough CMake.
 
 Full prerequisites, the per-platform workflows (Linux helper scripts, the Windows `Build-Windows.ps1` configurations, the containerized Stevedore build), packaging (CPack/MSIX), and troubleshooting live in [docs/source/getting_started.md](docs/source/getting_started.md).
 
