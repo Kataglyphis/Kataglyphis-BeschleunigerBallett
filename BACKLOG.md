@@ -8116,7 +8116,46 @@ here does.
 
 ### CI
 
-- [ ] **(M) Run the Rust crate's `rustfmt`/`clippy` on this repo's always-on Linux lane** — the crate is compiled twice here and linted zero times, so edits to `crates/webgpu_renderer` from this working tree get no lint signal until the submodule is pushed separately.
+- [b] **(M) Run the Rust crate's `rustfmt`/`clippy` on this repo's always-on Linux lane** (**blocked on owner decision**) — the crate is compiled twice here and linted zero times, so edits to `crates/webgpu_renderer` from this working tree get no lint signal until the submodule is pushed separately.
+
+  **Blocker (found while doing step 1, "run the linters locally to learn
+  whether the pinned commit is clean"):** it is not clean. `cargo fmt --all
+  -- --check` against the pinned commit
+  (`bf26e12353ee686c1581b5c25b8b6edd32ba9148`) reports diffs in ~30 files,
+  all under `crates/webgpu_renderer` itself (`src/asset/gltf_loader.rs`,
+  `src/render/{animation,bounds,cascades,texture,tile_grid}.rs`,
+  `src/scene/mod.rs`, several files under `tests/`, etc.) — not in some
+  other crate, so step 5's crate-scoped `-p kataglyphis_webgpu_renderer`
+  fallback does not help; the dirt is already inside the one crate that
+  fallback would scope to.
+
+  This contradicts the task's premise ("the submodule pin is at a commit
+  whose own workflow runs this script green"): `rust_ubuntu24_04.yml:112`'s
+  "Check formatting" step has `continue-on-error: true`, so that workflow
+  reports green regardless of the fmt/clippy outcome — it was never actually
+  gating. `clippy` could not be verified locally either: this host's MSVC
+  linker is broken (see `AGENTS.md`/memory `rust-crate-msvc-linker-broken`),
+  and `cargo clippy` still links proc-macro/build-script crates
+  (`serde_core`, `cubecl-common`, `time-macros`, ...) even though it skips
+  linking the crate under lint, so the task's assumption "clippy does not
+  link" does not hold here.
+
+  Wiring step 3 as specified — an unconditional hard gate mirroring the
+  existing "Run Rust renderer tests" step, no `continue-on-error` — would
+  turn this repo's always-on Linux lane red starting now, not just on future
+  `crates/webgpu_renderer` edits. That's a call for the owner: either (a)
+  fix formatting in the `Kataglyphis-RustProjectTemplate` submodule itself
+  and bump this repo's pin (a cross-repo change outside this task's scope),
+  or (b) accept the new step running non-blocking, which weakens the gate
+  this task exists to add.
+
+  `Scripts/Linux/run-cargo-lints.sh` has been added (mirrors
+  `run-cargo-tests.sh`, delegates to
+  `linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh` workspace-wide, no
+  `-p` filter) and confirmed to correctly delegate and correctly fail (exit
+  1) on the diffs above — it is not wired into `Linux.yml` yet. Once the pin
+  is clean, step 3 (add the CI step right after `:286`) and step 4 (AGENTS.md
+  wrapper-map + "What CI runs" updates) are a small follow-up.
 
   **Files to read:**
   - `.github/workflows/Linux.yml` — `:277-286`, the "Run Rust renderer tests" step, whose comment already makes this exact argument for tests
