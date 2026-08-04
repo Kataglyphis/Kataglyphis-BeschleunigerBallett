@@ -187,6 +187,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
     // depth_format was already resolved by createDepthbufferImage(), which
     // init() always runs first - reuse it rather than querying again, so the
     // attachment and the image it is paired with cannot diverge.
+    // This eClear discards the depth values the skybox pass just wrote into
+    // the same depth image - deliberate, not changed by this helper switch.
     const vk::AttachmentDescription depth_attachment = buildAttachmentDescription(
       depth_format,
       vk::ImageLayout::eDepthStencilAttachmentOptimal,
@@ -205,16 +207,12 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
     const vk::SubpassDescription subpass = buildSubpassDescription(
       std::span<const vk::AttachmentReference>(&color_attachment_reference, 1), &depth_attachment_reference);
 
-    std::array<vk::SubpassDependency, 1> subpass_dependencies;
-
-    subpass_dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-    subpass_dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    subpass_dependencies[0].srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-    subpass_dependencies[0].dstSubpass = 0;
-    subpass_dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    subpass_dependencies[0].dstAccessMask =
-      vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eColorAttachmentRead;
-    subpass_dependencies[0].dependencyFlags = vk::DependencyFlagBits::eByRegion;
+    // Shares common/RenderPassHelper.hpp's buildExternalColorDepthDependency
+    // with Rasterizer and DeferredRasterizer - the depth half of the source
+    // scope is what actually matters here, since this pass clears the depth
+    // image the skybox pass just wrote (see the depth_attachment comment
+    // above).
+    const std::array<vk::SubpassDependency, 1> subpass_dependencies = { buildExternalColorDepthDependency() };
 
     std::array<vk::AttachmentDescription, 2> render_pass_attachments = { color_attachment, depth_attachment };
     const std::array<vk::SubpassDescription, 1> subpasses = { subpass };

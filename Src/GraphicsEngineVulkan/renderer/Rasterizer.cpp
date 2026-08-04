@@ -172,26 +172,15 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
     const vk::SubpassDescription subpass = buildSubpassDescription(
       std::span<const vk::AttachmentReference>(&color_attachment_reference, 1), &depth_attachment_reference);
 
-    std::array<vk::SubpassDependency, 1> subpass_dependencies{};
-
-    subpass_dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     // Depth is cleared via loadOp after an initial layout transition; the
     // dependency must cover EARLY/LATE_FRAGMENT_TESTS + depth writes or the
-    // clear races the transition (SYNC-HAZARD-WRITE-AFTER-WRITE).
-    subpass_dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput
-                                           | vk::PipelineStageFlagBits::eEarlyFragmentTests
-                                           | vk::PipelineStageFlagBits::eLateFragmentTests;
-    // The single depth buffer is shared across frames in flight: the
-    // previous frame's storeOp write must be made available before this
-    // frame's clear (cross-submission WAW otherwise).
-    subpass_dependencies[0].srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-
-    subpass_dependencies[0].dstSubpass = 0;
-    subpass_dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput
-                                           | vk::PipelineStageFlagBits::eEarlyFragmentTests;
-    subpass_dependencies[0].dstAccessMask =
-      vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-    subpass_dependencies[0].dependencyFlags = vk::DependencyFlags{};
+    // clear races the transition (SYNC-HAZARD-WRITE-AFTER-WRITE). See
+    // common/RenderPassHelper.hpp's buildExternalColorDepthDependency for the
+    // full rationale - shared with DeferredRasterizer and PostStage. Note
+    // this adds eColorAttachmentWrite to srcAccessMask on top of the
+    // previous hand-rolled version, a widening rather than a behaviour
+    // change: the colour attachment is also shared across frames in flight.
+    const std::array<vk::SubpassDependency, 1> subpass_dependencies = { buildExternalColorDepthDependency() };
 
     std::array<vk::AttachmentDescription, 2> render_pass_attachments = { color_attachment, depth_attachment };
     const std::array<vk::SubpassDescription, 1> subpasses = { subpass };

@@ -6353,6 +6353,75 @@ TEST(BuildIntegrity, NoStageHandRollsTheDepthAttachmentChain)
                                   "this check too";
 }
 
+// Rasterizer, DeferredRasterizer and PostStage used to each spell out their
+// own external subpass dependency by hand; they now share
+// Kataglyphis::buildExternalColorDepthDependency (common/RenderPassHelper.hpp)
+// for their single shared depth image. SkyBox and CascadedShadowMap keep
+// their own inline dependency - a genuinely different edge, documented on the
+// helper - so this pins down that no other raster stage picks the hand-rolled
+// shape back up by accident.
+TEST(BuildIntegrity, NoRasterStageHandRollsItsExternalSubpassDependency)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    static const char *const kExternalAssign = "srcSubpass = VK_SUBPASS_EXTERNAL";
+    static const char *const kStageAssign = "srcStageMask =";
+    // The helper's own definition, and the two passes with a genuinely
+    // different dependency shape, are exempt from this rule.
+    static const std::set<std::string> kAllowedFiles = {
+        "Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp",
+        "Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp",
+        "Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp"
+    };
+    // How many lines after the srcSubpass assignment to look for a hand-rolled
+    // srcStageMask assignment - every existing hand-rolled site sets it within
+    // the next couple of lines (an interleaved comment at most).
+    static constexpr std::size_t kLookaheadLines = 4;
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".cpp" && path.extension() != ".ixx" && path.extension() != ".hpp") { continue; }
+
+        const std::string relative_file = fs::relative(path, repo_root).generic_string();
+        if (kAllowedFiles.contains(relative_file)) { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::vector<std::string> lines;
+        std::string line;
+        while (std::getline(file, line)) { lines.push_back(line); }
+
+        for (std::size_t i = 0; i < lines.size(); ++i) {
+            if (lines[i].find(kExternalAssign) == std::string::npos) { continue; }
+            const std::size_t window_end = std::min(lines.size(), i + 1 + kLookaheadLines);
+            for (std::size_t j = i; j < window_end; ++j) {
+                if (lines[j].find(kStageAssign) == std::string::npos) { continue; }
+                violations.push_back(relative_file + ":" + std::to_string(i + 1) + ": " + lines[i]);
+                break;
+            }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " hand-rolled external subpass dependency/dependencies found under Src/GraphicsEngineVulkan/ - route "
+         "single-depth-image raster stages through Kataglyphis::buildExternalColorDepthDependency "
+         "(common/RenderPassHelper.hpp) instead:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 // Colour twin of NoStageHandRollsTheDepthAttachmentChain: every raster stage
 // used to spell out its own plain colour attachment creation chain by hand -
 // createImage(..., eColorAttachment, eDeviceLocal) -> createImageView(...,

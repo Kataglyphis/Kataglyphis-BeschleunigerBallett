@@ -146,6 +146,44 @@ constexpr vk::RenderPassCreateInfo buildRenderPassCreateInfo(
         static_cast<uint32_t>(dependencies.size()), dependencies.data() };
 }
 
+// Rasterizer, DeferredRasterizer and PostStage each spelled out this same
+// external dependency by hand for their single-subpass depth buffer: it is
+// written by one pass and cleared by the next, and the buffer is shared
+// across frames in flight, so the previous frame's write must be made
+// available before this frame's clear or draw touches it
+// (SYNC-HAZARD-WRITE-AFTER-WRITE otherwise - see Rasterizer.cpp's history,
+// which is where this was first found and fixed). dstSubpass is always 0:
+// none of the three passes this covers has more than one subpass.
+//
+// dependencyFlags is deliberately empty - eByRegion only makes sense for a
+// dependency local to the current frame's tile memory; a cross-frame
+// dependency like this one is not by-region.
+//
+// SkyBox and CascadedShadowMap keep their own inline dependency rather than
+// this helper: SkyBox's dstAccessMask carries a second, different member
+// (eColorAttachmentRead), and CascadedShadowMap's srcStageMask/srcAccessMask
+// cover a sampled shadow map (eFragmentShader/eShaderRead) - a genuinely
+// different edge, not a copy-paste. See
+// BuildIntegrity.NoRasterStageHandRollsItsExternalSubpassDependency in
+// buildIntegritySuite.cpp for the check that keeps it that way.
+constexpr vk::SubpassDependency buildExternalColorDepthDependency()
+{
+    vk::SubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput
+                              | vk::PipelineStageFlagBits::eEarlyFragmentTests
+                              | vk::PipelineStageFlagBits::eLateFragmentTests;
+    dependency.srcAccessMask =
+      vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+    dependency.dstStageMask =
+      vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests;
+    dependency.dstAccessMask =
+      vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+    dependency.dependencyFlags = vk::DependencyFlags{};
+    return dependency;
+}
+
 // Destroys a render pass and nulls its handle - the same idempotence rule
 // FramebufferHelper.hpp's destroyFramebuffer/destroyFramebuffers and
 // PipelineLayoutHelper.hpp's destroyPipelineAndLayout follow: a device-less

@@ -219,14 +219,12 @@ void DeferredRasterizer::createRenderPass()
     // Dependencies
     std::array<vk::SubpassDependency, 3> dependencies;
 
-    // External -> Geometry Subpass
-    dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies[0].dstSubpass = 0;
-    dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eBottomOfPipe;
-    dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests;
-    dependencies[0].srcAccessMask = vk::AccessFlagBits::eMemoryRead;
-    dependencies[0].dstAccessMask = vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-    dependencies[0].dependencyFlags = vk::DependencyFlagBits::eByRegion;
+    // External -> Geometry Subpass: shares common/RenderPassHelper.hpp's
+    // buildExternalColorDepthDependency with Rasterizer and PostStage,
+    // rather than the eBottomOfPipe/eMemoryRead catch-all this replaces - the
+    // depth attachment here is the same "written by one pass, cleared by the
+    // next" single-buffer shape those two cover.
+    dependencies[0] = buildExternalColorDepthDependency();
 
     // Geometry Subpass -> Lighting Subpass
     dependencies[1].srcSubpass = 0;

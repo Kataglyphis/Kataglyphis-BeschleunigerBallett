@@ -26,6 +26,7 @@
 #include "common/RenderPassHelper.hpp"
 
 using Kataglyphis::buildAttachmentDescription;
+using Kataglyphis::buildExternalColorDepthDependency;
 using Kataglyphis::destroyRenderPass;
 
 // Usable in a constant expression, matching ViewportHelper.hpp's convention.
@@ -181,6 +182,24 @@ TEST(RenderPassHelperUnit, MatchesCascadedShadowMapDepthAttachmentThatIsSampledL
     EXPECT_EQ(description.initialLayout, vk::ImageLayout::eUndefined);
     EXPECT_EQ(description.finalLayout, vk::ImageLayout::eShaderReadOnlyOptimal);
     expectEngineWideAttachmentInvariants(description);
+}
+
+TEST(RenderPassHelper, ExternalDependencyCoversDepthWrites)
+{
+    // Rasterizer, DeferredRasterizer and PostStage each share a single depth
+    // image across frames in flight: the dependency must cover the fragment
+    // test stages and the depth write access, or the next frame's clear
+    // races the previous frame's storeOp write (SYNC-HAZARD-WRITE-AFTER-WRITE).
+    const vk::SubpassDependency dependency = buildExternalColorDepthDependency();
+
+    EXPECT_EQ(dependency.srcSubpass, VK_SUBPASS_EXTERNAL);
+    EXPECT_EQ(dependency.dstSubpass, 0U);
+    EXPECT_TRUE(dependency.srcStageMask & vk::PipelineStageFlagBits::eEarlyFragmentTests);
+    EXPECT_TRUE(dependency.srcStageMask & vk::PipelineStageFlagBits::eLateFragmentTests);
+    EXPECT_TRUE(dependency.srcAccessMask & vk::AccessFlagBits::eDepthStencilAttachmentWrite);
+    EXPECT_TRUE(dependency.dstAccessMask & vk::AccessFlagBits::eDepthStencilAttachmentWrite);
+    // Not by-region: this is a cross-frame dependency, not a tile-local one.
+    EXPECT_EQ(dependency.dependencyFlags, vk::DependencyFlags{});
 }
 
 TEST(RenderPassHelperUnit, DestroyRenderPassOnANullDeviceIsANoOp)
