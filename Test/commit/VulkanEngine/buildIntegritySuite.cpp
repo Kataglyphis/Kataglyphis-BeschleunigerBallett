@@ -5022,6 +5022,38 @@ TEST(BuildIntegrity, MaxTextureCountInDocsMatchesTheHeader)
       << " defines MAX_TEXTURE_COUNT = " << *header_value;
 }
 
+// docs/model-loading.md is the one doc in the tree written to cite
+// `file:line` locations, and those citations rot within days - a function
+// moves ten lines and the citation now points at unrelated code, silently.
+// Every other doc (docs/cpp-renderer-improvements.md included, which is a
+// chronological log where a citation pinned to a historical commit is
+// legitimate) cites symbol names instead, so this gate is scoped to this one
+// file rather than widened to all of docs/.
+TEST(BuildIntegrity, ModelLoadingDocCitesSymbolsNotLineNumbers)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path doc_path = repo_root / "docs" / "model-loading.md";
+    const auto doc_content = readFileText(doc_path);
+    ASSERT_TRUE(doc_content.has_value()) << "could not open " << doc_path.string();
+
+    static const std::regex kFileLinePattern(R"([A-Za-z_/.-]+\.(cpp|ixx|hpp|rs):[0-9]+)");
+
+    std::vector<std::string> violations;
+    auto begin = std::sregex_iterator(doc_content->begin(), doc_content->end(), kFileLinePattern);
+    for (auto it = begin; it != std::sregex_iterator(); ++it) { violations.push_back(it->str()); }
+
+    EXPECT_TRUE(violations.empty())
+      << doc_path.string() << " cites " << violations.size()
+      << " file:line location(s), which rot within days - cite the function or member name instead:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 // Parses docs/code-quality.md's `<!-- format-drift-denominator: N -->` marker
 // line. Returns std::nullopt if the marker line, or its value, is missing -
 // a deleted or malformed marker must fail the calling test, not skip it.
