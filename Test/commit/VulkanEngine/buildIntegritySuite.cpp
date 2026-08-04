@@ -2627,8 +2627,7 @@ TEST(BuildIntegrity, EmissiveIsConsumedByTheRasterShadingPaths)
     const auto deferred_text_opt = readFileText(deferred_path);
     ASSERT_TRUE(deferred_text_opt.has_value()) << "could not open " << deferred_path.string();
     const std::string &deferred_text = *deferred_text_opt;
-    EXPECT_NE(deferred_text.find("outMaterial = float4(clamp(sqrt(2.0 / (material.shininess + 2.0)), 0.045, 1.0), "
-                                  "material.emission)"),
+    EXPECT_NE(deferred_text.find("outMaterial = float4(material_roughness(material), material.emission)"),
               std::string::npos)
       << "deferred.slang's geometry pass no longer packs material.emission into outMaterial.gba. " << kFailureMessage;
     EXPECT_NE(deferred_text.find("color += material.gba"), std::string::npos)
@@ -2937,6 +2936,70 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
              for (const auto &entry : violations) { joined += "\n  " + entry; }
              return joined;
          }();
+}
+
+// Completed item 8 removed the hard-coded `roughness = 0.9` from forward
+// shading; raytrace.rchit.slang kept its own copy until this test's commit
+// moved the shininess -> roughness mapping into common/material_fetch.slang's
+// material_roughness(). Guards against a numeric literal being reintroduced
+// by any shading path, and against a shading path silently dropping the
+// shared helper call.
+TEST(BuildIntegrity, EveryShadingPathDerivesRoughnessFromTheMaterial)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path slang_root = slangRoot();
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    static const std::regex kLiteralRoughnessAssignment(R"(\broughness\s*=\s*[0-9])");
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
+
+        const auto content = readFileText(path);
+        if (!content.has_value()) { continue; }
+
+        std::istringstream stream(*content);
+        std::string raw_line;
+        int line_number = 0;
+        while (std::getline(stream, raw_line)) {
+            ++line_number;
+            const std::string line = strip_line_comment(raw_line);
+            if (std::regex_search(line, kLiteralRoughnessAssignment)) {
+                violations.push_back(fs::relative(path, repo_root).generic_string() + ':'
+                                      + std::to_string(line_number) + ": " + line
+                                      + " assigns a numeric literal to roughness - derive it from the material via "
+                                        "material_roughness() instead");
+            }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size() << " shader site(s) hard-code roughness instead of deriving it from the material:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    static const std::array<const char *, 3> kShadingShaders = {
+        "rasterizer/rasterizer.slang",
+        "deferred/deferred.slang",
+        "raytracing/raytrace.rchit.slang",
+    };
+
+    for (const char *relative : kShadingShaders) {
+        const fs::path path = slang_root / relative;
+        const auto content = readFileText(path);
+        ASSERT_TRUE(content.has_value()) << "missing " << path.string();
+        EXPECT_NE(content->find("material_roughness("), std::string::npos)
+          << relative << " must derive roughness via material_roughness(), not its own copy of the mapping";
+    }
 }
 
 // bloom.slang's fs_brightpass and tonemap.slang's fs_main must agree on

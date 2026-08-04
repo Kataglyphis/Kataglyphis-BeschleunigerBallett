@@ -2,6 +2,7 @@ import scene_types;
 import rt_types;
 import brdf;
 import base_color;
+import material_fetch;
 
 // Ray tracing closest-hit shader. Sole source for this shader. Emits
 // SPIR-V only.
@@ -12,8 +13,6 @@ import base_color;
 // BRDF math (import brdf) is used for the Epic/Unreal4 shading model.
 
 [vk::binding(1, 0)] ConstantBuffer<SceneUBO> sceneUBO;
-
-[vk::binding(2, 0)] StructuredBuffer<ObjectDescription> objectDescription;
 
 [vk::binding(4, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
 [vk::binding(3, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
@@ -30,7 +29,7 @@ void rchit_main(
     // Per-mesh object description: instanceCustomIndex is the model's
     // first-mesh flat index; GeometryIndex is the mesh within the BLAS.
     uint objIndex = InstanceIndex() + GeometryIndex();
-    ObjectDescription obj = objectDescription[objIndex];
+    ObjectDescription obj = fetch_object_description(objIndex);
 
     // Fetch geometry via buffer device addresses (T* = PhysicalStorageBuffer).
     Vertices* vertices = (Vertices*)obj.vertex_address;
@@ -108,7 +107,7 @@ void rchit_main(
             shadowed);
     }
 
-    float roughness = 0.9;
+    float roughness = material_roughness(material);
     float3 lightColor = sceneUBO.dirLight.color.rgb;
     float lightIntensity = sceneUBO.dirLight.color.w;
 

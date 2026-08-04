@@ -8910,56 +8910,6 @@ for tasks 2/3.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Derive the ray-tracing hit shader's roughness from the material, like both raster paths already do** — `raytrace.rchit.slang:111` is the last surviving copy of the hard-coded `0.9` that completed item 8 removed from forward and deferred on 2026-07-22.
-
-  **Files to read:**
-  - `Resources/ShadersSlang/raytracing/raytrace.rchit.slang:111-125` — the
-    `float roughness = 0.9;` and the `brdf_direct` call below it.
-  - `Resources/ShadersSlang/rasterizer/rasterizer.slang:73` — the expression
-    to reuse: `clamp(sqrt(2.0 / (material.shininess + 2.0)), 0.045, 1.0)`.
-  - `Resources/ShadersSlang/deferred/deferred.slang:79` — the same expression,
-    third copy, packed into the G-buffer.
-  - `BACKLOG.md`, completed item 8 ("Forward shading ignores material diffuse
-    and roughness") — the fix this one was missed by.
-
-  **Steps:**
-  1. Replace `raytrace.rchit.slang:111` with the shininess-derived roughness.
-     `material` is already in scope at that point (the shader reads
-     `material.emission` at `:69` and `ambient` comes from the same fetch).
-  2. Because that expression now has three identical copies, move it into
-     `Resources/ShadersSlang/common/material_fetch.slang` as
-     `float material_roughness(ObjMaterial material)` with a one-line comment
-     naming the Beckmann-style shininess→roughness mapping and the 0.045
-     floor, and call it from all three sites. `material_fetch` is already
-     imported by all three (`rasterizer.slang:3`, `deferred.slang:2`,
-     `raytrace.rchit.slang` — verify its import list first and add it if
-     absent).
-  3. Recompile shaders (SPIR-V only, no C++ rebuild):
-     `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`
-
-  **Test:** add `BuildIntegrity.EveryShadingPathDerivesRoughnessFromTheMaterial`
-  to `buildIntegritySuite.cpp` — assert no `.slang` under
-  `Resources/ShadersSlang/` assigns a numeric literal to a variable named
-  `roughness`, and that each of the three shading shaders calls
-  `material_roughness`. Model it on
-  `BuildIntegrity.EveryShaderDerivesTheLightVectorByNegation`
-  (`buildIntegritySuite.cpp:2863`), which is the same "one rule, N shaders"
-  shape. `BuildIntegrity.EverySlangFunctionIsReachableFromAnEntryPoint`
-  (`:3386`) will also exercise the new helper, so run the whole
-  `BuildIntegrity.*` filter.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='BuildIntegrity.*'`.
-  Host GPU confirmation: `--gtest_filter='GoldenRender.RayTracing*'` from the
-  repo root — RT surfaces should gain a visible specular highlight.
-
-  **Context:** Land this before the metallic task below; both edit
-  `raytrace.rchit.slang:111-125` and the metallic task assumes the literal is
-  already gone. Do not "fix" this by giving the RT path its own roughness
-  constant that happens to look nicer — the point is that all three paths read
-  the same material field through one expression.
-
 - [ ] **(M) Carry glTF `metallic_factor` into `ObjMaterial` and use it in all three C++ shading paths** — the loader opens `pbr_metallic_roughness`, reads two of its three factors and drops metallic, so every metal renders as a dielectric in the Vulkan renderer and as a metal in the WebGPU one.
 
   **Files to read:**

@@ -24,6 +24,14 @@ ObjMaterial fetch_material(ObjectDescription obj, uint primitiveID)
     return materials->m[materialIDs->i[primitiveID]];
 }
 
+// Beckmann-style shininess -> roughness mapping shared by every shading
+// path (forward, deferred, ray-traced). The 0.045 floor keeps the BRDF's
+// specular lobe from collapsing to a singularity at shininess extremes.
+float material_roughness(ObjMaterial material)
+{
+    return clamp(sqrt(2.0 / (material.shininess + 2.0)), 0.045, 1.0);
+}
+
 // glTF alphaMode MASK test. ObjMaterial.hpp defines a negative alphaCutoff as
 // "not a MASK material" (OPAQUE/BLEND) - never discard. OBJ materials and
 // every non-MASK glTF material default to -1, so they are unaffected. The

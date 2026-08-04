@@ -76,7 +76,7 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID)
     // eR8G8B8A8Unorm, so emissive is quantized to 8 bits and clamped to
     // [0,1] - which matches glTF's emissive_factor range absent
     // KHR_materials_emissive_strength.
-    g.outMaterial = float4(clamp(sqrt(2.0 / (material.shininess + 2.0)), 0.045, 1.0), material.emission);
+    g.outMaterial = float4(material_roughness(material), material.emission);
     return g;
 }
 

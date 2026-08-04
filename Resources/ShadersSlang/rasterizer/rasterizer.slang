@@ -70,7 +70,7 @@ float4 fs_main(VsOut In, uint primitiveID : SV_PrimitiveID) : SV_Target
 
     ambient *= In.fragmentColor.rgb;
 
-    float roughness = clamp(sqrt(2.0 / (material.shininess + 2.0)), 0.045, 1.0);
+    float roughness = material_roughness(material);
     float3 lightColor = sceneUBO.dirLight.color.rgb;
     float lightIntensity = sceneUBO.dirLight.color.w;
 
