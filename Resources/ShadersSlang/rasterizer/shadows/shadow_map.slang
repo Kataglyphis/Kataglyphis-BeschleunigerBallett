@@ -42,11 +42,19 @@ void shadow_fs_main(ShadowVsOut In, uint primitiveID : SV_PrimitiveID)
     ObjectDescription obj = fetch_object_description(pc.objectIndex);
     ObjMaterial material = fetch_material(obj, primitiveID);
 
-    // Only textured MASK materials alpha-test; everything else casts unchanged.
-    if (material.alphaCutoff >= 0.0 && material.textureID >= 0)
+    // MASK materials alpha-test; OPAQUE/BLEND (alphaCutoff < 0) cast unchanged.
+    // The outer guard skips the branch entirely for the common non-MASK case.
+    if (material.alphaCutoff >= 0.0)
     {
-        int textureId = resolve_texture_slot(obj, material);
-        float alpha = textures[textureId].Sample(textureSamplers[textureId], transform_uv(In.fragUV, material)).a;
-        if (alpha_masked_out(material, alpha)) discard;
+        if (material.textureID >= 0)
+        {
+            int textureId = resolve_texture_slot(obj, material);
+            float alpha = textures[textureId].Sample(textureSamplers[textureId], transform_uv(In.fragUV, material)).a;
+            if (alpha_masked_out(material, alpha)) discard;
+        }
+        else
+        {
+            if (alpha_masked_out(material, 1.0)) discard;
+        }
     }
 }

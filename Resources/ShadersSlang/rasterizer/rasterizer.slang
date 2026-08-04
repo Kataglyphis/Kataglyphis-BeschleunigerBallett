@@ -64,6 +64,7 @@ float4 fs_main(VsOut In, uint primitiveID : SV_PrimitiveID) : SV_Target
     }
     else
     {
+        if (alpha_masked_out(material, 1.0)) discard;
         ambient = material.diffuse;
     }
 

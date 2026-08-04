@@ -2252,6 +2252,7 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
     };
     static const std::string kSharedPredicate = "alpha_masked_out(";
     static const std::string kBannedFallback = "alphaCutoff >= 0.0) ?";
+    static const std::string kTextureGuard = "textureID >= 0";
 
     std::vector<std::string> violations;
     for (const char *relative_path : kShaders) {
@@ -2267,6 +2268,41 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
         if (text.find(kBannedFallback) != std::string::npos) {
             violations.push_back(std::string(relative_path) + ": still contains the hand-rolled '"
                                   + kBannedFallback + "' alpha-cutoff fallback");
+        }
+
+        // A MASK material with no base-colour texture must alpha-test its
+        // factor alone (glTF's texture term defaults to 1) - so the shader
+        // must call alpha_masked_out() on both sides of its "textureID >= 0"
+        // branch, not just the textured one.
+        std::size_t occurrences = 0;
+        for (std::size_t pos = text.find(kSharedPredicate); pos != std::string::npos;
+             pos = text.find(kSharedPredicate, pos + kSharedPredicate.size())) {
+            ++occurrences;
+        }
+        if (text.find(kTextureGuard) != std::string::npos && occurrences < 2) {
+            violations.push_back(std::string(relative_path)
+                                  + ": calls " + kSharedPredicate + " only once - the untextured side of its '"
+                                  + kTextureGuard + "' branch must alpha-test the factor too");
+        }
+    }
+
+    // The MASK test's alpha is baseColorFactor.a * baseColorTexture.a - if the
+    // shared predicate stops multiplying by material.dissolve, every caller
+    // above silently loses the factor half of that product again.
+    {
+        const fs::path path = repo_root / "Resources/ShadersSlang/common/material_fetch.slang";
+        std::ifstream file(path);
+        ASSERT_TRUE(file) << "missing " << path.string();
+        std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+        const std::size_t fn_start = text.find("bool alpha_masked_out(");
+        ASSERT_NE(fn_start, std::string::npos) << "alpha_masked_out() definition not found in " << path.string();
+        // The function body is a handful of lines; a fixed window comfortably
+        // covers it without needing to brace-match the closing '}'.
+        const std::string body = text.substr(fn_start, 400);
+        if (body.find("material.dissolve") == std::string::npos) {
+            violations.push_back(
+              "material_fetch.slang: alpha_masked_out() no longer multiplies by material.dissolve");
         }
     }
 

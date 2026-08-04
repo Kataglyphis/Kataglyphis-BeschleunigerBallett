@@ -63,6 +63,7 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID)
     }
     else
     {
+        if (alpha_masked_out(material, 1.0)) discard;
         texColor = float4(material.diffuse, 1.0);
     }
 

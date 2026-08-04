@@ -104,17 +104,20 @@ ObjMaterial neutralMaterial()
 }
 
 /// Maps a glTF material to the engine's ObjMaterial. Base-colour factor becomes
-/// diffuse (the dominant term this forward renderer reads); ambient tracks it at
-/// low strength. Metallic/roughness fold into a rough specular approximation -
-/// this engine has no metallic-roughness PBR slot, so the mapping is lossy on
-/// purpose. Textures are increment d; textureID stays -1 here.
+/// diffuse (the dominant term this forward renderer reads) and its alpha becomes
+/// dissolve; ambient tracks diffuse at low strength. Metallic/roughness fold into
+/// a rough specular approximation - this engine has no metallic-roughness PBR
+/// slot, so the mapping is lossy on purpose. Textures are increment d; textureID
+/// stays -1 here.
 ObjMaterial fromGltfMaterial(const cgltf_material &material)
 {
     glm::vec3 baseColor(0.8F);
+    float baseAlpha = 1.0F;
     float roughness = 1.0F;
     if (material.has_pbr_metallic_roughness != 0) {
         const cgltf_pbr_metallic_roughness &pbr = material.pbr_metallic_roughness;
         baseColor = glm::vec3(pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2]);
+        baseAlpha = pbr.base_color_factor[3];
         roughness = pbr.roughness_factor;
     }
     const glm::vec3 emission(material.emissive_factor[0], material.emissive_factor[1], material.emissive_factor[2]);
@@ -146,7 +149,7 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
       emission,// emission
       shininess,// shininess
       1.0F,// ior
-      1.0F,// dissolve
+      baseAlpha,// dissolve (glTF baseColorFactor.a)
       2,// illum
       -1,// textureID (increment d)
       alphaCutoff,// glTF MASK cutoff (-1 = OPAQUE/BLEND)

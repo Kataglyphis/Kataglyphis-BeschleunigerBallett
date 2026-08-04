@@ -586,6 +586,67 @@ TEST(GltfParseUnit, OpaqueMaterialHasNoCutoff)
     EXPECT_LT(cutoff, 0.0F) << "a non-MASK material must have alphaCutoff < 0 (never discards)";
 }
 
+TEST(GltfParseUnit, BaseColourFactorAlphaReachesTheMaterial)
+{
+    // glTF baseColorFactor.a is the alpha half of the MASK test
+    // (baseColorFactor.a * baseColorTexture.a, texture term defaulting to 1).
+    // fromGltfMaterial used to drop the fourth component on the floor and pass
+    // a literal 1.0F for dissolve - an untextured MASK material could then
+    // never discard, and a textured one ignored the factor's alpha entirely.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [
+        { "pbrMetallicRoughness": { "baseColorFactor": [1.0, 1.0, 1.0, 0.25] } }
+      ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 },
+        "material": 0
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_base_color_factor_alpha.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_GT(loader.getMaterials().size(), 0U);
+    EXPECT_NEAR(loader.getMaterials()[0].dissolve, 0.25F, 1e-6F)
+      << "baseColorFactor.a must reach ObjMaterial::dissolve";
+}
+
+TEST(GltfParseUnit, OpaqueMaterialWithoutFactorStillHasFullDissolve)
+{
+    // An OPAQUE material whose baseColorFactor alpha is the default 1.0 (as
+    // material_gltf's fixture uses) must yield ObjMaterial::dissolve == 1.0F -
+    // otherwise every plain glTF would gain a spurious discard once
+    // alphaCutoff-based MASK materials exist nearby.
+    const float dissolve = [] {
+        const auto tmp = std::filesystem::temp_directory_path() / "kat_no_alpha_material.gltf";
+        {
+            std::ofstream out(tmp, std::ios::binary);
+            out << material_gltf("");
+        }
+        Kataglyphis::GltfLoader loader;
+        const bool parsed = loader.parseCpu(tmp.string());
+        std::filesystem::remove(tmp);
+        EXPECT_TRUE(parsed);
+        EXPECT_GT(loader.getMaterials().size(), 0U);
+        return loader.getMaterials().empty() ? 0.0F : loader.getMaterials()[0].dissolve;
+    }();
+    EXPECT_NEAR(dissolve, 1.0F, 1e-6F) << "a material without an explicit alpha factor must be fully opaque";
+}
+
 TEST(GltfParseUnit, MaskCardFixtureLoadsWithCutoutTextureAndCutoff)
 {
     // mask_card.gltf (a quad + a checkerboard-alpha cut-out PNG, alphaMode MASK /
