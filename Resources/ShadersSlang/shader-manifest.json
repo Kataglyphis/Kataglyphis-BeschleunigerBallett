@@ -57,6 +57,7 @@
     { "file": "raytracing/shadow.rmiss.slang", "entry": "shadow_rmiss_main", "stage": "miss", "targets": ["spirv"] },
     { "file": "raytracing/raytrace.rgen.slang", "entry": "rgen_main", "stage": "raygeneration", "targets": ["spirv"] },
     { "file": "raytracing/raytrace.rchit.slang", "entry": "rchit_main", "stage": "closesthit", "targets": ["spirv"] },
+    { "file": "raytracing/raytrace.rahit.slang", "entry": "rahit_main", "stage": "anyhit", "targets": ["spirv"] },
     { "_comment": "Path tracing compute kernel (ray query, SPIR-V only).",
       "file": "path_tracing/path_tracing.slang", "entry": "path_tracing_main", "stage": "compute", "targets": ["spirv"] },
     { "_comment": "Skybox (cubemap, SPIR-V only).",

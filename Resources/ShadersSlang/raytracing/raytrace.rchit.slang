@@ -101,7 +101,7 @@ void rchit_main(
         shadowRay.TMax = 10000.0;
 
         TraceRay(TLAS,
-            RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_FORCE_OPAQUE,
+            RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER,
             0xFFu,
             0u, 0u, 1u,   // sbt offset, stride, miss index (shadow miss)
             shadowRay,

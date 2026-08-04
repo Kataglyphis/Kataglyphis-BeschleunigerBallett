@@ -2567,11 +2567,12 @@ TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    static const std::array<const char *, 5> kShaders = {
+    static const std::array<const char *, 6> kShaders = {
         "Resources/ShadersSlang/rasterizer/rasterizer.slang",
         "Resources/ShadersSlang/deferred/deferred.slang",
         "Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang",
         "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
+        "Resources/ShadersSlang/raytracing/raytrace.rahit.slang",
         "Resources/ShadersSlang/path_tracing/path_tracing.slang",
     };
     static const std::string kTextures = "textures[";

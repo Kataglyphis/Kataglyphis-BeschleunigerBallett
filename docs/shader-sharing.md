@@ -139,6 +139,7 @@ push constants, so it never merged with the Rust tonemap shader.
 | `post/post.slang` | spirv |
 | `rasterizer/rasterizer.slang` | spirv |
 | `rasterizer/shadows/shadow_map.slang` | spirv |
+| `raytracing/raytrace.rahit.slang` | spirv |
 | `raytracing/raytrace.rchit.slang` | spirv |
 | `raytracing/raytrace.rgen.slang` | spirv |
 | `raytracing/raytrace.rmiss.slang` | spirv |

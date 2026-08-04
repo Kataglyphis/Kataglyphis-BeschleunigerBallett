@@ -62,4 +62,14 @@ TEST(ShaderStageHelperUnit, TrianglesHitGroupSetsOnlyTheClosestHitIndex)
     EXPECT_EQ(group.intersectionShader, VK_SHADER_UNUSED_KHR);
 }
 
+TEST(ShaderStageHelperUnit, TrianglesHitGroupWithAnyHitSetsBothIndices)
+{
+    const vk::RayTracingShaderGroupCreateInfoKHR group = buildTrianglesHitGroup(2, 4);
+    EXPECT_EQ(group.type, vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup);
+    EXPECT_EQ(group.generalShader, VK_SHADER_UNUSED_KHR);
+    EXPECT_EQ(group.closestHitShader, 2u);
+    EXPECT_EQ(group.anyHitShader, 4u);
+    EXPECT_EQ(group.intersectionShader, VK_SHADER_UNUSED_KHR);
+}
+
 }// namespace

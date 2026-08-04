@@ -30,14 +30,17 @@ constexpr vk::RayTracingShaderGroupCreateInfoKHR buildGeneralShaderGroup(uint32_
 }
 
 // Raytracing's closest-hit shader group is a triangles-hit group: no general
-// shader, a closest-hit index, and any-hit/intersection left unused (the
-// engine has no any-hit or procedural-intersection shaders today).
-constexpr vk::RayTracingShaderGroupCreateInfoKHR buildTrianglesHitGroup(uint32_t closestHitShader)
+// shader, a closest-hit index, and intersection left unused (the engine has
+// no procedural-intersection shaders). anyHitShader defaults to unused for
+// call sites without an any-hit shader; raytrace.rahit.slang is the
+// engine's first, passed explicitly by its caller.
+constexpr vk::RayTracingShaderGroupCreateInfoKHR buildTrianglesHitGroup(uint32_t closestHitShader,
+  uint32_t anyHitShader = VK_SHADER_UNUSED_KHR)
 {
     return vk::RayTracingShaderGroupCreateInfoKHR{ vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup,
         VK_SHADER_UNUSED_KHR,
         closestHitShader,
-        VK_SHADER_UNUSED_KHR,
+        anyHitShader,
         VK_SHADER_UNUSED_KHR };
 }
 

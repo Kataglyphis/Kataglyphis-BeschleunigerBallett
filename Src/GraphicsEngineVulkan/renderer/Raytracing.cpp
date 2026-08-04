@@ -161,29 +161,35 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
 
     std::string const raygen_spv = "raytrace.rgen.rgen_main.spv";
     std::string const chit_spv = "raytrace.rchit.rchit_main.spv";
+    std::string const ahit_spv = "raytrace.rahit.rahit_main.spv";
     std::string const miss_spv = "raytrace.rmiss.rmiss_main.spv";
     std::string const shadow_spv = "shadow.rmiss.shadow_rmiss_main.spv";
 
     vk::ShaderModule raygen_shader_module = loadSpirvShaderModule(device, slang_spv_dir + raygen_spv);
     vk::ShaderModule raychit_shader_module = loadSpirvShaderModule(device, slang_spv_dir + chit_spv);
+    vk::ShaderModule rayahit_shader_module = loadSpirvShaderModule(device, slang_spv_dir + ahit_spv);
     vk::ShaderModule raymiss_shader_module = loadSpirvShaderModule(device, slang_spv_dir + miss_spv);
     vk::ShaderModule shadow_shader_module = loadSpirvShaderModule(device, slang_spv_dir + shadow_spv);
 
-    std::array<vk::PipelineShaderStageCreateInfo, 4> shader_stages = {
+    std::array<vk::PipelineShaderStageCreateInfo, 5> shader_stages = {
         buildShaderStageCreateInfo(vk::ShaderStageFlagBits::eRaygenKHR, raygen_shader_module),
         buildShaderStageCreateInfo(vk::ShaderStageFlagBits::eMissKHR, raymiss_shader_module),
         buildShaderStageCreateInfo(vk::ShaderStageFlagBits::eMissKHR, shadow_shader_module),
-        buildShaderStageCreateInfo(vk::ShaderStageFlagBits::eClosestHitKHR, raychit_shader_module)
+        buildShaderStageCreateInfo(vk::ShaderStageFlagBits::eClosestHitKHR, raychit_shader_module),
+        buildShaderStageCreateInfo(vk::ShaderStageFlagBits::eAnyHitKHR, rayahit_shader_module)
     };
 
-    enum StageIndices { eRaygen, eMiss, eMiss2, eClosestHit, eShaderGroupCount };
+    enum StageIndices { eRaygen, eMiss, eMiss2, eClosestHit, eAnyHit, eShaderGroupCount };
 
     shader_groups.reserve(4);
 
     shader_groups.push_back(buildGeneralShaderGroup(eRaygen));
     shader_groups.push_back(buildGeneralShaderGroup(eMiss));
     shader_groups.push_back(buildGeneralShaderGroup(eMiss2));
-    shader_groups.push_back(buildTrianglesHitGroup(eClosestHit));
+    // Any-hit joins the existing triangles-hit group rather than adding a
+    // group: the SBT's hit region stays one record (see createSBT/recordCommands,
+    // which size hit_region for a single handle).
+    shader_groups.push_back(buildTrianglesHitGroup(eClosestHit, eAnyHit));
 
     const std::array<vk::PushConstantRange, 1> push_constant_ranges = { pc_ranges };
     vk::PipelineLayoutCreateInfo pipeline_layout_create_info =
@@ -219,6 +225,7 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
     device->getLogicalDevice().destroyShaderModule(raygen_shader_module);
     device->getLogicalDevice().destroyShaderModule(raymiss_shader_module);
     device->getLogicalDevice().destroyShaderModule(raychit_shader_module);
+    device->getLogicalDevice().destroyShaderModule(rayahit_shader_module);
     device->getLogicalDevice().destroyShaderModule(shadow_shader_module);
 }
 
