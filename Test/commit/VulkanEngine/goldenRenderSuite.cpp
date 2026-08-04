@@ -61,6 +61,7 @@ import kataglyphis.vulkan.window;
 
 namespace {
 
+using Kataglyphis::VulkanRendererInternals::FrontendShared::GUIRendererSharedVars;
 using Kataglyphis::VulkanRendererInternals::FrontendShared::RasterizationMode;
 using Kataglyphis::Test::GoldenMetrics::Crop;
 using Kataglyphis::Test::GoldenMetrics::card_crop;
@@ -139,6 +140,20 @@ struct EngineHarness
         renderer->requestFrameCapture();
         render_frame();
         return renderer->takeCapturedFrame(width, height);
+    }
+
+    [[nodiscard]] bool supportsFrameCapture() const { return renderer->supportsFrameCapture(); }
+
+    // Selects forward rasterization (as opposed to ray/path tracing), the mode
+    // most golden tests measure. Returns the shared-vars reference so a caller
+    // that needs to tweak further fields keeps one binding.
+    GUIRendererSharedVars &useForwardRaster()
+    {
+        auto &renderer_vars = gui->getGuiRendererSharedVars();
+        renderer_vars.raytracing = false;
+        renderer_vars.pathTracing = false;
+        renderer_vars.rasterizationMode = RasterizationMode::Forward;
+        return renderer_vars;
     }
 
     ~EngineHarness()
@@ -329,6 +344,15 @@ class ScopedGpuTimingJsonPath
         }                                                                              \
     } while (false)
 
+// A GPU may report Vulkan support yet still lack a surface that allows
+// copying out of a swapchain image; the frame-capture tests need that too.
+#define SKIP_WITHOUT_FRAME_CAPTURE(harness)                                                        \
+    do {                                                                                           \
+        if (!(harness).supportsFrameCapture()) {                                                   \
+            GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";   \
+        }                                                                                           \
+    } while (false)
+
 } // namespace
 
 // A rendered frame must carry actual image content: not a uniform colour, not
@@ -339,15 +363,10 @@ TEST(GoldenRender, RendersNonBlankFrame)
     SKIP_WITHOUT_GPU();
 
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
     auto &scene_vars = harness.gui->getGuiSceneSharedVars();
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.useForwardRaster();
     scene_vars.shadows_enabled = true;
 
     harness.render_frames(WARMUP_FRAMES);
@@ -462,14 +481,9 @@ TEST(GoldenRender, DISABLED_DumpsFrameToPng)
     SKIP_WITHOUT_GPU();
 
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.useForwardRaster();
     harness.gui->getGuiSceneSharedVars().shadows_enabled = true;
     // Maximum intensity, matching ShadowsDarkenSomePixels: the two must
     // measure the same configuration or they cannot be compared, and they
@@ -611,15 +625,10 @@ TEST(GoldenRender, ShadowsDarkenSomePixels)
 
     const ScopedModelOverride use_shadow_rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
     auto &scene_vars = harness.gui->getGuiSceneSharedVars();
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.useForwardRaster();
 
     // Shadows stay enabled in both runs so the exact same passes are recorded;
     // only the intensity the lighting shaders apply changes. That isolates
@@ -750,10 +759,7 @@ TEST(GoldenRender, ShadowCasterStatsAreReportedAndZeroWhenShadowsAreOff)
 
     EngineHarness harness;
     auto &scene_vars = harness.gui->getGuiSceneSharedVars();
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    auto &renderer_vars = harness.useForwardRaster();
 
     scene_vars.shadows_enabled = true;
     harness.render_frames(WARMUP_FRAMES);
@@ -791,10 +797,7 @@ TEST(GoldenRender, DisablingFrustumCullingAlsoDisablesShadowCasterCulling)
 
     EngineHarness harness;
     auto &scene_vars = harness.gui->getGuiSceneSharedVars();
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    auto &renderer_vars = harness.useForwardRaster();
 
     scene_vars.shadows_enabled = true;
 
@@ -835,15 +838,10 @@ TEST(GoldenRender, ShadowsMoveWhenTheLightRotates)
 
     const ScopedModelOverride use_shadow_rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
     auto &scene_vars = harness.gui->getGuiSceneSharedVars();
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.useForwardRaster();
     scene_vars.shadows_enabled = true;
 
     harness.render_frames(WARMUP_FRAMES);
@@ -992,9 +990,7 @@ TEST(GoldenRender, DeferredMatchesForwardRoughly)
     SKIP_WITHOUT_GPU();
 
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
     auto &scene_vars = harness.gui->getGuiSceneSharedVars();
     auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
@@ -1093,10 +1089,7 @@ TEST(GoldenRender, FrustumCullingDropsOffscreenMeshesOnly)
     SKIP_WITHOUT_GPU();
 
     EngineHarness harness;
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    auto &renderer_vars = harness.useForwardRaster();
     renderer_vars.frustum_culling_enabled = true;
 
     harness.render_frames(WARMUP_FRAMES);
@@ -1148,14 +1141,9 @@ TEST(GoldenRender, SecondModelLoadsAndRenders)
     SKIP_WITHOUT_GPU();
 
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    auto &renderer_vars = harness.useForwardRaster();
     renderer_vars.frustum_culling_enabled = true;
 
     harness.render_frames(WARMUP_FRAMES);
@@ -1212,14 +1200,9 @@ TEST(GoldenRender, MultiPrimitiveGltfLoadsAsMultipleMeshes)
     const ScopedModelOverride model_override(TWO_PRIMITIVE_MODEL);
 
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    auto &renderer_vars = harness.useForwardRaster();
     renderer_vars.frustum_culling_enabled = false;// count every mesh, framing aside
 
     harness.render_frames(WARMUP_FRAMES);
@@ -1255,10 +1238,7 @@ TEST(GoldenRender, GpuTimingJsonDumpIsWrittenAndSane)
 
     {
         EngineHarness harness;
-        auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-        renderer_vars.raytracing = false;
-        renderer_vars.pathTracing = false;
-        renderer_vars.rasterizationMode = RasterizationMode::Forward;
+        harness.useForwardRaster();
         harness.gui->getGuiSceneSharedVars().shadows_enabled = true;
 
         // Enough frames for the averages to mean something. The first
@@ -1340,9 +1320,7 @@ TEST(GoldenRender, PathTracingAccumulatesAndConverges)
     SKIP_WITHOUT_GPU();
 
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
     if (!harness.renderer->supportsHardwareRaytracing()) {
         GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
@@ -1483,9 +1461,7 @@ TEST(GoldenRender, PathTracingRespondsToTheDirectionalLight)
     // light a real surface area, same reasoning as ShadowsDarkenSomePixels.
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
     if (!harness.renderer->supportsHardwareRaytracing()) {
         GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
@@ -1571,9 +1547,7 @@ TEST(GoldenRender, PathTracingHonorsTheQualityControls)
 
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
     if (!harness.renderer->supportsHardwareRaytracing()) {
         GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
@@ -1620,15 +1594,10 @@ TEST(GoldenRender, ForwardLightingRespondsToTheDirectionalLight)
 
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
     auto &scene_vars = harness.gui->getGuiSceneSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.useForwardRaster();
     harness.render_frames(WARMUP_FRAMES + SETTLE_FRAMES);
 
     uint32_t width = 0;
@@ -1697,9 +1666,7 @@ TEST(GoldenRender, RaytracedWorldFollowsTheModelTransform)
 
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
     if (!harness.renderer->supportsHardwareRaytracing()) {
         GTEST_SKIP() << "Hardware raytracing unsupported.";
     }
@@ -1761,10 +1728,7 @@ TEST(GoldenRender, RaytracingFrameSkipsTheRasterPass)
         GTEST_SKIP() << "Hardware raytracing unsupported.";
     }
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    auto &renderer_vars = harness.useForwardRaster();
     renderer_vars.frustum_culling_enabled = true;
 
     // Render enough frames to flush the rolling GPU-timing window
@@ -1813,14 +1777,9 @@ TEST(GoldenRender, SecondModelShadesWithItsOwnTextures)
 
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.useForwardRaster();
     harness.render_frames(WARMUP_FRAMES);
 
     // Sponza, because it is the one bundled model with actual texture FILES
@@ -1874,14 +1833,9 @@ TEST(GoldenRender, SponzaBindsEveryTextureSlot)
 
     ScopedModelOverride sponza_override(sponza.c_str());
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.useForwardRaster();
     harness.render_frames(WARMUP_FRAMES);
 
     EXPECT_LE(harness.scene->getTextureCount(0), static_cast<uint32_t>(MAX_TEXTURE_COUNT))
@@ -1912,14 +1866,9 @@ TEST(GoldenRender, CorruptEmbeddedImageKeepsTextureSlotsAligned)
 
     ScopedModelOverride corrupt_override(CORRUPT_EMBEDDED_IMAGE_MODEL);
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.useForwardRaster();
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost())
       << "Device lost loading a model with a corrupt embedded image - the failed decode was not handled.";
@@ -1946,14 +1895,9 @@ TEST(GoldenRender, MaskCardDiscardsCutoutTexelsVisually)
 
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.useForwardRaster();
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
 
@@ -2076,14 +2020,9 @@ TEST(GoldenRender, MaskCardDoubleSidedRendersFromBehind)
 
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.useForwardRaster();
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
 
@@ -2168,9 +2107,7 @@ TEST(GoldenRender, MaskCardDoubleSidedRendersFromBehindDeferred)
 
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
     auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
     renderer_vars.raytracing = false;
@@ -2240,14 +2177,9 @@ TEST(GoldenRender, KhrTextureTransformTilesTheTexture)
 
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.useForwardRaster();
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost());
 
@@ -2330,9 +2262,7 @@ TEST(GoldenRender, AddedModelAppearsInPathTracing)
 
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
     if (!harness.renderer->supportsHardwareRaytracing()) {
         GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
@@ -2405,9 +2335,7 @@ TEST(GoldenRender, ReloadedModelIsVisibleInPathTracing)
     // BLAS is not what this test measures.
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
     if (!harness.renderer->supportsHardwareRaytracing()) {
         GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
@@ -2510,9 +2438,7 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
 
     ScopedModelOverride rig(SHADOW_RIG_MODEL);
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
     if (!harness.renderer->supportsHardwareRaytracing()) {
         GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
     }
@@ -2598,9 +2524,7 @@ TEST(GoldenRender, GuiInputSweepNeverCrashesOrLosesTheDevice)
     SKIP_WITHOUT_GPU();
 
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
     const bool rt_supported = harness.renderer->supportsHardwareRaytracing();
 
     harness.render_frames(WARMUP_FRAMES);
@@ -2720,14 +2644,9 @@ TEST(GoldenRender, SwapchainRecreationKeepsRendering)
     SKIP_WITHOUT_GPU();
 
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.useForwardRaster();
 
     harness.render_frames(WARMUP_FRAMES);
     ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
@@ -2784,14 +2703,9 @@ TEST(GoldenRender, CloudsAcrossManyFramesDoesNotLoseTheDevice)
     SKIP_WITHOUT_GPU();
 
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
 
-    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
-    renderer_vars.raytracing = false;
-    renderer_vars.pathTracing = false;
-    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.useForwardRaster();
     auto &scene_vars = harness.gui->getGuiSceneSharedVars();
     scene_vars.clouds_enabled = true;
 
@@ -2834,9 +2748,7 @@ TEST(GoldenRender, RaytracedLargeMeshDoesNotLoseTheDevice)
     // large dinosaur mesh (Models/Dinosaurs/dinosaurs.obj), the same one
     // PathTracingAccumulatesAndConverges device-loses on.
     EngineHarness harness;
-    if (!harness.renderer->supportsFrameCapture()) {
-        GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
-    }
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
     if (!harness.renderer->supportsHardwareRaytracing()) {
         GTEST_SKIP() << "Hardware raytracing unsupported.";
     }
