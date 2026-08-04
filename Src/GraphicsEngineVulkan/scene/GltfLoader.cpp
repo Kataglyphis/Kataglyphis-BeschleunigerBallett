@@ -85,6 +85,11 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
     return model;
 }
 
+TexCoordSetInfo describeTexCoordSet(int texcoord)
+{
+    return { static_cast<unsigned int>(texcoord), texcoord == 0 };
+}
+
 namespace {
 
 /// Neutral Lambertian stand-in, used for primitives with no material. The
@@ -114,11 +119,23 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
     glm::vec3 baseColor(0.8F);
     float baseAlpha = 1.0F;
     float roughness = 1.0F;
+    const char *materialName = material.name != nullptr ? material.name : "<unnamed>";
     if (material.has_pbr_metallic_roughness != 0) {
         const cgltf_pbr_metallic_roughness &pbr = material.pbr_metallic_roughness;
         baseColor = glm::vec3(pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2]);
         baseAlpha = pbr.base_color_factor[3];
         roughness = pbr.roughness_factor;
+
+        // Vertex has exactly one UV slot (bound to TEXCOORD_0); a base-colour
+        // texture that names any other set is silently mis-sampled unless we
+        // say so. The Rust loader supports TEXCOORD_0/1 and warns past that -
+        // this loader supports only TEXCOORD_0, so it warns on any non-zero set.
+        const TexCoordSetInfo texCoordInfo = describeTexCoordSet(pbr.base_color_texture.texcoord);
+        if (!texCoordInfo.supported) {
+            spdlog::warn("GltfLoader: material '{}' base-colour texture uses TEXCOORD_{}, but only TEXCOORD_0 is "
+                         "supported; sampling with UV0",
+              materialName, texCoordInfo.set);
+        }
     }
     const glm::vec3 emission(material.emissive_factor[0], material.emissive_factor[1], material.emissive_factor[2]);
     // Smoother surfaces (low roughness) get a tighter, stronger highlight.
@@ -140,6 +157,20 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
         const cgltf_texture_transform &transform = material.pbr_metallic_roughness.base_color_texture.transform;
         uvScale = glm::vec2(transform.scale[0], transform.scale[1]);
         uvOffset = glm::vec2(transform.offset[0], transform.offset[1]);
+
+        // KHR_texture_transform can itself override which UV set the transform
+        // applies to, and can rotate. Neither is applied - scale/offset stays
+        // the supported subset - so say so rather than silently dropping them.
+        if (transform.has_texcoord != 0 && transform.texcoord != 0) {
+            spdlog::warn("GltfLoader: material '{}' KHR_texture_transform overrides the base-colour UV set to "
+                         "TEXCOORD_{}, but only TEXCOORD_0 is supported; ignoring the override",
+              materialName, static_cast<unsigned int>(transform.texcoord));
+        }
+        if (transform.rotation != 0.0F) {
+            spdlog::warn("GltfLoader: material '{}' KHR_texture_transform specifies a rotation of {} radians, which "
+                         "is not applied (only scale/offset are)",
+              materialName, transform.rotation);
+        }
     }
 
     return ObjMaterial(baseColor * 0.1F,// ambient

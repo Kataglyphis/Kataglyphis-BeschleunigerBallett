@@ -150,6 +150,15 @@ all Rust shaders are on Slang-emitted WGSL (`histogram.wgsl` excepted — see
 the WGSL fallback policy above). The migration described in earlier
 revisions of this document as "in progress" is complete.
 
+## Known glTF loader divergences (not shader-shared, but the two renderers must stay honest about it)
+
+- **Base-colour UV set beyond TEXCOORD_0** — `scene/GltfLoader.cpp`'s
+  `fromGltfMaterial` (C++) supports only TEXCOORD_0 and now warns when a
+  material's base-colour texture or `KHR_texture_transform` names anything
+  else (including a rotation, which is also unapplied); the WebGPU
+  `asset/gltf_loader.rs`'s `uv_set_bit` (Rust) supports TEXCOORD_0/1 and warns
+  only past that.
+
 ## Beyond shaders
 
 The bigger cross-renderer wins on the roadmap

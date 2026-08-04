@@ -933,6 +933,21 @@ TEST(GltfParseUnit, OnlyTheDefaultSceneIsLoaded)
     }
 }
 
+TEST(GltfParseUnit, NonZeroBaseColourTexCoordSetIsReported)
+{
+    // fromGltfMaterial's TEXCOORD_1/... diagnostic (increment: warn instead of
+    // silently sampling UV0) hinges on Kataglyphis::describeTexCoordSet - this
+    // pins that helper directly, no device or Vulkan needed. Set 0 is the only
+    // set Vertex can carry, so it alone is "supported"; anything else is not.
+    const Kataglyphis::TexCoordSetInfo set0 = Kataglyphis::describeTexCoordSet(0);
+    EXPECT_EQ(set0.set, 0U);
+    EXPECT_TRUE(set0.supported) << "TEXCOORD_0 is the one UV set Vertex carries";
+
+    const Kataglyphis::TexCoordSetInfo set1 = Kataglyphis::describeTexCoordSet(1);
+    EXPECT_EQ(set1.set, 1U);
+    EXPECT_FALSE(set1.supported) << "TEXCOORD_1 has no Vertex slot to land in";
+}
+
 TEST(GltfParseUnit, ANodeNoSceneReferencesIsNotLoaded)
 {
     // One scene lists node 0; node 1 is an orphan with its own mesh that no

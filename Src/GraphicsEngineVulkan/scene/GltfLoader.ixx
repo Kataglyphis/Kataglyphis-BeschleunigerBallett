@@ -28,6 +28,22 @@ export import kataglyphis.vulkan.mesh_range;
 
 export namespace Kataglyphis {
 
+/// Which UV set a glTF texture view's `texCoord` index names, and whether
+/// this engine can sample it. `Vertex` carries exactly one UV slot (bound to
+/// TEXCOORD_0), so set 0 is the only supported value - anything else names a
+/// channel the geometry does not carry.
+struct TexCoordSetInfo
+{
+    unsigned int set;
+    bool supported;
+};
+
+/// Resolves a glTF texture view's `texCoord` index to the UV set it names and
+/// whether `GltfLoader` can sample it. Exported so parse tests can assert the
+/// decision without a device; also the single definition `fromGltfMaterial`
+/// warns from when a material asks for an unsupported set.
+TexCoordSetInfo describeTexCoordSet(int texcoord);
+
 /// Loads `.gltf`/`.glb` geometry into the SAME CPU-side arrays `ObjLoader`
 /// produces, so it plugs into `Model`/`Mesh` and the `AsyncModelParse` worker
 /// unchanged. Touches no Vulkan - that is the point, the parse is the expensive
