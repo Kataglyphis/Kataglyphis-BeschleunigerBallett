@@ -25,6 +25,9 @@ import kataglyphis.vulkan.vertex;
 // Re-exported: MeshRange appears in getMeshRanges()'s return type, so consumers
 // (and the parse tests) that import this module see it without a second import.
 export import kataglyphis.vulkan.mesh_range;
+// Re-exported: GltfSamplerDesc appears in getTextureSamplerDescs()'s return
+// type, for the same reason.
+export import kataglyphis.vulkan.sampler_builder;
 
 export namespace Kataglyphis {
 
@@ -91,6 +94,13 @@ class GltfLoader
     /// a device.
     const std::vector<std::vector<unsigned char>> &getTextureImages() const { return textureImages; }
 
+    /// The glTF sampler (wrap modes + filters) each entry of getTextureImages()
+    /// was authored with, index-parallel with it. Two textures sharing one
+    /// image but naming different samplers get distinct slots (see parseCpu's
+    /// dedup key), so this stays index-parallel rather than needing its own
+    /// lookup.
+    const std::vector<GltfSamplerDesc> &getTextureSamplerDescs() const { return textureSamplerDescs; }
+
     // One entry per glTF primitive (see the shared kataglyphis.vulkan.mesh_range
     // module): its slice of the flat vertices/indices/materialIndex arrays.
     // uploadParsed builds one Mesh per range, so a multi-primitive glTF becomes a
@@ -136,6 +146,8 @@ class GltfLoader
     std::vector<unsigned int> materialIndex;
     // One encoded image per textured material (see getTextureImages).
     std::vector<std::vector<unsigned char>> textureImages;
+    // Index-parallel with textureImages; see getTextureSamplerDescs.
+    std::vector<GltfSamplerDesc> textureSamplerDescs;
     // One slice per glTF primitive; see MeshRange / getMeshRanges.
     std::vector<MeshRange> meshRanges;
 };

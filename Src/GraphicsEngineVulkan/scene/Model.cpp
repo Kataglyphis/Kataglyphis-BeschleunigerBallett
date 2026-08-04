@@ -33,7 +33,7 @@ void Model::cleanUp()
 
     for (vk::Sampler owned_sampler : ownedSamplers) { device->getLogicalDevice().destroySampler(owned_sampler); }
     ownedSamplers.clear();
-    ownedSamplerMipLevels.clear();
+    ownedSamplerKeys.clear();
     modelTextureSamplers.clear();
 
     for (Mesh &m : meshes) { m.cleanUp(); }
@@ -58,29 +58,31 @@ void Model::add_new_mesh(const std::shared_ptr<VulkanDevice> &vulkan_device,
 
 void Model::set_model(glm::mat4 new_model) { this->model = new_model; }
 
-void Model::addTexture(Texture &&newTexture)
+void Model::addTexture(Texture &&newTexture, GltfSamplerDesc samplerDesc)
 {
     modelTextures.emplace_back(std::move(newTexture));
-    addSampler(modelTextures.back());
+    addSampler(modelTextures.back(), samplerDesc);
 }
 
 Model::~Model() { cleanUp(); }
 
-void Model::addSampler(const Texture &newTexture)
+void Model::addSampler(const Texture &newTexture, const GltfSamplerDesc &samplerDesc)
 {
-    const uint32_t mip_level = newTexture.getMipLevel();
+    const SamplerKey key{ newTexture.getMipLevel(), samplerDesc };
 
-    if (std::optional<std::size_t> existing = findSamplerForMipLevel(ownedSamplerMipLevels, mip_level);
-        existing.has_value()) {
+    if (std::optional<std::size_t> existing = findSampler(ownedSamplerKeys, key); existing.has_value()) {
         modelTextureSamplers.push_back(ownedSamplers[*existing]);
         return;
     }
 
-    const bool aniso = device->supportsSamplerAnisotropy();
+    // Nearest-filtered assets are exactly the ones whose blocky look the
+    // author chose deliberately; anisotropy would just blur that away
+    // (usesNearestFiltering also keeps aniso off when the device does not
+    // support it, matching the pre-sampler-support behaviour).
+    const bool aniso = device->supportsSamplerAnisotropy() && !usesNearestFiltering(samplerDesc);
 
-    vk::SamplerCreateInfo sampler_create_info = buildSamplerCreateInfo(vk::Filter::eLinear,
-      vk::SamplerAddressMode::eRepeat,
-      static_cast<float>(mip_level),
+    vk::SamplerCreateInfo sampler_create_info = buildSamplerCreateInfo(samplerDesc,
+      static_cast<float>(key.mipLevel),
       aniso,
       resolveMaxAnisotropy(aniso, device->maxSamplerAnisotropy()),
       vk::BorderColor::eFloatOpaqueBlack);
@@ -89,7 +91,7 @@ void Model::addSampler(const Texture &newTexture)
     ASSERT_VULKAN(sampler_result.result, "Failed to create texture sampler!");
     vk::Sampler newSampler = sampler_result.value;
 
-    ownedSamplerMipLevels.push_back(mip_level);
+    ownedSamplerKeys.push_back(key);
     ownedSamplers.push_back(newSampler);
     modelTextureSamplers.push_back(newSampler);
 }

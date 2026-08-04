@@ -14,6 +14,7 @@ import kataglyphis.vulkan.mesh_range;
 import kataglyphis.vulkan.obj_material;
 import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.texture;
+import kataglyphis.vulkan.sampler_builder;
 
 export namespace Kataglyphis {
 
@@ -26,12 +27,18 @@ export namespace Kataglyphis {
 /// default texture instead. Both loaders need this: textureID is a dense
 /// index over "one texture per material slot", so skipping a failed load
 /// would shift every later texture down one and push the last textureID past
-/// the descriptor array.
-void addTextureOrDefault(
-  Model &model, const std::shared_ptr<VulkanDevice> &device, vk::CommandPool pool, bool created, Texture &&texture)
+/// the descriptor array. `samplerDesc` carries the glTF sampler this texture
+/// was authored with (default-constructed for OBJ, which has no sampler
+/// concept, and for a failed load's default stand-in texture).
+void addTextureOrDefault(Model &model,
+  const std::shared_ptr<VulkanDevice> &device,
+  vk::CommandPool pool,
+  bool created,
+  Texture &&texture,
+  GltfSamplerDesc samplerDesc = {})
 {
     if (created) {
-        model.addTexture(std::move(texture));
+        model.addTexture(std::move(texture), samplerDesc);
         return;
     }
     Texture defaultTexture;

@@ -2,9 +2,9 @@ module;
 
 #include <cstddef>
 #include <cstdlib>
+#include <map>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -27,6 +27,7 @@ import kataglyphis.vulkan.model;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.mesh_range;
 import kataglyphis.vulkan.model_assembly;
+import kataglyphis.vulkan.sampler_builder;
 
 namespace Kataglyphis {
 
@@ -50,6 +51,7 @@ void GltfLoader::adoptParsed(GltfLoader &&other)
     materials = std::move(other.materials);
     materialIndex = std::move(other.materialIndex);
     textureImages = std::move(other.textureImages);
+    textureSamplerDescs = std::move(other.textureSamplerDescs);
     meshRanges = std::move(other.meshRanges);
 }
 
@@ -70,10 +72,11 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
     // in each material indexes into these, added in the same order. If a
     // document had no textures, reserve the default so textureID 0 is valid -
     // matching the OBJ path.
-    for (const std::vector<unsigned char> &encoded : textureImages) {
+    for (std::size_t i = 0; i < textureImages.size(); ++i) {
+        const std::vector<unsigned char> &encoded = textureImages[i];
         Texture texture;
         const bool created = texture.createFromMemory(device, command_pool, encoded.data(), encoded.size());
-        addTextureOrDefault(*model, device, command_pool, created, std::move(texture));
+        addTextureOrDefault(*model, device, command_pool, created, std::move(texture), textureSamplerDescs[i]);
     }
     ensureAtLeastOneTexture(*model, device, command_pool);
 
@@ -264,6 +267,64 @@ std::vector<unsigned char> extractImageBytes(const cgltf_image *image, const cgl
         }
     }
     return {};
+}
+
+/// Maps a glTF sampler's wrap/filter settings onto GltfSamplerDesc, mirroring
+/// asset/gltf_loader.rs's `to_cpu_sampler` (the mapping the WebGPU renderer
+/// uses for the same document). A null `sampler` (the texture named none) or
+/// an unset (`_undefined`) filter yields GltfSamplerDesc's own defaults -
+/// repeat + linear + linear, byte-identical to this loader's
+/// pre-sampler-support behaviour.
+GltfSamplerDesc gltfSamplerDesc(const cgltf_sampler *sampler)
+{
+    GltfSamplerDesc desc{};
+    if (sampler == nullptr) { return desc; }
+
+    const auto wrap = [](cgltf_wrap_mode mode) {
+        switch (mode) {
+        case cgltf_wrap_mode_clamp_to_edge:
+            return vk::SamplerAddressMode::eClampToEdge;
+        case cgltf_wrap_mode_mirrored_repeat:
+            return vk::SamplerAddressMode::eMirroredRepeat;
+        case cgltf_wrap_mode_repeat:
+        default:
+            return vk::SamplerAddressMode::eRepeat;
+        }
+    };
+    desc.addressModeU = wrap(sampler->wrap_s);
+    desc.addressModeV = wrap(sampler->wrap_t);
+
+    desc.magFilter = sampler->mag_filter == cgltf_filter_type_nearest ? vk::Filter::eNearest : vk::Filter::eLinear;
+
+    // The mipmap half of minFilter selects mipmapMode, the magnification half
+    // selects minFilter - the same split to_cpu_sampler makes via
+    // (min_nearest, mip_nearest). A bare Nearest/Linear (no mipmap qualifier)
+    // is treated the same as its *_mipmap_nearest/*_mipmap_linear sibling,
+    // matching the Rust loader exactly.
+    switch (sampler->min_filter) {
+    case cgltf_filter_type_nearest:
+    case cgltf_filter_type_nearest_mipmap_nearest:
+        desc.minFilter = vk::Filter::eNearest;
+        desc.mipmapMode = vk::SamplerMipmapMode::eNearest;
+        break;
+    case cgltf_filter_type_nearest_mipmap_linear:
+        desc.minFilter = vk::Filter::eNearest;
+        desc.mipmapMode = vk::SamplerMipmapMode::eLinear;
+        break;
+    case cgltf_filter_type_linear_mipmap_nearest:
+        desc.minFilter = vk::Filter::eLinear;
+        desc.mipmapMode = vk::SamplerMipmapMode::eNearest;
+        break;
+    case cgltf_filter_type_linear:
+    case cgltf_filter_type_linear_mipmap_linear:
+    case cgltf_filter_type_undefined:
+    default:
+        desc.minFilter = vk::Filter::eLinear;
+        desc.mipmapMode = vk::SamplerMipmapMode::eLinear;
+        break;
+    }
+
+    return desc;
 }
 
 }// namespace
@@ -481,6 +542,7 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
     materials.clear();
     materialIndex.clear();
     textureImages.clear();
+    textureSamplerDescs.clear();
     meshRanges.clear();
 
     cgltf_options options{};
@@ -503,11 +565,14 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
     // primitive that references none. `materialIndex` (per triangle) points into
     // this table.
     //
-    // Materials that share the same glTF image share one textureImages slot:
-    // each image is decoded/uploaded once no matter how many materials point at
-    // it, which matters because textureID indexes into the engine's fixed
-    // MAX_TEXTURE_COUNT descriptor budget.
-    std::unordered_map<const cgltf_image *, int> imageSlot;
+    // Materials that share the same glTF (image, sampler) pair share one
+    // textureImages slot: each is decoded/uploaded once no matter how many
+    // materials point at it, which matters because textureID indexes into the
+    // engine's fixed MAX_TEXTURE_COUNT descriptor budget. The key is the PAIR,
+    // not just the image - two textures may share one image with different
+    // samplers, and collapsing them onto one slot would make the sampler
+    // unobservable.
+    std::map<std::pair<const cgltf_image *, const cgltf_sampler *>, int> imageSlot;
     for (cgltf_size m = 0; m < data->materials_count; ++m) {
         const cgltf_material &material = data->materials[m];
         ObjMaterial objMaterial = fromGltfMaterial(material);
@@ -515,16 +580,19 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
         // encoded bytes and point the material at the new texture slot.
         if (material.has_pbr_metallic_roughness != 0
             && material.pbr_metallic_roughness.base_color_texture.texture != nullptr) {
-            const cgltf_image *img = material.pbr_metallic_roughness.base_color_texture.texture->image;
-            const auto existing = imageSlot.find(img);
+            const cgltf_texture *tex = material.pbr_metallic_roughness.base_color_texture.texture;
+            const cgltf_image *img = tex->image;
+            const auto key = std::make_pair(img, tex->sampler);
+            const auto existing = imageSlot.find(key);
             if (existing != imageSlot.end()) {
                 objMaterial.textureID = existing->second;
             } else {
                 std::vector<unsigned char> bytes = extractImageBytes(img, options);
                 if (!bytes.empty()) {
                     objMaterial.textureID = static_cast<int>(textureImages.size());
-                    imageSlot[img] = objMaterial.textureID;
+                    imageSlot[key] = objMaterial.textureID;
                     textureImages.push_back(std::move(bytes));
+                    textureSamplerDescs.push_back(gltfSamplerDesc(tex->sampler));
                 }
             }
         }

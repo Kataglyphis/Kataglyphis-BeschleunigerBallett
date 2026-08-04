@@ -37,10 +37,44 @@ auto Kataglyphis::buildSamplerCreateInfo(vk::Filter filter,
     return sampler_create_info;
 }
 
-auto Kataglyphis::findSamplerForMipLevel(std::span<const uint32_t> createdMipLevels, uint32_t mipLevel)
+auto Kataglyphis::buildSamplerCreateInfo(const GltfSamplerDesc &desc,
+  float maxLod,
+  vk::Bool32 anisotropyEnable,
+  float maxAnisotropy,
+  vk::BorderColor borderColor,
+  vk::Bool32 compareEnable,
+  vk::CompareOp compareOp) -> vk::SamplerCreateInfo
+{
+    vk::SamplerCreateInfo sampler_create_info{};
+    sampler_create_info.magFilter = desc.magFilter;
+    sampler_create_info.minFilter = desc.minFilter;
+    sampler_create_info.addressModeU = desc.addressModeU;
+    sampler_create_info.addressModeV = desc.addressModeV;
+    sampler_create_info.addressModeW = desc.addressModeU;
+    sampler_create_info.borderColor = borderColor;
+    sampler_create_info.unnormalizedCoordinates = VK_FALSE;
+    sampler_create_info.mipmapMode = desc.mipmapMode;
+    sampler_create_info.mipLodBias = 0.0F;
+    sampler_create_info.minLod = 0.0F;
+    sampler_create_info.maxLod = maxLod;
+    sampler_create_info.anisotropyEnable = anisotropyEnable;
+    sampler_create_info.maxAnisotropy = maxAnisotropy;
+    sampler_create_info.compareEnable = compareEnable;
+    sampler_create_info.compareOp = compareOp;
+
+    return sampler_create_info;
+}
+
+auto Kataglyphis::usesNearestFiltering(const GltfSamplerDesc &desc) -> bool
+{
+    return desc.magFilter == vk::Filter::eNearest || desc.minFilter == vk::Filter::eNearest
+        || desc.mipmapMode == vk::SamplerMipmapMode::eNearest;
+}
+
+auto Kataglyphis::findSampler(std::span<const SamplerKey> createdSamplers, SamplerKey key)
   -> std::optional<std::size_t>
 {
-    const auto it = std::ranges::find(createdMipLevels, mipLevel);
-    if (it == createdMipLevels.end()) { return std::nullopt; }
-    return static_cast<std::size_t>(std::ranges::distance(createdMipLevels.begin(), it));
+    const auto it = std::ranges::find(createdSamplers, key);
+    if (it == createdSamplers.end()) { return std::nullopt; }
+    return static_cast<std::size_t>(std::ranges::distance(createdSamplers.begin(), it));
 }

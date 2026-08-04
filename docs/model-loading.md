@@ -142,7 +142,8 @@ default (documented on the member itself in `ObjMaterial.hpp`).
 | `emission` | `emissiveFactor` | `Ke` | `rasterizer.slang` (`color += material.emission`), `deferred.slang` (packed into the G-buffer's `.gba`) |
 | `shininess` | — (only ever set to a derived `mix(128, 1, roughnessFactor)` value, kept as the OBJ-only fallback `material_roughness()` falls back to) | `Ns` | `material_fetch.slang`'s `material_roughness()`, OBJ materials only |
 | `dissolve` | `baseColorFactor.a` | `d` | `material_fetch.slang`'s `alpha_masked_out()` |
-| `textureID` | dedup'd slot into `textureImages` (`imageSlot` map, keyed on `const cgltf_image *`) | dedup'd slot into `textures` (`pathSlot` map, keyed on the resolved texture path) | all five entry points, via `texture_offset + material.textureID` (see below) |
+| `textureID` | dedup'd slot into `textureImages` (`imageSlot` map, keyed on `(const cgltf_image *, const cgltf_sampler *)`) | dedup'd slot into `textures` (`pathSlot` map, keyed on the resolved texture path) | all five entry points, via `texture_offset + material.textureID` (see below) |
+| `sampler` (not an `ObjMaterial` field — tracked separately, index-parallel with `textureImages`, via `GltfLoader::getTextureSamplerDescs()`) | `textures[].sampler`'s wrap modes and mag/min/mipmap filters, mapped to `GltfSamplerDesc` (`vulkan_base/SamplerBuilder.ixx`) | — (OBJ has no sampler concept; every OBJ texture keeps the repeat/linear/linear default) | `Model::addSampler`, when building the texture's `vk::Sampler` |
 | `alphaCutoff` | `material.alpha_cutoff` when `alphaMode == MASK`, else `-1` | — | `material_fetch.slang`'s `alpha_masked_out()`, `shadow_map.slang` |
 | `uv_transform_row0` / `uv_transform_row1` | `KHR_texture_transform`'s T\*R\*S rows on the base-colour texture; identity rows if the extension is absent | — | `base_color.slang`'s `transform_uv()` |
 | `metallic` | `pbrMetallicRoughness.metallicFactor`, clamped `[0,1]` | — | `rasterizer.slang`/`raytrace.rchit.slang` (`f0`, `brdf_direct`), `deferred.slang` (G-buffer normal's `.a`) |
@@ -158,10 +159,13 @@ array bound at `TEXTURES_BINDING`/`SAMPLER_BINDING`, sized by
 `const int MAX_TEXTURE_COUNT = 128;`. Both loaders actively economise
 against that budget rather than just hoping models stay small:
 
-- **glTF dedup by image** — `GltfLoader::parseCpu`'s `imageSlot` map keys
-  on the `const cgltf_image *`, not the material: one decode+upload per
-  image no matter how many materials reference it (e.g. a base-colour and a
-  normal map sharing the same PNG).
+- **glTF dedup by image and sampler** — `GltfLoader::parseCpu`'s `imageSlot`
+  map keys on the pair `(const cgltf_image *, const cgltf_sampler *)`, not
+  the material: one decode+upload per (image, sampler) pair no matter how
+  many materials reference it (e.g. a base-colour and a normal map sharing
+  the same PNG), while two textures that share an image but name different
+  samplers still get distinct slots — collapsing those would make the
+  second texture's wrap/filter settings unobservable.
 - **OBJ dedup by resolved path** — `ObjLoader::loadTexturesAndMaterials`'s
   `pathSlot` map keys on the path `resolveObjTexturePath` returns, not the
   raw `map_Kd` string, so two materials naming the same file through
@@ -172,10 +176,11 @@ against that budget rather than just hoping models stay small:
   `addTextureOrDefault` call substitutes the default texture rather than
   skipping the slot, because `textureID` is a dense counter over non-empty
   names and skipping would shift every later `textureID` down by one.
-- **Sampler dedup by mip level** — `Model::addSampler` (`scene/Model.cpp`)
-  keys on mip level via `findSamplerForMipLevel`
-  (`vulkan_base/SamplerBuilder.cpp`): N textures that happen to share a mip
-  count share one `vk::Sampler`, instead of one sampler per texture.
+- **Sampler dedup by mip level and glTF sampler description** —
+  `Model::addSampler` (`scene/Model.cpp`) keys on a `SamplerKey{ mipLevel,
+  GltfSamplerDesc }` via `findSampler` (`vulkan_base/SamplerBuilder.cpp`): N
+  textures share one `vk::Sampler` only when both their mip count and their
+  wrap/filter settings match, instead of one sampler per texture.
 - **Flattening into the global array** — `assignTextureOffsets`
   (`scene/ObjectDescription.ixx`) stamps each mesh's `texture_offset` with
   its model's running offset into the flattened array, advancing by that

@@ -21,11 +21,56 @@ auto buildSamplerCreateInfo(vk::Filter filter,
   vk::Bool32 compareEnable = VK_FALSE,
   vk::CompareOp compareOp = vk::CompareOp::eNever) -> vk::SamplerCreateInfo;
 
-// Looks up an already-created sampler by mip level so callers with several
-// textures that only differ by mip count can reuse one vk::Sampler instead of
-// allocating a duplicate per texture. Pure and device-free, so it is
-// unit-testable without a Vulkan instance.
-auto findSamplerForMipLevel(std::span<const uint32_t> createdMipLevels, uint32_t mipLevel)
-  -> std::optional<std::size_t>;
+/// A glTF sampler's wrap/filter settings, translated into Vulkan enums. One
+/// instance per glTF `sampler` object referenced by a texture (or the default
+/// below when a texture names none / the document is not glTF at all).
+/// Defaults match this engine's pre-sampler-support behaviour exactly -
+/// repeat + linear + linear - so an untextured or OBJ-sourced texture keeps
+/// producing a byte-identical vk::SamplerCreateInfo.
+struct GltfSamplerDesc
+{
+    vk::SamplerAddressMode addressModeU{ vk::SamplerAddressMode::eRepeat };
+    vk::SamplerAddressMode addressModeV{ vk::SamplerAddressMode::eRepeat };
+    vk::Filter magFilter{ vk::Filter::eLinear };
+    vk::Filter minFilter{ vk::Filter::eLinear };
+    vk::SamplerMipmapMode mipmapMode{ vk::SamplerMipmapMode::eLinear };
+
+    bool operator==(const GltfSamplerDesc &) const = default;
+};
+
+// Same as the overload above, but sourced from a glTF sampler description:
+// mag/min filter and mipmap mode vary independently instead of sharing one
+// `filter`, and U/V wrap modes can differ (W is not a glTF concept for a 2D
+// texture, so it follows U).
+auto buildSamplerCreateInfo(const GltfSamplerDesc &desc,
+  float maxLod,
+  vk::Bool32 anisotropyEnable,
+  float maxAnisotropy,
+  vk::BorderColor borderColor,
+  vk::Bool32 compareEnable = VK_FALSE,
+  vk::CompareOp compareOp = vk::CompareOp::eNever) -> vk::SamplerCreateInfo;
+
+// True when `desc` asked for nearest filtering anywhere (mag, min or mip).
+// Anisotropic filtering is meaningless combined with nearest sampling, and
+// nearest-filtered assets are exactly the ones whose blocky look the author
+// chose deliberately - so anisotropy must not silently apply anyway.
+auto usesNearestFiltering(const GltfSamplerDesc &desc) -> bool;
+
+// Key a created sampler is reusable under: mip level AND glTF sampler
+// description must both match, since two textures with the same mip count
+// but different wrap/filter settings need genuinely different samplers.
+struct SamplerKey
+{
+    uint32_t mipLevel;
+    GltfSamplerDesc desc;
+
+    bool operator==(const SamplerKey &) const = default;
+};
+
+// Looks up an already-created sampler by SamplerKey so callers with several
+// textures that only differ by neither mip level nor sampler description can
+// reuse one vk::Sampler instead of allocating a duplicate per texture. Pure
+// and device-free, so it is unit-testable without a Vulkan instance.
+auto findSampler(std::span<const SamplerKey> createdSamplers, SamplerKey key) -> std::optional<std::size_t>;
 
 }// namespace Kataglyphis

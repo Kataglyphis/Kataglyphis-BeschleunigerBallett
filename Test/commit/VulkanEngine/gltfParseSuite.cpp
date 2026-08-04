@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vulkan/vulkan.hpp>
 
 import kataglyphis.vulkan.gltf_loader;
 import kataglyphis.vulkan.vertex;
@@ -184,6 +185,103 @@ TEST(GltfParseUnit, DistinctImagesStillGetDistinctSlots)
     ASSERT_EQ(loader.getMaterials().size(), 3U) << "the two declared materials, plus the neutral fallback";
     EXPECT_EQ(loader.getMaterials()[0].textureID, 0);
     EXPECT_EQ(loader.getMaterials()[1].textureID, 1);
+}
+
+TEST(GltfParseUnit, ReadsSamplerWrapAndFilterFromTheDocument)
+{
+    // A texture naming an explicit sampler must have that sampler's wrap and
+    // filter settings show up in getTextureSamplerDescs(), index-parallel with
+    // getTextureImages().
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [
+        { "pbrMetallicRoughness": { "baseColorTexture": { "index": 0 } } }
+      ],
+      "textures": [ { "source": 0, "sampler": 0 } ],
+      "samplers": [ { "wrapS": 33071, "wrapT": 33071, "magFilter": 9728 } ],
+      "images": [
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" }
+      ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 }
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_sampler_wrap_filter.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getTextureSamplerDescs().size(), 1U);
+    const Kataglyphis::GltfSamplerDesc &desc = loader.getTextureSamplerDescs()[0];
+    EXPECT_EQ(desc.addressModeU, vk::SamplerAddressMode::eClampToEdge);
+    EXPECT_EQ(desc.addressModeV, vk::SamplerAddressMode::eClampToEdge);
+    EXPECT_EQ(desc.magFilter, vk::Filter::eNearest);
+    // minFilter was not set by the document - defaults survive untouched.
+    EXPECT_EQ(desc.minFilter, vk::Filter::eLinear);
+    EXPECT_EQ(desc.mipmapMode, vk::SamplerMipmapMode::eLinear);
+}
+
+TEST(GltfParseUnit, OneImageWithTwoSamplersGetsTwoSlots)
+{
+    // Two textures share the same image but name different samplers: the
+    // dedup key is (image, sampler), so this must NOT collapse onto one
+    // textureImages slot the way MaterialsSharingAnImageShareOneTextureSlot's
+    // identical-sampler case does.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [
+        { "pbrMetallicRoughness": { "baseColorTexture": { "index": 0 } } },
+        { "pbrMetallicRoughness": { "baseColorTexture": { "index": 1 } } }
+      ],
+      "textures": [ { "source": 0, "sampler": 0 }, { "source": 0, "sampler": 1 } ],
+      "samplers": [
+        { "wrapS": 10497, "wrapT": 10497 },
+        { "wrapS": 33071, "wrapT": 33071, "magFilter": 9728 }
+      ],
+      "images": [
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" }
+      ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 }
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_two_samplers_one_image.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getTextureImages().size(), 2U) << "same image, different sampler must still get two slots";
+    ASSERT_EQ(loader.getTextureSamplerDescs().size(), 2U);
+    ASSERT_EQ(loader.getMaterials().size(), 3U) << "the two declared materials, plus the neutral fallback";
+    EXPECT_EQ(loader.getMaterials()[0].textureID, 0);
+    EXPECT_EQ(loader.getMaterials()[1].textureID, 1);
+    EXPECT_EQ(loader.getTextureSamplerDescs()[0].addressModeU, vk::SamplerAddressMode::eRepeat);
+    EXPECT_EQ(loader.getTextureSamplerDescs()[1].addressModeU, vk::SamplerAddressMode::eClampToEdge);
+    EXPECT_EQ(loader.getTextureSamplerDescs()[1].magFilter, vk::Filter::eNearest);
 }
 
 TEST(GltfParseUnit, BaseColorFactorSurvivesATexturedMaterial)

@@ -9441,3 +9441,298 @@ the only one that recompiles the whole engine.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
+## 2026-08-04 batch XVI — planner (the glTF `sampler` object, which the Rust loader reads in full and the C++ loader never looks at once, next to a per-texture sampler array that already has a slot for it; base-colour images referenced by an external file URI, which this repo's own OBJ→glTF converter is the thing that emits and the C++ loader is the thing that silently drops; the `eOpaque` follow-up `ASManager.cpp` asks for by name, now that every geometry in the scene invokes an any-hit shader; the path tracer, which forces every ray opaque and so is the last shading path where a MASK cut-out is a solid quad; and a G-buffer albedo attachment left at 8-bit UNORM three commits after its sibling was widened for exactly this reason)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Batch VII's three tasks all shipped
+(`6a70d193`, `c59d2f82`, `46c63fbf`). Everything below was read out of the
+tree this pass, at `46c63fbf`.
+
+**The duplication families are drained.** A mechanical 8-line duplicate-block
+scan over all 149 files in `Src/` this pass returns nothing but shared
+`#include`/`import` preambles and the two rasterizers' parallel public
+interfaces — no remaining "one rule, N hand-rolled copies". That is why this
+batch has no `(refactor)` entry: the twelve create/destroy helper extractions
+have taken the C++ tree as far as that pattern goes. What is left is
+behavioural, and four of the five items below are the same shape — a glTF
+feature the Rust twin implements and the C++ loader does not read at all.
+
+**First, `GltfLoader` never looks at a glTF `sampler`.** `parseCpu`
+(`scene/GltfLoader.cpp:508-528`) records only `textureImages` — a
+`std::vector<std::vector<unsigned char>>` of encoded bytes — and
+`uploadParsed` (`:73-77`) uploads each one. `texture->sampler` is never
+dereferenced anywhere in the file. Every texture the engine ever binds
+therefore gets the one sampler `Model::addSampler` (`scene/Model.cpp:68-93`)
+builds: `vk::Filter::eLinear`, `vk::SamplerAddressMode::eRepeat`, max
+anisotropy. The Rust twin reads the whole object —
+`asset/gltf_loader.rs:339-362`'s `to_cpu_sampler` maps `wrap_s`/`wrap_t` and
+all five `MinFilter`/`MagFilter` combinations into `CpuSampler`, and
+`render/texture.rs:7-30` turns that into the `wgpu::Sampler`.
+
+This is not a "would need a descriptor-layout change" gap. The layout is
+already there: `scene_types.slang:14-15` declares `TEXTURES_BINDING = 3` and
+`SAMPLER_BINDING = 4` as **two parallel arrays of `MAX_TEXTURE_COUNT`**
+(`VulkanRenderer.cpp:1478-1480`), and every shading path indexes both with the
+same `resolve_texture_slot()` result. `VulkanRenderer.cpp:1621-1630` already
+writes one `vk::Sampler` per slot. Nothing in the shaders has to change; the
+per-texture sampler descriptor exists and is being filled with N copies of one
+handle.
+
+The visible failure is the ordinary one: a `CLAMP_TO_EDGE` base-colour texture
+(the standard authoring for a decal, a UI atlas or any texture whose UVs run
+slightly outside `[0,1]`) tiles instead of clamping, so the opposite edge of
+the image bleeds in along every border. A `NEAREST`-filtered texture — the one
+case where the author's choice *is* the look — is bilinear-filtered into mush.
+
+**Second, an image referenced by an external file URI is dropped.**
+`extractImageBytes` (`GltfLoader.cpp:224-266`) handles exactly two forms, and
+says so at `:219-223`: a `buffer_view` (the `.glb` case) and a `base64,` data
+URI. A plain `image->uri` naming a file next to the document falls through
+every branch and returns `{}`, so `parseCpu:521-527` never assigns a
+`textureID` and the material loads untextured. Geometry is unaffected —
+`cgltf_load_buffers` (`:497`) *does* resolve an external `.bin`, so the mesh
+arrives intact and only the textures are missing, which is the failure mode
+hardest to attribute to the loader.
+
+The comment's stated reason ("no asset in the tree uses one, and it would need
+the document path to resolve") is no longer either true or a blocker. It is
+not a blocker because `extractImageBytes` is called from `parseCpu`, whose
+`modelFile` parameter is the document path — the same string already passed to
+`cgltf_load_buffers` one line earlier. And it is not true because **this
+repo's own converter emits exactly that form**:
+`asset/obj_to_gltf.rs:600-604` writes `{ "uri": "<bare filename>" }` per
+image and `:845-849` copies the texture next to the converted document. So
+`obj2gltf` (`examples/obj2gltf.rs`) produces documents that the Rust renderer
+displays textured and the C++ renderer displays grey — and
+`docs/model-loading.md:225-233` documents that emission as deliberate, which
+means the two halves of this repo have a written, agreed-on interchange format
+that one of them cannot read.
+
+**Third, `ASManager.cpp` asks for this one by name.** `objectToVkGeometryKHR`
+(`:564-571`) sets `acceleration_structure_geometry.flags = {}` for every BLAS
+geometry, with the comment "Correctness before speed - a follow-up should set
+`eOpaque` per geometry (off only for meshes that actually contain a MASK
+material) once RT frame time with every geometry now invoking any-hit is
+measured." That follow-up is now worth doing: `raytrace.rahit.slang` shipped
+(`Raytracing.cpp:164-192` wires it as `eAnyHit` into the triangles hit group),
+so every hit on every triangle in the scene now enters an any-hit invocation,
+and its first act (`rahit_main`, `:33`) is to load the object description and
+the per-triangle material through two buffer-device-address indirections just
+to discover `alphaCutoff < 0.0` and return. On a scene like `crytek-sponza`
+that is two dependent memory loads per hit, scene-wide, to answer a question
+the BLAS flag answers for free.
+
+The predicate is already available where it is needed: `Mesh`'s constructor
+(`scene/Mesh.ixx:22-27`) receives the full `std::vector<ObjMaterial>`, so
+"does any material in this mesh carry `alphaCutoff >= 0`" is computable at
+construction and needs no new plumbing from either loader.
+
+**Fourth, the path tracer forces every ray opaque.** `path_tracing.slang:104`
+and `:110` declare and trace `RayQuery<RAY_FLAG_FORCE_OPAQUE>`, and `:256-266`
+does the same for the NEE shadow query. `RAY_FLAG_FORCE_OPAQUE` makes the
+implementation commit every candidate triangle without ever surfacing it as
+`CANDIDATE_NON_OPAQUE_TRIANGLE` — and a ray query has no any-hit shader stage
+at all, so the flag is the *only* thing standing between the kernel and the
+alpha test. `raytrace.rahit.slang` does nothing for this path.
+
+So PT is now the one remaining shading path where a glTF MASK cut-out is a
+solid quad. Forward, deferred and the shadow pass discard through
+`material_fetch.slang`'s `alpha_masked_out`; RT mode discards through the
+any-hit shader as of this week; PT does not, and additionally casts a solid
+NEE shadow from geometry the other four paths see through. The kernel already
+has every ingredient — `:215-225` fetches the material and samples the
+base-colour texture with `SampleLevel` for the committed hit.
+
+**Fifth, `GBUFFER_ALBEDO_FORMAT` is still `eR8G8B8A8Unorm`**
+(`DeferredRasterizer.ixx:75`), while its two siblings on the same G-buffer are
+`eR16G16B16A16Sfloat` (`:74`, `:76`). `deferred.slang:83`'s comment records
+why the material attachment was widened three commits ago (`a9911a5a`):
+"roughness is no longer quantized to 256 steps". The albedo attachment was not
+revisited, and it holds the one value in the G-buffer that is stored in the
+*wrong space* for 8 bits: `g.outAlbedo = texColor` (`:76`) is **linear** base
+colour — `Texture.cpp:123` uploads every texture as `eR8G8B8A8Srgb` so the
+hardware decodes to linear at sample time, and `base_color()` then multiplies
+the linear factor. 256 uniform steps in linear space put nearly all of the
+precision where the eye has least, and the forward path quantizes nothing.
+
+The fix is not a widening — it is one enum. `eR8G8B8A8Srgb` costs the same
+bandwidth, encodes on colour-attachment write and decodes on
+`SubpassLoad`, and gives the stored value a perceptual distribution. Albedo is
+bounded in `[0,1]` by construction (`baseColorFactor`, the texture, and
+`COLOR_0` are all `[0,1]`), so nothing clips; alpha is not sRGB-encoded by the
+format and the lighting pass reads only `.rgb` anyway
+(`deferred.slang:126-138`).
+
+**GPU verification is still blocked over RDP** (see the `- [b]` entry near the
+end of this file), and `path_tracing` mode additionally device-losts on the
+host RX 9070 XT on unmodified `develop` (the `- [b]` at line ~2030). Every
+task below therefore states a CPU-only acceptance criterion that the container
+build and the always-on Linux lane can actually deliver, and treats the golden
+run as "if you have an adapter, also do this". Task 4 in particular is a
+compile-and-gate acceptance by construction — do not claim a PT visual result
+you cannot obtain.
+
+**Ordering:** task 3 must land before task 4. Task 3 restores `eOpaque` on
+non-MASK geometry, which is what keeps task 4's candidate-commit loop off the
+hot path for the 99% of the scene that has no cutoff; landing 4 first is
+correct but makes every triangle in the scene take the slow path in the
+meantime. Tasks 1, 2 and 5 are independent of everything else and of each
+other.
+
+### Test suites
+
+### C++ Vulkan engine
+
+- [ ] **(M) Resolve external image URIs in the C++ glTF loader** — `extractImageBytes` handles `.glb` buffer views and base64 data URIs only, so a `.gltf` that names its textures as sibling files — which is exactly what this repo's own `obj2gltf` emits — loads with full geometry and no textures at all.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp` — `extractImageBytes` (`:219-266`) and its call site in `parseCpu` (`:521-527`); note `modelFile` is in scope there
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp` — `resolveObjTexturePath`, the sibling-directory resolution rule already in use
+  - `Src/shared/util/FileReader.ixx` — the shared whole-file reader to use rather than a fresh `ifstream`
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/asset/obj_to_gltf.rs:591-604` and `:820-855` — the converter that emits the bare-filename `uri` and copies the file next to the document
+  - `docs/model-loading.md:225-233` — the documented contract this closes
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp` — `MalformedTextIsRejectedNotCrashed` (`:241`) and `ShortBase64ImageUriDoesNotUnderflow` (`:255`) for the temp-file pattern
+
+  **Steps:**
+  1. Give `extractImageBytes` a third parameter: the directory containing the document (`std::filesystem::path`). Pass `std::filesystem::path(modelFile).parent_path()` from `parseCpu`; an empty parent means the document is a bare filename, so treat it as `.` — the same rule `resolveObjTexturePath` applies.
+  2. Add the external branch **after** the existing `buffer_view` and `base64,` branches, so both current forms stay on exactly the path they are on today. Guard it on the URI *not* containing `base64,` and not starting with a scheme (`data:`, `http:`, `https:`) — a remote URI is out of scope and must return `{}` with a warning, not attempt a fetch.
+  3. Percent-decode the URI before using it as a path (glTF requires URI encoding, so a space is `%20` and a real exporter emits it). Decode only `%XX` triplets with two valid hex digits; leave anything else literal rather than failing the load.
+  4. Normalise `\` to `/` before resolving, for the same reason `resolveObjTexturePath` does — a Windows-authored relative path must still resolve elsewhere.
+  5. **Reject any resolved path that escapes the document's directory.** Build the candidate as `documentDir / decodedUri`, then `weakly_canonical` it and require that the result is under `weakly_canonical(documentDir)`. A `.gltf` is untrusted input fed from the GUI's file picker, and a `"uri": "../../../../Windows/System32/..."` must be refused, not read. Log the rejection.
+  6. Read the file with the shared `FileReader` helper. A missing or unreadable file returns `{}` (the existing "no bytes" contract), and `parseCpu:521-527` already handles that by leaving `textureID` at `-1`. Log a warning naming the resolved candidate — a wrong texture path otherwise leaves no signal at all, which is the whole failure mode here.
+  7. Delete the now-false comment at `:219-223` and replace it with the three forms actually handled plus the traversal rule from step 5.
+
+  **Test:** In `gltfParseSuite.cpp`, add `GltfParseUnit.ExternalImageUriIsResolvedRelativeToTheDocument` — write a temp directory holding a minimal `.gltf` with `"images": [{ "uri": "tex.png" }]` plus a real 1×1 PNG named `tex.png`, parse, and assert the material's `textureID` is `0` and `getTextureImages()[0]` is non-empty. Add `GltfParseUnit.ExternalImageUriEscapingTheDocumentDirectoryIsRejected` (`"uri": "../secret.png"` with the file present one level up, asserting `textureID == -1`) and `GltfParseUnit.PercentEncodedExternalUriResolves` (a file named `my tex.png`, referenced as `my%20tex.png`). All CPU-only.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GltfParse*`.
+
+  **Context:** Do not "fix" this by making `obj2gltf` embed its images instead
+  — the converter's self-contained-document-next-to-its-`.bin` layout is
+  deliberate and documented, and `obj_to_gltf.rs`'s tests depend on the
+  emitted JSON staying byte-stable. The gap is on the reading side. Keep the
+  base64 length guard at `:250-254` exactly as it is; it is a fuzz-found
+  underflow fix and the new branch must not be reachable from a URI that
+  contains `base64,`. `Texture::createFromMemory` already decodes whatever
+  bytes it is handed via `stbi`, so no new image-format handling is involved.
+
+- [ ] **(M) Set `eOpaque` per BLAS geometry, off only for meshes that carry a MASK material** — the follow-up `ASManager.cpp:564-571` asks for by name: with the any-hit shader shipped, every hit on every triangle in the scene now runs two buffer-device-address loads just to discover the material has no cutoff.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp` — `objectToVkGeometryKHR` (`:527-580`), especially the comment at `:564-571`
+  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/BlasGeometryLimits.hpp` — the pure-header, `constexpr`, CPU-tested pattern to follow
+  - `Src/GraphicsEngineVulkan/scene/Mesh.ixx` — the constructor (`:22-27`) already receives the full material vector; `setDoubleSided`/`isDoubleSided` (`:50-55`) is the existing "loader-set flag" precedent
+  - `Src/shared/scene/ObjMaterial.hpp:15-21` — the `alphaCutoff < 0` means "not MASK" convention
+  - `Resources/ShadersSlang/raytracing/raytrace.rahit.slang:31-33` — the early return this change makes unreachable for non-MASK geometry
+  - `Test/commit/VulkanEngine/blasGeometryLimitsSuite.cpp` — the test pattern
+
+  **Steps:**
+  1. Add to `BlasGeometryLimits.hpp` a `constexpr bool blasGeometryNeedsAnyHit(std::span<const ObjMaterial>)` returning `true` iff any material has `alphaCutoff >= 0.0F`, and a `constexpr vk::GeometryFlagsKHR blasGeometryFlags(bool needsAnyHit)` returning `{}` when it does and `vk::GeometryFlagBitsKHR::eOpaque` when it does not. Keep both free, pure and header-only — that is what makes them testable without a device, exactly like `blasTriangleLimits` beside them.
+  2. In `Mesh`'s constructor, compute `has_masked_material = blasGeometryNeedsAnyHit(materials)` once and store it in a `bool` member next to `double_sided`. Expose `bool hasMaskedMaterial() const`. Do not add a setter — unlike `doubleSided` this is derivable from data the constructor already has, so deriving it is strictly safer than asking both loaders to remember to set it.
+  3. In `objectToVkGeometryKHR`, replace `acceleration_structure_geometry.flags = {};` with `blasGeometryFlags(mesh->hasMaskedMaterial())`.
+  4. Rewrite the `:564-571` comment: state the rule (`eOpaque` unless the mesh carries a MASK material, because `eOpaque` suppresses any-hit invocation entirely) and delete the "a follow-up should…" sentence, which this task is.
+  5. Leave the hit group in `Raytracing.cpp:179-192` alone. The any-hit stage must stay in the pipeline — MASK meshes still need it, and the SBT layout is not changing.
+
+  **Test:** In `blasGeometryLimitsSuite.cpp`, add `BlasGeometryLimitsUnit.MaskMaterialDropsOpaque` and `BlasGeometryLimitsUnit.AllOpaqueMaterialsKeepOpaque`, plus a `static_assert` that `blasGeometryFlags` is usable in a constant expression (matching the existing `static_assert` at `:11`). Add `BlasGeometryLimitsUnit.ASingleMaskMaterialAmongManyOpaqueOnesDropsOpaque` — the mixed-mesh case is the one a naive "check material 0" implementation gets wrong.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  (`-FreshContainer`: `Mesh.ixx` is a module interface.) Then
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BlasGeometryLimits*`.
+  **If you have an adapter**, also run
+  `--gtest_filter=GoldenRender.MaskCard*:GoldenRender.Raytraced*` — the MASK
+  card must still cut out in RT mode after this change, which is the one way
+  to get the flag backwards and not notice.
+
+  **Context:** This is a performance change with a correctness cliff: setting
+  `eOpaque` on a mesh that *does* carry a MASK material makes
+  `raytrace.rahit.slang` dead code for it and turns the cut-out back into a
+  solid quad — the exact regression batch XV shipped the any-hit shader to
+  fix. That is why the predicate is derived in the `Mesh` constructor from the
+  material vector rather than set by the loaders. Land this **before** the
+  path-tracing task below; it is what keeps that task's candidate-commit loop
+  off the hot path for non-MASK geometry.
+
+- [ ] **(M) Alpha-test MASK materials in the path tracer's ray queries** — `path_tracing.slang` traces both its bounce ray and its NEE shadow ray with `RAY_FLAG_FORCE_OPAQUE`, and a ray query has no any-hit stage, so PT is the last of five shading paths where a glTF MASK cut-out is a solid quad and casts a solid shadow.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/path_tracing/path_tracing.slang` — the bounce query (`:104-120`), the committed-hit material fetch and texture sample (`:205-238`), the NEE shadow query (`:256-271`)
+  - `Resources/ShadersSlang/raytracing/raytrace.rahit.slang` — the alpha test to mirror, including the `SampleLevel` (not `Sample`) rule and the barycentric interpolation of `COLOR_0` alpha
+  - `Resources/ShadersSlang/common/material_fetch.slang:50-53` — `alpha_masked_out`, the one predicate
+  - `docs/path-tracing.md` — update the pipeline-shape section
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `RasterShadersShareOneAlphaCutoffRule` (`:2366`), the gate to extend
+
+  **Steps:**
+  1. Factor the any-hit body into a shared helper. Add `bool ray_hit_masked_out(ObjectDescription obj, uint primitiveID, float2 bary)` to a module both `raytrace.rahit.slang` and `path_tracing.slang` can import — it needs the `textures`/`textureSamplers` arrays, so it belongs in a new `common/alpha_test.slang` that declares bindings 3 and 4, imported by exactly those two files. Check the ambiguous-binding constraint documented in `base_color.slang:6-12` before choosing where it lives; if a shared binding declaration is not workable, duplicate the ~15-line body and extend the `BuildIntegrity` gate in step 6 to pin the two copies against each other instead.
+  2. Drop `RAY_FLAG_FORCE_OPAQUE` from the bounce query's type parameter (`:104`) and its `TraceRayInline` argument (`:110`).
+  3. Replace the empty `while (rayQuery.Proceed()) { }` body (`:116-118`) with a candidate handler: when `rayQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE`, resolve the object description from `CandidateInstanceIndex() + CandidateGeometryIndex()`, run the alpha test against `CandidatePrimitiveIndex()` and `CandidateTriangleBarycentrics()`, and call `rayQuery.CommitNonOpaqueTriangleHit()` when it passes. Do nothing when it fails — not committing *is* the discard.
+  4. Do the same for the NEE shadow query (`:256-267`). Keep `RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH`: it still ends the search at the first *committed* hit, which is the intended semantics, and dropping it would cost a full traversal per shadow ray.
+  5. Leave the committed-hit path (`:120` onward) alone. `CommittedStatus() != COMMITTED_TRIANGLE_HIT` still means "sky", and after this change it correctly also means "every candidate was alpha-tested away".
+  6. Extend `BuildIntegrity.RasterShadersShareOneAlphaCutoffRule` — or add a sibling `EveryShadingPathAlphaTestsMaskMaterials` — to assert that `path_tracing.slang` references the alpha-test helper and that the string `RAY_FLAG_FORCE_OPAQUE` no longer appears in it. That grep is the only automated thing standing between this fix and a future edit re-adding the flag.
+  7. Update `docs/path-tracing.md`'s pipeline-shape section: the ray queries are no longer force-opaque, and MASK materials are alpha-tested in the candidate loop.
+
+  **Test:** The gate in step 6 is the acceptance test and it is CPU-only. Also
+  add `GoldenRender.PathTracedMaskCardShowsItsCutout` modelled on
+  `MaskCardDiscardsCutoutTexelsVisually` (`goldenRenderSuite.cpp:2181`) but in
+  `pathTracing` mode, with `SKIP_WITHOUT_GPU()` — write it now so it is there
+  when the host GPU is usable again, and do not report it as passing.
+
+  **Build:** `clangcl-debug`, plus a shader compile:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`
+  then
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  and `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity*`.
+
+  **Context:** **This task cannot be visually verified right now** — `path_tracing`
+  mode device-losts on the host RX 9070 XT on unmodified `develop` (the `- [b]`
+  entry around line 2030), and GPU goldens are blocked over RDP besides. The
+  acceptance is: `slangc` emits SPIR-V for `path_tracing_main` without
+  diagnostics, the SPIR-V gates in `buildIntegritySuite.cpp` stay green
+  (including the implicit-LOD rule — use `SampleLevel`, never `Sample`, in a
+  compute shader), and the new gate from step 6 passes. Say exactly that in the
+  commit message. Landing this after the `eOpaque` task above means only MASK
+  geometry ever enters the candidate loop, so the traversal cost of the change
+  is confined to the geometry that needs it.
+
+- [ ] **(S) Store the deferred G-buffer albedo in `eR8G8B8A8Srgb` instead of `eR8G8B8A8Unorm`** — it holds *linear* base colour, so 256 uniform steps put the precision where the eye has least; its two sibling attachments were widened three commits ago for exactly this reason and this one was not revisited.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.ixx:73-79` — the four format constants and the `static_assert` tying `FINAL_FORMAT` to `Rasterizer::OFFSCREEN_FORMAT`
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:86-93` (attachment creation) and `:176-195` (the render-pass attachment descriptions)
+  - `Resources/ShadersSlang/deferred/deferred.slang:55-83` (the geometry write) and `:126-138` (the lighting read)
+  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:117-123` — why the source texture is already `eR8G8B8A8Srgb` and therefore decoded to linear at sample time
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp:1178-1250` — `EmissiveStrengthSurvivesTheDeferredGBuffer`, the measured red/green pair the sibling widening shipped with
+
+  **Steps:**
+  1. Change `GBUFFER_ALBEDO_FORMAT` to `vk::Format::eR8G8B8A8Srgb` in `DeferredRasterizer.ixx:75`.
+  2. Verify nothing else needs to move: `createAttachment` (`:92`) and `buildAttachmentDescription` (`:189`) both take the constant, and `getGBufferAlbedo` (`:37`) feeds `VulkanRenderer.cpp:1656`'s input-attachment write — all three are format-agnostic. Confirm by reading, not by rebuilding blind.
+  3. Update the comment block at `deferred.slang:72-82` to record the albedo attachment alongside the material one: the format is sRGB so the hardware encodes on write and decodes on `SubpassLoad`, the stored value is unchanged in linear terms, and the gain is precision distribution rather than range.
+  4. Add a one-line note to `docs/cpp-renderer-improvements.md` in the same change, matching how the `GBUFFER_MATERIAL_FORMAT` widening was logged.
+
+  **Test:** No new CPU test — the format is a compile-time constant with no
+  pure-function surface to pin. **If you have an adapter**, run
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GoldenRender.DeferredMatchesForwardRoughly:GoldenRender.EmissiveStrengthSurvivesTheDeferredGBuffer`
+  and record the measured mean-abs-diff in the commit message: the first
+  currently measures 0.41 on the RX 9070 XT and this change should move it
+  *down*, toward the forward path it is compared against. Do not tighten
+  either test's threshold on a single measurement.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  (`-FreshContainer`: `DeferredRasterizer.ixx` is a module interface.)
+
+  **Context:** This is deliberately *not* a widening to
+  `eR16G16B16A16Sfloat`. Albedo is bounded in `[0,1]` by construction — the
+  glTF spec caps `baseColorFactor`, the texture is `UNORM`-sourced and
+  `COLOR_0` is `[0,1]` — so there is no range to recover, only distribution,
+  and sRGB buys that at identical bandwidth where a float16 attachment would
+  double the G-buffer's albedo traffic for nothing. Alpha is not sRGB-encoded
+  by the format (Vulkan spec) and the lighting pass reads only `.rgb`
+  (`deferred.slang:132-138`), so the alpha channel is unaffected either way.
+  If the goldens move the *wrong* way, the likely cause is a driver that does
+  not apply the decode on an input-attachment read — report the measurement
+  rather than papering over it with a threshold.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+

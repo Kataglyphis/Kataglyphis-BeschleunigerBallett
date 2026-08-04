@@ -14,7 +14,10 @@
 import kataglyphis.vulkan.sampler_builder;
 
 using Kataglyphis::buildSamplerCreateInfo;
-using Kataglyphis::findSamplerForMipLevel;
+using Kataglyphis::findSampler;
+using Kataglyphis::GltfSamplerDesc;
+using Kataglyphis::SamplerKey;
+using Kataglyphis::usesNearestFiltering;
 
 TEST(SamplerBuilderUnit, MatchesPostStageOffscreenSamplerConfiguration)
 {
@@ -96,19 +99,58 @@ TEST(SamplerBuilderUnit, MatchesShadowMapComparisonSamplerConfiguration)
     EXPECT_EQ(info.compareOp, vk::CompareOp::eLessOrEqual);
 }
 
-TEST(SamplerBuilder, FindSamplerForMipLevelReusesAnEqualMipCount)
+TEST(SamplerBuilder, FindSamplerReusesAnEqualKey)
 {
-    const std::array<uint32_t, 3> created_mip_levels{ 1U, 4U, 7U };
+    const std::array<SamplerKey, 3> created{
+        SamplerKey{ 1U, GltfSamplerDesc{} },
+        SamplerKey{ 4U, GltfSamplerDesc{} },
+        SamplerKey{ 7U, GltfSamplerDesc{} },
+    };
 
-    EXPECT_EQ(findSamplerForMipLevel(created_mip_levels, 4U), 1U);
-    EXPECT_EQ(findSamplerForMipLevel(created_mip_levels, 1U), 0U);
-    EXPECT_EQ(findSamplerForMipLevel(created_mip_levels, 7U), 2U);
+    EXPECT_EQ(findSampler(created, SamplerKey{ 4U, GltfSamplerDesc{} }), 1U);
+    EXPECT_EQ(findSampler(created, SamplerKey{ 1U, GltfSamplerDesc{} }), 0U);
+    EXPECT_EQ(findSampler(created, SamplerKey{ 7U, GltfSamplerDesc{} }), 2U);
 }
 
-TEST(SamplerBuilder, FindSamplerForMipLevelReturnsNulloptForANewMipCount)
+TEST(SamplerBuilder, FindSamplerReturnsNulloptForANewKey)
 {
-    const std::array<uint32_t, 3> created_mip_levels{ 1U, 4U, 7U };
+    const std::array<SamplerKey, 3> created{
+        SamplerKey{ 1U, GltfSamplerDesc{} },
+        SamplerKey{ 4U, GltfSamplerDesc{} },
+        SamplerKey{ 7U, GltfSamplerDesc{} },
+    };
 
-    EXPECT_EQ(findSamplerForMipLevel(created_mip_levels, 2U), std::nullopt);
-    EXPECT_EQ(findSamplerForMipLevel({}, 0U), std::nullopt);
+    EXPECT_EQ(findSampler(created, SamplerKey{ 2U, GltfSamplerDesc{} }), std::nullopt);
+    EXPECT_EQ(findSampler({}, SamplerKey{ 0U, GltfSamplerDesc{} }), std::nullopt);
+}
+
+TEST(SamplerBuilderUnit, SamplerDedupSeparatesDistinctWrapModes)
+{
+    // Same mip level, only the wrap mode differs - two textures that share a
+    // mip count but not a glTF sampler must not collapse onto one vk::Sampler.
+    GltfSamplerDesc repeatDesc{};
+    GltfSamplerDesc clampDesc{};
+    clampDesc.addressModeU = vk::SamplerAddressMode::eClampToEdge;
+
+    const std::array<SamplerKey, 1> created{ SamplerKey{ 3U, repeatDesc } };
+
+    EXPECT_EQ(findSampler(created, SamplerKey{ 3U, repeatDesc }), 0U);
+    EXPECT_EQ(findSampler(created, SamplerKey{ 3U, clampDesc }), std::nullopt);
+}
+
+TEST(SamplerBuilderUnit, NearestFilteringDropsAnisotropy)
+{
+    EXPECT_FALSE(usesNearestFiltering(GltfSamplerDesc{}));
+
+    GltfSamplerDesc magNearest{};
+    magNearest.magFilter = vk::Filter::eNearest;
+    EXPECT_TRUE(usesNearestFiltering(magNearest));
+
+    GltfSamplerDesc minNearest{};
+    minNearest.minFilter = vk::Filter::eNearest;
+    EXPECT_TRUE(usesNearestFiltering(minNearest));
+
+    GltfSamplerDesc mipNearest{};
+    mipNearest.mipmapMode = vk::SamplerMipmapMode::eNearest;
+    EXPECT_TRUE(usesNearestFiltering(mipNearest));
 }

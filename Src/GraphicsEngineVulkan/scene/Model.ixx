@@ -12,6 +12,9 @@ import kataglyphis.vulkan.mesh;
 import kataglyphis.vulkan.texture;
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.vertex;
+// Re-exported: GltfSamplerDesc appears in addTexture()'s parameter type, so
+// consumers that import this module can pass one without a second import.
+export import kataglyphis.vulkan.sampler_builder;
 
 export namespace Kataglyphis {
 class Model
@@ -38,14 +41,14 @@ class Model
     glm::mat4 getModel() { return model; };
 
     void set_model(glm::mat4 new_model);
-    void addTexture(Texture &&newTexture);
+    void addTexture(Texture &&newTexture, GltfSamplerDesc samplerDesc = {});
 
     ~Model();
 
   private:
     std::shared_ptr<VulkanDevice>device{ nullptr };
 
-    void addSampler(const Texture &newTexture);
+    void addSampler(const Texture &newTexture, const GltfSamplerDesc &samplerDesc);
 
     // A Model holds one or more meshes: one per glTF primitive / OBJ group.
     // Mesh is move-only (noexcept move), so vector storage is fine.
@@ -58,8 +61,8 @@ class Model
     // Backing storage for the samplers this Model actually created (and
     // therefore owns and must destroy). Distinct from modelTextureSamplers,
     // which stays index-parallel with modelTextures and may repeat a handle
-    // when two textures share a mip level.
-    std::vector<uint32_t> ownedSamplerMipLevels;
+    // when two textures share a mip level AND sampler description.
+    std::vector<SamplerKey> ownedSamplerKeys;
     std::vector<vk::Sampler> ownedSamplers;
 };
 }// namespace Kataglyphis
