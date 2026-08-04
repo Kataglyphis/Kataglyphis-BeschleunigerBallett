@@ -54,6 +54,14 @@ class Mesh
     void setDoubleSided(bool value) { double_sided = value; };
     bool isDoubleSided() const { return double_sided; };
 
+    /// Whether any material this mesh references is a glTF MASK material
+    /// (ObjMaterial::alphaCutoff >= 0). Derived once in the constructor from
+    /// the material vector the constructor already receives - unlike
+    /// double_sided this needs no setter, since every loader already hands
+    /// the constructor its full materials, so deriving it here can never go
+    /// stale the way a loader-set flag could.
+    bool hasMaskedMaterial() const { return has_masked_material; };
+
     void setModel(glm::mat4 new_model);
 
     ~Mesh();
@@ -81,6 +89,9 @@ class Mesh
 
     // glTF material.doubleSided; see setDoubleSided.
     bool double_sided{ false };
+
+    // See hasMaskedMaterial().
+    bool has_masked_material{ false };
 
     std::shared_ptr<VulkanDevice>device{ nullptr };
 

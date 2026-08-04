@@ -562,13 +562,12 @@ void Kataglyphis::VulkanRendererInternals::ASManager::objectToVkGeometryKHR(cons
 
     acceleration_structure_geometry.geometryType = vk::GeometryTypeKHR::eTriangles;
     acceleration_structure_geometry.geometry = acceleration_structure_geometry_data;
-    // Not eOpaque: eOpaque makes the implementation skip any-hit shader
-    // invocation entirely, which would make raytrace.rahit.slang's MASK
-    // alpha test dead code for every BLAS geometry. Correctness before
-    // speed - a follow-up should set eOpaque per geometry (off only for
-    // meshes that actually contain a MASK material) once RT frame time
-    // with every geometry now invoking any-hit is measured.
-    acceleration_structure_geometry.flags = {};
+    // eOpaque unless the mesh carries a MASK material: eOpaque makes the
+    // implementation skip any-hit shader invocation entirely, which would
+    // make raytrace.rahit.slang's MASK alpha test dead code. Geometry with no
+    // MASK material has no alpha test to run, so it takes the fast eOpaque
+    // path; only MASK geometry pays for any-hit invocation.
+    acceleration_structure_geometry.flags = Kataglyphis::blasGeometryFlags(mesh->hasMaskedMaterial());
 
     acceleration_structure_build_range_info.primitiveCount = limits.primitiveCount;
     acceleration_structure_build_range_info.primitiveOffset = 0;

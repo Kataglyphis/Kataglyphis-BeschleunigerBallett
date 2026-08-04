@@ -7,9 +7,13 @@
 
 #include "renderer/accelerationStructures/BlasGeometryLimits.hpp"
 #include "renderer/accelerationStructures/BlasCompaction.hpp"
+#include "shared/scene/ObjMaterial.hpp"
 
 static_assert(Kataglyphis::blasTriangleLimits(100, 300).maxVertex == 99,
   "blasTriangleLimits must be usable in a constant expression");
+
+static_assert(Kataglyphis::blasGeometryFlags(false) == vk::GeometryFlagBitsKHR::eOpaque,
+  "blasGeometryFlags must be usable in a constant expression");
 
 namespace {
 
@@ -27,6 +31,41 @@ TEST(BlasGeometryLimitsUnit, AnEmptyMeshDoesNotWrapToUintMax)
 TEST(BlasGeometryLimitsUnit, PrimitiveCountTruncatesAPartialTriangle)
 {
     EXPECT_EQ(Kataglyphis::blasTriangleLimits(4, 7).primitiveCount, 2U);
+}
+
+namespace {
+ObjMaterial opaqueMaterial()
+{
+    return ObjMaterial({ 0.7F, 0.7F, 0.7F }, { 0.0F, 0.0F, 0.0F }, 0.0F, 1.0F, -1, -1.0F);
+}
+
+ObjMaterial maskMaterial()
+{
+    return ObjMaterial({ 0.7F, 0.7F, 0.7F }, { 0.0F, 0.0F, 0.0F }, 0.0F, 1.0F, -1, 0.5F);
+}
+}// namespace
+
+TEST(BlasGeometryLimitsUnit, MaskMaterialDropsOpaque)
+{
+    const std::array<ObjMaterial, 1> materials{ maskMaterial() };
+    EXPECT_TRUE(Kataglyphis::blasGeometryNeedsAnyHit(materials));
+    EXPECT_EQ(Kataglyphis::blasGeometryFlags(Kataglyphis::blasGeometryNeedsAnyHit(materials)), vk::GeometryFlagsKHR{});
+}
+
+TEST(BlasGeometryLimitsUnit, AllOpaqueMaterialsKeepOpaque)
+{
+    const std::array<ObjMaterial, 2> materials{ opaqueMaterial(), opaqueMaterial() };
+    EXPECT_FALSE(Kataglyphis::blasGeometryNeedsAnyHit(materials));
+    EXPECT_EQ(
+      Kataglyphis::blasGeometryFlags(Kataglyphis::blasGeometryNeedsAnyHit(materials)), vk::GeometryFlagBitsKHR::eOpaque);
+}
+
+TEST(BlasGeometryLimitsUnit, ASingleMaskMaterialAmongManyOpaqueOnesDropsOpaque)
+{
+    const std::array<ObjMaterial, 4> materials{
+        opaqueMaterial(), opaqueMaterial(), maskMaterial(), opaqueMaterial()
+    };
+    EXPECT_TRUE(Kataglyphis::blasGeometryNeedsAnyHit(materials));
 }
 
 TEST(BlasCompactionUnit, RejectsEmptyAndZeroSizedResults)

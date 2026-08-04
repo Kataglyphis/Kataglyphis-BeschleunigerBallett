@@ -9,6 +9,8 @@
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#include "renderer/accelerationStructures/BlasGeometryLimits.hpp"
+
 module kataglyphis.vulkan.mesh;
 
 import kataglyphis.vulkan.device;
@@ -56,6 +58,8 @@ Mesh::Mesh(const std::shared_ptr<VulkanDevice> &device,
         }
         bounds = AABB{ minimum, maximum };
     }
+
+    has_masked_material = Kataglyphis::blasGeometryNeedsAnyHit(materials);
 
     object_description = ObjectDescription{};
     createVertexBuffer(transfer_command_pool, vertices);

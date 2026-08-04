@@ -9583,43 +9583,6 @@ other.
 
 ### C++ Vulkan engine
 
-- [ ] **(M) Set `eOpaque` per BLAS geometry, off only for meshes that carry a MASK material** — the follow-up `ASManager.cpp:564-571` asks for by name: with the any-hit shader shipped, every hit on every triangle in the scene now runs two buffer-device-address loads just to discover the material has no cutoff.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp` — `objectToVkGeometryKHR` (`:527-580`), especially the comment at `:564-571`
-  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/BlasGeometryLimits.hpp` — the pure-header, `constexpr`, CPU-tested pattern to follow
-  - `Src/GraphicsEngineVulkan/scene/Mesh.ixx` — the constructor (`:22-27`) already receives the full material vector; `setDoubleSided`/`isDoubleSided` (`:50-55`) is the existing "loader-set flag" precedent
-  - `Src/shared/scene/ObjMaterial.hpp:15-21` — the `alphaCutoff < 0` means "not MASK" convention
-  - `Resources/ShadersSlang/raytracing/raytrace.rahit.slang:31-33` — the early return this change makes unreachable for non-MASK geometry
-  - `Test/commit/VulkanEngine/blasGeometryLimitsSuite.cpp` — the test pattern
-
-  **Steps:**
-  1. Add to `BlasGeometryLimits.hpp` a `constexpr bool blasGeometryNeedsAnyHit(std::span<const ObjMaterial>)` returning `true` iff any material has `alphaCutoff >= 0.0F`, and a `constexpr vk::GeometryFlagsKHR blasGeometryFlags(bool needsAnyHit)` returning `{}` when it does and `vk::GeometryFlagBitsKHR::eOpaque` when it does not. Keep both free, pure and header-only — that is what makes them testable without a device, exactly like `blasTriangleLimits` beside them.
-  2. In `Mesh`'s constructor, compute `has_masked_material = blasGeometryNeedsAnyHit(materials)` once and store it in a `bool` member next to `double_sided`. Expose `bool hasMaskedMaterial() const`. Do not add a setter — unlike `doubleSided` this is derivable from data the constructor already has, so deriving it is strictly safer than asking both loaders to remember to set it.
-  3. In `objectToVkGeometryKHR`, replace `acceleration_structure_geometry.flags = {};` with `blasGeometryFlags(mesh->hasMaskedMaterial())`.
-  4. Rewrite the `:564-571` comment: state the rule (`eOpaque` unless the mesh carries a MASK material, because `eOpaque` suppresses any-hit invocation entirely) and delete the "a follow-up should…" sentence, which this task is.
-  5. Leave the hit group in `Raytracing.cpp:179-192` alone. The any-hit stage must stay in the pipeline — MASK meshes still need it, and the SBT layout is not changing.
-
-  **Test:** In `blasGeometryLimitsSuite.cpp`, add `BlasGeometryLimitsUnit.MaskMaterialDropsOpaque` and `BlasGeometryLimitsUnit.AllOpaqueMaterialsKeepOpaque`, plus a `static_assert` that `blasGeometryFlags` is usable in a constant expression (matching the existing `static_assert` at `:11`). Add `BlasGeometryLimitsUnit.ASingleMaskMaterialAmongManyOpaqueOnesDropsOpaque` — the mixed-mesh case is the one a naive "check material 0" implementation gets wrong.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
-  (`-FreshContainer`: `Mesh.ixx` is a module interface.) Then
-  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BlasGeometryLimits*`.
-  **If you have an adapter**, also run
-  `--gtest_filter=GoldenRender.MaskCard*:GoldenRender.Raytraced*` — the MASK
-  card must still cut out in RT mode after this change, which is the one way
-  to get the flag backwards and not notice.
-
-  **Context:** This is a performance change with a correctness cliff: setting
-  `eOpaque` on a mesh that *does* carry a MASK material makes
-  `raytrace.rahit.slang` dead code for it and turns the cut-out back into a
-  solid quad — the exact regression batch XV shipped the any-hit shader to
-  fix. That is why the predicate is derived in the `Mesh` constructor from the
-  material vector rather than set by the loaders. Land this **before** the
-  path-tracing task below; it is what keeps that task's candidate-commit loop
-  off the hot path for non-MASK geometry.
-
 - [ ] **(M) Alpha-test MASK materials in the path tracer's ray queries** — `path_tracing.slang` traces both its bounce ray and its NEE shadow ray with `RAY_FLAG_FORCE_OPAQUE`, and a ray query has no any-hit stage, so PT is the last of five shading paths where a glTF MASK cut-out is a solid quad and casts a solid shadow.
 
   **Files to read:**
