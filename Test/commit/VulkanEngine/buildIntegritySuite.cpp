@@ -1063,7 +1063,8 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "textureID", offsetof(ObjMaterial, textureID) },
             { "alphaCutoff", offsetof(ObjMaterial, alphaCutoff) },
             { "uv_transform_row0", offsetof(ObjMaterial, uv_transform_row0) },
-            { "uv_transform_row1", offsetof(ObjMaterial, uv_transform_row1) } } },
+            { "uv_transform_row1", offsetof(ObjMaterial, uv_transform_row1) },
+            { "metallic", offsetof(ObjMaterial, metallic) } } },
         { "Vertex_natural",
           { { "position", offsetof(Vertex, position) },
             { "normal", offsetof(Vertex, normal) },
@@ -2530,6 +2531,52 @@ TEST(BuildIntegrity, EveryBaseColourSampleIsScaledByTheMaterialFactor)
 
     EXPECT_TRUE(violations.empty())
       << violations.size() << " shader(s) do not scale their sampled base colour by the material factor:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+// f0 = mix(0.04, albedo, metallic) is brdf.slang's contract for reflectance
+// at normal incidence (see brdf_direct's doc comment). A shading path that
+// hard-codes the third argument to a 0.0 literal instead of the material's
+// metallic value renders every metal as a dielectric - this was true of
+// rasterizer.slang, deferred.slang and raytrace.rchit.slang until
+// ObjMaterial grew a metallic field. Scans every .slang file (excluding
+// build/) for a `lerp(float3(0.04), <expr>, 0.0)` call and fails if the
+// third argument is still the 0.0 literal rather than a variable.
+TEST(BuildIntegrity, NoShadingPathPinsMetallicToZero)
+{
+    const fs::path slang_root = slangRoot();
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    static const std::regex kPinnedToZero(R"(lerp\(float3\(0\.04\)\s*,[^,]+,\s*0\.0\s*\))");
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
+        if (fs::relative(path, slang_root).generic_string().starts_with("build/")) { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string line;
+        int line_number = 0;
+        while (std::getline(file, line)) {
+            ++line_number;
+            if (std::regex_search(line, kPinnedToZero)) {
+                violations.push_back(fs::relative(path, slang_root).generic_string() + ':'
+                                      + std::to_string(line_number) + ": " + line);
+            }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " shading path(s) pin f0's metallic mix to a 0.0 literal instead of the material's metallic value:"
       << [&violations] {
              std::string joined;
              for (const auto &entry : violations) { joined += "\n  " + entry; }

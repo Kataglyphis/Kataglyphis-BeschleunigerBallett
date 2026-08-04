@@ -116,9 +116,9 @@ void rchit_main(
 
     if (!shadowed)
     {
-        float3 f0 = lerp(float3(0.04), ambient, 0.0);
+        float3 f0 = lerp(float3(0.04), ambient, material.metallic);
         payload.hit_value += brdf_direct(
-            N, V, L, ambient, 0.0, roughness, f0,
+            N, V, L, ambient, material.metallic, roughness, f0,
             lightColor * lightIntensity);
     }
 }

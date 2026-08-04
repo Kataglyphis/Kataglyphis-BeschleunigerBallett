@@ -88,6 +88,23 @@ TEST(ObjParseUnit, UntexturedMtlMaterialsRouteToTheDiffuseFallback)
     }
 }
 
+TEST(ObjParseUnit, MaterialsHaveZeroMetallic)
+{
+    const std::string dino = sceneConfig::resolveModelPath("Models/Dinosaurs/dinosaurs.obj");
+    if (!std::filesystem::exists(dino)) { GTEST_SKIP() << "test model not present"; }
+
+    // Wavefront .mtl has no metallic channel, so every OBJ material must come
+    // back with ObjMaterial's default metallic (0.0) - OBJ scenes stay
+    // bit-identical to their pre-metallic-field rendering.
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu(dino));
+
+    ASSERT_FALSE(loader.getMaterials().empty());
+    for (const auto &material : loader.getMaterials()) {
+        EXPECT_NEAR(material.metallic, 0.0F, 1e-6F) << "an OBJ material must default to metallic 0.0";
+    }
+}
+
 TEST(ObjParseUnit, MultiShapeObjRecordsPerShapeMeshRanges)
 {
     // The OBJ analog of the glTF primitive split (#10): each OBJ shape (`o`/`g`

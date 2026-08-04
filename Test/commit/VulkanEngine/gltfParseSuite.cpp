@@ -648,6 +648,59 @@ TEST(GltfParseUnit, OpaqueMaterialWithoutFactorStillHasFullDissolve)
     EXPECT_NEAR(dissolve, 1.0F, 1e-6F) << "a material without an explicit alpha factor must be fully opaque";
 }
 
+TEST(GltfParseUnit, MetallicFactorReachesTheMaterial)
+{
+    // glTF pbrMetallicRoughness.metallicFactor must carry through to
+    // ObjMaterial::metallic instead of being dropped on the floor - the
+    // loader used to have no metallic-roughness slot at all, so every glTF
+    // metal rendered as a dielectric.
+    const auto path = sceneConfig::resolveModelPath("Models/GltfTest/metallic_card.gltf");
+    if (!std::filesystem::exists(path)) { GTEST_SKIP() << "metallic_card fixture not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(path));
+
+    ASSERT_GT(loader.getMaterials().size(), 0U);
+    EXPECT_NEAR(loader.getMaterials()[0].metallic, 0.75F, 1e-6F)
+      << "the fixture's metallicFactor must reach ObjMaterial::metallic";
+}
+
+TEST(GltfParseUnit, MaterialWithoutPbrMetallicRoughnessHasZeroMetallic)
+{
+    // A material with no pbrMetallicRoughness block at all (cgltf reports
+    // has_pbr_metallic_roughness == 0) must not pick up a stray non-zero
+    // metallic - the fromGltfMaterial() metallic read is gated behind that
+    // same has_pbr_metallic_roughness check as base colour and roughness.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [ {} ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 },
+        "material": 0
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_no_pbr_material.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_GT(loader.getMaterials().size(), 0U);
+    EXPECT_NEAR(loader.getMaterials()[0].metallic, 0.0F, 1e-6F)
+      << "a material without pbrMetallicRoughness must default to metallic 0.0";
+}
+
 TEST(GltfParseUnit, MaskCardFixtureLoadsWithCutoutTextureAndCutoff)
 {
     // mask_card.gltf (a quad + a checkerboard-alpha cut-out PNG, alphaMode MASK /

@@ -70,7 +70,10 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID)
     texColor.rgb *= In.fragmentColor.rgb;
 
     GBufferOut g;
-    g.outNormal = float4(normalize(In.shadingNormal), 1.0);
+    // .w is otherwise unused (GBUFFER_NORMAL_FORMAT is eR16G16B16A16Sfloat,
+    // and lighting_fs_main only ever read normal.xyz) - the free float
+    // channel for metallic, so it does not need its own G-buffer attachment.
+    g.outNormal = float4(normalize(In.shadingNormal), material.metallic);
     g.outAlbedo = texColor;
     // r = roughness, gba = emissive. GBUFFER_MATERIAL_FORMAT is
     // eR8G8B8A8Unorm, so emissive is quantized to 8 bits and clamped to
@@ -127,11 +130,12 @@ float4 lighting_fs_main(LightingVsOut In) : SV_Target
 
     float3 ambient = albedo.rgb;
     float roughness = material.r;
+    float metallic = normal.w;
     float3 lightColor = sceneUBO_lighting.dirLight.color.rgb;
     float lightIntensity = sceneUBO_lighting.dirLight.color.w;
 
-    float3 f0 = lerp(float3(0.04), ambient, 0.0);
-    float3 color = brdf_direct(N, V, L, ambient, 0.0, roughness, f0,
+    float3 f0 = lerp(float3(0.04), ambient, metallic);
+    float3 color = brdf_direct(N, V, L, ambient, metallic, roughness, f0,
                                lightColor * lightIntensity);
 
     float shadow = calc_cascaded_shadow(worldPos.xyz, N, L, sceneUBO_lighting);
