@@ -8114,26 +8114,6 @@ here does.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-- [ ] **(S) Give `cs_reduce_exposure` the non-finite recovery its CPU twin has, and pin the two constants `histogram_constants.rs` forgot** — the shader states it mirrors `adapt_exposure_ev`, which has a tested NaN escape hatch it lacks.
-
-  **Files to read:**
-  - `crates/webgpu_renderer/src/render/auto_exposure.rs` — `EXPOSURE_KEY` (`:37`), the bare `1e-6` literals at `:46` and `:102`, `adapt_exposure_ev`'s non-finite guard (`:130-132`) and its test (`:350-355`)
-  - `crates/webgpu_renderer/src/shaders/histogram.wgsl` — `BLACK_THRESHOLD` (`:17`), `EXPOSURE_KEY` (`:112`), `cs_reduce_exposure` (`:143-199`): `current_ev` read at `:168`, the hold path at `:185`, the blend at `:192-196`
-  - `crates/webgpu_renderer/tests/histogram_constants.rs` — the whole file; `extract_const` (`:25-41`) already parses `1e-6`-style literals
-
-  **Steps:**
-  1. In `auto_exposure.rs`, add `pub const BLACK_THRESHOLD: f32 = 1e-6;` next to `EXPOSURE_KEY` and replace the two inline `1e-6` literals (`:46` in `histogram_bin`, `:102` in `exposure_for_luminance`) with it. Behaviour is unchanged; the point is that the value becomes nameable from the test.
-  2. In `histogram.wgsl`'s `cs_reduce_exposure`, right after `let current_ev = exposure_state[0];` (`:168`), add the mirror of the CPU guard. WGSL has no `is_finite`, so write it as the self-comparison + magnitude test — e.g. `let current_ok = current_ev == current_ev && abs(current_ev) < 1e30;` — and use `select(target_ev, current_ev, current_ok)` in place of `current_ev` at both `:185` and `:194`. Comment it with the same reason the Rust test gives (a NaN that cannot be climbed out of loses every subsequent frame) and cite `auto_exposure.rs:130-132`.
-  3. Add `exposure_key_matches_the_shader` and `black_threshold_matches_the_shader` to `tests/histogram_constants.rs`, in the exact shape of the three existing `*_matches_the_shader` tests, including the "edit both together" failure message.
-
-  **Test:** The two new tests in `tests/histogram_constants.rs` (pure CPU, no `GpuContext`, so they run everywhere). Because the host MSVC linker cannot link `cargo test` binaries, accept this locally with, from `ExternalLib/Kataglyphis-RustProjectTemplate`:
-  `cargo fmt --all -- --check` and `cargo clippy --all-targets --all-features -p kataglyphis_webgpu_renderer -- -D warnings`
-  (clippy type-checks the test target without linking). The always-on Linux lane runs the tests themselves via `Scripts/Linux/run-cargo-tests.sh` on push.
-
-  **Build:** none (Rust only; no CMake preset involved).
-
-  **Context:** `histogram_constants.rs`'s own header explains why it exists: `histogram.wgsl` is the one shader Slang cannot generate, so none of `SlangCompileManifestsAgree` / `CheckedInWgslIsNotOlderThanItsSlangSource` / `CheckedInWgslHasNoHandEdits` cover it, and a drifted constant "just makes the CPU oracle in `tests/histogram.rs` validate the GPU against a mapping the GPU is no longer using". `EXPOSURE_KEY` is the worst one to leave unpinned — it is what "correctly exposed" means on both sides.
-
 ### CI
 
 - [ ] **(M) Run the Rust crate's `rustfmt`/`clippy` on this repo's always-on Linux lane** — the crate is compiled twice here and linted zero times, so edits to `crates/webgpu_renderer` from this working tree get no lint signal until the submodule is pushed separately.
