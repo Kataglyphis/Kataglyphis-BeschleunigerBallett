@@ -20,6 +20,7 @@ namespace {
 
 using Kataglyphis::Test::GoldenMetrics::Crop;
 using Kataglyphis::Test::GoldenMetrics::detail_fraction;
+using Kataglyphis::Test::GoldenMetrics::mean_luminance_in_crop;
 using Kataglyphis::Test::GoldenMetrics::swung_fraction;
 
 constexpr uint32_t WIDTH = 8;
@@ -84,4 +85,25 @@ TEST(GoldenMetrics, DetailFractionIsHighForCheckerboard)
     // Every column boundary within the crop is an edge, so the fraction is
     // close to (but not exactly) 1.0.
     EXPECT_GT(detail_fraction(frame, WIDTH, HEIGHT, detail_safe_crop()), 0.4);
+}
+
+TEST(GoldenMetrics, MeanLuminanceInCropMatchesAFlatImage)
+{
+    const std::vector<uint8_t> frame = flat_frame(128U);
+    EXPECT_NEAR(mean_luminance_in_crop(frame, WIDTH, HEIGHT, full_frame_crop()), 128.0, 1e-9);
+}
+
+TEST(GoldenMetrics, MeanLuminanceInCropIgnoresPixelsOutsideTheCrop)
+{
+    // Black frame with a single bright pixel outside a crop that excludes it:
+    // the crop must read 0, not be dragged up by the pixel it should not see.
+    std::vector<uint8_t> frame = flat_frame(0U);
+    const size_t outside_pixel_base = 0U;// column 0, row 0
+    frame[outside_pixel_base] = 255U;
+    frame[outside_pixel_base + 1U] = 255U;
+    frame[outside_pixel_base + 2U] = 255U;
+    frame[outside_pixel_base + 3U] = 255U;
+
+    const Crop crop_excluding_column_zero{ 1U, WIDTH, 0U, HEIGHT };
+    EXPECT_DOUBLE_EQ(mean_luminance_in_crop(frame, WIDTH, HEIGHT, crop_excluding_column_zero), 0.0);
 }

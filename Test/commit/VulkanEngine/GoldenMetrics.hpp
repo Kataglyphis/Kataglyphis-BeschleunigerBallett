@@ -45,6 +45,23 @@ inline double luminance_of(const std::vector<uint8_t> &rgba, size_t pixel)
            + 0.0722 * static_cast<double>(rgba[base + 2U]);
 }
 
+// Mean Rec. 709 luminance of pixels within `crop`, on a 0..255 scale - the
+// GUI-free counterpart of a whole-frame mean, for goldens that must compare
+// brightness without the ImGui overlay drowning the signal (see
+// panel_free_crop above).
+inline double mean_luminance_in_crop(const std::vector<uint8_t> &rgba, uint32_t w, uint32_t h, Crop crop)
+{
+    double sum = 0.0;
+    size_t count = 0;
+    for (uint32_t y = crop.y0; y < crop.y1; ++y) {
+        for (uint32_t x = crop.x0; x < crop.x1; ++x) {
+            sum += luminance_of(rgba, static_cast<size_t>(y) * w + x);
+            ++count;
+        }
+    }
+    return count > 0U ? sum / static_cast<double>(count) : 0.0;
+}
+
 // Fraction of pixels within `crop` whose colour moves by more than 5 levels
 // (on any channel) between captures `a` and `b`.
 inline double swung_fraction(

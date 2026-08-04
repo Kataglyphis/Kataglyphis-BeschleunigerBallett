@@ -67,6 +67,7 @@ using Kataglyphis::Test::GoldenMetrics::Crop;
 using Kataglyphis::Test::GoldenMetrics::card_crop;
 using Kataglyphis::Test::GoldenMetrics::detail_fraction;
 using Kataglyphis::Test::GoldenMetrics::luminance_of;
+using Kataglyphis::Test::GoldenMetrics::mean_luminance_in_crop;
 using Kataglyphis::Test::GoldenMetrics::panel_free_crop;
 using Kataglyphis::Test::GoldenMetrics::swung_fraction;
 
@@ -272,6 +273,15 @@ constexpr const char *MASK_CARD_MODEL = "Models/GltfTest/mask_card.gltf";
 // PNG - the device-side half of the 2026-07-23 texture-index-misalignment fix.
 constexpr const char *CORRUPT_EMBEDDED_IMAGE_MODEL = "Models/GltfTest/corrupt_embedded_image.gltf";
 constexpr const char *UV_TRANSFORM_MODEL = "Models/GltfTest/uv_transform_card.gltf";
+// Near-black base colour, emissiveFactor (1,1,1) - glows regardless of light.
+constexpr const char *EMISSIVE_CARD_MODEL = "Models/GltfTest/emissive_card.gltf";
+// Same near-black base colour and emissiveFactor as EMISSIVE_CARD_MODEL, plus
+// KHR_materials_emissive_strength = 4.0 - big enough to overflow an 8-bit
+// UNORM G-buffer channel.
+constexpr const char *EMISSIVE_STRENGTH_CARD_MODEL = "Models/GltfTest/emissive_strength_card.gltf";
+// White base colour, textured, non-emissive - the "lit but not glowing"
+// control for EMISSIVE_CARD_MODEL.
+constexpr const char *METALLIC_CARD_MODEL = "Models/GltfTest/metallic_card.gltf";
 
 // Counts spdlog::error (or above) messages logged while alive, by attaching a
 // callback sink to the default logger for the object's lifetime. This is the
@@ -1071,6 +1081,173 @@ TEST(GoldenRender, DeferredMatchesForwardRoughly)
     constexpr double MEAN_ABS_DIFF_LIMIT = 1.0;
     EXPECT_LT(mean_abs_diff, MEAN_ABS_DIFF_LIMIT)
       << "Deferred diverges from forward per-pixel; the paths no longer shade alike.";
+}
+
+// Env-tunable placement shared by the emissive goldens below: the 1x1 card
+// fixtures load at the origin, which - with the default camera at (0,6,26)
+// looking down -Z - projects to screen-centre, squarely behind the opaque
+// ImGui panel (see MaskCardDiscardsCutoutTexelsVisually). Scaling the card up
+// and pushing it right/forward of the origin, exactly as that test does, is
+// what puts it in the GUI-free region GoldenMetrics::card_crop isolates.
+static glm::mat4 emissive_card_placement()
+{
+    const auto env_f = [](const char *name, float fallback) {
+        const char *value = std::getenv(name);
+        return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
+    };
+    return glm::translate(glm::mat4(1.0F),
+             glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
+           * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
+}
+
+// Emission is only a real shading contribution if it actually brightens the
+// frame - EmissiveIsConsumedByEveryShadingPath (buildIntegritySuite.cpp) only
+// checks the shaders reference material.emission as *text*, which would pass
+// unchanged through a shader that reads the value and adds zero. Renders the
+// near-black-base-colour EMISSIVE_CARD_MODEL and the lit-but-non-emissive
+// METALLIC_CARD_MODEL at the same placement over the same shadow-rig backdrop,
+// and asserts the emissive card's own footprint is the brighter of the two.
+TEST(GoldenRender, EmissiveMaterialBrightensTheFrame)
+{
+    SKIP_WITHOUT_GPU();
+
+    {
+        // Probes frame-capture support once, up front, so a lack of it skips
+        // the whole test instead of surfacing as two failed harnesses below -
+        // SKIP_WITHOUT_FRAME_CAPTURE relies on `return` reaching this TEST
+        // function directly, which only holds at this nesting depth (not
+        // inside the per-card lambda further down).
+        ScopedModelOverride rig(SHADOW_RIG_MODEL);
+        EngineHarness probe;
+        SKIP_WITHOUT_FRAME_CAPTURE(probe);
+    }
+
+    const glm::mat4 placement = emissive_card_placement();
+
+    // Each card gets its own harness rather than swapping models mid-harness:
+    // addModel only ever adds, so a second call would leave both cards in
+    // frame and the crop would measure their sum, not either one alone.
+    const auto capture_card_mean = [&placement](const char *card_model, const char *label) {
+        ScopedModelOverride rig(SHADOW_RIG_MODEL);
+        EngineHarness harness;
+
+        harness.useForwardRaster();
+        harness.gui->getGuiSceneSharedVars().shadows_enabled = true;
+        harness.render_frames(WARMUP_FRAMES);
+        if (harness.renderer->hasDeviceLost()) {
+            ADD_FAILURE() << "Device lost while warming up (" << label << ").";
+            return std::optional<double>();
+        }
+
+        const auto added = harness.renderer->addModel(card_model, placement);
+        if (!added.has_value()) {
+            ADD_FAILURE() << "adding the " << label << " card failed";
+            return std::optional<double>();
+        }
+        harness.render_frames(SETTLE_FRAMES);
+        if (harness.renderer->hasDeviceLost()) {
+            ADD_FAILURE() << "Device lost after adding the " << label << " card.";
+            return std::optional<double>();
+        }
+
+        uint32_t width = 0;
+        uint32_t height = 0;
+        const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+        if (frame.empty()) {
+            ADD_FAILURE() << label << " card capture returned no pixels.";
+            return std::optional<double>();
+        }
+        return std::optional<double>(mean_luminance_in_crop(frame, width, height, card_crop(width, height)));
+    };
+
+    const std::optional<double> emissive_mean = capture_card_mean(EMISSIVE_CARD_MODEL, "emissive");
+    ASSERT_TRUE(emissive_mean.has_value());
+    const std::optional<double> metallic_mean = capture_card_mean(METALLIC_CARD_MODEL, "metallic");
+    ASSERT_TRUE(metallic_mean.has_value());
+
+    GTEST_LOG_(INFO) << "card-region mean luminance: emissive " << *emissive_mean << ", metallic " << *metallic_mean;
+
+    // Threshold set from measurement on this rig (RX 9070 XT), not from taste;
+    // re-measure if the rig, placement or camera changes.
+    constexpr double MARGIN = 10.0;
+    EXPECT_GT(*emissive_mean, *metallic_mean + MARGIN)
+      << "The emissive card's own region is not meaningfully brighter than the non-emissive control; "
+         "material.emission is likely not reaching this shading path.";
+}
+
+// The red/green pair for the GBUFFER_MATERIAL_FORMAT task: with the 8-bit
+// UNORM attachment the deferred G-buffer clips a strength-4 emitter's packed
+// emission to 1.0 while the forward pass shades it in full float. ACES
+// tonemapping compresses highlights hard, so a clipped-to-1.0 emitter and a
+// correct 4.0 one do not look dramatically different once captured - this
+// is a real but modest divergence, not a blown-out one (see the measured
+// numbers below). Same instrument as DeferredMatchesForwardRoughly, run
+// instead against a card that actually carries KHR_materials_emissive_strength.
+//
+// Deliberately the shipped debug scene (dinosaur), not SHADOW_RIG_MODEL: measured
+// on this rig, forward vs deferred diverge by ~5.2 mean-abs against the
+// shadow rig's sky-dominated framing REGARDLESS of the card (reproduces with
+// the card removed too) - some pre-existing forward/deferred discrepancy in
+// that backdrop's sky/ambient handling this test is not about. The debug
+// scene's own baseline (DeferredMatchesForwardRoughly) measures 0.41.
+TEST(GoldenRender, EmissiveStrengthSurvivesTheDeferredGBuffer)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = false;
+    harness.gui->getGuiSceneSharedVars().shadows_enabled = true;
+
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    const auto added = harness.renderer->addModel(EMISSIVE_STRENGTH_CARD_MODEL, emissive_card_placement());
+    ASSERT_TRUE(added.has_value()) << "adding the emissive-strength card failed";
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> forward = harness.capture_frame(width, height);
+    ASSERT_FALSE(forward.empty()) << "Forward capture returned no pixels.";
+
+    renderer_vars.rasterizationMode = RasterizationMode::Deferred;
+    harness.render_frames(SETTLE_FRAMES);
+    const std::vector<uint8_t> deferred = harness.capture_frame(width, height);
+    ASSERT_FALSE(deferred.empty()) << "Deferred capture returned no pixels.";
+
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost during capture.";
+    ASSERT_EQ(forward.size(), deferred.size());
+
+    double abs_diff_sum = 0.0;
+    for (size_t i = 0; i < forward.size(); ++i) {
+        abs_diff_sum += std::abs(static_cast<int>(forward[i]) - static_cast<int>(deferred[i]));
+    }
+    const double mean_abs_diff = abs_diff_sum / static_cast<double>(forward.size());
+    GTEST_LOG_(INFO) << "emissive-strength deferred-vs-forward mean abs channel diff: " << mean_abs_diff;
+
+    if (const char *dump = std::getenv("KATAGLYPHIS_EMISSIVE_DUMP")) {
+        const std::string base = dump;
+        const auto stride = static_cast<int>(width) * 4;
+        stbi_write_png((base + "-forward.png").c_str(), int(width), int(height), 4, forward.data(), stride);
+        stbi_write_png((base + "-deferred.png").c_str(), int(width), int(height), 4, deferred.data(), stride);
+    }
+
+    // Threshold set from measurement on this rig (RX 9070 XT), not from
+    // taste: with GBUFFER_MATERIAL_FORMAT at its shipped
+    // eR16G16B16A16Sfloat this measures 0.32; reverting it to
+    // eR8G8B8A8Unorm (which clamps the packed emissive channel to 1.0)
+    // measures 1.18. 0.7 sits cleanly between the two, red-proven by that
+    // revert.
+    constexpr double MEAN_ABS_DIFF_LIMIT = 0.7;
+    EXPECT_LT(mean_abs_diff, MEAN_ABS_DIFF_LIMIT)
+      << "Deferred diverges from forward on the emissive-strength card; the G-buffer attachment is likely "
+         "clipping a strength>1 emitter again.";
 }
 
 // Frustum culling, end to end through the real renderer.
