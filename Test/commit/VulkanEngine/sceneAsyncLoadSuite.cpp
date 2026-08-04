@@ -8,8 +8,9 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
-#include <fstream>
 #include <string>
+
+#include "RepoFiles.hpp"
 
 import kataglyphis.vulkan.scene;
 
@@ -33,18 +34,8 @@ TEST(SceneAsyncLoad, ReloadCancelsAPendingParse)
 namespace {
 namespace fs = std::filesystem;
 
-// Tests run with the repo root as working directory (gtest_discover_tests sets
-// WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}), but be forgiving if that changes.
-fs::path find_repo_root()
-{
-    fs::path candidate = fs::current_path();
-    for (int depth = 0; depth < 6; ++depth) {
-        if (fs::exists(candidate / "Resources" / "ShadersSlang")) { return candidate; }
-        if (!candidate.has_parent_path()) { break; }
-        candidate = candidate.parent_path();
-    }
-    return {};
-}
+using Kataglyphis::TestSupport::readFileText;
+using Kataglyphis::TestSupport::repoRoot;
 }// namespace
 
 // reloadModel() replaces the scene wholesale; if it does not first cancel a
@@ -53,13 +44,13 @@ fs::path find_repo_root()
 // reloaded model and the startup one.
 TEST(BuildIntegrity, ReloadModelCancelsAPendingAsyncParse)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path scene_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "Scene.cpp";
-    std::ifstream file(scene_path);
-    ASSERT_TRUE(static_cast<bool>(file)) << "missing " << scene_path.string();
-    const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    const auto contentsOpt = readFileText(scene_path);
+    ASSERT_TRUE(contentsOpt.has_value()) << "missing " << scene_path.string();
+    const std::string &contents = *contentsOpt;
 
     const std::size_t signature_pos = contents.find("Scene::reloadModel(");
     ASSERT_NE(signature_pos, std::string::npos) << "Scene::reloadModel is no longer defined in " << scene_path.string();

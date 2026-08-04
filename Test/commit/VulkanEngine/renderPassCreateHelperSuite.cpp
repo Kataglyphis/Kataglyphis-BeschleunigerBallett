@@ -11,12 +11,11 @@
 
 #include <array>
 #include <filesystem>
-#include <fstream>
-#include <iterator>
 #include <span>
 #include <string>
 #include <vulkan/vulkan.hpp>
 
+#include "RepoFiles.hpp"
 #include "common/RenderPassHelper.hpp"
 
 using Kataglyphis::buildRenderPassCreateInfo;
@@ -105,25 +104,8 @@ TEST(RenderPassCreateHelperUnit, FlagsAndPNextAreDefaultedSoCallersCanChainTheir
 namespace {
 namespace fs = std::filesystem;
 
-// Tests run with the repo root as working directory (gtest_discover_tests sets
-// WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}), but be forgiving if that changes.
-fs::path find_repo_root()
-{
-    fs::path candidate = fs::current_path();
-    for (int depth = 0; depth < 6; ++depth) {
-        if (fs::exists(candidate / "Resources" / "ShadersSlang")) { return candidate; }
-        if (!candidate.has_parent_path()) { break; }
-        candidate = candidate.parent_path();
-    }
-    return {};
-}
-
-std::string read_file(const fs::path &path)
-{
-    std::ifstream file(path);
-    if (!file) { return {}; }
-    return { std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>() };
-}
+using Kataglyphis::TestSupport::readFileText;
+using Kataglyphis::TestSupport::repoRoot;
 
 }// namespace
 
@@ -134,15 +116,15 @@ std::string read_file(const fs::path &path)
 // depth attachment at all, not that a particular pixel changed.
 TEST(RenderPassCreateHelperUnit, PostAndSkyboxPassesDeclareNoDepthAttachment)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path post_stage_path = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "PostStage.cpp";
     const fs::path sky_box_path =
       repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "sky_box" / "SkyBox.cpp";
 
-    const std::string post_stage_contents = read_file(post_stage_path);
-    const std::string sky_box_contents = read_file(sky_box_path);
+    const std::string post_stage_contents = readFileText(post_stage_path).value_or(std::string{});
+    const std::string sky_box_contents = readFileText(sky_box_path).value_or(std::string{});
     ASSERT_FALSE(post_stage_contents.empty()) << "missing or empty " << post_stage_path.string();
     ASSERT_FALSE(sky_box_contents.empty()) << "missing or empty " << sky_box_path.string();
 
@@ -167,8 +149,8 @@ TEST(RenderPassCreateHelperUnit, PostAndSkyboxPassesDeclareNoDepthAttachment)
     const fs::path deferred_rasterizer_path =
       repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "DeferredRasterizer.cpp";
 
-    const std::string rasterizer_contents = read_file(rasterizer_path);
-    const std::string deferred_rasterizer_contents = read_file(deferred_rasterizer_path);
+    const std::string rasterizer_contents = readFileText(rasterizer_path).value_or(std::string{});
+    const std::string deferred_rasterizer_contents = readFileText(deferred_rasterizer_path).value_or(std::string{});
     ASSERT_FALSE(rasterizer_contents.empty()) << "missing or empty " << rasterizer_path.string();
     ASSERT_FALSE(deferred_rasterizer_contents.empty()) << "missing or empty " << deferred_rasterizer_path.string();
 

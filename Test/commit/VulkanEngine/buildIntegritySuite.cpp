@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "ObjectDescription.hpp"
+#include "RepoFiles.hpp"
 #include "common/host_device_shared_vars.hpp"
 #include "renderer/GlobalUBO.hpp"
 #include "renderer/PathTracingDispatch.hpp"
@@ -49,18 +50,10 @@ namespace {
 
 namespace fs = std::filesystem;
 
-// Tests run with the repo root as working directory (gtest_discover_tests sets
-// WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}), but be forgiving if that changes.
-fs::path find_repo_root()
-{
-    fs::path candidate = fs::current_path();
-    for (int depth = 0; depth < 6; ++depth) {
-        if (fs::exists(candidate / "Resources" / "ShadersSlang")) { return candidate; }
-        if (!candidate.has_parent_path()) { break; }
-        candidate = candidate.parent_path();
-    }
-    return {};
-}
+using Kataglyphis::TestSupport::readFileText;
+using Kataglyphis::TestSupport::repoRoot;
+using Kataglyphis::TestSupport::slangRoot;
+using Kataglyphis::TestSupport::spirvRoot;
 
 // compile-slang-shaders.ps1 names each compiled artifact
 // "<source-stem>.<entry-point>.<ext>", where <source-stem> is the .slang
@@ -241,7 +234,7 @@ std::optional<ShaderManifestData> parse_shader_manifest(const fs::path &manifest
 const std::optional<ShaderManifestData> &shader_manifest(const fs::path &repo_root)
 {
     static const std::optional<ShaderManifestData> cached =
-      parse_shader_manifest(repo_root / "Resources" / "ShadersSlang" / "shader-manifest.json");
+      parse_shader_manifest(slangRoot() / "shader-manifest.json");
     return cached;
 }
 
@@ -251,10 +244,9 @@ const std::optional<ShaderManifestData> &shader_manifest(const fs::path &repo_ro
 // manifest and must not be expected to have a matching .spv.
 bool has_entry_point(const fs::path &slang_source)
 {
-    std::ifstream file(slang_source);
-    if (!file) { return false; }
-    const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    return content.find("[shader(") != std::string::npos;
+    const auto content = readFileText(slang_source);
+    if (!content) { return false; }
+    return content->find("[shader(") != std::string::npos;
 }
 
 // True if some .spv directly under spirv_root's mirror of source's directory
@@ -878,9 +870,9 @@ std::string spirv_literal_string(const std::vector<uint32_t> &words, std::size_t
 std::optional<std::map<std::string, std::map<std::string, uint32_t>>> parse_spirv_member_offsets(
   const fs::path &spv_path)
 {
-    std::ifstream file(spv_path, std::ios::binary);
-    if (!file) { return std::nullopt; }
-    const std::vector<char> raw((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    const auto text = readFileText(spv_path);
+    if (!text) { return std::nullopt; }
+    const std::vector<char> raw(text->begin(), text->end());
     if (raw.size() < kSpirvHeaderWordCount * sizeof(uint32_t) || raw.size() % sizeof(uint32_t) != 0) {
         return std::nullopt;
     }
@@ -972,9 +964,9 @@ struct SpirvEntryPointInfo
 
 std::optional<SpirvEntryPointInfo> parse_spirv_entry_point_info(const fs::path &spv_path)
 {
-    std::ifstream file(spv_path, std::ios::binary);
-    if (!file) { return std::nullopt; }
-    const std::vector<char> raw((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    const auto text = readFileText(spv_path);
+    if (!text) { return std::nullopt; }
+    const std::vector<char> raw(text->begin(), text->end());
     if (raw.size() < kSpirvHeaderWordCount * sizeof(uint32_t) || raw.size() % sizeof(uint32_t) != 0) {
         return std::nullopt;
     }
@@ -1106,14 +1098,6 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
     };
 }
 
-// Reads `path` in full, or std::nullopt if it cannot be opened.
-std::optional<std::string> read_file_text(const fs::path &path)
-{
-    std::ifstream file(path, std::ios::binary);
-    if (!file) { return std::nullopt; }
-    return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-}
-
 // Finds the definition of `qualified_name(...)` in `text` (e.g.
 // "Kataglyphis::VulkanBuffer::create") and returns the first non-comment,
 // non-blank statement in its body, or std::nullopt if the function or its
@@ -1200,11 +1184,11 @@ std::optional<std::pair<std::size_t, std::size_t>> function_body_span(
 // older than the .slang source it was compiled from.
 TEST(BuildIntegrity, CompiledShadersAreNotOlderThanTheirSources)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
-    const fs::path spirv_root = slang_root / "build" / "spirv";
+    const fs::path slang_root = slangRoot();
+    const fs::path spirv_root = spirvRoot();
     ASSERT_TRUE(fs::exists(spirv_root)) << "missing " << spirv_root.string();
 
     std::vector<std::string> stale;
@@ -1254,11 +1238,11 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanTheirSources)
 // invalidates every output); this guards that behaviour.
 TEST(BuildIntegrity, CompiledShadersAreNotOlderThanSharedIncludes)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty());
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
-    const fs::path spirv_root = slang_root / "build" / "spirv";
+    const fs::path slang_root = slangRoot();
+    const fs::path spirv_root = spirvRoot();
     ASSERT_TRUE(fs::exists(spirv_root));
 
     fs::file_time_type newest_import{};
@@ -1289,11 +1273,11 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanSharedIncludes)
 // Fragment-stage module.
 TEST(BuildIntegrity, NoImplicitLodImageInstructionsOutsideFragmentShaders)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
-    const fs::path spirv_root = slang_root / "build" / "spirv";
+    const fs::path slang_root = slangRoot();
+    const fs::path spirv_root = spirvRoot();
     if (!fs::exists(spirv_root)) { GTEST_SKIP() << "missing " << spirv_root.string() << " - shaders have not been compiled"; }
 
     constexpr uint32_t kFragmentExecutionModel = 4;
@@ -1339,7 +1323,7 @@ TEST(BuildIntegrity, NoImplicitLodImageInstructionsOutsideFragmentShaders)
 // need a device.
 TEST(BuildIntegrity, ResourceCreateReleasesThePreviousAllocation)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path vulkan_base_dir = repo_root / "Src" / "GraphicsEngineVulkan" / "vulkan_base";
@@ -1359,7 +1343,7 @@ TEST(BuildIntegrity, ResourceCreateReleasesThePreviousAllocation)
     };
 
     for (const auto &target : targets) {
-        const auto text = read_file_text(target.source);
+        const auto text = readFileText(target.source);
         ASSERT_TRUE(text.has_value()) << "could not read " << target.source.string();
 
         const auto first_statement = first_statement_of_function(*text, target.qualified_name);
@@ -1381,11 +1365,11 @@ TEST(BuildIntegrity, ResourceCreateReleasesThePreviousAllocation)
 // GPU-resource half of cleanUp(), so the release lives in create() itself.
 TEST(BuildIntegrity, DescriptorSetGroupCreateReleasesThePreviousAllocation)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path source = repo_root / "Src" / "GraphicsEngineVulkan" / "vulkan_base" / "DescriptorSetGroup.cpp";
-    const auto text = read_file_text(source);
+    const auto text = readFileText(source);
     ASSERT_TRUE(text.has_value()) << "could not read " << source.string();
 
     const auto first_statement = first_statement_of_function(*text, "Kataglyphis::DescriptorSetGroup::create");
@@ -1407,7 +1391,7 @@ TEST(BuildIntegrity, DescriptorSetGroupCreateReleasesThePreviousAllocation)
 // comment for why (a behavioural test would need a device).
 TEST(BuildIntegrity, ViewIsReleasedBeforeItsImageOnRecreate)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path scene_dir = repo_root / "Src" / "GraphicsEngineVulkan" / "scene";
@@ -1425,7 +1409,7 @@ TEST(BuildIntegrity, ViewIsReleasedBeforeItsImageOnRecreate)
     };
 
     for (const auto &target : targets) {
-        const auto text = read_file_text(target.source);
+        const auto text = readFileText(target.source);
         ASSERT_TRUE(text.has_value()) << "could not read " << target.source.string();
 
         const std::size_t release_pos = text->find(target.release_needle);
@@ -1485,11 +1469,11 @@ TEST(BuildIntegrity, GlmProducesVulkanDepthRange)
 // unnoticed until pipeline creation.
 TEST(BuildIntegrity, EveryShaderSourceHasCompiledBinary)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty());
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
-    const fs::path spirv_root = slang_root / "build" / "spirv";
+    const fs::path slang_root = slangRoot();
+    const fs::path spirv_root = spirvRoot();
 
     const auto &manifest = shader_manifest(repo_root);
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
@@ -1581,11 +1565,11 @@ std::vector<std::pair<std::string, std::string>> collect_spirv_paths_referenced_
 // caller does.
 TEST(BuildIntegrity, ActivePipelineShadersHaveCompiledBinaries)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty());
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
-    const fs::path spirv_root = slang_root / "build" / "spirv";
+    const fs::path slang_root = slangRoot();
+    const fs::path spirv_root = spirvRoot();
 
     const auto referenced = collect_spirv_paths_referenced_by_sources(repo_root);
     // Guards against the scanner silently finding nothing - the failure mode
@@ -1625,12 +1609,12 @@ TEST(BuildIntegrity, ActivePipelineShadersHaveCompiledBinaries)
 // unchecked.
 TEST(BuildIntegrity, HostAndShaderSharedConstantsAgree)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const auto host = parse_int_constants(repo_root / "Src" / "GraphicsEngineVulkan" / "common"
                                            / "host_device_shared_vars.hpp");
-    const auto shader = parse_int_constants(repo_root / "Resources" / "ShadersSlang" / "common" / "scene_types.slang");
+    const auto shader = parse_int_constants(slangRoot() / "common" / "scene_types.slang");
 
     for (const auto &name : kSharedConstantNames) {
         ASSERT_TRUE(host.contains(name)) << name << " not found (or not parseable) in host_device_shared_vars.hpp";
@@ -1648,10 +1632,10 @@ TEST(BuildIntegrity, HostAndShaderSharedConstantsAgree)
 // Slang-side values against the constants the compiler actually produced.
 TEST(BuildIntegrity, SharedConstantsMatchTheCompiledHostValues)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const auto shader = parse_int_constants(repo_root / "Resources" / "ShadersSlang" / "common" / "scene_types.slang");
+    const auto shader = parse_int_constants(slangRoot() / "common" / "scene_types.slang");
     for (const auto &name : kSharedConstantNames) {
         ASSERT_TRUE(shader.contains(name)) << name << " not found (or not parseable) in scene_types.slang";
     }
@@ -1679,7 +1663,7 @@ TEST(BuildIntegrity, SharedConstantsMatchTheCompiledHostValues)
 // actually exists.
 TEST(BuildIntegrity, WindowsCiExcludesExactlyTheGpuSuites)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path workflow_path = repo_root / ".github" / "workflows" / "Windows.yml";
@@ -1726,7 +1710,7 @@ TEST(BuildIntegrity, WindowsCiExcludesExactlyTheGpuSuites)
 // run in CI, and nothing says so.
 TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const std::vector<std::string> declared_targets =
@@ -1796,7 +1780,7 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
 // engine-surface coverage.
 TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const std::vector<std::string> declared_targets =
@@ -1902,7 +1886,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
 // a clean quit. This stops that shape from silently coming back.
 TEST(BuildIntegrity, EveryHostRunnerPropagatesTheApplicationExitCode)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path scripts_dir = repo_root / "Scripts" / "Windows";
@@ -1962,7 +1946,7 @@ TEST(BuildIntegrity, EveryHostRunnerPropagatesTheApplicationExitCode)
 // comparator.
 TEST(BuildIntegrity, PerfBaselineCoversEveryRegisteredBenchmark)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const std::vector<std::string> declared_benchmarks =
@@ -2040,10 +2024,10 @@ TEST(BuildIntegrity, PerfBaselineCoversEveryRegisteredBenchmark)
 // (task 3 below).
 TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path slang_root = slangRoot();
 
     const auto &manifest = shader_manifest(repo_root);
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
@@ -2103,7 +2087,7 @@ TEST(BuildIntegrity, CheckedInWgslIsNotOlderThanItsSlangSource)
 // next compile-slang-shaders run silently drops it. Catch it here instead.
 TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const auto &manifest = shader_manifest(repo_root);
@@ -2168,7 +2152,7 @@ TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)
 // are skipped.
 TEST(BuildIntegrity, CheckedInWgslVaryingStructsCarryLocations)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const auto &manifest = shader_manifest(repo_root);
@@ -2259,7 +2243,7 @@ TEST(BuildIntegrity, CheckedInWgslVaryingStructsCarryLocations)
 // here instead - the scripts compare the leading MAJOR.MINOR only.
 TEST(BuildIntegrity, ShaderManifestPinsAMinimumSlangcVersionForWgsl)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const auto &manifest = shader_manifest(repo_root);
@@ -2293,10 +2277,10 @@ TEST(BuildIntegrity, ShaderManifestPinsAMinimumSlangcVersionForWgsl)
 //       basename exists under Resources/ShadersSlang/.
 TEST(BuildIntegrity, SourceCommentsDoNotReferenceDeletedShaderFiles)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path slang_root = slangRoot();
     ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
 
     std::set<std::string> real_slang_basenames;
@@ -2406,7 +2390,7 @@ TEST(BuildIntegrity, SourceCommentsDoNotReferenceDeletedShaderFiles)
 // drift cannot silently come back.
 TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     static const std::array<const char *, 3> kShaders = {
@@ -2421,10 +2405,9 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
     std::vector<std::string> violations;
     for (const char *relative_path : kShaders) {
         const fs::path path = repo_root / relative_path;
-        std::ifstream file(path);
-        ASSERT_TRUE(file) << "missing " << path.string();
-
-        std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        const auto textOpt = readFileText(path);
+        ASSERT_TRUE(textOpt.has_value()) << "missing " << path.string();
+        const std::string &text = *textOpt;
 
         if (text.find(kSharedPredicate) == std::string::npos) {
             violations.push_back(std::string(relative_path) + ": does not call " + kSharedPredicate);
@@ -2455,9 +2438,9 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
     // above silently loses the factor half of that product again.
     {
         const fs::path path = repo_root / "Resources/ShadersSlang/common/material_fetch.slang";
-        std::ifstream file(path);
-        ASSERT_TRUE(file) << "missing " << path.string();
-        std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        const auto textOpt = readFileText(path);
+        ASSERT_TRUE(textOpt.has_value()) << "missing " << path.string();
+        const std::string &text = *textOpt;
 
         const std::size_t fn_start = text.find("bool alpha_masked_out(");
         ASSERT_NE(fn_start, std::string::npos) << "alpha_masked_out() definition not found in " << path.string();
@@ -2490,7 +2473,7 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
 // again the way forward.slang's reference path never did.
 TEST(BuildIntegrity, EveryBaseColourSampleIsScaledByTheMaterialFactor)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     static const std::array<const char *, 4> kShaders = {
@@ -2564,7 +2547,7 @@ TEST(BuildIntegrity, EveryBaseColourSampleIsScaledByTheMaterialFactor)
 // transform_uv( on the same line.
 TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     static const std::array<const char *, 5> kShaders = {
@@ -2619,7 +2602,7 @@ TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
 // raster path stops consuming material.emission.
 TEST(BuildIntegrity, EmissiveIsConsumedByTheRasterShadingPaths)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     static const char *kFailureMessage =
@@ -2627,23 +2610,23 @@ TEST(BuildIntegrity, EmissiveIsConsumedByTheRasterShadingPaths)
       "black";
 
     const fs::path scene_types_path = repo_root / "Resources/ShadersSlang/common/scene_types.slang";
-    std::ifstream scene_types_file(scene_types_path);
-    ASSERT_TRUE(static_cast<bool>(scene_types_file)) << "could not open " << scene_types_path.string();
-    std::string scene_types_text((std::istreambuf_iterator<char>(scene_types_file)), std::istreambuf_iterator<char>());
+    const auto scene_types_text_opt = readFileText(scene_types_path);
+    ASSERT_TRUE(scene_types_text_opt.has_value()) << "could not open " << scene_types_path.string();
+    const std::string &scene_types_text = *scene_types_text_opt;
     EXPECT_NE(scene_types_text.find("float3 emission"), std::string::npos)
       << "scene_types.slang no longer declares ObjMaterial::emission. " << kFailureMessage;
 
     const fs::path rasterizer_path = repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang";
-    std::ifstream rasterizer_file(rasterizer_path);
-    ASSERT_TRUE(static_cast<bool>(rasterizer_file)) << "could not open " << rasterizer_path.string();
-    std::string rasterizer_text((std::istreambuf_iterator<char>(rasterizer_file)), std::istreambuf_iterator<char>());
+    const auto rasterizer_text_opt = readFileText(rasterizer_path);
+    ASSERT_TRUE(rasterizer_text_opt.has_value()) << "could not open " << rasterizer_path.string();
+    const std::string &rasterizer_text = *rasterizer_text_opt;
     EXPECT_NE(rasterizer_text.find(".emission"), std::string::npos)
       << "rasterizer.slang no longer uses material.emission. " << kFailureMessage;
 
     const fs::path deferred_path = repo_root / "Resources/ShadersSlang/deferred/deferred.slang";
-    std::ifstream deferred_file(deferred_path);
-    ASSERT_TRUE(static_cast<bool>(deferred_file)) << "could not open " << deferred_path.string();
-    std::string deferred_text((std::istreambuf_iterator<char>(deferred_file)), std::istreambuf_iterator<char>());
+    const auto deferred_text_opt = readFileText(deferred_path);
+    ASSERT_TRUE(deferred_text_opt.has_value()) << "could not open " << deferred_path.string();
+    const std::string &deferred_text = *deferred_text_opt;
     EXPECT_NE(deferred_text.find("outMaterial = float4(clamp(sqrt(2.0 / (material.shininess + 2.0)), 0.045, 1.0), "
                                   "material.emission)"),
               std::string::npos)
@@ -2674,10 +2657,10 @@ TEST(BuildIntegrity, EmissiveIsConsumedByTheRasterShadingPaths)
 // exists to catch.
 TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path slang_root = slangRoot();
     ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
 
     const fs::path scene_types_relative = fs::path("common") / "scene_types.slang";
@@ -2755,13 +2738,13 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
 // edit cannot silently drop one half of the double lock.
 TEST(BuildIntegrity, CascadedShadowClampsBothItsUboCounts)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path shadow_path = repo_root / "Resources" / "ShadersSlang" / "common" / "cascaded_shadow.slang";
-    std::ifstream file(shadow_path);
-    ASSERT_TRUE(file) << "missing " << shadow_path.string();
-    const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    const fs::path shadow_path = slangRoot() / "common" / "cascaded_shadow.slang";
+    const auto contentOpt = readFileText(shadow_path);
+    ASSERT_TRUE(contentOpt.has_value()) << "missing " << shadow_path.string();
+    const std::string &content = *contentOpt;
 
     EXPECT_NE(content.find("clamp(int(sceneUBO.numCascades), 0, MAX_CASCADES)"), std::string::npos)
       << "cascaded_shadow.slang must clamp numCascades to MAX_CASCADES before indexing "
@@ -2783,11 +2766,11 @@ TEST(BuildIntegrity, CascadedShadowClampsBothItsUboCounts)
 // only kind of coverage available for a path that needs a device.
 TEST(BuildIntegrity, ShadowLightMatricesAreProvisionedInOnePlace)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path source = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
-    const auto text = read_file_text(source);
+    const auto text = readFileText(source);
     ASSERT_TRUE(text.has_value()) << "could not read " << source.string();
     const std::string &content = *text;
 
@@ -2830,10 +2813,10 @@ TEST(BuildIntegrity, ShadowLightMatricesAreProvisionedInOnePlace)
 // warning documents.
 TEST(BuildIntegrity, TextureSlotClampHasOneDefinition)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path slang_root = slangRoot();
     ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
 
     static const std::string kClampLiteral = "MAX_TEXTURE_COUNT - 1)";
@@ -2849,7 +2832,7 @@ TEST(BuildIntegrity, TextureSlotClampHasOneDefinition)
         const std::string relative_path = fs::relative(path, slang_root).generic_string();
         if (relative_path.starts_with("build/")) { continue; }
 
-        const auto text = read_file_text(path);
+        const auto text = readFileText(path);
         if (!text.has_value() || text->find(kClampLiteral) == std::string::npos) { continue; }
 
         if (relative_path == scene_types_relative.generic_string()) {
@@ -2879,10 +2862,10 @@ TEST(BuildIntegrity, TextureSlotClampHasOneDefinition)
 // happen right where the field is read, inside normalize(...).
 TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path slang_root = slangRoot();
     ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
 
     static const std::string kMarker = "dirLight.direction";
@@ -2964,24 +2947,23 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
 // "Threshold bloom in post-exposure units" entry for the reasoning.
 TEST(BuildIntegrity, BloomAndTonemapAgreeOnWhereExposureIsApplied)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path bloom_path = repo_root / "Resources" / "ShadersSlang" / "bloom" / "bloom.slang";
-    std::ifstream bloom_file(bloom_path);
-    ASSERT_TRUE(bloom_file) << "missing " << bloom_path.string();
-    const std::string bloom_source((std::istreambuf_iterator<char>(bloom_file)), std::istreambuf_iterator<char>());
+    const fs::path bloom_path = slangRoot() / "bloom" / "bloom.slang";
+    const auto bloom_source_opt = readFileText(bloom_path);
+    ASSERT_TRUE(bloom_source_opt.has_value()) << "missing " << bloom_path.string();
+    const std::string &bloom_source = *bloom_source_opt;
 
     EXPECT_NE(bloom_source.find("exposureState"), std::string::npos)
       << "bloom.slang must read exposureState so fs_brightpass thresholds the exposed HDR value, not the raw "
          "one: "
       << bloom_path.string();
 
-    const fs::path tonemap_path = repo_root / "Resources" / "ShadersSlang" / "tonemap" / "tonemap.slang";
-    std::ifstream tonemap_file(tonemap_path);
-    ASSERT_TRUE(tonemap_file) << "missing " << tonemap_path.string();
-    const std::string tonemap_source(
-      (std::istreambuf_iterator<char>(tonemap_file)), std::istreambuf_iterator<char>());
+    const fs::path tonemap_path = slangRoot() / "tonemap" / "tonemap.slang";
+    const auto tonemap_source_opt = readFileText(tonemap_path);
+    ASSERT_TRUE(tonemap_source_opt.has_value()) << "missing " << tonemap_path.string();
+    const std::string &tonemap_source = *tonemap_source_opt;
 
     static const std::string kCompositeCall = "aces_tonemap(";
     const std::size_t call_pos = tonemap_source.find(kCompositeCall);
@@ -3033,10 +3015,10 @@ TEST(BuildIntegrity, BloomAndTonemapAgreeOnWhereExposureIsApplied)
 
 TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path slang_root = slangRoot();
     ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
 
     static const std::string kMarker = "SampleCmpLevelZero(";
@@ -3403,10 +3385,10 @@ const std::string kUnreachableSlangMarkerPrefix = "UNREACHABLE_SLANG_FUNCTION_OK
 // kUnreachableSlangAllowlist above rather than deleting the function.
 TEST(BuildIntegrity, EverySlangFunctionIsReachableFromAnEntryPoint)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path slang_root = slangRoot();
     ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
 
     const std::vector<SlangFunctionDef> functions = collect_slang_functions(slang_root);
@@ -3617,10 +3599,10 @@ std::set<std::string> slang_function_names_reachable_from_source(const std::vect
 // the first place.
 TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path slang_root = slangRoot();
     const auto &manifest = shader_manifest(repo_root);
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
 
@@ -3637,9 +3619,9 @@ TEST(BuildIntegrity, EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl)
         const fs::path dest = repo_root / mapping.dst_dir / mapping.wgsl_file;
         if (!fs::exists(dest)) { continue; }// RustProjectTemplate submodule not checked out here
 
-        std::ifstream dest_file(dest);
-        ASSERT_TRUE(static_cast<bool>(dest_file)) << "could not open " << dest.string();
-        const std::string dest_text((std::istreambuf_iterator<char>(dest_file)), std::istreambuf_iterator<char>());
+        const auto dest_text_opt = readFileText(dest);
+        ASSERT_TRUE(dest_text_opt.has_value()) << "could not open " << dest.string();
+        const std::string &dest_text = *dest_text_opt;
 
         const std::set<std::string> file_set = resolve_slang_import_closure(slang_root, mapping.slang_source);
         const std::set<std::string> reachable_names =
@@ -3795,10 +3777,10 @@ std::optional<std::string> resolve_slang_module(const std::map<std::string, std:
 // any comment justifying it) is stale and should be deleted.
 TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path slang_root = slangRoot();
     ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
 
     const std::vector<std::string> all_relative_paths = collect_all_slang_relative_paths(slang_root);
@@ -3891,10 +3873,10 @@ TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
 // aging invisibly.
 TEST(BuildIntegrity, EverySlangSourceWithAnEntryPointHasAnEnabledManifestRow)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path slang_root = slangRoot();
     ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
 
     const auto &manifest = shader_manifest(repo_root);
@@ -3938,10 +3920,10 @@ TEST(BuildIntegrity, EverySlangSourceWithAnEntryPointHasAnEnabledManifestRow)
 // and it names the drift it prevents.
 TEST(BuildIntegrity, NoGeneratedWgslSourceClaimsToMirrorItsOutput)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path slang_root = slangRoot();
     const auto &manifest = shader_manifest(repo_root);
     ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
     ASSERT_GE(manifest->wgsl_map.size(), 5U) << "found only " << manifest->wgsl_map.size()
@@ -3949,10 +3931,9 @@ TEST(BuildIntegrity, NoGeneratedWgslSourceClaimsToMirrorItsOutput)
 
     std::vector<std::string> violations;
     for (const auto &mapping : manifest->wgsl_map) {
-        std::ifstream file(slang_root / mapping.slang_source);
-        ASSERT_TRUE(static_cast<bool>(file)) << "could not open " << mapping.slang_source;
-        const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        if (content.find("Mirrors ") != std::string::npos) { violations.push_back(mapping.slang_source); }
+        const auto content = readFileText(slang_root / mapping.slang_source);
+        ASSERT_TRUE(content.has_value()) << "could not open " << mapping.slang_source;
+        if (content->find("Mirrors ") != std::string::npos) { violations.push_back(mapping.slang_source); }
     }
 
     EXPECT_TRUE(violations.empty())
@@ -4060,7 +4041,7 @@ std::map<std::string, std::set<std::string>> collect_module_importers(const std:
 // weight.
 TEST(BuildIntegrity, EveryModuleInterfaceIsImported)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src";
@@ -4233,7 +4214,7 @@ TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
     EXPECT_TRUE(looks_like_query_call("  auto x = d.getSurfaceFormatsKHR(*s).value;"));
     EXPECT_FALSE(looks_like_query_call("  auto x = getter(y).value;"));
 
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path engine_root = repo_root / "Src" / "GraphicsEngineVulkan";
@@ -4363,7 +4344,7 @@ std::string declared_command_buffer_name(const std::vector<std::string> &lines, 
 // mirroring VulkanCreationResultsAreChecked's window-scan shape above.
 TEST(BuildIntegrity, EveryBeginCommandBufferResultIsChecked)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src";
@@ -4435,7 +4416,7 @@ TEST(BuildIntegrity, EveryBeginCommandBufferResultIsChecked)
 // nothing to unwind on failure and legitimately discard the result.
 TEST(BuildIntegrity, EveryEndAndSubmitCommandBufferResultIsChecked)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src";
@@ -4496,15 +4477,14 @@ TEST(BuildIntegrity, EveryEndAndSubmitCommandBufferResultIsChecked)
 // texture path no longer has an escaping null.
 TEST(BuildIntegrity, CommandBufferFailurePathsDoNotLeaveHalfBuiltResources)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path as_manager_path =
       repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "accelerationStructures" / "ASManager.cpp";
-    std::ifstream as_manager_file(as_manager_path);
-    ASSERT_TRUE(as_manager_file) << "missing " << as_manager_path.string();
-    std::string as_manager_source(
-      (std::istreambuf_iterator<char>(as_manager_file)), std::istreambuf_iterator<char>());
+    const auto as_manager_source_opt = readFileText(as_manager_path);
+    ASSERT_TRUE(as_manager_source_opt.has_value()) << "missing " << as_manager_path.string();
+    const std::string &as_manager_source = *as_manager_source_opt;
 
     EXPECT_NE(as_manager_source.find("bool Kataglyphis::VulkanRendererInternals::ASManager::createBLAS("),
       std::string::npos)
@@ -4532,9 +4512,9 @@ TEST(BuildIntegrity, CommandBufferFailurePathsDoNotLeaveHalfBuiltResources)
 
     const fs::path clouds_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "atmospheric_effects"
                                   / "clouds" / "Clouds.cpp";
-    std::ifstream clouds_file(clouds_path);
-    ASSERT_TRUE(clouds_file) << "missing " << clouds_path.string();
-    std::string clouds_source((std::istreambuf_iterator<char>(clouds_file)), std::istreambuf_iterator<char>());
+    const auto clouds_source_opt = readFileText(clouds_path);
+    ASSERT_TRUE(clouds_source_opt.has_value()) << "missing " << clouds_path.string();
+    const std::string &clouds_source = *clouds_source_opt;
 
     EXPECT_EQ(clouds_source.find("return nullptr;"), std::string::npos)
       << "Clouds.cpp must not return a null texture from createStorageTexture - a half-initialized clouds "
@@ -4550,14 +4530,13 @@ TEST(BuildIntegrity, CommandBufferFailurePathsDoNotLeaveHalfBuiltResources)
 // must forward uploadRgba's bool instead of swallowing it as void.
 TEST(BuildIntegrity, TextureUploadConsumesTheSubmitResult)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path texture_cpp_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "Texture.cpp";
-    std::ifstream texture_cpp_file(texture_cpp_path);
-    ASSERT_TRUE(texture_cpp_file) << "missing " << texture_cpp_path.string();
-    std::string texture_cpp_source(
-      (std::istreambuf_iterator<char>(texture_cpp_file)), std::istreambuf_iterator<char>());
+    const auto texture_cpp_source_opt = readFileText(texture_cpp_path);
+    ASSERT_TRUE(texture_cpp_source_opt.has_value()) << "missing " << texture_cpp_path.string();
+    const std::string &texture_cpp_source = *texture_cpp_source_opt;
 
     const std::size_t call_pos = texture_cpp_source.find("endAndSubmitCommandBuffer(");
     ASSERT_NE(call_pos, std::string::npos) << "could not locate endAndSubmitCommandBuffer( call in Texture.cpp";
@@ -4569,10 +4548,9 @@ TEST(BuildIntegrity, TextureUploadConsumesTheSubmitResult)
          "discarding it with static_cast<void> - a failed upload must not be reported as a successful texture";
 
     const fs::path texture_ixx_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "Texture.ixx";
-    std::ifstream texture_ixx_file(texture_ixx_path);
-    ASSERT_TRUE(texture_ixx_file) << "missing " << texture_ixx_path.string();
-    std::string texture_ixx_source(
-      (std::istreambuf_iterator<char>(texture_ixx_file)), std::istreambuf_iterator<char>());
+    const auto texture_ixx_source_opt = readFileText(texture_ixx_path);
+    ASSERT_TRUE(texture_ixx_source_opt.has_value()) << "missing " << texture_ixx_path.string();
+    const std::string &texture_ixx_source = *texture_ixx_source_opt;
 
     EXPECT_NE(texture_ixx_source.find("bool createDefaultTexture("), std::string::npos)
       << "Texture::createDefaultTexture must be declared returning bool, forwarding uploadRgba's failure to "
@@ -4589,15 +4567,14 @@ TEST(BuildIntegrity, TextureUploadConsumesTheSubmitResult)
 // vanish silently.
 TEST(BuildIntegrity, GeometryAndCubemapUploadsConsumeTheSubmitResult)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path buffer_manager_cpp_path =
       repo_root / "Src" / "GraphicsEngineVulkan" / "vulkan_base" / "VulkanBufferManager.cpp";
-    std::ifstream buffer_manager_cpp_file(buffer_manager_cpp_path);
-    ASSERT_TRUE(buffer_manager_cpp_file) << "missing " << buffer_manager_cpp_path.string();
-    std::string buffer_manager_cpp_source(
-      (std::istreambuf_iterator<char>(buffer_manager_cpp_file)), std::istreambuf_iterator<char>());
+    const auto buffer_manager_cpp_source_opt = readFileText(buffer_manager_cpp_path);
+    ASSERT_TRUE(buffer_manager_cpp_source_opt.has_value()) << "missing " << buffer_manager_cpp_path.string();
+    const std::string &buffer_manager_cpp_source = *buffer_manager_cpp_source_opt;
 
     {
         const std::size_t call_pos = buffer_manager_cpp_source.find("endAndSubmitCommandBuffer(");
@@ -4614,10 +4591,9 @@ TEST(BuildIntegrity, GeometryAndCubemapUploadsConsumeTheSubmitResult)
 
     const fs::path sky_box_cpp_path =
       repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "sky_box" / "SkyBox.cpp";
-    std::ifstream sky_box_cpp_file(sky_box_cpp_path);
-    ASSERT_TRUE(sky_box_cpp_file) << "missing " << sky_box_cpp_path.string();
-    std::string sky_box_cpp_source(
-      (std::istreambuf_iterator<char>(sky_box_cpp_file)), std::istreambuf_iterator<char>());
+    const auto sky_box_cpp_source_opt = readFileText(sky_box_cpp_path);
+    ASSERT_TRUE(sky_box_cpp_source_opt.has_value()) << "missing " << sky_box_cpp_path.string();
+    const std::string &sky_box_cpp_source = *sky_box_cpp_source_opt;
 
     {
         const std::size_t call_pos = sky_box_cpp_source.find("endAndSubmitCommandBuffer(");
@@ -4633,10 +4609,9 @@ TEST(BuildIntegrity, GeometryAndCubemapUploadsConsumeTheSubmitResult)
 
     const fs::path buffer_manager_ixx_path =
       repo_root / "Src" / "GraphicsEngineVulkan" / "vulkan_base" / "VulkanBufferManager.ixx";
-    std::ifstream buffer_manager_ixx_file(buffer_manager_ixx_path);
-    ASSERT_TRUE(buffer_manager_ixx_file) << "missing " << buffer_manager_ixx_path.string();
-    std::string buffer_manager_ixx_source(
-      (std::istreambuf_iterator<char>(buffer_manager_ixx_file)), std::istreambuf_iterator<char>());
+    const auto buffer_manager_ixx_source_opt = readFileText(buffer_manager_ixx_path);
+    ASSERT_TRUE(buffer_manager_ixx_source_opt.has_value()) << "missing " << buffer_manager_ixx_path.string();
+    const std::string &buffer_manager_ixx_source = *buffer_manager_ixx_source_opt;
 
     EXPECT_NE(buffer_manager_ixx_source.find("bool copyBuffer("), std::string::npos)
       << "VulkanBufferManager::copyBuffer must be declared returning bool";
@@ -4662,7 +4637,7 @@ TEST(BuildIntegrity, GeometryAndCubemapUploadsConsumeTheSubmitResult)
 // early return added to this span cannot reintroduce the leak silently.
 TEST(BuildIntegrity, EveryPostAcquireEarlyReturnRetiresTheAcquireSemaphore)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path renderer_path =
@@ -4744,7 +4719,7 @@ TEST(BuildIntegrity, EveryPostAcquireEarlyReturnRetiresTheAcquireSemaphore)
 // - they need a GPU the CI container does not have.
 TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path doc_path = repo_root / "docs" / "gpu-golden-testing.md";
@@ -4812,7 +4787,7 @@ TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)
 // the furnace toggle specifically.
 TEST(BuildIntegrity, PathTracingDocMatchesTheGoldenSuite)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path doc_path = repo_root / "docs" / "path-tracing.md";
@@ -4857,13 +4832,13 @@ TEST(BuildIntegrity, PathTracingDocMatchesTheGoldenSuite)
       << joined(missing_from_doc) << "], extra in doc: [" << joined(extra_in_doc) << "]";
 
     const fs::path pathtracing_cpp_path = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "PathTracing.cpp";
-    std::ifstream cpp_file(pathtracing_cpp_path);
-    ASSERT_TRUE(static_cast<bool>(cpp_file)) << "could not open " << pathtracing_cpp_path.string();
-    const std::string cpp_content((std::istreambuf_iterator<char>(cpp_file)), std::istreambuf_iterator<char>());
+    const auto cpp_content_opt = readFileText(pathtracing_cpp_path);
+    ASSERT_TRUE(cpp_content_opt.has_value()) << "could not open " << pathtracing_cpp_path.string();
+    const std::string &cpp_content = *cpp_content_opt;
 
-    std::ifstream doc_file(doc_path);
-    ASSERT_TRUE(static_cast<bool>(doc_file)) << "could not open " << doc_path.string();
-    const std::string doc_content((std::istreambuf_iterator<char>(doc_file)), std::istreambuf_iterator<char>());
+    const auto doc_content_opt = readFileText(doc_path);
+    ASSERT_TRUE(doc_content_opt.has_value()) << "could not open " << doc_path.string();
+    const std::string &doc_content = *doc_content_opt;
 
     const bool shader_ships_furnace = cpp_content.find("KATAGLYPHIS_PT_FURNACE") != std::string::npos;
     const bool doc_still_wants_toggle = doc_content.find("wants a uniform-environment toggle") != std::string::npos;
@@ -4918,7 +4893,7 @@ std::optional<int> parse_max_texture_count_header(const fs::path &header_path)
 // GoldenTestCountsInDocsMatchTheSuite above.
 TEST(BuildIntegrity, MaxTextureCountInDocsMatchesTheHeader)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path doc_path = repo_root / "docs" / "model-loading.md";
@@ -4996,7 +4971,7 @@ std::size_t count_cpp_sources(const fs::path &root)
 // says nothing about whether that numerator is still accurate.
 TEST(BuildIntegrity, FormatDriftDenominatorMatchesTheTrackedSourceCount)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path doc_path = repo_root / "docs" / "code-quality.md";
@@ -5074,7 +5049,7 @@ std::optional<std::map<std::string, std::string>> parse_shader_targets_marker(co
 // fallback), so it can never appear in shader-manifest.json's manifest[].
 TEST(BuildIntegrity, ShaderSharingDocMatchesTheManifestTargets)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path doc_path = repo_root / "docs" / "shader-sharing.md";
@@ -5156,12 +5131,12 @@ TEST(BuildIntegrity, ShaderSharingDocMatchesTheManifestTargets)
 // matched zero times".
 std::optional<std::array<int, 3>> parse_numthreads(const fs::path &path)
 {
-    std::ifstream file(path);
-    if (!file) { return std::nullopt; }
+    const auto contentsOpt = readFileText(path);
+    if (!contentsOpt) { return std::nullopt; }
 
     static const std::regex kNumThreadsPattern(R"(\[numthreads\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)\])");
 
-    std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    const std::string &contents = *contentsOpt;
     std::smatch match;
     if (!std::regex_search(contents, match, kNumThreadsPattern)) { return std::nullopt; }
 
@@ -5179,11 +5154,11 @@ std::optional<std::array<int, 3>> parse_numthreads(const fs::path &path)
 // against the compiled host value" shape.
 TEST(BuildIntegrity, CloudDispatchGridsMatchTheShaderWorkgroupSizes)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path noise_path = repo_root / "Resources" / "ShadersSlang" / "compute" / "noise.slang";
-    const fs::path clouds_path = repo_root / "Resources" / "ShadersSlang" / "compute" / "clouds.slang";
+    const fs::path noise_path = slangRoot() / "compute" / "noise.slang";
+    const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
 
     const auto noise_threads = parse_numthreads(noise_path);
     ASSERT_TRUE(noise_threads.has_value()) << "no [numthreads(...)] attribute found in " << noise_path.string();
@@ -5222,14 +5197,14 @@ TEST(BuildIntegrity, CloudDispatchGridsMatchTheShaderWorkgroupSizes)
 // getComputeQueue() accessor that would tempt a caller into the same bug.
 TEST(BuildIntegrity, CloudResourcesAreProducedAndConsumedOnOneQueue)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path clouds_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "atmospheric_effects"
                                   / "clouds" / "Clouds.cpp";
-    std::ifstream clouds_file(clouds_path);
-    ASSERT_TRUE(clouds_file) << "missing " << clouds_path.string();
-    std::string const clouds_source((std::istreambuf_iterator<char>(clouds_file)), std::istreambuf_iterator<char>());
+    const auto clouds_source_opt = readFileText(clouds_path);
+    ASSERT_TRUE(clouds_source_opt.has_value()) << "missing " << clouds_path.string();
+    const std::string &clouds_source = *clouds_source_opt;
 
     EXPECT_EQ(clouds_source.find("getComputeQueue"), std::string::npos)
       << "Clouds.cpp must dispatch noise generation on the graphics queue that owns the eExclusive noise image, "
@@ -5240,10 +5215,9 @@ TEST(BuildIntegrity, CloudResourcesAreProducedAndConsumedOnOneQueue)
 
     const fs::path device_header_path =
       repo_root / "Src" / "GraphicsEngineVulkan" / "vulkan_base" / "VulkanDevice.ixx";
-    std::ifstream device_header_file(device_header_path);
-    ASSERT_TRUE(device_header_file) << "missing " << device_header_path.string();
-    std::string const device_header_source(
-      (std::istreambuf_iterator<char>(device_header_file)), std::istreambuf_iterator<char>());
+    const auto device_header_source_opt = readFileText(device_header_path);
+    ASSERT_TRUE(device_header_source_opt.has_value()) << "missing " << device_header_path.string();
+    const std::string &device_header_source = *device_header_source_opt;
 
     EXPECT_EQ(device_header_source.find("getComputeQueue"), std::string::npos)
       << "VulkanDevice must not expose getComputeQueue() - the only caller (Clouds.cpp) now dispatches on the "
@@ -5258,13 +5232,13 @@ TEST(BuildIntegrity, CloudResourcesAreProducedAndConsumedOnOneQueue)
 // (rather than integrated) density.
 TEST(BuildIntegrity, CloudRayMarchesUseAConstantStepLength)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path clouds_path = repo_root / "Resources" / "ShadersSlang" / "compute" / "clouds.slang";
-    std::ifstream file(clouds_path);
-    ASSERT_TRUE(static_cast<bool>(file)) << "missing " << clouds_path.string();
-    const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
+    const auto contentsOpt = readFileText(clouds_path);
+    ASSERT_TRUE(contentsOpt.has_value()) << "missing " << clouds_path.string();
+    const std::string &contents = *contentsOpt;
 
     static const std::regex kDistanceAsStepSize(R"(float\(i\)\s*/\s*float\()");
     EXPECT_FALSE(std::regex_search(contents, kDistanceAsStepSize))
@@ -5295,11 +5269,11 @@ TEST(BuildIntegrity, CloudRayMarchesUseAConstantStepLength)
 // and names the pair that moved on failure.
 TEST(BuildIntegrity, CloudUboPackingMatchesTheShaderUnpack)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path clouds_path = repo_root / "Resources" / "ShadersSlang" / "compute" / "clouds.slang";
-    const auto contents = read_file_text(clouds_path);
+    const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
+    const auto contents = readFileText(clouds_path);
     ASSERT_TRUE(contents.has_value()) << "missing " << clouds_path.string();
 
     struct FieldPair
@@ -5341,11 +5315,11 @@ TEST(BuildIntegrity, CloudUboPackingMatchesTheShaderUnpack)
 // Mirrors CloudDispatchGridsMatchTheShaderWorkgroupSizes's shape.
 TEST(BuildIntegrity, PathTracingDispatchMatchesTheShaderWorkgroupSize)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path path_tracing_path =
-      repo_root / "Resources" / "ShadersSlang" / "path_tracing" / "path_tracing.slang";
+      slangRoot() / "path_tracing" / "path_tracing.slang";
 
     const auto path_tracing_threads = parse_numthreads(path_tracing_path);
     ASSERT_TRUE(path_tracing_threads.has_value())
@@ -5376,7 +5350,7 @@ TEST(BuildIntegrity, PathTracingDispatchMatchesTheShaderWorkgroupSize)
 // reformatting.
 TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     static const std::array<const char *, 2> kFiles = {
@@ -5398,9 +5372,9 @@ TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
 
     for (const char *relative_path : kFiles) {
         const fs::path path = repo_root / relative_path;
-        std::ifstream file(path);
-        ASSERT_TRUE(static_cast<bool>(file)) << "missing " << path.string();
-        const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        const auto contentsOpt = readFileText(path);
+        ASSERT_TRUE(contentsOpt.has_value()) << "missing " << path.string();
+        const std::string &contents = *contentsOpt;
 
         std::set<std::string> transitions_to_shader_read_only;
         for (auto it = std::sregex_iterator(contents.begin(), contents.end(), kBarrierConstruction);
@@ -5491,7 +5465,7 @@ TEST(BuildIntegrity, OffscreenImageBarriersNameTheStageThatConsumesThem)
 // are intentionally not flagged.
 TEST(BuildIntegrity, ProjectSourcesContainNoStrayControlBytes)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     if (repo_root.empty()) { GTEST_SKIP() << "could not locate the repository root"; }
 
     std::vector<std::string> offenders;
@@ -5526,7 +5500,7 @@ TEST(BuildIntegrity, ProjectSourcesContainNoStrayControlBytes)
         }
     }
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path slang_root = slangRoot();
     const std::string slang_build_prefix = (slang_root / "build").generic_string() + "/";
     std::error_code error;
     if (fs::exists(slang_root, error)) {
@@ -5560,10 +5534,10 @@ TEST(BuildIntegrity, ProjectSourcesContainNoStrayControlBytes)
 // at the same byte offset the host struct computes.
 TEST(BuildIntegrity, SharedStructOffsetsMatchTheCompiledSpirv)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    const fs::path spirv_root = repo_root / "Resources" / "ShadersSlang" / "build" / "spirv";
+    const fs::path spirv_root = spirvRoot();
     ASSERT_TRUE(fs::exists(spirv_root)) << "missing " << spirv_root.string();
 
     std::map<std::string, std::map<std::string, uint32_t>> compiled;// union across every .spv
@@ -5637,7 +5611,7 @@ TEST(BuildIntegrity, SharedStructOffsetsMatchTheCompiledSpirv)
 // any line still mentioning either, so the shim cannot silently come back.
 TEST(BuildIntegrity, NoHostDeviceHeaderCarriesTheRetiredGlslDualCompileShim)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src";
@@ -5689,8 +5663,7 @@ namespace {
 // shader could plausibly read, and are skipped.
 std::vector<std::string> parse_scene_ubo_member_names(const fs::path &header_path)
 {
-    std::ifstream file(header_path);
-    const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    const std::string text = readFileText(header_path).value_or(std::string{});
 
     const std::size_t struct_pos = text.find("struct SceneUBO");
     if (struct_pos == std::string::npos) { return {}; }
@@ -5754,7 +5727,7 @@ std::vector<std::string> parse_scene_ubo_member_names(const fs::path &header_pat
 // in one direction, on data instead of code.
 TEST(BuildIntegrity, EverySceneUboFieldIsReadByAShader)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path header_path = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "SceneUBO.hpp";
@@ -5764,7 +5737,7 @@ TEST(BuildIntegrity, EverySceneUboFieldIsReadByAShader)
     ASSERT_GT(members.size(), 5U) << "found only " << members.size() << " SceneUBO member(s) in "
                                    << header_path.string() << " - the parser itself is broken";
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path slang_root = slangRoot();
     ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
 
     std::string all_slang_text;
@@ -5772,8 +5745,7 @@ TEST(BuildIntegrity, EverySceneUboFieldIsReadByAShader)
     for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
         if (error) { break; }
         if (!it->is_regular_file(error) || it->path().extension() != ".slang") { continue; }
-        std::ifstream file(it->path());
-        all_slang_text += std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        all_slang_text += readFileText(it->path()).value_or(std::string{});
         all_slang_text += '\n';
     }
 
@@ -5806,22 +5778,21 @@ TEST(BuildIntegrity, EverySceneUboFieldIsReadByAShader)
 // constant), asserts some .slang source dereferences `<field>.w`.
 TEST(BuildIntegrity, SceneUboWComponentsCarryingDataAreReadByAShader)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path marshal_path = repo_root / "Src" / "GraphicsEngineVulkan" / "common" / "SceneUboMarshal.hpp";
-    const auto marshal_source = read_file_text(marshal_path);
+    const auto marshal_source = readFileText(marshal_path);
     ASSERT_TRUE(marshal_source.has_value()) << "missing " << marshal_path.string();
 
-    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path slang_root = slangRoot();
     ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
     std::string all_slang_text;
     std::error_code error;
     for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
         if (error) { break; }
         if (!it->is_regular_file(error) || it->path().extension() != ".slang") { continue; }
-        std::ifstream file(it->path());
-        all_slang_text += std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        all_slang_text += readFileText(it->path()).value_or(std::string{});
         all_slang_text += '\n';
     }
 
@@ -5870,7 +5841,7 @@ TEST(BuildIntegrity, SceneUboWComponentsCarryingDataAreReadByAShader)
 // "// NO_EC_OK: <reason>" trailing comment.
 TEST(BuildIntegrity, EngineSourcesUseNonThrowingFilesystemOverloads)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src";
@@ -5944,7 +5915,7 @@ TEST(BuildIntegrity, EngineSourcesUseNonThrowingFilesystemOverloads)
 
 TEST(BuildIntegrity, EngineSourcesDoNotLogRawVulkanHandles)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src";
@@ -5995,7 +5966,7 @@ TEST(BuildIntegrity, EngineSourcesDoNotLogRawVulkanHandles)
 // other allowlists in this file.
 TEST(BuildIntegrity, DescriptorSetsAreCreatedThroughDescriptorSetGroup)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src";
@@ -6059,7 +6030,7 @@ TEST(BuildIntegrity, DescriptorSetsAreCreatedThroughDescriptorSetGroup)
 // through it rather than calling the ASManager methods directly.
 TEST(BuildIntegrity, AccelerationStructureRebuildsGoThroughTheSceneChangeHelper)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src";
@@ -6153,9 +6124,10 @@ TEST(BuildIntegrity, AccelerationStructureRebuildsGoThroughTheSceneChangeHelper)
              return joined;
          }();
 
-    std::ifstream header(repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.ixx");
-    ASSERT_TRUE(static_cast<bool>(header)) << "missing VulkanRenderer.ixx";
-    const std::string header_contents((std::istreambuf_iterator<char>(header)), std::istreambuf_iterator<char>());
+    const auto header_contents_opt =
+      readFileText(repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.ixx");
+    ASSERT_TRUE(header_contents_opt.has_value()) << "missing VulkanRenderer.ixx";
+    const std::string &header_contents = *header_contents_opt;
     ASSERT_NE(header_contents.find("void refreshAfterSceneChange(bool rebuildBottomLevel);"), std::string::npos)
       << "VulkanRenderer::refreshAfterSceneChange is no longer declared in VulkanRenderer.ixx - this gate's "
          "allow-list needs updating if it was renamed or its signature changed";
@@ -6170,7 +6142,7 @@ TEST(BuildIntegrity, AccelerationStructureRebuildsGoThroughTheSceneChangeHelper)
 // allowlist.
 TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
@@ -6204,9 +6176,9 @@ TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
       << " - the scan itself is broken, or every implementation was removed and this gate is now vacuous";
 
     const fs::path renderer_path = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
-    std::ifstream renderer_file(renderer_path);
-    ASSERT_TRUE(static_cast<bool>(renderer_file)) << "missing " << renderer_path.string();
-    const std::string renderer_contents((std::istreambuf_iterator<char>(renderer_file)), std::istreambuf_iterator<char>());
+    const auto renderer_contents_opt = readFileText(renderer_path);
+    ASSERT_TRUE(renderer_contents_opt.has_value()) << "missing " << renderer_path.string();
+    const std::string &renderer_contents = *renderer_contents_opt;
 
     const std::size_t signature_pos = renderer_contents.find("VulkanRenderer::shaderHotReload(");
     ASSERT_NE(signature_pos, std::string::npos) << "VulkanRenderer::shaderHotReload is no longer defined in "
@@ -6255,7 +6227,7 @@ TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
 // the NEXT pipeline-owning subsystem cannot be added without one either.
 TEST(BuildIntegrity, EverySpirvLoadingSubsystemImplementsShaderHotReload)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
@@ -6270,10 +6242,9 @@ TEST(BuildIntegrity, EverySpirvLoadingSubsystemImplementsShaderHotReload)
         const fs::path &path = it->path();
         if (!it->is_regular_file(error) || path.extension() != ".cpp") { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        if (contents.find(kSpirvMarker) != std::string::npos) { spirv_loading_files.push_back(path); }
+        const auto contents = readFileText(path);
+        if (!contents) { continue; }
+        if (contents->find(kSpirvMarker) != std::string::npos) { spirv_loading_files.push_back(path); }
     }
 
     ASSERT_GT(spirv_loading_files.size(), 0u)
@@ -6282,17 +6253,14 @@ TEST(BuildIntegrity, EverySpirvLoadingSubsystemImplementsShaderHotReload)
 
     std::vector<std::string> missing_implementation;
     for (const fs::path &path : spirv_loading_files) {
-        std::ifstream file(path);
-        ASSERT_TRUE(static_cast<bool>(file)) << "could not re-open " << path.string();
-        const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        const auto contents = readFileText(path);
+        ASSERT_TRUE(contents.has_value()) << "could not re-open " << path.string();
 
-        bool declares_reload = contents.find("shaderHotReload") != std::string::npos;
+        bool declares_reload = contents->find("shaderHotReload") != std::string::npos;
         if (!declares_reload) {
             const fs::path paired_ixx = fs::path(path).replace_extension(".ixx");
-            std::ifstream ixx_file(paired_ixx);
-            if (ixx_file) {
-                const std::string ixx_contents((std::istreambuf_iterator<char>(ixx_file)), std::istreambuf_iterator<char>());
-                declares_reload = ixx_contents.find("shaderHotReload") != std::string::npos;
+            if (const auto ixx_contents = readFileText(paired_ixx)) {
+                declares_reload = ixx_contents->find("shaderHotReload") != std::string::npos;
             }
         }
 
@@ -6309,9 +6277,9 @@ TEST(BuildIntegrity, EverySpirvLoadingSubsystemImplementsShaderHotReload)
          }();
 
     const fs::path renderer_path = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
-    std::ifstream renderer_file(renderer_path);
-    ASSERT_TRUE(static_cast<bool>(renderer_file)) << "missing " << renderer_path.string();
-    const std::string renderer_contents((std::istreambuf_iterator<char>(renderer_file)), std::istreambuf_iterator<char>());
+    const auto renderer_contents_opt = readFileText(renderer_path);
+    ASSERT_TRUE(renderer_contents_opt.has_value()) << "missing " << renderer_path.string();
+    const std::string &renderer_contents = *renderer_contents_opt;
 
     const std::size_t signature_pos = renderer_contents.find("VulkanRenderer::shaderHotReload(");
     ASSERT_NE(signature_pos, std::string::npos) << "VulkanRenderer::shaderHotReload is no longer defined in "
@@ -6355,7 +6323,7 @@ TEST(BuildIntegrity, EverySpirvLoadingSubsystemImplementsShaderHotReload)
 // the rule below needs no per-class exceptions.
 TEST(BuildIntegrity, EveryShaderHotReloadDestroysThePipelineLayoutItRecreates)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
@@ -6372,9 +6340,9 @@ TEST(BuildIntegrity, EveryShaderHotReloadDestroysThePipelineLayoutItRecreates)
         const fs::path &path = it->path();
         if (!it->is_regular_file(error) || path.extension() != ".cpp") { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        const auto contentsOpt = readFileText(path);
+        if (!contentsOpt) { continue; }
+        const std::string &contents = *contentsOpt;
 
         std::smatch match;
         std::string remaining = contents;
@@ -6439,14 +6407,14 @@ TEST(BuildIntegrity, EveryShaderHotReloadDestroysThePipelineLayoutItRecreates)
 // arbitrary busywork for that reason.
 TEST(BuildIntegrity, RaytracingShaderHotReloadRebuildsTheShaderBindingTable)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path raytracing_path =
       repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "Raytracing.cpp";
-    std::ifstream file(raytracing_path);
-    ASSERT_TRUE(static_cast<bool>(file)) << "missing " << raytracing_path.string();
-    const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    const auto contentsOpt = readFileText(raytracing_path);
+    ASSERT_TRUE(contentsOpt.has_value()) << "missing " << raytracing_path.string();
+    const std::string &contents = *contentsOpt;
 
     const std::size_t signature_pos = contents.find("Raytracing::shaderHotReload(");
     ASSERT_NE(signature_pos, std::string::npos)
@@ -6485,7 +6453,7 @@ TEST(BuildIntegrity, RaytracingShaderHotReloadRebuildsTheShaderBindingTable)
 // the duplication.
 TEST(BuildIntegrity, ComputePipelinesAreCreatedThroughTheSharedHelper)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src";
@@ -6542,7 +6510,7 @@ TEST(BuildIntegrity, ComputePipelinesAreCreatedThroughTheSharedHelper)
 // pins down pipeline creation.
 TEST(BuildIntegrity, PipelineTeardownGoesThroughTheSharedHelper)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
@@ -6606,7 +6574,7 @@ TEST(BuildIntegrity, PipelineTeardownGoesThroughTheSharedHelper)
 // source marker instead of a line number).
 TEST(BuildIntegrity, NoStageHandRollsTheDepthAttachmentChain)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
@@ -6676,7 +6644,7 @@ TEST(BuildIntegrity, NoStageHandRollsTheDepthAttachmentChain)
 // shape back up by accident.
 TEST(BuildIntegrity, NoRasterStageHandRollsItsExternalSubpassDependency)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
@@ -6748,7 +6716,7 @@ TEST(BuildIntegrity, NoRasterStageHandRollsItsExternalSubpassDependency)
 // depth gate anchors to a source marker instead of a line number.
 TEST(BuildIntegrity, NoStageHandRollsTheColorAttachmentChain)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
@@ -6816,19 +6784,19 @@ TEST(BuildIntegrity, NoStageHandRollsTheColorAttachmentChain)
 // is gone.
 TEST(BuildIntegrity, ShadowMapArrayHasExactlyOneImageView)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path cpp_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "light" / "directional_light"
                                / "CascadedShadowMap.cpp";
     const fs::path ixx_path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "light" / "directional_light"
                                / "CascadedShadowMap.ixx";
-    std::ifstream cpp_file(cpp_path);
-    ASSERT_TRUE(static_cast<bool>(cpp_file)) << "missing " << cpp_path.string();
-    const std::string cpp_contents((std::istreambuf_iterator<char>(cpp_file)), std::istreambuf_iterator<char>());
-    std::ifstream ixx_file(ixx_path);
-    ASSERT_TRUE(static_cast<bool>(ixx_file)) << "missing " << ixx_path.string();
-    const std::string ixx_contents((std::istreambuf_iterator<char>(ixx_file)), std::istreambuf_iterator<char>());
+    const auto cpp_contents_opt = readFileText(cpp_path);
+    ASSERT_TRUE(cpp_contents_opt.has_value()) << "missing " << cpp_path.string();
+    const std::string &cpp_contents = *cpp_contents_opt;
+    const auto ixx_contents_opt = readFileText(ixx_path);
+    ASSERT_TRUE(ixx_contents_opt.has_value()) << "missing " << ixx_path.string();
+    const std::string &ixx_contents = *ixx_contents_opt;
 
     const auto count_occurrences = [](const std::string &haystack, const std::string &needle) {
         std::size_t count = 0;
@@ -6863,7 +6831,7 @@ TEST(BuildIntegrity, ShadowMapArrayHasExactlyOneImageView)
 // PipelineTeardownGoesThroughTheSharedHelper does for pipelines.
 TEST(BuildIntegrity, FramebufferTeardownGoesThroughTheSharedHelper)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
@@ -6916,7 +6884,7 @@ TEST(BuildIntegrity, FramebufferTeardownGoesThroughTheSharedHelper)
 // FramebufferTeardownGoesThroughTheSharedHelper does for framebuffers.
 TEST(BuildIntegrity, RenderPassTeardownGoesThroughTheSharedHelper)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
@@ -6972,14 +6940,14 @@ TEST(BuildIntegrity, RenderPassTeardownGoesThroughTheSharedHelper)
 // the ordering down so that stays true.
 TEST(BuildIntegrity, EveryStageFramebufferIsDestroyedBeforeTheSwapchainIsRecreated)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path renderer_cpp =
       repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
-    std::ifstream file(renderer_cpp);
-    ASSERT_TRUE(static_cast<bool>(file)) << "missing " << renderer_cpp.string();
-    const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    const auto contentsOpt = readFileText(renderer_cpp);
+    ASSERT_TRUE(contentsOpt.has_value()) << "missing " << renderer_cpp.string();
+    const std::string &contents = *contentsOpt;
 
     static const std::string kFunctionSignature = "Kataglyphis::VulkanRenderer::recreateSwapChain(";
     const std::size_t signature_pos = contents.find(kFunctionSignature);
@@ -7054,10 +7022,9 @@ TEST(BuildIntegrity, EveryStageFramebufferIsDestroyedBeforeTheSwapchainIsRecreat
              "or that owns none, like clouds) so a sixth stage cannot silently skip this check";
 
         const fs::path stage_path = repo_root / map_it->second;
-        std::ifstream stage_file(stage_path);
-        ASSERT_TRUE(static_cast<bool>(stage_file)) << "missing " << stage_path.string();
-        const std::string stage_contents(
-          (std::istreambuf_iterator<char>(stage_file)), std::istreambuf_iterator<char>());
+        const auto stage_contents_opt = readFileText(stage_path);
+        ASSERT_TRUE(stage_contents_opt.has_value()) << "missing " << stage_path.string();
+        const std::string &stage_contents = *stage_contents_opt;
         const bool owns_framebuffers = stage_contents.find("::destroyFramebuffers()") != std::string::npos;
 
         if (!owns_framebuffers) { continue; }// e.g. clouds - nothing to require here
@@ -7086,7 +7053,7 @@ TEST(BuildIntegrity, EveryStageFramebufferIsDestroyedBeforeTheSwapchainIsRecreat
 // text instead of exercising the function.
 TEST(BuildIntegrity, TextureCreateImageRecordsTheMipLevelItWasGiven)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path texture_cpp = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "Texture.cpp";
@@ -7134,7 +7101,7 @@ TEST(BuildIntegrity, TextureCreateImageRecordsTheMipLevelItWasGiven)
 // than degrading.
 TEST(BuildIntegrity, EveryEnabledDeviceFeatureIsCopiedFromAnAvailabilityQuery)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path vulkan_device_cpp = repo_root / "Src" / "GraphicsEngineVulkan" / "vulkan_base" / "VulkanDevice.cpp";
@@ -7204,16 +7171,16 @@ TEST(BuildIntegrity, EveryEnabledDeviceFeatureIsCopiedFromAnAvailabilityQuery)
 // CURRENT image_index rather than always set 0.
 TEST(BuildIntegrity, ShadowLightMatricesAreDoubleBufferedPerSwapchainImage)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path shadow_dir =
       repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "light" / "directional_light";
 
     const fs::path ixx_path = shadow_dir / "CascadedShadowMap.ixx";
-    std::ifstream ixx_file(ixx_path);
-    ASSERT_TRUE(static_cast<bool>(ixx_file)) << "could not open " << ixx_path.string();
-    const std::string ixx_contents((std::istreambuf_iterator<char>(ixx_file)), std::istreambuf_iterator<char>());
+    const auto ixx_contents_opt = readFileText(ixx_path);
+    ASSERT_TRUE(ixx_contents_opt.has_value()) << "could not open " << ixx_path.string();
+    const std::string &ixx_contents = *ixx_contents_opt;
 
     EXPECT_NE(ixx_contents.find("std::vector<VulkanBuffer> lightMatricesBuffers"), std::string::npos)
       << "CascadedShadowMap no longer declares lightMatricesBuffers as a std::vector<VulkanBuffer> in "
@@ -7225,9 +7192,9 @@ TEST(BuildIntegrity, ShadowLightMatricesAreDoubleBufferedPerSwapchainImage)
       << "CascadedShadowMap still declares the old single-buffer lightMatricesBuffer member in " << ixx_path.string();
 
     const fs::path cpp_path = shadow_dir / "CascadedShadowMap.cpp";
-    std::ifstream cpp_file(cpp_path);
-    ASSERT_TRUE(static_cast<bool>(cpp_file)) << "could not open " << cpp_path.string();
-    const std::string cpp_contents((std::istreambuf_iterator<char>(cpp_file)), std::istreambuf_iterator<char>());
+    const auto cpp_contents_opt = readFileText(cpp_path);
+    ASSERT_TRUE(cpp_contents_opt.has_value()) << "could not open " << cpp_path.string();
+    const std::string &cpp_contents = *cpp_contents_opt;
 
     EXPECT_NE(cpp_contents.find("lightMatricesDescriptors.sets()[image_index]"), std::string::npos)
       << "CascadedShadowMap::recordCommands in " << cpp_path.string()
@@ -7255,15 +7222,14 @@ TEST(BuildIntegrity, ShadowLightMatricesAreDoubleBufferedPerSwapchainImage)
 // in reprovisionPerImageResources() itself.
 TEST(BuildIntegrity, EveryPerSwapchainImageSubsystemIsReprovisionedOnImageCountChange)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path renderer_path =
       repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
-    std::ifstream renderer_file(renderer_path);
-    ASSERT_TRUE(static_cast<bool>(renderer_file)) << "could not open " << renderer_path.string();
-    const std::string renderer_contents(
-      (std::istreambuf_iterator<char>(renderer_file)), std::istreambuf_iterator<char>());
+    const auto renderer_contents_opt = readFileText(renderer_path);
+    ASSERT_TRUE(renderer_contents_opt.has_value()) << "could not open " << renderer_path.string();
+    const std::string &renderer_contents = *renderer_contents_opt;
 
     const std::size_t reinit_occurrences = [&renderer_contents] {
         std::size_t count = 0;
@@ -7338,7 +7304,7 @@ TEST(BuildIntegrity, EveryPerSwapchainImageSubsystemIsReprovisionedOnImageCountC
 // hand-rolled copy that drifts from the shared one again.
 TEST(BuildIntegrity, ModelUploadGoesThroughTheSharedAssembly)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src";
@@ -7403,7 +7369,7 @@ TEST(BuildIntegrity, ModelUploadGoesThroughTheSharedAssembly)
 // the staging abstraction it no longer needs.
 TEST(BuildIntegrity, OnlyTheRendererCreatesACommandPool)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path engine_root = repo_root / "Src" / "GraphicsEngineVulkan";
@@ -7417,10 +7383,9 @@ TEST(BuildIntegrity, OnlyTheRendererCreatesACommandPool)
         if (!it->is_regular_file(error)) { continue; }
         if (path.extension() != ".cpp" && path.extension() != ".ixx") { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        if (contents.find("createCommandPool(") == std::string::npos) { continue; }
+        const auto contents = readFileText(path);
+        if (!contents) { continue; }
+        if (contents->find("createCommandPool(") == std::string::npos) { continue; }
 
         files_with_pool_creation.push_back(fs::relative(path, repo_root).generic_string());
     }
@@ -7442,16 +7407,16 @@ TEST(BuildIntegrity, OnlyTheRendererCreatesACommandPool)
 
 TEST(BuildIntegrity, CascadedShadowMapDoesNotStageThroughABufferManager)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path shadow_map_cpp = repo_root
       / "Src" / "GraphicsEngineVulkan" / "scene" / "light" / "directional_light" / "CascadedShadowMap.cpp";
     ASSERT_TRUE(fs::exists(shadow_map_cpp)) << "missing " << shadow_map_cpp.string();
 
-    std::ifstream file(shadow_map_cpp);
-    ASSERT_TRUE(file) << "could not open " << shadow_map_cpp.string();
-    std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    const auto contentsOpt = readFileText(shadow_map_cpp);
+    ASSERT_TRUE(contentsOpt.has_value()) << "could not open " << shadow_map_cpp.string();
+    const std::string &contents = *contentsOpt;
 
     EXPECT_EQ(contents.find("VulkanBufferManager"), std::string::npos)
       << "CascadedShadowMap.cpp should seed lightMatricesBuffers directly through getMappedData(), not a "
@@ -7479,7 +7444,7 @@ TEST(BuildIntegrity, CascadedShadowMapDoesNotStageThroughABufferManager)
 // exactly the divergence this test exists to catch.
 TEST(BuildIntegrity, EveryRenderStageDerivesItsDepthFormatOnce)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     static const std::array<const char *, 3> kFiles = {
@@ -7494,9 +7459,9 @@ TEST(BuildIntegrity, EveryRenderStageDerivesItsDepthFormatOnce)
         const fs::path path = repo_root / relative_path;
         ASSERT_TRUE(fs::exists(path)) << "missing " << path.string();
 
-        std::ifstream file(path);
-        ASSERT_TRUE(file) << "could not open " << path.string();
-        const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        const auto contentsOpt = readFileText(path);
+        ASSERT_TRUE(contentsOpt.has_value()) << "could not open " << path.string();
+        const std::string &contents = *contentsOpt;
 
         std::size_t count = 0;
         std::size_t pos = 0;
@@ -7525,7 +7490,7 @@ TEST(BuildIntegrity, EveryRenderStageDerivesItsDepthFormatOnce)
 // and that is exactly the pattern this test must NOT flag.
 TEST(BuildIntegrity, ImageMemoryBarriersGoThroughTheSharedHelper)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
@@ -7587,20 +7552,19 @@ TEST(BuildIntegrity, ImageMemoryBarriersGoThroughTheSharedHelper)
 // name both sides in the failure message.
 TEST(BuildIntegrity, RendererImprovementLogDoesNotAskForShippedWork)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path doc_path = repo_root / "docs" / "cpp-renderer-improvements.md";
     const fs::path renderer_path = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
 
-    std::ifstream doc_file(doc_path);
-    ASSERT_TRUE(static_cast<bool>(doc_file)) << "could not open " << doc_path.string();
-    const std::string doc_content((std::istreambuf_iterator<char>(doc_file)), std::istreambuf_iterator<char>());
+    const auto doc_content_opt = readFileText(doc_path);
+    ASSERT_TRUE(doc_content_opt.has_value()) << "could not open " << doc_path.string();
+    const std::string &doc_content = *doc_content_opt;
 
-    std::ifstream renderer_file(renderer_path);
-    ASSERT_TRUE(static_cast<bool>(renderer_file)) << "could not open " << renderer_path.string();
-    const std::string renderer_content(
-      (std::istreambuf_iterator<char>(renderer_file)), std::istreambuf_iterator<char>());
+    const auto renderer_content_opt = readFileText(renderer_path);
+    ASSERT_TRUE(renderer_content_opt.has_value()) << "could not open " << renderer_path.string();
+    const std::string &renderer_content = *renderer_content_opt;
 
     const bool renderer_records_the_removal = renderer_content.find("used to sit here") != std::string::npos;
     const bool doc_still_asks_for_the_removal = doc_content.find("remove only after a sync-validation") != std::string::npos;
@@ -7632,7 +7596,7 @@ TEST(BuildIntegrity, RendererImprovementLogDoesNotAskForShippedWork)
 // "static member function" (the latter is fine and must stay untouched).
 TEST(BuildIntegrity, HeadersDoNotDefineStaticFreeFunctions)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src";
@@ -7684,7 +7648,7 @@ TEST(BuildIntegrity, HeadersDoNotDefineStaticFreeFunctions)
 // classes are intentionally exempt - see kExemptClasses below.
 TEST(BuildIntegrity, EveryCleanUpIsCalledFromItsDestructor)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
@@ -7712,9 +7676,9 @@ TEST(BuildIntegrity, EveryCleanUpIsCalledFromItsDestructor)
         if (!it->is_regular_file(error)) { continue; }
         if (path.extension() != ".ixx") { continue; }
 
-        std::ifstream ixx_file(path);
-        if (!ixx_file) { continue; }
-        const std::string ixx_contents((std::istreambuf_iterator<char>(ixx_file)), std::istreambuf_iterator<char>());
+        const auto ixx_contents_opt = readFileText(path);
+        if (!ixx_contents_opt) { continue; }
+        const std::string &ixx_contents = *ixx_contents_opt;
 
         if (ixx_contents.find("void cleanUp();") == std::string::npos) { continue; }
 
@@ -7726,11 +7690,7 @@ TEST(BuildIntegrity, EveryCleanUpIsCalledFromItsDestructor)
 
         std::string combined_contents = ixx_contents;
         const fs::path cpp_path = fs::path(path).replace_extension(".cpp");
-        std::ifstream cpp_file(cpp_path);
-        if (cpp_file) {
-            combined_contents += std::string(
-              (std::istreambuf_iterator<char>(cpp_file)), std::istreambuf_iterator<char>());
-        }
+        if (const auto cpp_contents = readFileText(cpp_path)) { combined_contents += *cpp_contents; }
 
         // Matches "~Name() { cleanUp(); }" whether spelled inline in the
         // .ixx or out-of-line (possibly namespace-qualified) in the .cpp.
@@ -7761,15 +7721,15 @@ TEST(BuildIntegrity, EveryCleanUpIsCalledFromItsDestructor)
 // actually ended - see appExitCodeSuite.cpp for the derivation itself.
 TEST(BuildIntegrity, AppRunDoesNotReturnABareExitSuccess)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path app_cpp = repo_root / "Src" / "GraphicsEngineVulkan" / "app" / "App.cpp";
     ASSERT_TRUE(fs::exists(app_cpp)) << "missing " << app_cpp.string();
 
-    std::ifstream file(app_cpp);
-    ASSERT_TRUE(file) << "could not open " << app_cpp.string();
-    const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    const auto contentsOpt = readFileText(app_cpp);
+    ASSERT_TRUE(contentsOpt.has_value()) << "could not open " << app_cpp.string();
+    const std::string &contents = *contentsOpt;
 
     EXPECT_EQ(contents.find("return EXIT_SUCCESS;"), std::string::npos)
       << "App.cpp contains a bare \"return EXIT_SUCCESS;\" - App::run()'s exit code must be derived from "
@@ -7786,7 +7746,7 @@ TEST(BuildIntegrity, AppRunDoesNotReturnABareExitSuccess)
 // member, and are marked with a trailing "// DEVICE_SINK_OK: " comment.
 TEST(BuildIntegrity, EveryVulkanDeviceParameterIsTakenByConstReference)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     static const char *const kMarkerPrefix = "DEVICE_SINK_OK: ";
@@ -7848,11 +7808,11 @@ TEST(BuildIntegrity, EveryVulkanDeviceParameterIsTakenByConstReference)
 // single CLI front end so the dead parser cannot silently come back.
 TEST(BuildIntegrity, MainHasOneCommandLineParser)
 {
-    const fs::path repo_root = find_repo_root();
+    const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path source = repo_root / "Src" / "GraphicsEngineVulkan" / "Main.cpp";
-    const auto text = read_file_text(source);
+    const auto text = readFileText(source);
     ASSERT_TRUE(text.has_value()) << "could not read " << source.string();
 
     EXPECT_NE(text->find("absl::ParseCommandLine"), std::string::npos)
@@ -7863,4 +7823,54 @@ TEST(BuildIntegrity, MainHasOneCommandLineParser)
     EXPECT_EQ(text->find("print_usage"), std::string::npos)
       << "Main.cpp must not carry a hand-rolled print_usage() alongside absl::ParseCommandLine in "
       << source.string();
+}
+
+// buildIntegritySuite, renderPassCreateHelperSuite and sceneAsyncLoadSuite
+// each used to carry their own copy of a repo-root walk-up helper and their
+// own whole-file stream-iterator slurp - three copies of each, one
+// (renderPassCreateHelperSuite's) even with a different failure contract than
+// the other two. RepoFiles.hpp collapsed all of that into
+// repoRoot()/slangRoot()/spirvRoot()/readFileText(). This scans every
+// Test/**/*.cpp and Test/**/*.hpp for the two textual signatures a
+// reimplementation would have to contain, so a fourth copy cannot grow back
+// silently. The signatures below are deliberately built by runtime
+// concatenation rather than spelled out as single literals - otherwise this
+// gate would contain, and thus fail, its own banned pattern.
+TEST(BuildIntegrity, TestSuitesShareOneRepoRootHelper)
+{
+    const fs::path test_root = repoRoot() / "Test";
+    ASSERT_TRUE(fs::exists(test_root)) << "missing " << test_root.string();
+
+    const std::array<std::string, 2> kBannedPatterns = { std::string("find_repo") + "_root",
+        std::string("istreambuf_iter") + "ator<char>" };
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(test_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        const auto extension = path.extension();
+        if (extension != ".cpp" && extension != ".hpp") { continue; }
+        if (path.filename() == "RepoFiles.hpp") { continue; }
+
+        const auto text = readFileText(path);
+        if (!text) { continue; }
+
+        for (const std::string &pattern : kBannedPatterns) {
+            if (text->find(pattern) != std::string::npos) {
+                violations.push_back(
+                  fs::relative(path, repoRoot()).generic_string() + " contains \"" + pattern + "\"");
+            }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " Test source file(s) reimplement RepoFiles.hpp's repoRoot()/readFileText() instead of including it: "
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
 }

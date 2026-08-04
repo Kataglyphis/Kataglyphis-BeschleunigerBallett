@@ -8736,3 +8736,227 @@ one that changes `ObjMaterial`'s field set, so land it before or after the
 other two but not interleaved, to keep the `buildIntegritySuite.cpp:978-991`
 offset-pin churn in a single commit.
 
+## 2026-08-04 batch X — planner (refactor: the duplication has moved out of `Src/` and into `Test/` — a byte-identical repo-root walk in three suites and 54 hand-rolled file slurps beside a helper that already exists; a README whose three CI badges report a *different repository's* pipelines and a Sphinx site still named after the old project; 26 copies of one skip block and 20 of one three-line mode setup in the golden suite)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Every `file:line` below was read out of the
+tree this pass, at `dc1fb9a6`.
+
+**The headline finding is a negative one, and it should change where the next
+refactor batches look.** An 8-line/3-copy clone sweep over every `.cpp`,
+`.ixx` and `.hpp` under `Src/` returns **nothing** — the "one rule, N
+hand-rolled copies" family that has driven a dozen batches is exhausted on the
+engine side. The same sweep over `Resources/ShadersSlang/**/*.slang` also
+returns nothing. Over `Test/` it returns five groups, four of them 7-copy. A
+sweep for `pub fn`s in the Rust crate with zero references anywhere in
+`crates/` or `Src/` returns exactly two (`forward.rs:975 disable_gpu_timing`,
+`forward.rs:2353 animation_duration` — folded into task 3 below as a delete,
+not worth their own entry), and a sweep for zero-argument accessors in `Src/`
+with no call site returns one (`timestampMask`). **The test tree is now the
+duplicated part of this repository, and it is where tasks 1 and 3 point.**
+
+**First, three suites carry a byte-identical `find_repo_root()`.**
+`buildIntegritySuite.cpp:54-63`, `renderPassCreateHelperSuite.cpp:110-119` and
+`sceneAsyncLoadSuite.cpp:38-47` are the same ten lines, under the same
+two-line comment ("Tests run with the repo root as working directory
+(`gtest_discover_tests` sets `WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}`), but be
+forgiving if that changes"), down to the depth-6 loop bound. Two of the three
+also carry a whole-file read: `renderPassCreateHelperSuite.cpp:121-126`
+(`read_file`, returns `std::string`) and `sceneAsyncLoadSuite.cpp:62` (inline).
+`buildIntegritySuite.cpp:1110-1121` has a third spelling, `read_file_text`,
+returning `std::optional<std::string>` — and it is called **9 times in a file
+that contains 54 hand-rolled `istreambuf_iterator<char>` slurps**. The drift
+this invites has already happened once: five of the six `spirv_root`
+derivations read `slang_root / "build" / "spirv"` (`:1207`, `:1261`, `:1296`,
+`:1492`, `:1588`) and the sixth (`:5566`) spells the whole path out from
+`repo_root` instead.
+
+**Second, the README's three build badges point at
+`github.com/Kataglyphis/Kataglyphis-Renderer`.** That is a different
+repository. `git remote -v` here is
+`git@github.com:Kataglyphis/Kataglyphis-BeschleunigerBallett.git`, and the
+CodeQL and dependency-submission badges three lines below (`README.md:24-25`)
+already use the correct slug — so the top of the README shows two repositories'
+CI status side by side with nothing to tell them apart. `docs/source/conf.py`
+has the same half-finished rename: `:86` already overrides
+`html_theme_options["repository_url"]` to the BeschleunigerBallett URL, while
+`:78` still sets `project = "Kataglyphis-Renderer"` and `:115-116` still name
+the Breathe project that. The rendered site therefore titles every page
+"Kataglyphis-Renderer 1.5.0 documentation" under an `index.rst` whose own H1
+reads "Kataglyphis-BeschleunigerBallett Documentation". Adjacent and in the
+same file: `docs/source/getting_started.md:11` lists "an OpenGL 4.6 capable
+driver/runtime **for the OpenGL renderer**" as a build prerequisite, and
+`docs/LICENSES-README.md:142` is the record of that renderer's removal ("kein
+`ExternalLib/glad`-Submodul mehr vorhanden, keine glad-/OpenGL-Loader-Referenzen
+unter `Src/`"). Confirmed independently: the only `OpenGL` hits under `Src/`
+are three comments about clip-space and winding conventions
+(`SceneUboMarshal.hpp:27`, `Frustum.cpp:40,46`, `GltfLoader.cpp:364`).
+
+**Third, `goldenRenderSuite.cpp` writes the same prologue 26 times.** 31
+`TEST(GoldenRender, ...)` bodies; 26 of them open with the identical
+three-line block
+
+```
+if (!harness.renderer->supportsFrameCapture()) {
+    GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";
+}
+```
+
+and 20 of them then write the identical triple `renderer_vars.raytracing =
+false; renderer_vars.pathTracing = false; renderer_vars.rasterizationMode =
+RasterizationMode::Forward;`. The file already has the right shape for the
+fix — `SKIP_WITHOUT_GPU()` at `:325` is exactly this pattern solved once — and
+`EngineHarness` (`:90-145`) is the natural home for the rest.
+
+Ordering: all three are independent. Task 2 is the only one that touches no
+C++ beyond a new gate, so it is the cheapest to land first. Tasks 1 and 3 both
+edit `Test/commit/VulkanEngine/`, but disjoint files — task 1 does not touch
+`goldenRenderSuite.cpp` and task 3 does not touch any file task 1 rewrites.
+
+
+- [ ] **(S) (refactor) Point the README's CI badges and the Sphinx project name at this repository, and drop the deleted OpenGL renderer from the prerequisites** — three build badges currently report `Kataglyphis/Kataglyphis-Renderer`'s pipelines, and `getting_started.md` still demands a driver for a renderer `docs/LICENSES-README.md` records as removed.
+
+  **Files to read:**
+  - `README.md:16` — the `Opengl-logo.png` badge, `alt="OpenGLEngine"`.
+    `:21-23` — the three build badges, each with the wrong slug **twice**
+    (image URL + link URL). `:26` — the TopLang shields URL, same wrong slug.
+    `:24-25` — the CodeQL and dependency badges, which already carry the
+    correct slug and are the template to match.
+  - `docs/source/conf.py:78` (`project`), `:86` (the already-corrected
+    `repository_url`), `:115-116` (the two Breathe project keys).
+  - `docs/source/index.rst:1-2` — the H1 the site title should agree with.
+  - `docs/source/getting_started.md:11` — the OpenGL 4.6 prerequisite.
+    `:22-31` — the `cmake --list-presets` block.
+  - `README.md:65-72` — the same block in the Quick Start.
+  - `docs/LICENSES-README.md:142` — the evidence that glad and every OpenGL
+    loader reference left `Src/`.
+  - `AGENTS.md` § Build System Overview — the verified trap to quote in step 4.
+
+  **Steps:**
+  1. In `README.md:21-23,26`, replace all seven occurrences of
+     `Kataglyphis/Kataglyphis-Renderer` with
+     `Kataglyphis/Kataglyphis-BeschleunigerBallett`. While there: the ARM badge
+     pins `?branch=main` and the other two pin nothing. Make all three
+     consistent at `?branch=develop` — `origin/HEAD` is `origin/develop` and
+     that is the branch every lane actually runs on for day-to-day work. (If
+     the owner later wants release status instead, all three move to `main`
+     together; the point is that they agree.)
+  2. In `docs/source/conf.py`, set `project` (`:78`) and both Breathe keys
+     (`:115-116`) to `"Kataglyphis-BeschleunigerBallett"`. The Breathe keys are
+     a dict key and the default-project name referring to it — rename them in
+     the same edit or the API build breaks.
+  3. Delete the OpenGL 4.6 prerequisite line (`getting_started.md:11`) and the
+     `Opengl-logo.png` badge (`README.md:16`). Do **not** touch
+     `README.md:168-172` (the "OpenGL" entry in the reading/credits list) or the
+     three clip-space comments under `Src/` — those are historical references,
+     not claims about what this repo builds.
+  4. In both preset blocks (`README.md:65-72`, `getting_started.md:22-31`),
+     keep the preset guidance but add the trap AGENTS.md records: a host CMake
+     older than 4.1 cannot read `CMakePresets.json` (`"version": 10`) and fails
+     `cmake --list-presets` with `Unrecognized "version" field` — read the file
+     or the configuration table instead. Add a one-line pointer for Windows
+     readers to `Scripts/Windows/Build-Windows-Container.ps1`, since AGENTS.md's
+     fast path says never to invoke CMake on the host there. This is the
+     documented papercut under "Developer-experience papercuts" above finally
+     reaching the two docs that hand users the failing command.
+  5. Add `BuildIntegrity.DocsNameThisRepository`: read `README.md` and every
+     file under `docs/source/` (`*.md`, `*.rst`, `conf.py`), fail on any
+     occurrence of the literal `Kataglyphis-Renderer`. Scan `docs/source/`
+     only — `docs/build/` is generated output and is correctly untracked
+     (verified: `git ls-files docs/build` is empty).
+
+  **Test:** `BuildIntegrity.DocsNameThisRepository` (new, pure CPU). Verify it
+  is a real gate by reverting one `README.md` badge line locally and confirming
+  the test goes RED before committing the fix. Nothing here changes rendering,
+  so no golden run is needed.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+  from the repo root.
+
+  **Context:** Same shape as `e3540e62` (stale clang-format figures quoted three
+  times) and batch XXII's shader-sharing-doc fix: prose that no gate reaches
+  drifts, and the drift here is worse than cosmetic — a red badge on this README
+  is currently *someone else's* red badge, which is the failure mode where a
+  broken pipeline reads as fine. `conf.py:86` proves the rename was started and
+  abandoned; finishing it is three lines. Keep this task to text and one gate:
+  do not restructure the Quick Start, and do not touch `AGENTS.md`, which
+  already documents all of it correctly.
+
+- [ ] **(S) (refactor) Fold the golden suite's 26-times-repeated frame-capture skip and 20-times-repeated forward-raster setup into `EngineHarness`** — the file already solves exactly this once, with `SKIP_WITHOUT_GPU()`; the two remaining prologue blocks never got the same treatment.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp:90-145` — `EngineHarness`
+    (`render_frame`, `wait_for_model`, `render_frames`, `capture_frame`), the
+    home for the new helpers.
+  - `:325-338` — the `SKIP_WITHOUT_GPU()` macro, the precedent for step 2.
+  - `:1811-1826` and `:1874-1888` — two of the 26 prologues, shown adjacent so
+    the shared and unshared parts are visible in one read.
+  - `:76` — `WARMUP_FRAMES`; do not change any `render_frames(WARMUP_FRAMES)`
+    call, the ordering against `wait_for_model()` is load-bearing.
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/forward.rs:975`
+    and `:2353` — `disable_gpu_timing` and `animation_duration`, the two `pub
+    fn`s in the whole crate with zero references in `crates/` or `Src/`
+    (including `tests/`, `benches/` and `wasm_demo.rs`). Deleted in step 5.
+
+  **Steps:**
+  1. Add `[[nodiscard]] bool supportsFrameCapture() const` to `EngineHarness`,
+     forwarding to `renderer->supportsFrameCapture()`.
+  2. Next to `SKIP_WITHOUT_GPU()`, add
+     `SKIP_WITHOUT_FRAME_CAPTURE(harness)` emitting the byte-identical
+     `GTEST_SKIP() << "Surface does not support eTransferSrc; frame capture unavailable.";`.
+     Replace all 26 copies. The message text must not change — it is what
+     distinguishes this skip from the no-GPU one in CI logs.
+  3. Add `EngineHarness::useForwardRaster()` returning
+     `GUIRendererSharedVars &` (so a test that then tweaks further fields keeps
+     one binding), setting `raytracing = false`, `pathTracing = false`,
+     `rasterizationMode = RasterizationMode::Forward` in that order. Replace the
+     20 exact triples. Leave the 2 `RasterizationMode::Deferred` sites and every
+     site that sets `raytracing`/`pathTracing` **true** untouched — do not
+     invent a `useDeferredRaster()` for two callers.
+  4. Review the diff line by line before building: every removed line must
+     reappear verbatim inside a helper. This change must be textual — the
+     container run below proves it compiles and enumerates, not that it renders
+     the same.
+  5. Delete `forward.rs:975-985` (`disable_gpu_timing`) and `:2353-2361`
+     (`animation_duration`). Both are `pub` in a lib crate, so `dead_code` never
+     flagged them. Re-grep for each name across `crates/` and `Src/` after
+     deleting to confirm zero hits, and verify with `cargo check -p
+     kataglyphis_webgpu_renderer` — **not** `cargo test`/`cargo build`, which
+     cannot link on this host (see the memory note on the MSVC linker).
+
+  **Test:** No new assertions — this is behaviour-neutral by construction.
+  Acceptance in the container is
+  `--gtest_list_tests --gtest_filter=GoldenRender.*` listing the **same 31
+  names** before and after (diff the two lists; any difference is a bug in the
+  edit), plus a clean `clangcl-debug` build.
+
+  **Then verify on the host GPU**, which is where this suite actually runs:
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GoldenRender.*` from
+  the repo root. Capture the pass/skip/fail set **before** the edit and require
+  it to be identical after. Two tests are known-red independently of this change
+  — `ShadowsMoveWhenTheLightRotates` and the path-tracing device-lost tracked in
+  the `- [b]` entry above — so "still red in the same way" is the pass condition
+  for those two, and a *new* failure anywhere is a stop. If the host session is
+  over RDP the suite reports "No synchronization frames available" for
+  everything (see AGENTS.md § Testing); that is the session, not this change —
+  re-run locally rather than accepting it.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** `SKIP_WITHOUT_GPU()` at `:325` is the same author solving the
+  same problem once already; these two blocks are what was left. The payoff is
+  the next golden test: today writing one means remembering three unrelated
+  incantations before the first assertion. The 5 tests that lack the guard
+  (`ShadowCasterStatsAreReportedAndZeroWhenShadowsAreOff`,
+  `DisablingFrustumCullingAlsoDisablesShadowCasterCulling`,
+  `FrustumCullingDropsOffscreenMeshesOnly`, `GpuTimingJsonDumpIsWrittenAndSane`,
+  `RaytracingFrameSkipsTheRasterPass`) call no `capture_frame` at all — that is
+  correct, **do not add the macro to them**; 26 guards for 26 capturing tests is
+  already the right count. Deliberately **not** in scope: the
+  two `sponza` path resolutions at `:1830`/`:1876`, which differ in whether they
+  skip on a missing model — that difference may be intentional, and merging it
+  needs a decision, not a refactor.
+
