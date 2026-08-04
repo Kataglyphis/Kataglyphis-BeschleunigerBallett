@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <glm/geometric.hpp>
+#include <glm/vec3.hpp>
 #include <string>
 #include <memory>
 #include <thread>
@@ -66,6 +67,29 @@ TEST(ObjParseUnit, FacesWithoutAMaterialIndexInsideTheMaterialsArray)
         ASSERT_LT(index, loader.getMaterials().size())
           << "face material index escapes the materials array (GPU OOB read)";
     }
+}
+
+TEST(ObjParseUnit, AnObjWithoutAnMtlGetsANonEmittingMaterial)
+{
+    // emission(0, 0, 0.10) was inert until shading started reading it - it
+    // then became a constant blue glow on every .obj shipped without an
+    // .mtl. No authored Ke means no emitted radiance.
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_no_mtllib.obj";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+
+    ASSERT_EQ(loader.getMaterials().size(), 1U);
+    const glm::vec3 &emission = loader.getMaterials().front().emission;
+    EXPECT_FLOAT_EQ(emission.x, 0.0F);
+    EXPECT_FLOAT_EQ(emission.y, 0.0F);
+    EXPECT_FLOAT_EQ(emission.z, 0.0F);
+
+    std::filesystem::remove(tmp);
 }
 
 TEST(ObjParseUnit, UntexturedMtlMaterialsRouteToTheDiffuseFallback)

@@ -9025,59 +9025,6 @@ and 3 change, so land it last.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Make the default `ObjMaterial` emission black** — `emission(0, 0, 0.10)` was inert until `59eca71c` started shading emission; it now adds a constant blue glow to every `.obj` shipped without an `.mtl`, including the golden suite's own `shadow_rig.obj`.
-
-  **Files to read:**
-  - `Src/shared/scene/ObjMaterial.hpp:38-41` — the default constructor. Only the
-    `emission` initialiser changes.
-  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:228-229` — the one reachable
-    caller: `if (tol_materials.empty()) { materials.emplace_back(); }`.
-  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:192-198` — the populated path,
-    which overwrites `emission` from `mp->emission`, for contrast.
-  - `Resources/ShadersSlang/rasterizer/rasterizer.slang:84-86` and
-    `Resources/ShadersSlang/deferred/deferred.slang:78-82` — the two consumers
-    that make the default reachable on screen.
-  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:353-355` — the other
-    `ObjMaterial{}` site. `skybox.slang` reads no material, so this is a no-op
-    for it; say so in the commit rather than leaving it unexplained.
-  - `Test/commit/VulkanEngine/objParseSuite.cpp` — the CPU parse-suite harness
-    to add the new test to.
-
-  **Steps:**
-  1. Change `emission(0.0F, 0.0F, 0.10F)` to `emission(0.0F)` in the default
-     constructor.
-  2. Replace it with a comment stating what the default means now: no authored
-     `Ke`/`emissive_factor` means no emitted radiance, and the shading paths add
-     `material.emission` unattenuated after shadowing
-     (`rasterizer.slang:84-86`), so any non-zero default is a scene-wide glow
-     nothing authored.
-  3. Do not touch the file-populated paths (`ObjLoader.cpp:196`,
-     `GltfLoader.cpp:142`) or `neutralMaterial()` (`GltfLoader.cpp:99-106`,
-     which already passes an explicit zero) — they all overwrite the default
-     already.
-
-  **Test:** Add `ObjParseUnit.AnObjWithoutAnMtlGetsANonEmittingMaterial`:
-  parse a `.obj` written to a temp path with no `mtllib` line, assert
-  `getMaterials().size() == 1` and that its `emission` is exactly
-  `glm::vec3(0.0F)`. Red today (it is `(0,0,0.1)`). Follow the temp-file
-  fixture pattern already in `objParseSuite.cpp`.
-
-  **Build:** `clangcl-debug`, **with `-FreshContainer`** (module-interface
-  change via `ObjMaterial.ixx`):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=ObjParseUnit.*:GltfParseUnit.*`.
-
-  **Context:** Land **after** task 1 — both edit `ObjMaterial.hpp` and running
-  them concurrently guarantees a conflict. `shadow_rig.obj` is one of the four
-  `.mtl`-less bundled models and is the golden suite's fixture
-  (`goldenRenderSuite.cpp:265`), so this shifts pixels; the goldens are
-  structural metrics (`GoldenMetrics.hpp`, `swung_fraction` / `luminance_of`),
-  not stored images, so nothing needs regenerating — but re-run
-  `GoldenRender.*` on the host GPU after the build and report the result rather
-  than assuming. This is the same "a constant that was harmless until the
-  feature that reads it shipped" shape as the `roughness = 0.9` survivor in
-  batch XI.
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 - [ ] **(S) Carry `.mtl` `Ke` through the OBJ→glTF converter as `emissiveFactor`** — the C++ OBJ loader reads it and shades it; the Rust converter drops it on the floor even though the renderer downstream fully supports emissive.

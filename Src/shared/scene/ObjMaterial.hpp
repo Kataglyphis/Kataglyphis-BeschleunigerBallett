@@ -42,8 +42,12 @@ struct ObjMaterial
     // same scalar-layout rationale as alphaCutoff.
     float roughness;
 
+    // No authored Ke/emissive_factor means no emitted radiance: the shading
+    // paths add material.emission unattenuated after shadowing
+    // (rasterizer.slang:84-86), so any non-zero default is a scene-wide glow
+    // nothing authored.
     ObjMaterial()
-      : diffuse(0.7F, 0.7F, 0.7F), emission(0.0F, 0.0F, 0.10F), shininess(0.0F), dissolve(1.0F), textureID(-1),
+      : diffuse(0.7F, 0.7F, 0.7F), emission(0.0F), shininess(0.0F), dissolve(1.0F), textureID(-1),
         alphaCutoff(-1.0F), uv_transform_row0(1.0F, 0.0F, 0.0F), uv_transform_row1(0.0F, 1.0F, 0.0F), metallic(0.0F),
         roughness(-1.0F)
     {}
