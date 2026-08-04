@@ -567,6 +567,80 @@ TEST(GltfParseUnit, UnskinnedNodeTransformStillApplies)
     EXPECT_TRUE(anyShifted) << "an unskinned node's translation must still apply to its vertices";
 }
 
+namespace {
+
+// A minimal one-triangle glTF (same 36-byte POSITION buffer as the fixtures
+// above: three vertices spanning x/y in [0,1]) whose node carries the given
+// "scale", so a test can pin whether a negative-determinant transform
+// reverses the emitted winding.
+std::string scaled_node_gltf(const std::string &scaleJson)
+{
+    return std::string(R"GLTF({
+      "asset": { "version": "2.0" },
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 }
+      } ] } ],
+      "nodes": [ { "mesh": 0, "scale": )GLTF")
+      + scaleJson + R"GLTF( } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+}
+
+std::vector<unsigned int> indices_of_scaled_node_gltf(const std::string &scaleJson, const char *tmpName)
+{
+    const auto tmp = std::filesystem::temp_directory_path() / tmpName;
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << scaled_node_gltf(scaleJson);
+    }
+    Kataglyphis::GltfLoader loader;
+    const bool parsed = loader.parseCpu(tmp.string());
+    std::filesystem::remove(tmp);
+    EXPECT_TRUE(parsed);
+    return loader.getIndices();
+}
+
+}// namespace
+
+TEST(GltfParseUnit, MirroredNodeReversesTriangleWinding)
+{
+    // glTF 2.0 spec (3.7.4 Transformations): a negative-determinant node
+    // transform must reverse the triangle winding order. "scale": [-1,1,1]
+    // has determinant -1 (a mirror), so the emitted list-topology triangle
+    // (0,1,2) must come out as (0,2,1). Red without the GltfLoader change:
+    // the mirrored mesh keeps (0,1,2), gets back-face-culled by
+    // MeshDrawRecorder's eBack, and disappears.
+    const auto indices = indices_of_scaled_node_gltf("[-1, 1, 1]", "kat_mirrored.gltf");
+    const std::vector<unsigned int> expected = { 0U, 2U, 1U };
+    EXPECT_EQ(indices, expected) << "a mirrored (determinant < 0) node must reverse its triangle winding";
+}
+
+TEST(GltfParseUnit, UnmirroredNodeKeepsItsWinding)
+{
+    // Control for the test above: a uniform positive scale (determinant +1)
+    // must NOT reverse the winding, so the determinant check cannot silently
+    // invert every node's triangles.
+    const auto indices = indices_of_scaled_node_gltf("[1, 1, 1]", "kat_unmirrored.gltf");
+    const std::vector<unsigned int> expected = { 0U, 1U, 2U };
+    EXPECT_EQ(indices, expected) << "an unmirrored node must keep its original triangle winding";
+}
+
+TEST(GltfParseUnit, RotatedNodeWithTwoNegativeScalesKeepsItsWinding)
+{
+    // "scale": [-1,-1,1] has determinant (+1)(-1)(-1)... actually (-1)*(-1)*1
+    // = +1: a 180-degree rotation about Z, not a mirror. This is the case a
+    // naive "any negative scale component" check gets wrong - only the SIGN
+    // of the determinant (an odd number of negative factors) matters.
+    const auto indices = indices_of_scaled_node_gltf("[-1, -1, 1]", "kat_rotated_not_mirrored.gltf");
+    const std::vector<unsigned int> expected = { 0U, 1U, 2U };
+    EXPECT_EQ(indices, expected) << "two negative scale components is a rotation (det +1), winding must be unchanged";
+}
+
 TEST(GltfParseUnit, MaskAlphaModeSetsTheCutoff)
 {
     // glTF alphaMode MASK carries the cutoff the raster shaders discard against.

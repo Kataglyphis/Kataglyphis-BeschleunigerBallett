@@ -107,11 +107,15 @@ class GltfLoader
     /// position-less primitives are skipped (early return). `world` and
     /// `normalMatrix` are the owning node's baked transforms; `fallbackMaterial`
     /// is the neutral-material index used when the primitive references none.
+    /// `mirrored` is true when `world` has a negative determinant (glTF 2.0
+    /// §3.7.4), in which case emitted triangles get their winding reversed so
+    /// back-face culling and the flat-normal fallback stay correct.
     void processPrimitive(const cgltf_primitive *primitive,
       const glm::mat4 &world,
       const glm::mat3 &normalMatrix,
       const cgltf_data *data,
-      unsigned int fallbackMaterial);
+      unsigned int fallbackMaterial,
+      bool mirrored);
 
     /// Visits `node` and recurses over its children, processing every
     /// primitive of every mesh reached this way. Shared with

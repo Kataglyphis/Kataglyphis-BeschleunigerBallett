@@ -266,7 +266,8 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
   const glm::mat4 &world,
   const glm::mat3 &normalMatrix,
   const cgltf_data *data,
-  unsigned int fallbackMaterial)
+  unsigned int fallbackMaterial,
+  bool mirrored)
 {
     // Triangles, triangle strips and triangle fans are all supported
     // (strips/fans are triangulated into a list below). Points and
@@ -351,14 +352,30 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
     // computeFlatNormals below and the BLAS build both index vertices
     // unchecked, so an out-of-range corner reaching either is an
     // out-of-bounds write / device fault rather than a diagnosable error.
+    //
+    // glTF 2.0 spec (3.7.4. Transformations): "the determinant of the
+    // node's global transform... indicates the winding order of the mesh
+    // triangles - if positive, the winding order triangle is unchanged; if
+    // negative, the winding order must be reversed". `mirrored` carries that
+    // sign so a mirrored node's triangles still front-face towards the
+    // viewer. MeshDrawRecorder.cpp sets eBack culling for every non-double-
+    // sided mesh, so an unreversed mirror is back-face-culled into
+    // invisibility; computeFlatNormals below derives its normal from this
+    // same corner order, so it must run (and does) after this reversal.
     const auto emitTri = [&](unsigned int a, unsigned int b, unsigned int c) {
         if (a >= vertexCount || b >= vertexCount || c >= vertexCount) {
             ++droppedTriangles;
             return;
         }
-        indices.push_back(base + a);
-        indices.push_back(base + b);
-        indices.push_back(base + c);
+        if (mirrored) {
+            indices.push_back(base + a);
+            indices.push_back(base + c);
+            indices.push_back(base + b);
+        } else {
+            indices.push_back(base + a);
+            indices.push_back(base + b);
+            indices.push_back(base + c);
+        }
     };
     if (primType == cgltf_primitive_type_triangle_strip) {
         // Strip: alternate winding each step to keep a consistent
@@ -435,9 +452,13 @@ void GltfLoader::visitNode(const cgltf_node *node, const cgltf_data *data, unsig
             world = glm::make_mat4(worldRaw);
         }
         const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(world));
+        // A skinned node keeps world == identity above, so its determinant is
+        // +1 and it is never mirrored - correct, bind-pose vertices are
+        // unmirrored regardless of the joint transforms that will move them.
+        const bool mirrored = glm::determinant(glm::mat3(world)) < 0.0F;
 
         for (cgltf_size p = 0; p < node->mesh->primitives_count; ++p) {
-            processPrimitive(&node->mesh->primitives[p], world, normalMatrix, data, fallbackMaterial);
+            processPrimitive(&node->mesh->primitives[p], world, normalMatrix, data, fallbackMaterial, mirrored);
         }
     }
 
@@ -536,9 +557,10 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
                 world = glm::make_mat4(worldRaw);
             }
             const glm::mat3 normalMatrix = glm::inverseTranspose(glm::mat3(world));
+            const bool mirrored = glm::determinant(glm::mat3(world)) < 0.0F;
 
             for (cgltf_size p = 0; p < node->mesh->primitives_count; ++p) {
-                processPrimitive(&node->mesh->primitives[p], world, normalMatrix, data, fallbackMaterial);
+                processPrimitive(&node->mesh->primitives[p], world, normalMatrix, data, fallbackMaterial, mirrored);
             }
         }
     }
