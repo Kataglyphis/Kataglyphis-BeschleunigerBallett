@@ -8364,28 +8364,6 @@ last one and its checked-in WGSL is final. Task 4 touches only
 
   **Context:** Same family as the eight `common/` extractions already shipped (`brdf`, `aces`, `fullscreen`, `noise`, `scene_types`, `material_fetch`, `base_color`, `cascaded_shadow`) — see `docs/shader-sharing.md`. What makes this one worth doing rather than cosmetic: `forward.slang:442` reflects the analytic sky into the ambient of the surfaces the sky pass draws behind, and `ibl.rs`'s panorama is convolved into the irradiance map that replaces that ambient, so a drift in any one copy shows up as a lighting/background mismatch nobody can localise. `tests/ibl.rs:933-945` only pins an ordering all three would still satisfy after drifting.
 
-- [ ] **(S) Make the orbit controller end a drag on focus loss and keep tracking the cursor while egui holds it** — both fixes already shipped on the C++ frontend; the Rust twin has neither.
-
-  **Files to read:**
-  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/scene/controller.rs:29-96` — `Default`, `handle_event`, and the `_ => false` arm; the `#[cfg(test)] mod tests` from `:225` is where the new tests go
-  - `.../examples/viewer.rs:296-303` and `.../src/wasm_demo.rs:234-241` — the two `if !consumed { … }` dispatch sites
-  - `Src/shared/frontend/WindowInputCallbacks.ixx:22-26` (`handle_focus_lost`) and `:75-84` (the "keep tracking while ImGui holds capture" comment) — the C++ fixes this mirrors
-  - `Test/commit/VulkanEngine/frontendInputSuite.cpp` — how the C++ side tests exactly these two properties
-
-  **Steps:**
-  1. Add a `WindowEvent::Focused(false)` arm to `handle_event` that clears `dragging`, sets `last_cursor = None`, and returns `false` (losing focus must not move the camera). `Focused(true)` needs no arm — `last_cursor = None` already makes the next move a no-delta re-seed.
-  2. Add `pub fn note_consumed_event(&mut self, event: &WindowEvent)` that handles the events the overlay swallowed: on `CursorMoved`, update `last_cursor` **without** applying a drag; on `Focused(false)` and on a left-button `Released`, do what step 1 does. Give it a doc comment stating the property it buys — "the first event after capture ends produces no delta" — the same property `WindowInputCallbacks.ixx:86-94` states.
-  3. Change both dispatch sites from `if !consumed { handle_event(...) }` to an `if consumed { self.controller.note_consumed_event(&event); } else { … }`, so the controller sees every event exactly once and in one of two roles.
-  4. Do not touch the touch-gesture paths (`handle_touch`, `:98-183`): `TouchPhase::Cancelled` is already the touch equivalent of focus loss and is already tested (`cancelled_touches_are_forgotten`).
-
-  **Test:** Two tests in `controller.rs`'s existing `mod tests`, both pure CPU:
-  `losing_focus_ends_a_drag` — press left, move (camera yaw changes), send `Focused(false)`, then move again and assert the yaw is unchanged;
-  `a_consumed_move_does_not_become_a_delta_when_the_cursor_returns` — press left at (100, 100), feed a *consumed* move to (400, 100) via `note_consumed_event`, then a normal move to (410, 100), and assert the yaw changed by the 10 px step, not the 310 px one. Follow `a_second_finger_does_not_jump_the_camera` (`:249`) for the assertion style — a bounded delta, not an exact float.
-
-  **Build:** No C++ build. `cargo clippy --all-targets -p kataglyphis_webgpu_renderer` and `cargo fmt -p kataglyphis_webgpu_renderer -- --check` from `ExternalLib/Kataglyphis-RustProjectTemplate`; the host MSVC linker cannot link `cargo test` (see memory), and the always-on Linux lane runs the new tests on push via `Scripts/Linux/run-cargo-tests.sh`.
-
-  **Context:** The C++ frontend paid for both of these twice (`9fb6b96f` accumulated mouse deltas; the look-mode/focus fixes are logged in `docs/cpp-renderer-improvements.md`), and the reasoning comments were written into `WindowInputCallbacks.ixx` precisely so the next implementation would not repeat them. The wasm demo is the user-facing surface here — it is the build published to the docs site — and "the camera spins forever after I switch tabs" is the exact failure mode. Keep `handle_event`'s signature and return contract (`true` iff the camera moved); several call sites and tests depend on it.
-
 ## 2026-08-02 — reuse-sweep residuals (the sweep itself shipped)
 
 The 2026-08-02 reuse sweep landed: WindowsCMake/Config/Formatting/WebDav/
