@@ -8341,29 +8341,6 @@ last one and its checked-in WGSL is final. Task 4 touches only
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-- [ ] **(M) Make the masked-shadow pass alpha-test with the same UV set and vertex alpha as the forward pass** — a MASK material whose base-colour texture declares `TEXCOORD_1` casts a shadow silhouette that does not match the geometry it draws.
-
-  **Files to read:**
-  - `Resources/ShadersSlang/forward/forward.slang` — `VsIn` (`:83-97`), `vs_shadow_masked` (`:181-192`), `fs_shadow_masked` (`:194-202`), and `fs_main`'s UV-set selection and alpha product (`:376-394`)
-  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/shaders/forward.wgsl:258-298` — the checked-in generated output, to confirm the defect before and the fix after
-  - `.../src/render/forward.rs:126-135` (`uv_set_mask` doc), `:1715-1735` (packing into `material_flags`), `:1341-1346` and `:1801` (the masked-shadow bind group and draw)
-  - `.../src/asset/gltf_loader.rs:660-672` — where `uv_set_mask` bit 0 comes from
-  - `.../tests/shader_export.rs:187-...` (`depth_resolve_fragment_writes_frag_depth`) — the shader-content test pattern to follow
-  - `docs/shader-build-pipeline.md` — the regeneration step and the slangc version floor
-
-  **Steps:**
-  1. In `vs_shadow_masked`, select the UV set the same way `fs_main` does for the base-colour slot: `float2 baseIn = (uint(prim.material_flags.y) & 1u) != 0u ? In.uv1 : In.uv;` and forward that as `o.uv`. Do **not** apply `base_uv_row0/row1` here — `fs_shadow_masked` already applies the transform (`:197-199`), and applying it twice is the next bug.
-  2. Add `float alpha : TEXCOORD1;` to `VsShadowMaskedOut` and set it to `In.color.a` in `vs_shadow_masked`, then multiply it into `fs_shadow_masked`'s test so the discarded alpha is `prim.base_color.a * texture.a * vertexColor.a` — the same three-factor product `fs_main` builds at `:393`. Passing the whole `float4` colour would work too but wastes three interpolants; the alpha is all the test uses.
-  3. Leave `vs_shadow` (the non-masked variant, `:165-173`) alone — it has no fragment stage and nothing to test.
-  4. Regenerate the WGSL: `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`. This needs slangc >= the manifest's `minSlangcVersionForWgsl` (2026.8); the host Vulkan SDK 1.4.350 provides it. Commit the regenerated `crates/webgpu_renderer/src/shaders/forward.wgsl` — it is a checked-in artifact, and `CheckedInWgslHasNoHandEdits` will fail if you edit it by hand.
-  5. Add a row to `docs/shader-sharing.md`'s divergence section recording that the C++ engine supports only TEXCOORD_0 (and warns, `GltfLoader.cpp:161-168`) while the Rust renderer honours the per-slot UV mask in both the forward and the masked-shadow pass. This divergence is currently unrecorded.
-
-  **Test:** Add `shadow_masked_uses_the_forward_pass_uv_set` to `crates/webgpu_renderer/tests/shader_export.rs`, in the style of `depth_resolve_fragment_writes_frag_depth`: slice `forward.wgsl` between `fn vs_shadow_masked(` and its closing brace and assert the body references both the `uv1` input member and `material_flags`, so a regeneration that drops the selector fails loudly; assert the `fs_shadow_masked` body multiplies three terms into the discarded alpha. Pure CPU, no adapter — keep it out of any `GpuContext`-backed test for the reason `tests/cull_constants.rs` states in its header.
-
-  **Build:** No C++ build. Verify with `cargo clippy --all-targets -p kataglyphis_webgpu_renderer` and `cargo fmt -p kataglyphis_webgpu_renderer -- --check` from `ExternalLib/Kataglyphis-RustProjectTemplate` — the host MSVC linker cannot link `cargo test` (see memory); the new test runs on the always-on Linux lane via `Scripts/Linux/run-cargo-tests.sh`. The `commitTestSuite` gates that watch the checked-in WGSL (`SlangCompileManifestsAgree`, `CheckedInWgslHasNoHandEdits`, `EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl`) run from the existing `build-clangcl-debug\commitTestSuite.exe` without a rebuild.
-
-  **Context:** This is the Rust twin of the two glTF-conformance fixes that shipped yesterday (`bdbec99a` carried `baseColorFactor` alpha into the MASK test, `3b6ccc92` warned on an unsupported TEXCOORD set). The shadow pass is where a masked material is *most* visible — a foliage card that alpha-tests correctly in the colour pass and solidly in the shadow pass reads as "the shadows are broken", not "the UV set is wrong". The visual confirmation wants a `viewer.rs` run against a MASK/TEXCOORD_1 asset once the RDP blocker clears; the acceptance above deliberately does not depend on it.
-
 - [ ] **(M) (refactor) Give the analytic sky one definition** — the same three constants and the same gradient are written in two Slang shaders and once more on the Rust CPU side, and the three must agree because each feeds the others' ambient.
 
   **Files to read:**

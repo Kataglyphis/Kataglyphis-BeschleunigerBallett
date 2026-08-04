@@ -176,6 +176,7 @@ struct VsShadowMaskedOut
 {
     float4 pos : SV_Position;
     float2 uv : TEXCOORD0;
+    float alpha : TEXCOORD1;
 };
 
 [shader("vertex")]
@@ -187,7 +188,9 @@ VsShadowMaskedOut vs_shadow_masked(VsIn In)
     if (cascade == 1u) o.pos = mul(frame.light_space_1, world);
     else if (cascade == 2u) o.pos = mul(frame.light_space_2, world);
     else o.pos = mul(frame.light_space, world);
-    o.uv = In.uv;
+    float2 baseIn = (uint(prim.material_flags.y) & 1u) != 0u ? In.uv1 : In.uv;
+    o.uv = baseIn;
+    o.alpha = In.color.a;
     return o;
 }
 
@@ -197,7 +200,7 @@ void fs_shadow_masked(VsShadowMaskedOut In)
     float2 uv = float2(
         prim.base_uv_row0.x * In.uv.x + prim.base_uv_row0.y * In.uv.y + prim.base_uv_row0.z,
         prim.base_uv_row1.x * In.uv.x + prim.base_uv_row1.y * In.uv.y + prim.base_uv_row1.z);
-    float alpha = prim.base_color.a * baseColorTex.Sample(baseColorSampler, uv, 0).a;
+    float alpha = prim.base_color.a * baseColorTex.Sample(baseColorSampler, uv, 0).a * In.alpha;
     if (alpha < prim.emissive_factor.w) discard;
 }
 

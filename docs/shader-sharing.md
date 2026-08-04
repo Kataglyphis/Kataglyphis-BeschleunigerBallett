@@ -157,7 +157,13 @@ revisions of this document as "in progress" is complete.
   material's base-colour texture or `KHR_texture_transform` names anything
   else (including a rotation, which is also unapplied); the WebGPU
   `asset/gltf_loader.rs`'s `uv_set_bit` (Rust) supports TEXCOORD_0/1 and warns
-  only past that.
+  only past that. The Rust masked-shadow pass (`forward.slang`'s
+  `vs_shadow_masked`/`fs_shadow_masked`) honours the per-slot UV mask for the
+  base-colour slot the same way the forward pass does, so a MASK material
+  whose base-colour texture declares TEXCOORD_1 casts a shadow silhouette
+  that matches its forward-pass alpha test; the C++ shadow pass has no
+  equivalent selector because it never reads past TEXCOORD_0 in the first
+  place.
 
 ## Beyond shaders
 
