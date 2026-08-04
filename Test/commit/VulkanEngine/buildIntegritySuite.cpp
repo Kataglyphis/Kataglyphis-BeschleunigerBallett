@@ -6728,6 +6728,88 @@ TEST(BuildIntegrity, ComputePipelinesAreCreatedThroughTheSharedHelper)
          }();
 }
 
+// Raytracing.cpp used to hand-roll six vk::PipelineShaderStageCreateInfo
+// (four stages) and four vk::RayTracingShaderGroupCreateInfoKHR field-by-field,
+// with twelve VK_SHADER_UNUSED_KHR sentinels spelled out where
+// common/ShaderStageHelper.hpp's buildShaderStageCreateInfo/
+// buildGeneralShaderGroup/buildTrianglesHitGroup builders now do the job in
+// four lines. This pins that down so a future pipeline cannot silently
+// reintroduce the duplication - a wrong pName or a wrong UNUSED_KHR sentinel
+// is a value a compiler cannot check, and produces a silently broken
+// pipeline rather than a build error.
+TEST(BuildIntegrity, EveryPipelineShaderStageGoesThroughTheSharedBuilder)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    // ShaderStageHelper.hpp is the builders' own definition.
+    static const std::array<const char *, 1> kExemptFiles = {
+        "Src/GraphicsEngineVulkan/common/ShaderStageHelper.hpp"
+    };
+
+    static const std::regex kPNameAssignment(R"(\.pName\s*=[^=])");
+    static const std::regex kStageAssignment(R"(\.stage\s*=[^=])");
+    // A local vk::PipelineShaderStageCreateInfo declaration - PipelineBuilder's
+    // std::span<...>/std::vector<...> *parameters* of that type construct
+    // nothing, so they must not trip this. Requires the type name not be
+    // immediately preceded by a template angle bracket on the same match.
+    static const std::regex kLocalDeclaration(
+      R"((?:^|[^<,]\s)vk::PipelineShaderStageCreateInfo\s+\w+\s*[{;])");
+
+    std::size_t checked = 0;
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".cpp" && path.extension() != ".ixx" && path.extension() != ".hpp") { continue; }
+
+        const std::string relative_file = fs::relative(path, repo_root).generic_string();
+        if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
+
+        const auto contentsOpt = readFileText(path);
+        if (!contentsOpt.has_value()) { continue; }
+        ++checked;
+
+        bool has_pname_assignment = false;
+        bool has_local_declaration = false;
+        bool has_stage_assignment = false;
+        std::istringstream stream(*contentsOpt);
+        std::string line;
+        while (std::getline(stream, line)) {
+            if (std::regex_search(line, kPNameAssignment)) { has_pname_assignment = true; }
+            if (std::regex_search(line, kLocalDeclaration)) { has_local_declaration = true; }
+            if (std::regex_search(line, kStageAssignment)) { has_stage_assignment = true; }
+        }
+
+        if (has_pname_assignment) {
+            violations.push_back(relative_file + ": hand-assigns .pName instead of using buildShaderStageCreateInfo");
+        }
+        if (has_local_declaration && has_stage_assignment) {
+            violations.push_back(relative_file
+              + ": declares a local vk::PipelineShaderStageCreateInfo and hand-assigns .stage instead of using "
+                "buildShaderStageCreateInfo");
+        }
+    }
+
+    ASSERT_GT(checked, 0u) << "found zero files under " << src_root.string() << " - the scan itself is broken";
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " hand-rolled vk::PipelineShaderStageCreateInfo field assignment(s) found under "
+         "Src/GraphicsEngineVulkan/ - build shader stages through common/ShaderStageHelper.hpp's "
+         "buildShaderStageCreateInfo instead:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 // Every hand-rolled destroyPipelineLayout(...)/destroyPipeline(...) teardown
 // pair used to be spelled out at each of the 20 call sites across 8 files.
 // Kataglyphis::destroyPipelineAndLayout (common/PipelineLayoutHelper.hpp) is

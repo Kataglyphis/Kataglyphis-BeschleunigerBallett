@@ -9027,3 +9027,285 @@ and 3 change, so land it last.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
+## 2026-08-04 batch XIII — planner (refactor: the ray-tracing pipeline is the one stage that never adopted the shared shader-stage builder — six hand-assigned `pName = "main"` blocks survive project-wide, four of them here, next to four five-line shader-group blocks that differ in two fields; a whole C++23 module whose entire job is to add one log line to three free functions, and whose `read()` has zero production callers; and 50 copies of one open-and-getline loop in the gate suite, beside a helper header that says it is "the one place those helpers live now")
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]`). Batch XII's five tasks all shipped (`4156455e`, `86d18037`,
+`90d62581`, `2f68854c`, `11705447`). Everything below was read out of the tree
+this pass, at `11705447`.
+
+**First, `Raytracing.cpp` is the last stage that hand-assigns
+`vk::PipelineShaderStageCreateInfo`.** `common/ComputePipelineHelper.hpp:13`
+already owns `buildComputeShaderStageCreateInfo(module)`, and its comment
+states the rule that makes the builder safe: "Slang always emits `main` as the
+entry-point symbol regardless of the Slang-side function name (AGENTS.md), so
+no call site has a reason to pass its own entry-point name here — a builder
+that took one would just be giving every future call site a way to get it
+wrong." That builder is compute-only, so the two non-compute construction sites
+never got it. `Raytracing.cpp:171-189` writes the same three-line
+`.stage`/`.module`/`.pName` block four times (raygen, miss, shadow-miss,
+closest-hit), and `ShaderHelper.cpp:75-81` writes it twice more for
+`ShaderStagePair`'s vertex/fragment pair. Six hand-written `pName = "main"`
+literals, in two files, against one builder that exists precisely to stop that.
+`grep -rn 'pName' Src/` finds no other spelling.
+
+The shader-group block immediately below is the same shape one level down.
+`Raytracing.cpp:198-230` declares a C array `vk::RayTracingShaderGroupCreateInfoKHR
+shader_group_create_infos[4]`, fills each element with five assignments and
+`push_back`s it — 33 lines in which only two fields ever vary: three groups are
+`eGeneral` with a `generalShader` index and `VK_SHADER_UNUSED_KHR` in the other
+three slots, and one is `eTrianglesHitGroup` with `closestHitShader` set and
+`generalShader` unused. Two constexpr builders (`buildGeneralShaderGroup`,
+`buildTrianglesHitGroup`) collapse it to four lines, and — the reason this is
+worth doing rather than cosmetic — they put the four `VK_SHADER_UNUSED_KHR`
+sentinels in one place instead of twelve. A missed sentinel here is not a
+compile error; it is a garbage shader index in the SBT.
+
+Scope note: **do not change the group count, the group order, or the
+`StageIndices` enum.** The known SBT defect (the miss region declaring one
+record while the shadow ray reads record 1, and the handle-offset stride
+assumption) is tracked separately as the blocked entry at
+`BACKLOG.md`'s "(M) Fix the ray-tracing SBT" — this task is a pure
+construction-site refactor and must leave `shader_groups`' contents
+byte-identical.
+
+**Second, `Kataglyphis::File` is a C++23 module whose whole job is to add one
+`spdlog` line to three free functions, and one of its three methods is dead.**
+`util/File.ixx` exports a class privately inheriting
+`Shared::FileLocationHolder` (a 15-line header that exists only for this one
+class — `grep -rn FileLocationHolder Src Test` finds no other user), and
+`util/File.cpp:18-43` implements all three methods as
+`if (!Shared::fileExists(loc)) { log; return {}; } return Shared::<the free
+function>(loc);`. The free functions are `Src/shared/util/FileReader.ixx`'s
+`readTextFile`, `readBinaryFile` and `getBaseDir`, all already directly unit
+tested by `Test/commit/VulkanEngine/fileReaderSuite.cpp` (including the two
+error paths the `fileExists` guard duplicates: missing path and directory path,
+`:90`/`:99`/`:110`/`:119`).
+
+Production call sites, in full:
+
+- `File::readCharSequence()` — one, `ShaderHelper.cpp:58`,
+  `File(spvPath).readCharSequence()`: a temporary constructed and destroyed on
+  the same line, which is the tell that the object was never carrying state.
+  Its "does not exist" log is redundant there — the very next statement is
+  `if (!validateSpirvBlob(code))`, which logs *critical* with the far better
+  message ("Invalid or missing SPIR-V shader blob at '…' — run
+  compile-slang-shaders.ps1") and then `std::abort()`s. The wrapper's `err`
+  line only ever prints immediately before that.
+- `File::getBaseDir()` — one, `ObjLoader.cpp:183-184`, which constructs
+  `File model_file(modelFile)` on one line purely to call `.getBaseDir()` on
+  the next. `Shared::getBaseDir(modelFile)` is the same call with the object
+  removed.
+- `File::read()` — **zero.** The only caller in the tree is
+  `Test/fuzz/shader_file_reader_fuzz_test.cpp:56`.
+
+That fuzz test is the one this repo cares most about (its header comment
+records that the byte-exactness property is what protects shader loading, and
+per memory it is also the target the Linux lane skips), so it must keep
+fuzzing the same functions — pointed at `readBinaryFile`/`readTextFile`/
+`getBaseDir` directly, its two properties are unchanged and it stops testing a
+wrapper on the way to them.
+
+**Third, `buildIntegritySuite.cpp` hand-rolls the same open-and-getline loop 50
+times, next to a helper header that claims to have ended exactly that.**
+`Test/commit/VulkanEngine/RepoFiles.hpp` was added to stop this — its comment
+says "Three suites each grew their own copy of both … This header is the one
+place those helpers live now" — and it does own `repoRoot()`, `slangRoot()`,
+`spirvRoot()` and `readFileText()`. But `readFileText` returns the whole file
+as one string, and the overwhelmingly common need in this suite is *lines*. So
+the line-reading twin was never written, and `grep -c 'std::ifstream'
+buildIntegritySuite.cpp` is **60**, of which 50 are immediately followed by a
+`while (std::getline(file, line))` loop within six lines. Each is the identical
+four-line preamble: construct, `if (!file) { return <nullopt|empty>; }`,
+declare `std::string line`, loop. (The remaining 10 are legitimately different:
+two hand `nlohmann::json::parse` the stream, and the SPIR-V readers already go
+through `readFileText`.)
+
+There is a portability wrinkle that makes this more than tidying, and the
+helper must handle it explicitly. All 50 copies open in **text** mode
+(`std::ifstream file(path)`, no `std::ios::binary`), which on Windows strips
+`\r` and on Linux does not — while `readFileText` opens binary. `.gitattributes`
+pins `*.ps1`/`*.psm1`/`*.cmd` to CRLF, and `.github/workflows/Windows.yml` is
+CRLF on this checkout (`file` reports "with CRLF line terminators"). Several of
+these parsers read exactly those files —
+`parse_local_runner_fuzz_targets` (a `.ps1`), `parse_ci_fuzz_targets` and
+`parse_ci_gpu_excluded_suites` (that workflow). They survive today only because
+every one of them matches with `find`/`substr` rather than comparing a whole
+line, so a trailing `\r` falls outside the match. That is luck, not design, and
+it is exactly the trap a naive `readFileText` + split-on-`\n` conversion would
+walk into. The helper must strip one trailing `\r` per line, which makes the
+converted sites behave the same on both platforms — strictly better than the
+status quo, where they behave differently.
+
+Ordering: run these **sequentially**, not concurrently. Tasks 1 and 2 both edit
+`Src/GraphicsEngineVulkan/vulkan_base/ShaderHelper.cpp` (task 1 at `:75-81`,
+task 2 at `:58`), and tasks 1 and 3 both edit
+`Test/commit/VulkanEngine/buildIntegritySuite.cpp` (task 1 adds a gate, task 3
+rewrites the helper block). Task 1 first, then task 2, then task 3. Tasks 1 and
+2 both need `-FreshContainer`: task 1 adds a header pulled into global module
+fragments, task 2 **deletes** `File.ixx`/`File.cpp`/`FileLocationHolder.hpp`,
+and a reused container keeps building deleted files (AGENTS.md § Container
+reuse). Task 3 is test-only and does not.
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Delete the `kataglyphis.vulkan.file` module and call the shared file-reader free functions directly** — a whole C++23 module, plus a header that exists only to serve it, wrapping three free functions to add one log line; one of its three methods has no production caller at all.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/util/File.ixx` and `util/File.cpp` — the module
+    being removed; note every method is `guard with fileExists → delegate`
+  - `Src/shared/util/FileReader.ixx` — `fileExists`, `readTextFile`,
+    `readBinaryFile`, `getBaseDir`: the functions that do the actual work, and
+    the comments explaining why each guards the way it does
+  - `Src/shared/util/FileLocationHolder.hpp` — 15 lines, no user but `File`
+  - `Src/GraphicsEngineVulkan/vulkan_base/ShaderHelper.cpp:55-68` — call site 1
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:177-190` — call site 2
+  - `Test/fuzz/shader_file_reader_fuzz_test.cpp` — the only caller of
+    `File::read()`; its header comment states the property that must survive
+  - `Test/commit/VulkanEngine/fileReaderSuite.cpp` — the free functions already
+    have direct coverage here, including both error paths
+
+  **Steps:**
+  1. `ShaderHelper.cpp:58`: replace `File(spvPath).readCharSequence()` with
+     `Kataglyphis::Shared::readBinaryFile(spvPath)`; swap
+     `import kataglyphis.vulkan.file;` for
+     `import kataglyphis.shared.util.file_reader;`. The missing-file case is
+     already covered two lines down by the `validateSpirvBlob` critical +
+     `std::abort()`, so no log is lost that matters — but say so in a short
+     comment on that line, because the deleted wrapper's `err` line is the only
+     behaviour change in this task.
+  2. `ObjLoader.cpp:183-184`: replace the `File model_file(modelFile);` /
+     `model_file.getBaseDir()` pair with
+     `const std::string base_dir = Kataglyphis::Shared::getBaseDir(modelFile);`
+     and swap the import the same way. Check whether `kataglyphis.vulkan.file`
+     was that file's only reason to import anything else — remove the import
+     line, do not leave it unused (`EveryImportedSlangModuleIsUsed`'s C++ twin
+     does not cover this, so it will not be caught for you).
+  3. `Test/fuzz/shader_file_reader_fuzz_test.cpp`: swap the import for
+     `kataglyphis.shared.util.file_reader`, and rewrite the two properties
+     against the free functions —
+     `ReadingArbitraryPathsNeverCrashes` calls `readBinaryFile(path)`,
+     `readTextFile(path)`, `getBaseDir(path)` (and, since the guard is what it
+     is really exercising, `fileExists(path)`);
+     `ReadingAFileReturnsItsBytesExactly` calls `readBinaryFile(path.string())`.
+     Keep both `.WithSeeds({...})` lists byte-for-byte. Update the file's
+     header comment: it currently says "ShaderHelper builds a path, wraps it in
+     `Kataglyphis::File`, and calls `readCharSequence()`" — after step 1 that
+     sentence is wrong.
+  4. Delete `Src/GraphicsEngineVulkan/util/File.ixx`,
+     `Src/GraphicsEngineVulkan/util/File.cpp` and
+     `Src/shared/util/FileLocationHolder.hpp`. The `util/` directory then holds
+     nothing else — remove it too if it is empty. No CMake edit is needed:
+     `Src/GraphicsEngineVulkan/CMakeLists.txt:17/28` glob `*.cpp`/`*.hpp` and
+     `kataglyphis_collect_module_interfaces` globs `*.ixx`.
+  5. `grep -rn 'kataglyphis\.vulkan\.file\|FileLocationHolder\|Kataglyphis::File'
+     Src Test` must come back empty before you build.
+
+  **Test:** No new test is needed for the deletion itself —
+  `fileReaderSuite.cpp` already covers all four free functions directly,
+  including the missing-path and directory-path error paths the removed guard
+  duplicated. Verify instead that (a) the whole `commitTestSuite.exe` stays
+  green, in particular `BuildIntegrity.EveryModuleInterfaceIsImported` (a
+  deleted module interface is exactly what that gate reasons about), and (b)
+  the rewritten fuzz target still builds and runs:
+  `.\build-clangcl-debug\shader_file_reader_fuzz_test.exe`. Add one case to
+  `fileReaderSuite.cpp` if it is missing: `readTextFile` on a binary blob
+  containing an embedded NUL, mirroring the fuzz property, so the round-trip
+  guarantee has a deterministic commit-suite anchor too.
+
+  **Build:** `clangcl-debug`, and **`-FreshContainer` is mandatory** — this
+  deletes source files, and a reused container overwrites sources in place
+  without ever pruning them, so `File.cpp` would keep compiling and the module
+  would keep resolving (AGENTS.md § Containerized Windows Builds):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  Then `.\build-clangcl-debug\commitTestSuite.exe`.
+
+  **Context:** Nothing in the engine ever holds a `File` — both production
+  sites construct a temporary, call one method, and drop it, which is the
+  signature of a class that should have been a function. The wrapper's only
+  added value was an `spdlog` "does not exist" line, and at the one site where
+  it could matter the very next statement already logs *critical* with a
+  better message and aborts. `File::read()` has zero production callers.
+  Follow the same rule the rest of `Src/shared/util/` already follows —
+  free functions in a module, no state, guarded with the `error_code`
+  filesystem overloads (`FileReader.ixx:13-24` explains why that is required
+  and not stylistic, given exceptions are disabled project-wide). Avoid:
+  changing any of the four free functions' behaviour, and avoid weakening the
+  fuzz test's byte-exactness property — that property is the reason the target
+  exists.
+
+### Test suites
+
+- [ ] **(M) (refactor) Give the gate suite a `readFileLines()` helper and retire its 50 hand-rolled getline loops** — `RepoFiles.hpp` says it is "the one place those helpers live now", but it only ever grew the whole-file reader, so the line reader was copied 50 times instead.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/RepoFiles.hpp` — the helper header; read its
+    top comment, which states the intent this task finishes
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — the 50 sites. The
+    helper block is `:60-1181`; the parsers at `:786` (a CRLF `.ps1`), `:698`
+    and `:561` (a CRLF workflow) are the ones with the line-ending hazard
+  - `.gitattributes` — `*.ps1`/`*.psm1`/`*.cmd` are pinned to CRLF; that is
+    why the helper must strip `\r`
+
+  **Steps:**
+  1. Add to `RepoFiles.hpp`, next to `readFileText`:
+     `inline std::optional<std::vector<std::string>> readFileLines(const std::filesystem::path &path)`.
+     Implement it by opening **binary**, reading with `std::getline`, and then
+     stripping **one** trailing `'\r'` from each line if present. Return
+     `std::nullopt` only when the file cannot be opened — an existing empty
+     file returns an empty vector, which the callers distinguish. Document in
+     the function comment *why* the `\r` strip is there (text-mode `getline`
+     strips it on Windows and not on Linux; `.gitattributes` pins several of
+     the parsed files to CRLF), so nobody "simplifies" it away.
+  2. Convert the 50 `std::ifstream` + `while (std::getline(...))` sites in
+     `buildIntegritySuite.cpp` to
+     `const auto lines = readFileLines(p); if (!lines) { return <the same
+     nullopt/empty value that site already returned>; } for (const auto &line :
+     *lines) { ... }`. **Preserve each site's existing failure contract
+     exactly** — some return `std::nullopt`, some return an empty container,
+     some `continue` inside a directory walk. Do not unify them; that is a
+     separate decision and several gates depend on the difference (the comment
+     at `:782-785` spells out one such contract explicitly).
+  3. Leave the 10 non-getline `std::ifstream` uses alone: the two that hand the
+     stream to `nlohmann::json::parse` (`:164`, `:671`) and the SPIR-V readers
+     that already use `readFileText`.
+  4. Convert the single `std::ifstream` in `goldenRenderSuite.cpp` and the one
+     in `shaderBlobSuite.cpp` too if they are whole-file or line reads — both
+     already have `RepoFiles.hpp` semantics available. Skip either one that is
+     doing something genuinely different.
+  5. `grep -c 'std::ifstream' Test/commit/VulkanEngine/buildIntegritySuite.cpp`
+     should end at ~10, down from 60.
+
+  **Test:** The conversion's own test is the suite itself — all 101
+  `BuildIntegrity.*` tests must stay green with **identical** pass/fail
+  results, so run the full binary before and after and diff the output. On top
+  of that, add `TEST(RepoFilesUnit, ...)` cases in a new
+  `Test/commit/VulkanEngine/repoFilesSuite.cpp` (globbed, no CMake edit)
+  asserting: `readFileLines` on a missing path returns `std::nullopt`; on a
+  directory returns `std::nullopt`; on an empty file returns an empty vector
+  (not `nullopt`); on `"a\nb\n"` returns `{"a","b"}`; on `"a\r\nb\r\n"` returns
+  `{"a","b"}` (the CRLF case, and the one that must hold identically on Linux
+  and Windows); and on a file with no trailing newline returns the last line.
+  Write the fixtures to `std::filesystem::temp_directory_path()` and clean up
+  with the `error_code` overload, the way `fileReaderSuite.cpp` does.
+
+  **Build:** `clangcl-debug` (test-only change, no module interface touched, so
+  **no** `-FreshContainer` needed):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  Then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='BuildIntegrity.*:RepoFilesUnit.*'`
+  and a full `.\build-clangcl-debug\commitTestSuite.exe` before declaring done.
+
+  **Context:** This continues the 2026-08-04 batch X finding that the
+  duplication in this repo has moved out of `Src/` and into `Test/` — that
+  batch created `RepoFiles.hpp` and collapsed the repo-root walk and the
+  whole-file slurps, but the line reader, which is the shape this suite
+  actually uses most, was never added. Follow `readFileText`'s contract
+  (`std::optional`, checked, never a silent empty string — the header comment
+  records that one of the three original copies got that wrong). Avoid: (a)
+  implementing this as `readFileText` + split on `'\n'` without the `\r` strip,
+  which silently changes what several of these parsers match against on
+  Windows; (b) "harmonising" the per-site failure contracts while converting —
+  keep this change mechanical, so a green run is real evidence; and (c)
+  splitting `buildIntegritySuite.cpp` into multiple files as part of this,
+  which is a separate, larger decision.
+

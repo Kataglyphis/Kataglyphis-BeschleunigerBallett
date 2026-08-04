@@ -119,9 +119,9 @@ fails the build on it (see "Known state" below).
 
 ## Known state (2026-08-04)
 
-<!-- format-drift-denominator: 214 -->
+<!-- format-drift-denominator: 216 -->
 
-**140 of 214** own sources under `Src/` and `Test/` differ from
+**140 of 216** own sources under `Src/` and `Test/` differ from
 `.clang-format` (up from 72 of 125 on 2026-07-19). `Invoke-ClangFormatCheck`
 (see the caveat above) reports this count on every container build and
 **never fails the build** on it — that is why it grew from 72 to 140 while

@@ -11,6 +11,7 @@ module;
 
 #include "common/ComputePipelineHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
+#include "common/ShaderStageHelper.hpp"
 #include "common/Utilities.hpp"
 #include "spdlog/spdlog.h"
 
@@ -70,16 +71,10 @@ auto Kataglyphis::loadSpirvShaderModule(const std::shared_ptr<VulkanDevice> &dev
 Kataglyphis::ShaderStagePair::ShaderStagePair(std::shared_ptr<VulkanDevice> device, const std::string &vertexSpvPath,  // DEVICE_SINK_OK: moved into member
   const std::string &fragmentSpvPath)
   : device_(std::move(device)), vertexModule_(loadSpirvShaderModule(device_, vertexSpvPath)),
-    fragmentModule_(loadSpirvShaderModule(device_, fragmentSpvPath))
-{
-    stages_[0].stage = vk::ShaderStageFlagBits::eVertex;
-    stages_[0].module = vertexModule_;
-    stages_[0].pName = "main";
-
-    stages_[1].stage = vk::ShaderStageFlagBits::eFragment;
-    stages_[1].module = fragmentModule_;
-    stages_[1].pName = "main";
-}
+    fragmentModule_(loadSpirvShaderModule(device_, fragmentSpvPath)),
+    stages_{ buildShaderStageCreateInfo(vk::ShaderStageFlagBits::eVertex, vertexModule_),
+        buildShaderStageCreateInfo(vk::ShaderStageFlagBits::eFragment, fragmentModule_) }
+{}
 
 Kataglyphis::ShaderStagePair::~ShaderStagePair()
 {

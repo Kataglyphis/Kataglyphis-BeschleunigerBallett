@@ -14,6 +14,7 @@
 #include "common/ImageBarrierHelper.hpp"
 #include "common/MemoryHelper.hpp"
 #include "common/PipelineLayoutHelper.hpp"
+#include "common/ShaderStageHelper.hpp"
 #include "common/Utilities.hpp"
 #include <spdlog/spdlog.h>
 #include "renderer/pushConstants/PushConstantRayTracing.hpp"
@@ -168,66 +169,21 @@ void Kataglyphis::VulkanRendererInternals::Raytracing::createGraphicsPipeline(
     vk::ShaderModule raymiss_shader_module = loadSpirvShaderModule(device, slang_spv_dir + miss_spv);
     vk::ShaderModule shadow_shader_module = loadSpirvShaderModule(device, slang_spv_dir + shadow_spv);
 
-    vk::PipelineShaderStageCreateInfo rgen_shader_stage_info{};
-    rgen_shader_stage_info.stage = vk::ShaderStageFlagBits::eRaygenKHR;
-    rgen_shader_stage_info.module = raygen_shader_module;
-    rgen_shader_stage_info.pName = "main";
-
-    vk::PipelineShaderStageCreateInfo rmiss_shader_stage_info{};
-    rmiss_shader_stage_info.stage = vk::ShaderStageFlagBits::eMissKHR;
-    rmiss_shader_stage_info.module = raymiss_shader_module;
-    rmiss_shader_stage_info.pName = "main";
-
-    vk::PipelineShaderStageCreateInfo shadow_shader_stage_info{};
-    shadow_shader_stage_info.stage = vk::ShaderStageFlagBits::eMissKHR;
-    shadow_shader_stage_info.module = shadow_shader_module;
-    shadow_shader_stage_info.pName = "main";
-
-    vk::PipelineShaderStageCreateInfo rchit_shader_stage_info{};
-    rchit_shader_stage_info.stage = vk::ShaderStageFlagBits::eClosestHitKHR;
-    rchit_shader_stage_info.module = raychit_shader_module;
-    rchit_shader_stage_info.pName = "main";
-
     std::array<vk::PipelineShaderStageCreateInfo, 4> shader_stages = {
-        rgen_shader_stage_info, rmiss_shader_stage_info, shadow_shader_stage_info, rchit_shader_stage_info
+        buildShaderStageCreateInfo(vk::ShaderStageFlagBits::eRaygenKHR, raygen_shader_module),
+        buildShaderStageCreateInfo(vk::ShaderStageFlagBits::eMissKHR, raymiss_shader_module),
+        buildShaderStageCreateInfo(vk::ShaderStageFlagBits::eMissKHR, shadow_shader_module),
+        buildShaderStageCreateInfo(vk::ShaderStageFlagBits::eClosestHitKHR, raychit_shader_module)
     };
 
     enum StageIndices { eRaygen, eMiss, eMiss2, eClosestHit, eShaderGroupCount };
 
     shader_groups.reserve(4);
-    vk::RayTracingShaderGroupCreateInfoKHR shader_group_create_infos[4];
 
-    shader_group_create_infos[0].type = vk::RayTracingShaderGroupTypeKHR::eGeneral;
-    shader_group_create_infos[0].generalShader = eRaygen;
-    shader_group_create_infos[0].closestHitShader = VK_SHADER_UNUSED_KHR;
-    shader_group_create_infos[0].anyHitShader = VK_SHADER_UNUSED_KHR;
-    shader_group_create_infos[0].intersectionShader = VK_SHADER_UNUSED_KHR;
-
-    shader_groups.push_back(shader_group_create_infos[0]);
-
-    shader_group_create_infos[1].type = vk::RayTracingShaderGroupTypeKHR::eGeneral;
-    shader_group_create_infos[1].generalShader = eMiss;
-    shader_group_create_infos[1].closestHitShader = VK_SHADER_UNUSED_KHR;
-    shader_group_create_infos[1].anyHitShader = VK_SHADER_UNUSED_KHR;
-    shader_group_create_infos[1].intersectionShader = VK_SHADER_UNUSED_KHR;
-
-    shader_groups.push_back(shader_group_create_infos[1]);
-
-    shader_group_create_infos[2].type = vk::RayTracingShaderGroupTypeKHR::eGeneral;
-    shader_group_create_infos[2].generalShader = eMiss2;
-    shader_group_create_infos[2].closestHitShader = VK_SHADER_UNUSED_KHR;
-    shader_group_create_infos[2].anyHitShader = VK_SHADER_UNUSED_KHR;
-    shader_group_create_infos[2].intersectionShader = VK_SHADER_UNUSED_KHR;
-
-    shader_groups.push_back(shader_group_create_infos[2]);
-
-    shader_group_create_infos[3].type = vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup;
-    shader_group_create_infos[3].generalShader = VK_SHADER_UNUSED_KHR;
-    shader_group_create_infos[3].closestHitShader = eClosestHit;
-    shader_group_create_infos[3].anyHitShader = VK_SHADER_UNUSED_KHR;
-    shader_group_create_infos[3].intersectionShader = VK_SHADER_UNUSED_KHR;
-
-    shader_groups.push_back(shader_group_create_infos[3]);
+    shader_groups.push_back(buildGeneralShaderGroup(eRaygen));
+    shader_groups.push_back(buildGeneralShaderGroup(eMiss));
+    shader_groups.push_back(buildGeneralShaderGroup(eMiss2));
+    shader_groups.push_back(buildTrianglesHitGroup(eClosestHit));
 
     const std::array<vk::PushConstantRange, 1> push_constant_ranges = { pc_ranges };
     vk::PipelineLayoutCreateInfo pipeline_layout_create_info =

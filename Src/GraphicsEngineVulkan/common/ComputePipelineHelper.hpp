@@ -2,19 +2,17 @@
 
 #include <vulkan/vulkan.hpp>
 
+#include "common/ShaderStageHelper.hpp"
+
 namespace Kataglyphis {
 
-// Every compute pass in this engine built the same
-// vk::PipelineShaderStageCreateInfo by hand: stage eCompute, pName "main".
-// Slang always emits "main" as the entry-point symbol regardless of the
-// Slang-side function name (AGENTS.md), so no call site has a reason to pass
-// its own entry-point name here - a builder that took one would just be
-// giving every future call site a way to get it wrong.
+// Thin delegation to the shared builder in ShaderStageHelper.hpp - kept as
+// its own function (rather than inlining the eCompute call everywhere) so
+// call sites and computePipelineHelperSuite.cpp don't need to know the
+// compute stage bit.
 constexpr vk::PipelineShaderStageCreateInfo buildComputeShaderStageCreateInfo(vk::ShaderModule module)
 {
-    return vk::PipelineShaderStageCreateInfo{
-        vk::PipelineShaderStageCreateFlags{}, vk::ShaderStageFlagBits::eCompute, module, "main"
-    };
+    return buildShaderStageCreateInfo(vk::ShaderStageFlagBits::eCompute, module);
 }
 
 // flags is deliberately left at its default so a pass that needs one
