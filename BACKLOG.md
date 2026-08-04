@@ -8736,32 +8736,6 @@ one that changes `ObjMaterial`'s field set, so land it before or after the
 other two but not interleaved, to keep the `buildIntegritySuite.cpp:978-991`
 offset-pin churn in a single commit.
 
-- [ ] **(M) Shade glTF `emissive_factor` in the forward and deferred paths instead of uploading it and ignoring it** — `ObjMaterial::emission` is parsed by both loaders, pinned by a SPIR-V offset gate, and read by zero shaders, so every emissive surface renders black while the Rust twin lights it.
-
-  **Files to read:**
-  - `Resources/ShadersSlang/common/scene_types.slang:39` — the `float3 emission` member, declared and unread
-  - `Resources/ShadersSlang/rasterizer/rasterizer.slang:55-85` — the forward path; `:84` is the `return float4(color, 1.0)` to add to
-  - `Resources/ShadersSlang/deferred/deferred.slang:49-76` (geometry pass, `:75` writes `outMaterial`) and `:104-137` (lighting pass, `:125` reads only `material.r`, `:136` returns)
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.ixx:73-76` — `GBUFFER_MATERIAL_FORMAT` is `eR8G8B8A8Unorm`
-  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:140`, `:180` — where `emission` is filled
-  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/../../../../../Resources/ShadersSlang/forward/forward.slang:388`, `:436` — the Rust twin's convention to mirror (`color = directLight + punctual + ambient + emissive`)
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:978-991` — the ObjMaterial offset pin (unchanged by this task; read it so you know it exists)
-
-  **Steps:**
-  1. `rasterizer.slang`: after the shadow attenuation at `:82`, add `color += material.emission;` and return. Emissive is not shadowed and not attenuated by `cascadedShadowIntensity` — it is surface-emitted radiance, so it must be added *after* the `color *= 1.0 - shadow * ...` line, not before.
-  2. `deferred.slang` geometry pass: `outMaterial` at `:75` currently writes `float4(roughness, 0.0, 1.0, 1.0)` — the `.gba` channels are literal constants the lighting pass never reads (`:125` takes `material.r` only). Pack emission there: `g.outMaterial = float4(roughness, material.emission);`. Add a comment naming the channel assignment (`r = roughness, gba = emissive`) and stating the precision limit: `GBUFFER_MATERIAL_FORMAT` is `eR8G8B8A8Unorm`, so emissive is quantized to 8 bits and clamped to [0,1] — which is exactly glTF's `emissive_factor` range absent `KHR_materials_emissive_strength`.
-  3. `deferred.slang` lighting pass: after `:134`'s shadow attenuation, add `color += material.gba;` before the `:136` return, mirroring step 1's ordering.
-  4. Leave `raytrace.rchit.slang` and `path_tracing.slang` alone. Emissive in a path tracer is `radiance += throughput * emission` at the hit, not a term added to a single shaded colour, and getting that wrong silently changes the converged image the accumulation buffer is averaging toward. Add a one-line comment in each of those two files saying emissive is deliberately not yet integrated there and pointing at this entry, so the next reader does not re-derive the gap.
-  5. Recompile the shaders from the repo root: `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`. No C++ change is required for steps 1-4.
-
-  **Test:** Add `BuildIntegrity.EmissiveIsConsumedByTheRasterShadingPaths` to `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — read `rasterizer.slang` and `deferred.slang` as text and assert each contains a use of `.emission` (rasterizer) / that `deferred.slang`'s `outMaterial` write references `material.emission` and its lighting pass adds `material.gba`. Assert `scene_types.slang` still declares `emission`. Failure message must say "ObjMaterial::emission is uploaded per material; a shading path that ignores it renders every glTF emitter black" so a future deletion is diagnosable. Follow the source-text gate pattern already in that file (see the `scene_types.slang` constant parsing at `:1487-1525`).
-
-  **Build:** `clangcl-debug`:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  Then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root.
-
-  **Context:** This closes a cross-renderer divergence of the same family as `1a839cad` (`baseColorFactor`) and `bdbec99a` (its alpha half) — the pattern there is: find the term the Rust forward shader applies, apply it in the C++ paths with the same ordering, gate it. Once RDP clears, `GoldenRender.*` should be re-run: the shipped scenes' materials have `emission` at or near zero (`ObjMaterial`'s default is `(0, 0, 0.10)`, and `GltfLoader.cpp:103`'s fallback material passes `vec3(0.0)`), so goldens are expected to move slightly or not at all — **check the default before writing new goldens**, because a non-zero default emission on OBJ materials would tint them.
-
 - [ ] **(M) Apply `KHR_texture_transform`'s rotation instead of warning about it, and carry the transform as the same 2×3 matrix the Rust loader builds** — the C++ loader logs "not applied" for every rotated material and then renders it at the wrong texels.
 
   **Files to read:**

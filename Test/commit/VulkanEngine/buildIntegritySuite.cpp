@@ -2422,6 +2422,47 @@ TEST(BuildIntegrity, EveryBaseColourSampleIsScaledByTheMaterialFactor)
          }();
 }
 
+// ObjMaterial::emission is parsed by both loaders and uploaded to the GPU,
+// but until this gate nothing in the shading paths actually read it - every
+// glTF/OBJ emitter rendered black in both the forward and deferred paths
+// while the Rust twin lit them. This scans the shader sources as text (the
+// source-text gate pattern used throughout this file) and fails if either
+// raster path stops consuming material.emission.
+TEST(BuildIntegrity, EmissiveIsConsumedByTheRasterShadingPaths)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const char *kFailureMessage =
+      "ObjMaterial::emission is uploaded per material; a shading path that ignores it renders every glTF emitter "
+      "black";
+
+    const fs::path scene_types_path = repo_root / "Resources/ShadersSlang/common/scene_types.slang";
+    std::ifstream scene_types_file(scene_types_path);
+    ASSERT_TRUE(static_cast<bool>(scene_types_file)) << "could not open " << scene_types_path.string();
+    std::string scene_types_text((std::istreambuf_iterator<char>(scene_types_file)), std::istreambuf_iterator<char>());
+    EXPECT_NE(scene_types_text.find("float3 emission"), std::string::npos)
+      << "scene_types.slang no longer declares ObjMaterial::emission. " << kFailureMessage;
+
+    const fs::path rasterizer_path = repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang";
+    std::ifstream rasterizer_file(rasterizer_path);
+    ASSERT_TRUE(static_cast<bool>(rasterizer_file)) << "could not open " << rasterizer_path.string();
+    std::string rasterizer_text((std::istreambuf_iterator<char>(rasterizer_file)), std::istreambuf_iterator<char>());
+    EXPECT_NE(rasterizer_text.find(".emission"), std::string::npos)
+      << "rasterizer.slang no longer uses material.emission. " << kFailureMessage;
+
+    const fs::path deferred_path = repo_root / "Resources/ShadersSlang/deferred/deferred.slang";
+    std::ifstream deferred_file(deferred_path);
+    ASSERT_TRUE(static_cast<bool>(deferred_file)) << "could not open " << deferred_path.string();
+    std::string deferred_text((std::istreambuf_iterator<char>(deferred_file)), std::istreambuf_iterator<char>());
+    EXPECT_NE(deferred_text.find("outMaterial = float4(clamp(sqrt(2.0 / (material.shininess + 2.0)), 0.045, 1.0), "
+                                  "material.emission)"),
+              std::string::npos)
+      << "deferred.slang's geometry pass no longer packs material.emission into outMaterial.gba. " << kFailureMessage;
+    EXPECT_NE(deferred_text.find("color += material.gba"), std::string::npos)
+      << "deferred.slang's lighting pass no longer adds the G-buffer's packed emissive term. " << kFailureMessage;
+}
+
 // scene_types.slang's MAX_CASCADES (:68) is the gated source of truth for the
 // cascade count - HostAndShaderSharedConstantsAgree above pins it against
 // host_device_shared_vars.hpp. That gate is blind to a second, independent

@@ -66,6 +66,10 @@ void rchit_main(
 
     // Material: per-primitive material ID.
     ObjMaterial material = materials->m[materialIDs->i[PrimitiveIndex()]];
+    // material.emission is deliberately not yet integrated here: this is a
+    // primary-ray shading term, not `radiance += throughput * emission` at
+    // the hit, so wiring it in the rasterizer's style would silently change
+    // the accumulated image instead (see BACKLOG.md's emissive_factor task).
     // Note: PrimitiveIndex() is valid here (closesthit stage).
     float3 ambient = float3(0.0);
     if (material.textureID >= 0)

@@ -203,6 +203,11 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             else
             {
                 ObjMaterial material = materials->m[materialIDs->i[primitiveID]];
+                // material.emission is deliberately not yet integrated here:
+                // a path tracer must add `radiance += throughput * emission`
+                // at the hit, not fold it into hitColor, or the converged
+                // image the accumulation buffer averages toward silently
+                // changes (see BACKLOG.md's emissive_factor task).
                 if (material.textureID >= 0)
                 {
                     int textureId = resolve_texture_slot(obj, material);

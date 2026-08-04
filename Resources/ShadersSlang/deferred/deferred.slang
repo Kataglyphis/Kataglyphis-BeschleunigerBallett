@@ -72,7 +72,11 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID)
     GBufferOut g;
     g.outNormal = float4(normalize(In.shadingNormal), 1.0);
     g.outAlbedo = texColor;
-    g.outMaterial = float4(clamp(sqrt(2.0 / (material.shininess + 2.0)), 0.045, 1.0), 0.0, 1.0, 1.0);
+    // r = roughness, gba = emissive. GBUFFER_MATERIAL_FORMAT is
+    // eR8G8B8A8Unorm, so emissive is quantized to 8 bits and clamped to
+    // [0,1] - which matches glTF's emissive_factor range absent
+    // KHR_materials_emissive_strength.
+    g.outMaterial = float4(clamp(sqrt(2.0 / (material.shininess + 2.0)), 0.045, 1.0), material.emission);
     return g;
 }
 
@@ -132,6 +136,10 @@ float4 lighting_fs_main(LightingVsOut In) : SV_Target
 
     float shadow = calc_cascaded_shadow(worldPos.xyz, N, L, sceneUBO_lighting);
     color *= 1.0 - shadow * sceneUBO_lighting.cascadedShadowIntensity;
+
+    // Emissive is surface-emitted radiance, not reflected light - it is
+    // unshadowed and unattenuated, so it is added after shadowing, not before.
+    color += material.gba;
 
     return float4(color, 1.0);
 }

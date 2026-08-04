@@ -81,5 +81,9 @@ float4 fs_main(VsOut In, uint primitiveID : SV_PrimitiveID) : SV_Target
     float shadow = calc_cascaded_shadow(In.worldPosition, N, L, sceneUBO);
     color *= 1.0 - shadow * sceneUBO.cascadedShadowIntensity;
 
+    // Emissive is surface-emitted radiance, not reflected light - it is
+    // unshadowed and unattenuated, so it is added after shadowing, not before.
+    color += material.emission;
+
     return float4(color, 1.0);
 }
