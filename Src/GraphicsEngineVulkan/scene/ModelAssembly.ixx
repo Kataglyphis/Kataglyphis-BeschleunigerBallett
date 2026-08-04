@@ -4,6 +4,8 @@ module;
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#include "spdlog/spdlog.h"
+
 export module kataglyphis.vulkan.model_assembly;
 
 import kataglyphis.vulkan.model;
@@ -33,7 +35,9 @@ void addTextureOrDefault(
         return;
     }
     Texture defaultTexture;
-    defaultTexture.createDefaultTexture(device, pool);
+    if (!defaultTexture.createDefaultTexture(device, pool)) {
+        spdlog::error("Default texture upload failed; slot will hold an empty texture.");
+    }
     model.addTexture(std::move(defaultTexture));
 }
 
@@ -43,7 +47,9 @@ void ensureAtLeastOneTexture(Model &model, const std::shared_ptr<VulkanDevice> &
 {
     if (model.getTextureCount() != 0) { return; }
     Texture defaultTexture;
-    defaultTexture.createDefaultTexture(device, pool);
+    if (!defaultTexture.createDefaultTexture(device, pool)) {
+        spdlog::error("Default texture upload failed; slot will hold an empty texture.");
+    }
     model.addTexture(std::move(defaultTexture));
 }
 

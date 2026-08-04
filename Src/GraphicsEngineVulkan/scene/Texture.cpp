@@ -165,6 +165,7 @@ auto Kataglyphis::Texture::uploadRgba(std::shared_ptr<VulkanDevice>device,
     if (!command_buffer) {
         spdlog::error("Skipping texture upload due to invalid command buffer.");
         stagingBuffer.cleanUp();
+        cleanUp();
         return false;
     }
 
@@ -187,23 +188,29 @@ auto Kataglyphis::Texture::uploadRgba(std::shared_ptr<VulkanDevice>device,
           vk::ImageAspectFlagBits::eColor);
     }
 
-    static_cast<void>(Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
-      device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer));
+    const bool upload_submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), command_buffer);
 
     stagingBuffer.cleanUp();
+
+    if (!upload_submitted) {
+        spdlog::error("Texture upload submit failed ({}x{}); leaving texture unwritten.", width, height);
+        cleanUp();
+        return false;
+    }
 
     createImageView(device, texture_format, vk::ImageAspectFlagBits::eColor, mip_levels, vk::ImageViewType::e2D, 1);
 
     return true;
 }
 
-void Kataglyphis::Texture::createDefaultTexture(std::shared_ptr<VulkanDevice>in_device,
-  vk::CommandPool commandPool)
+auto Kataglyphis::Texture::createDefaultTexture(std::shared_ptr<VulkanDevice>in_device,
+  vk::CommandPool commandPool) -> bool
 {
     constexpr vk::DeviceSize default_size = 4;
     constexpr unsigned char white_pixel[4] = { 255, 255, 255, 255 };
 
-    uploadRgba(in_device, commandPool, 1, 1, default_size, white_pixel);
+    return uploadRgba(in_device, commandPool, 1, 1, default_size, white_pixel);
 }
 
 void Kataglyphis::Texture::setImage(vk::Image image) { vulkanImage.setImage(image); }

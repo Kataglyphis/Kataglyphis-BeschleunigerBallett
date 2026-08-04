@@ -7988,6 +7988,231 @@ breakage date I had not verified, then spent three CI round trips on a control
 that moved two variables at once. The local reproduction took one container run
 and answered it outright. Get the failing thing into a shell before theorising.
 
+## 2026-08-04 batch III — planner (four shading paths that drop glTF's `baseColorFactor` the moment a texture exists, where the Rust twin multiplies it; a texture upload that returns `true` after the submit it just ignored failed; an app that exits 0 after a device loss closed the window; the exposure reduction whose CPU twin has a NaN recovery it lacks, next to two of its constants no gate pins; the Rust crate's `clippy`/`rustfmt`, which this repo compiles twice and lints zero times)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the
+tree this pass.
+
+**Host GPU golden verification is still blocked over RDP** (see the `- [b]`
+entry near the end of this file), so every task here is written to be
+*accepted* without an adapter: tasks 2 and 3 land pure helpers plus
+`buildIntegritySuite.cpp` grep gates, task 4 is CI wiring verified by running
+the linters, task 5's acceptance is a CPU parse test plus a gate. Task 1 is
+Rust, where the host MSVC linker is broken (`cargo test` cannot link — see
+`docs`/memory), so its acceptance is `cargo clippy --all-targets` compiling
+the new test plus the always-on Linux lane running it on push. Task 5's
+*pixels* still want a golden re-run when RDP clears; that is called out in the
+entry rather than hidden.
+
+**The headline is that the C++ engine drops glTF's `baseColorFactor`, in four
+places, whenever the material also has a base-colour texture.** The pattern is
+byte-identical in all four:
+
+| shader | line | textured branch | untextured branch |
+| --- | --- | --- | --- |
+| `rasterizer/rasterizer.slang` | `:57-68` | `ambient = baseSample.xyz` | `ambient = material.diffuse` |
+| `deferred/deferred.slang` | `:57-73` | `texColor = textures[..].Sample(..)` | `texColor = float4(material.diffuse, 1.0)` |
+| `raytracing/raytrace.rchit.slang` | `:70-82` | `ambient += textures[..].SampleLevel(..)` | `ambient += material.diffuse` |
+| `path_tracing/path_tracing.slang` | `:204-213` | `hitColor = textures[..].Sample(..)` | `hitColor = material.diffuse` |
+
+`GltfLoader.cpp`'s `fromGltfMaterial` (`:111-155`) *does* carry the factor —
+`baseColor = pbr.base_color_factor.rgb` at `:117`, stored as `diffuse` at
+`:143` — so the value reaches the GPU in `ObjMaterial.diffuse` and is then
+thrown away by every path that finds a texture. The glTF 2.0 spec defines base
+colour as factor **×** texture, and the Rust renderer already implements it
+that way: `forward/forward.slang:393` is
+`float4 albedo = prim.base_color * baseSample * In.vertexColor`, and the
+checked-in `forward.wgsl:721` shows the same product. So this is simultaneously
+a spec-conformance bug in the C++ engine and a cross-renderer divergence that
+`docs/shader-sharing.md` does not record. The symptom is silent: a glTF that
+tints a shared texture per material (the standard atlas/variant pattern)
+renders every variant identically in the C++ engine and correctly in the Rust
+one. OBJ is unaffected in practice — `ObjLoader.cpp:199` fills `diffuse` from
+`Kd`, which is `1 1 1` for the textured materials in the tree — which is also
+why no golden has ever moved on it.
+
+**Second, `Texture::uploadRgba` reports success it did not verify.** Commit
+`8001c7b6` gave `endAndSubmitCommandBuffer` a `bool` return with two real
+failure exits (`CommandBufferManager.cpp:89-99` — `queue.submit` failed, the
+buffer is freed and nulled — and the fence-wait fallback at `:101-112`).
+`Texture.cpp:190-191` discards it with `static_cast<void>` and then returns
+`true` at `:197`. `createFromFile`/`createFromMemory` forward that `true`, and
+`addTextureOrDefault` (`ModelAssembly.ixx:28-38`) reads it as "keep this
+texture" — so a failed upload leaves an image whose device memory was never
+written bound into the descriptor array and sampled as undefined content,
+instead of taking the white-default fallback that already exists one branch
+away. `createDefaultTexture` (`:200-207`) returns `void`, so the fallback
+itself cannot report failure either. The `static_cast<void>` is *allowed* by
+`buildIntegritySuite.cpp:3864-3917` (the gate demands the result be assigned,
+tested or explicitly discarded), so this is not gate drift — it is a call site
+that took the discard when it had a `bool` return of its own to put it in.
+Same file, `:165-169`: the null-command-buffer path returns `false` *after*
+`vulkanImageView.cleanUp()` (`:149`) and `createImage()` (`:151`) already ran,
+leaving the `Texture` holding a fresh image, no view, and a non-zero
+`mip_levels`.
+
+**Third, the app exits 0 after a fatal frame.** `drawFrame`'s
+`abort_frame_with_fatal_error` (`VulkanRenderer.cpp:460-467`) logs, sets
+`device_lost_detected` when the result is `eErrorDeviceLost`, and calls
+`glfwSetWindowShouldClose(..., GLFW_TRUE)`. The loop in `App.cpp:49-68` then
+exits normally and `:82` returns `EXIT_SUCCESS` unconditionally;
+`Main.cpp:183-185` hands that straight to the process. Two consequences: a
+device-lost run (the exact failure mode `path-tracing device lost` is about)
+is indistinguishable from a clean quit at the shell, and
+`Run-SyncValidation.ps1`, which exits non-zero *only* on `SYNC-HAZARD` in the
+log, passes a run that lost the device before recording anything. Note the
+window is also closed by two paths that never set `device_lost_detected`
+(`:505-512`, invalid sync handles) and by every non-device-lost
+`abort_frame_with_fatal_error` (a failed `queue.submit`, a failed
+`waitForFences`), so `hasDeviceLost()` alone is not the predicate — the
+renderer needs a "the loop aborted" flag distinct from "the device is gone",
+because `App.cpp:70-77` deliberately keys Vulkan teardown on the latter.
+
+**Fourth, `histogram.wgsl`'s reduction is missing the one guard its CPU twin
+documents as load-bearing.** The shader's own header says it "mirrors
+`render::auto_exposure::{average_luminance, exposure_ev_for_luminance,
+adapt_exposure_ev}`". `adapt_exposure_ev` opens with
+`if !current_ev.is_finite() { return target_ev }`
+(`auto_exposure.rs:130-132`), and `a_non_finite_current_value_recovers_instead_of_propagating`
+(`:350-355`) pins it with the reason: "If exposure ever becomes NaN the frame
+is lost; adaptation must be able to climb out rather than staying NaN
+forever." `cs_reduce_exposure` has no equivalent: `current_ev` is read from the
+persistent buffer at `:168` and flows into `current_ev + (target_ev -
+current_ev) * blend` at `:194` and into the hold path at `:185`, both of which
+propagate a non-finite value for the rest of the process. Alongside it,
+`tests/histogram_constants.rs` pins four of the shader's six hand-duplicated
+constants — `HISTOGRAM_BINS`, `MIN_LOG_LUMINANCE`, `MAX_LOG_LUMINANCE` and the
+two workgroup sizes — but **not** `EXPOSURE_KEY` (`histogram.wgsl:112` vs
+`auto_exposure.rs:37`) or `BLACK_THRESHOLD` (`histogram.wgsl:17` vs the bare
+`1e-6` literals at `auto_exposure.rs:46` and `:102`). That file exists
+precisely because this shader is the one Slang cannot generate and no
+generated-shader gate covers it; a drifted `EXPOSURE_KEY` would make the GPU
+expose to a different grey than the CPU oracle in `tests/histogram.rs`
+asserts, silently.
+
+**Fifth, this repo compiles the Rust crate twice and lints it zero times.**
+`Linux.yml:277-286` runs `Scripts/Linux/run-cargo-tests.sh` on the
+`ubuntu-24.04` leg, and its comment states the case exactly: the crate is
+compiled here by the Rust bridge and the wasm demo, but its tests only ran in
+`Kataglyphis-RustProjectTemplate`'s own workflow, "so edits made to
+`crates/webgpu_renderer` from this working tree got no test signal until the
+submodule was pushed separately". The identical argument applies to
+`clippy`/`rustfmt` and has not been acted on: `grep -rn "clippy\|rustfmt"
+.github/workflows/` returns nothing in this repo, while the submodule's own
+`rust_ubuntu24_04.yml:123` runs
+`ExternalLib/Kataglyphis-ContainerHub/linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh`.
+The driver already exists upstream (`cargo fmt --all -- --check` then
+`cargo clippy --all-targets --all-features -- -D warnings`), so per AGENTS.md
+§ "Rule: Reusable Work Belongs in ContainerHub" this repo owes only a thin
+wrapper and a workflow step.
+
+Ordering: the five are disjoint. Tasks 2 and 3 both add
+`buildIntegritySuite.cpp` gates; do them in either order but rerun the whole
+suite after the second. Task 5 touches four `.slang` files and nothing else
+here does.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Make `App::run()` report failure when the frame loop aborted** — a device-lost or failed-submit run currently exits 0, so `Run-SyncValidation.ps1` and the run helpers read it as a clean quit.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/app/App.cpp` — the loop (`:49-68`), the device-lost-gated teardown (`:70-77`), `return EXIT_SUCCESS` (`:82`)
+  - `Src/GraphicsEngineVulkan/app/App.ixx` — `static int run()`
+  - `Src/GraphicsEngineVulkan/Main.cpp` — `:183-185`, which returns `run()`'s value as the process exit code
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` — `abort_frame_with_fatal_error` (`:460-467`); the non-device-lost close paths at `:505-512`
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.ixx` — `hasDeviceLost()` (`:82`), `device_lost_detected` (`:310`)
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMapMath.cpp` — `makeShadowPush` (`:63-70`) is the "deliberately trivial, deliberately named, unit-tested" helper pattern to copy
+
+  **Steps:**
+  1. Add `bool fatal_frame_error{ false };` next to `device_lost_detected` in `VulkanRenderer.ixx:310` and a `[[nodiscard]] bool hasFatalFrameError() const` accessor next to `hasDeviceLost()` (`:82`). Set it in `abort_frame_with_fatal_error` (`VulkanRenderer.cpp:460`) — **every** call, not only the device-lost one — and in the two invalid-sync-handle returns at `:505-512` that also force the window closed. Leave `abort_frame_after_acquire` (`:477-481`) alone: those are the documented recoverable returns.
+  2. Add a pure helper — new header `Src/GraphicsEngineVulkan/app/AppExitCode.hpp`, `constexpr int appExitCode(bool deviceLost, bool fatalFrameError)` returning `EXIT_FAILURE` when either is set, else `EXIT_SUCCESS`. Keep it free of Vulkan and GLFW types so it links into a test with no device.
+  3. Replace `App.cpp:82`'s `return EXIT_SUCCESS;` with `return appExitCode(vulkan_renderer.hasDeviceLost(), vulkan_renderer.hasFatalFrameError());`. Do **not** change the teardown gating at `:70-77` — that must stay keyed on `hasDeviceLost()` alone, because a failed submit still leaves a live device that must be torn down normally.
+  4. Confirm nothing else calls `App::run()` (`grep -rn "App::run" Src/ Test/`) — the golden suites construct `VulkanRenderer` directly (`commitSuite.cpp:71`), so they are unaffected.
+
+  **Test:** Add `AppExitCode.*` to a new `Test/commit/VulkanEngine/appExitCodeSuite.cpp`: `CleanRunSucceeds` (both flags false → `EXIT_SUCCESS`), `DeviceLossFails`, `FatalFrameErrorWithoutDeviceLossFails` (the case `hasDeviceLost()` alone would miss), `BothFail`. Add a `BuildIntegrity` gate asserting `App.cpp` contains no bare `return EXIT_SUCCESS;` — the whole point is that the exit code is derived, not constant.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** `Run-SyncValidation.ps1` exits non-zero only on `SYNC-HAZARD` in the log, so today a run that lost the device in frame 3 and recorded no hazards is reported as a pass. `run_clangcl_*.ps1` already surfaces a non-zero code (`run_clangcl_debug.ps1:266`), so this change makes the existing plumbing mean something. This is also groundwork for the blocked path-tracing device-loss investigation: an exit code is the cheapest signal a headless run can produce.
+
+### Cross-renderer
+
+- [ ] **(M) Apply glTF's `baseColorFactor` to the sampled base colour in all four C++ shading paths** — the factor is loaded, uploaded and then discarded whenever a texture exists, which is both a glTF spec deviation and a divergence from the Rust renderer.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/forward/forward.slang` — `:387-393`, the **reference** implementation: `float4 albedo = prim.base_color * baseSample * In.vertexColor`
+  - `Resources/ShadersSlang/rasterizer/rasterizer.slang` — `:57-68`
+  - `Resources/ShadersSlang/deferred/deferred.slang` — `:57-73` (`geometry_fs_main`)
+  - `Resources/ShadersSlang/raytracing/raytrace.rchit.slang` — `:70-82`
+  - `Resources/ShadersSlang/path_tracing/path_tracing.slang` — `:204-213`
+  - `Resources/ShadersSlang/common/material_fetch.slang` — `transform_uv` / `alpha_masked_out`, the existing home for shared material helpers
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp` — `fromGltfMaterial` (`:111-155`), factor read at `:117`, stored as `diffuse` at `:143`
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp` — `:199`, where `diffuse` comes from `Kd`
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp` — the in-memory-glTF test pattern (`:105-160`, `:444`)
+  - `docs/shader-sharing.md` — the doc that owns "where the two renderers diverge"; gated by `buildIntegritySuite.cpp` (see `dd243bb1`)
+
+  **Steps:**
+  1. Add one helper to `common/material_fetch.slang`, next to `transform_uv`: `float3 base_color(ObjMaterial material, float3 sampled) { return sampled * material.diffuse; }`, with a comment citing the glTF rule (base colour = factor × texture) and `forward.slang:393` as the twin.
+  2. Route the textured branch of all four shaders through it: `rasterizer.slang:62` (`ambient = base_color(material, baseSample.xyz)`), `deferred.slang:66-67` (`texColor = float4(base_color(material, texColor.rgb), texColor.a)`), `raytrace.rchit.slang:78` and `path_tracing.slang:208`. Leave every untextured branch exactly as it is — `material.diffuse` alone is already correct there.
+  3. Do **not** touch the alpha half in this task. `alpha_masked_out` compares the texture alpha only, while `forward.slang:200` uses `prim.base_color.a * tex.a`; carrying `base_color_factor[3]` needs a new `ObjMaterial` field (`fromGltfMaterial` reads only `[0..2]`) and changes what MASK discards. Record it as a follow-up in the same commit message.
+  4. Recompile shaders: `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`. No C++ rebuild is needed (`AGENTS.md` § routing).
+  5. Add the divergence's resolution to `docs/shader-sharing.md` — it currently does not mention base colour at all; after this change the two renderers agree, and the doc should say so rather than stay silent.
+
+  **Test:** (a) `GltfParse.BaseColorFactorSurvivesATexturedMaterial` in `gltfParseSuite.cpp`: an in-memory glTF whose single material has both `baseColorFactor: [0.25, 0.5, 1.0, 1.0]` and a `baseColorTexture`, asserting the parsed `ObjMaterial` has `diffuse == vec3(0.25, 0.5, 1.0)` **and** `textureID >= 0` — i.e. the host contract the shaders now rely on. (b) `BuildIntegrity.EveryBaseColourSampleIsScaledByTheMaterialFactor`: scan the four shader files and fail if a file samples `textures[...]`/`baseColorTex` into an albedo local without going through `base_color(`. Model it on the `:4149` `shader-sharing.md` gate.
+
+  **Build:** `clangcl-debug` for the tests; the shader change itself needs only `compile-slang-shaders.ps1`.
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+
+  **Context:** Expect **no** golden movement on the models in the tree: `Dinosaurs`/`crytek-sponza` are OBJ, where `Kd` is `1 1 1` for the textured materials, so the new multiply is an identity there. That is a feature of the change (low regression risk) and the reason the CPU test above, not a golden, is the acceptance criterion. When the RDP blocker on host GPU goldens clears, re-run `GoldenRender.*` and confirm they are unchanged; if any moves, an OBJ material with a non-white `Kd` is the first thing to check, not this multiply.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(S) Give `cs_reduce_exposure` the non-finite recovery its CPU twin has, and pin the two constants `histogram_constants.rs` forgot** — the shader states it mirrors `adapt_exposure_ev`, which has a tested NaN escape hatch it lacks.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/render/auto_exposure.rs` — `EXPOSURE_KEY` (`:37`), the bare `1e-6` literals at `:46` and `:102`, `adapt_exposure_ev`'s non-finite guard (`:130-132`) and its test (`:350-355`)
+  - `crates/webgpu_renderer/src/shaders/histogram.wgsl` — `BLACK_THRESHOLD` (`:17`), `EXPOSURE_KEY` (`:112`), `cs_reduce_exposure` (`:143-199`): `current_ev` read at `:168`, the hold path at `:185`, the blend at `:192-196`
+  - `crates/webgpu_renderer/tests/histogram_constants.rs` — the whole file; `extract_const` (`:25-41`) already parses `1e-6`-style literals
+
+  **Steps:**
+  1. In `auto_exposure.rs`, add `pub const BLACK_THRESHOLD: f32 = 1e-6;` next to `EXPOSURE_KEY` and replace the two inline `1e-6` literals (`:46` in `histogram_bin`, `:102` in `exposure_for_luminance`) with it. Behaviour is unchanged; the point is that the value becomes nameable from the test.
+  2. In `histogram.wgsl`'s `cs_reduce_exposure`, right after `let current_ev = exposure_state[0];` (`:168`), add the mirror of the CPU guard. WGSL has no `is_finite`, so write it as the self-comparison + magnitude test — e.g. `let current_ok = current_ev == current_ev && abs(current_ev) < 1e30;` — and use `select(target_ev, current_ev, current_ok)` in place of `current_ev` at both `:185` and `:194`. Comment it with the same reason the Rust test gives (a NaN that cannot be climbed out of loses every subsequent frame) and cite `auto_exposure.rs:130-132`.
+  3. Add `exposure_key_matches_the_shader` and `black_threshold_matches_the_shader` to `tests/histogram_constants.rs`, in the exact shape of the three existing `*_matches_the_shader` tests, including the "edit both together" failure message.
+
+  **Test:** The two new tests in `tests/histogram_constants.rs` (pure CPU, no `GpuContext`, so they run everywhere). Because the host MSVC linker cannot link `cargo test` binaries, accept this locally with, from `ExternalLib/Kataglyphis-RustProjectTemplate`:
+  `cargo fmt --all -- --check` and `cargo clippy --all-targets --all-features -p kataglyphis_webgpu_renderer -- -D warnings`
+  (clippy type-checks the test target without linking). The always-on Linux lane runs the tests themselves via `Scripts/Linux/run-cargo-tests.sh` on push.
+
+  **Build:** none (Rust only; no CMake preset involved).
+
+  **Context:** `histogram_constants.rs`'s own header explains why it exists: `histogram.wgsl` is the one shader Slang cannot generate, so none of `SlangCompileManifestsAgree` / `CheckedInWgslIsNotOlderThanItsSlangSource` / `CheckedInWgslHasNoHandEdits` cover it, and a drifted constant "just makes the CPU oracle in `tests/histogram.rs` validate the GPU against a mapping the GPU is no longer using". `EXPOSURE_KEY` is the worst one to leave unpinned — it is what "correctly exposed" means on both sides.
+
+### CI
+
+- [ ] **(M) Run the Rust crate's `rustfmt`/`clippy` on this repo's always-on Linux lane** — the crate is compiled twice here and linted zero times, so edits to `crates/webgpu_renderer` from this working tree get no lint signal until the submodule is pushed separately.
+
+  **Files to read:**
+  - `.github/workflows/Linux.yml` — `:277-286`, the "Run Rust renderer tests" step, whose comment already makes this exact argument for tests
+  - `Scripts/Linux/run-cargo-tests.sh` — the wrapper to copy verbatim (`CARGO_HOME` fallback, `RUST_PROJECT_DIR` resolution, the "delegate upstream" comment)
+  - `ExternalLib/Kataglyphis-ContainerHub/linux/scripts/02-toolchain/rust/cargo_fmt_clippy.sh` — the upstream driver: `cargo fmt --all "$@" -- --check` then `cargo clippy --all-targets --all-features "$@" -- -D warnings`
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/.github/workflows/rust_ubuntu24_04.yml` — `:123`, where the submodule runs the same script workspace-wide and green
+  - `AGENTS.md` § "Rule: Reusable Work Belongs in ContainerHub" and the wrapper map
+
+  **Steps:**
+  1. Before writing anything, run the linters locally from `ExternalLib/Kataglyphis-RustProjectTemplate` to learn whether the pinned commit is clean: `cargo fmt --all -- --check` and `cargo clippy --all-targets --all-features -- -D warnings`. Clippy does not link, so the broken host MSVC linker is not in the way. Record the result in the commit message.
+  2. Add `Scripts/Linux/run-cargo-lints.sh`, a near-copy of `run-cargo-tests.sh`: source `lib/common.sh`, resolve `REPO_ROOT`/`RUST_PROJECT_DIR`, assert the ContainerHub script exists, export the same `CARGO_TARGET_DIR`/`CARGO_HOME` fallbacks, then `( cd "${RUST_PROJECT_DIR}" && bash "${CARGO_FMT_CLIPPY_SH}" )`. Run it **workspace-wide, with no `-p`** — `cargo fmt --all -p <crate>` is a conflicting-arguments error, and workspace-wide is exactly what the submodule's own green CI runs.
+  3. Add a "Lint Rust renderer crate" step to `.github/workflows/Linux.yml` immediately after the existing Rust test step (`:286`), same `if: ${{ inputs.runner == 'ubuntu-24.04' }}` gate, same `run-in-linux-container@main` action, `script: bash ./Scripts/Linux/run-cargo-lints.sh`. ARM must not pay for it, for the same reason the comment at `:277-281` gives for tests.
+  4. Add the new wrapper to `AGENTS.md`'s wrapper map table (next to the `run-cargo-tests.sh` row) and to `AGENTS.md` § "What CI runs" where the Rust test step is described. Keeping that table complete is a stated invariant.
+  5. If step 1 surfaced findings in crates **other than** `webgpu_renderer`, do not fix them here and do not silence them with `#[allow]`: the submodule's own CI owns those crates. Fall back to a crate-scoped wrapper instead — `cargo fmt -p kataglyphis_webgpu_renderer -- --check` and `cargo clippy -p kataglyphis_webgpu_renderer --all-targets --all-features -- -D warnings` invoked directly rather than via the upstream script — and say in the script's header comment why the upstream delegation was not usable.
+
+  **Test:** Run `bash ./Scripts/Linux/run-cargo-lints.sh` (Git Bash on the host, or in the Linux container per `AGENTS.md` § "Running the Linux build locally") and confirm it exits 0. There is no unit test for a CI step; the acceptance is a clean local run plus the workflow YAML parsing (`gh workflow view` or a `yq`/`python -c "import yaml"` parse of `Linux.yml`).
+
+  **Build:** none (CI/scripts). The Linux lane runs on every push, so no `[build-win]`/`[build-arm]` marker is needed to get the signal.
+
+  **Context:** This closes the last gap in the argument `Linux.yml:277-281` already makes. The submodule pin is at a commit whose own workflow runs this script green, so a red first run means the pin drifted or this repo's working tree has uncommitted crate edits — both worth knowing, and both invisible today.
+
 ## 2026-08-02 — reuse-sweep residuals (the sweep itself shipped)
 
 The 2026-08-02 reuse sweep landed: WindowsCMake/Config/Formatting/WebDav/

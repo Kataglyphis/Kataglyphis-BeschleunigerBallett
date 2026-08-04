@@ -30,7 +30,9 @@ class Texture
       vk::CommandPool commandPool,
       const unsigned char *encodedBytes,
       size_t byteCount);
-    void createDefaultTexture(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool);
+    /// Returns false if the white-default upload itself failed (e.g. a failed
+    /// submit), in which case the texture is left empty/unwritten.
+    bool createDefaultTexture(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool);
 
     void setImage(vk::Image image);
     void setImageView(vk::ImageView imageView);
