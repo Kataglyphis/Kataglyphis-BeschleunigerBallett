@@ -2,6 +2,7 @@ import scene_types;
 import brdf;
 import material_fetch;
 import base_color;
+import emission;
 import cascaded_shadow;
 import push_constants;
 
@@ -88,7 +89,13 @@ float4 fs_main(VsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFace : S
 
     // Emissive is surface-emitted radiance, not reflected light - it is
     // unshadowed and unattenuated, so it is added after shadowing, not before.
-    color += material.emission;
+    float3 emissiveSample = float3(1.0);
+    if (material.emissiveTextureID >= 0)
+    {
+        int emissiveTexId = resolve_texture_slot(obj, material.emissiveTextureID);
+        emissiveSample = textures[emissiveTexId].Sample(textureSamplers[emissiveTexId], transform_uv(In.texCoords, material)).xyz;
+    }
+    color += material_emission(material, emissiveSample);
 
     return float4(color, 1.0);
 }

@@ -1,5 +1,6 @@
 import scene_types;
 import base_color;
+import emission;
 import alpha_test;
 
 // Path tracing compute kernel using ray query (GL_EXT_ray_query).
@@ -252,7 +253,14 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             // exactly the environment radiance" invariant.
             if (!furnace)
             {
-                radiance += throughput * material.emission;
+                float3 emissiveSample = float3(1.0);
+                if (material.emissiveTextureID >= 0)
+                {
+                    int emissiveTexId = resolve_texture_slot(obj, material.emissiveTextureID);
+                    // Explicit LOD: see the base-colour sample above for why.
+                    emissiveSample = textures[emissiveTexId].SampleLevel(textureSamplers[emissiveTexId], transform_uv(texCoords, material), 0.0).xyz;
+                }
+                radiance += throughput * material_emission(material, emissiveSample);
             }
 
             // Apply color absorption.

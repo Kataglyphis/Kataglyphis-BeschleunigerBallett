@@ -42,6 +42,7 @@ struct ObjMaterial
     float3 uv_transform_row1;
     float metallic;
     float roughness;
+    int emissiveTextureID;
 };
 
 // Per-mesh object description (matches ObjectDescription.hpp). The uint64_t
@@ -67,9 +68,14 @@ struct Materials { ObjMaterial m[]; }
 // texture count pushes it past MAX_TEXTURE_COUNT silently samples a wrong
 // slot instead of going out of bounds (see VulkanRenderer.cpp's
 // "models past the cap will sample the wrong slots" warning).
+int resolve_texture_slot(ObjectDescription obj, int textureID)
+{
+    return clamp(int(obj.texture_offset) + textureID, 0, MAX_TEXTURE_COUNT - 1);
+}
+
 int resolve_texture_slot(ObjectDescription obj, ObjMaterial material)
 {
-    return clamp(int(obj.texture_offset) + material.textureID, 0, MAX_TEXTURE_COUNT - 1);
+    return resolve_texture_slot(obj, material.textureID);
 }
 
 static const int MAX_CASCADES = 3;

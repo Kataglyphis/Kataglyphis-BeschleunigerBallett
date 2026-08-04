@@ -2,6 +2,7 @@ import scene_types;
 import rt_types;
 import brdf;
 import base_color;
+import emission;
 import material_fetch;
 
 // Ray tracing closest-hit shader. Sole source for this shader. Emits
@@ -139,5 +140,12 @@ void rchit_main(
 
     // Emissive is surface-emitted radiance, not reflected light - it is
     // unshadowed and unattenuated, so it is added after shadowing, not before.
-    payload.hit_value += material.emission;
+    float3 emissiveSample = float3(1.0);
+    if (material.emissiveTextureID >= 0)
+    {
+        int emissiveTexId = resolve_texture_slot(obj, material.emissiveTextureID);
+        // Explicit LOD: see the base-colour sample above for why.
+        emissiveSample = textures[emissiveTexId].SampleLevel(textureSamplers[emissiveTexId], transform_uv(texCoords, material), 0.0).xyz;
+    }
+    payload.hit_value += material_emission(material, emissiveSample);
 }

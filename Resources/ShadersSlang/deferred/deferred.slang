@@ -1,6 +1,7 @@
 import scene_types;
 import material_fetch;
 import base_color;
+import emission;
 import brdf;
 import cascaded_shadow;
 import push_constants;
@@ -88,12 +89,22 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID, bool i
     // unchanged in linear terms, only its 256 steps are redistributed
     // toward the range the eye is most sensitive to.
     g.outAlbedo = texColor;
+    // Emissive is surface-emitted radiance: the base-colour*emissiveTexture
+    // multiply happens here, in the geometry pass, since the lighting pass
+    // only has the already-packed G-buffer value to work with (no material
+    // or texCoords).
+    float3 emissiveSample = float3(1.0);
+    if (material.emissiveTextureID >= 0)
+    {
+        int emissiveTexId = resolve_texture_slot(obj, material.emissiveTextureID);
+        emissiveSample = textures[emissiveTexId].Sample(textureSamplers[emissiveTexId], transform_uv(In.texCoords, material)).xyz;
+    }
     // r = roughness, gba = emissive. GBUFFER_MATERIAL_FORMAT is
     // eR16G16B16A16Sfloat, so emissive above 1.0 from
     // KHR_materials_emissive_strength survives the G-buffer round-trip
     // instead of clamping to [0,1], and roughness is no longer quantized
     // to 256 steps.
-    g.outMaterial = float4(material_roughness(material), material.emission);
+    g.outMaterial = float4(material_roughness(material), material_emission(material, emissiveSample));
     return g;
 }
 

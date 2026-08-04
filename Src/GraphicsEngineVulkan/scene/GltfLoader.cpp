@@ -195,16 +195,28 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
         }
     }
 
+    // A non-zero emissiveTexture.texcoord has the same "only TEXCOORD_0 is
+    // supported" limitation as the base-colour texture above.
+    if (material.emissive_texture.texture != nullptr) {
+        const TexCoordSetInfo emissiveTexCoordInfo = describeTexCoordSet(material.emissive_texture.texcoord);
+        if (!emissiveTexCoordInfo.supported) {
+            spdlog::warn("GltfLoader: material '{}' emissive texture uses TEXCOORD_{}, but only TEXCOORD_0 is "
+                         "supported; sampling with UV0",
+              materialName, emissiveTexCoordInfo.set);
+        }
+    }
+
     return ObjMaterial(baseColor,// diffuse
       emission,// emission
       shininess,// shininess
       baseAlpha,// dissolve (glTF baseColorFactor.a)
-      -1,// textureID (increment d)
+      -1,// textureID (assigned in parseCpu)
       alphaCutoff,// glTF MASK cutoff (-1 = OPAQUE/BLEND)
       uvTransformRow0,// KHR_texture_transform T*R*S row 0
       uvTransformRow1,// KHR_texture_transform T*R*S row 1
       metallic,// glTF pbrMetallicRoughness.metallicFactor
-      authoredRoughness);// glTF pbrMetallicRoughness.roughnessFactor (-1 = not authored)
+      authoredRoughness,// glTF pbrMetallicRoughness.roughnessFactor (-1 = not authored)
+      -1);// emissiveTextureID (assigned in parseCpu)
 }
 
 /// Reads a float attribute (2, 3 or 4 components) into `out`, one entry per
@@ -650,29 +662,38 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
     const std::filesystem::path documentDir = std::filesystem::path(modelFile).parent_path();
 
     std::map<std::pair<const cgltf_image *, const cgltf_sampler *>, int> imageSlot;
+
+    // Assigns `view`'s (image, sampler) pair a slot in textureImages, reusing
+    // an existing slot when some earlier texture (base-colour or emissive,
+    // on this material or an earlier one) already named the same pair -
+    // slots are the shared 128-entry descriptor budget, so a document whose
+    // emissive and base-colour views point at the same image must land on
+    // ONE slot. Returns -1 ("no texture") when the view has no texture or
+    // its bytes cannot be extracted.
+    const auto assignTextureSlot = [&](const cgltf_texture_view &view) -> int {
+        if (view.texture == nullptr) { return -1; }
+        const cgltf_texture *tex = view.texture;
+        const cgltf_image *img = tex->image;
+        const auto key = std::make_pair(img, tex->sampler);
+        const auto existing = imageSlot.find(key);
+        if (existing != imageSlot.end()) { return existing->second; }
+
+        std::vector<unsigned char> bytes = extractImageBytes(img, options, documentDir);
+        if (bytes.empty()) { return -1; }
+        const int slot = static_cast<int>(textureImages.size());
+        imageSlot[key] = slot;
+        textureImages.push_back(std::move(bytes));
+        textureSamplerDescs.push_back(gltfSamplerDesc(tex->sampler));
+        return slot;
+    };
+
     for (cgltf_size m = 0; m < data->materials_count; ++m) {
         const cgltf_material &material = data->materials[m];
         ObjMaterial objMaterial = fromGltfMaterial(material);
-        // A base-colour texture (per material, like the OBJ path): record its
-        // encoded bytes and point the material at the new texture slot.
-        if (material.has_pbr_metallic_roughness != 0
-            && material.pbr_metallic_roughness.base_color_texture.texture != nullptr) {
-            const cgltf_texture *tex = material.pbr_metallic_roughness.base_color_texture.texture;
-            const cgltf_image *img = tex->image;
-            const auto key = std::make_pair(img, tex->sampler);
-            const auto existing = imageSlot.find(key);
-            if (existing != imageSlot.end()) {
-                objMaterial.textureID = existing->second;
-            } else {
-                std::vector<unsigned char> bytes = extractImageBytes(img, options, documentDir);
-                if (!bytes.empty()) {
-                    objMaterial.textureID = static_cast<int>(textureImages.size());
-                    imageSlot[key] = objMaterial.textureID;
-                    textureImages.push_back(std::move(bytes));
-                    textureSamplerDescs.push_back(gltfSamplerDesc(tex->sampler));
-                }
-            }
+        if (material.has_pbr_metallic_roughness != 0) {
+            objMaterial.textureID = assignTextureSlot(material.pbr_metallic_roughness.base_color_texture);
         }
+        objMaterial.emissiveTextureID = assignTextureSlot(material.emissive_texture);
         materials.push_back(objMaterial);
     }
     const auto fallbackMaterial = static_cast<unsigned int>(materials.size());

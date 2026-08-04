@@ -1049,7 +1049,8 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "uv_transform_row0", offsetof(ObjMaterial, uv_transform_row0) },
             { "uv_transform_row1", offsetof(ObjMaterial, uv_transform_row1) },
             { "metallic", offsetof(ObjMaterial, metallic) },
-            { "roughness", offsetof(ObjMaterial, roughness) } } },
+            { "roughness", offsetof(ObjMaterial, roughness) },
+            { "emissiveTextureID", offsetof(ObjMaterial, emissiveTextureID) } } },
         { "Vertex_natural",
           { { "position", offsetof(Vertex, position) },
             { "normal", offsetof(Vertex, normal) },
@@ -2708,16 +2709,17 @@ TEST(BuildIntegrity, EmissiveIsConsumedByEveryShadingPath)
     const auto rasterizer_text_opt = readFileText(rasterizer_path);
     ASSERT_TRUE(rasterizer_text_opt.has_value()) << "could not open " << rasterizer_path.string();
     const std::string &rasterizer_text = *rasterizer_text_opt;
-    EXPECT_NE(rasterizer_text.find(".emission"), std::string::npos)
-      << "rasterizer.slang no longer uses material.emission. " << kFailureMessage;
+    EXPECT_NE(rasterizer_text.find("material_emission(material, emissiveSample)"), std::string::npos)
+      << "rasterizer.slang no longer uses material_emission(). " << kFailureMessage;
 
     const fs::path deferred_path = repo_root / "Resources/ShadersSlang/deferred/deferred.slang";
     const auto deferred_text_opt = readFileText(deferred_path);
     ASSERT_TRUE(deferred_text_opt.has_value()) << "could not open " << deferred_path.string();
     const std::string &deferred_text = *deferred_text_opt;
-    EXPECT_NE(deferred_text.find("outMaterial = float4(material_roughness(material), material.emission)"),
-              std::string::npos)
-      << "deferred.slang's geometry pass no longer packs material.emission into outMaterial.gba. " << kFailureMessage;
+    EXPECT_NE(
+      deferred_text.find("outMaterial = float4(material_roughness(material), material_emission(material, emissiveSample))"),
+      std::string::npos)
+      << "deferred.slang's geometry pass no longer packs material_emission() into outMaterial.gba. " << kFailureMessage;
     EXPECT_NE(deferred_text.find("color += material.gba"), std::string::npos)
       << "deferred.slang's lighting pass no longer adds the G-buffer's packed emissive term. " << kFailureMessage;
 
@@ -2725,15 +2727,57 @@ TEST(BuildIntegrity, EmissiveIsConsumedByEveryShadingPath)
     const auto rchit_text_opt = readFileText(rchit_path);
     ASSERT_TRUE(rchit_text_opt.has_value()) << "could not open " << rchit_path.string();
     const std::string &rchit_text = *rchit_text_opt;
-    EXPECT_NE(rchit_text.find(".emission"), std::string::npos)
-      << "raytrace.rchit.slang no longer uses material.emission. " << kFailureMessage;
+    EXPECT_NE(rchit_text.find("material_emission(material, emissiveSample)"), std::string::npos)
+      << "raytrace.rchit.slang no longer uses material_emission(). " << kFailureMessage;
 
     const fs::path path_tracing_path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
     const auto path_tracing_text_opt = readFileText(path_tracing_path);
     ASSERT_TRUE(path_tracing_text_opt.has_value()) << "could not open " << path_tracing_path.string();
     const std::string &path_tracing_text = *path_tracing_text_opt;
-    EXPECT_NE(path_tracing_text.find("radiance += throughput * material.emission"), std::string::npos)
-      << "path_tracing.slang no longer adds throughput * material.emission at the hit. " << kFailureMessage;
+    EXPECT_NE(path_tracing_text.find("radiance += throughput * material_emission(material, emissiveSample)"), std::string::npos)
+      << "path_tracing.slang no longer adds throughput * material_emission() at the hit. " << kFailureMessage;
+}
+
+// ObjMaterial::emissiveTextureID (glTF emissiveTexture, see EmissiveIsConsumedByEveryShadingPath above for the
+// factor-only case) is dedup'd into the same texture-slot budget as textureID, but only actually LIT if every
+// shading path samples it through the shared common/emission.slang helper rather than four hand-rolled multiplies -
+// this scans the shader sources as text (the source-text gate pattern used throughout this file) and fails if any
+// of the four shading paths stops calling material_emission(), or if emission.slang itself stops multiplying the
+// sampled texture into the factor.
+TEST(BuildIntegrity, EmissionSamplingUsesTheSharedHelperInEveryShadingPath)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const char *kFailureMessage =
+      "material_emission() in common/emission.slang is the sole place the emissiveFactor * emissiveTexture "
+      "multiply happens; a shading path that hand-rolls it instead risks silently diverging from the other three";
+
+    const fs::path emission_path = repo_root / "Resources/ShadersSlang/common/emission.slang";
+    const auto emission_text_opt = readFileText(emission_path);
+    ASSERT_TRUE(emission_text_opt.has_value()) << "could not open " << emission_path.string();
+    const std::string &emission_text = *emission_text_opt;
+    EXPECT_NE(emission_text.find("material.emission * sampled"), std::string::npos)
+      << "emission.slang's material_emission() no longer multiplies the sampled emissiveTexture into the factor. "
+      << kFailureMessage;
+
+    const std::vector<fs::path> shading_paths = {
+        repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang",
+        repo_root / "Resources/ShadersSlang/deferred/deferred.slang",
+        repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
+        repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang",
+    };
+    for (const fs::path &path : shading_paths) {
+        const auto text_opt = readFileText(path);
+        ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
+        const std::string &text = *text_opt;
+        EXPECT_NE(text.find("import emission;"), std::string::npos)
+          << path.string() << " no longer imports common/emission.slang. " << kFailureMessage;
+        EXPECT_NE(text.find("material_emission("), std::string::npos)
+          << path.string() << " no longer calls material_emission(). " << kFailureMessage;
+        EXPECT_NE(text.find("emissiveTextureID"), std::string::npos)
+          << path.string() << " no longer branches on ObjMaterial::emissiveTextureID. " << kFailureMessage;
+    }
 }
 
 // Vertex.color (glTF COLOR_0) is fetched by every loader and uploaded to the
