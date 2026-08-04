@@ -106,11 +106,24 @@ namespace {
 /// fields are ObjMaterial's; textureID -1 means untextured.
 ObjMaterial neutralMaterial()
 {
-    return ObjMaterial(glm::vec3(0.8F),// diffuse
-      glm::vec3(0.0F),// emission
-      1.0F,// shininess
-      1.0F,// dissolve
-      -1);// textureID
+    // Only diffuse and shininess differ from ObjMaterial's defaults; every
+    // other field (emission, dissolve, textureID, ...) already matches.
+    return ObjMaterial{ .diffuse = glm::vec3(0.8F), .shininess = 1.0F };
+}
+
+/// Warns once when a texture's UV set is anything but TEXCOORD_0, the only
+/// set the vertex layout binds. `slotLabel` names the texture in the message
+/// ("base-colour", "emissive", "normal"). No-op when the material has no
+/// texture in this slot.
+void warnUnsupportedTexCoordSet(const char *materialName, const cgltf_texture_view &view, const char *slotLabel)
+{
+    if (view.texture == nullptr) { return; }
+    const TexCoordSetInfo texCoordInfo = describeTexCoordSet(view.texcoord);
+    if (!texCoordInfo.supported) {
+        spdlog::warn("GltfLoader: material '{}' {} texture uses TEXCOORD_{}, but only TEXCOORD_0 is supported; "
+                     "sampling with UV0",
+          materialName, slotLabel, texCoordInfo.set);
+    }
 }
 
 /// Maps a glTF material to the engine's ObjMaterial. Base-colour factor becomes
@@ -144,12 +157,7 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
         // texture that names any other set is silently mis-sampled unless we
         // say so. The Rust loader supports TEXCOORD_0/1 and warns past that -
         // this loader supports only TEXCOORD_0, so it warns on any non-zero set.
-        const TexCoordSetInfo texCoordInfo = describeTexCoordSet(pbr.base_color_texture.texcoord);
-        if (!texCoordInfo.supported) {
-            spdlog::warn("GltfLoader: material '{}' base-colour texture uses TEXCOORD_{}, but only TEXCOORD_0 is "
-                         "supported; sampling with UV0",
-              materialName, texCoordInfo.set);
-        }
+        warnUnsupportedTexCoordSet(materialName, pbr.base_color_texture, "base-colour");
     }
     // KHR_materials_emissive_strength scales the emissive contribution past the
     // [0,1] glTF factor range (for HDR emitters). Fold it into the factor so the
@@ -197,37 +205,23 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
 
     // A non-zero emissiveTexture.texcoord has the same "only TEXCOORD_0 is
     // supported" limitation as the base-colour texture above.
-    if (material.emissive_texture.texture != nullptr) {
-        const TexCoordSetInfo emissiveTexCoordInfo = describeTexCoordSet(material.emissive_texture.texcoord);
-        if (!emissiveTexCoordInfo.supported) {
-            spdlog::warn("GltfLoader: material '{}' emissive texture uses TEXCOORD_{}, but only TEXCOORD_0 is "
-                         "supported; sampling with UV0",
-              materialName, emissiveTexCoordInfo.set);
-        }
-    }
+    warnUnsupportedTexCoordSet(materialName, material.emissive_texture, "emissive");
 
     // Same "only TEXCOORD_0 is supported" limitation for the normal texture.
-    if (material.normal_texture.texture != nullptr) {
-        const TexCoordSetInfo normalTexCoordInfo = describeTexCoordSet(material.normal_texture.texcoord);
-        if (!normalTexCoordInfo.supported) {
-            spdlog::warn("GltfLoader: material '{}' normal texture uses TEXCOORD_{}, but only TEXCOORD_0 is "
-                         "supported; sampling with UV0",
-              materialName, normalTexCoordInfo.set);
-        }
-    }
+    warnUnsupportedTexCoordSet(materialName, material.normal_texture, "normal");
 
-    return ObjMaterial(baseColor,// diffuse
-      emission,// emission
-      shininess,// shininess
-      baseAlpha,// dissolve (glTF baseColorFactor.a)
-      -1,// textureID (assigned in parseCpu)
-      alphaCutoff,// glTF MASK cutoff (-1 = OPAQUE/BLEND)
-      uvTransformRow0,// KHR_texture_transform T*R*S row 0
-      uvTransformRow1,// KHR_texture_transform T*R*S row 1
-      metallic,// glTF pbrMetallicRoughness.metallicFactor
-      authoredRoughness,// glTF pbrMetallicRoughness.roughnessFactor (-1 = not authored)
-      -1,// emissiveTextureID (assigned in parseCpu)
-      -1);// normalTextureID (assigned in parseCpu)
+    return ObjMaterial{
+        .diffuse = baseColor,
+        .emission = emission,
+        .shininess = shininess,
+        .dissolve = baseAlpha,// glTF baseColorFactor.a
+        // textureID, emissiveTextureID, normalTextureID: assigned in parseCpu.
+        .alphaCutoff = alphaCutoff,// glTF MASK cutoff (-1 = OPAQUE/BLEND)
+        .uv_transform_row0 = uvTransformRow0,// KHR_texture_transform T*R*S row 0
+        .uv_transform_row1 = uvTransformRow1,// KHR_texture_transform T*R*S row 1
+        .metallic = metallic,// glTF pbrMetallicRoughness.metallicFactor
+        .roughness = authoredRoughness,// glTF pbrMetallicRoughness.roughnessFactor (-1 = not authored)
+    };
 }
 
 /// Reads a float attribute (2, 3 or 4 components) into `out`, one entry per

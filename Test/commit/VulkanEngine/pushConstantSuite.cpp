@@ -161,3 +161,26 @@ TEST(ObjMaterialLayoutUnit, MatchesTheSlangTwinScalarLayout)
     EXPECT_EQ(offsetof(ObjMaterial, normalTextureID), 76U);
     EXPECT_EQ(sizeof(ObjMaterial), 80U);
 }
+
+// ObjMaterial's default member initializers must carry exactly the sentinels
+// documented on each field (alphaCutoff < 0 = never discard, roughness < 0 =
+// derive from shininess, -1 = no texture). ObjMaterial became an aggregate
+// with no constructor, so this guarantee is no longer enforced by a
+// constructor body - it needs its own pin.
+TEST(ObjMaterialLayoutUnit, ValueInitializedMaterialCarriesTheDocumentedSentinels)
+{
+    const ObjMaterial m{};
+
+    EXPECT_EQ(m.diffuse, glm::vec3(0.7F));
+    EXPECT_EQ(m.emission, glm::vec3(0.0F));
+    EXPECT_FLOAT_EQ(m.shininess, 0.0F);
+    EXPECT_FLOAT_EQ(m.dissolve, 1.0F);
+    EXPECT_EQ(m.textureID, -1);
+    EXPECT_FLOAT_EQ(m.alphaCutoff, -1.0F);
+    EXPECT_EQ(m.uv_transform_row0, glm::vec3(1.0F, 0.0F, 0.0F));
+    EXPECT_EQ(m.uv_transform_row1, glm::vec3(0.0F, 1.0F, 0.0F));
+    EXPECT_FLOAT_EQ(m.metallic, 0.0F);
+    EXPECT_FLOAT_EQ(m.roughness, -1.0F);
+    EXPECT_EQ(m.emissiveTextureID, -1);
+    EXPECT_EQ(m.normalTextureID, -1);
+}

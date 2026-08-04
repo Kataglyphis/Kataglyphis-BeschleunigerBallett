@@ -36,12 +36,14 @@ TEST(BlasGeometryLimitsUnit, PrimitiveCountTruncatesAPartialTriangle)
 namespace {
 ObjMaterial opaqueMaterial()
 {
-    return ObjMaterial({ 0.7F, 0.7F, 0.7F }, { 0.0F, 0.0F, 0.0F }, 0.0F, 1.0F, -1, -1.0F);
+    return ObjMaterial{ .diffuse = { 0.7F, 0.7F, 0.7F }, .emission = { 0.0F, 0.0F, 0.0F }, .shininess = 0.0F,
+        .dissolve = 1.0F, .textureID = -1, .alphaCutoff = -1.0F };
 }
 
 ObjMaterial maskMaterial()
 {
-    return ObjMaterial({ 0.7F, 0.7F, 0.7F }, { 0.0F, 0.0F, 0.0F }, 0.0F, 1.0F, -1, 0.5F);
+    return ObjMaterial{ .diffuse = { 0.7F, 0.7F, 0.7F }, .emission = { 0.0F, 0.0F, 0.0F }, .shininess = 0.0F,
+        .dissolve = 1.0F, .textureID = -1, .alphaCutoff = 0.5F };
 }
 }// namespace
 
