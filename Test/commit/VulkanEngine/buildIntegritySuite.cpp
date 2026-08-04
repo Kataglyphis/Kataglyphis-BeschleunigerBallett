@@ -4384,6 +4384,85 @@ TEST(BuildIntegrity, MaxTextureCountInDocsMatchesTheHeader)
       << " defines MAX_TEXTURE_COUNT = " << *header_value;
 }
 
+// Parses docs/code-quality.md's `<!-- format-drift-denominator: N -->` marker
+// line. Returns std::nullopt if the marker line, or its value, is missing -
+// a deleted or malformed marker must fail the calling test, not skip it.
+std::optional<int> parse_format_drift_denominator_marker(const fs::path &doc_path)
+{
+    std::ifstream file(doc_path);
+    if (!file) { return std::nullopt; }
+
+    static const std::regex kMarkerPattern(R"(<!--\s*format-drift-denominator:\s*(\d+)\s*-->)");
+
+    std::string line;
+    while (std::getline(file, line)) {
+        std::smatch match;
+        if (std::regex_search(line, match, kMarkerPattern)) { return std::stoi(match[1].str()); }
+    }
+    return std::nullopt;
+}
+
+// Counts files with the eight extensions Get-ProjectCppFiles (the container
+// build's clang-format check) tracks, under one root, skipping any `build*`
+// directory the same way that PowerShell helper's git-less fallback does.
+std::size_t count_cpp_sources(const fs::path &root)
+{
+    static const std::set<std::string> kCppExtensions = { ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".ixx" };
+
+    std::size_t count = 0;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(root, fs::directory_options::skip_permission_denied, error), end; it != end;
+         it.increment(error)) {
+        if (error) { break; }
+        if (it->is_directory(error) && it->path().filename().string().starts_with("build")) {
+            it.disable_recursion_pending();
+            continue;
+        }
+        if (!it->is_regular_file(error) || !kCppExtensions.contains(it->path().extension().string())) { continue; }
+        ++count;
+    }
+    return count;
+}
+
+// docs/code-quality.md's "Known state" section pins the total tracked C/C++
+// source count (the denominator of its X-of-Y formatting-drift figure) in a
+// `<!-- format-drift-denominator: N -->` marker so the figure can be checked
+// mechanically even though the deviating count itself needs clang-format
+// (unavailable in the Linux CI lane) to re-measure. This mirrors
+// MaxTextureCountInDocsMatchesTheHeader's "parse two sources, compare, fail
+// with both numbers" pattern, but pins the doc against a live directory walk
+// instead of a header constant - the same drift that let 72/125 rot into
+// 77/136 and then the actual 140/211 undetected for weeks.
+//
+// This only guards the denominator. The deviating numerator still needs a
+// human to re-run clang-format and update the doc by hand; a green run here
+// says nothing about whether that numerator is still accurate.
+TEST(BuildIntegrity, FormatDriftDenominatorMatchesTheTrackedSourceCount)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path doc_path = repo_root / "docs" / "code-quality.md";
+    if (!fs::exists(doc_path)) {
+        GTEST_SKIP() << "could not open " << doc_path.string() << " - not running from the repo root?";
+    }
+
+    const auto doc_value = parse_format_drift_denominator_marker(doc_path);
+    ASSERT_TRUE(doc_value.has_value())
+      << doc_path.string()
+      << " is missing its '<!-- format-drift-denominator: N -->' marker line - a deleted marker must fail this "
+         "test, not silently pass";
+
+    const std::size_t actual_count = count_cpp_sources(repo_root / "Src") + count_cpp_sources(repo_root / "Test");
+
+    EXPECT_EQ(static_cast<std::size_t>(*doc_value), actual_count)
+      << doc_path.string() << "'s format-drift-denominator marker says " << *doc_value << " but Src/ + Test/ "
+      << "currently contain " << actual_count
+      << " tracked C/C++ sources - re-run the clang-format drift measurement in docs/code-quality.md's \"Known "
+         "state\" section and update both the marker and the X-of-Y prose (this test only pins the "
+         "denominator, not the deviating count).";
+}
+
 // Parses docs/shader-sharing.md's `<!-- shader-targets:begin -->` /
 // `:end` marker table - one `| \`<file>\` | spirv|wgsl |` row per Slang
 // entry-point source. Returns std::nullopt if the marker pair is missing, so

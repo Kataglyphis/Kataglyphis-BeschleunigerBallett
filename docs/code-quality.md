@@ -104,7 +104,9 @@ containerized builds never run clang-tidy — but they always run the
 clang-format check (only `-SkipTidy` is hard-coded; the container script
 has no `-SkipFormat` to forward). Host `Build-Windows.ps1` accepts
 `-SkipFormat`. That is why tidy drift accumulates even when every build is
-green.
+green — and format drift accumulates too, for a different reason: the
+clang-format check that does run reports its deviating count but never
+fails the build on it (see "Known state" below).
 
 ## Suggested cadence
 
@@ -115,10 +117,16 @@ green.
   `Scripts/Linux/run_static_analysis_format.sh` on Linux (it adds
   `scan-build` static analysis on top).
 
-## Known state (2026-07-19)
+## Known state (2026-08-04)
 
-**72 of 125** own sources under `Src/` and `Test/` differ from
-`.clang-format`. This is pre-existing drift, not from any single change.
+<!-- format-drift-denominator: 211 -->
+
+**140 of 211** own sources under `Src/` and `Test/` differ from
+`.clang-format` (up from 72 of 125 on 2026-07-19). `Invoke-ClangFormatCheck`
+(see the caveat above) reports this count on every container build and
+**never fails the build** on it — that is why it grew from 72 to 140 while
+every build stayed green. The "tidy drift accumulates even when every build
+is green" sentence above applies to format drift too, not just clang-tidy.
 Reformatting them is a **decision, not a chore**: it touches most of the
 engine in one commit and will collide with in-flight work. Tracked in
 `BACKLOG.md` — do it deliberately, ideally right after a merge point, and
