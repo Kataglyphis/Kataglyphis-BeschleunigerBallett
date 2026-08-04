@@ -5414,6 +5414,66 @@ TEST(BuildIntegrity, EverySceneUboFieldIsReadByAShader)
          }();
 }
 
+// EverySceneUboFieldIsReadByAShader above checks whole member names, so a
+// member whose .xyz is read but whose .w quietly starts carrying real data
+// (cam_pos.w used to ship fov this way - nothing ever read it back) passes
+// that gate anyway. This test reads SceneUboMarshal.hpp's fillSceneUboCamera
+// / fillSceneUboDirectionalLight source directly: for each
+// `ubo.<field> = glm::vec4(<xyz>, <wArg>)` assignment, if wArg is not a
+// float literal (i.e. it packs real per-frame data rather than a filler
+// constant), asserts some .slang source dereferences `<field>.w`.
+TEST(BuildIntegrity, SceneUboWComponentsCarryingDataAreReadByAShader)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path marshal_path = repo_root / "Src" / "GraphicsEngineVulkan" / "common" / "SceneUboMarshal.hpp";
+    const auto marshal_source = read_file_text(marshal_path);
+    ASSERT_TRUE(marshal_source.has_value()) << "missing " << marshal_path.string();
+
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+    std::string all_slang_text;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        if (!it->is_regular_file(error) || it->path().extension() != ".slang") { continue; }
+        std::ifstream file(it->path());
+        all_slang_text += std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        all_slang_text += '\n';
+    }
+
+    static const std::regex kFloatLiteral(R"(^-?[0-9]+\.[0-9]+[fF]?$)");
+    static const std::array<const char *, 4> kWBearingFields{
+        "view_dir", R"(dirLight\.direction)", R"(dirLight\.color)", "cam_pos"
+    };
+
+    bool matchedRadianceField = false;
+    for (const char *field : kWBearingFields) {
+        const std::regex assignRegex(std::string("ubo\\.") + field
+          + R"(\s*=\s*glm::vec4\([^;]*?,\s*([A-Za-z_][A-Za-z0-9_]*|-?[0-9]+\.[0-9]+[fF]?)\s*\)\s*;)");
+        std::smatch match;
+        ASSERT_TRUE(std::regex_search(*marshal_source, match, assignRegex))
+          << marshal_path.string() << " no longer assigns ubo." << field
+          << " as glm::vec4(xyz, w) - update this parser to match the new packing shape";
+
+        const std::string wArg = match[1].str();
+        if (std::regex_match(wArg, kFloatLiteral)) { continue; }// filler constant, nothing to check
+
+        if (std::string(field) == R"(dirLight\.color)") { matchedRadianceField = true; }
+
+        const std::regex wRead(field + std::string(R"(\.w\b)"));
+        EXPECT_TRUE(std::regex_search(all_slang_text, wRead))
+          << "SceneUboMarshal.hpp packs a non-constant value (" << wArg << ") into ubo." << field
+          << ".w, but no .slang source under " << slang_root.string() << " reads " << field
+          << ".w - either wire it into a shader or write a constant filler instead";
+    }
+
+    EXPECT_TRUE(matchedRadianceField)
+      << "expected dirLight.color's .w assignment (radiance) to be the one non-constant SceneUBO "
+         ".w slot this test verifies - if that packing moved, this sanity check needs updating too";
+}
+
 // FileReader.ixx spells out the rule this test enforces: the error_code
 // overload of std::filesystem's query functions is REQUIRED, not stylistic,
 // because exceptions are disabled project-wide (-fno-exceptions/EHs-) and the

@@ -21,8 +21,10 @@
 using Kataglyphis::aspectRatioOf;
 using Kataglyphis::clampCloudMeshScale;
 using Kataglyphis::clampPcfRadius;
+using Kataglyphis::fillSceneUboCamera;
 using Kataglyphis::fillSceneUboCascades;
 using Kataglyphis::fillSceneUboClouds;
+using Kataglyphis::fillSceneUboDirectionalLight;
 using Kataglyphis::kMinCloudDensityMultiplier;
 using Kataglyphis::kMinCloudMeshExtent;
 using Kataglyphis::makeVulkanProjection;
@@ -246,6 +248,43 @@ TEST(SceneUboMarshalUnit, ClampPcfRadiusPinsTheBoundTheShaderLoopsOver)
     EXPECT_EQ(clampPcfRadius(MAX_PCF_RADIUS), static_cast<uint32_t>(MAX_PCF_RADIUS));
     EXPECT_EQ(clampPcfRadius(MAX_PCF_RADIUS + 1), static_cast<uint32_t>(MAX_PCF_RADIUS));
     EXPECT_EQ(clampPcfRadius(INT_MAX), static_cast<uint32_t>(MAX_PCF_RADIUS));
+}
+
+TEST(SceneUboMarshal, CameraFillsPositionAndDirection)
+{
+    SceneUBO ubo{};
+    fillSceneUboCamera(ubo, glm::vec3(1.0F, 2.0F, 3.0F), glm::vec3(0.0F, 0.0F, -1.0F));
+
+    EXPECT_FLOAT_EQ(ubo.cam_pos.x, 1.0F);
+    EXPECT_FLOAT_EQ(ubo.cam_pos.y, 2.0F);
+    EXPECT_FLOAT_EQ(ubo.cam_pos.z, 3.0F);
+    EXPECT_FLOAT_EQ(ubo.cam_pos.w, 1.0F) << "cam_pos.w is filler - no shader reads past .xyz";
+
+    EXPECT_FLOAT_EQ(ubo.view_dir.x, 0.0F);
+    EXPECT_FLOAT_EQ(ubo.view_dir.y, 0.0F);
+    EXPECT_FLOAT_EQ(ubo.view_dir.z, -1.0F);
+    EXPECT_FLOAT_EQ(ubo.view_dir.w, 1.0F) << "view_dir.w is filler - no shader reads past .xyz";
+}
+
+TEST(SceneUboMarshal, DirectionalLightPacksRadianceInColorW)
+{
+    SceneUBO ubo{};
+    fillSceneUboDirectionalLight(
+      ubo, glm::vec3(3.0F, 4.0F, 0.0F), glm::vec3(0.9F, 0.8F, 0.7F), 2.5F);
+
+    EXPECT_FLOAT_EQ(glm::length(glm::vec3(ubo.dirLight.direction)), 1.0F)
+      << "direction.xyz must be unit length even for a non-normalized input";
+    EXPECT_FLOAT_EQ(ubo.dirLight.direction.w, 1.0F) << "direction.w is filler - no shader reads past .xyz";
+
+    EXPECT_FLOAT_EQ(ubo.dirLight.color.x, 0.9F);
+    EXPECT_FLOAT_EQ(ubo.dirLight.color.y, 0.8F);
+    EXPECT_FLOAT_EQ(ubo.dirLight.color.z, 0.7F);
+    EXPECT_FLOAT_EQ(ubo.dirLight.color.w, 2.5F) << "color.w carries radiance - rasterizer.slang:75 reads it";
+
+    SceneUBO zeroInput{};
+    fillSceneUboDirectionalLight(zeroInput, glm::vec3(0.0F), glm::vec3(1.0F), 1.0F);
+    EXPECT_FLOAT_EQ(glm::length(glm::vec3(zeroInput.dirLight.direction)), 1.0F)
+      << "the zero-vector fallback normalizedLightDirection defines must still land as a unit vector";
 }
 
 }// namespace

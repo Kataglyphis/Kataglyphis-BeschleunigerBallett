@@ -8,6 +8,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "common/LightDirection.hpp"
 #include "common/host_device_shared_vars.hpp"
 #include "renderer/SceneUBO.hpp"
 
@@ -92,6 +93,31 @@ inline void fillSceneUboClouds(VulkanRendererInternals::SceneUBO &ubo,
     ubo.cloudMeshOffset = glm::vec4(meshOffset.x, meshOffset.y, meshOffset.z, coverageThreshold);
     ubo.cloudParameters = glm::vec4(
       pillowness, cirrusEffect, powderEffect ? 1.0F : 0.0F, static_cast<float>(numMarchSteps));
+}
+
+// Packs the camera position/direction into their two SceneUBO vec4s. Both
+// .w components are filler (1.0F): every shader that reads either field
+// samples only .xyz (cascaded_shadow.slang:22, clouds.slang:126,
+// deferred.slang:121, rasterizer.slang:55, raytrace.rchit.slang:87). fov is
+// not packed here - makeVulkanProjection already carries it into the
+// projection matrix, and no shader has ever read it back out of cam_pos.w.
+inline void fillSceneUboCamera(VulkanRendererInternals::SceneUBO &ubo, glm::vec3 position, glm::vec3 direction)
+{
+    ubo.view_dir = glm::vec4(direction, 1.0F);
+    ubo.cam_pos = glm::vec4(position, 1.0F);
+}
+
+// Packs the directional light. Normalizes rawDirection itself so
+// normalizedLightDirection has exactly one caller. direction.w is filler
+// (1.0F, unread); color.w carries radiance and IS read - rasterizer.slang:75
+// unpacks it as lightIntensity - so unlike every other .w slot in SceneUBO,
+// this one must stay wired to a shader (see
+// BuildIntegrity.SceneUboWComponentsCarryingDataAreReadByAShader).
+inline void fillSceneUboDirectionalLight(
+  VulkanRendererInternals::SceneUBO &ubo, glm::vec3 rawDirection, glm::vec3 color, float radiance)
+{
+    ubo.dirLight.direction = glm::vec4(normalizedLightDirection(rawDirection), 1.0F);
+    ubo.dirLight.color = glm::vec4(color, radiance);
 }
 
 // Writes up to MAX_CASCADES splits/matrices into the SceneUBO and returns the

@@ -36,9 +36,9 @@ struct SceneUBO
       "cascadeSplits is a single vec4 - a fourth-plus cascade would write past its end");
     mat4 cascadeLightSpaceMatrices[MAX_CASCADES];
 
-    // Camera
+    // Camera - packed by SceneUboMarshal.hpp's fillSceneUboCamera. Both .w
+    // components are 1.0F filler; no shader reads either past .xyz.
     vec4 view_dir;
-    // xyz is position; w = fov
     vec4 cam_pos;
     
     // Clouds - packed by SceneUboMarshal.hpp's fillSceneUboClouds, which documents

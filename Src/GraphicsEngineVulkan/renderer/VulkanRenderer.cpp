@@ -1,7 +1,6 @@
 module;
 #include <optional>
 #include "common/GuiModelTransform.hpp"
-#include "common/LightDirection.hpp"
 #include "common/SceneUboMarshal.hpp"
 #include "common/Utilities.hpp"
 #include "common/host_device_shared_vars.hpp"
@@ -184,19 +183,16 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
       camera_data->get_near_plane(),
       camera_data->get_far_plane());
 
-    sceneUBO.view_dir = glm::vec4(camera_data->get_camera_direction().x, camera_data->get_camera_direction().y, camera_data->get_camera_direction().z, 1.0F);
+    fillSceneUboCamera(sceneUBO, camera_data->get_camera_position(), camera_data->get_camera_direction());
 
-    const glm::vec3 dirLightDirection = normalizedLightDirection(glm::vec3(guiSceneSharedVars.directional_light_direction[0],
-      guiSceneSharedVars.directional_light_direction[1],
-      guiSceneSharedVars.directional_light_direction[2]));
-    sceneUBO.dirLight.direction = glm::vec4(dirLightDirection, 1.0F);
-
-    sceneUBO.dirLight.color = glm::vec4(guiSceneSharedVars.directional_light_color[0],
-      guiSceneSharedVars.directional_light_color[1],
-      guiSceneSharedVars.directional_light_color[2],
+    fillSceneUboDirectionalLight(sceneUBO,
+      glm::vec3(guiSceneSharedVars.directional_light_direction[0],
+        guiSceneSharedVars.directional_light_direction[1],
+        guiSceneSharedVars.directional_light_direction[2]),
+      glm::vec3(guiSceneSharedVars.directional_light_color[0],
+        guiSceneSharedVars.directional_light_color[1],
+        guiSceneSharedVars.directional_light_color[2]),
       guiSceneSharedVars.directional_light_radiance);
-
-    sceneUBO.cam_pos = glm::vec4(camera_data->get_camera_position().x, camera_data->get_camera_position().y, camera_data->get_camera_position().z, camera_data->get_fov());
 
     // Populate GUI state into SceneUBO
     sceneUBO.pcfRadius = clampPcfRadius(guiSceneSharedVars.pcf_radius);
