@@ -54,28 +54,28 @@ float4 fs_main(VsOut In, uint primitiveID : SV_PrimitiveID) : SV_Target
     float3 N = normalize(In.shadingNormal);
     float3 V = normalize(sceneUBO.cam_pos.xyz - In.worldPosition);
 
-    float3 ambient;
+    float3 albedo;
     if (material.textureID >= 0)
     {
         int textureId = resolve_texture_slot(obj, material);
         float4 baseSample = textures[textureId].Sample(textureSamplers[textureId], transform_uv(In.texCoords, material));
         if (alpha_masked_out(material, baseSample.a * In.fragmentColor.a)) discard;
-        ambient = base_color(material, baseSample.xyz);
+        albedo = base_color(material, baseSample.xyz);
     }
     else
     {
         if (alpha_masked_out(material, In.fragmentColor.a)) discard;
-        ambient = material.diffuse;
+        albedo = material.diffuse;
     }
 
-    ambient *= In.fragmentColor.rgb;
+    albedo *= In.fragmentColor.rgb;
 
     float roughness = material_roughness(material);
     float3 lightColor = sceneUBO.dirLight.color.rgb;
     float lightIntensity = sceneUBO.dirLight.color.w;
 
-    float3 f0 = lerp(float3(0.04), ambient, material.metallic);
-    float3 color = brdf_direct(N, V, L, ambient, material.metallic, roughness, f0,
+    float3 f0 = lerp(float3(0.04), albedo, material.metallic);
+    float3 color = brdf_direct(N, V, L, albedo, material.metallic, roughness, f0,
                                lightColor * lightIntensity);
 
     float shadow = calc_cascaded_shadow(In.worldPosition, N, L, sceneUBO);

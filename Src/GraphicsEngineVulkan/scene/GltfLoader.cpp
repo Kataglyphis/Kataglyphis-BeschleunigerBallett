@@ -98,22 +98,17 @@ namespace {
 /// fields are ObjMaterial's; textureID -1 means untextured.
 ObjMaterial neutralMaterial()
 {
-    return ObjMaterial(glm::vec3(0.1F),// ambient
-      glm::vec3(0.8F),// diffuse
-      glm::vec3(0.0F),// specular
-      glm::vec3(0.0F),// transmittance
+    return ObjMaterial(glm::vec3(0.8F),// diffuse
       glm::vec3(0.0F),// emission
       1.0F,// shininess
-      1.0F,// ior
       1.0F,// dissolve
-      2,// illum
       -1);// textureID
 }
 
 /// Maps a glTF material to the engine's ObjMaterial. Base-colour factor becomes
 /// diffuse (the dominant term this forward renderer reads) and its alpha becomes
-/// dissolve; ambient tracks diffuse at low strength. metallic_factor carries
-/// through losslessly to ObjMaterial::metallic. roughness_factor is still lossy:
+/// dissolve. metallic_factor carries through losslessly to ObjMaterial::metallic.
+/// roughness_factor is still lossy:
 /// it round-trips through a Phong shininess approximation (see `shininess`
 /// below) and material_roughness()'s sqrt(2/(shininess+2)) does not invert
 /// mix(128,1,roughness), so the shading paths' roughness is only an
@@ -182,15 +177,10 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
         }
     }
 
-    return ObjMaterial(baseColor * 0.1F,// ambient
-      baseColor,// diffuse
-      glm::vec3(1.0F - roughness) * 0.5F,// specular
-      glm::vec3(0.0F),// transmittance
+    return ObjMaterial(baseColor,// diffuse
       emission,// emission
       shininess,// shininess
-      1.0F,// ior
       baseAlpha,// dissolve (glTF baseColorFactor.a)
-      2,// illum
       -1,// textureID (increment d)
       alphaCutoff,// glTF MASK cutoff (-1 = OPAQUE/BLEND)
       uvTransformRow0,// KHR_texture_transform T*R*S row 0

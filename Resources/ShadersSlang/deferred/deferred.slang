@@ -128,14 +128,13 @@ float4 lighting_fs_main(LightingVsOut In) : SV_Target
     float3 L = normalize(-sceneUBO_lighting.dirLight.direction.xyz);
     float3 V = normalize(sceneUBO_lighting.cam_pos.xyz - worldPos.xyz);
 
-    float3 ambient = albedo.rgb;
     float roughness = material.r;
     float metallic = normal.w;
     float3 lightColor = sceneUBO_lighting.dirLight.color.rgb;
     float lightIntensity = sceneUBO_lighting.dirLight.color.w;
 
-    float3 f0 = lerp(float3(0.04), ambient, metallic);
-    float3 color = brdf_direct(N, V, L, ambient, metallic, roughness, f0,
+    float3 f0 = lerp(float3(0.04), albedo.rgb, metallic);
+    float3 color = brdf_direct(N, V, L, albedo.rgb, metallic, roughness, f0,
                                lightColor * lightIntensity);
 
     float shadow = calc_cascaded_shadow(worldPos.xyz, N, L, sceneUBO_lighting);

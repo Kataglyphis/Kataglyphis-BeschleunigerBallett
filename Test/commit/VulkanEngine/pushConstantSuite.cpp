@@ -147,18 +147,14 @@ TEST(PushConstantRaytracingUnit, MatchesTheSlangTwinLayout)
 // .slang twin and report it, do not adjust the number to make the test pass.
 TEST(ObjMaterialLayoutUnit, MatchesTheSlangTwinScalarLayout)
 {
-    EXPECT_EQ(offsetof(ObjMaterial, ambient), 0U);
-    EXPECT_EQ(offsetof(ObjMaterial, diffuse), 12U);
-    EXPECT_EQ(offsetof(ObjMaterial, specular), 24U);
-    EXPECT_EQ(offsetof(ObjMaterial, transmittance), 36U);
-    EXPECT_EQ(offsetof(ObjMaterial, emission), 48U);
-    EXPECT_EQ(offsetof(ObjMaterial, shininess), 60U);
-    EXPECT_EQ(offsetof(ObjMaterial, ior), 64U);
-    EXPECT_EQ(offsetof(ObjMaterial, dissolve), 68U);
-    EXPECT_EQ(offsetof(ObjMaterial, illum), 72U);
-    EXPECT_EQ(offsetof(ObjMaterial, textureID), 76U);
-    EXPECT_EQ(offsetof(ObjMaterial, alphaCutoff), 80U);
-    EXPECT_EQ(offsetof(ObjMaterial, uv_transform_row0), 84U);
-    EXPECT_EQ(offsetof(ObjMaterial, uv_transform_row1), 96U);
-    EXPECT_EQ(sizeof(ObjMaterial), 108U);
+    EXPECT_EQ(offsetof(ObjMaterial, diffuse), 0U);
+    EXPECT_EQ(offsetof(ObjMaterial, emission), 12U);
+    EXPECT_EQ(offsetof(ObjMaterial, shininess), 24U);
+    EXPECT_EQ(offsetof(ObjMaterial, dissolve), 28U);
+    EXPECT_EQ(offsetof(ObjMaterial, textureID), 32U);
+    EXPECT_EQ(offsetof(ObjMaterial, alphaCutoff), 36U);
+    EXPECT_EQ(offsetof(ObjMaterial, uv_transform_row0), 40U);
+    EXPECT_EQ(offsetof(ObjMaterial, uv_transform_row1), 52U);
+    EXPECT_EQ(offsetof(ObjMaterial, metallic), 64U);
+    EXPECT_EQ(sizeof(ObjMaterial), 68U);
 }

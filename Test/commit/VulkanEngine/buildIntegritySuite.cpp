@@ -1051,15 +1051,10 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "material_address", offsetof(ObjectDescription, material_address) },
             { "texture_offset", offsetof(ObjectDescription, texture_offset) } } },
         { "ObjMaterial_natural",
-          { { "ambient", offsetof(ObjMaterial, ambient) },
-            { "diffuse", offsetof(ObjMaterial, diffuse) },
-            { "specular", offsetof(ObjMaterial, specular) },
-            { "transmittance", offsetof(ObjMaterial, transmittance) },
+          { { "diffuse", offsetof(ObjMaterial, diffuse) },
             { "emission", offsetof(ObjMaterial, emission) },
             { "shininess", offsetof(ObjMaterial, shininess) },
-            { "ior", offsetof(ObjMaterial, ior) },
             { "dissolve", offsetof(ObjMaterial, dissolve) },
-            { "illum", offsetof(ObjMaterial, illum) },
             { "textureID", offsetof(ObjMaterial, textureID) },
             { "alphaCutoff", offsetof(ObjMaterial, alphaCutoff) },
             { "uv_transform_row0", offsetof(ObjMaterial, uv_transform_row0) },
@@ -5825,6 +5820,45 @@ std::vector<std::string> parse_scene_ubo_member_names(const fs::path &header_pat
     return names;
 }
 
+// Parses the member names straight out of scene_types.slang's ObjMaterial
+// mirror (the shader-visible layout, scalar layout - see
+// ObjMaterial.hpp's comment). Same brace-matching approach as
+// parse_scene_ubo_member_names above, but the member declarations are bare
+// Slang type + identifier (`float3 diffuse;`), not C++ ones.
+std::vector<std::string> parse_obj_material_member_names(const fs::path &scene_types_path)
+{
+    const std::string text = readFileText(scene_types_path).value_or(std::string{});
+
+    const std::size_t struct_pos = text.find("struct ObjMaterial");
+    if (struct_pos == std::string::npos) { return {}; }
+    const std::size_t open_brace = text.find('{', struct_pos);
+    if (open_brace == std::string::npos) { return {}; }
+
+    int depth = 1;
+    std::size_t close_brace = std::string::npos;
+    for (std::size_t pos = open_brace + 1; pos < text.size(); ++pos) {
+        if (text[pos] == '{') {
+            ++depth;
+        } else if (text[pos] == '}') {
+            --depth;
+            if (depth == 0) {
+                close_brace = pos;
+                break;
+            }
+        }
+    }
+    if (close_brace == std::string::npos) { return {}; }
+
+    const std::string body = text.substr(open_brace + 1, close_brace - open_brace - 1);
+    static const std::regex kMemberDecl(R"(\b(?:float3|float|int)\s+([A-Za-z_]\w*)\s*;)");
+
+    std::vector<std::string> names;
+    for (auto it = std::sregex_iterator(body.begin(), body.end(), kMemberDecl); it != std::sregex_iterator(); ++it) {
+        names.push_back((*it)[1].str());
+    }
+    return names;
+}
+
 }// namespace
 
 // SceneUBO is 352 bytes uploaded to every swapchain image every frame, and
@@ -5871,6 +5905,56 @@ TEST(BuildIntegrity, EverySceneUboFieldIsReadByAShader)
       << slang_root.string()
       << " - either wire the field into a shader or delete it (see the cloudMovementDirection removal for the "
          "precedent):"
+      << [&unread] {
+             std::string joined;
+             for (const auto &entry : unread) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+// ObjMaterial mirrors SceneUBO's blind spot: a member the host packs into
+// every material record but that zero shaders read compiles fine and just
+// costs bytes forever - ambient/specular/transmittance/ior/illum shipped
+// this way until this gate. Parses the member names straight out of
+// scene_types.slang's ObjMaterial mirror (the shader-visible layout) and
+// fails listing any that no Slang source references as `material.<name>`.
+TEST(BuildIntegrity, EveryObjMaterialFieldIsReadByAShader)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path scene_types_path = repo_root / "Resources/ShadersSlang/common/scene_types.slang";
+    ASSERT_TRUE(fs::exists(scene_types_path)) << "missing " << scene_types_path.string();
+
+    const std::vector<std::string> members = parse_obj_material_member_names(scene_types_path);
+    ASSERT_GT(members.size(), 3U) << "found only " << members.size() << " ObjMaterial member(s) in "
+                                   << scene_types_path.string() << " - the parser itself is broken";
+
+    const fs::path slang_root = slangRoot();
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    std::string all_slang_text;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        if (!it->is_regular_file(error) || it->path().extension() != ".slang") { continue; }
+        all_slang_text += readFileText(it->path()).value_or(std::string{});
+        all_slang_text += '\n';
+    }
+
+    std::vector<std::string> unread;
+    for (const auto &member : members) {
+        const std::regex material_dot_field(R"(material\.)" + member + R"(\b)");
+        if (!std::regex_search(all_slang_text, material_dot_field)) { unread.push_back(member); }
+    }
+
+    EXPECT_TRUE(unread.empty())
+      << unread.size()
+      << " ObjMaterial member(s) are uploaded per material but read by no Slang shader source (as "
+         "material.<name>) under "
+      << slang_root.string()
+      << " - either wire the field into a shader or delete it (see the ambient/specular/transmittance/ior/illum "
+         "removal for the precedent):"
       << [&unread] {
              std::string joined;
              for (const auto &entry : unread) { joined += "\n  " + entry; }

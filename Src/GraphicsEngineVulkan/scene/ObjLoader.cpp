@@ -192,15 +192,10 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
     for (const auto &tol_material : tol_materials) {
         const tinyobj::material_t *mp = &tol_material;
         ObjMaterial material{};
-        material.ambient = glm::vec3(mp->ambient[0], mp->ambient[1], mp->ambient[2]);
         material.diffuse = glm::vec3(mp->diffuse[0], mp->diffuse[1], mp->diffuse[2]);
-        material.specular = glm::vec3(mp->specular[0], mp->specular[1], mp->specular[2]);
         material.emission = glm::vec3(mp->emission[0], mp->emission[1], mp->emission[2]);
-        material.transmittance = glm::vec3(mp->transmittance[0], mp->transmittance[1], mp->transmittance[2]);
         material.dissolve = mp->dissolve;
-        material.ior = mp->ior;
         material.shininess = mp->shininess;
-        material.illum = mp->illum;
 
         if (!mp->diffuse_texname.empty()) {
             const std::string resolved = resolveObjTexturePath(base_dir, mp->diffuse_texname);

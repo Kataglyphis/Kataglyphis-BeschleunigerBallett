@@ -32,15 +32,10 @@ struct Vertex
 // Material (matches Src/shared/scene/ObjMaterial.hpp, scalar layout).
 struct ObjMaterial
 {
-    float3 ambient;
     float3 diffuse;
-    float3 specular;
-    float3 transmittance;
     float3 emission;
     float shininess;
-    float ior;
     float dissolve;
-    int illum;
     int textureID;
     float alphaCutoff;
     float3 uv_transform_row0;

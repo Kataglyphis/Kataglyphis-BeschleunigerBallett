@@ -5,16 +5,11 @@
 
 struct ObjMaterial
 {
-    glm::vec3 ambient;
     glm::vec3 diffuse;
-    glm::vec3 specular;
-    glm::vec3 transmittance;
     glm::vec3 emission;
     float shininess;
-    float ior;
     float dissolve;
 
-    int illum;
     int textureID;
 
     // glTF alphaMode MASK: the base-colour alpha cutoff. A negative value means
@@ -41,29 +36,22 @@ struct ObjMaterial
     float metallic;
 
     ObjMaterial()
-      : ambient(0.1F, 0.1F, 0.1F), diffuse(0.7F, 0.7F, 0.7F), specular(1.0F, 1.0F, 1.0F),
-        transmittance(0.0F, 0.0F, 0.0F), emission(0.0F, 0.0F, 0.10F), shininess(0.0F), ior(1.0F), dissolve(1.0F),
-        illum(0), textureID(-1), alphaCutoff(-1.0F), uv_transform_row0(1.0F, 0.0F, 0.0F),
-        uv_transform_row1(0.0F, 1.0F, 0.0F), metallic(0.0F)
+      : diffuse(0.7F, 0.7F, 0.7F), emission(0.0F, 0.0F, 0.10F), shininess(0.0F), dissolve(1.0F), textureID(-1),
+        alphaCutoff(-1.0F), uv_transform_row0(1.0F, 0.0F, 0.0F), uv_transform_row1(0.0F, 1.0F, 0.0F), metallic(0.0F)
     {}
 
-    ObjMaterial(glm::vec3 ambient,
-      glm::vec3 diffuse,
-      glm::vec3 specular,
-      glm::vec3 transmittance,
+    ObjMaterial(glm::vec3 diffuse,
       glm::vec3 emission,
       float shininess,
-      float ior,
       float dissolve,
-      int illum,
       int textureID,
       float alphaCutoff = -1.0F,
       glm::vec3 uv_transform_row0 = glm::vec3(1.0F, 0.0F, 0.0F),
       glm::vec3 uv_transform_row1 = glm::vec3(0.0F, 1.0F, 0.0F),
       float metallic = 0.0F)
-      : ambient(ambient), diffuse(diffuse), specular(specular), transmittance(transmittance), emission(emission),
-        shininess(shininess), ior(ior), dissolve(dissolve), illum(illum), textureID(textureID), alphaCutoff(alphaCutoff),
-        uv_transform_row0(uv_transform_row0), uv_transform_row1(uv_transform_row1), metallic(metallic)
+      : diffuse(diffuse), emission(emission), shininess(shininess), dissolve(dissolve), textureID(textureID),
+        alphaCutoff(alphaCutoff), uv_transform_row0(uv_transform_row0), uv_transform_row1(uv_transform_row1),
+        metallic(metallic)
     {}
 
     int get_textureID() const { return textureID; }
