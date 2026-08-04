@@ -33,6 +33,7 @@ import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.pipeline_builder;
 import kataglyphis.vulkan.sampler_builder;
+import kataglyphis.vulkan.depth_attachment;
 
 Kataglyphis::VulkanRendererInternals::PostStage::PostStage() = default;
 
@@ -138,22 +139,13 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recreateFrameResources()
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createDepthbufferImage()
 {
-    depth_format = Kataglyphis::chooseDepthFormat(device->getPhysicalDevice());
-
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
     depthBufferImage = std::make_unique<Texture>();
-    depthBufferImage->createImage(device,
-      swap_chain_extent.width,
-      swap_chain_extent.height,
-      1,
-      depth_format,
-      vk::ImageTiling::eOptimal,
-      vk::ImageUsageFlagBits::eDepthStencilAttachment,
-      vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     // Depth-only attachment view, no layout transition: exactly one aspect,
     // not Kataglyphis::depthStencilTransitionAspect. See its doc comment.
-    depthBufferImage->createImageView(device, depth_format, vk::ImageAspectFlagBits::eDepth, 1);
+    depth_format =
+      createDepthAttachment(*depthBufferImage, device, swap_chain_extent, {}, vk::ImageAspectFlagBits::eDepth);
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createOffscreenTextureSampler()

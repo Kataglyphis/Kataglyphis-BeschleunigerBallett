@@ -27,6 +27,7 @@ import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.pipeline_builder;
 import kataglyphis.vulkan.mesh_draw_recorder;
+import kataglyphis.vulkan.depth_attachment;
 
 using namespace Kataglyphis::VulkanRendererInternals;
 
@@ -95,10 +96,9 @@ void DeferredRasterizer::createTextures()
     // initialLayout = eUndefined for every attachment this function creates,
     // so the render pass itself performs the first transition.
     depthBufferImage = std::make_unique<Texture>();
-    depth_format = Kataglyphis::chooseDepthFormat(device->getPhysicalDevice());
-    depthBufferImage->createImage(device, extent.width, extent.height, 1, depth_format, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eInputAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal);
     // Input-attachment view: exactly one aspect, not Kataglyphis::depthStencilTransitionAspect. See its doc comment.
-    depthBufferImage->createImageView(device, depth_format, vk::ImageAspectFlagBits::eDepth, 1);
+    depth_format = createDepthAttachment(
+      *depthBufferImage, device, extent, vk::ImageUsageFlagBits::eInputAttachment, vk::ImageAspectFlagBits::eDepth);
 }
 
 void DeferredRasterizer::createPushConstantRange()

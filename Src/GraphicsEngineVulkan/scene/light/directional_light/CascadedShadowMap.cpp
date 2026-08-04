@@ -58,7 +58,18 @@ void CascadedShadowMap::init(std::shared_ptr<VulkanDevice>in_device, uint32_t wi
 
     // Create 2D Texture Array for Cascades
     shadowMapArray = std::make_unique<Texture>();
-    shadowMapArray->createImage(device, shadowWidth, shadowHeight, 1, depthFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, numCascades);
+    // Sampled 2D array + comparison sampler, not a plain attachment - deliberately outside
+    // Kataglyphis::VulkanRendererInternals::createDepthAttachment (renderer/DepthAttachment.ixx).
+    shadowMapArray->createImage(device,
+      shadowWidth,
+      shadowHeight,
+      1,
+      depthFormat,
+      vk::ImageTiling::eOptimal,
+      vk::ImageUsageFlagBits::eDepthStencilAttachment// DEPTH_ATTACHMENT_CHAIN_OK: sampled-array-not-a-plain-attachment
+        | vk::ImageUsageFlagBits::eSampled,
+      vk::MemoryPropertyFlagBits::eDeviceLocal,
+      numCascades);
 
     // Create a view for the entire array (used in descriptor set for reading later)
     // Sampled view: exactly one aspect, not Kataglyphis::depthStencilTransitionAspect. See its doc comment.

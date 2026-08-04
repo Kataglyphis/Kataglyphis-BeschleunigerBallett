@@ -5972,6 +5972,84 @@ TEST(BuildIntegrity, PipelineTeardownGoesThroughTheSharedHelper)
          }();
 }
 
+// Every raster stage used to spell out its own depth attachment creation
+// chain by hand: chooseDepthFormat -> createImage(...,
+// eDepthStencilAttachment, eDeviceLocal) -> createImageView(...).
+// Kataglyphis::VulkanRendererInternals::createDepthAttachment
+// (renderer/DepthAttachment.ixx) is now the one place that chain is spelled
+// out - this pins that down the same way PipelineTeardownGoesThroughTheSharedHelper
+// does for pipeline teardown, so a fourth raster stage cannot pick a
+// different tiling or memory property by accident. CascadedShadowMap's
+// shadow map array is a deliberate non-goal (a sampled 2D array behind a
+// comparison sampler, not a plain attachment) and is allowlisted via a
+// "// DEPTH_ATTACHMENT_CHAIN_OK: <marker>" trailing comment on the exempted
+// line rather than a bare file exemption, so an unrelated edit cannot
+// silently widen the exemption to a second call site added later in the
+// same file (e8b1db52 is the precedent for anchoring an allowlist to a
+// source marker instead of a line number).
+TEST(BuildIntegrity, NoStageHandRollsTheDepthAttachmentChain)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    // Matches only the image-usage-flag spelling, not the unrelated
+    // vk::AccessFlagBits::eDepthStencilAttachment* / vk::ImageLayout::
+    // eDepthStencilAttachmentOptimal / vk::FormatFeatureFlagBits::
+    // eDepthStencilAttachment spellings, which appear in several other files.
+    static const char *const kUsageBit = "ImageUsageFlagBits::eDepthStencilAttachment";
+    static const char *const kMarkerPrefix = "DEPTH_ATTACHMENT_CHAIN_OK: ";
+
+    // The helper's own definition is exempt from its own rule.
+    static const char *const kHelperFile = "Src/GraphicsEngineVulkan/renderer/DepthAttachment.ixx";
+
+    std::vector<std::string> violations;
+    bool marker_found = false;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".cpp" && path.extension() != ".ixx") { continue; }
+
+        const std::string relative_file = fs::relative(path, repo_root).generic_string();
+        if (relative_file == kHelperFile) { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string line;
+        std::size_t line_number = 0;
+        while (std::getline(file, line)) {
+            ++line_number;
+            if (line.find(kUsageBit) == std::string::npos) { continue; }
+            if (line.find(kMarkerPrefix) != std::string::npos) {
+                marker_found = true;
+                continue;
+            }
+            violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " hand-rolled vk::ImageUsageFlagBits::eDepthStencilAttachment use(s) found under "
+         "Src/GraphicsEngineVulkan/ - route depth attachment creation through "
+         "Kataglyphis::VulkanRendererInternals::createDepthAttachment (renderer/DepthAttachment.ixx) instead, "
+         "or add a \"// DEPTH_ATTACHMENT_CHAIN_OK: <marker>\" trailing comment on the line if the site is a "
+         "deliberate non-goal:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    EXPECT_TRUE(marker_found) << "expected to find the CascadedShadowMap.cpp shadow-map-array exemption marker "
+                                  "(\"// DEPTH_ATTACHMENT_CHAIN_OK: ...\") in source - if it was removed, delete "
+                                  "this check too";
+}
+
 // CascadedShadowMap used to create TWO byte-identical image views over the
 // same shadow-map-array image: shadowMapArray's own sampled view (init(),
 // passed (format, eDepth, 1, e2DArray, numCascades)) and a second view built
@@ -6628,7 +6706,16 @@ TEST(BuildIntegrity, CascadedShadowMapDoesNotStageThroughABufferManager)
 // attachment format and the depth image it is paired with were derived
 // independently and could silently diverge. PostStage and CascadedShadowMap
 // already cache the result in a member and read it a second time; this test
-// holds all four render stages to that invariant by counting call sites.
+// holds all four render stages to that invariant.
+//
+// Rasterizer, PostStage and DeferredRasterizer now derive it indirectly -
+// through Kataglyphis::VulkanRendererInternals::createDepthAttachment
+// (renderer/DepthAttachment.ixx), which calls chooseDepthFormat() and
+// returns the result - rather than calling chooseDepthFormat() in their own
+// text, so the invariant is checked at the one place all four stages still
+// share: the member assignment itself. Two occurrences would mean the
+// member was derived and (re)assigned twice in the same file, which is
+// exactly the divergence this test exists to catch.
 TEST(BuildIntegrity, EveryRenderStageDerivesItsDepthFormatOnce)
 {
     const fs::path repo_root = find_repo_root();
@@ -6641,6 +6728,12 @@ TEST(BuildIntegrity, EveryRenderStageDerivesItsDepthFormatOnce)
         "Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp",
     };
 
+    // No trailing space: clang-format breaks the line right after "="
+    // when the right-hand side does not fit the column limit (PostStage),
+    // but keeps it on one line when it does (Rasterizer, DeferredRasterizer,
+    // CascadedShadowMap) - the marker must match both.
+    static const char *const kAssignment = "depth_format =";
+
     for (const char *relative_path : kFiles) {
         const fs::path path = repo_root / relative_path;
         ASSERT_TRUE(fs::exists(path)) << "missing " << path.string();
@@ -6651,14 +6744,14 @@ TEST(BuildIntegrity, EveryRenderStageDerivesItsDepthFormatOnce)
 
         std::size_t count = 0;
         std::size_t pos = 0;
-        while ((pos = contents.find("chooseDepthFormat(", pos)) != std::string::npos) {
+        while ((pos = contents.find(kAssignment, pos)) != std::string::npos) {
             ++count;
-            pos += std::strlen("chooseDepthFormat(");
+            pos += std::strlen(kAssignment);
         }
 
-        EXPECT_EQ(count, 1U) << relative_path << " calls chooseDepthFormat() " << count
-                              << " time(s); it must be derived exactly once and cached in a member, so the "
-                                 "render-pass attachment and the image it is paired with cannot diverge";
+        EXPECT_EQ(count, 1U) << relative_path << " assigns depth_format " << count
+                             << " time(s); it must be derived exactly once and cached in a member, so the "
+                                "render-pass attachment and the image it is paired with cannot diverge";
     }
 }
 

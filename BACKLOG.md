@@ -8179,35 +8179,6 @@ here does.
 
 ## 2026-08-04 batch IV — planner (refactor: a formatting-drift figure quoted three times, all three wrong and two of them contradicting each other, behind a build check that reports and never fails; the cloud half of the GUI→UBO marshalling, where one of four `vec4`s goes through the shared header and three are packed inline against a shader nothing pins them to; the depth attachment, created by the same seven-argument chain in three raster stages)
 
-- [ ] **(M) (refactor) Route the three raster stages' depth attachment through one `createDepthAttachment`, and gate the chain** — `chooseDepthFormat` → `createImage(..., eDepthStencilAttachment, eDeviceLocal)` → `createImageView(..., 1)` is written out three times with only the extra usage bit and the view aspect differing.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:259-285` — copy 1. View aspect is `depthStencilTransitionAspect(depth_format)`, and it is followed by a self-submitting layout transition to `eDepthStencilAttachmentOptimal`.
-  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:139-157` — copy 2. Identical image, view aspect `eDepth`, no transition, with the reason stated in place (`:154-155`).
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:97-101` — copy 3. Adds `eInputAttachment`, view aspect `eDepth`, no transition, same reason stated (`:100`).
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:53-74` — the **deliberate non-goal**: a 2D array with `eSampled`, an `e2DArray` view over `numCascades` layers, and a comparison sampler bound to `Sampler2DArrayShadow`. Read it to confirm it stays out.
-  - `Src/GraphicsEngineVulkan/scene/ModelAssembly.ixx` — the pattern for the new file: a small module of free functions that legitimately take `Texture`/`VulkanDevice`, which a `common/*.hpp` header cannot (global-module-fragment rule; see the note in task 2 above).
-  - `Src/GraphicsEngineVulkan/scene/Texture.ixx:46-60` — `createImage` / `createImageView` signatures and their defaults.
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:5898-5945` — the `destroyFramebuffers` source-scan gate: the closest existing analogue, including its "route it through the shared helper instead" failure message.
-
-  **Steps:**
-  1. Add `Src/GraphicsEngineVulkan/renderer/DepthAttachment.ixx`, module `kataglyphis.vulkan.depth_attachment`, exporting one function in `Kataglyphis::VulkanRendererInternals`:
-     `vk::Format createDepthAttachment(Texture &target, const std::shared_ptr<VulkanDevice> &device, vk::Extent2D extent, vk::ImageUsageFlags extraUsage, vk::ImageAspectFlags viewAspect)`.
-     It calls `chooseDepthFormat`, `createImage(device, extent.width, extent.height, 1, fmt, eOptimal, eDepthStencilAttachment | extraUsage, eDeviceLocal)` and `createImageView(device, fmt, viewAspect, 1)`, and returns the format so each caller keeps storing it in its own `depth_format` member.
-  2. Register the new module TU in `Src/GraphicsEngineVulkan/CMakeLists.txt` alongside the other `.ixx` sources.
-  3. Rewrite the three call sites to `depth_format = createDepthAttachment(*depthBufferImage, device, extent, extra, aspect);` with `extra = {}` for Rasterizer and PostStage, `eInputAttachment` for DeferredRasterizer, and the aspect each already passes. **Everything else stays at the call site** — the `std::make_unique<Texture>()`, Rasterizer's layout transition and its `depth_aspect_flags` local, and the two "exactly one aspect, not `depthStencilTransitionAspect`" comments, which explain a caller decision and would lose their subject inside the helper.
-  4. Verify argument-for-argument that nothing changed: same mip count (1), same tiling, same memory properties, same usage bits, same view aspect per stage, same array layers (1, the default). **If any call site cannot be expressed without changing an argument, stop and mark this task `- [b]` with the reason** — a silent behaviour change here reaches every raster frame and the GPU goldens are not currently runnable to catch it.
-  5. Add `BuildIntegrity.NoStageHandRollsTheDepthAttachmentChain`: scan `Src/GraphicsEngineVulkan/**/*.{cpp,ixx}` for `vk::ImageUsageFlagBits::eDepthStencilAttachment` and fail on any hit outside `renderer/DepthAttachment.ixx`, with `scene/light/directional_light/CascadedShadowMap.cpp` allowlisted plus its stated reason (array + comparison sampler). Anchor the allowlist to a source marker comment in that file rather than to a line number — `e8b1db52` is the precedent for why. Match only `ImageUsageFlagBits::`, not the `AccessFlagBits::eDepthStencilAttachment*` and `ImageLayout::eDepthStencilAttachmentOptimal` spellings, which are unrelated and appear in five files.
-
-  **Test:** `BuildIntegrity.NoStageHandRollsTheDepthAttachmentChain` (new, pure CPU). The whole CPU suite must stay green — this is a mechanical extraction, so any CPU failure means step 4 was not actually argument-preserving. Run:
-  `.\build-clangcl-debug\commitTestSuite.exe`
-  The `GoldenRender.*` / `Integration.*` suites skip in the container and host GPU verification is unavailable in this session; note in the commit message that the pixel-level confirmation is outstanding, and re-run the raster goldens (`GoldenRender.*`) the next time the host GPU is usable.
-
-  **Build:** `clangcl-debug`, and **`-FreshContainer` is mandatory** — this adds a module interface, and a reused container keeps stale BMIs (`AGENTS.md` § Containerized Windows Builds). Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
-
-  **Context:** The next member of the "one rule, N hand-rolled copies" family this repo has been draining since batch XII — `9ab6b505` (image barriers), `a3b42dfc` (depth aspect), `4a4719a7` (render-pass teardown), `a5d39f41` (depth-format caching, which fixed the *derivation* half of exactly these three sites and left the *creation* half). The payoff is that a fourth raster stage cannot pick a different tiling or memory property by accident, not the ~20 lines removed. Do not fold `CascadedShadowMap` in to make the helper "complete": its image is a sampled array feeding a comparison sampler, and generalising the helper to cover it is how a shared helper acquires the parameters that let the next caller get it wrong.
-
 ## 2026-08-02 — reuse-sweep residuals (the sweep itself shipped)
 
 The 2026-08-02 reuse sweep landed: WindowsCMake/Config/Formatting/WebDav/

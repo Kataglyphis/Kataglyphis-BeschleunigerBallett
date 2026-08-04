@@ -30,6 +30,7 @@ import kataglyphis.vulkan.frustum;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.pipeline_builder;
 import kataglyphis.vulkan.mesh_draw_recorder;
+import kataglyphis.vulkan.depth_attachment;
 
 Kataglyphis::VulkanRendererInternals::Rasterizer::Rasterizer() = default;
 
@@ -256,22 +257,13 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
         offscreenTextures[index] = std::move(texture);
     }
 
-    depth_format = chooseDepthFormat(device->getPhysicalDevice());
-
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
     depthBufferImage = std::make_unique<Texture>();
-    depthBufferImage->createImage(device,
-      swap_chain_extent.width,
-      swap_chain_extent.height,
-      1,
-      depth_format,
-      vk::ImageTiling::eOptimal,
-      vk::ImageUsageFlagBits::eDepthStencilAttachment,
-      vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-    vk::ImageAspectFlags depth_aspect_flags = depthStencilTransitionAspect(depth_format);
+    vk::ImageAspectFlags depth_aspect_flags =
+      depthStencilTransitionAspect(chooseDepthFormat(device->getPhysicalDevice()));
 
-    depthBufferImage->createImageView(device, depth_format, depth_aspect_flags, 1);
+    depth_format = createDepthAttachment(*depthBufferImage, device, swap_chain_extent, {}, depth_aspect_flags);
 
     // This overload allocates, submits and fence-waits its own command buffer -
     // there is no outer command buffer batching this transition.
