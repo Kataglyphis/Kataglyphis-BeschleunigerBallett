@@ -45,13 +45,18 @@ VsOut vs_main(
 }
 
 [shader("fragment")]
-float4 fs_main(VsOut In, uint primitiveID : SV_PrimitiveID) : SV_Target
+float4 fs_main(VsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFace : SV_IsFrontFace) : SV_Target
 {
     ObjectDescription obj = fetch_object_description(pc_raster.objectIndex);
     ObjMaterial material = fetch_material(obj, primitiveID);
 
     float3 L = normalize(-sceneUBO.dirLight.direction.xyz);
     float3 N = normalize(In.shadingNormal);
+    // Back faces reach this shader only where culling was disabled, and
+    // culling is disabled only for doubleSided materials (see
+    // MeshDrawRecorder.cpp's dynamic eCullMode) - !isFrontFace is therefore
+    // the doubleSided test; no ObjMaterial field is needed for it.
+    if (!isFrontFace) N = -N;
     float3 V = normalize(sceneUBO.cam_pos.xyz - In.worldPosition);
 
     float3 albedo;

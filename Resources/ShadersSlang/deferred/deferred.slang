@@ -48,7 +48,7 @@ GVsOut geometry_vs_main(
 }
 
 [shader("fragment")]
-GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID)
+GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFace : SV_IsFrontFace)
 {
     ObjectDescription obj = fetch_object_description(pc_raster.objectIndex);
     ObjMaterial material = fetch_material(obj, primitiveID);
@@ -70,10 +70,17 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID)
     texColor.rgb *= In.fragmentColor.rgb;
 
     GBufferOut g;
+    // Back faces reach this shader only where culling was disabled, and
+    // culling is disabled only for doubleSided materials (see
+    // MeshDrawRecorder.cpp's dynamic eCullMode) - !isFrontFace is therefore
+    // the doubleSided test. The flip must happen before this G-buffer write,
+    // not in the lighting pass, since the lighting pass has no SV_IsFrontFace.
+    float3 N = normalize(In.shadingNormal);
+    if (!isFrontFace) N = -N;
     // .w is otherwise unused (GBUFFER_NORMAL_FORMAT is eR16G16B16A16Sfloat,
     // and lighting_fs_main only ever read normal.xyz) - the free float
     // channel for metallic, so it does not need its own G-buffer attachment.
-    g.outNormal = float4(normalize(In.shadingNormal), material.metallic);
+    g.outNormal = float4(N, material.metallic);
     // GBUFFER_ALBEDO_FORMAT is eR8G8B8A8Srgb: base colour is linear by
     // construction (glTF caps baseColorFactor/COLOR_0 to [0,1], texColor is
     // decoded from an sRGB source texture), so the hardware re-encodes on

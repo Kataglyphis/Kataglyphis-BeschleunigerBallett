@@ -359,7 +359,7 @@ float3 punctual_lighting(float3 worldPos, float3 n, float3 v, float3 albedo,
 }
 
 [shader("fragment")]
-float4 fs_main(VsOut In) : SV_Target
+float4 fs_main(VsOut In, bool isFrontFace : SV_IsFrontFace) : SV_Target
 {
     uint uvMask = uint(prim.material_flags.y);
     float2 baseIn = (uvMask & 1u) != 0u ? In.uv1 : In.uv;
@@ -388,6 +388,13 @@ float4 fs_main(VsOut In) : SV_Target
     float3 emissive = prim.emissive_factor.rgb * emissiveSample.rgb;
 
     float3 nGeom = normalize(In.worldNormal);
+    // Back faces reach this shader only where culling was disabled, and
+    // culling is disabled only for doubleSided materials (see forward.rs's
+    // pipeline_double_sided, cull None) - !isFrontFace is therefore the
+    // doubleSided test. Flip before t/b are derived below so the bitangent
+    // handedness (cross(nGeom, t) * w) comes out right; do not also flip b,
+    // it follows automatically.
+    if (!isFrontFace) nGeom = -nGeom;
     float3 t = normalize(In.worldTangent.xyz - nGeom * dot(nGeom, In.worldTangent.xyz));
     float3 b = cross(nGeom, t) * In.worldTangent.w;
     float3 nTs = normalSample.xyz * 2.0 - 1.0;

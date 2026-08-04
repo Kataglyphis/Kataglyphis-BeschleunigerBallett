@@ -8712,3 +8712,51 @@ TEST(BuildIntegrity, EveryAssertVulkanCallSiteEndsInASemicolon)
              return joined;
          }();
 }
+
+// glTF 2.0 Section 3.9.4 ("Normals") requires that a back-facing fragment of
+// a double-sided material flip its shading normal to face the viewer. All
+// three C++ raster shaders already disable culling for doubleSided meshes
+// (MeshDrawRecorder.cpp's dynamic eCullMode), so a back face reaching a
+// fragment shader is exactly the doubleSided case, and SV_IsFrontFace is the
+// cheapest available test for it. This scans the three raster shader sources
+// as text and fails if any of them stops reading SV_IsFrontFace or stops
+// negating its normal in response.
+TEST(BuildIntegrity, DoubleSidedBackFacesFlipTheShadingNormal)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const char *kFailureMessage =
+      "glTF 2.0 Section 3.9.4 requires flipping the shading normal on back-facing fragments of doubleSided "
+      "materials; both C++ renderers already disable culling for doubleSided meshes, so a fragment shader that "
+      "does not test SV_IsFrontFace and negate its normal renders those back faces black";
+
+    const fs::path rasterizer_path = repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang";
+    const auto rasterizer_text_opt = readFileText(rasterizer_path);
+    ASSERT_TRUE(rasterizer_text_opt.has_value()) << "could not open " << rasterizer_path.string();
+    const std::string &rasterizer_text = *rasterizer_text_opt;
+    EXPECT_NE(rasterizer_text.find("SV_IsFrontFace"), std::string::npos)
+      << "rasterizer.slang's fs_main no longer reads SV_IsFrontFace. " << kFailureMessage;
+    EXPECT_NE(rasterizer_text.find("N = -N"), std::string::npos)
+      << "rasterizer.slang no longer negates N for back-facing fragments. " << kFailureMessage;
+
+    const fs::path deferred_path = repo_root / "Resources/ShadersSlang/deferred/deferred.slang";
+    const auto deferred_text_opt = readFileText(deferred_path);
+    ASSERT_TRUE(deferred_text_opt.has_value()) << "could not open " << deferred_path.string();
+    const std::string &deferred_text = *deferred_text_opt;
+    EXPECT_NE(deferred_text.find("SV_IsFrontFace"), std::string::npos)
+      << "deferred.slang's geometry_fs_main no longer reads SV_IsFrontFace. " << kFailureMessage;
+    EXPECT_NE(deferred_text.find("N = -N"), std::string::npos)
+      << "deferred.slang no longer negates N for back-facing fragments before the G-buffer write. "
+      << kFailureMessage;
+
+    const fs::path forward_path = repo_root / "Resources/ShadersSlang/forward/forward.slang";
+    const auto forward_text_opt = readFileText(forward_path);
+    ASSERT_TRUE(forward_text_opt.has_value()) << "could not open " << forward_path.string();
+    const std::string &forward_text = *forward_text_opt;
+    EXPECT_NE(forward_text.find("SV_IsFrontFace"), std::string::npos)
+      << "forward.slang's fs_main no longer reads SV_IsFrontFace. " << kFailureMessage;
+    EXPECT_NE(forward_text.find("nGeom = -nGeom"), std::string::npos)
+      << "forward.slang no longer negates nGeom for back-facing fragments before t/b are derived. "
+      << kFailureMessage;
+}
