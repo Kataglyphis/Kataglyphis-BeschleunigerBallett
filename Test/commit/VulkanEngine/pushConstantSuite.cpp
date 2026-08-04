@@ -158,7 +158,7 @@ TEST(ObjMaterialLayoutUnit, MatchesTheSlangTwinScalarLayout)
     EXPECT_EQ(offsetof(ObjMaterial, illum), 72U);
     EXPECT_EQ(offsetof(ObjMaterial, textureID), 76U);
     EXPECT_EQ(offsetof(ObjMaterial, alphaCutoff), 80U);
-    EXPECT_EQ(offsetof(ObjMaterial, uv_scale), 84U);
-    EXPECT_EQ(offsetof(ObjMaterial, uv_offset), 92U);
-    EXPECT_EQ(sizeof(ObjMaterial), 100U);
+    EXPECT_EQ(offsetof(ObjMaterial, uv_transform_row0), 84U);
+    EXPECT_EQ(offsetof(ObjMaterial, uv_transform_row1), 96U);
+    EXPECT_EQ(sizeof(ObjMaterial), 108U);
 }

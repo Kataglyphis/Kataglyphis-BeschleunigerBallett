@@ -13,6 +13,8 @@ module;
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/matrix_transform_2d.hpp>
 
 #include "spdlog/spdlog.h"
 
@@ -147,29 +149,31 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
     // have yet, so BLEND currently renders opaque - MASK is the common cut-out case.
     const float alphaCutoff = (material.alpha_mode == cgltf_alpha_mode_mask) ? material.alpha_cutoff : -1.0F;
 
-    // glTF KHR_texture_transform on the base-colour texture: scale + offset the
-    // UV (rotation is not yet applied - scale/offset is the common atlas/tiling
-    // case). Absent -> identity (1,1)/(0,0), so untransformed materials are
-    // bit-unchanged.
-    glm::vec2 uvScale(1.0F, 1.0F);
-    glm::vec2 uvOffset(0.0F, 0.0F);
+    // glTF KHR_texture_transform on the base-colour texture: the full T*R*S UV
+    // transform. Absent -> identity rows (1,0,0)/(0,1,0), so untransformed
+    // materials are bit-unchanged.
+    glm::vec3 uvTransformRow0(1.0F, 0.0F, 0.0F);
+    glm::vec3 uvTransformRow1(0.0F, 1.0F, 0.0F);
     if (material.has_pbr_metallic_roughness != 0 && material.pbr_metallic_roughness.base_color_texture.has_transform != 0) {
         const cgltf_texture_transform &transform = material.pbr_metallic_roughness.base_color_texture.transform;
-        uvScale = glm::vec2(transform.scale[0], transform.scale[1]);
-        uvOffset = glm::vec2(transform.offset[0], transform.offset[1]);
+        const glm::vec2 offset(transform.offset[0], transform.offset[1]);
+        const glm::vec2 scaleVec(transform.scale[0], transform.scale[1]);
+
+        // T * R * S, same convention as the Rust loader's gltf_loader.rs:618-625,
+        // including the negated rotation sign (glTF's `rotation` is clockwise in
+        // UV space).
+        const glm::mat3 uvMatrix =
+          glm::scale(glm::rotate(glm::translate(glm::mat3(1.0F), offset), -transform.rotation), scaleVec);
+        uvTransformRow0 = glm::vec3(uvMatrix[0][0], uvMatrix[1][0], uvMatrix[2][0]);
+        uvTransformRow1 = glm::vec3(uvMatrix[0][1], uvMatrix[1][1], uvMatrix[2][1]);
 
         // KHR_texture_transform can itself override which UV set the transform
-        // applies to, and can rotate. Neither is applied - scale/offset stays
-        // the supported subset - so say so rather than silently dropping them.
+        // applies to. That is not applied - so say so rather than silently
+        // dropping it.
         if (transform.has_texcoord != 0 && transform.texcoord != 0) {
             spdlog::warn("GltfLoader: material '{}' KHR_texture_transform overrides the base-colour UV set to "
                          "TEXCOORD_{}, but only TEXCOORD_0 is supported; ignoring the override",
               materialName, static_cast<unsigned int>(transform.texcoord));
-        }
-        if (transform.rotation != 0.0F) {
-            spdlog::warn("GltfLoader: material '{}' KHR_texture_transform specifies a rotation of {} radians, which "
-                         "is not applied (only scale/offset are)",
-              materialName, transform.rotation);
         }
     }
 
@@ -184,8 +188,8 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
       2,// illum
       -1,// textureID (increment d)
       alphaCutoff,// glTF MASK cutoff (-1 = OPAQUE/BLEND)
-      uvScale,// KHR_texture_transform scale
-      uvOffset);// KHR_texture_transform offset
+      uvTransformRow0,// KHR_texture_transform T*R*S row 0
+      uvTransformRow1);// KHR_texture_transform T*R*S row 1
 }
 
 /// Reads a float attribute (2, 3 or 4 components) into `out`, one entry per

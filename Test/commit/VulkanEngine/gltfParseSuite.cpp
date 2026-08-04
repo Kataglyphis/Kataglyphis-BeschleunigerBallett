@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <glm/geometric.hpp>
 #include <filesystem>
@@ -700,8 +701,8 @@ TEST(GltfParseUnit, ReadsKhrTextureTransformScale)
     // glTF KHR_texture_transform scales/offsets the base-colour UV. The loader
     // used to ignore it entirely, so an atlas/tiled material sampled at the raw
     // UV. uv_transform_card.gltf carries scale [4,4] on its base-colour texture.
-    // Red without the GltfLoader change: uv_scale stays the constructor default
-    // (1,1) and the texture would not tile.
+    // Red without the GltfLoader change: the rows stay the constructor's
+    // identity (1,0,0)/(0,1,0) and the texture would not tile.
     const auto path = sceneConfig::resolveModelPath("Models/GltfTest/uv_transform_card.gltf");
     if (!std::filesystem::exists(path)) { GTEST_SKIP() << "uv_transform fixture not present"; }
 
@@ -710,16 +711,57 @@ TEST(GltfParseUnit, ReadsKhrTextureTransformScale)
     ASSERT_GT(loader.getMaterials().size(), 0U);
 
     const ObjMaterial &material = loader.getMaterials()[0];
-    EXPECT_NEAR(material.uv_scale.x, 4.0F, 1e-6F) << "KHR_texture_transform scale.x must reach ObjMaterial";
-    EXPECT_NEAR(material.uv_scale.y, 4.0F, 1e-6F) << "KHR_texture_transform scale.y must reach ObjMaterial";
-    EXPECT_NEAR(material.uv_offset.x, 0.0F, 1e-6F) << "absent offset defaults to 0";
-    EXPECT_NEAR(material.uv_offset.y, 0.0F, 1e-6F) << "absent offset defaults to 0";
+    EXPECT_NEAR(material.uv_transform_row0.x, 4.0F, 1e-6F) << "KHR_texture_transform scale.x must reach ObjMaterial";
+    EXPECT_NEAR(material.uv_transform_row0.y, 0.0F, 1e-6F) << "no rotation -> row0.y stays 0";
+    EXPECT_NEAR(material.uv_transform_row0.z, 0.0F, 1e-6F) << "absent offset.x defaults to 0";
+    EXPECT_NEAR(material.uv_transform_row1.x, 0.0F, 1e-6F) << "no rotation -> row1.x stays 0";
+    EXPECT_NEAR(material.uv_transform_row1.y, 4.0F, 1e-6F) << "KHR_texture_transform scale.y must reach ObjMaterial";
+    EXPECT_NEAR(material.uv_transform_row1.z, 0.0F, 1e-6F) << "absent offset.y defaults to 0";
+}
+
+TEST(GltfParseUnit, KhrTextureTransformRotationReachesTheMaterial)
+{
+    // uv_transform_rotation_card.gltf carries a +pi/2 rotation (no scale/offset)
+    // on its base-colour texture. Assert the resulting rows transform a known UV
+    // to the same point the spec's T*R*S formula gives, AND pin the sign against
+    // the Rust loader's convention (gltf_loader.rs:618-625: rotate(-rotation)) -
+    // a silently flipped sign produces a plausible-looking but mirrored image
+    // that no other test would catch.
+    const auto path = sceneConfig::resolveModelPath("Models/GltfTest/uv_transform_rotation_card.gltf");
+    if (!std::filesystem::exists(path)) { GTEST_SKIP() << "uv_transform_rotation fixture not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(path));
+    ASSERT_GT(loader.getMaterials().size(), 0U);
+
+    const ObjMaterial &material = loader.getMaterials()[0];
+    const float rotation = 1.5707963267948966F;// +pi/2, matches the fixture
+
+    // Spec formula (KHR_texture_transform, T*R*S with the spec's rotation
+    // convention baked in as "rotate by -rotation"), applied directly to a UV -
+    // independent re-derivation, not just re-reading the loader's own output.
+    const float cosR = std::cos(-rotation);
+    const float sinR = std::sin(-rotation);
+    const glm::vec2 uv(1.0F, 0.0F);
+    const glm::vec2 expected(cosR * uv.x - sinR * uv.y, sinR * uv.x + cosR * uv.y);
+
+    const glm::vec2 actual(glm::dot(glm::vec3(uv, 1.0F), material.uv_transform_row0),
+      glm::dot(glm::vec3(uv, 1.0F), material.uv_transform_row1));
+    EXPECT_NEAR(actual.x, expected.x, 1e-5F) << "rotated UV.x must match the spec T*R*S formula";
+    EXPECT_NEAR(actual.y, expected.y, 1e-5F) << "rotated UV.y must match the spec T*R*S formula";
+
+    // Sign pin: a +pi/2 rotation applied to (1,0) must land where
+    // Mat3::from_angle(-pi/2) puts it (the Rust convention), i.e. (0,-1) -
+    // NOT (0,1), which is what an un-negated rotation would give.
+    EXPECT_NEAR(actual.x, 0.0F, 1e-5F) << "sign pin vs. the Rust loader's rotate(-rotation) convention";
+    EXPECT_NEAR(actual.y, -1.0F, 1e-5F) << "sign pin vs. the Rust loader's rotate(-rotation) convention";
 }
 
 TEST(GltfParseUnit, MaterialWithoutTextureTransformIsIdentity)
 {
-    // A material with no KHR_texture_transform must default to identity (scale
-    // 1, offset 0) so its texture samples exactly as before the extension existed.
+    // A material with no KHR_texture_transform must default to identity rows
+    // (1,0,0)/(0,1,0) so its texture samples exactly as before the extension
+    // existed.
     const auto path = sceneConfig::resolveModelPath("Models/GltfTest/mask_card.gltf");
     if (!std::filesystem::exists(path)) { GTEST_SKIP() << "mask_card fixture not present"; }
 
@@ -728,10 +770,12 @@ TEST(GltfParseUnit, MaterialWithoutTextureTransformIsIdentity)
     ASSERT_GT(loader.getMaterials().size(), 0U);
 
     const ObjMaterial &material = loader.getMaterials()[0];
-    EXPECT_NEAR(material.uv_scale.x, 1.0F, 1e-6F);
-    EXPECT_NEAR(material.uv_scale.y, 1.0F, 1e-6F);
-    EXPECT_NEAR(material.uv_offset.x, 0.0F, 1e-6F);
-    EXPECT_NEAR(material.uv_offset.y, 0.0F, 1e-6F);
+    EXPECT_NEAR(material.uv_transform_row0.x, 1.0F, 1e-6F);
+    EXPECT_NEAR(material.uv_transform_row0.y, 0.0F, 1e-6F);
+    EXPECT_NEAR(material.uv_transform_row0.z, 0.0F, 1e-6F);
+    EXPECT_NEAR(material.uv_transform_row1.x, 0.0F, 1e-6F);
+    EXPECT_NEAR(material.uv_transform_row1.y, 1.0F, 1e-6F);
+    EXPECT_NEAR(material.uv_transform_row1.z, 0.0F, 1e-6F);
 }
 
 TEST(GltfParseUnit, MultiPrimitiveGltfRecordsPerPrimitiveMeshRanges)

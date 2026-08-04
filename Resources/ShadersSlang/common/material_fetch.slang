@@ -24,10 +24,10 @@ ObjMaterial fetch_material(ObjectDescription obj, uint primitiveID)
     return materials->m[materialIDs->i[primitiveID]];
 }
 
-// glTF KHR_texture_transform: scale then offset the UV before sampling.
+// glTF KHR_texture_transform: apply the T*R*S UV matrix before sampling.
 float2 transform_uv(float2 uv, ObjMaterial material)
 {
-    return uv * material.uv_scale + material.uv_offset;
+    return float2(dot(float3(uv, 1.0), material.uv_transform_row0), dot(float3(uv, 1.0), material.uv_transform_row1));
 }
 
 // glTF alphaMode MASK test. ObjMaterial.hpp defines a negative alphaCutoff as

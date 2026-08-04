@@ -43,8 +43,8 @@ struct ObjMaterial
     int illum;
     int textureID;
     float alphaCutoff;
-    float2 uv_scale;
-    float2 uv_offset;
+    float3 uv_transform_row0;
+    float3 uv_transform_row1;
 };
 
 // Per-mesh object description (matches ObjectDescription.hpp). The uint64_t

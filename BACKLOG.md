@@ -8736,33 +8736,6 @@ one that changes `ObjMaterial`'s field set, so land it before or after the
 other two but not interleaved, to keep the `buildIntegritySuite.cpp:978-991`
 offset-pin churn in a single commit.
 
-- [ ] **(M) Apply `KHR_texture_transform`'s rotation instead of warning about it, and carry the transform as the same 2×3 matrix the Rust loader builds** — the C++ loader logs "not applied" for every rotated material and then renders it at the wrong texels.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:150-172` — the current scale/offset extraction and the two "not applied" warnings; `:187-188` the `ObjMaterial` constructor arguments
-  - `Src/shared/scene/ObjMaterial.hpp` — the `uv_scale` / `uv_offset` members, their trailing-field/scalar-layout rationale, and both constructors
-  - `Resources/ShadersSlang/common/scene_types.slang:46-47` — the mirrored members
-  - `Resources/ShadersSlang/common/material_fetch.slang:27-31` — `transform_uv`, the single definition every raster path calls
-  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/asset/gltf_loader.rs:611-626` — **the convention to copy exactly**, including the `-t.rotation()` sign and the row-major 2×3 packing
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:978-991` — the SPIR-V offset pin that must be updated in this commit
-  - `Test/commit/VulkanEngine/gltfParseSuite.cpp:698-736` — `ReadsKhrTextureTransformScale` and `MaterialWithoutTextureTransformIsIdentity`, the tests to extend
-
-  **Steps:**
-  1. Replace `ObjMaterial`'s `glm::vec2 uv_scale; glm::vec2 uv_offset;` with `glm::vec3 uv_transform_row0; glm::vec3 uv_transform_row1;` — the two rows of the 2×3 UV matrix. Use `vec3`/`float3`, not a `glm::mat3x2`: the struct's five existing `vec3` members already prove that pairing survives this scalar-layout mirror, and a glm matrix type's alignment does not match Slang's. Default them to the identity rows `(1, 0, 0)` and `(0, 1, 0)` in both the default constructor and the parameterized one, so OBJ materials and untransformed glTF materials stay bit-identical.
-  2. Mirror the change in `scene_types.slang:46-47` as `float3 uv_transform_row0; float3 uv_transform_row1;`.
-  3. Rewrite `transform_uv` in `material_fetch.slang` as `return float2(dot(float3(uv, 1.0), material.uv_transform_row0), dot(float3(uv, 1.0), material.uv_transform_row1));`. All three current callers (`rasterizer.slang:60`, `deferred.slang:60`, `shadow_map.slang:55`) are unchanged.
-  4. In `GltfLoader.cpp:154-172`, build the matrix `T * R * S` with glm, using **the same rotation sign as the Rust loader** — `glm::mat3 m = translate(offset) * rotate(-transform.rotation) * scale(scaleVec)` — and pack rows 0 and 1. Delete the rotation warning at `:167-171`; keep the `has_texcoord` override warning at `:162-166`, which is still accurate (the C++ vertex has one UV slot). Update the `:150-153` comment to say the full T*R*S transform is applied.
-  5. Update the `buildIntegritySuite.cpp:978-991` `ObjMaterial_natural` pin: replace the `uv_scale` / `uv_offset` rows with `uv_transform_row0` / `uv_transform_row1` and their `offsetof`s.
-  6. Recompile shaders (`compile-slang-shaders.ps1`) and rebuild with `-FreshContainer` if any module interface moved (it should not — `ObjMaterial.hpp` is a plain header).
-
-  **Test:** Extend `Test/commit/VulkanEngine/gltfParseSuite.cpp`: rename/rework `ReadsKhrTextureTransformScale` to assert the packed identity for scale+offset-only fixtures, and add `GltfParseUnit.KhrTextureTransformRotationReachesTheMaterial` using a fixture with a non-zero `rotation` — assert the resulting rows transform a known UV to the same point the spec formula gives, to `1e-5`. Add a second assertion pinning the sign against the Rust convention: a `rotation` of `+pi/2` applied to `(1, 0)` must land where `Mat3::from_angle(-pi/2)` puts it, and say so in the failure message, because a silently flipped sign is the failure mode this whole task exists to avoid. Also assert `MaterialWithoutTextureTransformIsIdentity` still holds with the new representation.
-
-  **Build:** `clangcl-debug`:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  Then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root.
-
-  **Context:** Same cross-renderer-parity family as the `baseColorFactor` and `COLOR_0` work; the Rust side is the reference implementation and its packing is already gated by its own tests, so copy it rather than inventing a second convention. The trap here is the rotation sign: glTF's `rotation` is measured clockwise in UV space, which is why `gltf_loader.rs:619` negates it before `Mat3::from_angle`. Getting that backwards produces a plausible-looking image that mirrors the Rust renderer's, which no CPU test will notice unless the test pins the sign explicitly — hence the second assertion above. Once RDP clears, no shipped golden should move (none of the shipped models use `KHR_texture_transform`); if one does, that is a bug in this change, not a golden to rewrite.
-
 - [ ] **(S) Fix the path tracer's implicit-LOD texture sample, and route both ray paths' base-colour sample through `transform_uv`** — `OpImageSampleImplicitLod` is illegal outside a fragment shader, and the ray paths are the only two of five sample sites that ignore `KHR_texture_transform`.
 
   **Files to read:**
