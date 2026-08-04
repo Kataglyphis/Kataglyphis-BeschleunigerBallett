@@ -2490,6 +2490,130 @@ TEST(GoldenRender, MaskCardDiscardsCutoutTexelsInRaytracing)
       << "the changed pixels are too sparse to be the checkerboard - check framing";
 }
 
+// The path-traced twin of MaskCardDiscardsCutoutTexelsInRaytracing above:
+// same rig, same card, same differential/bounding-box oracle, but with
+// path_tracing.slang's ray-query bounce/shadow rays owning the frame. Before
+// the "Alpha-test MASK materials in the path tracer's ray queries" task both
+// queries traced with RAY_FLAG_FORCE_OPAQUE and a ray query has no any-hit
+// stage, so the card was a solid quad with a solid shadow - PT was the last
+// of five shading paths with this bug (forward/deferred/shadow-map/RT are
+// covered by the goldens above and RasterShadersShareOneAlphaCutoffRule).
+//
+// UNVERIFIED on this host: `path_tracing` mode device-losts on the RX 9070
+// XT reproducing on unmodified `develop` HEAD (see the "path_tracing device
+// lost" `- [b]` backlog entry), so this test cannot actually be run to
+// confirm a pass here - it is written now, gated the same way as the other
+// mask-card goldens, so it is exercised the next time PT is usable on real
+// hardware. The threshold mirrors the RT twin's 0.35/0.15 band rather than a
+// value measured on this scene.
+TEST(GoldenRender, PathTracedMaskCardShowsItsCutout)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = true;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    // A: the base scene, before the card is added.
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> before = harness.capture_frame(width, height);
+    ASSERT_FALSE(before.empty());
+
+    // Same env-tunable placement as the forward/RT discard goldens.
+    const auto env_f = [](const char *name, float fallback) {
+        const char *value = std::getenv(name);
+        return (value != nullptr) ? std::strtof(value, nullptr) : fallback;
+    };
+    const glm::mat4 placement =
+      glm::translate(glm::mat4(1.0F),
+        glm::vec3(env_f("MASK_X", 2.5F), env_f("MASK_Y", 4.0F), env_f("MASK_Z", 15.0F)))
+      * glm::scale(glm::mat4(1.0F), glm::vec3(env_f("MASK_SCALE", 2.0F)));
+    const auto added = harness.renderer->addModel(MASK_CARD_MODEL, placement);
+    ASSERT_TRUE(added.has_value()) << "adding the mask card failed";
+    harness.render_frames(SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+
+    // B: with the card.
+    uint32_t w2 = 0;
+    uint32_t h2 = 0;
+    const std::vector<uint8_t> after = harness.capture_frame(w2, h2);
+    ASSERT_FALSE(after.empty());
+    ASSERT_EQ(width, w2);
+    ASSERT_EQ(height, h2);
+
+    const auto changed_at = [&](uint32_t x, uint32_t y) {
+        const size_t b = (static_cast<size_t>(y) * width + x) * 4U;
+        return std::abs(static_cast<int>(before[b]) - static_cast<int>(after[b])) > 12
+               || std::abs(static_cast<int>(before[b + 1U]) - static_cast<int>(after[b + 1U])) > 12
+               || std::abs(static_cast<int>(before[b + 2U]) - static_cast<int>(after[b + 2U])) > 12;
+    };
+
+    // Same GUI-free upper-right scan region as the forward/RT goldens.
+    const uint32_t scan_x0 = (width * 68U) / 100U;
+    const uint32_t scan_y1 = (height * 62U) / 100U;
+
+    uint32_t minx = width;
+    uint32_t miny = height;
+    uint32_t maxx = 0;
+    uint32_t maxy = 0;
+    size_t changed_total = 0;
+    for (uint32_t y = 0; y < scan_y1; ++y) {
+        for (uint32_t x = scan_x0; x < width; ++x) {
+            if (changed_at(x, y)) {
+                ++changed_total;
+                minx = std::min(minx, x);
+                maxx = std::max(maxx, x);
+                miny = std::min(miny, y);
+                maxy = std::max(maxy, y);
+            }
+        }
+    }
+
+    if (const char *dump = std::getenv("KATAGLYPHIS_MASK_DUMP")) {
+        const std::string base = dump;
+        std::vector<uint8_t> diff(before.size(), 0U);
+        for (uint32_t y = 0; y < height; ++y) {
+            for (uint32_t x = 0; x < width; ++x) {
+                const size_t b = (static_cast<size_t>(y) * width + x) * 4U;
+                const bool in_scan = (x >= scan_x0 && y < scan_y1);
+                const uint8_t v = changed_at(x, y) ? 255U : 0U;
+                diff[b] = v;
+                diff[b + 1U] = in_scan ? v : static_cast<uint8_t>(v / 3U);
+                diff[b + 2U] = in_scan ? v : static_cast<uint8_t>(v / 3U);
+                diff[b + 3U] = 255U;
+            }
+        }
+        const auto stride = static_cast<int>(width) * 4;
+        stbi_write_png((base + "-before.png").c_str(), int(width), int(height), 4, before.data(), stride);
+        stbi_write_png((base + "-after.png").c_str(), int(width), int(height), 4, after.data(), stride);
+        stbi_write_png((base + "-diff.png").c_str(), int(width), int(height), 4, diff.data(), stride);
+    }
+
+    ASSERT_GT(changed_total, 200U)
+      << "the card barely changed the upper-right region - not visible there (framing/culling)";
+
+    const double box_area = static_cast<double>(maxx - minx + 1U) * static_cast<double>(maxy - miny + 1U);
+    const double changed_fraction = static_cast<double>(changed_total) / box_area;
+    GTEST_LOG_(INFO) << "PT mask card: changed " << changed_total << " px in upper-right, bbox [" << minx << ","
+                     << miny << ".." << maxx << "," << maxy << "] fraction-in-box " << changed_fraction;
+
+    EXPECT_LT(changed_fraction, 0.35)
+      << "the card footprint changed too fully in PT - cut-out texels are NOT being discarded";
+    EXPECT_GT(changed_fraction, 0.15)
+      << "the changed pixels are too sparse to be the checkerboard - check framing";
+}
+
 // glTF material.doubleSided: a doubleSided mesh must render BOTH faces. Same rig
 // as the discard golden but the card is rotated 180 deg about Y so its BACK face
 // points at the camera. Single-sided (the pre-doubleSided behaviour) back-face

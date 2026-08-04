@@ -9583,47 +9583,6 @@ other.
 
 ### C++ Vulkan engine
 
-- [ ] **(M) Alpha-test MASK materials in the path tracer's ray queries** — `path_tracing.slang` traces both its bounce ray and its NEE shadow ray with `RAY_FLAG_FORCE_OPAQUE`, and a ray query has no any-hit stage, so PT is the last of five shading paths where a glTF MASK cut-out is a solid quad and casts a solid shadow.
-
-  **Files to read:**
-  - `Resources/ShadersSlang/path_tracing/path_tracing.slang` — the bounce query (`:104-120`), the committed-hit material fetch and texture sample (`:205-238`), the NEE shadow query (`:256-271`)
-  - `Resources/ShadersSlang/raytracing/raytrace.rahit.slang` — the alpha test to mirror, including the `SampleLevel` (not `Sample`) rule and the barycentric interpolation of `COLOR_0` alpha
-  - `Resources/ShadersSlang/common/material_fetch.slang:50-53` — `alpha_masked_out`, the one predicate
-  - `docs/path-tracing.md` — update the pipeline-shape section
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `RasterShadersShareOneAlphaCutoffRule` (`:2366`), the gate to extend
-
-  **Steps:**
-  1. Factor the any-hit body into a shared helper. Add `bool ray_hit_masked_out(ObjectDescription obj, uint primitiveID, float2 bary)` to a module both `raytrace.rahit.slang` and `path_tracing.slang` can import — it needs the `textures`/`textureSamplers` arrays, so it belongs in a new `common/alpha_test.slang` that declares bindings 3 and 4, imported by exactly those two files. Check the ambiguous-binding constraint documented in `base_color.slang:6-12` before choosing where it lives; if a shared binding declaration is not workable, duplicate the ~15-line body and extend the `BuildIntegrity` gate in step 6 to pin the two copies against each other instead.
-  2. Drop `RAY_FLAG_FORCE_OPAQUE` from the bounce query's type parameter (`:104`) and its `TraceRayInline` argument (`:110`).
-  3. Replace the empty `while (rayQuery.Proceed()) { }` body (`:116-118`) with a candidate handler: when `rayQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE`, resolve the object description from `CandidateInstanceIndex() + CandidateGeometryIndex()`, run the alpha test against `CandidatePrimitiveIndex()` and `CandidateTriangleBarycentrics()`, and call `rayQuery.CommitNonOpaqueTriangleHit()` when it passes. Do nothing when it fails — not committing *is* the discard.
-  4. Do the same for the NEE shadow query (`:256-267`). Keep `RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH`: it still ends the search at the first *committed* hit, which is the intended semantics, and dropping it would cost a full traversal per shadow ray.
-  5. Leave the committed-hit path (`:120` onward) alone. `CommittedStatus() != COMMITTED_TRIANGLE_HIT` still means "sky", and after this change it correctly also means "every candidate was alpha-tested away".
-  6. Extend `BuildIntegrity.RasterShadersShareOneAlphaCutoffRule` — or add a sibling `EveryShadingPathAlphaTestsMaskMaterials` — to assert that `path_tracing.slang` references the alpha-test helper and that the string `RAY_FLAG_FORCE_OPAQUE` no longer appears in it. That grep is the only automated thing standing between this fix and a future edit re-adding the flag.
-  7. Update `docs/path-tracing.md`'s pipeline-shape section: the ray queries are no longer force-opaque, and MASK materials are alpha-tested in the candidate loop.
-
-  **Test:** The gate in step 6 is the acceptance test and it is CPU-only. Also
-  add `GoldenRender.PathTracedMaskCardShowsItsCutout` modelled on
-  `MaskCardDiscardsCutoutTexelsVisually` (`goldenRenderSuite.cpp:2181`) but in
-  `pathTracing` mode, with `SKIP_WITHOUT_GPU()` — write it now so it is there
-  when the host GPU is usable again, and do not report it as passing.
-
-  **Build:** `clangcl-debug`, plus a shader compile:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`
-  then
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  and `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity*`.
-
-  **Context:** **This task cannot be visually verified right now** — `path_tracing`
-  mode device-losts on the host RX 9070 XT on unmodified `develop` (the `- [b]`
-  entry around line 2030), and GPU goldens are blocked over RDP besides. The
-  acceptance is: `slangc` emits SPIR-V for `path_tracing_main` without
-  diagnostics, the SPIR-V gates in `buildIntegritySuite.cpp` stay green
-  (including the implicit-LOD rule — use `SampleLevel`, never `Sample`, in a
-  compute shader), and the new gate from step 6 passes. Say exactly that in the
-  commit message. Landing this after the `eOpaque` task above means only MASK
-  geometry ever enters the candidate loop, so the traversal cost of the change
-  is confined to the geometry that needs it.
-
 - [ ] **(S) Store the deferred G-buffer albedo in `eR8G8B8A8Srgb` instead of `eR8G8B8A8Unorm`** — it holds *linear* base colour, so 256 uniform steps put the precision where the eye has least; its two sibling attachments were widened three commits ago for exactly this reason and this one was not revisited.
 
   **Files to read:**

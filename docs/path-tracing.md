@@ -20,6 +20,17 @@ path dispatches only when a TLAS exists - during the async model load there
 is nothing to trace against, and dispatching anyway used to consume
 never-written descriptor sets.
 
+Neither the bounce ray nor the NEE shadow ray traces `RAY_FLAG_FORCE_OPAQUE`:
+a ray query has no any-hit stage, so glTF MASK cut-outs are alpha-tested
+inline in each query's candidate loop instead, via the `ray_hit_masked_out`
+helper shared with `raytracing/raytrace.rahit.slang`
+(`Resources/ShadersSlang/common/alpha_test.slang`). A candidate triangle is
+committed with `CommitNonOpaqueTriangleHit()` only when the test passes;
+not committing is the discard. The shadow ray keeps
+`RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH` - it still ends the search at the
+first *committed* hit, so a masked-out candidate does not end the search
+early.
+
 ## The estimator
 
 Per pixel and frame, `samples_per_pixel` independent paths (GUI slider,

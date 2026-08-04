@@ -2438,6 +2438,74 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
          }();
 }
 
+// path_tracing.slang's ray queries used to trace with RAY_FLAG_FORCE_OPAQUE,
+// and a ray query has no any-hit stage, so a glTF MASK cut-out committed as
+// a solid quad and cast a solid shadow - the last of five shading paths with
+// that bug. Both of path_tracing.slang's queries (the bounce ray and the NEE
+// shadow ray) must instead alpha-test candidates via alpha_test.slang's
+// shared ray_hit_masked_out(), which raytrace.rahit.slang's any-hit shader
+// also calls. This pins that fix so RAY_FLAG_FORCE_OPAQUE cannot silently
+// come back to either ray query.
+TEST(BuildIntegrity, EveryShadingPathAlphaTestsMaskMaterials)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    std::vector<std::string> violations;
+
+    {
+        const fs::path path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
+        const auto textOpt = readFileText(path);
+        ASSERT_TRUE(textOpt.has_value()) << "missing " << path.string();
+        const std::string &text = *textOpt;
+
+        if (text.find("RAY_FLAG_FORCE_OPAQUE") != std::string::npos) {
+            violations.push_back(
+              "path_tracing.slang: still contains RAY_FLAG_FORCE_OPAQUE - ray queries have no any-hit stage, "
+              "so this forces MASK cut-outs to be solid again");
+        }
+        if (text.find("ray_hit_masked_out(") == std::string::npos) {
+            violations.push_back("path_tracing.slang: does not call the shared ray_hit_masked_out() alpha test");
+        }
+        if (text.find("CommitNonOpaqueTriangleHit()") == std::string::npos) {
+            violations.push_back(
+              "path_tracing.slang: does not call CommitNonOpaqueTriangleHit() - without it, no candidate "
+              "triangle is ever committed and every ray reports a miss");
+        }
+    }
+
+    {
+        const fs::path path = repo_root / "Resources/ShadersSlang/raytracing/raytrace.rahit.slang";
+        const auto textOpt = readFileText(path);
+        ASSERT_TRUE(textOpt.has_value()) << "missing " << path.string();
+        const std::string &text = *textOpt;
+
+        if (text.find("ray_hit_masked_out(") == std::string::npos) {
+            violations.push_back("raytrace.rahit.slang: does not call the shared ray_hit_masked_out() alpha test");
+        }
+    }
+
+    {
+        const fs::path path = repo_root / "Resources/ShadersSlang/common/alpha_test.slang";
+        const auto textOpt = readFileText(path);
+        ASSERT_TRUE(textOpt.has_value()) << "missing " << path.string();
+        const std::string &text = *textOpt;
+
+        if (text.find("bool ray_hit_masked_out(") == std::string::npos) {
+            violations.push_back("alpha_test.slang: does not define ray_hit_masked_out()");
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " shading path(s) do not alpha-test MASK materials in their ray queries:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 // glTF base colour = baseColorFactor * sampled texture (see
 // material_fetch.slang's base_color() helper and GltfLoader.cpp's
 // fromGltfMaterial, which keeps the factor in ObjMaterial::diffuse even when
@@ -2561,7 +2629,9 @@ TEST(BuildIntegrity, NoShadingPathPinsMetallicToZero)
 // model using the extension rendered inconsistently depending on which mode
 // was active. Scans each shading source as text and requires that every line
 // sampling `textures[...]` via `textureSamplers[...]` also calls
-// transform_uv( on the same line.
+// transform_uv( on the same line. The any-hit alpha test's sample site lives
+// in common/alpha_test.slang (raytrace.rahit.slang and path_tracing.slang's
+// ray-query candidate loop both call it), not in raytrace.rahit.slang itself.
 TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
 {
     const fs::path repo_root = repoRoot();
@@ -2572,7 +2642,7 @@ TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
         "Resources/ShadersSlang/deferred/deferred.slang",
         "Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang",
         "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
-        "Resources/ShadersSlang/raytracing/raytrace.rahit.slang",
+        "Resources/ShadersSlang/common/alpha_test.slang",
         "Resources/ShadersSlang/path_tracing/path_tracing.slang",
     };
     static const std::string kTextures = "textures[";

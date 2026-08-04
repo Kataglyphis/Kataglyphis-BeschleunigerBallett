@@ -1,5 +1,6 @@
 import scene_types;
 import base_color;
+import alpha_test;
 
 // Path tracing compute kernel using ray query (GL_EXT_ray_query).
 // Sole source for this shader. Emits SPIR-V only (Vulkan ray query — WebGPU
@@ -24,8 +25,8 @@ struct PushConstantPathTracing
 [vk::binding(0, 0)] ConstantBuffer<GlobalUBO> globalUBO;
 [vk::binding(1, 0)] ConstantBuffer<SceneUBO> sceneUBO;
 [vk::binding(2, 0)] StructuredBuffer<ObjectDescription> objectDescription;
-[vk::binding(4, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
-[vk::binding(3, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
+// textures/textureSamplers (bindings 3, 4) come from alpha_test.slang,
+// shared with raytrace.rahit.slang's alpha test.
 
 [vk::binding(0, 1)] RaytracingAccelerationStructure TLAS;
 [vk::binding(1, 1)] RWTexture2D<float4> image;
@@ -101,20 +102,34 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 throughput /= survival;
             }
 
-            RayQuery<RAY_FLAG_FORCE_OPAQUE> rayQuery;
+            RayQuery<0> rayQuery;
             RayDesc ray;
             ray.Origin = rayOrigin;
             ray.Direction = rayDirection;
             ray.TMin = 0.001;
             ray.TMax = 10000.0;
-            rayQuery.TraceRayInline(TLAS, RAY_FLAG_FORCE_OPAQUE, 0xFFu, ray);
+            rayQuery.TraceRayInline(TLAS, 0, 0xFFu, ray);
             // Proceed() performs one traversal step and must be looped until
             // it returns false (GL_EXT_ray_query: rayQueryProceedEXT) — a
             // single call can leave traversal incomplete, so
             // CommittedStatus() and the committed-hit accessors below would
             // read undefined state.
+            //
+            // Deliberately not forced opaque: a ray query has no any-hit
+            // stage, so glTF MASK cut-outs are alpha-tested here in the
+            // candidate loop instead - CommitNonOpaqueTriangleHit() only for
+            // candidates that pass, which is what implements the discard.
             while (rayQuery.Proceed())
             {
+                if (rayQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
+                {
+                    uint candidateObjIndex = rayQuery.CandidateInstanceIndex() + rayQuery.CandidateGeometryIndex();
+                    ObjectDescription candidateObj = objectDescription[candidateObjIndex];
+                    if (!ray_hit_masked_out(candidateObj, rayQuery.CandidatePrimitiveIndex(), rayQuery.CandidateTriangleBarycentrics()))
+                    {
+                        rayQuery.CommitNonOpaqueTriangleHit();
+                    }
+                }
             }
 
             if (rayQuery.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
@@ -253,7 +268,12 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             float nDotL = dot(hitWorldNormal, lightDir);
             if (nDotL > 0.0)
             {
-                RayQuery<RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> shadowQuery;
+                // Deliberately not forced opaque, same reason as the bounce
+                // query above. RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH still
+                // ends the search at the first *committed* hit - a rejected
+                // (masked-out) candidate keeps traversal going instead of
+                // ending the search on a hit that should not count.
+                RayQuery<RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> shadowQuery;
                 RayDesc shadowRay;
                 shadowRay.Origin = rayOrigin;
                 shadowRay.Direction = lightDir;
@@ -261,11 +281,20 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 shadowRay.TMax = 10000.0;
                 shadowQuery.TraceRayInline(
                     TLAS,
-                    RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
+                    RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
                     0xFFu,
                     shadowRay);
                 while (shadowQuery.Proceed())
                 {
+                    if (shadowQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
+                    {
+                        uint candidateObjIndex = shadowQuery.CandidateInstanceIndex() + shadowQuery.CandidateGeometryIndex();
+                        ObjectDescription candidateObj = objectDescription[candidateObjIndex];
+                        if (!ray_hit_masked_out(candidateObj, shadowQuery.CandidatePrimitiveIndex(), shadowQuery.CandidateTriangleBarycentrics()))
+                        {
+                            shadowQuery.CommitNonOpaqueTriangleHit();
+                        }
+                    }
                 }
                 if (shadowQuery.CommittedStatus() != COMMITTED_TRIANGLE_HIT)
                 {
