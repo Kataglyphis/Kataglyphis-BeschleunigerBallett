@@ -101,14 +101,14 @@ class Mesh
     // Each create*Buffer differs only in its target buffer and base usage bit,
     // so they all funnel through here.
     template<typename T>
-    void uploadDeviceLocalBuffer(vk::CommandPool transfer_command_pool,
+    bool uploadDeviceLocalBuffer(vk::CommandPool transfer_command_pool,
       VulkanBuffer &targetBuffer,
       vk::BufferUsageFlags baseUsage,
       const std::vector<T> &data);
 };
 
 template<typename T>
-inline void Mesh::uploadDeviceLocalBuffer(vk::CommandPool transfer_command_pool,
+inline bool Mesh::uploadDeviceLocalBuffer(vk::CommandPool transfer_command_pool,
   VulkanBuffer &targetBuffer,
   vk::BufferUsageFlags baseUsage,
   const std::vector<T> &data)
@@ -127,7 +127,7 @@ inline void Mesh::uploadDeviceLocalBuffer(vk::CommandPool transfer_command_pool,
         memory_allocate_flags |= vk::MemoryAllocateFlagBits::eDeviceAddress;
     }
 
-    vulkanBufferManager.createBufferAndUploadVectorOnDevice(
+    return vulkanBufferManager.createBufferAndUploadVectorOnDevice(
       device, transfer_command_pool, targetBuffer, usage_flags, memory_property_flags, data, memory_allocate_flags);
 }
 }// namespace Kataglyphis

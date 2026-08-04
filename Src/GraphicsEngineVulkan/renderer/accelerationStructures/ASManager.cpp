@@ -320,14 +320,18 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(std::shared_ptr
 
     VulkanBuffer geometryInstanceBuffer;
 
-    vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
-      commandPool,
-      geometryInstanceBuffer,
-      vk::BufferUsageFlagBits::eShaderDeviceAddress
-        | vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eTransferDst,
-      vk::MemoryPropertyFlagBits::eDeviceLocal,
-      tlas_instances,
-      vk::MemoryAllocateFlagBits::eDeviceAddress);
+    if (!vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
+          commandPool,
+          geometryInstanceBuffer,
+          vk::BufferUsageFlagBits::eShaderDeviceAddress
+            | vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR
+            | vk::BufferUsageFlagBits::eTransferDst,
+          vk::MemoryPropertyFlagBits::eDeviceLocal,
+          tlas_instances,
+          vk::MemoryAllocateFlagBits::eDeviceAddress)) {
+        spdlog::error("ASManager::createTLAS: geometry instance buffer upload failed, skipping TLAS build.");
+        return;
+    }
 
     vk::BufferDeviceAddressInfo geometry_instance_buffer_device_address_info{};
     geometry_instance_buffer_device_address_info.buffer = geometryInstanceBuffer.getBuffer();

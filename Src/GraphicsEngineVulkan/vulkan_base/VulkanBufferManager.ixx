@@ -20,25 +20,17 @@ class VulkanBufferManager
     VulkanBufferManager(VulkanBufferManager &&) noexcept = default;
     VulkanBufferManager &operator=(VulkanBufferManager &&) noexcept = default;
 
-    void copyBuffer(vk::Device device,
+    bool copyBuffer(vk::Device device,
       vk::Queue transfer_queue,
       vk::CommandPool transfer_command_pool,
       VulkanBuffer &src_buffer,
       VulkanBuffer &dst_buffer,
       vk::DeviceSize buffer_size);
 
-    void copyImageBuffer(vk::Device device,
-      vk::Queue transfer_queue,
-      vk::CommandPool transfer_command_pool,
-      vk::Buffer src_buffer,
-      vk::Image image,
-      uint32_t width,
-      uint32_t height);
-
     static void copyImageBuffer(vk::CommandBuffer command_buffer, vk::Buffer src_buffer, vk::Image image, uint32_t width, uint32_t height);
 
     template<typename T>
-    void createBufferAndUploadVectorOnDevice(std::shared_ptr<VulkanDevice>device,
+    bool createBufferAndUploadVectorOnDevice(std::shared_ptr<VulkanDevice>device,
       vk::CommandPool commandPool,
       VulkanBuffer &vulkanBuffer,
       vk::BufferUsageFlags dstBufferUsageFlags,
@@ -67,7 +59,7 @@ class VulkanBufferManager
 };
 
 template<typename T>
-inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(std::shared_ptr<VulkanDevice>device,
+inline bool VulkanBufferManager::createBufferAndUploadVectorOnDevice(std::shared_ptr<VulkanDevice>device,
   vk::CommandPool commandPool,
   VulkanBuffer &vulkanBuffer,
   vk::BufferUsageFlags dstBufferUsageFlags,
@@ -81,7 +73,7 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(std::shared
         bufferSize = sizeof(uint32_t);
         vulkanBuffer.create(
           device, bufferSize, dstBufferUsageFlags, dstBufferMemoryPropertyFlags, dstBufferMemoryAllocateFlags);
-        return;
+        return true;
     }
 
     ensureStagingBufferCapacity(device, bufferSize);
@@ -93,9 +85,9 @@ inline void VulkanBufferManager::createBufferAndUploadVectorOnDevice(std::shared
       device, bufferSize, dstBufferUsageFlags, dstBufferMemoryPropertyFlags, dstBufferMemoryAllocateFlags);
 
     vk::Queue const queue = transfer_queue ? transfer_queue : device->getGraphicsQueue();
-    copyBuffer(device->getLogicalDevice(), queue, commandPool, stagingBuffer, vulkanBuffer, bufferSize);
 
     // stagingBuffer is intentionally kept alive for reuse by the next upload;
     // it is released in cleanUp().
+    return copyBuffer(device->getLogicalDevice(), queue, commandPool, stagingBuffer, vulkanBuffer, bufferSize);
 }
 }// namespace Kataglyphis

@@ -8237,6 +8237,178 @@ CPU suites staying green plus a new gate.
   cull predicate; those are genuinely different and merging them is how a
   helper becomes a config struct nobody can read.
 
+## 2026-08-04 batch VI — planner (the geometry half of the "upload reports success it never verified" family — vertex/index buffers, the TLAS instance buffer and the skybox cubemap all discard the submit result the texture path just learned to read; a masked-shadow pass in the Rust renderer that alpha-tests with the wrong UV set and without vertex-colour alpha; the analytic sky written out three times across two languages; a Rust orbit controller that never ends a drag on focus loss and snaps when the cursor comes back off an egui panel)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the
+tree this pass.
+
+**Host GPU golden verification is still blocked over RDP** (see the `- [b]`
+entry near the end of this file), so every task here is accepted without an
+adapter: task 1's acceptance is the CPU suites plus a `buildIntegritySuite`
+gate, task 3's is the existing CPU suites plus a new constants-pinning test,
+and tasks 2 and 4 are Rust, where the host MSVC linker is broken (`cargo test`
+cannot link — see memory), so their acceptance is `cargo clippy --all-targets`
+compiling the new tests plus the always-on Linux lane running them on push.
+Task 2's *pixels* want a golden/visual re-run when RDP clears; that is called
+out in the entry rather than hidden.
+
+**The headline is that the submit-failure fix that shipped yesterday
+(`8da7d054`) covered exactly one of the four upload paths.** `8001c7b6` gave
+`CommandBufferManager::endAndSubmitCommandBuffer` a `bool` return with two
+real failure exits (`CommandBufferManager.cpp:89-99`, `:101-112`).
+`Texture::uploadRgba` now reads it. The other three still do not:
+
+| path | discard | what is then treated as valid |
+| --- | --- | --- |
+| `VulkanBufferManager.cpp:34-35` (`copy_buffer_impl`) | `static_cast<void>` | every vertex, index, material and material-index buffer (`Mesh.ixx:130-131`), the TLAS instance buffer (`ASManager.cpp:323-330`), the object-description SSBO (`VulkanRenderer.cpp:1373`, `:1381`) |
+| `VulkanBufferManager.cpp:72-73` (device overload of `copyImageBuffer`) | `static_cast<void>` | nothing — the overload has zero callers (see task 1 step 4) |
+| `SkyBox.cpp:189` (`uploadCubeMapFaces`) | `static_cast<void>` | `:193-194` builds the image view and sampler, `:114`/`:127` writes the descriptor — a never-written cubemap becomes the sky |
+
+The same three functions also *log and return* on `beginCommandBuffer`
+returning null (`VulkanBufferManager.cpp:22-25`, `:63-66`, `SkyBox.cpp:153-157`)
+without telling the caller, so `createBufferAndUploadVectorOnDevice`
+(`VulkanBufferManager.ixx:69-100`) hands back a freshly created, entirely
+unwritten device-local buffer that the ray-tracing BLAS build then reads
+vertex positions out of. None of this is gate drift: `buildIntegritySuite.cpp:4122`
+(`EveryEndAndSubmitCommandBufferResultIsChecked`) deliberately *permits* an
+explicit discard. These are call sites that took the discard when they had a
+return value of their own to put it in — the same sentence that was written
+about `Texture.cpp` one batch ago.
+
+**Second, the Rust renderer's alpha-masked shadow pass tests the wrong
+texels.** `forward.slang`'s `fs_main` selects between `In.uv` and `In.uv1` per
+texture slot from `prim.material_flags.y` (`:376-381`) and multiplies vertex
+colour into the alpha it discards on (`:393-394`,
+`albedo = prim.base_color * baseSample * In.vertexColor`). Its shadow twin does
+neither: `vs_shadow_masked` (`:181-192`) forwards `o.uv = In.uv`
+unconditionally and drops `In.color` on the floor, and `fs_shadow_masked`
+(`:194-202`) tests `prim.base_color.a * baseColorTex.Sample(...).a`. The
+generated WGSL shows the same shape (`crates/webgpu_renderer/src/shaders/forward.wgsl:279`,
+`o_1.uv_4 = _S23.uv_5;`, and `:293`). `uv_set_mask` bit 0 *is* the base-colour
+slot and *is* populated from the glTF (`asset/gltf_loader.rs:666-671`,
+`uv_set_bit("base color", i.tex_coord(), 0)`) and packed into
+`material_flags[1]` (`render/forward.rs:1729-1734`), so this is reachable
+data, not a hypothetical: a MASK material whose base-colour texture declares
+`TEXCOORD_1` — cut-out foliage with a second UV set is the standard case —
+alpha-tests its shadow against UV0 and casts a silhouette that does not match
+the geometry the forward pass draws. The C++ engine does not have this
+divergence (it supports only TEXCOORD_0 and warns, `GltfLoader.cpp:161-168`),
+so `docs/shader-sharing.md` does not record it either.
+
+**Third, the analytic sky exists three times, in two languages.** The three
+constants and the horizon/zenith/ground gradient are written verbatim in
+`sky/sky.slang:36-44`, in `forward/forward.slang:271-281` (`SKY_ZENITH`,
+`SKY_HORIZON`, `SKY_GROUND`, `sky_radiance`), and again on the CPU in
+`render/ibl.rs:143-158` (`EnvironmentImage::sky`, whose own doc says "The
+analytic sky of `sky.wgsl`, panoramised"). The sun-disk term is duplicated
+between the first two (`sky.slang:46-49` vs `forward.slang:282-288`), down to
+the `pow(cosSun, 1200.0) * 24.0 + pow(cosSun, 48.0) * 0.5` magic numbers. They
+must agree — `forward.slang:442` reflects `sky_radiance(reflected, true)` into
+the analytic ambient of the very surfaces the sky pass draws behind, and
+`ibl.rs`'s panorama is what gets convolved into the irradiance map that
+*replaces* it — and nothing checks that they do. `tests/ibl.rs:933-945` only
+asserts an ordering (horizon > zenith > ground) that all three would still
+satisfy after any of them drifted.
+
+**Fourth, the Rust orbit controller has neither of the two input fixes the C++
+frontend already shipped.** `OrbitController::handle_event`
+(`scene/controller.rs:45-88`) has no `WindowEvent::Focused` arm — it falls into
+`_ => false` — so a left-drag that ends after the window loses focus (alt-tab,
+a browser tab switch) never sees `ElementState::Released` and leaves
+`dragging == true` forever; every later cursor move orbits with no button held.
+`Src/shared/frontend/WindowInputCallbacks.ixx:22-26` (`handle_focus_lost`) is
+the fix for exactly this on the C++ side. Separately, both dispatch sites skip
+the controller entirely when egui consumes the event
+(`examples/viewer.rs:296-303`, `src/wasm_demo.rs:234-241`,
+`if !consumed { self.controller.handle_event(...) }`), so `last_cursor` goes
+stale at the pre-panel position while the cursor crosses the overlay and the
+first event after it leaves diffs against that stale position — the camera
+snaps by the distance travelled over the panel. That is the same defect, and
+the same reasoning, as the comment at `WindowInputCallbacks.ixx:75-84` ("Keep
+tracking the raw cursor position while ImGui holds capture … snapping the
+camera by the distance crossed while hovering the panel").
+
+Ordering: the four tasks are disjoint. Task 1 touches `VulkanBufferManager.ixx`
+(a module interface — needs `-FreshContainer`), `VulkanBufferManager.cpp`,
+`Mesh.ixx`, `ASManager.cpp`, `VulkanRenderer.cpp`, `SkyBox.cpp` and
+`buildIntegritySuite.cpp`. Tasks 2 and 3 both regenerate `forward.wgsl`; if
+they land in the same session, do task 2 first so task 3's regeneration is the
+last one and its checked-in WGSL is final. Task 4 touches only
+`scene/controller.rs` plus the two dispatch sites.
+
+### C++ Vulkan engine
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) Make the masked-shadow pass alpha-test with the same UV set and vertex alpha as the forward pass** — a MASK material whose base-colour texture declares `TEXCOORD_1` casts a shadow silhouette that does not match the geometry it draws.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/forward/forward.slang` — `VsIn` (`:83-97`), `vs_shadow_masked` (`:181-192`), `fs_shadow_masked` (`:194-202`), and `fs_main`'s UV-set selection and alpha product (`:376-394`)
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/shaders/forward.wgsl:258-298` — the checked-in generated output, to confirm the defect before and the fix after
+  - `.../src/render/forward.rs:126-135` (`uv_set_mask` doc), `:1715-1735` (packing into `material_flags`), `:1341-1346` and `:1801` (the masked-shadow bind group and draw)
+  - `.../src/asset/gltf_loader.rs:660-672` — where `uv_set_mask` bit 0 comes from
+  - `.../tests/shader_export.rs:187-...` (`depth_resolve_fragment_writes_frag_depth`) — the shader-content test pattern to follow
+  - `docs/shader-build-pipeline.md` — the regeneration step and the slangc version floor
+
+  **Steps:**
+  1. In `vs_shadow_masked`, select the UV set the same way `fs_main` does for the base-colour slot: `float2 baseIn = (uint(prim.material_flags.y) & 1u) != 0u ? In.uv1 : In.uv;` and forward that as `o.uv`. Do **not** apply `base_uv_row0/row1` here — `fs_shadow_masked` already applies the transform (`:197-199`), and applying it twice is the next bug.
+  2. Add `float alpha : TEXCOORD1;` to `VsShadowMaskedOut` and set it to `In.color.a` in `vs_shadow_masked`, then multiply it into `fs_shadow_masked`'s test so the discarded alpha is `prim.base_color.a * texture.a * vertexColor.a` — the same three-factor product `fs_main` builds at `:393`. Passing the whole `float4` colour would work too but wastes three interpolants; the alpha is all the test uses.
+  3. Leave `vs_shadow` (the non-masked variant, `:165-173`) alone — it has no fragment stage and nothing to test.
+  4. Regenerate the WGSL: `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`. This needs slangc >= the manifest's `minSlangcVersionForWgsl` (2026.8); the host Vulkan SDK 1.4.350 provides it. Commit the regenerated `crates/webgpu_renderer/src/shaders/forward.wgsl` — it is a checked-in artifact, and `CheckedInWgslHasNoHandEdits` will fail if you edit it by hand.
+  5. Add a row to `docs/shader-sharing.md`'s divergence section recording that the C++ engine supports only TEXCOORD_0 (and warns, `GltfLoader.cpp:161-168`) while the Rust renderer honours the per-slot UV mask in both the forward and the masked-shadow pass. This divergence is currently unrecorded.
+
+  **Test:** Add `shadow_masked_uses_the_forward_pass_uv_set` to `crates/webgpu_renderer/tests/shader_export.rs`, in the style of `depth_resolve_fragment_writes_frag_depth`: slice `forward.wgsl` between `fn vs_shadow_masked(` and its closing brace and assert the body references both the `uv1` input member and `material_flags`, so a regeneration that drops the selector fails loudly; assert the `fs_shadow_masked` body multiplies three terms into the discarded alpha. Pure CPU, no adapter — keep it out of any `GpuContext`-backed test for the reason `tests/cull_constants.rs` states in its header.
+
+  **Build:** No C++ build. Verify with `cargo clippy --all-targets -p kataglyphis_webgpu_renderer` and `cargo fmt -p kataglyphis_webgpu_renderer -- --check` from `ExternalLib/Kataglyphis-RustProjectTemplate` — the host MSVC linker cannot link `cargo test` (see memory); the new test runs on the always-on Linux lane via `Scripts/Linux/run-cargo-tests.sh`. The `commitTestSuite` gates that watch the checked-in WGSL (`SlangCompileManifestsAgree`, `CheckedInWgslHasNoHandEdits`, `EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl`) run from the existing `build-clangcl-debug\commitTestSuite.exe` without a rebuild.
+
+  **Context:** This is the Rust twin of the two glTF-conformance fixes that shipped yesterday (`bdbec99a` carried `baseColorFactor` alpha into the MASK test, `3b6ccc92` warned on an unsupported TEXCOORD set). The shadow pass is where a masked material is *most* visible — a foliage card that alpha-tests correctly in the colour pass and solidly in the shadow pass reads as "the shadows are broken", not "the UV set is wrong". The visual confirmation wants a `viewer.rs` run against a MASK/TEXCOORD_1 asset once the RDP blocker clears; the acceptance above deliberately does not depend on it.
+
+- [ ] **(M) (refactor) Give the analytic sky one definition** — the same three constants and the same gradient are written in two Slang shaders and once more on the Rust CPU side, and the three must agree because each feeds the others' ambient.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/sky/sky.slang:29-52` — the gradient and the sun disk
+  - `Resources/ShadersSlang/forward/forward.slang:271-296` — `SKY_ZENITH`/`SKY_HORIZON`/`SKY_GROUND`, `sky_radiance`, `hemisphere_irradiance`; and `:442`, the one consumer of `sky_radiance`
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/ibl.rs:137-186` — `EnvironmentImage::sky` and `lerp3`
+  - `Resources/ShadersSlang/common/` — `brdf.slang`, `aces.slang`, `fullscreen.slang` are the shape a shared module takes here
+  - `Resources/ShadersSlang/shader-manifest.json` — the `wgslMap` rows for `sky/sky.slang` and `forward/forward.slang`, both of which must be regenerated
+  - `.../tests/cull_constants.rs` and `.../tests/histogram_constants.rs` — the "pin a shader constant against its Rust twin" test pattern
+
+  **Steps:**
+  1. Add `Resources/ShadersSlang/common/sky_model.slang` exporting the three constants and three functions: `sky_gradient(float3 dir)` (the horizon/zenith/ground lerp), `sun_disk(float3 dir, float3 lightDir, float intensity)` (the two `pow(cosSun, …)` terms and the warm tint), and `hemisphere_irradiance(float3 n)`, moved verbatim from `forward.slang:292-296`. Do not invent a combined `sky_radiance(dir, withSun)` in the shared module — the two callers pass their light direction and intensity from different uniform blocks (`sky.light_dir_intensity` vs `frame.light_dir_ambient` + `frame.light_color_intensity.w`), which is a genuine per-caller difference.
+  2. Rewrite `sky/sky.slang`'s `fs_main` over the module: `sky_gradient(dir) + sun_disk(dir, sky.light_dir_intensity.xyz, sky.light_dir_intensity.w)`. Rewrite `forward.slang`'s `sky_radiance` as a thin local wrapper that supplies its own uniforms and keeps the `withSun` flag, so `:442` is untouched. Delete both copies of the constants.
+  3. Regenerate both WGSL outputs: `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`, then commit `crates/webgpu_renderer/src/shaders/sky.wgsl` and `forward.wgsl`. The emitted maths must be unchanged — read the diff and confirm only naming/inlining moved, not a constant or an exponent. If `CheckedInWgslIsNotOlderThanItsSlangSource` fails on a file whose *content* did not change, that is the known slangc/Copy-Item mtime no-op, not a real staleness failure (recorded in memory); touch the output rather than "fixing" the gate.
+  4. In `ibl.rs`, promote the three constants to `pub const SKY_ZENITH/SKY_HORIZON/SKY_GROUND: [f32; 3]` on the module (keeping `EnvironmentImage::sky` reading them) so a test can name them. Do not try to share the *code* across the language boundary — the CPU version panoramises over a different parameterisation; sharing the numbers is the whole win.
+  5. Update `docs/shader-sharing.md`'s list of shared `common/` modules with the new one.
+
+  **Test:** Add `crates/webgpu_renderer/tests/sky_constants.rs` in the style of `cull_constants.rs`: `include_str!("../src/shaders/sky.wgsl")`, extract the three `vec3<f32>(…)` literals the gradient uses, and assert each equals the matching `pub const` in `render::ibl`, with a failure message that says "edit both together". Pure CPU. On the C++ side no new test is needed — the SPIR-V targets are unaffected, and the existing `SlangCompileManifestsAgree` / `EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl` gates cover the new module's reachability.
+
+  **Build:** Shaders only, no C++ rebuild (see `AGENTS.md`'s routing table). Run the existing `.\build-clangcl-debug\commitTestSuite.exe` for the shader gates, plus `cargo clippy --all-targets -p kataglyphis_webgpu_renderer` and `cargo fmt -p kataglyphis_webgpu_renderer -- --check`.
+
+  **Context:** Same family as the eight `common/` extractions already shipped (`brdf`, `aces`, `fullscreen`, `noise`, `scene_types`, `material_fetch`, `base_color`, `cascaded_shadow`) — see `docs/shader-sharing.md`. What makes this one worth doing rather than cosmetic: `forward.slang:442` reflects the analytic sky into the ambient of the surfaces the sky pass draws behind, and `ibl.rs`'s panorama is convolved into the irradiance map that replaces that ambient, so a drift in any one copy shows up as a lighting/background mismatch nobody can localise. `tests/ibl.rs:933-945` only pins an ordering all three would still satisfy after drifting.
+
+- [ ] **(S) Make the orbit controller end a drag on focus loss and keep tracking the cursor while egui holds it** — both fixes already shipped on the C++ frontend; the Rust twin has neither.
+
+  **Files to read:**
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/scene/controller.rs:29-96` — `Default`, `handle_event`, and the `_ => false` arm; the `#[cfg(test)] mod tests` from `:225` is where the new tests go
+  - `.../examples/viewer.rs:296-303` and `.../src/wasm_demo.rs:234-241` — the two `if !consumed { … }` dispatch sites
+  - `Src/shared/frontend/WindowInputCallbacks.ixx:22-26` (`handle_focus_lost`) and `:75-84` (the "keep tracking while ImGui holds capture" comment) — the C++ fixes this mirrors
+  - `Test/commit/VulkanEngine/frontendInputSuite.cpp` — how the C++ side tests exactly these two properties
+
+  **Steps:**
+  1. Add a `WindowEvent::Focused(false)` arm to `handle_event` that clears `dragging`, sets `last_cursor = None`, and returns `false` (losing focus must not move the camera). `Focused(true)` needs no arm — `last_cursor = None` already makes the next move a no-delta re-seed.
+  2. Add `pub fn note_consumed_event(&mut self, event: &WindowEvent)` that handles the events the overlay swallowed: on `CursorMoved`, update `last_cursor` **without** applying a drag; on `Focused(false)` and on a left-button `Released`, do what step 1 does. Give it a doc comment stating the property it buys — "the first event after capture ends produces no delta" — the same property `WindowInputCallbacks.ixx:86-94` states.
+  3. Change both dispatch sites from `if !consumed { handle_event(...) }` to an `if consumed { self.controller.note_consumed_event(&event); } else { … }`, so the controller sees every event exactly once and in one of two roles.
+  4. Do not touch the touch-gesture paths (`handle_touch`, `:98-183`): `TouchPhase::Cancelled` is already the touch equivalent of focus loss and is already tested (`cancelled_touches_are_forgotten`).
+
+  **Test:** Two tests in `controller.rs`'s existing `mod tests`, both pure CPU:
+  `losing_focus_ends_a_drag` — press left, move (camera yaw changes), send `Focused(false)`, then move again and assert the yaw is unchanged;
+  `a_consumed_move_does_not_become_a_delta_when_the_cursor_returns` — press left at (100, 100), feed a *consumed* move to (400, 100) via `note_consumed_event`, then a normal move to (410, 100), and assert the yaw changed by the 10 px step, not the 310 px one. Follow `a_second_finger_does_not_jump_the_camera` (`:249`) for the assertion style — a bounded delta, not an exact float.
+
+  **Build:** No C++ build. `cargo clippy --all-targets -p kataglyphis_webgpu_renderer` and `cargo fmt -p kataglyphis_webgpu_renderer -- --check` from `ExternalLib/Kataglyphis-RustProjectTemplate`; the host MSVC linker cannot link `cargo test` (see memory), and the always-on Linux lane runs the new tests on push via `Scripts/Linux/run-cargo-tests.sh`.
+
+  **Context:** The C++ frontend paid for both of these twice (`9fb6b96f` accumulated mouse deltas; the look-mode/focus fixes are logged in `docs/cpp-renderer-improvements.md`), and the reasoning comments were written into `WindowInputCallbacks.ixx` precisely so the next implementation would not repeat them. The wasm demo is the user-facing surface here — it is the build published to the docs site — and "the camera spins forever after I switch tabs" is the exact failure mode. Keep `handle_event`'s signature and return contract (`true` iff the camera moved); several call sites and tests depend on it.
+
 ## 2026-08-02 — reuse-sweep residuals (the sweep itself shipped)
 
 The 2026-08-02 reuse sweep landed: WindowsCMake/Config/Formatting/WebDav/

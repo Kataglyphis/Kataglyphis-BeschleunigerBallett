@@ -4265,6 +4265,74 @@ TEST(BuildIntegrity, TextureUploadConsumesTheSubmitResult)
          "its callers instead of swallowing it as void";
 }
 
+// Third and last instalment of the family TextureUploadConsumesTheSubmitResult
+// pins: the vertex/index/TLAS/object-description uploads and the skybox
+// cubemap used to report success they never verified, because
+// VulkanBufferManager::copyBuffer and createBufferAndUploadVectorOnDevice
+// discarded endAndSubmitCommandBuffer's result with static_cast<void>. A
+// failed transfer produces undefined buffer contents that the BLAS builder
+// and every shader read as geometry - this must surface as a bool, not
+// vanish silently.
+TEST(BuildIntegrity, GeometryAndCubemapUploadsConsumeTheSubmitResult)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path buffer_manager_cpp_path =
+      repo_root / "Src" / "GraphicsEngineVulkan" / "vulkan_base" / "VulkanBufferManager.cpp";
+    std::ifstream buffer_manager_cpp_file(buffer_manager_cpp_path);
+    ASSERT_TRUE(buffer_manager_cpp_file) << "missing " << buffer_manager_cpp_path.string();
+    std::string buffer_manager_cpp_source(
+      (std::istreambuf_iterator<char>(buffer_manager_cpp_file)), std::istreambuf_iterator<char>());
+
+    {
+        const std::size_t call_pos = buffer_manager_cpp_source.find("endAndSubmitCommandBuffer(");
+        ASSERT_NE(call_pos, std::string::npos)
+          << "could not locate endAndSubmitCommandBuffer( call in VulkanBufferManager.cpp";
+        const std::size_t line_start = buffer_manager_cpp_source.rfind('\n', call_pos);
+        const std::string prefix = buffer_manager_cpp_source.substr(
+          line_start == std::string::npos ? 0 : line_start + 1, call_pos - (line_start + 1));
+        EXPECT_EQ(prefix.find("static_cast<void>("), std::string::npos)
+          << "VulkanBufferManager.cpp's endAndSubmitCommandBuffer(...) call must consume the submit result "
+             "instead of discarding it with static_cast<void> - a failed transfer must not be reported as a "
+             "successful upload";
+    }
+
+    const fs::path sky_box_cpp_path =
+      repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "sky_box" / "SkyBox.cpp";
+    std::ifstream sky_box_cpp_file(sky_box_cpp_path);
+    ASSERT_TRUE(sky_box_cpp_file) << "missing " << sky_box_cpp_path.string();
+    std::string sky_box_cpp_source(
+      (std::istreambuf_iterator<char>(sky_box_cpp_file)), std::istreambuf_iterator<char>());
+
+    {
+        const std::size_t call_pos = sky_box_cpp_source.find("endAndSubmitCommandBuffer(");
+        ASSERT_NE(call_pos, std::string::npos) << "could not locate endAndSubmitCommandBuffer( call in SkyBox.cpp";
+        const std::size_t line_start = sky_box_cpp_source.rfind('\n', call_pos);
+        const std::string prefix = sky_box_cpp_source.substr(
+          line_start == std::string::npos ? 0 : line_start + 1, call_pos - (line_start + 1));
+        EXPECT_EQ(prefix.find("static_cast<void>("), std::string::npos)
+          << "SkyBox.cpp's endAndSubmitCommandBuffer(...) call must consume the submit result instead of "
+             "discarding it with static_cast<void> - a failed cubemap upload must not write a descriptor "
+             "pointed at an unfilled image";
+    }
+
+    const fs::path buffer_manager_ixx_path =
+      repo_root / "Src" / "GraphicsEngineVulkan" / "vulkan_base" / "VulkanBufferManager.ixx";
+    std::ifstream buffer_manager_ixx_file(buffer_manager_ixx_path);
+    ASSERT_TRUE(buffer_manager_ixx_file) << "missing " << buffer_manager_ixx_path.string();
+    std::string buffer_manager_ixx_source(
+      (std::istreambuf_iterator<char>(buffer_manager_ixx_file)), std::istreambuf_iterator<char>());
+
+    EXPECT_NE(buffer_manager_ixx_source.find("bool copyBuffer("), std::string::npos)
+      << "VulkanBufferManager::copyBuffer must be declared returning bool";
+    EXPECT_NE(buffer_manager_ixx_source.find("bool createBufferAndUploadVectorOnDevice("), std::string::npos)
+      << "VulkanBufferManager::createBufferAndUploadVectorOnDevice must be declared returning bool";
+    EXPECT_EQ(buffer_manager_ixx_source.find("copyImageBuffer(vk::Device device,"), std::string::npos)
+      << "the dead seven-argument device overload of copyImageBuffer must be deleted - only the static "
+         "command-buffer overload should remain";
+}
+
 // drawFrame used to have three post-acquire early returns that left
 // frameSync's imageAvailableSemaphore() signaled with no pending wait, then
 // handed that same semaphore straight back to the next frame's

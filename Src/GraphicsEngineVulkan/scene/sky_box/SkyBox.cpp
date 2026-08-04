@@ -107,9 +107,16 @@ void SkyBox::loadCubeMap(vk::CommandPool commandPool)
     // view fed gamma-space values into the HDR target that post then gamma-
     // encodes again - the same defect the material-texture sRGB fix caught,
     // on a separate texture path. sRGB makes the hardware decode to linear.
-    uploadCubeMapFaces(commandPool, static_cast<uint32_t>(width), static_cast<uint32_t>(height), faces);
+    const bool uploaded =
+      uploadCubeMapFaces(commandPool, static_cast<uint32_t>(width), static_cast<uint32_t>(height), faces);
 
     for (size_t i = 0; i < 6; i++) { stbi_image_free(face_data[i]); }
+
+    if (!uploaded) {
+        spdlog::error("SkyBox: cubemap upload failed, falling back to the black fallback cubemap.");
+        loadFallbackCubeMap(commandPool);
+        return;
+    }
 
     updateDescriptorSetForCubeMap();
 }
@@ -123,11 +130,14 @@ void SkyBox::loadFallbackCubeMap(vk::CommandPool commandPool)
         kFallbackCubemapFacePixel, kFallbackCubemapFacePixel, kFallbackCubemapFacePixel,
         kFallbackCubemapFacePixel, kFallbackCubemapFacePixel, kFallbackCubemapFacePixel
     };
-    uploadCubeMapFaces(commandPool, 1, 1, faces);
+    if (!uploadCubeMapFaces(commandPool, 1, 1, faces)) {
+        spdlog::error("SkyBox: fallback cubemap upload failed; leaving the cubemap descriptor unwritten.");
+        return;
+    }
     updateDescriptorSetForCubeMap();
 }
 
-void SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool, uint32_t width, uint32_t height, std::span<const unsigned char *const, 6> faceData)
+bool SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool, uint32_t width, uint32_t height, std::span<const unsigned char *const, 6> faceData)
 {
     vk::DeviceSize const layerSize = static_cast<vk::DeviceSize>(width) * static_cast<vk::DeviceSize>(height) * 4;
     vk::DeviceSize const imageSize = layerSize * 6;
@@ -153,7 +163,7 @@ void SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool, uint32_t width, uin
     if (!commandBuffer) {
         spdlog::error("SkyBox::uploadCubeMapFaces: failed to begin command buffer, skipping cubemap upload.");
         stagingBuffer.cleanUp();
-        return;
+        return false;
     }
 
     cubeMapTexture->getVulkanImage().transitionImageLayout(commandBuffer,
@@ -186,12 +196,19 @@ void SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool, uint32_t width, uin
       vk::ImageAspectFlagBits::eColor,
       6);
 
-    static_cast<void>(Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer));
+    const bool submitted = Kataglyphis::VulkanRendererInternals::CommandBufferManager::endAndSubmitCommandBuffer(
+      device->getLogicalDevice(), commandPool, device->getGraphicsQueue(), commandBuffer);
 
     stagingBuffer.cleanUp();
 
+    if (!submitted) {
+        spdlog::error("SkyBox::uploadCubeMapFaces: submit failed ({}x{}); leaving cubemap image unwritten.", width, height);
+        return false;
+    }
+
     cubeMapTexture->createImageView(device, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, 1, vk::ImageViewType::eCube, 6);
     cubeMapTexture->createTextureSampler(device);
+    return true;
 }
 
 void SkyBox::createDescriptorSetForCubeMap()

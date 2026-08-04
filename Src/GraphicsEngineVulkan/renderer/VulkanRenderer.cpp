@@ -1370,20 +1370,27 @@ void Kataglyphis::VulkanRenderer::create_object_description_buffer()
       objectDescriptions, scene->getMeshCountPerModel(), scene->getTextureCountPerModel());
 
     if (!objectDescriptions.empty()) {
-        vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
-          graphics_command_pool,
-          objectDescriptionBuffer,
-          vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
-          vk::MemoryPropertyFlagBits::eDeviceLocal,
-          objectDescriptions);
+        if (!vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
+              graphics_command_pool,
+              objectDescriptionBuffer,
+              vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
+              vk::MemoryPropertyFlagBits::eDeviceLocal,
+              objectDescriptions)) {
+            spdlog::error(
+              "VulkanRenderer::create_object_description_buffer: upload failed; object-description buffer left "
+              "unwritten.");
+        }
     } else {
         // Create an empty buffer (1 byte) if no object descriptions are present to avoid validation error
-        vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
-          graphics_command_pool,
-          objectDescriptionBuffer,
-          vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
-          vk::MemoryPropertyFlagBits::eDeviceLocal,
-          std::vector<uint32_t>{0});
+        if (!vulkanBufferManager.createBufferAndUploadVectorOnDevice(device,
+              graphics_command_pool,
+              objectDescriptionBuffer,
+              vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer,
+              vk::MemoryPropertyFlagBits::eDeviceLocal,
+              std::vector<uint32_t>{0})) {
+            spdlog::error(
+              "VulkanRenderer::create_object_description_buffer: empty placeholder buffer upload failed.");
+        }
     }
 
     updateObjectDescriptionDescriptorSets();

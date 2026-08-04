@@ -1,6 +1,7 @@
 ﻿module;
 #include <memory>
 
+#include "spdlog/spdlog.h"
 #include <cstdint>
 #include <cstring>
 #include <glm/ext/matrix_float4x4.hpp>
@@ -96,19 +97,23 @@ Mesh::~Mesh() = default;
 void Mesh::createVertexBuffer(vk::CommandPool transfer_command_pool,
   const std::vector<Vertex> &vertices)
 {
-    uploadDeviceLocalBuffer(transfer_command_pool,
-      vertexBuffer,
-      vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eStorageBuffer,
-      vertices);
+    if (!uploadDeviceLocalBuffer(transfer_command_pool,
+          vertexBuffer,
+          vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eStorageBuffer,
+          vertices)) {
+        spdlog::error("Mesh::createVertexBuffer: upload failed; vertex buffer left unwritten.");
+    }
 }
 
 void Mesh::createIndexBuffer(vk::CommandPool transfer_command_pool,
   const std::vector<uint32_t> &indices)
 {
-    uploadDeviceLocalBuffer(transfer_command_pool,
-      indexBuffer,
-      vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eStorageBuffer,
-      indices);
+    if (!uploadDeviceLocalBuffer(transfer_command_pool,
+          indexBuffer,
+          vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eStorageBuffer,
+          indices)) {
+        spdlog::error("Mesh::createIndexBuffer: upload failed; index buffer left unwritten.");
+    }
 }
 
 void Mesh::createMaterialIDBuffer(vk::CommandPool transfer_command_pool,
@@ -116,8 +121,10 @@ void Mesh::createMaterialIDBuffer(vk::CommandPool transfer_command_pool,
 {
     // The material-ID buffer is read as a storage buffer (and via device
     // address) in the shaders, never bound as an index buffer.
-    uploadDeviceLocalBuffer(
-      transfer_command_pool, materialIdsBuffer, vk::BufferUsageFlagBits::eStorageBuffer, materialIndex);
+    if (!uploadDeviceLocalBuffer(
+          transfer_command_pool, materialIdsBuffer, vk::BufferUsageFlagBits::eStorageBuffer, materialIndex)) {
+        spdlog::error("Mesh::createMaterialIDBuffer: upload failed; material-ID buffer left unwritten.");
+    }
 }
 
 void Mesh::createMaterialBuffer(vk::CommandPool transfer_command_pool,
@@ -125,5 +132,8 @@ void Mesh::createMaterialBuffer(vk::CommandPool transfer_command_pool,
 {
     // The materials buffer is read as a storage buffer (and via device
     // address) in the shaders, never bound as an index buffer.
-    uploadDeviceLocalBuffer(transfer_command_pool, materialsBuffer, vk::BufferUsageFlagBits::eStorageBuffer, materials);
+    if (!uploadDeviceLocalBuffer(
+          transfer_command_pool, materialsBuffer, vk::BufferUsageFlagBits::eStorageBuffer, materials)) {
+        spdlog::error("Mesh::createMaterialBuffer: upload failed; materials buffer left unwritten.");
+    }
 }
