@@ -70,20 +70,20 @@ void rchit_main(
     // Material: per-primitive material ID.
     ObjMaterial material = materials->m[materialIDs->i[PrimitiveIndex()]];
     // Note: PrimitiveIndex() is valid here (closesthit stage).
-    float3 ambient = float3(0.0);
+    float3 albedo = float3(0.0);
     if (material.textureID >= 0)
     {
         int textureId = resolve_texture_slot(obj, material);
         // Explicit LOD: closesthit runs under RayClosestHitKHR, which has no
         // fragment derivatives, so an implicit-LOD .Sample() fails SPIR-V
         // validation (ImplicitLod requires Fragment/GLCompute/MeshEXT/TaskEXT).
-        ambient += base_color(material, textures[textureId].SampleLevel(textureSamplers[textureId], transform_uv(texCoords, material), 0.0).xyz);
+        albedo += base_color(material, textures[textureId].SampleLevel(textureSamplers[textureId], transform_uv(texCoords, material), 0.0).xyz);
     }
     else
     {
-        ambient += material.diffuse;
+        albedo += material.diffuse;
     }
-    ambient *= vertexColor.rgb;
+    albedo *= vertexColor.rgb;
 
     // Light direction (towards the light) and view direction (towards camera).
     float3 L = normalize(-sceneUBO.dirLight.direction.xyz);
@@ -112,14 +112,18 @@ void rchit_main(
     float3 lightColor = sceneUBO.dirLight.color.rgb;
     float lightIntensity = sceneUBO.dirLight.color.w;
 
-    payload.hit_value = ambient;
+    // Forward, deferred lighting, and this closest-hit shader all start
+    // shading an ObjMaterial from brdf_direct alone: this engine has no
+    // ambient or IBL term, so seeding the payload with albedo here would
+    // diverge from the other two paths.
+    payload.hit_value = float3(0.0);
     payload.is_hit = 1.0;
 
     if (!shadowed)
     {
-        float3 f0 = lerp(float3(0.04), ambient, material.metallic);
+        float3 f0 = lerp(float3(0.04), albedo, material.metallic);
         payload.hit_value += brdf_direct(
-            N, V, L, ambient, material.metallic, roughness, f0,
+            N, V, L, albedo, material.metallic, roughness, f0,
             lightColor * lightIntensity);
     }
 

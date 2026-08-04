@@ -91,7 +91,7 @@ naive golden pass with per-frame sampling disabled.
 
 ## Verification
 
-<!-- pt-goldens: PathTracingAccumulatesAndConverges, PathTracingAntiAliasesGeometricEdges, PathTracingRespondsToTheDirectionalLight, PathTracingHonorsTheQualityControls, RaytracedWorldFollowsTheModelTransform, PathTracingPassesTheWhiteFurnaceTest, RaytracedLargeMeshDoesNotLoseTheDevice -->
+<!-- pt-goldens: PathTracingAccumulatesAndConverges, PathTracingAntiAliasesGeometricEdges, PathTracingRespondsToTheDirectionalLight, PathTracingHonorsTheQualityControls, RaytracedWorldFollowsTheModelTransform, PathTracingPassesTheWhiteFurnaceTest, RaytracedLargeMeshDoesNotLoseTheDevice, RaytracedShadowsAreDarkerThanLitGround -->
 
 Seven PT-facing goldens in `Test/commit/VulkanEngine/goldenRenderSuite.cpp`,
 each red/green-proven against the pre-fix kernel (numbers are post-HDR;

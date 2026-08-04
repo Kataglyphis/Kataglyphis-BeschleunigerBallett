@@ -1992,6 +1992,73 @@ TEST(GoldenRender, RaytracedWorldFollowsTheModelTransform)
       << "The traced image did not follow the model transform - stale TLAS.";
 }
 
+// The ray-traced closest-hit shader used to seed every pixel's payload with
+// its full unlit albedo (`payload.hit_value = ambient`) before adding the
+// shadow-tested direct term - an ambient/IBL bounce neither the forward nor
+// the deferred lighting path has (both start shading from brdf_direct
+// alone). That meant a shadowed ray-traced surface never actually went
+// dark: the fake ambient term always showed through at full albedo. Fixed
+// by seeding the payload at black instead.
+TEST(GoldenRender, RaytracedShadowsAreDarkerThanLitGround)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = true;
+    renderer_vars.pathTracing = false;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(frame.empty());
+
+    // The shadow rig's ground plane spans both the shadowed patch under the
+    // floating box and open, directly-lit ground within the same panel-free
+    // crop, so a whole-crop mean would average shadow and light together and
+    // hide the contrast this golden exists to catch. Instead, compare the
+    // mean luminance of the darkest decile of crop pixels (the shadowed
+    // patch) against the brightest decile (the lit ground).
+    const Crop crop = panel_free_crop(width, height);
+    std::vector<double> luminances;
+    luminances.reserve(static_cast<size_t>(crop.x1 - crop.x0) * static_cast<size_t>(crop.y1 - crop.y0));
+    for (uint32_t y = crop.y0; y < crop.y1; ++y) {
+        for (uint32_t x = crop.x0; x < crop.x1; ++x) {
+            luminances.push_back(luminance_of(frame, static_cast<size_t>(y) * width + x));
+        }
+    }
+    std::sort(luminances.begin(), luminances.end());
+    const size_t decile = std::max<size_t>(1U, luminances.size() / 10U);
+    double dark_sum = 0.0;
+    for (size_t i = 0; i < decile; ++i) { dark_sum += luminances[i]; }
+    double lit_sum = 0.0;
+    for (size_t i = luminances.size() - decile; i < luminances.size(); ++i) { lit_sum += luminances[i]; }
+    const double dark_mean = dark_sum / static_cast<double>(decile);
+    const double lit_mean = lit_sum / static_cast<double>(decile);
+
+    GTEST_LOG_(INFO) << "RT shadow darkest-decile mean luminance: " << dark_mean
+                     << ", lit-decile mean luminance: " << lit_mean;
+
+    // MEASURED 0.0 dark vs 244 lit with the fix (ratio 0.0 - shadowed ground
+    // has no ambient term left to show, so it comes out exactly black);
+    // reverting step 2 in raytrace.rchit.slang (payload.hit_value = albedo
+    // instead of float3(0.0)) measures 41.6 dark vs 248 lit (ratio ~0.168) -
+    // the shadowed patch still shows most of its unlit albedo. Gate at 0.05,
+    // strictly between the two ratios.
+    EXPECT_LT(dark_mean, lit_mean * 0.05)
+      << "Ray-traced shadow did not go dark relative to the lit ground - the "
+         "closest-hit shader is still seeding an ambient/unlit-albedo term.";
+}
+
 // The full forward/deferred scene used to be rasterized every RT/PT frame
 // into an image the RT dispatch then overwrote completely - dead GPU work.
 // record_commands now skips recordRasterPass whenever raytracingOwnsFrame()
