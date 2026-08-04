@@ -39,13 +39,24 @@ env:
   BUILD_RELEASE_DIR: build-release
   DOCS_OUT: build/build/html
   COVERAGE_JSON: build/coverage.json
-  # :latest-cross, NOT :latest. The plain tag is the old single-arch build and
+  # The cross lane, NOT :latest. The plain tag is the old single-arch build and
   # had not been rebuilt since 2026-04-16 - three months of toolchain drift
-  # behind the cross lane, which is rebuilt routinely (2026-07-20 at the time
-  # of writing). Both publish linux/amd64, arm64 and riscv64. Use the same tag
-  # locally so a CI failure is reproducible on a dev box; see ContainerHub
-  # docs/rancher-desktop-linux-containers.md.
-  CONTAINER_IMAGE: ghcr.io/kataglyphis/kataglyphis_beschleuniger:latest-cross
+  # behind the cross lane, which is rebuilt routinely. Worse, :latest's manifest
+  # list still ADVERTISES amd64/arm64/riscv64 but every child manifest it points
+  # at now 404s (MANIFEST_UNKNOWN) - it is not a fallback for anything.
+  #
+  # Per-ARCH tag, not the :latest-cross index (verified against GHCR 2026-08-04):
+  # the :latest-cross manifest list contains exactly ONE entry, linux/amd64, so
+  # `docker pull` on ubuntu-24.04-arm died with "no matching manifest for
+  # linux/arm64/v8 in the manifest list entries" - three attempts, then the whole
+  # ARM lane. The arch-specific tags ContainerHub pushes alongside the index are
+  # both present and current (:latest-cross-amd64 built 2026-07-26,
+  # :latest-cross-arm64 built 2026-07-24), and :latest-cross-amd64 resolves to
+  # the very same image the index serves today, so naming them directly costs the
+  # x86 lane nothing and stops the ARM lane depending on an index that has never
+  # listed it. Use the same tag locally so a CI failure is reproducible on a dev
+  # box; see ContainerHub docs/rancher-desktop-linux-containers.md.
+  CONTAINER_IMAGE: "ghcr.io/kataglyphis/kataglyphis_beschleuniger:${{ inputs.runner == 'ubuntu-24.04-arm' && 'latest-cross-arm64' || 'latest-cross-amd64' }}"
 
 jobs:
   build_and_test:
