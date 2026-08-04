@@ -66,7 +66,11 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
 
     for (int sampleIdx = 0; sampleIdx < numSamples; sampleIdx++)
     {
-        float2 pixelCenter = float2(tid.xy) + float2(0.5);
+        // Jitter within the pixel's unit square (a box filter) instead of
+        // always sampling the exact centre: this is what makes
+        // samples_per_pixel and the temporal running mean anti-alias
+        // geometric edges rather than just denoise a point-sampled image.
+        float2 pixelCenter = float2(tid.xy) + float2(stepAndOutputRNGFloat(rngState), stepAndOutputRNGFloat(rngState));
         float2 uv = pixelCenter / float2(resolution);
         float2 cs = uv * 2.0 - 1.0;
 

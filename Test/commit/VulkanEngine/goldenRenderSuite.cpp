@@ -1443,6 +1443,118 @@ TEST(GoldenRender, PathTracingAccumulatesAndConverges)
       << "Per-frame movement did not shrink with accumulation depth - history not converging.";
 }
 
+// The primary ray is now jittered uniformly within the pixel (box filter)
+// instead of always sampling the exact centre, so accumulation should
+// anti-alias geometric silhouette edges: a pixel whose area straddles an
+// edge sometimes samples the foreground and sometimes the background, and
+// the running mean over many frames blends those into a colour strictly
+// between the two flat regions either side. Without jitter every sample
+// re-hits the same sub-pixel point, so a boundary pixel is either fully
+// foreground or fully background - "hard" transitions only, no partial
+// ones - the same fg/bg-vs-partial-pixel distinction the Rust WebGPU
+// renderer's MSAA note (BACKLOG.md, "No anti-aliasing anywhere") describes
+// for a diagonal edge under multisampling.
+//
+// Same shadow rig as the other PT goldens: a solid box floating over a
+// ground plane against the sky gives clean, flat-shaded regions on both
+// sides of a silhouette edge, so a jump in luminance between neighbours is
+// unambiguously an edge and not texture/material detail.
+TEST(GoldenRender, PathTracingAntiAliasesGeometricEdges)
+{
+    SKIP_WITHOUT_GPU();
+
+    ScopedModelOverride rig(SHADOW_RIG_MODEL);
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+    if (!harness.renderer->supportsHardwareRaytracing()) {
+        GTEST_SKIP() << "Hardware raytracing unsupported; path tracing unavailable.";
+    }
+
+    auto &renderer_vars = harness.gui->getGuiRendererSharedVars();
+    renderer_vars.raytracing = false;
+    renderer_vars.pathTracing = true;
+    renderer_vars.rasterizationMode = RasterizationMode::Forward;
+    harness.render_frames(WARMUP_FRAMES);
+
+    // Same history-reset nudge as PathTracingAccumulatesAndConverges: start
+    // the running mean fresh from the fully-loaded, settled scene rather
+    // than measuring a mean still healing from pre-load frames.
+    harness.camera->set_camera_position(harness.camera->get_camera_position()
+                                        + glm::vec3(0.001F, 0.0F, 0.0F));
+    harness.render_frame();
+
+    // Accumulate deep, same depth as the furnace golden, so per-sample
+    // noise is averaged well below the margin the partial-pixel check below
+    // uses - a shallow history would itself look "in between" everywhere
+    // from noise alone, which would pass this test vacuously.
+    harness.render_frames(80);
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> frame = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost());
+    ASSERT_FALSE(frame.empty());
+
+    // Walk the panel-free crop (same region the other PT goldens measure
+    // in) and look at consecutive pixel triples, both along a row and down
+    // a column - the rig's box/ground/sky boundaries in this camera framing
+    // are mostly near-horizontal lines (box top/bottom, the ground/sky
+    // horizon), which only show up as a jump between VERTICAL neighbours,
+    // not horizontal ones. A "hard edge" is a big luminance jump between
+    // the outer two pixels of a triple; among those, a "partial pixel" is
+    // the middle pixel sitting strictly between the two outer ones, with
+    // margin on both sides so accumulation noise near either flat region
+    // does not count. Counting triples (not raw neighbour diffs) means both
+    // the fg and bg reference values come from the SAME local edge, so this
+    // does not depend on knowing the rig's absolute colours.
+    const Crop crop = panel_free_crop(width, height);
+    constexpr double EDGE_JUMP = 40.0;
+    constexpr double PARTIAL_MARGIN = 6.0;
+    size_t edges_found = 0;
+    size_t edges_with_partial_pixel = 0;
+    const auto classify_triple = [&](double before, double mid, double after) {
+        const double lo = std::min(before, after);
+        const double hi = std::max(before, after);
+        if (hi - lo <= EDGE_JUMP) { return; }
+        ++edges_found;
+        if (mid > lo + PARTIAL_MARGIN && mid < hi - PARTIAL_MARGIN) { ++edges_with_partial_pixel; }
+    };
+    for (uint32_t y = crop.y0; y < crop.y1; ++y) {
+        for (uint32_t x = crop.x0 + 1U; x + 1U < crop.x1; ++x) {
+            classify_triple(luminance_of(frame, static_cast<size_t>(y) * width + (x - 1U)),
+              luminance_of(frame, static_cast<size_t>(y) * width + x),
+              luminance_of(frame, static_cast<size_t>(y) * width + (x + 1U)));
+        }
+    }
+    for (uint32_t x = crop.x0; x < crop.x1; ++x) {
+        for (uint32_t y = crop.y0 + 1U; y + 1U < crop.y1; ++y) {
+            classify_triple(luminance_of(frame, static_cast<size_t>(y - 1U) * width + x),
+              luminance_of(frame, static_cast<size_t>(y) * width + x),
+              luminance_of(frame, static_cast<size_t>(y + 1U) * width + x));
+        }
+    }
+
+    ASSERT_GT(edges_found, 0U)
+      << "No silhouette edge (a >40-level luminance jump between neighbours) found in the panel-free "
+         "crop - the shadow rig's box/ground/sky boundary should always produce one; check the crop or rig.";
+
+    const double partial_fraction =
+      static_cast<double>(edges_with_partial_pixel) / static_cast<double>(edges_found);
+    GTEST_LOG_(INFO) << "silhouette edges found: " << edges_found
+                     << ", with a partial (intermediate-luminance) pixel: " << edges_with_partial_pixel << " ("
+                     << (partial_fraction * 100.0) << "%)";
+
+    // Measured on the RX 9070 XT: jittered kernel gives 1012 edges / 20.65%
+    // with a partial pixel; reverting to the pixel-centre-only `+
+    // float2(0.5)` sample point gives 1264 edges / 0.55% (7 pixels) - noise
+    // floor, not signal. The threshold sits with wide margin above the red
+    // state and below the green one.
+    EXPECT_GT(partial_fraction, 0.15)
+      << "Almost none of this frame's silhouette edges have a partial (blended) pixel between the "
+         "foreground and background luminance - the primary ray is landing on the exact pixel centre "
+         "every sample instead of being jittered across the pixel's area.";
+}
+
 // The GUI directional light must exist in path tracing. Before 2026-07-22 the
 // PT kernel's only light was an accidental radiance-1 white furnace (the env
 // term on miss was commented out), so this test's two captures were identical

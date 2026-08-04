@@ -9263,53 +9263,6 @@ deletes a file, so `-FreshContainer` is not required.
 
 ### Shaders
 
-- [ ] **(S) Jitter the path tracer's primary ray inside the pixel** — every sample of every frame traces through the exact pixel centre, so accumulation converges to a point-sampled, permanently aliased image.
-
-  **Files to read:**
-  - `Resources/ShadersSlang/path_tracing/path_tracing.slang:36-43` (`stepAndOutputRNGFloat`), `:53-54` (the per-pixel seed with the frame fold), `:67-75` (the sample loop and the primary-ray construction)
-  - `docs/path-tracing.md` — "The estimator" § "Primary ray", and the "Open work" list at the end
-  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` — `PathTracingAccumulatesAndConverges` and `PathTracingPassesTheWhiteFurnaceTest`
-
-  **Steps:**
-  1. Replace `float2 pixelCenter = float2(tid.xy) + float2(0.5);` with a
-     jittered sample position: `float2(tid.xy) +
-     float2(stepAndOutputRNGFloat(rngState), stepAndOutputRNGFloat(rngState))`.
-     It must be inside the `sampleIdx` loop (it already is) so each sample of
-     a frame gets its own offset, and it must draw from the existing
-     `rngState` so the frame-index fold at `:54` also decorrelates the jitter
-     across frames.
-  2. Add a comment stating the estimator change in one sentence: uniform
-     sampling of the pixel's area (a box filter), which is what makes
-     `samples_per_pixel` and the temporal mean anti-alias rather than just
-     denoise.
-  3. Update `docs/path-tracing.md`: the "Primary ray" bullet must say the ray
-     is jittered uniformly within the pixel, and this must not be added to the
-     "Open work" list (it is now shipped, and that list currently holds only
-     RNG decorrelation).
-
-  **Test:** Add `GoldenRender.PathTracingAntiAliasesGeometricEdges` to
-  `goldenRenderSuite.cpp`: render the path-traced shadow rig for enough frames
-  to accumulate, and assert the histogram over a GUI-free crop containing a
-  silhouette edge has pixels *between* the foreground and background
-  luminances — the same "partial pixels exist" oracle
-  `BACKLOG.md`'s Rust MSAA note describes. Follow the suite's cautions: measure
-  in the panel-free right edge, and count pixels rather than averaging. Confirm
-  the test is red with `+ float2(0.5)` restored before trusting it.
-  `PathTracingPassesTheWhiteFurnaceTest` must stay green — jitter changes which
-  rays are traced, not whether the estimator is unbiased.
-
-  **Build:** Step 1-2 are shader-only:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`,
-  then re-run the existing `commitTestSuite.exe`. The new golden needs a
-  `clangcl-debug` container build.
-
-  **Context:** Do this **after** the emission task above — both edit
-  `path_tracing.slang`, and that one rewrites the block this one sits next to.
-  The RNG is drawn twice per sample here and twice more per bounce; that is
-  fine and deliberate, but do not reorder the existing draws, because
-  `PathTracingAccumulatesAndConverges` measures a specific early/late
-  changed-pixel fraction and a reseeded stream will move those numbers.
-
 ### Test suites
 
 - [ ] **(M) Golden: an emissive material must brighten the frame, in forward and in deferred alike** — the only guard on emissive today is a `grep` for four substrings, which passes unchanged through a shader that adds zero.

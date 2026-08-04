@@ -81,7 +81,7 @@ feature, an image transition, or the loader upload path:
    `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite` pins against the
    suite source.
 
-<!-- golden-counts: defined=31 runnable=30 integration=2 total=32 excluded=3 -->
+<!-- golden-counts: defined=32 runnable=31 integration=2 total=33 excluded=3 -->
 
 This turns changes the container can only compile-check (device creation,
 image barriers, the deferred/forward command streams, path/ray tracing) into

@@ -29,7 +29,10 @@ estimators is biased):
 
 - **Primary ray** from the precomputed `inv_view`/`inv_projection` in
   `GlobalUBO` (the kernel used to invert both matrices *per sample* - 24
-  4x4 inversions per pixel per frame).
+  4x4 inversions per pixel per frame). Jittered uniformly within the
+  pixel's unit square (a box filter) rather than always through the exact
+  centre, so `samples_per_pixel` and the temporal running mean anti-alias
+  geometric edges rather than just denoise a point-sampled image.
 - **Hit**: throughput *= albedo (texture, or `material.diffuse` when
   `textureID` is -1). Normals are transformed as directions
   (inverse-transpose via row-multiplying `worldToObject`); the hit normal is
@@ -88,15 +91,20 @@ naive golden pass with per-frame sampling disabled.
 
 ## Verification
 
-<!-- pt-goldens: PathTracingAccumulatesAndConverges, PathTracingRespondsToTheDirectionalLight, PathTracingHonorsTheQualityControls, RaytracedWorldFollowsTheModelTransform, PathTracingPassesTheWhiteFurnaceTest, RaytracedLargeMeshDoesNotLoseTheDevice -->
+<!-- pt-goldens: PathTracingAccumulatesAndConverges, PathTracingAntiAliasesGeometricEdges, PathTracingRespondsToTheDirectionalLight, PathTracingHonorsTheQualityControls, RaytracedWorldFollowsTheModelTransform, PathTracingPassesTheWhiteFurnaceTest, RaytracedLargeMeshDoesNotLoseTheDevice -->
 
-Six PT-facing goldens in `Test/commit/VulkanEngine/goldenRenderSuite.cpp`,
+Seven PT-facing goldens in `Test/commit/VulkanEngine/goldenRenderSuite.cpp`,
 each red/green-proven against the pre-fix kernel (numbers are post-HDR;
 lifting the UNORM ceiling widened several of them dramatically):
 
 - `PathTracingAccumulatesAndConverges` - consecutive-frame changed-pixel
   fraction in a GUI-free crop: 7.6e-3 early, 3.1e-5 late; the
   frame-invariant seed measures exactly 0 early and fails.
+- `PathTracingAntiAliasesGeometricEdges` - triples of pixels straddling a
+  shadow-rig silhouette edge in a GUI-free crop must sometimes have a
+  middle pixel strictly between the two flat luminances either side (a
+  jittered, accumulated primary ray blends fg/bg at the boundary); a
+  pixel-centre-only kernel gives hard transitions with no partial pixel.
 - `PathTracingRespondsToTheDirectionalLight` - radiance 10 vs 0 on the
   shadow rig: swung fraction 0.751 (0.027 pre-HDR - the ceiling hid three
   quarters of the response) vs exactly 0 for the pre-NEE kernel.
