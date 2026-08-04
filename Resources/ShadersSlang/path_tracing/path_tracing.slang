@@ -195,19 +195,19 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                              + v1.texture_coords * barycentrics.y
                              + v2.texture_coords * barycentrics.z;
 
+            ObjMaterial material = materials->m[materialIDs->i[primitiveID]];
+
             float3 hitColor;
             if (furnace)
             {
+                // Furnace mode must keep forcing albedo to exactly 1, or
+                // PathTracingPassesTheWhiteFurnaceTest's "converges to
+                // exactly the environment radiance" invariant breaks - so
+                // the vertex-colour multiply below is skipped here.
                 hitColor = float3(1.0);
             }
             else
             {
-                ObjMaterial material = materials->m[materialIDs->i[primitiveID]];
-                // material.emission is deliberately not yet integrated here:
-                // a path tracer must add `radiance += throughput * emission`
-                // at the hit, not fold it into hitColor, or the converged
-                // image the accumulation buffer averages toward silently
-                // changes (see BACKLOG.md's emissive_factor task).
                 if (material.textureID >= 0)
                 {
                     int textureId = resolve_texture_slot(obj, material);
@@ -220,6 +220,18 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 {
                     hitColor = material.diffuse;
                 }
+
+                float4 vertexColor = v0.color * barycentrics.x + v1.color * barycentrics.y + v2.color * barycentrics.z;
+                hitColor *= vertexColor.rgb;
+            }
+
+            // Emissive is surface-emitted radiance, added at the hit before
+            // throughput absorbs this bounce's albedo - furnace mode stays
+            // gated out, or a furnace emitter would break the "converges to
+            // exactly the environment radiance" invariant.
+            if (!furnace)
+            {
+                radiance += throughput * material.emission;
             }
 
             // Apply color absorption.

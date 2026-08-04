@@ -63,12 +63,12 @@ void rchit_main(
                      + v1.texture_coords * barycentrics.y
                      + v2.texture_coords * barycentrics.z;
 
+    // Vertex colour at the hit position, same barycentric interpolation as
+    // position/normal/texCoords above.
+    float4 vertexColor = v0.color * barycentrics.x + v1.color * barycentrics.y + v2.color * barycentrics.z;
+
     // Material: per-primitive material ID.
     ObjMaterial material = materials->m[materialIDs->i[PrimitiveIndex()]];
-    // material.emission is deliberately not yet integrated here: this is a
-    // primary-ray shading term, not `radiance += throughput * emission` at
-    // the hit, so wiring it in the rasterizer's style would silently change
-    // the accumulated image instead (see BACKLOG.md's emissive_factor task).
     // Note: PrimitiveIndex() is valid here (closesthit stage).
     float3 ambient = float3(0.0);
     if (material.textureID >= 0)
@@ -83,6 +83,7 @@ void rchit_main(
     {
         ambient += material.diffuse;
     }
+    ambient *= vertexColor.rgb;
 
     // Light direction (towards the light) and view direction (towards camera).
     float3 L = normalize(-sceneUBO.dirLight.direction.xyz);
@@ -121,4 +122,8 @@ void rchit_main(
             N, V, L, ambient, material.metallic, roughness, f0,
             lightColor * lightIntensity);
     }
+
+    // Emissive is surface-emitted radiance, not reflected light - it is
+    // unshadowed and unattenuated, so it is added after shadowing, not before.
+    payload.hit_value += material.emission;
 }

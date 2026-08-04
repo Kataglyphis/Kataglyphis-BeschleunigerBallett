@@ -2614,9 +2614,10 @@ TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
 // but until this gate nothing in the shading paths actually read it - every
 // glTF/OBJ emitter rendered black in both the forward and deferred paths
 // while the Rust twin lit them. This scans the shader sources as text (the
-// source-text gate pattern used throughout this file) and fails if either
-// raster path stops consuming material.emission.
-TEST(BuildIntegrity, EmissiveIsConsumedByTheRasterShadingPaths)
+// source-text gate pattern used throughout this file) and fails if any of
+// the four shading paths (rasterizer, deferred, ray tracing, path tracing)
+// stops consuming material.emission.
+TEST(BuildIntegrity, EmissiveIsConsumedByEveryShadingPath)
 {
     const fs::path repo_root = repoRoot();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
@@ -2648,6 +2649,64 @@ TEST(BuildIntegrity, EmissiveIsConsumedByTheRasterShadingPaths)
       << "deferred.slang's geometry pass no longer packs material.emission into outMaterial.gba. " << kFailureMessage;
     EXPECT_NE(deferred_text.find("color += material.gba"), std::string::npos)
       << "deferred.slang's lighting pass no longer adds the G-buffer's packed emissive term. " << kFailureMessage;
+
+    const fs::path rchit_path = repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang";
+    const auto rchit_text_opt = readFileText(rchit_path);
+    ASSERT_TRUE(rchit_text_opt.has_value()) << "could not open " << rchit_path.string();
+    const std::string &rchit_text = *rchit_text_opt;
+    EXPECT_NE(rchit_text.find(".emission"), std::string::npos)
+      << "raytrace.rchit.slang no longer uses material.emission. " << kFailureMessage;
+
+    const fs::path path_tracing_path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
+    const auto path_tracing_text_opt = readFileText(path_tracing_path);
+    ASSERT_TRUE(path_tracing_text_opt.has_value()) << "could not open " << path_tracing_path.string();
+    const std::string &path_tracing_text = *path_tracing_text_opt;
+    EXPECT_NE(path_tracing_text.find("radiance += throughput * material.emission"), std::string::npos)
+      << "path_tracing.slang no longer adds throughput * material.emission at the hit. " << kFailureMessage;
+}
+
+// Vertex.color (glTF COLOR_0) is fetched by every loader and uploaded to the
+// GPU alongside position/normal, but the rasterizer and deferred paths are
+// the only ones that ever multiplied it into shading - the ray tracing and
+// path tracing paths silently ignored per-vertex colour. This scans the
+// shader sources as text and fails if any of the four shading paths stops
+// referencing Vertex.color.
+TEST(BuildIntegrity, VertexColourIsConsumedByEveryShadingPath)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const char *kFailureMessage =
+      "Vertex::color (glTF COLOR_0) is uploaded per vertex; a shading path that ignores it silently drops "
+      "vertex-painted colour";
+
+    const fs::path rasterizer_path = repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang";
+    const auto rasterizer_text_opt = readFileText(rasterizer_path);
+    ASSERT_TRUE(rasterizer_text_opt.has_value()) << "could not open " << rasterizer_path.string();
+    const std::string &rasterizer_text = *rasterizer_text_opt;
+    EXPECT_NE(rasterizer_text.find("fragmentColor"), std::string::npos)
+      << "rasterizer.slang no longer uses In.fragmentColor. " << kFailureMessage;
+
+    const fs::path deferred_path = repo_root / "Resources/ShadersSlang/deferred/deferred.slang";
+    const auto deferred_text_opt = readFileText(deferred_path);
+    ASSERT_TRUE(deferred_text_opt.has_value()) << "could not open " << deferred_path.string();
+    const std::string &deferred_text = *deferred_text_opt;
+    EXPECT_NE(deferred_text.find("fragmentColor"), std::string::npos)
+      << "deferred.slang no longer uses In.fragmentColor. " << kFailureMessage;
+
+    const fs::path rchit_path = repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang";
+    const auto rchit_text_opt = readFileText(rchit_path);
+    ASSERT_TRUE(rchit_text_opt.has_value()) << "could not open " << rchit_path.string();
+    const std::string &rchit_text = *rchit_text_opt;
+    EXPECT_NE(rchit_text.find(".color"), std::string::npos)
+      << "raytrace.rchit.slang no longer uses Vertex.color. " << kFailureMessage;
+
+    const fs::path path_tracing_path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
+    const auto path_tracing_text_opt = readFileText(path_tracing_path);
+    ASSERT_TRUE(path_tracing_text_opt.has_value()) << "could not open " << path_tracing_path.string();
+    const std::string &path_tracing_text = *path_tracing_text_opt;
+    EXPECT_NE(path_tracing_text.find(".color"), std::string::npos)
+      << "path_tracing.slang no longer uses Vertex.color. " << kFailureMessage;
 }
 
 // scene_types.slang's MAX_CASCADES (:68) is the gated source of truth for the
