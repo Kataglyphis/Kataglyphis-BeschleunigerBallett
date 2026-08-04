@@ -74,6 +74,12 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID)
     // and lighting_fs_main only ever read normal.xyz) - the free float
     // channel for metallic, so it does not need its own G-buffer attachment.
     g.outNormal = float4(normalize(In.shadingNormal), material.metallic);
+    // GBUFFER_ALBEDO_FORMAT is eR8G8B8A8Srgb: base colour is linear by
+    // construction (glTF caps baseColorFactor/COLOR_0 to [0,1], texColor is
+    // decoded from an sRGB source texture), so the hardware re-encodes on
+    // write and decodes on SubpassLoad below - the stored value is
+    // unchanged in linear terms, only its 256 steps are redistributed
+    // toward the range the eye is most sensitive to.
     g.outAlbedo = texColor;
     // r = roughness, gba = emissive. GBUFFER_MATERIAL_FORMAT is
     // eR16G16B16A16Sfloat, so emissive above 1.0 from

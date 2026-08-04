@@ -72,7 +72,7 @@ class DeferredRasterizer
     // order documented at createRenderPass()'s :190-195.
     static constexpr vk::Format FINAL_FORMAT = vk::Format::eR16G16B16A16Sfloat;
     static constexpr vk::Format GBUFFER_NORMAL_FORMAT = vk::Format::eR16G16B16A16Sfloat;
-    static constexpr vk::Format GBUFFER_ALBEDO_FORMAT = vk::Format::eR8G8B8A8Unorm;
+    static constexpr vk::Format GBUFFER_ALBEDO_FORMAT = vk::Format::eR8G8B8A8Srgb;
     static constexpr vk::Format GBUFFER_MATERIAL_FORMAT = vk::Format::eR16G16B16A16Sfloat;
     // FINAL_FORMAT backs the same forward-offscreen contract as Rasterizer's
     // offscreen target, so the two must never drift apart silently.

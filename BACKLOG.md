@@ -9583,44 +9583,5 @@ other.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Store the deferred G-buffer albedo in `eR8G8B8A8Srgb` instead of `eR8G8B8A8Unorm`** — it holds *linear* base colour, so 256 uniform steps put the precision where the eye has least; its two sibling attachments were widened three commits ago for exactly this reason and this one was not revisited.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.ixx:73-79` — the four format constants and the `static_assert` tying `FINAL_FORMAT` to `Rasterizer::OFFSCREEN_FORMAT`
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:86-93` (attachment creation) and `:176-195` (the render-pass attachment descriptions)
-  - `Resources/ShadersSlang/deferred/deferred.slang:55-83` (the geometry write) and `:126-138` (the lighting read)
-  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:117-123` — why the source texture is already `eR8G8B8A8Srgb` and therefore decoded to linear at sample time
-  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp:1178-1250` — `EmissiveStrengthSurvivesTheDeferredGBuffer`, the measured red/green pair the sibling widening shipped with
-
-  **Steps:**
-  1. Change `GBUFFER_ALBEDO_FORMAT` to `vk::Format::eR8G8B8A8Srgb` in `DeferredRasterizer.ixx:75`.
-  2. Verify nothing else needs to move: `createAttachment` (`:92`) and `buildAttachmentDescription` (`:189`) both take the constant, and `getGBufferAlbedo` (`:37`) feeds `VulkanRenderer.cpp:1656`'s input-attachment write — all three are format-agnostic. Confirm by reading, not by rebuilding blind.
-  3. Update the comment block at `deferred.slang:72-82` to record the albedo attachment alongside the material one: the format is sRGB so the hardware encodes on write and decodes on `SubpassLoad`, the stored value is unchanged in linear terms, and the gain is precision distribution rather than range.
-  4. Add a one-line note to `docs/cpp-renderer-improvements.md` in the same change, matching how the `GBUFFER_MATERIAL_FORMAT` widening was logged.
-
-  **Test:** No new CPU test — the format is a compile-time constant with no
-  pure-function surface to pin. **If you have an adapter**, run
-  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GoldenRender.DeferredMatchesForwardRoughly:GoldenRender.EmissiveStrengthSurvivesTheDeferredGBuffer`
-  and record the measured mean-abs-diff in the commit message: the first
-  currently measures 0.41 on the RX 9070 XT and this change should move it
-  *down*, toward the forward path it is compared against. Do not tighten
-  either test's threshold on a single measurement.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
-  (`-FreshContainer`: `DeferredRasterizer.ixx` is a module interface.)
-
-  **Context:** This is deliberately *not* a widening to
-  `eR16G16B16A16Sfloat`. Albedo is bounded in `[0,1]` by construction — the
-  glTF spec caps `baseColorFactor`, the texture is `UNORM`-sourced and
-  `COLOR_0` is `[0,1]` — so there is no range to recover, only distribution,
-  and sRGB buys that at identical bandwidth where a float16 attachment would
-  double the G-buffer's albedo traffic for nothing. Alpha is not sRGB-encoded
-  by the format (Vulkan spec) and the lighting pass reads only `.rgb`
-  (`deferred.slang:132-138`), so the alpha channel is unaffected either way.
-  If the goldens move the *wrong* way, the likely cause is a driver that does
-  not apply the decode on an input-attachment read — report the measurement
-  rather than papering over it with a threshold.
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
