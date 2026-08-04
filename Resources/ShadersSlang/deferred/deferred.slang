@@ -20,7 +20,7 @@ struct GVsOut
     float4 svPosition : SV_Position;
     float2 texCoords : TEXCOORD0;
     float3 shadingNormal : TEXCOORD1;
-    float3 fragmentColor : TEXCOORD2;
+    float4 fragmentColor : TEXCOORD2;
     float3 worldPosition : TEXCOORD3;
 };
 
@@ -35,7 +35,7 @@ struct GBufferOut
 GVsOut geometry_vs_main(
     float3 positions : POSITION,
     float3 normal : NORMAL,
-    float3 color : COLOR,
+    float4 color : COLOR,
     float2 tex_coords : TEXCOORD0)
 {
     GVsOut o;
@@ -58,16 +58,16 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID)
     {
         int textureId = resolve_texture_slot(obj, material);
         texColor = textures[textureId].Sample(textureSamplers[textureId], transform_uv(In.texCoords, material));
-        if (alpha_masked_out(material, texColor.a)) discard;
+        if (alpha_masked_out(material, texColor.a * In.fragmentColor.a)) discard;
         texColor = float4(base_color(material, texColor.rgb), texColor.a);
     }
     else
     {
-        if (alpha_masked_out(material, 1.0)) discard;
+        if (alpha_masked_out(material, In.fragmentColor.a)) discard;
         texColor = float4(material.diffuse, 1.0);
     }
 
-    texColor.rgb *= In.fragmentColor;
+    texColor.rgb *= In.fragmentColor.rgb;
 
     GBufferOut g;
     g.outNormal = float4(normalize(In.shadingNormal), 1.0);

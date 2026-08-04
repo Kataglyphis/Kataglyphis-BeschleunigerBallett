@@ -8491,4 +8491,404 @@ helper with a `const std::shared_ptr<VulkanDevice> &` parameter from the
 start, copying `createDepthAttachment`'s signature.) Task 3 is Rust and
 disjoint from both.
 
+## 2026-08-04 batch VIII — planner (the C++ vertex has no alpha channel, so `COLOR_0` is dropped and the MASK test the Rust twin performs with it cannot be performed at all; two of six render passes whose external subpass dependency is read-only on the source side, both of them sharing one depth image with a pass that writes it; a shadow-map re-init that leaves every swapchain image but one holding unseeded light matrices, next to a startup path that reads the cascade count from `MAX_CASCADES` instead of the GUI default one line below it; ~62 lines of command-line parser in `Main.cpp` that nothing calls; 26 `wgpu::BufferDescriptor` literals in the Rust crate that collapse to five shapes)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Every `file:line` below was read out of the
+tree this pass.
+
+**Host GPU golden verification is still blocked over RDP** (see the `- [b]`
+entry near the end of this file), so nothing here is accepted on pixels.
+Tasks 1 and 2 change rendering; their acceptance is the CPU suites plus a new
+gate each, and both entries name the goldens that should re-run once RDP
+clears rather than pretending CPU coverage is enough. Tasks 3 and 4 are
+plumbing/dead-code with source gates. Task 5 is Rust, where the host MSVC
+linker is broken (`cargo test` cannot link — see memory), so its acceptance is
+`cargo clippy --all-targets` compiling the new test plus the always-on Linux
+lane running it on push. **Do not use `cargo fmt --check` as a gate on the
+Rust crate**: the pinned submodule is known not fmt-clean (~30 files).
+
+**First, the C++ engine cannot perform the glTF alpha test the spec defines,
+because its vertex has nowhere to put `COLOR_0.a`.** glTF's alpha value is
+`baseColorFactor.a * baseColorTexture.a * COLOR_0.a`. The first two terms
+shipped in `bdbec99a`/`1a839cad`; the third is structurally absent.
+`Src/shared/scene/Vertex.hpp:13` declares `glm::vec3 color`,
+`common/scene_types.slang:28` mirrors it as `float3 color`,
+`scene/Vertex.cpp:62` describes it as `eR32G32B32Sfloat`, and
+`scene/GltfLoader.cpp:293` reads the attribute with `readAttribute<3>` — so
+the alpha is discarded at parse time and there is no channel to carry it in.
+The Rust renderer does all of this: `asset/gltf_loader.rs:492-495` widens
+`COLOR_0` to `[f32; 4]` ("vec3 or vec4 in the file, always vec4 here"), and
+`forward/forward.slang:194` (`o.alpha = In.color.a`) feeds `:204`
+(`prim.base_color.a * baseColorTex...a * In.alpha`). The two renderers
+therefore disagree on which texels a MASK material discards whenever a file
+ships a vertex-alpha channel — and `d6709c55` fixed exactly this on the Rust
+shadow side six commits ago, so the divergence is fresh, not historical.
+
+**Second, two render passes declare an external dependency that cannot order
+a depth write, and both share their depth image with a pass that writes it.**
+Six render passes exist. Four get the source scope right:
+`Rasterizer.cpp:177-193` (with a comment naming the
+`SYNC-HAZARD-WRITE-AFTER-WRITE` it fixed and why
+`eEarlyFragmentTests|eLateFragmentTests` + `eDepthStencilAttachmentWrite` are
+both required), `SkyBox.cpp:253-262` ("Cover the depth attachment's
+transition + load as well (sync hazard...)"), and both of
+`CascadedShadowMap.cpp:189-199`. The two that do not:
+
+| pass | external dependency | source scope |
+| --- | --- | --- |
+| `DeferredRasterizer.cpp:223-229` | `VK_SUBPASS_EXTERNAL -> 0` | `srcStageMask = eBottomOfPipe`, `srcAccessMask = eMemoryRead` |
+| `PostStage.cpp:210-217` | `VK_SUBPASS_EXTERNAL -> 0` | `srcStageMask = eColorAttachmentOutput`, `srcAccessMask = eColorAttachmentWrite` |
+
+`eBottomOfPipe` is not a meaningful *source* stage and `eMemoryRead` is not a
+write, so `DeferredRasterizer`'s dependency has an empty write source scope —
+yet its `depthBufferImage` is a **single** image (`DeferredRasterizer.cpp:98`,
+one `Texture`, not one per swapchain image) whose `loadOp` is `eClear`
+(`:191`, via `buildAttachmentDescription`'s default), so every frame's clear
+races the previous frame's `eLateFragmentTests` store. `PostStage`'s depth is
+likewise a single image (`PostStage.cpp:143`) cleared at `:193` — and it is
+the *same* image the skybox pass renders into: `VulkanRenderer.cpp:153` and
+`:741` hand `postStage.getDepthBufferImageView()` to
+`skyBox.createFramebuffers`, and `record_commands` runs sky (`:1049-1055`)
+immediately before post (`:1062-1068`) in one command buffer. Two passes
+clearing and writing one depth image back to back, with no dependency that
+covers depth on either side. (Worth noting while there: because post clears
+the depth the skybox pass just wrote, the skybox's depth writes are discarded
+outright — flag it, do not "fix" it in this task.)
+
+**Third, a shadow-map re-init leaves N-1 swapchain images holding unseeded
+light matrices, and the startup path reads its cascade count from the wrong
+place.** `VulkanRenderer`'s constructor ends with a deliberate loop
+(`VulkanRenderer.cpp:141-148`) whose comment spells out the hazard: "without
+this only the image the first drawFrame() happens to acquire gets real
+matrices, and the rest keep ... default-constructed matrices". The two paths
+that tear the buffers down and rebuild them —
+`reinitShadowMapForCurrentSettings()` (`:315-342`, reached from
+`handleShadowResolutionChange` at `:344-357` and from
+`reprovisionPerImageResources()` at `:688`) — do **not** re-run it.
+`CascadedShadowMap::cleanUp` clears `lightMatricesBuffers`
+(`CascadedShadowMap.cpp:263-264`) and `createDescriptorSetAndPipeline`
+reallocates them from a freshly `resize`d `cascadeData` (`:52`), so after any
+shadow-resolution or cascade-count change every swapchain image except the
+next acquired one renders its shadow pass from default matrices until
+`drawFrame` cycles back to it. Separately, the same function is where the
+cascade count is *supposed* to come from the GUI: `:331-332` reads
+`guiSceneSharedVars.num_shadow_cascades`, while the constructor at `:112-113`
+passes `MAX_CASCADES` as the requested count — three lines above the comment
+at `:118-121` stating "The GUI is the single source of truth for the startup
+shadow-map resolution, so it can no longer disagree with what the combo
+shows". The resolution half was fixed; the cascade half was not.
+`GUISceneSharedVars.ixx:43` defaults `num_shadow_cascades = 3` and
+`host_device_shared_vars.hpp:9` sets `MAX_CASCADES = 3`, so the two agree
+**today** — this is latent drift, not a live defect, and it is cheap to close
+while fixing the seeding because both live in the same function.
+
+**Fourth, `Main.cpp` carries a complete command-line parser that nothing
+calls.** `CommandLineParseResultKind` (`:35-39`), `CommandLineParseResult`
+(`:41-44`), `print_usage` (`:96-99`) and `parse_command_line` (`:101-146`)
+have zero call sites anywhere in the repo — `main` uses
+`absl::ParseCommandLine` (`:154`) and `absl::GetFlag(FLAGS_gpu)` (`:156`)
+instead. `normalize_gpu_mode` (`:46-54`) is **live** (called at `:158`) and
+must stay. That is ~62 lines of anonymous-namespace code describing a
+`--help`/`--gpu` contract abseil now owns, sitting in the file a reader opens
+first to learn how the engine starts.
+
+**Fifth, the Rust crate writes `wgpu::BufferDescriptor` 26 times for five
+shapes.** Every one sets `mapped_at_creation: false` and differs only in
+label, size and usage. Twenty-four of them fall into five usage sets:
+
+| shape | usage | sites |
+| --- | --- | --- |
+| uniform | `UNIFORM \| COPY_DST` | `render/forward.rs:433`, `:626`, `:1192`; `render/tonemap.rs:76`; `render/ssao.rs:71`; `render/histogram.rs:128`; `render/occlusion.rs:195` |
+| storage (host-written) | `STORAGE \| COPY_DST` | `render/forward.rs:459`, `:486`, `:492`, `:1660`, `:1671`; `render/gpu_occlusion.rs:124` |
+| storage (GPU-written) | `STORAGE \| COPY_SRC` | `render/gpu_occlusion.rs:131`; `render/histogram.rs:105` |
+| readback | `COPY_DST \| MAP_READ` | `render/forward.rs:2206`; `render/ibl.rs:810`; `render/gpu_timing.rs:361`; `render/gpu_occlusion.rs:367`; `render/histogram.rs:112`, `:135`; `render/occlusion.rs:498` |
+| query resolve | `QUERY_RESOLVE \| COPY_SRC` | `render/gpu_timing.rs:355`; `render/occlusion.rs:492` |
+
+Two sites are genuinely their own shape and must stay literal:
+`render/histogram.rs:119` (`STORAGE | COPY_SRC | COPY_DST` — the exposure
+state buffer is read back *and* seeded) and `render/occlusion.rs:472`
+(`VERTEX | COPY_DST`). The crate already has the right home pattern:
+`render/bind_layout.rs` and `render/pipeline_desc.rs`, with
+`tests/texture_desc_single_definition.rs` (shipped `dc7b4e65`) as the gate
+shape to copy.
+
+Ordering: tasks 3 and 4 touch `VulkanRenderer.cpp`/`Main.cpp` and are
+disjoint from everything else. Task 1 and task 2 both touch
+`buildIntegritySuite.cpp` and both regenerate SPIR-V — if they land in one
+session, do **task 2 first**, because task 1's shader edits then recompile on
+top of an already-fixed render pass rather than the other way round. Task 5 is
+Rust and disjoint from all four.
+
+- [ ] **(M) Give the deferred and post render passes the depth source scope
+  the other four carry, behind one shared helper** — a single depth image
+  written by one pass and cleared by the next, with no dependency on either
+  side that covers depth.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:175-194` — the correct
+    version, with the comment explaining why each stage/access bit is there
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:220-229` — the
+    `eBottomOfPipe`/`eMemoryRead` external dependency, and `:98-101` for the
+    single depth image it guards
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:208-217` — the
+    colour-only external dependency, and `:140-149` for its single depth image
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:249-272` — the pass
+    that shares `PostStage`'s depth view and already covers depth
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:150-154`, `:741-742`,
+    `:1049-1068` — where the shared depth view is handed to SkyBox and where
+    sky and post are recorded back to back
+  - `Src/GraphicsEngineVulkan/common/RenderPassHelper.hpp` — the five existing
+    helpers and the "a pass that needs X must build it inline and say why" rule
+  - `Test/commit/VulkanEngine/renderPassHelperSuite.cpp` — the CPU test shape
+
+  **Steps:**
+  1. Add a sixth helper to `common/RenderPassHelper.hpp`:
+     `constexpr vk::SubpassDependency buildExternalColorDepthDependency()`
+     returning the `VK_SUBPASS_EXTERNAL -> 0` dependency
+     `Rasterizer.cpp:177-193` builds — `srcStageMask =
+     eColorAttachmentOutput | eEarlyFragmentTests | eLateFragmentTests`,
+     `srcAccessMask = eColorAttachmentWrite | eDepthStencilAttachmentWrite`,
+     `dstStageMask = eColorAttachmentOutput | eEarlyFragmentTests`,
+     `dstAccessMask = eColorAttachmentWrite | eDepthStencilAttachmentWrite`.
+     Move `Rasterizer.cpp`'s explanatory comment onto the helper — it is the
+     rationale for the whole family, not for one caller — and note there that
+     `dependencyFlags` is deliberately empty (a cross-frame dependency is not
+     by-region).
+  2. Route `Rasterizer::createRenderPass` through it, adding back only what it
+     genuinely differs on (it currently omits `eColorAttachmentWrite` from
+     `srcAccessMask`; adding it is a widening, not a behaviour change — say so
+     in the commit).
+  3. Replace `DeferredRasterizer.cpp:223-229`'s `dependencies[0]` with the
+     helper. Keep `dependencies[1]` (geometry -> lighting) and
+     `dependencies[2]` (lighting -> external) exactly as they are — those are
+     in-pass and correct.
+  4. Replace `PostStage.cpp:210-217`'s `subpass_dependencies[0]` with the
+     helper. `PostStage` clears the depth image the skybox pass just wrote, so
+     the depth half of the source scope is what actually matters here.
+  5. Leave `SkyBox` and `CascadedShadowMap` alone: SkyBox's dependency has a
+     second, different member and CascadedShadowMap's source is
+     `eFragmentShader`/`eShaderRead` (a sampled shadow map, a genuinely
+     different edge). Say so in the helper's comment so a later sweep does not
+     "finish the job" and break them.
+  6. While in `PostStage`, add a one-line comment recording that its `eClear`
+     of the shared depth image discards the skybox pass's depth writes. Do not
+     change that behaviour in this task.
+
+  **Test:** Add `RenderPassHelper.ExternalDependencyCoversDepthWrites` to
+  `Test/commit/VulkanEngine/renderPassHelperSuite.cpp`, asserting the helper's
+  `srcStageMask` contains both `eEarlyFragmentTests` and `eLateFragmentTests`
+  and its `srcAccessMask` contains `eDepthStencilAttachmentWrite` (the two bits
+  whose absence is the hazard). Then add
+  `BuildIntegrity.NoRasterStageHandRollsItsExternalSubpassDependency` to
+  `buildIntegritySuite.cpp`: grep `Src/GraphicsEngineVulkan/` for
+  `srcSubpass = VK_SUBPASS_EXTERNAL` and assert the only files that still
+  assign `srcStageMask` next to one are `SkyBox.cpp` and
+  `CascadedShadowMap.cpp` — same "one rule, one definition" shape as
+  `NoStageHandRollsTheDepthAttachmentChain`
+  (`buildIntegritySuite.cpp:6293`). CPU only.
+
+  **Build:** `clangcl-debug`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  Then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root.
+
+  **Context:** Synchronization validation is the only instrument that sees this
+  class of defect — it found 10 real WRITE-AFTER-WRITE hazards in July 2026 and
+  `Rasterizer.cpp:178-187` is the comment left behind by one of them. Both
+  `Run-SyncValidation.ps1` and the goldens need a host GPU, which is blocked
+  over RDP, so this lands on the spec argument plus the CPU gate; when the
+  blocker clears, `pwsh -File .\Scripts\Windows\Run-SyncValidation.ps1` with
+  the deferred mode selected is the confirmation. Do not "fix" the hazard by
+  giving each stage its own per-swapchain-image depth buffer — that trades a
+  missing dependency for three times the depth bandwidth.
+
+- [ ] **(M) Route shadow-map provisioning through one path: re-seed every
+  swapchain image's light matrices after a re-init, and take the startup
+  cascade count from the GUI default** — after a resolution or cascade-count
+  change, every image but the next acquired one renders shadows from
+  default-constructed matrices.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:112-123` (startup
+    init), `:141-148` (the seeding loop and the comment stating why it exists),
+    `:315-342` (`reinitShadowMapForCurrentSettings`), `:344-357`
+    (`handleShadowResolutionChange`), `:674-694`
+    (`reprovisionPerImageResources`), `:761-776` (`update_uniform_buffers`)
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:40-52`
+    (`init`), `:135-170` (`uploadLightMatrices` and its "seeded again once the
+    pipeline exists" comment), `:255-267` (`cleanUp` clearing the buffers),
+    `:269-290` (`createDescriptorSetAndPipeline` reallocating them)
+  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx:41-43` — the GUI
+    defaults, including `num_shadow_cascades = 3`
+  - `Src/GraphicsEngineVulkan/app/App.cpp:60-69` — the per-frame order
+    (`updateStateDueToUserInput` -> `updateUniforms` -> `drawFrame`), which is
+    why the re-seed cannot happen inside the re-init itself
+  - `Src/GraphicsEngineVulkan/gui/GUI.cpp:184-193` — both sliders that raise
+    `shadow_resolution_changed`
+
+  **Steps:**
+  1. Add a private `bool lightMatricesNeedFullReseed{ false };` to
+     `VulkanRenderer` and set it at the end of
+     `reinitShadowMapForCurrentSettings()`. It cannot re-seed inline: the
+     re-init runs in `updateStateDueToUserInput`, and `cascadeData` is not
+     recomputed until `updateUniforms` -> `dirShadowMap.updateCascades` later
+     in the same frame, so seeding there would upload the *old* (or
+     default-constructed) matrices.
+  2. In `update_uniform_buffers(image_index)` (`:761`), when the flag is set,
+     upload to **every** swapchain image instead of just `image_index`, then
+     clear the flag. This is the first point in the frame where `cascadeData`
+     is guaranteed fresh.
+  3. Make the constructor use the same mechanism: replace the hard-coded
+     `clampCascadeCount(MAX_CASCADES, MAX_CASCADES, ...)` +
+     `shadowResolutionForIndex(kGuiDefaults.shadow_map_res_index)` +
+     `dirShadowMap.init(...)` + `createGraphicsPipeline()` block at `:112-123`
+     with a call to `reinitShadowMapForCurrentSettings()`. It already reads
+     both values off `gui->getGuiSceneSharedVars()` and already logs the
+     device-limit clamp, so the startup cascade count stops being
+     `MAX_CASCADES` and starts being the GUI default. `MAX_CASCADES` and the
+     GUI default are both 3 today, so this is a de-duplication with no
+     behaviour change — say that in the commit message rather than claiming a
+     fix. Check the ordering holds: `initDescriptorResources()` (`:103`) must
+     still run before the call, since `init` caches
+     `sharedRenderDescriptors.getLayout()`.
+  4. Delete the now-redundant explicit loop at `:141-148` and move its comment
+     (which is the *reason* for the whole mechanism) onto the new flag's
+     declaration.
+  5. Confirm `reprovisionPerImageResources()` (`:688`) is covered by the same
+     flag — it calls the same function, so it should be, but read the path
+     rather than assuming.
+
+  **Test:** Add `BuildIntegrity.ShadowLightMatricesAreProvisionedInOnePlace` to
+  `buildIntegritySuite.cpp`: grep `renderer/VulkanRenderer.cpp` and assert
+  `dirShadowMap.init(` appears exactly once (inside
+  `reinitShadowMapForCurrentSettings`) and `uploadLightMatrices(` appears only
+  inside `update_uniform_buffers` — the same source-level "one rule, one
+  definition" gate the create/destroy helper family uses, and the only kind of
+  coverage available for a path that needs a device. Extend
+  `Test/commit/VulkanEngine/guiSceneVarsRoundTripSuite.cpp` with an assertion
+  that `GUISceneSharedVars{}.num_shadow_cascades <= MAX_CASCADES`, so the two
+  constants can no longer drift apart unnoticed.
+
+  **Build:** `clangcl-debug`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  Then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root. Once
+  RDP clears, the behavioural check is `GoldenRender.ShadowsDarkenSomePixels`
+  and `GuiInputSweepNeverCrashesOrLosesTheDevice` (which drives both shadow
+  sliders).
+
+  **Context:** `uploadLightMatrices`'s own comment
+  (`CascadedShadowMap.cpp:137-152`) already documents this exact failure mode
+  for the startup case — "the shadow map was rendered from a garbage viewpoint
+  while the lighting shader sampled it with the correct ones" — and the fix
+  for it was applied only to the constructor. Do not make
+  `uploadLightMatrices` seed all images unconditionally: the per-image split
+  exists so the CPU never rewrites a buffer an in-flight shadow pass for a
+  different image is reading, and only a `waitIdle`-guarded re-init makes the
+  full loop safe (both callers already wait idle — `:350` and `:705`).
+
+- [ ] **(S) (refactor) Delete `Main.cpp`'s unreachable command-line parser and
+  pin abseil as the single CLI front end** — ~62 lines describing a
+  `--help`/`--gpu` contract that `main` has not used since abseil flags landed.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/Main.cpp:29-32` (the `ABSL_FLAG`), `:34-54`
+    (the dead types plus the live `normalize_gpu_mode`), `:96-146` (the dead
+    `print_usage`/`parse_command_line`), `:149-186` (`main`, which calls
+    `absl::ParseCommandLine` and never the local parser)
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — the grep-gate helpers
+    (`read_file_text` at `:1027`) and any existing single-source gate to copy
+
+  **Steps:**
+  1. Delete `CommandLineParseResultKind` (`:35-39`), `CommandLineParseResult`
+     (`:41-44`), `print_usage` (`:96-99`) and `parse_command_line`
+     (`:101-146`). Keep `normalize_gpu_mode` — it is called at `:158`.
+  2. Prune the includes those functions were the only users of. Check each one
+     against what is left before removing it: `<iostream>` is still needed
+     (`std::cout` at `:175`, inside `#if USE_RUST`), `<vector>` is still needed
+     (the sink vector), `<string_view>` and `<span>` are the likely casualties.
+     Build after this step specifically — a wrongly pruned include is the only
+     way this task can break anything.
+  3. Add a short comment above the `ABSL_FLAG` recording that abseil owns
+     argument parsing, `--help` and unknown-argument rejection, so the next
+     reader does not re-add a hand-rolled parser next to it.
+
+  **Test:** Add `BuildIntegrity.MainHasOneCommandLineParser` to
+  `buildIntegritySuite.cpp`: read `Src/GraphicsEngineVulkan/Main.cpp` and
+  assert it contains `absl::ParseCommandLine` and contains neither
+  `parse_command_line` nor `print_usage`. CPU only, same shape as the other
+  source-text gates in that file.
+
+  **Build:** `clangcl-debug`, with `-FreshContainer` (a file's worth of
+  symbols disappears, and a reused container never prunes):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  Then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root, and
+  spot-check the binary still parses flags:
+  `.\build-clangcl-debug\GraphicsEngine.exe --help` and `--gpu dedicated`.
+
+  **Context:** Same family as the dead-accessor and dead-parameter sweeps in
+  the 2026-08-01/02 batches: the risk of dead code here is not bytes, it is
+  that `Main.cpp` is the first file a new reader opens and half of it
+  describes a code path that cannot run. Do not "revive" the parser instead —
+  abseil is already wired into the build and CI, and two parsers is how the
+  `--gpu` handling drifts.
+
+- [ ] **(S) (refactor) Give the Rust crate's 26 `wgpu::BufferDescriptor`
+  literals five named constructors** — the sixth member of the descriptor-shape
+  family, after `bind_layout.rs`, `pipeline_desc.rs` and the texture
+  descriptor that shipped in `dc7b4e65`.
+
+  **Files to read:**
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/pipeline_desc.rs`
+    and `.../render/bind_layout.rs` — the two existing shape modules: naming,
+    doc-comment style, where the `#[cfg(test)]` block sits
+  - `.../crates/webgpu_renderer/tests/texture_desc_single_definition.rs` — the
+    gate shape to copy verbatim
+  - The 26 call sites listed in this batch's header table
+
+  **Steps:**
+  1. Add `src/render/buffer_desc.rs` with five `pub(crate) fn`s returning
+     `wgpu::Buffer` (take `device`, `label`, `size`): `uniform`, `storage_dst`,
+     `storage_src`, `readback`, `query_resolve`. All five set
+     `mapped_at_creation: false`; each hard-codes its usage set. Register the
+     module in `src/render/mod.rs`.
+  2. Document in the module header **why the two outliers stay literal**:
+     `histogram.rs:119` needs `STORAGE | COPY_SRC | COPY_DST` (read back *and*
+     seeded) and `occlusion.rs:472` needs `VERTEX | COPY_DST`. State the same
+     rule the C++ helpers state — a site that needs a different usage set
+     builds the descriptor inline and says why, rather than growing this module
+     a `usage` parameter, which would turn five named shapes back into one
+     anonymous one.
+  3. Route all 24 matching sites through the helpers, one file at a time
+     (`forward.rs`, `tonemap.rs`, `ssao.rs`, `histogram.rs`, `occlusion.rs`,
+     `gpu_occlusion.rs`, `gpu_timing.rs`, `ibl.rs`). Preserve every label
+     string exactly, including the `format!("..._{i}")` ones — labels are what
+     wgpu validation errors and the GPU-timing export are keyed on.
+  4. Leave the `wgpu::util::DeviceExt::create_buffer_init` call sites alone:
+     they are a different API (data-initialised) and are not part of this
+     shape.
+
+  **Test:** Add
+  `crates/webgpu_renderer/tests/buffer_desc_single_definition.rs`, copying
+  `texture_desc_single_definition.rs`: walk `src/`, assert
+  `wgpu::BufferDescriptor {` appears only in `render/buffer_desc.rs` plus the
+  two named outlier files, and assert those two files contain the outlier
+  usage sets (so the exemption cannot silently become a general escape hatch).
+
+  **Build:** No C++ build. Verify with
+  `cargo clippy --all-targets -p kataglyphis_webgpu_renderer` and
+  `cargo check --tests -p kataglyphis_webgpu_renderer` from
+  `ExternalLib/Kataglyphis-RustProjectTemplate`. `cargo test` cannot link on
+  this host (broken MSVC linker — see memory), so the test's actual *run* is
+  the always-on Linux lane's `Scripts/Linux/run-cargo-tests.sh` step after
+  push. **Do not** add `cargo fmt --check` as a gate: the pinned submodule is
+  not fmt-clean.
+
+  **Context:** `docs/webgpu-renderer-roadmap.md` for where these passes sit.
+  The payoff is the same as the C++ create/destroy helper family: the usage
+  flags stop being retyped per call site, so a buffer that is missing
+  `COPY_DST` fails at one place instead of producing a wgpu validation error
+  at the first `write_buffer`. Remember both repos ship together —
+  `ExternalLib/Kataglyphis-RustProjectTemplate` is committed and pushed, then
+  the submodule pin is bumped here in the same change.
+
 

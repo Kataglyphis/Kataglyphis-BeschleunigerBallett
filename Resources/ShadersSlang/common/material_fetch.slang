@@ -34,9 +34,12 @@ float2 transform_uv(float2 uv, ObjMaterial material)
 // "not a MASK material" (OPAQUE/BLEND) - never discard. OBJ materials and
 // every non-MASK glTF material default to -1, so they are unaffected. The
 // tested alpha is the glTF product rule baseColorFactor.a * baseColorTexture.a
-// (material.dissolve * sampledAlpha) - callers pass 1.0 for sampledAlpha when
+// * COLOR_0.a (material.dissolve * sampledAlpha, where sampledAlpha is the
+// caller-computed product of the base-colour texture's alpha and the vertex
+// COLOR_0 alpha) - callers pass just the COLOR_0 alpha for sampledAlpha when
 // there is no base-colour texture, matching the spec's "texture term defaults
-// to 1". OBJ materials always have dissolve == 1.0, so they are bit-unchanged.
+// to 1". OBJ materials always have dissolve == 1.0 and vertex color == 1.0,
+// so they are bit-unchanged.
 bool alpha_masked_out(ObjMaterial material, float sampledAlpha)
 {
     return material.alphaCutoff >= 0.0 && (sampledAlpha * material.dissolve) < material.alphaCutoff;

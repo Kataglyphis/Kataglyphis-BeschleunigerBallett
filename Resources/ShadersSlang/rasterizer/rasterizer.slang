@@ -24,7 +24,7 @@ struct VsOut
     float4 svPosition : SV_Position;
     float2 texCoords : TEXCOORD0;
     float3 shadingNormal : TEXCOORD1;
-    float3 fragmentColor : TEXCOORD2;
+    float4 fragmentColor : TEXCOORD2;
     float3 worldPosition : TEXCOORD3;
 };
 
@@ -32,7 +32,7 @@ struct VsOut
 VsOut vs_main(
     float3 positions : POSITION,
     float3 normal : NORMAL,
-    float3 color : COLOR,
+    float4 color : COLOR,
     float2 tex_coords : TEXCOORD0)
 {
     VsOut o;
@@ -59,16 +59,16 @@ float4 fs_main(VsOut In, uint primitiveID : SV_PrimitiveID) : SV_Target
     {
         int textureId = resolve_texture_slot(obj, material);
         float4 baseSample = textures[textureId].Sample(textureSamplers[textureId], transform_uv(In.texCoords, material));
-        if (alpha_masked_out(material, baseSample.a)) discard;
+        if (alpha_masked_out(material, baseSample.a * In.fragmentColor.a)) discard;
         ambient = base_color(material, baseSample.xyz);
     }
     else
     {
-        if (alpha_masked_out(material, 1.0)) discard;
+        if (alpha_masked_out(material, In.fragmentColor.a)) discard;
         ambient = material.diffuse;
     }
 
-    ambient *= In.fragmentColor;
+    ambient *= In.fragmentColor.rgb;
 
     float roughness = clamp(sqrt(2.0 / (material.shininess + 2.0)), 0.045, 1.0);
     float3 lightColor = sceneUBO.dirLight.color.rgb;

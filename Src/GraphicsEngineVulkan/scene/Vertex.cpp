@@ -59,7 +59,7 @@ auto getVertexInputAttributeDesc() -> std::array<vk::VertexInputAttributeDescrip
       vk::VertexInputAttributeDescription(1, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, normal));
 
     attribute_describtions[2] =
-      vk::VertexInputAttributeDescription(2, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color));
+      vk::VertexInputAttributeDescription(2, 0, vk::Format::eR32G32B32A32Sfloat, offsetof(Vertex, color));
 
     attribute_describtions[3] =
       vk::VertexInputAttributeDescription(3, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, texture_coords));

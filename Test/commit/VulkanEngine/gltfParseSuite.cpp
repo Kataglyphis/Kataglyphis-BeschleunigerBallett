@@ -816,6 +816,103 @@ TEST(GltfParseUnit, ReadsColor0VertexColours)
     EXPECT_TRUE(has_color(1.0F, 1.0F, 1.0F)) << "white corner colour missing";
 }
 
+TEST(GltfParseUnit, VertexColorAlphaIsCarriedFromColor0)
+{
+    // COLOR_0's alpha is the third factor of the glTF MASK alpha product
+    // (baseColorFactor.a * baseColorTexture.a * COLOR_0.a) - Vertex::color
+    // used to be a vec3, so this component was silently dropped between
+    // GltfLoader and the vertex buffer. Two-triangle strip (4 vertices, mode
+    // 5, matching TriangleStripIsTriangulatedNotDropped's POSITION fixture)
+    // whose VEC4 COLOR_0 alpha is 0.25 everywhere.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0, "COLOR_0": 1 },
+        "mode": 5
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [
+        { "componentType": 5126, "count": 4, "type": "VEC3",
+          "min": [0,0,0], "max": [1,1,0], "bufferView": 0 },
+        { "componentType": 5126, "count": 4, "type": "VEC4", "bufferView": 1 }
+      ],
+      "bufferViews": [
+        { "buffer": 0, "byteLength": 48 },
+        { "buffer": 1, "byteLength": 64 }
+      ],
+      "buffers": [
+        { "byteLength": 48,
+          "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAACAPwAAgD8AAAAA" },
+        { "byteLength": 64,
+          "uri": "data:application/octet-stream;base64,AACAPwAAgD8AAIA/AACAPgAAgD8AAIA/AACAPwAAgD4AAIA/AACAPwAAgD8AAIA+AACAPwAAgD8AAIA/AACAPg==" }
+      ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_color0_vec4.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getVertices().size(), 4U);
+    for (const Vertex &v : loader.getVertices()) {
+        EXPECT_NEAR(v.color.w, 0.25F, 1e-4F) << "VEC4 COLOR_0 alpha must reach Vertex::color's fourth component";
+    }
+}
+
+TEST(GltfParseUnit, Vec3Color0DefaultsVertexAlphaToOne)
+{
+    // A VEC3 COLOR_0 accessor has no alpha component. cgltf_accessor_read_float
+    // only writes the accessor's own component count, so reading it into a
+    // vec4 with N=4 would otherwise leave the fourth component untouched -
+    // this pins the loader's pre-fill (readAttribute<4>'s VecT(1.0F) default)
+    // rather than uninitialized/garbage alpha.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0, "COLOR_0": 1 },
+        "mode": 5
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [
+        { "componentType": 5126, "count": 4, "type": "VEC3",
+          "min": [0,0,0], "max": [1,1,0], "bufferView": 0 },
+        { "componentType": 5126, "count": 4, "type": "VEC3", "bufferView": 1 }
+      ],
+      "bufferViews": [
+        { "buffer": 0, "byteLength": 48 },
+        { "buffer": 1, "byteLength": 48 }
+      ],
+      "buffers": [
+        { "byteLength": 48,
+          "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAAAACAPwAAgD8AAAAA" },
+        { "byteLength": 48,
+          "uri": "data:application/octet-stream;base64,AAAAP5qZGT8zMzM/AAAAP5qZGT8zMzM/AAAAP5qZGT8zMzM/AAAAP5qZGT8zMzM/" }
+      ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_color0_vec3.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getVertices().size(), 4U);
+    for (const Vertex &v : loader.getVertices()) {
+        EXPECT_NEAR(v.color.w, 1.0F, 1e-6F)
+          << "VEC3 COLOR_0 must default Vertex::color's alpha to 1.0, not leave it uninitialized";
+        EXPECT_NEAR(v.color.x, 0.5F, 1e-4F) << "VEC3 COLOR_0's rgb must still reach Vertex::color";
+    }
+}
+
 TEST(GltfParseUnit, CorruptEmbeddedImageStillAssignsDenseTextureSlots)
 {
     // corrupt_embedded_image.gltf has two materials, each with its own

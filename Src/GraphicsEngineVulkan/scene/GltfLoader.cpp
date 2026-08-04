@@ -188,12 +188,18 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
       uvOffset);// KHR_texture_transform offset
 }
 
-/// Reads a float attribute (2 or 3 components) into `out`, one entry per accessor
-/// element. cgltf handles the underlying component type and stride.
+/// Reads a float attribute (2, 3 or 4 components) into `out`, one entry per
+/// accessor element. cgltf handles the underlying component type and stride.
 template<int N, typename VecT>
 void readAttribute(const cgltf_accessor *accessor, std::vector<VecT> &out)
 {
-    out.resize(accessor->count);
+    // Pre-fill with 1.0: cgltf_accessor_read_float writes only
+    // min(accessor's component count, N) floats, so a VEC3 COLOR_0 accessor
+    // read with N=4 leaves the 4th (alpha) component untouched. Pre-filling
+    // makes that case default to alpha = 1.0 instead of uninitialized memory.
+    // A no-op for every attribute whose accessor component count equals N
+    // (position, normal, uv), since the read then overwrites every component.
+    out.assign(accessor->count, VecT(1.0F));
     for (cgltf_size i = 0; i < accessor->count; ++i) {
         cgltf_accessor_read_float(accessor, i, glm::value_ptr(out[i]), N);
     }
@@ -271,7 +277,7 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
     std::vector<glm::vec3> positions;
     std::vector<glm::vec3> normals;
     std::vector<glm::vec2> uvs;
-    std::vector<glm::vec3> colors;
+    std::vector<glm::vec4> colors;
 
     for (cgltf_size a = 0; a < primitive->attributes_count; ++a) {
         const cgltf_attribute *attribute = &primitive->attributes[a];
@@ -286,11 +292,12 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
             if (attribute->index == 0) { readAttribute<2>(attribute->data, uvs); }
             break;
         case cgltf_attribute_type_color:
-            // COLOR_0 multiplies the base colour (glTF spec). The file may
-            // store it as vec3 or vec4; cgltf_accessor_read_float hands back
-            // the rgb either way. Absent -> white below, so the shader
-            // multiply is a no-op for the common uncoloured mesh.
-            if (attribute->index == 0) { readAttribute<3>(attribute->data, colors); }
+            // COLOR_0 multiplies the base colour, alpha included (glTF spec).
+            // The file may store it as vec3 or vec4; readAttribute<4> pre-fills
+            // alpha to 1.0 for the vec3 case (see its comment). Absent -> white
+            // below, so the shader multiply is a no-op for the common
+            // uncoloured mesh.
+            if (attribute->index == 0) { readAttribute<4>(attribute->data, colors); }
             break;
         default:
             break;
@@ -308,7 +315,7 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
         const glm::vec3 worldNormal =
           i < normals.size() ? glm::normalize(normalMatrix * normals[i]) : glm::vec3(0.0F, 1.0F, 0.0F);
         const glm::vec2 uv = i < uvs.size() ? uvs[i] : glm::vec2(0.0F);
-        const glm::vec3 vcolor = i < colors.size() ? colors[i] : glm::vec3(1.0F);
+        const glm::vec4 vcolor = i < colors.size() ? colors[i] : glm::vec4(1.0F);
         vertices.emplace_back(worldPos, worldNormal, vcolor, uv);
     }
 

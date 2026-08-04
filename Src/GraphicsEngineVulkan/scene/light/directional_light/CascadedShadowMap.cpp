@@ -341,6 +341,15 @@ void CascadedShadowMap::buildGraphicsPipeline()
     uvAttr.format = vk::Format::eR32G32Sfloat;
     uvAttr.offset = offsetof(Vertex, texture_coords);
 
+    // COLOR_0 alpha for the MASK alpha test, mirroring the forward/deferred
+    // passes' third alpha factor - without it a masked shadow silhouette
+    // disagrees with the lit silhouette. Location 2 = the Vertex color slot.
+    vk::VertexInputAttributeDescription colorAttr{};
+    colorAttr.location = 2;
+    colorAttr.binding = 0;
+    colorAttr.format = vk::Format::eR32G32B32A32Sfloat;
+    colorAttr.offset = offsetof(Vertex, color);
+
     vk::PushConstantRange pushConstantRange{};
     // The fragment stage now reads objectIndex from the push block too.
     pushConstantRange.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
@@ -362,7 +371,7 @@ void CascadedShadowMap::buildGraphicsPipeline()
     PipelineBuilder pipelineBuilder;
     graphicsPipeline =
       pipelineBuilder.setShaderStages({ stages.stages().begin(), stages.stages().end() })
-        .setVertexInput({ bindingDesc }, { posAttr, uvAttr })
+        .setVertexInput({ bindingDesc }, { posAttr, uvAttr, colorAttr })
         // Culling MUST be off here, and it is not an optimisation question.
         //
         // VulkanRenderer flips the camera projection's Y (globalUBO.projection

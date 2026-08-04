@@ -358,10 +358,10 @@ void SkyBox::createMesh(vk::CommandPool commandPool)
 
     // Fullscreen quad vertices with UVs
     std::vector<Vertex> vertices = {
-        Vertex(glm::vec3(-1.0F, -1.0F, 0.0F), glm::vec3(0), glm::vec3(0), glm::vec2(0.0F, 0.0F)),
-        Vertex(glm::vec3( 1.0F, -1.0F, 0.0F), glm::vec3(0), glm::vec3(0), glm::vec2(1.0F, 0.0F)),
-        Vertex(glm::vec3(-1.0F,  1.0F, 0.0F), glm::vec3(0), glm::vec3(0), glm::vec2(0.0F, 1.0F)),
-        Vertex(glm::vec3( 1.0F,  1.0F, 0.0F), glm::vec3(0), glm::vec3(0), glm::vec2(1.0F, 1.0F))
+        Vertex(glm::vec3(-1.0F, -1.0F, 0.0F), glm::vec3(0), glm::vec4(0), glm::vec2(0.0F, 0.0F)),
+        Vertex(glm::vec3( 1.0F, -1.0F, 0.0F), glm::vec3(0), glm::vec4(0), glm::vec2(1.0F, 0.0F)),
+        Vertex(glm::vec3(-1.0F,  1.0F, 0.0F), glm::vec3(0), glm::vec4(0), glm::vec2(0.0F, 1.0F)),
+        Vertex(glm::vec3( 1.0F,  1.0F, 0.0F), glm::vec3(0), glm::vec4(0), glm::vec2(1.0F, 1.0F))
     };
 
     std::vector<unsigned int> materialIndex = {0};

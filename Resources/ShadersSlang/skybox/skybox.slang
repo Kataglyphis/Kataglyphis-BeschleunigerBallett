@@ -28,7 +28,7 @@ struct VsOut
 [shader("vertex")]
 VsOut vs_main(float3 in_position : POSITION,
               float3 in_normal : NORMAL,
-              float3 in_color : COLOR,
+              float4 in_color : COLOR,
               float2 in_tex_coord : TEXCOORD0)
 {
     VsOut o;

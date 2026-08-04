@@ -10,12 +10,12 @@ struct Vertex
 {
     glm::vec3 position;
     glm::vec3 normal;
-    glm::vec3 color;
+    glm::vec4 color;
     glm::vec2 texture_coords;
 
     Vertex() = default;
 
-    Vertex(glm::vec3 pos, glm::vec3 normal, glm::vec3 color, glm::vec2 texture_coords)
+    Vertex(glm::vec3 pos, glm::vec3 normal, glm::vec4 color, glm::vec2 texture_coords)
       : position(pos), normal(normal), color(color), texture_coords(texture_coords)
     {}
 
@@ -49,7 +49,7 @@ template<> struct hash<Vertex>
         // color participates in operator==, so it must participate here too -
         // omitting it is legal but makes every colour variant of a position
         // collide.
-        seed = combine(seed, hash<glm::vec3>()(vertex.color));
+        seed = combine(seed, hash<glm::vec4>()(vertex.color));
         return seed;
     }
 };

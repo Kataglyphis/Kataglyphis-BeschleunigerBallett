@@ -16,6 +16,7 @@ module;
 #define TINYOBJLOADER_DISABLE_FAST_FLOAT
 #include <glm/ext/vector_float2.hpp>
 #include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 #include <algorithm>
 #include <iterator>
 #include <iostream>
@@ -310,13 +311,15 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
                     // White when the OBJ carries no per-vertex colour: the fragment
                     // shader multiplies this in (glTF COLOR_0 semantics, shared path),
                     // so the absent case must be the identity (1,1,1), not the old -1
-                    // sentinel that would have darkened/inverted the surface.
-                    glm::vec3 color(1.F);
+                    // sentinel that would have darkened/inverted the surface. OBJ has
+                    // no per-vertex alpha channel, so alpha is always 1.0 - the shared
+                    // MASK alpha test's third factor is a glTF COLOR_0-only concept.
+                    glm::vec4 color(1.F);
                     if ((3 * vertex_index) + 2 < attrib.colors.size()) {
                         tinyobj::real_t const red = attrib.colors[(3 * vertex_index) + 0];
                         tinyobj::real_t const green = attrib.colors[(3 * vertex_index) + 1];
                         tinyobj::real_t const blue = attrib.colors[(3 * vertex_index) + 2];
-                        color = glm::vec3(red, green, blue);
+                        color = glm::vec4(red, green, blue, 1.F);
                     }
 
                     glm::vec2 tex_coords(0.0F);

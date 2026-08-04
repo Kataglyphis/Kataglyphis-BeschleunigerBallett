@@ -25,7 +25,7 @@ struct Vertex
 {
     float3 position;
     float3 normal;
-    float3 color;
+    float4 color;
     float2 texture_coords;
 };
 
