@@ -9265,3 +9265,384 @@ deletes a file, so `-FreshContainer` is not required.
 
 ### Test suites
 
+## 2026-08-04 batch XV — planner (a gate that is RED right now because the commit that shipped this morning's goldens never bumped the count marker, next to a prose sentence carrying a third, differently-wrong copy; a ray-traced closest hit that seeds every pixel with the full unlit albedo, so an RT shadow is barely darker than lit ground and neither raster path does anything of the kind; MASK cut-outs that are solid quads in ray-traced mode because every BLAS geometry declares itself `eOpaque` and there is no any-hit shader at all; a Rust OBJ→glTF converter that clamps `Ke` to 1 where the C++ OBJ loader keeps it; and a pixel oracle that reads one column past its crop, which every caller already works around by hand)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]`). Batch XIV's five tasks all shipped (`6109f2c8`, `e5de9629`,
+`a9911a5a`, `5adbe178`, `846b50d8`). Everything below was read out of the tree
+this pass, at `846b50d8`.
+
+**First, a commit test is RED on `develop` as of this writing.**
+`BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite`
+(`buildIntegritySuite.cpp:4840`) pins `docs/gpu-golden-testing.md`'s
+`<!-- golden-counts: ... -->` marker against a file-I/O count of
+`TEST(GoldenRender, ...)` / `TEST(Integration, ...)` definitions under
+`Test/commit/VulkanEngine/`. The marker (`:84`) says `defined=32 runnable=31
+integration=2 total=33`; the tree holds **34** `TEST(GoldenRender, ...)`
+definitions (one of them `DISABLED_DumpsFrameToPng`) and 2 `TEST(Integration,
+...)`, i.e. `defined=34 runnable=33 integration=2 total=35`. `846b50d8` added
+the two emissive goldens and did not touch the marker. This is a CPU test — it
+runs in the container and in the always-on Linux lane — so it is not a
+host-only latency; it fails every build right now.
+
+The prose three lines above the marker (`:77-79`) is a *separate* copy of the
+same numbers and is wrong in a third way: "the baseline is 30 runnable
+`GoldenRender` tests (31 defined … ) + 2 `Integration` tests = 32 total". The
+gate reads only the HTML marker, so prose drift is exactly the failure mode
+the gate was written for and exactly the failure mode it cannot see. Two
+copies of one fact, one of them unguarded, is the thing to remove — not to
+re-synchronise for the third time.
+
+**Second, `raytrace.rchit.slang` starts from the unlit albedo and the two
+raster paths do not.** `:73-86` accumulates the base colour into a local
+called `ambient` (it is not an ambient term — it is the sampled/factor base
+colour times `COLOR_0`), and `:115` does `payload.hit_value = ambient;` before
+the shadow test. The direct-lighting term is then *added* on top only when the
+ray reaches the light (`:118-124`). So a ray-traced surface in full shadow
+renders at its complete albedo, and a lit one renders at albedo + BRDF.
+
+Neither raster path has any such term. `rasterizer.slang:78-82` is
+`color = brdf_direct(...)` then `color *= 1.0 - shadow * intensity`;
+`deferred.slang`'s `lighting_fs_main` is the same two lines. There is no
+ambient, no IBL and no sky contribution anywhere in the C++ raster shading —
+`grep -rn ambient Resources/ShadersSlang/*/*.slang` finds it only in the
+Rust-side `forward.slang` and in this one rchit local. The consequence is not
+subtle: on `shadow_rig.obj` the ray-traced ground under the box is nearly as
+bright as the ground beside it, so RT mode barely renders a shadow at all,
+while the same scene in forward and deferred shows a clean one. Three shading
+paths over one `ObjMaterial`, and one of them silently adds a full extra
+albedo bounce.
+
+Nothing measures this. RT mode does have goldens —
+`RaytracedWorldFollowsTheModelTransform` (`goldenRenderSuite.cpp:1952`), the
+uv-transform card golden at `:2034`, and `RaytracedLargeMeshDoesNotLoseTheDevice`
+(`:3038`) — but all three assert on *presence* (a transform moved, a frame is
+not blank, the device survived). None asserts a brightness relationship, so
+the divergence has been invisible to the suite since the RT path was written.
+
+**Third, glTF `alphaMode: MASK` is honoured in all three raster shaders and in
+neither ray mode.** `material_fetch.slang:50-53` owns the one predicate,
+`BuildIntegrity.RasterShadersShareOneAlphaCutoffRule`
+(`buildIntegritySuite.cpp:2366`) pins its three *raster* callers, and
+`GoldenRender.MaskCardDiscardsCutoutTexelsVisually` (`:2181`) proves the
+forward discard in real pixels with `Models/GltfTest/mask_card.gltf`. In RT
+and PT the same card is a solid quad: `raytrace.rchit.slang` never calls
+`alpha_masked_out` (a closest-hit shader cannot discard — that needs an
+any-hit), the shadow ray is traced with `RAY_FLAG_FORCE_OPAQUE` (`:104`), and
+`Raytracing.cpp:186` builds its hit group with
+`buildTrianglesHitGroup(eClosestHit)`, whose header comment states the
+situation plainly: "any-hit/intersection left unused (the engine has no
+any-hit or procedural-intersection shaders today)".
+
+The load-bearing detail is one line away from all of that:
+`ASManager.cpp:565` sets `acceleration_structure_geometry.flags =
+vk::GeometryFlagBitsKHR::eOpaque` on **every** BLAS geometry. That flag makes
+the implementation skip any-hit invocation entirely, so adding an any-hit
+shader without touching it produces a pipeline that compiles, links, and
+changes nothing — the most expensive possible way to not fix this.
+
+**Fourth, `Ke` survives the C++ OBJ loader and is clamped by the Rust
+converter.** `ObjLoader.cpp:195` takes tinyobj's `emission` verbatim, so
+`Ke 4 4 4` reaches `ObjMaterial::emission` as 4. `obj_to_gltf.rs:143-153`
+clamps the same input to `[0,1]`, and its own comment says why — "values above
+1 belong in `KHR_materials_emissive_strength`, which this converter does not
+emit". Every OBJ the Rust renderer draws goes through that converter, so an
+HDR emitter is four times too dim there and correct in the C++ engine. The
+receiving end already works: `gltf_loader.rs:638-642` reads
+`material.emissive_strength()` and folds it into `emissive_factor` (and
+`6109f2c8` taught the C++ loader the same), so the only missing link is the
+emitter. It writes no `extensions` block and no `extensionsUsed` array today.
+
+**Fifth, `detail_fraction` reads one pixel past the last column of its crop.**
+`GoldenMetrics.hpp:90-99` compares each pixel with `base + 1U` — its
+right-hand neighbour — for `x` up to `crop.x1 - 1`, so the read at the last
+column lands on `crop.x1`, outside the crop. For a crop whose `x1` is the
+frame width that is the first pixel of the *next row* (a wrapped, meaningless
+"edge"), and on the bottom row it is one pixel past the end of the vector — an
+out-of-bounds read the ASAN debug build would flag if a caller ever hit it.
+Every caller already works around it by hand, which is the tell:
+`goldenMetricsSuite.cpp:59` had to invent a `detail_safe_crop()` whose comment
+spells the hazard out, and `goldenRenderSuite.cpp:2530` passes
+`Crop{minx, maxx, miny, maxy + 1U}` — inclusive in `y`, exclusive in `x`, with
+nothing saying the asymmetry is deliberate. The two sibling helpers in the
+same header (`mean_luminance_in_crop`, `swung_fraction`) have no such footgun.
+
+Ordering: task 1 first (it is the red gate), and **tasks 2 and 3 each add a
+`TEST(GoldenRender, ...)` and must bump the same marker in the same change** —
+the gate will tell them so. Tasks 2 and 3 both edit `raytrace.rchit.slang`
+(task 2 the `:73-128` shading block, task 3 the `:104` shadow-ray flags), so
+run 2 before 3. Task 2 is shader-only: recompile with
+`compile-slang-shaders.ps1` and run one golden, no C++ rebuild. Task 3 adds a
+shader **and** changes C++; it does not delete a file or change a module
+interface, so `-FreshContainer` is not required. Tasks 4 and 5 are independent
+of everything else.
+
+Deliberately **not** queued this pass, so it does not get half-done: the
+path-tracing half of task 3. `path_tracing.slang` uses inline `RayQuery` with
+`RAY_FLAG_FORCE_OPAQUE` on both its primary and shadow queries, so honouring
+MASK there means handling candidate hits in the `Proceed()` loop rather than
+adding a shader — a different change, in the one file that carries the `- [b]`
+device-lost blocker. Pick it up once task 3 has established that the BLAS
+opacity flags can be relaxed without a perf or stability surprise.
+
+### Test suites
+
+- [ ] **(S) (refactor) Stop `detail_fraction` reading past the last column of its crop, and drop the two hand-rolled workarounds it forced on its callers** — one caller is asymmetric in x and y with nothing explaining why, and the unit test needed a bespoke crop to avoid an out-of-bounds read.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/GoldenMetrics.hpp:88-104` — `detail_fraction`; `:52-64` and `:66-88` for the two sibling helpers that have no such rule
+  - `Test/commit/VulkanEngine/goldenMetricsSuite.cpp:51-88` — `full_frame_crop()`, `detail_safe_crop()` and the two tests that use the latter
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp:2530`, `:2593`, `:2101` — the three golden-suite call sites
+
+  **Steps:**
+  1. In `detail_fraction`, make the neighbour read stay inside the crop: run the
+     inner loop to `crop.x1 - 1`, guarding `crop.x1 == 0` and
+     `crop.x1 <= crop.x0 + 1` (both must yield 0.0, not underflow). The
+     denominator must count only the pixels actually compared, so a flat image
+     still returns exactly 0.0 and a checkerboard still returns near 1.0.
+  2. Document the new contract in the comment above it: the function measures
+     the boundaries *within* the crop, so a crop of width 1 has none and returns
+     0.0 — callers no longer have to shrink `x1` themselves.
+  3. Delete `detail_safe_crop()` from `goldenMetricsSuite.cpp` and point both of
+     its tests at `full_frame_crop()`.
+  4. At `goldenRenderSuite.cpp:2530`, change the crop to
+     `Crop{minx, maxx + 1U, miny, maxy + 1U}` so both axes are the half-open
+     form of the same inclusive bounding box the scan produced. The measured
+     `detail` will shift slightly (one more column of a checkerboard); re-run
+     that golden on the host and update the recorded MEASURED number in its
+     comment if the shift is visible at two decimal places. The `0.15` gate has
+     ample headroom, but say what you measured.
+
+  **Test:** Add `GoldenMetrics.DetailFractionOfAFullWidthCropStaysInBounds`:
+  build a `WIDTH x HEIGHT` checkerboard, call `detail_fraction` with
+  `full_frame_crop()`, assert the result is `> 0.4`. Add
+  `GoldenMetrics.DetailFractionOfASingleColumnCropIsZero` (`Crop{0, 1, 0,
+  HEIGHT}`). Both are red today: the first is an ASAN heap-buffer-overflow on
+  the bottom-right pixel, the second underflows the loop bound. Follow the
+  existing `goldenMetricsSuite.cpp` fixture style (`flat_frame` /
+  `checkerboard_frame`).
+
+  **Build:** `clangcl-debug` — ASAN is on in that configuration and is what
+  turns the first new test from "passes by luck" into a real failure. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -RunTests`,
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='GoldenMetrics.*'`,
+  and the touched golden on the host per `docs/gpu-golden-testing.md`.
+
+  **Context:** `GoldenMetrics.hpp` was extracted precisely so these oracles
+  could be unit-tested instead of only ever exercised through a GPU golden — and
+  the first thing the unit tests had to do was invent a crop that dodges one of
+  them. A helper whose contract is "shrink your crop before calling me, or you
+  get undefined behaviour" is a helper that will eventually be called
+  correctly-looking and wrongly. Keep the fix inside `GoldenMetrics.hpp`; do not
+  add a clamping helper to `RepoFiles.hpp` or elsewhere.
+
+### Shaders
+
+- [ ] **(M) Stop the ray-traced closest hit seeding every pixel with the full unlit albedo, so RT shadows are shadows** — `payload.hit_value = ambient` gives RT an extra albedo bounce neither raster path has, and no test can currently tell.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/raytracing/raytrace.rchit.slang:73-128` — the `ambient` local, the `payload.hit_value = ambient` seed, the shadow branch
+  - `Resources/ShadersSlang/rasterizer/rasterizer.slang:57-88` and `Resources/ShadersSlang/deferred/deferred.slang`'s `lighting_fs_main` — the two paths that do *not* do this, and are the reference behaviour
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp:1952-2010` — `RaytracedWorldFollowsTheModelTransform`, the RT-mode golden whose setup to copy (`supportsHardwareRaytracing()` skip, `raytracing = true`)
+  - `Test/commit/VulkanEngine/GoldenMetrics.hpp` — `mean_luminance_in_crop`, `panel_free_crop`, `Crop`
+
+  **Steps:**
+  1. Rename the local `ambient` to `albedo` throughout `rchit_main` (`:73`,
+     `:80`, `:84`, `:86`, `:115`, `:120`, `:122`). It is the base colour; the
+     name is what let an unlit albedo term pass for an ambient one. Purely
+     mechanical — do it first and separately from step 2 so the behavioural diff
+     is one line.
+  2. Change the seed at `:115` from `payload.hit_value = ambient;` to
+     `payload.hit_value = float3(0.0);`, leaving `payload.is_hit = 1.0;` and the
+     `if (!shadowed) payload.hit_value += brdf_direct(...)` block exactly as they
+     are. The emissive add at `:128` stays last and unshadowed.
+  3. Replace the comment block the rename touches with one sentence stating the
+     invariant: the three shading paths over `ObjMaterial` (forward, deferred
+     lighting, ray-traced closest hit) all start from `brdf_direct` alone — this
+     engine has no ambient or IBL term, and a path that invents one diverges
+     from the other two.
+  4. Recompile the SPIR-V:
+     `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`.
+     No C++ rebuild is needed for steps 1-3 (AGENTS.md fast path).
+  5. Bump `docs/gpu-golden-testing.md`'s `<!-- golden-counts: -->` marker for the
+     golden added below, or `BuildIntegrity.GoldenTestCountsInDocsMatchTheSuite`
+     goes red.
+
+  **Test:** Add `GoldenRender.RaytracedShadowsAreDarkerThanLitGround`.
+  `ScopedModelOverride rig(SHADOW_RIG_MODEL)` (ground plane + floating box — the
+  scene the shadow goldens already use because it casts a solid shadow),
+  `SKIP_WITHOUT_GPU()`, `SKIP_WITHOUT_FRAME_CAPTURE(harness)`, skip on
+  `!supportsHardwareRaytracing()`, set `raytracing = true; pathTracing = false;`,
+  render `WARMUP_FRAMES`, assert no device loss, capture. Then within
+  `panel_free_crop(width, height)` take the mean luminance of the darkest decile
+  of pixels and of the brightest decile and assert `dark_mean < lit_mean * K`.
+  **Measure both numbers on the host and record them in the comment**, then
+  red-prove by reverting step 2 in the `.slang`, recompiling the spv and
+  confirming the test fails — the ratio should move sharply, because before the
+  fix the shadowed ground carries its full albedo. Pick `K` to sit between the
+  two measurements, following the "MEASURED x with the fix, y without, gate at
+  z, red-proven by …" convention every golden in the file uses. Also re-run the
+  three existing `GoldenRender.Raytraced*` goldens — they assert presence, not
+  brightness, and must stay green.
+
+  **Build:** No C++ rebuild for the shader change; a `clangcl-debug` container
+  build is needed once the new golden is added. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`,
+  then on the host from the repo root:
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='GoldenRender.Raytraced*'`.
+
+  **Context:** RT mode is meant to be the same scene as the raster modes — that
+  is the whole premise of `Scripts/Compare-RendererPixels.ps1`. Expect the RT
+  image to get noticeably darker in shadow; that is the point, and it matches
+  what forward and deferred already do. Do **not** "fix" this by adding an
+  ambient term to the raster paths instead: that would move the recorded
+  MEASURED constants in 30-odd existing goldens, and this engine's decision to
+  have no ambient is load-bearing for all of them. If an ambient is ever wanted
+  it deserves one named constant in one place and its own task. Do not edit
+  anything under `Resources/ShadersSlang/common/` for this — a `common/` edit
+  triggers the conservative shader rebuild and the
+  `CheckedInWgslIsNotOlderThanItsSlangSource` mtime false-positive for no
+  benefit here.
+
+### C++ Vulkan engine
+
+- [ ] **(M) Honour glTF `alphaMode: MASK` in ray-traced mode: add the engine's first any-hit shader and stop declaring every BLAS geometry opaque** — the mask card the forward path cuts holes in renders and shadows as a solid quad in RT.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/raytracing/raytrace.rchit.slang:70-109` — the material fetch to mirror, and the shadow ray's `RAY_FLAG_FORCE_OPAQUE`
+  - `Resources/ShadersSlang/common/material_fetch.slang:40-53` — `alpha_masked_out`, the one predicate to call
+  - `Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang` — the smallest existing caller, and the pattern for "alpha-test only, no shading"
+  - `Src/GraphicsEngineVulkan/renderer/Raytracing.cpp:157-200` — shader modules, `StageIndices`, shader groups; and `Raytracing::shaderHotReload` further down
+  - `Src/GraphicsEngineVulkan/common/ShaderStageHelper.hpp:31-43` — `buildTrianglesHitGroup`
+  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp:560-570` — `flags = vk::GeometryFlagBitsKHR::eOpaque`
+  - `Resources/ShadersSlang/shader-manifest.json` — the shader list is data; add the new entry here, never in the compile scripts
+
+  **Steps:**
+  1. Add `Resources/ShadersSlang/raytracing/raytrace.rahit.slang` with a single
+     `[shader("anyhit")] void rahit_main(inout HitPayload payload, in
+     BuiltInTriangleIntersectionAttributes attribs)`. Import the same modules the
+     rchit does; fetch the object description and material the same way
+     (`InstanceIndex() + GeometryIndex()`, `PrimitiveIndex()`); interpolate only
+     the UV and the `COLOR_0` alpha; sample the base-colour texture with
+     `SampleLevel(..., 0.0)` (any-hit has no derivatives either — same rule as
+     the rchit's `:77-81` comment, and the SPIR-V gate enforces it); call
+     `alpha_masked_out(material, sampledAlpha * vertexColor.a)` and `IgnoreHit()`
+     when it returns true. Return without touching `payload` otherwise — the
+     shadow ray reuses this shader and must not have its `bool` payload written.
+  2. Register it in `shader-manifest.json` as SPIR-V-only (no WGSL target — the
+     Rust renderer has no ray tracing), run `compile-slang-shaders.ps1`, and
+     confirm
+     `Resources/ShadersSlang/build/spirv/raytracing/raytrace.rahit.rahit_main.spv`
+     appears.
+  3. Extend `buildTrianglesHitGroup` in `ShaderStageHelper.hpp` to take an
+     `anyHitShader` parameter defaulting to `VK_SHADER_UNUSED_KHR`, keeping it
+     `constexpr`, and update its comment (it currently states the engine has no
+     any-hit shaders). Update `Test/commit/VulkanEngine/shaderStageHelperSuite.cpp`
+     to cover both the defaulted and the supplied form.
+  4. In `Raytracing.cpp::createGraphicsPipeline`, load the new module, add an
+     `eAnyHit` stage to `shader_stages`, extend the `StageIndices` enum, and pass
+     `eAnyHit` to `buildTrianglesHitGroup`. **The group count must stay 4** — an
+     any-hit joins the existing triangles hit group, it does not add a group, and
+     the SBT's hit region stays one record. Verify that against whatever computes
+     the SBT regions in this file before you build.
+  5. Mirror the module load in `Raytracing::shaderHotReload` — the hot-reload
+     path is separately gated (`buildIntegritySuite.cpp:6643`) and silently
+     skipping the new stage there is exactly the class of bug that gate exists
+     for. Destroy the new module on the same paths the other four are destroyed
+     on.
+  6. Drop `RAY_FLAG_FORCE_OPAQUE` from the shadow `TraceRay` in
+     `raytrace.rchit.slang:104`, keeping
+     `RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH | RAY_FLAG_SKIP_CLOSEST_HIT_SHADER`,
+     so a cut-out triangle stops casting a solid shadow.
+  7. In `ASManager.cpp:565`, stop setting `vk::GeometryFlagBitsKHR::eOpaque`
+     unconditionally (use `{}`). Leave a comment saying why: `eOpaque` makes the
+     implementation skip any-hit invocation entirely, so with it set, steps 1-6
+     compile, link and change nothing.
+  8. Several `BuildIntegrity` gates enumerate the ray-tracing shader set and the
+     compiled `.spv` list (`buildIntegritySuite.cpp:2457`, `:2574`, `:3066`, and
+     the `.spv` manifest gate). Expect to extend them; run the suite and let each
+     failure name itself rather than guessing up front.
+  9. Bump the `<!-- golden-counts: -->` marker for the golden below.
+
+  **Test:** Add `GoldenRender.MaskCardDiscardsCutoutTexelsInRaytracing` — the RT
+  twin of `MaskCardDiscardsCutoutTexelsVisually` (`goldenRenderSuite.cpp:2181`).
+  Same rig, same `MASK_X/Y/Z/SCALE` env-tunable placement, same
+  changed-pixel-fraction-in-bounding-box oracle, but with `raytracing = true` and
+  a `supportsHardwareRaytracing()` skip. Measure the fraction on the host before
+  and after the change and record both in the comment: before the fix the solid
+  card should fill its box (near the forward path's no-discard number), after it
+  should land near the checkerboard's. Re-run `GoldenRender.MaskCard*` and
+  `GoldenRender.Raytraced*` — none may regress. Also run `Run-SyncValidation.ps1`:
+  this changes acceleration-structure build flags and the RT pipeline.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`,
+  then from the repo root
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='GoldenRender.MaskCard*:GoldenRender.Raytraced*:BuildIntegrity.*'`
+  and `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1`.
+  `-FreshContainer` is not required (no file deleted, no module interface changed).
+
+  **Context:** Dropping `eOpaque` globally means every ray-triangle hit now
+  invokes the any-hit shader, including for the vast majority of materials that
+  are not MASK. That is the correct first step — correctness before speed — but
+  say so in the commit message and record the measured RT frame time before and
+  after, because the follow-up (set `eOpaque` per geometry, off only for meshes
+  that actually contain a MASK material, which needs a flag plumbed alongside
+  `MeshRange::doubleSided`) should be driven by that number, not by assumption.
+  The path-tracing half is deliberately out of scope — see this batch's preamble.
+  `maxPipelineRayRecursionDepth` stays 2.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(S) Emit `KHR_materials_emissive_strength` from the OBJ→glTF converter instead of clamping `Ke` to 1** — the C++ OBJ loader keeps an HDR `Ke` verbatim, so the same `.mtl` glows four times brighter in the C++ engine than in the Rust one.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/asset/obj_to_gltf.rs:143-153` — the `"Ke"` arm and the clamp, whose comment already names the missing extension
+  - `crates/webgpu_renderer/src/asset/obj_to_gltf.rs:618-655` — the material JSON emitter (`emissive_json`, and the absence of any `extensions` block)
+  - `crates/webgpu_renderer/src/asset/gltf_loader.rs:634-642` — the receiving end, which already reads `material.emissive_strength()` and folds it in
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:195` — the C++ behaviour this is diverging from
+
+  **Steps:**
+  1. In the `"Ke"` arm, stop clamping: store the parsed component as-is (the
+     non-finite guard `finite_or` provides downstream stays).
+  2. In the emitter, split the stored emissive into the glTF-legal factor and a
+     strength: `strength = max(er, eg, eb)`, and when `strength > 1.0` emit
+     `emissiveFactor` as the components divided by `strength`, plus
+     `"extensions": { "KHR_materials_emissive_strength": { "emissiveStrength":
+     <strength> } }` on that material. When `strength <= 1.0`, emit exactly what
+     is emitted today so existing documents stay byte-identical.
+  3. Add `"extensionsUsed": ["KHR_materials_emissive_strength"]` at the document
+     root **only** when at least one material actually needed it — the file has
+     no `extensionsUsed` today and the existing tests compare generated JSON, so
+     an unconditional array would churn all of them.
+  4. Update the `"Ke"` arm's comment: it currently explains the clamp by saying
+     this converter does not emit the extension. It does now.
+  5. `cargo fmt` and `cargo clippy -p kataglyphis_webgpu_renderer -- -D warnings`
+     from `ExternalLib/Kataglyphis-RustProjectTemplate`.
+
+  **Test:** Add a unit test in `obj_to_gltf.rs`'s existing `#[cfg(test)]`
+  module: convert a `.mtl` with `Ke 4 4 4`, assert the emitted JSON contains
+  `"emissiveStrength": 4` and an `emissiveFactor` of `[1, 1, 1]`, and that
+  `extensionsUsed` names the extension. Add a second asserting `Ke 0.5 0.5 0.5`
+  produces no `extensions` and no `extensionsUsed` at all (the byte-identical
+  case). If a round trip through `gltf_loader.rs` is cheap in that test module,
+  assert the loaded `emissive_factor` comes back as `[4, 4, 4]` — that is the
+  property that actually matters.
+
+  **Build:** No C++ build. `cargo check` / `clippy` / `fmt` from
+  `ExternalLib/Kataglyphis-RustProjectTemplate` are the local signal — `cargo
+  test` and `cargo build` do **not** link on this host (the VC++ Build Tools
+  install is incomplete and Git Bash's `link.exe` shadows MSVC's). The crate's
+  test suite runs in this repo's always-on Linux lane via
+  `Scripts/Linux/run-cargo-tests.sh`, so push and read CI for the test result; do
+  not report the tests as passing locally when they were never run.
+
+  **Context:** The glTF spec caps `emissiveFactor` at `[0,1]` per component,
+  which is exactly why the extension exists — factoring the magnitude out into
+  `emissiveStrength` is the standard encoding, and the one Blender and Sketchfab
+  produce. Both loaders on the receiving side already handle it
+  (`gltf_loader.rs:640` and, since `6109f2c8`, `GltfLoader.cpp:149`), so this
+  closes the loop rather than opening a new one. Keep the "unchanged documents
+  stay byte-identical" property — the converter's existing tests depend on it,
+  and it is the reason the `emissiveFactor` field itself is emitted
+  conditionally.
