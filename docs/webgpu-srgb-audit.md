@@ -5,6 +5,10 @@ Phase A closing item: every texture and attachment in
 data is sRGB-encoded and decoded by the hardware on sample; *data* maps and
 all render math stay linear.
 
+Despite the name, this table now also carries the C++/Vulkan engine's one
+swapchain row (below), added 2026-08-04 once it turned out to have the same
+bug as the web canvas case.
+
 | Resource | Format | Space | Rationale |
 | --- | --- | --- | --- |
 | Base color texture | `Rgba8UnormSrgb` | sRGB | Authored color; hardware decode on sample |
@@ -21,8 +25,10 @@ all render math stay linear.
 | Swapchain (web) | browser-preferred (often `Bgra8Unorm`, non-sRGB) | sRGB | WebGPU canvases don't offer sRGB formats, so the tonemap shader applies the IEC 61966-2-1 transfer function itself when the target is non-sRGB (`TonemapPass::encode_srgb`, `params.w`). Fixed 2026-07-20 |
 | Headless readback target | `Rgba8UnormSrgb` | sRGB | Golden tests assert sRGB-encoded bytes (documented in `tests/headless.rs`) |
 | egui overlay | surface format | matches target | egui-wgpu handles its own color management |
+| C++/Vulkan swapchain | UNORM (`SwapchainChoices.hpp::chooseBestSurfaceFormat` prefers `eR8G8B8A8Unorm`/`eB8G8R8A8Unorm`) | sRGB | Same bug as the web canvas case: no hardware encode on present, so `post/post.slang` and `skybox/skybox.slang` (the only two shaders that write the swapchain directly) apply `linear_to_srgb` themselves. Fixed 2026-08-04 |
 
-**No known deviations.** The web swapchain caveat was closed on 2026-07-20.
+**No known deviations.** The web swapchain caveat was closed on 2026-07-20; the
+equivalent C++/Vulkan swapchain caveat was closed on 2026-08-04.
 
 **KTX2 container vs. material usage.** glTF usage always decides the GPU
 format for a block-compressed texture (base colour/emissive are sRGB;

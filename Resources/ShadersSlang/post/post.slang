@@ -54,8 +54,10 @@ float4 fs_main(VsOut In) : SV_Target
     // ACES filmic tonemap (shared with Rust WebGPU renderer via aces.slang).
     float3 tonemapped = aces_tonemap(color);
 
-    // The C++ engine renders to an sRGB target, so the hardware encodes and
-    // we emit linear values. (The Rust side conditionally encodes itself for
-    // non-sRGB web canvases — see tonemap.slang.)
-    return float4(tonemapped, alpha);
+    // The swapchain is UNORM, not sRGB (SwapchainChoices.hpp's
+    // chooseBestSurfaceFormat prefers eR8G8B8A8Unorm/eB8G8R8A8Unorm with an
+    // eSrgbNonlinear color space), so there is no hardware encode on
+    // present - the shader must do it itself, exactly like tonemap.slang's
+    // non-sRGB-canvas path does on the web renderer.
+    return float4(linear_to_srgb(tonemapped), alpha);
 }

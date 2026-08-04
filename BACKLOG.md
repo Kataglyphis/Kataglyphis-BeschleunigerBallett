@@ -8813,3 +8813,384 @@ C++ beyond a new gate, so it is the cheapest to land first. Tasks 1 and 3 both
 edit `Test/commit/VulkanEngine/`, but disjoint files — task 1 does not touch
 `goldenRenderSuite.cpp` and task 3 does not touch any file task 1 rewrites.
 
+## 2026-08-04 batch XI — planner (colour management: the swapchain is a UNORM format and *nothing* sRGB-encodes into it, which a golden test's own measured constant proves; the last survivor of the "hard-coded roughness 0.9" fix that shipped 2026-07-22; glTF `metallic_factor`, read by the loader and dropped on the floor, next to three `lerp(0.04, albedo, 0.0)` identities; three samplers that ask for 16x anisotropy without consulting the device limit, on a device the engine refuses to run on if it lacks the feature at all; five `ObjMaterial` members uploaded per material and read by zero shaders)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]`). Batch X's three tasks all shipped (`bacdcd3f`, `75961b50`,
+`3d19b5b5`). Every `file:line` below was read out of the tree this pass, at
+`3d19b5b5`.
+
+**The headline finding is that the C++ engine never sRGB-encodes its final
+image, and one of its own tests measured the proof.** `post.slang:57-59` states
+"The C++ engine renders to an sRGB target, so the hardware encodes and we emit
+linear values." It does not. `chooseBestSurfaceFormat`
+(`SwapchainChoices.hpp:13-36`) searches for `eR8G8B8A8Unorm` /
+`eB8G8R8A8Unorm` — **UNORM**, never the `_SRGB` variants — paired with
+`eSrgbNonlinear`, and `PostStage.cpp:161` builds the post render pass from
+exactly that format. A UNORM attachment performs no transfer-function encode
+on write, so the ACES output lands raw in the buffer and the presentation
+engine displays it as though it were sRGB-encoded. The corroboration is in
+`goldenRenderSuite.cpp:2402-2413`, whose comment says "the C++ engine's sRGB
+render target does NOT re-apply `linear_to_srgb` … the ACES output is written
+directly. So tonemap(1.0) = `aces_tonemap(1.0)` * 255 = 0.80380 * 255 =
+204.97, matching the measured mean below almost exactly" — and the test then
+asserts a mean of 205 ±6 (`:2482-2489`). **205 is the un-encoded value.** Had
+the target actually been sRGB, the hardware encode would have put that pixel
+at `linear_to_srgb(0.80380)` * 255 ≈ 231.6. The test did not catch the bug; it
+calibrated itself to it. This is not a hypothetical: the Rust renderer had the
+identical defect on non-sRGB web canvases, fixed 2026-07-20, and
+`docs/webgpu-srgb-audit.md` quantifies it as "177.17 vs 127.77, a 49-level
+gap — which is the 'slightly dark on web' symptom, quantified". The two halves
+of the chain that *were* fixed make it worse, not better: base-colour textures
+moved to `eR8G8B8A8Srgb` on 2026-07-22 (completed item 7 above) and the
+skybox cubemap is `eR8G8B8A8Srgb` (`SkyBox.cpp:150`), so every input now
+decodes to linear correctly and only the output encode is missing — the two
+errors no longer cancel.
+
+**Second, the `roughness = 0.9` that completed item 8 removed is still in the
+ray-tracing hit shader.** That entry ("Forward shading ignores material
+diffuse and roughness", DONE 2026-07-22) records replacing "the hard-coded 0.9
+that DEFERRED also wrote into its own G-buffer". `rasterizer.slang:73` and
+`deferred.slang:79` both derive roughness from `material.shininess` today;
+`raytracing/raytrace.rchit.slang:111` is still `float roughness = 0.9;`, so
+the RT path shades every surface in the scene as if it were near-fully rough
+regardless of its material.
+
+**Third, `metallic_factor` never leaves the glTF loader.**
+`GltfLoader.cpp:125-129` opens `pbr_metallic_roughness` and reads
+`base_color_factor` and `roughness_factor` — and not `metallic_factor`.
+`ObjMaterial` has no slot for it (`ObjMaterial.hpp:6-36`), so all three C++
+shading paths pass a literal `0.0` for the `brdf_direct` metallic parameter
+and compute `float3 f0 = lerp(float3(0.04), ambient, 0.0)` — an identity whose
+`ambient` operand is dead and whose shape deliberately mimics
+`brdf.slang:56`'s documented `mix(0.04, albedo, metallic)` while pinning the
+mix to zero. Three copies (`rasterizer.slang:77`, `deferred.slang:133`,
+`raytrace.rchit.slang:120`) plus the CI-guard shader
+(`tests/brdf_test.slang:18`). The Rust twin does the real thing
+(`forward.slang:385`, `:400`): `metallic = clamp(material_factors.x *
+mrSample.b, 0, 1)` and `f0 = lerp(float3(0.04), albedo.rgb, metallic)`. So
+every metal in a glTF scene renders as a dielectric in the Vulkan renderer and
+as a metal in the WebGPU one. `gltfParseSuite.cpp` has zero assertions on
+metallic, roughness or shininess.
+
+**Fourth, three sampler sites hard-code `maxAnisotropy = 16.0F`** without
+reading `VkPhysicalDeviceLimits::maxSamplerAnisotropy`
+(`PostStage.cpp:135-140`, `Model.cpp:80-85`; `Texture.cpp:260-267` passes
+`VK_FALSE`/`1.0F` and is fine). VUID-VkSamplerCreateInfo-anisotropyEnable-01071
+requires `maxAnisotropy` to lie in `[1.0, limits.maxSamplerAnisotropy]`, so on
+any device reporting less than 16 this is a validation error. The two sites
+also answer "is anisotropy available" differently — `PostStage.cpp:133` issues
+its own `getPhysicalDevice().getFeatures()` call while `Model.cpp:78` uses the
+cached `device->supportsSamplerAnisotropy()`. Underneath both:
+`VulkanDevice.cpp:669` makes `device_features.samplerAnisotropy` a hard
+device-**suitability** requirement, so the engine refuses to run at all on a
+device without it — which is exactly the class of software Vulkan device
+(lavapipe) that could give the golden suites a CI home, and which also makes
+the `aniso ? 16.0F : 1.0F` fallbacks unreachable dead branches today.
+
+**Fifth, five `ObjMaterial` members are uploaded per material and read by no
+shader.** A grep for `material.ambient`, `.specular`, `.transmittance`, `.ior`
+and `.illum` across every `.slang` returns **zero** hits (against 6 for
+`.diffuse` and 2 for `.dissolve`). They are mirrored into the GPU-side struct
+(`scene_types.slang:33-48`), which must match the host layout byte-for-byte
+because the shaders cast a buffer device address to `Materials*` — so they
+cost 44 bytes in every material record for nothing. On the host they are
+written only by `ObjLoader.cpp:195-203` from the `.mtl` and read by nobody.
+`SceneUBO` already has this gate (`BuildIntegrity.EverySceneUboFieldIsReadByAShader`,
+`buildIntegritySuite.cpp:5728`); the material struct has none.
+
+Ordering: task 1 and task 4 are independent of everything else and of each
+other. Task 2 must land before task 3 (both edit `raytrace.rchit.slang`, and
+task 3 assumes task 2 already replaced the literal). Task 3 must land before
+task 5 (both edit `ObjMaterial.hpp` + `scene_types.slang` + the
+`SharedStructOffsetsMatchTheCompiledSpirv` fixture; doing them in the other
+order means writing that fixture twice). Task 1 shifts absolute pixel values
+in the golden suite, so land it before running any golden-based verification
+for tasks 2/3.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Derive the ray-tracing hit shader's roughness from the material, like both raster paths already do** — `raytrace.rchit.slang:111` is the last surviving copy of the hard-coded `0.9` that completed item 8 removed from forward and deferred on 2026-07-22.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/raytracing/raytrace.rchit.slang:111-125` — the
+    `float roughness = 0.9;` and the `brdf_direct` call below it.
+  - `Resources/ShadersSlang/rasterizer/rasterizer.slang:73` — the expression
+    to reuse: `clamp(sqrt(2.0 / (material.shininess + 2.0)), 0.045, 1.0)`.
+  - `Resources/ShadersSlang/deferred/deferred.slang:79` — the same expression,
+    third copy, packed into the G-buffer.
+  - `BACKLOG.md`, completed item 8 ("Forward shading ignores material diffuse
+    and roughness") — the fix this one was missed by.
+
+  **Steps:**
+  1. Replace `raytrace.rchit.slang:111` with the shininess-derived roughness.
+     `material` is already in scope at that point (the shader reads
+     `material.emission` at `:69` and `ambient` comes from the same fetch).
+  2. Because that expression now has three identical copies, move it into
+     `Resources/ShadersSlang/common/material_fetch.slang` as
+     `float material_roughness(ObjMaterial material)` with a one-line comment
+     naming the Beckmann-style shininess→roughness mapping and the 0.045
+     floor, and call it from all three sites. `material_fetch` is already
+     imported by all three (`rasterizer.slang:3`, `deferred.slang:2`,
+     `raytrace.rchit.slang` — verify its import list first and add it if
+     absent).
+  3. Recompile shaders (SPIR-V only, no C++ rebuild):
+     `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`
+
+  **Test:** add `BuildIntegrity.EveryShadingPathDerivesRoughnessFromTheMaterial`
+  to `buildIntegritySuite.cpp` — assert no `.slang` under
+  `Resources/ShadersSlang/` assigns a numeric literal to a variable named
+  `roughness`, and that each of the three shading shaders calls
+  `material_roughness`. Model it on
+  `BuildIntegrity.EveryShaderDerivesTheLightVectorByNegation`
+  (`buildIntegritySuite.cpp:2863`), which is the same "one rule, N shaders"
+  shape. `BuildIntegrity.EverySlangFunctionIsReachableFromAnEntryPoint`
+  (`:3386`) will also exercise the new helper, so run the whole
+  `BuildIntegrity.*` filter.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='BuildIntegrity.*'`.
+  Host GPU confirmation: `--gtest_filter='GoldenRender.RayTracing*'` from the
+  repo root — RT surfaces should gain a visible specular highlight.
+
+  **Context:** Land this before the metallic task below; both edit
+  `raytrace.rchit.slang:111-125` and the metallic task assumes the literal is
+  already gone. Do not "fix" this by giving the RT path its own roughness
+  constant that happens to look nicer — the point is that all three paths read
+  the same material field through one expression.
+
+- [ ] **(M) Carry glTF `metallic_factor` into `ObjMaterial` and use it in all three C++ shading paths** — the loader opens `pbr_metallic_roughness`, reads two of its three factors and drops metallic, so every metal renders as a dielectric in the Vulkan renderer and as a metal in the WebGPU one.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:115-192` —
+    `fromGltfMaterial`. `:125-129` is where `metallic_factor` should be read;
+    `:116-117`'s doc comment ("this engine has no metallic-roughness PBR
+    slot") is what this task makes false.
+  - `Src/shared/scene/ObjMaterial.hpp:6-63` — the host struct, both
+    constructors, and the scalar-layout rationale in the `alphaCutoff` /
+    `uv_transform_row*` comments (`:20-35`) that explains where a new trailing
+    scalar may go.
+  - `Resources/ShadersSlang/common/scene_types.slang:32-48` — the GPU mirror.
+    It is cast from a buffer device address, so the two layouts must match
+    exactly.
+  - `Resources/ShadersSlang/forward/forward.slang:385`, `:400` — the Rust
+    twin's real implementation, and the naming to match.
+  - `Resources/ShadersSlang/common/brdf.slang:47-79` — `brdf_direct`; `:56`
+    documents `f0 = mix(0.04, albedo, metallic)` and `:78` is where metallic
+    kills the diffuse lobe.
+  - `Resources/ShadersSlang/rasterizer/rasterizer.slang:77-79`,
+    `deferred/deferred.slang:73-79`,`:129-136`,
+    `raytracing/raytrace.rchit.slang:118-124`,
+    `tests/brdf_test.slang:18` — the four `lerp(float3(0.04), …, 0.0)` sites.
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.ixx:74-79` — the
+    G-buffer formats. `GBUFFER_NORMAL_FORMAT` is `eR16G16B16A16Sfloat` and
+    `deferred.slang:73` writes a constant `1.0` into its `.w`, which
+    `lighting_fs_main` never reads (`:124` uses `normal.xyz`) — that is the
+    free channel for metallic.
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp:600-660` — the
+    `dissolve`/`baseColorFactor.a` assertions; the pattern for the new ones.
+    `Resources/Models/GltfTest/mask_card.gltf` is the pattern for a new
+    single-material test asset.
+
+  **Steps:**
+  1. Add `float metallic;` to `ObjMaterial` **after** `uv_transform_row1` (a
+     trailing scalar, same rationale the existing comments give), default
+     `0.0F`, and add it as a trailing defaulted constructor parameter so no
+     existing call site changes. Mirror it as the last member of
+     `scene_types.slang`'s `ObjMaterial`.
+  2. `GltfLoader.cpp`: read `pbr.metallic_factor` next to `roughness_factor`
+     at `:129`, clamp to `[0,1]`, and pass it through. Update the `:115-119`
+     doc comment — metallic is no longer lossy; roughness still is (it round
+     trips through Phong shininess via `:144`, and `sqrt(2/(shininess+2))`
+     does not invert `mix(128,1,r)`; say so explicitly rather than leaving the
+     comment vague, and do not attempt to fix that round trip here).
+  3. `ObjLoader.cpp`: leave metallic at its `0.0F` default — Wavefront `.mtl`
+     has no metallic channel, so OBJ scenes stay bit-identical.
+  4. `rasterizer.slang` and `raytrace.rchit.slang`: replace `lerp(float3(0.04),
+     ambient, 0.0)` with `lerp(float3(0.04), ambient, material.metallic)` and
+     pass `material.metallic` as `brdf_direct`'s metallic argument instead of
+     the literal `0.0`.
+  5. `deferred.slang`: write metallic into `g.outNormal.w` at `:73` (replacing
+     the constant `1.0`) with a comment naming `GBUFFER_NORMAL_FORMAT` as the
+     reason the channel is free and float; in `lighting_fs_main` read it back
+     as `normal.w` and use it for both `f0` and the `brdf_direct` metallic
+     argument.
+  6. `tests/brdf_test.slang:18`: take metallic from a variable rather than the
+     `0.0` literal so the CI guard exercises the real expression on both
+     targets.
+  7. Recompile shaders; `brdf_test` emits to **both** SPIR-V and WGSL, so
+     watch that leg of the compile script.
+
+  **Test:** three additions. (a) `GltfParse.*`: a new
+  `Resources/Models/GltfTest/metallic_card.gltf` (copy `mask_card.gltf`, set
+  `metallicFactor` to something non-default like 0.75) plus an assertion that
+  `loader.getMaterials()[0].metallic` is 0.75, and one that a glTF *without*
+  `pbr_metallic_roughness` yields 0.0. (b) An `ObjParse.*` assertion that an
+  OBJ material comes back with metallic 0.0. (c) Extend
+  `BuildIntegrity.SharedStructOffsetsMatchTheCompiledSpirv`
+  (`buildIntegritySuite.cpp:5535`) so the new member is covered, and add
+  `BuildIntegrity.NoShadingPathPinsMetallicToZero` asserting that no `.slang`
+  contains `lerp(float3(0.04)` followed by a `0.0` third argument. Model the
+  latter on `BuildIntegrity.EveryBaseColourSampleIsScaledByTheMaterialFactor`
+  (`:2474`).
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='GltfParse*:ObjParse*:BuildIntegrity.*'`.
+  Host GPU: `--gtest_filter='GoldenRender.*'` from the repo root — the shipped
+  scenes have metallic 0, so goldens should be **unchanged**; a shifted golden
+  means the default is leaking somewhere.
+
+  **Context:** Same family as the `baseColorFactor`, `baseColorFactor.a`,
+  `emissive_factor` and `KHR_texture_transform` tasks that shipped over the
+  last week — a glTF field the Rust loader honours and the C++ loader parses
+  and discards. Land task 2 above first (both edit `raytrace.rchit.slang`) and
+  land this before task 5 below (both edit `ObjMaterial.hpp`,
+  `scene_types.slang` and the shared-offset fixture). Do **not** also add
+  metallic-roughness *textures* — the C++ `Vertex`/descriptor layout has one
+  texture slot per material and that is a separate, much larger change.
+
+- [ ] **(M) Clamp sampler anisotropy to the device limit, ask the device once, and stop rejecting devices that lack the feature** — three sites request 16x without reading `maxSamplerAnisotropy` (a spec violation on any device that reports less), and the suitability check refuses to run at all on a device without anisotropy, which is exactly the software-Vulkan class that could host the golden suites.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/vulkan_base/SamplerBuilder.cpp:11-38` and
+    `SamplerBuilder.ixx:13-22` — the shared builder; `maxAnisotropy` is a
+    plain pass-through parameter today.
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:131-145` — hard-coded
+    `16.0F`, and its own `getPhysicalDevice().getFeatures()` call at `:133`.
+  - `Src/GraphicsEngineVulkan/scene/Model.cpp:70-92` — hard-coded `16.0F`,
+    availability from the cached `device->supportsSamplerAnisotropy()`.
+  - `Src/GraphicsEngineVulkan/scene/Texture.cpp:249-272` — the third caller;
+    passes `VK_FALSE`/`1.0F` and needs no change, but read it so the new
+    helper's signature fits all three.
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.cpp:653-669` —
+    `check_device_suitable`; `:669` is the `&& device_features.samplerAnisotropy`
+    to remove. `:389` and `:418` are where the feature is enabled from and
+    cached; the limit should be cached alongside.
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.ixx:33`,`:77` — the
+    accessor and the cached flag to sit next to.
+  - `Src/GraphicsEngineVulkan/vulkan_base/PhysicalDeviceChoices.hpp:64-71` —
+    `shouldEnableComputeDerivativeGroupQuads`, the exact pattern to follow: a
+    `constexpr` predicate over capability bits, unit-tested without a device.
+  - `Test/commit/VulkanEngine/physicalDeviceChoicesSuite.cpp:50` —
+    `ComputeDerivativeQuadsNeedBothTheExtensionAndTheFeature`, the test
+    pattern.
+
+  **Steps:**
+  1. Add `constexpr float resolveMaxAnisotropy(bool anisotropyEnabled, float
+     deviceLimit)` to `PhysicalDeviceChoices.hpp`: returns `1.0F` when
+     disabled, otherwise `std::clamp(16.0F, 1.0F, deviceLimit)`. Comment it
+     with the VUID
+     (`VUID-VkSamplerCreateInfo-anisotropyEnable-01071`) and with why 16 is
+     the ceiling we ask for rather than the limit itself (diminishing returns
+     past 16x; asking for the raw limit would silently change quality per
+     GPU).
+  2. Cache the limit in `VulkanDevice` next to `deviceSupportsSamplerAnisotropy`
+     (`VulkanDevice.ixx:77`) — set it from `getProperties().limits.maxSamplerAnisotropy`
+     wherever `:418` caches the feature bit — and expose
+     `maxSamplerAnisotropy()` beside `supportsSamplerAnisotropy()` at `:33`.
+  3. Rewrite `PostStage.cpp:133-140` to use `device->supportsSamplerAnisotropy()`
+     and `resolveMaxAnisotropy(...)`, deleting the local
+     `getPhysicalDevice().getFeatures()` call. Do the same at
+     `Model.cpp:78-85`.
+  4. Delete `&& device_features.samplerAnisotropy` from
+     `VulkanDevice.cpp:669`. Leave `:389` alone — the feature is still
+     *enabled* when available, and `BuildIntegrity.EveryEnabledDeviceFeatureIsCopiedFromAnAvailabilityQuery`
+     (`buildIntegritySuite.cpp:7102`) depends on that shape. Add a comment at
+     `:669` recording that anisotropy is a quality knob with a working
+     fallback, not a requirement, and naming lavapipe as the device this
+     unblocks.
+  5. `device_features` may become unused in `check_device_suitable` after
+     step 4 — if so, delete the local rather than leaving a dead query.
+
+  **Test:** add `PhysicalDeviceChoicesUnit.MaxAnisotropyIsClampedToTheDeviceLimit`
+  to `physicalDeviceChoicesSuite.cpp` covering: disabled → 1.0; limit 16 →
+  16.0; limit 2 → 2.0; limit 1 → 1.0. Then add
+  `BuildIntegrity.NoSamplerHardCodesItsMaxAnisotropy` to
+  `buildIntegritySuite.cpp` asserting that no source under
+  `Src/GraphicsEngineVulkan/` passes a numeric literal above 1.0 as
+  `buildSamplerCreateInfo`'s `maxAnisotropy` argument, and that
+  `getFeatures()` is not called outside `VulkanDevice.cpp`. Follow
+  `BuildIntegrity.EveryRenderStageDerivesItsDepthFormatOnce` (`:7445`) for the
+  "one source of a capability answer" shape.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='PhysicalDeviceChoicesUnit.*:BuildIntegrity.*'`.
+  On the host, launch once (`.\Scripts\Windows\run_clangcl_debug.ps1`) with the
+  validation layers installed and confirm the log has no
+  `VUID-VkSamplerCreateInfo` entries — the RX 9070 XT reports a limit of 16,
+  so behaviour there must be unchanged.
+
+  **Context:** Do not chase the follow-on question of actually running the
+  engine on lavapipe in this task — removing the suitability veto is the
+  prerequisite, and whether a software device gets far enough to render is a
+  separate investigation. Same class as the SBT `- [b]` entry above: a spec
+  violation invisible only because every GPU this has run on happens to sit at
+  the permissive end of the limit.
+
+- [ ] **(S) (refactor) Delete the five `ObjMaterial` members no shader reads, and gate the struct the way `SceneUBO` is gated** — `ambient`, `specular`, `transmittance`, `ior` and `illum` are mirrored into the GPU material record and read by zero shaders, costing 44 bytes in every material.
+
+  **Files to read:**
+  - `Src/shared/scene/ObjMaterial.hpp:6-63` — the struct and both
+    constructors.
+  - `Resources/ShadersSlang/common/scene_types.slang:32-48` — the GPU mirror
+    that must stay byte-identical (it is cast from a buffer device address via
+    `Materials` at `:66`).
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:190-205` — the only writer of
+    all five, straight from tinyobj's `.mtl` data.
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:98-192` — both the default
+    material (`:98-111`) and `fromGltfMaterial`'s return (`:180-192`) pass
+    positional values for them.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:5728` —
+    `EverySceneUboFieldIsReadByAShader`, the gate to clone.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:5535` —
+    `SharedStructOffsetsMatchTheCompiledSpirv`, which must be updated in the
+    same change.
+  - `Test/commit/VulkanEngine/objParseSuite.cpp`,
+    `Test/commit/VulkanEngine/gltfParseSuite.cpp` — every construction site
+    that the constructor-arity change touches.
+
+  **Steps:**
+  1. Verify the finding still holds before deleting anything: a grep for
+     `material.ambient`, `material.specular`, `material.transmittance`,
+     `material.ior` and `material.illum` across `Resources/ShadersSlang/**/*.slang`
+     must return zero hits. If any now has a reader, drop that member from the
+     deletion list and say so in the commit message.
+  2. Delete the five members from `ObjMaterial.hpp` and from
+     `scene_types.slang`'s mirror, and drop them from both constructors.
+     Keeping the positional constructor is fine; it just gets shorter.
+  3. Fix the call sites: `ObjLoader.cpp:190-205` (delete the five
+     assignments, keep `shininess`/`dissolve`), `GltfLoader.cpp:98-111` and
+     `:180-192` (drop the corresponding positional arguments and their
+     trailing `// ambient` style comments).
+  4. Update the affected assertions in `objParseSuite.cpp` /
+     `gltfParseSuite.cpp` — do not weaken a test to compile; if a test
+     asserted on a deleted field, delete that assertion and note it.
+  5. `rasterizer.slang:57`,`:63`,`:68`,`:71` and `deferred.slang:128` name a
+     local `ambient` that actually holds albedo — with the material member of
+     that name gone, rename those locals to `albedo` in the same pass so the
+     word means one thing in this codebase.
+
+  **Test:** add `BuildIntegrity.EveryObjMaterialFieldIsReadByAShader` to
+  `buildIntegritySuite.cpp`, cloned from `EverySceneUboFieldIsReadByAShader`
+  (`:5728`): parse the member names out of `scene_types.slang`'s `ObjMaterial`
+  and require each to appear as `material.<name>` in at least one shader
+  outside `scene_types.slang`. Update
+  `BuildIntegrity.SharedStructOffsetsMatchTheCompiledSpirv` (`:5535`) for the
+  new layout.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='BuildIntegrity.*:ObjParse*:GltfParse*'`.
+  Host GPU: `--gtest_filter='GoldenRender.*'` — this change must be
+  **pixel-identical**; any golden that moves means a live reader was missed.
+
+  **Context:** Land after the metallic task above — both edit
+  `ObjMaterial.hpp`, `scene_types.slang` and the shared-offset fixture, and
+  doing this one second means the offsets fixture is written once, for the
+  final layout. The `SceneUBO` gate this clones was itself written after the
+  same finding on the other shared struct (`SceneUboWComponentsCarryingDataAreReadByAShader`,
+  `:5779`); this closes the matching hole on the material record.
+

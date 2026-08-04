@@ -7920,3 +7920,60 @@ TEST(BuildIntegrity, DocsNameThisRepository)
              return joined;
          }();
 }
+
+// The C++ engine's swapchain is UNORM, not sRGB (SwapchainChoices.hpp's
+// chooseBestSurfaceFormat), so there is no hardware encode on present -
+// every fragment shader that writes directly into the swapchain
+// (post/post.slang, the last stage of the post pass, and skybox/skybox.slang,
+// which bypasses the post pass entirely) must apply linear_to_srgb itself.
+// If a future change ever prefers an sRGB surface format instead, this gate
+// must fail loudly so those shader-side encodes get removed with it - see
+// BACKLOG.md's "sRGB-encode every shader that writes the swapchain" entry.
+TEST(BuildIntegrity, EverySwapchainWritingShaderEncodesSrgb)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path swapchain_choices_path =
+      repo_root / "Src" / "GraphicsEngineVulkan" / "vulkan_base" / "SwapchainChoices.hpp";
+    const auto swapchain_choices_text = readFileText(swapchain_choices_path);
+    ASSERT_TRUE(swapchain_choices_text.has_value()) << "missing " << swapchain_choices_path.string();
+
+    // Match vk::Format::e...Srgb..., not vk::ColorSpaceKHR::eSrgbNonlinear -
+    // the latter is the expected, unrelated presentation color space.
+    static const std::regex kSrgbFormat(R"(vk::Format::e\w*Srgb)");
+    EXPECT_FALSE(std::regex_search(*swapchain_choices_text, kSrgbFormat))
+      << swapchain_choices_path.string()
+      << " now prefers an sRGB surface format - the shader-side linear_to_srgb encodes in post.slang and "
+         "skybox.slang become a double-encode and must be removed";
+
+    const fs::path slang_root = slangRoot();
+    const std::array<fs::path, 2> shaders = { slang_root / "post" / "post.slang",
+        slang_root / "skybox" / "skybox.slang" };
+
+    for (const fs::path &shader_path : shaders) {
+        const auto source = readFileText(shader_path);
+        ASSERT_TRUE(source.has_value()) << "missing " << shader_path.string();
+
+        static const std::string kFragmentMarker = "[shader(\"fragment\")]";
+        const std::size_t marker_pos = source->find(kFragmentMarker);
+        ASSERT_NE(marker_pos, std::string::npos)
+          << "no [shader(\"fragment\")] entry point found in " << shader_path.string();
+
+        const std::size_t body_start = source->find('{', marker_pos);
+        ASSERT_NE(body_start, std::string::npos)
+          << "could not find the fragment entry point's opening brace in " << shader_path.string();
+
+        std::size_t depth = 1;
+        std::size_t pos = body_start + 1;
+        for (; pos < source->size() && depth > 0; ++pos) {
+            if ((*source)[pos] == '{') { ++depth; }
+            else if ((*source)[pos] == '}') { --depth; }
+        }
+        ASSERT_EQ(depth, 0u) << "unbalanced braces in the fragment entry point of " << shader_path.string();
+
+        const std::string body = source->substr(body_start, pos - body_start);
+        EXPECT_NE(body.find("linear_to_srgb"), std::string::npos)
+          << shader_path.string() << "'s fragment entry point must call linear_to_srgb before writing the swapchain";
+    }
+}

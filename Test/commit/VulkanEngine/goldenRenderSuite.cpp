@@ -2399,18 +2399,24 @@ TEST(GoldenRender, ReloadedModelIsVisibleInPathTracing)
 // reweighting, the accumulation mean, and the tonemap all sit under one
 // number.
 //
-// The ideal value below was RECALIBRATED (2026-07-31, restoring the bounce
-// loop lost in the Slang port): the post-processing tonemap moved from
-// Reinhard+manual-gamma to the ACES filmic curve (common/aces.slang,
-// Narkowicz 2015) in the same migration that dropped the bounce loop, and
-// the C++ engine's sRGB render target does NOT re-apply linear_to_srgb on
-// top of that (unlike the Rust renderer's non-sRGB-canvas path) - the ACES
-// output is written directly. So tonemap(1.0) = aces_tonemap(1.0) * 255 =
-// 0.80380 * 255 = 204.97, matching the measured mean below almost exactly.
-// The OLD "186" band was Reinhard-specific and went stale the moment the
-// tonemap changed; it does not indicate a bounce-loop bug (cross-checked
-// against a pure-background, single-bounce furnace capture, which hits this
-// exact formula with zero escape/bounce ambiguity).
+// The ideal value below was RECALIBRATED again (2026-08-04, sRGB-encoding
+// the swapchain): the C++ engine's swapchain is UNORM, not sRGB
+// (SwapchainChoices.hpp's chooseBestSurfaceFormat), so there is no hardware
+// encode on present - post.slang now applies linear_to_srgb itself, exactly
+// like the Rust renderer's non-sRGB-canvas path always has. So tonemap(1.0)
+// = linear_to_srgb(aces_tonemap(1.0)) * 255 = linear_to_srgb(0.80380) * 255
+// ~= 231.60, matching the measured mean below almost exactly. The move from
+// 204.97 to 231.60 is the encode being ADDED, not the tonemap changing
+// again (that recalibration, 2026-07-31, is preserved below for context).
+//
+// [2026-07-31, restoring the bounce loop lost in the Slang port]: the
+// post-processing tonemap moved from Reinhard+manual-gamma to the ACES
+// filmic curve (common/aces.slang, Narkowicz 2015) in the same migration
+// that dropped the bounce loop. The OLD "186" band was Reinhard-specific
+// and went stale the moment the tonemap changed; it does not indicate a
+// bounce-loop bug (cross-checked against a pure-background, single-bounce
+// furnace capture, which hits this exact formula with zero escape/bounce
+// ambiguity).
 TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
 {
     SKIP_WITHOUT_GPU();
@@ -2474,18 +2480,18 @@ TEST(GoldenRender, PathTracingPassesTheWhiteFurnaceTest)
         for (uint32_t x = x0; x < x1; ++x) {
             const double lum = luminance_of(frame, static_cast<size_t>(y) * width + x);
             sum += lum;
-            if (std::abs(lum - 205.0) <= 6.0) { ++within; }
+            if (std::abs(lum - 231.6) <= 6.0) { ++within; }
             ++total;
         }
     }
     const double mean = sum / static_cast<double>(total);
     const double uniform_fraction = static_cast<double>(within) / static_cast<double>(total);
     GTEST_LOG_(INFO) << "furnace crop mean luminance: " << mean
-                     << " (ideal 205), fraction within +-6: " << uniform_fraction;
+                     << " (ideal 231.6), fraction within +-6: " << uniform_fraction;
 
-    EXPECT_GT(mean, 199.0) << "Furnace converges LOW - the estimator is losing energy "
+    EXPECT_GT(mean, 225.6) << "Furnace converges LOW - the estimator is losing energy "
                               "(beyond the known bounce-cap truncation).";
-    EXPECT_LT(mean, 211.0) << "Furnace converges HIGH - the estimator is gaining energy.";
+    EXPECT_LT(mean, 237.6) << "Furnace converges HIGH - the estimator is gaining energy.";
     EXPECT_GT(uniform_fraction, 0.98)
       << "The furnace image is not uniform - geometry is visible, so some path "
          "class is biased.";

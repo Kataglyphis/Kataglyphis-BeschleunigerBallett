@@ -1,6 +1,8 @@
 // Skybox shaders. Sole source for this shader. Emits SPIR-V only
 // (C++/Vulkan cubemap-based skybox).
 
+import aces;
+
 struct CameraUBO
 {
     float4x4 projection;
@@ -43,9 +45,14 @@ VsOut vs_main(float3 in_position : POSITION,
 [shader("fragment")]
 float4 fs_main(VsOut In) : SV_Target
 {
+    // The skybox renders directly into the swapchain (no post pass in
+    // between), and the swapchain is UNORM - see the same note in
+    // post/post.slang. Every value written here is authored linear, so both
+    // branches go through linear_to_srgb to keep one output rule for the
+    // pass.
     if (pc_skybox.skybox_enabled != 0u)
     {
-        return float4(skyboxSampler.Sample(normalize(In.worldDir)).xyz, 1.0);
+        return float4(linear_to_srgb(skyboxSampler.Sample(normalize(In.worldDir)).xyz), 1.0);
     }
-    return float4(0.0, 0.0, 0.5, 1.0);
+    return float4(linear_to_srgb(float3(0.0, 0.0, 0.5)), 1.0);
 }
