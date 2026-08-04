@@ -5,8 +5,6 @@ import kataglyphis.vulkan.app;
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
-#include <span>
-#include <string_view>
 #include <system_error>
 #include <vector>
 
@@ -26,23 +24,14 @@ import kataglyphis.vulkan.app;
 #include <iostream>
 #include <string>
 
+// abseil owns argument parsing, `--help` and unknown-argument rejection;
+// do not add a hand-rolled parser alongside it.
 ABSL_FLAG(std::string,
           gpu,
           "",
           "GPU selection mode (auto, dedicated, integrated)");
 
 namespace {
-enum class CommandLineParseResultKind {
-    Continue,
-    ExitSuccess,
-    ExitFailure,
-};
-
-struct CommandLineParseResult {
-    CommandLineParseResultKind kind{ CommandLineParseResultKind::Continue };
-    std::string gpu_mode;
-};
-
 auto normalize_gpu_mode(std::string value) -> std::string
 {
     for (auto &character : value) {
@@ -93,57 +82,6 @@ void initialize_logging()
 #endif
 }
 
-void print_usage(const char *executable_name)
-{
-    std::cout << "Usage: " << executable_name << " [--gpu <auto|dedicated|integrated>]\n";
-}
-
-auto parse_command_line(int argc, char **argv) -> CommandLineParseResult
-{
-    CommandLineParseResult result{};
-    const char *const executable_name = argc > 0 ? argv[0] : "GraphicsEngine";
-
-    for (int index = 1; index < argc; ++index) {
-        const std::string_view argument{ argv[index] };
-
-        if (argument == "--help" || argument == "-h") {
-            print_usage(executable_name);
-            result.kind = CommandLineParseResultKind::ExitSuccess;
-            return result;
-        }
-
-        if (argument == "--gpu") {
-            if (index + 1 >= argc) {
-                std::cerr << "Missing value for --gpu\n";
-                print_usage(executable_name);
-                result.kind = CommandLineParseResultKind::ExitFailure;
-                return result;
-            }
-
-            result.gpu_mode = argv[++index];
-            continue;
-        }
-
-        if (argument.starts_with("--gpu=")) {
-            result.gpu_mode = std::string(argument.substr(6));
-            if (result.gpu_mode.empty()) {
-                std::cerr << "Missing value for --gpu\n";
-                print_usage(executable_name);
-                result.kind = CommandLineParseResultKind::ExitFailure;
-                return result;
-            }
-
-            continue;
-        }
-
-        std::cerr << "Unknown argument: " << argument << '\n';
-        print_usage(executable_name);
-        result.kind = CommandLineParseResultKind::ExitFailure;
-        return result;
-    }
-
-    return result;
-}
 }// namespace
 
 auto main(int argc, char **argv) -> int

@@ -7612,3 +7612,26 @@ TEST(BuildIntegrity, EveryVulkanDeviceParameterIsTakenByConstReference)
                                   "(DescriptorSetGroup::create, the GltfLoader ctor, the ShaderStagePair ctor) - "
                                   "if all sinks were removed, delete this check too";
 }
+
+// Main.cpp used to carry a hand-rolled parse_command_line()/print_usage()
+// pair alongside absl::ParseCommandLine - ~62 dead lines describing a
+// --help/--gpu contract main() never called. This gate pins abseil as the
+// single CLI front end so the dead parser cannot silently come back.
+TEST(BuildIntegrity, MainHasOneCommandLineParser)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path source = repo_root / "Src" / "GraphicsEngineVulkan" / "Main.cpp";
+    const auto text = read_file_text(source);
+    ASSERT_TRUE(text.has_value()) << "could not read " << source.string();
+
+    EXPECT_NE(text->find("absl::ParseCommandLine"), std::string::npos)
+      << "Main.cpp must parse arguments via absl::ParseCommandLine in " << source.string();
+    EXPECT_EQ(text->find("parse_command_line"), std::string::npos)
+      << "Main.cpp must not carry a hand-rolled parse_command_line() alongside absl::ParseCommandLine in "
+      << source.string();
+    EXPECT_EQ(text->find("print_usage"), std::string::npos)
+      << "Main.cpp must not carry a hand-rolled print_usage() alongside absl::ParseCommandLine in "
+      << source.string();
+}

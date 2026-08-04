@@ -8620,52 +8620,6 @@ session, do **task 2 first**, because task 1's shader edits then recompile on
 top of an already-fixed render pass rather than the other way round. Task 5 is
 Rust and disjoint from all four.
 
-- [ ] **(S) (refactor) Delete `Main.cpp`'s unreachable command-line parser and
-  pin abseil as the single CLI front end** — ~62 lines describing a
-  `--help`/`--gpu` contract that `main` has not used since abseil flags landed.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/Main.cpp:29-32` (the `ABSL_FLAG`), `:34-54`
-    (the dead types plus the live `normalize_gpu_mode`), `:96-146` (the dead
-    `print_usage`/`parse_command_line`), `:149-186` (`main`, which calls
-    `absl::ParseCommandLine` and never the local parser)
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — the grep-gate helpers
-    (`read_file_text` at `:1027`) and any existing single-source gate to copy
-
-  **Steps:**
-  1. Delete `CommandLineParseResultKind` (`:35-39`), `CommandLineParseResult`
-     (`:41-44`), `print_usage` (`:96-99`) and `parse_command_line`
-     (`:101-146`). Keep `normalize_gpu_mode` — it is called at `:158`.
-  2. Prune the includes those functions were the only users of. Check each one
-     against what is left before removing it: `<iostream>` is still needed
-     (`std::cout` at `:175`, inside `#if USE_RUST`), `<vector>` is still needed
-     (the sink vector), `<string_view>` and `<span>` are the likely casualties.
-     Build after this step specifically — a wrongly pruned include is the only
-     way this task can break anything.
-  3. Add a short comment above the `ABSL_FLAG` recording that abseil owns
-     argument parsing, `--help` and unknown-argument rejection, so the next
-     reader does not re-add a hand-rolled parser next to it.
-
-  **Test:** Add `BuildIntegrity.MainHasOneCommandLineParser` to
-  `buildIntegritySuite.cpp`: read `Src/GraphicsEngineVulkan/Main.cpp` and
-  assert it contains `absl::ParseCommandLine` and contains neither
-  `parse_command_line` nor `print_usage`. CPU only, same shape as the other
-  source-text gates in that file.
-
-  **Build:** `clangcl-debug`, with `-FreshContainer` (a file's worth of
-  symbols disappears, and a reused container never prunes):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
-  Then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root, and
-  spot-check the binary still parses flags:
-  `.\build-clangcl-debug\GraphicsEngine.exe --help` and `--gpu dedicated`.
-
-  **Context:** Same family as the dead-accessor and dead-parameter sweeps in
-  the 2026-08-01/02 batches: the risk of dead code here is not bytes, it is
-  that `Main.cpp` is the first file a new reader opens and half of it
-  describes a code path that cannot run. Do not "revive" the parser instead —
-  abseil is already wired into the build and CI, and two parsers is how the
-  `--gpu` handling drifts.
-
 - [ ] **(S) (refactor) Give the Rust crate's 26 `wgpu::BufferDescriptor`
   literals five named constructors** — the sixth member of the descriptor-shape
   family, after `bind_layout.rs`, `pipeline_desc.rs` and the texture
