@@ -81,7 +81,7 @@ void setupDebugging(vk::Instance instance, vk::DebugReportFlagsEXT /*flags*/, vk
 
     vk::Result result;
     std::tie(result, debugUtilsMessenger) = instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCI, nullptr);
-    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to create debug messenger")
+    ASSERT_VULKAN(result, "Failed to create debug messenger");
 }
 
 void freeDebugCallback(vk::Instance instance)

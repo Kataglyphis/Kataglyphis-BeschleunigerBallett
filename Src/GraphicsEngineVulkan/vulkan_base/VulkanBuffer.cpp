@@ -105,7 +105,7 @@ void Kataglyphis::VulkanBuffer::create(const std::shared_ptr<VulkanDevice> &vulk
                         &c_buffer,
                         &allocation,
                         &allocation_info),
-          "Failed to create device-address buffer via VMA!")
+          "Failed to create device-address buffer via VMA!");
     } else {
         ASSERT_VULKAN(vmaCreateBuffer(device->getVmaAllocator(),
                         &c_buffer_info,
@@ -113,7 +113,7 @@ void Kataglyphis::VulkanBuffer::create(const std::shared_ptr<VulkanDevice> &vulk
                         &c_buffer,
                         &allocation,
                         &allocation_info),
-          "Failed to create buffer via VMA!")
+          "Failed to create buffer via VMA!");
     }
 
     buffer = c_buffer;

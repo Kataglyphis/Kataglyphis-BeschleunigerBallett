@@ -45,7 +45,7 @@ Allocator::Allocator(const vk::Device &device,
     allocatorCreateInfo.device = static_cast<VkDevice>(device);
     allocatorCreateInfo.instance = static_cast<VkInstance>(instance);
 
-    ASSERT_VULKAN(vmaCreateAllocator(&allocatorCreateInfo, &vmaAllocator), "Failed to create vma allocator!")
+    ASSERT_VULKAN(vmaCreateAllocator(&allocatorCreateInfo, &vmaAllocator), "Failed to create vma allocator!");
 }
 
 void Allocator::cleanUp()

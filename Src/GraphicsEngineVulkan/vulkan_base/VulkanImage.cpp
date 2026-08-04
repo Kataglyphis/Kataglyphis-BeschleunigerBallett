@@ -95,7 +95,7 @@ void Kataglyphis::VulkanImage::create(const std::shared_ptr<VulkanDevice> &in_de
                     &c_image,
                     &allocation,
                     nullptr),
-      "Failed to create image via VMA!")
+      "Failed to create image via VMA!");
 
     image = c_image;
 }

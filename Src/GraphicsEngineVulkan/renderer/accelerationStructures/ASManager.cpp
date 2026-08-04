@@ -158,7 +158,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(const std::sha
     query_pool_create_info.queryType = vk::QueryType::eAccelerationStructureCompactedSizeKHR;
     query_pool_create_info.queryCount = count;
     vk::ResultValue<vk::QueryPool> query_pool_result = logical.createQueryPool(query_pool_create_info);
-    ASSERT_VULKAN(query_pool_result.result, "Failed to create query pool for BLAS compaction!")
+    ASSERT_VULKAN(query_pool_result.result, "Failed to create query pool for BLAS compaction!");
     vk::QueryPool const query_pool = query_pool_result.value;
 
     std::vector<vk::AccelerationStructureKHR> handles;
@@ -225,7 +225,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::compactBLAS(const std::sha
         create_info.buffer = compacted[i].vulkanBuffer.getBuffer();
         vk::ResultValue<vk::AccelerationStructureKHR> compacted_as_result =
           logical.createAccelerationStructureKHR(create_info);
-        ASSERT_VULKAN(compacted_as_result.result, "Failed to create compacted acceleration structure!")
+        ASSERT_VULKAN(compacted_as_result.result, "Failed to create compacted acceleration structure!");
         compacted[i].vulkanAS = compacted_as_result.value;
 
         vk::CopyAccelerationStructureInfoKHR copy_info{};
@@ -392,7 +392,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createTLAS(const std::shar
     vk::AccelerationStructureKHR &tlAS = tlas.vulkanAS;
     vk::ResultValue<vk::AccelerationStructureKHR> tlas_result =
       device->getLogicalDevice().createAccelerationStructureKHR(acceleration_structure_create_info);
-    ASSERT_VULKAN(tlas_result.result, "Failed to create top-level acceleration structure!")
+    ASSERT_VULKAN(tlas_result.result, "Failed to create top-level acceleration structure!");
     tlAS = tlas_result.value;
 
     VulkanBuffer scratchBuffer;
@@ -482,7 +482,7 @@ void Kataglyphis::VulkanRendererInternals::ASManager::createSingleBlas(const std
     vk::AccelerationStructureKHR &blas_as = build_as_structure.single_blas.vulkanAS;
     vk::ResultValue<vk::AccelerationStructureKHR> blas_result =
       device->getLogicalDevice().createAccelerationStructureKHR(acceleration_structure_create_info);
-    ASSERT_VULKAN(blas_result.result, "Failed to create bottom-level acceleration structure!")
+    ASSERT_VULKAN(blas_result.result, "Failed to create bottom-level acceleration structure!");
     blas_as = blas_result.value;
 
     build_as_structure.build_info.dstAccelerationStructure = blas_as;

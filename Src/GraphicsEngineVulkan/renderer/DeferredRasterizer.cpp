@@ -250,7 +250,7 @@ void DeferredRasterizer::createRenderPass()
       Kataglyphis::buildRenderPassCreateInfo(attachments, subpasses, dependencies);
 
     auto result = device->getLogicalDevice().createRenderPass(renderPassInfo);
-    ASSERT_VULKAN(VkResult(result.result), "Failed to create deferred render pass!")
+    ASSERT_VULKAN(result.result, "Failed to create deferred render pass!");
     renderPass = result.value;
 }
 
@@ -276,7 +276,7 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
 
     vk::ResultValue<vk::PipelineLayout> geometry_pipeline_layout_result =
       device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
-    ASSERT_VULKAN(geometry_pipeline_layout_result.result, "Failed to create deferred geometry pipeline layout!")
+    ASSERT_VULKAN(geometry_pipeline_layout_result.result, "Failed to create deferred geometry pipeline layout!");
     geometryPipelineLayout = geometry_pipeline_layout_result.value;
 
     PipelineBuilder geometryPipelineBuilder;
@@ -297,7 +297,7 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
 
     vk::ResultValue<vk::PipelineLayout> lighting_pipeline_layout_result =
       device->getLogicalDevice().createPipelineLayout(lightPipelineLayoutInfo);
-    ASSERT_VULKAN(lighting_pipeline_layout_result.result, "Failed to create deferred lighting pipeline layout!")
+    ASSERT_VULKAN(lighting_pipeline_layout_result.result, "Failed to create deferred lighting pipeline layout!");
     lightingPipelineLayout = lighting_pipeline_layout_result.value;
 
     PipelineBuilder lightingPipelineBuilder;
@@ -329,7 +329,7 @@ void DeferredRasterizer::createFramebuffer()
           Kataglyphis::buildFramebufferCreateInfo(renderPass, attachments, extent);
 
         auto result = device->getLogicalDevice().createFramebuffer(framebufferInfo);
-        ASSERT_VULKAN(VkResult(result.result), "Failed to create deferred framebuffer!");
+        ASSERT_VULKAN(result.result, "Failed to create deferred framebuffer!");
         framebuffer[i] = result.value;
     }
 }

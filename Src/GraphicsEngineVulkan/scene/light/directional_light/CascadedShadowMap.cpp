@@ -219,7 +219,7 @@ void CascadedShadowMap::createRenderPass()
     renderPassInfo.pNext = &multiviewInfo;
 
     auto result = device->getLogicalDevice().createRenderPass(renderPassInfo);
-    ASSERT_VULKAN(VkResult(result.result), "Failed to create cascaded shadow map render pass!");
+    ASSERT_VULKAN(result.result, "Failed to create cascaded shadow map render pass!");
     renderPass = result.value;
 }
 
@@ -239,7 +239,7 @@ void CascadedShadowMap::createFramebuffers()
       renderPass, std::span<const vk::ImageView>(&attachment, 1), vk::Extent2D{ shadowWidth, shadowHeight });
 
     auto fbResult = device->getLogicalDevice().createFramebuffer(framebufferInfo);
-    ASSERT_VULKAN(VkResult(fbResult.result), "Failed to create shadow map framebuffer!");
+    ASSERT_VULKAN(fbResult.result, "Failed to create shadow map framebuffer!");
     framebuffer = fbResult.value;
 
 }
@@ -365,7 +365,7 @@ void CascadedShadowMap::buildGraphicsPipeline()
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo = buildPipelineLayoutCreateInfo(setLayouts, pushConstantRanges);
 
     auto layoutRes = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
-    ASSERT_VULKAN(VkResult(layoutRes.result), "Failed to create shadow map pipeline layout!");
+    ASSERT_VULKAN(layoutRes.result, "Failed to create shadow map pipeline layout!");
     pipelineLayout = layoutRes.value;
 
     PipelineBuilder pipelineBuilder;

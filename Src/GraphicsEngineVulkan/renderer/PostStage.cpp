@@ -142,7 +142,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createOffscreenTextureSamp
 
     vk::Result const result =
       device->getLogicalDevice().createSampler(&sampler_create_info, nullptr, &offscreenTextureSampler);
-    ASSERT_VULKAN(result, "Failed to create a texture sampler!")
+    ASSERT_VULKAN(result, "Failed to create a texture sampler!");
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createPushConstantRange()
@@ -185,7 +185,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
       Kataglyphis::buildRenderPassCreateInfo(render_pass_attachments, subpasses, subpass_dependencies);
 
     auto result = device->getLogicalDevice().createRenderPass(render_pass_create_info);
-    ASSERT_VULKAN(static_cast<VkResult>(result.result), "Failed to create render pass!")
+    ASSERT_VULKAN(result.result, "Failed to create render pass!");
     render_pass = result.value;
 }
 
@@ -207,7 +207,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
 
     vk::ResultValue<vk::PipelineLayout> pipeline_layout_result =
       device->getLogicalDevice().createPipelineLayout(pipeline_layout_create_info);
-    ASSERT_VULKAN(pipeline_layout_result.result, "Failed to create pipeline layout!")
+    ASSERT_VULKAN(pipeline_layout_result.result, "Failed to create pipeline layout!");
     pipeline_layout = pipeline_layout_result.value;
 
     PipelineBuilder pipeline_builder;
@@ -232,7 +232,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createFramebuffer()
           render_pass, attachments, vulkanSwapChain->getSwapChainExtent());
 
         auto result = device->getLogicalDevice().createFramebuffer(frame_buffer_create_info);
-        ASSERT_VULKAN(static_cast<VkResult>(result.result), "Failed to create framebuffer!")
+        ASSERT_VULKAN(result.result, "Failed to create framebuffer!");
         framebuffers[i] = result.value;
     }
 }

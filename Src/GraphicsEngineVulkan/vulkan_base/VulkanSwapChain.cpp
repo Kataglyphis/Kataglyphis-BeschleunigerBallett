@@ -138,7 +138,7 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(const std::shared_ptr<Vulka
     // The result was never checked: on eErrorOutOfDateKHR / eErrorSurfaceLostKHR
     // (both possible when a resize races the recreate) this stored a null
     // handle and every later use was UB. Fail fast instead.
-    ASSERT_VULKAN(VkResult(swapchain_result.result), "Failed to (re)create swapchain!")
+    ASSERT_VULKAN(swapchain_result.result, "Failed to (re)create swapchain!");
     swapchain = swapchain_result.value;
 
     // store for later reference
@@ -147,7 +147,7 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(const std::shared_ptr<Vulka
 
     // get swapchain images
     vk::ResultValue<std::vector<vk::Image>> images_result = device->getLogicalDevice().getSwapchainImagesKHR(swapchain);
-    ASSERT_VULKAN(VkResult(images_result.result), "Failed to get swapchain images!")
+    ASSERT_VULKAN(images_result.result, "Failed to get swapchain images!");
     std::vector<vk::Image> images = images_result.value;
 
     swap_chain_images.clear();

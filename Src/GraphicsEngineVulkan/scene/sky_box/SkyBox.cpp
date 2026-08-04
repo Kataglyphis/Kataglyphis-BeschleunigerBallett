@@ -264,7 +264,7 @@ void SkyBox::createRenderPass(vk::Format format)
       Kataglyphis::buildRenderPassCreateInfo(attachments, subpasses, dependencies);
 
     auto result = device->getLogicalDevice().createRenderPass(renderPassInfo);
-    ASSERT_VULKAN(VkResult(result.result), "Failed to create skybox render pass!");
+    ASSERT_VULKAN(result.result, "Failed to create skybox render pass!");
     renderPass = result.value;
 }
 
@@ -278,7 +278,7 @@ void SkyBox::createFramebuffers(std::span<const vk::ImageView> imageViews, uint3
         const vk::FramebufferCreateInfo fbInfo = Kataglyphis::buildFramebufferCreateInfo(
           renderPass, attachments, vk::Extent2D{ width, height });
         auto fbResult = device->getLogicalDevice().createFramebuffer(fbInfo);
-        ASSERT_VULKAN(VkResult(fbResult.result), "Failed to create skybox framebuffer!");
+        ASSERT_VULKAN(fbResult.result, "Failed to create skybox framebuffer!");
         framebuffers[i] = fbResult.value;
     }
 }
@@ -309,7 +309,7 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo = buildPipelineLayoutCreateInfo(combinedLayouts, pushConstantRanges);
 
     auto layoutRes = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
-    ASSERT_VULKAN(VkResult(layoutRes.result), "Failed to create skybox pipeline layout!");
+    ASSERT_VULKAN(layoutRes.result, "Failed to create skybox pipeline layout!");
     pipelineLayout = layoutRes.value;
 
     PipelineBuilder pipelineBuilder;

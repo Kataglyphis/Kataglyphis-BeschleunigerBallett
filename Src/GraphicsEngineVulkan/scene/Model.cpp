@@ -86,7 +86,7 @@ void Model::addSampler(const Texture &newTexture)
       vk::BorderColor::eFloatOpaqueBlack);
 
     vk::ResultValue<vk::Sampler> sampler_result = device->getLogicalDevice().createSampler(sampler_create_info);
-    ASSERT_VULKAN(sampler_result.result, "Failed to create texture sampler!")
+    ASSERT_VULKAN(sampler_result.result, "Failed to create texture sampler!");
     vk::Sampler newSampler = sampler_result.value;
 
     ownedSamplerMipLevels.push_back(mip_level);

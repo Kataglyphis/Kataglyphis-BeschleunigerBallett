@@ -8530,3 +8530,93 @@ TEST(BuildIntegrity, NoSamplerHardCodesItsMaxAnisotropy)
              return joined;
          }();
 }
+
+// ASSERT_VULKAN (common/Utilities.hpp) used to expand to a bare unbraced
+// `if`, so every call site was a statement fragment rather than a statement -
+// 38 of 49 sites omitted the trailing semicolon and relied on that. The macro
+// is now wrapped in do/while(false), which makes it a real statement that
+// *requires* the semicolon - a missing one is a compile error, so this test
+// is cheap insurance rather than the primary check. It also guards against a
+// future copy-pasted call site reintroducing the old, inconsistent spelling.
+TEST(BuildIntegrity, EveryAssertVulkanCallSiteEndsInASemicolon)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const std::array<fs::path, 2> kRoots = { repo_root / "Src" / "GraphicsEngineVulkan",
+        repo_root / "Src" / "shared" };
+
+    const std::string_view kMacroInvocation = "ASSERT_VULKAN(";
+    const fs::path definition_file = repo_root / "Src" / "GraphicsEngineVulkan" / "common" / "Utilities.hpp";
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (const fs::path &root : kRoots) {
+        if (!fs::exists(root)) { continue; }
+        for (fs::recursive_directory_iterator it(root, error), end; it != end; it.increment(error)) {
+            if (error) { break; }
+            const fs::path &path = it->path();
+            if (!it->is_regular_file(error)) { continue; }
+            if (fs::equivalent(path, definition_file, error)) { continue; }
+            const auto extension = path.extension();
+            if (extension != ".hpp" && extension != ".cpp" && extension != ".ixx") { continue; }
+
+            const auto lines = readFileLines(path);
+            if (!lines) { continue; }
+
+            // A call spanning multiple lines only closes its parens on its
+            // last line, so track the cumulative paren depth across lines
+            // rather than checking each line in isolation - a parenless
+            // argument line (e.g. "&allocation,") must not be mistaken for
+            // the closing line just because it has zero net parens.
+            bool inside_call = false;
+            int paren_depth = 0;
+            std::size_t call_start_line = 0;
+            std::size_t line_number = 0;
+            for (const auto &line : *lines) {
+                ++line_number;
+                std::size_t search_pos = 0;
+                if (!inside_call) {
+                    const auto found = line.find(kMacroInvocation);
+                    if (found == std::string::npos) { continue; }
+                    inside_call = true;
+                    paren_depth = 0;
+                    call_start_line = line_number;
+                    search_pos = found;
+                }
+
+                std::size_t close_pos = std::string::npos;
+                for (std::size_t i = search_pos; i < line.size(); ++i) {
+                    if (line[i] == '(') { ++paren_depth; }
+                    else if (line[i] == ')') {
+                        --paren_depth;
+                        if (paren_depth == 0) {
+                            close_pos = i;
+                            break;
+                        }
+                    }
+                }
+
+                if (close_pos == std::string::npos) { continue; }
+
+                inside_call = false;
+                const bool ends_in_semicolon = close_pos + 1 < line.size() && line[close_pos + 1] == ';';
+                if (!ends_in_semicolon) {
+                    violations.push_back(fs::relative(path, repo_root).generic_string() + ":"
+                                          + std::to_string(call_start_line) + "-" + std::to_string(line_number)
+                                          + ": " + line);
+                }
+            }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " ASSERT_VULKAN call site(s) do not end in \");\" - the macro is a do/while(false) statement and requires "
+         "the trailing semicolon:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}

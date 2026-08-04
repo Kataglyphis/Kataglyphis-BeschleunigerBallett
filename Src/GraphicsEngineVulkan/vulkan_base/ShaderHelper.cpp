@@ -98,14 +98,14 @@ auto Kataglyphis::createComputePipeline(const std::shared_ptr<VulkanDevice> &dev
     const vk::PipelineLayoutCreateInfo pipelineLayoutInfo = buildPipelineLayoutCreateInfo(setLayouts, pushConstantRanges);
 
     auto layoutResult = device->getLogicalDevice().createPipelineLayout(pipelineLayoutInfo);
-    ASSERT_VULKAN(layoutResult.result, layoutErrorMessage)
+    ASSERT_VULKAN(layoutResult.result, layoutErrorMessage);
     ComputePipelineHandles handles{};
     handles.layout = layoutResult.value;
 
     const vk::ComputePipelineCreateInfo pipelineInfo = buildComputePipelineCreateInfo(stageInfo, handles.layout);
 
     auto pipelineResult = device->getLogicalDevice().createComputePipeline(device->getPipelineCache(), pipelineInfo);
-    ASSERT_VULKAN(pipelineResult.result, pipelineErrorMessage)
+    ASSERT_VULKAN(pipelineResult.result, pipelineErrorMessage);
     handles.pipeline = pipelineResult.value;
 
     device->getLogicalDevice().destroyShaderModule(shaderModule);

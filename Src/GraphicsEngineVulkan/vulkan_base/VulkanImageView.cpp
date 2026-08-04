@@ -56,7 +56,7 @@ void Kataglyphis::VulkanImageView::create(const std::shared_ptr<VulkanDevice> &i
     // project-wide (VULKAN_HPP_NO_EXCEPTIONS), so a failure stored a null
     // handle here and surfaced as opaque UB downstream. Fail fast.
     auto imageViewResult = device->getLogicalDevice().createImageView(view_create_info);
-    ASSERT_VULKAN(VkResult(imageViewResult.result), "Failed to create image view!")
+    ASSERT_VULKAN(imageViewResult.result, "Failed to create image view!");
     imageView = imageViewResult.value;
 }
 

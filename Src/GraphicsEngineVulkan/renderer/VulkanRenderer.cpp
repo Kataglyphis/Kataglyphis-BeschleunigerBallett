@@ -1532,7 +1532,7 @@ void Kataglyphis::VulkanRenderer::create_command_buffers()
 
     vk::Result const result =
       device->getLogicalDevice().allocateCommandBuffers(&command_buffer_alloc_info, command_buffers.data());
-    ASSERT_VULKAN(static_cast<VkResult>(result), "Failed to allocate command buffers!")
+    ASSERT_VULKAN(result, "Failed to allocate command buffers!");
 }
 
 void Kataglyphis::VulkanRenderer::createSynchronization()

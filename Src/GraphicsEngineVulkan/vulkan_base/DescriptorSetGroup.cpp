@@ -93,7 +93,7 @@ bool Kataglyphis::DescriptorSetGroup::create(std::shared_ptr<VulkanDevice> vulka
     layout_create_info.pBindings = bindings.data();
 
     auto layout_result = device->getLogicalDevice().createDescriptorSetLayout(layout_create_info);
-    ASSERT_VULKAN(layout_result.result, "Failed to create a descriptor set layout!")
+    ASSERT_VULKAN(layout_result.result, "Failed to create a descriptor set layout!");
     layout = layout_result.value;
 
     // -- pool (sizes derived per descriptor type: binding count * set count)
@@ -105,7 +105,7 @@ bool Kataglyphis::DescriptorSetGroup::create(std::shared_ptr<VulkanDevice> vulka
     pool_create_info.pPoolSizes = pool_sizes.data();
 
     auto pool_result = device->getLogicalDevice().createDescriptorPool(pool_create_info);
-    ASSERT_VULKAN(pool_result.result, "Failed to create a descriptor pool!")
+    ASSERT_VULKAN(pool_result.result, "Failed to create a descriptor pool!");
     pool = pool_result.value;
 
     // -- sets
@@ -117,7 +117,7 @@ bool Kataglyphis::DescriptorSetGroup::create(std::shared_ptr<VulkanDevice> vulka
     set_alloc_info.pSetLayouts = set_layouts.data();
 
     auto alloc_result = device->getLogicalDevice().allocateDescriptorSets(set_alloc_info);
-    ASSERT_VULKAN(alloc_result.result, "Failed to allocate descriptor sets!")
+    ASSERT_VULKAN(alloc_result.result, "Failed to allocate descriptor sets!");
     descriptor_sets = alloc_result.value;
 
     return true;

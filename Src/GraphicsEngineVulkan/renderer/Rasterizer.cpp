@@ -192,7 +192,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createRenderPass()
     if (result.result == vk::Result::eSuccess) {
         render_pass = result.value;
     } else {
-        ASSERT_VULKAN(static_cast<VkResult>(result.result), "Failed to create render pass!")
+        ASSERT_VULKAN(result.result, "Failed to create render pass!");
     }
 }
 
@@ -211,7 +211,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createFramebuffer()
         if (result.result == vk::Result::eSuccess) {
             framebuffer[i] = result.value;
         } else {
-            ASSERT_VULKAN(static_cast<VkResult>(result.result), "Failed to create framebuffer!")
+            ASSERT_VULKAN(result.result, "Failed to create framebuffer!");
         }
     }
 }
@@ -283,7 +283,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
       buildPipelineLayoutCreateInfo(descriptorSetLayouts, push_constant_ranges);
 
     auto layout_result = device->getLogicalDevice().createPipelineLayout(pipeline_layout_create_info);
-    ASSERT_VULKAN(static_cast<VkResult>(layout_result.result), "Failed to create pipeline layout!")
+    ASSERT_VULKAN(layout_result.result, "Failed to create pipeline layout!");
     pipeline_layout = layout_result.value;
 
     PipelineBuilder pipeline_builder;
