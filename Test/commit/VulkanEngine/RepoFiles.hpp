@@ -14,6 +14,7 @@
 #include <iterator>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace Kataglyphis::TestSupport {
 
@@ -47,6 +48,27 @@ inline std::optional<std::string> readFileText(const std::filesystem::path &path
     std::ifstream file(path, std::ios::binary);
     if (!file) { return std::nullopt; }
     return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+}
+
+/// Reads `path` line by line, or std::nullopt if it cannot be opened. An
+/// existing empty file returns an empty vector, distinct from std::nullopt -
+/// callers rely on that distinction. Opens in binary mode so behavior is
+/// identical on Linux and Windows, then strips one trailing '\r' from each
+/// line: text-mode getline() strips '\r' for CRLF files on Windows but not on
+/// Linux, and .gitattributes pins several of the files parsed by this suite
+/// (*.ps1, *.psm1, *.cmd) to CRLF, so without the strip the parsed lines would
+/// differ by platform.
+inline std::optional<std::vector<std::string>> readFileLines(const std::filesystem::path &path)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file) { return std::nullopt; }
+    std::vector<std::string> lines;
+    std::string line;
+    while (std::getline(file, line)) {
+        if (!line.empty() && line.back() == '\r') { line.pop_back(); }
+        lines.push_back(std::move(line));
+    }
+    return lines;
 }
 
 }// namespace Kataglyphis::TestSupport

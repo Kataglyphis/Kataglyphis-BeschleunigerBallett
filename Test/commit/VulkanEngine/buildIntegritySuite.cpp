@@ -50,6 +50,7 @@ namespace {
 
 namespace fs = std::filesystem;
 
+using Kataglyphis::TestSupport::readFileLines;
 using Kataglyphis::TestSupport::readFileText;
 using Kataglyphis::TestSupport::repoRoot;
 using Kataglyphis::TestSupport::slangRoot;
@@ -312,11 +313,10 @@ std::optional<int> parse_int_after(const std::string &line, std::size_t name_end
 std::map<std::string, int> parse_int_constants(const fs::path &path)
 {
     std::map<std::string, int> result;
-    std::ifstream file(path);
-    if (!file) { return result; }
+    const auto lines = readFileLines(path);
+    if (!lines) { return result; }
 
-    std::string raw_line;
-    while (std::getline(file, raw_line)) {
+    for (const auto &raw_line : *lines) {
         const std::string line = strip_line_comment(raw_line);
         for (const auto &name : kSharedConstantNames) {
             if (result.contains(name)) { continue; }
@@ -347,10 +347,9 @@ std::set<std::string> collect_defined_suites(const fs::path &tests_dir)
         if (error) { break; }
         if (!it->is_regular_file(error) || it->path().extension() != ".cpp") { continue; }
 
-        std::ifstream file(it->path());
-        if (!file) { continue; }
-        std::string line;
-        while (std::getline(file, line)) {
+        const auto lines = readFileLines(it->path());
+        if (!lines) { continue; }
+        for (const auto &line : *lines) {
             const std::size_t start = line.find_first_not_of(" \t");
             if (start == std::string::npos) { continue; }
 
@@ -388,10 +387,9 @@ std::vector<std::string> collect_suite_test_names(const fs::path &tests_dir, con
         if (error) { break; }
         if (!it->is_regular_file(error) || it->path().extension() != ".cpp") { continue; }
 
-        std::ifstream file(it->path());
-        if (!file) { continue; }
-        std::string line;
-        while (std::getline(file, line)) {
+        const auto lines = readFileLines(it->path());
+        if (!lines) { continue; }
+        for (const auto &line : *lines) {
             const std::size_t start = line.find_first_not_of(" \t");
             if (start == std::string::npos) { continue; }
             if (line.compare(start, macro_prefix.size(), macro_prefix) != 0) { continue; }
@@ -441,11 +439,10 @@ std::optional<int> parse_marker_field(const std::string &line, const std::string
 // a hard failure rather than a silent pass.
 std::optional<GoldenCountsMarker> parse_golden_counts_marker(const fs::path &doc_path)
 {
-    std::ifstream file(doc_path);
-    if (!file) { return std::nullopt; }
+    const auto lines = readFileLines(doc_path);
+    if (!lines) { return std::nullopt; }
 
-    std::string line;
-    while (std::getline(file, line)) {
+    for (const auto &line : *lines) {
         if (line.find("<!-- golden-counts:") == std::string::npos) { continue; }
 
         const auto defined_val = parse_marker_field(line, "defined=");
@@ -481,12 +478,11 @@ std::optional<GoldenCountsMarker> parse_golden_counts_marker(const fs::path &doc
 std::optional<std::vector<std::pair<std::string, std::string>>> parse_golden_test_exclusion_filter(
   const fs::path &doc_path)
 {
-    std::ifstream file(doc_path);
-    if (!file) { return std::nullopt; }
+    const auto lines = readFileLines(doc_path);
+    if (!lines) { return std::nullopt; }
 
     static const std::string kFilterKey = "--gtest_filter='";
-    std::string line;
-    while (std::getline(file, line)) {
+    for (const auto &line : *lines) {
         const std::size_t filter_start = line.find(kFilterKey);
         if (filter_start == std::string::npos) { continue; }
 
@@ -521,12 +517,11 @@ std::optional<std::vector<std::pair<std::string, std::string>>> parse_golden_tes
 // silently pass.
 std::optional<std::vector<std::string>> parse_pt_goldens_marker(const fs::path &doc_path)
 {
-    std::ifstream file(doc_path);
-    if (!file) { return std::nullopt; }
+    const auto lines = readFileLines(doc_path);
+    if (!lines) { return std::nullopt; }
 
     static const std::string kMarkerKey = "<!-- pt-goldens:";
-    std::string line;
-    while (std::getline(file, line)) {
+    for (const auto &line : *lines) {
         const std::size_t marker_start = line.find(kMarkerKey);
         if (marker_start == std::string::npos) { continue; }
 
@@ -560,13 +555,12 @@ std::optional<std::vector<std::string>> parse_pt_goldens_marker(const fs::path &
 // std::nullopt only if the file cannot be opened.
 std::optional<std::vector<std::string>> parse_ci_gpu_excluded_suites(const fs::path &workflow_path)
 {
-    std::ifstream file(workflow_path);
-    if (!file) { return std::nullopt; }
+    const auto lines = readFileLines(workflow_path);
+    if (!lines) { return std::nullopt; }
 
     std::vector<std::string> suites;
     bool inside_array = false;
-    std::string line;
-    while (std::getline(file, line)) {
+    for (const auto &line : *lines) {
         if (!inside_array) {
             if (line.find("$gpuOnlySuites = @(") != std::string::npos) { inside_array = true; }
             continue;
@@ -596,12 +590,11 @@ std::optional<std::vector<std::string>> parse_ci_gpu_excluded_suites(const fs::p
 std::vector<std::string> parse_declared_fuzz_targets(const fs::path &cmake_path)
 {
     std::vector<std::string> targets;
-    std::ifstream file(cmake_path);
-    if (!file) { return targets; }
+    const auto lines = readFileLines(cmake_path);
+    if (!lines) { return targets; }
 
     static const std::string kMacro = "kataglyphis_add_fuzz_test(";
-    std::string line;
-    while (std::getline(file, line)) {
+    for (const auto &line : *lines) {
         const std::size_t pos = line.find(kMacro);
         if (pos == std::string::npos) { continue; }
 
@@ -624,12 +617,11 @@ std::vector<std::string> parse_declared_fuzz_targets(const fs::path &cmake_path)
 std::vector<std::string> parse_declared_perf_benchmarks(const fs::path &source_path)
 {
     std::vector<std::string> names;
-    std::ifstream file(source_path);
-    if (!file) { return names; }
+    const auto lines = readFileLines(source_path);
+    if (!lines) { return names; }
 
     static const std::string kMacro = "BENCHMARK(";
-    std::string line;
-    while (std::getline(file, line)) {
+    for (const auto &line : *lines) {
         const std::size_t pos = line.find(kMacro);
         if (pos == std::string::npos) { continue; }
 
@@ -697,8 +689,8 @@ std::optional<std::vector<std::string>> parse_perf_baseline_names(const fs::path
 // rather than skip.
 std::optional<std::vector<std::string>> parse_ci_fuzz_targets(const fs::path &workflow_path)
 {
-    std::ifstream file(workflow_path);
-    if (!file) { return std::nullopt; }
+    const auto lines = readFileLines(workflow_path);
+    if (!lines) { return std::nullopt; }
 
     // Two spellings, both legal: the step used to run in a host-side pwsh
     // block where `$t` needed backtick-escaping so the RUNNER did not expand
@@ -708,8 +700,7 @@ std::optional<std::vector<std::string>> parse_ci_fuzz_targets(const fs::path &wo
     static const std::array<std::string, 2> kAnchors = { "foreach (`$t in @(", "foreach ($t in @(" };
     static const std::string kCloser = "))";
 
-    std::string line;
-    while (std::getline(file, line)) {
+    for (const auto &line : *lines) {
         std::size_t anchor_pos = std::string::npos;
         std::size_t anchor_size = 0;
         for (const auto &anchor : kAnchors) {
@@ -750,14 +741,13 @@ std::optional<std::vector<std::string>> parse_ci_fuzz_targets(const fs::path &wo
 // loudly on rather than skip. Modeled on parse_ci_fuzz_targets above.
 std::optional<std::vector<std::string>> parse_linux_ci_fuzz_targets(const fs::path &workflow_path)
 {
-    std::ifstream file(workflow_path);
-    if (!file) { return std::nullopt; }
+    const auto lines = readFileLines(workflow_path);
+    if (!lines) { return std::nullopt; }
 
     static const std::string kAnchor = "for t in ";
     static const std::string kCloser = "; do";
 
-    std::string line;
-    while (std::getline(file, line)) {
+    for (const auto &line : *lines) {
         const std::size_t anchor_pos = line.find(kAnchor);
         if (anchor_pos == std::string::npos) { continue; }
 
@@ -785,15 +775,14 @@ std::optional<std::vector<std::string>> parse_linux_ci_fuzz_targets(const fs::pa
 // skip.
 std::optional<std::vector<std::string>> parse_local_runner_fuzz_targets(const fs::path &script_path)
 {
-    std::ifstream file(script_path);
-    if (!file) { return std::nullopt; }
+    const auto lines = readFileLines(script_path);
+    if (!lines) { return std::nullopt; }
 
     static const std::string kAnchor = "foreach ($fuzzExecutable in @(";
     static const std::string kCloser = "))";
     static const std::string kExeSuffix = ".exe";
 
-    std::string line;
-    while (std::getline(file, line)) {
+    for (const auto &line : *lines) {
         const std::size_t anchor_pos = line.find(kAnchor);
         if (anchor_pos == std::string::npos) { continue; }
 
@@ -1526,13 +1515,12 @@ std::vector<std::pair<std::string, std::string>> collect_spirv_paths_referenced_
         const fs::path &path = it->path();
         if (!it->is_regular_file(error) || path.extension() != ".cpp") { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
 
         const std::string relative_source = fs::relative(path, repo_root).generic_string();
         std::string in_scope_slang_spv_dir;
-        std::string raw_line;
-        while (std::getline(file, raw_line)) {
+        for (const auto &raw_line : *lines) {
             const std::string line = strip_line_comment(raw_line);
 
             std::smatch dir_match;
@@ -1905,15 +1893,14 @@ TEST(BuildIntegrity, EveryHostRunnerPropagatesTheApplicationExitCode)
 
     std::vector<std::string> missing_exit;
     for (const auto &script_path : runner_scripts) {
-        std::ifstream file(script_path);
-        if (!file) {
+        const auto lines = readFileLines(script_path);
+        if (!lines) {
             missing_exit.push_back(script_path.filename().string() + " (could not open)");
             continue;
         }
 
         bool found = false;
-        std::string line;
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             if (std::regex_match(line, kExitVariableLine)) {
                 found = true;
                 break;
@@ -2097,12 +2084,11 @@ TEST(BuildIntegrity, CheckedInWgslHasNoHandEdits)
         if (!fs::exists(dest)) { continue; }// RustProjectTemplate submodule not checked out here
         ++checked;
 
-        std::ifstream file(dest);
-        if (!file) { continue; }
+        const auto lines = readFileLines(dest);
+        if (!lines) { continue; }
 
-        std::string line;
         int line_number = 0;
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             ++line_number;
             if (line.find("//") != std::string::npos) {
                 hand_edits.push_back(fs::relative(dest, repo_root).string() + ':' + std::to_string(line_number)
@@ -2168,15 +2154,9 @@ TEST(BuildIntegrity, CheckedInWgslVaryingStructsCarryLocations)
         if (!fs::exists(dest)) { continue; }// RustProjectTemplate submodule not checked out here
         ++checked;
 
-        std::ifstream file(dest);
-        if (!file) { continue; }
-
-        std::vector<std::string> lines;
-        std::string line;
-        while (std::getline(file, line)) {
-            if (!line.empty() && line.back() == '\r') { line.pop_back(); }
-            lines.push_back(line);
-        }
+        const auto lines_opt = readFileLines(dest);
+        if (!lines_opt) { continue; }
+        const auto &lines = *lines_opt;
 
         std::size_t index = 0;
         while (index < lines.size()) {
@@ -2333,11 +2313,10 @@ TEST(BuildIntegrity, SourceCommentsDoNotReferenceDeletedShaderFiles)
         if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
         if (fs::relative(path, slang_root).generic_string().starts_with("build/")) { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string line;
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         int line_number = 0;
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             ++line_number;
             scan_line(path, line_number, line, line);
         }
@@ -2355,11 +2334,10 @@ TEST(BuildIntegrity, SourceCommentsDoNotReferenceDeletedShaderFiles)
             const std::string extension = path.extension().string();
             if (extension != ".cpp" && extension != ".hpp" && extension != ".ixx") { continue; }
 
-            std::ifstream file(path);
-            if (!file) { continue; }
-            std::string line;
+            const auto lines = readFileLines(path);
+            if (!lines) { continue; }
             int line_number = 0;
-            while (std::getline(file, line)) {
+            for (const auto &line : *lines) {
                 ++line_number;
                 const std::size_t comment_at = line.find("//");
                 if (comment_at == std::string::npos) { continue; }
@@ -2486,12 +2464,9 @@ TEST(BuildIntegrity, EveryBaseColourSampleIsScaledByTheMaterialFactor)
     std::vector<std::string> violations;
     for (const char *relative_path : kShaders) {
         const fs::path path = repo_root / relative_path;
-        std::ifstream file(path);
-        ASSERT_TRUE(static_cast<bool>(file)) << "could not open " << path.string();
-
-        std::vector<std::string> lines;
-        std::string line;
-        while (std::getline(file, line)) { lines.push_back(line); }
+        const auto lines_opt = readFileLines(path);
+        ASSERT_TRUE(lines_opt.has_value()) << "could not open " << path.string();
+        const auto &lines = *lines_opt;
 
         std::size_t guard_start = lines.size();
         for (std::size_t index = 0; index < lines.size(); ++index) {
@@ -2557,11 +2532,10 @@ TEST(BuildIntegrity, NoShadingPathPinsMetallicToZero)
         if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
         if (fs::relative(path, slang_root).generic_string().starts_with("build/")) { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string line;
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         int line_number = 0;
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             ++line_number;
             if (std::regex_search(line, kPinnedToZero)) {
                 violations.push_back(fs::relative(path, slang_root).generic_string() + ':'
@@ -2607,13 +2581,12 @@ TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
     std::vector<std::string> violations;
     for (const char *relative_path : kShaders) {
         const fs::path path = repo_root / relative_path;
-        std::ifstream file(path);
-        ASSERT_TRUE(static_cast<bool>(file)) << "could not open " << path.string();
+        const auto lines = readFileLines(path);
+        ASSERT_TRUE(lines.has_value()) << "could not open " << path.string();
 
         bool sawSampleSite = false;
-        std::string line;
         std::size_t line_number = 0;
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             ++line_number;
             if (line.find(kTextures) == std::string::npos || line.find(kSamplers) == std::string::npos) { continue; }
             sawSampleSite = true;
@@ -2730,11 +2703,10 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
         if (relative_path == scene_types_relative.generic_string()) { continue; }
         if (!vulkan_consumed_sources.contains(relative_path)) { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string raw_line;
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         int line_number = 0;
-        while (std::getline(file, raw_line)) {
+        for (const auto &raw_line : *lines) {
             ++line_number;
             const std::string line = strip_line_comment(raw_line);
             const auto keyword_pos = line.find(kDeclKeyword);
@@ -2921,11 +2893,10 @@ TEST(BuildIntegrity, EveryShaderDerivesTheLightVectorByNegation)
         const fs::path &path = it->path();
         if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string raw_line;
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         int line_number = 0;
-        while (std::getline(file, raw_line)) {
+        for (const auto &raw_line : *lines) {
             ++line_number;
             const std::string line = strip_line_comment(raw_line);
             std::size_t search_from = 0;
@@ -3139,11 +3110,10 @@ TEST(BuildIntegrity, EveryPcfKernelBoundsChecksItsTaps)
         const fs::path &path = it->path();
         if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         std::string stripped_text;
-        std::string raw_line;
-        while (std::getline(file, raw_line)) {
+        for (const auto &raw_line : *lines) {
             stripped_text += strip_line_comment(raw_line);
             stripped_text += '\n';
         }
@@ -3430,12 +3400,11 @@ std::vector<SlangFunctionDef> collect_slang_functions(const fs::path &slang_root
         const std::string relative_path = fs::relative(path, slang_root).generic_string();
         if (relative_path.starts_with("build/")) { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         std::vector<std::string> raw_lines;
         std::vector<std::string> stripped_lines;
-        std::string raw_line;
-        while (std::getline(file, raw_line)) {
+        for (auto raw_line : *lines) {
             stripped_lines.push_back(strip_line_comment(strip_string_literals(raw_line)));
             raw_lines.push_back(std::move(raw_line));
         }
@@ -3620,10 +3589,9 @@ std::set<std::string> resolve_slang_import_closure(const fs::path &slang_root, c
         worklist.pop_back();
         if (!file_set.insert(relative).second) { continue; }// already visited
 
-        std::ifstream file(slang_root / relative);
-        if (!file) { continue; }
-        std::string raw_line;
-        while (std::getline(file, raw_line)) {
+        const auto lines = readFileLines(slang_root / relative);
+        if (!lines) { continue; }
+        for (const auto &raw_line : *lines) {
             const std::string stripped = strip_line_comment(raw_line);
             std::smatch match;
             if (std::regex_search(stripped, match, kImportRe)) { worklist.push_back("common/" + match[1].str() + ".slang"); }
@@ -3831,11 +3799,10 @@ std::vector<SlangStructDef> collect_slang_structs(const fs::path &slang_root)
 {
     std::vector<SlangStructDef> structs;
     for (const std::string &relative_path : collect_all_slang_relative_paths(slang_root)) {
-        std::ifstream file(slang_root / relative_path);
-        if (!file) { continue; }
+        const auto lines = readFileLines(slang_root / relative_path);
+        if (!lines) { continue; }
         std::vector<std::string> stripped_lines;
-        std::string raw_line;
-        while (std::getline(file, raw_line)) {
+        for (const auto &raw_line : *lines) {
             stripped_lines.push_back(strip_line_comment(strip_string_literals(raw_line)));
         }
         collect_structs_from_file(stripped_lines, relative_path, structs);
@@ -3909,13 +3876,12 @@ TEST(BuildIntegrity, EveryImportedSlangModuleIsUsed)
     std::vector<std::string> violations;
 
     for (const auto &relative_path : all_relative_paths) {
-        std::ifstream file(slang_root / relative_path);
-        ASSERT_TRUE(static_cast<bool>(file)) << "could not open " << relative_path;
+        const auto lines = readFileLines(slang_root / relative_path);
+        ASSERT_TRUE(lines.has_value()) << "could not open " << relative_path;
 
         std::vector<std::string> module_names;
         std::vector<std::string> stripped_lines;
-        std::string raw_line;
-        while (std::getline(file, raw_line)) {
+        for (const auto &raw_line : *lines) {
             const std::string stripped = strip_line_comment(strip_string_literals(raw_line));
             stripped_lines.push_back(stripped);
             std::smatch match;
@@ -4090,10 +4056,9 @@ std::vector<ModuleInterface> collect_module_interfaces(const fs::path &src_root)
         if (error) { break; }
         if (!it->is_regular_file(error) || it->path().extension() != ".ixx") { continue; }
 
-        std::ifstream file(it->path());
-        if (!file) { continue; }
-        std::string line;
-        while (std::getline(file, line)) {
+        const auto lines = readFileLines(it->path());
+        if (!lines) { continue; }
+        for (const auto &line : *lines) {
             const std::string name = extract_module_name(line, "export module ");
             if (!name.empty()) {
                 modules.push_back({ name, it->path() });
@@ -4118,10 +4083,9 @@ std::map<std::string, std::set<std::string>> collect_module_importers(const std:
             const auto extension = path.extension();
             if (extension != ".cpp" && extension != ".ixx") { continue; }
 
-            std::ifstream file(path);
-            if (!file) { continue; }
-            std::string line;
-            while (std::getline(file, line)) {
+            const auto lines = readFileLines(path);
+            if (!lines) { continue; }
+            for (const auto &line : *lines) {
                 std::string name = extract_module_name(line, "export import ");
                 if (name.empty()) { name = extract_module_name(line, "import "); }
                 if (!name.empty()) { importers[name].insert(path.generic_string()); }
@@ -4335,11 +4299,9 @@ TEST(BuildIntegrity, VulkanCreationResultsAreChecked)
         const fs::path &path = it->path();
         if (!it->is_regular_file(error) || path.extension() != ".cpp") { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::vector<std::string> lines;
-        std::string raw_line;
-        while (std::getline(file, raw_line)) { lines.push_back(raw_line); }
+        const auto lines_opt = readFileLines(path);
+        if (!lines_opt) { continue; }
+        const auto &lines = *lines_opt;
 
         for (std::size_t i = 0; i < lines.size(); ++i) {
             if (lines[i].find(".value") == std::string::npos) { continue; }
@@ -4465,11 +4427,9 @@ TEST(BuildIntegrity, EveryBeginCommandBufferResultIsChecked)
         const fs::path &path = it->path();
         if (!it->is_regular_file(error) || path.extension() != ".cpp") { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::vector<std::string> lines;
-        std::string raw_line;
-        while (std::getline(file, raw_line)) { lines.push_back(raw_line); }
+        const auto lines_opt = readFileLines(path);
+        if (!lines_opt) { continue; }
+        const auto &lines = *lines_opt;
 
         for (std::size_t i = 0; i < lines.size(); ++i) {
             if (lines[i].find("beginCommandBuffer(") == std::string::npos) { continue; }
@@ -4535,11 +4495,9 @@ TEST(BuildIntegrity, EveryEndAndSubmitCommandBufferResultIsChecked)
         const fs::path &path = it->path();
         if (!it->is_regular_file(error) || path.extension() != ".cpp") { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::vector<std::string> lines;
-        std::string raw_line;
-        while (std::getline(file, raw_line)) { lines.push_back(raw_line); }
+        const auto lines_opt = readFileLines(path);
+        if (!lines_opt) { continue; }
+        const auto &lines = *lines_opt;
 
         for (std::size_t i = 0; i < lines.size(); ++i) {
             const std::string &line = lines[i];
@@ -4748,12 +4706,9 @@ TEST(BuildIntegrity, EveryPostAcquireEarlyReturnRetiresTheAcquireSemaphore)
 
     const fs::path renderer_path =
       repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
-    std::ifstream renderer_file(renderer_path);
-    ASSERT_TRUE(renderer_file) << "missing " << renderer_path.string();
-
-    std::vector<std::string> lines;
-    std::string raw_line;
-    while (std::getline(renderer_file, raw_line)) { lines.push_back(raw_line); }
+    const auto renderer_lines = readFileLines(renderer_path);
+    ASSERT_TRUE(renderer_lines.has_value()) << "missing " << renderer_path.string();
+    const auto &lines = *renderer_lines;
 
     std::size_t acquire_line = lines.size();
     std::size_t advance_frame_line = lines.size();
@@ -4960,13 +4915,12 @@ TEST(BuildIntegrity, PathTracingDocMatchesTheGoldenSuite)
 // deleted or malformed marker must fail the calling test, not skip it.
 std::optional<int> parse_max_texture_count_marker(const fs::path &doc_path)
 {
-    std::ifstream file(doc_path);
-    if (!file) { return std::nullopt; }
+    const auto lines = readFileLines(doc_path);
+    if (!lines) { return std::nullopt; }
 
     static const std::regex kMarkerPattern(R"(<!--\s*max-texture-count:\s*(\d+)\s*-->)");
 
-    std::string line;
-    while (std::getline(file, line)) {
+    for (const auto &line : *lines) {
         std::smatch match;
         if (std::regex_search(line, match, kMarkerPattern)) { return std::stoi(match[1].str()); }
     }
@@ -4978,13 +4932,12 @@ std::optional<int> parse_max_texture_count_marker(const fs::path &doc_path)
 // header - the point is to catch the header changing out from under the doc.
 std::optional<int> parse_max_texture_count_header(const fs::path &header_path)
 {
-    std::ifstream file(header_path);
-    if (!file) { return std::nullopt; }
+    const auto lines = readFileLines(header_path);
+    if (!lines) { return std::nullopt; }
 
     static const std::regex kMaxTextureCountPattern(R"(const\s+int\s+MAX_TEXTURE_COUNT\s*=\s*(\d+)\s*;)");
 
-    std::string line;
-    while (std::getline(file, line)) {
+    for (const auto &line : *lines) {
         std::smatch match;
         if (std::regex_search(line, match, kMaxTextureCountPattern)) { return std::stoi(match[1].str()); }
     }
@@ -5059,13 +5012,12 @@ TEST(BuildIntegrity, ModelLoadingDocCitesSymbolsNotLineNumbers)
 // a deleted or malformed marker must fail the calling test, not skip it.
 std::optional<int> parse_format_drift_denominator_marker(const fs::path &doc_path)
 {
-    std::ifstream file(doc_path);
-    if (!file) { return std::nullopt; }
+    const auto lines = readFileLines(doc_path);
+    if (!lines) { return std::nullopt; }
 
     static const std::regex kMarkerPattern(R"(<!--\s*format-drift-denominator:\s*(\d+)\s*-->)");
 
-    std::string line;
-    while (std::getline(file, line)) {
+    for (const auto &line : *lines) {
         std::smatch match;
         if (std::regex_search(line, match, kMarkerPattern)) { return std::stoi(match[1].str()); }
     }
@@ -5140,16 +5092,15 @@ TEST(BuildIntegrity, FormatDriftDenominatorMatchesTheTrackedSourceCount)
 // an empty (vacuously matching) map.
 std::optional<std::map<std::string, std::string>> parse_shader_targets_marker(const fs::path &doc_path)
 {
-    std::ifstream file(doc_path);
-    if (!file) { return std::nullopt; }
+    const auto lines = readFileLines(doc_path);
+    if (!lines) { return std::nullopt; }
 
     static const std::regex kRowPattern(R"(\|\s*`([^`]+)`\s*\|\s*(spirv|wgsl)\s*\|)");
 
     std::map<std::string, std::string> rows;
     bool in_block = false;
     bool saw_block = false;
-    std::string line;
-    while (std::getline(file, line)) {
+    for (const auto &line : *lines) {
         if (line.find("<!-- shader-targets:begin -->") != std::string::npos) {
             in_block = true;
             saw_block = true;
@@ -5765,11 +5716,10 @@ TEST(BuildIntegrity, NoHostDeviceHeaderCarriesTheRetiredGlslDualCompileShim)
         const auto extension = path.extension();
         if (extension != ".hpp" && extension != ".ixx") { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string line;
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         int line_number = 0;
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             ++line_number;
             if (line.find("__cplusplus") != std::string::npos || line.find("KTG_VEC") != std::string::npos) {
                 violations.push_back(fs::relative(path, repo_root).generic_string() + ':'
@@ -6101,11 +6051,9 @@ TEST(BuildIntegrity, EngineSourcesUseNonThrowingFilesystemOverloads)
         const auto extension = path.extension();
         if (extension != ".cpp" && extension != ".ixx" && extension != ".hpp") { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::vector<std::string> lines;
-        std::string raw_line;
-        while (std::getline(file, raw_line)) { lines.push_back(raw_line); }
+        const auto lines_opt = readFileLines(path);
+        if (!lines_opt) { continue; }
+        const auto &lines = *lines_opt;
 
         constexpr int kLookaheadLines = 2;
         for (std::size_t i = 0; i < lines.size(); ++i) {
@@ -6157,11 +6105,10 @@ TEST(BuildIntegrity, EngineSourcesDoNotLogRawVulkanHandles)
         const auto extension = path.extension();
         if (extension != ".cpp" && extension != ".ixx") { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string line;
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         std::size_t line_number = 0;
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             ++line_number;
             if (line.find("spdlog::") == std::string::npos) { continue; }
             const bool has_vk_cast_to_uint64 = line.find("(uint64_t)(Vk") != std::string::npos;
@@ -6222,11 +6169,10 @@ TEST(BuildIntegrity, DescriptorSetsAreCreatedThroughDescriptorSetGroup)
         const std::string relative_file = fs::relative(path, repo_root).generic_string();
         if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string line;
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         std::size_t line_number = 0;
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             ++line_number;
             for (const char *type_name : kRawDescriptorTypeNames) {
                 if (line.find(type_name) == std::string::npos) { continue; }
@@ -6279,18 +6225,17 @@ TEST(BuildIntegrity, AccelerationStructureRebuildsGoThroughTheSceneChangeHelper)
         const auto extension = path.extension();
         if (extension != ".cpp" && extension != ".ixx") { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         const std::string relative_file = fs::relative(path, repo_root).generic_string();
 
-        std::string line;
         std::size_t line_number = 0;
         int brace_depth = 0;
         std::string current_function;
         bool awaiting_open_brace = false;
         std::string pending_function_name;
 
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             ++line_number;
 
             if (awaiting_open_brace) {
@@ -6386,10 +6331,9 @@ TEST(BuildIntegrity, EveryShaderHotReloadImplementationIsCalledByTheRenderer)
         if (!it->is_regular_file(error)) { continue; }
         if (path.extension() != ".cpp") { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string line;
-        while (std::getline(file, line)) {
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
+        for (const auto &line : *lines) {
             std::smatch match;
             if (std::regex_search(line, match, kDefinition)) {
                 std::string class_name = match[1].str();
@@ -6706,11 +6650,10 @@ TEST(BuildIntegrity, ComputePipelinesAreCreatedThroughTheSharedHelper)
         const std::string relative_file = fs::relative(path, repo_root).generic_string();
         if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string line;
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         std::size_t line_number = 0;
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             ++line_number;
             if (line.find(kRawComputePipelineTypeName) == std::string::npos) { continue; }
             violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
@@ -6843,11 +6786,10 @@ TEST(BuildIntegrity, PipelineTeardownGoesThroughTheSharedHelper)
         const std::string relative_file = fs::relative(path, repo_root).generic_string();
         if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string line;
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         std::size_t line_number = 0;
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             ++line_number;
             if (line.find(kRawTeardownCall) == std::string::npos) { continue; }
             violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
@@ -6911,11 +6853,10 @@ TEST(BuildIntegrity, NoStageHandRollsTheDepthAttachmentChain)
         const std::string relative_file = fs::relative(path, repo_root).generic_string();
         if (relative_file == kHelperFile) { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string line;
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         std::size_t line_number = 0;
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             ++line_number;
             if (line.find(kUsageBit) == std::string::npos) { continue; }
             if (line.find(kMarkerPrefix) != std::string::npos) {
@@ -6984,11 +6925,9 @@ TEST(BuildIntegrity, NoRasterStageHandRollsItsExternalSubpassDependency)
         const std::string relative_file = fs::relative(path, repo_root).generic_string();
         if (kAllowedFiles.contains(relative_file)) { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::vector<std::string> lines;
-        std::string line;
-        while (std::getline(file, line)) { lines.push_back(line); }
+        const auto lines_opt = readFileLines(path);
+        if (!lines_opt) { continue; }
+        const auto &lines = *lines_opt;
 
         for (std::size_t i = 0; i < lines.size(); ++i) {
             if (lines[i].find(kExternalAssign) == std::string::npos) { continue; }
@@ -7050,11 +6989,10 @@ TEST(BuildIntegrity, NoStageHandRollsTheColorAttachmentChain)
         const std::string relative_file = fs::relative(path, repo_root).generic_string();
         if (relative_file == kHelperFile) { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string line;
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         std::size_t line_number = 0;
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             ++line_number;
             if (line.find(kViewCall) == std::string::npos) { continue; }
             if (line.find(kColorAspect) == std::string::npos) { continue; }
@@ -7164,11 +7102,10 @@ TEST(BuildIntegrity, FramebufferTeardownGoesThroughTheSharedHelper)
         const std::string relative_file = fs::relative(path, repo_root).generic_string();
         if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string line;
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         std::size_t line_number = 0;
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             ++line_number;
             if (line.find(kRawTeardownCall) == std::string::npos) { continue; }
             violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
@@ -7217,11 +7154,10 @@ TEST(BuildIntegrity, RenderPassTeardownGoesThroughTheSharedHelper)
         const std::string relative_file = fs::relative(path, repo_root).generic_string();
         if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string line;
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         std::size_t line_number = 0;
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             ++line_number;
             if (line.find(kRawTeardownCall) == std::string::npos) { continue; }
             violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
@@ -7366,18 +7302,17 @@ TEST(BuildIntegrity, TextureCreateImageRecordsTheMipLevelItWasGiven)
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path texture_cpp = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "Texture.cpp";
-    std::ifstream file(texture_cpp);
-    ASSERT_TRUE(static_cast<bool>(file)) << "could not open " << texture_cpp.string();
+    const auto lines = readFileLines(texture_cpp);
+    ASSERT_TRUE(lines.has_value()) << "could not open " << texture_cpp.string();
 
     static const std::string kFunctionSignature = "Kataglyphis::Texture::createImage(";
     static const std::string kAssignment = "mip_levels = in_mip_levels;";
 
-    std::string line;
     bool in_function = false;
     bool function_started = false;// seen the opening '{' of the definition body
     int brace_depth = 0;
     bool found_assignment = false;
-    while (std::getline(file, line)) {
+    for (const auto &line : *lines) {
         if (!in_function) {
             if (line.find(kFunctionSignature) == std::string::npos) { continue; }
             in_function = true;
@@ -7414,12 +7349,9 @@ TEST(BuildIntegrity, EveryEnabledDeviceFeatureIsCopiedFromAnAvailabilityQuery)
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
     const fs::path vulkan_device_cpp = repo_root / "Src" / "GraphicsEngineVulkan" / "vulkan_base" / "VulkanDevice.cpp";
-    std::ifstream file(vulkan_device_cpp);
-    ASSERT_TRUE(static_cast<bool>(file)) << "could not open " << vulkan_device_cpp.string();
-
-    std::vector<std::string> lines;
-    std::string line;
-    while (std::getline(file, line)) { lines.push_back(line); }
+    const auto lines_opt = readFileLines(vulkan_device_cpp);
+    ASSERT_TRUE(lines_opt.has_value()) << "could not open " << vulkan_device_cpp.string();
+    const auto &lines = *lines_opt;
 
     static const std::string kGuard = "if (deviceSupportsHardwareAcceleratedRRT)";
     std::size_t guard_start = lines.size();
@@ -7642,11 +7574,10 @@ TEST(BuildIntegrity, ModelUploadGoesThroughTheSharedAssembly)
         const std::string relative_file = fs::relative(path, repo_root).generic_string();
         if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string line;
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         std::size_t line_number = 0;
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             ++line_number;
             for (const char *banned : kBannedCalls) {
                 if (line.find(banned) == std::string::npos) { continue; }
@@ -7829,11 +7760,10 @@ TEST(BuildIntegrity, ImageMemoryBarriersGoThroughTheSharedHelper)
         const std::string relative_file = fs::relative(path, repo_root).generic_string();
         if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string line;
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         std::size_t line_number = 0;
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             ++line_number;
             if (!std::regex_search(line, hand_rolled_barrier)) { continue; }
             violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
@@ -7920,11 +7850,10 @@ TEST(BuildIntegrity, HeadersDoNotDefineStaticFreeFunctions)
         const auto extension = path.extension();
         if (extension != ".hpp" && extension != ".ixx") { continue; }
 
-        std::ifstream file(path);
-        if (!file) { continue; }
-        std::string line;
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
         std::size_t line_number = 0;
-        while (std::getline(file, line)) {
+        for (const auto &line : *lines) {
             ++line_number;
             constexpr std::string_view kStaticPrefix = "static ";
             if (line.compare(0, kStaticPrefix.size(), kStaticPrefix) != 0) { continue; }
@@ -8078,11 +8007,10 @@ TEST(BuildIntegrity, EveryVulkanDeviceParameterIsTakenByConstReference)
 
             const std::string relative_file = fs::relative(path, repo_root).generic_string();
 
-            std::ifstream file(path);
-            if (!file) { continue; }
-            std::string line;
+            const auto lines = readFileLines(path);
+            if (!lines) { continue; }
             std::size_t line_number = 0;
-            while (std::getline(file, line)) {
+            for (const auto &line : *lines) {
                 ++line_number;
                 if (line.find(kMarkerPrefix) != std::string::npos) {
                     marker_found = true;
