@@ -2780,6 +2780,49 @@ TEST(BuildIntegrity, VertexColourIsConsumedByEveryShadingPath)
       << "path_tracing.slang no longer uses Vertex.color. " << kFailureMessage;
 }
 
+// The object->world normal transform is the inverse-transpose of the
+// object->world matrix, i.e. WorldToObject applied as a *row* multiply
+// (mul(v, M), the HLSL/Slang convention where mul(M, v) is a column
+// multiply). Both raytrace.rchit.slang and path_tracing.slang once
+// column-multiplied WorldToObject instead, which agrees with the correct
+// row form only when the model's linear part is orthonormal with no
+// non-uniform scale/shear (e.g. identity or pure translation) - exactly the
+// default scene, which is why no golden test caught it. This scans the
+// shader sources as text and fails if either reintroduces the column
+// spelling, or drops the row spelling / the closest-hit face-forward.
+TEST(BuildIntegrity, RayTracedNormalsUseTheInverseTransposeTransform)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const char *kFailureMessage =
+      "the object->world normal transform must be the inverse-transpose of WorldToObject, applied as a row "
+      "multiply (mul(normalHit, M)), not a column multiply (mul(M, normalHit)) - a column multiply only agrees "
+      "with the correct transform when the model matrix has no rotation/scale, which the default scene never "
+      "exercises";
+
+    const fs::path rchit_path = repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang";
+    const auto rchit_text_opt = readFileText(rchit_path);
+    ASSERT_TRUE(rchit_text_opt.has_value()) << "could not open " << rchit_path.string();
+    const std::string &rchit_text = *rchit_text_opt;
+    EXPECT_EQ(rchit_text.find("mul((float3x3)WorldToObject()"), std::string::npos)
+      << "raytrace.rchit.slang column-multiplies WorldToObject for the normal again. " << kFailureMessage;
+    EXPECT_NE(rchit_text.find("mul(normalHit,"), std::string::npos)
+      << "raytrace.rchit.slang no longer row-multiplies WorldToObject for the normal. " << kFailureMessage;
+    EXPECT_NE(rchit_text.find("dot(worldNormal, WorldRayDirection())"), std::string::npos)
+      << "raytrace.rchit.slang no longer face-forwards the closest-hit normal against WorldRayDirection(). "
+      << kFailureMessage;
+
+    const fs::path path_tracing_path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
+    const auto path_tracing_text_opt = readFileText(path_tracing_path);
+    ASSERT_TRUE(path_tracing_text_opt.has_value()) << "could not open " << path_tracing_path.string();
+    const std::string &path_tracing_text = *path_tracing_text_opt;
+    EXPECT_EQ(path_tracing_text.find("mul(worldToObject, float4(normalHit"), std::string::npos)
+      << "path_tracing.slang column-multiplies worldToObject for the normal again. " << kFailureMessage;
+    EXPECT_NE(path_tracing_text.find("mul(normalHit,"), std::string::npos)
+      << "path_tracing.slang no longer row-multiplies worldToObject for the normal. " << kFailureMessage;
+}
+
 // scene_types.slang's MAX_CASCADES (:68) is the gated source of truth for the
 // cascade count - HostAndShaderSharedConstantsAgree above pins it against
 // host_device_shared_vars.hpp. That gate is blind to a second, independent

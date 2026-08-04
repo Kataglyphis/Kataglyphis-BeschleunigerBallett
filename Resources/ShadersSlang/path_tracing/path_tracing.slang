@@ -202,7 +202,9 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             float3 hitWorldPosition = mul(objToWorld, float4(objectPos, 1.0));
 
             float3 normalHit = v0.normal * barycentrics.x + v1.normal * barycentrics.y + v2.normal * barycentrics.z;
-            float3 hitWorldNormal = normalize(mul(worldToObject, float4(normalHit, 0.0)));
+            // Inverse-transpose = row-multiply worldToObject (mul(v, M), not
+            // mul(M, v)); see raytrace.rchit.slang for the same rule.
+            float3 hitWorldNormal = normalize(mul(normalHit, (float3x3)worldToObject));
             // Flip the normal so it points against the ray direction
             // (GLSL faceforward(N, I, N)).
             if (dot(hitWorldNormal, rayDirection) > 0.0)

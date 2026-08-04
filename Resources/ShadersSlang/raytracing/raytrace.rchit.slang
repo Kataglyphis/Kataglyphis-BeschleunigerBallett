@@ -50,13 +50,23 @@ void rchit_main(
                                  attribs.barycentrics.x,
                                  attribs.barycentrics.y);
 
-    // Hit position in object space -> world space.
+    // Hit position in object space -> world space. This is a column multiply
+    // on purpose: ObjectToWorld() maps positions directly, unlike the normal
+    // below.
     float3 hitPos = v0.position * barycentrics.x + v1.position * barycentrics.y + v2.position * barycentrics.z;
     float3 worldHitPos = (float3)mul(ObjectToWorld(), float4(hitPos, 1.0));
 
-    // Normal at hit position (inverse-transpose = row-multiply WorldToObject).
+    // Normal at hit position (inverse-transpose = row-multiply WorldToObject,
+    // i.e. mul(v, M) not mul(M, v)).
     float3 normalHit = v0.normal * barycentrics.x + v1.normal * barycentrics.y + v2.normal * barycentrics.z;
-    float3 worldNormal = normalize((float3)mul((float3x3)WorldToObject(), normalHit));
+    float3 worldNormal = normalize(mul(normalHit, (float3x3)WorldToObject()));
+
+    // Flip the normal so it points against the ray direction
+    // (GLSL faceforward(N, I, N)).
+    if (dot(worldNormal, WorldRayDirection()) > 0.0)
+    {
+        worldNormal = -worldNormal;
+    }
 
     // Texture coordinates.
     float2 texCoords = v0.texture_coords * barycentrics.x
