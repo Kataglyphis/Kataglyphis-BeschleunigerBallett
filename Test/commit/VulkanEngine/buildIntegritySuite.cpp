@@ -7323,3 +7323,68 @@ TEST(BuildIntegrity, AppRunDoesNotReturnABareExitSuccess)
          "whether the frame loop hit a device loss or fatal frame error (Kataglyphis::appExitCode), not "
          "hard-coded, or a broken run is reported as a clean quit again.";
 }
+
+// std::shared_ptr<VulkanDevice> is the single most widely passed object in
+// the engine. Passing it by value pays two atomic refcount operations per
+// call for a parameter that is usually only read; every non-sink parameter
+// must take it as `const std::shared_ptr<VulkanDevice> &`. The three
+// genuine sinks (DescriptorSetGroup::create, the GltfLoader ctor, the
+// ShaderStagePair ctor) keep it by value because they move it into a
+// member, and are marked with a trailing "// DEVICE_SINK_OK: " comment.
+TEST(BuildIntegrity, EveryVulkanDeviceParameterIsTakenByConstReference)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const char *const kMarkerPrefix = "DEVICE_SINK_OK: ";
+    const std::regex by_value_device_param(R"(std::shared_ptr<VulkanDevice>\s*[A-Za-z_][A-Za-z0-9_]*\s*[,)])");
+
+    const std::array<fs::path, 2> search_roots = { repo_root / "Src" / "GraphicsEngineVulkan",
+        repo_root / "Src" / "shared" };
+
+    std::vector<std::string> violations;
+    bool marker_found = false;
+    for (const fs::path &src_root : search_roots) {
+        ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+        std::error_code error;
+        for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+            if (error) { break; }
+            const fs::path &path = it->path();
+            if (!it->is_regular_file(error)) { continue; }
+            if (path.extension() != ".cpp" && path.extension() != ".ixx" && path.extension() != ".hpp") { continue; }
+
+            const std::string relative_file = fs::relative(path, repo_root).generic_string();
+
+            std::ifstream file(path);
+            if (!file) { continue; }
+            std::string line;
+            std::size_t line_number = 0;
+            while (std::getline(file, line)) {
+                ++line_number;
+                if (line.find(kMarkerPrefix) != std::string::npos) {
+                    marker_found = true;
+                    continue;
+                }
+                if (!std::regex_search(line, by_value_device_param)) { continue; }
+                violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
+            }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " by-value std::shared_ptr<VulkanDevice> parameter(s) found under Src/GraphicsEngineVulkan/ and "
+         "Src/shared/ - take the parameter as `const std::shared_ptr<VulkanDevice> &` instead, or add a "
+         "trailing \"// DEVICE_SINK_OK: <reason>\" comment on the line if the parameter is a deliberate sink "
+         "moved into a member:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    EXPECT_TRUE(marker_found) << "expected to find at least one \"// DEVICE_SINK_OK: ...\" exemption marker "
+                                  "(DescriptorSetGroup::create, the GltfLoader ctor, the ShaderStagePair ctor) - "
+                                  "if all sinks were removed, delete this check too";
+}

@@ -35,7 +35,7 @@ import kataglyphis.vulkan.model_assembly;
 
 using namespace Kataglyphis;
 
-ObjLoader::ObjLoader(std::shared_ptr<VulkanDevice>device, vk::CommandPool command_pool)
+ObjLoader::ObjLoader(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool command_pool)
   : device(device), command_pool(command_pool)
 {}
 

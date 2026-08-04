@@ -16,12 +16,12 @@ class VulkanSwapChain
   public:
     VulkanSwapChain();
 
-    void initVulkanContext(std::shared_ptr<VulkanDevice>in_device,
+    void initVulkanContext(const std::shared_ptr<VulkanDevice> &in_device,
       Kataglyphis::Frontend::Window *window,
       const vk::SurfaceKHR &surface,
       const vk::SwapchainKHR &oldSwapchain = nullptr);
 
-    void recreate(std::shared_ptr<VulkanDevice>in_device, const vk::SurfaceKHR &surface);
+    void recreate(const std::shared_ptr<VulkanDevice> &in_device, const vk::SurfaceKHR &surface);
 
     const vk::SwapchainKHR &getSwapChain() const { return swapchain; };
     uint32_t getNumberSwapChainImages() const { return static_cast<uint32_t>(swap_chain_images.size()); };

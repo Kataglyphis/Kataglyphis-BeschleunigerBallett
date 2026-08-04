@@ -17,7 +17,7 @@ class VulkanBuffer
     VulkanBuffer(VulkanBuffer &&other) noexcept;
     VulkanBuffer &operator=(VulkanBuffer &&other) noexcept;
 
-    void create(std::shared_ptr<VulkanDevice>vulkanDevice,
+    void create(const std::shared_ptr<VulkanDevice> &vulkanDevice,
       vk::DeviceSize buffer_size,
       vk::BufferUsageFlags buffer_usage_flags,
       vk::MemoryPropertyFlags buffer_propertiy_flags,

@@ -26,7 +26,7 @@ class Rasterizer
     Rasterizer(const Rasterizer &) = delete;
     Rasterizer &operator=(const Rasterizer &) = delete;
 
-    void init(std::shared_ptr<VulkanDevice>in_device,
+    void init(const std::shared_ptr<VulkanDevice> &in_device,
       VulkanSwapChain *swap_chain,
       std::span<const vk::DescriptorSetLayout> descriptorSetLayouts,
       vk::CommandPool &commandPool);

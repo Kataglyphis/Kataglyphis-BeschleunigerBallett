@@ -33,7 +33,7 @@ using namespace Kataglyphis::VulkanRendererInternals;
 
 DeferredRasterizer::DeferredRasterizer() = default;
 
-void DeferredRasterizer::init(std::shared_ptr<VulkanDevice>in_device,
+void DeferredRasterizer::init(const std::shared_ptr<VulkanDevice> &in_device,
   VulkanSwapChain *swap_chain,
   std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {

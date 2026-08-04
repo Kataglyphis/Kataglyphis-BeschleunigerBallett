@@ -114,7 +114,7 @@ class CascadedShadowMap
     CascadedShadowMap(const CascadedShadowMap &) = delete;
     CascadedShadowMap &operator=(const CascadedShadowMap &) = delete;
 
-    void init(std::shared_ptr<VulkanDevice>device, uint32_t width, uint32_t height, uint32_t num_cascades,
+    void init(const std::shared_ptr<VulkanDevice> &device, uint32_t width, uint32_t height, uint32_t num_cascades,
       vk::DescriptorSetLayout sharedRenderDescriptorSetLayout, uint32_t swapChainImageCount,
       vk::CommandPool commandPool);
 

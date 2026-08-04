@@ -21,7 +21,7 @@ import kataglyphis.vulkan.window;
 
 Kataglyphis::VulkanSwapChain::VulkanSwapChain() = default;
 
-void Kataglyphis::VulkanSwapChain::initVulkanContext(std::shared_ptr<VulkanDevice>in_device,
+void Kataglyphis::VulkanSwapChain::initVulkanContext(const std::shared_ptr<VulkanDevice> &in_device,
   Kataglyphis::Frontend::Window *frontend_window,
   const vk::SurfaceKHR &surface,
   const vk::SwapchainKHR &oldSwapchain)
@@ -181,7 +181,7 @@ void Kataglyphis::VulkanSwapChain::cleanUp()
 
 Kataglyphis::VulkanSwapChain::~VulkanSwapChain() { cleanUp(); }
 
-void Kataglyphis::VulkanSwapChain::recreate(std::shared_ptr<VulkanDevice>in_device, const vk::SurfaceKHR &surface)
+void Kataglyphis::VulkanSwapChain::recreate(const std::shared_ptr<VulkanDevice> &in_device, const vk::SurfaceKHR &surface)
 {
     // Keep the old swapchain alive across the create so it can be the
     // oldSwapchain handoff source (the previous code destroyed everything

@@ -8405,3 +8405,242 @@ CHANGELOG.md deleted (git history + this file are the record). What remains:
   `git -C ExternalLib/Kataglyphis-RustProjectTemplate status` clean.
   Build preset: none (container tooling).
 
+## 2026-08-04 batch VII — planner (refactor: 83 declaration lines that take the engine's one `shared_ptr<VulkanDevice>` by value, against five newer helpers that take it by reference, with exactly three real sinks among them; the colour twin of the depth-attachment chain, hand-rolled in the same three raster stages the depth helper was extracted from; eleven `wgpu::TextureDescriptor` literals in the Rust crate that differ in four fields and repeat four)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Every `file:line` below was read out of the
+tree this pass.
+
+**Host GPU golden verification is still blocked over RDP** (see the `- [b]`
+entry above), so none of these three is accepted on pixels. All three are
+signature/plumbing refactors with no intended behaviour change, so acceptance
+is the existing CPU suites staying green plus a new single-definition gate per
+task — the same shape the depth-attachment, framebuffer and render-pass
+helpers already carry. Task 3 is Rust, where the host MSVC linker is broken
+(`cargo test` cannot link — see memory), so its acceptance is
+`cargo clippy --all-targets` compiling the new test plus the always-on Linux
+lane running it on push. **Do not use `cargo fmt --check` as a gate on the
+Rust crate**: the pinned submodule is known not fmt-clean (~30 files), which
+is why `f88dd634` left the CI wiring blocked.
+
+**First, the engine passes its single most-passed object by value 83 times.**
+`std::shared_ptr<VulkanDevice>` is threaded through nearly every creation
+path, and 83 declaration/definition lines across 45 files take it *by value* —
+one atomic increment and one atomic decrement per call, for a pointer none of
+them consume. The regex that finds them is
+`std::shared_ptr<VulkanDevice> ?<identifier>` followed by `,` or `)`; the
+heaviest files are `scene/Texture.{ixx,cpp}` (7 each),
+`renderer/accelerationStructures/ASManager.{ixx,cpp}` (7 each) and
+`scene/Scene.{ixx,cpp}` (5 + 4). This is not a style preference the codebase
+is undecided about — the five newest helpers already take it by const
+reference and read correctly:
+`renderer/DepthAttachment.ixx:26`, `renderer/FrameCapture.ixx:61` and `:178`,
+`scene/ModelAssembly.ixx:31`/`:46`/`:65`,
+`vulkan_base/ShaderHelper.ixx:74` (`createComputePipeline`) and
+`vulkan_base/VulkanBufferManager.ixx:58`. Ten lines do it right, 83 do it the
+old way, and nothing records which is intended.
+
+Exactly **three** of the 83 are genuine sink parameters — they consume the
+argument with `std::move` into a member, so by-value is the correct signature
+and must stay:
+
+| sink | declaration | definition |
+| --- | --- | --- |
+| `DescriptorSetGroup::create` | `vulkan_base/DescriptorSetGroup.ixx:68` | `DescriptorSetGroup.cpp:78` (`device = std::move(vulkan_device)`) |
+| `GltfLoader::GltfLoader` | `scene/GltfLoader.ixx:60` | `GltfLoader.cpp:32` (`: device(std::move(device))`) |
+| `ShaderStagePair::ShaderStagePair` | `vulkan_base/ShaderHelper.ixx:40` | `ShaderHelper.cpp:72` (`: device_(std::move(device))`) |
+
+Everything else copies and never moves. Note `loadSpirvShaderModule`
+(`ShaderHelper.ixx:27`, `.cpp:55`) sits next to a sink but is *not* one — it
+only reads the device — while its neighbour `createComputePipeline` in the
+same file already takes a const reference. That file alone has all three
+spellings.
+
+**Second, the colour attachment is the depth attachment's untouched twin.**
+`createDepthAttachment` (`renderer/DepthAttachment.ixx:25-45`) was extracted
+because three raster stages spelled out `chooseDepthFormat -> createImage ->
+createImageView` by hand. The colour/storage half of that same chain —
+`createImage(..., eOptimal, <usage>, eDeviceLocal) -> createImageView(...,
+eColor, 1)` — is still written out longhand in the *same three stages*:
+`renderer/DeferredRasterizer.cpp:76-83` (a local `createAttachment` lambda,
+called four times at `:86` and `:91-93`), `renderer/Rasterizer.cpp:242-255`,
+and `renderer/VulkanRenderer.cpp:1325-1334` (`pathTracingAccumulation`,
+storage-only). They already agree on tiling and memory property by
+coincidence, which is exactly the accident `NoStageHandRollsTheDepthAttachment
+Chain` (`buildIntegritySuite.cpp:6293`) was written to prevent on the depth
+side.
+
+**Third, the Rust crate writes `wgpu::TextureDescriptor` eleven times for one
+shape.** Every one of these is a single-layer 2D texture — `dimension: D2`,
+`depth_or_array_layers: 1`, `view_formats: &[]` — differing only in label,
+size, format, usage, and (in two cases) mip count:
+`render/bloom.rs:107`, `render/ssao.rs:100`, `render/forward.rs:2188`,
+`render/ibl.rs:324` / `:382` / `:427` / `:767`, `render/texture.rs:158` /
+`:234` / `:270` / `:289`. Three sites are legitimately a different shape and
+must stay: `render/ibl.rs:343` (`dummy_cube`) and `render/ibl.rs:649`
+(`create_cube`) are six-layer cube textures, and `render/forward.rs:679`
+(`shadow_map_array`) is a depth array. The crate already has the right home
+for this — `render/bind_layout.rs` and `render/pipeline_desc.rs` are the two
+descriptor-shape modules extracted for exactly this reason in the 2026-08-04
+batch — and `render/texture.rs` already owns two of the eleven.
+
+Ordering: **do task 2 before task 1** if both land in one session, so the new
+`ColorAttachment.ixx` exists before task 1's sweep and its signature is
+covered by task 1's gate rather than added after it. (Task 2 must write the
+helper with a `const std::shared_ptr<VulkanDevice> &` parameter from the
+start, copying `createDepthAttachment`'s signature.) Task 3 is Rust and
+disjoint from both.
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Extract `createColorAttachment`, the colour twin of `createDepthAttachment`** — the same three raster stages the depth chain was lifted out of still spell the colour/storage chain by hand.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/DepthAttachment.ixx` (all 48 lines) —
+    the exact file, module and doc-comment shape to mirror, including how it
+    names its non-goals
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:70-95` — the
+    local `createAttachment` lambda and its four call sites
+  - `Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp:237-266` — the longhand
+    copy, immediately above an already-converted `createDepthAttachment` call
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:1319-1335` — the
+    storage-only path-tracing accumulation image
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:6278-6350` — the gate to
+    copy
+
+  **Steps:**
+  1. Add `Src/GraphicsEngineVulkan/renderer/ColorAttachment.ixx` exporting
+     `kataglyphis.vulkan.color_attachment` with
+     `void createColorAttachment(Texture &target, const std::shared_ptr<VulkanDevice> &device, vk::Extent2D extent, vk::Format format, vk::ImageUsageFlags usage)`
+     — body is `target.createImage(device, extent.width, extent.height, 1,
+     format, vk::ImageTiling::eOptimal, usage,
+     vk::MemoryPropertyFlagBits::eDeviceLocal);` followed by
+     `target.createImageView(device, format, vk::ImageAspectFlagBits::eColor, 1);`.
+     A new `.ixx` needs no CMake edit (`kataglyphis_collect_module_interfaces`
+     globs `Src/GraphicsEngineVulkan/`) but does need a fresh configure.
+  2. Write the doc comment the way `DepthAttachment.ixx:15-24` does: state the
+     chain, state that callers keep their own follow-up work (Rasterizer's and
+     VulkanRenderer's layout transitions are caller decisions and stay at the
+     call sites), and name the non-goals explicitly — `Clouds::createStorageTexture`
+     (`scene/atmospheric_effects/clouds/Clouds.cpp:35-36`, a 3D/array storage
+     texture that passes `vk::ImageType`, `depth` and a view type), `SkyBox`
+     (`scene/sky_box/SkyBox.cpp:150` and `:209`, six layers +
+     `eCubeCompatible`), `CascadedShadowMap` (`.cpp:64`/`:77`, a depth 2D
+     array), `Texture::createFromRgba` (`scene/Texture.cpp:151`/`:202`, a real
+     mip chain) and `VulkanSwapChain` (`.cpp:160`, a view over an image the
+     swapchain owns).
+  3. Rewrite the three call sites over it. In `DeferredRasterizer.cpp` the
+     lambda body collapses to one `createColorAttachment(*tex, device, extent,
+     format, usage)` call; keep the lambda (it owns the per-swapchain-image
+     loop and the `std::move` into the vector) and keep the "no position
+     attachment" comment at `:87-90` untouched.
+  4. In `Rasterizer.cpp` and `VulkanRenderer.cpp`, leave the code that follows
+     the chain exactly where it is — `Rasterizer`'s `std::move` into
+     `offscreenTextures[index]` and `VulkanRenderer`'s
+     `transitionImageLayout` to `eGeneral` plus its "storage images live in
+     eGeneral for their whole lifetime" comment are not part of the chain.
+
+  **Test:** Add `BuildIntegrity.NoStageHandRollsTheColorAttachmentChain` to
+  `buildIntegritySuite.cpp`, directly beneath the depth twin and cross-
+  referencing it in the comment: walk `Src/GraphicsEngineVulkan/` for
+  `.cpp`/`.ixx`, flag any line calling `createImageView(` with
+  `vk::ImageAspectFlagBits::eColor`, exempt `ColorAttachment.ixx` itself, and
+  exempt allowlisted lines carrying a trailing
+  `// COLOR_ATTACHMENT_CHAIN_OK: <marker>` comment (the five non-goals from
+  step 2 get one each). Assert at least one marker was found, per the depth
+  gate's `marker_found`. CPU only.
+
+  **Build:** `clangcl-debug`, with `-FreshContainer` (new module interface):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  Then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root. Once
+  the RDP blocker clears, `GoldenRender.*` for both rasterizers and the
+  path-tracing goldens are the behavioural check — this change is intended to
+  be pixel-identical.
+
+  **Context:** Thirteenth member of the create/destroy helper family logged in
+  `docs/cpp-renderer-improvements.md`; add the entry there in the same change.
+  The value is not line count — it is that a fourth colour attachment cannot
+  pick `eLinear` tiling or a host-visible memory property by accident, which
+  is the same sentence the depth helper's gate comment already makes. Do not
+  try to fold the colour and depth helpers into one function with a
+  `vk::ImageAspectFlags` parameter: they differ in what they return (depth
+  returns the chosen format from `chooseDepthFormat`, colour is told its
+  format) and merging them is how a helper becomes a config struct nobody
+  can read.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(M) (refactor) Give the crate's single-layer 2D `wgpu::TextureDescriptor` one definition** — eleven literals repeat `dimension`, `depth_or_array_layers`, `view_formats` and (nine times) `mip_level_count`/`sample_count` to vary four fields.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/render/texture.rs:260-303` —
+    `create_depth_texture` / `create_hdr_texture`, the two that already live in
+    the right module and are byte-identical apart from label and format
+  - `crates/webgpu_renderer/src/render/bind_layout.rs` and
+    `src/render/pipeline_desc.rs` — the two descriptor-shape modules extracted
+    in the 2026-08-04 batch; match their naming, visibility (`pub(crate)`) and
+    doc-comment style
+  - `crates/webgpu_renderer/tests/sky_constants.rs:1-40` — the `include_str!`
+    source-gate pattern to copy for the test
+  - `crates/webgpu_renderer/src/render/ibl.rs:643-666` (`create_cube`) — a
+    deliberate non-goal, for the doc comment
+
+  **Steps:**
+  1. In `src/render/texture.rs`, add
+     `pub(crate) fn create_2d_texture(device: &wgpu::Device, label: &str, width: u32, height: u32, format: wgpu::TextureFormat, usage: wgpu::TextureUsages, mip_level_count: u32, sample_count: u32) -> wgpu::Texture`
+     and a thin
+     `pub(crate) fn create_2d_view(...) -> wgpu::TextureView` that appends
+     `.create_view(&wgpu::TextureViewDescriptor::default())` (eight of the
+     eleven sites want the view, not the texture). Clamp inside:
+     `width.max(1)`, `height.max(1)`.
+  2. Document the non-goals in the function's doc comment the way
+     `DepthAttachment.ixx` does on the C++ side: cube textures
+     (`ibl.rs:343` `dummy_cube`, `ibl.rs:649` `create_cube`) and the depth
+     array (`forward.rs:679` `shadow_map_array`) are a different shape and
+     stay hand-written.
+  3. Rewrite the eleven call sites: `render/bloom.rs:107`,
+     `render/ssao.rs:100`, `render/forward.rs:2188`, `render/ibl.rs:324`,
+     `:382`, `:427`, `:767`, `render/texture.rs:158`, `:234`, `:270`, `:289`.
+     `bloom.rs` and `ssao.rs` keep their `make_tex` closures — the closure
+     captures `w`/`h` and the label varies per call; only the descriptor body
+     collapses.
+  4. Note one intentional behaviour change and put it in the commit message:
+     `forward.rs:2188` (`offscreen_color`, the screenshot/headless readback
+     path) currently passes `width`/`height` unclamped, so a zero-sized
+     request is a wgpu validation error; after this it renders 1×1. That is
+     strictly better than a panic and matches what
+     `create_depth_texture`/`create_hdr_texture` already do, but it is a
+     change, so say so rather than letting it ride.
+  5. Do not widen the helper to take a `wgpu::Extent3d` or an
+     `Option<&[wgpu::TextureFormat]>` for `view_formats` — no call site needs
+     either, and adding them puts the duplication back as parameters.
+
+  **Test:** Add `crates/webgpu_renderer/tests/texture_desc_single_definition.rs`
+  following the `tests/sky_constants.rs` pattern: `include_str!` each of
+  `../src/render/{bloom,ssao,forward,ibl,texture}.rs`, count occurrences of
+  `wgpu::TextureDescriptor {`, and assert the only ones left are the three
+  allowlisted non-goals plus the single literal inside `create_2d_texture`.
+  Allowlist by a trailing `// TEXTURE_2D_SHAPE_OK: <marker>` comment on the
+  exempted line rather than by count, so a fourth cube texture does not
+  silently fit under the number. Pure CPU, no adapter — say so in the module
+  doc comment, as `sky_constants.rs` does.
+
+  **Build:** No C++ build. From
+  `ExternalLib/Kataglyphis-RustProjectTemplate`:
+  `cargo clippy --all-targets -p kataglyphis_webgpu_renderer -- -D warnings`.
+  **`cargo test` cannot link on this host** (the MSVC linker install is
+  incomplete and Git Bash's `link.exe` shadows MSVC's), so clippy compiling
+  the new test is the local acceptance; the always-on Linux lane runs
+  `cargo test -p kataglyphis_webgpu_renderer` via
+  `Scripts/Linux/run-cargo-tests.sh` on push and is the real signal. Do
+  **not** add `cargo fmt --check` to the acceptance — the pinned submodule is
+  known not fmt-clean (see the `f88dd634` commit message and the blocked CI
+  entry), and it will fail for unrelated reasons.
+
+  **Context:** Same family as `render/bind_layout.rs` and
+  `render/pipeline_desc.rs`. Both renderers are converging on "one rule, one
+  definition" gates; this closes the texture-creation half on the Rust side
+  the way `createDepthAttachment` closed the attachment half on the C++ side.
+  Update `docs/webgpu-renderer-roadmap.md` only if you touch a feature row —
+  a pure refactor does not need one.
+

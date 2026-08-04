@@ -29,7 +29,7 @@ namespace {
 /// Picks the loader by file extension: glTF documents (`.gltf`/`.glb`) go to
 /// GltfLoader, everything else to ObjLoader. Both produce a device-side Model
 /// the same way, so callers do not care which ran.
-std::shared_ptr<Model> loadModelByExtension(std::shared_ptr<VulkanDevice> device,
+std::shared_ptr<Model> loadModelByExtension(const std::shared_ptr<VulkanDevice> &device,
   vk::CommandPool commandPool,
   const std::string &modelFile)
 {
@@ -46,7 +46,7 @@ std::shared_ptr<Model> loadModelByExtension(std::shared_ptr<VulkanDevice> device
 
 Scene::Scene() = default;
 
-void Scene::loadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool)
+void Scene::loadModel(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool)
 {
     std::string const modelFileName = sceneConfig::getModelFile();
     spdlog::info("Loading model: {}", modelFileName);
@@ -65,7 +65,7 @@ void Scene::loadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool comma
     }
 }
 
-std::optional<uint32_t> Scene::loadAdditionalModel(std::shared_ptr<VulkanDevice> device,
+std::optional<uint32_t> Scene::loadAdditionalModel(const std::shared_ptr<VulkanDevice> &device,
   vk::CommandPool commandPool,
   const std::string &modelPath,
   const glm::mat4 &modelMatrix)
@@ -98,7 +98,7 @@ void Scene::beginModelLoadAsync()
 
 bool Scene::isModelLoadPending() const { return modelLoadPending; }
 
-bool Scene::pollModelLoad(std::shared_ptr<VulkanDevice> device, vk::CommandPool commandPool)
+bool Scene::pollModelLoad(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool)
 {
     if (!modelLoadPending || !pendingModelParse.isFinished()) { return false; }
 
@@ -181,7 +181,7 @@ void Scene::cancelPendingModelLoad()
     spdlog::info("Discarded an in-flight asynchronous model parse; the scene is being replaced.");
 }
 
-void Scene::reloadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, const std::string &modelPath)
+void Scene::reloadModel(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, const std::string &modelPath)
 {
     cancelPendingModelLoad();
     cleanUp();

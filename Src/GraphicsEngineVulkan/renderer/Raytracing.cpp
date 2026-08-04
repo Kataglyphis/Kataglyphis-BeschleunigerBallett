@@ -25,7 +25,7 @@ import kataglyphis.vulkan.swapchain;
 
 Kataglyphis::VulkanRendererInternals::Raytracing::Raytracing() = default;
 
-void Kataglyphis::VulkanRendererInternals::Raytracing::init(std::shared_ptr<VulkanDevice>in_device,
+void Kataglyphis::VulkanRendererInternals::Raytracing::init(const std::shared_ptr<VulkanDevice> &in_device,
   std::span<const vk::DescriptorSetLayout> descriptorSetLayouts,
   VulkanSwapChain *swapchain)
 {

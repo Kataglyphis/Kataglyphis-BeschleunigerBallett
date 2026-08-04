@@ -46,7 +46,7 @@ auto Kataglyphis::VulkanImage::operator=(VulkanImage &&other) noexcept -> Vulkan
     return *this;
 }
 
-void Kataglyphis::VulkanImage::create(std::shared_ptr<VulkanDevice>in_device,
+void Kataglyphis::VulkanImage::create(const std::shared_ptr<VulkanDevice> &in_device,
   uint32_t width,
   uint32_t height,
   uint32_t mip_levels,

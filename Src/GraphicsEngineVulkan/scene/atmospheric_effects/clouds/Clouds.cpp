@@ -18,7 +18,7 @@ import kataglyphis.vulkan.command_buffer_manager;
 
 namespace Kataglyphis {
 
-void Clouds::init(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, vk::DescriptorSetLayout sharedLayout, uint32_t width, uint32_t height)
+void Clouds::init(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, vk::DescriptorSetLayout sharedLayout, uint32_t width, uint32_t height)
 {
     this->device = device;
     this->width = width;

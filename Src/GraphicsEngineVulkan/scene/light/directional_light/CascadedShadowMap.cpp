@@ -37,7 +37,7 @@ import kataglyphis.vulkan.mesh_draw_recorder;
 namespace Kataglyphis {
 
 
-void CascadedShadowMap::init(std::shared_ptr<VulkanDevice>in_device, uint32_t width, uint32_t height, uint32_t num_cascades,
+void CascadedShadowMap::init(const std::shared_ptr<VulkanDevice> &in_device, uint32_t width, uint32_t height, uint32_t num_cascades,
   vk::DescriptorSetLayout sharedRenderDescriptorSetLayout, uint32_t swapChainImageCount,
   vk::CommandPool commandPool)
 {

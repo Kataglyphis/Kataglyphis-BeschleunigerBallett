@@ -48,7 +48,7 @@ auto Kataglyphis::VulkanBuffer::operator=(VulkanBuffer &&other) noexcept -> Vulk
     return *this;
 }
 
-void Kataglyphis::VulkanBuffer::create(std::shared_ptr<VulkanDevice>vulkan_device,
+void Kataglyphis::VulkanBuffer::create(const std::shared_ptr<VulkanDevice> &vulkan_device,
   vk::DeviceSize buffer_size,
   vk::BufferUsageFlags buffer_usage_flags,
   vk::MemoryPropertyFlags buffer_propertiy_flags,

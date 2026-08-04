@@ -71,7 +71,7 @@ auto Kataglyphis::DescriptorSetGroup::addBinding(uint32_t binding,
     return *this;
 }
 
-bool Kataglyphis::DescriptorSetGroup::create(std::shared_ptr<VulkanDevice> vulkan_device, uint32_t set_count)
+bool Kataglyphis::DescriptorSetGroup::create(std::shared_ptr<VulkanDevice> vulkan_device, uint32_t set_count)  // DEVICE_SINK_OK: moved into member
 {
     releaseGpuResources();
 

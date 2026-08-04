@@ -18,11 +18,11 @@ class Model
 {
   public:
     Model();
-    Model(std::shared_ptr<VulkanDevice>device);
+    Model(const std::shared_ptr<VulkanDevice> &device);
 
     void cleanUp();
 
-    void add_new_mesh(std::shared_ptr<VulkanDevice>vulkan_device,
+    void add_new_mesh(const std::shared_ptr<VulkanDevice> &vulkan_device,
       vk::CommandPool command_pool,
       std::vector<Vertex> &vertices,
       std::vector<unsigned int> &indices,

@@ -65,7 +65,7 @@ class DescriptorSetGroup
     // duplicate binding number, before anything is created; every later
     // failure goes through ASSERT_VULKAN, which logs critical and aborts, so
     // there is no partial-cleanup path.
-    [[nodiscard]] bool create(std::shared_ptr<VulkanDevice> vulkan_device, uint32_t set_count);
+    [[nodiscard]] bool create(std::shared_ptr<VulkanDevice> vulkan_device, uint32_t set_count);  // DEVICE_SINK_OK: moved into member
 
     // -- write helpers (thin wrappers around vkUpdateDescriptorSets; the
     // descriptor type / array count come from the declared binding)

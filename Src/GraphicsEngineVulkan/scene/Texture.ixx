@@ -21,18 +21,18 @@ class Texture
     Texture(Texture &&other) noexcept;
     Texture &operator=(Texture &&other) noexcept;
 
-    bool createFromFile(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, const std::string &fileName);
+    bool createFromFile(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, const std::string &fileName);
     /// Decodes an encoded image (PNG/JPG/...) already in memory and uploads it,
     /// for glTF's embedded / data-URI images which never touch the filesystem.
     /// Shares the upload path with createFromFile; returns false if the bytes
     /// do not decode.
-    bool createFromMemory(std::shared_ptr<VulkanDevice>device,
+    bool createFromMemory(const std::shared_ptr<VulkanDevice> &device,
       vk::CommandPool commandPool,
       const unsigned char *encodedBytes,
       size_t byteCount);
     /// Returns false if the white-default upload itself failed (e.g. a failed
     /// submit), in which case the texture is left empty/unwritten.
-    bool createDefaultTexture(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool);
+    bool createDefaultTexture(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool);
 
     void setImage(vk::Image image);
     void setImageView(vk::ImageView imageView);
@@ -43,7 +43,7 @@ class Texture
     vk::ImageView &getImageView() { return vulkanImageView.getImageView(); };
     vk::Sampler &getSampler() { return textureSampler; }
 
-    void createImage(std::shared_ptr<VulkanDevice>device,
+    void createImage(const std::shared_ptr<VulkanDevice> &device,
       uint32_t width,
       uint32_t height,
       uint32_t in_mip_levels,
@@ -56,9 +56,9 @@ class Texture
       vk::ImageType image_type = vk::ImageType::e2D,
       uint32_t depth = 1);
 
-    void createImageView(std::shared_ptr<VulkanDevice>device, vk::Format format, vk::ImageAspectFlags aspect_flags, uint32_t in_mip_levels, vk::ImageViewType view_type = vk::ImageViewType::e2D, uint32_t array_layers = 1);
+    void createImageView(const std::shared_ptr<VulkanDevice> &device, vk::Format format, vk::ImageAspectFlags aspect_flags, uint32_t in_mip_levels, vk::ImageViewType view_type = vk::ImageViewType::e2D, uint32_t array_layers = 1);
 
-    void createTextureSampler(std::shared_ptr<VulkanDevice>device,
+    void createTextureSampler(const std::shared_ptr<VulkanDevice> &device,
       vk::Filter filter = vk::Filter::eLinear,
       vk::SamplerAddressMode addressMode = vk::SamplerAddressMode::eRepeat,
       vk::Bool32 compareEnable = VK_FALSE,
@@ -95,7 +95,7 @@ class Texture
     // RGBA8 and does the staging-buffer copy, image creation, layout
     // transitions, mip generation and view creation. Returns false on an empty
     // image.
-    bool uploadRgba(std::shared_ptr<VulkanDevice>device,
+    bool uploadRgba(const std::shared_ptr<VulkanDevice> &device,
       vk::CommandPool commandPool,
       int width,
       int height,

@@ -20,7 +20,7 @@ class VulkanImageView
 
     vk::ImageView &getImageView() { return imageView; };
 
-    void create(std::shared_ptr<VulkanDevice>in_device,
+    void create(const std::shared_ptr<VulkanDevice> &in_device,
       vk::Image image,
       vk::Format format,
       vk::ImageAspectFlags aspect_flags,

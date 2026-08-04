@@ -52,7 +52,7 @@ auto Kataglyphis::validateSpirvBlob(std::span<const char> code) -> bool
     return magic == kSpirvMagic;
 }
 
-auto Kataglyphis::loadSpirvShaderModule(std::shared_ptr<VulkanDevice> device, const std::string &spvPath)
+auto Kataglyphis::loadSpirvShaderModule(const std::shared_ptr<VulkanDevice> &device, const std::string &spvPath)
   -> vk::ShaderModule
 {
     const std::vector<char> code = File(spvPath).readCharSequence();
@@ -67,7 +67,7 @@ auto Kataglyphis::loadSpirvShaderModule(std::shared_ptr<VulkanDevice> device, co
     return createShaderModuleFromBytes(device, code);
 }
 
-Kataglyphis::ShaderStagePair::ShaderStagePair(std::shared_ptr<VulkanDevice> device, const std::string &vertexSpvPath,
+Kataglyphis::ShaderStagePair::ShaderStagePair(std::shared_ptr<VulkanDevice> device, const std::string &vertexSpvPath,  // DEVICE_SINK_OK: moved into member
   const std::string &fragmentSpvPath)
   : device_(std::move(device)), vertexModule_(loadSpirvShaderModule(device_, vertexSpvPath)),
     fragmentModule_(loadSpirvShaderModule(device_, fragmentSpvPath))

@@ -18,7 +18,7 @@ class VulkanImage
     VulkanImage(VulkanImage &&other) noexcept;
     VulkanImage &operator=(VulkanImage &&other) noexcept;
 
-    void create(std::shared_ptr<VulkanDevice>in_device,
+    void create(const std::shared_ptr<VulkanDevice> &in_device,
       uint32_t width,
       uint32_t height,
       uint32_t mip_levels,

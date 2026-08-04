@@ -24,7 +24,7 @@ auto validateSpirvBlob(std::span<const char> code) -> bool;
 // critical (with a hint to (re)compile shaders) and aborts - shader loading
 // happens during stage init, where this codebase already treats a Vulkan
 // creation failure as unrecoverable.
-auto loadSpirvShaderModule(std::shared_ptr<VulkanDevice> device, const std::string &spvPath) -> vk::ShaderModule;
+auto loadSpirvShaderModule(const std::shared_ptr<VulkanDevice> &device, const std::string &spvPath) -> vk::ShaderModule;
 
 // Owns the vertex + fragment vk::ShaderModule pair every pipeline-creation
 // site loads, plus the two vk::PipelineShaderStageCreateInfo that reference
@@ -37,7 +37,7 @@ auto loadSpirvShaderModule(std::shared_ptr<VulkanDevice> device, const std::stri
 class ShaderStagePair
 {
   public:
-    ShaderStagePair(std::shared_ptr<VulkanDevice> device, const std::string &vertexSpvPath,
+    ShaderStagePair(std::shared_ptr<VulkanDevice> device, const std::string &vertexSpvPath,  // DEVICE_SINK_OK: moved into member
       const std::string &fragmentSpvPath);
 
     ShaderStagePair(const ShaderStagePair &) = delete;

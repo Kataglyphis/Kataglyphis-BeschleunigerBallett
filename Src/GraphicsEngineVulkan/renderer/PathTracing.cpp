@@ -29,7 +29,7 @@ import kataglyphis.vulkan.shader_helper;
 
 Kataglyphis::VulkanRendererInternals::PathTracing::PathTracing() = default;
 
-void Kataglyphis::VulkanRendererInternals::PathTracing::init(std::shared_ptr<VulkanDevice>in_device,
+void Kataglyphis::VulkanRendererInternals::PathTracing::init(const std::shared_ptr<VulkanDevice> &in_device,
   std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {
     this->device = in_device;

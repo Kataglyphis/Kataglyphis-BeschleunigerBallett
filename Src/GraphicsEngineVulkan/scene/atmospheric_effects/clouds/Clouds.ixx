@@ -21,7 +21,7 @@ class Clouds
     Clouds(const Clouds &) = delete;
     Clouds &operator=(const Clouds &) = delete;
 
-    void init(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, vk::DescriptorSetLayout sharedLayout, uint32_t width, uint32_t height);
+    void init(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, vk::DescriptorSetLayout sharedLayout, uint32_t width, uint32_t height);
 
     void recordComputeCommands(vk::CommandBuffer &commandBuffer, std::span<const vk::DescriptorSet> descriptorSets);
 

@@ -37,7 +37,7 @@ import kataglyphis.vulkan.depth_attachment;
 
 Kataglyphis::VulkanRendererInternals::PostStage::PostStage() = default;
 
-void Kataglyphis::VulkanRendererInternals::PostStage::init(std::shared_ptr<VulkanDevice>in_device,
+void Kataglyphis::VulkanRendererInternals::PostStage::init(const std::shared_ptr<VulkanDevice> &in_device,
   VulkanSwapChain *swapchain,
   std::span<const vk::DescriptorSetLayout> descriptorSetLayouts)
 {

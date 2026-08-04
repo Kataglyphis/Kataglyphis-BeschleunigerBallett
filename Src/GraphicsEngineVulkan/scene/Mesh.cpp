@@ -30,7 +30,7 @@ void Mesh::cleanUp()
     materialsBuffer.cleanUp();
 }
 
-Mesh::Mesh(std::shared_ptr<VulkanDevice>device,
+Mesh::Mesh(const std::shared_ptr<VulkanDevice> &device,
   vk::CommandPool transfer_command_pool,
   const std::vector<Vertex> &vertices,
   const std::vector<uint32_t> &indices,

@@ -64,7 +64,7 @@ auto deviceSupportsMipmapGeneration(vk::PhysicalDevice physical_device, vk::Form
 }
 }// namespace
 
-auto Kataglyphis::Texture::createFromFile(std::shared_ptr<VulkanDevice>device,
+auto Kataglyphis::Texture::createFromFile(const std::shared_ptr<VulkanDevice> &device,
   vk::CommandPool commandPool,
   const std::string &fileName) -> bool
 {
@@ -82,7 +82,7 @@ auto Kataglyphis::Texture::createFromFile(std::shared_ptr<VulkanDevice>device,
     return uploadRgba(device, commandPool, width, height, size, image_data);
 }
 
-auto Kataglyphis::Texture::createFromMemory(std::shared_ptr<VulkanDevice>device,
+auto Kataglyphis::Texture::createFromMemory(const std::shared_ptr<VulkanDevice> &device,
   vk::CommandPool commandPool,
   const unsigned char *encodedBytes,
   size_t byteCount) -> bool
@@ -106,7 +106,7 @@ auto Kataglyphis::Texture::createFromMemory(std::shared_ptr<VulkanDevice>device,
     return uploadRgba(device, commandPool, width, height, size, image_data);
 }
 
-auto Kataglyphis::Texture::uploadRgba(std::shared_ptr<VulkanDevice>device,
+auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &device,
   vk::CommandPool commandPool,
   int width,
   int height,
@@ -204,7 +204,7 @@ auto Kataglyphis::Texture::uploadRgba(std::shared_ptr<VulkanDevice>device,
     return true;
 }
 
-auto Kataglyphis::Texture::createDefaultTexture(std::shared_ptr<VulkanDevice>in_device,
+auto Kataglyphis::Texture::createDefaultTexture(const std::shared_ptr<VulkanDevice> &in_device,
   vk::CommandPool commandPool) -> bool
 {
     constexpr vk::DeviceSize default_size = 4;
@@ -217,7 +217,7 @@ void Kataglyphis::Texture::setImage(vk::Image image) { vulkanImage.setImage(imag
 
 void Kataglyphis::Texture::setImageView(vk::ImageView imageView) { vulkanImageView.setImageView(imageView); }
 
-void Kataglyphis::Texture::createImage(std::shared_ptr<VulkanDevice>in_device,
+void Kataglyphis::Texture::createImage(const std::shared_ptr<VulkanDevice> &in_device,
   uint32_t width,
   uint32_t height,
   uint32_t in_mip_levels,
@@ -235,7 +235,7 @@ void Kataglyphis::Texture::createImage(std::shared_ptr<VulkanDevice>in_device,
     vulkanImage.create(in_device, width, height, in_mip_levels, format, tiling, use_flags, prop_flags, array_layers, create_flags, image_type, depth);
 }
 
-void Kataglyphis::Texture::createImageView(std::shared_ptr<VulkanDevice>in_device,
+void Kataglyphis::Texture::createImageView(const std::shared_ptr<VulkanDevice> &in_device,
   vk::Format format,
   vk::ImageAspectFlags aspect_flags,
   uint32_t in_mip_levels,
@@ -246,7 +246,7 @@ void Kataglyphis::Texture::createImageView(std::shared_ptr<VulkanDevice>in_devic
     vulkanImageView.create(in_device, vulkanImage.getImage(), format, aspect_flags, in_mip_levels, view_type, array_layers);
 }
 
-void Kataglyphis::Texture::createTextureSampler(std::shared_ptr<VulkanDevice>in_device, vk::Filter filter, vk::SamplerAddressMode addressMode, vk::Bool32 compareEnable, vk::CompareOp compareOp)
+void Kataglyphis::Texture::createTextureSampler(const std::shared_ptr<VulkanDevice> &in_device, vk::Filter filter, vk::SamplerAddressMode addressMode, vk::Bool32 compareEnable, vk::CompareOp compareOp)
 {
     // Must run before `this->device` is overwritten: releaseSampler() destroys
     // the old sampler with the device that created it, not the incoming one.

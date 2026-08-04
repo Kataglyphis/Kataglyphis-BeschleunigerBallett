@@ -36,11 +36,11 @@ class ASManager
 
     vk::AccelerationStructureKHR &getTLAS() { return tlas.vulkanAS; };
 
-    void createASForScene(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
+    void createASForScene(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
 
-    bool createBLAS(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
+    bool createBLAS(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
 
-    void createTLAS(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
+    void createTLAS(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, Kataglyphis::Scene *scene);
 
     void cleanUp();
 
@@ -58,20 +58,20 @@ class ASManager
     // cost; it is legal because the builds carry eAllowCompaction and the
     // build submission is fully synchronous before this runs. TLAS is built
     // AFTER, so it picks up the compacted device addresses naturally.
-    void compactBLAS(std::shared_ptr<VulkanDevice> device, vk::CommandPool commandPool);
+    void compactBLAS(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool);
 
-    static void createSingleBlas(std::shared_ptr<VulkanDevice>device,
+    static void createSingleBlas(const std::shared_ptr<VulkanDevice> &device,
       vk::CommandBuffer command_buffer,
       BuildAccelerationStructure &build_as_structure,
       vk::DeviceAddress scratch_device_or_host_address);
 
-    static void createAccelerationStructureInfosBLAS(std::shared_ptr<VulkanDevice>device,
+    static void createAccelerationStructureInfosBLAS(const std::shared_ptr<VulkanDevice> &device,
       BuildAccelerationStructure &build_as_structure,
       BlasInput &blas_input,
       vk::DeviceSize &current_scratch_size,
       vk::DeviceSize &current_size);
 
-    static void objectToVkGeometryKHR(std::shared_ptr<VulkanDevice>device,
+    static void objectToVkGeometryKHR(const std::shared_ptr<VulkanDevice> &device,
       Kataglyphis::Mesh *mesh,
       vk::AccelerationStructureGeometryKHR &acceleration_structure_geometry,
       vk::AccelerationStructureBuildRangeInfoKHR &acceleration_structure_build_range_info);

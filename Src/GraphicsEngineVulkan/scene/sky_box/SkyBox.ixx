@@ -24,7 +24,7 @@ class SkyBox
     SkyBox(const SkyBox &) = delete;
     SkyBox &operator=(const SkyBox &) = delete;
 
-    void init(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool);
+    void init(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool);
 
     void createRenderPass(vk::Format format, vk::Format depthFormat);
     void createFramebuffers(std::span<const vk::ImageView> imageViews, vk::ImageView depthView, uint32_t width, uint32_t height);

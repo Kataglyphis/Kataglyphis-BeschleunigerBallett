@@ -28,7 +28,7 @@ import kataglyphis.vulkan.model_assembly;
 
 namespace Kataglyphis {
 
-GltfLoader::GltfLoader(std::shared_ptr<VulkanDevice> device, vk::CommandPool command_pool)
+GltfLoader::GltfLoader(std::shared_ptr<VulkanDevice> device, vk::CommandPool command_pool)  // DEVICE_SINK_OK: moved into member
   : device(std::move(device)), command_pool(command_pool)
 {}
 

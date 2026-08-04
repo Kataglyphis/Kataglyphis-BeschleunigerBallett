@@ -22,7 +22,7 @@ using namespace Kataglyphis;
 
 Model::Model() = default;
 
-Model::Model(std::shared_ptr<VulkanDevice>device) : device(device) {}
+Model::Model(const std::shared_ptr<VulkanDevice> &device) : device(device) {}
 
 void Model::cleanUp()
 {
@@ -39,7 +39,7 @@ void Model::cleanUp()
     meshes.clear();
 }
 
-void Model::add_new_mesh(std::shared_ptr<VulkanDevice>vulkan_device,
+void Model::add_new_mesh(const std::shared_ptr<VulkanDevice> &vulkan_device,
   vk::CommandPool command_pool,
   std::vector<Vertex> &vertices,
   std::vector<unsigned int> &indices,

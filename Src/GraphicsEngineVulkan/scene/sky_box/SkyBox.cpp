@@ -34,7 +34,7 @@ namespace Kataglyphis {
 
 SkyBox::SkyBox() = default;
 
-void SkyBox::init(std::shared_ptr<VulkanDevice>in_device, vk::CommandPool commandPool)
+void SkyBox::init(const std::shared_ptr<VulkanDevice> &in_device, vk::CommandPool commandPool)
 {
     this->device = in_device;
 

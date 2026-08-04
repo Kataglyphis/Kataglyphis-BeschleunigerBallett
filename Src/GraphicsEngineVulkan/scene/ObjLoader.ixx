@@ -30,7 +30,7 @@ std::string resolveObjTexturePath(const std::string &baseDir, const std::string 
 class ObjLoader
 {
   public:
-    ObjLoader(std::shared_ptr<VulkanDevice>device, vk::CommandPool command_pool);
+    ObjLoader(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool command_pool);
 
     /// CPU-only construction, for parsing off the render thread (or in a test).
     /// loadModel() is unavailable on such an instance - it has no device to

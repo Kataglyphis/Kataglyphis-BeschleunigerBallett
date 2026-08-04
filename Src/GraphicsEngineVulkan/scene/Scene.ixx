@@ -142,7 +142,7 @@ class Scene
     std::vector<ObjectDescription> getObjectDescriptions() { return object_descriptions; };
     std::vector<std::shared_ptr<Model>> const &get_model_list() { return model_list; };
 
-    void loadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool);
+    void loadModel(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool);
 
     /// Starts parsing the configured model on a worker thread and returns
     /// immediately. The scene has NO model until pollModelLoad() reports one.
@@ -158,7 +158,7 @@ class Scene
     /// owns the device) and adds the model. Returns true on the frame the
     /// model becomes available, so the caller can rebuild whatever depends on
     /// scene contents. Cheap to call every frame.
-    bool pollModelLoad(std::shared_ptr<VulkanDevice> device, vk::CommandPool commandPool);
+    bool pollModelLoad(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool);
 
     /// Joins and discards a still-running beginModelLoadAsync() parse. A
     /// no-op when no parse is pending. reloadModel() calls this first so a
@@ -166,7 +166,7 @@ class Scene
     /// alongside the reloaded model.
     void cancelPendingModelLoad();
 
-    void reloadModel(std::shared_ptr<VulkanDevice>device, vk::CommandPool commandPool, const std::string &modelPath);
+    void reloadModel(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, const std::string &modelPath);
 
     /// Loads an ADDITIONAL model, leaving existing ones in place, and returns
     /// its model index (the value the raster paths push as objectIndex) or
@@ -176,7 +176,7 @@ class Scene
     /// reloadModel() replaces the scene, so until now nothing could produce a
     /// scene with two models - which meant the per-draw objectIndex could not
     /// be exercised even though the shaders index with it.
-    std::optional<uint32_t> loadAdditionalModel(std::shared_ptr<VulkanDevice> device,
+    std::optional<uint32_t> loadAdditionalModel(const std::shared_ptr<VulkanDevice> &device,
       vk::CommandPool commandPool,
       const std::string &modelPath,
       const glm::mat4 &modelMatrix);

@@ -17,7 +17,7 @@ class GUI
   public:
     GUI(Window *window);
 
-    void initializeVulkanContext(std::shared_ptr<VulkanDevice>device,
+    void initializeVulkanContext(const std::shared_ptr<VulkanDevice> &device,
       const vk::Instance &instance,
       const vk::RenderPass &post_render_pass,
       uint32_t image_count);

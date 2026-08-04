@@ -32,7 +32,7 @@ void applyKataglyphisDarkTheme() { Kataglyphis::Frontend::applyKataglyphisImGuiD
 
 GUI::GUI(Window *window) : window(window) {}
 
-void GUI::initializeVulkanContext(std::shared_ptr<VulkanDevice>vulkan_device,
+void GUI::initializeVulkanContext(const std::shared_ptr<VulkanDevice> &vulkan_device,
   const vk::Instance &instance,
   const vk::RenderPass &post_render_pass,
   uint32_t image_count)
