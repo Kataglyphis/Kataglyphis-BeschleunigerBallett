@@ -8193,46 +8193,6 @@ grep gate, task 2's acceptance is a CPU parse assertion plus a gate (its
 hidden), tasks 4 and 5 are pure refactors whose acceptance is the existing
 CPU suites staying green plus a new gate.
 
-- [ ] **(M) (refactor) Give the per-frame model×mesh draw walk one definition** — `recordSceneMeshDraws` and `CascadedShadowMap::recordCommands` implement the same walk twice, including the flat-mesh-index invariant that decides which material each draw fetches.
-
-  Read side by side, `MeshDrawRecorder.cpp:30-82` and
-  `CascadedShadowMap.cpp:471-513` are the same loop:
-
-  | | `MeshDrawRecorder.cpp` | `CascadedShadowMap.cpp` |
-  | --- | --- | --- |
-  | flat index bookkeeping | `:30`, `:43` | `:471`, `:476` |
-  | `findMesh` + `unknownBounds` fallback | `:50-52` (with a 4-line comment) | `:483-485` (the **same** 4-line comment, verbatim) |
-  | `transformAABB` + cull decision | `:57-60` | `:486-496` |
-  | considered/drawn counters | `:23`, `:44`, `:80` | `:406-407`, `:477`, `:497` |
-  | bind VB, bind IB, `drawIndexed` | `:72-79` | `:506-511` |
-
-  The invariant that matters is stated twice, in two comments that already
-  paraphrase each other (`:25-29` and `:465-470`): **`objectIndex` is the
-  running flat mesh index and must advance for culled meshes too**, because it
-  indexes the per-mesh object-description buffer. If the two loops ever drift
-  on that, the shadow pass's fragment alpha test fetches a different material
-  than the forward pass does for the same mesh — a silent, per-mesh wrong-cutout
-  bug with no test that would catch it.
-
-  What genuinely differs, and must stay per-caller: the push-constant type
-  (`PushConstantRasterizer` vs `ShadowPushConstants` + the inverse-transpose
-  rows `MeshDrawRecorder.cpp:36-40` computes and the shadow pass does not), the
-  dynamic `setCullMode` for `doubleSided` (`:69-70`, forward only — the shadow
-  pipeline is built `eCullMode = eNone`), and the cull predicate (`isVisible`
-  against one frustum vs `isVisibleAsShadowCaster` unioned over the cascades).
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/MeshDrawRecorder.cpp` (whole file, 85 lines)
-    and `MeshDrawRecorder.ixx`
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:404-516`
-  - `Src/GraphicsEngineVulkan/scene/Scene.ixx:37-140` — `findModel`/`findMesh`,
-    the "one definition" precedent this follows
-  - `Src/GraphicsEngineVulkan/scene/Frustum.ixx` — `isVisible` /
-    `isVisibleAsShadowCaster` / `transformAABB`
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:6647`
-    (`OnlyTheRendererCreatesACommandPool`) — the shape of a "exactly one place
-    does X" gate
-
   **Steps:**
   1. In `MeshDrawRecorder.ixx`, export a `SceneMeshVisit` aggregate
      (`uint32_t modelIndex, meshIndex, flatMeshIndex; Mesh *mesh; glm::mat4

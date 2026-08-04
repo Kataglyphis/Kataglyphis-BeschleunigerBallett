@@ -32,6 +32,7 @@ import kataglyphis.vulkan.mesh;
 import kataglyphis.vulkan.vertex;
 import kataglyphis.vulkan.buffer;
 import kataglyphis.vulkan.pipeline_builder;
+import kataglyphis.vulkan.mesh_draw_recorder;
 
 namespace Kataglyphis {
 
@@ -466,51 +467,33 @@ void CascadedShadowMap::recordCommands(vk::CommandBuffer &commandBuffer, uint32_
     // the per-mesh object-description buffer), pushed per mesh in the old
     // cascade-index slot so the fragment stage can fetch this draw's material for
     // the MASK alpha test. Advances for every caster (culled included). The
-    // cascade itself comes from gl_ViewIndex. No-op vs the per-model push while a
-    // Model holds one Mesh (#10).
-    uint32_t flat_mesh_index = 0;
-    for (uint32_t m = 0; m < scene->getModelCount(); m++) {
-        const glm::mat4 modelMatrix = scene->getModelMatrix(m);
-
-        for (uint32_t k = 0; k < scene->getMeshCount(m); k++) {
-            const uint32_t object_index = flat_mesh_index++;
-            ++castersConsidered;
-
-            // Unreachable with a null mesh: m/k come from getModelCount()/
-            // getMeshCount(m), so findMesh() always resolves here. Kept as a
-            // fallback rather than an assert so behaviour matches the former
-            // per-accessor calls byte-for-byte.
-            Mesh *mesh = scene->findMesh(m, k);
-            static const AABB unknownBounds{ glm::vec3(1.0F), glm::vec3(-1.0F) };
-            const AABB &meshBounds = mesh != nullptr ? mesh->getBounds() : unknownBounds;
-            const AABB casterBounds = transformAABB(modelMatrix, meshBounds);
-            bool visible_in_any_cascade = !cullingEnabled;
-            if (cullingEnabled) {
-                for (uint32_t cascade = 0; cascade < numCascades; cascade++) {
-                    if (isVisibleAsShadowCaster(cascadeFrusta[cascade], casterBounds)) {
-                        visible_in_any_cascade = true;
-                        break;
-                    }
-                }
-            }
-            if (!visible_in_any_cascade) { continue; }
-            ++castersDrawn;
-
-            const ShadowPushConstants push = makeShadowPush(modelMatrix, object_index);
-            commandBuffer.pushConstants(pipelineLayout,
-              vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-              0,
-              sizeof(ShadowPushConstants),
-              &push);
-
-            const vk::Buffer vertex_buffer = mesh != nullptr ? mesh->getVertexBuffer() : vk::Buffer{};
-            const vk::DeviceSize offset = 0;
-            commandBuffer.bindVertexBuffers(0, 1, &vertex_buffer, &offset);
-            commandBuffer.bindIndexBuffer(
-              mesh != nullptr ? mesh->getIndexBuffer() : vk::Buffer{}, 0, vk::IndexType::eUint32);
-            commandBuffer.drawIndexed(mesh != nullptr ? mesh->getIndexCount() : 0, 1, 0, 0, 0);
-        }
-    }
+    // cascade itself comes from gl_ViewIndex. Shared with the forward pass via
+    // VulkanRendererInternals::walkSceneMeshes (see MeshDrawRecorder.ixx) - this
+    // is that walk's shadow-pass instantiation: no per-model setup, culling
+    // unions isVisibleAsShadowCaster over every cascade instead of one camera
+    // frustum, and the push constant is ShadowPushConstants with no cull-mode
+    // toggle (the shadow pipeline is built eCullMode = eNone).
+    const VulkanRendererInternals::MeshDrawStats stats = VulkanRendererInternals::walkSceneMeshes(
+      commandBuffer,
+      scene,
+      [](const glm::mat4 & /*modelMatrix*/) {},
+      [&](const AABB &casterBounds) {
+          if (!cullingEnabled) { return false; }
+          for (uint32_t cascade = 0; cascade < numCascades; cascade++) {
+              if (isVisibleAsShadowCaster(cascadeFrusta[cascade], casterBounds)) { return false; }
+          }
+          return true;
+      },
+      [&](const glm::mat4 &modelMatrix, uint32_t object_index, Mesh * /*mesh*/) {
+          const ShadowPushConstants push = makeShadowPush(modelMatrix, object_index);
+          commandBuffer.pushConstants(pipelineLayout,
+            vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            0,
+            sizeof(ShadowPushConstants),
+            &push);
+      });
+    castersDrawn = stats.drawn;
+    castersConsidered = stats.considered;
 
     commandBuffer.endRenderPass();
 }
