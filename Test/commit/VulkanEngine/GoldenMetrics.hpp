@@ -86,13 +86,17 @@ inline double swung_fraction(
 
 // Fraction of pixels within `crop` whose right-hand neighbour differs in
 // luminance by more than 6 levels - a texture-detail proxy that separates a
-// real (sampled) texture or fine pattern from a flat fallback colour.
+// real (sampled) texture or fine pattern from a flat fallback colour. The
+// neighbour read stays inside `crop`: a crop of width 0 or 1 has no
+// right-hand-neighbour pair to compare and returns 0.0, without callers
+// having to shrink `x1` themselves first.
 inline double detail_fraction(const std::vector<uint8_t> &rgba, uint32_t w, uint32_t h, Crop crop)
 {
+    if (crop.x1 == 0U || crop.x1 <= crop.x0 + 1U) { return 0.0; }
     size_t detailed = 0;
     size_t total = 0;
     for (uint32_t y = crop.y0; y < crop.y1; ++y) {
-        for (uint32_t x = crop.x0; x < crop.x1; ++x) {
+        for (uint32_t x = crop.x0; x < crop.x1 - 1U; ++x) {
             const size_t base = static_cast<size_t>(y) * w + x;
             if (std::abs(luminance_of(rgba, base) - luminance_of(rgba, base + 1U)) > 6.0) { ++detailed; }
             ++total;

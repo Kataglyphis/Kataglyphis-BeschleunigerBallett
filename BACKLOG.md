@@ -9387,55 +9387,6 @@ opacity flags can be relaxed without a perf or stability surprise.
 
 ### Test suites
 
-- [ ] **(S) (refactor) Stop `detail_fraction` reading past the last column of its crop, and drop the two hand-rolled workarounds it forced on its callers** — one caller is asymmetric in x and y with nothing explaining why, and the unit test needed a bespoke crop to avoid an out-of-bounds read.
-
-  **Files to read:**
-  - `Test/commit/VulkanEngine/GoldenMetrics.hpp:88-104` — `detail_fraction`; `:52-64` and `:66-88` for the two sibling helpers that have no such rule
-  - `Test/commit/VulkanEngine/goldenMetricsSuite.cpp:51-88` — `full_frame_crop()`, `detail_safe_crop()` and the two tests that use the latter
-  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp:2530`, `:2593`, `:2101` — the three golden-suite call sites
-
-  **Steps:**
-  1. In `detail_fraction`, make the neighbour read stay inside the crop: run the
-     inner loop to `crop.x1 - 1`, guarding `crop.x1 == 0` and
-     `crop.x1 <= crop.x0 + 1` (both must yield 0.0, not underflow). The
-     denominator must count only the pixels actually compared, so a flat image
-     still returns exactly 0.0 and a checkerboard still returns near 1.0.
-  2. Document the new contract in the comment above it: the function measures
-     the boundaries *within* the crop, so a crop of width 1 has none and returns
-     0.0 — callers no longer have to shrink `x1` themselves.
-  3. Delete `detail_safe_crop()` from `goldenMetricsSuite.cpp` and point both of
-     its tests at `full_frame_crop()`.
-  4. At `goldenRenderSuite.cpp:2530`, change the crop to
-     `Crop{minx, maxx + 1U, miny, maxy + 1U}` so both axes are the half-open
-     form of the same inclusive bounding box the scan produced. The measured
-     `detail` will shift slightly (one more column of a checkerboard); re-run
-     that golden on the host and update the recorded MEASURED number in its
-     comment if the shift is visible at two decimal places. The `0.15` gate has
-     ample headroom, but say what you measured.
-
-  **Test:** Add `GoldenMetrics.DetailFractionOfAFullWidthCropStaysInBounds`:
-  build a `WIDTH x HEIGHT` checkerboard, call `detail_fraction` with
-  `full_frame_crop()`, assert the result is `> 0.4`. Add
-  `GoldenMetrics.DetailFractionOfASingleColumnCropIsZero` (`Crop{0, 1, 0,
-  HEIGHT}`). Both are red today: the first is an ASAN heap-buffer-overflow on
-  the bottom-right pixel, the second underflows the loop bound. Follow the
-  existing `goldenMetricsSuite.cpp` fixture style (`flat_frame` /
-  `checkerboard_frame`).
-
-  **Build:** `clangcl-debug` — ASAN is on in that configuration and is what
-  turns the first new test from "passes by luck" into a real failure. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -RunTests`,
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='GoldenMetrics.*'`,
-  and the touched golden on the host per `docs/gpu-golden-testing.md`.
-
-  **Context:** `GoldenMetrics.hpp` was extracted precisely so these oracles
-  could be unit-tested instead of only ever exercised through a GPU golden — and
-  the first thing the unit tests had to do was invent a crop that dodges one of
-  them. A helper whose contract is "shrink your crop before calling me, or you
-  get undefined behaviour" is a helper that will eventually be called
-  correctly-looking and wrongly. Keep the fix inside `GoldenMetrics.hpp`; do not
-  add a clamping helper to `RepoFiles.hpp` or elsewhere.
-
 ### Shaders
 
 - [ ] **(M) Stop the ray-traced closest hit seeding every pixel with the full unlit albedo, so RT shadows are shadows** — `payload.hit_value = ambient` gives RT an extra albedo bounce neither raster path has, and no test can currently tell.

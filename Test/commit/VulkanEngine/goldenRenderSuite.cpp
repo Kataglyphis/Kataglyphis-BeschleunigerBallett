@@ -2527,7 +2527,7 @@ TEST(GoldenRender, KhrTextureTransformTilesTheTexture)
     // DETAIL: fraction of card-box pixels whose right neighbour differs in
     // luminance by more than 6 levels. A finely-tiled checkerboard is nearly all
     // edges; a coarse (untransformed) one is not.
-    const double detail = detail_fraction(after, width, height, Crop{minx, maxx, miny, maxy + 1U});
+    const double detail = detail_fraction(after, width, height, Crop{minx, maxx + 1U, miny, maxy + 1U});
     GTEST_LOG_(INFO) << "uv-transform card: box [" << minx << "," << miny << ".." << maxx << "," << maxy
                      << "] detail-fraction " << detail;
 

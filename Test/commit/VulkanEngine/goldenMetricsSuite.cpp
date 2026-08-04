@@ -50,14 +50,6 @@ std::vector<uint8_t> checkerboard_frame()
 
 Crop full_frame_crop() { return Crop{0U, WIDTH, 0U, HEIGHT}; }
 
-// detail_fraction reads each pixel's RIGHT-HAND neighbour, so a crop whose x1
-// reaches the frame width would read one pixel past the last row on the
-// bottom-right corner. Every real caller's crop already excludes the
-// rightmost column (see GoldenMetrics.hpp's panel_free_crop/card_crop); this
-// helper keeps these tests to the same contract instead of relying on
-// out-of-bounds vector access being merely undefined rather than caught.
-Crop detail_safe_crop() { return Crop{0U, WIDTH - 1U, 0U, HEIGHT}; }
-
 } // namespace
 
 TEST(GoldenMetrics, SwungFractionIsZeroForIdenticalFrames)
@@ -76,7 +68,7 @@ TEST(GoldenMetrics, SwungFractionIsOneForFullyDifferentFrames)
 TEST(GoldenMetrics, DetailFractionIsZeroForFlatImage)
 {
     const std::vector<uint8_t> frame = flat_frame(128U);
-    EXPECT_DOUBLE_EQ(detail_fraction(frame, WIDTH, HEIGHT, detail_safe_crop()), 0.0);
+    EXPECT_DOUBLE_EQ(detail_fraction(frame, WIDTH, HEIGHT, full_frame_crop()), 0.0);
 }
 
 TEST(GoldenMetrics, DetailFractionIsHighForCheckerboard)
@@ -84,7 +76,24 @@ TEST(GoldenMetrics, DetailFractionIsHighForCheckerboard)
     const std::vector<uint8_t> frame = checkerboard_frame();
     // Every column boundary within the crop is an edge, so the fraction is
     // close to (but not exactly) 1.0.
-    EXPECT_GT(detail_fraction(frame, WIDTH, HEIGHT, detail_safe_crop()), 0.4);
+    EXPECT_GT(detail_fraction(frame, WIDTH, HEIGHT, full_frame_crop()), 0.4);
+}
+
+TEST(GoldenMetrics, DetailFractionOfAFullWidthCropStaysInBounds)
+{
+    // A crop whose x1 reaches the frame width used to read one pixel past
+    // the last column on the bottom-right corner; ASAN catches that heap
+    // overflow if detail_fraction regresses back to reading out of bounds.
+    const std::vector<uint8_t> frame = checkerboard_frame();
+    EXPECT_GT(detail_fraction(frame, WIDTH, HEIGHT, full_frame_crop()), 0.4);
+}
+
+TEST(GoldenMetrics, DetailFractionOfASingleColumnCropIsZero)
+{
+    // A single-column crop has no right-hand-neighbour pair to compare.
+    const std::vector<uint8_t> frame = checkerboard_frame();
+    const Crop single_column{0U, 1U, 0U, HEIGHT};
+    EXPECT_DOUBLE_EQ(detail_fraction(frame, WIDTH, HEIGHT, single_column), 0.0);
 }
 
 TEST(GoldenMetrics, MeanLuminanceInCropMatchesAFlatImage)
