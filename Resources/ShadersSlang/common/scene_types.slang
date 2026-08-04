@@ -27,6 +27,8 @@ struct Vertex
     float3 normal;
     float4 color;
     float2 texture_coords;
+    // xyz = tangent direction, w = handedness (+-1); see Vertex.hpp.
+    float4 tangent;
 };
 
 // Material (matches Src/shared/scene/ObjMaterial.hpp, scalar layout).

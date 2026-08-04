@@ -14,7 +14,7 @@ export module kataglyphis.vulkan.vertex;
 export using ::Vertex;
 
 export namespace vertex {
-std::array<vk::VertexInputAttributeDescription, 4> getVertexInputAttributeDesc();
+std::array<vk::VertexInputAttributeDescription, 5> getVertexInputAttributeDesc();
 
 /// Per-triangle geometric (flat) normal, assigned to all three vertices of
 /// every triangle in indices[firstIndex..]. The OBJ and glTF loaders each
@@ -30,4 +30,12 @@ void computeFlatNormals(std::span<Vertex> vertices, std::span<const unsigned int
 void fillMissingFlatNormals(std::span<Vertex> vertices,
   std::span<const unsigned int> indices,
   std::size_t firstIndex = 0);
+
+/// Per-vertex tangent frame (xyz = tangent, w = handedness) from triangle UV
+/// gradients (Lengyel's method), for every triangle in indices[firstIndex..].
+/// Requires each touched vertex's `normal` to already be final - run this
+/// after computeFlatNormals/fillMissingFlatNormals, never before. Degenerate
+/// UVs fall back to an arbitrary axis orthogonal to the normal instead of
+/// producing a NaN.
+void computeTangents(std::span<Vertex> vertices, std::span<const unsigned int> indices, std::size_t firstIndex = 0);
 }

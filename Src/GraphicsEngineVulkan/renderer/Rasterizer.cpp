@@ -276,7 +276,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createGraphicsPipeline(
     binding_description.stride = sizeof(Vertex);
     binding_description.inputRate = vk::VertexInputRate::eVertex;
 
-    std::array<vk::VertexInputAttributeDescription, 4> attribute_describtions = vertex::getVertexInputAttributeDesc();
+    std::array<vk::VertexInputAttributeDescription, 5> attribute_describtions = vertex::getVertexInputAttributeDesc();
 
     const std::array<vk::PushConstantRange, 1> push_constant_ranges = { push_constant_range };
     vk::PipelineLayoutCreateInfo pipeline_layout_create_info =

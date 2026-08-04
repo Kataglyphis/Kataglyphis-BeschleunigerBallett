@@ -296,7 +296,7 @@ void SkyBox::createGraphicsPipeline(vk::DescriptorSetLayout sharedLayout)
     bindingDescription.stride = sizeof(Vertex);
     bindingDescription.inputRate = vk::VertexInputRate::eVertex;
 
-    std::array<vk::VertexInputAttributeDescription, 4> attributeDescriptions = vertex::getVertexInputAttributeDesc();
+    std::array<vk::VertexInputAttributeDescription, 5> attributeDescriptions = vertex::getVertexInputAttributeDesc();
 
     std::array<vk::DescriptorSetLayout, 2> combinedLayouts = {sharedLayout, cubemapDescriptors.getLayout()};
 

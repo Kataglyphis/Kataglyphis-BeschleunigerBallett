@@ -1774,3 +1774,70 @@ TEST(GltfParseUnit, ChildNodesOfASceneRootAreStillLoaded)
         EXPECT_GT(v.position.x, 49.0F) << "the child node's own translation must apply";
     }
 }
+
+TEST(GltfParseUnit, AuthoredTangentsArePreferredOverGeneratedOnes)
+{
+    // A document shipping a TANGENT accessor must keep those values verbatim
+    // instead of running vertex::computeTangents over them. The node carries
+    // no transform (identity, unmirrored), so the authored (1,0,0,1) must
+    // survive parseCpu byte-for-byte.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0, "TANGENT": 1 }
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [
+        { "componentType": 5126, "count": 3, "type": "VEC3",
+          "min": [0,0,0], "max": [1,1,0], "bufferView": 0 },
+        { "componentType": 5126, "count": 3, "type": "VEC4", "bufferView": 1 }
+      ],
+      "bufferViews": [
+        { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+        { "buffer": 1, "byteOffset": 0, "byteLength": 48 }
+      ],
+      "buffers": [
+        { "byteLength": 36,
+          "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" },
+        { "byteLength": 48,
+          "uri": "data:application/octet-stream;base64,AACAPwAAAAAAAAAAAACAPwAAgD8AAAAAAAAAAAAAgD8AAIA/AAAAAAAAAAAAAIA/" }
+      ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_authored_tangent.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getVertices().size(), 3U);
+    for (const Vertex &v : loader.getVertices()) {
+        EXPECT_NEAR(v.tangent.x, 1.0F, 1e-5F);
+        EXPECT_NEAR(v.tangent.y, 0.0F, 1e-5F);
+        EXPECT_NEAR(v.tangent.z, 0.0F, 1e-5F);
+        EXPECT_NEAR(v.tangent.w, 1.0F, 1e-5F) << "authored handedness must survive unmirrored/untransformed";
+    }
+}
+
+TEST(GltfParseUnit, MissingTangentsAreGeneratedWithUnitLengthAndOrthogonalToTheNormal)
+{
+    // No TANGENT attribute: vertex::computeTangents must run and produce a
+    // tangent that is unit length and perpendicular to the (flat, computed)
+    // normal for every vertex of a real asset, not just a hand-built triangle.
+    if (!std::filesystem::exists(test_gltf())) { GTEST_SKIP() << "test glb not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(test_gltf()));
+
+    ASSERT_GT(loader.getVertices().size(), 0U);
+    for (const Vertex &v : loader.getVertices()) {
+        const float tangentLen = glm::length(glm::vec3(v.tangent));
+        EXPECT_NEAR(tangentLen, 1.0F, 1e-3F) << "generated tangent must be unit length";
+        EXPECT_NEAR(glm::dot(glm::vec3(v.tangent), v.normal), 0.0F, 1e-3F)
+          << "generated tangent must be orthogonal to the vertex normal";
+        EXPECT_TRUE(v.tangent.w == 1.0F || v.tangent.w == -1.0F) << "handedness must be exactly +-1";
+    }
+}

@@ -438,6 +438,7 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
     std::vector<glm::vec3> normals;
     std::vector<glm::vec2> uvs;
     std::vector<glm::vec4> colors;
+    std::vector<glm::vec4> tangents;
 
     for (cgltf_size a = 0; a < primitive->attributes_count; ++a) {
         const cgltf_attribute *attribute = &primitive->attributes[a];
@@ -459,6 +460,10 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
             // uncoloured mesh.
             if (attribute->index == 0) { readAttribute<4>(attribute->data, colors); }
             break;
+        case cgltf_attribute_type_tangent:
+            // glTF TANGENT is always a VEC4 accessor (xyz + w handedness).
+            readAttribute<4>(attribute->data, tangents);
+            break;
         default:
             break;
         }
@@ -476,7 +481,19 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
           i < normals.size() ? glm::normalize(normalMatrix * normals[i]) : glm::vec3(0.0F, 1.0F, 0.0F);
         const glm::vec2 uv = i < uvs.size() ? uvs[i] : glm::vec2(0.0F);
         const glm::vec4 vcolor = i < colors.size() ? colors[i] : glm::vec4(1.0F);
-        vertices.emplace_back(worldPos, worldNormal, vcolor, uv);
+        // An authored TANGENT is in the primitive's local space, like
+        // POSITION/NORMAL; the xyz direction transforms with the model's
+        // linear part (world, NOT normalMatrix's inverse-transpose - a
+        // tangent lies IN the surface, it does not need to stay
+        // perpendicular to it). `mirrored` already reverses this primitive's
+        // triangle winding for a negative-determinant transform; the
+        // handedness sign must flip the same way so the shader's
+        // reconstructed bitangent still matches the (now-reversed) winding.
+        const glm::vec4 vtangent = i < tangents.size()
+          ? glm::vec4(glm::normalize(glm::mat3(world) * glm::vec3(tangents[i])),
+              mirrored ? -tangents[i].w : tangents[i].w)
+          : glm::vec4(0.0F);
+        vertices.emplace_back(worldPos, worldNormal, vcolor, uv, vtangent);
     }
 
     // Gather the primitive's local index sequence (from the accessor,
@@ -565,6 +582,11 @@ void GltfLoader::processPrimitive(const cgltf_primitive *primitive,
     // uses (kataglyphis.vulkan.vertex's computeFlatNormals, the shared
     // copy of this loop). Only runs for primitives that shipped no normals.
     if (normals.empty()) { vertex::computeFlatNormals(vertices, indices, primIndexStart); }
+
+    // TANGENT absent: generate it (needs the final normals above, so this
+    // must run after computeFlatNormals). A document shipping TANGENT keeps
+    // its authored values verbatim - already placed in vertices above.
+    if (tangents.empty()) { vertex::computeTangents(vertices, indices, primIndexStart); }
 
     // One material id per triangle of this primitive (materialIndex is
     // per-face, like the OBJ path). All of a primitive's triangles share

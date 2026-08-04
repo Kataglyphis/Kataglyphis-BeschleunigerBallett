@@ -379,4 +379,8 @@ void ObjLoader::loadVertices(const tinyobj::ObjReader &reader)
     // last - the same flat approximation computeFlatNormals already makes,
     // not a new limitation.
     vertex::fillMissingFlatNormals(vertices, indices);
+
+    // OBJ has no tangent concept - always generate. Needs the final normals
+    // above, so this must run after fillMissingFlatNormals.
+    vertex::computeTangents(vertices, indices);
 }

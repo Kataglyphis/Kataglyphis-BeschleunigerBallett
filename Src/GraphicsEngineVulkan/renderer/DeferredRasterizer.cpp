@@ -268,7 +268,7 @@ void DeferredRasterizer::createPipelines(std::span<const vk::DescriptorSetLayout
     bindingDescription.stride = sizeof(Vertex);
     bindingDescription.inputRate = vk::VertexInputRate::eVertex;
     
-    std::array<vk::VertexInputAttributeDescription, 4> attributeDescriptions = vertex::getVertexInputAttributeDesc();
+    std::array<vk::VertexInputAttributeDescription, 5> attributeDescriptions = vertex::getVertexInputAttributeDesc();
 
     const std::array<vk::PushConstantRange, 1> push_constant_ranges = { push_constant_range };
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo =

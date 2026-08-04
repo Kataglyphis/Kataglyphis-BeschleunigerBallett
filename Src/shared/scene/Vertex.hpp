@@ -12,11 +12,20 @@ struct Vertex
     glm::vec3 normal;
     glm::vec4 color;
     glm::vec2 texture_coords;
+    // xyz = tangent direction, w = handedness (+-1) for reconstructing the
+    // bitangent as cross(normal, tangent) * w (glTF convention). Trailing so
+    // the first four members' offsets - and every std::array<..., 4>
+    // vertex-input-attribute call site - stay unchanged.
+    glm::vec4 tangent;
 
     Vertex() = default;
 
-    Vertex(glm::vec3 pos, glm::vec3 normal, glm::vec4 color, glm::vec2 texture_coords)
-      : position(pos), normal(normal), color(color), texture_coords(texture_coords)
+    Vertex(glm::vec3 pos,
+      glm::vec3 normal,
+      glm::vec4 color,
+      glm::vec2 texture_coords,
+      glm::vec4 tangent = glm::vec4(0.0F))
+      : position(pos), normal(normal), color(color), texture_coords(texture_coords), tangent(tangent)
     {}
 
     glm::vec3 get_position() const { return position; }
@@ -24,7 +33,7 @@ struct Vertex
     bool operator==(const Vertex &other) const
     {
         return position == other.position && normal == other.normal && texture_coords == other.texture_coords
-               && color == other.color;
+               && color == other.color && tangent == other.tangent;
     }
 };
 
@@ -50,6 +59,8 @@ template<> struct hash<Vertex>
         // omitting it is legal but makes every colour variant of a position
         // collide.
         seed = combine(seed, hash<glm::vec4>()(vertex.color));
+        // Same reasoning as color: tangent participates in operator==.
+        seed = combine(seed, hash<glm::vec4>()(vertex.tangent));
         return seed;
     }
 };
