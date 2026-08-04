@@ -6259,15 +6259,22 @@ TEST(BuildIntegrity, DescriptorSetsAreCreatedThroughDescriptorSetGroup)
         "vk::DescriptorSetLayoutCreateInfo", "vk::DescriptorPoolCreateInfo", "vk::DescriptorSetAllocateInfo"
     };
 
-    // DescriptorSetGroup.cpp is the abstraction's own implementation. GUI.cpp
-    // creates one descriptor pool (only) for ImGui, which allocates and
-    // manages its own descriptor sets internally via ImGui_ImplVulkan - that
-    // pool is not a layout/pool/set triad this project owns the shape of.
-    static const std::array<const char *, 2> kExemptFiles = {
-        "Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.cpp", "Src/GraphicsEngineVulkan/gui/GUI.cpp"
+    // DescriptorSetGroup.cpp is the abstraction's own implementation - it
+    // stays a whole-file exemption (its internal count is an implementation
+    // detail, and pinning it to a fixed number would fail on every
+    // legitimate edit). GUI.cpp is different: it creates exactly one
+    // descriptor pool for ImGui, which allocates and manages its own
+    // descriptor sets internally via ImGui_ImplVulkan, so it gets a
+    // per-file budget instead of a blanket skip - a second, hand-rolled
+    // triad added to that file would still be caught.
+    static const std::array<const char *, 1> kExemptFiles = {
+        "Src/GraphicsEngineVulkan/vulkan_base/DescriptorSetGroup.cpp"
+    };
+    static const std::map<std::string, std::size_t> kDescriptorBudgets = {
+        { "Src/GraphicsEngineVulkan/gui/GUI.cpp", 1 },
     };
 
-    std::vector<std::string> violations;
+    std::map<std::string, std::size_t> counts;
     std::error_code error;
     for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
         if (error) { break; }
@@ -6280,25 +6287,70 @@ TEST(BuildIntegrity, DescriptorSetsAreCreatedThroughDescriptorSetGroup)
 
         const auto lines = readFileLines(path);
         if (!lines) { continue; }
-        std::size_t line_number = 0;
         for (const auto &line : *lines) {
-            ++line_number;
             for (const char *type_name : kRawDescriptorTypeNames) {
                 if (line.find(type_name) == std::string::npos) { continue; }
-                violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
+                ++counts[relative_file];
             }
+        }
+    }
+
+    std::vector<std::string> violations;
+    for (const auto &[file, count] : counts) {
+        const auto budget_it = kDescriptorBudgets.find(file);
+        const std::size_t budget = budget_it == kDescriptorBudgets.end() ? 0 : budget_it->second;
+        if (count == budget) { continue; }
+        if (count > budget) {
+            violations.push_back(file + ": found " + std::to_string(count)
+                                  + " hand-rolled descriptor set layout/pool/set triad(s), budget is "
+                                  + std::to_string(budget)
+                                  + " - declare bindings through DescriptorSetGroup "
+                                    "(vulkan_base/DescriptorSetGroup.ixx) via addBinding()/create() instead");
+        } else {
+            violations.push_back(file + ": found " + std::to_string(count)
+                                  + " hand-rolled descriptor set layout/pool/set triad(s), budget is "
+                                  + std::to_string(budget) + " - lower the budget in this test");
         }
     }
 
     EXPECT_TRUE(violations.empty())
       << violations.size()
-      << " hand-rolled descriptor set layout/pool/set triad(s) found under Src/ - declare bindings through "
-         "DescriptorSetGroup (vulkan_base/DescriptorSetGroup.ixx) via addBinding()/create() instead:"
+      << " budget mismatch(es) for hand-rolled descriptor set layout/pool/set triad(s) found under Src/:"
       << [&violations] {
              std::string joined;
              for (const auto &entry : violations) { joined += "\n  " + entry; }
              return joined;
          }();
+}
+
+TEST(BuildIntegrity, DescriptorBudgetsNameOnlyFilesThatStillHaveTriads)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const std::array<const char *, 3> kRawDescriptorTypeNames = {
+        "vk::DescriptorSetLayoutCreateInfo", "vk::DescriptorPoolCreateInfo", "vk::DescriptorSetAllocateInfo"
+    };
+    static const std::map<std::string, std::size_t> kDescriptorBudgets = {
+        { "Src/GraphicsEngineVulkan/gui/GUI.cpp", 1 },
+    };
+
+    for (const auto &[file, budget] : kDescriptorBudgets) {
+        EXPECT_GT(budget, 0u) << file << ": a budgeted file must have a non-zero budget, or it is a dead entry";
+
+        const fs::path path = repo_root / file;
+        ASSERT_TRUE(fs::exists(path)) << "budgeted file no longer exists: " << file;
+
+        const auto lines = readFileLines(path);
+        ASSERT_TRUE(lines.has_value()) << "could not read " << file;
+        std::size_t count = 0;
+        for (const auto &line : *lines) {
+            for (const char *type_name : kRawDescriptorTypeNames) {
+                if (line.find(type_name) != std::string::npos) { ++count; }
+            }
+        }
+        EXPECT_EQ(count, budget) << file << ": budget says " << budget << " but the file currently has " << count;
+    }
 }
 
 // asManager.createASForScene()/createTLAS() rebuild the acceleration
@@ -7845,20 +7897,22 @@ TEST(BuildIntegrity, ImageMemoryBarriersGoThroughTheSharedHelper)
     const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
     ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
 
-    // ImageBarrierHelper.hpp is the helper's own definition (it builds its
-    // return value via a fully-explicit constructor, not this idiom, but is
-    // listed here so a later sweep does not re-litigate it). VulkanImage.cpp
-    // and Texture.cpp build a vk::ImageMemoryBarrier from a general
+    // Per-file budgets, not whole-file exemptions: VulkanImage.cpp and
+    // Texture.cpp each build one vk::ImageMemoryBarrier from a general
     // transition helper's own aspect/mip/layer parameters, not boilerplate.
     // VulkanRenderer.cpp's two cloud-output barriers are the subject of a
-    // separate, blocked backlog entry.
-    static const std::array<const char *, 4> kExemptFiles = { "Src/GraphicsEngineVulkan/common/ImageBarrierHelper.hpp",
-        "Src/GraphicsEngineVulkan/vulkan_base/VulkanImage.cpp", "Src/GraphicsEngineVulkan/scene/Texture.cpp",
-        "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp" };
+    // separate, blocked backlog entry. Every file not listed here has an
+    // implicit budget of 0. ImageBarrierHelper.hpp (the helper's own
+    // definition) matches nothing, so it needs no entry at all.
+    static const std::map<std::string, std::size_t> kBarrierBudgets = {
+        { "Src/GraphicsEngineVulkan/vulkan_base/VulkanImage.cpp", 1 },
+        { "Src/GraphicsEngineVulkan/scene/Texture.cpp", 1 },
+        { "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp", 2 },
+    };
 
     const std::regex hand_rolled_barrier(R"(vk::ImageMemoryBarrier\s+\w+\s*\{\s*\}\s*;)");
 
-    std::vector<std::string> violations;
+    std::map<std::string, std::size_t> counts;
     std::error_code error;
     for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
         if (error) { break; }
@@ -7867,29 +7921,68 @@ TEST(BuildIntegrity, ImageMemoryBarriersGoThroughTheSharedHelper)
         if (path.extension() != ".cpp" && path.extension() != ".ixx" && path.extension() != ".hpp") { continue; }
 
         const std::string relative_file = fs::relative(path, repo_root).generic_string();
-        if (std::find(kExemptFiles.begin(), kExemptFiles.end(), relative_file) != kExemptFiles.end()) { continue; }
 
         const auto lines = readFileLines(path);
         if (!lines) { continue; }
-        std::size_t line_number = 0;
         for (const auto &line : *lines) {
-            ++line_number;
             if (!std::regex_search(line, hand_rolled_barrier)) { continue; }
-            violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
+            ++counts[relative_file];
+        }
+    }
+
+    std::vector<std::string> violations;
+    for (const auto &[file, count] : counts) {
+        const auto budget_it = kBarrierBudgets.find(file);
+        const std::size_t budget = budget_it == kBarrierBudgets.end() ? 0 : budget_it->second;
+        if (count == budget) { continue; }
+        if (count > budget) {
+            violations.push_back(file + ": found " + std::to_string(count) + " hand-rolled barrier(s), budget is "
+                                  + std::to_string(budget)
+                                  + " - route the new one(s) through Kataglyphis::buildImageMemoryBarrier "
+                                    "(common/ImageBarrierHelper.hpp)");
+        } else {
+            violations.push_back(file + ": found " + std::to_string(count) + " hand-rolled barrier(s), budget is "
+                                  + std::to_string(budget) + " - lower the budget in this test");
         }
     }
 
     EXPECT_TRUE(violations.empty())
-      << violations.size()
-      << " hand-rolled vk::ImageMemoryBarrier declaration(s) found under Src/GraphicsEngineVulkan/ - build image "
-         "memory barriers through Kataglyphis::buildImageMemoryBarrier (common/ImageBarrierHelper.hpp) instead. "
-         "Documented exemptions: ImageBarrierHelper.hpp itself, VulkanImage.cpp, Texture.cpp and the two "
-         "cloud-output barriers in VulkanRenderer.cpp."
+      << violations.size() << " budget mismatch(es) for hand-rolled vk::ImageMemoryBarrier declarations under "
+         "Src/GraphicsEngineVulkan/:"
       << [&violations] {
              std::string joined;
              for (const auto &entry : violations) { joined += "\n  " + entry; }
              return joined;
          }();
+}
+
+TEST(BuildIntegrity, BarrierBudgetsNameOnlyFilesThatStillHaveBarriers)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const std::map<std::string, std::size_t> kBarrierBudgets = {
+        { "Src/GraphicsEngineVulkan/vulkan_base/VulkanImage.cpp", 1 },
+        { "Src/GraphicsEngineVulkan/scene/Texture.cpp", 1 },
+        { "Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp", 2 },
+    };
+
+    const std::regex hand_rolled_barrier(R"(vk::ImageMemoryBarrier\s+\w+\s*\{\s*\}\s*;)");
+
+    for (const auto &[file, budget] : kBarrierBudgets) {
+        EXPECT_GT(budget, 0u) << file << ": a budgeted file must have a non-zero budget, or it is a dead entry";
+
+        const fs::path path = repo_root / file;
+        ASSERT_TRUE(fs::exists(path)) << "budgeted file no longer exists: " << file;
+
+        const auto lines = readFileLines(path);
+        ASSERT_TRUE(lines.has_value()) << "could not read " << file;
+        std::size_t count = 0;
+        for (const auto &line : *lines) {
+            if (std::regex_search(line, hand_rolled_barrier)) { ++count; }
+        }
+        EXPECT_EQ(count, budget) << file << ": budget says " << budget << " but the file currently has " << count;
+    }
 }
 
 // docs/cpp-renderer-improvements.md's "In progress" section once asked for

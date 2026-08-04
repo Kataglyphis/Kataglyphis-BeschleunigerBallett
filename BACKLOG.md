@@ -9410,3 +9410,170 @@ opacity flags can be relaxed without a perf or stability surprise.
   stay byte-identical" property — the converter's existing tests depend on it,
   and it is the reason the `emissiveFactor` field itself is emitted
   conditionally.
+
+## 2026-08-04 batch VII — planner (refactor: three consumer files exempted from the barrier gate whole-file when each has a bounded, known count, plus a fourth entry that matches nothing; `ASSERT_VULKAN` as a bare unbraced `if` whose argument four VMA call sites rely on being evaluated exactly once; an identity predicate in the Rust crate threaded through a per-frame field, both existing only to carry a parameter the body discards)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Every `file:line` below was read out of the
+tree this pass.
+
+**Host GPU golden verification is still blocked over RDP** (see the `- [b]`
+entry near the end of this file), so all three tasks here are accepted
+without an adapter, by construction: task 1 changes only
+`buildIntegritySuite.cpp`, task 2 is a preprocessor/call-site normalisation
+whose acceptance is that the whole engine still compiles and the CPU suites
+stay green, and task 3 deletes Rust code whose behavioural coverage
+(`tests/histogram.rs`) runs in this repo's always-on Linux lane.
+
+None of the three overlaps the blocked entry **"Collapse the two cloud-output
+image barriers and the rationale comment that is written twice"** — that one
+rewrites the two barriers and needs a golden; task 1 only stops the gate from
+pretending it cannot see them. Task 1 should in fact land *first*, because it
+gives that blocked task a mechanical tell when it eventually ships (the budget
+drops from 2 to 0 and the gate fails until the map is updated).
+
+Ordering: tasks 1, 2 and 3 are independent and touch disjoint files. Task 2 is
+the only one that recompiles the whole engine.
+
+### Test suites
+
+### C++ Vulkan engine
+
+- [ ] **(S) (refactor) Make `ASSERT_VULKAN` a single-statement, single-evaluation macro and normalise its 49 call sites** — it currently expands to a bare unbraced `if`, four call sites pass a side-effecting VMA call as its argument, and 38 of 49 sites omit the trailing semicolon.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/common/Utilities.hpp:9-19` — the whole macro. It
+    expands to `if (static_cast<vk::Result>(val) != vk::Result::eSuccess) { ... }`
+    with no `do { } while (false)` wrapper and no local for `val`.
+  - `Src/GraphicsEngineVulkan/memory/Allocator.cpp:48` —
+    `ASSERT_VULKAN(vmaCreateAllocator(&allocatorCreateInfo, &vmaAllocator), ...)`.
+    The other three side-effecting sites are the `vmaCreateBuffer`,
+    `vmaCreateBufferWithAlignment` and `vmaCreateImage` calls (grep
+    `ASSERT_VULKAN(vma`). These work today **only** because the macro happens to
+    name `val` exactly once.
+  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:145,188,210` — three sites
+    in one file showing all three argument spellings in use: bare `result`,
+    `static_cast<VkResult>(result.result)` and `pipeline_layout_result.result`.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:7945-7995`
+    (`HeadersDoNotDefineStaticFreeFunctions`) — the closest gate shape to copy:
+    a regex sweep over `Src/GraphicsEngineVulkan/` with a named failure message.
+
+  **Steps:**
+  1. In `Utilities.hpp`, wrap the macro body in `do { ... } while (false)` and
+     bind the argument to a local first, so it is evaluated exactly once
+     regardless of how the body later grows:
+     `do { const vk::Result assert_vulkan_result_ = static_cast<vk::Result>(val); if (assert_vulkan_result_ != vk::Result::eSuccess) { spdlog::critical(error_string); std::abort(); } } while (false)`.
+     Keep the existing rationale comment (`:9-14`) — the "exceptions are
+     disabled, so the fail-fast primitive is `abort()`" paragraph is still the
+     reason this is a macro and not a function. Add one sentence recording why
+     the `do/while` and the local exist.
+  2. Add the trailing `;` to all 38 call sites that lack one (`grep -rn
+     'ASSERT_VULKAN(' Src/ | grep -v ');$'` finds them). After step 1 the macro
+     is a statement that *requires* the semicolon, so the build itself proves
+     the sweep was complete — a missed site is a compile error, not a silent
+     pass.
+  3. Drop the 20 redundant outer casts: the macro already does
+     `static_cast<vk::Result>`, so `ASSERT_VULKAN(VkResult(x), ...)` and
+     `ASSERT_VULKAN(static_cast<VkResult>(x), ...)` become `ASSERT_VULKAN(x, ...)`.
+     Check each one as you go — the argument is sometimes already `vk::Result`
+     and sometimes a raw `VkResult` from a VMA call, and both are fine bare, but
+     do not remove a cast you cannot see the source type of.
+  4. Do **not** convert the macro to a function and do not change any control
+     flow, message, or the `std::abort()`. This is a hygiene change; if it moves
+     behaviour anywhere it has gone wrong.
+
+  **Test:** Add `BuildIntegrity.EveryAssertVulkanCallSiteEndsInASemicolon` to
+  `Test/commit/VulkanEngine/buildIntegritySuite.cpp`: sweep
+  `Src/GraphicsEngineVulkan/` and `Src/shared/` for lines containing
+  `ASSERT_VULKAN(`, skip `common/Utilities.hpp` (the definition), and assert
+  every remaining line ends in `);`. Name the offending `file:line` in the
+  failure message. This is cheap insurance rather than the primary check — the
+  compiler is the primary check after step 1 — but it keeps a future
+  copy-pasted site from re-introducing the inconsistent spelling.
+
+  **Build:** `clangcl-debug`. `Utilities.hpp` is a plain header included widely
+  but it is **not** a module interface, so `-FreshContainer` is not required:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  Expect a near-full rebuild anyway (49 translation units touch it). Then
+  `.\build-clangcl-debug\commitTestSuite.exe` from the repo root. CPU only.
+
+  **Context:** No call site is broken today — there is no dangling `else` after
+  an `ASSERT_VULKAN` in the tree right now, and `val` is named once so the four
+  VMA calls fire exactly once. That is precisely the argument for fixing it: the
+  macro is one edit away from double-submitting a `vmaCreateImage` or swallowing
+  an `else` branch, and neither failure would produce a diagnostic. `do { }
+  while (false)` is the standard, boring answer and `AGENTS.md` already treats
+  `ASSERT_VULKAN` as the project's one fail-fast primitive, so it is worth
+  making it behave like a statement. Keep the diff mechanical: 49 call sites is
+  a large but entirely reviewable change only as long as nothing else rides
+  along with it.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(S) (refactor) Delete `histogram_build_needed` and the `auto_exposure_was_on` field it exists to consume** — the function is `fn(bool, bool) -> bool { auto_enabled }`, the second parameter is `_`-prefixed and discarded, and the field feeding it is written every frame and read nowhere else.
+
+  **Files to read:**
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/forward.rs:2818-2830`
+    — the function and its doc comment, which states outright that
+    "`was_enabled` doesn't change the answer today — it's threaded through so …
+    a future gate (e.g. a debounce) has somewhere to hook in".
+  - the same file `:309-311` — the field declaration and its doc comment;
+    `:815` — its initialiser; `:2096-2097` — the only read, immediately
+    followed by the only write.
+  - the same file `:2085-2095` — the call-site comment, which already carries
+    the *entire* rationale in the function's doc comment ("Gating on the
+    current frame's flag already covers the frame auto-exposure switches back
+    on: the build clears and rebuilds from scratch"). Nothing is lost by
+    deleting the doc comment.
+  - the same file `:2845-2859` — the three unit tests
+    (`histogram_build_needed_off_never_builds`,
+    `..._on_always_builds`, `..._on_transition_frame_builds`). All three assert
+    that a parameter with no effect has no effect.
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/tests/histogram.rs`
+    — the behavioural coverage that actually pins auto-exposure, and the check
+    that must stay green.
+
+  **Steps:**
+  1. Delete `fn histogram_build_needed` (`:2818-2830`) entirely — with the
+     second parameter gone it is the identity function on a `bool`, so keeping a
+     one-argument version just moves the noise.
+  2. At `:2096-2098`, replace `let build_needed = histogram_build_needed(...); self.auto_exposure_was_on = ...; if build_needed {` with `if self.auto_exposure {`.
+     Leave the `:2085-2095` comment block in place — it is the rationale and it
+     is now the only copy.
+  3. Delete the `auto_exposure_was_on` field (`:309-311`) and its initialiser
+     (`:815`). Fix the `See [`histogram_build_needed`]` intra-doc link — that
+     link is on the field's own doc comment, so it disappears with the field;
+     grep the crate for `histogram_build_needed` afterwards and confirm zero
+     hits, because a dangling intra-doc link is a `cargo doc` warning, not a
+     compile error.
+  4. Delete the three `histogram_build_needed_*` tests (`:2845-2859`). Leave the
+     rest of `mod tests` (`set_animation_time_recomputes_...` and below)
+     untouched.
+  5. Confirm `ForwardRenderer::new`'s struct literal at `:815` still lists every
+     field — Rust will tell you if it does not.
+
+  **Test:** No new test. The deletion is only correct if behaviour is unchanged,
+  and the thing that proves that is
+  `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/tests/histogram.rs`
+  staying green — it exercises the auto-exposure path end to end, including the
+  off→on transition the deleted tests only mimicked. Do not replace the three
+  deleted unit tests with a one-argument equivalent; asserting `if
+  self.auto_exposure` does what `self.auto_exposure` says is not a test.
+
+  **Build:** No C++ build. `cargo check`, `cargo clippy` and `cargo fmt` from
+  `ExternalLib/Kataglyphis-RustProjectTemplate` are the local signal — `cargo
+  test` and `cargo build` do **not** link on this host (the VC++ Build Tools
+  install is incomplete and Git Bash's `link.exe` shadows MSVC's). The crate's
+  test suite runs in this repo's always-on Linux lane via
+  `Scripts/Linux/run-cargo-tests.sh`, so push and read CI for the test result;
+  do **not** report `tests/histogram.rs` as passing locally when it was never
+  run.
+
+  **Context:** Same family as the dead-generality sweep in the 2026-08-01
+  batch II entry: a parameter kept "so a future gate has somewhere to hook in"
+  costs a per-frame field write, a struct field, a doc comment, an intra-doc
+  link and three tests, and buys nothing — the hook is two lines to add back on
+  the day a debounce actually exists, at which point its author will want to
+  choose the signature anyway. The one thing worth preserving is the *reasoning*
+  about why gating on the current frame's flag is sufficient, and that already
+  lives at the call site in a fuller form than the function's own doc comment.
