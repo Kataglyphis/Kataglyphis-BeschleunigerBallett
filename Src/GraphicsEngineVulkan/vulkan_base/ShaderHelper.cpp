@@ -18,7 +18,7 @@ module;
 module kataglyphis.vulkan.shader_helper;
 
 import kataglyphis.vulkan.device;
-import kataglyphis.vulkan.file;
+import kataglyphis.shared.util.file_reader;
 
 namespace {
 
@@ -56,7 +56,10 @@ auto Kataglyphis::validateSpirvBlob(std::span<const char> code) -> bool
 auto Kataglyphis::loadSpirvShaderModule(const std::shared_ptr<VulkanDevice> &device, const std::string &spvPath)
   -> vk::ShaderModule
 {
-    const std::vector<char> code = File(spvPath).readCharSequence();
+    // No missing-file log here (File used to add one): the very next check
+    // already logs critical with a better message and aborts, so nothing is
+    // lost.
+    const std::vector<char> code = Kataglyphis::Shared::readBinaryFile(spvPath);
 
     if (!validateSpirvBlob(code)) {
         spdlog::default_logger_raw()->log(spdlog::level::critical,

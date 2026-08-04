@@ -30,7 +30,7 @@ import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.obj_material;
 import kataglyphis.vulkan.model;
 import kataglyphis.vulkan.texture;
-import kataglyphis.vulkan.file;
+import kataglyphis.shared.util.file_reader;
 import kataglyphis.vulkan.mesh_range;
 import kataglyphis.vulkan.model_assembly;
 
@@ -180,8 +180,7 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
     textures.reserve(tol_materials.size());
 
     int texture_id = 0;
-    File model_file(modelFile);
-    const std::string base_dir = model_file.getBaseDir();
+    const std::string base_dir = Kataglyphis::Shared::getBaseDir(modelFile);
 
     // Materials whose diffuse texture resolves to the same on-disk path share
     // one textures slot: keyed on the resolved path (not the raw map_Kd), so

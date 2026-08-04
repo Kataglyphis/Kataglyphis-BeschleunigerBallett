@@ -1,9 +1,9 @@
 // Fuzzes the file reader every shader load goes through.
 //
-// ShaderHelper builds a path, wraps it in Kataglyphis::File, and calls
-// readCharSequence(); the bytes become a VkShaderModule with no further
-// validation. Two things therefore matter, and only one of them is about
-// crashing:
+// ShaderHelper builds a path and calls
+// Kataglyphis::Shared::readBinaryFile(); the bytes become a VkShaderModule
+// with no further validation. Two things therefore matter, and only one of
+// them is about crashing:
 //
 //   - a hostile or malformed PATH must not crash or hang;
 //   - the CONTENT must come back byte-exact. SPIR-V is binary: it contains
@@ -38,12 +38,12 @@
 
 #include "fuzztest/fuzztest.h"
 
-import kataglyphis.vulkan.file;
+import kataglyphis.shared.util.file_reader;
 
 namespace {
 
 // Reading a path that may be malformed, absent, hostile or simply strange
-// must return empty rather than crash. File::read/readCharSequence guard with
+// must return empty rather than crash. readTextFile/readBinaryFile guard with
 // fileExists, so the interesting inputs are the ones that make path
 // construction itself misbehave.
 void ReadingArbitraryPathsNeverCrashes(const std::string &path)
@@ -51,11 +51,12 @@ void ReadingArbitraryPathsNeverCrashes(const std::string &path)
     // Beyond this only the OS path limit is under test, not our logic.
     if (path.size() > 512) { return; }
 
-    Kataglyphis::File file(path);
-    const std::vector<char> bytes = file.readCharSequence();
-    const std::string text = file.read();
-    const std::string base = file.getBaseDir();
+    const bool exists = Kataglyphis::Shared::fileExists(path);
+    const std::vector<char> bytes = Kataglyphis::Shared::readBinaryFile(path);
+    const std::string text = Kataglyphis::Shared::readTextFile(path);
+    const std::string base = Kataglyphis::Shared::getBaseDir(path);
 
+    (void)exists;
     (void)bytes.size();
     (void)text.size();
     (void)base.size();
@@ -93,8 +94,7 @@ void ReadingAFileReturnsItsBytesExactly(const std::vector<uint8_t> &contents)
         if (!out) { return; }
     }
 
-    Kataglyphis::File file(path.string());
-    const std::vector<char> read_back = file.readCharSequence();
+    const std::vector<char> read_back = Kataglyphis::Shared::readBinaryFile(path.string());
 
     // Byte count first: a truncation at the first NUL shows up here, and the
     // message is far clearer than a mismatch deep in the comparison.

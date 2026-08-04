@@ -165,6 +165,27 @@ TEST(FileReaderUnit, ReadTextFileAppendsTrailingNewlineWhenSourceHasNone)
     std::filesystem::remove(path, ec);
 }
 
+TEST(FileReaderUnit, ReadTextFilePreservesEmbeddedNulByte)
+{
+    // Mirrors the fuzz round-trip property (ReadingAFileReturnsItsBytesExactly
+    // in shader_file_reader_fuzz_test.cpp), pinned as a deterministic case:
+    // std::getline reads up to '\n', not up to a NUL, so an embedded NUL must
+    // survive inside the returned std::string rather than truncating it.
+    const auto path = uniqueTempPath("kat_filereader_embedded_nul.bin");
+    const std::vector<char> contents = { 'A', '\0', 'B', '\n' };
+    {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        out.write(contents.data(), static_cast<std::streamsize>(contents.size()));
+    }
+
+    const std::string text = readTextFile(path.string());
+    const std::string expected(contents.data(), contents.size());
+    EXPECT_EQ(text, expected) << "embedded NUL byte was dropped or truncated by a text-mode read";
+
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
 TEST(FileReaderUnit, GetBaseDirSlashOnly)
 {
     EXPECT_EQ(getBaseDir("a/b/c.txt"), "a/b");
