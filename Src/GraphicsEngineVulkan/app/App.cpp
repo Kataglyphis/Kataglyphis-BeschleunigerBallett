@@ -12,6 +12,8 @@ module;
 
 #include "spdlog/spdlog.h"
 
+#include "app/AppExitCode.hpp"
+
 module kataglyphis.vulkan.app;
 
 import kataglyphis.shared.frontend.frame_input;
@@ -79,7 +81,7 @@ auto Kataglyphis::App::run() -> int
     vulkan_renderer.cleanUp();
     window->cleanUp();
 
-    return EXIT_SUCCESS;
+    return Kataglyphis::appExitCode(vulkan_renderer.hasDeviceLost(), vulkan_renderer.hasFatalFrameError());
 }
 
 Kataglyphis::App::~App() = default;

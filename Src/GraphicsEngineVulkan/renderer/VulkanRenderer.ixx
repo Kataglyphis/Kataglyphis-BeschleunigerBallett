@@ -80,6 +80,12 @@ class VulkanRenderer
     void updateStateDueToUserInput(GUISceneSharedVars &guiSceneSharedVars);
     void finishAllRenderCommands();
     bool hasDeviceLost() const { return device_lost_detected; }
+    // True once any frame has hit a fatal (non-recoverable) error - a failed
+    // wait/submit or an invalid sync handle - that forced the window closed.
+    // Distinct from hasDeviceLost(): a failed submit can leave a live device
+    // that App::run() still tears down normally, but the run itself must
+    // still be reported as a failure.
+    [[nodiscard]] bool hasFatalFrameError() const { return fatal_frame_error; }
     bool supportsHardwareRaytracing() const;
 
     // -- headless frame capture (test / tooling instrumentation)
@@ -308,5 +314,6 @@ class VulkanRenderer
 
     bool checkChangedFramebufferSize();
     bool device_lost_detected{ false };
+    bool fatal_frame_error{ false };
 };
 }// namespace Kataglyphis

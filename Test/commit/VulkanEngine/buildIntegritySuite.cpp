@@ -6704,3 +6704,25 @@ TEST(BuildIntegrity, EveryCleanUpIsCalledFromItsDestructor)
              return joined;
          }();
 }
+
+// App::run() used to unconditionally `return EXIT_SUCCESS;`, so a device-lost
+// or fatal-submit run was reported to the OS as a clean quit. The exit code
+// must now be derived (via Kataglyphis::appExitCode) from how the frame loop
+// actually ended - see appExitCodeSuite.cpp for the derivation itself.
+TEST(BuildIntegrity, AppRunDoesNotReturnABareExitSuccess)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path app_cpp = repo_root / "Src" / "GraphicsEngineVulkan" / "app" / "App.cpp";
+    ASSERT_TRUE(fs::exists(app_cpp)) << "missing " << app_cpp.string();
+
+    std::ifstream file(app_cpp);
+    ASSERT_TRUE(file) << "could not open " << app_cpp.string();
+    const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    EXPECT_EQ(contents.find("return EXIT_SUCCESS;"), std::string::npos)
+      << "App.cpp contains a bare \"return EXIT_SUCCESS;\" - App::run()'s exit code must be derived from "
+         "whether the frame loop hit a device loss or fatal frame error (Kataglyphis::appExitCode), not "
+         "hard-coded, or a broken run is reported as a clean quit again.";
+}

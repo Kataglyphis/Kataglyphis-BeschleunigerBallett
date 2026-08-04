@@ -459,6 +459,7 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
 
     const auto abort_frame_with_fatal_error = [&](const char *message, vk::Result error_code) -> void {
         spdlog::error(fmt::format("{} (vk::Result={})", message, static_cast<int>(error_code)));
+        fatal_frame_error = true;
         if (error_code == vk::Result::eErrorDeviceLost) { device_lost_detected = true; }
         if (window != nullptr && window->get_window() != nullptr) {
             glfwSetWindowShouldClose(window->get_window(), GLFW_TRUE);
@@ -504,6 +505,7 @@ void Kataglyphis::VulkanRenderer::drawFrame(const GUISceneSharedVars &guiSceneSh
 
     if (!frameSync.inFlightFence() || !frameSync.imageAvailableSemaphore()) {
         spdlog::error(fmt::format("Synchronization handles are invalid for frame {}.", frameSync.currentFrame()));
+        fatal_frame_error = true;
         if (window != nullptr && window->get_window() != nullptr) {
             glfwSetWindowShouldClose(window->get_window(), GLFW_TRUE);
         }

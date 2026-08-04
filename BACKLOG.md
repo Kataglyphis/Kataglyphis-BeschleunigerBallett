@@ -8112,31 +8112,6 @@ Ordering: the five are disjoint. Tasks 2 and 3 both add
 suite after the second. Task 5 touches four `.slang` files and nothing else
 here does.
 
-### C++ Vulkan engine
-
-- [ ] **(S) Make `App::run()` report failure when the frame loop aborted** — a device-lost or failed-submit run currently exits 0, so `Run-SyncValidation.ps1` and the run helpers read it as a clean quit.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/app/App.cpp` — the loop (`:49-68`), the device-lost-gated teardown (`:70-77`), `return EXIT_SUCCESS` (`:82`)
-  - `Src/GraphicsEngineVulkan/app/App.ixx` — `static int run()`
-  - `Src/GraphicsEngineVulkan/Main.cpp` — `:183-185`, which returns `run()`'s value as the process exit code
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` — `abort_frame_with_fatal_error` (`:460-467`); the non-device-lost close paths at `:505-512`
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.ixx` — `hasDeviceLost()` (`:82`), `device_lost_detected` (`:310`)
-  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMapMath.cpp` — `makeShadowPush` (`:63-70`) is the "deliberately trivial, deliberately named, unit-tested" helper pattern to copy
-
-  **Steps:**
-  1. Add `bool fatal_frame_error{ false };` next to `device_lost_detected` in `VulkanRenderer.ixx:310` and a `[[nodiscard]] bool hasFatalFrameError() const` accessor next to `hasDeviceLost()` (`:82`). Set it in `abort_frame_with_fatal_error` (`VulkanRenderer.cpp:460`) — **every** call, not only the device-lost one — and in the two invalid-sync-handle returns at `:505-512` that also force the window closed. Leave `abort_frame_after_acquire` (`:477-481`) alone: those are the documented recoverable returns.
-  2. Add a pure helper — new header `Src/GraphicsEngineVulkan/app/AppExitCode.hpp`, `constexpr int appExitCode(bool deviceLost, bool fatalFrameError)` returning `EXIT_FAILURE` when either is set, else `EXIT_SUCCESS`. Keep it free of Vulkan and GLFW types so it links into a test with no device.
-  3. Replace `App.cpp:82`'s `return EXIT_SUCCESS;` with `return appExitCode(vulkan_renderer.hasDeviceLost(), vulkan_renderer.hasFatalFrameError());`. Do **not** change the teardown gating at `:70-77` — that must stay keyed on `hasDeviceLost()` alone, because a failed submit still leaves a live device that must be torn down normally.
-  4. Confirm nothing else calls `App::run()` (`grep -rn "App::run" Src/ Test/`) — the golden suites construct `VulkanRenderer` directly (`commitSuite.cpp:71`), so they are unaffected.
-
-  **Test:** Add `AppExitCode.*` to a new `Test/commit/VulkanEngine/appExitCodeSuite.cpp`: `CleanRunSucceeds` (both flags false → `EXIT_SUCCESS`), `DeviceLossFails`, `FatalFrameErrorWithoutDeviceLossFails` (the case `hasDeviceLost()` alone would miss), `BothFail`. Add a `BuildIntegrity` gate asserting `App.cpp` contains no bare `return EXIT_SUCCESS;` — the whole point is that the exit code is derived, not constant.
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-
-  **Context:** `Run-SyncValidation.ps1` exits non-zero only on `SYNC-HAZARD` in the log, so today a run that lost the device in frame 3 and recorded no hazards is reported as a pass. `run_clangcl_*.ps1` already surfaces a non-zero code (`run_clangcl_debug.ps1:266`), so this change makes the existing plumbing mean something. This is also groundwork for the blocked path-tracing device-loss investigation: an exit code is the cheapest signal a headless run can produce.
-
 ### Cross-renderer
 
 - [ ] **(M) Apply glTF's `baseColorFactor` to the sampled base colour in all four C++ shading paths** — the factor is loaded, uploaded and then discarded whenever a texture exists, which is both a glTF spec deviation and a divergence from the Rust renderer.
