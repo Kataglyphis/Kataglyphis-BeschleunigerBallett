@@ -7231,15 +7231,19 @@ TEST(BuildIntegrity, CascadedShadowMapDoesNotStageThroughABufferManager)
 // Rasterizer and DeferredRasterizer used to call chooseDepthFormat() once in
 // createTextures() and again in createRenderPass(), so the render-pass
 // attachment format and the depth image it is paired with were derived
-// independently and could silently diverge. PostStage and CascadedShadowMap
-// already cache the result in a member and read it a second time; this test
-// holds all four render stages to that invariant.
+// independently and could silently diverge. CascadedShadowMap already caches
+// the result in a member and reads it a second time; this test holds all
+// three remaining depth-owning render stages to that invariant. PostStage
+// dropped out of this list along with its depth attachment entirely - see
+// "Delete the depth attachment that PostStage and SkyBox allocate, clear and
+// synchronize but never test or write" - nothing read it, so there is no
+// depth_format left to derive.
 //
-// Rasterizer, PostStage and DeferredRasterizer now derive it indirectly -
-// through Kataglyphis::VulkanRendererInternals::createDepthAttachment
+// Rasterizer and DeferredRasterizer now derive it indirectly - through
+// Kataglyphis::VulkanRendererInternals::createDepthAttachment
 // (renderer/DepthAttachment.ixx), which calls chooseDepthFormat() and
 // returns the result - rather than calling chooseDepthFormat() in their own
-// text, so the invariant is checked at the one place all four stages still
+// text, so the invariant is checked at the one place all three stages still
 // share: the member assignment itself. Two occurrences would mean the
 // member was derived and (re)assigned twice in the same file, which is
 // exactly the divergence this test exists to catch.
@@ -7248,17 +7252,12 @@ TEST(BuildIntegrity, EveryRenderStageDerivesItsDepthFormatOnce)
     const fs::path repo_root = find_repo_root();
     ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
 
-    static const std::array<const char *, 4> kFiles = {
+    static const std::array<const char *, 3> kFiles = {
         "Src/GraphicsEngineVulkan/renderer/Rasterizer.cpp",
         "Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp",
-        "Src/GraphicsEngineVulkan/renderer/PostStage.cpp",
         "Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp",
     };
 
-    // No trailing space: clang-format breaks the line right after "="
-    // when the right-hand side does not fit the column limit (PostStage),
-    // but keeps it on one line when it does (Rasterizer, DeferredRasterizer,
-    // CascadedShadowMap) - the marker must match both.
     static const char *const kAssignment = "depth_format =";
 
     for (const char *relative_path : kFiles) {

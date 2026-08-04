@@ -223,45 +223,31 @@ void SkyBox::updateDescriptorSetForCubeMap()
       0, 1, cubeMapTexture->getImageView(), vk::ImageLayout::eShaderReadOnlyOptimal, cubeMapTexture->getSampler());
 }
 
-void SkyBox::createRenderPass(vk::Format format, vk::Format depthFormat)
+void SkyBox::createRenderPass(vk::Format format)
 {
     // The post stage LOADS this colour attachment afterwards, so it is left in
     // eColorAttachmentOptimal rather than handed straight to presentation.
     const vk::AttachmentDescription colorAttachment =
       buildAttachmentDescription(format, vk::ImageLayout::eColorAttachmentOptimal);
 
-    const vk::AttachmentDescription depthAttachment =
-      buildAttachmentDescription(depthFormat, vk::ImageLayout::eDepthStencilAttachmentOptimal);
-
-    std::array attachments = {colorAttachment, depthAttachment};
+    std::array attachments = {colorAttachment};
 
     vk::AttachmentReference colorRef{};
     colorRef.attachment = 0;
     colorRef.layout = vk::ImageLayout::eColorAttachmentOptimal;
 
-    vk::AttachmentReference depthRef{};
-    depthRef.attachment = 1;
-    depthRef.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
-
     const vk::SubpassDescription subpass =
-      Kataglyphis::buildSubpassDescription(std::span<const vk::AttachmentReference>(&colorRef, 1), &depthRef);
+      Kataglyphis::buildSubpassDescription(std::span<const vk::AttachmentReference>(&colorRef, 1), nullptr);
 
     std::array<vk::SubpassDependency, 2> dependencies{};
 
     dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencies[0].dstSubpass = 0;
-    // Cover the depth attachment's transition + load as well (sync hazard
-    // otherwise; see Rasterizer render pass comment).
-    dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput
-                                   | vk::PipelineStageFlagBits::eEarlyFragmentTests
-                                   | vk::PipelineStageFlagBits::eLateFragmentTests;
-    dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput
-                                   | vk::PipelineStageFlagBits::eEarlyFragmentTests;
-    dependencies[0].srcAccessMask =
-      vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-    dependencies[0].dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite
-                                    | vk::AccessFlagBits::eColorAttachmentRead
-                                    | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+    dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependencies[0].srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    dependencies[0].dstAccessMask =
+      vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eColorAttachmentRead;
     dependencies[0].dependencyFlags = vk::DependencyFlagBits::eByRegion;
 
     dependencies[1].srcSubpass = 0;
@@ -282,13 +268,13 @@ void SkyBox::createRenderPass(vk::Format format, vk::Format depthFormat)
     renderPass = result.value;
 }
 
-void SkyBox::createFramebuffers(std::span<const vk::ImageView> imageViews, vk::ImageView depthView, uint32_t width, uint32_t height)
+void SkyBox::createFramebuffers(std::span<const vk::ImageView> imageViews, uint32_t width, uint32_t height)
 {
     framebufferWidth = width;
     framebufferHeight = height;
     framebuffers.resize(imageViews.size());
     for (size_t i = 0; i < imageViews.size(); i++) {
-        std::array attachments = {imageViews[i], depthView};
+        std::array attachments = {imageViews[i]};
         const vk::FramebufferCreateInfo fbInfo = Kataglyphis::buildFramebufferCreateInfo(
           renderPass, attachments, vk::Extent2D{ width, height });
         auto fbResult = device->getLogicalDevice().createFramebuffer(fbInfo);
@@ -384,8 +370,7 @@ void SkyBox::recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_ind
     spdlog::debug("SkyBox: enabled={}, fbSize={}, indexCount={}", skyboxEnabled, framebuffers.size(), skyMesh->getIndexCount());
 
     std::array clearValues = {
-        vk::ClearValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}},
-        vk::ClearValue{vk::ClearDepthStencilValue{1.0f, 0}}
+        vk::ClearValue{std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f}}
     };
     const vk::RenderPassBeginInfo renderPassInfo = Kataglyphis::buildRenderPassBeginInfo(
       renderPass, framebuffers[image_index], vk::Extent2D{framebufferWidth, framebufferHeight}, clearValues);
@@ -443,9 +428,9 @@ void SkyBox::destroyFramebuffers()
 // Rebuilds framebuffers but deliberately does not destroy the previous ones -
 // VulkanRenderer::recreateSwapChain() must call destroyFramebuffers() before
 // this, while the swapchain images they reference still exist.
-void SkyBox::recreateFrameResources(std::span<const vk::ImageView> imageViews, vk::ImageView depthView, uint32_t width, uint32_t height)
+void SkyBox::recreateFrameResources(std::span<const vk::ImageView> imageViews, uint32_t width, uint32_t height)
 {
-    createFramebuffers(imageViews, depthView, width, height);
+    createFramebuffers(imageViews, width, height);
 }
 
 }

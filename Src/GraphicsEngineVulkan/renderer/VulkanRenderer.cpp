@@ -133,9 +133,9 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     updateAllDescriptorSets();
 
     skyBox.init(device, graphics_command_pool);
-    skyBox.createRenderPass(vulkanSwapChain.getSwapChainFormat(), postStage.getDepthFormat());
+    skyBox.createRenderPass(vulkanSwapChain.getSwapChainFormat());
     skyBox.createGraphicsPipeline(sharedRenderDescriptors.getLayout());
-    skyBox.createFramebuffers(swapchainImageViews(), postStage.getDepthBufferImageView(),
+    skyBox.createFramebuffers(swapchainImageViews(),
         vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
 
     // Start the parse and carry on initialising. Everything that depends on
@@ -730,7 +730,7 @@ void Kataglyphis::VulkanRenderer::recreateSwapChain()
     // new resolution). updateAllDescriptorSets() below rewrites its binding.
     if (device->supportsHardwareAcceleratedRRT()) { createPathTracingAccumulationResources(); }
 
-    skyBox.recreateFrameResources(swapchainImageViews(), postStage.getDepthBufferImageView(),
+    skyBox.recreateFrameResources(swapchainImageViews(),
         vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
 
     // If the image count changed, every per-swapchain-image resource must be

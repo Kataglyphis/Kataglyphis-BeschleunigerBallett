@@ -184,6 +184,25 @@ constexpr vk::SubpassDependency buildExternalColorDepthDependency()
     return dependency;
 }
 
+// PostStage's colour-only twin of buildExternalColorDepthDependency: once
+// PostStage stopped owning a depth attachment (it never read the one it
+// cleared - see the removal that added this helper), its external dependency
+// no longer has a depth half to cover, and simply narrows to ordering this
+// frame's colour load/write against the previous colour write into the same
+// swapchain image (the SkyBox pass, which renders into it first).
+constexpr vk::SubpassDependency buildExternalColorDependency()
+{
+    vk::SubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependency.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    dependency.dependencyFlags = vk::DependencyFlags{};
+    return dependency;
+}
+
 // Destroys a render pass and nulls its handle - the same idempotence rule
 // FramebufferHelper.hpp's destroyFramebuffer/destroyFramebuffers and
 // PipelineLayoutHelper.hpp's destroyPipelineAndLayout follow: a device-less

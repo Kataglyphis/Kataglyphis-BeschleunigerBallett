@@ -8620,3 +8620,216 @@ session, do **task 2 first**, because task 1's shader edits then recompile on
 top of an already-fixed render pass rather than the other way round. Task 5 is
 Rust and disjoint from all four.
 
+## 2026-08-04 batch IX — planner (a depth attachment that two render passes allocate, clear and declare dependencies for while neither of them tests or writes depth; glTF `emissive_factor`, parsed into `ObjMaterial`, uploaded per material, mirrored in `scene_types.slang` and read by zero shaders; a `KHR_texture_transform` rotation the Rust twin applies per spec and the C++ loader warns about and drops; a compute kernel that samples a base-colour texture with implicit LOD, in the one file whose ray-tracing sibling documents why that is illegal; the SPIR-V gate that would have caught it)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Every `file:line` below was read out of the
+tree this pass, at `3b141b04`.
+
+**Host GPU golden verification is still blocked over RDP** (see the `- [b]`
+entry near the end of this file), so nothing here is accepted on pixels.
+Tasks 1, 2, 3 and 4 change rendering; their acceptance is the CPU suites plus
+a source or SPIR-V gate each, and each entry names the goldens that should
+re-run once RDP clears rather than pretending CPU coverage is enough.
+
+**First, `PostStage` allocates a full-resolution depth image that no pass in
+the engine tests or writes.** `PostStage::createDepthbufferImage()`
+(`renderer/PostStage.cpp:140-148`) builds a swapchain-extent depth `Texture`
+through `createDepthAttachment`. Exactly two consumers exist, and both are
+inert:
+
+| consumer | what it does with the depth image |
+| --- | --- |
+| `PostStage` itself | attaches it (`:192-197`, `loadOp = eClear`, `storeOp = eDontCare`), clears it every frame (`:71`), and draws a fullscreen quad with the `PipelineBuilder` depth defaults — `depth_test = true`, `depth_write = true`, `eLessOrEqual` (`:253`, `PipelineBuilder.ixx:108-110`) — against a buffer just cleared to 1.0, so every fragment passes and every write lands in a `eDontCare` attachment |
+| `SkyBox` | receives the same view (`VulkanRenderer.cpp:136-139`, `:733-735`), attaches it (`SkyBox.cpp:233-236`), clears it (`:387-389`) — and its pipeline sets `setDepthTest(false).setDepthWrite(false).setDepthCompareOp(eAlways)` (`SkyBox.cpp:334-336`) |
+
+So per frame the engine pays for one swapchain-extent depth allocation (re-made
+on every `recreateFrameResources`, `PostStage.cpp:130-138`), two full-screen
+depth clears, two framebuffer attachment slots, and two subpass dependencies
+whose depth halves exist only to order those clears
+(`PostStage.cpp:210-215`'s `buildExternalColorDepthDependency`,
+`SkyBox.cpp:253-264`'s hand-rolled `eEarlyFragmentTests|eLateFragmentTests` +
+`eDepthStencilAttachmentWrite`). `PostStage.cpp:190-191` already says out loud
+that the clear "discards the depth values the skybox pass just wrote" — and
+the skybox writes none, because its pipeline has depth writes off. Nothing
+samples this image: `gbufferDescriptors.writeImage(i, 3, ...)`
+(`VulkanRenderer.cpp:1655`) binds `deferredRasterizer`'s depth, a different
+image. Note that ImGui draws **inside** the post render pass
+(`PostStage.cpp:95`) and its pipeline is created against
+`postStage.getRenderPass()` (`VulkanRenderer.cpp:154`), so the render pass may
+lose its depth attachment without a compatibility break — but that wiring is
+what makes this a "read both call sites first" change rather than a delete.
+
+**Second, glTF emissive materials render black in the C++ engine.**
+`GltfLoader.cpp:140` reads `material.emissive_factor` into a `glm::vec3` and
+`:180` passes it to `ObjMaterial::emission`; `ObjLoader.cpp:198` fills the
+same field from `.mtl`; `ObjMaterial.hpp` carries it as the fifth `vec3`;
+`scene_types.slang:39` mirrors it as `float3 emission`;
+`buildIntegritySuite.cpp:983` pins its offset against the compiled SPIR-V. And
+then:
+
+```
+$ grep -rn "emission" Resources/ShadersSlang --include=*.slang
+Resources/ShadersSlang/common/scene_types.slang:39:    float3 emission;
+```
+
+One hit — the declaration. Not one of the five shading paths
+(`rasterizer.slang`, `deferred.slang`, `raytrace.rchit.slang`,
+`path_tracing.slang`, `shadow_map.slang`) reads it. Twelve bytes per material
+travel host→device every load to be ignored, and every emissive glTF surface
+in the Vulkan renderer is lit only by the directional light. The Rust twin
+does apply it: `forward/forward.slang:388`
+(`float3 emissive = prim.emissive_factor.rgb * emissiveSample.rgb`) feeding
+`:436` (`color = directLight + punctual + ambient + emissive`), and
+`asset/gltf_loader.rs:636-640` even folds `KHR_materials_emissive_strength`
+into the factor first. Same file pair, same glTF, two different pictures.
+
+**Third, the C++ loader drops `KHR_texture_transform`'s rotation and says so
+in a log line; the Rust loader applies it per spec.** `GltfLoader.cpp:154-172`
+reads `transform.scale` and `transform.offset` into `ObjMaterial::uv_scale` /
+`uv_offset`, and at `:167-171` warns that a non-zero `transform.rotation` "is
+not applied (only scale/offset are)". `material_fetch.slang:27-31` implements
+exactly that subset: `return uv * material.uv_scale + material.uv_offset;`.
+`asset/gltf_loader.rs:611-626` builds the full spec matrix —
+`Mat3::from_translation(offset) * Mat3::from_angle(-t.rotation()) *
+Mat3::from_scale(scale)` — packs it as a 2×3 (`scene/mod.rs:173`,
+`render/forward.rs:129`), and `forward.rs:1707-1715` uploads it per primitive.
+Any rotated atlas/decal material therefore samples at different texels in the
+two renderers, and the C++ side tells you so once per material and then
+renders wrong anyway.
+
+**Fourth, the path-tracing compute kernel samples with implicit LOD.**
+`path_tracing.slang:47` is `[shader("compute")] [numthreads(8, 8, 1)]`, and
+`:209` calls `textures[textureId].Sample(textureSamplers[textureId],
+texCoords)`. `OpImageSampleImplicitLod` requires the `Fragment` execution
+model — there are no derivatives in a compute invocation. The sibling file
+knows this: `raytrace.rchit.slang:75-77` carries the comment "fragment
+derivatives, so an implicit-LOD `.Sample()` fails SPIR-V" and uses
+`SampleLevel(..., 0.0)`. The path-tracing port did not copy that. It is latent
+rather than live on the shipped scenes — `dinosaurs.obj` is untextured, so the
+branch never executes there, and it is **not** the root cause of the
+device-lost tracked in the `- [b]` entry above (that reproducer never reaches
+this line; do not reopen that entry on the strength of this one). It fires the
+moment a textured model is path-traced.
+
+The same two ray shaders are also the only base-colour sample sites in the
+repo that skip `transform_uv`. Three of five apply it —
+`rasterizer.slang:60`, `deferred.slang:60`, `shadow_map.slang:55` — while
+`raytrace.rchit.slang:77` and `path_tracing.slang:209` pass raw interpolated
+`texCoords`. So a `KHR_texture_transform` material already renders differently
+between this engine's raster and ray modes, before task 3 widens the
+transform.
+
+**Fifth, nothing validates the emitted SPIR-V.** `grep -rn "spirv-val"` over
+`Scripts/`, `Test/` and the CMake files returns nothing: the Slang output is
+compiled, copied and loaded, never checked. `buildIntegritySuite.cpp` already
+walks `.spv` at the word level for a different purpose —
+`spirv_literal_string` (`:857`) and `parse_spirv_member_offsets` (`:878`),
+driven from the `spirv_root` recursive walk at `:1124-1135` — so the shape for
+a structural gate is already in the file and needs no new tool, no
+SPIRV-Tools dependency and no GPU.
+
+Ordering: **task 4 before task 5**, or task 5's gate lands RED on
+`path_tracing.path_tracing_main.spv`. Task 1 is C++-only and disjoint from
+everything else. Tasks 2, 3 and 4 all regenerate SPIR-V; task 3 is the only
+one that changes `ObjMaterial`'s field set, so land it before or after the
+other two but not interleaved, to keep the `buildIntegritySuite.cpp:978-991`
+offset-pin churn in a single commit.
+
+- [ ] **(M) Shade glTF `emissive_factor` in the forward and deferred paths instead of uploading it and ignoring it** — `ObjMaterial::emission` is parsed by both loaders, pinned by a SPIR-V offset gate, and read by zero shaders, so every emissive surface renders black while the Rust twin lights it.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/common/scene_types.slang:39` — the `float3 emission` member, declared and unread
+  - `Resources/ShadersSlang/rasterizer/rasterizer.slang:55-85` — the forward path; `:84` is the `return float4(color, 1.0)` to add to
+  - `Resources/ShadersSlang/deferred/deferred.slang:49-76` (geometry pass, `:75` writes `outMaterial`) and `:104-137` (lighting pass, `:125` reads only `material.r`, `:136` returns)
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.ixx:73-76` — `GBUFFER_MATERIAL_FORMAT` is `eR8G8B8A8Unorm`
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:140`, `:180` — where `emission` is filled
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/../../../../../Resources/ShadersSlang/forward/forward.slang:388`, `:436` — the Rust twin's convention to mirror (`color = directLight + punctual + ambient + emissive`)
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:978-991` — the ObjMaterial offset pin (unchanged by this task; read it so you know it exists)
+
+  **Steps:**
+  1. `rasterizer.slang`: after the shadow attenuation at `:82`, add `color += material.emission;` and return. Emissive is not shadowed and not attenuated by `cascadedShadowIntensity` — it is surface-emitted radiance, so it must be added *after* the `color *= 1.0 - shadow * ...` line, not before.
+  2. `deferred.slang` geometry pass: `outMaterial` at `:75` currently writes `float4(roughness, 0.0, 1.0, 1.0)` — the `.gba` channels are literal constants the lighting pass never reads (`:125` takes `material.r` only). Pack emission there: `g.outMaterial = float4(roughness, material.emission);`. Add a comment naming the channel assignment (`r = roughness, gba = emissive`) and stating the precision limit: `GBUFFER_MATERIAL_FORMAT` is `eR8G8B8A8Unorm`, so emissive is quantized to 8 bits and clamped to [0,1] — which is exactly glTF's `emissive_factor` range absent `KHR_materials_emissive_strength`.
+  3. `deferred.slang` lighting pass: after `:134`'s shadow attenuation, add `color += material.gba;` before the `:136` return, mirroring step 1's ordering.
+  4. Leave `raytrace.rchit.slang` and `path_tracing.slang` alone. Emissive in a path tracer is `radiance += throughput * emission` at the hit, not a term added to a single shaded colour, and getting that wrong silently changes the converged image the accumulation buffer is averaging toward. Add a one-line comment in each of those two files saying emissive is deliberately not yet integrated there and pointing at this entry, so the next reader does not re-derive the gap.
+  5. Recompile the shaders from the repo root: `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`. No C++ change is required for steps 1-4.
+
+  **Test:** Add `BuildIntegrity.EmissiveIsConsumedByTheRasterShadingPaths` to `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — read `rasterizer.slang` and `deferred.slang` as text and assert each contains a use of `.emission` (rasterizer) / that `deferred.slang`'s `outMaterial` write references `material.emission` and its lighting pass adds `material.gba`. Assert `scene_types.slang` still declares `emission`. Failure message must say "ObjMaterial::emission is uploaded per material; a shading path that ignores it renders every glTF emitter black" so a future deletion is diagnosable. Follow the source-text gate pattern already in that file (see the `scene_types.slang` constant parsing at `:1487-1525`).
+
+  **Build:** `clangcl-debug`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  Then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root.
+
+  **Context:** This closes a cross-renderer divergence of the same family as `1a839cad` (`baseColorFactor`) and `bdbec99a` (its alpha half) — the pattern there is: find the term the Rust forward shader applies, apply it in the C++ paths with the same ordering, gate it. Once RDP clears, `GoldenRender.*` should be re-run: the shipped scenes' materials have `emission` at or near zero (`ObjMaterial`'s default is `(0, 0, 0.10)`, and `GltfLoader.cpp:103`'s fallback material passes `vec3(0.0)`), so goldens are expected to move slightly or not at all — **check the default before writing new goldens**, because a non-zero default emission on OBJ materials would tint them.
+
+- [ ] **(M) Apply `KHR_texture_transform`'s rotation instead of warning about it, and carry the transform as the same 2×3 matrix the Rust loader builds** — the C++ loader logs "not applied" for every rotated material and then renders it at the wrong texels.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:150-172` — the current scale/offset extraction and the two "not applied" warnings; `:187-188` the `ObjMaterial` constructor arguments
+  - `Src/shared/scene/ObjMaterial.hpp` — the `uv_scale` / `uv_offset` members, their trailing-field/scalar-layout rationale, and both constructors
+  - `Resources/ShadersSlang/common/scene_types.slang:46-47` — the mirrored members
+  - `Resources/ShadersSlang/common/material_fetch.slang:27-31` — `transform_uv`, the single definition every raster path calls
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/asset/gltf_loader.rs:611-626` — **the convention to copy exactly**, including the `-t.rotation()` sign and the row-major 2×3 packing
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:978-991` — the SPIR-V offset pin that must be updated in this commit
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp:698-736` — `ReadsKhrTextureTransformScale` and `MaterialWithoutTextureTransformIsIdentity`, the tests to extend
+
+  **Steps:**
+  1. Replace `ObjMaterial`'s `glm::vec2 uv_scale; glm::vec2 uv_offset;` with `glm::vec3 uv_transform_row0; glm::vec3 uv_transform_row1;` — the two rows of the 2×3 UV matrix. Use `vec3`/`float3`, not a `glm::mat3x2`: the struct's five existing `vec3` members already prove that pairing survives this scalar-layout mirror, and a glm matrix type's alignment does not match Slang's. Default them to the identity rows `(1, 0, 0)` and `(0, 1, 0)` in both the default constructor and the parameterized one, so OBJ materials and untransformed glTF materials stay bit-identical.
+  2. Mirror the change in `scene_types.slang:46-47` as `float3 uv_transform_row0; float3 uv_transform_row1;`.
+  3. Rewrite `transform_uv` in `material_fetch.slang` as `return float2(dot(float3(uv, 1.0), material.uv_transform_row0), dot(float3(uv, 1.0), material.uv_transform_row1));`. All three current callers (`rasterizer.slang:60`, `deferred.slang:60`, `shadow_map.slang:55`) are unchanged.
+  4. In `GltfLoader.cpp:154-172`, build the matrix `T * R * S` with glm, using **the same rotation sign as the Rust loader** — `glm::mat3 m = translate(offset) * rotate(-transform.rotation) * scale(scaleVec)` — and pack rows 0 and 1. Delete the rotation warning at `:167-171`; keep the `has_texcoord` override warning at `:162-166`, which is still accurate (the C++ vertex has one UV slot). Update the `:150-153` comment to say the full T*R*S transform is applied.
+  5. Update the `buildIntegritySuite.cpp:978-991` `ObjMaterial_natural` pin: replace the `uv_scale` / `uv_offset` rows with `uv_transform_row0` / `uv_transform_row1` and their `offsetof`s.
+  6. Recompile shaders (`compile-slang-shaders.ps1`) and rebuild with `-FreshContainer` if any module interface moved (it should not — `ObjMaterial.hpp` is a plain header).
+
+  **Test:** Extend `Test/commit/VulkanEngine/gltfParseSuite.cpp`: rename/rework `ReadsKhrTextureTransformScale` to assert the packed identity for scale+offset-only fixtures, and add `GltfParseUnit.KhrTextureTransformRotationReachesTheMaterial` using a fixture with a non-zero `rotation` — assert the resulting rows transform a known UV to the same point the spec formula gives, to `1e-5`. Add a second assertion pinning the sign against the Rust convention: a `rotation` of `+pi/2` applied to `(1, 0)` must land where `Mat3::from_angle(-pi/2)` puts it, and say so in the failure message, because a silently flipped sign is the failure mode this whole task exists to avoid. Also assert `MaterialWithoutTextureTransformIsIdentity` still holds with the new representation.
+
+  **Build:** `clangcl-debug`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  Then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root.
+
+  **Context:** Same cross-renderer-parity family as the `baseColorFactor` and `COLOR_0` work; the Rust side is the reference implementation and its packing is already gated by its own tests, so copy it rather than inventing a second convention. The trap here is the rotation sign: glTF's `rotation` is measured clockwise in UV space, which is why `gltf_loader.rs:619` negates it before `Mat3::from_angle`. Getting that backwards produces a plausible-looking image that mirrors the Rust renderer's, which no CPU test will notice unless the test pins the sign explicitly — hence the second assertion above. Once RDP clears, no shipped golden should move (none of the shipped models use `KHR_texture_transform`); if one does, that is a bug in this change, not a golden to rewrite.
+
+- [ ] **(S) Fix the path tracer's implicit-LOD texture sample, and route both ray paths' base-colour sample through `transform_uv`** — `OpImageSampleImplicitLod` is illegal outside a fragment shader, and the ray paths are the only two of five sample sites that ignore `KHR_texture_transform`.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/path_tracing/path_tracing.slang:45-47` (the compute entry point) and `:194-215` (the material fetch and the offending `.Sample()` at `:209`)
+  - `Resources/ShadersSlang/raytracing/raytrace.rchit.slang:63-78` — **the precedent**, including the `:75-76` comment explaining why implicit LOD is illegal in a ray-tracing stage, and its `SampleLevel(..., 0.0)` at `:77`
+  - `Resources/ShadersSlang/common/material_fetch.slang:27-31` — `transform_uv`
+  - `Resources/ShadersSlang/rasterizer/rasterizer.slang:60`, `deferred/deferred.slang:60`, `rasterizer/shadows/shadow_map.slang:55` — the three sites that already call it
+  - `docs/path-tracing.md` — check whether it states a texture-sampling rule that needs updating
+
+  **Steps:**
+  1. `path_tracing.slang:209`: change `.Sample(textureSamplers[textureId], texCoords)` to `.SampleLevel(textureSamplers[textureId], transform_uv(texCoords, material), 0.0)`. Add a comment pointing at `raytrace.rchit.slang:75-76` rather than restating it.
+  2. `raytrace.rchit.slang:77`: wrap the UV in `transform_uv(texCoords, material)`. Leave `SampleLevel` as is.
+  3. `path_tracing.slang` imports `scene_types` and `base_color` today but not `material_fetch`; add the import if `transform_uv` is not already reachable, and check it does not drag ray-tracing capabilities into the module (the `material_fetch.slang` header comment at `:4-7` explains the `scene_types` vs `rt_types` split — read it before adding the import, and if it does conflict, move `transform_uv` into a smaller shared module rather than duplicating it).
+  4. Recompile: `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1` from the repo root. No C++ change.
+
+  **Test:** Covered structurally by the next task's gate; in this task, add `BuildIntegrity.EveryBaseColourSampleAppliesTheUvTransform` to `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — read the five shading sources and assert each `textures[...]` sample expression on the same line as a `textureSamplers[` index also mentions `transform_uv`. Failure message must name the file and say that a sample site skipping `transform_uv` makes that mode disagree with the other four on any `KHR_texture_transform` material.
+
+  **Build:** `clangcl-debug` (only needed to rebuild the test):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  Then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root.
+
+  **Context:** Do **not** treat this as a candidate fix for the blocked path-tracing `VK_ERROR_DEVICE_LOST` entry earlier in this file. That reproducer (`dinosaurs.obj`) has `material.textureID < 0` on every material, so this branch is never executed there — the bisection recorded in that entry already established that. This is a latent defect that fires on the first textured path-traced scene, and it is worth fixing on its own terms. Once RDP clears, `GoldenRender.PathTracingAccumulatesAndConverges` and the ray-tracing goldens should be re-run; both currently render untextured scenes, so neither is expected to move.
+
+- [ ] **(S) Gate the emitted SPIR-V against implicit-LOD image instructions outside fragment entry points** — nothing in this repo validates the Slang output, which is why an illegal `.Sample()` sat in a compute kernel undetected.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:857-877` (`spirv_literal_string`) and `:878-925` (`parse_spirv_member_offsets`) — the existing word-level SPIR-V walker to copy: header skip, `word_count = words[pos] >> 16`, `opcode = words[pos] & 0xFFFF`
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1124-1140` — the `spirv_root` recursive walk that enumerates every emitted `.spv`
+  - `Resources/ShadersSlang/shader-manifest.json` — the stage of every entry point, for the assertion's failure message
+
+  **Steps:**
+  1. Add a helper next to `parse_spirv_member_offsets` that walks a `.spv`'s words once and returns `{ execution_model, set_of_opcodes_present }`. `OpEntryPoint` is opcode `15`; its first operand word is the execution model (`0` Vertex, `4` Fragment, `5` GLCompute, `5313` RayGenerationKHR, `5314` IntersectionKHR, `5315` AnyHitKHR, `5316` ClosestHitKHR, `5317` MissKHR, `5318` CallableKHR). Every file this repo emits is a single-entry-point module, so the first `OpEntryPoint` is the only one — assert that rather than assuming it.
+  2. Define the implicit-LOD opcode set: `OpImageSampleImplicitLod` 87, `OpImageSampleDrefImplicitLod` 89, `OpImageSampleProjImplicitLod` 91, `OpImageSampleProjDrefImplicitLod` 93, and the sparse variants 305, 307, 309, 311. Do **not** include `OpImageQueryLod` (100) — it is legal in `GLCompute` as well as `Fragment`.
+  3. Add `TEST(BuildIntegrity, NoImplicitLodImageInstructionsOutsideFragmentShaders)`: walk `Resources/ShadersSlang/build/spirv/` and, for every module whose execution model is not `Fragment`, assert the intersection with the implicit-LOD set is empty. The failure message must name the `.spv`, its execution model, the offending opcode, and point at `raytrace.rchit.slang:75-77` as the fix pattern (`SampleLevel(..., 0.0)`).
+  4. Guard the test the way the existing SPIR-V tests are guarded: `GTEST_SKIP()` (or the file's existing equivalent) when `build/spirv/` is absent, so a tree that has not run the shader compile does not report a false failure.
+
+  **Test:** The test *is* the deliverable. Verify it both ways: it must be GREEN after the previous task lands, and you must confirm it goes RED on the pre-fix source — revert `path_tracing.slang:209` to `.Sample(...)`, recompile shaders, run the suite, see it fail naming `path_tracing.path_tracing_main.spv`, then restore. A gate that has never been observed failing is not a gate; record both observations in the commit message.
+
+  **Build:** `clangcl-debug`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  Then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*` from the repo root.
+
+  **Context:** Deliberately hand-rolled rather than shelling out to `spirv-val`: the suite already parses SPIR-V words for the UBO offset pins, so this needs no new dependency, runs on every platform the CPU suites run on, and cannot be skipped by a missing SDK tool. It is narrower than `spirv-val` on purpose — one rule, precisely stated, with a message that tells you the fix. If a future change wants full validation, that is a separate task and probably belongs in the shader-compile script, not here.
+

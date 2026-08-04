@@ -33,7 +33,6 @@ import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.pipeline_builder;
 import kataglyphis.vulkan.sampler_builder;
-import kataglyphis.vulkan.depth_attachment;
 
 Kataglyphis::VulkanRendererInternals::PostStage::PostStage() = default;
 
@@ -47,7 +46,6 @@ void Kataglyphis::VulkanRendererInternals::PostStage::init(const std::shared_ptr
     createOffscreenTextureSampler();
 
     createPushConstantRange();
-    createDepthbufferImage();
     createRenderpass();
     createGraphicsPipeline(descriptorSetLayouts);
     createFramebuffer();
@@ -67,9 +65,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
 {
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
 
-    std::array<vk::ClearValue, 2> clear_values;
+    std::array<vk::ClearValue, 1> clear_values;
     clear_values[0].color = vk::ClearColorValue{ 0.2F, 0.65F, 0.4F, 1.0F };
-    clear_values[1].depthStencil = vk::ClearDepthStencilValue{ 1.0F, 0 };
 
     const vk::RenderPassBeginInfo render_pass_begin_info = Kataglyphis::buildRenderPassBeginInfo(
       render_pass, framebuffers[image_index], swap_chain_extent, clear_values);
@@ -104,9 +101,6 @@ void Kataglyphis::VulkanRendererInternals::PostStage::cleanUp()
     // is only a safety net for the forgotten path).
     if (!device) { return; }
 
-    if (depthBufferImage) { depthBufferImage->cleanUp(); }
-    depthBufferImage.reset();
-
     destroyFramebuffers();
 
     if (offscreenTextureSampler) {
@@ -131,21 +125,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::destroyFramebuffers()
 // this, while the swapchain images they reference still exist.
 void Kataglyphis::VulkanRendererInternals::PostStage::recreateFrameResources()
 {
-    depthBufferImage->cleanUp();
-
-    createDepthbufferImage();
     createFramebuffer();
-}
-
-void Kataglyphis::VulkanRendererInternals::PostStage::createDepthbufferImage()
-{
-    const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
-    depthBufferImage = std::make_unique<Texture>();
-
-    // Depth-only attachment view, no layout transition: exactly one aspect,
-    // not Kataglyphis::depthStencilTransitionAspect. See its doc comment.
-    depth_format =
-      createDepthAttachment(*depthBufferImage, device, swap_chain_extent, {}, vk::ImageAspectFlagBits::eDepth);
 }
 
 void Kataglyphis::VulkanRendererInternals::PostStage::createOffscreenTextureSampler()
@@ -184,37 +164,20 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createRenderpass()
       vk::AttachmentStoreOp::eStore,
       vk::ImageLayout::eColorAttachmentOptimal);
 
-    // depth_format was already resolved by createDepthbufferImage(), which
-    // init() always runs first - reuse it rather than querying again, so the
-    // attachment and the image it is paired with cannot diverge.
-    // This eClear discards the depth values the skybox pass just wrote into
-    // the same depth image - deliberate, not changed by this helper switch.
-    const vk::AttachmentDescription depth_attachment = buildAttachmentDescription(
-      depth_format,
-      vk::ImageLayout::eDepthStencilAttachmentOptimal,
-      vk::AttachmentLoadOp::eClear,
-      vk::AttachmentStoreOp::eDontCare,
-      vk::ImageLayout::eDepthStencilAttachmentOptimal);
-
     vk::AttachmentReference color_attachment_reference;
     color_attachment_reference.attachment = 0;
     color_attachment_reference.layout = vk::ImageLayout::eColorAttachmentOptimal;
 
-    vk::AttachmentReference depth_attachment_reference;
-    depth_attachment_reference.attachment = 1;
-    depth_attachment_reference.layout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
-
     const vk::SubpassDescription subpass = buildSubpassDescription(
-      std::span<const vk::AttachmentReference>(&color_attachment_reference, 1), &depth_attachment_reference);
+      std::span<const vk::AttachmentReference>(&color_attachment_reference, 1), nullptr);
 
-    // Shares common/RenderPassHelper.hpp's buildExternalColorDepthDependency
-    // with Rasterizer and DeferredRasterizer - the depth half of the source
-    // scope is what actually matters here, since this pass clears the depth
-    // image the skybox pass just wrote (see the depth_attachment comment
-    // above).
-    const std::array<vk::SubpassDependency, 1> subpass_dependencies = { buildExternalColorDepthDependency() };
+    // common/RenderPassHelper.hpp's buildExternalColorDependency: this pass no
+    // longer owns a depth attachment, so all that remains to order is this
+    // frame's colour load against the skybox pass's colour write into the
+    // same swapchain image.
+    const std::array<vk::SubpassDependency, 1> subpass_dependencies = { buildExternalColorDependency() };
 
-    std::array<vk::AttachmentDescription, 2> render_pass_attachments = { color_attachment, depth_attachment };
+    std::array<vk::AttachmentDescription, 1> render_pass_attachments = { color_attachment };
     const std::array<vk::SubpassDescription, 1> subpasses = { subpass };
 
     vk::RenderPassCreateInfo const render_pass_create_info =
@@ -250,7 +213,8 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createGraphicsPipeline(
     graphics_pipeline = pipeline_builder.setShaderStages({ stages.stages().begin(), stages.stages().end() })
                           .setCullMode(vk::CullModeFlagBits::eNone)
                           .setAlphaBlending(true)
-                          .setDepthCompareOp(vk::CompareOp::eLessOrEqual)
+                          .setDepthTest(false)
+                          .setDepthWrite(false)
                           .build(device->getLogicalDevice(), pipeline_layout, render_pass, device->getPipelineCache());
 }
 
@@ -261,8 +225,7 @@ void Kataglyphis::VulkanRendererInternals::PostStage::createFramebuffer()
     for (size_t i = 0; i < vulkanSwapChain->getNumberSwapChainImages(); i++) {
         Texture &swap_chain_image = vulkanSwapChain->getSwapChainImage(static_cast<uint32_t>(i));
 
-        std::array<vk::ImageView, 2> attachments = { swap_chain_image.getImageView(),
-            depthBufferImage->getImageView() };
+        std::array<vk::ImageView, 1> attachments = { swap_chain_image.getImageView() };
 
         const vk::FramebufferCreateInfo frame_buffer_create_info = Kataglyphis::buildFramebufferCreateInfo(
           render_pass, attachments, vulkanSwapChain->getSwapChainExtent());

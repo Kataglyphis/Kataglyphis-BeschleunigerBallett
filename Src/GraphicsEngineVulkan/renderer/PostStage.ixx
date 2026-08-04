@@ -9,7 +9,6 @@ export module kataglyphis.vulkan.post_stage;
 
 import kataglyphis.vulkan.device;
 import kataglyphis.vulkan.swapchain;
-import kataglyphis.vulkan.texture;
 
 export namespace Kataglyphis::VulkanRendererInternals {
 class PostStage
@@ -28,8 +27,6 @@ class PostStage
 
     vk::RenderPass &getRenderPass() { return render_pass; };
     vk::Sampler &getOffscreenSampler() { return offscreenTextureSampler; };
-    vk::ImageView getDepthBufferImageView() { return depthBufferImage->getImageView(); };
-    vk::Format getDepthFormat() { return depth_format; };
 
     void recreateFrameResources();
     void destroyFramebuffers();
@@ -47,9 +44,6 @@ class PostStage
     VulkanSwapChain *vulkanSwapChain{ nullptr };
 
     std::vector<vk::Framebuffer> framebuffers;
-    std::unique_ptr<Kataglyphis::Texture> depthBufferImage;
-    vk::Format depth_format{ vk::Format::eUndefined };
-    void createDepthbufferImage();
 
     vk::Sampler offscreenTextureSampler{};
     void createOffscreenTextureSampler();
