@@ -33,7 +33,7 @@ std::unique_ptr<Kataglyphis::Texture> Clouds::createStorageTexture(vk::CommandPo
 {
     auto texture = std::make_unique<Texture>();
     texture->createImage(device, w, h, 1, vk::Format::eR16G16B16A16Sfloat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, 1, vk::ImageCreateFlags{}, type, depth);
-    texture->createImageView(device, vk::Format::eR16G16B16A16Sfloat, vk::ImageAspectFlagBits::eColor, 1, viewType, 1);
+    texture->createImageView(device, vk::Format::eR16G16B16A16Sfloat, vk::ImageAspectFlagBits::eColor, 1, viewType, 1);// COLOR_ATTACHMENT_CHAIN_OK: storage-texture-3d-or-array-view-type
     texture->createTextureSampler(device);
 
     vk::CommandBuffer commandBuffer = Kataglyphis::VulkanRendererInternals::CommandBufferManager::beginCommandBuffer(device->getLogicalDevice(), commandPool);

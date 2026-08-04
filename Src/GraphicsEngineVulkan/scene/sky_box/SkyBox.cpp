@@ -206,7 +206,7 @@ bool SkyBox::uploadCubeMapFaces(vk::CommandPool commandPool, uint32_t width, uin
         return false;
     }
 
-    cubeMapTexture->createImageView(device, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, 1, vk::ImageViewType::eCube, 6);
+    cubeMapTexture->createImageView(device, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, 1, vk::ImageViewType::eCube, 6);// COLOR_ATTACHMENT_CHAIN_OK: cubemap-six-layers-cube-compatible
     cubeMapTexture->createTextureSampler(device);
     return true;
 }

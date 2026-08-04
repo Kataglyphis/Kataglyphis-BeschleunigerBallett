@@ -199,7 +199,7 @@ auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &devic
         return false;
     }
 
-    createImageView(device, texture_format, vk::ImageAspectFlagBits::eColor, mip_levels, vk::ImageViewType::e2D, 1);
+    createImageView(device, texture_format, vk::ImageAspectFlagBits::eColor, mip_levels, vk::ImageViewType::e2D, 1);// COLOR_ATTACHMENT_CHAIN_OK: real-mip-chain
 
     return true;
 }

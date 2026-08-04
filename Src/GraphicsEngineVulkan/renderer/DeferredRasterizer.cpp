@@ -28,6 +28,7 @@ import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.pipeline_builder;
 import kataglyphis.vulkan.mesh_draw_recorder;
 import kataglyphis.vulkan.depth_attachment;
+import kataglyphis.vulkan.color_attachment;
 
 using namespace Kataglyphis::VulkanRendererInternals;
 
@@ -76,8 +77,7 @@ void DeferredRasterizer::createTextures()
     auto createAttachment = [&](std::vector<std::unique_ptr<Texture>>& textures, vk::Format format, vk::ImageUsageFlags usage) {
         for (uint32_t i = 0; i < count; i++) {
             auto tex = std::make_unique<Texture>();
-            tex->createImage(device, extent.width, extent.height, 1, format, vk::ImageTiling::eOptimal, usage, vk::MemoryPropertyFlagBits::eDeviceLocal);
-            tex->createImageView(device, format, vk::ImageAspectFlagBits::eColor, 1);
+            createColorAttachment(*tex, device, extent, format, usage);
             textures[i] = std::move(tex);
         }
     };

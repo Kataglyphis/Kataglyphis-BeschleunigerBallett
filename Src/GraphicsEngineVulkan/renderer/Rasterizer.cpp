@@ -31,6 +31,7 @@ import kataglyphis.vulkan.shader_helper;
 import kataglyphis.vulkan.pipeline_builder;
 import kataglyphis.vulkan.mesh_draw_recorder;
 import kataglyphis.vulkan.depth_attachment;
+import kataglyphis.vulkan.color_attachment;
 
 Kataglyphis::VulkanRendererInternals::Rasterizer::Rasterizer() = default;
 
@@ -242,17 +243,12 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::createTextures(vk::Comman
         auto texture = std::make_unique<Texture>();
         const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
 
-        texture->createImage(device,
-          swap_chain_extent.width,
-          swap_chain_extent.height,
-          1,
+        createColorAttachment(*texture,
+          device,
+          swap_chain_extent,
           OFFSCREEN_FORMAT,
-          vk::ImageTiling::eOptimal,
           vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eStorage
-            | vk::ImageUsageFlagBits::eTransferDst,
-          vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-        texture->createImageView(device, OFFSCREEN_FORMAT, vk::ImageAspectFlagBits::eColor, 1);
+            | vk::ImageUsageFlagBits::eTransferDst);
 
         offscreenTextures[index] = std::move(texture);
     }

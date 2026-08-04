@@ -157,7 +157,7 @@ void Kataglyphis::VulkanSwapChain::initVulkanContext(const std::shared_ptr<Vulka
         swap_chain_images.emplace_back();
         Texture &swap_chain_image = swap_chain_images.back();
         swap_chain_image.setImage(image);
-        swap_chain_image.createImageView(device, swap_chain_image_format, vk::ImageAspectFlagBits::eColor, 1);
+        swap_chain_image.createImageView(device, swap_chain_image_format, vk::ImageAspectFlagBits::eColor, 1);// COLOR_ATTACHMENT_CHAIN_OK: view-over-an-image-the-swapchain-owns
     }
 }
 

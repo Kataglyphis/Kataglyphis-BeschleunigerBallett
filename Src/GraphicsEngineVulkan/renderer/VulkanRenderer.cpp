@@ -71,6 +71,7 @@ import kataglyphis.vulkan.scene_ubo;
 import kataglyphis.vulkan.global_ubo;
 import kataglyphis.vulkan.swapchain;
 import kataglyphis.vulkan.window;
+import kataglyphis.vulkan.color_attachment;
 
 Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *window,
   Scene *scene,
@@ -1322,16 +1323,8 @@ void Kataglyphis::VulkanRenderer::createPathTracingAccumulationResources()
     pathTracingAccumulation.cleanUp();
 
     vk::Extent2D const extent = vulkanSwapChain.getSwapChainExtent();
-    pathTracingAccumulation.createImage(device,
-      extent.width,
-      extent.height,
-      1,
-      vk::Format::eR32G32B32A32Sfloat,
-      vk::ImageTiling::eOptimal,
-      vk::ImageUsageFlagBits::eStorage,
-      vk::MemoryPropertyFlagBits::eDeviceLocal);
-    pathTracingAccumulation.createImageView(
-      device, vk::Format::eR32G32B32A32Sfloat, vk::ImageAspectFlagBits::eColor, 1);
+    Kataglyphis::VulkanRendererInternals::createColorAttachment(
+      pathTracingAccumulation, device, extent, vk::Format::eR32G32B32A32Sfloat, vk::ImageUsageFlagBits::eStorage);
 
     // Storage images live in eGeneral for their whole lifetime (same pattern
     // as the clouds output texture).

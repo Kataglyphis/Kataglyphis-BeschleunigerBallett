@@ -6353,6 +6353,77 @@ TEST(BuildIntegrity, NoStageHandRollsTheDepthAttachmentChain)
                                   "this check too";
 }
 
+// Colour twin of NoStageHandRollsTheDepthAttachmentChain: every raster stage
+// used to spell out its own plain colour attachment creation chain by hand -
+// createImage(..., eColorAttachment, eDeviceLocal) -> createImageView(...,
+// eColor). Kataglyphis::VulkanRendererInternals::createColorAttachment
+// (renderer/ColorAttachment.ixx) is now the one place that chain is spelled
+// out. Non-plain colour views (storage/array/cube textures, and the swapchain
+// view over an image it does not own) are deliberate non-goals, allowlisted
+// via a "// COLOR_ATTACHMENT_CHAIN_OK: <marker>" trailing comment on the
+// exempted line rather than a bare file exemption, for the same reason the
+// depth gate anchors to a source marker instead of a line number.
+TEST(BuildIntegrity, NoStageHandRollsTheColorAttachmentChain)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src" / "GraphicsEngineVulkan";
+    ASSERT_TRUE(fs::exists(src_root)) << "missing " << src_root.string();
+
+    static const char *const kViewCall = "createImageView(";
+    static const char *const kColorAspect = "ImageAspectFlagBits::eColor";
+    static const char *const kMarkerPrefix = "COLOR_ATTACHMENT_CHAIN_OK: ";
+
+    // The helper's own definition is exempt from its own rule.
+    static const char *const kHelperFile = "Src/GraphicsEngineVulkan/renderer/ColorAttachment.ixx";
+
+    std::vector<std::string> violations;
+    bool marker_found = false;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        if (path.extension() != ".cpp" && path.extension() != ".ixx") { continue; }
+
+        const std::string relative_file = fs::relative(path, repo_root).generic_string();
+        if (relative_file == kHelperFile) { continue; }
+
+        std::ifstream file(path);
+        if (!file) { continue; }
+        std::string line;
+        std::size_t line_number = 0;
+        while (std::getline(file, line)) {
+            ++line_number;
+            if (line.find(kViewCall) == std::string::npos) { continue; }
+            if (line.find(kColorAspect) == std::string::npos) { continue; }
+            if (line.find(kMarkerPrefix) != std::string::npos) {
+                marker_found = true;
+                continue;
+            }
+            violations.push_back(relative_file + ":" + std::to_string(line_number) + ": " + line);
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " hand-rolled createImageView(..., vk::ImageAspectFlagBits::eColor, ...) call(s) found under "
+         "Src/GraphicsEngineVulkan/ - route plain colour attachment creation through "
+         "Kataglyphis::VulkanRendererInternals::createColorAttachment (renderer/ColorAttachment.ixx) instead, "
+         "or add a \"// COLOR_ATTACHMENT_CHAIN_OK: <marker>\" trailing comment on the line if the site is a "
+         "deliberate non-goal:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    EXPECT_TRUE(marker_found) << "expected to find at least one of the non-goal exemption markers "
+                                  "(\"// COLOR_ATTACHMENT_CHAIN_OK: ...\") in source - if all of them were "
+                                  "removed, delete this check too";
+}
+
 // CascadedShadowMap used to create TWO byte-identical image views over the
 // same shadow-map-array image: shadowMapArray's own sampled view (init(),
 // passed (format, eDepth, 1, e2DArray, numCascades)) and a second view built
