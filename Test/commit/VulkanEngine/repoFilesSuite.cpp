@@ -1,5 +1,5 @@
-// Pins the contract of RepoFiles.hpp's readFileLines(), which
-// buildIntegritySuite.cpp now relies on for every line-based source scan.
+// Pins the contract of RepoFiles.hpp's readFileLines() and readFileText(), which
+// buildIntegritySuite.cpp now relies on for every source scan.
 
 #include <filesystem>
 #include <fstream>
@@ -11,6 +11,7 @@
 #include "RepoFiles.hpp"
 
 using Kataglyphis::TestSupport::readFileLines;
+using Kataglyphis::TestSupport::readFileText;
 
 namespace {
 
@@ -42,6 +43,55 @@ TEST(RepoFilesUnit, ReadFileLinesNulloptForDirectoryPath)
     EXPECT_FALSE(readFileLines(dir).has_value());
 
     std::filesystem::remove(dir, ec);
+}
+
+// readFileText() shares readFileLines()' open path and so shared its bug: on
+// Linux a directory opens fine and only fails on read, which used to surface as
+// an empty-but-present string instead of std::nullopt.
+TEST(RepoFilesUnit, ReadFileTextNulloptForDirectoryPath)
+{
+    const auto dir = uniqueTempPath("kat_repofiles_text_dir");
+    std::error_code ec;
+    std::filesystem::create_directory(dir, ec);
+
+    EXPECT_FALSE(readFileText(dir).has_value());
+
+    std::filesystem::remove(dir, ec);
+}
+
+TEST(RepoFilesUnit, ReadFileTextNulloptForMissingPath)
+{
+    const auto missing = uniqueTempPath("kat_repofiles_text_missing.txt");
+    std::error_code ec;
+    std::filesystem::remove(missing, ec);
+
+    EXPECT_FALSE(readFileText(missing).has_value());
+}
+
+TEST(RepoFilesUnit, ReadFileTextEmptyFileReturnsEmptyStringNotNullopt)
+{
+    const auto path = uniqueTempPath("kat_repofiles_text_empty.txt");
+    writeFile(path, "");
+
+    const auto text = readFileText(path);
+    ASSERT_TRUE(text.has_value());
+    EXPECT_TRUE(text->empty());
+
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
+}
+
+TEST(RepoFilesUnit, ReadFileTextKeepsBytesVerbatim)
+{
+    const auto path = uniqueTempPath("kat_repofiles_text_verbatim.txt");
+    writeFile(path, "a\r\nb\n");
+
+    const auto text = readFileText(path);
+    ASSERT_TRUE(text.has_value());
+    EXPECT_EQ(*text, "a\r\nb\n") << "binary mode must not translate line endings on Windows";
+
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
 }
 
 TEST(RepoFilesUnit, ReadFileLinesEmptyFileReturnsEmptyVectorNotNullopt)

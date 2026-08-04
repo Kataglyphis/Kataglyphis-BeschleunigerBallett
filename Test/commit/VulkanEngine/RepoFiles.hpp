@@ -14,6 +14,7 @@
 #include <iterator>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <vector>
 
 namespace Kataglyphis::TestSupport {
@@ -42,15 +43,30 @@ inline std::filesystem::path slangRoot() { return repoRoot() / "Resources" / "Sh
 /// slangRoot()'s compiled-SPIR-V output directory.
 inline std::filesystem::path spirvRoot() { return slangRoot() / "build" / "spirv"; }
 
-/// Reads `path` in full, or std::nullopt if it cannot be opened or read.
+/// True only for a path that names a regular file. Both readers gate on this
+/// because open(2) on a directory *succeeds* on Linux - std::ifstream reports a
+/// good stream and then fails on the first read, so a directory would otherwise
+/// read as an empty file there while failing to open at all on Windows. Uses the
+/// std::error_code overload: this project builds with exceptions disabled, so
+/// the throwing form would terminate on a permission error instead of returning.
+inline bool isReadableRegularFile(const std::filesystem::path &path)
+{
+    std::error_code ec;
+    return std::filesystem::is_regular_file(path, ec);
+}
+
+/// Reads `path` in full, or std::nullopt if it is not a regular file or cannot
+/// be opened or read.
 inline std::optional<std::string> readFileText(const std::filesystem::path &path)
 {
+    if (!isReadableRegularFile(path)) { return std::nullopt; }
     std::ifstream file(path, std::ios::binary);
     if (!file) { return std::nullopt; }
     return std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 }
 
-/// Reads `path` line by line, or std::nullopt if it cannot be opened. An
+/// Reads `path` line by line, or std::nullopt if it is not a regular file or
+/// cannot be opened. An
 /// existing empty file returns an empty vector, distinct from std::nullopt -
 /// callers rely on that distinction. Opens in binary mode so behavior is
 /// identical on Linux and Windows, then strips one trailing '\r' from each
@@ -60,6 +76,7 @@ inline std::optional<std::string> readFileText(const std::filesystem::path &path
 /// differ by platform.
 inline std::optional<std::vector<std::string>> readFileLines(const std::filesystem::path &path)
 {
+    if (!isReadableRegularFile(path)) { return std::nullopt; }
     std::ifstream file(path, std::ios::binary);
     if (!file) { return std::nullopt; }
     std::vector<std::string> lines;
