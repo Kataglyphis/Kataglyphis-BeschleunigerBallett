@@ -107,19 +107,22 @@ ObjMaterial neutralMaterial()
 
 /// Maps a glTF material to the engine's ObjMaterial. Base-colour factor becomes
 /// diffuse (the dominant term this forward renderer reads) and its alpha becomes
-/// dissolve. metallic_factor carries through losslessly to ObjMaterial::metallic.
-/// roughness_factor is still lossy:
-/// it round-trips through a Phong shininess approximation (see `shininess`
-/// below) and material_roughness()'s sqrt(2/(shininess+2)) does not invert
-/// mix(128,1,roughness), so the shading paths' roughness is only an
-/// approximation of the source glTF value. Textures are incremented; textureID
-/// stays -1 here.
+/// dissolve. metallic_factor and roughness_factor both carry through losslessly
+/// to ObjMaterial::metallic and ObjMaterial::roughness. `shininess` (below) is
+/// still derived from roughness_factor and kept as the OBJ-only fallback path:
+/// OBJ has no roughness input, only `Ns`, so material_roughness() uses it only
+/// when ObjMaterial::roughness is the "no authored roughness" sentinel.
+/// Textures are incremented; textureID stays -1 here.
 ObjMaterial fromGltfMaterial(const cgltf_material &material)
 {
     glm::vec3 baseColor(0.8F);
     float baseAlpha = 1.0F;
     float roughness = 1.0F;
     float metallic = 0.0F;
+    // -1.0F: no authored roughness (matches ObjMaterial's sentinel default).
+    // Set below only when the material actually has a pbr_metallic_roughness
+    // block, so materials without one keep resolving through `shininess`.
+    float authoredRoughness = -1.0F;
     const char *materialName = material.name != nullptr ? material.name : "<unnamed>";
     if (material.has_pbr_metallic_roughness != 0) {
         const cgltf_pbr_metallic_roughness &pbr = material.pbr_metallic_roughness;
@@ -127,6 +130,7 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
         baseAlpha = pbr.base_color_factor[3];
         roughness = pbr.roughness_factor;
         metallic = glm::clamp(pbr.metallic_factor, 0.0F, 1.0F);
+        authoredRoughness = glm::clamp(pbr.roughness_factor, 0.0F, 1.0F);
 
         // Vertex has exactly one UV slot (bound to TEXCOORD_0); a base-colour
         // texture that names any other set is silently mis-sampled unless we
@@ -185,7 +189,8 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
       alphaCutoff,// glTF MASK cutoff (-1 = OPAQUE/BLEND)
       uvTransformRow0,// KHR_texture_transform T*R*S row 0
       uvTransformRow1,// KHR_texture_transform T*R*S row 1
-      metallic);// glTF pbrMetallicRoughness.metallicFactor
+      metallic,// glTF pbrMetallicRoughness.metallicFactor
+      authoredRoughness);// glTF pbrMetallicRoughness.roughnessFactor (-1 = not authored)
 }
 
 /// Reads a float attribute (2, 3 or 4 components) into `out`, one entry per

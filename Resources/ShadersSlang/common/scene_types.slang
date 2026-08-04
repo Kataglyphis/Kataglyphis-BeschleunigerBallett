@@ -41,6 +41,7 @@ struct ObjMaterial
     float3 uv_transform_row0;
     float3 uv_transform_row1;
     float metallic;
+    float roughness;
 };
 
 // Per-mesh object description (matches ObjectDescription.hpp). The uint64_t

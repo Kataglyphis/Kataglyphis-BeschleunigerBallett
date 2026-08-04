@@ -8910,3 +8910,372 @@ for tasks 2/3.
 
 ### C++ Vulkan engine
 
+## 2026-08-04 batch XII — planner (the last lossy glTF PBR factor: `roughness_factor` round-trips through a Phong shininess approximation whose inverse is not its inverse, and the loader's own comment says so; a node whose world transform has a negative determinant, whose triangles the spec says to re-wind and which this engine instead back-face-culls away; a default `ObjMaterial` that emits blue 0.1, harmless until emissive shipped three commits ago and now glowing on a model the golden suite renders; `Ke`, read by the C++ OBJ loader and dropped by the Rust converter that feeds the renderer which does support emissive; eleven `file:line` references in one doc, seven of them wrong)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]`). Batch XI's five tasks all shipped (`99ff68a5`, `01761e08`,
+`9deae53c`, `08ba468a`, `2cbf2719`). Every `file:line` below was read out of
+the tree this pass, at `3caefb7c`.
+
+**First, `roughness_factor` is the one glTF PBR factor still going through a
+lossy approximation, and `GltfLoader.cpp:110-115` documents its own defect:**
+"metallic_factor carries through losslessly to `ObjMaterial::metallic`.
+roughness_factor is still lossy: it round-trips through a Phong shininess
+approximation … and `material_roughness()`'s `sqrt(2/(shininess+2))` does not
+invert `mix(128,1,roughness)`". Both halves are in the tree.
+`GltfLoader.cpp:128` reads `pbr.roughness_factor` into a local, `:144` burns it
+into `shininess = mix(128, 1, clamp(roughness,0,1))`, and `ObjMaterial` has no
+roughness slot (`ObjMaterial.hpp:6-58`) — so `material_fetch.slang:30-33` is
+the only way back out, and it is a different curve. Concretely: glTF
+`roughnessFactor` 0.5 becomes shininess 64.5, which comes back as
+`sqrt(2/66.5)` = **0.173**, not 0.5; `roughnessFactor` 0.0 becomes shininess
+128 → 0.124, and `roughnessFactor` 1.0 becomes shininess 1 → 0.816. The error
+is largest exactly where it is most visible (the whole smooth half of the
+range collapses into 0.12–0.17). All three C++ shading paths read it —
+`rasterizer.slang:73`, `deferred.slang:82` (which is what lands in the
+G-buffer's `.r`), `raytrace.rchit.slang:110` — and the Rust twin does the
+exact thing instead: `forward.slang:386`, `roughness = clamp(material_factors.y
+* mrSample.g, 0.045, 1.0)` fed from `gltf_loader.rs:633`,
+`roughness_factor: pbr.roughness_factor()`. This is the same shape as the
+`metallic_factor` task that shipped yesterday (`9deae53c`), and the same fix
+applies. `gltfParseSuite.cpp` has assertions on metallic (`:651`, `:668`) and
+none on roughness.
+
+**Second, a glTF node with a negative-determinant transform renders
+inside-out.** The spec (3.7.4, Meshes): "When a mesh primitive uses any
+triangle-based topology and the determinant of the node's global transform is
+negative, the winding order of the triangle faces MUST be reversed." Both
+loaders bake the world matrix into vertex positions — `GltfLoader.cpp:310`,
+`world * vec4(positions[i],1)` — and neither ever computes that determinant
+(`grep -rn determinant Src/GraphicsEngineVulkan/scene/` returns nothing).
+Mirroring a node (a `scale` with an odd number of negative components, the
+standard way an exporter emits a left/right symmetric pair) therefore flips
+the geometric facing of every triangle it owns while leaving the index order
+alone. That is not cosmetic here: `MeshDrawRecorder.cpp:50-51` sets
+`eCullMode` per draw and single-sided meshes get `vk::CullModeFlagBits::eBack`,
+so a mirrored single-sided mesh has its *front* faces discarded and renders as
+the inside of itself (or vanishes). The normals do not paper over it — a
+provided `NORMAL` goes through `glm::inverseTranspose` (`:432`) and comes out
+correctly flipped, so shading and geometry disagree; and a primitive with no
+`NORMAL` gets `computeFlatNormals` (`:391`) derived from the *unreversed*
+winding, so its flat normals point the wrong way too. `emitTri`
+(`:349-357`) is the single choke point every topology already funnels through
+(`:358-377`), which makes this a two-line behaviour change.
+
+**Third, the default `ObjMaterial` emits blue.** `ObjMaterial.hpp:39` has
+`emission(0.0F, 0.0F, 0.10F)` in the default constructor — an arbitrary
+non-black value that was inert for as long as nothing shaded emission, and
+stopped being inert at `59eca71c` ("shade glTF `emissive_factor` in the forward
+and deferred raster paths"), which added `color += material.emission`
+(`rasterizer.slang:86`) and `g.outMaterial = float4(..., material.emission)`
+(`deferred.slang:82`). `ObjLoader.cpp:229` — `if (tol_materials.empty()) {
+materials.emplace_back(); }` — is the reachable path: an `.obj` with no
+`mtllib` gets exactly that default. Four bundled models take it
+(`Resources/Models/{buddha/buddha,bunny/bunny,StanfordDragon/dragon,ShadowTest/shadow_rig}.obj`),
+and **`shadow_rig.obj` is the golden suite's own fixture**
+(`goldenRenderSuite.cpp:265`, `SHADOW_RIG_MODEL`, added at `:1166`), so the
+constant is currently baked into rendered goldens. Everything that fills the
+struct from a file overwrites the field (`ObjLoader.cpp:196` from `mp->emission`,
+`GltfLoader.cpp:142` from `emissive_factor`, `neutralMaterial()` at `:102`
+passes an explicit zero), which is why nothing caught it: the default is
+reachable from exactly one line. The goldens are structural metrics, not
+stored images (`GoldenMetrics.hpp`), so no golden needs regenerating.
+
+**Fourth, `Ke` never survives the Rust OBJ→glTF conversion.** The C++ OBJ
+loader reads it (`ObjLoader.cpp:196`, `material.emission = mp->emission`) and
+now shades it. The Rust path converts `.obj` to glTF first, and that
+converter's material struct has three fields — `name`, `base_color`,
+`base_color_texture` (`obj_to_gltf.rs:29-35`) — with no emissive slot;
+`parse_mtl` (`:109-175`) matches `newmtl`/`Kd`/`d`/`map_Kd`/`Tr` and drops
+everything else through `_ => {}`; and the emitted material JSON
+(`:619-625`) writes only `baseColorFactor`, an optional `baseColorTexture`,
+`metallicFactor` and `roughnessFactor`. The receiving end is fully wired:
+`gltf_loader.rs:638-641` reads `emissive_factor` (with
+`KHR_materials_emissive_strength`), `forward.rs:1438-1441` packs it into the
+material uniform, `forward.slang:41` declares it. So an emissive `.mtl` glows
+in the Vulkan renderer and is black in the WebGPU one, for the sake of one
+missing `match` arm. `docs/model-loading.md` claims the two OBJ paths agree
+and does not record this.
+
+**Fifth, `docs/model-loading.md` is the only doc in the tree that cites
+`file:line`, and most of its citations are stale.** Eleven such references
+(`grep -rEon '[A-Za-z_/.-]+\.(cpp|ixx|hpp|rs):[0-9]+'` finds 11 there and 1
+everywhere else combined). Verified this pass: `GltfLoader.cpp:282` for
+`COLOR_0` is now `:294-301`; `GltfLoader.cpp:377` for the `computeFlatNormals`
+fallback is now `:391`; `GltfLoader.cpp:464-483` for the `imageSlot` map is now
+`:478-`; `ObjLoader.cpp:210-240` for `pathSlot` is now `:189-214`;
+`ObjLoader.cpp:333-340` for `attrib.colors` is now `:313-320`; and
+`ObjLoader.cpp:399-404` for its `computeFlatNormals` fallback points at
+nothing — that loader has no such call, only the comments at `:375`/`:380`.
+The doc also has no material-field mapping table at all, which is now a real
+gap: `ObjMaterial` grew five fields in eight days (`alphaCutoff`,
+`uv_transform_row0/1`, `metallic`, and `roughness` in task 1 of this batch) and
+the only place their `.mtl`/glTF provenance is written down is the header's own
+comments. This doc already carries a machine-checked marker
+(`<!-- max-texture-count: N -->`, `buildIntegritySuite.cpp:4957-5022`), so the
+enforcement pattern is in place.
+
+Ordering: task 2 and task 4 are independent of everything and of each other.
+Task 1 and task 3 both edit `Src/shared/scene/ObjMaterial.hpp` — do not run
+them concurrently; task 1 first (it also touches `scene_types.slang` and the
+`ObjMaterial_natural` offset fixture, which task 3 does not). Both are
+module-interface changes (`ObjMaterial.ixx` includes that header in its global
+module fragment), so both need `-FreshContainer`. Task 5 documents what tasks 1
+and 3 change, so land it last.
+
+### C++ Vulkan engine
+
+- [ ] **(M) Reverse triangle winding for glTF nodes whose world transform has a negative determinant** — a mirrored single-sided mesh is currently back-face-culled into invisibility, and its computed flat normals point the wrong way.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:420-442` — `visitNode`: where
+    `world` is built (`:426-431`) and `normalMatrix` derived (`:432`). This is
+    where the determinant is known.
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:260-418` —
+    `processPrimitive`: its signature (`:260-264`), the `emitTri` lambda
+    (`:349-357`), the three topology loops that call it (`:358-377`), the
+    `computeFlatNormals` call (`:391`), and the `MeshRange` push (`:410-417`).
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.ixx` — `processPrimitive`'s
+    declaration, which the new parameter must match.
+  - `Src/GraphicsEngineVulkan/renderer/MeshDrawRecorder.cpp:42-52` — the
+    per-draw `setCullMode`, `eBack` for every non-`doubleSided` mesh. This is
+    what makes the bug visible rather than academic.
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp:459-484` — the
+    `skin_node_gltf()` fixture (a node carrying a transform) and `:548-568`
+    (`UnskinnedNodeTransformStillApplies`), the closest existing pattern.
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp:334-406` — the strip/fan
+    triangulation tests, so the new test asserts winding the same way they
+    assert index order.
+
+  **Steps:**
+  1. In `visitNode`, after `world` is built, compute
+     `const bool mirrored = glm::determinant(glm::mat3(world)) < 0.0F;` and pass
+     it to `processPrimitive`. A skinned node keeps `world == identity`
+     (`:427`), so its determinant is +1 and it is never mirrored — that is
+     correct, the bind-pose vertices are unmirrored.
+  2. Add the `bool mirrored` parameter to `processPrimitive` in both the `.cpp`
+     and the `.ixx`.
+  3. In `emitTri`, after the existing bounds check, emit `base+a, base+c,
+     base+b` when `mirrored` and `base+a, base+b, base+c` otherwise. Doing it
+     in the lambda covers list, strip and fan in one place — do **not** edit the
+     three loops.
+  4. Comment it with the spec sentence (glTF 2.0 §3.7.4) and state the two
+     downstream consumers that depend on it: `MeshDrawRecorder.cpp:50-51`'s
+     `eBack` cull, and `computeFlatNormals` (`:391`), which derives its normal
+     from the emitted corner order and therefore must run *after* the reversal —
+     it already does.
+  5. Leave `normalMatrix` alone. `glm::inverseTranspose` already handles a
+     mirroring transform correctly for authored `NORMAL`s; this change makes
+     the geometry agree with it rather than the other way round.
+
+  **Test:** Add `GltfParseUnit.MirroredNodeReversesTriangleWinding` — a
+  one-triangle glTF (reuse the 36-byte POSITION buffer every fixture in that
+  file shares) on a node with `"scale": [-1, 1, 1]`, asserting
+  `getIndices()` is `{0, 2, 1}` rather than `{0, 1, 2}`. Add
+  `GltfParseUnit.UnmirroredNodeKeepsItsWinding` with `"scale": [1, 1, 1]` as the
+  control, so the determinant test cannot silently invert. A third assertion
+  worth having: with `"scale": [-1, -1, 1]` (determinant +1, a 180° rotation,
+  not a mirror) the winding must be **unchanged** — that is the case a naive
+  "any negative scale component" check gets wrong.
+
+  **Build:** `clangcl-debug` (no module-interface change here — `GltfLoader.ixx`
+  is a module interface, so use `-FreshContainer` anyway since step 2 edits it):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GltfParseUnit.*`.
+
+  **Context:** Same family as the strip/fan triangulation fix and the
+  skinned-node-transform fix already in this loader — a spec clause that was
+  never implemented, found by reading the spec against the code rather than by
+  a failing render. The Rust loader (`crates/webgpu_renderer/src/asset/gltf_loader.rs`,
+  `visit_node` at `:379-450`, `load_primitive` at `:455-`) bakes `world` the same
+  way and has the same gap, but it also carries skinning and animation, where
+  the determinant is not a load-time constant — that is a separate task, not
+  this one. Do not widen scope to it.
+
+- [ ] **(S) Make the default `ObjMaterial` emission black** — `emission(0, 0, 0.10)` was inert until `59eca71c` started shading emission; it now adds a constant blue glow to every `.obj` shipped without an `.mtl`, including the golden suite's own `shadow_rig.obj`.
+
+  **Files to read:**
+  - `Src/shared/scene/ObjMaterial.hpp:38-41` — the default constructor. Only the
+    `emission` initialiser changes.
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:228-229` — the one reachable
+    caller: `if (tol_materials.empty()) { materials.emplace_back(); }`.
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:192-198` — the populated path,
+    which overwrites `emission` from `mp->emission`, for contrast.
+  - `Resources/ShadersSlang/rasterizer/rasterizer.slang:84-86` and
+    `Resources/ShadersSlang/deferred/deferred.slang:78-82` — the two consumers
+    that make the default reachable on screen.
+  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.cpp:353-355` — the other
+    `ObjMaterial{}` site. `skybox.slang` reads no material, so this is a no-op
+    for it; say so in the commit rather than leaving it unexplained.
+  - `Test/commit/VulkanEngine/objParseSuite.cpp` — the CPU parse-suite harness
+    to add the new test to.
+
+  **Steps:**
+  1. Change `emission(0.0F, 0.0F, 0.10F)` to `emission(0.0F)` in the default
+     constructor.
+  2. Replace it with a comment stating what the default means now: no authored
+     `Ke`/`emissive_factor` means no emitted radiance, and the shading paths add
+     `material.emission` unattenuated after shadowing
+     (`rasterizer.slang:84-86`), so any non-zero default is a scene-wide glow
+     nothing authored.
+  3. Do not touch the file-populated paths (`ObjLoader.cpp:196`,
+     `GltfLoader.cpp:142`) or `neutralMaterial()` (`GltfLoader.cpp:99-106`,
+     which already passes an explicit zero) — they all overwrite the default
+     already.
+
+  **Test:** Add `ObjParseUnit.AnObjWithoutAnMtlGetsANonEmittingMaterial`:
+  parse a `.obj` written to a temp path with no `mtllib` line, assert
+  `getMaterials().size() == 1` and that its `emission` is exactly
+  `glm::vec3(0.0F)`. Red today (it is `(0,0,0.1)`). Follow the temp-file
+  fixture pattern already in `objParseSuite.cpp`.
+
+  **Build:** `clangcl-debug`, **with `-FreshContainer`** (module-interface
+  change via `ObjMaterial.ixx`):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=ObjParseUnit.*:GltfParseUnit.*`.
+
+  **Context:** Land **after** task 1 — both edit `ObjMaterial.hpp` and running
+  them concurrently guarantees a conflict. `shadow_rig.obj` is one of the four
+  `.mtl`-less bundled models and is the golden suite's fixture
+  (`goldenRenderSuite.cpp:265`), so this shifts pixels; the goldens are
+  structural metrics (`GoldenMetrics.hpp`, `swung_fraction` / `luminance_of`),
+  not stored images, so nothing needs regenerating — but re-run
+  `GoldenRender.*` on the host GPU after the build and report the result rather
+  than assuming. This is the same "a constant that was harmless until the
+  feature that reads it shipped" shape as the `roughness = 0.9` survivor in
+  batch XI.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(S) Carry `.mtl` `Ke` through the OBJ→glTF converter as `emissiveFactor`** — the C++ OBJ loader reads it and shades it; the Rust converter drops it on the floor even though the renderer downstream fully supports emissive.
+
+  **Files to read:**
+  - `crates/webgpu_renderer/src/asset/obj_to_gltf.rs:27-48` — the `ObjMaterial`
+    struct and its `Default` impl. Note the doc-comment style: each field names
+    the `.mtl` keyword it comes from.
+  - `crates/webgpu_renderer/src/asset/obj_to_gltf.rs:109-175` — `parse_mtl`, the
+    `match keyword` block. `Kd` (`:128-136`) is the exact shape to copy for a
+    three-float directive.
+  - `crates/webgpu_renderer/src/asset/obj_to_gltf.rs:599-628` — the
+    `materials_json` builder, including `finite_or` (`:607`) which is what keeps
+    a `NaN`/`inf` from emitting invalid JSON.
+  - `crates/webgpu_renderer/src/asset/gltf_loader.rs:634-641` — the receiving
+    end: `emissive_factor` plus `KHR_materials_emissive_strength`. No change
+    needed there; read it to confirm the wiring.
+  - `crates/webgpu_renderer/tests/obj_to_gltf.rs:229-263` —
+    `mtl_diffuse_and_opacity_become_base_color` and the `d`/`Tr` test. Same file,
+    same style, for the new test.
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:196` — the C++ side this
+    restores parity with.
+
+  **Steps:**
+  1. Add `pub emissive: [f32; 3]` to `ObjMaterial`, doc-commented as "`Ke`",
+     defaulting to `[0.0, 0.0, 0.0]` in the `Default` impl (glTF's own
+     `emissiveFactor` default, so a `.mtl` without `Ke` converts
+     byte-identically to today).
+  2. Add a `"Ke" if values.len() >= 3 =>` arm to `parse_mtl`, mirroring the `Kd`
+     arm's per-component `parse::<f32>()` loop. Do not clamp — glTF's
+     `emissiveFactor` is `[0,1]` per component, so clamp to `0.0..=1.0` and say
+     in a comment that values above 1 belong in
+     `KHR_materials_emissive_strength`, which this converter does not emit.
+  3. In `materials_json`, run the three components through `finite_or(_, 0.0)`
+     and append `, "emissiveFactor": [r, g, b]` to the material object — but
+     **only when the value is non-zero**, so every existing converted document
+     is byte-identical and the existing golden-JSON assertions in
+     `tests/obj_to_gltf.rs` do not move. Place it after the
+     `pbrMetallicRoughness` object, as a sibling key (it is a material-level
+     property, not a PBR one).
+  4. Update the module doc comment at `:1-20` (which lists what the converter
+     carries) and the "OBJ has no metallic/roughness" comment at `:608-611` so
+     the next reader does not conclude emissive is deliberately dropped too.
+
+  **Test:** Add two tests to `crates/webgpu_renderer/tests/obj_to_gltf.rs`:
+  `mtl_emissive_becomes_emissive_factor` — `parse_mtl("newmtl a\nKe 0.5 0.25
+  0.0\n")` yields `emissive == [0.5, 0.25, 0.0]`, and the converted document
+  contains `"emissiveFactor": [0.5, 0.25, 0]`; and
+  `mtl_without_ke_emits_no_emissive_factor` — a `Kd`-only material's JSON
+  contains no `emissiveFactor` key at all. Parse the emitted string with the
+  same approach the neighbouring tests use rather than comparing whole
+  documents.
+
+  **Build:** No C++ build. Verify with
+  `cargo check -p kataglyphis_webgpu_renderer`,
+  `cargo clippy -p kataglyphis_webgpu_renderer --all-targets -- -D warnings` and
+  `cargo fmt -p kataglyphis_webgpu_renderer -- --check`, run from
+  `ExternalLib/Kataglyphis-RustProjectTemplate`. **`cargo test` / `cargo build`
+  do not link on this host** (incomplete VC++ Build Tools install plus Git
+  Bash's `link.exe` shadowing MSVC's) — do not spend the session fighting it;
+  the crate's tests run in this repo's always-on Linux lane
+  (`Scripts/Linux/run-cargo-tests.sh`), so push and read CI for the test
+  signal. Say plainly in the report that the new tests were not executed
+  locally.
+
+  **Context:** Cross-renderer parity, the same class as the `COLOR_0`-alpha and
+  masked-shadow-UV fixes already shipped. The converter is the *only* thing
+  standing between an emissive `.mtl` and a renderer that already has emissive
+  textures, factors and `KHR_materials_emissive_strength` wired end to end. Do
+  not also try to map `Ns` to `roughnessFactor` in the same change — that is a
+  lossy heuristic with no spec-defined answer, unlike `Ke`, and it belongs in
+  its own task with its own argument.
+
+- [ ] **(S) (refactor) Replace `docs/model-loading.md`'s eleven `file:line` citations with symbol names, add the `ObjMaterial` field-mapping table, and gate the file against line numbers coming back** — seven of the eleven are already wrong, and the doc has no record of the five material fields added in the last eight days.
+
+  **Files to read:**
+  - `docs/model-loading.md:120-225` — every `file:line` citation lives in this
+    range (`:141`, `:145`, `:149`, `:154`, `:158-163`, `:171-174`).
+  - `Src/shared/scene/ObjMaterial.hpp` — the field list and each field's own
+    provenance comment. This is the source for the new table.
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:108-189` (`fromGltfMaterial`)
+    and `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:192-229` — the two
+    mappings the table describes.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:4957-5022` —
+    `MaxTextureCountInDocsMatchesTheHeader`, which already reads this same doc.
+    Copy its `repoRoot()` + `readFileText` structure.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:8072-8118` —
+    `DocsNameThisRepository`, the closest existing "this doc must not contain
+    X" gate.
+
+  **Steps:**
+  1. Rewrite every `Foo.cpp:NNN` reference as a symbol reference — the function
+     or variable name plus the file, e.g. "`GltfLoader.cpp`'s `imageSlot` map in
+     `parseCpu`" instead of "`GltfLoader.cpp:464-483`". Verify each claim
+     against the tree while doing it; several are not just off by lines
+     (`ObjLoader.cpp:399-404` cites a `computeFlatNormals` call that loader does
+     not make — it fills flat normals inline, see the comments at `:375`/`:380`,
+     so the sentence at `:171-174` claiming both loaders "fall back to the shared
+     `computeFlatNormals`" needs fixing, not renumbering).
+  2. Add a "Material fields and where they come from" table with one row per
+     `ObjMaterial` member: member, glTF source, `.mtl` source, and which shaders
+     read it. Fill the glTF column from `fromGltfMaterial` and the `.mtl` column
+     from `ObjLoader.cpp:192-198` (write "—" where a loader has no source, e.g.
+     `alphaCutoff`/`uv_transform_row*`/`metallic`/`roughness` for OBJ, `shininess`
+     for glTF once task 1 lands). Keep it to the fields that exist when you write
+     it — check the header, do not copy this list.
+  3. Add `TEST(BuildIntegrity, ModelLoadingDocCitesSymbolsNotLineNumbers)`:
+     read `docs/model-loading.md`, `std::regex_search` for
+     `[A-Za-z_/.-]+\.(cpp|ixx|hpp|rs):[0-9]+`, and fail listing every hit, with
+     a message saying line numbers rot within days and the doc must cite symbol
+     names. Do **not** widen the gate to all of `docs/` —
+     `docs/cpp-renderer-improvements.md` is a chronological log where a citation
+     pinned to a historical commit is legitimate; scope it to this one file and
+     say why in the comment.
+
+  **Test:** `BuildIntegrity.ModelLoadingDocCitesSymbolsNotLineNumbers` (new,
+  pure CPU — no GPU, no shader compile). It must be red against the doc as it
+  stands today and green after step 1; verify both directions rather than only
+  the green one.
+
+  **Build:** `clangcl-debug` (no `-FreshContainer` needed — test source only):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*Doc*`.
+
+  **Context:** Land **last** in this batch — the table in step 2 must describe
+  `ObjMaterial` after tasks 1 and 3, not before. This is the same "make the
+  invariant enforceable instead of re-fixing the drift" move as
+  `GoldenTestCountsInDocsMatchTheSuite`, `PathTracingDocMatchesTheGoldenSuite`
+  and `ShaderSharingDocMatchesTheManifestTargets`: the value is that the drift
+  cannot silently return, not the seven numbers corrected today. Per
+  `AGENTS.md`, each topic has exactly one home — link, do not restate; the table
+  belongs here because `model-loading.md` owns the loaders, and the shader-side
+  reads should be one column, not a duplicate of `shader-sharing.md`.
+

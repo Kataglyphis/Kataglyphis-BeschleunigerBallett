@@ -24,12 +24,17 @@ ObjMaterial fetch_material(ObjectDescription obj, uint primitiveID)
     return materials->m[materialIDs->i[primitiveID]];
 }
 
-// Beckmann-style shininess -> roughness mapping shared by every shading
-// path (forward, deferred, ray-traced). The 0.045 floor keeps the BRDF's
-// specular lobe from collapsing to a singularity at shininess extremes.
+// Roughness shared by every shading path (forward, deferred, ray-traced).
+// A non-negative material.roughness is an authored glTF roughnessFactor and
+// is used directly. A negative material.roughness (every OBJ material, which
+// has no roughness input, only Ns) falls back to the Beckmann-style
+// shininess -> roughness mapping. The 0.045 floor keeps the BRDF's specular
+// lobe from collapsing to a singularity at shininess/roughness extremes.
 float material_roughness(ObjMaterial material)
 {
-    return clamp(sqrt(2.0 / (material.shininess + 2.0)), 0.045, 1.0);
+    return material.roughness >= 0.0
+      ? clamp(material.roughness, 0.045, 1.0)
+      : clamp(sqrt(2.0 / (material.shininess + 2.0)), 0.045, 1.0);
 }
 
 // glTF alphaMode MASK test. ObjMaterial.hpp defines a negative alphaCutoff as

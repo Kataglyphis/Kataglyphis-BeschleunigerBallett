@@ -35,9 +35,17 @@ struct ObjMaterial
     // (dielectric), so pre-existing scenes are bit-unchanged.
     float metallic;
 
+    // glTF pbrMetallicRoughness.roughnessFactor [0,1]. A negative value means
+    // "no authored roughness - derive it from `shininess`" (same sentinel
+    // convention as alphaCutoff), which is what every OBJ material and every
+    // pre-existing scene gets, so they stay bit-unchanged. Trailing scalar,
+    // same scalar-layout rationale as alphaCutoff.
+    float roughness;
+
     ObjMaterial()
       : diffuse(0.7F, 0.7F, 0.7F), emission(0.0F, 0.0F, 0.10F), shininess(0.0F), dissolve(1.0F), textureID(-1),
-        alphaCutoff(-1.0F), uv_transform_row0(1.0F, 0.0F, 0.0F), uv_transform_row1(0.0F, 1.0F, 0.0F), metallic(0.0F)
+        alphaCutoff(-1.0F), uv_transform_row0(1.0F, 0.0F, 0.0F), uv_transform_row1(0.0F, 1.0F, 0.0F), metallic(0.0F),
+        roughness(-1.0F)
     {}
 
     ObjMaterial(glm::vec3 diffuse,
@@ -48,10 +56,11 @@ struct ObjMaterial
       float alphaCutoff = -1.0F,
       glm::vec3 uv_transform_row0 = glm::vec3(1.0F, 0.0F, 0.0F),
       glm::vec3 uv_transform_row1 = glm::vec3(0.0F, 1.0F, 0.0F),
-      float metallic = 0.0F)
+      float metallic = 0.0F,
+      float roughness = -1.0F)
       : diffuse(diffuse), emission(emission), shininess(shininess), dissolve(dissolve), textureID(textureID),
         alphaCutoff(alphaCutoff), uv_transform_row0(uv_transform_row0), uv_transform_row1(uv_transform_row1),
-        metallic(metallic)
+        metallic(metallic), roughness(roughness)
     {}
 
     int get_textureID() const { return textureID; }

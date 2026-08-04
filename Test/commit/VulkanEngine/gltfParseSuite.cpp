@@ -701,6 +701,80 @@ TEST(GltfParseUnit, MaterialWithoutPbrMetallicRoughnessHasZeroMetallic)
       << "a material without pbrMetallicRoughness must default to metallic 0.0";
 }
 
+TEST(GltfParseUnit, RoughnessFactorReachesTheMaterialUnchanged)
+{
+    // glTF pbrMetallicRoughness.roughnessFactor must carry through losslessly
+    // to ObjMaterial::roughness instead of only round-tripping through the
+    // shininess approximation - ObjMaterial used to have no roughness slot at
+    // all, so this is red without the ObjMaterial change.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [
+        { "pbrMetallicRoughness": { "baseColorFactor": [1,1,1,1], "roughnessFactor": 0.5 } }
+      ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 },
+        "material": 0
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_roughness_factor.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_GT(loader.getMaterials().size(), 0U);
+    EXPECT_NEAR(loader.getMaterials()[0].roughness, 0.5F, 1e-5F)
+      << "the material's roughnessFactor must reach ObjMaterial::roughness";
+}
+
+TEST(GltfParseUnit, MaterialWithoutPbrMetallicRoughnessHasNoAuthoredRoughness)
+{
+    // A material with no pbrMetallicRoughness block at all (cgltf reports
+    // has_pbr_metallic_roughness == 0) must keep ObjMaterial::roughness at its
+    // negative sentinel, so material_roughness() still falls back to the
+    // shininess-derived approximation for OBJ and no-pbr glTF materials.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [ {} ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 },
+        "material": 0
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_no_pbr_material_roughness.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_GT(loader.getMaterials().size(), 0U);
+    EXPECT_LT(loader.getMaterials()[0].roughness, 0.0F)
+      << "a material without pbrMetallicRoughness must have no authored roughness";
+}
+
 TEST(GltfParseUnit, MaskCardFixtureLoadsWithCutoutTextureAndCutoff)
 {
     // mask_card.gltf (a quad + a checkerboard-alpha cut-out PNG, alphaMode MASK /
