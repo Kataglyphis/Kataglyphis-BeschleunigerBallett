@@ -8736,24 +8736,3 @@ one that changes `ObjMaterial`'s field set, so land it before or after the
 other two but not interleaved, to keep the `buildIntegritySuite.cpp:978-991`
 offset-pin churn in a single commit.
 
-- [ ] **(S) Gate the emitted SPIR-V against implicit-LOD image instructions outside fragment entry points** — nothing in this repo validates the Slang output, which is why an illegal `.Sample()` sat in a compute kernel undetected.
-
-  **Files to read:**
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:857-877` (`spirv_literal_string`) and `:878-925` (`parse_spirv_member_offsets`) — the existing word-level SPIR-V walker to copy: header skip, `word_count = words[pos] >> 16`, `opcode = words[pos] & 0xFFFF`
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1124-1140` — the `spirv_root` recursive walk that enumerates every emitted `.spv`
-  - `Resources/ShadersSlang/shader-manifest.json` — the stage of every entry point, for the assertion's failure message
-
-  **Steps:**
-  1. Add a helper next to `parse_spirv_member_offsets` that walks a `.spv`'s words once and returns `{ execution_model, set_of_opcodes_present }`. `OpEntryPoint` is opcode `15`; its first operand word is the execution model (`0` Vertex, `4` Fragment, `5` GLCompute, `5313` RayGenerationKHR, `5314` IntersectionKHR, `5315` AnyHitKHR, `5316` ClosestHitKHR, `5317` MissKHR, `5318` CallableKHR). Every file this repo emits is a single-entry-point module, so the first `OpEntryPoint` is the only one — assert that rather than assuming it.
-  2. Define the implicit-LOD opcode set: `OpImageSampleImplicitLod` 87, `OpImageSampleDrefImplicitLod` 89, `OpImageSampleProjImplicitLod` 91, `OpImageSampleProjDrefImplicitLod` 93, and the sparse variants 305, 307, 309, 311. Do **not** include `OpImageQueryLod` (100) — it is legal in `GLCompute` as well as `Fragment`.
-  3. Add `TEST(BuildIntegrity, NoImplicitLodImageInstructionsOutsideFragmentShaders)`: walk `Resources/ShadersSlang/build/spirv/` and, for every module whose execution model is not `Fragment`, assert the intersection with the implicit-LOD set is empty. The failure message must name the `.spv`, its execution model, the offending opcode, and point at `raytrace.rchit.slang:75-77` as the fix pattern (`SampleLevel(..., 0.0)`).
-  4. Guard the test the way the existing SPIR-V tests are guarded: `GTEST_SKIP()` (or the file's existing equivalent) when `build/spirv/` is absent, so a tree that has not run the shader compile does not report a false failure.
-
-  **Test:** The test *is* the deliverable. Verify it both ways: it must be GREEN after the previous task lands, and you must confirm it goes RED on the pre-fix source — revert `path_tracing.slang:209` to `.Sample(...)`, recompile shaders, run the suite, see it fail naming `path_tracing.path_tracing_main.spv`, then restore. A gate that has never been observed failing is not a gate; record both observations in the commit message.
-
-  **Build:** `clangcl-debug`:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  Then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*` from the repo root.
-
-  **Context:** Deliberately hand-rolled rather than shelling out to `spirv-val`: the suite already parses SPIR-V words for the UBO offset pins, so this needs no new dependency, runs on every platform the CPU suites run on, and cannot be skipped by a missing SDK tool. It is narrower than `spirv-val` on purpose — one rule, precisely stated, with a message that tells you the fix. If a future change wants full validation, that is a separate task and probably belongs in the shader-compile script, not here.
-

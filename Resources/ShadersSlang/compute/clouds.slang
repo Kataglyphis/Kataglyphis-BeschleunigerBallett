@@ -35,7 +35,10 @@ struct Clouds
 float sample_density(float3 position, Clouds cloud)
 {
     float3 uvw128 = abs(fmod(position + cloud.offset, 256.0)) / 256.0;
-    float4 noise128 = noiseTexture.Sample(uvw128);
+    // Explicit LOD: this compute kernel has no fragment derivatives, so an
+    // implicit-LOD .Sample() fails SPIR-V validation. See
+    // raytracing/raytrace.rchit.slang:78-81.
+    float4 noise128 = noiseTexture.SampleLevel(uvw128, 0.0);
 
     float baseDensity = ((cloud.pillowness * 0.25)) * max(0.0, noise128.r - cloud.threshold) * cloud.scale
                       + ((1.0 - cloud.pillowness) * 0.125) * max(0.0, noise128.g - cloud.threshold) * cloud.scale
@@ -45,7 +48,7 @@ float sample_density(float3 position, Clouds cloud)
                 + max(0.0, noise128.a - cloud.threshold) * cloud.scale * cloud.cirrus_effect;
 
     float3 uvw32 = abs(fmod(position + cloud.offset, 64.0)) / 64.0;
-    float4 noise32 = noiseTexture.Sample(uvw32);
+    float4 noise32 = noiseTexture.SampleLevel(uvw32, 0.0);
 
     float fineDensity = 0.6 * max(0.0, noise32.r - cloud.threshold) * cloud.scale
                       + 0.15 * max(0.0, noise32.g - cloud.threshold) * cloud.scale

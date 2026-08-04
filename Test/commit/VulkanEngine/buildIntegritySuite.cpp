@@ -923,6 +923,89 @@ std::optional<std::map<std::string, std::map<std::string, uint32_t>>> parse_spir
     return result;
 }
 
+constexpr uint32_t kOpEntryPoint = 15;
+
+// SPIR-V's own opcodes for the implicit-LOD image sampling instructions -
+// automatic derivatives are only defined for Fragment shader invocations, so
+// any of these appearing in a module compiled for another execution model is
+// a spec violation the validator layers reject at pipeline-creation time.
+// Deliberately excludes OpImageQueryLod (100): that instruction is legal in
+// GLCompute as well as Fragment.
+const std::set<uint32_t> kImplicitLodImageOpcodes = {
+    87,//  OpImageSampleImplicitLod
+    89,//  OpImageSampleDrefImplicitLod
+    91,//  OpImageSampleProjImplicitLod
+    93,//  OpImageSampleProjDrefImplicitLod
+    305,// OpImageSparseSampleImplicitLod
+    307,// OpImageSparseSampleDrefImplicitLod
+    309,// OpImageSparseSampleProjImplicitLod
+    311,// OpImageSparseSampleProjDrefImplicitLod
+};
+
+// Human-readable name for a SPIR-V ExecutionModel operand, for test failure
+// messages only - not exhaustive, just the models this repo's shaders use.
+std::string spirv_execution_model_name(uint32_t model)
+{
+    switch (model) {
+        case 0: return "Vertex";
+        case 4: return "Fragment";
+        case 5: return "GLCompute";
+        case 5313: return "RayGenerationKHR";
+        case 5314: return "IntersectionKHR";
+        case 5315: return "AnyHitKHR";
+        case 5316: return "ClosestHitKHR";
+        case 5317: return "MissKHR";
+        case 5318: return "CallableKHR";
+        default: return "Unknown(" + std::to_string(model) + ")";
+    }
+}
+
+// One compiled module's execution model (from its single OpEntryPoint - every
+// .spv this repo emits has exactly one) and the set of distinct opcodes used
+// anywhere in the module. Returns std::nullopt on the same "not a SPIR-V
+// module" / "no entry point found" conditions as parse_spirv_member_offsets.
+struct SpirvEntryPointInfo
+{
+    uint32_t execution_model = 0;
+    std::set<uint32_t> opcodes_present;
+};
+
+std::optional<SpirvEntryPointInfo> parse_spirv_entry_point_info(const fs::path &spv_path)
+{
+    std::ifstream file(spv_path, std::ios::binary);
+    if (!file) { return std::nullopt; }
+    const std::vector<char> raw((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    if (raw.size() < kSpirvHeaderWordCount * sizeof(uint32_t) || raw.size() % sizeof(uint32_t) != 0) {
+        return std::nullopt;
+    }
+
+    std::vector<uint32_t> words(raw.size() / sizeof(uint32_t));
+    std::memcpy(words.data(), raw.data(), raw.size());
+    if (words[0] != kSpirvMagicNumber) { return std::nullopt; }
+
+    SpirvEntryPointInfo info;
+    bool found_entry_point = false;
+
+    std::size_t pos = kSpirvHeaderWordCount;
+    while (pos < words.size()) {
+        const uint32_t instruction_word = words[pos];
+        const uint32_t word_count = instruction_word >> 16U;
+        const uint32_t opcode = instruction_word & 0xFFFFU;
+        if (word_count == 0 || pos + word_count > words.size()) { break; }// malformed stream - stop, do not read OOB
+
+        if (opcode == kOpEntryPoint && !found_entry_point && word_count >= 2) {
+            info.execution_model = words[pos + 1];
+            found_entry_point = true;
+        }
+        info.opcodes_present.insert(opcode);
+
+        pos += word_count;
+    }
+
+    if (!found_entry_point) { return std::nullopt; }
+    return info;
+}
+
 // One shared-layout struct's contract: the struct name Slang emits it as in
 // compiled SPIR-V, paired with { emitted member name -> offsetof(HostType,
 // member) }. ArrayStride/MatrixStride are deliberately not checked here -
@@ -1194,6 +1277,55 @@ TEST(BuildIntegrity, CompiledShadersAreNotOlderThanSharedIncludes)
     EXPECT_TRUE(stale.empty()) << stale.size()
                                << " SPIR-V binaries are older than the newest shared Slang import under "
                                   "common/; editing a shared module must rebuild its dependents.";
+}
+
+// Nothing in this repo validated the Slang compiler's output against the
+// SPIR-V spec itself - an illegal implicit-LOD .Sample() call sat in
+// path_tracing.slang's compute kernel (execution model GLCompute) until it
+// device-lost the GPU, because implicit LOD needs an automatic derivative,
+// which only exists for Fragment shader invocations. This walks every
+// compiled .spv the same way CompiledShadersAreNotOlderThanTheirSources does
+// and asserts none of them use an implicit-LOD image instruction outside a
+// Fragment-stage module.
+TEST(BuildIntegrity, NoImplicitLodImageInstructionsOutsideFragmentShaders)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path slang_root = repo_root / "Resources" / "ShadersSlang";
+    const fs::path spirv_root = slang_root / "build" / "spirv";
+    if (!fs::exists(spirv_root)) { GTEST_SKIP() << "missing " << spirv_root.string() << " - shaders have not been compiled"; }
+
+    constexpr uint32_t kFragmentExecutionModel = 4;
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(spirv_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &spv = it->path();
+        if (!it->is_regular_file(error) || spv.extension() != ".spv") { continue; }
+
+        const auto info = parse_spirv_entry_point_info(spv);
+        if (!info.has_value() || info->execution_model == kFragmentExecutionModel) { continue; }
+
+        for (const uint32_t opcode : kImplicitLodImageOpcodes) {
+            if (!info->opcodes_present.contains(opcode)) { continue; }
+            violations.push_back(fs::relative(spv, repo_root).string() + " (execution model " +
+              spirv_execution_model_name(info->execution_model) + ", opcode " + std::to_string(opcode) + ")");
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " compiled .spv use an implicit-LOD image instruction outside a Fragment shader - implicit LOD needs an "
+         "automatic derivative, which is only defined for Fragment shader invocations. Use the explicit-LOD form "
+         "instead (see raytrace.rchit.slang:75-77's SampleLevel(..., 0.0) for the fix pattern). Offending "
+         "module(s):"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
 }
 
 // VulkanBuffer and VulkanImage are documented in AGENTS.md as "move-only with
