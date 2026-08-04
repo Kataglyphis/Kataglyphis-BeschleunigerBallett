@@ -8179,6 +8179,338 @@ here does.
 
 ## 2026-08-04 batch IV — planner (refactor: a formatting-drift figure quoted three times, all three wrong and two of them contradicting each other, behind a build check that reports and never fails; the cloud half of the GUI→UBO marshalling, where one of four `vec4`s goes through the shared header and three are packed inline against a shader nothing pins them to; the depth attachment, created by the same seven-argument chain in three raster stages)
 
+## 2026-08-04 batch V — planner (the one local runner that reports a broken run as a clean one and skips five of seven fuzz targets; the alpha half of the `baseColorFactor` fix that shipped yesterday, where a factor-only MASK material never discards; a base-colour texture that declares `TEXCOORD_1` and is silently sampled with UV0; the model×mesh draw walk written twice with the same flat-index invariant; the camera/light half of the GUI→SceneUBO marshalling, where three of four `.w` slots carry values no shader reads)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 15
+`- [b]` across the whole file). Every `file:line` below was read out of the
+tree this pass.
+
+**Host GPU golden verification is still blocked over RDP** (see the `- [b]`
+entry near the end of this file), so every task here is accepted without an
+adapter: tasks 1 and 3 are script/loader changes with a `buildIntegritySuite`
+grep gate, task 2's acceptance is a CPU parse assertion plus a gate (its
+*pixels* want a golden re-run once RDP clears — called out in the entry, not
+hidden), tasks 4 and 5 are pure refactors whose acceptance is the existing
+CPU suites staying green plus a new gate.
+
+- [ ] **(M) Carry glTF's `baseColorFactor` alpha into the material and apply it in the MASK test** — the alpha half of the fix that shipped as `1a839cad`; today an `alphaMode: MASK` material with no base-colour texture can never discard, and one with a texture ignores the factor's alpha entirely.
+
+  `1a839cad` made all four shading paths multiply the sampled base colour by
+  `material.diffuse` (the glTF `baseColorFactor.rgb`). The **fourth component
+  was left behind on both sides**:
+
+  - `GltfLoader.cpp:117` reads `pbr.base_color_factor[0..2]` only;
+    `:149` passes a literal `1.0F` for `dissolve`. So
+    `baseColorFactor[3]` never leaves the loader.
+  - `ObjMaterial` (`Src/shared/scene/ObjMaterial.hpp:15`) already has the slot:
+    `dissolve`, filled from the OBJ `d`/`Tr` opacity at `ObjLoader.cpp:199`,
+    laid out at offset 68 (`pushConstantSuite.cpp:157`) and mirrored in
+    `common/scene_types.slang:42`. **No shader reads it** (verified by grep
+    across `Resources/ShadersSlang/`), so it reaches the GPU and is discarded.
+  - `alpha_masked_out` (`common/material_fetch.slang:36-39`) tests only the
+    *sampled* alpha, and every call site is inside a `textureID >= 0` branch:
+    `rasterizer/rasterizer.slang:62`, `deferred/deferred.slang:61`,
+    `rasterizer/shadows/shadow_map.slang:46-50` (the last one guards on
+    `alphaCutoff >= 0.0 && material.textureID >= 0` explicitly).
+
+  glTF 2.0 defines the alpha the MASK test compares as
+  `baseColorFactor.a * baseColorTexture.a`, with the texture term defaulting to
+  1 when absent. So: a MASK material that encodes its cut-out purely in the
+  factor renders fully opaque (and casts a full shadow), and a textured MASK
+  material whose factor dims alpha discards too little. The Rust twin gets this
+  right — `gltf_loader.rs:607` keeps `AlphaMode::Mask(cutoff)` alongside a
+  `base_color` factor that `forward.slang:393` multiplies as a `float4`. This
+  is therefore both a spec bug in the C++ engine and a cross-renderer
+  divergence `docs/shader-sharing.md` does not record.
+
+  Ray tracing and path tracing are **out of scope**: `raytrace.rchit.slang` and
+  `path_tracing.slang` import `base_color` but not `material_fetch` and run no
+  alpha test at all (they would need an any-hit shader). Say so in the change;
+  do not bolt a discard into a closest-hit shader.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:111-155` — `fromGltfMaterial`
+  - `Src/shared/scene/ObjMaterial.hpp` — the `dissolve` slot and its layout comment
+  - `Resources/ShadersSlang/common/material_fetch.slang:33-39` — `alpha_masked_out`
+  - `Resources/ShadersSlang/rasterizer/rasterizer.slang:57-68`,
+    `deferred/deferred.slang:56-67`,
+    `rasterizer/shadows/shadow_map.slang:39-52` — the three call sites
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp` — the parse-assertion pattern
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:2104`
+    (`RasterShadersShareOneAlphaCutoffRule`) and `:2152`
+    (`EveryBaseColourSampleIsScaledByTheMaterialFactor`) — the two gates this
+    change extends rather than duplicates
+
+  **Steps:**
+  1. `GltfLoader.cpp`: read `pbr.base_color_factor[3]` into a local
+     `baseAlpha` (default `1.0F` when `has_pbr_metallic_roughness == 0`) and
+     pass it as the `dissolve` argument at `:149` instead of the literal
+     `1.0F`. Leave `defaultMaterial()` at `:101` on `1.0F` — an absent material
+     is opaque. Update the doc comment at `:106-110` so it stops implying only
+     the rgb is carried.
+  2. `material_fetch.slang`: change `alpha_masked_out` to compare
+     `sampledAlpha * material.dissolve` against `material.alphaCutoff`. Keep
+     the `alphaCutoff >= 0.0` guard as the first term. OBJ is bit-unchanged:
+     its materials always have `alphaCutoff == -1`, so the new factor is never
+     reached. Extend the comment at `:33-35` with the glTF product rule.
+  3. Add the untextured branch to all three raster paths: where the shader
+     currently only alpha-tests inside `textureID >= 0`, also discard when
+     `alphaCutoff >= 0` and there is no texture — `alpha_masked_out(material,
+     1.0)` expresses exactly the spec's "texture term defaults to 1", so use
+     that rather than a second inline comparison.
+     - `rasterizer.slang`: add the test in the `else` branch at `:64-67`.
+     - `deferred.slang`: add it in the `else` branch at `:65-68`, before
+       `texColor` is assigned.
+     - `shadow_map.slang`: drop `&& material.textureID >= 0` from the `:46`
+       guard and branch inside on whether a texture exists, so an untextured
+       MASK caster stops casting a full shadow. Keep the comment at `:45`
+       accurate — it currently says "Only textured MASK materials alpha-test".
+  4. Recompile the SPIR-V:
+     `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`.
+     **No WGSL regeneration is needed** — `material_fetch.slang` is imported
+     only by `rasterizer`, `deferred` and `shadow_map`, all `spirv`-only rows
+     in `shader-manifest.json` (`forward.slang` imports `brdf` only). Confirm
+     `git -C ExternalLib/Kataglyphis-RustProjectTemplate status` stays clean.
+  5. Re-run the shader-staleness gates before trusting anything else — see the
+     warning at the top of this file about measuring against stale SPIR-V.
+
+  **Test:** Add `GltfParseUnit.BaseColourFactorAlphaReachesTheMaterial` to
+  `gltfParseSuite.cpp`, asserting that a glTF material with
+  `baseColorFactor = [1,1,1,0.25]` parses to `ObjMaterial::dissolve == 0.25F`
+  (and that an OPAQUE material without the factor still yields `1.0F`). Extend
+  `BuildIntegrity.RasterShadersShareOneAlphaCutoffRule` so it asserts every
+  raster shader that calls `alpha_masked_out` calls it on **both** sides of its
+  `textureID >= 0` branch, and that `alpha_masked_out`'s body multiplies by
+  `material.dissolve` — that is the gate that stops the untextured branch
+  being dropped again. Both are CPU-only.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='GltfParseUnit.*:BuildIntegrity.*'`
+  from the repo root.
+
+  **Context:** No golden moves on this today — no asset in the tree ships a
+  factor-only MASK material, which is exactly why it went unnoticed alongside
+  the rgb fix. Once host GPU verification is available again (the RDP `- [b]`
+  below), re-run `GoldenRender.*` to confirm the textured MASK goldens
+  (`MaskAlpha*`) are unchanged: the textured path only changes where a factor
+  alpha < 1 is present, and the tree's MASK materials have `a == 1`.
+
+- [ ] **(S) Warn when a glTF base-colour texture declares `TEXCOORD_1`, instead of silently sampling UV0** — the Rust loader already does; the C++ loader reads UV set 0 unconditionally and never looks at the texture view's `texcoord`.
+
+  `GltfLoader.cpp:251-253` takes `cgltf_attribute_type_texcoord` only when
+  `attribute->index == 0`, and `Vertex` has exactly one UV slot, so UV1 cannot
+  be represented. That part is a deliberate limitation. What is **not**
+  deliberate is that nothing ever reads
+  `material.pbr_metallic_roughness.base_color_texture.texcoord`: a glTF whose
+  base-colour texture points at TEXCOORD_1 (the standard lightmap/detail-set
+  pattern) is textured with the wrong UVs and the log says nothing. The Rust
+  twin handles the same case explicitly — `gltf_loader.rs:188-199`'s
+  `uv_set_bit` supports sets 0 and 1 and warns by name for anything else
+  ("…but only TEXCOORD_0/1 are supported; sampling with UV0"). Same class:
+  `fromGltfMaterial:130-140` reads `transform.scale`/`transform.offset` from
+  `KHR_texture_transform` and ignores `transform.rotation`, again silently,
+  and `cgltf_texture_transform` also carries its own `has_texcoord`/`texcoord`
+  override that nothing inspects.
+
+  Scope is a diagnostic, not a feature: do **not** add a second UV channel to
+  `Vertex` here (that is a layout change touching the BLAS, the vertex input
+  and both loaders).
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:106-155` (`fromGltfMaterial`)
+    and `:242-264` (the attribute switch)
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/asset/gltf_loader.rs:188-199`
+    — `uv_set_bit`, the wording to mirror
+  - `Test/commit/VulkanEngine/gltfParseSuite.cpp` — parse-assertion pattern
+  - `docs/shader-sharing.md` — where the two renderers' divergences are recorded
+
+  **Steps:**
+  1. In `fromGltfMaterial`, read
+     `material.pbr_metallic_roughness.base_color_texture.texcoord` (guarded by
+     `has_pbr_metallic_roughness`) and, when it is non-zero,
+     `spdlog::warn` once per material naming the set and stating that UV0 is
+     used instead — mirror the Rust wording so a reader grepping either repo
+     finds both.
+  2. Same for `KHR_texture_transform`: when `transform.has_texcoord != 0 &&
+     transform.texcoord != 0`, and when `transform.rotation != 0.0F`, warn that
+     the value is not applied. Keep the existing scale/offset behaviour byte
+     for byte.
+  3. Extract the "which UV set does this texture view want" decision into a
+     small free function next to `fromGltfMaterial` (returning the set index
+     and whether it was supported), so the warning has one definition and the
+     test has something to call without a device.
+  4. Record the divergence in `docs/shader-sharing.md` alongside the existing
+     entries — one line, linking to both loaders.
+
+  **Test:** Add `GltfParseUnit.NonZeroBaseColourTexCoordSetIsReported` to
+  `gltfParseSuite.cpp`, asserting the helper from step 3 reports set 1 as
+  unsupported and set 0 as supported. CPU only — no device, no adapter.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='GltfParseUnit.*'`.
+
+  **Context:** Every other "the two renderers disagree about glTF" finding in
+  this file turned into either a fix or a recorded divergence; this one is
+  currently neither. A warning is the honest state of the engine and costs
+  nothing at runtime for the common single-UV asset.
+
+- [ ] **(M) (refactor) Give the per-frame model×mesh draw walk one definition** — `recordSceneMeshDraws` and `CascadedShadowMap::recordCommands` implement the same walk twice, including the flat-mesh-index invariant that decides which material each draw fetches.
+
+  Read side by side, `MeshDrawRecorder.cpp:30-82` and
+  `CascadedShadowMap.cpp:471-513` are the same loop:
+
+  | | `MeshDrawRecorder.cpp` | `CascadedShadowMap.cpp` |
+  | --- | --- | --- |
+  | flat index bookkeeping | `:30`, `:43` | `:471`, `:476` |
+  | `findMesh` + `unknownBounds` fallback | `:50-52` (with a 4-line comment) | `:483-485` (the **same** 4-line comment, verbatim) |
+  | `transformAABB` + cull decision | `:57-60` | `:486-496` |
+  | considered/drawn counters | `:23`, `:44`, `:80` | `:406-407`, `:477`, `:497` |
+  | bind VB, bind IB, `drawIndexed` | `:72-79` | `:506-511` |
+
+  The invariant that matters is stated twice, in two comments that already
+  paraphrase each other (`:25-29` and `:465-470`): **`objectIndex` is the
+  running flat mesh index and must advance for culled meshes too**, because it
+  indexes the per-mesh object-description buffer. If the two loops ever drift
+  on that, the shadow pass's fragment alpha test fetches a different material
+  than the forward pass does for the same mesh — a silent, per-mesh wrong-cutout
+  bug with no test that would catch it.
+
+  What genuinely differs, and must stay per-caller: the push-constant type
+  (`PushConstantRasterizer` vs `ShadowPushConstants` + the inverse-transpose
+  rows `MeshDrawRecorder.cpp:36-40` computes and the shadow pass does not), the
+  dynamic `setCullMode` for `doubleSided` (`:69-70`, forward only — the shadow
+  pipeline is built `eCullMode = eNone`), and the cull predicate (`isVisible`
+  against one frustum vs `isVisibleAsShadowCaster` unioned over the cascades).
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/MeshDrawRecorder.cpp` (whole file, 85 lines)
+    and `MeshDrawRecorder.ixx`
+  - `Src/GraphicsEngineVulkan/scene/light/directional_light/CascadedShadowMap.cpp:404-516`
+  - `Src/GraphicsEngineVulkan/scene/Scene.ixx:37-140` — `findModel`/`findMesh`,
+    the "one definition" precedent this follows
+  - `Src/GraphicsEngineVulkan/scene/Frustum.ixx` — `isVisible` /
+    `isVisibleAsShadowCaster` / `transformAABB`
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:6647`
+    (`OnlyTheRendererCreatesACommandPool`) — the shape of a "exactly one place
+    does X" gate
+
+  **Steps:**
+  1. In `MeshDrawRecorder.ixx`, export a `SceneMeshVisit` aggregate
+     (`uint32_t modelIndex, meshIndex, flatMeshIndex; Mesh *mesh; glm::mat4
+     modelMatrix; AABB worldBounds;`) and a
+     `forEachSceneMesh(Scene *scene, auto &&visit)` that owns the walk: the
+     model loop, `getModelMatrix`, the mesh loop, `findMesh`, the
+     `unknownBounds` fallback, `transformAABB`, and the flat-index increment
+     that happens for **every** mesh. The callback returns `bool drawn` so the
+     caller keeps ownership of the cull decision and the counters stay in one
+     place.
+  2. Rewrite `recordSceneMeshDraws` over it: the callback keeps the
+     inverse-transpose computation (hoist it so it still runs once per model,
+     not once per mesh — use `visit.meshIndex == 0` or cache the last
+     `modelIndex`), the `isVisible` test, the push, `setCullMode`, the binds
+     and the draw. `MeshDrawStats` is filled from the callback's return value.
+  3. Rewrite `CascadedShadowMap::recordCommands`'s inner loop over the same
+     helper, keeping the cascade-union `isVisibleAsShadowCaster` test and
+     `castersDrawn`/`castersConsidered`. Delete the duplicated
+     `unknownBounds`/`findMesh` comment there and link to the helper instead.
+  4. Confirm behaviour is unchanged by reading, not by guessing: the flat index
+     must still advance for culled meshes in both callers, and the shadow pass
+     must still push before binding.
+
+  **Test:** Add `BuildIntegrity.OnlyOneWalkFlattensSceneMeshesForDrawing` to
+  `buildIntegritySuite.cpp`: grep `Src/GraphicsEngineVulkan/` for
+  `getMeshCount(` inside a loop over `getModelCount(` and assert exactly one
+  source file (`MeshDrawRecorder.cpp`) contains that pair — same
+  "one rule, one definition" gate the depth-attachment, framebuffer and
+  render-pass helpers already carry. CPU only.
+
+  **Build:** `clangcl-debug`, with `-FreshContainer` because
+  `MeshDrawRecorder.ixx` is a module interface:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+  Then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root. Once the
+  RDP blocker below clears, `GoldenRender.FrustumCull*` and the shadow goldens
+  are the behavioural check.
+
+  **Context:** This is the same family as the eleven create/destroy helpers
+  already extracted (see `docs/cpp-renderer-improvements.md`) — the payoff here
+  is that the flat-index invariant stops being a comment repeated in two files
+  and becomes a single loop. Do not try to also unify the push constants or the
+  cull predicate; those are genuinely different and merging them is how a
+  helper becomes a config struct nobody can read.
+
+- [ ] **(S) (refactor) Give the camera/light half of the GUI→SceneUBO marshalling one testable definition** — the cloud half moved into `SceneUboMarshal.hpp` in `a533e479`; the camera and light fields are still packed inline in `updateUniforms`, and three of their four `.w` slots carry values no shader reads.
+
+  `VulkanRenderer::updateUniforms` (`VulkanRenderer.cpp:174-244`) now routes
+  cascades (`fillSceneUboCascades`) and clouds (`fillSceneUboClouds`) through
+  `common/SceneUboMarshal.hpp`, but `:187-203` still packs four `vec4`s by
+  hand, each with a different `.w` convention and no test:
+
+  | write | `.w` | read by a shader? |
+  | --- | --- | --- |
+  | `sceneUBO.view_dir` (`:187`) | `1.0F` filler | `.xyz` only — `common/cascaded_shadow.slang:22` |
+  | `sceneUBO.dirLight.direction` (`:192`) | `1.0F` filler | `.xyz` only |
+  | `sceneUBO.dirLight.color` (`:194-197`) | `directional_light_radiance` | **yes** — `rasterizer.slang:73` reads it as `lightIntensity` |
+  | `sceneUBO.cam_pos` (`:199`) | `camera_data->get_fov()` | **no** — every read is `.xyz` (`cascaded_shadow.slang:22`, `clouds.slang:126`, `deferred.slang:121`, `rasterizer.slang:55`, `raytrace.rchit.slang:87`) |
+
+  So the one `.w` that carries meaning (radiance) is the one with no test and
+  no gate, and `cam_pos.w` ships a field-of-view to the GPU that nothing has
+  ever sampled. `02d7aa38` renamed the radiance member and relabelled its
+  slider precisely because this packing is hard to read from either side.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:174-244`
+  - `Src/GraphicsEngineVulkan/common/SceneUboMarshal.hpp` — `fillSceneUboClouds`
+    (`:79-95`) is the shape to copy, including the "takes plain scalars, not
+    `GUISceneSharedVars`" constraint at `:76-78` (global module fragment
+    headers cannot name a module-exported type)
+  - `Src/GraphicsEngineVulkan/common/LightDirection.hpp` — `normalizedLightDirection`,
+    already extracted and tested
+  - `Test/commit/VulkanEngine/sceneUboMarshalSuite.cpp` — the suite to extend
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:5198`
+    (`EverySceneUboFieldIsReadByAShader`) — the gate that is per-field and does
+    not reach `.w` components
+
+  **Steps:**
+  1. Add `fillSceneUboCamera(SceneUBO&, glm::vec3 position, glm::vec3 direction,
+     float fovDegrees)` and `fillSceneUboDirectionalLight(SceneUBO&, glm::vec3
+     rawDirection, glm::vec3 color, float radiance)` to `SceneUboMarshal.hpp`,
+     taking plain scalars/`glm` types only. The light helper calls
+     `normalizedLightDirection` itself so the normalization has one caller.
+     Document each `.w` convention in a comment directly above the write, the
+     way `fillSceneUboClouds` documents the cloud rows.
+  2. Replace `VulkanRenderer.cpp:187-199` with the two calls. Leave
+     `clampPcfRadius` and `cascadedShadowIntensity` (`:202-203`) where they are.
+  3. Decide `cam_pos.w` deliberately rather than by inertia: either keep the
+     fov and say in the comment that it is reserved for a shader that does not
+     read it yet, or write `1.0F` like the other filler slots. Prefer keeping
+     it **only** if you also add it to the gate in step 5; otherwise write
+     `1.0F` and note in the commit that no shader regressed (grep is in the
+     table above).
+
+  **Test:** Extend `sceneUboMarshalSuite.cpp` with
+  `SceneUboMarshal.CameraFillsPositionAndDirection` and
+  `SceneUboMarshal.DirectionalLightPacksRadianceInColorW` — the latter is the
+  one that matters: assert `ubo.dirLight.color.w == radiance` and that
+  `ubo.dirLight.direction.xyz` is unit length for a non-normalized input
+  (including the zero-vector fallback `normalizedLightDirection` already
+  defines). Then extend
+  `BuildIntegrity.EverySceneUboFieldIsReadByAShader` — or add a sibling — to
+  assert that any `.w` slot the host writes with a non-constant value is read
+  by at least one `.slang` source, so a future "pack it in the spare
+  component" write cannot go unread. CPU only.
+
+  **Build:** `clangcl-debug`. Run:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
+  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter='SceneUboMarshal.*:BuildIntegrity.*'`.
+
+  **Context:** `SceneUboMarshal.hpp` exists because per-frame UBO packing kept
+  drifting from the shaders that unpack it (see the cloud entry in the
+  2026-08-04 batch IV header). This finishes the move; after it,
+  `updateUniforms` is call sites plus the cascade computation, and every packed
+  `.w` has a named definition and a test.
+
 ## 2026-08-02 — reuse-sweep residuals (the sweep itself shipped)
 
 The 2026-08-02 reuse sweep landed: WindowsCMake/Config/Formatting/WebDav/

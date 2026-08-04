@@ -783,6 +783,53 @@ std::optional<std::vector<std::string>> parse_linux_ci_fuzz_targets(const fs::pa
     return std::vector<std::string>{};
 }
 
+// Parses the fuzz-executable names out of run_clangcl_debug.ps1's local
+// fuzz-run loop: a PowerShell `foreach ($fuzzExecutable in @('a.exe', ...))`
+// loop. Anchored the same way as parse_ci_fuzz_targets, then strips the
+// trailing ".exe" so the names compare directly against
+// kataglyphis_add_fuzz_test(<name> ...) declarations. Returns std::nullopt
+// only if the file cannot be opened; an empty vector means the anchor text
+// itself was not found, which the caller must fail loudly on rather than
+// skip.
+std::optional<std::vector<std::string>> parse_local_runner_fuzz_targets(const fs::path &script_path)
+{
+    std::ifstream file(script_path);
+    if (!file) { return std::nullopt; }
+
+    static const std::string kAnchor = "foreach ($fuzzExecutable in @(";
+    static const std::string kCloser = "))";
+    static const std::string kExeSuffix = ".exe";
+
+    std::string line;
+    while (std::getline(file, line)) {
+        const std::size_t anchor_pos = line.find(kAnchor);
+        if (anchor_pos == std::string::npos) { continue; }
+
+        const std::size_t list_start = anchor_pos + kAnchor.size();
+        const std::size_t closer_pos = line.find(kCloser, list_start);
+        if (closer_pos == std::string::npos) { break; }
+
+        const std::string list = line.substr(list_start, closer_pos - list_start);
+        std::vector<std::string> targets;
+        std::size_t pos = 0;
+        while (pos < list.size()) {
+            const std::size_t open_quote = list.find('\'', pos);
+            if (open_quote == std::string::npos) { break; }
+            const std::size_t close_quote = list.find('\'', open_quote + 1);
+            if (close_quote == std::string::npos) { break; }
+            std::string entry = list.substr(open_quote + 1, close_quote - open_quote - 1);
+            if (entry.size() > kExeSuffix.size()
+                && entry.compare(entry.size() - kExeSuffix.size(), kExeSuffix.size(), kExeSuffix) == 0) {
+                entry.erase(entry.size() - kExeSuffix.size());
+            }
+            targets.push_back(entry);
+            pos = close_quote + 1;
+        }
+        return targets;
+    }
+    return std::vector<std::string>{};
+}
+
 using Kataglyphis::ShadowPushConstants;
 using Kataglyphis::VulkanRendererInternals::DirectionalLightData;
 using Kataglyphis::VulkanRendererInternals::GlobalUBO;
@@ -1579,7 +1626,10 @@ TEST(BuildIntegrity, EveryFuzzTargetIsInTheWindowsCiFuzzList)
 // every push, Windows.yml only on [build-win]), so a real engine-surface
 // fuzzer could sit unexercised for weeks between opt-in runs, and nothing
 // noticed when a new target was added to neither lane. This gates every
-// target declared in Test/fuzz/CMakeLists.txt against BOTH workflow files.
+// target declared in Test/fuzz/CMakeLists.txt against both workflow files
+// AND the local host runner (run_clangcl_debug.ps1), which used to hard-code
+// only the two FuzzTest smoke targets and silently skip the five with real
+// engine-surface coverage.
 TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
 {
     const fs::path repo_root = find_repo_root();
@@ -1590,9 +1640,11 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
     ASSERT_FALSE(declared_targets.empty())
       << "parsed zero kataglyphis_add_fuzz_test(...) declarations out of Test/fuzz/CMakeLists.txt - the "
          "anchor text ('kataglyphis_add_fuzz_test(') may have changed";
+    const std::set<std::string> declared_set(declared_targets.begin(), declared_targets.end());
 
     const fs::path linux_workflow_path = repo_root / ".github" / "workflows" / "Linux.yml";
     const fs::path windows_workflow_path = repo_root / ".github" / "workflows" / "Windows.yml";
+    const fs::path local_runner_path = repo_root / "Scripts" / "Windows" / "run_clangcl_debug.ps1";
 
     const auto linux_targets_opt = parse_linux_ci_fuzz_targets(linux_workflow_path);
     if (!linux_targets_opt.has_value()) {
@@ -1602,15 +1654,23 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
     if (!windows_targets_opt.has_value()) {
         GTEST_SKIP() << "could not open " << windows_workflow_path.string() << " - not running from the repo root?";
     }
+    const auto local_targets_opt = parse_local_runner_fuzz_targets(local_runner_path);
+    if (!local_targets_opt.has_value()) {
+        GTEST_SKIP() << "could not open " << local_runner_path.string() << " - not running from the repo root?";
+    }
     ASSERT_FALSE(linux_targets_opt->empty())
       << "parsed zero fuzz targets out of the for-loop in " << linux_workflow_path.string()
       << " - the anchor text ('for t in ' / '; do') may have changed";
     ASSERT_FALSE(windows_targets_opt->empty())
       << "parsed zero fuzz targets out of the foreach array in " << windows_workflow_path.string()
       << R"( - the anchor text ('foreach (`$t in @(' / '))') may have changed)";
+    ASSERT_FALSE(local_targets_opt->empty())
+      << "parsed zero fuzz targets out of the foreach array in " << local_runner_path.string()
+      << R"( - the anchor text ('foreach ($fuzzExecutable in @(' / '))') may have changed)";
 
     const std::set<std::string> linux_set(linux_targets_opt->begin(), linux_targets_opt->end());
     const std::set<std::string> windows_set(windows_targets_opt->begin(), windows_targets_opt->end());
+    const std::set<std::string> local_set(local_targets_opt->begin(), local_targets_opt->end());
 
     // A target may be absent from a lane only if it is listed here, with a
     // reason - e.g. a linked-VulkanEngineCore target crashing at static init
@@ -1619,7 +1679,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
     struct NotRunInCi
     {
         std::string target;
-        std::string lane;// "Linux.yml" or "Windows.yml"
+        std::string lane;// "Linux.yml", "Windows.yml", or "run_clangcl_debug.ps1"
         std::string reason;
     };
     const std::vector<NotRunInCi> kNotRunInCi;
@@ -1637,6 +1697,7 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
     };
     check_lane("Linux.yml", linux_set);
     check_lane("Windows.yml", windows_set);
+    check_lane("run_clangcl_debug.ps1", local_set);
 
     EXPECT_TRUE(missing.empty())
       << missing.size()
@@ -1645,6 +1706,84 @@ TEST(BuildIntegrity, EveryRegisteredFuzzTargetRunsInCi)
       << [&missing] {
              std::string joined;
              for (const auto &entry : missing) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    // Unlike the two workflow files (whose foreach arrays are cross-checked
+    // against declared_targets in BuildIntegrity.EveryFuzzTargetIsInTheWindowsCiFuzzList
+    // and mirrored by construction for Linux.yml), the local runner has no
+    // other test catching a stale/renamed entry, so check both directions here.
+    std::vector<std::string> dead_local_entries;
+    for (const auto &target : *local_targets_opt) {
+        if (!declared_set.contains(target)) { dead_local_entries.push_back(target); }
+    }
+    EXPECT_TRUE(dead_local_entries.empty())
+      << dead_local_entries.size()
+      << " entry/entries in run_clangcl_debug.ps1's local fuzz-run foreach array do not correspond to any "
+         "target declared in Test/fuzz/CMakeLists.txt (renamed or deleted?): "
+      << [&dead_local_entries] {
+             std::string joined;
+             for (const auto &entry : dead_local_entries) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
+// A source-shape gate, not a behavioural one: it does not exercise a runner
+// end-to-end (that would need a stub executable and a fake build tree), only
+// that each run_clangcl_*.ps1 helper contains a top-level `exit` statement
+// whose argument is a variable. run_clangcl_debug.ps1 used to launch the app
+// without ever propagating its exit code - the launch happened inside an
+// Invoke-WithAsanOptions scriptblock, and a non-zero result was downgraded to
+// a warning that never escaped - so a device-lost or fatal-submit run read as
+// a clean quit. This stops that shape from silently coming back.
+TEST(BuildIntegrity, EveryHostRunnerPropagatesTheApplicationExitCode)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path scripts_dir = repo_root / "Scripts" / "Windows";
+    ASSERT_TRUE(fs::exists(scripts_dir)) << "could not locate " << scripts_dir.string();
+
+    std::vector<fs::path> runner_scripts;
+    for (const auto &entry : fs::directory_iterator(scripts_dir)) {
+        if (!entry.is_regular_file()) { continue; }
+        const fs::path &candidate = entry.path();
+        if (candidate.extension() == ".ps1" && candidate.filename().string().rfind("run_clangcl_", 0) == 0) {
+            runner_scripts.push_back(candidate);
+        }
+    }
+    ASSERT_FALSE(runner_scripts.empty())
+      << "found zero run_clangcl_*.ps1 helpers under " << scripts_dir.string()
+      << " - the naming convention may have changed";
+
+    static const std::regex kExitVariableLine(R"(^\s*exit\s+\$[A-Za-z_][A-Za-z0-9_:]*\s*$)");
+
+    std::vector<std::string> missing_exit;
+    for (const auto &script_path : runner_scripts) {
+        std::ifstream file(script_path);
+        if (!file) {
+            missing_exit.push_back(script_path.filename().string() + " (could not open)");
+            continue;
+        }
+
+        bool found = false;
+        std::string line;
+        while (std::getline(file, line)) {
+            if (std::regex_match(line, kExitVariableLine)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) { missing_exit.push_back(script_path.filename().string()); }
+    }
+
+    EXPECT_TRUE(missing_exit.empty())
+      << missing_exit.size()
+      << " run_clangcl_*.ps1 helper(s) have no top-level 'exit $<variable>' line, so a failing launch inside "
+         "them can silently report success to the caller: "
+      << [&missing_exit] {
+             std::string joined;
+             for (const auto &entry : missing_exit) { joined += "\n  " + entry; }
              return joined;
          }();
 }
