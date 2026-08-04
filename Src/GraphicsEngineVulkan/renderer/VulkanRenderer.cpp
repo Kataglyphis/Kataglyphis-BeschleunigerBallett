@@ -109,18 +109,12 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
     deferredRasterizer.init(device, &vulkanSwapChain, descriptor_set_layouts_deferred);
 
     clouds.init(device, graphics_command_pool, sharedRenderDescriptors.getLayout(), vulkanSwapChain.getSwapChainExtent().width, vulkanSwapChain.getSwapChainExtent().height);
-    const auto initial_cascade_count = clampCascadeCount(
-      static_cast<uint32_t>(MAX_CASCADES), static_cast<uint32_t>(MAX_CASCADES), device->getMaxMultiviewViewCount());
-    if (initial_cascade_count < static_cast<uint32_t>(MAX_CASCADES)) {
-        spdlog::warn("Device maxMultiviewViewCount ({}) is below MAX_CASCADES ({}); clamping startup cascade count to {}.",
-          device->getMaxMultiviewViewCount(), MAX_CASCADES, initial_cascade_count);
-    }
-    // The GUI is the single source of truth for the startup shadow-map
-    // resolution, so it can no longer disagree with what the combo shows.
-    constexpr GUISceneSharedVars kGuiDefaults{};
-    const uint32_t initial_shadow_res = shadowResolutionForIndex(kGuiDefaults.shadow_map_res_index);
-    dirShadowMap.init(device, initial_shadow_res, initial_shadow_res, initial_cascade_count, sharedRenderDescriptors.getLayout(), vulkanSwapChain.getNumberSwapChainImages(), graphics_command_pool);
-    dirShadowMap.createGraphicsPipeline();
+    // The startup cascade count and shadow resolution now come from the same
+    // path as every later shadow-setting change (reinitShadowMapForCurrentSettings
+    // reads both off gui->getGuiSceneSharedVars()), so the GUI default is the
+    // single source of truth instead of a hard-coded MAX_CASCADES. cleanUp()
+    // is a safe no-op here: dirShadowMap has no device yet.
+    reinitShadowMapForCurrentSettings();
 
     std::array<vk::DescriptorSetLayout, 1> const descriptor_set_layouts_post = { postDescriptors.getLayout() };
     postStage.init(device, &vulkanSwapChain, descriptor_set_layouts_post);
@@ -137,15 +131,6 @@ Kataglyphis::VulkanRenderer::VulkanRenderer(Kataglyphis::Frontend::Window *windo
 
     updateUniforms(scene, camera, gui->getGuiSceneSharedVars());
     updateAllDescriptorSets();
-
-    // Seed every swapchain image's light-matrix buffer with the just-computed
-    // cascades, matching create_uniform_buffers()'s per-image initial upload
-    // for globalUBO/sceneUBO above: without this only the image the first
-    // drawFrame() happens to acquire gets real matrices, and the rest keep
-    // whatever createDescriptorSetAndPipeline() uploaded before dirShadowMap
-    // had ever computed a cascade (i.e. default-constructed matrices) until
-    // drawFrame eventually cycles back to them.
-    for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) { dirShadowMap.uploadLightMatrices(i); }
 
     skyBox.init(device, graphics_command_pool);
     skyBox.createRenderPass(vulkanSwapChain.getSwapChainFormat(), postStage.getDepthFormat());
@@ -339,6 +324,13 @@ void Kataglyphis::VulkanRenderer::reinitShadowMapForCurrentSettings()
     // cleanUp() destroyed the pipeline, descriptor resources and the light
     // matrices buffer; recreate them (same sequence as at startup).
     dirShadowMap.createGraphicsPipeline();
+
+    // createGraphicsPipeline() just seeded every image from cascadeData, but
+    // cascadeData is still whatever it held before this re-init (stale, or
+    // default-constructed at startup) - updateUniforms() has not run yet for
+    // the new settings. Ask update_uniform_buffers() to re-seed every image
+    // once cascadeData is fresh, instead of only the next acquired one.
+    lightMatricesNeedFullReseed = true;
 }
 
 void Kataglyphis::VulkanRenderer::handleShadowResolutionChange(
@@ -768,10 +760,25 @@ bool Kataglyphis::VulkanRenderer::update_uniform_buffers(uint32_t image_index)
     std::memcpy(globalUBOMapped[image_index], &globalUBO, sizeof(VulkanRendererInternals::GlobalUBO));
     std::memcpy(sceneUBOMapped[image_index], &sceneUBO, sizeof(VulkanRendererInternals::SceneUBO));
 
-    // Same per-image-index buffering as the two UBOs above: the shadow-render
-    // matrices (this) and the shadow-sample matrices (sceneUBO, filled in
-    // updateUniforms) must land in the SAME image's buffers together.
-    dirShadowMap.uploadLightMatrices(image_index);
+    if (lightMatricesNeedFullReseed) {
+        // A shadow re-init (startup, a GUI resolution/cascade-count change, or
+        // a swapchain-image-count change) left every image's light-matrix
+        // buffer holding stale or default-constructed data - see
+        // reinitShadowMapForCurrentSettings(). This is the first point in the
+        // frame where cascadeData is guaranteed fresh (updateUniforms() runs
+        // before drawFrame() - see App.cpp), so catch every image up here
+        // rather than only the one drawFrame() acquired this frame.
+        for (uint32_t i = 0; i < vulkanSwapChain.getNumberSwapChainImages(); i++) {
+            dirShadowMap.uploadLightMatrices(i);
+        }
+        lightMatricesNeedFullReseed = false;
+    } else {
+        // Same per-image-index buffering as the two UBOs above: the
+        // shadow-render matrices (this) and the shadow-sample matrices
+        // (sceneUBO, filled in updateUniforms) must land in the SAME image's
+        // buffers together.
+        dirShadowMap.uploadLightMatrices(image_index);
+    }
     return true;
 }
 

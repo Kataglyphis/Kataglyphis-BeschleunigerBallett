@@ -1072,6 +1072,38 @@ std::optional<std::string> first_statement_of_function(const std::string &text, 
     return text.substr(body_pos, stmt_end - body_pos + 1);
 }
 
+// Same signature-location logic as first_statement_of_function, but returns
+// the [begin, end) offsets of the whole brace-matched body instead of just
+// its first statement - so a caller can check that every occurrence of some
+// other call text falls inside one specific function.
+std::optional<std::pair<std::size_t, std::size_t>> function_body_span(
+  const std::string &text, const std::string &qualified_name)
+{
+    const std::string signature = qualified_name + "(";
+    const std::size_t sig_pos = text.find(signature);
+    if (sig_pos == std::string::npos) { return std::nullopt; }
+
+    std::size_t pos = sig_pos + signature.size();
+    int paren_depth = 1;
+    while (pos < text.size() && paren_depth > 0) {
+        if (text[pos] == '(') { ++paren_depth; } else if (text[pos] == ')') { --paren_depth; }
+        ++pos;
+    }
+    if (paren_depth != 0) { return std::nullopt; }
+
+    const std::size_t brace_pos = text.find('{', pos);
+    if (brace_pos == std::string::npos) { return std::nullopt; }
+
+    std::size_t end_pos = brace_pos + 1;
+    int brace_depth = 1;
+    while (end_pos < text.size() && brace_depth > 0) {
+        if (text[end_pos] == '{') { ++brace_depth; } else if (text[end_pos] == '}') { --brace_depth; }
+        ++end_pos;
+    }
+    if (brace_depth != 0) { return std::nullopt; }
+    return std::make_pair(brace_pos + 1, end_pos - 1);
+}
+
 }// namespace
 
 // Both the build-time compiler (Scripts/Windows/compile-slang-shaders.ps1) and
@@ -2506,6 +2538,58 @@ TEST(BuildIntegrity, CascadedShadowClampsBothItsUboCounts)
          "cascadeLightSpaceMatrices[]";
     EXPECT_NE(content.find("clamp(int(sceneUBO.pcfRadius), 0, MAX_PCF_RADIUS)"), std::string::npos)
       << "cascaded_shadow.slang must clamp pcfRadius to MAX_PCF_RADIUS before the tap loop";
+}
+
+// dirShadowMap.init(...) used to also run inline in VulkanRenderer's
+// constructor (a second, hard-coded MAX_CASCADES/startup-resolution copy of
+// what reinitShadowMapForCurrentSettings() does), and the per-image light
+// matrices were re-seeded via an explicit loop right after construction
+// instead of through the same flag-driven path every later re-init uses. A
+// re-init (GUI shadow-resolution/cascade-count change, or a swapchain-image-
+// count change) left every image but the next one drawFrame() acquired
+// holding stale or default-constructed matrices, because dirShadowMap's own
+// seed loop runs before updateUniforms() has recomputed cascadeData for the
+// new settings. This is a source-level "one rule, one definition" gate - the
+// only kind of coverage available for a path that needs a device.
+TEST(BuildIntegrity, ShadowLightMatricesAreProvisionedInOnePlace)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path source = repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "VulkanRenderer.cpp";
+    const auto text = read_file_text(source);
+    ASSERT_TRUE(text.has_value()) << "could not read " << source.string();
+    const std::string &content = *text;
+
+    std::size_t init_count = 0;
+    for (std::size_t pos = content.find("dirShadowMap.init("); pos != std::string::npos;
+         pos = content.find("dirShadowMap.init(", pos + 1)) {
+        ++init_count;
+    }
+    EXPECT_EQ(init_count, 1U) << "dirShadowMap.init( must be called from exactly one place "
+                                  "(reinitShadowMapForCurrentSettings) so every re-provisioning path stays in sync";
+
+    const auto reinit_span =
+      function_body_span(content, "Kataglyphis::VulkanRenderer::reinitShadowMapForCurrentSettings");
+    ASSERT_TRUE(reinit_span.has_value()) << "reinitShadowMapForCurrentSettings(...) definition not found";
+    const std::size_t init_pos = content.find("dirShadowMap.init(");
+    ASSERT_NE(init_pos, std::string::npos);
+    EXPECT_GE(init_pos, reinit_span->first) << "dirShadowMap.init( must live inside reinitShadowMapForCurrentSettings";
+    EXPECT_LT(init_pos, reinit_span->second) << "dirShadowMap.init( must live inside reinitShadowMapForCurrentSettings";
+
+    const auto update_span = function_body_span(content, "Kataglyphis::VulkanRenderer::update_uniform_buffers");
+    ASSERT_TRUE(update_span.has_value()) << "update_uniform_buffers(...) definition not found";
+
+    std::size_t upload_count = 0;
+    for (std::size_t pos = content.find("uploadLightMatrices("); pos != std::string::npos;
+         pos = content.find("uploadLightMatrices(", pos + 1)) {
+        EXPECT_GE(pos, update_span->first) << "uploadLightMatrices( call at offset " << pos
+                                            << " lies outside update_uniform_buffers";
+        EXPECT_LT(pos, update_span->second) << "uploadLightMatrices( call at offset " << pos
+                                             << " lies outside update_uniform_buffers";
+        ++upload_count;
+    }
+    EXPECT_GT(upload_count, 0U) << "expected at least one uploadLightMatrices( call in VulkanRenderer.cpp";
 }
 
 // The flattened texture-slot clamp (int(obj.texture_offset) + textureID,
