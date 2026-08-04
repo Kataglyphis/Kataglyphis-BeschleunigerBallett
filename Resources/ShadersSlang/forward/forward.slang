@@ -1,4 +1,5 @@
 import brdf;
+import sky_model;
 
 // Forward PBR pass (Rust/WebGPU side). forward.wgsl is generated from
 // this file and checked into the Rust crate by wgslMap. Emits WGSL.
@@ -271,31 +272,15 @@ float shadow_visibility(float viewDepth, float3 worldPos, float nDotL)
     return sum / 9.0;
 }
 
-static const float3 SKY_ZENITH = float3(0.09, 0.16, 0.35);
-static const float3 SKY_HORIZON = float3(0.55, 0.62, 0.72);
-static const float3 SKY_GROUND = float3(0.18, 0.16, 0.15);
-
+// Thin wrapper over common/sky_model.slang: this pass's light direction and
+// intensity come from frame.light_dir_ambient / frame.light_color_intensity,
+// which differs from sky/sky.slang's own SkyUniforms - see sky_model.slang.
 float3 sky_radiance(float3 dir, bool withSun)
 {
-    float3 color;
-    if (dir.y >= 0.0)
-        color = lerp(SKY_HORIZON, SKY_ZENITH, pow(clamp(dir.y, 0.0, 1.0), 0.7));
-    else
-        color = lerp(SKY_HORIZON, SKY_GROUND, clamp(-dir.y * 3.0, 0.0, 1.0));
+    float3 color = sky_gradient(dir);
     if (withSun)
-    {
-        float3 l = normalize(frame.light_dir_ambient.xyz);
-        float cosSun = max(dot(dir, l), 0.0);
-        float sun = pow(cosSun, 1200.0) * 24.0 + pow(cosSun, 48.0) * 0.5;
-        color += float3(1.0, 0.95, 0.85) * sun * (frame.light_color_intensity.w * 0.4);
-    }
+        color += sun_disk(dir, frame.light_dir_ambient.xyz, frame.light_color_intensity.w);
     return color;
-}
-
-float3 hemisphere_irradiance(float3 n)
-{
-    float3 sky = lerp(SKY_HORIZON, SKY_ZENITH, pow(clamp(n.y, 0.0, 1.0), 0.7));
-    return lerp(SKY_GROUND * 0.7, sky, clamp(n.y * 0.5 + 0.5, 0.0, 1.0));
 }
 
 float3 env_brdf_approx(float3 f0, float roughness, float nDotV)

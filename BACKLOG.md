@@ -8341,29 +8341,6 @@ last one and its checked-in WGSL is final. Task 4 touches only
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-- [ ] **(M) (refactor) Give the analytic sky one definition** — the same three constants and the same gradient are written in two Slang shaders and once more on the Rust CPU side, and the three must agree because each feeds the others' ambient.
-
-  **Files to read:**
-  - `Resources/ShadersSlang/sky/sky.slang:29-52` — the gradient and the sun disk
-  - `Resources/ShadersSlang/forward/forward.slang:271-296` — `SKY_ZENITH`/`SKY_HORIZON`/`SKY_GROUND`, `sky_radiance`, `hemisphere_irradiance`; and `:442`, the one consumer of `sky_radiance`
-  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/render/ibl.rs:137-186` — `EnvironmentImage::sky` and `lerp3`
-  - `Resources/ShadersSlang/common/` — `brdf.slang`, `aces.slang`, `fullscreen.slang` are the shape a shared module takes here
-  - `Resources/ShadersSlang/shader-manifest.json` — the `wgslMap` rows for `sky/sky.slang` and `forward/forward.slang`, both of which must be regenerated
-  - `.../tests/cull_constants.rs` and `.../tests/histogram_constants.rs` — the "pin a shader constant against its Rust twin" test pattern
-
-  **Steps:**
-  1. Add `Resources/ShadersSlang/common/sky_model.slang` exporting the three constants and three functions: `sky_gradient(float3 dir)` (the horizon/zenith/ground lerp), `sun_disk(float3 dir, float3 lightDir, float intensity)` (the two `pow(cosSun, …)` terms and the warm tint), and `hemisphere_irradiance(float3 n)`, moved verbatim from `forward.slang:292-296`. Do not invent a combined `sky_radiance(dir, withSun)` in the shared module — the two callers pass their light direction and intensity from different uniform blocks (`sky.light_dir_intensity` vs `frame.light_dir_ambient` + `frame.light_color_intensity.w`), which is a genuine per-caller difference.
-  2. Rewrite `sky/sky.slang`'s `fs_main` over the module: `sky_gradient(dir) + sun_disk(dir, sky.light_dir_intensity.xyz, sky.light_dir_intensity.w)`. Rewrite `forward.slang`'s `sky_radiance` as a thin local wrapper that supplies its own uniforms and keeps the `withSun` flag, so `:442` is untouched. Delete both copies of the constants.
-  3. Regenerate both WGSL outputs: `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`, then commit `crates/webgpu_renderer/src/shaders/sky.wgsl` and `forward.wgsl`. The emitted maths must be unchanged — read the diff and confirm only naming/inlining moved, not a constant or an exponent. If `CheckedInWgslIsNotOlderThanItsSlangSource` fails on a file whose *content* did not change, that is the known slangc/Copy-Item mtime no-op, not a real staleness failure (recorded in memory); touch the output rather than "fixing" the gate.
-  4. In `ibl.rs`, promote the three constants to `pub const SKY_ZENITH/SKY_HORIZON/SKY_GROUND: [f32; 3]` on the module (keeping `EnvironmentImage::sky` reading them) so a test can name them. Do not try to share the *code* across the language boundary — the CPU version panoramises over a different parameterisation; sharing the numbers is the whole win.
-  5. Update `docs/shader-sharing.md`'s list of shared `common/` modules with the new one.
-
-  **Test:** Add `crates/webgpu_renderer/tests/sky_constants.rs` in the style of `cull_constants.rs`: `include_str!("../src/shaders/sky.wgsl")`, extract the three `vec3<f32>(…)` literals the gradient uses, and assert each equals the matching `pub const` in `render::ibl`, with a failure message that says "edit both together". Pure CPU. On the C++ side no new test is needed — the SPIR-V targets are unaffected, and the existing `SlangCompileManifestsAgree` / `EveryReachableSlangFunctionSurvivesIntoItsCheckedInWgsl` gates cover the new module's reachability.
-
-  **Build:** Shaders only, no C++ rebuild (see `AGENTS.md`'s routing table). Run the existing `.\build-clangcl-debug\commitTestSuite.exe` for the shader gates, plus `cargo clippy --all-targets -p kataglyphis_webgpu_renderer` and `cargo fmt -p kataglyphis_webgpu_renderer -- --check`.
-
-  **Context:** Same family as the eight `common/` extractions already shipped (`brdf`, `aces`, `fullscreen`, `noise`, `scene_types`, `material_fetch`, `base_color`, `cascaded_shadow`) — see `docs/shader-sharing.md`. What makes this one worth doing rather than cosmetic: `forward.slang:442` reflects the analytic sky into the ambient of the surfaces the sky pass draws behind, and `ibl.rs`'s panorama is convolved into the irradiance map that replaces that ambient, so a drift in any one copy shows up as a lighting/background mismatch nobody can localise. `tests/ibl.rs:933-945` only pins an ordering all three would still satisfy after drifting.
-
 ## 2026-08-02 — reuse-sweep residuals (the sweep itself shipped)
 
 The 2026-08-02 reuse sweep landed: WindowsCMake/Config/Formatting/WebDav/

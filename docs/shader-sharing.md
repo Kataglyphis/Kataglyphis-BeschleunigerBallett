@@ -103,6 +103,17 @@ system rather than textual `#include`:
   the same rule (`baseColorFactor[3]`) is not yet carried this way — it needs
   a new `ObjMaterial` field, since `fromGltfMaterial` only reads
   `baseColorFactor[0..2]` today.
+- `common/sky_model.slang` — the analytic sky's horizon/zenith/ground
+  gradient (`sky_gradient`), sun disk (`sun_disk`), and diffuse hemisphere
+  irradiance approximation (`hemisphere_irradiance`), shared by `sky/sky.slang`
+  (the Rust/WebGPU background) and `forward/forward.slang` (the analytic IBL
+  fallback whose reflections and irradiance the background must agree with).
+  A combined `sky_radiance` is deliberately not part of the module: each
+  caller sources its light direction/intensity from a different uniform
+  block, so each keeps a thin local wrapper over `sky_gradient` + `sun_disk`.
+  The same three gradient constants are pinned a third time on the Rust CPU
+  side (`render::ibl::SKY_ZENITH`/`SKY_HORIZON`/`SKY_GROUND`, consumed by
+  `EnvironmentImage::sky`'s panorama) by `tests/sky_constants.rs`.
 
 **Entry-point shader targets:** every Slang entry-point source below compiles
 to exactly one target today — none is currently shared between the two
