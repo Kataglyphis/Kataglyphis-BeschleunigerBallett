@@ -2422,6 +2422,63 @@ TEST(BuildIntegrity, EveryBaseColourSampleIsScaledByTheMaterialFactor)
          }();
 }
 
+// KHR_texture_transform must apply to every base-colour sample, not just
+// four of the five shading paths - the path-tracing ray-query kernel and the
+// RT closest-hit shader used to sample raw UVs while the three raster paths
+// (forward, deferred, shadow) already routed through transform_uv(), so a
+// model using the extension rendered inconsistently depending on which mode
+// was active. Scans each shading source as text and requires that every line
+// sampling `textures[...]` via `textureSamplers[...]` also calls
+// transform_uv( on the same line.
+TEST(BuildIntegrity, EveryBaseColourSampleAppliesTheUvTransform)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const std::array<const char *, 5> kShaders = {
+        "Resources/ShadersSlang/rasterizer/rasterizer.slang",
+        "Resources/ShadersSlang/deferred/deferred.slang",
+        "Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang",
+        "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
+        "Resources/ShadersSlang/path_tracing/path_tracing.slang",
+    };
+    static const std::string kTextures = "textures[";
+    static const std::string kSamplers = "textureSamplers[";
+    static const std::string kTransform = "transform_uv(";
+
+    std::vector<std::string> violations;
+    for (const char *relative_path : kShaders) {
+        const fs::path path = repo_root / relative_path;
+        std::ifstream file(path);
+        ASSERT_TRUE(static_cast<bool>(file)) << "could not open " << path.string();
+
+        bool sawSampleSite = false;
+        std::string line;
+        std::size_t line_number = 0;
+        while (std::getline(file, line)) {
+            ++line_number;
+            if (line.find(kTextures) == std::string::npos || line.find(kSamplers) == std::string::npos) { continue; }
+            sawSampleSite = true;
+            if (line.find(kTransform) == std::string::npos) {
+                violations.push_back(std::string(relative_path) + ":" + std::to_string(line_number)
+                                      + " samples the base-colour texture without transform_uv(, so this mode "
+                                        "disagrees with the others on any KHR_texture_transform material");
+            }
+        }
+        if (!sawSampleSite) {
+            violations.push_back(std::string(relative_path) + ": no base-colour sample site found - did it move?");
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size() << " base-colour sample site(s) skip the KHR_texture_transform UV matrix:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 // ObjMaterial::emission is parsed by both loaders and uploaded to the GPU,
 // but until this gate nothing in the shading paths actually read it - every
 // glTF/OBJ emitter rendered black in both the forward and deferred paths

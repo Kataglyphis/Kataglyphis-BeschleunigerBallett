@@ -211,7 +211,10 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 if (material.textureID >= 0)
                 {
                     int textureId = resolve_texture_slot(obj, material);
-                    hitColor = base_color(material, textures[textureId].Sample(textureSamplers[textureId], texCoords).xyz);
+                    // Explicit LOD: this compute kernel has no fragment
+                    // derivatives, so an implicit-LOD .Sample() fails SPIR-V
+                    // validation. See raytracing/raytrace.rchit.slang:78-81.
+                    hitColor = base_color(material, textures[textureId].SampleLevel(textureSamplers[textureId], transform_uv(texCoords, material), 0.0).xyz);
                 }
                 else
                 {

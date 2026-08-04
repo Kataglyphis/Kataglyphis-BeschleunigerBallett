@@ -78,7 +78,7 @@ void rchit_main(
         // Explicit LOD: closesthit runs under RayClosestHitKHR, which has no
         // fragment derivatives, so an implicit-LOD .Sample() fails SPIR-V
         // validation (ImplicitLod requires Fragment/GLCompute/MeshEXT/TaskEXT).
-        ambient += base_color(material, textures[textureId].SampleLevel(textureSamplers[textureId], texCoords, 0.0).xyz);
+        ambient += base_color(material, textures[textureId].SampleLevel(textureSamplers[textureId], transform_uv(texCoords, material), 0.0).xyz);
     }
     else
     {

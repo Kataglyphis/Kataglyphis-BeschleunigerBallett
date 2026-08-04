@@ -14,3 +14,13 @@ float3 base_color(ObjMaterial material, float3 sampled)
 {
     return sampled * material.diffuse;
 }
+
+// glTF KHR_texture_transform: apply the T*R*S UV matrix before sampling.
+// Lives here rather than material_fetch.slang for the same reason as
+// base_color() above: the ray tracing / path tracing entry points cannot
+// `import material_fetch` (duplicate objectDescription binding), but every
+// shading path already imports this no-binding module.
+float2 transform_uv(float2 uv, ObjMaterial material)
+{
+    return float2(dot(float3(uv, 1.0), material.uv_transform_row0), dot(float3(uv, 1.0), material.uv_transform_row1));
+}

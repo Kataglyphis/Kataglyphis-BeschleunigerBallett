@@ -8736,29 +8736,6 @@ one that changes `ObjMaterial`'s field set, so land it before or after the
 other two but not interleaved, to keep the `buildIntegritySuite.cpp:978-991`
 offset-pin churn in a single commit.
 
-- [ ] **(S) Fix the path tracer's implicit-LOD texture sample, and route both ray paths' base-colour sample through `transform_uv`** — `OpImageSampleImplicitLod` is illegal outside a fragment shader, and the ray paths are the only two of five sample sites that ignore `KHR_texture_transform`.
-
-  **Files to read:**
-  - `Resources/ShadersSlang/path_tracing/path_tracing.slang:45-47` (the compute entry point) and `:194-215` (the material fetch and the offending `.Sample()` at `:209`)
-  - `Resources/ShadersSlang/raytracing/raytrace.rchit.slang:63-78` — **the precedent**, including the `:75-76` comment explaining why implicit LOD is illegal in a ray-tracing stage, and its `SampleLevel(..., 0.0)` at `:77`
-  - `Resources/ShadersSlang/common/material_fetch.slang:27-31` — `transform_uv`
-  - `Resources/ShadersSlang/rasterizer/rasterizer.slang:60`, `deferred/deferred.slang:60`, `rasterizer/shadows/shadow_map.slang:55` — the three sites that already call it
-  - `docs/path-tracing.md` — check whether it states a texture-sampling rule that needs updating
-
-  **Steps:**
-  1. `path_tracing.slang:209`: change `.Sample(textureSamplers[textureId], texCoords)` to `.SampleLevel(textureSamplers[textureId], transform_uv(texCoords, material), 0.0)`. Add a comment pointing at `raytrace.rchit.slang:75-76` rather than restating it.
-  2. `raytrace.rchit.slang:77`: wrap the UV in `transform_uv(texCoords, material)`. Leave `SampleLevel` as is.
-  3. `path_tracing.slang` imports `scene_types` and `base_color` today but not `material_fetch`; add the import if `transform_uv` is not already reachable, and check it does not drag ray-tracing capabilities into the module (the `material_fetch.slang` header comment at `:4-7` explains the `scene_types` vs `rt_types` split — read it before adding the import, and if it does conflict, move `transform_uv` into a smaller shared module rather than duplicating it).
-  4. Recompile: `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1` from the repo root. No C++ change.
-
-  **Test:** Covered structurally by the next task's gate; in this task, add `BuildIntegrity.EveryBaseColourSampleAppliesTheUvTransform` to `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — read the five shading sources and assert each `textures[...]` sample expression on the same line as a `textureSamplers[` index also mentions `transform_uv`. Failure message must name the file and say that a sample site skipping `transform_uv` makes that mode disagree with the other four on any `KHR_texture_transform` material.
-
-  **Build:** `clangcl-debug` (only needed to rebuild the test):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  Then `.\build-clangcl-debug\commitTestSuite.exe` from the repo root.
-
-  **Context:** Do **not** treat this as a candidate fix for the blocked path-tracing `VK_ERROR_DEVICE_LOST` entry earlier in this file. That reproducer (`dinosaurs.obj`) has `material.textureID < 0` on every material, so this branch is never executed there — the bisection recorded in that entry already established that. This is a latent defect that fires on the first textured path-traced scene, and it is worth fixing on its own terms. Once RDP clears, `GoldenRender.PathTracingAccumulatesAndConverges` and the ray-tracing goldens should be re-run; both currently render untextured scenes, so neither is expected to move.
-
 - [ ] **(S) Gate the emitted SPIR-V against implicit-LOD image instructions outside fragment entry points** — nothing in this repo validates the Slang output, which is why an illegal `.Sample()` sat in a compute kernel undetected.
 
   **Files to read:**
