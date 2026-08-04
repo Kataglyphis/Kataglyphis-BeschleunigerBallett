@@ -17,24 +17,20 @@ auto Kataglyphis::buildSamplerCreateInfo(vk::Filter filter,
   vk::Bool32 compareEnable,
   vk::CompareOp compareOp) -> vk::SamplerCreateInfo
 {
-    vk::SamplerCreateInfo sampler_create_info{};
-    sampler_create_info.magFilter = filter;
-    sampler_create_info.minFilter = filter;
-    sampler_create_info.addressModeU = addressMode;
-    sampler_create_info.addressModeV = addressMode;
-    sampler_create_info.addressModeW = addressMode;
-    sampler_create_info.borderColor = borderColor;
-    sampler_create_info.unnormalizedCoordinates = VK_FALSE;
-    sampler_create_info.mipmapMode = vk::SamplerMipmapMode::eLinear;
-    sampler_create_info.mipLodBias = 0.0F;
-    sampler_create_info.minLod = 0.0F;
-    sampler_create_info.maxLod = maxLod;
-    sampler_create_info.anisotropyEnable = anisotropyEnable;
-    sampler_create_info.maxAnisotropy = maxAnisotropy;
-    sampler_create_info.compareEnable = compareEnable;
-    sampler_create_info.compareOp = compareOp;
-
-    return sampler_create_info;
+    // addressModeU == addressModeV == addressMode here, so the desc overload's
+    // addressModeW = desc.addressModeU is byte-identical to this overload's
+    // former addressModeW = addressMode.
+    return buildSamplerCreateInfo(GltfSamplerDesc{ .addressModeU = addressMode,
+                                     .addressModeV = addressMode,
+                                     .magFilter = filter,
+                                     .minFilter = filter,
+                                     .mipmapMode = vk::SamplerMipmapMode::eLinear },
+      maxLod,
+      anisotropyEnable,
+      maxAnisotropy,
+      borderColor,
+      compareEnable,
+      compareOp);
 }
 
 auto Kataglyphis::buildSamplerCreateInfo(const GltfSamplerDesc &desc,

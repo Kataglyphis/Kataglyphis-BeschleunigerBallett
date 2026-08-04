@@ -9839,32 +9839,6 @@ does not.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) (refactor) Collapse `buildSamplerCreateInfo`'s two overloads onto one body** — ten of the fifteen field assignments are copied verbatim between them, which is exactly the drift this helper was extracted to stop.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/vulkan_base/SamplerBuilder.cpp:11-66` — the two overloads side by side
-  - `Src/GraphicsEngineVulkan/vulkan_base/SamplerBuilder.ixx:12-51` — the declarations, `GltfSamplerDesc` and its defaults (`:30-39`)
-  - `Test/commit/VulkanEngine/samplerBuilderSuite.cpp` — the existing field-by-field pins for all four call sites; the new test follows the same style
-  - `Src/GraphicsEngineVulkan/renderer/PostStage.cpp:136`, `Src/GraphicsEngineVulkan/scene/Texture.cpp:261` — the two scalar-overload call sites whose output must not change
-  - `Src/GraphicsEngineVulkan/common/ImageBarrierHelper.hpp:7-33` — the precedent for this kind of collapse, including the rule about when a call site may stay unconverted
-
-  **Steps:**
-  1. In `SamplerBuilder.cpp`, rewrite the scalar overload's body (`:19-38`) to construct a `GltfSamplerDesc` and delegate:
-     `return buildSamplerCreateInfo(GltfSamplerDesc{ .addressModeU = addressMode, .addressModeV = addressMode, .magFilter = filter, .minFilter = filter, .mipmapMode = vk::SamplerMipmapMode::eLinear }, maxLod, anisotropyEnable, maxAnisotropy, borderColor, compareEnable, compareOp);`
-     Use designated initializers in **declaration order** (`addressModeU`, `addressModeV`, `magFilter`, `minFilter`, `mipmapMode` — see `SamplerBuilder.ixx:32-36`); out-of-order designated initializers are ill-formed in C++.
-  2. Verify the one asymmetry before trusting the delegation: the desc overload sets `addressModeW = desc.addressModeU` (`:53`), while the scalar overload sets `addressModeW = addressMode` (`:25`). With `addressModeU == addressModeV == addressMode` these are the same value, so the result is byte-identical — state that in a short comment above the delegation rather than leaving the reader to re-derive it.
-  3. Leave the desc overload's body untouched: it is now the single definition.
-  4. Update the comment at `SamplerBuilder.ixx:41-44` ("Same as the overload above, but sourced from a glTF sampler description") so it reads in the new direction — the desc form is the primitive and the scalar form is the convenience wrapper.
-  5. Do not change either declaration's signature or defaults; both are called with positional arguments from three files.
-
-  **Test:** Add `SamplerBuilderUnit.ScalarOverloadDelegatesToTheDescOverload` to `Test/commit/VulkanEngine/samplerBuilderSuite.cpp`. Build one info from the scalar overload and one from the equivalent `GltfSamplerDesc` with the same `maxLod`/anisotropy/border/compare arguments, and assert every field the builder writes matches between them: `magFilter`, `minFilter`, `addressModeU`, `addressModeV`, `addressModeW`, `borderColor`, `unnormalizedCoordinates`, `mipmapMode`, `mipLodBias`, `minLod`, `maxLod`, `anisotropyEnable`, `maxAnisotropy`, `compareEnable`, `compareOp`. Cover at least two parameter sets, one of them non-default (e.g. `eNearest` + `eClampToEdge` + `compareEnable = VK_TRUE`), so the test cannot pass on defaults alone. Compare fields individually — do not rely on `operator==` for `vk::SamplerCreateInfo`, whose availability depends on the vulkan.hpp spaceship-operator configuration.
-
-  **Build:** `clangcl-debug`. This edits only `SamplerBuilder.cpp` (a module *implementation* unit) plus a comment in the interface — if you touch `SamplerBuilder.ixx` at all, use `-FreshContainer`:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  Then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=SamplerBuilder*`. All eight pre-existing `samplerBuilderSuite` tests must stay green unmodified — they are the proof the four production call sites still get the same struct.
-
-  **Context:** `SamplerBuilder` exists because three hand-written `vk::SamplerCreateInfo` literals had already drifted (see the suite's header comment). It then acquired a second overload for glTF samplers (`94567de7`) and re-created the duplication one level up: fifteen assignments, ten of them the same twice. Every future field (`unnormalizedCoordinates` for a rect sampler, a real `mipLodBias`, `reductionMode`) would have to be added in both places or drift again. The delegation makes that structurally impossible while leaving both call-site spellings intact.
-
 - [ ] **(M) (refactor) Make `ObjMaterial` an aggregate with default member initializers, and fold `GltfLoader`'s three copy-pasted TEXCOORD warnings into one helper** — the twelve-parameter positional constructor has grown one argument per glTF factor for four commits running.
 
   **Files to read:**

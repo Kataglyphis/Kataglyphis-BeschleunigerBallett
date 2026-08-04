@@ -9,9 +9,11 @@ export module kataglyphis.vulkan.sampler_builder;
 
 export namespace Kataglyphis {
 
-// Builds a vk::SamplerCreateInfo from explicit parameters. Returns the struct
-// only - it does not create the sampler, since the three call sites use three
-// different createSampler overloads and error conventions.
+// Convenience wrapper over the GltfSamplerDesc overload below for callers
+// that only need one filter/address mode shared across mag, min and U/V/W.
+// Returns the struct only - it does not create the sampler, since the three
+// call sites use three different createSampler overloads and error
+// conventions.
 auto buildSamplerCreateInfo(vk::Filter filter,
   vk::SamplerAddressMode addressMode,
   float maxLod,
@@ -38,10 +40,10 @@ struct GltfSamplerDesc
     bool operator==(const GltfSamplerDesc &) const = default;
 };
 
-// Same as the overload above, but sourced from a glTF sampler description:
-// mag/min filter and mipmap mode vary independently instead of sharing one
+// The primitive form, sourced from a glTF sampler description: mag/min
+// filter and mipmap mode vary independently instead of sharing one
 // `filter`, and U/V wrap modes can differ (W is not a glTF concept for a 2D
-// texture, so it follows U).
+// texture, so it follows U). The overload above delegates here.
 auto buildSamplerCreateInfo(const GltfSamplerDesc &desc,
   float maxLod,
   vk::Bool32 anisotropyEnable,

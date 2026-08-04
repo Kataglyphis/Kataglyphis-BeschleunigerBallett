@@ -99,6 +99,69 @@ TEST(SamplerBuilderUnit, MatchesShadowMapComparisonSamplerConfiguration)
     EXPECT_EQ(info.compareOp, vk::CompareOp::eLessOrEqual);
 }
 
+TEST(SamplerBuilderUnit, ScalarOverloadDelegatesToTheDescOverload)
+{
+    const auto expectSameFields = [](const vk::SamplerCreateInfo &scalar, const vk::SamplerCreateInfo &desc) {
+        EXPECT_EQ(scalar.magFilter, desc.magFilter);
+        EXPECT_EQ(scalar.minFilter, desc.minFilter);
+        EXPECT_EQ(scalar.addressModeU, desc.addressModeU);
+        EXPECT_EQ(scalar.addressModeV, desc.addressModeV);
+        EXPECT_EQ(scalar.addressModeW, desc.addressModeW);
+        EXPECT_EQ(scalar.borderColor, desc.borderColor);
+        EXPECT_EQ(scalar.unnormalizedCoordinates, desc.unnormalizedCoordinates);
+        EXPECT_EQ(scalar.mipmapMode, desc.mipmapMode);
+        EXPECT_FLOAT_EQ(scalar.mipLodBias, desc.mipLodBias);
+        EXPECT_FLOAT_EQ(scalar.minLod, desc.minLod);
+        EXPECT_FLOAT_EQ(scalar.maxLod, desc.maxLod);
+        EXPECT_EQ(scalar.anisotropyEnable, desc.anisotropyEnable);
+        EXPECT_FLOAT_EQ(scalar.maxAnisotropy, desc.maxAnisotropy);
+        EXPECT_EQ(scalar.compareEnable, desc.compareEnable);
+        EXPECT_EQ(scalar.compareOp, desc.compareOp);
+    };
+
+    {
+        // Default-ish parameter set.
+        const vk::SamplerCreateInfo scalar = buildSamplerCreateInfo(
+          vk::Filter::eLinear, vk::SamplerAddressMode::eRepeat, 4.0F, VK_TRUE, 16.0F, vk::BorderColor::eFloatOpaqueBlack);
+        const vk::SamplerCreateInfo desc = buildSamplerCreateInfo(
+          GltfSamplerDesc{ .addressModeU = vk::SamplerAddressMode::eRepeat,
+            .addressModeV = vk::SamplerAddressMode::eRepeat,
+            .magFilter = vk::Filter::eLinear,
+            .minFilter = vk::Filter::eLinear,
+            .mipmapMode = vk::SamplerMipmapMode::eLinear },
+          4.0F,
+          VK_TRUE,
+          16.0F,
+          vk::BorderColor::eFloatOpaqueBlack);
+        expectSameFields(scalar, desc);
+    }
+
+    {
+        // Non-default parameter set: nearest filtering, clamp-to-edge, comparison enabled.
+        const vk::SamplerCreateInfo scalar = buildSamplerCreateInfo(vk::Filter::eNearest,
+          vk::SamplerAddressMode::eClampToEdge,
+          5.0F,
+          VK_FALSE,
+          1.0F,
+          vk::BorderColor::eIntOpaqueBlack,
+          VK_TRUE,
+          vk::CompareOp::eLessOrEqual);
+        const vk::SamplerCreateInfo desc = buildSamplerCreateInfo(
+          GltfSamplerDesc{ .addressModeU = vk::SamplerAddressMode::eClampToEdge,
+            .addressModeV = vk::SamplerAddressMode::eClampToEdge,
+            .magFilter = vk::Filter::eNearest,
+            .minFilter = vk::Filter::eNearest,
+            .mipmapMode = vk::SamplerMipmapMode::eLinear },
+          5.0F,
+          VK_FALSE,
+          1.0F,
+          vk::BorderColor::eIntOpaqueBlack,
+          VK_TRUE,
+          vk::CompareOp::eLessOrEqual);
+        expectSameFields(scalar, desc);
+    }
+}
+
 TEST(SamplerBuilder, FindSamplerReusesAnEqualKey)
 {
     const std::array<SamplerKey, 3> created{
