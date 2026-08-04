@@ -142,8 +142,9 @@ default (documented on the member itself in `ObjMaterial.hpp`).
 | `emission` | `emissiveFactor` | `Ke` | `rasterizer.slang` (`color += material.emission`), `deferred.slang` (packed into the G-buffer's `.gba`) |
 | `shininess` | — (only ever set to a derived `mix(128, 1, roughnessFactor)` value, kept as the OBJ-only fallback `material_roughness()` falls back to) | `Ns` | `material_fetch.slang`'s `material_roughness()`, OBJ materials only |
 | `dissolve` | `baseColorFactor.a` | `d` | `material_fetch.slang`'s `alpha_masked_out()` |
-| `textureID` | dedup'd slot into `textureImages` (`imageSlot` map, keyed on `(const cgltf_image *, const cgltf_sampler *)`) | dedup'd slot into `textures` (`pathSlot` map, keyed on the resolved texture path) | all five entry points, via `texture_offset + material.textureID` (see below) |
+| `textureID` | dedup'd slot into `textureImages` (`imageSlot` map, keyed on `(const cgltf_image *, const cgltf_sampler *, bool srgb)`) | dedup'd slot into `textures` (`pathSlot` map, keyed on the resolved texture path) | all five entry points, via `texture_offset + material.textureID` (see below) |
 | `sampler` (not an `ObjMaterial` field — tracked separately, index-parallel with `textureImages`, via `GltfLoader::getTextureSamplerDescs()`) | `textures[].sampler`'s wrap modes and mag/min/mipmap filters, mapped to `GltfSamplerDesc` (`vulkan_base/SamplerBuilder.ixx`) | — (OBJ has no sampler concept; every OBJ texture keeps the repeat/linear/linear default) | `Model::addSampler`, when building the texture's `vk::Sampler` |
+| `srgb` (not an `ObjMaterial` field — tracked separately, index-parallel with `textureImages`, via `GltfLoader::getTextureSrgbFlags()`) | `true` for base-colour/emissive views, `false` for the normal-map view | — (OBJ textures always upload sRGB) | `Texture::createFromMemory`/`createFromFile`, selecting `eR8G8B8A8Srgb` vs. `eR8G8B8A8Unorm` |
 | `alphaCutoff` | `material.alpha_cutoff` when `alphaMode == MASK`, else `-1` | — | `material_fetch.slang`'s `alpha_masked_out()`, `shadow_map.slang` |
 | `uv_transform_row0` / `uv_transform_row1` | `KHR_texture_transform`'s T\*R\*S rows on the base-colour texture; identity rows if the extension is absent | — | `base_color.slang`'s `transform_uv()` |
 | `metallic` | `pbrMetallicRoughness.metallicFactor`, clamped `[0,1]` | — | `rasterizer.slang`/`raytrace.rchit.slang` (`f0`, `brdf_direct`), `deferred.slang` (G-buffer normal's `.a`) |
@@ -161,20 +162,21 @@ array bound at `TEXTURES_BINDING`/`SAMPLER_BINDING`, sized by
 `const int MAX_TEXTURE_COUNT = 128;`. Both loaders actively economise
 against that budget rather than just hoping models stay small:
 
-- **glTF dedup by image and sampler** — `GltfLoader::parseCpu`'s `imageSlot`
-  map keys on the pair `(const cgltf_image *, const cgltf_sampler *)`, not
-  the material or the texture slot (base-colour vs. emissive vs. normal): one
-  decode+upload per (image, sampler) pair no matter how many materials or
-  texture slots reference it (e.g. a material whose base-colour and
-  emissive views name the same PNG shares one slot — `textureID ==
+- **glTF dedup by image, sampler and colour space** —
+  `GltfLoader::parseCpu`'s `imageSlot` map keys on the triple
+  `(const cgltf_image *, const cgltf_sampler *, bool srgb)`, not the material
+  or the texture slot (base-colour vs. emissive vs. normal): one
+  decode+upload per (image, sampler, colour space) triple no matter how many
+  materials or texture slots reference it (e.g. a material whose base-colour
+  and emissive views name the same PNG share one slot — `textureID ==
   emissiveTextureID`), while two textures that share an image but name
-  different samplers still get distinct slots — collapsing those would make
-  the second texture's wrap/filter settings unobservable. Note this means a
-  normal map sharing an image with a base-colour/emissive texture is decoded
-  through the same sRGB-format upload as those (`Texture.cpp`'s
-  `uploadRgba`); a document that never reuses an image this way is
-  unaffected, but this is otherwise a known gap - see the comment beside
-  `assignTextureSlot(material.normal_texture)` in `GltfLoader.cpp`.
+  different samplers, or that need different colour spaces, still get
+  distinct slots — collapsing those would make the second texture's
+  wrap/filter settings unobservable, or upload one of the two through the
+  wrong `VkFormat`. A base-colour/normal pair sharing one image therefore
+  gets **two** slots: one uploaded sRGB (`Texture.cpp`'s `uploadRgba` picks
+  `eR8G8B8A8Srgb`), the other UNORM (`eR8G8B8A8Unorm`) — glTF normal maps are
+  linear tangent-space data, not gamma-encoded colour.
 - **OBJ dedup by resolved path** — `ObjLoader::loadTexturesAndMaterials`'s
   `pathSlot` map keys on the path `resolveObjTexturePath` returns, not the
   raw `map_Kd` string, so two materials naming the same file through

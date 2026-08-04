@@ -21,15 +21,18 @@ class Texture
     Texture(Texture &&other) noexcept;
     Texture &operator=(Texture &&other) noexcept;
 
-    bool createFromFile(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, const std::string &fileName);
+    bool createFromFile(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool, const std::string &fileName, bool srgb = true);
     /// Decodes an encoded image (PNG/JPG/...) already in memory and uploads it,
     /// for glTF's embedded / data-URI images which never touch the filesystem.
     /// Shares the upload path with createFromFile; returns false if the bytes
-    /// do not decode.
+    /// do not decode. `srgb` selects the colour space the data is uploaded in:
+    /// true for colour data (base colour, emissive), false for linear data
+    /// (normal maps) - see the note on uploadRgba's texture_format.
     bool createFromMemory(const std::shared_ptr<VulkanDevice> &device,
       vk::CommandPool commandPool,
       const unsigned char *encodedBytes,
-      size_t byteCount);
+      size_t byteCount,
+      bool srgb = true);
     /// Returns false if the white-default upload itself failed (e.g. a failed
     /// submit), in which case the texture is left empty/unwritten.
     bool createDefaultTexture(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool);
@@ -100,7 +103,8 @@ class Texture
       int width,
       int height,
       vk::DeviceSize size,
-      const unsigned char *rgba);
+      const unsigned char *rgba,
+      bool srgb = true);
 
     uint32_t mip_levels = 0;
 

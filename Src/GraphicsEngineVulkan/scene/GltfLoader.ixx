@@ -101,6 +101,14 @@ class GltfLoader
     /// lookup.
     const std::vector<GltfSamplerDesc> &getTextureSamplerDescs() const { return textureSamplerDescs; }
 
+    /// Colour space each entry of getTextureImages() was authored in,
+    /// index-parallel with it: 1 for sRGB (base colour, emissive), 0 for
+    /// linear (normal maps). `unsigned char`, not `std::vector<bool>` - the
+    /// proxy reference is a trap in a parallel-array getter. An image used as
+    /// both base colour and normal map gets two slots, one per colour space,
+    /// since a slot can only carry one image format.
+    const std::vector<unsigned char> &getTextureSrgbFlags() const { return textureSrgb; }
+
     // One entry per glTF primitive (see the shared kataglyphis.vulkan.mesh_range
     // module): its slice of the flat vertices/indices/materialIndex arrays.
     // uploadParsed builds one Mesh per range, so a multi-primitive glTF becomes a
@@ -148,6 +156,8 @@ class GltfLoader
     std::vector<std::vector<unsigned char>> textureImages;
     // Index-parallel with textureImages; see getTextureSamplerDescs.
     std::vector<GltfSamplerDesc> textureSamplerDescs;
+    // Index-parallel with textureImages; see getTextureSrgbFlags.
+    std::vector<unsigned char> textureSrgb;
     // One slice per glTF primitive; see MeshRange / getMeshRanges.
     std::vector<MeshRange> meshRanges;
 };

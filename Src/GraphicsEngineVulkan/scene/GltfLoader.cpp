@@ -9,6 +9,7 @@ module;
 #include <memory>
 #include <string>
 #include <system_error>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -57,6 +58,7 @@ void GltfLoader::adoptParsed(GltfLoader &&other)
     materialIndex = std::move(other.materialIndex);
     textureImages = std::move(other.textureImages);
     textureSamplerDescs = std::move(other.textureSamplerDescs);
+    textureSrgb = std::move(other.textureSrgb);
     meshRanges = std::move(other.meshRanges);
 }
 
@@ -80,7 +82,8 @@ std::shared_ptr<Model> GltfLoader::uploadParsed()
     for (std::size_t i = 0; i < textureImages.size(); ++i) {
         const std::vector<unsigned char> &encoded = textureImages[i];
         Texture texture;
-        const bool created = texture.createFromMemory(device, command_pool, encoded.data(), encoded.size());
+        const bool created =
+          texture.createFromMemory(device, command_pool, encoded.data(), encoded.size(), textureSrgb[i] != 0);
         addTextureOrDefault(*model, device, command_pool, created, std::move(texture), textureSamplerDescs[i]);
     }
     ensureAtLeastOneTexture(*model, device, command_pool);
@@ -657,6 +660,7 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
     materialIndex.clear();
     textureImages.clear();
     textureSamplerDescs.clear();
+    textureSrgb.clear();
     meshRanges.clear();
 
     cgltf_options options{};
@@ -679,29 +683,31 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
     // primitive that references none. `materialIndex` (per triangle) points into
     // this table.
     //
-    // Materials that share the same glTF (image, sampler) pair share one
-    // textureImages slot: each is decoded/uploaded once no matter how many
-    // materials point at it, which matters because textureID indexes into the
-    // engine's fixed MAX_TEXTURE_COUNT descriptor budget. The key is the PAIR,
-    // not just the image - two textures may share one image with different
-    // samplers, and collapsing them onto one slot would make the sampler
-    // unobservable.
+    // Materials that share the same glTF (image, sampler, colour space) triple
+    // share one textureImages slot: each is decoded/uploaded once no matter
+    // how many materials point at it, which matters because textureID indexes
+    // into the engine's fixed MAX_TEXTURE_COUNT descriptor budget. Colour
+    // space is part of the key, not just an attribute of the slot: an image
+    // used as both sRGB base colour and linear normal map needs two slots,
+    // one per format, since a slot can only carry one image format.
     const std::filesystem::path documentDir = std::filesystem::path(modelFile).parent_path();
 
-    std::map<std::pair<const cgltf_image *, const cgltf_sampler *>, int> imageSlot;
+    std::map<std::tuple<const cgltf_image *, const cgltf_sampler *, bool>, int> imageSlot;
 
-    // Assigns `view`'s (image, sampler) pair a slot in textureImages, reusing
-    // an existing slot when some earlier texture (base-colour or emissive,
-    // on this material or an earlier one) already named the same pair -
-    // slots are the shared 128-entry descriptor budget, so a document whose
-    // emissive and base-colour views point at the same image must land on
-    // ONE slot. Returns -1 ("no texture") when the view has no texture or
-    // its bytes cannot be extracted.
-    const auto assignTextureSlot = [&](const cgltf_texture_view &view) -> int {
+    // Assigns `view`'s (image, sampler, srgb) triple a slot in textureImages,
+    // reusing an existing slot when some earlier texture (base-colour or
+    // emissive, on this material or an earlier one) already named the same
+    // triple - slots are the shared 128-entry descriptor budget, so a
+    // document whose emissive and base-colour views point at the same image
+    // must land on ONE slot. `srgb` selects the colour space the texel data
+    // is uploaded in (true for base-colour/emissive, false for normal maps).
+    // Returns -1 ("no texture") when the view has no texture or its bytes
+    // cannot be extracted.
+    const auto assignTextureSlot = [&](const cgltf_texture_view &view, bool srgb) -> int {
         if (view.texture == nullptr) { return -1; }
         const cgltf_texture *tex = view.texture;
         const cgltf_image *img = tex->image;
-        const auto key = std::make_pair(img, tex->sampler);
+        const auto key = std::make_tuple(img, tex->sampler, srgb);
         const auto existing = imageSlot.find(key);
         if (existing != imageSlot.end()) { return existing->second; }
 
@@ -711,6 +717,7 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
         imageSlot[key] = slot;
         textureImages.push_back(std::move(bytes));
         textureSamplerDescs.push_back(gltfSamplerDesc(tex->sampler));
+        textureSrgb.push_back(srgb ? 1 : 0);
         return slot;
     };
 
@@ -718,19 +725,10 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
         const cgltf_material &material = data->materials[m];
         ObjMaterial objMaterial = fromGltfMaterial(material);
         if (material.has_pbr_metallic_roughness != 0) {
-            objMaterial.textureID = assignTextureSlot(material.pbr_metallic_roughness.base_color_texture);
+            objMaterial.textureID = assignTextureSlot(material.pbr_metallic_roughness.base_color_texture, true);
         }
-        objMaterial.emissiveTextureID = assignTextureSlot(material.emissive_texture);
-        // KNOWN LIMITATION: assignTextureSlot uploads through Texture.cpp's
-        // single hardcoded eR8G8B8A8Srgb format (see uploadRgba), which is
-        // correct for base-colour/emissive (sRGB-encoded PNG/JPG source data)
-        // but wrong for a normal map (linear tangent-space data - glTF
-        // requires it be read WITHOUT sRGB decode). Sharing a slot with an
-        // sRGB-sampled texture would also be wrong for the same reason, but
-        // dedup is by (image, sampler) identity, so a document that does not
-        // reuse a base-colour/emissive image as its normal map is unaffected
-        // by this. Fixing it needs a per-slot format, out of scope here.
-        objMaterial.normalTextureID = assignTextureSlot(material.normal_texture);
+        objMaterial.emissiveTextureID = assignTextureSlot(material.emissive_texture, true);
+        objMaterial.normalTextureID = assignTextureSlot(material.normal_texture, false);
         materials.push_back(objMaterial);
     }
     const auto fallbackMaterial = static_cast<unsigned int>(materials.size());

@@ -9839,3 +9839,354 @@ does not.
 
 ### C++ Vulkan engine
 
+## 2026-08-05 batch II — planner (every normal map in the C++ engine is sRGB-decoded before it is unpacked, so a flat texel unpacks to a -0.57 tilt rather than zero; `normalTexture.scale`, which `common/normal_map.slang` names in a comment as the thing `ObjMaterial` has no field for; the metallic-roughness texture, the one lit glTF slot the Rust twin samples and this engine has no field for; and `map_Bump`/`norm`, which both OBJ paths drop while both renderers now do normal mapping)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). The 2026-08-05 batch's three tasks all shipped
+(`fc637887`, `caba3c20`, `ddbdb1b4`). Everything below was read out of the tree
+at `ddbdb1b4`.
+
+**First, normal maps are uploaded through the sRGB format.**
+`Texture.cpp:124` is `constexpr vk::Format texture_format =
+vk::Format::eR8G8B8A8Srgb` — one hardcoded format for every model texture, used
+for the image (`:156`) and for the view (`:203`). `GltfLoader.cpp:724-732`
+already says so in a `KNOWN LIMITATION` comment written when the normal slot
+landed: "wrong for a normal map (linear tangent-space data — glTF requires it
+be read WITHOUT sRGB decode) … Fixing it needs a per-slot format, out of scope
+here." Normal mapping then shipped four commits later (`2030c374`), so that
+comment now describes live, wrong output in all four shading paths.
+
+The size of the error is not subtle. A flat normal-map texel is (128, 128,
+255); through a UNORM view it samples as (0.502, 0.502, 1.0) and
+`normal_map.slang:21`'s `sampledNormal * 2.0 - 1.0` gives (0.004, 0.004, 1.0) —
+the geometric normal, as intended. Through the sRGB view the hardware decodes
+128/255 to **0.2158**, and the same line gives **(-0.568, -0.568, 1.0)**. Every
+normal-mapped surface in the engine is therefore tilted by a large constant
+amount along -T and -B, before the map's own detail is applied. The Rust twin
+gets this right and carries the exact mechanism this task needs: `CpuTextureRef`
+has an `srgb: bool` (`scene/mod.rs:155`, `asset/gltf_loader.rs:364-376`) and
+`gltf_loader.rs:649-665` passes `true` for base colour and emissive, `false`
+for metallic-roughness, normal and occlusion.
+
+The dedup key has to move with the format. `GltfLoader.cpp:704` keys
+`imageSlot` on `(const cgltf_image *, const cgltf_sampler *)`, and
+`gltfParseSuite.cpp:371-415` pins the consequence: a document whose
+`baseColorTexture` and `normalTexture` name the same image lands on **one**
+slot. One slot can only have one format, so that case is unfixable without
+adding the colour space to the key — which is also why that existing test's
+expectation has to change as part of this task, not be worked around.
+
+**Second, `normalTexture.scale` has nowhere to go.**
+`common/normal_map.slang:10` is a comment naming the gap outright:
+"KHR\_texture\_transform normalScale factor — ObjMaterial has none yet." glTF
+2.0 §3.9.3 defines the scale as applying to the tangent-space X and Y
+components before normalisation; the Rust twin reads it
+(`gltf_loader.rs:646`, `normal_scale`), packs it into
+`material_factors.w` and applies it in `forward.slang`. The C++ loader never
+reads `cgltf_texture_view::scale`, so an author who dials a normal map's
+strength down gets no effect at all in this engine. It is the last
+per-texture glTF scalar in the normal chain, and it is the only one of the
+four `ObjMaterial` factors added in the last week (`metallic`, `roughness`,
+`emissiveTextureID`, `normalTextureID`) whose companion value was left behind.
+
+**Third, `metallicRoughnessTexture` is the last unread lit texture slot.**
+`fromGltfMaterial` reads `pbr.metallic_factor` and `pbr.roughness_factor`
+(`GltfLoader.cpp:152-154`) and every shading path consumes them —
+`rasterizer.slang:92-97`, `deferred.slang:97,120`,
+`raytrace.rchit.slang:136-151`, and the path tracer. But
+`pbr.metallic_roughness_texture` is never touched: `parseCpu` assigns exactly
+three slots (`:721` base colour, `:723` emissive, `:733` normal). So a glTF
+whose roughness varies across a surface — the normal authoring case for
+anything metal or worn — renders with one flat factor. The Rust twin samples it
+(`gltf_loader.rs:652-654`, `forward.slang:369-387`) with the spec's channel
+assignment (G = roughness, B = metallic, multiplied by the factors). Occlusion,
+the fifth slot the Rust twin carries, deliberately stays out of this batch:
+the C++ paths have no ambient or IBL term for it to attenuate (a grep for
+`ambient`/`ibl` across `rasterizer.slang`, `deferred.slang` and `common/`
+returns nothing but `sky_model.slang`'s doc comment), so there is nothing to
+multiply it into yet.
+
+**Fourth, both OBJ paths drop the normal map.** `ObjLoader.cpp:199` reads
+`mp->diffuse_texname` and nothing else; `tiny_obj_loader.h:210` and `:238`
+expose `bump_texname` (`map_Bump`/`map_bump`/`bump`) and `normal_texname`
+(`norm`), and both are ignored. The Rust OBJ→glTF converter does the same, and
+its comment justifying it — `obj_to_gltf.rs:110-114`, "`map_Bump`… have no
+glTF equivalent" — was true when it was written and is now false: glTF's
+`normalTexture` is exactly that equivalent, and both renderers implement it.
+
+**Verification context.** Host GPU goldens are still blocked over RDP (the
+`- [b]` near the end of this file) and `path_tracing` mode device-losts on the
+host RX 9070 XT on unmodified `develop` (the `- [b]` at line ~2030). Tasks 1
+and 4 are CPU-verifiable end to end: the format decision and the slot
+assignment are both parse-time state the loaders already expose to
+device-free suites. Tasks 2, 3 and 5 change shading math or generated glTF and
+carry defaults chosen so an unaffected scene is bit-unchanged (`normalScale`
+1.0, no MR texture, no `map_Bump`). **Do not claim a rendered result you
+cannot obtain** — state which suites you ran.
+
+**Ordering.** Task 1 first: tasks 3 and 4 both need the per-slot colour space
+it introduces (metallic-roughness and normal data are both linear), and task 4
+needs the `createFromFile` half of it. Tasks 2 and 3 both append a member to
+`ObjMaterial` and both edit the same two layout gates, so whichever runs second
+rebases on the first's offsets — the entries below spell out both cases. Task 5
+is in the Rust submodule and is independent of all four.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Carry glTF `normalTexture.scale` into `ObjMaterial` and apply it in `apply_normal_map`** — `common/normal_map.slang:10` names this gap in a comment; the Rust twin has applied it since the normal slot landed.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/common/normal_map.slang` — 23 lines; `:10` is the
+    comment to delete, `:16-23` the function to extend.
+  - `Src/shared/scene/ObjMaterial.hpp:37-68` — the trailing-scalar convention
+    every recent field follows, and the two `static_assert`s at `:74-75`.
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:137-225` — `fromGltfMaterial`
+    and its designated-initializer return at `:213-224`.
+  - `Resources/ShadersSlang/common/scene_types.slang:34-49` — the Slang twin
+    struct.
+  - `Test/commit/VulkanEngine/pushConstantSuite.cpp:140-186` — the offset and
+    sentinel gates.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:1042-1054` — the
+    `ObjMaterial_natural` layout entry.
+  - Call sites to update: `rasterizer.slang:68-73`, `deferred.slang:88-93`,
+    `raytracing/raytrace.rchit.slang:103-111`,
+    `path_tracing/path_tracing.slang:229-241`.
+  - Reference: `.../webgpu_renderer/src/asset/gltf_loader.rs:646` and
+    `Resources/ShadersSlang/forward/forward.slang:40` (`material_factors.w`).
+
+  **Steps:**
+  1. Add `float normalScale{ 1.0F };` as the **trailing** member of
+     `ObjMaterial`, with a comment in the style of its neighbours: glTF
+     `normalTexture.scale`, default 1.0 so every OBJ material and every glTF
+     material without a normal texture is bit-unchanged.
+  2. Mirror it as the last member of `scene_types.slang`'s `ObjMaterial`.
+  3. In `fromGltfMaterial`, set
+     `.normalScale = material.normal_texture.texture != nullptr ? material.normal_texture.scale : 1.0F`
+     — `cgltf_texture_view::scale` is left at its default when there is no
+     texture, so guard on the texture pointer rather than trusting the field.
+  4. `apply_normal_map` gains a trailing `float scale = 1.0` parameter and
+     applies it per glTF 2.0 §3.9.3 — **X and Y only**, before normalisation:
+     `float3 nTs = sampledNormal * 2.0 - 1.0; nTs.xy *= scale;`. Delete the
+     `:10` comment. The default parameter keeps any caller not yet updated
+     compiling with today's behaviour.
+  5. Pass `material.normalScale` at all four call sites.
+  6. Update `pushConstantSuite.cpp:148-163`: `offsetof(ObjMaterial,
+     normalScale) == 80U`, `sizeof(ObjMaterial) == 84U`; add
+     `EXPECT_FLOAT_EQ(m.normalScale, 1.0F)` to the sentinel test at `:170-186`;
+     add the field to `buildIntegritySuite.cpp`'s `ObjMaterial_natural` list.
+     (If task 3 landed first, append after its member instead and shift both
+     numbers by 4.)
+  7. Recompile shaders:
+     `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`,
+     then run the `BuildIntegrity` staleness gates. `scene_types.slang` and
+     `normal_map.slang` are imported only by the SPIR-V shaders (`forward.slang`
+     imports just `brdf` and `sky_model`), so no WGSL is regenerated.
+
+  **Test:** `GltfParseUnit.NormalTextureScaleIsCarriedIntoTheMaterial` in
+  `gltfParseSuite.cpp` — a fixture with `"normalTexture": { "index": 1, "scale":
+  0.5 }` yields `0.5F`, and the existing no-normal-texture fixture at `:416-451`
+  yields `1.0F`. Extend
+  `BuildIntegrity.NormalMappingIsAppliedByEveryShadingPath`
+  (`buildIntegritySuite.cpp:2792`) to also require `normalScale` in each of the
+  four shader sources, so a fifth path cannot silently skip it. Plus the
+  updated layout gates from step 6.
+
+  **Build:** `clangcl-debug`, **`-FreshContainer`** (`ObjMaterial.hpp` sits in
+  `ObjMaterial.ixx`'s global module fragment). Then
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=ObjMaterialLayoutUnit.*:GltfParseUnit.*:BuildIntegrity.*`.
+
+  **Context:** the default of 1.0 makes this a no-op for every scene in the
+  tree, so the layout gates plus the parse test are the whole verification
+  surface — which is why they must be updated, not skipped. `scale` is the same
+  `cgltf_texture_view` field glTF reuses as `occlusionTexture.strength`; do not
+  wire occlusion here, the C++ paths have no ambient term to attenuate.
+
+- [ ] **(M) Sample glTF `metallicRoughnessTexture` in all four C++ shading paths** — metallic and roughness are per-material constants today; the Rust twin has sampled the texture since its PBR pass landed.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp:700-735` — `assignTextureSlot`
+    and the three existing slot assignments; `:118-127` `warnUnsupportedTexCoordSet`.
+  - `Src/shared/scene/ObjMaterial.hpp` — the trailing-member convention.
+  - `Resources/ShadersSlang/common/material_fetch.slang:33` —
+    `material_roughness()`, the helper this extends.
+  - `Resources/ShadersSlang/common/scene_types.slang:34-49` — the Slang twin.
+  - Consumers: `rasterizer.slang:92-97`, `deferred.slang:97,115-120`,
+    `raytrace.rchit.slang:136-151`, `path_tracing/path_tracing.slang` (its
+    BRDF call).
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:2785-2830` — the
+    per-path gate to copy.
+  - Reference:
+    `.../webgpu_renderer/src/asset/gltf_loader.rs:652-654` and
+    `Resources/ShadersSlang/forward/forward.slang:369-390` (channel assignment).
+
+  **Steps:**
+  1. Add `int metallicRoughnessTextureID{ -1 };` as the trailing member of
+     `ObjMaterial` (same `-1` sentinel and comment style as
+     `emissiveTextureID`/`normalTextureID`), mirror it in `scene_types.slang`,
+     and update `pushConstantSuite.cpp:148-186` and
+     `buildIntegritySuite.cpp:1042-1054`. Offsets depend on task 2: without it,
+     offset 80 / `sizeof` 84; after it, offset 84 / `sizeof` 88.
+  2. In `parseCpu`'s material loop (`GltfLoader.cpp:717-735`), inside the
+     existing `has_pbr_metallic_roughness` guard, add
+     `objMaterial.metallicRoughnessTextureID =
+     assignTextureSlot(material.pbr_metallic_roughness.metallic_roughness_texture, /*srgb=*/false)`
+     — **linear**, like the normal slot; this task depends on task 1 having
+     added that parameter.
+  3. In `fromGltfMaterial`, add the fourth
+     `warnUnsupportedTexCoordSet(materialName, pbr.metallic_roughness_texture,
+     "metallic-roughness")` call beside the three at `:160`, `:208`, `:211`.
+  4. In `common/material_fetch.slang`, add
+     `float2 material_metallic_roughness(ObjMaterial m, float4 mrSample)`
+     returning `float2(m.metallic * mrSample.b, material_roughness(m) *
+     mrSample.g)` — glTF 2.0 §3.9.2: **G = roughness, B = metallic**, and the
+     factors multiply the texture. Document that a material with no MR texture
+     passes `float4(1.0)` so the result is exactly today's factors.
+  5. Wire all four paths: sample with `resolve_texture_slot(obj,
+     material.metallicRoughnessTextureID)` and `transform_uv(...)` exactly as
+     the normal slot does, guarded by `>= 0`, then feed
+     `material_metallic_roughness`'s two outputs into the existing `metallic`
+     and `roughness` locals. Deferred needs no G-buffer change — metallic
+     already rides `outNormal.w` and roughness `outMaterial.r`, both per-pixel.
+  6. Recompile shaders and run the staleness gates (as in task 2).
+
+  **Test:**
+  - `GltfParseUnit.MetallicRoughnessTextureGetsItsOwnLinearSlot` in
+    `gltfParseSuite.cpp` — a material with distinct base-colour and MR images:
+    the two IDs differ and the MR slot's `getTextureSrgbFlags()` entry is 0.
+  - `GltfParseUnit.AMaterialWithoutAMetallicRoughnessTextureKeepsTheSentinel` —
+    `-1`.
+  - `BuildIntegrity.MetallicRoughnessTextureIsSampledByEveryShadingPath`,
+    modelled line-for-line on
+    `NormalMappingIsAppliedByEveryShadingPath` (`buildIntegritySuite.cpp:2792`):
+    each of the four sources must mention `metallicRoughnessTextureID`, and
+    `material_fetch.slang` must be the sole place the channel swizzle appears.
+  - Updated layout gates from step 1.
+
+  **Build:** `clangcl-debug`, **`-FreshContainer`**, then
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=ObjMaterialLayoutUnit.*:GltfParseUnit.*:BuildIntegrity.*`.
+
+  **Context:** **run after task 1** — without the per-slot colour space this
+  would upload linear metallic-roughness data through the sRGB view and repeat
+  the exact defect task 1 fixes. Occlusion is deliberately out of scope: the
+  C++ paths have no ambient/IBL term, so there is nothing for it to multiply.
+  Do not widen any G-buffer attachment; both channels already exist.
+
+- [ ] **(S) Read `map_Bump` / `norm` in the C++ OBJ loader into `normalTextureID`** — `ObjLoader` reads exactly one MTL texture directive, so an OBJ with a normal map renders flat in every C++ path.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:139-160` —
+    `resolveObjTexturePath` (the `textures/` fallback and backslash
+    normalisation); `:188-221` — the `pathSlot` dedup loop that currently reads
+    only `mp->diffuse_texname`.
+  - `ExternalLib/TINY_OBJ_LOADER/tiny_obj_loader.h:210` (`bump_texname` —
+    `map_bump`/`map_Bump`/`bump`) and `:238` (`normal_texname` — `norm`), plus
+    `bump_texopt.bump_multiplier`.
+  - `Src/GraphicsEngineVulkan/scene/ModelAssembly.ixx:26-49` —
+    `addTextureOrDefault`, the shared tail both loaders use.
+  - `Test/commit/VulkanEngine/objParseSuite.cpp:397-533` — the texture-resolution
+    and slot-sharing tests to follow.
+
+  **Steps:**
+  1. In the material loop, after the existing `diffuse_texname` block, resolve
+     the normal map as `mp->normal_texname` when non-empty, else
+     `mp->bump_texname`. Prefer `norm`: it is defined as a tangent-space normal
+     map, while `map_Bump` is conventionally a height map that most exporters
+     (Blender included) nonetheless use for normal maps. Log at `spdlog::debug`
+     when falling back to `bump_texname` so the ambiguity is visible.
+  2. Resolve it through `resolveObjTexturePath(base_dir, ...)` like the diffuse
+     path, and assign the slot through the same `pathSlot` map — but key on
+     `(resolved path, isSrgb)` so a `.mtl` that names one file as both `map_Kd`
+     and `map_Bump` gets two slots with the right format each. Same rule task 1
+     applies to the glTF key.
+  3. Carry a per-slot sRGB flag through the OBJ upload the same way: pass
+     `false` to `Texture::createFromFile` for the normal slot (task 1 adds that
+     parameter) and default-`true` everywhere else.
+  4. Set `material.normalTextureID` to the resolved slot, `-1` when the
+     material names neither directive. Leave `textureID` untouched.
+  5. If task 2 landed, map `mp->bump_texopt.bump_multiplier` onto
+     `material.normalScale`; if it has not, skip this step and say so in the
+     commit message rather than inventing a field.
+
+  **Test:** in `objParseSuite.cpp`, following
+  `MaterialsSharingAMapKdShareOneTextureSlot` (`:430-466`) — those tests write a
+  `.obj`/`.mtl` pair to a temp dir and parse without a device:
+  - `ObjParseUnit.MtlMapBumpBecomesTheNormalTextureSlot` — a `.mtl` with
+    `map_Kd wood.png` + `map_Bump wood_n.png` gives distinct, non-negative
+    `textureID` and `normalTextureID`.
+  - `ObjParseUnit.MtlNormPreferredOverMapBump` — both directives present, the
+    `norm` file wins.
+  - `ObjParseUnit.AnMtlWithoutANormalMapKeepsTheMinusOneSentinel`.
+  - `ObjParseUnit.OneFileNamedAsBothMapKdAndMapBumpGetsTwoSlots` — the
+    colour-space split from step 2.
+
+  **Build:** `clangcl-debug` (`ObjLoader.cpp` is an implementation unit;
+  `-FreshContainer` only if task 1's `Texture.ixx` change is in the same
+  build). Then
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=ObjParseUnit.*`.
+
+  **Context:** **run after task 1.** The OBJ path shares
+  `addTextureOrDefault`/`ensureAtLeastOneTexture` with the glTF path, and the
+  "a failed texture still occupies its slot" rule in
+  `docs/model-loading.md:183-187` applies unchanged — a missing normal map must
+  still consume its slot, or every later `textureID` shifts down by one. Update
+  the OBJ column of the material table in `docs/model-loading.md:151` (today a
+  bare `—` for `normalTextureID`).
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+- [ ] **(S) Emit `normalTexture` from `map_Bump`/`norm` in the OBJ→glTF converter** — the converter drops the directive on the grounds that it has "no glTF equivalent", which stopped being true when both renderers implemented normal mapping.
+
+  **Files to read:**
+  - `ExternalLib/Kataglyphis-RustProjectTemplate/crates/webgpu_renderer/src/asset/obj_to_gltf.rs:30-50`
+    (`ObjMaterial`, which has only `base_color_texture`), `:109-190`
+    (`parse_mtl`, incl. the stale comment at `:110-114` and the `map_Kd`
+    option/backslash handling at `:166-185`), `:585-680` (image/texture/material
+    JSON emission and the dedup at `:588-605`), `:820-865` (the "copy referenced
+    textures next to the glTF" pass that walks `base_color_texture` only).
+  - `.../src/asset/gltf_loader.rs:655-657` — the `normal_texture` the loader
+    already reads back, so the round trip works the moment the converter emits it.
+  - The crate's existing `parse_mtl`/`to_gltf` unit tests (same file's `#[cfg(test)]`
+    module) for the fixture style.
+
+  **Steps:**
+  1. Add `normal_texture: Option<String>` and `normal_scale: f32` (default
+     `1.0`) to `ObjMaterial`.
+  2. In `parse_mtl`, handle `norm`, `map_Bump`, `map_bump` and `bump`, reusing
+     the existing `map_Kd` arm's two hard-won rules verbatim: the path is the
+     **last** token (options may precede it) and `\` is normalised to `/`.
+     Prefer `norm` when a material names both. Parse a `-bm <f32>` option into
+     `normal_scale` when present.
+  3. Fix the comment at `:110-114`: `map_Bump` **does** have a glTF equivalent
+     (`normalTexture`); `Ns`, `Ka`, `Ks` and `illum` are the ones that do not.
+  4. Feed the normal URI through the same image dedup (`:588-605`) as
+     `base_color_texture`, emit
+     `"normalTexture": { "index": N, "scale": S }` in the material JSON at
+     `:631-671`, and add it to the texture-copy walk at `:828` so the referenced
+     file is copied beside the output.
+
+  **Test:** in the same file's test module —
+  `parse_mtl_reads_map_bump_as_the_normal_texture`,
+  `parse_mtl_prefers_norm_over_map_bump`,
+  `parse_mtl_takes_the_last_token_of_an_option_carrying_map_bump`, and a
+  `to_gltf` test asserting the emitted JSON contains a `normalTexture` whose
+  `index` points at a distinct image entry when `map_Kd` and `map_Bump` name
+  different files (and the **same** entry when they name the same file — the
+  Rust loader carries `srgb` per `CpuTextureRef`, so sharing an image is
+  correct on this side).
+
+  **Build:** the crate, not the engine. Verify with
+  `cargo check -p kataglyphis_webgpu_renderer`,
+  `cargo clippy -p kataglyphis_webgpu_renderer -- -D warnings` and
+  `cargo fmt --check` from
+  `ExternalLib/Kataglyphis-RustProjectTemplate`. **`cargo test` does not link on
+  this host** (incomplete VC++ Build Tools + Git Bash's `link.exe` shadowing
+  MSVC's) — the tests still run in CI's `ubuntu-24.04` leg via
+  `Scripts/Linux/run-cargo-tests.sh`. Write them, run what links locally, and
+  say plainly which of the three commands you ran.
+
+  **Context:** this is submodule work — commit inside
+  `ExternalLib/Kataglyphis-RustProjectTemplate` first, then bump the gitlink in
+  this repo in the same change (`AGENTS.md` § Critical Invariant: Submodule
+  Pins). Independent of tasks 1-4: it touches neither the C++ engine nor any
+  shared shader.
+

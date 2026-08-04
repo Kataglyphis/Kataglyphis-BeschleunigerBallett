@@ -67,7 +67,8 @@ auto deviceSupportsMipmapGeneration(vk::PhysicalDevice physical_device, vk::Form
 
 auto Kataglyphis::Texture::createFromFile(const std::shared_ptr<VulkanDevice> &device,
   vk::CommandPool commandPool,
-  const std::string &fileName) -> bool
+  const std::string &fileName,
+  bool srgb) -> bool
 {
     int width = 0;
     int height = 0;
@@ -80,13 +81,14 @@ auto Kataglyphis::Texture::createFromFile(const std::shared_ptr<VulkanDevice> &d
         return false;
     }
 
-    return uploadRgba(device, commandPool, width, height, size, image_data);
+    return uploadRgba(device, commandPool, width, height, size, image_data, srgb);
 }
 
 auto Kataglyphis::Texture::createFromMemory(const std::shared_ptr<VulkanDevice> &device,
   vk::CommandPool commandPool,
   const unsigned char *encodedBytes,
-  size_t byteCount) -> bool
+  size_t byteCount,
+  bool srgb) -> bool
 {
     if (encodedBytes == nullptr || byteCount == 0) { return false; }
 
@@ -104,7 +106,7 @@ auto Kataglyphis::Texture::createFromMemory(const std::shared_ptr<VulkanDevice> 
 
     // STBI_rgb_alpha forced 4 channels, so the tight size is width*height*4.
     const vk::DeviceSize size = static_cast<vk::DeviceSize>(width) * static_cast<vk::DeviceSize>(height) * 4U;
-    return uploadRgba(device, commandPool, width, height, size, image_data);
+    return uploadRgba(device, commandPool, width, height, size, image_data, srgb);
 }
 
 auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &device,
@@ -112,7 +114,8 @@ auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &devic
   int width,
   int height,
   vk::DeviceSize size,
-  const unsigned char *rgba) -> bool
+  const unsigned char *rgba,
+  bool srgb) -> bool
 {
     if (width == 0 || height == 0 || rgba == nullptr) { return false; }
 
@@ -120,8 +123,10 @@ auto Kataglyphis::Texture::uploadRgba(const std::shared_ptr<VulkanDevice> &devic
     // through a UNORM view fed gamma-space values into lighting math that
     // assumes linear - then post's gamma encode applied on top, washing out
     // every textured surface. The sRGB view makes the hardware decode to
-    // linear at sample time.
-    constexpr vk::Format texture_format = vk::Format::eR8G8B8A8Srgb;
+    // linear at sample time. Normal maps are the inverse: their texels are
+    // already linear tangent-space offsets, so sRGB-decoding them tilts every
+    // unpacked normal - those go through as UNORM instead (srgb = false).
+    const vk::Format texture_format = srgb ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
     mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1;
     if (!deviceSupportsMipmapGeneration(device->getPhysicalDevice(), texture_format)) {
         vk::FormatFeatureFlags optimal_tiling_features =

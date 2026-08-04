@@ -278,6 +278,9 @@ TEST(GltfParseUnit, EmissiveAndBaseColourSharingOneImageShareOneSlot)
     EXPECT_EQ(loader.getMaterials()[0].textureID, 0);
     EXPECT_EQ(loader.getMaterials()[0].emissiveTextureID, 0)
       << "base-colour and emissive naming the same (image, sampler) pair must share one slot";
+    ASSERT_EQ(loader.getTextureSrgbFlags().size(), loader.getTextureImages().size());
+    EXPECT_EQ(loader.getTextureSrgbFlags()[0], 1)
+      << "base-colour and emissive are both sRGB, so sharing a slot is still correct under the colour-space key";
 }
 
 TEST(GltfParseUnit, MaterialWithoutAnEmissiveTextureKeepsTheSentinel)
@@ -364,13 +367,19 @@ TEST(GltfParseUnit, NormalTextureGetsItsOwnTextureSlot)
     EXPECT_EQ(loader.getMaterials()[0].normalTextureID, 1);
     EXPECT_NE(loader.getMaterials()[0].textureID, loader.getMaterials()[0].normalTextureID)
       << "distinct images must not collapse onto one slot";
+    ASSERT_EQ(loader.getTextureSrgbFlags().size(), loader.getTextureImages().size());
+    EXPECT_EQ(loader.getTextureSrgbFlags()[loader.getMaterials()[0].textureID], 1)
+      << "base-colour texel data is sRGB-encoded";
+    EXPECT_EQ(loader.getTextureSrgbFlags()[loader.getMaterials()[0].normalTextureID], 0)
+      << "normal-map texel data is linear tangent-space offsets, not gamma-encoded colour";
 }
 
-TEST(GltfParseUnit, NormalAndBaseColourSharingOneImageShareOneSlot)
+TEST(GltfParseUnit, NormalAndBaseColourSharingOneImageGetTwoSlotsForDifferentColourSpaces)
 {
     // A material whose baseColorTexture and normalTexture both name
-    // texture[0] -> image[0] must land on ONE textureImages slot: slots are
-    // the shared 128-entry descriptor budget.
+    // texture[0] -> image[0] must nonetheless land on TWO textureImages
+    // slots: a slot can only carry one VkFormat, and base-colour (sRGB) and
+    // normal-map (linear/UNORM) data need different formats.
     const char *doc = R"GLTF({
       "asset": { "version": "2.0" },
       "materials": [
@@ -404,11 +413,17 @@ TEST(GltfParseUnit, NormalAndBaseColourSharingOneImageShareOneSlot)
     ASSERT_TRUE(loader.parseCpu(tmp.string()));
     std::filesystem::remove(tmp);
 
-    ASSERT_EQ(loader.getTextureImages().size(), 1U) << "the shared image must be extracted only once";
+    ASSERT_EQ(loader.getTextureImages().size(), 2U)
+      << "the shared image must still be extracted twice: one slot can only carry one image format, and "
+         "base-colour (sRGB) and normal (linear) need different formats";
     ASSERT_EQ(loader.getMaterials().size(), 2U) << "the one declared material, plus the neutral fallback";
     EXPECT_EQ(loader.getMaterials()[0].textureID, 0);
-    EXPECT_EQ(loader.getMaterials()[0].normalTextureID, 0)
-      << "base-colour and normal naming the same (image, sampler) pair must share one slot";
+    EXPECT_EQ(loader.getMaterials()[0].normalTextureID, 1);
+    EXPECT_NE(loader.getMaterials()[0].textureID, loader.getMaterials()[0].normalTextureID)
+      << "one (image, sampler) pair used at two colour spaces must not collapse onto one slot";
+    ASSERT_EQ(loader.getTextureSrgbFlags().size(), loader.getTextureImages().size());
+    EXPECT_EQ(loader.getTextureSrgbFlags()[loader.getMaterials()[0].textureID], 1);
+    EXPECT_EQ(loader.getTextureSrgbFlags()[loader.getMaterials()[0].normalTextureID], 0);
 }
 
 TEST(GltfParseUnit, MaterialWithoutANormalTextureKeepsTheSentinel)
