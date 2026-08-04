@@ -143,7 +143,13 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
               materialName, texCoordInfo.set);
         }
     }
-    const glm::vec3 emission(material.emissive_factor[0], material.emissive_factor[1], material.emissive_factor[2]);
+    // KHR_materials_emissive_strength scales the emissive contribution past the
+    // [0,1] glTF factor range (for HDR emitters). Fold it into the factor so the
+    // shading paths stay unchanged; default 1.0 when the extension is absent.
+    const float emissiveStrength = material.has_emissive_strength != 0 ? material.emissive_strength.emissive_strength : 1.0F;
+    const glm::vec3 emission(material.emissive_factor[0] * emissiveStrength,
+      material.emissive_factor[1] * emissiveStrength,
+      material.emissive_factor[2] * emissiveStrength);
     // Smoother surfaces (low roughness) get a tighter, stronger highlight.
     const float shininess = glm::mix(128.0F, 1.0F, glm::clamp(roughness, 0.0F, 1.0F));
 

@@ -849,6 +849,80 @@ TEST(GltfParseUnit, MaterialWithoutPbrMetallicRoughnessHasNoAuthoredRoughness)
       << "a material without pbrMetallicRoughness must have no authored roughness";
 }
 
+TEST(GltfParseUnit, EmissiveFactorReachesTheMaterial)
+{
+    // glTF material.emissiveFactor must carry through to ObjMaterial::emission -
+    // the plain path with no KHR_materials_emissive_strength extension involved.
+    const auto path = sceneConfig::resolveModelPath("Models/GltfTest/emissive_card.gltf");
+    if (!std::filesystem::exists(path)) { GTEST_SKIP() << "emissive_card fixture not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(path));
+
+    ASSERT_GT(loader.getMaterials().size(), 0U);
+    const glm::vec3 &emission = loader.getMaterials()[0].emission;
+    EXPECT_NEAR(emission.x, 1.0F, 1e-6F) << "the fixture's emissiveFactor must reach ObjMaterial::emission";
+    EXPECT_NEAR(emission.y, 1.0F, 1e-6F) << "the fixture's emissiveFactor must reach ObjMaterial::emission";
+    EXPECT_NEAR(emission.z, 1.0F, 1e-6F) << "the fixture's emissiveFactor must reach ObjMaterial::emission";
+}
+
+TEST(GltfParseUnit, EmissiveStrengthScalesTheEmissiveFactor)
+{
+    // KHR_materials_emissive_strength must scale emissiveFactor past the [0,1]
+    // glTF range - without folding the strength in, an emissiveStrength of 4.0
+    // would still read back as (1,1,1) instead of (4,4,4).
+    const auto path = sceneConfig::resolveModelPath("Models/GltfTest/emissive_strength_card.gltf");
+    if (!std::filesystem::exists(path)) { GTEST_SKIP() << "emissive_strength_card fixture not present"; }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(path));
+
+    ASSERT_GT(loader.getMaterials().size(), 0U);
+    const glm::vec3 &emission = loader.getMaterials()[0].emission;
+    EXPECT_NEAR(emission.x, 4.0F, 1e-5F) << "emissiveStrength must scale emissiveFactor into ObjMaterial::emission";
+    EXPECT_NEAR(emission.y, 4.0F, 1e-5F) << "emissiveStrength must scale emissiveFactor into ObjMaterial::emission";
+    EXPECT_NEAR(emission.z, 4.0F, 1e-5F) << "emissiveStrength must scale emissiveFactor into ObjMaterial::emission";
+}
+
+TEST(GltfParseUnit, MaterialWithoutEmissiveStrengthIsUnscaled)
+{
+    // A material with an emissiveFactor but no KHR_materials_emissive_strength
+    // extension (cgltf reports has_emissive_strength == 0) must not pick up a
+    // stray scale - the emission read stays at the plain factor.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [
+        { "emissiveFactor": [0.2, 0.4, 0.6] }
+      ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 },
+        "material": 0
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_no_emissive_strength_material.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_GT(loader.getMaterials().size(), 0U);
+    const glm::vec3 &emission = loader.getMaterials()[0].emission;
+    EXPECT_NEAR(emission.x, 0.2F, 1e-6F) << "a material without emissive_strength must keep the plain factor";
+    EXPECT_NEAR(emission.y, 0.4F, 1e-6F) << "a material without emissive_strength must keep the plain factor";
+    EXPECT_NEAR(emission.z, 0.6F, 1e-6F) << "a material without emissive_strength must keep the plain factor";
+}
+
 TEST(GltfParseUnit, MaskCardFixtureLoadsWithCutoutTextureAndCutoff)
 {
     // mask_card.gltf (a quad + a checkerboard-alpha cut-out PNG, alphaMode MASK /

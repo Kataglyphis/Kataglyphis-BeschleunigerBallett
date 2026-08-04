@@ -9151,3 +9151,316 @@ reuse). Task 3 is test-only and does not.
 
 ### Test suites
 
+## 2026-08-04 batch XIV — planner (the emissive chain, end to end: the one glTF extension the Rust twin folds into `emissive_factor` and the C++ loader drops, so every HDR emitter loads four times too dim; the two shading paths still carrying a "deliberately not yet integrated" comment pointing at a backlog task that shipped this morning, which also drop `COLOR_0` entirely; the G-buffer channel that stores emissive in 8 UNORM bits and can never carry a strength above 1; a path tracer that samples the exact pixel centre every sample of every frame, so no amount of accumulation ever anti-aliases an edge; and the fact that the only thing guarding any of this is a `grep` for `.emission`)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]`). Batch XIII's three tasks all shipped (`96d8c5f7`, `04bd2368`,
+`2cf18361`). Everything below was read out of the tree this pass, at
+`2cf18361`.
+
+**Emissive shipped this morning and stopped one link short of working.**
+`59eca71c` wired `ObjMaterial::emission` into `rasterizer.slang` and
+`deferred.slang`; `4156455e` made the default emission black; `2f68854c`
+carried `.mtl` `Ke` through the Rust OBJ→glTF converter. What none of them
+touched is the four places the value is *attenuated or dropped* on the way to
+a pixel, and they compound: the loader scales it by 1 instead of the authored
+strength, the G-buffer clamps it to 1, and the two ray paths ignore it
+outright. An asset authored with `KHR_materials_emissive_strength: 4` — the
+standard Blender/Sketchfab export for anything meant to glow — renders four
+times too dim in forward, four times too dim *and* clipped in deferred, and
+black in both ray modes.
+
+**First, `KHR_materials_emissive_strength`.** `GltfLoader.cpp`'s
+`fromGltfMaterial` reads `material.emissive_factor[0..2]` raw. cgltf parses
+the extension (`ExternalLib/cgltf/cgltf.h:506-509` declares
+`cgltf_emissive_strength`, `:552` the `has_emissive_strength` flag, `:4900`
+the `KHR_materials_emissive_strength` case), and the Rust loader already folds
+it in — `asset/gltf_loader.rs:638-642`, with the comment that says exactly
+why: "fold it into the factor so the shader path stays unchanged; default 1.0
+when the extension is absent". The C++ side never asks. The same file already
+does per-material extension handling for `KHR_texture_transform` two blocks
+down, so there is a shape to copy.
+
+Note also that `gltfParseSuite.cpp` has **no emissive test at all** — 43
+`GltfParseUnit` cases and `grep -in emissive` finds nothing. The plain
+`emissiveFactor` path shipped untested on the parse side; the fixture this
+task adds covers both.
+
+**Second, `raytrace.rchit.slang` and `path_tracing.slang` both carry a comment
+deferring emissive to a backlog task that no longer exists.**
+`raytrace.rchit.slang:68-71` and `path_tracing.slang:206-210` each say
+"material.emission is deliberately not yet integrated here … (see BACKLOG.md's
+emissive_factor task)". That task is `59eca71c`, shipped, and its entry was
+pruned from this file — so both comments now point at nothing. The reasoning
+in them is still correct and is the specification for the fix: the rchit is a
+primary-ray shading term and takes the rasterizer's treatment (add after
+shadowing), while the path tracer must do `radiance += throughput * emission`
+*before* the `throughput *= hitColor` on `:226`, or the mean the accumulation
+buffer converges toward is wrong rather than merely different.
+
+The same two shaders have a second, independent hole: **neither reads
+`Vertex.color`.** `scene_types.slang:24-30` declares it, `GltfLoader.cpp`
+fills it from `COLOR_0` (`readAttribute<4>`, with the vec3→alpha-1.0
+pre-fill), and `rasterizer.slang:71` / `deferred.slang:70` both multiply it
+into albedo. The rchit interpolates position, normal and UV barycentrically
+(`:54-64`) and simply never interpolates colour; the path tracer likewise
+(`:181-196`). So `Models/GltfTest/vertex_colored_quad.gltf` renders with its
+vertex colours in forward and deferred and white in both ray modes. The
+interpolation is per-shader (it needs the barycentrics that are already in
+hand), so this does **not** want a helper in `common/` — inline it, and keep
+`common/` untouched so the conservative shader-staleness rebuild and the
+`CheckedInWgslIsNotOlderThanItsSlangSource` mtime trap stay out of the way.
+
+**Third, the G-buffer's material attachment is 8-bit UNORM.**
+`DeferredRasterizer.ixx:74-76`: normals are `eR16G16B16A16Sfloat`, albedo and
+*material* are `eR8G8B8A8Unorm`. `deferred.slang:78-82` packs
+`float4(roughness, emission)` into that attachment and its comment states the
+consequence outright — "emissive is quantized to 8 bits and clamped to [0,1] —
+which matches glTF's emissive_factor range **absent
+KHR_materials_emissive_strength**". The moment the first task lands, that
+caveat becomes a live defect: forward carries the strength (the offscreen
+target has been `rgba16f` since the HDR unit), deferred clips it at 1.0, and
+the two raster paths disagree on any emitter. `GBUFFER_NORMAL_FORMAT` proves
+the half-float attachment works as an input attachment on this rig.
+
+**Fourth, the path tracer never jitters its primary ray.**
+`path_tracing.slang:69` computes `float2 pixelCenter = float2(tid.xy) +
+float2(0.5)` *inside* the sample loop but from nothing that varies — every one
+of `samples_per_pixel` samples, every frame, traces the identical primary ray
+through the exact pixel centre. The bounce RNG decorrelates the *indirect*
+estimate, so the image still converges, but it converges to the point-sampled
+image: geometric edges stay hard-aliased no matter how long the accumulation
+runs. This is not a known limitation — `docs/path-tracing.md`'s "Open work"
+section lists only RNG decorrelation, and its estimator section describes the
+primary ray without mentioning pixel-area sampling. The fix is one line
+(`+ float2(rng, rng)` instead of `+ 0.5`), it is what makes
+`samples_per_pixel` mean what its name says, and it needs no extra state: the
+RNG is already seeded per pixel and folded with the frame index.
+
+**Fifth, none of the above has a pixel oracle.** The only guard on emissive
+today is `BuildIntegrity.EmissiveIsConsumedByTheRasterShadingPaths`
+(`buildIntegritySuite.cpp:2619`), which greps four substrings out of two
+`.slang` files. It cannot tell a shader that adds emission from one that adds
+zero, and it would pass unchanged through every defect described above.
+`goldenRenderSuite.cpp` has the instruments to close that: `ScopedModelOverride`
+(`:240`) forces the scene via `KATAGLYPHIS_MODEL_OVERRIDE`, and
+`DeferredMatchesForwardRoughly` (`:988-1073`) already establishes the
+per-pixel mean-abs-channel-diff instrument, with the measured numbers that
+justify its threshold (~0.2 with both paths healthy, >2 for a single
+deliberate shading defect, limit 1.0).
+
+Ordering: two independent chains. **Chain A is 1 → 3 → 5** (the loader
+produces the value, the format carries it, the golden proves it) — task 5's
+strength assertion is red until both 1 and 3 have landed. **Chain B is 2 → 4**
+(both edit `path_tracing.slang`; task 2 rewrites the `hitColor` block at
+`:198-226`, task 4 the `pixelCenter` line at `:69`). The chains do not touch
+each other's files. Tasks 2 and 4 are shader-only and need **no C++ rebuild** —
+recompile with `compile-slang-shaders.ps1` and run the goldens. Tasks 1, 3 and
+5 do need a container build; none of them changes a module interface or
+deletes a file, so `-FreshContainer` is not required.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Widen `GBUFFER_MATERIAL_FORMAT` to `eR16G16B16A16Sfloat`** — the deferred path packs emissive into an 8-bit UNORM channel, so it clips every emitter with a strength above 1 while forward carries it.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.ixx:74-76` — the three `GBUFFER_*_FORMAT` constants; `GBUFFER_NORMAL_FORMAT` is already the target format
+  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:91-93`, `:188-190` — the attachment creation and the render-pass attachment descriptions, both driven off the same constants
+  - `Resources/ShadersSlang/deferred/deferred.slang:78-83` — the packing comment that states the clamp, and `:145` where the lighting pass reads it back
+
+  **Steps:**
+  1. Change `GBUFFER_MATERIAL_FORMAT` to `vk::Format::eR16G16B16A16Sfloat`.
+     Both use sites read the constant, so no other C++ edit should be needed —
+     verify that by grepping for the constant and for any hard-coded
+     `eR8G8B8A8Unorm` in `DeferredRasterizer.cpp`.
+  2. Rewrite the `deferred.slang:78-82` comment: it currently explains why 8
+     UNORM bits are acceptable. It must now state what the half-float
+     attachment buys (emissive above 1.0 from
+     `KHR_materials_emissive_strength`, and roughness no longer quantized to
+     256 steps) and stay accurate. `deferred.slang` emits SPIR-V only, so
+     recompile with `compile-slang-shaders.ps1` — a comment-only shader edit
+     still changes the source mtime and the `.spv` must be regenerated or the
+     integrity gate fails.
+  3. Leave `GBUFFER_ALBEDO_FORMAT` alone. Albedo is a colour in [0,1] by
+     construction and widening it costs bandwidth for nothing.
+
+  **Test:** No new unit test — this is a format change with no CPU-visible
+  behaviour. Verify on the host GPU: run
+  `commitTestSuite.exe --gtest_filter=GoldenRender.*:Integration.*` and
+  confirm `DeferredMatchesForwardRoughly` and
+  `MaskCardDoubleSidedRendersFromBehindDeferred` stay green, then run
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1`
+  — this changes an attachment's format, which is exactly the class of change
+  the sync-validation pass exists for.
+
+  **Build:** `clangcl-debug`, plus
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`
+  before running anything.
+
+  **Context:** Do this **after** the emissive-strength loader task — before it,
+  the current comment is true and the change is unmotivated bandwidth. Sized S
+  because the constants are already the single source of truth for both the
+  image and the render pass; if that turns out not to be the case, that
+  discovery is the more valuable half of the task and belongs in the commit
+  message.
+
+### Shaders
+
+- [ ] **(M) Shade `material.emission` and vertex `COLOR_0` in the ray-traced and path-traced paths** — both shaders still carry a "deliberately not yet integrated" comment pointing at a backlog task that shipped, and neither has ever read `Vertex.color`.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/raytracing/raytrace.rchit.slang` — `:54-64` the barycentric interpolation block, `:68-71` the stale comment, `:73-85` the `ambient` build, `:114-123` the payload write
+  - `Resources/ShadersSlang/path_tracing/path_tracing.slang` — `:181-196` the interpolation block, `:198-226` the `hitColor`/`furnace` block and the `throughput *= hitColor` line, `:232-266` the NEE block
+  - `Resources/ShadersSlang/rasterizer/rasterizer.slang:71,84-86` and `Resources/ShadersSlang/deferred/deferred.slang:70,143-145` — the two paths that already do both things, and the comment wording to mirror
+  - `Resources/ShadersSlang/common/scene_types.slang:24-30` — `Vertex.color` is a `float4`
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:2619-2651` — the gate to extend
+
+  **Steps:**
+  1. `raytrace.rchit.slang`: interpolate `v0/v1/v2.color` with the
+     `barycentrics` already computed at `:49-51`, and multiply its `.rgb` into
+     `ambient` right after the textured/untextured branch — the same position
+     `rasterizer.slang:71` uses. Then add `material.emission` to
+     `payload.hit_value` **after** the shadowed/unshadowed branch, so it is
+     unattenuated, mirroring `rasterizer.slang:84-86`. Replace the `:68-71`
+     comment with one that describes what the code now does.
+  2. `path_tracing.slang`: interpolate the vertex colour the same way in the
+     `:181-196` block and multiply its `.rgb` into `hitColor` in the
+     **non-furnace branch only** — furnace mode must keep forcing albedo to
+     exactly 1 or `PathTracingPassesTheWhiteFurnaceTest` breaks by design.
+  3. `path_tracing.slang`: add `radiance += throughput * emission;`
+     immediately **before** `throughput *= hitColor;` at `:226`, again gated
+     out of furnace mode (a furnace emitter would break the "converges to
+     exactly the environment radiance" invariant). Replace the `:206-210`
+     comment with the integration rule it now implements.
+  4. Extend `BuildIntegrity.EmissiveIsConsumedByTheRasterShadingPaths` to
+     cover all four paths and rename it
+     `EmissiveIsConsumedByEveryShadingPath`: assert `.emission` appears in
+     `raytrace.rchit.slang` and that `path_tracing.slang` contains
+     `radiance += throughput * emission`. Add a sibling gate,
+     `VertexColourIsConsumedByEveryShadingPath`, asserting all four shaders
+     reference `.color` (rasterizer/deferred via `fragmentColor`). Search
+     `buildIntegritySuite.cpp` for any other test naming the old gate before
+     renaming.
+  5. `grep -rn "BACKLOG" Resources/ShadersSlang/` afterwards and confirm no
+     shader comment still points at a pruned backlog entry.
+
+  **Test:** `commitTestSuite.exe --gtest_filter=BuildIntegrity.*Emissive*:BuildIntegrity.*VertexColour*`
+  for the gates. On the host GPU, the behavioural check is the existing PT
+  suite: `--gtest_filter=GoldenRender.PathTracing*` must stay green, in
+  particular `PathTracingPassesTheWhiteFurnaceTest` (proves the furnace gating
+  is right) and `PathTracingAccumulatesAndConverges`.
+
+  **Build:** Shader-only for steps 1-3 — run
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`
+  and re-run the goldens with the **existing** `commitTestSuite.exe`; no C++
+  rebuild. Step 4 edits a test TU, so build `clangcl-debug` once at the end.
+
+  **Context:** Two known hazards. (a) Path tracing device-losts on the large
+  `Dinosaurs.obj` debug scene on this host (the KNOWN ISSUE block at
+  `path_tracing.slang:136-160`, and the `- [b]` entry in this file) — that is
+  pre-existing and reproduces on unmodified `develop`; do not chase it here,
+  and use the goldens' own scenes rather than the dinosaur mesh to judge this
+  change. (b) Do **not** add a helper to `Resources/ShadersSlang/common/` for
+  the vertex-colour multiply: the interpolation needs barycentrics that only
+  exist per shader, and a `common/` edit forces a conservative rebuild of every
+  dependent shader and can trip the `CheckedInWgslIsNotOlderThanItsSlangSource`
+  mtime false-positive for nothing.
+
+- [ ] **(S) Jitter the path tracer's primary ray inside the pixel** — every sample of every frame traces through the exact pixel centre, so accumulation converges to a point-sampled, permanently aliased image.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/path_tracing/path_tracing.slang:36-43` (`stepAndOutputRNGFloat`), `:53-54` (the per-pixel seed with the frame fold), `:67-75` (the sample loop and the primary-ray construction)
+  - `docs/path-tracing.md` — "The estimator" § "Primary ray", and the "Open work" list at the end
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` — `PathTracingAccumulatesAndConverges` and `PathTracingPassesTheWhiteFurnaceTest`
+
+  **Steps:**
+  1. Replace `float2 pixelCenter = float2(tid.xy) + float2(0.5);` with a
+     jittered sample position: `float2(tid.xy) +
+     float2(stepAndOutputRNGFloat(rngState), stepAndOutputRNGFloat(rngState))`.
+     It must be inside the `sampleIdx` loop (it already is) so each sample of
+     a frame gets its own offset, and it must draw from the existing
+     `rngState` so the frame-index fold at `:54` also decorrelates the jitter
+     across frames.
+  2. Add a comment stating the estimator change in one sentence: uniform
+     sampling of the pixel's area (a box filter), which is what makes
+     `samples_per_pixel` and the temporal mean anti-alias rather than just
+     denoise.
+  3. Update `docs/path-tracing.md`: the "Primary ray" bullet must say the ray
+     is jittered uniformly within the pixel, and this must not be added to the
+     "Open work" list (it is now shipped, and that list currently holds only
+     RNG decorrelation).
+
+  **Test:** Add `GoldenRender.PathTracingAntiAliasesGeometricEdges` to
+  `goldenRenderSuite.cpp`: render the path-traced shadow rig for enough frames
+  to accumulate, and assert the histogram over a GUI-free crop containing a
+  silhouette edge has pixels *between* the foreground and background
+  luminances — the same "partial pixels exist" oracle
+  `BACKLOG.md`'s Rust MSAA note describes. Follow the suite's cautions: measure
+  in the panel-free right edge, and count pixels rather than averaging. Confirm
+  the test is red with `+ float2(0.5)` restored before trusting it.
+  `PathTracingPassesTheWhiteFurnaceTest` must stay green — jitter changes which
+  rays are traced, not whether the estimator is unbiased.
+
+  **Build:** Step 1-2 are shader-only:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`,
+  then re-run the existing `commitTestSuite.exe`. The new golden needs a
+  `clangcl-debug` container build.
+
+  **Context:** Do this **after** the emission task above — both edit
+  `path_tracing.slang`, and that one rewrites the block this one sits next to.
+  The RNG is drawn twice per sample here and twice more per bounce; that is
+  fine and deliberate, but do not reorder the existing draws, because
+  `PathTracingAccumulatesAndConverges` measures a specific early/late
+  changed-pixel fraction and a reseeded stream will move those numbers.
+
+### Test suites
+
+- [ ] **(M) Golden: an emissive material must brighten the frame, in forward and in deferred alike** — the only guard on emissive today is a `grep` for four substrings, which passes unchanged through a shader that adds zero.
+
+  **Files to read:**
+  - `Test/commit/VulkanEngine/goldenRenderSuite.cpp` — `EngineHarness` (`:91-178`), `ScopedModelOverride` (`:240-261`) and the model constants below it (`:263-274`), `mean_luminance`/`fraction_above` (`:180-215`), and `DeferredMatchesForwardRoughly` (`:988-1073`) for the mean-abs-channel-diff instrument and its measured thresholds
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp:2619-2651` — the grep gate this replaces as the primary oracle (keep the gate; it is cheap and runs without a GPU)
+  - `docs/gpu-golden-testing.md` — the cautions section (ImGui panel coverage, the panel-free right edge, counting vs averaging)
+
+  **Steps:**
+  1. Add the two fixture constants next to `UV_TRANSFORM_MODEL`:
+     `EMISSIVE_CARD_MODEL = "Models/GltfTest/emissive_card.gltf"` and
+     `EMISSIVE_STRENGTH_CARD_MODEL =
+     "Models/GltfTest/emissive_strength_card.gltf"` (both created by the
+     loader task in this batch — this test is blocked until that lands).
+  2. Add `GoldenRender.EmissiveMaterialBrightensTheFrame`: two harnesses under
+     `ScopedModelOverride`, one on `emissive_card.gltf` and one on
+     `metallic_card.gltf` (same quad, same camera, near-black base colour vs a
+     textured card), forward raster, shadows on. Assert the emissive capture's
+     mean luminance over a GUI-free crop is meaningfully above the
+     non-emissive one. Log both means with `GTEST_LOG_(INFO)` — the suite's
+     convention, and the only way the next person can re-derive the threshold.
+  3. Add `GoldenRender.EmissiveStrengthSurvivesTheDeferredGBuffer`: one
+     harness on `emissive_strength_card.gltf`, capture in `Forward` and then
+     in `Deferred` exactly as `DeferredMatchesForwardRoughly` does, and assert
+     the per-pixel mean absolute channel difference stays under that test's
+     `MEAN_ABS_DIFF_LIMIT` of 1.0. This is the red/green pair for the
+     `GBUFFER_MATERIAL_FORMAT` task: with the 8-bit UNORM attachment the
+     deferred path clips a strength-4 emitter to 1.0 and the two captures
+     diverge far past the limit.
+  4. Both tests use `SKIP_WITHOUT_GPU()` and `SKIP_WITHOUT_FRAME_CAPTURE()`,
+     like every neighbour, so the container CI run keeps skipping them rather
+     than failing.
+
+  **Test:** the tests are the deliverable. Prove each one red before trusting
+  it: for step 2, temporarily drop the `color += material.emission` line from
+  `rasterizer.slang`; for step 3, temporarily revert `GBUFFER_MATERIAL_FORMAT`
+  to `eR8G8B8A8Unorm`. Restore both, recompile the shaders, and re-run.
+
+  **Build:** `clangcl-debug` container build, then
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=GoldenRender.Emissive*`
+  **from the repo root** on the host — the GPU suites skip inside the
+  container.
+
+  **Context:** Sequenced last in chain A: it needs the loader task's two
+  fixtures and the format task's widened attachment. The reason it is worth a
+  golden at all is the lesson `DeferredMatchesForwardRoughly` records in its
+  own body — that test passed for weeks while comparing forward against
+  forward. A source-text gate is even weaker: it proves a string exists, not
+  that a photon does.
+
