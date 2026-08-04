@@ -89,7 +89,7 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID, bool i
     {
         int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
         float3 normalSample = textures[normalTexId].Sample(textureSamplers[normalTexId], transform_uv(In.texCoords, material)).xyz;
-        N = apply_normal_map(N, In.worldTangent, normalSample);
+        N = apply_normal_map(N, In.worldTangent, normalSample, material.normalScale);
     }
     // .w is otherwise unused (GBUFFER_NORMAL_FORMAT is eR16G16B16A16Sfloat,
     // and lighting_fs_main only ever read normal.xyz) - the free float

@@ -64,6 +64,15 @@ struct ObjMaterial
     // alphaCutoff.
     int normalTextureID{ -1 };
 
+    // glTF normalTexture.scale: scales the X and Y components of the sampled
+    // tangent-space normal before it is renormalized (glTF 2.0 SS3.9.3).
+    // Default 1.0 = unscaled, matching every OBJ material and every glTF
+    // material without a normalTexture (cgltf leaves the field at its
+    // zero-initialized default in that case, so the loader must guard on the
+    // texture pointer rather than trusting it). Trailing scalar, same
+    // scalar-layout rationale as alphaCutoff.
+    float normalScale{ 1.0F };
+
     int get_textureID() const { return textureID; }
 };
 

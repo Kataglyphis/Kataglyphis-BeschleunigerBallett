@@ -224,6 +224,10 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
         .uv_transform_row1 = uvTransformRow1,// KHR_texture_transform T*R*S row 1
         .metallic = metallic,// glTF pbrMetallicRoughness.metallicFactor
         .roughness = authoredRoughness,// glTF pbrMetallicRoughness.roughnessFactor (-1 = not authored)
+        // cgltf_texture_view::scale is left at its zero-initialized default when
+        // there is no normalTexture, so guard on the texture pointer rather than
+        // trusting the field.
+        .normalScale = material.normal_texture.texture != nullptr ? material.normal_texture.scale : 1.0F,
     };
 }
 

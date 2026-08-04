@@ -1051,7 +1051,8 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "metallic", offsetof(ObjMaterial, metallic) },
             { "roughness", offsetof(ObjMaterial, roughness) },
             { "emissiveTextureID", offsetof(ObjMaterial, emissiveTextureID) },
-            { "normalTextureID", offsetof(ObjMaterial, normalTextureID) } } },
+            { "normalTextureID", offsetof(ObjMaterial, normalTextureID) },
+            { "normalScale", offsetof(ObjMaterial, normalScale) } } },
         { "Vertex_natural",
           { { "position", offsetof(Vertex, position) },
             { "normal", offsetof(Vertex, normal) },
@@ -2826,6 +2827,9 @@ TEST(BuildIntegrity, NormalMappingIsAppliedByEveryShadingPath)
           << path.string() << " no longer branches on ObjMaterial::normalTextureID. " << kFailureMessage;
         EXPECT_NE(text.find("worldTangent"), std::string::npos)
           << path.string() << " no longer derives a world-space tangent to build the TBN basis. " << kFailureMessage;
+        EXPECT_NE(text.find("material.normalScale"), std::string::npos)
+          << path.string() << " no longer passes ObjMaterial::normalScale into apply_normal_map(). "
+          << kFailureMessage;
     }
 }
 

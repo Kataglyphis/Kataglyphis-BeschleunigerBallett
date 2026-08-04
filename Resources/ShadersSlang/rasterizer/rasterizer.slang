@@ -69,7 +69,7 @@ float4 fs_main(VsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFace : S
     {
         int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
         float3 normalSample = textures[normalTexId].Sample(textureSamplers[normalTexId], transform_uv(In.texCoords, material)).xyz;
-        N = apply_normal_map(N, In.worldTangent, normalSample);
+        N = apply_normal_map(N, In.worldTangent, normalSample, material.normalScale);
     }
     float3 V = normalize(sceneUBO.cam_pos.xyz - In.worldPosition);
 

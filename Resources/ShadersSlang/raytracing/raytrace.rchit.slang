@@ -111,7 +111,7 @@ void rchit_main(
         int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
         // Explicit LOD: see the base-colour sample above for why.
         float3 normalSample = textures[normalTexId].SampleLevel(textureSamplers[normalTexId], transform_uv(texCoords, material), 0.0).xyz;
-        N = apply_normal_map(N, float4(worldTangent, tangentHit.w), normalSample);
+        N = apply_normal_map(N, float4(worldTangent, tangentHit.w), normalSample, material.normalScale);
     }
     float3 V = normalize(sceneUBO.cam_pos.xyz - worldHitPos);
 

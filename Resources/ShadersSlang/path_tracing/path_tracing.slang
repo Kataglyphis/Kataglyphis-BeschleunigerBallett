@@ -238,7 +238,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
                 // Explicit LOD: see the base-colour sample below for why.
                 float3 normalSample = textures[normalTexId].SampleLevel(textureSamplers[normalTexId], transform_uv(texCoords, material), 0.0).xyz;
-                shadingNormal = apply_normal_map(hitWorldNormal, float4(worldTangent, tangentHit.w), normalSample);
+                shadingNormal = apply_normal_map(hitWorldNormal, float4(worldTangent, tangentHit.w), normalSample, material.normalScale);
             }
 
             float3 hitColor;
