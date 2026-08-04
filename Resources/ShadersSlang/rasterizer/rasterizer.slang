@@ -1,6 +1,7 @@
 import scene_types;
 import brdf;
 import material_fetch;
+import base_color;
 import cascaded_shadow;
 import push_constants;
 
@@ -59,7 +60,7 @@ float4 fs_main(VsOut In, uint primitiveID : SV_PrimitiveID) : SV_Target
         int textureId = resolve_texture_slot(obj, material);
         float4 baseSample = textures[textureId].Sample(textureSamplers[textureId], transform_uv(In.texCoords, material));
         if (alpha_masked_out(material, baseSample.a)) discard;
-        ambient = baseSample.xyz;
+        ambient = base_color(material, baseSample.xyz);
     }
     else
     {

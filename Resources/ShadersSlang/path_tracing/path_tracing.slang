@@ -1,4 +1,5 @@
 import scene_types;
+import base_color;
 
 // Path tracing compute kernel using ray query (GL_EXT_ray_query).
 // Sole source for this shader. Emits SPIR-V only (Vulkan ray query — WebGPU
@@ -205,7 +206,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 if (material.textureID >= 0)
                 {
                     int textureId = resolve_texture_slot(obj, material);
-                    hitColor = textures[textureId].Sample(textureSamplers[textureId], texCoords).xyz;
+                    hitColor = base_color(material, textures[textureId].Sample(textureSamplers[textureId], texCoords).xyz);
                 }
                 else
                 {

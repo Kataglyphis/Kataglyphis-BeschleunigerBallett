@@ -1,5 +1,6 @@
 import scene_types;
 import material_fetch;
+import base_color;
 import brdf;
 import cascaded_shadow;
 import push_constants;
@@ -58,6 +59,7 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID)
         int textureId = resolve_texture_slot(obj, material);
         texColor = textures[textureId].Sample(textureSamplers[textureId], transform_uv(In.texCoords, material));
         if (alpha_masked_out(material, texColor.a)) discard;
+        texColor = float4(base_color(material, texColor.rgb), texColor.a);
     }
     else
     {

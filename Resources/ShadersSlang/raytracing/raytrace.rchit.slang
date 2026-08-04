@@ -1,6 +1,7 @@
 import scene_types;
 import rt_types;
 import brdf;
+import base_color;
 
 // Ray tracing closest-hit shader. Sole source for this shader. Emits
 // SPIR-V only.
@@ -73,7 +74,7 @@ void rchit_main(
         // Explicit LOD: closesthit runs under RayClosestHitKHR, which has no
         // fragment derivatives, so an implicit-LOD .Sample() fails SPIR-V
         // validation (ImplicitLod requires Fragment/GLCompute/MeshEXT/TaskEXT).
-        ambient += textures[textureId].SampleLevel(textureSamplers[textureId], texCoords, 0.0).xyz;
+        ambient += base_color(material, textures[textureId].SampleLevel(textureSamplers[textureId], texCoords, 0.0).xyz);
     }
     else
     {

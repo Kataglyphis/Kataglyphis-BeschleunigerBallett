@@ -185,6 +185,54 @@ TEST(GltfParseUnit, DistinctImagesStillGetDistinctSlots)
     EXPECT_EQ(loader.getMaterials()[1].textureID, 1);
 }
 
+TEST(GltfParseUnit, BaseColorFactorSurvivesATexturedMaterial)
+{
+    // glTF base colour = baseColorFactor * sampled texture. fromGltfMaterial
+    // must keep the factor in ObjMaterial::diffuse even when a texture is also
+    // present - the shaders (material_fetch.slang's base_color()) rely on both
+    // the factor and the textureID surviving parseCpu together.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [
+        { "pbrMetallicRoughness": {
+            "baseColorFactor": [0.25, 0.5, 1.0, 1.0],
+            "baseColorTexture": { "index": 0 }
+        } }
+      ],
+      "textures": [ { "source": 0 } ],
+      "images": [
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" }
+      ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 },
+        "material": 0
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_base_color_factor.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getMaterials().size(), 2U) << "the one declared material, plus the neutral fallback";
+    const ObjMaterial &material = loader.getMaterials()[0];
+    EXPECT_GE(material.textureID, 0) << "the material must still reference its base-colour texture";
+    EXPECT_NEAR(material.diffuse.x, 0.25F, 1e-5F);
+    EXPECT_NEAR(material.diffuse.y, 0.5F, 1e-5F);
+    EXPECT_NEAR(material.diffuse.z, 1.0F, 1e-5F);
+}
+
 // Untrusted-input hardening (2026-07-22): the GUI model picker feeds arbitrary
 // files to parseCpu. These prove the structural guards reject rather than
 // crash. The full coverage-guided sweep is gltf_parsing_fuzz_test; these pin

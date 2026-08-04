@@ -2141,6 +2141,80 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
          }();
 }
 
+// glTF base colour = baseColorFactor * sampled texture (see
+// material_fetch.slang's base_color() helper and GltfLoader.cpp's
+// fromGltfMaterial, which keeps the factor in ObjMaterial::diffuse even when
+// a texture is also present). Each of these four shaders has a
+// "textureID >= 0" branch that samples the base-colour texture; this scans
+// that branch and fails if it samples a texture without routing the result
+// through base_color(, which would silently drop the material's factor
+// again the way forward.slang's reference path never did.
+TEST(BuildIntegrity, EveryBaseColourSampleIsScaledByTheMaterialFactor)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const std::array<const char *, 4> kShaders = {
+        "Resources/ShadersSlang/rasterizer/rasterizer.slang",
+        "Resources/ShadersSlang/deferred/deferred.slang",
+        "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
+        "Resources/ShadersSlang/path_tracing/path_tracing.slang",
+    };
+    static const std::string kGuard = "material.textureID >= 0)";
+    static const std::string kSample = ".Sample";// covers both .Sample( and .SampleLevel(
+    static const std::string kHelper = "base_color(";
+
+    std::vector<std::string> violations;
+    for (const char *relative_path : kShaders) {
+        const fs::path path = repo_root / relative_path;
+        std::ifstream file(path);
+        ASSERT_TRUE(static_cast<bool>(file)) << "could not open " << path.string();
+
+        std::vector<std::string> lines;
+        std::string line;
+        while (std::getline(file, line)) { lines.push_back(line); }
+
+        std::size_t guard_start = lines.size();
+        for (std::size_t index = 0; index < lines.size(); ++index) {
+            if (lines[index].find(kGuard) != std::string::npos) {
+                guard_start = index;
+                break;
+            }
+        }
+        ASSERT_LT(guard_start, lines.size())
+          << relative_path << " has no '" << kGuard << "' branch to check - did the texture guard move?";
+
+        bool sawSample = false;
+        bool sawHelper = false;
+        int brace_depth = 0;
+        bool body_started = false;
+        for (std::size_t index = guard_start; index < lines.size(); ++index) {
+            brace_depth += static_cast<int>(std::count(lines[index].begin(), lines[index].end(), '{'));
+            brace_depth -= static_cast<int>(std::count(lines[index].begin(), lines[index].end(), '}'));
+            if (brace_depth > 0) { body_started = true; }
+            if (lines[index].find(kSample) != std::string::npos) { sawSample = true; }
+            if (lines[index].find(kHelper) != std::string::npos) { sawHelper = true; }
+            if (body_started && brace_depth <= 0) { break; }
+        }
+
+        if (!sawSample) {
+            violations.push_back(std::string(relative_path) + ": textured branch no longer samples a texture");
+        }
+        if (!sawHelper) {
+            violations.push_back(std::string(relative_path)
+                                  + ": samples the base-colour texture without routing it through base_color(");
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size() << " shader(s) do not scale their sampled base colour by the material factor:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 // scene_types.slang's MAX_CASCADES (:68) is the gated source of truth for the
 // cascade count - HostAndShaderSharedConstantsAgree above pins it against
 // host_device_shared_vars.hpp. That gate is blind to a second, independent

@@ -8112,36 +8112,6 @@ Ordering: the five are disjoint. Tasks 2 and 3 both add
 suite after the second. Task 5 touches four `.slang` files and nothing else
 here does.
 
-### Cross-renderer
-
-- [ ] **(M) Apply glTF's `baseColorFactor` to the sampled base colour in all four C++ shading paths** — the factor is loaded, uploaded and then discarded whenever a texture exists, which is both a glTF spec deviation and a divergence from the Rust renderer.
-
-  **Files to read:**
-  - `Resources/ShadersSlang/forward/forward.slang` — `:387-393`, the **reference** implementation: `float4 albedo = prim.base_color * baseSample * In.vertexColor`
-  - `Resources/ShadersSlang/rasterizer/rasterizer.slang` — `:57-68`
-  - `Resources/ShadersSlang/deferred/deferred.slang` — `:57-73` (`geometry_fs_main`)
-  - `Resources/ShadersSlang/raytracing/raytrace.rchit.slang` — `:70-82`
-  - `Resources/ShadersSlang/path_tracing/path_tracing.slang` — `:204-213`
-  - `Resources/ShadersSlang/common/material_fetch.slang` — `transform_uv` / `alpha_masked_out`, the existing home for shared material helpers
-  - `Src/GraphicsEngineVulkan/scene/GltfLoader.cpp` — `fromGltfMaterial` (`:111-155`), factor read at `:117`, stored as `diffuse` at `:143`
-  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp` — `:199`, where `diffuse` comes from `Kd`
-  - `Test/commit/VulkanEngine/gltfParseSuite.cpp` — the in-memory-glTF test pattern (`:105-160`, `:444`)
-  - `docs/shader-sharing.md` — the doc that owns "where the two renderers diverge"; gated by `buildIntegritySuite.cpp` (see `dd243bb1`)
-
-  **Steps:**
-  1. Add one helper to `common/material_fetch.slang`, next to `transform_uv`: `float3 base_color(ObjMaterial material, float3 sampled) { return sampled * material.diffuse; }`, with a comment citing the glTF rule (base colour = factor × texture) and `forward.slang:393` as the twin.
-  2. Route the textured branch of all four shaders through it: `rasterizer.slang:62` (`ambient = base_color(material, baseSample.xyz)`), `deferred.slang:66-67` (`texColor = float4(base_color(material, texColor.rgb), texColor.a)`), `raytrace.rchit.slang:78` and `path_tracing.slang:208`. Leave every untextured branch exactly as it is — `material.diffuse` alone is already correct there.
-  3. Do **not** touch the alpha half in this task. `alpha_masked_out` compares the texture alpha only, while `forward.slang:200` uses `prim.base_color.a * tex.a`; carrying `base_color_factor[3]` needs a new `ObjMaterial` field (`fromGltfMaterial` reads only `[0..2]`) and changes what MASK discards. Record it as a follow-up in the same commit message.
-  4. Recompile shaders: `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`. No C++ rebuild is needed (`AGENTS.md` § routing).
-  5. Add the divergence's resolution to `docs/shader-sharing.md` — it currently does not mention base colour at all; after this change the two renderers agree, and the doc should say so rather than stay silent.
-
-  **Test:** (a) `GltfParse.BaseColorFactorSurvivesATexturedMaterial` in `gltfParseSuite.cpp`: an in-memory glTF whose single material has both `baseColorFactor: [0.25, 0.5, 1.0, 1.0]` and a `baseColorTexture`, asserting the parsed `ObjMaterial` has `diffuse == vec3(0.25, 0.5, 1.0)` **and** `textureID >= 0` — i.e. the host contract the shaders now rely on. (b) `BuildIntegrity.EveryBaseColourSampleIsScaledByTheMaterialFactor`: scan the four shader files and fail if a file samples `textures[...]`/`baseColorTex` into an albedo local without going through `base_color(`. Model it on the `:4149` `shader-sharing.md` gate.
-
-  **Build:** `clangcl-debug` for the tests; the shader change itself needs only `compile-slang-shaders.ps1`.
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-
-  **Context:** Expect **no** golden movement on the models in the tree: `Dinosaurs`/`crytek-sponza` are OBJ, where `Kd` is `1 1 1` for the textured materials, so the new multiply is an identity there. That is a feature of the change (low regression risk) and the reason the CPU test above, not a golden, is the acceptance criterion. When the RDP blocker on host GPU goldens clears, re-run `GoldenRender.*` and confirm they are unchanged; if any moves, an OBJ material with a non-white `Kd` is the first thing to check, not this multiply.
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 - [ ] **(S) Give `cs_reduce_exposure` the non-finite recovery its CPU twin has, and pin the two constants `histogram_constants.rs` forgot** — the shader states it mirrors `adapt_exposure_ev`, which has a tested NaN escape hatch it lacks.
