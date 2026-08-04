@@ -9393,41 +9393,6 @@ opacity flags can be relaxed without a perf or stability surprise.
 
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
-- [ ] **(S) Emit `KHR_materials_emissive_strength` from the OBJ→glTF converter instead of clamping `Ke` to 1** — the C++ OBJ loader keeps an HDR `Ke` verbatim, so the same `.mtl` glows four times brighter in the C++ engine than in the Rust one.
-
-  **Files to read:**
-  - `crates/webgpu_renderer/src/asset/obj_to_gltf.rs:143-153` — the `"Ke"` arm and the clamp, whose comment already names the missing extension
-  - `crates/webgpu_renderer/src/asset/obj_to_gltf.rs:618-655` — the material JSON emitter (`emissive_json`, and the absence of any `extensions` block)
-  - `crates/webgpu_renderer/src/asset/gltf_loader.rs:634-642` — the receiving end, which already reads `material.emissive_strength()` and folds it in
-  - `Src/GraphicsEngineVulkan/scene/ObjLoader.cpp:195` — the C++ behaviour this is diverging from
-
-  **Steps:**
-  1. In the `"Ke"` arm, stop clamping: store the parsed component as-is (the
-     non-finite guard `finite_or` provides downstream stays).
-  2. In the emitter, split the stored emissive into the glTF-legal factor and a
-     strength: `strength = max(er, eg, eb)`, and when `strength > 1.0` emit
-     `emissiveFactor` as the components divided by `strength`, plus
-     `"extensions": { "KHR_materials_emissive_strength": { "emissiveStrength":
-     <strength> } }` on that material. When `strength <= 1.0`, emit exactly what
-     is emitted today so existing documents stay byte-identical.
-  3. Add `"extensionsUsed": ["KHR_materials_emissive_strength"]` at the document
-     root **only** when at least one material actually needed it — the file has
-     no `extensionsUsed` today and the existing tests compare generated JSON, so
-     an unconditional array would churn all of them.
-  4. Update the `"Ke"` arm's comment: it currently explains the clamp by saying
-     this converter does not emit the extension. It does now.
-  5. `cargo fmt` and `cargo clippy -p kataglyphis_webgpu_renderer -- -D warnings`
-     from `ExternalLib/Kataglyphis-RustProjectTemplate`.
-
-  **Test:** Add a unit test in `obj_to_gltf.rs`'s existing `#[cfg(test)]`
-  module: convert a `.mtl` with `Ke 4 4 4`, assert the emitted JSON contains
-  `"emissiveStrength": 4` and an `emissiveFactor` of `[1, 1, 1]`, and that
-  `extensionsUsed` names the extension. Add a second asserting `Ke 0.5 0.5 0.5`
-  produces no `extensions` and no `extensionsUsed` at all (the byte-identical
-  case). If a round trip through `gltf_loader.rs` is cheap in that test module,
-  assert the loaded `emissive_factor` comes back as `[4, 4, 4]` — that is the
-  property that actually matters.
-
   **Build:** No C++ build. `cargo check` / `clippy` / `fmt` from
   `ExternalLib/Kataglyphis-RustProjectTemplate` are the local signal — `cargo
   test` and `cargo build` do **not** link on this host (the VC++ Build Tools
