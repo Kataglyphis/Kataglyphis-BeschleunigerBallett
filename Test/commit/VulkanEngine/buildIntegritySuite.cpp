@@ -4837,6 +4837,44 @@ TEST(BuildIntegrity, EveryPostAcquireEarlyReturnRetiresTheAcquireSemaphore)
 // same "parse two sources, compare, fail with both numbers" pattern this
 // suite uses throughout. Must never run the golden tests themselves to count them
 // - they need a GPU the CI container does not have.
+// Scans docs/gpu-golden-testing.md for a bare integer written immediately
+// next to "runnable" / "defined" / "`Integration` tests" outside the
+// golden-counts marker line - a second hand-typed copy of a number the
+// marker already tracks. This is exactly what let the doc's counts drift out
+// of sync three times before the marker existed: the marker got fixed, the
+// prose sentence next to it did not. Pure substr scanning, no regex, matching
+// the rest of this file's parsing style.
+std::vector<std::string> find_bare_golden_count_copies(const fs::path &doc_path)
+{
+    std::vector<std::string> violations;
+    const auto lines = readFileLines(doc_path);
+    if (!lines) { return violations; }
+
+    static const std::array<std::string, 3> kKeywords = { "runnable", "defined", "`Integration` tests" };
+
+    for (std::size_t line_no = 0; line_no < lines->size(); ++line_no) {
+        const std::string &line = (*lines)[line_no];
+        if (line.find("<!-- golden-counts:") != std::string::npos) { continue; }
+
+        for (const auto &keyword : kKeywords) {
+            const std::size_t pos = line.find(keyword);
+            if (pos == std::string::npos) { continue; }
+
+            std::size_t digit_end = pos;
+            while (digit_end > 0 && line[digit_end - 1] == ' ') { --digit_end; }
+            std::size_t digit_start = digit_end;
+            while (digit_start > 0 && std::isdigit(static_cast<unsigned char>(line[digit_start - 1]))) {
+                --digit_start;
+            }
+
+            if (digit_start != digit_end) {
+                violations.push_back("line " + std::to_string(line_no + 1) + ": \"" + line + "\"");
+            }
+        }
+    }
+    return violations;
+}
+
 TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)
 {
     const fs::path repo_root = repoRoot();
@@ -4891,6 +4929,17 @@ TEST(BuildIntegrity, GoldenTestCountsInDocsMatchTheSuite)
           << doc_path.string() << "'s --gtest_filter= excludes " << suite << "." << name << " but no such TEST("
           << suite << ", " << name << ") exists in " << tests_dir.string();
     }
+
+    const auto bare_copies = find_bare_golden_count_copies(doc_path);
+    EXPECT_TRUE(bare_copies.empty())
+      << doc_path.string()
+      << " hand-types a count next to 'runnable'/'defined'/'`Integration` tests' outside the golden-counts marker "
+         "- the marker is the single source of truth, a second copy just drifts out of sync with it:"
+      << [&bare_copies] {
+             std::string joined;
+             for (const auto &entry : bare_copies) { joined += "\n  " + entry; }
+             return joined;
+         }();
 }
 
 // docs/path-tracing.md's "## Verification" section drifted out of sync with
