@@ -76,9 +76,10 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID)
     g.outNormal = float4(normalize(In.shadingNormal), material.metallic);
     g.outAlbedo = texColor;
     // r = roughness, gba = emissive. GBUFFER_MATERIAL_FORMAT is
-    // eR8G8B8A8Unorm, so emissive is quantized to 8 bits and clamped to
-    // [0,1] - which matches glTF's emissive_factor range absent
-    // KHR_materials_emissive_strength.
+    // eR16G16B16A16Sfloat, so emissive above 1.0 from
+    // KHR_materials_emissive_strength survives the G-buffer round-trip
+    // instead of clamping to [0,1], and roughness is no longer quantized
+    // to 256 steps.
     g.outMaterial = float4(material_roughness(material), material.emission);
     return g;
 }

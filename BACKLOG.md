@@ -9261,49 +9261,6 @@ deletes a file, so `-FreshContainer` is not required.
 
 ### C++ Vulkan engine
 
-- [ ] **(S) Widen `GBUFFER_MATERIAL_FORMAT` to `eR16G16B16A16Sfloat`** — the deferred path packs emissive into an 8-bit UNORM channel, so it clips every emitter with a strength above 1 while forward carries it.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.ixx:74-76` — the three `GBUFFER_*_FORMAT` constants; `GBUFFER_NORMAL_FORMAT` is already the target format
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.cpp:91-93`, `:188-190` — the attachment creation and the render-pass attachment descriptions, both driven off the same constants
-  - `Resources/ShadersSlang/deferred/deferred.slang:78-83` — the packing comment that states the clamp, and `:145` where the lighting pass reads it back
-
-  **Steps:**
-  1. Change `GBUFFER_MATERIAL_FORMAT` to `vk::Format::eR16G16B16A16Sfloat`.
-     Both use sites read the constant, so no other C++ edit should be needed —
-     verify that by grepping for the constant and for any hard-coded
-     `eR8G8B8A8Unorm` in `DeferredRasterizer.cpp`.
-  2. Rewrite the `deferred.slang:78-82` comment: it currently explains why 8
-     UNORM bits are acceptable. It must now state what the half-float
-     attachment buys (emissive above 1.0 from
-     `KHR_materials_emissive_strength`, and roughness no longer quantized to
-     256 steps) and stay accurate. `deferred.slang` emits SPIR-V only, so
-     recompile with `compile-slang-shaders.ps1` — a comment-only shader edit
-     still changes the source mtime and the `.spv` must be regenerated or the
-     integrity gate fails.
-  3. Leave `GBUFFER_ALBEDO_FORMAT` alone. Albedo is a colour in [0,1] by
-     construction and widening it costs bandwidth for nothing.
-
-  **Test:** No new unit test — this is a format change with no CPU-visible
-  behaviour. Verify on the host GPU: run
-  `commitTestSuite.exe --gtest_filter=GoldenRender.*:Integration.*` and
-  confirm `DeferredMatchesForwardRoughly` and
-  `MaskCardDoubleSidedRendersFromBehindDeferred` stay green, then run
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Run-SyncValidation.ps1`
-  — this changes an attachment's format, which is exactly the class of change
-  the sync-validation pass exists for.
-
-  **Build:** `clangcl-debug`, plus
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1`
-  before running anything.
-
-  **Context:** Do this **after** the emissive-strength loader task — before it,
-  the current comment is true and the change is unmotivated bandwidth. Sized S
-  because the constants are already the single source of truth for both the
-  image and the render pass; if that turns out not to be the case, that
-  discovery is the more valuable half of the task and belongs in the commit
-  message.
-
 ### Shaders
 
 - [ ] **(M) Shade `material.emission` and vertex `COLOR_0` in the ray-traced and path-traced paths** — both shaders still carry a "deliberately not yet integrated" comment pointing at a backlog task that shipped, and neither has ever read `Vertex.color`.
