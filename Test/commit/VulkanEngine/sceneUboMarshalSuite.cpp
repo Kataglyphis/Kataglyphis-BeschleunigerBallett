@@ -22,6 +22,7 @@ using Kataglyphis::aspectRatioOf;
 using Kataglyphis::clampCloudMeshScale;
 using Kataglyphis::clampPcfRadius;
 using Kataglyphis::fillSceneUboCascades;
+using Kataglyphis::fillSceneUboClouds;
 using Kataglyphis::kMinCloudDensityMultiplier;
 using Kataglyphis::kMinCloudMeshExtent;
 using Kataglyphis::makeVulkanProjection;
@@ -178,6 +179,61 @@ TEST(SceneUboMarshalUnit, CloudMeshScaleNeverReachesZero)
     EXPECT_FLOAT_EQ(normal.y, 5.0F);
     EXPECT_FLOAT_EQ(normal.z, 1000.0F);
     EXPECT_FLOAT_EQ(normal.w, 0.63F);
+}
+
+TEST(SceneUboMarshalUnit, CloudSlidersLandInTheDocumentedComponents)
+{
+    SceneUBO ubo{};
+    fillSceneUboClouds(ubo,
+      /*meshScale=*/glm::vec3(11.0F, 22.0F, 33.0F),
+      /*densityMultiplier=*/0.5F,
+      /*meshOffset=*/glm::vec3(44.0F, 55.0F, 66.0F),
+      /*coverageThreshold=*/0.77F,
+      /*numMarchSteps=*/8,
+      /*numMarchStepsToLight=*/4,
+      /*pillowness=*/0.88F,
+      /*cirrusEffect=*/0.99F,
+      /*powderEffect=*/true);
+
+    EXPECT_FLOAT_EQ(ubo.cloudLightMarch.x, 4.0F);
+    EXPECT_FLOAT_EQ(ubo.cloudLightMarch.y, 0.0F);
+    EXPECT_FLOAT_EQ(ubo.cloudLightMarch.z, 0.0F);
+    EXPECT_FLOAT_EQ(ubo.cloudLightMarch.w, 0.0F);
+
+    EXPECT_FLOAT_EQ(ubo.cloudMeshScale.x, 11.0F);
+    EXPECT_FLOAT_EQ(ubo.cloudMeshScale.y, 22.0F);
+    EXPECT_FLOAT_EQ(ubo.cloudMeshScale.z, 33.0F);
+    EXPECT_FLOAT_EQ(ubo.cloudMeshScale.w, 0.5F);
+
+    EXPECT_FLOAT_EQ(ubo.cloudMeshOffset.x, 44.0F);
+    EXPECT_FLOAT_EQ(ubo.cloudMeshOffset.y, 55.0F);
+    EXPECT_FLOAT_EQ(ubo.cloudMeshOffset.z, 66.0F);
+    EXPECT_FLOAT_EQ(ubo.cloudMeshOffset.w, 0.77F);
+
+    EXPECT_FLOAT_EQ(ubo.cloudParameters.x, 0.88F);
+    EXPECT_FLOAT_EQ(ubo.cloudParameters.y, 0.99F);
+    EXPECT_FLOAT_EQ(ubo.cloudParameters.z, 1.0F);
+    EXPECT_FLOAT_EQ(ubo.cloudParameters.w, 8.0F);
+
+    SceneUBO degenerate{};
+    fillSceneUboClouds(degenerate,
+      /*meshScale=*/glm::vec3(0.0F),
+      /*densityMultiplier=*/0.0F,
+      /*meshOffset=*/glm::vec3(1.0F, 2.0F, 3.0F),
+      /*coverageThreshold=*/0.1F,
+      /*numMarchSteps=*/1,
+      /*numMarchStepsToLight=*/1,
+      /*pillowness=*/0.0F,
+      /*cirrusEffect=*/0.0F,
+      /*powderEffect=*/false);
+
+    EXPECT_GE(degenerate.cloudMeshScale.x, kMinCloudMeshExtent)
+      << "a zero mesh scale must still go through clampCloudMeshScale's floor";
+    EXPECT_GE(degenerate.cloudMeshScale.y, kMinCloudMeshExtent);
+    EXPECT_GE(degenerate.cloudMeshScale.z, kMinCloudMeshExtent);
+    EXPECT_GE(degenerate.cloudMeshScale.w, kMinCloudDensityMultiplier);
+    EXPECT_FLOAT_EQ(degenerate.cloudParameters.z, 0.0F)
+      << "powderEffect == false must produce exactly 0.0F - clouds.slang tests > 0.5";
 }
 
 TEST(SceneUboMarshalUnit, ClampPcfRadiusPinsTheBoundTheShaderLoopsOver)

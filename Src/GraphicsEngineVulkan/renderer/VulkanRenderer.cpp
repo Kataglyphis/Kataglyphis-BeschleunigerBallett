@@ -227,26 +227,20 @@ void Kataglyphis::VulkanRenderer::updateUniforms(Scene *scene_data,
       std::span<const glm::mat4>(cascadeViewProjMatrices).first(active_cascades),
       guiSceneSharedVars.shadows_enabled);
 
-    sceneUBO.cloudLightMarch = glm::vec4(
-        static_cast<float>(guiSceneSharedVars.cloud_num_march_steps_to_light), 0.0F, 0.0F, 0.0F);
-
-    sceneUBO.cloudMeshScale = clampCloudMeshScale(
-        glm::vec3(guiSceneSharedVars.cloud_mesh_scale[0],
-          guiSceneSharedVars.cloud_mesh_scale[1],
-          guiSceneSharedVars.cloud_mesh_scale[2]),
-        guiSceneSharedVars.cloud_density_multiplier);
-
-    sceneUBO.cloudMeshOffset = glm::vec4(
-        guiSceneSharedVars.cloud_mesh_offset[0],
+    fillSceneUboClouds(sceneUBO,
+      glm::vec3(guiSceneSharedVars.cloud_mesh_scale[0],
+        guiSceneSharedVars.cloud_mesh_scale[1],
+        guiSceneSharedVars.cloud_mesh_scale[2]),
+      guiSceneSharedVars.cloud_density_multiplier,
+      glm::vec3(guiSceneSharedVars.cloud_mesh_offset[0],
         guiSceneSharedVars.cloud_mesh_offset[1],
-        guiSceneSharedVars.cloud_mesh_offset[2],
-        guiSceneSharedVars.cloud_coverage_threshold);
-
-    sceneUBO.cloudParameters = glm::vec4(
-        guiSceneSharedVars.cloud_pillowness,
-        guiSceneSharedVars.cloud_cirrus_effect,
-        guiSceneSharedVars.cloud_powder_effect ? 1.0f : 0.0f,
-        static_cast<float>(guiSceneSharedVars.cloud_num_march_steps));
+        guiSceneSharedVars.cloud_mesh_offset[2]),
+      guiSceneSharedVars.cloud_coverage_threshold,
+      guiSceneSharedVars.cloud_num_march_steps,
+      guiSceneSharedVars.cloud_num_march_steps_to_light,
+      guiSceneSharedVars.cloud_pillowness,
+      guiSceneSharedVars.cloud_cirrus_effect,
+      guiSceneSharedVars.cloud_powder_effect);
 }
 
 auto Kataglyphis::VulkanRenderer::supportsHardwareRaytracing() const -> bool

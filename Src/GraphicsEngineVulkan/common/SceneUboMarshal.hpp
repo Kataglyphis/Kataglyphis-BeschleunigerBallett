@@ -66,6 +66,34 @@ constexpr auto clampCloudMeshScale(glm::vec3 meshScale, float densityMultiplier)
         std::max(densityMultiplier, kMinCloudDensityMultiplier) };
 }
 
+// Packs every GUI cloud slider into SceneUBO's four cloud vec4s. The unpack
+// side is clouds.slang:129-143 (BuildIntegrity.CloudUboPackingMatchesTheShaderUnpack
+// pins the two against each other):
+//   cloudLightMarch   x = numMarchStepsToLight,       y/z/w reserved (0)
+//   cloudMeshScale    xyz = meshScale,                w = densityMultiplier (cloud.scale)
+//   cloudMeshOffset   xyz = meshOffset,                w = coverageThreshold (cloud.threshold)
+//   cloudParameters   x = pillowness, y = cirrusEffect, z = powderEffect, w = numMarchSteps
+// Takes plain scalars, not GUISceneSharedVars: common/*.hpp are included in
+// the global module fragment and cannot name a module-exported type (this is
+// why clampPcfRadius takes an int).
+inline void fillSceneUboClouds(VulkanRendererInternals::SceneUBO &ubo,
+  glm::vec3 meshScale,
+  float densityMultiplier,
+  glm::vec3 meshOffset,
+  float coverageThreshold,
+  int numMarchSteps,
+  int numMarchStepsToLight,
+  float pillowness,
+  float cirrusEffect,
+  bool powderEffect)
+{
+    ubo.cloudLightMarch = glm::vec4(static_cast<float>(numMarchStepsToLight), 0.0F, 0.0F, 0.0F);
+    ubo.cloudMeshScale = clampCloudMeshScale(meshScale, densityMultiplier);
+    ubo.cloudMeshOffset = glm::vec4(meshOffset.x, meshOffset.y, meshOffset.z, coverageThreshold);
+    ubo.cloudParameters = glm::vec4(
+      pillowness, cirrusEffect, powderEffect ? 1.0F : 0.0F, static_cast<float>(numMarchSteps));
+}
+
 // Writes up to MAX_CASCADES splits/matrices into the SceneUBO and returns the
 // count actually written. shadowsEnabled false zeroes ubo.numCascades (the
 // field the shaders gate on) but still writes the matrices/splits - keeping

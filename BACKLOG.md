@@ -8179,33 +8179,6 @@ here does.
 
 ## 2026-08-04 batch IV — planner (refactor: a formatting-drift figure quoted three times, all three wrong and two of them contradicting each other, behind a build check that reports and never fails; the cloud half of the GUI→UBO marshalling, where one of four `vec4`s goes through the shared header and three are packed inline against a shader nothing pins them to; the depth attachment, created by the same seven-argument chain in three raster stages)
 
-- [ ] **(S) (refactor) Give the GUI→SceneUBO cloud packing one definition in `SceneUboMarshal.hpp`, and pin it against `clouds.slang`** — one of the four cloud `vec4`s already goes through the shared header; the other three are packed by hand in `updateUniforms`, and which GUI slider lands in which component is asserted nowhere.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp:230-249` — the four assignments. `cloudMeshScale` calls `clampCloudMeshScale`; `cloudLightMarch`, `cloudMeshOffset` and `cloudParameters` are hand-built `glm::vec4`s.
-  - `Src/GraphicsEngineVulkan/common/SceneUboMarshal.hpp:53-95` — where this belongs: `clampCloudMeshScale` and `fillSceneUboCascades` are the two shapes to imitate (a `constexpr` pure packer, and a `fillSceneUbo*` that writes into the UBO).
-  - `Src/GraphicsEngineVulkan/renderer/SceneUBO.hpp:45-48` — the per-component contract, currently a trailing comment on each field.
-  - `Resources/ShadersSlang/compute/clouds.slang:129-143` — the unpack side, the only consumer.
-  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx:67-76` — the source fields and their types (`int` march steps, `bool cloud_powder_effect`, `float[3]` scale/offset).
-  - `Test/commit/VulkanEngine/sceneUboMarshalSuite.cpp:1-40` — the suite to extend, including its `static_assert` style for the `constexpr` helpers.
-
-  **Steps:**
-  1. Add to `common/SceneUboMarshal.hpp`, next to `clampCloudMeshScale`, a single writer:
-     `inline void fillSceneUboClouds(VulkanRendererInternals::SceneUBO &ubo, glm::vec3 meshScale, float densityMultiplier, glm::vec3 meshOffset, float coverageThreshold, int numMarchSteps, int numMarchStepsToLight, float pillowness, float cirrusEffect, bool powderEffect)`.
-     It must take plain scalars, **not** `GUISceneSharedVars`: `common/*.hpp` are included in the global module fragment and cannot name a module-exported type (this is why `clampPcfRadius` takes an `int`).
-  2. Move all four assignments into it verbatim, keeping `clampCloudMeshScale` as the `cloudMeshScale` value and keeping every zero/reserved component exactly as it is (`cloudLightMarch.yzw` are 0). This must be a pure move — no new clamping, even where the shader clamps on its own (`max(cloudParameters.w, 4.0)`, `clamp(cloudLightMarch.x, 1.0, 128.0)`).
-  3. Move `SceneUBO.hpp:45-48`'s per-component comments onto the new function as one block, and leave a one-line pointer to it on the struct. One place states the packing.
-  4. Replace `VulkanRenderer.cpp:230-249` with the single call.
-  5. Add `BuildIntegrity.CloudUboPackingMatchesTheShaderUnpack`: read `Resources/ShadersSlang/compute/clouds.slang` and assert it contains each of the seven literal unpack statements the helper's comment promises — `cloud.num_march_steps` from `scene.cloudParameters.w`, `cloud.num_march_steps_to_light` from `scene.cloudLightMarch.x`, `cloud.scale` from `scene.cloudMeshScale.w`, `cloud.threshold` from `scene.cloudMeshOffset.w`, `cloud.pillowness` from `.x`, `cloud.cirrus_effect` from `.y`, `cloud.powder_effect` from `.z`, plus `scene.cloudMeshScale.xyz` and `scene.cloudMeshOffset.xyz`. Match on field-and-component pairs rather than whole lines so the shader's surrounding `max`/`clamp`/`> 0.5` wrappers do not make it brittle. Fail naming the pair that moved.
-
-  **Test:** Extend `Test/commit/VulkanEngine/sceneUboMarshalSuite.cpp` with `SceneUboMarshalUnit.CloudSlidersLandInTheDocumentedComponents` — call `fillSceneUboClouds` with nine distinguishable values and assert each landed in its component, including `powderEffect == false` producing exactly `0.0F` in `cloudParameters.z` (the shader tests `> 0.5`) and a zero mesh scale still being clamped to `kMinCloudMeshExtent`. Plus the new `BuildIntegrity` gate. Both pure CPU. Run:
-  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=SceneUboMarshalUnit.*:BuildIntegrity.CloudUboPackingMatchesTheShaderUnpack`
-
-  **Build:** `clangcl-debug`. Run:
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-
-  **Context:** Direct continuation of batch XI's "the per-frame GUI→UBO marshalling is 76 untestable lines" (`BACKLOG.md:6017`), which extracted the projection/PCF/cascade/mesh-scale parts and left the cloud packing behind. Same payoff as `ed8613f1` and `57a54226`: the point is that the next slider cannot be wired to the wrong component silently, not the lines removed. A component swap here is invisible to every existing test — `sceneUboLayoutSuite` pins the byte *offsets* of these four fields and says nothing about what goes inside them.
-
 - [ ] **(M) (refactor) Route the three raster stages' depth attachment through one `createDepthAttachment`, and gate the chain** — `chooseDepthFormat` → `createImage(..., eDepthStencilAttachment, eDeviceLocal)` → `createImageView(..., 1)` is written out three times with only the extra usage bit and the view aspect differing.
 
   **Files to read:**

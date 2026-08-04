@@ -4727,6 +4727,54 @@ TEST(BuildIntegrity, CloudRayMarchesUseAConstantStepLength)
          "integrated optical depth (density * step length), not a mean density";
 }
 
+// SceneUboMarshal.hpp's fillSceneUboClouds (the host packer) and this shader
+// (the only unpack side) are two hand-written mirrors of the same seven-value
+// layout, tied together by nothing but a comment. sceneUboLayoutSuite pins
+// the four cloud vec4s' byte *offsets* but says nothing about what goes
+// inside them, so a component swap on either side is invisible to every
+// other test. This pins each host component to the exact shader field it
+// must land in, matching on field-and-component pairs (not whole lines) so
+// the shader's surrounding max/clamp/> 0.5 wrappers don't make it brittle,
+// and names the pair that moved on failure.
+TEST(BuildIntegrity, CloudUboPackingMatchesTheShaderUnpack)
+{
+    const fs::path repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path clouds_path = repo_root / "Resources" / "ShadersSlang" / "compute" / "clouds.slang";
+    const auto contents = read_file_text(clouds_path);
+    ASSERT_TRUE(contents.has_value()) << "missing " << clouds_path.string();
+
+    struct FieldPair
+    {
+        const char *cloud_field;
+        const char *scene_field;
+        const char *component;
+    };
+    static const std::array<FieldPair, 9> kPairs{ {
+      { "num_march_steps", "cloudParameters", "w" },
+      { "num_march_steps_to_light", "cloudLightMarch", "x" },
+      { "scale", "cloudMeshScale", "w" },
+      { "threshold", "cloudMeshOffset", "w" },
+      { "pillowness", "cloudParameters", "x" },
+      { "cirrus_effect", "cloudParameters", "y" },
+      { "powder_effect", "cloudParameters", "z" },
+      { "radius", "cloudMeshScale", "xyz" },
+      { "offset", "cloudMeshOffset", "xyz" },
+    } };
+
+    for (const auto &pair : kPairs) {
+        const std::string pattern = std::string("cloud\\.") + pair.cloud_field + R"(\s*=[^;]*scene\.)"
+          + pair.scene_field + "\\." + pair.component + "\\b";
+        const std::regex field_regex(pattern);
+        EXPECT_TRUE(std::regex_search(*contents, field_regex))
+          << clouds_path.string() << " no longer assigns cloud." << pair.cloud_field << " from scene."
+          << pair.scene_field << '.' << pair.component
+          << " - the host packer (SceneUboMarshal.hpp's fillSceneUboClouds) and this shader's unpack "
+             "must agree on which component every cloud slider lands in";
+    }
+}
+
 // PathTracing.cpp dispatches the path tracing compute pass using
 // kPathTracingWorkgroupSizeX/Y (PathTracingDispatch.hpp) to size the
 // thread-group grid. Those constants have no compiler-enforced link to the

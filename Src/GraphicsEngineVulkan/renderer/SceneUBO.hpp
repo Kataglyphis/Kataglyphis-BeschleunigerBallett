@@ -41,10 +41,11 @@ struct SceneUBO
     // xyz is position; w = fov
     vec4 cam_pos;
     
-    // Clouds
-    vec4 cloudLightMarch; // x = numMarchStepsToLight, y/z/w reserved (0)
-    vec4 cloudMeshScale; // w = cloud.scale (density multiplier)
-    vec4 cloudMeshOffset; // w = cloud.threshold (coverage threshold)
-    vec4 cloudParameters; // x = pillowness, y = cirrus_effect, z = powder_effect, w = numMarchSteps
+    // Clouds - packed by SceneUboMarshal.hpp's fillSceneUboClouds, which documents
+    // what lands in each component.
+    vec4 cloudLightMarch;
+    vec4 cloudMeshScale;
+    vec4 cloudMeshOffset;
+    vec4 cloudParameters;
 };
 }// namespace Kataglyphis::VulkanRendererInternals
