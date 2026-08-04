@@ -9725,10 +9725,6 @@ Task 4 must land *last* of the shader-touching set: it changes
 landing it in the middle would rebase tasks 1–3's diffs for no reason. Task 5
 is the only one that touches no shader at all and can go first or last.
 
-### C++ Vulkan engine
-
-- [ ] **(M) Consume the per-vertex tangent for normal mapping across the four C++ shading paths** — follow-up to the tangent-plumbing task (`Vertex::tangent`, `vertex::computeTangents`, `scene_types.slang`'s `Vertex.tangent`, the grown `getVertexInputAttributeDesc()`): the buffer layout carries a real tangent now, but nothing reads it yet. The Rust twin (`webgpu_renderer`) already builds a TBN basis and samples a normal map; this is the C++ parity step. Four shading paths need the same TBN-from-tangent treatment: forward (`Resources/ShadersSlang/rasterizer/rasterizer.slang`), deferred geometry (`Resources/ShadersSlang/deferred/deferred.slang`), RT closest-hit (`Resources/ShadersSlang/raytracing/raytrace.rchit.slang`), and PT closest-hit (`Resources/ShadersSlang/path_tracing/path_tracing.slang`). Each needs: forward the vertex tangent through its VS (like `fragment_color`/UV already are), reconstruct the bitangent as `cross(normal, tangent.xyz) * tangent.w`, build the TBN matrix, sample a normal map texture (glTF `NORMAL_TEXTURE` — `ObjMaterial`/`GltfLoader` do not yet carry a normal-texture slot; that is itself a prerequisite sub-step, following the `emissiveTexture`/`textureID` slot-assignment pattern in `GltfLoader.cpp`), and perturb the shading normal before the BRDF. `doubleSided` back-face normal flip (already shipped, `923011db`) must apply to the perturbed normal, not just the geometric one.
-
 ### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
 
 > The back-face normal flip above is cross-renderer: its third step edits

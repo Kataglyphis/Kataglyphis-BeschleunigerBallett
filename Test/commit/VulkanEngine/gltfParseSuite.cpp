@@ -320,6 +320,137 @@ TEST(GltfParseUnit, MaterialWithoutAnEmissiveTextureKeepsTheSentinel)
       << "a material without an emissiveTexture must keep the -1 sentinel";
 }
 
+TEST(GltfParseUnit, NormalTextureGetsItsOwnTextureSlot)
+{
+    // A material whose baseColorTexture and normalTexture name two DIFFERENT
+    // declared images must get two distinct slots.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [
+        {
+          "pbrMetallicRoughness": { "baseColorTexture": { "index": 0 } },
+          "normalTexture": { "index": 1 }
+        }
+      ],
+      "textures": [ { "source": 0 }, { "source": 1 } ],
+      "images": [
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" },
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" }
+      ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 }
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_distinct_normal_texture.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getTextureImages().size(), 2U) << "the two distinct declared images must both be extracted";
+    ASSERT_EQ(loader.getMaterials().size(), 2U) << "the one declared material, plus the neutral fallback";
+    EXPECT_EQ(loader.getMaterials()[0].textureID, 0);
+    EXPECT_EQ(loader.getMaterials()[0].normalTextureID, 1);
+    EXPECT_NE(loader.getMaterials()[0].textureID, loader.getMaterials()[0].normalTextureID)
+      << "distinct images must not collapse onto one slot";
+}
+
+TEST(GltfParseUnit, NormalAndBaseColourSharingOneImageShareOneSlot)
+{
+    // A material whose baseColorTexture and normalTexture both name
+    // texture[0] -> image[0] must land on ONE textureImages slot: slots are
+    // the shared 128-entry descriptor budget.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [
+        {
+          "pbrMetallicRoughness": { "baseColorTexture": { "index": 0 } },
+          "normalTexture": { "index": 0 }
+        }
+      ],
+      "textures": [ { "source": 0 } ],
+      "images": [
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" }
+      ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 }
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_shared_normal_texture.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getTextureImages().size(), 1U) << "the shared image must be extracted only once";
+    ASSERT_EQ(loader.getMaterials().size(), 2U) << "the one declared material, plus the neutral fallback";
+    EXPECT_EQ(loader.getMaterials()[0].textureID, 0);
+    EXPECT_EQ(loader.getMaterials()[0].normalTextureID, 0)
+      << "base-colour and normal naming the same (image, sampler) pair must share one slot";
+}
+
+TEST(GltfParseUnit, MaterialWithoutANormalTextureKeepsTheSentinel)
+{
+    // A material with a baseColorTexture but no normalTexture must keep
+    // ObjMaterial::normalTextureID at its -1 sentinel.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [
+        { "pbrMetallicRoughness": { "baseColorTexture": { "index": 0 } } }
+      ],
+      "textures": [ { "source": 0 } ],
+      "images": [
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" }
+      ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 }
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_no_normal_texture.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getMaterials().size(), 2U) << "the one declared material, plus the neutral fallback";
+    EXPECT_EQ(loader.getMaterials()[0].textureID, 0);
+    EXPECT_EQ(loader.getMaterials()[0].normalTextureID, -1)
+      << "a material without a normalTexture must keep the -1 sentinel";
+}
+
 TEST(GltfParseUnit, ReadsSamplerWrapAndFilterFromTheDocument)
 {
     // A texture naming an explicit sampler must have that sampler's wrap and

@@ -157,5 +157,7 @@ TEST(ObjMaterialLayoutUnit, MatchesTheSlangTwinScalarLayout)
     EXPECT_EQ(offsetof(ObjMaterial, uv_transform_row1), 52U);
     EXPECT_EQ(offsetof(ObjMaterial, metallic), 64U);
     EXPECT_EQ(offsetof(ObjMaterial, roughness), 68U);
-    EXPECT_EQ(sizeof(ObjMaterial), 72U);
+    EXPECT_EQ(offsetof(ObjMaterial, emissiveTextureID), 72U);
+    EXPECT_EQ(offsetof(ObjMaterial, normalTextureID), 76U);
+    EXPECT_EQ(sizeof(ObjMaterial), 80U);
 }

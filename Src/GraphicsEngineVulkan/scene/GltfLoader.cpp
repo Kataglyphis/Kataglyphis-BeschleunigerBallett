@@ -206,6 +206,16 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
         }
     }
 
+    // Same "only TEXCOORD_0 is supported" limitation for the normal texture.
+    if (material.normal_texture.texture != nullptr) {
+        const TexCoordSetInfo normalTexCoordInfo = describeTexCoordSet(material.normal_texture.texcoord);
+        if (!normalTexCoordInfo.supported) {
+            spdlog::warn("GltfLoader: material '{}' normal texture uses TEXCOORD_{}, but only TEXCOORD_0 is "
+                         "supported; sampling with UV0",
+              materialName, normalTexCoordInfo.set);
+        }
+    }
+
     return ObjMaterial(baseColor,// diffuse
       emission,// emission
       shininess,// shininess
@@ -216,7 +226,8 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
       uvTransformRow1,// KHR_texture_transform T*R*S row 1
       metallic,// glTF pbrMetallicRoughness.metallicFactor
       authoredRoughness,// glTF pbrMetallicRoughness.roughnessFactor (-1 = not authored)
-      -1);// emissiveTextureID (assigned in parseCpu)
+      -1,// emissiveTextureID (assigned in parseCpu)
+      -1);// normalTextureID (assigned in parseCpu)
 }
 
 /// Reads a float attribute (2, 3 or 4 components) into `out`, one entry per
@@ -716,6 +727,16 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
             objMaterial.textureID = assignTextureSlot(material.pbr_metallic_roughness.base_color_texture);
         }
         objMaterial.emissiveTextureID = assignTextureSlot(material.emissive_texture);
+        // KNOWN LIMITATION: assignTextureSlot uploads through Texture.cpp's
+        // single hardcoded eR8G8B8A8Srgb format (see uploadRgba), which is
+        // correct for base-colour/emissive (sRGB-encoded PNG/JPG source data)
+        // but wrong for a normal map (linear tangent-space data - glTF
+        // requires it be read WITHOUT sRGB decode). Sharing a slot with an
+        // sRGB-sampled texture would also be wrong for the same reason, but
+        // dedup is by (image, sampler) identity, so a document that does not
+        // reuse a base-colour/emissive image as its normal map is unaffected
+        // by this. Fixing it needs a per-slot format, out of scope here.
+        objMaterial.normalTextureID = assignTextureSlot(material.normal_texture);
         materials.push_back(objMaterial);
     }
     const auto fallbackMaterial = static_cast<unsigned int>(materials.size());

@@ -3,6 +3,7 @@ import rt_types;
 import brdf;
 import base_color;
 import emission;
+import normal_map;
 import material_fetch;
 
 // Ray tracing closest-hit shader. Sole source for this shader. Emits
@@ -99,6 +100,19 @@ void rchit_main(
     // Light direction (towards the light) and view direction (towards camera).
     float3 L = normalize(-sceneUBO.dirLight.direction.xyz);
     float3 N = worldNormal;
+    if (material.normalTextureID >= 0)
+    {
+        // Tangent at hit position, world-transformed. Unlike the normal above,
+        // a tangent is a surface direction, so it transforms with
+        // ObjectToWorld() directly (same rule as worldHitPos), not the
+        // inverse-transpose WorldToObject() the normal uses.
+        float4 tangentHit = v0.tangent * barycentrics.x + v1.tangent * barycentrics.y + v2.tangent * barycentrics.z;
+        float3 worldTangent = normalize((float3)mul(ObjectToWorld(), float4(tangentHit.xyz, 0.0)));
+        int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
+        // Explicit LOD: see the base-colour sample above for why.
+        float3 normalSample = textures[normalTexId].SampleLevel(textureSamplers[normalTexId], transform_uv(texCoords, material), 0.0).xyz;
+        N = apply_normal_map(N, float4(worldTangent, tangentHit.w), normalSample);
+    }
     float3 V = normalize(sceneUBO.cam_pos.xyz - worldHitPos);
 
     // Shadow ray: trace from the hit point towards the light.

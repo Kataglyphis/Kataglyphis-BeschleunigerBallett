@@ -1050,7 +1050,8 @@ std::vector<SpirvStructContract> build_shared_struct_offset_contracts()
             { "uv_transform_row1", offsetof(ObjMaterial, uv_transform_row1) },
             { "metallic", offsetof(ObjMaterial, metallic) },
             { "roughness", offsetof(ObjMaterial, roughness) },
-            { "emissiveTextureID", offsetof(ObjMaterial, emissiveTextureID) } } },
+            { "emissiveTextureID", offsetof(ObjMaterial, emissiveTextureID) },
+            { "normalTextureID", offsetof(ObjMaterial, normalTextureID) } } },
         { "Vertex_natural",
           { { "position", offsetof(Vertex, position) },
             { "normal", offsetof(Vertex, normal) },
@@ -2778,6 +2779,53 @@ TEST(BuildIntegrity, EmissionSamplingUsesTheSharedHelperInEveryShadingPath)
           << path.string() << " no longer calls material_emission(). " << kFailureMessage;
         EXPECT_NE(text.find("emissiveTextureID"), std::string::npos)
           << path.string() << " no longer branches on ObjMaterial::emissiveTextureID. " << kFailureMessage;
+    }
+}
+
+// ObjMaterial::normalTextureID (glTF normalTexture, follow-up to the tangent-plumbing task naming these four
+// shading paths) is dedup'd into the same texture-slot budget as textureID/emissiveTextureID, but only actually
+// perturbs shading if every shading path derives a TBN basis from the per-vertex tangent and runs the sampled
+// texture through the shared common/normal_map.slang helper rather than four hand-rolled copies - this scans the
+// shader sources as text (the source-text gate pattern used throughout this file) and fails if any of the four
+// shading paths stops calling apply_normal_map(), or if normal_map.slang itself stops perturbing by the sampled
+// tangent-space normal.
+TEST(BuildIntegrity, NormalMappingIsAppliedByEveryShadingPath)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    static const char *kFailureMessage =
+      "apply_normal_map() in common/normal_map.slang is the sole place the tangent-space normalTexture sample is "
+      "turned into a world-space shading normal; a shading path that hand-rolls it instead risks silently "
+      "diverging from the other three, or never lighting normal maps at all";
+
+    const fs::path normal_map_path = repo_root / "Resources/ShadersSlang/common/normal_map.slang";
+    const auto normal_map_text_opt = readFileText(normal_map_path);
+    ASSERT_TRUE(normal_map_text_opt.has_value()) << "could not open " << normal_map_path.string();
+    const std::string &normal_map_text = *normal_map_text_opt;
+    EXPECT_NE(normal_map_text.find("sampledNormal * 2.0 - 1.0"), std::string::npos)
+      << "normal_map.slang's apply_normal_map() no longer unpacks the sampled tangent-space normal from [0,1] to "
+         "[-1,1]. "
+      << kFailureMessage;
+
+    const std::vector<fs::path> shading_paths = {
+        repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang",
+        repo_root / "Resources/ShadersSlang/deferred/deferred.slang",
+        repo_root / "Resources/ShadersSlang/raytracing/raytrace.rchit.slang",
+        repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang",
+    };
+    for (const fs::path &path : shading_paths) {
+        const auto text_opt = readFileText(path);
+        ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
+        const std::string &text = *text_opt;
+        EXPECT_NE(text.find("import normal_map;"), std::string::npos)
+          << path.string() << " no longer imports common/normal_map.slang. " << kFailureMessage;
+        EXPECT_NE(text.find("apply_normal_map("), std::string::npos)
+          << path.string() << " no longer calls apply_normal_map(). " << kFailureMessage;
+        EXPECT_NE(text.find("normalTextureID"), std::string::npos)
+          << path.string() << " no longer branches on ObjMaterial::normalTextureID. " << kFailureMessage;
+        EXPECT_NE(text.find("worldTangent"), std::string::npos)
+          << path.string() << " no longer derives a world-space tangent to build the TBN basis. " << kFailureMessage;
     }
 }
 

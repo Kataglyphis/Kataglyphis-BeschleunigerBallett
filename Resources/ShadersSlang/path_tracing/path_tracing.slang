@@ -1,6 +1,7 @@
 import scene_types;
 import base_color;
 import emission;
+import normal_map;
 import alpha_test;
 
 // Path tracing compute kernel using ray query (GL_EXT_ray_query).
@@ -219,6 +220,27 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
 
             ObjMaterial material = materials->m[materialIDs->i[primitiveID]];
 
+            // Shading normal for the NEE lighting term below (nDotL): the
+            // geometric hitWorldNormal itself stays unperturbed, since it also
+            // drives the ray-offset (self-intersection guard) and the bounce
+            // hemisphere sampling, and perturbing those would couple the
+            // normal map into path geometry rather than just shading.
+            float3 shadingNormal = hitWorldNormal;
+            if (material.normalTextureID >= 0)
+            {
+                float4 tangentHit = v0.tangent * barycentrics.x + v1.tangent * barycentrics.y + v2.tangent * barycentrics.z;
+                // float3x4 is 3 rows x 4 cols; mul(float3x4, float4) = float3.
+                // Same "surface direction, not a normal" rule as
+                // raytracing/raytrace.rchit.slang - transforms with objToWorld
+                // directly, not the inverse-transpose worldToObject the normal
+                // above uses.
+                float3 worldTangent = normalize(mul(objToWorld, float4(tangentHit.xyz, 0.0)));
+                int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
+                // Explicit LOD: see the base-colour sample below for why.
+                float3 normalSample = textures[normalTexId].SampleLevel(textureSamplers[normalTexId], transform_uv(texCoords, material), 0.0).xyz;
+                shadingNormal = apply_normal_map(hitWorldNormal, float4(worldTangent, tangentHit.w), normalSample);
+            }
+
             float3 hitColor;
             if (furnace)
             {
@@ -275,7 +297,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             // unreachable by the diffuse bounce ray, so this does not
             // double-count with the sky term on miss.
             float3 lightDir = normalize(-sceneUBO.dirLight.direction.xyz);
-            float nDotL = dot(hitWorldNormal, lightDir);
+            float nDotL = dot(shadingNormal, lightDir);
             if (nDotL > 0.0)
             {
                 // Deliberately not forced opaque, same reason as the bounce

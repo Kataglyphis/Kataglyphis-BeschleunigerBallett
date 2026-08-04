@@ -2,6 +2,7 @@ import scene_types;
 import material_fetch;
 import base_color;
 import emission;
+import normal_map;
 import brdf;
 import cascaded_shadow;
 import push_constants;
@@ -23,6 +24,7 @@ struct GVsOut
     float3 shadingNormal : TEXCOORD1;
     float4 fragmentColor : TEXCOORD2;
     float3 worldPosition : TEXCOORD3;
+    float4 worldTangent : TEXCOORD4;
 };
 
 struct GBufferOut
@@ -37,12 +39,17 @@ GVsOut geometry_vs_main(
     float3 positions : POSITION,
     float3 normal : NORMAL,
     float4 color : COLOR,
-    float2 tex_coords : TEXCOORD0)
+    float2 tex_coords : TEXCOORD0,
+    float4 tangent : TANGENT)
 {
     GVsOut o;
     o.svPosition = mul(mul(mul(globalUBO.projection, globalUBO.view), pc_raster.model), float4(positions, 1.0));
     o.worldPosition = mul(pc_raster.model, float4(positions, 1.0)).xyz;
     o.shadingNormal = transform_normal(pc_raster, normal);
+    // Tangent is a surface direction, not a normal, so it transforms with the
+    // model matrix directly rather than the inverse-transpose transform_normal()
+    // uses (see push_constants.slang's transform_normal doc).
+    o.worldTangent = float4(normalize(mul(pc_raster.model, float4(tangent.xyz, 0.0)).xyz), tangent.w);
     o.texCoords = tex_coords;
     o.fragmentColor = color;
     return o;
@@ -78,6 +85,12 @@ GBufferOut geometry_fs_main(GVsOut In, uint primitiveID : SV_PrimitiveID, bool i
     // not in the lighting pass, since the lighting pass has no SV_IsFrontFace.
     float3 N = normalize(In.shadingNormal);
     if (!isFrontFace) N = -N;
+    if (material.normalTextureID >= 0)
+    {
+        int normalTexId = resolve_texture_slot(obj, material.normalTextureID);
+        float3 normalSample = textures[normalTexId].Sample(textureSamplers[normalTexId], transform_uv(In.texCoords, material)).xyz;
+        N = apply_normal_map(N, In.worldTangent, normalSample);
+    }
     // .w is otherwise unused (GBUFFER_NORMAL_FORMAT is eR16G16B16A16Sfloat,
     // and lighting_fs_main only ever read normal.xyz) - the free float
     // channel for metallic, so it does not need its own G-buffer attachment.

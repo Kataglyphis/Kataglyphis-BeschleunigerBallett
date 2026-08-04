@@ -149,6 +149,7 @@ default (documented on the member itself in `ObjMaterial.hpp`).
 | `metallic` | `pbrMetallicRoughness.metallicFactor`, clamped `[0,1]` | — | `rasterizer.slang`/`raytrace.rchit.slang` (`f0`, `brdf_direct`), `deferred.slang` (G-buffer normal's `.a`) |
 | `roughness` | `pbrMetallicRoughness.roughnessFactor`, clamped `[0,1]`; `-1` sentinel ("unauthored") when the material has no `pbrMetallicRoughness` block | — | `material_fetch.slang`'s `material_roughness()` |
 | `emissiveTextureID` | dedup'd slot into `textureImages` (same `imageSlot` map as `textureID` — an emissive view naming the same `(image, sampler)` pair as the base-colour view lands on the same slot); `-1` if the material has no `emissiveTexture` | — | all four shading paths, via `common/emission.slang`'s `material_emission()` |
+| `normalTextureID` | dedup'd slot into `textureImages` (same `imageSlot` map as `textureID`/`emissiveTextureID`); `-1` if the material has no `normalTexture` | — | all four shading paths, via `common/normal_map.slang`'s `apply_normal_map()`, using `Vertex::tangent` for the TBN basis |
 
 ## Textures, samplers and the 128-slot budget
 
@@ -162,13 +163,18 @@ against that budget rather than just hoping models stay small:
 
 - **glTF dedup by image and sampler** — `GltfLoader::parseCpu`'s `imageSlot`
   map keys on the pair `(const cgltf_image *, const cgltf_sampler *)`, not
-  the material or the texture slot (base-colour vs. emissive): one
+  the material or the texture slot (base-colour vs. emissive vs. normal): one
   decode+upload per (image, sampler) pair no matter how many materials or
   texture slots reference it (e.g. a material whose base-colour and
   emissive views name the same PNG shares one slot — `textureID ==
   emissiveTextureID`), while two textures that share an image but name
   different samplers still get distinct slots — collapsing those would make
-  the second texture's wrap/filter settings unobservable.
+  the second texture's wrap/filter settings unobservable. Note this means a
+  normal map sharing an image with a base-colour/emissive texture is decoded
+  through the same sRGB-format upload as those (`Texture.cpp`'s
+  `uploadRgba`); a document that never reuses an image this way is
+  unaffected, but this is otherwise a known gap - see the comment beside
+  `assignTextureSlot(material.normal_texture)` in `GltfLoader.cpp`.
 - **OBJ dedup by resolved path** — `ObjLoader::loadTexturesAndMaterials`'s
   `pathSlot` map keys on the path `resolveObjTexturePath` returns, not the
   raw `map_Kd` string, so two materials naming the same file through

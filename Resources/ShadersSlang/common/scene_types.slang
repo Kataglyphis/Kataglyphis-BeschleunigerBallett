@@ -45,6 +45,7 @@ struct ObjMaterial
     float metallic;
     float roughness;
     int emissiveTextureID;
+    int normalTextureID;
 };
 
 // Per-mesh object description (matches ObjectDescription.hpp). The uint64_t
