@@ -10716,3 +10716,307 @@ and therefore needs `-FreshContainer`.
 
 ### Docs
 
+## 2026-08-05 batch IX — planner (refactor: five shared Slang modules that each explain, in prose, why the ray-tracing entry points "cannot import `material_fetch`" — while two of the three of them do; a vertex stage that the forward and deferred rasterizers write out byte-identically, twice, whose two outputs a golden test asserts agree; and nineteen `[vk::binding(N, ...)]` literals for numbers `scene_types.slang` already names and a gate already pins against the host header)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Batch VIII's five tasks all shipped
+(`2802c163`, `9ae2679b`, `86371ffd`, `fb278765`, `45011e7d`). Everything below
+was read out of the tree at `45011e7d`.
+
+**First, the "RT/PT cannot import `material_fetch`" rationale is repeated in
+five modules and is false in two of the three shaders it names.**
+`common/material_fetch.slang` owns the `objectDescription` binding plus
+`fetch_object_description()` / `fetch_material()`. Five sibling modules —
+`common/base_color.slang`, `common/material_rules.slang`,
+`common/normal_map.slang`, `common/emission.slang` and
+`common/alpha_test.slang` — each carry a paragraph justifying their own
+existence with the same claim: *"the ray tracing / path tracing entry points
+already declare their own `objectDescription` binding and cannot also `import
+material_fetch` (which declares the same binding again) without an
+ambiguous-reference compile error."* Read the three shaders it names:
+
+- `raytracing/raytrace.rchit.slang` **does** `import material_fetch` and calls
+  `fetch_object_description(objIndex)`.
+- `raytracing/raytrace.rahit.slang` **does** `import material_fetch` — next to
+  `import alpha_test`, i.e. the exact combination the paragraph in
+  `alpha_test.slang` says would be ambiguous.
+- Only `path_tracing/path_tracing.slang` still declares
+  `StructuredBuffer<ObjectDescription> objectDescription` itself.
+
+So four fifths of the claim is stale, and the fifth (`alpha_test.slang`'s) is
+true only of `path_tracing.slang`. Two concrete consequences follow, not just
+a wrong comment:
+
+- `rchit_main` already imports `material_fetch`, then declares `MaterialIDs*
+  materialIDs` and `Materials* materials` purely to write
+  `materials->m[materialIDs->i[PrimitiveIndex()]]` — which is
+  `fetch_material()`'s entire body, character for character.
+- `path_tracing_main` does the same thing twice (`objectDescription[...]` and
+  the same two-pointer material lookup), and its reason not to import
+  `material_fetch` does not survive inspection: `material_fetch` declares only
+  `objectDescription`; the `textures`/`textureSamplers` arrays it needs come
+  from `alpha_test.slang`, which declares no `objectDescription`. Dropping its
+  own declaration and importing `material_fetch` should leave the descriptor
+  set identical.
+
+**Second, the forward and deferred rasterizers write the same vertex stage
+twice.** `rasterizer/rasterizer.slang`'s `VsOut` / `vs_main` and
+`deferred/deferred.slang`'s `GVsOut` / `geometry_vs_main` are byte-identical:
+the same six interpolants with the same semantics, the same six assignment
+lines (`svPosition`, `worldPosition`, `shadingNormal` via `transform_normal`,
+`worldTangent`, `texCoords`, `fragmentColor`), and the same three-line
+"tangent is a surface direction, not a normal" comment. This is not incidental
+duplication — `goldenRenderSuite.cpp`'s forward/deferred parity oracle asserts
+the two paths agree, so any drift between these two copies is a test failure
+whose cause is two files that were supposed to be one. Both shaders already
+import `common/push_constants.slang`, which established the pattern of a shared
+module taking the push constant as a *parameter* (`transform_normal(pc,
+normal)`) rather than declaring it.
+
+**Third, `scene_types.slang` names the shared descriptor set's binding numbers
+and almost nothing uses the names.** It declares `globalUBO_BINDING`,
+`sceneUBO_BINDING`, `OBJECT_DESCRIPTION_BINDING`, `TEXTURES_BINDING`,
+`SAMPLER_BINDING`, `SHADOW_MAP_BINDING`, `TLAS_BINDING`, `OUT_IMAGE_BINDING`
+and `ACCUMULATION_IMAGE_BINDING`;
+`buildIntegritySuite.cpp`'s `HostAndShaderSharedConstantsAgree` pins all nine
+against `Src/GraphicsEngineVulkan/common/host_device_shared_vars.hpp`, and the
+C++ side writes its descriptor layout with the names
+(`VulkanRenderer::createSharedRenderDescriptorResources`). The shaders do not:
+`common/alpha_test.slang` is the **only** file in the tree whose
+`[vk::binding(...)]` attributes use them. Nineteen other declarations spell the
+same numbers as bare integers, across `material_fetch.slang`,
+`cascaded_shadow.slang`, `rasterizer.slang`, `deferred.slang`,
+`shadow_map.slang`, `raytrace.rchit.slang`, `raytrace.rgen.slang` and
+`path_tracing.slang`. The pin test therefore guards a rename that would move
+the host and `scene_types.slang` in lockstep while every literal stayed put —
+exactly the failure mode `NoShaderRedeclaresTheCascadeCount` was written to
+close for `MAX_CASCADES`, and the same gate shape applies here.
+
+**Verification context.** Host GPU goldens remain blocked over RDP (the `- [b]`
+near the end of this file) and `path_tracing` mode device-losts on the host
+RX 9070 XT on unmodified `develop` (the `- [b]` at line ~2030). **No task below
+may claim a rendered result** — and none needs to. All three are pure source
+refactors that must leave the emitted SPIR-V *byte-identical*, which is a
+stronger and entirely GPU-free oracle than a golden image. Every task therefore
+carries the same mandatory check:
+
+```pwsh
+# before touching anything
+Copy-Item -Recurse Resources\ShadersSlang\build\spirv $env:TEMP\spirv-before
+# ... make the change ...
+pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\compile-slang-shaders.ps1
+Compare-Object `
+  (Get-ChildItem -Recurse $env:TEMP\spirv-before -File | Get-FileHash) `
+  (Get-ChildItem -Recurse Resources\ShadersSlang\build\spirv -File | Get-FileHash) `
+  -Property Hash, @{E={Split-Path $_.Path -Leaf}}
+```
+A non-empty `Compare-Object` result means the refactor changed behaviour — stop
+and find out why rather than re-baselining. **Say which suites you actually
+ran**, and say explicitly that no image was rendered.
+
+**Ordering.** Land 1 → 2 → 3, one at a time. Task 1 deletes
+`path_tracing.slang`'s own `objectDescription` declaration, which task 3 would
+otherwise rewrite; task 3 rewrites `[vk::binding(...)]` lines in the two files
+task 2 edits. Each later task rebases trivially over the earlier ones. All
+three add a test to `Test/commit/VulkanEngine/buildIntegritySuite.cpp`, so
+serialize for that reason too. No task changes a C++23 module interface, so
+none needs `-FreshContainer`; none changes `Src/`'s compiled output at all
+except task 1's optional step 6.
+
+### C++ Vulkan engine
+
+- [ ] **(M) (refactor) Extract the rasterizer/deferred vertex stage into one `common/raster_geometry.slang`** — `vs_main` and `geometry_vs_main` are byte-identical, and a golden test asserts their two outputs agree.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/rasterizer/rasterizer.slang` — `VsOut`, `vs_main`.
+  - `Resources/ShadersSlang/deferred/deferred.slang` — `GVsOut`,
+    `geometry_vs_main`. Note the file has a *second*, unrelated vertex stage
+    (`lighting_vs_main`, the fullscreen triangle) — leave it alone.
+  - `Resources/ShadersSlang/common/push_constants.slang` — the pattern to
+    follow: a shared module whose helper takes the push constant as a
+    parameter (`transform_normal(pc, normal)`) rather than declaring it.
+  - `Resources/ShadersSlang/common/cascaded_shadow.slang` — the other
+    precedent: a shared function taking `sceneUBO` by value.
+  - `docs/shader-sharing.md` — the `<!-- shared-module-targets:begin -->`
+    table; a new `common/` module needs a row here or the gate that parses it
+    goes red.
+  - `Resources/ShadersSlang/shader-manifest.json` — confirm the four affected
+    entries (`vs_main`, `fs_main`, `geometry_vs_main`, `geometry_fs_main`)
+    stay exactly as they are; this task changes no entry point name.
+
+  **Steps:**
+  1. Create `Resources/ShadersSlang/common/raster_geometry.slang`. It imports
+     `scene_types` and `push_constants`, declares **no bindings**, and exports:
+     - `struct RasterVsOut` with the six existing interpolants and semantics
+       (`svPosition : SV_Position`, `texCoords : TEXCOORD0`,
+       `shadingNormal : TEXCOORD1`, `fragmentColor : TEXCOORD2`,
+       `worldPosition : TEXCOORD3`, `worldTangent : TEXCOORD4`) — copy them
+       verbatim, semantics included, so the fragment-stage interface is
+       unchanged.
+     - `RasterVsOut raster_geometry_vs(GlobalUBO globalUBO,
+       PushConstantRasterizer pc, float3 position, float3 normal, float4 color,
+       float2 texCoords, float4 tangent)` carrying the six existing assignment
+       lines and the existing "tangent is a surface direction, not a normal"
+       comment, moved (not copied).
+     Head the module with a comment naming both consumers and the reason it
+     exists: the forward and deferred geometry passes must produce identical
+     world position, normal and tangent or the forward/deferred parity golden
+     is comparing two different geometries.
+  2. In `rasterizer.slang`: `import raster_geometry;`, delete `VsOut`, and
+     reduce `vs_main` to a single `return raster_geometry_vs(globalUBO,
+     pc_raster, positions, normal, color, tex_coords, tangent);`. Change
+     `fs_main`'s parameter type to `RasterVsOut In`. The entry point keeps its
+     name and its explicit attribute list — only the body moves.
+  3. Same in `deferred.slang` for `GVsOut` / `geometry_vs_main` /
+     `geometry_fs_main`. Delete `GVsOut` outright rather than aliasing it.
+  4. Add the row `| `common/raster_geometry.slang` | spirv |` to
+     `docs/shader-sharing.md`'s `shared-module-targets` table, in alphabetical
+     position (between `push_constants` and `scene_types`).
+  5. Recompile the shaders and run the SPIR-V byte-identity check from this
+     batch's preamble. A difference here means the extraction changed the
+     emitted code — Slang should inline this to exactly what was there before.
+  6. Add the gate (see **Test** below).
+
+  **Test:** Add `BuildIntegrity.TheTwoRasterGeometryPassesShareOneVertexStage`
+  to `Test/commit/VulkanEngine/buildIntegritySuite.cpp`: read
+  `rasterizer/rasterizer.slang` and `deferred/deferred.slang` and assert each
+  contains `raster_geometry_vs(` and `import raster_geometry;` and contains
+  **no** `o.worldTangent =` assignment of its own (the marker for a
+  re-hand-rolled vertex body). Follow the failure-message style of the
+  existing shader gates: name the file and say "the forward and deferred
+  geometry passes must share common/raster_geometry.slang's
+  raster_geometry_vs() — the forward/deferred parity golden compares their
+  outputs". Note that the existing `shared-module-targets` gate in the same
+  file already covers step 4, so do not write a second doc check.
+
+  **Build:** `clangcl-debug`, then
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+  from the repo root, plus the SPIR-V byte-identity check. The GPU suites
+  (`GoldenRender.*`) that would exercise this are blocked over RDP — say so
+  rather than skipping silently.
+
+  **Context:** These two vertex stages must agree by construction, not by
+  review: `goldenRenderSuite.cpp`'s forward/deferred parity oracle exists
+  precisely because they can disagree, and a bug in that oracle has already
+  shipped once (see the `- [b]` entry about the deferred lighting pass's
+  mirrored world-position reconstruction). Avoid the temptation to also move
+  the four duplicated texture-slot sample blocks (normal, metallic-roughness,
+  emissive, alpha) in the same change — those need the `textures[]` /
+  `textureSamplers[]` bindings, which four shaders each declare separately, and
+  that is a larger design question. It is recorded as prose at the end of this
+  batch.
+
+- [ ] **(S) (refactor) Spell the shared descriptor set's binding numbers with `scene_types.slang`'s named constants, and gate the literals** — the host header, the C++ descriptor layout and the pin test all use the names; nineteen shader declarations still use bare integers, so a rename would move three of four sides.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/common/scene_types.slang` — the nine constants.
+  - `Src/GraphicsEngineVulkan/common/host_device_shared_vars.hpp` — the C++
+    half they are pinned against.
+  - `Resources/ShadersSlang/common/alpha_test.slang` — the one file already
+    doing this (`[vk::binding(TEXTURES_BINDING, 0)]`), i.e. the target form.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` —
+    `HostAndShaderSharedConstantsAgree` (the existing pin) and
+    `NoShaderRedeclaresTheCascadeCount` (the gate shape to copy, including its
+    manifest-scoped file iteration and `strip_line_comment` use).
+
+  **Steps:**
+  1. Replace the literal with the matching constant in every **set 0**
+     declaration of the shared render descriptor set, in these files:
+     `common/material_fetch.slang` (`OBJECT_DESCRIPTION_BINDING`),
+     `common/cascaded_shadow.slang` (`SHADOW_MAP_BINDING`),
+     `rasterizer/rasterizer.slang` (`globalUBO_BINDING`, `sceneUBO_BINDING`,
+     `TEXTURES_BINDING`, `SAMPLER_BINDING`),
+     `deferred/deferred.slang` (`globalUBO_BINDING` twice — the geometry pass
+     and the lighting pass each declare one — `sceneUBO_BINDING`,
+     `TEXTURES_BINDING`, `SAMPLER_BINDING`),
+     `rasterizer/shadows/shadow_map.slang` (`TEXTURES_BINDING`,
+     `SAMPLER_BINDING`),
+     `raytracing/raytrace.rchit.slang` (`sceneUBO_BINDING`, `TEXTURES_BINDING`,
+     `SAMPLER_BINDING`),
+     `raytracing/raytrace.rgen.slang` (`globalUBO_BINDING`),
+     `path_tracing/path_tracing.slang` (`globalUBO_BINDING`,
+     `sceneUBO_BINDING`; its `objectDescription` line is gone if task 1
+     landed — if it is still there, use `OBJECT_DESCRIPTION_BINDING`).
+  2. Replace the **set 1** ray-tracing literals with their names —
+     `TLAS_BINDING`, `OUT_IMAGE_BINDING`, `ACCUMULATION_IMAGE_BINDING` — in
+     `raytrace.rchit.slang`, `raytrace.rgen.slang` and `path_tracing.slang`.
+     Every file touched already imports `scene_types` transitively; add an
+     explicit `import scene_types;` where it is only transitive.
+  3. **Do not touch** anything else. Specifically leave alone:
+     `deferred.slang`'s four set-1 subpass-input bindings, `shadow_map.slang`'s
+     `[vk::binding(1, 1)] lightSpaceMatrices`, and every binding in the
+     standalone post-processing shaders (`tonemap`, `bloom`, `ssao`, `sky`,
+     `skybox`, `post`, `tex_quad`, `depth_resolve`, `gpu_cull`,
+     `occlusion_bbox`, `ibl`, `compute/clouds`, `compute/noise`) and in
+     `forward/forward.slang`. Those are pipeline-local sets with no named
+     constant; inventing names for them is out of scope and would be a second
+     unpinned mirror.
+  4. Recompile and run the SPIR-V byte-identity check from this batch's
+     preamble. This step is the whole point: the numbers are unchanged, so
+     every `.spv` must hash identically.
+  5. Add the gate (see **Test** below).
+
+  **Test:** Add `BuildIntegrity.SharedDescriptorSetBindingsUseTheNamedConstants`
+  to `Test/commit/VulkanEngine/buildIntegritySuite.cpp`. Over the file list
+  from step 1 (an explicit list, not a directory walk — the exclusions in
+  step 3 are the point), scan each line for `vk::binding(` and fail if the
+  first argument parses as an integer literal rather than an identifier.
+  Report `file:name-of-declared-variable` and the sentence "use
+  scene_types.slang's named binding constant — host_device_shared_vars.hpp and
+  HostAndShaderSharedConstantsAgree already pin these". Guard the file list
+  itself: assert every path in it exists, so a renamed shader fails the gate
+  loudly instead of silently dropping out of coverage (the "an exemption entry
+  that matches nothing" failure mode from the 2026-08-04 batch VII refactor).
+  Reuse `readFileLines` and `strip_line_comment`.
+
+  **Build:** `clangcl-debug`, then
+  `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*`
+  from the repo root, plus the SPIR-V byte-identity check.
+
+  **Context:** `HostAndShaderSharedConstantsAgree` gives a false sense of
+  coverage here: it proves the C++ macro and the Slang `static const int` hold
+  the same value, but nothing checks that the shaders' `[vk::binding(...)]`
+  attributes are derived from that constant rather than from a coincidence.
+  Renaming or renumbering `SHADOW_MAP_BINDING` today updates
+  `host_device_shared_vars.hpp`, `scene_types.slang` and
+  `VulkanRenderer::createSharedRenderDescriptorResources` — and leaves
+  `cascaded_shadow.slang`'s `5` behind, with a green pin test. This is the
+  same class of hole `NoShaderRedeclaresTheCascadeCount` was written to close
+  for `MAX_CASCADES`; copy its structure, including the
+  `parse_vulkan_consumed_slang_sources` habit of not scanning WGSL-only
+  shaders.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+### Docs
+
+**Not in this batch, recorded so it is not lost.** Two findings that are real
+but do not belong to the three tasks above:
+
+- **The four texture-slot sample blocks are written twice in the raster paths
+  and twice more in the traced paths.** `rasterizer.slang`'s `fs_main` and
+  `deferred.slang`'s `geometry_fs_main` contain byte-identical blocks for the
+  alpha (`map_d`), normal, metallic-roughness and emissive slots — each a
+  `if (material.XTextureID >= 0) { resolve_texture_slot(...); Sample(...); }`
+  triple, including the four-line `map_d` comment reproduced verbatim.
+  `raytrace.rchit.slang` and `path_tracing.slang` carry the same four blocks
+  with `SampleLevel(..., 0.0)` instead of `Sample(...)`. A shared module cannot
+  simply own them, because it would have to own the `textures[]` /
+  `textureSamplers[]` arrays — which `rasterizer.slang`, `deferred.slang`,
+  `shadow_map.slang`, `raytrace.rchit.slang` and `alpha_test.slang` each
+  declare separately today (five copies of the same two bindings). Deciding
+  whether one module owns those arrays for all five, or whether the sample
+  helpers take the array as a parameter, is a design call worth its own batch,
+  and it should land after task 3 has made the binding numbers symbolic
+  everywhere.
+- **`Src/shared/util/FileReader.ixx`'s `readTextFile` and `fileExists` have no
+  production callers.** `Src/` reaches only `readBinaryFile` (`ShaderHelper.cpp`,
+  `GltfLoader.cpp`) and `getBaseDir` (`ObjLoader.cpp`); the other two are
+  driven only by `Test/commit/VulkanEngine/fileReaderSuite.cpp` and
+  `Test/fuzz/shader_file_reader_fuzz_test.cpp`. This is **not** a deletion
+  candidate — the fuzz target exercises all four together and `fileExists`'s
+  comment records the `std::filesystem::exists` throw-on-permission-denied
+  finding that motivated the `error_code` overload, which is exactly the kind
+  of knowledge a dead-code sweep destroys. Recorded so the next sweep stops
+  here instead of re-deriving it.
+

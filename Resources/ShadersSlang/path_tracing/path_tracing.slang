@@ -3,6 +3,7 @@ import base_color;
 import emission;
 import normal_map;
 import alpha_test;
+import material_fetch;
 import material_rules;
 
 // Path tracing compute kernel using ray query (GL_EXT_ray_query).
@@ -27,7 +28,7 @@ struct PushConstantPathTracing
 
 [vk::binding(0, 0)] ConstantBuffer<GlobalUBO> globalUBO;
 [vk::binding(1, 0)] ConstantBuffer<SceneUBO> sceneUBO;
-[vk::binding(2, 0)] StructuredBuffer<ObjectDescription> objectDescription;
+// objectDescription (binding 2) comes from material_fetch.slang.
 // textures/textureSamplers (bindings 3, 4) come from alpha_test.slang,
 // shared with raytrace.rahit.slang's alpha test.
 
@@ -127,7 +128,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 if (rayQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
                 {
                     uint candidateObjIndex = rayQuery.CandidateInstanceIndex() + rayQuery.CandidateGeometryIndex();
-                    ObjectDescription candidateObj = objectDescription[candidateObjIndex];
+                    ObjectDescription candidateObj = fetch_object_description(candidateObjIndex);
                     if (!ray_hit_masked_out(candidateObj, rayQuery.CandidatePrimitiveIndex(), rayQuery.CandidateTriangleBarycentrics()))
                     {
                         rayQuery.CommitNonOpaqueTriangleHit();
@@ -184,11 +185,9 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             float3x4 objToWorld = rayQuery.CommittedObjectToWorld3x4();
             float3x4 worldToObject = rayQuery.CommittedWorldToObject3x4();
 
-            ObjectDescription obj = objectDescription[instanceIndex];
+            ObjectDescription obj = fetch_object_description(instanceIndex);
             Vertices* vertices = (Vertices*)obj.vertex_address;
             Indices* indices = (Indices*)obj.index_address;
-            MaterialIDs* materialIDs = (MaterialIDs*)obj.material_index_address;
-            Materials* materials = (Materials*)obj.material_address;
 
             uint primitiveID = rayQuery.CommittedPrimitiveIndex();
 
@@ -219,7 +218,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                              + v1.texture_coords * barycentrics.y
                              + v2.texture_coords * barycentrics.z;
 
-            ObjMaterial material = materials->m[materialIDs->i[primitiveID]];
+            ObjMaterial material = fetch_material(obj, primitiveID);
 
             // Shading normal for the NEE lighting term below (nDotL): the
             // geometric hitWorldNormal itself stays unperturbed, since it also
@@ -358,7 +357,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                     if (shadowQuery.CandidateType() == CANDIDATE_NON_OPAQUE_TRIANGLE)
                     {
                         uint candidateObjIndex = shadowQuery.CandidateInstanceIndex() + shadowQuery.CandidateGeometryIndex();
-                        ObjectDescription candidateObj = objectDescription[candidateObjIndex];
+                        ObjectDescription candidateObj = fetch_object_description(candidateObjIndex);
                         if (!ray_hit_masked_out(candidateObj, shadowQuery.CandidatePrimitiveIndex(), shadowQuery.CandidateTriangleBarycentrics()))
                         {
                             shadowQuery.CommitNonOpaqueTriangleHit();

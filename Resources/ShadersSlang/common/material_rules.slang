@@ -1,11 +1,9 @@
 import scene_types;
 
-// Pure glTF material rules over an ObjMaterial value, no bindings - the ray
-// tracing / path tracing entry points already declare their own
-// `objectDescription` binding and cannot also `import material_fetch`
-// (which declares the same binding again) without an ambiguous-reference
-// compile error. This module has no bindings, so every shading path -
-// including the ray-query kernels - can import it. Same pattern as
+// Pure glTF material rules over an ObjMaterial value, no bindings - so every
+// shading path, including the ray-query kernels, can import it without
+// pulling in a second copy of material_fetch.slang's `objectDescription`
+// declaration. Same pattern as
 // base_color.slang/emission.slang/normal_map.slang.
 
 // Roughness shared by every shading path (forward, deferred, ray-traced).

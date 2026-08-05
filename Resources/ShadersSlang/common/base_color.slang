@@ -4,13 +4,12 @@ import scene_types;
 // `material.diffuse` holds the factor (see GltfLoader.cpp's fromGltfMaterial);
 // mirrors forward.slang's `prim.base_color * baseSample`.
 //
-// Deliberately its own module (not folded into material_fetch.slang): the
-// ray tracing / path tracing entry points already declare their own
-// `objectDescription` binding and cannot also `import material_fetch`
-// (which declares the same binding again) without an ambiguous-reference
-// compile error. This module has no bindings, so every shading path can
-// import it - the established pattern common/material_rules.slang also
-// follows for its own no-binding material rules.
+// Deliberately its own module (not folded into material_fetch.slang): this
+// module has no bindings, so every shading path - rasterization, ray
+// tracing and the ray-query compute kernel alike - can import it without
+// pulling in a second copy of material_fetch.slang's `objectDescription`
+// declaration. Same pattern common/material_rules.slang follows for its own
+// no-binding material rules.
 float3 base_color(ObjMaterial material, float3 sampled)
 {
     return sampled * material.diffuse;
@@ -18,9 +17,8 @@ float3 base_color(ObjMaterial material, float3 sampled)
 
 // glTF KHR_texture_transform: apply the T*R*S UV matrix (given as its two
 // rows) before sampling. Lives here rather than material_fetch.slang for the
-// same reason as base_color() above: the ray tracing / path tracing entry
-// points cannot `import material_fetch` (duplicate objectDescription
-// binding), but every shading path already imports this no-binding module.
+// same reason as base_color() above: this no-binding module can be imported
+// by every shading path alongside material_fetch.slang.
 float2 transform_uv(float2 uv, float3 row0, float3 row1)
 {
     return float2(dot(float3(uv, 1.0), row0), dot(float3(uv, 1.0), row1));

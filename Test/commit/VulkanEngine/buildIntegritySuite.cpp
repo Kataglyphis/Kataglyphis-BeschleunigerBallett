@@ -3430,6 +3430,90 @@ TEST(BuildIntegrity, NoShaderRedeclaresTheCascadeCount)
          }();
 }
 
+// Regression gate for the RT/PT objectDescription centralization:
+// common/material_fetch.slang owns the [vk::binding(2, 0)] objectDescription
+// binding and the raw MaterialIDs*/Materials* lookup it wraps
+// (fetch_object_description() / fetch_material()) - every other shading path
+// must fetch through those two functions rather than re-declaring the
+// binding or hand-rolling the lookup, the way path_tracing.slang and
+// raytrace.rchit.slang used to. Scans every SPIR-V-targeted shader entry
+// point (per shader_manifest's vulkan_spirv_sources, same source
+// NoShaderRedeclaresTheCascadeCount above scans) plus the shared common/
+// modules those shaders import - a stray binding or lookup could land in
+// either. common/scene_types.slang is excluded: it is the struct definition
+// site for both the objectDescription binding's element type and the
+// material_index_address field itself, so it legitimately contains both
+// substrings without being a "shading path".
+TEST(BuildIntegrity, EveryShadingPathFetchesObjectDescriptionsThroughMaterialFetch)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path slang_root = slangRoot();
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    const auto &manifest = shader_manifest(repo_root);
+    ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
+    const auto &vulkan_consumed_sources = manifest->vulkan_spirv_sources;
+    ASSERT_FALSE(vulkan_consumed_sources.empty())
+      << "no spirv-targeted rows in shader-manifest.json - manifest format changed?";
+
+    static const std::string kObjectDescriptionDecl = "StructuredBuffer<ObjectDescription> objectDescription";
+    static const std::string kMaterialIndexAddress = "material_index_address";
+    static const std::string kMaterialFetchRelative = "common/material_fetch.slang";
+    static const std::string kAlphaTestRelative = "common/alpha_test.slang";
+    static const std::string kSceneTypesRelative = "common/scene_types.slang";
+
+    std::vector<std::string> binding_violations;
+    std::vector<std::string> lookup_violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
+        const std::string relative_path = fs::relative(path, slang_root).generic_string();
+        if (relative_path.starts_with("build/")) { continue; }
+        if (relative_path == kSceneTypesRelative) { continue; }
+        const bool is_spirv_shader = vulkan_consumed_sources.contains(relative_path);
+        const bool is_common_module = relative_path.starts_with("common/");
+        if (!is_spirv_shader && !is_common_module) { continue; }
+
+        const auto content = readFileText(path);
+        if (!content) { continue; }
+
+        if (content->find(kObjectDescriptionDecl) != std::string::npos && relative_path != kMaterialFetchRelative) {
+            binding_violations.push_back(relative_path);
+        }
+        if (content->find(kMaterialIndexAddress) != std::string::npos && relative_path != kMaterialFetchRelative
+            && relative_path != kAlphaTestRelative) {
+            lookup_violations.push_back(relative_path);
+        }
+    }
+
+    static const std::string kFixSuggestion =
+      "use fetch_object_description() / fetch_material() from common/material_fetch.slang instead";
+
+    EXPECT_TRUE(binding_violations.empty())
+      << binding_violations.size() << " file(s) redeclare the objectDescription binding outside "
+      << kMaterialFetchRelative << ": "
+      << [&binding_violations] {
+             std::string joined;
+             for (const auto &entry : binding_violations) { joined += "\n  " + entry; }
+             return joined;
+         }()
+      << " - " << kFixSuggestion;
+
+    EXPECT_TRUE(lookup_violations.empty())
+      << lookup_violations.size() << " file(s) hand-roll the material_index_address lookup outside "
+      << kMaterialFetchRelative << " and " << kAlphaTestRelative << ": "
+      << [&lookup_violations] {
+             std::string joined;
+             for (const auto &entry : lookup_violations) { joined += "\n  " + entry; }
+             return joined;
+         }()
+      << " - " << kFixSuggestion;
+}
+
 // cascaded_shadow.slang reads two SceneUBO fields the host already clamps
 // (SceneUboMarshal.hpp's clampPcfRadius and fillSceneUboCascades) and must
 // clamp them again itself: the host is the first lock, the shader is the

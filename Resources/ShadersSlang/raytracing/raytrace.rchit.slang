@@ -37,8 +37,6 @@ void rchit_main(
     // Fetch geometry via buffer device addresses (T* = PhysicalStorageBuffer).
     Vertices* vertices = (Vertices*)obj.vertex_address;
     Indices* indices = (Indices*)obj.index_address;
-    MaterialIDs* materialIDs = (MaterialIDs*)obj.material_index_address;
-    Materials* materials = (Materials*)obj.material_address;
 
     // Indices of the closest-hit triangle.
     int3 ind = indices->i[PrimitiveIndex()];
@@ -81,8 +79,8 @@ void rchit_main(
     float4 vertexColor = v0.color * barycentrics.x + v1.color * barycentrics.y + v2.color * barycentrics.z;
 
     // Material: per-primitive material ID.
-    ObjMaterial material = materials->m[materialIDs->i[PrimitiveIndex()]];
     // Note: PrimitiveIndex() is valid here (closesthit stage).
+    ObjMaterial material = fetch_material(obj, PrimitiveIndex());
     float3 albedo = float3(0.0);
     if (material.textureID >= 0)
     {

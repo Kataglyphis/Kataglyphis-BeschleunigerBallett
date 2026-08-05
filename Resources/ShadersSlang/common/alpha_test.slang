@@ -11,11 +11,12 @@ import material_rules;
 // now calls directly rather than mirroring.
 //
 // Declares its own textures/textureSamplers bindings rather than importing
-// material_fetch.slang for them: path_tracing.slang already declares its
-// own objectDescription binding directly (see base_color.slang's comment
-// on the same constraint), so importing material_fetch.slang here - which
-// declares objectDescription again - would make that binding ambiguous the
-// moment path_tracing.slang imports this module.
+// them from material_fetch.slang: material_fetch.slang declares only
+// objectDescription, not textures, and ray_hit_masked_out() takes its
+// ObjectDescription as a parameter rather than fetching it itself, so this
+// module has no need to import material_fetch.slang at all. Both
+// raytrace.rahit.slang and path_tracing.slang import material_fetch and
+// alpha_test together without conflict.
 
 [vk::binding(TEXTURES_BINDING, 0)] Texture2D<float4> textures[MAX_TEXTURE_COUNT];
 [vk::binding(SAMPLER_BINDING, 0)] SamplerState textureSamplers[MAX_TEXTURE_COUNT];
