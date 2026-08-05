@@ -11738,3 +11738,68 @@ TEST(BuildIntegrity, EveryTunableGuiSceneVarHasAControl)
              return joined;
          }();
 }
+
+// Parses docs/cpp-renderer-improvements.md's `<!-- commit-suite-test-count: N -->` marker.
+std::optional<int> parse_commit_suite_test_count_marker(const fs::path &doc_path)
+{
+    const auto lines = readFileLines(doc_path);
+    if (!lines) { return std::nullopt; }
+
+    static const std::regex kMarkerPattern(R"(<!--\s*commit-suite-test-count:\s*(\d+)\s*-->)");
+
+    for (const auto &line : *lines) {
+        std::smatch match;
+        if (std::regex_search(line, match, kMarkerPattern)) { return std::stoi(match[1].str()); }
+    }
+    return std::nullopt;
+}
+
+// Counts every TEST(...)/TEST_F(...)/TEST_P(...) definition line across every
+// .cpp under Test/commit/VulkanEngine/, mirroring
+// `grep -c '^(TEST|TEST_F|TEST_P)\('`.
+int count_commit_suite_tests(const fs::path &tests_dir)
+{
+    static const std::regex kTestPattern(R"(^(TEST|TEST_F|TEST_P)\()");
+
+    int count = 0;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(tests_dir, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        if (!it->is_regular_file(error) || it->path().extension() != ".cpp") { continue; }
+        const auto lines = readFileLines(it->path());
+        if (!lines) { continue; }
+        for (const auto &line : *lines) {
+            if (std::regex_search(line, kTestPattern)) { ++count; }
+        }
+    }
+    return count;
+}
+
+// docs/cpp-renderer-improvements.md's opening paragraph quotes a commit-suite
+// test count that nothing enforced, and it drifted 573 tests stale before
+// being caught. Fails loudly (not GTEST_SKIP) when the marker is missing, so
+// deleting it cannot silently pass the gate - same shape as
+// MaxTextureCountInDocsMatchesTheHeader above. Deliberately churny: every
+// test-adding change now also touches one line of this doc. That is the
+// price of the number in the first paragraph being true, and it is the same
+// trade PerfBaselineCoversEveryRegisteredBenchmark already makes.
+TEST(BuildIntegrity, ImprovementLogQuotesTheCurrentCommitSuiteTestCount)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path doc_path = repo_root / "docs" / "cpp-renderer-improvements.md";
+    const auto marker_value = parse_commit_suite_test_count_marker(doc_path);
+    ASSERT_TRUE(marker_value.has_value())
+      << doc_path.string()
+      << " is missing its '<!-- commit-suite-test-count: N -->' marker line - this is a one-line update, add it "
+         "back with the current count from Test/commit/VulkanEngine/.";
+
+    const fs::path tests_dir = repo_root / "Test" / "commit" / "VulkanEngine";
+    const int actual_count = count_commit_suite_tests(tests_dir);
+
+    EXPECT_EQ(*marker_value, actual_count)
+      << doc_path.string() << "'s commit-suite-test-count marker says " << *marker_value << " but "
+      << tests_dir.string() << " actually defines " << actual_count
+      << " TEST/TEST_F/TEST_P case(s) - this is a one-line update to the marker in " << doc_path.string() << ".";
+}

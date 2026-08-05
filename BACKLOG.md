@@ -11383,28 +11383,6 @@ tasks 3 and 5 change no `Src/` output at all. No task in this batch touches a
 `.slang` file, so no shader recompile and no WGSL regeneration is needed and
 the staleness gates cannot fire.
 
-- [ ] **(M) Bring `docs/cpp-renderer-improvements.md` up to date — 44 commits of drift — and pin the test count it quotes** — the doc `AGENTS.md` sends every renderer change to has no entry for anything that shipped since `fc637887`, and its opening paragraph claims a suite size that is off by 573.
-
-  **Files to read:**
-  - `docs/cpp-renderer-improvements.md` — the header paragraph ("72 tests at campaign start, 103 as of 2026-07-23") and the `## Shipped` table's row format, including the existing multi-hash rows (`\`876a151f\`, \`c743d99d\`, …`) that group a theme into one row
-  - `AGENTS.md` — the routing table row and the Docs table row that both name this file as the owner
-  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — `BuildIntegrity.ModelLoadingDocMatchesMaxTextureCount` and its `parse_max_texture_count_marker` helper: the `<!-- key: N -->` marker-plus-gate shape to copy
-  - `git log --oneline fc637887..HEAD -- Src Resources/ShadersSlang` — the 44 commits to cover
-
-  **Steps:**
-  1. Append grouped rows to the `## Shipped` table, one per theme, each citing its commit hashes the way the existing multi-hash rows do. Derive the grouping from `git log` rather than trusting this list, but it should come out close to: glTF material completion (`47371a1a`, `e0e25ee6`, `4bf4bba0`, `54a39af2`, `4b3f438d`, `f01fb288`, `3143e92a`, `f5e27d46`, `135aebb8`, `8a728c26`, `937ad16d`, `ddbdb1b4`, `c812eef8`, `70658a67`); shared-Slang-module consolidation (`0c5c57b0`, `13f377b6`, `c9ba1be6`, `9ee460cb`, `a94358e1`, `e5ad0863`, `53853c9a`); ray/path-tracing correctness (`f2cb4cb4`, `1df30964`, `b7f2ecc4`, `d2be7ae6`); clouds (`2802c163`, `9ae2679b`, `fb278765`, `09812a21`, `5e365528`, `f4e6d623`); normal mapping and tangents (`e1d3fb8b`, `0f22247c`); input and window (`fafa67f2`, `6c4191ab`); loader/renderer plumbing (`bc021c43`, `d41eb037`, `86371ffd`, `caba3c20`, `994cbf4a`, `7a23ad06`); gates and tooling (`c1cd8fad`, `aec130c2`, `8061e608`, `33f6e016`, `45011e7d`, `146fa517`, `bf3e7fbc`).
-  2. Write each Notes cell the way the existing ones are written: what was wrong, what it now does, and the evidence — not a restatement of the commit subject. Where a commit's own message already contains the measurement (the clouds fixes, `0f22247c`, `33f6e016`), quote the number.
-  3. Replace the header's parenthetical with the current figure and add a marker line `<!-- commit-suite-test-count: N -->` directly beneath the paragraph, where N is the count the gate below computes.
-  4. Do not add `file:line` citations anywhere — `SourceAndDocsCiteSymbolsNotLineNumbers` does not scan this file (it is the one deliberate exemption, for exactly the historical-citation reason this doc exists), but the rest of the tree's convention is symbol names and the new rows should read the same way.
-
-  **Test:** Add `BuildIntegrity.ImprovementLogQuotesTheCurrentCommitSuiteTestCount`: parse `<!-- commit-suite-test-count: N -->` out of `docs/cpp-renderer-improvements.md`, then count lines matching `^(TEST|TEST_F|TEST_P)\(` across every `.cpp` under `Test/commit/VulkanEngine/`, and assert equality. Fail loudly (not skip) when the marker is missing, so deleting it cannot pass. The failure message must say the marker is a one-line update and point at the doc. This gate is deliberately churny — every test-adding change will now also touch one line of this doc; that is the price of the number in the first paragraph being true, and it is the same trade `PerfBaselineCoversEveryRegisteredBenchmark` already makes.
-
-  **Build:** `clangcl-debug` (no `Src/` change, so no `-FreshContainer` needed):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug`
-  then `.\build-clangcl-debug\commitTestSuite.exe --gtest_filter=BuildIntegrity.*` from the repo root.
-
-  **Context:** This doc is linked from `AGENTS.md` twice, from `BACKLOG.md`, and from the per-unit verification loop in `docs/gpu-golden-testing.md`; it is the first thing a new agent reads to learn what the renderer already does and why. A 44-commit hole in it is why the same material-loading gaps kept being rediscovered one field at a time through batches XI–XVII. Write the rows as a chronologist, not a changelog generator: the table's value is the *why*, and the git history already has the *what*.
-
 - [ ] **(S) (refactor) Make the seventeen remaining read-only accessors `const`, and gate the rule** — `VulkanDevice` marks all of its query accessors `const` and eight other types mark none of theirs, so a read-only helper cannot take a `const` reference to any of them.
 
   **Files to read:**
