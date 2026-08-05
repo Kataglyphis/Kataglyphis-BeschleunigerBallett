@@ -13,6 +13,7 @@
 #include <glm/geometric.hpp>
 #include <filesystem>
 #include <fstream>
+#include <set>
 #include <string>
 #include <vulkan/vulkan.hpp>
 
@@ -1829,6 +1830,94 @@ TEST(GltfParseUnit, ATransformOnANonBaseSlotAloneStillReachesTheMaterial)
     // Every other slot has no texture at all, so it must stay identity.
     EXPECT_NEAR(material.uv_transform_row0.x, 1.0F, 1e-6F) << "no base-colour texture -> identity";
     EXPECT_NEAR(material.uv_transform_row1.y, 1.0F, 1e-6F) << "no base-colour texture -> identity";
+}
+
+TEST(GltfParseUnit, AllFourTextureSlotsRoundTripTogether)
+{
+    // One material carrying all four texture slots at once, each pointing at
+    // a distinct image and each with its own distinct KHR_texture_transform
+    // scale (4, 3, 2, 1 for base-colour/metallic-roughness/normal/emissive).
+    // A table rewrite that cross-wires a slot (e.g. reading the wrong view,
+    // or writing a transform into the wrong ObjMaterial row pair) is exactly
+    // what per-slot tests in isolation cannot catch - no earlier test
+    // exercises all four together.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "extensionsUsed": [ "KHR_texture_transform" ],
+      "materials": [
+        {
+          "pbrMetallicRoughness": {
+            "baseColorTexture": { "index": 0, "extensions": { "KHR_texture_transform": { "scale": [4, 4] } } },
+            "metallicRoughnessTexture": { "index": 1, "extensions": { "KHR_texture_transform": { "scale": [3, 3] } } }
+          },
+          "normalTexture": { "index": 2, "extensions": { "KHR_texture_transform": { "scale": [2, 2] } } },
+          "emissiveTexture": { "index": 3, "extensions": { "KHR_texture_transform": { "scale": [1.5, 1.5] } } },
+          "emissiveFactor": [1, 1, 1]
+        }
+      ],
+      "textures": [ { "source": 0 }, { "source": 1 }, { "source": 2 }, { "source": 3 } ],
+      "images": [
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" },
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" },
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" },
+        { "uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR4nGPQuGPz/47Gif8MIALEAQBX2AoVR8sp2gAAAABJRU5ErkJggg==" }
+      ],
+      "meshes": [ { "primitives": [ {
+        "attributes": { "POSITION": 0 }
+      } ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_all_four_texture_slots.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_EQ(loader.getTextureImages().size(), 4U) << "four distinct declared images must all be extracted";
+    ASSERT_EQ(loader.getMaterials().size(), 2U) << "the one declared material, plus the neutral fallback";
+    const ObjMaterial &material = loader.getMaterials()[0];
+
+    ASSERT_GE(material.textureID, 0);
+    ASSERT_GE(material.metallicRoughnessTextureID, 0);
+    ASSERT_GE(material.normalTextureID, 0);
+    ASSERT_GE(material.emissiveTextureID, 0);
+    const std::set<int> slots = { material.textureID,
+        material.metallicRoughnessTextureID,
+        material.normalTextureID,
+        material.emissiveTextureID };
+    EXPECT_EQ(slots.size(), 4U) << "four distinct images must land on four mutually distinct slots";
+
+    EXPECT_NEAR(material.uv_transform_row0.x, 4.0F, 1e-6F) << "base-colour scale must reach the base-colour rows";
+    EXPECT_NEAR(material.uv_transform_row1.y, 4.0F, 1e-6F) << "base-colour scale must reach the base-colour rows";
+    EXPECT_NEAR(material.metallic_roughness_uv_transform_row0.x, 3.0F, 1e-6F)
+      << "metallic-roughness scale must reach its own rows, not another slot's";
+    EXPECT_NEAR(material.metallic_roughness_uv_transform_row1.y, 3.0F, 1e-6F)
+      << "metallic-roughness scale must reach its own rows, not another slot's";
+    EXPECT_NEAR(material.normal_uv_transform_row0.x, 2.0F, 1e-6F)
+      << "normal scale must reach its own rows, not another slot's";
+    EXPECT_NEAR(material.normal_uv_transform_row1.y, 2.0F, 1e-6F)
+      << "normal scale must reach its own rows, not another slot's";
+    EXPECT_NEAR(material.emissive_uv_transform_row0.x, 1.5F, 1e-6F)
+      << "emissive scale must reach its own rows, not another slot's";
+    EXPECT_NEAR(material.emissive_uv_transform_row1.y, 1.5F, 1e-6F)
+      << "emissive scale must reach its own rows, not another slot's";
+
+    ASSERT_EQ(loader.getTextureSrgbFlags().size(), loader.getTextureImages().size());
+    EXPECT_EQ(loader.getTextureSrgbFlags()[material.textureID], 1) << "base-colour uploads sRGB";
+    EXPECT_EQ(loader.getTextureSrgbFlags()[material.emissiveTextureID], 1) << "emissive uploads sRGB";
+    EXPECT_EQ(loader.getTextureSrgbFlags()[material.normalTextureID], 0) << "normal uploads linear";
+    EXPECT_EQ(loader.getTextureSrgbFlags()[material.metallicRoughnessTextureID], 0)
+      << "metallic-roughness uploads linear";
 }
 
 TEST(GltfParseUnit, MultiPrimitiveGltfRecordsPerPrimitiveMeshRanges)

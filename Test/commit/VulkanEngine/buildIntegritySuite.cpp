@@ -9651,3 +9651,69 @@ TEST(BuildIntegrity, RasterStagesReleaseFrameTexturesThroughOneHelper)
         }
     }
 }
+
+// GltfLoader.cpp used to spell out the has_pbr_metallic_roughness guard three
+// times (once for factors/warnings, once for UV-transform reading, once for
+// texture-slot assignment) and call readUvTransform / warnUnsupportedTexCoordSet
+// / assignTextureSlot once per texture slot by hand. gltfTextureSlots()
+// collapses all four slots (base-colour, metallic-roughness, normal,
+// emissive) into one table that every caller loops over instead; this pins
+// that shape so the guard/call-site duplication cannot silently come back
+// slot by slot.
+TEST(BuildIntegrity, GltfTextureSlotsAreEnumeratedInOneTable)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path path = repo_root / "Src" / "GraphicsEngineVulkan" / "scene" / "GltfLoader.cpp";
+    const auto lines_opt = readFileLines(path);
+    ASSERT_TRUE(lines_opt.has_value()) << "missing " << path.string();
+
+    // Comments stripped: the doc comments on gltfTextureSlots and its callers
+    // spell out "has_pbr_metallic_roughness" in prose to explain the guard,
+    // which would otherwise be mistaken for a second code occurrence.
+    std::string text;
+    for (const auto &raw_line : *lines_opt) {
+        text += strip_line_comment(raw_line);
+        text += '\n';
+    }
+
+    const auto slots_span = function_body_span(text, "gltfTextureSlots");
+    ASSERT_TRUE(slots_span.has_value())
+      << "gltfTextureSlots not found in " << path.string() << " - was the table rewrite reverted?";
+
+    // Everything outside gltfTextureSlots' own body - the guard and the three
+    // per-slot calls are only allowed to appear once each there, anchored to
+    // the function's body rather than a line number so the exemption tracks
+    // the function even if it moves.
+    const std::string outside = text.substr(0, slots_span->first) + text.substr(slots_span->second);
+
+    const auto count_occurrences = [](const std::string &haystack, const std::string &needle) {
+        std::size_t count = 0;
+        for (std::size_t pos = haystack.find(needle); pos != std::string::npos;
+             pos = haystack.find(needle, pos + needle.size())) {
+            ++count;
+        }
+        return count;
+    };
+
+    EXPECT_LE(count_occurrences(outside, "has_pbr_metallic_roughness"), 1U)
+      << "has_pbr_metallic_roughness must be gated inside gltfTextureSlots (fromGltfMaterial's own factor read is "
+         "the one allowed exception), not repeated once per texture-slot call site";
+
+    // readUvTransform/warnUnsupportedTexCoordSet are free functions, so their
+    // own signatures ("readUvTransform(const char *materialName, ...") also
+    // contain the function name followed by "(". Matching "materialName"
+    // (the literal argument every call site passes, with no type prefix)
+    // right after the opening paren selects call sites only, not the
+    // declaration.
+    EXPECT_LE(count_occurrences(outside, "readUvTransform(materialName"), 1U)
+      << "readUvTransform must be called from one loop over gltfTextureSlots' table, not once per texture slot";
+    EXPECT_LE(count_occurrences(outside, "warnUnsupportedTexCoordSet(materialName"), 1U)
+      << "warnUnsupportedTexCoordSet must be called from one loop over gltfTextureSlots' table, not once per "
+         "texture slot";
+    // assignTextureSlot is a lambda ("assignTextureSlot = [&](..."), so every
+    // occurrence of "assignTextureSlot(" in the file is a call site.
+    EXPECT_LE(count_occurrences(outside, "assignTextureSlot("), 1U)
+      << "assignTextureSlot must be called from one loop over gltfTextureSlots' table, not once per texture slot";
+}

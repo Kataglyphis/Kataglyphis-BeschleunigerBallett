@@ -1,6 +1,7 @@
 module;
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstddef>
 #include <cstdlib>
@@ -183,6 +184,42 @@ UvTransformRows readUvTransform(const char *materialName, const cgltf_texture_vi
     return rows;
 }
 
+/// One glTF material texture slot: the cgltf view to read, the label used in
+/// diagnostics, and the colour space its texel data uploads in (true = sRGB,
+/// false = linear). Base-colour and emissive carry gamma-encoded colour and
+/// are sRGB; metallic-roughness and normal carry scalar/tangent-space data
+/// and are linear (glTF 2.0 SS3.9.2/SS3.9.3).
+struct GltfTextureSlot
+{
+    const cgltf_texture_view *view;
+    const char *label;
+    bool srgb;
+};
+
+/// The four texture slots a glTF material carries, always in this fixed order
+/// (base-colour, metallic-roughness, normal, emissive). Every caller that
+/// needs "all of a material's texture slots" - UV-transform reading, TEXCOORD
+/// warnings, texture-slot assignment - loops over this table once instead of
+/// hand-copying the has_pbr_metallic_roughness guard per call site. The two
+/// pbr slots are gated on has_pbr_metallic_roughness HERE - the only place the
+/// guard survives - pointing at a static all-zero view (view.texture ==
+/// nullptr) when the block is absent, so downstream `view.texture == nullptr`
+/// checks behave exactly as they do for an absent normal/emissive texture.
+std::array<GltfTextureSlot, 4> gltfTextureSlots(const cgltf_material &material)
+{
+    static const cgltf_texture_view kNoView{};
+    const bool hasPbr = material.has_pbr_metallic_roughness != 0;
+    const cgltf_texture_view &baseColorView = hasPbr ? material.pbr_metallic_roughness.base_color_texture : kNoView;
+    const cgltf_texture_view &metallicRoughnessView =
+      hasPbr ? material.pbr_metallic_roughness.metallic_roughness_texture : kNoView;
+    return { {
+        { &baseColorView, "base-colour", true },
+        { &metallicRoughnessView, "metallic-roughness", false },
+        { &material.normal_texture, "normal", false },
+        { &material.emissive_texture, "emissive", true },
+    } };
+}
+
 /// Maps a glTF material to the engine's ObjMaterial. Base-colour factor becomes
 /// diffuse (the dominant term this forward renderer reads) and its alpha becomes
 /// dissolve. metallic_factor and roughness_factor both carry through losslessly
@@ -208,16 +245,6 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
         baseAlpha = pbr.base_color_factor[3];
         metallic = glm::clamp(pbr.metallic_factor, 0.0F, 1.0F);
         authoredRoughness = glm::clamp(pbr.roughness_factor, 0.0F, 1.0F);
-
-        // Vertex has exactly one UV slot (bound to TEXCOORD_0); a base-colour
-        // texture that names any other set is silently mis-sampled unless we
-        // say so. The Rust loader supports TEXCOORD_0/1 and warns past that -
-        // this loader supports only TEXCOORD_0, so it warns on any non-zero set.
-        warnUnsupportedTexCoordSet(materialName, pbr.base_color_texture, "base-colour");
-
-        // Same "only TEXCOORD_0 is supported" limitation for the metallic-roughness
-        // texture.
-        warnUnsupportedTexCoordSet(materialName, pbr.metallic_roughness_texture, "metallic-roughness");
     }
     // KHR_materials_emissive_strength scales the emissive contribution past the
     // [0,1] glTF factor range (for HDR emitters). Fold it into the factor so the
@@ -233,29 +260,28 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
     // have yet, so BLEND currently renders opaque - MASK is the common cut-out case.
     const float alphaCutoff = (material.alpha_mode == cgltf_alpha_mode_mask) ? material.alpha_cutoff : -1.0F;
 
-    // glTF KHR_texture_transform, per texture slot: the extension is declared
-    // per `textureInfo`, so base-colour, metallic-roughness, normal and
-    // emissive each get their own T*R*S UV transform. Absent on a slot ->
-    // identity rows (1,0,0)/(0,1,0) for that slot, so untransformed materials
-    // (and untransformed slots of a partially-transformed material) are
-    // bit-unchanged.
-    UvTransformRows baseColorUvTransform;
-    UvTransformRows metallicRoughnessUvTransform;
-    if (material.has_pbr_metallic_roughness != 0) {
-        baseColorUvTransform =
-          readUvTransform(materialName, material.pbr_metallic_roughness.base_color_texture, "base-colour");
-        metallicRoughnessUvTransform = readUvTransform(
-          materialName, material.pbr_metallic_roughness.metallic_roughness_texture, "metallic-roughness");
+    // Vertex has exactly one UV slot (bound to TEXCOORD_0); a texture naming
+    // any other set is silently mis-sampled unless we say so. The Rust loader
+    // supports TEXCOORD_0/1 and warns past that - this loader supports only
+    // TEXCOORD_0, so it warns on any non-zero set, for every slot that has a
+    // texture. glTF KHR_texture_transform is declared per `textureInfo`, so
+    // base-colour, metallic-roughness, normal and emissive each get their own
+    // T*R*S UV transform. Absent on a slot -> identity rows (1,0,0)/(0,1,0)
+    // for that slot, so untransformed materials (and untransformed slots of a
+    // partially-transformed material) are bit-unchanged. One pass over
+    // gltfTextureSlots' fixed order covers every slot instead of four
+    // hand-copied call sites; the table order becomes the warning order
+    // (nothing asserts on ordering).
+    const std::array<GltfTextureSlot, 4> textureSlots = gltfTextureSlots(material);
+    std::array<UvTransformRows, 4> uvTransforms{};
+    for (std::size_t i = 0; i < textureSlots.size(); ++i) {
+        warnUnsupportedTexCoordSet(materialName, *textureSlots[i].view, textureSlots[i].label);
+        uvTransforms[i] = readUvTransform(materialName, *textureSlots[i].view, textureSlots[i].label);
     }
-    const UvTransformRows normalUvTransform = readUvTransform(materialName, material.normal_texture, "normal");
-    const UvTransformRows emissiveUvTransform = readUvTransform(materialName, material.emissive_texture, "emissive");
-
-    // A non-zero emissiveTexture.texcoord has the same "only TEXCOORD_0 is
-    // supported" limitation as the base-colour texture above.
-    warnUnsupportedTexCoordSet(materialName, material.emissive_texture, "emissive");
-
-    // Same "only TEXCOORD_0 is supported" limitation for the normal texture.
-    warnUnsupportedTexCoordSet(materialName, material.normal_texture, "normal");
+    const UvTransformRows &baseColorUvTransform = uvTransforms[0];
+    const UvTransformRows &metallicRoughnessUvTransform = uvTransforms[1];
+    const UvTransformRows &normalUvTransform = uvTransforms[2];
+    const UvTransformRows &emissiveUvTransform = uvTransforms[3];
 
     return ObjMaterial{
         .diffuse = baseColor,
@@ -779,15 +805,19 @@ bool GltfLoader::parseCpu(const std::string &modelFile)
     for (cgltf_size m = 0; m < data->materials_count; ++m) {
         const cgltf_material &material = data->materials[m];
         ObjMaterial objMaterial = fromGltfMaterial(material);
-        if (material.has_pbr_metallic_roughness != 0) {
-            objMaterial.textureID = assignTextureSlot(material.pbr_metallic_roughness.base_color_texture, true);
-            // Linear, like the normal slot: G/B channels are roughness/metallic
-            // scalars, not gamma-encoded colour (glTF 2.0 SS3.9.2).
-            objMaterial.metallicRoughnessTextureID =
-              assignTextureSlot(material.pbr_metallic_roughness.metallic_roughness_texture, false);
+        // Same fixed slot order as gltfTextureSlots (base-colour,
+        // metallic-roughness, normal, emissive); each slot's `srgb` flag
+        // already carries its colour space, so one loop replaces the guarded
+        // pbr pair plus two unconditional calls.
+        const std::array<GltfTextureSlot, 4> textureSlots = gltfTextureSlots(material);
+        std::array<int, 4> assignedSlots{};
+        for (std::size_t i = 0; i < textureSlots.size(); ++i) {
+            assignedSlots[i] = assignTextureSlot(*textureSlots[i].view, textureSlots[i].srgb);
         }
-        objMaterial.emissiveTextureID = assignTextureSlot(material.emissive_texture, true);
-        objMaterial.normalTextureID = assignTextureSlot(material.normal_texture, false);
+        objMaterial.textureID = assignedSlots[0];
+        objMaterial.metallicRoughnessTextureID = assignedSlots[1];
+        objMaterial.normalTextureID = assignedSlots[2];
+        objMaterial.emissiveTextureID = assignedSlots[3];
         materials.push_back(objMaterial);
     }
     const auto fallbackMaterial = static_cast<unsigned int>(materials.size());
