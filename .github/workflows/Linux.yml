@@ -156,14 +156,43 @@ jobs:
       # against the CMakeLists.txt declarations, and the existence check below
       # turns a renamed or unbuilt target into a loud failure instead of a
       # step that silently runs fewer fuzzers than it claims to.
+      # Each target runs INSIDE the image it was built in, like every other
+      # test step in this lane. It used to run them straight on the runner
+      # host - the only step here that did - which is a different libstdc++
+      # (the image builds against /opt/gcc-16.1.0, absent on the host), no
+      # llvm-symbolizer (every ASan report came back "invalid path to external
+      # symbolizer", unsymbolized frame addresses only), and none of the
+      # runtime the engine-linked targets expect. Same docker run shape as the
+      # run-in-linux-container action; it is spelled out here because the
+      # action takes one command line and this needs a loop that keeps going
+      # after a failure.
+      #
+      # Collecting failures instead of aborting on the first is the point of
+      # the loop: with `set -e` semantics the first bad target hid the verdict
+      # on every target after it, so each round trip revealed exactly one
+      # broken fuzzer out of seven.
       - name: Run fuzzer tests
         run: |
+          failed=""
           for t in first_fuzz_test example_fuzz_test obj_parsing_fuzz_test gltf_parsing_fuzz_test scene_config_fuzz_test shader_file_reader_fuzz_test texture_loading_fuzz_test; do
             exe="build-asan-clang/$t"
             test -x "$exe" || { echo "missing $exe"; exit 1; }
             echo "--- $t"
-            "$exe"
+            if docker run --rm \
+                 -v "${{ github.workspace }}:/workspace" \
+                 -w /workspace \
+                 "${{ env.CONTAINER_IMAGE }}" \
+                 "./$exe"; then
+              echo "--- $t OK"
+            else
+              echo "::error::fuzz target $t failed"
+              failed="$failed $t"
+            fi
           done
+          if [ -n "$failed" ]; then
+            echo "::error::fuzz targets failed:$failed"
+            exit 1
+          fi
         working-directory: ${{ github.workspace }}
 
       - name: Run tests under AddressSanitizer
