@@ -11410,6 +11410,84 @@ TEST(BuildIntegrity, EveryTunableGuiSceneVarHasAControl)
       << joinViolations(missing);
 }
 
+// The right-mouse look mode shipped in 6c4191ab without the "KEY Bindings"
+// panel being touched, and ESC has never been listed there either - the
+// panel is a hand-written string literal nothing checks against the input
+// code it is supposed to describe. This walks CameraController.ixx and
+// WindowInputCallbacks.ixx for every GLFW_KEY_*/GLFW_MOUSE_BUTTON_* symbol
+// they act on and asserts the panel literal in CommonGuiPanels.ixx mentions
+// each one, via a hand-maintained symbol->prose table so a new binding with
+// no table entry fails loudly by name instead of being silently invisible.
+TEST(BuildIntegrity, KeyBindingsPanelListsEveryBinding)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path camera_controller_path = repo_root / "Src" / "shared" / "frontend" / "CameraController.ixx";
+    const fs::path window_input_callbacks_path =
+      repo_root / "Src" / "shared" / "frontend" / "WindowInputCallbacks.ixx";
+    const fs::path panel_path = repo_root / "Src" / "shared" / "frontend" / "CommonGuiPanels.ixx";
+
+    const auto camera_controller_text = readFileText(camera_controller_path);
+    ASSERT_TRUE(camera_controller_text.has_value()) << "could not open " << camera_controller_path.string();
+    const auto window_input_callbacks_text = readFileText(window_input_callbacks_path);
+    ASSERT_TRUE(window_input_callbacks_text.has_value()) << "could not open " << window_input_callbacks_path.string();
+    const auto panel_text = readFileText(panel_path);
+    ASSERT_TRUE(panel_text.has_value()) << "could not open " << panel_path.string();
+
+    static const std::regex kKeyOrButtonPattern(R"(GLFW_(?:KEY|MOUSE_BUTTON)_[A-Z0-9_]+)");
+
+    std::set<std::string> bindings;
+    for (const auto *text : { &*camera_controller_text, &*window_input_callbacks_text }) {
+        for (auto it = std::sregex_iterator(text->begin(), text->end(), kKeyOrButtonPattern);
+             it != std::sregex_iterator(); ++it) {
+            bindings.insert(it->str());
+        }
+    }
+    ASSERT_FALSE(bindings.empty()) << "found no GLFW_KEY_*/GLFW_MOUSE_BUTTON_* usages in "
+                                    << camera_controller_path.string() << " or "
+                                    << window_input_callbacks_path.string();
+
+    // Symbol -> the exact substring the panel literal must contain for it.
+    static const std::map<std::string, std::string> kSymbolToProse{
+        { "GLFW_KEY_W", "W" },
+        { "GLFW_KEY_A", "A" },
+        { "GLFW_KEY_S", "S" },
+        { "GLFW_KEY_D", "D" },
+        { "GLFW_KEY_Q", "Q" },
+        { "GLFW_KEY_E", "E" },
+        { "GLFW_KEY_ESCAPE", "ESC" },
+        { "GLFW_MOUSE_BUTTON_RIGHT", "right mouse" },
+    };
+
+    // Symbols that act on input but are deliberately not user-facing controls,
+    // with the reason each is exempt from needing panel prose. Empty today -
+    // every binding CameraController.ixx/WindowInputCallbacks.ixx implements
+    // is user-facing.
+    static const std::set<std::string> kExemptSymbols{};
+
+    std::vector<std::string> unmapped;
+    std::vector<std::string> missing_from_panel;
+    for (const auto &symbol : bindings) {
+        if (kExemptSymbols.contains(symbol)) { continue; }
+        const auto mapping = kSymbolToProse.find(symbol);
+        if (mapping == kSymbolToProse.end()) {
+            unmapped.push_back(symbol);
+            continue;
+        }
+        if (panel_text->find(mapping->second) == std::string::npos) { missing_from_panel.push_back(symbol); }
+    }
+
+    EXPECT_TRUE(unmapped.empty()) << "found GLFW binding(s) with no prose mapping in this test's kSymbolToProse "
+                                      "table - add one, or if the binding is deliberately not user-facing, add it "
+                                      "to kExemptSymbols with a reason:"
+                                  << joinViolations(unmapped);
+    EXPECT_TRUE(missing_from_panel.empty())
+      << panel_path.string()
+      << " does not mention the following key binding(s) - add them to renderCommonKeyBindings():"
+      << joinViolations(missing_from_panel);
+}
+
 // Parses docs/cpp-renderer-improvements.md's `<!-- commit-suite-test-count: N -->` marker.
 std::optional<int> parse_commit_suite_test_count_marker(const fs::path &doc_path)
 {

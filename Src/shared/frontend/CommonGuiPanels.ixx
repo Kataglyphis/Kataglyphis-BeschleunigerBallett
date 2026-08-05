@@ -32,7 +32,10 @@ inline void renderCommonGuiStyleSettings()
 inline void renderCommonKeyBindings()
 {
     if (ImGui::CollapsingHeader("KEY Bindings")) {
-        ImGui::TextUnformatted("WASD for moving Forward, backward and to the side\n QE for rotating ");
+        ImGui::TextUnformatted("WASD for moving Forward, backward and to the side\n"
+                                "QE for rotating\n"
+                                "right mouse button (hold) to look\n"
+                                "ESC to quit");
     }
 }
 
