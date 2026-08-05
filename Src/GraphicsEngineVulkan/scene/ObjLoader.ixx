@@ -66,6 +66,7 @@ class ObjLoader
         materials = std::move(other.materials);
         materialIndex = std::move(other.materialIndex);
         textures = std::move(other.textures);
+        textureSrgb = std::move(other.textureSrgb);
         meshRanges = std::move(other.meshRanges);
     }
 
@@ -76,6 +77,7 @@ class ObjLoader
     const std::vector<ObjMaterial> &getMaterials() const { return materials; }
     const std::vector<unsigned int> &getMaterialIndices() const { return materialIndex; }
     const std::vector<std::string> &getTextureNames() const { return textures; }
+    const std::vector<unsigned char> &getTextureSrgbFlags() const { return textureSrgb; }
 
     /// One entry per OBJ shape (`o`/`g` group): its slice of the flat vertices/
     /// indices/materialIndex arrays. `uploadParsed` builds one Mesh per range, so
@@ -98,6 +100,9 @@ class ObjLoader
     std::vector<ObjMaterial> materials;
     std::vector<unsigned int> materialIndex;
     std::vector<std::string> textures;
+    // Parallel to textures: 1 = upload sRGB-decoded (diffuse), 0 = linear
+    // (normal maps). Same convention as GltfLoader's textureSrgb.
+    std::vector<unsigned char> textureSrgb;
     // One slice per OBJ shape; see MeshRange / getMeshRanges.
     std::vector<MeshRange> meshRanges;
 

@@ -5,6 +5,7 @@ module;
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <string>
 #include <system_error>
@@ -44,6 +45,7 @@ bool ObjLoader::parseCpu(const std::string &modelFile)
 {
     // clear prior state if called multiple times on the same instance
     textures.clear();
+    textureSrgb.clear();
     materials.clear();
     vertices.clear();
     indices.clear();
@@ -119,7 +121,8 @@ auto ObjLoader::uploadParsed() -> std::shared_ptr<Model>
         // will be reserved for a default texture
         if (!textureNames[i].empty()) {
             Texture texture;
-            const bool created = texture.createFromFile(device, command_pool, textureNames[i]);
+            const bool created =
+              texture.createFromFile(device, command_pool, textureNames[i], textureSrgb[i] != 0);
             addTextureOrDefault(*new_model, device, command_pool, created, std::move(texture));
         }
     }
@@ -166,7 +169,7 @@ std::string Kataglyphis::resolveObjTexturePath(const std::string &baseDir, const
     // wrong path degrading silently to white is the failure mode this whole
     // resolution rule is about.
     spdlog::warn(
-      "map_Kd '{}' not found beside the .mtl ('{}') or under textures/ ('{}'); the model will "
+      "texture '{}' not found beside the .mtl ('{}') or under textures/ ('{}'); the model will "
       "render with the default texture",
       mapKd,
       beside_mtl,
@@ -182,12 +185,36 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
     int texture_id = 0;
     const std::string base_dir = Kataglyphis::Shared::getBaseDir(modelFile);
 
-    // Materials whose diffuse texture resolves to the same on-disk path share
-    // one textures slot: keyed on the resolved path (not the raw map_Kd), so
-    // two .mtl spellings of the same file collapse together.
-    std::unordered_map<std::string, int> pathSlot;
+    // Materials whose texture resolves to the same on-disk path AND colour
+    // space share one textures slot: keyed on (resolved path, srgb), so a
+    // .mtl that names one file as both map_Kd (sRGB) and map_Bump (linear)
+    // still gets two slots - one per format, matching GltfLoader's
+    // (image, sampler, srgb) key.
+    std::map<std::pair<std::string, bool>, int> pathSlot;
 
-    // we now iterate over all materials to get diffuse textures
+    // Resolves texname (already known non-empty by the caller) against
+    // base_dir and returns its slot, reusing an existing (path, srgb) slot
+    // when one already matches. Always appends to textures/textureSrgb so
+    // uploadParsed's dense counter keeps walking them 1:1 with materials.
+    const auto resolveSlot = [&](const std::string &texname, bool srgb) -> int {
+        const std::string resolved = resolveObjTexturePath(base_dir, texname);
+        const auto key = std::make_pair(resolved, srgb);
+        const auto existing = pathSlot.find(key);
+        if (existing != pathSlot.end()) {
+            // uploadParsed's dense counter walks textures 1:1 with materials;
+            // an empty entry here keeps that mapping intact while skipping
+            // the (already-uploaded) duplicate texture.
+            textures.emplace_back("");
+            textureSrgb.push_back(srgb ? 1 : 0);
+            return existing->second;
+        }
+        pathSlot[key] = texture_id;
+        textures.push_back(resolved);
+        textureSrgb.push_back(srgb ? 1 : 0);
+        return texture_id++;
+    };
+
+    // we now iterate over all materials to get diffuse and normal textures
     for (const auto &tol_material : tol_materials) {
         const tinyobj::material_t *mp = &tol_material;
         ObjMaterial material{};
@@ -197,21 +224,7 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
         material.shininess = mp->shininess;
 
         if (!mp->diffuse_texname.empty()) {
-            const std::string resolved = resolveObjTexturePath(base_dir, mp->diffuse_texname);
-            const auto existing = pathSlot.find(resolved);
-            if (existing != pathSlot.end()) {
-                material.textureID = existing->second;
-                // uploadParsed's dense counter walks textures 1:1 with
-                // materials; an empty entry here keeps that mapping intact
-                // while skipping the (already-uploaded) duplicate texture.
-                textures.emplace_back("");
-            } else {
-                pathSlot[resolved] = texture_id;
-                textures.push_back(resolved);
-                material.textureID = texture_id;
-                texture_id++;
-            }
-
+            material.textureID = resolveSlot(mp->diffuse_texname, true);
         } else {
             // No diffuse texture: -1 routes the shaders to material.diffuse.
             // This was 0, which sampled texture slot 0 instead - so a
@@ -219,7 +232,31 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
             // colours as flat WHITE for as long as the engine existed.
             material.textureID = -1;
             textures.emplace_back("");
+            textureSrgb.push_back(1);
         }
+
+        // norm is a tangent-space normal map by definition; map_Bump is
+        // conventionally a height map that most exporters (Blender included)
+        // nonetheless use for normal maps, so it is only the fallback.
+        if (!mp->normal_texname.empty()) {
+            material.normalTextureID = resolveSlot(mp->normal_texname, false);
+        } else if (!mp->bump_texname.empty()) {
+            spdlog::debug(
+              "ObjLoader: material '{}' has no 'norm' directive; using 'map_Bump' ('{}') as the normal map",
+              mp->name,
+              mp->bump_texname);
+            material.normalTextureID = resolveSlot(mp->bump_texname, false);
+        } else {
+            // Unlike the diffuse slot, no directive at all means no push: a
+            // model without a normal map (still the common case) keeps
+            // textures/textureSrgb exactly as long as materials, matching
+            // pre-normal-mapping behaviour and existing size expectations.
+            material.normalTextureID = -1;
+        }
+        // -bm option; defaults to 1.0 (unscaled) when absent, matching
+        // ObjMaterial::normalScale's default and unused when there is no
+        // normal texture.
+        material.normalScale = mp->bump_texopt.bump_multiplier;
 
         materials.push_back(material);
     }

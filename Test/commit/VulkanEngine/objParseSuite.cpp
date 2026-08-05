@@ -464,6 +464,148 @@ TEST(ObjParseUnit, MaterialsSharingAMapKdShareOneTextureSlot)
     std::filesystem::remove_all(dir);
 }
 
+TEST(ObjParseUnit, MtlMapBumpBecomesTheNormalTextureSlot)
+{
+    // map_Bump names a normal map: it must resolve into a distinct,
+    // non-negative normalTextureID, separate from the diffuse textureID.
+    const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_map_bump";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    {
+        std::ofstream mtl(dir / "bump.mtl", std::ios::binary);
+        mtl << "newmtl painted\nKd 1 1 1\nmap_Kd wood.png\nmap_Bump wood_n.png\n";
+    }
+    { std::ofstream texture(dir / "wood.png", std::ios::binary); }
+    { std::ofstream texture(dir / "wood_n.png", std::ios::binary); }
+    {
+        std::ofstream obj(dir / "bump.obj", std::ios::binary);
+        obj << "mtllib bump.mtl\n"
+               "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+               "vt 0 0\nvt 1 0\nvt 0 1\n"
+               "usemtl painted\nf 1/1 2/2 3/3\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu((dir / "bump.obj").string()));
+
+    ASSERT_EQ(loader.getMaterials().size(), 1U);
+    const auto &material = loader.getMaterials()[0];
+    EXPECT_GE(material.textureID, 0);
+    EXPECT_GE(material.normalTextureID, 0);
+    EXPECT_NE(material.textureID, material.normalTextureID)
+      << "the diffuse and normal maps must not share a slot";
+
+    std::filesystem::remove_all(dir);
+}
+
+TEST(ObjParseUnit, MtlNormPreferredOverMapBump)
+{
+    // When a .mtl names both directives, norm (a true tangent-space normal
+    // map) wins over map_Bump (conventionally a height map).
+    const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_norm_preferred";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    {
+        std::ofstream mtl(dir / "norm.mtl", std::ios::binary);
+        mtl << "newmtl painted\nKd 1 1 1\nmap_Bump height.png\nnorm normal.png\n";
+    }
+    { std::ofstream texture(dir / "height.png", std::ios::binary); }
+    { std::ofstream texture(dir / "normal.png", std::ios::binary); }
+    {
+        std::ofstream obj(dir / "norm.obj", std::ios::binary);
+        obj << "mtllib norm.mtl\n"
+               "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+               "vt 0 0\nvt 1 0\nvt 0 1\n"
+               "usemtl painted\nf 1/1 2/2 3/3\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu((dir / "norm.obj").string()));
+
+    ASSERT_EQ(loader.getMaterials().size(), 1U);
+    EXPECT_GE(loader.getMaterials()[0].normalTextureID, 0);
+
+    // normalTextureID counts real (non-empty) texture pushes, not raw
+    // getTextureNames() position (an absent map_Kd still leaves a "" gap in
+    // that vector), so check by content instead of by indexing with the ID.
+    bool sawNormalPng = false;
+    for (const std::string &name : loader.getTextureNames()) {
+        const auto filename = std::filesystem::path(name).filename();
+        EXPECT_NE(filename, "height.png") << "map_Bump must be ignored when norm is also present";
+        if (filename == "normal.png") { sawNormalPng = true; }
+    }
+    EXPECT_TRUE(sawNormalPng) << "norm must win over map_Bump when both are present";
+
+    std::filesystem::remove_all(dir);
+}
+
+TEST(ObjParseUnit, AnMtlWithoutANormalMapKeepsTheMinusOneSentinel)
+{
+    // No norm/map_Bump directive at all: normalTextureID must stay -1, the
+    // same "no texture" sentinel textureID already uses.
+    const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_no_normal";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    {
+        std::ofstream mtl(dir / "flat.mtl", std::ios::binary);
+        mtl << "newmtl painted\nKd 1 1 1\nmap_Kd wood.png\n";
+    }
+    { std::ofstream texture(dir / "wood.png", std::ios::binary); }
+    {
+        std::ofstream obj(dir / "flat.obj", std::ios::binary);
+        obj << "mtllib flat.mtl\n"
+               "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+               "vt 0 0\nvt 1 0\nvt 0 1\n"
+               "usemtl painted\nf 1/1 2/2 3/3\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu((dir / "flat.obj").string()));
+
+    ASSERT_EQ(loader.getMaterials().size(), 1U);
+    EXPECT_EQ(loader.getMaterials()[0].normalTextureID, -1);
+
+    std::filesystem::remove_all(dir);
+}
+
+TEST(ObjParseUnit, OneFileNamedAsBothMapKdAndMapBumpGetsTwoSlots)
+{
+    // The same on-disk file used as both map_Kd (sRGB) and map_Bump (linear)
+    // must land on two distinct slots - one per colour space - since a slot
+    // can only carry one image format.
+    const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_shared_file_two_slots";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    {
+        std::ofstream mtl(dir / "dual.mtl", std::ios::binary);
+        mtl << "newmtl painted\nKd 1 1 1\nmap_Kd wood.png\nmap_Bump wood.png\n";
+    }
+    { std::ofstream texture(dir / "wood.png", std::ios::binary); }
+    {
+        std::ofstream obj(dir / "dual.obj", std::ios::binary);
+        obj << "mtllib dual.mtl\n"
+               "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+               "vt 0 0\nvt 1 0\nvt 0 1\n"
+               "usemtl painted\nf 1/1 2/2 3/3\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu((dir / "dual.obj").string()));
+
+    ASSERT_EQ(loader.getMaterials().size(), 1U);
+    const auto &material = loader.getMaterials()[0];
+    EXPECT_GE(material.textureID, 0);
+    EXPECT_GE(material.normalTextureID, 0);
+    EXPECT_NE(material.textureID, material.normalTextureID)
+      << "the same file used as sRGB base colour and linear normal map needs two slots";
+
+    std::filesystem::remove_all(dir);
+}
+
 TEST(ObjParseUnit, MtlTextureUnderATexturesSubdirectoryIsResolved)
 {
     // docs/model-loading.md's second candidate: the layout every shipped OBJ
