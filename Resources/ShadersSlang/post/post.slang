@@ -41,8 +41,9 @@ VsOut vs_main(uint vid : SV_VertexID)
 [shader("fragment")]
 float4 fs_main(VsOut In) : SV_Target
 {
-    float3 color = noisyTxt.Sample(In.uv).rgb;
-    float  alpha = noisyTxt.Sample(In.uv).a;
+    float4 sampled = noisyTxt.Sample(In.uv);
+    float3 color = sampled.rgb;
+    float  alpha = sampled.a;
 
     if (bool(pc_post.clouds_enabled))
     {

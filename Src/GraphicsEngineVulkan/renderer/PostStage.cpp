@@ -66,11 +66,11 @@ void Kataglyphis::VulkanRendererInternals::PostStage::recordCommands(vk::Command
 {
     const vk::Extent2D &swap_chain_extent = vulkanSwapChain->getSwapChainExtent();
 
-    std::array<vk::ClearValue, 1> clear_values;
-    clear_values[0].color = vk::ClearColorValue{ 0.2F, 0.65F, 0.4F, 1.0F };
-
+    // No clear values: createRenderpass()'s colour attachment uses eLoad, not
+    // eClear (the skybox pass already rendered into this swapchain image), so
+    // a clear value here would never be read.
     const vk::RenderPassBeginInfo render_pass_begin_info = Kataglyphis::buildRenderPassBeginInfo(
-      render_pass, framebuffers[image_index], swap_chain_extent, clear_values);
+      render_pass, framebuffers[image_index], swap_chain_extent, std::span<const vk::ClearValue>{});
 
     commandBuffer.beginRenderPass(render_pass_begin_info, vk::SubpassContents::eInline);
 

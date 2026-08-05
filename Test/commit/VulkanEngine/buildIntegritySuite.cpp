@@ -11528,3 +11528,56 @@ TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
              return joined;
          }();
 }
+
+// PostStage::createRenderpass builds its single colour attachment with
+// vk::AttachmentLoadOp::eLoad (the skybox pass already rendered into this
+// swapchain image), so a clear value passed to beginRenderPass can never be
+// consumed. If someone later switches the pass back to eClear, this test
+// should fail and tell them to update the gate rather than silently passing.
+// Alongside that, post.slang's fs_main must sample noisyTxt exactly once -
+// two identical fetches for one texel invite the reading that they differ.
+TEST(BuildIntegrity, TheLoadingPostPassDeclaresNoClearValue)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path post_stage_path = repo_root / "Src/GraphicsEngineVulkan/renderer/PostStage.cpp";
+    const auto post_stage_text_opt = readFileText(post_stage_path);
+    ASSERT_TRUE(post_stage_text_opt.has_value()) << "missing " << post_stage_path.string();
+    const std::string &post_stage_text = *post_stage_text_opt;
+
+    EXPECT_NE(post_stage_text.find("vk::AttachmentLoadOp::eLoad"), std::string::npos)
+      << post_stage_path.string()
+      << " no longer declares its colour attachment with vk::AttachmentLoadOp::eLoad - this pass loads its "
+         "attachment, so a clear value can never be consumed; if that changed, this gate needs updating instead "
+         "of just deleting the assertion below";
+    EXPECT_EQ(post_stage_text.find("ClearColorValue"), std::string::npos)
+      << post_stage_path.string()
+      << " builds a ClearColorValue for a pass whose attachment is eLoad - this pass loads its attachment, so a "
+         "clear value can never be consumed";
+    // The empty-span idiom (std::span<const vk::ClearValue>{}) still names
+    // the type - only a populated array/vector of clear values is dead here.
+    EXPECT_EQ(post_stage_text.find("std::array<vk::ClearValue"), std::string::npos)
+      << post_stage_path.string()
+      << " builds an array of vk::ClearValue for a pass whose attachment is eLoad - this pass loads its "
+         "attachment, so a clear value can never be consumed";
+    EXPECT_NE(post_stage_text.find("std::span<const vk::ClearValue>{}"), std::string::npos)
+      << post_stage_path.string()
+      << " no longer passes an empty std::span<const vk::ClearValue> to buildRenderPassBeginInfo";
+
+    const fs::path post_slang_path = slangRoot() / "post" / "post.slang";
+    const auto post_slang_text_opt = readFileText(post_slang_path);
+    ASSERT_TRUE(post_slang_text_opt.has_value()) << "missing " << post_slang_path.string();
+    const std::string &post_slang_text = *post_slang_text_opt;
+
+    std::size_t sample_count = 0;
+    std::size_t pos = 0;
+    static const std::string kNeedle = "noisyTxt.Sample";
+    while ((pos = post_slang_text.find(kNeedle, pos)) != std::string::npos) {
+        ++sample_count;
+        pos += kNeedle.size();
+    }
+    EXPECT_EQ(sample_count, 1U)
+      << post_slang_path.string() << " samples noisyTxt " << sample_count
+      << " time(s) in fs_main - expected exactly one fetch into a float4, with .rgb/.a taken from it";
+}

@@ -43,6 +43,15 @@ TEST(RenderPassBeginHelperUnit, ClearValueCountIsDerivedFromTheSpan)
     EXPECT_EQ(info.clearValueCount, 3U);
 }
 
+TEST(RenderPassBeginHelperUnit, EmptySpanYieldsZeroClearValueCountAndNullPointer)
+{
+    const vk::RenderPassBeginInfo info = buildRenderPassBeginInfo(
+      vk::RenderPass{}, vk::Framebuffer{}, vk::Extent2D{ 800, 600 }, std::span<const vk::ClearValue>{});
+
+    EXPECT_EQ(info.clearValueCount, 0U);
+    EXPECT_EQ(info.pClearValues, nullptr);
+}
+
 TEST(RenderPassBeginHelperUnit, PClearValuesPointsAtTheCallersStorage)
 {
     const vk::RenderPassBeginInfo info = buildRenderPassBeginInfo(vk::RenderPass{}, vk::Framebuffer{},
