@@ -2,10 +2,7 @@ import scene_types;
 import rt_types;
 import brdf;
 import base_color;
-import emission;
-import normal_map;
 import material_fetch;
-import material_rules;
 import material_textures;
 
 // Ray tracing closest-hit shader. Sole source for this shader. Emits
@@ -117,8 +114,7 @@ void rchit_main(
         float4 tangentHit = v0.tangent * barycentrics.x + v1.tangent * barycentrics.y + v2.tangent * barycentrics.z;
         float3 worldTangent = normalize((float3)mul(ObjectToWorld(), float4(tangentHit.xyz, 0.0)));
         // Explicit LOD: see the base-colour sample above for why.
-        float3 normalSample = sample_normal_lod0(obj, material, texCoords);
-        N = apply_normal_map(N, float4(worldTangent, tangentHit.w), normalSample, material.normalScale);
+        N = resolved_normal_lod0(N, float4(worldTangent, tangentHit.w), obj, material, texCoords);
     }
     float3 V = normalize(sceneUBO.cam_pos.xyz - worldHitPos);
 
@@ -140,16 +136,10 @@ void rchit_main(
             shadowed);
     }
 
-    float metallic = material.metallic;
-    float roughness = material_roughness(material);
-    if (material.metallicRoughnessTextureID >= 0)
-    {
-        // Explicit LOD: see the base-colour sample above for why.
-        float4 mrSample = sample_metallic_roughness_lod0(obj, material, texCoords);
-        float2 metallicRoughness = material_metallic_roughness(material, mrSample);
-        metallic = metallicRoughness.x;
-        roughness = metallicRoughness.y;
-    }
+    // Explicit LOD: see the base-colour sample above for why.
+    float2 metallicRoughness = resolved_metallic_roughness_lod0(obj, material, texCoords);
+    float metallic = metallicRoughness.x;
+    float roughness = metallicRoughness.y;
     float3 lightColor = sceneUBO.dirLight.color.rgb;
     float lightIntensity = sceneUBO.dirLight.color.w;
 
@@ -170,11 +160,6 @@ void rchit_main(
 
     // Emissive is surface-emitted radiance, not reflected light - it is
     // unshadowed and unattenuated, so it is added after shadowing, not before.
-    float3 emissiveSample = float3(1.0);
-    if (material.emissiveTextureID >= 0)
-    {
-        // Explicit LOD: see the base-colour sample above for why.
-        emissiveSample = sample_emissive_lod0(obj, material, texCoords);
-    }
-    payload.hit_value += material_emission(material, emissiveSample);
+    // Explicit LOD: see the base-colour sample above for why.
+    payload.hit_value += resolved_emission_lod0(obj, material, texCoords);
 }

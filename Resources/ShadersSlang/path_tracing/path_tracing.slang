@@ -1,7 +1,5 @@
 import scene_types;
 import base_color;
-import emission;
-import normal_map;
 import alpha_test;
 import material_fetch;
 import material_rules;
@@ -231,8 +229,7 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
                 // above uses.
                 float3 worldTangent = normalize(mul(objToWorld, float4(tangentHit.xyz, 0.0)));
                 // Explicit LOD: see the base-colour sample below for why.
-                float3 normalSample = sample_normal_lod0(obj, material, texCoords);
-                shadingNormal = apply_normal_map(hitWorldNormal, float4(worldTangent, tangentHit.w), normalSample, material.normalScale);
+                shadingNormal = resolved_normal_lod0(hitWorldNormal, float4(worldTangent, tangentHit.w), obj, material, texCoords);
             }
 
             float3 hitColor;
@@ -304,13 +301,8 @@ void path_tracing_main(uint3 tid : SV_DispatchThreadID)
             // exactly the environment radiance" invariant.
             if (!furnace)
             {
-                float3 emissiveSample = float3(1.0);
-                if (material.emissiveTextureID >= 0)
-                {
-                    // Explicit LOD: see the base-colour sample above for why.
-                    emissiveSample = sample_emissive_lod0(obj, material, texCoords);
-                }
-                radiance += throughput * material_emission(material, emissiveSample);
+                // Explicit LOD: see the base-colour sample above for why.
+                radiance += throughput * resolved_emission_lod0(obj, material, texCoords);
             }
 
             // Apply color absorption.

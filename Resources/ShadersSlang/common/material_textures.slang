@@ -1,5 +1,8 @@
 import scene_types;
 import base_color;
+import emission;
+import material_rules;
+import normal_map;
 
 // One owning module for the [vk::binding(TEXTURES_BINDING, 0)] / [vk::binding(SAMPLER_BINDING, 0)]
 // texture arrays, previously declared separately in rasterizer.slang,
@@ -12,6 +15,23 @@ import base_color;
 // site instead - it drives shading control flow (albedo assembly, discard,
 // G-buffer packing) that differs per shader, where these four are a uniform
 // "resolve slot, sample, return" pattern.
+//
+// Below the four sample_*() blocks, resolved_emission[_lod0](),
+// resolved_metallic_roughness[_lod0]() and resolved_normal[_lod0]() go one
+// step further and own the guard-plus-default-plus-combine wrapper that used
+// to be written out at every call site too (eleven copies across four
+// shaders, batch XVIII: `git log` for the exact count at the time). Each
+// pairs one of the sample_*() functions above with its glTF combine rule
+// from emission.slang/material_rules.slang/normal_map.slang - binding-free
+// modules, so importing them here pulls in no second `objectDescription`
+// declaration, the same argument the sample-block comment above already
+// makes. `resolved_metallic_roughness[_lod0]()` folds in material_roughness()
+// as the fallback roughness the same way the old inline blocks did.
+// path_tracing.slang deliberately does not adopt
+// resolved_metallic_roughness_lod0(): its kernel consumes only the metallic
+// half, only when a texture is present, with no factor fallback, so the
+// shared helper's untextured-material default would silently start applying
+// material.metallic to a Lambertian-only kernel.
 //
 // One module, not two: probed by compiling a throwaway compute entry point
 // and a throwaway closesthit entry point, each importing this module and
@@ -86,4 +106,58 @@ float3 sample_emissive(ObjectDescription obj, ObjMaterial material, float2 texCo
 {
     int emissiveTexId = resolve_texture_slot(obj, material.emissiveTextureID);
     return textures[emissiveTexId].Sample(textureSamplers[emissiveTexId], emissive_uv(texCoords, material)).xyz;
+}
+
+float3 resolved_emission_lod0(ObjectDescription obj, ObjMaterial material, float2 texCoords)
+{
+    float3 sampled = float3(1.0);
+    if (material.emissiveTextureID >= 0)
+    {
+        sampled = sample_emissive_lod0(obj, material, texCoords);
+    }
+    return material_emission(material, sampled);
+}
+
+float3 resolved_emission(ObjectDescription obj, ObjMaterial material, float2 texCoords)
+{
+    float3 sampled = float3(1.0);
+    if (material.emissiveTextureID >= 0)
+    {
+        sampled = sample_emissive(obj, material, texCoords);
+    }
+    return material_emission(material, sampled);
+}
+
+float2 resolved_metallic_roughness_lod0(ObjectDescription obj, ObjMaterial material, float2 texCoords)
+{
+    if (material.metallicRoughnessTextureID < 0)
+    {
+        return float2(material.metallic, material_roughness(material));
+    }
+    float4 mrSample = sample_metallic_roughness_lod0(obj, material, texCoords);
+    return material_metallic_roughness(material, mrSample);
+}
+
+float2 resolved_metallic_roughness(ObjectDescription obj, ObjMaterial material, float2 texCoords)
+{
+    if (material.metallicRoughnessTextureID < 0)
+    {
+        return float2(material.metallic, material_roughness(material));
+    }
+    float4 mrSample = sample_metallic_roughness(obj, material, texCoords);
+    return material_metallic_roughness(material, mrSample);
+}
+
+float3 resolved_normal_lod0(float3 geometricNormal, float4 tangent, ObjectDescription obj, ObjMaterial material, float2 texCoords)
+{
+    if (material.normalTextureID < 0) { return geometricNormal; }
+    float3 sampled = sample_normal_lod0(obj, material, texCoords);
+    return apply_normal_map(geometricNormal, tangent, sampled, material.normalScale);
+}
+
+float3 resolved_normal(float3 geometricNormal, float4 tangent, ObjectDescription obj, ObjMaterial material, float2 texCoords)
+{
+    if (material.normalTextureID < 0) { return geometricNormal; }
+    float3 sampled = sample_normal(obj, material, texCoords);
+    return apply_normal_map(geometricNormal, tangent, sampled, material.normalScale);
 }

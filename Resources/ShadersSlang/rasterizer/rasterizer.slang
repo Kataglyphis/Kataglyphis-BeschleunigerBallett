@@ -3,8 +3,6 @@ import brdf;
 import material_fetch;
 import material_rules;
 import base_color;
-import emission;
-import normal_map;
 import cascaded_shadow;
 import push_constants;
 import raster_geometry;
@@ -46,11 +44,7 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     // MeshDrawRecorder.cpp's dynamic eCullMode) - !isFrontFace is therefore
     // the doubleSided test; no ObjMaterial field is needed for it.
     if (!isFrontFace) N = -N;
-    if (material.normalTextureID >= 0)
-    {
-        float3 normalSample = sample_normal(obj, material, In.texCoords);
-        N = apply_normal_map(N, In.worldTangent, normalSample, material.normalScale);
-    }
+    N = resolved_normal(N, In.worldTangent, obj, material, In.texCoords);
     float3 V = normalize(sceneUBO.cam_pos.xyz - In.worldPosition);
 
     // map_d's alpha is independent of which base-colour branch is taken
@@ -84,15 +78,9 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
     // used for anything.
     if (material.unlit != 0) return float4(albedo, 1.0);
 
-    float metallic = material.metallic;
-    float roughness = material_roughness(material);
-    if (material.metallicRoughnessTextureID >= 0)
-    {
-        float4 mrSample = sample_metallic_roughness(obj, material, In.texCoords);
-        float2 metallicRoughness = material_metallic_roughness(material, mrSample);
-        metallic = metallicRoughness.x;
-        roughness = metallicRoughness.y;
-    }
+    float2 metallicRoughness = resolved_metallic_roughness(obj, material, In.texCoords);
+    float metallic = metallicRoughness.x;
+    float roughness = metallicRoughness.y;
     float3 lightColor = sceneUBO.dirLight.color.rgb;
     float lightIntensity = sceneUBO.dirLight.color.w;
 
@@ -105,12 +93,7 @@ float4 fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, bool isFrontFa
 
     // Emissive is surface-emitted radiance, not reflected light - it is
     // unshadowed and unattenuated, so it is added after shadowing, not before.
-    float3 emissiveSample = float3(1.0);
-    if (material.emissiveTextureID >= 0)
-    {
-        emissiveSample = sample_emissive(obj, material, In.texCoords);
-    }
-    color += material_emission(material, emissiveSample);
+    color += resolved_emission(obj, material, In.texCoords);
 
     return float4(color, 1.0);
 }

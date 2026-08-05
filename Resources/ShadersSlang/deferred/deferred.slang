@@ -2,8 +2,6 @@ import scene_types;
 import material_fetch;
 import material_rules;
 import base_color;
-import emission;
-import normal_map;
 import brdf;
 import cascaded_shadow;
 import push_constants;
@@ -76,20 +74,10 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
     // not in the lighting pass, since the lighting pass has no SV_IsFrontFace.
     float3 N = normalize(In.shadingNormal);
     if (!isFrontFace) N = -N;
-    if (material.normalTextureID >= 0)
-    {
-        float3 normalSample = sample_normal(obj, material, In.texCoords);
-        N = apply_normal_map(N, In.worldTangent, normalSample, material.normalScale);
-    }
-    float metallic = material.metallic;
-    float roughness = material_roughness(material);
-    if (material.metallicRoughnessTextureID >= 0)
-    {
-        float4 mrSample = sample_metallic_roughness(obj, material, In.texCoords);
-        float2 metallicRoughness = material_metallic_roughness(material, mrSample);
-        metallic = metallicRoughness.x;
-        roughness = metallicRoughness.y;
-    }
+    N = resolved_normal(N, In.worldTangent, obj, material, In.texCoords);
+    float2 metallicRoughness = resolved_metallic_roughness(obj, material, In.texCoords);
+    float metallic = metallicRoughness.x;
+    float roughness = metallicRoughness.y;
     // .w is otherwise unused (GBUFFER_NORMAL_FORMAT is eR16G16B16A16Sfloat,
     // and lighting_fs_main only ever read normal.xyz) - the free float
     // channel for metallic, so it does not need its own G-buffer attachment.
@@ -116,17 +104,13 @@ GBufferOut geometry_fs_main(RasterVsOut In, uint primitiveID : SV_PrimitiveID, b
     // multiply happens here, in the geometry pass, since the lighting pass
     // only has the already-packed G-buffer value to work with (no material
     // or texCoords).
-    float3 emissiveSample = float3(1.0);
-    if (material.emissiveTextureID >= 0)
-    {
-        emissiveSample = sample_emissive(obj, material, In.texCoords);
-    }
+    //
     // r = roughness, gba = emissive. GBUFFER_MATERIAL_FORMAT is
     // eR16G16B16A16Sfloat, so emissive above 1.0 from
     // KHR_materials_emissive_strength survives the G-buffer round-trip
     // instead of clamping to [0,1], and roughness is no longer quantized
     // to 256 steps.
-    g.outMaterial = float4(roughness, material_emission(material, emissiveSample));
+    g.outMaterial = float4(roughness, resolved_emission(obj, material, In.texCoords));
     return g;
 }
 

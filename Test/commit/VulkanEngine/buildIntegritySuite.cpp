@@ -2620,6 +2620,77 @@ TEST(BuildIntegrity, RasterShadersShareOneAlphaCutoffRule)
          }();
 }
 
+// Batch XVIII moved the guard-plus-default-plus-combine wrapper around the
+// emissive/metallic-roughness/normal-map texture slots into
+// common/material_textures.slang's resolved_emission[_lod0](),
+// resolved_metallic_roughness[_lod0]() and resolved_normal[_lod0](), the
+// same way batch X moved the raw sample_*() calls themselves. This pins the
+// raw sample_emissive/sample_normal/sample_metallic_roughness (and their
+// _lod0 twins) calls down to that one owning module, so a future shading
+// path cannot silently reintroduce a hand-rolled wrapper around them.
+TEST(BuildIntegrity, TextureSlotWrappersHaveOneOwner)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path slang_root = slangRoot();
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    static const std::array<const char *, 6> kRawSamplers = {
+        "sample_emissive_lod0(", "sample_emissive(",
+        "sample_normal_lod0(", "sample_normal(",
+        "sample_metallic_roughness_lod0(", "sample_metallic_roughness("
+    };
+    static const std::string kOwningFile = "common/material_textures.slang";
+
+    // path_tracing.slang's Lambertian-only kernel deliberately keeps its
+    // metallic-roughness block inline (see resolved_metallic_roughness_lod0's
+    // doc comment in material_textures.slang) rather than adopting
+    // resolved_metallic_roughness_lod0(): that helper's untextured-material
+    // fallback would silently start applying material.metallic to a kernel
+    // whose glTF default is metallicFactor == 1.0.
+    static const std::string kSanctionedExceptionFile = "path_tracing/path_tracing.slang";
+    static const std::string kSanctionedExceptionCall = "sample_metallic_roughness_lod0(";
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
+
+        const std::string relative_path = fs::relative(path, slang_root).generic_string();
+        if (relative_path.starts_with("build/")) { continue; }
+        if (relative_path == kOwningFile) { continue; }
+
+        const auto textOpt = readFileText(path);
+        ASSERT_TRUE(textOpt.has_value()) << "could not open " << relative_path;
+        const std::string &text = *textOpt;
+
+        for (const char *raw_sampler : kRawSamplers) {
+            if (text.find(raw_sampler) == std::string::npos) { continue; }
+            if (relative_path == kSanctionedExceptionFile && std::string(raw_sampler) == kSanctionedExceptionCall) {
+                continue;
+            }
+            violations.push_back(relative_path + " calls " + raw_sampler
+                                  + " directly - only " + kOwningFile
+                                  + " (and path_tracing.slang's sanctioned sample_metallic_roughness_lod0 "
+                                    "exception) may call the raw sampler; every other shading path must go "
+                                    "through resolved_emission/resolved_metallic_roughness/resolved_normal "
+                                    "(and their _lod0 twins) instead");
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " raw texture-slot sampler call(s) found outside their owning module:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 // common/material_rules.slang exists so the ray tracing / path tracing entry
 // points - which cannot import material_fetch.slang without an
 // ambiguous-reference compile error over its objectDescription binding -
@@ -2939,21 +3010,28 @@ TEST(BuildIntegrity, EmissiveIsConsumedByEveryShadingPath)
     EXPECT_NE(scene_types_text.find("float3 emission"), std::string::npos)
       << "scene_types.slang no longer declares ObjMaterial::emission. " << kFailureMessage;
 
+    // Batch XVIII moved the guard-plus-default-plus-combine wrapper around
+    // material_emission() into common/material_textures.slang's
+    // resolved_emission()/resolved_emission_lod0() - each of the four
+    // shading paths below now calls one of those instead of material_emission()
+    // directly (see EmissionSamplingUsesTheSharedHelperInEveryShadingPath for
+    // the check that material_textures.slang itself still wires
+    // emissiveTextureID through material_emission()).
     const fs::path rasterizer_path = repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang";
     const auto rasterizer_text_opt = readFileText(rasterizer_path);
     ASSERT_TRUE(rasterizer_text_opt.has_value()) << "could not open " << rasterizer_path.string();
     const std::string &rasterizer_text = *rasterizer_text_opt;
-    EXPECT_NE(rasterizer_text.find("material_emission(material, emissiveSample)"), std::string::npos)
-      << "rasterizer.slang no longer uses material_emission(). " << kFailureMessage;
+    EXPECT_NE(rasterizer_text.find("color += resolved_emission(obj, material, In.texCoords)"), std::string::npos)
+      << "rasterizer.slang no longer uses resolved_emission(). " << kFailureMessage;
 
     const fs::path deferred_path = repo_root / "Resources/ShadersSlang/deferred/deferred.slang";
     const auto deferred_text_opt = readFileText(deferred_path);
     ASSERT_TRUE(deferred_text_opt.has_value()) << "could not open " << deferred_path.string();
     const std::string &deferred_text = *deferred_text_opt;
     EXPECT_NE(
-      deferred_text.find("outMaterial = float4(roughness, material_emission(material, emissiveSample))"),
+      deferred_text.find("outMaterial = float4(roughness, resolved_emission(obj, material, In.texCoords))"),
       std::string::npos)
-      << "deferred.slang's geometry pass no longer packs material_emission() into outMaterial.gba. " << kFailureMessage;
+      << "deferred.slang's geometry pass no longer packs resolved_emission() into outMaterial.gba. " << kFailureMessage;
     EXPECT_NE(deferred_text.find("color += material.gba"), std::string::npos)
       << "deferred.slang's lighting pass no longer adds the G-buffer's packed emissive term. " << kFailureMessage;
 
@@ -2961,15 +3039,16 @@ TEST(BuildIntegrity, EmissiveIsConsumedByEveryShadingPath)
     const auto rchit_text_opt = readFileText(rchit_path);
     ASSERT_TRUE(rchit_text_opt.has_value()) << "could not open " << rchit_path.string();
     const std::string &rchit_text = *rchit_text_opt;
-    EXPECT_NE(rchit_text.find("material_emission(material, emissiveSample)"), std::string::npos)
-      << "raytrace.rchit.slang no longer uses material_emission(). " << kFailureMessage;
+    EXPECT_NE(rchit_text.find("resolved_emission_lod0(obj, material, texCoords)"), std::string::npos)
+      << "raytrace.rchit.slang no longer uses resolved_emission_lod0(). " << kFailureMessage;
 
     const fs::path path_tracing_path = repo_root / "Resources/ShadersSlang/path_tracing/path_tracing.slang";
     const auto path_tracing_text_opt = readFileText(path_tracing_path);
     ASSERT_TRUE(path_tracing_text_opt.has_value()) << "could not open " << path_tracing_path.string();
     const std::string &path_tracing_text = *path_tracing_text_opt;
-    EXPECT_NE(path_tracing_text.find("radiance += throughput * material_emission(material, emissiveSample)"), std::string::npos)
-      << "path_tracing.slang no longer adds throughput * material_emission() at the hit. " << kFailureMessage;
+    EXPECT_NE(path_tracing_text.find("radiance += throughput * resolved_emission_lod0(obj, material, texCoords)"),
+              std::string::npos)
+      << "path_tracing.slang no longer adds throughput * resolved_emission_lod0() at the hit. " << kFailureMessage;
 }
 
 // ObjMaterial::emissiveTextureID (glTF emissiveTexture, see EmissiveIsConsumedByEveryShadingPath above for the
@@ -2995,6 +3074,24 @@ TEST(BuildIntegrity, EmissionSamplingUsesTheSharedHelperInEveryShadingPath)
       << "emission.slang's material_emission() no longer multiplies the sampled emissiveTexture into the factor. "
       << kFailureMessage;
 
+    // Batch XVIII moved the guard-plus-default-plus-combine wrapper around
+    // material_emission() into material_textures.slang's resolved_emission()/
+    // resolved_emission_lod0() - it is now the sole direct importer of
+    // emission.slang and the sole direct caller of material_emission(); the
+    // four shading paths below call resolved_emission[_lod0]() instead (see
+    // EmissiveIsConsumedByEveryShadingPath for the exact call site per path).
+    const fs::path material_textures_path = repo_root / "Resources/ShadersSlang/common/material_textures.slang";
+    const auto material_textures_text_opt = readFileText(material_textures_path);
+    ASSERT_TRUE(material_textures_text_opt.has_value()) << "could not open " << material_textures_path.string();
+    const std::string &material_textures_text = *material_textures_text_opt;
+    EXPECT_NE(material_textures_text.find("import emission;"), std::string::npos)
+      << "material_textures.slang no longer imports common/emission.slang. " << kFailureMessage;
+    EXPECT_NE(material_textures_text.find("material_emission("), std::string::npos)
+      << "material_textures.slang no longer calls material_emission(). " << kFailureMessage;
+    EXPECT_NE(material_textures_text.find("material.emissiveTextureID"), std::string::npos)
+      << "material_textures.slang's resolved_emission helpers no longer branch on ObjMaterial::emissiveTextureID. "
+      << kFailureMessage;
+
     const std::vector<fs::path> shading_paths = {
         repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang",
         repo_root / "Resources/ShadersSlang/deferred/deferred.slang",
@@ -3005,12 +3102,12 @@ TEST(BuildIntegrity, EmissionSamplingUsesTheSharedHelperInEveryShadingPath)
         const auto text_opt = readFileText(path);
         ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
         const std::string &text = *text_opt;
-        EXPECT_NE(text.find("import emission;"), std::string::npos)
-          << path.string() << " no longer imports common/emission.slang. " << kFailureMessage;
-        EXPECT_NE(text.find("material_emission("), std::string::npos)
-          << path.string() << " no longer calls material_emission(). " << kFailureMessage;
-        EXPECT_NE(text.find("emissiveTextureID"), std::string::npos)
-          << path.string() << " no longer branches on ObjMaterial::emissiveTextureID. " << kFailureMessage;
+        EXPECT_NE(text.find("import material_textures;"), std::string::npos)
+          << path.string() << " no longer imports common/material_textures.slang. " << kFailureMessage;
+        const bool calls_resolved_emission =
+          text.find("resolved_emission(") != std::string::npos || text.find("resolved_emission_lod0(") != std::string::npos;
+        EXPECT_TRUE(calls_resolved_emission)
+          << path.string() << " no longer calls resolved_emission()/resolved_emission_lod0(). " << kFailureMessage;
     }
 }
 
@@ -3058,6 +3155,28 @@ TEST(BuildIntegrity, NormalMappingIsAppliedByEveryShadingPath)
       << "forward.slang's fs_main must not left-multiply the row-built (t, b, nGeom) basis - that is the "
          "world-to-tangent transform, not tangent-to-world.";
 
+    // Batch XVIII moved the guard-plus-default-plus-combine wrapper around
+    // apply_normal_map() into material_textures.slang's resolved_normal()/
+    // resolved_normal_lod0() - it is now the sole direct importer of
+    // normal_map.slang and the sole direct caller of apply_normal_map(),
+    // with material.normalScale folded in there instead of at each call
+    // site. The four shading paths below call resolved_normal[_lod0]()
+    // instead.
+    const fs::path material_textures_path = repo_root / "Resources/ShadersSlang/common/material_textures.slang";
+    const auto material_textures_text_opt = readFileText(material_textures_path);
+    ASSERT_TRUE(material_textures_text_opt.has_value()) << "could not open " << material_textures_path.string();
+    const std::string &material_textures_text = *material_textures_text_opt;
+    EXPECT_NE(material_textures_text.find("import normal_map;"), std::string::npos)
+      << "material_textures.slang no longer imports common/normal_map.slang. " << kFailureMessage;
+    EXPECT_NE(material_textures_text.find("apply_normal_map("), std::string::npos)
+      << "material_textures.slang no longer calls apply_normal_map(). " << kFailureMessage;
+    EXPECT_NE(material_textures_text.find("material.normalTextureID"), std::string::npos)
+      << "material_textures.slang's resolved_normal helpers no longer branch on ObjMaterial::normalTextureID. "
+      << kFailureMessage;
+    EXPECT_NE(material_textures_text.find("material.normalScale"), std::string::npos)
+      << "material_textures.slang no longer passes ObjMaterial::normalScale into apply_normal_map(). "
+      << kFailureMessage;
+
     const std::vector<fs::path> shading_paths = {
         repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang",
         repo_root / "Resources/ShadersSlang/deferred/deferred.slang",
@@ -3068,17 +3187,14 @@ TEST(BuildIntegrity, NormalMappingIsAppliedByEveryShadingPath)
         const auto text_opt = readFileText(path);
         ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
         const std::string &text = *text_opt;
-        EXPECT_NE(text.find("import normal_map;"), std::string::npos)
-          << path.string() << " no longer imports common/normal_map.slang. " << kFailureMessage;
-        EXPECT_NE(text.find("apply_normal_map("), std::string::npos)
-          << path.string() << " no longer calls apply_normal_map(). " << kFailureMessage;
-        EXPECT_NE(text.find("normalTextureID"), std::string::npos)
-          << path.string() << " no longer branches on ObjMaterial::normalTextureID. " << kFailureMessage;
+        EXPECT_NE(text.find("import material_textures;"), std::string::npos)
+          << path.string() << " no longer imports common/material_textures.slang. " << kFailureMessage;
+        const bool calls_resolved_normal =
+          text.find("resolved_normal(") != std::string::npos || text.find("resolved_normal_lod0(") != std::string::npos;
+        EXPECT_TRUE(calls_resolved_normal)
+          << path.string() << " no longer calls resolved_normal()/resolved_normal_lod0(). " << kFailureMessage;
         EXPECT_NE(text.find("worldTangent"), std::string::npos)
           << path.string() << " no longer derives a world-space tangent to build the TBN basis. " << kFailureMessage;
-        EXPECT_NE(text.find("material.normalScale"), std::string::npos)
-          << path.string() << " no longer passes ObjMaterial::normalScale into apply_normal_map(). "
-          << kFailureMessage;
     }
 }
 
@@ -3339,6 +3455,27 @@ TEST(BuildIntegrity, MetallicRoughnessTextureIsSampledByEveryShadingPath)
          "roughness factor. "
       << kFailureMessage;
 
+    // Batch XVIII moved the guard-plus-default-plus-combine wrapper around
+    // material_metallic_roughness() into material_textures.slang's
+    // resolved_metallic_roughness()/resolved_metallic_roughness_lod0() for
+    // rasterizer/deferred/raytrace.rchit. path_tracing.slang deliberately
+    // keeps its block inline instead of adopting
+    // resolved_metallic_roughness_lod0() - see that helper's doc comment in
+    // material_textures.slang: the shared helper's untextured-material
+    // fallback (today's factors) would silently start applying
+    // material.metallic to this Lambertian-only kernel, which never
+    // consumed it before.
+    const fs::path material_textures_path = repo_root / "Resources/ShadersSlang/common/material_textures.slang";
+    const auto material_textures_text_opt = readFileText(material_textures_path);
+    ASSERT_TRUE(material_textures_text_opt.has_value()) << "could not open " << material_textures_path.string();
+    const std::string &material_textures_text = *material_textures_text_opt;
+    EXPECT_NE(material_textures_text.find("material_metallic_roughness("), std::string::npos)
+      << "material_textures.slang no longer calls material_metallic_roughness(). " << kFailureMessage;
+    EXPECT_NE(material_textures_text.find("material.metallicRoughnessTextureID"), std::string::npos)
+      << "material_textures.slang's resolved_metallic_roughness helpers no longer branch on "
+         "ObjMaterial::metallicRoughnessTextureID. "
+      << kFailureMessage;
+
     const std::vector<fs::path> brdf_shading_paths = {
         repo_root / "Resources/ShadersSlang/rasterizer/rasterizer.slang",
         repo_root / "Resources/ShadersSlang/deferred/deferred.slang",
@@ -3349,10 +3486,22 @@ TEST(BuildIntegrity, MetallicRoughnessTextureIsSampledByEveryShadingPath)
         const auto text_opt = readFileText(path);
         ASSERT_TRUE(text_opt.has_value()) << "could not open " << path.string();
         const std::string &text = *text_opt;
-        EXPECT_NE(text.find("metallicRoughnessTextureID"), std::string::npos)
-          << path.string() << " no longer branches on ObjMaterial::metallicRoughnessTextureID. " << kFailureMessage;
-        EXPECT_NE(text.find("material_metallic_roughness("), std::string::npos)
-          << path.string() << " no longer calls material_metallic_roughness(). " << kFailureMessage;
+        const bool is_path_tracing = path.filename() == "path_tracing.slang";
+        if (is_path_tracing) {
+            EXPECT_NE(text.find("metallicRoughnessTextureID"), std::string::npos)
+              << path.string() << " no longer branches on ObjMaterial::metallicRoughnessTextureID. " << kFailureMessage;
+            EXPECT_NE(text.find("material_metallic_roughness("), std::string::npos)
+              << path.string() << " no longer calls material_metallic_roughness(). " << kFailureMessage;
+        } else {
+            EXPECT_NE(text.find("import material_textures;"), std::string::npos)
+              << path.string() << " no longer imports common/material_textures.slang. " << kFailureMessage;
+            const bool calls_resolved =
+              text.find("resolved_metallic_roughness(") != std::string::npos
+              || text.find("resolved_metallic_roughness_lod0(") != std::string::npos;
+            EXPECT_TRUE(calls_resolved)
+              << path.string() << " no longer calls resolved_metallic_roughness()/resolved_metallic_roughness_lod0(). "
+              << kFailureMessage;
+        }
         EXPECT_EQ(text.find("mrSample.g"), std::string::npos)
           << path.string() << " hand-rolls the roughness (G) channel read instead of going through "
                                "material_metallic_roughness(). "
@@ -4232,6 +4381,19 @@ TEST(BuildIntegrity, EveryShadingPathDerivesRoughnessFromTheMaterial)
              return joined;
          }();
 
+    // Batch XVIII moved the metallic-roughness guard-plus-default-plus-combine
+    // wrapper - including the material_roughness() fallback call - into
+    // material_textures.slang's resolved_metallic_roughness()/
+    // resolved_metallic_roughness_lod0(); rasterizer/deferred/raytrace.rchit
+    // now derive roughness by calling one of those instead of
+    // material_roughness() directly.
+    const fs::path material_textures_path = slang_root / "common/material_textures.slang";
+    const auto material_textures_content = readFileText(material_textures_path);
+    ASSERT_TRUE(material_textures_content.has_value()) << "missing " << material_textures_path.string();
+    EXPECT_NE(material_textures_content->find("material_roughness("), std::string::npos)
+      << "material_textures.slang's resolved_metallic_roughness helpers must derive the fallback roughness via "
+         "material_roughness(), not their own copy of the mapping";
+
     static const std::array<const char *, 3> kShadingShaders = {
         "rasterizer/rasterizer.slang",
         "deferred/deferred.slang",
@@ -4242,8 +4404,12 @@ TEST(BuildIntegrity, EveryShadingPathDerivesRoughnessFromTheMaterial)
         const fs::path path = slang_root / relative;
         const auto content = readFileText(path);
         ASSERT_TRUE(content.has_value()) << "missing " << path.string();
-        EXPECT_NE(content->find("material_roughness("), std::string::npos)
-          << relative << " must derive roughness via material_roughness(), not its own copy of the mapping";
+        const bool calls_resolved =
+          content->find("resolved_metallic_roughness(") != std::string::npos
+          || content->find("resolved_metallic_roughness_lod0(") != std::string::npos;
+        EXPECT_TRUE(calls_resolved)
+          << relative << " must derive roughness via resolved_metallic_roughness()/"
+                          "resolved_metallic_roughness_lod0(), not its own copy of the mapping";
     }
 }
 
