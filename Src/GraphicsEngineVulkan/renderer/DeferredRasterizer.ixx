@@ -33,10 +33,10 @@ class DeferredRasterizer
     void shaderHotReload(std::span<const vk::DescriptorSetLayout> descriptor_set_layouts);
 
     Kataglyphis::Texture &getOffscreenTexture(uint32_t index);
-    vk::ImageView getGBufferNormal(uint32_t index) { return gBufferNormals[index]->getImageView(); }
-    vk::ImageView getGBufferAlbedo(uint32_t index) { return gBufferAlbedos[index]->getImageView(); }
-    vk::ImageView getGBufferMaterial(uint32_t index) { return gBufferMaterials[index]->getImageView(); }
-    vk::ImageView getDepthBufferImageView() { return depthBufferImage->getImageView(); }
+    vk::ImageView getGBufferNormal(uint32_t index) const { return gBufferNormals[index]->getImageView(); }
+    vk::ImageView getGBufferAlbedo(uint32_t index) const { return gBufferAlbedos[index]->getImageView(); }
+    vk::ImageView getGBufferMaterial(uint32_t index) const { return gBufferMaterials[index]->getImageView(); }
+    vk::ImageView getDepthBufferImageView() const { return depthBufferImage->getImageView(); }
 
     void setPushConstant(PushConstantRasterizer push_constant);
 

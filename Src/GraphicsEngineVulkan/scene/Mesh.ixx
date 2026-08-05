@@ -35,8 +35,8 @@ class Mesh
     void cleanUp();
 
     ObjectDescription &getObjectDescription() { return object_description; };
-    uint32_t getVertexCount() { return vertex_count; };
-    uint32_t getIndexCount() { return index_count; };
+    uint32_t getVertexCount() const { return vertex_count; };
+    uint32_t getIndexCount() const { return index_count; };
     vk::Buffer &getVertexBuffer() { return vertexBuffer.getBuffer(); };
     vk::Buffer &getIndexBuffer() { return indexBuffer.getBuffer(); };
 

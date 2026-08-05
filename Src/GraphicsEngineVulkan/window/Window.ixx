@@ -18,12 +18,12 @@ class Window
     [[nodiscard]] int initialize(uint32_t window_width, uint32_t window_height);
     void cleanUp();
 
-    bool get_should_close() { return glfwWindowShouldClose(main_window); }
+    bool get_should_close() const { return glfwWindowShouldClose(main_window); }
     float get_x_change();
     float get_y_change();
-    GLFWwindow *get_window() { return main_window; }
+    GLFWwindow *get_window() const { return main_window; }
 
-    std::span<const bool> get_keys() { return input_state.keys; }
+    std::span<const bool> get_keys() const { return input_state.keys; }
     bool framebuffer_size_has_changed() const;
     void reset_framebuffer_has_changed();
     [[nodiscard]] bool is_valid() const { return initialized && main_window != nullptr; }

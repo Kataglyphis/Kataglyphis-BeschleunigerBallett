@@ -33,12 +33,18 @@ class Model
       std::vector<ObjMaterial> &materials,
       bool double_sided = false);
 
-    uint32_t getTextureCount() { return static_cast<uint32_t>(modelTextures.size()); };
+    uint32_t getTextureCount() const { return static_cast<uint32_t>(modelTextures.size()); };
     std::vector<Texture> &getTextures() { return modelTextures; }
     std::vector<vk::Sampler> &getTextureSamplers() { return modelTextureSamplers; }
-    uint32_t getMeshCount() { return static_cast<uint32_t>(meshes.size()); };
+    uint32_t getMeshCount() const { return static_cast<uint32_t>(meshes.size()); };
+    // Cannot be const: meshes is std::vector<Mesh>, so a const overload of
+    // operator[] returns const Mesh&, and &meshes[index] would not convert
+    // to the non-const Mesh* this returns. Unlike the unique_ptr<T>::get()
+    // /shared_ptr<T>::get()-backed accessors elsewhere, constness here would
+    // propagate to the pointee because meshes stores Mesh by value, not
+    // behind a smart pointer.
     Mesh *getMesh(size_t index) { return index < meshes.size() ? &meshes[index] : nullptr; };
-    glm::mat4 getModel() { return model; };
+    glm::mat4 getModel() const { return model; };
 
     void set_model(glm::mat4 new_model);
     void addTexture(Texture &&newTexture, GltfSamplerDesc samplerDesc = {});

@@ -11383,33 +11383,6 @@ tasks 3 and 5 change no `Src/` output at all. No task in this batch touches a
 `.slang` file, so no shader recompile and no WGSL regeneration is needed and
 the staleness gates cannot fire.
 
-- [ ] **(S) (refactor) Make the seventeen remaining read-only accessors `const`, and gate the rule** — `VulkanDevice` marks all of its query accessors `const` and eight other types mark none of theirs, so a read-only helper cannot take a `const` reference to any of them.
-
-  **Files to read:**
-  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanDevice.ixx` — the convention to match (every `get*`/`supports*` accessor is `const`)
-  - `Src/GraphicsEngineVulkan/scene/Scene.ixx` — `getModelCount`, `getModelMatrix`, `getMeshCount`, `getTextureCount`, `getTextureCountPerModel`, `getMeshBounds`, `getObjectDescriptions`, `get_model_list`, and `findModel`/`findMesh`
-  - `Src/GraphicsEngineVulkan/scene/Model.ixx` — `getTextureCount`, `getMeshCount`, `getModel`
-  - `Src/GraphicsEngineVulkan/scene/Mesh.ixx` — `getVertexCount`, `getIndexCount`
-  - `Src/GraphicsEngineVulkan/window/Window.ixx` — `get_should_close`, `get_keys`
-  - `Src/GraphicsEngineVulkan/renderer/DeferredRasterizer.ixx` — `getGBufferNormal`, `getGBufferAlbedo`, `getGBufferMaterial`, `getDepthBufferImageView`
-  - `Src/GraphicsEngineVulkan/scene/sky_box/SkyBox.ixx` (`getMesh`), `.../atmospheric_effects/clouds/Clouds.ixx` (`getCloudOutputTexture`), `.../light/directional_light/CascadedShadowMap.ixx` (`getShadowMapArray`)
-  - `Src/GraphicsEngineVulkan/renderer/QueueFamilyIndices.ixx` — `is_valid()`, the same shape one level down
-
-  **Steps:**
-  1. Add `const` to each accessor above whose body is a plain read. The four `unique_ptr`-backed ones (`getCloudOutputTexture`, `getShadowMapArray`, `getMesh`, `getDepthBufferImageView`) are safe: `std::unique_ptr<T>::get() const` returns `T*`, so constness does not propagate to the pointee. The same argument covers `Scene::findModel`/`findMesh` over `std::vector<std::shared_ptr<Model>>` — do them too, and let that carry `getModelMatrix`/`getMeshCount`/`getTextureCount`/`getMeshBounds` along.
-  2. Work bottom-up (`Mesh` → `Model` → `Scene`) and let the compiler drive: anything that will not compile `const` stays non-`const` and gets a one-line comment saying which member forced it. Do not reach for `mutable` or `const_cast`.
-  3. Add `const` to `QueueFamilyIndices::is_valid()` in the same pass.
-  4. **Do not** change any function *signature* that takes these types — in particular leave `walkSceneMeshes`/`recordSceneMeshDraws` taking `Kataglyphis::Scene *`. Widening the draw walk to `const Scene *` is a separate change with its own review surface; this task is the prerequisite, not the change.
-  5. Do not touch `getObjectDescriptions`' return-by-value — that copy is a real cost but its single caller copies anyway, and changing it to a span is a separate task.
-
-  **Test:** Add `BuildIntegrity.ReadOnlyAccessorsAreConst`: scan every `.ixx` and `.hpp` under `Src/` for inline accessor definitions matching a `get[A-Z_]…` / `get_[a-z]…` / `is[A-Z]…` name followed by a parameter list and an opening brace on the same line, and fail for any whose declaration does not contain ` const`. Carry an explicit exemption array of the accessors step 2 proved cannot be `const`, each with the member that forced it, so the list is self-documenting. Report all violations at once. Existing coverage (`sceneAccessorSuite.cpp`, `meshRangeSliceSuite.cpp`) must stay green unchanged — a pure `const` addition changes no behaviour.
-
-  **Build:** `clangcl-debug` with `-FreshContainer` (many module interfaces change):
-  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
-  then `.\build-clangcl-debug\commitTestSuite.exe` in full — a `const` sweep either compiles or it does not, and the whole suite is the check.
-
-  **Context:** Seventeen is a small enough number to finish in one pass and large enough that the rule is worth pinning; without the gate the next accessor added will be non-`const` like its neighbours. The gate is also the reason to write the exemption list honestly rather than silently skipping whatever fails — an accessor that *cannot* be `const` is a fact about the type worth recording next to it.
-
 - [ ] **(S) Benchmark the two flat-normal functions and `transformAABB`, and re-capture the baseline rows the new gate now demands** — `computeTangents` is the only one of the three vertex-pass functions with perf coverage, and it only got it because a quadratic bug needed acceptance evidence after the fact.
 
   **Files to read:**

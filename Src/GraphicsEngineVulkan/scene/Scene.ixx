@@ -72,17 +72,17 @@ class Scene
         }
         return model->getTextureSamplers();
     };
-    uint32_t getTextureCount(uint32_t model_index)
+    uint32_t getTextureCount(uint32_t model_index) const
     {
         Model *model = findModel(model_index);
         return model != nullptr ? model->getTextureCount() : 0;
     };
-    uint32_t getModelCount() { return static_cast<uint32_t>(model_list.size()); };
-    glm::mat4 getModelMatrix(uint32_t model_index) {
+    uint32_t getModelCount() const { return static_cast<uint32_t>(model_list.size()); };
+    glm::mat4 getModelMatrix(uint32_t model_index) const {
         Model *model = findModel(model_index);
         return model != nullptr ? model->getModel() : glm::mat4(1.0f);
     };
-    uint32_t getMeshCount(uint32_t model_index)
+    uint32_t getMeshCount(uint32_t model_index) const
     {
         Model *model = findModel(model_index);
         return model != nullptr ? static_cast<uint32_t>(model->getMeshCount()) : 0;
@@ -90,7 +90,7 @@ class Scene
     // This ordering is the contract assignTextureOffsets and
     // planFlattenedTextureSlots are both indexed by; consumers must use this
     // accessor rather than re-deriving the per-model vector themselves.
-    std::vector<uint32_t> getTextureCountPerModel()
+    std::vector<uint32_t> getTextureCountPerModel() const
     {
         std::vector<uint32_t> counts;
         counts.reserve(model_list.size());
@@ -99,7 +99,7 @@ class Scene
         }
         return counts;
     };
-    std::vector<uint32_t> getMeshCountPerModel()
+    std::vector<uint32_t> getMeshCountPerModel() const
     {
         std::vector<uint32_t> counts;
         counts.reserve(model_list.size());
@@ -108,24 +108,24 @@ class Scene
         }
         return counts;
     };
-    vk::Buffer getVertexBuffer(uint32_t model_index, uint32_t mesh_index)
+    vk::Buffer getVertexBuffer(uint32_t model_index, uint32_t mesh_index) const
     {
         Mesh *mesh = findMesh(model_index, mesh_index);
         return mesh != nullptr ? mesh->getVertexBuffer() : vk::Buffer{};
     };
-    vk::Buffer getIndexBuffer(uint32_t model_index, uint32_t mesh_index)
+    vk::Buffer getIndexBuffer(uint32_t model_index, uint32_t mesh_index) const
     {
         Mesh *mesh = findMesh(model_index, mesh_index);
         return mesh != nullptr ? mesh->getIndexBuffer() : vk::Buffer{};
     };
-    uint32_t getIndexCount(uint32_t model_index, uint32_t mesh_index)
+    uint32_t getIndexCount(uint32_t model_index, uint32_t mesh_index) const
     {
         Mesh *mesh = findMesh(model_index, mesh_index);
         return mesh != nullptr ? mesh->getIndexCount() : 0;
     };
     /// glTF material.doubleSided for a mesh, so the raster pass can disable
     /// back-face culling for it. Out-of-range defaults to single-sided.
-    bool isMeshDoubleSided(uint32_t model_index, uint32_t mesh_index)
+    bool isMeshDoubleSided(uint32_t model_index, uint32_t mesh_index) const
     {
         Mesh *mesh = findMesh(model_index, mesh_index);
         return mesh != nullptr && mesh->isDoubleSided();
@@ -133,14 +133,14 @@ class Scene
     /// Object-space bounds of a mesh, for frustum culling. An invalid box is
     /// returned for an out-of-range index, which isVisible() treats as
     /// visible - a missing bound must never be a reason to skip a draw.
-    const AABB &getMeshBounds(uint32_t model_index, uint32_t mesh_index)
+    const AABB &getMeshBounds(uint32_t model_index, uint32_t mesh_index) const
     {
         static const AABB unknown{ glm::vec3(1.0F), glm::vec3(-1.0F) };
         Mesh *mesh = findMesh(model_index, mesh_index);
         return mesh != nullptr ? mesh->getBounds() : unknown;
     };
-    std::vector<ObjectDescription> getObjectDescriptions() { return object_descriptions; };
-    std::vector<std::shared_ptr<Model>> const &get_model_list() { return model_list; };
+    std::vector<ObjectDescription> getObjectDescriptions() const { return object_descriptions; };
+    std::vector<std::shared_ptr<Model>> const &get_model_list() const { return model_list; };
 
     void loadModel(const std::shared_ptr<VulkanDevice> &device, vk::CommandPool commandPool);
 

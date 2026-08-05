@@ -11803,3 +11803,118 @@ TEST(BuildIntegrity, ImprovementLogQuotesTheCurrentCommitSuiteTestCount)
       << tests_dir.string() << " actually defines " << actual_count
       << " TEST/TEST_F/TEST_P case(s) - this is a one-line update to the marker in " << doc_path.string() << ".";
 }
+
+// VulkanDevice marks every one of its query accessors const; this gate keeps
+// a newly-added read-only accessor elsewhere in Src/ from reintroducing the
+// drift that left seventeen of them non-const.
+//
+// "Read-only" here deliberately excludes anything whose return type is a
+// non-const lvalue reference (Model::getTextures(), VulkanBuffer::getBuffer(),
+// GUI::getGuiSceneSharedVars(), ...): those hand out a mutable handle by
+// design - callers write through them - and are a different category from a
+// query accessor, out of scope for this gate. A pointer return (Texture*,
+// Mesh*, GLFWwindow*) stays in scope: for a unique_ptr<T>/shared_ptr<T>-backed
+// accessor, or a plain raw-pointer member, constness does not propagate to
+// the pointee, so marking the accessor const costs nothing.
+//
+// Free functions (e.g. Frustum.ixx's isVisible) are excluded by requiring the
+// match to start on an indented line: every inline accessor in Src/ is a
+// class member and therefore indented, while every free function here starts
+// at column 0.
+TEST(BuildIntegrity, ReadOnlyAccessorsAreConst)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path src_root = repo_root / "Src";
+    ASSERT_TRUE(fs::exists(src_root));
+
+    struct Exemption
+    {
+        std::string file;
+        std::string name;
+        std::string reason;
+    };
+    // Accessors proven - by the compiler, not by inspection - unable to
+    // become const without also changing their return type, which is a
+    // bigger, separate change than this gate makes.
+    const std::vector<Exemption> exemptions = { { "Src/GraphicsEngineVulkan/scene/Model.ixx", "getMesh",
+      "returns Mesh* via meshes[index] over std::vector<Mesh> - operator[] const yields const Mesh&, so "
+      "&meshes[index] cannot convert to the non-const Mesh* this returns (unlike the "
+      "unique_ptr<T>::get()/shared_ptr<T>::get()-backed accessors, whose constness does not propagate to the "
+      "pointee)" } };
+
+    static const std::regex kAccessorRegex(
+      R"re((get[A-Z_]\w*|get_[a-z]\w*|is[A-Z]\w*|is_[a-z]\w*)\s*\(([^()]*)\)\s*(const)?\s*(noexcept)?\s*(\{|;))re");
+
+    int accessors_checked = 0;
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(src_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error)) { continue; }
+        const std::string ext = path.extension().string();
+        if (ext != ".ixx" && ext != ".hpp") { continue; }
+
+        const auto lines = readFileLines(path);
+        if (!lines) { continue; }
+        std::string stripped_text;
+        for (const auto &raw_line : *lines) {
+            stripped_text += strip_line_comment(raw_line);
+            stripped_text += '\n';
+        }
+
+        const std::string relative_path = fs::relative(path, repo_root).generic_string();
+
+        for (auto match = std::sregex_iterator(stripped_text.begin(), stripped_text.end(), kAccessorRegex);
+             match != std::sregex_iterator(); ++match) {
+            const auto &found = *match;
+            if (found[5].str() != "{") { continue; }// declaration-only, or a call site - not a definition
+
+            const auto match_start = static_cast<std::size_t>(found.position(0));
+            const auto line_start_pos = match_start == 0 ? std::string::npos
+                                                           : stripped_text.find_last_of('\n', match_start - 1);
+            const std::size_t prefix_start = line_start_pos == std::string::npos ? 0 : line_start_pos + 1;
+            const std::string prefix = stripped_text.substr(prefix_start, match_start - prefix_start);
+
+            // Free functions in this codebase sit at namespace scope (column
+            // 0); every class member accessor is indented.
+            if (prefix.empty() || (prefix.front() != ' ' && prefix.front() != '\t')) { continue; }
+
+            const std::size_t trimmed_end = prefix.find_last_not_of(" \t");
+            const std::string trimmed_prefix = trimmed_end == std::string::npos ? std::string{} : prefix.substr(0, trimmed_end + 1);
+            const bool returns_non_const_reference =
+              !trimmed_prefix.empty() && trimmed_prefix.back() == '&' && trimmed_prefix.find("const") == std::string::npos;
+            if (returns_non_const_reference) { continue; }// mutable-handle accessor, not read-only - out of scope
+
+            const std::string name = found[1].str();
+            ++accessors_checked;
+            if (found[3].matched) { continue; }// already const
+
+            const bool is_exempt = std::any_of(exemptions.begin(), exemptions.end(), [&](const Exemption &exemption) {
+                return exemption.file == relative_path && exemption.name == name;
+            });
+            if (is_exempt) { continue; }
+
+            const auto line_number = 1
+              + static_cast<std::size_t>(std::count(stripped_text.begin(), stripped_text.begin() + static_cast<std::ptrdiff_t>(match_start), '\n'));
+            violations.push_back(
+              relative_path + ':' + std::to_string(line_number) + ": " + name + "() is a read-only accessor with no const qualifier");
+        }
+    }
+
+    EXPECT_GT(accessors_checked, 0) << "scanner found zero candidate accessors under " << src_root.string()
+                                     << " - the regex or the indentation heuristic has drifted from the "
+                                        "codebase's formatting";
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " read-only accessor(s) are missing const - either add const, or if the compiler rejects it, add a "
+         "named Exemption recording the member that forced it: "
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}

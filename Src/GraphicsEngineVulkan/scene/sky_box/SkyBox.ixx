@@ -37,7 +37,7 @@ class SkyBox
 
     void cleanUp();
 
-    Kataglyphis::Mesh* getMesh() { return skyMesh.get(); }
+    Kataglyphis::Mesh* getMesh() const { return skyMesh.get(); }
 
     ~SkyBox();
 

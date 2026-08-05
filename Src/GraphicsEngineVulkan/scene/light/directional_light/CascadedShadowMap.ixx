@@ -124,7 +124,7 @@ class CascadedShadowMap
     void shaderHotReload();
     void recordCommands(vk::CommandBuffer &commandBuffer, uint32_t image_index, Scene *scene, std::span<const vk::DescriptorSet> descriptorSets, bool cullingEnabled);
 
-    Kataglyphis::Texture* getShadowMapArray() { return shadowMapArray.get(); }
+    Kataglyphis::Texture* getShadowMapArray() const { return shadowMapArray.get(); }
     vk::RenderPass getRenderPass() const { return renderPass; }
 
     // Passes the map resolution through, so live cascades are stabilized.
