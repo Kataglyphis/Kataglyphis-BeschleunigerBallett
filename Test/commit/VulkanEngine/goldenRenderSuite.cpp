@@ -3339,6 +3339,106 @@ TEST(GoldenRender, CloudsAcrossManyFramesDoesNotLoseTheDevice)
     ASSERT_FALSE(frame.empty()) << "Frame capture returned no pixels.";
 }
 
+// Numerical oracle for the clouds subsystem (docs/clouds.md, "The estimator"
+// section, explicitly calls out that neither of its last two shipped bug
+// fixes has one). CloudsAcrossManyFramesDoesNotLoseTheDevice above only
+// asserts the device survives and the capture is non-empty - it would pass
+// with a uniformly transparent cloud buffer. Both prior cloud bugs produced
+// exactly that class of output: a noise volume with seven eighths of its
+// domain unwritten and two channels constant (2802c163), and a phase
+// function peaked away from the sun (9ae2679b). This test renders the same
+// backdrop with clouds off and then on and requires that enabling clouds
+// both changes a meaningful fraction of the frame and *adds* detail rather
+// than compositing as a flat wash.
+TEST(GoldenRender, EnablingCloudsChangesTheFrameAndAddsDetail)
+{
+    SKIP_WITHOUT_GPU();
+
+    EngineHarness harness;
+    SKIP_WITHOUT_FRAME_CAPTURE(harness);
+
+    harness.useForwardRaster();
+    auto &scene_vars = harness.gui->getGuiSceneSharedVars();
+    scene_vars.clouds_enabled = false;
+
+    // Test set-up, not a product change: the shipped default
+    // (cloud_mesh_offset[1] == 367, half-height 31.5 - GUISceneSharedVars.ixx)
+    // centres the cloud slab far above the debug camera's eye height (y == 6,
+    // Camera.cpp), which looks out horizontally and never sees it. Lowering
+    // just the Y offset here puts the slab across the camera's eye line while
+    // leaving GUISceneSharedVars' own defaults untouched. coverage_threshold
+    // and density_multiplier are likewise bumped from their GUI defaults
+    // (0.493 / 0.63) purely to make the effect strong enough to measure: at
+    // the shipped defaults the visible wisps are real but too faint for
+    // detail_fraction's fixed 6-level neighbour-delta to reliably separate
+    // from sky noise (measured margin against baseline was under 1%).
+    scene_vars.cloud_mesh_offset[1] = 6.0F;
+    scene_vars.cloud_coverage_threshold = 0.60F;
+    scene_vars.cloud_density_multiplier = 2.0F;
+
+    harness.render_frames(WARMUP_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost while warming up.";
+
+    uint32_t width = 0;
+    uint32_t height = 0;
+    const std::vector<uint8_t> baseline = harness.capture_frame(width, height);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost capturing the clouds-off baseline.";
+    ASSERT_FALSE(baseline.empty()) << "Baseline capture returned no pixels.";
+
+    // Same harness, same camera: only the clouds toggle changes.
+    scene_vars.clouds_enabled = true;
+    constexpr int CLOUD_SETTLE_FRAMES = 30;
+    harness.render_frames(CLOUD_SETTLE_FRAMES);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost rendering with clouds enabled.";
+
+    uint32_t width2 = 0;
+    uint32_t height2 = 0;
+    const std::vector<uint8_t> clouds = harness.capture_frame(width2, height2);
+    ASSERT_FALSE(harness.renderer->hasDeviceLost()) << "Device lost capturing the clouds-on frame.";
+    ASSERT_FALSE(clouds.empty()) << "Clouds-on capture returned no pixels.";
+    ASSERT_EQ(width, width2);
+    ASSERT_EQ(height, height2);
+
+    if (const char *dump = std::getenv("KATAGLYPHIS_CLOUDS_DUMP")) {
+        const std::string base = dump;
+        const auto stride = static_cast<int>(width) * 4;
+        stbi_write_png((base + "-baseline.png").c_str(), int(width), int(height), 4, baseline.data(), stride);
+        stbi_write_png((base + "-clouds.png").c_str(), int(width), int(height), 4, clouds.data(), stride);
+    }
+
+    // Narrowed to the upper half of the panel-free crop: at the shipped
+    // default camera (eye height 6, pitch 0 - Camera.cpp), the lower half of
+    // this crop is ground/debug-scene geometry the clouds toggle does not
+    // touch, and (with the shipped debug scene) the dinosaur skeleton's thin
+    // bone silhouette against the sky is itself a sharp high-frequency edge
+    // that would inflate the clouds-off baseline past what clouds
+    // realistically add over open sky.
+    const Crop panel_free = panel_free_crop(width, height);
+    const Crop crop{ panel_free.x0, panel_free.x1, panel_free.y0,
+        panel_free.y0 + (panel_free.y1 - panel_free.y0) / 2U };
+    const double swung = swung_fraction(baseline, clouds, width, height, crop);
+    const double baseline_detail = detail_fraction(baseline, width, height, crop);
+    const double clouds_detail = detail_fraction(clouds, width, height, crop);
+
+    GTEST_LOG_(INFO) << "clouds toggle: swung fraction " << swung << ", detail baseline " << baseline_detail
+                      << ", detail clouds " << clouds_detail;
+
+    // Thresholds measured on this rig (RX 9070 XT); re-measure if the rig,
+    // camera or cloud_mesh_offset default changes.
+    constexpr double SWUNG_FRACTION_MIN = 0.05;
+    EXPECT_GT(swung, SWUNG_FRACTION_MIN)
+      << "Enabling clouds barely changed the panel-free crop; the cloud box may be out of view "
+         "(scene_vars.cloud_mesh_offset) or the clouds pass is not writing pixels at all.";
+
+    // This is the assertion that carries the weight: a flat or uniform noise
+    // volume composites as a smooth wash and would *lower* detail, catching
+    // the exact 2026-08-05 noise-fill bug class without pinning any
+    // driver-specific value.
+    EXPECT_GT(clouds_detail, baseline_detail)
+      << "Clouds did not add pixel-to-pixel detail over the clouds-off baseline (baseline=" << baseline_detail
+      << ", clouds=" << clouds_detail << "); the noise volume may be flat or uniformly filled again.";
+}
+
 // RT-pipeline large-mesh diagnostic for the "Localize (and fix if cheap) the
 // path-tracing compute VK_ERROR_DEVICE_LOST" backlog entry. Every existing
 // RT/PT golden that reads v0.position/v0.normal via the vertex
