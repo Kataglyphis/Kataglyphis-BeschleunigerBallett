@@ -110,13 +110,7 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::cleanUp()
 
     destroyFramebuffers();
 
-    for (const auto &texture : offscreenTextures) {
-        if (texture) { texture->cleanUp(); }
-    }
-    offscreenTextures.clear();
-
-    if (depthBufferImage) { depthBufferImage->cleanUp(); }
-    depthBufferImage.reset();
+    releaseFrameTextures();
 
     Kataglyphis::destroyPipelineAndLayout(device->getLogicalDevice(), graphics_pipeline, pipeline_layout);
     Kataglyphis::destroyRenderPass(device->getLogicalDevice(), render_pass);
@@ -131,15 +125,23 @@ void Kataglyphis::VulkanRendererInternals::Rasterizer::destroyFramebuffers()
     Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffer);
 }
 
+void Kataglyphis::VulkanRendererInternals::Rasterizer::releaseFrameTextures()
+{
+    for (const auto &texture : offscreenTextures) {
+        if (texture) { texture->cleanUp(); }
+    }
+    offscreenTextures.clear();
+
+    if (depthBufferImage) { depthBufferImage->cleanUp(); }
+    depthBufferImage.reset();
+}
+
 // Rebuilds framebuffers but deliberately does not destroy the previous ones -
 // VulkanRenderer::recreateSwapChain() must call destroyFramebuffers() before
 // this, while the swapchain images they reference still exist.
 void Kataglyphis::VulkanRendererInternals::Rasterizer::recreateFrameResources(vk::CommandPool commandPool)
 {
-    for (const auto &texture : offscreenTextures) { texture->cleanUp(); }
-    offscreenTextures.clear();
-
-    depthBufferImage->cleanUp();
+    releaseFrameTextures();
 
     createTextures(commandPool);
     createFramebuffer();

@@ -122,16 +122,7 @@ void DeferredRasterizer::cleanUp()
 
     destroyFramebuffers();
 
-    for (auto& tex : offscreenTextures) { if (tex) tex->cleanUp(); }
-    offscreenTextures.clear();
-    for (auto& tex : gBufferNormals) { if (tex) tex->cleanUp(); }
-    gBufferNormals.clear();
-    for (auto& tex : gBufferAlbedos) { if (tex) tex->cleanUp(); }
-    gBufferAlbedos.clear();
-    for (auto& tex : gBufferMaterials) { if (tex) tex->cleanUp(); }
-    gBufferMaterials.clear();
-    if (depthBufferImage) { depthBufferImage->cleanUp(); }
-    depthBufferImage.reset();
+    releaseFrameTextures();
 
     device.reset();
 }
@@ -143,10 +134,7 @@ void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::destroyFramebuffe
     Kataglyphis::destroyFramebuffers(device->getLogicalDevice(), framebuffer);
 }
 
-// Rebuilds framebuffers but deliberately does not destroy the previous ones -
-// VulkanRenderer::recreateSwapChain() must call destroyFramebuffers() before
-// this, while the swapchain images they reference still exist.
-void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::recreateFrameResources()
+void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::releaseFrameTextures()
 {
     for (auto& tex : offscreenTextures) { if (tex) tex->cleanUp(); }
     offscreenTextures.clear();
@@ -158,6 +146,14 @@ void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::recreateFrameReso
     gBufferMaterials.clear();
     if (depthBufferImage) { depthBufferImage->cleanUp(); }
     depthBufferImage.reset();
+}
+
+// Rebuilds framebuffers but deliberately does not destroy the previous ones -
+// VulkanRenderer::recreateSwapChain() must call destroyFramebuffers() before
+// this, while the swapchain images they reference still exist.
+void Kataglyphis::VulkanRendererInternals::DeferredRasterizer::recreateFrameResources()
+{
+    releaseFrameTextures();
 
     createTextures();
     createFramebuffer();

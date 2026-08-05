@@ -114,6 +114,7 @@ class DeferredRasterizer
     vk::RenderPass renderPass{};
 
     void createTextures();
+    void releaseFrameTextures();
     void createRenderPass();
     void createPipelines(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
     void createFramebuffer();

@@ -9215,3 +9215,61 @@ TEST(BuildIntegrity, MeshDoesNotHoldAModelMatrix)
     EXPECT_EQ(text.find("glm::mat4 model"), std::string::npos)
       << "Mesh.ixx must not hold a glm::mat4 model member. " << kFailureMessage;
 }
+
+// Rasterizer and DeferredRasterizer each used to spell out their frame-texture
+// teardown twice - once in cleanUp() and once in recreateFrameResources() -
+// and the two copies had drifted apart in Rasterizer, where the
+// recreateFrameResources() copy dereferenced offscreenTextures/depthBufferImage
+// unconditionally while cleanUp()'s copy guarded them. This pins that both
+// call sites now go through a single releaseFrameTextures() helper, so a
+// future edit cannot paste a third (possibly-diverging) copy back in.
+TEST(BuildIntegrity, RasterStagesReleaseFrameTexturesThroughOneHelper)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    struct Target
+    {
+        fs::path path;
+        std::string clean_up_name;
+        std::string recreate_name;
+    };
+
+    const std::array<Target, 2> targets{ {
+      { repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "Rasterizer.cpp", "Rasterizer::cleanUp",
+        "Rasterizer::recreateFrameResources" },
+      { repo_root / "Src" / "GraphicsEngineVulkan" / "renderer" / "DeferredRasterizer.cpp",
+        "DeferredRasterizer::cleanUp", "DeferredRasterizer::recreateFrameResources" },
+    } };
+
+    static const std::array<const char *, 3> kTextureCleanUpTokens{
+        "tex->cleanUp()",
+        "texture->cleanUp()",
+        "depthBufferImage->cleanUp()",
+    };
+
+    for (const auto &target : targets) {
+        const auto text_opt = readFileText(target.path);
+        ASSERT_TRUE(text_opt.has_value()) << "could not read " << target.path.string();
+        const std::string &text = *text_opt;
+
+        for (const auto &function_name : { target.clean_up_name, target.recreate_name }) {
+            const auto span = function_body_span(text, function_name);
+            ASSERT_TRUE(span.has_value())
+              << target.path.string() << " is missing a body for " << function_name << "(...)";
+            const std::string body = text.substr(span->first, span->second - span->first);
+
+            EXPECT_NE(body.find("releaseFrameTextures()"), std::string::npos)
+              << target.path.string() << "'s " << function_name
+              << " no longer calls releaseFrameTextures() - the frame-texture teardown must go through the "
+                 "shared helper rather than being pasted back in inline.";
+
+            for (const char *token : kTextureCleanUpTokens) {
+                EXPECT_EQ(body.find(token), std::string::npos)
+                  << target.path.string() << "'s " << function_name << " contains an inline \"" << token
+                  << "\" - frame-texture teardown must go through releaseFrameTextures() instead of a "
+                     "second hand-written copy.";
+            }
+        }
+    }
+}

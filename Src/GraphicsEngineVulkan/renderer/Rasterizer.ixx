@@ -92,6 +92,7 @@ class Rasterizer
     vk::RenderPass render_pass{};
 
     void createTextures(vk::CommandPool &commandPool);
+    void releaseFrameTextures();
     void createGraphicsPipeline(std::span<const vk::DescriptorSetLayout> descriptorSetLayouts);
     void createRenderPass();
     void createFramebuffer();
