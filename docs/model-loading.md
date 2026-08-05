@@ -134,7 +134,11 @@ meshes automatically feeds the systems that were already made mesh-aware:
 loaders fill and every shader reads. `fromGltfMaterial` (`GltfLoader.cpp`) is
 the glTF mapping; `ObjLoader::loadTexturesAndMaterials` is the `.mtl` mapping.
 A `—` means that format has no source for the field, so the struct keeps its
-default (documented on the member itself in `ObjMaterial.hpp`).
+default (documented on the member itself in `ObjMaterial.hpp`). The "Read by"
+column here names the shading paths at a glance; for the exact per-path
+expression (or an explicit "not read" and why), see
+[`shader-sharing.md`'s "Which C++ shading path reads which `ObjMaterial`
+field"](shader-sharing.md#which-c-shading-path-reads-which-objmaterial-field).
 
 | Member | glTF source | `.mtl` source | Read by |
 | --- | --- | --- | --- |

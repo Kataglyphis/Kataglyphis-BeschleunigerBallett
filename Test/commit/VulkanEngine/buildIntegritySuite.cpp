@@ -11256,3 +11256,218 @@ TEST(BuildIntegrity, PathTracingBounceDirectionIsNormalized)
     EXPECT_EQ(contents.find("rayDirection = newDirection;"), std::string::npos)
       << path_tracing_path.string() << " assigns the bounce direction without normalizing it. " << kFailureMessage;
 }
+
+// docs/shader-sharing.md's "Which C++ shading path reads which ObjMaterial
+// field" table is the fine-grained sibling of EveryObjMaterialFieldIsReadByAShader
+// (above): that gate only asks whether *some* shader mentions material.<field>
+// anywhere, so a field read by one shading path and silently dropped by
+// another still passes it - precisely the bug shape batches XI-XVII kept
+// re-discovering one field at a time. This test parses the ObjMaterial member
+// list out of scene_types.slang (parse_obj_material_member_names, reused from
+// EveryObjMaterialFieldIsReadByAShader above) and the doc's table, and checks
+// (a) exactly one row per member, no extras, (b) every row has five
+// non-empty cells, one per shading path, and (c) for every cell that does not
+// start with "not read", the corresponding shading path's own shader source
+// actually names the member - either directly as material.<name>, or through
+// one of the helper functions in kHelperFields below, the no-binding helpers
+// (material_rules.slang/base_color.slang/emission.slang/normal_map.slang/
+// material_textures.slang) every shading path funnels its ObjMaterial reads
+// through instead of dereferencing every field inline.
+TEST(BuildIntegrity, ShaderSharingDocCoversEveryObjMaterialFieldPerShadingPath)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path scene_types_path = repo_root / "Resources/ShadersSlang/common/scene_types.slang";
+    ASSERT_TRUE(fs::exists(scene_types_path)) << "missing " << scene_types_path.string();
+    const std::vector<std::string> members = parse_obj_material_member_names(scene_types_path);
+    ASSERT_GT(members.size(), 3U) << "found only " << members.size() << " ObjMaterial member(s) in "
+                                   << scene_types_path.string() << " - the parser itself is broken";
+
+    const fs::path doc_path = repo_root / "docs" / "shader-sharing.md";
+    const auto doc_content = readFileText(doc_path);
+    ASSERT_TRUE(doc_content.has_value()) << "could not open " << doc_path.string();
+
+    const auto section_start = doc_content->find("Which C++ shading path reads which");
+    ASSERT_NE(section_start, std::string::npos)
+      << doc_path.string() << " is missing its \"Which C++ shading path reads which ObjMaterial field\" section";
+    const auto section_end = doc_content->find("\n## ", section_start);
+    const std::string section_text = doc_content->substr(
+      section_start, section_end == std::string::npos ? std::string::npos : section_end - section_start);
+
+    // Split into "| cell | cell | ... |" rows, each row into pipe-delimited
+    // cells (Member, rasterizer.slang, deferred.slang, raytrace.rchit.slang,
+    // path_tracing.slang, shadow_map.slang / alpha_test.slang) - same shape
+    // as ModelLoadingDocSrgbRowCoversEveryObjTextureDirective above.
+    std::vector<std::vector<std::string>> rows;
+    {
+        std::istringstream stream(section_text);
+        std::string line;
+        while (std::getline(stream, line)) {
+            if (line.empty() || line.front() != '|') { continue; }
+            std::vector<std::string> cells;
+            std::size_t pos = 1;// skip the leading '|'
+            while (pos < line.size()) {
+                const std::size_t next = line.find('|', pos);
+                const std::size_t end = next == std::string::npos ? line.size() : next;
+                std::string cell = line.substr(pos, end - pos);
+                const std::size_t first = cell.find_first_not_of(" \t");
+                cell = first == std::string::npos ? ""
+                                                   : cell.substr(first, cell.find_last_not_of(" \t") - first + 1);
+                cells.push_back(std::move(cell));
+                pos = end + 1;
+            }
+            rows.push_back(std::move(cells));
+        }
+    }
+    // Row 0 is the header, row 1 the "| --- | ... |" separator; data rows
+    // start at index 2.
+    ASSERT_GE(rows.size(), 2U) << doc_path.string() << "'s per-shading-path table has no data rows";
+
+    static const std::regex kBacktickToken(R"(`([^`]*)`)");
+
+    std::map<std::string, std::vector<std::string>> rows_by_member;
+    std::vector<std::string> extra_rows;
+    std::vector<std::string> malformed_rows;
+    for (std::size_t i = 2; i < rows.size(); ++i) {
+        const auto &cells = rows[i];
+        if (cells.size() < 6) { continue; }
+
+        std::smatch member_match;
+        if (!std::regex_search(cells[0], member_match, kBacktickToken)) { continue; }
+        const std::string member = member_match[1].str();
+
+        const std::vector<std::string> shading_cells(cells.begin() + 1, cells.begin() + 6);
+        if (std::any_of(shading_cells.begin(), shading_cells.end(), [](const std::string &c) { return c.empty(); })) {
+            malformed_rows.push_back(member);
+            continue;
+        }
+
+        if (std::find(members.begin(), members.end(), member) == members.end()) {
+            extra_rows.push_back(member);
+            continue;
+        }
+        if (rows_by_member.contains(member)) {
+            extra_rows.push_back(member + " (duplicate)");
+            continue;
+        }
+        rows_by_member.emplace(member, shading_cells);
+    }
+
+    EXPECT_TRUE(malformed_rows.empty())
+      << doc_path.string()
+      << "'s per-shading-path table has row(s) with an empty shading-path cell:" << [&malformed_rows] {
+             std::string joined;
+             for (const auto &entry : malformed_rows) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    EXPECT_TRUE(extra_rows.empty())
+      << doc_path.string()
+      << "'s per-shading-path table has row(s) that are not a current ObjMaterial member (or are duplicates):"
+      << [&extra_rows] {
+             std::string joined;
+             for (const auto &entry : extra_rows) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    std::vector<std::string> missing_rows;
+    for (const auto &member : members) {
+        if (!rows_by_member.contains(member)) { missing_rows.push_back(member); }
+    }
+    EXPECT_TRUE(missing_rows.empty())
+      << doc_path.string() << "'s per-shading-path table is missing a row for the following ObjMaterial member(s):"
+      << [&missing_rows] {
+             std::string joined;
+             for (const auto &entry : missing_rows) { joined += "\n  " + entry; }
+             return joined;
+         }();
+
+    // One shading-path source blob per table column, in table-column order.
+    // shadow_map.slang and alpha_test.slang share one column - neither ever
+    // shades a colour, both are alpha-only ObjMaterial consumers.
+    static constexpr std::array<const char *, 5> kColumnNames{ "rasterizer.slang", "deferred.slang",
+        "raytrace.rchit.slang", "path_tracing.slang", "shadow_map.slang / alpha_test.slang" };
+    std::array<std::string, 5> column_text;
+    {
+        const std::array<std::vector<const char *>, 5> kColumnFiles{ {
+          { "Resources/ShadersSlang/rasterizer/rasterizer.slang" },
+          { "Resources/ShadersSlang/deferred/deferred.slang" },
+          { "Resources/ShadersSlang/raytracing/raytrace.rchit.slang" },
+          { "Resources/ShadersSlang/path_tracing/path_tracing.slang" },
+          { "Resources/ShadersSlang/rasterizer/shadows/shadow_map.slang",
+            "Resources/ShadersSlang/common/alpha_test.slang" },
+        } };
+        for (std::size_t c = 0; c < kColumnFiles.size(); ++c) {
+            for (const char *relative : kColumnFiles[c]) {
+                const fs::path path = repo_root / relative;
+                const auto text = readFileText(path);
+                ASSERT_TRUE(text.has_value()) << "missing " << path.string();
+                column_text[c] += *text;
+                column_text[c] += '\n';
+            }
+        }
+    }
+
+    // Helper functions every shading path funnels its ObjMaterial reads
+    // through, and the fields each is known to consume - so a cell whose
+    // shader source names the helper (not material.<field> directly) still
+    // counts as a real read. resolved_emission/resolved_metallic_roughness/
+    // resolved_normal cover both their implicit-LOD and _lod0 explicit-LOD
+    // forms via substring match (the _lod0 name starts with the un-suffixed
+    // one). material_metallic_roughness and sample_metallic_roughness_lod0
+    // are path_tracing.slang's documented exception
+    // (material_textures.slang's header comment): it calls both directly
+    // instead of resolved_metallic_roughness[_lod0](), so those two raw
+    // helpers get their own entries.
+    const std::vector<std::pair<std::string, std::vector<std::string>>> kHelperFields{
+        { "resolved_emission",
+          { "emission", "emissiveTextureID", "emissive_uv_transform_row0", "emissive_uv_transform_row1" } },
+        { "resolved_metallic_roughness",
+          { "metallic", "roughness", "shininess", "metallicRoughnessTextureID", "metallic_roughness_uv_transform_row0",
+            "metallic_roughness_uv_transform_row1" } },
+        { "resolved_normal",
+          { "normalTextureID", "normalScale", "normal_uv_transform_row0", "normal_uv_transform_row1" } },
+        { "alpha_masked_out", { "alphaCutoff", "dissolve" } },
+        { "material_roughness", { "roughness", "shininess" } },
+        { "base_color", { "diffuse" } },
+        { "transform_uv", { "uv_transform_row0", "uv_transform_row1" } },
+        { "material_metallic_roughness", { "metallic" } },
+        { "sample_metallic_roughness_lod0",
+          { "metallic_roughness_uv_transform_row0", "metallic_roughness_uv_transform_row1" } },
+    };
+
+    std::vector<std::string> unverified;
+    for (const auto &member : members) {
+        const auto &cells = rows_by_member.at(member);
+        const std::regex material_dot_field(R"(material\.)" + member + R"(\b)");
+
+        for (std::size_t c = 0; c < cells.size(); ++c) {
+            const std::string &cell = cells[c];
+            if (cell.rfind("not read", 0) == 0) { continue; }
+
+            const std::string &text = column_text[c];
+            bool found = std::regex_search(text, material_dot_field);
+            if (!found) {
+                for (const auto &[helper, fields] : kHelperFields) {
+                    if (std::find(fields.begin(), fields.end(), member) == fields.end()) { continue; }
+                    if (text.find(helper) != std::string::npos) {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            if (!found) { unverified.push_back(member + " / " + kColumnNames[c] + " (cell: \"" + cell + "\")"); }
+        }
+    }
+
+    EXPECT_TRUE(unverified.empty())
+      << doc_path.string()
+      << "'s per-shading-path table claims the following (member / shading path) read(s), but neither "
+         "material.<name> nor a known helper appears in that shading path's own source:"
+      << [&unverified] {
+             std::string joined;
+             for (const auto &entry : unverified) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}

@@ -517,7 +517,7 @@ ContainerHub (see the rule above), project-specific ones here.
 | `docs/model-loading.md` | Model-loading architecture: the two loaders, async parse/upload split, multi-mesh MeshRange flow |
 | `docs/webgpu-renderer-roadmap.md` | Rust WebGPU renderer status per feature |
 | `docs/webgpu-gltf-rust-plan.md` | Original WebGPU + glTF Rust renderer plan (milestones 1–5), kept for the record |
-| `docs/shader-sharing.md` | Why/how one Slang source serves both renderers, and where the two diverge |
+| `docs/shader-sharing.md` | Why/how one Slang source serves both renderers, where the two diverge, and which C++ shading path reads which `ObjMaterial` field |
 | `docs/shader-build-pipeline.md` | The Slang→SPIR-V/WGSL build step: manifest, staleness rules, fast iteration |
 | `docs/webgpu-srgb-audit.md` | Colour-space decisions (no known deviations) |
 | `docs/code-quality.md` | clang-format / clang-tidy / cmake-format commands + cadence |

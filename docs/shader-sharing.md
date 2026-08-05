@@ -263,6 +263,56 @@ revisions of this document as "in progress" is complete.
 | Roughness default when `Pr` is unauthored (OBJ path) | `ObjLoader` treats an absent (or `0.0`) `Pr` as "not authored" and leaves `ObjMaterial::roughness` at its sentinel, so `material_roughness()` derives it from `shininess`/`Ns` | the OBJ→glTF converter (`obj_to_gltf`) emits `roughnessFactor` from `Ns` via the same `sqrt(2/(Ns+2))` curve, clamped `[0.045, 1.0]`, when `Pr` is absent | Parity, not a gap — both paths derive the same roughness from the same `.mtl`'s `Ns` when `Pr` is unauthored; `material_roughness()` (`material_rules.slang`) is the shared reference both sides implement. |
 | `map_d` (OBJ per-texel opacity map) | `ObjLoader::loadTexturesAndMaterials` reads `map_d` into `ObjMaterial::alphaTextureID` and treats it as a glTF `MASK` cut-out at the conventional `alphaCutoff = 0.5`, honoured in `rasterizer.slang`, `deferred.slang`, `shadow_map.slang` and `common/alpha_test.slang` | `obj_to_gltf` reads only the scalar `d`/`Tr` directives into a per-material alpha and emits `alphaMode: BLEND` when it is below `1.0` (see the `alphaMode` `BLEND` row above); it has no code path for a *textured* opacity map at all, so a `map_d` material converts with neither a cut-out nor per-texel alpha | Real gap, not an intended divergence: `obj_to_gltf` would need to emit a `baseColorTexture.a` channel (or a dedicated occlusion-style slot) from `map_d` to match the C++ side. |
 
+## Which C++ shading path reads which `ObjMaterial` field
+
+A new `ObjMaterial` field is not "done" when *one* shading path reads it —
+`BuildIntegrity.EveryObjMaterialFieldIsReadByAShader` only asks whether
+*some* `.slang` source anywhere mentions `material.<field>`, so a field read
+by `rasterizer.slang` and silently dropped by `path_tracing.slang` still
+passes it. The table below is the finer-grained, per-shading-path answer:
+one row per `ObjMaterial` member (`common/scene_types.slang`), one column
+per C++ shading path — `rasterizer.slang`, `deferred.slang`
+(`geometry_fs_main`), `raytrace.rchit.slang` (`rchit_main`),
+`path_tracing.slang` (`path_tracing_main`), and the two alpha-only
+consumers `shadow_map.slang`/`alpha_test.slang` sharing one column, since
+neither ever shades a colour. Each cell names the expression or helper that
+actually reads the field on that path, or says plainly "not read" and why —
+including the asymmetries this table exists to stop being rediscovered one
+field at a time: `metallic` is a full factor-or-texture read on three paths
+but, on `path_tracing.slang`, only the metallic-roughness *texture* branch
+touches it (see `material_textures.slang`'s comment on why that path skips
+`resolved_metallic_roughness_lod0()`); `shininess` is only ever reachable
+through `material_roughness()`'s negative-`roughness` fallback; `dissolve`
+is read only inside `alpha_masked_out()`, so a path with no MASK alpha test
+of its own (`raytrace.rchit.slang`, `path_tracing.slang`'s own shading —
+their MASK test runs earlier, in `alpha_test.slang`'s `ray_hit_masked_out()`)
+never touches it.
+
+| Member | `rasterizer.slang` | `deferred.slang` | `raytrace.rchit.slang` | `path_tracing.slang` | `shadow_map.slang` / `alpha_test.slang` |
+| --- | --- | --- | --- | --- | --- |
+| `diffuse` | `material.diffuse` (untextured) / `base_color()` (textured) | `material.diffuse` (untextured) / `base_color()` (textured) | `material.diffuse` (untextured) / `base_color()` (textured) | `material.diffuse` (untextured) / `base_color()` (textured) | not read — alpha testing only discards a fragment, never shades a colour |
+| `emission` | `resolved_emission()` | `resolved_emission()` | `resolved_emission_lod0()` | `resolved_emission_lod0()` (skipped in furnace-test mode) | not read — no lighting |
+| `shininess` | `resolved_metallic_roughness()`, via `material_roughness()`'s negative-`roughness` fallback | `resolved_metallic_roughness()`, via `material_roughness()`'s negative-`roughness` fallback | `resolved_metallic_roughness_lod0()`, via `material_roughness()`'s negative-`roughness` fallback | not read — no roughness/specular term at all (only the metallic half of `material_metallic_roughness()` is used) | not read — no lighting |
+| `dissolve` | `alpha_masked_out()` | `alpha_masked_out()` | not read — MASK cut-out for ray-traced hits runs in the any-hit shader (`raytrace.rahit.slang`, via `alpha_test.slang`), not here | not read — candidates are alpha-tested earlier by `alpha_test.slang`'s `ray_hit_masked_out()`, before this kernel's own material-driven shading runs | `alpha_masked_out()` |
+| `textureID` | `material.textureID` | `material.textureID` | `material.textureID` | `material.textureID` | `material.textureID` |
+| `alphaCutoff` | `alpha_masked_out()` | `alpha_masked_out()` | not read — see `dissolve` | not read — see `dissolve` | `material.alphaCutoff` (outer guard) / `alpha_masked_out()` |
+| `uv_transform_row0` | `transform_uv()` | `transform_uv()` | `transform_uv()` | `transform_uv()` | `transform_uv()` |
+| `uv_transform_row1` | `transform_uv()` | `transform_uv()` | `transform_uv()` | `transform_uv()` | `transform_uv()` |
+| `metallic` | `resolved_metallic_roughness()` | `resolved_metallic_roughness()` | `resolved_metallic_roughness_lod0()` | `material_metallic_roughness()`'s raw metallic term, gated on `metallicRoughnessTextureID >= 0` only — no untextured-factor fallback | not read — no lighting |
+| `roughness` | `resolved_metallic_roughness()` | `resolved_metallic_roughness()` | `resolved_metallic_roughness_lod0()` | not read — only the metallic half (`.x`) of `material_metallic_roughness()` is used | not read — no lighting |
+| `emissiveTextureID` | `resolved_emission()` | `resolved_emission()` | `resolved_emission_lod0()` | `resolved_emission_lod0()` | not read — no lighting |
+| `normalTextureID` | `resolved_normal()` | `resolved_normal()` | `material.normalTextureID` (outer guard) / `resolved_normal_lod0()` | `material.normalTextureID` (outer guard) / `resolved_normal_lod0()` | not read — no normal mapping |
+| `normalScale` | `resolved_normal()` | `resolved_normal()` | `resolved_normal_lod0()` | `resolved_normal_lod0()` | not read — no normal mapping |
+| `metallicRoughnessTextureID` | `resolved_metallic_roughness()` | `resolved_metallic_roughness()` | `resolved_metallic_roughness_lod0()` | `material.metallicRoughnessTextureID` (outer guard before `sample_metallic_roughness_lod0()`) | not read — no lighting |
+| `normal_uv_transform_row0` | `resolved_normal()` | `resolved_normal()` | `resolved_normal_lod0()` | `resolved_normal_lod0()` | not read — no normal mapping |
+| `normal_uv_transform_row1` | `resolved_normal()` | `resolved_normal()` | `resolved_normal_lod0()` | `resolved_normal_lod0()` | not read — no normal mapping |
+| `metallic_roughness_uv_transform_row0` | `resolved_metallic_roughness()` | `resolved_metallic_roughness()` | `resolved_metallic_roughness_lod0()` | `sample_metallic_roughness_lod0()`, called directly — same `metallic`-style exception | not read — no lighting |
+| `metallic_roughness_uv_transform_row1` | `resolved_metallic_roughness()` | `resolved_metallic_roughness()` | `resolved_metallic_roughness_lod0()` | `sample_metallic_roughness_lod0()`, called directly — same `metallic`-style exception | not read — no lighting |
+| `emissive_uv_transform_row0` | `resolved_emission()` | `resolved_emission()` | `resolved_emission_lod0()` | `resolved_emission_lod0()` | not read — no lighting |
+| `emissive_uv_transform_row1` | `resolved_emission()` | `resolved_emission()` | `resolved_emission_lod0()` | `resolved_emission_lod0()` | not read — no lighting |
+| `unlit` | `material.unlit` | `material.unlit` | `material.unlit` | `material.unlit` | not read — MASK alpha testing runs regardless of `unlit` |
+| `alphaTextureID` | `material.alphaTextureID` | `material.alphaTextureID` | not read — see `dissolve` | not read — see `dissolve` | `material.alphaTextureID` |
+
 ## Beyond shaders
 
 The bigger cross-renderer wins on the roadmap
