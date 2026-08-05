@@ -1477,6 +1477,53 @@ TEST(GltfParseUnit, MaterialWithoutPbrMetallicRoughnessHasNoAuthoredRoughness)
       << "a material without pbrMetallicRoughness must have no authored roughness";
 }
 
+TEST(GltfParseUnit, GltfShininessIsThePinnedFallbackValue)
+{
+    // ObjMaterial::shininess is read only through material_roughness()'s
+    // "no authored roughness" sentinel branch, which a glTF material reaches
+    // only when it has no pbrMetallicRoughness block - roughnessFactor is
+    // never read in that case. Both materials below must come back with
+    // shininess == 1.0F even though their roughness differs, which is the
+    // invariant fromGltfMaterial's pinned kFallbackShininess relies on.
+    const char *doc = R"GLTF({
+      "asset": { "version": "2.0" },
+      "materials": [
+        { "pbrMetallicRoughness": { "baseColorFactor": [1,1,1,1], "roughnessFactor": 0.1 } },
+        {}
+      ],
+      "meshes": [ { "primitives": [
+        { "attributes": { "POSITION": 0 }, "material": 0 },
+        { "attributes": { "POSITION": 0 }, "material": 1 }
+      ] } ],
+      "nodes": [ { "mesh": 0 } ],
+      "scenes": [ { "nodes": [ 0 ] } ],
+      "accessors": [ { "componentType": 5126, "count": 3, "type": "VEC3",
+                       "min": [0,0,0], "max": [1,1,0], "bufferView": 0 } ],
+      "bufferViews": [ { "buffer": 0, "byteLength": 36 } ],
+      "buffers": [ { "byteLength": 36,
+        "uri": "data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAACAPwAAAAAAAAAAAAAAAAAAgD8AAAAA" } ]
+    })GLTF";
+    const auto tmp = std::filesystem::temp_directory_path() / "kat_shininess_pinned.gltf";
+    {
+        std::ofstream out(tmp, std::ios::binary);
+        out << doc;
+    }
+
+    Kataglyphis::GltfLoader loader;
+    ASSERT_TRUE(loader.parseCpu(tmp.string()));
+    std::filesystem::remove(tmp);
+
+    ASSERT_GE(loader.getMaterials().size(), 2U);
+    const auto &withPbr = loader.getMaterials()[0];
+    const auto &withoutPbr = loader.getMaterials()[1];
+
+    EXPECT_NEAR(withPbr.roughness, 0.1F, 1e-5F) << "the authored roughnessFactor must still reach ObjMaterial::roughness";
+    EXPECT_LT(withoutPbr.roughness, 0.0F) << "the material without pbrMetallicRoughness must have no authored roughness";
+
+    EXPECT_FLOAT_EQ(withPbr.shininess, 1.0F) << "shininess must be the pinned fallback value regardless of roughnessFactor";
+    EXPECT_FLOAT_EQ(withoutPbr.shininess, 1.0F) << "shininess must be the pinned fallback value regardless of roughnessFactor";
+}
+
 TEST(GltfParseUnit, EmissiveFactorReachesTheMaterial)
 {
     // glTF material.emissiveFactor must carry through to ObjMaterial::emission -

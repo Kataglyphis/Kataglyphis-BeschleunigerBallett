@@ -3546,6 +3546,60 @@ TEST(BuildIntegrity, EveryShadingPathDerivesRoughnessFromTheMaterial)
     }
 }
 
+// GltfLoader.cpp pins ObjMaterial::shininess to a fixed fallback value on the
+// assumption that common/material_rules.slang's material_roughness() is the
+// only shader reader (see the kFallbackShininess comment). This scans every
+// checked-in .slang for `material.shininess` so a future shading path cannot
+// start reading the pinned field elsewhere without this test noticing.
+TEST(BuildIntegrity, MaterialShininessIsReadOnlyThroughMaterialRoughness)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path slang_root = slangRoot();
+    ASSERT_TRUE(fs::exists(slang_root)) << "missing " << slang_root.string();
+
+    static const fs::path kAllowedReader = fs::path("common") / "material_rules.slang";
+    static const std::regex kShininessRead(R"(\bmaterial\.shininess\b)");
+
+    std::vector<std::string> violations;
+    std::error_code error;
+    for (fs::recursive_directory_iterator it(slang_root, error), end; it != end; it.increment(error)) {
+        if (error) { break; }
+        const fs::path &path = it->path();
+        if (!it->is_regular_file(error) || path.extension() != ".slang") { continue; }
+
+        const fs::path relative = fs::relative(path, slang_root);
+        if (relative == kAllowedReader) { continue; }
+
+        const auto content = readFileText(path);
+        if (!content.has_value()) { continue; }
+
+        std::istringstream stream(*content);
+        std::string raw_line;
+        int line_number = 0;
+        while (std::getline(stream, raw_line)) {
+            ++line_number;
+            const std::string line = strip_line_comment(raw_line);
+            if (std::regex_search(line, kShininessRead)) {
+                violations.push_back(fs::relative(path, repo_root).generic_string() + ':'
+                                      + std::to_string(line_number) + ": " + line);
+            }
+        }
+    }
+
+    EXPECT_TRUE(violations.empty())
+      << violations.size()
+      << " shader site(s) read material.shininess outside common/material_rules.slang - that field is pinned "
+         "to a fixed fallback value by GltfLoader.cpp and is only meaningful through material_roughness()'s "
+         "sentinel branch:"
+      << [&violations] {
+             std::string joined;
+             for (const auto &entry : violations) { joined += "\n  " + entry; }
+             return joined;
+         }();
+}
+
 // bloom.slang's fs_brightpass and tonemap.slang's fs_main must agree on
 // where auto-exposure is applied: bloom pre-exposes in the bright pass (so
 // its fixed THRESHOLD of 1.0 means something across the whole auto-exposure

@@ -105,13 +105,23 @@ TexCoordSetInfo describeTexCoordSet(int texcoord)
 
 namespace {
 
+// material_roughness() (common/material_rules.slang) reads material.shininess
+// only through its `material.roughness < 0` sentinel branch - the fallback a
+// glTF material takes when it has no pbrMetallicRoughness block. That branch
+// always evaluated the old `mix(128, 1, roughnessFactor)` expression at
+// roughnessFactor's default of 1.0 (roughness stays 1.0F unless the block is
+// present, and when it is present shininess is never read), which is 1.0.
+// Pinning it here documents that as the actual invariant instead of a fiction
+// computed from a value nothing reads.
+constexpr float kFallbackShininess = 1.0F;
+
 /// Neutral Lambertian stand-in, used for primitives with no material. The
 /// fields are ObjMaterial's; textureID -1 means untextured.
 ObjMaterial neutralMaterial()
 {
     // Only diffuse and shininess differ from ObjMaterial's defaults; every
     // other field (emission, dissolve, textureID, ...) already matches.
-    return ObjMaterial{ .diffuse = glm::vec3(0.8F), .shininess = 1.0F };
+    return ObjMaterial{ .diffuse = glm::vec3(0.8F), .shininess = kFallbackShininess };
 }
 
 /// Warns once when a texture's UV set is anything but TEXCOORD_0, the only
@@ -177,15 +187,15 @@ UvTransformRows readUvTransform(const char *materialName, const cgltf_texture_vi
 /// diffuse (the dominant term this forward renderer reads) and its alpha becomes
 /// dissolve. metallic_factor and roughness_factor both carry through losslessly
 /// to ObjMaterial::metallic and ObjMaterial::roughness. `shininess` (below) is
-/// still derived from roughness_factor and kept as the OBJ-only fallback path:
-/// OBJ has no roughness input, only `Ns`, so material_roughness() uses it only
-/// when ObjMaterial::roughness is the "no authored roughness" sentinel.
+/// pinned to kFallbackShininess: it is the OBJ-only fallback path
+/// material_roughness() takes when ObjMaterial::roughness is the "no authored
+/// roughness" sentinel, which a glTF material reaches only when it has no
+/// pbrMetallicRoughness block - `roughness_factor` is never read in that case.
 /// Textures are incremented; textureID stays -1 here.
 ObjMaterial fromGltfMaterial(const cgltf_material &material)
 {
     glm::vec3 baseColor(0.8F);
     float baseAlpha = 1.0F;
-    float roughness = 1.0F;
     float metallic = 0.0F;
     // -1.0F: no authored roughness (matches ObjMaterial's sentinel default).
     // Set below only when the material actually has a pbr_metallic_roughness
@@ -196,7 +206,6 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
         const cgltf_pbr_metallic_roughness &pbr = material.pbr_metallic_roughness;
         baseColor = glm::vec3(pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2]);
         baseAlpha = pbr.base_color_factor[3];
-        roughness = pbr.roughness_factor;
         metallic = glm::clamp(pbr.metallic_factor, 0.0F, 1.0F);
         authoredRoughness = glm::clamp(pbr.roughness_factor, 0.0F, 1.0F);
 
@@ -217,8 +226,6 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
     const glm::vec3 emission(material.emissive_factor[0] * emissiveStrength,
       material.emissive_factor[1] * emissiveStrength,
       material.emissive_factor[2] * emissiveStrength);
-    // Smoother surfaces (low roughness) get a tighter, stronger highlight.
-    const float shininess = glm::mix(128.0F, 1.0F, glm::clamp(roughness, 0.0F, 1.0F));
 
     // glTF alphaMode MASK -> the shader discards where base-colour alpha < cutoff
     // (cut-out foliage/decals). OPAQUE and BLEND map to -1 (never discard); real
@@ -253,7 +260,7 @@ ObjMaterial fromGltfMaterial(const cgltf_material &material)
     return ObjMaterial{
         .diffuse = baseColor,
         .emission = emission,
-        .shininess = shininess,
+        .shininess = kFallbackShininess,
         .dissolve = baseAlpha,// glTF baseColorFactor.a
         // textureID, emissiveTextureID, normalTextureID: assigned in parseCpu.
         .alphaCutoff = alphaCutoff,// glTF MASK cutoff (-1 = OPAQUE/BLEND)
