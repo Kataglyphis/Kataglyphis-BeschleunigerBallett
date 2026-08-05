@@ -22,7 +22,9 @@
 #include <cstddef>
 #include <cstring>
 #include <iterator>
+#include <new>
 #include <string>
+#include <type_traits>
 
 import kataglyphis.vulkan.camera;
 import kataglyphis.vulkan.gui_scene_shared_vars;
@@ -39,12 +41,10 @@ constexpr std::size_t GUI_SCENE_SHARED_VARS_EXPECTED_SIZE = 184;
 // catch, and AllFieldsSurviveTheRoundTrip below fails when that happens.
 GUISceneSharedVars makeNonDefaultVars()
 {
-    // Value-initialised, NOT default-initialised. The byte-wise comparison
-    // below would otherwise read this struct's padding bytes, which
-    // default-initialisation leaves indeterminate - the test would pass or
-    // fail on whatever happened to be on the stack. `{}` zero-initialises the
-    // whole object (padding included) before the member initialisers run, so
-    // both sides of the comparison have deterministic padding.
+    // Value-initialised, NOT default-initialised. That is necessary but NOT
+    // sufficient for the byte-wise comparison below - see the placement-new
+    // dance in AllFieldsSurviveTheRoundTrip for why, and do not "simplify"
+    // this back to two plain locals.
     GUISceneSharedVars vars{};
     vars.directional_light_radiance = 3.5F;
     vars.directional_light_color[0] = 0.25F;
@@ -97,12 +97,35 @@ GUISceneSharedVars makeNonDefaultVars()
 // self-referential handle), the renderer silently reads the wrong value.
 TEST(GuiSceneVarsRoundTrip, AllFieldsSurviveTheRoundTrip)
 {
-    const GUISceneSharedVars source = makeNonDefaultVars();
+    // memcmp() reads the PADDING between members too, and copy assignment is
+    // not required to copy padding - it copies members. Value-initialising two
+    // locals is not enough to make those bytes agree: the compiler may skip
+    // zeroing padding it cannot see being read, and clang does. Measured in
+    // the CI image (clang 22, -O0, GUISceneSharedVars is 184 bytes): an
+    // unsanitised build left bytes 180-181, the struct's trailing padding,
+    // differing between the two objects while every member matched; the same
+    // source under -fsanitize=address compared equal. So the old version of
+    // this test passed or failed on whatever the stack happened to hold, and
+    // on 2026-08-05 it finally failed - under ThreadSanitizer, with all 652
+    // tests green in the plain and ASan runs of the very same commit.
+    //
+    // Zeroing the STORAGE first and constructing into it fixes that: the
+    // constructor and the assignment both write members only, so the padding
+    // keeps the zeros on both sides and the comparison is left testing what it
+    // means to test. The zeroing cannot be optimised away because memcmp()
+    // below reads those arrays.
+    static_assert(std::is_trivially_copyable_v<GUISceneSharedVars>,
+      "this test compares object representations; that is only meaningful for a trivially copyable type");
 
-    GUISceneSharedVars destination{};
-    destination = source;// exactly what Scene::update_user_input does
+    alignas(GUISceneSharedVars) unsigned char source_storage[sizeof(GUISceneSharedVars)]{};
+    alignas(GUISceneSharedVars) unsigned char destination_storage[sizeof(GUISceneSharedVars)]{};
 
-    EXPECT_EQ(std::memcmp(&source, &destination, sizeof(GUISceneSharedVars)), 0)
+    const GUISceneSharedVars *source = new (source_storage) GUISceneSharedVars{ makeNonDefaultVars() };
+    GUISceneSharedVars *destination = new (destination_storage) GUISceneSharedVars{};
+
+    *destination = *source;// exactly what Scene::update_user_input does
+
+    EXPECT_EQ(std::memcmp(source, destination, sizeof(GUISceneSharedVars)), 0)
       << "GUISceneSharedVars did not copy cleanly";
 }
 

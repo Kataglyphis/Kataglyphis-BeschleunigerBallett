@@ -19,6 +19,7 @@ import kataglyphis.vulkan.texture;
 
 using Kataglyphis::Shared::fileExists;
 using Kataglyphis::Shared::getBaseDir;
+using Kataglyphis::Shared::isWindowsReservedDeviceName;
 using Kataglyphis::Shared::readBinaryFile;
 using Kataglyphis::Shared::readTextFile;
 using Kataglyphis::Shared::resolveResourceRelativePath;
@@ -100,6 +101,45 @@ TEST(FileReaderUnit, ReadTextFileEmptyForDirectoryPath)
 
     std::filesystem::remove(dir, ec);
 }
+
+// The DOS device names Windows resolves in every directory. Pure string
+// logic, so it is asserted on every platform even though only the Windows
+// readers act on it.
+//
+// This is the regression test for a CI run that had to be KILLED:
+// shader_file_reader_fuzz_test's "con" seed (commented "reserved device name
+// on Windows" in that file) reached readTextFile, which opened the console
+// and blocked for 1 h 8 min inside the Windows container on 2026-08-05,
+// stalling the whole lane. The fuzz suite's contract is "must not crash or
+// hang" - this is the hang.
+TEST(FileReaderUnit, WindowsDeviceNamesAreRecognisedInEveryForm)
+{
+    for (const char *device : { "con", "CON", "Con.TXT", "shaders/con", "shaders\\con.spv", "con . ", "nul", "prn",
+           "aux", "com0", "com1", "COM9", "lpt3" }) {
+        EXPECT_TRUE(isWindowsReservedDeviceName(device)) << device << " is a Windows device name";
+    }
+
+    // Names that merely start with, contain or extend a device name are
+    // ordinary files: Windows only resolves the stem, and only exactly.
+    for (const char *ordinary : { "console", "connect.spv", "acon", "my.con", "com", "com10", "lpt", "",
+           "Resources/ShadersSlang/build/spirv/rasterizer/rasterizer.fs_main.spv" }) {
+        EXPECT_FALSE(isWindowsReservedDeviceName(ordinary)) << ordinary << " is an ordinary filename";
+    }
+}
+
+// The behavioural half of the test above, and the POSIX twin of the same bug:
+// a character device opens cleanly and then never finishes being read
+// (/dev/zero would fill memory with NULs forever). Both readers must refuse
+// anything that is not a regular file. Guarded because /dev/zero is a POSIX
+// path; the Windows side of this is unreachable from a test that would have
+// to open the console to prove it.
+#ifndef _WIN32
+TEST(FileReaderUnit, ReadersRefuseCharacterDevicesInsteadOfBlocking)
+{
+    EXPECT_TRUE(readTextFile("/dev/zero").empty()) << "readTextFile must not read a character device";
+    EXPECT_TRUE(readBinaryFile("/dev/zero").empty()) << "readBinaryFile must not read a character device";
+}
+#endif
 
 TEST(FileReaderUnit, ReadBinaryFileEmptyForMissingPath)
 {
