@@ -6163,6 +6163,85 @@ std::optional<std::map<std::string, std::string>> parse_shader_targets_marker(co
     return rows;
 }
 
+// Parses docs/shader-sharing.md's `<!-- shared-module-targets:begin -->` /
+// `:end` marker table - one `| \`common/<name>.slang\` | <target> |` row,
+// where <target> is spirv, wgsl, both, or (unused). Mirrors
+// parse_shader_targets_marker above: returns std::nullopt if the marker pair
+// is missing, so a deleted marker block fails the calling test instead of
+// comparing against an empty (vacuously matching) map.
+std::optional<std::map<std::string, std::string>> parse_shared_module_targets_marker(const fs::path &doc_path)
+{
+    const auto lines = readFileLines(doc_path);
+    if (!lines) { return std::nullopt; }
+
+    static const std::regex kRowPattern(R"(\|\s*`(common/[^`]+)`\s*\|\s*(spirv|wgsl|both|\(unused\))\s*\|)");
+
+    std::map<std::string, std::string> rows;
+    bool in_block = false;
+    bool saw_block = false;
+    for (const auto &line : *lines) {
+        if (line.find("<!-- shared-module-targets:begin -->") != std::string::npos) {
+            in_block = true;
+            saw_block = true;
+            continue;
+        }
+        if (line.find("<!-- shared-module-targets:end -->") != std::string::npos) {
+            in_block = false;
+            continue;
+        }
+        if (!in_block) { continue; }
+
+        std::smatch match;
+        if (std::regex_search(line, match, kRowPattern)) { rows[match[1].str()] = match[2].str(); }
+    }
+
+    if (!saw_block) { return std::nullopt; }
+    return rows;
+}
+
+// For every Resources/ShadersSlang/common/*.slang module, the union of
+// targets ('spirv', 'wgsl') over every enabled manifest entry-point source -
+// tests/*.slang included, they are real dual-emit consumers and exactly why
+// brdf/noise are genuinely both-target - whose import_closure reaches it.
+// A module with no consumer at all (present under common/ but not currently
+// imported by anything compiled) maps to "(unused)"; two targets collapse to
+// "both"; one target is reported as-is.
+std::map<std::string, std::string> shared_module_target_truth(const fs::path &slang_root, const ShaderManifestData &manifest)
+{
+    std::map<std::string, std::set<std::string>> module_targets;
+
+    std::error_code dir_error;
+    for (fs::directory_iterator it(slang_root / "common", dir_error), end; it != end; it.increment(dir_error)) {
+        if (dir_error) { break; }
+        if (!it->is_regular_file(dir_error) || it->path().extension() != ".slang") { continue; }
+        module_targets["common/" + it->path().filename().string()];
+    }
+
+    for (const auto &[source, targets] : manifest.file_targets) {
+        for (const auto &import_path : import_closure(slang_root, slang_root / source)) {
+            std::error_code rel_error;
+            const std::string relative = fs::relative(import_path, slang_root, rel_error).generic_string();
+            if (rel_error) { continue; }
+
+            const auto it = module_targets.find(relative);
+            if (it == module_targets.end()) { continue; }// not a common/ module
+            for (const auto &target : targets) { it->second.insert(target); }
+        }
+    }
+
+    std::map<std::string, std::string> result;
+    for (const auto &[module, targets] : module_targets) {
+        if (targets.empty()) {
+            result[module] = "(unused)";
+        } else if (targets.size() > 1) {
+            result[module] = "both";
+        } else {
+            result[module] = *targets.begin();
+        }
+    }
+    return result;
+}
+
 // docs/shader-sharing.md's shader-targets table claims, per Slang
 // entry-point source, which single target it compiles to (spirv for the C++
 // Vulkan engine, wgsl for the Rust WebGPU renderer). shader-manifest.json is
@@ -6255,6 +6334,72 @@ TEST(BuildIntegrity, ShaderSharingDocMatchesTheManifestTargets)
       << doc_path.string()
       << "'s shader-targets table must not list histogram.wgsl - it has no Slang source (hand-written WGSL "
          "fallback) and cannot appear in shader-manifest.json";
+}
+
+// docs/shader-sharing.md's shared-module-targets table claims, per
+// Resources/ShadersSlang/common/ module, which target(s) actually reach it
+// through the manifest's import graph. Recomputes shared_module_target_truth
+// from import_closure + shader-manifest.json and asserts set equality in
+// both directions, so a module missing from the table AND a table row for a
+// module that no longer exists under common/ both fail loudly - the same
+// shape as ShaderSharingDocMatchesTheManifestTargets above, just one level
+// deeper (modules instead of entry points).
+TEST(BuildIntegrity, SharedModuleTargetsTableMatchesTheImportGraph)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+    const fs::path slang_root = slangRoot();
+
+    const fs::path doc_path = repo_root / "docs" / "shader-sharing.md";
+    if (!fs::exists(doc_path)) {
+        GTEST_SKIP() << "could not open " << doc_path.string() << " - not running from the repo root?";
+    }
+
+    const auto doc_targets = parse_shared_module_targets_marker(doc_path);
+    ASSERT_TRUE(doc_targets.has_value())
+      << doc_path.string()
+      << " is missing its '<!-- shared-module-targets:begin -->' / '<!-- shared-module-targets:end -->' marker "
+         "block";
+
+    const auto &manifest = shader_manifest(repo_root);
+    ASSERT_TRUE(manifest.has_value()) << "shader-manifest.json is missing or malformed";
+
+    const auto truth = shared_module_target_truth(slang_root, *manifest);
+
+    std::vector<std::string> doc_only;
+    std::vector<std::string> mismatched;
+    for (const auto &[module, target] : *doc_targets) {
+        const auto it = truth.find(module);
+        if (it == truth.end()) {
+            doc_only.push_back(module);
+        } else if (it->second != target) {
+            mismatched.push_back(module + ": doc says " + target + ", import graph says " + it->second);
+        }
+    }
+    std::vector<std::string> truth_only;
+    for (const auto &[module, target] : truth) {
+        if (!doc_targets->contains(module)) { truth_only.push_back(module + " (" + target + ")"); }
+    }
+
+    EXPECT_TRUE(doc_only.empty())
+      << doc_path.string() << "'s shared-module-targets table lists module(s) not found under "
+      << (slang_root / "common").string() << ":" << [&doc_only] {
+             std::string joined;
+             for (const auto &entry : doc_only) { joined += "\n  " + entry; }
+             return joined;
+         }();
+    EXPECT_TRUE(truth_only.empty())
+      << doc_path.string() << "'s shared-module-targets table is missing module(s):" << [&truth_only] {
+             std::string joined;
+             for (const auto &entry : truth_only) { joined += "\n  " + entry; }
+             return joined;
+         }();
+    EXPECT_TRUE(mismatched.empty())
+      << doc_path.string() << "'s shared-module-targets table disagrees with the import graph on:" << [&mismatched] {
+             std::string joined;
+             for (const auto &entry : mismatched) { joined += "\n  " + entry; }
+             return joined;
+         }();
 }
 
 // Parses the X, Y, Z triple out of the first "[numthreads(X, Y, Z)]" in

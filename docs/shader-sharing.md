@@ -64,9 +64,16 @@ cannot be emitted to GLSL/WGSL text directly, and imported functions are
 name-mangled in the emit, so sharing works through Slang's own module
 system rather than textual `#include`:
 
-- **Shared math** lives in Slang modules under `Resources/ShadersSlang/common/`
-  (`aces.slang`, `brdf.slang`, `noise.slang`, `fullscreen.slang`, plus
-  `material_fetch.slang`, `material_rules.slang` and `cascaded_shadow.slang`).
+- **Shared math** lives in Slang modules under `Resources/ShadersSlang/common/`.
+  A handful (`aces.slang`, `brdf.slang`, `noise.slang`, `fullscreen.slang`)
+  are imported by entry points on both targets and so are genuinely shared
+  *between* the two renderers; most of the rest (`material_fetch.slang`,
+  `material_rules.slang`, `cascaded_shadow.slang`, `base_color.slang`,
+  `emission.slang`, `normal_map.slang`, `alpha_test.slang`) are shared only
+  *within* one target — today all of them within the C++/SPIR-V side, across
+  its raster, deferred, shadow-map, ray tracing and path tracing shading
+  paths. The shared-module-targets table further down is the exact, gated
+  mapping this bullet summarizes.
 - **Entry points** are Slang shaders that `import` the math modules and
   compile to whichever target(s) their renderer needs. Mangling is a
   non-issue because Slang links modules internally.
@@ -87,29 +94,51 @@ system rather than textual `#include`:
 - `common/fullscreen.slang` — the shared fullscreen-triangle vertex trick
   (`vid/2*4-1`), used by every fullscreen pass on both sides.
 - `common/material_fetch.slang` — the `objectDescription` binding and the
-  `fetch_object_description`/`fetch_material` lookups built on it, for the
-  raster entry points. Not imported by the ray tracing / path tracing entry
-  points, which already declare their own `objectDescription` binding and
-  cannot re-import the same binding from this module.
+  `fetch_object_description`/`fetch_material` lookups built on it. Shared
+  only within the spirv target, across the raster (`rasterizer.slang`,
+  `deferred.slang`, `shadow_map.slang`) and closest-hit/any-hit ray tracing
+  (`raytrace.rchit.slang`, `raytrace.rahit.slang`) entry points. Not imported
+  by `path_tracing.slang`, which already declares its own `objectDescription`
+  binding and cannot re-import the same binding from this module.
 - `common/material_rules.slang` — the pure, binding-free glTF material rules
   built on the fetched `ObjMaterial`: `material_roughness`,
   `material_metallic_roughness` (glTF SS3.9.2 G=roughness/B=metallic channel
   swizzle) and `alpha_masked_out` (alphaMode MASK). Split out of
-  `material_fetch.slang` so the ray tracing / path tracing entry points,
-  which cannot import that module, can still call them - same reasoning as
-  `base_color.slang` below.
+  `material_fetch.slang` so `path_tracing.slang`, which cannot import that
+  module, can still call them - same reasoning as `base_color.slang` below.
+  Shared only within the spirv target, across every C++ shading path (raster,
+  deferred, shadow map, ray tracing, path tracing).
+- `common/cascaded_shadow.slang` — PCF cascaded shadow-map sampling
+  (`calc_cascaded_shadow`). Shared only within the spirv target, by the
+  raster and deferred lighting shading paths (`rasterizer.slang`,
+  `deferred.slang`).
 - `common/base_color.slang` — `base_color` (glTF base colour =
   `baseColorFactor * sampled texture`) and `transform_uv`
   (KHR_texture_transform), split out into its own bindingless module so every
-  shading path can import it. It is what keeps
+  spirv shading path can import it. It is what keeps
   `rasterizer/rasterizer.slang`, `deferred/deferred.slang`,
   `raytracing/raytrace.rchit.slang`, and `path_tracing/path_tracing.slang`
-  in agreement with `forward/forward.slang`'s reference
-  `prim.base_color * baseSample` — before it existed, those four discarded
-  `baseColorFactor` whenever a material also had a texture. The alpha half of
-  the same rule (`baseColorFactor[3]`) is not yet carried this way — it needs
-  a new `ObjMaterial` field, since `fromGltfMaterial` only reads
-  `baseColorFactor[0..2]` today.
+  in agreement with `forward/forward.slang`'s (wgsl, not an importer of this
+  module) reference `prim.base_color * baseSample` — before it existed, those
+  four discarded `baseColorFactor` whenever a material also had a texture.
+  The alpha half of the same rule (`baseColorFactor[3]`) is not yet carried
+  this way — it needs a new `ObjMaterial` field, since `fromGltfMaterial`
+  only reads `baseColorFactor[0..2]` today. Shared only within the spirv
+  target.
+- `common/emission.slang` — the glTF emissive rule (`material_emission`:
+  `emissiveFactor` \* sampled `emissiveTexture`, or just the factor with no
+  texture). Shared only within the spirv target, across all four raster/RT
+  shading paths (`rasterizer.slang`, `deferred.slang`, `raytrace.rchit.slang`,
+  `path_tracing.slang`).
+- `common/normal_map.slang` — glTF tangent-space normal mapping
+  (`apply_normal_map`, glTF SS3.9.3). Shared only within the spirv target,
+  across the same four shading paths as `emission.slang`;
+  `forward/forward.slang`'s `fs_main` (wgsl) reimplements the identical math
+  locally rather than importing it.
+- `common/alpha_test.slang` — the shared glTF MASK alpha test for ray
+  queries: `raytrace.rahit.slang`'s any-hit shader and
+  `path_tracing.slang`'s ray-query candidate loop (which has no any-hit stage
+  of its own). Shared only within the spirv target.
 - `common/sky_model.slang` — the analytic sky's horizon/zenith/ground
   gradient (`sky_gradient`), sun disk (`sun_disk`), and diffuse hemisphere
   irradiance approximation (`hemisphere_irradiance`), shared by `sky/sky.slang`
@@ -124,8 +153,11 @@ system rather than textual `#include`:
 
 **Entry-point shader targets:** every Slang entry-point source below compiles
 to exactly one target today — none is currently shared between the two
-renderers at the entry-point level (only the shared math modules above, and
-the CI guards below, cross both targets). `tonemap/tonemap.slang` (WGSL) and
+renderers at the entry-point level (only `aces.slang`, `brdf.slang`,
+`fullscreen.slang` and `noise.slang` among the shared math modules above, and
+the CI guards below, cross both targets — the rest of that list is shared
+only within one target; see the shared-module-targets table below).
+`tonemap/tonemap.slang` (WGSL) and
 `post/post.slang` (SPIR-V) look like a shared pass but are two separate
 sources: the C++ side's `post/post.slang` also handles cloud compositing via
 push constants, so it never merged with the Rust tonemap shader.
@@ -162,7 +194,39 @@ push constants, so it never merged with the Rust tonemap shader.
 `import` a shared math module and dual-emit to SPIR-V + WGSL, so a change
 that breaks either target's compile fails the manifest run in
 `compile-slang-shaders.ps1` before it reaches either renderer. They are
-deliberately excluded from the table above (see its gating test).
+deliberately excluded from the table above (see its gating test). Only
+`brdf` and `noise` are guarded for dual emit today; a spirv-only module has
+nothing to guard until it gains a real wgsl consumer — the
+shared-module-targets table below is what makes that fact checkable instead
+of merely asserted.
+
+**Shared-module targets:** the per-`common/`-module counterpart to the
+shader-targets table above, computed the same way (an import-graph walk over
+`shader-manifest.json`, with `tests/*.slang` counted as real consumers - it
+is exactly why `brdf` and `noise` show `both` below despite `noise` having no
+production wgsl consumer yet), and gated by the same kind of test. Of the
+`common/` modules, only four are reachable from both a spirv and a wgsl
+entry point; the rest are shared within a single target (`(unused)` would
+mark a module under `common/` that nothing currently imports at all).
+
+<!-- shared-module-targets:begin -->
+| Module | Target |
+| --- | --- |
+| `common/aces.slang` | both |
+| `common/alpha_test.slang` | spirv |
+| `common/base_color.slang` | spirv |
+| `common/brdf.slang` | both |
+| `common/cascaded_shadow.slang` | spirv |
+| `common/emission.slang` | spirv |
+| `common/fullscreen.slang` | both |
+| `common/material_fetch.slang` | spirv |
+| `common/material_rules.slang` | spirv |
+| `common/noise.slang` | both |
+| `common/normal_map.slang` | spirv |
+| `common/push_constants.slang` | spirv |
+| `common/scene_types.slang` | spirv |
+| `common/sky_model.slang` | wgsl |
+<!-- shared-module-targets:end -->
 
 **Status:** all C++ shaders are on Slang SPIR-V (all 8 loading sites), and
 all Rust shaders are on Slang-emitted WGSL (`histogram.wgsl` excepted — see
