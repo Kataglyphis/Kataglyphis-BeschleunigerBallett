@@ -10560,3 +10560,458 @@ and 3 are independent of everything.
 
 ### Docs
 
+## 2026-08-05 batch VIII — planner (a 128³ noise volume whose generating kernel normalises its thread id by 256, so seven eighths of the domain is never generated and two of the four channels the cloud march reads are written as constants; a Henyey-Greenstein denominator whose sign puts the scattering peak away from the sun; a "powder effect" that raises transmittance as density rises; seven `endAndSubmitCommandBuffer` results discarded with `static_cast<void>`, one of which lets a failed BLAS build return success; and the one subsystem with a compute pair, a nine-control GUI panel and four UBO slots that no document owns)
+
+The actionable queue was empty when this batch was written (0 `- [ ]`, 16
+`- [b]` across the whole file). Batch VII's five tasks all shipped
+(`e1d3fb8b`, `fafa67f2`, `0f22247c`, `159c1c74`, `bae7fc45`). Everything
+below was read out of the tree at `bae7fc45`.
+
+**First, `compute/noise.slang` generates one eighth of the volume it writes
+into, and leaves half its channels constant.** `noise_main` opens with
+`float3 uvw = float3(tid) / 256.0;`. The dispatch is
+`kNoiseVolumeExtent / kNoiseWorkgroupSize` cubed = 16³ groups of 8³ threads,
+so `tid` runs `[0, 128)` in each axis and `uvw` only ever reaches `0.5`. The
+image is 128³ (`CloudDispatch.hpp`'s `kNoiseVolumeExtent`, which `a348bd9f`
+introduced by lifting the literal `128` out of `Clouds::createTextures` and
+`dispatchNoiseGeneration` — it never touched the shader's `256.0`). Two
+consequences: `worley(uvw, 4.0)` is asked for four cells across the unit
+domain and gets two, and the volume no longer tiles, because `sample_density`
+addresses it with `abs(fmod(position + offset, 256.0)) / 256.0` — a wrap that
+assumes the texture spans the whole `[0, 1)` domain.
+
+The second half is the write itself:
+`noiseVolume[tid] = float4(worleyVal, perlinVal, 0.0, 1.0);`. `sample_density`
+reads all four components of both taps. `.b` is a constant `0.0`, so its
+`max(0.0, noise.b - cloud.threshold)` term is identically zero for any
+non-negative coverage threshold — one of the three weights in `baseDensity`
+and one of the three in `fineDensity` are dead. `.a` is a constant `1.0`, and
+it is the *cirrus* band:
+`baseDensity * (1 - cirrus) + max(0, 1.0 - threshold) * scale * cirrus`. So the
+"Cirrus effect" slider does not add cirrus — it linearly blends the
+noise-driven density toward a value that is the same at every point in space,
+i.e. it dissolves the clouds into a uniform slab. The default is 0.034, which
+is why nobody has noticed.
+
+`common/noise.slang` is worth reading before touching this: it carries
+`snoise`/`fbm` under a header claiming "both renderers' compute/raster passes"
+as consumers, and the one compute pass in the repo that *generates* noise does
+not import it, hand-rolling `hash13`/`valueNoise`/`fbm_value` instead.
+
+**Second, `phase_HG`'s denominator has the sign that points the scattering
+peak away from the light.** It computes
+`denom = 1.0 + g * g + 2.0 * g * cosTheta`, and the caller passes
+`cosTheta = dot(rayDirection, normalize(-dirLight.direction))` — the cosine
+between the view ray and the direction *toward* the sun. Henyey-Greenstein is
+`(1 - g²) / (4π (1 + g² - 2g·cosθ)^{3/2})`; with a **plus**, the denominator is
+largest at `cosθ = +1`, so the phase function is at its *minimum* when you look
+straight at the sun and its maximum when the sun is behind you. With the
+hard-coded `g = 0.5` that is the behaviour of `g = -0.5`: backscattering, where
+clouds are strongly forward-scattering, and the silver lining renders on the
+wrong side of the sky. Both readings of the convention agree — whether θ is
+taken between the incident propagation direction and the outgoing one, or
+between view ray and light vector, the sign in front of `2g·cosθ` is negative.
+
+**Third, the powder effect is applied to the wrong quantity, in the wrong
+direction.** Inside the march:
+
+```
+transmittance *= exp(-densityOfSample * dt);
+if (transmittance < 0.01) break;
+if (cloud.powder_effect) {
+    float powderness = 1.0 - exp(-(densityOfSample * dt) / 2.0);
+    transmittance = saturate(transmittance + powderness);
+}
+```
+
+`powderness` grows with density, and it is *added* to transmittance — so the
+denser the sample, the more transparent the volume becomes, undoing the
+Beer-Lambert step on the line above. The powder/dark-edge term exists to
+attenuate the *in-scattered* radiance at low optical depth (it is what makes
+cloud edges read as dense rather than washed out); it belongs on the
+`lightEnergy +=` accumulation, never on the transmittance, which must be
+monotonically non-increasing along a ray. The checkbox defaults to **on**
+(`GUISceneSharedVars`'s `cloud_powder_effect = true`), so this is the shipped
+path, not a corner.
+
+**Fourth, seven `endAndSubmitCommandBuffer` results are discarded with
+`static_cast<void>`.** `CommandBufferManager::endAndSubmitCommandBuffer`
+returns `bool` and is fully synchronous on return. The callers that learned to
+read it are `Texture::uploadRgba` (`upload_submitted`) and
+`ASManager::compactBLAS`'s copy step (`copy_submitted`), from the
+"upload reports success it never verified" family the 2026-08-04 batches
+shipped. Seven sites were never converted, and they are not equivalent:
+
+- `ASManager::createBLAS`'s build submit is the severe one. `createBLAS`
+  `return true`s unconditionally after it, so `createASForScene` proceeds to
+  `compactBLAS` — which queries compacted sizes of structures that were never
+  built — and then to `createTLAS`, which references them from the TLAS
+  instance buffer. That is a device loss reported as a successful scene load.
+- `ASManager::createTLAS`'s build submit, and `compactBLAS`'s
+  compacted-size *query* submit. The latter already has the right wording on
+  its two neighbouring error paths ("keeping uncompacted BLAS").
+- `Clouds::createStorageTexture`'s layout-transition submit: on failure the
+  image stays in `eUndefined` while the descriptor written later declares
+  `eGeneral`. The `!commandBuffer` branch three lines above already calls
+  `ASSERT_VULKAN` and states why.
+- `Clouds::dispatchNoiseGeneration`'s submit: on failure the noise volume is
+  undefined. The `graphicsFamilySupportsCompute()` guard above it already has
+  the right sentence for that outcome.
+- `VulkanRenderer`'s path-tracing accumulation-image transition: the
+  `!commandBuffer` branch directly above already cleans up and returns.
+- `VulkanImage::transitionImageLayout`'s standalone (own-command-buffer)
+  overload, which returns `void` and therefore cannot report anything today.
+
+**Fifth, no document owns the clouds subsystem.** `AGENTS.md`'s Docs table
+gives every topic exactly one home, and path tracing — a comparable
+single-mode subsystem — has `docs/path-tracing.md`. Clouds has two compute
+kernels, a 128³ storage image, three dispatch constants in a shared header, a
+four-`vec4` UBO block with a packing contract, a nine-control GUI panel, a
+cross-frame WAR barrier pair in `VulkanRenderer::recordCommands`, a
+queue-ownership rule with its own gate, and a compositing contract with
+`post.slang` — and the only prose about any of it is scattered comments plus
+whatever `docs/cpp-renderer-improvements.md` recorded at the time. The four
+findings above were each reconstructed by re-reading the two shaders; the next
+reader should not have to.
+
+**Not in this batch, recorded so it is not lost:** `159c1c74` taught the C++
+OBJ loader to read `map_d` into `ObjMaterial::alphaTextureID`, but the Rust
+`obj_to_gltf.rs` still drops the directive entirely, so the bundled sponza's
+chain and vase-plant cut-outs render solid through the Rust renderer and cut
+out through the C++ one. It is **not** a mirror of the `map_Ke`/`map_Bump`
+tasks: sponza's `map_d` names a *separate* image (`chain_texture_mask.jpg`,
+`vase_plant_mask.jpg`), and glTF has no separate opacity texture — a faithful
+conversion has to composite the mask's luminance into the base-colour image's
+alpha channel and re-encode it. `image` is a **dev**-dependency of
+`crates/webgpu_renderer`, built `default-features = false, features = ["png"]`,
+so there is no JPEG decoder on the shipping path. Promoting an image codec into
+the shipping dependency set (and the wasm bundle) is an owner decision, which
+is why this is prose and not a task.
+
+**Verification context.** Host GPU goldens remain blocked over RDP (the `- [b]`
+near the end of this file) and `path_tracing` mode device-losts on the host
+RX 9070 XT on unmodified `develop` (the `- [b]` at line ~2030). **No task below
+may claim a rendered result.** Tasks 1, 2 and 4 are source-text gates (plus,
+for 4, device-free unit tests over `SceneUboMarshal.hpp`) in
+`commitTestSuite.exe`; task 3 is a source-text marker gate plus compile
+coverage; task 5 is docs plus a gate. **Say which suites you actually ran**,
+and say explicitly that the cloud appearance changes were not visually
+confirmed.
+
+**Ordering.** Tasks 1, 2, 4 and 5 all add tests to
+`Test/commit/VulkanEngine/buildIntegritySuite.cpp` — land them one at a time,
+in that order; each later one rebases trivially. Tasks 1 and 2 both edit
+`Resources/ShadersSlang/compute/` (task 1 `noise.slang`, task 2 `clouds.slang`),
+so serialize those two as well. **Task 5 must run last** — it documents the
+contracts tasks 1, 2 and 4 establish, and writing it first guarantees a doc
+that is wrong on the day it lands. Task 3 is independent of all of them: it
+touches `ASManager.cpp`, `Clouds.cpp`, `VulkanRenderer.cpp` and
+`VulkanImage.cpp`, none of which the other four edit. Task 3 changes no module
+interface unless you take its step 7 option (b), which edits `VulkanImage.ixx`
+and therefore needs `-FreshContainer`.
+
+### C++ Vulkan engine
+
+- [ ] **(S) Fix the cloud phase function's sign and stop the powder effect from raising transmittance** — `phase_HG` peaks away from the sun, and the powder term is added to transmittance instead of attenuating in-scattered light.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/compute/clouds.slang` — `phase_HG`, the
+    `lightEnergy +=` / `transmittance *=` block in `clouds_main`, and
+    `box_intersect`.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` —
+    `BuildIntegrity.CloudRayMarchesUseAConstantStepLength`: a source-text gate
+    over this same file, with the regex-plus-explanatory-message shape to copy.
+
+  **Steps:**
+  1. In `phase_HG`, change `1.0 + g * g + 2.0 * g * cosTheta` to
+     `1.0 + g * g - 2.0 * g * cosTheta`. Add a comment stating the convention
+     the caller uses —
+     `cosTheta = dot(rayDirection, normalize(-dirLight.direction))`, i.e. the
+     cosine between the view ray and the vector toward the sun — and that a
+     positive `g` must therefore put the maximum at `cosTheta = +1` (forward
+     scattering, looking toward the sun), not at `-1`.
+  2. Move the powder term onto the in-scattered radiance. Compute it before the
+     accumulation —
+     `float powder = cloud.powder_effect ? (1.0 - exp(-densityOfSample * dt * 2.0)) : 1.0;`
+     — multiply it into the `lightEnergy +=` expression alongside
+     `transmittance` and `lightTransmittance`, and **delete the post-`break`
+     block that assigns `transmittance`**. State in a comment that transmittance
+     is monotonically non-increasing along a ray by construction and that
+     nothing inside the loop may raise it.
+  3. Same file, same commit, two dead declarations: `box_intersect`'s fourth
+     parameter `txi` is never read in its body (both call sites pass
+     `cloud.model_to_world` into it), and `clouds_main` declares
+     `uint width, height, layers;` while calling the two-argument
+     `outputImage.GetDimensions(width, height)`. Delete the parameter at the
+     declaration and both call sites, and delete `layers`.
+  4. Add `BuildIntegrity.CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittance`,
+     next to `CloudRayMarchesUseAConstantStepLength`. Three assertions over
+     `clouds.slang`'s text: the phase denominator matches
+     `1\.0\s*\+\s*g\s*\*\s*g\s*-\s*2\.0\s*\*\s*g` and does **not** match the
+     `+ 2.0 * g` form; no line assigns `transmittance` from an expression
+     mentioning `powder`; and the only assignment to `transmittance` inside the
+     march loop is a `*=` whose right-hand side is an `exp(-` call. Spell the
+     reasoning out in the test comment — a reviewer reading only the diff
+     cannot tell a sign fix from a sign break.
+  5. Recompile shaders. `clouds.slang` is `spirv`-only; no WGSL, no submodule
+     commit.
+
+  **Test:** `BuildIntegrity.CloudScatteringKeepsItsPhaseSignAndItsMonotonicTransmittance`
+  (new, pure CPU), plus the full `BuildIntegrity.*` filter. A numerical oracle
+  is deliberately **not** requested: mirroring `phase_HG` in C++ to assert
+  `p(+1) > p(-1)` would put a second copy of the formula in the tree, which is
+  the failure mode half this backlog is about.
+
+  **Build:** `clangcl-debug`, same invocation as the task above.
+
+  **Context:** The phase sign and the powder direction both change how clouds
+  look and **neither can be confirmed here** — goldens are blocked. Say that in
+  the commit message. Step 3's deletions are bundled deliberately: they are in
+  the same 40 lines, they cannot change behaviour, and they have no other home
+  small enough to be worth a task.
+
+- [ ] **(M) Read the seven discarded `endAndSubmitCommandBuffer` results, and gate the discard shape** — a failed BLAS build currently returns `true`, and the scene then builds a TLAS over acceleration structures that were never written.
+
+  **Files to read:**
+  - `Src/GraphicsEngineVulkan/renderer/CommandBufferManager.cpp` —
+    `endAndSubmitCommandBuffer`'s contract: it is fully synchronous on return,
+    frees the buffer on both paths, and `false` means the work did not happen.
+  - `Src/GraphicsEngineVulkan/scene/Texture.cpp` — `uploadRgba`'s
+    `upload_submitted` check: the shape to copy (log with context, tear the
+    object back down, return `false`).
+  - `Src/GraphicsEngineVulkan/renderer/accelerationStructures/ASManager.cpp` —
+    `createBLAS`, `compactBLAS` (note `copy_submitted`, already correct, and
+    the "keeping uncompacted BLAS" wording on its two neighbouring error
+    paths), `createTLAS`, and `createASForScene`, which already handles
+    `createBLAS` returning `false`.
+  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp` —
+    `createStorageTexture` (whose `!commandBuffer` branch `ASSERT_VULKAN`s and
+    explains why) and `dispatchNoiseGeneration` (whose
+    `graphicsFamilySupportsCompute()` guard already states the visual outcome).
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` — the path-tracing
+    accumulation-image transition and the `!commandBuffer` branch above it.
+  - `Src/GraphicsEngineVulkan/vulkan_base/VulkanImage.cpp` and
+    `VulkanImage.ixx` — the standalone `transitionImageLayout` overload that
+    owns its own command buffer.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` —
+    `BuildIntegrity.NoStageHandRollsTheColorAttachmentChain` and its
+    `COLOR_ATTACHMENT_CHAIN_OK: <marker>` trailing-comment allowlist: the
+    marker convention to reuse, including "anchor the exemption to a source
+    marker, not a line number".
+
+  **Steps:**
+  1. `ASManager::createBLAS`: capture the submit result. On `false`, log at
+     error naming the model count, `scratchBuffer.cleanUp()`, and `return false`
+     **before** the `blas.emplace_back(std::move(b.single_blas))` loop and
+     before `compactBLAS` — the point is that `blas` must not end up holding
+     structures that were never built.
+  2. `ASManager::compactBLAS`: capture the compacted-size *query* submit
+     result; on `false`, `logical.destroyQueryPool(query_pool)` and `return`,
+     with the same "keeping uncompacted BLAS" wording its neighbours use.
+  3. `ASManager::createTLAS`: capture the build submit result; on `false`, log
+     at error and leave the TLAS in whatever state the function's existing
+     failure handling defines. Read the function end to end before choosing —
+     if it has no failure path today, the minimum is a logged error plus a
+     comment saying what the caller then renders.
+  4. `Clouds::createStorageTexture`: on `false`, `ASSERT_VULKAN` with the same
+     argument the `!commandBuffer` branch three lines above already makes (a
+     half-initialized clouds subsystem has no defined rendering behaviour, and
+     the descriptor written later declares `eGeneral` for an image still in
+     `eUndefined`).
+  5. `Clouds::dispatchNoiseGeneration`: on `false`, log at error and state the
+     outcome in the same terms the `graphicsFamilySupportsCompute()` warning
+     already uses (the noise volume is undefined).
+  6. `VulkanRenderer`'s path-tracing accumulation transition: on `false`, do
+     what the `!commandBuffer` branch directly above does —
+     `pathTracingAccumulation.cleanUp()`, log, `return`.
+  7. `VulkanImage::transitionImageLayout`'s standalone overload returns `void`.
+     Either (a) log at error on `false` and leave the signature alone, or
+     (b) change it to return `bool` and update its callers. (a) is the
+     lower-risk default; (b) edits `VulkanImage.ixx`, which is a module
+     interface, so it needs `-FreshContainer` and touches every importer. Pick
+     one, do it consistently, and say which in the commit message.
+  8. Add `BuildIntegrity.EverySubmitResultIsCheckedOrExplicitlyExempt`: walk
+     `Src/` for `.cpp`/`.hpp`/`.ixx`, find every line containing
+     `endAndSubmitCommandBuffer`, and fail any line that also contains
+     `static_cast<void>(` unless the line carries a trailing
+     `// SUBMIT_RESULT_IGNORED_OK: <reason>` comment. Copy
+     `NoStageHandRollsTheColorAttachmentChain`'s structure exactly, including
+     its second assertion that at least one non-exempt call site was seen, so a
+     rename cannot turn the gate into a no-op, and its "if all of them were
+     exempted, the gate stops meaning anything" comment.
+
+  **Test:** `BuildIntegrity.EverySubmitResultIsCheckedOrExplicitlyExempt`
+  (new, pure CPU). Also run the existing GPU-free suites in
+  `commitTestSuite.exe` — `BlasGeometryLimits.*` and the AS-related
+  `BuildIntegrity` tests are the ones most likely to react. The behaviour
+  changes here are all on failure paths that do not fire on a healthy device,
+  so **compile coverage plus the gate is the whole story** — do not claim a
+  behavioural verification.
+
+  **Build:** `clangcl-debug`. Use `-FreshContainer` only if you took step 7
+  option (b):
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+
+  **Context:** This is the last cohort of the "upload reports success it never
+  verified" family the 2026-08-04 batches opened (texture uploads, then
+  vertex/index buffers, the TLAS instance buffer and the skybox cubemap). The
+  BLAS case is qualitatively worse than its predecessors: the others produced a
+  wrong image, this one hands the ray-tracing pipeline structures the driver
+  never wrote. Do **not** convert the discards to `ASSERT_VULKAN` wholesale —
+  four of the seven have a defined degraded mode, and aborting the process
+  would be a regression.
+
+- [ ] **(S) Give the two cloud march-step counts one host-owned range, and pin the shader's clamps to it** — the GUI's "# march steps" slider is 1..128 while the shader floors it at 4, so its first three positions do nothing.
+
+  **Files to read:**
+  - `Resources/ShadersSlang/compute/clouds.slang` — `clouds_main`'s
+    `num_march_steps = int(max(scene.cloudParameters.w, 4.0))` and
+    `num_march_steps_to_light = int(clamp(scene.cloudLightMarch.x, 1.0, 128.0))`,
+    and the two places the counts become divisors (`dt`, `dtL`).
+  - `Src/GraphicsEngineVulkan/common/SceneUboMarshal.hpp` —
+    `fillSceneUboClouds`, `clampCloudMeshScale`, `kMinCloudMeshExtent`,
+    `kMinCloudDensityMultiplier`, `clampPcfRadius`. These are the established
+    pattern: the host clamps, the shader trusts, and a named constant carries
+    the bound.
+  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/CloudDispatch.hpp`
+    — the plain (non-module) header both `Clouds.cpp` and
+    `buildIntegritySuite.cpp` include; the right home for shared cloud
+    constants.
+  - `Src/GraphicsEngineVulkan/gui/GUI.cpp` — the "Cloud Settings" tree's two
+    `SliderInt` calls.
+  - `Src/GraphicsEngineVulkan/scene/GUISceneSharedVars.ixx` — the defaults.
+  - `Test/commit/VulkanEngine/sceneUboMarshalSuite.cpp` — the device-free suite
+    over these helpers; the clamp tests go here.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` —
+    `BuildIntegrity.CloudUboPackingMatchesTheShaderUnpack` (the packing
+    contract this extends) and `CloudDispatchGridsMatchTheShaderWorkgroupSizes`
+    (the "parse the literal out of the shader, compare to the host constant"
+    shape).
+
+  **Steps:**
+  1. Add to `CloudDispatch.hpp`: `kMinCloudMarchSteps = 4`,
+     `kMaxCloudMarchSteps = 128`, `kMinCloudLightMarchSteps = 1`,
+     `kMaxCloudLightMarchSteps = 128` (as `inline constexpr int`, matching the
+     types the GUI sliders and `fillSceneUboClouds` use). Comment that the
+     minimums are load-bearing: both counts are divisors (`dt`, `dtL`) and a
+     zero makes every sample position infinite — the same argument
+     `kMinCloudMeshExtent` already carries.
+  2. Clamp in `fillSceneUboClouds`, where `clampCloudMeshScale` already does
+     the equivalent job, so the UBO can never carry an out-of-range count
+     regardless of who wrote the GUI vars (a test, a config load).
+  3. Use the same four constants as the `SliderInt` bounds in `GUI.cpp`, so the
+     slider cannot offer a value the host will silently change under it.
+  4. Leave the shader's clamps in place — a shader must not trust a UBO — but
+     rewrite the literals so they read as the same numbers, and add a comment
+     naming `CloudDispatch.hpp` as the owner and the gate from step 6 as the
+     enforcement.
+  5. Extend `sceneUboMarshalSuite.cpp`: assert `fillSceneUboClouds` clamps a
+     below-minimum and an above-maximum value for both counts into
+     `cloudParameters.w` / `cloudLightMarch.x`, and that an in-range value
+     round-trips unchanged. Follow the existing tests' naming.
+  6. Add `BuildIntegrity.CloudMarchStepBoundsMatchTheShaderClamps`: regex the
+     two clamp expressions out of `clouds.slang` and `EXPECT_EQ` each bound
+     against the corresponding `CloudDispatch.hpp` constant, using
+     `parse_numthreads`'s `std::nullopt`-on-no-match convention so a rewritten
+     expression fails loudly rather than matching nothing.
+  7. Recompile shaders (`clouds.slang` is `spirv`-only).
+
+  **Test:** the new `SceneUboMarshal.*` clamp cases (device-free) plus
+  `BuildIntegrity.CloudMarchStepBoundsMatchTheShaderClamps`. Run the
+  `SceneUboMarshal.*` and `BuildIntegrity.*` filters and report both.
+
+  **Build:** `clangcl-debug`. `CloudDispatch.hpp` is a plain header included in
+  global module fragments, so use `-FreshContainer`:
+  `pwsh -ExecutionPolicy Bypass -File .\Scripts\Windows\Build-Windows-Container.ps1 -Configurations clangcl-debug -FreshContainer`
+
+  **Context:** Same shape as `clampPcfRadius`/`MAX_PCF_RADIUS` and
+  `clampCloudMeshScale`/`kMinCloudMeshExtent`: a range that exists in three
+  places (GUI slider, host packing, shader clamp) and agrees in none. The
+  user-visible half is small — three dead slider positions — but the durable
+  half is that the next person to widen the range only has to widen it once.
+
+### Rust WebGPU renderer (`ExternalLib/Kataglyphis-RustProjectTemplate`)
+
+### Docs
+
+- [ ] **(M) Give the volumetric-clouds subsystem an owning document, and gate its two tables** — clouds is the only subsystem with a compute pair, a shared constants header, a four-`vec4` UBO block and a nine-control GUI panel that `AGENTS.md`'s Docs table does not list.
+
+  **Run this task LAST in this batch** — it documents contracts tasks 1, 2 and
+  4 change. Written first, it is wrong on the day it lands.
+
+  **Files to read:**
+  - `docs/path-tracing.md` — the closest sibling: one subsystem, its pipeline
+    shape, its estimator, its open work. Match its length and altitude; this is
+    not a tutorial.
+  - `docs/shader-sharing.md` — specifically its `shader-targets:begin` /
+    `shader-targets:end` marker block and the gate behind it. Copy that
+    mechanism for the two tables below rather than inventing one.
+  - `Src/GraphicsEngineVulkan/scene/atmospheric_effects/clouds/Clouds.cpp` and
+    `CloudDispatch.hpp` — init order, the two pipelines, the storage textures,
+    `shaderHotReload`, `recreateFrameResources`, and the graphics-queue
+    ownership rule (`CloudResourcesAreProducedAndConsumedOnOneQueue` is the
+    gate that already pins it).
+  - `Resources/ShadersSlang/compute/noise.slang` and `compute/clouds.slang`.
+  - `Src/GraphicsEngineVulkan/common/SceneUboMarshal.hpp` —
+    `fillSceneUboClouds`'s packing table comment, which is the source for the
+    UBO table.
+  - `Src/GraphicsEngineVulkan/renderer/VulkanRenderer.cpp` — the cloud-output
+    WAR barrier before `recordComputeCommands` and the compute-to-fragment
+    barrier after it, plus the shared descriptor set the post stage binds.
+  - `Resources/ShadersSlang/post/post.slang` — `fs_main`'s premultiplied
+    compositing (`cloud.rgb + color * (1.0 - cloud.a)`), which is the contract
+    `clouds_main`'s `float4(cloudColor, 1.0 - transmittance)` write satisfies.
+  - `AGENTS.md` — the Docs table, the routing table, and the "each topic has
+    exactly one home; link, do not copy" rule.
+  - `Test/commit/VulkanEngine/buildIntegritySuite.cpp` — the existing cloud
+    gates (`CloudDispatchGridsMatchTheShaderWorkgroupSizes`,
+    `CloudUboPackingMatchesTheShaderUnpack`,
+    `CloudResourcesAreProducedAndConsumedOnOneQueue`,
+    `CloudRayMarchesUseAConstantStepLength`) — the doc should point at these by
+    test name rather than restate what they check.
+
+  **Steps:**
+  1. Write `docs/clouds.md` covering, in this order: the two compute passes and
+     when each runs (noise once at init, clouds once per frame while the GUI
+     checkbox is on); the noise volume's extent/format/channel contract (as
+     task 1 leaves it); the ray march's estimator in one paragraph
+     (Beer-Lambert transmittance, Henyey-Greenstein phase, the secondary light
+     march); the resource lifecycle (`recreateFrameResources` on swapchain
+     resize, `shaderHotReload` deliberately not regenerating the volume); the
+     queue-ownership and barrier rules; and the compositing contract with
+     `post.slang`. Link to the gates by test name; do not restate their logic.
+  2. Add a `cloud-ubo:begin` / `cloud-ubo:end` marker block holding the
+     GUI-control -> `SceneUBO` field/component -> shader-variable table,
+     sourced from `fillSceneUboClouds`'s comment and `clouds_main`'s unpack
+     block.
+  3. Add a `cloud-constants:begin` / `cloud-constants:end` marker block listing
+     every `CloudDispatch.hpp` constant with its value and the shader token it
+     pins.
+  4. Add `BuildIntegrity.CloudsDocTablesMatchTheirSources`: parse both marker
+     blocks, check the constants table against the compiled `CloudDispatch.hpp`
+     values, and check the UBO table's field/component pairs against the same
+     list `CloudUboPackingMatchesTheShaderUnpack` already derives — reuse that
+     test's data rather than adding a second hand-written copy, which is the
+     failure mode this whole mechanism exists to prevent.
+  5. Add a `docs/clouds.md` row to `AGENTS.md`'s Docs table, and a "Touching
+     the clouds subsystem" row to its routing table at the top.
+  6. Check whether `docs/cpp-renderer-improvements.md` carries cloud prose that
+     is now duplicated. Per `AGENTS.md`'s one-home rule, the chronological log
+     keeps its historical entries; only forward-looking "how it works" prose
+     moves. Do not rewrite history there.
+
+  **Test:** `BuildIntegrity.CloudsDocTablesMatchTheirSources` (new, pure CPU).
+  Also run `BuildIntegrity.*` in full. `SourceAndDocsCiteSymbolsNotLineNumbers`
+  does not currently scan `docs/clouds.md`, so **cite symbols, not line
+  numbers, anyway**, and consider adding the new file to that gate's scan list
+  in the same change.
+
+  **Build:** `clangcl-debug`, same invocation as task 1.
+
+  **Context:** Four independent defects in this subsystem were found in one
+  planning pass, each by re-reading the two shaders from scratch, because there
+  is nowhere else to read them. `docs/path-tracing.md` is the precedent for
+  what an owning document buys. Keep it short — a document that restates the
+  shaders will drift faster than they do, which is why steps 2-4 put the two
+  facts that actually rot behind a gate and leave the rest as prose.
+

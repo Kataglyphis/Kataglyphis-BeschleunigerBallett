@@ -6466,6 +6466,149 @@ TEST(BuildIntegrity, CloudDispatchGridsMatchTheShaderWorkgroupSizes)
                                        << (*cloud_threads)[1] << ", " << (*cloud_threads)[2] << ")] Z is not 1";
 }
 
+// Parses the operand list of noise.slang's `noiseVolume[tid] = float4( ... );`
+// assignment, splitting on top-level commas (respecting nested parens, so an
+// operand like `worley(uvw, 4.0)` counts as one argument, not two). Returns
+// nullopt if the assignment is not found, matching parse_numthreads's
+// "std::nullopt when the pattern is absent" convention.
+std::optional<std::vector<std::string>> parse_noise_volume_write_operands(const std::string &contents)
+{
+    static const std::regex kAssignStart(R"(noiseVolume\[tid\]\s*=\s*float4\()");
+    std::smatch match;
+    if (!std::regex_search(contents, match, kAssignStart)) { return std::nullopt; }
+
+    size_t pos = static_cast<size_t>(match.position(0)) + static_cast<size_t>(match.length(0));
+    int depth = 1;
+    std::string operandsText;
+    for (; pos < contents.size() && depth > 0; ++pos) {
+        const char c = contents[pos];
+        if (c == '(') {
+            ++depth;
+            operandsText += c;
+        } else if (c == ')') {
+            --depth;
+            if (depth > 0) { operandsText += c; }
+        } else {
+            operandsText += c;
+        }
+    }
+    if (depth != 0) { return std::nullopt; }
+
+    std::vector<std::string> operands;
+    std::string current;
+    int nestDepth = 0;
+    for (const char c : operandsText) {
+        if (c == '(') {
+            ++nestDepth;
+            current += c;
+        } else if (c == ')') {
+            --nestDepth;
+            current += c;
+        } else if (c == ',' && nestDepth == 0) {
+            operands.push_back(current);
+            current.clear();
+        } else {
+            current += c;
+        }
+    }
+    operands.push_back(current);
+
+    for (auto &operand : operands) {
+        const size_t start = operand.find_first_not_of(" \t\r\n");
+        const size_t end = operand.find_last_not_of(" \t\r\n");
+        operand = (start == std::string::npos) ? "" : operand.substr(start, end - start + 1);
+    }
+    return operands;
+}
+
+// Extracts the brace-delimited body of the first function found via
+// `signature_needle` (a substring unique to that function's declaration).
+std::string extract_function_body(const std::string &contents, const std::string &signature_needle)
+{
+    const size_t sig_pos = contents.find(signature_needle);
+    if (sig_pos == std::string::npos) { return {}; }
+    const size_t brace_pos = contents.find('{', sig_pos);
+    if (brace_pos == std::string::npos) { return {}; }
+
+    int depth = 1;
+    size_t pos = brace_pos + 1;
+    for (; pos < contents.size() && depth > 0; ++pos) {
+        if (contents[pos] == '{') { ++depth; }
+        else if (contents[pos] == '}') { --depth; }
+    }
+    return contents.substr(brace_pos, pos - brace_pos);
+}
+
+// noise.slang used to normalise its 128^3 thread id by a bare 256.0 (half
+// the actual volume extent, so the noise only ever covered the volume's
+// first octant) and hard-coded .b/.a to 0.0/1.0, even though clouds.slang's
+// sample_density weights all four channels into baseDensity and the cirrus
+// band. Neither gap was compiler-visible - both compiled and ran, just
+// silently produced the wrong picture. Mirrors HostAndShaderSharedConstantsAgree's
+// "parse the shader text, compare against the compiled host value" shape.
+TEST(BuildIntegrity, CloudNoiseVolumeCoversItsFullDomainAndWritesEveryChannelTheMarchReads)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path noise_path = slangRoot() / "compute" / "noise.slang";
+    const fs::path clouds_path = slangRoot() / "compute" / "clouds.slang";
+
+    const auto noise_contents = readFileText(noise_path);
+    ASSERT_TRUE(noise_contents.has_value()) << "could not read " << noise_path.string();
+
+    // (a) NOISE_VOLUME_EXTENT must equal CloudDispatch.hpp's kNoiseVolumeExtent.
+    static const std::regex kExtentPattern(R"(NOISE_VOLUME_EXTENT\s*=\s*([0-9]+(?:\.[0-9]*)?))");
+    std::smatch extent_match;
+    ASSERT_TRUE(std::regex_search(*noise_contents, extent_match, kExtentPattern))
+      << "no NOISE_VOLUME_EXTENT initializer found in " << noise_path.string();
+    const auto parsed_extent = static_cast<uint32_t>(std::stod(extent_match[1].str()));
+    EXPECT_EQ(parsed_extent, Kataglyphis::kNoiseVolumeExtent)
+      << noise_path.string() << "'s NOISE_VOLUME_EXTENT (" << parsed_extent
+      << ") does not match CloudDispatch.hpp's kNoiseVolumeExtent (" << Kataglyphis::kNoiseVolumeExtent << ')';
+
+    // (b) None of the four float4() operands may be a bare numeric literal -
+    // that is exactly how .b/.a ended up hard-coded to 0.0/1.0 last time.
+    const auto operands = parse_noise_volume_write_operands(*noise_contents);
+    ASSERT_TRUE(operands.has_value()) << "no `noiseVolume[tid] = float4( ... );` assignment found in "
+                                       << noise_path.string();
+    ASSERT_EQ(operands->size(), 4u) << noise_path.string()
+                                     << "'s noiseVolume[tid] = float4( ... ) assignment does not have 4 operands";
+
+    static const std::regex kBareNumericLiteral(R"(^[+-]?[0-9]+(\.[0-9]*)?[fF]?$)");
+    static const char *const kChannelNames[4] = { ".r", ".g", ".b", ".a" };
+    for (size_t i = 0; i < operands->size(); ++i) {
+        EXPECT_FALSE(std::regex_match((*operands)[i], kBareNumericLiteral))
+          << noise_path.string() << "'s noiseVolume[tid] = float4(...) operand " << (i + 1) << " (channel "
+          << kChannelNames[i] << ", value \"" << (*operands)[i]
+          << "\") is a bare numeric literal, not a computed value - clouds.slang's sample_density weights every "
+             "channel into baseDensity/the cirrus band, so a constant channel silently flattens part of the "
+             "cloud shape";
+    }
+
+    // Cross-check: the swizzle components clouds.slang's sample_density
+    // actually reads off noise128/noise32 must be exactly {r, g, b, a}, so
+    // this gate fails loudly if that consumer contract changes instead of
+    // silently checking a stale set.
+    const auto clouds_contents = readFileText(clouds_path);
+    ASSERT_TRUE(clouds_contents.has_value()) << "could not read " << clouds_path.string();
+    const std::string sample_density_body =
+      extract_function_body(*clouds_contents, "float sample_density(float3 position, Clouds cloud)");
+    ASSERT_FALSE(sample_density_body.empty())
+      << "could not locate sample_density's body in " << clouds_path.string();
+
+    static const std::regex kSwizzleRead(R"(noise(?:128|32)\.([rgba]))");
+    std::set<char> swizzle_components;
+    for (auto it = std::sregex_iterator(sample_density_body.begin(), sample_density_body.end(), kSwizzleRead);
+         it != std::sregex_iterator(); ++it) {
+        swizzle_components.insert((*it)[1].str()[0]);
+    }
+    const std::set<char> expected_components = { 'r', 'g', 'b', 'a' };
+    EXPECT_EQ(swizzle_components, expected_components)
+      << clouds_path.string()
+      << "'s sample_density reads a different swizzle-component set off noise128/noise32 than {r, g, b, a}";
+}
+
 // The cloud noise volume used to be written on a dedicated compute queue
 // while the eExclusive storage image it lives in is owned by the graphics
 // family - undefined contents on the family that samples it, with no
