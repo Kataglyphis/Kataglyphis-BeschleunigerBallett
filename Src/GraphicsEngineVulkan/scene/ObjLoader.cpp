@@ -263,6 +263,18 @@ void ObjLoader::loadTexturesAndMaterials(const tinyobj::ObjReader &reader, const
             material.normalTextureID = -1;
         }
 
+        // map_Ke is authored colour (like map_Kd), so it goes through
+        // eR8G8B8A8Srgb - srgb=true, unlike the normal slot's linear decode.
+        if (!mp->emissive_texname.empty()) {
+            material.emissiveTextureID = resolveSlot(mp->emissive_texname, true);
+        } else {
+            // Same "no directive, no push" rule as the normal slot: keeps
+            // textures/textureSrgb exactly as long as materials for every
+            // model that ships no map_Ke - every model in Resources/Models/
+            // today.
+            material.emissiveTextureID = -1;
+        }
+
         materials.push_back(material);
     }
 

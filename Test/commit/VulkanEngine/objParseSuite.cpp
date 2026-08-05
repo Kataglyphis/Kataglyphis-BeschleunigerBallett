@@ -757,5 +757,106 @@ TEST(ObjParseUnit, BumpMultiplierDoesNotLeakFromMapBumpOntoAPreferredNormDirecti
     std::filesystem::remove_all(dir);
 }
 
+TEST(ObjParseUnit, MapKeBecomesTheEmissiveTextureSlot)
+{
+    // map_Ke names an emissive map: it must resolve into a distinct,
+    // non-negative emissiveTextureID, separate from the diffuse textureID,
+    // and (being authored colour like map_Kd) sRGB-flagged.
+    const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_map_ke";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    {
+        std::ofstream mtl(dir / "glow.mtl", std::ios::binary);
+        mtl << "newmtl painted\nKd 1 1 1\nKe 1 1 1\nmap_Kd base.png\nmap_Ke glow.png\n";
+    }
+    { std::ofstream texture(dir / "base.png", std::ios::binary); }
+    { std::ofstream texture(dir / "glow.png", std::ios::binary); }
+    {
+        std::ofstream obj(dir / "glow.obj", std::ios::binary);
+        obj << "mtllib glow.mtl\n"
+               "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+               "vt 0 0\nvt 1 0\nvt 0 1\n"
+               "usemtl painted\nf 1/1 2/2 3/3\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu((dir / "glow.obj").string()));
+
+    ASSERT_EQ(loader.getMaterials().size(), 1U);
+    const auto &material = loader.getMaterials()[0];
+    EXPECT_GE(material.emissiveTextureID, 0);
+    EXPECT_NE(material.textureID, material.emissiveTextureID)
+      << "the diffuse and emissive maps must not share a slot";
+
+    ASSERT_EQ(loader.getTextureSrgbFlags().size(), loader.getTextureNames().size());
+    bool sawGlowPngSrgb = false;
+    for (size_t i = 0; i < loader.getTextureNames().size(); i++) {
+        if (std::filesystem::path(loader.getTextureNames()[i]).filename() == "glow.png") {
+            EXPECT_EQ(loader.getTextureSrgbFlags()[i], 1) << "map_Ke is authored colour and must be sRGB";
+            sawGlowPngSrgb = true;
+        }
+    }
+    EXPECT_TRUE(sawGlowPngSrgb) << "glow.png must have been pushed as a texture slot";
+
+    std::filesystem::remove_all(dir);
+}
+
+TEST(ObjParseUnit, MapKdAndMapKeNamingOneFileShareASlot)
+{
+    // The same on-disk file used as both map_Kd and map_Ke - both sRGB - must
+    // collapse onto one slot, the (resolved path, srgb) key's whole point,
+    // mirroring OneFileNamedAsBothMapKdAndMapBumpGetsTwoSlots's opposite case.
+    const auto dir = std::filesystem::temp_directory_path() / "kat_mtl_shared_file_ke_slot";
+    std::filesystem::remove_all(dir);
+    std::filesystem::create_directories(dir);
+
+    {
+        std::ofstream mtl(dir / "dual_ke.mtl", std::ios::binary);
+        mtl << "newmtl painted\nKd 1 1 1\nKe 1 1 1\nmap_Kd wood.png\nmap_Ke wood.png\n";
+    }
+    { std::ofstream texture(dir / "wood.png", std::ios::binary); }
+    {
+        std::ofstream obj(dir / "dual_ke.obj", std::ios::binary);
+        obj << "mtllib dual_ke.mtl\n"
+               "v 0 0 0\nv 1 0 0\nv 0 1 0\n"
+               "vt 0 0\nvt 1 0\nvt 0 1\n"
+               "usemtl painted\nf 1/1 2/2 3/3\n";
+    }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu((dir / "dual_ke.obj").string()));
+
+    ASSERT_EQ(loader.getMaterials().size(), 1U);
+    const auto &material = loader.getMaterials()[0];
+    EXPECT_GE(material.textureID, 0);
+    EXPECT_EQ(material.textureID, material.emissiveTextureID)
+      << "one file named as both map_Kd and map_Ke (both sRGB) must share a slot";
+
+    std::filesystem::remove_all(dir);
+}
+
+TEST(ObjParseUnit, AMaterialWithoutMapKeKeepsTheSentinel)
+{
+    // dinosaurs.mtl ships no map_Ke directive at all: emissiveTextureID must
+    // stay -1, and (mirroring the normal-map absent case) no slot may be
+    // pushed for it - every material's texture count must still match one
+    // push per material (the always-pushed diffuse slot; dinosaurs.mtl also
+    // carries no normal/bump directive).
+    const std::string dino = sceneConfig::resolveModelPath("Models/Dinosaurs/dinosaurs.obj");
+    if (!std::filesystem::exists(dino)) { GTEST_SKIP() << "test model not present"; }
+
+    Kataglyphis::ObjLoader loader;
+    ASSERT_TRUE(loader.parseCpu(dino));
+
+    ASSERT_FALSE(loader.getMaterials().empty());
+    for (const auto &material : loader.getMaterials()) {
+        EXPECT_EQ(material.emissiveTextureID, -1) << "a material without map_Ke must keep the sentinel";
+    }
+    EXPECT_EQ(loader.getTextureNames().size(), loader.getMaterials().size())
+      << "dinosaurs.mtl carries no map_Ke or normal/bump directives, so each material must push exactly "
+         "one (possibly empty) diffuse slot and nothing more";
+}
+
 // The async wrapper (AsyncModelParse) has its own dedicated coverage in
 // asyncModelParseSuite.cpp, suite AsyncModelParseUnit.
