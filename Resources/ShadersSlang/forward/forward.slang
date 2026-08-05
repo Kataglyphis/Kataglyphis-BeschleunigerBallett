@@ -41,8 +41,25 @@ struct PrimUniforms
     float4 emissive_factor;   // rgb: emissive, w: MASK cutoff
     float4 base_uv_row0;
     float4 base_uv_row1;
+    float4 mr_uv_row0;
+    float4 mr_uv_row1;
+    float4 normal_uv_row0;
+    float4 normal_uv_row1;
+    float4 emissive_uv_row0;
+    float4 emissive_uv_row1;
+    float4 occlusion_uv_row0;
+    float4 occlusion_uv_row1;
     float4 material_flags;    // x: unlit, y: uv mask bits
 };
+
+// Applies a KHR_texture_transform's two affine rows (see PrimUniforms'
+// *_uv_row0/_uv_row1 pairs) to a UV. Identity rows leave uv unchanged.
+float2 apply_uv_transform(float4 row0, float4 row1, float2 uv)
+{
+    return float2(
+        row0.x * uv.x + row0.y * uv.y + row0.z,
+        row1.x * uv.x + row1.y * uv.y + row1.z);
+}
 
 struct IblParams
 {
@@ -198,9 +215,7 @@ VsShadowMaskedOut vs_shadow_masked(VsIn In)
 [shader("fragment")]
 void fs_shadow_masked(VsShadowMaskedOut In)
 {
-    float2 uv = float2(
-        prim.base_uv_row0.x * In.uv.x + prim.base_uv_row0.y * In.uv.y + prim.base_uv_row0.z,
-        prim.base_uv_row1.x * In.uv.x + prim.base_uv_row1.y * In.uv.y + prim.base_uv_row1.z);
+    float2 uv = apply_uv_transform(prim.base_uv_row0, prim.base_uv_row1, In.uv);
     float alpha = prim.base_color.a * baseColorTex.Sample(baseColorSampler, uv, 0).a * In.alpha;
     if (alpha < prim.emissive_factor.w) discard;
 }
@@ -368,15 +383,17 @@ float4 fs_main(VsOut In, bool isFrontFace : SV_IsFrontFace) : SV_Target
     float2 emissiveIn = (uvMask & 8u) != 0u ? In.uv1 : In.uv;
     float2 occlusionIn = (uvMask & 16u) != 0u ? In.uv1 : In.uv;
 
-    float2 baseUv = float2(
-        prim.base_uv_row0.x * baseIn.x + prim.base_uv_row0.y * baseIn.y + prim.base_uv_row0.z,
-        prim.base_uv_row1.x * baseIn.x + prim.base_uv_row1.y * baseIn.y + prim.base_uv_row1.z);
+    float2 baseUv = apply_uv_transform(prim.base_uv_row0, prim.base_uv_row1, baseIn);
+    float2 mrUv = apply_uv_transform(prim.mr_uv_row0, prim.mr_uv_row1, mrIn);
+    float2 normalUv = apply_uv_transform(prim.normal_uv_row0, prim.normal_uv_row1, normalIn);
+    float2 emissiveUv = apply_uv_transform(prim.emissive_uv_row0, prim.emissive_uv_row1, emissiveIn);
+    float2 occlusionUv = apply_uv_transform(prim.occlusion_uv_row0, prim.occlusion_uv_row1, occlusionIn);
 
     float4 baseSample = baseColorTex.Sample(baseColorSampler, baseUv);
-    float4 mrSample = metalRoughTex.Sample(metalRoughSampler, mrIn);
-    float4 normalSample = normalTex.Sample(normalSampler, normalIn);
-    float4 emissiveSample = emissiveTex.Sample(emissiveSampler, emissiveIn);
-    float4 occlusionSample = occlusionTex.Sample(occlusionSampler, occlusionIn);
+    float4 mrSample = metalRoughTex.Sample(metalRoughSampler, mrUv);
+    float4 normalSample = normalTex.Sample(normalSampler, normalUv);
+    float4 emissiveSample = emissiveTex.Sample(emissiveSampler, emissiveUv);
+    float4 occlusionSample = occlusionTex.Sample(occlusionSampler, occlusionUv);
 
     float4 albedo = prim.base_color * baseSample * In.vertexColor;
     if (albedo.a < prim.emissive_factor.w) discard;
