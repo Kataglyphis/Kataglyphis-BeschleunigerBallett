@@ -11597,3 +11597,99 @@ TEST(BuildIntegrity, TheLoadingPostPassDeclaresNoClearValue)
       << post_slang_path.string() << " samples noisyTxt " << sample_count
       << " time(s) in fs_main - expected exactly one fetch into a float4, with .rgb/.a taken from it";
 }
+
+// Parses every `BENCHMARK(NAME)` registration in perfSuite.cpp, together with
+// its trailing `->Arg(N)` chain up to the statement's `;`, and expands each
+// to the Google-Benchmark name(s) it produces at run time: no `->Arg` yields
+// the bare NAME, one or more `->Arg(N)` yields one "NAME/N" per argument.
+// Other chained calls (`->Unit(...)`) are matched but ignored - they do not
+// change the run name.
+std::vector<std::string> parse_registered_benchmark_names(const std::string &perf_suite_text)
+{
+    static const std::regex kRegistration(
+      R"(BENCHMARK\(\s*([A-Za-z_]\w*)\s*\)((?:\s*->\s*\w+\([^)]*\))*)\s*;)");
+    static const std::regex kArg(R"(->\s*Arg\(\s*(\d+)\s*\))");
+
+    std::vector<std::string> names;
+    for (auto match = std::sregex_iterator(perf_suite_text.begin(), perf_suite_text.end(), kRegistration),
+              match_end = std::sregex_iterator();
+         match != match_end; ++match) {
+        const std::string benchmark_name = (*match)[1].str();
+        const std::string chain = (*match)[2].str();
+
+        std::vector<std::string> args;
+        for (auto arg_match = std::sregex_iterator(chain.begin(), chain.end(), kArg), arg_end = std::sregex_iterator();
+             arg_match != arg_end; ++arg_match) {
+            args.push_back((*arg_match)[1].str());
+        }
+
+        if (args.empty()) {
+            names.push_back(benchmark_name);
+        } else {
+            for (const auto &arg : args) { names.push_back(benchmark_name + "/" + arg); }
+        }
+    }
+    return names;
+}
+
+// perfSuite.cpp is the source of truth for what BENCHMARK_MAIN() actually
+// registers; the checked-in baseline (win-9070xt-32core.json) exists to catch
+// perf regressions on exactly those functions. The two have drifted before:
+// BM_ComputeTangents grew two more ->Arg() rows on 2026-07-31 and the
+// baseline was never updated, so Compare-PerfBaseline.ps1 (deliberately
+// never-fatal for an unmatched benchmark - see its header comment) silently
+// stopped protecting the function it was added to guard. This test is the
+// commit-time half of that contract: the baseline must cover the suite, even
+// though a single comparison run is allowed not to.
+TEST(BuildIntegrity, EveryRegisteredBenchmarkHasAPerfBaselineRow)
+{
+    const fs::path repo_root = repoRoot();
+    ASSERT_FALSE(repo_root.empty()) << "could not locate the repository root";
+
+    const fs::path perf_suite_path = repo_root / "Test" / "perf" / "perfSuite.cpp";
+    const auto perf_suite_text = readFileText(perf_suite_path);
+    ASSERT_TRUE(perf_suite_text.has_value()) << "missing " << perf_suite_path.string();
+
+    const fs::path baseline_path = repo_root / "Test" / "perf" / "baselines" / "win-9070xt-32core.json";
+    const auto baseline_text = readFileText(baseline_path);
+    ASSERT_TRUE(baseline_text.has_value()) << "missing " << baseline_path.string();
+
+    const nlohmann::json baseline_doc = nlohmann::json::parse(*baseline_text, nullptr, /*allow_exceptions=*/false);
+    ASSERT_FALSE(baseline_doc.is_discarded()) << baseline_path.string() << " is not valid JSON";
+    ASSERT_TRUE(baseline_doc.contains("benchmarks") && baseline_doc["benchmarks"].is_array())
+      << baseline_path.string() << " has no \"benchmarks\" array";
+
+    std::set<std::string> baseline_names;
+    for (const auto &entry : baseline_doc["benchmarks"]) {
+        ASSERT_TRUE(entry.contains("name") && entry["name"].is_string())
+          << baseline_path.string() << " has a benchmarks[] entry with no string \"name\"";
+        baseline_names.insert(entry["name"].get<std::string>());
+    }
+
+    const std::vector<std::string> registered = parse_registered_benchmark_names(*perf_suite_text);
+    ASSERT_FALSE(registered.empty()) << "found no BENCHMARK(...) registrations in " << perf_suite_path.string();
+    const std::set<std::string> registered_names(registered.begin(), registered.end());
+
+    std::vector<std::string> missing;
+    for (const auto &name : registered_names) {
+        if (!baseline_names.contains(name)) { missing.push_back(name); }
+    }
+    std::vector<std::string> stale;
+    for (const auto &name : baseline_names) {
+        if (!registered_names.contains(name)) { stale.push_back(name); }
+    }
+
+    EXPECT_TRUE(missing.empty()) << perf_suite_path.string() << " registers benchmark(s) with no row in "
+                                  << baseline_path.string() << ":" << [&missing] {
+        std::string joined;
+        for (const auto &entry : missing) { joined += "\n  " + entry; }
+        return joined;
+    }();
+    EXPECT_TRUE(stale.empty()) << baseline_path.string()
+                                << " has benchmarks[] row(s) for benchmark(s) no longer registered in "
+                                << perf_suite_path.string() << " - delete the stale row(s):" << [&stale] {
+        std::string joined;
+        for (const auto &entry : stale) { joined += "\n  " + entry; }
+        return joined;
+    }();
+}

@@ -274,6 +274,48 @@
       "real_time": 1.5737520563709001e+01,
       "cpu_time": 1.5729737029489037e+01,
       "time_unit": "us"
+    },
+    {
+      "name": "BM_ComputeTangents/1",
+      "family_index": 14,
+      "per_family_instance_index": 0,
+      "run_name": "BM_ComputeTangents/1",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 7466667,
+      "real_time": 9.0376134356249509e+01,
+      "cpu_time": 8.9983254911461827e+01,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_ComputeTangents/64",
+      "family_index": 14,
+      "per_family_instance_index": 1,
+      "run_name": "BM_ComputeTangents/64",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 112000,
+      "real_time": 5.7286928570517503e+03,
+      "cpu_time": 5.7198660714285716e+03,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_ComputeTangents/512",
+      "family_index": 14,
+      "per_family_instance_index": 2,
+      "run_name": "BM_ComputeTangents/512",
+      "run_type": "iteration",
+      "repetitions": 1,
+      "repetition_index": 0,
+      "threads": 1,
+      "iterations": 15448,
+      "real_time": 4.5961341273095284e+04,
+      "cpu_time": 4.5515600725012948e+04,
+      "time_unit": "ns"
     }
   ]
 }
